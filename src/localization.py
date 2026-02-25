@@ -7532,6 +7532,42 @@ TRANSLATIONS = {
     'menu_lb_error_fetch_failed': {
         'tr': 'Steam skorları alınamadı: {error}', 'en': 'Failed to fetch Steam scores: {error}', 'de': 'Steam-Punkte konnten nicht abgerufen werden: {error}', 'fr': 'Impossible de récupérer les scores Steam : {error}', 'es': 'No se pudieron obtener las puntuaciones de Steam: {error}', 'it': 'Impossibile recuperare i punteggi Steam: {error}', 'pt': 'Falha ao buscar pontuações Steam: {error}', 'ja': 'Steamスコアの取得に失敗しました: {error}', 'zh': '获取 Steam 分数失败：{error}', 'ko': 'Steam 점수를 가져오지 못했습니다: {error}'
     },
+    'steam_lb_submit_no_license': {
+        'tr': 'Skor kaydedilemedi: Steam hesabınızda bu oyunun lisansı yok. Oyunu Steam üzerinden edinin.',
+        'en': 'Score not saved: Your Steam account does not own a license for this game. Please acquire the game on Steam.',
+        'de': 'Punktzahl nicht gespeichert: Dein Steam-Konto hat keine Lizenz für dieses Spiel.',
+        'fr': "Score non enregistré : Votre compte Steam n'a pas de licence pour ce jeu.",
+        'es': 'Puntuación no guardada: Tu cuenta de Steam no tiene licencia para este juego.',
+        'it': 'Punteggio non salvato: Il tuo account Steam non ha una licenza per questo gioco.',
+        'pt': 'Pontuação não salva: Sua conta Steam não possui licença para este jogo.',
+        'ja': 'スコアは保存されませんでした：Steamアカウントにこのゲームのライセンスがありません。',
+        'zh': '分数未保存：您的 Steam 账户没有此游戏的许可证。',
+        'ko': '점수가 저장되지 않았습니다: Steam 계정에 이 게임의 라이선스가 없습니다.',
+    },
+    'steam_lb_submit_steam_closed': {
+        'tr': 'Skor kaydedilemedi: Steam çalışmıyor. Skoru görmek için Steam açık olmalı.',
+        'en': 'Score not saved: Steam is not running. Open Steam to see your score on the leaderboard.',
+        'de': 'Punktzahl nicht gespeichert: Steam läuft nicht.',
+        'fr': "Score non enregistré : Steam n'est pas en cours d'exécution.",
+        'es': 'Puntuación no guardada: Steam no está en ejecución.',
+        'it': 'Punteggio non salvato: Steam non è in esecuzione.',
+        'pt': 'Pontuação não salva: Steam não está em execução.',
+        'ja': 'スコアは保存されませんでした：Steamが起動していません。',
+        'zh': '分数未保存：Steam 未运行。',
+        'ko': '점수가 저장되지 않았습니다: Steam이 실행중이지 않습니다.',
+    },
+    'steam_lb_submit_ok': {
+        'tr': 'Skor Steam liderlik tablosuna kaydedildi! Sıralaman: #{rank}',
+        'en': 'Score saved to Steam leaderboard! Your rank: #{rank}',
+        'de': 'Punktzahl in Steam-Bestenliste gespeichert! Deine Platzierung: #{rank}',
+        'fr': 'Score enregistré dans le classement Steam ! Ton classement : #{rank}',
+        'es': '¡Puntuación guardada en la tabla de clasificación de Steam! Tu posición: #{rank}',
+        'it': 'Punteggio salvato nella classifica Steam! Il tuo rango: #{rank}',
+        'pt': 'Pontuação salva no placar Steam! Sua classificação: #{rank}',
+        'ja': 'スコアがSteamランキングに保存されました！あなたのランク: #{rank}',
+        'zh': '分数已保存到 Steam 排行榜！您的排名：#{rank}',
+        'ko': 'Steam 리더보드에 점수가 저장되었습니다! 당신의 순위: #{rank}',
+    },
     'menu_lb_title': {
         'tr': 'Skorlar', 'en': 'Scores', 'de': 'Punkte', 'fr': 'Scores', 'es': 'Puntuaciones', 'it': 'Punteggi', 'pt': 'Pontuações', 'ja': 'スコア', 'zh': '分数', 'ko': '점수'
     },

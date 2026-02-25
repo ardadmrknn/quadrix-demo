@@ -116,10 +116,19 @@ if campaign_dir.exists():
         if module_name != '__init__':
             hiddenimports.append(f'campaign.{module_name}')
 
+# Steamworks DLL - dll/win64/ klasöründen al, EXE içine göm (onefile)
+# Steam, DLL'i _MEIPASS'tan ctypes ile yükler; ayrı dosya gerekmez.
+steam_dll_src = str(REPO_ROOT / 'dll' / 'win64' / 'steam_api64.dll')
+if os.path.exists(steam_dll_src):
+    binaries = [(steam_dll_src, '.')]  # EXE içine gömülür, _MEIPASS'a çıkarılır
+else:
+    binaries = []
+    print(f"WARNING: steam_api64.dll not found at {steam_dll_src}")
+
 a = Analysis(
     [str(SRC_DIR / 'main.py')],  # Ana giriş noktası
     pathex=[str(SRC_DIR), str(REPO_ROOT)],
-    binaries=[],
+    binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,
     hookspath=[],

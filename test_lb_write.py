@@ -51,7 +51,7 @@ for _ in range(300):
         break
     time.sleep(0.05)
 dll.SteamAPI_Shutdown()
-params = urllib.parse.urlencode({"key":PUBLISHER_KEY,"appid":APP_ID,"leaderboardid":LB_ID_MYSTERY,"steamid":steam_id,"score":test_score,"scoremethod":1}).encode()
+params = urllib.parse.urlencode({"key":PUBLISHER_KEY,"appid":APP_ID,"leaderboardid":LB_ID_MYSTERY,"steamid":steam_id,"score":test_score,"scoremethod":"KeepBest"}).encode()
 req = urllib.request.Request("https://partner.steam-api.com/ISteamLeaderboards/SetLeaderboardScore/v1/", data=params, method="POST")
 req.add_header("Content-Type", "application/x-www-form-urlencoded")
 with urllib.request.urlopen(req, timeout=10) as resp:
