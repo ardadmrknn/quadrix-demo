@@ -231,6 +231,32 @@ class SteamLeaderboardService:
         self.session_token = token
         return True
 
+    def submit_score(
+        self,
+        mode: str,
+        score: int,
+        ticket: str | None = None,
+        scoremethod: str = "KeepBest",
+    ) -> bool:
+        """Submit score to leaderboard via backend proxy.
+
+        Requires backend to be configured (LEADERBOARD_BACKEND_URL env var).
+        Returns True on success.
+        """
+        if not self._is_backend_mode():
+            return False
+        if ticket is None:
+            return False
+        try:
+            result = self._post_json(
+                f"/api/v1/leaderboards/{mode}/submit",
+                {"ticket": ticket, "score": int(score), "scoremethod": scoremethod},
+            )
+            return bool(result.get("ok"))
+        except Exception as exc:
+            print(f"[SteamLeaderboardService] submit_score error: {exc}")
+            return False
+
     def _direct_get(self, endpoint: str, **params: Any) -> dict[str, Any]:
         if not self._is_direct_mode():
             self.last_error = "Direct Steam modu için STEAM_APP_ID ve STEAM_WEB_API_KEY gerekli."

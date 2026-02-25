@@ -78,4 +78,56 @@ python tools/steam_leaderboard_smoke_test.py
 
 - Ana menü sağ alt panel (`Kart Ustalığı`) backend'den `global` ve `friends` skorlarını çeker.
 - Friends için backend session token yoksa yalnızca global görünür; friends sekmesi doğrulama hatası verir.
+
+---
+
+## 7) Leaderboard Yazma Başarısızlığı Teşhisi
+
+### `result=8` — `k_EResultInvalidParam` (En Sık Karşılaşılan)
+
+**Anlam:** İstek yapan Steam hesabının AppID 4428040 için **geçerli bir lisansı yok**.
+
+**SDK belirtisi:**
+```
+m_bSuccess = 0   (UploadLeaderboardScore callback sonucu)
+```
+
+**Partner API belirtisi:**
+```json
+{"result": {"result": 8}}
+```
+
+**Çözüm (geliştirici/QA hesabı için):**
+```
+partner.steamgames.com
+  → Apps & Packages → Apps → 4428040
+    → Packages & Activations → Packages
+      → Quadrix - Developer Comp → Edit Package
+        → Add Steam Account → [SteamID64 gir] → Save
+```
+
+**Çözüm (playtest oyuncuları için):**  
+Oyuncular oyunu Playtest key veya satın alma ile edindiklerinde lisans otomatik oluşur. Ek işlem gerekmez.
+
+> **Not:** Playtest istek kuyruğuna alınmak ≠ lisans. Onay sonrası bile erişim türüne göre lisans oluşmaması mümkündür.
+
+### `result=27` — `k_EResultInvalidSteamID`
+SteamID64 formatı hatalı. `get_steam_id_str()` çıktısını doğrulayın.
+
+### `Init=2` (SteamAPI_InitFlat)
+Steam istemcisi çalışmıyor. Steam'i başlatın.
+
+### Debug Araçları
+```powershell
+# SDK + Partner API yazma durumunu an be an test et
+$env:SteamAppId="4428040"
+py test_lb_write.py
+
+# Fallback ile debug (sadece geliştirici ortamı!)
+$env:STEAM_PARTNER_WRITE_FALLBACK="1"
+py test_lb_write.py
+```
+
+Tam runbook: [`docs/STEAM_PLAYTEST_LICENSE_RUNBOOK_TR.md`](STEAM_PLAYTEST_LICENSE_RUNBOOK_TR.md)
+
 - Client, `LEADERBOARD_STEAM_TICKET` verilmişse `POST /api/v1/auth/steam-ticket` ile session token almayı dener.

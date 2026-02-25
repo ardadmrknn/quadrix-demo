@@ -411,6 +411,56 @@ class SteamDirectGateway:
             self.last_error = ""
         return results
 
+    def _post_web(self, endpoint: str, **params: Any) -> dict[str, Any]:
+        """POST to Steam partner API (form-encoded)."""
+        import urllib.parse as _urlparse
+        import urllib.request as _urlrequest
+        import json as _json
+        merged = {"key": self.publisher_key, "appid": self.app_id, **params}
+        data = _urlparse.urlencode(merged).encode("ascii")
+        url = f"{STEAM_WEB_API_BASE}/{endpoint}"
+        req = _urlrequest.Request(url, data=data, method="POST")
+        req.add_header("Content-Type", "application/x-www-form-urlencoded")
+        with _urlrequest.urlopen(req, timeout=self.timeout_seconds) as resp:
+            return _json.loads(resp.read().decode("utf-8", errors="replace"))
+
+    def set_score(
+        self,
+        mode: str,
+        steam_id: str,
+        score: int,
+        scoremethod: str = "KeepBest",
+    ) -> bool:
+        """Write score to Steam leaderboard via SetLeaderboardScore/v1/.
+
+        scoremethod must be 'KeepBest' or 'ForceUpdate' (string — NOT int).
+        Returns True if result==1.
+        """
+        lb_id = self._resolve_mode_leaderboard_id(mode)
+        if not lb_id:
+            return False
+        try:
+            body = self._post_web(
+                "ISteamLeaderboards/SetLeaderboardScore/v1/",
+                leaderboardid=lb_id,
+                steamid=steam_id,
+                score=int(score),
+                scoremethod=scoremethod,
+            )
+            result_code = body.get("result", {}).get("result", -1)
+            if result_code == 1:
+                rank = body.get("result", {}).get("global_rank_new", 0)
+                print(f"[Proxy] set_score OK: {mode} → {score} rank={rank}")
+                return True
+            hint = ""
+            if result_code == 8:
+                hint = " (InvalidParam: check scoremethod string, leaderboardid, appid)"
+            print(f"[Proxy] set_score FAIL: {mode} result={result_code}{hint}")
+            return False
+        except Exception as exc:
+            print(f"[Proxy] set_score error ({mode}): {exc}")
+            return False
+
 
 class SessionTokenManager:
     def __init__(self, secret: str, ttl_seconds: int = 900):
@@ -643,6 +693,36 @@ def create_app() -> Flask:
 
         summaries = gateway.fetch_player_summaries(steam_ids)
         return jsonify({"ok": True, "players": summaries})
+
+    @app.post("/api/v1/leaderboards/<mode>/submit")
+    def submit_score(mode: str):
+        if not gateway.is_ready():
+            return json_error("steam gateway hazır değil", 503)
+
+        body = request.get_json(silent=True) or {}
+        ticket = str(body.get("ticket", "")).strip()
+        score = body.get("score")
+        scoremethod = str(body.get("scoremethod", "KeepBest")).strip()
+
+        if not ticket or score is None:
+            return json_error("ticket and score required", 400)
+
+        try:
+            score = int(score)
+        except (TypeError, ValueError):
+            return json_error("score must be integer", 400)
+
+        if scoremethod not in ("KeepBest", "ForceUpdate"):
+            scoremethod = "KeepBest"
+
+        ok, steam_id, err = gateway.verify_steam_ticket(ticket)
+        if not ok:
+            return json_error(f"ticket validation failed: {err}", 403)
+
+        success = gateway.set_score(mode, steam_id, score, scoremethod=scoremethod)
+        if success:
+            return jsonify({"ok": True, "steam_id": steam_id, "score": score})
+        return json_error("score write failed", 502)
 
     @app.errorhandler(Exception)
     def unhandled_error(exc):

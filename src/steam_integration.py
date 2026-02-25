@@ -35,6 +35,7 @@ _isteam_friends: ctypes.c_void_p | None = None
 _isteam_user: ctypes.c_void_p | None = None
 _isteam_user_stats: ctypes.c_void_p | None = None
 _isteam_utils: ctypes.c_void_p | None = None
+_isteam_apps: ctypes.c_void_p | None = None
 
 # Önbellek
 _persona_name_cache: str | None = None
@@ -286,6 +287,22 @@ def _setup_dll_functions(dll: ctypes.CDLL) -> None:
     except AttributeError:
         pass
 
+    # SteamApps interface accessor (v008 veya v007)
+    for _apps_ver in ('SteamAPI_SteamApps_v008', 'SteamAPI_SteamApps_v007'):
+        try:
+            fn = getattr(dll, _apps_ver)
+            fn.restype = ctypes.c_void_p
+            fn.argtypes = []
+        except AttributeError:
+            pass
+
+    # ISteamApps_BIsSubscribed — aktif hesabın AppID lisansı var mı?
+    try:
+        dll.SteamAPI_ISteamApps_BIsSubscribed.restype = ctypes.c_bool
+        dll.SteamAPI_ISteamApps_BIsSubscribed.argtypes = [ctypes.c_void_p]
+    except AttributeError:
+        pass
+
 
 def init() -> bool:
     """Steam API'yi başlat. Başarılı olursa True döndürür.
@@ -293,7 +310,7 @@ def init() -> bool:
     İkinci çağrıda mevcut durumu döndürür (idempotent).
     """
     global _dll, _dll_loaded, _init_ok, _isteam_friends, _isteam_user, _isteam_user_stats, _isteam_utils
-    global _pump_thread, _pump_running
+    global _isteam_apps, _pump_thread, _pump_running
 
     with _init_lock:
         if _dll_loaded:
@@ -307,17 +324,31 @@ def init() -> bool:
         # çıkarılır ama CWD exe'nin bulunduğu yerdir — dosya orada olmayabilir.
         # Env var her zaman çalışır.
         _APP_ID = '4428040'
-        os.environ.setdefault('SteamAppId', _APP_ID)
-        os.environ.setdefault('SteamGameId', _APP_ID)
-        # steam_appid.txt'yi exe'nin yanına da yazmaya çalış ( Steam offline launch için)
-        try:
-            import sys as _sys
-            _exe_dir = Path(getattr(_sys, 'executable', '') or '').parent
-            _appid_dst = _exe_dir / 'steam_appid.txt'
-            if not _appid_dst.exists():
-                _appid_dst.write_text(_APP_ID + '\n', encoding='utf-8')
-        except Exception:
-            pass
+        # ── Dev mode / Production mode ayırt et ─────────────────────────────────
+        # PyInstaller frozen build'da (sys.frozen=True) Steam client AppID'yi
+        # zaten sağlar; env override yapmak yanlış AppID enjekte edebilir.
+        # Dev modda (script çalıştırma) ya da STEAM_DEV_OVERRIDE=1 olduğunda
+        # override yapılır.
+        _is_dev_mode = (
+            not getattr(sys, 'frozen', False)
+            or os.environ.get('STEAM_DEV_OVERRIDE', '0') == '1'
+        )
+        if _is_dev_mode:
+            os.environ.setdefault('SteamAppId', _APP_ID)
+            os.environ.setdefault('SteamGameId', _APP_ID)
+            # steam_appid.txt'yi exe'nin yanına da yazmaya çalış (Steam offline launch için)
+            try:
+                import sys as _sys
+                _exe_dir = Path(getattr(_sys, 'executable', '') or '').parent
+                _appid_dst = _exe_dir / 'steam_appid.txt'
+                if not _appid_dst.exists():
+                    _appid_dst.write_text(_APP_ID + '\n', encoding='utf-8')
+            except Exception:
+                pass
+            print(f"[Steam] Dev mode: AppID override applied ({_APP_ID})")
+        else:
+            print("[Steam] Production mode: using AppID from Steam client")
+        # ─────────────────────────────────────────────────────────────────────
         # ────────────────────────────────────────────────────────────────────
         dll_path = _find_dll()
         if not dll_path:
@@ -363,6 +394,7 @@ def init() -> bool:
 
         _dll = dll
         _init_ok = True
+        print(f"[Steam] Runtime AppID: {os.environ.get('SteamAppId', '(from Steam client)')}")
 
         # Interface pointer'larını al — SDK sürümüne göre doğru accessor'ı dene
         def _try_accessor(*names):
@@ -399,6 +431,10 @@ def init() -> bool:
         _isteam_utils = _try_accessor(
             'SteamAPI_SteamUtils_v010',
             'SteamAPI_SteamUtils_v009',
+        )
+        _isteam_apps = _try_accessor(
+            'SteamAPI_SteamApps_v008',
+            'SteamAPI_SteamApps_v007',
         )
 
         # Callback pump thread'i başlat
@@ -527,6 +563,33 @@ def get_steam_id_str() -> str:
     """SteamID64'ü string olarak döndürür; bilinmiyorsa boş."""
     sid = get_steam_id()
     return str(sid) if sid else ""
+
+
+def is_app_owned() -> bool | None:
+    """Aktif Steam hesabının bu AppID için geçerli lisansı olup olmadığını kontrol et.
+
+    Returns:
+        True  — lisans var (SDK onayı).
+        False — lisans yok; k_EResultInvalidParam(8) durumunun root-cause'u.
+        None  — Steam SDK mevcut değil veya SteamApps arayüzü alınamadı (bilinmiyor).
+
+    Not: Playtest istek kuyruğuna alınmak ≠ Steam lisansı.
+    Lisans için: Partner Portal → AppID → Packages → Developer Comp → hesap ekle.
+    """
+    if not is_available() or not _isteam_apps or not _dll:
+        return None
+    try:
+        result = _dll.SteamAPI_ISteamApps_BIsSubscribed(_isteam_apps)
+        owned = bool(result)
+        if not owned:
+            print(
+                f"[Steam] is_app_owned: FALSE — bu hesapta AppID {_APP_ID_INT} lisansi yok. "
+                "Partner Portal -> Packages -> Developer Comp ile lisans ekleyin."
+            )
+        return owned
+    except Exception as e:
+        print(f"[Steam] is_app_owned hatasi: {e}")
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -747,6 +810,52 @@ _LB_NAME_TO_ID: dict[str, int] = {
 _PARTNER_API_KEY = '4B6B6D93520B540A3F7B79E98472F375'
 _APP_ID_INT = 4428040
 
+# In-memory cache for dynamically resolved leaderboard IDs (session-lived)
+_lb_id_web_cache: dict[str, int] = {}
+
+
+def _resolve_lb_id_via_web_api(lb_name: str) -> int | None:
+    """Resolve leaderboard numeric ID from Steam Web API (FindLeaderboard/v1/).
+
+    Caches results for the session. Returns None on failure.
+    Requires _PARTNER_API_KEY and _APP_ID_INT to be set.
+    """
+    if lb_name in _lb_id_web_cache:
+        return _lb_id_web_cache[lb_name]
+    if not _PARTNER_API_KEY or not _APP_ID_INT:
+        return None
+    try:
+        import urllib.request
+        import urllib.parse
+        import json
+        params = urllib.parse.urlencode({
+            'key': _PARTNER_API_KEY,
+            'appid': _APP_ID_INT,
+            'name': lb_name,
+        })
+        url = f'https://partner.steam-api.com/ISteamLeaderboards/FindLeaderboard/v1/?{params}'
+        req = urllib.request.Request(url, method='GET')
+        with urllib.request.urlopen(req, timeout=6) as resp:
+            body = json.loads(resp.read().decode('utf-8', errors='replace'))
+            lb_id = body.get('leaderboard', {}).get('leaderboardID')
+            if lb_id:
+                _lb_id_web_cache[lb_name] = int(lb_id)
+                print(f"[Steam] Leaderboard ID resolved: {lb_name} \u2192 {lb_id}")
+                return int(lb_id)
+    except Exception as e:
+        print(f"[Steam] Leaderboard ID resolve failed ({lb_name}): {e}")
+    return None
+
+
+def _is_partner_fallback_enabled() -> bool:
+    """Partner API write fallback aktif mi kontrol et.
+
+    Varsayılan: KAPALI (üretim güvenliği).
+    Debug/staff ortamda: STEAM_PARTNER_WRITE_FALLBACK=1 ile açılır.
+    Bu fallback publisher key içerdiğinden production build'lerde varsayılan kapalıdır.
+    """
+    return os.environ.get('STEAM_PARTNER_WRITE_FALLBACK', '0').strip() == '1'
+
 
 def _submit_score_via_partner_api(lb_name: str, score: int, steam_id_str: str) -> bool:
     """SDK başarısız olursa Partner Server API ile skor gönder (fallback).
@@ -754,7 +863,8 @@ def _submit_score_via_partner_api(lb_name: str, score: int, steam_id_str: str) -
     Bu yol; oyuncunun Steam lisansı varsa (normal satın alma / playtest key ile)
     her zaman çalışır. Lisans yoksa k_EResultInvalidParam(8) döner.
     """
-    lb_id = _LB_NAME_TO_ID.get(lb_name)
+    # Try dynamic Web API resolution first; fall back to hardcoded map
+    lb_id = _resolve_lb_id_via_web_api(lb_name) or _LB_NAME_TO_ID.get(lb_name)
     if not lb_id or not steam_id_str:
         return False
     try:
@@ -766,7 +876,7 @@ def _submit_score_via_partner_api(lb_name: str, score: int, steam_id_str: str) -
             'leaderboardid': lb_id,
             'steamid': steam_id_str,
             'score': score,
-            'scoremethod': 0,   # 0 = KeepBest
+            'scoremethod': 'KeepBest',  # Steam Web API requires string: "KeepBest" or "ForceUpdate"
         }).encode('ascii')
         url = 'https://partner.steam-api.com/ISteamLeaderboards/SetLeaderboardScore/v1/'
         req = urllib.request.Request(url, data=params, method='POST')
@@ -782,7 +892,10 @@ def _submit_score_via_partner_api(lb_name: str, score: int, steam_id_str: str) -
             else:
                 # result=8 = k_EResultInvalidParam: bu account bu app'i sahip degil
                 # Production oyuncularinda bu olmaz (Steam key/satin alma ile lisansli olurlar)
-                print(f"[Steam] Partner API skor FAIL -> {lb_name}: result={result_code} "
+                hint = ""
+                if result_code == 8:
+                    hint = " (result=8 = InvalidParam: check scoremethod string, leaderboardid, appid)"
+                print(f"[Steam] Partner API skor FAIL -> {lb_name}: result={result_code}{hint} "
                       f"(8=lisans yok / dev hesabi icin: Partner Portal -> Packages -> Developer Comp -> hesabi ekle)")
                 return False
     except Exception as e:
@@ -837,9 +950,24 @@ def submit_score(mode: str, score: int) -> bool:
             except Exception as e:
                 print(f"[Steam] SDK submit hatasi ({lb_name}): {e}")
 
-        # --- Yol 2: Partner Server API fallback ---
+        # --- Yol 2: Partner Server API fallback (yalnız flag açıksa) ---
         if not sdk_success and steam_id_str:
-            _submit_score_via_partner_api(lb_name, score, steam_id_str)
+            if _is_partner_fallback_enabled():
+                _submit_score_via_partner_api(lb_name, score, steam_id_str)
+            else:
+                owned = is_app_owned()
+                if owned is False:
+                    print(
+                        f"[Steam] Skor gonderilemedi ({lb_name}): Bu hesapta AppID {_APP_ID_INT} lisansi yok. "
+                        "Duzeltmek icin: Steam Partner Portal -> 4428040 -> Packages -> Developer Comp -> "
+                        "hesabi ekle. Playtest queue erisimi != Steam lisansi."
+                    )
+                else:
+                    print(
+                        f"[Steam] SDK yazimi basarisiz (sdk_success=0) -> {lb_name}. "
+                        "Partner API fallback kapali (uretim politikasi). "
+                        "Debug icin: STEAM_PARTNER_WRITE_FALLBACK=1 env var ile aktiflestirebilirsiniz."
+                    )
         elif not sdk_success and not steam_id_str:
             print(f"[Steam] Skor gonderilemedi: SDK yok, steam_id yok -> {lb_name}: {score}")
 
