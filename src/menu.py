@@ -991,10 +991,6 @@ class Menu:
             border_radius=14,
         )
 
-        strip_w = max(4, min(8, draw_rect.width // 28))
-        strip_rect = pygame.Rect(draw_rect.x + 4, draw_rect.y + 6, strip_w, draw_rect.height - 12)
-        pygame.draw.rect(self.screen, accent_color, strip_rect, border_radius=3)
-
         title_area_h = max(sp(32), int(draw_rect.height * 0.40))
         title_area = pygame.Rect(draw_rect.x + sp(16), draw_rect.y + sp(10), draw_rect.width - sp(24), title_area_h)
         title_font_size = max(sp(16), min(sp(26), int(min(draw_rect.width, draw_rect.height) * 0.12)))
@@ -1518,8 +1514,6 @@ class Menu:
                 for hy in range(hl_h):
                     ha = int(18 * (1 - hy / max(1, hl_h)))
                     pygame.draw.line(card_surf, (255, 255, 255, ha), (4, hy), (card_w - 4, hy))
-                # Sol accent strip (altın)
-                pygame.draw.rect(card_surf, (*gold, 200 if has_item else 80), pygame.Rect(0, 4, 4, card_h - 8), border_radius=2)
                 # Border (altın neon)
                 pygame.draw.rect(card_surf, (*gold, 110 if has_item else 45), card_surf.get_rect(), 1, border_radius=8)
 
@@ -1593,8 +1587,6 @@ class Menu:
             for hy in range(min(6, lv_panel_h // 4)):
                 ha = int(20 * (1 - hy / 6))
                 pygame.draw.line(lv_bg, (255, 255, 255, ha), (6, hy), (lv_panel_w - 6, hy))
-            # Sol accent strip
-            pygame.draw.rect(lv_bg, (*accent_color[:3], 200), pygame.Rect(0, 4, 3, lv_panel_h - 8), border_radius=2)
             # Kenarlık
             pygame.draw.rect(lv_bg, (*accent_color[:3], 80), lv_bg.get_rect(), 1, border_radius=10)
             self.screen.blit(lv_bg, (lv_panel_x, lv_panel_y))
@@ -2333,10 +2325,6 @@ class Menu:
         retro_style.draw_glass_panel(self.screen, panel_rect, alpha=200, border_color=score_accent)
         pygame.draw.rect(self.screen, (*score_accent, 160), panel_rect, 2, border_radius=14)
 
-        # Sol accent strip
-        strip_rect = pygame.Rect(panel_rect.x + s(4), panel_rect.y + s(8), s(5), panel_rect.height - s(16))
-        pygame.draw.rect(self.screen, score_accent, strip_rect, border_radius=3)
-
         title_font = retro_style.get_font(s(22), bold=True)
         subtitle_font = retro_style.get_font(s(14), bold=False)
         title_surf = title_font.render(t('menu_lb_title'), True, UIColors.TEXT_PRIMARY)
@@ -2407,9 +2395,7 @@ class Menu:
             row_rect = pygame.Rect(list_rect.x + s(6), base_y + idx * row_h, list_rect.width - s(12), row_h - s(5))
             row_surf = pygame.Surface((row_rect.width, row_rect.height), pygame.SRCALPHA)
             pygame.draw.rect(row_surf, (16, 22, 38, 170), row_surf.get_rect(), border_radius=8)
-            # Sol accent strip (medalya rengi)
             medal_c = medal_colors[idx] if idx < 3 else UIColors.TEXT_MUTED
-            pygame.draw.rect(row_surf, (*medal_c[:3], 180 if idx < 3 else 80), pygame.Rect(0, 4, 3, row_rect.height - 8), border_radius=2)
             pygame.draw.rect(row_surf, (*score_accent, 60), row_surf.get_rect(), 1, border_radius=8)
             self.screen.blit(row_surf, row_rect.topleft)
 
@@ -2634,10 +2620,6 @@ class Menu:
             border_alpha = 220 if hover else 100
             pygame.draw.rect(self.screen, (*btn_color, border_alpha), draw_rect, border_width, border_radius=12)
 
-            # Sol accent strip
-            strip_w = 6
-            pygame.draw.rect(self.screen, btn_color, (draw_rect.x + 2, draw_rect.y + 4, strip_w, draw_rect.height - 8), border_radius=3)
-
             # Metin
             txt_color = (255, 255, 255) if hover else (220, 230, 245)
             title_font_btn = retro_style.get_fitting_font(label, max(14, int(20 * panel_scale)), draw_rect.width - 40, bold=True)
@@ -2647,7 +2629,7 @@ class Menu:
 
             gap = 3
             total_h = title_surf_btn.get_height() + gap + sub_surf.get_height()
-            text_x = draw_rect.x + strip_w + 14
+            text_x = draw_rect.x + 14
             text_start_y = draw_rect.centery - total_h // 2
             self.screen.blit(title_surf_btn, (text_x, text_start_y))
             self.screen.blit(sub_surf, (text_x, text_start_y + title_surf_btn.get_height() + gap))
@@ -3156,13 +3138,6 @@ class Menu:
         # Neon çerçeve
         border_alpha = 200 if hover else 120
         pygame.draw.rect(self.screen, (*accent_color[:3], border_alpha), rect, 2, border_radius=14)
-
-        # Sol üst köşede ince accent strip
-        strip_x = max(3, int(4 * card_scale))
-        strip_y = max(6, int(8 * card_scale))
-        strip_w = max(3, int(4 * card_scale))
-        strip_rect = pygame.Rect(rect.x + strip_x, rect.y + strip_y, strip_w, rect.height - (strip_y * 2))
-        pygame.draw.rect(self.screen, accent_color, strip_rect, border_radius=2)
 
         pad = max(10, int(14 * card_scale))
         inner_x = rect.x + pad + max(4, int(6 * card_scale))
