@@ -1023,16 +1023,11 @@ class RetroStyle:
         else:
             pygame.draw.rect(screen, (50, 60, 85), rect, 1, border_radius=10)
         
-        # Sol strip
-        strip_col = strip_color or (100, 110, 130)
-        lw = 8 if selected else 5
-        pygame.draw.rect(screen, strip_col, (rect.x + 2, rect.y + 4, lw, rect.height - 8), border_radius=3)
-        
         # Label
         label_c = label_color or (230, 235, 245)
         label_font = self.get_fitting_font(label, 26, rect.width - 200, bold=True)
         label_surf = label_font.render(label, True, label_c)
-        screen.blit(label_surf, (rect.x + lw + 18, rect.y + (rect.height - label_surf.get_height()) // 2))
+        screen.blit(label_surf, (rect.x + 14, rect.y + (rect.height - label_surf.get_height()) // 2))
         
         # Value (kind'a göre)
         if kind == 'toggle':
@@ -1121,12 +1116,8 @@ class RetroStyle:
         else:
             pygame.draw.rect(screen, (50, 60, 85), rect, 1, border_radius=10)
         
-        # Sol strip
-        lw = 6
-        pygame.draw.rect(screen, strip_color, (rect.x + 2, rect.y + 4, lw, rect.height - 8), border_radius=3)
-        
         padding = 14
-        title_x = rect.x + lw + padding
+        title_x = rect.x + padding
         
         # Preview color
         if preview_color:
