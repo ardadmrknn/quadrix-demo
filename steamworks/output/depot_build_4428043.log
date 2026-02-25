@@ -1,0 +1,126 @@
+[2026-02-23 14:01:16]: Starting build for depot 4428043, content path is "/tmp/quadrix_nfc_test/", build flags 0x0
+[2026-02-23 14:01:16]: Building file listing for depot 4428043 ...
+[2026-02-23 14:01:17]: Found 4369 files for mapping: /tmp/quadrix_nfc_test/Quadrix.app * -> Quadrix.app/
+[2026-02-23 14:01:17]: Found 4369 files (319 MB) for depot 4428043
+[2026-02-23 14:01:19]: Building depot 4428043, baseline manifest 8384334314096268034 (4348 files)
+[2026-02-23 14:01:20]: Found 4279 new chunks ( 4279 used previously ) for depot 4428043, took 0 minutes, 0 seconds
+[2026-02-23 14:01:20]: Changes to baseline manifest 8384334314096268034 :
+[2026-02-23 14:01:20]: Added  : "Quadrix.app\Contents\Frameworks\apple_emojis" 0 KB ,Flags: 512
+[2026-02-23 14:01:20]: Added  : "Quadrix.app\Contents\Frameworks\assets" 0 KB ,Flags: 512
+[2026-02-23 14:01:20]: Added  : "Quadrix.app\Contents\Frameworks\avatars" 0 KB ,Flags: 512
+[2026-02-23 14:01:20]: Added  : "Quadrix.app\Contents\Frameworks\backgrounds" 0 KB ,Flags: 512
+[2026-02-23 14:01:20]: Changed: "Quadrix.app\Contents\Frameworks\base_library.zip" 0 KB size, 0 KB changed ,Flags: 512
+[2026-02-23 14:01:20]: Added  : "Quadrix.app\Contents\Frameworks\certifi" 0 KB ,Flags: 512
+[2026-02-23 14:01:20]: Added  : "Quadrix.app\Contents\Frameworks\font" 0 KB ,Flags: 512
+[2026-02-23 14:01:20]: Added  : "Quadrix.app\Contents\Frameworks\jaraco" 0 KB ,Flags: 512
+[2026-02-23 14:01:20]: Changed: "Quadrix.app\Contents\Frameworks\libbrotlicommon.1.0.9.dylib" 0 KB size, 0 KB changed ,Flags: 512
+[2026-02-23 14:01:20]: Changed: "Quadrix.app\Contents\Frameworks\libbrotlidec.1.0.9.dylib" 0 KB size, 0 KB changed ,Flags: 512
+[2026-02-23 14:01:20]: Changed: "Quadrix.app\Contents\Frameworks\libFLAC.8.dylib" 0 KB size, 0 KB changed ,Flags: 512
+[2026-02-23 14:01:20]: Changed: "Quadrix.app\Contents\Frameworks\libfluidsynth.3.1.1.dylib" 0 KB size, 0 KB changed ,Flags: 512
+[2026-02-23 14:01:20]: Changed: "Quadrix.app\Contents\Frameworks\libfreetype.6.dylib" 0 KB size, 0 KB changed ,Flags: 512
+[2026-02-23 14:01:20]: Changed: "Quadrix.app\Contents\Frameworks\libglib-2.0.0.dylib" 0 KB size, 0 KB changed ,Flags: 512
+[2026-02-23 14:01:20]: Changed: "Quadrix.app\Contents\Frameworks\libgthread-2.0.0.dylib" 0 KB size, 0 KB changed ,Flags: 512
+[2026-02-23 14:01:20]: Changed: "Quadrix.app\Contents\Frameworks\libintl.8.dylib" 0 KB size, 0 KB changed ,Flags: 512
+[2026-02-23 14:01:20]: Changed: "Quadrix.app\Contents\Frameworks\libjpeg.62.3.0.dylib" 0 KB size, 0 KB changed ,Flags: 512
+[2026-02-23 14:01:20]: Changed: "Quadrix.app\Contents\Frameworks\libmodplug.1.dylib" 0 KB size, 0 KB changed ,Flags: 512
+[2026-02-23 14:01:20]: Changed: "Quadrix.app\Contents\Frameworks\libmpg123.0.dylib" 0 KB size, 0 KB changed ,Flags: 512
+[2026-02-23 14:01:20]: Changed: "Quadrix.app\Contents\Frameworks\libogg.0.8.5.dylib" 0 KB size, 0 KB changed ,Flags: 512
+[2026-02-23 14:01:20]: Changed: "Quadrix.app\Contents\Frameworks\libopus.0.dylib" 0 KB size, 0 KB changed ,Flags: 512
+[2026-02-23 14:01:20]: Changed: "Quadrix.app\Contents\Frameworks\libopusfile.0.dylib" 0 KB size, 0 KB changed ,Flags: 512
+[2026-02-23 14:01:20]: Changed: "Quadrix.app\Contents\Frameworks\libpng16.16.dylib" 0 KB size, 0 KB changed ,Flags: 512
+[2026-02-23 14:01:20]: Changed: "Quadrix.app\Contents\Frameworks\libSDL2-2.0.0.dylib" 0 KB size, 0 KB changed ,Flags: 512
+[2026-02-23 14:01:20]: Changed: "Quadrix.app\Contents\Frameworks\libSDL2_image-2.0.0.dylib" 0 KB size, 0 KB changed ,Flags: 512
+[2026-02-23 14:01:20]: Changed: "Quadrix.app\Contents\Frameworks\libSDL2_mixer-2.0.0.dylib" 0 KB size, 0 KB changed ,Flags: 512
+[2026-02-23 14:01:20]: Changed: "Quadrix.app\Contents\Frameworks\libSDL2_ttf-2.0.0.dylib" 0 KB size, 0 KB changed ,Flags: 512
+[2026-02-23 14:01:20]: Changed: "Quadrix.app\Contents\Frameworks\libsharpyuv.0.dylib" 0 KB size, 0 KB changed ,Flags: 512
+[2026-02-23 14:01:20]: Changed: "Quadrix.app\Contents\Frameworks\libsndfile.1.0.34.dylib" 0 KB size, 0 KB changed ,Flags: 512
+[2026-02-23 14:01:20]: Changed: "Quadrix.app\Contents\Frameworks\libtiff.5.8.0.dylib" 0 KB size, 0 KB changed ,Flags: 512
+[2026-02-23 14:01:20]: Changed: "Quadrix.app\Contents\Frameworks\libvorbis.0.4.9.dylib" 0 KB size, 0 KB changed ,Flags: 512
+[2026-02-23 14:01:20]: Changed: "Quadrix.app\Contents\Frameworks\libvorbisenc.2.0.12.dylib" 0 KB size, 0 KB changed ,Flags: 512
+[2026-02-23 14:01:20]: Changed: "Quadrix.app\Contents\Frameworks\libvorbisfile.3.3.8.dylib" 0 KB size, 0 KB changed ,Flags: 512
+[2026-02-23 14:01:20]: Changed: "Quadrix.app\Contents\Frameworks\libwebp.7.dylib" 0 KB size, 0 KB changed ,Flags: 512
+[2026-02-23 14:01:20]: Changed: "Quadrix.app\Contents\Frameworks\libz.1.2.11.zlib-ng.dylib" 0 KB size, 0 KB changed ,Flags: 512
+[2026-02-23 14:01:20]: Changed: "Quadrix.app\Contents\Frameworks\menu_layout_runtime.json" 0 KB size, 0 KB changed ,Flags: 512
+[2026-02-23 14:01:20]: Added  : "Quadrix.app\Contents\Frameworks\music" 0 KB ,Flags: 512
+[2026-02-23 14:01:20]: Added  : "Quadrix.app\Contents\Frameworks\pygame\.dylibs" 0 KB ,Flags: 512
+[2026-02-23 14:01:20]: Changed: "Quadrix.app\Contents\Frameworks\pygame\freesansbold.ttf" 0 KB size, 0 KB changed ,Flags: 512
+[2026-02-23 14:01:20]: Changed: "Quadrix.app\Contents\Frameworks\pygame\pygame_icon_mac.bmp" 0 KB size, 0 KB changed ,Flags: 512
+[2026-02-23 14:01:20]: Changed: "Quadrix.app\Contents\Frameworks\Python" 0 KB size, 0 KB changed ,Flags: 512
+[2026-02-23 14:01:20]: Changed: "Quadrix.app\Contents\Frameworks\Python.framework\Python" 0 KB size, 0 KB changed ,Flags: 512
+[2026-02-23 14:01:20]: Added  : "Quadrix.app\Contents\Frameworks\Python.framework\Resources" 0 KB ,Flags: 512
+[2026-02-23 14:01:20]: Added  : "Quadrix.app\Contents\Frameworks\Python.framework\Versions\Current" 0 KB ,Flags: 512
+[2026-02-23 14:01:20]: Added  : "Quadrix.app\Contents\Frameworks\python3.12" 0 KB ,Flags: 512
+[2026-02-23 14:01:20]: Changed: "Quadrix.app\Contents\Frameworks\settings.txt" 0 KB size, 0 KB changed ,Flags: 512
+[2026-02-23 14:01:20]: Added  : "Quadrix.app\Contents\Frameworks\src" 0 KB ,Flags: 512
+[2026-02-23 14:01:20]: Changed: "Quadrix.app\Contents\Frameworks\steam_appid.txt" 0 KB size, 0 KB changed ,Flags: 512
+[2026-02-23 14:01:20]: Added  : "Quadrix.app\Contents\Resources\AppKit" 0 KB ,Flags: 512
+[2026-02-23 14:01:20]: Added  : "Quadrix.app\Contents\Resources\charset_normalizer" 0 KB ,Flags: 512
+[2026-02-23 14:01:20]: Added  : "Quadrix.app\Contents\Resources\CoreFoundation" 0 KB ,Flags: 512
+[2026-02-23 14:01:20]: Added  : "Quadrix.app\Contents\Resources\Foundation" 0 KB ,Flags: 512
+[2026-02-23 14:01:20]: Changed: "Quadrix.app\Contents\Resources\libbrotlicommon.1.0.9.dylib" 0 KB size, 0 KB changed ,Flags: 512
+[2026-02-23 14:01:20]: Changed: "Quadrix.app\Contents\Resources\libbrotlidec.1.0.9.dylib" 0 KB size, 0 KB changed ,Flags: 512
+[2026-02-23 14:01:20]: Changed: "Quadrix.app\Contents\Resources\libcrypto.3.dylib" 0 KB size, 0 KB changed ,Flags: 512
+[2026-02-23 14:01:20]: Changed: "Quadrix.app\Contents\Resources\libFLAC.8.dylib" 0 KB size, 0 KB changed ,Flags: 512
+[2026-02-23 14:01:20]: Changed: "Quadrix.app\Contents\Resources\libfluidsynth.3.1.1.dylib" 0 KB size, 0 KB changed ,Flags: 512
+[2026-02-23 14:01:20]: Changed: "Quadrix.app\Contents\Resources\libfreetype.6.dylib" 0 KB size, 0 KB changed ,Flags: 512
+[2026-02-23 14:01:20]: Changed: "Quadrix.app\Contents\Resources\libglib-2.0.0.dylib" 0 KB size, 0 KB changed ,Flags: 512
+[2026-02-23 14:01:20]: Changed: "Quadrix.app\Contents\Resources\libgthread-2.0.0.dylib" 0 KB size, 0 KB changed ,Flags: 512
+[2026-02-23 14:01:20]: Changed: "Quadrix.app\Contents\Resources\libintl.8.dylib" 0 KB size, 0 KB changed ,Flags: 512
+[2026-02-23 14:01:20]: Changed: "Quadrix.app\Contents\Resources\libjpeg.62.3.0.dylib" 0 KB size, 0 KB changed ,Flags: 512
+[2026-02-23 14:01:20]: Changed: "Quadrix.app\Contents\Resources\liblzma.5.dylib" 0 KB size, 0 KB changed ,Flags: 512
+[2026-02-23 14:01:20]: Changed: "Quadrix.app\Contents\Resources\libmodplug.1.dylib" 0 KB size, 0 KB changed ,Flags: 512
+[2026-02-23 14:01:20]: Changed: "Quadrix.app\Contents\Resources\libmpdec.4.dylib" 0 KB size, 0 KB changed ,Flags: 512
+[2026-02-23 14:01:20]: Changed: "Quadrix.app\Contents\Resources\libmpg123.0.dylib" 0 KB size, 0 KB changed ,Flags: 512
+[2026-02-23 14:01:20]: Changed: "Quadrix.app\Contents\Resources\libogg.0.8.5.dylib" 0 KB size, 0 KB changed ,Flags: 512
+[2026-02-23 14:01:20]: Changed: "Quadrix.app\Contents\Resources\libopus.0.dylib" 0 KB size, 0 KB changed ,Flags: 512
+[2026-02-23 14:01:20]: Changed: "Quadrix.app\Contents\Resources\libopusfile.0.dylib" 0 KB size, 0 KB changed ,Flags: 512
+[2026-02-23 14:01:20]: Changed: "Quadrix.app\Contents\Resources\libpng16.16.dylib" 0 KB size, 0 KB changed ,Flags: 512
+[2026-02-23 14:01:20]: Changed: "Quadrix.app\Contents\Resources\libSDL2-2.0.0.dylib" 0 KB size, 0 KB changed ,Flags: 512
+[2026-02-23 14:01:20]: Changed: "Quadrix.app\Contents\Resources\libSDL2_image-2.0.0.dylib" 0 KB size, 0 KB changed ,Flags: 512
+[2026-02-23 14:01:20]: Changed: "Quadrix.app\Contents\Resources\libSDL2_mixer-2.0.0.dylib" 0 KB size, 0 KB changed ,Flags: 512
+[2026-02-23 14:01:20]: Changed: "Quadrix.app\Contents\Resources\libSDL2_ttf-2.0.0.dylib" 0 KB size, 0 KB changed ,Flags: 512
+[2026-02-23 14:01:20]: Changed: "Quadrix.app\Contents\Resources\libsharpyuv.0.dylib" 0 KB size, 0 KB changed ,Flags: 512
+[2026-02-23 14:01:20]: Changed: "Quadrix.app\Contents\Resources\libsndfile.1.0.34.dylib" 0 KB size, 0 KB changed ,Flags: 512
+[2026-02-23 14:01:20]: Changed: "Quadrix.app\Contents\Resources\libssl.3.dylib" 0 KB size, 0 KB changed ,Flags: 512
+[2026-02-23 14:01:20]: Changed: "Quadrix.app\Contents\Resources\libtiff.5.8.0.dylib" 0 KB size, 0 KB changed ,Flags: 512
+[2026-02-23 14:01:20]: Changed: "Quadrix.app\Contents\Resources\libvorbis.0.4.9.dylib" 0 KB size, 0 KB changed ,Flags: 512
+[2026-02-23 14:01:20]: Changed: "Quadrix.app\Contents\Resources\libvorbisenc.2.0.12.dylib" 0 KB size, 0 KB changed ,Flags: 512
+[2026-02-23 14:01:20]: Changed: "Quadrix.app\Contents\Resources\libvorbisfile.3.3.8.dylib" 0 KB size, 0 KB changed ,Flags: 512
+[2026-02-23 14:01:20]: Changed: "Quadrix.app\Contents\Resources\libwebp.7.dylib" 0 KB size, 0 KB changed ,Flags: 512
+[2026-02-23 14:01:20]: Changed: "Quadrix.app\Contents\Resources\libz.1.2.11.zlib-ng.dylib" 0 KB size, 0 KB changed ,Flags: 512
+[2026-02-23 14:01:20]: Added  : "Quadrix.app\Contents\Resources\objc" 0 KB ,Flags: 512
+[2026-02-23 14:01:20]: Added  : "Quadrix.app\Contents\Resources\pygame\.dylibs" 0 KB ,Flags: 512
+[2026-02-23 14:01:20]: Changed: "Quadrix.app\Contents\Resources\pygame\base.cpython-312-darwin.so" 0 KB size, 0 KB changed ,Flags: 512
+[2026-02-23 14:01:20]: Changed: "Quadrix.app\Contents\Resources\pygame\bufferproxy.cpython-312-darwin.so" 0 KB size, 0 KB changed ,Flags: 512
+[2026-02-23 14:01:20]: Changed: "Quadrix.app\Contents\Resources\pygame\color.cpython-312-darwin.so" 0 KB size, 0 KB changed ,Flags: 512
+[2026-02-23 14:01:20]: Changed: "Quadrix.app\Contents\Resources\pygame\constants.cpython-312-darwin.so" 0 KB size, 0 KB changed ,Flags: 512
+[2026-02-23 14:01:20]: Changed: "Quadrix.app\Contents\Resources\pygame\display.cpython-312-darwin.so" 0 KB size, 0 KB changed ,Flags: 512
+[2026-02-23 14:01:20]: Changed: "Quadrix.app\Contents\Resources\pygame\draw.cpython-312-darwin.so" 0 KB size, 0 KB changed ,Flags: 512
+[2026-02-23 14:01:20]: Changed: "Quadrix.app\Contents\Resources\pygame\event.cpython-312-darwin.so" 0 KB size, 0 KB changed ,Flags: 512
+[2026-02-23 14:01:20]: Changed: "Quadrix.app\Contents\Resources\pygame\font.cpython-312-darwin.so" 0 KB size, 0 KB changed ,Flags: 512
+[2026-02-23 14:01:20]: Changed: "Quadrix.app\Contents\Resources\pygame\gfxdraw.cpython-312-darwin.so" 0 KB size, 0 KB changed ,Flags: 512
+[2026-02-23 14:01:20]: Changed: "Quadrix.app\Contents\Resources\pygame\image.cpython-312-darwin.so" 0 KB size, 0 KB changed ,Flags: 512
+[2026-02-23 14:01:20]: Changed: "Quadrix.app\Contents\Resources\pygame\imageext.cpython-312-darwin.so" 0 KB size, 0 KB changed ,Flags: 512
+[2026-02-23 14:01:20]: Changed: "Quadrix.app\Contents\Resources\pygame\joystick.cpython-312-darwin.so" 0 KB size, 0 KB changed ,Flags: 512
+[2026-02-23 14:01:20]: Changed: "Quadrix.app\Contents\Resources\pygame\key.cpython-312-darwin.so" 0 KB size, 0 KB changed ,Flags: 512
+[2026-02-23 14:01:20]: Changed: "Quadrix.app\Contents\Resources\pygame\mask.cpython-312-darwin.so" 0 KB size, 0 KB changed ,Flags: 512
+[2026-02-23 14:01:20]: Changed: "Quadrix.app\Contents\Resources\pygame\math.cpython-312-darwin.so" 0 KB size, 0 KB changed ,Flags: 512
+[2026-02-23 14:01:20]: Changed: "Quadrix.app\Contents\Resources\pygame\mixer.cpython-312-darwin.so" 0 KB size, 0 KB changed ,Flags: 512
+[2026-02-23 14:01:20]: Changed: "Quadrix.app\Contents\Resources\pygame\mixer_music.cpython-312-darwin.so" 0 KB size, 0 KB changed ,Flags: 512
+[2026-02-23 14:01:20]: Changed: "Quadrix.app\Contents\Resources\pygame\mouse.cpython-312-darwin.so" 0 KB size, 0 KB changed ,Flags: 512
+[2026-02-23 14:01:20]: Changed: "Quadrix.app\Contents\Resources\pygame\pixelarray.cpython-312-darwin.so" 0 KB size, 0 KB changed ,Flags: 512
+[2026-02-23 14:01:20]: Changed: "Quadrix.app\Contents\Resources\pygame\pixelcopy.cpython-312-darwin.so" 0 KB size, 0 KB changed ,Flags: 512
+[2026-02-23 14:01:20]: Changed: "Quadrix.app\Contents\Resources\pygame\rect.cpython-312-darwin.so" 0 KB size, 0 KB changed ,Flags: 512
+[2026-02-23 14:01:20]: Changed: "Quadrix.app\Contents\Resources\pygame\rwobject.cpython-312-darwin.so" 0 KB size, 0 KB changed ,Flags: 512
+[2026-02-23 14:01:20]: Changed: "Quadrix.app\Contents\Resources\pygame\scrap.cpython-312-darwin.so" 0 KB size, 0 KB changed ,Flags: 512
+[2026-02-23 14:01:20]: Changed: "Quadrix.app\Contents\Resources\pygame\surface.cpython-312-darwin.so" 0 KB size, 0 KB changed ,Flags: 512
+[2026-02-23 14:01:20]: Changed: "Quadrix.app\Contents\Resources\pygame\surflock.cpython-312-darwin.so" 0 KB size, 0 KB changed ,Flags: 512
+[2026-02-23 14:01:20]: Changed: "Quadrix.app\Contents\Resources\pygame\time.cpython-312-darwin.so" 0 KB size, 0 KB changed ,Flags: 512
+[2026-02-23 14:01:20]: Changed: "Quadrix.app\Contents\Resources\pygame\transform.cpython-312-darwin.so" 0 KB size, 0 KB changed ,Flags: 512
+[2026-02-23 14:01:20]: Changed: "Quadrix.app\Contents\Resources\pygame\_freetype.cpython-312-darwin.so" 0 KB size, 0 KB changed ,Flags: 512
+[2026-02-23 14:01:20]: Changed: "Quadrix.app\Contents\Resources\Python" 0 KB size, 0 KB changed ,Flags: 512
+[2026-02-23 14:01:20]: Added  : "Quadrix.app\Contents\Resources\Python.framework" 0 KB ,Flags: 512
+[2026-02-23 14:01:20]: Added  : "Quadrix.app\Contents\Resources\python3.12" 0 KB ,Flags: 512
+[2026-02-23 14:01:20]: Summary: 21 files added (0 bytes), 95 files changed (0 bytes), 0 files removed (0 bytes)
+[2026-02-23 14:01:20]: Uploading new manifest to depot_ingest.discovery.steamserver.net (handle 15711094311595153061, 739886 bytes).
+[2026-02-23 14:01:26]: Success! New manifestID 5974246583067360995 created and 0 new chunks uploaded.

@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ultra Mode Timer</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            background: #000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            font-family: 'Courier New', monospace;
+            overflow: hidden;
+        }
+        
+        .timer-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 30px;
+        }
+        
+        .progress-bar {
+            display: flex;
+            flex-direction: column-reverse;
+            gap: 5px;
+            padding: 20px;
+            background: rgba(20, 20, 20, 0.9);
+            border-radius: 15px;
+            box-shadow: 0 0 30px rgba(0, 255, 255, 0.3);
+        }
+        
+        .square {
+            width: 50px;
+            height: 50px;
+            background: #1a1a1a;
+            border: 2px solid #444;
+            border-radius: 5px;
+            transition: all 0.5s ease;
+        }
+        
+        .square.filled {
+            background: linear-gradient(135deg, #00ff88, #00cc66);
+            border-color: #00ff88;
+            box-shadow: 0 0 15px rgba(0, 255, 136, 0.5);
+        }
+        
+        .square.filled.warning {
+            background: linear-gradient(135deg, #ffa500, #ff8c00);
+            border-color: #ffa500;
+            box-shadow: 0 0 15px rgba(255, 165, 0, 0.5);
+        }
+        
+        .square.filled.danger {
+            background: linear-gradient(135deg, #ff4444, #cc0000);
+            border-color: #ff4444;
+            box-shadow: 0 0 15px rgba(255, 68, 68, 0.5);
+            animation: pulse 0.5s ease-in-out infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+        }
+        
+        .time-display {
+            font-size: 48px;
+            font-weight: bold;
+            color: #00ff88;
+            text-shadow: 0 0 20px rgba(0, 255, 136, 0.5);
+            letter-spacing: 5px;
+        }
+        
+        .time-display.warning {
+            color: #ffa500;
+            text-shadow: 0 0 20px rgba(255, 165, 0, 0.5);
+        }
+        
+        .time-display.danger {
+            color: #ff4444;
+            text-shadow: 0 0 20px rgba(255, 68, 68, 0.5);
+            animation: blink 0.5s ease-in-out infinite;
+        }
+        
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+        
+        .label {
+            font-size: 20px;
+            color: #666;
+            text-transform: uppercase;
+            letter-spacing: 3px;
+        }
+    </style>
+</head>
+<body>
+    <div class="timer-container">
+        <div class="label">Ultra Mode</div>
+        <div class="time-display" id="timeDisplay">2:00</div>
+        <div class="progress-bar" id="progressBar">
+            <!-- 12 squares will be generated here -->
+        </div>
+    </div>
+
+    <script>
+        const TOTAL_TIME = 120; // 120 seconds = 2 minutes
+        const TOTAL_SQUARES = 12;
+        let startTime = Date.now();
+        let isPaused = false;
+        let pausedElapsed = 0;
+        
+        // Create 12 squares
+        const progressBar = document.getElementById('progressBar');
+        for (let i = 0; i < TOTAL_SQUARES; i++) {
+            const square = document.createElement('div');
+            square.className = 'square';
+            square.id = `square-${i}`;
+            progressBar.appendChild(square);
+        }
+        
+        function updateTimer() {
+            if (isPaused) return;
+            
+            const elapsed = (Date.now() - startTime) / 1000 + pausedElapsed;
+            const remaining = Math.max(0, TOTAL_TIME - elapsed);
+            
+            // Update time display
+            const minutes = Math.floor(remaining / 60);
+            const seconds = Math.floor(remaining % 60);
+            const timeDisplay = document.getElementById('timeDisplay');
+            timeDisplay.textContent = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+            
+            // Update color based on remaining time
+            timeDisplay.className = 'time-display';
+            if (remaining <= 10) {
+                timeDisplay.classList.add('danger');
+            } else if (remaining <= 30) {
+                timeDisplay.classList.add('warning');
+            }
+            
+            // Update progress bar squares
+            const filledSquares = Math.min(Math.floor(elapsed / 10), TOTAL_SQUARES);
+            for (let i = 0; i < TOTAL_SQUARES; i++) {
+                const square = document.getElementById(`square-${i}`);
+                if (i < filledSquares) {
+                    square.classList.add('filled');
+                    
+                    // Color based on remaining time
+                    square.classList.remove('warning', 'danger');
+                    if (remaining <= 10) {
+                        square.classList.add('danger');
+                    } else if (remaining <= 30) {
+                        square.classList.add('warning');
+                    }
+                } else {
+                    square.classList.remove('filled', 'warning', 'danger');
+                }
+            }
+            
+            // Stop when time runs out
+            if (remaining <= 0) {
+                timeDisplay.textContent = '0:00';
+                timeDisplay.classList.add('danger');
+                return;
+            }
+            
+            requestAnimationFrame(updateTimer);
+        }
+        
+        // Keyboard controls
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'r' || e.key === 'R') {
+                // Reset timer
+                startTime = Date.now();
+                pausedElapsed = 0;
+                isPaused = false;
+                updateTimer();
+            } else if (e.key === ' ') {
+                // Pause/Resume
+                if (isPaused) {
+                    startTime = Date.now();
+                    isPaused = false;
+                    updateTimer();
+                } else {
+                    pausedElapsed += (Date.now() - startTime) / 1000;
+                    isPaused = true;
+                }
+            }
+        });
+        
+        // Start the timer
+        updateTimer();
+    </script>
+</body>
+</html>

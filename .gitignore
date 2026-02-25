@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual envs (NOT ALLOWED in this repo)
+.venv/
+venv/
+ENV/
+
+# Test/coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# OS/editor
+.DS_Store
+.vscode/*.log
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# Secrets / local env
+.env
+.env.*
+backend/.env

@@ -1,0 +1,16 @@
+"DepotBuild"
+{
+    "DepotID" "4428043"
+
+    "FileMapping"
+    {
+        "LocalPath" "Quadrix.app/*"
+        "DepotPath" "Quadrix.app/"
+        "Recursive" "1"
+    }
+
+    "FileExclusion" "*.pdb"
+    "FileExclusion" "*.log"
+    "FileExclusion" ".DS_Store"
+    "FileExclusion" "**/.DS_Store"
+}

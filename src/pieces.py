@@ -1,0 +1,206 @@
+"""Quadrix parçalarını (Tetromino) tanımlar"""
+import random
+from constants import COLORS
+
+# Tetromino şekilleri (I, O, T, S, Z, J, L)
+SHAPES = [
+    # I (4x4 kutu içinde, merkezden dönme için)
+    [[0, 0, 0, 0],
+     [1, 1, 1, 1],
+     [0, 0, 0, 0],
+     [0, 0, 0, 0]],
+    # O (2x2)
+    [[1, 1],
+     [1, 1]],
+    # T (3x3 kutu içinde, merkez: [1,1])
+    [[0, 1, 0],
+     [1, 1, 1],
+     [0, 0, 0]],
+    # S (3x3)
+    [[0, 1, 1],
+     [1, 1, 0],
+     [0, 0, 0]],
+    # Z (3x3)
+    [[1, 1, 0],
+     [0, 1, 1],
+     [0, 0, 0]],
+    # J (3x3)
+    [[1, 0, 0],
+     [1, 1, 1],
+     [0, 0, 0]],
+    # L (3x3)
+    [[0, 0, 1],
+     [1, 1, 1],
+     [0, 0, 0]]
+]
+
+# Quadrix 2 için EKSTRA parçalar
+EXTRA_SHAPES = [
+    [[0, 1, 0], [1, 1, 1], [0, 1, 0]],  # Plus (+) - 5 blok
+    [[1, 0, 1], [1, 1, 1], [0, 1, 0]],  # Y-Shape (compact) - 6 blok
+    [[1, 1], [0, 0]],  # Domino - 2 blok (2x2 kutu içinde, merkezden dönme için)
+    [[1, 1, 1], [1, 1, 1], [1, 1, 1]]  # Big Square - 9 blok (TAM DOLU 3x3)
+]
+
+EXTRA_COLORS = [
+    (255, 0, 255),    # Plus (+) - Magenta/Pembe parlak
+    (0, 255, 255),    # Y - Cyan/Turkuaz
+    (255, 128, 0),    # Domino - Turuncu
+    (255, 215, 0)     # BigSquare (3x3) - Altın
+]
+
+SHAPE_NAMES = ['I', 'O', 'T', 'S', 'Z', 'J', 'L']
+EXTRA_SHAPE_NAMES = ['Plus', 'Y', 'Domino', 'BigSquare']
+
+
+class Piece:
+    """Bir Quadrix parçasını temsil eder"""
+    
+    def __init__(self, x=3, y=0, shape_index=None):
+        """
+        Yeni bir parça oluştur
+        
+        Args:
+            x: Başlangıç x pozisyonu
+            y: Başlangıç y pozisyonu
+            shape_index: Belirli bir şekil indeksi (None ise rastgele)
+        """
+        self.x = x
+        self.y = y
+        if shape_index is None:
+            shape_index = random.randint(0, len(SHAPES) - 1)
+        self.shape_index = shape_index
+        self.shape = [row[:] for row in SHAPES[shape_index]]
+        self.color = COLORS[shape_index]
+        self.name = SHAPE_NAMES[shape_index]
+        self.texture_path = None
+        self.texture_surface = None
+        self.texture_surface_original = None
+        self.rotation_state = 0  # 0,1,2,3 -> saat yönü
+    
+    def rotate(self):
+        """Parçayı saat yönünde 90 derece döndür"""
+        # Clockwise dönüş
+        self.shape = [[self.shape[y][x] for y in range(len(self.shape) - 1, -1, -1)]
+                      for x in range(len(self.shape[0]))]
+        # Rotate optional per-cell color matrix in lock-step with shape.
+        if hasattr(self, 'color_matrix') and getattr(self, 'color_matrix', None) is not None:
+            try:
+                cm = self.color_matrix
+                self.color_matrix = [[cm[y][x] for y in range(len(cm) - 1, -1, -1)]
+                                     for x in range(len(cm[0]))]
+            except Exception:
+                # If matrix is malformed, drop it rather than breaking rotation.
+                self.color_matrix = None
+        self.rotation_state = (self.rotation_state + 1) % 4
+    
+    def get_cells(self):
+        """
+        Parçanın kapladığı tüm hücrelerin koordinatlarını döndür
+        
+        Returns:
+            list: (x, y) koordinat listesi
+        """
+        cells = []
+        for y, row in enumerate(self.shape):
+            for x, cell in enumerate(row):
+                if cell:
+                    cells.append((self.x + x, self.y + y))
+        return cells
+    
+    def get_width(self):
+        """Parçanın genişliğini döndür"""
+        return len(self.shape[0]) if self.shape else 0
+    
+    def get_height(self):
+        """Parçanın yüksekliğini döndür"""
+        return len(self.shape)
+    
+    def copy(self):
+        """Parçanın bir kopyasını oluştur"""
+        # Extra parça ise özel kopyalama
+        if hasattr(self, 'name') and self.name in ['Plus', 'Y', 'Domino', 'BigSquare']:
+            new_piece = Piece(self.x, self.y, 0)  # Dummy piece
+            new_piece.shape = [row[:] for row in self.shape]
+            new_piece.color = self.color
+            new_piece.name = self.name
+            new_piece.shape_index = self.shape_index
+            new_piece.texture_path = self.texture_path
+            new_piece.texture_surface = self.texture_surface
+            new_piece.texture_surface_original = self.texture_surface_original
+            new_piece.rotation_state = self.rotation_state
+            if hasattr(self, 'is_workshop_piece'):
+                new_piece.is_workshop_piece = getattr(self, 'is_workshop_piece')
+            if hasattr(self, 'workshop_block_id'):
+                new_piece.workshop_block_id = getattr(self, 'workshop_block_id')
+            if hasattr(self, 'color_matrix'):
+                cm = getattr(self, 'color_matrix', None)
+                new_piece.color_matrix = [row[:] for row in cm] if cm is not None else None
+            return new_piece
+        else:
+            # Normal parça
+            new_piece = Piece(self.x, self.y, self.shape_index)
+            new_piece.shape = [row[:] for row in self.shape]
+            new_piece.color = self.color
+            new_piece.texture_path = self.texture_path
+            new_piece.texture_surface = self.texture_surface
+            new_piece.texture_surface_original = self.texture_surface_original
+            new_piece.rotation_state = self.rotation_state
+            if hasattr(self, 'is_workshop_piece'):
+                new_piece.is_workshop_piece = getattr(self, 'is_workshop_piece')
+            if hasattr(self, 'workshop_block_id'):
+                new_piece.workshop_block_id = getattr(self, 'workshop_block_id')
+            if hasattr(self, 'color_matrix'):
+                cm = getattr(self, 'color_matrix', None)
+                new_piece.color_matrix = [row[:] for row in cm] if cm is not None else None
+            return new_piece
+
+
+def create_random_piece(x=3, y=0):
+    """Rastgele bir parça oluştur"""
+    return Piece(x, y)
+
+
+def create_random_tetris2_piece(x=3, y=0):
+    """Quadrix 2 için rastgele parça - TÜM 11 PARÇA EŞİT ŞANS (her biri %9.09)"""
+    # Toplam 11 parça: 0-6 klasik, 7-10 extra
+    piece_index = random.randint(0, 10)
+    
+    if piece_index < 7:
+        # KLASİK PARÇA (0-6): I, O, T, S, Z, J, L
+        return Piece(x, y, piece_index)
+    else:
+        # EXTRA PARÇA (7-10): Plus, Y, Domino, BigSquare
+        extra_index = piece_index - 7  # 0-3 arası
+        piece = create_extra_piece(extra_index, x=x, y=0)
+        color_names = ['MAGENTA', 'CYAN', 'TURUNCU', 'ALTIN']
+        print(f"🎲 EXTRA PARÇA: {piece.name} ({color_names[extra_index]})")
+        return piece
+
+
+def create_piece_by_index(index, x=3, y=0):
+    """Belirli indeksteki parçayı oluştur"""
+    return Piece(x, y, index)
+
+
+def create_extra_piece(extra_index, x=3, y=0):
+    """Belirli ekstra parçayı oluştur."""
+    extra_index = max(0, min(extra_index, len(EXTRA_SHAPES) - 1))
+    piece = Piece(x, y, 0)
+    piece.shape = [row[:] for row in EXTRA_SHAPES[extra_index]]
+    piece.shape_index = 7 + extra_index
+    piece.name = EXTRA_SHAPE_NAMES[extra_index]
+    piece.color = EXTRA_COLORS[extra_index]
+    piece.texture_path = None
+    piece.texture_surface = None
+    piece.texture_surface_original = None
+    return piece
+
+
+def create_piece_by_name(name, x=3, y=0):
+    """Üçüncü parti çağrılar için isimden parça üret."""
+    if name in SHAPE_NAMES:
+        return Piece(x, y, SHAPE_NAMES.index(name))
+    if name in EXTRA_SHAPE_NAMES:
+        return create_extra_piece(EXTRA_SHAPE_NAMES.index(name), x, y)
+    raise ValueError(f"Bilinmeyen parça adı: {name}")

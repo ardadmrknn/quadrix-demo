@@ -1,0 +1,1015 @@
+"""Steam SDK entegrasyonu (ctypes tabanlı, çok platformlu, graceful fallback).
+
+Steamworks SDK flat API'sini ctypes üzerinden kullanır.
+  Windows  : steam_api64.dll
+  macOS    : libsteam_api.dylib
+  Linux    : libsteam_api.so
+
+- SteamAPI_Init() başarısız olursa veya kütüphane bulunamazsa tüm fonksiyonlar
+  güvenli biçimde None/False döndürür (oyun çalışmaya devam eder).
+- Steam'den bağımsız başlatmalar için is_available() kontrol edilir.
+"""
+
+from __future__ import annotations
+
+import ctypes
+import ctypes.util
+import os
+import sys
+import threading
+import time
+from pathlib import Path
+from typing import Any
+
+# ---------------------------------------------------------------------------
+# DLL yükleyici
+# ---------------------------------------------------------------------------
+
+_dll: ctypes.CDLL | None = None
+_dll_loaded = False
+_init_ok = False
+_init_lock = threading.Lock()
+
+# Interface pointer'ları (init sonrası doldurulur)
+_isteam_friends: ctypes.c_void_p | None = None
+_isteam_user: ctypes.c_void_p | None = None
+_isteam_user_stats: ctypes.c_void_p | None = None
+_isteam_utils: ctypes.c_void_p | None = None
+
+# Önbellek
+_persona_name_cache: str | None = None
+_steam_id_cache: int | None = None
+
+# Leaderboard handle cache: leaderboard_name -> SteamLeaderboard_t (uint64)
+_lb_handle_cache: dict[str, int] = {}
+
+# Bekleyen skor gönderimi kuyruğu: (mode, score) listeleri
+_pending_scores: list[tuple[str, int]] = []
+_score_lock = threading.Lock()
+
+# Callback pump thread
+_pump_thread: threading.Thread | None = None
+_pump_running = False
+
+
+def _get_platform_lib_name() -> str:
+    """Platforma göre Steam kütüphane dosya adını döndür."""
+    if sys.platform == 'darwin':
+        return 'libsteam_api.dylib'
+    elif sys.platform.startswith('linux'):
+        return 'libsteam_api.so'
+    else:  # Windows
+        return 'steam_api64.dll'
+
+
+def _find_dll() -> str | None:
+    """Platforma uygun Steam kütüphanesini bul."""
+    lib_name = _get_platform_lib_name()
+    candidates: list[str] = []
+
+    # 1. PyInstaller bundle
+    if getattr(sys, '_MEIPASS', None):
+        candidates.append(str(Path(sys._MEIPASS) / lib_name))
+
+    # 2. Çalışma dizini
+    candidates.append(str(Path.cwd() / lib_name))
+
+    # 3. Bu dosyanın bulunduğu klasörün üstü (proje kökü)
+    proj_root = Path(__file__).resolve().parent.parent
+    candidates.append(str(proj_root / lib_name))
+
+    # 4. Proje içi dll/ alt klasörü (kaynak ağacındaki konum)
+    if sys.platform == 'darwin':
+        candidates.append(str(proj_root / 'dll' / 'osx' / lib_name))
+    elif sys.platform.startswith('linux'):
+        candidates.append(str(proj_root / 'dll' / 'linux64' / lib_name))
+    else:
+        candidates.append(str(proj_root / 'dll' / 'win64' / lib_name))
+
+    # 5. dist/ klasörü
+    candidates.append(str(proj_root / 'dist' / lib_name))
+
+    # 5. Platform'a özel ek konumlar
+    if sys.platform == 'darwin':
+        # macOS: Steam uygulama klasörü ve olası framework yolları
+        mac_dirs = [
+            Path.home() / 'Library/Application Support/Steam',
+            Path('/Applications/Steam.app/Contents/MacOS'),
+            Path('/usr/local/lib'),
+        ]
+        for d in mac_dirs:
+            candidates.append(str(d / lib_name))
+    elif sys.platform.startswith('linux'):
+        linux_dirs = [
+            Path.home() / '.steam/steam',
+            Path.home() / '.local/share/Steam',
+            Path('/usr/lib'),
+            Path('/usr/lib/x86_64-linux-gnu'),
+        ]
+        for d in linux_dirs:
+            candidates.append(str(d / lib_name))
+    else:
+        # Windows
+        win_dirs = [
+            Path(r'C:\Program Files (x86)\Steam'),
+            Path(r'C:\Program Files\Steam'),
+        ]
+        for d in win_dirs:
+            candidates.append(str(d / lib_name))
+
+    for c in candidates:
+        if os.path.isfile(c):
+            return c
+    return None
+
+
+def _setup_dll_functions(dll: ctypes.CDLL) -> None:
+    """DLL fonksiyon imzalarını tanımla."""
+    # SteamAPI_InitFlat — SDK 1.60+ flat API (tercih edilen)
+    # ESteamAPIInitResult döndürür: 0=OK, diğerleri=hata
+    try:
+        _errmsg_buf_type = ctypes.c_char * 1024
+        dll.SteamAPI_InitFlat.restype = ctypes.c_int   # ESteamAPIInitResult
+        dll.SteamAPI_InitFlat.argtypes = [ctypes.c_char_p]  # SteamErrMsg* (NULL geçilebilir)
+        dll._quadrix_has_init_flat = True
+    except AttributeError:
+        dll._quadrix_has_init_flat = False
+
+    # SteamAPI_Init — SDK 1.59 ve öncesi (bool döndürür: 1=OK)
+    try:
+        dll.SteamAPI_Init.restype = ctypes.c_int  # bool ama c_int olarak oku
+        dll.SteamAPI_Init.argtypes = []
+        dll._quadrix_has_init_legacy = True
+    except AttributeError:
+        dll._quadrix_has_init_legacy = False
+
+    # SteamAPI_Shutdown()
+    try:
+        dll.SteamAPI_Shutdown.restype = None
+        dll.SteamAPI_Shutdown.argtypes = []
+    except AttributeError:
+        pass
+
+    # SteamAPI_RunCallbacks()
+    try:
+        dll.SteamAPI_RunCallbacks.restype = None
+        dll.SteamAPI_RunCallbacks.argtypes = []
+    except AttributeError:
+        pass
+
+    # Interface accessors (flat API)
+    try:
+        dll.SteamAPI_SteamFriends_v017.restype = ctypes.c_void_p
+        dll.SteamAPI_SteamFriends_v017.argtypes = []
+    except AttributeError:
+        pass
+
+    try:
+        dll.SteamAPI_SteamUser_v023.restype = ctypes.c_void_p
+        dll.SteamAPI_SteamUser_v023.argtypes = []
+    except AttributeError:
+        pass
+
+    try:
+        dll.SteamAPI_SteamUserStats_v012.restype = ctypes.c_void_p
+        dll.SteamAPI_SteamUserStats_v012.argtypes = []
+    except AttributeError:
+        pass
+
+    # ISteamFriends_GetPersonaName
+    try:
+        dll.SteamAPI_ISteamFriends_GetPersonaName.restype = ctypes.c_char_p
+        dll.SteamAPI_ISteamFriends_GetPersonaName.argtypes = [ctypes.c_void_p]
+    except AttributeError:
+        pass
+
+    # ISteamUser_GetSteamID returns uint64 in low/high regs; use c_uint64
+    try:
+        dll.SteamAPI_ISteamUser_GetSteamID.restype = ctypes.c_uint64
+        dll.SteamAPI_ISteamUser_GetSteamID.argtypes = [ctypes.c_void_p]
+    except AttributeError:
+        pass
+
+    # ISteamUserStats_FindLeaderboard -> SteamAPICall_t (uint64)
+    try:
+        dll.SteamAPI_ISteamUserStats_FindLeaderboard.restype = ctypes.c_uint64
+        dll.SteamAPI_ISteamUserStats_FindLeaderboard.argtypes = [ctypes.c_void_p, ctypes.c_char_p]
+    except AttributeError:
+        pass
+
+    # ISteamUserStats_UploadLeaderboardScore -> SteamAPICall_t (uint64)
+    # eLeaderboardUploadScoreMethod: 0 = KeepBest, 1 = ForceUpdate
+    try:
+        dll.SteamAPI_ISteamUserStats_UploadLeaderboardScore.restype = ctypes.c_uint64
+        dll.SteamAPI_ISteamUserStats_UploadLeaderboardScore.argtypes = [
+            ctypes.c_void_p,  # ISteamUserStats*
+            ctypes.c_uint64,  # SteamLeaderboard_t
+            ctypes.c_int,     # eLeaderboardUploadScoreMethod
+            ctypes.c_int32,   # nScore
+            ctypes.c_void_p,  # pScoreDetails (NULL)
+            ctypes.c_int,     # cScoreDetailsCount (0)
+        ]
+    except AttributeError:
+        pass
+
+    # ISteamUserStats_GetLeaderboardName (handle -> name)
+    try:
+        dll.SteamAPI_ISteamUserStats_GetLeaderboardName.restype = ctypes.c_char_p
+        dll.SteamAPI_ISteamUserStats_GetLeaderboardName.argtypes = [ctypes.c_void_p, ctypes.c_uint64]
+    except AttributeError:
+        pass
+
+    # ISteamUserStats_DownloadLeaderboardEntries -> SteamAPICall_t
+    try:
+        dll.SteamAPI_ISteamUserStats_DownloadLeaderboardEntries.restype = ctypes.c_uint64
+        dll.SteamAPI_ISteamUserStats_DownloadLeaderboardEntries.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_uint64,   # SteamLeaderboard_t
+            ctypes.c_int,      # ELeaderboardDataRequest
+            ctypes.c_int,      # rangeStart
+            ctypes.c_int,      # rangeEnd
+        ]
+    except AttributeError:
+        pass
+
+    # ISteamUser_GetAuthSessionTicket
+    try:
+        dll.SteamAPI_ISteamUser_GetAuthSessionTicket.restype = ctypes.c_uint32  # HAuthTicket
+        dll.SteamAPI_ISteamUser_GetAuthSessionTicket.argtypes = [
+            ctypes.c_void_p,   # ISteamUser*
+            ctypes.c_void_p,   # pTicket buffer
+            ctypes.c_int,      # cbMaxTicket
+            ctypes.POINTER(ctypes.c_uint32),  # pcbTicket out
+            ctypes.c_void_p,   # pSteamNetworkingIdentity (NULL)
+        ]
+    except AttributeError:
+        pass
+
+    # ISteamUtils interface accessors
+    for _utils_ver in ('SteamAPI_SteamUtils_v010', 'SteamAPI_SteamUtils_v009'):
+        try:
+            fn = getattr(dll, _utils_ver)
+            fn.restype = ctypes.c_void_p
+            fn.argtypes = []
+        except AttributeError:
+            pass
+
+    # ISteamUtils_GetAPICallResult — callback sonucunu polling ile almak için
+    try:
+        dll.SteamAPI_ISteamUtils_GetAPICallResult.restype = ctypes.c_bool
+        dll.SteamAPI_ISteamUtils_GetAPICallResult.argtypes = [
+            ctypes.c_void_p,              # ISteamUtils*
+            ctypes.c_uint64,              # SteamAPICall_t
+            ctypes.c_void_p,              # pCallback (out)
+            ctypes.c_int,                 # cubCallback
+            ctypes.c_int,                 # iCallbackExpected
+            ctypes.POINTER(ctypes.c_bool),# pbFailed
+        ]
+    except AttributeError:
+        pass
+
+    # ISteamUtils_IsAPICallCompleted — çağrı tamamlandı mı?
+    try:
+        dll.SteamAPI_ISteamUtils_IsAPICallCompleted.restype = ctypes.c_bool
+        dll.SteamAPI_ISteamUtils_IsAPICallCompleted.argtypes = [
+            ctypes.c_void_p,              # ISteamUtils*
+            ctypes.c_uint64,              # SteamAPICall_t
+            ctypes.POINTER(ctypes.c_bool),# pbFailed
+        ]
+    except AttributeError:
+        pass
+
+    # ISteamUserStats_RequestCurrentStats — UserStats işlemleri için zorunlu
+    try:
+        dll.SteamAPI_ISteamUserStats_RequestCurrentStats.restype = ctypes.c_bool
+        dll.SteamAPI_ISteamUserStats_RequestCurrentStats.argtypes = [ctypes.c_void_p]
+    except AttributeError:
+        pass
+
+
+def init() -> bool:
+    """Steam API'yi başlat. Başarılı olursa True döndürür.
+
+    İkinci çağrıda mevcut durumu döndürür (idempotent).
+    """
+    global _dll, _dll_loaded, _init_ok, _isteam_friends, _isteam_user, _isteam_user_stats, _isteam_utils
+    global _pump_thread, _pump_running
+
+    with _init_lock:
+        if _dll_loaded:
+            return _init_ok
+
+        _dll_loaded = True
+
+        # ── Steam AppID env var — onefile PyInstaller için zorunlu ──────────────
+        # SteamAPI_Init, steam_appid.txt dosyasını ya CWD'den ya da SteamAppId
+        # env var‧ından okur. Onefile build'larda _MEIPASS geçici klasörüne
+        # çıkarılır ama CWD exe'nin bulunduğu yerdir — dosya orada olmayabilir.
+        # Env var her zaman çalışır.
+        _APP_ID = '4428040'
+        os.environ.setdefault('SteamAppId', _APP_ID)
+        os.environ.setdefault('SteamGameId', _APP_ID)
+        # steam_appid.txt'yi exe'nin yanına da yazmaya çalış ( Steam offline launch için)
+        try:
+            import sys as _sys
+            _exe_dir = Path(getattr(_sys, 'executable', '') or '').parent
+            _appid_dst = _exe_dir / 'steam_appid.txt'
+            if not _appid_dst.exists():
+                _appid_dst.write_text(_APP_ID + '\n', encoding='utf-8')
+        except Exception:
+            pass
+        # ────────────────────────────────────────────────────────────────────
+        dll_path = _find_dll()
+        if not dll_path:
+            lib_name = _get_platform_lib_name()
+            print(f"[Steam] {lib_name} bulunamadı – Steam entegrasyonu devre dışı.")
+            return False
+
+        try:
+            dll = ctypes.CDLL(dll_path)
+        except OSError as e:
+            print(f"[Steam] Kütüphane yüklenemedi ({dll_path}): {e}")
+            return False
+
+        _setup_dll_functions(dll)
+
+        # SDK 1.60+ → SteamAPI_InitFlat(pOutErrMsg) → ESteamAPIInitResult, 0=OK
+        # SDK <1.60  → SteamAPI_Init()            → bool/int,          1=OK
+        _init_ok_val = False
+        if getattr(dll, '_quadrix_has_init_flat', False):
+            try:
+                errmsg = ctypes.create_string_buffer(1024)
+                result = dll.SteamAPI_InitFlat(errmsg)
+                _init_ok_val = (result == 0)   # k_ESteamAPIInitResult_OK == 0
+                if not _init_ok_val:
+                    msg = errmsg.value.decode('utf-8', errors='replace').strip()
+                    print(f"[Steam] SteamAPI_InitFlat başarısız ({result}): {msg or 'Steam çalışıyor mu?'}")
+            except Exception as e:
+                print(f"[Steam] SteamAPI_InitFlat hatası: {e}")
+        elif getattr(dll, '_quadrix_has_init_legacy', False):
+            try:
+                result = dll.SteamAPI_Init()
+                # Eski SDK: bool → 1=True=OK; c_int olarak okuyoruz
+                _init_ok_val = bool(result)
+                if not _init_ok_val:
+                    print("[Steam] SteamAPI_Init() başarısız. Steam çalışıyor mu?")
+            except Exception as e:
+                print(f"[Steam] SteamAPI_Init hatası: {e}")
+        else:
+            print("[Steam] Ne SteamAPI_InitFlat ne SteamAPI_Init bulundu – DLL uyumsuz?")
+
+        if not _init_ok_val:
+            return False
+
+        _dll = dll
+        _init_ok = True
+
+        # Interface pointer'larını al — SDK sürümüne göre doğru accessor'ı dene
+        def _try_accessor(*names):
+            """Birden fazla versiyon adından ilk çalışanı döndür."""
+            for name in names:
+                try:
+                    fn = getattr(dll, name)
+                    fn.restype = ctypes.c_void_p
+                    fn.argtypes = []
+                    ptr = fn()
+                    if ptr:
+                        return ptr
+                except Exception:
+                    pass
+            return None
+
+        _isteam_friends = _try_accessor(
+            'SteamAPI_SteamFriends_v018',  # SDK 1.62+
+            'SteamAPI_SteamFriends_v017',
+            'SteamAPI_SteamFriends_v016',
+        )
+        _isteam_user = _try_accessor(
+            'SteamAPI_SteamUser_v023',
+            'SteamAPI_SteamUser_v022',
+            'SteamAPI_SteamUser_v024',
+        )
+        _isteam_user_stats = _try_accessor(
+            'SteamAPI_SteamUserStats_v013',  # SDK 1.62+
+            'SteamAPI_SteamUserStats_v012',
+            'SteamAPI_SteamUserStats_v011',
+        )
+        print(f"[Steam] interface ptrs: friends={_isteam_friends} user={_isteam_user} "
+              f"userstats={_isteam_user_stats} utils={_isteam_utils}")
+        _isteam_utils = _try_accessor(
+            'SteamAPI_SteamUtils_v010',
+            'SteamAPI_SteamUtils_v009',
+        )
+
+        # Callback pump thread'i başlat
+        _pump_running = True
+        _pump_thread = threading.Thread(target=_callback_pump_loop, daemon=True)
+        _pump_thread.start()
+
+        # RequestCurrentStats — UserStats API'sini aktive et (leaderboard için gerekli)
+        # NOT: Bu fonksiyon bazı SDK versiyonlarında DLL'de olmayabilir, sorun değil
+        if _isteam_user_stats:
+            try:
+                dll.SteamAPI_ISteamUserStats_RequestCurrentStats.restype = ctypes.c_bool
+                dll.SteamAPI_ISteamUserStats_RequestCurrentStats.argtypes = [ctypes.c_void_p]
+                result = dll.SteamAPI_ISteamUserStats_RequestCurrentStats(_isteam_user_stats)
+                # Kısa süre pump yap ki stats gelsin
+                for _ in range(10):
+                    time.sleep(0.05)
+                    try:
+                        dll.SteamAPI_RunCallbacks()
+                    except Exception:
+                        pass
+                print(f"[Steam] RequestCurrentStats gönderildi: {result}")
+            except AttributeError:
+                print("[Steam] RequestCurrentStats bu DLL'de yok, atlanıyor (normal).")
+            except Exception as _rcs_e:
+                print(f"[Steam] RequestCurrentStats hatası: {_rcs_e}")
+
+        # Tüm leaderboard handle'larını arka planda önceden cache'le
+        threading.Thread(target=_precache_all_leaderboard_handles, daemon=True).start()
+
+        print(f"[Steam] Başarıyla başlatıldı. Kullanıcı: {get_persona_name()} ({get_steam_id()})")
+        return True
+
+
+def shutdown() -> None:
+    """Steam API'yi kapat."""
+    global _pump_running, _init_ok
+    _pump_running = False
+    if _dll and _init_ok:
+        try:
+            _dll.SteamAPI_Shutdown()
+        except Exception:
+            pass
+    _init_ok = False
+
+
+def is_available() -> bool:
+    """Steam SDK başarıyla başlatıldıysa True döndürür."""
+    return _init_ok and _dll is not None
+
+
+def _callback_pump_loop() -> None:
+    """Arka planda Steam callback'lerini işle (30ms aralıklı)."""
+    while _pump_running:
+        if _dll and _init_ok:
+            try:
+                _dll.SteamAPI_RunCallbacks()
+            except Exception:
+                pass
+        time.sleep(0.03)
+
+
+def run_callbacks() -> None:
+    """Tek seferlik callback pump (ana thread'den çağrılabilir)."""
+    if _dll and _init_ok:
+        try:
+            _dll.SteamAPI_RunCallbacks()
+        except Exception:
+            pass
+
+
+def _precache_all_leaderboard_handles() -> None:
+    """Init sonrası tüm leaderboard handle'larını arka planda önceden al."""
+    # Pump thread'inin başlaması için biraz bekle
+    time.sleep(1.0)
+    if not is_available() or not _isteam_user_stats:
+        return
+    print("[Steam] Leaderboard handle'ları önceden yükleniyor...")
+    for mode, lb_name in _MODE_TO_LB.items():
+        if lb_name not in _lb_handle_cache:
+            _find_leaderboard_handle_by_api(lb_name, timeout=8.0)
+    cached = list(_lb_handle_cache.keys())
+    print(f"[Steam] {len(cached)} leaderboard handle cache'lendi: {cached}")
+
+
+# ---------------------------------------------------------------------------
+# Kullanıcı bilgisi
+# ---------------------------------------------------------------------------
+
+def get_persona_name() -> str | None:
+    """Oturum açmış Steam kullanıcısının profil adını döndürür."""
+    global _persona_name_cache
+    if _persona_name_cache is not None:
+        return _persona_name_cache
+    if not is_available() or not _isteam_friends:
+        return None
+    try:
+        raw = _dll.SteamAPI_ISteamFriends_GetPersonaName(_isteam_friends)  # type: ignore[union-attr]
+        if raw:
+            name = raw.decode('utf-8', errors='replace')
+            _persona_name_cache = name
+            return name
+    except Exception as e:
+        print(f"[Steam] GetPersonaName hatası: {e}")
+    return None
+
+
+def get_steam_id() -> int | None:
+    """Oturum açmış kullanıcının SteamID64'ünü döndürür."""
+    global _steam_id_cache
+    if _steam_id_cache is not None:
+        return _steam_id_cache
+    if not is_available() or not _isteam_user:
+        return None
+    try:
+        sid = _dll.SteamAPI_ISteamUser_GetSteamID(_isteam_user)  # type: ignore[union-attr]
+        if sid and sid != 0:
+            _steam_id_cache = int(sid)
+            return _steam_id_cache
+    except Exception as e:
+        print(f"[Steam] GetSteamID hatası: {e}")
+    return None
+
+
+def get_steam_id_str() -> str:
+    """SteamID64'ü string olarak döndürür; bilinmiyorsa boş."""
+    sid = get_steam_id()
+    return str(sid) if sid else ""
+
+
+# ---------------------------------------------------------------------------
+# Auth ticket (arkadaş listesi)
+# ---------------------------------------------------------------------------
+
+_auth_ticket_cache: bytes | None = None
+_auth_ticket_hex_cache: str | None = None
+
+
+def get_auth_session_ticket() -> str | None:
+    """Steam auth session ticket döndürür (hex encoded).
+
+    Bu ticket backend'e gönderilir; backend ISteamUserAuth_AuthenticateUserTicket ile doğrular.
+    """
+    global _auth_ticket_cache, _auth_ticket_hex_cache
+    if _auth_ticket_hex_cache:
+        return _auth_ticket_hex_cache
+    if not is_available() or not _isteam_user:
+        return None
+    try:
+        buf_size = 1024
+        buf = (ctypes.c_uint8 * buf_size)()
+        out_size = ctypes.c_uint32(0)
+        handle = _dll.SteamAPI_ISteamUser_GetAuthSessionTicket(  # type: ignore[union-attr]
+            _isteam_user,
+            buf,
+            buf_size,
+            ctypes.byref(out_size),
+            None,
+        )
+        if handle and out_size.value > 0:
+            ticket_bytes = bytes(buf[:out_size.value])
+            _auth_ticket_cache = ticket_bytes
+            _auth_ticket_hex_cache = ticket_bytes.hex()
+            # Ticket'ın geçerli hale gelmesi için callbacks pump
+            for _ in range(5):
+                run_callbacks()
+                time.sleep(0.05)
+            return _auth_ticket_hex_cache
+    except Exception as e:
+        print(f"[Steam] GetAuthSessionTicket hatası: {e}")
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Leaderboard yardımcıları
+# ---------------------------------------------------------------------------
+
+# Skor gönderimi için mod adından Steam leaderboard adına map
+_MODE_TO_LB: dict[str, str] = {
+    "classic": "quadrix_classic",
+    "sprint": "quadrix_sprint",
+    "ultra": "quadrix_ultra",
+    "zen": "quadrix_zen",
+    "mystery": "quadrix_mystery",
+    "survival": "quadrix_survival",
+    "cascade": "quadrix_cascade",
+    "wide": "quadrix_wide",
+    "hardcore": "quadrix_hardcore",
+    "daily": "quadrix_daily",
+    "tetris2": "quadrix_tetris2",
+}
+
+
+def _find_leaderboard_sync(lb_name: str, timeout: float = 5.0) -> int | None:
+    """FindLeaderboard çağrısı ve callback ile handle al (senkron-blocking)."""
+    if not is_available() or not _isteam_user_stats:
+        return None
+    if lb_name in _lb_handle_cache:
+        return _lb_handle_cache[lb_name]
+    try:
+        api_call = _dll.SteamAPI_ISteamUserStats_FindLeaderboard(  # type: ignore[union-attr]
+            _isteam_user_stats,
+            lb_name.encode('utf-8'),
+        )
+        if not api_call:
+            return None
+        # Callback pump ile sonucu bekle
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            run_callbacks()
+            # Handle cache'e yazıldıysa tamamdır
+            if lb_name in _lb_handle_cache:
+                return _lb_handle_cache[lb_name]
+            time.sleep(0.05)
+    except Exception as e:
+        print(f"[Steam] FindLeaderboard hatası ({lb_name}): {e}")
+    return None
+
+
+class _LeaderboardSearchResultStruct(ctypes.Structure):
+    """LeaderboardFindResult_t call result yapısı (Steamworks SDK)."""
+    _fields_ = [
+        ("m_hSteamLeaderboard", ctypes.c_uint64),
+        ("m_bLeaderboardFound", ctypes.c_uint8),
+    ]
+
+
+# Steam callback ID sabitleri (ISteamUserStats = 1100-base)
+_CB_LEADERBOARD_FIND_RESULT   = 1104  # LeaderboardFindResult_t      (k_iSteamUserStatsCallbacks+4)
+_CB_LEADERBOARD_SCORE_UPLOADED = 1106  # LeaderboardScoreUploaded_t   (k_iSteamUserStatsCallbacks+6)
+
+
+class _LeaderboardFindResult(ctypes.Structure):
+    """LeaderboardFindResult_t — FindLeaderboard callback sonucu."""
+    _fields_ = [
+        ("m_hSteamLeaderboard", ctypes.c_uint64),
+        ("m_bLeaderboardFound", ctypes.c_uint8),
+    ]
+
+
+class _LeaderboardScoreUploaded(ctypes.Structure):
+    """LeaderboardScoreUploaded_t — UploadLeaderboardScore callback sonucu."""
+    _fields_ = [
+        ("m_bSuccess",          ctypes.c_uint8),
+        ("m_hSteamLeaderboard", ctypes.c_uint64),
+        ("m_nScore",            ctypes.c_int32),
+        ("m_bScoreChanged",     ctypes.c_uint8),
+        ("m_nGlobalRankNew",    ctypes.c_int32),
+        ("m_nGlobalRankPrevious", ctypes.c_int32),
+    ]
+
+
+def _get_api_call_result(api_call_handle: int, result_struct, callback_id: int,
+                         timeout: float = 6.0) -> Any | None:
+    """SteamAPI_ISteamUtils_GetAPICallResult ile async call sonucunu polling ile al.
+
+    Bu, C++'daki CCallResult mekanizmasının Python karşılığıdır.
+    Returns: dolu result_struct örneği veya None (hata/timeout).
+    """
+    if not _isteam_utils or not _dll:
+        print(f"[Steam] _get_api_call_result: utils={_isteam_utils} dll={_dll is not None}")
+        return None
+    failed = ctypes.c_bool(False)
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        # run_callbacks() burada ÇAĞRILMIYOR — pump thread her 30ms'de hallediyor
+        # İki thread'den aynı anda RunCallbacks çağırmak race condition yaratır
+        try:
+            # Önce tamamlandı mı kontrol et
+            try:
+                completed = _dll.SteamAPI_ISteamUtils_IsAPICallCompleted(
+                    _isteam_utils, ctypes.c_uint64(api_call_handle), ctypes.byref(failed)
+                )
+                if completed and failed.value:
+                    print(f"[Steam] API call {api_call_handle} failed flag set")
+                    return None
+            except Exception:
+                pass  # IsAPICallCompleted olmayabilir, sorun değil
+
+            ok = _dll.SteamAPI_ISteamUtils_GetAPICallResult(
+                _isteam_utils,
+                ctypes.c_uint64(api_call_handle),
+                ctypes.byref(result_struct),
+                ctypes.sizeof(result_struct),
+                callback_id,
+                ctypes.byref(failed),
+            )
+            if ok:
+                if failed.value:
+                    print(f"[Steam] API call {api_call_handle} cb={callback_id} failed")
+                    return None
+                return result_struct
+        except Exception as _e:
+            print(f"[Steam] GetAPICallResult exception (cb={callback_id}): {_e}")
+            return None
+        time.sleep(0.05)
+    print(f"[Steam] API call {api_call_handle} cb={callback_id} TIMEOUT ({timeout}s)")
+    return None
+
+
+def _find_leaderboard_handle_by_api(lb_name: str, timeout: float = 6.0) -> int | None:
+    """FindLeaderboard + GetAPICallResult ile leaderboard handle'ını al."""
+    if not is_available() or not _isteam_user_stats:
+        return None
+    # Cache'de varsa direkt döndür
+    if lb_name in _lb_handle_cache:
+        return _lb_handle_cache[lb_name]
+    try:
+        api_call = _dll.SteamAPI_ISteamUserStats_FindLeaderboard(  # type: ignore[union-attr]
+            _isteam_user_stats,
+            lb_name.encode('utf-8'),
+        )
+        if not api_call:
+            print(f"[Steam] FindLeaderboard çağrısı başarısız: {lb_name}")
+            return None
+
+        result = _LeaderboardFindResult()
+        found = _get_api_call_result(api_call, result, _CB_LEADERBOARD_FIND_RESULT, timeout=timeout)
+        if found and found.m_bLeaderboardFound and found.m_hSteamLeaderboard:
+            handle = int(found.m_hSteamLeaderboard)
+            _lb_handle_cache[lb_name] = handle
+            print(f"[Steam] Leaderboard bulundu: {lb_name} → handle={handle}")
+            return handle
+        else:
+            print(f"[Steam] Leaderboard bulunamadı: {lb_name}")
+    except Exception as e:
+        print(f"[Steam] FindLeaderboard hatası ({lb_name}): {e}")
+    return None
+
+
+# Leaderboard isimden Steam numeric ID'ye map (Partner API fallback için)
+_LB_NAME_TO_ID: dict[str, int] = {
+    "quadrix_classic":  19192037,
+    "quadrix_sprint":   19192054,
+    "quadrix_ultra":    19192058,
+    "quadrix_zen":      19192061,
+    "quadrix_mystery":  19198572,
+    "quadrix_survival": 19192067,
+    "quadrix_cascade":  19192075,
+    "quadrix_wide":     19192077,
+    "quadrix_hardcore": 19192078,
+    "quadrix_daily":    19192081,
+    "quadrix_tetris2":  19192083,
+}
+
+_PARTNER_API_KEY = '4B6B6D93520B540A3F7B79E98472F375'
+_APP_ID_INT = 4428040
+
+
+def _submit_score_via_partner_api(lb_name: str, score: int, steam_id_str: str) -> bool:
+    """SDK başarısız olursa Partner Server API ile skor gönder (fallback).
+
+    Bu yol; oyuncunun Steam lisansı varsa (normal satın alma / playtest key ile)
+    her zaman çalışır. Lisans yoksa k_EResultInvalidParam(8) döner.
+    """
+    lb_id = _LB_NAME_TO_ID.get(lb_name)
+    if not lb_id or not steam_id_str:
+        return False
+    try:
+        import urllib.request
+        import urllib.parse
+        params = urllib.parse.urlencode({
+            'key': _PARTNER_API_KEY,
+            'appid': _APP_ID_INT,
+            'leaderboardid': lb_id,
+            'steamid': steam_id_str,
+            'score': score,
+            'scoremethod': 0,   # 0 = KeepBest
+        }).encode('ascii')
+        url = 'https://partner.steam-api.com/ISteamLeaderboards/SetLeaderboardScore/v1/'
+        req = urllib.request.Request(url, data=params, method='POST')
+        req.add_header('Content-Type', 'application/x-www-form-urlencoded')
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            import json
+            body = json.loads(resp.read().decode('utf-8', errors='replace'))
+            result_code = body.get('result', {}).get('result', -1)
+            if result_code == 1:
+                new_rank = body.get('result', {}).get('global_rank_new', 0)
+                print(f"[Steam] Partner API skor OK -> {lb_name}: {score} rank={new_rank}")
+                return True
+            else:
+                # result=8 = k_EResultInvalidParam: bu account bu app'i sahip degil
+                # Production oyuncularinda bu olmaz (Steam key/satin alma ile lisansli olurlar)
+                print(f"[Steam] Partner API skor FAIL -> {lb_name}: result={result_code} "
+                      f"(8=lisans yok / dev hesabi icin: Partner Portal -> Packages -> Developer Comp -> hesabi ekle)")
+                return False
+    except Exception as e:
+        print(f"[Steam] Partner API skor hatasi ({lb_name}): {e}")
+        return False
+
+
+def submit_score(mode: str, score: int) -> bool:
+    """Steam leaderboard'una en yüksek skor (KeepBest) olarak yükle.
+
+    Arka planda çalışır. Önce SDK (UploadLeaderboardScore) dener.
+    SDK success=0 dönerse Partner Server API'ye fallback yapar.
+    Returns True if upload thread was started.
+    """
+    lb_name = _MODE_TO_LB.get(str(mode or '').lower())
+    if not lb_name:
+        print(f"[Steam] Tanınmayan mod: {mode!r}")
+        return False
+
+    sdk_ok = is_available() and bool(_isteam_user_stats)
+    steam_id_str = get_steam_id_str() if sdk_ok else None
+
+    def _worker():
+        sdk_success = False
+
+        # --- Yol 1: Client SDK ---
+        if sdk_ok and _isteam_user_stats:
+            try:
+                handle = _lb_handle_cache.get(lb_name) or _find_leaderboard_handle_by_api(lb_name)
+                if handle:
+                    api_call = _dll.SteamAPI_ISteamUserStats_UploadLeaderboardScore(  # type: ignore[union-attr]
+                        _isteam_user_stats,
+                        ctypes.c_uint64(handle),
+                        0,   # k_ELeaderboardUploadScoreMethodKeepBest
+                        ctypes.c_int32(score),
+                        None, 0,
+                    )
+                    if api_call:
+                        up_result = _LeaderboardScoreUploaded()
+                        confirmed = _get_api_call_result(
+                            api_call, up_result, _CB_LEADERBOARD_SCORE_UPLOADED, timeout=8.0)
+                        if confirmed and confirmed.m_bSuccess:
+                            sdk_success = True
+                            print(f"[Steam] SDK skor OK -> {lb_name}: {score} "
+                                  f"rank={confirmed.m_nGlobalRankNew} degisti={bool(confirmed.m_bScoreChanged)}")
+                        else:
+                            print(f"[Steam] SDK skor FAIL (success=0) -> {lb_name}, Partner API deneniyor...")
+                    else:
+                        print(f"[Steam] UploadLeaderboardScore cagri basarisiz: {lb_name}")
+                else:
+                    print(f"[Steam] Handle alinamadi: {lb_name}")
+            except Exception as e:
+                print(f"[Steam] SDK submit hatasi ({lb_name}): {e}")
+
+        # --- Yol 2: Partner Server API fallback ---
+        if not sdk_success and steam_id_str:
+            _submit_score_via_partner_api(lb_name, score, steam_id_str)
+        elif not sdk_success and not steam_id_str:
+            print(f"[Steam] Skor gonderilemedi: SDK yok, steam_id yok -> {lb_name}: {score}")
+
+    threading.Thread(target=_worker, daemon=True).start()
+    return True
+
+
+# ---------------------------------------------------------------------------
+# Otomatik kullanıcı profil bilgisi
+# ---------------------------------------------------------------------------
+
+def get_user_display_name() -> str | None:
+    """Steam persona adını döndür (yoksa None)."""
+    return get_persona_name()
+
+
+def get_user_identity() -> dict[str, Any]:
+    """Steam profil bilgilerini dict olarak döndür.
+
+    Returns:
+        {
+            "steam_id": int | None,
+            "steam_id_str": str,
+            "persona_name": str | None,
+            "available": bool,
+        }
+    """
+    return {
+        "steam_id": get_steam_id(),
+        "steam_id_str": get_steam_id_str(),
+        "persona_name": get_persona_name(),
+        "available": is_available(),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Leaderboard okuma (SDK üzerinden, proxy gerektirmez)
+# ---------------------------------------------------------------------------
+
+# ELeaderboardDataRequest enum değerleri
+_LB_REQUEST_GLOBAL = 0
+_LB_REQUEST_AROUND_USER = 1
+_LB_REQUEST_FRIENDS = 2
+
+
+class _LeaderboardEntry(ctypes.Structure):
+    """LeaderboardEntry_t yapısı."""
+    _fields_ = [
+        ("m_steamIDUser",  ctypes.c_uint64),
+        ("m_nGlobalRank",  ctypes.c_int32),
+        ("m_nScore",       ctypes.c_int32),
+        ("m_cDetails",     ctypes.c_int32),
+        ("m_hUGC",         ctypes.c_uint64),
+    ]
+
+
+def _setup_get_entries_function(dll: ctypes.CDLL) -> None:
+    """GetDownloadedLeaderboardEntry fonksiyonunu kur."""
+    try:
+        dll.SteamAPI_ISteamUserStats_GetDownloadedLeaderboardEntry.restype = ctypes.c_bool
+        dll.SteamAPI_ISteamUserStats_GetDownloadedLeaderboardEntry.argtypes = [
+            ctypes.c_void_p,   # ISteamUserStats*
+            ctypes.c_uint64,   # SteamLeaderboardEntries_t
+            ctypes.c_int,      # index
+            ctypes.POINTER(_LeaderboardEntry),  # pLeaderboardEntry out
+            ctypes.c_void_p,   # pDetails (NULL)
+            ctypes.c_int,      # cDetailsMax
+        ]
+    except AttributeError:
+        pass
+
+    try:
+        dll.SteamAPI_ISteamUserStats_GetLeaderboardEntryCount.restype = ctypes.c_int
+        dll.SteamAPI_ISteamUserStats_GetLeaderboardEntryCount.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_uint64,
+        ]
+    except AttributeError:
+        pass
+
+
+class _DownloadLeaderboardEntriesResult(ctypes.Structure):
+    """LeaderboardScoresDownloaded_t call result."""
+    _fields_ = [
+        ("m_hSteamLeaderboard", ctypes.c_uint64),
+        ("m_hSteamLeaderboardEntries", ctypes.c_uint64),
+        ("m_cEntryCount", ctypes.c_int32),
+    ]
+
+
+def fetch_leaderboard_entries(
+    mode: str,
+    request_type: int = _LB_REQUEST_GLOBAL,
+    limit: int = 5,
+    timeout: float = 8.0,
+) -> list[dict[str, Any]]:
+    """Steam SDK üzerinden leaderboard girişlerini çek.
+
+    Args:
+        mode: Oyun modu adı ('mystery', 'classic', vs.)
+        request_type: 0=Global, 1=AroundUser, 2=Friends
+        limit: Maksimum giriş sayısı
+        timeout: Bekleme süresi (saniye)
+
+    Returns:
+        [{"rank": int, "score": int, "steam_id": str}, ...]
+    """
+    if not is_available() or not _isteam_user_stats:
+        return []
+    lb_name = _MODE_TO_LB.get(str(mode or '').strip().lower())
+    if not lb_name:
+        return []
+
+    # Gerekli fonksiyonları kur (ilk çağrıda)
+    if _dll and not hasattr(_dll, '_entries_setup_done'):
+        _setup_get_entries_function(_dll)
+        _dll._entries_setup_done = True  # type: ignore[attr-defined]
+
+    results: list[dict[str, Any]] = []
+    result_event = threading.Event()
+    result_holder: list[list[dict]] = [[]]
+
+    def _worker():
+        try:
+            handle = _lb_handle_cache.get(lb_name)
+            if not handle:
+                handle = _find_leaderboard_handle_by_api(lb_name, timeout=min(5.0, timeout * 0.6))
+            if not handle:
+                result_event.set()
+                return
+
+            safe_limit = max(1, min(int(limit), 100))
+            api_call = _dll.SteamAPI_ISteamUserStats_DownloadLeaderboardEntries(  # type: ignore[union-attr]
+                _isteam_user_stats,
+                ctypes.c_uint64(handle),
+                request_type,
+                1,
+                safe_limit,
+            )
+            if not api_call:
+                result_event.set()
+                return
+
+            # Download callback bekle
+            deadline = time.monotonic() + min(timeout, 6.0)
+            # Callbacks pump (pump threadi de çalışıyor ama burada ekstra basin)
+            while time.monotonic() < deadline:
+                run_callbacks()
+                time.sleep(0.05)
+
+            # Sonuçları oku — ancak GetDownloadedLeaderboardEntry call result gerektirir.
+            # Basit yaklaşım: GetLeaderboardEntryCount ile ne kadar indi, sonra oku.
+            # NOT: Bu syncronous değil; callback sonucunu almak için call result dispatcher gerekiyor.
+            # Şimdilik boş döndür, gelecekte callback dispatcher eklenecek.
+        except Exception as e:
+            print(f"[Steam] fetch_leaderboard_entries hatası: {e}")
+        finally:
+            result_event.set()
+
+    t_worker = threading.Thread(target=_worker, daemon=True)
+    t_worker.start()
+    result_event.wait(timeout=timeout + 1)
+    return result_holder[0]
+
+
+def fetch_global_scores(mode: str, limit: int = 5) -> list[dict[str, Any]]:
+    """Global leaderboard skorlarını Steam SDK üzerinden al."""
+    return fetch_leaderboard_entries(mode, request_type=_LB_REQUEST_GLOBAL, limit=limit)
+
+
+def fetch_friend_scores(mode: str, limit: int = 5) -> list[dict[str, Any]]:
+    """Arkadaş leaderboard skorlarını Steam SDK üzerinden al."""
+    return fetch_leaderboard_entries(mode, request_type=_LB_REQUEST_FRIENDS, limit=limit)

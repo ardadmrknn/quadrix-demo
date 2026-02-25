@@ -1,0 +1,13 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "pytest (py3.12)",
+      "type": "shell",
+      "command": "bash",
+      "args": ["./run_tests.sh", "-q"],
+      "problemMatcher": [],
+      "group": "test"
+    }
+  ]
+}

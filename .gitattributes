@@ -1,0 +1,10 @@
+# Enforce platform-appropriate line endings
+*.sh text eol=lf
+*.bash text eol=lf
+*.py text eol=lf
+*.md text eol=lf
+*.json text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+start_game.bat text eol=crlf
+*.bat text eol=crlf

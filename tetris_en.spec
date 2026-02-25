@@ -1,0 +1,172 @@
+# -*- mode: python ; coding: utf-8 -*-
+"""
+Quadrix Oyunu - PyInstaller Spec Dosyası (EN varsayılan dil)
+Tek EXE dosyasına paketleme için yapılandırma
+"""
+
+import os
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(SPECPATH).resolve()))
+from tools.embed_menu_layout import write_embedded_layout_module
+
+# Proje kök dizini
+REPO_ROOT = Path(SPECPATH).resolve()
+SRC_DIR = REPO_ROOT / 'src'
+write_embedded_layout_module(REPO_ROOT)
+
+block_cipher = None
+
+# Oyun runtime'ında kullanılan tüm kaynakları topla
+datas = [
+    # Tüm görsel/ses asset ağacı
+    (str(REPO_ROOT / 'assets'), 'assets'),
+
+    # Diğer medya klasörleri
+    (str(REPO_ROOT / 'music'), 'music'),
+    (str(REPO_ROOT / 'backgrounds'), 'backgrounds'),
+    (str(REPO_ROOT / 'avatars'), 'avatars'),
+
+    # Dil/font profilleri için font dosyaları
+    (str(REPO_ROOT / 'font'), 'font'),
+
+    # Apple emoji görselleri
+    (str(REPO_ROOT / 'apple_emojis'), 'apple_emojis'),
+
+    # Kampanya level tanımları
+    (str(REPO_ROOT / 'campaign_levels.csv'), '.'),
+
+    # Runtime yapılandırmaları
+    (str(REPO_ROOT / 'steam_appid.txt'), '.'),
+    (str(REPO_ROOT / 'settings.txt'), '.'),
+    (str(REPO_ROOT / 'menu_layout_runtime.json'), '.'),
+    (str(REPO_ROOT / 'credits_layout.json'), '.'),
+
+    # src içi kaynaklar
+    (str(SRC_DIR / 'splashscreen'), 'src/splashscreen'),
+    (str(SRC_DIR / 'avatars'), 'src/avatars'),
+    (str(SRC_DIR / 'settings.json'), 'src'),
+]
+
+# Sadece var olan dizinleri ekle
+datas = [(src, dst) for src, dst in datas if os.path.exists(src)]
+
+# Gizli importlar (dinamik olarak yüklenen modüller)
+hiddenimports = [
+    'pygame',
+    'pygame.mixer',
+    'pygame.font',
+    'pygame.image',
+    'pygame.transform',
+    'pygame.display',
+    'pygame.event',
+    'pygame.time',
+    'pygame.draw',
+    'pygame.surface',
+    'pygame.rect',
+    'pygame.color',
+    'pygame.key',
+    'pygame.mouse',
+    'json',
+    'csv',
+    'pathlib',
+    'platform',
+    'random',
+    'time',
+    'datetime',
+    'math',
+    'copy',
+    'collections',
+    'functools',
+    'threading',
+    'os',
+    'sys',
+    'typing',
+]
+
+# src klasöründeki tüm Python modüllerini ekle
+for py_file in SRC_DIR.glob('*.py'):
+    module_name = py_file.stem
+    if module_name != '__init__':
+        hiddenimports.append(module_name)
+
+# Alt klasörlerdeki modüller
+for subdir in ['renderers', 'types']:
+    subdir_path = SRC_DIR / subdir
+    if subdir_path.exists():
+        for py_file in subdir_path.glob('*.py'):
+            module_name = f"{subdir}.{py_file.stem}"
+            hiddenimports.append(module_name)
+
+# src/campaign/ alt paketi
+campaign_dir = SRC_DIR / 'campaign'
+if campaign_dir.exists():
+    hiddenimports.append('campaign')
+    for py_file in campaign_dir.glob('*.py'):
+        module_name = py_file.stem
+        if module_name != '__init__':
+            hiddenimports.append(f'campaign.{module_name}')
+
+a = Analysis(
+    [str(SRC_DIR / 'main.py')],  # Ana giriş noktası
+    pathex=[str(SRC_DIR), str(REPO_ROOT)],
+    binaries=[],
+    datas=datas,
+    hiddenimports=hiddenimports,
+    hookspath=[],
+    hooksconfig={},
+    runtime_hooks=[str(REPO_ROOT / 'pyi_rth_lang_en.py')],
+    excludes=[
+        # tkinter artık kullanılmıyor (pygame tabanlı color_picker/file_dialog)
+        'tkinter',
+        '_tkinter',
+        'tkinter.colorchooser',
+        'tkinter.filedialog',
+        'tkinter.simpledialog',
+        # Gereksiz büyük modülleri hariç tut (boyutu azaltmak için)
+        'matplotlib',
+        # NumPy bu projede artık kullanılmıyor; EXE taşınabilirliğini artırmak için hariç tut.
+        'numpy',
+        # pygame.surfarray NumPy'yi çekebilir; oyunda kullanılmadığı için hariç tut.
+        'pygame.surfarray',
+        'pandas',
+        'scipy',
+        'cv2',
+        'tensorflow',
+        'torch',
+        'sklearn',
+        'IPython',
+        'notebook',
+        'jupyter',
+    ],
+    win_no_prefer_redirects=False,
+    win_private_assemblies=False,
+    cipher=block_cipher,
+    noarchive=False,
+)
+
+pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
+
+exe = EXE(
+    pyz,
+    a.scripts,
+    a.binaries,
+    a.zipfiles,
+    a.datas,
+    [],
+    name='Tetris_EN',
+    debug=False,
+    bootloader_ignore_signals=False,
+    strip=False,
+    upx=False,  # UPX kapalı: bazı sistemlerde .pyd/.dll yükleme sorunlarını azaltır
+    upx_exclude=[],
+    runtime_tmpdir=None,
+    console=False,  # Konsol penceresi gösterme (GUI uygulama)
+    disable_windowed_traceback=False,
+    argv_emulation=False,
+    target_arch=None,
+    codesign_identity=None,
+    entitlements_file=None,
+
+)

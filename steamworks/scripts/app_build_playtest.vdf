@@ -1,0 +1,13 @@
+"AppBuild"
+{
+    "AppID" "4428040"
+    "Desc" "Playtest build 2026-02-24 v1.0.9 BUGFIX-PartnerAPI-LB-fallback"
+    "SetLive" ""
+    "ContentRoot" "C:\\Users\\arda demirkan\\Desktop\\v2_23022026\\v2\\dist\\"
+    "BuildOutput" "C:\\Users\\arda demirkan\\Desktop\\v2_23022026\\v2\\steamworks\\output\\"
+
+    "Depots"
+    {
+        "4428041" "depot_build_playtest_windows.vdf"
+    }
+}

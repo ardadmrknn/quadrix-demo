@@ -1,0 +1,21 @@
+{
+    "python-envs.defaultEnvManager": "ms-python.python:system",
+    "python-envs.pythonProjects": [],
+    "python.defaultInterpreterPath": "/opt/homebrew/bin/python3.12",
+    "python.terminal.activateEnvironment": false,
+    "python.testing.pytestEnabled": true,
+    "python.testing.unittestEnabled": false,
+    "python.testing.autoTestDiscoverOnSaveEnabled": false,
+    "python.testing.pytestArgs": ["-q"],
+    "emeraldwalk.runonsave": {
+        "commands": []
+    },
+    "robotcode.disableExtension": true,
+    "kiroAgent.configureMCP": "Disabled",
+    "chat.tools.terminal.autoApprove": {
+        "/^Get-NetTCPConnection -LocalPort 8787 -State Listen \\| Select-Object LocalAddress,LocalPort,OwningProcess,State \\| Format-Table -AutoSize \\| Out-String$/": {
+            "approve": true,
+            "matchCommandLine": true
+        }
+    }
+}

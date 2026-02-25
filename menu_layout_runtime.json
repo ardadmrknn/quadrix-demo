@@ -1,0 +1,453 @@
+{
+  "version": 3,
+  "source": "tools/menu_layout_editor.py",
+  "coord_space": "screen_pct",
+  "reference_resolution": [
+    1920,
+    1080
+  ],
+  "rects": {
+    "settings_button": {
+      "x_pct": 0.014063,
+      "y_pct": 0.02037,
+      "w_pct": 0.036458,
+      "h_pct": 0.064815,
+      "title": "Ayarlar Butonu"
+    },
+    "mute_button": {
+      "x_pct": 0.063542,
+      "y_pct": 0.02037,
+      "w_pct": 0.036458,
+      "h_pct": 0.064815,
+      "title": "Ses Butonu"
+    },
+    "credits_button": {
+      "x_pct": 0.014063,
+      "y_pct": 0.907407,
+      "w_pct": 0.036458,
+      "h_pct": 0.064815,
+      "title": "Emeği Geçenler Butonu"
+    },
+    "high_scores_button": {
+      "x_pct": 0.063021,
+      "y_pct": 0.907407,
+      "w_pct": 0.036458,
+      "h_pct": 0.064815,
+      "title": "Yüksek Skor Butonu"
+    },
+    "guide_button": {
+      "x_pct": 0.014063,
+      "y_pct": 0.826852,
+      "w_pct": 0.036458,
+      "h_pct": 0.064815,
+      "title": "Kılavuz Butonu"
+    },
+    "extras": {
+      "x_pct": 0.480208,
+      "y_pct": 0.25,
+      "w_pct": 0.106771,
+      "h_pct": 0.251852,
+      "title": "Oyun Modları"
+    },
+    "piece_workshop": {
+      "x_pct": 0.339062,
+      "y_pct": 0.55,
+      "w_pct": 0.125521,
+      "h_pct": 0.214815,
+      "title": "Parça Atölyesi"
+    },
+    "block_styles": {
+      "x_pct": 0.480208,
+      "y_pct": 0.524074,
+      "w_pct": 0.106771,
+      "h_pct": 0.241667,
+      "title": "Blok Görünümleri"
+    },
+    "campaign_mode": {
+      "x_pct": 0.3375,
+      "y_pct": 0.252778,
+      "w_pct": 0.125521,
+      "h_pct": 0.283333,
+      "title": "Görev Modu"
+    },
+    "pvp_2_players": {
+      "x_pct": 0.339062,
+      "y_pct": 0.788889,
+      "w_pct": 0.247917,
+      "h_pct": 0.112037,
+      "title": "Online PvP Co-op"
+    },
+    "new_gen_tetris": {
+      "x_pct": 0.141146,
+      "y_pct": 0.253704,
+      "w_pct": 0.182292,
+      "h_pct": 0.438889,
+      "title": "Kart Ustalığı"
+    },
+    "daily_challenge": {
+      "x_pct": 0.141146,
+      "y_pct": 0.72037,
+      "w_pct": 0.182292,
+      "h_pct": 0.17963,
+      "title": "Günlük"
+    },
+    "sos_button": {
+      "x_pct": 0.944271,
+      "y_pct": 0.02037,
+      "w_pct": 0.044271,
+      "h_pct": 0.064815,
+      "title": "SOS Butonu"
+    },
+    "switch_user_button": {
+      "x_pct": 0.951562,
+      "y_pct": 0.103704,
+      "w_pct": 0.036458,
+      "h_pct": 0.064815,
+      "title": "Kullanıcı Butonu"
+    },
+    "exit_button": {
+      "x_pct": 0.944271,
+      "y_pct": 0.907407,
+      "w_pct": 0.044271,
+      "h_pct": 0.064815,
+      "title": "Çıkış Butonu"
+    },
+    "hero_panel": {
+      "x_pct": 0.310937,
+      "y_pct": 0.02037,
+      "w_pct": 0.416146,
+      "h_pct": 0.150926,
+      "title": "QUADRIX Üst Panel"
+    },
+    "achievements": {
+      "x_pct": 0.601042,
+      "y_pct": 0.249074,
+      "w_pct": 0.169271,
+      "h_pct": 0.191667,
+      "title": "Başarılar"
+    },
+    "steam_scores": {
+      "x_pct": 0.601042,
+      "y_pct": 0.464815,
+      "w_pct": 0.251563,
+      "h_pct": 0.434259,
+      "title": "Steam Skor Tablosu"
+    },
+    "tutorial_mode": {
+      "x_pct": 0.778125,
+      "y_pct": 0.248148,
+      "w_pct": 0.073958,
+      "h_pct": 0.191667,
+      "title": "Eğitim"
+    },
+    "new_gen_tetris_sticker": {
+      "x_pct": 0.145313,
+      "y_pct": 0.258333,
+      "w_pct": 0.181771,
+      "h_pct": 0.44537,
+      "title": "Kart Ustalığı Sticker"
+    },
+    "tutorial_mode_sticker": {
+      "x_pct": 0.79375,
+      "y_pct": 0.287037,
+      "w_pct": 0.055208,
+      "h_pct": 0.125,
+      "title": "Eğitim Sticker"
+    },
+    "language_button": {
+      "x_pct": 0.014063,
+      "y_pct": 0.101852,
+      "w_pct": 0.036458,
+      "h_pct": 0.064815,
+      "title": "Dil Butonu"
+    }
+  },
+  "panels": [
+    {
+      "key": "settings_button",
+      "title": "Ayarlar Butonu",
+      "x": 27,
+      "y": 22,
+      "w": 70,
+      "h": 70,
+      "color": [
+        0,
+        240,
+        255
+      ]
+    },
+    {
+      "key": "mute_button",
+      "title": "Ses Butonu",
+      "x": 122,
+      "y": 22,
+      "w": 70,
+      "h": 70,
+      "color": [
+        0,
+        255,
+        170
+      ]
+    },
+    {
+      "key": "credits_button",
+      "title": "Emeği Geçenler Butonu",
+      "x": 27,
+      "y": 980,
+      "w": 70,
+      "h": 70,
+      "color": [
+        255,
+        220,
+        40
+      ]
+    },
+    {
+      "key": "high_scores_button",
+      "title": "Yüksek Skor Butonu",
+      "x": 121,
+      "y": 980,
+      "w": 70,
+      "h": 70,
+      "color": [
+        255,
+        220,
+        40
+      ]
+    },
+    {
+      "key": "guide_button",
+      "title": "Kılavuz Butonu",
+      "x": 27,
+      "y": 893,
+      "w": 70,
+      "h": 70,
+      "color": [
+        100,
+        200,
+        255
+      ]
+    },
+    {
+      "key": "extras",
+      "title": "Oyun Modları",
+      "x": 922,
+      "y": 270,
+      "w": 205,
+      "h": 272,
+      "color": [
+        0,
+        240,
+        255
+      ]
+    },
+    {
+      "key": "piece_workshop",
+      "title": "Parça Atölyesi",
+      "x": 651,
+      "y": 594,
+      "w": 241,
+      "h": 232,
+      "color": [
+        255,
+        0,
+        180
+      ]
+    },
+    {
+      "key": "block_styles",
+      "title": "Blok Görünümleri",
+      "x": 922,
+      "y": 566,
+      "w": 205,
+      "h": 261,
+      "color": [
+        0,
+        240,
+        255
+      ]
+    },
+    {
+      "key": "campaign_mode",
+      "title": "Görev Modu",
+      "x": 648,
+      "y": 273,
+      "w": 241,
+      "h": 306,
+      "color": [
+        0,
+        240,
+        255
+      ]
+    },
+    {
+      "key": "pvp_2_players",
+      "title": "Online PvP Co-op",
+      "x": 651,
+      "y": 852,
+      "w": 476,
+      "h": 121,
+      "color": [
+        255,
+        155,
+        0
+      ]
+    },
+    {
+      "key": "new_gen_tetris",
+      "title": "Kart Ustalığı",
+      "x": 271,
+      "y": 274,
+      "w": 350,
+      "h": 474,
+      "color": [
+        255,
+        0,
+        180
+      ]
+    },
+    {
+      "key": "daily_challenge",
+      "title": "Günlük",
+      "x": 271,
+      "y": 778,
+      "w": 350,
+      "h": 194,
+      "color": [
+        0,
+        255,
+        180
+      ]
+    },
+    {
+      "key": "sos_button",
+      "title": "SOS Butonu",
+      "x": 1813,
+      "y": 22,
+      "w": 85,
+      "h": 70,
+      "color": [
+        255,
+        70,
+        70
+      ]
+    },
+    {
+      "key": "switch_user_button",
+      "title": "Kullanıcı Butonu",
+      "x": 1827,
+      "y": 112,
+      "w": 70,
+      "h": 70,
+      "color": [
+        255,
+        0,
+        180
+      ]
+    },
+    {
+      "key": "exit_button",
+      "title": "Çıkış Butonu",
+      "x": 1813,
+      "y": 980,
+      "w": 85,
+      "h": 70,
+      "color": [
+        255,
+        80,
+        80
+      ]
+    },
+    {
+      "key": "hero_panel",
+      "title": "QUADRIX Üst Panel",
+      "x": 597,
+      "y": 22,
+      "w": 799,
+      "h": 163,
+      "color": [
+        0,
+        220,
+        255
+      ]
+    },
+    {
+      "key": "achievements",
+      "title": "Başarılar",
+      "x": 1154,
+      "y": 269,
+      "w": 325,
+      "h": 207,
+      "color": [
+        255,
+        220,
+        40
+      ]
+    },
+    {
+      "key": "steam_scores",
+      "title": "Steam Skor Tablosu",
+      "x": 1154,
+      "y": 502,
+      "w": 483,
+      "h": 469,
+      "color": [
+        80,
+        230,
+        120
+      ]
+    },
+    {
+      "key": "tutorial_mode",
+      "title": "Eğitim",
+      "x": 1494,
+      "y": 268,
+      "w": 142,
+      "h": 207,
+      "color": [
+        120,
+        225,
+        255
+      ]
+    },
+    {
+      "key": "new_gen_tetris_sticker",
+      "title": "Kart Ustalığı Sticker",
+      "x": 279,
+      "y": 279,
+      "w": 349,
+      "h": 481,
+      "color": [
+        140,
+        110,
+        255
+      ]
+    },
+    {
+      "key": "tutorial_mode_sticker",
+      "title": "Eğitim Sticker",
+      "x": 1524,
+      "y": 310,
+      "w": 106,
+      "h": 135,
+      "color": [
+        110,
+        185,
+        255
+      ]
+    },
+    {
+      "key": "language_button",
+      "title": "Dil Butonu",
+      "x": 27,
+      "y": 110,
+      "w": 70,
+      "h": 70,
+      "color": [
+        255,
+        90,
+        90
+      ]
+    }
+  ]
+}
