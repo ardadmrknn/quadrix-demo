@@ -1085,11 +1085,14 @@ class HardcoreMode(Game):
             
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
-                    self.show_exit_prompt = True
+                    self.paused = True
+                    self.pause_menu_selected = 0
                     continue
                 
                 if event.key == pygame.K_p:
                     self.paused = not self.paused
+                    if self.paused:
+                        self.pause_menu_selected = 0
                     continue
                 
                 # Saklama devre dışı - C tuşu çalışmaz

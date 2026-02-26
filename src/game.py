@@ -1336,11 +1336,6 @@ class Game:
                         continue
                     continue
 
-                # ESC - oyun içindeyken çıkış onayı göster
-                if event.key == pygame.K_ESCAPE:
-                    self.show_exit_prompt = True
-                    continue
-                
                 # P - Duraklat
                 if event.key == bindings['pause']:
                     self.paused = not self.paused
@@ -1358,6 +1353,12 @@ class Game:
                         self.restart()
                     elif pause_action == 'main_menu':
                         return 'menu'
+                    continue
+
+                # ESC - oyun içindeyken pause menüsünü aç
+                if event.key == pygame.K_ESCAPE:
+                    self.paused = True
+                    self.pause_menu_selected = 0
                     continue
                 
                 # Sol hareket - DAS sistemi ile
@@ -1833,6 +1834,8 @@ class Game:
         # Build option hitboxes for mouse
         self._pause_option_rects = []
         self._pause_volume_rects = {}
+        # Her frame gerçek fare pozisyonunu al (hover state mouse motion olmadan da çalışır)
+        _pause_mouse_pos = pygame.mouse.get_pos()
 
         start_y = panel_rect.y + top_pad
         for i, option in enumerate(self.pause_menu_options):
@@ -1864,6 +1867,7 @@ class Game:
                 color_code = retro_style.accent
                 sub_text = f"{int(self.sound.sfx_volume * 100)}%  < >"
 
+            _pm_hover = button_rect.collidepoint(_pause_mouse_pos)
             retro_style.draw_uniform_button(
                 self.screen,
                 button_rect,
@@ -1871,6 +1875,7 @@ class Game:
                 sub_text=sub_text,
                 color_code=color_code,
                 selected=is_selected,
+                state='hover' if _pm_hover else 'normal',
             )
 
             # Volume bars (clickable)
@@ -4030,20 +4035,46 @@ class Game:
         yes_rect = pygame.Rect(start_x, button_y, button_width, button_height)
         no_rect = pygame.Rect(start_x + button_width + spacing, button_y, button_width, button_height)
 
-        retro_style.draw_uniform_button(
-            self.screen,
-            yes_rect,
-            t('quit_confirm_yes_label'),
-            color_code=retro_style.success,
-            selected=False,
-        )
-        retro_style.draw_uniform_button(
-            self.screen,
-            no_rect,
-            t('quit_confirm_no_label'),
-            color_code=retro_style.secondary,
-            selected=False,
-        )
+        # Hover-aware buton çizimi — ana menü exit confirm ile aynı stil
+        mouse_pos = pygame.mouse.get_pos()
+        for _rect, _label, _sub_label, _btn_color in (
+            (yes_rect, t('quit_confirm_yes_label'), 'ENTER', retro_style.success),
+            (no_rect, t('quit_confirm_no_label'), 'ESC', retro_style.secondary),
+        ):
+            _hover = _rect.collidepoint(mouse_pos)
+            _draw_rect = _rect.inflate(6, 4) if _hover else _rect
+
+            _btn_bg = pygame.Surface(_draw_rect.size, pygame.SRCALPHA)
+            if _hover:
+                pygame.draw.rect(_btn_bg, (*_btn_color, 35), _btn_bg.get_rect(), border_radius=12)
+                _hl_rect = pygame.Rect(4, 2, _draw_rect.width - 8, 1)
+                pygame.draw.rect(_btn_bg, (*_btn_color, 60), _hl_rect)
+            else:
+                pygame.draw.rect(_btn_bg, (20, 26, 42, 200), _btn_bg.get_rect(), border_radius=12)
+            self.screen.blit(_btn_bg, _draw_rect.topleft)
+
+            if _hover:
+                _glow_surf = pygame.Surface((_draw_rect.width + 12, _draw_rect.height + 12), pygame.SRCALPHA)
+                _glow_r = _glow_surf.get_rect()
+                pygame.draw.rect(_glow_surf, (*_btn_color, 25), _glow_r, border_radius=16)
+                pygame.draw.rect(_glow_surf, (*_btn_color, 15), _glow_r.inflate(-4, -4), border_radius=14)
+                self.screen.blit(_glow_surf, (_draw_rect.x - 6, _draw_rect.y - 6))
+
+            _bw = 3 if _hover else 1
+            _ba = 220 if _hover else 100
+            pygame.draw.rect(self.screen, (*_btn_color, _ba), _draw_rect, _bw, border_radius=12)
+
+            _txt_color = (255, 255, 255) if _hover else (220, 230, 245)
+            _btn_font = retro_style.get_fitting_font(_label, self._sx(20, ui_scale, minimum=14), _draw_rect.width - 40, bold=True)
+            _btn_surf = _btn_font.render(_label, True, _txt_color)
+            _sub_font = retro_style.get_font(self._sx(13, ui_scale, minimum=10), bold=False)
+            _sub_color = (*_btn_color,) if _hover else (140, 155, 180)
+            _sub_surf = _sub_font.render(_sub_label, True, _sub_color)
+            _gap_t = 3
+            _total_h = _btn_surf.get_height() + _gap_t + _sub_surf.get_height()
+            _ty = _draw_rect.centery - _total_h // 2
+            self.screen.blit(_btn_surf, (_draw_rect.x + 14, _ty))
+            self.screen.blit(_sub_surf, (_draw_rect.x + 14, _ty + _btn_surf.get_height() + _gap_t))
 
         self.exit_yes_rect = yes_rect
         self.exit_no_rect = no_rect

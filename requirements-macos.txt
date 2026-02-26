@@ -1,5 +1,6 @@
 pygame==2.6.1
 numpy==1.26.4
+Pillow
 
 # Opsiyonel: macOS pencere focus yönetimi için (kurulumu uzun sürebilir)
 # pyobjc-framework-Cocoa

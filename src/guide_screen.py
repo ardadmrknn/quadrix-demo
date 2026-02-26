@@ -1310,17 +1310,8 @@ class GuideScreen:
         self.screen.blit(text_surf, (text_x, text_y))
     
     def _draw_card_navigation(self, content_x: int, content_width: int, height: int):
-        """Sadece sayfa göstergesi çiz (butonlar kaldırıldı)"""
-        page_font = retro_style.get_font(16, bold=False)
-        
-        # Sayfa göstergesi
-        cards_per_page = 9
-        current_page = (self.card_index // cards_per_page) + 1
-        total_pages = (self.max_cards + cards_per_page - 1) // cards_per_page
-        page_text = f"Sayfa {current_page} / {total_pages}"
-        page_surf = page_font.render(page_text, True, retro_style.text_secondary)
-        page_x = content_x + content_width // 2 - page_surf.get_width() // 2
-        self.screen.blit(page_surf, (page_x, height - 78))
+        """Kart navigasyon helper — sayfa göstergesi geri butonuyla çakıştığı için kaldırıldı."""
+        pass  # Sayfa X/Y metni geri butonuyla iç içe geçiyordu; kaldırıldı
     
     def _draw_hints(self, width: int, height: int):
         hint_font = retro_style.get_font(14, bold=False)

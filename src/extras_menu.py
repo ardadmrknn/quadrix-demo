@@ -22,6 +22,11 @@ def _get_base_path() -> Path:
 
 # AI görsel simgelerinin promptları (Nano Banana Pro için)
 MODE_IMAGE_PROMPTS = {
+    'Classic Mode': {
+        'prompt': 'A timeless tetris block arrangement in clean white and light blue gradient, minimalist retro style with subtle grid pattern, classic game aesthetic, soft glow, transparent background, 256x256 icon',
+        'filename': 'classic_mode_icon.png',
+        'alt_emoji': '🎮'
+    },
     'Campaign Mode': {
         'prompt': 'A glowing neon compass over a stylized valley landscape with a winding path and star marker, gold and emerald gradients, futuristic UI frame, soft particle glow, transparent background, 256x256 icon',
         'filename': 'campaign_mode_icon.png',
@@ -80,6 +85,7 @@ class ExtrasScreen:
     
     # Mod ID'lerini game_stats anahtarlarına eşleyen mapping
     MODE_ID_TO_STATS_KEY = {
+        'Classic Mode': 'classic',
         'Sprint Mode': 'sprint',
         'Ultra Mode': 'ultra',
         'Zen Mode': 'zen',
@@ -120,6 +126,13 @@ class ExtrasScreen:
                 'desc_key': 'campaign_desc',
                 'color': (187, 255, 0),  # #E5FF00
                 'image_data': MODE_IMAGE_PROMPTS.get('Campaign Mode')
+            },
+            {
+                'id': 'Classic Mode',
+                'name_key': 'mode_label_classic',
+                'desc_key': 'extras_classic_desc',
+                'color': (100, 180, 255),  # Açık mavi — klasik/temiz hiss
+                'image_data': MODE_IMAGE_PROMPTS.get('Classic Mode')
             },
             {
                 'id': 'Sprint Mode', 
@@ -253,10 +266,10 @@ class ExtrasScreen:
         def s(value: int, minimum: int) -> int:
             return max(minimum, int(round(value * ui_scale)))
 
-        self.font_title = UIFonts.get(s(UIFonts.SIZE_TITLE, 26), bold=True)
-        self.font_option = UIFonts.get(s(UIFonts.SIZE_SUBHEADING + 6, 16), bold=True)
-        self.font_desc = UIFonts.get(s(UIFonts.SIZE_SMALL + 4, 11), bold=False)
-        self.font_desc_strong = UIFonts.get(s(UIFonts.SIZE_SMALL + 4, 11), bold=True)
+        self.font_title = retro_style.get_font(s(48, 26), bold=True)
+        self.font_option = retro_style.get_font(s(34, 16), bold=True)
+        self.font_desc = retro_style.get_font(s(22, 11), bold=False)
+        self.font_desc_strong = retro_style.get_font(s(22, 11), bold=True)
     
     @property
     def items(self):
@@ -548,7 +561,7 @@ class ExtrasScreen:
         else:
             # Fallback (tofu-safe): emoji basma, harf/şekil kullan
             short = ''.join([w[0] for w in (item.get('name', 'M').split()) if w])[:2].upper() or 'M'
-            icon_font = UIFonts.get(s(54, 20), bold=True)
+            icon_font = retro_style.get_font(s(54, 20), bold=True)
             icon_surf = icon_font.render(short, True, UIColors.TEXT_PRIMARY)
             icon_rect = icon_surf.get_rect(center=(rect.centerx, icon_y))
             
@@ -592,7 +605,7 @@ class ExtrasScreen:
         desc_color = UIColors.TEXT_SECONDARY if not selected else UIColors.TEXT_PRIMARY
         max_width = rect.width - s(28)
         lines = self._wrap_text(item['desc'], self.font_desc, max_width, max_lines=2)
-        base_y = rect.y + s(178)
+        base_y = plate.bottom + s(10)
         for li, line in enumerate(lines):
             surf = self.font_desc.render(line, True, desc_color)
             shadow = self.font_desc.render(line, True, (0, 0, 0))
@@ -612,7 +625,7 @@ class ExtrasScreen:
             if highscore > 0:
                 # Highscore rozeti - kartın kendi rengini kullan
                 hs_text = f"{t('best_score')}: {highscore:,}"
-                hs_font = UIFonts.get(s(24, 11), bold=True)  # Büyük font
+                hs_font = retro_style.get_font(s(24, 11), bold=True)
                 hs_surf = hs_font.render(hs_text, True, mode_color)  # Kartın rengi
                 hs_shadow = hs_font.render(hs_text, True, (0, 0, 0))
                 hs_shadow.set_alpha(200)
