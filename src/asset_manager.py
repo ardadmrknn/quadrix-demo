@@ -42,12 +42,25 @@ _RAW_IMAGE_CACHE = _LRUCache(max_items=96)
 _SCALED_IMAGE_CACHE = _LRUCache(max_items=192)
 
 
+def _get_root_dir() -> Path:
+    """PyInstaller-safe kök dizin (frozen: _MEIPASS, source: proje kökü)."""
+    meipass = getattr(sys, '_MEIPASS', None)
+    if isinstance(meipass, str) and meipass:
+        return Path(meipass)
+    return Path(__file__).resolve().parent.parent
+
+
 def _normalize_path(path: Union[str, os.PathLike]) -> str:
     # resolve() bazı senaryolarda (relative / non-existent) exception atabilir; güvenli normalize.
     try:
         p = Path(path)
         if p.exists():
             p = p.resolve()
+            return os.path.normpath(str(p))
+        # Göreceli path bulunamadıysa ROOT_DIR ile birleştirip dene (CWD farklı olabilir)
+        root_candidate = _get_root_dir() / p
+        if root_candidate.exists():
+            return os.path.normpath(str(root_candidate.resolve()))
         return os.path.normpath(str(p))
     except Exception:
         return os.path.normpath(str(path))

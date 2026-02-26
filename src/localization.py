@@ -7681,6 +7681,54 @@ TRANSLATIONS = {
     'later': {
         'tr': 'Sonra', 'en': 'Later', 'de': 'Später', 'fr': 'Plus tard', 'es': 'Más tarde', 'it': 'Più tardi', 'pt': 'Mais tarde', 'ja': '後で', 'zh': '稍后', 'ko': '나중에'
     },
+    'display_mode_restart_title': {
+        'tr': 'YENİDEN BAŞLATMA GEREKİYOR',
+        'en': 'RESTART REQUIRED',
+        'de': 'NEUSTART ERFORDERLICH',
+        'fr': 'REDÉMARRAGE REQUIS',
+        'es': 'SE REQUIERE REINICIO',
+        'it': 'RIAVVIO RICHIESTO',
+        'pt': 'REINICIALIZAÇÃO NECESSÁRIA',
+        'ja': '再起動が必要です',
+        'zh': '需要重新启动',
+        'ko': '재시작 필요'
+    },
+    'display_mode_restart_message': {
+        'tr': 'Bu değişiklik için oyunu kapatıp yeniden açmanız gerekecektir.',
+        'en': 'You will need to close and reopen the game for this change to take effect.',
+        'de': 'Du musst das Spiel schließen und neu starten, damit diese Änderung wirksam wird.',
+        'fr': 'Vous devrez fermer et rouvrir le jeu pour que ce changement prenne effet.',
+        'es': 'Necesitarás cerrar y volver a abrir el juego para que este cambio tenga efecto.',
+        'it': 'Dovrai chiudere e riaprire il gioco per applicare questa modifica.',
+        'pt': 'Você precisará fechar e reabrir o jogo para que esta alteração entre em vigor.',
+        'ja': 'この変更を有効にするには、ゲームを閉じて再度開く必要があります。',
+        'zh': '您需要关闭并重新打开游戏，此更改才能生效。',
+        'ko': '이 변경 사항을 적용하려면 게임을 닫고 다시 열어야 합니다.'
+    },
+    'display_mode_restart_yes': {
+        'tr': 'Evet, kapat',
+        'en': 'Yes, close',
+        'de': 'Ja, schließen',
+        'fr': 'Oui, fermer',
+        'es': 'Sí, cerrar',
+        'it': 'Sì, chiudi',
+        'pt': 'Sim, fechar',
+        'ja': 'はい、閉じる',
+        'zh': '是，关闭',
+        'ko': '예, 닫기'
+    },
+    'display_mode_restart_no': {
+        'tr': 'Hayır, iptal',
+        'en': 'No, cancel',
+        'de': 'Nein, abbrechen',
+        'fr': 'Non, annuler',
+        'es': 'No, cancelar',
+        'it': 'No, annulla',
+        'pt': 'Não, cancelar',
+        'ja': 'いいえ、キャンセル',
+        'zh': '否，取消',
+        'ko': '아니요, 취소'
+    },
     'back': {
         'tr': 'Geri', 'en': 'Back', 'de': 'Zurück', 'fr': 'Retour', 'es': 'Atrás', 'it': 'Indietro', 'pt': 'Voltar', 'ja': '戻る', 'zh': '返回', 'ko': '뒤로'
     },

@@ -407,6 +407,13 @@ class TabbedSettingsScreen:
         self._vsync_prompt_choice = 0
         self._vsync_prompt_buttons: list[pygame.Rect] = []
 
+        # Display mode (fullscreen/windowed) restart confirm modal
+        self._display_mode_confirm_active: bool = False
+        self._display_mode_confirm_prev_fullscreen: bool = True
+        self._display_mode_confirm_target_fullscreen: bool = False
+        self._display_mode_confirm_yes_rect: pygame.Rect | None = None
+        self._display_mode_confirm_no_rect: pygame.Rect | None = None
+
         # Grafik ayarları – ilk değerleri hatırla
         self._initial_fullscreen = self.fullscreen
         self._initial_resolution = self.resolution
@@ -446,8 +453,21 @@ class TabbedSettingsScreen:
         self._music_picker_scroll = 0
         self._music_picker_item_rects: list[tuple[pygame.Rect, int]] = []
 
+        # Slider mouse cache + drag state
+        self._slider_bar_rects: dict = {}
+        self._slider_drag_active: bool = False
+        self._slider_drag_key: str = ''
+        self._slider_drag_item: dict | None = None
+        self._slider_drag_bar_rect: pygame.Rect | None = None
+
         # Close button rect
         self._close_btn_rect: pygame.Rect | None = None
+
+        # Settings scrollbar drag state
+        self._settings_sb_thumb_rect: pygame.Rect | None = None
+        self._settings_sb_container_rect: pygame.Rect | None = None
+        self._settings_sb_drag_active: bool = False
+        self._settings_sb_drag_offset_y: int = 0
 
     # ------------------------------------------------------------------
     # Ayar yükleme
@@ -1023,12 +1043,54 @@ class TabbedSettingsScreen:
             return 'change_menu_transparency'
         return None
 
+    def _set_slider_from_x(self, item: dict, x: int, bar_rect: pygame.Rect) -> str | None:
+        """Mouse x pozisyonuna göre slider değerini ayarla."""
+        key = item.get('key', '')
+        min_val = item.get('min', 0)
+        max_val = item.get('max', 1)
+        step = item.get('step', 1)
+
+        ratio = (x - bar_rect.x) / max(1, bar_rect.width)
+        ratio = max(0.0, min(1.0, ratio))
+        raw = min_val + ratio * (max_val - min_val)
+
+        # Step snap
+        if step > 0:
+            snapped = round(raw / step) * step
+        else:
+            snapped = raw
+
+        if item.get('percent'):
+            new_val = round(max(min_val, min(max_val, snapped)), 2)
+        else:
+            new_val = int(max(min_val, min(max_val, round(snapped))))
+
+        self._set_value(key, new_val)
+
+        if key == 'music_volume':
+            self.music_volume = new_val
+            return 'change_music_volume'
+        elif key == 'sfx_volume':
+            self.sfx_volume = new_val
+            return 'change_sfx_volume'
+        elif key == 'bg_transparency':
+            self.bg_transparency = new_val
+            return 'change_bg_transparency'
+        elif key == 'menu_transparency':
+            self.menu_transparency = new_val
+            return 'change_menu_transparency'
+        return None
+
     def _cycle_selector(self, key: str, delta: int) -> str | None:
         """Selector type ayarı döngüsel değiştir."""
         if key == 'fullscreen':
-            self.fullscreen = not self.fullscreen
-            self._set_value('fullscreen', self.fullscreen)
-            return 'apply_display_mode'
+            # Değişimi anında uygulama; önce onay kutusu göster.
+            prev = self.fullscreen
+            target = not prev
+            self._display_mode_confirm_prev_fullscreen = prev
+            self._display_mode_confirm_target_fullscreen = target
+            self._display_mode_confirm_active = True
+            return None
         elif key == 'resolution':
             if self.fullscreen:
                 return None
@@ -1168,12 +1230,21 @@ class TabbedSettingsScreen:
                 self._pending_keybind_slot = 'primary'
             return None
 
+        # Display mode restart confirm modal
+        if self._display_mode_confirm_active:
+            return self._handle_display_mode_confirm(event)
+
         # VSync restart prompt
         if self._vsync_prompt_active:
             return self._handle_vsync_prompt(event)
 
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_ESCAPE:
+                # Drag state'leri temizle
+                self._settings_sb_drag_active = False
+                self._slider_drag_active = False
+                self._slider_drag_item = None
+                self._slider_drag_bar_rect = None
                 self.settings_manager.save_settings()
                 return 'back'
 
@@ -1237,10 +1308,23 @@ class TabbedSettingsScreen:
         # Mouse hareket
         elif event.type == pygame.MOUSEMOTION:
             pos = normalize_mouse_pos(getattr(event, 'pos', None)) or event.pos
-            # Tab hover
-            for i, rect in enumerate(self._tab_rects):
-                if rect.collidepoint(pos):
-                    pass  # Tab'a tıklama gerekiyor, hover yok
+            # Settings scrollbar drag
+            if self._settings_sb_drag_active and self._settings_sb_container_rect:
+                track_y = self._settings_sb_container_rect.top + 4
+                track_h = self._settings_sb_container_rect.height - 8
+                thumb_h = self._settings_sb_thumb_rect.height if self._settings_sb_thumb_rect else 30
+                panel = self._panel_rect()
+                content = self._content_rect(panel)
+                max_scroll = self._max_scroll(content)
+                new_thumb_top = pos[1] - self._settings_sb_drag_offset_y - track_y
+                new_thumb_top = max(0, min(new_thumb_top, track_h - thumb_h))
+                ratio = new_thumb_top / max(1, track_h - thumb_h)
+                self.scroll_offset = int(ratio * max_scroll)
+                return None
+            # Slider drag
+            if self._slider_drag_active and self._slider_drag_item and self._slider_drag_bar_rect:
+                self._set_slider_from_x(self._slider_drag_item, pos[0], self._slider_drag_bar_rect)
+                return None
             # Satır hover
             for i, rect in enumerate(self.option_rects):
                 if rect.collidepoint(pos):
@@ -1249,6 +1333,12 @@ class TabbedSettingsScreen:
         # Mouse tıklama
         elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             pos = normalize_mouse_pos(getattr(event, 'pos', None)) or event.pos
+
+            # Settings scrollbar thumb drag başlatma
+            if self._settings_sb_thumb_rect and self._settings_sb_thumb_rect.collidepoint(pos):
+                self._settings_sb_drag_active = True
+                self._settings_sb_drag_offset_y = pos[1] - self._settings_sb_thumb_rect.y
+                return None
 
             # Tab tıklama
             for i, rect in enumerate(self._tab_rects):
@@ -1266,6 +1356,30 @@ class TabbedSettingsScreen:
                     if i < len(self._selectable_indices):
                         item_idx = self._selectable_indices[i]
                         item = self._tab_items[item_idx]
+                        if item.get('type') == 'slider':
+                            key = item.get('key', '')
+                            bar_rect = self._slider_bar_rects.get(key)
+                            if bar_rect:
+                                if bar_rect.collidepoint(pos):
+                                    # Bar içine tıklandı: değer set et + drag başlat
+                                    result = self._set_slider_from_x(item, pos[0], bar_rect)
+                                    self._slider_drag_active = True
+                                    self._slider_drag_key = key
+                                    self._slider_drag_item = item
+                                    self._slider_drag_bar_rect = bar_rect
+                                    return result
+                                else:
+                                    # Bar dışında ama satır içinde: < > arrow hit test
+                                    # Soldaki ok bölgesi: bar_rect'in solundaki ~20px
+                                    left_zone = pygame.Rect(bar_rect.x - 24, rect.y, 24, rect.height)
+                                    right_zone = pygame.Rect(bar_rect.right, rect.y, rect.right - bar_rect.right, rect.height)
+                                    if left_zone.collidepoint(pos):
+                                        return self._handle_setting_action(pygame.K_LEFT)
+                                    elif right_zone.collidepoint(pos):
+                                        return self._handle_setting_action(pygame.K_RIGHT)
+                                    else:
+                                        return None
+                            return None
                         if item.get('type') == 'keybind':
                             section = item.get('section')
                             if section == 'single_player':
@@ -1295,7 +1409,28 @@ class TabbedSettingsScreen:
                                         return None
                                 self._start_keybind_capture(item, slot=self._gamepad_bind_slot)
                                 return None
+                    itype_local = item.get('type', '') if i < len(self._selectable_indices) else ''
+                    if itype_local in ('selector', 'music_selector'):
+                        srects = self._keybind_slot_rects[i] if i < len(self._keybind_slot_rects) else None
+                        if isinstance(srects, dict) and 'left_rect' in srects and 'right_rect' in srects:
+                            if srects['left_rect'].collidepoint(pos):
+                                return self._handle_setting_action(pygame.K_LEFT)
+                            elif srects['right_rect'].collidepoint(pos):
+                                return self._handle_setting_action(pygame.K_RIGHT)
+                            if itype_local == 'music_selector':
+                                return self._handle_setting_action(pygame.K_RETURN)
+                        return self._handle_setting_action(pygame.K_RIGHT)
                     return self._handle_setting_action(pygame.K_RETURN)
+
+        elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
+            if self._settings_sb_drag_active:
+                self._settings_sb_drag_active = False
+                self._settings_sb_drag_offset_y = 0
+            if self._slider_drag_active:
+                self._slider_drag_active = False
+                self._slider_drag_key = ''
+                self._slider_drag_item = None
+                self._slider_drag_bar_rect = None
 
         return None
 
@@ -1420,6 +1555,31 @@ class TabbedSettingsScreen:
                     self._vsync_prompt_active = False
         return None
 
+    def _handle_display_mode_confirm(self, event) -> str | None:
+        """Tam ekran/pencere değişimi için 'yeniden başlatma gerekiyor' onay modalının event handler'ı."""
+        if event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_ESCAPE:
+                # Hayır – değişikliği iptal et
+                self._display_mode_confirm_active = False
+                return None
+            elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+                # Evet – kaydet ve oyunu kapat
+                self.settings_manager.set('fullscreen', self._display_mode_confirm_target_fullscreen)
+                self.fullscreen = self._display_mode_confirm_target_fullscreen
+                self._display_mode_confirm_active = False
+                return 'quit_game'
+        elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            pos = normalize_mouse_pos(getattr(event, 'pos', None)) or event.pos
+            if self._display_mode_confirm_yes_rect and self._display_mode_confirm_yes_rect.collidepoint(pos):
+                self.settings_manager.set('fullscreen', self._display_mode_confirm_target_fullscreen)
+                self.fullscreen = self._display_mode_confirm_target_fullscreen
+                self._display_mode_confirm_active = False
+                return 'quit_game'
+            if self._display_mode_confirm_no_rect and self._display_mode_confirm_no_rect.collidepoint(pos):
+                self._display_mode_confirm_active = False
+                return None
+        return None
+
     # ------------------------------------------------------------------
     # Update (animasyonlar)
     # ------------------------------------------------------------------
@@ -1466,6 +1626,10 @@ class TabbedSettingsScreen:
         # VSync prompt
         if self._vsync_prompt_active:
             self._draw_vsync_prompt()
+
+        # Display mode restart confirm modal
+        if self._display_mode_confirm_active:
+            self._draw_display_mode_confirm_panel()
 
         if self._music_picker_open:
             self._draw_music_picker()
@@ -1548,6 +1712,7 @@ class TabbedSettingsScreen:
         """Mevcut sekmenin içeriğini çiz."""
         self.option_rects = []
         self._keybind_slot_rects = []
+        self._slider_bar_rects = {}
         row_h = 58
         section_h = 40
         sel_item_index = 0  # seçilebilir öğe sayacı
@@ -1586,20 +1751,28 @@ class TabbedSettingsScreen:
 
         self.screen.set_clip(None)
 
-        # Scrollbar
+        # Scrollbar – panel'in dışına/sağına konumlandırılmış, sürüklenebilir
+        panel = self._panel_rect()
         max_scroll = self._max_scroll(content_rect)
+        total_h = 0
+        for item in self._tab_items:
+            total_h += section_h if item['type'] == 'section' else row_h
         if max_scroll > 0:
-            total_h = 0
-            for item in self._tab_items:
-                total_h += section_h if item['type'] == 'section' else row_h
-            sb_rect = pygame.Rect(
-                content_rect.right - 6, content_rect.y,
-                5, content_rect.height,
+            # bar_width=10 → container.right = panel.right+20 → track_x = panel.right+6
+            sb_bar_w = 10
+            sb_container = pygame.Rect(
+                panel.right + 6, content_rect.y,
+                sb_bar_w + 4, content_rect.height,
             )
-            retro_style.draw_scrollbar(
-                self.screen, sb_rect,
+            self._settings_sb_container_rect = sb_container
+            self._settings_sb_thumb_rect = retro_style.draw_scrollbar(
+                self.screen, sb_container,
                 self.scroll_offset, total_h, content_rect.height,
+                bar_width=sb_bar_w,
             )
+        else:
+            self._settings_sb_thumb_rect = None
+            self._settings_sb_container_rect = None
 
     def _draw_section_header(
         self, x: int, y: int, w: int, h: int, item: dict,
@@ -1798,6 +1971,7 @@ class TabbedSettingsScreen:
         if bar_right > bar_left + 30:
             bar_h = 10
             bar_rect = pygame.Rect(bar_left, rect.centery - bar_h // 2, bar_right - bar_left, bar_h)
+            self._slider_bar_rects[key] = bar_rect
 
             # Track arka planı
             pygame.draw.rect(self.screen, (30, 38, 58), bar_rect, border_radius=4)
@@ -1938,10 +2112,15 @@ class TabbedSettingsScreen:
         left_arrow = arrow_font.render('<', True, arrow_color)
         right_arrow = arrow_font.render('>', True, arrow_color)
 
-        self.screen.blit(left_arrow, left_arrow.get_rect(center=(cx - val_surf.get_width() // 2 - 16, rect.centery)))
+        la_rect = left_arrow.get_rect(center=(cx - val_surf.get_width() // 2 - 16, rect.centery))
+        ra_rect = right_arrow.get_rect(center=(cx + val_surf.get_width() // 2 + 16, rect.centery))
+        self.screen.blit(left_arrow, la_rect)
         self.screen.blit(val_surf, val_surf.get_rect(center=(cx, rect.centery)))
-        self.screen.blit(right_arrow, right_arrow.get_rect(center=(cx + val_surf.get_width() // 2 + 16, rect.centery)))
-        return None
+        self.screen.blit(right_arrow, ra_rect)
+        # Hit zone'ları büyüt, kolay tıklanabilir olsun
+        la_hit = la_rect.inflate(20, rect.height)
+        ra_hit = ra_rect.inflate(20, rect.height)
+        return {'left_rect': la_hit, 'right_rect': ra_hit}
 
     def _draw_submenu_arrow(self, rect: pygame.Rect, selected: bool) -> None:
         """Submenu tipi ayar için > oku."""
@@ -1987,3 +2166,137 @@ class TabbedSettingsScreen:
         later_text = _t('later', 'Sonra' if lang == 'tr' else 'Later')
         retro_style.draw_button(self.screen, btn1, restart_text, selected=self._vsync_prompt_choice == 0)
         retro_style.draw_button(self.screen, btn2, later_text, selected=self._vsync_prompt_choice == 1)
+
+    def _draw_display_mode_confirm_panel(self) -> None:
+        """Tam ekran / pencere geçişi 'yeniden başlatma gerekiyor' onay kutusunu çiz.
+
+        Menu._draw_exit_prompt_panel() ile aynı glass-panel + buton stilini kullanır.
+        """
+        width, height = self.screen.get_size()
+
+        # Referans ölçek (Menu._fullscreen_panel_scale aynı mantık)
+        scale = min(width / 1366.0, height / 768.0)
+        panel_scale = max(0.68, min(1.16, scale))
+
+        # Koyu overlay
+        overlay = pygame.Surface((width, height), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 220))
+        self.screen.blit(overlay, (0, 0))
+
+        # Panel boyutları
+        side_pad_total = max(80, int(100 * panel_scale))
+        panel_width = min(int(560 * panel_scale), width - side_pad_total)
+        panel_height = min(int(260 * panel_scale), height - max(60, int(80 * panel_scale)))
+        panel_width = max(380, panel_width)
+        panel_height = max(200, panel_height)
+        panel_rect = pygame.Rect(
+            (width - panel_width) // 2,
+            (height - panel_height) // 2,
+            panel_width, panel_height,
+        )
+
+        retro_style.draw_glass_panel(
+            self.screen, panel_rect,
+            alpha=180,
+            border_color=(*retro_style.accent, 140),
+            glow=True,
+        )
+
+        # Başlık
+        title_font = retro_style.get_font(max(20, int(28 * panel_scale)), bold=True)
+        title_text = _t('display_mode_restart_title', 'YENİDEN BAŞLATMA GEREKİYOR')
+        title_surf = title_font.render(title_text, True, retro_style.accent)
+        self.screen.blit(
+            title_surf,
+            title_surf.get_rect(
+                centerx=panel_rect.centerx,
+                top=panel_rect.y + max(12, int(16 * panel_scale)),
+            ),
+        )
+
+        # Gövde metni
+        body_font = retro_style.get_font(max(14, int(17 * panel_scale)), bold=False)
+        body_color = (210, 225, 245)
+        pad_x = max(18, int(26 * panel_scale))
+        body_top = panel_rect.y + max(48, int(60 * panel_scale))
+        body_h = max(55, int(72 * panel_scale))
+        body_rect = pygame.Rect(
+            panel_rect.x + pad_x, body_top,
+            panel_rect.width - pad_x * 2, body_h,
+        )
+        body_text = _t(
+            'display_mode_restart_message',
+            'Bu değişiklik için oyunu kapatıp yeniden açmanız gerekecektir.',
+        )
+        retro_style.draw_wrapped_text(
+            self.screen, body_text, body_font, body_color, body_rect,
+            align='center',
+            line_spacing=max(3, int(5 * panel_scale)),
+        )
+
+        # Butonlar
+        spacing = max(10, int(16 * panel_scale))
+        button_width = min(int(200 * panel_scale), (panel_rect.width - pad_x * 2 - spacing) // 2)
+        button_height = max(38, int(50 * panel_scale))
+        total_width = button_width * 2 + spacing
+        start_x = panel_rect.centerx - total_width // 2
+        button_y = panel_rect.bottom - button_height - max(20, int(40 * panel_scale))
+
+        yes_rect = pygame.Rect(start_x, button_y, button_width, button_height)
+        no_rect = pygame.Rect(start_x + button_width + spacing, button_y, button_width, button_height)
+
+        mouse_pos = normalize_mouse_pos(pygame.mouse.get_pos())
+
+        yes_label = _t('display_mode_restart_yes', 'Evet, kapat')
+        no_label = _t('display_mode_restart_no', 'Hayır, iptal')
+        yes_hint = 'ENTER'
+        no_hint = 'ESC'
+
+        for rect, label, hint, btn_color in (
+            (yes_rect, yes_label, yes_hint, retro_style.success),
+            (no_rect, no_label, no_hint, retro_style.secondary),
+        ):
+            hover = rect.collidepoint(mouse_pos)
+            draw_rect = rect.inflate(6, 4) if hover else rect
+
+            # Arka plan
+            btn_bg = pygame.Surface(draw_rect.size, pygame.SRCALPHA)
+            if hover:
+                pygame.draw.rect(btn_bg, (*btn_color, 35), btn_bg.get_rect(), border_radius=12)
+                highlight_rect = pygame.Rect(4, 2, draw_rect.width - 8, 1)
+                pygame.draw.rect(btn_bg, (*btn_color, 60), highlight_rect)
+            else:
+                pygame.draw.rect(btn_bg, (20, 26, 42, 200), btn_bg.get_rect(), border_radius=12)
+            self.screen.blit(btn_bg, draw_rect.topleft)
+
+            # Neon glow (hover)
+            if hover:
+                glow_surf = pygame.Surface((draw_rect.width + 12, draw_rect.height + 12), pygame.SRCALPHA)
+                glow_rect_g = glow_surf.get_rect()
+                pygame.draw.rect(glow_surf, (*btn_color, 25), glow_rect_g, border_radius=16)
+                pygame.draw.rect(glow_surf, (*btn_color, 15), glow_rect_g.inflate(-4, -4), border_radius=14)
+                self.screen.blit(glow_surf, (draw_rect.x - 6, draw_rect.y - 6))
+
+            # Çerçeve
+            border_width = 3 if hover else 1
+            border_alpha = 220 if hover else 100
+            pygame.draw.rect(self.screen, (*btn_color, border_alpha), draw_rect, border_width, border_radius=12)
+
+            # Metin
+            txt_color = (255, 255, 255) if hover else (220, 230, 245)
+            lbl_font = retro_style.get_fitting_font(
+                label, max(14, int(18 * panel_scale)), draw_rect.width - 40, bold=True,
+            )
+            lbl_surf = lbl_font.render(label, True, txt_color)
+            hint_font = retro_style.get_font(max(10, int(12 * panel_scale)), bold=False)
+            hint_surf = hint_font.render(hint, True, (140, 155, 180) if not hover else (*btn_color,))
+
+            gap = 3
+            total_h = lbl_surf.get_height() + gap + hint_surf.get_height()
+            text_x = draw_rect.x + 14
+            text_start_y = draw_rect.centery - total_h // 2
+            self.screen.blit(lbl_surf, (text_x, text_start_y))
+            self.screen.blit(hint_surf, (text_x, text_start_y + lbl_surf.get_height() + gap))
+
+        self._display_mode_confirm_yes_rect = yes_rect
+        self._display_mode_confirm_no_rect = no_rect

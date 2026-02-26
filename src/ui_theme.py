@@ -124,6 +124,27 @@ class UIFonts:
         cls.clear_cache()
     
     @classmethod
+    def _get_system_font(cls, scaled_size: int, effective_bold: bool) -> pygame.font.Font:
+        """Güvenli system font fallback — pygame default font (freesansbold.ttf) olmadan da çalışır."""
+        if not pygame.font.get_init():
+            pygame.font.init()
+        for name in ('Segoe UI', 'Arial', 'Helvetica', 'DejaVu Sans'):
+            path = pygame.font.match_font(name)
+            if path:
+                try:
+                    font_obj = pygame.font.Font(path, scaled_size)
+                    if effective_bold:
+                        font_obj.set_bold(True)
+                    return font_obj
+                except Exception:
+                    continue
+        # Son çare: SysFont (freesansbold.ttf gerektirmez)
+        try:
+            return pygame.font.SysFont(None, scaled_size, bold=effective_bold)
+        except Exception:
+            return pygame.font.SysFont('monospace', scaled_size, bold=effective_bold)
+
+    @classmethod
     def _get_latin_font(cls, scaled_size: int, effective_bold: bool) -> pygame.font.Font:
         """Varsayılan latin fontunu döndür (CJK hibrit sistem için)."""
         key = (scaled_size, effective_bold, '__latin__')
@@ -137,9 +158,8 @@ class UIFonts:
                 except Exception:
                     font_obj = None
             if font_obj is None:
-                font_obj = pygame.font.Font(None, scaled_size)
-                if effective_bold:
-                    font_obj.set_bold(True)
+                # Font(None) yerine güvenli system font fallback kullan
+                font_obj = cls._get_system_font(scaled_size, effective_bold)
             cls._cache[key] = font_obj
         return cls._cache[key]
 
@@ -158,12 +178,11 @@ class UIFonts:
                     latin_font = cls._get_latin_font(scaled_size, effective_bold)
                     cls._cache[key] = HybridFont(latin_font, cjk_font)
                 else:
-                    font = pygame.font.Font(None, scaled_size)
-                    if effective_bold:
-                        font.set_bold(True)
-                    cls._cache[key] = font
+                    # Font(None) yerine güvenli system font fallback kullan
+                    cls._cache[key] = cls._get_system_font(scaled_size, effective_bold)
             except Exception:
-                cls._cache[key] = pygame.font.Font(None, scaled_size)
+                # Son çare: güvenli fallback (Font(None) kullanma — paketli build'da eksik olabilir)
+                cls._cache[key] = cls._get_system_font(scaled_size, effective_bold)
         return cls._cache[key]
     
     @classmethod

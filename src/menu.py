@@ -365,6 +365,11 @@ class Menu:
         self.menu_language_panel_scroll = 0
         self.menu_language_panel_item_rects = []
         self.menu_language_panel_rect = None
+        # Scrollbar drag state
+        self.menu_language_panel_sb_thumb_rect: 'pygame.Rect | None' = None
+        self.menu_language_panel_sb_container_rect: 'pygame.Rect | None' = None
+        self.menu_language_panel_sb_drag_active: bool = False
+        self.menu_language_panel_sb_drag_offset_y: int = 0
 
         # Emoji icon cache (assets/emoji/ klasöründen yüklenen PNG'ler)
         self._emoji_icon_cache = {}
@@ -386,11 +391,12 @@ class Menu:
         self._tile_flavor_scaled_cache = {}
 
         # Ana menü sağ-alt: Steam skor paneli (Kart Ustalığı)
-        # publisher_key + app_id = direct mode fallback (proxy yoksa Steam Web API'ye gider)
+        # publisher_key ve app_id sadece ortam değişkenleriyle aktif olur;
+        # proxy yoksa ve STEAM_WEB_API_KEY set edilmişse direct fallback devreye girer.
         self._leaderboard_service = SteamLeaderboardService(
             backend_base_url=os.getenv('LEADERBOARD_BACKEND_URL', 'http://127.0.0.1:8787'),
-            publisher_key=os.getenv('STEAM_WEB_API_KEY', '4B6B6D93520B540A3F7B79E98472F375'),
-            app_id=4428040,
+            publisher_key=os.getenv('STEAM_WEB_API_KEY', ''),
+            app_id=int(os.getenv('STEAM_APP_ID', '0') or '0'),
         )
         self._mystery_lb_tab = 'global'
         self._mystery_lb_tab_rects = {}
@@ -1072,25 +1078,25 @@ class Menu:
         """Panel adına göre arka plan dekoratif efekt (tetris blokları kaldırıldı)."""
         panel_flavor_map = {
             'new_gen_tetris': {
-                'path': os.path.join('assets', 'main_theme', 'kart_panel_effect.png'),
+                'path': str(ROOT_DIR / 'assets' / 'main_theme' / 'kart_panel_effect.png'),
                 'cache_attr': '_kart_panel_effect_image',
                 'fail_attr': '_kart_panel_effect_load_failed',
                 'override_key': 'new_gen_tetris_sticker',
             },
             'tutorial_mode': {
-                'path': os.path.join('assets', 'main_theme', 'eğitim_panel_effect.png'),
+                'path': str(ROOT_DIR / 'assets' / 'main_theme' / 'eğitim_panel_effect.png'),
                 'cache_attr': '_tutorial_panel_effect_image',
                 'fail_attr': '_tutorial_panel_effect_load_failed',
                 'override_key': 'tutorial_mode_sticker',
             },
             'piece_workshop': {
-                'path': os.path.join('assets', 'main_theme', 'atölye_panel_back_effect.png'),
+                'path': str(ROOT_DIR / 'assets' / 'main_theme' / 'atölye_panel_back_effect.png'),
                 'cache_attr': '_piece_workshop_panel_effect_image',
                 'fail_attr': '_piece_workshop_panel_effect_load_failed',
                 'fit_full': True,
             },
             'block_styles': {
-                'path': os.path.join('assets', 'main_theme', 'blok_görünüm.png'),
+                'path': str(ROOT_DIR / 'assets' / 'main_theme' / 'blok_görünüm.png'),
                 'cache_attr': '_block_styles_panel_effect_image',
                 'fail_attr': '_block_styles_panel_effect_load_failed',
                 'fit_full': True,
@@ -1446,7 +1452,7 @@ class Menu:
             # Kalp PNG yükle ve cache'le
             if not hasattr(self, '_blue_heart_cache') or self._blue_heart_cache is None or self._blue_heart_cache_size != heart_img_size:
                 try:
-                    raw = load_image(os.path.join('assets', 'emoji', 'blue_heart.png'))
+                    raw = load_image(str(ROOT_DIR / 'assets' / 'emoji' / 'blue_heart.png'))
                     if raw:
                         self._blue_heart_cache = pygame.transform.smoothscale(raw, (heart_img_size, heart_img_size))
                     else:
@@ -2222,10 +2228,10 @@ class Menu:
                 except Exception:
                     pass
 
-                global_entries = service.fetch_mode_highscores('mystery', limit=5)
+                global_entries = service.fetch_mode_highscores('mystery', limit=10)
                 global_error = service.last_error
 
-                friend_entries = service.fetch_mode_friend_highscores('mystery', limit=5)
+                friend_entries = service.fetch_mode_friend_highscores('mystery', limit=10)
                 friend_error = service.last_error
 
                 self._mystery_lb_entries = {
@@ -2298,8 +2304,8 @@ class Menu:
         if panel_rect is None:
             width, height = self.screen.get_size()
             scale = self._ui_scale()
-            panel_w = max(280, min(int(360 * scale), width // 3))
-            panel_h = max(260, int(330 * scale))
+            panel_w = max(300, min(int(380 * scale), width // 3))
+            panel_h = max(360, int(500 * scale))
             panel_x = width - panel_w - max(14, int(24 * scale))
             panel_y = max(int(150 * scale), height - panel_h - max(30, int(52 * scale)))
 
@@ -2386,22 +2392,30 @@ class Menu:
             self.screen.blit(msg_surf, msg_surf.get_rect(center=list_rect.center))
             return
 
-        row_h = s(46)
-        base_y = list_rect.y + s(8)
-        max_rows = min(5, len(active_entries))
+        max_rows = min(10, len(active_entries))
+        # Satır yüksekliğini mevcut listeye dinamik sığdır (min 26 px)
+        row_h = max(s(26), (list_rect.height - s(10)) // max(1, max_rows))
+        base_y = list_rect.y + s(5)
         medal_colors = [UIColors.NEON_GOLD, (200, 200, 210), (200, 140, 80)]  # Altın, Gümüş, Bronz
+        # Aktif Steam kullanıcısını vurgula
+        _current_sid = str(self._leaderboard_service.current_steam_id or '').strip()
         for idx in range(max_rows):
             entry = active_entries[idx]
             row_rect = pygame.Rect(list_rect.x + s(6), base_y + idx * row_h, list_rect.width - s(12), row_h - s(5))
+            steam_id = str(entry.get('steam_id', '') or '')
+            is_self = bool(_current_sid and steam_id == _current_sid)
             row_surf = pygame.Surface((row_rect.width, row_rect.height), pygame.SRCALPHA)
-            pygame.draw.rect(row_surf, (16, 22, 38, 170), row_surf.get_rect(), border_radius=8)
+            if is_self:
+                pygame.draw.rect(row_surf, (40, 60, 100, 200), row_surf.get_rect(), border_radius=8)
+                pygame.draw.rect(row_surf, (100, 180, 255, 120), row_surf.get_rect(), 2, border_radius=8)
+            else:
+                pygame.draw.rect(row_surf, (16, 22, 38, 170), row_surf.get_rect(), border_radius=8)
+                pygame.draw.rect(row_surf, (*score_accent, 60), row_surf.get_rect(), 1, border_radius=8)
             medal_c = medal_colors[idx] if idx < 3 else UIColors.TEXT_MUTED
-            pygame.draw.rect(row_surf, (*score_accent, 60), row_surf.get_rect(), 1, border_radius=8)
             self.screen.blit(row_surf, row_rect.topleft)
 
             rank = int(entry.get('rank', idx + 1) or (idx + 1))
             score = int(entry.get('score', 0) or 0)
-            steam_id = str(entry.get('steam_id', '') or '')
 
             # Oyuncu adı: cache varsa personaname, yoksa kısa steam_id
             player_info = self._steam_player_cache.get(steam_id, {})
@@ -3588,6 +3602,10 @@ class Menu:
         self.menu_language_panel_open = True
         self.menu_language_panel_scroll = 0
         self.menu_language_panel_item_rects = []
+        self.menu_language_panel_sb_drag_active = False
+        self.menu_language_panel_sb_drag_offset_y = 0
+        self.menu_language_panel_sb_thumb_rect = None
+        self.menu_language_panel_sb_container_rect = None
         langs = self._get_menu_language_options()
         codes = [code for code, _label in langs]
         try:
@@ -3600,6 +3618,10 @@ class Menu:
         self.menu_language_panel_scroll = 0
         self.menu_language_panel_item_rects = []
         self.menu_language_panel_rect = None
+        self.menu_language_panel_sb_drag_active = False
+        self.menu_language_panel_sb_drag_offset_y = 0
+        self.menu_language_panel_sb_thumb_rect = None
+        self.menu_language_panel_sb_container_rect = None
 
     def _apply_menu_language_choice(self, lang_code: str) -> str | None:
         if not lang_code:
@@ -3640,7 +3662,8 @@ class Menu:
         return pygame.Rect(panel_x, panel_y, panel_w, panel_h)
 
     def _menu_language_panel_max_scroll(self, visible_h: int, item_h: int, gap: int) -> int:
-        total_h = len(self._get_menu_language_options()) * (item_h + gap)
+        n = len(self._get_menu_language_options())
+        total_h = n * (item_h + gap) - (gap if n > 0 else 0)
         return max(0, total_h - max(visible_h, 0))
 
     def _menu_language_panel_ensure_visible(self, visible_h: int, item_h: int, gap: int) -> None:
@@ -3674,12 +3697,29 @@ class Menu:
                 return action
 
         elif event.type == pygame.MOUSEWHEEL:
+            item_h, gap = 30, 4
+            visible_h = (self.menu_language_panel_rect.height - 12) if self.menu_language_panel_rect else 200
+            ms = self._menu_language_panel_max_scroll(visible_h, item_h, gap)
             self.menu_language_panel_scroll -= event.y * 30
-            self.menu_language_panel_scroll = max(0, self.menu_language_panel_scroll)
+            self.menu_language_panel_scroll = max(0, min(self.menu_language_panel_scroll, ms))
             return None
 
         elif event.type == pygame.MOUSEMOTION:
             pos = normalize_mouse_pos(getattr(event, 'pos', None)) or event.pos
+            # Scrollbar drag
+            if self.menu_language_panel_sb_drag_active and self.menu_language_panel_sb_container_rect:
+                sb_c = self.menu_language_panel_sb_container_rect
+                track_y = sb_c.top + 4
+                track_h = sb_c.height - 8
+                thumb_h = self.menu_language_panel_sb_thumb_rect.height if self.menu_language_panel_sb_thumb_rect else 30
+                visible_h = (self.menu_language_panel_rect.height - 12) if self.menu_language_panel_rect else 200
+                ms = self._menu_language_panel_max_scroll(visible_h, 30, 4)
+                new_thumb_top = pos[1] - self.menu_language_panel_sb_drag_offset_y - track_y
+                new_thumb_top = max(0, min(new_thumb_top, track_h - thumb_h))
+                ratio = new_thumb_top / max(1, track_h - thumb_h)
+                self.menu_language_panel_scroll = int(ratio * ms)
+                return None
+            # Item hover
             for rect, idx in self.menu_language_panel_item_rects:
                 if rect.collidepoint(pos):
                     self.menu_language_panel_selected = idx
@@ -3688,6 +3728,11 @@ class Menu:
 
         elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             pos = normalize_mouse_pos(getattr(event, 'pos', None)) or event.pos
+            # Scrollbar thumb drag başlatma
+            if self.menu_language_panel_sb_thumb_rect and self.menu_language_panel_sb_thumb_rect.collidepoint(pos):
+                self.menu_language_panel_sb_drag_active = True
+                self.menu_language_panel_sb_drag_offset_y = pos[1] - self.menu_language_panel_sb_thumb_rect.y
+                return None
             for rect, idx in self.menu_language_panel_item_rects:
                 if rect.collidepoint(pos):
                     self.menu_language_panel_selected = idx
@@ -3695,9 +3740,17 @@ class Menu:
                     action = self._apply_menu_language_choice(code)
                     self._close_menu_language_panel()
                     return action
-            if self.menu_language_panel_rect and not self.menu_language_panel_rect.collidepoint(pos):
+            # Scrollbar alanına tıklama paneli kapatmasın
+            sb_area = self.menu_language_panel_sb_container_rect
+            in_panel = self.menu_language_panel_rect and self.menu_language_panel_rect.collidepoint(pos)
+            in_sb = sb_area is not None and sb_area.inflate(8, 0).collidepoint(pos)
+            if not in_panel and not in_sb:
                 self._close_menu_language_panel()
             return None
+
+        elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
+            self.menu_language_panel_sb_drag_active = False
+            self.menu_language_panel_sb_drag_offset_y = 0
 
         return None
 
@@ -3744,17 +3797,28 @@ class Menu:
 
         self.screen.set_clip(None)
 
-        total_h = len(langs) * (item_h + gap)
+        total_h = len(langs) * (item_h + gap) - gap
         if total_h > list_rect.height:
-            sb_rect = pygame.Rect(panel_rect.right - 8, list_rect.y, 4, list_rect.height)
-            retro_style.draw_scrollbar(
+            # Scrollbar’ı panel'in sağına/dışına konumlandır
+            # bar_width=8 → container.right = panel_rect.right+18 → track_x = panel_rect.right+6
+            sb_bar_w = 8
+            sb_container = pygame.Rect(
+                panel_rect.right + 6, list_rect.y,
+                sb_bar_w + 4, list_rect.height,
+            )
+            self.menu_language_panel_sb_container_rect = sb_container
+            self.menu_language_panel_sb_thumb_rect = retro_style.draw_scrollbar(
                 self.screen,
-                sb_rect,
+                sb_container,
                 self.menu_language_panel_scroll,
                 total_h,
                 list_rect.height,
+                bar_width=sb_bar_w,
                 color=(255, 90, 90),
             )
+        else:
+            self.menu_language_panel_sb_thumb_rect = None
+            self.menu_language_panel_sb_container_rect = None
 
     def set_muted(self, muted: bool):
         """Dışarıdan ses durumunu güncelle (main.py'den çağrılır)."""
