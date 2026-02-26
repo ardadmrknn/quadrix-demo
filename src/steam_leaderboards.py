@@ -482,7 +482,8 @@ class SteamLeaderboardService:
     def fetch_player_summaries(self, steam_ids: list[str]) -> dict[str, dict[str, Any]]:
         """Verilen Steam ID'leri için oyuncu adı ve avatar URL döndür.
 
-        Returns: steam_id -> {personaname, avatar, avatarmedium, avatarfull}
+        Önce proxy backend; yoksa direct Steam Web API (publisher_key ile).
+        Returns: steam_id -> {personaname, avatar, avatarmedium, avatarfull, profileurl}
         Boş dict döner: servis yapılandırılmamış, ID listesi boşsa veya hata oluşursa.
         """
         clean_ids = [str(sid).strip() for sid in (steam_ids or []) if str(sid or "").strip()]
@@ -495,9 +496,56 @@ class SteamLeaderboardService:
                 params={"steamids": ",".join(clean_ids[:100])},
             )
             players = raw.get("players")
-            if isinstance(players, dict):
+            if isinstance(players, dict) and players:
                 return players
-            return {}
+            # Backend boş döndüyse ve direct de yapılandırıldıysa direct'e düş
+            if not self._is_direct_mode():
+                return {}
 
-        # Direkt mod (şu an sadece backend destekli - future proof)
-        return {}
+        # Direct mod: ISteamUser/GetPlayerSummaries/v2/
+        # (appid gönderilmediğine dikkat — bu endpoint appid gerektirmez)
+        if not self._is_direct_mode():
+            return {}
+        return self._fetch_player_summaries_direct(clean_ids)
+    def _fetch_player_summaries_direct(self, clean_ids: list[str]) -> dict[str, dict[str, Any]]:
+        """ISteamUser/GetPlayerSummaries/v2/ endpoint'ine direkt GET atar.
+
+        appid gönderilmez; sadece publisher key ve steamids kullanılır.
+        Sonuçlar: steam_id -> {personaname, avatar, avatarmedium, avatarfull, profileurl}
+        """
+        results: dict[str, dict[str, Any]] = {}
+        chunk_size = 100
+        for i in range(0, len(clean_ids), chunk_size):
+            chunk = clean_ids[i : i + chunk_size]
+            url = f"{STEAM_WEB_API_BASE}/ISteamUser/GetPlayerSummaries/v2/"
+            params: dict[str, Any] = {
+                "key": self.publisher_key,
+                "steamids": ",".join(chunk),
+            }
+            try:
+                response = requests.get(url, params=params, timeout=self.timeout_seconds)
+                response.raise_for_status()
+                payload = response.json() if response.content else {}
+            except Exception as exc:
+                self.last_error = self._humanize_network_error(exc)
+                return results  # Kısmi sonuçlarla dön; yıkıcı olmayan hata
+
+            response_obj = payload.get("response", {}) if isinstance(payload, dict) else {}
+            players = response_obj.get("players", []) if isinstance(response_obj, dict) else []
+            for player in players:
+                if not isinstance(player, dict):
+                    continue
+                sid = str(player.get("steamid", "")).strip()
+                if not sid:
+                    continue
+                results[sid] = {
+                    "personaname": str(player.get("personaname", "") or ""),
+                    "avatar": str(player.get("avatar", "") or ""),
+                    "avatarmedium": str(player.get("avatarmedium", "") or ""),
+                    "avatarfull": str(player.get("avatarfull", "") or ""),
+                    "profileurl": str(player.get("profileurl", "") or ""),
+                }
+
+        if results:
+            self.last_error = ""
+        return results

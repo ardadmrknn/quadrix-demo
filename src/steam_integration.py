@@ -807,7 +807,7 @@ _LB_NAME_TO_ID: dict[str, int] = {
     "quadrix_tetris2":  19192083,
 }
 
-_PARTNER_API_KEY = '4B6B6D93520B540A3F7B79E98472F375'
+_PARTNER_API_KEY = os.environ.get('STEAM_WEB_API_KEY', '').strip()
 _APP_ID_INT = 4428040
 
 # In-memory cache for dynamically resolved leaderboard IDs (session-lived)

@@ -77,6 +77,16 @@ if _src_settings.exists():
 # Sadece var olan dizin/dosyaları ekle (build hatasını önle)
 datas = [(src, dst) for src, dst in datas if os.path.exists(src)]
 
+# pygame varsayılan font (freesansbold.ttf) — paketli ortamda eksik olabilir (belt-and-suspenders)
+try:
+    import pygame as _pg
+    _freesans = Path(_pg.__file__).resolve().parent / 'freesansbold.ttf'
+    if _freesans.exists():
+        datas.append((str(_freesans), 'pygame'))
+        print(f'[spec] freesansbold.ttf eklendi: {_freesans}')
+except Exception as _e:
+    print(f'[spec] freesansbold.ttf eklenemedi: {_e}')
+
 # ═══════════════════════════════════════════════════════════════════
 #  HIDDEN IMPORTS - Dinamik olarak yüklenen tüm modüller
 # ═══════════════════════════════════════════════════════════════════

@@ -231,8 +231,11 @@ class UserManager:
             return None
         return dict(status)
     
-    def create_user(self, username, avatar=None):
-        """Yeni kullanıcı oluştur"""
+    def create_user(self, username, avatar=None, steam_id: str | None = None):
+        """Yeni kullanıcı oluştur.
+
+        steam_id: Opsiyonel Steam ID (SteamID64 string). Verilirse profile yazılır.
+        """
         if not username or username.strip() == '':
             return False, t('user_create_empty')
         
@@ -241,7 +244,10 @@ class UserManager:
         
         if len(username) > 20:
             return False, t('user_create_too_long')
-        
+
+        # steam_id normalize: boş/whitespace → None
+        normalized_steam_id = str(steam_id).strip() if steam_id and str(steam_id).strip() else None
+
         # Yeni kullanıcı oluştur
         self.users[username] = {
             'created_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
@@ -278,7 +284,8 @@ class UserManager:
                 'daily': {'games': 0, 'score': 0, 'lines': 0},
                 'pvp': {'games': 0, 'wins': 0, 'losses': 0}
             },
-            'tutorial_completed': False
+            'tutorial_completed': False,
+            'steam_id': normalized_steam_id,
         }
         
         # İlk kullanıcı ise otomatik seç

@@ -324,6 +324,24 @@ def get_mouse_pos() -> tuple[int, int]:
     return normalize_mouse_pos(pos) or (0, 0)
 
 
+def _get_windows_physical_resolution() -> tuple[int, int]:
+    """Windows'ta DPI ölçeğinden bağımsız fiziksel piksel çözünürlüğünü döndür.
+
+    GetSystemMetrics(SM_CXSCREEN/SM_CYSCREEN) Per-Monitor DPI awareness aktifken
+    primary monitörün fiziksel piksel boyutunu döndürür.
+    Başarısız olursa get_native_resolution() ile devam et.
+    """
+    try:
+        import ctypes
+        physical_w = ctypes.windll.user32.GetSystemMetrics(0)  # SM_CXSCREEN
+        physical_h = ctypes.windll.user32.GetSystemMetrics(1)  # SM_CYSCREEN
+        if physical_w > 0 and physical_h > 0:
+            return (physical_w, physical_h)
+    except Exception:
+        pass
+    return get_native_resolution()
+
+
 def create_display(
     width: int,
     height: int,
@@ -376,18 +394,43 @@ def create_display(
     
     # Windows/Linux için standart handling
     if fullscreen and borderless:
-        native_w, native_h = get_native_resolution()
-        flags = pygame.NOFRAME | pygame.DOUBLEBUF
-        if IS_WINDOWS:
-            flags |= pygame.HWSURFACE
+        # Windows: ctypes ile DPI-bağımsız fiziksel çözünürlük al
+        native_w, native_h = (
+            _get_windows_physical_resolution() if IS_WINDOWS else get_native_resolution()
+        )
+        # SDL_VIDEO_CENTERED=1 NOFRAME penceresinin (0,0)'dan başlamasını engeller.
+        # Fullscreen geçişinde centered hint'i geçici olarak devre dışı bırak.
+        old_centered = os.environ.pop('SDL_VIDEO_CENTERED', None)
+        old_win_pos = os.environ.get('SDL_VIDEO_WINDOW_POS')
+        os.environ['SDL_VIDEO_WINDOW_POS'] = '0,0'
+        # SDL2/Pygame2'de HWSURFACE gereksiz (SDL2 ignore eder); bu path'ten kaldırıldı.
+        flags_bl = pygame.NOFRAME | pygame.DOUBLEBUF
         try:
-            surface = pygame.display.set_mode((native_w, native_h), flags)
+            surface = pygame.display.set_mode((native_w, native_h), flags_bl)
+            # Boyut doğrulama: beklenen boyuta ulaşılamadıysa exclusive fullscreen fallback
+            actual_w, actual_h = surface.get_size()
+            if abs(actual_w - native_w) > 4 or abs(actual_h - native_h) > 4:
+                # Borderless başarısız; exclusive fullscreen'e düş
+                excl_flags = pygame.FULLSCREEN | pygame.DOUBLEBUF
+                surface = pygame.display.set_mode((0, 0), excl_flags)
             return surface
         except pygame.error:
             pass
+        finally:
+            # Her durumda env'i önceki değerine geri yükle
+            if old_centered is not None:
+                os.environ['SDL_VIDEO_CENTERED'] = old_centered
+            if old_win_pos is not None:
+                os.environ['SDL_VIDEO_WINDOW_POS'] = old_win_pos
+            elif 'SDL_VIDEO_WINDOW_POS' in os.environ:
+                del os.environ['SDL_VIDEO_WINDOW_POS']
 
     flags = get_display_flags(resizable=(not fullscreen and resizable), fullscreen=fullscreen)
-    
+
+    # Exclusive fullscreen modunda da SDL_VIDEO_CENTERED'ı geçici devre dışı bırak
+    old_centered_excl = None
+    if fullscreen:
+        old_centered_excl = os.environ.pop('SDL_VIDEO_CENTERED', None)
     try:
         if fullscreen:
             surface = pygame.display.set_mode((0, 0), flags)
@@ -397,12 +440,13 @@ def create_display(
     except pygame.error:
         try:
             fallback_flags = pygame.DOUBLEBUF | pygame.RESIZABLE
-            if IS_WINDOWS:
-                fallback_flags |= pygame.HWSURFACE
             surface = pygame.display.set_mode((width or 800, height or 600), fallback_flags)
             return surface
         except pygame.error:
             return pygame.Surface((width or 800, height or 600))
+    finally:
+        if fullscreen and old_centered_excl is not None:
+            os.environ['SDL_VIDEO_CENTERED'] = old_centered_excl
 
 
 def _first_nonempty_line(text: str | None) -> str | None:

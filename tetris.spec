@@ -71,6 +71,27 @@ datas = [
 # Sadece var olan dizinleri ekle
 datas = [(src, dst) for src, dst in datas if os.path.exists(src)]
 
+# pygame varsayılan font (freesansbold.ttf) — paketli ortamda eksik olabilir (belt-and-suspenders)
+try:
+    import pygame as _pg
+    _freesans = Path(_pg.__file__).resolve().parent / 'freesansbold.ttf'
+    if _freesans.exists():
+        datas.append((str(_freesans), 'pygame'))
+        print(f'[spec] freesansbold.ttf eklendi: {_freesans}')
+except Exception as _e:
+    print(f'[spec] freesansbold.ttf eklenemedi: {_e}')
+# setuptools jaraco.text Lorem ipsum.txt \u2014 pkg_resources import crash\u0131n\u0131 \u00f6nle
+try:
+    import setuptools as _st
+    _jaraco_dir = Path(_st.__file__).resolve().parent / '_vendor' / 'jaraco' / 'text'
+    _lorem = _jaraco_dir / 'Lorem ipsum.txt'
+    if _lorem.exists():
+        datas.append((str(_lorem), str(Path('setuptools') / '_vendor' / 'jaraco' / 'text')))
+        print(f'[spec] Lorem ipsum.txt eklendi: {_lorem}')
+    else:
+        print(f'[spec] Lorem ipsum.txt bulunamad\u0131: {_lorem}')
+except Exception as _e:
+    print(f'[spec] Lorem ipsum.txt eklenemedi: {_e}')
 # Gizli importlar (dinamik olarak yüklenen modüller)
 hiddenimports = [
     'pygame',

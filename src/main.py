@@ -881,18 +881,28 @@ def main():
 
                 # 2. Steam ID eşleşmesi yoksa persona adına bak
                 if not _target_user and _steam_persona:
-                    if _steam_persona in user_manager.users:
-                        _target_user = _steam_persona
-                        # Mevcut profile steam_id ekle (sadece bir kez)
-                        if _steam_id_str:
-                            user_manager.set_steam_id(_target_user, _steam_id_str)
+                    _existing = user_manager.users.get(_steam_persona)
+                    if _existing is not None:
+                        # Profil var; mevcut steam_id aynı veya boşsa bağla
+                        _existing_sid = str(_existing.get('steam_id') or '').strip()
+                        if not _existing_sid or _existing_sid == _steam_id_str:
+                            _target_user = _steam_persona
+                            if _steam_id_str and not _existing_sid:
+                                user_manager.set_steam_id(_target_user, _steam_id_str)
+                        # else: aynı isimde farklı Steam hesabı → adım 3'te yeni kullanıcı oluştur
 
-                # 3. Hiç profil yoksa yeni oluştur
+                # 3. Hiç profil yoksa veya persona çakıştıysa yeni oluştur
                 if not _target_user and _steam_persona:
-                    _username = _steam_persona[:20]  # max 20 karakter
-                    user_manager.create_user(_username, avatar='🎮', steam_id=_steam_id_str)
-                    _target_user = _username
-                    print(f"[Steam] Yeni profil oluşturuldu: {_target_user}")
+                    _base = _steam_persona[:16]
+                    # Çakışma yoksa direkt kullan; varsa SteamID son 4 hanesiyle unique yap
+                    _username = _base[:20]
+                    if _username in user_manager.users:
+                        _suffix = (_steam_id_str or '0000')[-4:]
+                        _username = f"{_base[:15]}_{_suffix}"[:20]
+                    ok_c, _ = user_manager.create_user(_username, avatar='🎮', steam_id=_steam_id_str)
+                    if ok_c:
+                        _target_user = _username
+                        print(f"[Steam] Yeni profil oluşturuldu: {_target_user}")
 
                 # 4. Her Steam başlatmada Steam profilini güçlü seç
                 if _target_user:
@@ -1167,6 +1177,13 @@ def main():
             borderless=borderless_value,
         )
         _apply_screen(new_screen)
+        # Mod değişimi sonrası birikmiş resize/video event'lerini temizle
+        # (bunlar sonraki frame'de ikinci bir geçiş tetikleyebilir)
+        try:
+            pygame.event.pump()
+            pygame.event.clear([pygame.VIDEORESIZE])
+        except Exception:
+            pass
         return new_screen
 
     def _toggle_fullscreen(width=500, height=700):
@@ -1180,33 +1197,40 @@ def main():
         fullscreen = not fullscreen
         settings_manager.set('fullscreen', fullscreen)
         
-        # macOS: Mevcut pencere üzerinden set_mode(FULLSCREEN) çağrılınca
-        # SDL Cocoa crash yaşanır (NSWindow setStyleMask crash'i).
-        # Bu yüzden macOS'ta fullscreen geçişi restart ile yönetilir.
+        # --- Deneme 1: SDL2 native toggle (en güvenilir) ---
+        try:
+            if hasattr(pygame.display, 'toggle_fullscreen'):
+                result = pygame.display.toggle_fullscreen()
+                if result:
+                    pygame.event.pump()
+                    new_surface = pygame.display.get_surface()
+                    if new_surface is not None:
+                        _apply_screen(new_surface)
+                        try:
+                            pygame.event.clear([pygame.VIDEORESIZE])
+                        except Exception:
+                            pass
+                        return True
+        except Exception:
+            pass
+        
+        # --- Deneme 2: Display rebuild (create_display + SDL env düzeltmeleri) ---
+        try:
+            _rebuild_display(width, height, fullscreen_value=fullscreen, resizable=True)
+            return True
+        except Exception:
+            pass
+        
+        # --- Deneme 3: macOS için son çare restart ---
         if current_platform == 'Darwin':
             if _restart_application():
                 running = False
                 return True
-            # Restart başarısızsa eski duruma geri dön
-            fullscreen = not fullscreen
-            settings_manager.set('fullscreen', fullscreen)
-            return False
         
-        try:
-            _rebuild_display(width, height, fullscreen_value=fullscreen, resizable=True)
-            return True
-        except Exception as e:
-            print(f"[UYARI] Fullscreen toggle hatası: {e}")
-            # Hata durumunda mevcut durumu koru
-            try:
-                # Pencere moduna geri dön
-                fullscreen = False
-                settings_manager.set('fullscreen', False)
-                screen = create_display(width, height, fullscreen=False, resizable=True, borderless=False)
-                _apply_screen(screen)
-            except Exception as e2:
-                print(f"[HATA] Kurtarma başarısız: {e2}")
-            return False
+        # Tümü başarısız, geri al
+        fullscreen = not fullscreen
+        settings_manager.set('fullscreen', fullscreen)
+        return False
 
     def _get_fullscreen_key():
         """Ayarlardan fullscreen toggle tuşunu al."""
@@ -1247,7 +1271,12 @@ def main():
                 args = [exe] + (sys.argv[1:] if len(sys.argv) > 1 else [])
             else:
                 args = [exe] + sys.argv
-            subprocess.Popen(args, close_fds=True)
+            # CWD'yi EXE'nin bulunduğu dizine ayarla (double-click davranışı)
+            if getattr(sys, 'frozen', False):
+                restart_cwd = os.path.dirname(sys.executable)
+            else:
+                restart_cwd = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            subprocess.Popen(args, close_fds=True, cwd=restart_cwd)
         except Exception as e:
             print(f"[HATA] Yeniden başlatılamadı: {e}")
             return False
@@ -1620,10 +1649,6 @@ def main():
         menu.show_daily_prompt = confirm_daily
         menu.daily_prompt_selected = daily_prompt_selected
         menu.daily_prompt_challenge = daily_prompt_challenge
-        try:
-            menu_sound.update_music_playlist()
-        except Exception:
-            pass
         menu.draw()
         return True
 
@@ -1751,10 +1776,6 @@ def main():
                 # Pencere/Tam ekran modu veya çözünürlük değişti (sekmeli ekrandan)
                 prev_fullscreen = fullscreen
                 fullscreen = settings_manager.get('fullscreen', True)
-                if bool(prev_fullscreen) != bool(fullscreen):
-                    if _restart_application():
-                        running = False
-                        return False
                 borderless = settings_manager.get('borderless_fullscreen', True)
                 resolution = settings_manager.get('resolution', 'auto')
                 if resolution == 'auto':
@@ -1766,13 +1787,65 @@ def main():
                         width, height = map(int, resolution.split('x'))
                     except Exception:
                         width, height = 1024, 768
-                new_screen = create_display(
-                    width, height,
-                    fullscreen=fullscreen,
-                    resizable=True,
-                    borderless=(borderless if fullscreen else False),
-                )
-                _apply_screen(new_screen)
+
+                fullscreen_changed = bool(prev_fullscreen) != bool(fullscreen)
+
+                if fullscreen_changed:
+                    # --- Deneme 1: SDL2 native toggle ---
+                    toggled = False
+                    try:
+                        if hasattr(pygame.display, 'toggle_fullscreen'):
+                            result = pygame.display.toggle_fullscreen()
+                            if result:
+                                pygame.event.pump()
+                                new_surface = pygame.display.get_surface()
+                                if new_surface is not None:
+                                    _apply_screen(new_surface)
+                                    toggled = True
+                    except Exception:
+                        pass
+
+                    # --- Deneme 2: Display rebuild ---
+                    if not toggled:
+                        try:
+                            new_screen = create_display(
+                                width, height,
+                                fullscreen=fullscreen,
+                                resizable=True,
+                                borderless=(borderless if fullscreen else False),
+                            )
+                            _apply_screen(new_screen)
+                            toggled = True
+                        except Exception:
+                            pass
+
+                    # --- Deneme 3: Restart (son çare) ---
+                    if not toggled:
+                        if _restart_application():
+                            running = False
+                            return False
+                        # Restart da başarısız, geri al
+                        fullscreen = prev_fullscreen
+                        settings_manager.set('fullscreen', fullscreen)
+                else:
+                    # Sadece çözünürlük değişti; restart gerekmez
+                    resolution = settings_manager.get('resolution', 'auto')
+                    if resolution == 'auto':
+                        native_w, native_h = get_native_resolution()
+                        width = max(800, min(1280, int(native_w * 0.8)))
+                        height = max(600, min(900, int(native_h * 0.8)))
+                    else:
+                        try:
+                            width, height = map(int, resolution.split('x'))
+                        except Exception:
+                            width, height = 1024, 768
+                    new_screen = create_display(
+                        width, height,
+                        fullscreen=fullscreen,
+                        resizable=True,
+                        borderless=(borderless if fullscreen else False),
+                    )
+                    _apply_screen(new_screen)
             elif action == 'change_bg_transparency':
                 # Arka plan şeffaflığı değişti (sekmeli ekrandan)
                 try:
@@ -1846,11 +1919,10 @@ def main():
                 settings_screen.focus_tab('customize', 'theme')
             elif action == 'toggle_fullscreen':
                 _toggle_fullscreen(500, 700)
+            elif action == 'quit_game':
+                # Kullanıcı onay kutusunda 'Evet' seçti; oyunu kapat (oto yeniden açılma yok)
+                running = False
 
-        try:
-            menu_sound.update_music_playlist()
-        except Exception:
-            pass
         settings_screen.draw()
         return True
 
@@ -2536,7 +2608,19 @@ def main():
             pygame.mouse.set_visible(state not in ('game', 'pvp'))
 
         did_draw = bool(handler(delta_ms))
-        
+
+        # ── Menü Müzik Playlist Global Tick ────────────────────────────
+        # update_music_playlist() daha önce yalnızca 'menu' ve 'settings'
+        # handler'larında çağrılıyordu; bu yüzden credits, başarımlar,
+        # kılavuz, yeni kullanıcı gibi ekranlarda parça bitince müzik
+        # devam etmiyordu. Oyun sırasında stop_music() playlist'i
+        # inactive yaptığından bu çağrı oyun müziğini etkilemez.
+        try:
+            menu_sound.update_music_playlist()
+        except Exception:
+            pass
+        # ────────────────────────────────────────────────────────────────
+
         # Geçiş efektini çiz (her şeyin üstüne)
         if did_draw:
             draw_screen_transition(screen)

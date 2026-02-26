@@ -1,11 +1,11 @@
-[2026-02-25 19:27:54]: Starting build for depot 4428041, content path is "C:\\Users\\arda demirkan\\Desktop\\v2_23022026\\v2\\dist\\", build flags 0x0
-[2026-02-25 19:27:54]: Building file listing for depot 4428041 ...
-[2026-02-25 19:27:54]: Found 1 files for mapping: C:\Users\arda demirkan\Desktop\v2_23022026\v2\dist * -> .
-[2026-02-25 19:27:54]: Found 1 files (299 MB) for depot 4428041
-[2026-02-25 19:27:55]: Building depot 4428041, baseline manifest 2551985302862157357 (1 files)
-[2026-02-25 19:27:56]: Found 305 new chunks ( 304 used previously ) for depot 4428041, took 0 minutes, 1 seconds
-[2026-02-25 19:27:56]: Changes to baseline manifest 2551985302862157357 :
-[2026-02-25 19:27:56]: Changed: "Quadrix.exe" 306236 KB size, 7763 KB changed 
-[2026-02-25 19:27:56]: Summary: 0 files added (0 bytes), 1 files changed (7.58 MB), 0 files removed (0 bytes)
-[2026-02-25 19:27:56]: Uploading new manifest to depot_ingest.discovery.steamserver.net (handle 1620065432641591830, 9610 bytes).
-[2026-02-25 19:27:58]: Success! Previous manifestID 8244189744655858392 reused, no chunks uploaded.
+[2026-02-25 21:22:26]: Starting build for depot 4428041, content path is "C:\\Users\\arda demirkan\\Desktop\\v2_23022026\\v2\\dist\\", build flags 0x0
+[2026-02-25 21:22:26]: Building file listing for depot 4428041 ...
+[2026-02-25 21:22:26]: Found 1 files for mapping: C:\Users\arda demirkan\Desktop\v2_23022026\v2\dist * -> .
+[2026-02-25 21:22:26]: Found 1 files (299 MB) for depot 4428041
+[2026-02-25 21:22:28]: Building depot 4428041, baseline manifest 8244189744655858392 (1 files)
+[2026-02-25 21:22:28]: Found 306 new chunks ( 305 used previously ) for depot 4428041, took 0 minutes, 0 seconds
+[2026-02-25 21:22:28]: Changes to baseline manifest 8244189744655858392 :
+[2026-02-25 21:22:28]: Changed: "Quadrix.exe" 306239 KB size, 6737 KB changed 
+[2026-02-25 21:22:28]: Summary: 0 files added (0 bytes), 1 files changed (6.58 MB), 0 files removed (0 bytes)
+[2026-02-25 21:22:29]: Uploading new manifest to depot_ingest.discovery.steamserver.net (handle 3557687235806773276, 9643 bytes).
+[2026-02-25 21:22:30]: Success! Previous manifestID 7329763340913181311 reused, no chunks uploaded.
