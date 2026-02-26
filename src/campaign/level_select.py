@@ -13,6 +13,7 @@ from typing import Dict, Any, List, Optional, Tuple, TYPE_CHECKING
 from .level_data import get_level, get_levels, get_total_levels, get_world_info, LevelConfig
 from background_effects import get_shared_falling_blocks_layer
 from ui_theme import UIColors, UIFonts, UIStyle
+from retro_style import retro_style as _retro_style
 from localization import t, get_language
 
 # Neon renk paleti (merkezi tema)
@@ -45,6 +46,7 @@ class CampaignLevelSelect:
         self.current_world = 1
         self.selected_level = 1
         self.hovered_level: Optional[int] = None
+        self.debug_unlock_all = False
         
         # Scroll
         self.scroll_offset = 0
@@ -178,12 +180,13 @@ class CampaignLevelSelect:
     
     def _init_fonts(self) -> None:
         """Fontları başlat"""
-        scale = max(0.72, min(1.2, self.window_width / 1400, self.window_height / 900))
-        self.font_title = UIFonts.get(int(UIFonts.SIZE_TITLE * scale), bold=True)
-        self.font_large = UIFonts.get(int(UIFonts.SIZE_HEADING * scale), bold=True)
-        self.font_medium = UIFonts.get(int(UIFonts.SIZE_SUBHEADING * scale))
-        self.font_small = UIFonts.get(int(UIFonts.SIZE_BODY * scale))
-        self.font_tiny = UIFonts.get(int(UIFonts.SIZE_SMALL * scale))
+        # max_scale=1.0 ile cap'lendi; 1080p ve üstünde puntoların gereğinden büyümesi önlenir
+        scale = max(0.72, min(1.0, self.window_width / 1400, self.window_height / 900))
+        self.font_title = _retro_style.get_font(int(48 * scale), bold=True)
+        self.font_large = _retro_style.get_font(int(36 * scale), bold=True)
+        self.font_medium = _retro_style.get_font(int(28 * scale), bold=False)
+        self.font_small = _retro_style.get_font(int(22 * scale), bold=False)
+        self.font_tiny = _retro_style.get_font(int(18 * scale), bold=False)
 
     def _get_ui_scale(self, min_scale: float = 0.72, max_scale: float = 1.26) -> float:
         """Pencere boyutuna göre ortak UI ölçek katsayısı"""
@@ -209,6 +212,8 @@ class CampaignLevelSelect:
     
     def _is_level_unlocked(self, level_num: int) -> bool:
         """Level açık mı kontrol et"""
+        if getattr(self, 'debug_unlock_all', False):
+            return True
         if level_num == 1:
             return True
         prev_level = str(level_num - 1)
@@ -326,6 +331,8 @@ class CampaignLevelSelect:
             new_level = world_end
         
         self.selected_level = new_level
+        # Klavye navigasyonunda hover state'i temizle; panel hemen seçili level'ı göstersin
+        self.hovered_level = None
     
     def _update_selection_for_world(self) -> None:
         """Dünya değiştiğinde seçimi güncelle"""
@@ -354,6 +361,8 @@ class CampaignLevelSelect:
         self.world_transition_active = True
         self.world_transition_progress = 0.0
         self._update_selection_for_world()
+        # Dünya geçişinde hover state'i temizle
+        self.hovered_level = None
     
     def draw(self) -> None:
         """Ekranı çiz"""

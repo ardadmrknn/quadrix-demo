@@ -6791,6 +6791,9 @@ TRANSLATIONS = {
     },
     
     # ==================== EXTRAS MENÜ MOD AÇIKLAMALARI ====================
+    'extras_classic_desc': {
+        'tr': 'Herkesin bildiği Quadrix oyunu.', 'en': 'The classic Quadrix everyone knows.', 'de': 'Das klassische Quadrix, das jeder kennt.', 'fr': 'Le classique Quadrix que tout le monde connaît.', 'es': 'El Quadrix clásico que todos conocen.', 'it': 'Il classico Quadrix che tutti conoscono.', 'pt': 'O Quadrix clássico que todos conhecem.', 'ja': '誰もが知るクラシック。', 'zh': '人人皆知的经典。', 'ko': '모두가 아는 클래식. '
+    },
     'extras_sprint_desc': {
         'tr': '40 satırı en hızlı sürede temizle.', 'en': 'Clear 40 lines as fast as possible.', 'de': 'Lösche 40 Zeilen so schnell wie möglich.', 'fr': 'Efface 40 lignes le plus vite possible.', 'es': 'Limpia 40 líneas lo más rápido posible.', 'it': 'Cancella 40 righe il più velocemente possibile.', 'pt': 'Limpe 40 linhas o mais rápido possível.', 'ja': '40ラインを最速で消そう。', 'zh': '以最快速度清除40行。', 'ko': '40줄을 최대한 빨리 지우세요.'
     },

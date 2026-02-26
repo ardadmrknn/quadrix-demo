@@ -309,6 +309,7 @@ class Menu:
         self.color_reset_buttons = []  # Renk sıfırlama butonları
         self.scroll_offset = 0  # Kaydırma için
         self._nav_source = 'mouse'  # 'mouse' veya 'keyboard' — input kaynağı ayrımı
+        self._mouse_in_panel = False  # Mouse option_rects üzerinde mi?
         self.fullscreen = False  # Tam ekran durumu
         self.background_fx = get_shared_falling_blocks_layer('default')
         # Belirli menü kartlarının içinde (cam panel arkasında) domino yağmuru
@@ -763,9 +764,13 @@ class Menu:
     def handle_input(self, event):
         """Menü girdilerini işle (klavye + mouse)"""
         if self.menu_language_panel_open:
+            was_open = True
             action = self._handle_menu_language_panel_input(event)
             if action is not None:
                 return action
+            # Panel tıklama ile kapandıysa event'i yut; kör tıklama ile tekrar açılmasın
+            if was_open and not self.menu_language_panel_open:
+                return None
             if self.menu_language_panel_open:
                 return None
 
@@ -843,6 +848,9 @@ class Menu:
                     navigated = True
                     self._ensure_visible()
             elif event.key in (pygame.K_RETURN, pygame.K_SPACE):
+                # Mouse modunda panel dışındayken Enter/Space tetiklemez
+                if getattr(self, '_nav_source', 'mouse') == 'mouse' and not getattr(self, '_mouse_in_panel', True):
+                    return None
                 return self.options[self.selected]
             elif is_fullscreen_toggle(event.key, getattr(event, 'mod', 0)):
                 return 'toggle_fullscreen'
@@ -855,8 +863,10 @@ class Menu:
             # Tuş navigasyonu aktifken fare hover seçimi değiştirmez
             if getattr(self, '_nav_source', 'mouse') != 'keyboard':
                 mouse_pos = normalize_mouse_pos(getattr(event, 'pos', None)) or event.pos
+                self._mouse_in_panel = False
                 for i, rect in enumerate(self.option_rects):
                     if rect.collidepoint(mouse_pos):
+                        self._mouse_in_panel = True
                         if i != self.selected:
                             self.selected = i
                             self._nav_source = 'mouse'
@@ -4974,6 +4984,11 @@ class AchievementScreen:
         max_scroll = max(0, total_content - max(0, visible_height))
         self.scroll_offset = max(0, min(self.scroll_offset, max_scroll))
 
+        # Panellerin üst panele taşmasını ve alta çıkmasını engelle
+        clip_rect = pygame.Rect(0, list_top, width, max(0, visible_height))
+        prev_clip = self.screen.get_clip()
+        self.screen.set_clip(clip_rect)
+
         for i, ach in enumerate(achievements):
             y_pos = list_top + i * (item_height + item_spacing) - self.scroll_offset
             if y_pos < list_top - item_height or y_pos > height - 120:
@@ -5025,12 +5040,14 @@ class AchievementScreen:
                     )
                     self.screen.blit(progress_surface, progress_rect)
 
-        # Scrollbar çiz
+        self.screen.set_clip(prev_clip)
+
+        # Scrollbar çiz — panellerin hemen dışına, sağ tarafa
         if total_content > visible_height:
             scrollbar_rect = pygame.Rect(
-                content_x + content_width - 20,
+                content_x + content_width + 4,
                 list_top,
-                12,
+                20,
                 visible_height
             )
             retro_style.draw_scrollbar(

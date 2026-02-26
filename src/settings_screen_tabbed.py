@@ -453,6 +453,18 @@ class TabbedSettingsScreen:
         self._music_picker_scroll = 0
         self._music_picker_item_rects: list[tuple[pygame.Rect, int]] = []
 
+        # ── Mod playlist editörü (inline overlay) ──
+        self._playlist_edit_active = False
+        self._playlist_edit_mode_key = None
+        self._playlist_edit_items = []
+        self._playlist_edit_selected = 0
+        self._playlist_edit_scroll = 0
+        self._playlist_edit_picker_open = False
+        self._playlist_edit_picker_selected = 0
+        self._playlist_edit_picker_scroll = 0
+        self._playlist_edit_item_rects: list[tuple[pygame.Rect, int]] = []
+        self._playlist_edit_picker_rects: list[tuple[pygame.Rect, int]] = []
+
         # Slider mouse cache + drag state
         self._slider_bar_rects: dict = {}
         self._slider_drag_active: bool = False
@@ -691,17 +703,13 @@ class TabbedSettingsScreen:
 
         elif itype == 'music_selector':
             mode_key = item.get('mode_key')
-            current = self._mode_music_overrides.get(mode_key)
-            for option in self._track_options:
-                if option.get('value') == current:
-                    return str(option.get('label', '')), (150, 220, 255)
-            if current:
-                if str(current).startswith('file:'):
-                    raw_path = str(current)[5:]
-                    stem = Path(raw_path).stem
-                    display_name = _latinize_track_display_name(stem)
-                    return f"{display_name} {t('track_file_suffix')}", (150, 220, 255)
-                return str(current), (150, 220, 255)
+            try:
+                playlist = self.settings_manager.get_mode_music_playlist(mode_key)
+                count = len(playlist) if playlist else 0
+            except Exception:
+                count = 0
+            if count > 0:
+                return f"{count} parça", (150, 220, 255)
             return t('track_default_label'), (150, 220, 255)
 
         elif itype == 'keybind':
@@ -912,6 +920,198 @@ class TabbedSettingsScreen:
         self._music_picker_mode_key = None
         self._music_picker_item_rects = []
 
+    def open_mode_playlist_editor(self, mode_key: str) -> None:
+        self._close_music_picker()
+        self._vsync_prompt_active = False
+        self._vsync_prompt_buttons = []
+        self._display_mode_confirm_active = False
+        self._display_mode_confirm_yes_rect = None
+        self._display_mode_confirm_no_rect = None
+        self._playlist_edit_active = True
+        self._playlist_edit_mode_key = mode_key
+        playlist = self.settings_manager.get_mode_music_playlist(mode_key) if self.settings_manager else []
+        self._playlist_edit_items = list(playlist)
+        self._playlist_edit_selected = 0
+        self._playlist_edit_scroll = 0
+        self._playlist_edit_picker_open = False
+        self._playlist_edit_picker_selected = 0
+        self._playlist_edit_picker_scroll = 0
+        self._playlist_edit_item_rects = []
+        self._playlist_edit_picker_rects = []
+
+    def _close_mode_playlist_editor(self) -> None:
+        self._playlist_edit_active = False
+        self._playlist_edit_mode_key = None
+        self._playlist_edit_items = []
+        self._playlist_edit_picker_open = False
+        self._playlist_edit_picker_selected = 0
+        self._playlist_edit_picker_scroll = 0
+        self._playlist_edit_item_rects = []
+        self._playlist_edit_picker_rects = []
+
+    def _save_mode_playlist(self) -> str | None:
+        if not self.settings_manager or not self._playlist_edit_mode_key:
+            return None
+        self.settings_manager.set_mode_music_playlist(self._playlist_edit_mode_key, list(self._playlist_edit_items))
+        return 'mode_playlist_changed'
+
+    def _track_label_for_value(self, value) -> str:
+        for option in self._track_options:
+            if option.get('value') == value:
+                return str(option.get('label', ''))
+        if value and isinstance(value, str) and value.startswith('file:'):
+            return t('track_file_prefix', path=value[5:])
+        if value:
+            return str(value)
+        return t('track_default_label')
+
+    def _playlist_list_max_scroll(self, total_items: int, item_h: int, gap: int, visible_h: int) -> int:
+        total_h = total_items * (item_h + gap)
+        return max(0, total_h - max(visible_h, 0))
+
+    def _playlist_ensure_visible(self, visible_h: int, item_h: int, gap: int) -> None:
+        y = self._playlist_edit_selected * (item_h + gap)
+        if y < self._playlist_edit_scroll:
+            self._playlist_edit_scroll = y
+        elif y > self._playlist_edit_scroll + visible_h - item_h:
+            self._playlist_edit_scroll = y - (visible_h - item_h)
+        total_items = len(self._playlist_edit_items) + 1
+        max_scroll = self._playlist_list_max_scroll(total_items, item_h, gap, visible_h)
+        self._playlist_edit_scroll = max(0, min(self._playlist_edit_scroll, max_scroll))
+
+    def _playlist_picker_ensure_visible(self, visible_h: int, item_h: int, gap: int) -> None:
+        y = self._playlist_edit_picker_selected * (item_h + gap)
+        if y < self._playlist_edit_picker_scroll:
+            self._playlist_edit_picker_scroll = y
+        elif y > self._playlist_edit_picker_scroll + visible_h - item_h:
+            self._playlist_edit_picker_scroll = y - (visible_h - item_h)
+        self._playlist_edit_picker_scroll = max(
+            0,
+            min(self._playlist_edit_picker_scroll, self._picker_max_scroll(visible_h, item_h, gap)),
+        )
+
+    def _open_mode_playlist_picker(self) -> None:
+        self._playlist_edit_picker_open = True
+        self._playlist_edit_picker_scroll = 0
+        self._playlist_edit_picker_selected = 0
+
+    def _close_mode_playlist_picker(self) -> None:
+        self._playlist_edit_picker_open = False
+        self._playlist_edit_picker_rects = []
+
+    def _handle_mode_playlist_edit_input(self, event) -> str | None:
+        if self._playlist_edit_picker_open:
+            if not self._track_options:
+                self._close_mode_playlist_picker()
+                return None
+
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE:
+                    self._close_mode_playlist_picker()
+                    return None
+                if event.key == pygame.K_UP:
+                    self._playlist_edit_picker_selected = (self._playlist_edit_picker_selected - 1) % len(self._track_options)
+                    return None
+                if event.key == pygame.K_DOWN:
+                    self._playlist_edit_picker_selected = (self._playlist_edit_picker_selected + 1) % len(self._track_options)
+                    return None
+                if event.key in (pygame.K_RETURN, pygame.K_SPACE):
+                    chosen = self._track_options[self._playlist_edit_picker_selected].get('value')
+                    self._playlist_edit_items.append(chosen)
+                    self._playlist_edit_selected = len(self._playlist_edit_items)
+                    self._close_mode_playlist_picker()
+                    return self._save_mode_playlist()
+
+            elif event.type == pygame.MOUSEWHEEL:
+                self._playlist_edit_picker_scroll -= event.y * 36
+                self._playlist_edit_picker_scroll = max(0, self._playlist_edit_picker_scroll)
+                return None
+
+            elif event.type == pygame.MOUSEMOTION:
+                pos = normalize_mouse_pos(getattr(event, 'pos', None)) or event.pos
+                for rect, idx in self._playlist_edit_picker_rects:
+                    if rect.collidepoint(pos):
+                        self._playlist_edit_picker_selected = idx
+                        break
+                return None
+
+            elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                pos = normalize_mouse_pos(getattr(event, 'pos', None)) or event.pos
+                for rect, idx in self._playlist_edit_picker_rects:
+                    if rect.collidepoint(pos):
+                        self._playlist_edit_picker_selected = idx
+                        chosen = self._track_options[self._playlist_edit_picker_selected].get('value')
+                        self._playlist_edit_items.append(chosen)
+                        self._playlist_edit_selected = len(self._playlist_edit_items)
+                        self._close_mode_playlist_picker()
+                        return self._save_mode_playlist()
+                self._close_mode_playlist_picker()
+                return None
+
+            return None
+
+        total_items = len(self._playlist_edit_items) + 1
+        if event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_ESCAPE:
+                self._close_mode_playlist_editor()
+                return None
+            if event.key == pygame.K_UP:
+                self._playlist_edit_selected = (self._playlist_edit_selected - 1) % max(total_items, 1)
+                return None
+            if event.key == pygame.K_DOWN:
+                self._playlist_edit_selected = (self._playlist_edit_selected + 1) % max(total_items, 1)
+                return None
+            if event.key in (pygame.K_RETURN, pygame.K_SPACE):
+                if self._playlist_edit_selected == 0:
+                    self._open_mode_playlist_picker()
+                return None
+            if event.key in (pygame.K_DELETE, pygame.K_BACKSPACE):
+                if self._playlist_edit_selected > 0:
+                    idx = self._playlist_edit_selected - 1
+                    if 0 <= idx < len(self._playlist_edit_items):
+                        del self._playlist_edit_items[idx]
+                        self._playlist_edit_selected = max(0, min(self._playlist_edit_selected, len(self._playlist_edit_items)))
+                        return self._save_mode_playlist()
+                return None
+            if event.key == pygame.K_LEFT:
+                if self._playlist_edit_selected > 1:
+                    idx = self._playlist_edit_selected - 1
+                    self._playlist_edit_items[idx - 1], self._playlist_edit_items[idx] = self._playlist_edit_items[idx], self._playlist_edit_items[idx - 1]
+                    self._playlist_edit_selected -= 1
+                    return self._save_mode_playlist()
+                return None
+            if event.key == pygame.K_RIGHT:
+                idx = self._playlist_edit_selected - 1
+                if 0 <= idx < len(self._playlist_edit_items) - 1:
+                    self._playlist_edit_items[idx + 1], self._playlist_edit_items[idx] = self._playlist_edit_items[idx], self._playlist_edit_items[idx + 1]
+                    self._playlist_edit_selected += 1
+                    return self._save_mode_playlist()
+                return None
+
+        elif event.type == pygame.MOUSEWHEEL:
+            self._playlist_edit_scroll -= event.y * 30
+            self._playlist_edit_scroll = max(0, self._playlist_edit_scroll)
+            return None
+
+        elif event.type == pygame.MOUSEMOTION:
+            pos = normalize_mouse_pos(getattr(event, 'pos', None)) or event.pos
+            for rect, idx in self._playlist_edit_item_rects:
+                if rect.collidepoint(pos):
+                    self._playlist_edit_selected = idx
+                    break
+            return None
+
+        elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            pos = normalize_mouse_pos(getattr(event, 'pos', None)) or event.pos
+            for rect, idx in self._playlist_edit_item_rects:
+                if rect.collidepoint(pos):
+                    self._playlist_edit_selected = idx
+                    if idx == 0:
+                        self._open_mode_playlist_picker()
+                    return None
+
+        return None
+
     def _picker_max_scroll(self, visible_h: int, item_h: int, gap: int) -> int:
         total_h = len(self._track_options) * (item_h + gap)
         return max(0, total_h - max(visible_h, 0))
@@ -969,6 +1169,142 @@ class TabbedSettingsScreen:
                     return
             self._close_music_picker()
             return
+
+    def _draw_mode_playlist_edit_overlay(self) -> None:
+        width, height = self.screen.get_size()
+        dim = pygame.Surface((width, height), pygame.SRCALPHA)
+        dim.fill((0, 0, 0, 145))
+        self.screen.blit(dim, (0, 0))
+
+        panel_w = min(920, width - 120)
+        panel_h = min(730, height - 90)
+        panel_rect = pygame.Rect((width - panel_w) // 2, (height - panel_h) // 2, panel_w, panel_h)
+        retro_style.draw_glass_panel(
+            self.screen,
+            panel_rect,
+            alpha=215,
+            border_color=retro_style.primary,
+            glow=True,
+        )
+
+        title_font = retro_style.get_font(28, bold=True)
+        subtitle_font = retro_style.get_font(18)
+        title = title_font.render(_t('mode_music_playlist_editor', 'Bölüm Müzikleri'), True, (235, 245, 255))
+        self.screen.blit(title, (panel_rect.x + 20, panel_rect.y + 16))
+
+        mode_key = self._playlist_edit_mode_key or ''
+        mode_name = str(mode_key)
+        for mk, label in get_mode_music_entries():
+            if mk == mode_key:
+                mode_name = str(label)
+                break
+        subtitle = subtitle_font.render(mode_name, True, (170, 190, 220))
+        self.screen.blit(subtitle, (panel_rect.x + 20, panel_rect.y + 50))
+
+        list_rect = pygame.Rect(panel_rect.x + 20, panel_rect.y + 86, panel_rect.width - 40, panel_rect.height - 156)
+        item_h = 52
+        gap = 8
+        total_items = len(self._playlist_edit_items) + 1
+
+        max_scroll = self._playlist_list_max_scroll(total_items, item_h, gap, list_rect.height)
+        self._playlist_edit_scroll = max(0, min(self._playlist_edit_scroll, max_scroll))
+        self._playlist_ensure_visible(list_rect.height, item_h, gap)
+
+        self._playlist_edit_item_rects = []
+        self.screen.set_clip(list_rect)
+        for idx in range(total_items):
+            y = list_rect.y + idx * (item_h + gap) - self._playlist_edit_scroll
+            if y + item_h < list_rect.y or y > list_rect.bottom:
+                continue
+
+            rect = pygame.Rect(list_rect.x, y, list_rect.width, item_h)
+            self._playlist_edit_item_rects.append((rect, idx))
+
+            if idx == 0:
+                text = '+ Ekle'
+            else:
+                value = self._playlist_edit_items[idx - 1]
+                text = self._track_label_for_value(value)
+
+            retro_style.draw_uniform_button(
+                self.screen,
+                rect,
+                text,
+                color_code=retro_style.primary,
+                selected=(idx == self._playlist_edit_selected),
+            )
+        self.screen.set_clip(None)
+
+        total_h = total_items * (item_h + gap)
+        if total_h > list_rect.height:
+            sb_rect = pygame.Rect(panel_rect.right - 12, list_rect.y, 6, list_rect.height)
+            retro_style.draw_scrollbar(self.screen, sb_rect, self._playlist_edit_scroll, total_h, list_rect.height)
+
+        hint_text = 'ESC: Kapat   ENTER: Seç/Ekle   DELETE: Sil   ←/→: Taşı'
+        hint_surf = self.font_hint.render(hint_text, True, (180, 200, 220))
+        self.screen.blit(hint_surf, (panel_rect.x + 20, panel_rect.bottom - 28))
+
+        if not self._playlist_edit_picker_open:
+            return
+
+        picker_dim = pygame.Surface((width, height), pygame.SRCALPHA)
+        picker_dim.fill((0, 0, 0, 95))
+        self.screen.blit(picker_dim, (0, 0))
+
+        picker_w = min(760, width - 180)
+        picker_h = min(580, height - 180)
+        picker_rect = pygame.Rect((width - picker_w) // 2, (height - picker_h) // 2, picker_w, picker_h)
+        retro_style.draw_glass_panel(
+            self.screen,
+            picker_rect,
+            alpha=220,
+            border_color=retro_style.primary,
+            glow=True,
+        )
+
+        picker_title = title_font.render(t('tracks'), True, (235, 245, 255))
+        self.screen.blit(picker_title, (picker_rect.x + 18, picker_rect.y + 14))
+
+        picker_list_rect = pygame.Rect(picker_rect.x + 18, picker_rect.y + 62, picker_rect.width - 36, picker_rect.height - 84)
+        p_item_h = 48
+        p_gap = 8
+
+        self._playlist_edit_picker_scroll = max(
+            0,
+            min(self._playlist_edit_picker_scroll, self._picker_max_scroll(picker_list_rect.height, p_item_h, p_gap)),
+        )
+        self._playlist_picker_ensure_visible(picker_list_rect.height, p_item_h, p_gap)
+
+        self._playlist_edit_picker_rects = []
+        self.screen.set_clip(picker_list_rect)
+        for idx, option in enumerate(self._track_options):
+            y = picker_list_rect.y + idx * (p_item_h + p_gap) - self._playlist_edit_picker_scroll
+            if y + p_item_h < picker_list_rect.y or y > picker_list_rect.bottom:
+                continue
+
+            rect = pygame.Rect(picker_list_rect.x, y, picker_list_rect.width, p_item_h)
+            self._playlist_edit_picker_rects.append((rect, idx))
+
+            label = str(option.get('label', ''))
+            retro_style.draw_uniform_button(
+                self.screen,
+                rect,
+                label,
+                color_code=retro_style.primary,
+                selected=(idx == self._playlist_edit_picker_selected),
+            )
+        self.screen.set_clip(None)
+
+        picker_total_h = len(self._track_options) * (p_item_h + p_gap)
+        if picker_total_h > picker_list_rect.height:
+            sb_rect = pygame.Rect(picker_rect.right - 12, picker_list_rect.y, 6, picker_list_rect.height)
+            retro_style.draw_scrollbar(
+                self.screen,
+                sb_rect,
+                self._playlist_edit_picker_scroll,
+                picker_total_h,
+                picker_list_rect.height,
+            )
 
     # ------------------------------------------------------------------
     # Ayar değiştirme
@@ -1185,6 +1521,9 @@ class TabbedSettingsScreen:
         if self._swallow_next_keydown and event.type == pygame.KEYDOWN:
             self._swallow_next_keydown = False
             return None
+
+        if self._playlist_edit_active:
+            return self._handle_mode_playlist_edit_input(event)
 
         if self._music_picker_open:
             self._handle_music_picker_input(event)
@@ -1473,12 +1812,8 @@ class TabbedSettingsScreen:
             mode_key = item.get('mode_key')
             if not mode_key:
                 return None
-            if key_code == pygame.K_LEFT:
-                self._cycle_mode_music(mode_key, -1)
-            elif key_code == pygame.K_RIGHT:
-                self._cycle_mode_music(mode_key, 1)
-            elif key_code in (pygame.K_RETURN, pygame.K_SPACE):
-                self._open_music_picker(mode_key)
+            if key_code in (pygame.K_RETURN, pygame.K_SPACE, pygame.K_LEFT, pygame.K_RIGHT):
+                return f'edit_mode_playlist:{mode_key}'
             return None
 
         elif itype == 'keybind':
@@ -1633,6 +1968,9 @@ class TabbedSettingsScreen:
 
         if self._music_picker_open:
             self._draw_music_picker()
+
+        if self._playlist_edit_active:
+            self._draw_mode_playlist_edit_overlay()
 
     def _draw_panel(self, rect: pygame.Rect) -> None:
         """Koyu yarı-saydam panel arka planı."""

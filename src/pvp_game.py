@@ -532,7 +532,7 @@ class PvPGame:
         # Kontrol bilgileri
         info_font = self.font_small
         pause_label = self._key_label(self.pvp_controls['pause'])
-        hint = info_font.render(f'{pause_label}: {t("pvp_pause_hint")}  •  ESC: {t("main_menu")}', True, skin.text_color)
+        hint = info_font.render(f'{pause_label}: {t("pvp_pause_hint")}  •  ESC: {t("pvp_pause_hint")}', True, skin.text_color)
         surface.blit(hint, hint.get_rect(center=(rect.centerx, rect.centery + 40)))
 
         # Match timer - süreli modda geri sayım, süresiz modda geçen süre
@@ -952,11 +952,14 @@ class PvPGame:
                         return 'menu'
                     continue
 
-                # Oyun sırasında ESC - çıkış onayı göster (tek oyunculu ile aynı)
+                # Game over iken ESC - ana menüye dön
+                if self.game_over and event.key == pygame.K_ESCAPE:
+                    return 'menu'
+
+                # Oyun sırasında ESC - pause menüsünü aç
                 if event.key == pygame.K_ESCAPE:
-                    self.show_exit_prompt = True
-                    self.exit_yes_rect = None
-                    self.exit_no_rect = None
+                    self.paused = True
+                    self.pause_menu_selected = 0
                     continue
                 
                 if self.game_over:
@@ -1342,6 +1345,7 @@ class PvPGame:
 
         self._pause_option_rects = []
         self._pause_volume_rects = {}
+        _pause_mouse_pos = pygame.mouse.get_pos()
 
         start_y = panel_rect.y + top_pad
         for i, option in enumerate(self.pause_menu_options):
@@ -1373,6 +1377,7 @@ class PvPGame:
                 color_code = retro_style.accent
                 sub_text = f"{int(self.sound.sfx_volume * 100)}%  < >"
 
+            _pv_hover = button_rect.collidepoint(_pause_mouse_pos)
             retro_style.draw_uniform_button(
                 self.screen,
                 button_rect,
@@ -1380,6 +1385,7 @@ class PvPGame:
                 sub_text=sub_text,
                 color_code=color_code,
                 selected=is_selected,
+                state='hover' if _pv_hover else 'normal',
             )
 
             if option == 'music_volume':

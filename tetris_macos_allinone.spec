@@ -91,6 +91,12 @@ except Exception as _e:
 #  HIDDEN IMPORTS - Dinamik olarak yüklenen tüm modüller
 # ═══════════════════════════════════════════════════════════════════
 hiddenimports = [
+    'PIL',
+    'PIL.Image',
+    'PIL.ImageSequence',
+    'PIL.GifImagePlugin',
+    'PIL.PngImagePlugin',
+
     # ── Pygame alt modülleri ──
     'pygame',
     'pygame.mixer',
@@ -241,8 +247,6 @@ a = Analysis(
         'PySide2',
         'PySide6',
         'PyQt6',
-        'PIL',
-        'Pillow',
         'xmlrpc',
         'unittest',
         'doctest',

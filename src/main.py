@@ -1072,10 +1072,10 @@ def main():
     game_return_state = 'menu'
     _campaign_needs_refresh = False  # Campaign progress yenileme flag'i
 
-    # Ana menü gizli kısayolu (GTA hileleri gibi): "arda" yazınca debug ayarlarını aç.
+    # Ana menü gizli kısayolları (GTA hileleri gibi).
     cheat_buffer = ''
     cheat_last_key_ms = 0
-    cheat_sequence = 'arda'
+    cheat_sequences = {'arda': 'show_debug_settings', 'burak': 'campaign_unlock_all'}
     cheat_timeout_ms = 1500
     
     if constants.DEBUG_MODE:
@@ -1407,19 +1407,42 @@ def main():
 
                     ch = ch.lower()
                     if ch.isalpha():
-                        cheat_buffer = (cheat_buffer + ch)[-len(cheat_sequence):]
-                        if cheat_buffer == cheat_sequence:
-                            # Runtime-only: diske yazma (oyun kapanınca tekrar gizli).
-                            try:
-                                if not settings_manager.get('show_debug_settings', False):
-                                    settings_manager.settings['show_debug_settings'] = True
-                            except Exception:
-                                pass
-                            try:
-                                settings_screen.sync_from_settings_manager()
-                            except Exception:
-                                pass
-                            cheat_buffer = ''
+                        _max_cheat_len = max(len(s) for s in cheat_sequences)
+                        cheat_buffer = (cheat_buffer + ch)[-_max_cheat_len:]
+                        for seq, cheat_action in cheat_sequences.items():
+                            if cheat_buffer.endswith(seq):
+                                if cheat_action == 'show_debug_settings':
+                                    # Runtime-only: diske yazma (oyun kapanınca tekrar gizli).
+                                    try:
+                                        if not settings_manager.get('show_debug_settings', False):
+                                            settings_manager.settings['show_debug_settings'] = True
+                                    except Exception:
+                                        pass
+                                    try:
+                                        settings_screen.sync_from_settings_manager()
+                                    except Exception:
+                                        pass
+                                elif cheat_action == 'campaign_unlock_all':
+                                    try:
+                                        currently_on = getattr(campaign_level_select, 'debug_unlock_all', False)
+                                        if currently_on:
+                                            campaign_level_select.debug_unlock_all = False
+                                            # Taze progress yükle (kampanya oynanmış ama henüz refresh edilmemiş olabilir)
+                                            try:
+                                                campaign_level_select.progress = campaign_level_select._load_progress()
+                                            except Exception:
+                                                pass
+                                            highest = campaign_level_select.progress.get('highest_level', 0)
+                                            campaign_level_select.current_world = max(1, (highest - 1) // 20 + 1) if highest > 0 else 1
+                                            campaign_level_select._update_selection_for_world()
+                                            campaign_level_select.scroll_offset = 0
+                                            campaign_level_select.hovered_level = None
+                                        else:
+                                            campaign_level_select.debug_unlock_all = True
+                                    except Exception:
+                                        pass
+                                cheat_buffer = ''
+                                break
 
             action = menu.handle_input(event)
             
@@ -1765,6 +1788,8 @@ def main():
             elif action == 'change_game_music':
                 # Oyun İçi Müzik değişti
                 print(f"🎮 Oyun içi müzik ayarlandı: {settings_screen.game_music}")
+            elif action == 'mode_playlist_changed':
+                pass
             elif action == 'toggle_debug':
                 # Debug modu değişti
                 constants.DEBUG_MODE = settings_screen.debug_mode
@@ -1901,6 +1926,12 @@ def main():
                     print(f"🖼️ Arka plan resmi seçildi: {filepath}")
             elif action == 'mode_music':
                 settings_screen.focus_tab('audio')
+            elif action and action.startswith('edit_mode_playlist:'):
+                mode_key = action.split(':', 1)[1]
+                try:
+                    settings_screen.open_mode_playlist_editor(mode_key)
+                except Exception:
+                    pass
             elif action == 'block_styles':
                 state = 'block_styles'
             elif action == 'block_workshop':
@@ -1927,10 +1958,29 @@ def main():
         return True
 
     def _handle_mode_music(delta_ms):
-        nonlocal state
-        settings_screen.focus_tab('audio')
-        state = 'settings'
-        return _handle_settings(delta_ms)
+        nonlocal state, running
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                running = False
+                return True
+
+            if _check_fullscreen_toggle(event):
+                _toggle_fullscreen(500, 700)
+                continue
+
+            action = mode_music_screen.handle_input(event)
+            if action == 'back':
+                state = 'settings'
+                return True
+            elif action == 'toggle_fullscreen':
+                _toggle_fullscreen(500, 700)
+
+        try:
+            mode_music_screen.draw()
+        except Exception:
+            state = 'settings'
+        return True
 
     def _handle_controls(delta_ms):
         nonlocal state
@@ -2133,6 +2183,29 @@ def main():
                 sound = settings_screen.sound_enabled
                 effects = settings_screen.effects_enabled
                 game = CascadeMode(difficulty, sound, effects, achievement_manager, theme_manager, screen, fullscreen, settings_manager, user_manager, 'cascade', score_manager=score_manager)
+                state = 'game'
+            elif action == 'Classic Mode':
+                if not _show_mode_intro_popup(screen, 'classic', settings_manager):
+                    continue
+                menu_sound.stop_music()
+                game_return_state = 'extras'
+                difficulty = settings_screen.difficulty
+                sound = settings_screen.sound_enabled
+                effects = settings_screen.effects_enabled
+                game = Game(
+                    difficulty,
+                    sound,
+                    effects,
+                    achievement_manager,
+                    theme_manager,
+                    screen,
+                    fullscreen,
+                    settings_manager,
+                    user_manager,
+                    'classic',
+                    sound_manager=menu_sound,
+                    score_manager=score_manager,
+                )
                 state = 'game'
 
         extras_screen.draw()
