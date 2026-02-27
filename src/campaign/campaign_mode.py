@@ -860,8 +860,8 @@ class CampaignMode(Game):
         pygame.draw.rect(self.screen, UIColors.GLASS_BORDER[:3], content_bg, 1, border_radius=10)
         
         # === LEVEL BİLGİSİ ===
-        header_font = UIFonts.subheading()
-        title_font = UIFonts.get(24, bold=True)
+        header_font = UIFonts.get(15)
+        title_font = UIFonts.get(16, bold=True)
         lang = get_language()
         level_name = self.level_config.name.get(lang, self.level_config.name.get('en', f"{t('level')} {self.current_level_num}"))
         world_info = get_world_info(self.level_config.world)
@@ -886,8 +886,8 @@ class CampaignMode(Game):
         )
         
         # === GÖREVLER ===
-        obj_font = UIFonts.body()
-        progress_font = UIFonts.get(20)
+        obj_font = UIFonts.get(14)
+        progress_font = UIFonts.get(13)
         y_offset = panel_rect.y + 102
         
         for obj in self.objectives:
@@ -966,7 +966,7 @@ class CampaignMode(Game):
             (panel_rect.right - 20, star_section_y), 1
         )
         
-        star_font = UIFonts.get(19)
+        star_font = UIFonts.get(13)
         star_y = star_section_y + 10
         
         # Başlık

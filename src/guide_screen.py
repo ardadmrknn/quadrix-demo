@@ -819,7 +819,7 @@ class GuideScreen:
                     surface.blit(icon, (icon_x, card_rect.y + 25))
             
             # Mod ismi
-            name_font = retro_style.get_font(22, bold=True)
+            name_font = retro_style.get_font(16, bold=True)
             name_text = t(mode.get('name_key', '')) if mode.get('name_key') else mode.get('name', '')
             if not name_text:
                 name_text = mode.get('name', '')

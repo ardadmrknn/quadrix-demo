@@ -267,9 +267,9 @@ class ExtrasScreen:
             return max(minimum, int(round(value * ui_scale)))
 
         self.font_title = retro_style.get_font(s(48, 26), bold=True)
-        self.font_option = retro_style.get_font(s(34, 16), bold=True)
-        self.font_desc = retro_style.get_font(s(22, 11), bold=False)
-        self.font_desc_strong = retro_style.get_font(s(22, 11), bold=True)
+        self.font_option = UIFonts.get(s(20, 12), bold=True)
+        self.font_desc = UIFonts.get(s(13, 9), bold=False)
+        self.font_desc_strong = UIFonts.get(s(13, 9), bold=True)
     
     @property
     def items(self):
@@ -561,7 +561,7 @@ class ExtrasScreen:
         else:
             # Fallback (tofu-safe): emoji basma, harf/şekil kullan
             short = ''.join([w[0] for w in (item.get('name', 'M').split()) if w])[:2].upper() or 'M'
-            icon_font = retro_style.get_font(s(54, 20), bold=True)
+            icon_font = UIFonts.get(s(54, 20), bold=True)
             icon_surf = icon_font.render(short, True, UIColors.TEXT_PRIMARY)
             icon_rect = icon_surf.get_rect(center=(rect.centerx, icon_y))
             
@@ -625,7 +625,7 @@ class ExtrasScreen:
             if highscore > 0:
                 # Highscore rozeti - kartın kendi rengini kullan
                 hs_text = f"{t('best_score')}: {highscore:,}"
-                hs_font = retro_style.get_font(s(24, 11), bold=True)
+                hs_font = UIFonts.get(s(13, 9), bold=True)
                 hs_surf = hs_font.render(hs_text, True, mode_color)  # Kartın rengi
                 hs_shadow = hs_font.render(hs_text, True, (0, 0, 0))
                 hs_shadow.set_alpha(200)

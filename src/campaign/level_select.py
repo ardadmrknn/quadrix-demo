@@ -184,9 +184,9 @@ class CampaignLevelSelect:
         scale = max(0.72, min(1.0, self.window_width / 1400, self.window_height / 900))
         self.font_title = _retro_style.get_font(int(48 * scale), bold=True)
         self.font_large = _retro_style.get_font(int(36 * scale), bold=True)
-        self.font_medium = _retro_style.get_font(int(28 * scale), bold=False)
-        self.font_small = _retro_style.get_font(int(22 * scale), bold=False)
-        self.font_tiny = _retro_style.get_font(int(18 * scale), bold=False)
+        self.font_medium = _retro_style.get_font(int(18 * scale), bold=False)
+        self.font_small = _retro_style.get_font(int(15 * scale), bold=False)
+        self.font_tiny = _retro_style.get_font(int(13 * scale), bold=False)
 
     def _get_ui_scale(self, min_scale: float = 0.72, max_scale: float = 1.26) -> float:
         """Pencere boyutuna göre ortak UI ölçek katsayısı"""
