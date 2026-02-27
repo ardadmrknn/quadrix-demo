@@ -204,6 +204,69 @@ def request_window_focus():
             pass
 
 
+def set_app_icon(assets_dir: str) -> None:
+    """Pencere ve görev çubuğu simgesini ayarla.
+
+    - pygame.display.set_icon() ile tüm platformlarda simgeyi günceller.
+    - Windows'ta AppUserModelID ile görev çubuğu simgesi ve ismi düzeltilir.
+    - macOS'ta AppKit üzerinden Dock simgesini Tetris.icns ile değiştirir.
+    """
+    import os
+    import pygame
+
+    # ── Pygame pencere ikonu (tüm platformlar) — 32x32 standart SDL2 boyutu ──
+    icon_png = os.path.join(assets_dir, 'Tetris_icon.png')
+    if os.path.exists(icon_png):
+        try:
+            icon_surf = pygame.image.load(icon_png).convert_alpha()
+            icon_surf = pygame.transform.smoothscale(icon_surf, (32, 32))
+            pygame.display.set_icon(icon_surf)
+        except Exception:
+            pass
+
+    # ── Windows: AppUserModelID + ctypes ile görev çubuğu simgesi ──
+    if sys.platform == 'win32':
+        try:
+            import ctypes
+            # AppUserModelID ayarla — Windows'un "python.exe" yazmasını engeller
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID('Quadrix.Game')
+            # .ico dosyasını varsa ctypes ile uygula (daha yüksek kaliteli simge)
+            ico_path = os.path.join(assets_dir, 'game_icon.ico')
+            if os.path.exists(ico_path):
+                abs_ico = os.path.abspath(ico_path)
+                hwnd = pygame.display.get_wm_info().get('window', 0)
+                if hwnd:
+                    WM_SETICON = 0x0080
+                    ICON_SMALL = 0
+                    ICON_BIG = 1
+                    LR_LOADFROMFILE = 0x00000010
+                    LR_DEFAULTSIZE = 0x00000040
+                    hicon = ctypes.windll.user32.LoadImageW(
+                        0, abs_ico, 1,
+                        0, 0,
+                        LR_LOADFROMFILE | LR_DEFAULTSIZE
+                    )
+                    if hicon:
+                        ctypes.windll.user32.SendMessageW(hwnd, WM_SETICON, ICON_SMALL, hicon)
+                        ctypes.windll.user32.SendMessageW(hwnd, WM_SETICON, ICON_BIG, hicon)
+        except Exception:
+            pass
+
+    # ── macOS Dock simgesi (AppKit / PyObjC) ──
+    if IS_MACOS:
+        icns_path = os.path.join(assets_dir, 'Tetris.icns')
+        if not os.path.exists(icns_path):
+            icns_path = icon_png  # Fallback: PNG kullan
+        try:
+            from AppKit import NSApplication, NSImage
+            abs_path = os.path.abspath(icns_path)
+            image = NSImage.alloc().initWithContentsOfFile_(abs_path)
+            if image:
+                NSApplication.sharedApplication().setApplicationIconImage_(image)
+        except Exception:
+            pass
+
+
 def init_platform_display():
     """Initialize platform-specific display settings before creating the window.
     

@@ -984,12 +984,16 @@ class Menu:
 
         if is_highlighted:
             # Neon glow efekti: altta kalsın (flavor/görselin altında)
+            # Panel sınırı dışına taşmaması için draw_rect ile kırpılıyor
+            prev_clip = self.screen.get_clip()
+            self.screen.set_clip(draw_rect)
             for glow_i in range(3, 0, -1):
                 glow_rect = draw_rect.inflate(glow_i * 4, glow_i * 4)
                 glow_alpha = max(10, 60 - glow_i * 18)
                 glow_surf = pygame.Surface((glow_rect.width, glow_rect.height), pygame.SRCALPHA)
                 pygame.draw.rect(glow_surf, (*accent_color[:3], glow_alpha), glow_surf.get_rect(), width=2, border_radius=14 + glow_i * 2)
                 self.screen.blit(glow_surf, glow_rect.topleft)
+            self.screen.set_clip(prev_clip)
 
         # Katman sırası: panel arka planı -> flavor görsel -> panel üst çizimleri
         self._draw_dashboard_tile_flavor(draw_rect, panel_key, accent_color, hover)
@@ -1497,11 +1501,25 @@ class Menu:
                     tip = [(cx_fb - r, cy_fb + 2), (cx_fb + r, cy_fb + 2), (cx_fb, cy_fb + r + 4)]
                     pygame.draw.polygon(self.screen, (*color, alpha), tip)
 
-            # --- Alt yazı (görev açıklaması) ---
+            # --- Alt yazı (görev açıklaması) — cam panel kutucuğu içinde ---
             text_y = rect.y + max(s(56), int(rect.height * 0.52))
-            text_font = retro_style.get_fitting_font(title_text, base_size=s(18), max_width=content_w, bold=False, min_size=max(10, s(13)))
+            text_font = retro_style.get_fitting_font(title_text, base_size=s(18), max_width=content_w - s(16), bold=False, min_size=max(10, s(13)))
             text_surf = text_font.render(title_text, True, UIColors.TEXT_PRIMARY)
-            self.screen.blit(text_surf, text_surf.get_rect(midleft=(rect.x + pad_l, text_y)))
+            # Panel kutucuğu
+            t_pad_x = s(10)
+            t_pad_y = s(5)
+            t_box_w = min(content_w, text_surf.get_width() + t_pad_x * 2 + s(4))
+            t_box_h = text_surf.get_height() + t_pad_y * 2
+            t_box_x = rect.x + pad_l
+            t_box_y = text_y - t_pad_y
+            t_box = pygame.Surface((t_box_w, t_box_h), pygame.SRCALPHA)
+            pygame.draw.rect(t_box, (12, 28, 48, 180), t_box.get_rect(), border_radius=9)
+            for hy in range(min(6, t_box_h // 4)):
+                ha = int(20 * (1 - hy / 6))
+                pygame.draw.line(t_box, (255, 255, 255, ha), (4, hy), (t_box_w - 4, hy))
+            pygame.draw.rect(t_box, (*accent_color[:3], 80), t_box.get_rect(), 1, border_radius=9)
+            self.screen.blit(t_box, (t_box_x, t_box_y))
+            self.screen.blit(text_surf, text_surf.get_rect(midleft=(t_box_x + t_pad_x + s(2), text_y + text_surf.get_height() // 2)))
 
         elif panel_key == 'achievements':
             items = panel_context.get('recent_achievements', [])[:3]
@@ -2966,8 +2984,9 @@ class Menu:
             surface.blit(masked, masked.get_rect(center=(center, center)))
 
         # Neon rim (drawn last to cover avatar edges)
+        rim_color = accent_color if accent_color else UIColors.NEON_CYAN
         pygame.draw.circle(surface, (*UIColors.GLASS_BORDER[:3], 150), (center, center), radius, width=2)
-        pygame.draw.circle(surface, (*neon, 210), (center, center), radius - 3, width=3)
+        pygame.draw.circle(surface, (*rim_color, 210), (center, center), radius - 3, width=3)
         pygame.draw.circle(surface, (255, 255, 255, 70), (center, center), radius - 8, width=1)
 
         return surface
@@ -2983,7 +3002,17 @@ class Menu:
             if path and os.path.exists(path):
                 try:
                     image = load_image(path, convert_alpha=True)
-                    return pygame.transform.smoothscale(image, (target_size, target_size))
+                    # En-boy oranını koruyarak ortadan kes (center-crop)
+                    src_w, src_h = image.get_size()
+                    scale = target_size / min(src_w, src_h) if min(src_w, src_h) > 0 else 1.0
+                    scaled_w = max(target_size, int(src_w * scale))
+                    scaled_h = max(target_size, int(src_h * scale))
+                    img = pygame.transform.smoothscale(image, (scaled_w, scaled_h))
+                    crop_x = (scaled_w - target_size) // 2
+                    crop_y = (scaled_h - target_size) // 2
+                    cropped = pygame.Surface((target_size, target_size), pygame.SRCALPHA)
+                    cropped.blit(img, (0, 0), area=pygame.Rect(crop_x, crop_y, target_size, target_size))
+                    return cropped
                 except Exception:
                     continue
         # Emoji avatar'lar bazı sistem fontlarında kare/kutucuk olarak görünebildiği için

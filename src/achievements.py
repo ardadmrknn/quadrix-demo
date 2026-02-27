@@ -188,6 +188,44 @@ ACHIEVEMENTS = {
         'icon': '🛡️',
         'check': lambda stats: stats.get('pvp_wins', 0) >= 10
     },
+
+    # Kampanya yıldız başarıları
+    'campaign_stars_10': {
+        'name': 'Yıldız Toplayıcı',
+        'description': 'Kampanyada toplam 10 yıldız kazan',
+        'icon': '⭐',
+        'check': lambda stats: stats.get('campaign_total_stars', 0) >= 10
+    },
+    'campaign_stars_30': {
+        'name': 'Yıldız Avcısı',
+        'description': 'Kampanyada toplam 30 yıldız kazan',
+        'icon': '🌟',
+        'check': lambda stats: stats.get('campaign_total_stars', 0) >= 30
+    },
+    'campaign_stars_50': {
+        'name': 'Yıldız Ustası',
+        'description': 'Kampanyada toplam 50 yıldız kazan',
+        'icon': '💫',
+        'check': lambda stats: stats.get('campaign_total_stars', 0) >= 50
+    },
+    'campaign_stars_100': {
+        'name': 'Yıldız Tanrısı',
+        'description': 'Kampanyada toplam 100 yıldız kazan',
+        'icon': '✨',
+        'check': lambda stats: stats.get('campaign_total_stars', 0) >= 100
+    },
+    'campaign_level50_3star': {
+        'name': 'Yarı Mükemmel',
+        'description': '50. bölümü 3 yıldızla tamamla',
+        'icon': '🏅',
+        'check': lambda stats: stats.get('campaign_level_50_stars', 0) >= 3
+    },
+    'campaign_level100_3star': {
+        'name': 'Efsane Kahraman',
+        'description': '100. bölümü 3 yıldızla tamamla',
+        'icon': '🏆',
+        'check': lambda stats: stats.get('campaign_level_100_stars', 0) >= 3
+    },
 }
 
 
@@ -240,7 +278,10 @@ class AchievementManager:
             'max_combo': 0,
             'perfect_clears': 0,
             'pvp_wins': 0,
-            'perfect_game': False
+            'perfect_game': False,
+            'campaign_total_stars': 0,
+            'campaign_level_50_stars': 0,
+            'campaign_level_100_stars': 0,
         }
         self.new_achievements = []  # Yeni açılan başarılar (gösterim için)
         self.load()
@@ -280,7 +321,10 @@ class AchievementManager:
                 'max_combo': self.stats.get('max_combo', 0),
                 'perfect_clears': self.stats.get('perfect_clears', 0),
                 'pvp_wins': self.stats.get('pvp_wins', 0),
-                'perfect_game': self.stats.get('perfect_game', False)
+                'perfect_game': self.stats.get('perfect_game', False),
+                'campaign_total_stars': self.stats.get('campaign_total_stars', 0),
+                'campaign_level_50_stars': self.stats.get('campaign_level_50_stars', 0),
+                'campaign_level_100_stars': self.stats.get('campaign_level_100_stars', 0),
             }
             
             data = {
@@ -408,6 +452,16 @@ class AchievementManager:
         match = re.match(r"^pvp_(\d+)_wins$", achievement_id)
         if match:
             return ("pvp_wins", int(match.group(1)), False)
+
+        match = re.match(r"^campaign_stars_(\d+)$", achievement_id)
+        if match:
+            return ("campaign_total_stars", int(match.group(1)), False)
+
+        if achievement_id == "campaign_level50_3star":
+            return ("campaign_level_50_stars", 3, False)
+
+        if achievement_id == "campaign_level100_3star":
+            return ("campaign_level_100_stars", 3, False)
 
         return None
 
