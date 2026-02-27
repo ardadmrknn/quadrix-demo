@@ -64,6 +64,37 @@ $env:LEADERBOARD_CLIENT_TOKEN="opsiyonel_istemci_token"
 py backend/steam_leaderboard_proxy.py
 ```
 
+## 4.1) Steam Playtest / Steam sürümü: herkes için proxy adresini otomatik verme
+
+Steam üzerinden oyunu oynayan oyuncuların bilgisayarında ortam değişkeni ayarlamak mümkün olmayacağı için
+en pratik ve sürdürülebilir yöntem Steamworks panelinden **Launch Options** ile argüman göndermektir.
+
+Bu repo giriş noktası `main.py`, aşağıdaki argümanları okuyup runtime’da `LEADERBOARD_BACKEND_URL` ve `LEADERBOARD_CLIENT_TOKEN`
+ortam değişkenlerine yazar:
+
+- `--leaderboard-backend-url=<url>`
+- `--leaderboard-backend-url <url>`
+- `--leaderboard-client-token=<token>`
+- `--leaderboard-client-token <token>`
+
+Steamworks → Installation / General Installation → Launch Options (Windows) örneği:
+
+```
+--leaderboard-backend-url=http://88.209.248.66 --leaderboard-client-token=YOUR_CLIENT_TOKEN
+```
+
+macOS notu:
+- Aynı argümanlar macOS launch option alanında da kullanılabilir.
+- Bu repoda macOS build giriş noktası `src/main.py` olduğu için argümanlar macOS `.app` içinde de okunur.
+
+URL notu:
+- Eğer VPS’te Nginx reverse proxy (80/443) kullanıyorsanız `http://88.209.248.66` / `https://domain` yazın.
+- Eğer Nginx yok ve Flask doğrudan dışarı açıldıysa `:8787` eklemeniz gerekir.
+
+Notlar:
+- Production için HTTPS + domain önerilir (IP + HTTP geçici kullanım).
+- `STEAM_WEB_API_KEY` hiçbir zaman istemciye verilmez; sadece VPS backend’de kalır.
+
 ## 5) Hızlı smoke test
 
 Windows PowerShell örneği:

@@ -916,6 +916,18 @@ TRANSLATIONS = {
         'zh': '音乐音量',
         'ko': '음악 볼륨'
     },
+    'menu_music_volume': {
+        'tr': 'Ana Menü Müzik Seviyesi',
+        'en': 'Menu Music Volume',
+        'de': 'Menü-Musiklautstärke',
+        'fr': 'Volume Musique Menu',
+        'es': 'Volumen Música Menú',
+        'it': 'Volume Musica Menu',
+        'pt': 'Volume Música Menu',
+        'ja': 'メニュー音楽音量',
+        'zh': '菜单音乐音量',
+        'ko': '메뉴 음악 볼륨'
+    },
     'sfx_volume': {
         'tr': 'Efekt Seviyesi',
         'en': 'SFX Volume',

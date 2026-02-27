@@ -58,6 +58,46 @@ elif current_platform == 'Darwin':  # macOS
 os.environ.setdefault('SDL_RENDER_VSYNC', '1')
 os.environ.setdefault('SDL_HINT_RENDER_SCALE_QUALITY', '1')
 
+
+def _apply_leaderboard_cli_overrides(argv: list[str]) -> None:
+    """Steam Launch Options ile gelen leaderboard parametrelerini env'e uygula."""
+
+    def _clean_value(value: str) -> str:
+        raw = str(value or '').strip()
+        if (raw.startswith('"') and raw.endswith('"')) or (raw.startswith("'") and raw.endswith("'")):
+            raw = raw[1:-1].strip()
+        return raw
+
+    def _next_value(index: int) -> tuple[str, int]:
+        if index + 1 < len(argv):
+            return argv[index + 1], 2
+        return '', 1
+
+    i = 0
+    while i < len(argv):
+        raw = str(argv[i] or '').strip()
+        if raw.startswith('--leaderboard-backend-url='):
+            value = _clean_value(raw.split('=', 1)[1])
+            if value and not value.startswith('--'):
+                os.environ['LEADERBOARD_BACKEND_URL'] = value
+        elif raw == '--leaderboard-backend-url':
+            value, consumed = _next_value(i)
+            value = _clean_value(value)
+            if value and not value.startswith('--'):
+                os.environ['LEADERBOARD_BACKEND_URL'] = value
+            i += consumed - 1
+        elif raw.startswith('--leaderboard-client-token='):
+            value = _clean_value(raw.split('=', 1)[1])
+            if value and not value.startswith('--'):
+                os.environ['LEADERBOARD_CLIENT_TOKEN'] = value
+        elif raw == '--leaderboard-client-token':
+            value, consumed = _next_value(i)
+            value = _clean_value(value)
+            if value and not value.startswith('--'):
+                os.environ['LEADERBOARD_CLIENT_TOKEN'] = value
+            i += consumed - 1
+        i += 1
+
 try:
     from .game import Game  # type: ignore
     from .block_styles import BlockStyleManager  # type: ignore
@@ -684,6 +724,11 @@ def _show_tutorial_prompt(screen):
 
 def main():
     """Ana menü ve oyunu başlat"""
+    try:
+        _apply_leaderboard_cli_overrides(sys.argv[1:])
+    except Exception:
+        pass
+
     # Windows 10/11 DPI Awareness - pygame.init() öncesi ayarlanmalı
     from platform_utils import _init_windows_dpi_awareness
     _init_windows_dpi_awareness()
@@ -1004,9 +1049,11 @@ def main():
         
         # Ses seviyelerini ayarla ve uygula (Varsayılan: %30 Müzik, %50 Efekt)
         saved_music_vol = settings_manager.get('music_volume', 0.3)
+        saved_menu_music_vol = settings_manager.get('menu_music_volume', 0.3)
         saved_sfx_vol = settings_manager.get('sfx_volume', 0.5)
         
-        menu_sound.set_music_volume(saved_music_vol)
+        # Ana menüdeyken menu_music_volume kullan
+        menu_sound.set_music_volume(saved_menu_music_vol)
         menu_sound.set_volume(saved_sfx_vol)
         
         # Menü playlist'i başlat
@@ -1744,6 +1791,11 @@ def main():
                 # Müzik seviyesi değişti
                 menu_sound.set_music_volume(settings_screen.music_volume)
                 print(f"🔊 Müzik seviyesi: {int(settings_screen.music_volume * 100)}%")
+            elif action == 'change_menu_music_volume':
+                # Ana menü müzik seviyesi değişti
+                menu_sound.set_music_volume(settings_screen.menu_music_volume)
+                settings_manager.set('menu_music_volume', settings_screen.menu_music_volume)
+                print(f"🔊 Ana menü müzik seviyesi: {int(settings_screen.menu_music_volume * 100)}%")
             elif action == 'change_sfx_volume':
                 # Efekt seviyesi değişti
                 menu_sound.set_volume(settings_screen.sfx_volume)
@@ -2212,7 +2264,7 @@ def main():
         return True
 
     def _handle_game(delta_ms):
-        nonlocal running, state, game, game_return_state, _campaign_needs_refresh
+        nonlocal running, state, game, game_return_state, _campaign_needs_refresh, highscore_screen
 
         if not game:
             state = 'menu'
@@ -2304,6 +2356,9 @@ def main():
                 game.sound.stop_music()
             game = None
             if settings_screen.music_enabled:
+                # Ana menüye dönünce menu_music_volume uygula
+                _menu_vol = settings_manager.get('menu_music_volume', 0.3)
+                menu_sound.set_music_volume(_menu_vol)
                 menu_music = settings_manager.get('menu_music', 'Mainv3')
                 try:
                     playlist = settings_manager.get_menu_music_playlist()
@@ -2316,6 +2371,12 @@ def main():
                 except Exception:
                     menu_sound.play_music(menu_music.lower(), loop=True)
                 print(f"🎵 Ana sayfa müziği başlatıldı: {menu_music}")
+            # Oyun bitti — Steam skor tablosunu güncelle ve HighScoreScreen'e yansıt
+            try:
+                fresh_scores = _load_steam_mode_scores(force=True, limit=3)
+                highscore_screen.steam_mode_scores = fresh_scores
+            except Exception:
+                pass
             return False
         
         # Campaign: Sonraki level'a geç
@@ -2385,6 +2446,8 @@ def main():
             state = 'menu'
             pvp_game = None
             if settings_screen.music_enabled and not getattr(settings_screen, 'mute_all', False):
+                _menu_vol = settings_manager.get('menu_music_volume', 0.3)
+                menu_sound.set_music_volume(_menu_vol)
                 menu_music = settings_manager.get('menu_music', 'Mainv3')
                 menu_sound.play_music(menu_music.lower(), loop=True)
                 print(f"🎵 Ana sayfa müziği başlatıldı: {menu_music}")
