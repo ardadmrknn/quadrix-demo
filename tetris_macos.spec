@@ -31,8 +31,9 @@ datas = [
     # Dil/font profilleri için font dosyaları
     (str(REPO_ROOT / 'font'), 'font'),
 
-    # Apple emoji görselleri
-    (str(REPO_ROOT / 'apple_emojis'), 'apple_emojis'),
+    # Apple emoji görselleri: runtime'da kullanılmaz.
+    # Emojiler assets/ui/emoji/ altında ASCII adlarla mevcuttur.
+    # (str(REPO_ROOT / 'apple_emojis'), 'apple_emojis'),
 
     # Kampanya level tanımları
     (str(REPO_ROOT / 'campaign_levels.csv'), '.'),
