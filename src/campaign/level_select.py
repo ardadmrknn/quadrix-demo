@@ -369,6 +369,16 @@ class CampaignLevelSelect:
         width = self.screen.get_width()
         height = self.screen.get_height()
 
+        # Fare hover durumunu her frame güncelle: MOUSEMOTION kaçırılan durumlarda
+        # (ekrana ilk giriş, dünya geçişi, pencere odaklanması) tooltip takılmaz.
+        if self.level_buttons:
+            mouse_pos = pygame.mouse.get_pos()
+            self.hovered_level = None
+            for rect, level_num in self.level_buttons:
+                if rect.collidepoint(mouse_pos):
+                    self.hovered_level = level_num
+                    break
+
         if width != self.window_width or height != self.window_height:
             self.window_width = width
             self.window_height = height
@@ -527,6 +537,13 @@ class CampaignLevelSelect:
                                  (fill_rect.x + i, fill_rect.y + fill_rect.height))
             # Glow
             pygame.draw.rect(self.screen, (*UIColors.NEON_CYAN, 60), fill_rect.inflate(6, 4), border_radius=7)
+
+        # Yüzde metni — bar panelinin sağ içinde, dikey ortada
+        pct_value = int(progress_ratio * 100)
+        pct_text = f'%{pct_value}'
+        pct_surf = self.font_small.render(pct_text, True, UIColors.NEON_CYAN)
+        pct_rect = pct_surf.get_rect(midright=(bar_rect.right - s(12), bar_rect.centery))
+        self.screen.blit(pct_surf, pct_rect)
 
         self.header_bottom = bar_rect.bottom
     
@@ -691,10 +708,13 @@ class CampaignLevelSelect:
         # Hangi çerçeveyi kullanacağız?
         if is_selected:
             frame_type = 'selected'
-            text_color = (0, 0, 0)
+            # Başka bir level hover ediliyorsa seçili öne çıkmasın → beyaz
+            # Ama hover edilen bu level'ın kendisiyse veya hover yoksa → altın
+            other_hovered = self.hovered_level and self.hovered_level != level_num
+            text_color = self.COLORS['white'] if other_hovered else self.COLORS['gold']
         elif is_hovered and is_unlocked:
             frame_type = 'hover'
-            text_color = self.COLORS['white']
+            text_color = self.COLORS['gold']
         elif is_unlocked:
             frame_type = 'normal'
             text_color = self.COLORS['white']
@@ -763,12 +783,20 @@ class CampaignLevelSelect:
                 self.screen.blit(btn_surf, rect.topleft)
                 pygame.draw.rect(self.screen, UIColors.BUTTON_BORDER, rect, 1, border_radius=UIStyle.BORDER_RADIUS_MEDIUM)
         
-        # Boss level özel glow KALDIRILDI - artık normal level gibi görünecek
-        # if is_boss and is_unlocked:
-        #     pulse = 0.6 + 0.4 * math.sin(self.animation_time * 4)
-        #     glow_alpha = int(50 * pulse)
-        #     glow_rect = frame_rect.inflate(6, 6)
-        #     pygame.draw.rect(self.screen, (*NEON_MAGENTA, glow_alpha), glow_rect, 2, border_radius=12)
+        # Boss level görsel ayrımı: sadece hover'da kırmızı kenarlık + "!" badge
+        if is_boss and is_hovered and is_unlocked:
+            pulse = 0.55 + 0.45 * math.sin(self.animation_time * 3)
+            glow_alpha = int(80 * pulse)
+            boss_col = (255, 60, 80)  # Kırmızı
+            # Dış kenarlık (frame_rect üstünde, 2px)
+            pygame.draw.rect(self.screen, (*boss_col, glow_alpha),
+                             frame_rect.inflate(4, 4), 2, border_radius=14)
+            # Üst sağ köşe "!" badge
+            badge_font = UIFonts.get(max(11, int(base_rect.height * 0.22)), bold=True)
+            badge_surf = badge_font.render('!', True, boss_col)
+            badge_surf.set_alpha(180 + int(75 * pulse))
+            badge_pos = badge_surf.get_rect(topright=(base_rect.right - 4, base_rect.top + 4))
+            self.screen.blit(badge_surf, badge_pos)
         
         # Level numarası - frame_rect merkezine göre
         # Artık boss leveller de normal numara gösteriyor (B harfi yerine 10, 20, 30 vb.)
@@ -1027,7 +1055,8 @@ class CampaignLevelSelect:
         # Level ismi - glow efektli
         lang = get_language()
         level_name = level_config.name.get(lang, level_config.name.get('en', f"{t('level')} {display_level}"))
-        name_text = f"{t('level')} {display_level}: {level_name}"
+        # "Seviye 21: Buz 1" yerine sadece "Buz 1" göster — isim zaten act-local numarayı içeriyor
+        name_text = level_name
         name_surf = self.font_medium.render(name_text, True, world_color)
         
         # Glow
@@ -1303,10 +1332,10 @@ class CampaignLevelSelect:
         
         if progress <= 0.5:
             # Fade in (0.0 -> 0.5 arası, karartma)
-            alpha = int((progress / 0.5) * 180)
+            alpha = int((progress / 0.5) * 120)
         else:
             # Fade out (0.5 -> 1.0 arası, açma)
-            alpha = int(((1.0 - progress) / 0.5) * 180)
+            alpha = int(((1.0 - progress) / 0.5) * 120)
         
         if alpha > 0:
             # Sadece alpha'yı değiştir (yeniden fill yerine)

@@ -1,6 +1,7 @@
 """Ses yöneticisi"""
 import math
 import os
+import random
 import shutil
 import subprocess
 import sys
@@ -699,13 +700,17 @@ class SoundManager:
         self.music_paused = False
         self.music_playlist_active = False
 
-    def set_music_playlist(self, tracks, loop=True, start_index=0, autoplay=True, force=False):
-        """Playlist tanımla ve istenirse çalmaya başla."""
+    def set_music_playlist(self, tracks, loop=True, start_index=0, autoplay=True, force=False, shuffle=False):
+        """Playlist tanımla ve istenirse çalmaya başla. shuffle=True ise sıra karıştırılır."""
         if not self.enabled:
             return
         if not isinstance(tracks, list):
             tracks = []
         cleaned = [t for t in tracks if isinstance(t, str) and t]
+        if shuffle and len(cleaned) > 1:
+            cleaned = list(cleaned)
+            random.shuffle(cleaned)
+            start_index = 0
         self.music_playlist = cleaned
         self.music_playlist_loop = bool(loop)
         self.music_playlist_index = max(0, min(int(start_index or 0), max(0, len(cleaned) - 1)))

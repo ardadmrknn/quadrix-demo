@@ -25,7 +25,7 @@ from workshop_blocks import WorkshopBlockDefinition, load_workshop_blocks
 from retro_style import retro_style
 from renderers.jelly_renderer import draw_jelly_block, draw_jelly_border
 from localization import t, get_language
-from platform_utils import get_display_flags, create_display, is_fullscreen_toggle
+from platform_utils import get_display_flags, create_display, is_fullscreen_toggle, set_app_icon
 from ui_theme import UIFonts, UIColors
 from asset_manager import load_image
 from gamepad_manager import get_gamepad_manager, is_gamepad_connected
@@ -251,7 +251,13 @@ class Game:
                 self.window_height = self.screen.get_height()
         
         try:
-            pygame.display.set_caption('Quadrix - Python (FULL EDITION)')
+            pygame.display.set_caption('Quadrix')
+        except Exception:
+            pass
+        try:
+            import os
+            _g_assets = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'assets')
+            set_app_icon(_g_assets)
         except Exception:
             pass
         self.clock = pygame.time.Clock()
@@ -518,8 +524,12 @@ class Game:
                 if track_key:
                     track_keys.append(track_key)
             if track_keys:
-                start_index = random.randrange(len(track_keys))
-                self.sound.set_music_playlist(track_keys, loop=True, start_index=start_index, autoplay=True, force=force)
+                do_shuffle = bool(self.settings_manager.get('music_shuffle', False)) if self.settings_manager else False
+                if do_shuffle:
+                    start_index = 0
+                else:
+                    start_index = random.randrange(len(track_keys))
+                self.sound.set_music_playlist(track_keys, loop=True, start_index=start_index, autoplay=True, force=force, shuffle=do_shuffle)
                 self.current_music_track = track_keys[start_index]
                 return
 

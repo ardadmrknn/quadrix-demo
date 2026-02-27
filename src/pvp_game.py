@@ -16,7 +16,7 @@ from retro_style import retro_style
 from renderers.jelly_renderer import draw_jelly_block, draw_jelly_border
 from themes import ThemeManager, CUSTOM_THEME_NAME
 from block_styles import BlockStyleManager, TextureSlice
-from platform_utils import create_display, get_display_flags, normalize_mouse_pos
+from platform_utils import create_display, get_display_flags, normalize_mouse_pos, set_app_icon
 from localization import t
 from ui_theme import UIColors, UIFonts
 
@@ -108,10 +108,15 @@ class PvPGame:
             self.fullscreen = False
         
         try:
-            pygame.display.set_caption('Quadrix - PvP Mode (2 Players)')
+            pygame.display.set_caption('Quadrix')
         except Exception:
             pass
-        self.clock = pygame.time.Clock()
+        try:
+            import os
+            _pvp_assets = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'assets')
+            set_app_icon(_pvp_assets)
+        except Exception:
+            pass
         
         # Ses yöneticisi (menüden enjekte edilebilir)
         self.sound = sound_manager if sound_manager is not None else SoundManager()
@@ -453,8 +458,12 @@ class PvPGame:
                 if track_key:
                     track_keys.append(track_key)
             if track_keys:
-                start_index = random.randrange(len(track_keys))
-                self.sound.set_music_playlist(track_keys, loop=True, start_index=start_index, autoplay=True, force=True)
+                do_shuffle = bool(self.settings_manager.get('music_shuffle', False)) if self.settings_manager else False
+                if do_shuffle:
+                    start_index = 0
+                else:
+                    start_index = random.randrange(len(track_keys))
+                self.sound.set_music_playlist(track_keys, loop=True, start_index=start_index, autoplay=True, force=True, shuffle=do_shuffle)
                 self.current_music_track = track_keys[start_index]
                 return
 

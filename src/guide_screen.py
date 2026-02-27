@@ -809,18 +809,14 @@ class GuideScreen:
             surface.blit(card_surf, (x, y))
             pygame.draw.rect(surface, mode['color'], card_rect, 2, border_radius=12)
             
-            # İkon yükle (gerçek PNG)
+            # İkon yükle (icon_cache kullan — disk I/O engellemez)
             icon_size = 100  # Daha büyük ikonlar
             if mode['icon']:
-                icon_path = os.path.join(UI_ICON_DIR, 'mode_icons', mode['icon'])
-                if os.path.exists(icon_path):
-                    try:
-                        icon = pygame.image.load(icon_path).convert_alpha()
-                        icon = pygame.transform.smoothscale(icon, (icon_size, icon_size))
-                        icon_x = card_rect.centerx - icon_size // 2
-                        surface.blit(icon, (icon_x, card_rect.y + 25))
-                    except:
-                        pass
+                icon_key = os.path.join('mode_icons', mode['icon'])
+                icon = self._load_card_icon(icon_key, icon_size)
+                if icon:
+                    icon_x = card_rect.centerx - icon_size // 2
+                    surface.blit(icon, (icon_x, card_rect.y + 25))
             
             # Mod ismi
             name_font = retro_style.get_font(22, bold=True)
@@ -983,7 +979,6 @@ class GuideScreen:
                     cards_per_page = 9
                     if self.card_index >= cards_per_page:
                         self.card_index = max(0, (self.card_index // cards_per_page - 1) * cards_per_page)
-                        self._content_cache.clear()
             
             elif event.key == pygame.K_DOWN:
                 if self.scroll_y < self.max_scroll:
@@ -994,7 +989,6 @@ class GuideScreen:
                     next_page_start = ((self.card_index // cards_per_page) + 1) * cards_per_page
                     if next_page_start < self.max_cards:
                         self.card_index = next_page_start
-                        self._content_cache.clear()
             
             # Sol/Sağ - Kart sayfası veya tab değiştirme
             elif event.key == pygame.K_LEFT:
@@ -1004,12 +998,10 @@ class GuideScreen:
                     if self.card_index >= cards_per_page:
                         self.card_index = max(0, (self.card_index // cards_per_page - 1) * cards_per_page)
                         self.scroll_y = 0
-                        self._content_cache.clear()
                 elif self.selected_tab > 0:
                     self.selected_tab -= 1
                     self.scroll_y = 0
                     self.card_index = 0
-                    self._content_cache.clear()
             
             elif event.key == pygame.K_RIGHT:
                 if self.selected_tab == 2:
@@ -1019,12 +1011,10 @@ class GuideScreen:
                     if next_page_start < self.max_cards:
                         self.card_index = next_page_start
                         self.scroll_y = 0
-                        self._content_cache.clear()
                 elif self.selected_tab < len(GUIDE_SECTIONS) - 1:
                     self.selected_tab += 1
                     self.scroll_y = 0
                     self.card_index = 0
-                    self._content_cache.clear()
             
             # Page Up/Down - Kart sayfası veya scroll
             elif event.key == pygame.K_PAGEUP:
@@ -1033,7 +1023,6 @@ class GuideScreen:
                     cards_per_page = 9
                     if self.card_index >= cards_per_page:
                         self.card_index = max(0, (self.card_index // cards_per_page - 1) * cards_per_page)
-                        self._content_cache.clear()
                 else:
                     self.scroll_y = max(0, self.scroll_y - 200)
             
@@ -1044,7 +1033,6 @@ class GuideScreen:
                     next_page_start = ((self.card_index // cards_per_page) + 1) * cards_per_page
                     if next_page_start < self.max_cards:
                         self.card_index = next_page_start
-                        self._content_cache.clear()
                 else:
                     self.scroll_y = min(self.max_scroll, self.scroll_y + 200)
             
@@ -1055,7 +1043,6 @@ class GuideScreen:
                     self.selected_tab = new_tab
                     self.scroll_y = 0
                     self.card_index = 0
-                    self._content_cache.clear()
             
             # Tam ekran
             if is_fullscreen_toggle(event.key, getattr(event, 'mod', 0)):
@@ -1071,7 +1058,6 @@ class GuideScreen:
                     self.selected_tab = tab_clicked
                     self.scroll_y = 0
                     self.card_index = 0
-                    self._content_cache.clear()
                     return None
                 
                 # Geri buton kontrolü

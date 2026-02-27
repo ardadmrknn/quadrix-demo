@@ -198,6 +198,10 @@ def _build_tab_content(tab_key: str, sm, show_debug: bool = False) -> list[dict]
         })
 
         # Müzik modu seçicileri (eski ModeMusicScreen yerine)
+        items.append({
+            'type': 'toggle', 'key': 'music_shuffle',
+            'label_tr': 'Müzik Karıştır (Shuffle)', 'label_en': 'Shuffle Music',
+        })
         items.append({'type': 'section', 'loc_key': 'settings_section_mode_music', 'label_tr': 'MOD MÜZİKLERİ', 'label_en': 'MODE MUSIC'})
         for mode_key, mode_label in get_mode_music_entries():
             items.append({

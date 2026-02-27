@@ -123,7 +123,7 @@ try:
     from .steam_leaderboards import SteamLeaderboardService  # type: ignore
     from .user_screens import UserSelectionScreen, UserManagementScreen  # type: ignore
     from .localization import set_language, t  # type: ignore
-    from .platform_utils import request_window_focus, init_platform_display, get_display_flags, create_display, get_native_resolution, is_fullscreen_toggle, normalize_mouse_pos  # type: ignore
+    from .platform_utils import request_window_focus, init_platform_display, get_display_flags, create_display, get_native_resolution, is_fullscreen_toggle, normalize_mouse_pos, set_app_icon  # type: ignore
     from .retro_style import retro_style  # type: ignore
     from .background_effects import (  # type: ignore
         start_screen_transition, update_screen_transition,
@@ -156,7 +156,7 @@ except Exception:
     from steam_leaderboards import SteamLeaderboardService
     from user_screens import UserSelectionScreen, UserManagementScreen
     from localization import set_language, t
-    from platform_utils import request_window_focus, init_platform_display, get_display_flags, create_display, get_native_resolution, is_fullscreen_toggle, normalize_mouse_pos
+    from platform_utils import request_window_focus, init_platform_display, get_display_flags, create_display, get_native_resolution, is_fullscreen_toggle, normalize_mouse_pos, set_app_icon
     from retro_style import retro_style
     from background_effects import (
         start_screen_transition, update_screen_transition,
@@ -645,7 +645,7 @@ def _show_tutorial_prompt(screen):
     # Arka planı yakala
     bg_capture = screen.copy()
     dim_surface = pygame.Surface(screen.get_size(), pygame.SRCALPHA)
-    dim_surface.fill((0, 0, 0, 180))
+    dim_surface.fill((0, 0, 0, 220))
     bg_capture.blit(dim_surface, (0, 0))
     
     while running_popup:
@@ -654,21 +654,22 @@ def _show_tutorial_prompt(screen):
         width, height = screen.get_size()
         popup_scale = _fullscreen_popup_scale(screen)
         side_margin = max(30, int(40 * popup_scale))
-        panel_width = min(int(500 * popup_scale), width - side_margin * 2)
-        panel_height = min(int(280 * popup_scale), height - max(70, int(90 * popup_scale)))
-        panel_width = max(340, panel_width)
-        panel_height = max(210, panel_height)
+        panel_width = min(int(820 * popup_scale), width - side_margin * 2)
+        panel_height = min(int(420 * popup_scale), height - max(70, int(90 * popup_scale)))
+        panel_width = max(560, panel_width)
+        panel_height = max(320, panel_height)
         panel_rect = pygame.Rect((width - panel_width) // 2, (height - panel_height) // 2, panel_width, panel_height)
         
-        btn_w = min(int(180 * popup_scale), (panel_rect.width - max(36, int(72 * popup_scale))) // 2)
-        btn_h = max(36, int(50 * popup_scale))
-        spacing = max(10, int(20 * popup_scale))
+        btn_w = min(int(210 * popup_scale), (panel_rect.width - max(36, int(72 * popup_scale))) // 2)
+        btn_h = max(46, int(62 * popup_scale))
+        spacing = max(14, int(24 * popup_scale))
         total_btn_w = btn_w * 2 + spacing
         btn_start_x = panel_rect.centerx - total_btn_w // 2
-        btn_y = panel_rect.bottom - btn_h - max(18, int(30 * popup_scale))
+        btn_y = panel_rect.bottom - btn_h - max(22, int(36 * popup_scale))
         
-        play_rect = pygame.Rect(btn_start_x, btn_y, btn_w, btn_h)
-        skip_rect = pygame.Rect(btn_start_x + btn_w + spacing, btn_y, btn_w, btn_h)
+        # Atla solda, Eğitimi Oyna sağda
+        skip_rect = pygame.Rect(btn_start_x, btn_y, btn_w, btn_h)
+        play_rect = pygame.Rect(btn_start_x + btn_w + spacing, btn_y, btn_w, btn_h)
         
         # Olaylar
         for event in pygame.event.get():
@@ -698,16 +699,16 @@ def _show_tutorial_prompt(screen):
         retro_style.draw_glass_panel(screen, panel_rect, alpha=230, border_color=(100, 255, 100), glow=True)
         
         # Başlık ve Metin
-        title_font = retro_style.get_font(max(17, int(26 * popup_scale)), bold=True)
+        title_font = retro_style.get_font(max(22, int(32 * popup_scale)), bold=True)
         title_surf = title_font.render(title, True, (100, 255, 100))
-        screen.blit(title_surf, title_surf.get_rect(centerx=panel_rect.centerx, top=panel_rect.y + max(16, int(30 * popup_scale))))
+        screen.blit(title_surf, title_surf.get_rect(centerx=panel_rect.centerx, top=panel_rect.y + max(22, int(36 * popup_scale))))
         
-        body_font = retro_style.get_font(max(13, int(20 * popup_scale)))
+        body_font = retro_style.get_font(max(16, int(22 * popup_scale)))
         body_rect = pygame.Rect(
-            panel_rect.x + max(16, int(30 * popup_scale)),
-            panel_rect.y + max(42, int(80 * popup_scale)),
-            panel_rect.width - max(32, int(60 * popup_scale)),
-            max(60, int(100 * popup_scale)),
+            panel_rect.x + max(20, int(36 * popup_scale)),
+            panel_rect.y + max(60, int(96 * popup_scale)),
+            panel_rect.width - max(40, int(72 * popup_scale)),
+            max(80, int(130 * popup_scale)),
         )
         retro_style.draw_wrapped_text(screen, text, body_font, (240, 240, 240), body_rect, align='center')
         
@@ -715,8 +716,8 @@ def _show_tutorial_prompt(screen):
         mpos = pygame.mouse.get_pos()
         mpos = normalize_mouse_pos(mpos) if 'normalize_mouse_pos' in globals() else mpos
         
-        retro_style.draw_uniform_button(screen, play_rect, t('play_tutorial'), sub_text='ENTER', color_code=retro_style.success, selected=play_rect.collidepoint(mpos))
         retro_style.draw_uniform_button(screen, skip_rect, t('skip_tutorial'), sub_text='ESC', color_code=retro_style.secondary, selected=skip_rect.collidepoint(mpos))
+        retro_style.draw_uniform_button(screen, play_rect, t('play_tutorial'), sub_text='ENTER', color_code=retro_style.success, selected=play_rect.collidepoint(mpos))
         
         pygame.display.flip()
         
@@ -857,7 +858,16 @@ def main():
     except Exception:
         screen = create_display(800, 600, fullscreen=False, resizable=True, borderless=False)
     
-    pygame.display.set_caption('Quadrix - Main Menu')
+    pygame.display.set_caption('Quadrix')
+    _assets_dir = str(Path(__file__).resolve().parent.parent / 'assets')
+    set_app_icon(_assets_dir)
+    # macOS: Dock/process adını 'Quadrix' olarak ayarla (PyObjC varsa)
+    if current_platform == 'Darwin':
+        try:
+            from AppKit import NSProcessInfo
+            NSProcessInfo.processInfo().setProcessName_('Quadrix')
+        except Exception:
+            pass
     request_window_focus()
     
     # Özel fare imlecini yükle (display oluşturulduktan sonra)
@@ -1062,7 +1072,8 @@ def main():
             playlist_keys = [menu_sound.ensure_track_available(p) for p in playlist]
             playlist_keys = [p for p in playlist_keys if p]
             if playlist_keys:
-                menu_sound.set_music_playlist(playlist_keys, loop=True, autoplay=True, force=True)
+                do_shuffle = bool(settings_manager.get('music_shuffle', False))
+                menu_sound.set_music_playlist(playlist_keys, loop=True, autoplay=True, force=True, shuffle=do_shuffle)
             else:
                 menu_sound.play_music(menu_music.lower(), loop=True)
         except Exception:
@@ -1178,6 +1189,16 @@ def main():
         """Ekran yeniden oluşturulduğunda tüm ekran referanslarını güncelle."""
         nonlocal screen
         screen = new_screen
+        # Display yeniden oluşturulunca pygame caption ve icon sıfırlanır — her seferinde geri yükle
+        try:
+            pygame.display.set_caption('Quadrix')
+        except Exception:
+            pass
+        try:
+            _icon_assets_dir = str(Path(__file__).resolve().parent.parent / 'assets')
+            set_app_icon(_icon_assets_dir)
+        except Exception:
+            pass
 
         for obj in (
             menu,
@@ -1774,7 +1795,8 @@ def main():
                         playlist_keys = [menu_sound.ensure_track_available(p) for p in playlist]
                         playlist_keys = [p for p in playlist_keys if p]
                         if playlist_keys:
-                            menu_sound.set_music_playlist(playlist_keys, loop=True, autoplay=True, force=True)
+                            do_shuffle = bool(settings_manager.get('music_shuffle', False))
+                            menu_sound.set_music_playlist(playlist_keys, loop=True, autoplay=True, force=True, shuffle=do_shuffle)
                         else:
                             menu_sound.play_music(menu_music.lower(), loop=True)
                     except Exception:
@@ -2365,7 +2387,8 @@ def main():
                     playlist_keys = [menu_sound.ensure_track_available(p) for p in playlist]
                     playlist_keys = [p for p in playlist_keys if p]
                     if playlist_keys:
-                        menu_sound.set_music_playlist(playlist_keys, loop=True, autoplay=True, force=True)
+                        do_shuffle = bool(settings_manager.get('music_shuffle', False))
+                        menu_sound.set_music_playlist(playlist_keys, loop=True, autoplay=True, force=True, shuffle=do_shuffle)
                     else:
                         menu_sound.play_music(menu_music.lower(), loop=True)
                 except Exception:
@@ -2463,13 +2486,13 @@ def main():
         return True
 
     def _handle_user_selection(delta_ms):
-        nonlocal running, state, score_manager, achievement_manager, highscore_screen, achievement_screen
+        nonlocal running, state, score_manager, achievement_manager, highscore_screen, achievement_screen, game
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
             action = user_selection_screen.handle_input(event)
-            if action == 'user_selected':
+            if action in ('user_selected', 'new_user_created'):
                 achievements_file = user_manager.get_achievements_file()
                 highscores_file = user_manager.get_highscores_file()
                 score_manager = ScoreManager(highscores_file)
@@ -2483,6 +2506,28 @@ def main():
                 achievement_screen = AchievementScreen(screen, achievement_manager)
                 user_selection_screen.users_list = list(user_manager.get_all_users().keys())
                 state = 'menu'
+                # Yeni kullanıcı oluşturulduğunda tutorial pop-up göster
+                if action == 'new_user_created':
+                    user_manager.set_tutorial_completed(False)
+                    if _show_tutorial_prompt(screen):
+                        menu_sound.stop_music()
+                        game = TutorialMode(
+                            'Normal',
+                            settings_screen.sound_enabled,
+                            settings_screen.effects_enabled,
+                            achievement_manager,
+                            theme_manager,
+                            screen,
+                            fullscreen,
+                            settings_manager,
+                            user_manager,
+                            sound_manager=menu_sound,
+                            score_manager=score_manager,
+                            block_style_manager=block_style_manager
+                        )
+                        state = 'game'
+                    else:
+                        user_manager.set_tutorial_completed(True)
             elif action == 'edit_user':
                 target_user = user_selection_screen.get_selected_username()
                 if target_user:

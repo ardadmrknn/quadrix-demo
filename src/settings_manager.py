@@ -149,6 +149,8 @@ class SettingsManager:
             'game_music_playlist': ['klasik0'],
             'campaign_music_playlist': ['klasik0'],
             'mode_music_playlists': {key: [value] for key, value in MODE_MUSIC_DEFAULTS.items()},
+            # Müzik karıştırma modu: playlist sırası karıştırılır
+            'music_shuffle': False,
             # Oynanış ayarları (FAZ 2)
             'das_delay': 170,         # İlk hareket gecikmesi (ms) - 100-300 arası
             'das_repeat': 50,         # Tekrar hızı (ms) - 10-500 arası

@@ -685,6 +685,23 @@ class CampaignMode(Game):
         
         self.settings_manager.set('campaign_progress', progress)
         self.settings_manager.save()
+
+        # Kampanya yıldız başarımlarını kontrol et
+        if self.achievement_manager:
+            ach_kwargs = {'campaign_total_stars': total_stars}
+            if self.current_level_num == 50:
+                ach_kwargs['campaign_level_50_stars'] = best_stars
+            if self.current_level_num == 100:
+                ach_kwargs['campaign_level_100_stars'] = best_stars
+            new_achs = self.achievement_manager.update_stats(**ach_kwargs)
+            for ach_id in new_achs:
+                achievement = self.achievement_manager.get_achievement(ach_id)
+                if achievement:
+                    self.achievement_notifications.append({
+                        'achievement': achievement,
+                        'time': pygame.time.get_ticks(),
+                        'alpha': 255
+                    })
     
     # === INPUT HANDLING ===
     

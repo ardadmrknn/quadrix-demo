@@ -27,15 +27,28 @@ def _darken_rgb(color: tuple[int, int, int], factor: float) -> tuple[int, int, i
 
 
 def _circle_crop_surface(src: pygame.Surface | None, diameter: int) -> pygame.Surface:
+    """Görüntüyü dairesel keser. En-boy oranını korur (center-crop)."""
     diameter = max(8, int(diameter))
     out = pygame.Surface((diameter, diameter), pygame.SRCALPHA)
     if src is None:
         return out
-    img = pygame.transform.smoothscale(src.convert_alpha(), (diameter, diameter))
+    src_w, src_h = src.get_size()
+    # En-boy oranını koru: kısa kenar diameter olacak şekilde ölçekle
+    scale = diameter / min(src_w, src_h) if min(src_w, src_h) > 0 else 1.0
+    scaled_w = max(diameter, int(src_w * scale))
+    scaled_h = max(diameter, int(src_h * scale))
+    img = pygame.transform.smoothscale(src.convert_alpha(), (scaled_w, scaled_h))
+    # Ortadan kes
+    crop_x = (scaled_w - diameter) // 2
+    crop_y = (scaled_h - diameter) // 2
+    crop_rect = pygame.Rect(crop_x, crop_y, diameter, diameter)
+    cropped = pygame.Surface((diameter, diameter), pygame.SRCALPHA)
+    cropped.blit(img, (0, 0), area=crop_rect)
+    # Daire maskesi uygula
     mask = pygame.Surface((diameter, diameter), pygame.SRCALPHA)
     pygame.draw.circle(mask, (255, 255, 255, 255), (diameter // 2, diameter // 2), diameter // 2)
-    img.blit(mask, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
-    out.blit(img, (0, 0))
+    cropped.blit(mask, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+    out.blit(cropped, (0, 0))
     return out
 
 
@@ -839,7 +852,7 @@ class UserSelectionScreen:
             self._ensure_visible()
             self._reset_create_form()
             self._start_transition()
-            return 'user_selected'
+            return 'new_user_created'
         else:
             self.error_message = message
             self.error_timer = 180
@@ -1339,18 +1352,25 @@ class UserSelectionScreen:
             sug.set_alpha(220)
             self.screen.blit(sug, sug.get_rect(midleft=(validation_rect.x + s(10), validation_rect.centery)))
 
-        # Butonlar ve hint alt hizaya sabit
-        button_y = rect.bottom - s(56) - s(54)
+        # Butonlar: içerikten sonra, ama altına ankraj yaparak. Küçük ekranda validation ile buton üst üste gelmesin.
+        content_bottom = validation_rect.bottom
+        bottom_anchor_y = rect.bottom - s(56) - s(54)
+        button_y = max(content_bottom + s(12), bottom_anchor_y)
+        # Buton, rect sınırından taşmasın
+        button_y = min(button_y, rect.bottom - s(56) - s(4))
         self._create_button_rect = pygame.Rect(rect.x + s(20), button_y, s(220), s(56))
         primary_label = t('user_action_save') if is_edit_mode else t('user_action_create')
         self._draw_action_button(self._create_button_rect, primary_label, _darken_rgb(retro_style.success, 0.55))
         self._cancel_button_rect = pygame.Rect(self._create_button_rect.right + s(20), button_y, s(180), s(56))
         self._draw_action_button(self._cancel_button_rect, t('user_action_back_esc'), (200, 80, 80))
-        
+
         hint_text = t('user_hint_save') if is_edit_mode else t('user_hint_create')
-        hint = self.font_small.render(hint_text, True, (190, 200, 215))
-        hint.set_alpha(235)
-        self.screen.blit(hint, hint.get_rect(midtop=(rect.centerx, rect.bottom - s(44))))
+        hint_y = button_y + s(56) + s(6)
+        # Hint çizmek için yeterli alan varsa göster
+        if hint_y + self.font_small.get_height() <= rect.bottom:
+            hint = self.font_small.render(hint_text, True, (190, 200, 215))
+            hint.set_alpha(235)
+            self.screen.blit(hint, hint.get_rect(midtop=(rect.centerx, hint_y)))
 
     def _draw_chip_button(self, rect, label, color):
         pygame.draw.rect(self.screen, color, rect, border_radius=16)
@@ -1486,8 +1506,14 @@ class UserSelectionScreen:
         info_rect = pygame.Rect(avatar_rect.right + s(30), avatar_rect.y, column_width, avatar_rect.height)
         stacked_layout = info_rect.width < s(320)
         if stacked_layout:
-            avatar_rect = pygame.Rect(form_rect.x + s(30), form_rect.y + s(60), form_rect.width - s(60), (form_rect.height - s(140)) // 2)
-            info_rect = pygame.Rect(avatar_rect.x, avatar_rect.bottom + s(40), avatar_rect.width, avatar_rect.height)
+            # info_rect içindeki elemanların üst üste binmemesi için minimum yükseklik:
+            # label(34) + input(66+64) + help(8) + validation(26+28) + gap(12) + button(56) + hint(44) = ~292
+            MIN_INFO_H = s(300)
+            usable_h = form_rect.height - s(120)  # s(60) üst boşluk + s(40) bölümler arası + s(20) alt padding
+            avatar_h = max(s(60), usable_h - MIN_INFO_H)
+            info_h = max(MIN_INFO_H, usable_h - avatar_h)
+            avatar_rect = pygame.Rect(form_rect.x + s(30), form_rect.y + s(60), form_rect.width - s(60), avatar_h)
+            info_rect = pygame.Rect(avatar_rect.x, avatar_rect.bottom + s(40), avatar_rect.width, info_h)
         self._draw_avatar_picker(avatar_rect)
         self._draw_username_form(info_rect)
         
