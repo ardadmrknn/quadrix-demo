@@ -321,9 +321,9 @@ class CampaignMode(Game):
         
         # Yıldız ikonunu yükle
         star_paths = [
-            os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'assets', 'ui', 'yıldız.png'),
-            os.path.join(os.path.dirname(os.path.dirname(__file__)), 'assets', 'ui', 'yıldız.png'),
-            'assets/ui/yıldız.png',
+            os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'assets', 'ui', 'yildiz.png'),
+            os.path.join(os.path.dirname(os.path.dirname(__file__)), 'assets', 'ui', 'yildiz.png'),
+            'assets/ui/yildiz.png',
         ]
         
         for path in star_paths:

@@ -1094,19 +1094,19 @@ class Menu:
                 'override_key': 'new_gen_tetris_sticker',
             },
             'tutorial_mode': {
-                'path': str(ROOT_DIR / 'assets' / 'main_theme' / 'eğitim_panel_effect.png'),
+                'path': str(ROOT_DIR / 'assets' / 'main_theme' / 'egitim_panel_effect.png'),
                 'cache_attr': '_tutorial_panel_effect_image',
                 'fail_attr': '_tutorial_panel_effect_load_failed',
                 'override_key': 'tutorial_mode_sticker',
             },
             'piece_workshop': {
-                'path': str(ROOT_DIR / 'assets' / 'main_theme' / 'atölye_panel_back_effect.png'),
+                'path': str(ROOT_DIR / 'assets' / 'main_theme' / 'atolye_panel_back_effect.png'),
                 'cache_attr': '_piece_workshop_panel_effect_image',
                 'fail_attr': '_piece_workshop_panel_effect_load_failed',
                 'fit_full': True,
             },
             'block_styles': {
-                'path': str(ROOT_DIR / 'assets' / 'main_theme' / 'blok_görünüm.png'),
+                'path': str(ROOT_DIR / 'assets' / 'main_theme' / 'blok_gorunum.png'),
                 'cache_attr': '_block_styles_panel_effect_image',
                 'fail_attr': '_block_styles_panel_effect_load_failed',
                 'fit_full': True,

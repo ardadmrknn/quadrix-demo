@@ -44,8 +44,9 @@ datas = [
     # ── Avatar görselleri ──
     (str(REPO_ROOT / 'avatars'), 'avatars'),
 
-    # ── Apple emoji görselleri (Türkçe isimli PNG'ler) ──
-    (str(REPO_ROOT / 'apple_emojis'), 'apple_emojis'),
+    # ── Apple emoji görselleri: runtime'da kullanılmaz ──
+    # Emojiler assets/ui/emoji/ altında ASCII adlarla mevcuttur.
+    # (str(REPO_ROOT / 'apple_emojis'), 'apple_emojis'),
 
     # ── Font dosyaları (CJK, paperlogy, cinecaption) ──
     (str(REPO_ROOT / 'font'), 'font'),

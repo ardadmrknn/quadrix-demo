@@ -1,5 +1,4 @@
-[2026-02-27 13:23:36]: Starting AppID 4428040 build (flags 0x0).
-[2026-02-27 13:23:36]: Building depot 4428041...
+[2026-02-27 14:50:11]: Starting AppID 4428040 build (flags 0x0).
+[2026-02-27 14:50:11]: Building depot 4428041...
 
-[2026-02-27 13:23:40]: ERROR! Failed to commit build for AppID 4428040 : Access Denied
-
+[2026-02-27 14:50:27]: Successfully finished AppID 4428040 build (BuildID 22126761).
