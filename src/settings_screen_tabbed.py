@@ -170,6 +170,12 @@ def _build_tab_content(tab_key: str, sm, show_debug: bool = False) -> list[dict]
             'label_tr': 'Müzik Ses Seviyesi', 'label_en': 'Music Volume',
             'min': 0.0, 'max': 1.0, 'step': 0.05, 'suffix': '%', 'percent': True,
         })
+        items.append({
+            'type': 'slider', 'key': 'menu_music_volume',
+            'loc_key': 'menu_music_volume',
+            'label_tr': 'Ana Menü Müzik Seviyesi', 'label_en': 'Menu Music Volume',
+            'min': 0.0, 'max': 1.0, 'step': 0.05, 'suffix': '%', 'percent': True,
+        })
 
         items.append({'type': 'section', 'loc_key': 'settings_section_sound_effects', 'label_tr': 'SES EFEKTLERİ', 'label_en': 'SOUND EFFECTS'})
         items.append({
@@ -397,6 +403,7 @@ class TabbedSettingsScreen:
         # Smooth slider animasyonları
         self._anim_last_tick = pygame.time.get_ticks()
         self._music_volume_vis = float(self.music_volume)
+        self._menu_music_volume_vis = float(self.menu_music_volume)
         self._sfx_volume_vis = float(self.sfx_volume)
 
         # Tab rect'leri (mouse için)
@@ -505,6 +512,7 @@ class TabbedSettingsScreen:
         # Audio
         self.music_enabled = sm.get('music_enabled', True)
         self.music_volume = sm.get('music_volume', 0.3)
+        self.menu_music_volume = sm.get('menu_music_volume', 0.3)
         self.sound_enabled = sm.get('sound_enabled', True)
         self.sfx_volume = sm.get('sfx_volume', 0.5)
         self.mute_all = sm.get('mute_all', False)
@@ -1368,6 +1376,9 @@ class TabbedSettingsScreen:
         if key == 'music_volume':
             self.music_volume = new_val
             return 'change_music_volume'
+        elif key == 'menu_music_volume':
+            self.menu_music_volume = new_val
+            return 'change_menu_music_volume'
         elif key == 'sfx_volume':
             self.sfx_volume = new_val
             return 'change_sfx_volume'
@@ -1406,6 +1417,9 @@ class TabbedSettingsScreen:
         if key == 'music_volume':
             self.music_volume = new_val
             return 'change_music_volume'
+        elif key == 'menu_music_volume':
+            self.menu_music_volume = new_val
+            return 'change_menu_music_volume'
         elif key == 'sfx_volume':
             self.sfx_volume = new_val
             return 'change_sfx_volume'
@@ -1936,6 +1950,7 @@ class TabbedSettingsScreen:
         dt = max(0.0, min(0.05, dt))
         speed = 18.0
         self._music_volume_vis += (self.music_volume - self._music_volume_vis) * min(1.0, dt * speed)
+        self._menu_music_volume_vis += (self.menu_music_volume - self._menu_music_volume_vis) * min(1.0, dt * speed)
         self._sfx_volume_vis += (self.sfx_volume - self._sfx_volume_vis) * min(1.0, dt * speed)
 
         # Arka plan
@@ -2268,6 +2283,8 @@ class TabbedSettingsScreen:
         # Smooth animasyon
         if key == 'music_volume':
             current = self._music_volume_vis
+        elif key == 'menu_music_volume':
+            current = self._menu_music_volume_vis
         elif key == 'sfx_volume':
             current = self._sfx_volume_vis
 

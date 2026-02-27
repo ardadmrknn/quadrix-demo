@@ -109,6 +109,7 @@ class SettingsManager:
             'music_enabled': True,
             'sound_enabled': True,
             'music_volume': 0.3,  # Müzik ses seviyesi (0.0 - 1.0)
+            'menu_music_volume': 0.3,  # Ana menü müzik ses seviyesi (0.0 - 1.0)
             'sfx_volume': 0.5,    # Efekt ses seviyesi (0.0 - 1.0)
             'effects_enabled': True,
             'background_enabled': True,
@@ -190,6 +191,7 @@ class SettingsManager:
         # Sık değişen ayarlar (slider, repeat input) - diske yazımı toplu yap.
         self._debounced_keys = {
             'music_volume',
+            'menu_music_volume',
             'sfx_volume',
             'bg_transparency',
             'menu_transparency',

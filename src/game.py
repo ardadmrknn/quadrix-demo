@@ -4090,6 +4090,25 @@ class Game:
         self.screen.blit(hint, hint.get_rect(centerx=panel_rect.centerx, bottom=panel_rect.bottom - self._sx(14, ui_scale)))
 
 
+    def _get_cached_peek_icon(self, icon_size):
+        """Peek (göz) ikonunu cache'li olarak yükle ve döndür."""
+        cache_key = icon_size
+        if getattr(self, '_peek_icon_cache_key', None) == cache_key:
+            return self._peek_icon_cache
+        try:
+            peek_icon_path = os.path.join(os.path.dirname(__file__), '..', 'assets', 'kart_secim_sagust.png')
+            if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+                peek_icon_path = os.path.join(sys._MEIPASS, 'assets', 'kart_secim_sagust.png')
+            peek_icon = load_image(peek_icon_path)
+            peek_icon = pygame.transform.smoothscale(peek_icon, (icon_size, icon_size))
+            self._peek_icon_cache = peek_icon
+            self._peek_icon_cache_key = cache_key
+            return peek_icon
+        except Exception:
+            self._peek_icon_cache = None
+            self._peek_icon_cache_key = cache_key
+            return None
+
     def _draw_game_over_overlay(self, skin):
         """Oyun bittiğinde animasyonlu yıldız sistemli modern panel göster."""
         import math
@@ -4115,17 +4134,12 @@ class Game:
             pygame.draw.circle(self.screen, (255, 255, 255), center, radius)
             pygame.draw.circle(self.screen, (100, 200, 255), center, radius, 2)
             
-            # Göz ikonu - PNG ikon kullan
-            peek_icon_path = os.path.join(os.path.dirname(__file__), '..', 'assets', 'kart_secim_sagust.png')
-            if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
-                peek_icon_path = os.path.join(sys._MEIPASS, 'assets', 'kart_secim_sagust.png')
-            try:
-                peek_icon = load_image(peek_icon_path)
-                icon_size = int(peek_btn_size * 0.65)
-                peek_icon = pygame.transform.smoothscale(peek_icon, (icon_size, icon_size))
-                icon_rect = peek_icon.get_rect(center=self._game_over_peek_rect.center)
-                self.screen.blit(peek_icon, icon_rect)
-            except Exception:
+            # Göz ikonu - cache'li yükleme
+            peek_icon_surf = self._get_cached_peek_icon(int(peek_btn_size * 0.65))
+            if peek_icon_surf:
+                icon_rect = peek_icon_surf.get_rect(center=self._game_over_peek_rect.center)
+                self.screen.blit(peek_icon_surf, icon_rect)
+            else:
                 # Fallback: metin göster
                 fallback_font = retro_style.get_font(s(20, minimum=12), bold=True)
                 eye_surf = fallback_font.render("X", True, (100, 200, 255))
@@ -4219,13 +4233,19 @@ class Game:
             self._update_confetti(current_time)
         
         # ============================================
-        # ÇİZİM - FADE OVERLAY
+        # ÇİZİM - FADE OVERLAY (cache'li gradient)
         # ============================================
-        overlay = pygame.Surface((self.window_width, self.window_height), pygame.SRCALPHA)
-        for y in range(self.window_height):
-            gradient_alpha = int(self._game_over_fade_alpha * 0.8 + 40 * (y / self.window_height))
-            pygame.draw.line(overlay, (5, 8, 18, min(gradient_alpha, self._game_over_fade_alpha)), (0, y), (self.window_width, y))
-        self.screen.blit(overlay, (0, 0))
+        _go_cache_key = (self.window_width, self.window_height)
+        if getattr(self, '_go_gradient_cache_key', None) != _go_cache_key:
+            _go_surf = pygame.Surface((self.window_width, self.window_height), pygame.SRCALPHA)
+            for y in range(self.window_height):
+                _a = int(240 * 0.8 + 40 * (y / self.window_height))
+                _a = min(_a, 240)
+                pygame.draw.line(_go_surf, (5, 8, 18, _a), (0, y), (self.window_width, y))
+            self._go_gradient_cache = _go_surf
+            self._go_gradient_cache_key = _go_cache_key
+        self._go_gradient_cache.set_alpha(self._game_over_fade_alpha)
+        self.screen.blit(self._go_gradient_cache, (0, 0))
         
         # Konfeti çiz (arka planda)
         self._draw_confetti()
@@ -4281,17 +4301,13 @@ class Game:
         border_color = (116, 190, 255) if peek_hovered else (110, 134, 188)
         pygame.draw.circle(self.screen, border_color, center, radius, 2)
         
-        # Göz ikonu - PNG ikon kullan
-        peek_icon_path = os.path.join(os.path.dirname(__file__), '..', 'assets', 'kart_secim_sagust.png')
-        if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
-            peek_icon_path = os.path.join(sys._MEIPASS, 'assets', 'kart_secim_sagust.png')
-        try:
-            peek_icon = load_image(peek_icon_path)
-            icon_size = int(peek_btn_size * 0.65)
-            peek_icon = pygame.transform.smoothscale(peek_icon, (icon_size, icon_size))
-            icon_rect = peek_icon.get_rect(center=self._game_over_peek_rect.center)
-            self.screen.blit(peek_icon, icon_rect)
-        except Exception:
+        # Göz ikonu - cache'li yükleme
+        _peek_icon_size = int(peek_btn_size * 0.65)
+        peek_icon_surf = self._get_cached_peek_icon(_peek_icon_size)
+        if peek_icon_surf:
+            icon_rect = peek_icon_surf.get_rect(center=self._game_over_peek_rect.center)
+            self.screen.blit(peek_icon_surf, icon_rect)
+        else:
             # Fallback: metin göster
             fallback_font = retro_style.get_font(s(16, minimum=10), bold=True)
             eye_surf = fallback_font.render("O", True, (116, 190, 255) if peek_hovered else (160, 182, 220))
@@ -4941,9 +4957,7 @@ class Game:
                 self._confetti_particles.remove(p)
     
     def _draw_confetti(self):
-        """Konfeti parçacıklarını çiz."""
-        import math
-        
+        """Konfeti parçacıklarını çiz (optimizeli)."""
         for p in self._confetti_particles:
             x = int(p['x'])
             y = int(p['y'])
@@ -4951,18 +4965,25 @@ class Game:
             color = p['color']
             
             # Alpha fade
-            alpha = min(255, p['life'] * 2)
+            alpha = min(255, int(p['life'] * 2))
+            if alpha <= 0:
+                continue
             
             if p['shape'] == 'rect':
-                # Dönen dikdörtgen
-                surf = pygame.Surface((size * 2, size), pygame.SRCALPHA)
-                surf.fill((*color, alpha))
-                rotated = pygame.transform.rotate(surf, p['rotation'])
-                rect = rotated.get_rect(center=(x, y))
-                self.screen.blit(rotated, rect)
+                # Dönen dikdörtgen - alpha yeterince yüksekse basit çiz
+                if alpha >= 240:
+                    # Opak: doğrudan rect (surface+rotate+blit yerine)
+                    half_w, half_h = size, size // 2
+                    pygame.draw.rect(self.screen, color, (x - half_w, y - half_h, size * 2, size))
+                else:
+                    surf = pygame.Surface((size * 2, size), pygame.SRCALPHA)
+                    surf.fill((*color, alpha))
+                    rotated = pygame.transform.rotate(surf, p['rotation'])
+                    rect = rotated.get_rect(center=(x, y))
+                    self.screen.blit(rotated, rect)
             else:
-                # Daire
-                if alpha >= 255:
+                # Daire - opak ise doğrudan çiz
+                if alpha >= 240:
                     pygame.draw.circle(self.screen, color, (x, y), size // 2)
                 else:
                     surf = pygame.Surface((size, size), pygame.SRCALPHA)
