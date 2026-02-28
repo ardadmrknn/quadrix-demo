@@ -7,11 +7,13 @@ try:
     from .constants import *  # type: ignore
     from .mode_skins import get_mode_skin  # type: ignore
     from .localization import t  # type: ignore
+    from .retro_style import retro_style  # type: ignore
 except Exception:
     from game import Game
     from constants import *
     from mode_skins import get_mode_skin
     from localization import t
+    from retro_style import retro_style
 
 
 def debug_print(*args, **kwargs):
@@ -53,10 +55,10 @@ class SprintMode(Game):
         self.is_finished = False
         
         # Font cache (her frame yeniden oluşturulmayacak)
-        self.sprint_font_large = pygame.font.Font(None, 48)
-        self.sprint_font_medium = pygame.font.Font(None, 36)
-        self.sprint_font_small = pygame.font.Font(None, 28)
-        self.sprint_font_timer = pygame.font.Font(None, 56)  # Büyük kronometre fontu
+        self.sprint_font_large = retro_style.get_font(48, bold=False)
+        self.sprint_font_medium = retro_style.get_font(36, bold=False)
+        self.sprint_font_small = retro_style.get_font(28, bold=False)
+        self.sprint_font_timer = retro_style.get_font(56, bold=False)  # Büyük kronometre fontu
         self.controls_under_stats = True
         self._sprint_counter_base_size = (int(self.window_width), int(self.window_height))
         
@@ -402,10 +404,10 @@ class UltraMode(Game):
         self.is_finished = False
         
         # Font cache (sadece bitişte kullanılacak)
-        self.ultra_font_large = pygame.font.Font(None, 72)
-        self.ultra_font_medium = pygame.font.Font(None, 56)
-        self.ultra_panel_font = pygame.font.Font(None, 48)
-        self.ultra_panel_font_small = pygame.font.Font(None, 36)
+        self.ultra_font_large = retro_style.get_font(72, bold=False)
+        self.ultra_font_medium = retro_style.get_font(56, bold=False)
+        self.ultra_panel_font = retro_style.get_font(48, bold=False)
+        self.ultra_panel_font_small = retro_style.get_font(36, bold=False)
         self.controls_under_stats = True
         self._ultra_counter_base_size = (int(self.window_width), int(self.window_height))
         
@@ -735,9 +737,9 @@ class ZenMode(Game):
         self.mode_name = "ZEN MODE"
         
         # Font cache (her frame yeniden oluşturulmayacak)
-        self.zen_font_large = pygame.font.Font(None, 48)
-        self.zen_font_medium = pygame.font.Font(None, 36)
-        self.zen_font_small = pygame.font.Font(None, 28)
+        self.zen_font_large = retro_style.get_font(48, bold=False)
+        self.zen_font_medium = retro_style.get_font(36, bold=False)
+        self.zen_font_small = retro_style.get_font(28, bold=False)
         
         # Zen mode özellikleri
         self.auto_clears = 0  # Otomatik temizlik sayacı
@@ -1006,7 +1008,7 @@ class ZenMode(Game):
         ]
         label_font = self.zen_font_small
         if ui_scale != 1.0:
-            label_font = pygame.font.Font(None, s(28, minimum=14))
+            label_font = retro_style.get_font(s(28, minimum=14), bold=False)
         for idx, (label, value, color) in enumerate(info_lines):
             label_text = label_font.render(label + ':', True, skin.text_color)
             self.screen.blit(label_text, (panel_rect.x + s(14), panel_rect.y + s(10) + idx * s(32)))
@@ -1048,9 +1050,9 @@ class HardcoreMode(Game):
         self.inverted_controls = True  # Ters kontroller
         
         # Font cache
-        self.hardcore_font_large = pygame.font.Font(None, 48)
-        self.hardcore_font_medium = pygame.font.Font(None, 36)
-        self.hardcore_font_small = pygame.font.Font(None, 28)
+        self.hardcore_font_large = retro_style.get_font(48, bold=False)
+        self.hardcore_font_medium = retro_style.get_font(36, bold=False)
+        self.hardcore_font_small = retro_style.get_font(28, bold=False)
         
         # En yüksek skorlar
         self.best_scores = self._load_best_scores()

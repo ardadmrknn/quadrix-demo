@@ -417,7 +417,11 @@ class SpecialBlockManager:
         
         # Layer sayısı
         if state.layers > 1:
-            font = pygame.font.Font(None, size // 2)
+            try:
+                from retro_style import retro_style as _rs
+                font = _rs.get_font(max(10, size // 2), bold=False)
+            except Exception:
+                font = pygame.font.Font(None, size // 2)
             text = font.render(str(state.layers), True, (255, 200, 100))
             text_rect = text.get_rect(center=(x + mid, y + mid))
             surface.blit(text, text_rect)
@@ -470,7 +474,11 @@ class SpecialBlockManager:
         surface.blit(timer_surface, (x, y))
         
         # Süre göstergesi
-        font = pygame.font.Font(None, size // 2)
+        try:
+            from retro_style import retro_style as _rs
+            font = _rs.get_font(max(10, size // 2), bold=False)
+        except Exception:
+            font = pygame.font.Font(None, size // 2)
         time_text = str(int(state.timer))
         text = font.render(time_text, True, (255, 255, 255))
         text_rect = text.get_rect(center=(x + size // 2, y + size // 2))

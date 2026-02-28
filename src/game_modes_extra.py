@@ -218,8 +218,8 @@ class Tetris2Mode(Game):
             score_manager=score_manager,
         )
         self.mode_name = "QUADRIX EXTRA"
-        self.tetris2_font_large = pygame.font.Font(None, 48)
-        self.tetris2_font_medium = pygame.font.Font(None, 36)
+        self.tetris2_font_large = retro_style.get_font(48, bold=False)
+        self.tetris2_font_medium = retro_style.get_font(36, bold=False)
         print("🎮 QUADRIX EXTRA MODE aktif. Ekstra parçalar devrede.")
 
     def _get_base_piece_factories(self):
@@ -1166,6 +1166,7 @@ class MysteryCardUI:
         # Widget list of UICard instances used to render the cards
         self.card_widgets: List['UICard'] = []
         self.skip_button_rect: pygame.Rect | None = None
+        self.reroll_button_rect: pygame.Rect | None = None
         # Göz atma (peek) butonu - oyun alanını görmek için
         self.peek_button_rect: pygame.Rect | None = None
         self.peek_mode_active = False  # True olunca kart seçimi gizlenip oyun alanı gösterilir
@@ -1184,6 +1185,7 @@ class MysteryCardUI:
         self.randomize_pill_rect = None
         self.card_widgets = []
         self.skip_button_rect = None
+        self.reroll_button_rect = None
         self.peek_button_rect = None
         self.peek_mode_active = False
 
@@ -1467,14 +1469,16 @@ class MysteryCardUI:
             # Render via UICard
             self.card_widgets[idx].render(screen, debug=card_mode_debug)
 
-        # Alt aksiyon: Kart almadan devam et
+        # Alt aksiyon: Kart almadan devam et + Yeniden Çek
         btn_font = fonts.get('small')
-        btn_label = btn_font.render(t('card_skip_selection'), True, retro_style.text_primary)
-        btn_w = min(s(320), panel_rect.width - s(80))
         btn_h = s(44)
-        btn_x = panel_rect.centerx - btn_w // 2
         btn_y = panel_rect.bottom - btn_h - s(26)
-        self.skip_button_rect = pygame.Rect(btn_x, btn_y, btn_w, btn_h)
+        total_btn_area_w = min(s(660), panel_rect.width - s(80))
+        gap = s(12)
+        each_w = (total_btn_area_w - gap) // 2
+        start_x = panel_rect.centerx - total_btn_area_w // 2
+        # Skip butonu (sol)
+        self.skip_button_rect = pygame.Rect(start_x, btn_y, each_w, btn_h)
         retro_style.draw_glass_panel(
             screen,
             self.skip_button_rect,
@@ -1482,7 +1486,20 @@ class MysteryCardUI:
             border_color=retro_style.glass_border[:3],
             glow=False,
         )
-        screen.blit(btn_label, btn_label.get_rect(center=self.skip_button_rect.center))
+        skip_label = btn_font.render(t('card_skip_selection'), True, retro_style.text_primary)
+        screen.blit(skip_label, skip_label.get_rect(center=self.skip_button_rect.center))
+        # Reroll butonu (sağ)
+        reroll_x = start_x + each_w + gap
+        self.reroll_button_rect = pygame.Rect(reroll_x, btn_y, each_w, btn_h)
+        retro_style.draw_glass_panel(
+            screen,
+            self.reroll_button_rect,
+            alpha=175,
+            border_color=(220, 170, 40),
+            glow=False,
+        )
+        reroll_label = btn_font.render(t('card_reroll_selection'), True, (255, 215, 80))
+        screen.blit(reroll_label, reroll_label.get_rect(center=self.reroll_button_rect.center))
 
         # Draw a scrollbar thumb in debug grid mode to indicate scroll position
         if card_mode_debug and self.grid_max_scroll > 0:
@@ -1712,6 +1729,9 @@ class MysteryCardUI:
         for idx, rect in enumerate(self.card_rects):
             if rect.collidepoint(pos):
                 return idx
+        # Yeniden Çek
+        if getattr(self, 'reroll_button_rect', None) and self.reroll_button_rect.collidepoint(pos):
+            return 'REROLL'
         # Kart almadan devam et
         if getattr(self, 'skip_button_rect', None) and self.skip_button_rect.collidepoint(pos):
             return 'SKIP'
@@ -3853,10 +3873,11 @@ class MysteryMode(Game):
         return left_w, right_w
 
     def _make_card_ui_font(self, size: int, *, bold: bool = False) -> pygame.font.Font:
-        """Kart UI fontunu dilden bağımsız seç.
+        """Kart UI fontunu mevcut dile göre seç.
 
-        CJK (ja/zh/ko) dillerinde dil profili fontu kullanılır; diğer dillerde
-        mevcut düzeni korumak için pygame varsayılan fontu tercih edilir.
+        CJK (ja/zh/ko) dillerinde get_font_for_language() ile doğrudan
+        HybridFont oluşturur — retro_style._font_path global durumundan
+        bağımsızdır.  Diğer dillerde retro_style.get_font() kullanılır.
         """
         try:
             lang = get_language()
@@ -3864,9 +3885,16 @@ class MysteryMode(Game):
             lang = None
 
         if lang in {"ja", "jp", "zh", "ko"}:
-            return retro_style.get_font(size, bold=bold)
+            try:
+                from ui_language_profile import get_font_for_language
+                effective_lang = "ja" if lang == "jp" else lang
+                font = get_font_for_language(effective_lang, size)
+                if font is not None:
+                    return font
+            except Exception:
+                pass
 
-        return pygame.font.Font(None, size)
+        return retro_style.get_font(size, bold=bold)
 
     def _refresh_card_ui_fonts(self) -> None:
         """Kart UI fontlarını mevcut dile göre yeniden üret."""
@@ -5327,6 +5355,13 @@ class MysteryMode(Game):
                             except Exception:
                                 pass
                             self._close_card_selection()
+                        elif choice == 'REROLL':
+                            # Kart havuzunu yeniden çek; overlay açık kalır.
+                            try:
+                                self.card_manager.prepare_selection()
+                            except Exception:
+                                pass
+                            self.card_ui.reset()
                         elif choice == 'PEEK':
                             # Peek moduna geçiş/çıkış - sadece UI durumu değişir, burada ek işlem yok
                             pass
@@ -9211,8 +9246,8 @@ class WideMode(Game):
             self.wide_background.set_transparency(transparency)
         self._load_wide_background()
 
-        self.wide_font_large = pygame.font.Font(None, 48)
-        self.wide_font_medium = pygame.font.Font(None, 36)
+        self.wide_font_large = retro_style.get_font(48, bold=False)
+        self.wide_font_medium = retro_style.get_font(36, bold=False)
 
         print("🎮 WIDE MODE aktif. Tahta genişliği 15 sütuna çıktı.")
 

@@ -15,11 +15,13 @@ try:
     from ..constants import COLORS, BLACK, BOARD_WIDTH, BOARD_HEIGHT  # type: ignore
     from ..pieces import SHAPE_NAMES  # type: ignore
     from ..localization import t  # type: ignore
+    from ..retro_style import retro_style  # type: ignore
 except Exception:
     from game import Game
     from constants import COLORS, BLACK, BOARD_WIDTH, BOARD_HEIGHT
     from pieces import SHAPE_NAMES
     from localization import t
+    from retro_style import retro_style
 
 from .level_data import get_level, get_total_levels, LevelConfig, get_world_info
 from .objectives import (
@@ -301,10 +303,10 @@ class CampaignMode(Game):
     
     def _init_campaign_fonts(self) -> None:
         """Campaign için font cache ve ikonları oluştur"""
-        self.campaign_font_large = pygame.font.Font(None, 48)
-        self.campaign_font_medium = pygame.font.Font(None, 36)
-        self.campaign_font_small = pygame.font.Font(None, 28)
-        self.campaign_font_tiny = pygame.font.Font(None, 22)
+        self.campaign_font_large = retro_style.get_font(48, bold=False)
+        self.campaign_font_medium = retro_style.get_font(36, bold=False)
+        self.campaign_font_small = retro_style.get_font(28, bold=False)
+        self.campaign_font_tiny = retro_style.get_font(22, bold=False)
         
         # Yıldız ve tik ikonlarını yükle
         self._load_campaign_icons()
@@ -727,6 +729,29 @@ class CampaignMode(Game):
                     if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER) and self.level_complete:
                         # Sonraki level'a geç
                         return 'next_level'
+                if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                    pos = pygame.mouse.get_pos()
+                    if self.level_failed:
+                        # Önce yeni game_over_overlay butonlarını kontrol et (kırmızı tema)
+                        targets = getattr(self, '_game_over_click_targets', {})
+                        if isinstance(targets, dict):
+                            if targets.get('restart') and targets['restart'].collidepoint(pos):
+                                self.restart()
+                                return True
+                            if targets.get('menu') and targets['menu'].collidepoint(pos):
+                                return 'main_menu'
+                        # Fallback: eski campaign_ui_effects butonları
+                        btns = getattr(campaign_ui_effects, '_failed_buttons', {})
+                        if btns.get('retry') and btns['retry'].collidepoint(pos):
+                            self.restart()
+                            return True
+                        if btns.get('menu') and btns['menu'].collidepoint(pos):
+                            return 'main_menu'
+                    if self.level_complete:
+                        btns = getattr(campaign_ui_effects, '_complete_buttons', {})
+                        if btns.get('retry') and btns['retry'].collidepoint(pos):
+                            self.restart()
+                            return True
             return True
         
         return super().handle_input()
@@ -739,6 +764,9 @@ class CampaignMode(Game):
         self.elapsed_time = 0.0
         self.moves_count = 0
         self.earned_stars = 0
+
+        # Başarısız overlay state sıfırla (yeniden başlayışta animasyon yeniden başlasın)
+        self._fail_game_over_active = False
 
         # Yıldız istatistiklerini sıfırla
         self.total_combos = 0
@@ -1387,17 +1415,21 @@ class CampaignMode(Game):
         )
     
     def _draw_level_failed_overlay(self) -> None:
-        """Level başarısız ekranı - premium animasyonlu UI"""
-        from localization import get_language
-        lang = get_language()
-        
-        reason = getattr(self, 'fail_reason', '')
-        
-        campaign_ui_effects.draw_level_failed_overlay(
-            self.screen,
-            reason,
-            lang
-        )
+        """Level başarısız ekranı - Oyun bitti ekranıyla aynı layout, kırmızı tema."""
+        from localization import t
+        _red_theme = {
+            'panel_border_color': (220, 50, 70),
+            'panel_glow_color':   (160, 25, 40),
+            'panel_fill_tint':    (30, 8, 12),
+            'card_fill_tint':     (38, 12, 18),
+            'card_border_color':  (140, 50, 65),
+            'gradient_tint':      (20, 5, 8),
+            'title_text':         t('campaign_failed_title'),
+            'skip_stars':         True,   # başarısızlıkta yıldız yok
+            'skip_record':        True,   # başarısızlıkta rekor yok
+            'state_prefix':       'fail_',
+        }
+        self._draw_game_over_overlay(None, alt_theme=_red_theme)
 
     def _difficulty_label_from_speed(self, speed_ms: int, lang: str = 'tr') -> str:
         """Hız değerinden zorluk etiketi üret"""

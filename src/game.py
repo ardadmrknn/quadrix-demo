@@ -455,6 +455,14 @@ class Game:
         self.das_charged = False  # İlk gecikme tamamlandı mı?
         
         # Fontlar (dinamik olarak güncellenecek)
+        # CJK dil profili: oyun başlarken retro_style ve UIFonts profilleri
+        # mevcut dile uygun olsun (menüden kalma uyumsuzlukları gider).
+        try:
+            from ui_language_profile import apply_language_ui_profile as _alup
+            from localization import get_language as _gl
+            _alup(_gl())
+        except Exception:
+            pass
         self.update_fonts()
         
         # OYUN İÇİ MÜZİĞİ BAŞLAT
@@ -1312,8 +1320,12 @@ class Game:
                 pause_action = self._handle_pause_menu_input(event)
                 if pause_action == 'resume':
                     self.paused = False
+                    if hasattr(self, 'sound') and self.sound:
+                        self.sound.unduck_music()
                 elif pause_action == 'restart':
                     self.paused = False
+                    if hasattr(self, 'sound') and self.sound:
+                        self.sound.unduck_music()
                     self.restart()
                 elif pause_action == 'main_menu':
                     return 'menu'
@@ -1325,6 +1337,8 @@ class Game:
                     gp_cfg = self.settings_manager.get_controls().get('gamepad', {})
                     if event.button == gp_cfg.get('menu_back', 1):
                         self.paused = False
+                        if hasattr(self, 'sound') and self.sound:
+                            self.sound.unduck_music()
                         continue
                 except Exception:
                     pass
@@ -1351,6 +1365,11 @@ class Game:
                     self.paused = not self.paused
                     if self.paused:
                         self.pause_menu_selected = 0  # Menüyü sıfırla
+                        if hasattr(self, 'sound') and self.sound:
+                            self.sound.duck_music()
+                    else:
+                        if hasattr(self, 'sound') and self.sound:
+                            self.sound.unduck_music()
                     continue
                 
                 # Duraklatılmışsa menü kontrollerini işle
@@ -1358,8 +1377,12 @@ class Game:
                     pause_action = self._handle_pause_menu_input(event)
                     if pause_action == 'resume':
                         self.paused = False
+                        if hasattr(self, 'sound') and self.sound:
+                            self.sound.unduck_music()
                     elif pause_action == 'restart':
                         self.paused = False
+                        if hasattr(self, 'sound') and self.sound:
+                            self.sound.unduck_music()
                         self.restart()
                     elif pause_action == 'main_menu':
                         return 'menu'
@@ -1369,6 +1392,8 @@ class Game:
                 if event.key == pygame.K_ESCAPE:
                     self.paused = True
                     self.pause_menu_selected = 0
+                    if hasattr(self, 'sound') and self.sound:
+                        self.sound.duck_music()
                     continue
                 
                 # Sol hareket - DAS sistemi ile
@@ -1819,6 +1844,7 @@ class Game:
         # Lokalize edilmiş seçenek etiketleri
         option_labels = {
             'Devam Et': t('resume'),
+            'Yeniden Başlat': t('campaign_retry') if getattr(self, 'game_mode', '') == 'campaign' else t('restart'),
             'Müzik': t('music'),
             'Müzik Seviyesi': t('music_volume'),
             'Ses Efektleri': t('sound_effects'),
@@ -4119,12 +4145,40 @@ class Game:
             self._peek_icon_cache_key = cache_key
             return None
 
-    def _draw_game_over_overlay(self, skin):
+    def _draw_game_over_overlay(self, skin, *, alt_theme: dict | None = None):
         """Oyun bittiğinde animasyonlu yıldız sistemli modern panel göster."""
         import math
         ui_scale = self._ui_scale(min_scale=0.68, max_scale=1.16)
         s = lambda v, minimum=1: self._sx(v, ui_scale, minimum)
-        
+
+        # Alt tema ve state prefix desteği
+        _theme = alt_theme or {}
+        _sp = (_theme.get('state_prefix', '') or '')
+        _skip_stars = bool(_theme.get('skip_stars', False))
+        _skip_record = bool(_theme.get('skip_record', False))
+
+        # State attribute name aliases (prefix ile çakışma önlenir)
+        _go_active_attr = f'_{_sp}game_over_active'
+        _go_start_attr = f'_{_sp}game_over_start_time'
+        _go_fade_attr = f'_{_sp}game_over_fade_alpha'
+        _final_score_attr = f'_{_sp}final_score'
+        _final_lines_attr = f'_{_sp}final_lines'
+        _final_level_attr = f'_{_sp}final_level'
+        _final_tetrises_attr = f'_{_sp}final_tetrises'
+        _final_time_attr = f'_{_sp}final_time'
+        _final_max_combo_attr = f'_{_sp}final_max_combo'
+        _earned_stars_attr = f'_{_sp}earned_stars'
+        _stars_shown_attr = f'_{_sp}stars_shown'
+        _star_anim_attr = f'_{_sp}star_animation_timer'
+        _disp_score_attr = f'_{_sp}displayed_score'
+        _count_speed_attr = f'_{_sp}score_count_speed'
+        _is_record_attr = f'_{_sp}is_new_record'
+        _confetti_attr = f'_{_sp}confetti_particles'
+        _confetti_active_attr = f'_{_sp}confetti_active'
+        _last_star_attr = f'_{_sp}last_star_sound'
+        _cache_attr = f'_{_sp}go_gradient_cache'
+        _cache_key_attr = f'_{_sp}go_gradient_cache_key'
+
         # Mouse ile tıklanabilir butonlar için hedefleri her frame güncelle
         self._game_over_click_targets = {}
         
@@ -4162,40 +4216,42 @@ class Game:
         current_time = pygame.time.get_ticks()
         
         # İlk kez çağrılıyorsa başlat
-        if not getattr(self, '_game_over_active', False):
-            self._game_over_active = True
-            self._game_over_start_time = current_time
-            
+        if not getattr(self, _go_active_attr, False):
+            setattr(self, _go_active_attr, True)
+            setattr(self, _go_start_attr, current_time)
+
             # Sonuç verilerini dondur (artık değişmeyecek)
-            self._final_score = self.board.score
-            self._final_lines = self.board.lines_cleared
-            self._final_level = self.board.level
-            self._final_tetrises = getattr(self.board, 'tetrises', 0)
-            self._final_time = self.game_time // 1000
-            self._final_max_combo = getattr(self.board, 'max_combo', 0)
-            
+            setattr(self, _final_score_attr, self.board.score)
+            setattr(self, _final_lines_attr, self.board.lines_cleared)
+            setattr(self, _final_level_attr, self.board.level)
+            setattr(self, _final_tetrises_attr, getattr(self.board, 'tetrises', 0))
+            setattr(self, _final_time_attr, self.game_time // 1000)
+            setattr(self, _final_max_combo_attr, getattr(self.board, 'max_combo', 0))
+
             # Yıldız hesapla
-            self._earned_stars = self._calculate_stars()
-            self._stars_shown = 0
-            self._star_animation_timer = 0.0
-            
+            setattr(self, _earned_stars_attr, self._calculate_stars())
+            setattr(self, _stars_shown_attr, 0)
+            setattr(self, _star_anim_attr, 0.0)
+
             # Skor animasyonu
-            self._displayed_score = 0
+            setattr(self, _disp_score_attr, 0)
+            _init_final_score = getattr(self, _final_score_attr, 0)
             duration_ms = 1500  # 1.5 saniyede skor sayılsın
-            self._score_count_speed = max(1, self._final_score / (duration_ms / 1000))
-            
-            # Rekor kontrolü
-            self._is_new_record = self._check_new_record()
-            
+            setattr(self, _count_speed_attr, max(1, _init_final_score / (duration_ms / 1000)))
+
+            # Rekor kontrolü (skip_record ise False)
+            _is_rec = False if _skip_record else self._check_new_record()
+            setattr(self, _is_record_attr, _is_rec)
+
             # Fade alpha
-            self._game_over_fade_alpha = 0
-            
+            setattr(self, _go_fade_attr, 0)
+
             # Konfeti (sadece rekor kırıldıysa)
-            self._confetti_particles = []
-            self._confetti_active = self._is_new_record
+            setattr(self, _confetti_attr, [])
+            setattr(self, _confetti_active_attr, _is_rec)
         
         # Geçen süre (ms)
-        elapsed_ms = current_time - self._game_over_start_time
+        elapsed_ms = current_time - getattr(self, _go_start_attr, current_time)
         elapsed_sec = elapsed_ms / 1000.0
         
         # ============================================
@@ -4209,9 +4265,9 @@ class Game:
         # Fade-in animasyonu (0-0.4 saniye)
         fade_duration = 0.4
         if elapsed_sec < fade_duration:
-            self._game_over_fade_alpha = int(240 * (elapsed_sec / fade_duration))
+            setattr(self, _go_fade_attr, int(240 * (elapsed_sec / fade_duration)))
         else:
-            self._game_over_fade_alpha = 240
+            setattr(self, _go_fade_attr, 240)
         
         # Skor sayım animasyonu (0.2-1.7 saniye)
         score_start = 0.2
@@ -4220,15 +4276,15 @@ class Game:
             score_progress = min(1.0, (elapsed_sec - score_start) / score_duration)
             # Ease-out curve: başta hızlı, sonda yavaş
             eased_progress = 1 - (1 - score_progress) ** 3
-            self._displayed_score = int(self._final_score * eased_progress)
+            setattr(self, _disp_score_attr, int(getattr(self, _final_score_attr, 0) * eased_progress))
         
         # Yıldız animasyonu ses efekti (her tam yıldızda bir ses)
         star_start = 1.5
         star_reveal_speed = 2.0
         if elapsed_sec > star_start:
-            current_shown = min(self._earned_stars, (elapsed_sec - star_start) * star_reveal_speed)
-            prev_shown = getattr(self, '_last_star_sound', 0)
-            
+            current_shown = min(getattr(self, _earned_stars_attr, 0.0), (elapsed_sec - star_start) * star_reveal_speed)
+            prev_shown = getattr(self, _last_star_attr, 0)
+
             # Yeni tam yıldız açıldıysa ses çal
             if int(current_shown) > int(prev_shown):
                 if self.sound_enabled:
@@ -4236,26 +4292,29 @@ class Game:
                         self.sound.play('rotate')
                     except Exception:
                         pass
-            self._last_star_sound = current_shown
+            setattr(self, _last_star_attr, current_shown)
         
         # Konfeti güncelle
-        if self._confetti_active and elapsed_sec > 1.5:
+        if getattr(self, _confetti_active_attr, False) and elapsed_sec > 1.5:
             self._update_confetti(current_time)
         
         # ============================================
         # ÇİZİM - FADE OVERLAY (cache'li gradient)
         # ============================================
         _go_cache_key = (self.window_width, self.window_height)
-        if getattr(self, '_go_gradient_cache_key', None) != _go_cache_key:
+        if getattr(self, _cache_key_attr, None) != _go_cache_key:
+            _gradient_tint = _theme.get('gradient_tint', (5, 8, 18))
             _go_surf = pygame.Surface((self.window_width, self.window_height), pygame.SRCALPHA)
             for y in range(self.window_height):
                 _a = int(240 * 0.8 + 40 * (y / self.window_height))
                 _a = min(_a, 240)
-                pygame.draw.line(_go_surf, (5, 8, 18, _a), (0, y), (self.window_width, y))
-            self._go_gradient_cache = _go_surf
-            self._go_gradient_cache_key = _go_cache_key
-        self._go_gradient_cache.set_alpha(self._game_over_fade_alpha)
-        self.screen.blit(self._go_gradient_cache, (0, 0))
+                pygame.draw.line(_go_surf, (*_gradient_tint, _a), (0, y), (self.window_width, y))
+            setattr(self, _cache_attr, _go_surf)
+            setattr(self, _cache_key_attr, _go_cache_key)
+        _go_cached_surf = getattr(self, _cache_attr, None)
+        if _go_cached_surf is not None:
+            _go_cached_surf.set_alpha(getattr(self, _go_fade_attr, 0))
+            self.screen.blit(_go_cached_surf, (0, 0))
         
         # Konfeti çiz (arka planda)
         self._draw_confetti()
@@ -4278,12 +4337,12 @@ class Game:
         inner_right = panel_rect.right - pad_x
         inner_w = inner_right - inner_left
 
-        # Modern panel paleti (soğuk koyu ton + elektrik mavi vurgu)
-        panel_border_color = (88, 146, 255)
-        panel_glow_color = (72, 118, 236)
-        panel_fill_tint = (10, 16, 34)
-        card_fill_tint = (14, 22, 44)
-        card_border_color = (74, 104, 162)
+        # Panel paleti (alt_theme ile override edilebilir)
+        panel_border_color = _theme.get('panel_border_color', (88, 146, 255))
+        panel_glow_color   = _theme.get('panel_glow_color',   (72, 118, 236))
+        panel_fill_tint    = _theme.get('panel_fill_tint',    (10, 16, 34))
+        card_fill_tint     = _theme.get('card_fill_tint',     (14, 22, 44))
+        card_border_color  = _theme.get('card_border_color',  (74, 104, 162))
         label_color_soft = (198, 212, 238)
         
         # Panel glow efekti
@@ -4323,9 +4382,13 @@ class Game:
             eye_surf = fallback_font.render("O", True, (116, 190, 255) if peek_hovered else (160, 182, 220))
             self.screen.blit(eye_surf, eye_surf.get_rect(center=self._game_over_peek_rect.center))
 
-        # BAŞLIK - Survival zafer durumunda farklı göster
+        # BAŞLIK - Survival zafer, alt_theme override, ya da game_over
         is_survival_victory = getattr(self, 'survival_victory', False)
-        if is_survival_victory:
+        _title_text_override = _theme.get('title_text', None)
+        if _title_text_override:
+            title_text = _title_text_override
+            title_color = panel_border_color
+        elif is_survival_victory:
             title_text = t('survival_victory_title')
             title_color = (255, 215, 0)  # Altın rengi
         else:
@@ -4374,7 +4437,7 @@ class Game:
         
         score_value_font = retro_style.get_font(s(36, minimum=17), bold=True)
         # Animasyonlu skor gösterimi
-        displayed = getattr(self, '_displayed_score', self._final_score)
+        displayed = getattr(self, _disp_score_attr, getattr(self, _final_score_attr, 0))
         score_value = score_value_font.render(f'{displayed:,}'.replace(',', '.'), True, WHITE)
         score_value_rect = score_value.get_rect()
         score_value_rect.midright = (score_rect.right - s(18), score_rect.centery + s(2))
@@ -4388,71 +4451,77 @@ class Game:
         self.screen.blit(score_value, score_value_rect)
         
         # Rekor göstergesi
-        if getattr(self, '_is_new_record', False):
+        if not _skip_record and getattr(self, _is_record_attr, False):
             record_font = retro_style.get_font(s(16, minimum=10), bold=True)
             record_text = record_font.render(t('new_high_score'), True, (255, 215, 0))
             self.screen.blit(record_text, record_text.get_rect(centerx=score_rect.centerx, top=score_rect.y + s(46)))
         
         # ============================================
-        # YILDIZ SİSTEMİ (0-3 Yıldız)
+        # YILDIZ SİSTEMİ (0-3 Yıldız) — skip_stars ise atlan
         # ============================================
-        star_area_y = score_rect.bottom + s(8)
-        star_size = s(30)
-        star_spacing = s(6)
-        total_stars = 5
-        total_star_width = total_stars * star_size + (total_stars - 1) * star_spacing
-        star_start_x = panel_rect.centerx - total_star_width // 2
-        
-        earned = getattr(self, '_earned_stars', 0.0)  # Float değer
-        
-        # Animasyon için gösterilen yıldız sayısı
-        # elapsed_sec kullanarak yavaşça açılsın
-        star_reveal_start = 1.5  # 1.5 saniyeden sonra başla
-        star_reveal_speed = 2.0  # Saniyede 2 yıldız açılsın
-        
-        if elapsed_sec > star_reveal_start:
-            shown_progress = min(earned, (elapsed_sec - star_reveal_start) * star_reveal_speed)
-        else:
-            shown_progress = 0.0
-        
-        # 5 yıldız çiz
-        for i in range(total_stars):
-            star_x = star_start_x + i * (star_size + star_spacing)
-            star_y = star_area_y
-            
-            # Bu yıldız için doluluk oranı hesapla
-            if i < int(shown_progress):
-                # Tam dolu yıldız
-                fill_ratio = 1.0
-            elif i < shown_progress:
-                # Kısmi dolu yıldız (ondalık kısım)
-                fill_ratio = shown_progress - int(shown_progress)
+        if not _skip_stars:
+            star_area_y = score_rect.bottom + s(8)
+            star_size = s(30)
+            star_spacing = s(6)
+            total_stars = 5
+            total_star_width = total_stars * star_size + (total_stars - 1) * star_spacing
+            star_start_x = panel_rect.centerx - total_star_width // 2
+
+            earned = getattr(self, _earned_stars_attr, 0.0)  # Float değer
+
+            # Animasyon için gösterilen yıldız sayısı
+            # elapsed_sec kullanarak yavaşça açılsın
+            star_reveal_start = 1.5  # 1.5 saniyeden sonra başla
+            star_reveal_speed = 2.0  # Saniyede 2 yıldız açılsın
+
+            if elapsed_sec > star_reveal_start:
+                shown_progress = min(earned, (elapsed_sec - star_reveal_start) * star_reveal_speed)
             else:
-                # Boş yıldız
-                fill_ratio = 0.0
-            
-            # Her yıldız için ufak "pop" animasyonu + glow yoğunluğu
-            reveal_time = star_reveal_start + (i / max(0.001, star_reveal_speed))
-            t_since = max(0.0, elapsed_sec - reveal_time)
-            pop = 0.0
-            if fill_ratio > 0.0:
-                pop = 0.16 * math.exp(-t_since * 6.0) * math.sin(t_since * 18.0)
-            scale = max(0.85, 1.0 + pop)
-            glow = min(1.0, 0.35 + 0.55 * fill_ratio + max(0.0, pop) * 1.5)
-            self._draw_star(star_x, star_y, star_size, fill_ratio=fill_ratio, scale=scale, glow_intensity=glow)
-        
-        # Puan göstergesi (yıldızların altında)
-        rating_y = star_area_y + star_size + s(7)
-        rating_font = retro_style.get_font(s(18, minimum=10), bold=True)
-        
-        # Gösterilen puan (animasyonlu)
-        displayed_rating = min(earned, shown_progress)
-        rating_text = f"{displayed_rating:.1f} / 5.0"
-        rating_color = (255, 215, 0) if displayed_rating >= 4.0 else label_color_soft
-        
-        rating_surf = rating_font.render(rating_text, True, rating_color)
-        self.screen.blit(rating_surf, rating_surf.get_rect(centerx=panel_rect.centerx, top=rating_y))
-        
+                shown_progress = 0.0
+
+            # 5 yıldız çiz
+            for i in range(total_stars):
+                star_x = star_start_x + i * (star_size + star_spacing)
+                star_y = star_area_y
+
+                # Bu yıldız için doluluk oranı hesapla
+                if i < int(shown_progress):
+                    # Tam dolu yıldız
+                    fill_ratio = 1.0
+                elif i < shown_progress:
+                    # Kısmi dolu yıldız (ondalık kısım)
+                    fill_ratio = shown_progress - int(shown_progress)
+                else:
+                    # Boş yıldız
+                    fill_ratio = 0.0
+
+                # Her yıldız için ufak "pop" animasyonu + glow yoğunluğu
+                reveal_time = star_reveal_start + (i / max(0.001, star_reveal_speed))
+                t_since = max(0.0, elapsed_sec - reveal_time)
+                pop = 0.0
+                if fill_ratio > 0.0:
+                    pop = 0.16 * math.exp(-t_since * 6.0) * math.sin(t_since * 18.0)
+                scale = max(0.85, 1.0 + pop)
+                glow = min(1.0, 0.35 + 0.55 * fill_ratio + max(0.0, pop) * 1.5)
+                self._draw_star(star_x, star_y, star_size, fill_ratio=fill_ratio, scale=scale, glow_intensity=glow)
+
+            # Puan göstergesi (yıldızların altında)
+            rating_y = star_area_y + star_size + s(7)
+            rating_font = retro_style.get_font(s(18, minimum=10), bold=True)
+
+            # Gösterilen puan (animasyonlu)
+            displayed_rating = min(earned, shown_progress)
+            rating_text = f"{displayed_rating:.1f} / 5.0"
+            rating_color = (255, 215, 0) if displayed_rating >= 4.0 else label_color_soft
+
+            rating_surf = rating_font.render(rating_text, True, rating_color)
+            self.screen.blit(rating_surf, rating_surf.get_rect(centerx=panel_rect.centerx, top=rating_y))
+
+            _stats_top_offset = rating_y + s(38)
+        else:
+            # skip_stars: yıldız/puan gösterimi yok; stats doğrudan skor kartının altında
+            _stats_top_offset = score_rect.bottom + s(8)
+
         # İstatistikler - modern grid
         def format_time(seconds: int) -> str:
             seconds = max(0, int(seconds))
@@ -4465,20 +4534,20 @@ class Game:
         # Uyumlu ama ayırt edilebilir stat paleti:
         # Satır=Cyan, Seviye=Amber, Quadrix=Magenta, Süre=Mint
         stats = [
-            (t('lines_cleared'), f'{self._final_lines}', (70, 224, 255)),
-            (t('level'), f'{self._final_level}', (255, 188, 78)),
-            (t('tetris_count'), f"{self._final_tetrises}", (232, 110, 255)),
-            (t('time'), format_time(self._final_time), (114, 245, 176)),
+            (t('lines_cleared'), f'{getattr(self, _final_lines_attr, 0)}', (70, 224, 255)),
+            (t('level'), f'{getattr(self, _final_level_attr, 0)}', (255, 188, 78)),
+            (t('tetris_count'), f"{getattr(self, _final_tetrises_attr, 0)}", (232, 110, 255)),
+            (t('time'), format_time(getattr(self, _final_time_attr, 0)), (114, 245, 176)),
         ]
-        
+
         stats_cols = 2
         stats_gap = s(14)
         col_width = (inner_w - stats_gap) // stats_cols
-        stats_top = rating_y + s(38)  # Puan göstergesinden sonra (aşağı kaydırıldı)
+        stats_top = _stats_top_offset  # Puan göstergesinden sonra (skip_stars ise doğrudan)
         row_height = s(64)  # Üst-alt satır arası boşluk artırıldı
         stat_font_label = retro_style.get_font(s(16, minimum=9), bold=True)
         stat_font_value = retro_style.get_font(s(24, minimum=12), bold=True)
-        
+
         for idx, (label, value, color) in enumerate(stats):
             col = idx % stats_cols
             row = idx // stats_cols
@@ -5028,6 +5097,8 @@ class Game:
         self.discard_held_uses = 5  # B tuşu hakkını sıfırla
         self.game_over = False
         self.paused = False
+        if hasattr(self, 'sound') and self.sound:
+            self.sound.unduck_music()
         self.fall_time = 0
         self.fall_speed = self.get_initial_speed()
         self.game_time = 0

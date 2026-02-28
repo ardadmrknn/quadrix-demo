@@ -233,8 +233,10 @@ def test_draw_calls_playlist_edit_overlay_when_active(monkeypatch):
     screen._anim_last_tick = 0
     screen.music_volume = 0.3
     screen.sfx_volume = 0.4
+    screen.menu_music_volume = 0.5
     screen._music_volume_vis = 0.3
     screen._sfx_volume_vis = 0.4
+    screen._menu_music_volume_vis = 0.5
     screen.background_fx = SimpleNamespace(update=Mock(), draw=Mock())
 
     sentinel = object()
