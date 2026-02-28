@@ -304,8 +304,6 @@ class PvPGame:
         self._board_accent_overlay_cache = {}
         self.calculate_board_positions()
         
-        # FPS
-        self.show_fps = False
         self._vs_panel_surface = None
         self._vs_panel_dirty = True
     
@@ -402,7 +400,6 @@ class PvPGame:
                 'rotate': pygame.K_UP,
             },
             'pause': pygame.K_p,
-            'toggle_fps': pygame.K_f,
         }
         if not self.settings_manager:
             return defaults
@@ -420,7 +417,6 @@ class PvPGame:
             }
         single_cfg = controls.get('single_player', {}) if isinstance(controls, dict) else {}
         resolved['pause'] = self._binding_to_keycode(single_cfg.get('pause'), defaults['pause'])
-        resolved['toggle_fps'] = self._binding_to_keycode(single_cfg.get('toggle_fps'), defaults['toggle_fps'])
         return resolved
 
     @staticmethod
@@ -976,10 +972,6 @@ class PvPGame:
                         self.restart(preserve_session=True)
                     continue
                 
-                if event.key == self.pvp_controls['toggle_fps']:
-                    self.show_fps = not self.show_fps
-                    continue
-
                 if self.paused:
                     continue
                 
@@ -2969,12 +2961,6 @@ class PvPGame:
         if self.effects_enabled:
             self.draw_particles()
         
-        # FPS
-        if self.show_fps:
-            fps = int(self.clock.get_fps())
-            fps_text = self.font_small.render(f'FPS: {fps}', True, GREEN if fps > 50 else RED)
-            self.screen.blit(fps_text, (10, 10))
-
         if getattr(self, 'show_exit_prompt', False):
             self._draw_exit_prompt_overlay()
 

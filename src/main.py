@@ -1163,7 +1163,6 @@ def main():
         print("  ✅ Ana Menü ve Ayarlar")
         print("  ✅ İstatistikler ve Liderlik Tablosu")
         print("  ✅ Yeniden Boyutlandırılabilir Pencere")
-        print("  ✅ FPS Göstergesi")
         print("  ✅ Tam Ekran Modu (F12)")
         print("  ✅ Sessiz Mod (M tuşu)")
         print("\n🎯 Oyun başlatılıyor...\n")
