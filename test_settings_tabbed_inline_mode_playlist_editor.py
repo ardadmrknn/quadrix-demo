@@ -86,6 +86,8 @@ def _install_settings_module_stubs(monkeypatch):
     menu_stub = types.ModuleType('menu')
     menu_stub.get_control_actions = lambda: {}
     menu_stub.get_mode_music_entries = lambda: []
+    menu_stub.get_campaign_phase_entries = lambda: []
+    menu_stub.CAMPAIGN_PHASE_WORLDS = []
     menu_stub.BUILT_IN_TRACK_CHOICES = []
     menu_stub.SUPPORTED_MUSIC_EXTENSIONS = ['.ogg', '.mp3', '.wav']
     monkeypatch.setitem(sys.modules, 'menu', menu_stub)
@@ -204,6 +206,7 @@ def test_handle_input_playlist_edit_guard_calls_only_playlist_handler(monkeypatc
     screen = mod.TabbedSettingsScreen.__new__(mod.TabbedSettingsScreen)
 
     screen._swallow_next_keydown = False
+    screen._campaign_phase_select_active = False
     screen._playlist_edit_active = True
     screen._music_picker_open = True
     screen._waiting_for_key = True
@@ -251,11 +254,13 @@ def test_draw_calls_playlist_edit_overlay_when_active(monkeypatch):
     screen._draw_vsync_prompt = Mock()
     screen._draw_display_mode_confirm_panel = Mock()
     screen._draw_music_picker = Mock()
+    screen._draw_campaign_phase_select_overlay = Mock()
     screen._draw_mode_playlist_edit_overlay = Mock()
 
     screen._vsync_prompt_active = False
     screen._display_mode_confirm_active = False
     screen._music_picker_open = False
+    screen._campaign_phase_select_active = False
     screen._playlist_edit_active = True
 
     screen.draw()

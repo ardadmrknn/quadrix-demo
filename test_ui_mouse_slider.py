@@ -61,6 +61,8 @@ def _install_settings_module_stubs(monkeypatch):
     menu_stub = types.ModuleType("menu")
     menu_stub.get_control_actions = lambda: {}
     menu_stub.get_mode_music_entries = lambda: []
+    menu_stub.get_campaign_phase_entries = lambda: []
+    menu_stub.CAMPAIGN_PHASE_WORLDS = []
     menu_stub.BUILT_IN_TRACK_CHOICES = []
     menu_stub.SUPPORTED_MUSIC_EXTENSIONS = [".ogg", ".mp3", ".wav"]
     monkeypatch.setitem(sys.modules, "menu", menu_stub)

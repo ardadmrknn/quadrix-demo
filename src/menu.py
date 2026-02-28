@@ -224,6 +224,29 @@ def get_mode_music_entries():
     ]
 
 
+CAMPAIGN_PHASE_WORLDS = [
+    ('campaign_world1', 1, 1, 20),
+    ('campaign_world2', 2, 21, 40),
+    ('campaign_world3', 3, 41, 60),
+    ('campaign_world4', 4, 61, 80),
+    ('campaign_world5', 5, 81, 100),
+]
+
+
+def get_campaign_phase_entries():
+    """Görev modunun 5 fazı için yerelleştirilmiş girişler döndür.
+
+    Returns:
+        list of (mode_key, world_num, label, level_range_str)
+    """
+    entries = []
+    for mode_key, world_num, start, end in CAMPAIGN_PHASE_WORLDS:
+        label = t(f'campaign_world_{world_num}')
+        level_range = t('campaign_world_levels_range', start=start, end=end)
+        entries.append((mode_key, world_num, label, level_range))
+    return entries
+
+
 # Eski değişkenler geriye uyumluluk için (deprecate edilecek)
 CONTROL_TABS = [
     ('single_player', 'Tek Oyuncu'),
@@ -2096,14 +2119,14 @@ class Menu:
             self.sos_mail_rect = btn1
             self.sos_instagram_rect = btn2
 
-            # İkon yükleme (cache'li)
+            # İkon yükleme (cache'li) — assets/ui altındaki gerçek Gmail & Instagram logoları
             if not hasattr(self, '_sos_gmail_icon'):
                 self._sos_gmail_icon = None
                 self._sos_insta_icon = None
                 try:
                     _base = ROOT_DIR
-                    _mail_path = _base / 'assets' / 'emoji' / 'e-mail-symbol.png'
-                    _insta_path = _base / 'assets' / 'emoji' / 'camera.png'
+                    _mail_path = _base / 'assets' / 'ui' / 'gmail_icon.png'
+                    _insta_path = _base / 'assets' / 'ui' / 'instagram_icon.png'
                     if _mail_path.exists():
                         self._sos_gmail_icon = pygame.image.load(str(_mail_path)).convert_alpha()
                     if _insta_path.exists():

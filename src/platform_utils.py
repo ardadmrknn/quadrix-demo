@@ -213,14 +213,20 @@ def set_app_icon(assets_dir: str) -> None:
     import pygame
 
     # ── Pygame pencere ikonu (tüm platformlar) — 32x32 standart SDL2 boyutu ──
-    icon_png = os.path.join(assets_dir, 'Tetris_icon.png')
-    if os.path.exists(icon_png):
-        try:
-            icon_surf = pygame.image.load(icon_png).convert_alpha()
-            icon_surf = pygame.transform.smoothscale(icon_surf, (32, 32))
-            pygame.display.set_icon(icon_surf)
-        except Exception:
-            pass
+    # Önce ICO, fallback olarak PNG dene
+    _icon_candidates = [
+        os.path.join(assets_dir, 'quadrix_icon.ico'),
+        os.path.join(assets_dir, 'Tetris_icon.png'),
+    ]
+    for _icon_file in _icon_candidates:
+        if os.path.exists(_icon_file):
+            try:
+                icon_surf = pygame.image.load(_icon_file).convert_alpha()
+                icon_surf = pygame.transform.smoothscale(icon_surf, (32, 32))
+                pygame.display.set_icon(icon_surf)
+                break
+            except Exception:
+                continue
 
     # ── Windows: AppUserModelID + ctypes ile görev çubuğu simgesi ──
     if sys.platform == 'win32':
@@ -229,7 +235,7 @@ def set_app_icon(assets_dir: str) -> None:
             # AppUserModelID ayarla — Windows'un "python.exe" yazmasını engeller
             ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID('Quadrix.Game')
             # .ico dosyasını varsa ctypes ile uygula (daha yüksek kaliteli simge)
-            ico_path = os.path.join(assets_dir, 'game_icon.ico')
+            ico_path = os.path.join(assets_dir, 'quadrix_icon.ico')
             if os.path.exists(ico_path):
                 abs_ico = os.path.abspath(ico_path)
                 hwnd = pygame.display.get_wm_info().get('window', 0)

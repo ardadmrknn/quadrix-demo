@@ -171,6 +171,48 @@ class CampaignMode(Game):
         # İlerleme yöneticisi referansı (lazy load)
         self._progress_manager = None
     
+    def _start_music_playlist(self, force=False):
+        """Kampanya dünyasına özel müzik playlist'ini başlat.
+
+        Önce dünyaya ait playlist kontrol edilir (campaign_world1 .. campaign_world5).
+        Yoksa genel campaign playlist'ine, o da yoksa Game varsayılanına düşer.
+        """
+        if not self.sound or not self.sound.music_enabled:
+            return
+
+        world = getattr(self.level_config, 'world', None)
+        world_key = f'campaign_world{world}' if world else None
+        playlist_values = []
+
+        if world_key and self.settings_manager:
+            try:
+                playlist_values = self.settings_manager.get_mode_music_playlist(world_key)
+            except Exception:
+                playlist_values = []
+
+        if not playlist_values and self.settings_manager:
+            try:
+                playlist_values = self.settings_manager.get_music_playlist_for_mode('campaign')
+            except Exception:
+                playlist_values = []
+
+        if playlist_values:
+            import random as _rng
+            track_keys = []
+            for value in playlist_values:
+                track_key = self.sound.ensure_track_available(value)
+                if track_key:
+                    track_keys.append(track_key)
+            if track_keys:
+                do_shuffle = bool(self.settings_manager.get('music_shuffle', False)) if self.settings_manager else False
+                start_index = 0 if do_shuffle else _rng.randrange(len(track_keys))
+                self.sound.set_music_playlist(track_keys, loop=True, start_index=start_index, autoplay=True, force=force, shuffle=do_shuffle)
+                self.current_music_track = track_keys[start_index]
+                return
+
+        # Dünyaya özel veya kampanya playlist'i yoksa Game varsayılanını kullan
+        super()._start_music_playlist(force=force)
+
     def _place_garbage_blocks(self) -> None:
         """Level konfigürasyonuna göre sabit şekilli çöp blokları yerleştir"""
         if not self.level_config:

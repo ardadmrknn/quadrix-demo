@@ -137,6 +137,8 @@ def _install_stubs(monkeypatch):
     menu_stub = types.ModuleType("menu")
     menu_stub.get_control_actions = lambda: {}
     menu_stub.get_mode_music_entries = lambda: []
+    menu_stub.get_campaign_phase_entries = lambda: []
+    menu_stub.CAMPAIGN_PHASE_WORLDS = []
     menu_stub.BUILT_IN_TRACK_CHOICES = []
     menu_stub.SUPPORTED_MUSIC_EXTENSIONS = [".ogg", ".mp3", ".wav"]
     monkeypatch.setitem(sys.modules, "menu", menu_stub)
@@ -378,6 +380,8 @@ def test_handle_input_intercepts_all_events_when_modal_active(monkeypatch):
     screen._music_picker_open = False
     screen._vsync_prompt_active = False
     screen._swallow_next_keydown = False
+    screen._campaign_phase_select_active = False
+    screen._playlist_edit_active = False
 
     # ESC input'u → iptal (None dönmeli)
     result = screen.handle_input(_esc_event(mod))

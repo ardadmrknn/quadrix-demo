@@ -21,7 +21,7 @@ from localization import (
     SUPPORTED_LANGUAGES, get_all_languages,
 )
 from ui_language_profile import apply_language_ui_profile, get_font_for_language
-from menu import get_control_actions, get_mode_music_entries, BUILT_IN_TRACK_CHOICES, SUPPORTED_MUSIC_EXTENSIONS
+from menu import get_control_actions, get_mode_music_entries, get_campaign_phase_entries, BUILT_IN_TRACK_CHOICES, SUPPORTED_MUSIC_EXTENSIONS
 from gamepad_manager import get_gamepad_manager, reload_gamepad_settings
 
 
@@ -477,6 +477,11 @@ class TabbedSettingsScreen:
         self._playlist_edit_item_rects: list[tuple[pygame.Rect, int]] = []
         self._playlist_edit_picker_rects: list[tuple[pygame.Rect, int]] = []
 
+        # ── Kampanya faz seçici overlay ──
+        self._campaign_phase_select_active = False
+        self._campaign_phase_selected = 0
+        self._campaign_phase_item_rects: list[tuple[pygame.Rect, int]] = []
+
         # Slider mouse cache + drag state
         self._slider_bar_rects: dict = {}
         self._slider_drag_active: bool = False
@@ -716,6 +721,22 @@ class TabbedSettingsScreen:
 
         elif itype == 'music_selector':
             mode_key = item.get('mode_key')
+            if mode_key == 'campaign':
+                # Kampanya modunda 5 fazın toplam parça sayısını göster
+                total = 0
+                configured = 0
+                try:
+                    from menu import CAMPAIGN_PHASE_WORLDS
+                    for mk, _wn, _s, _e in CAMPAIGN_PHASE_WORLDS:
+                        pl = self.settings_manager.get_mode_music_playlist(mk)
+                        if pl:
+                            total += len(pl)
+                            configured += 1
+                except Exception:
+                    pass
+                if total > 0:
+                    return f"{configured}/5 faz, {total} {_t('track_count_unit', 'parça')}", (150, 220, 255)
+                return '▶ ' + _t('track_default_label', 'Varsayılan'), (150, 220, 255)
             try:
                 playlist = self.settings_manager.get_mode_music_playlist(mode_key)
                 count = len(playlist) if playlist else 0
@@ -961,6 +982,162 @@ class TabbedSettingsScreen:
         self._playlist_edit_picker_scroll = 0
         self._playlist_edit_item_rects = []
         self._playlist_edit_picker_rects = []
+
+    # ------------------------------------------------------------------
+    # Kampanya faz seçici overlay
+    # ------------------------------------------------------------------
+
+    def _open_campaign_phase_select(self) -> None:
+        """Kampanya müzik faz seçici overlay panelini aç."""
+        self._campaign_phase_select_active = True
+        self._campaign_phase_selected = 0
+        self._campaign_phase_item_rects = []
+
+    def _close_campaign_phase_select(self) -> None:
+        self._campaign_phase_select_active = False
+        self._campaign_phase_selected = 0
+        self._campaign_phase_item_rects = []
+
+    def _handle_campaign_phase_select_input(self, event) -> str | None:
+        """Kampanya faz seçici overlay girdilerini işle."""
+        phases = get_campaign_phase_entries()
+        if not phases:
+            self._close_campaign_phase_select()
+            return None
+
+        if event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_ESCAPE:
+                self._close_campaign_phase_select()
+                return None
+            if event.key == pygame.K_UP:
+                self._campaign_phase_selected = (self._campaign_phase_selected - 1) % len(phases)
+                return None
+            if event.key == pygame.K_DOWN:
+                self._campaign_phase_selected = (self._campaign_phase_selected + 1) % len(phases)
+                return None
+            if event.key in (pygame.K_RETURN, pygame.K_SPACE):
+                mode_key = phases[self._campaign_phase_selected][0]
+                self._close_campaign_phase_select()
+                self.open_mode_playlist_editor(mode_key)
+                return None
+
+        elif event.type == pygame.MOUSEMOTION:
+            pos = normalize_mouse_pos(getattr(event, 'pos', None)) or event.pos
+            for rect, idx in self._campaign_phase_item_rects:
+                if rect.collidepoint(pos):
+                    self._campaign_phase_selected = idx
+                    break
+            return None
+
+        elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            pos = normalize_mouse_pos(getattr(event, 'pos', None)) or event.pos
+            for rect, idx in self._campaign_phase_item_rects:
+                if rect.collidepoint(pos):
+                    self._campaign_phase_selected = idx
+                    mode_key = phases[idx][0]
+                    self._close_campaign_phase_select()
+                    self.open_mode_playlist_editor(mode_key)
+                    return None
+            # Panelin dışına tıklandıysa kapat
+            self._close_campaign_phase_select()
+            return None
+
+        return None
+
+    def _draw_campaign_phase_select_overlay(self) -> None:
+        """Kampanya faz seçici overlay panelini çiz."""
+        width, height = self.screen.get_size()
+        dim = pygame.Surface((width, height), pygame.SRCALPHA)
+        dim.fill((0, 0, 0, 145))
+        self.screen.blit(dim, (0, 0))
+
+        panel_w = min(680, width - 100)
+        panel_h = min(540, height - 80)
+        panel_rect = pygame.Rect((width - panel_w) // 2, (height - panel_h) // 2, panel_w, panel_h)
+        retro_style.draw_glass_panel(
+            self.screen,
+            panel_rect,
+            alpha=220,
+            border_color=(100, 200, 255),
+            glow=True,
+        )
+
+        title_font = retro_style.get_font(26, bold=True)
+        title_text = _t('campaign_phase_selector_title', 'Görev Modu – Dünya Seçimi')
+        title_surf = title_font.render(title_text, True, (235, 245, 255))
+        self.screen.blit(title_surf, (panel_rect.x + 24, panel_rect.y + 18))
+
+        phases = get_campaign_phase_entries()
+        item_h = 68
+        gap = 10
+        list_y = panel_rect.y + 70
+        self._campaign_phase_item_rects = []
+
+        # Dünya renkleri (kampanya dünyalarına eşleşen)
+        world_colors = {
+            1: (80, 200, 120),   # Yeşil - Başlangıç Vadisi
+            2: (100, 180, 255),  # Mavi - Buz Diyarı
+            3: (255, 120, 60),   # Turuncu - Lav Mağarası
+            4: (180, 130, 255),  # Mor - Fırtına Kalesi
+            5: (255, 220, 80),   # Altın - Yıldız Kulesi
+        }
+
+        label_font = retro_style.get_font(20, bold=True)
+        sub_font = retro_style.get_font(15)
+        track_count_font = retro_style.get_font(14)
+
+        for i, (mode_key, world_num, label, level_range) in enumerate(phases):
+            y = list_y + i * (item_h + gap)
+            item_rect = pygame.Rect(panel_rect.x + 20, y, panel_rect.width - 40, item_h)
+            self._campaign_phase_item_rects.append((item_rect, i))
+
+            is_selected = (i == self._campaign_phase_selected)
+            color = world_colors.get(world_num, (150, 170, 200))
+
+            # Arka plan
+            bg_surf = pygame.Surface(item_rect.size, pygame.SRCALPHA)
+            bg_alpha = 70 if is_selected else 35
+            bg_color = (*color, bg_alpha)
+            pygame.draw.rect(bg_surf, bg_color, bg_surf.get_rect(), border_radius=12)
+            self.screen.blit(bg_surf, item_rect.topleft)
+
+            # Seçim kenarlığı
+            border_alpha = 255 if is_selected else 60
+            border_color = (*color[:3],)
+            if is_selected:
+                pygame.draw.rect(self.screen, border_color, item_rect, width=2, border_radius=12)
+            else:
+                border_surf = pygame.Surface(item_rect.size, pygame.SRCALPHA)
+                pygame.draw.rect(border_surf, (*border_color, border_alpha), border_surf.get_rect(), width=1, border_radius=12)
+                self.screen.blit(border_surf, item_rect.topleft)
+
+            # Dünya renk göstergesi (sol tarafta dikey çubuk)
+            indicator_rect = pygame.Rect(item_rect.x + 8, item_rect.y + 10, 4, item_rect.height - 20)
+            pygame.draw.rect(self.screen, color, indicator_rect, border_radius=2)
+
+            # Faz adı
+            text_color = (255, 255, 255) if is_selected else (210, 220, 235)
+            label_surf = label_font.render(label, True, text_color)
+            self.screen.blit(label_surf, (item_rect.x + 22, item_rect.y + 12))
+
+            # Level aralığı
+            range_surf = sub_font.render(level_range, True, (160, 175, 200))
+            self.screen.blit(range_surf, (item_rect.x + 22, item_rect.y + 40))
+
+            # Sağda parça sayısı
+            try:
+                playlist = self.settings_manager.get_mode_music_playlist(mode_key)
+                count = len(playlist) if playlist else 0
+            except Exception:
+                count = 0
+            if count > 0:
+                count_text = f"{count} {_t('track_count_unit', 'parça')}"
+                count_color = (150, 220, 255)
+            else:
+                count_text = _t('track_default_label', 'Varsayılan')
+                count_color = (120, 140, 170)
+            count_surf = track_count_font.render(count_text, True, count_color)
+            self.screen.blit(count_surf, (item_rect.right - count_surf.get_width() - 16, item_rect.y + (item_h - count_surf.get_height()) // 2))
 
     def _save_mode_playlist(self) -> str | None:
         if not self.settings_manager or not self._playlist_edit_mode_key:
@@ -1211,6 +1388,12 @@ class TabbedSettingsScreen:
             if mk == mode_key:
                 mode_name = str(label)
                 break
+        # Kampanya faz anahtarları için faz adını göster
+        if mode_key.startswith('campaign_world'):
+            for mk, _wn, label, _lr in get_campaign_phase_entries():
+                if mk == mode_key:
+                    mode_name = str(label)
+                    break
         subtitle = subtitle_font.render(mode_name, True, (170, 190, 220))
         self.screen.blit(subtitle, (panel_rect.x + 20, panel_rect.y + 50))
 
@@ -1541,6 +1724,9 @@ class TabbedSettingsScreen:
             self._swallow_next_keydown = False
             return None
 
+        if self._campaign_phase_select_active:
+            return self._handle_campaign_phase_select_input(event)
+
         if self._playlist_edit_active:
             return self._handle_mode_playlist_edit_input(event)
 
@@ -1830,6 +2016,11 @@ class TabbedSettingsScreen:
             mode_key = item.get('mode_key')
             if not mode_key:
                 return None
+            if mode_key == 'campaign':
+                if key_code in (pygame.K_RETURN, pygame.K_SPACE, pygame.K_LEFT, pygame.K_RIGHT):
+                    self._open_campaign_phase_select()
+                    return None
+                return None
             if key_code in (pygame.K_RETURN, pygame.K_SPACE, pygame.K_LEFT, pygame.K_RIGHT):
                 return f'edit_mode_playlist:{mode_key}'
             return None
@@ -1987,6 +2178,9 @@ class TabbedSettingsScreen:
 
         if self._music_picker_open:
             self._draw_music_picker()
+
+        if self._campaign_phase_select_active:
+            self._draw_campaign_phase_select_overlay()
 
         if self._playlist_edit_active:
             self._draw_mode_playlist_edit_overlay()
