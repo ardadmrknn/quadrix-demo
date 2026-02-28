@@ -21,7 +21,7 @@ Menüde "Online & Co-op coming soon" metni gösteriliyor ama ortada hiç ağ kod
 - Oyuncu bağlantı kopması yönetimi (reconnect, timeout)
 - Anti-cheat mekanizması (seed doğrulama, input replay)
 - Steam Networking (Steamworks ISteamNetworking veya GameNetworkingSockets) entegrasyonu
-- Co-op modu tasarımı (ortak board? Garbage paylaşımı?)
+- Co-op modu tasarımı (ortak board? Garbage paylaşımı? daha sonra detaylandırılabilir)
 
 **Teknik notlar:**
 - Mevcut `PvPGame` lokal split-screen mantığını ağ üzerinden soyutlamak mümkün
