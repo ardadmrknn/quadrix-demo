@@ -424,6 +424,7 @@ class Game:
         # Combo ve mesajlar
         self.combo_message = ""
         self.combo_message_time = 0
+        self.show_fps = False
         
         # Partiküller
         self.particles = []
@@ -558,6 +559,7 @@ class Game:
             'hold': pygame.K_c,
             'hold2': pygame.K_v,
             'pause': pygame.K_p,
+            'toggle_fps': pygame.K_f,
         }
         if not self.settings_manager:
             return defaults
@@ -584,6 +586,7 @@ class Game:
             'hold': None,
             'hold2': None,
             'pause': None,
+            'toggle_fps': None,
         }
         if not self.settings_manager:
             for action, fallback in defaults.items():
@@ -1557,6 +1560,10 @@ class Game:
                         self.sound.play('clear')  # Silme sesi
                         print(f"🗑️ Saklanan parça silindi! Kalan hak: {self.discard_held_uses}")
                 
+                # FPS göster/gizle
+                elif event.key == bindings['toggle_fps']:
+                    self.show_fps = not self.show_fps
+
                 # Shape Mutation (LSHIFT): only if perk_phase is active
                 elif event.key == pygame.K_LSHIFT:
                     try:
@@ -3960,6 +3967,12 @@ class Game:
             msg_surf = msg_font.render(milestone_msg, True, (220, 230, 250))
             msg_rect = msg_surf.get_rect(centerx=panel_rect.centerx, bottom=panel_rect.bottom - 10)
             self.screen.blit(msg_surf, msg_rect)
+        
+        # FPS göster
+        if self.show_fps:
+            fps = int(self._fps_value or self.clock.get_fps())
+            fps_text = self.font_small.render(f'FPS: {fps}', True, GREEN if fps > 50 else RED)
+            self.screen.blit(fps_text, (10, 10))
         
         # Oyun bitti mesajı
         if self.game_over:

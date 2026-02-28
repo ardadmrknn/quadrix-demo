@@ -14,6 +14,19 @@ src_dir_for_imports = os.path.dirname(os.path.abspath(__file__))
 if src_dir_for_imports not in sys.path:
     sys.path.insert(0, src_dir_for_imports)
 
+# ==================== DUAL-MODULE LOCALIZATION FIX ====================
+# src/main.py "from src.main import main" ile paket olarak yüklendiğinde,
+# relative import (from .localization) → sys.modules['src.localization'] oluşturur;
+# ancak game.py, menu.py gibi alt modüller bare import (from localization import t)
+# kullanır → sys.modules['localization'] olarak AYRI bir modül yükler.
+# İki farklı modül nesnesi = iki farklı _current_language → set_language() diğerine yansımaz.
+# Çözüm: localization'ı tek seferlik yükleyip her iki ad altında da kaydet.
+try:
+    import localization as _loc_singleton
+    sys.modules.setdefault('src.localization', _loc_singleton)
+except Exception:
+    pass
+
 # ==================== WORKING DIRECTORY FIX (macOS .app için kritik) ====================
 # Finder'dan açıldığında CWD yanlış olabiliyor, bu yüzden doğru dizine geçiyoruz
 def _fix_working_directory():
@@ -1704,6 +1717,21 @@ def main():
             elif action == 'block_styles':
                 confirm_exit = False
                 state = 'block_styles'
+            elif action == 'language_changed':
+                # Ana menüden dil değiştirildiğinde tüm ekranları senkronize et
+                try:
+                    settings_screen.sync_from_settings_manager()
+                except Exception:
+                    pass
+                try:
+                    extras_screen._refresh_fonts()
+                except Exception:
+                    pass
+                try:
+                    if hasattr(achievement_screen, '_refresh_fonts_for_language'):
+                        achievement_screen._refresh_fonts_for_language(force=True)
+                except Exception:
+                    pass
             elif action in ('exit', 'Çıkış', 'Exit'):
                 confirm_exit = True
             elif action == 'toggle_fullscreen':
@@ -1781,8 +1809,20 @@ def main():
             if action == 'back':
                 state = 'menu'
             elif action == 'language_changed':
+                # Ayarlardan dil değiştirildiğinde tüm ekranları senkronize et
+                try:
+                    menu.font_menu = retro_style.get_font(32, bold=True)
+                    menu.font_small = retro_style.get_font(24)
+                    menu._update_options()
+                except Exception:
+                    pass
                 try:
                     extras_screen._refresh_fonts()
+                except Exception:
+                    pass
+                try:
+                    if hasattr(achievement_screen, '_refresh_fonts_for_language'):
+                        achievement_screen._refresh_fonts_for_language(force=True)
                 except Exception:
                     pass
             elif action == 'toggle_music':

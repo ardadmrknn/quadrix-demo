@@ -3685,6 +3685,12 @@ class Menu:
                 self.settings_manager.set('language', lang_code)
         except Exception:
             pass
+        # Menü fontlarını ve seçenek listesini yenile
+        try:
+            self.font_menu = retro_style.get_font(32, bold=True)
+            self.font_small = retro_style.get_font(24)
+        except Exception:
+            pass
         self._update_options()
         return 'language_changed'
 

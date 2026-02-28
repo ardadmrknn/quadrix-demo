@@ -1,0 +1,43 @@
+﻿Unique EU missing keys: 410
+  bg_back: Back
+  bg_default: Default
+  bg_main: Main Background
+  bg_outer: Outer Area Background
+  bg_pvp_board: PvP Boards
+  bg_pvp_main: PvP Main Background
+  bg_show: Show Background
+  bg_single: Single Player Board
+  bg_title: BACKGROUND SELECTOR
+  bg_transparency: Transparency
+  bg_wide: Wide Mode Background
+  block_workshop_action_delete: Delete
+  block_workshop_action_duplicate: Duplicate
+  block_workshop_action_modes: Modes
+  block_workshop_action_new: New
+  block_workshop_action_rename: Rename
+  block_workshop_block_color_updated: Block color updated
+  block_workshop_block_colors_reset: Block colors reset
+  block_workshop_block_empty: This block is empty
+  block_workshop_block_name: {label} #{index}
+  block_workshop_cell_color_reset: Cell color reset
+  block_workshop_cell_color_updated: Cell color updated
+  block_workshop_cell_empty: This cell is empty
+  block_workshop_clear_board: Board cleared
+  block_workshop_default_set: Default Package
+python : Traceback (most recent call last):
+At line:1 char:1
++ python _dump_eu.py 2>&1 | Out-File "_eu_missing_list.txt" -Encoding u ...
++ ~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Traceback (most recent call last) 
+   ::String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+  File "C:\Users\arda demirkan\Desktop\v2_23022026\v2\_dump_eu.py", line 10, in
+ <module>
+    print(f'  {k}: {v[:80]}')
+  File "C:\Users\arda demirkan\AppData\Local\Programs\Python\Python311\Lib\enco
+dings\cp1254.py", line 19, in encode
+    return codecs.charmap_encode(input,self.errors,encoding_table)[0]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+UnicodeEncodeError: 'charmap' codec can't encode characters in position 37-38: 
+character maps to <undefined>

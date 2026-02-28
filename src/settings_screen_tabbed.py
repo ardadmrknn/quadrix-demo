@@ -125,6 +125,11 @@ def _build_tab_content(tab_key: str, sm, show_debug: bool = False) -> list[dict]
 
         items.append({'type': 'section', 'loc_key': 'settings_section_visual', 'label_tr': 'GÖRSEL', 'label_en': 'VISUAL'})
         items.append({
+            'type': 'toggle', 'key': 'show_fps',
+            'loc_key': 'show_fps',
+            'label_tr': 'FPS Göster', 'label_en': 'Show FPS',
+        })
+        items.append({
             'type': 'toggle', 'key': 'show_ghost',
             'loc_key': 'show_ghost',
             'label_tr': 'Gölge Bloğu', 'label_en': 'Ghost Piece',
@@ -503,6 +508,7 @@ class TabbedSettingsScreen:
         self.resolution = sm.get('resolution', 'auto')
         self.vsync = sm.get('vsync', True)
         self.fps_limit = sm.get('fps_limit', 0)
+        self.show_fps = sm.get('show_fps', False)
         self.show_ghost = sm.get('show_ghost', True)
         self.background_enabled = sm.get('background_enabled', True)
         self.bg_transparency = sm.get('bg_transparency', 0.3)
@@ -1327,6 +1333,7 @@ class TabbedSettingsScreen:
             'music_enabled': 'toggle_music',
             'sound_enabled': 'toggle_sound',
             'mute_all': 'toggle_mute',
+            'show_fps': None,
             'show_ghost': None,
             'background_enabled': 'toggle_background_enabled',
             'particle_effects': None,
