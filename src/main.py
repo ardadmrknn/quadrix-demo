@@ -49,7 +49,10 @@ elif current_platform == 'Darwin':  # macOS
     current_audio = os.environ.get('SDL_AUDIODRIVER', '')
     if current_audio != 'dummy':
         os.environ['SDL_AUDIODRIVER'] = 'coreaudio'
-    os.environ.setdefault('SDL_VIDEO_HIGHDPI_DISABLED', '1')
+    # Retina HiDPI: aktif — SDL surface fiziksel piksel boyutunda oluşturulur,
+    # pencere logical point boyutunda kalır.  Tüm mouse koordinatları
+    # normalize_mouse_pos() / get_mouse_pos() üzerinden fiziksel piksele çevrilir.
+    os.environ.setdefault('SDL_VIDEO_HIGHDPI_DISABLED', '0')
     os.environ.setdefault('SDL_VIDEO_MAC_FULLSCREEN_SPACES', '0')
     os.environ.setdefault('SDL_VIDEO_MINIMIZE_ON_FOCUS_LOSS', '0')
     os.environ.setdefault('SDL_VIDEODRIVER', 'cocoa')
@@ -123,7 +126,7 @@ try:
     from .steam_leaderboards import SteamLeaderboardService  # type: ignore
     from .user_screens import UserSelectionScreen, UserManagementScreen  # type: ignore
     from .localization import set_language, t  # type: ignore
-    from .platform_utils import request_window_focus, init_platform_display, get_display_flags, create_display, get_native_resolution, is_fullscreen_toggle, normalize_mouse_pos, set_app_icon  # type: ignore
+    from .platform_utils import request_window_focus, init_platform_display, get_display_flags, create_display, get_native_resolution, is_fullscreen_toggle, normalize_mouse_pos, get_mouse_pos, set_app_icon  # type: ignore
     from .retro_style import retro_style  # type: ignore
     from .background_effects import (  # type: ignore
         start_screen_transition, update_screen_transition,
@@ -156,7 +159,7 @@ except Exception:
     from steam_leaderboards import SteamLeaderboardService
     from user_screens import UserSelectionScreen, UserManagementScreen
     from localization import set_language, t
-    from platform_utils import request_window_focus, init_platform_display, get_display_flags, create_display, get_native_resolution, is_fullscreen_toggle, normalize_mouse_pos, set_app_icon
+    from platform_utils import request_window_focus, init_platform_display, get_display_flags, create_display, get_native_resolution, is_fullscreen_toggle, normalize_mouse_pos, get_mouse_pos, set_app_icon
     from retro_style import retro_style
     from background_effects import (
         start_screen_transition, update_screen_transition,
@@ -398,8 +401,7 @@ def _show_mode_intro_popup(screen, mode_key, settings_manager=None):
         screen.blit(cb_text_surf, (checkbox_rect.right + 10, checkbox_rect.y + (cb_size - cb_text_surf.get_height()) // 2))
         
         # Buttons
-        mpos = pygame.mouse.get_pos()
-        mouse_active = normalize_mouse_pos(mpos) if 'normalize_mouse_pos' in globals() else mpos
+        mouse_active = get_mouse_pos()
         
         play_hover = play_rect.collidepoint(mouse_active)
         cancel_hover = cancel_rect.collidepoint(mouse_active)
@@ -576,8 +578,7 @@ def _show_zen_start_popup(screen, board_height=20, settings_manager=None):
         screen.blit(sub_surf, sub_surf.get_rect(centerx=panel_rect.centerx, top=y_text))
 
         # 4. Seçici (Selector)
-        mpos = pygame.mouse.get_pos()
-        mpos = normalize_mouse_pos(mpos) if 'normalize_mouse_pos' in globals() else mpos
+        mpos = get_mouse_pos()
         
         # Sol Ok
         left_hover = left_arrow_rect.collidepoint(mpos)
@@ -713,8 +714,7 @@ def _show_tutorial_prompt(screen):
         retro_style.draw_wrapped_text(screen, text, body_font, (240, 240, 240), body_rect, align='center')
         
         # Butonlar
-        mpos = pygame.mouse.get_pos()
-        mpos = normalize_mouse_pos(mpos) if 'normalize_mouse_pos' in globals() else mpos
+        mpos = get_mouse_pos()
         
         retro_style.draw_uniform_button(screen, skip_rect, t('skip_tutorial'), sub_text='ESC', color_code=retro_style.secondary, selected=skip_rect.collidepoint(mpos))
         retro_style.draw_uniform_button(screen, play_rect, t('play_tutorial'), sub_text='ENTER', color_code=retro_style.success, selected=play_rect.collidepoint(mpos))

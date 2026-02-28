@@ -14,6 +14,7 @@ Desteklenen kontrolcüler:
 import pygame
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
+from platform_utils import get_mouse_pos as _gmp
 
 # Xbox / PlayStation / Nintendo buton indeksleri (SDL GameController layout)
 # SDL GameController standardında butonlar:
@@ -898,7 +899,11 @@ class GamepadManager:
             gp._mouse_accum_x -= dx
             gp._mouse_accum_y -= dy
 
-            width, height = surface.get_size()
+            # Mouse API'leri logical (window) space'te çalışır
+            if hasattr(pygame.display, 'get_window_size'):
+                width, height = pygame.display.get_window_size()
+            else:
+                width, height = surface.get_size()
             cur_x, cur_y = pygame.mouse.get_pos()
             new_x = max(0, min(width - 1, cur_x + dx))
             new_y = max(0, min(height - 1, cur_y + dy))
@@ -907,7 +912,7 @@ class GamepadManager:
             events.append(
                 pygame.event.Event(
                     pygame.MOUSEMOTION,
-                    pos=(new_x, new_y),
+                    pos=_gmp(),
                     rel=(dx, dy),
                     buttons=(0, 0, 0),
                 )
@@ -938,7 +943,7 @@ class GamepadManager:
                             pygame.event.Event(
                                 pygame.MOUSEBUTTONDOWN,
                                 button=1,
-                                pos=pygame.mouse.get_pos(),
+                                pos=_gmp(),
                             )
                         )
                     elif not a_now and a_prev:
@@ -946,7 +951,7 @@ class GamepadManager:
                             pygame.event.Event(
                                 pygame.MOUSEBUTTONUP,
                                 button=1,
-                                pos=pygame.mouse.get_pos(),
+                                pos=_gmp(),
                             )
                         )
             except Exception:
@@ -964,7 +969,7 @@ class GamepadManager:
                     pygame.event.Event(
                         pygame.MOUSEBUTTONDOWN,
                         button=1,
-                        pos=pygame.mouse.get_pos(),
+                        pos=_gmp(),
                     )
                 )
             elif not pressed_now and pressed_prev:
@@ -972,7 +977,7 @@ class GamepadManager:
                     pygame.event.Event(
                         pygame.MOUSEBUTTONUP,
                         button=1,
-                        pos=pygame.mouse.get_pos(),
+                        pos=_gmp(),
                     )
                 )
         except Exception:

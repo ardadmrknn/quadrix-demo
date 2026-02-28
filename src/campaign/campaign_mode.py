@@ -16,12 +16,14 @@ try:
     from ..pieces import SHAPE_NAMES  # type: ignore
     from ..localization import t  # type: ignore
     from ..retro_style import retro_style  # type: ignore
+    from ..platform_utils import get_mouse_pos  # type: ignore
 except Exception:
     from game import Game
     from constants import COLORS, BLACK, BOARD_WIDTH, BOARD_HEIGHT
     from pieces import SHAPE_NAMES
     from localization import t
     from retro_style import retro_style
+    from platform_utils import get_mouse_pos
 
 from .level_data import get_level, get_total_levels, LevelConfig, get_world_info
 from .objectives import (
@@ -382,6 +384,12 @@ class CampaignMode(Game):
     def get_current_speed(self) -> int:
         """Campaign modunda hız sabit kalır (level-based)"""
         return self.get_initial_speed()
+
+    def wants_mouse_visible(self) -> bool:
+        """Campaign modunda başarısız/tamamlandı ekranlarında mouse görünür olsun"""
+        if getattr(self, 'level_failed', False) or getattr(self, 'level_complete', False):
+            return True
+        return super().wants_mouse_visible()
     
     # === OYUN DÖNGÜSÜ ===
     
@@ -432,6 +440,15 @@ class CampaignMode(Game):
         
         # Normal oyun güncellemesi
         super().update(dt)
+
+        # Oyun alanı doldu (taşlar üste ulaştı) → campaign başarısız ekranına yönlendir
+        # game_over flag'ini sıfırla ki parent'ın standart "OYUN BİTTİ" overlay'i gösterilmesin
+        if getattr(self, 'game_over', False) and not self.level_failed:
+            self.game_over = False
+            self._game_over_active = False
+            self._game_over_pending = False
+            self._handle_level_failed(t('campaign_fail_board'))
+            return
         
         # Skor güncelleme eventi
         self._emit_event('score_update', {'score': self.board.score})
@@ -730,7 +747,7 @@ class CampaignMode(Game):
                         # Sonraki level'a geç
                         return 'next_level'
                 if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                    pos = pygame.mouse.get_pos()
+                    pos = get_mouse_pos()
                     if self.level_failed:
                         # Önce yeni game_over_overlay butonlarını kontrol et (kırmızı tema)
                         targets = getattr(self, '_game_over_click_targets', {})

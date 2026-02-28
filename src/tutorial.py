@@ -7,14 +7,14 @@ try:
     from .retro_style import retro_style  # type: ignore
     from .constants import *  # type: ignore
     from .pieces import create_piece_by_name  # type: ignore
-    from .platform_utils import create_display  # type: ignore
+    from .platform_utils import create_display, normalize_mouse_pos, get_mouse_pos  # type: ignore
 except Exception:
     from game import Game
     from localization import t
     from retro_style import retro_style
     from constants import *
     from pieces import create_piece_by_name
-    from platform_utils import create_display
+    from platform_utils import create_display, normalize_mouse_pos, get_mouse_pos
 
 class TutorialMode(Game):
     def __init__(self, difficulty='Normal', sound_enabled=True, effects_enabled=True, 
@@ -456,7 +456,7 @@ class TutorialMode(Game):
                         return 'menu'
                 
                 elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                    pos = getattr(event, 'pos', pygame.mouse.get_pos())
+                    pos = normalize_mouse_pos(getattr(event, 'pos', None)) or get_mouse_pos()
                     # Check rects provided by Game._draw_exit_prompt_overlay
                     if getattr(self, 'exit_yes_rect', None) and self.exit_yes_rect.collidepoint(pos):
                         return 'menu'

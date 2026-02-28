@@ -31,23 +31,21 @@ if IS_WINDOWS:
 
 
 def safe_blit(dest: pygame.Surface, src: pygame.Surface, pos, special_flags: int = 0) -> None:
-    """Platform-safe blit - macOS'ta BLEND flags'ler crash yapabiliyor.
+    """Platform-safe blit with exception fallback.
+    
+    Pygame 2.x sürümünde BLEND flag'leri macOS dahil tüm platformlarda
+    kararlı çalışmaktadır. Eski Pygame 1.x workaround'u kaldırılmıştır.
     
     Args:
         dest: Hedef surface
         src: Kaynak surface
         pos: Pozisyon (tuple veya Rect)
-        special_flags: pygame BLEND flags (macOS'ta yok sayılır)
+        special_flags: pygame BLEND flags
     """
     try:
-        if IS_MACOS and special_flags != 0:
-            # macOS'ta BLEND flags'ler sorunlu olabilir
-            # Basit blit kullan
-            dest.blit(src, pos)
-        else:
-            dest.blit(src, pos, special_flags=special_flags)
+        dest.blit(src, pos, special_flags=special_flags)
     except Exception:
-        # Fallback: basit blit
+        # Fallback: basit blit (flag'siz)
         try:
             dest.blit(src, pos)
         except Exception:
@@ -281,27 +279,75 @@ def init_platform_display():
             pass
 
 
+def get_display_scale_factor() -> float:
+    """Return the ratio of physical pixels to logical points.
+
+    On macOS Retina displays this is typically 2.0.
+    On all other platforms (or when HiDPI is disabled) it returns 1.0.
+    Safe to call at any time after ``pygame.display.set_mode()``.
+    """
+    try:
+        surface = pygame.display.get_surface()
+        if surface is not None and hasattr(pygame.display, 'get_window_size'):
+            surf_w, _ = surface.get_size()           # physical pixels
+            win_w, _ = pygame.display.get_window_size()  # logical points
+            if win_w > 0:
+                factor = surf_w / float(win_w)
+                if factor >= 0.5:  # sanity check
+                    return factor
+    except Exception:
+        pass
+    return 1.0
+
+
+def _macos_logical_resolution() -> tuple[int, int] | None:
+    """macOS'ta NSScreen API ile logical (points) ekran çözünürlüğünü döndür.
+
+    HiDPI aktif olsa bile daima logical boyut döner (ör: 1440×900).
+    PyObjC yoksa veya hata olursa None döner.
+    """
+    if not IS_MACOS:
+        return None
+    try:
+        from AppKit import NSScreen  # type: ignore[import-untyped]
+        frame = NSScreen.mainScreen().frame()
+        w, h = int(frame.size.width), int(frame.size.height)
+        if w > 0 and h > 0:
+            return (w, h)
+    except Exception:
+        pass
+    return None
+
+
 def get_native_resolution():
-    """Get the native screen resolution from the operating system.
+    """Get the native screen resolution in *logical points*.
+
+    On macOS Retina, always returns the logical (point) resolution
+    regardless of HiDPI state (e.g. 1440×900, not 2880×1800).
+    On Windows/Linux, returns the desktop pixel resolution.
 
     Returns:
         Tuple[int, int]: (width, height) of the primary monitor.
     """
+    # macOS: prefer NSScreen to avoid SDL physical-vs-logical ambiguity
+    if IS_MACOS:
+        ns_res = _macos_logical_resolution()
+        if ns_res is not None:
+            return ns_res
+
     try:
-        # pygame.display.Info() works before set_mode on most platforms
         info = pygame.display.Info()
         width = info.current_w
         height = info.current_h
-        
-        # macOS Retina: SDL bazen "points" (logical) döndürür, bazen "pixels" (physical)
-        # HIDPI disabled olduğunda logical resolution alırız
-        if IS_MACOS:
-            # Eğer çözünürlük çok büyükse (physical pixels) logical'a çevir
-            # Tipik Retina: 2880x1800 -> 1440x900, 3024x1964 -> 1512x982
-            # Gerçek ekran boyutuna göre mantıklı bir değer döndür
-            pass  # HIDPI disabled olduğu için zaten logical alıyoruz
-        
-        # Sanity check: if the values are unreasonable, fall back
+
+        if IS_MACOS and width > 0 and height > 0:
+            # Fallback heuristic: SDL HiDPI aktifken fiziksel piksel dönebilir.
+            # Tipik Retina scale 2x, bazı ekranlarda ~1.5x–2x arası.
+            # 3000'den büyük genişlik neredeyse kesin fiziksel pikseldir.
+            if width > 3000:
+                width //= 2
+                height //= 2
+
         if width > 0 and height > 0:
             return (width, height)
     except Exception:

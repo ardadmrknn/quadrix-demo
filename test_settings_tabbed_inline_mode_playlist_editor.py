@@ -61,6 +61,7 @@ def _install_settings_module_stubs(monkeypatch):
     platform_utils_stub = types.ModuleType('platform_utils')
     platform_utils_stub.is_fullscreen_toggle = lambda *args, **kwargs: False
     platform_utils_stub.normalize_mouse_pos = lambda pos=None: pos
+    platform_utils_stub.get_mouse_pos = lambda: (0, 0)
     monkeypatch.setitem(sys.modules, 'platform_utils', platform_utils_stub)
 
     background_effects_stub = types.ModuleType('background_effects')

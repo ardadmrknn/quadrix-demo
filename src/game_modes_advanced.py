@@ -1755,6 +1755,7 @@ class DailyChallengeMode(Game):
         self.fog_overlay = False
         self._daily_outcome_recorded = False
         self.daily_attempt_cap = DAILY_MAX_FAILURES
+        self._daily_failed = False
         self.speed_multiplier = float(self.challenge.get('speed_multiplier', 1.0))
         self.controls_under_stats = True
         
@@ -1856,15 +1857,49 @@ class DailyChallengeMode(Game):
         self.game_over = True
         print(message or "💥 Kural ihlali limiti doldu. Challenge başarısız!")
 
+    def wants_mouse_visible(self) -> bool:
+        if getattr(self, '_daily_failed', False):
+            return True
+        return super().wants_mouse_visible()
+
     def handle_input(self):
+        if getattr(self, '_daily_failed', False):
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    return False
+                if event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_ESCAPE:
+                        return 'menu'
+                    if event.key == pygame.K_r:
+                        self.restart()
+                        return True
+                if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                    from platform_utils import get_mouse_pos as _get_mouse_pos
+                    pos = _get_mouse_pos()
+                    targets = getattr(self, '_game_over_click_targets', {})
+                    if isinstance(targets, dict):
+                        if targets.get('restart') and targets['restart'].collidepoint(pos):
+                            self.restart()
+                            return True
+                        if targets.get('menu') and targets['menu'].collidepoint(pos):
+                            return 'main_menu'
+            return True
         if self.disable_hold:
             self.can_hold = False
         return super().handle_input()
 
     def update(self, delta_time):
+        if getattr(self, '_daily_failed', False):
+            return
         if self.disable_hold:
             self.can_hold = False
         super().update(delta_time)
+        # Oyun alanı doldu → günlük görev başarısız ekranına yönlendir
+        if getattr(self, 'game_over', False) and not getattr(self, '_daily_failed', False):
+            self.game_over = False
+            self._game_over_active = False
+            self._game_over_pending = False
+            self._daily_failed = True
 
     def get_current_speed(self):
         base = super().get_current_speed()
@@ -1872,6 +1907,9 @@ class DailyChallengeMode(Game):
         return max(60, scaled)
 
     def draw_mode_overlay(self):
+        if getattr(self, '_daily_failed', False):
+            self._draw_daily_failed_overlay()
+            return
         super().draw_mode_overlay()
         if self.fog_overlay and not self.game_over:
             fog = pygame.Surface((self.window_width, self.window_height), pygame.SRCALPHA)
@@ -1884,6 +1922,26 @@ class DailyChallengeMode(Game):
             self.draw_mode_info(0, 0)
         except Exception:
             pass
+
+    def _draw_daily_failed_overlay(self) -> None:
+        """Günlük görev başarısız ekranı - kırmızı tema."""
+        try:
+            from localization import t as _t
+        except Exception:
+            def _t(k, **kw): return k  # type: ignore
+        _red_theme = {
+            'panel_border_color': (220, 50, 70),
+            'panel_glow_color':   (160, 25, 40),
+            'panel_fill_tint':    (30, 8, 12),
+            'card_fill_tint':     (38, 12, 18),
+            'card_border_color':  (140, 50, 65),
+            'gradient_tint':      (20, 5, 8),
+            'title_text':         _t('campaign_failed_title'),
+            'skip_stars':         True,
+            'skip_record':        True,
+            'state_prefix':       'daily_fail_',
+        }
+        self._draw_game_over_overlay(None, alt_theme=_red_theme)
     
     def check_challenge_completion(self):
         """Challenge tamamlandı mı kontrol et"""
@@ -2161,6 +2219,7 @@ class DailyChallengeMode(Game):
         self._score_recorded = False
         self.challenge_completed = False
         self.mistakes_made = 0
+        self._daily_failed = False
         super().restart()
         self._apply_modifiers()
         self.fall_speed = int(self.get_initial_speed() * self.speed_multiplier)

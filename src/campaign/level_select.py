@@ -12,6 +12,7 @@ from typing import Dict, Any, List, Optional, Tuple, TYPE_CHECKING
 
 from .level_data import get_level, get_levels, get_total_levels, get_world_info, LevelConfig
 from background_effects import get_shared_falling_blocks_layer
+from platform_utils import get_mouse_pos, normalize_mouse_pos
 from ui_theme import UIColors, UIFonts, UIStyle
 from retro_style import retro_style as _retro_style
 from localization import t, get_language
@@ -277,7 +278,7 @@ class CampaignLevelSelect:
                     return f'play_{self.selected_level}'
         
         elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-            pos = event.pos
+            pos = normalize_mouse_pos(event.pos) or event.pos
             
             # Oyna butonu
             if self.play_button and self.play_button.collidepoint(pos):
@@ -304,7 +305,7 @@ class CampaignLevelSelect:
                         self.selected_level = level_num
         
         elif event.type == pygame.MOUSEMOTION:
-            pos = event.pos
+            pos = normalize_mouse_pos(event.pos) or event.pos
             self.hovered_level = None
             for rect, level_num in self.level_buttons:
                 if rect.collidepoint(pos):
@@ -372,7 +373,7 @@ class CampaignLevelSelect:
         # Fare hover durumunu her frame güncelle: MOUSEMOTION kaçırılan durumlarda
         # (ekrana ilk giriş, dünya geçişi, pencere odaklanması) tooltip takılmaz.
         if self.level_buttons:
-            mouse_pos = pygame.mouse.get_pos()
+            mouse_pos = get_mouse_pos()
             self.hovered_level = None
             for rect, level_num in self.level_buttons:
                 if rect.collidepoint(mouse_pos):

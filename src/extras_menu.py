@@ -7,7 +7,7 @@ from pathlib import Path
 from constants import *
 from retro_style import retro_style
 from background_effects import get_shared_falling_blocks_layer
-from platform_utils import is_fullscreen_toggle, normalize_mouse_pos
+from platform_utils import is_fullscreen_toggle, normalize_mouse_pos, get_mouse_pos
 from ui_theme import UIColors, UIFonts, UIStyle, lerp_color
 from ui_components import draw_glass_card
 from asset_manager import load_image
@@ -431,8 +431,7 @@ class ExtrasScreen:
         # Her frame'de mouse pozisyonunu kontrol et (MOUSEMOTION event'i gelmese bile)
         # Bu sayede hover efekti anında tepki verir
         try:
-            mouse_pos = pygame.mouse.get_pos()
-            mouse_pos = normalize_mouse_pos(mouse_pos) or mouse_pos
+            mouse_pos = get_mouse_pos()
             mouse_over_any = False
             for i, rect in enumerate(self.option_rects):
                 if rect and rect.width > 0 and rect.collidepoint(mouse_pos):

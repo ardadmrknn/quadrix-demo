@@ -25,7 +25,7 @@ from workshop_blocks import WorkshopBlockDefinition, load_workshop_blocks
 from retro_style import retro_style
 from renderers.jelly_renderer import draw_jelly_block, draw_jelly_border
 from localization import t, get_language
-from platform_utils import get_display_flags, create_display, is_fullscreen_toggle, set_app_icon
+from platform_utils import get_display_flags, create_display, is_fullscreen_toggle, set_app_icon, normalize_mouse_pos, get_mouse_pos
 from ui_theme import UIFonts, UIColors
 from asset_manager import load_image
 from gamepad_manager import get_gamepad_manager, is_gamepad_connected
@@ -1256,7 +1256,7 @@ class Game:
                         pass
                     continue
                 if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                    pos = getattr(event, 'pos', pygame.mouse.get_pos())
+                    pos = normalize_mouse_pos(getattr(event, 'pos', None)) or get_mouse_pos()
                     if self.exit_yes_rect and self.exit_yes_rect.collidepoint(pos):
                         return 'menu'
                     if self.exit_no_rect and self.exit_no_rect.collidepoint(pos):
@@ -1267,22 +1267,26 @@ class Game:
             
             # Pencere boyutu değiştirildiğinde
             if event.type == pygame.VIDEORESIZE:
-                self.window_width = max(event.w, MIN_WINDOW_WIDTH)
-                self.window_height = max(event.h, MIN_WINDOW_HEIGHT)
-                # Renderer oluşturma hatalarına karşı platform_utils.create_display kullan.
+                # VIDEORESIZE event.w/h logical (point) boyutu taşır.
+                # create_display() logical boyutla çağrılır; surface fiziksel piksel olabilir.
+                req_w = max(event.w, MIN_WINDOW_WIDTH)
+                req_h = max(event.h, MIN_WINDOW_HEIGHT)
                 self.screen = create_display(
-                    self.window_width,
-                    self.window_height,
+                    req_w,
+                    req_h,
                     fullscreen=False,
                     resizable=True,
                 )
+                # Daima surface'tan gerçek piksel boyutunu al
+                self.window_width = self.screen.get_width()
+                self.window_height = self.screen.get_height()
                 self.update_fonts()
                 continue
 
             # Mouse clicks (game over overlay)
             if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 if self.game_over:
-                    pos = getattr(event, 'pos', pygame.mouse.get_pos())
+                    pos = normalize_mouse_pos(getattr(event, 'pos', None)) or get_mouse_pos()
                     # Peek butonu kontrolü
                     peek_rect = getattr(self, '_game_over_peek_rect', None)
                     if peek_rect and peek_rect.collidepoint(pos):
@@ -1798,7 +1802,7 @@ class Game:
             return None
 
         if event.type == pygame.MOUSEMOTION:
-            pos = getattr(event, 'pos', pygame.mouse.get_pos())
+            pos = normalize_mouse_pos(getattr(event, 'pos', None)) or get_mouse_pos()
             for idx, rect in enumerate(getattr(self, '_pause_option_rects', []) or []):
                 if rect and rect.collidepoint(pos):
                     if idx != self.pause_menu_selected:
@@ -1807,7 +1811,7 @@ class Game:
             return None
 
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-            pos = getattr(event, 'pos', pygame.mouse.get_pos())
+            pos = normalize_mouse_pos(getattr(event, 'pos', None)) or get_mouse_pos()
             for idx, rect in enumerate(getattr(self, '_pause_option_rects', []) or []):
                 if rect and rect.collidepoint(pos):
                     self.pause_menu_selected = idx
@@ -1864,7 +1868,7 @@ class Game:
         self._pause_option_rects = []
         self._pause_volume_rects = {}
         # Her frame gerçek fare pozisyonunu al (hover state mouse motion olmadan da çalışır)
-        _pause_mouse_pos = pygame.mouse.get_pos()
+        _pause_mouse_pos = get_mouse_pos()
 
         start_y = panel_rect.y + top_pad
         for i, option in enumerate(self.pause_menu_options):
@@ -4059,7 +4063,7 @@ class Game:
         no_rect = pygame.Rect(start_x + button_width + spacing, button_y, button_width, button_height)
 
         # Hover-aware buton çizimi — ana menü exit confirm ile aynı stil
-        mouse_pos = pygame.mouse.get_pos()
+        mouse_pos = get_mouse_pos()
         for _rect, _label, _sub_label, _btn_color in (
             (yes_rect, t('quit_confirm_yes_label'), 'ENTER', retro_style.success),
             (no_rect, t('quit_confirm_no_label'), 'ESC', retro_style.secondary),
@@ -4340,7 +4344,19 @@ class Game:
         self.screen.blit(glow_surf, glow_rect.topleft)
         
         # Glass panel
-        retro_style.draw_glass_panel(self.screen, panel_rect, alpha=216, border_color=panel_border_color)
+        if alt_theme:
+            # Alt tema varsa panel arka planını özel renkle çiz (tint ile)
+            _tint_surf = pygame.Surface(panel_rect.size, pygame.SRCALPHA)
+            _tint_surf.fill((*panel_fill_tint, 216))
+            # Üst kenar cam highlight
+            _hl_h = min(panel_rect.height // 3, 40)
+            for _yl in range(_hl_h):
+                _ha = int(25 * (1 - _yl / _hl_h))
+                pygame.draw.line(_tint_surf, (255, 255, 255, _ha), (0, _yl), (panel_rect.width, _yl))
+            self.screen.blit(_tint_surf, panel_rect.topleft)
+            pygame.draw.rect(self.screen, panel_border_color, panel_rect, 2, border_radius=12)
+        else:
+            retro_style.draw_glass_panel(self.screen, panel_rect, alpha=216, border_color=panel_border_color)
         
         # Göz butonu - panelin sağ üst köşesinde
         peek_btn_size = s(36)
@@ -4349,7 +4365,7 @@ class Game:
         self._game_over_peek_rect = pygame.Rect(peek_btn_x, peek_btn_y, peek_btn_size, peek_btn_size)
         
         # Göz butonu arka planı
-        mouse_pos = pygame.mouse.get_pos() if pygame.mouse.get_focused() else None
+        mouse_pos = get_mouse_pos() if pygame.mouse.get_focused() else None
         peek_hovered = mouse_pos is not None and self._game_over_peek_rect.collidepoint(mouse_pos)
         center = self._game_over_peek_rect.center
         radius = peek_btn_size // 2
