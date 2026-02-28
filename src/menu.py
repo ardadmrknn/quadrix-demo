@@ -183,7 +183,6 @@ def get_control_actions():
         ('rotate', t('ctrl_rotate')),
         ('hold', t('ctrl_hold')),
         ('pause', t('ctrl_pause')),
-        ('toggle_fps', t('ctrl_toggle_fps')),
         ('fullscreen_toggle', t('ctrl_fullscreen_toggle')),
     ]
     
@@ -241,7 +240,6 @@ CONTROL_ACTIONS = {
         ('rotate', 'Döndür'),
         ('hold', 'Hold / değiştir'),
         ('pause', 'Duraklat'),
-        ('toggle_fps', 'FPS göster'),
     ],
     'pvp.player1': [
         ('move_left', 'Sola kay'),
@@ -998,10 +996,10 @@ class Menu:
         # Katman sırası: panel arka planı -> flavor görsel -> panel üst çizimleri
         self._draw_dashboard_tile_flavor(draw_rect, panel_key, accent_color, hover)
 
-        if is_highlighted:
-            fill = pygame.Surface(draw_rect.size, pygame.SRCALPHA)
-            fill.fill((0, 0, 0, 14))
-            self.screen.blit(fill, draw_rect.topleft)
+        # Her zaman tüm karta (yazı alanı dahil) hafif siyah overlay uygula
+        fill = pygame.Surface(draw_rect.size, pygame.SRCALPHA)
+        fill.fill((0, 0, 0, 48 if is_highlighted else 38))
+        self.screen.blit(fill, draw_rect.topleft)
 
         pygame.draw.rect(
             self.screen,
@@ -1015,6 +1013,32 @@ class Menu:
         title_area = pygame.Rect(draw_rect.x + sp(16), draw_rect.y + sp(10), draw_rect.width - sp(24), title_area_h)
         title_font_size = max(sp(16), min(sp(26), int(min(draw_rect.width, draw_rect.height) * 0.12)))
         title_font = retro_style.get_font(title_font_size, bold=True)
+
+        # Eğer başlık tek satıra sığmıyorsa font küçültülerek tek satıra indirilir.
+        _min_title_font = max(sp(11), sp(12))
+        while title_font_size > _min_title_font:
+            if title_font.size(title)[0] <= title_area.width:
+                break
+            title_font_size -= 1
+            title_font = retro_style.get_font(title_font_size, bold=True)
+
+        # Başlık metninin gerçek boyutunu ölç, tam o alana koyu arka plan çiz
+        _title_lines = retro_style.wrap_text(title, title_font, title_area.width)
+        _line_h = title_font.get_linesize()
+        _title_text_h = max(_line_h, len(_title_lines) * _line_h + max(0, len(_title_lines) - 1) * sp(2))
+        _tbg_pad_x = sp(8)
+        _tbg_pad_y = sp(9)
+        _tbg_w = min(draw_rect.width - sp(8), title_area.width + _tbg_pad_x * 2)
+        _tbg_h = _title_text_h + _tbg_pad_y * 2
+        _tbg = pygame.Surface((_tbg_w, _tbg_h), pygame.SRCALPHA)
+        pygame.draw.rect(_tbg, (8, 12, 30, 210), _tbg.get_rect(),
+                         border_top_left_radius=14, border_top_right_radius=14,
+                         border_bottom_left_radius=8, border_bottom_right_radius=8)
+        pygame.draw.rect(_tbg, (*accent_color[:3], 110), _tbg.get_rect(), 1,
+                         border_top_left_radius=14, border_top_right_radius=14,
+                         border_bottom_left_radius=8, border_bottom_right_radius=8)
+        self.screen.blit(_tbg, (draw_rect.x + sp(4), draw_rect.y))
+
         retro_style.draw_wrapped_text(
             self.screen,
             title,
@@ -2949,45 +2973,32 @@ class Menu:
         size = max(64, size)
         surface = pygame.Surface((size, size), pygame.SRCALPHA)
         center = size // 2
-
-        # Dairesel avatar rozet: neon + cam (kenarlar çerçeveyle gizlenecek)
-        neon = UIColors.NEON_CYAN
         radius = center - 4
 
-        # outer glow (circle) — taşmadan: büyük yarıçaplar kare kırpma yapıyordu
-        glow = pygame.Surface((size, size), pygame.SRCALPHA)
-        for width, alpha in ((12, 16), (9, 26), (6, 40), (3, 62)):
-            pygame.draw.circle(glow, (*neon, alpha), (center, center), radius - 1, width=width)
-        surface.blit(glow, (0, 0), special_flags=pygame.BLEND_RGBA_ADD)
+        # 1. Önce dolu arka plan dairesi — accent_color ile
+        bg_surf = pygame.Surface((size, size), pygame.SRCALPHA)
+        pygame.draw.circle(bg_surf, (*accent_color, 240), (center, center), radius)
+        surface.blit(bg_surf, (0, 0))
 
-        # glass base
-        pygame.draw.circle(surface, (*UIColors.BG_MEDIUM, 210), (center, center), radius)
-        pygame.draw.circle(surface, (255, 255, 255, 18), (center, center), radius)
+        # 2. Hafif parlama (içe doğru beyaz kenar)
+        pygame.draw.circle(surface, (255, 255, 255, 22), (center, center), radius)
 
-        # top arc highlight (soft glass sheen)
-        highlight = pygame.Surface((size, size), pygame.SRCALPHA)
-        for i in range(max(10, size // 5)):
-            a = int(26 * (1 - i / max(1, (size // 5))))
-            pygame.draw.circle(highlight, (255, 255, 255, a), (center - 6, center - 10), max(0, radius - 6 - i), width=2)
-        surface.blit(highlight, (0, 0))
-
+        # 3. Avatar bitmap
         avatar_size = max(32, size - 24)
         avatar_bitmap = self._resolve_avatar_bitmap(avatar_value, avatar_size)
         if avatar_bitmap:
-            # Avatarı daireye kırp (çerçeve kenarları kapatsın diye biraz daha küçük)
             masked = pygame.Surface((avatar_size, avatar_size), pygame.SRCALPHA)
             mask = pygame.Surface((avatar_size, avatar_size), pygame.SRCALPHA)
-            cut_r = max(2, avatar_size // 2 - 3)
+            cut_r = max(2, avatar_size // 2 - 2)
             pygame.draw.circle(mask, (255, 255, 255, 255), (avatar_size // 2, avatar_size // 2), cut_r)
             masked.blit(avatar_bitmap, (0, 0))
             masked.blit(mask, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
             surface.blit(masked, masked.get_rect(center=(center, center)))
 
-        # Neon rim (drawn last to cover avatar edges)
+        # 4. Dış rim: accent rengi + neon
         rim_color = accent_color if accent_color else UIColors.NEON_CYAN
-        pygame.draw.circle(surface, (*UIColors.GLASS_BORDER[:3], 150), (center, center), radius, width=2)
-        pygame.draw.circle(surface, (*rim_color, 210), (center, center), radius - 3, width=3)
-        pygame.draw.circle(surface, (255, 255, 255, 70), (center, center), radius - 8, width=1)
+        pygame.draw.circle(surface, (*rim_color, 230), (center, center), radius, width=3)
+        pygame.draw.circle(surface, (*UIColors.NEON_CYAN, 120), (center, center), radius + 1, width=2)
 
         return surface
 

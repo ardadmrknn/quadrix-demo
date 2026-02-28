@@ -22,7 +22,6 @@ DEFAULT_CONTROLS = {
         'rotate': {'primary': 'up', 'secondary': 'w'},
         'hold': {'primary': 'c', 'secondary': ''},
         'pause': {'primary': 'p', 'secondary': ''},
-        'toggle_fps': {'primary': 'f', 'secondary': ''},
         'fullscreen_toggle': {'primary': 'f12', 'secondary': ''},
     },
     'pvp': {
@@ -128,7 +127,6 @@ class SettingsManager:
             'vsync': True,  # VSYNC açık - screen tearing önleme
             # FPS limiti: 0 = MAX (sınırsız). Değerler: 30/45/60/90/120/0
             'fps_limit': 0,
-            'show_fps': False,  # FPS göster varsayılan kapalı
             'show_ghost': True,
             'bg_transparency': 0.3,
             # Menü/UI panel şeffaflığı (RetroStyle glass/panel/button yüzeyleri).
@@ -176,12 +174,6 @@ class SettingsManager:
         # Her uygulama açılışında tekrar gizli başlasın.
         try:
             self.settings['show_debug_settings'] = False
-        except Exception:
-            pass
-
-        # FPS göstergesi her oturumda kapalı başlar (runtime-only)
-        try:
-            self.settings['show_fps'] = False
         except Exception:
             pass
 

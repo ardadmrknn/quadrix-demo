@@ -172,6 +172,20 @@ class UserSelectionScreen:
         self.edit_target_username = None
         self._avatar_editor_return_state = 'create_new'
 
+        # Avatar arka plan renk seçimi
+        self.avatar_colors = [
+            (100, 150, 255),  # Mavi
+            (255, 100, 100),  # Kırmızı
+            (100, 220, 100),  # Yeşil
+            (255, 220, 80),   # Sarı
+            (255, 100, 220),  # Pembe
+            (80, 230, 230),   # Cyan
+            (255, 160, 80),   # Turuncu
+            (190, 90, 255),   # Mor
+        ]
+        self.selected_color_index = 0
+        self._avatar_color_rects = []
+
     def _get_ui_reference_size(self) -> tuple[int, int]:
         try:
             info = pygame.display.Info()
@@ -542,6 +556,7 @@ class UserSelectionScreen:
         self.edit_target_username = None
         self._avatar_editor_return_state = 'create_new'
         self._form_focus = 0
+        self.selected_color_index = 0
 
     def _begin_create_flow(self):
         self._reset_create_form()
@@ -579,6 +594,12 @@ class UserSelectionScreen:
         self._ensure_visible()
         self._form_focus = 1
         self._start_transition()
+        # Kaydedilmiş rengi yükle
+        saved_color = user_data.get('avatar_color', (100, 150, 255))
+        try:
+            self.selected_color_index = self.avatar_colors.index(tuple(saved_color))
+        except (ValueError, TypeError):
+            self.selected_color_index = 0
 
     def _launch_avatar_editor(self):
         self._avatar_editor_return_state = self.state if self.state in ('create_new', 'edit_existing') else 'create_new'
@@ -817,7 +838,14 @@ class UserSelectionScreen:
             elif self._custom_avatar_button_rect and self._custom_avatar_button_rect.collidepoint(pos):
                 self._form_focus = 0
                 self._launch_avatar_editor()
-            elif self._create_button_rect and self._create_button_rect.collidepoint(pos):
+            else:
+                # Renk paleti dairelerine tıklama
+                for i, dot_rect in enumerate(self._avatar_color_rects):
+                    if dot_rect.collidepoint(pos):
+                        self.selected_color_index = i
+                        self._form_focus = 0
+                        break
+            if self._create_button_rect and self._create_button_rect.collidepoint(pos):
                 self._form_focus = 2
                 return self._attempt_update_user() if is_edit_mode else self._attempt_create_user()
             elif self._cancel_button_rect and self._cancel_button_rect.collidepoint(pos):
@@ -845,6 +873,9 @@ class UserSelectionScreen:
         avatar = self.custom_avatar_path if self.custom_avatar_path else self.selected_avatar
         success, message = self.user_manager.create_user(username, avatar)
         if success:
+            # Seçilen arka plan rengini kaydet
+            self.user_manager.update_user_profile(
+                username, avatar_color=self.avatar_colors[self.selected_color_index])
             self.users_list = list(self.user_manager.get_all_users().keys())
             self.selected_user = len(self.users_list) - 1 if self.users_list else 0
             self.user_manager.select_user(username)
@@ -865,7 +896,8 @@ class UserSelectionScreen:
         avatar = self.custom_avatar_path if self.custom_avatar_path else self.selected_avatar
         success, message = self.user_manager.update_user_profile(
             self.edit_target_username,
-            avatar=avatar
+            avatar=avatar,
+            avatar_color=self.avatar_colors[self.selected_color_index]
         )
         if success:
             self.users_list = list(self.user_manager.get_all_users().keys())
@@ -980,7 +1012,7 @@ class UserSelectionScreen:
         avatar_color = user_data.get('avatar_color', (100, 150, 255))
         pygame.draw.circle(self.screen, avatar_color, avatar_rect.center, avatar_size // 2)
         pygame.draw.circle(self.screen, (255, 255, 255), avatar_rect.center, avatar_size // 2, s(2))
-        avatar_surface = self._get_avatar_surface(user_data.get('avatar', '__default__'), avatar_size - s(8))
+        avatar_surface = self._get_avatar_surface(user_data.get('avatar', '__default__'), avatar_size - s(2))
         self.screen.blit(avatar_surface, avatar_surface.get_rect(center=avatar_rect.center))
         
         name_color = WHITE
@@ -1256,14 +1288,17 @@ class UserSelectionScreen:
         s = self._sx
         retro_style.draw_panel(self.screen, rect, t('user_avatar_select'), title_color=retro_style.text_primary)
         preview_rect = pygame.Rect(rect.centerx - s(90), rect.y + s(80), s(180), s(180))
-        glow = pygame.Surface(preview_rect.size, pygame.SRCALPHA)
-        pygame.draw.ellipse(glow, (retro_style.primary[0], retro_style.primary[1], retro_style.primary[2], 30), glow.get_rect())
-        self.screen.blit(glow, preview_rect.topleft)
-        pygame.draw.ellipse(self.screen, (30, 40, 80), preview_rect, s(2))
+
+        # Seçili renkle doldurulan arka plan dairesi
+        sel_color = self.avatar_colors[self.selected_color_index]
+        pygame.draw.ellipse(self.screen, sel_color, preview_rect)
+        glow = pygame.Surface(preview_rect.inflate(s(8), s(8)).size, pygame.SRCALPHA)
+        pygame.draw.ellipse(glow, (*sel_color[:3], 50), glow.get_rect())
+        self.screen.blit(glow, preview_rect.inflate(s(8), s(8)).topleft)
         pygame.draw.ellipse(self.screen, retro_style.primary, preview_rect.inflate(s(8), s(8)), s(2))
-        
+
         avatar_value = self.custom_avatar_path if self.custom_avatar_path else self.selected_avatar
-        avatar_surface = self._get_avatar_surface(avatar_value, s(130))
+        avatar_surface = self._get_avatar_surface(avatar_value, s(162))
         self.screen.blit(avatar_surface, avatar_surface.get_rect(center=preview_rect.center))
         
         # Oklar avatar merkezine simetrik
@@ -1277,12 +1312,35 @@ class UserSelectionScreen:
         counter = self.font_small.render(f'{self.avatar_index + 1} / {len(self.avatars)}', True, (200, 210, 230))
         counter.set_alpha(235)
         # Sayfa göstergesi tam merkez
-        self.screen.blit(counter, counter.get_rect(midtop=(preview_rect.centerx, preview_rect.bottom + s(10))))
+        counter_y = preview_rect.bottom + s(10)
+        self.screen.blit(counter, counter.get_rect(midtop=(preview_rect.centerx, counter_y)))
         
         self._custom_avatar_button_rect = None
         if self.custom_avatar_path:
             info = self.font_small.render(t('user_custom_image'), True, (120, 255, 180))
             self.screen.blit(info, info.get_rect(midtop=(rect.centerx, preview_rect.bottom + s(35))))
+
+        # Renk paleti — küçük daireler
+        dot_r = s(14)
+        dot_gap = s(6)
+        n_colors = len(self.avatar_colors)
+        palette_w = n_colors * (dot_r * 2) + (n_colors - 1) * dot_gap
+        palette_x0 = rect.centerx - palette_w // 2
+        palette_y = rect.bottom - s(48)
+        # Yeterli alan yoksa counter'ın biraz altına koy
+        palette_y = max(counter_y + s(30), palette_y)
+        self._avatar_color_rects = []
+        for i, color in enumerate(self.avatar_colors):
+            cx = palette_x0 + i * (dot_r * 2 + dot_gap) + dot_r
+            cy = palette_y + dot_r
+            dot_rect = pygame.Rect(cx - dot_r, cy - dot_r, dot_r * 2, dot_r * 2)
+            self._avatar_color_rects.append(dot_rect)
+            pygame.draw.ellipse(self.screen, color, dot_rect)
+            if i == self.selected_color_index:
+                # Seçili dairenin etrafına parlak çerçeve
+                pygame.draw.ellipse(self.screen, (255, 255, 255), dot_rect.inflate(s(4), s(4)), s(2))
+            else:
+                pygame.draw.ellipse(self.screen, (80, 90, 130), dot_rect, 1)
 
     def _draw_username_form(self, rect):
         s = self._sx
@@ -1942,10 +2000,10 @@ class UserManagementScreen:
             radius = avatar_size // 2
             pygame.draw.circle(self.screen, avatar_color, center, radius)
             pygame.draw.circle(self.screen, WHITE if is_selected else (200, 200, 200), center, radius, 3 if is_selected else 2)
-            avatar_img = _load_avatar_image(avatar, avatar_size - 8)
+            avatar_img = _load_avatar_image(avatar, avatar_size - 2)
             if avatar_img is None:
-                avatar_img = _render_placeholder_avatar(avatar_size - 8)
-            avatar_surf = _circle_crop_surface(avatar_img, avatar_size - 8)
+                avatar_img = _render_placeholder_avatar(avatar_size - 2)
+            avatar_surf = _circle_crop_surface(avatar_img, avatar_size - 2)
             self.screen.blit(avatar_surf, avatar_surf.get_rect(center=center))
             
             # Kullanıcı bilgileri
@@ -2421,10 +2479,10 @@ class UserManagementScreen:
                 radius = avatar_bg_size // 2
                 pygame.draw.circle(self.screen, self.avatar_colors[self.temp_color_index], center, radius)
                 display_value = self.custom_avatar_path if self.custom_avatar_path else value
-                avatar_img = _load_avatar_image(display_value, avatar_bg_size - 6)
+                avatar_img = _load_avatar_image(display_value, avatar_bg_size - 2)
                 if avatar_img is None:
-                    avatar_img = _render_placeholder_avatar(avatar_bg_size - 6)
-                avatar_surf = _circle_crop_surface(avatar_img, avatar_bg_size - 6)
+                    avatar_img = _render_placeholder_avatar(avatar_bg_size - 2)
+                avatar_surf = _circle_crop_surface(avatar_img, avatar_bg_size - 2)
                 self.screen.blit(avatar_surf, avatar_surf.get_rect(center=center))
                 pygame.draw.circle(self.screen, WHITE, center, radius, 2)
                 

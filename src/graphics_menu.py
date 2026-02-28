@@ -25,7 +25,6 @@ class GraphicsMenu:
             'resolution',
             'vsync',
             'fps_limit',
-            'show_fps',
             'show_ghost',
             'show_background',
             'bg_transparency',
@@ -41,7 +40,6 @@ class GraphicsMenu:
         self.resolution = settings_manager.get('resolution', 'auto')
         self.vsync = settings_manager.get('vsync', True)
         self.fps_limit = settings_manager.get('fps_limit', 0)  # 0 = MAX (sınırsız)
-        self.show_fps = settings_manager.get('show_fps', False)  # Varsayılan kapalı
         self.show_ghost = settings_manager.get('show_ghost', True)
         self.background_enabled = settings_manager.get('background_enabled', True)
         self.bg_transparency = settings_manager.get('bg_transparency', 0.3)
@@ -164,17 +162,14 @@ class GraphicsMenu:
             # Show restart-required prompt.
             self._vsync_restart_prompt_active = True
             self._vsync_restart_choice = 0
-        elif self.selected == 4:  # FPS Göster
-            self.show_fps = not self.show_fps
-            self.settings_manager.set('show_fps', self.show_fps)
-        elif self.selected == 5:  # Gölge Göster
+        elif self.selected == 4:  # Gölge Göster
             self.show_ghost = not self.show_ghost
             self.settings_manager.set('show_ghost', self.show_ghost)
-        elif self.selected == 6:  # Arka Plan Göster
+        elif self.selected == 5:  # Arka Plan Göster
             self.background_enabled = not self.background_enabled
             self.settings_manager.set('background_enabled', self.background_enabled)
             return 'toggle_background_enabled'
-        elif self.selected == 9:  # Parçacık Efektleri
+        elif self.selected == 8:  # Parçacık Efektleri
             self.particle_effects = not self.particle_effects
             self.settings_manager.set('particle_effects', self.particle_effects)
 
@@ -207,7 +202,7 @@ class GraphicsMenu:
             self.fps_limit = int(self.fps_limits[idx])
             self.settings_manager.set('fps_limit', self.fps_limit)
         
-        elif self.selected == 7:  # Arka Plan Şeffaflığı
+        elif self.selected == 6:  # Arka Plan Şeffaflığı
             if increase:
                 self.bg_transparency = min(1.0, float(self.bg_transparency) + 0.1)
             else:
@@ -215,7 +210,7 @@ class GraphicsMenu:
             self.settings_manager.set('bg_transparency', round(self.bg_transparency, 1))
             return 'change_bg_transparency'
 
-        elif self.selected == 8:  # Menü Şeffaflığı
+        elif self.selected == 7:  # Menü Şeffaflığı
             if increase:
                 self.menu_transparency = min(1.0, float(self.menu_transparency) + 0.1)
             else:
@@ -267,10 +262,10 @@ class GraphicsMenu:
                     strip_color=strip_color,
                 )
                 continue
-            elif i in (2, 4, 5, 6, 9):  # Toggle seçenekler (vsync, show_fps, show_ghost, show_background, particle)
+            elif i in (2, 4, 5, 8):  # Toggle seçenekler (vsync, show_ghost, show_background, particle)
                 kind = 'toggle'
                 strip_color = (112, 160, 255)  # mavi
-            elif i in (0, 1, 3, 7, 8):  # Selector seçenekler (window_mode, çözünürlük, fps limit, şeffaflık)
+            elif i in (0, 1, 3, 6, 7):  # Selector seçenekler (window_mode, çözünürlük, fps limit, Şeffaflık)
                 kind = 'selector'
                 strip_color = (100, 220, 150)  # yeşil
             else:
@@ -356,19 +351,17 @@ class GraphicsMenu:
             except Exception:
                 limit = 0
             return 'MAX' if limit <= 0 else f'{limit}'
-        elif index == 4:  # FPS Göster
-            return t('on') if self.show_fps else t('off')
-        elif index == 5:  # Gölge Göster
+        elif index == 4:  # Gölge Göster
             return t('on') if self.show_ghost else t('off')
-        elif index == 6:  # Arka Plan Göster
+        elif index == 5:  # Arka Plan Göster
             return t('on') if self.background_enabled else t('off')
-        elif index == 7:  # Arka Plan Şeffaflığı
+        elif index == 6:  # Arka Plan Şeffaflığı
             return f'{int(self.bg_transparency * 100)}%'
-        elif index == 8:  # Menü Şeffaflığı
+        elif index == 7:  # Menü Şeffaflığı
             return f'{int(self.menu_transparency * 100)}%'
-        elif index == 9:  # Parçacık Efektleri
+        elif index == 8:  # Parçacık Efektleri
             return t('on') if self.particle_effects else t('off')
-        elif index == 10:  # Geri
+        elif index == 9:  # Geri
             return ''
         return ''
 
