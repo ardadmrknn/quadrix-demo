@@ -185,7 +185,13 @@ rs_mod = sys.modules['retro_style']
 rs_mod.retro_style = types.SimpleNamespace(
     draw_background=lambda *a, **kw: None,
     draw_title=lambda *a, **kw: types.SimpleNamespace(bottom=0),
+    get_font=lambda *a, **kw: _FakeFont(),
+    get_fitting_font=lambda *a, **kw: _FakeFont(),
+    draw_glass_panel=lambda *a, **kw: None,
 )
+rs_mod.get_font = lambda *a, **kw: _FakeFont()
+rs_mod.get_fitting_font = lambda *a, **kw: _FakeFont()
+rs_mod.draw_glass_panel = lambda *a, **kw: None
 
 # asset_manager mock
 sys.modules['asset_manager'].load_image = lambda *a, **kw: _FakeSurface()

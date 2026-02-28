@@ -54,7 +54,8 @@ datas = [
 # Sadece var olan dizinleri ekle
 datas = [(src, dst) for src, dst in datas if os.path.exists(src)]
 
-# pygame varsayılan font (freesansbold.ttf) — paketli ortamda eksik olabilir (belt-and-suspenders)
+# pygame-ce varsayılan font (freesansbold.ttf) — paketli ortamda eksik olabilir (belt-and-suspenders)
+# NOT: pygame-ce de 'pygame' namespace altında kurulur, bu yüzden import pygame çalışır.
 try:
     import pygame as _pg
     _freesans = Path(_pg.__file__).resolve().parent / 'freesansbold.ttf'
