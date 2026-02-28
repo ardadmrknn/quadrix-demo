@@ -13,6 +13,7 @@ import math
 from typing import Dict, Any, List, Optional, Tuple, TYPE_CHECKING
 
 from ui_theme import UIColors, UIFonts, UIStyle
+from platform_utils import get_mouse_pos
 from localization import t
 
 # Oyunun renk paleti (merkezi tema)
@@ -1015,7 +1016,7 @@ class CampaignUIEffects:
                 footer_rect.height - btn_vpad * 2,
             )
             self._complete_buttons = {'retry': retry_btn_rect}
-            _mouse_pos = pygame.mouse.get_pos()
+            _mouse_pos = get_mouse_pos()
             retro_style.draw_uniform_button(
                 surface, retry_btn_rect, t('campaign_retry'),
                 sub_text='R', color_code=retro_style.primary,
@@ -1255,7 +1256,7 @@ class CampaignUIEffects:
             self._failed_buttons = {'retry': retry_btn_rect, 'menu': menu_btn_rect}
 
             if retro_style:
-                _mouse_pos = pygame.mouse.get_pos()
+                _mouse_pos = get_mouse_pos()
                 retro_style.draw_uniform_button(
                     surface, retry_btn_rect, t('campaign_retry'),
                     sub_text='R', color_code=retro_style.success,

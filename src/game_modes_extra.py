@@ -16,7 +16,7 @@ except Exception:
     Image = None  # type: ignore
     ImageSequence = None  # type: ignore
 
-from platform_utils import normalize_mouse_pos
+from platform_utils import normalize_mouse_pos, get_mouse_pos, get_display_scale_factor
 
 from asset_manager import load_image
 from localization import t, get_language
@@ -1359,7 +1359,7 @@ class MysteryCardUI:
         self.peek_button_rect = pygame.Rect(peek_btn_x, peek_btn_y, peek_btn_size, peek_btn_size)
         
         # Göz butonu arka planı - Yuvarlak beyaz
-        mouse_pos = pygame.mouse.get_pos() if pygame.mouse.get_focused() else None
+        mouse_pos = get_mouse_pos() if pygame.mouse.get_focused() else None
         peek_hovered = mouse_pos and self.peek_button_rect.collidepoint(mouse_pos)
         center = self.peek_button_rect.center
         radius = peek_btn_size // 2
@@ -1438,7 +1438,7 @@ class MysteryCardUI:
         else:
             start_x = panel_rect.x + (panel_rect.width - total_width) // 2
 
-        mouse_pos = pygame.mouse.get_pos() if pygame.mouse.get_focused() else None
+        mouse_pos = get_mouse_pos() if pygame.mouse.get_focused() else None
         self.card_rects = []
         self.hover_index = -1
         # Ensure card widget count matches cards
@@ -5730,12 +5730,15 @@ class MysteryMode(Game):
             board_width = self.board.width * cell_size
             board_height = self.board.height * cell_size
             
-            mouse_x, mouse_y = pygame.mouse.get_pos()
+            # Normalize: fiziksel piksel uzayında çalış (board koordinatları fiziksel)
+            mouse_x, mouse_y = get_mouse_pos()
             clamped_x = max(board_x, min(mouse_x, board_x + board_width - 1))
             clamped_y = max(board_y, min(mouse_y, board_y + board_height - 1))
             
             if mouse_x != clamped_x or mouse_y != clamped_y:
-                pygame.mouse.set_pos(clamped_x, clamped_y)
+                # set_pos logical space bekler — fiziksel → logical çevir
+                scale = get_display_scale_factor()
+                pygame.mouse.set_pos(int(clamped_x / scale), int(clamped_y / scale))
             
             mouse_pos = (clamped_x, clamped_y)
             self._sniper_hover_pos = mouse_pos
@@ -9049,7 +9052,7 @@ class MysteryMode(Game):
         start_x = popup_x + (popup_width - total_buttons_width) // 2
         button_y = popup_y + 65
         
-        mouse_pos = pygame.mouse.get_pos() if pygame.mouse.get_focused() else None
+        mouse_pos = get_mouse_pos() if pygame.mouse.get_focused() else None
         self._piece_selection_rects = []
         self._piece_selection_hover = -1
         

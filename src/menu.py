@@ -6867,7 +6867,7 @@ class BlockStyleSettingsScreen:
 
     def _draw_icon_button(self, rect, icon_type, is_selected):
         # Hover check
-        mouse_pos = pygame.mouse.get_pos()
+        mouse_pos = get_mouse_pos()
         is_hovered = rect.collidepoint(mouse_pos)
         
         # Background

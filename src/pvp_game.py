@@ -16,7 +16,7 @@ from retro_style import retro_style
 from renderers.jelly_renderer import draw_jelly_block, draw_jelly_border
 from themes import ThemeManager, CUSTOM_THEME_NAME
 from block_styles import BlockStyleManager, TextureSlice
-from platform_utils import create_display, get_display_flags, normalize_mouse_pos, set_app_icon
+from platform_utils import create_display, get_display_flags, normalize_mouse_pos, get_mouse_pos, set_app_icon
 from localization import t
 from ui_theme import UIColors, UIFonts
 
@@ -816,9 +816,12 @@ class PvPGame:
                 return False
             
             if event.type == pygame.VIDEORESIZE:
-                self.window_width = max(event.w, 800)
-                self.window_height = max(event.h, 600)
-                self.screen = create_display(self.window_width, self.window_height, fullscreen=False, resizable=True)
+                req_w = max(event.w, 800)
+                req_h = max(event.h, 600)
+                self.screen = create_display(req_w, req_h, fullscreen=False, resizable=True)
+                # Daima surface'tan gerçek piksel boyutunu al
+                self.window_width = self.screen.get_width()
+                self.window_height = self.screen.get_height()
                 self._vs_panel_dirty = True
                 self.calculate_board_positions()
                 continue
@@ -834,7 +837,7 @@ class PvPGame:
                     continue
 
                 if event.type == pygame.MOUSEBUTTONDOWN and getattr(event, 'button', None) == 1:
-                    pos = getattr(event, 'pos', pygame.mouse.get_pos())
+                    pos = normalize_mouse_pos(getattr(event, 'pos', None)) or get_mouse_pos()
                     if self.exit_yes_rect and self.exit_yes_rect.collidepoint(pos):
                         try:
                             self.sound.play('click')
@@ -1306,7 +1309,7 @@ class PvPGame:
             return None
 
         if event.type == pygame.MOUSEMOTION:
-            pos = getattr(event, 'pos', pygame.mouse.get_pos())
+            pos = normalize_mouse_pos(getattr(event, 'pos', None)) or get_mouse_pos()
             for idx, rect in enumerate(getattr(self, '_pause_option_rects', []) or []):
                 if rect and rect.collidepoint(pos):
                     if idx != self.pause_menu_selected:
@@ -1315,7 +1318,7 @@ class PvPGame:
             return None
 
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-            pos = getattr(event, 'pos', pygame.mouse.get_pos())
+            pos = normalize_mouse_pos(getattr(event, 'pos', None)) or get_mouse_pos()
             for idx, rect in enumerate(getattr(self, '_pause_option_rects', []) or []):
                 if rect and rect.collidepoint(pos):
                     self.pause_menu_selected = idx
@@ -1357,7 +1360,7 @@ class PvPGame:
 
         self._pause_option_rects = []
         self._pause_volume_rects = {}
-        _pause_mouse_pos = pygame.mouse.get_pos()
+        _pause_mouse_pos = get_mouse_pos()
 
         start_y = panel_rect.y + top_pad
         for i, option in enumerate(self.pause_menu_options):
@@ -1556,7 +1559,7 @@ class PvPGame:
         self._game_over_peek_rect = pygame.Rect(peek_btn_x, peek_btn_y, peek_btn_size, peek_btn_size)
         
         # Göz butonu arka planı - Yuvarlak beyaz
-        mouse_pos = pygame.mouse.get_pos() if pygame.mouse.get_focused() else None
+        mouse_pos = get_mouse_pos() if pygame.mouse.get_focused() else None
         peek_hovered = mouse_pos is not None and self._game_over_peek_rect.collidepoint(mouse_pos)
         center = self._game_over_peek_rect.center
         radius = peek_btn_size // 2
@@ -1681,7 +1684,7 @@ class PvPGame:
         button_gap = s(20)
         
         # Mouse pozisyonu al (hover efekti için)
-        mouse_pos = pygame.mouse.get_pos()
+        mouse_pos = get_mouse_pos()
         
         # Yeniden oyna butonu
         restart_rect = pygame.Rect(panel_rect.centerx - button_width - button_gap // 2, button_y, button_width, button_height)

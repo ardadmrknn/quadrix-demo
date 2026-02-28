@@ -17,6 +17,8 @@ from typing import Dict, List, Optional, Tuple
 
 import pygame
 
+from platform_utils import get_mouse_pos
+
 # ── Tetromino şekilleri ──────────────────────────────────────────────
 _PIECE_SHAPES: Dict[str, List[List[int]]] = {
     "I": [[0, 0, 0, 0], [1, 1, 1, 1], [0, 0, 0, 0], [0, 0, 0, 0]],
@@ -455,7 +457,7 @@ def pygame_color_picker(
 
     # ── Ana Döngü ───────────────────────────────────────────────────
     while running:
-        mp = pygame.mouse.get_pos()
+        mp = get_mouse_pos()
         h_ok = ok_rect.collidepoint(mp)
         h_cancel = cancel_rect.collidepoint(mp)
         now = time.time() - t0
@@ -845,7 +847,7 @@ def pygame_text_input(
     font_b = _get_font(20, bold=True)
 
     while running:
-        mp = pygame.mouse.get_pos()
+        mp = get_mouse_pos()
         ho = ok_rect.collidepoint(mp)
         hc = cancel_rect.collidepoint(mp)
         now = time.time() - t0
