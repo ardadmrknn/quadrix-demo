@@ -139,3 +139,10 @@ def apply_language_ui_profile(lang_code: str) -> None:
     else:
         UIFonts.set_font_profile(font_path=None, size_scale=1.0, force_no_bold=False)
         retro_style.set_font_profile(font_path=None, size_scale=1.0, force_no_bold=False)
+
+    # Font profili değiştiğinde eski render cache'lerini temizle
+    try:
+        from text_cache import clear_text_cache
+        clear_text_cache()
+    except Exception:
+        pass
