@@ -33,6 +33,10 @@ _PROFILE_BY_LANG = {
         "size_scale": 1.0,
         "force_no_bold": True,
     },
+    # NOT: KyrillaSansSerif-Black.ttf Kiril glyphlerini desteklemiyor
+    # (boş/şeffaf piksel üretiyor). Rusça için sistem fontları (Segoe UI,
+    # Arial, DejaVu Sans) Kiril'i native olarak destekler; ayrı profil
+    # gerekmez. İleride uygun bir Kiril fontu bulunursa buraya eklenebilir.
 }
 
 # CJK dilleri için önceden yüklenmiş font cache'i (dil paneli vb. için)
@@ -89,19 +93,16 @@ def _resolve_font_path(rel_path: Optional[str]) -> Optional[str]:
 def get_font_for_language(lang_code: str, size: int) -> Optional[pygame.font.Font]:
     """Belirli bir dil kodu için uygun fontu döndür.
 
-    CJK dilleri için özel font döndürür, diğer diller için None döner
-    (çağıran taraf varsayılan fontu kullanmalı).
+    CJK dilleri için HybridFont (Latin+CJK), profili olan diğer diller için
+    pygame.font.Font döndürür. Profil yoksa None döner.
     """
-    if lang_code not in _CJK_LANGS:
+    profile = _PROFILE_BY_LANG.get(lang_code)
+    if not profile:
         return None
 
     key = (lang_code, size)
     if key in _cjk_font_cache:
         return _cjk_font_cache[key]
-
-    profile = _PROFILE_BY_LANG.get(lang_code)
-    if not profile:
-        return None
 
     font_path = _resolve_font_path(profile.get("font_path"))
     if not font_path:
@@ -110,12 +111,14 @@ def get_font_for_language(lang_code: str, size: int) -> Optional[pygame.font.Fon
     try:
         if not pygame.font.get_init():
             pygame.font.init()
-        cjk_font = pygame.font.Font(font_path, size)
-        # Latin karakterler için varsayılan fontu al
-        latin_font = retro_style._get_latin_font(size, False)
-        hybrid = HybridFont(latin_font, cjk_font)
-        _cjk_font_cache[key] = hybrid
-        return hybrid
+        if lang_code in _CJK_LANGS:
+            cjk_font = pygame.font.Font(font_path, size)
+            latin_font = retro_style._get_latin_font(size, False)
+            loaded = HybridFont(latin_font, cjk_font)
+        else:
+            loaded = pygame.font.Font(font_path, size)
+        _cjk_font_cache[key] = loaded
+        return loaded
     except Exception:
         return None
 
@@ -123,10 +126,11 @@ def get_font_for_language(lang_code: str, size: int) -> Optional[pygame.font.Fon
 def apply_language_ui_profile(lang_code: str) -> None:
     """Apply language-specific UI font profile.
 
-    Only CJK languages use a custom profile. All others reset to defaults.
+    CJK languages use a HybridFont profile. Other languages with a profile
+    (e.g. 'ru') use a plain bundled font. All others reset to defaults.
     """
     profile = _PROFILE_BY_LANG.get(lang_code)
-    if lang_code in _CJK_LANGS and profile:
+    if profile:
         font_path = _resolve_font_path(profile.get("font_path"))
         size_scale = profile.get("size_scale", 1.0)
         force_no_bold = profile.get("force_no_bold", False)

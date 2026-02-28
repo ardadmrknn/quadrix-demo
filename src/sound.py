@@ -786,6 +786,27 @@ class SoundManager:
                 track.set_volume(self._compute_volume(name))
         if self.current_track_name and isinstance(self.music_tracks.get(self.current_track_name), str):
             pygame.mixer.music.set_volume(self._compute_volume(self.current_track_name))
+
+    def duck_music(self, factor: float = 0.25):
+        """Müziği duck et (pause menüsü için). factor: 0-1 arası; 0.25 = %25 seviye."""
+        self._music_duck_factor = max(0.0, min(1.0, factor))
+        self._apply_duck_volume()
+
+    def unduck_music(self):
+        """Müzik duck'ı kaldır, normal seviyeye dön."""
+        self._music_duck_factor = 1.0
+        self._apply_duck_volume()
+
+    def _apply_duck_volume(self):
+        """Mevcut duck factor'ü tüm müzik kanallarına uygula."""
+        for name, track in self.music_tracks.items():
+            if hasattr(track, 'set_volume'):
+                track.set_volume(self._compute_volume(name))
+        if self.current_track_name and isinstance(self.music_tracks.get(self.current_track_name), str):
+            try:
+                pygame.mixer.music.set_volume(self._compute_volume(self.current_track_name))
+            except Exception:
+                pass
     
     def play(self, sound_name):
         """Ses efekti çal"""
@@ -877,7 +898,8 @@ class SoundManager:
     def _compute_volume(self, track_name):
         base = self.music_volume
         multiplier = self.track_volumes.get(track_name, 1.0)
-        return max(0.0, min(1.0, base * multiplier))
+        duck = getattr(self, '_music_duck_factor', 1.0)
+        return max(0.0, min(1.0, base * multiplier * duck))
 
     def _default_track_volumes(self):
         """Her parça için göreceli ses seviyesi"""

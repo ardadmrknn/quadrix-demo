@@ -221,14 +221,15 @@ class SettingsManager:
     def _apply_env_default_language(self) -> None:
         """TETRIS_DEFAULT_LANGUAGE ile varsayılan dili ayarla.
 
-        Geçerli değerler: 'tr', 'en'
+        Geçerli değerler: 'tr', 'en', 'de', 'fr', 'es', 'it', 'pt', 'ru', 'ja', 'zh', 'ko'
         """
         try:
             lang = os.environ.get('TETRIS_DEFAULT_LANGUAGE', '')
             if not isinstance(lang, str):
                 return
             lang = lang.strip().lower()
-            if lang in {'tr', 'en'}:
+            _VALID_LANGUAGES = {'tr', 'en', 'de', 'fr', 'es', 'it', 'pt', 'ru', 'ja', 'zh', 'ko'}
+            if lang in _VALID_LANGUAGES:
                 self.default_settings['language'] = lang
         except Exception:
             pass

@@ -857,6 +857,8 @@ class PvPGame:
                 pause_action = self._handle_pause_menu_input(event)
                 if pause_action == 'resume':
                     self.paused = False
+                    if hasattr(self, 'sound') and self.sound:
+                        self.sound.unduck_music()
                 elif pause_action == 'main_menu':
                     return 'menu'
                 continue
@@ -946,6 +948,11 @@ class PvPGame:
                     self.paused = not self.paused
                     if self.paused:
                         self.pause_menu_selected = 0
+                        if hasattr(self, 'sound') and self.sound:
+                            self.sound.duck_music()
+                    else:
+                        if hasattr(self, 'sound') and self.sound:
+                            self.sound.unduck_music()
                     continue
 
                 # Duraklatılmışsa menü kontrollerini işle
@@ -953,6 +960,8 @@ class PvPGame:
                     pause_action = self._handle_pause_menu_input(event)
                     if pause_action == 'resume':
                         self.paused = False
+                        if hasattr(self, 'sound') and self.sound:
+                            self.sound.unduck_music()
                     elif pause_action == 'main_menu':
                         return 'menu'
                     continue
@@ -965,6 +974,8 @@ class PvPGame:
                 if event.key == pygame.K_ESCAPE:
                     self.paused = True
                     self.pause_menu_selected = 0
+                    if hasattr(self, 'sound') and self.sound:
+                        self.sound.duck_music()
                     continue
                 
                 if self.game_over:
@@ -3102,6 +3113,8 @@ class PvPGame:
         self.game_over = False
         self.winner = None
         self.paused = False
+        if hasattr(self, 'sound') and self.sound:
+            self.sound.unduck_music()
         self._game_over_peek_active = False
         self._game_over_peek_rect = None
         

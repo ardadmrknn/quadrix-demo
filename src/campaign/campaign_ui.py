@@ -52,6 +52,10 @@ class CampaignUIEffects:
         self.star_animations: List[Dict] = []
         self.explosion_effects: List[Dict] = []
         self.particle_effects: List[Dict] = []
+
+        # Mouse tıklama için buton rect'leri (her frame draw'da güncellenir)
+        self._failed_buttons: Dict[str, pygame.Rect] = {}
+        self._complete_buttons: Dict[str, pygame.Rect] = {}
         
     def update(self, dt: float) -> None:
         """Animasyonları güncelle"""
@@ -999,9 +1003,36 @@ class CampaignUIEffects:
             footer_font = retro_style.get_font(16, bold=False)
         else:
             footer_font = self._get_font(16)
-        footer_text = t('campaign_footer_controls')
-        footer_surf = footer_font.render(footer_text, True, UIColors.TEXT_SECONDARY)
-        surface.blit(footer_surf, footer_surf.get_rect(center=footer_rect.center))
+
+        # Tekrar Dene butonu (footer'ın sol tarafı)
+        if retro_style:
+            btn_vpad = 4
+            retry_btn_w = min(160, int(footer_rect.width * 0.35))
+            retry_btn_rect = pygame.Rect(
+                footer_rect.x + 6,
+                footer_rect.y + btn_vpad,
+                retry_btn_w,
+                footer_rect.height - btn_vpad * 2,
+            )
+            self._complete_buttons = {'retry': retry_btn_rect}
+            _mouse_pos = pygame.mouse.get_pos()
+            retro_style.draw_uniform_button(
+                surface, retry_btn_rect, t('campaign_retry'),
+                sub_text='R', color_code=retro_style.primary,
+                state='hover' if retry_btn_rect.collidepoint(_mouse_pos) else 'normal',
+            )
+            # Kontrol metni sağa hizalı
+            footer_text = t('campaign_footer_controls')
+            footer_surf_text = footer_font.render(footer_text, True, UIColors.TEXT_SECONDARY)
+            text_right = footer_rect.right - 8
+            text_rect = footer_surf_text.get_rect()
+            text_rect.midright = (text_right, footer_rect.centery)
+            surface.blit(footer_surf_text, text_rect)
+        else:
+            self._complete_buttons = {}
+            footer_text = t('campaign_footer_controls')
+            footer_surf_text = footer_font.render(footer_text, True, UIColors.TEXT_SECONDARY)
+            surface.blit(footer_surf_text, footer_surf_text.get_rect(center=footer_rect.center))
 
         # ============================================
         # Buton çizimi kaldırıldı (alt kısım temiz kalsın)
@@ -1203,7 +1234,7 @@ class CampaignUIEffects:
             reason_rect = reason_surf.get_rect(centerx=panel_rect.centerx, top=title_rect.bottom + 16)
             surface.blit(reason_surf, reason_rect)
         
-        # Buton ipuçları
+        # Buton ipuçları + tıklanabilir butonlar
         if anim_time > 0.8:
             hint_text = t('campaign_failed_hint')
             
@@ -1212,13 +1243,40 @@ class CampaignUIEffects:
             else:
                 hint_font = self._get_font(15)
             
+            # Butonları panel altına yerleştir
+            btn_h = 40
+            btn_margin = 10
+            btn_gap = 8
+            btn_w = (panel_rect.width - btn_margin * 2 - btn_gap) // 2
+            btn_y = panel_rect.bottom - btn_h - btn_margin
+
+            retry_btn_rect = pygame.Rect(panel_rect.x + btn_margin, btn_y, btn_w, btn_h)
+            menu_btn_rect = pygame.Rect(panel_rect.x + btn_margin + btn_w + btn_gap, btn_y, btn_w, btn_h)
+            self._failed_buttons = {'retry': retry_btn_rect, 'menu': menu_btn_rect}
+
+            if retro_style:
+                _mouse_pos = pygame.mouse.get_pos()
+                retro_style.draw_uniform_button(
+                    surface, retry_btn_rect, t('campaign_retry'),
+                    sub_text='R', color_code=retro_style.success,
+                    state='hover' if retry_btn_rect.collidepoint(_mouse_pos) else 'normal',
+                )
+                retro_style.draw_uniform_button(
+                    surface, menu_btn_rect, t('main_menu'),
+                    sub_text='ESC', color_code=retro_style.secondary,
+                    state='hover' if menu_btn_rect.collidepoint(_mouse_pos) else 'normal',
+                )
+            
+            # Hint metni butonların üstünde
             hint_surf = hint_font.render(hint_text, True, (160, 145, 145))
-            hint_rect = hint_surf.get_rect(centerx=panel_rect.centerx, bottom=panel_rect.bottom - 22)
+            hint_rect = hint_surf.get_rect(centerx=panel_rect.centerx, bottom=btn_y - 6)
             
             # Yanıp sönen efekt
             flash = 0.6 + 0.4 * math.sin(anim_time * 3.5)
             hint_surf.set_alpha(int(255 * flash))
             surface.blit(hint_surf, hint_rect)
+        else:
+            self._failed_buttons = {}
     
     def _draw_star_shape(self, surface: pygame.Surface, cx: int, cy: int, size: int, color: Tuple) -> None:
         """Yıldız şekli çiz"""

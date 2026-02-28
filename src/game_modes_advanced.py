@@ -931,8 +931,8 @@ class CascadeMode(Game):
         self.last_cascade_level = 0  # Son cascade seviyesi (görsel için)
         self.cascade_message_time = 0  # Cascade mesajı gösterme süresi
         # Minimal HUD etiketi için fontlar
-        self._cascade_hud_font = pygame.font.Font(None, 26)
-        self._cascade_hud_font_small = pygame.font.Font(None, 18)
+        self._cascade_hud_font = ui_style.get_font(26, bold=False)
+        self._cascade_hud_font_small = ui_style.get_font(18, bold=False)
 
     def restart(self):
         """Clear cascade specific state on restart to prevent lingering animations and bonuses."""

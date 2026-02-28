@@ -428,14 +428,18 @@ class PowerUpManager:
             }
             symbol = symbols.get(ptype, "?")
             
-            font = pygame.font.Font(None, 28)
+            try:
+                from retro_style import retro_style as _rs
+            except Exception:
+                _rs = None
+            font = _rs.get_font(28, bold=False) if _rs else pygame.font.Font(None, 28)
             text = font.render(symbol, True, (255, 255, 255))
             text_rect = text.get_rect(center=icon_rect.center)
             surface.blit(text, text_rect)
             
             # Sayı badge
             if count > 1:
-                badge_font = pygame.font.Font(None, 18)
+                badge_font = _rs.get_font(18, bold=False) if _rs else pygame.font.Font(None, 18)
                 badge = badge_font.render(str(count), True, (255, 255, 255))
                 badge_rect = badge.get_rect(bottomright=(icon_rect.right - 2, icon_rect.bottom - 2))
                 pygame.draw.circle(surface, (200, 50, 50), badge_rect.center, 8)
@@ -456,7 +460,11 @@ class PowerUpManager:
         if not self.active_power_ups:
             return
         
-        font = pygame.font.Font(None, 20)
+        try:
+            from retro_style import retro_style as _rs
+        except Exception:
+            _rs = None
+        font = _rs.get_font(20, bold=False) if _rs else pygame.font.Font(None, 20)
         current_y = y
         
         for active in self.active_power_ups:

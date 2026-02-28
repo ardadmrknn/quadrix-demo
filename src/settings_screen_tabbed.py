@@ -195,6 +195,7 @@ def _build_tab_content(tab_key: str, sm, show_debug: bool = False) -> list[dict]
         # Müzik modu seçicileri (eski ModeMusicScreen yerine)
         items.append({
             'type': 'toggle', 'key': 'music_shuffle',
+            'loc_key': 'music_shuffle',
             'label_tr': 'Müzik Karıştır (Shuffle)', 'label_en': 'Shuffle Music',
         })
         items.append({'type': 'section', 'loc_key': 'settings_section_mode_music', 'label_tr': 'MOD MÜZİKLERİ', 'label_en': 'MODE MUSIC'})
@@ -715,7 +716,7 @@ class TabbedSettingsScreen:
             except Exception:
                 count = 0
             if count > 0:
-                return f"{count} parça", (150, 220, 255)
+                return f"{count} {_t('track_count_unit', 'parça')}", (150, 220, 255)
             return t('track_default_label'), (150, 220, 255)
 
         elif itype == 'keybind':
@@ -1673,8 +1674,7 @@ class TabbedSettingsScreen:
                 return None
             # Slider drag
             if self._slider_drag_active and self._slider_drag_item and self._slider_drag_bar_rect:
-                self._set_slider_from_x(self._slider_drag_item, pos[0], self._slider_drag_bar_rect)
-                return None
+                return self._set_slider_from_x(self._slider_drag_item, pos[0], self._slider_drag_bar_rect)
             # Satır hover
             for i, rect in enumerate(self.option_rects):
                 if rect.collidepoint(pos):
