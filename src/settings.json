@@ -1,0 +1,27 @@
+{
+    "menu_music": "main_1",
+    "game_music": "klasik_1",
+    "menu_music_playlist": ["main_1"],
+    "game_music_playlist": ["klasik_1"],
+    "campaign_music_playlist": ["klasik_1"],
+    "mode_music_playlists": {
+        "survival": ["file:survival_2.mp3", "file:survival_1.mp3"],
+        "campaign_world1": ["file:d1.mp3", "file:d1_1.mp3"],
+        "campaign_world2": ["file:d2.mp3", "file:d2_1.mp3", "file:d2_3.mp3", "file:d2_4.mp3"],
+        "campaign_world3": ["file:d3.mp3", "file:d3_1.mp3", "file:d3_2.mp3"],
+        "campaign_world4": ["file:d4_1.mp3", "file:d4_2.mp3", "file:d4_3.mp3"],
+        "campaign_world5": ["file:d5.mp3", "file:d5_1.mp3", "file:d5_2.mp3"],
+        "classic": ["file:klasik_1.mp3"],
+        "sprint": ["file:sprint_1.mp3"],
+        "ultra": ["file:ultra_1.mp3", "file:ultra_2.mp3"],
+        "tetris2": ["file:quadrixextra_1.mp3"],
+        "mystery": ["file:kart_1.mp3", "file:kart_2.mp3", "file:kart_3.mp3"],
+        "cascade": ["file:cascade_1.mp3", "file:cascade_2.mp3"],
+        "pvp": ["file:pvp_1.mp3"],
+        "hardcore": ["file:hardcore_1.mp3", "file:hardcore_2.mp3"],
+        "wide": ["file:wide_1.mp3", "file:wide_2.mp3"],
+        "zen": ["file:zen_1.mp3"],
+        "daily": ["file:daily_1.mp3"]
+    },
+    "mode_music_overrides": {}
+}

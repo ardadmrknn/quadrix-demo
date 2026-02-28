@@ -214,6 +214,7 @@ exe = EXE(
     upx_exclude=[],
     runtime_tmpdir=None,
     console=False,  # Konsol penceresi gösterme (GUI uygulama)
+    icon=str(REPO_ROOT / 'assets' / 'quadrix_icon.ico'),  # Uygulama simgesi
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,

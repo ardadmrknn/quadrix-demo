@@ -872,7 +872,10 @@ def main():
         screen = create_display(800, 600, fullscreen=False, resizable=True, borderless=False)
     
     pygame.display.set_caption('Quadrix')
-    _assets_dir = str(Path(__file__).resolve().parent.parent / 'assets')
+    if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+        _assets_dir = str(Path(sys._MEIPASS) / 'assets')
+    else:
+        _assets_dir = str(Path(__file__).resolve().parent.parent / 'assets')
     set_app_icon(_assets_dir)
     # macOS: Dock/process adını 'Quadrix' olarak ayarla (PyObjC varsa)
     if current_platform == 'Darwin':
@@ -1207,7 +1210,10 @@ def main():
         except Exception:
             pass
         try:
-            _icon_assets_dir = str(Path(__file__).resolve().parent.parent / 'assets')
+            if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+                _icon_assets_dir = str(Path(sys._MEIPASS) / 'assets')
+            else:
+                _icon_assets_dir = str(Path(__file__).resolve().parent.parent / 'assets')
             set_app_icon(_icon_assets_dir)
         except Exception:
             pass

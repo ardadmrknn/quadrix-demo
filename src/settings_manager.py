@@ -660,6 +660,14 @@ class SettingsManager:
             if pref:
                 return [pref]
 
+        # Kampanya dünya anahtarları (campaign_world1 - campaign_world5)
+        # için genel campaign playlist'ine düş
+        if key.startswith('campaign_world'):
+            campaign_playlist = self.get_mode_music_playlist('campaign')
+            if campaign_playlist:
+                return campaign_playlist
+            return self.settings.get('campaign_music_playlist', ['klasik0'])
+
         if key == 'campaign':
             return self.settings.get('campaign_music_playlist', ['klasik0'])
 

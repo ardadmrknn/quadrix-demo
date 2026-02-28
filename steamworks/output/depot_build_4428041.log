@@ -1,12 +1,12 @@
-[2026-02-27 16:13:17]: Starting build for depot 4428041, content path is "C:\\Users\\arda demirkan\\Desktop\\v2_23022026\\v2\\dist\\", build flags 0x0
-[2026-02-27 16:13:17]: Building file listing for depot 4428041 ...
-[2026-02-27 16:13:17]: Found 1 files for mapping: C:\Users\arda demirkan\Desktop\v2_23022026\v2\dist * -> .
-[2026-02-27 16:13:17]: Found 1 files (276 MB) for depot 4428041
-[2026-02-27 16:13:18]: Building depot 4428041, baseline manifest 5680493128678711494 (1 files)
-[2026-02-27 16:13:18]: Found 280 new chunks ( 303 used previously ) for depot 4428041, took 0 minutes, 0 seconds
-[2026-02-27 16:13:18]: Changes to baseline manifest 5680493128678711494 :
-[2026-02-27 16:13:18]: Changed: "Quadrix.exe" 283100 KB size, 8479 KB changed 
-[2026-02-27 16:13:18]: Summary: 0 files added (0 bytes), 1 files changed (8.28 MB), 0 files removed (0 bytes)
-[2026-02-27 16:13:19]: Uploading new manifest to depot_ingest.discovery.steamserver.net (handle 3890498708279546140, 8849 bytes).
-[2026-02-27 16:13:20]: Uploading 10 out of 10 missing chunks.
-[2026-02-27 16:13:33]: Success! New manifestID 835545653185647941 created and 10 new chunks uploaded.
+[2026-02-28 19:12:16]: Starting build for depot 4428041, content path is "C:\\Users\\arda demirkan\\Desktop\\v2_23022026\\v2\\dist\\", build flags 0x0
+[2026-02-28 19:12:16]: Building file listing for depot 4428041 ...
+[2026-02-28 19:12:16]: Found 1 files for mapping: C:\Users\arda demirkan\Desktop\v2_23022026\v2\dist * -> .
+[2026-02-28 19:12:16]: Found 1 files (299 MB) for depot 4428041
+[2026-02-28 19:12:17]: Building depot 4428041, baseline manifest 835545653185647941 (1 files)
+[2026-02-28 19:12:19]: Found 305 new chunks ( 280 used previously ) for depot 4428041, took 0 minutes, 1 seconds
+[2026-02-28 19:12:19]: Changes to baseline manifest 835545653185647941 :
+[2026-02-28 19:12:19]: Changed: "Quadrix.exe" 306483 KB size, 60663 KB changed 
+[2026-02-28 19:12:19]: Summary: 0 files added (0 bytes), 1 files changed (59.24 MB), 0 files removed (0 bytes)
+[2026-02-28 19:12:19]: Uploading new manifest to depot_ingest.discovery.steamserver.net (handle 5825465905251958595, 9646 bytes).
+[2026-02-28 19:12:20]: Uploading 64 out of 64 missing chunks.
+[2026-02-28 19:12:48]: Success! New manifestID 1564015115363748939 created and 64 new chunks uploaded.

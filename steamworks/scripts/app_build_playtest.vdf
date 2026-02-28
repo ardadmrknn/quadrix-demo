@@ -1,7 +1,7 @@
 "AppBuild"
 {
     "AppID" "4428040"
-    "Desc" "Playtest build 2026-02-27 v1.0.21 ascii-filename-fix"
+    "Desc" "Playtest build 2026-02-28 v1.0.25 icon-music-defaults"
     "SetLive" ""
     "ContentRoot" "C:\\Users\\arda demirkan\\Desktop\\v2_23022026\\v2\\dist\\"
     "BuildOutput" "C:\\Users\\arda demirkan\\Desktop\\v2_23022026\\v2\\steamworks\\output\\"
