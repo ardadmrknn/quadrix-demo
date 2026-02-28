@@ -144,6 +144,7 @@ loc.get_language = lambda: 'tr'
 # platform_utils mock
 pl = sys.modules['platform_utils']
 pl.normalize_mouse_pos = lambda p: p
+pl.get_mouse_pos = lambda: (0, 0)
 pl.is_fullscreen_toggle = lambda *a, **kw: False
 
 # background_effects mock

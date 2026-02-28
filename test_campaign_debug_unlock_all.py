@@ -70,6 +70,13 @@ for mod in [
 ]:
     sys.modules[mod] = types.ModuleType(mod)
 
+for _pu_name in ('platform_utils', 'src.platform_utils'):
+    _pu = sys.modules.get(_pu_name)
+    if _pu is not None:
+        _pu.normalize_mouse_pos = lambda pos=None: pos
+        _pu.get_mouse_pos = lambda: (0, 0)
+        _pu.is_fullscreen_toggle = lambda *a, **kw: False
+
 sys.modules['retro_style'].retro_style = types.SimpleNamespace(
     get_font=lambda *a, **kw: FakeFont()
 )

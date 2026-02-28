@@ -3561,6 +3561,18 @@ TRANSLATIONS = {
         'zh': '没有剩余方块！',
         'ko': '남은 블록이 없습니다!',
     },
+    'campaign_fail_board': {
+        'tr': 'Oyun alanı doldu!',
+        'en': 'Board is full!',
+        'de': 'Spielfeld voll!',
+        'fr': 'Grille pleine !',
+        'es': '¡Tablero lleno!',
+        'it': 'Campo pieno!',
+        'pt': 'Campo cheio!',
+        'ja': 'フィールドが満杯！',
+        'zh': '场地已满！',
+        'ko': '필드가 꽉 찼어요!'
+    },
     'campaign_block_limit_title': {
         'tr': 'Kalan Blok',
         'en': 'Blocks Left',

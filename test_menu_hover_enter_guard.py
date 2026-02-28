@@ -104,6 +104,7 @@ for mod_name in [
 # platform_utils
 pu = sys.modules['platform_utils']
 pu.normalize_mouse_pos = lambda pos: pos
+pu.get_mouse_pos = lambda: (0, 0)
 pu.is_fullscreen_toggle = lambda key, mod: False
 pu.get_native_resolution = lambda: (1920, 1080)
 

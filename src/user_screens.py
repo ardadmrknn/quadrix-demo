@@ -1043,7 +1043,7 @@ class UserSelectionScreen:
             # "Geç" (Select) button
             btn_rect = pygame.Rect(rect.right - s(120), rect.bottom - s(44), s(100), s(28))
             # Check hover for visual feedback
-            m_pos = normalize_mouse_pos(pygame.mouse.get_pos())
+            m_pos = get_mouse_pos()
             is_btn_hover = btn_rect.collidepoint(m_pos)
             
             btn_color = retro_style.accent if is_btn_hover else _darken_rgb(retro_style.accent, 0.2)

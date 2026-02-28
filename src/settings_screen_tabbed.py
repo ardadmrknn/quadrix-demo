@@ -14,7 +14,7 @@ from pathlib import Path
 import pygame
 from constants import *
 from retro_style import retro_style
-from platform_utils import is_fullscreen_toggle, normalize_mouse_pos
+from platform_utils import is_fullscreen_toggle, normalize_mouse_pos, get_mouse_pos
 from background_effects import get_shared_falling_blocks_layer
 from localization import (
     t, get_text, get_language, set_language, get_language_name,
@@ -2604,7 +2604,7 @@ class TabbedSettingsScreen:
         yes_rect = pygame.Rect(start_x, button_y, button_width, button_height)
         no_rect = pygame.Rect(start_x + button_width + spacing, button_y, button_width, button_height)
 
-        mouse_pos = normalize_mouse_pos(pygame.mouse.get_pos())
+        mouse_pos = get_mouse_pos()
 
         yes_label = _t('display_mode_restart_yes', 'Evet, kapat')
         no_label = _t('display_mode_restart_no', 'Hayır, iptal')
