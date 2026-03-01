@@ -57,10 +57,44 @@ def _make_pygame_stub():
 
     pg.display = _display
     pg.error = Exception
+
+    # Alt modül stub'ları — diğer testlerin pygame.font / pygame.mixer
+    # erişiminde AttributeError almaması için eklenir.
+    _font = types.ModuleType("pygame.font")
+    _font.Font = MagicMock()
+    _font.SysFont = MagicMock()
+    _font.get_init = lambda: True
+    _font.init = lambda: None
+    _font.match_font = lambda name, bold=False, italic=False: None
+    _font.get_fonts = lambda: []
+    pg.font = _font
+
+    _mixer = types.ModuleType("pygame.mixer")
+    _mixer.init = lambda *a, **k: None
+    _mixer.pre_init = lambda *a, **k: None
+    _mixer.get_init = lambda: (44100, -16, 2)
+    _mixer.Sound = MagicMock
+    _mixer_music = types.ModuleType("pygame.mixer.music")
+    _mixer_music.get_busy = lambda: False
+    _mixer_music.load = lambda p: None
+    _mixer_music.play = lambda *a, **k: None
+    _mixer_music.stop = lambda: None
+    _mixer_music.set_volume = lambda v: None
+    _mixer_music.pause = lambda: None
+    _mixer_music.unpause = lambda: None
+    _mixer_music.get_pos = lambda: 0
+    _mixer.music = _mixer_music
+    pg.mixer = _mixer
+
     return pg
 
 
 sys.modules.setdefault("pygame", _make_pygame_stub())
+# Alt modüller de sys.modules'da kayıtlı olmalı
+_pg = sys.modules["pygame"]
+sys.modules.setdefault("pygame.font", getattr(_pg, "font", None))
+sys.modules.setdefault("pygame.mixer", getattr(_pg, "mixer", None))
+sys.modules.setdefault("pygame.mixer.music", getattr(getattr(_pg, "mixer", None), "music", None))
 import pygame  # noqa: E402  (pytest discovers after stub is set)
 
 

@@ -88,16 +88,16 @@ Yalnızca TR ve EN tam. Kalan 9 dil `complete: False` işaretli.
 
 ---
 
-### 6. CI/CD Pipeline
+### 6. ~~CI/CD Pipeline~~ ✅ TAMAMLANDI (1 Mart 2026)
 Şu an otomatik test veya build pipeline'ı yok.
 
-**Yapılacaklar:**
-- GitHub Actions ile otomatik `pytest` çalıştırma (push/PR tetikli)
-- macOS / Windows / Linux matris build
-- PyInstaller ile otomatik .app / .exe derleme
-- Test coverage raporlama
-- Linting (flake8 / ruff) + type checking (mypy / pyright)
-- Release otomasyonu (tag → build → upload)
+**Yapılanlar:**
+- ~~GitHub Actions ile otomatik `pytest` çalıştırma (push/PR tetikli)~~ → `.github/workflows/ci.yml` oluşturuldu
+- ~~macOS / Windows / Linux matris build~~ → ubuntu-latest, macos-latest, windows-latest matris
+- PyInstaller ile otomatik .app / .exe derleme — henüz eklenmedi (release otomasyonuyla yapılacak)
+- Test coverage raporlama — henüz eklenmedi
+- ~~Linting (flake8 / ruff)~~ → ruff lint job eklendi
+- Release otomasyonu (tag → build → upload) — henüz eklenmedi
 
 ---
 
@@ -123,29 +123,33 @@ GOREV_LISTESI.md'de bekleyen madde. Boss/mini-boss seviyeler öncesi oyuncuya ko
 
 ---
 
-### 9. Mod Bazlı Başarımlar
+### 9. ~~Mod Bazlı Başarımlar~~ ✅ TAMAMLANDI (1 Mart 2026)
 Mevcut ~28 başarımın çoğu genel. Modlara özel başarımlar eksik.
 
-**Eklenebilecek başarımlar:**
-- **Survival:** 5 dk hayatta kal, Virüs yayılmadan bitir
-- **Cascade:** 10x+ zincir combo
-- **Mystery:** Tüm kartları topla, nadir kart aç
-- **Sprint:** 40 satır < 60 sn, < 45 sn, < 30 sn
-- **Ultra:** 50K+, 100K+ skor
-- **Daily Challenge:** 7 gün üst üste oyna, 30 gün streak
-- **Wide:** 200 satır tek oyunda
-- **Hardcore:** 10 level, no hold ile 5 level
+**Eklenen başarımlar (11 yeni):**
+- ~~**Survival:** 5 dk hayatta kal~~ → `survival_5min` eklendi
+- ~~**Cascade:** 10x+ zincir combo~~ → `cascade_chain_10` eklendi
+- ~~**Sprint:** 40 satır < 60 sn, < 45 sn~~ → `sprint_sub60`, `sprint_sub45` eklendi
+- ~~**Ultra:** 50K+, 100K+ skor~~ → `ultra_50k`, `ultra_100k` eklendi
+- ~~**Hardcore:** 10 level~~ → `hardcore_lvl10` eklendi
+- ~~**Wide:** 200 satır tek oyunda~~ → `wide_200_lines` eklendi
+- **Mystery:** Tüm kartları topla, nadir kart aç — henüz eklenmedi (Mystery kartları runtime verisi gerektirir)
+- **Daily Challenge:** 7 gün üst üste oyna, 30 gün streak — henüz eklenmedi (streak takibi gerekli)
+
+**Teknik:** `update_stats()` fonksiyonuna `game_mode` parametresi eklendi; mod-spesifik istatistikler (sprint_best_time, ultra_max_score vb.) otomatik takip ediliyor.
 
 ---
 
-### 10. Steam Achievements Senkronizasyonu
+### 10. ~~Steam Achievements Senkronizasyonu~~ ✅ TAMAMLANDI (1 Mart 2026)
 Oyun içi `achievements.py` ile Steam Achievement API'nin senkronizasyonu net değil.
 
-**Yapılacaklar:**
-- Her oyun içi başarım → Steam Achievement ID eşlemesi
-- Unlock anında `ISteamUserStats::SetAchievement()` + `StoreStats()` çağrısı
-- Steam overlay'de başarım popup'ı
-- Mevcut başarımların geriye dönük senkronizasyonu
+**Yapılanlar:**
+- ~~Her oyun içi başarım → Steam Achievement ID eşlemesi~~ → `STEAM_ACHIEVEMENT_MAP` dict'i eklendi
+- ~~Unlock anında `ISteamUserStats::SetAchievement()` + `StoreStats()` çağrısı~~ → `unlock()` içinde otomatik çağrı
+- Steam overlay'de başarım popup'ı (Steam SDK native olarak hallediyor, ek kod gerekmez)
+- ~~Mevcut başarımların geriye dönük senkronizasyonu~~ → `sync_to_steam()` + `sync_all_achievements()` fonksiyonları eklendi
+- `steam_integration.py`'ye `SetAchievement`, `GetAchievement`, `StoreStats` ctypes binding'leri eklendi
+- 10 test yazıldı (`test_steam_achievements_sync.py`), hepsi geçiyor
 
 ---
 
@@ -339,9 +343,10 @@ Metadata'da `rtl: False` alanı var ama hiç RTL dil tanımlı değil.
 
 ## 🔧 Teknik Borç & Bakım
 
-### 26. Test Coverage Artırma
-- Mevcut: ~110 test geçiyor, birçoğu mock tabanlı
-- Test ordering sorunları var (izole geçen testler toplu çalışınca başarısız)
+### 26. Test Coverage Artırma — 🔶 KISMEN TAMAMLANDI (1 Mart 2026)
+- Mevcut: ~135 test geçiyor (önceki: ~121), birçoğu mock tabanlı
+- ~~Test ordering sorunları var (izole geçen testler toplu çalışınca başarısız)~~ → 14 test düzeltildi (pygame stub kirlenmesi, constants stub, _PARTNER_API_KEY eksikliği)
+- Kalan 5 başarısız test: derin cross-module pygame state kirlenmesi (pytest-forked veya subprocess izolasyonu gerekli)
 - Integration test eksik (gerçek pygame init ile)
 - Campaign modu testleri sınırlı
 - PvP modu testleri yok
@@ -352,11 +357,11 @@ Metadata'da `rtl: False` alanı var ama hiç RTL dil tanımlı değil.
 - API dokümantasyonu yok
 - Modül bağımlılık diyagramı yok
 
-### 28. Bağımlılık Yönetimi
-- `requirements.txt` 186 satır — birçoğu geliştirme bağımlılığı
-- Runtime vs dev dependency ayrımı yok (`requirements-dev.txt` eksik)
-- Dependency pinning fazla strict (güvenlik yamaları gecikebilir)
-- `pyproject.toml` veya `setup.cfg` kullanımına geçiş düşünülebilir
+### 28. ~~Bağımlılık Yönetimi~~ ✅ TAMAMLANDI (1 Mart 2026)
+- ~~`requirements.txt` 186 satır — birçoğu geliştirme bağımlılığı~~ → `pyproject.toml` oluşturuldu
+- ~~Runtime vs dev dependency ayrımı yok~~ → `[project.dependencies]` (runtime: pygame-ce, numpy, Pillow) + `[project.optional-dependencies]` dev/build/macos ayrımı yapıldı
+- ~~`pyproject.toml` veya `setup.cfg` kullanımına geçiş düşünülebilir~~ → `pyproject.toml` ile modern Python packaging
+- pytest ve ruff konfigürasyonu da `pyproject.toml`'a taşındı (`[tool.pytest.ini_options]`, `[tool.ruff]`)
 
 ---
 
@@ -365,14 +370,14 @@ Metadata'da `rtl: False` alanı var ama hiç RTL dil tanımlı değil.
 ### Faz 1 — Stabilizasyon (1-2 hafta)
 1. ~~pygame-ce geçişi~~ ✅ TAMAMLANDI
 2. Bekleyen 2 görev (kademeli eğitim + bölüm koşul anlatımı)
-3. Test ordering sorunlarını düzelt
-4. CI/CD pipeline kur
+3. ~~Test ordering sorunlarını düzelt~~ ✅ KISMEN TAMAMLANDI (14 test düzeltildi)
+4. ~~CI/CD pipeline kur~~ ✅ TAMAMLANDI
 
 ### Faz 2 — İçerik & Kalite (2-4 hafta)
 5. 9 dil çevirilerini tamamla
 6. localization.py'yi dosya bazlı sisteme refactor et
-7. Mod bazlı başarımlar ekle
-8. Steam Achievements senkronizasyonu
+7. ~~Mod bazlı başarımlar ekle~~ ✅ TAMAMLANDI
+8. ~~Steam Achievements senkronizasyonu~~ ✅ TAMAMLANDI
 9. Performans optimizasyonları (dirty rect, fblits)
 
 ### Faz 3 — Büyük Özellikler (1-3 ay)
