@@ -359,6 +359,9 @@ class Menu:
         self.daily_cancel_rect = None
         self.campaign_quick_play_rect = None
         self.campaign_quick_level = 1
+        self.new_gen_tetris_play_rect: 'pygame.Rect | None' = None
+        self.extras_browse_rect: 'pygame.Rect | None' = None
+        self.tutorial_enter_rect: 'pygame.Rect | None' = None
         self._hero_avatar_surface = None
         self._hero_avatar_signature = None
 
@@ -899,6 +902,15 @@ class Menu:
             if self.campaign_quick_play_rect and self.campaign_quick_play_rect.collidepoint(mouse_pos):
                 return f'campaign_quick_start_{int(self.campaign_quick_level or 1)}'
 
+            if self.new_gen_tetris_play_rect and self.new_gen_tetris_play_rect.collidepoint(mouse_pos):
+                return 'new_gen_tetris'
+
+            if self.extras_browse_rect and self.extras_browse_rect.collidepoint(mouse_pos):
+                return 'extras'
+
+            if self.tutorial_enter_rect and self.tutorial_enter_rect.collidepoint(mouse_pos):
+                return 'tutorial_mode'
+
             # SOS panel/button click handling (main menu only)
             if self.sos_button_rect and self.sos_button_rect.collidepoint(mouse_pos):
                 self.sos_open = not self.sos_open
@@ -1075,54 +1087,104 @@ class Menu:
         if subtitle:
             # Açıklama metni: küçük panellerde taşmayı önlemek için çok satırlı mini alt-panel
             tutorial_subtitle = panel_key == 'tutorial_mode'
-            sub_base_size = sp(19) if tutorial_subtitle else (sp(16) if draw_rect.height < 160 else sp(15))
-            sub_min_size = sp(13) if tutorial_subtitle else sp(10)
-            sub_pad_x = sp(12)
-            sub_pad_y = sp(6)
-            sub_max_w = draw_rect.width - sp(36)
-            text_w = max(40, sub_max_w - sub_pad_x * 2 - 4)
-            max_lines = 1 if tutorial_subtitle else (2 if draw_rect.height < 185 else 1)
+            badge_subtitle = panel_key in ('piece_workshop', 'block_styles')
 
-            font_size = sub_base_size
-            sub_font = retro_style.get_font(font_size, bold=False)
-            wrapped_lines = retro_style.wrap_text(subtitle, sub_font, text_w)
-            while len(wrapped_lines) > max_lines and font_size > sub_min_size:
-                font_size -= 1
-                sub_font = retro_style.get_font(font_size, bold=False)
+            if badge_subtitle:
+                # ── Buton/badge stili alt yazı (piece_workshop & block_styles) ──
+                sub_pad_x = sp(12)
+                sub_pad_y = sp(7)
+                sub_max_w = draw_rect.width - sp(12)
+                text_w = max(40, sub_max_w - sub_pad_x * 2)
+                font_size = max(sp(13), min(sp(17), int(draw_rect.height * 0.075)))
+                sub_font = retro_style.get_font(font_size, bold=True)
+                # Tek satıra sığana kadar font küçült
+                badge_lines = retro_style.wrap_text(subtitle, sub_font, text_w)
+                while len(badge_lines) > 1 and font_size > sp(10):
+                    font_size -= 1
+                    sub_font = retro_style.get_font(font_size, bold=True)
+                    badge_lines = retro_style.wrap_text(subtitle, sub_font, text_w)
+                badge_lines = badge_lines[:1]
+                line_h = sub_font.get_linesize()
+                line_gap = max(1, sp(2))
+                total_text_h = len(badge_lines) * line_h + max(0, len(badge_lines) - 1) * line_gap
+                max_line_w = max((sub_font.size(l)[0] for l in badge_lines), default=0)
+                sub_bg_w = min(sub_max_w, max(max_line_w + sub_pad_x * 2, sub_max_w))
+                sub_bg_h = total_text_h + sub_pad_y * 2
+                sub_bg_x = draw_rect.x + (draw_rect.width - sub_bg_w) // 2
+                sub_bg_y = draw_rect.bottom - sub_bg_h - sp(10)
+
+                # Glow efekti (hover'da daha belirgin)
+                if is_highlighted:
+                    glow_surf = pygame.Surface((sub_bg_w + 10, sub_bg_h + 10), pygame.SRCALPHA)
+                    pygame.draw.rect(glow_surf, (*accent_color[:3], 35), glow_surf.get_rect(), border_radius=12)
+                    self.screen.blit(glow_surf, (sub_bg_x - 5, sub_bg_y - 5))
+
+                # Badge arka planı
+                sub_bg = pygame.Surface((sub_bg_w, sub_bg_h), pygame.SRCALPHA)
+                pygame.draw.rect(sub_bg, (12, 20, 45, 210), sub_bg.get_rect(), border_radius=9)
+                # Üst highlight (cam efekti)
+                for hy in range(min(5, sub_bg_h // 3)):
+                    ha = int(22 * (1 - hy / 5))
+                    pygame.draw.line(sub_bg, (255, 255, 255, ha), (4, hy), (sub_bg_w - 4, hy))
+                # Tam kenarlık (buton gibi)
+                border_a = 200 if is_highlighted else 130
+                pygame.draw.rect(sub_bg, (*accent_color[:3], border_a), sub_bg.get_rect(), 2, border_radius=9)
+                self.screen.blit(sub_bg, (sub_bg_x, sub_bg_y))
+                # Her satırı ortala
+                line_y = sub_bg_y + sub_pad_y
+                for bl in badge_lines:
+                    bl_surf = sub_font.render(bl, True, UIColors.TEXT_PRIMARY)
+                    self.screen.blit(bl_surf, bl_surf.get_rect(centerx=sub_bg_x + sub_bg_w // 2, y=line_y))
+                    line_y += line_h + line_gap
+            else:
+                sub_base_size = sp(20) if tutorial_subtitle else (sp(16) if draw_rect.height < 160 else sp(15))
+                sub_min_size = sp(13) if tutorial_subtitle else sp(10)
+                sub_pad_x = sp(12)
+                sub_pad_y = sp(7)
+                sub_max_w = draw_rect.width - sp(20)
+                text_w = max(40, sub_max_w - sub_pad_x * 2 - 4)
+                max_lines = 1 if tutorial_subtitle else (2 if draw_rect.height < 185 else 1)
+
+                font_size = sub_base_size
+                sub_font = retro_style.get_font(font_size, bold=tutorial_subtitle)
                 wrapped_lines = retro_style.wrap_text(subtitle, sub_font, text_w)
+                while len(wrapped_lines) > max_lines and font_size > sub_min_size:
+                    font_size -= 1
+                    sub_font = retro_style.get_font(font_size, bold=tutorial_subtitle)
+                    wrapped_lines = retro_style.wrap_text(subtitle, sub_font, text_w)
 
-            if len(wrapped_lines) > max_lines:
-                wrapped_lines = wrapped_lines[:max_lines]
-                if not tutorial_subtitle:
-                    last_line = wrapped_lines[-1].rstrip()
-                    if not last_line.endswith('…'):
-                        wrapped_lines[-1] = f"{last_line}…"
+                if len(wrapped_lines) > max_lines:
+                    wrapped_lines = wrapped_lines[:max_lines]
+                    if not tutorial_subtitle:
+                        last_line = wrapped_lines[-1].rstrip()
+                        if not last_line.endswith('…'):
+                            wrapped_lines[-1] = f"{last_line}…"
 
-            line_h = sub_font.get_linesize()
-            line_gap = max(1, sp(2))
-            text_h = len(wrapped_lines) * line_h + max(0, len(wrapped_lines) - 1) * line_gap
-            max_line_w = max((sub_font.size(line)[0] for line in wrapped_lines), default=0)
+                line_h = sub_font.get_linesize()
+                line_gap = max(1, sp(2))
+                text_h = len(wrapped_lines) * line_h + max(0, len(wrapped_lines) - 1) * line_gap
+                max_line_w = max((sub_font.size(line)[0] for line in wrapped_lines), default=0)
 
-            sub_bg_w = min(sub_max_w, max_line_w + sub_pad_x * 2 + 8)
-            sub_bg_h = text_h + sub_pad_y * 2
-            sub_bg_x = draw_rect.x + sp(18)
-            sub_bg_y = draw_rect.bottom - sub_bg_h - sp(8)
+                sub_bg_w = min(sub_max_w, max_line_w + sub_pad_x * 2 + 8)
+                sub_bg_h = text_h + sub_pad_y * 2
+                sub_bg_x = draw_rect.x + sp(18)
+                sub_bg_y = draw_rect.bottom - sub_bg_h - sp(8)
 
-            # Alt-panel arka plan
-            sub_bg = pygame.Surface((sub_bg_w, sub_bg_h), pygame.SRCALPHA)
-            pygame.draw.rect(sub_bg, (15, 22, 42, 170), sub_bg.get_rect(), border_radius=8)
-            # Sol accent çizgi
-            pygame.draw.rect(sub_bg, (*accent_color[:3], 140), pygame.Rect(0, 3, 3, sub_bg_h - 6), border_radius=2)
-            # Kenarlık
-            pygame.draw.rect(sub_bg, (*accent_color[:3], 55), sub_bg.get_rect(), 1, border_radius=8)
-            self.screen.blit(sub_bg, (sub_bg_x, sub_bg_y))
+                # Alt-panel arka plan
+                sub_bg = pygame.Surface((sub_bg_w, sub_bg_h), pygame.SRCALPHA)
+                pygame.draw.rect(sub_bg, (15, 22, 42, 170), sub_bg.get_rect(), border_radius=8)
+                # Sol accent çizgi
+                pygame.draw.rect(sub_bg, (*accent_color[:3], 140), pygame.Rect(0, 3, 3, sub_bg_h - 6), border_radius=2)
+                # Kenarlık
+                pygame.draw.rect(sub_bg, (*accent_color[:3], 55), sub_bg.get_rect(), 1, border_radius=8)
+                self.screen.blit(sub_bg, (sub_bg_x, sub_bg_y))
 
-            subtitle_color = UIColors.TEXT_PRIMARY if tutorial_subtitle else UIColors.TEXT_SECONDARY
-            line_y = sub_bg_y + sub_pad_y
-            for line in wrapped_lines:
-                line_surf = sub_font.render(line, True, subtitle_color)
-                self.screen.blit(line_surf, (sub_bg_x + sub_pad_x + sp(4), line_y))
-                line_y += line_h + line_gap
+                subtitle_color = UIColors.TEXT_PRIMARY if tutorial_subtitle else UIColors.TEXT_SECONDARY
+                line_y = sub_bg_y + sub_pad_y
+                for line in wrapped_lines:
+                    line_surf = sub_font.render(line, True, subtitle_color)
+                    self.screen.blit(line_surf, (sub_bg_x + sub_pad_x + sp(4), line_y))
+                    line_y += line_h + line_gap
 
         if panel_context and panel_key:
             self._draw_panel_micro_content(draw_rect, panel_key, accent_color, panel_context, hover)
@@ -1681,45 +1743,134 @@ class Menu:
                 name_surf = name_font.render(lv_sub, True, UIColors.TEXT_SECONDARY)
                 self.screen.blit(name_surf, name_surf.get_rect(midleft=(lv_panel_x + lv_pad_x + s(4), lv_panel_y + lv_pad_y + lv_surf.get_height() + s(10))))
 
-            # --- Hızlı Devam butonu ---
-            btn_w = max(s(115), min(s(160), rect.width - s(26)))
-            btn_h = s(32)
-            # Sağ-alt yerine panelin orta-alt boş alanına taşı
-            btn_x = rect.x + (rect.width - btn_w) // 2
-            btn_y = rect.bottom - btn_h - s(52)
-            btn_min_y = rect.y + int(rect.height * 0.58)
-            btn_max_y = rect.bottom - btn_h - s(40)
-            btn_y = max(btn_min_y, min(btn_y, btn_max_y))
+            # --- Hızlı Devam butonu (sağ-alt köşe) ---
+            btn_w = max(s(115), min(s(150), rect.width - s(26)))
+            btn_h = s(38)
+            btn_x = rect.right - btn_w - s(10)
+            btn_y = rect.bottom - btn_h - s(10)
+            btn_rect = pygame.Rect(btn_x, btn_y, btn_w, btn_h)
+            btn_hover = btn_rect.collidepoint(get_mouse_pos())
+
+            btn_surf = pygame.Surface((btn_w, btn_h), pygame.SRCALPHA)
+            bg_alpha = 225 if btn_hover else 185
+            pygame.draw.rect(btn_surf, (15, 25, 40, bg_alpha), btn_surf.get_rect(), border_radius=11)
+            # Üst highlight
+            for hy in range(min(12, btn_h // 3)):
+                ha = int(30 * (1 - hy / 12))
+                pygame.draw.line(btn_surf, (255, 255, 255, ha), (4, hy), (btn_w - 4, hy))
+            border_alpha = 240 if btn_hover else 175
+            pygame.draw.rect(btn_surf, (*accent_color[:3], border_alpha), btn_surf.get_rect(), 2, border_radius=11)
+            if btn_hover:
+                glow = pygame.Surface((btn_w + 10, btn_h + 10), pygame.SRCALPHA)
+                pygame.draw.rect(glow, (*accent_color[:3], 40), glow.get_rect(), border_radius=14)
+                self.screen.blit(glow, (btn_rect.x - 5, btn_rect.y - 5))
+            btn_label = t('menu_dashboard_quick_continue')
+            btn_font = retro_style.get_fitting_font(btn_label, base_size=s(18), max_width=btn_w - s(32), bold=True, min_size=max(12, s(13)))
+            btn_text_surf = btn_font.render(btn_label, True, UIColors.TEXT_PRIMARY)
+            btn_surf.blit(btn_text_surf, btn_text_surf.get_rect(center=(btn_w // 2 + s(5), btn_h // 2)))
+            # Sol tarafta üçgen ok ikonu
+            arrow_x = s(12)
+            arrow_cy = btn_h // 2
+            arrow_size = s(7)
+            arrow_pts = [(arrow_x, arrow_cy - arrow_size), (arrow_x, arrow_cy + arrow_size), (arrow_x + arrow_size + 2, arrow_cy)]
+            pygame.draw.polygon(btn_surf, (*accent_color[:3], 230), arrow_pts)
+
+            self.screen.blit(btn_surf, btn_rect.topleft)
+            self.campaign_quick_play_rect = btn_rect
+            self.campaign_quick_level = next_level
+
+        elif panel_key == 'new_gen_tetris':
+            btn_label = t('menu_dashboard_play')
+            btn_w = max(s(110), min(s(160), rect.width - s(26)))
+            btn_h = s(38)
+            btn_x = rect.right - btn_w - s(10)
+            btn_y = rect.bottom - btn_h - s(10)
+            btn_rect = pygame.Rect(btn_x, btn_y, btn_w, btn_h)
+            btn_hover = btn_rect.collidepoint(get_mouse_pos())
+
+            btn_surf = pygame.Surface((btn_w, btn_h), pygame.SRCALPHA)
+            bg_alpha = 225 if btn_hover else 185
+            pygame.draw.rect(btn_surf, (15, 25, 40, bg_alpha), btn_surf.get_rect(), border_radius=11)
+            for hy in range(min(12, btn_h // 3)):
+                ha = int(30 * (1 - hy / 12))
+                pygame.draw.line(btn_surf, (255, 255, 255, ha), (4, hy), (btn_w - 4, hy))
+            border_alpha = 240 if btn_hover else 175
+            pygame.draw.rect(btn_surf, (*accent_color[:3], border_alpha), btn_surf.get_rect(), 2, border_radius=11)
+            if btn_hover:
+                glow = pygame.Surface((btn_w + 10, btn_h + 10), pygame.SRCALPHA)
+                pygame.draw.rect(glow, (*accent_color[:3], 40), glow.get_rect(), border_radius=14)
+                self.screen.blit(glow, (btn_rect.x - 5, btn_rect.y - 5))
+            btn_font = retro_style.get_fitting_font(btn_label, base_size=s(18), max_width=btn_w - s(32), bold=True, min_size=max(12, s(13)))
+            btn_text_surf = btn_font.render(btn_label, True, UIColors.TEXT_PRIMARY)
+            # Sol tarafta üçgen ok ikonu
+            arrow_x = s(12)
+            arrow_cy = btn_h // 2
+            arrow_size = s(7)
+            arrow_pts = [(arrow_x, arrow_cy - arrow_size), (arrow_x, arrow_cy + arrow_size), (arrow_x + arrow_size + 2, arrow_cy)]
+            pygame.draw.polygon(btn_surf, (*accent_color[:3], 230), arrow_pts)
+            btn_surf.blit(btn_text_surf, btn_text_surf.get_rect(center=(btn_w // 2 + s(5), btn_h // 2)))
+            self.screen.blit(btn_surf, btn_rect.topleft)
+            self.new_gen_tetris_play_rect = btn_rect
+
+        elif panel_key == 'extras':
+            btn_label = t('menu_dashboard_browse')
+            btn_w = max(s(100), min(s(150), rect.width - s(26)))
+            btn_h = s(38)
+            btn_x = rect.right - btn_w - s(10)
+            btn_y = rect.bottom - btn_h - s(10)
+            btn_rect = pygame.Rect(btn_x, btn_y, btn_w, btn_h)
+            btn_hover = btn_rect.collidepoint(get_mouse_pos())
+
+            btn_surf = pygame.Surface((btn_w, btn_h), pygame.SRCALPHA)
+            bg_alpha = 225 if btn_hover else 185
+            pygame.draw.rect(btn_surf, (15, 25, 40, bg_alpha), btn_surf.get_rect(), border_radius=11)
+            for hy in range(min(12, btn_h // 3)):
+                ha = int(30 * (1 - hy / 12))
+                pygame.draw.line(btn_surf, (255, 255, 255, ha), (4, hy), (btn_w - 4, hy))
+            border_alpha = 240 if btn_hover else 175
+            pygame.draw.rect(btn_surf, (*accent_color[:3], border_alpha), btn_surf.get_rect(), 2, border_radius=11)
+            if btn_hover:
+                glow = pygame.Surface((btn_w + 10, btn_h + 10), pygame.SRCALPHA)
+                pygame.draw.rect(glow, (*accent_color[:3], 40), glow.get_rect(), border_radius=14)
+                self.screen.blit(glow, (btn_rect.x - 5, btn_rect.y - 5))
+            btn_font = retro_style.get_fitting_font(btn_label, base_size=s(18), max_width=btn_w - s(32), bold=True, min_size=max(12, s(13)))
+            btn_text_surf = btn_font.render(btn_label, True, UIColors.TEXT_PRIMARY)
+            # Sol tarafta üçgen ok ikonu
+            arrow_x = s(12)
+            arrow_cy = btn_h // 2
+            arrow_size = s(7)
+            arrow_pts = [(arrow_x, arrow_cy - arrow_size), (arrow_x, arrow_cy + arrow_size), (arrow_x + arrow_size + 2, arrow_cy)]
+            pygame.draw.polygon(btn_surf, (*accent_color[:3], 230), arrow_pts)
+            btn_surf.blit(btn_text_surf, btn_text_surf.get_rect(center=(btn_w // 2 + s(5), btn_h // 2)))
+            self.screen.blit(btn_surf, btn_rect.topleft)
+            self.extras_browse_rect = btn_rect
+
+        elif panel_key == 'tutorial_mode':
+            btn_label = t('menu_dashboard_sub_tutorial')
+            btn_w = rect.width - s(16)
+            btn_h = s(34)
+            btn_x = rect.x + s(8)
+            btn_y = rect.bottom - btn_h - s(10)
             btn_rect = pygame.Rect(btn_x, btn_y, btn_w, btn_h)
             btn_hover = btn_rect.collidepoint(get_mouse_pos())
 
             btn_surf = pygame.Surface((btn_w, btn_h), pygame.SRCALPHA)
             bg_alpha = 225 if btn_hover else 185
             pygame.draw.rect(btn_surf, (15, 25, 40, bg_alpha), btn_surf.get_rect(), border_radius=10)
-            # Üst highlight
             for hy in range(min(10, btn_h // 3)):
                 ha = int(28 * (1 - hy / 10))
                 pygame.draw.line(btn_surf, (255, 255, 255, ha), (4, hy), (btn_w - 4, hy))
             border_alpha = 240 if btn_hover else 175
             pygame.draw.rect(btn_surf, (*accent_color[:3], border_alpha), btn_surf.get_rect(), 2, border_radius=10)
             if btn_hover:
-                glow = pygame.Surface((btn_w + 8, btn_h + 8), pygame.SRCALPHA)
-                pygame.draw.rect(glow, (*accent_color[:3], 30), glow.get_rect(), border_radius=12)
-                self.screen.blit(glow, (btn_rect.x - 4, btn_rect.y - 4))
-            btn_label = t('menu_dashboard_quick_continue')
-            btn_font = retro_style.get_fitting_font(btn_label, base_size=s(15), max_width=btn_w - s(18), bold=True, min_size=max(10, s(11)))
+                glow = pygame.Surface((btn_w + 10, btn_h + 10), pygame.SRCALPHA)
+                pygame.draw.rect(glow, (*accent_color[:3], 40), glow.get_rect(), border_radius=14)
+                self.screen.blit(glow, (btn_rect.x - 5, btn_rect.y - 5))
+            btn_font = retro_style.get_fitting_font(btn_label, base_size=s(17), max_width=btn_w - s(20), bold=True, min_size=max(11, s(12)))
             btn_text_surf = btn_font.render(btn_label, True, UIColors.TEXT_PRIMARY)
             btn_surf.blit(btn_text_surf, btn_text_surf.get_rect(center=(btn_w // 2, btn_h // 2)))
-            # Sol tarafta küçük üçgen ok ikonu
-            arrow_x = s(12)
-            arrow_cy = btn_h // 2
-            arrow_size = s(6)
-            arrow_pts = [(arrow_x, arrow_cy - arrow_size), (arrow_x, arrow_cy + arrow_size), (arrow_x + arrow_size + 2, arrow_cy)]
-            pygame.draw.polygon(btn_surf, (*accent_color[:3], 220), arrow_pts)
-
             self.screen.blit(btn_surf, btn_rect.topleft)
-            self.campaign_quick_play_rect = btn_rect
-            self.campaign_quick_level = next_level
+            self.tutorial_enter_rect = btn_rect
 
         elif panel_key == 'pvp_2_players':
             # Local PvP butonu kaldırıldı – subtitle yeterli
@@ -1949,6 +2100,9 @@ class Menu:
 
         panel_context = self._build_dashboard_panel_context(lang)
         self.campaign_quick_play_rect = None
+        self.new_gen_tetris_play_rect = None
+        self.extras_browse_rect = None
+        self.tutorial_enter_rect = None
 
         action_title_map = {
             'new_gen_tetris': t('new_gen_tetris'),
@@ -1970,7 +2124,7 @@ class Menu:
             'extras': '',
             'block_styles': t('menu_dashboard_sub_block_styles'),
             'pvp_2_players': t('menu_dashboard_sub_pvp'),
-            'tutorial_mode': t('menu_dashboard_sub_tutorial'),
+            'tutorial_mode': '',
             'achievements': '',
         }
 
