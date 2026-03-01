@@ -89,12 +89,28 @@ def _make_pygame_stub():
     return pg
 
 
-sys.modules.setdefault("pygame", _make_pygame_stub())
+_pg_stub = _make_pygame_stub()
+if "pygame" not in sys.modules:
+    sys.modules["pygame"] = _pg_stub
+else:
+    # Başka testlerin bıraktığı stub eksik attribute içerebilir; yoksaları ekle.
+    _existing_pg = sys.modules["pygame"]
+    for _attr in ("FULLSCREEN", "NOFRAME", "DOUBLEBUF", "HWSURFACE", "RESIZABLE",
+                  "VIDEORESIZE", "KMOD_META", "KMOD_ALT", "K_F12", "K_RETURN",
+                  "K_KP_ENTER", "KMOD_CTRL", "Surface", "display", "error",
+                  "font", "mixer"):
+        if not hasattr(_existing_pg, _attr):
+            setattr(_existing_pg, _attr, getattr(_pg_stub, _attr))
+
 # Alt modüller de sys.modules'da kayıtlı olmalı
 _pg = sys.modules["pygame"]
-sys.modules.setdefault("pygame.font", getattr(_pg, "font", None))
-sys.modules.setdefault("pygame.mixer", getattr(_pg, "mixer", None))
-sys.modules.setdefault("pygame.mixer.music", getattr(getattr(_pg, "mixer", None), "music", None))
+if "pygame.font" not in sys.modules:
+    sys.modules["pygame.font"] = getattr(_pg, "font", _pg_stub.font)
+if "pygame.mixer" not in sys.modules:
+    sys.modules["pygame.mixer"] = getattr(_pg, "mixer", _pg_stub.mixer)
+if "pygame.mixer.music" not in sys.modules:
+    _mx = sys.modules.get("pygame.mixer") or getattr(_pg, "mixer", None)
+    sys.modules["pygame.mixer.music"] = getattr(_mx, "music", None)
 import pygame  # noqa: E402  (pytest discovers after stub is set)
 
 
@@ -291,6 +307,12 @@ class TestCreateDisplayWindowsBorderlessFallback(unittest.TestCase):
         _force_windows(platform_utils)
         self._call_flags = []
 
+        # Diğer testlerden kalan stub'larda bu sabitler eksik olabilir; güvence al.
+        for _attr, _val in (("FULLSCREEN", 4), ("NOFRAME", 32), ("DOUBLEBUF", 1),
+                             ("HWSURFACE", 2), ("RESIZABLE", 16), ("error", Exception)):
+            if not hasattr(platform_utils.pygame, _attr):
+                setattr(platform_utils.pygame, _attr, _val)
+
         def fake_set_mode(size, flags=0):
             self._call_flags.append(flags)
             surf = MagicMock()
@@ -316,8 +338,10 @@ class TestCreateDisplayWindowsBorderlessFallback(unittest.TestCase):
         try:
             platform_utils.create_display(1920, 1080, fullscreen=True, borderless=True)
             self.assertEqual(len(self._call_flags), 2, "İki set_mode çağrısı bekleniyor")
+            # platform_utils.pygame kullan — test dizisi boyunca tutarlı referans garantisi
+            _fullscreen_flag = getattr(platform_utils.pygame, "FULLSCREEN", 4)
             self.assertTrue(
-                self._call_flags[1] & pygame.FULLSCREEN,
+                self._call_flags[1] & _fullscreen_flag,
                 "İkinci çağrı FULLSCREEN flag içermeli",
             )
         finally:

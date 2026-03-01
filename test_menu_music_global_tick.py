@@ -203,6 +203,9 @@ def _make_sound_manager(monkeypatch, music_busy: bool):
     if src_dir not in _sys.path:
         _sys.path.insert(0, src_dir)
 
+    # Diğer testlerin bıraktığı kirli/kısmi sound modülünü temizle
+    for _k in [k for k in _sys.modules if k == "sound" or k.startswith("sound.")]:
+        del _sys.modules[_k]
     sound_mod = importlib.import_module("sound")
     sm = sound_mod.SoundManager.__new__(sound_mod.SoundManager)
     # Manuel init — gerçek __init__ pygame.mixer.init vs. çağırabilir
