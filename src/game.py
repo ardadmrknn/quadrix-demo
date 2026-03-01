@@ -544,7 +544,7 @@ class Game:
         preference = None
         if self.settings_manager:
             preference = self.settings_manager.get_music_preference_for_mode(self.game_mode)
-        track_key = self.sound.ensure_track_available(preference or 'Klasikv1')
+        track_key = self.sound.ensure_track_available(preference or 'klasik_1')
         if track_key:
             self.sound.play_music(track_key, loop=True, force=force)
             self.current_music_track = track_key
@@ -1734,7 +1734,7 @@ class Game:
                     preference = None
                     if self.settings_manager:
                         preference = self.settings_manager.get_music_preference_for_mode(self.game_mode)
-                    track_key = self.current_music_track or self.sound.ensure_track_available(preference or 'Klasikv1')
+                    track_key = self.current_music_track or self.sound.ensure_track_available(preference or 'klasik_1')
                     self.current_music_track = track_key
                     self.sound.play_music(track_key, loop=True)
                 else:

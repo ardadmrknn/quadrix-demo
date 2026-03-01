@@ -75,18 +75,18 @@ DEFAULT_CONTROLS = {
 }
 
 MODE_MUSIC_DEFAULTS = {
-    'campaign': 'Klasik0',
-    'survival': 'Survival',
-    'sprint': 'Kartv3',
-    'ultra': 'Ultrav3',
-    'zen': 'zen1',
-    'tetris2': 'tetrisextra1',
-    'mystery': 'Kartv2',
-    'wide': 'Widev3',
-    'cascade': 'Cascadev3',
-    'pvp': 'PvPv3',
-    'daily': 'dailyv2',
-    'hardcore': 'hardcorew0_1',
+    'campaign': 'klasik_1',
+    'survival': 'survival_1',
+    'sprint': 'kart_3',
+    'ultra': 'ultra_2',
+    'zen': 'zen_1',
+    'tetris2': 'quadrixextra_1',
+    'mystery': 'kart_2',
+    'wide': 'wide_2',
+    'cascade': 'cascade_2',
+    'pvp': 'pvp_1',
+    'daily': 'daily_1',
+    'hardcore': 'hardcore_2',
 }
 
 
@@ -113,8 +113,8 @@ class SettingsManager:
             'effects_enabled': True,
             'background_enabled': True,
             # Yerleşik (8-bit/sentez) müzikler kaldırıldı: varsayılanlar music/ klasöründeki dosyalardır.
-            'menu_music': 'mainv3',
-            'game_music': 'klasik0',
+            'menu_music': 'main_1',
+            'game_music': 'klasik_1',
             'theme': 'Classic',  # Varsayılan tema Classic
             'debug_mode': False,
             'card_mode_debug': False,
@@ -143,9 +143,9 @@ class SettingsManager:
             'controls': copy.deepcopy(DEFAULT_CONTROLS),
             'mode_music_overrides': {},
             # Playlist tabanlı müzik seçimi
-            'menu_music_playlist': ['mainv3'],
-            'game_music_playlist': ['klasik0'],
-            'campaign_music_playlist': ['klasik0'],
+            'menu_music_playlist': ['main_1'],
+            'game_music_playlist': ['klasik_1'],
+            'campaign_music_playlist': ['klasik_1'],
             'mode_music_playlists': {key: [value] for key, value in MODE_MUSIC_DEFAULTS.items()},
             # Müzik karıştırma modu: playlist sırası karıştırılır
             'music_shuffle': False,
@@ -558,10 +558,10 @@ class SettingsManager:
             return MODE_MUSIC_DEFAULTS[key]
         
         # Klasik mod (varsayılan oyun müziği) için dosya adı kontrolü
-        # 'Klasikv1' kodu 'klasik0.mp3' ile eşleşmiyor olabilir, onu da düzeltiyoruz.
-        default_music = self.settings.get('game_music', 'klasik0')
-        if default_music == 'Klasikv1': 
-            return 'klasik0'
+        # Eski müzik adlarını yeni adlara yönlendir
+        default_music = self.settings.get('game_music', 'klasik_1')
+        if default_music in ('Klasikv1', 'klasik0', 'Klasik0'):
+            return 'klasik_1'
         return default_music
 
     def _normalize_playlist(self, playlist):
@@ -612,7 +612,7 @@ class SettingsManager:
         playlist = self._normalize_playlist(playlist)
         if playlist:
             return playlist
-        return ['klasik0']
+        return ['klasik_1']
 
     def set_campaign_music_playlist(self, playlist):
         normalized = self._normalize_playlist(playlist)
@@ -666,10 +666,10 @@ class SettingsManager:
             campaign_playlist = self.get_mode_music_playlist('campaign')
             if campaign_playlist:
                 return campaign_playlist
-            return self.settings.get('campaign_music_playlist', ['klasik0'])
+            return self.settings.get('campaign_music_playlist', ['klasik_1'])
 
         if key == 'campaign':
-            return self.settings.get('campaign_music_playlist', ['klasik0'])
+            return self.settings.get('campaign_music_playlist', ['klasik_1'])
 
         return self.get_game_music_playlist()
 

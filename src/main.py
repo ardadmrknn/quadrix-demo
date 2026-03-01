@@ -1069,7 +1069,7 @@ def main():
     print(f"   music_enabled ayarı: {music_enabled}")
     
     if music_enabled:
-        menu_music = settings_manager.get('menu_music', 'Mainv3')
+        menu_music = settings_manager.get('menu_music', 'main_1')
         print(f"   menu_music ayarı: {menu_music}")
         print(f"   Çalınacak track: {menu_music.lower()}")
         
@@ -1834,7 +1834,7 @@ def main():
             elif action == 'toggle_music':
                 # Müzik ayarı değişti
                 if settings_screen.music_enabled and not settings_screen.mute_all:
-                    menu_music = settings_manager.get('menu_music', 'Mainv3')
+                    menu_music = settings_manager.get('menu_music', 'main_1')
                     try:
                         playlist = settings_manager.get_menu_music_playlist()
                         playlist_keys = [menu_sound.ensure_track_available(p) for p in playlist]
@@ -2426,7 +2426,7 @@ def main():
                 # Ana menüye dönünce menu_music_volume uygula
                 _menu_vol = settings_manager.get('menu_music_volume', 0.3)
                 menu_sound.set_music_volume(_menu_vol)
-                menu_music = settings_manager.get('menu_music', 'Mainv3')
+                menu_music = settings_manager.get('menu_music', 'main_1')
                 try:
                     playlist = settings_manager.get_menu_music_playlist()
                     playlist_keys = [menu_sound.ensure_track_available(p) for p in playlist]
@@ -2516,7 +2516,7 @@ def main():
             if settings_screen.music_enabled and not getattr(settings_screen, 'mute_all', False):
                 _menu_vol = settings_manager.get('menu_music_volume', 0.3)
                 menu_sound.set_music_volume(_menu_vol)
-                menu_music = settings_manager.get('menu_music', 'Mainv3')
+                menu_music = settings_manager.get('menu_music', 'main_1')
                 menu_sound.play_music(menu_music.lower(), loop=True)
                 print(f"🎵 Ana sayfa müziği başlatıldı: {menu_music}")
             return False
