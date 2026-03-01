@@ -182,12 +182,19 @@ def _make_sound_manager(monkeypatch, music_busy: bool):
         import pygame
         monkeypatch.setattr(pygame.mixer, "music", _FakeMixerMusic(music_busy))
 
-    # constants stub (DEBUG_MODE)
-    if "src.constants" not in sys.modules and "constants" not in sys.modules:
-        c_stub = types.ModuleType("constants")
-        c_stub.DEBUG_MODE = False
-        sys.modules["constants"] = c_stub
-        sys.modules["src.constants"] = c_stub
+    # constants — gerçek modülü import et, yoksa stub oluştur
+    if "constants" not in sys.modules:
+        src_dir = str(Path(__file__).parent / "src")
+        if src_dir not in sys.path:
+            sys.path.insert(0, src_dir)
+        try:
+            import importlib
+            _const_mod = importlib.import_module("constants")
+        except Exception:
+            c_stub = types.ModuleType("constants")
+            c_stub.DEBUG_MODE = False
+            sys.modules["constants"] = c_stub
+            sys.modules["src.constants"] = c_stub
 
     # SoundManager'ı import et
     import importlib, sys as _sys
@@ -196,6 +203,9 @@ def _make_sound_manager(monkeypatch, music_busy: bool):
     if src_dir not in _sys.path:
         _sys.path.insert(0, src_dir)
 
+    # Diğer testlerin bıraktığı kirli/kısmi sound modülünü temizle
+    for _k in [k for k in _sys.modules if k == "sound" or k.startswith("sound.")]:
+        del _sys.modules[_k]
     sound_mod = importlib.import_module("sound")
     sm = sound_mod.SoundManager.__new__(sound_mod.SoundManager)
     # Manuel init — gerçek __init__ pygame.mixer.init vs. çağırabilir

@@ -63,6 +63,9 @@ class TestResolveLbIdViaWebApi(unittest.TestCase):
     def _import_module(self):
         with patch('ctypes.CDLL', return_value=MagicMock()):
             import src.steam_integration as m
+        # Testlerin çalışması için Partner API key ve App ID ayarla
+        m._PARTNER_API_KEY = 'FAKE_TEST_KEY'
+        m._APP_ID_INT = 4428040
         return m
 
     def test_returns_id_from_web_api(self):

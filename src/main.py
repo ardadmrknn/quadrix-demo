@@ -1007,6 +1007,13 @@ def main():
     score_manager = ScoreManager(highscores_file)
     achievement_manager = AchievementManager(achievements_file)
     theme_manager = ThemeManager(settings_manager)
+
+    # Steam'e daha önce açılmış başarımları geriye dönük senkronla
+    if _steam_init_ok:
+        try:
+            achievement_manager.sync_to_steam()
+        except Exception:
+            pass
     
     # Dil ayarını yükle ve uygula
     saved_language = settings_manager.get('language', 'tr')

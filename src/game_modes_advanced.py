@@ -528,6 +528,7 @@ class SurvivalMode(Game):
                     score=self.board.score, lines=self.board.lines_cleared,
                     level=self.board.level, tetrises=self.board.tetrises,
                     combo=self.board.combo,
+                    game_mode=self.game_mode,
                 )
                 for ach_id in new_achievements:
                     achievement = self.achievement_manager.get_achievement(ach_id)

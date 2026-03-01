@@ -287,6 +287,31 @@ def _setup_dll_functions(dll: ctypes.CDLL) -> None:
     except AttributeError:
         pass
 
+    # ISteamUserStats_SetAchievement — Başarım kilidini aç
+    try:
+        dll.SteamAPI_ISteamUserStats_SetAchievement.restype = ctypes.c_bool
+        dll.SteamAPI_ISteamUserStats_SetAchievement.argtypes = [ctypes.c_void_p, ctypes.c_char_p]
+    except AttributeError:
+        pass
+
+    # ISteamUserStats_GetAchievement — Başarım durumunu sorgula
+    try:
+        dll.SteamAPI_ISteamUserStats_GetAchievement.restype = ctypes.c_bool
+        dll.SteamAPI_ISteamUserStats_GetAchievement.argtypes = [
+            ctypes.c_void_p,               # ISteamUserStats*
+            ctypes.c_char_p,               # pchName
+            ctypes.POINTER(ctypes.c_bool),  # pbAchieved (out)
+        ]
+    except AttributeError:
+        pass
+
+    # ISteamUserStats_StoreStats — Başarım/stat değişikliklerini Steam'e yaz
+    try:
+        dll.SteamAPI_ISteamUserStats_StoreStats.restype = ctypes.c_bool
+        dll.SteamAPI_ISteamUserStats_StoreStats.argtypes = [ctypes.c_void_p]
+    except AttributeError:
+        pass
+
     # SteamApps interface accessor (v008 veya v007)
     for _apps_ver in ('SteamAPI_SteamApps_v008', 'SteamAPI_SteamApps_v007'):
         try:
@@ -484,6 +509,90 @@ def shutdown() -> None:
 def is_available() -> bool:
     """Steam SDK başarıyla başlatıldıysa True döndürür."""
     return _init_ok and _dll is not None
+
+
+# ---------------------------------------------------------------------------
+# Steam Achievements API
+# ---------------------------------------------------------------------------
+
+def unlock_steam_achievement(api_name: str) -> bool:
+    """Steam'de bir başarımın kilidini aç.
+
+    Args:
+        api_name: Steamworks konsolunda tanımlı API Name (ör. 'ACH_FIRST_GAME').
+
+    Returns:
+        True → başarıyla set edildi ve store edildi.
+        False → Steam müsait değil veya hata oluştu.
+    """
+    if not is_available() or not _isteam_user_stats or not _dll:
+        return False
+    try:
+        name_bytes = api_name.encode('utf-8') if isinstance(api_name, str) else api_name
+        ok = _dll.SteamAPI_ISteamUserStats_SetAchievement(_isteam_user_stats, name_bytes)
+        if ok:
+            _dll.SteamAPI_ISteamUserStats_StoreStats(_isteam_user_stats)
+            print(f"[Steam] Achievement unlocked: {api_name}")
+        return bool(ok)
+    except Exception as e:
+        print(f"[Steam] Achievement unlock hatası ({api_name}): {e}")
+        return False
+
+
+def is_steam_achievement_unlocked(api_name: str) -> bool | None:
+    """Steam'de başarımın açılmış olup olmadığını sorgula.
+
+    Returns:
+        True/False → durum, None → sorgulanamadı.
+    """
+    if not is_available() or not _isteam_user_stats or not _dll:
+        return None
+    try:
+        name_bytes = api_name.encode('utf-8') if isinstance(api_name, str) else api_name
+        achieved = ctypes.c_bool(False)
+        ok = _dll.SteamAPI_ISteamUserStats_GetAchievement(
+            _isteam_user_stats, name_bytes, ctypes.byref(achieved)
+        )
+        if ok:
+            return bool(achieved.value)
+        return None
+    except Exception:
+        return None
+
+
+def sync_all_achievements(unlocked_ids: dict[str, str], id_map: dict[str, str]) -> int:
+    """Oyundaki tüm açılmış başarımları Steam'e toplu senkronla.
+
+    Args:
+        unlocked_ids: {achievement_id: unlock_date} — oyun içi açılmış başarımlar.
+        id_map: {achievement_id: steam_api_name} — oyun ID → Steam API Name eşlemesi.
+
+    Returns:
+        Yeni senkronlanan başarım sayısı.
+    """
+    if not is_available() or not _isteam_user_stats or not _dll:
+        return 0
+    count = 0
+    for ach_id, steam_name in id_map.items():
+        if ach_id in unlocked_ids:
+            # Zaten Steam'de açık mı kontrol et
+            already = is_steam_achievement_unlocked(steam_name)
+            if already is True:
+                continue
+            try:
+                name_bytes = steam_name.encode('utf-8') if isinstance(steam_name, str) else steam_name
+                ok = _dll.SteamAPI_ISteamUserStats_SetAchievement(_isteam_user_stats, name_bytes)
+                if ok:
+                    count += 1
+            except Exception:
+                pass
+    if count > 0:
+        try:
+            _dll.SteamAPI_ISteamUserStats_StoreStats(_isteam_user_stats)
+            print(f"[Steam] {count} başarım senkronlandı.")
+        except Exception:
+            pass
+    return count
 
 
 def _callback_pump_loop() -> None:

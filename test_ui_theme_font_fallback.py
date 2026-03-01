@@ -19,6 +19,30 @@ if SRC_DIR not in sys.path:
     sys.path.insert(0, SRC_DIR)
 
 
+def _ensure_clean_imports():
+    """Önceki testlerden kalan bozuk stub modülleri temizle ve gerçek modülleri yükle."""
+    # constants modülü önceki bir test tarafından stub'lanmış olabilir
+    _const = sys.modules.get("constants")
+    if _const is not None and not hasattr(_const, "NEON_CYAN"):
+        # Bozuk stub — kaldır ve zincirdeki bağımlıları da temizle
+        for mod_name in list(sys.modules):
+            if mod_name in ("constants", "src.constants",
+                            "retro_style", "src.retro_style",
+                            "ui_theme", "src.ui_theme",
+                            "background", "src.background"):
+                sys.modules.pop(mod_name, None)
+
+    # pygame stub kontrol — font submodülü yoksa gerçek pygame yükle
+    _pg = sys.modules.get("pygame")
+    if _pg is not None and not hasattr(getattr(_pg, "font", None), "match_font"):
+        sys.modules.pop("pygame", None)
+        for sub in [k for k in sys.modules if k.startswith("pygame.")]:
+            sys.modules.pop(sub, None)
+
+
+_ensure_clean_imports()
+
+
 def _ensure_pygame_font_init():
     """Headless ortamda pygame font subsystem'ini başlat."""
     import pygame

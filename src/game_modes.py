@@ -53,6 +53,8 @@ class SprintMode(Game):
         self.start_time = pygame.time.get_ticks()
         self.finish_time = None
         self.is_finished = False
+        self._total_paused_ms = 0        # Toplam duraklatma süresi (ms)
+        self._pause_start_tick = None    # Pause başlangıç anı
         
         # Font cache (her frame yeniden oluşturulmayacak)
         self.sprint_font_large = retro_style.get_font(48, bold=False)
@@ -112,6 +114,13 @@ class SprintMode(Game):
 
     def update(self, dt):
         """Sprint modunu güncelle"""
+        # Pause durumu değişikliğini izle (timer'ı durdurmak/başlatmak için)
+        if self.paused and self._pause_start_tick is None:
+            self._pause_start_tick = pygame.time.get_ticks()
+        elif not self.paused and self._pause_start_tick is not None:
+            self._total_paused_ms += pygame.time.get_ticks() - self._pause_start_tick
+            self._pause_start_tick = None
+
         if not self.is_finished:
             super().update(dt)
             
@@ -121,7 +130,7 @@ class SprintMode(Game):
                 self.finish_time = pygame.time.get_ticks()
                 # Game over flag'ini true yapmıyoruz ki overlay çizilsin
                 # self.game_over = True 
-                elapsed = max(0, (self.finish_time - self.start_time) / 1000)
+                elapsed = max(0, self._effective_elapsed_ms()) / 1000
                 
                 # En iyi süreyi kaydet
                 self._save_best_time(elapsed)
@@ -132,11 +141,17 @@ class SprintMode(Game):
                 if self.sound_enabled and self.sound:
                     self.sound.play('level_up') # Veya uygun başka bir ses
     
+    def _effective_elapsed_ms(self):
+        """Pause süresini düşerek net geçen süreyi (ms) döndür."""
+        if self.is_finished:
+            return self.finish_time - self.start_time - self._total_paused_ms
+        paused_now = 0
+        if self._pause_start_tick is not None:
+            paused_now = pygame.time.get_ticks() - self._pause_start_tick
+        return pygame.time.get_ticks() - self.start_time - self._total_paused_ms - paused_now
+
     def _format_elapsed(self):
-        if not self.is_finished:
-            elapsed = (pygame.time.get_ticks() - self.start_time) / 1000
-        else:
-            elapsed = (self.finish_time - self.start_time) / 1000
+        elapsed = max(0, self._effective_elapsed_ms()) / 1000
         minutes = int(elapsed // 60)
         seconds = int(elapsed % 60)
         centiseconds = int((elapsed % 1) * 100)
@@ -368,6 +383,8 @@ class SprintMode(Game):
         self.start_time = pygame.time.get_ticks()
         self.finish_time = None
         self.is_finished = False
+        self._total_paused_ms = 0
+        self._pause_start_tick = None
         # En iyi süreleri yeniden yükle
         self.best_times = self._load_best_times()
 
