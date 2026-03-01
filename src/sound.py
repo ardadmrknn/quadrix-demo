@@ -434,7 +434,7 @@ class SoundManager:
         Bu projede yerleşik (sentez) müzik yoktur; sadece dosya tabanlı müzikler.
 
         Kullanım örnekleri:
-        - 'mainv3' -> music/ klasöründen otomatik yüklenen track key
+        - 'main_1' -> music/ klasöründen otomatik yüklenen track key
         - 'file:my_song.mp3' -> music/my_song.mp3 dosyası
         - 'file:subfolder/song.ogg' -> music/subfolder/song.ogg
         """
@@ -563,7 +563,7 @@ class SoundManager:
         if direct in self.music_tracks:
             return direct
 
-        # Versiyon soneki değişmiş olabilir: klasikv1 -> klasik0 vb.
+        # Versiyon soneki değişmiş olabilir: klasikv1 -> klasik_1 vb.
         base = self._strip_version_suffix(slug)
         if base:
             candidates = []

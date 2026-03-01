@@ -8561,8 +8561,8 @@ class SettingsScreen:
         self.effects_enabled = settings_manager.get('effects_enabled', True)
         self.background_enabled = settings_manager.get('background_enabled', True)
         self.custom_background = settings_manager.get('custom_background', None)
-        self.menu_music = settings_manager.get('menu_music', 'Mainv3')
-        self.game_music = settings_manager.get('game_music', 'Klasikv1')
+        self.menu_music = settings_manager.get('menu_music', 'main_1')
+        self.game_music = settings_manager.get('game_music', 'klasik_1')
         self.difficulty = 'Normal'  # Sabit değer - artık ayarlanabilir değil
         self.debug_mode = settings_manager.get('debug_mode', False)
         self.card_mode_debug = settings_manager.get('card_mode_debug', False)

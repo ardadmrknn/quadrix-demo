@@ -471,7 +471,7 @@ class PvPGame:
                 preferred = self.settings_manager.get('pvp_music')
             if not preferred:
                 preferred = self.settings_manager.get('game_music')
-        track_key = self.sound.ensure_track_available(preferred or 'Pvpv3')
+        track_key = self.sound.ensure_track_available(preferred or 'pvp_1')
         self.sound.play_music(track_key, loop=True)
         self.current_music_track = track_key
 
