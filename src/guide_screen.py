@@ -370,7 +370,14 @@ class GuideScreen:
         
         # Tab rect'leri (mouse için)
         self._tab_rects: List[pygame.Rect] = []
-        
+
+        # Scrollbar drag state
+        self._sb_thumb_rect: Optional[pygame.Rect] = None
+        self._sb_container_rect: Optional[pygame.Rect] = None
+        self._sb_last_panel_rect: Optional[pygame.Rect] = None
+        self._sb_drag_active: bool = False
+        self._sb_drag_offset_y: int = 0
+
         # Falling blocks arka plan
         self.falling_blocks = get_shared_falling_blocks_layer()
     
@@ -1050,8 +1057,24 @@ class GuideScreen:
         
         elif event.type == pygame.MOUSEBUTTONDOWN:
             pos = normalize_mouse_pos(event.pos) if hasattr(event, 'pos') else event.pos
-            
+
             if event.button == 1:
+                # Scrollbar thumb drag başlat
+                if self._sb_thumb_rect and self._sb_thumb_rect.collidepoint(pos):
+                    self._sb_drag_active = True
+                    self._sb_drag_offset_y = pos[1] - self._sb_thumb_rect.y
+                    return None
+
+                # Scrollbar track alanına tıklama → o pozisyona zıpla
+                if self._sb_container_rect and self._sb_container_rect.collidepoint(pos):
+                    _az = max(10, 10 + 2)
+                    _ty = self._sb_container_rect.top + _az + 2
+                    _th = max(4, self._sb_container_rect.height - _az * 2 - 4)
+                    _tmh = self._sb_thumb_rect.height if self._sb_thumb_rect else 20
+                    _rel = pos[1] - _ty - _tmh // 2
+                    self.scroll_y = int(max(0.0, min(1.0, _rel / max(1, _th - _tmh))) * self.max_scroll)
+                    return None
+
                 # Tab tıklama kontrolü
                 tab_clicked = self._check_tab_click(pos)
                 if tab_clicked is not None and tab_clicked != self.selected_tab:
@@ -1059,22 +1082,39 @@ class GuideScreen:
                     self.scroll_y = 0
                     self.card_index = 0
                     return None
-                
+
                 # Geri buton kontrolü
                 if self._check_back_button_click(pos):
                     return 'back'
-            
-            # Mouse wheel scroll
+
+            # Mouse wheel scroll (eski button 4/5 protokolü)
             elif event.button == 4:
                 self.scroll_y = max(0, self.scroll_y - self.scroll_speed)
             elif event.button == 5:
                 self.scroll_y = min(self.max_scroll, self.scroll_y + self.scroll_speed)
-        
+
+        elif event.type == pygame.MOUSEBUTTONUP:
+            if event.button == 1:
+                self._sb_drag_active = False
+                self._sb_drag_offset_y = 0
+
         elif event.type == pygame.MOUSEWHEEL:
             self.scroll_y = max(0, min(self.max_scroll, self.scroll_y - event.y * self.scroll_speed))
-        
+
         elif event.type == pygame.MOUSEMOTION:
             pos = normalize_mouse_pos(event.pos) if hasattr(event, 'pos') else event.pos
+            # Scrollbar drag
+            if self._sb_drag_active and self._sb_container_rect:
+                sb_c = self._sb_container_rect
+                arrow_zone = max(10, 10 + 2)
+                track_y = sb_c.top + arrow_zone + 2
+                track_h = max(4, sb_c.height - arrow_zone * 2 - 4)
+                thumb_h = self._sb_thumb_rect.height if self._sb_thumb_rect else 20
+                new_thumb_top = pos[1] - self._sb_drag_offset_y - track_y
+                new_thumb_top = max(0, min(new_thumb_top, track_h - thumb_h))
+                ratio = new_thumb_top / max(1, track_h - thumb_h)
+                self.scroll_y = int(ratio * self.max_scroll)
+                return None
             self.tab_hover = self._get_tab_at_pos(pos)
             self.back_hover = self._check_back_button_hover(pos)
         
@@ -1255,20 +1295,25 @@ class GuideScreen:
         
         if self.max_scroll > 0:
             self._draw_scrollbar(panel_rect, height)
-    
+
     def _draw_scrollbar(self, panel_rect: pygame.Rect, height: int):
-        scrollbar_width = 8
-        scrollbar_x = panel_rect.right - scrollbar_width - 10
-        scrollbar_height = height - 50
-        
-        bg_rect = pygame.Rect(scrollbar_x, panel_rect.y + 25, scrollbar_width, scrollbar_height)
-        pygame.draw.rect(self.screen, (40, 50, 70), bg_rect, border_radius=4)
-        
-        thumb_height = max(40, int(scrollbar_height * (scrollbar_height / (scrollbar_height + self.max_scroll))))
-        thumb_y = panel_rect.y + 25 + int((scrollbar_height - thumb_height) * (self.scroll_y / max(1, self.max_scroll)))
-        
-        thumb_rect = pygame.Rect(scrollbar_x, thumb_y, scrollbar_width, thumb_height)
-        pygame.draw.rect(self.screen, retro_style.primary, thumb_rect, border_radius=4)
+        sb_container = pygame.Rect(
+            panel_rect.right - 22,
+            panel_rect.y + 8,
+            22,
+            height - 16,
+        )
+        self._sb_container_rect = sb_container
+        self._sb_last_panel_rect = panel_rect
+        content_height = height + self.max_scroll
+        self._sb_thumb_rect = retro_style.draw_scrollbar(
+            self.screen,
+            sb_container,
+            self.scroll_y,
+            content_height,
+            height,
+            bar_width=10,
+        )
     
     def _draw_back_button(self):
         btn_rect = self._get_back_button_rect()

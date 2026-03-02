@@ -1494,9 +1494,9 @@ class UserSelectionScreen:
         visible_height = list_rect.height - s(48)
         if len(entries) > self.visible_limit:
             scrollbar_rect = pygame.Rect(
-                list_rect.right - s(16),
+                list_rect.right - s(22),
                 list_rect.y + s(24),
-                s(10),
+                s(22),
                 visible_height
             )
             retro_style.draw_scrollbar(
