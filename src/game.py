@@ -389,6 +389,8 @@ class Game:
         self.pause_menu_options = ['Devam Et', 'Yeniden Başlat', 'Müzik', 'Müzik Seviyesi', 'Ses Efektleri', 'Efekt Seviyesi', 'Ana Menü']
         self._pause_option_rects: list[pygame.Rect] = []
         self._pause_volume_rects: dict[str, pygame.Rect] = {}
+        self._pause_vol_drag_active: bool = False
+        self._pause_vol_drag_option: str = ''
         
         # Tema renklerini parçalara uygula
         self.apply_theme_to_pieces()
@@ -1320,7 +1322,7 @@ class Game:
                     pass
 
             # Duraklatılmışsa mouse kontrollerini işle
-            if self.paused and not self.game_over and event.type in (pygame.MOUSEMOTION, pygame.MOUSEWHEEL, pygame.MOUSEBUTTONDOWN):
+            if self.paused and not self.game_over and event.type in (pygame.MOUSEMOTION, pygame.MOUSEWHEEL, pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP):
                 pause_action = self._handle_pause_menu_input(event)
                 if pause_action == 'resume':
                     self.paused = False
@@ -1810,6 +1812,13 @@ class Game:
 
         if event.type == pygame.MOUSEMOTION:
             pos = normalize_mouse_pos(getattr(event, 'pos', None)) or get_mouse_pos()
+            # Sürükleme aktifse bar'ı güncelle (option rects'e bakmadan)
+            if self._pause_vol_drag_active and self._pause_vol_drag_option:
+                bar_rect = (getattr(self, '_pause_volume_rects', {}) or {}).get(self._pause_vol_drag_option)
+                if bar_rect and bar_rect.width > 0:
+                    ratio = (pos[0] - bar_rect.x) / bar_rect.width
+                    adjust_volume(self._pause_vol_drag_option, absolute=max(0.0, min(1.0, ratio)))
+                return None
             for idx, rect in enumerate(getattr(self, '_pause_option_rects', []) or []):
                 if rect and rect.collidepoint(pos):
                     if idx != self.pause_menu_selected:
@@ -1823,14 +1832,20 @@ class Game:
                 if rect and rect.collidepoint(pos):
                     self.pause_menu_selected = idx
                     option = self.pause_menu_options[idx]
-                    # Volume rows: allow clicking the bar to set an absolute value
                     if option in ('Müzik Seviyesi', 'Efekt Seviyesi'):
                         bar_rect = (getattr(self, '_pause_volume_rects', {}) or {}).get(option)
                         if bar_rect and bar_rect.width > 0:
                             ratio = (pos[0] - bar_rect.x) / bar_rect.width
                             adjust_volume(option, absolute=max(0.0, min(1.0, ratio)))
+                            self._pause_vol_drag_active = True
+                            self._pause_vol_drag_option = option
                         return None
                     return apply_option(option)
+            return None
+
+        if event.type == pygame.MOUSEBUTTONUP and event.button == 1:
+            self._pause_vol_drag_active = False
+            self._pause_vol_drag_option = ''
             return None
 
         return None
@@ -1927,8 +1942,8 @@ class Game:
                     self._sx(18, ui_scale),
                 )
                 self._pause_volume_rects[option] = bar_rect
-                self._draw_volume_bar(bar_rect.x, bar_rect.y, bar_rect.width, bar_rect.height,
-                                      self.sound.music_volume, (80, 180, 255), int(self.sound.music_volume * 100), is_selected, ui_scale)
+                retro_style.draw_volume_bar(self.screen, bar_rect.x, bar_rect.y, bar_rect.width, bar_rect.height,
+                                      self.sound.music_volume, (0, 210, 255), int(self.sound.music_volume * 100), is_selected, ui_scale)
             elif option == 'Efekt Seviyesi':
                 bar_rect = pygame.Rect(
                     button_rect.right - self._sx(150, ui_scale),
@@ -1937,44 +1952,10 @@ class Game:
                     self._sx(18, ui_scale),
                 )
                 self._pause_volume_rects[option] = bar_rect
-                self._draw_volume_bar(bar_rect.x, bar_rect.y, bar_rect.width, bar_rect.height,
-                                      self.sound.sfx_volume, (255, 180, 80), int(self.sound.sfx_volume * 100), is_selected, ui_scale)
+                retro_style.draw_volume_bar(self.screen, bar_rect.x, bar_rect.y, bar_rect.width, bar_rect.height,
+                                      self.sound.sfx_volume, (255, 185, 0), int(self.sound.sfx_volume * 100), is_selected, ui_scale)
 
         # Pause kılavuz metni kaldırıldı
-    
-    def _draw_volume_bar(self, x, y, width, height, value, color, pct, is_selected, ui_scale=1.0):
-        """Grafik tabanlı ses seviyesi çubuğu çiz"""
-        # Arka plan (boş bar)
-        bg_rect = pygame.Rect(x, y, width, height)
-        pygame.draw.rect(self.screen, (40, 45, 60), bg_rect, border_radius=4)
-        pygame.draw.rect(self.screen, (60, 70, 90), bg_rect, 1, border_radius=4)
-        
-        # Dolu kısım
-        if value > 0:
-            fill_width = int(width * value)
-            fill_rect = pygame.Rect(x, y, fill_width, height)
-            pygame.draw.rect(self.screen, color, fill_rect, border_radius=4)
-        
-        # Ok göstergeleri (seçiliyse)
-        if is_selected:
-            # Sol ok
-            pygame.draw.polygon(self.screen, (150, 160, 180), [
-                (x - self._sx(12, ui_scale), y + height // 2),
-                (x - self._sx(5, ui_scale), y + self._sx(3, ui_scale)),
-                (x - self._sx(5, ui_scale), y + height - self._sx(3, ui_scale))
-            ])
-            # Sağ ok
-            pygame.draw.polygon(self.screen, (150, 160, 180), [
-                (x + width + self._sx(12, ui_scale), y + height // 2),
-                (x + width + self._sx(5, ui_scale), y + self._sx(3, ui_scale)),
-                (x + width + self._sx(5, ui_scale), y + height - self._sx(3, ui_scale))
-            ])
-        
-        # Yüzde metni
-        pct_font = retro_style.get_font(self._sx(18, ui_scale, minimum=10), bold=True)
-        pct_text = pct_font.render(f'{pct}%', True, (255, 255, 255))
-        pct_rect = pct_text.get_rect(center=(x + width // 2, y + height // 2))
-        self.screen.blit(pct_text, pct_rect)
     
     def create_particles(self, count, x=None, y=None, colors=None, speed=5):
         """Partiküller oluştur - animasyon seviyesine göre sayı ayarlanır"""

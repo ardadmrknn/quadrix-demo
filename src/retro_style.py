@@ -1322,5 +1322,70 @@ class RetroStyle:
         """Oyun içi overlay"""
         self._blit_scanlines(screen)
 
+    def draw_volume_bar(
+        self,
+        screen: pygame.Surface,
+        x: int,
+        y: int,
+        width: int,
+        height: int,
+        value: float,
+        color: tuple,
+        pct: int,
+        is_selected: bool,
+        ui_scale: float = 1.0,
+    ) -> None:
+        """Premium neon ses seviyesi çubuğu (pause menüsü için)."""
+        r = height // 2
+        cy = y + height // 2
+
+        # Track – pill, iç gölge
+        track_surf = pygame.Surface((width, height), pygame.SRCALPHA)
+        pygame.draw.rect(track_surf, (16, 22, 42, 215), track_surf.get_rect(), border_radius=r)
+        pygame.draw.rect(track_surf, (60, 80, 120, 130), track_surf.get_rect(), 1, border_radius=r)
+        hl_t = pygame.Surface((max(1, width - 6), 2), pygame.SRCALPHA)
+        hl_t.fill((255, 255, 255, 14))
+        track_surf.blit(hl_t, (3, 3))
+        screen.blit(track_surf, (x, y))
+
+        # Seçiliyse track glow
+        if is_selected:
+            glow_s = pygame.Surface((width + 16, height + 16), pygame.SRCALPHA)
+            for gi, ga in enumerate([12, 28, 50]):
+                gr = pygame.Rect(gi * 2, gi * 2, width + 16 - gi * 4, height + 16 - gi * 4)
+                pygame.draw.rect(glow_s, (*color, ga), gr, border_radius=r + 8 - gi * 2)
+            screen.blit(glow_s, (x - 8, y - 8))
+
+        # Dolgu – neon pill + üst vurgu + glow katman
+        fill_w = int(width * max(0.0, min(1.0, value)))
+        if fill_w > 2:
+            fill_surf = pygame.Surface((fill_w, height), pygame.SRCALPHA)
+            pygame.draw.rect(fill_surf, (*color, 230), fill_surf.get_rect(), border_radius=r)
+            hl_f = pygame.Surface((max(1, fill_w - 6), max(1, height // 3)), pygame.SRCALPHA)
+            hl_f.fill((255, 255, 255, 70))
+            fill_surf.blit(hl_f, (3, 2))
+            gc = tuple(min(255, c + 55) for c in color)
+            pygame.draw.rect(fill_surf, (*gc, 40), fill_surf.get_rect(), border_radius=r)
+            screen.blit(fill_surf, (x, y))
+
+        # Knob
+        knob_x = x + fill_w
+        knob_r = r + 2
+        if is_selected:
+            glow_k = pygame.Surface((knob_r * 2 + 10, knob_r * 2 + 10), pygame.SRCALPHA)
+            for gi, ga in enumerate([20, 40, 65]):
+                gkr = knob_r + 5 - gi * 2
+                pygame.draw.circle(glow_k, (*color, ga), (knob_r + 5, knob_r + 5), max(1, gkr))
+            screen.blit(glow_k, (knob_x - knob_r - 5, cy - knob_r - 5))
+        pygame.draw.circle(screen, color, (knob_x, cy), knob_r, 2)
+        inner_c = (255, 255, 255) if is_selected else (200, 212, 230)
+        pygame.draw.circle(screen, inner_c, (knob_x, cy), knob_r - 2)
+        pygame.draw.circle(screen, (255, 255, 255), (knob_x - 2, cy - max(1, knob_r // 3)), max(1, knob_r // 4))
+
+        # Yüzde metni
+        font_size = max(9, int(round(15 * ui_scale)))
+        pct_surf = self.get_font(font_size, bold=True).render(f'{pct}%', True, (255, 255, 255))
+        screen.blit(pct_surf, pct_surf.get_rect(center=(x + width // 2, cy)))
+
 
 retro_style = RetroStyle()
