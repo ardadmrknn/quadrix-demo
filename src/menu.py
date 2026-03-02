@@ -2402,14 +2402,14 @@ class Menu:
                 mascot_y = panel_y + panel_h - draw_h
                 self.screen.blit(mascot_draw, (mascot_x, mascot_y))
 
+        # Dil paneli — kartların üzerinde, ama modal dialog'ların altında
+        self._draw_menu_language_panel()
+
         if self.show_exit_prompt:
             self._draw_exit_prompt_panel()
 
         if self.show_daily_prompt:
             self._draw_daily_prompt_panel()
-
-        # Dil paneli — tüm dashboard elemanlarının üzerinde çizilmeli
-        self._draw_menu_language_panel()
 
         # Gamepad bağlıysa küçük gösterge
         self._draw_gamepad_indicator()
@@ -5049,6 +5049,11 @@ class AchievementScreen:
         self.font_progress = retro_style.get_font(24)
         self._refresh_fonts_for_language(force=True)
         self.scroll_offset = 0
+        self._sb_thumb_rect: 'pygame.Rect | None' = None
+        self._sb_container_rect: 'pygame.Rect | None' = None
+        self._sb_drag_active: bool = False
+        self._sb_drag_offset_y: int = 0
+        self._max_scroll_cache: int = 0
         # Menüyle aynı shared katman: ekran geçişlerinde animasyon kesilmesin.
         self.background_fx = get_shared_falling_blocks_layer('default')
 
@@ -5086,13 +5091,42 @@ class AchievementScreen:
             if event.key == pygame.K_UP:
                 self.scroll_offset = max(0, self.scroll_offset - 40)
             elif event.key == pygame.K_DOWN:
-                self.scroll_offset += 40
+                self.scroll_offset = min(self._max_scroll_cache, self.scroll_offset + 40)
             elif event.key == pygame.K_ESCAPE:
                 return 'back'
         elif event.type == pygame.MOUSEWHEEL:
-            # Mouse scroll desteği
             self.scroll_offset -= event.y * 40
-            self.scroll_offset = max(0, self.scroll_offset)
+            self.scroll_offset = max(0, min(self.scroll_offset, self._max_scroll_cache))
+        elif event.type == pygame.MOUSEMOTION:
+            mouse_pos = normalize_mouse_pos(getattr(event, 'pos', None)) or event.pos
+            if self._sb_drag_active and self._sb_container_rect:
+                _az = max(10, 10 + 2)
+                track_y = self._sb_container_rect.top + _az + 2
+                track_h = max(4, self._sb_container_rect.height - _az * 2 - 4)
+                thumb_h = self._sb_thumb_rect.height if self._sb_thumb_rect else 30
+                new_top = mouse_pos[1] - self._sb_drag_offset_y - track_y
+                new_top = max(0, min(new_top, track_h - thumb_h))
+                ratio = new_top / max(1, track_h - thumb_h)
+                self.scroll_offset = int(ratio * self._max_scroll_cache)
+        elif event.type == pygame.MOUSEBUTTONDOWN:
+            if event.button == 1:
+                mouse_pos = normalize_mouse_pos(getattr(event, 'pos', None)) or event.pos
+                if self._sb_thumb_rect and self._sb_thumb_rect.collidepoint(mouse_pos):
+                    self._sb_drag_active = True
+                    self._sb_drag_offset_y = mouse_pos[1] - self._sb_thumb_rect.y
+                    return None
+                if self._sb_container_rect and self._sb_container_rect.collidepoint(mouse_pos):
+                    _az = max(10, 10 + 2)
+                    _ty = self._sb_container_rect.top + _az + 2
+                    _th = max(4, self._sb_container_rect.height - _az * 2 - 4)
+                    _tmh = self._sb_thumb_rect.height if self._sb_thumb_rect else 20
+                    _rel = mouse_pos[1] - _ty - _tmh // 2
+                    self.scroll_offset = int(max(0.0, min(1.0, _rel / max(1, _th - _tmh))) * self._max_scroll_cache)
+                    return None
+        elif event.type == pygame.MOUSEBUTTONUP:
+            if event.button == 1:
+                self._sb_drag_active = False
+                self._sb_drag_offset_y = 0
         return None
     
     def draw(self):
@@ -5340,13 +5374,19 @@ class AchievementScreen:
                 22,
                 visible_height
             )
-            retro_style.draw_scrollbar(
+            self._sb_container_rect = scrollbar_rect
+            self._max_scroll_cache = max_scroll
+            self._sb_thumb_rect = retro_style.draw_scrollbar(
                 self.screen,
                 scrollbar_rect,
                 self.scroll_offset,
                 total_content,
                 visible_height
             )
+        else:
+            self._sb_thumb_rect = None
+            self._sb_container_rect = None
+            self._max_scroll_cache = 0
 
 
 

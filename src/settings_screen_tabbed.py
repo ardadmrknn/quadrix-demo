@@ -2539,38 +2539,62 @@ class TabbedSettingsScreen:
         bar_left += 2
 
         if bar_right > bar_left + 30:
-            bar_h = 10
+            bar_h = 14
+            r = bar_h // 2
             bar_rect = pygame.Rect(bar_left, rect.centery - bar_h // 2, bar_right - bar_left, bar_h)
             self._slider_bar_rects[key] = bar_rect
 
-            # Track arka planı
-            pygame.draw.rect(self.screen, (30, 38, 58), bar_rect, border_radius=4)
-            pygame.draw.rect(self.screen, (50, 60, 85), bar_rect, 1, border_radius=4)
+            # Slider rengi (dolgu + knob için ortak) – neon palette
+            if key in ('music_volume', 'menu_music_volume'):
+                fill_color = (0, 210, 255)    # neon cyan
+            elif key == 'sfx_volume':
+                fill_color = (255, 185, 0)    # neon gold
+            elif key == 'bg_transparency':
+                fill_color = (0, 255, 160)    # neon green
+            elif key == 'menu_transparency':
+                fill_color = (190, 60, 255)   # neon purple
+            elif key in ('das_delay', 'das_repeat', 'soft_drop_speed'):
+                fill_color = (255, 80, 160)   # neon pink
+            else:
+                fill_color = (0, 180, 255)    # neon blue
 
-            # Dolgu
+            # Track – pill şekli, derinlik gölgesi
+            track_surf = pygame.Surface((bar_rect.width, bar_h), pygame.SRCALPHA)
+            pygame.draw.rect(track_surf, (20, 28, 48, 200), track_surf.get_rect(), border_radius=r)
+            pygame.draw.rect(track_surf, (60, 80, 120, 130), track_surf.get_rect(), 1, border_radius=r)
+            hl_t = pygame.Surface((max(1, bar_rect.width - 6), 2), pygame.SRCALPHA)
+            hl_t.fill((255, 255, 255, 14))
+            track_surf.blit(hl_t, (3, 3))
+            self.screen.blit(track_surf, bar_rect.topleft)
+
+            # Dolgu – parlak pill + üst vurgu şeridi
             fill_w = int(bar_rect.width * ratio)
-            if fill_w > 0:
-                fill_rect = pygame.Rect(bar_rect.x, bar_rect.y, fill_w, bar_rect.height)
-                # Gradient renk
-                if key == 'music_volume':
-                    fill_color = (80, 180, 255)
-                elif key == 'sfx_volume':
-                    fill_color = (255, 180, 80)
-                elif key == 'bg_transparency':
-                    fill_color = (100, 200, 150)
-                elif key == 'menu_transparency':
-                    fill_color = (180, 140, 255)
-                else:
-                    fill_color = (100, 180, 255)
-                pygame.draw.rect(self.screen, fill_color, fill_rect, border_radius=4)
+            if fill_w > 2:
+                fill_surf = pygame.Surface((fill_w, bar_h), pygame.SRCALPHA)
+                pygame.draw.rect(fill_surf, (*fill_color, 220), fill_surf.get_rect(), border_radius=r)
+                # üst parlak vurgu
+                hl_f = pygame.Surface((max(1, fill_w - 8), 3), pygame.SRCALPHA)
+                hl_f.fill((255, 255, 255, 70))
+                fill_surf.blit(hl_f, (4, 2))
+                # hafif glow overlay
+                glow_c = tuple(min(255, c + 55) for c in fill_color)
+                pygame.draw.rect(fill_surf, (*glow_c, 45), fill_surf.get_rect(), border_radius=r)
+                self.screen.blit(fill_surf, bar_rect.topleft)
 
-            # Knob
+            # Knob – glow + dış halka + iç daire + vurgu nokta
             knob_x = bar_rect.x + fill_w
-            knob_r = 7
-            knob_color = (255, 255, 255) if selected else (180, 190, 210)
-            pygame.draw.circle(self.screen, knob_color, (knob_x, rect.centery), knob_r)
-            if selected:
-                pygame.draw.circle(self.screen, (80, 160, 255), (knob_x, rect.centery), knob_r, 2)
+            knob_r = 9
+            is_active = selected or (self._slider_drag_active and self._slider_drag_key == key)
+            if is_active:
+                glow_surf = pygame.Surface((knob_r * 2 + 12, knob_r * 2 + 12), pygame.SRCALPHA)
+                for gi, ga in enumerate([20, 40, 60]):
+                    gr = knob_r + 6 - gi * 2
+                    pygame.draw.circle(glow_surf, (*fill_color, ga), (knob_r + 6, knob_r + 6), gr)
+                self.screen.blit(glow_surf, (knob_x - knob_r - 6, rect.centery - knob_r - 6))
+            pygame.draw.circle(self.screen, fill_color, (knob_x, rect.centery), knob_r, 2)
+            knob_inner = (255, 255, 255) if is_active else (200, 212, 230)
+            pygame.draw.circle(self.screen, knob_inner, (knob_x, rect.centery), knob_r - 2)
+            pygame.draw.circle(self.screen, (255, 255, 255), (knob_x - 2, rect.centery - 3), max(1, knob_r // 4))
 
     def _draw_selector_value(self, rect: pygame.Rect, item: dict, selected: bool) -> dict | None:
         """Selector tipi ayar için < değer > göster."""
