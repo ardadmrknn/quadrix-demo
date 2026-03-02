@@ -764,38 +764,8 @@ _MODE_TO_LB: dict[str, str] = {
 }
 
 
-def _find_leaderboard_sync(lb_name: str, timeout: float = 5.0) -> int | None:
-    """FindLeaderboard çağrısı ve callback ile handle al (senkron-blocking)."""
-    if not is_available() or not _isteam_user_stats:
-        return None
-    if lb_name in _lb_handle_cache:
-        return _lb_handle_cache[lb_name]
-    try:
-        api_call = _dll.SteamAPI_ISteamUserStats_FindLeaderboard(  # type: ignore[union-attr]
-            _isteam_user_stats,
-            lb_name.encode('utf-8'),
-        )
-        if not api_call:
-            return None
-        # Callback pump ile sonucu bekle
-        deadline = time.monotonic() + timeout
-        while time.monotonic() < deadline:
-            run_callbacks()
-            # Handle cache'e yazıldıysa tamamdır
-            if lb_name in _lb_handle_cache:
-                return _lb_handle_cache[lb_name]
-            time.sleep(0.05)
-    except Exception as e:
-        print(f"[Steam] FindLeaderboard hatası ({lb_name}): {e}")
-    return None
-
-
-class _LeaderboardSearchResultStruct(ctypes.Structure):
-    """LeaderboardFindResult_t call result yapısı (Steamworks SDK)."""
-    _fields_ = [
-        ("m_hSteamLeaderboard", ctypes.c_uint64),
-        ("m_bLeaderboardFound", ctypes.c_uint8),
-    ]
+# NOT: _find_leaderboard_sync kaldırıldı — pump thread ile yarış durumu oluşturuyordu.
+# Yerine _find_leaderboard_handle_by_api (GetAPICallResult-polling tabanlı, thread-safe) kullanılır.
 
 
 # Steam callback ID sabitleri (ISteamUserStats = 1100-base)
@@ -892,12 +862,21 @@ def _find_leaderboard_handle_by_api(lb_name: str, timeout: float = 6.0) -> int |
         if found and found.m_bLeaderboardFound and found.m_hSteamLeaderboard:
             handle = int(found.m_hSteamLeaderboard)
             _lb_handle_cache[lb_name] = handle
-            print(f"[Steam] Leaderboard bulundu: {lb_name} → handle={handle}")
+            try:
+                print(f"[Steam] Leaderboard found: {lb_name} -> handle={handle}")
+            except Exception:
+                pass
             return handle
         else:
-            print(f"[Steam] Leaderboard bulunamadı: {lb_name}")
+            try:
+                print(f"[Steam] Leaderboard not found: {lb_name}")
+            except Exception:
+                pass
     except Exception as e:
-        print(f"[Steam] FindLeaderboard hatası ({lb_name}): {e}")
+        try:
+            print(f"[Steam] FindLeaderboard error ({lb_name}): {e}")
+        except Exception:
+            pass
     return None
 
 
@@ -916,8 +895,20 @@ _LB_NAME_TO_ID: dict[str, int] = {
     "quadrix_tetris2":  19192083,
 }
 
-_PARTNER_API_KEY = os.environ.get('STEAM_WEB_API_KEY', '').strip()
+# NOT: _PARTNER_API_KEY modül import'unda okunur AMA çalışma zamanı
+# güncellemelerini yakalamak için _get_partner_api_key() fonksiyonu kullanılır.
+_PARTNER_API_KEY_CACHED: str | None = None
 _APP_ID_INT = 4428040
+
+
+def _get_partner_api_key() -> str:
+    """Partner API key'i döndürür (env var her seferinde kontrol edilir)."""
+    global _PARTNER_API_KEY_CACHED
+    val = os.environ.get('STEAM_WEB_API_KEY', '').strip()
+    if val:
+        _PARTNER_API_KEY_CACHED = val
+        return val
+    return _PARTNER_API_KEY_CACHED or ''
 
 # In-memory cache for dynamically resolved leaderboard IDs (session-lived)
 _lb_id_web_cache: dict[str, int] = {}
@@ -927,18 +918,19 @@ def _resolve_lb_id_via_web_api(lb_name: str) -> int | None:
     """Resolve leaderboard numeric ID from Steam Web API (FindLeaderboard/v1/).
 
     Caches results for the session. Returns None on failure.
-    Requires _PARTNER_API_KEY and _APP_ID_INT to be set.
+    Requires _get_partner_api_key() and _APP_ID_INT to be set.
     """
     if lb_name in _lb_id_web_cache:
         return _lb_id_web_cache[lb_name]
-    if not _PARTNER_API_KEY or not _APP_ID_INT:
+    api_key = _get_partner_api_key()
+    if not api_key or not _APP_ID_INT:
         return None
     try:
         import urllib.request
         import urllib.parse
         import json
         params = urllib.parse.urlencode({
-            'key': _PARTNER_API_KEY,
+            'key': api_key,
             'appid': _APP_ID_INT,
             'name': lb_name,
         })
@@ -988,10 +980,16 @@ def _resolve_lb_id_via_web_api(lb_name: str) -> int | None:
 
             if lb_id:
                 _lb_id_web_cache[lb_name] = lb_id
-                print(f"[Steam] Leaderboard ID resolved: {lb_name} \u2192 {lb_id}")
+                try:
+                    print(f"[Steam] Leaderboard ID resolved: {lb_name} -> {lb_id}")
+                except Exception:
+                    pass
                 return lb_id
     except Exception as e:
-        print(f"[Steam] Leaderboard ID resolve failed ({lb_name}): {e}")
+        try:
+            print(f"[Steam] Leaderboard ID resolve failed ({lb_name}): {e}")
+        except Exception:
+            pass
     return None
 
 
@@ -1006,7 +1004,7 @@ def _is_partner_fallback_enabled() -> bool:
     if os.environ.get('STEAM_PARTNER_WRITE_FALLBACK', '0').strip() == '1':
         return True
     # Publisher key mevcutsa otomatik aktifleştir (playtest/dev senaryosu)
-    if _PARTNER_API_KEY:
+    if _get_partner_api_key():
         return True
     return False
 
@@ -1024,8 +1022,9 @@ def _submit_score_via_partner_api(lb_name: str, score: int, steam_id_str: str) -
     try:
         import urllib.request
         import urllib.parse
+        api_key = _get_partner_api_key()
         params = urllib.parse.urlencode({
-            'key': _PARTNER_API_KEY,
+            'key': api_key,
             'appid': _APP_ID_INT,
             'leaderboardid': lb_id,
             'steamid': steam_id_str,
@@ -1083,7 +1082,7 @@ def submit_score(mode: str, score: int) -> bool:
                     api_call = _dll.SteamAPI_ISteamUserStats_UploadLeaderboardScore(  # type: ignore[union-attr]
                         _isteam_user_stats,
                         ctypes.c_uint64(handle),
-                        0,   # k_ELeaderboardUploadScoreMethodKeepBest
+                        1,   # k_ELeaderboardUploadScoreMethodKeepBest (0=None, 1=KeepBest, 2=ForceUpdate)
                         ctypes.c_int32(score),
                         None, 0,
                     )
@@ -1238,7 +1237,6 @@ def fetch_leaderboard_entries(
         _setup_get_entries_function(_dll)
         _dll._entries_setup_done = True  # type: ignore[attr-defined]
 
-    results: list[dict[str, Any]] = []
     result_event = threading.Event()
     result_holder: list[list[dict]] = [[]]
 
@@ -1260,20 +1258,55 @@ def fetch_leaderboard_entries(
                 safe_limit,
             )
             if not api_call:
+                print(f"[Steam] DownloadLeaderboardEntries çağrı başarısız: {lb_name}")
                 result_event.set()
                 return
 
-            # Download callback bekle
-            deadline = time.monotonic() + min(timeout, 6.0)
-            # Callbacks pump (pump threadi de çalışıyor ama burada ekstra basin)
-            while time.monotonic() < deadline:
-                run_callbacks()
-                time.sleep(0.05)
+            # LeaderboardScoresDownloaded_t callback'ini bekle (k_iSteamUserStatsCallbacks + 5 = 1105)
+            _CB_LEADERBOARD_SCORES_DOWNLOADED = 1105
+            download_result = _DownloadLeaderboardEntriesResult()
+            confirmed = _get_api_call_result(
+                api_call, download_result, _CB_LEADERBOARD_SCORES_DOWNLOADED,
+                timeout=min(timeout, 8.0))
 
-            # Sonuçları oku — ancak GetDownloadedLeaderboardEntry call result gerektirir.
-            # Basit yaklaşım: GetLeaderboardEntryCount ile ne kadar indi, sonra oku.
-            # NOT: Bu syncronous değil; callback sonucunu almak için call result dispatcher gerekiyor.
-            # Şimdilik boş döndür, gelecekte callback dispatcher eklenecek.
+            if not confirmed:
+                print(f"[Steam] DownloadLeaderboardEntries callback timeout: {lb_name}")
+                result_event.set()
+                return
+
+            entry_count = confirmed.m_cEntryCount
+            entries_handle = confirmed.m_hSteamLeaderboardEntries
+
+            if entry_count <= 0 or not entries_handle:
+                print(f"[Steam] Leaderboard boş veya handle yok: {lb_name} (count={entry_count})")
+                result_event.set()
+                return
+
+            # Her girişi oku
+            entries: list[dict[str, Any]] = []
+            for idx in range(min(entry_count, safe_limit)):
+                entry = _LeaderboardEntry()
+                try:
+                    ok = _dll.SteamAPI_ISteamUserStats_GetDownloadedLeaderboardEntry(  # type: ignore[union-attr]
+                        _isteam_user_stats,
+                        ctypes.c_uint64(entries_handle),
+                        idx,
+                        ctypes.byref(entry),
+                        None,  # pDetails
+                        0,     # cDetailsMax
+                    )
+                    if ok:
+                        entries.append({
+                            "rank": int(entry.m_nGlobalRank),
+                            "score": int(entry.m_nScore),
+                            "steam_id": str(entry.m_steamIDUser),
+                        })
+                except Exception as e:
+                    print(f"[Steam] GetDownloadedLeaderboardEntry[{idx}] hatası: {e}")
+
+            result_holder[0] = entries
+            print(f"[Steam] SDK leaderboard OK: {lb_name} -> {len(entries)} giris")
+
         except Exception as e:
             print(f"[Steam] fetch_leaderboard_entries hatası: {e}")
         finally:

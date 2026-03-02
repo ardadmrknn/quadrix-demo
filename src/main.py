@@ -897,7 +897,9 @@ def main():
     user_manager = UserManager()  # Kullanıcı yöneticisi
 
     steam_leaderboard_service = SteamLeaderboardService(
-        backend_base_url=os.getenv('LEADERBOARD_BACKEND_URL', 'http://127.0.0.1:8787')
+        backend_base_url=os.getenv('LEADERBOARD_BACKEND_URL', ''),
+        publisher_key=os.getenv('STEAM_WEB_API_KEY', ''),
+        app_id=int(os.getenv('STEAM_APP_ID', '0') or '0'),
     )
     steam_mode_scores_cache: dict[str, list[dict]] = {}
     steam_mode_scores_loading = False
@@ -907,7 +909,17 @@ def main():
     def _load_steam_mode_scores(limit=3, force=False):
         nonlocal steam_mode_scores_loading, steam_mode_scores_last_attempt
 
-        if not steam_leaderboard_service.is_configured():
+        # SDK erişilebilir mi kontrol et
+        _sdk_available = False
+        try:
+            import steam_integration as _si_check
+            _sdk_available = _si_check.is_available()
+        except Exception:
+            pass
+
+        service_configured = steam_leaderboard_service.is_configured()
+
+        if not service_configured and not _sdk_available:
             return steam_mode_scores_cache
 
         now_s = time.monotonic()
@@ -924,7 +936,24 @@ def main():
         def _load_worker():
             nonlocal steam_mode_scores_loading
             try:
-                data = steam_leaderboard_service.fetch_all_mode_highscores(modes, limit=limit)
+                data: dict[str, list[dict]] = {}
+
+                # Yol 1+2: Backend proxy veya Direct Web API
+                if service_configured:
+                    data = steam_leaderboard_service.fetch_all_mode_highscores(modes, limit=limit)
+
+                # Yol 3: SDK fallback
+                if _sdk_available:
+                    try:
+                        import steam_integration as _si
+                        for mode in modes:
+                            if not data.get(mode):
+                                sdk_entries = _si.fetch_global_scores(mode, limit=limit)
+                                if sdk_entries:
+                                    data[mode] = sdk_entries
+                    except Exception:
+                        pass
+
                 if data:
                     steam_mode_scores_cache.clear()
                     steam_mode_scores_cache.update(data)

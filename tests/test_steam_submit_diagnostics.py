@@ -49,8 +49,8 @@ class TestSubmitScoreDiagnostics(unittest.TestCase):
         logged = []
 
         # Partner API key temizle (fallback auto-enable olmasın)
-        original_key = m._PARTNER_API_KEY
-        m._PARTNER_API_KEY = ''
+        original_key = m._PARTNER_API_KEY_CACHED
+        m._PARTNER_API_KEY_CACHED = ''
 
         # Tüm patch'ler test bloğu boyunca aktif kalıyor
         try:
@@ -61,7 +61,7 @@ class TestSubmitScoreDiagnostics(unittest.TestCase):
                 m.submit_score('mystery', 50000)
                 time.sleep(0.4)  # worker thread'in bitmesini bekle
         finally:
-            m._PARTNER_API_KEY = original_key
+            m._PARTNER_API_KEY_CACHED = original_key
 
         sdk_fail_warn = any('basarisiz' in msg or 'STEAM_WEB_API_KEY' in msg for msg in logged)
         self.assertTrue(sdk_fail_warn, f"SDK başarısız uyarı mesajı bulunamadı. Loglar: {logged}")
@@ -79,8 +79,8 @@ class TestSubmitScoreDiagnostics(unittest.TestCase):
         m._lb_handle_cache = {'quadrix_mystery': 12345}
 
         # Partner API key temizle (fallback auto-enable olmasın)
-        original_key = m._PARTNER_API_KEY
-        m._PARTNER_API_KEY = ''
+        original_key = m._PARTNER_API_KEY_CACHED
+        m._PARTNER_API_KEY_CACHED = ''
 
         logged = []
 
@@ -92,7 +92,7 @@ class TestSubmitScoreDiagnostics(unittest.TestCase):
                 m.submit_score('mystery', 50000)
                 time.sleep(0.4)
         finally:
-            m._PARTNER_API_KEY = original_key
+            m._PARTNER_API_KEY_CACHED = original_key
 
         fallback_warn = any('STEAM_WEB_API_KEY' in msg or 'basarisiz' in msg for msg in logged)
         self.assertTrue(fallback_warn, f"Fallback uyarı mesajı bulunamadı. Loglar: {logged}")

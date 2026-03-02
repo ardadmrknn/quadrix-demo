@@ -42,8 +42,8 @@ class TestPartnerFallbackFlagOff(unittest.TestCase):
         fake_result.m_bSuccess = 0
 
         # Partner API key de temiz olmalı (auto-enable olmasın)
-        original_key = m._PARTNER_API_KEY
-        m._PARTNER_API_KEY = ''
+        original_key = m._PARTNER_API_KEY_CACHED
+        m._PARTNER_API_KEY_CACHED = ''
 
         try:
             with patch.object(m, '_get_api_call_result', return_value=fake_result), \
@@ -53,7 +53,7 @@ class TestPartnerFallbackFlagOff(unittest.TestCase):
                 m.submit_score('mystery', 99999)
                 import time; time.sleep(0.3)
         finally:
-            m._PARTNER_API_KEY = original_key
+            m._PARTNER_API_KEY_CACHED = original_key
         mock_partner.assert_not_called()
 
     def test_is_partner_fallback_enabled_default_false(self):

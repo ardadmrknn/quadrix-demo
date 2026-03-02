@@ -72,9 +72,7 @@ class SteamLeaderboardService:
     @staticmethod
     def _resolve_backend_base_url(raw_base: str | None) -> str:
         base = str(raw_base or "").strip().rstrip("/")
-        if base:
-            return base
-        return DEFAULT_LOCAL_BACKEND_URL
+        return base
 
     @staticmethod
     def _read_app_id_from_file() -> int:
@@ -424,10 +422,15 @@ class SteamLeaderboardService:
             entries = self._normalize_entries(payload.get("entries"))
             if entries:
                 return entries
-            if (not payload) and self.last_error and self._is_direct_mode():
-                return self._fetch_direct_entries(mode, data_request="RequestGlobal", limit=safe_limit)
+            # Proxy boş/hatalı döndüyse → direct Steam Web API fallback
+            if self._is_direct_mode():
+                direct_entries = self._fetch_direct_entries(mode, data_request="RequestGlobal", limit=safe_limit)
+                if direct_entries:
+                    return direct_entries
             return entries
-        return self._fetch_direct_entries(mode, data_request="RequestGlobal", limit=safe_limit)
+        if self._is_direct_mode():
+            return self._fetch_direct_entries(mode, data_request="RequestGlobal", limit=safe_limit)
+        return []
 
     def fetch_mode_friend_highscores(self, mode: str, steam_id: str | int | None = None, limit: int = 3) -> list[dict[str, Any]]:
         """Friends skorlarını döndürür.

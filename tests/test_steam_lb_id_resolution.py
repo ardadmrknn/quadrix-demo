@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 import unittest
 from io import BytesIO
@@ -64,7 +65,7 @@ class TestResolveLbIdViaWebApi(unittest.TestCase):
         with patch('ctypes.CDLL', return_value=MagicMock()):
             import src.steam_integration as m
         # Testlerin çalışması için Partner API key ve App ID ayarla
-        m._PARTNER_API_KEY = 'FAKE_TEST_KEY'
+        m._PARTNER_API_KEY_CACHED = 'FAKE_TEST_KEY'
         m._APP_ID_INT = 4428040
         return m
 
@@ -178,19 +179,20 @@ class TestResolveLbIdViaWebApi(unittest.TestCase):
         self.assertIsNone(result)
 
     def test_returns_none_when_no_api_key(self):
-        """_PARTNER_API_KEY boşsa None dönmeli, HTTP isteği atmamalı."""
+        """_PARTNER_API_KEY_CACHED boşsa None dönmeli, HTTP isteği atmamalı."""
         m = self._import_module()
         m._lb_id_web_cache.clear()
 
-        original_key = m._PARTNER_API_KEY
+        original_key = m._PARTNER_API_KEY_CACHED
         try:
-            m._PARTNER_API_KEY = ''
+            m._PARTNER_API_KEY_CACHED = ''
+            os.environ.pop('STEAM_WEB_API_KEY', None)
             with patch('urllib.request.urlopen') as mock_open:
                 result = m._resolve_lb_id_via_web_api('quadrix_zen')
                 mock_open.assert_not_called()
             self.assertIsNone(result)
         finally:
-            m._PARTNER_API_KEY = original_key
+            m._PARTNER_API_KEY_CACHED = original_key
 
 
 if __name__ == '__main__':

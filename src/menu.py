@@ -419,7 +419,7 @@ class Menu:
         # publisher_key ve app_id sadece ortam değişkenleriyle aktif olur;
         # proxy yoksa ve STEAM_WEB_API_KEY set edilmişse direct fallback devreye girer.
         self._leaderboard_service = SteamLeaderboardService(
-            backend_base_url=os.getenv('LEADERBOARD_BACKEND_URL', 'http://127.0.0.1:8787'),
+            backend_base_url=os.getenv('LEADERBOARD_BACKEND_URL', ''),
             publisher_key=os.getenv('STEAM_WEB_API_KEY', ''),
             app_id=int(os.getenv('STEAM_APP_ID', '0') or '0'),
         )
@@ -2423,7 +2423,13 @@ class Menu:
         self._refresh_mystery_leaderboard_cache(force=True)
 
     def _refresh_mystery_leaderboard_cache(self, force: bool = False):
-        """Kart Ustalığı için Steam leaderboard cache'ini yenile."""
+        """Kart Ustalığı için Steam leaderboard cache'ini yenile.
+
+        Fallback zinciri:
+        1. Backend proxy (LEADERBOARD_BACKEND_URL set ise)
+        2. Direct Steam Web API (STEAM_WEB_API_KEY + STEAM_APP_ID set ise)
+        3. Steam SDK client (Steam çalışıyorsa — VPS/key gerekmez)
+        """
         if self._mystery_lb_loading:
             return
 
@@ -2432,8 +2438,18 @@ class Menu:
             return
         self._mystery_lb_last_fetch_ms = now
 
+        # SDK erişilebilir mi kontrol et
+        _sdk_available = False
+        try:
+            import steam_integration as _si_check
+            _sdk_available = _si_check.is_available()
+        except Exception:
+            pass
+
         service = self._leaderboard_service
-        if not service.is_configured():
+        service_configured = service.is_configured()
+
+        if not service_configured and not _sdk_available:
             self._mystery_lb_entries = {'global': [], 'friends': []}
             self._mystery_lb_error = t('menu_lb_error_config_missing')
             return
@@ -2457,11 +2473,41 @@ class Menu:
                 except Exception:
                     pass
 
-                global_entries = service.fetch_mode_highscores('mystery', limit=10)
-                global_error = service.last_error
+                global_entries: list[dict] = []
+                friend_entries: list[dict] = []
+                global_error = ''
+                friend_error = ''
 
-                friend_entries = service.fetch_mode_friend_highscores('mystery', limit=10)
-                friend_error = service.last_error
+                # --- Yol 1+2: Backend proxy veya Direct Web API ---
+                if service_configured:
+                    global_entries = service.fetch_mode_highscores('mystery', limit=10)
+                    global_error = service.last_error
+
+                    friend_entries = service.fetch_mode_friend_highscores('mystery', limit=10)
+                    friend_error = service.last_error
+
+                # --- Yol 3: SDK fallback (proxy/direct boş döndüyse) ---
+                if not global_entries and _sdk_available:
+                    try:
+                        import steam_integration as _si
+                        sdk_global = _si.fetch_global_scores('mystery', limit=10)
+                        if sdk_global:
+                            global_entries = sdk_global
+                            global_error = ''
+                            print(f"[Steam] SDK leaderboard fallback OK: mystery global → {len(sdk_global)} giriş")
+                    except Exception as _sdk_err:
+                        print(f"[Steam] SDK leaderboard fallback hatası: {_sdk_err}")
+
+                if not friend_entries and _sdk_available:
+                    try:
+                        import steam_integration as _si
+                        sdk_friends = _si.fetch_friend_scores('mystery', limit=10)
+                        if sdk_friends:
+                            friend_entries = sdk_friends
+                            friend_error = ''
+                            print(f"[Steam] SDK friend leaderboard fallback OK: mystery → {len(sdk_friends)} giriş")
+                    except Exception as _sdk_err:
+                        print(f"[Steam] SDK friend leaderboard fallback hatası: {_sdk_err}")
 
                 self._mystery_lb_entries = {
                     'global': global_entries,

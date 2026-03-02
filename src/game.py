@@ -2964,7 +2964,11 @@ class Game:
                 if _backend_url and _steam_int.is_available():
                     try:
                         from steam_leaderboards import SteamLeaderboardService
-                        _svc = SteamLeaderboardService(backend_base_url=_backend_url)
+                        _svc = SteamLeaderboardService(
+                            backend_base_url=_backend_url,
+                            publisher_key=os.environ.get('STEAM_WEB_API_KEY', ''),
+                            app_id=int(os.environ.get('STEAM_APP_ID', '0') or '0'),
+                        )
                         _ticket = _steam_int.get_auth_session_ticket()
                         if _ticket and _svc.submit_score(self.game_mode, self.board.score, ticket=_ticket):
                             _proxy_written = True
