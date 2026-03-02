@@ -209,6 +209,12 @@ class ExtrasScreen:
         self.selected = 0
         self.option_rects = []
         self.scroll_offset = 0
+        # Scrollbar drag state
+        self._sb_thumb_rect: 'pygame.Rect | None' = None
+        self._sb_container_rect: 'pygame.Rect | None' = None
+        self._sb_drag_active: bool = False
+        self._sb_drag_offset_y: int = 0
+        self._cached_max_scroll: int = 0
         self.background_fx = get_shared_falling_blocks_layer('default')
         
         # Grid ayarları (UI temasına göre)
@@ -358,6 +364,19 @@ class ExtrasScreen:
         
         elif event.type == pygame.MOUSEMOTION:
             mouse_pos = normalize_mouse_pos(getattr(event, 'pos', None)) or event.pos
+            # Scrollbar drag
+            if self._sb_drag_active and self._sb_container_rect:
+                sb_c = self._sb_container_rect
+                _az = max(10, 8 + 2)  # bar_width=8 → arrow_zone=10
+                track_y = sb_c.top + _az + 2
+                track_h = max(4, sb_c.height - _az * 2 - 4)
+                thumb_h = self._sb_thumb_rect.height if self._sb_thumb_rect else 30
+                max_scroll = self._cached_max_scroll
+                new_thumb_top = mouse_pos[1] - self._sb_drag_offset_y - track_y
+                new_thumb_top = max(0, min(new_thumb_top, track_h - thumb_h))
+                ratio = new_thumb_top / max(1, track_h - thumb_h)
+                self.scroll_offset = int(ratio * max_scroll)
+                return None
             # Mouse herhangi bir kartın üzerinde değilse selected'ı değiştirme
             # Bu sayede mouse karttan çıkınca anında tepki verir
             hovered_any = False
@@ -370,22 +389,35 @@ class ExtrasScreen:
         elif event.type == pygame.MOUSEBUTTONDOWN:
             if event.button == 1:
                 mouse_pos = normalize_mouse_pos(getattr(event, 'pos', None)) or event.pos
+                # Scrollbar thumb drag başlat
+                if self._sb_thumb_rect and self._sb_thumb_rect.collidepoint(mouse_pos):
+                    self._sb_drag_active = True
+                    self._sb_drag_offset_y = mouse_pos[1] - self._sb_thumb_rect.y
+                    return None
+                # Scrollbar track alanına tıklama → o pozisyona zıpla
+                if self._sb_container_rect and self._sb_container_rect.collidepoint(mouse_pos):
+                    _az = max(10, 8 + 2)
+                    _ty = self._sb_container_rect.top + _az + 2
+                    _th = max(4, self._sb_container_rect.height - _az * 2 - 4)
+                    _tmh = self._sb_thumb_rect.height if self._sb_thumb_rect else 20
+                    _max = self._cached_max_scroll
+                    _rel = mouse_pos[1] - _ty - _tmh // 2
+                    self.scroll_offset = int(max(0.0, min(1.0, _rel / max(1, _th - _tmh))) * _max)
+                    return None
                 for i, rect in enumerate(self.option_rects):
                     if rect.collidepoint(mouse_pos):
                         return self.items[i]['id']
-        
+
+        elif event.type == pygame.MOUSEBUTTONUP:
+            if event.button == 1:
+                self._sb_drag_active = False
+                self._sb_drag_offset_y = 0
+
         return None
     
     def _clamp_scroll(self):
-        """Scroll sınırlarını kontrol et"""
-        width, height = self.screen.get_size()
-        ui_scale = self._extras_ui_scale()
-        s = lambda v, minimum=1: max(minimum, int(round(v * ui_scale)))
-        rows = math.ceil(len(self.items) / self.cols)
-        total_height = rows * (self.card_size[1] + self.spacing) + s(100)
-        visible_height = height - s(150)
-        max_scroll = max(0, total_height - visible_height)
-        self.scroll_offset = max(0, min(self.scroll_offset, max_scroll))
+        """Scroll sınırlarını kontrol et (draw ile aynı max_scroll)."""
+        self.scroll_offset = max(0, min(self.scroll_offset, self._cached_max_scroll))
     
     def _ensure_visible(self):
         """Seçili öğenin görünür olmasını sağla"""
@@ -455,8 +487,15 @@ class ExtrasScreen:
         
         # Grid başlangıç
         start_y = sub_rect.bottom + s(40)
+        visible_h = max(1, height - start_y - s(20))
+        total_grid_h = math.ceil(len(self.items) / self.cols) * (self.card_size[1] + self.spacing)
+        self._cached_max_scroll = max(0, total_grid_h - visible_h)
+        self.scroll_offset = max(0, min(self.scroll_offset, self._cached_max_scroll))
         self.option_rects = []
-        
+        # Kart çizimini görünür alana kırp (taşma önleme)
+        prev_clip = self.screen.get_clip()
+        self.screen.set_clip(pygame.Rect(0, start_y, width, visible_h))
+
         # Toplam grid genişliği
         grid_width = self.cols * self.card_size[0] + (self.cols - 1) * self.spacing
         start_x = (width - grid_width) // 2
@@ -489,23 +528,21 @@ class ExtrasScreen:
             
             # Modern glassmorphism kart çizimi
             self._draw_modern_mode_card(card_rect, item, is_selected, self.hover_progress[idx])
-            
-        # Modern scrollbar
-        total_grid_h = math.ceil(len(self.items) / self.cols) * (self.card_size[1] + self.spacing)
-        visible_h = height - start_y - s(20)
+
+        # Kırpma alanını geri yükle
+        self.screen.set_clip(prev_clip)
+
+        # Scrollbar (retro_style, sürüklenebilir)
         if total_grid_h > visible_h:
-            sb_x = width - s(20)
-            sb_w = s(6)
-            sb_rect = pygame.Rect(sb_x, start_y, sb_w, visible_h)
-            
-            # Scrollbar background
-            pygame.draw.rect(self.screen, (*UIColors.BG_LIGHT, 100), sb_rect, border_radius=3)
-            
-            # Scrollbar handle
-            handle_height = max(s(30), int(visible_h * visible_h / total_grid_h))
-            handle_y = start_y + int(self.scroll_offset * visible_h / total_grid_h)
-            handle_rect = pygame.Rect(sb_x, handle_y, sb_w, handle_height)
-            pygame.draw.rect(self.screen, UIColors.NEON_CYAN, handle_rect, border_radius=3)
+            sb_container = pygame.Rect(width - 22, start_y, 22, visible_h)
+            self._sb_container_rect = sb_container
+            self._sb_thumb_rect = retro_style.draw_scrollbar(
+                self.screen, sb_container, self.scroll_offset, total_grid_h, visible_h,
+                bar_width=8, color=UIColors.NEON_CYAN,
+            )
+        else:
+            self._sb_thumb_rect = None
+            self._sb_container_rect = None
 
         # Footer intentionally omitted
 

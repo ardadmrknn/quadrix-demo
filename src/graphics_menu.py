@@ -59,6 +59,11 @@ class GraphicsMenu:
         self.fps_limits = [0, 60, 90, 120, 144, 240]
         
         self.scroll_offset = 0
+        # Scrollbar drag state
+        self._sb_thumb_rect: 'pygame.Rect | None' = None
+        self._sb_container_rect: 'pygame.Rect | None' = None
+        self._sb_drag_active: bool = False
+        self._sb_drag_offset_y: int = 0
 
         # VSync changes require restart (SDL hint/env is read on init).
         self._vsync_restart_prompt_active = False
@@ -102,6 +107,18 @@ class GraphicsMenu:
         
         elif event.type == pygame.MOUSEMOTION:
             mouse_pos = normalize_mouse_pos(getattr(event, 'pos', None)) or event.pos
+            # Scrollbar drag
+            if self._sb_drag_active and self._sb_container_rect:
+                _az = max(10, 10 + 2)  # bar_width=10 (varsayılan)
+                track_y = self._sb_container_rect.top + _az + 2
+                track_h = max(4, self._sb_container_rect.height - _az * 2 - 4)
+                thumb_h = self._sb_thumb_rect.height if self._sb_thumb_rect else 30
+                max_scroll = self._max_scroll()
+                new_thumb_top = mouse_pos[1] - self._sb_drag_offset_y - track_y
+                new_thumb_top = max(0, min(new_thumb_top, track_h - thumb_h))
+                ratio = new_thumb_top / max(1, track_h - thumb_h)
+                self.scroll_offset = int(ratio * max_scroll)
+                return None
             for i, rect in enumerate(self.option_rects):
                 if rect.collidepoint(mouse_pos):
                     self.selected = i
@@ -109,6 +126,21 @@ class GraphicsMenu:
         elif event.type == pygame.MOUSEBUTTONDOWN:
             if event.button == 1:
                 mouse_pos = normalize_mouse_pos(getattr(event, 'pos', None)) or event.pos
+                # Scrollbar thumb drag başlat
+                if self._sb_thumb_rect and self._sb_thumb_rect.collidepoint(mouse_pos):
+                    self._sb_drag_active = True
+                    self._sb_drag_offset_y = mouse_pos[1] - self._sb_thumb_rect.y
+                    return None
+                # Scrollbar track alanına tıklama → o pozisyona zıpla
+                if self._sb_container_rect and self._sb_container_rect.collidepoint(mouse_pos):
+                    _az = max(10, 10 + 2)
+                    _ty = self._sb_container_rect.top + _az + 2
+                    _th = max(4, self._sb_container_rect.height - _az * 2 - 4)
+                    _tmh = self._sb_thumb_rect.height if self._sb_thumb_rect else 20
+                    _max = self._max_scroll()
+                    _rel = mouse_pos[1] - _ty - _tmh // 2
+                    self.scroll_offset = int(max(0.0, min(1.0, _rel / max(1, _th - _tmh))) * _max)
+                    return None
                 for i, rect in enumerate(self.option_rects):
                     if rect.collidepoint(mouse_pos):
                         self.selected = i
@@ -118,7 +150,12 @@ class GraphicsMenu:
                             action = self._toggle_setting()
                             if action:
                                 return action
-        
+
+        elif event.type == pygame.MOUSEBUTTONUP:
+            if event.button == 1:
+                self._sb_drag_active = False
+                self._sb_drag_offset_y = 0
+
         return None
 
     def _handle_vsync_prompt_input(self, event):
@@ -238,6 +275,11 @@ class GraphicsMenu:
         self.scroll_offset = max(0, min(self.scroll_offset, max_scroll))
         start_y = title_rect.bottom + 40 - self.scroll_offset
 
+        clip_top = title_rect.bottom + 10
+        clip_h = max(1, height - clip_top - 80)
+        prev_clip = self.screen.get_clip()
+        self.screen.set_clip(pygame.Rect(0, clip_top, width, clip_h))
+
         for i, option in enumerate(self.options):
             y_pos = start_y + i * spacing
             if y_pos < title_rect.bottom + 10 or y_pos > height - 160:
@@ -294,6 +336,20 @@ class GraphicsMenu:
                 kind=kind,
             )
 
+        self.screen.set_clip(prev_clip)
+
+        # Scrollbar (sürüklenebilir)
+        total_h = len(self.options) * spacing
+        visible_h = max(1, height - 280)
+        if total_h > visible_h:
+            sb_rect = pygame.Rect(width // 2 + card_width // 2 + 8, clip_top, 20, clip_h)
+            self._sb_container_rect = sb_rect
+            self._sb_thumb_rect = retro_style.draw_scrollbar(
+                self.screen, sb_rect, self.scroll_offset, total_h, visible_h,
+            )
+        else:
+            self._sb_thumb_rect = None
+            self._sb_container_rect = None
 
         if self._vsync_restart_prompt_active:
             self._draw_vsync_restart_prompt()

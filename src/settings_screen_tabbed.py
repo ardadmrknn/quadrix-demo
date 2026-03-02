@@ -1201,9 +1201,11 @@ class TabbedSettingsScreen:
                     return None
                 if event.key == pygame.K_UP:
                     self._playlist_edit_picker_selected = (self._playlist_edit_picker_selected - 1) % len(self._track_options)
+                    self._playlist_picker_ensure_visible(200, 48, 8)
                     return None
                 if event.key == pygame.K_DOWN:
                     self._playlist_edit_picker_selected = (self._playlist_edit_picker_selected + 1) % len(self._track_options)
+                    self._playlist_picker_ensure_visible(200, 48, 8)
                     return None
                 if event.key in (pygame.K_RETURN, pygame.K_SPACE):
                     chosen = self._track_options[self._playlist_edit_picker_selected].get('value')
@@ -1247,9 +1249,11 @@ class TabbedSettingsScreen:
                 return None
             if event.key == pygame.K_UP:
                 self._playlist_edit_selected = (self._playlist_edit_selected - 1) % max(total_items, 1)
+                self._playlist_ensure_visible(200, 52, 8)
                 return None
             if event.key == pygame.K_DOWN:
                 self._playlist_edit_selected = (self._playlist_edit_selected + 1) % max(total_items, 1)
+                self._playlist_ensure_visible(200, 52, 8)
                 return None
             if event.key in (pygame.K_RETURN, pygame.K_SPACE):
                 if self._playlist_edit_selected == 0:
@@ -1321,9 +1325,11 @@ class TabbedSettingsScreen:
                 return
             if event.key == pygame.K_UP:
                 self._music_picker_selected = (self._music_picker_selected - 1) % len(self._track_options)
+                self._picker_ensure_visible(200, 52, 8)
                 return
             if event.key == pygame.K_DOWN:
                 self._music_picker_selected = (self._music_picker_selected + 1) % len(self._track_options)
+                self._picker_ensure_visible(200, 52, 8)
                 return
             if event.key in (pygame.K_RETURN, pygame.K_SPACE):
                 if self._music_picker_mode_key is not None:
@@ -1404,7 +1410,6 @@ class TabbedSettingsScreen:
 
         max_scroll = self._playlist_list_max_scroll(total_items, item_h, gap, list_rect.height)
         self._playlist_edit_scroll = max(0, min(self._playlist_edit_scroll, max_scroll))
-        self._playlist_ensure_visible(list_rect.height, item_h, gap)
 
         self._playlist_edit_item_rects = []
         self.screen.set_clip(list_rect)
@@ -1433,7 +1438,7 @@ class TabbedSettingsScreen:
 
         total_h = total_items * (item_h + gap)
         if total_h > list_rect.height:
-            sb_rect = pygame.Rect(panel_rect.right - 12, list_rect.y, 6, list_rect.height)
+            sb_rect = pygame.Rect(panel_rect.right - 22, list_rect.y, 22, list_rect.height)
             retro_style.draw_scrollbar(self.screen, sb_rect, self._playlist_edit_scroll, total_h, list_rect.height)
 
         hint_text = 'ESC: Kapat   ENTER: Seç/Ekle   DELETE: Sil   ←/→: Taşı'
@@ -1469,7 +1474,6 @@ class TabbedSettingsScreen:
             0,
             min(self._playlist_edit_picker_scroll, self._picker_max_scroll(picker_list_rect.height, p_item_h, p_gap)),
         )
-        self._playlist_picker_ensure_visible(picker_list_rect.height, p_item_h, p_gap)
 
         self._playlist_edit_picker_rects = []
         self.screen.set_clip(picker_list_rect)
@@ -1493,7 +1497,7 @@ class TabbedSettingsScreen:
 
         picker_total_h = len(self._track_options) * (p_item_h + p_gap)
         if picker_total_h > picker_list_rect.height:
-            sb_rect = pygame.Rect(picker_rect.right - 12, picker_list_rect.y, 6, picker_list_rect.height)
+            sb_rect = pygame.Rect(picker_rect.right - 22, picker_list_rect.y, 22, picker_list_rect.height)
             retro_style.draw_scrollbar(
                 self.screen,
                 sb_rect,
@@ -1854,8 +1858,9 @@ class TabbedSettingsScreen:
             pos = normalize_mouse_pos(getattr(event, 'pos', None)) or event.pos
             # Settings scrollbar drag
             if self._settings_sb_drag_active and self._settings_sb_container_rect:
-                track_y = self._settings_sb_container_rect.top + 4
-                track_h = self._settings_sb_container_rect.height - 8
+                _az = max(10, 10 + 2)  # bar_width=10
+                track_y = self._settings_sb_container_rect.top + _az + 2
+                track_h = max(4, self._settings_sb_container_rect.height - _az * 2 - 4)
                 thumb_h = self._settings_sb_thumb_rect.height if self._settings_sb_thumb_rect else 30
                 panel = self._panel_rect()
                 content = self._content_rect(panel)
@@ -1881,6 +1886,19 @@ class TabbedSettingsScreen:
             if self._settings_sb_thumb_rect and self._settings_sb_thumb_rect.collidepoint(pos):
                 self._settings_sb_drag_active = True
                 self._settings_sb_drag_offset_y = pos[1] - self._settings_sb_thumb_rect.y
+                return None
+
+            # Settings scrollbar track alanına tıklama → o pozisyona zıpla
+            if self._settings_sb_container_rect and self._settings_sb_container_rect.collidepoint(pos):
+                _az = max(10, 10 + 2)
+                _ty = self._settings_sb_container_rect.top + _az + 2
+                _th = max(4, self._settings_sb_container_rect.height - _az * 2 - 4)
+                _tmh = self._settings_sb_thumb_rect.height if self._settings_sb_thumb_rect else 20
+                panel = self._panel_rect()
+                content = self._content_rect(panel)
+                _max = self._max_scroll(content)
+                _rel = pos[1] - _ty - _tmh // 2
+                self.scroll_offset = int(max(0.0, min(1.0, _rel / max(1, _th - _tmh))) * _max)
                 return None
 
             # Tab tıklama
@@ -2415,7 +2433,6 @@ class TabbedSettingsScreen:
         gap = 8
 
         self._music_picker_scroll = max(0, min(self._music_picker_scroll, self._picker_max_scroll(list_rect.height, item_h, gap)))
-        self._picker_ensure_visible(list_rect.height, item_h, gap)
 
         self._music_picker_item_rects = []
         self.screen.set_clip(list_rect)

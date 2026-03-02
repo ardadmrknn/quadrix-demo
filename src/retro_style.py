@@ -1195,46 +1195,111 @@ class RetroStyle:
         scroll_offset: int,
         content_height: int,
         visible_height: int | None = None,
-        bar_width: int = 8,
+        bar_width: int = 10,
         color: tuple[int, int, int] | None = None,
         show_always: bool = False,
     ) -> pygame.Rect | None:
-        """Modern scrollbar"""
+        """Premium scrollbar — gradient thumb, ok işaretleri, parlak glow."""
         visible = visible_height if visible_height else container_rect.height
-        
+
         if content_height <= visible and not show_always:
             return None
-        
-        # Track
-        track_x = container_rect.right - bar_width - 4
-        track_y = container_rect.top + 4
-        track_height = container_rect.height - 8
+
+        thumb_color = color or self.primary
+        r = bar_width // 2
+
+        # ── Track ──────────────────────────────────────────────────────
+        arrow_zone = max(10, bar_width + 2)          # ok için ayrılan yükseklik
+        # Track'i container içinde yatay-ortala; tıklama alanı tüm genişliği kaplar
+        track_x = container_rect.x + (container_rect.width - bar_width) // 2
+        track_y = container_rect.top + arrow_zone + 2
+        track_height = max(4, container_rect.height - arrow_zone * 2 - 4)
         track_rect = pygame.Rect(track_x, track_y, bar_width, track_height)
-        
-        # Track background
+
+        # Track arka plan — pill şekli
         track_surf = pygame.Surface((bar_width, track_height), pygame.SRCALPHA)
-        track_surf.fill((30, 40, 60, 100))
+        pygame.draw.rect(track_surf, (20, 28, 48, 180), track_surf.get_rect(), border_radius=r)
+        pygame.draw.rect(track_surf, (60, 80, 120, 120), track_surf.get_rect(), 1, border_radius=r)
+        # İç soluk çizgi (derinlik hissi)
+        inner_line_surf = pygame.Surface((2, track_height - 4), pygame.SRCALPHA)
+        inner_line_surf.fill((255, 255, 255, 14))
+        track_surf.blit(inner_line_surf, (2, 2))
         screen.blit(track_surf, (track_x, track_y))
-        
-        # Thumb
+
+        # ── Thumb ──────────────────────────────────────────────────────
         thumb_ratio = visible / max(content_height, 1)
-        thumb_height = max(30, int(track_height * thumb_ratio))
-        
+        thumb_height = max(bar_width * 2 + 4, int(track_height * thumb_ratio))
+
         max_scroll = max(0, content_height - visible)
         scroll_ratio = scroll_offset / max(max_scroll, 1) if max_scroll > 0 else 0
         thumb_y = track_y + int((track_height - thumb_height) * scroll_ratio)
-        
+
         thumb_rect = pygame.Rect(track_x, thumb_y, bar_width, thumb_height)
-        thumb_color = color or self.primary
-        
-        # Thumb glow
-        glow_surf = pygame.Surface((bar_width + 4, thumb_height + 4), pygame.SRCALPHA)
-        pygame.draw.rect(glow_surf, (*thumb_color, 40), glow_surf.get_rect(), border_radius=bar_width)
-        screen.blit(glow_surf, (thumb_rect.x - 2, thumb_rect.y - 2))
-        
-        # Thumb
-        pygame.draw.rect(screen, thumb_color, thumb_rect, border_radius=bar_width // 2)
-        
+
+        # Dış parlama (glow)
+        glow_w = bar_width + 8
+        glow_h = thumb_height + 8
+        glow_surf = pygame.Surface((glow_w, glow_h), pygame.SRCALPHA)
+        gc = thumb_color
+        for i, alpha in enumerate([20, 35, 50]):
+            inset = i
+            gr = pygame.Rect(inset, inset, glow_w - inset * 2, glow_h - inset * 2)
+            pygame.draw.rect(glow_surf, (*gc, alpha), gr, border_radius=r + 4 - inset)
+        screen.blit(glow_surf, (thumb_rect.x - 4, thumb_rect.y - 4))
+
+        # Thumb gövdesi — gradient (üstten alta: açık → koyu)
+        thumb_surf = pygame.Surface((bar_width, thumb_height), pygame.SRCALPHA)
+        for iy in range(thumb_height):
+            t_ratio = iy / max(thumb_height - 1, 1)
+            bright = int(thumb_color[0] + (min(255, thumb_color[0] + 60) - thumb_color[0]) * (1 - t_ratio))
+            gr_c = (
+                min(255, int(thumb_color[0] * (1.25 - 0.45 * t_ratio))),
+                min(255, int(thumb_color[1] * (1.20 - 0.40 * t_ratio))),
+                min(255, int(thumb_color[2] * (1.15 - 0.35 * t_ratio))),
+            )
+            pygame.draw.line(thumb_surf, (*gr_c, 230), (0, iy), (bar_width, iy))
+        pygame.draw.rect(thumb_surf, (0, 0, 0, 0), thumb_surf.get_rect(), border_radius=r)  # köşe mask
+        # Yeniden pill çiz — gradient clip için
+        mask = pygame.Surface((bar_width, thumb_height), pygame.SRCALPHA)
+        pygame.draw.rect(mask, (255, 255, 255, 255), mask.get_rect(), border_radius=r)
+        thumb_surf.blit(mask, (0, 0), special_flags=pygame.BLEND_RGBA_MIN)
+        screen.blit(thumb_surf, thumb_rect.topleft)
+
+        # Thumb üst kenarda parlak vurgu çizgisi
+        hl_surf = pygame.Surface((max(1, bar_width - 4), 2), pygame.SRCALPHA)
+        hl_surf.fill((255, 255, 255, 80))
+        screen.blit(hl_surf, (thumb_rect.x + 2, thumb_rect.y + 2))
+
+        # Thumb border
+        pygame.draw.rect(screen, (*thumb_color, 200), thumb_rect, 1, border_radius=r)
+
+        # ── Ok işaretleri ──────────────────────────────────────────────
+        arrow_color = (*thumb_color, 180)
+        arrow_dim  = (*thumb_color, 80)
+        cx = track_x + bar_width // 2
+
+        # Yukarı ok ▲
+        up_cy = container_rect.top + arrow_zone // 2
+        aw = max(4, bar_width - 2)
+        ah = max(3, aw // 2)
+        at_up = max_scroll > 0 and scroll_offset > 0
+        _ac = arrow_color if at_up else arrow_dim
+        pygame.draw.polygon(screen, _ac, [
+            (cx, up_cy - ah // 2),
+            (cx - aw // 2, up_cy + ah // 2),
+            (cx + aw // 2, up_cy + ah // 2),
+        ])
+
+        # Aşağı ok ▼
+        down_cy = container_rect.bottom - arrow_zone // 2
+        at_down = max_scroll > 0 and scroll_offset < max_scroll
+        _ac2 = arrow_color if at_down else arrow_dim
+        pygame.draw.polygon(screen, _ac2, [
+            (cx, down_cy + ah // 2),
+            (cx - aw // 2, down_cy - ah // 2),
+            (cx + aw // 2, down_cy - ah // 2),
+        ])
+
         return thumb_rect
 
     def _render_text_with_outline(self, font: pygame.font.Font, text: str, color: tuple[int, int, int], outline_color: tuple[int, int, int] = (0, 0, 0), outline_width: int = 1) -> pygame.Surface:

@@ -2028,7 +2028,6 @@ class Menu:
 
         # --- Köşe butonları (Ayarlar, Ses, Kullanıcı Değiştir, Emeği Geçenler) ---
         self._draw_corner_buttons()
-        self._draw_menu_language_panel()
 
         # "Neo-retro arcade deneyimi" etiketi kullanıcı isteğiyle kaldırıldı.
 
@@ -2408,6 +2407,9 @@ class Menu:
 
         if self.show_daily_prompt:
             self._draw_daily_prompt_panel()
+
+        # Dil paneli — tüm dashboard elemanlarının üzerinde çizilmeli
+        self._draw_menu_language_panel()
 
         # Gamepad bağlıysa küçük gösterge
         self._draw_gamepad_indicator()
@@ -3965,9 +3967,13 @@ class Menu:
                 return None
             if event.key == pygame.K_UP:
                 self.menu_language_panel_selected = (self.menu_language_panel_selected - 1) % len(langs)
+                _vis_h = (self.menu_language_panel_rect.height - 12) if self.menu_language_panel_rect else 200
+                self._menu_language_panel_ensure_visible(_vis_h, 30, 4)
                 return None
             if event.key == pygame.K_DOWN:
                 self.menu_language_panel_selected = (self.menu_language_panel_selected + 1) % len(langs)
+                _vis_h = (self.menu_language_panel_rect.height - 12) if self.menu_language_panel_rect else 200
+                self._menu_language_panel_ensure_visible(_vis_h, 30, 4)
                 return None
             if event.key in (pygame.K_RETURN, pygame.K_SPACE):
                 code, _label = langs[self.menu_language_panel_selected]
@@ -3988,8 +3994,9 @@ class Menu:
             # Scrollbar drag
             if self.menu_language_panel_sb_drag_active and self.menu_language_panel_sb_container_rect:
                 sb_c = self.menu_language_panel_sb_container_rect
-                track_y = sb_c.top + 4
-                track_h = sb_c.height - 8
+                _az = max(10, 8 + 2)  # bar_width=8
+                track_y = sb_c.top + _az + 2
+                track_h = max(4, sb_c.height - _az * 2 - 4)
                 thumb_h = self.menu_language_panel_sb_thumb_rect.height if self.menu_language_panel_sb_thumb_rect else 30
                 visible_h = (self.menu_language_panel_rect.height - 12) if self.menu_language_panel_rect else 200
                 ms = self._menu_language_panel_max_scroll(visible_h, 30, 4)
@@ -4011,6 +4018,21 @@ class Menu:
             if self.menu_language_panel_sb_thumb_rect and self.menu_language_panel_sb_thumb_rect.collidepoint(pos):
                 self.menu_language_panel_sb_drag_active = True
                 self.menu_language_panel_sb_drag_offset_y = pos[1] - self.menu_language_panel_sb_thumb_rect.y
+                return None
+            # Scrollbar track alanına tıklama → o pozisyona zıpla
+            if self.menu_language_panel_sb_container_rect and self.menu_language_panel_sb_container_rect.collidepoint(pos):
+                langs = self._get_menu_language_options()
+                item_h, gap = 30, 4
+                total_h = len(langs) * (item_h + gap) - gap
+                visible_h = (self.menu_language_panel_rect.height - 12) if self.menu_language_panel_rect else 200
+                _ms = self._menu_language_panel_max_scroll(visible_h, item_h, gap)
+                sb_c = self.menu_language_panel_sb_container_rect
+                _az = max(10, 8 + 2)
+                _ty = sb_c.top + _az + 2
+                _th = max(4, sb_c.height - _az * 2 - 4)
+                _tmh = self.menu_language_panel_sb_thumb_rect.height if self.menu_language_panel_sb_thumb_rect else 20
+                _rel = pos[1] - _ty - _tmh // 2
+                self.menu_language_panel_scroll = int(max(0.0, min(1.0, _rel / max(1, _th - _tmh))) * _ms)
                 return None
             for rect, idx in self.menu_language_panel_item_rects:
                 if rect.collidepoint(pos):
@@ -4053,7 +4075,6 @@ class Menu:
         self.menu_language_panel_item_rects = []
 
         self.menu_language_panel_scroll = max(0, min(self.menu_language_panel_scroll, self._menu_language_panel_max_scroll(list_rect.height, item_h, gap)))
-        self._menu_language_panel_ensure_visible(list_rect.height, item_h, gap)
 
         self.screen.set_clip(list_rect)
         for idx, (code, label) in enumerate(langs):
@@ -5316,7 +5337,7 @@ class AchievementScreen:
             scrollbar_rect = pygame.Rect(
                 content_x + content_width + 4,
                 list_top,
-                20,
+                22,
                 visible_height
             )
             retro_style.draw_scrollbar(
@@ -5496,9 +5517,8 @@ class ModeMusicScreen:
         sub = subtitle_font.render(summary_text, True, (170, 190, 220))
         self.screen.blit(sub, (panel_rect.x + 20, panel_rect.y + 50))
 
-        # Clamp scroll + keep selection visible
+        # Clamp scroll only (ensure_visible sadece klavye nav sonrası çağrılır)
         self.scroll_offset = max(0, min(self.scroll_offset, self._overlay_max_scroll(list_rect.height, item_h, gap)))
-        self._overlay_ensure_visible(list_rect.height, item_h, gap)
 
         # List
         self.option_rects = []
@@ -5535,7 +5555,7 @@ class ModeMusicScreen:
         # Scrollbar
         total_h = len(self.modes) * (item_h + gap)
         if total_h > list_rect.height:
-            sb_rect = pygame.Rect(panel_rect.right - 12, list_rect.y, 6, list_rect.height)
+            sb_rect = pygame.Rect(panel_rect.right - 22, list_rect.y, 22, list_rect.height)
             retro_style.draw_scrollbar(self.screen, sb_rect, self.scroll_offset, total_h, list_rect.height)
 
         hint = subtitle_font.render(t('menu_theme_hint'), True, (140, 160, 190))
@@ -5656,9 +5676,11 @@ class ModeMusicScreen:
                 return None
             if event.key == pygame.K_UP:
                 self.picker_selected = (self.picker_selected - 1) % len(self.track_options)
+                self._picker_ensure_visible(200, 44, 8)
                 return None
             if event.key == pygame.K_DOWN:
                 self.picker_selected = (self.picker_selected + 1) % len(self.track_options)
+                self._picker_ensure_visible(200, 44, 8)
                 return None
             if event.key in (pygame.K_RETURN, pygame.K_SPACE):
                 if self.picker_mode_key is not None:
@@ -5825,7 +5847,6 @@ class ModeMusicScreen:
 
         # Clamp scroll
         self.picker_scroll = max(0, min(self.picker_scroll, self._picker_max_scroll(list_rect.height, item_h, gap)))
-        self._picker_ensure_visible(list_rect.height, item_h, gap)
 
         self.screen.set_clip(list_rect)
         for idx, option in enumerate(self.track_options):
@@ -5852,7 +5873,7 @@ class ModeMusicScreen:
         # Scrollbar
         total_h = len(self.track_options) * (item_h + gap)
         if total_h > list_rect.height:
-            sb_rect = pygame.Rect(panel_rect.right - 12, list_rect.y, 6, list_rect.height)
+            sb_rect = pygame.Rect(panel_rect.right - 22, list_rect.y, 22, list_rect.height)
             retro_style.draw_scrollbar(self.screen, sb_rect, self.picker_scroll, total_h, list_rect.height)
 
         # Footer hints
@@ -5994,7 +6015,7 @@ class ModeMusicScreen:
         # Scrollbar
         total_h = len(self.modes) * (item_height + spacing)
         if total_h > list_visible_h:
-            sb_rect = pygame.Rect(px + pw - 24, content_top, 5, list_visible_h)
+            sb_rect = pygame.Rect(px + pw - 22, content_top, 22, list_visible_h)
             retro_style.draw_scrollbar(self.screen, sb_rect, self.scroll_offset, total_h, list_visible_h)
 
         if self.picker_open:
@@ -7212,9 +7233,9 @@ class BlockStyleSettingsScreen:
         total_content = len(self.piece_names) * card_spacing
         if total_content > visible_height:
             scrollbar_rect = pygame.Rect(
-                (width + card_width) // 2 + 20,
+                (width + card_width) // 2 + 12,
                 start_y,
-                12,
+                22,
                 visible_height
             )
             retro_style.draw_scrollbar(
@@ -8935,9 +8956,13 @@ class SettingsScreen:
                 return None
             if event.key == pygame.K_UP:
                 self.language_panel_selected = (self.language_panel_selected - 1) % len(langs)
+                _vis_h = (self.language_panel_rect.height - 16) if self.language_panel_rect else 200
+                self._language_panel_ensure_visible(_vis_h, 34, 6)
                 return None
             if event.key == pygame.K_DOWN:
                 self.language_panel_selected = (self.language_panel_selected + 1) % len(langs)
+                _vis_h = (self.language_panel_rect.height - 16) if self.language_panel_rect else 200
+                self._language_panel_ensure_visible(_vis_h, 34, 6)
                 return None
             if event.key in (pygame.K_RETURN, pygame.K_SPACE):
                 code, _label = langs[self.language_panel_selected]
@@ -8994,7 +9019,6 @@ class SettingsScreen:
         gap = 6
         self.language_panel_item_rects = []
         self.language_panel_scroll = max(0, min(self.language_panel_scroll, self._language_panel_max_scroll(list_rect.height, item_h, gap)))
-        self._language_panel_ensure_visible(list_rect.height, item_h, gap)
 
         self.screen.set_clip(list_rect)
         for idx, (_code, label) in enumerate(langs):
@@ -9023,7 +9047,7 @@ class SettingsScreen:
 
         total_h = len(langs) * (item_h + gap)
         if total_h > list_rect.height:
-            sb_rect = pygame.Rect(panel_rect.right - 8, list_rect.y, 4, list_rect.height)
+            sb_rect = pygame.Rect(panel_rect.right - 22, list_rect.y, 22, list_rect.height)
             retro_style.draw_scrollbar(self.screen, sb_rect, self.language_panel_scroll, total_h, list_rect.height)
 
     def _theme_picker_max_scroll(self, visible_h: int, item_h: int, gap: int) -> int:
@@ -9059,9 +9083,11 @@ class SettingsScreen:
                 return None
             if event.key == pygame.K_UP:
                 self.theme_picker_selected = (self.theme_picker_selected - 1) % len(themes)
+                self._theme_picker_ensure_visible(200, 44, 8)
                 return None
             if event.key == pygame.K_DOWN:
                 self.theme_picker_selected = (self.theme_picker_selected + 1) % len(themes)
+                self._theme_picker_ensure_visible(200, 44, 8)
                 return None
             if event.key in (pygame.K_RETURN, pygame.K_SPACE):
                 self._apply_theme_choice(themes[self.theme_picker_selected])
@@ -9140,7 +9166,6 @@ class SettingsScreen:
         self.theme_picker_item_rects = []
 
         self.theme_picker_scroll = max(0, min(self.theme_picker_scroll, self._theme_picker_max_scroll(list_rect.height, item_h, gap)))
-        self._theme_picker_ensure_visible(list_rect.height, item_h, gap)
 
         self.screen.set_clip(list_rect)
         for idx, name in enumerate(themes):
@@ -9165,7 +9190,7 @@ class SettingsScreen:
 
         total_h = len(themes) * (item_h + gap)
         if total_h > list_rect.height:
-            sb_rect = pygame.Rect(panel_rect.right - 12, list_rect.y, 6, list_rect.height)
+            sb_rect = pygame.Rect(panel_rect.right - 22, list_rect.y, 22, list_rect.height)
             retro_style.draw_scrollbar(self.screen, sb_rect, self.theme_picker_scroll, total_h, list_rect.height)
 
         hint = subtitle_font.render(t('theme_picker_hint'), True, (140, 160, 190))
@@ -9543,9 +9568,11 @@ class SettingsScreen:
                 return None
             if event.key == pygame.K_UP:
                 self.music_track_picker_selected = (self.music_track_picker_selected - 1) % len(self.music_types)
+                self._music_track_picker_ensure_visible(200, 44, 8)
                 return None
             if event.key == pygame.K_DOWN:
                 self.music_track_picker_selected = (self.music_track_picker_selected + 1) % len(self.music_types)
+                self._music_track_picker_ensure_visible(200, 44, 8)
                 return None
             if event.key in (pygame.K_RETURN, pygame.K_SPACE):
                 if not isinstance(self.music_track_picker_target, str):
@@ -9681,7 +9708,6 @@ class SettingsScreen:
         gap = 8
         self.music_track_picker_item_rects = []
         self.music_track_picker_scroll = max(0, min(self.music_track_picker_scroll, self._music_track_picker_max_scroll(list_rect.height, item_h, gap)))
-        self._music_track_picker_ensure_visible(list_rect.height, item_h, gap)
 
         self.screen.set_clip(list_rect)
         for idx, name in enumerate(self.music_types):
@@ -9706,7 +9732,7 @@ class SettingsScreen:
 
         total_h = len(self.music_types) * (item_h + gap)
         if total_h > list_rect.height:
-            sb_rect = pygame.Rect(panel_rect.right - 12, list_rect.y, 6, list_rect.height)
+            sb_rect = pygame.Rect(panel_rect.right - 22, list_rect.y, 22, list_rect.height)
             retro_style.draw_scrollbar(self.screen, sb_rect, self.music_track_picker_scroll, total_h, list_rect.height)
 
         hint = subtitle_font.render(t('hint_select_apply_close'), True, (140, 160, 190))
