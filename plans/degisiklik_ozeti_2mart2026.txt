@@ -1,0 +1,18 @@
+================================================================
+QUADRIX — KISA DEĞİŞİKLİK ÖZETİ
+Tarih: 2 Mart 2026
+================================================================
+
+Bu güncellemede test tarafında düzenleme yapıldı:
+
+- Ana klasörde dağınık duran test dosyaları tek bir yerde toplandı.
+- Tüm test dosyaları `tests` klasörü altına taşındı.
+- Toplam 33 test dosyası yeni konumuna alındı.
+- Böylece proje ana klasörü daha temiz ve daha kolay takip edilir hale geldi.
+
+Ek olarak:
+- Test aracının (pytest) testleri doğrudan `tests` klasöründen okuması için ayar güncellendi.
+
+Not:
+- Test toplama sırasında görülen bazı hatalar, taşıma işleminden önce de var olan
+  test ortamı/import kaynaklı mevcut durumlardır.

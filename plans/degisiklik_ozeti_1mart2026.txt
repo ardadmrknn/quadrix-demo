@@ -4,6 +4,26 @@ Tarih: 1 Mart 2026
 ================================================================
 
 ----------------------------------------------------------------
+
+EK GÜNCELLEME — 2 Mart 2026
+================================================================
+
+----------------------------------------------------------------
+8. TEST DOSYALARI DÜZENİ TOPARLANDI
+----------------------------------------------------------------
+- Projenin ana klasöründeki test dosyaları tek tek dağınık duruyordu.
+- Daha düzenli olması için tüm test dosyaları `tests/` klasörü altında toplandı.
+- Toplam 33 adet test dosyası taşındı.
+- Böylece ana klasör daha temiz ve okunabilir hale geldi.
+
+Yapılan küçük ayar:
+- `pytest.ini` dosyasında testlerin doğrudan `tests/` klasöründen okunması sağlandı.
+
+Not:
+- Test toplama sırasında görülen bazı import/stub kaynaklı hatalar, bu taşıma
+  işleminden önce de var olan mevcut test ortamı sorunlarıdır.
+
+----------------------------------------------------------------
 1. STEAM ACHIEVEMENTS SENKRONİZASYONU
    Dosya: src/steam_integration.py
 ----------------------------------------------------------------
