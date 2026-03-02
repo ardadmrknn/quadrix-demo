@@ -946,11 +946,50 @@ def _resolve_lb_id_via_web_api(lb_name: str) -> int | None:
         req = urllib.request.Request(url, method='GET')
         with urllib.request.urlopen(req, timeout=6) as resp:
             body = json.loads(resp.read().decode('utf-8', errors='replace'))
-            lb_id = body.get('leaderboard', {}).get('leaderboardID')
+            # Steam API yanıt yapısı varyantları:
+            #   {"response": {"leaderboard": {"leaderboardid": ...}}}
+            #   {"leaderboard": {"leaderboardID": ...}}
+            # Her iki yapıyı da destekle
+            if not isinstance(body, dict):
+                return None
+
+            _ID_KEYS = ('leaderboardid', 'leaderboard_id', 'leaderboardID', 'id')
+
+            def _extract_id(obj: dict) -> int | None:
+                for key in _ID_KEYS:
+                    val = obj.get(key)
+                    if val is not None:
+                        try:
+                            return int(val)
+                        except (TypeError, ValueError):
+                            pass
+                return None
+
+            lb_id = None
+
+            # Yol 1: body.response.leaderboard (standart Steam API)
+            response = body.get('response', {})
+            if isinstance(response, dict):
+                lb_id = _extract_id(response)
+                if lb_id is None:
+                    nested = response.get('leaderboard', {})
+                    if isinstance(nested, dict):
+                        lb_id = _extract_id(nested)
+
+            # Yol 2: body.leaderboard (alternatif format)
+            if lb_id is None:
+                nested = body.get('leaderboard', {})
+                if isinstance(nested, dict):
+                    lb_id = _extract_id(nested)
+
+            # Yol 3: doğrudan body seviyesinde
+            if lb_id is None:
+                lb_id = _extract_id(body)
+
             if lb_id:
-                _lb_id_web_cache[lb_name] = int(lb_id)
+                _lb_id_web_cache[lb_name] = lb_id
                 print(f"[Steam] Leaderboard ID resolved: {lb_name} \u2192 {lb_id}")
-                return int(lb_id)
+                return lb_id
     except Exception as e:
         print(f"[Steam] Leaderboard ID resolve failed ({lb_name}): {e}")
     return None
@@ -959,11 +998,17 @@ def _resolve_lb_id_via_web_api(lb_name: str) -> int | None:
 def _is_partner_fallback_enabled() -> bool:
     """Partner API write fallback aktif mi kontrol et.
 
-    Varsayılan: KAPALI (üretim güvenliği).
-    Debug/staff ortamda: STEAM_PARTNER_WRITE_FALLBACK=1 ile açılır.
-    Bu fallback publisher key içerdiğinden production build'lerde varsayılan kapalıdır.
+    Aktif olma koşulları (herhangi biri yeterli):
+    1. STEAM_PARTNER_WRITE_FALLBACK=1 env var açıkça set edilmişse
+    2. STEAM_WEB_API_KEY env var'ında geçerli bir publisher key varsa
+       (playtest / dev ortamında key varsa fallback otomatik aktif olur)
     """
-    return os.environ.get('STEAM_PARTNER_WRITE_FALLBACK', '0').strip() == '1'
+    if os.environ.get('STEAM_PARTNER_WRITE_FALLBACK', '0').strip() == '1':
+        return True
+    # Publisher key mevcutsa otomatik aktifleştir (playtest/dev senaryosu)
+    if _PARTNER_API_KEY:
+        return True
+    return False
 
 
 def _submit_score_via_partner_api(lb_name: str, score: int, steam_id_str: str) -> bool:
@@ -1059,24 +1104,22 @@ def submit_score(mode: str, score: int) -> bool:
             except Exception as e:
                 print(f"[Steam] SDK submit hatasi ({lb_name}): {e}")
 
-        # --- Yol 2: Partner Server API fallback (yalnız flag açıksa) ---
+        # --- Yol 2: Partner Server API fallback ---
         if not sdk_success and steam_id_str:
             if _is_partner_fallback_enabled():
-                _submit_score_via_partner_api(lb_name, score, steam_id_str)
+                partner_ok = _submit_score_via_partner_api(lb_name, score, steam_id_str)
+                if not partner_ok:
+                    print(
+                        f"[Steam] Partner API fallback da basarisiz -> {lb_name}. "
+                        f"Leaderboard ID veya publisher key kontrol edin."
+                    )
             else:
-                owned = is_app_owned()
-                if owned is False:
-                    print(
-                        f"[Steam] Skor gonderilemedi ({lb_name}): Bu hesapta AppID {_APP_ID_INT} lisansi yok. "
-                        "Duzeltmek icin: Steam Partner Portal -> 4428040 -> Packages -> Developer Comp -> "
-                        "hesabi ekle. Playtest queue erisimi != Steam lisansi."
-                    )
-                else:
-                    print(
-                        f"[Steam] SDK yazimi basarisiz (sdk_success=0) -> {lb_name}. "
-                        "Partner API fallback kapali (uretim politikasi). "
-                        "Debug icin: STEAM_PARTNER_WRITE_FALLBACK=1 env var ile aktiflestirebilirsiniz."
-                    )
+                print(
+                    f"[Steam] SDK yazimi basarisiz (sdk_success=0) -> {lb_name}. "
+                    "Partner API fallback icin: STEAM_WEB_API_KEY env var set edin. "
+                    "(Playtest kullanicilari icin Partner API gereklidir, "
+                    "cunku SDK leaderboard yazimi farkli AppID altinda calismaz.)"
+                )
         elif not sdk_success and not steam_id_str:
             print(f"[Steam] Skor gonderilemedi: SDK yok, steam_id yok -> {lb_name}: {score}")
 
