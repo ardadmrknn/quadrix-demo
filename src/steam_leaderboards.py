@@ -358,11 +358,22 @@ class SteamLeaderboardService:
         }
         data_request_str = str(data_request or "RequestGlobal")
         data_request_int = _DATA_REQUEST_MAP.get(data_request_str, 0)
+        range_start = 1
+        range_end = safe_limit
+        if data_request_str == "RequestFriends":
+            # Steam Web API'de friend sorgusunda aralık parametreleri kullanılmaz;
+            # 1..N gönderildiğinde bazı istemcilerde global benzeri sonuçlar dönebilir.
+            range_start = -1
+            range_end = -1
+        elif data_request_str in ("RequestAroundUser", "RequestGlobalAroundUser"):
+            half = max(1, safe_limit // 2)
+            range_start = -half
+            range_end = half
         params: dict[str, Any] = {
             "leaderboardid": leaderboard_id,
             "datarequest": data_request_int,
-            "rangestart": 1,
-            "rangeend": safe_limit,
+            "rangestart": range_start,
+            "rangeend": range_end,
         }
         if data_request_str in ("RequestFriends", "RequestAroundUser", "RequestGlobalAroundUser"):
             sid = str(steam_id or self.current_steam_id or "").strip()

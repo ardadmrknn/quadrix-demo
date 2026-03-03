@@ -564,6 +564,9 @@ class AchievementManager:
         # Başarıları kontrol et
         self.check_achievements()
         self.save()
+
+        # İstatistikleri Steam'e senkronla
+        self.sync_stats_to_steam()
         
         return self.new_achievements
     
@@ -578,6 +581,9 @@ class AchievementManager:
             try:
                 if achievement['check'](self.stats):
                     self.unlock(ach_id)
+                else:
+                    # Açılmadıysa ilerleme bildirimi gönder (kademeli başarımlar)
+                    self.indicate_steam_progress(ach_id)
             except Exception as e:
                 if constants.DEBUG_MODE:
                     print(f"[UYARI] Başarı kontrolü hata ({ach_id}): {e}")
@@ -602,15 +608,77 @@ class AchievementManager:
         return False
 
     def sync_to_steam(self):
-        """Oyundaki tüm açılmış başarımları Steam'e toplu senkronla.
+        """Oyundaki tüm açılmış başarımları ve istatistikleri Steam'e toplu senkronla.
 
         Oyun açılışında veya profil yüklendiğinde çağrılmalı.
         """
         try:
             import steam_integration
-            return steam_integration.sync_all_achievements(self.unlocked, STEAM_ACHIEVEMENT_MAP)
+            ach_count = steam_integration.sync_all_achievements(self.unlocked, STEAM_ACHIEVEMENT_MAP)
+            stat_count = steam_integration.sync_stats_to_steam(self.stats)
+            return ach_count + stat_count
         except Exception:
             return 0
+
+    def sync_stats_to_steam(self):
+        """Sadece istatistikleri Steam'e senkronla.
+
+        Oyun sonu gibi stat güncellemelerinden sonra çağrılmalı.
+        """
+        try:
+            import steam_integration
+            return steam_integration.sync_stats_to_steam(self.stats)
+        except Exception:
+            return 0
+
+    def indicate_steam_progress(self, achievement_id: str):
+        """Belirli kilometre taşlarında Steam Overlay'de ilerleme bildirimi göster.
+
+        Yıldız toplama, satır temizleme gibi kademeli başarımlarda
+        %25, %50, %75 noktalarında kullanıcıya toast gösterir.
+        """
+        if achievement_id in self.unlocked:
+            return  # Zaten açıkmış, bildirme
+
+        steam_name = STEAM_ACHIEVEMENT_MAP.get(achievement_id)
+        if not steam_name:
+            return
+
+        spec = self._progress_spec_for(achievement_id)
+        if not spec:
+            return
+
+        stat_key, target, is_boolean = spec
+        if is_boolean:
+            return  # Boolean başarımlarda ilerleme gösterme
+
+        current_raw = self.stats.get(stat_key, 0)
+        try:
+            current = int(current_raw or 0)
+        except Exception:
+            return
+
+        # Sprint gibi ters istatistiklerde ilerleme bildirimi gösterme
+        _inverse_stats = ('sprint_best_time',)
+        if stat_key in _inverse_stats:
+            return
+
+        # Sadece belirli yüzdelerde bildir (%25, %50, %75)
+        if target <= 0:
+            return
+        pct = (current / target) * 100
+        _MILESTONES = (25, 50, 75)
+        # Tam milestone'a denk geliyorsa veya çok yakınsa bildir
+        for ms in _MILESTONES:
+            if abs(pct - ms) < 2:  # %2 tolerans
+                try:
+                    import steam_integration
+                    steam_integration.indicate_achievement_progress(
+                        steam_name, current, target
+                    )
+                except Exception:
+                    pass
+                break
     
     def get_achievement(self, achievement_id):
         """Başarı bilgisini al"""

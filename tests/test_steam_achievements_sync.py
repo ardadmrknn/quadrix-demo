@@ -188,6 +188,7 @@ def test_sync_to_steam_calls_sync_all():
 
     mock_steam = MagicMock()
     mock_steam.sync_all_achievements = MagicMock(return_value=3)
+    mock_steam.sync_stats_to_steam = MagicMock(return_value=2)
     sys.modules["steam_integration"] = mock_steam
 
     mgr = achievements.AchievementManager.__new__(achievements.AchievementManager)
@@ -197,10 +198,11 @@ def test_sync_to_steam_calls_sync_all():
 
     result = mgr.sync_to_steam()
 
-    assert result == 3
+    assert result == 5  # 3 achievement + 2 stat
     mock_steam.sync_all_achievements.assert_called_once_with(
         mgr.unlocked, achievements.STEAM_ACHIEVEMENT_MAP
     )
+    mock_steam.sync_stats_to_steam.assert_called_once_with(mgr.stats)
 
     sys.modules.pop("steam_integration", None)
 
@@ -224,3 +226,155 @@ def test_is_steam_achievement_unlocked_when_not_available():
 
     result = steam_integration.is_steam_achievement_unlocked("ACH_FIRST_GAME")
     assert result is None
+
+
+# ── Yeni Steam API fonksiyonları ─────────────────────────────────────────
+
+def test_clear_steam_achievement_when_not_available():
+    """Steam müsait değilken clear_steam_achievement False dönmeli."""
+    import steam_integration
+    importlib.reload(steam_integration)
+
+    result = steam_integration.clear_steam_achievement("ACH_FIRST_GAME")
+    assert result is False
+
+
+def test_indicate_achievement_progress_when_not_available():
+    """Steam müsait değilken indicate_achievement_progress False dönmeli."""
+    import steam_integration
+    importlib.reload(steam_integration)
+
+    result = steam_integration.indicate_achievement_progress("ACH_LINES_100", 50, 100)
+    assert result is False
+
+
+def test_set_steam_stat_int_when_not_available():
+    """Steam müsait değilken set_steam_stat_int False dönmeli."""
+    import steam_integration
+    importlib.reload(steam_integration)
+
+    result = steam_integration.set_steam_stat_int("STAT_TOTAL_GAMES", 42)
+    assert result is False
+
+
+def test_set_steam_stat_float_when_not_available():
+    """Steam müsait değilken set_steam_stat_float False dönmeli."""
+    import steam_integration
+    importlib.reload(steam_integration)
+
+    result = steam_integration.set_steam_stat_float("STAT_SPRINT_BEST_TIME", 55.3)
+    assert result is False
+
+
+def test_get_steam_stat_int_when_not_available():
+    """Steam müsait değilken get_steam_stat_int None dönmeli."""
+    import steam_integration
+    importlib.reload(steam_integration)
+
+    result = steam_integration.get_steam_stat_int("STAT_TOTAL_GAMES")
+    assert result is None
+
+
+def test_get_steam_stat_float_when_not_available():
+    """Steam müsait değilken get_steam_stat_float None dönmeli."""
+    import steam_integration
+    importlib.reload(steam_integration)
+
+    result = steam_integration.get_steam_stat_float("STAT_SPRINT_BEST_TIME")
+    assert result is None
+
+
+def test_store_steam_stats_when_not_available():
+    """Steam müsait değilken store_steam_stats False dönmeli."""
+    import steam_integration
+    importlib.reload(steam_integration)
+
+    result = steam_integration.store_steam_stats()
+    assert result is False
+
+
+def test_sync_stats_to_steam_when_not_available():
+    """Steam müsait değilken sync_stats_to_steam 0 dönmeli."""
+    import steam_integration
+    importlib.reload(steam_integration)
+
+    result = steam_integration.sync_stats_to_steam({"total_games": 10})
+    assert result == 0
+
+
+def test_reset_all_steam_stats_when_not_available():
+    """Steam müsait değilken reset_all_steam_stats False dönmeli."""
+    import steam_integration
+    importlib.reload(steam_integration)
+
+    result = steam_integration.reset_all_steam_stats(achievements_too=True)
+    assert result is False
+
+
+def test_steam_stat_map_exists():
+    """STEAM_STAT_MAP dict'i tanımlı ve boş değil."""
+    import steam_integration
+    importlib.reload(steam_integration)
+
+    assert hasattr(steam_integration, "STEAM_STAT_MAP")
+    assert len(steam_integration.STEAM_STAT_MAP) > 0
+
+
+def test_steam_stat_map_values_are_tuples():
+    """STEAM_STAT_MAP değerleri (api_name, type) tuple olmalı."""
+    import steam_integration
+    importlib.reload(steam_integration)
+
+    for game_key, val in steam_integration.STEAM_STAT_MAP.items():
+        assert isinstance(val, tuple), f"{game_key} tuple değil: {val}"
+        assert len(val) == 2, f"{game_key} uzunluk 2 değil: {val}"
+        api_name, stat_type = val
+        assert api_name.startswith("STAT_"), f"{game_key} → {api_name} STAT_ ile başlamıyor"
+        assert stat_type in ("int", "float"), f"{game_key} → {stat_type} geçersiz tür"
+
+
+def test_sync_stats_calls_steam_functions():
+    """sync_stats_to_steam() istatistikleri doğru fonksiyonlarla yazmalı."""
+    import achievements
+    importlib.reload(achievements)
+
+    mock_steam = MagicMock()
+    mock_steam.sync_stats_to_steam = MagicMock(return_value=5)
+    sys.modules["steam_integration"] = mock_steam
+
+    mgr = achievements.AchievementManager.__new__(achievements.AchievementManager)
+    mgr.unlocked = {}
+    mgr.new_achievements = []
+    mgr.stats = {"total_games": 10, "max_score": 5000}
+
+    result = mgr.sync_stats_to_steam()
+
+    assert result == 5
+    mock_steam.sync_stats_to_steam.assert_called_once_with(mgr.stats)
+
+    sys.modules.pop("steam_integration", None)
+
+
+def test_indicate_steam_progress_called_on_milestone():
+    """Kademeli başarımlarda ilerleme bildirimi gönderilmeli."""
+    import achievements
+    importlib.reload(achievements)
+
+    mock_steam = MagicMock()
+    mock_steam.indicate_achievement_progress = MagicMock(return_value=True)
+    sys.modules["steam_integration"] = mock_steam
+
+    mgr = achievements.AchievementManager.__new__(achievements.AchievementManager)
+    mgr.unlocked = {}
+    mgr.new_achievements = []
+    mgr.stats = {"total_games": 25}  # games_50 → %50 milestone
+
+    # indicate_steam_progress'i çağır
+    mgr.indicate_steam_progress("games_50")
+
+    # %50'de bildirim gönderilmeli
+    mock_steam.indicate_achievement_progress.assert_called_once_with(
+        "ACH_GAMES_50", 25, 50
+    )
+
+    sys.modules.pop("steam_integration", None)

@@ -101,6 +101,7 @@ hiddenimports = [
     'shutil',
     'subprocess',
     'steam_integration',  # Steam SDK ctypes wrapper (macOS: libsteam_api.dylib)
+    'steam_net_bridge',    # Steam Networking bridge (Pybind11, Online PvP)
 ]
 
 # src klasöründeki tüm Python modüllerini ekle
@@ -134,6 +135,17 @@ if os.path.exists(steam_dylib_src):
     binaries = [(steam_dylib_src, '.')]  # Contents/MacOS/ içine kopyalanır
 else:
     binaries = []
+
+# Steam Networking bridge (Pybind11 C++ modülü) — Online PvP için
+import glob as _glob
+_bridge_patterns = [
+    str(REPO_ROOT / 'steam_net_bridge*.pyd'),
+    str(REPO_ROOT / 'steam_net_bridge*.so'),
+]
+for _pat in _bridge_patterns:
+    for _bridge_path in _glob.glob(_pat):
+        binaries.append((_bridge_path, '.'))
+        print(f'[spec] steam_net_bridge eklendi: {_bridge_path}')
 
 a = Analysis(
     [str(SRC_DIR / 'main.py')],  # Ana giriş noktası

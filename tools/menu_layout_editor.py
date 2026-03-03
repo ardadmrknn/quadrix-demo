@@ -79,7 +79,7 @@ def _default_panels() -> list[Panel]:
         Panel("new_gen_tetris_sticker", "Kart Ustalığı Sticker", pygame.Rect(108, 248, 434, 330), (140, 110, 255)),
         Panel("piece_workshop", "Parça Atölyesi", pygame.Rect(595, 188, 300, 290), (255, 0, 180)),
         Panel("extras", "Oyun Modları", pygame.Rect(910, 188, 300, 290), (0, 240, 255)),
-        Panel("pvp_2_players", "Online PvP Co-op", pygame.Rect(595, 500, 615, 200), (255, 155, 0)),
+        Panel("pvp_2_players", "PvP (Local + Online)", pygame.Rect(595, 500, 615, 200), (255, 155, 0)),
         Panel("tutorial_mode", "Eğitim", pygame.Rect(1215, 188, 230, 290), (120, 225, 255)),
         Panel("tutorial_mode_sticker", "Eğitim Sticker", pygame.Rect(1234, 250, 190, 175), (110, 185, 255)),
         Panel("achievements", "Başarılar", pygame.Rect(1460, 188, 380, 290), (255, 220, 40)),

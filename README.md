@@ -1,160 +1,94 @@
-# 🎮 QUADRIX FULL EDITION V2.6
+# 🎮 QUADRIX (Python/Pygame)
 
-**Multi-Platform Quadrix Game - Python, TypeScript & C++**
+Quadrix; Pygame tabanlı, çok modlu bir Tetris türevi oyundur.
+Projede kampanya, PvP, geniş ayar menüleri, başarım sistemi ve Steam entegrasyonu bulunur.
 
-Bu proje klasik Quadrix oyununun 3 farklı dilde implementasyonunu içerir:
-- 🐍 **Python** (Pygame ile) - Ana versiyonu
-- 📜 **TypeScript** - Web versiyonu  
-- ⚡ **C++** - Native performans versiyonu
+## Hızlı Başlangıç
 
-## 🚀 HIZLI BAŞLANGIÇ
+### Windows
 
-
-
-### Windows## Project Structure
-
-**OYUNU_BASLAT.bat** dosyasına çift tıklayın
-
+```powershell
+py main.py
 ```
 
-### macOS / Linuxtetris-game
+Alternatif:
+- `start_game.bat`
+- `run_game.ps1`
 
-Terminal'de şu komutları çalıştırın:├── src
+### macOS / Linux
 
-```bash│   ├── main.ts        # Entry point of the game
-
-cd Desktop/burak│   ├── game.ts        # Game logic management
-
-chmod +x oyunu_baslat.sh│   ├── board.ts       # Game board representation
-
-./oyunu_baslat.sh│   ├── pieces.ts      # Quadrix pieces and their rotations
-
-```│   ├── input.ts       # User input handling
-
-│   ├── render.ts      # Rendering the game on the screen
-
-### Manuel Başlatma (Tüm Platformlar)│   └── types
-
-```bash│       └── index.ts   # Types and interfaces
-
-python src/main.py├── public
-
-# veya│   ├── index.html     # Main HTML file
-
-python3 src/main.py│   └── styles.css     # Styles for the game
-
-```├── package.json       # npm configuration
-
-├── tsconfig.json      # TypeScript configuration
-
----
-
-## 📋 GEREKSİNİMLER
-
-### 🐍 Python Versiyonu:
-- Python 3.7+
-- Pygame kütüphanesi
-
-### 📜 TypeScript Versiyonu:
-- Node.js ve npm
-- Modern web tarayıcısı
-
-### ⚡ C++ Versiyonu:
-- CMake 3.15+
-- C++17 uyumlu compiler (MinGW/Visual Studio)
-- SDL2, SDL2_mixer, SDL2_ttf kütüphaneleri
-
-### Kütüphaneleri Yükleme
-
-**Python:**
 ```bash
-# Windows
+python3 main.py
+```
+
+## Gereksinimler
+
+- Python 3.12 önerilir
+- Pygame (ve diğer bağımlılıklar)
+
+Kurulum:
+
+```powershell
 pip install -r requirements.txt
-
-# macOS / Linux
-pip3 install -r requirements.txt
 ```
 
-**TypeScript:**
+macOS için:
+
 ```bash
-cd tetris-game
-npm install
-npm start
+pip3 install -r requirements-macos.txt
 ```
 
-**C++:**
-```batch
-cd cpp
-build.bat
-run.bat
+## Proje Yapısı
+
+Kısa özet:
+
+- `src/` → ana oyun kaynak kodu
+- `tests/` → pytest testleri
+- `backend/` → Steam leaderboard proxy
+- `docs/` → teknik dokümantasyon
+- `assets/`, `music/`, `backgrounds/`, `font/` → içerik varlıkları
+- `diary/` → değişiklik günlükleri
+- `reports/` → raporlar ve loglar
+- `tools/` → yardımcı araçlar
+
+Detaylı yapı dokümanı: [docs/PROJECT_STRUCTURE_TR.md](docs/PROJECT_STRUCTURE_TR.md)
+
+## Öne Çıkan Özellikler
+
+- Tek oyunculu ve PvP modları
+- Kampanya/görev sistemi
+- Geniş ayar ekranları (ses, grafik, kontrol vb.)
+- Başarım sistemi + Steam başarımları/stat senkronizasyonu
+- Steam leaderboard entegrasyonu (SDK + proxy altyapısı)
+
+## Test
+
+Tüm testler:
+
+```powershell
+py -m pytest -q
 ```
 
-Detaylı C++ kurulum için: `cpp/README.md`
+Belirli test dosyaları:
 
----
-
-## ✨ ÖZELLİKLER
-
-### 🎮 Oyun Modları
-✅ **Tek Oyunculu** - Klasik Quadrix
-✅ **PvP (2 Oyuncu)** - İsim girişi + VS gösterimi
-
-### 🎵 11 Farklı Müzik
-Crazy Frog dahil 11 8-bit müzik!
-
-### 🏆 25+ Başarı Sistemi
-### 🎨 5 Görsel Tema
-
-### 🖼️ Özel Arka Plan Desteği
-
-## How to Play
-
----
-
-- Use the arrow keys to move the pieces left, right, and down.
-
-## 🎮 KONTROLLER- Press the up arrow key to rotate the pieces.
-
-- The goal is to fill complete lines to clear them and score points.
-
-**Tek Oyuncu:** ←→↓ Space C P ESC
-
-**PvP:** WASD (P1) + Ok Tuşları (P2)## Contributing
-
-
-
-Detaylar için **NASIL_OYNANIR.txt** dosyasına bakın.Feel free to submit issues or pull requests if you have suggestions or improvements for the game.
-
-
-
----## License
-
-
-
-## 📁 DOSYA YAPISIThis project is open-source and available under the MIT License.
-
-```
-burak/
-├── OYUNU_BASLAT.bat    🪟 Windows
-├── oyunu_baslat.sh     🍎 macOS/Linux
-├── src/                💻 Kaynak kodlar
-├── music/              🎵 Müzikler
-├── backgrounds/        🖼️ Arka planlar
-└── requirements.txt    📦 Gereksinimler
+```powershell
+py -m pytest tests/test_steam_achievements_sync.py -v
 ```
 
----
+## Build / Dağıtım
 
-## 👥 EMEĞİ GEÇENLER
+- Windows/macOS spec dosyaları kök dizindedir (`tetris*.spec`)
+- Build rehberi: [docs/BUILD_AND_UPLOAD.md](docs/BUILD_AND_UPLOAD.md)
+- Steam operasyon dokümanları: `docs/STEAM_*`
 
-**Arda Demirkan & Burak Yaşayan**
+## Dokümanlar
 
-© 2025 - Quadrix Full Edition V2.6
+- Tam oyun/özellik notları: [README_FULL.md](README_FULL.md)
+- Türkçe rehber (eski/sade): [README_TR.md](README_TR.md)
+- Platform desteği: [PLATFORM_SUPPORT.md](PLATFORM_SUPPORT.md)
 
----
+## Katkı
 
-## 🌐 PLATFORM DESTEĞİ
-
-✅ Windows 10/11
-✅ macOS 10.15+
-✅ Linux
+- Kod stilini mevcut yapıyla uyumlu tutun.
+- Yeni test eklerken `tests/` klasörünü kullanın.
+- Geçici analiz/script çıktıları için kök dizin yerine `tools/` ve `reports/` kullanın.

@@ -1,0 +1,13 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <CustomBuild Include="C:\Users\arda demirkan\Desktop\v2_23022026\v2\steamworks\steam_net_bridge\build312\CMakeFiles\a60f51421ccc50650fa8639ed5ee1b6f\INSTALL_force.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="CMake Rules">
+      <UniqueIdentifier>{67EDD1BF-1571-38BB-8BDF-0B6FB0AB13E0}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>

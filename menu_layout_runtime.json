@@ -75,7 +75,7 @@
       "y_pct": 0.788889,
       "w_pct": 0.247917,
       "h_pct": 0.112037,
-      "title": "Online PvP Co-op"
+      "title": "PvP (Local + Online)"
     },
     "new_gen_tetris": {
       "x_pct": 0.141146,
@@ -282,7 +282,7 @@
     },
     {
       "key": "pvp_2_players",
-      "title": "Online PvP Co-op",
+      "title": "PvP (Local + Online)",
       "x": 651,
       "y": 852,
       "w": 476,

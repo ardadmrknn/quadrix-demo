@@ -362,6 +362,9 @@ class Menu:
         self.new_gen_tetris_play_rect: 'pygame.Rect | None' = None
         self.extras_browse_rect: 'pygame.Rect | None' = None
         self.tutorial_enter_rect: 'pygame.Rect | None' = None
+        self.pvp_local_rect: 'pygame.Rect | None' = None
+        self.pvp_online_rect: 'pygame.Rect | None' = None
+        self._pvp_split_selection = 'local'  # 'local' | 'online' (klavye alt seçim)
         self._hero_avatar_surface = None
         self._hero_avatar_signature = None
 
@@ -429,7 +432,7 @@ class Menu:
         self._mystery_lb_entries = {'global': [], 'friends': []}
         self._mystery_lb_error = ''
         self._mystery_lb_last_fetch_ms = -120_000
-        self._mystery_lb_refresh_ms = 30_000
+        self._mystery_lb_refresh_ms = 12_000
         self._mystery_lb_loading = False
 
         # Steam oyuncu profil cache: steam_id -> {personaname, avatarmedium, ...}
@@ -438,6 +441,13 @@ class Menu:
         self._steam_avatar_bytes: dict[str, bytes] = {}
         # Avatar surface cache: avatar_url -> pygame.Surface (main thread'de oluşturuldu)
         self._steam_avatar_surf: dict[str, pygame.Surface | None] = {}
+
+        # Main header (QUADRIX yanı) için aktif Steam avatar cache
+        self._steam_header_avatar_url = ''
+        self._steam_header_avatar_bytes: bytes | None = None
+        self._steam_header_avatar_surface_by_size: dict[int, pygame.Surface] = {}
+        self._steam_header_avatar_loading = False
+        self._steam_header_avatar_fetch_attempted = False
 
         # Dashboard panel context cache
         self._panel_context_cache = None
@@ -843,6 +853,28 @@ class Menu:
         if event.type == pygame.KEYDOWN:
             nav = self._get_nav_keys()
             navigated = False
+            current_option = self.options[self.selected] if (0 <= self.selected < len(self.options)) else ''
+
+            if current_option == 'pvp_2_players':
+                if event.key in nav['left']:
+                    self._pvp_split_selection = 'local'
+                    self._nav_source = 'keyboard'
+                    return None
+                elif event.key in nav['right']:
+                    self._pvp_split_selection = 'online'
+                    self._nav_source = 'keyboard'
+                    return None
+                elif event.key in (pygame.K_RETURN, pygame.K_SPACE):
+                    if getattr(self, '_nav_source', 'mouse') == 'mouse' and not getattr(self, '_mouse_in_panel', True):
+                        return None
+                    try:
+                        mouse_pos_now = get_mouse_pos()
+                    except Exception:
+                        mouse_pos_now = None
+                    if mouse_pos_now and self.pvp_online_rect and self.pvp_online_rect.collidepoint(mouse_pos_now):
+                        return 'online_pvp'
+                    return 'online_pvp' if self._pvp_split_selection == 'online' else 'pvp_2_players'
+
             if event.key in nav['up']:
                 new_idx = self._find_spatial_neighbor('up')
                 if new_idx != self.selected:
@@ -888,6 +920,10 @@ class Menu:
             # Tuş navigasyonu aktifken fare hover seçimi değiştirmez
             if getattr(self, '_nav_source', 'mouse') != 'keyboard':
                 mouse_pos = normalize_mouse_pos(getattr(event, 'pos', None)) or event.pos
+                if self.pvp_local_rect and self.pvp_local_rect.collidepoint(mouse_pos):
+                    self._pvp_split_selection = 'local'
+                elif self.pvp_online_rect and self.pvp_online_rect.collidepoint(mouse_pos):
+                    self._pvp_split_selection = 'online'
                 self._mouse_in_panel = False
                 for i, rect in enumerate(self.option_rects):
                     if rect.collidepoint(mouse_pos):
@@ -911,6 +947,14 @@ class Menu:
 
             if self.tutorial_enter_rect and self.tutorial_enter_rect.collidepoint(mouse_pos):
                 return 'tutorial_mode'
+
+            if self.pvp_local_rect and self.pvp_local_rect.collidepoint(mouse_pos):
+                self._pvp_split_selection = 'local'
+                return 'pvp_2_players'
+
+            if self.pvp_online_rect and self.pvp_online_rect.collidepoint(mouse_pos):
+                self._pvp_split_selection = 'online'
+                return 'online_pvp'
 
             # SOS panel/button click handling (main menu only)
             if self.sos_button_rect and self.sos_button_rect.collidepoint(mouse_pos):
@@ -1561,6 +1605,81 @@ class Menu:
         pad_r = s(14)  # Sağ padding
         content_w = rect.width - pad_l - pad_r
 
+        if panel_key == 'pvp_2_players':
+            # Tek panel içinde 2 yarı: sol Local PvP, sağ Online PvP
+            # Layout editör uyumu için yarılar pvp_2_players rect'inden türetilir.
+            mouse_pos = get_mouse_pos()
+
+            split_top = rect.y + max(s(56), int(rect.height * 0.34))
+            split_bottom = rect.bottom - s(12)
+            split_h = max(s(40), split_bottom - split_top)
+            split_rect = pygame.Rect(rect.x + s(10), split_top, max(s(120), rect.width - s(20)), split_h)
+
+            divider_gap = s(6)
+            left_w = max(s(48), (split_rect.width - divider_gap) // 2)
+            right_w = max(s(48), split_rect.width - left_w - divider_gap)
+            local_rect = pygame.Rect(split_rect.x, split_rect.y, left_w, split_rect.height)
+            online_rect = pygame.Rect(split_rect.x + left_w + divider_gap, split_rect.y, right_w, split_rect.height)
+
+            self.pvp_local_rect = local_rect
+            self.pvp_online_rect = online_rect
+
+            local_hover = local_rect.collidepoint(mouse_pos)
+            online_hover = online_rect.collidepoint(mouse_pos)
+            if local_hover:
+                self._pvp_split_selection = 'local'
+            elif online_hover:
+                self._pvp_split_selection = 'online'
+
+            keyboard_focus = False
+            try:
+                keyboard_focus = (
+                    getattr(self, '_nav_source', 'mouse') == 'keyboard'
+                    and 0 <= self.selected < len(self.options)
+                    and self.options[self.selected] == 'pvp_2_players'
+                )
+            except Exception:
+                keyboard_focus = False
+
+            if keyboard_focus:
+                if self._pvp_split_selection == 'online':
+                    online_hover = True
+                    local_hover = False
+                else:
+                    local_hover = True
+                    online_hover = False
+
+            # Orta bölme çizgisi
+            divider_x = local_rect.right + divider_gap // 2
+            pygame.draw.line(self.screen, (*accent_color[:3], 130), (divider_x, split_rect.y + s(4)), (divider_x, split_rect.bottom - s(4)), 1)
+
+            halves = [
+                (local_rect, UIColors.NEON_ORANGE, t('menu_dashboard_pvp_local_label', 'Local PvP'), t('menu_dashboard_pvp_local_sub', '2 Oyuncu'), local_hover),
+                (online_rect, UIColors.NEON_CYAN, t('menu_dashboard_pvp_online_label', 'Online PvP'), t('menu_dashboard_pvp_online_sub', 'Steam 1v1'), online_hover),
+            ]
+
+            for half_rect, half_color, label, sub, is_hover in halves:
+                half_surf = pygame.Surface(half_rect.size, pygame.SRCALPHA)
+                bg_alpha = 210 if is_hover else 160
+                pygame.draw.rect(half_surf, (12, 22, 40, bg_alpha), half_surf.get_rect(), border_radius=10)
+                for hy in range(min(7, half_rect.height // 4)):
+                    ha = int(18 * (1 - hy / max(1, min(7, half_rect.height // 4))))
+                    pygame.draw.line(half_surf, (255, 255, 255, ha), (4, hy), (half_rect.width - 4, hy))
+                pygame.draw.rect(half_surf, (*half_color[:3], 210 if is_hover else 120), half_surf.get_rect(), 2 if is_hover else 1, border_radius=10)
+                self.screen.blit(half_surf, half_rect.topleft)
+
+                label_font = retro_style.get_fitting_font(label, base_size=s(18), max_width=half_rect.width - s(14), bold=True, min_size=max(10, s(11)))
+                label_surf = label_font.render(label, True, UIColors.TEXT_PRIMARY)
+                label_rect = label_surf.get_rect(centerx=half_rect.centerx, y=half_rect.y + s(10))
+                self.screen.blit(label_surf, label_rect)
+
+                sub_font = retro_style.get_fitting_font(sub, base_size=s(13), max_width=half_rect.width - s(12), bold=False, min_size=max(9, s(10)))
+                sub_surf = sub_font.render(sub, True, UIColors.TEXT_SECONDARY)
+                sub_rect = sub_surf.get_rect(centerx=half_rect.centerx, bottom=half_rect.bottom - s(10))
+                self.screen.blit(sub_surf, sub_rect)
+
+            return
+
         if panel_key == 'daily_challenge':
             title_text = str(panel_context.get('daily_title') or '')
             lives = int(panel_context.get('daily_lives', 0) or 0)
@@ -2103,6 +2222,8 @@ class Menu:
         self.new_gen_tetris_play_rect = None
         self.extras_browse_rect = None
         self.tutorial_enter_rect = None
+        self.pvp_local_rect = None
+        self.pvp_online_rect = None
 
         action_title_map = {
             'new_gen_tetris': t('new_gen_tetris'),
@@ -2123,7 +2244,7 @@ class Menu:
             'campaign_mode': '',
             'extras': '',
             'block_styles': t('menu_dashboard_sub_block_styles'),
-            'pvp_2_players': t('menu_dashboard_sub_pvp'),
+            'pvp_2_players': '',
             'tutorial_mode': '',
             'achievements': '',
         }
@@ -2423,6 +2544,7 @@ class Menu:
         # Avatar surface cache'ini temizle: yeni yuvarlama/çözünürlük için
         # (bytes cache'i koru - yeniden indirmemek için)
         self._steam_avatar_surf.clear()
+        self._ensure_steam_header_avatar_async()
         self._refresh_mystery_leaderboard_cache(force=True)
 
     def _refresh_mystery_leaderboard_cache(self, force: bool = False):
@@ -2481,6 +2603,33 @@ class Menu:
                 global_error = ''
                 friend_error = ''
 
+                def _entry_score(entry: dict) -> int:
+                    try:
+                        return int(entry.get('score', 0) or 0)
+                    except Exception:
+                        return 0
+
+                def _merge_entries(base_entries: list[dict], extra_entries: list[dict]) -> list[dict]:
+                    merged: list[dict] = []
+                    by_sid: dict[str, int] = {}
+                    for raw in list(base_entries or []) + list(extra_entries or []):
+                        entry = dict(raw or {})
+                        sid = str(entry.get('steam_id', '') or '').strip()
+                        if sid:
+                            existing_idx = by_sid.get(sid)
+                            if existing_idx is None:
+                                by_sid[sid] = len(merged)
+                                merged.append(entry)
+                            else:
+                                if _entry_score(entry) >= _entry_score(merged[existing_idx]):
+                                    merged[existing_idx] = entry
+                        else:
+                            merged.append(entry)
+                    merged.sort(key=_entry_score, reverse=True)
+                    for _ri, _re in enumerate(merged):
+                        _re['rank'] = _ri + 1
+                    return merged
+
                 # --- Yol 1+2: Backend proxy veya Direct Web API ---
                 if service_configured:
                     global_entries = service.fetch_mode_highscores('mystery', limit=10)
@@ -2489,17 +2638,19 @@ class Menu:
                     friend_entries = service.fetch_mode_friend_highscores('mystery', limit=10)
                     friend_error = service.last_error
 
-                # --- Yol 3: SDK fallback (proxy/direct boş döndüyse) ---
-                if not global_entries and _sdk_available:
+                # --- Yol 3: SDK global verisini her zaman birleştir (anlık güncelleme) ---
+                sdk_global: list[dict] = []
+                if _sdk_available:
                     try:
                         import steam_integration as _si
-                        sdk_global = _si.fetch_global_scores('mystery', limit=10)
+                        sdk_global = _si.fetch_global_scores('mystery', limit=10) or []
                         if sdk_global:
-                            global_entries = sdk_global
-                            global_error = ''
-                            print(f"[Steam] SDK leaderboard fallback OK: mystery global → {len(sdk_global)} giriş")
+                            print(f"[Steam] SDK leaderboard merge OK: mystery global → {len(sdk_global)} giriş")
                     except Exception as _sdk_err:
                         print(f"[Steam] SDK leaderboard fallback hatası: {_sdk_err}")
+                if sdk_global:
+                    global_entries = _merge_entries(global_entries, sdk_global)
+                    global_error = ''
 
                 if not friend_entries and _sdk_available:
                     try:
@@ -2512,18 +2663,9 @@ class Menu:
                     except Exception as _sdk_err:
                         print(f"[Steam] SDK friend leaderboard fallback hatası: {_sdk_err}")
 
-                # Global listeye arkadaş girişlerini de ekle (eksik olanları)
-                if friend_entries and global_entries is not None:
-                    _global_sids = {str(e.get('steam_id', '') or '') for e in global_entries}
-                    for fe in friend_entries:
-                        _fid = str(fe.get('steam_id', '') or '')
-                        if _fid and _fid not in _global_sids:
-                            global_entries.append(fe)
-                            _global_sids.add(_fid)
-                    # Score'a göre yeniden sırala, rank güncelle
-                    global_entries.sort(key=lambda e: int(e.get('score', 0) or 0), reverse=True)
-                    for _ri, _re in enumerate(global_entries):
-                        _re['rank'] = _ri + 1
+                # Global listeye arkadaş girişlerini de ekle/güncelle
+                if friend_entries:
+                    global_entries = _merge_entries(global_entries, friend_entries)
 
                 self._mystery_lb_entries = {
                     'global': global_entries,
@@ -3192,13 +3334,133 @@ class Menu:
             return None
         avatar_value = user_data.get('avatar', None)
         accent_color = self._normalize_color(user_data.get('avatar_color', retro_style.primary))
-        signature = (avatar_value, accent_color, size)
+        steam_avatar_bitmap = self._get_steam_header_avatar_bitmap(max(32, size - 24))
+        steam_avatar_sig = self._steam_header_avatar_url or ('sdk' if steam_avatar_bitmap is not None else '')
+        signature = (avatar_value, accent_color, size, steam_avatar_sig)
         if self._hero_avatar_signature == signature and self._hero_avatar_surface is not None:
             return self._hero_avatar_surface
-        surface = self._draw_avatar_badge_surface(avatar_value, accent_color, size)
+        surface = self._draw_avatar_badge_surface(
+            avatar_value,
+            accent_color,
+            size,
+            steam_avatar_bitmap=steam_avatar_bitmap,
+        )
         self._hero_avatar_signature = signature
         self._hero_avatar_surface = surface
         return surface
+
+    def _ensure_steam_header_avatar_async(self):
+        if self._steam_header_avatar_bytes is not None or self._steam_header_avatar_loading:
+            return
+        if self._steam_header_avatar_fetch_attempted:
+            return
+        try:
+            import steam_integration as _si
+            if not _si.is_available():
+                return
+            steam_id = str(_si.get_steam_id_str() or '').strip()
+        except Exception:
+            return
+        if not steam_id:
+            return
+
+        # Önce mevcut cache'den dene
+        player_info = self._steam_player_cache.get(steam_id, {})
+        avatar_url = str(player_info.get('avatarmedium') or player_info.get('avatar') or '').strip()
+        if avatar_url and avatar_url in self._steam_avatar_bytes:
+            self._steam_header_avatar_url = avatar_url
+            self._steam_header_avatar_bytes = self._steam_avatar_bytes.get(avatar_url)
+            self._steam_header_avatar_surface_by_size.clear()
+            return
+
+        if not self._leaderboard_service.is_configured():
+            self._steam_header_avatar_fetch_attempted = True
+            return
+
+        self._steam_header_avatar_loading = True
+        self._steam_header_avatar_fetch_attempted = True
+
+        def _worker():
+            try:
+                summaries = {}
+                if self._leaderboard_service.is_configured():
+                    summaries = self._leaderboard_service.fetch_player_summaries([steam_id])
+                if summaries:
+                    self._steam_player_cache.update(summaries)
+                info = self._steam_player_cache.get(steam_id, {})
+                url = str(info.get('avatarmedium') or info.get('avatar') or '').strip()
+                if not url:
+                    return
+
+                data = self._steam_avatar_bytes.get(url)
+                if data is None:
+                    try:
+                        import requests as _req
+                        resp = _req.get(url, timeout=3)
+                        if resp.status_code == 200 and resp.content:
+                            data = resp.content
+                            self._steam_avatar_bytes[url] = data
+                    except Exception:
+                        data = None
+                if data:
+                    self._steam_header_avatar_url = url
+                    self._steam_header_avatar_bytes = data
+                    self._steam_header_avatar_surface_by_size.clear()
+            finally:
+                self._steam_header_avatar_loading = False
+
+        threading.Thread(target=_worker, daemon=True).start()
+
+    def _get_steam_header_avatar_bitmap(self, target_size: int):
+        self._ensure_steam_header_avatar_async()
+        target_size = max(16, int(target_size))
+
+        # 1) HTTP'den alınan avatar bytes
+        if not self._steam_header_avatar_bytes:
+            # 2) Steam SDK doğrudan avatar fallback
+            try:
+                import steam_integration as _si
+                avatar_rgba = _si.get_avatar_rgba(preferred='medium')
+                if avatar_rgba:
+                    aw, ah, argba = avatar_rgba
+                    source = pygame.image.frombuffer(bytearray(argba), (aw, ah), 'RGBA').convert_alpha()
+                else:
+                    source = None
+            except Exception:
+                source = None
+            if source is None:
+                return None
+            src_w, src_h = source.get_size()
+            scale = target_size / min(src_w, src_h) if min(src_w, src_h) > 0 else 1.0
+            scaled_w = max(target_size, int(src_w * scale))
+            scaled_h = max(target_size, int(src_h * scale))
+            img = pygame.transform.smoothscale(source, (scaled_w, scaled_h))
+            crop_x = (scaled_w - target_size) // 2
+            crop_y = (scaled_h - target_size) // 2
+            cropped = pygame.Surface((target_size, target_size), pygame.SRCALPHA)
+            cropped.blit(img, (0, 0), area=pygame.Rect(crop_x, crop_y, target_size, target_size))
+            return cropped
+
+        cached = self._steam_header_avatar_surface_by_size.get(target_size)
+        if cached is not None:
+            return cached
+        try:
+            import io as _io
+            loaded = pygame.image.load(_io.BytesIO(self._steam_header_avatar_bytes))
+            src = loaded.convert() if _IS_MACOS else loaded.convert_alpha()
+            src_w, src_h = src.get_size()
+            scale = target_size / min(src_w, src_h) if min(src_w, src_h) > 0 else 1.0
+            scaled_w = max(target_size, int(src_w * scale))
+            scaled_h = max(target_size, int(src_h * scale))
+            img = pygame.transform.smoothscale(src, (scaled_w, scaled_h))
+            crop_x = (scaled_w - target_size) // 2
+            crop_y = (scaled_h - target_size) // 2
+            cropped = pygame.Surface((target_size, target_size), pygame.SRCALPHA)
+            cropped.blit(img, (0, 0), area=pygame.Rect(crop_x, crop_y, target_size, target_size))
+            self._steam_header_avatar_surface_by_size[target_size] = cropped
+            return cropped
+        except Exception:
+            return None
 
     def _normalize_color(self, color):
         if isinstance(color, (list, tuple)) and len(color) >= 3:
@@ -3208,7 +3470,7 @@ class Menu:
                 pass
         return retro_style.primary
 
-    def _draw_avatar_badge_surface(self, avatar_value, accent_color, size):
+    def _draw_avatar_badge_surface(self, avatar_value, accent_color, size, steam_avatar_bitmap=None):
         size = max(64, size)
         surface = pygame.Surface((size, size), pygame.SRCALPHA)
         center = size // 2
@@ -3224,7 +3486,7 @@ class Menu:
 
         # 3. Avatar bitmap
         avatar_size = max(32, size - 24)
-        avatar_bitmap = self._resolve_avatar_bitmap(avatar_value, avatar_size)
+        avatar_bitmap = steam_avatar_bitmap if steam_avatar_bitmap is not None else self._resolve_avatar_bitmap(avatar_value, avatar_size)
         if avatar_bitmap:
             masked = pygame.Surface((avatar_size, avatar_size), pygame.SRCALPHA)
             mask = pygame.Surface((avatar_size, avatar_size), pygame.SRCALPHA)

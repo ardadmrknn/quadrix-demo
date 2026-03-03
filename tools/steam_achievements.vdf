@@ -1,0 +1,759 @@
+"achievements"
+{
+	"1"
+	{
+		"name"		"ACH_FIRST_GAME"
+		"display"
+		{
+			"name"
+			{
+				"english"		"First Step"
+				"turkish"		"İlk Adım"
+			}
+			"desc"
+			{
+				"english"		"Complete your first game"
+				"turkish"		"İlk oyununu tamamla"
+			}
+		}
+		"hidden"		"0"
+	}
+	"2"
+	{
+		"name"		"ACH_FIRST_LINE"
+		"display"
+		{
+			"name"
+			{
+				"english"		"First Line"
+				"turkish"		"İlk Satır"
+			}
+			"desc"
+			{
+				"english"		"Clear your first line"
+				"turkish"		"İlk satırını temizle"
+			}
+		}
+		"hidden"		"0"
+	}
+	"3"
+	{
+		"name"		"ACH_FIRST_TETRIS"
+		"display"
+		{
+			"name"
+			{
+				"english"		"First Quadrix"
+				"turkish"		"İlk Quadrix"
+			}
+			"desc"
+			{
+				"english"		"Make your first 4-line Quadrix"
+				"turkish"		"İlk 4 satırlık Quadrix'ini yap"
+			}
+		}
+		"hidden"		"0"
+	}
+	"4"
+	{
+		"name"		"ACH_PERFECT_CLEAR"
+		"display"
+		{
+			"name"
+			{
+				"english"		"Perfect Clear"
+				"turkish"		"Mükemmel Temizlik"
+			}
+			"desc"
+			{
+				"english"		"Clear the entire board"
+				"turkish"		"Tahtayı tamamen temizle"
+			}
+		}
+		"hidden"		"0"
+	}
+	"5"
+	{
+		"name"		"ACH_NO_MISTAKES"
+		"display"
+		{
+			"name"
+			{
+				"english"		"Flawless"
+				"turkish"		"Kusursuz"
+			}
+			"desc"
+			{
+				"english"		"Complete a Daily Challenge: No Mistakes"
+				"turkish"		"Daily Challenge: No Mistakes görevini tamamla"
+			}
+		}
+		"hidden"		"1"
+	}
+	"6"
+	{
+		"name"		"ACH_SCORE_1K"
+		"display"
+		{
+			"name"
+			{
+				"english"		"Beginner"
+				"turkish"		"Başlangıç"
+			}
+			"desc"
+			{
+				"english"		"Reach 1,000 points in a single game"
+				"turkish"		"Bir oyunda 1,000 puana ulaş"
+			}
+		}
+		"hidden"		"0"
+	}
+	"7"
+	{
+		"name"		"ACH_SCORE_10K"
+		"display"
+		{
+			"name"
+			{
+				"english"		"Experienced"
+				"turkish"		"Deneyimli"
+			}
+			"desc"
+			{
+				"english"		"Reach 10,000 points in a single game"
+				"turkish"		"Bir oyunda 10,000 puana ulaş"
+			}
+		}
+		"hidden"		"0"
+	}
+	"8"
+	{
+		"name"		"ACH_SCORE_50K"
+		"display"
+		{
+			"name"
+			{
+				"english"		"Master"
+				"turkish"		"Usta"
+			}
+			"desc"
+			{
+				"english"		"Reach 50,000 points in a single game"
+				"turkish"		"Bir oyunda 50,000 puana ulaş"
+			}
+		}
+		"hidden"		"0"
+	}
+	"9"
+	{
+		"name"		"ACH_SCORE_100K"
+		"display"
+		{
+			"name"
+			{
+				"english"		"Legend"
+				"turkish"		"Efsane"
+			}
+			"desc"
+			{
+				"english"		"Reach 100,000 points in a single game"
+				"turkish"		"Bir oyunda 100,000 puana ulaş"
+			}
+		}
+		"hidden"		"1"
+	}
+	"10"
+	{
+		"name"		"ACH_LINES_10"
+		"display"
+		{
+			"name"
+			{
+				"english"		"Cleaner"
+				"turkish"		"Temizlikçi"
+			}
+			"desc"
+			{
+				"english"		"Clear 10 lines in a single game"
+				"turkish"		"Bir oyunda 10 satır temizle"
+			}
+		}
+		"hidden"		"0"
+	}
+	"11"
+	{
+		"name"		"ACH_LINES_50"
+		"display"
+		{
+			"name"
+			{
+				"english"		"Sweeper"
+				"turkish"		"Süpürge"
+			}
+			"desc"
+			{
+				"english"		"Clear 50 lines in a single game"
+				"turkish"		"Bir oyunda 50 satır temizle"
+			}
+		}
+		"hidden"		"0"
+	}
+	"12"
+	{
+		"name"		"ACH_LINES_100"
+		"display"
+		{
+			"name"
+			{
+				"english"		"Cleaning Robot"
+				"turkish"		"Temizlik Robotu"
+			}
+			"desc"
+			{
+				"english"		"Clear 100 lines in a single game"
+				"turkish"		"Bir oyunda 100 satır temizle"
+			}
+		}
+		"hidden"		"0"
+	}
+	"13"
+	{
+		"name"		"ACH_LINES_200"
+		"display"
+		{
+			"name"
+			{
+				"english"		"Cleaning Machine"
+				"turkish"		"Temizlik Makinesi"
+			}
+			"desc"
+			{
+				"english"		"Clear 200 lines in a single game"
+				"turkish"		"Bir oyunda 200 satır temizle"
+			}
+		}
+		"hidden"		"1"
+	}
+	"14"
+	{
+		"name"		"ACH_TETRIS_5"
+		"display"
+		{
+			"name"
+			{
+				"english"		"Quadrix Master"
+				"turkish"		"Quadrix Ustası"
+			}
+			"desc"
+			{
+				"english"		"Perform 5 Quadrixes"
+				"turkish"		"5 Quadrix yap"
+			}
+		}
+		"hidden"		"0"
+	}
+	"15"
+	{
+		"name"		"ACH_TETRIS_10"
+		"display"
+		{
+			"name"
+			{
+				"english"		"Quadrix God"
+				"turkish"		"Quadrix Tanrısı"
+			}
+			"desc"
+			{
+				"english"		"Perform 10 Quadrixes"
+				"turkish"		"10 Quadrix yap"
+			}
+		}
+		"hidden"		"0"
+	}
+	"16"
+	{
+		"name"		"ACH_LEVEL_5"
+		"display"
+		{
+			"name"
+			{
+				"english"		"Speeding Up"
+				"turkish"		"Hızlanıyor"
+			}
+			"desc"
+			{
+				"english"		"Reach level 5 in a single game"
+				"turkish"		"Bir oyunda seviye 5'e ulaş"
+			}
+		}
+		"hidden"		"0"
+	}
+	"17"
+	{
+		"name"		"ACH_LEVEL_10"
+		"display"
+		{
+			"name"
+			{
+				"english"		"Speed Demon"
+				"turkish"		"Hız Canavarı"
+			}
+			"desc"
+			{
+				"english"		"Reach level 10 in a single game"
+				"turkish"		"Bir oyunda seviye 10'a ulaş"
+			}
+		}
+		"hidden"		"0"
+	}
+	"18"
+	{
+		"name"		"ACH_LEVEL_15"
+		"display"
+		{
+			"name"
+			{
+				"english"		"Supersonic"
+				"turkish"		"Süpersonik"
+			}
+			"desc"
+			{
+				"english"		"Reach level 15 in a single game"
+				"turkish"		"Bir oyunda seviye 15'e ulaş"
+			}
+		}
+		"hidden"		"0"
+	}
+	"19"
+	{
+		"name"		"ACH_LEVEL_20"
+		"display"
+		{
+			"name"
+			{
+				"english"		"Light Speed"
+				"turkish"		"Işık Hızı"
+			}
+			"desc"
+			{
+				"english"		"Reach level 20 in a single game"
+				"turkish"		"Bir oyunda seviye 20'ye ulaş"
+			}
+		}
+		"hidden"		"1"
+	}
+	"20"
+	{
+		"name"		"ACH_GAMES_10"
+		"display"
+		{
+			"name"
+			{
+				"english"		"Loyal Player"
+				"turkish"		"Sadık Oyuncu"
+			}
+			"desc"
+			{
+				"english"		"Play 10 games"
+				"turkish"		"10 oyun oyna"
+			}
+		}
+		"hidden"		"0"
+	}
+	"21"
+	{
+		"name"		"ACH_GAMES_50"
+		"display"
+		{
+			"name"
+			{
+				"english"		"Regular"
+				"turkish"		"Müdavim"
+			}
+			"desc"
+			{
+				"english"		"Play 50 games"
+				"turkish"		"50 oyun oyna"
+			}
+		}
+		"hidden"		"0"
+	}
+	"22"
+	{
+		"name"		"ACH_GAMES_100"
+		"display"
+		{
+			"name"
+			{
+				"english"		"Professional"
+				"turkish"		"Profesyonel"
+			}
+			"desc"
+			{
+				"english"		"Play 100 games"
+				"turkish"		"100 oyun oyna"
+			}
+		}
+		"hidden"		"0"
+	}
+	"23"
+	{
+		"name"		"ACH_COMBO_5"
+		"display"
+		{
+			"name"
+			{
+				"english"		"Combo Master"
+				"turkish"		"Kombo Ustası"
+			}
+			"desc"
+			{
+				"english"		"Perform a 5x combo in a single game"
+				"turkish"		"Bir oyunda 5x kombo yap"
+			}
+		}
+		"hidden"		"0"
+	}
+	"24"
+	{
+		"name"		"ACH_PVP_FIRST_WIN"
+		"display"
+		{
+			"name"
+			{
+				"english"		"First Victory"
+				"turkish"		"İlk Zafer"
+			}
+			"desc"
+			{
+				"english"		"Win your first PvP match"
+				"turkish"		"PvP'de ilk galibiyetini al"
+			}
+		}
+		"hidden"		"0"
+	}
+	"25"
+	{
+		"name"		"ACH_PVP_10_WINS"
+		"display"
+		{
+			"name"
+			{
+				"english"		"Warrior"
+				"turkish"		"Savaşçı"
+			}
+			"desc"
+			{
+				"english"		"Win 10 PvP matches"
+				"turkish"		"PvP'de 10 galibiyet"
+			}
+		}
+		"hidden"		"0"
+	}
+	"26"
+	{
+		"name"		"ACH_CAMPAIGN_STARS_10"
+		"display"
+		{
+			"name"
+			{
+				"english"		"Star Collector"
+				"turkish"		"Yıldız Toplayıcı"
+			}
+			"desc"
+			{
+				"english"		"Earn 10 stars in Campaign mode"
+				"turkish"		"Görev modunda toplam 10 yıldız kazan"
+			}
+		}
+		"hidden"		"0"
+	}
+	"27"
+	{
+		"name"		"ACH_CAMPAIGN_STARS_30"
+		"display"
+		{
+			"name"
+			{
+				"english"		"Star Hunter"
+				"turkish"		"Yıldız Avcısı"
+			}
+			"desc"
+			{
+				"english"		"Earn 30 stars in Campaign mode"
+				"turkish"		"Görev modunda toplam 30 yıldız kazan"
+			}
+		}
+		"hidden"		"0"
+	}
+	"28"
+	{
+		"name"		"ACH_CAMPAIGN_STARS_50"
+		"display"
+		{
+			"name"
+			{
+				"english"		"Star Master"
+				"turkish"		"Yıldız Ustası"
+			}
+			"desc"
+			{
+				"english"		"Earn 50 stars in Campaign mode"
+				"turkish"		"Görev modunda toplam 50 yıldız kazan"
+			}
+		}
+		"hidden"		"0"
+	}
+	"29"
+	{
+		"name"		"ACH_CAMPAIGN_STARS_100"
+		"display"
+		{
+			"name"
+			{
+				"english"		"Star God"
+				"turkish"		"Yıldız Tanrısı"
+			}
+			"desc"
+			{
+				"english"		"Earn 100 stars in Campaign mode"
+				"turkish"		"Görev modunda toplam 100 yıldız kazan"
+			}
+		}
+		"hidden"		"1"
+	}
+	"30"
+	{
+		"name"		"ACH_CAMPAIGN_LVL50_3STAR"
+		"display"
+		{
+			"name"
+			{
+				"english"		"Half Perfect"
+				"turkish"		"Yarı Mükemmel"
+			}
+			"desc"
+			{
+				"english"		"Complete level 50 with 3 stars"
+				"turkish"		"50. bölümü 3 yıldızla tamamla"
+			}
+		}
+		"hidden"		"1"
+	}
+	"31"
+	{
+		"name"		"ACH_CAMPAIGN_LVL100_3STAR"
+		"display"
+		{
+			"name"
+			{
+				"english"		"Legendary Hero"
+				"turkish"		"Efsane Kahraman"
+			}
+			"desc"
+			{
+				"english"		"Complete level 100 with 3 stars"
+				"turkish"		"100. bölümü 3 yıldızla tamamla"
+			}
+		}
+		"hidden"		"1"
+	}
+	"32"
+	{
+		"name"		"ACH_SPRINT_SUB60"
+		"display"
+		{
+			"name"
+			{
+				"english"		"Fast Fingers"
+				"turkish"		"Hızlı Parmaklar"
+			}
+			"desc"
+			{
+				"english"		"Finish Sprint in under 60 seconds"
+				"turkish"		"Sprint modunda 40 satırı 60 saniyeden kısa sürede bitir"
+			}
+		}
+		"hidden"		"0"
+	}
+	"33"
+	{
+		"name"		"ACH_SPRINT_SUB45"
+		"display"
+		{
+			"name"
+			{
+				"english"		"Light Speed"
+				"turkish"		"Işık Hızı"
+			}
+			"desc"
+			{
+				"english"		"Finish Sprint in under 45 seconds"
+				"turkish"		"Sprint modunda 40 satırı 45 saniyeden kısa sürede bitir"
+			}
+		}
+		"hidden"		"1"
+	}
+	"34"
+	{
+		"name"		"ACH_ULTRA_50K"
+		"display"
+		{
+			"name"
+			{
+				"english"		"Ultra Master"
+				"turkish"		"Ultra Usta"
+			}
+			"desc"
+			{
+				"english"		"Score 50,000+ in Ultra mode"
+				"turkish"		"Ultra modunda 50.000+ puan yap"
+			}
+		}
+		"hidden"		"0"
+	}
+	"35"
+	{
+		"name"		"ACH_ULTRA_100K"
+		"display"
+		{
+			"name"
+			{
+				"english"		"Ultra Legend"
+				"turkish"		"Ultra Efsane"
+			}
+			"desc"
+			{
+				"english"		"Score 100,000+ in Ultra mode"
+				"turkish"		"Ultra modunda 100.000+ puan yap"
+			}
+		}
+		"hidden"		"1"
+	}
+	"36"
+	{
+		"name"		"ACH_SURVIVAL_5MIN"
+		"display"
+		{
+			"name"
+			{
+				"english"		"Survivor"
+				"turkish"		"Hayatta Kalan"
+			}
+			"desc"
+			{
+				"english"		"Stay alive 5 minutes in Survival mode"
+				"turkish"		"Survival modunda 5 dakika hayatta kal"
+			}
+		}
+		"hidden"		"0"
+	}
+	"37"
+	{
+		"name"		"ACH_SURVIVAL_10MIN"
+		"display"
+		{
+			"name"
+			{
+				"english"		"Last Standing"
+				"turkish"		"Sağ Kalan"
+			}
+			"desc"
+			{
+				"english"		"Stay alive 10 minutes in Survival mode"
+				"turkish"		"Survival modunda 10 dakika hayatta kal"
+			}
+		}
+		"hidden"		"0"
+	}
+	"38"
+	{
+		"name"		"ACH_CASCADE_CHAIN_10"
+		"display"
+		{
+			"name"
+			{
+				"english"		"Chain Reaction"
+				"turkish"		"Zincir Reaksiyonu"
+			}
+			"desc"
+			{
+				"english"		"Perform a 10x+ chain combo in Cascade mode"
+				"turkish"		"Cascade modunda 10x+ zincir combo yap"
+			}
+		}
+		"hidden"		"0"
+	}
+	"39"
+	{
+		"name"		"ACH_HARDCORE_LEVEL10"
+		"display"
+		{
+			"name"
+			{
+				"english"		"Hardcore Warrior"
+				"turkish"		"Hardcore Savaşçı"
+			}
+			"desc"
+			{
+				"english"		"Reach level 10 in Hardcore mode"
+				"turkish"		"Hardcore modunda seviye 10'a ulaş"
+			}
+		}
+		"hidden"		"1"
+	}
+	"40"
+	{
+		"name"		"ACH_DAILY_7_STREAK"
+		"display"
+		{
+			"name"
+			{
+				"english"		"Weekly Routine"
+				"turkish"		"Haftalık Rutin"
+			}
+			"desc"
+			{
+				"english"		"Play 7 consecutive days of Daily Challenge"
+				"turkish"		"Günlük Challenge'da 7 gün üst üste oyna"
+			}
+		}
+		"hidden"		"0"
+	}
+	"41"
+	{
+		"name"		"ACH_DAILY_30_STREAK"
+		"display"
+		{
+			"name"
+			{
+				"english"		"Discipline Master"
+				"turkish"		"Disiplin Ustası"
+			}
+			"desc"
+			{
+				"english"		"Play 30 consecutive days of Daily Challenge"
+				"turkish"		"Günlük Challenge'da 30 gün üst üste oyna"
+			}
+		}
+		"hidden"		"1"
+	}
+	"42"
+	{
+		"name"		"ACH_WIDE_200_LINES"
+		"display"
+		{
+			"name"
+			{
+				"english"		"Wide Angle"
+				"turkish"		"Geniş Açı"
+			}
+			"desc"
+			{
+				"english"		"Clear 200 lines in a single Wide mode game"
+				"turkish"		"Wide modunda tek oyunda 200 satır temizle"
+			}
+		}
+		"hidden"		"0"
+	}
+}

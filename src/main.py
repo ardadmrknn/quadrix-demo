@@ -120,6 +120,7 @@ try:
     from .tutorial import TutorialMode  # type: ignore
     from .splash_screen import SplashScreen  # type: ignore
     from .pvp_game import PvPGame  # type: ignore
+    from .online_pvp_game import OnlinePvPGame  # type: ignore
     from .game_modes import SprintMode, UltraMode, ZenMode, HardcoreMode  # type: ignore
     from .game_modes_extra import Tetris2Mode, MysteryMode, WideMode  # type: ignore
     from .game_modes_advanced import SurvivalMode, CascadeMode, DailyChallengeMode  # type: ignore
@@ -153,6 +154,7 @@ except Exception:
     from tutorial import TutorialMode
     from splash_screen import SplashScreen
     from pvp_game import PvPGame
+    from online_pvp_game import OnlinePvPGame
     from game_modes import SprintMode, UltraMode, ZenMode, HardcoreMode
     from game_modes_extra import Tetris2Mode, MysteryMode, WideMode
     from game_modes_advanced import SurvivalMode, CascadeMode, DailyChallengeMode
@@ -1712,6 +1714,18 @@ def main():
                     sound_manager=menu_sound,
                 )
                 state = 'pvp'
+            elif action in ('online_pvp', 'Online PvP'):
+                confirm_exit = False
+                menu_sound.stop_music()
+                online_pvp_game = OnlinePvPGame(
+                    screen=screen,
+                    fullscreen=fullscreen,
+                    user_manager=user_manager,
+                    settings_manager=settings_manager,
+                    sound_manager=menu_sound,
+                )
+                _handle_online_pvp._game = online_pvp_game
+                state = 'online_pvp'
             elif action in ('daily_challenge', t('daily_challenge')):
                 confirm_exit = False
                 allowed, reason = user_manager.can_play_daily() if user_manager else (False, 'Kullanıcı bulunamadı!')
@@ -2339,6 +2353,17 @@ def main():
                 effects = settings_screen.effects_enabled
                 game = CascadeMode(difficulty, sound, effects, achievement_manager, theme_manager, screen, fullscreen, settings_manager, user_manager, 'cascade', score_manager=score_manager)
                 state = 'game'
+            elif action == 'Online PvP':
+                menu_sound.stop_music()
+                online_pvp_game = OnlinePvPGame(
+                    screen=screen,
+                    fullscreen=fullscreen,
+                    user_manager=user_manager,
+                    settings_manager=settings_manager,
+                    sound_manager=menu_sound,
+                )
+                _handle_online_pvp._game = online_pvp_game
+                state = 'online_pvp'
             elif action == 'Classic Mode':
                 if not _show_mode_intro_popup(screen, 'classic', settings_manager):
                     continue
@@ -2566,6 +2591,36 @@ def main():
             pass
         return True
 
+    def _handle_online_pvp(delta_ms):
+        nonlocal running, state
+        online_pvp = getattr(_handle_online_pvp, '_game', None)
+
+        if not online_pvp:
+            state = 'menu'
+            return False
+
+        result = online_pvp.handle_input()
+
+        if result is False:
+            running = False
+            return False
+
+        if result == 'menu':
+            state = 'menu'
+            _handle_online_pvp._game = None
+            if settings_screen.music_enabled and not getattr(settings_screen, 'mute_all', False):
+                _menu_vol = settings_manager.get('menu_music_volume', 0.3)
+                menu_sound.set_music_volume(_menu_vol)
+                menu_music = settings_manager.get('menu_music', 'main_1')
+                menu_sound.play_music(menu_music.lower(), loop=True)
+            return False
+
+        online_pvp.update(delta_ms)
+        online_pvp.draw()
+        return True
+
+    _handle_online_pvp._game = None
+
     def _handle_user_selection(delta_ms):
         nonlocal running, state, score_manager, achievement_manager, highscore_screen, achievement_screen, game
 
@@ -2725,6 +2780,7 @@ def main():
         'extras': _handle_extras,
         'game': _handle_game,
         'pvp': _handle_pvp,
+        'online_pvp': _handle_online_pvp,
         'user_selection': _handle_user_selection,
         'user_management': _handle_user_management,
         'campaign_select': _handle_campaign_select,
@@ -2742,7 +2798,7 @@ def main():
     def _get_transition_type(from_state: str, to_state: str) -> str:
         """State geçişi için uygun efekt tipini belirle."""
         # Oyuna giriş için perde efekti (campaign'den de oyuna girerken)
-        if to_state == 'game' or to_state == 'pvp':
+        if to_state == 'game' or to_state == 'pvp' or to_state == 'online_pvp':
             return 'wipe'
         # Oyundan çıkış için fade
         if from_state == 'game' or from_state == 'pvp':

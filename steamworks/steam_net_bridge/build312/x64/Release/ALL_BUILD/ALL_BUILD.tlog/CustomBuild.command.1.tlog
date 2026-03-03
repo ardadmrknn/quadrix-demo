@@ -1,0 +1,10 @@
+^C:\USERS\ARDA DEMIRKAN\DESKTOP\V2_23022026\V2\STEAMWORKS\STEAM_NET_BRIDGE\CMAKELISTS.TXT
+setlocal
+"C:\Program Files\CMake\bin\cmake.exe" "-SC:/Users/arda demirkan/Desktop/v2_23022026/v2/steamworks/steam_net_bridge" "-BC:/Users/arda demirkan/Desktop/v2_23022026/v2/steamworks/steam_net_bridge/build312" --check-stamp-file "C:/Users/arda demirkan/Desktop/v2_23022026/v2/steamworks/steam_net_bridge/build312/CMakeFiles/generate.stamp"
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd

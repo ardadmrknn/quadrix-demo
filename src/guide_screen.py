@@ -126,6 +126,16 @@ CARD_DATA = [
         'color': (150, 255, 200),
     },
     {
+        'id': 'freeze_drop',
+        'name_key': 'guide_card_freeze_drop_name',
+        'desc_key': 'guide_card_freeze_drop_desc',
+        'name_fallback': 'Son Düşüş',
+        'desc_fallback': '3 hak: F ile bloğu dondur! Sadece sağ-sol ve sert düşüş çalışır.',
+        'icon': 'icon_freeze_drop.png',
+        'rarity': 'rare',
+        'color': (130, 220, 255),
+    },
+    {
         'id': 'bomb_master',
         'name_key': 'card_bomb_master_title',
         'desc_key': 'card_bomb_master_desc',
@@ -310,6 +320,7 @@ GUIDE_SECTIONS = [
             'guide_mode_wide',
             'guide_mode_mystery',
             'guide_mode_pvp',
+            'guide_mode_online_pvp',
             'guide_mode_daily',
             'guide_mode_hardcore',
         ]
@@ -791,6 +802,7 @@ class GuideScreen:
             {'name_key': 'guide_mode_name_wide', 'icon': 'wide_mode_icon.png', 'color': (100, 255, 255), 'key': 'guide_mode_wide'},
             {'name_key': 'guide_mode_name_mystery', 'icon': 'mystery_mode_icon.png', 'color': (255, 150, 255), 'key': 'guide_mode_mystery'},
             {'name_key': 'guide_mode_name_pvp', 'icon': 'pvp_mode_icon.png', 'color': (255, 100, 100), 'key': 'guide_mode_pvp'},
+            {'name_key': 'guide_mode_name_online_pvp', 'icon': 'online_pvp_mode_icon.png', 'color': (0, 210, 255), 'key': 'guide_mode_online_pvp'},
             {'name_key': 'guide_mode_name_daily', 'icon': 'daily_mode_icon.png', 'color': (255, 180, 100), 'key': 'guide_mode_daily'},
             {'name_key': 'guide_mode_name_hardcore', 'icon': 'hardcore_mode_icon.png', 'color': (255, 0, 0), 'key': 'guide_mode_hardcore'},
         ]

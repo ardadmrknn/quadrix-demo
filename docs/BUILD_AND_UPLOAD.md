@@ -32,6 +32,9 @@ steam_dll_src = str(REPO_ROOT / 'dll' / 'win64' / 'steam_api64.dll')
 binaries = [(steam_dll_src, '.')]   # _MEIPASS'a çıkarılır, EXE yanında ayrı dosya gerekmez
 ```
 
+> **ÖNEMLİ (Online PvP):** EXE/.app derlemeden önce `steam_net_bridge` derlemesi zorunludur.  
+> Zorunlu adımlar ve platform bazlı komutlar için: [EXE_APP_BRIDGE_ENTEGRASYON_ZORUNLULUKLARI_TR.md](EXE_APP_BRIDGE_ENTEGRASYON_ZORUNLULUKLARI_TR.md)
+
 ---
 
 ## 2. Build (Windows EXE)

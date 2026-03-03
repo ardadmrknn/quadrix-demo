@@ -1,0 +1,21 @@
+{
+    "configurations": [
+        {
+            "name": "Win64",
+            "includePath": [
+                "${workspaceFolder}/steamworks/sdk/public",
+                "C:/Users/arda demirkan/AppData/Local/Programs/Python/Python311/Lib/site-packages/pybind11/include",
+                "C:/Users/arda demirkan/AppData/Local/Programs/Python/Python311/Include",
+                "${default}"
+            ],
+            "defines": [
+                "_WIN32",
+                "_WIN64"
+            ],
+            "cStandard": "c17",
+            "cppStandard": "c++17",
+            "intelliSenseMode": "windows-msvc-x64"
+        }
+    ],
+    "version": 4
+}

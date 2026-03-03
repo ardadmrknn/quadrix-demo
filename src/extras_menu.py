@@ -76,6 +76,11 @@ MODE_IMAGE_PROMPTS = {
         'prompt': 'A jagged, glitching skull symbol fused with swapped/reversed directional arrows (left pointing right), large question mark silhouette in background, aggressive neon blood-red primary with chaotic violet/cyan glitch effects, clean cyber UI icon, transparent background, 256x256 icon',
         'filename': 'hardcore_mode_icon.png',
         'alt_emoji': '💀'
+    },
+    'Online PvP': {
+        'prompt': "SUBJECT: two mirrored cyber Tetromino cores linked by a luminous network bridge, with a sharp stylized 'VS' split and packet-like digital sparks; subtle Steam-inspired circular node pattern in the backdrop; conveys 'online duel, synchronized real-time battle, and precision competitive play'. STYLE: clean cyber UI icon, holographic edge highlights, controlled impact trails near the VS split, sharp edges, transparent background, 256x256. COLOR: Neon Cyan and Electric Blue primary with vivid Orange conflict accents and bright white sync sparks; deep indigo-violet competitive shadows, high-energy pulse glow.",
+        'filename': 'online_pvp_mode_icon.png',
+        'alt_emoji': 'VS'
     }
 }
 
@@ -200,6 +205,14 @@ class ExtrasScreen:
                 'color': (180, 30, 30),  # Koyu kırmızı
                 'hover_color': (220, 50, 50),
                 'image_data': MODE_IMAGE_PROMPTS.get('Hardcore Mode')
+            },
+            {
+                'id': 'Online PvP',
+                'name_key': 'mode_label_online_pvp',
+                'desc_key': 'extras_online_pvp_desc',
+                'color': (0, 200, 255),  # Steam mavisi
+                'hover_color': (40, 230, 255),
+                'image_data': MODE_IMAGE_PROMPTS.get('Online PvP')
             },
         ]
         

@@ -1,8 +1,10 @@
 """Kullanıcı seçim ve yönetim ekranları"""
 import pygame
 import os
+import io
 import random
 import re
+import threading
 from datetime import datetime
 from constants import *
 from avatar_editor import AvatarEditor
@@ -16,6 +18,7 @@ from pieces import create_piece_by_name
 from renderers.jelly_renderer import draw_jelly_block
 from platform_utils import normalize_mouse_pos, get_mouse_pos
 from localization import t, get_language
+from steam_leaderboards import SteamLeaderboardService
 
 _AVATAR_EXTS = ('.png', '.jpg', '.jpeg', '.webp', '.bmp')
 
@@ -185,6 +188,21 @@ class UserSelectionScreen:
         ]
         self.selected_color_index = 0
         self._avatar_color_rects = []
+
+        # Steam avatar (aktif Steam kullanıcısı) cache
+        self._steam_current_sid = ''
+        self._steam_avatar_url = ''
+        self._steam_avatar_bytes: bytes | None = None
+        self._steam_avatar_surface_cache: dict[int, pygame.Surface] = {}
+        self._steam_avatar_loading = False
+        self._steam_avatar_fetch_attempted = False
+        self._steam_profile_service = SteamLeaderboardService(
+            backend_base_url=os.getenv('LEADERBOARD_BACKEND_URL', ''),
+            publisher_key=os.getenv('STEAM_WEB_API_KEY', ''),
+            app_id=int(os.getenv('STEAM_APP_ID', '0') or '0'),
+            timeout_seconds=3.0,
+        )
+        self._ensure_steam_avatar_async()
 
     def _get_ui_reference_size(self) -> tuple[int, int]:
         try:
@@ -610,6 +628,90 @@ class UserSelectionScreen:
     def _invalidate_avatar_cache(self):
         self.avatar_cache.clear()
 
+    def _ensure_steam_avatar_async(self):
+        if self._steam_avatar_bytes is not None or self._steam_avatar_loading:
+            return
+        if self._steam_avatar_fetch_attempted:
+            return
+        try:
+            import steam_integration as _si
+            if not _si.is_available():
+                return
+            steam_id = str(_si.get_steam_id_str() or '').strip()
+        except Exception:
+            return
+        if not steam_id:
+            return
+
+        self._steam_current_sid = steam_id
+        if not self._steam_profile_service.is_configured():
+            self._steam_avatar_fetch_attempted = True
+            return
+        self._steam_avatar_loading = True
+        self._steam_avatar_fetch_attempted = True
+
+        def _worker():
+            try:
+                if not self._steam_profile_service.is_configured():
+                    return
+                summaries = self._steam_profile_service.fetch_player_summaries([steam_id]) or {}
+                info = summaries.get(steam_id, {})
+                url = str(info.get('avatarmedium') or info.get('avatar') or '').strip()
+                if not url:
+                    return
+                try:
+                    import requests as _req
+                    resp = _req.get(url, timeout=3)
+                    if resp.status_code == 200 and resp.content:
+                        self._steam_avatar_url = url
+                        self._steam_avatar_bytes = resp.content
+                        self._steam_avatar_surface_cache.clear()
+                except Exception:
+                    pass
+            finally:
+                self._steam_avatar_loading = False
+
+        threading.Thread(target=_worker, daemon=True).start()
+
+    def _get_steam_avatar_surface(self, size: int) -> pygame.Surface | None:
+        self._ensure_steam_avatar_async()
+        size = max(16, int(size))
+
+        # 1) HTTP ile indirilen avatar
+        if not self._steam_avatar_bytes:
+            # 2) Steam SDK avatar fallback
+            try:
+                import steam_integration as _si
+                avatar_rgba = _si.get_avatar_rgba(preferred='medium')
+                if avatar_rgba:
+                    aw, ah, argba = avatar_rgba
+                    source = pygame.image.frombuffer(bytearray(argba), (aw, ah), 'RGBA').convert_alpha()
+                    scaled = pygame.transform.smoothscale(source, (size, size))
+                    return _circle_crop_surface(scaled, size)
+            except Exception:
+                pass
+            return None
+
+        cached = self._steam_avatar_surface_cache.get(size)
+        if cached is not None:
+            return cached
+        try:
+            loaded = pygame.image.load(io.BytesIO(self._steam_avatar_bytes)).convert_alpha()
+            scaled = pygame.transform.smoothscale(loaded, (size, size))
+            circle = _circle_crop_surface(scaled, size)
+            self._steam_avatar_surface_cache[size] = circle
+            return circle
+        except Exception:
+            return None
+
+    def _should_use_steam_avatar_for_user(self, user_data: dict, is_active: bool) -> bool:
+        if not self._steam_current_sid:
+            return False
+        if is_active:
+            return True
+        linked_sid = str(user_data.get('steam_id', '') or '').strip()
+        return bool(linked_sid and linked_sid == self._steam_current_sid)
+
     def _get_avatar_surface(self, avatar_value, size):
         cache_key = (avatar_value or '__none__', size)
         cached = self.avatar_cache.get(cache_key)
@@ -952,6 +1054,7 @@ class UserSelectionScreen:
 
     def draw(self):
         """Ekranı çiz"""
+        self._ensure_steam_avatar_async()
         # Hafif geçiş (fade + küçük slide)
         if self.state == 'avatar_editor':
             self.avatar_editor.draw()
@@ -1012,7 +1115,11 @@ class UserSelectionScreen:
         avatar_color = user_data.get('avatar_color', (100, 150, 255))
         pygame.draw.circle(self.screen, avatar_color, avatar_rect.center, avatar_size // 2)
         pygame.draw.circle(self.screen, (255, 255, 255), avatar_rect.center, avatar_size // 2, s(2))
-        avatar_surface = self._get_avatar_surface(user_data.get('avatar', '__default__'), avatar_size - s(2))
+        avatar_surface = None
+        if self._should_use_steam_avatar_for_user(user_data, is_active):
+            avatar_surface = self._get_steam_avatar_surface(avatar_size - s(2))
+        if avatar_surface is None:
+            avatar_surface = self._get_avatar_surface(user_data.get('avatar', '__default__'), avatar_size - s(2))
         self.screen.blit(avatar_surface, avatar_surface.get_rect(center=avatar_rect.center))
         
         name_color = WHITE
@@ -1134,7 +1241,12 @@ class UserSelectionScreen:
         badge_radius = badge_rect.width // 2
         pygame.draw.circle(self.screen, (20, 30, 60), badge_center, badge_radius)
         pygame.draw.circle(self.screen, retro_style.primary, badge_center, badge_radius, s(2))
-        avatar_surface = self._get_avatar_surface(user_data.get('avatar', '__default__'), s(96))
+        is_active_profile = (username == self.user_manager.get_current_user())
+        avatar_surface = None
+        if self._should_use_steam_avatar_for_user(user_data, is_active_profile):
+            avatar_surface = self._get_steam_avatar_surface(s(96))
+        if avatar_surface is None:
+            avatar_surface = self._get_avatar_surface(user_data.get('avatar', '__default__'), s(96))
         self.screen.blit(avatar_surface, avatar_surface.get_rect(center=badge_center))
 
         button_width = s(220)

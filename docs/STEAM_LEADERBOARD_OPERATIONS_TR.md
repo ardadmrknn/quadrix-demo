@@ -132,12 +132,12 @@ py backend/steam_leaderboard_proxy.py
 
 # Leaderboard yazma testi
 $env:SteamAppId="4428040"
-py test_lb_write.py
+py tests/test_lb_write.py
 
 # Fallback ile yazma testi (debug, geliştirici ortamı)
 $env:STEAM_PARTNER_WRITE_FALLBACK="1"
-py test_lb_write.py
+py tests/test_lb_write.py
 
 # Tüm birim testleri
-py -m pytest test_steam_integration_license_status.py test_steam_submit_diagnostics.py test_partner_fallback_flag.py test_partner_fallback_enabled.py -v
+py -m pytest tests/test_steam_integration_license_status.py tests/test_steam_submit_diagnostics.py tests/test_partner_fallback_flag.py tests/test_partner_fallback_enabled.py -v
 ```

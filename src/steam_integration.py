@@ -40,6 +40,7 @@ _isteam_apps: ctypes.c_void_p | None = None
 # Önbellek
 _persona_name_cache: str | None = None
 _steam_id_cache: int | None = None
+_avatar_rgba_cache: dict[tuple[int, str], tuple[int, int, bytes]] = {}
 
 # Leaderboard handle cache: leaderboard_name -> SteamLeaderboard_t (uint64)
 _lb_handle_cache: dict[str, int] = {}
@@ -194,6 +195,45 @@ def _setup_dll_functions(dll: ctypes.CDLL) -> None:
     except AttributeError:
         pass
 
+    # ISteamFriends_Get*FriendAvatar -> int image_handle (-1 loading, 0 no avatar)
+    try:
+        dll.SteamAPI_ISteamFriends_GetLargeFriendAvatar.restype = ctypes.c_int
+        dll.SteamAPI_ISteamFriends_GetLargeFriendAvatar.argtypes = [ctypes.c_void_p, ctypes.c_uint64]
+    except AttributeError:
+        pass
+    try:
+        dll.SteamAPI_ISteamFriends_GetMediumFriendAvatar.restype = ctypes.c_int
+        dll.SteamAPI_ISteamFriends_GetMediumFriendAvatar.argtypes = [ctypes.c_void_p, ctypes.c_uint64]
+    except AttributeError:
+        pass
+    try:
+        dll.SteamAPI_ISteamFriends_GetSmallFriendAvatar.restype = ctypes.c_int
+        dll.SteamAPI_ISteamFriends_GetSmallFriendAvatar.argtypes = [ctypes.c_void_p, ctypes.c_uint64]
+    except AttributeError:
+        pass
+
+    # ISteamUtils image helpers
+    try:
+        dll.SteamAPI_ISteamUtils_GetImageSize.restype = ctypes.c_bool
+        dll.SteamAPI_ISteamUtils_GetImageSize.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_int,
+            ctypes.POINTER(ctypes.c_uint32),
+            ctypes.POINTER(ctypes.c_uint32),
+        ]
+    except AttributeError:
+        pass
+    try:
+        dll.SteamAPI_ISteamUtils_GetImageRGBA.restype = ctypes.c_bool
+        dll.SteamAPI_ISteamUtils_GetImageRGBA.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_int,
+            ctypes.POINTER(ctypes.c_uint8),
+            ctypes.c_int,
+        ]
+    except AttributeError:
+        pass
+
     # ISteamUser_GetSteamID returns uint64 in low/high regs; use c_uint64
     try:
         dll.SteamAPI_ISteamUser_GetSteamID.restype = ctypes.c_uint64
@@ -319,6 +359,79 @@ def _setup_dll_functions(dll: ctypes.CDLL) -> None:
     try:
         dll.SteamAPI_ISteamUserStats_StoreStats.restype = ctypes.c_bool
         dll.SteamAPI_ISteamUserStats_StoreStats.argtypes = [ctypes.c_void_p]
+    except AttributeError:
+        pass
+
+    # ISteamUserStats_ClearAchievement — Başarım kilidini geri al (test/geliştirme)
+    try:
+        dll.SteamAPI_ISteamUserStats_ClearAchievement.restype = ctypes.c_bool
+        dll.SteamAPI_ISteamUserStats_ClearAchievement.argtypes = [ctypes.c_void_p, ctypes.c_char_p]
+    except AttributeError:
+        pass
+
+    # ISteamUserStats_IndicateAchievementProgress — İlerleme bildirimi göster
+    try:
+        dll.SteamAPI_ISteamUserStats_IndicateAchievementProgress.restype = ctypes.c_bool
+        dll.SteamAPI_ISteamUserStats_IndicateAchievementProgress.argtypes = [
+            ctypes.c_void_p,   # ISteamUserStats*
+            ctypes.c_char_p,   # pchName
+            ctypes.c_uint32,   # nCurProgress
+            ctypes.c_uint32,   # nMaxProgress
+        ]
+    except AttributeError:
+        pass
+
+    # ISteamUserStats_SetStat (INT32) — İstatistik değeri yaz
+    try:
+        dll.SteamAPI_ISteamUserStats_SetStatInt32.restype = ctypes.c_bool
+        dll.SteamAPI_ISteamUserStats_SetStatInt32.argtypes = [
+            ctypes.c_void_p,   # ISteamUserStats*
+            ctypes.c_char_p,   # pchName
+            ctypes.c_int32,    # nData
+        ]
+    except AttributeError:
+        pass
+
+    # ISteamUserStats_SetStat (FLOAT) — İstatistik değeri yaz (float)
+    try:
+        dll.SteamAPI_ISteamUserStats_SetStatFloat.restype = ctypes.c_bool
+        dll.SteamAPI_ISteamUserStats_SetStatFloat.argtypes = [
+            ctypes.c_void_p,   # ISteamUserStats*
+            ctypes.c_char_p,   # pchName
+            ctypes.c_float,    # fData
+        ]
+    except AttributeError:
+        pass
+
+    # ISteamUserStats_GetStat (INT32) — İstatistik değeri oku
+    try:
+        dll.SteamAPI_ISteamUserStats_GetStatInt32.restype = ctypes.c_bool
+        dll.SteamAPI_ISteamUserStats_GetStatInt32.argtypes = [
+            ctypes.c_void_p,              # ISteamUserStats*
+            ctypes.c_char_p,              # pchName
+            ctypes.POINTER(ctypes.c_int32),  # pData (out)
+        ]
+    except AttributeError:
+        pass
+
+    # ISteamUserStats_GetStat (FLOAT) — İstatistik değeri oku (float)
+    try:
+        dll.SteamAPI_ISteamUserStats_GetStatFloat.restype = ctypes.c_bool
+        dll.SteamAPI_ISteamUserStats_GetStatFloat.argtypes = [
+            ctypes.c_void_p,              # ISteamUserStats*
+            ctypes.c_char_p,              # pchName
+            ctypes.POINTER(ctypes.c_float),  # pData (out)
+        ]
+    except AttributeError:
+        pass
+
+    # ISteamUserStats_ResetAllStats — Tüm istatistikleri sıfırla (test/geliştirme)
+    try:
+        dll.SteamAPI_ISteamUserStats_ResetAllStats.restype = ctypes.c_bool
+        dll.SteamAPI_ISteamUserStats_ResetAllStats.argtypes = [
+            ctypes.c_void_p,   # ISteamUserStats*
+            ctypes.c_bool,     # bAchievementsToo
+        ]
     except AttributeError:
         pass
 
@@ -605,6 +718,241 @@ def sync_all_achievements(unlocked_ids: dict[str, str], id_map: dict[str, str]) 
     return count
 
 
+def clear_steam_achievement(api_name: str) -> bool:
+    """Steam'de bir başarımın kilidini geri al (test/geliştirme amaçlı).
+
+    Args:
+        api_name: Steamworks konsolunda tanımlı API Name (ör. 'ACH_FIRST_GAME').
+
+    Returns:
+        True → başarıyla temizlendi ve store edildi.
+    """
+    if not is_available() or not _isteam_user_stats or not _dll:
+        return False
+    try:
+        name_bytes = api_name.encode('utf-8') if isinstance(api_name, str) else api_name
+        ok = _dll.SteamAPI_ISteamUserStats_ClearAchievement(_isteam_user_stats, name_bytes)
+        if ok:
+            _dll.SteamAPI_ISteamUserStats_StoreStats(_isteam_user_stats)
+            print(f"[Steam] Achievement cleared: {api_name}")
+        return bool(ok)
+    except Exception as e:
+        print(f"[Steam] Achievement clear hatası ({api_name}): {e}")
+        return False
+
+
+def indicate_achievement_progress(api_name: str, current: int, target: int) -> bool:
+    """Steam Overlay'de başarım ilerleme bildirimi göster.
+
+    Belirli kilometre taşlarında (ör. %50, %75) çağrılarak
+    kullanıcıya toast bildirim gösterir.
+
+    Args:
+        api_name: Steamworks API Name (ör. 'ACH_LINES_100').
+        current: Mevcut ilerleme değeri.
+        target: Hedef değer.
+
+    Returns:
+        True → bildirim başarıyla gönderildi.
+    """
+    if not is_available() or not _isteam_user_stats or not _dll:
+        return False
+    try:
+        name_bytes = api_name.encode('utf-8') if isinstance(api_name, str) else api_name
+        ok = _dll.SteamAPI_ISteamUserStats_IndicateAchievementProgress(
+            _isteam_user_stats, name_bytes,
+            ctypes.c_uint32(max(0, current)),
+            ctypes.c_uint32(max(1, target)),
+        )
+        return bool(ok)
+    except Exception as e:
+        print(f"[Steam] IndicateAchievementProgress hatası ({api_name}): {e}")
+        return False
+
+
+# ---------------------------------------------------------------------------
+# Steam Stats API — İstatistik okuma / yazma
+# ---------------------------------------------------------------------------
+
+# Oyun → Steamworks stat API Name eşlemesi
+STEAM_STAT_MAP: dict[str, tuple[str, str]] = {
+    # game_stat_key: (steam_api_name, type)
+    'total_games':           ('STAT_TOTAL_GAMES', 'int'),
+    'total_lines':           ('STAT_TOTAL_LINES', 'int'),
+    'total_tetrises':        ('STAT_TOTAL_TETRISES', 'int'),
+    'max_score':             ('STAT_MAX_SCORE', 'int'),
+    'max_lines':             ('STAT_MAX_LINES', 'int'),
+    'max_level':             ('STAT_MAX_LEVEL', 'int'),
+    'max_combo':             ('STAT_MAX_COMBO', 'int'),
+    'perfect_clears':        ('STAT_PERFECT_CLEARS', 'int'),
+    'pvp_wins':              ('STAT_PVP_WINS', 'int'),
+    'campaign_total_stars':  ('STAT_CAMPAIGN_STARS', 'int'),
+    'sprint_best_time':      ('STAT_SPRINT_BEST_TIME', 'float'),
+    'ultra_max_score':       ('STAT_ULTRA_MAX_SCORE', 'int'),
+    'survival_max_time':     ('STAT_SURVIVAL_MAX_TIME', 'float'),
+    'cascade_max_chain':     ('STAT_CASCADE_MAX_CHAIN', 'int'),
+    'hardcore_max_level':    ('STAT_HARDCORE_MAX_LEVEL', 'int'),
+    'wide_max_lines':        ('STAT_WIDE_MAX_LINES', 'int'),
+    'daily_max_streak':      ('STAT_DAILY_MAX_STREAK', 'int'),
+}
+
+
+def set_steam_stat_int(api_name: str, value: int) -> bool:
+    """Steam'de bir INT istatistiğini güncelle (StoreStats ayrıca çağrılmalı).
+
+    Args:
+        api_name: Steamworks konsolunda tanımlı stat API Name.
+        value: Yeni değer.
+    """
+    if not is_available() or not _isteam_user_stats or not _dll:
+        return False
+    try:
+        name_bytes = api_name.encode('utf-8') if isinstance(api_name, str) else api_name
+        ok = _dll.SteamAPI_ISteamUserStats_SetStatInt32(
+            _isteam_user_stats, name_bytes, ctypes.c_int32(value)
+        )
+        return bool(ok)
+    except Exception as e:
+        print(f"[Steam] SetStat INT hatası ({api_name}): {e}")
+        return False
+
+
+def set_steam_stat_float(api_name: str, value: float) -> bool:
+    """Steam'de bir FLOAT istatistiğini güncelle (StoreStats ayrıca çağrılmalı).
+
+    Args:
+        api_name: Steamworks konsolunda tanımlı stat API Name.
+        value: Yeni değer.
+    """
+    if not is_available() or not _isteam_user_stats or not _dll:
+        return False
+    try:
+        name_bytes = api_name.encode('utf-8') if isinstance(api_name, str) else api_name
+        ok = _dll.SteamAPI_ISteamUserStats_SetStatFloat(
+            _isteam_user_stats, name_bytes, ctypes.c_float(value)
+        )
+        return bool(ok)
+    except Exception as e:
+        print(f"[Steam] SetStat FLOAT hatası ({api_name}): {e}")
+        return False
+
+
+def get_steam_stat_int(api_name: str) -> int | None:
+    """Steam'den bir INT istatistiğini oku.
+
+    Returns:
+        Değer veya None (okunamadı).
+    """
+    if not is_available() or not _isteam_user_stats or not _dll:
+        return None
+    try:
+        name_bytes = api_name.encode('utf-8') if isinstance(api_name, str) else api_name
+        data = ctypes.c_int32(0)
+        ok = _dll.SteamAPI_ISteamUserStats_GetStatInt32(
+            _isteam_user_stats, name_bytes, ctypes.byref(data)
+        )
+        if ok:
+            return data.value
+        return None
+    except Exception:
+        return None
+
+
+def get_steam_stat_float(api_name: str) -> float | None:
+    """Steam'den bir FLOAT istatistiğini oku.
+
+    Returns:
+        Değer veya None (okunamadı).
+    """
+    if not is_available() or not _isteam_user_stats or not _dll:
+        return None
+    try:
+        name_bytes = api_name.encode('utf-8') if isinstance(api_name, str) else api_name
+        data = ctypes.c_float(0.0)
+        ok = _dll.SteamAPI_ISteamUserStats_GetStatFloat(
+            _isteam_user_stats, name_bytes, ctypes.byref(data)
+        )
+        if ok:
+            return data.value
+        return None
+    except Exception:
+        return None
+
+
+def store_steam_stats() -> bool:
+    """Bekleyen tüm stat ve başarım değişikliklerini Steam'e yaz.
+
+    SetStat / SetAchievement çağrıları bellekte tutulur;
+    bu fonksiyon onları sunucuya gönderir.
+    """
+    if not is_available() or not _isteam_user_stats or not _dll:
+        return False
+    try:
+        ok = _dll.SteamAPI_ISteamUserStats_StoreStats(_isteam_user_stats)
+        return bool(ok)
+    except Exception as e:
+        print(f"[Steam] StoreStats hatası: {e}")
+        return False
+
+
+def sync_stats_to_steam(stats: dict) -> int:
+    """Oyun istatistiklerini Steam'e toplu senkronla.
+
+    Args:
+        stats: Oyun içi istatistikler dict'i (AchievementManager.stats).
+
+    Returns:
+        Güncellenen stat sayısı.
+    """
+    if not is_available() or not _isteam_user_stats or not _dll:
+        return 0
+    count = 0
+    for game_key, (steam_name, stat_type) in STEAM_STAT_MAP.items():
+        value = stats.get(game_key)
+        if value is None:
+            continue
+        try:
+            if stat_type == 'float':
+                ok = set_steam_stat_float(steam_name, float(value))
+            else:
+                ok = set_steam_stat_int(steam_name, int(value))
+            if ok:
+                count += 1
+        except Exception:
+            pass
+    if count > 0:
+        store_steam_stats()
+        print(f"[Steam] {count} istatistik senkronlandı.")
+    return count
+
+
+def reset_all_steam_stats(achievements_too: bool = False) -> bool:
+    """Tüm istatistikleri (ve isteğe bağlı başarımları) sıfırla.
+
+    DİKKAT: Bu fonksiyon sadece geliştirme/test amacıyla kullanılmalıdır!
+
+    Args:
+        achievements_too: True ise başarımlar da sıfırlanır.
+
+    Returns:
+        True → başarıyla sıfırlandı.
+    """
+    if not is_available() or not _isteam_user_stats or not _dll:
+        return False
+    try:
+        ok = _dll.SteamAPI_ISteamUserStats_ResetAllStats(
+            _isteam_user_stats, ctypes.c_bool(achievements_too)
+        )
+        if ok:
+            # Sıfırlamadan sonra stats'ı yeniden al
+            _dll.SteamAPI_ISteamUserStats_RequestCurrentStats(_isteam_user_stats)
+            print(f"[Steam] Tüm istatistikler sıfırlandı (achievements_too={achievements_too})")
+        return bool(ok)
+    except Exception as e:
+        print(f"[Steam] ResetAllStats hatası: {e}")
+        return False
+
+
 def _callback_pump_loop() -> None:
     """Arka planda Steam callback'lerini işle (30ms aralıklı)."""
     while _pump_running:
@@ -682,6 +1030,81 @@ def get_steam_id_str() -> str:
     """SteamID64'ü string olarak döndürür; bilinmiyorsa boş."""
     sid = get_steam_id()
     return str(sid) if sid else ""
+
+
+def get_avatar_rgba(
+    steam_id: int | None = None,
+    preferred: str = 'medium',
+) -> tuple[int, int, bytes] | None:
+    """Steam avatarını SDK üzerinden RGBA olarak döndür.
+
+    Returns:
+        (width, height, rgba_bytes) veya None
+    """
+    if not is_available() or not _dll or not _isteam_friends or not _isteam_utils:
+        return None
+
+    sid = int(steam_id or get_steam_id() or 0)
+    if sid <= 0:
+        return None
+
+    pref = str(preferred or 'medium').strip().lower()
+    if pref not in ('small', 'medium', 'large'):
+        pref = 'medium'
+    cache_key = (sid, pref)
+    cached = _avatar_rgba_cache.get(cache_key)
+    if cached is not None:
+        return cached
+
+    getter_name = {
+        'small': 'SteamAPI_ISteamFriends_GetSmallFriendAvatar',
+        'medium': 'SteamAPI_ISteamFriends_GetMediumFriendAvatar',
+        'large': 'SteamAPI_ISteamFriends_GetLargeFriendAvatar',
+    }[pref]
+    get_avatar_fn = getattr(_dll, getter_name, None)
+    if not callable(get_avatar_fn):
+        return None
+
+    try:
+        image_handle = int(get_avatar_fn(_isteam_friends, ctypes.c_uint64(sid)))
+    except Exception:
+        return None
+
+    # -1: loading, 0: no avatar
+    if image_handle <= 0:
+        return None
+
+    width = ctypes.c_uint32(0)
+    height = ctypes.c_uint32(0)
+    try:
+        ok_size = _dll.SteamAPI_ISteamUtils_GetImageSize(
+            _isteam_utils,
+            ctypes.c_int(image_handle),
+            ctypes.byref(width),
+            ctypes.byref(height),
+        )
+    except Exception:
+        return None
+    if not ok_size or width.value <= 0 or height.value <= 0:
+        return None
+
+    rgba_len = int(width.value) * int(height.value) * 4
+    buf = (ctypes.c_uint8 * rgba_len)()
+    try:
+        ok_rgba = _dll.SteamAPI_ISteamUtils_GetImageRGBA(
+            _isteam_utils,
+            ctypes.c_int(image_handle),
+            buf,
+            ctypes.c_int(rgba_len),
+        )
+    except Exception:
+        return None
+    if not ok_rgba:
+        return None
+
+    result = (int(width.value), int(height.value), bytes(buf))
+    _avatar_rgba_cache[cache_key] = result
+    return result
 
 
 def is_app_owned() -> bool | None:
@@ -1260,12 +1683,23 @@ def fetch_leaderboard_entries(
                 return
 
             safe_limit = max(1, min(int(limit), 100))
+            range_start = 1
+            range_end = safe_limit
+            if int(request_type) == _LB_REQUEST_FRIENDS:
+                # Steamworks'te RequestFriends için range parametreleri yok sayılır;
+                # -1/-1 kullanmak global liste sızıntısı riskini azaltır.
+                range_start = -1
+                range_end = -1
+            elif int(request_type) == _LB_REQUEST_AROUND_USER:
+                half = max(1, safe_limit // 2)
+                range_start = -half
+                range_end = half
             api_call = _dll.SteamAPI_ISteamUserStats_DownloadLeaderboardEntries(  # type: ignore[union-attr]
                 _isteam_user_stats,
                 ctypes.c_uint64(handle),
                 request_type,
-                1,
-                safe_limit,
+                range_start,
+                range_end,
             )
             if not api_call:
                 print(f"[Steam] DownloadLeaderboardEntries çağrı başarısız: {lb_name}")

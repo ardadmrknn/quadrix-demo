@@ -1,0 +1,132 @@
+QUADRIX - DEĞİŞİKLİK NOTLARI (3 Mart 2026)
+=============================================
+
+1. GÖREV MODU - BOSS BÖLÜM VURGUSU DÜZELTİLDİ
+   Bölüm seçim ekranında boss bölümlere klavye ile gittiğinde
+   kırmızı vurgu artık görünüyor. Daha önce sadece fare ile
+   üzerine gelince kırmızı oluyordu, klavye okları ile
+   seçildiğinde gözükmüyordu.
+
+2. KART USTALIĞI - YENİ KART: "SON DÜŞÜŞ" (Buz Temalı)
+   Kart Ustalığı moduna yeni bir beceri kartı eklendi: Son Düşüş.
+   F tuşu ile kullanılır. Düşen bloğu buz mavisi rengine boyar
+   ve havada dondurur. Donmuş blok düşmez — sadece sağ-sol
+   hareket ve sert düşüş (Space) çalışır, aşağı tuşu devre dışıdır.
+   3 kullanım hakkı verir. Üç nadirlık seviyesi var:
+     - Nadir (Rare): 6 saniye dondurma
+     - Destansı (Epic): 10 saniye dondurma
+     - Efsanevi (Legendary): 15 saniye dondurma
+   Süre dolduğunda veya blok kitlendiğinde dondurma otomatik biter.
+
+3. TÜM MENÜLERDE "TEKRAR DENE" SEÇENEĞİ
+   Oyun bitti ekranı, ESC duraklatma menüsü ve görev modu
+   başarısız/tamamlandı ekranlarının hepsinde artık "Tekrar Dene"
+   yazıyor. R tuşuna basarak veya butona tıklayarak ana menüye
+   dönmeden direkt aynı oyunu/bölümü yeniden başlatabilirsiniz.
+
+4. GÖREV MODU - BLOK BİTİŞİNDE SES VE MÜZİK DÜZELTİLDİ
+   Görev modunda blok sayısı veya süre bittiğinde başarısız
+   ekranı geliyordu ama müzik kesilmiyor ve başarısızlık ses
+   efekti çalmıyordu. Artık bloklar üst üste geldiğindeki
+   davranışla aynı: müzik durur ve "oyun bitti" sesi çalar.
+
+5. GÖREV MODU - GÖZ BUTONU DÜZELTİLDİ
+   Görev modunda başarısız ekranının sağ üst köşesindeki göz
+   ikonu çalışmıyordu. Artık göz butonuna tıklayınca başarısız
+   paneli gizlenir ve alttaki oyun alanını görebilirsiniz.
+   Tekrar tıklayınca panel geri gelir.
+
+6. KART USTALIĞI - HIZ PATLAMASI KARTI DENGELENDİ
+   Hız Patlaması kartı çok güçlüydü (2x puan çarpanı).
+   Artık tek bir ortak (Common) kart yerine üç nadirlık
+   seviyesine ayrıldı ve değerleri düşürüldü:
+     - Nadir (Rare): %25 hız artışı, 1.3x puan, ~20 saniye
+     - Destansı (Epic): %40 hız artışı, 1.5x puan, ~30 saniye
+     - Efsanevi (Legendary): %60 hız artışı, 1.75x puan, ~40 saniye
+   Efsanevi versiyonu bile eskisinden daha dengeli.
+   eheheh
+
+7. STEAM - BAŞARIM VE İSTATİSTİK ENTEGRASYONU GENİŞLETİLDİ
+   Steam başarımlarına ek olarak istatistik (stat) altyapısı da eklendi.
+   Oyun artık SetStat/GetStat/StoreStats akışıyla temel istatistikleri
+   Steam'e senkronluyor. Oyun açılışında geriye dönük başarım+stat
+   senkronu da çalışıyor.
+
+8. STEAM - BAŞARIM İLERLEME BİLDİRİMİ DESTEĞİ EKLENDİ
+   Kademeli başarımlar için Steam overlay ilerleme bildirimi desteği
+   eklendi. Uygun kilometre taşlarında (ör. %25/%50/%75) ilerleme
+   bildirimi gönderilebiliyor. Test/geliştirme için clear/reset
+   yardımcı fonksiyonları da entegre edildi.
+
+9. STEAM PLAYTEST - KURULUM DOKÜMANTASYONU VE TESTLER GÜNCELLENDİ
+   Steam başarımlarını ve statları partner paneline girme adımları
+   netleştirildi; hızlı kopyala-yapıştır listeleri eklendi.
+   Steam başarım senkronizasyon testleri genişletildi ve yeni
+   fonksiyonlar için ek doğrulamalar yazıldı (toplam testler geçti).
+
+10. KART USTALIĞI - OYUN SONU DURAKSAMA DÜZELTİLDİ
+   Skorun Steam leaderboard'a işlenmesi oyun sonu ana akışını
+   bloke ediyordu ve 2-3 saniyelik takılma yaratabiliyordu.
+   Skor gönderimi arka plana alındı; game over ekranına geçiş
+   daha akıcı ve kesintisiz hale getirildi.
+
+11. ANA MENÜ SKOR PANELİ - SATIR YÜKSEKLİĞİ VE GLOBAL BİRLEŞTİRME İYİLEŞTİRMESİ
+   Bazen tek satırın paneli doldurması sorunu giderildi; satır
+   yüksekliği minimum/maksimum sınırlarla standardize edildi.
+   Ayrıca arkadaş listesinde görünen skorlar global listede de
+   birleştirilecek şekilde güncellendi ve yenileme daha sık hale getirildi.
+
+12. STEAM AVATAR - MENÜ VE KULLANICI EKRANLARINA ENTEGRASYON
+   Oyun Steam'den açıldığında aktif Steam kullanıcısının profil
+   fotoğrafı ana menü üst bölümünde (QUADRIX yanındaki rozet)
+   ve kullanıcı değiştirme/profil ekranlarında gösterilecek şekilde eklendi.
+   SDK tarafında avatar çekimi için ek fallback yolu da entegre edildi.
+
+13. KILAVUZ - "SON DÜŞÜŞ" KARTI OYUN KARTLARINA EKLENDİ
+   Kılavuzdaki kart galerisine Son Düşüş kartı eklendi.
+   Kart adı/açıklaması için çoklu dil lokalizasyon anahtarları
+   tanımlandı ve icon_freeze_drop görseli ile eşlendi.
+
+14. STEAM EXE - ARKADAŞLAR/GLOBAL AYRIŞMASI DÜZELTİLDİ
+   Steam'den açılan EXE'de Friends sorgusunda bazı durumlarda
+   global listeye ait oyuncuların arkadaşlar sekmesine sızması
+   sorunu giderildi.
+   Friends sorgularında Steam SDK ve Web API istek aralıkları
+   uygun değerlere çekilerek filtreleme davranışı düzeltildi.
+
+15. STEAM LEADERBOARD - SKOR GÖNDERİMİ 6 KRİTİK HATA DÜZELTİLDİ
+   Steam leaderboard skor yazımını bozan 6 ayrı hata tespit
+   edildi ve düzeltildi:
+   a) UploadLeaderboardScore method=0 (None) yerine method=1
+      (KeepBest) olarak düzeltildi. SDK çağrıları sessizce
+      başarısız oluyordu.
+   b) Partner API key (STEAM_WEB_API_KEY) modül yüklenirken
+      bir kez okunup sabitleniyordu; artık her çağrıda env var
+      dinamik okunuyor (_get_partner_api_key fonksiyonu).
+   c) Windows terminallerinde Türkçe karakterli print() çağrıları
+      UnicodeEncodeError fırlatıyordu; tüm Steam print'leri
+      Unicode-safe hale getirildi.
+   d) _find_leaderboard_sync dead code'u kaldırıldı (race condition
+      riski taşıyordu).
+   e) Tekrarlanan _LeaderboardSearchResultStruct sınıfı temizlendi.
+   f) game.py'de SteamLeaderboardService'e publisher_key ve app_id
+      parametreleri eksikti, eklendi.
+
+16. STEAM LEADERBOARD - macOS .APP BUNDLE'DA STEAM SDK EKSİKTİ
+   build_macos_app.sh tarafından kullanılan tetris_macos_allinone.spec
+   dosyasında binaries=[] idi — libsteam_api.dylib .app bundle'a
+   hiç dahil edilmiyordu. macOS'ta Steam tamamen devre dışı kalıyor
+   ve skor gönderimi imkansız oluyordu. Düzeltme:
+   - tetris_macos_allinone.spec: libsteam_api.dylib (dll/osx/)
+     binaries listesine eklendi.
+   - tetris_en.spec: steam_api64.dll (dll/win64/) binaries
+     listesine eklendi (aynı sorun İngilizce build'de de vardı).
+   - steam_integration.py _find_dll(): macOS .app bundle yapısında
+     Contents/MacOS/ ve Frameworks/ yolları da aranacak şekilde
+     genişletildi.
+   NOT: macOS yapısı ctypes ile dylib yüklemeyi ENGELLEMİYOR.
+   Sorun tamamen build konfigürasyon eksikliğiydi.
+
+17. TEST DOSYALARI DÜZENLEME
+   33 adet root dizindeki test_*.py dosyası tests/ klasörüne
+   taşındı ve pytest.ini testpaths=tests olarak güncellendi.

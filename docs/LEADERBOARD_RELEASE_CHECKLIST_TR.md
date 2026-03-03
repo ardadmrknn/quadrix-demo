@@ -13,7 +13,7 @@
 - [ ] Publisher key (`_PARTNER_API_KEY`) yalnızca `steam_integration.py` debug fallback'te; kaynak koda gömülü değil
 - [ ] Birim testleri geçiyor:
   ```
-  py -m pytest test_steam_integration_license_status.py test_steam_submit_diagnostics.py test_partner_fallback_flag.py test_partner_fallback_enabled.py -v
+  py -m pytest tests/test_steam_integration_license_status.py tests/test_steam_submit_diagnostics.py tests/test_partner_fallback_flag.py tests/test_partner_fallback_enabled.py -v
   ```
 - [ ] `src/steam_integration.py` syntax OK: `py -c "import src.steam_integration"`
 - [ ] Steam DLL erişilebilir: `dll/win64/steam_api64.dll` (v013)
@@ -27,14 +27,14 @@ Her senaryoyu **Steam açıkken** işaretle:
 ### Senaryo A — Lisanslı Geliştirici Hesabı (Developer Comp paketi)
 | Adım | Beklenen | Geçti mi? |
 |---|---|---|
-| `py test_lb_write.py` çalıştır | `[5] SDK: BASARILI rank=XX` | [ ] |
+| `py tests/test_lb_write.py` çalıştır | `[5] SDK: BASARILI rank=XX` | [ ] |
 | `[6] Partner API` satırı yok (fallback kapalı) | Partner API çağrılmadı | [ ] |
 | Oyun içi oyun → skor gönder | Log: `[Steam] SDK skor OK →` | [ ] |
 
 ### Senaryo B — Lisanssız Hesap (Playtest queue'da ama lisans yok)
 | Adım | Beklenen | Geçti mi? |
 |---|---|---|
-| `py test_lb_write.py` çalıştır | `[5] SDK: BASARISIZ` veya `Init=2` | [ ] |
+| `py tests/test_lb_write.py` çalıştır | `[5] SDK: BASARISIZ` veya `Init=2` | [ ] |
 | Oyun içi skor gönder | Log: `lisansi yok` mesajı, crash yok | [ ] |
 | Oyun normal çalışmaya devam ediyor | Leaderboard ekranı graceful error gösteriyor | [ ] |
 
