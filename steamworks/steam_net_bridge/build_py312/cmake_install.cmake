@@ -1,8 +1,8 @@
-# Install script for directory: C:/Users/arda demirkan/Desktop/v2_23022026/v2/steamworks/steam_net_bridge
+# Install script for directory: /Users/burakyasayan/quadrix-main/steamworks/steam_net_bridge
 
 # Set the install prefix
 if(NOT DEFINED CMAKE_INSTALL_PREFIX)
-  set(CMAKE_INSTALL_PREFIX "C:/Program Files/steam_net_bridge")
+  set(CMAKE_INSTALL_PREFIX "/usr/local")
 endif()
 string(REGEX REPLACE "/$" "" CMAKE_INSTALL_PREFIX "${CMAKE_INSTALL_PREFIX}")
 
@@ -32,54 +32,33 @@ if(NOT DEFINED CMAKE_CROSSCOMPILING)
   set(CMAKE_CROSSCOMPILING "FALSE")
 endif()
 
+# Set path to fallback-tool for dependency-resolution.
+if(NOT DEFINED CMAKE_OBJDUMP)
+  set(CMAKE_OBJDUMP "/usr/bin/objdump")
+endif()
+
 if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)
-  if(CMAKE_INSTALL_CONFIG_NAME MATCHES "^([Dd][Ee][Bb][Uu][Gg])$")
-    list(APPEND CMAKE_ABSOLUTE_DESTINATION_FILES
-     "C:/Users/arda demirkan/Desktop/v2_23022026/v2/steamworks/steam_net_bridge/../../steam_net_bridge.cp312-win_amd64.pyd")
-    if(CMAKE_WARN_ON_ABSOLUTE_INSTALL_DESTINATION)
-      message(WARNING "ABSOLUTE path INSTALL DESTINATION : ${CMAKE_ABSOLUTE_DESTINATION_FILES}")
+  list(APPEND CMAKE_ABSOLUTE_DESTINATION_FILES
+   "/Users/burakyasayan/quadrix-main/steamworks/steam_net_bridge/../../steam_net_bridge.cpython-312-darwin.so")
+  if(CMAKE_WARN_ON_ABSOLUTE_INSTALL_DESTINATION)
+    message(WARNING "ABSOLUTE path INSTALL DESTINATION : ${CMAKE_ABSOLUTE_DESTINATION_FILES}")
+  endif()
+  if(CMAKE_ERROR_ON_ABSOLUTE_INSTALL_DESTINATION)
+    message(FATAL_ERROR "ABSOLUTE path INSTALL DESTINATION forbidden (by caller): ${CMAKE_ABSOLUTE_DESTINATION_FILES}")
+  endif()
+  file(INSTALL DESTINATION "/Users/burakyasayan/quadrix-main/steamworks/steam_net_bridge/../.." TYPE MODULE FILES "/Users/burakyasayan/quadrix-main/steamworks/steam_net_bridge/build_py312/steam_net_bridge.cpython-312-darwin.so")
+  if(EXISTS "$ENV{DESTDIR}/Users/burakyasayan/quadrix-main/steamworks/steam_net_bridge/../../steam_net_bridge.cpython-312-darwin.so" AND
+     NOT IS_SYMLINK "$ENV{DESTDIR}/Users/burakyasayan/quadrix-main/steamworks/steam_net_bridge/../../steam_net_bridge.cpython-312-darwin.so")
+    if(CMAKE_INSTALL_DO_STRIP)
+      execute_process(COMMAND "/usr/bin/strip" -x "$ENV{DESTDIR}/Users/burakyasayan/quadrix-main/steamworks/steam_net_bridge/../../steam_net_bridge.cpython-312-darwin.so")
     endif()
-    if(CMAKE_ERROR_ON_ABSOLUTE_INSTALL_DESTINATION)
-      message(FATAL_ERROR "ABSOLUTE path INSTALL DESTINATION forbidden (by caller): ${CMAKE_ABSOLUTE_DESTINATION_FILES}")
-    endif()
-    file(INSTALL DESTINATION "C:/Users/arda demirkan/Desktop/v2_23022026/v2/steamworks/steam_net_bridge/../.." TYPE MODULE FILES "C:/Users/arda demirkan/Desktop/v2_23022026/v2/steamworks/steam_net_bridge/build_py312/Debug/steam_net_bridge.cp312-win_amd64.pyd")
-  elseif(CMAKE_INSTALL_CONFIG_NAME MATCHES "^([Rr][Ee][Ll][Ee][Aa][Ss][Ee])$")
-    list(APPEND CMAKE_ABSOLUTE_DESTINATION_FILES
-     "C:/Users/arda demirkan/Desktop/v2_23022026/v2/steamworks/steam_net_bridge/../../steam_net_bridge.cp312-win_amd64.pyd")
-    if(CMAKE_WARN_ON_ABSOLUTE_INSTALL_DESTINATION)
-      message(WARNING "ABSOLUTE path INSTALL DESTINATION : ${CMAKE_ABSOLUTE_DESTINATION_FILES}")
-    endif()
-    if(CMAKE_ERROR_ON_ABSOLUTE_INSTALL_DESTINATION)
-      message(FATAL_ERROR "ABSOLUTE path INSTALL DESTINATION forbidden (by caller): ${CMAKE_ABSOLUTE_DESTINATION_FILES}")
-    endif()
-    file(INSTALL DESTINATION "C:/Users/arda demirkan/Desktop/v2_23022026/v2/steamworks/steam_net_bridge/../.." TYPE MODULE FILES "C:/Users/arda demirkan/Desktop/v2_23022026/v2/steamworks/steam_net_bridge/build_py312/Release/steam_net_bridge.cp312-win_amd64.pyd")
-  elseif(CMAKE_INSTALL_CONFIG_NAME MATCHES "^([Mm][Ii][Nn][Ss][Ii][Zz][Ee][Rr][Ee][Ll])$")
-    list(APPEND CMAKE_ABSOLUTE_DESTINATION_FILES
-     "C:/Users/arda demirkan/Desktop/v2_23022026/v2/steamworks/steam_net_bridge/../../steam_net_bridge.cp312-win_amd64.pyd")
-    if(CMAKE_WARN_ON_ABSOLUTE_INSTALL_DESTINATION)
-      message(WARNING "ABSOLUTE path INSTALL DESTINATION : ${CMAKE_ABSOLUTE_DESTINATION_FILES}")
-    endif()
-    if(CMAKE_ERROR_ON_ABSOLUTE_INSTALL_DESTINATION)
-      message(FATAL_ERROR "ABSOLUTE path INSTALL DESTINATION forbidden (by caller): ${CMAKE_ABSOLUTE_DESTINATION_FILES}")
-    endif()
-    file(INSTALL DESTINATION "C:/Users/arda demirkan/Desktop/v2_23022026/v2/steamworks/steam_net_bridge/../.." TYPE MODULE FILES "C:/Users/arda demirkan/Desktop/v2_23022026/v2/steamworks/steam_net_bridge/build_py312/MinSizeRel/steam_net_bridge.cp312-win_amd64.pyd")
-  elseif(CMAKE_INSTALL_CONFIG_NAME MATCHES "^([Rr][Ee][Ll][Ww][Ii][Tt][Hh][Dd][Ee][Bb][Ii][Nn][Ff][Oo])$")
-    list(APPEND CMAKE_ABSOLUTE_DESTINATION_FILES
-     "C:/Users/arda demirkan/Desktop/v2_23022026/v2/steamworks/steam_net_bridge/../../steam_net_bridge.cp312-win_amd64.pyd")
-    if(CMAKE_WARN_ON_ABSOLUTE_INSTALL_DESTINATION)
-      message(WARNING "ABSOLUTE path INSTALL DESTINATION : ${CMAKE_ABSOLUTE_DESTINATION_FILES}")
-    endif()
-    if(CMAKE_ERROR_ON_ABSOLUTE_INSTALL_DESTINATION)
-      message(FATAL_ERROR "ABSOLUTE path INSTALL DESTINATION forbidden (by caller): ${CMAKE_ABSOLUTE_DESTINATION_FILES}")
-    endif()
-    file(INSTALL DESTINATION "C:/Users/arda demirkan/Desktop/v2_23022026/v2/steamworks/steam_net_bridge/../.." TYPE MODULE FILES "C:/Users/arda demirkan/Desktop/v2_23022026/v2/steamworks/steam_net_bridge/build_py312/RelWithDebInfo/steam_net_bridge.cp312-win_amd64.pyd")
   endif()
 endif()
 
 string(REPLACE ";" "\n" CMAKE_INSTALL_MANIFEST_CONTENT
        "${CMAKE_INSTALL_MANIFEST_FILES}")
 if(CMAKE_INSTALL_LOCAL_ONLY)
-  file(WRITE "C:/Users/arda demirkan/Desktop/v2_23022026/v2/steamworks/steam_net_bridge/build_py312/install_local_manifest.txt"
+  file(WRITE "/Users/burakyasayan/quadrix-main/steamworks/steam_net_bridge/build_py312/install_local_manifest.txt"
      "${CMAKE_INSTALL_MANIFEST_CONTENT}")
 endif()
 if(CMAKE_INSTALL_COMPONENT)
@@ -95,6 +74,6 @@ else()
 endif()
 
 if(NOT CMAKE_INSTALL_LOCAL_ONLY)
-  file(WRITE "C:/Users/arda demirkan/Desktop/v2_23022026/v2/steamworks/steam_net_bridge/build_py312/${CMAKE_INSTALL_MANIFEST}"
+  file(WRITE "/Users/burakyasayan/quadrix-main/steamworks/steam_net_bridge/build_py312/${CMAKE_INSTALL_MANIFEST}"
      "${CMAKE_INSTALL_MANIFEST_CONTENT}")
 endif()
