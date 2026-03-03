@@ -218,12 +218,24 @@ if types_dir.exists():
             hiddenimports.append(f'types.{module_name}')
 
 # ═══════════════════════════════════════════════════════════════════
+#  STEAM SDK - libsteam_api.dylib
+# ═══════════════════════════════════════════════════════════════════
+# macOS .app bundle'da Contents/MacOS/ içine yerleşir (Steam'in beklediği konum)
+steam_dylib_src = str(REPO_ROOT / 'dll' / 'osx' / 'libsteam_api.dylib')
+if os.path.exists(steam_dylib_src):
+    _steam_binaries = [(steam_dylib_src, '.')]
+    print(f'[spec] libsteam_api.dylib eklendi: {steam_dylib_src}')
+else:
+    _steam_binaries = []
+    print(f'WARNING: libsteam_api.dylib not found at {steam_dylib_src}')
+
+# ═══════════════════════════════════════════════════════════════════
 #  ANALYSIS
 # ═══════════════════════════════════════════════════════════════════
 a = Analysis(
     [str(SRC_DIR / 'main.py')],
     pathex=[str(SRC_DIR), str(REPO_ROOT)],
-    binaries=[],
+    binaries=_steam_binaries,
     datas=datas,
     hiddenimports=hiddenimports,
     hookspath=[],

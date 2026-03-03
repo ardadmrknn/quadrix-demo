@@ -167,6 +167,9 @@ def _card_type_label_key(card: Dict[str, Any]) -> str:
         'hold_destroyer_3',
         'hold_destroyer_4',
         'hold_destroyer_5',
+        'freeze_drop_rare',
+        'freeze_drop_epic',
+        'freeze_drop_legendary',
     }
     if card_id in limited_ids:
         return 'card_type_limited'
@@ -416,7 +419,7 @@ class MysteryCardManager:
                     "id": card["id"],
                     "title": card["title"],
                     "value": value,
-                    "description": card["description"].format(value=value),
+                    "description": card["description"].format(value=value, freeze_duration=card.get("freeze_duration", "")),
                     "color": card["color"],
                     "bg": card.get("bg", (34, 34, 46)),
                     "icon": card.get("icon", "*"),
@@ -646,28 +649,78 @@ class MysteryCardManager:
                 "style": {"border": (255, 170, 120)},
                 "single_use": True,
             },
+            # ==================== HIZ PATLAMASI (Enderlik Sistemi) ====================
             {
-                "id": "speed_burst",
+                "id": "speed_burst_rare",
+                "_group_id": "speed_burst",
                 "title": "Hız Patlaması",
-                "base": 40,
-                "value_range": (35, 45),
-                "description": "{value} saniye boyunca %50 hızlı düşüş + temizlenen her satır için 2x puan!",
+                "base": 20,
+                "value_range": (18, 22),
+                "description": "{value} saniye boyunca %25 hızlı düşüş + temizlenen her satır için 1.3x puan!",
+                "color": (255, 200, 80),
+                "bg": (50, 38, 12),
+                "icon": "⚡",
+                "tag": "Rare",
+                "rarity": "rare",
+                "weight": 35,
+                "icon_image": os.path.join(UI_ICON_DIR, "icon_speed_burst.png"),
+                "style": {
+                    "gradient": [(255, 210, 100), (190, 120, 30)],
+                    "border": (255, 220, 120),
+                    "corner": 22,
+                    "pattern": "spark",
+                    "icon_bg": (200, 150, 50),
+                },
+                "timed_buff": True,
+                "payload": {"speed_multiplier": 1.25, "line_multiplier": 1.3},
+            },
+            {
+                "id": "speed_burst_epic",
+                "_group_id": "speed_burst",
+                "title": "Hız Patlaması",
+                "base": 30,
+                "value_range": (25, 35),
+                "description": "{value} saniye boyunca %40 hızlı düşüş + temizlenen her satır için 1.5x puan!",
                 "color": (255, 180, 50),
                 "bg": (50, 35, 10),
                 "icon": "⚡",
-                "tag": "Common",
-                "rarity": "common",
-                "weight": 55,
+                "tag": "Epic",
+                "rarity": "epic",
+                "weight": 20,
                 "icon_image": os.path.join(UI_ICON_DIR, "icon_speed_burst.png"),
                 "style": {
-                    "gradient": [(255, 200, 80), (180, 100, 20)],
-                    "border": (255, 220, 120),
+                    "gradient": [(255, 190, 60), (170, 90, 15)],
+                    "border": (255, 200, 100),
                     "corner": 24,
                     "pattern": "spark",
-                    "icon_bg": (200, 140, 40),
+                    "icon_bg": (190, 130, 35),
                 },
                 "timed_buff": True,
-                "payload": {"speed_multiplier": 1.5, "line_multiplier": 2.0},
+                "payload": {"speed_multiplier": 1.4, "line_multiplier": 1.5},
+            },
+            {
+                "id": "speed_burst_legendary",
+                "_group_id": "speed_burst",
+                "title": "Hız Patlaması",
+                "base": 40,
+                "value_range": (35, 45),
+                "description": "{value} saniye boyunca %60 hızlı düşüş + temizlenen her satır için 1.75x puan!",
+                "color": (255, 160, 30),
+                "bg": (48, 30, 8),
+                "icon": "⚡",
+                "tag": "Legendary",
+                "rarity": "legendary",
+                "weight": 8,
+                "icon_image": os.path.join(UI_ICON_DIR, "icon_speed_burst.png"),
+                "style": {
+                    "gradient": [(255, 170, 40), (160, 80, 10)],
+                    "border": (255, 190, 80),
+                    "corner": 26,
+                    "pattern": "spark",
+                    "icon_bg": (180, 120, 25),
+                },
+                "timed_buff": True,
+                "payload": {"speed_multiplier": 1.6, "line_multiplier": 1.75},
             },
             {
                 "id": "quantum_tunneling",
@@ -1139,8 +1192,83 @@ class MysteryCardManager:
                 "limited": True,
                 "single_use": True,
             },
+            # ==================== SON DÜŞÜŞ (Blok Dondurma) ====================
+            {
+                "id": "freeze_drop_rare",
+                "_group_id": "freeze_drop",
+                "title": "Son Düşüş",
+                "base": 3,
+                "value_range": (3, 3),
+                "description": "3 hak: F ile bloğu {freeze_duration}sn dondur! Sadece sağ-sol ve sert düşüş çalışır.",
+                "color": (140, 220, 255),
+                "bg": (10, 24, 50),
+                "icon": "❄️",
+                "tag": "Rare",
+                "rarity": "rare",
+                "weight": 30,
+                "freeze_duration": 6,
+                "icon_image": os.path.join(UI_ICON_DIR, "icon_freeze_drop.png"),
+                "style": {
+                    "gradient": [(100, 200, 255), (20, 60, 120)],
+                    "border": (160, 230, 255),
+                    "corner": 24,
+                    "pattern": "wave",
+                    "icon_bg": (30, 80, 140),
+                },
+                "limited": True,
+                "single_use": True,
+            },
+            {
+                "id": "freeze_drop_epic",
+                "_group_id": "freeze_drop",
+                "title": "Son Düşüş",
+                "base": 3,
+                "value_range": (3, 3),
+                "description": "3 hak: F ile bloğu {freeze_duration}sn dondur! Sadece sağ-sol ve sert düşüş çalışır.",
+                "color": (100, 180, 255),
+                "bg": (8, 18, 44),
+                "icon": "❄️",
+                "tag": "Epic",
+                "rarity": "epic",
+                "weight": 18,
+                "freeze_duration": 10,
+                "icon_image": os.path.join(UI_ICON_DIR, "icon_freeze_drop.png"),
+                "style": {
+                    "gradient": [(70, 160, 240), (15, 40, 100)],
+                    "border": (130, 200, 255),
+                    "corner": 26,
+                    "pattern": "wave",
+                    "icon_bg": (25, 60, 120),
+                },
+                "limited": True,
+                "single_use": True,
+            },
+            {
+                "id": "freeze_drop_legendary",
+                "_group_id": "freeze_drop",
+                "title": "Son Düşüş",
+                "base": 3,
+                "value_range": (3, 3),
+                "description": "3 hak: F ile bloğu {freeze_duration}sn dondur! Sadece sağ-sol ve sert düşüş çalışır.",
+                "color": (60, 150, 255),
+                "bg": (5, 12, 38),
+                "icon": "❄️",
+                "tag": "Legendary",
+                "rarity": "legendary",
+                "weight": 8,
+                "freeze_duration": 15,
+                "icon_image": os.path.join(UI_ICON_DIR, "icon_freeze_drop.png"),
+                "style": {
+                    "gradient": [(40, 120, 220), (10, 30, 80)],
+                    "border": (100, 180, 255),
+                    "corner": 28,
+                    "pattern": "spark",
+                    "icon_bg": (20, 50, 100),
+                },
+                "limited": True,
+                "single_use": True,
+            },
         ]
-
         return cards
 
 
@@ -4055,6 +4183,12 @@ class MysteryMode(Game):
         # Hammer charges: player can turn the CURRENT falling piece into a 1x1 block via H.
         self.hammer_charges_remaining = 0
 
+        # Son Düşüş (Freeze Drop): F tuşuyla bloğu dondur, sadece sağ-sol ve sert düşüş çalışır.
+        self._freeze_drop_charges = 0
+        self._freeze_drop_duration = 0  # Aktif dondurma süresi (saniye, nadirlğe bağlı)
+        self._freeze_drop_timer = 0.0  # Kalan dondurma süresi (saniye)
+        self._freeze_drop_active = False  # Şu an bir parça donuk mu?
+
         # Keep a short history of picked cards so the left panel can show
         # "seçilen bütün kartlar" (not only currently-active effects).
         self.selected_cards_log: List[Dict[str, Any]] = []
@@ -4080,7 +4214,7 @@ class MysteryMode(Game):
         self.time_warp_timer = 0.0
         self.gravity_freeze_timer = 0.0
         self.phase_used_for_piece = False
-        self._last_ability_keys = {'z': False, 'x': False, 'g': False, 'h': False, 'm': False, 'c': False, 'rotate': False, 'lshift': False, 'v': False, 'b': False}
+        self._last_ability_keys = {'z': False, 'x': False, 'g': False, 'h': False, 'm': False, 'c': False, 'rotate': False, 'lshift': False, 'v': False, 'b': False, 'f': False}
         # Bomba Ustası: M tuşuyla mini bomba yapma hakları
         self.bomb_master_charges = 0
         # Tuttuğunu Koparan: B tuşuyla hold silme hakları (kart seçilene kadar 0)
@@ -4541,6 +4675,10 @@ class MysteryMode(Game):
         if getattr(self.perk_manager, 'chrono_freeze_timer', 0) > 0:
             self.gravity_freeze_timer = self.perk_manager.chrono_freeze_timer
             self.perk_manager.chrono_freeze_timer = 0.0
+        # Son Düşüş: parça kilitlendiğinde dondurma sona erer
+        if getattr(self, '_freeze_drop_active', False):
+            self._freeze_drop_active = False
+            self._freeze_drop_timer = 0.0
         super().lock_and_new_piece()
 
         # If the underlying Game ignored the lock (e.g., tunneled hard-drop pressed
@@ -5108,6 +5246,38 @@ class MysteryMode(Game):
                 # hd_charges == 0 ise sessiz kal (B tuşu aktif kart yok)
             self._last_ability_keys['b'] = bool(_b_pressed)
 
+            # Son Düşüş (F): mevcut düşen bloğu dondur (3 hak)
+            _f_pressed = keys[pygame.K_f]
+            if _f_pressed and not self._last_ability_keys.get('f', False):
+                try:
+                    charges = int(getattr(self, '_freeze_drop_charges', 0) or 0)
+                except Exception:
+                    charges = 0
+                if charges > 0 and not getattr(self, '_freeze_drop_active', False):
+                    piece = getattr(self, 'current_piece', None)
+                    if piece is not None:
+                        try:
+                            self._freeze_drop_active = True
+                            dur = int(getattr(self, '_freeze_drop_duration', 6) or 6)
+                            self._freeze_drop_timer = float(dur)
+                            self._freeze_drop_charges = max(0, charges - 1)
+                            # Parçayı buz rengine boya
+                            if getattr(piece, '_original_color', None) is None:
+                                setattr(piece, '_original_color', getattr(piece, 'color', None))
+                            ICE_COLOR = (140, 220, 255)
+                            piece.color = ICE_COLOR
+                            setattr(piece, '_force_color', ICE_COLOR)
+                            setattr(piece, '_frozen', True)
+                            left = int(self._freeze_drop_charges)
+                            self.card_message = f"❄️ Blok dondu! {dur}sn. Kalan: {left}"
+                            self.card_message_timer = 1.4
+                            self._sync_active_cards()
+                            if self.sound_enabled:
+                                self.sound.play_sound('rotate')
+                        except Exception:
+                            pass
+            self._last_ability_keys['f'] = bool(_f_pressed)
+
             # Time Warp (X) - cost 60
             if keys[pygame.K_x] and not self._last_ability_keys['x']:
                 if self.energy >= 60 and self.time_warp_timer <= 0:
@@ -5153,6 +5323,9 @@ class MysteryMode(Game):
 
             # Soft drop must work reliably even if KEYDOWN was swallowed by
             # an overlay (e.g., card selection). Use key state as source of truth.
+            # Son Düşüş aktifken soft drop engellenir — parça sadece sağ-sol ve sert düşüş yapabilir.
+            if getattr(self, '_freeze_drop_active', False):
+                soft_drop_active = False
             if soft_drop_active and getattr(self, 'gravity_freeze_timer', 0.0) <= 0:
                 try:
                     soft_ms = int(self.settings_manager.get('soft_drop_speed', FAST_FALL_SPEED)) if self.settings_manager else int(FAST_FALL_SPEED)
@@ -5278,11 +5451,38 @@ class MysteryMode(Game):
                     if hasattr(self, '_active_effect_visuals'):
                         self._active_effect_visuals = [
                             v for v in self._active_effect_visuals 
-                            if v.get('id') != 'speed_burst'
+                            if not (v.get('id', '') or '').startswith('speed_burst')
                         ]
                 except Exception:
                     pass
                 self._sync_active_cards()
+
+        # Son Düşüş (Freeze Drop) timer
+        if getattr(self, '_freeze_drop_active', False) and getattr(self, '_freeze_drop_timer', 0.0) > 0:
+            self._freeze_drop_timer = max(0.0, self._freeze_drop_timer - seconds)
+            if self._freeze_drop_timer > 0:
+                # Yerçekimini durdur — parça düşmez
+                self.fall_speed = int(1e9)
+            else:
+                # Süre doldu, donma biter
+                self._freeze_drop_active = False
+                piece = getattr(self, 'current_piece', None)
+                if piece is not None:
+                    setattr(piece, '_frozen', False)
+                    orig = getattr(piece, '_original_color', None)
+                    if orig:
+                        piece.color = orig
+                        try:
+                            delattr(piece, '_force_color')
+                        except Exception:
+                            pass
+                self.fall_speed = self.get_current_speed()
+                try:
+                    self.card_message = "❄️ Dondurma süresi doldu!"
+                    self.card_message_timer = 1.0
+                except Exception:
+                    pass
+            self._sync_active_cards()
 
     def handle_input(self) -> bool:
         if self.card_selection_active:
@@ -5547,6 +5747,11 @@ class MysteryMode(Game):
         self._active_effect_visuals = {}
         self.tunnel_charges_remaining = 0
         self.hammer_charges_remaining = 0
+        # Son Düşüş sıfırla
+        self._freeze_drop_charges = 0
+        self._freeze_drop_duration = 0
+        self._freeze_drop_timer = 0.0
+        self._freeze_drop_active = False
         
         # Zaman Kapsulu sifirla
         self.time_capsule_saved = False
@@ -5571,7 +5776,7 @@ class MysteryMode(Game):
         self.phase_used_for_piece = False
         # Phase shift (shape mutation) per-run usage limit
         self.phase_shift_uses_remaining = 0
-        self._last_ability_keys = {'z': False, 'x': False, 'g': False, 'h': False, 'm': False, 'c': False, 'v': False, 'rotate': False, 'lshift': False, 'b': False}
+        self._last_ability_keys = {'z': False, 'x': False, 'g': False, 'h': False, 'm': False, 'c': False, 'v': False, 'rotate': False, 'lshift': False, 'b': False, 'f': False}
         # Shape mutation cooldown
         self._shape_mutation_cooldown = 0.0
         # Hız seviyesi
@@ -6997,7 +7202,7 @@ class MysteryMode(Game):
             except Exception:
                 pass
             effect_triggered = True
-        elif cid == "speed_burst":
+        elif cid in ("speed_burst_rare", "speed_burst_epic", "speed_burst_legendary", "speed_burst"):
             # Hız Patlaması: Belirli süre hızlı düşüş + satır temizleme bonusu
             duration = int(value)
             speed_mult = card.get("payload", {}).get("speed_multiplier", 1.5)
@@ -7128,6 +7333,28 @@ class MysteryMode(Game):
             self._future_changer_remaining = 2
             self._future_changer_card = card
             self._open_piece_selection_popup()
+            effect_triggered = True
+
+        # === SON DÜŞÜŞ (Blok Dondurma) ===
+        elif cid in ("freeze_drop_rare", "freeze_drop_epic", "freeze_drop_legendary"):
+            freeze_dur = int(card.get('freeze_duration', 6))
+            try:
+                cur = int(getattr(self, '_freeze_drop_charges', 0) or 0)
+            except Exception:
+                cur = 0
+            if cur in (0, 1, 2):
+                self._freeze_drop_charges = 3
+            self._freeze_drop_duration = freeze_dur
+            try:
+                self.card_message = f"Son Düşüş! F ile dondur ({int(self._freeze_drop_charges)} hak, {freeze_dur}sn)"
+                self.card_message_timer = 1.5
+            except Exception:
+                pass
+            try:
+                self._remember_effect_visual('freeze_drop', card)
+                self._sync_active_cards()
+            except Exception:
+                pass
             effect_triggered = True
 
         # === BLOK ATÖLYESİ KARTI ===
@@ -7748,7 +7975,7 @@ class MysteryMode(Game):
             mult = getattr(self, '_speed_burst_line_mult', 1.5)
             if "speed_burst" not in self._active_effect_visuals:
                 try:
-                    c = next((x for x in (getattr(self.card_manager, 'catalog', []) or []) if x.get('id') == 'speed_burst'), None)
+                    c = next((x for x in (getattr(self.card_manager, 'catalog', []) or []) if str(x.get('id', '')).startswith('speed_burst')), None)
                     if c:
                         self._remember_effect_visual('speed_burst', c)
                 except Exception:
@@ -7897,6 +8124,33 @@ class MysteryMode(Game):
             add("hold_destroyer", f"{_b_lbl} ile saklanan parçayı sil. Kalan hak: {hd_charges}", status=f"{_b_lbl}: {hd_charges} Hak")
         else:
             self._active_effect_visuals.pop("hold_destroyer", None)
+
+        # Son Düşüş (F tuşu): visible while charges remain or freeze is active.
+        try:
+            fd_charges = int(getattr(self, '_freeze_drop_charges', 0) or 0)
+        except Exception:
+            fd_charges = 0
+        fd_active = bool(getattr(self, '_freeze_drop_active', False))
+        if fd_charges > 0 or fd_active:
+            if "freeze_drop" not in self._active_effect_visuals:
+                try:
+                    card = next((c for c in (getattr(self.card_manager, 'catalog', []) or []) if str(c.get('id', '')).startswith('freeze_drop')), None)
+                except Exception:
+                    card = None
+                if card:
+                    try:
+                        self._remember_effect_visual('freeze_drop', card)
+                    except Exception:
+                        pass
+        if (fd_charges > 0 or fd_active) and "freeze_drop" in self._active_effect_visuals:
+            _f_lbl = _card_key('F', 'card_freeze')
+            if fd_active:
+                fd_timer = getattr(self, '_freeze_drop_timer', 0.0)
+                add("freeze_drop", f"❄️ Blok dondu! {fd_timer:.1f}s kaldı. Kalan hak: {fd_charges}", status=f"{fd_timer:.1f}s | {fd_charges} Hak")
+            else:
+                add("freeze_drop", f"{_f_lbl} ile bloğu dondur. Kalan hak: {fd_charges}", status=f"{_f_lbl}: {fd_charges} Hak")
+        else:
+            self._active_effect_visuals.pop("freeze_drop", None)
 
         # Laser Drill: active only while the current piece is drill-enabled
         try:

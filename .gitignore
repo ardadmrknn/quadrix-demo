@@ -22,8 +22,10 @@ build/
 dist/
 *.egg-info/
 
-# SteamPipe build outputs (log/vdf her build'de değişir, commit etme)
-steamworks/output/
+# Steam build artifacts
+steamworks/output/*
+!steamworks/output/.gitkeep
+steamworks/scripts/.tmp_app_build_*.vdf
 
 # Secrets / local env
 .env

@@ -2,6 +2,7 @@
 {
     "AppID" "4428040"
     "Desc" "macOS Playtest build 2026-02-19"
+    "SetLive" ""
     "ContentRoot" ""
     "BuildOutput" ""
 

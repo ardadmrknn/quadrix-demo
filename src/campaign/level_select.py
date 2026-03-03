@@ -784,8 +784,8 @@ class CampaignLevelSelect:
                 self.screen.blit(btn_surf, rect.topleft)
                 pygame.draw.rect(self.screen, UIColors.BUTTON_BORDER, rect, 1, border_radius=UIStyle.BORDER_RADIUS_MEDIUM)
         
-        # Boss level görsel ayrımı: sadece hover'da kırmızı kenarlık + "!" badge
-        if is_boss and is_hovered and is_unlocked:
+        # Boss level görsel ayrımı: hover veya klavye seçiminde kırmızı kenarlık + "!" badge
+        if is_boss and (is_hovered or is_selected) and is_unlocked:
             pulse = 0.55 + 0.45 * math.sin(self.animation_time * 3)
             glow_alpha = int(80 * pulse)
             boss_col = (255, 60, 80)  # Kırmızı
