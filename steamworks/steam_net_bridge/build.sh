@@ -53,6 +53,8 @@ else
     exit 1
 fi
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
 PYTHON_EXE="$($PYTHON -c 'import sys; print(sys.executable)')"
 PY_TAG="$($PYTHON -c 'import sys; print(f"{sys.version_info.major}{sys.version_info.minor}")')"
 EXT_SUFFIX="$($PYTHON -c 'import sysconfig; print(sysconfig.get_config_var("EXT_SUFFIX") or ".so")')"
@@ -64,11 +66,10 @@ echo "[BILGI] Build dizini: $BUILD_DIR"
 # Pybind11 kontrolü
 if ! "$PYTHON_EXE" -c "import pybind11" 2>/dev/null; then
     echo "[BILGI] pybind11 kuruluyor..."
-    "$PYTHON_EXE" -m pip install pybind11
+    "$PYTHON_EXE" -m pip install pybind11 --break-system-packages
 fi
 
 # SDK kontrolü
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SDK_DIR="$SCRIPT_DIR/../sdk"
 
 if [[ ! -f "$SDK_DIR/public/steam/steam_api.h" ]]; then
