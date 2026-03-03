@@ -130,3 +130,42 @@ QUADRIX - DEĞİŞİKLİK NOTLARI (3 Mart 2026)
 17. TEST DOSYALARI DÜZENLEME
    33 adet root dizindeki test_*.py dosyası tests/ klasörüne
    taşındı ve pytest.ini testpaths=tests olarak güncellendi.
+
+18. ONLINE PVP - PANEL/AKIŞ/TIKLAMA VE PLATFORM UYUMU DÜZELTMELERİ
+    Online PvP ekranları uçtan uca denetlendi ve birden fazla kritik UI
+    akış sorunu düzeltildi:
+    - Fare tıklamaları artık sadece lobi menüsünde değil WAITING,
+       READY_CHECK, GAME_OVER ve DISCONNECTED ekranlarında da çalışıyor.
+    - EXE/HiDPI tıklama kayması için normalize_mouse_pos() kullanımı
+       eklendi (Windows ve macOS Retina ölçek uyumu).
+    - WAITING ve READY_CHECK ekranlarına tıklanabilir "Ana Menüye Dön"
+       butonları eklendi (ESC alternatifi).
+    - Online PvP girişinde menü müziğinin aniden kesilmesi kaldırıldı;
+       müzik artık geri sayım başlangıcında duruyor.
+    - Local PvP ile tutarlı mod giriş popup'ı Online PvP için eklendi.
+    - Hold görsel bug'ı düzeltildi: hold_piece artık hold işleminde
+       gerçek Piece nesnesiyle set edilip panelde doğru gösteriliyor.
+    - Fullscreen toggle (F12 / Alt+Enter / Cmd+Enter) Online PvP akışına
+       eklendi ve main handler tarafında işlenir hale getirildi.
+    - VIDEORESIZE tarafında fullscreen durumu korunacak şekilde güncellendi,
+       macOS için yüzey boyutu readback ile daha güvenli resize sağlandı.
+
+19. ONLINE PVP - ÖZEL LOBİ / ARKADAŞ DAVETİ ALTYAPISI KRİTİK DÜZELTMELER
+    Özel lobi açma ve arkadaş daveti akışı Steam bridge + Python katmanında
+    tekrar incelendi, aşağıdaki kritik uyumsuzluklar giderildi:
+    - Kanal polling uyumsuzluğu düzeltildi: C++ bridge yalnızca channel 0
+       poll ettiği için Python tarafındaki mesaj kanalları geçici olarak
+       tek kanala (0) alındı. Böylece READY/GAME_START/GAME_OVER ve durum
+       mesajlarının kaybolması engellendi.
+    - Lobi listeleme event uyumsuzluğu düzeltildi: Python tek seferde
+       "lobby_list" beklerken bridge "lobby_found" + "lobby_list_complete"
+       gönderiyordu. Akış yeni event modeline göre güncellendi.
+    - Lobi listesi için birikim tamponu (_pending_lobby_list) eklendi ve
+       yeni arama öncesi temizlenen güvenli akış kuruldu.
+    - lobby_create_failed / lobby_join_failed / lobby_list_failed eventleri
+       için hata handler'ları eklendi; kullanıcı artık sessiz takılmak yerine
+       durum mesajı görüyor.
+    - Lobi ekranına zamanlı durum mesajı altyapısı (_status_msg,
+       _status_timer) eklendi.
+    - Bu değişiklikler sonrası online_pvp_game.py, steam_networking.py ve
+       localization.py dosyalarında syntax ve hata kontrolü temiz geçti.

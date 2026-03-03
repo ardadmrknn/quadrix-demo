@@ -262,6 +262,10 @@ GAME_MODE_INFOS = {
         'title_key': 'mode_pvp',
         'desc_key': 'mode_intro_pvp_desc'
     },
+    'online_pvp': {
+        'title_key': 'mode_online_pvp',
+        'desc_key': 'mode_intro_online_pvp_desc'
+    },
     'hardcore': {
         'title_key': 'mode_hardcore',
         'desc_key': 'mode_intro_hardcore_desc'
@@ -1715,8 +1719,9 @@ def main():
                 )
                 state = 'pvp'
             elif action in ('online_pvp', 'Online PvP'):
+                if not _show_mode_intro_popup(screen, 'online_pvp', settings_manager):
+                    continue
                 confirm_exit = False
-                menu_sound.stop_music()
                 online_pvp_game = OnlinePvPGame(
                     screen=screen,
                     fullscreen=fullscreen,
@@ -2354,7 +2359,8 @@ def main():
                 game = CascadeMode(difficulty, sound, effects, achievement_manager, theme_manager, screen, fullscreen, settings_manager, user_manager, 'cascade', score_manager=score_manager)
                 state = 'game'
             elif action == 'Online PvP':
-                menu_sound.stop_music()
+                if not _show_mode_intro_popup(screen, 'online_pvp', settings_manager):
+                    continue
                 online_pvp_game = OnlinePvPGame(
                     screen=screen,
                     fullscreen=fullscreen,
@@ -2605,14 +2611,28 @@ def main():
             running = False
             return False
 
-        if result == 'menu':
+        if result == 'toggle_fullscreen':
+            _toggle_fullscreen(500, 700)
+            if not running:  # macOS restart tetiklendi
+                return False
+            online_pvp.screen = screen
+            online_pvp.window_width = screen.get_width()
+            online_pvp.window_height = screen.get_height()
+            online_pvp.fullscreen = fullscreen
+        elif result == 'menu':
             state = 'menu'
             _handle_online_pvp._game = None
             if settings_screen.music_enabled and not getattr(settings_screen, 'mute_all', False):
-                _menu_vol = settings_manager.get('menu_music_volume', 0.3)
-                menu_sound.set_music_volume(_menu_vol)
-                menu_music = settings_manager.get('menu_music', 'main_1')
-                menu_sound.play_music(menu_music.lower(), loop=True)
+                # Müzik lobide devam ediyordu; sadece durduysa tekrar başlat
+                try:
+                    music_playing = pygame.mixer.music.get_busy()
+                except Exception:
+                    music_playing = False
+                if not music_playing:
+                    _menu_vol = settings_manager.get('menu_music_volume', 0.3)
+                    menu_sound.set_music_volume(_menu_vol)
+                    menu_music = settings_manager.get('menu_music', 'main_1')
+                    menu_sound.play_music(menu_music.lower(), loop=True)
             return False
 
         online_pvp.update(delta_ms)

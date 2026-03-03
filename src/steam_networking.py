@@ -120,10 +120,13 @@ class NetMessage:
 
 
 # ---------- Kanal sabitleri ----------
+# NOT: C++ bridge şu an yalnızca kanal 0'ı polluyor (_poll_incoming_messages).
+# Tüm mesajlar CHANNEL_GAME (0) üzerinden gönderilmelidir.
+# C++ tarafı düzeltildiğinde kanal ayrımı tekrar devreye alınabilir.
 
-CHANNEL_GAME = 0       # Oyun mesajları (çöp satır, skor, parça kilitlendi)
-CHANNEL_STATE = 1      # Tahta durumu (snapshot, unreliable)
-CHANNEL_CONTROL = 2    # Kontrol mesajları (hazır, başla, duraklat)
+CHANNEL_GAME = 0       # Tüm mesajlar — C++ bridge tek kanal polluyor
+CHANNEL_STATE = 0      # (Geçici: 0 — C++ çoklu kanal desteği eklenince 1 yapılacak)
+CHANNEL_CONTROL = 0    # (Geçici: 0 — C++ çoklu kanal desteği eklenince 2 yapılacak)
 
 
 # ---------- Mesaj tipleri ----------
