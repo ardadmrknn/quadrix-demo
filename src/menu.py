@@ -422,13 +422,14 @@ class Menu:
             backend_base_url=os.getenv('LEADERBOARD_BACKEND_URL', ''),
             publisher_key=os.getenv('STEAM_WEB_API_KEY', ''),
             app_id=int(os.getenv('STEAM_APP_ID', '0') or '0'),
+            timeout_seconds=3.0,
         )
         self._mystery_lb_tab = 'global'
         self._mystery_lb_tab_rects = {}
         self._mystery_lb_entries = {'global': [], 'friends': []}
         self._mystery_lb_error = ''
         self._mystery_lb_last_fetch_ms = -120_000
-        self._mystery_lb_refresh_ms = 45_000
+        self._mystery_lb_refresh_ms = 30_000
         self._mystery_lb_loading = False
 
         # Steam oyuncu profil cache: steam_id -> {personaname, avatarmedium, ...}
@@ -2511,6 +2512,19 @@ class Menu:
                     except Exception as _sdk_err:
                         print(f"[Steam] SDK friend leaderboard fallback hatası: {_sdk_err}")
 
+                # Global listeye arkadaş girişlerini de ekle (eksik olanları)
+                if friend_entries and global_entries is not None:
+                    _global_sids = {str(e.get('steam_id', '') or '') for e in global_entries}
+                    for fe in friend_entries:
+                        _fid = str(fe.get('steam_id', '') or '')
+                        if _fid and _fid not in _global_sids:
+                            global_entries.append(fe)
+                            _global_sids.add(_fid)
+                    # Score'a göre yeniden sırala, rank güncelle
+                    global_entries.sort(key=lambda e: int(e.get('score', 0) or 0), reverse=True)
+                    for _ri, _re in enumerate(global_entries):
+                        _re['rank'] = _ri + 1
+
                 self._mystery_lb_entries = {
                     'global': global_entries,
                     'friends': friend_entries,
@@ -2556,7 +2570,7 @@ class Menu:
                                 if url and url not in self._steam_avatar_bytes:
                                     try:
                                         import requests as _req
-                                        resp = _req.get(url, timeout=5)
+                                        resp = _req.get(url, timeout=3)
                                         if resp.status_code == 200:
                                             self._steam_avatar_bytes[url] = resp.content
                                     except Exception:
@@ -2670,8 +2684,8 @@ class Menu:
             return
 
         max_rows = min(10, len(active_entries))
-        # Satır yüksekliğini mevcut listeye dinamik sığdır (min 26 px)
-        row_h = max(s(26), (list_rect.height - s(10)) // max(1, max_rows))
+        # Satır yüksekliğini mevcut listeye dinamik sığdır (min 26, max 54 px)
+        row_h = min(s(54), max(s(26), (list_rect.height - s(10)) // max(1, max_rows)))
         base_y = list_rect.y + s(5)
         medal_colors = [UIColors.NEON_GOLD, (200, 200, 210), (200, 140, 80)]  # Altın, Gümüş, Bronz
         # Aktif Steam kullanıcısını vurgula

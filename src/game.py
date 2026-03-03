@@ -2935,32 +2935,38 @@ class Game:
                 mode=self.game_mode,
             )
             print(f"Kullanıcı istatistikleri güncellendi: {self.game_mode.upper()} - {self.board.score} puan")
-        # Steam leaderboard'una skor gönder
-        try:
-            import steam_integration as _steam_int
-            if self.board.score > 0:
-                _proxy_written = False
-                # Yol 1: Backend proxy güvenli yazım (LEADERBOARD_BACKEND_URL ayarlıysa)
-                _backend_url = os.environ.get('LEADERBOARD_BACKEND_URL', '').strip()
-                if _backend_url and _steam_int.is_available():
-                    try:
-                        from steam_leaderboards import SteamLeaderboardService
-                        _svc = SteamLeaderboardService(
-                            backend_base_url=_backend_url,
-                            publisher_key=os.environ.get('STEAM_WEB_API_KEY', ''),
-                            app_id=int(os.environ.get('STEAM_APP_ID', '0') or '0'),
-                        )
-                        _ticket = _steam_int.get_auth_session_ticket()
-                        if _ticket and _svc.submit_score(self.game_mode, self.board.score, ticket=_ticket):
-                            _proxy_written = True
-                            print(f"[Steam] Proxy skor yazımı OK: {self.game_mode} → {self.board.score}")
-                    except Exception as _pe:
-                        print(f"[Steam] Proxy skor yazım hatası: {_pe}")
-                # Yol 2: SDK doğrudan yazım (fallback veya proxy yoksa)
-                if not _proxy_written and _steam_int.is_available():
-                    _steam_int.submit_score(self.game_mode, self.board.score)
-        except Exception as _se:
-            print(f"[Steam] Skor gönderme hatası: {_se}")
+        # Steam leaderboard'una skor gönder — main thread'i bloklamadan arka planda
+        _game_mode = self.game_mode
+        _board_score = self.board.score
+        def _steam_submit_worker():
+            try:
+                import steam_integration as _steam_int
+                if _board_score > 0:
+                    _proxy_written = False
+                    # Yol 1: Backend proxy güvenli yazım (LEADERBOARD_BACKEND_URL ayarlıysa)
+                    _backend_url = os.environ.get('LEADERBOARD_BACKEND_URL', '').strip()
+                    if _backend_url and _steam_int.is_available():
+                        try:
+                            from steam_leaderboards import SteamLeaderboardService
+                            _svc = SteamLeaderboardService(
+                                backend_base_url=_backend_url,
+                                publisher_key=os.environ.get('STEAM_WEB_API_KEY', ''),
+                                app_id=int(os.environ.get('STEAM_APP_ID', '0') or '0'),
+                                timeout_seconds=3.0,
+                            )
+                            _ticket = _steam_int.get_auth_session_ticket()
+                            if _ticket and _svc.submit_score(_game_mode, _board_score, ticket=_ticket):
+                                _proxy_written = True
+                                print(f"[Steam] Proxy skor yazımı OK: {_game_mode} → {_board_score}")
+                        except Exception as _pe:
+                            print(f"[Steam] Proxy skor yazım hatası: {_pe}")
+                    # Yol 2: SDK doğrudan yazım (fallback veya proxy yoksa)
+                    if not _proxy_written and _steam_int.is_available():
+                        _steam_int.submit_score(_game_mode, _board_score)
+            except Exception as _se:
+                print(f"[Steam] Skor gönderme hatası: {_se}")
+        import threading as _thr
+        _thr.Thread(target=_steam_submit_worker, daemon=True).start()
         if self.achievement_manager:
             stats = self.achievement_manager.stats
             stats['total_games'] = stats.get('total_games', 0) + 1
