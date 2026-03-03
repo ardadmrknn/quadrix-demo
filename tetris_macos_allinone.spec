@@ -182,6 +182,9 @@ hiddenimports = [
     'packaging.markers',
     'platformdirs',
     'zipp',
+
+    # ── Steam Net Bridge (Online PvP) ──
+    'steam_net_bridge',
 ]
 
 # ── src/ altındaki tüm Python modüllerini ekle ──
@@ -228,6 +231,21 @@ if os.path.exists(steam_dylib_src):
 else:
     _steam_binaries = []
     print(f'WARNING: libsteam_api.dylib not found at {steam_dylib_src}')
+
+# ═══════════════════════════════════════════════════════════════════
+#  STEAM NET BRIDGE - Online PvP (Pybind11 C++ modülü)
+# ═══════════════════════════════════════════════════════════════════
+import glob as _glob
+_bridge_matches = (
+    _glob.glob(str(REPO_ROOT / 'steam_net_bridge*.pyd')) +
+    _glob.glob(str(REPO_ROOT / 'steam_net_bridge*.so'))
+)
+if _bridge_matches:
+    _bridge_path = _bridge_matches[0]
+    _steam_binaries.append((_bridge_path, '.'))
+    print(f'[spec] steam_net_bridge eklendi: {_bridge_path}')
+else:
+    print('WARNING: steam_net_bridge not found — Online PvP çalışmayacak!')
 
 # ═══════════════════════════════════════════════════════════════════
 #  ANALYSIS

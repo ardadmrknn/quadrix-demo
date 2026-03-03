@@ -56,6 +56,23 @@ if $CLEAN_BUILD; then
     rm -rf "$BUILD_DIR/$APP_NAME" "$DIST_DIR/$APP_NAME" "$DIST_DIR/$APP_NAME.app"
 fi
 
+# Steam Net Bridge (Online PvP için zorunlu)
+echo -e "${CYAN}🔧 Steam Net Bridge kontrolü...${NC}"
+BRIDGE_SO=$(ls steam_net_bridge*.so 2>/dev/null | head -1 || true)
+if [[ -z "$BRIDGE_SO" ]]; then
+    echo -e "${YELLOW}  Bridge bulunamadı, derleniyor...${NC}"
+    if [[ ! -f "steamworks/steam_net_bridge/build.sh" ]]; then
+        echo -e "${RED}HATA: steamworks/steam_net_bridge/build.sh bulunamadı!${NC}"; exit 1
+    fi
+    chmod +x steamworks/steam_net_bridge/build.sh
+    (cd steamworks/steam_net_bridge && ./build.sh)
+    BRIDGE_SO=$(ls steam_net_bridge*.so 2>/dev/null | head -1 || true)
+    if [[ -z "$BRIDGE_SO" ]]; then
+        echo -e "${RED}HATA: Bridge derlemesi başarısız!${NC}"; exit 1
+    fi
+fi
+echo -e "${GREEN}✓${NC} Bridge: $BRIDGE_SO"
+
 # Menü layout embed
 echo -e "${CYAN}📦 Menü layout embedleniyor...${NC}"
 $PYTHON_CMD -c "
