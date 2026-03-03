@@ -1,4 +1,7 @@
-C:/Users/arda demirkan/Desktop/v2_23022026/v2/steamworks/steam_net_bridge/build_py312/CMakeFiles/steam_net_bridge.dir
-C:/Users/arda demirkan/Desktop/v2_23022026/v2/steamworks/steam_net_bridge/build_py312/CMakeFiles/INSTALL.dir
-C:/Users/arda demirkan/Desktop/v2_23022026/v2/steamworks/steam_net_bridge/build_py312/CMakeFiles/ALL_BUILD.dir
-C:/Users/arda demirkan/Desktop/v2_23022026/v2/steamworks/steam_net_bridge/build_py312/CMakeFiles/ZERO_CHECK.dir
+/Users/burakyasayan/quadrix-main/steamworks/steam_net_bridge/build_py312/CMakeFiles/steam_net_bridge.dir
+/Users/burakyasayan/quadrix-main/steamworks/steam_net_bridge/build_py312/CMakeFiles/edit_cache.dir
+/Users/burakyasayan/quadrix-main/steamworks/steam_net_bridge/build_py312/CMakeFiles/rebuild_cache.dir
+/Users/burakyasayan/quadrix-main/steamworks/steam_net_bridge/build_py312/CMakeFiles/list_install_components.dir
+/Users/burakyasayan/quadrix-main/steamworks/steam_net_bridge/build_py312/CMakeFiles/install.dir
+/Users/burakyasayan/quadrix-main/steamworks/steam_net_bridge/build_py312/CMakeFiles/install/local.dir
+/Users/burakyasayan/quadrix-main/steamworks/steam_net_bridge/build_py312/CMakeFiles/install/strip.dir
