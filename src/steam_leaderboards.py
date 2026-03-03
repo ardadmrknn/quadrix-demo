@@ -361,10 +361,20 @@ class SteamLeaderboardService:
         range_start = 1
         range_end = safe_limit
         if data_request_str == "RequestFriends":
-            # Steam Web API'de friend sorgusunda aralık parametreleri kullanılmaz;
-            # 1..N gönderildiğinde bazı istemcilerde global benzeri sonuçlar dönebilir.
-            range_start = -1
-            range_end = -1
+            # Steam Web API GetLeaderboardEntries arkadaş filtresini DESTEKLEMIYOR —
+            # datarequest=2 gönderilse bile global sonuçlar döner. Bunun yerine
+            # Steam SDK (DownloadLeaderboardEntries + k_ELeaderboardDataRequestFriends)
+            # kullanılmalıdır. SDK available ise oradan çek; yoksa boş dön.
+            try:
+                import steam_integration as _si  # type: ignore[import]
+                if _si.is_available():
+                    sdk_entries = _si.fetch_friend_scores(mode, limit=safe_limit)
+                    if sdk_entries is not None:
+                        return sdk_entries
+            except Exception:
+                pass
+            self.last_error = "friends_sdk_required"
+            return []
         elif data_request_str in ("RequestAroundUser", "RequestGlobalAroundUser"):
             half = max(1, safe_limit // 2)
             range_start = -half

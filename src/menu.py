@@ -1092,6 +1092,26 @@ class Menu:
         title_area_h = max(sp(32), int(draw_rect.height * 0.40))
         title_area = pygame.Rect(draw_rect.x + sp(16), draw_rect.y + sp(10), draw_rect.width - sp(24), title_area_h)
         title_font_size = max(sp(16), min(sp(26), int(min(draw_rect.width, draw_rect.height) * 0.12)))
+
+        # Çık butonu: yazıyı ortaya yayıp büyük göster
+        if panel_key == 'exit':
+            title_font_size = max(sp(22), min(sp(32), int(draw_rect.height * 0.40)))
+            title_font = retro_style.get_font(title_font_size, bold=True)
+            while title_font_size > sp(14):
+                if title_font.size(title)[0] <= draw_rect.width - sp(16):
+                    break
+                title_font_size -= 1
+                title_font = retro_style.get_font(title_font_size, bold=True)
+            # Dikey ortalama: tek satır, rect merkezine yerleştir
+            t_surf = title_font.render(title, True, UIColors.TEXT_PRIMARY)
+            self.screen.blit(t_surf, t_surf.get_rect(center=draw_rect.center))
+            # Border en üste
+            pygame.draw.rect(
+                self.screen,
+                (*accent_color[:3], 255 if is_highlighted else 140),
+                draw_rect, 3 if is_highlighted else 2, border_radius=14,
+            )
+            return draw_rect
         title_font = retro_style.get_font(title_font_size, bold=True)
 
         # Eğer başlık tek satıra sığmıyorsa font küçültülerek tek satıra indirilir.
@@ -1864,8 +1884,8 @@ class Menu:
                 self.screen.blit(name_surf, name_surf.get_rect(midleft=(lv_panel_x + lv_pad_x + s(4), lv_panel_y + lv_pad_y + lv_surf.get_height() + s(10))))
 
             # --- Hızlı Devam butonu (sağ-alt köşe) ---
-            btn_w = max(s(115), min(s(150), rect.width - s(26)))
-            btn_h = s(38)
+            btn_w = max(s(115), 116, min(s(150), rect.width - s(26)))
+            btn_h = max(s(38), 36)
             btn_x = rect.right - btn_w - s(10)
             btn_y = rect.bottom - btn_h - s(10)
             btn_rect = pygame.Rect(btn_x, btn_y, btn_w, btn_h)
@@ -1885,7 +1905,7 @@ class Menu:
                 pygame.draw.rect(glow, (*accent_color[:3], 40), glow.get_rect(), border_radius=14)
                 self.screen.blit(glow, (btn_rect.x - 5, btn_rect.y - 5))
             btn_label = t('menu_dashboard_quick_continue')
-            btn_font = retro_style.get_fitting_font(btn_label, base_size=s(18), max_width=btn_w - s(32), bold=True, min_size=max(12, s(13)))
+            btn_font = retro_style.get_fitting_font(btn_label, base_size=max(s(18), 15), max_width=btn_w - s(32), bold=True, min_size=max(14, s(13)))
             btn_text_surf = btn_font.render(btn_label, True, UIColors.TEXT_PRIMARY)
             btn_surf.blit(btn_text_surf, btn_text_surf.get_rect(center=(btn_w // 2 + s(5), btn_h // 2)))
             # Sol tarafta üçgen ok ikonu
@@ -1901,8 +1921,8 @@ class Menu:
 
         elif panel_key == 'new_gen_tetris':
             btn_label = t('menu_dashboard_play')
-            btn_w = max(s(110), min(s(160), rect.width - s(26)))
-            btn_h = s(38)
+            btn_w = max(s(130), 128, min(s(190), rect.width - s(26)))
+            btn_h = max(s(44), 42)
             btn_x = rect.right - btn_w - s(10)
             btn_y = rect.bottom - btn_h - s(10)
             btn_rect = pygame.Rect(btn_x, btn_y, btn_w, btn_h)
@@ -1920,7 +1940,7 @@ class Menu:
                 glow = pygame.Surface((btn_w + 10, btn_h + 10), pygame.SRCALPHA)
                 pygame.draw.rect(glow, (*accent_color[:3], 40), glow.get_rect(), border_radius=14)
                 self.screen.blit(glow, (btn_rect.x - 5, btn_rect.y - 5))
-            btn_font = retro_style.get_fitting_font(btn_label, base_size=s(18), max_width=btn_w - s(32), bold=True, min_size=max(12, s(13)))
+            btn_font = retro_style.get_fitting_font(btn_label, base_size=max(s(20), 17), max_width=btn_w - s(32), bold=True, min_size=max(15, s(14)))
             btn_text_surf = btn_font.render(btn_label, True, UIColors.TEXT_PRIMARY)
             # Sol tarafta üçgen ok ikonu
             arrow_x = s(12)
@@ -1934,8 +1954,8 @@ class Menu:
 
         elif panel_key == 'extras':
             btn_label = t('menu_dashboard_browse')
-            btn_w = max(s(100), min(s(150), rect.width - s(26)))
-            btn_h = s(38)
+            btn_w = max(s(100), 102, min(s(150), rect.width - s(26)))
+            btn_h = max(s(38), 36)
             btn_x = rect.right - btn_w - s(10)
             btn_y = rect.bottom - btn_h - s(10)
             btn_rect = pygame.Rect(btn_x, btn_y, btn_w, btn_h)
@@ -1953,7 +1973,7 @@ class Menu:
                 glow = pygame.Surface((btn_w + 10, btn_h + 10), pygame.SRCALPHA)
                 pygame.draw.rect(glow, (*accent_color[:3], 40), glow.get_rect(), border_radius=14)
                 self.screen.blit(glow, (btn_rect.x - 5, btn_rect.y - 5))
-            btn_font = retro_style.get_fitting_font(btn_label, base_size=s(18), max_width=btn_w - s(32), bold=True, min_size=max(12, s(13)))
+            btn_font = retro_style.get_fitting_font(btn_label, base_size=max(s(18), 15), max_width=btn_w - s(32), bold=True, min_size=max(14, s(13)))
             btn_text_surf = btn_font.render(btn_label, True, UIColors.TEXT_PRIMARY)
             # Sol tarafta üçgen ok ikonu
             arrow_x = s(12)
@@ -2630,13 +2650,10 @@ class Menu:
                         _re['rank'] = _ri + 1
                     return merged
 
-                # --- Yol 1+2: Backend proxy veya Direct Web API ---
+                # --- Yol 1+2: Backend proxy veya Direct Web API (global) ---
                 if service_configured:
                     global_entries = service.fetch_mode_highscores('mystery', limit=10)
                     global_error = service.last_error
-
-                    friend_entries = service.fetch_mode_friend_highscores('mystery', limit=10)
-                    friend_error = service.last_error
 
                 # --- Yol 3: SDK global verisini her zaman birleştir (anlık güncelleme) ---
                 sdk_global: list[dict] = []
@@ -2652,16 +2669,22 @@ class Menu:
                     global_entries = _merge_entries(global_entries, sdk_global)
                     global_error = ''
 
-                if not friend_entries and _sdk_available:
+                # --- Yol 4: Friends — önce SDK (gerçek arkadaş filtresi), boşsa service ---
+                # Steam Web API GetLeaderboardEntries datarequest=2 arkadaş filtresini
+                # desteklemez (global sonuç döner). SDK her zaman önce denenmeli.
+                if _sdk_available:
                     try:
                         import steam_integration as _si
                         sdk_friends = _si.fetch_friend_scores('mystery', limit=10)
                         if sdk_friends:
                             friend_entries = sdk_friends
-                            friend_error = ''
-                            print(f"[Steam] SDK friend leaderboard fallback OK: mystery → {len(sdk_friends)} giriş")
+                            print(f"[Steam] SDK friend leaderboard OK: mystery → {len(sdk_friends)} giriş")
                     except Exception as _sdk_err:
-                        print(f"[Steam] SDK friend leaderboard fallback hatası: {_sdk_err}")
+                        print(f"[Steam] SDK friend leaderboard hatası: {_sdk_err}")
+
+                if not friend_entries and service_configured:
+                    friend_entries = service.fetch_mode_friend_highscores('mystery', limit=10)
+                    friend_error = service.last_error
 
                 # Global listeye arkadaş girişlerini de ekle/güncelle
                 if friend_entries:
@@ -10620,16 +10643,22 @@ class CreditsScreen:
             },
         ]
         
-        # Oyun testçileri listesi
+        # Oyun testçileri listesi — (isim, renk) tuple. Renk None ise varsayılan kullanılır.
+        _GOLD = (255, 215, 0)
         self.testers_list = [
-            'Alpaslan Kibar',
-            'Oğzuzhan Arı',
-            'Cemal Koparan',
-            'Tunahan Mazı',
-            'Meda Sönmez',
-            'Zeynep Öztürk',
-            'Osman Bülbül',
-            'Adem Akbıyık'
+            ('Enes Atik',       _GOLD),
+            ('Yusuf Çolak',     _GOLD),
+            ('Alpaslan Kibar',  None),
+            ('Oğuzhan Arı',     None),
+            ('Cemal Koparan',   None),
+            ('Tunahan Mazı',    None),
+            ('Meda Sönmez',     None),
+            ('Zeynep Öztürk',   None),
+            ('Osman Bülbül',    None),
+            ('Adem Akbıyık',    None),
+            ('Nabi Çalık',      None),
+            ('Büşra Gümüşay',   None),
+            ('Fatma Ağbaba',    None),
         ]
         
         # Özel teşekkürler
@@ -10750,8 +10779,8 @@ class CreditsScreen:
     def _get_testers_popup_rect(self) -> pygame.Rect:
         width, height = self.screen.get_size()
         popup_scale = self._fullscreen_panel_scale()
-        popup_w = max(260, min(int(350 * popup_scale), width - max(50, int(90 * popup_scale))))
-        popup_h = max(220, min(int(300 * popup_scale), height - max(70, int(110 * popup_scale))))
+        popup_w = max(420, min(int(560 * popup_scale), width - max(50, int(90 * popup_scale))))
+        popup_h = max(360, min(int(480 * popup_scale), height - max(70, int(110 * popup_scale))))
         return pygame.Rect((width - popup_w) // 2, (height - popup_h) // 2, popup_w, popup_h)
 
     def _rebuild_header_cache(self):
@@ -11021,7 +11050,14 @@ class CreditsScreen:
         list_start_y = popup_y + max(55, int(75 * popup_scale))
         col_width = popup_w // 2
         
-        for i, name in enumerate(self.testers_list):
+        _DEFAULT_NAME_COLOR = (220, 230, 250)
+        for i, entry in enumerate(self.testers_list):
+            if isinstance(entry, tuple):
+                name, name_color = entry
+            else:
+                name, name_color = entry, None
+            name_color = name_color or _DEFAULT_NAME_COLOR
+
             row = i // 2
             col = i % 2
             
@@ -11033,7 +11069,7 @@ class CreditsScreen:
             self.screen.blit(bullet_surf, (x, y))
             
             # İsim
-            name_surf = self.font_body.render(name, True, (220, 230, 250))
+            name_surf = self.font_body.render(name, True, name_color)
             self.screen.blit(name_surf, (x + 18, y))
         
         # Kapatma ipucu
