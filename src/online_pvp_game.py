@@ -54,7 +54,7 @@ except ImportError:
 
 try:
     from platform_utils import create_display, set_app_icon, resource_path
-    from platform_utils import normalize_mouse_pos, get_mouse_pos
+    from platform_utils import normalize_mouse_pos, get_mouse_pos, is_fullscreen_toggle
 except ImportError:
     def create_display(w, h, **kw):
         flags = pygame.RESIZABLE
@@ -69,6 +69,8 @@ except ImportError:
         return pygame.mouse.get_pos()
     def set_app_icon(path):
         pass
+    def is_fullscreen_toggle(key, mods, custom_key=None):
+        return key == pygame.K_F12
 
 
 # ─────────────── Online PvP Durumları ───────────────
@@ -228,6 +230,11 @@ class OnlinePvPGame:
         self._lobby_list: list[dict] = []  # Public lobiler
         self._lobby_list_scroll = 0
         self._lobby_list_fetching = False
+        self._pending_lobby_list: list[dict] = []  # Lobi listesi birikim tampon
+
+        # Durum mesajı (hata/bilgi)
+        self._status_msg: str = ''
+        self._status_timer: float = 0
 
     # ============================================================
     #  BAŞLATMA
@@ -251,7 +258,13 @@ class OnlinePvPGame:
             self.net.on('lobby_member_joined', self._on_member_joined)
             self.net.on('lobby_member_left', self._on_member_left)
             self.net.on('lobby_member_disconnected', self._on_member_left)
-            self.net.on('lobby_list', self._on_lobby_list)
+            # Lobi listesi — C++ per-lobi event gönderiyor, tek JSON değil
+            self.net.on('lobby_found', self._on_lobby_found)
+            self.net.on('lobby_list_complete', self._on_lobby_list_complete)
+            # Hata olayları
+            self.net.on('lobby_create_failed', self._on_lobby_error)
+            self.net.on('lobby_join_failed', self._on_lobby_error)
+            self.net.on('lobby_list_failed', self._on_lobby_list_error)
         return ok
 
     # ============================================================
@@ -286,16 +299,40 @@ class OnlinePvPGame:
             else:
                 self.online_state = OnlineState.WAITING
 
-    def _on_lobby_list(self, ev: NetEvent):
-        """Public lobi listesi geldi."""
+    def _on_lobby_found(self, ev: NetEvent):
+        """Tek bir public lobi bulundu — biriktir."""
+        self._pending_lobby_list.append({
+            'id': ev.steam_id,
+            'members': int(ev.data) if ev.data.isdigit() else 0,
+            'max_members': 2,
+            'name': f'Lobi #{len(self._pending_lobby_list) + 1}',
+        })
+
+    def _on_lobby_list_complete(self, ev: NetEvent):
+        """Lobi listesi tamamlandı — sonuçları onayla."""
         self._lobby_list_fetching = False
-        try:
-            lobbies = json.loads(ev.data) if ev.data else []
-        except (json.JSONDecodeError, TypeError):
-            lobbies = []
-        self._lobby_list = lobbies
+        self._lobby_list = self._pending_lobby_list[:]
+        self._pending_lobby_list.clear()
         self._lobby_list_scroll = 0
-        print(f"[OnlinePvP] {len(lobbies)} lobi bulundu.")
+        count = len(self._lobby_list)
+        print(f"[OnlinePvP] {count} lobi bulundu.")
+        if count == 0:
+            self._status_msg = t('no_lobbies_found', 'Lobi bulunamadı')
+            self._status_timer = 2.5
+
+    def _on_lobby_error(self, ev: NetEvent):
+        """Lobi oluşturma/katılma hatası."""
+        print(f"[OnlinePvP] Lobi hatası: {ev.type} — {ev.data}")
+        self.online_state = OnlineState.LOBBY_MENU
+        self._status_msg = t('lobby_error', 'Lobi işlemi başarısız oldu!')
+        self._status_timer = 4.0
+
+    def _on_lobby_list_error(self, ev: NetEvent):
+        """Lobi listesi alınamadı."""
+        self._lobby_list_fetching = False
+        self._lobby_list = []
+        self._status_msg = t('lobby_list_error', 'Lobi listesi alınamadı')
+        self._status_timer = 3.0
 
     # ============================================================
     #  MESAJ İŞLEME
@@ -391,6 +428,11 @@ class OnlinePvPGame:
         self.online_state = OnlineState.COUNTDOWN
         self.countdown_value = 3
         self.countdown_timer = 0
+        # Menü müziğini geri sayım başlayınca durdur
+        try:
+            self.sound.stop_music()
+        except Exception:
+            pass
 
     def _start_game(self):
         """Oyunu fiilen başlat."""
@@ -485,6 +527,7 @@ class OnlinePvPGame:
         if self.hold_shape_index < 0:
             # İlk hold — saklı parça yok, sıradakini al
             self.hold_shape_index = current_shape_index
+            self.hold_piece = Piece(x=0, y=0, shape_index=current_shape_index)
             self.my_piece = self.my_next_piece
             self.my_next_piece = self._get_next_piece()
             self.next_piece = self.my_next_piece
@@ -492,6 +535,7 @@ class OnlinePvPGame:
             # Swap
             old_hold = self.hold_shape_index
             self.hold_shape_index = current_shape_index
+            self.hold_piece = Piece(x=0, y=0, shape_index=current_shape_index)
             self.my_piece = Piece(x=3, y=0, shape_index=old_hold)
 
         self.hold_used = True
@@ -551,6 +595,12 @@ class OnlinePvPGame:
         if self._net_initialized:
             self.net.tick()
             self._process_messages()
+
+        # Durum mesajı zamanlayıcı
+        if self._status_timer > 0:
+            self._status_timer -= delta_time / 1000.0
+            if self._status_timer <= 0:
+                self._status_msg = ''
 
         if self.online_state == OnlineState.COUNTDOWN:
             self.countdown_timer += delta_time
@@ -692,7 +742,10 @@ class OnlinePvPGame:
                 self.window_width = max(800, event.w)
                 self.window_height = max(600, event.h)
                 self.screen = create_display(self.window_width, self.window_height,
-                                             fullscreen=False, resizable=True)
+                                             fullscreen=self.fullscreen, resizable=True)
+                # Surface'tan gerçek piksel boyutunu al (macOS HiDPI)
+                self.window_width = self.screen.get_width()
+                self.window_height = self.screen.get_height()
                 continue
 
             if event.type == pygame.KEYDOWN:
@@ -716,6 +769,11 @@ class OnlinePvPGame:
     def _handle_keydown(self, event):
         """Tuş basılma olayı."""
         key = event.key
+        mods = getattr(event, 'mod', 0)
+
+        # Fullscreen toggle (F12 / Alt+Enter)
+        if is_fullscreen_toggle(key, mods):
+            return 'toggle_fullscreen'
 
         # ESC — Lobiden / oyundan çık
         if key == pygame.K_ESCAPE:
@@ -747,6 +805,7 @@ class OnlinePvPGame:
             elif key == pygame.K_3:
                 self._init_networking()
                 self._lobby_list_fetching = True
+                self._pending_lobby_list.clear()
                 self.net.request_lobby_list()
             return None
 
@@ -826,11 +885,9 @@ class OnlinePvPGame:
             self._lobby_list_scroll = max(0, self._lobby_list_scroll - event.y)
 
     def _handle_mouse_click(self, event):
-        """Fare tıklama — lobi ekranı butonları."""
-        if self.online_state != OnlineState.LOBBY_MENU:
-            return None
-        pos = event.pos
-        # Ana butonlar
+        """Fare tıklama — tüm ekranlardaki butonlar."""
+        pos = normalize_mouse_pos(event.pos) or event.pos
+
         for btn in self._lobby_buttons:
             if btn['rect'].collidepoint(pos):
                 action = btn.get('action', '')
@@ -843,8 +900,22 @@ class OnlinePvPGame:
                 elif action == 'find_match':
                     self._init_networking()
                     self._lobby_list_fetching = True
+                    self._pending_lobby_list.clear()
                     self.net.request_lobby_list()
                 elif action == 'back':
+                    return 'menu'
+                elif action == 'invite_friend':
+                    self.net.invite_friend()
+                elif action == 'ready':
+                    self.my_ready = True
+                    self.net.send_ready()
+                    self._check_both_ready()
+                elif action == 'rematch':
+                    self.my_ready = False
+                    self.opponent_ready = False
+                    self.online_state = OnlineState.READY_CHECK
+                elif action == 'exit_menu':
+                    self.net.leave_lobby()
                     return 'menu'
                 elif action.startswith('join_lobby:'):
                     lobby_id_str = action.split(':', 1)[1]
@@ -895,6 +966,9 @@ class OnlinePvPGame:
 
     def draw(self):
         """Ekranı çiz."""
+        # Her frame'de buton listesini sıfırla — draw metotları dolduracak
+        self._lobby_buttons.clear()
+
         # Arka plan — retro_style ile tutarlı (resim + gradient fallback)
         _rs.draw_background(self.screen)
         # Düşen blok animasyonu — diğer tüm pencerelerle ortak
@@ -937,7 +1011,6 @@ class OnlinePvPGame:
         self.screen.blit(sub, sub.get_rect(center=(cx, s(108))))
 
         # Sol panel: butonlar
-        self._lobby_buttons.clear()
         btn_w = s(340)
         btn_h = s(52)
         panel_left = max(s(30), cx - s(400))
@@ -1052,6 +1125,12 @@ class OnlinePvPGame:
                 self.screen.blit(sc_txt, sc_txt.get_rect(
                     center=(list_x + list_w // 2, list_y + list_h - s(16))))
 
+        # Durum mesajı (hata / bilgi)
+        if self._status_msg:
+            st_font = _rs.get_font(s(16, minimum=11), bold=False)
+            st_surf = st_font.render(self._status_msg, True, UIColors.NEON_MAGENTA)
+            self.screen.blit(st_surf, st_surf.get_rect(center=(cx, h - s(52))))
+
         # Alt bilgi — Steam ID
         info_font = _rs.get_font(s(13, minimum=10), bold=False)
         sid = self.net.my_steam_id or t('connecting', 'Bağlanılıyor...')
@@ -1067,7 +1146,7 @@ class OnlinePvPGame:
         s = lambda v, minimum=1: self._sx(v, sc, minimum)
 
         pw = min(s(500), w - s(80))
-        ph = s(260)
+        ph = s(310)
         panel = pygame.Rect(cx - pw // 2, cy - ph // 2, pw, ph)
         draw_glass_panel(self.screen, panel, alpha=185,
                          border_color=UIColors.NEON_CYAN, glow=True)
@@ -1092,7 +1171,16 @@ class OnlinePvPGame:
                                 t('invite_friend', 'Arkadaş Davet Et'),
                                 sub_text='I', color_code=UIColors.NEON_GREEN,
                                 state='hover' if m_hover else 'normal')
-        # _lobby_buttons'a ekle (mevcut handle_input'ta kullanılmıyor ama ileride)
+        self._lobby_buttons.append({'rect': inv_rect, 'action': 'invite_friend'})
+
+        # Geri butonu
+        back_rect = pygame.Rect(cx - s(130), panel.y + s(195), s(260), s(38))
+        m_back = back_rect.collidepoint(get_mouse_pos())
+        _rs.draw_uniform_button(self.screen, back_rect,
+                                t('back_to_menu', 'Ana Menüye Dön'),
+                                sub_text='ESC', color_code=_rs.secondary,
+                                state='hover' if m_back else 'normal')
+        self._lobby_buttons.append({'rect': back_rect, 'action': 'exit_menu'})
 
         if self.net.lobby_id:
             lf = _rs.get_font(s(13, minimum=10), bold=False)
@@ -1108,7 +1196,7 @@ class OnlinePvPGame:
         s = lambda v, minimum=1: self._sx(v, sc, minimum)
 
         pw = min(s(600), w - s(80))
-        ph = s(320)
+        ph = s(350)
         panel = pygame.Rect(cx - pw // 2, cy - ph // 2, pw, ph)
         draw_glass_panel(self.screen, panel, alpha=185,
                          border_color=UIColors.NEON_CYAN, glow=True)
@@ -1148,16 +1236,23 @@ class OnlinePvPGame:
                                     t('press_enter_ready', 'Hazırım!'),
                                     sub_text='ENTER', color_code=UIColors.NEON_GREEN,
                                     state='hover' if m_h else 'normal')
+            self._lobby_buttons.append({'rect': btn_r, 'action': 'ready'})
         else:
             wf = _rs.get_font(s(16, minimum=12), bold=False)
             wt = wf.render(t('waiting_opponent_ready', 'Rakip bekleniyor...'),
                            True, _rs.text_secondary)
             self.screen.blit(wt, wt.get_rect(center=(cx, panel.y + s(200))))
 
-        # ESC ipucu
-        hf = _rs.get_font(s(13, minimum=10), bold=False)
-        ht = hf.render('[ESC] ' + t('back_to_menu', 'Ana Menüye Dön'), True, _rs.text_muted)
-        self.screen.blit(ht, ht.get_rect(center=(cx, panel.bottom - s(18))))
+        # ESC — tıklanabilir geri butonu
+        esc_w = s(200)
+        esc_h = s(36)
+        esc_rect = pygame.Rect(cx - esc_w // 2, panel.bottom - s(52), esc_w, esc_h)
+        m_esc = esc_rect.collidepoint(get_mouse_pos())
+        _rs.draw_uniform_button(self.screen, esc_rect,
+                                t('back_to_menu', 'Ana Menüye Dön'),
+                                sub_text='ESC', color_code=_rs.secondary,
+                                state='hover' if m_esc else 'normal')
+        self._lobby_buttons.append({'rect': esc_rect, 'action': 'exit_menu'})
 
     # ─── Geri Sayım ───
 
@@ -1547,6 +1642,8 @@ class OnlinePvPGame:
                                 t('back_to_menu', 'Çıkış'),
                                 sub_text='ESC', color_code=_rs.secondary,
                                 state='hover' if exit_r.collidepoint(mp) else 'normal')
+        self._lobby_buttons.append({'rect': rematch_r, 'action': 'rematch'})
+        self._lobby_buttons.append({'rect': exit_r, 'action': 'exit_menu'})
 
         hint_f = _rs.get_font(s(12, minimum=9), bold=False)
         ht = hint_f.render('[R] / [ESC]', True, _rs.text_muted)
@@ -1578,6 +1675,7 @@ class OnlinePvPGame:
                                 t('back_to_menu', 'Ana Menü'),
                                 sub_text='ESC', color_code=_rs.secondary,
                                 state='hover' if btn_r.collidepoint(mp) else 'normal')
+        self._lobby_buttons.append({'rect': btn_r, 'action': 'exit_menu'})
 
     # ============================================================
     #  ANA DÖNGÜ
