@@ -52,18 +52,18 @@ py -m PyInstaller tetris.spec --noconfirm 2>&1 | Tee-Object build_log.txt
 
 ---
 
-## 3. VDF Güncelleme
+## 3. VDF Politikası (Ortak Dosya)
 
-Her build öncesi `steamworks\scripts\app_build_playtest.vdf` içindeki `Desc` satırını güncelle:
+`steamworks\scripts\app_build_playtest.vdf` artık **ortak şablon** dosyadır. Bu dosyada makineye özel `ContentRoot / BuildOutput` veya günlük `Desc` değişikliği commit etmeyin:
 
 ```vdf
 "AppBuild"
 {
     "AppID"        "4428040"
-    "Desc"         "Playtest build 2026-02-24 v2 steam-integration"
+    "Desc"         "Playtest build"
     "SetLive"      ""
-    "ContentRoot"  "C:\\Users\\arda demirkan\\Desktop\\v2_23022026\\v2\\dist\\"
-    "BuildOutput"  "C:\\Users\\arda demirkan\\Desktop\\v2_23022026\\v2\\steamworks\\output\\"
+    "ContentRoot"  ""
+    "BuildOutput"  ""
 
     "Depots"
     {
@@ -72,9 +72,8 @@ Her build öncesi `steamworks\scripts\app_build_playtest.vdf` içindeki `Desc` s
 }
 ```
 
-- `ContentRoot` → `dist\` klasörü (Quadrix.exe buradadır)
 - `SetLive ""` → sadece upload, branch'e otomatik push **yapılmaz**
-- Branch'e almak için `"SetLive" "playtest"` yaz
+- Runtime değerleri upload scripti tarafından geçici VDF'e yazılır
 
 ---
 
@@ -85,7 +84,9 @@ Her build öncesi `steamworks\scripts\app_build_playtest.vdf` içindeki `Desc` s
 ```powershell
 .\tools\steam_upload_playtest.ps1 `
     -SteamCmdPath "C:\steamcmd\steamcmd.exe" `
-    -SteamUser "vibecode_production"
+    -SteamUser "vibecode_production" `
+    -BuildDescription "Playtest build 2026-03-03 v1.0.27" `
+    -SetLive ""
 ```
 
 Şifre sorulursa girilir; Steam Guard kodu (e-posta) sorulabilir.

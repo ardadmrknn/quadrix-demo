@@ -489,7 +489,7 @@ class CampaignMode(Game):
             self.game_over = False
             self._game_over_active = False
             self._game_over_pending = False
-            self._handle_level_failed(t('campaign_fail_board'))
+            self._handle_level_failed(t('campaign_fail_board'), skip_sound=True)
             return
         
         # Skor güncelleme eventi
@@ -626,7 +626,7 @@ class CampaignMode(Game):
         # Finalize
         self.finalize_run(playtime=int(self.elapsed_time))
     
-    def _handle_level_failed(self, reason: str = "") -> None:
+    def _handle_level_failed(self, reason: str = "", *, skip_sound: bool = False) -> None:
         """Level başarısız olduğunda"""
         if self.level_failed:
             return
@@ -637,9 +637,9 @@ class CampaignMode(Game):
         # UI animasyonunu başlat
         campaign_ui_effects.start_level_failed(reason)
         
-        # Başarısızlık sesi
-        if self.sound_enabled and self.sound:
-            self.sound.play('game_over')
+        # Müziği durdur + başarısızlık sesi çal (blok üste ulaştıysa zaten çalınmıştır)
+        if not skip_sound and self.sound_enabled and self.sound:
+            self.sound.play_game_over_sequence()
 
     def _is_star_condition_met(self, condition: Dict[str, Any]) -> bool:
         """Yıldız koşulu sağlandı mı?"""
@@ -790,6 +790,14 @@ class CampaignMode(Game):
                         return 'next_level'
                 if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                     pos = get_mouse_pos()
+                    # Peek (göz) butonu — tıklanınca paneli gizle/göster
+                    peek_rect = getattr(self, '_game_over_peek_rect', None)
+                    if peek_rect and peek_rect.collidepoint(pos):
+                        self._game_over_peek_active = not getattr(self, '_game_over_peek_active', False)
+                        continue
+                    # Peek modundayken diğer butonlara tıklama yok
+                    if getattr(self, '_game_over_peek_active', False):
+                        continue
                     if self.level_failed:
                         # Önce yeni game_over_overlay butonlarını kontrol et (kırmızı tema)
                         targets = getattr(self, '_game_over_click_targets', {})

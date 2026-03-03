@@ -90,7 +90,17 @@ def _find_dll() -> str | None:
     # 5. dist/ klasörü
     candidates.append(str(proj_root / 'dist' / lib_name))
 
-    # 5. Platform'a özel ek konumlar
+    # 5b. macOS .app bundle — Contents/MacOS/ (COLLECT mode)
+    if sys.platform == 'darwin' and getattr(sys, 'frozen', False):
+        # PyInstaller COLLECT mode: executable is at .app/Contents/MacOS/Quadrix
+        _exe_dir = Path(getattr(sys, 'executable', '')).resolve().parent
+        candidates.append(str(_exe_dir / lib_name))
+        # Also check one level up from _MEIPASS (Frameworks dir in some bundles)
+        if getattr(sys, '_MEIPASS', None):
+            _meipass = Path(sys._MEIPASS)
+            candidates.append(str(_meipass.parent / 'Frameworks' / lib_name))
+
+    # 6. Platform'a özel ek konumlar
     if sys.platform == 'darwin':
         # macOS: Steam uygulama klasörü ve olası framework yolları
         mac_dirs = [

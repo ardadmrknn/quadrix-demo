@@ -22,6 +22,11 @@ build/
 dist/
 *.egg-info/
 
+# Steam build artifacts
+steamworks/output/*
+!steamworks/output/.gitkeep
+steamworks/scripts/.tmp_app_build_*.vdf
+
 # Secrets / local env
 .env
 .env.*

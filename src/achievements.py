@@ -251,25 +251,25 @@ ACHIEVEMENTS = {
     # Kampanya yıldız başarıları
     'campaign_stars_10': {
         'name': 'Yıldız Toplayıcı',
-        'description': 'Kampanyada toplam 10 yıldız kazan',
+        'description': 'Görev modunda toplam 10 yıldız kazan',
         'icon': '⭐',
         'check': lambda stats: stats.get('campaign_total_stars', 0) >= 10
     },
     'campaign_stars_30': {
         'name': 'Yıldız Avcısı',
-        'description': 'Kampanyada toplam 30 yıldız kazan',
+        'description': 'Görev modunda toplam 30 yıldız kazan',
         'icon': '🌟',
         'check': lambda stats: stats.get('campaign_total_stars', 0) >= 30
     },
     'campaign_stars_50': {
         'name': 'Yıldız Ustası',
-        'description': 'Kampanyada toplam 50 yıldız kazan',
+        'description': 'Görev modunda toplam 50 yıldız kazan',
         'icon': '💫',
         'check': lambda stats: stats.get('campaign_total_stars', 0) >= 50
     },
     'campaign_stars_100': {
         'name': 'Yıldız Tanrısı',
-        'description': 'Kampanyada toplam 100 yıldız kazan',
+        'description': 'Görev modunda toplam 100 yıldız kazan',
         'icon': '✨',
         'check': lambda stats: stats.get('campaign_total_stars', 0) >= 100
     },

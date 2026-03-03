@@ -1863,7 +1863,7 @@ class Game:
         # Lokalize edilmiş seçenek etiketleri
         option_labels = {
             'Devam Et': t('resume'),
-            'Yeniden Başlat': t('campaign_retry') if getattr(self, 'game_mode', '') == 'campaign' else t('restart'),
+            'Yeniden Başlat': t('campaign_retry'),
             'Müzik': t('music'),
             'Müzik Seviyesi': t('music_volume'),
             'Ses Efektleri': t('sound_effects'),
@@ -4617,7 +4617,7 @@ class Game:
 
         # Modern butonlar
         buttons = [
-            ('R', t('restart'), retro_style.primary, 'restart'),
+            ('R', t('campaign_retry'), retro_style.primary, 'restart'),
             ('ESC', t('back_to_menu'), (200, 80, 80), 'menu'),
         ]
         button_width = (panel_rect.width - s(84)) // len(buttons)

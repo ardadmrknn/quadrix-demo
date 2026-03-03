@@ -3536,7 +3536,7 @@ TRANSLATIONS = {
         'ko': '다음 레벨',
     },
     'campaign_complete': {
-        'tr': 'Kampanya tamamlandı',
+        'tr': 'Görev modu tamamlandı',
         'en': 'Campaign complete',
         'de': 'Kampagne abgeschlossen',
         'fr': 'Campagne terminée',
@@ -12021,7 +12021,7 @@ TRANSLATIONS = {
         'ko': '별 수집가',
     },
     'ach_campaign_stars_10_desc': {
-        'tr': 'Kampanyada toplam 10 yıldız kazan',
+        'tr': 'Görev modunda toplam 10 yıldız kazan',
         'en': 'Earn 10 stars total in campaign',
         'de': 'Sammle insgesamt 10 Sterne in der Kampagne',
         'fr': 'Obtiens 10 étoiles au total en campagne',
@@ -12047,7 +12047,7 @@ TRANSLATIONS = {
         'ko': '별 사냥꾼',
     },
     'ach_campaign_stars_30_desc': {
-        'tr': 'Kampanyada toplam 30 yıldız kazan',
+        'tr': 'Görev modunda toplam 30 yıldız kazan',
         'en': 'Earn 30 stars total in campaign',
         'de': 'Sammle insgesamt 30 Sterne in der Kampagne',
         'fr': 'Obtiens 30 étoiles au total en campagne',
@@ -12073,7 +12073,7 @@ TRANSLATIONS = {
         'ko': '별의 달인',
     },
     'ach_campaign_stars_50_desc': {
-        'tr': 'Kampanyada toplam 50 yıldız kazan',
+        'tr': 'Görev modunda toplam 50 yıldız kazan',
         'en': 'Earn 50 stars total in campaign',
         'de': 'Sammle insgesamt 50 Sterne in der Kampagne',
         'fr': 'Obtiens 50 étoiles au total en campagne',
@@ -12099,7 +12099,7 @@ TRANSLATIONS = {
         'ko': '별의 신',
     },
     'ach_campaign_stars_100_desc': {
-        'tr': 'Kampanyada toplam 100 yıldız kazan',
+        'tr': 'Görev modunda toplam 100 yıldız kazan',
         'en': 'Earn 100 stars total in campaign',
         'de': 'Sammle insgesamt 100 Sterne in der Kampagne',
         'fr': 'Obtiens 100 étoiles au total en campagne',
