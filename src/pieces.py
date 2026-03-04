@@ -78,22 +78,29 @@ class Piece:
         self.texture_surface_original = None
         self.rotation_state = 0  # 0,1,2,3 -> saat yönü
     
-    def rotate(self):
-        """Parçayı saat yönünde 90 derece döndür"""
-        # Clockwise dönüş
-        self.shape = [[self.shape[y][x] for y in range(len(self.shape) - 1, -1, -1)]
-                      for x in range(len(self.shape[0]))]
-        # Rotate optional per-cell color matrix in lock-step with shape.
-        if hasattr(self, 'color_matrix') and getattr(self, 'color_matrix', None) is not None:
-            try:
-                cm = self.color_matrix
-                self.color_matrix = [[cm[y][x] for y in range(len(cm) - 1, -1, -1)]
-                                     for x in range(len(cm[0]))]
-            except Exception:
-                # If matrix is malformed, drop it rather than breaking rotation.
-                self.color_matrix = None
-        self.rotation_state = (self.rotation_state + 1) % 4
+    def rotate(self, direction=1):
+        """Parçayı döndür. direction=1 saat yönü, direction=-1 ters yön."""
+        # Normalize: -1 yön = 3 kez saat yönü dönüş
+        steps = direction % 4
+        for _ in range(steps):
+            # Clockwise dönüş
+            self.shape = [[self.shape[y][x] for y in range(len(self.shape) - 1, -1, -1)]
+                          for x in range(len(self.shape[0]))]
+            # Rotate optional per-cell color matrix in lock-step with shape.
+            if hasattr(self, 'color_matrix') and getattr(self, 'color_matrix', None) is not None:
+                try:
+                    cm = self.color_matrix
+                    self.color_matrix = [[cm[y][x] for y in range(len(cm) - 1, -1, -1)]
+                                         for x in range(len(cm[0]))]
+                except Exception:
+                    # If matrix is malformed, drop it rather than breaking rotation.
+                    self.color_matrix = None
+            self.rotation_state = (self.rotation_state + 1) % 4
     
+    def get_shape(self):
+        """Parçanın mevcut şekil matrisini döndür."""
+        return self.shape
+
     def get_cells(self):
         """
         Parçanın kapladığı tüm hücrelerin koordinatlarını döndür

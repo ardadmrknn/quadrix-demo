@@ -150,7 +150,34 @@ public:
         m_friends->ActivateGameOverlayInviteDialog(m_currentLobby);
     }
 
+    // ============ Lobi Tipi Yönetimi ============
+
+    void create_lobby_with_type(int lobby_type, int max_members = 2) {
+        if (!m_matchmaking) return;
+        ELobbyType type = static_cast<ELobbyType>(lobby_type);
+        SteamAPICall_t call = m_matchmaking->CreateLobby(type, max_members);
+        m_lobbyCreatedResult.Set(call, this, &SteamNetBridge::OnLobbyCreated);
+    }
+
+    bool set_lobby_type(int lobby_type) {
+        if (!m_matchmaking || !m_currentLobby.IsValid()) return false;
+        return m_matchmaking->SetLobbyType(m_currentLobby,
+                                           static_cast<ELobbyType>(lobby_type));
+    }
+
+    bool set_lobby_joinable(bool joinable) {
+        if (!m_matchmaking || !m_currentLobby.IsValid()) return false;
+        return m_matchmaking->SetLobbyJoinable(m_currentLobby, joinable);
+    }
+
     // ============ Lobi Listesi (Public Matchmaking) ============
+
+    void add_request_lobby_list_string_filter(const std::string& key,
+                                              const std::string& value) {
+        if (!m_matchmaking) return;
+        m_matchmaking->AddRequestLobbyListStringFilter(
+            key.c_str(), value.c_str(), k_ELobbyComparisonEqual);
+    }
 
     void request_lobby_list() {
         if (!m_matchmaking) return;
@@ -414,6 +441,15 @@ PYBIND11_MODULE(steam_net_bridge, m) {
         .def("get_current_lobby_id",  &SteamNetBridge::get_current_lobby_id)
         .def("is_in_lobby",           &SteamNetBridge::is_in_lobby)
         .def("invite_friend",         &SteamNetBridge::invite_friend)
+        .def("create_lobby_with_type", &SteamNetBridge::create_lobby_with_type,
+             py::arg("lobby_type"), py::arg("max_members") = 2)
+        .def("set_lobby_type",        &SteamNetBridge::set_lobby_type,
+             py::arg("lobby_type"))
+        .def("set_lobby_joinable",    &SteamNetBridge::set_lobby_joinable,
+             py::arg("joinable"))
+        .def("add_request_lobby_list_string_filter",
+             &SteamNetBridge::add_request_lobby_list_string_filter,
+             py::arg("key"), py::arg("value"))
         .def("request_lobby_list",    &SteamNetBridge::request_lobby_list)
         // Mesajlaşma
         .def("send_message",          &SteamNetBridge::send_message,
