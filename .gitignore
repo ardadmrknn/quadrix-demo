@@ -31,5 +31,3 @@ steamworks/scripts/.tmp_app_build_*.vdf
 .env
 .env.*
 backend/.env
-
-tests/
