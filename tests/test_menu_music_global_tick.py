@@ -14,7 +14,7 @@ import textwrap
 from pathlib import Path
 
 
-MAIN_PY = Path(__file__).parent / "src" / "main.py"
+MAIN_PY = Path(__file__).parent.parent / "main.py"
 
 
 # ─────────────────────────────────────────────────────────────────────────────

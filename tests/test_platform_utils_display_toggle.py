@@ -189,6 +189,7 @@ class TestCreateDisplayWindowsBorderlessCenteredEnv(unittest.TestCase):
         _force_windows(platform_utils)
         # Çağrı anındaki env durumunu kaydetmek için set_mode mock'u
         self._env_at_call = {}
+        self._orig_set_mode = platform_utils.pygame.display.set_mode
 
         def fake_set_mode(size, flags=0):
             self._env_at_call["centered"] = os.environ.get("SDL_VIDEO_CENTERED", "__MISSING__")
@@ -200,10 +201,7 @@ class TestCreateDisplayWindowsBorderlessCenteredEnv(unittest.TestCase):
         platform_utils.pygame.display.set_mode = fake_set_mode
 
     def tearDown(self):
-        _force_non_windows(platform_utils)
-        # Orijinal stub'ı geri yükle
-        import importlib
-        importlib.reload(platform_utils)
+        platform_utils.pygame.display.set_mode = self._orig_set_mode
         _force_non_windows(platform_utils)
 
     def test_centered_absent_during_set_mode(self):
@@ -234,6 +232,7 @@ class TestCreateDisplayWindowsBorderlessEnvRestore(unittest.TestCase):
 
     def setUp(self):
         _force_windows(platform_utils)
+        self._orig_set_mode = platform_utils.pygame.display.set_mode
 
         def fake_set_mode(size, flags=0):
             surf = MagicMock()
@@ -243,9 +242,7 @@ class TestCreateDisplayWindowsBorderlessEnvRestore(unittest.TestCase):
         platform_utils.pygame.display.set_mode = fake_set_mode
 
     def tearDown(self):
-        _force_non_windows(platform_utils)
-        import importlib
-        importlib.reload(platform_utils)
+        platform_utils.pygame.display.set_mode = self._orig_set_mode
         _force_non_windows(platform_utils)
 
     def test_centered_restored_after_call(self):
@@ -306,6 +303,7 @@ class TestCreateDisplayWindowsBorderlessFallback(unittest.TestCase):
     def setUp(self):
         _force_windows(platform_utils)
         self._call_flags = []
+        self._orig_set_mode = platform_utils.pygame.display.set_mode
 
         # Diğer testlerden kalan stub'larda bu sabitler eksik olabilir; güvence al.
         for _attr, _val in (("FULLSCREEN", 4), ("NOFRAME", 32), ("DOUBLEBUF", 1),
@@ -326,9 +324,7 @@ class TestCreateDisplayWindowsBorderlessFallback(unittest.TestCase):
         platform_utils.pygame.display.set_mode = fake_set_mode
 
     def tearDown(self):
-        _force_non_windows(platform_utils)
-        import importlib
-        importlib.reload(platform_utils)
+        platform_utils.pygame.display.set_mode = self._orig_set_mode
         _force_non_windows(platform_utils)
 
     def test_exclusive_fallback_triggered_on_size_mismatch(self):

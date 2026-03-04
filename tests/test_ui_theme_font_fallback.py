@@ -32,9 +32,10 @@ def _ensure_clean_imports():
                             "background", "src.background"):
                 sys.modules.pop(mod_name, None)
 
-    # pygame stub kontrol — font submodülü yoksa gerçek pygame yükle
+    # pygame stub kontrol — herhangi bir stub varsa temizle; gerçek pygame zorla yüklensin.
+    # Gerçek pygame-ce'nin 'ver' attribute'u vardır; stub'larda bulunmaz.
     _pg = sys.modules.get("pygame")
-    if _pg is not None and not hasattr(getattr(_pg, "font", None), "match_font"):
+    if _pg is not None and not hasattr(_pg, "ver"):
         sys.modules.pop("pygame", None)
         for sub in [k for k in sys.modules if k.startswith("pygame.")]:
             sys.modules.pop(sub, None)
@@ -46,6 +47,9 @@ _ensure_clean_imports()
 def _ensure_pygame_font_init():
     """Headless ortamda pygame font subsystem'ini başlat."""
     import pygame
+    # pygame.font submodülü attribute olarak erişilebilir değilse açıkça import et
+    if not hasattr(pygame, "font"):
+        import pygame.font  # noqa: F401
     if not pygame.font.get_init():
         pygame.font.init()
 

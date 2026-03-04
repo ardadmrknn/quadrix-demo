@@ -5,7 +5,7 @@ import pathlib
 import re
 
 
-SPEC_PATH = pathlib.Path(__file__).parent / 'tetris_macos_allinone.spec'
+SPEC_PATH = pathlib.Path(__file__).parent.parent / 'tetris_macos_allinone.spec'
 
 
 def _parse_excludes(text: str) -> list[str]:
