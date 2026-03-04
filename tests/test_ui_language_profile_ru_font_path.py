@@ -95,7 +95,7 @@ def test_apply_language_ui_profile_ru_resets_defaults():
 def test_kyril_font_file_exists_on_disk():
     """font/kyril/KyrillaSansSerif-Black.ttf repo'da hala mevcut (referans)."""
     kyril_path = os.path.join(
-        os.path.dirname(__file__), "font", "kyril", "KyrillaSansSerif-Black.ttf"
+        os.path.dirname(__file__), "..", "font", "kyril", "KyrillaSansSerif-Black.ttf"
     )
     assert os.path.exists(kyril_path), (
         f"Kiril font dosyası repoda mevcut olmalı: {kyril_path}"

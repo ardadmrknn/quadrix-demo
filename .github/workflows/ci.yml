@@ -35,13 +35,13 @@ jobs:
           PYGAME_HIDE_SUPPORT_PROMPT: 1
         run: >-
           python -m pytest -q --tb=short
-          --ignore=test_flexible_border_feature.py
-          --ignore=test_flexible_border_ingame.py
-          --ignore=test_flexible_border_integration.py
-          --ignore=test_ingame_esc_opens_pause_menu.py
-          --ignore=test_lb_write.py
-          --ignore=test_lb_write_proxy.py
-          --ignore=test_user_manager_steam_profile.py
+          --ignore=tests/test_flexible_border_feature.py
+          --ignore=tests/test_flexible_border_ingame.py
+          --ignore=tests/test_flexible_border_integration.py
+          --ignore=tests/test_ingame_esc_opens_pause_menu.py
+          --ignore=tests/test_lb_write.py
+          --ignore=tests/test_lb_write_proxy.py
+          --ignore=tests/test_user_manager_steam_profile.py
 
   lint:
     runs-on: ubuntu-latest
