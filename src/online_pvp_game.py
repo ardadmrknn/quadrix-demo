@@ -45,6 +45,7 @@ from localization import t
 from steam_networking import (
     SteamNetworking, MsgType, NetEvent, NetMessage,
     CHANNEL_GAME, CHANNEL_STATE, CHANNEL_CONTROL,
+    generate_lobby_code,
 )
 
 try:
@@ -213,6 +214,7 @@ class OnlinePvPGame:
 
         # Pending garbage (sırada bekleyen çöp satırlar)
         self.pending_garbage = 0
+        self._garbage_gap = 0  # Son gelen çöp satır gap sütunu
 
         # DAS
         self.das_direction = 0
@@ -235,6 +237,18 @@ class OnlinePvPGame:
         # Durum mesajı (hata/bilgi)
         self._status_msg: str = ''
         self._status_timer: float = 0
+
+        # Lobi oluşturulduktan sonra otomatik davet aç
+        self._invite_after_lobby: bool = False
+
+        # ─── Lobi Kodu Sistemi ───
+        self._lobby_code: str = ''          # Oluşturulan lobi kodu (6 haneli)
+        self._lobby_id_str: str = ''        # Ham lobby ID (tam numara)
+        self._join_code_input: str = ''     # "Kod ile Katıl" metin girişi
+        self._join_code_active: bool = False  # Metin girişi aktif mi
+        self._join_code_error: str = ''     # Giriş hata mesajı
+        self._searching_by_code: bool = False  # Kod ile arama yapılıyor mu
+        self._search_code: str = ''         # Aranan kod (lobby_list_complete'de eşleşme için)
 
         # Müzik başlat (lobi ekranına girince)
         self._start_pvp_music()
@@ -300,6 +314,8 @@ class OnlinePvPGame:
             # Lobi listesi — C++ per-lobi event gönderiyor, tek JSON değil
             self.net.on('lobby_found', self._on_lobby_found)
             self.net.on('lobby_list_complete', self._on_lobby_list_complete)
+            # Steam overlay "Oyuna Katıl" isteği
+            self.net.on('join_requested', self._on_join_requested)
             # Hata olayları
             self.net.on('lobby_create_failed', self._on_lobby_error)
             self.net.on('lobby_join_failed', self._on_lobby_error)
@@ -313,6 +329,21 @@ class OnlinePvPGame:
     def _on_lobby_created(self, ev: NetEvent):
         self.online_state = OnlineState.WAITING
         print(f"[OnlinePvP] Lobi oluşturuldu: {ev.steam_id}")
+
+        # ─── Lobi kodu oluştur ve metadata'ya kaydet ───
+        self._lobby_id_str = str(ev.steam_id)
+        self._lobby_code = generate_lobby_code(ev.steam_id)
+        # Metadata'ya kaydet (kod ile arama desteği için)
+        self.net.set_lobby_data('lobby_code', self._lobby_code)
+        self.net.set_lobby_data('lobby_code_full', self._lobby_id_str)
+        print(f"[OnlinePvP] Lobi Kodu: {self._lobby_code}  |  Tam ID: {self._lobby_id_str}")
+
+        # Davet bekletilmişse şimdi aç
+        if self._invite_after_lobby:
+            self._invite_after_lobby = False
+            self.net.invite_friend()
+            self._status_msg = t('invite_sent', 'Steam davet penceresi açıldı')
+            self._status_timer = 2.5
 
     def _on_lobby_joined(self, ev: NetEvent):
         self.online_state = OnlineState.WAITING
@@ -335,8 +366,20 @@ class OnlinePvPGame:
                 self.online_state = OnlineState.DISCONNECTED
                 self.game_over = True
                 self.winner = 'me'
+            elif self.online_state == OnlineState.COUNTDOWN:
+                # Geri sayım sırasında rakip çıktı — lobiye dön
+                self.online_state = OnlineState.WAITING
+                self.countdown_value = 3
+                self.countdown_timer = 0
+                self._status_msg = t('opponent_left', 'Rakip ayrıldı')
+                self._status_timer = 3.0
             else:
                 self.online_state = OnlineState.WAITING
+                self._status_msg = t('opponent_left', 'Rakip ayrıldı')
+                self._status_timer = 3.0
+            # Ready durumlarını sıfırla
+            self.my_ready = False
+            self.opponent_ready = False
 
     def _on_lobby_found(self, ev: NetEvent):
         """Tek bir public lobi bulundu — biriktir."""
@@ -355,6 +398,26 @@ class OnlinePvPGame:
         self._lobby_list_scroll = 0
         count = len(self._lobby_list)
         print(f"[OnlinePvP] {count} lobi bulundu.")
+
+        # Kod ile arama yapılıyorsa otomatik katıl
+        if self._searching_by_code:
+            self._searching_by_code = False
+            if count > 0:
+                # İlk eşleşen lobiye katıl
+                lobby_id = self._lobby_list[0].get('id', 0)
+                if lobby_id:
+                    self.net.join_lobby(lobby_id)
+                    self._status_msg = t('joining_lobby', 'Lobiye katılınıyor...')
+                    self._status_timer = 2.0
+                else:
+                    self._status_msg = t('lobby_not_found_by_code', 'Bu kodla lobi bulunamadı')
+                    self._status_timer = 3.0
+            else:
+                # Kod ile bulunamadı — tam ID olarak dene
+                self._try_direct_join_by_code(self._search_code)
+            self._search_code = ''
+            return
+
         if count == 0:
             self._status_msg = t('no_lobbies_found', 'Lobi bulunamadı')
             self._status_timer = 2.5
@@ -370,8 +433,28 @@ class OnlinePvPGame:
         """Lobi listesi alınamadı."""
         self._lobby_list_fetching = False
         self._lobby_list = []
-        self._status_msg = t('lobby_list_error', 'Lobi listesi alınamadı')
-        self._status_timer = 3.0
+        if self._searching_by_code:
+            self._searching_by_code = False
+            # Arama başarısız — doğrudan ID ile dene
+            self._try_direct_join_by_code(self._search_code)
+            self._search_code = ''
+        else:
+            self._status_msg = t('lobby_list_error', 'Lobi listesi alınamadı')
+            self._status_timer = 3.0
+
+    def _on_join_requested(self, ev: NetEvent):
+        """Steam overlay'den 'Oyuna Katıl' tıklandı.
+
+        steam_networking.py zaten otomatik JoinLobby() yapıyor.
+        Burada UI durumunu güncelliyoruz — eğer lobi menüsündeysek
+        bekleme ekranına geçiş yapılmalı.
+        """
+        print(f"[OnlinePvP] Steam overlay katılım isteği: lobby={ev.steam_id}")
+        # UI'ı güncelle — gelen join_requested sonrası lobby_joined event'i
+        # otomatik olarak WAITING state'e geçirecek.
+        # Burada sadece kullanıcıya geri bildirim veriyoruz.
+        self._status_msg = t('joining_lobby', 'Lobiye katılınıyor...')
+        self._status_timer = 2.0
 
     # ============================================================
     #  MESAJ İŞLEME
@@ -430,6 +513,16 @@ class OnlinePvPGame:
 
             elif msg_type == MsgType.RESUME:
                 self.opponent_paused = False
+
+            elif msg_type == MsgType.REMATCH:
+                # Rakip rematch istiyor
+                self.opponent_ready = False
+                self.my_ready = False
+                self.game_over = False
+                self.winner = ''
+                self.online_state = OnlineState.READY_CHECK
+                self._status_msg = t('opponent_wants_rematch', 'Rakip tekrar oynamak istiyor!')
+                self._status_timer = 3.0
 
     def _check_both_ready(self):
         """İki oyuncu da hazırsa oyun başlamayı tetikle."""
@@ -495,8 +588,18 @@ class OnlinePvPGame:
         self.lock_timer = 0
         self.game_over = False
         self.pending_garbage = 0
+        self._garbage_gap = 0
         self.state_snapshot_timer = 0
         self.soft_dropping = False
+        self.paused = False
+        self.opponent_paused = False
+        self.das_direction = 0
+        self.das_timer = 0
+        self.das_active = False
+        self.opponent_grid_snapshot = None
+        self.opponent_score = 0
+        self.opponent_lines = 0
+        self.opponent_level = 1
 
     def _get_next_piece(self) -> Piece:
         """Sıradaki parçayı al."""
@@ -520,13 +623,23 @@ class OnlinePvPGame:
             self.net.send_garbage(garbage_lines, gap_col)
 
     def _receive_garbage(self, lines: int, gap_col: int = -1):
-        """Rakipten gelen çöp satırları tahtaya ekle."""
-        if lines <= 0 or not self.my_board:
+        """Rakipten gelen çöp satırları kuyruğa al — parça kilitlenince uygulanır."""
+        if lines <= 0:
             return
         if gap_col < 0:
             gap_col = random.randint(0, BOARD_WIDTH - 1)
 
-        # Alt tarafa çöp satırlar ekle
+        self.pending_garbage += lines
+        self._garbage_gap = gap_col  # Son gap sütunu (uygulamada kullanılacak)
+
+    def _apply_pending_garbage(self):
+        """Kuyrukta bekleyen çöp satırları tahtaya uygula."""
+        if self.pending_garbage <= 0 or not self.my_board:
+            return
+
+        gap_col = getattr(self, '_garbage_gap', random.randint(0, BOARD_WIDTH - 1))
+        lines = self.pending_garbage
+
         for _ in range(lines):
             # Üst satırı kaldır
             self.my_board.grid.pop(0)
@@ -544,6 +657,33 @@ class OnlinePvPGame:
             self.my_board.texture_grid.append([None] * BOARD_WIDTH)
             self.my_board.owners.append([None] * BOARD_WIDTH)
             self.my_board.gold.append([False] * BOARD_WIDTH)
+
+        self.pending_garbage = 0
+
+        # Garbage sonrası aktif parça geçerli pozisyonda mı kontrol et
+        # Tahta yukarı kayınca parça var olan bloklarla çakışabilir
+        if self.my_piece:
+            if not self.my_board.is_valid_position(self.my_piece):
+                # Parçayı yukarı kaydırmayı dene
+                saved = False
+                for offset in range(1, lines + 3):
+                    self.my_piece.y -= 1
+                    if self.my_piece.y < -2:
+                        break
+                    if self.my_board.is_valid_position(self.my_piece):
+                        saved = True
+                        break
+                if not saved:
+                    # Parça kurtarılamadı — oyun bitti
+                    self.game_over = True
+                    self.winner = 'opponent'
+                    self.online_state = OnlineState.GAME_OVER
+                    self.net.send_game_over(
+                        self.my_board.score, self.my_board.lines_cleared)
+                    try:
+                        self.sound.play('gameover')
+                    except Exception:
+                        pass
 
     def _update_opponent_display(self, data: dict):
         """Rakip tahta snapshot'ını güncelle."""
@@ -581,6 +721,10 @@ class OnlinePvPGame:
 
         self.hold_used = True
         self.lock_timer = 0
+        try:
+            self.sound.play('hold')
+        except Exception:
+            pass
 
         # Hold sonrası parça geçerli pozisyonda mı kontrol et
         if not self.my_board.is_valid_position(self.my_piece):
@@ -677,11 +821,15 @@ class OnlinePvPGame:
                     if self.soft_dropping:
                         self.my_board.score += 1
                     self.lock_timer = 0
-                else:
-                    # Yere değdi — kilitleme gecikmesi
-                    self.lock_timer += delta_time
-                    if self.lock_timer >= DEFAULT_LOCK_DELAY:
-                        self._lock_piece()
+
+        # Kilitleme gecikmesi — her frame kontrol et (fall_timer dışında)
+        if self.my_board and self.my_piece:
+            if not self.my_board.is_valid_position(self.my_piece, dy=1):
+                self.lock_timer += delta_time
+                if self.lock_timer >= DEFAULT_LOCK_DELAY:
+                    self._lock_piece()
+            else:
+                self.lock_timer = 0
 
         # DAS (yatay basılı tutma)
         self._update_das(delta_time)
@@ -693,13 +841,20 @@ class OnlinePvPGame:
             self._send_board_snapshot()
 
     def _lock_piece(self):
-        """Parçayı kilitle, satır temizle, yeni parça al."""
+        """Parçayı kilitle, satır temizle, bekleyen çöpleri uygula, yeni parça al."""
         if not self.my_board or not self.my_piece:
             return
 
         lines = self.my_board.lock_piece(self.my_piece)
 
+        try:
+            self.sound.play('lock')
+        except Exception:
+            pass
+
         if lines > 0:
+            # Temizlenen satırlar bekleyen çöpü iptal eder
+            self.pending_garbage = max(0, self.pending_garbage - lines)
             self._send_garbage(lines)
             self.net.send_score_update(
                 self.my_board.score,
@@ -710,6 +865,12 @@ class OnlinePvPGame:
                 self.sound.play('line' if lines < 4 else 'tetris')
             except Exception:
                 pass
+
+        # Kalan bekleyen çöp satırları uygula (satır temizleme iptal edemediği kısım)
+        if self.pending_garbage > 0:
+            self._apply_pending_garbage()
+            if self.game_over:
+                return  # Garbage oyunu bitirdi
 
         # Yeni parça
         self.my_piece = self.my_next_piece
@@ -797,6 +958,13 @@ class OnlinePvPGame:
             if event.type == pygame.KEYUP:
                 self._handle_keyup(event)
 
+            # Metin girişi — Lobi kodu text input
+            if event.type == pygame.TEXTINPUT and self._join_code_active:
+                for ch in event.text:
+                    if ch.isdigit() and len(self._join_code_input) < 20:
+                        self._join_code_input += ch
+                        self._join_code_error = ''
+
             if event.type == pygame.MOUSEBUTTONDOWN:
                 result = self._handle_mouse_click(event)
                 if result is not None:
@@ -818,6 +986,12 @@ class OnlinePvPGame:
 
         # ESC — Lobiden / oyundan çık
         if key == pygame.K_ESCAPE:
+            # Kod girişi aktifse önce onu kapat
+            if self._join_code_active:
+                self._join_code_active = False
+                self._join_code_input = ''
+                self._join_code_error = ''
+                return None
             if self.online_state == OnlineState.PLAYING:
                 self.paused = not self.paused
                 # Rakibe bildir
@@ -837,6 +1011,27 @@ class OnlinePvPGame:
 
         # Lobi ekranı
         if self.online_state == OnlineState.LOBBY_MENU:
+            # Kod girişi aktifken tuş olayları
+            if self._join_code_active:
+                if key == pygame.K_RETURN or key == pygame.K_KP_ENTER:
+                    self._try_join_by_code()
+                elif key == pygame.K_BACKSPACE:
+                    if self._join_code_input:
+                        self._join_code_input = self._join_code_input[:-1]
+                        self._join_code_error = ''
+                elif key == pygame.K_v and (mods & pygame.KMOD_CTRL):
+                    # Ctrl+V — Yapıştır
+                    pasted = self._paste_from_clipboard()
+                    if pasted:
+                        # Sadece rakam karakterlerini al
+                        digits = ''.join(c for c in pasted if c.isdigit())
+                        if digits:
+                            self._join_code_input = digits[:20]
+                            self._join_code_error = ''
+                elif key == pygame.K_TAB:
+                    self._join_code_active = False
+                return None
+
             if key == pygame.K_1:
                 self._init_networking()
                 self.net.create_lobby()
@@ -848,12 +1043,21 @@ class OnlinePvPGame:
                 self._lobby_list_fetching = True
                 self._pending_lobby_list.clear()
                 self.net.request_lobby_list()
+            elif key == pygame.K_i:
+                self._do_invite_friend()
+            elif key == pygame.K_j:
+                # J tuşu — Kod ile Katıl alanını aktifle
+                self._join_code_active = True
+                self._join_code_input = ''
+                self._join_code_error = ''
             return None
 
-        # Bekleme → Davet
+        # Bekleme → Davet / Kopyala
         if self.online_state == OnlineState.WAITING:
             if key == pygame.K_i:
-                self.net.invite_friend()
+                self._do_invite_friend()
+            elif key == pygame.K_c:
+                self._copy_lobby_code()
             return None
 
         # Bekleme → Hazır
@@ -868,9 +1072,7 @@ class OnlinePvPGame:
         if self.online_state == OnlineState.GAME_OVER:
             if key == pygame.K_r:
                 # Rematch
-                self.my_ready = False
-                self.opponent_ready = False
-                self.online_state = OnlineState.READY_CHECK
+                self._request_rematch()
                 return None
             if key == pygame.K_ESCAPE or key == pygame.K_q:
                 self.net.leave_lobby()
@@ -906,8 +1108,8 @@ class OnlinePvPGame:
                 # Hold
                 self._do_hold()
             elif key == pygame.K_i:
-                # Arkadaş davet et
-                self.net.invite_friend()
+                # Arkadaş davet et (oyun sırasında)
+                self._do_invite_friend()
 
         return None
 
@@ -946,15 +1148,13 @@ class OnlinePvPGame:
                 elif action == 'back':
                     return 'menu'
                 elif action == 'invite_friend':
-                    self.net.invite_friend()
+                    self._do_invite_friend()
                 elif action == 'ready':
                     self.my_ready = True
                     self.net.send_ready()
                     self._check_both_ready()
                 elif action == 'rematch':
-                    self.my_ready = False
-                    self.opponent_ready = False
-                    self.online_state = OnlineState.READY_CHECK
+                    self._request_rematch()
                 elif action == 'exit_menu':
                     self.net.leave_lobby()
                     return 'menu'
@@ -965,6 +1165,19 @@ class OnlinePvPGame:
                         self.net.join_lobby(lobby_id)
                     except (ValueError, TypeError):
                         pass
+                elif action == 'join_by_code':
+                    # "Kod ile Katıl" butonuna tıklandı
+                    self._join_code_active = True
+                    self._join_code_input = ''
+                    self._join_code_error = ''
+                elif action == 'join_code_submit':
+                    self._try_join_by_code()
+                elif action == 'copy_lobby_code':
+                    self._copy_lobby_code()
+                elif action == 'copy_lobby_id':
+                    self._copy_lobby_id()
+                elif action == 'join_code_field':
+                    self._join_code_active = True
                 try:
                     self.sound.play('click')
                 except Exception:
@@ -976,7 +1189,7 @@ class OnlinePvPGame:
         """Parçayı döndür (SRS wall kick dahil)."""
         if not self.my_board or not self.my_piece:
             return
-        old_rot = self.my_piece.rotation
+        old_rot = self.my_piece.rotation_state
         self.my_piece.rotate(direction)
         if not self.my_board.is_valid_position(self.my_piece):
             # Basit wall kick denemeleri
@@ -984,11 +1197,19 @@ class OnlinePvPGame:
                 if self.my_board.is_valid_position(self.my_piece, dx=dx):
                     self.my_piece.x += dx
                     self.lock_timer = 0
+                    try:
+                        self.sound.play('rotate')
+                    except Exception:
+                        pass
                     return
             # Hiçbiri çalışmadıysa geri al
             self.my_piece.rotate(-direction)
         else:
             self.lock_timer = 0
+            try:
+                self.sound.play('rotate')
+            except Exception:
+                pass
 
     def _hard_drop(self):
         """Sert düşüş — parçayı anında en alta indir ve kilitle."""
@@ -999,7 +1220,200 @@ class OnlinePvPGame:
             self.my_piece.y += 1
             drop_distance += 1
         self.my_board.score += drop_distance * 2
+        try:
+            self.sound.play('drop')
+        except Exception:
+            pass
         self._lock_piece()
+
+    # ============================================================
+    #  DAVET & REMATCH
+    # ============================================================
+
+    def _do_invite_friend(self):
+        """Steam overlay arkadaş davet penceresi aç — kullanıcıya geri bildirim ver."""
+        if not self._net_initialized:
+            ok = self._init_networking()
+            if not ok:
+                self._status_msg = t('steam_not_available', 'Steam bağlantısı kurulamadı!')
+                self._status_timer = 3.0
+                return
+
+        if not self.net.available or not self.net.initialized:
+            self._status_msg = t('steam_not_available', 'Steam bağlantısı kurulamadı!')
+            self._status_timer = 3.0
+            return
+
+        # Lobi yoksa önce oluştur
+        if not self.net.lobby_id:
+            self.net.create_lobby()
+            self._status_msg = t('creating_lobby_invite', 'Lobi oluşturuluyor...')
+            self._status_timer = 2.0
+            # Lobi oluşturulduktan sonra davet açılacak — flag koy
+            self._invite_after_lobby = True
+            return
+
+        self.net.invite_friend()
+        self._status_msg = t('invite_sent', 'Steam davet penceresi açıldı')
+        self._status_timer = 2.5
+        try:
+            self.sound.play('click')
+        except Exception:
+            pass
+
+    def _request_rematch(self):
+        """Rakibe rematch isteği gönder ve ready check'e geç."""
+        self.my_ready = False
+        self.opponent_ready = False
+        self.game_over = False
+        self.winner = ''
+        self.online_state = OnlineState.READY_CHECK
+        # Rakibe rematch isteği bildir
+        self.net.send({'type': MsgType.REMATCH}, reliable=True, channel=CHANNEL_CONTROL)
+        try:
+            self.sound.play('click')
+        except Exception:
+            pass
+
+    # ============================================================
+    #  LOBİ KODU İŞLEMLERİ
+    # ============================================================
+
+    def _try_join_by_code(self):
+        """Girilen lobi kodunu parse edip katılmayı dene.
+
+        Strateji:
+          1. Giriş 6 haneli ise (lobi kodu) → metadata araması başlat
+          2. Giriş >6 haneli ise (tam lobby ID) → doğrudan JoinLobby()
+          3. Her iki durumda da hata mesajı göster (başarısızsa)
+        """
+        code = self._join_code_input.strip()
+        if not code:
+            self._join_code_error = t('enter_lobby_code', 'Lobi kodu girin')
+            return
+
+        self._init_networking()
+
+        if len(code) <= 8:
+            # 6-8 haneli kısa kod — metadata araması ile bul
+            self._searching_by_code = True
+            self._search_code = code
+            self._lobby_list_fetching = True
+            self._pending_lobby_list.clear()
+            self.net.search_lobby_by_code(code)
+            self._status_msg = t('searching_by_code', 'Lobi kodu aranıyor...')
+            self._status_timer = 3.0
+            self._join_code_active = False
+        else:
+            # Uzun numara — doğrudan lobby ID olarak dene
+            try:
+                lobby_id = int(code)
+                self.net.join_lobby(lobby_id)
+                self._status_msg = t('joining_lobby', 'Lobiye katılınıyor...')
+                self._status_timer = 2.0
+                self._join_code_active = False
+                self._join_code_input = ''
+                self._join_code_error = ''
+            except (ValueError, TypeError):
+                self._join_code_error = t('invalid_lobby_code', 'Geçersiz lobi kodu!')
+
+    def _try_direct_join_by_code(self, code: str):
+        """Kod araması sonuçsuz kaldığında, kodu doğrudan lobby ID olarak dene."""
+        try:
+            lobby_id = int(code)
+            if lobby_id > 100000:
+                self.net.join_lobby(lobby_id)
+                self._status_msg = t('joining_lobby', 'Lobiye katılınıyor...')
+                self._status_timer = 2.0
+                return
+        except (ValueError, TypeError):
+            pass
+        self._status_msg = t('lobby_not_found_by_code', 'Bu kodla lobi bulunamadı')
+        self._status_timer = 3.0
+
+    def _copy_lobby_code(self):
+        """Lobi kodunu panoya kopyala."""
+        code = self._lobby_code
+        if not code and self.net.lobby_id:
+            code = str(self.net.lobby_id)
+        if not code:
+            return
+        ok = self._copy_to_clipboard(code)
+        if ok:
+            self._status_msg = t('code_copied', 'Lobi kodu kopyalandı!')
+        else:
+            self._status_msg = f'{t("lobby_code", "Lobi Kodu")}: {code}'
+        self._status_timer = 2.5
+        try:
+            self.sound.play('click')
+        except Exception:
+            pass
+
+    def _copy_lobby_id(self):
+        """Tam lobi ID'sini panoya kopyala."""
+        lid = self._lobby_id_str or str(self.net.lobby_id or '')
+        if not lid:
+            return
+        ok = self._copy_to_clipboard(lid)
+        if ok:
+            self._status_msg = t('lobby_id_copied', 'Lobi ID kopyalandı!')
+        else:
+            self._status_msg = f'ID: {lid}'
+        self._status_timer = 2.5
+        try:
+            self.sound.play('click')
+        except Exception:
+            pass
+
+    def _copy_to_clipboard(self, text: str) -> bool:
+        """Metni sistem panosuna kopyala — cross-platform."""
+        try:
+            import subprocess
+            if sys.platform == 'win32':
+                process = subprocess.Popen(
+                    ['powershell', '-command', f'Set-Clipboard -Value "{text}"'],
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    creationflags=subprocess.CREATE_NO_WINDOW,
+                )
+                process.wait(timeout=2)
+                return process.returncode == 0
+            elif sys.platform == 'darwin':
+                process = subprocess.Popen(['pbcopy'], stdin=subprocess.PIPE)
+                process.communicate(text.encode('utf-8'), timeout=2)
+                return process.returncode == 0
+            else:
+                process = subprocess.Popen(
+                    ['xclip', '-selection', 'clipboard'],
+                    stdin=subprocess.PIPE)
+                process.communicate(text.encode('utf-8'), timeout=2)
+                return process.returncode == 0
+        except Exception:
+            return False
+
+    def _paste_from_clipboard(self) -> str:
+        """Sistem panosundan metin oku — cross-platform."""
+        try:
+            import subprocess
+            if sys.platform == 'win32':
+                result = subprocess.run(
+                    ['powershell', '-command', 'Get-Clipboard'],
+                    capture_output=True, text=True, timeout=2,
+                    creationflags=subprocess.CREATE_NO_WINDOW,
+                )
+                return result.stdout.strip()
+            elif sys.platform == 'darwin':
+                result = subprocess.run(
+                    ['pbpaste'], capture_output=True, text=True, timeout=2)
+                return result.stdout.strip()
+            else:
+                result = subprocess.run(
+                    ['xclip', '-selection', 'clipboard', '-o'],
+                    capture_output=True, text=True, timeout=2)
+                return result.stdout.strip()
+        except Exception:
+            return ''
 
     # ============================================================
     #  ÇİZİM
@@ -1066,8 +1480,12 @@ class OnlinePvPGame:
              _rs.primary, 'ENTER'),
             ('create_public', t('create_public_lobby', 'Herkese Acik Lobi'),
              _rs.success, None),
+            ('invite_friend', t('invite_friend', 'Arkadaş Davet Et'),
+             UIColors.NEON_GREEN, 'I'),
             ('find_match', t('find_match', 'Maç Bul'),
              _rs.accent, None),
+            ('join_by_code', t('join_by_code', 'Kod ile Katıl'),
+             UIColors.NEON_CYAN, 'J'),
             ('back', t('back_to_menu', 'Ana Menüye Dön'),
              _rs.secondary, 'ESC'),
         ]
@@ -1084,6 +1502,11 @@ class OnlinePvPGame:
                 state='hover' if is_hover else 'normal',
             )
             self._lobby_buttons.append({'rect': rect, 'action': action})
+
+        # ─── "Kod ile Katıl" metin giriş alanı (aktifse göster) ───
+        last_btn_bottom = btn_y_start + len(buttons) * (btn_h + gap)
+        if self._join_code_active:
+            self._draw_join_code_input(btn_x, last_btn_bottom + s(8), btn_w, s, mouse_pos)
 
         # Sağ panel: Lobi listesi
         list_x = btn_x + btn_w + s(30)
@@ -1180,6 +1603,81 @@ class OnlinePvPGame:
         info = info_font.render(f'Steam ID: {sid}', True, _rs.text_muted)
         self.screen.blit(info, info.get_rect(center=(cx, h - s(24))))
 
+    def _draw_join_code_input(self, x, y, btn_w, s, mouse_pos):
+        """Kod ile Katıl metin giriş panelini çiz."""
+        # Cam panel: giriş alanı + gönder butonu
+        panel_h = s(120)
+        panel_r = pygame.Rect(x, y, btn_w, panel_h)
+        draw_glass_panel(self.screen, panel_r, alpha=190,
+                         border_color=UIColors.NEON_CYAN, glow=True)
+
+        # Başlık
+        tf = _rs.get_font(s(16, minimum=11))
+        title = tf.render(t('join_by_code', 'Kod ile Katıl'), True, UIColors.NEON_CYAN)
+        self.screen.blit(title, title.get_rect(
+            midleft=(x + s(14), y + s(18))))
+
+        # Metin girişi arka planı
+        inp_x = x + s(14)
+        inp_y = y + s(38)
+        inp_w = btn_w - s(28)
+        inp_h = s(36)
+        inp_rect = pygame.Rect(inp_x, inp_y, inp_w, inp_h)
+
+        # Giriş alanı
+        inp_bg = pygame.Surface((inp_w, inp_h), pygame.SRCALPHA)
+        pygame.draw.rect(inp_bg, (18, 18, 42, 220), inp_bg.get_rect(), border_radius=8)
+        self.screen.blit(inp_bg, (inp_x, inp_y))
+        border_color = UIColors.NEON_CYAN if self._join_code_active else _rs.glass_border
+        pygame.draw.rect(self.screen, border_color, inp_rect, 2, border_radius=8)
+
+        # Metin
+        display_text = self._join_code_input
+        if not display_text and self._join_code_active:
+            # Placeholder
+            pf = _rs.get_font(s(15, minimum=11), bold=False)
+            ph_txt = pf.render(
+                t('enter_lobby_code', 'Lobi kodu girin'), True, _rs.text_muted)
+            self.screen.blit(ph_txt, (inp_x + s(10), inp_y + s(8)))
+        else:
+            tf2 = _rs.get_font(s(16, minimum=12))
+            t_surf = tf2.render(display_text, True, (255, 255, 255))
+            self.screen.blit(t_surf, (inp_x + s(10), inp_y + s(8)))
+
+        # İmleç yanıp sönme
+        if self._join_code_active and int(time.time() * 2.5) % 2 == 0:
+            cursor_x = inp_x + s(10) + _rs.get_font(s(16, minimum=12)).size(display_text)[0]
+            pygame.draw.line(self.screen, UIColors.NEON_CYAN,
+                             (cursor_x, inp_y + s(6)), (cursor_x, inp_y + inp_h - s(6)), 2)
+
+        # Tıklanabilir alan olarak kaydet
+        self._lobby_buttons.append({'rect': inp_rect, 'action': 'join_code_field'})
+
+        # Hata mesajı
+        if self._join_code_error:
+            ef = _rs.get_font(s(12, minimum=9), bold=False)
+            err = ef.render(self._join_code_error, True, UIColors.NEON_RED)
+            self.screen.blit(err, (inp_x, inp_y + inp_h + s(4)))
+
+        # Gönder butonu
+        sub_btn_w = btn_w - s(28)
+        sub_btn_h = s(34)
+        sub_y = inp_y + inp_h + s(18)
+        sub_rect = pygame.Rect(inp_x, sub_y, sub_btn_w, sub_btn_h)
+        sub_hover = sub_rect.collidepoint(mouse_pos)
+        _rs.draw_uniform_button(self.screen, sub_rect,
+                                t('join', 'Katıl'),
+                                sub_text='ENTER',
+                                color_code=UIColors.NEON_GREEN,
+                                state='hover' if sub_hover else 'normal')
+        self._lobby_buttons.append({'rect': sub_rect, 'action': 'join_code_submit'})
+
+        # Paste ipucu
+        hint_f = _rs.get_font(s(11, minimum=9), bold=False)
+        hint = hint_f.render(t('paste_code_hint', 'Yapıştır: Ctrl+V'), True, _rs.text_muted)
+        self.screen.blit(hint, hint.get_rect(
+            midright=(x + btn_w - s(14), y + s(18))))
+
     # ─── Bekleme Ekranı ───
 
     def _draw_waiting_screen(self):
@@ -1187,29 +1685,97 @@ class OnlinePvPGame:
         cx, cy = w // 2, h // 2
         sc = self._ui_scale()
         s = lambda v, minimum=1: self._sx(v, sc, minimum)
+        mouse_pos = get_mouse_pos()
 
-        pw = min(s(500), w - s(80))
-        ph = s(310)
+        pw = min(s(520), w - s(80))
+        ph = s(440)
         panel = pygame.Rect(cx - pw // 2, cy - ph // 2, pw, ph)
         draw_glass_panel(self.screen, panel, alpha=185,
                          border_color=UIColors.NEON_CYAN, glow=True)
 
         # Başlık
         tf = _rs.get_fitting_font(
-            t('waiting_for_opponent', 'Rakip Bekleniyor...'), s(32), pw - s(60))
+            t('waiting_for_opponent', 'Rakip Bekleniyor...'), s(30), pw - s(60))
         title = tf.render(t('waiting_for_opponent', 'Rakip Bekleniyor...'),
                           True, UIColors.NEON_CYAN)
-        self.screen.blit(title, title.get_rect(center=(cx, panel.y + s(50))))
+        self.screen.blit(title, title.get_rect(center=(cx, panel.y + s(40))))
 
         # Animasyonlu noktalar
         dots = '●' * (int(time.time() * 2) % 4) + '○' * (3 - int(time.time() * 2) % 4)
-        df = _rs.get_font(s(22, minimum=14))
+        df = _rs.get_font(s(20, minimum=14))
         dt = df.render(dots, True, _rs.text_secondary)
-        self.screen.blit(dt, dt.get_rect(center=(cx, panel.y + s(100))))
+        self.screen.blit(dt, dt.get_rect(center=(cx, panel.y + s(75))))
 
-        # Davet butonu
-        inv_rect = pygame.Rect(cx - s(130), panel.y + s(140), s(260), s(44))
-        m_hover = inv_rect.collidepoint(get_mouse_pos())
+        # ─── Lobi Kodu Bölümü (belirgin) ───
+        code_section_y = panel.y + s(100)
+        if self._lobby_code:
+            # "Lobi Kodu" etiketi
+            label_f = _rs.get_font(s(14, minimum=10), bold=False)
+            label_s = label_f.render(t('lobby_code', 'Lobi Kodu'), True, _rs.text_secondary)
+            self.screen.blit(label_s, label_s.get_rect(center=(cx, code_section_y)))
+
+            # Büyük kod gösterimi (vurgulu)
+            code_f = _rs.get_font(s(40, minimum=24))
+            # Kodu okunabilir grupla: "482 917"
+            display_code = self._lobby_code
+            if len(display_code) == 6:
+                display_code = f'{display_code[:3]}  {display_code[3:]}'
+            code_surf = code_f.render(display_code, True, UIColors.NEON_GREEN)
+            code_rect = code_surf.get_rect(center=(cx, code_section_y + s(35)))
+            self.screen.blit(code_surf, code_rect)
+
+            # Paylaşım ipucu
+            hint_f = _rs.get_font(s(12, minimum=9), bold=False)
+            hint = hint_f.render(
+                t('lobby_code_hint', 'Bu kodu arkadaşınla paylaş!'),
+                True, UIColors.NEON_MAGENTA)
+            self.screen.blit(hint, hint.get_rect(center=(cx, code_section_y + s(62))))
+
+            # Kodu Kopyala butonu
+            copy_w = s(170)
+            copy_h = s(36)
+            copy_rect = pygame.Rect(cx - copy_w - s(6), code_section_y + s(78),
+                                    copy_w, copy_h)
+            copy_hover = copy_rect.collidepoint(mouse_pos)
+            _rs.draw_uniform_button(self.screen, copy_rect,
+                                    t('copy_code', 'Kodu Kopyala'),
+                                    sub_text='C',
+                                    color_code=UIColors.NEON_CYAN,
+                                    state='hover' if copy_hover else 'normal')
+            self._lobby_buttons.append({'rect': copy_rect, 'action': 'copy_lobby_code'})
+
+            # Lobi ID Kopyala butonu
+            lid_rect = pygame.Rect(cx + s(6), code_section_y + s(78),
+                                   copy_w, copy_h)
+            lid_hover = lid_rect.collidepoint(mouse_pos)
+            _rs.draw_uniform_button(self.screen, lid_rect,
+                                    t('copy_lobby_id', 'Lobi ID Kopyala'),
+                                    color_code=_rs.text_muted,
+                                    state='hover' if lid_hover else 'normal')
+            self._lobby_buttons.append({'rect': lid_rect, 'action': 'copy_lobby_id'})
+
+            # Ayırıcı
+            sep_y = code_section_y + s(122)
+            or_f = _rs.get_font(s(13, minimum=10), bold=False)
+            or_s = or_f.render(
+                t('or_invite_steam', 'veya Steam\'den davet et'),
+                True, _rs.text_muted)
+            self.screen.blit(or_s, or_s.get_rect(center=(cx, sep_y)))
+            pygame.draw.line(self.screen, (*_rs.text_muted[:3], 40),
+                             (panel.x + s(20), sep_y),
+                             (cx - or_s.get_width() // 2 - s(10), sep_y), 1)
+            pygame.draw.line(self.screen, (*_rs.text_muted[:3], 40),
+                             (cx + or_s.get_width() // 2 + s(10), sep_y),
+                             (panel.right - s(20), sep_y), 1)
+
+            btn_area_y = sep_y + s(16)
+        else:
+            btn_area_y = code_section_y + s(10)
+
+        # Steam Davet butonu
+        inv_w = s(260)
+        inv_rect = pygame.Rect(cx - inv_w // 2, btn_area_y, inv_w, s(44))
+        m_hover = inv_rect.collidepoint(mouse_pos)
         _rs.draw_uniform_button(self.screen, inv_rect,
                                 t('invite_friend', 'Arkadaş Davet Et'),
                                 sub_text='I', color_code=UIColors.NEON_GREEN,
@@ -1217,18 +1783,25 @@ class OnlinePvPGame:
         self._lobby_buttons.append({'rect': inv_rect, 'action': 'invite_friend'})
 
         # Geri butonu
-        back_rect = pygame.Rect(cx - s(130), panel.y + s(195), s(260), s(38))
-        m_back = back_rect.collidepoint(get_mouse_pos())
+        back_rect = pygame.Rect(cx - inv_w // 2, btn_area_y + s(54), inv_w, s(38))
+        m_back = back_rect.collidepoint(mouse_pos)
         _rs.draw_uniform_button(self.screen, back_rect,
                                 t('back_to_menu', 'Ana Menüye Dön'),
                                 sub_text='ESC', color_code=_rs.secondary,
                                 state='hover' if m_back else 'normal')
         self._lobby_buttons.append({'rect': back_rect, 'action': 'exit_menu'})
 
+        # Lobi ID alt bilgi (küçük puntoda)
         if self.net.lobby_id:
-            lf = _rs.get_font(s(13, minimum=10), bold=False)
-            lt = lf.render(f'Lobi: {self.net.lobby_id}', True, _rs.text_muted)
-            self.screen.blit(lt, lt.get_rect(center=(cx, panel.bottom - s(20))))
+            lf = _rs.get_font(s(11, minimum=9), bold=False)
+            lt = lf.render(f'Lobby ID: {self.net.lobby_id}', True, _rs.text_muted)
+            self.screen.blit(lt, lt.get_rect(center=(cx, panel.bottom - s(14))))
+
+        # Durum mesajı (geri bildirim)
+        if self._status_msg:
+            st_font = _rs.get_font(s(15, minimum=11), bold=False)
+            st_surf = st_font.render(self._status_msg, True, UIColors.NEON_MAGENTA)
+            self.screen.blit(st_surf, st_surf.get_rect(center=(cx, panel.bottom + s(18))))
 
     # ─── Hazırlanma Ekranı ───
 
@@ -1747,6 +2320,7 @@ class OnlinePvPGame:
 
             self.update(delta_time)
             self.draw()
+            pygame.display.flip()
 
         self.net.shutdown()
         return 'menu'

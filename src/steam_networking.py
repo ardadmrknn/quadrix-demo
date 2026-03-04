@@ -129,6 +129,31 @@ CHANNEL_STATE = 0      # (Geçici: 0 — C++ çoklu kanal desteği eklenince 1 y
 CHANNEL_CONTROL = 0    # (Geçici: 0 — C++ çoklu kanal desteği eklenince 2 yapılacak)
 
 
+# ---------- Lobi tipleri (Steam ELobbyType) ----------
+
+class LobbyType:
+    PRIVATE = 0       # Sadece davet ile katılım
+    FRIENDS_ONLY = 1  # Arkadaşlar görür, lobby ID ile katılım mümkün
+    PUBLIC = 2        # Herkes görür ve katılabilir
+    INVISIBLE = 3     # Arama sonuçlarında görünür ama arkadaş listesinde görünmez
+
+
+# ---------- Lobi kodu yardımcıları ----------
+
+def generate_lobby_code(lobby_id: int) -> str:
+    """Steam lobby ID'sinden 6 haneli, insan-dostu lobi kodu üret.
+
+    Kod, lobby_id'nin basit bir hash'inden türetilir.
+    Farklı lobby_id'ler aynı kodu üretebilir (düşük ihtimal),
+    ancak asıl katılım lobby_id üzerinden yapılır.
+    """
+    if not lobby_id:
+        return '000000'
+    # 6 haneli deterministik kod
+    code = abs(hash(str(lobby_id))) % 1_000_000
+    return f'{code:06d}'
+
+
 # ---------- Mesaj tipleri ----------
 
 class MsgType:
@@ -253,7 +278,14 @@ class SteamNetworking:
         if public:
             self._bridge_instance.create_public_lobby(max_members)
         else:
-            self._bridge_instance.create_lobby(max_members)
+            # Özel lobi: FriendsOnly (arkadaşlar görebilir, ID ile katılım mümkün)
+            # Bu sayede hem Steam davet hem de lobi kodu ile katılım çalışır.
+            try:
+                self._bridge_instance.create_lobby_with_type(
+                    LobbyType.FRIENDS_ONLY, max_members)
+            except (AttributeError, TypeError):
+                # C++ bridge eski sürüm — fallback
+                self._bridge_instance.create_lobby(max_members)
         print(f"[SteamNet] Lobi oluşturuluyor... (public={public})")
 
     def join_lobby(self, lobby_id: int):
@@ -280,6 +312,32 @@ class SteamNetworking:
         if self._bridge_instance:
             self._bridge_instance.invite_friend()
 
+    def set_lobby_type(self, lobby_type: int):
+        """Lobi tipini değiştir (LobbyType sabitleri kullanın)."""
+        if self._bridge_instance:
+            try:
+                return self._bridge_instance.set_lobby_type(lobby_type)
+            except (AttributeError, TypeError):
+                pass
+        return False
+
+    def set_lobby_joinable(self, joinable: bool):
+        """Lobinin katılıma açık olup olmadığını ayarla."""
+        if self._bridge_instance:
+            try:
+                return self._bridge_instance.set_lobby_joinable(joinable)
+            except (AttributeError, TypeError):
+                pass
+        return False
+
+    def add_lobby_search_filter(self, key: str, value: str):
+        """Sonraki request_lobby_list() çağrısına string filtre ekle."""
+        if self._bridge_instance:
+            try:
+                self._bridge_instance.add_request_lobby_list_string_filter(key, value)
+            except (AttributeError, TypeError):
+                pass
+
     def set_lobby_data(self, key: str, value: str):
         """Lobi metadata'sı ayarla."""
         if self._bridge_instance:
@@ -300,6 +358,20 @@ class SteamNetworking:
     def request_lobby_list(self):
         """Public lobi listesini iste. Sonuç poll_events() ile gelir."""
         if self._bridge_instance:
+            self._bridge_instance.request_lobby_list()
+
+    def search_lobby_by_code(self, code: str):
+        """Lobi koduna göre arama başlat.
+
+        Önce lobby_code filtresi ekler, sonra request_lobby_list() çağırır.
+        Sonuç poll_events() ile lobby_found / lobby_list_complete olarak gelir.
+        """
+        if self._bridge_instance:
+            try:
+                self._bridge_instance.add_request_lobby_list_string_filter(
+                    'lobby_code', code.strip())
+            except (AttributeError, TypeError):
+                pass
             self._bridge_instance.request_lobby_list()
 
     # ============ Mesajlaşma ============
