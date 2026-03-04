@@ -3216,16 +3216,15 @@ class PvPGame:
 
         if self.current_input <= 2:
             # İsim giriş alanları
-            title_label_rect = pygame.Rect(panel_rect.x + s(18), panel_rect.y + s(14), panel_rect.width - s(36), s(26))
-            title_label = retro_style.render_fit_text(t('pvp_player_profiles'), UIColors.NEON_GOLD, title_label_rect.width, s(20, minimum=12), bold=True)
-            self.screen.blit(title_label, title_label.get_rect(midleft=(title_label_rect.left, title_label_rect.centery)))
-
             inner_pad_x = s(36)
-            inner_pad_top = s(56)
+            inner_pad_top = s(28)
             gap_y = s(28)
             field_height = s(116)
             field1 = pygame.Rect(panel_rect.x + inner_pad_x, panel_rect.y + inner_pad_top, panel_rect.width - inner_pad_x * 2, field_height)
             field2 = pygame.Rect(panel_rect.x + inner_pad_x, field1.bottom + gap_y, panel_rect.width - inner_pad_x * 2, field_height)
+            # Tıklama tespiti için sakla
+            self._name_field1_rect = field1.copy()
+            self._name_field2_rect = field2.copy()
 
             self._draw_name_field(
                 field1,
@@ -3513,6 +3512,22 @@ class PvPGame:
     
     def _handle_setup_mouse_click(self, pos):
         """Mod seçimi ekranında fare tıklamalarını işle."""
+        if self.current_input <= 2:
+            # İsim alanlarına tıklama ile odak değiştir
+            if hasattr(self, '_name_field1_rect') and self._name_field1_rect.collidepoint(pos):
+                if self.current_input != 1:
+                    self.current_input = 1
+                    self._vs_panel_dirty = True
+                    self.sound.play('move')
+                return True
+            if hasattr(self, '_name_field2_rect') and self._name_field2_rect.collidepoint(pos):
+                if self.current_input != 2:
+                    self.current_input = 2
+                    self._vs_panel_dirty = True
+                    self.sound.play('move')
+                return True
+            return False
+
         if self.current_input >= 3:
             # Süreli mod butonu
             if hasattr(self, '_timed_btn_rect') and self._timed_btn_rect.collidepoint(pos):
