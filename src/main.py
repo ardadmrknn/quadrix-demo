@@ -1722,6 +1722,8 @@ def main():
                 if not _show_mode_intro_popup(screen, 'online_pvp', settings_manager):
                     continue
                 confirm_exit = False
+                # Menü müziğini durdur; online PvP kendi müziğini başlatacak.
+                menu_sound.stop_music()
                 online_pvp_game = OnlinePvPGame(
                     screen=screen,
                     fullscreen=fullscreen,
@@ -2361,6 +2363,8 @@ def main():
             elif action == 'Online PvP':
                 if not _show_mode_intro_popup(screen, 'online_pvp', settings_manager):
                     continue
+                # Menü müziğini durdur; online PvP kendi müziğini başlatacak.
+                menu_sound.stop_music()
                 online_pvp_game = OnlinePvPGame(
                     screen=screen,
                     fullscreen=fullscreen,
@@ -2584,7 +2588,17 @@ def main():
                 _menu_vol = settings_manager.get('menu_music_volume', 0.3)
                 menu_sound.set_music_volume(_menu_vol)
                 menu_music = settings_manager.get('menu_music', 'main_1')
-                menu_sound.play_music(menu_music.lower(), loop=True)
+                try:
+                    playlist = settings_manager.get_menu_music_playlist()
+                    playlist_keys = [menu_sound.ensure_track_available(p) for p in playlist]
+                    playlist_keys = [p for p in playlist_keys if p]
+                    if playlist_keys:
+                        do_shuffle = bool(settings_manager.get('music_shuffle', False))
+                        menu_sound.set_music_playlist(playlist_keys, loop=True, autoplay=True, force=True, shuffle=do_shuffle)
+                    else:
+                        menu_sound.play_music(menu_music.lower(), loop=True)
+                except Exception:
+                    menu_sound.play_music(menu_music.lower(), loop=True)
                 print(f"🎵 Ana sayfa müziği başlatıldı: {menu_music}")
             return False
 
@@ -2623,20 +2637,30 @@ def main():
             state = 'menu'
             _handle_online_pvp._game = None
             if settings_screen.music_enabled and not getattr(settings_screen, 'mute_all', False):
-                # Müzik lobide devam ediyordu; sadece durduysa tekrar başlat
+                _menu_vol = settings_manager.get('menu_music_volume', 0.3)
+                menu_sound.set_music_volume(_menu_vol)
+                menu_music = settings_manager.get('menu_music', 'main_1')
                 try:
-                    music_playing = pygame.mixer.music.get_busy()
+                    playlist = settings_manager.get_menu_music_playlist()
+                    playlist_keys = [menu_sound.ensure_track_available(p) for p in playlist]
+                    playlist_keys = [p for p in playlist_keys if p]
+                    if playlist_keys:
+                        do_shuffle = bool(settings_manager.get('music_shuffle', False))
+                        menu_sound.set_music_playlist(playlist_keys, loop=True, autoplay=True, force=True, shuffle=do_shuffle)
+                    else:
+                        menu_sound.play_music(menu_music.lower(), loop=True)
                 except Exception:
-                    music_playing = False
-                if not music_playing:
-                    _menu_vol = settings_manager.get('menu_music_volume', 0.3)
-                    menu_sound.set_music_volume(_menu_vol)
-                    menu_music = settings_manager.get('menu_music', 'main_1')
                     menu_sound.play_music(menu_music.lower(), loop=True)
+                print(f"🎵 Ana sayfa müziği başlatıldı: {menu_music}")
             return False
 
         online_pvp.update(delta_ms)
         online_pvp.draw()
+        try:
+            if getattr(online_pvp, 'sound', None):
+                online_pvp.sound.update_music_playlist()
+        except Exception:
+            pass
         return True
 
     _handle_online_pvp._game = None
@@ -2821,7 +2845,7 @@ def main():
         if to_state == 'game' or to_state == 'pvp' or to_state == 'online_pvp':
             return 'wipe'
         # Oyundan çıkış için fade
-        if from_state == 'game' or from_state == 'pvp':
+        if from_state == 'game' or from_state == 'pvp' or from_state == 'online_pvp':
             return 'fade'
         # Campaign select özel geçişleri
         if from_state == 'menu' and to_state == 'campaign_select':

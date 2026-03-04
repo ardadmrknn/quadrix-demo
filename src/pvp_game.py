@@ -474,8 +474,9 @@ class PvPGame:
             if not preferred:
                 preferred = self.settings_manager.get('game_music')
         track_key = self.sound.ensure_track_available(preferred or 'pvp_1')
-        self.sound.play_music(track_key, loop=True)
-        self.current_music_track = track_key
+        if track_key:
+            self.sound.set_music_playlist([track_key], loop=True, autoplay=True, force=True)
+            self.current_music_track = track_key
 
     def _get_vs_panel_surface(self, panel_width=None):
         """Return (and rebuild if needed) the cached VS panel surface."""
@@ -1238,11 +1239,8 @@ class PvPGame:
                 if self.settings_manager:
                     self.settings_manager.set('music_enabled', self.sound.music_enabled)
                 if self.sound.music_enabled:
-                    # Müzik tekrar açıldıysa PvP müziğini başlat
-                    if self.current_music_track:
-                        self.sound.play_music(self.current_music_track, loop=True)
-                    else:
-                        self._start_pvp_music()
+                    # Müzik tekrar açıldıysa PvP playlist'ini başlat (shuffle/playlist korunur)
+                    self._start_pvp_music()
                 else:
                     self.sound.stop_music()
                 return None
