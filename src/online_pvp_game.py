@@ -236,9 +236,48 @@ class OnlinePvPGame:
         self._status_msg: str = ''
         self._status_timer: float = 0
 
+        # Müzik başlat (lobi ekranına girince)
+        self._start_pvp_music()
+
     # ============================================================
     #  BAŞLATMA
     # ============================================================
+
+    def _start_pvp_music(self):
+        """PvP müziğini başlat (local PvP ile aynı playlist mantığı)."""
+        if not getattr(self.sound, 'music_enabled', True):
+            return
+        playlist_values = []
+        if self.settings_manager:
+            try:
+                playlist_values = self.settings_manager.get_music_playlist_for_mode('pvp')
+            except Exception:
+                playlist_values = []
+        if playlist_values:
+            track_keys = []
+            for value in playlist_values:
+                track_key = self.sound.ensure_track_available(value)
+                if track_key:
+                    track_keys.append(track_key)
+            if track_keys:
+                do_shuffle = bool(self.settings_manager.get('music_shuffle', False)) if self.settings_manager else False
+                start_index = 0 if do_shuffle else random.randrange(len(track_keys))
+                self.sound.set_music_playlist(track_keys, loop=True, start_index=start_index, autoplay=True, force=True, shuffle=do_shuffle)
+                return
+        preferred = None
+        if self.settings_manager:
+            try:
+                overrides = self.settings_manager.get_mode_music_overrides()
+                preferred = overrides.get('pvp')
+            except Exception:
+                pass
+            if not preferred:
+                preferred = self.settings_manager.get('pvp_music')
+            if not preferred:
+                preferred = self.settings_manager.get('game_music')
+        track_key = self.sound.ensure_track_available(preferred or 'pvp_1')
+        if track_key:
+            self.sound.set_music_playlist([track_key], loop=True, autoplay=True, force=True)
 
     def _init_networking(self) -> bool:
         """Steam networking'i başlat."""
@@ -440,6 +479,8 @@ class OnlinePvPGame:
         self.my_board = Board()
         self.opponent_board = Board()
         self.piece_index = 0
+        # Geri sayım sırasında müzik durdurulmuştu — oyun başlayınca yeniden başlat
+        self._start_pvp_music()
 
         if not self.piece_sequence:
             self._generate_pieces(self.game_seed, 200)
@@ -991,7 +1032,9 @@ class OnlinePvPGame:
         elif self.online_state == OnlineState.DISCONNECTED:
             self._draw_disconnected()
 
-        pygame.display.flip()
+        # NOT: pygame.display.flip() burada çağrılmıyor.
+        # Ana döngü (main.py) geçiş efektini src üstüne çizdikten sonra
+        # flip() yapıyor — local PvP ile aynı davranış.
 
     # ─── Lobi Menü Çizimi ───
 
