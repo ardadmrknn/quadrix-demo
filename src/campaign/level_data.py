@@ -235,6 +235,187 @@ def _get_world_names() -> Dict[int, Dict[str, str]]:
     }
 
 
+# ──────────────────────────────────────────────────────────────────────────────
+# LEVEL OVERRIDE YARDIMCI FONKSİYONLARI
+# ──────────────────────────────────────────────────────────────────────────────
+
+def _cs() -> Dict[str, Any]:
+    """1. Yıldız: Leveli tamamla"""
+    return {'type': 'complete', 'description': {'tr': "Level'ı tamamla", 'en': "Complete level"}}
+
+def _ct(secs: int) -> Dict[str, Any]:
+    """Zaman limiti yıldızı"""
+    return {'type': 'time_limit', 'value': secs,
+            'description': {'tr': f"{secs}s içinde tamamla", 'en': f"Complete in {secs}s"}}
+
+def _cm(n: int) -> Dict[str, Any]:
+    """Combo yıldızı"""
+    return {'type': 'combo', 'value': n,
+            'description': {'tr': f"{n} Combo yap", 'en': f"Get {n} Combo(s)"}}
+
+def _mc(n: int) -> Dict[str, Any]:
+    """Multi-clear yıldızı (2=Double, 3=Triple)"""
+    suffix = "2'li" if n == 2 else "3'lü" if n == 3 else f"{n}'li"
+    clear_name = "Double" if n == 2 else "Triple" if n == 3 else f"{n}-clear"
+    return {'type': 'multi_clear', 'value': n,
+            'description': {'tr': f"{suffix} satır temizle", 'en': f"Get a {clear_name}"}}
+
+def _qx(n: int = 1) -> Dict[str, Any]:
+    """Quadrix yıldızı"""
+    desc_tr = "Quadrix yap (4'lü)" if n == 1 else f"{n} Quadrix yap"
+    desc_en = "Get a Quadrix" if n == 1 else f"Get {n} Quadrixes"
+    return {'type': 'tetris', 'value': n, 'description': {'tr': desc_tr, 'en': desc_en}}
+
+def _mv(n: int) -> Dict[str, Any]:
+    """Move (blok) limiti yıldızı"""
+    return {'type': 'move_limit', 'value': n,
+            'description': {'tr': f"{n} blokta tamamla", 'en': f"Complete in {n} moves"}}
+
+def _obj_lines(n: int) -> Dict[str, Any]:
+    return {'type': 'clear_lines', 'target': n}
+
+def _obj_score(n: int) -> Dict[str, Any]:
+    return {'type': 'score', 'target': n}
+
+def _obj_tetris(n: int = 1) -> Dict[str, Any]:
+    return {'type': 'tetris', 'target': n}
+
+def _obj_combo(n: int) -> Dict[str, Any]:
+    return {'type': 'combo', 'target': n}
+
+def _obj_garbage() -> Dict[str, Any]:
+    return {'type': 'clear_garbage', 'target': 0}
+
+def _obj_survival(n: int) -> Dict[str, Any]:
+    return {'type': 'survival', 'target': n,
+            'description': {'tr': f"{n} saniye hayatta kal", 'en': f"Survive {n} seconds"}}
+
+def _obj_multi_clear(n: int) -> Dict[str, Any]:
+    suffix = "3'lü" if n == 3 else f"{n}'li"
+    return {'type': 'multi_clear', 'target': n,
+            'description': {'tr': f"{suffix} satır temizle", 'en': f"Get a {'Triple' if n == 3 else str(n)+'-clear'}"}}
+
+def _obj_special_block(n: int) -> Dict[str, Any]:
+    return {'type': 'special_block', 'target': n}
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# LEVEL OVERRIDE TABLOSU
+# Sadece auto-gen'den FARKLI olan alanlar belirtilmiştir.
+# 'move_limit': None → limit yok | int → o limit | anahtar yoksa auto-calc
+# 'time_limit': None → süresiz  | int → saniye   | anahtar yoksa auto-calc
+# ──────────────────────────────────────────────────────────────────────────────
+_LEVEL_OVERRIDES: Dict[int, Dict[str, Any]] = {
+    # ─── DÜNYA 1: BAŞLANGIÇ VADİSİ ────────────────────
+    1:   {'objectives': [_obj_lines(3)], 'move_limit': None, 'stars': {1: _cs(), 2: _mc(2), 3: _ct(110)}},
+    2:   {'objectives': [_obj_lines(4)], 'move_limit': 19, 'stars': {1: _cs(), 2: _cm(1), 3: _ct(110)}},
+    3:   {'objectives': [_obj_lines(5)], 'stars': {1: _cs(), 2: _mc(2), 3: _cm(1)}},
+    4:   {'move_limit': None, 'time_limit': 100, 'stars': {1: _cs(), 2: _cm(1), 3: _mv(21)}},
+    5:   {'stars': {1: _cs(), 2: _mc(2), 3: _ct(100)}},
+    6:   {'move_limit': 24, 'stars': {1: _cs(), 2: _cm(1), 3: _cm(2)}},
+    7:   {'objectives': [_obj_score(2100)], 'move_limit': 34, 'stars': {1: _cs(), 2: _mc(2), 3: _ct(90)}},
+    8:   {'move_limit': 24, 'stars': {1: _cs(), 2: _cm(1), 3: _ct(80)}},
+    9:   {'objectives': [_obj_lines(8)], 'move_limit': None, 'time_limit': 120, 'stars': {1: _cs(), 2: _mc(2), 3: _cm(2)}},
+    10:  {'move_limit': 39, 'stars': {1: _cs(), 2: _cm(2), 3: _ct(75)}},            # BOSS
+    11:  {'objectives': [_obj_score(2300)], 'move_limit': 42, 'stars': {1: _cs(), 2: _cm(2), 3: _ct(80)}},
+    12:  {'objectives': [_obj_multi_clear(3)], 'move_limit': 35, 'stars': {1: _cs(), 2: _cm(1), 3: _ct(100)}},
+    13:  {'move_limit': 42, 'garbage_rows': 2, 'stars': {1: _cs(), 2: _cm(2), 3: _ct(75)}},
+    14:  {'move_limit': 42, 'stars': {1: _cs(), 2: _mv(28), 3: _ct(80)}},
+    15:  {'objectives': [_obj_lines(13)], 'move_limit': 39, 'stars': {1: _cs(), 2: _mc(3), 3: _cm(2)}},
+    16:  {'objectives': [_obj_score(3000)], 'move_limit': 39, 'stars': {1: _cs(), 2: _cm(2), 3: _ct(75)}},
+    17:  {'objectives': [_obj_tetris(1)], 'move_limit': None, 'stars': {1: _cs(), 2: _mv(28), 3: _ct(85)}},
+    18:  {'move_limit': 34, 'stars': {1: _cs(), 2: _mc(3), 3: _cm(2)}},
+    19:  {'move_limit': None, 'time_limit': 75, 'stars': {1: _cs(), 2: _mv(26), 3: _ct(55)}},
+    20:  {'move_limit': 60, 'time_limit': 90, 'stars': {1: _cs(), 2: _cm(2), 3: _ct(75)}},  # BOSS
+    # ─── DÜNYA 2: BUZ DİYARI ──────────────────────────
+    21:  {'objectives': [_obj_lines(14)], 'move_limit': 36, 'stars': {1: _cs(), 2: _mc(3), 3: _cm(2)}},
+    22:  {'objectives': [_obj_score(3500)], 'move_limit': 60, 'time_limit': 70, 'stars': {1: _cs(), 2: _cm(2), 3: _ct(60)}},
+    23:  {'objectives': [_obj_tetris(1)], 'move_limit': 30, 'stars': {1: _cs(), 2: _ct(90), 3: _ct(75)}},
+    24:  {'move_limit': 40, 'stars': {1: _cs(), 2: _mc(3), 3: _cm(2)}},
+    25:  {'stars': {1: _cs(), 2: _mv(50), 3: _ct(80)}},
+    26:  {'objectives': [_obj_lines(15)], 'move_limit': 60, 'stars': {1: _cs(), 2: _cm(2), 3: _ct(85)}},
+    27:  {'objectives': [_obj_score(7000)], 'stars': {1: _cs(), 2: _mc(3), 3: _cm(2)}},
+    28:  {'objectives': [_obj_lines(6)], 'move_limit': None, 'time_limit': 30, 'garbage_rows': 0, 'stars': {1: _cs(), 2: _mc(2), 3: _ct(25)}},
+    29:  {'objectives': [_obj_score(3000)], 'move_limit': None, 'time_limit': 50, 'stars': {1: _cs(), 2: _cm(1), 3: _ct(40)}},
+    30:  {'objectives': [_obj_tetris(2)], 'move_limit': 80, 'time_limit': 150, 'stars': {1: _cs(), 2: _cm(1), 3: _ct(120)}},  # BOSS
+    # ─── DÜNYA 2 (devam) ──────────────────────────────
+    31:  {'garbage_rows': 4, 'stars': {1: _cs(), 2: _cm(2), 3: _ct(60)}},
+    32:  {'objectives': [_obj_combo(3), _obj_special_block(4)]},
+    33:  {'stars': {1: _cs(), 2: _cm(3), 3: _cm(3)}},
+    34:  {'stars': {1: _cs(), 2: _cm(3), 3: _ct(58)}},
+    35:  {'stars': {1: _cs(), 2: _cm(3), 3: _ct(58)}},
+    36:  {'objectives': [_obj_score(4600), _obj_special_block(5)], 'stars': {1: _cs(), 2: _qx(), 3: _cm(3)}},
+    37:  {'stars': {1: _cs(), 2: _cm(3), 3: _ct(57)}},
+    38:  {'stars': {1: _cs(), 2: _cm(3), 3: _ct(56)}},
+    39:  {'stars': {1: _cs(), 2: _cm(3), 3: _cm(3)}},
+    40:  {'objectives': [_obj_lines(32), _obj_special_block(5)]},  # BOSS
+    # ─── DÜNYA 3: LAV MAĞARASI ────────────────────────
+    41:  {'stars': {1: _cs(), 2: _cm(3), 3: _ct(55)}},
+    42:  {'stars': {1: _cs(), 2: _cm(3), 3: _cm(3)}},
+    43:  {'stars': {1: _cs(), 2: _cm(3), 3: _ct(54)}},
+    # L44: auto-gen ile aynı, override yok
+    45:  {'objectives': [_obj_garbage(), _obj_special_block(2)], 'stars': {1: _cs(), 2: _cm(3), 3: _cm(3)}},
+    46:  {'stars': {1: _cs(), 2: _cm(3), 3: _ct(52)}},
+    47:  {'stars': {1: _cs(), 2: _cm(3), 3: _ct(52)}},
+    48:  {'stars': {1: _cs(), 2: _qx(), 3: _cm(3)}},
+    49:  {'stars': {1: _cs(), 2: _cm(3), 3: _ct(51)}},
+    50:  {'objectives': [_obj_score(9000), _obj_special_block(3)], 'stars': {1: _cs(), 2: _cm(3), 3: _ct(50)}},  # BOSS
+    51:  {'stars': {1: _cs(), 2: _cm(3), 3: _cm(3)}},
+    # L52: auto-gen ile aynı, override yok
+    53:  {'stars': {1: _cs(), 2: _cm(3), 3: _ct(49)}},
+    54:  {'stars': {1: _cs(), 2: _cm(3), 3: _cm(3)}},
+    55:  {'objectives': [_obj_survival(170), _obj_special_block(3)], 'stars': {1: _cs(), 2: _cm(3), 3: _ct(48)}},
+    # L56: auto-gen ile aynı, override yok
+    57:  {'stars': {1: _cs(), 2: _cm(3), 3: _cm(3)}},
+    58:  {'stars': {1: _cs(), 2: _cm(3), 3: _ct(46)}},
+    59:  {'stars': {1: _cs(), 2: _cm(3), 3: _ct(46)}},
+    60:  {'objectives': [_obj_tetris(6), _obj_special_block(4)], 'stars': {1: _cs(), 2: _qx(), 3: _cm(3)}},  # BOSS
+    # ─── DÜNYA 4: FIRTINA KALESİ ──────────────────────
+    61:  {'stars': {1: _cs(), 2: _cm(4), 3: _ct(45)}},
+    62:  {'stars': {1: _cs(), 2: _cm(4), 3: _ct(45)}},
+    63:  {'stars': {1: _cs(), 2: _cm(4), 3: _cm(3)}},
+    64:  {'stars': {1: _cs(), 2: _cm(4), 3: _ct(44)}},
+    65:  {'stars': {1: _cs(), 2: _qx(2), 3: _ct(44)}},
+    66:  {'stars': {1: _cs(), 2: _cm(4), 3: _cm(3)}},
+    67:  {'stars': {1: _cs(), 2: _cm(4), 3: _ct(44)}},
+    68:  {'stars': {1: _cs(), 2: _cm(4), 3: _ct(43)}},
+    69:  {'stars': {1: _cs(), 2: _cm(4), 3: _cm(3)}},
+    70:  {'stars': {1: _cs(), 2: _qx(2), 3: _ct(43)}},  # BOSS
+    71:  {'stars': {1: _cs(), 2: _cm(4), 3: _ct(43)}},
+    72:  {'stars': {1: _cs(), 2: _cm(4), 3: _cm(3)}},
+    73:  {'stars': {1: _cs(), 2: _cm(4), 3: _ct(42)}},
+    74:  {'stars': {1: _cs(), 2: _cm(4), 3: _ct(42)}},
+    75:  {'stars': {1: _cs(), 2: _qx(2), 3: _cm(3)}},
+    76:  {'stars': {1: _cs(), 2: _cm(4), 3: _ct(41)}},
+    77:  {'stars': {1: _cs(), 2: _cm(4), 3: _ct(41)}},
+    78:  {'stars': {1: _cs(), 2: _cm(4), 3: _cm(3)}},
+    79:  {'stars': {1: _cs(), 2: _cm(4), 3: _ct(41)}},
+    80:  {'stars': {1: _cs(), 2: _qx(2), 3: _ct(40)}},  # BOSS
+    # ─── DÜNYA 5: YILDIZ KULESİ ───────────────────────
+    81:  {'stars': {1: _cs(), 2: _cm(4), 3: _cm(3)}},
+    82:  {'stars': {1: _cs(), 2: _cm(4), 3: _ct(40)}},
+    83:  {'stars': {1: _cs(), 2: _cm(4), 3: _ct(40)}},
+    84:  {'stars': {1: _cs(), 2: _cm(4), 3: _cm(3)}},
+    85:  {'stars': {1: _cs(), 2: _qx(2), 3: _ct(39)}},
+    86:  {'stars': {1: _cs(), 2: _cm(4), 3: _ct(39)}},
+    87:  {'stars': {1: _cs(), 2: _cm(4), 3: _cm(3)}},
+    88:  {'stars': {1: _cs(), 2: _cm(4), 3: _ct(38)}},
+    89:  {'stars': {1: _cs(), 2: _cm(4), 3: _ct(38)}},
+    90:  {'stars': {1: _cs(), 2: _qx(2), 3: _cm(3)}},  # BOSS
+    91:  {'stars': {1: _cs(), 2: _cm(4), 3: _ct(38)}},
+    92:  {'stars': {1: _cs(), 2: _cm(4), 3: _ct(37)}},
+    93:  {'stars': {1: _cs(), 2: _cm(4), 3: _cm(3)}},
+    94:  {'stars': {1: _cs(), 2: _cm(4), 3: _ct(37)}},
+    95:  {'stars': {1: _cs(), 2: _qx(2), 3: _ct(37)}},
+    96:  {'stars': {1: _cs(), 2: _cm(4), 3: _cm(3)}},
+    97:  {'stars': {1: _cs(), 2: _cm(4), 3: _ct(36)}},
+    98:  {'stars': {1: _cs(), 2: _cm(4), 3: _ct(36)}},
+    99:  {'stars': {1: _cs(), 2: _cm(4), 3: _cm(3)}},
+    100: {'stars': {1: _cs(), 2: _qx(2), 3: _ct(35)}},  # BOSS
+
+}
+
+
 def _generate_level(level: int) -> LevelConfig:
     """Dinamik olarak level konfigürasyonu oluştur"""
     world = _get_world(level)
@@ -285,38 +466,24 @@ def _generate_level(level: int) -> LevelConfig:
         garbage_rows = max(2, min(4, 2 + (level - 6) // 10))
         
     # --- KULLANICI ÖZEL DEĞİŞİKLİKLERİ (OVERRIDES) ---
-    if level == 16:
-        move_limit = 40
-    elif level == 17:
-        for obj in objectives:
-            if obj.get('type') == 'tetris':
-                obj['target'] = 1
-    elif level == 22:
-        if 3 in stars and stars[3]['type'] == 'time_limit':
-            stars[3]['value'] = 80
-            stars[3]['description'] = {"tr": "80s içinde tamamla", "en": "Complete in 80s"}
-    elif level == 23:
-        if 3 in stars and stars[3]['type'] == 'time_limit':
-            stars[3]['value'] = 90
-            stars[3]['description'] = {"tr": "90s içinde tamamla", "en": "Complete in 90s"}
-    elif level == 24:
-        move_limit = 40
-    elif level == 25:
-        objectives = [{"type": "score", "target": 6000}]
-        if 3 in stars and stars[3]['type'] == 'time_limit':
-            stars[3]['value'] = 80
-            stars[3]['description'] = {"tr": "80s içinde tamamla", "en": "Complete in 80s"}
-    elif level == 26:
-        objectives = [{"type": "clear_lines", "target": 15}]
-        move_limit = 60
-    elif level == 27:
-        objectives = [{"type": "score", "target": 7000}]
-    elif level == 29:
-        objectives = [{"type": "score", "target": 10000}]
-    elif level == 30:
-        for obj in objectives:
-            if obj.get('type') == 'tetris':
-                obj['target'] = 3
+    ov = _LEVEL_OVERRIDES.get(level)
+    if ov:
+        if 'objectives' in ov:
+            objectives = ov['objectives']
+        if 'move_limit' in ov:
+            move_limit = ov['move_limit']
+        if 'time_limit' in ov:
+            time_limit = ov['time_limit']
+        if 'garbage_rows' in ov:
+            garbage_rows = ov['garbage_rows']
+        if 'garbage_pattern' in ov:
+            garbage_pattern = ov['garbage_pattern']
+        if 'no_hold' in ov:
+            no_hold = ov['no_hold']
+        if 'cascade_mode' in ov:
+            cascade_mode = ov['cascade_mode']
+        if 'stars' in ov:
+            stars = ov['stars']
     
     return LevelConfig(
         level=level,
@@ -529,15 +696,6 @@ def _generate_objectives(level: int, world: int, is_boss: bool) -> List[Dict[str
             "type": "time_challenge",
             "target": max(30, 90 - level // 3),  # 30-90 saniye
             "description": {"tr": "Süre içinde tamamla", "en": "Complete in time"}
-        })
-    
-    elif objective_type == 'no_gaps':
-        # Boşluk bırakmadan temizle
-        lines_target = _calculate_lines_target(level) // 2
-        objectives.append({
-            "type": "perfect_clear",
-            "target": lines_target,
-            "description": {"tr": f"{lines_target} satırı sıfır boşlukla", "en": f"{lines_target} lines with no gaps"}
         })
     
     # Ek görevler (world'e göre)
