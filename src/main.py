@@ -2619,9 +2619,24 @@ def main():
             state = 'menu'
             return False
 
-        result = online_pvp.handle_input()
+        try:
+            result = online_pvp.handle_input()
+        except Exception as e:
+            print(f"[OnlinePvP] handle_input hatası: {e}")
+            import traceback; traceback.print_exc()
+            try:
+                online_pvp._cleanup()
+            except Exception:
+                pass
+            _handle_online_pvp._game = None
+            state = 'menu'
+            return False
 
         if result is False:
+            try:
+                online_pvp._cleanup()
+            except Exception:
+                pass
             running = False
             return False
 
@@ -2635,6 +2650,11 @@ def main():
             online_pvp.fullscreen = fullscreen
         elif result == 'menu':
             state = 'menu'
+            # Online PvP temizliği — pump thread'i sürdür
+            try:
+                online_pvp._cleanup()
+            except Exception:
+                pass
             _handle_online_pvp._game = None
             if settings_screen.music_enabled and not getattr(settings_screen, 'mute_all', False):
                 _menu_vol = settings_manager.get('menu_music_volume', 0.3)
@@ -2654,8 +2674,19 @@ def main():
                 print(f"🎵 Ana sayfa müziği başlatıldı: {menu_music}")
             return False
 
-        online_pvp.update(delta_ms)
-        online_pvp.draw()
+        try:
+            online_pvp.update(delta_ms)
+            online_pvp.draw()
+        except Exception as e:
+            print(f"[OnlinePvP] update/draw hatası: {e}")
+            import traceback; traceback.print_exc()
+            try:
+                online_pvp._cleanup()
+            except Exception:
+                pass
+            _handle_online_pvp._game = None
+            state = 'menu'
+            return False
         try:
             if getattr(online_pvp, 'sound', None):
                 online_pvp.sound.update_music_playlist()

@@ -55,6 +55,7 @@ public:
         , m_friends(nullptr)
         , m_currentLobby(k_steamIDNil)
         , m_lobbyReady(false)
+        , m_joinRequestedTime(0)
     {}
 
     ~SteamNetBridge() {
@@ -270,6 +271,8 @@ private:
     ISteamFriends*              m_friends;
     CSteamID                    m_currentLobby;
     bool                        m_lobbyReady;
+    // join_requested'dan itibaren geçen süreyi ölçmek için (epoch saniye)
+    uint32                      m_joinRequestedTime;
 
     // Event kuyruğu
     std::mutex                  m_eventMutex;
@@ -390,17 +393,48 @@ void SteamNetBridge::OnLobbyDataUpdate(LobbyDataUpdate_t* pParam) {
 
 void SteamNetBridge::OnGameLobbyJoinRequested(GameLobbyJoinRequested_t* pParam) {
     // Kullanıcı Steam overlay'den "Oyuna Katıl" dedi
+    // Allowlist penceresini başlat (lobby yokken 30s kabul)
+    m_joinRequestedTime = SteamUtils() ? SteamUtils()->GetServerRealTime() : 0;
     push_event("join_requested", pParam->m_steamIDLobby.ConvertToUint64(),
                std::to_string(pParam->m_steamIDFriend.ConvertToUint64()));
 }
 
 void SteamNetBridge::OnSessionRequest(SteamNetworkingMessagesSessionRequest_t* pParam) {
-    // Gelen bağlantı isteğini otomatik kabul et
-    if (m_messages) {
-        m_messages->AcceptSessionWithUser(pParam->m_identityRemote);
-        push_event("session_accepted",
-                   pParam->m_identityRemote.GetSteamID64(), "");
+    if (!m_messages) return;
+
+    uint64_t remote_id = pParam->m_identityRemote.GetSteamID64();
+
+    if (m_currentLobby.IsValid() && m_currentLobby != k_steamIDNil) {
+        // Lobby geçerli: sadece lobby üyelerini kabul et
+        bool is_member = false;
+        if (m_matchmaking) {
+            int count = m_matchmaking->GetNumLobbyMembers(m_currentLobby);
+            for (int i = 0; i < count; i++) {
+                CSteamID member = m_matchmaking->GetLobbyMemberByIndex(m_currentLobby, i);
+                if (member.ConvertToUint64() == remote_id) {
+                    is_member = true;
+                    break;
+                }
+            }
+        }
+        if (!is_member) {
+            push_event("session_rejected", remote_id, "not_lobby_member");
+            return;
+        }
+    } else {
+        // Lobby yok: join_requested'dan itibaren 30 saniyelik allowlist penceresi
+        uint32 now = SteamUtils() ? SteamUtils()->GetServerRealTime() : 0;
+        bool in_window = (m_joinRequestedTime > 0) &&
+                         (now >= m_joinRequestedTime) &&
+                         ((now - m_joinRequestedTime) <= 30u);
+        if (!in_window) {
+            push_event("session_rejected", remote_id, "no_lobby_no_window");
+            return;
+        }
     }
+
+    m_messages->AcceptSessionWithUser(pParam->m_identityRemote);
+    push_event("session_accepted", remote_id, "");
 }
 
 // ============ Pybind11 Modül Tanımı ============

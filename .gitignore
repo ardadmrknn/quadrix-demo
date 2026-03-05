@@ -21,11 +21,47 @@ htmlcov/
 build/
 dist/
 *.egg-info/
+*.spec.bak
+build_log.txt
+stderr.log
+
+# Compiled bridge artifacts (platform-specific, built locally)
+steam_net_bridge*.pyd
+steam_net_bridge*.so
+steam_net_bridge.cpython-*.so
+
+# Root-level DLLs (copies/extracts, originals live in dll/)
+steam_api64.dll
+
+# Bridge C++ build directories
+steamworks/steam_net_bridge/build_*/
 
 # Steam build artifacts
 steamworks/output/*
 !steamworks/output/.gitkeep
 steamworks/scripts/.tmp_app_build_*.vdf
+
+# steamcmd auto-downloaded runtime files
+steamworks/sdk/tools/ContentBuilder/builder/*.dll
+steamworks/sdk/tools/ContentBuilder/builder/*.dll.old
+steamworks/sdk/tools/ContentBuilder/builder/*.exe.old
+steamworks/sdk/tools/ContentBuilder/builder/*.exe.1.delete
+steamworks/sdk/tools/ContentBuilder/builder/*.vdf
+steamworks/sdk/tools/ContentBuilder/builder/appcache/
+steamworks/sdk/tools/ContentBuilder/builder/bin/
+steamworks/sdk/tools/ContentBuilder/builder/config/
+steamworks/sdk/tools/ContentBuilder/builder/logs/
+steamworks/sdk/tools/ContentBuilder/builder/package/
+steamworks/sdk/tools/ContentBuilder/builder/public/
+steamworks/sdk/tools/ContentBuilder/builder/siteserverui/
+steamworks/sdk/tools/ContentBuilder/builder/steamapps/
+steamworks/sdk/tools/ContentBuilder/builder/userdata/
+steamworks/sdk/tools/ContentBuilder/builder/steamerrorreporter.exe
+
+# Steam upload content & output (large EXE copies)
+steamworks/sdk/tools/ContentBuilder/content/
+steamworks/sdk/tools/ContentBuilder/output/
+steamworks/output/
 
 # Secrets / local env
 .env

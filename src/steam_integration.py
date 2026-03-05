@@ -12,6 +12,7 @@ Steamworks SDK flat API'sini ctypes üzerinden kullanır.
 
 from __future__ import annotations
 
+import atexit
 import ctypes
 import ctypes.util
 import os
@@ -52,6 +53,10 @@ _score_lock = threading.Lock()
 # Callback pump thread
 _pump_thread: threading.Thread | None = None
 _pump_running = False
+_pump_paused = False  # Online PvP bridge aktifken True — Race condition önleme
+_pump_pause_count = 0  # Ref-count: nested pause/resume için (0 = resumed)
+_pump_paused_event = threading.Event()  # pump döngüsü bu event'i set eder (pause ack)
+_pump_lock = threading.Lock()  # RunCallbacks çakmasını önle
 
 
 def _get_platform_lib_name() -> str:
@@ -629,6 +634,17 @@ def shutdown() -> None:
     _init_ok = False
 
 
+def _atexit_cleanup() -> None:
+    """Uygulama çıkışında pump ref-count'u ve paused flag'ini sıfırla, Steam'i kapat."""
+    global _pump_pause_count, _pump_paused
+    _pump_pause_count = 0
+    _pump_paused = False
+    shutdown()
+
+
+atexit.register(_atexit_cleanup)
+
+
 def is_available() -> bool:
     """Steam SDK başarıyla başlatıldıysa True döndürür."""
     return _init_ok and _dll is not None
@@ -956,21 +972,63 @@ def reset_all_steam_stats(achievements_too: bool = False) -> bool:
 def _callback_pump_loop() -> None:
     """Arka planda Steam callback'lerini işle (30ms aralıklı)."""
     while _pump_running:
-        if _dll and _init_ok:
-            try:
-                _dll.SteamAPI_RunCallbacks()
-            except Exception:
-                pass
+        if _dll and _init_ok and not _pump_paused:
+            with _pump_lock:
+                try:
+                    _dll.SteamAPI_RunCallbacks()
+                except Exception:
+                    pass
+        else:
+            # Pause bekleniyorsa ack ver
+            _pump_paused_event.set()
         time.sleep(0.03)
 
 
 def run_callbacks() -> None:
     """Tek seferlik callback pump (ana thread'den çağrılabilir)."""
-    if _dll and _init_ok:
-        try:
-            _dll.SteamAPI_RunCallbacks()
-        except Exception:
-            pass
+    if _dll and _init_ok and not _pump_paused:
+        with _pump_lock:
+            try:
+                _dll.SteamAPI_RunCallbacks()
+            except Exception:
+                pass
+
+
+def pause_pump() -> None:
+    """Pump thread'ini duraklat — Online PvP bridge RunCallbacks'i devralınca çağrılır.
+
+    Ref-count tabanlı: birden fazla çağrıya karşı güvenli (nested pause/resume).
+    Aynı anda iki farklı thread'den SteamAPI_RunCallbacks() çağırmak
+    Steam SDK'da race condition/segfault oluşturur. Bridge kendi tick()
+    metodu içinde RunCallbacks çağırdığı için pump thread duraklatılmalıdır.
+    """
+    global _pump_paused, _pump_pause_count
+    _pump_pause_count += 1
+    _pump_paused_event.clear()
+    _pump_paused = True
+    # Pump döngüsünün mevcut iterasyonunun bitmesini BEKle (lock ile garanti)
+    # Lock al ve bırak — pump döngüsü RunCallbacks'ten çıkana kadar burada bekler
+    with _pump_lock:
+        pass
+    # Ek güvenlik için pump'un pause gördüğünden emin ol (best-effort)
+    if not _pump_paused_event.wait(timeout=0.15):
+        print(f"[Steam] Pump pause ack timeout (best-effort devam, count={_pump_pause_count})")
+    print(f"[Steam] Pump thread duraklatıldı (bridge aktif, count={_pump_pause_count})")
+
+
+def resume_pump() -> None:
+    """Pump thread'ini sürdür — Online PvP bridge kapandığında çağrılır.
+
+    Ref-count tabanlı: yalnızca tüm pause çağrıları karşılandığında pump açılır.
+    Count asla negatife düşmez.
+    """
+    global _pump_paused, _pump_pause_count
+    _pump_pause_count -= 1
+    if _pump_pause_count <= 0:
+        _pump_pause_count = 0  # Negatife düşmeyi önle
+        _pump_paused = False
+        _pump_paused_event.clear()
+    print(f"[Steam] Pump resume çağrıldı (count={_pump_pause_count}, paused={_pump_paused})")
 
 
 def _precache_all_leaderboard_handles() -> None:
