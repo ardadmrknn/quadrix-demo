@@ -35,6 +35,7 @@ from background import BackgroundManager
 from background_effects import get_shared_falling_blocks_layer
 from themes import ThemeManager
 from retro_style import retro_style as _rs
+from renderers.jelly_renderer import draw_jelly_block
 
 # Convenience aliases for retro_style singleton methods
 get_font = _rs.get_font
@@ -55,6 +56,18 @@ try:
 except ImportError:
     def _pause_steam_pump(): pass
     def _resume_steam_pump(): pass
+
+# Steam overlay — doğrudan ctypes API çağrıları (C++ bridge gerektirmez)
+try:
+    from steam_integration import (
+        activate_game_overlay as _activate_overlay,
+        activate_game_overlay_invite_dialog as _activate_invite_dialog,
+        activate_game_overlay_to_user as _activate_overlay_to_user,
+    )
+except ImportError:
+    def _activate_overlay(panel='Friends'): return False
+    def _activate_invite_dialog(lobby_id=0): return False
+    def _activate_overlay_to_user(action='', sid=0): return False
 
 try:
     from gamepad_manager import GamepadManager
@@ -364,12 +377,26 @@ class OnlinePvPGame:
         # Metadata'ya kaydet (kod ile arama desteği için)
         self.net.set_lobby_data('lobby_code', self._lobby_code)
         self.net.set_lobby_data('lobby_code_full', self._lobby_id_str)
+        # Host adını metadata'ya kaydet (lobi listesinde gösterilmek üzere)
+        host_name = ''
+        try:
+            host_name = self.net._get_name(self.net.my_steam_id)
+        except Exception:
+            pass
+        if host_name:
+            self.net.set_lobby_data('host_name', host_name)
         print(f"[OnlinePvP] Lobi Kodu: {self._lobby_code}  |  Tam ID: {self._lobby_id_str}")
 
         # Davet bekletilmişse şimdi aç
         if self._invite_after_lobby:
             self._invite_after_lobby = False
-            self.net.invite_friend()
+            try:
+                self.net.invite_friend()
+            except Exception:
+                pass
+            # Windows'ta ek olarak doğrudan ctypes overlay dene
+            if sys.platform == 'win32' and ev.steam_id:
+                _activate_invite_dialog(ev.steam_id)
             self._status_msg = t('invite_sent', 'Steam davet penceresi açıldı')
             self._status_timer = 2.5
 
@@ -411,11 +438,34 @@ class OnlinePvPGame:
 
     def _on_lobby_found(self, ev: NetEvent):
         """Tek bir public lobi bulundu — biriktir."""
+        # Lobi sahibi bilgisini metadata'dan almayı dene.
+        # Not: get_lobby_data, bridge'in lobby_found callback bağlamında
+        # bulunan lobinin metadata'sını döndürmelidir. Ancak bridge
+        # implementasyonuna bağlı olarak boş string dönebilir — fallback mevcut.
+        host_name = ''
+        lobby_code = ''
+        try:
+            host_name = self.net.get_lobby_data('host_name') or ''
+        except Exception:
+            pass
+        try:
+            lobby_code = self.net.get_lobby_data('lobby_code') or ''
+        except Exception:
+            pass
+
+        # ev.data genelde "members" bilgisini taşır — parse kontrolü
+        try:
+            member_count = int(ev.data) if ev.data and ev.data.isdigit() else 0
+        except (ValueError, AttributeError):
+            member_count = 0
+
         self._pending_lobby_list.append({
             'id': ev.steam_id,
-            'members': int(ev.data) if ev.data.isdigit() else 0,
+            'members': member_count,
             'max_members': 2,
-            'name': f'Lobi #{len(self._pending_lobby_list) + 1}',
+            'name': host_name or f'Lobi #{len(self._pending_lobby_list) + 1}',
+            'code': lobby_code,
+            'found_time': time.time(),
         })
 
     def _on_lobby_list_complete(self, ev: NetEvent):
@@ -578,19 +628,37 @@ class OnlinePvPGame:
                 self.opponent_level = self._clamp_int(data.get('level', 1), 0, 30, 'level')
 
             elif msg_type == MsgType.GAME_OVER:
-                # Rakip öldü — biz kazandık!
-                self.game_over = True
-                self.winner = 'me'
-                self.online_state = OnlineState.GAME_OVER
-                try:
-                    self.sound.play('tetris')  # zafer sesi
-                except Exception:
-                    pass
+                # Rakip öldü — ama biz de ölmüş olabiliriz (race condition)
+                if self.game_over and self.winner == 'opponent':
+                    # İkimiz de aynı anda öldük — skor karşılaştırması ile karar ver
+                    my_score = self.my_board.score if self.my_board else 0
+                    opp_score = self._clamp_int(data.get('score', 0), 0, 999999, 'opp_final_score')
+                    if my_score > opp_score:
+                        self.winner = 'me'
+                        print(f"[OnlinePvP] Simultane ölüm — skor karşılaştırması: BEN ({my_score}) > RAKİP ({opp_score})")
+                    elif opp_score > my_score:
+                        self.winner = 'opponent'
+                        print(f"[OnlinePvP] Simultane ölüm — skor karşılaştırması: RAKİP ({opp_score}) > BEN ({my_score})")
+                    else:
+                        self.winner = 'draw'
+                        print(f"[OnlinePvP] Simultane ölüm — BERABERE (her iki skor: {my_score})")
+                    self.online_state = OnlineState.GAME_OVER
+                elif not self.game_over:
+                    # Normal durum — rakip öldü, biz kazandık
+                    self.game_over = True
+                    self.winner = 'me'
+                    self.online_state = OnlineState.GAME_OVER
+                    try:
+                        self.sound.play('tetris')  # zafer sesi
+                    except Exception:
+                        pass
+                # else: game_over zaten True ve winner zaten 'me' — ignore
 
             elif msg_type == MsgType.ELIMINATED:
-                self.game_over = True
-                self.winner = 'me'
-                self.online_state = OnlineState.GAME_OVER
+                if not self.game_over:
+                    self.game_over = True
+                    self.winner = 'me'
+                    self.online_state = OnlineState.GAME_OVER
 
             elif msg_type == MsgType.PAUSE_REQUEST:
                 self.opponent_paused = True
@@ -1225,6 +1293,10 @@ class OnlinePvPGame:
                     elif action == 'create_public':
                         if self._init_networking():
                             self.net.create_lobby(public=True)
+                            # Otomatik lobi listesini de yenile (maç bul işlevi)
+                            self._lobby_list_fetching = True
+                            self._pending_lobby_list.clear()
+                            self.net.request_lobby_list()
                     elif action == 'find_match':
                         if self._init_networking():
                             self._lobby_list_fetching = True
@@ -1321,7 +1393,11 @@ class OnlinePvPGame:
     # ============================================================
 
     def _do_invite_friend(self):
-        """Steam overlay arkadaş davet penceresi aç — kullanıcıya geri bildirim ver."""
+        """Steam overlay arkadaş davet penceresi aç — kullanıcıya geri bildirim ver.
+
+        Önce C++ bridge üzerinden dener. Başarısız olursa doğrudan
+        Steam ctypes API'si üzerinden overlay açar (Windows uyumluluğu).
+        """
         if not self._net_initialized:
             ok = self._init_networking()
             if not ok:
@@ -1343,7 +1419,22 @@ class OnlinePvPGame:
             self._invite_after_lobby = True
             return
 
-        self.net.invite_friend()
+        # Önce C++ bridge ile dene
+        invite_ok = False
+        try:
+            self.net.invite_friend()
+            invite_ok = True
+        except Exception:
+            pass
+
+        # C++ bridge çalışmadıysa doğrudan ctypes overlay dene
+        if not invite_ok or sys.platform == 'win32':
+            # Windows'ta C++ bridge overlay'ı düzgün açamayabiliyor
+            # doğrudan Steam API çağrısı yap
+            lobby_id = self.net.lobby_id
+            if lobby_id:
+                _activate_invite_dialog(lobby_id)
+
         self._status_msg = t('invite_sent', 'Steam davet penceresi açıldı')
         self._status_timer = 2.5
         try:
@@ -1370,12 +1461,10 @@ class OnlinePvPGame:
     # ============================================================
 
     def _try_join_by_code(self):
-        """Girilen lobi kodunu parse edip katılmayı dene.
+        """Girilen 6 haneli lobi kodunu parse edip katılmayı dene.
 
-        Strateji:
-          1. Giriş 6 haneli ise (lobi kodu) → metadata araması başlat
-          2. Giriş >6 haneli ise (tam lobby ID) → doğrudan JoinLobby()
-          3. Her iki durumda da hata mesajı göster (başarısızsa)
+        Lobi kodu metadata araması ile eşleşen lobiye katılır.
+        Bulunamazsa hata mesajı gösterilir.
         """
         code = self._join_code_input.strip()
         if not code:
@@ -1386,28 +1475,15 @@ class OnlinePvPGame:
             self._join_code_error = t('steam_not_available', 'Steam bağlantısı kurulamadı!')
             return
 
-        if len(code) <= 8:
-            # 6-8 haneli kısa kod — metadata araması ile bul
-            self._searching_by_code = True
-            self._search_code = code
-            self._lobby_list_fetching = True
-            self._pending_lobby_list.clear()
-            self.net.search_lobby_by_code(code)
-            self._status_msg = t('searching_by_code', 'Lobi kodu aranıyor...')
-            self._status_timer = 3.0
-            self._join_code_active = False
-        else:
-            # Uzun numara — doğrudan lobby ID olarak dene
-            try:
-                lobby_id = int(code)
-                self.net.join_lobby(lobby_id)
-                self._status_msg = t('joining_lobby', 'Lobiye katılınıyor...')
-                self._status_timer = 2.0
-                self._join_code_active = False
-                self._join_code_input = ''
-                self._join_code_error = ''
-            except (ValueError, TypeError):
-                self._join_code_error = t('invalid_lobby_code', 'Geçersiz lobi kodu!')
+        # Her zaman 6 haneli kod olarak ara
+        self._searching_by_code = True
+        self._search_code = code
+        self._lobby_list_fetching = True
+        self._pending_lobby_list.clear()
+        self.net.search_lobby_by_code(code)
+        self._status_msg = t('searching_by_code', 'Lobi kodu aranıyor...')
+        self._status_timer = 3.0
+        self._join_code_active = False
 
     def _try_direct_join_by_code(self, code: str):
         """Kod araması sonuçsuz kaldığında, kodu doğrudan lobby ID olarak dene."""
@@ -1564,39 +1640,40 @@ class OnlinePvPGame:
         s = lambda v, minimum=1: self._sx(v, sc, minimum)
 
         # Başlık (retro_style.draw_title ile — glow + alt çizgi)
-        _rs.draw_title(self.screen, t('online_pvp_title', 'ONLINE PvP'), (cx, s(68)))
-        sub_font = _rs.get_font(s(18, minimum=12), bold=False)
+        _rs.draw_title(self.screen, t('online_pvp_title', 'ONLINE PvP'), (cx, s(58)))
+        sub_font = _rs.get_font(s(16, minimum=11), bold=False)
         sub = sub_font.render(
             t('extras_online_pvp_desc', 'Steam üzerinden 1v1 online Tetris maçı'),
             True, _rs.text_secondary)
-        self.screen.blit(sub, sub.get_rect(center=(cx, s(108))))
+        self.screen.blit(sub, sub.get_rect(center=(cx, s(94))))
 
-        # Sol panel: butonlar
+        # Sol panel: butonlar — modernize edilmiş yerleşim
         btn_w = s(340)
         btn_h = s(52)
         panel_left = max(s(30), cx - s(400))
         btn_x = panel_left
-        btn_y_start = s(150)
+        btn_y_start = s(130)
         gap = s(12)
 
-        buttons = [
-            ('create_private', t('create_private_lobby', 'Ozel Lobi Olustur'),
+        # Özel Lobi bölümü başlığı
+        section_font = _rs.get_font(s(13, minimum=10), bold=False)
+        sec1 = section_font.render(t('private_lobby_section', '── Özel Lobi ──'),
+                                   True, _rs.text_muted)
+        self.screen.blit(sec1, sec1.get_rect(center=(btn_x + btn_w // 2, btn_y_start - s(8))))
+
+        buttons_private = [
+            ('create_private', t('create_private_lobby', 'Özel Lobi Oluştur'),
              _rs.primary, 'ENTER'),
-            ('create_public', t('create_public_lobby', 'Herkese Acik Lobi'),
-             _rs.success, None),
-            ('invite_friend', t('invite_friend', 'Arkadaş Davet Et'),
-             UIColors.NEON_GREEN, 'I'),
-            ('find_match', t('find_match', 'Maç Bul'),
-             _rs.accent, None),
             ('join_by_code', t('join_by_code', 'Kod ile Katıl'),
              UIColors.NEON_CYAN, 'J'),
-            ('back', t('back_to_menu', 'Ana Menüye Dön'),
-             _rs.secondary, 'ESC'),
+            ('invite_friend', t('invite_friend', 'Arkadaş Davet Et'),
+             UIColors.NEON_GREEN, 'I'),
         ]
 
         mouse_pos = get_mouse_pos()
-        for i, (action, label, color, shortcut) in enumerate(buttons):
-            rect = pygame.Rect(btn_x, btn_y_start + i * (btn_h + gap), btn_w, btn_h)
+        y_pos = btn_y_start + s(8)
+        for action, label, color, shortcut in buttons_private:
+            rect = pygame.Rect(btn_x, y_pos, btn_w, btn_h)
             is_hover = rect.collidepoint(mouse_pos)
 
             _rs.draw_uniform_button(
@@ -1606,11 +1683,45 @@ class OnlinePvPGame:
                 state='hover' if is_hover else 'normal',
             )
             self._lobby_buttons.append({'rect': rect, 'action': action})
+            y_pos += btn_h + gap
 
-        # ─── "Kod ile Katıl" metin giriş alanı (aktifse göster) ───
-        last_btn_bottom = btn_y_start + len(buttons) * (btn_h + gap)
+        # "Kod ile Katıl" metin giriş alanı (aktifse göster)
         if self._join_code_active:
-            self._draw_join_code_input(btn_x, last_btn_bottom + s(8), btn_w, s, mouse_pos)
+            self._draw_join_code_input(btn_x, y_pos, btn_w, s, mouse_pos)
+            y_pos += s(130)
+
+        # Herkese Açık Lobi bölümü başlığı
+        y_pos += s(10)
+        sec2 = section_font.render(t('public_lobby_section', '── Herkese Açık ──'),
+                                   True, _rs.text_muted)
+        self.screen.blit(sec2, sec2.get_rect(center=(btn_x + btn_w // 2, y_pos)))
+        y_pos += s(18)
+
+        # "Herkese Açık Lobi" butonu (artık Maç Bul işlevini de kapsar)
+        pub_rect = pygame.Rect(btn_x, y_pos, btn_w, btn_h)
+        pub_hover = pub_rect.collidepoint(mouse_pos)
+        _rs.draw_uniform_button(
+            self.screen, pub_rect,
+            t('find_public_match', 'Herkese Açık Maç Bul'),
+            sub_text=None,
+            color_code=_rs.success,
+            state='hover' if pub_hover else 'normal',
+        )
+        self._lobby_buttons.append({'rect': pub_rect, 'action': 'create_public'})
+        y_pos += btn_h + gap
+
+        # Geri butonu
+        y_pos += s(10)
+        back_rect = pygame.Rect(btn_x, y_pos, btn_w, s(44))
+        back_hover = back_rect.collidepoint(mouse_pos)
+        _rs.draw_uniform_button(
+            self.screen, back_rect,
+            t('back_to_menu', 'Ana Menüye Dön'),
+            sub_text='ESC',
+            color_code=_rs.secondary,
+            state='hover' if back_hover else 'normal',
+        )
+        self._lobby_buttons.append({'rect': back_rect, 'action': 'back'})
 
         # Sağ panel: Lobi listesi
         list_x = btn_x + btn_w + s(30)
@@ -1649,7 +1760,7 @@ class OnlinePvPGame:
             self.screen.blit(e1, e1.get_rect(center=(list_x + list_w // 2, list_y + list_h // 2 - s(10))))
             self.screen.blit(e2, e2.get_rect(center=(list_x + list_w // 2, list_y + list_h // 2 + s(14))))
         else:
-            item_h = s(58)
+            item_h = s(72)
             visible = max(1, (list_h - s(70)) // item_h)
             start_idx = self._lobby_list_scroll
             clip = pygame.Rect(list_x + 4, content_top, list_w - 8, list_h - s(70))
@@ -1667,17 +1778,37 @@ class OnlinePvPGame:
                 members = lobby.get('members', '?')
                 mx = lobby.get('max_members', 2)
                 lid = lobby.get('id', 0)
+                l_code = lobby.get('code', '')
 
+                # Lobi adı (host adı)
                 nf = _rs.get_font(s(16, minimum=11))
-                cf = _rs.get_font(s(13, minimum=10), bold=False)
                 self.screen.blit(nf.render(lname, True, _rs.text_primary),
                                  (ir.x + s(12), ir.y + s(7)))
-                self.screen.blit(cf.render(f'{members}/{mx}', True, UIColors.NEON_GREEN),
+
+                # Detay satırı: üye sayısı + lobi kodu
+                cf = _rs.get_font(s(12, minimum=9), bold=False)
+                detail_parts = [f'{members}/{mx} oyuncu']
+                if l_code:
+                    detail_parts.append(f'Kod: {l_code}')
+                detail_text = '  ·  '.join(detail_parts)
+                self.screen.blit(cf.render(detail_text, True, _rs.text_secondary),
                                  (ir.x + s(12), ir.y + s(28)))
 
-                # Katıl butonu
-                jw, jh = s(60), item_h - s(20)
-                jb = pygame.Rect(ir.right - jw - s(8), ir.y + s(7), jw, jh)
+                # Zaman bilgisi
+                found_t = lobby.get('found_time', 0)
+                if found_t:
+                    elapsed = int(time.time() - found_t)
+                    if elapsed < 60:
+                        time_str = t('just_now', 'Az önce')
+                    else:
+                        time_str = f'{elapsed // 60} dk önce'
+                    tf2 = _rs.get_font(s(11, minimum=9), bold=False)
+                    self.screen.blit(tf2.render(time_str, True, _rs.text_muted),
+                                     (ir.x + s(12), ir.y + s(43)))
+
+                # Katıl butonu — daha belirgin stil
+                jw, jh = s(72), s(32)
+                jb = pygame.Rect(ir.right - jw - s(10), ir.centery - jh // 2, jw, jh)
                 jh_hover = jb.collidepoint(mouse_pos)
                 _rs.draw_uniform_button(self.screen, jb,
                                         t('join', 'Katıl'),
@@ -1835,10 +1966,10 @@ class OnlinePvPGame:
                 True, UIColors.NEON_MAGENTA)
             self.screen.blit(hint, hint.get_rect(center=(cx, code_section_y + s(62))))
 
-            # Kodu Kopyala butonu
-            copy_w = s(170)
+            # Kodu Kopyala butonu (tek, ortalanmış)
+            copy_w = s(200)
             copy_h = s(36)
-            copy_rect = pygame.Rect(cx - copy_w - s(6), code_section_y + s(78),
+            copy_rect = pygame.Rect(cx - copy_w // 2, code_section_y + s(78),
                                     copy_w, copy_h)
             copy_hover = copy_rect.collidepoint(mouse_pos)
             _rs.draw_uniform_button(self.screen, copy_rect,
@@ -1847,16 +1978,6 @@ class OnlinePvPGame:
                                     color_code=UIColors.NEON_CYAN,
                                     state='hover' if copy_hover else 'normal')
             self._lobby_buttons.append({'rect': copy_rect, 'action': 'copy_lobby_code'})
-
-            # Lobi ID Kopyala butonu
-            lid_rect = pygame.Rect(cx + s(6), code_section_y + s(78),
-                                   copy_w, copy_h)
-            lid_hover = lid_rect.collidepoint(mouse_pos)
-            _rs.draw_uniform_button(self.screen, lid_rect,
-                                    t('copy_lobby_id', 'Lobi ID Kopyala'),
-                                    color_code=_rs.text_muted,
-                                    state='hover' if lid_hover else 'normal')
-            self._lobby_buttons.append({'rect': lid_rect, 'action': 'copy_lobby_id'})
 
             # Ayırıcı
             sep_y = code_section_y + s(122)
@@ -1895,12 +2016,6 @@ class OnlinePvPGame:
                                 state='hover' if m_back else 'normal')
         self._lobby_buttons.append({'rect': back_rect, 'action': 'exit_menu'})
 
-        # Lobi ID alt bilgi (küçük puntoda)
-        if self.net.lobby_id:
-            lf = _rs.get_font(s(11, minimum=9), bold=False)
-            lt = lf.render(f'Lobby ID: {self.net.lobby_id}', True, _rs.text_muted)
-            self.screen.blit(lt, lt.get_rect(center=(cx, panel.bottom - s(14))))
-
         # Durum mesajı (geri bildirim)
         if self._status_msg:
             st_font = _rs.get_font(s(15, minimum=11), bold=False)
@@ -1909,48 +2024,159 @@ class OnlinePvPGame:
 
     # ─── Hazırlanma Ekranı ───
 
+    def _get_steam_avatar_surface(self, steam_id: int, size: int) -> pygame.Surface | None:
+        """Steam profil fotoğrafını pygame Surface olarak al ve önbelleğe.
+
+        Steam avatar yükleme async olabilir (image_handle == -1 = loading).
+        Bu nedenle başarısız sonuçlar kalıcı cache'lenmez — belirli sayıda
+        (max 10) yeniden deneme yapılır. Başarılı sonuçlar kalıcı olarak cache'lenir.
+        """
+        if not hasattr(self, '_avatar_cache'):
+            self._avatar_cache: dict[tuple[int, int], pygame.Surface] = {}
+        if not hasattr(self, '_avatar_retry_count'):
+            self._avatar_retry_count: dict[tuple[int, int], int] = {}
+        cache_key = (steam_id, size)
+        if cache_key in self._avatar_cache:
+            return self._avatar_cache[cache_key]
+        # Retry limiti — çok fazla API çağrısı yapılmasını önle
+        retries = self._avatar_retry_count.get(cache_key, 0)
+        if retries >= 10:
+            return None  # Kalıcı olarak bulunamadı
+        try:
+            from steam_integration import get_avatar_rgba
+            rgba = get_avatar_rgba(steam_id, preferred='medium')
+            if rgba:
+                aw, ah, argba = rgba
+                source = pygame.image.frombuffer(bytearray(argba), (aw, ah), 'RGBA').convert_alpha()
+                scaled = pygame.transform.smoothscale(source, (size, size))
+                # Yuvarlak kırpma
+                circle_surf = pygame.Surface((size, size), pygame.SRCALPHA)
+                pygame.draw.circle(circle_surf, (255, 255, 255, 255),
+                                   (size // 2, size // 2), size // 2)
+                scaled.blit(circle_surf, (0, 0), special_flags=pygame.BLEND_RGBA_MIN)
+                self._avatar_cache[cache_key] = scaled
+                return scaled
+        except Exception:
+            pass
+        # Başarısız — cache'leme, retry sayacını artır (sonraki frame tekrar dener)
+        self._avatar_retry_count[cache_key] = retries + 1
+        return None
+
     def _draw_ready_check(self):
         w, h = self.window_width, self.window_height
         cx, cy = w // 2, h // 2
         sc = self._ui_scale()
         s = lambda v, minimum=1: self._sx(v, sc, minimum)
 
-        pw = min(s(600), w - s(80))
-        ph = s(350)
+        pw = min(s(650), w - s(80))
+        ph = s(420)
         panel = pygame.Rect(cx - pw // 2, cy - ph // 2, pw, ph)
         draw_glass_panel(self.screen, panel, alpha=185,
                          border_color=UIColors.NEON_CYAN, glow=True)
 
-        # VS
-        vs_font = _rs.get_font(s(48, minimum=28))
+        # VS başlık — büyük glow efektli
+        vs_font = _rs.get_font(s(56, minimum=32))
         vs = vs_font.render('VS', True, UIColors.NEON_MAGENTA)
-        self.screen.blit(vs, vs.get_rect(center=(cx, panel.y + s(50))))
+        # Glow
+        for offset in (3, 2, 1):
+            glow_s = pygame.Surface(vs.get_size(), pygame.SRCALPHA)
+            glow_s.fill((*UIColors.NEON_MAGENTA[:3], 20))
+            glow_s.blit(vs, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+            self.screen.blit(glow_s, glow_s.get_rect(center=(cx + offset, panel.y + s(45) + offset)))
+        self.screen.blit(vs, vs.get_rect(center=(cx, panel.y + s(45))))
 
-        # Oyuncu isimleri
+        # Oyuncu isimleri ve avatarları
         my_name = self.net._get_name(self.net.my_steam_id) if self.net.my_steam_id else 'Sen'
         opp_name = self.net.opponent_name or t('opponent', 'Rakip')
-        nf = _rs.get_font(s(22, minimum=14))
 
-        my_color = UIColors.NEON_GREEN if self.my_ready else _rs.text_muted
-        opp_color = UIColors.NEON_GREEN if self.opponent_ready else _rs.text_muted
-        check = ' ✓'
-
-        my_s = nf.render(f'{my_name}{check if self.my_ready else ""}', True, my_color)
-        opp_s = nf.render(f'{opp_name}{check if self.opponent_ready else ""}', True, opp_color)
-
-        # Yan yana ortalanmış
-        name_y = panel.y + s(110)
         col_w = pw // 2 - s(20)
-        self.screen.blit(my_s, my_s.get_rect(center=(panel.x + col_w // 2 + s(10), name_y)))
-        self.screen.blit(opp_s, opp_s.get_rect(center=(panel.right - col_w // 2 - s(10), name_y)))
+        my_cx = panel.x + col_w // 2 + s(10)
+        opp_cx = panel.right - col_w // 2 - s(10)
 
-        # Ayırıcı dikey çizgi
+        # Avatar çerçeveleri
+        avatar_size = s(64, minimum=40)
+        avatar_y = panel.y + s(90)
+
+        # Kendi avatarım
+        my_avatar = self._get_steam_avatar_surface(
+            self.net.my_steam_id or 0, avatar_size)
+        my_accent = UIColors.NEON_CYAN
+        my_border_color = UIColors.NEON_GREEN if self.my_ready else my_accent
+        # Avatar çerçeve paneli
+        av_frame = pygame.Rect(my_cx - avatar_size // 2 - s(4), avatar_y - s(4),
+                               avatar_size + s(8), avatar_size + s(8))
+        draw_glass_panel(self.screen, av_frame, alpha=160, border_color=my_border_color)
+        if my_avatar:
+            self.screen.blit(my_avatar, (my_cx - avatar_size // 2, avatar_y))
+        else:
+            # Placeholder
+            pygame.draw.circle(self.screen, (*my_accent[:3], 80),
+                               (my_cx, avatar_y + avatar_size // 2), avatar_size // 2)
+            pf = _rs.get_font(s(24, minimum=16))
+            pt = pf.render('?', True, my_accent)
+            self.screen.blit(pt, pt.get_rect(center=(my_cx, avatar_y + avatar_size // 2)))
+
+        # Rakip avatarı
+        opp_avatar = self._get_steam_avatar_surface(
+            self.net.opponent_steam_id or 0, avatar_size)
+        opp_accent = UIColors.NEON_MAGENTA
+        opp_border_color = UIColors.NEON_GREEN if self.opponent_ready else opp_accent
+        av_frame2 = pygame.Rect(opp_cx - avatar_size // 2 - s(4), avatar_y - s(4),
+                                avatar_size + s(8), avatar_size + s(8))
+        draw_glass_panel(self.screen, av_frame2, alpha=160, border_color=opp_border_color)
+        if opp_avatar:
+            self.screen.blit(opp_avatar, (opp_cx - avatar_size // 2, avatar_y))
+        else:
+            pygame.draw.circle(self.screen, (*opp_accent[:3], 80),
+                               (opp_cx, avatar_y + avatar_size // 2), avatar_size // 2)
+            pf = _rs.get_font(s(24, minimum=16))
+            pt = pf.render('?', True, opp_accent)
+            self.screen.blit(pt, pt.get_rect(center=(opp_cx, avatar_y + avatar_size // 2)))
+
+        # İsimler — avatarların altında
+        name_y = avatar_y + avatar_size + s(14)
+        nf = _rs.get_font(s(20, minimum=14))
+
+        my_color = UIColors.NEON_GREEN if self.my_ready else _rs.text_primary
+        opp_color = UIColors.NEON_GREEN if self.opponent_ready else _rs.text_primary
+
+        my_s = nf.render(my_name, True, my_color)
+        opp_s = nf.render(opp_name, True, opp_color)
+        self.screen.blit(my_s, my_s.get_rect(center=(my_cx, name_y)))
+        self.screen.blit(opp_s, opp_s.get_rect(center=(opp_cx, name_y)))
+
+        # Hazır durumu göstergesi — ismin altında badge
+        status_y = name_y + s(24)
+        status_font = _rs.get_font(s(14, minimum=10), bold=False)
+        if self.my_ready:
+            ready_badge = pygame.Rect(my_cx - s(50), status_y, s(100), s(24))
+            draw_glass_panel(self.screen, ready_badge, alpha=180,
+                             border_color=UIColors.NEON_GREEN)
+            rt = status_font.render('✓ HAZIR', True, UIColors.NEON_GREEN)
+            self.screen.blit(rt, rt.get_rect(center=ready_badge.center))
+        else:
+            wt = status_font.render(t('not_ready', 'Bekleniyor...'), True, _rs.text_muted)
+            self.screen.blit(wt, wt.get_rect(center=(my_cx, status_y + s(12))))
+
+        if self.opponent_ready:
+            ready_badge2 = pygame.Rect(opp_cx - s(50), status_y, s(100), s(24))
+            draw_glass_panel(self.screen, ready_badge2, alpha=180,
+                             border_color=UIColors.NEON_GREEN)
+            rt2 = status_font.render('✓ HAZIR', True, UIColors.NEON_GREEN)
+            self.screen.blit(rt2, rt2.get_rect(center=ready_badge2.center))
+        else:
+            wt2 = status_font.render(t('not_ready', 'Bekleniyor...'), True, _rs.text_muted)
+            self.screen.blit(wt2, wt2.get_rect(center=(opp_cx, status_y + s(12))))
+
+        # Dikey ayırıcı çizgi
+        sep_top = panel.y + s(80)
+        sep_bot = status_y + s(30)
         pygame.draw.line(self.screen, (*UIColors.NEON_MAGENTA[:3], 60),
-                         (cx, panel.y + s(90)), (cx, panel.y + s(140)), 2)
+                         (cx, sep_top), (cx, sep_bot), 2)
 
-        # Alt buton
+        # Alt buton — Hazırım
         if not self.my_ready:
-            btn_r = pygame.Rect(cx - s(120), panel.y + s(180), s(240), s(48))
+            btn_r = pygame.Rect(cx - s(130), panel.y + s(290), s(260), s(50))
             m_h = btn_r.collidepoint(get_mouse_pos())
             _rs.draw_uniform_button(self.screen, btn_r,
                                     t('press_enter_ready', 'Hazırım!'),
@@ -1958,15 +2184,19 @@ class OnlinePvPGame:
                                     state='hover' if m_h else 'normal')
             self._lobby_buttons.append({'rect': btn_r, 'action': 'ready'})
         else:
+            # "Hazır" onay badge
             wf = _rs.get_font(s(16, minimum=12), bold=False)
+            wait_rect = pygame.Rect(cx - s(100), panel.y + s(295), s(200), s(36))
+            draw_glass_panel(self.screen, wait_rect, alpha=150,
+                             border_color=UIColors.NEON_GREEN)
             wt = wf.render(t('waiting_opponent_ready', 'Rakip bekleniyor...'),
-                           True, _rs.text_secondary)
-            self.screen.blit(wt, wt.get_rect(center=(cx, panel.y + s(200))))
+                           True, UIColors.NEON_GREEN)
+            self.screen.blit(wt, wt.get_rect(center=wait_rect.center))
 
         # ESC — tıklanabilir geri butonu
         esc_w = s(200)
         esc_h = s(36)
-        esc_rect = pygame.Rect(cx - esc_w // 2, panel.bottom - s(52), esc_w, esc_h)
+        esc_rect = pygame.Rect(cx - esc_w // 2, panel.bottom - s(48), esc_w, esc_h)
         m_esc = esc_rect.collidepoint(get_mouse_pos())
         _rs.draw_uniform_button(self.screen, esc_rect,
                                 t('back_to_menu', 'Ana Menüye Dön'),
@@ -2179,7 +2409,7 @@ class OnlinePvPGame:
                                   next_rect.top + s(30), mini)
 
     def _draw_mini_piece(self, piece, cx, top_y, mini):
-        """Bir parçayı küçük boyutta ortalanmış çiz (hold/next için)."""
+        """Bir parçayı küçük boyutta ortalanmış çiz (hold/next için) — jelly stili."""
         shape = piece.get_shape() if hasattr(piece, 'get_shape') else piece.shape
         rows = len(shape)
         cols = len(shape[0]) if rows else 0
@@ -2188,9 +2418,9 @@ class OnlinePvPGame:
         for ri, row in enumerate(shape):
             for ci, cell in enumerate(row):
                 if cell:
-                    pygame.draw.rect(self.screen, piece.color,
-                                     (ox + ci * mini + 1, oy + ri * mini + 1,
-                                      mini - 2, mini - 2), border_radius=2)
+                    draw_jelly_block(self.screen,
+                                     ox + ci * mini + 1, oy + ri * mini + 1,
+                                     mini - 2, piece.color[:3])
 
     def _draw_pause_overlay(self):
         """Duraklatma ekranı — pvp_game standardında (alpha=185 + cam panel)."""
@@ -2231,7 +2461,7 @@ class OnlinePvPGame:
 
     def _draw_board(self, x: int, y: int, cell_size: int,
                     board: Board | None, piece: Piece | None):
-        """Kendi tahtamızı çiz."""
+        """Kendi tahtamızı çiz — jelly blok stili ile."""
         if not board:
             return
 
@@ -2250,9 +2480,8 @@ class OnlinePvPGame:
                 cy = y + row * cell_size
                 color = board.grid[row][col]
                 if color != BLACK:
-                    pygame.draw.rect(self.screen, color,
-                                     (cx + 1, cy + 1, cell_size - 2, cell_size - 2),
-                                     border_radius=3)
+                    draw_jelly_block(self.screen, cx + 1, cy + 1,
+                                     cell_size - 2, color[:3])
                 else:
                     pygame.draw.rect(self.screen, grid_color,
                                      (cx, cy, cell_size, cell_size), 1)
@@ -2266,12 +2495,11 @@ class OnlinePvPGame:
                         px = x + (piece.x + col_i) * cell_size
                         py = y + (piece.y + row_i) * cell_size
                         if 0 <= piece.y + row_i < BOARD_HEIGHT:
-                            pygame.draw.rect(self.screen, piece.color,
-                                             (px + 1, py + 1, cell_size - 2, cell_size - 2),
-                                             border_radius=3)
+                            draw_jelly_block(self.screen, px + 1, py + 1,
+                                             cell_size - 2, piece.color[:3])
 
     def _draw_opponent_board(self, x: int, y: int, cell_size: int):
-        """Ağdan gelen snapshot ile rakip tahtasını çiz."""
+        """Ağdan gelen snapshot ile rakip tahtasını çiz — jelly blok stili."""
         board_w = BOARD_WIDTH * cell_size
         board_h = BOARD_HEIGHT * cell_size
 
@@ -2287,9 +2515,8 @@ class OnlinePvPGame:
                     cell = self.opponent_grid_snapshot[row][col]
                     if cell is not None:
                         color = tuple(cell) if isinstance(cell, (list, tuple)) else (128, 128, 128)
-                        pygame.draw.rect(self.screen, color,
-                                         (cx + 1, cy + 1, cell_size - 2, cell_size - 2),
-                                         border_radius=3)
+                        draw_jelly_block(self.screen, cx + 1, cy + 1,
+                                         cell_size - 2, color[:3])
                     else:
                         pygame.draw.rect(self.screen, grid_color,
                                          (cx, cy, cell_size, cell_size), 1)
@@ -2317,45 +2544,90 @@ class OnlinePvPGame:
         if self.winner == 'me':
             result_text = t('you_win', 'KAZANDIN!')
             result_color = UIColors.NEON_GREEN
+            icon_text = '🏆'
+            sub_text = t('victory_sub', 'Tebrikler, rakibini yendin!')
         elif self.winner == 'opponent':
             result_text = t('you_lose', 'KAYBETTİN')
             result_color = UIColors.NEON_RED
+            icon_text = '💀'
+            sub_text = t('defeat_sub', 'Bir dahaki sefere!')
         else:
             result_text = t('draw', 'BERABERE')
             result_color = UIColors.NEON_ORANGE
+            icon_text = '🤝'
+            sub_text = t('draw_sub', 'Eşit güçte rakipler!')
 
-        pw = min(s(500), w - s(80))
-        ph = s(280)
+        pw = min(s(540), w - s(80))
+        ph = s(340)
         panel = pygame.Rect(cx - pw // 2, cy - ph // 2, pw, ph)
-        draw_glass_panel(self.screen, panel, alpha=200,
-                         border_color=(*result_color[:3], 160), glow=True)
 
-        # Sonuç başlığı
-        tf = _rs.get_fitting_font(result_text, s(36), pw - s(60))
+        # Ana panel — glow border
+        draw_glass_panel(self.screen, panel, alpha=210,
+                         border_color=(*result_color[:3], 180), glow=True)
+
+        # İkon — büyük emoji veya fallback
+        icon_font = _rs.get_font(s(48, minimum=30))
+        try:
+            icon_s = icon_font.render(icon_text, True, result_color)
+        except Exception:
+            icon_s = icon_font.render('★' if self.winner == 'me' else 'X', True, result_color)
+        self.screen.blit(icon_s, icon_s.get_rect(center=(cx, panel.y + s(45))))
+
+        # Sonuç başlığı — glow efektli
+        tf = _rs.get_fitting_font(result_text, s(40), pw - s(60))
         ts = tf.render(result_text, True, result_color)
-        self.screen.blit(ts, ts.get_rect(center=(cx, panel.y + s(55))))
+        # Glow katmanları
+        for glow_offset in (3, 2, 1):
+            glow_surf = pygame.Surface(ts.get_size(), pygame.SRCALPHA)
+            glow_surf.fill((*result_color[:3], 18))
+            glow_surf.blit(ts, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+            self.screen.blit(glow_surf, glow_surf.get_rect(center=(cx + glow_offset, panel.y + s(100) + glow_offset)))
+        self.screen.blit(ts, ts.get_rect(center=(cx, panel.y + s(100))))
 
-        # Skor
-        if self.my_board:
-            score_font = _rs.get_font(s(18, minimum=12), bold=False)
-            st = score_font.render(
-                f'{t("score", "Skor")}: {self.my_board.score:,}  '
-                f'{t("lines", "Satır")}: {self.my_board.lines_cleared}',
-                True, _rs.text_primary)
-            self.screen.blit(st, st.get_rect(center=(cx, panel.y + s(110))))
+        # Alt açıklama
+        sub_f = _rs.get_font(s(15, minimum=11), bold=False)
+        sub_s = sub_f.render(sub_text, True, _rs.text_secondary)
+        self.screen.blit(sub_s, sub_s.get_rect(center=(cx, panel.y + s(135))))
 
-        # Butonlar
-        btn_w = s(130)
-        btn_h = s(44)
-        btn_gap = s(16)
-        btn_y = panel.y + s(160)
+        # Skor karşılaştırma paneli
+        score_panel_y = panel.y + s(158)
+        score_panel_h = s(50)
+        score_panel_r = pygame.Rect(cx - s(180), score_panel_y, s(360), score_panel_h)
+        draw_glass_panel(self.screen, score_panel_r, alpha=140,
+                         border_color=_rs.glass_border)
+
+        score_font = _rs.get_font(s(15, minimum=11), bold=False)
+        my_name = self.net._get_name(self.net.my_steam_id) if self.net.my_steam_id else 'Sen'
+        opp_name = self.net.opponent_name or t('opponent', 'Rakip')
+        my_score = self.my_board.score if self.my_board else 0
+        my_lines = self.my_board.lines_cleared if self.my_board else 0
+
+        # Sol — benim skorumum
+        my_txt = score_font.render(
+            f'{my_name}: {my_score:,} · {my_lines} satır'.replace(',', '.'),
+            True, UIColors.NEON_CYAN)
+        self.screen.blit(my_txt, my_txt.get_rect(
+            midleft=(score_panel_r.x + s(12), score_panel_r.centery)))
+
+        # Sağ — rakip skoru
+        opp_txt = score_font.render(
+            f'{opp_name}: {self.opponent_score:,} · {self.opponent_lines} satır'.replace(',', '.'),
+            True, UIColors.NEON_MAGENTA)
+        self.screen.blit(opp_txt, opp_txt.get_rect(
+            midright=(score_panel_r.right - s(12), score_panel_r.centery)))
+
+        # Butonlar — daha belirgin stiller
+        btn_w = s(140)
+        btn_h = s(48)
+        btn_gap = s(20)
+        btn_y = panel.y + s(228)
 
         rematch_r = pygame.Rect(cx - btn_w - btn_gap // 2, btn_y, btn_w, btn_h)
         exit_r = pygame.Rect(cx + btn_gap // 2, btn_y, btn_w, btn_h)
         mp = get_mouse_pos()
 
         _rs.draw_uniform_button(self.screen, rematch_r,
-                                t('rematch', 'Tekrar'),
+                                t('rematch', 'Tekrar Oyna'),
                                 sub_text='R', color_code=UIColors.NEON_GREEN,
                                 state='hover' if rematch_r.collidepoint(mp) else 'normal')
         _rs.draw_uniform_button(self.screen, exit_r,
@@ -2366,8 +2638,8 @@ class OnlinePvPGame:
         self._lobby_buttons.append({'rect': exit_r, 'action': 'exit_menu'})
 
         hint_f = _rs.get_font(s(12, minimum=9), bold=False)
-        ht = hint_f.render('[R] / [ESC]', True, _rs.text_muted)
-        self.screen.blit(ht, ht.get_rect(center=(cx, panel.bottom - s(22))))
+        ht = hint_f.render('[R] Tekrar  ·  [ESC] Çıkış', True, _rs.text_muted)
+        self.screen.blit(ht, ht.get_rect(center=(cx, panel.bottom - s(20))))
 
     # ─── Bağlantı Koptu ───
 

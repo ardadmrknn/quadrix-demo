@@ -170,14 +170,15 @@ class LobbyType:
 def generate_lobby_code(lobby_id: int) -> str:
     """Steam lobby ID'sinden 6 haneli, insan-dostu lobi kodu üret.
 
-    Kod, lobby_id'nin basit bir hash'inden türetilir.
-    Farklı lobby_id'ler aynı kodu üretebilir (düşük ihtimal),
-    ancak asıl katılım lobby_id üzerinden yapılır.
+    Kod, lobby_id'nin stabil bir hash'inden (hashlib) türetilir.
+    Python hash() her process'te farklı seed kullandığı için
+    hashlib.md5 tercih edilir — her iki tarafta aynı kodu üretir.
     """
     if not lobby_id:
         return '000000'
-    # 6 haneli deterministik kod
-    code = abs(hash(str(lobby_id))) % 1_000_000
+    import hashlib
+    digest = hashlib.md5(str(lobby_id).encode('utf-8')).hexdigest()
+    code = int(digest[:8], 16) % 1_000_000
     return f'{code:06d}'
 
 

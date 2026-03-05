@@ -246,6 +246,29 @@ def _setup_dll_functions(dll: ctypes.CDLL) -> None:
     except AttributeError:
         pass
 
+    # ISteamFriends_ActivateGameOverlay — Steam overlay paneli açma (Windows için kritik)
+    try:
+        dll.SteamAPI_ISteamFriends_ActivateGameOverlay.restype = None
+        dll.SteamAPI_ISteamFriends_ActivateGameOverlay.argtypes = [ctypes.c_void_p, ctypes.c_char_p]
+    except AttributeError:
+        pass
+
+    # ISteamFriends_ActivateGameOverlayToUser — belirli kullanıcıya overlay açma
+    try:
+        dll.SteamAPI_ISteamFriends_ActivateGameOverlayToUser.restype = None
+        dll.SteamAPI_ISteamFriends_ActivateGameOverlayToUser.argtypes = [
+            ctypes.c_void_p, ctypes.c_char_p, ctypes.c_uint64]
+    except AttributeError:
+        pass
+
+    # ISteamFriends_ActivateGameOverlayInviteDialog — davet penceresi açma
+    try:
+        dll.SteamAPI_ISteamFriends_ActivateGameOverlayInviteDialog.restype = None
+        dll.SteamAPI_ISteamFriends_ActivateGameOverlayInviteDialog.argtypes = [
+            ctypes.c_void_p, ctypes.c_uint64]
+    except AttributeError:
+        pass
+
     # ISteamUserStats_FindLeaderboard -> SteamAPICall_t (uint64)
     try:
         dll.SteamAPI_ISteamUserStats_FindLeaderboard.restype = ctypes.c_uint64
@@ -1828,3 +1851,77 @@ def fetch_global_scores(mode: str, limit: int = 5) -> list[dict[str, Any]]:
 def fetch_friend_scores(mode: str, limit: int = 5) -> list[dict[str, Any]]:
     """Arkadaş leaderboard skorlarını Steam SDK üzerinden al."""
     return fetch_leaderboard_entries(mode, request_type=_LB_REQUEST_FRIENDS, limit=limit)
+
+
+# ---------------------------------------------------------------------------
+# Steam Overlay API — Windows + macOS uyumlu
+# ---------------------------------------------------------------------------
+
+def activate_game_overlay(panel: str = 'Friends') -> bool:
+    """Steam oyun içi overlay'ı aç.
+
+    Args:
+        panel: Açılacak overlay paneli. Geçerli değerler:
+            'Friends', 'Community', 'Players', 'Settings',
+            'OfficialGameGroup', 'Stats', 'Achievements'
+
+    Returns:
+        True → overlay çağrısı başarılı, False → Steam mevcut değil.
+    """
+    if not is_available() or not _dll or not _isteam_friends:
+        return False
+    try:
+        panel_bytes = panel.encode('utf-8') if isinstance(panel, str) else panel
+        _dll.SteamAPI_ISteamFriends_ActivateGameOverlay(_isteam_friends, panel_bytes)
+        print(f"[Steam] Overlay açıldı: {panel}")
+        return True
+    except Exception as e:
+        print(f"[Steam] ActivateGameOverlay hatası: {e}")
+        return False
+
+
+def activate_game_overlay_invite_dialog(lobby_id: int) -> bool:
+    """Steam davet overlay dialogunu aç (lobby ID ile).
+
+    Bu fonksiyon doğrudan Steam API'nin ISteamFriends arayüzünü
+    kullanarak arkadaş davet penceresi açar — C++ bridge gerektirmez.
+
+    Args:
+        lobby_id: Davet edilecek lobinin Steam ID'si.
+
+    Returns:
+        True → başarılı.
+    """
+    if not is_available() or not _dll or not _isteam_friends:
+        return False
+    try:
+        _dll.SteamAPI_ISteamFriends_ActivateGameOverlayInviteDialog(
+            _isteam_friends, ctypes.c_uint64(lobby_id))
+        print(f"[Steam] Davet overlay açıldı: lobby={lobby_id}")
+        return True
+    except Exception as e:
+        print(f"[Steam] ActivateGameOverlayInviteDialog hatası: {e}")
+        return False
+
+
+def activate_game_overlay_to_user(action: str, steam_id: int) -> bool:
+    """Belirli bir kullanıcıya yönelik Steam overlay'ı aç.
+
+    Args:
+        action: 'steamid', 'chat', 'jointrade', 'stats', 'achievements', 'friendadd', 'friendremove', 'friendrequestaccept', 'friendrequestignore'
+        steam_id: Hedef kullanıcının Steam ID'si.
+
+    Returns:
+        True → başarılı.
+    """
+    if not is_available() or not _dll or not _isteam_friends:
+        return False
+    try:
+        action_bytes = action.encode('utf-8') if isinstance(action, str) else action
+        _dll.SteamAPI_ISteamFriends_ActivateGameOverlayToUser(
+            _isteam_friends, action_bytes, ctypes.c_uint64(steam_id))
+        print(f"[Steam] Overlay açıldı: {action} → {steam_id}")
+        return True
+    except Exception as e:
+        print(f"[Steam] ActivateGameOverlayToUser hatası: {e}")
+        return False
