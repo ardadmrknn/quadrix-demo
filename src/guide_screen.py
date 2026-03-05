@@ -1131,7 +1131,7 @@ class GuideScreen:
             self.back_hover = self._check_back_button_hover(pos)
         
         return None
-    
+
     def _check_tab_click(self, pos: Tuple[int, int]) -> Optional[int]:
         for i, rect in enumerate(self._tab_rects):
             if rect.collidepoint(pos):

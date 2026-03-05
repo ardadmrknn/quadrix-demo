@@ -2868,7 +2868,10 @@ def main():
     
     # Ekran geçiş efekti için state takibi
     _previous_state = state
-    
+    # Menü state'inden başlandığında basılı tutma tekrarı aktif
+    if state not in ('game', 'pvp', 'online_pvp'):
+        pygame.key.set_repeat(350, 80)
+
     # Geçiş tipleri (state çiftlerine göre)
     def _get_transition_type(from_state: str, to_state: str) -> str:
         """State geçişi için uygun efekt tipini belirle."""
@@ -2977,6 +2980,11 @@ def main():
                 duration = 350
             start_screen_transition(screen, None, duration_ms=duration, transition_type=transition_type)
             _previous_state = state
+            # Menü ekranlarında basılı tutma tekrarı aktif, oyunda devre dışı
+            if state in ('game', 'pvp', 'online_pvp'):
+                pygame.key.set_repeat(0)
+            else:
+                pygame.key.set_repeat(350, 80)
 
         handler = STATE_HANDLERS.get(state)
         if handler is None:
