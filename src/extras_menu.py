@@ -454,7 +454,7 @@ class ExtrasScreen:
             self.scroll_offset += (item_bottom - visible_bottom) + s(20)
             
         self._clamp_scroll()
-    
+
     def draw(self):
         """Ekstralar ekranını çiz - Modern Glassmorphism Grid Layout"""
         width, height = self.screen.get_size()
