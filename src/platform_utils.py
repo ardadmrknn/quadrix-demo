@@ -366,15 +366,15 @@ def is_fullscreen_toggle(key: int, mods: int, custom_key: int | None = None) -> 
     """Return True if a key event should toggle fullscreen.
 
     - custom_key: Kullanıcının ayarladığı tuş (settings'den gelir)
-    - Varsayılan: F12
+    - Varsayılan: F10
     - Alternatif: Alt/Option+Enter, macOS'ta Cmd+Enter
     """
     try:
         # Kullanıcının ayarladığı tuş
         if custom_key is not None and key == custom_key:
             return True
-        # Varsayılan F12
-        if key == pygame.K_F12:
+        # Varsayılan F10
+        if key == pygame.K_F10:
             return True
         # Alt+Enter veya Cmd+Enter (macOS)
         if key in (pygame.K_RETURN, pygame.K_KP_ENTER):

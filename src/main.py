@@ -272,6 +272,111 @@ GAME_MODE_INFOS = {
     }
 }
 
+
+def _maybe_recover_windows_display(screen, *, settings_manager=None):
+    """Windows'ta PrintScreen/focus-loss sonrası display'i debounce ile toparla.
+
+    Dönüş:
+        Aynı surface (değişmediyse) veya yeniden oluşturulmuş yeni display surface.
+    """
+    if current_platform != 'Windows' or screen is None:
+        return screen
+
+    state = getattr(
+        _maybe_recover_windows_display,
+        '_state',
+        {
+            'display_was_inactive': False,
+            'prtsc_was_down': False,
+            'pending_prtsc_recover_ms': -1,
+            'last_display_recover_ms': -10_000,
+        },
+    )
+
+    now_ms = pygame.time.get_ticks()
+    try:
+        is_active = bool(pygame.display.get_active())
+    except Exception:
+        is_active = True
+
+    focus_event_seen = False
+    for evt_name in ('WINDOWFOCUSGAINED', 'WINDOWRESTORED', 'WINDOWEXPOSED'):
+        evt_type = getattr(pygame, evt_name, None)
+        if evt_type is not None and pygame.event.peek(evt_type):
+            focus_event_seen = True
+            break
+
+    should_recover = False
+    if not is_active:
+        state['display_was_inactive'] = True
+    else:
+        if state['display_was_inactive']:
+            state['display_was_inactive'] = False
+            should_recover = True
+        if focus_event_seen:
+            should_recover = True
+
+    prtsc_down = False
+    k_prtsc = getattr(pygame, 'K_PRINTSCREEN', None)
+    if k_prtsc is not None:
+        try:
+            keys = pygame.key.get_pressed()
+            if 0 <= int(k_prtsc) < len(keys):
+                prtsc_down = bool(keys[int(k_prtsc)])
+        except Exception:
+            prtsc_down = False
+
+    if prtsc_down and not state['prtsc_was_down']:
+        state['pending_prtsc_recover_ms'] = now_ms + 220
+    state['prtsc_was_down'] = prtsc_down
+
+    if (
+        state['pending_prtsc_recover_ms'] > 0
+        and now_ms >= state['pending_prtsc_recover_ms']
+        and not state['prtsc_was_down']
+    ):
+        state['pending_prtsc_recover_ms'] = -1
+        should_recover = True
+
+    if should_recover and (now_ms - state['last_display_recover_ms'] >= 900):
+        state['last_display_recover_ms'] = now_ms
+
+        try:
+            width = max(800, int(screen.get_width() or 0))
+            height = max(600, int(screen.get_height() or 0))
+        except Exception:
+            width, height = 1024, 768
+
+        fullscreen = False
+        borderless = False
+        try:
+            if settings_manager is not None:
+                fullscreen = bool(settings_manager.get('fullscreen', False))
+                borderless = bool(settings_manager.get('borderless_fullscreen', True))
+            else:
+                fullscreen = bool(screen.get_flags() & pygame.FULLSCREEN)
+                borderless = fullscreen
+        except Exception:
+            fullscreen = False
+            borderless = False
+
+        try:
+            new_screen = create_display(
+                width,
+                height,
+                fullscreen=fullscreen,
+                resizable=True,
+                borderless=(borderless if fullscreen else False),
+            )
+            request_window_focus()
+            _maybe_recover_windows_display._state = state
+            return new_screen
+        except Exception:
+            pass
+
+    _maybe_recover_windows_display._state = state
+    return screen
+
 def _show_mode_intro_popup(screen, mode_key, settings_manager=None):
     """
     Oyun moduna girmeden önce bilgi penceresi gösterir (Blocking Loop).
@@ -307,6 +412,7 @@ def _show_mode_intro_popup(screen, mode_key, settings_manager=None):
     
     while running_popup:
         clock.tick(60)
+        screen = _maybe_recover_windows_display(screen, settings_manager=settings_manager)
         
         # Dinamik layout hesapla (resize durumuna karşı)
         width, height = screen.get_size()
@@ -496,6 +602,7 @@ def _show_zen_start_popup(screen, board_height=20, settings_manager=None):
     
     while running_popup:
         clock.tick(60)
+        screen = _maybe_recover_windows_display(screen, settings_manager=settings_manager)
         
         width, height = screen.get_size()
         popup_scale = _fullscreen_popup_scale(screen)
@@ -670,6 +777,7 @@ def _show_tutorial_prompt(screen):
     
     while running_popup:
         clock.tick(60)
+        screen = _maybe_recover_windows_display(screen)
         
         width, height = screen.get_size()
         popup_scale = _fullscreen_popup_scale(screen)
@@ -1119,6 +1227,16 @@ def main():
         pygame.quit()
         return
 
+    # Splash sırasında display yeniden kurulmuş olabilir; ana referansı senkronize et.
+    try:
+        _display_surface = pygame.display.get_surface()
+        if _display_surface is not None:
+            screen = _display_surface
+        elif getattr(splash, 'screen', None) is not None:
+            screen = splash.screen
+    except Exception:
+        pass
+
     # Splash screen'den sonra event kuyruğunu temizle
     pygame.event.clear()
     pygame.time.wait(50)
@@ -1242,7 +1360,7 @@ def main():
         print("  ✅ Ana Menü ve Ayarlar")
         print("  ✅ İstatistikler ve Liderlik Tablosu")
         print("  ✅ Yeniden Boyutlandırılabilir Pencere")
-        print("  ✅ Tam Ekran Modu (F12)")
+        print("  ✅ Tam Ekran Modu (F10)")
         print("  ✅ Sessiz Mod (M tuşu)")
         print("\n🎯 Oyun başlatılıyor...\n")
     
@@ -1393,12 +1511,12 @@ def main():
         try:
             controls = settings_manager.get_controls()
             fs_binding = controls.get('single_player', {}).get('fullscreen_toggle', {})
-            key_name = fs_binding.get('primary', 'f12') if isinstance(fs_binding, dict) else fs_binding
+            key_name = fs_binding.get('primary', 'f10') if isinstance(fs_binding, dict) else fs_binding
             if key_name and isinstance(key_name, str):
                 return pygame.key.key_code(key_name)
         except Exception:
             pass
-        return pygame.K_F12  # Varsayılan
+        return pygame.K_F10  # Varsayılan
 
     def _check_fullscreen_toggle(event):
         """Event'in fullscreen toggle olup olmadığını kontrol et."""
@@ -2983,6 +3101,15 @@ def main():
             pass
         # ────────────────────────────────────────────────────────────────
 
+        # Windows: PrintScreen / focus-loss sonrası bozulma ve pencere kaybına
+        # karşı display'i otomatik iyileştir (tüm pencere akışlarında ortak guard).
+        try:
+            maybe_screen = _maybe_recover_windows_display(screen, settings_manager=settings_manager)
+            if maybe_screen is not None and maybe_screen is not screen:
+                _apply_screen(maybe_screen)
+        except Exception:
+            pass
+
         # Pause menüsü gibi başka yerlerden ayarlar değişebiliyor.
         # Bu yüzden SettingsScreen cache'ini SettingsManager ile senkron tut.
         if settings_screen:
@@ -3037,6 +3164,15 @@ def main():
             pygame.mouse.set_visible(state not in ('game', 'pvp'))
 
         did_draw = bool(handler(delta_ms))
+
+        # Handler içinde (popup/modal) display yeniden oluşturulmuş olabilir.
+        # Ana screen referansını ve bağlı ekranları tek noktadan senkronize et.
+        try:
+            surface_now = pygame.display.get_surface()
+            if surface_now is not None and surface_now is not screen:
+                _apply_screen(surface_now)
+        except Exception:
+            pass
 
         # ── Menü Müzik Playlist Global Tick ────────────────────────────
         # update_music_playlist() daha önce yalnızca 'menu' ve 'settings'

@@ -92,7 +92,7 @@ except ImportError:
     def set_app_icon(path):
         pass
     def is_fullscreen_toggle(key, mods, custom_key=None):
-        return key == pygame.K_F12
+        return key == pygame.K_F10
 
 
 # ─────────────── Online PvP Durumları ───────────────
@@ -216,6 +216,11 @@ class OnlinePvPGame:
         self.opponent_score = 0
         self.opponent_lines = 0
         self.opponent_level = 1
+
+        # Rakip aktif parça (gerçek zamanlı ağ verisi)
+        self.opponent_piece_data: dict | None = None
+        self._opponent_piece_seq: int = 0   # Sıra numarası (out-of-order koruması)
+        self._my_piece_seq: int = 0         # Gönderilen sıra numarası
 
         # Zamanlama
         self.fall_timer = 0
@@ -390,12 +395,14 @@ class OnlinePvPGame:
         # Davet bekletilmişse şimdi aç
         if self._invite_after_lobby:
             self._invite_after_lobby = False
+            invite_ok = False
             try:
                 self.net.invite_friend()
+                invite_ok = True
             except Exception:
                 pass
-            # Windows'ta ek olarak doğrudan ctypes overlay dene
-            if sys.platform == 'win32' and ev.steam_id:
+            # C++ bridge başarısızsa ctypes overlay dene
+            if not invite_ok and ev.steam_id:
                 _activate_invite_dialog(ev.steam_id)
             self._status_msg = t('invite_sent', 'Steam davet penceresi açıldı')
             self._status_timer = 2.5
@@ -417,6 +424,9 @@ class OnlinePvPGame:
 
     def _on_member_left(self, ev: NetEvent):
         if ev.steam_id == self.net.opponent_steam_id:
+            # Rakip ayrılınca parça verisini temizle
+            self.opponent_piece_data = None
+            self._opponent_piece_seq = 0
             if self.online_state == OnlineState.PLAYING:
                 self.online_state = OnlineState.DISCONNECTED
                 self.game_over = True
@@ -480,8 +490,23 @@ class OnlinePvPGame:
         # Kod ile arama yapılıyorsa otomatik katıl
         if self._searching_by_code:
             self._searching_by_code = False
-            if count > 0:
-                # İlk eşleşen lobiye katıl
+            # Client-side kod doğrulaması — filtre çalışmamış olabilir
+            matched_lobby = None
+            for lobby in self._lobby_list:
+                if lobby.get('code', '') == self._search_code:
+                    matched_lobby = lobby
+                    break
+            if matched_lobby:
+                lobby_id = matched_lobby.get('id', 0)
+                if lobby_id:
+                    self.net.join_lobby(lobby_id)
+                    self._status_msg = t('joining_lobby', 'Lobiye katılınıyor...')
+                    self._status_timer = 2.0
+                else:
+                    self._status_msg = t('lobby_not_found_by_code', 'Bu kodla lobi bulunamadı')
+                    self._status_timer = 3.0
+            elif count > 0 and count == 1:
+                # Filtre çalışmış olabilir — tek sonuç varsa güven
                 lobby_id = self._lobby_list[0].get('id', 0)
                 if lobby_id:
                     self.net.join_lobby(lobby_id)
@@ -491,8 +516,8 @@ class OnlinePvPGame:
                     self._status_msg = t('lobby_not_found_by_code', 'Bu kodla lobi bulunamadı')
                     self._status_timer = 3.0
             else:
-                # Kod ile bulunamadı — tam ID olarak dene
-                self._try_direct_join_by_code(self._search_code)
+                self._status_msg = t('lobby_not_found_by_code', 'Bu kodla lobi bulunamadı')
+                self._status_timer = 3.0
             self._search_code = ''
             return
 
@@ -513,9 +538,9 @@ class OnlinePvPGame:
         self._lobby_list = []
         if self._searching_by_code:
             self._searching_by_code = False
-            # Arama başarısız — doğrudan ID ile dene
-            self._try_direct_join_by_code(self._search_code)
             self._search_code = ''
+            self._status_msg = t('lobby_not_found_by_code', 'Bu kodla lobi bulunamadı')
+            self._status_timer = 3.0
         else:
             self._status_msg = t('lobby_list_error', 'Lobi listesi alınamadı')
             self._status_timer = 3.0
@@ -622,12 +647,30 @@ class OnlinePvPGame:
                     continue
                 self._update_opponent_display(data)
 
+            elif msg_type == MsgType.PIECE_POSITION:
+                # Gerçek zamanlı rakip parça pozisyonu
+                seq = data.get('seq', 0)
+                try:
+                    seq = int(seq)
+                except (TypeError, ValueError):
+                    seq = 0
+                if seq >= self._opponent_piece_seq:
+                    self._opponent_piece_seq = seq
+                    self.opponent_piece_data = {
+                        'si': data.get('si', 0),
+                        'x': data.get('x', 0),
+                        'y': data.get('y', 0),
+                        'r': data.get('r', 0),
+                    }
+
             elif msg_type == MsgType.SCORE_UPDATE:
                 self.opponent_score = self._clamp_int(data.get('score', 0), 0, 999999, 'score')
                 self.opponent_lines = self._clamp_int(data.get('lines', 0), 0, 999999, 'opponent_lines')
                 self.opponent_level = self._clamp_int(data.get('level', 1), 0, 30, 'level')
 
             elif msg_type == MsgType.GAME_OVER:
+                # Rakip öldü — aktif parça verisini temizle
+                self.opponent_piece_data = None
                 # Rakip öldü — ama biz de ölmüş olabiliriz (race condition)
                 if self.game_over and self.winner == 'opponent':
                     # İkimiz de aynı anda öldük — skor karşılaştırması ile karar ver
@@ -752,6 +795,9 @@ class OnlinePvPGame:
         self.opponent_score = 0
         self.opponent_lines = 0
         self.opponent_level = 1
+        self.opponent_piece_data = None
+        self._opponent_piece_seq = 0
+        self._my_piece_seq = 0
 
     def _get_next_piece(self) -> Piece:
         """Sıradaki parçayı al."""
@@ -845,6 +891,10 @@ class OnlinePvPGame:
         self.opponent_score = data.get('score', self.opponent_score)
         self.opponent_lines = data.get('lines', self.opponent_lines)
         self.opponent_level = data.get('level', self.opponent_level)
+        # Board snapshot'tan gelen aktif parça bilgisi (fallback sync)
+        piece = data.get('piece')
+        if piece:
+            self.opponent_piece_data = piece
 
     # ============================================================
     #  HOLD (SAKLAMA) MEKANİĞİ
@@ -886,6 +936,9 @@ class OnlinePvPGame:
                 if self.my_board.is_valid_position(self.my_piece):
                     break
 
+        # Pozisyon düzeltmesinden SONRA gönder
+        self._send_piece_position()
+
     # ============================================================
     #  GHOST PIECE (HAYALET PARÇA)
     # ============================================================
@@ -915,12 +968,36 @@ class OnlinePvPGame:
                     row.append(None)
             compact_grid.append(row)
 
-        self.net.send_board_state({
+        data = {
             'grid': compact_grid,
             'score': self.my_board.score,
             'lines': self.my_board.lines_cleared,
             'level': self.my_board.level,
-        })
+        }
+
+        # Aktif parça bilgisini de ekle (fallback sync noktası)
+        if self.my_piece:
+            data['piece'] = {
+                'si': self.my_piece.shape_index,
+                'x': self.my_piece.x,
+                'y': self.my_piece.y,
+                'r': self.my_piece.rotation_state,
+            }
+
+        self.net.send_board_state(data)
+
+    def _send_piece_position(self):
+        """Aktif parçanın pozisyonunu rakibe gönder (gerçek zamanlı)."""
+        if not self.my_piece or not self._net_initialized:
+            return
+        self._my_piece_seq += 1
+        self.net.send_piece_position(
+            self.my_piece.shape_index,
+            self.my_piece.x,
+            self.my_piece.y,
+            self.my_piece.rotation_state,
+            self._my_piece_seq,
+        )
 
     # ============================================================
     #  OYUN GÜNCELLEMESİ
@@ -973,6 +1050,7 @@ class OnlinePvPGame:
                     if self.soft_dropping:
                         self.my_board.score += 1
                     self.lock_timer = 0
+                    self._send_piece_position()
 
         # Kilitleme gecikmesi — her frame kontrol et (fall_timer dışında)
         if self.my_board and self.my_piece:
@@ -1031,6 +1109,9 @@ class OnlinePvPGame:
         self.lock_timer = 0
         self.hold_used = False  # Yeni parçada hold tekrar kullanılabilir
 
+        # Yeni parça pozisyonunu hemen gönder
+        self._send_piece_position()
+
         # Oyun bitti mi?
         if not self.my_board.is_valid_position(self.my_piece):
             self.game_over = True
@@ -1066,6 +1147,7 @@ class OnlinePvPGame:
             if self.my_board.is_valid_position(self.my_piece, dx=dx):
                 self.my_piece.x += dx
                 self.lock_timer = 0
+                self._send_piece_position()
 
     # ============================================================
     #  INPUT İŞLEME
@@ -1132,7 +1214,7 @@ class OnlinePvPGame:
         key = event.key
         mods = getattr(event, 'mod', 0)
 
-        # Fullscreen toggle (F12 / Alt+Enter)
+        # Fullscreen toggle (F10 / Alt+Enter)
         if is_fullscreen_toggle(key, mods):
             return 'toggle_fullscreen'
 
@@ -1254,6 +1336,7 @@ class OnlinePvPGame:
                     if self.my_board.is_valid_position(self.my_piece, dy=1):
                         self.my_piece.y += 1
                         self.my_board.score += 1
+                        self._send_piece_position()
             elif key == pygame.K_SPACE:
                 self._hard_drop()
             elif key in (pygame.K_c, pygame.K_v, pygame.K_LSHIFT, pygame.K_RSHIFT):
@@ -1355,6 +1438,7 @@ class OnlinePvPGame:
                 if self.my_board.is_valid_position(self.my_piece, dx=dx):
                     self.my_piece.x += dx
                     self.lock_timer = 0
+                    self._send_piece_position()
                     try:
                         self.sound.play('rotate')
                     except Exception:
@@ -1364,6 +1448,7 @@ class OnlinePvPGame:
             self.my_piece.rotate(-direction)
         else:
             self.lock_timer = 0
+            self._send_piece_position()
             try:
                 self.sound.play('rotate')
             except Exception:
@@ -1378,6 +1463,7 @@ class OnlinePvPGame:
             self.my_piece.y += 1
             drop_distance += 1
         self.my_board.score += drop_distance * 2
+        self._send_piece_position()
         try:
             self.sound.play('drop')
         except Exception:
@@ -1424,9 +1510,7 @@ class OnlinePvPGame:
             pass
 
         # C++ bridge çalışmadıysa doğrudan ctypes overlay dene
-        if not invite_ok or sys.platform == 'win32':
-            # Windows'ta C++ bridge overlay'ı düzgün açamayabiliyor
-            # doğrudan Steam API çağrısı yap
+        if not invite_ok:
             lobby_id = self.net.lobby_id
             if lobby_id:
                 _activate_invite_dialog(lobby_id)
@@ -1684,7 +1768,7 @@ class OnlinePvPGame:
         # "Kod ile Katıl" metin giriş alanı (aktifse göster)
         if self._join_code_active:
             self._draw_join_code_input(btn_x, y_pos, btn_w, s, mouse_pos)
-            y_pos += s(130)
+            y_pos += s(158)
 
         # Herkese Açık Lobi bölümü başlığı
         y_pos += s(10)
@@ -1850,7 +1934,7 @@ class OnlinePvPGame:
     def _draw_join_code_input(self, x, y, btn_w, s, mouse_pos):
         """Kod ile Katıl metin giriş panelini çiz."""
         # Cam panel: giriş alanı + gönder butonu
-        panel_h = s(120)
+        panel_h = s(148)
         panel_r = pygame.Rect(x, y, btn_w, panel_h)
         draw_glass_panel(self.screen, panel_r, alpha=190,
                          border_color=UIColors.NEON_CYAN, glow=True)
@@ -2536,6 +2620,33 @@ class OnlinePvPGame:
                     cy = y + row * cell_size
                     pygame.draw.rect(self.screen, grid_color,
                                      (cx, cy, cell_size, cell_size), 1)
+
+        # ── Rakip aktif parça (gerçek zamanlı) ──
+        if self.opponent_piece_data:
+            try:
+                si = int(self.opponent_piece_data.get('si', -1))
+                px = int(self.opponent_piece_data.get('x', 0))
+                py = int(self.opponent_piece_data.get('y', 0))
+                rot = int(self.opponent_piece_data.get('r', 0)) % 4
+            except (TypeError, ValueError):
+                si = -1
+            if 0 <= si < len(SHAPES):
+                # Geçici Piece ile doğru rotasyonu uygula
+                temp = Piece(x=0, y=0, shape_index=si)
+                for _ in range(rot):
+                    temp.rotate(1)
+                shape = temp.get_shape()
+                piece_color = temp.color[:3]
+                for ri, row_data in enumerate(shape):
+                    for ci, cell in enumerate(row_data):
+                        if cell:
+                            draw_row = py + ri
+                            draw_col = px + ci
+                            if 0 <= draw_row < BOARD_HEIGHT and 0 <= draw_col < BOARD_WIDTH:
+                                bx = x + draw_col * cell_size
+                                by = y + draw_row * cell_size
+                                draw_jelly_block(self.screen, bx + 1, by + 1,
+                                                 cell_size - 2, piece_color)
 
     # ─── Game Over Overlay ───
 

@@ -103,6 +103,12 @@ class SplashScreen:
         self._custom_prompt = prompt_text
         self.clock = pygame.time.Clock()
 
+        # Windows PrintScreen / focus-loss recovery state
+        self._display_was_inactive = False
+        self._prtsc_was_down = False
+        self._pending_prtsc_recover_ms = -1
+        self._last_display_recover_ms = -10_000
+
         # Ekran boyutları
         self.screen_w, self.screen_h = screen.get_size()
         
@@ -128,6 +134,98 @@ class SplashScreen:
                 self.image = load_image(self.image_path, convert_alpha=True)
             except Exception:
                 self.image = None
+
+    def _recover_display_after_focus_loss(self, reason: str = '') -> bool:
+        """Windows'ta focus/screenshot sonrası splash display'ini yeniden kur."""
+        if sys.platform != 'win32':
+            return False
+
+        now_ms = pygame.time.get_ticks()
+        if now_ms - self._last_display_recover_ms < 900:
+            return False
+        self._last_display_recover_ms = now_ms
+
+        try:
+            width = int(self.screen.get_width()) if self.screen is not None else 0
+            height = int(self.screen.get_height()) if self.screen is not None else 0
+        except Exception:
+            width, height = 0, 0
+
+        width = max(800, width or 0)
+        height = max(600, height or 0)
+
+        fullscreen = False
+        borderless = False
+        try:
+            if self.settings_manager is not None:
+                fullscreen = bool(self.settings_manager.get('fullscreen', False))
+                borderless = bool(self.settings_manager.get('borderless_fullscreen', True))
+            else:
+                fullscreen = bool(self.screen and (self.screen.get_flags() & pygame.FULLSCREEN))
+                borderless = fullscreen
+        except Exception:
+            fullscreen = False
+            borderless = False
+
+        try:
+            from platform_utils import create_display, request_window_focus
+
+            self.screen = create_display(
+                width,
+                height,
+                fullscreen=fullscreen,
+                resizable=True,
+                borderless=(borderless if fullscreen else False),
+            )
+            self.screen_w, self.screen_h = self.screen.get_size()
+            request_window_focus()
+            return True
+        except Exception:
+            return False
+
+    def _update_windows_display_recovery(self, now: int) -> None:
+        """Windows için focus regain / PrintScreen sonrası otomatik recovery."""
+        if sys.platform != 'win32':
+            return
+
+        try:
+            is_active = bool(pygame.display.get_active())
+        except Exception:
+            is_active = True
+
+        focus_event_seen = False
+        for evt_name in ('WINDOWFOCUSGAINED', 'WINDOWRESTORED', 'WINDOWEXPOSED'):
+            evt_type = getattr(pygame, evt_name, None)
+            if evt_type is not None and pygame.event.peek(evt_type):
+                focus_event_seen = True
+                break
+
+        if not is_active:
+            self._display_was_inactive = True
+        else:
+            if self._display_was_inactive:
+                self._display_was_inactive = False
+                focus_event_seen = True
+            if focus_event_seen:
+                self._recover_display_after_focus_loss('focus_regain')
+
+        prtsc_down = False
+        k_prtsc = getattr(pygame, 'K_PRINTSCREEN', None)
+        if k_prtsc is not None:
+            try:
+                keys = pygame.key.get_pressed()
+                if 0 <= int(k_prtsc) < len(keys):
+                    prtsc_down = bool(keys[int(k_prtsc)])
+            except Exception:
+                prtsc_down = False
+
+        if prtsc_down and not self._prtsc_was_down:
+            self._pending_prtsc_recover_ms = now + 220
+        self._prtsc_was_down = prtsc_down
+
+        if self._pending_prtsc_recover_ms > 0 and now >= self._pending_prtsc_recover_ms and not self._prtsc_was_down:
+            self._pending_prtsc_recover_ms = -1
+            self._recover_display_after_focus_loss('printscreen')
 
     def run(self):
         """Run splashscreen loop, returns True if continue, False for quit"""
@@ -159,6 +257,8 @@ class SplashScreen:
                     if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
                         fade_out = True
                         exit_start = now
+
+            self._update_windows_display_recovery(now)
                         
             # Update animations
             elapsed = now - start_time

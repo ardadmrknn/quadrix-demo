@@ -84,19 +84,19 @@ def _build_tab_content(tab_key: str, sm, show_debug: bool = False) -> list[dict]
         items.append({
             'type': 'slider', 'key': 'das_delay',
             'loc_key': 'settings_das_delay',
-            'label_tr': 'DAS Gecikmesi', 'label_en': 'DAS Delay',
+            'label_tr': 'Basılı Tutma Gecikmesi', 'label_en': 'Hold Delay (DAS)',
             'min': 50, 'max': 300, 'step': 10, 'suffix': 'ms',
         })
         items.append({
             'type': 'slider', 'key': 'das_repeat',
             'loc_key': 'settings_das_repeat',
-            'label_tr': 'DAS Tekrar', 'label_en': 'DAS Repeat',
+            'label_tr': 'Basılı Tutma Kayma Hızı', 'label_en': 'Hold Move Speed (ARR)',
             'min': 10, 'max': 500, 'step': 5, 'suffix': 'ms',
         })
         items.append({
             'type': 'slider', 'key': 'soft_drop_speed',
             'loc_key': 'settings_soft_drop_speed',
-            'label_tr': 'Yumuşak Düşme Hızı', 'label_en': 'Soft Drop Speed',
+            'label_tr': 'Aşağı Tuşu Düşüş Hızı', 'label_en': 'Down Key Drop Speed',
             'min': 20, 'max': 100, 'step': 5, 'suffix': 'ms',
         })
 
@@ -454,6 +454,7 @@ class TabbedSettingsScreen:
         self._gamepad_bind_slot = 'primary'
         self._swallow_next_keydown = False
         self._keybind_slot_rects: list[dict | None] = []
+        self._help_icon_rects: list[tuple[pygame.Rect, str]] = []
 
         # ── Müzik modu seçicileri (music_selector) ──
         self._mode_music_overrides = self.settings_manager.get_mode_music_overrides()
@@ -2281,6 +2282,7 @@ class TabbedSettingsScreen:
         """Mevcut sekmenin içeriğini çiz."""
         self.option_rects = []
         self._keybind_slot_rects = []
+        self._help_icon_rects = []
         self._slider_bar_rects = {}
         row_h = 58
         section_h = 40
@@ -2343,6 +2345,8 @@ class TabbedSettingsScreen:
             self._settings_sb_thumb_rect = None
             self._settings_sb_container_rect = None
 
+        self._draw_help_tooltip(content_rect)
+
     def _draw_section_header(
         self, x: int, y: int, w: int, h: int, item: dict,
     ) -> None:
@@ -2386,7 +2390,13 @@ class TabbedSettingsScreen:
         max_label_w = int(rect.width * 0.42)
         label_font = retro_style.get_fitting_font(label, 22, max_label_w, bold=True)
         label_surf = label_font.render(label, True, label_color)
-        self.screen.blit(label_surf, (rect.x + 24, rect.centery - label_surf.get_height() // 2))
+        label_x = rect.x + 24
+        label_y = rect.centery - label_surf.get_height() // 2
+        self.screen.blit(label_surf, (label_x, label_y))
+
+        help_text = self._help_text_for_item(item)
+        if help_text:
+            self._draw_label_help_icon(rect, label_x, label_surf, help_text, selected)
 
         # Value
         if itype == 'toggle':
@@ -2402,6 +2412,110 @@ class TabbedSettingsScreen:
             return None
 
         return None
+
+    def _help_text_for_item(self, item: dict) -> str | None:
+        """Yardım ikonu için hover açıklama metnini döndür."""
+        key = str(item.get('key', '') or '')
+        if key == 'das_delay':
+            value = t('das_delay_desc')
+            return value if value != 'das_delay_desc' else 'Sağ/sol tuşunu basılı tutunca otomatik kayma başlamadan önceki bekleme süresi. Düşük değer daha hızlıdır.'
+        if key == 'das_repeat':
+            value = t('das_repeat_desc')
+            return value if value != 'das_repeat_desc' else 'Basılı tutma başladıktan sonra sağ/sol otomatik kaymanın tekrar hızı. Düşük değer daha hızlıdır.'
+        if key == 'soft_drop_speed':
+            value = t('soft_drop_desc')
+            return value if value != 'soft_drop_desc' else 'Aşağı tuşuna basılı tutarken parçanın düşme hızı. Düşük değer daha hızlıdır.'
+        return None
+
+    def _draw_label_help_icon(
+        self,
+        row_rect: pygame.Rect,
+        label_x: int,
+        label_surf: pygame.Surface,
+        help_text: str,
+        selected: bool,
+    ) -> None:
+        """Etiketin sağına soru işareti ikonu çiz ve hover alanını kaydet."""
+        icon_r = 9
+        icon_cx = label_x + label_surf.get_width() + 16 + icon_r
+        icon_cx = min(icon_cx, row_rect.x + int(row_rect.width * 0.48))
+        icon_cy = row_rect.centery
+        icon_rect = pygame.Rect(icon_cx - icon_r, icon_cy - icon_r, icon_r * 2, icon_r * 2)
+
+        base_color = (80, 160, 255) if selected else (100, 120, 150)
+        fill_alpha = 120 if selected else 90
+        pygame.draw.circle(self.screen, (*base_color, fill_alpha), (icon_cx, icon_cy), icon_r)
+        pygame.draw.circle(self.screen, (*base_color, 220), (icon_cx, icon_cy), icon_r, 1)
+
+        q_font = retro_style.get_font(14, bold=True)
+        q_surf = q_font.render('?', True, (235, 245, 255))
+        self.screen.blit(q_surf, q_surf.get_rect(center=(icon_cx, icon_cy + 1)))
+
+        self._help_icon_rects.append((icon_rect, help_text))
+
+    def _wrap_help_text(self, text: str, font, max_width: int) -> list[str]:
+        words = text.split()
+        if not words:
+            return [text]
+
+        lines: list[str] = []
+        current = words[0]
+        for word in words[1:]:
+            candidate = f'{current} {word}'
+            if font.size(candidate)[0] <= max_width:
+                current = candidate
+            else:
+                lines.append(current)
+                current = word
+        lines.append(current)
+        return lines
+
+    def _draw_help_tooltip(self, content_rect: pygame.Rect) -> None:
+        """? ikonuna hover edildiğinde açıklama tooltip'i çiz."""
+        if not self._help_icon_rects:
+            return
+
+        mouse_pos = get_mouse_pos()
+        hovered_rect = None
+        hovered_text = None
+        for icon_rect, text in self._help_icon_rects:
+            if icon_rect.collidepoint(mouse_pos):
+                hovered_rect = icon_rect
+                hovered_text = text
+                break
+
+        if hovered_rect is None or not hovered_text:
+            return
+
+        font = self.font_hint
+        max_text_w = min(420, max(240, int(content_rect.width * 0.45)))
+        lines = self._wrap_help_text(hovered_text, font, max_text_w)
+
+        line_h = font.get_height() + 3
+        tooltip_w = min(460, max(260, max(font.size(line)[0] for line in lines) + 24))
+        tooltip_h = max(42, len(lines) * line_h + 16)
+
+        screen_w, screen_h = self.screen.get_size()
+        tip_x = hovered_rect.right + 12
+        if tip_x + tooltip_w > screen_w - 10:
+            tip_x = hovered_rect.left - tooltip_w - 12
+        tip_y = hovered_rect.centery - tooltip_h // 2
+        tip_y = max(10, min(screen_h - tooltip_h - 10, tip_y))
+
+        tip_rect = pygame.Rect(tip_x, tip_y, tooltip_w, tooltip_h)
+        retro_style.draw_glass_panel(
+            self.screen,
+            tip_rect,
+            alpha=230,
+            border_color=(90, 170, 255),
+            glow=True,
+        )
+
+        text_y = tip_rect.y + 8
+        for line in lines:
+            line_surf = font.render(line, True, (225, 235, 250))
+            self.screen.blit(line_surf, (tip_rect.x + 12, text_y))
+            text_y += line_h
 
     def _draw_music_picker(self) -> None:
         width, height = self.screen.get_size()

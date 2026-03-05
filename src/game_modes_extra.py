@@ -5660,6 +5660,7 @@ class MysteryMode(Game):
         drill_locked = getattr(self, '_drill_movement_locked', False)
         piece = getattr(self, 'current_piece', None)
         is_drill_piece = piece and getattr(piece, 'drill', False)
+        time_capsule_keyboard_handled = False
         
         # Geri Sarma tuşu kontrolü (U tuşu) - normal gameplay sırasında
         for event in pygame.event.get():
@@ -5669,6 +5670,13 @@ class MysteryMode(Game):
                     rotate_key = self.control_bindings.get('rotate', pygame.K_UP)
                     if event.key == rotate_key:
                         # Döndürme engellendi, event'i yutuyoruz
+                        continue
+
+            # R tuşu: Zaman Kapsulu toggle (ilk basış kaydet, ikinci basış geri yükle)
+            if event.type == pygame.KEYDOWN and event.key == pygame.K_r:
+                if not self.game_over and not self.paused and not self.card_selection_active:
+                    if self._toggle_time_capsule():
+                        time_capsule_keyboard_handled = True
                         continue
             
             # B tuşunu yut - MysteryMode B'yi kendi update() metodunda yönetiyor
@@ -5688,12 +5696,6 @@ class MysteryMode(Game):
                 if not self.game_over and not self.paused:
                     if self._open_sniper_overlay():
                         continue
-            # T tuşu: Zaman Kapsulu kaydet
-            # R tuşu: Zaman Kapsulu toggle (ilk basış kaydet, ikinci basış geri yükle)
-            if event.type == pygame.KEYDOWN and event.key == pygame.K_r:
-                if not self.game_over and not self.paused and not self.card_selection_active:
-                    if self._toggle_time_capsule():
-                        continue
         
         # Gamepad action kontrolü (event loop dışında)
         if not self.game_over and not self.paused:
@@ -5701,7 +5703,7 @@ class MysteryMode(Game):
                 from gamepad_manager import gamepad_manager
                 if gamepad_manager and gamepad_manager.enabled:
                     # Zaman Kapsulu Toggle: save/restore actionlarından biri tetiklenirse tek akış çalışır
-                    if not self.card_selection_active:
+                    if not self.card_selection_active and not time_capsule_keyboard_handled:
                         tc_pressed = (
                             gamepad_manager.was_action_just_pressed('card_time_capsule_save')
                             or gamepad_manager.was_action_just_pressed('card_time_capsule_restore')
@@ -7621,38 +7623,6 @@ class MysteryMode(Game):
                 'board_texture_grid': copy.deepcopy(self.board.texture_grid),
                 'board_gold': copy.deepcopy(self.board.gold),
                 'board_owners': copy.deepcopy(self.board.owners),
-                'board_score': self.board.score,
-                'board_lines_cleared': self.board.lines_cleared,
-                'board_level': self.board.level,
-                'current_piece': copy.deepcopy(self.current_piece) if self.current_piece else None,
-                'next_piece_queue': copy.deepcopy(self.next_piece_queue),
-                'held_piece': copy.deepcopy(self.held_piece) if self.held_piece else None,
-                'can_hold': self.can_hold,
-                'combo': getattr(self.board, 'combo', 0),
-                # Parca akisini deterministik geri almak icin torba + RNG state
-                '_piece_bag': copy.deepcopy(getattr(self, '_piece_bag', [])),
-                '_piece_rng_state': getattr(getattr(self, '_piece_rng', None), 'getstate', lambda: None)(),
-                '_last_piece_identity': getattr(self, '_last_piece_identity', None),
-                '_last_piece_streak': getattr(self, '_last_piece_streak', 0),
-                # Kart efekt durumlarini kaydet
-                'tunnel_charges_remaining': getattr(self, 'tunnel_charges_remaining', 0),
-                'hammer_charges_remaining': getattr(self, 'hammer_charges_remaining', 0),
-                'bomb_master_charges': getattr(self, 'bomb_master_charges', 0),
-                '_sniper_charges': getattr(self, '_sniper_charges', 0),
-                'speed_effect_timer': getattr(self, 'speed_effect_timer', 0.0),
-                'speed_effect_multiplier': getattr(self, 'speed_effect_multiplier', 1.0),
-                'combo_aura_timer': getattr(self, 'combo_aura_timer', 0.0),
-                'combo_aura_bonus': getattr(self, 'combo_aura_bonus', 0),
-                'line_bonus_remaining': getattr(self, 'line_bonus_remaining', 0),
-                'line_bonus_amount': getattr(self, 'line_bonus_amount', 0),
-                '_line_clear_multiplier_remaining': getattr(self, '_line_clear_multiplier_remaining', 0),
-                '_line_clear_multiplier_value': getattr(self, '_line_clear_multiplier_value', 1.0),
-                'gravity_freeze_timer': getattr(self, 'gravity_freeze_timer', 0.0),
-                'time_warp_timer': getattr(self, 'time_warp_timer', 0.0),
-                '_armed_nova_clusters': getattr(self, '_armed_nova_clusters', 0),
-                # Perk durumlarini kaydet
-                'perk_manager_active': copy.deepcopy(getattr(self.perk_manager, 'active', {})) if hasattr(self, 'perk_manager') else {},
-                'phase_shift_uses_remaining': getattr(self, 'phase_shift_uses_remaining', 0)
             }
             self.time_capsule_saved = True
             
@@ -7707,52 +7677,6 @@ class MysteryMode(Game):
             self.board.texture_grid = data['board_texture_grid']
             self.board.gold = data['board_gold']
             self.board.owners = data['board_owners']
-            self.board.score = data['board_score']
-            self.board.lines_cleared = data['board_lines_cleared']
-            self.board.level = data['board_level']
-            self.current_piece = data['current_piece']
-            self.next_piece_queue = data['next_piece_queue']
-            self.held_piece = data['held_piece']
-            self.can_hold = data['can_hold']
-            if hasattr(self.board, 'combo'):
-                self.board.combo = data['combo']
-
-            # Parca akisini birebir geri yukle
-            self._piece_bag = data.get('_piece_bag', [])
-            self._last_piece_identity = data.get('_last_piece_identity', None)
-            self._last_piece_streak = int(data.get('_last_piece_streak', 0) or 0)
-            piece_rng_state = data.get('_piece_rng_state', None)
-            if piece_rng_state is not None and hasattr(self, '_piece_rng') and hasattr(self._piece_rng, 'setstate'):
-                try:
-                    self._piece_rng.setstate(piece_rng_state)
-                except Exception:
-                    pass
-            
-            # Kart efekt durumlarini geri yukle
-            self.tunnel_charges_remaining = data.get('tunnel_charges_remaining', 0)
-            self.hammer_charges_remaining = data.get('hammer_charges_remaining', 0)
-            self.bomb_master_charges = data.get('bomb_master_charges', 0)
-            self._sniper_charges = data.get('_sniper_charges', 0)
-            self.speed_effect_timer = data.get('speed_effect_timer', 0.0)
-            self.speed_effect_multiplier = data.get('speed_effect_multiplier', 1.0)
-            self.combo_aura_timer = data.get('combo_aura_timer', 0.0)
-            self.combo_aura_bonus = data.get('combo_aura_bonus', 0)
-            self.line_bonus_remaining = data.get('line_bonus_remaining', 0)
-            self.line_bonus_amount = data.get('line_bonus_amount', 0)
-            self._line_clear_multiplier_remaining = data.get('_line_clear_multiplier_remaining', 0)
-            self._line_clear_multiplier_value = data.get('_line_clear_multiplier_value', 1.0)
-            self.gravity_freeze_timer = data.get('gravity_freeze_timer', 0.0)
-            self.time_warp_timer = data.get('time_warp_timer', 0.0)
-            self._armed_nova_clusters = data.get('_armed_nova_clusters', 0)
-            
-            # Perk durumlarini geri yukle
-            if hasattr(self, 'perk_manager') and 'perk_manager_active' in data:
-                self.perk_manager.active = data['perk_manager_active']
-            self.phase_shift_uses_remaining = data.get('phase_shift_uses_remaining', 0)
-            
-            # Parçalara tema uygula
-            if self.current_piece:
-                self.apply_theme_to_pieces()
             
             # Zaman kapsulunu tüket (tek kullanım)
             self.time_capsule_available = False

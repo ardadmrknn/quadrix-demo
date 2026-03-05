@@ -96,12 +96,12 @@ class Game:
             if sm:
                 controls = sm.get_controls()
                 fs_binding = controls.get('single_player', {}).get('fullscreen_toggle', {})
-                key_name = fs_binding.get('primary', 'f12') if isinstance(fs_binding, dict) else fs_binding
+                key_name = fs_binding.get('primary', 'f10') if isinstance(fs_binding, dict) else fs_binding
                 if key_name and isinstance(key_name, str):
                     return pygame.key.key_code(key_name)
         except Exception:
             pass
-        return pygame.K_F12  # Varsayılan
+        return pygame.K_F10  # Varsayılan
 
     def _draw_hud_glass_panel(self, rect: pygame.Rect) -> None:
         """Sağ panelin temel cam panel stilini tek yerden uygula."""
