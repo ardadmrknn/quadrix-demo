@@ -1193,8 +1193,12 @@ class UserSelectionScreen:
         icon_rect = pygame.Rect(rect.x + s(16), rect.y + (rect.height - icon_size) // 2, icon_size, icon_size)
         pygame.draw.rect(self.screen, _darken_rgb(retro_style.success, 0.55), icon_rect, border_radius=12)
         pygame.draw.rect(self.screen, (255, 255, 255, 40), icon_rect, 2, border_radius=12)
-        plus_surface = self.font_title.render('+', True, WHITE)
-        self.screen.blit(plus_surface, plus_surface.get_rect(center=icon_rect.center))
+        # + işaretini pygame.draw.line ile çiz — cross-platform tutarlı merkez
+        _cx, _cy = icon_rect.center
+        _arm = s(14)
+        _lw = max(3, s(4))
+        pygame.draw.line(self.screen, WHITE, (_cx - _arm, _cy), (_cx + _arm, _cy), _lw)
+        pygame.draw.line(self.screen, WHITE, (_cx, _cy - _arm), (_cx, _cy + _arm), _lw)
         
         title = self.font_normal.render(t('user_create_new'), True, WHITE)
         text_x = icon_rect.right + s(16)
