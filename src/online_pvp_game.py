@@ -1293,10 +1293,6 @@ class OnlinePvPGame:
                     elif action == 'create_public':
                         if self._init_networking():
                             self.net.create_lobby(public=True)
-                            # Otomatik lobi listesini de yenile (maç bul işlevi)
-                            self._lobby_list_fetching = True
-                            self._pending_lobby_list.clear()
-                            self.net.request_lobby_list()
                     elif action == 'find_match':
                         if self._init_networking():
                             self._lobby_list_fetching = True
