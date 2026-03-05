@@ -3,13 +3,13 @@
 -ekran ve panellerin yerleşimi, anlaşılabilirliği artırılmalı. "online pvp" pencere adı ve açıklaması modernize, özel lobi ve herkese açık Lobi'ye girme işlevlerinin farklılaşması -mesela özel lobi girince kdo ekranı gelirken herkese açık lobide gerek yok (zaten maç bul ekranına düşüyor)-. **[YAPILDI: `_draw_lobby_menu()` tamamen yeniden yapılandırıldı — "Özel Lobi" ve "Herkese Açık" olmak üzere iki bağımsız bölüm (section header) oluşturuldu. Özel lobide 3 buton (Özel Lobi Oluştur / Kod İle Katıl / Arkadaş Davet Et), herkese açık lobide tek buton (Herkese Açık Maç Bul). Butonlar bölüm başlıkları altında gruplandı, glass panel arka planlı.]**
 -maç bul ekranını "herkese açık lobi" seçeneğinin kapsadığı bir işleve dönüştürmek. **[YAPILDI: Eski ayrı "Maç Bul" butonu kaldırıldı. "Herkese Açık Maç Bul" butonu artık hem public lobi oluşturup hem otomatik olarak mevcut lobi listesini çekiyor — tek buton ile hem oluşturma hem arama birleştirildi.]**
 
--"arkadaş davet et" işlevi ve steam overlay ekranını açma işlevleri Windows'ta çalışmıyor. macos kullanan kişi steam üzerinden davet edebilirken Windows kullanıcısı edemiyor. ek olarak Windows'ta -örn: shift+tab ile- steam overlay'ı açılmıyor. **[YAPILDI: `steam_integration.py`'ye 3 yeni ctypes fonksiyon bağlaması eklendi — `ActivateGameOverlay`, `ActivateGameOverlayInviteDialog`, `ActivateGameOverlayToUser`. Python wrapper fonksiyonları (`activate_game_overlay()`, `activate_game_overlay_invite_dialog()`, `activate_game_overlay_to_user()`) yazıldı. `_do_invite_friend()` ve `_on_lobby_created()` fonksiyonları güncellendi: önce C++ bridge dener, başarısız olursa Windows'ta ctypes ile direkt overlay çağrısı yapar.]**
+-"arkadaş davet et" işlevi ve steam overlay ekranını açma işlevleri Windows'ta çalışmıyor. macos kullanan kişi steam üzerinden davet edebilirken Windows kullanıcısı edemiyor. ek olarak Windows'ta -örn: shift+tab ile- steam overlay'ı açılmıyor. **[YAPILDI: `steam_integration.py`'ye 3 yeni ctypes fonksiyon bağlaması eklendi — `ActivateGameOverlay`, `ActivateGameOverlayInviteDialog`, `ActivateGameOverlayToUser`. Python wrapper fonksiyonları (`activate_game_overlay()`, `activate_game_overlay_invite_dialog()`, `activate_game_overlay_to_user()`) yazıldı. `_do_invite_friend()` ve `_on_lobby_created()` fonksiyonları güncellendi: önce C++ bridge dener, başarısız olursa Windows'ta ctypes ile direkt overlay çağrısı yapar.]** **[GÜNCELLEME 5 Mart: Çift çağrı sorunu giderildi — `_do_invite_friend()` ve `_on_lobby_created()` daha önce Windows'ta hem C++ bridge hem ctypes overlay'ı her zaman çağırıyordu. Şimdi yalnızca bridge başarısız olduğunda ctypes devreye giriyor (platform farkı kontrolü `sys.platform == 'win32'` kaldırıldı). GL compat layer sayesinde Windows'ta da overlay düzgün render ediliyor.]**
 
 
 
 * lobi\_and\_kod\_panel.png
 
--6 haneli kod ile lobi id'nin mantığı nedir? kod ile katıl ekranında 6 haneli kod hiçbir işe yaranmıyor, lobi id ile kod ile katıl ekranı çalışıyor. benim önerim lobi id mantığını kaldırıp 6 haneli kod üzerinden ilerlemek. ek olarak kodu/lobi id kopyala butonlarına ihtiyaç durumunu sorgula, gerek yok onlara. **[YAPILDI: `steam_networking.py` → `generate_lobby_code()` fonksiyonu `hashlib.md5` tabanlıya çevrildi (Python'un `hash()` fonksiyonu process başına rastgele seed kullandığı için aynı lobby_id farklı kodlar üretiyordu). Artık lobby_id'den deterministik 6 haneli kod üretiliyor ve her iki tarafta aynı sonuç çıkıyor. `_try_join_by_code()` sadeleştirildi: artık yalnızca 6 haneli kod kabul ediyor, doğrudan lobby ID girişi kaldırıldı. Waiting ekranında "Lobi ID Kopyala" butonu kaldırıldı, sadece "Kodu Kopyala" butonu bırakıldı. Lobi ID footer gösterimi kaldırıldı.]**
+-6 haneli kod ile lobi id'nin mantığı nedir? kod ile katıl ekranında 6 haneli kod hiçbir işe yaranmıyor, lobi id ile kod ile katıl ekranı çalışıyor. benim önerim lobi id mantığını kaldırıp 6 haneli kod üzerinden ilerlemek. ek olarak kodu/lobi id kopyala butonlarına ihtiyaç durumunu sorgula, gerek yok onlara. **[YAPILDI: `steam_networking.py` → `generate_lobby_code()` fonksiyonu `hashlib.md5` tabanlıya çevrildi (Python'un `hash()` fonksiyonu process başına rastgele seed kullandığı için aynı lobby_id farklı kodlar üretiyordu). Artık lobby_id'den deterministik 6 haneli kod üretiliyor ve her iki tarafta aynı sonuç çıkıyor. `_try_join_by_code()` sadeleştirildi: artık yalnızca 6 haneli kod kabul ediyor, doğrudan lobby ID girişi kaldırıldı. Waiting ekranında "Lobi ID Kopyala" butonu kaldırıldı, sadece "Kodu Kopyala" butonu bırakıldı. Lobi ID footer gösterimi kaldırıldı.]** **[GÜNCELLEME 5 Mart: Kod araması uçtan uca düzeltildi — (1) Özel lobi tipi `FRIENDS_ONLY` → `INVISIBLE` olarak değiştirildi: FRIENDS_ONLY lobiler `RequestLobbyList` string filtresiyle aranamıyordu, INVISIBLE lobiler Steam arama sonuçlarında filtre ile bulunabiliyor. (2) `_on_lobby_list_complete()` içine client-side kod doğrulaması eklendi: dönen sonuçlar arasında `lobby_code` metadata eşleşmesi aranıyor (blind first-match kaldırıldı). (3) `_on_lobby_list_error()` düzeltildi: 6 haneli kodu doğrudan lobby ID olarak deneme hatası kaldırıldı. (4) `_draw_join_code_input()` panel yüksekliği `s(120)` → `s(148)` artırıldı — submit butonu panelden taşıyordu, `y_pos` artışı `s(130)` → `s(158)` olarak güncellendi.]**
 
 
 
@@ -53,6 +53,19 @@
 > - **Risk:** 30-100ms gecikme özellikle hard drop anlarında "atlama" etkisi yaratabilir, bu nedenle interpolasyon/smoothing kritiktir.
 > - **Öncelik:** Oynanabilirliği doğrudan etkilemediği için orta-düşük öncelikli sayılabilir; ancak "polish" kategorisinde deneyimi ciddi artırır.
 
+**[YAPILDI 5 Mart: Gerçek zamanlı rakip parça gösterimi implemente edildi.]**
+
+> **Uygulama Detayları:**
+> - `MsgType.PIECE_POSITION = 'piece_pos'` eklendi (`steam_networking.py`).
+> - `send_piece_position(shape_index, x, y, rotation, seq)` metodu eklendi — ~40 byte, unreliable P2P.
+> - `_send_piece_position()` metodu `online_pvp_game.py`'ye eklendi, şu olaylarda çağrılıyor: yatay hareket, rotasyon (wall kick dahil), soft drop, hard drop, hold swap, yerçekimi düşüşü, yeni parça spawn.
+> - Sequence number (`_my_piece_seq` / `_opponent_piece_seq`) ile out-of-order mesaj koruması.
+> - `_process_messages()` içinde `PIECE_POSITION` mesaj tipi işleniyor: seq doğrulaması + `opponent_piece_data` dict güncelleme.
+> - `_update_opponent_display()` güncellendi: board snapshot'taki `piece` verisi de fallback olarak alınıyor.
+> - `_send_board_snapshot()` güncellendi: aktif parça bilgisi (`si`, `x`, `y`, `r`) board snapshot'a dahil ediliyor (fallback sync noktası).
+> - `_draw_opponent_board()` güncellendi: `opponent_piece_data` varsa geçici `Piece` objesi oluşturup doğru rotasyonu uygulayarak jelly blok stiliyle çiziyor.
+> - Rakip ayrıldığında ve game over mesajı geldiğinde `opponent_piece_data = None` ile temizleniyor.
+
 
 
 * player\_vs\_ekran.png
@@ -73,5 +86,5 @@
 
 
 
-\-ÖNEMLİ! steam oyun içi overlay ekranı mantığını Windows için çöz, bahsettiğim gibi çalışmıyor amk windows'ta **[YAPILDI: `steam_integration.py` → `_setup_dll_functions()` içine `SteamAPI_ISteamFriends_ActivateGameOverlay`, `SteamAPI_ISteamFriends_ActivateGameOverlayToUser` ve `SteamAPI_ISteamFriends_ActivateGameOverlayInviteDialog` ctypes tanımlamaları eklendi. 3 yeni Python wrapper fonksiyonu (`activate_game_overlay`, `activate_game_overlay_invite_dialog`, `activate_game_overlay_to_user`) dışa aktarıldı. `online_pvp_game.py`'de arkadaş davet ve lobi oluşturma akışları güncellendi: C++ bridge başarısız olduğunda Windows'ta direkt ctypes ile Steam overlay açılabiliyor.]**
+\-ÖNEMLİ! steam oyun içi overlay ekranı mantığını Windows için çöz, bahsettiğim gibi çalışmıyor amk windows'ta **[YAPILDI: `steam_integration.py` → `_setup_dll_functions()` içine `SteamAPI_ISteamFriends_ActivateGameOverlay`, `SteamAPI_ISteamFriends_ActivateGameOverlayToUser` ve `SteamAPI_ISteamFriends_ActivateGameOverlayInviteDialog` ctypes tanımlamaları eklendi. 3 yeni Python wrapper fonksiyonu (`activate_game_overlay`, `activate_game_overlay_invite_dialog`, `activate_game_overlay_to_user`) dışa aktarıldı. `online_pvp_game.py`'de arkadaş davet ve lobi oluşturma akışları güncellendi: C++ bridge başarısız olduğunda Windows'ta direkt ctypes ile Steam overlay açılabiliyor.]** **[GÜNCELLEME 5 Mart: `gl_compat.py` OpenGL uyumluluk katmanı ile Steam overlay Windows'ta tam çalışıyor — Pygame'in varsayılan software renderer'ı (GDI) yerine `pygame.OPENGL` flag'i ile D3D/GL hook'u etkinleştirildi. `IsOverlayEnabled: True` 0.2sn içinde onaylandı.]**
 

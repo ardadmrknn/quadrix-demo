@@ -200,6 +200,7 @@ class MsgType:
     BOARD_STATE     = 'board_state'
     SCORE_UPDATE    = 'score_update'
     ELIMINATED      = 'eliminated'
+    PIECE_POSITION  = 'piece_pos'    # Aktif parça pozisyonu (gerçek zamanlı)
 
 
 # ---------- Ana Sınıf ----------
@@ -330,14 +331,19 @@ class SteamNetworking:
             if public:
                 self._bridge_instance.create_public_lobby(max_members)
             else:
-                # Özel lobi: FriendsOnly (arkadaşlar görebilir, ID ile katılım mümkün)
-                # Bu sayede hem Steam davet hem de lobi kodu ile katılım çalışır.
+                # Özel lobi: Invisible (arama sonuçlarında filtre ile bulunabilir,
+                # ancak arkadaş listesinde görünmez). Bu sayede hem Steam davet
+                # hem de lobi kodu ile katılım çalışır.
                 try:
                     self._bridge_instance.create_lobby_with_type(
-                        LobbyType.FRIENDS_ONLY, max_members)
+                        LobbyType.INVISIBLE, max_members)
                 except (AttributeError, TypeError):
-                    # C++ bridge eski sürüm — fallback
-                    self._bridge_instance.create_lobby(max_members)
+                    # C++ bridge eski sürüm — fallback: FriendsOnly
+                    try:
+                        self._bridge_instance.create_lobby_with_type(
+                            LobbyType.FRIENDS_ONLY, max_members)
+                    except (AttributeError, TypeError):
+                        self._bridge_instance.create_lobby(max_members)
             print(f"[SteamNet] Lobi oluşturuluyor... (public={public})")
         except Exception as e:
             print(f"[SteamNet] create_lobby hatası: {e}")
@@ -483,6 +489,18 @@ class SteamNetworking:
         """Tahta durumunu gönder (unreliable — kayıp packet önemsiz)."""
         board_data['type'] = MsgType.BOARD_STATE
         self.send(board_data, reliable=False, channel=CHANNEL_STATE)
+
+    def send_piece_position(self, shape_index: int, x: int, y: int,
+                            rotation: int, seq: int):
+        """Aktif parça pozisyonunu gönder (unreliable, düşük gecikme)."""
+        self.send({
+            'type': MsgType.PIECE_POSITION,
+            'si': shape_index,
+            'x': x,
+            'y': y,
+            'r': rotation,
+            'seq': seq,
+        }, reliable=False, channel=CHANNEL_STATE)
 
     def send_score_update(self, score: int, lines: int, level: int):
         """Skor güncellemesi gönder."""

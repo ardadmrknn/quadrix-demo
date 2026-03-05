@@ -22,7 +22,7 @@ DEFAULT_CONTROLS = {
         'rotate': {'primary': 'up', 'secondary': 'w'},
         'hold': {'primary': 'c', 'secondary': ''},
         'pause': {'primary': 'p', 'secondary': ''},
-        'fullscreen_toggle': {'primary': 'f12', 'secondary': ''},
+        'fullscreen_toggle': {'primary': 'f10', 'secondary': ''},
     },
     'pvp': {
         'player1': {
@@ -731,4 +731,16 @@ class SettingsManager:
                                     merged['gamepad'][key][slot] = int(slot_value)
                     elif isinstance(value, (str, int, float, bool)):
                         merged['gamepad'][key] = value
+
+        # Steam screenshot (F12) ile çakışmayı önlemek için eski varsayılanı
+        # (primary=f12, secondary boş) otomatik olarak F10'a geçir.
+        try:
+            fs = merged.get('single_player', {}).get('fullscreen_toggle', {})
+            if isinstance(fs, dict):
+                primary = str(fs.get('primary', '')).strip().lower()
+                secondary = str(fs.get('secondary', '')).strip().lower()
+                if primary == 'f12' and secondary in ('', 'none'):
+                    fs['primary'] = 'f10'
+        except Exception:
+            pass
         return merged

@@ -27,6 +27,7 @@ def _make_pygame_stub():
     pg.VIDEORESIZE = 256
     pg.KMOD_META = 1024
     pg.KMOD_ALT = 256
+    pg.K_F10 = 300
     pg.K_F12 = 301
     pg.K_RETURN = 13
     pg.K_KP_ENTER = 271
@@ -96,7 +97,7 @@ else:
     # Başka testlerin bıraktığı stub eksik attribute içerebilir; yoksaları ekle.
     _existing_pg = sys.modules["pygame"]
     for _attr in ("FULLSCREEN", "NOFRAME", "DOUBLEBUF", "HWSURFACE", "RESIZABLE",
-                  "VIDEORESIZE", "KMOD_META", "KMOD_ALT", "K_F12", "K_RETURN",
+                  "VIDEORESIZE", "KMOD_META", "KMOD_ALT", "K_F10", "K_F12", "K_RETURN",
                   "K_KP_ENTER", "KMOD_CTRL", "Surface", "display", "error",
                   "font", "mixer"):
         if not hasattr(_existing_pg, _attr):
