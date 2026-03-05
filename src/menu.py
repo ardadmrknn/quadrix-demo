@@ -3366,7 +3366,8 @@ class Menu:
                 import steam_integration as _si
                 current_steam_id = str(_si.get_steam_id_str() or '').strip()
                 if current_steam_id and current_steam_id == user_steam_id:
-                    steam_avatar_bitmap = self._get_steam_header_avatar_bitmap(max(32, size - 24))
+                    _inner_r = (size // 2 - 4)
+                    steam_avatar_bitmap = self._get_steam_header_avatar_bitmap(max(32, _inner_r * 2))
             except Exception:
                 pass
         # steam_avatar_bitmap None ise imzaya URL dahil etme; eski önbellek yüzeyi dönmesin.
@@ -3513,25 +3514,32 @@ class Menu:
 
         # 1. Önce dolu arka plan dairesi — accent_color ile
         bg_surf = pygame.Surface((size, size), pygame.SRCALPHA)
-        pygame.draw.circle(bg_surf, (*accent_color, 240), (center, center), radius)
+        pygame.draw.circle(bg_surf, (*accent_color, 255), (center, center), radius)
         surface.blit(bg_surf, (0, 0))
 
-        # 2. Hafif parlama (içe doğru beyaz kenar)
-        pygame.draw.circle(surface, (255, 255, 255, 22), (center, center), radius)
-
-        # 3. Avatar bitmap
-        avatar_size = max(32, size - 24)
-        avatar_bitmap = steam_avatar_bitmap if steam_avatar_bitmap is not None else self._resolve_avatar_bitmap(avatar_value, avatar_size)
-        if avatar_bitmap:
+        # 2. Avatar bitmap (accent_color arka planının üzerine çizilir)
+        # avatar_size = radius * 2 ile dairenin tam içini kapla (taşma yok — mask ile kesilir)
+        avatar_size = radius * 2
+        raw_bitmap = steam_avatar_bitmap if steam_avatar_bitmap is not None else self._resolve_avatar_bitmap(avatar_value, avatar_size)
+        if raw_bitmap:
+            # Gelen bitmap farklı boyuttaysa (ör. Steam) yeniden ölçekle
+            bw, bh = raw_bitmap.get_size()
+            if bw != avatar_size or bh != avatar_size:
+                raw_bitmap = pygame.transform.smoothscale(raw_bitmap, (avatar_size, avatar_size))
+            # BLEND_RGBA_MULT için kaynak yüzeyin SRCALPHA olması gerekir
+            if raw_bitmap.get_flags() & pygame.SRCALPHA == 0:
+                tmp = pygame.Surface((avatar_size, avatar_size), pygame.SRCALPHA)
+                tmp.blit(raw_bitmap, (0, 0))
+                raw_bitmap = tmp
             masked = pygame.Surface((avatar_size, avatar_size), pygame.SRCALPHA)
             mask = pygame.Surface((avatar_size, avatar_size), pygame.SRCALPHA)
-            cut_r = max(2, avatar_size // 2 - 2)
+            cut_r = radius
             pygame.draw.circle(mask, (255, 255, 255, 255), (avatar_size // 2, avatar_size // 2), cut_r)
-            masked.blit(avatar_bitmap, (0, 0))
+            masked.blit(raw_bitmap, (0, 0))
             masked.blit(mask, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
             surface.blit(masked, masked.get_rect(center=(center, center)))
 
-        # 4. Dış rim: accent rengi + neon
+        # 3. Dış rim: accent rengi + neon
         rim_color = accent_color if accent_color else UIColors.NEON_CYAN
         pygame.draw.circle(surface, (*rim_color, 230), (center, center), radius, width=3)
         pygame.draw.circle(surface, (*UIColors.NEON_CYAN, 120), (center, center), radius + 1, width=2)

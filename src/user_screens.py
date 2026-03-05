@@ -1243,14 +1243,33 @@ class UserSelectionScreen:
         badge_rect = pygame.Rect(rect.x + s(30), rect.y + s(110), s(120), s(120))
         badge_center = badge_rect.center
         badge_radius = badge_rect.width // 2
-        pygame.draw.circle(self.screen, (20, 30, 60), badge_center, badge_radius)
-        pygame.draw.circle(self.screen, retro_style.primary, badge_center, badge_radius, s(2))
+        raw_avatar_color = user_data.get('avatar_color', (100, 150, 255))
+        if isinstance(raw_avatar_color, (list, tuple)) and len(raw_avatar_color) >= 3:
+            badge_bg_color = tuple(int(max(0, min(255, c))) for c in raw_avatar_color[:3])
+        else:
+            badge_bg_color = (100, 150, 255)
+        # Dış glow halkası — dıştan içe azalan alpha (i=1 en dış, en soluk)
+        glow_color = tuple(min(255, c + 40) for c in badge_bg_color)
+        for i in range(1, 4):
+            glow_alpha = i * 15  # i=1→15, i=2→30, i=3→45 (içe doğru yoğunlaşır)
+            gs = badge_radius * 2 + (4 - i) * 8
+            glow_surf = pygame.Surface((gs, gs), pygame.SRCALPHA)
+            pygame.draw.circle(glow_surf, (*glow_color, glow_alpha),
+                               (gs // 2, gs // 2), badge_radius + (4 - i) * 3)
+            self.screen.blit(glow_surf, glow_surf.get_rect(center=badge_center))
+        pygame.draw.circle(self.screen, badge_bg_color, badge_center, badge_radius)
+        pygame.draw.circle(self.screen, tuple(min(255, c + 60) for c in badge_bg_color), badge_center, badge_radius, s(3))
+        # Avatar boyutu daire iç çapıyla eşleşmeli (badge_radius * 2)
+        avatar_diameter = badge_radius * 2
         is_active_profile = (username == self.user_manager.get_current_user())
         avatar_surface = None
         if self._should_use_steam_avatar_for_user(user_data, is_active_profile):
-            avatar_surface = self._get_steam_avatar_surface(s(96))
+            avatar_surface = self._get_steam_avatar_surface(avatar_diameter)
         if avatar_surface is None:
-            avatar_surface = self._get_avatar_surface(user_data.get('avatar', '__default__'), s(96))
+            avatar_surface = self._get_avatar_surface(user_data.get('avatar', '__default__'), avatar_diameter)
+        # Boyut uyumsuzluğuna karşı güvenlik ölçeği
+        if avatar_surface.get_width() != avatar_diameter:
+            avatar_surface = pygame.transform.smoothscale(avatar_surface, (avatar_diameter, avatar_diameter))
         self.screen.blit(avatar_surface, avatar_surface.get_rect(center=badge_center))
 
         button_width = s(220)
