@@ -28,57 +28,84 @@ from typing import Any, Callable
 
 _bridge = None
 _bridge_available = False
+_bridge_import_attempted = False
+
+# Windows: os.add_dll_directory() dönüş değerleri (context/handle objeleri) burada
+# saklanır. Fonksiyon-local bir listede olsalardı GC tarafından geri alınabilirler;
+# module-global tutarak DLL arama yolunun canlı kalması garanti edilir.
+_dll_dirs: list[Any] = []
+
 
 def _try_import_bridge():
-    """C++ köprü modülünü yükle."""
-    global _bridge, _bridge_available
+    """C++ köprü modülünü yükle (lazy — yalnızca SteamNetworking.init() içinden çağrılır)."""
+    global _bridge, _bridge_available, _bridge_import_attempted
+    _bridge_import_attempted = True
+
     project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    tried_paths: list[str] = []
 
     # steam_api64.dll / libsteam_api.dylib arama yoluna DLL dizinlerini ekle
     # (bridge modülü link-time'da bu DLL'e bağımlı)
-    _dll_dirs_added: list[Any] = []
     if sys.platform == 'win32':
-        dll_search_dirs = []
+        dll_search_dirs: list[str] = []
         # PyInstaller bundle
         if getattr(sys, '_MEIPASS', None):
-            dll_search_dirs.append(sys._MEIPASS)
+            dll_search_dirs.append(str(sys._MEIPASS))
         # Proje kökü
         dll_search_dirs.append(project_root)
         # dll/win64 alt dizini
         dll_search_dirs.append(os.path.join(project_root, 'dll', 'win64'))
         for d in dll_search_dirs:
+            tried_paths.append(d)
             if os.path.isdir(d):
                 try:
-                    _dll_dirs_added.append(os.add_dll_directory(d))
+                    # handle module-global listede saklanır — GC'den korunur
+                    _dll_dirs.append(os.add_dll_directory(d))
                 except OSError:
                     pass
     elif sys.platform == 'darwin':
-        for sub in ('dll/osx', '.'):
-            d = os.path.join(project_root, sub)
-            if os.path.isdir(d) and d not in os.environ.get('DYLD_LIBRARY_PATH', ''):
-                os.environ['DYLD_LIBRARY_PATH'] = d + ':' + os.environ.get('DYLD_LIBRARY_PATH', '')
+        # PyInstaller frozen bundle için açık aday yollar; deterministik sırada sys.path'e eklenir
+        candidates: list[str] = []
+        meipass = getattr(sys, '_MEIPASS', None)
+        if meipass:
+            candidates.append(os.path.normpath(os.path.join(meipass, '..', 'Frameworks')))
+            candidates.append(os.path.normpath(os.path.join(meipass, '..', 'MacOS')))
+            candidates.append(str(meipass))
+        candidates.append(os.path.join(project_root, 'dll', 'osx'))
+        candidates.append(project_root)
+        for d in candidates:
+            tried_paths.append(d)
+            if os.path.isdir(d):
+                if d not in sys.path:
+                    sys.path.insert(0, d)
+                dyld = os.environ.get('DYLD_LIBRARY_PATH', '')
+                if d not in dyld:
+                    os.environ['DYLD_LIBRARY_PATH'] = d + ':' + dyld
 
     try:
         import steam_net_bridge as snb
         _bridge = snb
         _bridge_available = True
         return True
-    except ImportError:
+    except Exception as exc:
         # Proje kökünden de dene (build sonrası .pyd burada olabilir)
         if project_root not in sys.path:
             sys.path.insert(0, project_root)
+            tried_paths.append(project_root + ' (sys.path fallback)')
         try:
             import steam_net_bridge as snb
             _bridge = snb
             _bridge_available = True
             return True
-        except ImportError:
-            print("[SteamNet] steam_net_bridge.pyd bulunamadi. Derleme gerekli.")
+        except Exception as exc2:
+            print(f"[SteamNet] steam_net_bridge yuklenemedi: {exc2}")
+            print(f"           Denenen yollar: {tried_paths}")
             print("           steamworks/steam_net_bridge/build.bat calistirin.")
             _bridge_available = False
             return False
 
-_try_import_bridge()
+# NOT: _try_import_bridge() artık import zamanında OTOMATİK çağrılmıyor.
+# Bridge yüklemesi YALNIZCA SteamNetworking.init() içinde (lazy) gerçekleşir.
 
 
 # ---------- Event ve Message tipleri ----------
@@ -189,6 +216,9 @@ class SteamNetworking:
         messages = net.get_messages()
     """
 
+    # Arka arkaya bu kadar exception olursa networking devre dışı bırakılır
+    _TICK_ERROR_THRESHOLD: int = 5
+
     def __init__(self):
         self._bridge_instance = None
         self._initialized = False
@@ -201,10 +231,13 @@ class SteamNetworking:
         self._lobby_id: int = 0
         self._opponent_name: str = ''
         self._state: str = 'idle'  # idle, lobby, waiting, playing
+        self._tick_consecutive_errors: int = 0  # Ardışık tick() hata sayacı
 
     @property
     def available(self) -> bool:
-        """C++ bridge mevcut mu?"""
+        """C++ bridge mevcut mu? Henüz denenmemişse lazy import tetikler."""
+        if not _bridge_import_attempted:
+            _try_import_bridge()
         return _bridge_available
 
     @property
@@ -237,12 +270,21 @@ class SteamNetworking:
 
     @property
     def in_lobby(self) -> bool:
-        return self._bridge_instance is not None and self._bridge_instance.is_in_lobby()
+        if self._bridge_instance is not None:
+            try:
+                return self._bridge_instance.is_in_lobby()
+            except Exception:
+                pass
+        return False
 
     # ============ Lifecycle ============
 
     def init(self) -> bool:
         """Steam networking başlat. SteamAPI_Init() zaten çağrılmış olmalı."""
+        global _bridge_available, _bridge_import_attempted
+        # Lazy import: bridge yalnızca ilk init() çağrısında yüklenir
+        if not _bridge_import_attempted:
+            _try_import_bridge()
         if not _bridge_available:
             print("[SteamNet] C++ bridge mevcut değil.")
             return False
@@ -254,15 +296,23 @@ class SteamNetworking:
                 self._initialized = True
                 self._my_steam_id = self._bridge_instance.get_my_steam_id()
                 print(f"[SteamNet] Başlatıldı. Steam ID: {self._my_steam_id}")
+            else:
+                print("[SteamNet] init() False döndürdü — bridge instance sıfırlanıyor")
+                self._bridge_instance = None
             return ok
         except Exception as e:
             print(f"[SteamNet] init hatası: {e}")
+            import traceback; traceback.print_exc()
+            self._bridge_instance = None
             return False
 
     def shutdown(self):
         """Temizle."""
         if self._bridge_instance:
-            self._bridge_instance.leave_lobby()
+            try:
+                self._bridge_instance.leave_lobby()
+            except Exception as e:
+                print(f"[SteamNet] shutdown leave_lobby hatası: {e}")
             self._bridge_instance = None
         self._initialized = False
         self._state = 'idle'
@@ -273,34 +323,44 @@ class SteamNetworking:
         """Yeni lobi oluştur. Sonuç poll_events() ile gelir."""
         if not self._bridge_instance:
             return
-        self._state = 'lobby'
-        self._is_host = True
-        if public:
-            self._bridge_instance.create_public_lobby(max_members)
-        else:
-            # Özel lobi: FriendsOnly (arkadaşlar görebilir, ID ile katılım mümkün)
-            # Bu sayede hem Steam davet hem de lobi kodu ile katılım çalışır.
-            try:
-                self._bridge_instance.create_lobby_with_type(
-                    LobbyType.FRIENDS_ONLY, max_members)
-            except (AttributeError, TypeError):
-                # C++ bridge eski sürüm — fallback
-                self._bridge_instance.create_lobby(max_members)
-        print(f"[SteamNet] Lobi oluşturuluyor... (public={public})")
+        try:
+            self._state = 'lobby'
+            self._is_host = True
+            if public:
+                self._bridge_instance.create_public_lobby(max_members)
+            else:
+                # Özel lobi: FriendsOnly (arkadaşlar görebilir, ID ile katılım mümkün)
+                # Bu sayede hem Steam davet hem de lobi kodu ile katılım çalışır.
+                try:
+                    self._bridge_instance.create_lobby_with_type(
+                        LobbyType.FRIENDS_ONLY, max_members)
+                except (AttributeError, TypeError):
+                    # C++ bridge eski sürüm — fallback
+                    self._bridge_instance.create_lobby(max_members)
+            print(f"[SteamNet] Lobi oluşturuluyor... (public={public})")
+        except Exception as e:
+            print(f"[SteamNet] create_lobby hatası: {e}")
+            import traceback; traceback.print_exc()
 
     def join_lobby(self, lobby_id: int):
         """Mevcut lobiye katıl."""
         if not self._bridge_instance:
             return
-        self._state = 'lobby'
-        self._is_host = False
-        self._bridge_instance.join_lobby(lobby_id)
-        print(f"[SteamNet] Lobiye katılınıyor: {lobby_id}")
+        try:
+            self._state = 'lobby'
+            self._is_host = False
+            self._bridge_instance.join_lobby(lobby_id)
+            print(f"[SteamNet] Lobiye katılınıyor: {lobby_id}")
+        except Exception as e:
+            print(f"[SteamNet] join_lobby hatası: {e}")
 
     def leave_lobby(self):
         """Lobiden ayrıl."""
         if self._bridge_instance:
-            self._bridge_instance.leave_lobby()
+            try:
+                self._bridge_instance.leave_lobby()
+            except Exception as e:
+                print(f"[SteamNet] leave_lobby hatası: {e}")
         self._state = 'idle'
         self._opponent_steam_id = 0
         self._opponent_name = ''
@@ -310,7 +370,10 @@ class SteamNetworking:
     def invite_friend(self):
         """Steam overlay arkadaş davet penceresi aç."""
         if self._bridge_instance:
-            self._bridge_instance.invite_friend()
+            try:
+                self._bridge_instance.invite_friend()
+            except Exception as e:
+                print(f"[SteamNet] invite_friend hatası: {e}")
 
     def set_lobby_type(self, lobby_type: int):
         """Lobi tipini değiştir (LobbyType sabitleri kullanın)."""
@@ -341,24 +404,36 @@ class SteamNetworking:
     def set_lobby_data(self, key: str, value: str):
         """Lobi metadata'sı ayarla."""
         if self._bridge_instance:
-            self._bridge_instance.set_lobby_data(key, value)
+            try:
+                self._bridge_instance.set_lobby_data(key, value)
+            except Exception as e:
+                print(f"[SteamNet] set_lobby_data hatası: {e}")
 
     def get_lobby_data(self, key: str) -> str:
         """Lobi metadata'sı oku."""
         if self._bridge_instance:
-            return self._bridge_instance.get_lobby_data(key)
+            try:
+                return self._bridge_instance.get_lobby_data(key)
+            except Exception as e:
+                print(f"[SteamNet] get_lobby_data hatası: {e}")
         return ''
 
     def get_lobby_members(self) -> list[int]:
         """Lobideki üyelerin Steam ID listesi."""
         if self._bridge_instance:
-            return self._bridge_instance.get_lobby_members()
+            try:
+                return self._bridge_instance.get_lobby_members()
+            except Exception as e:
+                print(f"[SteamNet] get_lobby_members hatası: {e}")
         return []
 
     def request_lobby_list(self):
         """Public lobi listesini iste. Sonuç poll_events() ile gelir."""
         if self._bridge_instance:
-            self._bridge_instance.request_lobby_list()
+            try:
+                self._bridge_instance.request_lobby_list()
+            except Exception as e:
+                print(f"[SteamNet] request_lobby_list hatası: {e}")
 
     def search_lobby_by_code(self, code: str):
         """Lobi koduna göre arama başlat.
@@ -372,7 +447,10 @@ class SteamNetworking:
                     'lobby_code', code.strip())
             except (AttributeError, TypeError):
                 pass
-            self._bridge_instance.request_lobby_list()
+            try:
+                self._bridge_instance.request_lobby_list()
+            except Exception as e:
+                print(f"[SteamNet] search_lobby_by_code hatası: {e}")
 
     # ============ Mesajlaşma ============
 
@@ -380,13 +458,17 @@ class SteamNetworking:
         """Rakibe JSON mesaj gönder."""
         if not self._bridge_instance:
             return False
-        payload = json.dumps(data, separators=(',', ':'))
-        if self._opponent_steam_id:
-            return self._bridge_instance.send_message(
-                self._opponent_steam_id, payload, reliable, channel)
-        else:
-            return self._bridge_instance.send_message_to_lobby(
-                payload, reliable, channel)
+        try:
+            payload = json.dumps(data, separators=(',', ':'))
+            if self._opponent_steam_id:
+                return self._bridge_instance.send_message(
+                    self._opponent_steam_id, payload, reliable, channel)
+            else:
+                return self._bridge_instance.send_message_to_lobby(
+                    payload, reliable, channel)
+        except Exception as e:
+            print(f"[SteamNet] send hatası: {e}")
+            return False
 
     def send_garbage(self, lines: int, gap_col: int = -1):
         """Rakibe çöp satır saldırısı gönder."""
@@ -457,19 +539,37 @@ class SteamNetworking:
         if not self._bridge_instance or not self._initialized:
             return
 
-        # Steam callback'leri işle + gelen mesajları kuyrukla
-        self._bridge_instance.run_callbacks()
+        try:
+            # Steam callback'leri işle + gelen mesajları kuyrukla
+            self._bridge_instance.run_callbacks()
 
-        # C++ event'lerini Python'a aktar
-        for ev in self._bridge_instance.poll_events():
-            net_event = NetEvent(ev.type, ev.steam_id, ev.data)
-            self._events.append(net_event)
-            self._handle_internal_event(net_event)
-            self._dispatch_event(net_event)
+            # C++ event'lerini Python'a aktar
+            for ev in self._bridge_instance.poll_events():
+                net_event = NetEvent(ev.type, ev.steam_id, ev.data)
+                self._events.append(net_event)
+                self._handle_internal_event(net_event)
+                self._dispatch_event(net_event)
 
-        # C++ mesajlarını Python'a aktar
-        for msg in self._bridge_instance.poll_messages():
-            self._messages.append(NetMessage(msg.sender, msg.payload, msg.channel))
+            # C++ mesajlarını Python'a aktar
+            for msg in self._bridge_instance.poll_messages():
+                self._messages.append(NetMessage(msg.sender, msg.payload, msg.channel))
+
+            # Başarılı tick — ardışık hata sayacını sıfırla
+            self._tick_consecutive_errors = 0
+
+        except Exception as e:
+            print(f"[SteamNet] tick hatası: {e}")
+            self._tick_consecutive_errors += 1
+            if self._tick_consecutive_errors >= self._TICK_ERROR_THRESHOLD:
+                print(
+                    f"[SteamNet] {self._tick_consecutive_errors} ardışık tick hatası — "
+                    "networking devre dışı bırakılıyor."
+                )
+                self._initialized = False
+                self._tick_consecutive_errors = 0
+                self._events.append(
+                    NetEvent('error', 0, 'networking_disabled')
+                )
 
     def get_events(self) -> list[NetEvent]:
         """Birikmiş olayları döndür ve kuyruğu temizle."""
@@ -536,5 +636,8 @@ class SteamNetworking:
     def _get_name(self, steam_id: int) -> str:
         """Steam ID'den persona ismini al."""
         if self._bridge_instance:
-            return self._bridge_instance.get_friend_persona_name(steam_id)
+            try:
+                return self._bridge_instance.get_friend_persona_name(steam_id)
+            except Exception as e:
+                print(f"[SteamNet] get_friend_persona_name hatası: {e}")
         return str(steam_id)

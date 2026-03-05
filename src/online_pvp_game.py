@@ -48,6 +48,14 @@ from steam_networking import (
     generate_lobby_code,
 )
 
+# Steam pump thread kontrolü — bridge aktifken pump duraklatılır (race condition önleme)
+try:
+    from steam_integration import pause_pump as _pause_steam_pump
+    from steam_integration import resume_pump as _resume_steam_pump
+except ImportError:
+    def _pause_steam_pump(): pass
+    def _resume_steam_pump(): pass
+
 try:
     from gamepad_manager import GamepadManager
 except ImportError:
@@ -300,7 +308,18 @@ class OnlinePvPGame:
 
         if not self.net.available:
             print("[OnlinePvP] Steam net bridge mevcut değil!")
+            self._status_msg = t('steam_bridge_not_available',
+                                 'Steam ağ köprüsü yüklenemedi. Online PvP kullanılamıyor.')
+            self._status_timer = 4.0
             return False
+
+        # ÖNEMLİ: steam_integration.py pump thread'ini duraklat.
+        # İki farklı thread'den SteamAPI_RunCallbacks() çağırmak
+        # Steam SDK'da race condition/segfault oluşturur.
+        try:
+            _pause_steam_pump()
+        except Exception as e:
+            print(f"[OnlinePvP] Pump pause hatası: {e}")
 
         ok = self.net.init()
         if ok:
@@ -320,6 +339,15 @@ class OnlinePvPGame:
             self.net.on('lobby_create_failed', self._on_lobby_error)
             self.net.on('lobby_join_failed', self._on_lobby_error)
             self.net.on('lobby_list_failed', self._on_lobby_list_error)
+        else:
+            # Init başarısız — pump'u tekrar başlat
+            try:
+                _resume_steam_pump()
+            except Exception:
+                pass
+            self._status_msg = t('steam_net_init_failed',
+                                 'Steam ağ bağlantısı kurulamadı!')
+            self._status_timer = 4.0
         return ok
 
     # ============================================================
@@ -460,6 +488,33 @@ class OnlinePvPGame:
     #  MESAJ İŞLEME
     # ============================================================
 
+    # ── Mesaj doğrulama yardımcıları ────────────────────────────────────
+
+    @staticmethod
+    def _clamp_int(value, lo: int, hi: int, field: str = '') -> int:
+        """value'yu int'e cast et ve [lo, hi] aralığına clamp et.
+        Dönüştürme başarısız olursa lo döner (sessiz ignore)."""
+        try:
+            v = int(value)
+        except (TypeError, ValueError):
+            print(f"[OnlinePvP] Alan doğrulama: '{field}' int'e dönüştürülemedi — {value!r}")
+            return lo
+        return max(lo, min(v, hi))
+
+    @staticmethod
+    def _validate_grid(grid) -> bool:
+        """grid'in beklenen boyutlarda olduğunu doğrula."""
+        if not isinstance(grid, list):
+            return False
+        if len(grid) != BOARD_HEIGHT:
+            return False
+        for row in grid:
+            if not isinstance(row, list) or len(row) != BOARD_WIDTH:
+                return False
+        return True
+
+    # ────────────────────────────────────────────────────────────────────
+
     def _process_messages(self):
         """Gelen ağ mesajlarını işle."""
         for msg in self.net.get_messages():
@@ -469,29 +524,58 @@ class OnlinePvPGame:
             except Exception:
                 continue
 
+            # ── Gönderici doğrulaması ──────────────────────────────────
+            # Rakip ID biliniyorsa yalnızca ondan gelen mesajları işle.
+            opponent_id = self.net.opponent_steam_id
+            if opponent_id and msg.sender != opponent_id:
+                print(f"[OnlinePvP] Bilinmeyen gönderici {msg.sender} — mesaj ignore edildi.")
+                continue
+
             if msg_type == MsgType.READY:
                 self.opponent_ready = True
                 self._check_both_ready()
 
             elif msg_type == MsgType.GAME_START:
-                self.game_seed = data.get('seed', 0)
+                try:
+                    seed = int(data.get('seed', 0))
+                except (TypeError, ValueError):
+                    seed = 0
+                self.game_seed = seed
                 pieces = data.get('pieces', [])
-                if pieces:
-                    self.piece_sequence = pieces
+                if isinstance(pieces, list):
+                    # Aşırı uzun listeyi kırp (max 500)
+                    self.piece_sequence = pieces[:500]
                 self._start_countdown()
 
             elif msg_type == MsgType.GARBAGE_ATTACK:
-                lines = data.get('lines', 0)
-                gap = data.get('gap', -1)
-                self._receive_garbage(lines, gap)
+                lines = self._clamp_int(data.get('lines', 0), 0, 20, 'lines')
+                raw_gap = data.get('gap', -1)
+                # gap: -1 sentinel (rastgele gap) ya da [0, BOARD_WIDTH-1]
+                try:
+                    gap_int = int(raw_gap)
+                except (TypeError, ValueError):
+                    gap_int = -1
+                if gap_int < -1:
+                    gap_int = -1
+                elif gap_int > BOARD_WIDTH - 1:
+                    gap_int = BOARD_WIDTH - 1
+                self._receive_garbage(lines, gap_int)
 
             elif msg_type == MsgType.BOARD_STATE:
+                # Grid boyut doğrulaması — hatalı boyutsa tüm mesajı ignore et
+                grid = data.get('grid')
+                if grid is not None and not self._validate_grid(grid):
+                    print(
+                        f"[OnlinePvP] BOARD_STATE: geçersiz grid boyutu "
+                        f"(rows={len(grid) if isinstance(grid, list) else 'N/A'}) — ignore."
+                    )
+                    continue
                 self._update_opponent_display(data)
 
             elif msg_type == MsgType.SCORE_UPDATE:
-                self.opponent_score = data.get('score', 0)
-                self.opponent_lines = data.get('lines', 0)
-                self.opponent_level = data.get('level', 1)
+                self.opponent_score = self._clamp_int(data.get('score', 0), 0, 999999, 'score')
+                self.opponent_lines = self._clamp_int(data.get('lines', 0), 0, 999999, 'opponent_lines')
+                self.opponent_level = self._clamp_int(data.get('level', 1), 0, 30, 'level')
 
             elif msg_type == MsgType.GAME_OVER:
                 # Rakip öldü — biz kazandık!
@@ -1033,16 +1117,16 @@ class OnlinePvPGame:
                 return None
 
             if key == pygame.K_1:
-                self._init_networking()
-                self.net.create_lobby()
+                if self._init_networking():
+                    self.net.create_lobby()
             elif key == pygame.K_2:
-                self._init_networking()
-                self.net.create_lobby(public=True)
+                if self._init_networking():
+                    self.net.create_lobby(public=True)
             elif key == pygame.K_3:
-                self._init_networking()
-                self._lobby_list_fetching = True
-                self._pending_lobby_list.clear()
-                self.net.request_lobby_list()
+                if self._init_networking():
+                    self._lobby_list_fetching = True
+                    self._pending_lobby_list.clear()
+                    self.net.request_lobby_list()
             elif key == pygame.K_i:
                 self._do_invite_friend()
             elif key == pygame.K_j:
@@ -1134,50 +1218,56 @@ class OnlinePvPGame:
         for btn in self._lobby_buttons:
             if btn['rect'].collidepoint(pos):
                 action = btn.get('action', '')
-                if action == 'create_private':
-                    self._init_networking()
-                    self.net.create_lobby()
-                elif action == 'create_public':
-                    self._init_networking()
-                    self.net.create_lobby(public=True)
-                elif action == 'find_match':
-                    self._init_networking()
-                    self._lobby_list_fetching = True
-                    self._pending_lobby_list.clear()
-                    self.net.request_lobby_list()
-                elif action == 'back':
-                    return 'menu'
-                elif action == 'invite_friend':
-                    self._do_invite_friend()
-                elif action == 'ready':
-                    self.my_ready = True
-                    self.net.send_ready()
-                    self._check_both_ready()
-                elif action == 'rematch':
-                    self._request_rematch()
-                elif action == 'exit_menu':
-                    self.net.leave_lobby()
-                    return 'menu'
-                elif action.startswith('join_lobby:'):
-                    lobby_id_str = action.split(':', 1)[1]
-                    try:
-                        lobby_id = int(lobby_id_str)
-                        self.net.join_lobby(lobby_id)
-                    except (ValueError, TypeError):
-                        pass
-                elif action == 'join_by_code':
-                    # "Kod ile Katıl" butonuna tıklandı
-                    self._join_code_active = True
-                    self._join_code_input = ''
-                    self._join_code_error = ''
-                elif action == 'join_code_submit':
-                    self._try_join_by_code()
-                elif action == 'copy_lobby_code':
-                    self._copy_lobby_code()
-                elif action == 'copy_lobby_id':
-                    self._copy_lobby_id()
-                elif action == 'join_code_field':
-                    self._join_code_active = True
+                try:
+                    if action == 'create_private':
+                        if self._init_networking():
+                            self.net.create_lobby()
+                    elif action == 'create_public':
+                        if self._init_networking():
+                            self.net.create_lobby(public=True)
+                    elif action == 'find_match':
+                        if self._init_networking():
+                            self._lobby_list_fetching = True
+                            self._pending_lobby_list.clear()
+                            self.net.request_lobby_list()
+                    elif action == 'back':
+                        return 'menu'
+                    elif action == 'invite_friend':
+                        self._do_invite_friend()
+                    elif action == 'ready':
+                        self.my_ready = True
+                        self.net.send_ready()
+                        self._check_both_ready()
+                    elif action == 'rematch':
+                        self._request_rematch()
+                    elif action == 'exit_menu':
+                        self.net.leave_lobby()
+                        return 'menu'
+                    elif action.startswith('join_lobby:'):
+                        lobby_id_str = action.split(':', 1)[1]
+                        try:
+                            lobby_id = int(lobby_id_str)
+                            self.net.join_lobby(lobby_id)
+                        except (ValueError, TypeError):
+                            pass
+                    elif action == 'join_by_code':
+                        # "Kod ile Katıl" butonuna tıklandı
+                        self._join_code_active = True
+                        self._join_code_input = ''
+                        self._join_code_error = ''
+                    elif action == 'join_code_submit':
+                        self._try_join_by_code()
+                    elif action == 'copy_lobby_code':
+                        self._copy_lobby_code()
+                    elif action == 'copy_lobby_id':
+                        self._copy_lobby_id()
+                    elif action == 'join_code_field':
+                        self._join_code_active = True
+                except Exception as e:
+                    print(f"[OnlinePvP] Buton aksiyonu hatası ({action}): {e}")
+                    import traceback; traceback.print_exc()
+                    self._status_msg = t('steam_not_available', 'Steam bağlantısı kurulamadı!')
+                    self._status_timer = 3.0
                 try:
                     self.sound.play('click')
                 except Exception:
@@ -1292,7 +1382,9 @@ class OnlinePvPGame:
             self._join_code_error = t('enter_lobby_code', 'Lobi kodu girin')
             return
 
-        self._init_networking()
+        if not self._init_networking():
+            self._join_code_error = t('steam_not_available', 'Steam bağlantısı kurulamadı!')
+            return
 
         if len(code) <= 8:
             # 6-8 haneli kısa kod — metadata araması ile bul
@@ -1367,8 +1459,8 @@ class OnlinePvPGame:
 
     def _copy_to_clipboard(self, text: str) -> bool:
         """Metni sistem panosuna kopyala — cross-platform."""
+        import subprocess
         try:
-            import subprocess
             if sys.platform == 'win32':
                 process = subprocess.Popen(
                     ['powershell', '-command', f'Set-Clipboard -Value "{text}"'],
@@ -1377,17 +1469,29 @@ class OnlinePvPGame:
                     stderr=subprocess.DEVNULL,
                     creationflags=subprocess.CREATE_NO_WINDOW,
                 )
-                process.wait(timeout=2)
+                try:
+                    process.wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    return False
                 return process.returncode == 0
             elif sys.platform == 'darwin':
                 process = subprocess.Popen(['pbcopy'], stdin=subprocess.PIPE)
-                process.communicate(text.encode('utf-8'), timeout=2)
+                try:
+                    process.communicate(text.encode('utf-8'), timeout=2)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    return False
                 return process.returncode == 0
             else:
                 process = subprocess.Popen(
                     ['xclip', '-selection', 'clipboard'],
                     stdin=subprocess.PIPE)
-                process.communicate(text.encode('utf-8'), timeout=2)
+                try:
+                    process.communicate(text.encode('utf-8'), timeout=2)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    return False
                 return process.returncode == 0
         except Exception:
             return False
@@ -2297,30 +2401,49 @@ class OnlinePvPGame:
     #  ANA DÖNGÜ
     # ============================================================
 
+    def _cleanup(self):
+        """Online PvP çıkışında kaynakları temizle ve pump thread'i sürdür."""
+        try:
+            self.net.shutdown()
+        except Exception:
+            pass
+        # Pump thread'i tekrar başlat — bridge artık RunCallbacks çağırmıyor
+        try:
+            _resume_steam_pump()
+        except Exception:
+            pass
+
     def run(self) -> str:
         """Ana oyun döngüsü. 'menu' döndürürse ana menüye dön."""
         self._init_networking()
         running = True
 
-        while running:
-            try:
-                fps_limit = int(self.settings_manager.get('fps_limit', 0) or 0) \
-                    if self.settings_manager else 0
-            except Exception:
-                fps_limit = 0
+        try:
+            while running:
+                try:
+                    fps_limit = int(self.settings_manager.get('fps_limit', 0) or 0) \
+                        if self.settings_manager else 0
+                except Exception:
+                    fps_limit = 0
 
-            delta_time = self.clock.tick(fps_limit if fps_limit > 0 else 60)
+                delta_time = self.clock.tick(fps_limit if fps_limit > 0 else 60)
 
-            result = self.handle_input()
-            if result is False:
-                break
-            if result == 'menu':
-                self.net.leave_lobby()
-                return 'menu'
+                result = self.handle_input()
+                if result is False:
+                    break
+                if result == 'menu':
+                    self.net.leave_lobby()
+                    self._cleanup()
+                    return 'menu'
 
-            self.update(delta_time)
-            self.draw()
-            pygame.display.flip()
+                self.update(delta_time)
+                self.draw()
+                pygame.display.flip()
+        except Exception as e:
+            print(f"[OnlinePvP] Kritik hata: {e}")
+            import traceback
+            traceback.print_exc()
+        finally:
+            self._cleanup()
 
-        self.net.shutdown()
         return 'menu'

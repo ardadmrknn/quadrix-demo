@@ -1,0 +1,24 @@
+"AppBuild"
+{
+    "AppID" "4428040"
+    "Desc" "v1.0.34 build 35 - Online PvP Steam stability hardening"
+    "SetLive" ""
+    "ContentRoot" "..\content\windows"
+    "BuildOutput" "..\output"
+
+    "Depots"
+    {
+        "4428041"
+        {
+            "FileMapping"
+            {
+                "LocalPath" "*"
+                "DepotPath" "."
+                "Recursive" "1"
+            }
+
+            "FileExclusion" "*.pdb"
+            "FileExclusion" "*.log"
+        }
+    }
+}

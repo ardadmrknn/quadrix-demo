@@ -137,6 +137,15 @@ else:
     binaries = []
     print(f"WARNING: steam_api64.dll not found at {steam_dll_src}")
 
+# Steamworks macOS dylib - dll/osx/ klasöründen al (.app bundle için)
+# macOS üzerinde build edildiğinde Contents/MacOS/ içine yerleşir (Steam'in beklediği konum)
+steam_dylib_src = str(REPO_ROOT / 'dll' / 'osx' / 'libsteam_api.dylib')
+if os.path.exists(steam_dylib_src):
+    binaries.append((steam_dylib_src, '.'))
+    print(f'[spec] libsteam_api.dylib eklendi: {steam_dylib_src}')
+else:
+    print(f'[spec] libsteam_api.dylib bulunamadı (macOS build değilse normaldir): {steam_dylib_src}')
+
 # Steam Networking bridge (Pybind11 C++ modülü) — Online PvP için
 import glob as _glob
 _bridge_patterns = [
