@@ -3357,8 +3357,20 @@ class Menu:
             return None
         avatar_value = user_data.get('avatar', None)
         accent_color = self._normalize_color(user_data.get('avatar_color', retro_style.primary))
-        steam_avatar_bitmap = self._get_steam_header_avatar_bitmap(max(32, size - 24))
-        steam_avatar_sig = self._steam_header_avatar_url or ('sdk' if steam_avatar_bitmap is not None else '')
+        # Steam avatarını yalnızca kullanıcının steam_id'si mevcut Steam oturumuyla
+        # eşleşiyorsa kullan; diğer kullanıcılara yanlışlıkla Steam fotoğrafı yansımasın.
+        steam_avatar_bitmap = None
+        user_steam_id = str(user_data.get('steam_id', '') or '').strip()
+        if user_steam_id:
+            try:
+                import steam_integration as _si
+                current_steam_id = str(_si.get_steam_id_str() or '').strip()
+                if current_steam_id and current_steam_id == user_steam_id:
+                    steam_avatar_bitmap = self._get_steam_header_avatar_bitmap(max(32, size - 24))
+            except Exception:
+                pass
+        # steam_avatar_bitmap None ise imzaya URL dahil etme; eski önbellek yüzeyi dönmesin.
+        steam_avatar_sig = (self._steam_header_avatar_url or 'sdk') if steam_avatar_bitmap is not None else ''
         signature = (avatar_value, accent_color, size, steam_avatar_sig)
         if self._hero_avatar_signature == signature and self._hero_avatar_surface is not None:
             return self._hero_avatar_surface
@@ -7333,10 +7345,12 @@ class BlockStyleSettingsScreen:
         self._last_click_index = None
         self._double_click_ms = 350
 
-        # Mouse çift tık ile renk seçimi
-        self._last_click_ms = 0
-        self._last_click_index = None
-        self._double_click_ms = 350
+        # Scrollbar drag durumu
+        self._sb_thumb_rect: 'pygame.Rect | None' = None
+        self._sb_track_rect: 'pygame.Rect | None' = None
+        self._sb_drag_active: bool = False
+        self._sb_drag_offset_y: int = 0
+        self._layout_start_y: int = 160  # draw() sırasında güncellenir
 
     def _switch_active_theme_to_custom(self):
         """Blok görünümü rengi değişince aktif temayı Özel Tema'ya geçir.
@@ -7393,11 +7407,13 @@ class BlockStyleSettingsScreen:
             return self._get_custom_theme_color(piece_name)
         return self.block_style_manager.get_color(piece_name, self._base_color(piece_name))
 
+    _CARD_SPACING = 92  # draw() ve mantık hesaplamaları aynı sabit değeri kullanır
+
     def _clamp_scroll(self):
-        card_spacing = 90
         height = self.screen.get_height()
-        visible = max(0, height - 220)
-        max_scroll = max(0, len(self.piece_names) * card_spacing - visible)
+        start_y = getattr(self, '_layout_start_y', 160)
+        visible = max(0, height - start_y - 140)
+        max_scroll = max(0, len(self.piece_names) * self._CARD_SPACING - visible)
         self.scroll_offset = max(0, min(self.scroll_offset, max_scroll))
 
     def _move_selection(self, delta):
@@ -7405,9 +7421,8 @@ class BlockStyleSettingsScreen:
         self._ensure_visible()
 
     def _ensure_visible(self):
-        card_spacing = 90
-        start_y = 160
-        item_y = start_y + self.selected * card_spacing - self.scroll_offset
+        start_y = getattr(self, '_layout_start_y', 160)
+        item_y = start_y + self.selected * self._CARD_SPACING - self.scroll_offset
         height = self.screen.get_height()
         if item_y < 140:
             self.scroll_offset -= 140 - item_y
@@ -7497,9 +7512,10 @@ class BlockStyleSettingsScreen:
         self.color_reset_buttons = []
         
         start_y = title_rect.bottom + 40
+        self._layout_start_y = start_y  # _clamp_scroll için güncel değer
         card_width = min(780, width - 120)
         card_height = 78
-        card_spacing = 92
+        card_spacing = self._CARD_SPACING
         snapshot = self.block_style_manager.get_style_snapshot()
 
         for i, piece_name in enumerate(self.piece_names):
@@ -7577,13 +7593,17 @@ class BlockStyleSettingsScreen:
                 22,
                 visible_height
             )
-            retro_style.draw_scrollbar(
+            self._sb_track_rect = scrollbar_rect
+            self._sb_thumb_rect = retro_style.draw_scrollbar(
                 self.screen,
                 scrollbar_rect,
                 self.scroll_offset,
                 total_content,
                 visible_height
             )
+        else:
+            self._sb_track_rect = None
+            self._sb_thumb_rect = None
 
     def _draw_piece_preview(self, piece_name, color, rect, selected):
         preview_surface = pygame.Surface(rect.size, pygame.SRCALPHA)
@@ -7672,14 +7692,60 @@ class BlockStyleSettingsScreen:
             self._clamp_scroll()
         elif event.type == pygame.MOUSEMOTION:
             mouse_pos = normalize_mouse_pos(getattr(event, 'pos', None)) or event.pos
-            for i, rect in enumerate(self.option_rects):
-                if rect.collidepoint(mouse_pos):
-                    self.selected = i
-                    break
+            # Scrollbar drag
+            if self._sb_drag_active and self._sb_thumb_rect and self._sb_track_rect:
+                arrow_zone = max(10, 12)  # draw_scrollbar ile aynı hesap (bar_width=10+2)
+                track_top = self._sb_track_rect.top + arrow_zone + 2
+                track_height = max(4, self._sb_track_rect.height - arrow_zone * 2 - 4)
+                thumb_h = self._sb_thumb_rect.height
+                usable = max(1, track_height - thumb_h)
+                new_thumb_y = mouse_pos[1] - self._sb_drag_offset_y
+                ratio = (new_thumb_y - track_top) / usable
+                ratio = max(0.0, min(1.0, ratio))
+                height = self.screen.get_height()
+                start_y = self._layout_start_y
+                visible = max(1, height - start_y - 140)
+                total_content = len(self.piece_names) * self._CARD_SPACING
+                max_scroll = max(0, total_content - visible)
+                self.scroll_offset = int(ratio * max_scroll)
+                self._clamp_scroll()
+            else:
+                for i, rect in enumerate(self.option_rects):
+                    if rect.collidepoint(mouse_pos):
+                        self.selected = i
+                        break
+        elif event.type == pygame.MOUSEBUTTONUP:
+            if event.button == 1:
+                self._sb_drag_active = False
+                self._sb_drag_offset_y = 0
         elif event.type == pygame.MOUSEBUTTONDOWN:
             if event.button == 1:
                 mouse_pos = normalize_mouse_pos(getattr(event, 'pos', None)) or event.pos
-                
+
+                # Scrollbar thumb sürükleme başlat
+                if self._sb_thumb_rect and self._sb_thumb_rect.collidepoint(mouse_pos):
+                    self._sb_drag_active = True
+                    self._sb_drag_offset_y = mouse_pos[1] - self._sb_thumb_rect.y
+                    return None
+                # Scrollbar track'e tıklama → thumb pozisyonuna zıpla
+                if self._sb_track_rect and self._sb_track_rect.collidepoint(mouse_pos):
+                    if self._sb_thumb_rect:
+                        arrow_zone = max(10, 12)
+                        track_top = self._sb_track_rect.top + arrow_zone + 2
+                        track_height = max(4, self._sb_track_rect.height - arrow_zone * 2 - 4)
+                        thumb_h = self._sb_thumb_rect.height
+                        usable = max(1, track_height - thumb_h)
+                        ratio = (mouse_pos[1] - track_top - thumb_h // 2) / usable
+                        ratio = max(0.0, min(1.0, ratio))
+                        height = self.screen.get_height()
+                        start_y = self._layout_start_y
+                        visible = max(1, height - start_y - 140)
+                        total_content = len(self.piece_names) * self._CARD_SPACING
+                        max_scroll = max(0, total_content - visible)
+                        self.scroll_offset = int(ratio * max_scroll)
+                        self._clamp_scroll()
+                    return None
+
                 # Check color edit/reset buttons (Block Styles Mode)
                 if self.mode == 'block_styles':
                     for rect, idx in self.color_edit_buttons:
