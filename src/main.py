@@ -792,9 +792,19 @@ def main():
             pass
 
     pygame.init()
-    
-    
-    
+
+    # ── Steam SDK erken başlat (Overlay hook için) ─────────────────────────
+    # Steam overlay, pencere oluşturulmadan ÖNCE SteamAPI_Init() gerektirir.
+    # create_display()'den önce başlatarak overlay'in D3D hook'unu
+    # yakalamasını sağlıyoruz.  init() idempotent olduğundan ilerideki
+    # ikinci çağrı güvenle mevcut durumu döndürür.
+    try:
+        import steam_integration as _steam_early
+        if _steam_early.init():
+            print("[Steam] Erken SDK init OK - overlay hook aktif")
+    except Exception:
+        pass
+
     # macOS için pygame.init() sonrası güvenli mixer init
     if current_platform == 'Darwin' and not mixer_initialized:
         macos_configs = [
@@ -876,7 +886,18 @@ def main():
                 
     except Exception:
         screen = create_display(800, 600, fullscreen=False, resizable=True, borderless=False)
-    
+
+    # ── Steam overlay OpenGL uyumluluk katmanı (Windows) ───────────────────
+    # Steam overlay yalnızca D3D/OpenGL rendering context'e hook olabilir.
+    # Pygame varsayılan olarak software renderer (GDI) kullandığından overlay
+    # görünmez.  gl_compat modülü pencereyi OpenGL moduna alır ve pygame
+    # surface'i her frame GL texture olarak ekrana çizer.
+    try:
+        from gl_compat import gl_overlay_setup
+        screen = gl_overlay_setup(screen)
+    except Exception as _gl_e:
+        print(f"[GL Compat] Atlandı: {_gl_e}")
+
     pygame.display.set_caption('Quadrix')
     if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
         _assets_dir = str(Path(sys._MEIPASS) / 'assets')
@@ -1245,6 +1266,13 @@ def main():
     def _apply_screen(new_screen):
         """Ekran yeniden oluşturulduğunda tüm ekran referanslarını güncelle."""
         nonlocal screen
+        # GL wrapper aktifse display rebuild sonrası tekrar kur
+        try:
+            from gl_compat import _reapply_gl, is_gl_active
+            if is_gl_active():
+                new_screen = _reapply_gl(new_screen)
+        except Exception:
+            pass
         screen = new_screen
         # Display yeniden oluşturulunca pygame caption ve icon sıfırlanır — her seferinde geri yükle
         try:
