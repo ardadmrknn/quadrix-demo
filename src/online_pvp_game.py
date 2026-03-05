@@ -1293,10 +1293,6 @@ class OnlinePvPGame:
                     elif action == 'create_public':
                         if self._init_networking():
                             self.net.create_lobby(public=True)
-                            # Otomatik lobi listesini de yenile (maç bul işlevi)
-                            self._lobby_list_fetching = True
-                            self._pending_lobby_list.clear()
-                            self.net.request_lobby_list()
                     elif action == 'find_match':
                         if self._init_networking():
                             self._lobby_list_fetching = True
@@ -1697,17 +1693,30 @@ class OnlinePvPGame:
         self.screen.blit(sec2, sec2.get_rect(center=(btn_x + btn_w // 2, y_pos)))
         y_pos += s(18)
 
-        # "Herkese Açık Lobi" butonu (artık Maç Bul işlevini de kapsar)
-        pub_rect = pygame.Rect(btn_x, y_pos, btn_w, btn_h)
-        pub_hover = pub_rect.collidepoint(mouse_pos)
+        # "Herkese Açık Lobi Oluştur" butonu — sadece public lobi oluşturur
+        pub_create_rect = pygame.Rect(btn_x, y_pos, btn_w, btn_h)
+        pub_create_hover = pub_create_rect.collidepoint(mouse_pos)
         _rs.draw_uniform_button(
-            self.screen, pub_rect,
-            t('find_public_match', 'Herkese Açık Maç Bul'),
-            sub_text=None,
+            self.screen, pub_create_rect,
+            t('create_public_lobby', 'Herkese Acik Lobi Olustur'),
+            sub_text='2',
             color_code=_rs.success,
-            state='hover' if pub_hover else 'normal',
+            state='hover' if pub_create_hover else 'normal',
         )
-        self._lobby_buttons.append({'rect': pub_rect, 'action': 'create_public'})
+        self._lobby_buttons.append({'rect': pub_create_rect, 'action': 'create_public'})
+        y_pos += btn_h + gap
+
+        # "Maç Bul" butonu — lobi listesini yeniler
+        find_rect = pygame.Rect(btn_x, y_pos, btn_w, btn_h)
+        find_hover = find_rect.collidepoint(mouse_pos)
+        _rs.draw_uniform_button(
+            self.screen, find_rect,
+            t('find_match', 'Mac Bul'),
+            sub_text='3',
+            color_code=UIColors.NEON_CYAN,
+            state='hover' if find_hover else 'normal',
+        )
+        self._lobby_buttons.append({'rect': find_rect, 'action': 'find_match'})
         y_pos += btn_h + gap
 
         # Geri butonu
@@ -2152,7 +2161,7 @@ class OnlinePvPGame:
             ready_badge = pygame.Rect(my_cx - s(50), status_y, s(100), s(24))
             draw_glass_panel(self.screen, ready_badge, alpha=180,
                              border_color=UIColors.NEON_GREEN)
-            rt = status_font.render('✓ HAZIR', True, UIColors.NEON_GREEN)
+            rt = status_font.render('HAZIR', True, UIColors.NEON_GREEN)
             self.screen.blit(rt, rt.get_rect(center=ready_badge.center))
         else:
             wt = status_font.render(t('not_ready', 'Bekleniyor...'), True, _rs.text_muted)
@@ -2162,7 +2171,7 @@ class OnlinePvPGame:
             ready_badge2 = pygame.Rect(opp_cx - s(50), status_y, s(100), s(24))
             draw_glass_panel(self.screen, ready_badge2, alpha=180,
                              border_color=UIColors.NEON_GREEN)
-            rt2 = status_font.render('✓ HAZIR', True, UIColors.NEON_GREEN)
+            rt2 = status_font.render('HAZIR', True, UIColors.NEON_GREEN)
             self.screen.blit(rt2, rt2.get_rect(center=ready_badge2.center))
         else:
             wt2 = status_font.render(t('not_ready', 'Bekleniyor...'), True, _rs.text_muted)
@@ -2544,18 +2553,18 @@ class OnlinePvPGame:
         if self.winner == 'me':
             result_text = t('you_win', 'KAZANDIN!')
             result_color = UIColors.NEON_GREEN
-            icon_text = '🏆'
+            icon_text = '★'
             sub_text = t('victory_sub', 'Tebrikler, rakibini yendin!')
         elif self.winner == 'opponent':
-            result_text = t('you_lose', 'KAYBETTİN')
+            result_text = t('you_lose', 'KAYBETTIN')
             result_color = UIColors.NEON_RED
-            icon_text = '💀'
+            icon_text = 'X'
             sub_text = t('defeat_sub', 'Bir dahaki sefere!')
         else:
             result_text = t('draw', 'BERABERE')
             result_color = UIColors.NEON_ORANGE
-            icon_text = '🤝'
-            sub_text = t('draw_sub', 'Eşit güçte rakipler!')
+            icon_text = '='
+            sub_text = t('draw_sub', 'Esit gucte rakipler!')
 
         pw = min(s(540), w - s(80))
         ph = s(340)
@@ -2565,12 +2574,9 @@ class OnlinePvPGame:
         draw_glass_panel(self.screen, panel, alpha=210,
                          border_color=(*result_color[:3], 180), glow=True)
 
-        # İkon — büyük emoji veya fallback
+        # İkon
         icon_font = _rs.get_font(s(48, minimum=30))
-        try:
-            icon_s = icon_font.render(icon_text, True, result_color)
-        except Exception:
-            icon_s = icon_font.render('★' if self.winner == 'me' else 'X', True, result_color)
+        icon_s = icon_font.render(icon_text, True, result_color)
         self.screen.blit(icon_s, icon_s.get_rect(center=(cx, panel.y + s(45))))
 
         # Sonuç başlığı — glow efektli
