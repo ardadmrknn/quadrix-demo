@@ -707,8 +707,8 @@ class UserSelectionScreen:
     def _should_use_steam_avatar_for_user(self, user_data: dict, is_active: bool) -> bool:
         if not self._steam_current_sid:
             return False
-        if is_active:
-            return True
+        # is_active olmak tek başına Steam avatarı göstermek için yeterli değil;
+        # kullanıcının steam_id'si mevcut Steam oturumuyla eşleşmelidir.
         linked_sid = str(user_data.get('steam_id', '') or '').strip()
         return bool(linked_sid and linked_sid == self._steam_current_sid)
 
@@ -1579,9 +1579,13 @@ class UserSelectionScreen:
         list_rect = pygame.Rect(s(60), s(150), list_width, list_height)
         
         # Dinamik görünür limit: (height - padding) // (card_height + gap)
+        # Başlık alanı: draw_panel başlığı y+8 konumuna ~22px font ile çizer → ~y+30.
+        # Kartların başladığı y ofseti (s(44)) başlığın altında kalmalıdır.
+        card_header_offset = s(44)  # panel başlığının altı + boşluk
+        card_bottom_pad = s(24)
         card_height = s(86)
         card_gap = s(14)
-        self.visible_limit = max(4, (list_height - s(40)) // max(s(84), card_height + card_gap))
+        self.visible_limit = max(4, (list_height - card_header_offset - card_bottom_pad) // max(s(84), card_height + card_gap))
 
         retro_style.draw_panel(self.screen, list_rect, t('user_profiles'), title_color=retro_style.text_primary)
         
@@ -1590,7 +1594,7 @@ class UserSelectionScreen:
         self._hovered_index = None
         entries = ['__add__'] + self.users_list
         visible_entries = entries[self.scroll_offset:self.scroll_offset + self.visible_limit]
-        card_y = list_rect.y + s(46)
+        card_y = list_rect.y + card_header_offset
         for idx, entry in enumerate(visible_entries):
             rect = pygame.Rect(list_rect.x + s(16), card_y, list_rect.width - s(32), card_height)
             global_index = self.scroll_offset + idx
@@ -1607,11 +1611,11 @@ class UserSelectionScreen:
         # Scrollbar çiz
         entries = ['__add__'] + self.users_list
         content_height = len(entries) * (card_height + card_gap)
-        visible_height = list_rect.height - s(56)
+        visible_height = list_rect.height - s(48)
         if len(entries) > self.visible_limit:
             scrollbar_rect = pygame.Rect(
                 list_rect.right - s(22),
-                list_rect.y + s(46),
+                list_rect.y + s(24),
                 s(22),
                 visible_height
             )
