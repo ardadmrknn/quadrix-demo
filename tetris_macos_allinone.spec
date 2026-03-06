@@ -258,7 +258,7 @@ a = Analysis(
     hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},
-    runtime_hooks=[],
+    runtime_hooks=[str(REPO_ROOT / 'pyi_rth_quadrix_data.py')],
     excludes=[
         # Gereksiz büyük modüller (boyutu azaltmak için)
         'matplotlib',

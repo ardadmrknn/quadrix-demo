@@ -75,6 +75,14 @@ SPEC_FILES = [
 
 
 @pytest.mark.parametrize("spec_name", SPEC_FILES)
+def test_specs_include_quadrix_data_runtime_hook(spec_name):
+    content = _read_spec(spec_name)
+    assert "pyi_rth_quadrix_data.py" in content, (
+        f"{spec_name} quadrix save-path runtime hook'unu icermiyor"
+    )
+
+
+@pytest.mark.parametrize("spec_name", SPEC_FILES)
 def test_specs_are_parseable_python(spec_name):
     """Her spec dosyası compile() ile syntax hatası olmadan parse edilebilmeli."""
     path = REPO_ROOT / spec_name

@@ -135,7 +135,10 @@ a = Analysis(
     hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},
-    runtime_hooks=[str(REPO_ROOT / 'pyi_rth_lang_en.py')],
+    runtime_hooks=[
+        str(REPO_ROOT / 'pyi_rth_quadrix_data.py'),
+        str(REPO_ROOT / 'pyi_rth_lang_en.py'),
+    ],
     excludes=[
         # tkinter artık kullanılmıyor (pygame tabanlı color_picker/file_dialog)
         'tkinter',

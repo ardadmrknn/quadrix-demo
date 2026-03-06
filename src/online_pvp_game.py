@@ -682,10 +682,14 @@ class OnlinePvPGame:
         print(f"[OnlinePvP] Lobi oluşturuldu: {ev.steam_id}")
 
         self._lobby_id_str = str(ev.steam_id)
+        self.net.set_lobby_data('visibility', 'public' if self._creating_public_lobby else 'private')
+        self.net.set_lobby_data('requires_code', '0' if self._creating_public_lobby else '1')
 
         # Public lobi için kod üretme/gösterme.
         if self._creating_public_lobby:
             self._lobby_code = ''
+            self.net.set_lobby_data('lobby_code', '')
+            self.net.set_lobby_data('lobby_code_full', '')
             print(f"[OnlinePvP] Public lobi hazır. Lobby ID: {self._lobby_id_str}")
         else:
             self._lobby_code = generate_lobby_code(ev.steam_id)
@@ -770,6 +774,8 @@ class OnlinePvPGame:
         # implementasyonuna bağlı olarak boş string dönebilir — fallback mevcut.
         host_name = ''
         lobby_code = ''
+        visibility = 'public'
+        requires_code = False
         try:
             host_name = self.net.get_lobby_data('host_name') or ''
         except Exception:
@@ -778,6 +784,18 @@ class OnlinePvPGame:
             lobby_code = self.net.get_lobby_data('lobby_code') or ''
         except Exception:
             pass
+        try:
+            visibility = (self.net.get_lobby_data('visibility') or 'public').strip().lower()
+        except Exception:
+            visibility = 'public'
+        try:
+            requires_code = (self.net.get_lobby_data('requires_code') or '0').strip() == '1'
+        except Exception:
+            requires_code = False
+
+        if visibility == 'private':
+            requires_code = True
+            lobby_code = ''
 
         # ev.data genelde "members" bilgisini taşır — parse kontrolü
         try:
@@ -791,6 +809,8 @@ class OnlinePvPGame:
             'max_members': 2,
             'name': host_name or f'Lobi #{len(self._pending_lobby_list) + 1}',
             'code': lobby_code,
+            'visibility': visibility,
+            'requires_code': requires_code,
             'found_time': time.time(),
         })
 
@@ -2218,7 +2238,7 @@ class OnlinePvPGame:
             # Metin girişi — Lobi kodu text input
             if event.type == pygame.TEXTINPUT and self._join_code_active:
                 for ch in event.text:
-                    if ch.isdigit() and len(self._join_code_input) < 20:
+                    if ch.isdigit() and len(self._join_code_input) < 6:
                         self._join_code_input += ch
                         self._join_code_error = ''
 
@@ -2286,7 +2306,7 @@ class OnlinePvPGame:
                         # Sadece rakam karakterlerini al
                         digits = ''.join(c for c in pasted if c.isdigit())
                         if digits:
-                            self._join_code_input = digits[:20]
+                            self._join_code_input = digits[:6]
                             self._join_code_error = ''
                 elif key == pygame.K_TAB:
                     self._join_code_active = False
@@ -2423,6 +2443,12 @@ class OnlinePvPGame:
                             self.net.join_lobby(lobby_id)
                         except (ValueError, TypeError):
                             pass
+                    elif action.startswith('join_private_lobby:'):
+                        self._join_code_active = True
+                        self._join_code_input = ''
+                        self._join_code_error = ''
+                        self._status_msg = t('enter_lobby_code', 'Lobi kodu girin')
+                        self._status_timer = 2.5
                     elif action == 'join_by_code':
                         # "Kod ile Katıl" butonuna tıklandı
                         self._join_code_active = True
@@ -2583,6 +2609,10 @@ class OnlinePvPGame:
         code = self._join_code_input.strip()
         if not code:
             self._join_code_error = t('enter_lobby_code', 'Lobi kodu girin')
+            return
+
+        if len(code) != 6:
+            self._join_code_error = t('enter_six_digit_code', '6 haneli lobi kodu girin')
             return
 
         if not self._init_networking():
@@ -2803,7 +2833,7 @@ class OnlinePvPGame:
         # "Kod ile Katıl" metin giriş alanı (aktifse göster)
         if self._join_code_active:
             self._draw_join_code_input(btn_x, y_pos, btn_w, s, mouse_pos)
-            y_pos += s(158)
+            y_pos += s(236)
 
         # Herkese Açık Lobi bölümü başlığı
         y_pos += s(10)
@@ -2858,7 +2888,8 @@ class OnlinePvPGame:
         list_h = h - list_y - s(60)
 
         list_panel = pygame.Rect(list_x, list_y, list_w, list_h)
-        draw_glass_panel(self.screen, list_panel, alpha=150, border_color=(80, 120, 180))
+        draw_glass_panel(self.screen, list_panel, alpha=165,
+                         border_color=(80, 120, 180), glow=True)
 
         # Lobi listesi başlığı
         lt_font = _rs.get_font(s(20, minimum=14))
@@ -2867,12 +2898,35 @@ class OnlinePvPGame:
         self.screen.blit(list_title, list_title.get_rect(
             center=(list_x + list_w // 2, list_y + s(24))))
 
+        sub_list_font = _rs.get_font(s(12, minimum=9), bold=False)
+        sub_list_text = sub_list_font.render(
+            t('lobby_list_subtitle', 'Acik odalar ve kod gerektiren ozel lobiler'),
+            True, _rs.text_muted)
+        self.screen.blit(sub_list_text, sub_list_text.get_rect(
+            center=(list_x + list_w // 2, list_y + s(44))))
+
+        count_font = _rs.get_font(s(12, minimum=9), bold=False)
+        count_text = count_font.render(str(len(self._lobby_list)), True, _rs.text_primary)
+        count_pad_x = s(10)
+        count_pad_y = s(5)
+        count_rect = pygame.Rect(
+            list_panel.right - count_text.get_width() - count_pad_x * 2 - s(12),
+            list_panel.y + s(14),
+            count_text.get_width() + count_pad_x * 2,
+            count_text.get_height() + count_pad_y * 2,
+        )
+        count_bg = pygame.Surface((count_rect.width, count_rect.height), pygame.SRCALPHA)
+        pygame.draw.rect(count_bg, (*UIColors.NEON_CYAN[:3], 50), count_bg.get_rect(), border_radius=999)
+        pygame.draw.rect(count_bg, (*UIColors.NEON_CYAN[:3], 120), count_bg.get_rect(), 1, border_radius=999)
+        self.screen.blit(count_bg, count_rect.topleft)
+        self.screen.blit(count_text, count_text.get_rect(center=count_rect.center))
+
         # Başlık altı çizgi
-        line_y = list_y + s(42)
+        line_y = list_y + s(58)
         pygame.draw.line(self.screen, (*_rs.accent[:3], 60),
                          (list_x + s(12), line_y), (list_x + list_w - s(12), line_y), 1)
 
-        content_top = list_y + s(50)
+        content_top = list_y + s(68)
 
         if self._lobby_list_fetching:
             dots = '.' * (int(time.time() * 2) % 4)
@@ -2891,39 +2945,73 @@ class OnlinePvPGame:
                 self.screen.blit(e1, e1.get_rect(center=(list_x + list_w // 2, list_y + list_h // 2 - s(10))))
                 self.screen.blit(e2, e2.get_rect(center=(list_x + list_w // 2, list_y + list_h // 2 + s(14))))
         else:
-            item_h = s(72)
-            visible = max(1, (list_h - s(70)) // item_h)
+            item_h = s(90)
+            visible = max(1, (list_h - s(86)) // item_h)
             start_idx = self._lobby_list_scroll
-            clip = pygame.Rect(list_x + 4, content_top, list_w - 8, list_h - s(70))
+            clip = pygame.Rect(list_x + 4, content_top, list_w - 8, list_h - s(86))
             self.screen.set_clip(clip)
 
             for i, lobby in enumerate(self._lobby_list[start_idx:start_idx + visible]):
                 iy = content_top + i * item_h
-                ir = pygame.Rect(list_x + s(8), iy, list_w - s(16), item_h - s(6))
+                ir = pygame.Rect(list_x + s(8), iy, list_w - s(16), item_h - s(10))
                 hover = ir.collidepoint(mouse_pos)
-                bdr = UIColors.NEON_CYAN if hover else (*_rs.glass_border[:3],)
+                requires_code = bool(lobby.get('requires_code', False))
+                accent_color = UIColors.NEON_ORANGE if requires_code else UIColors.NEON_GREEN
+                bdr = accent_color if hover or requires_code else (*_rs.glass_border[:3],)
                 draw_glass_panel(self.screen, ir,
-                                 alpha=190 if hover else 140, border_color=bdr)
+                                 alpha=205 if hover else 150, border_color=bdr, glow=hover)
+
+                accent_bar = pygame.Rect(ir.x + s(6), ir.y + s(8), s(5), ir.height - s(16))
+                pygame.draw.rect(self.screen, accent_color, accent_bar, border_radius=999)
+
+                if hover:
+                    hover_overlay = pygame.Surface((ir.width, ir.height), pygame.SRCALPHA)
+                    pygame.draw.rect(hover_overlay, (*accent_color[:3], 20), hover_overlay.get_rect(), border_radius=12)
+                    self.screen.blit(hover_overlay, ir.topleft)
 
                 lname = lobby.get('name', f'Lobi #{i + start_idx + 1}')
                 members = lobby.get('members', '?')
                 mx = lobby.get('max_members', 2)
                 lid = lobby.get('id', 0)
                 l_code = lobby.get('code', '')
+                visibility = str(lobby.get('visibility', 'public') or 'public').lower()
+                try:
+                    member_ratio = min(1.0, max(0.0, float(members) / max(1.0, float(mx))))
+                except Exception:
+                    member_ratio = 0.0
 
                 # Lobi adı (host adı)
-                nf = _rs.get_font(s(16, minimum=11))
+                nf = _rs.get_font(s(17, minimum=12))
                 self.screen.blit(nf.render(lname, True, _rs.text_primary),
-                                 (ir.x + s(12), ir.y + s(7)))
+                                 (ir.x + s(20), ir.y + s(10)))
+
+                badge_font = _rs.get_font(s(11, minimum=9), bold=False)
+                badge_text = t('private_locked', 'Kilitli Ozel Lobi') if requires_code else t('open_lobby', 'Acik lobi')
+                badge_text_surf = badge_font.render(badge_text, True, accent_color)
+                badge_rect = pygame.Rect(
+                    ir.right - badge_text_surf.get_width() - s(22),
+                    ir.y + s(8),
+                    badge_text_surf.get_width() + s(16),
+                    badge_text_surf.get_height() + s(8),
+                )
+                badge_surface = pygame.Surface((badge_rect.width, badge_rect.height), pygame.SRCALPHA)
+                pygame.draw.rect(badge_surface, (*accent_color[:3], 40), badge_surface.get_rect(), border_radius=999)
+                pygame.draw.rect(badge_surface, (*accent_color[:3], 130), badge_surface.get_rect(), 1, border_radius=999)
+                self.screen.blit(badge_surface, badge_rect.topleft)
+                self.screen.blit(badge_text_surf, badge_text_surf.get_rect(center=badge_rect.center))
 
                 # Detay satırı: üye sayısı + lobi kodu
                 cf = _rs.get_font(s(12, minimum=9), bold=False)
                 detail_parts = [f'{members}/{mx} oyuncu']
-                if l_code:
+                if requires_code:
+                    detail_parts.append(t('code_required', 'Katilmak icin kod gerekli'))
+                elif l_code:
                     detail_parts.append(f'Kod: {l_code}')
+                elif visibility == 'public':
+                    detail_parts.append(t('open_lobby', 'Acik lobi'))
                 detail_text = '  ·  '.join(detail_parts)
                 self.screen.blit(cf.render(detail_text, True, _rs.text_secondary),
-                                 (ir.x + s(12), ir.y + s(28)))
+                                 (ir.x + s(20), ir.y + s(34)))
 
                 # Zaman bilgisi
                 found_t = lobby.get('found_time', 0)
@@ -2935,17 +3023,27 @@ class OnlinePvPGame:
                         time_str = f'{elapsed // 60} dk önce'
                     tf2 = _rs.get_font(s(11, minimum=9), bold=False)
                     self.screen.blit(tf2.render(time_str, True, _rs.text_muted),
-                                     (ir.x + s(12), ir.y + s(43)))
+                                     (ir.x + s(20), ir.y + s(57)))
 
                 # Katıl butonu — daha belirgin stil
-                jw, jh = s(72), s(32)
-                jb = pygame.Rect(ir.right - jw - s(10), ir.centery - jh // 2, jw, jh)
+                jw, jh = s(92), s(34)
+                jb = pygame.Rect(ir.right - jw - s(12), ir.centery - jh // 2, jw, jh)
                 jh_hover = jb.collidepoint(mouse_pos)
+                action = f'join_private_lobby:{lid}' if requires_code else f'join_lobby:{lid}'
                 _rs.draw_uniform_button(self.screen, jb,
-                                        t('join', 'Katıl'),
-                                        color_code=UIColors.NEON_GREEN,
+                                        t('enter_code', 'Kod Gir') if requires_code else t('join', 'Katıl'),
+                                        color_code=UIColors.NEON_ORANGE if requires_code else UIColors.NEON_GREEN,
                                         state='hover' if jh_hover else 'normal')
-                self._lobby_buttons.append({'rect': jb, 'action': f'join_lobby:{lid}'})
+                if requires_code:
+                    self._lobby_buttons.append({'rect': ir, 'action': action})
+                self._lobby_buttons.append({'rect': jb, 'action': action})
+
+                bar_rect = pygame.Rect(ir.x + s(102), ir.y + s(59), max(s(72), jb.x - ir.x - s(132)), s(8))
+                pygame.draw.rect(self.screen, (35, 48, 76), bar_rect, border_radius=999)
+                fill_rect = pygame.Rect(bar_rect.x, bar_rect.y, max(1, int(bar_rect.width * member_ratio)), bar_rect.height)
+                pygame.draw.rect(self.screen, accent_color, fill_rect, border_radius=999)
+                occupancy_text = cf.render(f'{members}/{mx}', True, _rs.text_secondary)
+                self.screen.blit(occupancy_text, occupancy_text.get_rect(midleft=(bar_rect.right + s(8), bar_rect.centery)))
 
             self.screen.set_clip(None)
 
@@ -2972,77 +3070,91 @@ class OnlinePvPGame:
     def _draw_join_code_input(self, x, y, btn_w, s, mouse_pos):
         """Kod ile Katıl metin giriş panelini çiz."""
         # Cam panel: giriş alanı + gönder butonu
-        panel_h = s(148)
+        panel_h = s(224)
         panel_r = pygame.Rect(x, y, btn_w, panel_h)
-        draw_glass_panel(self.screen, panel_r, alpha=190,
-                         border_color=UIColors.NEON_CYAN, glow=True)
+        panel_border = UIColors.NEON_RED if self._join_code_error else UIColors.NEON_CYAN
+        draw_glass_panel(self.screen, panel_r, alpha=195,
+                         border_color=panel_border, glow=True)
 
         # Başlık
-        tf = _rs.get_font(s(16, minimum=11))
+        tf = _rs.get_font(s(18, minimum=12))
         title = tf.render(t('join_by_code', 'Kod ile Katıl'), True, UIColors.NEON_CYAN)
         self.screen.blit(title, title.get_rect(
-            midleft=(x + s(14), y + s(18))))
+            midleft=(x + s(16), y + s(20))))
 
-        # Metin girişi arka planı
-        inp_x = x + s(14)
-        inp_y = y + s(38)
-        inp_w = btn_w - s(28)
-        inp_h = s(36)
-        inp_rect = pygame.Rect(inp_x, inp_y, inp_w, inp_h)
+        subf = _rs.get_font(s(12, minimum=9), bold=False)
+        subtitle = subf.render(t('join_code_subtitle', 'Ozel lobiye girmek icin 6 haneli kodu yaz'), True, _rs.text_muted)
+        self.screen.blit(subtitle, subtitle.get_rect(midleft=(x + s(16), y + s(41))))
 
-        # Giriş alanı
-        inp_bg = pygame.Surface((inp_w, inp_h), pygame.SRCALPHA)
-        pygame.draw.rect(inp_bg, (18, 18, 42, 220), inp_bg.get_rect(), border_radius=8)
-        self.screen.blit(inp_bg, (inp_x, inp_y))
-        border_color = UIColors.NEON_CYAN if self._join_code_active else _rs.glass_border
-        pygame.draw.rect(self.screen, border_color, inp_rect, 2, border_radius=8)
+        hint_f = _rs.get_font(s(11, minimum=9), bold=False)
+        hint = hint_f.render(t('paste_code_hint', 'Yapistir: Ctrl+V  •  Kapat: ESC'), True, _rs.text_muted)
+        self.screen.blit(hint, hint.get_rect(midright=(x + btn_w - s(16), y + s(20))))
 
-        # Metin
-        display_text = self._join_code_input
-        if not display_text and self._join_code_active:
-            # Placeholder
-            pf = _rs.get_font(s(15, minimum=11), bold=False)
-            ph_txt = pf.render(
-                t('enter_lobby_code', 'Lobi kodu girin'), True, _rs.text_muted)
-            self.screen.blit(ph_txt, (inp_x + s(10), inp_y + s(8)))
-        else:
-            tf2 = _rs.get_font(s(16, minimum=12))
-            t_surf = tf2.render(display_text, True, (255, 255, 255))
-            self.screen.blit(t_surf, (inp_x + s(10), inp_y + s(8)))
+        # Kod kutuları
+        display_text = self._join_code_input[:6]
+        slot_gap = s(8)
+        slot_count = 6
+        slot_w = min(s(44), (btn_w - s(32) - slot_gap * (slot_count - 1)) // slot_count)
+        slot_h = s(50)
+        total_slots_w = slot_count * slot_w + (slot_count - 1) * slot_gap
+        slots_x = x + (btn_w - total_slots_w) // 2
+        slots_y = y + s(68)
+        slots_rect = pygame.Rect(slots_x, slots_y, total_slots_w, slot_h)
 
-        # İmleç yanıp sönme
-        if self._join_code_active and int(time.time() * 2.5) % 2 == 0:
-            cursor_x = inp_x + s(10) + _rs.get_font(s(16, minimum=12)).size(display_text)[0]
+        for idx in range(slot_count):
+            slot_x = slots_x + idx * (slot_w + slot_gap)
+            slot_rect = pygame.Rect(slot_x, slots_y, slot_w, slot_h)
+            is_filled = idx < len(display_text)
+            is_active_slot = self._join_code_active and idx == min(len(display_text), slot_count - 1)
+            slot_border = UIColors.NEON_RED if self._join_code_error else (UIColors.NEON_CYAN if is_active_slot else (*_rs.glass_border[:3],))
+            slot_bg = pygame.Surface((slot_w, slot_h), pygame.SRCALPHA)
+            pygame.draw.rect(slot_bg, (18, 22, 46, 230), slot_bg.get_rect(), border_radius=10)
+            if is_filled:
+                pygame.draw.rect(slot_bg, (*UIColors.NEON_GREEN[:3], 22), slot_bg.get_rect(), border_radius=10)
+            self.screen.blit(slot_bg, slot_rect.topleft)
+            pygame.draw.rect(self.screen, slot_border, slot_rect, 2, border_radius=10)
+
+            if is_filled:
+                char_font = _rs.get_font(s(24, minimum=16))
+                char_surf = char_font.render(display_text[idx], True, _rs.text_primary)
+                self.screen.blit(char_surf, char_surf.get_rect(center=slot_rect.center))
+            else:
+                dot_font = _rs.get_font(s(16, minimum=12), bold=False)
+                dot_surf = dot_font.render('•', True, _rs.text_muted)
+                self.screen.blit(dot_surf, dot_surf.get_rect(center=slot_rect.center))
+
+        if self._join_code_active and int(time.time() * 2.5) % 2 == 0 and len(display_text) < slot_count:
+            cursor_slot_x = slots_x + len(display_text) * (slot_w + slot_gap)
+            cursor_center_x = cursor_slot_x + slot_w // 2
             pygame.draw.line(self.screen, UIColors.NEON_CYAN,
-                             (cursor_x, inp_y + s(6)), (cursor_x, inp_y + inp_h - s(6)), 2)
+                             (cursor_center_x, slots_y + s(12)),
+                             (cursor_center_x, slots_y + slot_h - s(12)), 2)
 
         # Tıklanabilir alan olarak kaydet
-        self._lobby_buttons.append({'rect': inp_rect, 'action': 'join_code_field'})
+        self._lobby_buttons.append({'rect': slots_rect, 'action': 'join_code_field'})
+
+        helper_font = _rs.get_font(s(11, minimum=9), bold=False)
+        helper_text = helper_font.render(t('join_code_helper', 'Her kutuya bir rakam gelecek sekilde 6 haneli kod gir'), True, _rs.text_secondary)
+        self.screen.blit(helper_text, helper_text.get_rect(center=(x + btn_w // 2, slots_y + slot_h + s(14))))
 
         # Hata mesajı
         if self._join_code_error:
             ef = _rs.get_font(s(12, minimum=9), bold=False)
             err = ef.render(self._join_code_error, True, UIColors.NEON_RED)
-            self.screen.blit(err, (inp_x, inp_y + inp_h + s(4)))
+            self.screen.blit(err, err.get_rect(center=(x + btn_w // 2, slots_y + slot_h + s(34))))
 
         # Gönder butonu
-        sub_btn_w = btn_w - s(28)
-        sub_btn_h = s(34)
-        sub_y = inp_y + inp_h + s(18)
-        sub_rect = pygame.Rect(inp_x, sub_y, sub_btn_w, sub_btn_h)
+        sub_btn_w = btn_w - s(32)
+        sub_btn_h = s(38)
+        sub_y = y + panel_h - sub_btn_h - s(16)
+        sub_rect = pygame.Rect(x + s(16), sub_y, sub_btn_w, sub_btn_h)
         sub_hover = sub_rect.collidepoint(mouse_pos)
         _rs.draw_uniform_button(self.screen, sub_rect,
-                                t('join', 'Katıl'),
+                                t('join_lobby_by_code', 'Kodla Lobiye Katıl'),
                                 sub_text='ENTER',
                                 color_code=UIColors.NEON_GREEN,
                                 state='hover' if sub_hover else 'normal')
         self._lobby_buttons.append({'rect': sub_rect, 'action': 'join_code_submit'})
-
-        # Paste ipucu
-        hint_f = _rs.get_font(s(11, minimum=9), bold=False)
-        hint = hint_f.render(t('paste_code_hint', 'Yapıştır: Ctrl+V'), True, _rs.text_muted)
-        self.screen.blit(hint, hint.get_rect(
-            midright=(x + btn_w - s(14), y + s(18))))
 
     # ─── Bekleme Ekranı ───
 

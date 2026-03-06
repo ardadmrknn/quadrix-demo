@@ -10,6 +10,16 @@ from pathlib import Path
 import constants
 from atomic_io import atomic_write_json
 from data_paths import iter_legacy_paths, migrate_legacy_file, resolve_data_path
+from storage_layout import (
+    get_campaign_progress_path,
+    get_settings_cloud_path,
+    get_settings_local_path,
+    merge_settings_payload,
+    migrate_legacy_settings_file,
+    read_json_file,
+    split_settings_payload,
+    write_json_file,
+)
 
 DEFAULT_CONTROLS = {
     'single_player': {
@@ -113,14 +123,34 @@ class SettingsManager:
     
     def __init__(self, filename='settings.json'):
         """Ayar yöneticisini başlat"""
-        # Keep settings location stable regardless of current working directory.
-        # Default: store in unified user data directory.
+        self._single_file_mode = False
+        self.filename = None
+        self.cloud_filename = None
+        self.local_filename = None
+        self.campaign_progress_filename = None
+
         if isinstance(filename, str) and filename:
-            self.filename = resolve_data_path(filename)
-            if not os.path.isabs(filename) and os.path.dirname(filename) == '':
-                migrate_legacy_file(self.filename, iter_legacy_paths(filename))
+            use_split_storage = (
+                not os.path.isabs(filename)
+                and os.path.dirname(filename) == ''
+                and filename in {'settings.json', 'settings_cloud.json'}
+            )
+            if use_split_storage:
+                self.cloud_filename = get_settings_cloud_path()
+                self.local_filename = get_settings_local_path()
+                self.campaign_progress_filename = get_campaign_progress_path()
+                self.filename = self.cloud_filename
+                migrate_legacy_settings_file(self.cloud_filename, legacy_filename='settings.json')
+            else:
+                self._single_file_mode = True
+                self.filename = filename
         else:
+            self._single_file_mode = True
             self.filename = filename
+
+        self.cloud_settings = {}
+        self.local_settings = {}
+        self.campaign_progress = {}
         self.default_settings = {
             'language': 'tr',  # Dil ayarı: 'tr' veya 'en'
             'music_enabled': True,
@@ -216,6 +246,88 @@ class SettingsManager:
         self._dirty = False
         self._last_change_monotonic = now
 
+    def _load_single_file_settings(self):
+        if os.path.exists(self.filename):
+            try:
+                with open(self.filename, 'r', encoding='utf-8') as f:
+                    loaded = json.load(f)
+                    for key, value in self.default_settings.items():
+                        if key not in loaded:
+                            loaded[key] = copy.deepcopy(value)
+                    loaded['controls'] = self._merge_controls(loaded.get('controls', {}))
+                    self._migrate_music_preferences_inplace(loaded)
+                    if constants.DEBUG_MODE:
+                        print(f"[OK] Ayarlar yuklendi: {self.filename}")
+                    return loaded
+            except Exception as e:
+                print(f"[UYARI] Ayarlar yuklenirken hata: {e}")
+                return copy.deepcopy(self.default_settings)
+
+        if constants.DEBUG_MODE:
+            print("[BILGI] Varsayilan ayarlar kullaniliyor")
+        defaults = copy.deepcopy(self.default_settings)
+        defaults['controls'] = self._merge_controls(defaults.get('controls', {}))
+        self._migrate_music_preferences_inplace(defaults)
+        return defaults
+
+    def _save_split_payloads(self, cloud_settings, local_settings, campaign_progress):
+        write_json_file(self.cloud_filename, cloud_settings, indent=2)
+        write_json_file(self.local_filename, local_settings, indent=2)
+        write_json_file(self.campaign_progress_filename, campaign_progress, indent=2)
+
+    def _load_split_settings(self):
+        cloud_payload = read_json_file(self.cloud_filename, default={})
+        local_payload = read_json_file(self.local_filename, default={})
+        campaign_payload = read_json_file(self.campaign_progress_filename, default={})
+
+        rewrite_split_files = False
+        if isinstance(cloud_payload, dict):
+            original_cloud_payload = copy.deepcopy(cloud_payload)
+            split_cloud, split_local_from_cloud, split_campaign_from_cloud = split_settings_payload(cloud_payload)
+            cloud_payload = split_cloud
+            if split_local_from_cloud:
+                local_payload = {**split_local_from_cloud, **(local_payload if isinstance(local_payload, dict) else {})}
+                rewrite_split_files = True
+            if split_campaign_from_cloud and not campaign_payload:
+                campaign_payload = split_campaign_from_cloud
+                rewrite_split_files = True
+            if split_cloud != original_cloud_payload:
+                rewrite_split_files = True
+
+        if not isinstance(local_payload, dict):
+            local_payload = {}
+        if not isinstance(campaign_payload, dict):
+            campaign_payload = {}
+
+        merged = merge_settings_payload(
+            self.default_settings,
+            cloud_payload if isinstance(cloud_payload, dict) else {},
+            local_payload,
+            campaign_payload,
+        )
+        merged['controls'] = self._merge_controls(merged.get('controls', {}))
+        self._migrate_music_preferences_inplace(merged)
+
+        self.cloud_settings = cloud_payload if isinstance(cloud_payload, dict) else {}
+        self.local_settings = local_payload
+        self.campaign_progress = campaign_payload
+
+        if (
+            rewrite_split_files
+            or not os.path.exists(self.cloud_filename)
+            or not os.path.exists(self.local_filename)
+            or not os.path.exists(self.campaign_progress_filename)
+        ):
+            cloud_payload, local_payload, campaign_payload = split_settings_payload(merged)
+            self.cloud_settings = cloud_payload
+            self.local_settings = local_payload
+            self.campaign_progress = campaign_payload
+            self._save_split_payloads(cloud_payload, local_payload, campaign_payload)
+
+        if constants.DEBUG_MODE:
+            print(f"[OK] Ayarlar yuklendi: cloud={self.cloud_filename} local={self.local_filename}")
+        return merged
+
     def _get_bundled_defaults_path(self) -> str | None:
         """Return bundled defaults JSON path if present.
 
@@ -305,29 +417,9 @@ class SettingsManager:
     
     def load_settings(self):
         """Ayarları JSON'dan yükle"""
-        if os.path.exists(self.filename):
-            try:
-                with open(self.filename, 'r', encoding='utf-8') as f:
-                    loaded = json.load(f)
-                    # Eksik ayarları varsayılanlarla tamamla
-                    for key, value in self.default_settings.items():
-                        if key not in loaded:
-                            loaded[key] = copy.deepcopy(value)
-                    loaded['controls'] = self._merge_controls(loaded.get('controls', {}))
-                    self._migrate_music_preferences_inplace(loaded)
-                    if constants.DEBUG_MODE:
-                        print(f"[OK] Ayarlar yuklendi: {self.filename}")
-                    return loaded
-            except Exception as e:
-                print(f"[UYARI] Ayarlar yuklenirken hata: {e}")
-                return copy.deepcopy(self.default_settings)
-        else:
-            if constants.DEBUG_MODE:
-                print("[BILGI] Varsayilan ayarlar kullaniliyor")
-            defaults = copy.deepcopy(self.default_settings)
-            defaults['controls'] = self._merge_controls(defaults.get('controls', {}))
-            self._migrate_music_preferences_inplace(defaults)
-            return defaults
+        if self._single_file_mode:
+            return self._load_single_file_settings()
+        return self._load_split_settings()
 
     def _slug_track_name(self, value):
         if value is None:
@@ -464,7 +556,14 @@ class SettingsManager:
     def save_settings(self):
         """Ayarları JSON'a kaydet"""
         try:
-            atomic_write_json(self.filename, self.settings, indent=2, ensure_ascii=False)
+            if self._single_file_mode:
+                atomic_write_json(self.filename, self.settings, indent=2, ensure_ascii=False)
+            else:
+                cloud_payload, local_payload, campaign_payload = split_settings_payload(self.settings)
+                self.cloud_settings = cloud_payload
+                self.local_settings = local_payload
+                self.campaign_progress = campaign_payload
+                self._save_split_payloads(cloud_payload, local_payload, campaign_payload)
             if constants.DEBUG_MODE:
                 print(f"[KAYIT] Ayarlar kaydedildi: {self.filename}")
             self._dirty = False
@@ -528,6 +627,7 @@ class SettingsManager:
     def reset_to_defaults(self):
         """Ayarları varsayılana sıfırla"""
         self.settings = copy.deepcopy(self.default_settings)
+        self.settings['campaign_progress'] = {}
         self.settings['controls'] = self._merge_controls(self.settings.get('controls', {}))
         self.save_settings()
         if constants.DEBUG_MODE:
