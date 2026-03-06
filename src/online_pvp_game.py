@@ -31,12 +31,14 @@ from constants import (
 )
 from board import Board
 from pieces import Piece, SHAPES
+from block_styles import BlockStyleManager, TextureSlice
 from sound import SoundManager
 from background import BackgroundManager
 from background_effects import get_shared_falling_blocks_layer
-from themes import ThemeManager
+from themes import ThemeManager, CUSTOM_THEME_NAME
+from mode_skins import apply_board_tint, draw_board_overlay, get_mode_skin
 from retro_style import retro_style as _rs
-from renderers.jelly_renderer import draw_jelly_block
+from renderers.jelly_renderer import draw_jelly_block, draw_jelly_border
 
 # Convenience aliases for retro_style singleton methods
 get_font = _rs.get_font
@@ -173,11 +175,27 @@ class OnlinePvPGame:
 
         # Arka plan
         self.background = BackgroundManager()
+        self.board_background = BackgroundManager()
         self.background.set_transparency(1.0)
+        if settings_manager:
+            self.board_background.set_transparency(settings_manager.get('bg_transparency', 1.0))
+        else:
+            self.board_background.set_transparency(1.0)
         self.background_fx = get_shared_falling_blocks_layer('default')
+        self.load_board_background()
 
         # Tema
         self.theme_manager = ThemeManager(settings_manager)
+        if self.settings_manager:
+            active_theme = self.settings_manager.get('theme', self.settings_manager.get('active_theme', 'Classic'))
+            self.theme_manager.set_theme(active_theme)
+        self.mode_skin = get_mode_skin('pvp')
+        self.block_style_manager = BlockStyleManager(self.settings_manager) if self.settings_manager else None
+        self._texture_rotation_cache: dict[int, dict] = {}
+        self._board_grid_cache = {'key': None, 'surface': None}
+        self._board_accent_overlay_cache: dict[tuple[int, int, tuple[int, int, int]], pygame.Surface] = {}
+        self._line_clear_flash_cache: dict[tuple[int, int], pygame.Surface] = {}
+        self._line_clear_glow_cache: dict[tuple[int, int, str], pygame.Surface] = {}
 
         # Font'lar (retro_style üzerinden — CJK/HybridFont desteği)
         self.font_large = _rs.get_font(36)
@@ -188,9 +206,11 @@ class OnlinePvPGame:
         # ─── Steam Networking ───
         self.net = SteamNetworking()
         self._net_initialized = False
+        self._auto_connect_attempted = False
+        self._auto_connect_retry_timer = 0.0
 
         # ─── Gamepad ───
-        self.gamepad: GamepadManager | None = None
+        self.gamepad = None
         if GamepadManager is not None:
             try:
                 self.gamepad = GamepadManager()
@@ -222,6 +242,10 @@ class OnlinePvPGame:
         self.opponent_piece_data: dict | None = None
         self._opponent_piece_seq: int = 0   # Sıra numarası (out-of-order koruması)
         self._my_piece_seq: int = 0         # Gönderilen sıra numarası
+        self._opponent_board_seq: int = -1  # Snapshot sıra numarası
+        self._my_board_seq: int = 0
+        self._opponent_clear_event_seq: int = -1
+        self._my_clear_event_seq: int = 0
 
         # Zamanlama
         self.fall_timer = 0
@@ -259,6 +283,9 @@ class OnlinePvPGame:
         self._lobby_list: list[dict] = []  # Public lobiler
         self._lobby_list_scroll = 0
         self._lobby_list_fetching = False
+        self._auto_lobby_refresh_requested = False
+        self._auto_lobby_refresh_timer = 0.0
+        self._auto_lobby_refresh_interval = 10000.0
         self._pending_lobby_list: list[dict] = []  # Lobi listesi birikim tampon
 
         # Durum mesajı (hata/bilgi)
@@ -286,12 +313,21 @@ class OnlinePvPGame:
         self.my_line_flash_timer: float = 0
         self.my_line_glow_alpha: int = 0
         self.my_wave_effects: list[dict] = []
+        self.my_line_sweep_rows: list[int] = []
+        self.my_line_sweep_progress: float = 0.0
+        self.my_line_sweep_active: bool = False
+        self.my_falling_block_animations: list[dict] = []
         # Rakip satır temizleme efektleri (ağdan gelince tetiklenir)
         self.opp_line_flash_rows: list[int] = []
         self.opp_line_flash_timer: float = 0
         self.opp_line_glow_alpha: int = 0
         self.opp_wave_effects: list[dict] = []
+        self.opp_line_sweep_rows: list[int] = []
+        self.opp_line_sweep_progress: float = 0.0
+        self.opp_line_sweep_active: bool = False
+        self.opp_falling_block_animations: list[dict] = []
         self._pending_opp_particle_rows: list[int] = []
+        self.block_fall_speed: float = 0.08
         # Ekran titremesi
         self.screen_shake: float = 0
         self.shake_intensity: int = 0
@@ -320,6 +356,235 @@ class OnlinePvPGame:
             return bool(sm.get('particle_effects', True))
         except Exception:
             return True
+
+    def _apply_block_style(self, piece: Piece | None):
+        if not piece:
+            return
+        base_color = self.theme_manager.get_piece_color(piece.name) if self.theme_manager else piece.color
+        if self.block_style_manager:
+            allow_color_override = bool(
+                self.theme_manager
+                and getattr(self.theme_manager, 'theme_name', None) == CUSTOM_THEME_NAME
+            )
+            self.block_style_manager.apply_to_piece(
+                piece,
+                base_color,
+                allow_color_override=allow_color_override,
+            )
+        else:
+            piece.color = base_color
+            piece.texture_path = None
+            piece.texture_surface = None
+            piece.texture_surface_original = None
+
+    def load_board_background(self):
+        """Online PvP oyun alanı arka planını yükle."""
+        custom_bg = self.settings_manager.get('bg_pvp_board', None) if self.settings_manager else None
+        if custom_bg and os.path.exists(custom_bg):
+            if self.board_background.load_image(custom_bg):
+                return
+
+        possible_paths = [
+            resource_path('backgrounds/game_background.png'),
+            resource_path('backgrounds/game_background.jpg'),
+            resource_path('backgrounds/board_background.png'),
+            resource_path('backgrounds/board_background.jpg'),
+            resource_path('backgrounds/board_bg.png'),
+            resource_path('backgrounds/tetris_bg.png'),
+            resource_path('backgrounds/game_bg.jpg'),
+        ]
+        for path in possible_paths:
+            if self.board_background.load_image(path):
+                break
+
+    def _get_board_grid_surface(self, cell_size: int) -> pygame.Surface:
+        skin = self.mode_skin
+        key = (int(cell_size), tuple(getattr(skin, 'grid_color', (50, 50, 80))), BOARD_WIDTH, BOARD_HEIGHT)
+        cached = self._board_grid_cache
+        if cached.get('key') == key and cached.get('surface') is not None:
+            return cached['surface']
+
+        board_width = BOARD_WIDTH * cell_size
+        board_height = BOARD_HEIGHT * cell_size
+        surface = pygame.Surface((board_width, board_height), pygame.SRCALPHA)
+        grid_color = getattr(skin, 'grid_color', (50, 50, 80))
+        line_color = (*grid_color[:3], 70)
+        for x in range(BOARD_WIDTH + 1):
+            pygame.draw.line(surface, line_color, (x * cell_size, 0), (x * cell_size, board_height))
+        for y in range(BOARD_HEIGHT + 1):
+            pygame.draw.line(surface, line_color, (0, y * cell_size), (board_width, y * cell_size))
+
+        cached['key'] = key
+        cached['surface'] = surface
+        return surface
+
+    def _get_board_accent_overlay(self, width: int, height: int, color: tuple[int, int, int], alpha: int) -> pygame.Surface:
+        key = (int(width), int(height), tuple(color[:3]), int(alpha))
+        cached = self._board_accent_overlay_cache.get(key)
+        if cached is not None:
+            return cached
+        surface = pygame.Surface((width, height), pygame.SRCALPHA)
+        surface.fill((*color[:3], alpha))
+        self._board_accent_overlay_cache[key] = surface
+        return surface
+
+    def _draw_line_clear_flash_overlay(self, board_x: int, board_y: int, board_width: int,
+                                       cell_size: int, rows: list[int], glow_alpha: int) -> None:
+        flash_cache = self._line_clear_flash_cache
+        glow_cache = self._line_clear_glow_cache
+
+        for row in rows:
+            if not 0 <= row < BOARD_HEIGHT:
+                continue
+            flash_rect = pygame.Rect(board_x, board_y + row * cell_size, board_width, cell_size)
+            flash_alpha = min(255, glow_alpha)
+            flash_key = (int(board_width), int(cell_size))
+            flash_surface = flash_cache.get(flash_key)
+            if flash_surface is None or flash_surface.get_size() != (int(board_width), int(cell_size)):
+                flash_surface = pygame.Surface((int(board_width), int(cell_size)), pygame.SRCALPHA)
+                flash_surface.fill((255, 255, 255, 255))
+                flash_cache[flash_key] = flash_surface
+            flash_surface.set_alpha(int(flash_alpha))
+            self.screen.blit(flash_surface, flash_rect.topleft)
+
+            if glow_alpha > 100:
+                glow_height = cell_size // 2
+                glow_surf_alpha = int(flash_alpha * 0.5)
+                if glow_height > 0 and glow_surf_alpha > 0:
+                    top_key = (int(board_width), int(glow_height), 'top')
+                    top_glow = glow_cache.get(top_key)
+                    if top_glow is None or top_glow.get_size() != (int(board_width), int(glow_height)):
+                        top_glow = pygame.Surface((int(board_width), int(glow_height)), pygame.SRCALPHA)
+                        for i in range(int(glow_height)):
+                            alpha = int(255 * (1.0 - (i / max(1, glow_height - 1))))
+                            pygame.draw.line(top_glow, (255, 255, 200, alpha), (0, i), (int(board_width), i))
+                        glow_cache[top_key] = top_glow
+                    top_glow.set_alpha(glow_surf_alpha)
+                    self.screen.blit(top_glow, (board_x, board_y + row * cell_size - glow_height))
+
+                    bottom_key = (int(board_width), int(glow_height), 'bottom')
+                    bottom_glow = glow_cache.get(bottom_key)
+                    if bottom_glow is None or bottom_glow.get_size() != (int(board_width), int(glow_height)):
+                        bottom_glow = pygame.Surface((int(board_width), int(glow_height)), pygame.SRCALPHA)
+                        for i in range(int(glow_height)):
+                            alpha = int(255 * (i / max(1, glow_height - 1)))
+                            pygame.draw.line(bottom_glow, (255, 255, 200, alpha), (0, i), (int(board_width), i))
+                        glow_cache[bottom_key] = bottom_glow
+                    bottom_glow.set_alpha(glow_surf_alpha)
+                    self.screen.blit(bottom_glow, (board_x, board_y + (row + 1) * cell_size))
+
+    def _start_block_fall_animation(self, rows: list[int], cell_size: int,
+                                    board: Board | None = None,
+                                    snapshot_grid: list[list[object | None]] | None = None,
+                                    is_opponent: bool = False) -> None:
+        if not rows:
+            return
+
+        animations = []
+        lines_count = len(rows)
+        if board is not None:
+            for row in range(board.height):
+                for col in range(board.width):
+                    if board.occupancy[row][col]:
+                        animations.append({
+                            'row': row,
+                            'col': col,
+                            'current_offset': -lines_count * cell_size,
+                            'target_offset': 0,
+                            'sweep_trigger': col / max(1, board.width - 1),
+                            'started': False,
+                        })
+        elif snapshot_grid is not None:
+            max_rows = min(BOARD_HEIGHT, len(snapshot_grid))
+            for row in range(max_rows):
+                max_cols = min(BOARD_WIDTH, len(snapshot_grid[row]))
+                for col in range(max_cols):
+                    if snapshot_grid[row][col] is not None:
+                        animations.append({
+                            'row': row,
+                            'col': col,
+                            'current_offset': -lines_count * cell_size,
+                            'target_offset': 0,
+                            'sweep_trigger': col / max(1, BOARD_WIDTH - 1),
+                            'started': False,
+                        })
+
+        if is_opponent:
+            self.opp_falling_block_animations = animations
+        else:
+            self.my_falling_block_animations = animations
+
+    def _get_block_fall_offset(self, row: int, col: int, is_opponent: bool = False) -> float:
+        animations = self.opp_falling_block_animations if is_opponent else self.my_falling_block_animations
+        for anim in animations:
+            if anim['row'] == row and anim['col'] == col:
+                return anim['current_offset']
+        return 0
+
+    def _make_texture_slice(self, piece: Piece | None, rel_x: int, rel_y: int,
+                             piece_width: int | None = None, piece_height: int | None = None) -> TextureSlice | None:
+        if not piece or not getattr(piece, 'texture_surface', None):
+            return None
+        width = piece_width if piece_width is not None else (len(piece.shape[0]) if piece.shape else 1)
+        height = piece_height if piece_height is not None else (len(piece.shape) if piece.shape else 1)
+        width = width or 1
+        height = height or 1
+        rotation = getattr(piece, 'rotation_state', 0)
+        style_key = getattr(piece, 'style_key', None) or piece.name
+        return TextureSlice(style_key, rel_x, rel_y, width, height, rotation)
+
+    def _get_rotated_surface(self, surface, rotation):
+        rotation = (rotation or 0) % 4
+        if surface is None or rotation == 0:
+            return surface
+        surf_id = id(surface)
+        cache_entry = self._texture_rotation_cache.get(surf_id)
+        if not cache_entry or cache_entry.get('surface') is not surface:
+            cache_entry = {'surface': surface, 'variants': {}}
+            self._texture_rotation_cache[surf_id] = cache_entry
+        variants = cache_entry['variants']
+        if rotation not in variants:
+            variants[rotation] = pygame.transform.rotate(surface, -90 * rotation)
+        return variants[rotation]
+
+    def _render_texture_slice(self, surface, slice_info, size):
+        rotated = self._get_rotated_surface(surface, getattr(slice_info, 'rotation', 0))
+        if rotated is None:
+            return None
+
+        tex_w, tex_h = rotated.get_size()
+        bounds = {'x': 0.0, 'y': 0.0, 'w': 1.0, 'h': 1.0}
+        if self.block_style_manager:
+            bounds = self.block_style_manager.get_slice_bounds(slice_info.piece_name)
+
+        u0 = bounds['x'] + (slice_info.rel_x / slice_info.width) * bounds['w']
+        u1 = bounds['x'] + ((slice_info.rel_x + 1) / slice_info.width) * bounds['w']
+        v0 = bounds['y'] + (slice_info.rel_y / slice_info.height) * bounds['h']
+        v1 = bounds['y'] + ((slice_info.rel_y + 1) / slice_info.height) * bounds['h']
+
+        rect = pygame.Rect(
+            int(u0 * tex_w),
+            int(v0 * tex_h),
+            max(1, int((u1 - u0) * tex_w)),
+            max(1, int((v1 - v0) * tex_h)),
+        )
+        rect.clamp_ip(rotated.get_rect())
+        cell_surface = rotated.subsurface(rect)
+        return pygame.transform.smoothscale(cell_surface, (size, size))
+
+    def _draw_texture_cell(self, x, y, size, texture_surface, texture_slice, dst):
+        scaled = self._render_texture_slice(texture_surface, texture_slice, size)
+        if scaled is None:
+            return
+        dst.blit(scaled, (x, y))
+
+    def draw_textured_block(self, x, y, size, color, texture_surface=None, texture_slice=None, dst: pygame.Surface | None = None):
+        target = dst or self.screen
+        if texture_surface is not None and texture_slice is not None:
+            self._draw_texture_cell(x, y, size, texture_surface, texture_slice, target)
+            draw_jelly_border(target, x, y, size, color)
+            return
+        draw_jelly_block(target, x, y, size, color)
 
     def _start_pvp_music(self):
         """PvP müziğini başlat (local PvP ile aynı playlist mantığı)."""
@@ -597,6 +862,18 @@ class OnlinePvPGame:
         self._status_msg = t('joining_lobby', 'Lobiye katılınıyor...')
         self._status_timer = 2.0
 
+    def _request_public_lobby_list(self) -> bool:
+        """Public lobi listesini yenile."""
+        if not self._init_networking():
+            return False
+        if self._lobby_list_fetching:
+            return True
+        self._lobby_list_fetching = True
+        self._auto_lobby_refresh_timer = self._auto_lobby_refresh_interval
+        self._pending_lobby_list.clear()
+        self.net.request_lobby_list()
+        return True
+
     def _return_to_pvp_lobby_menu(self):
         """Aktif lobiden ayrıl ve Online PvP giriş ekranına dön."""
         self.net.leave_lobby()
@@ -615,6 +892,9 @@ class OnlinePvPGame:
         self._searching_by_code = False
         self._search_code = ''
         self._lobby_list_fetching = False
+        self._auto_lobby_refresh_requested = False
+        self._auto_lobby_refresh_timer = 0.0
+        self._auto_connect_retry_timer = 0.0
         self._pending_lobby_list.clear()
         self._status_msg = ''
         self._status_timer = 0
@@ -860,14 +1140,26 @@ class OnlinePvPGame:
         self.opponent_piece_data = None
         self._opponent_piece_seq = 0
         self._my_piece_seq = 0
+        self._opponent_board_seq = -1
+        self._my_board_seq = 0
+        self._opponent_clear_event_seq = -1
+        self._my_clear_event_seq = 0
         self.my_line_flash_rows = []
         self.my_line_flash_timer = 0
         self.my_line_glow_alpha = 0
         self.my_wave_effects = []
+        self.my_line_sweep_rows = []
+        self.my_line_sweep_progress = 0.0
+        self.my_line_sweep_active = False
+        self.my_falling_block_animations = []
         self.opp_line_flash_rows = []
         self.opp_line_flash_timer = 0
         self.opp_line_glow_alpha = 0
         self.opp_wave_effects = []
+        self.opp_line_sweep_rows = []
+        self.opp_line_sweep_progress = 0.0
+        self.opp_line_sweep_active = False
+        self.opp_falling_block_animations = []
         self._pending_opp_particle_rows = []
         self.particles.clear()
         self.screen_shake = 0
@@ -881,6 +1173,7 @@ class OnlinePvPGame:
         idx = self.piece_sequence[self.piece_index]
         self.piece_index += 1
         piece = Piece(x=3, y=0, shape_index=idx)
+        self._apply_block_style(piece)
         return piece
 
     def trigger_screen_shake(self, intensity=10, duration=15):
@@ -1127,13 +1420,24 @@ class OnlinePvPGame:
             self.opp_line_flash_timer = 20
             self.opp_line_glow_alpha = 255
             wave_list = self.opp_wave_effects
+            self.opp_line_sweep_rows = list(rows)
+            self.opp_line_sweep_progress = 0.0
+            self.opp_line_sweep_active = True
         else:
             self.my_line_flash_rows = list(rows)
             self.my_line_flash_timer = 20
             self.my_line_glow_alpha = 255
             wave_list = self.my_wave_effects
+            self.my_line_sweep_rows = list(rows)
+            self.my_line_sweep_progress = 0.0
+            self.my_line_sweep_active = True
 
         self.create_line_clear_particles(rows, board_x, board_y, cell_size, board=board)
+        if is_opponent:
+            if self.opponent_grid_snapshot:
+                self._start_block_fall_animation(rows, cell_size, snapshot_grid=self.opponent_grid_snapshot, is_opponent=True)
+        else:
+            self._start_block_fall_animation(rows, cell_size, board=board, is_opponent=False)
         for row in rows:
             wave_list.append({
                 'x': board_x + (BOARD_WIDTH * cell_size) // 2,
@@ -1231,6 +1535,15 @@ class OnlinePvPGame:
 
     def _update_opponent_display(self, data: dict):
         """Rakip tahta snapshot'ını güncelle."""
+        try:
+            snapshot_seq = int(data.get('seq', -1))
+        except (TypeError, ValueError):
+            snapshot_seq = -1
+        if snapshot_seq >= 0 and snapshot_seq < self._opponent_board_seq:
+            return
+        if snapshot_seq >= 0:
+            self._opponent_board_seq = snapshot_seq
+
         grid = data.get('grid')
         if grid:
             self.opponent_grid_snapshot = grid
@@ -1240,29 +1553,27 @@ class OnlinePvPGame:
             new_lines = int(new_lines)
         except (TypeError, ValueError):
             new_lines = self.opponent_lines
-        delta_lines = max(0, new_lines - int(getattr(self, '_opponent_lines_prev', 0) or 0))
-        effect_line_count = min(4, delta_lines)
-        if effect_line_count > 0:
-            effect_rows = list(range(max(0, BOARD_HEIGHT - effect_line_count), BOARD_HEIGHT))
-            self.opp_line_flash_rows = effect_rows
-            self.opp_line_flash_timer = 20
-            self.opp_line_glow_alpha = 255
-            self._pending_opp_particle_rows = list(effect_rows)
-            self.opp_wave_effects.clear()
-            for row in effect_rows:
-                self.opp_wave_effects.append({
-                    'x': 0,
-                    'y': row,
-                    'radius': 0,
-                    'max_radius': BOARD_WIDTH,
-                    'alpha': 200,
-                    'color': (255, 255, 255),
-                    'speed': 15,
-                })
-            if effect_line_count >= 4:
-                self.trigger_screen_shake(intensity=15, duration=20)
-            else:
-                self.trigger_screen_shake(intensity=3 + effect_line_count * 2, duration=8)
+        clear_rows = data.get('clear_rows')
+        try:
+            clear_event_seq = int(data.get('clear_event_seq', -1))
+        except (TypeError, ValueError):
+            clear_event_seq = -1
+        if (
+            isinstance(clear_rows, list)
+            and clear_rows
+            and clear_event_seq > self._opponent_clear_event_seq
+        ):
+            effect_rows = []
+            for row in clear_rows:
+                try:
+                    row_i = int(row)
+                except (TypeError, ValueError):
+                    continue
+                if 0 <= row_i < BOARD_HEIGHT:
+                    effect_rows.append(row_i)
+            if effect_rows:
+                self._opponent_clear_event_seq = clear_event_seq
+                self._pending_opp_particle_rows = list(effect_rows)
         self.opponent_lines = new_lines
         self._opponent_lines_prev = new_lines
         self.opponent_level = data.get('level', self.opponent_level)
@@ -1286,6 +1597,7 @@ class OnlinePvPGame:
             # İlk hold — saklı parça yok, sıradakini al
             self.hold_shape_index = current_shape_index
             self.hold_piece = Piece(x=0, y=0, shape_index=current_shape_index)
+            self._apply_block_style(self.hold_piece)
             self.my_piece = self.my_next_piece
             self.my_next_piece = self._get_next_piece()
             self.next_piece = self.my_next_piece
@@ -1294,7 +1606,9 @@ class OnlinePvPGame:
             old_hold = self.hold_shape_index
             self.hold_shape_index = current_shape_index
             self.hold_piece = Piece(x=0, y=0, shape_index=current_shape_index)
+            self._apply_block_style(self.hold_piece)
             self.my_piece = Piece(x=3, y=0, shape_index=old_hold)
+            self._apply_block_style(self.my_piece)
 
         self.hold_used = True
         self.lock_timer = 0
@@ -1327,10 +1641,11 @@ class OnlinePvPGame:
             ghost_y += 1
         return ghost_y
 
-    def _send_board_snapshot(self):
+    def _send_board_snapshot(self, clear_rows: list[int] | None = None):
         """Kendi tahta durumunu rakibe gönder."""
         if not self.my_board:
             return
+        self._my_board_seq += 1
         # Grid'i kompakt formata çevir (sadece dolu hücreler)
         compact_grid = []
         for y in range(BOARD_HEIGHT):
@@ -1344,11 +1659,25 @@ class OnlinePvPGame:
             compact_grid.append(row)
 
         data = {
+            'seq': self._my_board_seq,
             'grid': compact_grid,
             'score': self.my_board.score,
             'lines': self.my_board.lines_cleared,
             'level': self.my_board.level,
         }
+
+        if clear_rows:
+            self._my_clear_event_seq += 1
+            sanitized_rows = []
+            for row in clear_rows:
+                try:
+                    row_i = int(row)
+                except (TypeError, ValueError):
+                    continue
+                if 0 <= row_i < BOARD_HEIGHT:
+                    sanitized_rows.append(row_i)
+            data['clear_rows'] = sanitized_rows
+            data['clear_event_seq'] = self._my_clear_event_seq
 
         # Aktif parça bilgisini de ekle (fallback sync noktası)
         if self.my_piece:
@@ -1381,6 +1710,36 @@ class OnlinePvPGame:
     def update(self, delta_time: int):
         """Her frame çağrılır."""
         self._last_dt_ms = delta_time
+
+        # Online PvP ekranına girildiğinde Steam'e otomatik bağlan.
+        # İlk deneme geçici olarak başarısız olursa kısa aralıklarla tekrar dene.
+        if not self._net_initialized:
+            if self._auto_connect_retry_timer > 0:
+                self._auto_connect_retry_timer = max(0.0, self._auto_connect_retry_timer - float(delta_time))
+            if not self._auto_connect_attempted or self._auto_connect_retry_timer <= 0:
+                self._auto_connect_attempted = True
+                if not self._init_networking():
+                    self._auto_connect_retry_timer = 2000.0
+
+        # Lobi menüsüne gelince önce bir kez, sonra da her 10 saniyede bir public lobileri yenile.
+        if (
+            self.online_state == OnlineState.LOBBY_MENU
+            and self._net_initialized
+            and not self._auto_lobby_refresh_requested
+        ):
+            if self._request_public_lobby_list():
+                self._auto_lobby_refresh_requested = True
+        elif (
+            self.online_state == OnlineState.LOBBY_MENU
+            and self._net_initialized
+            and self._auto_lobby_refresh_requested
+            and not self._lobby_list_fetching
+            and not self._searching_by_code
+        ):
+            self._auto_lobby_refresh_timer = max(0.0, self._auto_lobby_refresh_timer - float(delta_time))
+            if self._auto_lobby_refresh_timer <= 0:
+                self._request_public_lobby_list()
+
         # Steam callback'leri işle
         if self._net_initialized:
             self.net.tick()
@@ -1407,6 +1766,20 @@ class OnlinePvPGame:
                 self.opp_line_flash_rows = []
                 self.opp_line_glow_alpha = 0
 
+        if self.my_line_sweep_active:
+            self.my_line_sweep_progress += dt_frames * 0.06
+            if self.my_line_sweep_progress >= 1.0:
+                self.my_line_sweep_progress = 1.0
+                self.my_line_sweep_active = False
+                self.my_line_sweep_rows = []
+
+        if self.opp_line_sweep_active:
+            self.opp_line_sweep_progress += dt_frames * 0.06
+            if self.opp_line_sweep_progress >= 1.0:
+                self.opp_line_sweep_progress = 1.0
+                self.opp_line_sweep_active = False
+                self.opp_line_sweep_rows = []
+
         for wave in self.my_wave_effects[:]:
             wave['radius'] += wave['speed'] * dt_frames
             wave['alpha'] = int(200 * (1 - wave['radius'] / wave['max_radius']))
@@ -1418,6 +1791,34 @@ class OnlinePvPGame:
             wave['alpha'] = int(200 * (1 - wave['radius'] / wave['max_radius']))
             if wave['radius'] >= wave['max_radius'] or wave['alpha'] <= 0:
                 self.opp_wave_effects.remove(wave)
+
+        if self.my_falling_block_animations:
+            fall_speed = self.block_fall_speed * dt_frames * 60
+            for anim in self.my_falling_block_animations:
+                if not anim.get('started', False) and self.my_line_sweep_progress >= anim.get('sweep_trigger', 0):
+                    anim['started'] = True
+                if anim.get('started', False):
+                    anim['current_offset'] += fall_speed
+                    if anim['current_offset'] >= 0:
+                        anim['current_offset'] = 0
+            self.my_falling_block_animations = [
+                anim for anim in self.my_falling_block_animations
+                if not (anim['current_offset'] >= 0 and anim.get('started', False))
+            ]
+
+        if self.opp_falling_block_animations:
+            fall_speed = self.block_fall_speed * dt_frames * 60
+            for anim in self.opp_falling_block_animations:
+                if not anim.get('started', False) and self.opp_line_sweep_progress >= anim.get('sweep_trigger', 0):
+                    anim['started'] = True
+                if anim.get('started', False):
+                    anim['current_offset'] += fall_speed
+                    if anim['current_offset'] >= 0:
+                        anim['current_offset'] = 0
+            self.opp_falling_block_animations = [
+                anim for anim in self.opp_falling_block_animations
+                if not (anim['current_offset'] >= 0 and anim.get('started', False))
+            ]
 
         # Durum mesajı zamanlayıcı
         if self._status_timer > 0:
@@ -1498,6 +1899,7 @@ class OnlinePvPGame:
             )
 
         lines = self.my_board.lock_piece(self.my_piece)
+        cleared_rows = list(self.my_board.last_cleared_lines) if lines > 0 else []
 
         try:
             self.sound.play('lock')
@@ -1543,6 +1945,7 @@ class OnlinePvPGame:
 
         # Yeni parça pozisyonunu hemen gönder
         self._send_piece_position()
+        self._send_board_snapshot(clear_rows=cleared_rows)
 
         # Oyun bitti mi?
         if not self.my_board.is_valid_position(self.my_piece):
@@ -1708,10 +2111,7 @@ class OnlinePvPGame:
                 if self._init_networking():
                     self.net.create_lobby(public=True)
             elif key == pygame.K_3:
-                if self._init_networking():
-                    self._lobby_list_fetching = True
-                    self._pending_lobby_list.clear()
-                    self.net.request_lobby_list()
+                self._request_public_lobby_list()
             elif key == pygame.K_i:
                 self._do_invite_friend()
             elif key == pygame.K_j:
@@ -1812,10 +2212,7 @@ class OnlinePvPGame:
                         if self._init_networking():
                             self.net.create_lobby(public=True)
                     elif action == 'find_match':
-                        if self._init_networking():
-                            self._lobby_list_fetching = True
-                            self._pending_lobby_list.clear()
-                            self.net.request_lobby_list()
+                        self._request_public_lobby_list()
                     elif action == 'back':
                         return 'menu'
                     elif action == 'invite_friend':
@@ -2288,10 +2685,13 @@ class OnlinePvPGame:
         elif not self._lobby_list:
             e_font = _rs.get_font(s(16, minimum=11), bold=False)
             e1 = e_font.render(t('no_lobbies_found', 'Lobi bulunamadı'), True, _rs.text_muted)
-            e2 = _rs.get_font(s(14, minimum=10), bold=False).render(
-                t('press_find_match', '"Maç Bul" ile arayın'), True, _rs.text_muted)
-            self.screen.blit(e1, e1.get_rect(center=(list_x + list_w // 2, list_y + list_h // 2 - s(10))))
-            self.screen.blit(e2, e2.get_rect(center=(list_x + list_w // 2, list_y + list_h // 2 + s(14))))
+            if self._auto_lobby_refresh_requested:
+                self.screen.blit(e1, e1.get_rect(center=(list_x + list_w // 2, list_y + list_h // 2)))
+            else:
+                e2 = _rs.get_font(s(14, minimum=10), bold=False).render(
+                    t('press_find_match', '"Maç Bul" ile arayın'), True, _rs.text_muted)
+                self.screen.blit(e1, e1.get_rect(center=(list_x + list_w // 2, list_y + list_h // 2 - s(10))))
+                self.screen.blit(e2, e2.get_rect(center=(list_x + list_w // 2, list_y + list_h // 2 + s(14))))
         else:
             item_h = s(72)
             visible = max(1, (list_h - s(70)) // item_h)
@@ -2947,18 +3347,34 @@ class OnlinePvPGame:
                                   next_rect.top + s(30), mini)
 
     def _draw_mini_piece(self, piece, cx, top_y, mini):
-        """Bir parçayı küçük boyutta ortalanmış çiz (hold/next için) — jelly stili."""
+        """Bir parçayı küçük boyutta ortalanmış çiz (hold/next için)."""
         shape = piece.get_shape() if hasattr(piece, 'get_shape') else piece.shape
         rows = len(shape)
         cols = len(shape[0]) if rows else 0
         ox = cx - (cols * mini) // 2
         oy = top_y
+        piece_texture = getattr(piece, 'texture_surface', None)
         for ri, row in enumerate(shape):
             for ci, cell in enumerate(row):
                 if cell:
-                    draw_jelly_block(self.screen,
-                                     ox + ci * mini + 1, oy + ri * mini + 1,
-                                     mini - 2, piece.color[:3])
+                    draw_color = piece.color[:3]
+                    color_matrix = getattr(piece, 'color_matrix', None)
+                    if color_matrix is not None:
+                        try:
+                            matrix_color = color_matrix[ri][ci]
+                            if matrix_color is not None:
+                                draw_color = matrix_color[:3]
+                        except Exception:
+                            pass
+                    slice_info = self._make_texture_slice(piece, ci, ri, cols, rows)
+                    self.draw_textured_block(
+                        ox + ci * mini + 1,
+                        oy + ri * mini + 1,
+                        mini - 2,
+                        draw_color,
+                        piece_texture,
+                        slice_info,
+                    )
 
     def _draw_pause_overlay(self):
         """Duraklatma ekranı — pvp_game standardında (alpha=185 + cam panel)."""
@@ -2999,55 +3415,98 @@ class OnlinePvPGame:
 
     def _draw_board(self, x: int, y: int, cell_size: int,
                     board: Board | None, piece: Piece | None):
-        """Kendi tahtamızı çiz — jelly blok stili ile."""
+        """Kendi tahtamızı modern oyun alanı render zinciri ile çiz."""
         if not board:
             return
 
         board_w = BOARD_WIDTH * cell_size
         board_h = BOARD_HEIGHT * cell_size
         player_accent = UIColors.NEON_CYAN
+        board_rect = pygame.Rect(x, y, board_w, board_h)
+        skin = self.mode_skin
 
-        # Arka plan
         bg_rect = pygame.Rect(x - 2, y - 2, board_w + 4, board_h + 4)
         draw_glass_panel(self.screen, bg_rect, alpha=170, border_color=player_accent)
-        tint_surface = pygame.Surface((board_w, board_h), pygame.SRCALPHA)
-        tint_surface.fill((*player_accent[:3], 16))
-        self.screen.blit(tint_surface, (x, y))
-        pygame.draw.rect(self.screen, player_accent, (x, y, board_w, board_h), 2, border_radius=12)
+        pygame.draw.rect(self.screen, (6, 6, 16), board_rect)
+        self.board_background.draw(self.screen, (x, y, board_w, board_h))
+        apply_board_tint(self.screen, board_rect, skin)
+        self.screen.blit(self._get_board_accent_overlay(board_w, board_h, player_accent, 18), (x, y))
+        draw_board_overlay(self.screen, board_rect, skin)
+        self.screen.blit(self._get_board_grid_surface(cell_size), (x, y))
 
-        # Grid
-        grid_color = (40, 40, 65)
         for row in range(BOARD_HEIGHT):
             for col in range(BOARD_WIDTH):
-                cx = x + col * cell_size
-                cy = y + row * cell_size
+                if not board.occupancy[row][col]:
+                    continue
                 color = board.grid[row][col]
-                if color != BLACK:
-                    draw_jelly_block(self.screen, cx + 1, cy + 1,
-                                     cell_size - 2, color[:3])
-                else:
-                    pygame.draw.rect(self.screen, grid_color,
-                                     (cx, cy, cell_size, cell_size), 1)
+                locked_slice = board.texture_grid[row][col] if hasattr(board, 'texture_grid') else None
+                texture_surface = None
+                texture_slice = None
+                if locked_slice and self.block_style_manager:
+                    texture_surface = self.block_style_manager.get_texture_surface(locked_slice.piece_name)
+                    texture_slice = locked_slice if texture_surface else None
+                self.draw_textured_block(
+                    x + col * cell_size + 1,
+                    y + row * cell_size + 1 + self._get_block_fall_offset(row, col, is_opponent=False),
+                    cell_size - 2,
+                    color[:3],
+                    texture_surface,
+                    texture_slice,
+                )
 
-        # Aktif parça
         if piece:
             shape = piece.get_shape()
+            piece_texture = getattr(piece, 'texture_surface', None)
+            piece_height = len(shape)
+            piece_width = len(shape[0]) if piece_height else 1
             for row_i, row in enumerate(shape):
                 for col_i, cell in enumerate(row):
                     if cell:
                         px = x + (piece.x + col_i) * cell_size
                         py = y + (piece.y + row_i) * cell_size
                         if 0 <= piece.y + row_i < BOARD_HEIGHT:
-                            draw_jelly_block(self.screen, px + 1, py + 1,
-                                             cell_size - 2, piece.color[:3])
+                            draw_color = piece.color[:3]
+                            color_matrix = getattr(piece, 'color_matrix', None)
+                            if color_matrix is not None:
+                                try:
+                                    matrix_color = color_matrix[row_i][col_i]
+                                    if matrix_color is not None:
+                                        draw_color = matrix_color[:3]
+                                except Exception:
+                                    pass
+                            slice_info = self._make_texture_slice(piece, col_i, row_i, piece_width, piece_height)
+                            self.draw_textured_block(
+                                px + 1,
+                                py + 1,
+                                cell_size - 2,
+                                draw_color,
+                                piece_texture,
+                                slice_info,
+                            )
+
+        if self.my_line_sweep_rows and self.my_line_sweep_active:
+            progress = self.my_line_sweep_progress
+            sweep_width = max(3, int(cell_size * 1.5))
+            for row in self.my_line_sweep_rows:
+                if 0 <= row < BOARD_HEIGHT:
+                    row_y = y + row * cell_size
+                    sweep_x = x + int(progress * (board_w + sweep_width)) - sweep_width
+                    for i in range(sweep_width):
+                        half = max(1, sweep_width // 2)
+                        intensity = 1.0 - abs(i - half) / half
+                        alpha = int(255 * intensity * (1.0 - progress * 0.3))
+                        line_x = sweep_x + i
+                        if x <= line_x < x + board_w and alpha > 0:
+                            pygame.draw.line(self.screen, (255, 255, 255), (line_x, row_y), (line_x, row_y + cell_size), 1)
+                    if progress > 0:
+                        lit_width = min(int(progress * board_w), board_w)
+                        if lit_width > 0:
+                            lit_surface = pygame.Surface((lit_width, cell_size), pygame.SRCALPHA)
+                            lit_surface.fill((255, 255, 255, int(180 * (1.0 - progress * 0.8))))
+                            self.screen.blit(lit_surface, (x, row_y))
 
         if self.my_line_flash_rows and self.my_line_glow_alpha > 0:
-            flash_surface = pygame.Surface((board_w, board_h), pygame.SRCALPHA)
-            for row in self.my_line_flash_rows:
-                row_rect = pygame.Rect(0, row * cell_size, board_w, cell_size)
-                pygame.draw.rect(flash_surface, (255, 255, 255, self.my_line_glow_alpha), row_rect)
-                pygame.draw.rect(flash_surface, (0, 255, 255, min(255, self.my_line_glow_alpha + 40)), row_rect, 2)
-            self.screen.blit(flash_surface, (x, y))
+            self._draw_line_clear_flash_overlay(x, y, board_w, cell_size, self.my_line_flash_rows, self.my_line_glow_alpha)
 
         for wave in self.my_wave_effects:
             radius = int(wave.get('radius', 0))
@@ -3064,46 +3523,49 @@ class OnlinePvPGame:
             wave_y = int(wave['y'] - 3)
             self.screen.blit(wave_surface, (wave_x, wave_y))
 
+        pygame.draw.rect(self.screen, player_accent, board_rect, 2, border_radius=14)
+
     def _draw_opponent_board(self, x: int, y: int, cell_size: int):
-        """Ağdan gelen snapshot ile rakip tahtasını çiz — jelly blok stili."""
+        """Ağdan gelen snapshot ile rakip tahtasını modern zincirle çiz."""
         board_w = BOARD_WIDTH * cell_size
         board_h = BOARD_HEIGHT * cell_size
         player_accent = UIColors.NEON_MAGENTA
+        board_rect = pygame.Rect(x, y, board_w, board_h)
+        skin = self.mode_skin
 
         if self._pending_opp_particle_rows:
-            self.create_line_clear_particles(self._pending_opp_particle_rows, x, y, cell_size, board=None)
+            self._trigger_line_clear_feedback(
+                list(self._pending_opp_particle_rows),
+                x,
+                y,
+                cell_size,
+                board=None,
+                is_opponent=True,
+            )
             self._pending_opp_particle_rows = []
 
         bg_rect = pygame.Rect(x - 2, y - 2, board_w + 4, board_h + 4)
         draw_glass_panel(self.screen, bg_rect, alpha=170, border_color=player_accent)
-        tint_surface = pygame.Surface((board_w, board_h), pygame.SRCALPHA)
-        tint_surface.fill((*player_accent[:3], 16))
-        self.screen.blit(tint_surface, (x, y))
-        pygame.draw.rect(self.screen, player_accent, (x, y, board_w, board_h), 2, border_radius=12)
+        pygame.draw.rect(self.screen, (6, 6, 16), board_rect)
+        self.board_background.draw(self.screen, (x, y, board_w, board_h))
+        apply_board_tint(self.screen, board_rect, skin)
+        self.screen.blit(self._get_board_accent_overlay(board_w, board_h, player_accent, 18), (x, y))
+        draw_board_overlay(self.screen, board_rect, skin)
+        self.screen.blit(self._get_board_grid_surface(cell_size), (x, y))
 
-        grid_color = (40, 40, 65)
         if self.opponent_grid_snapshot:
             for row in range(min(BOARD_HEIGHT, len(self.opponent_grid_snapshot))):
                 for col in range(min(BOARD_WIDTH, len(self.opponent_grid_snapshot[row]))):
-                    cx = x + col * cell_size
-                    cy = y + row * cell_size
                     cell = self.opponent_grid_snapshot[row][col]
                     if cell is not None:
                         color = tuple(cell) if isinstance(cell, (list, tuple)) else (128, 128, 128)
-                        draw_jelly_block(self.screen, cx + 1, cy + 1,
-                                         cell_size - 2, color[:3])
-                    else:
-                        pygame.draw.rect(self.screen, grid_color,
-                                         (cx, cy, cell_size, cell_size), 1)
-        else:
-            for row in range(BOARD_HEIGHT):
-                for col in range(BOARD_WIDTH):
-                    cx = x + col * cell_size
-                    cy = y + row * cell_size
-                    pygame.draw.rect(self.screen, grid_color,
-                                     (cx, cy, cell_size, cell_size), 1)
+                        self.draw_textured_block(
+                            x + col * cell_size + 1,
+                            y + row * cell_size + 1 + self._get_block_fall_offset(row, col, is_opponent=True),
+                            cell_size - 2,
+                            color[:3],
+                        )
 
-        # ── Rakip aktif parça (gerçek zamanlı) ──
         if self.opponent_piece_data:
             try:
                 si = int(self.opponent_piece_data.get('si', -1))
@@ -3113,12 +3575,14 @@ class OnlinePvPGame:
             except (TypeError, ValueError):
                 si = -1
             if 0 <= si < len(SHAPES):
-                # Geçici Piece ile doğru rotasyonu uygula
                 temp = Piece(x=0, y=0, shape_index=si)
+                self._apply_block_style(temp)
                 for _ in range(rot):
                     temp.rotate(1)
                 shape = temp.get_shape()
-                piece_color = temp.color[:3]
+                piece_texture = getattr(temp, 'texture_surface', None)
+                piece_height = len(shape)
+                piece_width = len(shape[0]) if piece_height else 1
                 for ri, row_data in enumerate(shape):
                     for ci, cell in enumerate(row_data):
                         if cell:
@@ -3127,22 +3591,54 @@ class OnlinePvPGame:
                             if 0 <= draw_row < BOARD_HEIGHT and 0 <= draw_col < BOARD_WIDTH:
                                 bx = x + draw_col * cell_size
                                 by = y + draw_row * cell_size
-                                draw_jelly_block(self.screen, bx + 1, by + 1,
-                                                 cell_size - 2, piece_color)
+                                draw_color = temp.color[:3]
+                                color_matrix = getattr(temp, 'color_matrix', None)
+                                if color_matrix is not None:
+                                    try:
+                                        matrix_color = color_matrix[ri][ci]
+                                        if matrix_color is not None:
+                                            draw_color = matrix_color[:3]
+                                    except Exception:
+                                        pass
+                                slice_info = self._make_texture_slice(temp, ci, ri, piece_width, piece_height)
+                                self.draw_textured_block(
+                                    bx + 1,
+                                    by + 1,
+                                    cell_size - 2,
+                                    draw_color,
+                                    piece_texture,
+                                    slice_info,
+                                )
+
+        if self.opp_line_sweep_rows and self.opp_line_sweep_active:
+            progress = self.opp_line_sweep_progress
+            sweep_width = max(3, int(cell_size * 1.5))
+            for row in self.opp_line_sweep_rows:
+                if 0 <= row < BOARD_HEIGHT:
+                    row_y = y + row * cell_size
+                    sweep_x = x + int(progress * (board_w + sweep_width)) - sweep_width
+                    for i in range(sweep_width):
+                        half = max(1, sweep_width // 2)
+                        intensity = 1.0 - abs(i - half) / half
+                        alpha = int(255 * intensity * (1.0 - progress * 0.3))
+                        line_x = sweep_x + i
+                        if x <= line_x < x + board_w and alpha > 0:
+                            pygame.draw.line(self.screen, (255, 255, 255), (line_x, row_y), (line_x, row_y + cell_size), 1)
+                    if progress > 0:
+                        lit_width = min(int(progress * board_w), board_w)
+                        if lit_width > 0:
+                            lit_surface = pygame.Surface((lit_width, cell_size), pygame.SRCALPHA)
+                            lit_surface.fill((255, 255, 255, int(180 * (1.0 - progress * 0.8))))
+                            self.screen.blit(lit_surface, (x, row_y))
 
         if self.opp_line_flash_rows and self.opp_line_glow_alpha > 0:
-            flash_surface = pygame.Surface((board_w, board_h), pygame.SRCALPHA)
-            for row in self.opp_line_flash_rows:
-                row_rect = pygame.Rect(0, row * cell_size, board_w, cell_size)
-                pygame.draw.rect(flash_surface, (255, 255, 255, self.opp_line_glow_alpha), row_rect)
-                pygame.draw.rect(flash_surface, (255, 0, 255, min(255, self.opp_line_glow_alpha + 40)), row_rect, 2)
-            self.screen.blit(flash_surface, (x, y))
+            self._draw_line_clear_flash_overlay(x, y, board_w, cell_size, self.opp_line_flash_rows, self.opp_line_glow_alpha)
 
         for wave in self.opp_wave_effects:
             alpha = max(0, min(255, int(wave.get('alpha', 0))))
             if alpha <= 0:
                 continue
-            radius = int(wave.get('radius', 0) * cell_size)
+            radius = int(wave.get('radius', 0))
             if radius <= 0:
                 continue
             wave_surface = pygame.Surface((radius * 2 + 6, 6), pygame.SRCALPHA)
@@ -3151,9 +3647,11 @@ class OnlinePvPGame:
                 (*wave.get('color', (255, 255, 255))[:3], alpha),
                 wave_surface.get_rect(),
             )
-            wave_x = x + board_w // 2 - radius
-            wave_y = y + int(wave['y']) * cell_size + cell_size // 2 - 3
+            wave_x = int(wave.get('x', x + board_w // 2) - radius)
+            wave_y = int(wave.get('y', y + board_h // 2) - 3)
             self.screen.blit(wave_surface, (wave_x, wave_y))
+
+        pygame.draw.rect(self.screen, player_accent, board_rect, 2, border_radius=14)
 
     # ─── Game Over Overlay ───
 

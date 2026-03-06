@@ -244,6 +244,15 @@ class PvPGame:
         self.p2_line_glow_alpha = 0
         self.p1_wave_effects = []  # Dalga efektleri
         self.p2_wave_effects = []
+        self.p1_line_sweep_rows = []
+        self.p1_line_sweep_progress = 0.0
+        self.p1_line_sweep_active = False
+        self.p2_line_sweep_rows = []
+        self.p2_line_sweep_progress = 0.0
+        self.p2_line_sweep_active = False
+        self.p1_falling_block_animations = []
+        self.p2_falling_block_animations = []
+        self.block_fall_speed = 0.08
         
         # Arka plan parçacıkları (ambient effect)
         self.ambient_particles = []
@@ -366,6 +375,35 @@ class PvPGame:
         cache = self._locked_board_cache.get(player)
         if cache is not None:
             cache['dirty'] = True
+
+    def _start_block_fall_animation(self, player: int, board: Board, cleared_rows: list[int]) -> None:
+        if not cleared_rows:
+            return
+        animations = []
+        lines_count = len(cleared_rows)
+        cell_size = self.cell_size
+        for row in range(board.height):
+            for col in range(board.width):
+                if board.occupancy[row][col]:
+                    animations.append({
+                        'row': row,
+                        'col': col,
+                        'current_offset': -lines_count * cell_size,
+                        'target_offset': 0,
+                        'sweep_trigger': col / max(1, board.width - 1),
+                        'started': False,
+                    })
+        if player == 1:
+            self.p1_falling_block_animations = animations
+        else:
+            self.p2_falling_block_animations = animations
+
+    def _get_block_fall_offset(self, player: int, row: int, col: int) -> float:
+        animations = self.p1_falling_block_animations if player == 1 else self.p2_falling_block_animations
+        for anim in animations:
+            if anim['row'] == row and anim['col'] == col:
+                return anim['current_offset']
+        return 0
 
     def _get_ambient_sprite(self, radius: int, alpha: int, glow: bool) -> pygame.Surface:
         """Create/reuse small cached circle sprites for ambient particles."""
@@ -1916,6 +1954,9 @@ class PvPGame:
                     self.p1_line_flash_rows = cleared_rows
                     self.p1_line_flash_timer = 20  # Ana oyunla aynı
                     self.p1_line_glow_alpha = 255
+                    self.p1_line_sweep_rows = cleared_rows
+                    self.p1_line_sweep_progress = 0.0
+                    self.p1_line_sweep_active = True
                     
                     # Parçacık efektleri (ana oyundaki gelişmiş versiyon)
                     self.create_line_clear_particles(
@@ -1943,6 +1984,7 @@ class PvPGame:
                     # Ekran titremesi (ana oyunla aynı)
                     if lines < 4:
                         self.trigger_screen_shake(intensity=3 + lines * 2, duration=8)
+                    self._start_block_fall_animation(1, self.board1, cleared_rows)
                 
                 self.sound.play('line' if lines < 4 else 'tetris')
                 
@@ -2000,6 +2042,9 @@ class PvPGame:
                     self.p2_line_flash_rows = cleared_rows
                     self.p2_line_flash_timer = 20  # Ana oyunla aynı
                     self.p2_line_glow_alpha = 255
+                    self.p2_line_sweep_rows = cleared_rows
+                    self.p2_line_sweep_progress = 0.0
+                    self.p2_line_sweep_active = True
                     
                     # Parçacık efektleri (ana oyundaki gelişmiş versiyon)
                     self.create_line_clear_particles(
@@ -2027,6 +2072,7 @@ class PvPGame:
                     # Ekran titremesi (ana oyunla aynı)
                     if lines < 4:
                         self.trigger_screen_shake(intensity=3 + lines * 2, duration=8)
+                    self._start_block_fall_animation(2, self.board2, cleared_rows)
                 
                 self.sound.play('line' if lines < 4 else 'tetris')
                 
@@ -2591,6 +2637,20 @@ class PvPGame:
             if self.p2_line_flash_timer <= 0:
                 self.p2_line_flash_rows = []
                 self.p2_line_glow_alpha = 0
+
+        if self.p1_line_sweep_active:
+            self.p1_line_sweep_progress += dt_frames * 0.06
+            if self.p1_line_sweep_progress >= 1.0:
+                self.p1_line_sweep_progress = 1.0
+                self.p1_line_sweep_active = False
+                self.p1_line_sweep_rows = []
+
+        if self.p2_line_sweep_active:
+            self.p2_line_sweep_progress += dt_frames * 0.06
+            if self.p2_line_sweep_progress >= 1.0:
+                self.p2_line_sweep_progress = 1.0
+                self.p2_line_sweep_active = False
+                self.p2_line_sweep_rows = []
         
         # Dalga efektlerini güncelle (ana oyundaki gibi)
         for wave in self.p1_wave_effects[:]:
@@ -2604,6 +2664,34 @@ class PvPGame:
             wave['alpha'] = int(200 * (1 - wave['radius'] / wave['max_radius']))
             if wave['radius'] >= wave['max_radius'] or wave['alpha'] <= 0:
                 self.p2_wave_effects.remove(wave)
+
+        if self.p1_falling_block_animations:
+            fall_speed = self.block_fall_speed * dt_frames * 60
+            for anim in self.p1_falling_block_animations:
+                if not anim.get('started', False) and self.p1_line_sweep_progress >= anim.get('sweep_trigger', 0):
+                    anim['started'] = True
+                if anim.get('started', False):
+                    anim['current_offset'] += fall_speed
+                    if anim['current_offset'] >= 0:
+                        anim['current_offset'] = 0
+            self.p1_falling_block_animations = [
+                anim for anim in self.p1_falling_block_animations
+                if not (anim['current_offset'] >= 0 and anim.get('started', False))
+            ]
+
+        if self.p2_falling_block_animations:
+            fall_speed = self.block_fall_speed * dt_frames * 60
+            for anim in self.p2_falling_block_animations:
+                if not anim.get('started', False) and self.p2_line_sweep_progress >= anim.get('sweep_trigger', 0):
+                    anim['started'] = True
+                if anim.get('started', False):
+                    anim['current_offset'] += fall_speed
+                    if anim['current_offset'] >= 0:
+                        anim['current_offset'] = 0
+            self.p2_falling_block_animations = [
+                anim for anim in self.p2_falling_block_animations
+                if not (anim['current_offset'] >= 0 and anim.get('started', False))
+            ]
         
         # Oyuncu 1 milestone kontrolü
         p1_milestone = (self.board1.score // 1000) * 1000
@@ -2704,7 +2792,8 @@ class PvPGame:
         player_idx = 1 if board is self.board1 else 2
         cache_entry = self._locked_board_cache[player_idx]
         cache_key = (int(cell_size), int(board_width), int(board_height))
-        if cache_entry.get('surface') is None or cache_entry.get('key') != cache_key or cache_entry.get('dirty'):
+        animating_fall = bool(self.p1_falling_block_animations) if player_idx == 1 else bool(self.p2_falling_block_animations)
+        if cache_entry.get('surface') is None or cache_entry.get('key') != cache_key or cache_entry.get('dirty') or animating_fall:
             locked_surface = pygame.Surface((board_width, board_height), pygame.SRCALPHA).convert_alpha()
             locked_surface.fill((0, 0, 0, 0))
             block_size = cell_size - 2
@@ -2721,10 +2810,13 @@ class PvPGame:
                             slice_info = None
                         if slice_info is not None and self.block_style_manager:
                             tex = self.block_style_manager.get_texture_surface(slice_info.piece_name)
-                        self.draw_textured_block(x * cell_size + 1, y * cell_size + 1, block_size, c, tex, slice_info, dst=locked_surface)
+                        block_x = x * cell_size + 1
+                        block_y = y * cell_size + 1
+                        block_y += self._get_block_fall_offset(player_idx, y, x)
+                        self.draw_textured_block(block_x, block_y, block_size, c, tex, slice_info, dst=locked_surface)
             cache_entry['surface'] = locked_surface
             cache_entry['key'] = cache_key
-            cache_entry['dirty'] = False
+            cache_entry['dirty'] = animating_fall
 
         self.screen.blit(cache_entry['surface'], (offset_x, offset_y))
         
@@ -2754,11 +2846,49 @@ class PvPGame:
                             height=piece_h or 1,
                             rotation=getattr(current_piece, 'rotation_state', 0),
                         )
-                    self.draw_textured_block(block_x, block_y, block_size, current_piece.color, tex, slice_info)
+                    draw_color = current_piece.color
+                    color_matrix = getattr(current_piece, 'color_matrix', None)
+                    if color_matrix is not None:
+                        try:
+                            cell_color = color_matrix[ly][lx]
+                            if cell_color is not None:
+                                draw_color = cell_color
+                        except Exception:
+                            pass
+                    self.draw_textured_block(block_x, block_y, block_size, draw_color, tex, slice_info)
 
         # ===== SATIR TEMİZLEME EFEKTLERİ (ANA OYUNLA BİREBİR AYNI) =====
         flash_rows = self.p1_line_flash_rows if board is self.board1 else self.p2_line_flash_rows
         glow_alpha = self.p1_line_glow_alpha if board is self.board1 else self.p2_line_glow_alpha
+        sweep_rows = self.p1_line_sweep_rows if board is self.board1 else self.p2_line_sweep_rows
+        sweep_progress = self.p1_line_sweep_progress if board is self.board1 else self.p2_line_sweep_progress
+        sweep_active = self.p1_line_sweep_active if board is self.board1 else self.p2_line_sweep_active
+
+        if self.effects_enabled and sweep_rows and sweep_active:
+            sweep_width = max(3, int(cell_size * 1.5))
+            for row in sweep_rows:
+                if 0 <= row < BOARD_HEIGHT:
+                    row_y = offset_y + row * cell_size
+                    sweep_x = offset_x + int(sweep_progress * (board_width + sweep_width)) - sweep_width
+                    for i in range(sweep_width):
+                        half = max(1, sweep_width // 2)
+                        intensity = 1.0 - abs(i - half) / half
+                        alpha = int(255 * intensity * (1.0 - sweep_progress * 0.3))
+                        line_x = sweep_x + i
+                        if offset_x <= line_x < offset_x + board_width and alpha > 0:
+                            pygame.draw.line(
+                                self.screen,
+                                (255, 255, 255),
+                                (line_x, row_y),
+                                (line_x, row_y + cell_size),
+                                1,
+                            )
+                    if sweep_progress > 0:
+                        lit_width = min(int(sweep_progress * board_width), int(board_width))
+                        if lit_width > 0:
+                            lit_surface = pygame.Surface((lit_width, cell_size), pygame.SRCALPHA)
+                            lit_surface.fill((255, 255, 255, int(180 * (1.0 - sweep_progress * 0.8))))
+                            self.screen.blit(lit_surface, (offset_x, row_y))
         
         # Flash overlay - temizlenen satırlar için beyaz parlama
         if self.effects_enabled and flash_rows and glow_alpha > 0:
@@ -3141,6 +3271,14 @@ class PvPGame:
         self.p2_line_glow_alpha = 0
         self.p1_wave_effects = []
         self.p2_wave_effects = []
+        self.p1_line_sweep_rows = []
+        self.p2_line_sweep_rows = []
+        self.p1_line_sweep_progress = 0.0
+        self.p2_line_sweep_progress = 0.0
+        self.p1_line_sweep_active = False
+        self.p2_line_sweep_active = False
+        self.p1_falling_block_animations = []
+        self.p2_falling_block_animations = []
         
         # Partiküller ve ambient efektler sıfırla
         self.particles = []
