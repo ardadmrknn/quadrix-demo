@@ -287,11 +287,14 @@ def _maybe_recover_windows_display(screen, *, settings_manager=None):
         '_state',
         {
             'display_was_inactive': False,
+            'pending_focus_recover_ms': -1,
             'prtsc_was_down': False,
             'pending_prtsc_recover_ms': -1,
             'last_display_recover_ms': -10_000,
         },
     )
+    # Eski state ile uyumluluk: yeni alan yoksa ekle.
+    state.setdefault('pending_focus_recover_ms', -1)
 
     now_ms = pygame.time.get_ticks()
     try:
@@ -299,22 +302,22 @@ def _maybe_recover_windows_display(screen, *, settings_manager=None):
     except Exception:
         is_active = True
 
-    focus_event_seen = False
-    for evt_name in ('WINDOWFOCUSGAINED', 'WINDOWRESTORED', 'WINDOWEXPOSED'):
-        evt_type = getattr(pygame, evt_name, None)
-        if evt_type is not None and pygame.event.peek(evt_type):
-            focus_event_seen = True
-            break
-
     should_recover = False
+    recover_reason = None
     if not is_active:
         state['display_was_inactive'] = True
+        state['pending_focus_recover_ms'] = -1
     else:
         if state['display_was_inactive']:
             state['display_was_inactive'] = False
-            should_recover = True
-        if focus_event_seen:
-            should_recover = True
+            # Alt+Tab/focus dönüşünde hemen set_mode çağırma:
+            # kısa gecikme sonrası yalnızca bir kez toparla.
+            state['pending_focus_recover_ms'] = now_ms + 220
+
+    if state['pending_focus_recover_ms'] > 0 and now_ms >= state['pending_focus_recover_ms']:
+        state['pending_focus_recover_ms'] = -1
+        should_recover = True
+        recover_reason = 'focus'
 
     prtsc_down = False
     k_prtsc = getattr(pygame, 'K_PRINTSCREEN', None)
@@ -337,6 +340,17 @@ def _maybe_recover_windows_display(screen, *, settings_manager=None):
     ):
         state['pending_prtsc_recover_ms'] = -1
         should_recover = True
+        recover_reason = 'prtsc'
+
+    # GL overlay aktifken focus kaynaklı set_mode zinciri (rebuild + reapply)
+    # Alt+Tab'da siyah ekranı büyütebilir; focus recovery'yi skip et.
+    if should_recover and recover_reason == 'focus':
+        try:
+            from gl_compat import is_gl_active
+            if is_gl_active():
+                should_recover = False
+        except Exception:
+            pass
 
     if should_recover and (now_ms - state['last_display_recover_ms'] >= 900):
         state['last_display_recover_ms'] = now_ms
