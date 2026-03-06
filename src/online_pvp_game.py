@@ -280,7 +280,8 @@ class OnlinePvPGame:
 
         # Lobi ekranı butonları
         self._lobby_buttons: list[dict] = []
-        self._lobby_list: list[dict] = []  # Public lobiler
+        self._lobby_list: list[dict] = []
+        self._lobby_list_filter: str = 'all'
         self._lobby_list_scroll = 0
         self._lobby_list_fetching = False
         self._auto_lobby_refresh_requested = False
@@ -767,35 +768,36 @@ class OnlinePvPGame:
             self.opponent_ready = False
 
     def _on_lobby_found(self, ev: NetEvent):
-        """Tek bir public lobi bulundu — biriktir."""
-        # Lobi sahibi bilgisini metadata'dan almayı dene.
-        # Not: get_lobby_data, bridge'in lobby_found callback bağlamında
-        # bulunan lobinin metadata'sını döndürmelidir. Ancak bridge
-        # implementasyonuna bağlı olarak boş string dönebilir — fallback mevcut.
+        """Tek bir lobi bulundu — metadata ile birlikte biriktir."""
+        def _read_lobby_data(key: str, fallback: str = '') -> str:
+            try:
+                value = self.net.get_lobby_data_for(ev.steam_id, key)
+                if value:
+                    return value
+            except Exception:
+                pass
+            try:
+                value = self.net.get_lobby_data(key)
+                if value:
+                    return value
+            except Exception:
+                pass
+            return fallback
+
         host_name = ''
         lobby_code = ''
         visibility = 'public'
         requires_code = False
-        try:
-            host_name = self.net.get_lobby_data('host_name') or ''
-        except Exception:
-            pass
-        try:
-            lobby_code = self.net.get_lobby_data('lobby_code') or ''
-        except Exception:
-            pass
-        try:
-            visibility = (self.net.get_lobby_data('visibility') or 'public').strip().lower()
-        except Exception:
-            visibility = 'public'
-        try:
-            requires_code = (self.net.get_lobby_data('requires_code') or '0').strip() == '1'
-        except Exception:
-            requires_code = False
+        host_name = _read_lobby_data('host_name', '')
+        lobby_code = _read_lobby_data('lobby_code', '')
+        visibility = (_read_lobby_data('visibility', 'public') or 'public').strip().lower()
+        requires_code = (_read_lobby_data('requires_code', '0') or '0').strip() == '1'
 
         if visibility == 'private':
             requires_code = True
             lobby_code = ''
+        elif requires_code:
+            visibility = 'private'
 
         # ev.data genelde "members" bilgisini taşır — parse kontrolü
         try:
@@ -895,8 +897,8 @@ class OnlinePvPGame:
         self._status_msg = t('joining_lobby', 'Lobiye katılınıyor...')
         self._status_timer = 2.0
 
-    def _request_public_lobby_list(self) -> bool:
-        """Public lobi listesini yenile."""
+    def _request_lobby_list(self) -> bool:
+        """Seçili filtreye göre lobi listesini yenile."""
         if not self._init_networking():
             return False
         if self._lobby_list_fetching:
@@ -904,8 +906,21 @@ class OnlinePvPGame:
         self._lobby_list_fetching = True
         self._auto_lobby_refresh_timer = self._auto_lobby_refresh_interval
         self._pending_lobby_list.clear()
+        if self._lobby_list_filter == 'public':
+            self.net.add_lobby_search_filter('visibility', 'public')
         self.net.request_lobby_list()
         return True
+
+    def _set_lobby_list_filter(self, lobby_filter: str, refresh: bool = True) -> bool:
+        """Lobi listesi filtresini güncelle."""
+        normalized = 'public' if str(lobby_filter).lower() == 'public' else 'all'
+        changed = normalized != self._lobby_list_filter
+        self._lobby_list_filter = normalized
+        if changed:
+            self._lobby_list_scroll = 0
+        if refresh:
+            return self._request_lobby_list()
+        return changed
 
     def _return_to_pvp_lobby_menu(self):
         """Aktif lobiden ayrıl ve Online PvP giriş ekranına dön."""
@@ -925,6 +940,7 @@ class OnlinePvPGame:
         self._join_code_error = ''
         self._searching_by_code = False
         self._search_code = ''
+        self._lobby_list_filter = 'all'
         self._lobby_list_fetching = False
         self._auto_lobby_refresh_requested = False
         self._auto_lobby_refresh_timer = 0.0
@@ -1921,13 +1937,13 @@ class OnlinePvPGame:
                 if not self._init_networking():
                     self._auto_connect_retry_timer = 2000.0
 
-        # Lobi menüsüne gelince önce bir kez, sonra da her 10 saniyede bir public lobileri yenile.
+        # Lobi menüsüne gelince önce bir kez, sonra da her 10 saniyede bir seçili filtreyi yenile.
         if (
             self.online_state == OnlineState.LOBBY_MENU
             and self._net_initialized
             and not self._auto_lobby_refresh_requested
         ):
-            if self._request_public_lobby_list():
+            if self._request_lobby_list():
                 self._auto_lobby_refresh_requested = True
         elif (
             self.online_state == OnlineState.LOBBY_MENU
@@ -1938,7 +1954,7 @@ class OnlinePvPGame:
         ):
             self._auto_lobby_refresh_timer = max(0.0, self._auto_lobby_refresh_timer - float(delta_time))
             if self._auto_lobby_refresh_timer <= 0:
-                self._request_public_lobby_list()
+                self._request_lobby_list()
 
         # Steam callback'leri işle
         if self._net_initialized:
@@ -2319,7 +2335,7 @@ class OnlinePvPGame:
                 if self._init_networking():
                     self._create_lobby(public=True)
             elif key == pygame.K_3:
-                self._request_public_lobby_list()
+                self._request_lobby_list()
             elif key == pygame.K_i:
                 self._do_invite_friend()
             elif key == pygame.K_j:
@@ -2420,7 +2436,11 @@ class OnlinePvPGame:
                         if self._init_networking():
                             self._create_lobby(public=True)
                     elif action == 'find_match':
-                        self._request_public_lobby_list()
+                        self._request_lobby_list()
+                    elif action == 'filter_all_lobbies':
+                        self._set_lobby_list_filter('all')
+                    elif action == 'filter_public_lobbies':
+                        self._set_lobby_list_filter('public')
                     elif action == 'back':
                         return 'menu'
                     elif action == 'invite_friend':
@@ -2895,15 +2915,53 @@ class OnlinePvPGame:
         lt_font = _rs.get_font(s(20, minimum=14))
         list_title = lt_font.render(
             t('lobby_list_title', 'Mevcut Lobiler'), True, _rs.accent)
-        self.screen.blit(list_title, list_title.get_rect(
-            center=(list_x + list_w // 2, list_y + s(24))))
+        title_rect = list_title.get_rect(center=(list_x + list_w // 2, list_y + s(24)))
+        self.screen.blit(list_title, title_rect)
 
         sub_list_font = _rs.get_font(s(12, minimum=9), bold=False)
+        subtitle_text = (
+            t('lobby_list_subtitle_public', 'Sadece acik lobiler')
+            if self._lobby_list_filter == 'public'
+            else t('lobby_list_subtitle_all', 'Ozel ve acik lobiler')
+        )
         sub_list_text = sub_list_font.render(
-            t('lobby_list_subtitle', 'Acik odalar ve kod gerektiren ozel lobiler'),
+            subtitle_text,
             True, _rs.text_muted)
-        self.screen.blit(sub_list_text, sub_list_text.get_rect(
-            center=(list_x + list_w // 2, list_y + s(44))))
+        subtitle_rect = sub_list_text.get_rect(
+            center=(list_x + list_w // 2, title_rect.bottom + s(12)))
+        self.screen.blit(sub_list_text, subtitle_rect)
+
+        filter_y = subtitle_rect.bottom + s(10)
+        filter_gap = s(10)
+        filter_h = s(32)
+        filter_x = list_x + s(16)
+        filter_total_w = list_w - s(32)
+        filter_w = max(s(120), (filter_total_w - filter_gap) // 2)
+        all_rect = pygame.Rect(filter_x, filter_y, filter_w, filter_h)
+        public_rect = pygame.Rect(
+            all_rect.right + filter_gap,
+            filter_y,
+            filter_total_w - filter_w - filter_gap,
+            filter_h,
+        )
+        all_hover = all_rect.collidepoint(mouse_pos)
+        public_hover = public_rect.collidepoint(mouse_pos)
+        all_active = self._lobby_list_filter == 'all'
+        public_active = self._lobby_list_filter == 'public'
+        _rs.draw_uniform_button(
+            self.screen, all_rect,
+            t('all_lobbies', 'Butun Lobiler'),
+            color_code=UIColors.NEON_CYAN if all_active else _rs.secondary,
+            state='hover' if all_active or all_hover else 'normal',
+        )
+        _rs.draw_uniform_button(
+            self.screen, public_rect,
+            t('public_lobbies', 'Acik Lobiler'),
+            color_code=UIColors.NEON_GREEN if public_active else _rs.secondary,
+            state='hover' if public_active or public_hover else 'normal',
+        )
+        self._lobby_buttons.append({'rect': all_rect, 'action': 'filter_all_lobbies'})
+        self._lobby_buttons.append({'rect': public_rect, 'action': 'filter_public_lobbies'})
 
         count_font = _rs.get_font(s(12, minimum=9), bold=False)
         count_text = count_font.render(str(len(self._lobby_list)), True, _rs.text_primary)
@@ -2911,7 +2969,7 @@ class OnlinePvPGame:
         count_pad_y = s(5)
         count_rect = pygame.Rect(
             list_panel.right - count_text.get_width() - count_pad_x * 2 - s(12),
-            list_panel.y + s(14),
+            list_panel.y + s(12),
             count_text.get_width() + count_pad_x * 2,
             count_text.get_height() + count_pad_y * 2,
         )
@@ -2922,11 +2980,12 @@ class OnlinePvPGame:
         self.screen.blit(count_text, count_text.get_rect(center=count_rect.center))
 
         # Başlık altı çizgi
-        line_y = list_y + s(58)
+        header_bottom = max(subtitle_rect.bottom, count_rect.bottom, all_rect.bottom, public_rect.bottom)
+        line_y = header_bottom + s(12)
         pygame.draw.line(self.screen, (*_rs.accent[:3], 60),
                          (list_x + s(12), line_y), (list_x + list_w - s(12), line_y), 1)
 
-        content_top = list_y + s(68)
+        content_top = line_y + s(14)
 
         if self._lobby_list_fetching:
             dots = '.' * (int(time.time() * 2) % 4)
@@ -2945,15 +3004,20 @@ class OnlinePvPGame:
                 self.screen.blit(e1, e1.get_rect(center=(list_x + list_w // 2, list_y + list_h // 2 - s(10))))
                 self.screen.blit(e2, e2.get_rect(center=(list_x + list_w // 2, list_y + list_h // 2 + s(14))))
         else:
-            item_h = s(90)
-            visible = max(1, (list_h - s(86)) // item_h)
-            start_idx = self._lobby_list_scroll
-            clip = pygame.Rect(list_x + 4, content_top, list_w - 8, list_h - s(86))
+            item_step = s(104)
+            item_h = item_step - s(12)
+            content_h = max(item_step, list_panel.bottom - content_top - s(22))
+            visible = max(1, content_h // item_step)
+            max_start = max(0, len(self._lobby_list) - visible)
+            start_idx = min(self._lobby_list_scroll, max_start)
+            if start_idx != self._lobby_list_scroll:
+                self._lobby_list_scroll = start_idx
+            clip = pygame.Rect(list_x + 4, content_top, list_w - 8, content_h)
             self.screen.set_clip(clip)
 
             for i, lobby in enumerate(self._lobby_list[start_idx:start_idx + visible]):
-                iy = content_top + i * item_h
-                ir = pygame.Rect(list_x + s(8), iy, list_w - s(16), item_h - s(10))
+                iy = content_top + i * item_step
+                ir = pygame.Rect(list_x + s(8), iy, list_w - s(16), item_h)
                 hover = ir.collidepoint(mouse_pos)
                 requires_code = bool(lobby.get('requires_code', False))
                 accent_color = UIColors.NEON_ORANGE if requires_code else UIColors.NEON_GREEN

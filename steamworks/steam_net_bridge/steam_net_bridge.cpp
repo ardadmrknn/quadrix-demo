@@ -121,6 +121,14 @@ public:
         return val ? std::string(val) : "";
     }
 
+    std::string get_lobby_data_for(uint64_t lobby_id, const std::string& key) {
+        if (!m_matchmaking) return "";
+        CSteamID lid(lobby_id);
+        if (!lid.IsValid()) return "";
+        const char* val = m_matchmaking->GetLobbyData(lid, key.c_str());
+        return val ? std::string(val) : "";
+    }
+
     std::vector<uint64_t> get_lobby_members() {
         std::vector<uint64_t> members;
         if (!m_matchmaking || !m_currentLobby.IsValid()) return members;
@@ -470,6 +478,8 @@ PYBIND11_MODULE(steam_net_bridge, m) {
         .def("leave_lobby",           &SteamNetBridge::leave_lobby)
         .def("set_lobby_data",        &SteamNetBridge::set_lobby_data)
         .def("get_lobby_data",        &SteamNetBridge::get_lobby_data)
+           .def("get_lobby_data_for",    &SteamNetBridge::get_lobby_data_for,
+               py::arg("lobby_id"), py::arg("key"))
         .def("get_lobby_members",     &SteamNetBridge::get_lobby_members)
         .def("get_lobby_owner",       &SteamNetBridge::get_lobby_owner)
         .def("get_current_lobby_id",  &SteamNetBridge::get_current_lobby_id)

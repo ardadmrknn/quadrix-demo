@@ -3213,6 +3213,12 @@ def main():
 
         # FPS limitleme frame başında uygulanıyor.
     
+    try:
+        import steam_integration as _steam_shutdown
+        _steam_shutdown.shutdown()
+    except Exception:
+        pass
+
     pygame.quit()
     
     # Ayarları son kez kaydet
