@@ -74,19 +74,37 @@ DEFAULT_CONTROLS = {
     },
 }
 
+DEFAULT_MENU_MUSIC_PLAYLIST = ['main_1']
+DEFAULT_GAME_MUSIC_PLAYLIST = ['klasik_1']
+DEFAULT_CAMPAIGN_MUSIC_PLAYLIST = ['klasik_1']
+
+DEFAULT_MODE_MUSIC_PLAYLISTS = {
+    'survival': ['file:survival_2.mp3', 'file:survival_1.mp3'],
+    'campaign_world1': ['file:d1.mp3', 'file:d1_1.mp3'],
+    'campaign_world2': ['file:d2.mp3', 'file:d2_1.mp3', 'file:d2_3.mp3', 'file:d2_4.mp3'],
+    'campaign_world3': ['file:d3.mp3', 'file:d3_1.mp3', 'file:d3_2.mp3'],
+    'campaign_world4': ['file:d4_1.mp3', 'file:d4_2.mp3', 'file:d4_3.mp3'],
+    'campaign_world5': ['file:d5.mp3', 'file:d5_1.mp3', 'file:d5_2.mp3'],
+    'classic': ['file:klasik_1.mp3'],
+    'sprint': ['file:sprint_1.mp3'],
+    'ultra': ['file:ultra_1.mp3', 'file:ultra_2.mp3'],
+    'tetris2': ['file:quadrixextra_1.mp3'],
+    'mystery': ['file:kart_1.mp3', 'file:kart_2.mp3', 'file:kart_3.mp3'],
+    'cascade': ['file:cascade_1.mp3', 'file:cascade_2.mp3'],
+    'pvp': ['file:pvp_1.mp3'],
+    'hardcore': ['file:hardcore_1.mp3', 'file:hardcore_2.mp3'],
+    'wide': ['file:wide_1.mp3', 'file:wide_2.mp3'],
+    'zen': ['file:zen_1.mp3'],
+    'daily': ['file:daily_1.mp3'],
+}
+
 MODE_MUSIC_DEFAULTS = {
-    'campaign': 'klasik_1',
-    'survival': 'survival_1',
-    'sprint': 'kart_3',
-    'ultra': 'ultra_2',
-    'zen': 'zen_1',
-    'tetris2': 'quadrixextra_1',
-    'mystery': 'kart_2',
-    'wide': 'wide_2',
-    'cascade': 'cascade_2',
-    'pvp': 'pvp_1',
-    'daily': 'daily_1',
-    'hardcore': 'hardcore_2',
+    'campaign': DEFAULT_CAMPAIGN_MUSIC_PLAYLIST[0],
+    **{
+        mode_key: playlist[0]
+        for mode_key, playlist in DEFAULT_MODE_MUSIC_PLAYLISTS.items()
+        if playlist
+    },
 }
 
 
@@ -113,8 +131,8 @@ class SettingsManager:
             'effects_enabled': True,
             'background_enabled': True,
             # Yerleşik (8-bit/sentez) müzikler kaldırıldı: varsayılanlar music/ klasöründeki dosyalardır.
-            'menu_music': 'main_1',
-            'game_music': 'klasik_1',
+            'menu_music': DEFAULT_MENU_MUSIC_PLAYLIST[0],
+            'game_music': DEFAULT_GAME_MUSIC_PLAYLIST[0],
             'theme': 'Classic',  # Varsayılan tema Classic
             'debug_mode': False,
             'card_mode_debug': False,
@@ -143,10 +161,10 @@ class SettingsManager:
             'controls': copy.deepcopy(DEFAULT_CONTROLS),
             'mode_music_overrides': {},
             # Playlist tabanlı müzik seçimi
-            'menu_music_playlist': ['main_1'],
-            'game_music_playlist': ['klasik_1'],
-            'campaign_music_playlist': ['klasik_1'],
-            'mode_music_playlists': {key: [value] for key, value in MODE_MUSIC_DEFAULTS.items()},
+            'menu_music_playlist': copy.deepcopy(DEFAULT_MENU_MUSIC_PLAYLIST),
+            'game_music_playlist': copy.deepcopy(DEFAULT_GAME_MUSIC_PLAYLIST),
+            'campaign_music_playlist': copy.deepcopy(DEFAULT_CAMPAIGN_MUSIC_PLAYLIST),
+            'mode_music_playlists': copy.deepcopy(DEFAULT_MODE_MUSIC_PLAYLISTS),
             # Müzik karıştırma modu: playlist sırası karıştırılır
             'music_shuffle': False,
             # Oynanış ayarları (FAZ 2)
@@ -275,13 +293,7 @@ class SettingsManager:
 
             mode_playlists = data.get('mode_music_playlists')
             if isinstance(mode_playlists, dict):
-                cleaned_playlists = {}
-                for key, playlist in mode_playlists.items():
-                    normalized = self._normalize_playlist(playlist)
-                    if normalized:
-                        cleaned_playlists[self._normalize_mode_key(key)] = normalized
-                if cleaned_playlists:
-                    self.default_settings['mode_music_playlists'] = cleaned_playlists
+                self.default_settings['mode_music_playlists'] = self._merge_mode_music_playlists_with_defaults(mode_playlists)
             
             # Ekran ayarlarını da paketlenmiş ayarlardan al (varsa)
             if 'fullscreen' in data:
@@ -576,6 +588,18 @@ class SettingsManager:
                 if value:
                     cleaned.append(value)
         return cleaned
+
+    def _merge_mode_music_playlists_with_defaults(self, playlists):
+        merged = copy.deepcopy(DEFAULT_MODE_MUSIC_PLAYLISTS)
+        if not isinstance(playlists, dict):
+            return merged
+
+        for key, playlist in playlists.items():
+            normalized_key = self._normalize_mode_key(key)
+            normalized_playlist = self._normalize_playlist(playlist)
+            if normalized_key and normalized_playlist:
+                merged[normalized_key] = normalized_playlist
+        return merged
 
     def get_menu_music_playlist(self):
         playlist = self.settings.get('menu_music_playlist')

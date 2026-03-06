@@ -252,6 +252,8 @@ class PvPGame:
         self.p2_line_sweep_active = False
         self.p1_falling_block_animations = []
         self.p2_falling_block_animations = []
+        self.p1_drop_trails = []
+        self.p2_drop_trails = []
         self.block_fall_speed = 0.08
         
         # Arka plan parçacıkları (ambient effect)
@@ -1081,25 +1083,21 @@ class PvPGame:
                         start_y = self.current_piece1.y
                         drop_distance = 0
                         
-                        while self.board1.is_valid_position(self.current_piece1):
+                        while self.board1.is_valid_position(self.current_piece1, dy=1):
                             self.current_piece1.y += 1
                             drop_distance += 1
-                        self.current_piece1.y -= 1
-                        
-                        # Hard drop iz efekti
+
                         if self.effects_enabled and drop_distance > 0:
-                            for i in range(0, drop_distance, 2):
-                                trail_y = start_y + i
-                                trail_x = self.p1_offset_x + (self.current_piece1.x + 2) * self.cell_size
-                                trail_y_pos = self.p1_offset_y + (trail_y + 2) * self.cell_size
-                                
-                                self.create_particles(
-                                    count=3,
-                                    x=trail_x,
-                                    y=trail_y_pos,
-                                    colors=[self.current_piece1.color],
-                                    speed=2
-                                )
+                            self._create_drop_trail(
+                                1,
+                                self.current_piece1,
+                                self.p1_offset_x,
+                                self.p1_offset_y,
+                                self.cell_size,
+                                start_y,
+                                drop_distance,
+                                trail_type='hard',
+                            )
                         
                         self.lock_and_new_piece(1)
                         self.sound.play('drop')
@@ -1155,25 +1153,21 @@ class PvPGame:
                         start_y = self.current_piece2.y
                         drop_distance = 0
                         
-                        while self.board2.is_valid_position(self.current_piece2):
+                        while self.board2.is_valid_position(self.current_piece2, dy=1):
                             self.current_piece2.y += 1
                             drop_distance += 1
-                        self.current_piece2.y -= 1
-                        
-                        # Hard drop iz efekti
+
                         if self.effects_enabled and drop_distance > 0:
-                            for i in range(0, drop_distance, 2):
-                                trail_y = start_y + i
-                                trail_x = self.p2_offset_x + (self.current_piece2.x + 2) * self.cell_size
-                                trail_y_pos = self.p2_offset_y + (trail_y + 2) * self.cell_size
-                                
-                                self.create_particles(
-                                    count=3,
-                                    x=trail_x,
-                                    y=trail_y_pos,
-                                    colors=[self.current_piece2.color],
-                                    speed=2
-                                )
+                            self._create_drop_trail(
+                                2,
+                                self.current_piece2,
+                                self.p2_offset_x,
+                                self.p2_offset_y,
+                                self.cell_size,
+                                start_y,
+                                drop_distance,
+                                trail_type='hard',
+                            )
                         
                         self.lock_and_new_piece(2)
                         self.sound.play('drop')
@@ -1932,17 +1926,27 @@ class PvPGame:
     def lock_and_new_piece(self, player):
         """Parçayı kilitle ve yeni parça oluştur"""
         if player == 1:
-            # Kilitlenme efekti
             if self.effects_enabled:
-                piece_center_x = self.p1_offset_x + (self.current_piece1.x + 2) * self.cell_size
-                piece_center_y = self.p1_offset_y + (self.current_piece1.y + 2) * self.cell_size
-                self.create_particles(
-                    count=6,
-                    x=piece_center_x,
-                    y=piece_center_y,
-                    colors=[self.current_piece1.color],
-                    speed=2
-                )
+                color_matrix = getattr(self.current_piece1, 'color_matrix', None)
+                for row_i, row in enumerate(self.current_piece1.shape):
+                    for col_i, cell in enumerate(row):
+                        if not cell:
+                            continue
+                        board_col = self.current_piece1.x + col_i
+                        board_row = self.current_piece1.y + row_i
+                        if not (0 <= board_col < BOARD_WIDTH and 0 <= board_row < BOARD_HEIGHT):
+                            continue
+                        cell_color = self.current_piece1.color
+                        if color_matrix is not None:
+                            try:
+                                matrix_color = color_matrix[row_i][col_i]
+                                if matrix_color is not None:
+                                    cell_color = matrix_color
+                            except Exception:
+                                pass
+                        screen_x = self.p1_offset_x + board_col * self.cell_size + self.cell_size // 2
+                        screen_y = self.p1_offset_y + board_row * self.cell_size + self.cell_size // 2
+                        self.create_lock_explosion(screen_x, screen_y, cell_color, cell_size=self.cell_size)
             
             lines = self.board1.lock_piece(self.current_piece1)
             self._mark_locked_board_dirty(1)
@@ -2020,17 +2024,27 @@ class PvPGame:
                     self.determine_winner()
         
         else:  # player == 2
-            # Kilitlenme efekti
             if self.effects_enabled:
-                piece_center_x = self.p2_offset_x + (self.current_piece2.x + 2) * self.cell_size
-                piece_center_y = self.p2_offset_y + (self.current_piece2.y + 2) * self.cell_size
-                self.create_particles(
-                    count=6,
-                    x=piece_center_x,
-                    y=piece_center_y,
-                    colors=[self.current_piece2.color],
-                    speed=2
-                )
+                color_matrix = getattr(self.current_piece2, 'color_matrix', None)
+                for row_i, row in enumerate(self.current_piece2.shape):
+                    for col_i, cell in enumerate(row):
+                        if not cell:
+                            continue
+                        board_col = self.current_piece2.x + col_i
+                        board_row = self.current_piece2.y + row_i
+                        if not (0 <= board_col < BOARD_WIDTH and 0 <= board_row < BOARD_HEIGHT):
+                            continue
+                        cell_color = self.current_piece2.color
+                        if color_matrix is not None:
+                            try:
+                                matrix_color = color_matrix[row_i][col_i]
+                                if matrix_color is not None:
+                                    cell_color = matrix_color
+                            except Exception:
+                                pass
+                        screen_x = self.p2_offset_x + board_col * self.cell_size + self.cell_size // 2
+                        screen_y = self.p2_offset_y + board_row * self.cell_size + self.cell_size // 2
+                        self.create_lock_explosion(screen_x, screen_y, cell_color, cell_size=self.cell_size)
             
             lines = self.board2.lock_piece(self.current_piece2)
             self._mark_locked_board_dirty(2)
@@ -2330,6 +2344,122 @@ class PvPGame:
             if particle['life'] > 0:
                 alive.append(particle)
         self.particles = alive
+
+    def create_lock_explosion(self, x, y, color, cell_size=25):
+        """Ana oyundaki gibi hücre bazlı kilitlenme patlaması oluştur."""
+        if not self._particle_effects_enabled():
+            return
+
+        base_color = tuple(color[:3]) if color else (128, 128, 128)
+        bright_color = tuple(min(255, int(c * 1.3)) for c in base_color)
+        dim_color = tuple(max(0, int(c * 0.7)) for c in base_color)
+        white_tint = tuple(min(255, c + 80) for c in base_color)
+        color_palette = [base_color, bright_color, dim_color, white_tint, (255, 255, 255)]
+
+        particle_count = random.randint(6, 10)
+        for i in range(particle_count):
+            angle = (i / particle_count) * 2 * math.pi + random.uniform(-0.3, 0.3)
+            speed = random.uniform(2, 5)
+            self.particles.append({
+                'x': float(x + random.uniform(-3, 3)),
+                'y': float(y + random.uniform(-3, 3)),
+                'vx': math.cos(angle) * speed,
+                'vy': math.sin(angle) * speed - 1,
+                'life': random.randint(20, 40),
+                'max_life': 40,
+                'color': random.choice(color_palette),
+                'size': random.randint(2, 4),
+                'glow': True,
+            })
+
+        self.particles.append({
+            'x': float(x),
+            'y': float(y),
+            'vx': 0,
+            'vy': -0.5,
+            'life': 12,
+            'max_life': 12,
+            'color': white_tint,
+            'size': int(cell_size * 0.4),
+            'glow': True,
+        })
+
+    def _get_drop_trail_store(self, player: int):
+        return self.p1_drop_trails if player == 1 else self.p2_drop_trails
+
+    def _create_drop_trail(self, player: int, piece: Piece | None, board_x: int, board_y: int,
+                           cell_size: int, start_y: int, distance: int,
+                           trail_type: str = 'hard'):
+        """Oyuncu bazlı sert düşüş izi oluştur."""
+        if not self.effects_enabled or not piece or distance <= 0:
+            return
+
+        trail_store = self._get_drop_trail_store(player)
+        for row_idx, row in enumerate(piece.shape):
+            for col_idx, cell in enumerate(row):
+                if not cell:
+                    continue
+                block_x = board_x + (piece.x + col_idx) * cell_size
+                block_y = board_y + start_y * cell_size + row_idx * cell_size
+                trail_height = distance * cell_size
+                if trail_height <= 0:
+                    continue
+
+                if trail_type == 'hard':
+                    alpha = 180
+                    trail_width = cell_size - 4
+                    fade_speed = 15
+                else:
+                    alpha = 80
+                    trail_width = max(2, cell_size // 2)
+                    fade_speed = 20
+
+                color = tuple(getattr(piece, 'color', (128, 128, 128))[:3])
+                bright_color = (
+                    min(255, color[0] + 50),
+                    min(255, color[1] + 50),
+                    min(255, color[2] + 50),
+                )
+                trail_store.append({
+                    'x': block_x + (cell_size - trail_width) // 2,
+                    'y': block_y,
+                    'width': trail_width,
+                    'height': trail_height,
+                    'color': bright_color,
+                    'alpha': alpha,
+                    'fade_speed': fade_speed,
+                })
+
+    def _update_drop_trails(self, dt_frames: float):
+        """Oyuncu bazlı trail efektlerini güncelle."""
+        for trail_store_name in ('p1_drop_trails', 'p2_drop_trails'):
+            trail_store = getattr(self, trail_store_name, [])
+            for trail in trail_store:
+                trail['alpha'] -= trail['fade_speed'] * dt_frames
+            setattr(self, trail_store_name, [trail for trail in trail_store if trail['alpha'] > 0])
+
+    def _draw_drop_trails(self, player: int):
+        """İlgili oyuncunun drop trail efektlerini çiz."""
+        for trail in self._get_drop_trail_store(player):
+            if trail['alpha'] <= 0:
+                continue
+            trail_surface = pygame.Surface((int(trail['width']), int(trail['height'])), pygame.SRCALPHA)
+            segments = max(1, int(trail['height'] // 4))
+            segment_height = trail['height'] / segments
+            for i in range(segments):
+                segment_alpha = int(trail['alpha'] * (1 - i / segments))
+                if segment_alpha <= 0:
+                    continue
+                y_pos = int(i * segment_height)
+                height = max(1, int(segment_height + 1))
+                color_with_alpha = (*trail['color'], segment_alpha)
+                pygame.draw.rect(
+                    trail_surface,
+                    color_with_alpha,
+                    (0, y_pos, int(trail['width']), height),
+                    border_radius=max(1, int(trail['width']) // 4),
+                )
+            self.screen.blit(trail_surface, (int(trail['x']), int(trail['y'])))
     
     def create_ambient_particles(self):
         """Arka plan için ambient parçacıklar oluştur"""
@@ -2620,6 +2750,9 @@ class PvPGame:
 
         # Frame bazlı delta hesapla (60 FPS varsayım)
         dt_frames = delta_time / 16.67 if delta_time > 0 else 1.0
+
+        if self.p1_drop_trails or self.p2_drop_trails:
+            self._update_drop_trails(dt_frames)
         
         # Satır flash timer güncelle (ana oyundaki gibi - 20 frame)
         if self.p1_line_flash_timer > 0:
@@ -2819,6 +2952,9 @@ class PvPGame:
             cache_entry['dirty'] = animating_fall
 
         self.screen.blit(cache_entry['surface'], (offset_x, offset_y))
+
+        if self.effects_enabled:
+            self._draw_drop_trails(player_idx)
         
         # Mevcut parça - 3D DOKULU
         if not board.is_game_over():
@@ -3279,6 +3415,8 @@ class PvPGame:
         self.p2_line_sweep_active = False
         self.p1_falling_block_animations = []
         self.p2_falling_block_animations = []
+        self.p1_drop_trails = []
+        self.p2_drop_trails = []
         
         # Partiküller ve ambient efektler sıfırla
         self.particles = []
