@@ -26,8 +26,8 @@ import pygame
 # Proje import'ları
 from constants import (
     BOARD_WIDTH, BOARD_HEIGHT, BLACK, COLORS,
-    INITIAL_FALL_SPEED, FAST_FALL_SPEED, SPEED_INCREASE_PER_LEVEL,
-    DEFAULT_LOCK_DELAY, DAS_DELAY, DAS_REPEAT,
+    INITIAL_FALL_SPEED, SPEED_INCREASE_PER_LEVEL,
+    DEFAULT_LOCK_DELAY,
 )
 from board import Board
 from pieces import Piece, SHAPES
@@ -51,6 +51,12 @@ from steam_networking import (
     CHANNEL_GAME, CHANNEL_STATE, CHANNEL_CONTROL,
     generate_lobby_code,
 )
+
+
+ONLINE_PVP_DAS_DELAY_MS = 160
+ONLINE_PVP_DAS_REPEAT_MS = 105
+ONLINE_PVP_SOFT_DROP_SPEED_MS = 55
+ONLINE_PVP_GARBAGE_ENABLED = False
 
 # Steam pump thread kontrolü — bridge aktifken pump duraklatılır (race condition önleme)
 try:
@@ -108,16 +114,6 @@ class OnlineState:
     PLAYING      = 'playing'       # Oyun devam ediyor
     GAME_OVER    = 'game_over'     # Maç bitti
     DISCONNECTED = 'disconnected'  # Bağlantı koptu
-
-
-# ─────────────── Çöp Satır Tablosu ───────────────
-
-GARBAGE_TABLE = {
-    1: 0,   # Tek satır = çöp yok
-    2: 1,   # Double = 1 çöp
-    3: 2,   # Triple = 2 çöp
-    4: 4,   # Quadrix = 4 çöp
-}
 
 
 class OnlinePvPGame:
@@ -260,6 +256,10 @@ class OnlinePvPGame:
         self.opponent_ready = False
         self.game_over = False
         self.winner: str = ''  # 'me', 'opponent', 'draw'
+        self.my_eliminated = False
+        self.opponent_eliminated = False
+        self._opponent_final_score = 0
+        self._opponent_final_lines = 0
         self.paused = False
         self.opponent_paused = False
 
@@ -294,6 +294,7 @@ class OnlinePvPGame:
 
         # Lobi oluşturulduktan sonra otomatik davet aç
         self._invite_after_lobby: bool = False
+        self._creating_public_lobby: bool = False
 
         # ─── Lobi Kodu Sistemi ───
         self._lobby_code: str = ''          # Oluşturulan lobi kodu (6 haneli)
@@ -308,6 +309,7 @@ class OnlinePvPGame:
         self.effects_enabled = True
         self.particles: list[dict] = []
         self.ambient_particles: list[dict] = []
+        self.drop_trails: list[dict] = []
         # Benim satır temizleme efektlerim
         self.my_line_flash_rows: list[int] = []
         self.my_line_flash_timer: float = 0
@@ -679,12 +681,19 @@ class OnlinePvPGame:
         self.online_state = OnlineState.WAITING
         print(f"[OnlinePvP] Lobi oluşturuldu: {ev.steam_id}")
 
-        # ─── Lobi kodu oluştur ve metadata'ya kaydet ───
         self._lobby_id_str = str(ev.steam_id)
-        self._lobby_code = generate_lobby_code(ev.steam_id)
-        # Metadata'ya kaydet (kod ile arama desteği için)
-        self.net.set_lobby_data('lobby_code', self._lobby_code)
-        self.net.set_lobby_data('lobby_code_full', self._lobby_id_str)
+
+        # Public lobi için kod üretme/gösterme.
+        if self._creating_public_lobby:
+            self._lobby_code = ''
+            print(f"[OnlinePvP] Public lobi hazır. Lobby ID: {self._lobby_id_str}")
+        else:
+            self._lobby_code = generate_lobby_code(ev.steam_id)
+            # Metadata'ya kaydet (kod ile arama desteği için)
+            self.net.set_lobby_data('lobby_code', self._lobby_code)
+            self.net.set_lobby_data('lobby_code_full', self._lobby_id_str)
+            print(f"[OnlinePvP] Lobi Kodu: {self._lobby_code}  |  Tam ID: {self._lobby_id_str}")
+
         # Host adını metadata'ya kaydet (lobi listesinde gösterilmek üzere)
         host_name = ''
         try:
@@ -693,7 +702,6 @@ class OnlinePvPGame:
             pass
         if host_name:
             self.net.set_lobby_data('host_name', host_name)
-        print(f"[OnlinePvP] Lobi Kodu: {self._lobby_code}  |  Tam ID: {self._lobby_id_str}")
 
         # Davet bekletilmişse şimdi aç
         if self._invite_after_lobby:
@@ -709,6 +717,11 @@ class OnlinePvPGame:
                 _activate_invite_dialog(ev.steam_id)
             self._status_msg = t('invite_sent', 'Steam davet penceresi açıldı')
             self._status_timer = 2.5
+
+    def _create_lobby(self, public: bool = False):
+        """Lobi oluşturma isteğini public/private bilgisiyle başlat."""
+        self._creating_public_lobby = bool(public)
+        self.net.create_lobby(public=public)
 
     def _on_lobby_joined(self, ev: NetEvent):
         self.online_state = OnlineState.WAITING
@@ -880,6 +893,7 @@ class OnlinePvPGame:
         self.online_state = OnlineState.LOBBY_MENU
         self.my_ready = False
         self.opponent_ready = False
+        self._reset_match_result_state()
         self.paused = False
         self.opponent_paused = False
         self.opponent_piece_data = None
@@ -899,6 +913,7 @@ class OnlinePvPGame:
         self._status_msg = ''
         self._status_timer = 0
         self._invite_after_lobby = False
+        self._creating_public_lobby = False
 
     # ============================================================
     #  MESAJ İŞLEME
@@ -916,6 +931,71 @@ class OnlinePvPGame:
             print(f"[OnlinePvP] Alan doğrulama: '{field}' int'e dönüştürülemedi — {value!r}")
             return lo
         return max(lo, min(v, hi))
+
+    def _reset_match_result_state(self):
+        """Maç sonu sonucunu belirleyen bayrakları sıfırla."""
+        self.game_over = False
+        self.winner = ''
+        self.my_eliminated = False
+        self.opponent_eliminated = False
+        self._opponent_final_score = 0
+        self._opponent_final_lines = 0
+
+    def _finalize_elimination_result(self):
+        """Local PvP ile aynı elenme kuralıyla kazananı hesapla."""
+        if not self.my_eliminated and not self.opponent_eliminated:
+            return
+
+        my_score = int(getattr(self.my_board, 'score', 0) or 0)
+        opp_score = int(self._opponent_final_score or self.opponent_score or 0)
+        was_game_over = self.online_state == OnlineState.GAME_OVER
+
+        if self.my_eliminated and not self.opponent_eliminated:
+            self.winner = 'opponent'
+        elif self.opponent_eliminated and not self.my_eliminated:
+            self.winner = 'me'
+        else:
+            if my_score > opp_score:
+                self.winner = 'me'
+                print(f"[OnlinePvP] Cifte elenme - BEN kazandim ({my_score} > {opp_score})")
+            elif opp_score > my_score:
+                self.winner = 'opponent'
+                print(f"[OnlinePvP] Cifte elenme - RAKIP kazandi ({opp_score} > {my_score})")
+            else:
+                self.winner = 'draw'
+                print(f"[OnlinePvP] Cifte elenme - BERABERE ({my_score} = {opp_score})")
+
+        self.game_over = True
+        self.online_state = OnlineState.GAME_OVER
+
+        if not was_game_over:
+            sound_name = 'tetris' if self.winner == 'me' else 'gameover'
+            try:
+                self.sound.play(sound_name)
+            except Exception:
+                pass
+
+    def _mark_local_eliminated(self):
+        """Kendi elenmeni işle ve final skorunu rakibe gönder."""
+        if self.my_eliminated:
+            return
+
+        self.my_eliminated = True
+        if self.my_board:
+            self.net.send_game_over(self.my_board.score, self.my_board.lines_cleared)
+        self._finalize_elimination_result()
+
+    def _mark_opponent_eliminated(self, score: int | None = None, lines: int | None = None):
+        """Rakibin elendiğini işle."""
+        self.opponent_piece_data = None
+        self.opponent_eliminated = True
+        if score is not None:
+            self._opponent_final_score = int(score)
+            self.opponent_score = int(score)
+        if lines is not None:
+            self._opponent_final_lines = int(lines)
+            self.opponent_lines = int(lines)
+        self._finalize_elimination_result()
 
     @staticmethod
     def _validate_grid(grid) -> bool:
@@ -964,6 +1044,10 @@ class OnlinePvPGame:
                 self._start_countdown()
 
             elif msg_type == MsgType.GARBAGE_ATTACK:
+                if not ONLINE_PVP_GARBAGE_ENABLED:
+                    self.pending_garbage = 0
+                    self._garbage_gap = 0
+                    continue
                 lines = self._clamp_int(data.get('lines', 0), 0, 20, 'lines')
                 raw_gap = data.get('gap', -1)
                 # gap: -1 sentinel (rastgele gap) ya da [0, BOARD_WIDTH-1]
@@ -1010,39 +1094,15 @@ class OnlinePvPGame:
                 self.opponent_level = self._clamp_int(data.get('level', 1), 0, 30, 'level')
 
             elif msg_type == MsgType.GAME_OVER:
-                # Rakip öldü — aktif parça verisini temizle
-                self.opponent_piece_data = None
-                # Rakip öldü — ama biz de ölmüş olabiliriz (race condition)
-                if self.game_over and self.winner == 'opponent':
-                    # İkimiz de aynı anda öldük — skor karşılaştırması ile karar ver
-                    my_score = self.my_board.score if self.my_board else 0
-                    opp_score = self._clamp_int(data.get('score', 0), 0, 999999, 'opp_final_score')
-                    if my_score > opp_score:
-                        self.winner = 'me'
-                        print(f"[OnlinePvP] Simultane ölüm — skor karşılaştırması: BEN ({my_score}) > RAKİP ({opp_score})")
-                    elif opp_score > my_score:
-                        self.winner = 'opponent'
-                        print(f"[OnlinePvP] Simultane ölüm — skor karşılaştırması: RAKİP ({opp_score}) > BEN ({my_score})")
-                    else:
-                        self.winner = 'draw'
-                        print(f"[OnlinePvP] Simultane ölüm — BERABERE (her iki skor: {my_score})")
-                    self.online_state = OnlineState.GAME_OVER
-                elif not self.game_over:
-                    # Normal durum — rakip öldü, biz kazandık
-                    self.game_over = True
-                    self.winner = 'me'
-                    self.online_state = OnlineState.GAME_OVER
-                    try:
-                        self.sound.play('tetris')  # zafer sesi
-                    except Exception:
-                        pass
-                # else: game_over zaten True ve winner zaten 'me' — ignore
+                if self.online_state in (OnlineState.PLAYING, OnlineState.GAME_OVER):
+                    self._mark_opponent_eliminated(
+                        score=self._clamp_int(data.get('score', self.opponent_score), 0, 999999, 'opp_final_score'),
+                        lines=self._clamp_int(data.get('lines', self.opponent_lines), 0, 999999, 'opp_final_lines'),
+                    )
 
             elif msg_type == MsgType.ELIMINATED:
-                if not self.game_over:
-                    self.game_over = True
-                    self.winner = 'me'
-                    self.online_state = OnlineState.GAME_OVER
+                if self.online_state in (OnlineState.PLAYING, OnlineState.GAME_OVER):
+                    self._mark_opponent_eliminated()
 
             elif msg_type == MsgType.PAUSE_REQUEST:
                 self.opponent_paused = True
@@ -1054,8 +1114,7 @@ class OnlinePvPGame:
                 # Rakip rematch istiyor
                 self.opponent_ready = False
                 self.my_ready = False
-                self.game_over = False
-                self.winner = ''
+                self._reset_match_result_state()
                 self.online_state = OnlineState.READY_CHECK
                 self._status_msg = t('opponent_wants_rematch', 'Rakip tekrar oynamak istiyor!')
                 self._status_timer = 3.0
@@ -1122,7 +1181,7 @@ class OnlinePvPGame:
         self.hold_shape_index = -1
         self.fall_timer = 0
         self.lock_timer = 0
-        self.game_over = False
+        self._reset_match_result_state()
         self.pending_garbage = 0
         self._garbage_gap = 0
         self.state_snapshot_timer = 0
@@ -1162,6 +1221,7 @@ class OnlinePvPGame:
         self.opp_falling_block_animations = []
         self._pending_opp_particle_rows = []
         self.particles.clear()
+        self.drop_trails.clear()
         self.screen_shake = 0
         self.shake_intensity = 0
 
@@ -1229,6 +1289,116 @@ class OnlinePvPGame:
                 'glow': True,
             }
             self.particles.append(particle)
+
+    def create_lock_explosion(self, x, y, color, cell_size=25):
+        """Ana oyundaki gibi hücre bazlı kilitlenme patlaması oluştur."""
+        if not self._particle_effects_enabled():
+            return
+
+        base_color = tuple(color[:3]) if color else (128, 128, 128)
+        bright_color = tuple(min(255, int(c * 1.3)) for c in base_color)
+        dim_color = tuple(max(0, int(c * 0.7)) for c in base_color)
+        white_tint = tuple(min(255, c + 80) for c in base_color)
+        color_palette = [base_color, bright_color, dim_color, white_tint, (255, 255, 255)]
+
+        particle_count = random.randint(6, 10)
+        for i in range(particle_count):
+            angle = (i / particle_count) * 2 * math.pi + random.uniform(-0.3, 0.3)
+            speed = random.uniform(2, 5)
+            self.particles.append({
+                'x': float(x + random.uniform(-3, 3)),
+                'y': float(y + random.uniform(-3, 3)),
+                'vx': math.cos(angle) * speed,
+                'vy': math.sin(angle) * speed - 1,
+                'life': random.randint(20, 40),
+                'max_life': 40,
+                'color': random.choice(color_palette),
+                'size': random.randint(2, 4),
+                'glow': True,
+            })
+
+        self.particles.append({
+            'x': float(x),
+            'y': float(y),
+            'vx': 0,
+            'vy': -0.5,
+            'life': 12,
+            'max_life': 12,
+            'color': white_tint,
+            'size': int(cell_size * 0.4),
+            'glow': True,
+        })
+
+    def _create_drop_trail(self, piece: Piece | None, board_x: int, board_y: int,
+                           cell_size: int, start_y: int, distance: int,
+                           trail_type: str = 'hard'):
+        """Ana oyundaki gibi sert düşüş izi oluştur."""
+        if not self.effects_enabled or not piece or distance <= 0:
+            return
+
+        for row_idx, row in enumerate(piece.shape):
+            for col_idx, cell in enumerate(row):
+                if not cell:
+                    continue
+                block_x = board_x + (piece.x + col_idx) * cell_size
+                block_y = board_y + start_y * cell_size + row_idx * cell_size
+                trail_height = distance * cell_size
+                if trail_height <= 0:
+                    continue
+
+                if trail_type == 'hard':
+                    alpha = 180
+                    trail_width = cell_size - 4
+                    fade_speed = 15
+                else:
+                    alpha = 80
+                    trail_width = max(2, cell_size // 2)
+                    fade_speed = 20
+
+                color = tuple(getattr(piece, 'color', (128, 128, 128))[:3])
+                bright_color = (
+                    min(255, color[0] + 50),
+                    min(255, color[1] + 50),
+                    min(255, color[2] + 50),
+                )
+                self.drop_trails.append({
+                    'x': block_x + (cell_size - trail_width) // 2,
+                    'y': block_y,
+                    'width': trail_width,
+                    'height': trail_height,
+                    'color': bright_color,
+                    'alpha': alpha,
+                    'fade_speed': fade_speed,
+                })
+
+    def _update_drop_trails(self, dt_frames: float):
+        """Drop trail efektlerini güncelle."""
+        for trail in self.drop_trails:
+            trail['alpha'] -= trail['fade_speed'] * dt_frames
+        self.drop_trails = [trail for trail in self.drop_trails if trail['alpha'] > 0]
+
+    def _draw_drop_trails(self):
+        """Drop trail efektlerini çiz."""
+        for trail in self.drop_trails:
+            if trail['alpha'] <= 0:
+                continue
+            trail_surface = pygame.Surface((int(trail['width']), int(trail['height'])), pygame.SRCALPHA)
+            segments = max(1, int(trail['height'] // 4))
+            segment_height = trail['height'] / segments
+            for i in range(segments):
+                segment_alpha = int(trail['alpha'] * (1 - i / segments))
+                if segment_alpha <= 0:
+                    continue
+                y_pos = int(i * segment_height)
+                height = max(1, int(segment_height + 1))
+                color_with_alpha = (*trail['color'], segment_alpha)
+                pygame.draw.rect(
+                    trail_surface,
+                    color_with_alpha,
+                    (0, y_pos, int(trail['width']), height),
+                    border_radius=max(1, int(trail['width']) // 4),
+                )
+            self.screen.blit(trail_surface, (int(trail['x']), int(trail['y'])))
 
     def create_line_clear_particles(self, cleared_rows, board_offset_x, board_offset_y, cell_size, board=None):
         """Satır temizlendiğinde local PvP benzeri güçlü partikül efekti oluştur."""
@@ -1465,13 +1635,26 @@ class OnlinePvPGame:
 
     def _send_garbage(self, lines_cleared: int):
         """Satır temizlediğimizde rakibe çöp gönder."""
-        garbage_lines = GARBAGE_TABLE.get(lines_cleared, 0)
+        if not ONLINE_PVP_GARBAGE_ENABLED:
+            return
+
+        garbage_table = {
+            1: 0,
+            2: 1,
+            3: 2,
+            4: 4,
+        }
+        garbage_lines = garbage_table.get(lines_cleared, 0)
         if garbage_lines > 0:
             gap_col = random.randint(0, BOARD_WIDTH - 1)
             self.net.send_garbage(garbage_lines, gap_col)
 
     def _receive_garbage(self, lines: int, gap_col: int = -1):
         """Rakipten gelen çöp satırları kuyruğa al — parça kilitlenince uygulanır."""
+        if not ONLINE_PVP_GARBAGE_ENABLED:
+            self.pending_garbage = 0
+            self._garbage_gap = 0
+            return
         if lines <= 0:
             return
         if gap_col < 0:
@@ -1482,6 +1665,10 @@ class OnlinePvPGame:
 
     def _apply_pending_garbage(self):
         """Kuyrukta bekleyen çöp satırları tahtaya uygula."""
+        if not ONLINE_PVP_GARBAGE_ENABLED:
+            self.pending_garbage = 0
+            self._garbage_gap = 0
+            return
         if self.pending_garbage <= 0 or not self.my_board:
             return
 
@@ -1507,6 +1694,7 @@ class OnlinePvPGame:
             self.my_board.gold.append([False] * BOARD_WIDTH)
 
         self.pending_garbage = 0
+        self._garbage_gap = 0
 
         # Garbage sonrası aktif parça geçerli pozisyonda mı kontrol et
         # Tahta yukarı kayınca parça var olan bloklarla çakışabilir
@@ -1522,16 +1710,8 @@ class OnlinePvPGame:
                         saved = True
                         break
                 if not saved:
-                    # Parça kurtarılamadı — oyun bitti
-                    self.game_over = True
-                    self.winner = 'opponent'
-                    self.online_state = OnlineState.GAME_OVER
-                    self.net.send_game_over(
-                        self.my_board.score, self.my_board.lines_cleared)
-                    try:
-                        self.sound.play('gameover')
-                    except Exception:
-                        pass
+                    # Parça kurtarılamadı — Local PvP ile aynı elenme mantığı
+                    self._mark_local_eliminated()
 
     def _update_opponent_display(self, data: dict):
         """Rakip tahta snapshot'ını güncelle."""
@@ -1820,6 +2000,9 @@ class OnlinePvPGame:
                 if not (anim['current_offset'] >= 0 and anim.get('started', False))
             ]
 
+        if self.drop_trails:
+            self._update_drop_trails(dt_frames)
+
         # Durum mesajı zamanlayıcı
         if self._status_timer > 0:
             self._status_timer -= delta_time / 1000.0
@@ -1847,7 +2030,7 @@ class OnlinePvPGame:
 
         # Soft drop hızlandırma
         if self.soft_dropping:
-            fall_speed = min(fall_speed, FAST_FALL_SPEED)
+            fall_speed = min(fall_speed, ONLINE_PVP_SOFT_DROP_SPEED_MS)
 
         self.fall_timer += delta_time
 
@@ -1888,15 +2071,27 @@ class OnlinePvPGame:
         my_board_rect = getattr(self, '_my_board_rect', None)
         if self.effects_enabled and my_board_rect:
             cell_size = max(1, my_board_rect.width // BOARD_WIDTH)
-            piece_center_x = my_board_rect.x + (self.my_piece.x + 2) * cell_size
-            piece_center_y = my_board_rect.y + (self.my_piece.y + 2) * cell_size
-            self.create_particles(
-                count=6,
-                x=int(piece_center_x),
-                y=int(piece_center_y),
-                colors=[self.my_piece.color],
-                speed=2,
-            )
+            piece_shape = self.my_piece.get_shape()
+            color_matrix = getattr(self.my_piece, 'color_matrix', None)
+            for row_i, row in enumerate(piece_shape):
+                for col_i, cell in enumerate(row):
+                    if not cell:
+                        continue
+                    board_col = self.my_piece.x + col_i
+                    board_row = self.my_piece.y + row_i
+                    if not (0 <= board_col < BOARD_WIDTH and 0 <= board_row < BOARD_HEIGHT):
+                        continue
+                    cell_color = self.my_piece.color
+                    if color_matrix is not None:
+                        try:
+                            matrix_color = color_matrix[row_i][col_i]
+                            if matrix_color is not None:
+                                cell_color = matrix_color
+                        except Exception:
+                            pass
+                    screen_x = my_board_rect.x + board_col * cell_size + cell_size // 2
+                    screen_y = my_board_rect.y + board_row * cell_size + cell_size // 2
+                    self.create_lock_explosion(screen_x, screen_y, cell_color, cell_size=cell_size)
 
         lines = self.my_board.lock_piece(self.my_piece)
         cleared_rows = list(self.my_board.last_cleared_lines) if lines > 0 else []
@@ -1907,9 +2102,9 @@ class OnlinePvPGame:
             pass
 
         if lines > 0:
-            # Temizlenen satırlar bekleyen çöpü iptal eder
-            self.pending_garbage = max(0, self.pending_garbage - lines)
-            self._send_garbage(lines)
+            if ONLINE_PVP_GARBAGE_ENABLED:
+                self.pending_garbage = max(0, self.pending_garbage - lines)
+                self._send_garbage(lines)
             self.net.send_score_update(
                 self.my_board.score,
                 self.my_board.lines_cleared,
@@ -1930,8 +2125,8 @@ class OnlinePvPGame:
                     is_opponent=False,
                 )
 
-        # Kalan bekleyen çöp satırları uygula (satır temizleme iptal edemediği kısım)
-        if self.pending_garbage > 0:
+        # Kalan bekleyen çöp satırları uygula (Online garbage kapalıysa bu blok atlanır)
+        if ONLINE_PVP_GARBAGE_ENABLED and self.pending_garbage > 0:
             self._apply_pending_garbage()
             if self.game_over:
                 return  # Garbage oyunu bitirdi
@@ -1949,14 +2144,7 @@ class OnlinePvPGame:
 
         # Oyun bitti mi?
         if not self.my_board.is_valid_position(self.my_piece):
-            self.game_over = True
-            self.winner = 'opponent'
-            self.online_state = OnlineState.GAME_OVER
-            self.net.send_game_over(self.my_board.score, self.my_board.lines_cleared)
-            try:
-                self.sound.play('gameover')
-            except Exception:
-                pass
+            self._mark_local_eliminated()
 
     def _update_das(self, delta_time: int):
         """DAS (Delayed Auto Shift) güncelle."""
@@ -1967,12 +2155,12 @@ class OnlinePvPGame:
 
         self.das_timer += delta_time
         if not self.das_active:
-            if self.das_timer >= DAS_DELAY:
+            if self.das_timer >= ONLINE_PVP_DAS_DELAY_MS:
                 self.das_active = True
                 self.das_timer = 0
                 self._move_horizontal(self.das_direction)
         else:
-            if self.das_timer >= DAS_REPEAT:
+            if self.das_timer >= ONLINE_PVP_DAS_REPEAT_MS:
                 self.das_timer = 0
                 self._move_horizontal(self.das_direction)
 
@@ -2106,10 +2294,10 @@ class OnlinePvPGame:
 
             if key == pygame.K_1:
                 if self._init_networking():
-                    self.net.create_lobby()
+                    self._create_lobby(public=False)
             elif key == pygame.K_2:
                 if self._init_networking():
-                    self.net.create_lobby(public=True)
+                    self._create_lobby(public=True)
             elif key == pygame.K_3:
                 self._request_public_lobby_list()
             elif key == pygame.K_i:
@@ -2125,7 +2313,7 @@ class OnlinePvPGame:
         if self.online_state == OnlineState.WAITING:
             if key == pygame.K_i:
                 self._do_invite_friend()
-            elif key == pygame.K_c:
+            elif key == pygame.K_c and self._lobby_code:
                 self._copy_lobby_code()
             return None
 
@@ -2207,10 +2395,10 @@ class OnlinePvPGame:
                 try:
                     if action == 'create_private':
                         if self._init_networking():
-                            self.net.create_lobby()
+                            self._create_lobby(public=False)
                     elif action == 'create_public':
                         if self._init_networking():
-                            self.net.create_lobby(public=True)
+                            self._create_lobby(public=True)
                     elif action == 'find_match':
                         self._request_public_lobby_list()
                     elif action == 'back':
@@ -2293,10 +2481,23 @@ class OnlinePvPGame:
         if not self.my_board or not self.my_piece:
             return
         drop_distance = 0
+        start_y = self.my_piece.y
         while self.my_board.is_valid_position(self.my_piece, dy=1):
             self.my_piece.y += 1
             drop_distance += 1
         self.my_board.score += drop_distance * 2
+        my_board_rect = getattr(self, '_my_board_rect', None)
+        if self.effects_enabled and drop_distance > 0 and my_board_rect:
+            cell_size = max(1, my_board_rect.width // BOARD_WIDTH)
+            self._create_drop_trail(
+                self.my_piece,
+                my_board_rect.x,
+                my_board_rect.y,
+                cell_size,
+                start_y,
+                drop_distance,
+                trail_type='hard',
+            )
         self._send_piece_position()
         try:
             self.sound.play('drop')
@@ -2328,7 +2529,7 @@ class OnlinePvPGame:
 
         # Lobi yoksa önce oluştur
         if not self.net.lobby_id:
-            self.net.create_lobby()
+            self._create_lobby(public=False)
             self._status_msg = t('creating_lobby_invite', 'Lobi oluşturuluyor...')
             self._status_timer = 2.0
             # Lobi oluşturulduktan sonra davet açılacak — flag koy
@@ -2360,8 +2561,7 @@ class OnlinePvPGame:
         """Rakibe rematch isteği gönder ve ready check'e geç."""
         self.my_ready = False
         self.opponent_ready = False
-        self.game_over = False
-        self.winner = ''
+        self._reset_match_result_state()
         self.online_state = OnlineState.READY_CHECK
         # Rakibe rematch isteği bildir
         self.net.send({'type': MsgType.REMATCH}, reliable=True, channel=CHANNEL_CONTROL)
@@ -2416,8 +2616,6 @@ class OnlinePvPGame:
     def _copy_lobby_code(self):
         """Lobi kodunu panoya kopyala."""
         code = self._lobby_code
-        if not code and self.net.lobby_id:
-            code = str(self.net.lobby_id)
         if not code:
             return
         ok = self._copy_to_clipboard(code)
@@ -3241,8 +3439,8 @@ class OnlinePvPGame:
         vs_text = vs_font.render('VS', True, UIColors.NEON_MAGENTA)
         self.screen.blit(vs_text, vs_text.get_rect(center=vs_rect.center))
 
-        # Pending garbage göstergesi (kırmızı bar)
-        if self.pending_garbage > 0:
+        # Pending garbage göstergesi (Online garbage açıksa görünür)
+        if ONLINE_PVP_GARBAGE_ENABLED and self.pending_garbage > 0:
             gb_h = min(self.pending_garbage * cell_size, board_h)
             gb_rect = pygame.Rect(my_x - s(10), board_top + board_h - gb_h, s(6), gb_h)
             pygame.draw.rect(self.screen, UIColors.NEON_RED, gb_rect, border_radius=3)
@@ -3453,6 +3651,9 @@ class OnlinePvPGame:
                     texture_surface,
                     texture_slice,
                 )
+
+        if self.effects_enabled and self.drop_trails:
+            self._draw_drop_trails()
 
         if piece:
             shape = piece.get_shape()
