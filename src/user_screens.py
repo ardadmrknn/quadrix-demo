@@ -1630,11 +1630,11 @@ class UserSelectionScreen:
         # Scrollbar çiz
         entries = ['__add__'] + self.users_list
         content_height = len(entries) * (card_height + card_gap)
-        visible_height = list_rect.height - card_header_offset - card_bottom_pad
+        visible_height = list_rect.height - s(48)
         if len(entries) > self.visible_limit:
             scrollbar_rect = pygame.Rect(
                 list_rect.right - s(22),
-                list_rect.y + card_header_offset,
+                list_rect.y + s(24),
                 s(22),
                 visible_height
             )
