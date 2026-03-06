@@ -59,6 +59,57 @@ _pump_paused_event = threading.Event()  # pump döngüsü bu event'i set eder (p
 _pump_lock = threading.Lock()  # RunCallbacks çakmasını önle
 
 
+def _read_app_id_from_runtime_sources(default: str = '4428040') -> str:
+    candidates: list[Path] = []
+
+    env_app_id = str(os.environ.get('STEAM_APP_ID', '') or '').strip()
+    if env_app_id:
+        return env_app_id
+
+    try:
+        candidates.append(Path.cwd() / 'steam_appid.txt')
+    except Exception:
+        pass
+
+    try:
+        exe_path = Path(getattr(sys, 'executable', '') or '')
+        if exe_path:
+            candidates.append(exe_path.resolve().parent / 'steam_appid.txt')
+    except Exception:
+        pass
+
+    try:
+        if getattr(sys, '_MEIPASS', None):
+            candidates.append(Path(sys._MEIPASS) / 'steam_appid.txt')
+    except Exception:
+        pass
+
+    try:
+        project_root = Path(__file__).resolve().parent.parent
+        candidates.append(project_root / 'steam_appid.txt')
+    except Exception:
+        pass
+
+    seen: set[str] = set()
+    for candidate in candidates:
+        try:
+            key = str(candidate.resolve())
+        except Exception:
+            key = str(candidate)
+        if key in seen:
+            continue
+        seen.add(key)
+        try:
+            if candidate.exists():
+                raw = candidate.read_text(encoding='utf-8').strip()
+                if raw:
+                    return raw
+        except Exception:
+            continue
+
+    return default
+
+
 def _get_platform_lib_name() -> str:
     """Platforma göre Steam kütüphane dosya adını döndür."""
     if sys.platform == 'darwin':
@@ -499,7 +550,7 @@ def init() -> bool:
         # env var‧ından okur. Onefile build'larda _MEIPASS geçici klasörüne
         # çıkarılır ama CWD exe'nin bulunduğu yerdir — dosya orada olmayabilir.
         # Env var her zaman çalışır.
-        _APP_ID = '4428040'
+        _APP_ID = _read_app_id_from_runtime_sources('4428040')
         # ── Dev mode / Production mode ayırt et ─────────────────────────────────
         # PyInstaller frozen build'da (sys.frozen=True) Steam client AppID'yi
         # zaten sağlar; env override yapmak yanlış AppID enjekte edebilir.

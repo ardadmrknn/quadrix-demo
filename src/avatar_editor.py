@@ -6,6 +6,7 @@ import pygame
 import os
 
 from asset_manager import load_image
+from storage_layout import build_temp_avatar_path
 from ui_theme import UIFonts
 from platform_utils import normalize_mouse_pos
 from localization import t
@@ -59,11 +60,6 @@ class AvatarEditor:
         self.resize_start = None
         self.resize_start_size = 0
         
-        # Kayıt klasörü
-        self.avatars_dir = 'avatars'
-        if not os.path.exists(self.avatars_dir):
-            os.makedirs(self.avatars_dir)
-    
     def open_file_dialog(self):
         """Dosya seçme dialogunu aç"""
         try:
@@ -464,15 +460,14 @@ class AvatarEditor:
         
         return cropped
     
-    def save_avatar(self, username):
+    def save_avatar(self, username, target_path=None):
         """Avatarı kaydet"""
         cropped = self.get_cropped_image()
         if not cropped:
             return None
-        
-        # Dosya adı
-        filename = f"{username}_avatar.png"
-        filepath = os.path.join(self.avatars_dir, filename)
+
+        filepath = target_path or build_temp_avatar_path(username)
+        os.makedirs(os.path.dirname(os.path.abspath(filepath)), exist_ok=True)
         
         # Kaydet
         pygame.image.save(cropped, filepath)

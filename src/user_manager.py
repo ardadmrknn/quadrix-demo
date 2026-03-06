@@ -4,8 +4,18 @@ import os
 from datetime import datetime, date
 
 from atomic_io import atomic_write_json
-from data_paths import iter_legacy_paths, migrate_legacy_file, resolve_data_path
+from data_paths import get_profiles_data_dir, iter_legacy_paths, migrate_legacy_file, resolve_cloud_path, resolve_profile_path
 from localization import t
+from storage_layout import (
+    USERS_SCHEMA_VERSION,
+    get_current_user_state_path,
+    get_users_cloud_path,
+    make_profile_id,
+    normalize_avatar_asset,
+    read_json_file,
+    utc_now_iso,
+    write_json_file,
+)
 
 DAILY_MAX_FAILURES = 3
 DAILY_HISTORY_LIMIT = 40
@@ -15,25 +25,133 @@ class UserManager:
     
     def __init__(self, users_file='users.json'):
         """Kullanıcı yöneticisini başlat"""
+        self._single_file_mode = False
+        self.current_user_state_file = None
+
         if isinstance(users_file, str) and users_file:
-            self.users_file = resolve_data_path(users_file)
-            if not os.path.isabs(users_file) and os.path.dirname(users_file) == '':
+            use_split_storage = (
+                not os.path.isabs(users_file)
+                and os.path.dirname(users_file) == ''
+                and users_file == 'users.json'
+            )
+            if use_split_storage:
+                self.users_file = get_users_cloud_path()
+                self.current_user_state_file = get_current_user_state_path()
                 migrate_legacy_file(self.users_file, iter_legacy_paths(users_file))
+            else:
+                self._single_file_mode = True
+                self.users_file = users_file
         else:
+            self._single_file_mode = True
             self.users_file = users_file
         self.users = {}
         self.current_user = None
         self.load_users()
 
+    def _profile_root_dir(self) -> str:
+        if self._single_file_mode:
+            base_dir = os.path.dirname(os.path.abspath(self.users_file or 'users.json'))
+            path = os.path.join(base_dir, 'profiles')
+            os.makedirs(path, exist_ok=True)
+            return path
+        return get_profiles_data_dir()
+
+    def _profile_dir(self, profile_id: str) -> str:
+        if self._single_file_mode:
+            path = os.path.join(self._profile_root_dir(), profile_id)
+            os.makedirs(path, exist_ok=True)
+            return path
+        return os.path.dirname(resolve_profile_path(profile_id, 'achievements.json'))
+
+    def _profile_file_path(self, profile_id: str, filename: str) -> str:
+        if self._single_file_mode:
+            return os.path.join(self._profile_dir(profile_id), filename)
+        return resolve_profile_path(profile_id, filename)
+
+    def _profile_fallback_filename(self, username: str, key: str) -> str:
+        if key == 'achievements_file':
+            return f'achievements_{username}.json'
+        if key == 'highscores_file':
+            return f'highscores_{username}.json'
+        return key
+
+    def _load_current_user_state(self, fallback: str | None = None) -> str | None:
+        if self._single_file_mode or not self.current_user_state_file:
+            return fallback
+        payload = read_json_file(self.current_user_state_file, default={})
+        if isinstance(payload, dict):
+            current_user = payload.get('current_user')
+            if isinstance(current_user, str) and current_user.strip():
+                return current_user
+        return fallback
+
+    def _save_current_user_state(self) -> None:
+        if self._single_file_mode or not self.current_user_state_file:
+            return
+        try:
+            write_json_file(
+                self.current_user_state_file,
+                {
+                    'current_user': self.current_user,
+                    'saved_at_utc': utc_now_iso(),
+                },
+                indent=2,
+            )
+        except Exception as e:
+            print(f"Aktif kullanıcı kaydedilirken hata: {e}")
+
+    def _touch_profile(self, username: str) -> None:
+        profile = self.users.get(username)
+        if isinstance(profile, dict):
+            profile['last_modified_utc'] = utc_now_iso()
+
+    def _ensure_profile_id(self, username: str, profile: dict) -> str:
+        profile_id = str(profile.get('profile_id') or '').strip()
+        if not profile_id:
+            profile_id = make_profile_id(
+                username,
+                steam_id=profile.get('steam_id'),
+                created_at=profile.get('created_at'),
+            )
+            profile['profile_id'] = profile_id
+        return profile_id
+
+    def _normalize_profile_avatar(self, username: str, profile: dict) -> None:
+        profile_id = self._ensure_profile_id(username, profile)
+        profile['avatar'] = normalize_avatar_asset(profile_id, username, profile.get('avatar'))
+
+    def _resolve_target_profile_file(self, profile_id: str, key: str) -> str:
+        if key == 'achievements_file':
+            return self._profile_file_path(profile_id, 'achievements.json')
+        if key == 'highscores_file':
+            return self._profile_file_path(profile_id, 'highscores.json')
+        raise ValueError(f'Unsupported profile file key: {key}')
+
+    def _migrate_profile_file(self, username: str, profile: dict, key: str) -> str:
+        profile_id = self._ensure_profile_id(username, profile)
+        target_path = self._resolve_target_profile_file(profile_id, key)
+        raw_value = str(profile.get(key) or '').strip()
+        fallback_name = self._profile_fallback_filename(username, key)
+
+        candidates: list[str] = []
+        if raw_value:
+            if os.path.isabs(raw_value) or os.path.dirname(raw_value):
+                candidates.append(raw_value)
+            else:
+                candidates.extend(iter_legacy_paths(raw_value))
+        candidates.extend(iter_legacy_paths(fallback_name))
+        migrate_legacy_file(target_path, candidates)
+        profile[key] = target_path
+        return target_path
+
     def _resolve_profile_file(self, username: str, key: str, fallback: str) -> str:
         profile = self.users.get(username)
         if not isinstance(profile, dict):
-            return resolve_data_path(fallback)
-        raw = profile.get(key) or fallback
-        resolved = resolve_data_path(str(raw))
-        if resolved != raw:
-            profile[key] = resolved
-        return resolved
+            if self._single_file_mode:
+                base_dir = os.path.dirname(os.path.abspath(self.users_file or fallback))
+                return os.path.join(base_dir, fallback)
+            return resolve_cloud_path(fallback)
+        return self._migrate_profile_file(username, profile, key)
     
     def load_users(self):
         """Kullanıcıları yükle"""
@@ -42,7 +160,8 @@ class UserManager:
                 with open(self.users_file, 'r', encoding='utf-8') as f:
                     data = json.load(f)
                     self.users = data.get('users', {})
-                    self.current_user = data.get('current_user', None)
+                    legacy_current_user = data.get('current_user', None)
+                    self.current_user = self._load_current_user_state(legacy_current_user)
                 # Schema migrate: yeni alanları eski profillere ekle
                 updated = False
                 # Tüm desteklenen modlar
@@ -58,6 +177,12 @@ class UserManager:
                     if isinstance(profile, dict) and 'steam_id' not in profile:
                         profile['steam_id'] = None
                         updated = True
+                    if isinstance(profile, dict) and 'profile_id' not in profile:
+                        self._ensure_profile_id(_name, profile)
+                        updated = True
+                    if isinstance(profile, dict) and 'last_modified_utc' not in profile:
+                        profile['last_modified_utc'] = utc_now_iso()
+                        updated = True
                     # Eksik modları game_stats'a ekle
                     if isinstance(profile, dict):
                         game_stats = profile.get('game_stats', {})
@@ -70,11 +195,25 @@ class UserManager:
                             game_stats['pvp'] = {'games': 0, 'wins': 0, 'losses': 0}
                             updated = True
                         profile['game_stats'] = game_stats
+                        old_ach = str(profile.get('achievements_file') or '')
+                        old_high = str(profile.get('highscores_file') or '')
+                        new_ach = self._migrate_profile_file(_name, profile, 'achievements_file')
+                        new_high = self._migrate_profile_file(_name, profile, 'highscores_file')
+                        if old_ach != new_ach or old_high != new_high:
+                            updated = True
+                        old_avatar = profile.get('avatar')
+                        self._normalize_profile_avatar(_name, profile)
+                        if profile.get('avatar') != old_avatar:
+                            updated = True
                 if updated:
                     self.save_users()
             else:
                 self.users = {}
-                self.current_user = None
+                self.current_user = self._load_current_user_state(None)
+
+            if self.current_user and self.current_user not in self.users:
+                self.current_user = list(self.users.keys())[0] if self.users else None
+                self._save_current_user_state()
         except Exception as e:
             print(f"Kullanıcılar yüklenirken hata: {e}")
             self.users = {}
@@ -84,10 +223,13 @@ class UserManager:
         """Kullanıcıları kaydet"""
         try:
             data = {
+                'schema_version': USERS_SCHEMA_VERSION,
                 'users': self.users,
-                'current_user': self.current_user
             }
+            if self._single_file_mode:
+                data['current_user'] = self.current_user
             atomic_write_json(self.users_file, data, indent=4, ensure_ascii=False)
+            self._save_current_user_state()
         except Exception as e:
             print(f"Kullanıcılar kaydedilirken hata: {e}")
 
@@ -146,6 +288,7 @@ class UserManager:
             status['completed'] = False
             updated = True
         if updated:
+            self._touch_profile(user)
             self.save_users()
         return status
 
@@ -222,6 +365,9 @@ class UserManager:
             status['fails'] = status.get('fails', 0) + 1
             if status['fails'] >= DAILY_MAX_FAILURES:
                 self._upsert_daily_history(status, False, challenge_id=challenge_id)
+        user = username or self.current_user
+        if user and user in self.users:
+            self._touch_profile(user)
         self.save_users()
 
     def get_daily_status(self, username=None):
@@ -247,10 +393,12 @@ class UserManager:
 
         # steam_id normalize: boş/whitespace → None
         normalized_steam_id = str(steam_id).strip() if steam_id and str(steam_id).strip() else None
+        created_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        profile_id = make_profile_id(username, steam_id=normalized_steam_id, created_at=created_at)
 
         # Yeni kullanıcı oluştur
         self.users[username] = {
-            'created_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'created_at': created_at,
             'avatar': avatar or '👤',
             'avatar_color': (100, 150, 255),  # Varsayılan renk
             'bio': '',  # Kısa açıklama
@@ -268,8 +416,9 @@ class UserManager:
             # Hold (C) ile saklanan parça sayaçları
             # Örn: {'I': 12, 'T': 7}
             'hold_piece_counts': {},
-            'achievements_file': resolve_data_path(f'achievements_{username}.json'),
-            'highscores_file': resolve_data_path(f'highscores_{username}.json'),
+            'profile_id': profile_id,
+            'achievements_file': self._profile_file_path(profile_id, 'achievements.json'),
+            'highscores_file': self._profile_file_path(profile_id, 'highscores.json'),
             'game_stats': {
                 'classic': {'games': 0, 'score': 0, 'lines': 0},
                 'sprint': {'games': 0, 'score': 0, 'lines': 0},
@@ -286,7 +435,9 @@ class UserManager:
             },
             'tutorial_completed': False,
             'steam_id': normalized_steam_id,
+            'last_modified_utc': utc_now_iso(),
         }
+        self._normalize_profile_avatar(username, self.users[username])
         
         # İlk kullanıcı ise otomatik seç
         if len(self.users) == 1:
@@ -308,6 +459,7 @@ class UserManager:
             counts = {}
             profile['hold_piece_counts'] = counts
         counts[piece_name] = int(counts.get(piece_name, 0) or 0) + 1
+        self._touch_profile(user)
         self.save_users()
 
     def get_user_by_steam_id(self, steam_id: str) -> str | None:
@@ -324,6 +476,7 @@ class UserManager:
         """Mevcut profile Steam ID bağla (birleştirme veya geç-bağlama için)."""
         if username in self.users and isinstance(self.users[username], dict):
             self.users[username]['steam_id'] = str(steam_id) if steam_id else None
+            self._touch_profile(username)
             self.save_users()
 
     def delete_user(self, username):
@@ -340,6 +493,16 @@ class UserManager:
             highscores_file = self._resolve_profile_file(username, 'highscores_file', f'highscores_{username}.json')
             if os.path.exists(highscores_file):
                 os.remove(highscores_file)
+
+            avatar_path = str(self.users.get(username, {}).get('avatar') or '').strip()
+            if avatar_path and os.path.exists(avatar_path):
+                os.remove(avatar_path)
+
+            profile_id = str(self.users.get(username, {}).get('profile_id') or '').strip()
+            if profile_id:
+                profile_dir = self._profile_dir(profile_id)
+                if os.path.isdir(profile_dir) and not os.listdir(profile_dir):
+                    os.rmdir(profile_dir)
         except Exception as e:
             print(f"Dosyalar silinirken hata: {e}")
         
@@ -445,6 +608,7 @@ class UserManager:
         if highscores:
             mode_stats['best_score'] = highscores[0].get('score', 0)
         
+        self._touch_profile(user)
         self.save_users()
         
         # Sıralama döndür (1-5 arası, veya None eğer listede değilse)
@@ -484,6 +648,7 @@ class UserManager:
                         # add_mode_highscore zaten save_users çağırıyor, burada tekrar çağırmaya gerek yok
                         return
             
+            self._touch_profile(user)
             self.save_users()
 
     def add_fragments(self, amount: int, username=None):
@@ -492,6 +657,7 @@ class UserManager:
         if user and user in self.users:
             current = self.users[user].get('neural_fragments', 0) or 0
             self.users[user]['neural_fragments'] = int(current + amount)
+            self._touch_profile(user)
             self.save_users()
 
     def add_xp(self, mode: str, amount: int, username=None):
@@ -521,6 +687,7 @@ class UserManager:
                     # update highest level if global
                     if current_level > self.users[user].get('highest_level', 1):
                         self.users[user]['highest_level'] = current_level
+            self._touch_profile(user)
             self.save_users()
     
     def update_pvp_stats(self, username=None, win=False):
@@ -532,6 +699,7 @@ class UserManager:
                 self.users[user]['game_stats']['pvp']['wins'] += 1
             else:
                 self.users[user]['game_stats']['pvp']['losses'] += 1
+            self._touch_profile(user)
             self.save_users()
     
     def update_user_avatar(self, username, new_avatar, color=None):
@@ -540,8 +708,10 @@ class UserManager:
             return False, t('user_select_not_found')
         
         self.users[username]['avatar'] = new_avatar
+        self._normalize_profile_avatar(username, self.users[username])
         if color:
             self.users[username]['avatar_color'] = color
+        self._touch_profile(username)
         self.save_users()
         return True, t('user_avatar_updated')
     
@@ -556,6 +726,9 @@ class UserManager:
         for key, value in kwargs.items():
             if key in allowed_fields:
                 self.users[username][key] = value
+
+        self._normalize_profile_avatar(username, self.users[username])
+        self._touch_profile(username)
         
         self.save_users()
         return True, t('user_profile_updated')
@@ -570,7 +743,7 @@ class UserManager:
         if user and user in self.users:
             return self._resolve_profile_file(user, 'achievements_file', f'achievements_{user}.json')
 
-        fallback = resolve_data_path('achievements.json')
+        fallback = resolve_cloud_path('achievements.json')
         migrate_legacy_file(fallback, iter_legacy_paths('achievements.json'))
         return fallback
     
@@ -580,7 +753,7 @@ class UserManager:
         if user and user in self.users:
             return self._resolve_profile_file(user, 'highscores_file', f'highscores_{user}.json')
 
-        fallback = resolve_data_path('highscores.json')
+        fallback = resolve_cloud_path('highscores.json')
         migrate_legacy_file(fallback, iter_legacy_paths('highscores.json'))
         return fallback
     
@@ -596,6 +769,7 @@ class UserManager:
         user = username or self.current_user
         if user and user in self.users:
             self.users[user]['tutorial_completed'] = completed
+            self._touch_profile(user)
             self.save_users()
 
     # ── Kart kullanım istatistikleri ──────────────────────────────
@@ -614,6 +788,7 @@ class UserManager:
             entry['title'] = card_title
         card_usage[card_id] = entry
         self.users[user]['card_usage'] = card_usage
+        self._touch_profile(user)
         self.save_users()
 
     def get_favorite_card(self, username=None) -> dict | None:
