@@ -15,6 +15,7 @@ Akış:
 from __future__ import annotations
 
 import json
+import math
 import time
 import random
 import os
@@ -228,7 +229,7 @@ class OnlinePvPGame:
         self.countdown_timer = 0.0
         self.countdown_value = 3
         self.state_snapshot_timer = 0.0
-        self.STATE_SNAPSHOT_INTERVAL = 500  # ms — her 500ms'de tahta snapshot'ı gönder
+        self.STATE_SNAPSHOT_INTERVAL = 100  # ms — her 100ms'de tahta snapshot'ı gönder (daha akıcı)
 
         # Flags
         self.my_ready = False
@@ -276,12 +277,49 @@ class OnlinePvPGame:
         self._searching_by_code: bool = False  # Kod ile arama yapılıyor mu
         self._search_code: str = ''         # Aranan kod (lobby_list_complete'de eşleşme için)
 
+        # ─── Görsel Efektler (local PvP ile birebir) ───
+        self.effects_enabled = True
+        self.particles: list[dict] = []
+        self.ambient_particles: list[dict] = []
+        # Benim satır temizleme efektlerim
+        self.my_line_flash_rows: list[int] = []
+        self.my_line_flash_timer: float = 0
+        self.my_line_glow_alpha: int = 0
+        self.my_wave_effects: list[dict] = []
+        # Rakip satır temizleme efektleri (ağdan gelince tetiklenir)
+        self.opp_line_flash_rows: list[int] = []
+        self.opp_line_flash_timer: float = 0
+        self.opp_line_glow_alpha: int = 0
+        self.opp_wave_effects: list[dict] = []
+        self._pending_opp_particle_rows: list[int] = []
+        # Ekran titremesi
+        self.screen_shake: float = 0
+        self.shake_intensity: int = 0
+        self._screen_shake_initial: float = 15.0
+        # Rakip önceki lines sayısı (satır artışını tespit için)
+        self._opponent_lines_prev: int = 0
+        # dt saklama
+        self._last_dt_ms: float = 16.666
+
         # Müzik başlat (lobi ekranına girince)
         self._start_pvp_music()
+        # Ambient parçacıkları başlat
+        self.create_ambient_particles()
 
     # ============================================================
     #  BAŞLATMA
     # ============================================================
+
+    def _particle_effects_enabled(self) -> bool:
+        if not getattr(self, 'effects_enabled', True):
+            return False
+        sm = getattr(self, 'settings_manager', None)
+        if sm is None:
+            return True  # Ayar yoksa açık say
+        try:
+            return bool(sm.get('particle_effects', True))
+        except Exception:
+            return True
 
     def _start_pvp_music(self):
         """PvP müziğini başlat (local PvP ile aynı playlist mantığı)."""
@@ -559,6 +597,29 @@ class OnlinePvPGame:
         self._status_msg = t('joining_lobby', 'Lobiye katılınıyor...')
         self._status_timer = 2.0
 
+    def _return_to_pvp_lobby_menu(self):
+        """Aktif lobiden ayrıl ve Online PvP giriş ekranına dön."""
+        self.net.leave_lobby()
+        self.online_state = OnlineState.LOBBY_MENU
+        self.my_ready = False
+        self.opponent_ready = False
+        self.paused = False
+        self.opponent_paused = False
+        self.opponent_piece_data = None
+        self._opponent_piece_seq = 0
+        self._lobby_code = ''
+        self._lobby_id_str = ''
+        self._join_code_active = False
+        self._join_code_input = ''
+        self._join_code_error = ''
+        self._searching_by_code = False
+        self._search_code = ''
+        self._lobby_list_fetching = False
+        self._pending_lobby_list.clear()
+        self._status_msg = ''
+        self._status_timer = 0
+        self._invite_after_lobby = False
+
     # ============================================================
     #  MESAJ İŞLEME
     # ============================================================
@@ -795,9 +856,22 @@ class OnlinePvPGame:
         self.opponent_score = 0
         self.opponent_lines = 0
         self.opponent_level = 1
+        self._opponent_lines_prev = 0
         self.opponent_piece_data = None
         self._opponent_piece_seq = 0
         self._my_piece_seq = 0
+        self.my_line_flash_rows = []
+        self.my_line_flash_timer = 0
+        self.my_line_glow_alpha = 0
+        self.my_wave_effects = []
+        self.opp_line_flash_rows = []
+        self.opp_line_flash_timer = 0
+        self.opp_line_glow_alpha = 0
+        self.opp_wave_effects = []
+        self._pending_opp_particle_rows = []
+        self.particles.clear()
+        self.screen_shake = 0
+        self.shake_intensity = 0
 
     def _get_next_piece(self) -> Piece:
         """Sıradaki parçayı al."""
@@ -808,6 +882,278 @@ class OnlinePvPGame:
         self.piece_index += 1
         piece = Piece(x=3, y=0, shape_index=idx)
         return piece
+
+    def trigger_screen_shake(self, intensity=10, duration=15):
+        """Ekran titremesi efekti başlat."""
+        if not self._particle_effects_enabled():
+            return
+        self._screen_shake_initial = max(1.0, float(duration))
+        self.screen_shake = float(duration)
+        self.shake_intensity = int(intensity)
+
+    def update_screen_shake(self, dt_ms: float | None = None):
+        """Ekran titremesini güncelle."""
+        if self.screen_shake <= 0:
+            return
+        try:
+            dt = float(dt_ms) if dt_ms is not None else float(getattr(self, '_last_dt_ms', 16.666))
+        except Exception:
+            dt = 16.666
+        dt = max(0.0, min(100.0, dt))
+        dt_frames = dt / 16.666
+        self.screen_shake = max(0.0, self.screen_shake - dt_frames)
+
+    def get_shake_offset(self) -> tuple[int, int]:
+        """Ekran titremesi için offset hesapla."""
+        if self.screen_shake <= 0:
+            return (0, 0)
+        initial = max(1.0, float(getattr(self, '_screen_shake_initial', 15.0)))
+        decay = self.screen_shake / initial
+        shake_x = random.randint(-self.shake_intensity, self.shake_intensity)
+        shake_y = random.randint(-self.shake_intensity, self.shake_intensity)
+        return (int(shake_x * decay), int(shake_y * decay))
+
+    def create_particles(self, count, x=None, y=None, colors=None, speed=5):
+        """Genel amaçlı parçacık oluşturucu."""
+        if not self._particle_effects_enabled():
+            return
+        if x is None:
+            x = random.randint(0, self.window_width)
+        if y is None:
+            y = random.randint(0, self.window_height // 2)
+        if colors is None:
+            colors = [(0, 255, 255), (255, 215, 0), (255, 0, 255), (0, 255, 120), (255, 90, 90)]
+        for _ in range(count):
+            particle = {
+                'x': float(x),
+                'y': float(y),
+                'vx': speed * (random.random() * 2 - 1),
+                'vy': speed * (random.random() * 2 - 1),
+                'life': random.randint(20, 40),
+                'max_life': 40,
+                'color': random.choice(colors),
+                'size': random.randint(2, 4),
+                'glow': True,
+            }
+            self.particles.append(particle)
+
+    def create_line_clear_particles(self, cleared_rows, board_offset_x, board_offset_y, cell_size, board=None):
+        """Satır temizlendiğinde local PvP benzeri güçlü partikül efekti oluştur."""
+        if not self._particle_effects_enabled():
+            return
+        sparkle_colors = [
+            (255, 255, 255),
+            (255, 255, 200),
+            (255, 215, 0),
+            (0, 255, 255),
+            (255, 100, 255),
+        ]
+        for row in cleared_rows:
+            for col in range(BOARD_WIDTH):
+                cell_x = board_offset_x + col * cell_size + cell_size // 2
+                cell_y = board_offset_y + row * cell_size + cell_size // 2
+                try:
+                    if board and hasattr(board, 'last_cleared_colors') and row in board.last_cleared_colors:
+                        row_colors = board.last_cleared_colors[row]
+                        if col < len(row_colors) and row_colors[col] != BLACK:
+                            cell_color = row_colors[col]
+                        else:
+                            cell_color = random.choice(sparkle_colors)
+                    else:
+                        cell_color = random.choice(sparkle_colors)
+                except Exception:
+                    cell_color = random.choice(sparkle_colors)
+
+                for _ in range(random.randint(6, 10)):
+                    speed = random.uniform(4, 12)
+                    self.particles.append({
+                        'x': float(cell_x + random.randint(-3, 3)),
+                        'y': float(cell_y + random.randint(-3, 3)),
+                        'vx': speed * random.uniform(-1.5, 1.5),
+                        'vy': speed * random.uniform(-1, 0.5) - 2,
+                        'life': random.randint(40, 80),
+                        'max_life': 80,
+                        'color': cell_color,
+                        'size': random.randint(3, 7),
+                        'glow': True,
+                    })
+
+                if col % 2 == 0:
+                    for _ in range(random.randint(2, 4)):
+                        spark_color = random.choice(sparkle_colors)
+                        spark_speed = random.uniform(8, 15)
+                        self.particles.append({
+                            'x': float(cell_x),
+                            'y': float(cell_y),
+                            'vx': spark_speed * random.uniform(-1, 1),
+                            'vy': -spark_speed * random.uniform(0.3, 1) - 5,
+                            'life': random.randint(20, 40),
+                            'max_life': 40,
+                            'color': spark_color,
+                            'size': random.randint(2, 4),
+                            'glow': True,
+                            'spark': True,
+                        })
+
+            center_x = board_offset_x + (BOARD_WIDTH * cell_size) // 2
+            center_y = board_offset_y + row * cell_size + cell_size // 2
+            for i in range(16):
+                angle = (i / 16) * 2 * math.pi
+                star_speed = random.uniform(6, 14)
+                self.particles.append({
+                    'x': float(center_x),
+                    'y': float(center_y),
+                    'vx': math.cos(angle) * star_speed,
+                    'vy': math.sin(angle) * star_speed - 2,
+                    'life': random.randint(30, 60),
+                    'max_life': 60,
+                    'color': random.choice(sparkle_colors),
+                    'size': random.randint(4, 8),
+                    'glow': True,
+                })
+
+    def update_particles(self, dt_ms: float | None = None):
+        """Parçacıkları güncelle."""
+        if not self.particles:
+            return
+        try:
+            dt = float(dt_ms) if dt_ms is not None else float(getattr(self, '_last_dt_ms', 16.666))
+        except Exception:
+            dt = 16.666
+        dt = max(0.0, min(100.0, dt))
+        dt_frames = dt / 16.666
+
+        alive = []
+        for particle in self.particles:
+            particle['x'] += particle.get('vx', 0) * dt_frames
+            particle['y'] += particle.get('vy', 0) * dt_frames
+            particle['vy'] += 0.5 * dt_frames
+            particle['vx'] *= 0.98 ** dt_frames
+            particle['life'] = float(particle.get('life', 0)) - dt_frames
+            if particle['life'] > 0:
+                alive.append(particle)
+        self.particles = alive
+
+    def create_ambient_particles(self):
+        """Arka plan için ambient parçacıklar oluştur."""
+        if not self._particle_effects_enabled():
+            return
+        self.ambient_particles.clear()
+        for _ in range(random.randint(50, 100)):
+            self.ambient_particles.append({
+                'x': random.uniform(0, self.window_width),
+                'y': random.uniform(0, self.window_height),
+                'vx': random.uniform(-0.5, 0.5),
+                'vy': random.uniform(0.2, 0.8),
+                'size': random.randint(1, 3),
+                'alpha': random.randint(50, 150),
+                'pulse': random.uniform(0, 6.28),
+                'pulse_speed': random.uniform(0.02, 0.05),
+            })
+
+    def update_ambient_particles(self, dt_ms: float | None = None):
+        """Ambient parçacıkları güncelle."""
+        try:
+            dt = float(dt_ms) if dt_ms is not None else float(getattr(self, '_last_dt_ms', 16.666))
+        except Exception:
+            dt = 16.666
+        dt = max(0.0, min(100.0, dt))
+        dt_frames = dt / 16.666
+
+        for particle in self.ambient_particles:
+            particle['x'] += particle['vx'] * dt_frames
+            particle['y'] += particle['vy'] * dt_frames
+            particle['pulse'] += particle['pulse_speed'] * dt_frames
+            if particle['y'] > self.window_height:
+                particle['y'] = -10
+                particle['x'] = random.uniform(0, self.window_width)
+            if particle['x'] < -10:
+                particle['x'] = self.window_width + 10
+            elif particle['x'] > self.window_width + 10:
+                particle['x'] = -10
+
+    def draw_ambient_particles(self):
+        """Ambient parçacıkları çiz."""
+        for particle in self.ambient_particles:
+            pulse_alpha = int(particle['alpha'] + math.sin(particle['pulse']) * 30)
+            pulse_alpha = max(30, min(180, pulse_alpha))
+            color = (200, 200, 255)
+            pos = (int(particle['x']), int(particle['y']))
+            size = particle['size']
+            if size > 1:
+                glow_surface = pygame.Surface((size * 4, size * 4), pygame.SRCALPHA)
+                pygame.draw.circle(glow_surface, (*color, pulse_alpha // 3), (size * 2, size * 2), size * 2)
+                self.screen.blit(glow_surface, (pos[0] - size * 2, pos[1] - size * 2))
+            particle_surface = pygame.Surface((size * 2, size * 2), pygame.SRCALPHA)
+            pygame.draw.circle(particle_surface, (*color, pulse_alpha), (size, size), size)
+            self.screen.blit(particle_surface, (pos[0] - size, pos[1] - size))
+
+    def draw_particles(self):
+        """Parçacıkları çiz."""
+        for particle in self.particles:
+            alpha_ratio = particle['life'] / particle['max_life']
+            alpha = int(255 * alpha_ratio)
+            size = max(1, int(particle['size'] * alpha_ratio))
+            color = particle['color']
+            pos = (int(particle['x']), int(particle['y']))
+            if particle.get('glow', False) and size > 2:
+                halo_size = size + 4
+                halo_color = tuple(min(255, int(c * 0.6)) for c in color[:3])
+                halo_surface = pygame.Surface((halo_size * 2, halo_size * 2), pygame.SRCALPHA)
+                pygame.draw.circle(halo_surface, (*halo_color, int(alpha * 0.3)), (halo_size, halo_size), halo_size)
+                self.screen.blit(halo_surface, (pos[0] - halo_size, pos[1] - halo_size))
+
+                mid_size = size + 2
+                mid_color = tuple(min(255, int(c * 0.8)) for c in color[:3])
+                mid_surface = pygame.Surface((mid_size * 2, mid_size * 2), pygame.SRCALPHA)
+                pygame.draw.circle(mid_surface, (*mid_color, int(alpha * 0.5)), (mid_size, mid_size), mid_size)
+                self.screen.blit(mid_surface, (pos[0] - mid_size, pos[1] - mid_size))
+
+            pygame.draw.circle(self.screen, color, pos, size)
+            if size > 2:
+                inner_size = max(1, size - 1)
+                inner_color = tuple(min(255, c + 80) for c in color[:3])
+                pygame.draw.circle(self.screen, inner_color, pos, inner_size)
+                if size > 3:
+                    core_color = tuple(min(255, c + 120) for c in color[:3])
+                    pygame.draw.circle(self.screen, core_color, pos, 1)
+
+    def _trigger_line_clear_feedback(self, rows, board_x, board_y, cell_size, board, is_opponent=False):
+        """Satır temizleme flash, wave, particle ve shake efektlerini tetikle."""
+        if not rows or not self.effects_enabled:
+            return
+        if is_opponent:
+            self.opp_line_flash_rows = list(rows)
+            self.opp_line_flash_timer = 20
+            self.opp_line_glow_alpha = 255
+            wave_list = self.opp_wave_effects
+        else:
+            self.my_line_flash_rows = list(rows)
+            self.my_line_flash_timer = 20
+            self.my_line_glow_alpha = 255
+            wave_list = self.my_wave_effects
+
+        self.create_line_clear_particles(rows, board_x, board_y, cell_size, board=board)
+        for row in rows:
+            wave_list.append({
+                'x': board_x + (BOARD_WIDTH * cell_size) // 2,
+                'y': board_y + row * cell_size + cell_size // 2,
+                'radius': 0,
+                'max_radius': BOARD_WIDTH * cell_size,
+                'alpha': 200,
+                'color': (255, 255, 255),
+                'speed': 15,
+            })
+
+        lines = len(rows)
+        if lines < 4:
+            self.trigger_screen_shake(intensity=3 + lines * 2, duration=8)
+        else:
+            center_x = board_x + (BOARD_WIDTH * cell_size) // 2
+            center_y = board_y + (BOARD_HEIGHT * cell_size) // 2
+            extra_colors = [(255, 215, 0), (255, 165, 0), (255, 255, 255), (0, 255, 255)]
+            self.create_particles(150, center_x, center_y, extra_colors, speed=10)
+            self.trigger_screen_shake(intensity=15, duration=20)
 
     # ============================================================
     #  ÇÖP SATIR MEKANİĞİ
@@ -889,7 +1235,36 @@ class OnlinePvPGame:
         if grid:
             self.opponent_grid_snapshot = grid
         self.opponent_score = data.get('score', self.opponent_score)
-        self.opponent_lines = data.get('lines', self.opponent_lines)
+        new_lines = data.get('lines', self.opponent_lines)
+        try:
+            new_lines = int(new_lines)
+        except (TypeError, ValueError):
+            new_lines = self.opponent_lines
+        delta_lines = max(0, new_lines - int(getattr(self, '_opponent_lines_prev', 0) or 0))
+        effect_line_count = min(4, delta_lines)
+        if effect_line_count > 0:
+            effect_rows = list(range(max(0, BOARD_HEIGHT - effect_line_count), BOARD_HEIGHT))
+            self.opp_line_flash_rows = effect_rows
+            self.opp_line_flash_timer = 20
+            self.opp_line_glow_alpha = 255
+            self._pending_opp_particle_rows = list(effect_rows)
+            self.opp_wave_effects.clear()
+            for row in effect_rows:
+                self.opp_wave_effects.append({
+                    'x': 0,
+                    'y': row,
+                    'radius': 0,
+                    'max_radius': BOARD_WIDTH,
+                    'alpha': 200,
+                    'color': (255, 255, 255),
+                    'speed': 15,
+                })
+            if effect_line_count >= 4:
+                self.trigger_screen_shake(intensity=15, duration=20)
+            else:
+                self.trigger_screen_shake(intensity=3 + effect_line_count * 2, duration=8)
+        self.opponent_lines = new_lines
+        self._opponent_lines_prev = new_lines
         self.opponent_level = data.get('level', self.opponent_level)
         # Board snapshot'tan gelen aktif parça bilgisi (fallback sync)
         piece = data.get('piece')
@@ -1005,10 +1380,44 @@ class OnlinePvPGame:
 
     def update(self, delta_time: int):
         """Her frame çağrılır."""
+        self._last_dt_ms = delta_time
         # Steam callback'leri işle
         if self._net_initialized:
             self.net.tick()
             self._process_messages()
+
+        self.update_particles(dt_ms=delta_time)
+        self.update_ambient_particles(dt_ms=delta_time)
+        self.update_screen_shake(dt_ms=delta_time)
+
+        dt_frames = delta_time / 16.67 if delta_time > 0 else 1.0
+        if self.my_line_flash_timer > 0:
+            self.my_line_flash_timer = max(0, self.my_line_flash_timer - dt_frames)
+            ratio = max(0.0, min(1.0, self.my_line_flash_timer / 20.0))
+            self.my_line_glow_alpha = int(255 * ratio)
+            if self.my_line_flash_timer <= 0:
+                self.my_line_flash_rows = []
+                self.my_line_glow_alpha = 0
+
+        if self.opp_line_flash_timer > 0:
+            self.opp_line_flash_timer = max(0, self.opp_line_flash_timer - dt_frames)
+            ratio = max(0.0, min(1.0, self.opp_line_flash_timer / 20.0))
+            self.opp_line_glow_alpha = int(255 * ratio)
+            if self.opp_line_flash_timer <= 0:
+                self.opp_line_flash_rows = []
+                self.opp_line_glow_alpha = 0
+
+        for wave in self.my_wave_effects[:]:
+            wave['radius'] += wave['speed'] * dt_frames
+            wave['alpha'] = int(200 * (1 - wave['radius'] / wave['max_radius']))
+            if wave['radius'] >= wave['max_radius'] or wave['alpha'] <= 0:
+                self.my_wave_effects.remove(wave)
+
+        for wave in self.opp_wave_effects[:]:
+            wave['radius'] += wave['speed'] * dt_frames
+            wave['alpha'] = int(200 * (1 - wave['radius'] / wave['max_radius']))
+            if wave['radius'] >= wave['max_radius'] or wave['alpha'] <= 0:
+                self.opp_wave_effects.remove(wave)
 
         # Durum mesajı zamanlayıcı
         if self._status_timer > 0:
@@ -1075,6 +1484,19 @@ class OnlinePvPGame:
         if not self.my_board or not self.my_piece:
             return
 
+        my_board_rect = getattr(self, '_my_board_rect', None)
+        if self.effects_enabled and my_board_rect:
+            cell_size = max(1, my_board_rect.width // BOARD_WIDTH)
+            piece_center_x = my_board_rect.x + (self.my_piece.x + 2) * cell_size
+            piece_center_y = my_board_rect.y + (self.my_piece.y + 2) * cell_size
+            self.create_particles(
+                count=6,
+                x=int(piece_center_x),
+                y=int(piece_center_y),
+                colors=[self.my_piece.color],
+                speed=2,
+            )
+
         lines = self.my_board.lock_piece(self.my_piece)
 
         try:
@@ -1095,6 +1517,16 @@ class OnlinePvPGame:
                 self.sound.play('line' if lines < 4 else 'tetris')
             except Exception:
                 pass
+            if self.my_board.last_cleared_lines and self.effects_enabled and my_board_rect:
+                cell_size = my_board_rect.width // BOARD_WIDTH
+                self._trigger_line_clear_feedback(
+                    list(self.my_board.last_cleared_lines),
+                    my_board_rect.x,
+                    my_board_rect.y,
+                    cell_size,
+                    self.my_board,
+                    is_opponent=False,
+                )
 
         # Kalan bekleyen çöp satırları uygula (satır temizleme iptal edemediği kısım)
         if self.pending_garbage > 0:
@@ -1235,6 +1667,9 @@ class OnlinePvPGame:
                 else:
                     self.net.send({'type': MsgType.RESUME},
                                  reliable=True, channel=CHANNEL_CONTROL)
+                return None
+            elif self.online_state == OnlineState.WAITING:
+                self._return_to_pvp_lobby_menu()
                 return None
             elif self.online_state in (OnlineState.GAME_OVER, OnlineState.DISCONNECTED):
                 self.net.leave_lobby()
@@ -1394,6 +1829,8 @@ class OnlinePvPGame:
                     elif action == 'exit_menu':
                         self.net.leave_lobby()
                         return 'menu'
+                    elif action == 'back_to_pvp_lobby':
+                        self._return_to_pvp_lobby_menu()
                     elif action.startswith('join_lobby:'):
                         lobby_id_str = action.split(':', 1)[1]
                         try:
@@ -1686,6 +2123,7 @@ class OnlinePvPGame:
 
         # Arka plan — retro_style ile tutarlı (resim + gradient fallback)
         _rs.draw_background(self.screen)
+        self.draw_ambient_particles()
         # Düşen blok animasyonu — diğer tüm pencerelerle ortak
         self.background_fx.update(self.screen)
         self.background_fx.draw(self.screen)
@@ -1705,6 +2143,8 @@ class OnlinePvPGame:
             self._draw_game_over_overlay()
         elif self.online_state == OnlineState.DISCONNECTED:
             self._draw_disconnected()
+
+        self.draw_particles()
 
         # NOT: pygame.display.flip() burada çağrılmıyor.
         # Ana döngü (main.py) geçiş efektini src üstüne çizdikten sonra
@@ -2104,10 +2544,10 @@ class OnlinePvPGame:
         back_rect = pygame.Rect(cx - inv_w // 2, btn_area_y + s(54), inv_w, s(38))
         m_back = back_rect.collidepoint(mouse_pos)
         _rs.draw_uniform_button(self.screen, back_rect,
-                                t('back_to_menu', 'Ana Menüye Dön'),
+                                t('back_to_pvp_area', 'PvP Alanına Geri Dön'),
                                 sub_text='ESC', color_code=_rs.secondary,
                                 state='hover' if m_back else 'normal')
-        self._lobby_buttons.append({'rect': back_rect, 'action': 'exit_menu'})
+        self._lobby_buttons.append({'rect': back_rect, 'action': 'back_to_pvp_lobby'})
 
         # Durum mesajı (geri bildirim)
         if self._status_msg:
@@ -2335,6 +2775,7 @@ class OnlinePvPGame:
         w, h = self.window_width, self.window_height
         sc = self._ui_scale()
         s = lambda v, minimum=1: self._sx(v, sc, minimum)
+        shake_x, shake_y = self.get_shake_offset()
 
         # Layout hesapla
         cell_size = min((h - s(180)) // BOARD_HEIGHT, (w - s(260)) // (BOARD_WIDTH * 2 + 8))
@@ -2347,9 +2788,11 @@ class OnlinePvPGame:
         header_h = s(56)
         total = board_w * 2 + gap + side_panel_w
         start_x = max(s(10), (w - total) // 2)
+        start_x += shake_x
 
         # Y pozisyonları — header dahil
         header_y = max(s(16), (h - board_h - header_h - s(60)) // 2)
+        header_y += shake_y
         board_top = header_y + header_h + s(10)
 
         # ─ Sol yan panel: Hold + Next ─
@@ -2358,6 +2801,9 @@ class OnlinePvPGame:
 
         # ─ Sol tahta (ben) ─
         my_x = start_x + side_panel_w + s(10)
+        opp_x = my_x + board_w + gap
+        self._my_board_rect = pygame.Rect(my_x, board_top, board_w, board_h)
+        self._opp_board_rect = pygame.Rect(opp_x, board_top, board_w, board_h)
         self._draw_board(my_x, board_top, cell_size, self.my_board, self.my_piece)
 
         # Ghost piece
@@ -2367,7 +2813,6 @@ class OnlinePvPGame:
                 self._draw_ghost_piece(my_x, board_top, cell_size, ghost_y)
 
         # ─ Sağ tahta (rakip) ─
-        opp_x = my_x + board_w + gap
         self._draw_opponent_board(opp_x, board_top, cell_size)
 
         # ─ Header paneller (pvp_game stili) ─
@@ -2560,10 +3005,15 @@ class OnlinePvPGame:
 
         board_w = BOARD_WIDTH * cell_size
         board_h = BOARD_HEIGHT * cell_size
+        player_accent = UIColors.NEON_CYAN
 
         # Arka plan
         bg_rect = pygame.Rect(x - 2, y - 2, board_w + 4, board_h + 4)
-        draw_glass_panel(self.screen, bg_rect, alpha=170)
+        draw_glass_panel(self.screen, bg_rect, alpha=170, border_color=player_accent)
+        tint_surface = pygame.Surface((board_w, board_h), pygame.SRCALPHA)
+        tint_surface.fill((*player_accent[:3], 16))
+        self.screen.blit(tint_surface, (x, y))
+        pygame.draw.rect(self.screen, player_accent, (x, y, board_w, board_h), 2, border_radius=12)
 
         # Grid
         grid_color = (40, 40, 65)
@@ -2591,13 +3041,45 @@ class OnlinePvPGame:
                             draw_jelly_block(self.screen, px + 1, py + 1,
                                              cell_size - 2, piece.color[:3])
 
+        if self.my_line_flash_rows and self.my_line_glow_alpha > 0:
+            flash_surface = pygame.Surface((board_w, board_h), pygame.SRCALPHA)
+            for row in self.my_line_flash_rows:
+                row_rect = pygame.Rect(0, row * cell_size, board_w, cell_size)
+                pygame.draw.rect(flash_surface, (255, 255, 255, self.my_line_glow_alpha), row_rect)
+                pygame.draw.rect(flash_surface, (0, 255, 255, min(255, self.my_line_glow_alpha + 40)), row_rect, 2)
+            self.screen.blit(flash_surface, (x, y))
+
+        for wave in self.my_wave_effects:
+            radius = int(wave.get('radius', 0))
+            alpha = max(0, min(255, int(wave.get('alpha', 0))))
+            if radius <= 0 or alpha <= 0:
+                continue
+            wave_surface = pygame.Surface((radius * 2 + 6, 6), pygame.SRCALPHA)
+            pygame.draw.ellipse(
+                wave_surface,
+                (*wave.get('color', (255, 255, 255))[:3], alpha),
+                wave_surface.get_rect(),
+            )
+            wave_x = int(wave['x'] - radius)
+            wave_y = int(wave['y'] - 3)
+            self.screen.blit(wave_surface, (wave_x, wave_y))
+
     def _draw_opponent_board(self, x: int, y: int, cell_size: int):
         """Ağdan gelen snapshot ile rakip tahtasını çiz — jelly blok stili."""
         board_w = BOARD_WIDTH * cell_size
         board_h = BOARD_HEIGHT * cell_size
+        player_accent = UIColors.NEON_MAGENTA
+
+        if self._pending_opp_particle_rows:
+            self.create_line_clear_particles(self._pending_opp_particle_rows, x, y, cell_size, board=None)
+            self._pending_opp_particle_rows = []
 
         bg_rect = pygame.Rect(x - 2, y - 2, board_w + 4, board_h + 4)
-        draw_glass_panel(self.screen, bg_rect, alpha=170)
+        draw_glass_panel(self.screen, bg_rect, alpha=170, border_color=player_accent)
+        tint_surface = pygame.Surface((board_w, board_h), pygame.SRCALPHA)
+        tint_surface.fill((*player_accent[:3], 16))
+        self.screen.blit(tint_surface, (x, y))
+        pygame.draw.rect(self.screen, player_accent, (x, y, board_w, board_h), 2, border_radius=12)
 
         grid_color = (40, 40, 65)
         if self.opponent_grid_snapshot:
@@ -2647,6 +3129,31 @@ class OnlinePvPGame:
                                 by = y + draw_row * cell_size
                                 draw_jelly_block(self.screen, bx + 1, by + 1,
                                                  cell_size - 2, piece_color)
+
+        if self.opp_line_flash_rows and self.opp_line_glow_alpha > 0:
+            flash_surface = pygame.Surface((board_w, board_h), pygame.SRCALPHA)
+            for row in self.opp_line_flash_rows:
+                row_rect = pygame.Rect(0, row * cell_size, board_w, cell_size)
+                pygame.draw.rect(flash_surface, (255, 255, 255, self.opp_line_glow_alpha), row_rect)
+                pygame.draw.rect(flash_surface, (255, 0, 255, min(255, self.opp_line_glow_alpha + 40)), row_rect, 2)
+            self.screen.blit(flash_surface, (x, y))
+
+        for wave in self.opp_wave_effects:
+            alpha = max(0, min(255, int(wave.get('alpha', 0))))
+            if alpha <= 0:
+                continue
+            radius = int(wave.get('radius', 0) * cell_size)
+            if radius <= 0:
+                continue
+            wave_surface = pygame.Surface((radius * 2 + 6, 6), pygame.SRCALPHA)
+            pygame.draw.ellipse(
+                wave_surface,
+                (*wave.get('color', (255, 255, 255))[:3], alpha),
+                wave_surface.get_rect(),
+            )
+            wave_x = x + board_w // 2 - radius
+            wave_y = y + int(wave['y']) * cell_size + cell_size // 2 - 3
+            self.screen.blit(wave_surface, (wave_x, wave_y))
 
     # ─── Game Over Overlay ───
 
