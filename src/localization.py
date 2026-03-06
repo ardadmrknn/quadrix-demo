@@ -10694,6 +10694,13 @@ TRANSLATIONS = {
         'pt': 'Voltar ao menu', 'ru': 'В главное меню', 'ja': 'メニューに戻る',
         'zh': '返回菜单', 'ko': '메뉴로 돌아가기',
     },
+    'back_to_pvp_area': {
+        'tr': 'PvP Alanına Geri Dön', 'en': 'Back to PvP Lobby',
+        'de': 'Zurück zum PvP-Bereich', 'fr': "Retour à l'espace JcJ",
+        'es': 'Volver al área PvP', 'it': "Torna all'area PvP",
+        'pt': 'Voltar para a área PvP', 'ru': 'Назад в зону PvP', 'ja': 'PvPエリアに戻る',
+        'zh': '返回 PvP 区域', 'ko': 'PvP 영역으로 돌아가기',
+    },
     'waiting_for_opponent': {
         'tr': 'Rakip Bekleniyor...', 'en': 'Waiting for opponent...',
         'de': 'Warte auf Gegner...', 'fr': "En attente d'un adversaire...",
