@@ -57,6 +57,8 @@ _pump_paused = False  # Online PvP bridge aktifken True — Race condition önle
 _pump_pause_count = 0  # Ref-count: nested pause/resume için (0 = resumed)
 _pump_paused_event = threading.Event()  # pump döngüsü bu event'i set eder (pause ack)
 _pump_lock = threading.Lock()  # RunCallbacks çakmasını önle
+_precache_thread: threading.Thread | None = None
+_shutdown_requested = False
 
 
 def _read_app_id_from_runtime_sources(default: str = '4428040') -> str:
@@ -537,13 +539,14 @@ def init() -> bool:
     İkinci çağrıda mevcut durumu döndürür (idempotent).
     """
     global _dll, _dll_loaded, _init_ok, _isteam_friends, _isteam_user, _isteam_user_stats, _isteam_utils
-    global _isteam_apps, _pump_thread, _pump_running
+    global _isteam_apps, _pump_thread, _pump_running, _precache_thread, _shutdown_requested
 
     with _init_lock:
         if _dll_loaded:
             return _init_ok
 
         _dll_loaded = True
+        _shutdown_requested = False
 
         # ── Steam AppID env var — onefile PyInstaller için zorunlu ──────────────
         # SteamAPI_Init, steam_appid.txt dosyasını ya CWD'den ya da SteamAppId
@@ -690,7 +693,8 @@ def init() -> bool:
                 print(f"[Steam] RequestCurrentStats hatası: {_rcs_e}")
 
         # Tüm leaderboard handle'larını arka planda önceden cache'le
-        threading.Thread(target=_precache_all_leaderboard_handles, daemon=True).start()
+        _precache_thread = threading.Thread(target=_precache_all_leaderboard_handles, daemon=True)
+        _precache_thread.start()
 
         print(f"[Steam] Başarıyla başlatıldı. Kullanıcı: {get_persona_name()} ({get_steam_id()})")
         return True
@@ -698,14 +702,53 @@ def init() -> bool:
 
 def shutdown() -> None:
     """Steam API'yi kapat."""
-    global _pump_running, _init_ok
-    _pump_running = False
-    if _dll and _init_ok:
-        try:
-            _dll.SteamAPI_Shutdown()
-        except Exception:
-            pass
-    _init_ok = False
+    global _dll, _dll_loaded, _init_ok
+    global _isteam_friends, _isteam_user, _isteam_user_stats, _isteam_utils, _isteam_apps
+    global _pump_thread, _pump_running, _pump_paused, _pump_pause_count
+    global _precache_thread, _shutdown_requested
+
+    with _init_lock:
+        if _shutdown_requested and not _init_ok and _dll is None:
+            return
+
+        _shutdown_requested = True
+        _pump_running = False
+        _pump_pause_count = 0
+        _pump_paused = True
+        _pump_paused_event.set()
+
+        pump_thread = _pump_thread
+        precache_thread = _precache_thread
+        _pump_thread = None
+        _precache_thread = None
+
+        if pump_thread and pump_thread.is_alive() and pump_thread is not threading.current_thread():
+            try:
+                pump_thread.join(timeout=0.35)
+            except Exception:
+                pass
+
+        if precache_thread and precache_thread.is_alive() and precache_thread is not threading.current_thread():
+            try:
+                precache_thread.join(timeout=0.35)
+            except Exception:
+                pass
+
+        if _dll and _init_ok:
+            with _pump_lock:
+                try:
+                    _dll.SteamAPI_Shutdown()
+                except Exception:
+                    pass
+
+        _isteam_friends = None
+        _isteam_user = None
+        _isteam_user_stats = None
+        _isteam_utils = None
+        _isteam_apps = None
+        _dll = None
+        _dll_loaded = False
+        _init_ok = False
 
 
 def _atexit_cleanup() -> None:
@@ -721,7 +764,7 @@ atexit.register(_atexit_cleanup)
 
 def is_available() -> bool:
     """Steam SDK başarıyla başlatıldıysa True döndürür."""
-    return _init_ok and _dll is not None
+    return _init_ok and _dll is not None and not _shutdown_requested
 
 
 # ---------------------------------------------------------------------------
@@ -1046,6 +1089,8 @@ def reset_all_steam_stats(achievements_too: bool = False) -> bool:
 def _callback_pump_loop() -> None:
     """Arka planda Steam callback'lerini işle (30ms aralıklı)."""
     while _pump_running:
+        if _shutdown_requested:
+            break
         if _dll and _init_ok and not _pump_paused:
             with _pump_lock:
                 try:
@@ -1056,10 +1101,13 @@ def _callback_pump_loop() -> None:
             # Pause bekleniyorsa ack ver
             _pump_paused_event.set()
         time.sleep(0.03)
+    _pump_paused_event.set()
 
 
 def run_callbacks() -> None:
     """Tek seferlik callback pump (ana thread'den çağrılabilir)."""
+    if _shutdown_requested:
+        return
     if _dll and _init_ok and not _pump_paused:
         with _pump_lock:
             try:
@@ -1109,10 +1157,12 @@ def _precache_all_leaderboard_handles() -> None:
     """Init sonrası tüm leaderboard handle'larını arka planda önceden al."""
     # Pump thread'inin başlaması için biraz bekle
     time.sleep(1.0)
-    if not is_available() or not _isteam_user_stats:
+    if _shutdown_requested or not is_available() or not _isteam_user_stats:
         return
     print("[Steam] Leaderboard handle'ları önceden yükleniyor...")
     for mode, lb_name in _MODE_TO_LB.items():
+        if _shutdown_requested:
+            break
         if lb_name not in _lb_handle_cache:
             _find_leaderboard_handle_by_api(lb_name, timeout=8.0)
     cached = list(_lb_handle_cache.keys())
@@ -1371,6 +1421,8 @@ def _get_api_call_result(api_call_handle: int, result_struct, callback_id: int,
     failed = ctypes.c_bool(False)
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
+        if _shutdown_requested or not _init_ok or not _dll or not _isteam_utils:
+            return None
         # run_callbacks() burada ÇAĞRILMIYOR — pump thread her 30ms'de hallediyor
         # İki thread'den aynı anda RunCallbacks çağırmak race condition yaratır
         try:
@@ -1408,7 +1460,7 @@ def _get_api_call_result(api_call_handle: int, result_struct, callback_id: int,
 
 def _find_leaderboard_handle_by_api(lb_name: str, timeout: float = 6.0) -> int | None:
     """FindLeaderboard + GetAPICallResult ile leaderboard handle'ını al."""
-    if not is_available() or not _isteam_user_stats:
+    if _shutdown_requested or not is_available() or not _isteam_user_stats:
         return None
     # Cache'de varsa direkt döndür
     if lb_name in _lb_handle_cache:
@@ -1637,12 +1689,18 @@ def submit_score(mode: str, score: int) -> bool:
     steam_id_str = get_steam_id_str() if sdk_ok else None
 
     def _worker():
+        if _shutdown_requested:
+            return
         sdk_success = False
 
         # --- Yol 1: Client SDK ---
         if sdk_ok and _isteam_user_stats:
             try:
+                if _shutdown_requested or not _dll or not _init_ok:
+                    return
                 handle = _lb_handle_cache.get(lb_name) or _find_leaderboard_handle_by_api(lb_name)
+                if _shutdown_requested:
+                    return
                 if handle:
                     api_call = _dll.SteamAPI_ISteamUserStats_UploadLeaderboardScore(  # type: ignore[union-attr]
                         _isteam_user_stats,
@@ -1807,9 +1865,15 @@ def fetch_leaderboard_entries(
 
     def _worker():
         try:
+            if _shutdown_requested or not _dll or not _init_ok or not _isteam_user_stats:
+                result_event.set()
+                return
             handle = _lb_handle_cache.get(lb_name)
             if not handle:
                 handle = _find_leaderboard_handle_by_api(lb_name, timeout=min(5.0, timeout * 0.6))
+            if _shutdown_requested or not _dll or not _init_ok or not _isteam_user_stats:
+                result_event.set()
+                return
             if not handle:
                 result_event.set()
                 return
@@ -1861,6 +1925,8 @@ def fetch_leaderboard_entries(
             # Her girişi oku
             entries: list[dict[str, Any]] = []
             for idx in range(min(entry_count, safe_limit)):
+                if _shutdown_requested or not _dll or not _init_ok or not _isteam_user_stats:
+                    break
                 entry = _LeaderboardEntry()
                 try:
                     ok = _dll.SteamAPI_ISteamUserStats_GetDownloadedLeaderboardEntry(  # type: ignore[union-attr]
