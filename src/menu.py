@@ -1102,7 +1102,7 @@ class Menu:
                 title_font_size -= 1
                 title_font = retro_style.get_font(title_font_size, bold=True)
             # Dikey ortalama: tek satır, rect merkezine yerleştir
-            t_surf = title_font.render(title, True, UIColors.TEXT_PRIMARY)
+            t_surf = title_font.render(title, True, accent_color)
             self.screen.blit(t_surf, t_surf.get_rect(center=draw_rect.center))
             # Border en üste
             pygame.draw.rect(
@@ -1142,7 +1142,7 @@ class Menu:
             self.screen,
             title,
             title_font,
-            UIColors.TEXT_PRIMARY,
+            accent_color,
             title_area,
             align='left' if draw_rect.width > 170 else 'center',
             line_spacing=2,
@@ -2788,7 +2788,7 @@ class Menu:
 
         title_font = retro_style.get_font(s(22), bold=True)
         subtitle_font = retro_style.get_font(s(14), bold=False)
-        title_surf = title_font.render(t('menu_lb_title'), True, UIColors.TEXT_PRIMARY)
+        title_surf = title_font.render(t('menu_lb_title'), True, score_accent)
         subtitle_surf = subtitle_font.render(t('menu_lb_subtitle'), True, UIColors.TEXT_SECONDARY)
         self.screen.blit(title_surf, (panel_rect.x + s(16), panel_rect.y + s(12)))
         self.screen.blit(subtitle_surf, (panel_rect.x + s(16), panel_rect.y + s(38)))

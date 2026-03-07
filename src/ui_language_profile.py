@@ -1,7 +1,7 @@
 """Language-specific UI profile switching.
 
-This module isolates UI font/layout overrides for CJK languages.
-Other languages always keep the default UI profile.
+This module centralizes bundled UI font selection for both CJK and
+Latin-script languages.
 """
 from __future__ import annotations
 
@@ -16,6 +16,8 @@ from ui_theme import UIFonts
 
 
 _CJK_LANGS = {"ja", "zh", "ko"}
+_LATIN_SCRIPT_LANGS = {"tr", "en", "de", "fr", "es", "it", "pt"}
+_LATIN_DEFAULT_FONT_PATH = os.path.join("font", "latin_deneme", "PixeloidSans.ttf")
 
 _PROFILE_BY_LANG = {
     "ja": {
@@ -39,8 +41,19 @@ _PROFILE_BY_LANG = {
     # gerekmez. İleride uygun bir Kiril fontu bulunursa buraya eklenebilir.
 }
 
-# CJK dilleri için önceden yüklenmiş font cache'i (dil paneli vb. için)
-_cjk_font_cache: dict[tuple[str, int], pygame.font.Font] = {}
+# Dil bazlı önceden yüklenmiş font cache'i (dil paneli vb. için)
+_ui_font_cache: dict[tuple[str, int, bool], pygame.font.Font] = {}
+
+
+def _normalize_lang_code(lang_code: Optional[str]) -> str:
+    normalized = (lang_code or "").lower()
+    if normalized == "jp":
+        return "ja"
+    return normalized
+
+
+def is_latin_script_language(lang_code: Optional[str]) -> bool:
+    return _normalize_lang_code(lang_code) in _LATIN_SCRIPT_LANGS
 
 
 def _resolve_font_path(rel_path: Optional[str]) -> Optional[str]:
@@ -90,21 +103,24 @@ def _resolve_font_path(rel_path: Optional[str]) -> Optional[str]:
     return None
 
 
-def get_font_for_language(lang_code: str, size: int) -> Optional[pygame.font.Font]:
+def get_font_for_language(lang_code: str, size: int, bold: bool = False) -> Optional[pygame.font.Font]:
     """Belirli bir dil kodu için uygun fontu döndür.
 
     CJK dilleri için HybridFont (Latin+CJK), profili olan diğer diller için
     pygame.font.Font döndürür. Profil yoksa None döner.
     """
+    lang_code = _normalize_lang_code(lang_code)
+    key = (lang_code, size, bool(bold))
+    if key in _ui_font_cache:
+        return _ui_font_cache[key]
+
     profile = _PROFILE_BY_LANG.get(lang_code)
-    if not profile:
-        return None
+    font_path = None
+    if lang_code in _LATIN_SCRIPT_LANGS:
+        font_path = _resolve_font_path(_LATIN_DEFAULT_FONT_PATH)
+    elif profile:
+        font_path = _resolve_font_path(profile.get("font_path"))
 
-    key = (lang_code, size)
-    if key in _cjk_font_cache:
-        return _cjk_font_cache[key]
-
-    font_path = _resolve_font_path(profile.get("font_path"))
     if not font_path:
         return None
 
@@ -113,32 +129,66 @@ def get_font_for_language(lang_code: str, size: int) -> Optional[pygame.font.Fon
             pygame.font.init()
         if lang_code in _CJK_LANGS:
             cjk_font = pygame.font.Font(font_path, size)
+            if bold:
+                cjk_font.set_bold(True)
             latin_font = retro_style._get_latin_font(size, False)
             loaded = HybridFont(latin_font, cjk_font)
         else:
             loaded = pygame.font.Font(font_path, size)
-        _cjk_font_cache[key] = loaded
+            if bold:
+                loaded.set_bold(True)
+        _ui_font_cache[key] = loaded
         return loaded
     except Exception:
         return None
-
-
 def apply_language_ui_profile(lang_code: str) -> None:
     """Apply language-specific UI font profile.
 
     CJK languages use a HybridFont profile. Other languages with a profile
     (e.g. 'ru') use a plain bundled font. All others reset to defaults.
     """
-    profile = _PROFILE_BY_LANG.get(lang_code)
-    if profile:
-        font_path = _resolve_font_path(profile.get("font_path"))
-        size_scale = profile.get("size_scale", 1.0)
-        force_no_bold = profile.get("force_no_bold", False)
-        UIFonts.set_font_profile(font_path=font_path, size_scale=size_scale, force_no_bold=force_no_bold)
-        retro_style.set_font_profile(font_path=font_path, size_scale=size_scale, force_no_bold=force_no_bold)
+    normalized_lang = _normalize_lang_code(lang_code)
+    latin_font_path = _resolve_font_path(_LATIN_DEFAULT_FONT_PATH)
+
+    if normalized_lang in _LATIN_SCRIPT_LANGS and latin_font_path:
+        UIFonts.set_font_profile(
+            font_path=None,
+            default_font_path=latin_font_path,
+            size_scale=1.0,
+            force_no_bold=False,
+        )
+        retro_style.set_font_profile(
+            font_path=None,
+            default_font_path=latin_font_path,
+            size_scale=1.0,
+            force_no_bold=False,
+        )
     else:
-        UIFonts.set_font_profile(font_path=None, size_scale=1.0, force_no_bold=False)
-        retro_style.set_font_profile(font_path=None, size_scale=1.0, force_no_bold=False)
+        profile = _PROFILE_BY_LANG.get(normalized_lang)
+        if profile:
+            font_path = _resolve_font_path(profile.get("font_path"))
+            size_scale = profile.get("size_scale", 1.0)
+            force_no_bold = profile.get("force_no_bold", False)
+            UIFonts.set_font_profile(
+                font_path=font_path,
+                default_font_path=None,
+                size_scale=size_scale,
+                force_no_bold=force_no_bold,
+            )
+            retro_style.set_font_profile(
+                font_path=font_path,
+                default_font_path=None,
+                size_scale=size_scale,
+                force_no_bold=force_no_bold,
+            )
+        else:
+            UIFonts.set_font_profile(font_path=None, default_font_path=None, size_scale=1.0, force_no_bold=False)
+            retro_style.set_font_profile(font_path=None, default_font_path=None, size_scale=1.0, force_no_bold=False)
+
+    try:
+        _ui_font_cache.clear()
+    except Exception:
+        pass
 
     # Font profili değiştiğinde eski render cache'lerini temizle
     try:

@@ -3542,15 +3542,10 @@ class Game:
         content_x = info_x + max(8, int(15 * hud_scale))
         content_w = panel_width - (max(8, int(15 * hud_scale)) * 2)
         
-        # Başlık - Neon Glow
+        # Başlık
         badge_text = get_localized_skin_title(skin) or t('tetris_label')
         title_center = (info_x + panel_width // 2, curr_y)
-        # retro_style.draw_title buraya büyük gelebilir, manuel çizelim
         title_font = retro_style.get_font(max(18, int(28 * hud_scale)), bold=True)
-        # Glow
-        for off in range(2, 0, -1):
-            glow_surf = title_font.render(badge_text, True, (*accent_color, 50))
-            self.screen.blit(glow_surf, glow_surf.get_rect(center=(title_center[0], title_center[1] + off)))
         title_surf = title_font.render(badge_text, True, accent_color)
         title_rect = title_surf.get_rect(center=title_center)
         self.screen.blit(title_surf, title_rect)
