@@ -124,7 +124,7 @@
       "y_pct": 0.249074,
       "w_pct": 0.169271,
       "h_pct": 0.191667,
-      "title": "Başarılar"
+      "title": "Başarımlar"
     },
     "steam_scores": {
       "x_pct": 0.601042,
@@ -373,7 +373,7 @@
     },
     {
       "key": "achievements",
-      "title": "Başarılar",
+      "title": "Başarımlar",
       "x": 1154,
       "y": 269,
       "w": 325,

@@ -35,7 +35,7 @@ from block_styles import BlockStyleManager, TextureSlice
 from sound import SoundManager
 from background import BackgroundManager
 from background_effects import get_shared_falling_blocks_layer
-from themes import ThemeManager
+from themes import ThemeManager, CUSTOM_THEME_NAME
 from mode_skins import apply_board_tint, draw_board_overlay, get_mode_skin
 from retro_style import retro_style as _rs
 from renderers.jelly_renderer import draw_jelly_block, draw_jelly_border
@@ -85,7 +85,7 @@ except ImportError:
 
 try:
     from platform_utils import create_display, set_app_icon, resource_path
-    from platform_utils import normalize_mouse_pos, get_mouse_pos, is_fullscreen_toggle
+    from platform_utils import normalize_mouse_pos, get_mouse_pos
 except ImportError:
     def create_display(w, h, **kw):
         flags = pygame.RESIZABLE
@@ -100,8 +100,6 @@ except ImportError:
         return pygame.mouse.get_pos()
     def set_app_icon(path):
         pass
-    def is_fullscreen_toggle(key, mods, custom_key=None):
-        return key == pygame.K_F10
 
 
 # ─────────────── Online PvP Durumları ───────────────
@@ -139,7 +137,7 @@ class OnlinePvPGame:
     def __init__(
         self,
         screen=None,
-        fullscreen=False,
+        fullscreen=True,
         user_manager=None,
         settings_manager=None,
         sound_manager=None,
@@ -156,12 +154,11 @@ class OnlinePvPGame:
             self.window_width = screen.get_width()
             self.window_height = screen.get_height()
         else:
-            self.window_width = 1400
-            self.window_height = 1000
-            self.screen = create_display(self.window_width, self.window_height,
-                                         fullscreen=False, resizable=True)
+            self.screen = create_display(0, 0, fullscreen=True, resizable=False, borderless=True)
+            self.window_width = self.screen.get_width()
+            self.window_height = self.screen.get_height()
 
-        self.fullscreen = fullscreen
+        self.fullscreen = True
         self.clock = pygame.time.Clock()
 
         # Ses
@@ -182,6 +179,9 @@ class OnlinePvPGame:
 
         # Tema
         self.theme_manager = ThemeManager(settings_manager)
+        if self.settings_manager:
+            active_theme = self.settings_manager.get('theme', self.settings_manager.get('active_theme', 'Classic'))
+            self.theme_manager.set_theme(active_theme)
         self.mode_skin = get_mode_skin('pvp')
         self.block_style_manager = BlockStyleManager(self.settings_manager) if self.settings_manager else None
         self._texture_rotation_cache: dict[int, dict] = {}
@@ -300,7 +300,6 @@ class OnlinePvPGame:
         self._join_code_input: str = ''     # "Kod ile Katıl" metin girişi
         self._join_code_active: bool = False  # Metin girişi aktif mi
         self._join_code_error: str = ''     # Giriş hata mesajı
-        self._join_target_lobby_id: int = 0  # Listeden seçilen private lobi ID'si
         self._searching_by_code: bool = False  # Kod ile arama yapılıyor mu
         self._search_code: str = ''         # Aranan kod (lobby_list_complete'de eşleşme için)
 
@@ -363,9 +362,14 @@ class OnlinePvPGame:
             return
         base_color = self.theme_manager.get_piece_color(piece.name) if self.theme_manager else piece.color
         if self.block_style_manager:
+            allow_color_override = bool(
+                self.theme_manager
+                and getattr(self.theme_manager, 'theme_name', None) == CUSTOM_THEME_NAME
+            )
             self.block_style_manager.apply_to_piece(
                 piece,
                 base_color,
+                allow_color_override=allow_color_override,
             )
         else:
             piece.color = base_color
@@ -953,7 +957,6 @@ class OnlinePvPGame:
         self._join_code_active = False
         self._join_code_input = ''
         self._join_code_error = ''
-        self._join_target_lobby_id = 0
         self._searching_by_code = False
         self._search_code = ''
         self._lobby_list_filter = 'all'
@@ -2267,7 +2270,7 @@ class OnlinePvPGame:
                 self.window_width = max(800, event.w)
                 self.window_height = max(600, event.h)
                 self.screen = create_display(self.window_width, self.window_height,
-                                             fullscreen=self.fullscreen, resizable=True)
+                                             fullscreen=True, resizable=False, borderless=True)
                 # Surface'tan gerçek piksel boyutunu al (macOS HiDPI)
                 self.window_width = self.screen.get_width()
                 self.window_height = self.screen.get_height()
@@ -2303,10 +2306,6 @@ class OnlinePvPGame:
         key = event.key
         mods = getattr(event, 'mod', 0)
 
-        # Fullscreen toggle (F10 / Alt+Enter)
-        if is_fullscreen_toggle(key, mods):
-            return 'toggle_fullscreen'
-
         # ESC — Lobiden / oyundan çık
         if key == pygame.K_ESCAPE:
             # Kod girişi aktifse önce onu kapat
@@ -2314,7 +2313,6 @@ class OnlinePvPGame:
                 self._join_code_active = False
                 self._join_code_input = ''
                 self._join_code_error = ''
-                self._join_target_lobby_id = 0
                 return None
             if self.online_state == OnlineState.PLAYING:
                 self.paused = not self.paused
@@ -2358,7 +2356,6 @@ class OnlinePvPGame:
                             self._join_code_error = ''
                 elif key == pygame.K_TAB:
                     self._join_code_active = False
-                    self._join_target_lobby_id = 0
                 return None
 
             if key == pygame.K_1:
@@ -2502,11 +2499,6 @@ class OnlinePvPGame:
                         except (ValueError, TypeError):
                             pass
                     elif action.startswith('join_private_lobby:'):
-                        lobby_id_str = action.split(':', 1)[1]
-                        try:
-                            self._join_target_lobby_id = int(lobby_id_str)
-                        except (ValueError, TypeError):
-                            self._join_target_lobby_id = 0
                         self._join_code_active = True
                         self._join_code_input = ''
                         self._join_code_error = ''
@@ -2514,7 +2506,6 @@ class OnlinePvPGame:
                         self._status_timer = 2.5
                     elif action == 'join_by_code':
                         # "Kod ile Katıl" butonuna tıklandı
-                        self._join_target_lobby_id = 0
                         self._join_code_active = True
                         self._join_code_input = ''
                         self._join_code_error = ''
@@ -2683,29 +2674,6 @@ class OnlinePvPGame:
             self._join_code_error = t('steam_not_available', 'Steam bağlantısı kurulamadı!')
             return
 
-        target_lobby_id = int(self._join_target_lobby_id or 0)
-        if target_lobby_id > 0:
-            expected_code = ''
-            try:
-                expected_code = (self.net.get_lobby_data_for(target_lobby_id, 'lobby_code') or '').strip()
-            except Exception:
-                expected_code = ''
-
-            if not expected_code:
-                self._join_code_error = t('lobby_code_unavailable', 'Lobi kodu doğrulanamadı, listeyi yenileyin')
-                return
-
-            if expected_code != code:
-                self._join_code_error = t('invalid_lobby_code', 'Girilen lobi kodu yanlış')
-                return
-
-            self.net.join_lobby(target_lobby_id)
-            self._status_msg = t('joining_lobby', 'Lobiye katılınıyor...')
-            self._status_timer = 2.0
-            self._join_code_active = False
-            self._join_target_lobby_id = 0
-            return
-
         # Her zaman 6 haneli kod olarak ara
         self._searching_by_code = True
         self._search_code = code
@@ -2715,7 +2683,6 @@ class OnlinePvPGame:
         self._status_msg = t('searching_by_code', 'Lobi kodu aranıyor...')
         self._status_timer = 3.0
         self._join_code_active = False
-        self._join_target_lobby_id = 0
 
     def _try_direct_join_by_code(self, code: str):
         """Kod araması sonuçsuz kaldığında, kodu doğrudan lobby ID olarak dene."""

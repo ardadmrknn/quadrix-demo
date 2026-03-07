@@ -363,28 +363,8 @@ def get_native_resolution():
 
 
 def is_fullscreen_toggle(key: int, mods: int, custom_key: int | None = None) -> bool:
-    """Return True if a key event should toggle fullscreen.
-
-    - custom_key: Kullanıcının ayarladığı tuş (settings'den gelir)
-    - Varsayılan: F10
-    - Alternatif: Alt/Option+Enter, macOS'ta Cmd+Enter
-    """
-    try:
-        # Kullanıcının ayarladığı tuş
-        if custom_key is not None and key == custom_key:
-            return True
-        # Varsayılan F10
-        if key == pygame.K_F10:
-            return True
-        # Alt+Enter veya Cmd+Enter (macOS)
-        if key in (pygame.K_RETURN, pygame.K_KP_ENTER):
-            if mods & pygame.KMOD_ALT:
-                return True
-            if IS_MACOS and (mods & pygame.KMOD_META):
-                return True
-        return False
-    except Exception:
-        return False
+    """Fullscreen/windowed toggle desteği kaldırıldı."""
+    return False
 
 
 def normalize_mouse_pos(pos: tuple[int, int] | list[int] | None) -> tuple[int, int] | None:
@@ -464,7 +444,10 @@ def create_display(
     resizable: bool = True,
     borderless: bool = False,
 ):
-    """Create a pygame display with platform-appropriate flags."""
+    """Create a pygame display locked to always-fullscreen mode."""
+    fullscreen = True
+    borderless = True
+    resizable = False
     
     # macOS için özel handling
     if IS_MACOS:
