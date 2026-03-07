@@ -43,12 +43,22 @@ def _select_seed_version(
 
 
 def _render_version_module(version: str, build_number: int, platform_name: str) -> str:
+    if platform_name == 'macos':
+        header = (
+            '# Bu dosya build sirasinda macOS icin lokal olarak uretilir.\n'
+            '# Git reposuna eklenmez; platforma ozel build numarasi burada tutulur.\n\n'
+        )
+    else:
+        header = (
+            '# Bu dosya build sirasinda lokal olarak guncellenir.\n'
+            '# Git reposuna eklenmez; platforma ozel build numarasi burada tutulur.\n\n'
+        )
+
     return (
-        '# Bu dosya build sirasinda lokal olarak guncellenir.\n'
-        '# Git reposuna eklenmez; platforma ozel build numarasi burada tutulur.\n\n'
-        f'PLATFORM = "{platform_name}"\n'
-        f'VERSION = "{version}"\n'
-        f'BUILD_NUMBER = {build_number}\n'
+        header
+        + f'PLATFORM = "{platform_name}"\n'
+        + f'VERSION = "{version}"\n'
+        + f'BUILD_NUMBER = {build_number}\n'
     )
 
 
