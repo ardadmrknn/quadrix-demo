@@ -10407,6 +10407,10 @@ class CreditsScreen:
             ('Nabi Çalık',      None),
             ('Büşra Gümüşay',   None),
             ('Fatma Ağbaba',    None),
+            ('Berke Dalgıç',    None),
+            ('Samet Alver',     None),
+            ('Tolunay Böcekci', None),
+            ('Egemen Süslü',    None),
         ]
         
         # Özel teşekkürler
