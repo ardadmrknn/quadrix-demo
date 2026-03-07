@@ -35,7 +35,7 @@ from block_styles import BlockStyleManager, TextureSlice
 from sound import SoundManager
 from background import BackgroundManager
 from background_effects import get_shared_falling_blocks_layer
-from themes import ThemeManager, CUSTOM_THEME_NAME
+from themes import ThemeManager
 from mode_skins import apply_board_tint, draw_board_overlay, get_mode_skin
 from retro_style import retro_style as _rs
 from renderers.jelly_renderer import draw_jelly_block, draw_jelly_border
@@ -362,14 +362,9 @@ class OnlinePvPGame:
             return
         base_color = self.theme_manager.get_piece_color(piece.name) if self.theme_manager else piece.color
         if self.block_style_manager:
-            allow_color_override = bool(
-                self.theme_manager
-                and getattr(self.theme_manager, 'theme_name', None) == CUSTOM_THEME_NAME
-            )
             self.block_style_manager.apply_to_piece(
                 piece,
                 base_color,
-                allow_color_override=allow_color_override,
             )
         else:
             piece.color = base_color
