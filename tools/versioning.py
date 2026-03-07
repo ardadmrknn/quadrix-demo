@@ -45,9 +45,8 @@ def _select_seed_version(
 def _render_version_module(version: str, build_number: int, platform_name: str) -> str:
     if platform_name == 'macos':
         header = (
-            '# Bootstrap macOS surum override dosyasi\n'
-            '# Bu dosya repoya bir kez gonderilerek macOS cihaza ilk kopya olarak ulasir.\n'
-            '# Sonrasinda macOS makinede git update-index --skip-worktree ile yerel tutulmalidir.\n\n'
+            '# Bu dosya build sirasinda macOS icin lokal olarak uretilir.\n'
+            '# Git reposuna eklenmez; platforma ozel build numarasi burada tutulur.\n\n'
         )
     else:
         header = (

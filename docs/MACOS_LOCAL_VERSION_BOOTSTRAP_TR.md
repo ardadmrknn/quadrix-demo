@@ -1,30 +1,18 @@
-# macOS local version bootstrap notu
+# macOS local version notu
 
-Bu dosya, src/version_local_macos.py dosyasinin repoya bir kez gonderilmesi icin olusturuldu.
+src/version_local_macos.py artik repoda tutulmaz.
 
-Amac:
-- macOS cihaz repo'yu pull ettiginde version_local_macos.py ilk kez gelsin
-- bundan sonraki macOS build artislari tekrar repoya gitmesin
+Guncel akis:
+- Dosya macOS build sirasinda lokal olarak uretilir.
+- Dosya .gitignore altindadir ve repoya commit edilmez.
+- Dosya silinirse bir sonraki macOS build tekrar olusturur.
 
-macOS cihazdaki agent ne yapmali:
+macOS cihazdaki beklenti:
 
 1. Repo'yu pull et.
-2. src/version_local_macos.py dosyasinin geldigini dogrula.
-3. Bu dosyayi bundan sonra yerel tutmak icin su komutu calistir:
-
-   git update-index --skip-worktree src/version_local_macos.py
-
-4. Bundan sonra macOS build'leri bu dosyayi lokal olarak artirabilir; git status icinde gorunmemelidir.
-
-Gerekirse skip-worktree kaldirma:
-
-   git update-index --no-skip-worktree src/version_local_macos.py
-
-Ne zaman kaldirilmali:
-- repo tarafindan bilerek yeni bir bootstrap macOS surum dosyasi gonderilecekse
-- veya dosyayi yeniden senkronize etmek gerekiyorsa
+2. Gerekliyse macOS build al.
+3. Build sonrasi src/version_local_macos.py dosyasinin lokal olustugunu dogrula.
 
 Notlar:
-- src/version_local_windows.py hala gitignore altindadir; Windows local kalmaya devam eder.
-- src/version_local_macos.py bu asamada bilerek track ediliyor.
-- macOS cihaz bu dosyayi aldiktan sonra normal gelistirme akisinda commit edilmemelidir.
+- src/version_local_windows.py da gitignore altindadir.
+- Runtime tarafinda dosya yoksa surum bilgisi version_base.py uzerinden fallback ile calisir.
