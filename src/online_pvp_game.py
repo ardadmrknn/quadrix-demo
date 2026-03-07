@@ -1158,9 +1158,11 @@ class OnlinePvPGame:
 
             elif msg_type == MsgType.PAUSE_REQUEST:
                 self.opponent_paused = True
+                self._freeze_active_gameplay_input()
 
             elif msg_type == MsgType.RESUME:
                 self.opponent_paused = False
+                self._freeze_active_gameplay_input()
 
             elif msg_type == MsgType.REMATCH:
                 # Rakip rematch istiyor
@@ -1180,6 +1182,13 @@ class OnlinePvPGame:
                 self._generate_pieces(self.game_seed, 200)
                 self.net.send_game_start(self.game_seed, self.piece_sequence[:200])
                 self._start_countdown()
+
+    def _freeze_active_gameplay_input(self):
+        """Pause geçişlerinde aktif gameplay input durumlarını temizle."""
+        self.soft_dropping = False
+        self.das_direction = 0
+        self.das_timer = 0
+        self.das_active = False
 
     # ============================================================
     #  OYUN BAŞLATMA
@@ -2235,7 +2244,12 @@ class OnlinePvPGame:
         if self.gamepad:
             try:
                 delta = self.clock.get_time() if hasattr(self, 'clock') else 16
-                if self.online_state == OnlineState.PLAYING:
+                if (
+                    self.online_state == OnlineState.PLAYING
+                    and not self.game_over
+                    and not self.paused
+                    and not self.opponent_paused
+                ):
                     self.gamepad.set_context('game')
                 else:
                     self.gamepad.set_context('menu')
@@ -2304,6 +2318,7 @@ class OnlinePvPGame:
                 return None
             if self.online_state == OnlineState.PLAYING:
                 self.paused = not self.paused
+                self._freeze_active_gameplay_input()
                 # Rakibe bildir
                 if self.paused:
                     self.net.send({'type': MsgType.PAUSE_REQUEST},
@@ -2391,7 +2406,12 @@ class OnlinePvPGame:
             return None
 
         # Oyun sırasında kontroller
-        if self.online_state == OnlineState.PLAYING and not self.game_over and not self.paused:
+        if (
+            self.online_state == OnlineState.PLAYING
+            and not self.game_over
+            and not self.paused
+            and not self.opponent_paused
+        ):
             if key == pygame.K_LEFT or key == pygame.K_a:
                 self._move_horizontal(-1)
                 self.das_direction = -1

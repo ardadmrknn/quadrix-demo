@@ -637,8 +637,10 @@ class CampaignMode(Game):
         # UI animasyonunu başlat
         campaign_ui_effects.start_level_failed(reason)
         
-        # Müziği durdur + başarısızlık sesi çal (blok üste ulaştıysa zaten çalınmıştır)
-        if not skip_sound and self.sound_enabled and self.sound:
+        # Campaign fail ekranında müzik her zaman kesilmeli.
+        # sound_enabled ses efektleri toggle'ı olduğu için burada gate olarak kullanılamaz.
+        # Aksi halde SFX kapalıyken blok/süre limiti fail akışı sessiz kalıp müzik çalmaya devam eder.
+        if not skip_sound and self.sound:
             self.sound.play_game_over_sequence()
 
     def _is_star_condition_met(self, condition: Dict[str, Any]) -> bool:

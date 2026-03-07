@@ -19,9 +19,13 @@ from pathlib import Path
 # ── Build-time menü layout embedleme ──
 sys.path.insert(0, str(Path(SPECPATH).resolve()))
 from tools.embed_menu_layout import write_embedded_layout_module
+from tools.versioning import bump_platform_version
 
 REPO_ROOT = Path(SPECPATH).resolve()
 SRC_DIR = REPO_ROOT / 'src'
+
+_new_version, _build, _version_file = bump_platform_version(REPO_ROOT, 'macos')
+print(f'[spec] macOS surumu guncellendi: {_new_version} (build {_build}) -> {_version_file.name}')
 
 # Menü layoutunu Python modülüne göm (build öncesi)
 write_embedded_layout_module(REPO_ROOT)
@@ -185,6 +189,9 @@ hiddenimports = [
 
     # ── Steam Net Bridge (Online PvP) ──
     'steam_net_bridge',
+    'version',
+    'version_base',
+    'version_local_macos',
 ]
 
 # ── src/ altındaki tüm Python modüllerini ekle ──
@@ -361,15 +368,15 @@ app = BUNDLE(
     name='Quadrix.app',
     icon=str(REPO_ROOT / 'assets' / 'Tetris.icns'),
     bundle_identifier='com.burakyasayan.quadrix',
-    version='1.0.0',
+    version=_new_version,
     info_plist={
         # ── Temel Bilgiler ──
         'CFBundleName': 'Quadrix',
         'CFBundleDisplayName': 'Quadrix',
         'CFBundleGetInfoString': 'Quadrix - Tetris Full Edition',
         'CFBundleIdentifier': 'com.burakyasayan.quadrix',
-        'CFBundleVersion': '1.0.0',
-        'CFBundleShortVersionString': '1.0.0',
+        'CFBundleVersion': _new_version,
+        'CFBundleShortVersionString': _new_version,
         'CFBundleExecutable': 'Quadrix',
         'CFBundlePackageType': 'APPL',
         'CFBundleSignature': 'QDRX',

@@ -1306,7 +1306,7 @@ class PvPGame:
                 self.pause_menu_selected = (self.pause_menu_selected + 1) % len(self.pause_menu_options)
                 self.sound.play('move')
                 return None
-            if event.key in (pygame.K_RETURN, pygame.K_SPACE):
+            if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE):
                 option = self.pause_menu_options[self.pause_menu_selected]
                 return apply_option(option)
             if event.key in (pygame.K_LEFT, pygame.K_RIGHT):
@@ -1314,6 +1314,8 @@ class PvPGame:
                 delta = 0.1 if event.key == pygame.K_RIGHT else -0.1
                 adjust_volume(option, delta=delta)
                 return None
+            if event.key == pygame.K_BACKSPACE:
+                return 'main_menu'
             if event.key == pygame.K_ESCAPE:
                 return 'resume'
             # P tuşu pause toggle, menüde "Devam Et" gibi davransın
@@ -1412,10 +1414,10 @@ class PvPGame:
 
             if option == 'resume':
                 color_code = retro_style.success
-                sub_text = 'ENTER / P'
+                sub_text = 'ESC / P'
             elif option == 'main_menu':
                 color_code = retro_style.secondary
-                sub_text = 'ESC'
+                sub_text = 'BACKSPACE'
             elif option == 'music':
                 color_code = retro_style.primary
                 sub_text = t('on') if self.sound.music_enabled else t('off')
