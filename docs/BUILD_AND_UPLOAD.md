@@ -143,6 +143,17 @@ DLL bulunamazsa `init()` sessizce `False` döner; tüm Steam özellikleri no-op 
 
 macOS build Mac üzerinde yapılmalıdır:
 
+İlk bootstrap sonrası macOS yerel sürüm dosyası bir kez kontrol edilmelidir:
+
+```bash
+ls src/version_local_macos.py
+git update-index --skip-worktree src/version_local_macos.py
+```
+
+- `src/version_local_macos.py` bu aşamada bilerek track edilir ve Mac'e ilk kopya olarak repo'dan gelir
+- Bu komuttan sonra macOS build artışları dosyayı yerelde güncelleyebilir; normal geliştirme akışında commit edilmemelidir
+- Gerekirse senkronizasyon için skip-worktree kaldırma komutu: `git update-index --no-skip-worktree src/version_local_macos.py`
+
 ```bash
 # Mac'te proje kökünde:
 cp dll/osx/libsteam_api.dylib libsteam_api.dylib   # ya da spec otomatik bulur

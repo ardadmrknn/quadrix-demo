@@ -64,3 +64,8 @@ def test_bump_platform_version_resets_to_newer_base_when_local_is_older():
         assert build_number == 61
         assert local_module.VERSION == '1.0.61'
         assert local_module.BUILD_NUMBER == 61
+
+        local_text = local_file.read_text(encoding='utf-8')
+        assert 'Bootstrap macOS surum override dosyasi' in local_text
+        assert 'git update-index --skip-worktree src/version_local_macos.py' not in local_text
+        assert 'git update-index --skip-worktree ile yerel tutulmalidir.' in local_text
