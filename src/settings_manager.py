@@ -171,6 +171,7 @@ class SettingsManager:
             # Grafik ayarları - Maksimum kalite varsayılan
             'fullscreen': True,  # Varsayılan: çerçevesiz tam ekran
             'borderless_fullscreen': True,  # Borderless/desktop fullscreen (alt+tab uyumlu)
+            'steam_overlay_gl': 'auto',  # auto|off|force - Windows Steam overlay GL compat
             'resolution': 'auto',  # Otomatik = cihazın maksimum çözünürlüğü
             'vsync': True,  # VSYNC açık - screen tearing önleme
             # FPS limiti: 0 = MAX (sınırsız). Değerler: 30/45/60/90/120/0

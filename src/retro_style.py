@@ -395,7 +395,7 @@ class RetroStyle:
             pygame.font.init()
         scaled_size = self._apply_font_scale(size)
         effective_bold = False if self._force_no_bold else bool(bold)
-        key = (scaled_size, effective_bold, self._font_path)
+        key = (scaled_size, effective_bold, self._font_path, self._default_font_path)
         if key not in self.font_cache:
             font_obj = None
             if self._font_path:
@@ -409,21 +409,7 @@ class RetroStyle:
                 except Exception:
                     font_obj = None
             if font_obj is None:
-                # Modern sans-serif fontları tercih et
-                candidates = [
-                    "Segoe UI",
-                    "Arial",
-                    "Helvetica",
-                    "DejaVu Sans",
-                    "Consolas",
-                ]
-                for name in candidates:
-                    path = pygame.font.match_font(name)
-                    if path:
-                        font_obj = pygame.font.Font(path, scaled_size)
-                        break
-                if font_obj is None:
-                    font_obj = pygame.font.SysFont(None, scaled_size, bold=effective_bold)
+                font_obj = self._get_latin_font(scaled_size, effective_bold)
             self.font_cache[key] = font_obj
         return self.font_cache[key]
 
@@ -470,16 +456,13 @@ class RetroStyle:
     def set_font_profile(
         self,
         font_path: str | None = None,
+        default_font_path: str | None = None,
         size_scale: float = 1.0,
         force_no_bold: bool = False,
     ) -> None:
         """Dil bazlı font profilini uygula."""
-        # CJK'ya geçmeden önce mevcut varsayılan font path'i kaydet
-        if font_path and not self._font_path:
-            self._default_font_path = None  # Sistem fontları kullanılıyordu
-        elif not font_path:
-            self._default_font_path = None  # Varsayılana dönüyoruz
         self._font_path = font_path
+        self._default_font_path = default_font_path
         try:
             self._font_scale = float(size_scale)
         except (TypeError, ValueError):

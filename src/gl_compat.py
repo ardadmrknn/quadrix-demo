@@ -12,7 +12,9 @@ Usage (in main.py, after create_display):
 The module monkey-patches:
 - ``pygame.display.flip`` / ``pygame.display.update``  → upload texture then swap
 - ``pygame.display.get_surface`` → return offscreen game surface (not GL surface)
-- ``platform_utils.create_display`` → auto-apply GL wrapper on every call
+
+Use ``get_display_surface()`` to access the real visible GL display surface when
+you need to inspect or forward the window after toggles/rebuilds.
 
 Non-Windows platforms or environments without OpenGL silently fall back to
 the standard pygame path (no-op wrapper).
@@ -189,6 +191,14 @@ def _gl_get_surface():
     return _original_get_surface()
 
 
+def get_display_surface():
+    """Return the real visible display surface, bypassing the GL offscreen wrapper."""
+    try:
+        return _original_get_surface()
+    except Exception:
+        return None
+
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -273,8 +283,8 @@ def gl_overlay_setup(display_surface: pygame.Surface) -> pygame.Surface:
     pygame.display.get_surface = _gl_get_surface
     _active = True
 
-    # Patch platform_utils.create_display so that any future calls
-    # (resize, fullscreen toggle, game.py, pvp, etc.) auto-apply GL wrapper
+    # Patch platform_utils.create_display so that dynamic imports that access
+    # the module attribute can still reapply GL when they rebuild the display.
     _patch_create_display()
 
     print(f"[GL Compat] Steam overlay GL wrapper aktif ({w}x{h})")
@@ -353,6 +363,11 @@ def _reapply_gl(display_surface: pygame.Surface) -> pygame.Surface:
     if platform.system() != 'Windows':
         return display_surface
 
+    if display_surface is _game_surface:
+        actual_surface = get_display_surface()
+        if actual_surface is not None:
+            display_surface = actual_surface
+
     w, h = display_surface.get_size()
 
     try:
@@ -360,7 +375,9 @@ def _reapply_gl(display_surface: pygame.Surface) -> pygame.Surface:
         caption = pygame.display.get_caption()
 
         new_flags = (old_flags | pygame.OPENGL | pygame.DOUBLEBUF) & ~pygame.HWSURFACE
-        pygame.display.set_mode((w, h), new_flags)
+        already_gl = bool(old_flags & pygame.OPENGL)
+        if not already_gl:
+            pygame.display.set_mode((w, h), new_flags)
 
         if caption and caption[0]:
             pygame.display.set_caption(caption[0])

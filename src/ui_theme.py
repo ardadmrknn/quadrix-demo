@@ -106,16 +106,13 @@ class UIFonts:
     def set_font_profile(
         cls,
         font_path: str | None = None,
+        default_font_path: str | None = None,
         size_scale: float = 1.0,
         force_no_bold: bool = False,
     ) -> None:
         """Font profilini ayarla (dil bazlı override)."""
-        # CJK'ya geçmeden önce mevcut font path'i kaydet
-        if font_path and not cls._font_path:
-            cls._default_font_path = None  # Sistem fontları kullanılıyordu
-        elif not font_path:
-            cls._default_font_path = None  # Varsayılana dönüyoruz
         cls._font_path = font_path
+        cls._default_font_path = default_font_path
         try:
             cls._size_scale = float(size_scale)
         except (TypeError, ValueError):
@@ -168,7 +165,7 @@ class UIFonts:
         """Font al (cache'li)"""
         scaled_size = cls._apply_size_scale(size)
         effective_bold = False if cls._force_no_bold else bool(bold)
-        key = (scaled_size, effective_bold, cls._font_path)
+        key = (scaled_size, effective_bold, cls._font_path, cls._default_font_path)
         if key not in cls._cache:
             try:
                 if cls._font_path:
@@ -178,8 +175,7 @@ class UIFonts:
                     latin_font = cls._get_latin_font(scaled_size, effective_bold)
                     cls._cache[key] = HybridFont(latin_font, cjk_font)
                 else:
-                    # Font(None) yerine güvenli system font fallback kullan
-                    cls._cache[key] = cls._get_system_font(scaled_size, effective_bold)
+                    cls._cache[key] = cls._get_latin_font(scaled_size, effective_bold)
             except Exception:
                 # Son çare: güvenli fallback (Font(None) kullanma — paketli build'da eksik olabilir)
                 cls._cache[key] = cls._get_system_font(scaled_size, effective_bold)

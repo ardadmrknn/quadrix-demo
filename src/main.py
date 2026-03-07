@@ -282,6 +282,14 @@ def _maybe_recover_windows_display(screen, *, settings_manager=None):
     if current_platform != 'Windows' or screen is None:
         return screen
 
+    gl_active = False
+    try:
+        if _get_steam_overlay_gl_mode(settings_manager) != 'off':
+            from gl_compat import is_gl_active
+            gl_active = bool(is_gl_active())
+    except Exception:
+        gl_active = False
+
     state = getattr(
         _maybe_recover_windows_display,
         '_state',
@@ -342,15 +350,10 @@ def _maybe_recover_windows_display(screen, *, settings_manager=None):
         should_recover = True
         recover_reason = 'prtsc'
 
-    # GL overlay aktifken focus kaynaklı set_mode zinciri (rebuild + reapply)
-    # Alt+Tab'da siyah ekranı büyütebilir; focus recovery'yi skip et.
-    if should_recover and recover_reason == 'focus':
-        try:
-            from gl_compat import is_gl_active
-            if is_gl_active():
-                should_recover = False
-        except Exception:
-            pass
+    # GL overlay aktifken focus/PrintScreen kaynaklı set_mode zinciri
+    # (rebuild + reapply) siyah ekran ve stale-frame sorunlarını büyütebilir.
+    if should_recover and gl_active and recover_reason in ('focus', 'prtsc'):
+        should_recover = False
 
     if should_recover and (now_ms - state['last_display_recover_ms'] >= 900):
         state['last_display_recover_ms'] = now_ms
@@ -382,7 +385,8 @@ def _maybe_recover_windows_display(screen, *, settings_manager=None):
                 resizable=True,
                 borderless=(borderless if fullscreen else False),
             )
-            request_window_focus()
+            if recover_reason == 'focus':
+                request_window_focus()
             _maybe_recover_windows_display._state = state
             return new_screen
         except Exception:
@@ -390,6 +394,23 @@ def _maybe_recover_windows_display(screen, *, settings_manager=None):
 
     _maybe_recover_windows_display._state = state
     return screen
+
+
+def _get_steam_overlay_gl_mode(settings_manager=None) -> str:
+    """Return normalized Steam overlay GL mode: auto|off|force."""
+    raw_value = os.environ.get('QUADRIX_STEAM_OVERLAY_GL')
+    if raw_value is None and settings_manager is not None:
+        try:
+            raw_value = settings_manager.get('steam_overlay_gl', 'auto')
+        except Exception:
+            raw_value = 'auto'
+
+    mode = str(raw_value or 'auto').strip().lower()
+    if mode in ('0', 'false', 'off', 'disable', 'disabled', 'none'):
+        return 'off'
+    if mode in ('1', 'true', 'on', 'force', 'forced', 'enable', 'enabled'):
+        return 'force'
+    return 'auto'
 
 def _show_mode_intro_popup(screen, mode_key, settings_manager=None):
     """
@@ -877,6 +898,7 @@ def main():
     
     # Ayarları pygame.init() öncesi yükle ki SDL hint/env (VSync gibi) doğru uygulansın.
     settings_manager = SettingsManager()  # Ayar yöneticisi
+    steam_overlay_gl_mode = _get_steam_overlay_gl_mode(settings_manager)
     try:
         vsync_enabled = bool(settings_manager.get('vsync', True))
     except Exception:
@@ -1015,8 +1037,11 @@ def main():
     # görünmez.  gl_compat modülü pencereyi OpenGL moduna alır ve pygame
     # surface'i her frame GL texture olarak ekrana çizer.
     try:
-        from gl_compat import gl_overlay_setup
-        screen = gl_overlay_setup(screen)
+        if steam_overlay_gl_mode != 'off':
+            from gl_compat import gl_overlay_setup
+            screen = gl_overlay_setup(screen)
+        else:
+            print("[GL Compat] Konfigürasyonla devre dışı bırakıldı")
     except Exception as _gl_e:
         print(f"[GL Compat] Atlandı: {_gl_e}")
 
@@ -1395,6 +1420,21 @@ def main():
         if constants.DEBUG_MODE:
             print("🔇 Sessiz mod: AÇIK (M tuşu)" if settings_screen.mute_all else "🔊 Sessiz mod: KAPALI (M tuşu)")
 
+    def _get_actual_display_surface():
+        """Return the visible display surface, not the GL offscreen game surface."""
+        try:
+            from gl_compat import get_display_surface, is_gl_active
+            if is_gl_active():
+                actual = get_display_surface()
+                if actual is not None:
+                    return actual
+        except Exception:
+            pass
+        try:
+            return pygame.display.get_surface()
+        except Exception:
+            return None
+
     def _apply_screen(new_screen):
         """Ekran yeniden oluşturulduğunda tüm ekran referanslarını güncelle."""
         nonlocal screen
@@ -1491,7 +1531,7 @@ def main():
                 result = pygame.display.toggle_fullscreen()
                 if result:
                     pygame.event.pump()
-                    new_surface = pygame.display.get_surface()
+                    new_surface = _get_actual_display_surface()
                     if new_surface is not None:
                         _apply_screen(new_surface)
                         try:
@@ -2159,7 +2199,7 @@ def main():
                             result = pygame.display.toggle_fullscreen()
                             if result:
                                 pygame.event.pump()
-                                new_surface = pygame.display.get_surface()
+                                new_surface = _get_actual_display_surface()
                                 if new_surface is not None:
                                     _apply_screen(new_surface)
                                     toggled = True
