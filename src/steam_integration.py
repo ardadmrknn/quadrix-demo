@@ -20,7 +20,7 @@ import sys
 import threading
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 # ---------------------------------------------------------------------------
 # DLL yükleyici
@@ -58,7 +58,35 @@ _pump_pause_count = 0  # Ref-count: nested pause/resume için (0 = resumed)
 _pump_paused_event = threading.Event()  # pump döngüsü bu event'i set eder (pause ack)
 _pump_lock = threading.Lock()  # RunCallbacks çakmasını önle
 _precache_thread: threading.Thread | None = None
+_worker_threads: set[threading.Thread] = set()
+_worker_threads_lock = threading.Lock()
 _shutdown_requested = False
+
+
+def _start_tracked_worker(target: Callable[[], Any], *, name: str) -> threading.Thread | None:
+    """Steam API kullanan kısa ömürlü worker thread'lerini izleyerek başlat."""
+    if _shutdown_requested:
+        return None
+
+    thread_ref: list[threading.Thread | None] = [None]
+
+    def _runner() -> None:
+        try:
+            target()
+        finally:
+            worker = thread_ref[0]
+            if worker is not None:
+                with _worker_threads_lock:
+                    _worker_threads.discard(worker)
+
+    worker = threading.Thread(target=_runner, name=name, daemon=True)
+    thread_ref[0] = worker
+    with _worker_threads_lock:
+        if _shutdown_requested:
+            return None
+        _worker_threads.add(worker)
+    worker.start()
+    return worker
 
 
 def _read_app_id_from_runtime_sources(default: str = '4428040') -> str:
@@ -731,6 +759,21 @@ def shutdown() -> None:
         if precache_thread and precache_thread.is_alive() and precache_thread is not threading.current_thread():
             try:
                 precache_thread.join(timeout=0.35)
+            except Exception:
+                pass
+
+        with _worker_threads_lock:
+            worker_threads = [
+                thread
+                for thread in _worker_threads
+                if thread.is_alive() and thread is not threading.current_thread()
+            ]
+            for thread in worker_threads:
+                _worker_threads.discard(thread)
+
+        for worker_thread in worker_threads:
+            try:
+                worker_thread.join(timeout=0.6)
             except Exception:
                 pass
 
@@ -1745,8 +1788,7 @@ def submit_score(mode: str, score: int) -> bool:
         elif not sdk_success and not steam_id_str:
             print(f"[Steam] Skor gonderilemedi: SDK yok, steam_id yok -> {lb_name}: {score}")
 
-    threading.Thread(target=_worker, daemon=True).start()
-    return True
+    return _start_tracked_worker(_worker, name=f"steam-submit-{lb_name}") is not None
 
 
 # ---------------------------------------------------------------------------
@@ -1954,8 +1996,9 @@ def fetch_leaderboard_entries(
         finally:
             result_event.set()
 
-    t_worker = threading.Thread(target=_worker, daemon=True)
-    t_worker.start()
+    t_worker = _start_tracked_worker(_worker, name=f"steam-fetch-{lb_name}")
+    if t_worker is None:
+        return result_holder[0]
     result_event.wait(timeout=timeout + 1)
     return result_holder[0]
 
