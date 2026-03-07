@@ -116,6 +116,35 @@ def _resolve_menu_layout_runtime_path() -> Path:
     project_layout = Path(__file__).resolve().parent.parent / 'menu_layout_runtime.json'
     return project_layout
 
+def _circle_crop_bitmap(src: pygame.Surface | None, diameter: int) -> pygame.Surface:
+    """Center-crop a bitmap and apply a circular alpha mask safely on all platforms."""
+    diameter = max(8, int(diameter))
+    out = pygame.Surface((diameter, diameter), pygame.SRCALPHA)
+    if src is None:
+        return out
+
+    src_w, src_h = src.get_size()
+    if src_w <= 0 or src_h <= 0:
+        return out
+
+    scale = diameter / min(src_w, src_h)
+    scaled_w = max(diameter, int(src_w * scale))
+    scaled_h = max(diameter, int(src_h * scale))
+    scaled = pygame.transform.smoothscale(src, (scaled_w, scaled_h))
+
+    cropped = pygame.Surface((diameter, diameter), pygame.SRCALPHA)
+    crop_x = (scaled_w - diameter) // 2
+    crop_y = (scaled_h - diameter) // 2
+    cropped.blit(scaled, (0, 0), area=pygame.Rect(crop_x, crop_y, diameter, diameter))
+
+    masked = pygame.Surface((diameter, diameter), pygame.SRCALPHA)
+    masked.blit(cropped, (0, 0))
+    mask = pygame.Surface((diameter, diameter), pygame.SRCALPHA)
+    pygame.draw.circle(mask, (255, 255, 255, 255), (diameter // 2, diameter // 2), diameter // 2)
+    masked.blit(mask, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+    out.blit(masked, (0, 0))
+    return out
+
 
 def _decode_layout_payload(raw: Any) -> tuple[
     dict[str, Any],
@@ -182,7 +211,6 @@ def get_control_actions():
         ('rotate', t('ctrl_rotate')),
         ('hold', t('ctrl_hold')),
         ('pause', t('ctrl_pause')),
-        ('fullscreen_toggle', t('ctrl_fullscreen_toggle')),
     ]
     
     return {
@@ -2893,10 +2921,8 @@ class Menu:
                             import io as _io
                             av_size_pre = max(20, min(s(32), row_rect.height - s(8)))
                             loaded = pygame.image.load(_io.BytesIO(raw_bytes))
-                            # macOS'ta convert_alpha() SRCALPHA surface'i crash yapabilir;
-                            # Steam avatar'ları JPEG olduğundan convert() her zaman yeterli.
-                            scaled = pygame.transform.smoothscale(loaded.convert(), (av_size_pre, av_size_pre))
-                            self._steam_avatar_surf[avatar_url] = scaled
+                            src = loaded.convert() if _IS_MACOS else loaded.convert_alpha()
+                            self._steam_avatar_surf[avatar_url] = _circle_crop_bitmap(src, av_size_pre)
                         except Exception:
                             self._steam_avatar_surf[avatar_url] = None
                 avatar_surf = self._steam_avatar_surf.get(avatar_url)
@@ -2921,19 +2947,7 @@ class Menu:
             border_c = medal_c[:3] if idx < 3 else UIColors.TEXT_MUTED[:3]
             border_a = 160 if idx < 3 else 70
             if avatar_surf:
-                if _IS_MACOS:
-                    # macOS: SRCALPHA/BLEND_RGBA_MIN yerine kare kırpmalı blit + elips border
-                    self.screen.blit(avatar_surf, av_rect_draw.topleft)
-                else:
-                    # Yuvarlak kırpma maskesi (SRCALPHA — masaüstü/Windows/Linux)
-                    try:
-                        mask_surf = pygame.Surface((av_size, av_size), pygame.SRCALPHA)
-                        pygame.draw.ellipse(mask_surf, (255, 255, 255, 255), mask_surf.get_rect())
-                        av_rgba = avatar_surf.convert_alpha()
-                        av_rgba.blit(mask_surf, (0, 0), special_flags=pygame.BLEND_RGBA_MIN)
-                        self.screen.blit(av_rgba, av_rect_draw.topleft)
-                    except Exception:
-                        self.screen.blit(avatar_surf, av_rect_draw.topleft)
+                self.screen.blit(avatar_surf, av_rect_draw.topleft)
                 # Elips border (her platformda güvenli)
                 pygame.draw.ellipse(self.screen, (*border_c, border_a), av_rect_draw, 1)
             else:

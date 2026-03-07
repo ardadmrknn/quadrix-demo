@@ -32,7 +32,6 @@ DEFAULT_CONTROLS = {
         'rotate': {'primary': 'up', 'secondary': 'w'},
         'hold': {'primary': 'c', 'secondary': ''},
         'pause': {'primary': 'p', 'secondary': ''},
-        'fullscreen_toggle': {'primary': 'f10', 'secondary': ''},
     },
     'pvp': {
         'player1': {
@@ -120,6 +119,8 @@ MODE_MUSIC_DEFAULTS = {
 OBSOLETE_SETTINGS_KEYS = {
     'theme',
     'custom_theme_colors',
+    'borderless_fullscreen',
+    'resolution',
 }
 
 
@@ -173,10 +174,8 @@ class SettingsManager:
             # Gizli ayarlar: ana menüde "arda" yazınca görünür olur.
             'show_debug_settings': False,
             # Grafik ayarları - Maksimum kalite varsayılan
-            'fullscreen': True,  # Varsayılan: çerçevesiz tam ekran
-            'borderless_fullscreen': True,  # Borderless/desktop fullscreen (alt+tab uyumlu)
-            'steam_overlay_gl': 'auto',  # auto|off|force - Windows Steam overlay GL compat
-            'resolution': 'auto',  # Otomatik = cihazın maksimum çözünürlüğü
+            'fullscreen': True,  # Oyun yalnızca tam ekran çalışır
+            'steam_overlay_gl': 'auto',  # Mevcut konfigürasyon uyumluluğu için korunur
             'vsync': True,  # VSYNC açık - screen tearing önleme
             # FPS limiti: 0 = MAX (sınırsız). Değerler: 30/45/60/90/120/0
             'fps_limit': 0,
@@ -214,6 +213,7 @@ class SettingsManager:
         # Sadece müzik seçimlerini uygular; diğer ayarlara dokunmaz.
         self._apply_bundled_music_defaults()
         self.settings = self.load_settings()
+        normalized_display_settings = self._normalize_display_settings_inplace(self.settings)
         removed_obsolete_settings = self._remove_obsolete_settings_inplace(self.settings)
 
         # Eski müzik adlarını mevcut track key'lerine migrate et.
@@ -223,7 +223,7 @@ class SettingsManager:
         except Exception:
             pass
 
-        if removed_obsolete_settings or migrated_music_preferences:
+        if normalized_display_settings or removed_obsolete_settings or migrated_music_preferences:
             self.save_settings()
 
         # Gizli debug ayar görünürlüğü runtime-only olmalı.
@@ -262,6 +262,7 @@ class SettingsManager:
                     for key, value in self.default_settings.items():
                         if key not in loaded:
                             loaded[key] = copy.deepcopy(value)
+                    self._normalize_display_settings_inplace(loaded)
                     loaded['controls'] = self._merge_controls(loaded.get('controls', {}))
                     self._migrate_music_preferences_inplace(loaded)
                     if constants.DEBUG_MODE:
@@ -274,6 +275,7 @@ class SettingsManager:
         if constants.DEBUG_MODE:
             print("[BILGI] Varsayilan ayarlar kullaniliyor")
         defaults = copy.deepcopy(self.default_settings)
+        self._normalize_display_settings_inplace(defaults)
         defaults['controls'] = self._merge_controls(defaults.get('controls', {}))
         self._migrate_music_preferences_inplace(defaults)
         return defaults
@@ -313,6 +315,7 @@ class SettingsManager:
             local_payload,
             campaign_payload,
         )
+        self._normalize_display_settings_inplace(merged)
         merged['controls'] = self._merge_controls(merged.get('controls', {}))
         self._migrate_music_preferences_inplace(merged)
 
@@ -415,11 +418,6 @@ class SettingsManager:
             if isinstance(mode_playlists, dict):
                 self.default_settings['mode_music_playlists'] = self._merge_mode_music_playlists_with_defaults(mode_playlists)
             
-            # Ekran ayarlarını da paketlenmiş ayarlardan al (varsa)
-            if 'fullscreen' in data:
-                self.default_settings['fullscreen'] = bool(data['fullscreen'])
-            if 'borderless_fullscreen' in data:
-                self.default_settings['borderless_fullscreen'] = bool(data['borderless_fullscreen'])
         except Exception:
             return
     
@@ -438,6 +436,22 @@ class SettingsManager:
             if key in data:
                 del data[key]
                 changed = True
+        return changed
+
+    def _normalize_display_settings_inplace(self, data):
+        if not isinstance(data, dict):
+            return False
+
+        changed = False
+        if data.get('fullscreen') is not True:
+            data['fullscreen'] = True
+            changed = True
+
+        for key in ('borderless_fullscreen', 'resolution'):
+            if key in data:
+                del data[key]
+                changed = True
+
         return changed
 
     def _slug_track_name(self, value):
@@ -575,6 +589,7 @@ class SettingsManager:
     def save_settings(self):
         """Ayarları JSON'a kaydet"""
         try:
+            self._normalize_display_settings_inplace(self.settings)
             self._remove_obsolete_settings_inplace(self.settings)
             if self._single_file_mode:
                 atomic_write_json(self.filename, self.settings, indent=2, ensure_ascii=False)
@@ -618,10 +633,15 @@ class SettingsManager:
         if key in OBSOLETE_SETTINGS_KEYS:
             return
 
+        if key == 'fullscreen':
+            value = True
+
         if key == 'controls':
             self.settings[key] = self._merge_controls(value if isinstance(value, dict) else {})
         else:
             self.settings[key] = value
+
+        self._normalize_display_settings_inplace(self.settings)
 
         # Debounced keys: disk yazımını geciktir.
         if key in getattr(self, '_debounced_keys', set()):
@@ -636,6 +656,9 @@ class SettingsManager:
         for key in OBSOLETE_SETTINGS_KEYS:
             kwargs.pop(key, None)
 
+        if 'fullscreen' in kwargs:
+            kwargs['fullscreen'] = True
+
         if not kwargs:
             return
 
@@ -643,6 +666,7 @@ class SettingsManager:
             controls_value = kwargs.pop('controls')
             self.settings['controls'] = self._merge_controls(controls_value if isinstance(controls_value, dict) else {})
         self.settings.update(kwargs)
+        self._normalize_display_settings_inplace(self.settings)
 
         debounced_keys = getattr(self, '_debounced_keys', set())
         should_debounce = any(k in debounced_keys for k in kwargs.keys())
@@ -657,6 +681,7 @@ class SettingsManager:
         """Ayarları varsayılana sıfırla"""
         self.settings = copy.deepcopy(self.default_settings)
         self.settings['campaign_progress'] = {}
+        self._normalize_display_settings_inplace(self.settings)
         self.settings['controls'] = self._merge_controls(self.settings.get('controls', {}))
         self.save_settings()
         if constants.DEBUG_MODE:
@@ -885,15 +910,4 @@ class SettingsManager:
                     elif isinstance(value, (str, int, float, bool)):
                         merged['gamepad'][key] = value
 
-        # Steam screenshot (F12) ile çakışmayı önlemek için eski varsayılanı
-        # (primary=f12, secondary boş) otomatik olarak F10'a geçir.
-        try:
-            fs = merged.get('single_player', {}).get('fullscreen_toggle', {})
-            if isinstance(fs, dict):
-                primary = str(fs.get('primary', '')).strip().lower()
-                secondary = str(fs.get('secondary', '')).strip().lower()
-                if primary == 'f12' and secondary in ('', 'none'):
-                    fs['primary'] = 'f10'
-        except Exception:
-            pass
         return merged

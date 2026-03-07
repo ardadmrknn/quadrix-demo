@@ -140,7 +140,7 @@ try:
     from .steam_leaderboards import SteamLeaderboardService  # type: ignore
     from .user_screens import UserSelectionScreen, UserManagementScreen  # type: ignore
     from .localization import set_language, t  # type: ignore
-    from .platform_utils import request_window_focus, init_platform_display, get_display_flags, create_display, get_native_resolution, is_fullscreen_toggle, normalize_mouse_pos, get_mouse_pos, set_app_icon  # type: ignore
+    from .platform_utils import request_window_focus, init_platform_display, get_display_flags, create_display, get_native_resolution, normalize_mouse_pos, get_mouse_pos, set_app_icon  # type: ignore
     from .retro_style import retro_style  # type: ignore
     from .background_effects import (  # type: ignore
         start_screen_transition, update_screen_transition,
@@ -174,7 +174,7 @@ except Exception:
     from steam_leaderboards import SteamLeaderboardService
     from user_screens import UserSelectionScreen, UserManagementScreen
     from localization import set_language, t
-    from platform_utils import request_window_focus, init_platform_display, get_display_flags, create_display, get_native_resolution, is_fullscreen_toggle, normalize_mouse_pos, get_mouse_pos, set_app_icon
+    from platform_utils import request_window_focus, init_platform_display, get_display_flags, create_display, get_native_resolution, normalize_mouse_pos, get_mouse_pos, set_app_icon
     from retro_style import retro_style
     from background_effects import (
         start_screen_transition, update_screen_transition,
@@ -282,14 +282,6 @@ def _maybe_recover_windows_display(screen, *, settings_manager=None):
     if current_platform != 'Windows' or screen is None:
         return screen
 
-    gl_active = False
-    try:
-        if _get_steam_overlay_gl_mode(settings_manager) != 'off':
-            from gl_compat import is_gl_active
-            gl_active = bool(is_gl_active())
-    except Exception:
-        gl_active = False
-
     state = getattr(
         _maybe_recover_windows_display,
         '_state',
@@ -350,10 +342,15 @@ def _maybe_recover_windows_display(screen, *, settings_manager=None):
         should_recover = True
         recover_reason = 'prtsc'
 
-    # GL overlay aktifken focus/PrintScreen kaynaklı set_mode zinciri
-    # (rebuild + reapply) siyah ekran ve stale-frame sorunlarını büyütebilir.
-    if should_recover and gl_active and recover_reason in ('focus', 'prtsc'):
-        should_recover = False
+    # GL overlay aktifken focus kaynaklı set_mode zinciri (rebuild + reapply)
+    # Alt+Tab'da siyah ekranı büyütebilir; focus recovery'yi skip et.
+    if should_recover and recover_reason == 'focus':
+        try:
+            from gl_compat import is_gl_active
+            if is_gl_active():
+                should_recover = False
+        except Exception:
+            pass
 
     if should_recover and (now_ms - state['last_display_recover_ms'] >= 900):
         state['last_display_recover_ms'] = now_ms
@@ -385,8 +382,7 @@ def _maybe_recover_windows_display(screen, *, settings_manager=None):
                 resizable=True,
                 borderless=(borderless if fullscreen else False),
             )
-            if recover_reason == 'focus':
-                request_window_focus()
+            request_window_focus()
             _maybe_recover_windows_display._state = state
             return new_screen
         except Exception:
@@ -394,23 +390,6 @@ def _maybe_recover_windows_display(screen, *, settings_manager=None):
 
     _maybe_recover_windows_display._state = state
     return screen
-
-
-def _get_steam_overlay_gl_mode(settings_manager=None) -> str:
-    """Return normalized Steam overlay GL mode: auto|off|force."""
-    raw_value = os.environ.get('QUADRIX_STEAM_OVERLAY_GL')
-    if raw_value is None and settings_manager is not None:
-        try:
-            raw_value = settings_manager.get('steam_overlay_gl', 'auto')
-        except Exception:
-            raw_value = 'auto'
-
-    mode = str(raw_value or 'auto').strip().lower()
-    if mode in ('0', 'false', 'off', 'disable', 'disabled', 'none'):
-        return 'off'
-    if mode in ('1', 'true', 'on', 'force', 'forced', 'enable', 'enabled'):
-        return 'force'
-    return 'auto'
 
 def _show_mode_intro_popup(screen, mode_key, settings_manager=None):
     """
@@ -898,7 +877,6 @@ def main():
     
     # Ayarları pygame.init() öncesi yükle ki SDL hint/env (VSync gibi) doğru uygulansın.
     settings_manager = SettingsManager()  # Ayar yöneticisi
-    steam_overlay_gl_mode = _get_steam_overlay_gl_mode(settings_manager)
     try:
         vsync_enabled = bool(settings_manager.get('vsync', True))
     except Exception:
@@ -985,37 +963,16 @@ def main():
     
     # Sistem ekran çözünürlüğünü al
     native_width, native_height = get_native_resolution()
-    
-    # Platform uyumlu pencere modu - pencere modunda başla
-    start_fullscreen = settings_manager.get('fullscreen', True)
-    start_borderless = settings_manager.get('borderless_fullscreen', True)
-    
-    # Pencere boyutları (pencere modunda kullanılır)
-    # Ayarlardan oku, yoksa mantıklı varsayılan kullan
-    saved_resolution = settings_manager.get('resolution', 'auto')
-    if saved_resolution == 'auto':
-        if current_platform == 'Darwin':
-            # macOS: Ekranın büyük bir kısmını kapla (%90)
-            # Menu bar ve dock için biraz alan bırak
-            window_width = max(1024, int(native_width * 0.90))
-            window_height = max(700, int(native_height * 0.85))
-        else:
-            # Windows/Linux: Ekranın %80'i kadar, minimum 800x600
-            window_width = max(800, min(1280, int(native_width * 0.8)))
-            window_height = max(600, min(900, int(native_height * 0.8)))
-    else:
-        try:
-            window_width, window_height = map(int, saved_resolution.split('x'))
-        except Exception:
-            window_width, window_height = 1024, 768
-    
+
+    settings_manager.set('fullscreen', True)
+
     try:
         screen = create_display(
-            window_width,
-            window_height,
-            fullscreen=start_fullscreen,
-            resizable=True,
-            borderless=start_borderless,
+            native_width,
+            native_height,
+            fullscreen=True,
+            resizable=False,
+            borderless=True,
         )
         
         # macOS: Surface validation
@@ -1026,10 +983,10 @@ def main():
             except Exception:
                 pygame.display.quit()
                 pygame.display.init()
-                screen = pygame.display.set_mode((800, 600), pygame.RESIZABLE)
+                screen = create_display(native_width, native_height, fullscreen=True, resizable=False, borderless=True)
                 
     except Exception:
-        screen = create_display(800, 600, fullscreen=False, resizable=True, borderless=False)
+        screen = create_display(native_width, native_height, fullscreen=True, resizable=False, borderless=True)
 
     # ── Steam overlay OpenGL uyumluluk katmanı (Windows) ───────────────────
     # Steam overlay yalnızca D3D/OpenGL rendering context'e hook olabilir.
@@ -1037,11 +994,8 @@ def main():
     # görünmez.  gl_compat modülü pencereyi OpenGL moduna alır ve pygame
     # surface'i her frame GL texture olarak ekrana çizer.
     try:
-        if steam_overlay_gl_mode != 'off':
-            from gl_compat import gl_overlay_setup
-            screen = gl_overlay_setup(screen)
-        else:
-            print("[GL Compat] Konfigürasyonla devre dışı bırakıldı")
+        from gl_compat import gl_overlay_setup
+        screen = gl_overlay_setup(screen)
     except Exception as _gl_e:
         print(f"[GL Compat] Atlandı: {_gl_e}")
 
@@ -1064,7 +1018,7 @@ def main():
     setup_custom_cursor()
     
     clock = pygame.time.Clock()
-    fullscreen = start_fullscreen  # Tam ekran durumu
+    fullscreen = True  # Oyun her zaman tam ekran çalışır
     last_fullscreen_toggle_ms = -10_000
     
     # Yöneticiler
@@ -1394,8 +1348,7 @@ def main():
         print("  ✅ Zorluk Seviyeleri")
         print("  ✅ Ana Menü ve Ayarlar")
         print("  ✅ İstatistikler ve Liderlik Tablosu")
-        print("  ✅ Yeniden Boyutlandırılabilir Pencere")
-        print("  ✅ Tam Ekran Modu (F10)")
+        print("  ✅ Tam Ekran Oynanış")
         print("  ✅ Sessiz Mod (M tuşu)")
         print("\n🎯 Oyun başlatılıyor...\n")
     
@@ -1415,21 +1368,6 @@ def main():
             pass
         if constants.DEBUG_MODE:
             print("🔇 Sessiz mod: AÇIK (M tuşu)" if settings_screen.mute_all else "🔊 Sessiz mod: KAPALI (M tuşu)")
-
-    def _get_actual_display_surface():
-        """Return the visible display surface, not the GL offscreen game surface."""
-        try:
-            from gl_compat import get_display_surface, is_gl_active
-            if is_gl_active():
-                actual = get_display_surface()
-                if actual is not None:
-                    return actual
-        except Exception:
-            pass
-        try:
-            return pygame.display.get_surface()
-        except Exception:
-            return None
 
     def _apply_screen(new_screen):
         """Ekran yeniden oluşturulduğunda tüm ekran referanslarını güncelle."""
@@ -1484,21 +1422,14 @@ def main():
     def _rebuild_display(width, height, *, fullscreen_value=None, resizable=True, borderless_value=None):
         """create_display çağır ve yeni screen'i her yere uygula."""
         nonlocal fullscreen
-        if fullscreen_value is None:
-            fullscreen_value = fullscreen
-        if borderless_value is None:
-            try:
-                borderless_value = settings_manager.get('borderless_fullscreen', True)
-            except Exception:
-                borderless_value = False
-        if not fullscreen_value:
-            borderless_value = False
+        fullscreen = True
+        settings_manager.set('fullscreen', True)
         new_screen = create_display(
             width,
             height,
-            fullscreen=fullscreen_value,
-            resizable=resizable,
-            borderless=borderless_value,
+            fullscreen=True,
+            resizable=False,
+            borderless=True,
         )
         _apply_screen(new_screen)
         # Mod değişimi sonrası birikmiş resize/video event'lerini temizle
@@ -1511,69 +1442,36 @@ def main():
         return new_screen
 
     def _toggle_fullscreen(width=500, height=700):
-        """Tam ekranı toggle et ve display'i yeniden kur."""
+        """Eski toggle çağrılarını tam ekranı yeniden uygulayarak uyumlu tut."""
         nonlocal fullscreen, last_fullscreen_toggle_ms, screen, running
         now_ms = pygame.time.get_ticks()
         if now_ms - last_fullscreen_toggle_ms < 600:
             return False
         last_fullscreen_toggle_ms = now_ms
-        
-        fullscreen = not fullscreen
-        settings_manager.set('fullscreen', fullscreen)
-        
-        # --- Deneme 1: SDL2 native toggle (en güvenilir) ---
+
+        fullscreen = True
+        settings_manager.set('fullscreen', True)
+
         try:
-            if hasattr(pygame.display, 'toggle_fullscreen'):
-                result = pygame.display.toggle_fullscreen()
-                if result:
-                    pygame.event.pump()
-                    new_surface = _get_actual_display_surface()
-                    if new_surface is not None:
-                        _apply_screen(new_surface)
-                        try:
-                            pygame.event.clear([pygame.VIDEORESIZE])
-                        except Exception:
-                            pass
-                        return True
-        except Exception:
-            pass
-        
-        # --- Deneme 2: Display rebuild (create_display + SDL env düzeltmeleri) ---
-        try:
-            _rebuild_display(width, height, fullscreen_value=fullscreen, resizable=True)
+            _rebuild_display(width, height, fullscreen_value=True, resizable=False, borderless_value=True)
             return True
         except Exception:
             pass
-        
-        # --- Deneme 3: macOS için son çare restart ---
+
         if current_platform == 'Darwin':
             if _restart_application():
                 running = False
                 return True
-        
-        # Tümü başarısız, geri al
-        fullscreen = not fullscreen
-        settings_manager.set('fullscreen', fullscreen)
+
         return False
 
     def _get_fullscreen_key():
         """Ayarlardan fullscreen toggle tuşunu al."""
-        try:
-            controls = settings_manager.get_controls()
-            fs_binding = controls.get('single_player', {}).get('fullscreen_toggle', {})
-            key_name = fs_binding.get('primary', 'f10') if isinstance(fs_binding, dict) else fs_binding
-            if key_name and isinstance(key_name, str):
-                return pygame.key.key_code(key_name)
-        except Exception:
-            pass
-        return pygame.K_F10  # Varsayılan
+        return None
 
     def _check_fullscreen_toggle(event):
         """Event'in fullscreen toggle olup olmadığını kontrol et."""
-        if event.type != pygame.KEYDOWN:
-            return False
-        custom_key = _get_fullscreen_key()
-        return is_fullscreen_toggle(event.key, getattr(event, 'mod', 0), custom_key)
+        return False
 
     def _restart_application() -> bool:
         """Uygulamayı yeniden başlat (PyInstaller onefile uyumlu)."""
@@ -2170,79 +2068,9 @@ def main():
             elif action == 'toggle_card_mode_debug':
                 pass  # Kart debug değişti, sadece settings'e kaydediliyor
             elif action == 'apply_display_mode':
-                # Pencere/Tam ekran modu veya çözünürlük değişti (sekmeli ekrandan)
-                prev_fullscreen = fullscreen
-                fullscreen = settings_manager.get('fullscreen', True)
-                borderless = settings_manager.get('borderless_fullscreen', True)
-                resolution = settings_manager.get('resolution', 'auto')
-                if resolution == 'auto':
-                    native_w, native_h = get_native_resolution()
-                    width = max(800, min(1280, int(native_w * 0.8)))
-                    height = max(600, min(900, int(native_h * 0.8)))
-                else:
-                    try:
-                        width, height = map(int, resolution.split('x'))
-                    except Exception:
-                        width, height = 1024, 768
-
-                fullscreen_changed = bool(prev_fullscreen) != bool(fullscreen)
-
-                if fullscreen_changed:
-                    # --- Deneme 1: SDL2 native toggle ---
-                    toggled = False
-                    try:
-                        if hasattr(pygame.display, 'toggle_fullscreen'):
-                            result = pygame.display.toggle_fullscreen()
-                            if result:
-                                pygame.event.pump()
-                                new_surface = _get_actual_display_surface()
-                                if new_surface is not None:
-                                    _apply_screen(new_surface)
-                                    toggled = True
-                    except Exception:
-                        pass
-
-                    # --- Deneme 2: Display rebuild ---
-                    if not toggled:
-                        try:
-                            new_screen = create_display(
-                                width, height,
-                                fullscreen=fullscreen,
-                                resizable=True,
-                                borderless=(borderless if fullscreen else False),
-                            )
-                            _apply_screen(new_screen)
-                            toggled = True
-                        except Exception:
-                            pass
-
-                    # --- Deneme 3: Restart (son çare) ---
-                    if not toggled:
-                        if _restart_application():
-                            running = False
-                            return False
-                        # Restart da başarısız, geri al
-                        fullscreen = prev_fullscreen
-                        settings_manager.set('fullscreen', fullscreen)
-                else:
-                    # Sadece çözünürlük değişti; restart gerekmez
-                    resolution = settings_manager.get('resolution', 'auto')
-                    if resolution == 'auto':
-                        native_w, native_h = get_native_resolution()
-                        width = max(800, min(1280, int(native_w * 0.8)))
-                        height = max(600, min(900, int(native_h * 0.8)))
-                    else:
-                        try:
-                            width, height = map(int, resolution.split('x'))
-                        except Exception:
-                            width, height = 1024, 768
-                    new_screen = create_display(
-                        width, height,
-                        fullscreen=fullscreen,
-                        resizable=True,
-                        borderless=(borderless if fullscreen else False),
-                    )
-                    _apply_screen(new_screen)
+                fullscreen = True
+                settings_manager.set('fullscreen', True)
+                _rebuild_display(screen.get_width(), screen.get_height(), fullscreen_value=True, resizable=False, borderless_value=True)
             elif action == 'change_bg_transparency':
                 # Arka plan şeffaflığı değişti (sekmeli ekrandan)
                 try:

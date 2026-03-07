@@ -99,113 +99,23 @@ def _dt_to_seconds(dt: float) -> float:
     return s
 
 
-CARD_LOCALIZATION_ALIASES = {
-    'speed_burst_rare': 'speed_burst',
-    'speed_burst_epic': 'speed_burst',
-    'speed_burst_legendary': 'speed_burst',
-    'freeze_drop_rare': 'freeze_drop',
-    'freeze_drop_epic': 'freeze_drop',
-    'freeze_drop_legendary': 'freeze_drop',
-    'hold_destroyer_2': 'hold_destroyer',
-    'hold_destroyer_3': 'hold_destroyer',
-    'hold_destroyer_4': 'hold_destroyer',
-    'hold_destroyer_5': 'hold_destroyer',
-}
-
-
-class _SafeCardFormatDict(dict):
-    def __missing__(self, key: str) -> str:
-        return '{' + key + '}'
-
-
-def _resolve_card_localization_id(card_or_id: Dict[str, Any] | str) -> str:
-    if isinstance(card_or_id, dict):
-        card_id = str(card_or_id.get('id') or '').strip()
-        group_id = str(card_or_id.get('_group_id') or '').strip()
-        if group_id:
-            return group_id
-        return CARD_LOCALIZATION_ALIASES.get(card_id, card_id)
-
-    card_id = str(card_or_id or '').strip()
-    return CARD_LOCALIZATION_ALIASES.get(card_id, card_id)
-
-
-def _build_card_format_context(card_or_id: Dict[str, Any] | str, value: Any = None) -> Dict[str, Any]:
-    context: Dict[str, Any] = {}
-
-    if isinstance(card_or_id, dict):
-        for key, raw_value in card_or_id.items():
-            if isinstance(raw_value, (str, int, float)):
-                context[key] = raw_value
-
-        payload = card_or_id.get('payload')
-        if isinstance(payload, dict):
-            for key, raw_value in payload.items():
-                if isinstance(raw_value, (str, int, float)):
-                    context[key] = raw_value
-
-        if 'value' not in context:
-            default_value = card_or_id.get('value')
-            if default_value is None:
-                default_value = card_or_id.get('base')
-            if isinstance(default_value, (str, int, float)):
-                context['value'] = default_value
-
-        speed_multiplier = context.get('speed_multiplier')
-        if isinstance(speed_multiplier, (int, float)) and 'speed_percent' not in context:
-            context['speed_percent'] = int(round((float(speed_multiplier) - 1.0) * 100))
-
-        line_multiplier = context.get('line_multiplier')
-        if isinstance(line_multiplier, (int, float)):
-            context['line_multiplier'] = f"{float(line_multiplier):g}"
-
-        freeze_duration = context.get('freeze_duration')
-        if isinstance(freeze_duration, float) and freeze_duration.is_integer():
-            context['freeze_duration'] = int(freeze_duration)
-
-    if value is not None:
-        context['value'] = value
-
-    return context
-
-
-def _format_card_text(text: str, card_or_id: Dict[str, Any] | str, value: Any = None) -> str:
-    if not text or '{' not in text:
-        return text
-
-    context = _build_card_format_context(card_or_id, value)
-    if not context:
-        return text
-
-    try:
-        return text.format_map(_SafeCardFormatDict(context))
-    except Exception:
-        return text
-
-
-def get_card_title(card_or_id: Dict[str, Any] | str, fallback: str = "") -> str:
+def get_card_title(card_id: str, fallback: str = "") -> str:
     """Kart başlığını yerelleştirilmiş olarak döndürür."""
-    if isinstance(card_or_id, dict) and not fallback:
-        fallback = str(card_or_id.get('title') or '')
-
-    localization_id = _resolve_card_localization_id(card_or_id)
-    key = f"card_{localization_id}_title"
+    key = f"card_{card_id}_title"
     translated = t(key)
     # t() anahtar bulunamazsa anahtarı döndürür
-    text = translated if translated != key else fallback
-    return _format_card_text(text, card_or_id)
+    return translated if translated != key else fallback
 
 
-def get_card_description(card_or_id: Dict[str, Any] | str, value: Any = None, fallback: str = "") -> str:
+def get_card_description(card_id: str, value: Any = None, fallback: str = "") -> str:
     """Kart açıklamasını yerelleştirilmiş olarak döndürür, {value} placeholder'ını doldurur."""
-    if isinstance(card_or_id, dict) and not fallback:
-        fallback = str(card_or_id.get('description') or '')
-
-    localization_id = _resolve_card_localization_id(card_or_id)
-    key = f"card_{localization_id}_desc"
+    key = f"card_{card_id}_desc"
     translated = t(key)
-    text = translated if translated != key else fallback
-    return _format_card_text(text, card_or_id, value)
+    if translated == key:
+        return fallback
+    if value is not None and '{value}' in translated:
+        return translated.format(value=value)
+    return translated
 
 
 try:
@@ -1672,7 +1582,6 @@ class MysteryCardUI:
                 rect = pygame.Rect(start_x + idx * (card_width + spacing), top, card_width, card_height)
             # update/assign rect to widget
             widget = self.card_widgets[idx]
-            widget.sync_resources(card, fonts)
             widget.base_rect = rect
             widget.update(dt=self._last_dt if hasattr(self, '_last_dt') else 16.0, mouse_pos=mouse_pos)
             self.card_rects.append(rect)
@@ -1746,7 +1655,6 @@ class MysteryCardUI:
         max_display: int = 6,
         placeholder_text: str | None = None,
         columns: int = 1,
-        max_height: int | None = None,
     ) -> int:
         font_small = fonts.get("small")
         font_desc = fonts.get("desc")
@@ -1754,9 +1662,6 @@ class MysteryCardUI:
         card_title_font = fonts.get("card_title", font_small)
         icon_font = fonts.get("icon", font_small)
         width = max(180, width)
-
-        if max_height is not None and int(max_height) <= 0:
-            return 0
 
         if not cards:
             if placeholder_text is None:
@@ -1829,17 +1734,10 @@ class MysteryCardUI:
         content_padding = 8
         
         md = max(1, int(max_display))
-        cols = max(1, int(columns))
-        if max_height is not None:
-            available_height = max(0, int(max_height))
-            if available_height <= 0:
-                return 0
-            rows_fit = max(1, (available_height + row_gap) // (row_height + row_gap))
-            md = min(md, rows_fit * cols)
-
         displayed = cards[-md:]
-
+        
         # İki sütun hesaplaması
+        cols = max(1, int(columns))
         if cols > 1:
             col_width = max(120, (width - col_gap * (cols - 1)) // cols)
         else:
@@ -1893,7 +1791,7 @@ class MysteryCardUI:
 
             # Title (Left center)
             title_local_x = icon_rect_local.right + 10
-            title_text = get_card_title(card, card.get("title", "???"))
+            title_text = get_card_title(card.get("id", ""), card.get("title", "???"))
             status_label, status_value = _parse_status(card.get("status", ""))
             badge_text = status_value
 
@@ -2072,7 +1970,7 @@ class MysteryCardUI:
         card_surface.blit(tag_bg, (rect.width - tag_bg.get_width() - 20, 28))
 
             # Prepare title text
-        card_title_text = get_card_title(card, card.get("title", ""))
+        card_title_text = get_card_title(card.get("id", ""), card.get("title", ""))
         title_text = f"{idx + 1}. {card_title_text}"
         # If title is longer than available area, trim with ellipsis
         title_font = fonts.get("card_title")
@@ -2106,7 +2004,7 @@ class MysteryCardUI:
 
         # Wrap description with available width and reduce max cols in debug
         desc_wrap_width = 30 if not debug else 28
-        card_desc_text = get_card_description(card, card.get("value"), card.get("description", ""))
+        card_desc_text = get_card_description(card.get("id", ""), card.get("value"), card.get("description", ""))
         desc_lines = self._wrap_text(card_desc_text, desc_wrap_width)
         # Cap description lines in overlay to avoid oversizing the card
         max_desc_lines_overlay = 3
@@ -2577,48 +2475,6 @@ class UICard:
         self._shimmer_w: int = 0
         self._shimmer_cache_key: tuple | None = None
         self._scroll_scaled_cache: dict[str, tuple[tuple[int, int, int], pygame.Surface]] = {}
-        self._font_signature: tuple | None = None
-        self._resource_signature: tuple | None = None
-        self._face_cache_token = 0
-        self.sync_resources(card, fonts)
-
-    @staticmethod
-    def _compute_font_signature(fonts: Dict[str, pygame.font.Font]) -> tuple:
-        keys = ('large', 'medium', 'small', 'card_title', 'desc', 'value', 'icon', 'tag')
-        return tuple(id(fonts.get(key)) for key in keys)
-
-    @staticmethod
-    def _compute_card_signature(card: Dict) -> tuple:
-        return (
-            str(card.get('id', '')),
-            str(card.get('title', '')),
-            str(card.get('description', '')),
-            str(card.get('value', '')),
-            str(card.get('icon', '')),
-            str(card.get('icon_image', '')),
-            str(card.get('tag', '')),
-            str(card.get('rarity', '')),
-        )
-
-    def _invalidate_face_cache(self) -> None:
-        self._baked_face_bg = None
-        self._baked_face_fg = None
-        self._baked_face_key = None
-        self._face_cache_token += 1
-
-    def sync_resources(self, card: Dict, fonts: Dict[str, pygame.font.Font]) -> None:
-        font_signature = self._compute_font_signature(fonts)
-        try:
-            current_lang = get_language()
-        except Exception:
-            current_lang = None
-        resource_signature = (current_lang, self._compute_card_signature(card), font_signature)
-        self.card = card
-        self.fonts = fonts
-        if self._resource_signature != resource_signature:
-            self._font_signature = font_signature
-            self._resource_signature = resource_signature
-            self._invalidate_face_cache()
 
     def update(self, dt: float, mouse_pos: tuple[int, int] | None):
         # dt gelebilir: ms (oyun döngüsünden) veya saniye. Tutarlı dönüşüm.
@@ -3736,7 +3592,7 @@ class UICard:
         """Statik kart yüzünü iki katman halinde cache'le.
         İlk katman: arka plan, ikinci katman: ikon + metin + etiketler.
         Böylece epic efekt bu iki katmanın arasına yerleşebilir."""
-        cache_key = (rect.width, rect.height, debug, self._face_cache_token)
+        cache_key = (rect.width, rect.height, debug)
         if self._baked_face_bg is not None and self._baked_face_fg is not None and self._baked_face_key == cache_key:
             return self._baked_face_bg, self._baked_face_fg
 
@@ -3800,7 +3656,7 @@ class UICard:
 
         # Title
         title_font = self.fonts.get('card_title')
-        card_title_text = get_card_title(self.card, self.card.get('title', ''))
+        card_title_text = get_card_title(self.card.get('id', ''), self.card.get('title', ''))
         title_surface = title_font.render(card_title_text, True, UIColors.TEXT_PRIMARY)
         title_pos = (16, icon_rect.bottom + 12)
         self._blit_shadowed(fg_layer, title_surface, title_pos, shadow_alpha=170)
@@ -3826,7 +3682,7 @@ class UICard:
         wrap_limit_pixels = rect.width - 48
         lines = []
         raw_desc = get_card_description(
-            self.card,
+            self.card.get('id', ''),
             value=self.card.get('value'),
             fallback=self.card.get('description', '')
         )
@@ -4144,57 +4000,29 @@ class MysteryMode(Game):
 
         return left_w, right_w
 
-    def _make_card_ui_font(
-        self,
-        size: int,
-        *,
-        bold: bool = False,
-    ) -> pygame.font.Font:
+    def _make_card_ui_font(self, size: int, *, bold: bool = False) -> pygame.font.Font:
         """Kart UI fontunu mevcut dile göre seç.
 
         CJK (ja/zh/ko) dillerinde get_font_for_language() ile doğrudan
         HybridFont oluşturur — retro_style._font_path global durumundan
-        bağımsızdır. Diğer dillerde retro_style.get_font() kullanılır.
+        bağımsızdır.  Diğer dillerde retro_style.get_font() kullanılır.
         """
         try:
             lang = get_language()
         except Exception:
             lang = None
 
-        effective_lang = "ja" if lang == "jp" else lang
-
-        try:
-            from ui_language_profile import get_font_for_language
-
-            font = get_font_for_language(effective_lang, size, bold=bold)
-            if font is not None:
-                return font
-        except Exception:
-            pass
+        if lang in {"ja", "jp", "zh", "ko"}:
+            try:
+                from ui_language_profile import get_font_for_language
+                effective_lang = "ja" if lang == "jp" else lang
+                font = get_font_for_language(effective_lang, size)
+                if font is not None:
+                    return font
+            except Exception:
+                pass
 
         return retro_style.get_font(size, bold=bold)
-
-    def _build_card_ui_font_pack(self, ui_scale: float | None = None) -> Dict[str, pygame.font.Font]:
-        """Kart Ustalığı UI'si için ortak font paketini üret."""
-        if ui_scale is None:
-            ui_scale = self._card_ui_scale()
-
-        def s(base: int, min_size: int, *, bold: bool = False) -> pygame.font.Font:
-            size = max(min_size, int(round(base * ui_scale)))
-            return self._make_card_ui_font(size, bold=bold)
-
-        return {
-            "heading": s(44, 26),
-            "panel_header": s(28, 17),
-            "large": s(44, 24),
-            "medium": s(32, 18),
-            "small": s(18, 11),
-            "card_title": s(26, 14),
-            "value": s(52, 24),
-            "icon": s(80, 32),
-            "tag": s(20, 11),
-            "desc": s(22, 11),
-        }
 
     def _refresh_card_ui_fonts(self) -> None:
         """Kart UI fontlarını mevcut dile göre yeniden üret."""
@@ -4203,30 +4031,24 @@ class MysteryMode(Game):
         except Exception:
             self._card_ui_lang = None
 
-        profile_signature = (
-            getattr(retro_style, '_font_path', None),
-            getattr(retro_style, '_default_font_path', None),
-            float(getattr(retro_style, '_font_scale', 1.0) or 1.0),
-            bool(getattr(retro_style, '_force_no_bold', False)),
-        )
-        fonts = self._build_card_ui_font_pack()
+        ui_scale = self._card_ui_scale()
 
-        self.mystery_font_heading = fonts['heading']
-        self.panel_header_font = fonts['panel_header']
-        self.mystery_font_large = fonts['large']
-        self.mystery_font_medium = fonts['medium']
-        self.mystery_font_small = fonts['small']
-        self.card_font = fonts['card_title']
-        self.card_value_font = fonts['value']
-        self.card_icon_font = fonts['icon']
-        self.card_tag_font = fonts['tag']
-        self.card_desc_font = fonts['desc']
+        def s(base: int, min_size: int) -> int:
+            return max(min_size, int(round(base * ui_scale)))
+
+        self.mystery_font_large = self._make_card_ui_font(s(48, 26))
+        self.mystery_font_medium = self._make_card_ui_font(s(36, 20))
+        self.mystery_font_small = self._make_card_ui_font(s(24, 12))
+        self.card_font = self._make_card_ui_font(s(28, 14))
+        self.card_value_font = self._make_card_ui_font(s(56, 26))
+        self.card_icon_font = self._make_card_ui_font(s(84, 34))
+        self.card_tag_font = self._make_card_ui_font(s(24, 12))
+        self.card_desc_font = self._make_card_ui_font(s(26, 13))
 
         self._card_ui_font_signature = (
             self._card_ui_lang,
             int(self.window_width),
             int(self.window_height),
-            profile_signature,
         )
 
     def _ensure_card_ui_fonts(self) -> None:
@@ -4236,17 +4058,7 @@ class MysteryMode(Game):
         except Exception:
             lang = None
 
-        signature = (
-            lang,
-            int(self.window_width),
-            int(self.window_height),
-            (
-                getattr(retro_style, '_font_path', None),
-                getattr(retro_style, '_default_font_path', None),
-                float(getattr(retro_style, '_font_scale', 1.0) or 1.0),
-                bool(getattr(retro_style, '_force_no_bold', False)),
-            ),
-        )
+        signature = (lang, int(self.window_width), int(self.window_height))
         if getattr(self, "_card_ui_font_signature", None) != signature:
             self._refresh_card_ui_fonts()
 
@@ -6067,7 +5879,16 @@ class MysteryMode(Game):
                         print(f"[MysteryMode] draw_mode_info failed (overlay): {exc!r}")
                 except Exception:
                     pass
-            fonts = self._build_card_ui_font_pack()
+            fonts = {
+                "large": self.mystery_font_large,
+                "medium": self.mystery_font_medium,
+                "small": self.mystery_font_small,
+                "card_title": self.card_font,
+                "desc": self.card_desc_font,
+                "value": self.card_value_font,
+                "icon": self.card_icon_font,
+                "tag": self.card_tag_font,
+            }
             self.card_ui.draw_selection_overlay(
                 self.screen,
                 self.window_width,
@@ -6079,20 +5900,13 @@ class MysteryMode(Game):
             )
         elif self.card_message and self.card_message_timer > 0 and not getattr(self, '_sniper_overlay_active', False):
             max_width = max(220, int(self.window_width - 48))
-            message = None
-            for size in range(22, 9, -1):
-                font = retro_style.get_font(size, bold=True)
-                if font.size(self.card_message)[0] <= max_width or size == 10:
-                    message = font.render(self.card_message, True, (255, 255, 255))
-                    break
-            if message is None:
-                message = retro_style.render_fit_text(
-                    self.card_message,
-                    (255, 255, 255),
-                    max_width,
-                    22,
-                    bold=True,
-                )
+            message = retro_style.render_fit_text(
+                self.card_message,
+                (255, 255, 255),
+                max_width,
+                22,
+                bold=True,
+            )
             rect = message.get_rect(center=(self.window_width // 2, 44))
             self.screen.blit(message, rect)
         
@@ -6501,15 +6315,21 @@ class MysteryMode(Game):
         # Limited cards should only show while they are active.
         effects = [c for c in active_cards if not bool(c.get('persistent', False))]
 
+        fonts = {
+            "small": self.mystery_font_small,
+            "desc": self.card_desc_font,
+            "tag": self.card_tag_font,
+            "card_title": self.card_font,
+            "icon": self.card_icon_font,
+        }
+
         ui_scale = self._card_ui_scale()
-        fonts = self._build_card_ui_font_pack(ui_scale)
 
         # Draw a container panel for the "selected/active cards" area.
         # This shares the same glass-panel base as the level box and right HUD.
         pad_x = max(10, int(15 * ui_scale))
-        pad_top = max(10, int(14 * ui_scale))
-        pad_bottom = max(10, int(14 * ui_scale))
-        content_indent = max(8, int(10 * ui_scale))
+        pad_top = max(8, int(12 * ui_scale))
+        pad_bottom = max(8, int(12 * ui_scale))
         hud_panel = getattr(self, '_hud_panel_rect', None)
         if hud_panel is not None:
             try:
@@ -6519,8 +6339,6 @@ class MysteryMode(Game):
         else:
             target_bottom = self.window_height - 30
         panel_h = max(0, int(target_bottom - cards_y))
-        if panel_h <= 0:
-            return 0
         cards_panel_rect = pygame.Rect(panel_x, cards_y, panel_width, panel_h)
         try:
             self._draw_hud_glass_panel(cards_panel_rect)
@@ -6529,38 +6347,58 @@ class MysteryMode(Game):
 
         inner_x = panel_x + pad_x
         inner_w = max(160, panel_width - pad_x * 2)
-        content_x = inner_x + content_indent
-        content_w = max(120, inner_w - content_indent)
         y_cursor = cards_panel_rect.y + pad_top
+        height = cards_panel_rect.height
 
-        header_font = fonts['panel_header']
-        section_font = fonts['small']
-
-        header_text = self._fit_text_to_width(header_font, t('cards'), inner_w)
-        header = header_font.render(header_text, True, (220, 230, 255))
+        header = self.mystery_font_small.render(t('cards'), True, (220, 230, 255))
         self.screen.blit(header, (inner_x, y_cursor))
-        y_cursor += header.get_height() + max(6, int(9 * ui_scale))
+        y_cursor += header.get_height() + max(6, int(10 * ui_scale))
 
-        section_text = self._fit_text_to_width(section_font, t('card_type_limited'), content_w)
-        label_fx = section_font.render(section_text, True, (180, 200, 220))
-        self.screen.blit(label_fx, (content_x, y_cursor))
-        y_cursor += label_fx.get_height() + max(5, int(7 * ui_scale))
-
-        available_cards_h = max(0, cards_panel_rect.bottom - pad_bottom - y_cursor)
+        label_fx = self.mystery_font_small.render(t('card_type_limited'), True, (180, 200, 220))
+        self.screen.blit(label_fx, (inner_x, y_cursor))
+        y_cursor += label_fx.get_height() + max(5, int(8 * ui_scale))
         effects_h = self.card_ui.draw_active_cards_panel(
             self.screen,
             effects,
             fonts,
-            content_x,
+            inner_x,
             y_cursor,
-            content_w,
+            inner_w,
             max_display=10,
             placeholder_text=t('card_placeholder_no_limited'),
             columns=1,
-            max_height=available_cards_h,
         )
-        used_height = (y_cursor - cards_panel_rect.y) + effects_h + pad_bottom
-        return min(cards_panel_rect.height, max(0, used_height))
+        y_cursor += effects_h + max(8, int(12 * ui_scale))
+
+        # Draw level progress bar (segmented for 5 lines)
+        bar_x = inner_x
+        bar_y = y_cursor
+        bar_width = inner_w
+        bar_height = max(8, int(12 * ui_scale))
+        
+        # Progress calculation for level up (5 lines per level)
+        progress = int(getattr(self.card_manager, 'progress', 0))
+        threshold = int(getattr(self.card_manager, 'threshold', 5))
+        if threshold < 1: threshold = 5
+        
+        # Calculate segment geometry
+        gap = 3
+        total_gaps = max(0, (threshold - 1) * gap)
+        segment_w = max(4, (bar_width - total_gaps) // threshold)
+        
+        # Draw segments
+        for i in range(threshold):
+            seg_x = bar_x + i * (segment_w + gap)
+            # Background for segment
+            pygame.draw.rect(self.screen, (30, 30, 30), (seg_x, bar_y, segment_w, bar_height), border_radius=4)
+            
+            # Fill if completed/active
+            if i < progress:
+                # Fill with accent color
+                pygame.draw.rect(self.screen, self.mode_skin.accent, (seg_x + 1, bar_y + 1, segment_w - 2, bar_height - 2), border_radius=3)
+        
+        height += bar_height + 12
+        return height
 
     def _draw_persistent_cards_icon_panel(self) -> None:
         active_cards = list(getattr(self.card_manager, 'active_cards', []) or [])
@@ -6665,7 +6503,7 @@ class MysteryMode(Game):
 
             text_x = icon_rect.right + s(8)
             text_w = max(s(34), item_rect.right - s(8) - text_x)
-            card_title = get_card_title(card, card.get('title', ''))
+            card_title = get_card_title(card.get('id', ''), card.get('title', ''))
             card_title = _trim_text(card_title, text_w)
             title_surf = title_font.render(card_title, True, (224, 234, 252))
             title_rect = title_surf.get_rect()
@@ -6714,8 +6552,6 @@ class MysteryMode(Game):
     def _draw_status_panel(self) -> None:
         status = self.card_manager.get_status()
         ui_scale = self._card_ui_scale()
-        fonts = self._build_card_ui_font_pack(ui_scale)
-
         panel_x, panel_y, panel_width = self._get_left_panel_frame()
         self._left_panel_frame = (panel_x, panel_y, panel_width)
 
@@ -6726,33 +6562,26 @@ class MysteryMode(Game):
         lines_in_level = int(self.board.lines_cleared % lines_needed)
         # Sağdaki standart HUD paneli ile aynı stil: glass panel (alpha=90)
         pad_x = max(10, int(15 * ui_scale))
-        pad_top = max(10, int(14 * ui_scale))
-        pad_bottom = max(10, int(14 * ui_scale))
-        content_indent = max(8, int(10 * ui_scale))
+        pad_top = max(8, int(12 * ui_scale))
+        pad_bottom = max(8, int(12 * ui_scale))
         inner_x = panel_x + pad_x
         inner_w = max(160, panel_width - pad_x * 2)
-        content_x = inner_x + content_indent
-        content_w = max(120, inner_w - content_indent)
 
-        heading_font = fonts['heading']
-        info_font = fonts['small']
-
-        header_surface = heading_font.render(f"{t('level')}: {level}", True, (230, 235, 245))
+        header_surface = self.mystery_font_medium.render(f"{t('level')}: {level}", True, (230, 235, 245))
         info_line_1 = t('card_level_progress', current=lines_in_level, needed=lines_needed)
         info_line_2 = t('card_pool_label', hint=status['hint'])
-        header_text = self._fit_text_to_width(heading_font, f"{t('level')}: {level}", inner_w)
-        header_surface = heading_font.render(header_text, True, (230, 235, 245))
-        info_line_1 = self._fit_text_to_width(info_font, info_line_1, content_w)
-        info_line_2 = self._fit_text_to_width(info_font, info_line_2, content_w)
+        info_line_1 = self._fit_text_to_width(self.mystery_font_small, info_line_1, inner_w)
+        info_line_2 = self._fit_text_to_width(self.mystery_font_small, info_line_2, inner_w)
         info_texts = [
-            info_font.render(info_line_1, True, (180, 200, 220)),
-            info_font.render(info_line_2, True, (180, 200, 220)),
+            self.mystery_font_small.render(info_line_1, True, (180, 200, 220)),
+            self.mystery_font_small.render(info_line_2, True, (180, 200, 220)),
         ]
 
-        line_gap = max(3, int(5 * ui_scale))
-        content_h = pad_top + header_surface.get_height() + max(5, int(8 * ui_scale))
+        progress_h = max(8, int(12 * ui_scale))
+        line_gap = max(2, int(4 * ui_scale))
+        content_h = pad_top + header_surface.get_height() + max(4, int(6 * ui_scale))
         content_h += sum(s.get_height() + line_gap for s in info_texts)
-        content_h += pad_bottom
+        content_h += max(6, int(10 * ui_scale)) + progress_h + pad_bottom
 
         panel_rect = pygame.Rect(panel_x, panel_y, panel_width, content_h)
         try:
@@ -6762,10 +6591,20 @@ class MysteryMode(Game):
 
         cursor = panel_rect.y + pad_top
         self.screen.blit(header_surface, (inner_x, cursor))
-        cursor += header_surface.get_height() + max(5, int(8 * ui_scale))
+        cursor += header_surface.get_height() + max(4, int(6 * ui_scale))
         for line_surface in info_texts:
-            self.screen.blit(line_surface, (content_x, cursor))
+            self.screen.blit(line_surface, (inner_x, cursor))
             cursor += line_surface.get_height() + line_gap
+
+        cursor += max(4, int(6 * ui_scale))
+        cursor += max(4, int(6 * ui_scale))
+        # Progress bar removed on user request
+        # progress_rect = pygame.Rect(inner_x, cursor, inner_w, progress_h)
+        # pygame.draw.rect(self.screen, (255, 255, 255, 22), progress_rect, border_radius=8)
+        # fill_w = int(inner_w * (lines_in_level / max(1, lines_needed)))
+        # if fill_w > 0:
+        #     pygame.draw.rect(self.screen, self.mode_skin.accent, (inner_x, cursor, fill_w, progress_h), border_radius=8)
+        # pygame.draw.rect(self.screen, (255, 255, 255, 40), progress_rect, 1, border_radius=8)
 
         self._left_panel_cards_y = panel_rect.bottom + max(10, int(18 * ui_scale))
         self._left_panel_content_x = panel_x + pad_x
@@ -6853,7 +6692,7 @@ class MysteryMode(Game):
         except Exception:
             pass
         self._apply_card_effect(card)
-        card_title_text = get_card_title(card, card.get('title', ''))
+        card_title_text = get_card_title(card.get('id', ''), card.get('title', ''))
         self.card_message = t('card_selected').format(title=card_title_text)
         self.card_message_timer = 3
         self._close_card_selection()
@@ -9661,6 +9500,7 @@ class WideMode(Game):
         self.ghost_piece = self.current_piece.copy()
         while self.board.is_valid_position(self.ghost_piece):
             self.ghost_piece.y += 1
+        self.ghost_piece.y -= 1
 
     def draw_mode_overlay(self) -> None:
         # Wide Mode: üst köşelerde metin/etiket gösterme.

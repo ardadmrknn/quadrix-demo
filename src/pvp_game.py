@@ -79,7 +79,7 @@ class PvPGame:
         sound_enabled=True,
         effects_enabled=True,
         screen=None,
-        fullscreen=False,
+        fullscreen=True,
         user_manager=None,
         settings_manager=None,
         sound_manager=None,
@@ -98,14 +98,12 @@ class PvPGame:
             self.screen = screen
             self.window_width = screen.get_width()
             self.window_height = screen.get_height()
-            self.fullscreen = fullscreen
+            self.fullscreen = True
         else:
-            # Geniş pencere (2 tahta yan yana) - Daha büyük başlangıç boyutu
-            self.window_width = 1400
-            self.window_height = 1000
-            
-            self.screen = create_display(self.window_width, self.window_height, fullscreen=False, resizable=True)
-            self.fullscreen = False
+            self.screen = create_display(0, 0, fullscreen=True, resizable=False, borderless=True)
+            self.window_width = self.screen.get_width()
+            self.window_height = self.screen.get_height()
+            self.fullscreen = True
         
         try:
             pygame.display.set_caption('Quadrix')
@@ -853,7 +851,7 @@ class PvPGame:
             if event.type == pygame.VIDEORESIZE:
                 req_w = max(event.w, 800)
                 req_h = max(event.h, 600)
-                self.screen = create_display(req_w, req_h, fullscreen=False, resizable=True)
+                self.screen = create_display(req_w, req_h, fullscreen=True, resizable=False, borderless=True)
                 # Daima surface'tan gerçek piksel boyutunu al
                 self.window_width = self.screen.get_width()
                 self.window_height = self.screen.get_height()
