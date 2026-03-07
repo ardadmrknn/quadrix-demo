@@ -24,7 +24,7 @@ from workshop_blocks import WorkshopBlockDefinition, load_workshop_blocks
 from retro_style import retro_style
 from renderers.jelly_renderer import draw_jelly_block, draw_jelly_border
 from localization import t, get_language
-from platform_utils import get_display_flags, create_display, is_fullscreen_toggle, set_app_icon, normalize_mouse_pos, get_mouse_pos
+from platform_utils import get_display_flags, create_display, set_app_icon, normalize_mouse_pos, get_mouse_pos
 from ui_theme import UIFonts, UIColors
 from asset_manager import load_image
 from gamepad_manager import get_gamepad_manager, is_gamepad_connected
@@ -87,20 +87,6 @@ class Game:
         if isinstance(secondary, int) and secondary != primary:
             keys.append(secondary)
         return tuple(keys)
-
-    def _get_fullscreen_toggle_key(self) -> int | None:
-        """Ayarlardan fullscreen toggle tuşunu al."""
-        try:
-            sm = getattr(self, 'settings_manager', None)
-            if sm:
-                controls = sm.get_controls()
-                fs_binding = controls.get('single_player', {}).get('fullscreen_toggle', {})
-                key_name = fs_binding.get('primary', 'f10') if isinstance(fs_binding, dict) else fs_binding
-                if key_name and isinstance(key_name, str):
-                    return pygame.key.key_code(key_name)
-        except Exception:
-            pass
-        return pygame.K_F10  # Varsayılan
 
     def _draw_hud_glass_panel(self, rect: pygame.Rect) -> None:
         """Sağ panelin temel cam panel stilini tek yerden uygula."""
@@ -194,7 +180,7 @@ class Game:
         except Exception:
             return False
     
-    def __init__(self, difficulty='Normal', sound_enabled=True, effects_enabled=True, achievement_manager=None, theme_manager=None, screen=None, fullscreen=False, settings_manager=None, user_manager=None, game_mode='classic', sound_manager=None, block_style_manager: BlockStyleManager | None = None, score_manager: ScoreManager | None = None, piece_rng_seed: int | None = None):
+    def __init__(self, difficulty='Normal', sound_enabled=True, effects_enabled=True, achievement_manager=None, theme_manager=None, screen=None, fullscreen=True, settings_manager=None, user_manager=None, game_mode='classic', sound_manager=None, block_style_manager: BlockStyleManager | None = None, score_manager: ScoreManager | None = None, piece_rng_seed: int | None = None):
         """Oyunu başlat"""
         pygame.init()
         
@@ -217,37 +203,12 @@ class Game:
             self.screen = screen
             self.window_width = screen.get_width()
             self.window_height = screen.get_height()
-            self.fullscreen = fullscreen
+            self.fullscreen = True
         else:
-            # Ayarlardan tam ekran ve çözünürlük oku
-            if self.settings_manager:
-                self.fullscreen = self.settings_manager.get('fullscreen', False)
-                resolution = self.settings_manager.get('resolution', 'auto')
-            else:
-                self.fullscreen = fullscreen
-                resolution = 'auto'
-            
-            if self.fullscreen:
-                borderless = False
-                if self.settings_manager:
-                    borderless = self.settings_manager.get('borderless_fullscreen', True)
-                # Cihazın tam çözünürlüğünü kullan
-                self.screen = create_display(0, 0, fullscreen=True, resizable=False, borderless=borderless)
-                self.window_width = self.screen.get_width()
-                self.window_height = self.screen.get_height()
-            else:
-                # Çözünürlük ayarına göre pencere aç
-                if resolution == 'auto':
-                    width, height = DEFAULT_WINDOW_WIDTH, DEFAULT_WINDOW_HEIGHT
-                else:
-                    try:
-                        width, height = map(int, resolution.split('x'))
-                    except Exception:
-                        width, height = DEFAULT_WINDOW_WIDTH, DEFAULT_WINDOW_HEIGHT
-                
-                self.screen = create_display(width, height, fullscreen=False, resizable=True)
-                self.window_width = self.screen.get_width()
-                self.window_height = self.screen.get_height()
+            self.fullscreen = True
+            self.screen = create_display(0, 0, fullscreen=True, resizable=False, borderless=True)
+            self.window_width = self.screen.get_width()
+            self.window_height = self.screen.get_height()
         
         try:
             pygame.display.set_caption('Quadrix')
@@ -1268,13 +1229,12 @@ class Game:
             if event.type == pygame.VIDEORESIZE:
                 # VIDEORESIZE event.w/h logical (point) boyutu taşır.
                 # create_display() logical boyutla çağrılır; surface fiziksel piksel olabilir.
-                req_w = max(event.w, MIN_WINDOW_WIDTH)
-                req_h = max(event.h, MIN_WINDOW_HEIGHT)
                 self.screen = create_display(
-                    req_w,
-                    req_h,
-                    fullscreen=False,
-                    resizable=True,
+                    max(event.w, MIN_WINDOW_WIDTH),
+                    max(event.h, MIN_WINDOW_HEIGHT),
+                    fullscreen=True,
+                    resizable=False,
+                    borderless=True,
                 )
                 # Daima surface'tan gerçek piksel boyutunu al
                 self.window_width = self.screen.get_width()
@@ -1344,11 +1304,6 @@ class Game:
                     pass
             
             if event.type == pygame.KEYDOWN:
-                # Fullscreen toggle (ayarlardan okunan tuş)
-                fs_key = self._get_fullscreen_toggle_key()
-                if is_fullscreen_toggle(event.key, getattr(event, 'mod', 0), fs_key):
-                    return 'toggle_fullscreen'
-                
                 bindings = self.control_bindings
                 alt_keys = getattr(self, 'alt_control_bindings', {})
                 # Game-over overlay input: R=restart, ESC=direct main menu (no confirmation)
@@ -1576,14 +1531,6 @@ class Game:
                                     pass
                     except Exception:
                         pass
-                elif is_fullscreen_toggle(event.key, getattr(event, 'mod', 0)):
-                    # macOS: set_mode(FULLSCREEN) mevcut pencerede crash (NSWindow setStyleMask).
-                    # main.py'nin restart ile yönetmesi için action return et.
-                    if sys.platform == 'darwin':
-                        return 'toggle_fullscreen'
-                    else:
-                        self.toggle_fullscreen()
-            
             # Tuş bırakıldığında
             if event.type == pygame.KEYUP:
                 alt_keys = getattr(self, 'alt_control_bindings', {})
@@ -2593,9 +2540,7 @@ class Game:
                     pygame.draw.circle(self.screen, core_color, pos, 1)
     
     def toggle_fullscreen(self):
-        """Tam ekran modunu aç/kapat (platform uyumlu)"""
-        # Debounce: macOS/SDL2 can crash if fullscreen transitions are triggered
-        # repeatedly in a short time window.
+        """Eski çağrılar için ekranı tam ekran olarak yeniden uygula."""
         try:
             now_ms = pygame.time.get_ticks()
         except Exception:
@@ -2605,43 +2550,19 @@ class Game:
             return
         self._last_fullscreen_toggle_ms = now_ms
 
-        self.fullscreen = not self.fullscreen
-        
-        # Pencere boyutunu ayarlardaki çözünürlükten al
-        resolution = self.settings_manager.get('resolution', 'auto') if self.settings_manager else 'auto'
-        
-        if resolution == 'auto':
-            width, height = DEFAULT_WINDOW_WIDTH, DEFAULT_WINDOW_HEIGHT
-        else:
-            try:
-                width, height = map(int, resolution.split('x'))
-            except Exception:
-                width, height = DEFAULT_WINDOW_WIDTH, DEFAULT_WINDOW_HEIGHT
-        
-        # Platform uyumlu display oluştur
-        borderless = False
-        if self.settings_manager:
-            borderless = self.settings_manager.get('borderless_fullscreen', True)
+        self.fullscreen = True
         self.screen = create_display(
-            width,
-            height,
-            fullscreen=self.fullscreen,
-            resizable=True,
-            borderless=(borderless if self.fullscreen else False),
+            self.window_width,
+            self.window_height,
+            fullscreen=True,
+            resizable=False,
+            borderless=True,
         )
+        self.window_width = self.screen.get_width()
+        self.window_height = self.screen.get_height()
         
-        if self.fullscreen:
-            # Fullscreen'de gerçek boyutları al
-            info = pygame.display.Info()
-            self.window_width = info.current_w
-            self.window_height = info.current_h
-        else:
-            self.window_width = width
-            self.window_height = height
-        
-        # Ayarı kaydet
         if self.settings_manager:
-            self.settings_manager.set('fullscreen', self.fullscreen)
+            self.settings_manager.set('fullscreen', True)
             self.settings_manager.save_settings()
         
         self.update_fonts()
@@ -3542,10 +3463,15 @@ class Game:
         content_x = info_x + max(8, int(15 * hud_scale))
         content_w = panel_width - (max(8, int(15 * hud_scale)) * 2)
         
-        # Başlık
+        # Başlık - Neon Glow
         badge_text = get_localized_skin_title(skin) or t('tetris_label')
         title_center = (info_x + panel_width // 2, curr_y)
+        # retro_style.draw_title buraya büyük gelebilir, manuel çizelim
         title_font = retro_style.get_font(max(18, int(28 * hud_scale)), bold=True)
+        # Glow
+        for off in range(2, 0, -1):
+            glow_surf = title_font.render(badge_text, True, (*accent_color, 50))
+            self.screen.blit(glow_surf, glow_surf.get_rect(center=(title_center[0], title_center[1] + off)))
         title_surf = title_font.render(badge_text, True, accent_color)
         title_rect = title_surf.get_rect(center=title_center)
         self.screen.blit(title_surf, title_rect)

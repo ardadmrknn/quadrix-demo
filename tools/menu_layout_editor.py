@@ -82,7 +82,7 @@ def _default_panels() -> list[Panel]:
         Panel("pvp_2_players", "PvP (Local + Online)", pygame.Rect(595, 500, 615, 200), (255, 155, 0)),
         Panel("tutorial_mode", "Eğitim", pygame.Rect(1215, 188, 230, 290), (120, 225, 255)),
         Panel("tutorial_mode_sticker", "Eğitim Sticker", pygame.Rect(1234, 250, 190, 175), (110, 185, 255)),
-        Panel("achievements", "Başarılar", pygame.Rect(1460, 188, 380, 290), (255, 220, 40)),
+        Panel("achievements", "Başarımlar", pygame.Rect(1460, 188, 380, 290), (255, 220, 40)),
         Panel("steam_scores", "Steam Skor Tablosu", pygame.Rect(1460, 490, 380, 370), (80, 230, 120)),
         Panel("daily_challenge", "Günlük", pygame.Rect(80, 750, 490, 250), (0, 255, 180)),
         Panel("campaign_mode", "Görev Modu", pygame.Rect(595, 720, 300, 260), (0, 240, 255)),

@@ -14,7 +14,7 @@ from pathlib import Path
 import pygame
 from constants import *
 from retro_style import retro_style
-from platform_utils import is_fullscreen_toggle, normalize_mouse_pos, get_mouse_pos
+from platform_utils import normalize_mouse_pos, get_mouse_pos
 from background_effects import get_shared_falling_blocks_layer
 from localization import (
     t, get_text, get_language, set_language, get_language_name,
@@ -102,16 +102,6 @@ def _build_tab_content(tab_key: str, sm, show_debug: bool = False) -> list[dict]
 
     elif tab_key == 'display':
         items.append({'type': 'section', 'loc_key': 'settings_section_screen', 'label_tr': 'EKRAN', 'label_en': 'SCREEN'})
-        items.append({
-            'type': 'selector', 'key': 'fullscreen',
-            'loc_key': 'window_mode',
-            'label_tr': 'Pencere Modu', 'label_en': 'Window Mode',
-        })
-        items.append({
-            'type': 'selector', 'key': 'resolution',
-            'loc_key': 'resolution',
-            'label_tr': 'Çözünürlük', 'label_en': 'Resolution',
-        })
         items.append({
             'type': 'toggle', 'key': 'vsync',
             'loc_key': 'vsync',
@@ -366,7 +356,6 @@ def _latinize_track_display_name(raw_name: str) -> str:
 class TabbedSettingsScreen:
     """Sekmeli ayarlar ekranı – tek panel içinde tüm ayar kategorileri."""
 
-    RESOLUTIONS = ['auto', '800x600', '1024x768', '1280x720', '1366x768', '1920x1080']
     FPS_LIMITS = [0, 60, 90, 120, 144, 240]
 
     def __init__(
@@ -412,17 +401,6 @@ class TabbedSettingsScreen:
         self._vsync_prompt_active = False
         self._vsync_prompt_choice = 0
         self._vsync_prompt_buttons: list[pygame.Rect] = []
-
-        # Display mode (fullscreen/windowed) restart confirm modal
-        self._display_mode_confirm_active: bool = False
-        self._display_mode_confirm_prev_fullscreen: bool = True
-        self._display_mode_confirm_target_fullscreen: bool = False
-        self._display_mode_confirm_yes_rect: pygame.Rect | None = None
-        self._display_mode_confirm_no_rect: pygame.Rect | None = None
-
-        # Grafik ayarları – ilk değerleri hatırla
-        self._initial_fullscreen = self.fullscreen
-        self._initial_resolution = self.resolution
 
         # SettingsScreen uyumluluk alanları (main.py bunlara erişiyor)
         self.music_enabled = self.settings_manager.get('music_enabled', True)
@@ -504,8 +482,8 @@ class TabbedSettingsScreen:
         self.das_repeat = sm.get('das_repeat', 50)
         self.soft_drop_speed = sm.get('soft_drop_speed', 50)
         # Display
-        self.fullscreen = sm.get('fullscreen', True)
-        self.resolution = sm.get('resolution', 'auto')
+        self.fullscreen = True
+        self.resolution = 'auto'
         self.vsync = sm.get('vsync', True)
         self.fps_limit = sm.get('fps_limit', 0)
         self.show_fps = sm.get('show_fps', False)
@@ -684,22 +662,7 @@ class TabbedSettingsScreen:
             return text, (200, 220, 255)
 
         elif itype == 'selector':
-            if key == 'fullscreen':
-                fs = self._get_value('fullscreen')
-                if fs:
-                    text = _t('fullscreen', 'Tam Ekran' if lang == 'tr' else 'Fullscreen')
-                else:
-                    text = _t('windowed', 'Pencereli' if lang == 'tr' else 'Windowed')
-                return text, (200, 220, 255)
-            elif key == 'resolution':
-                if self.fullscreen:
-                    na = _t('not_available_short', 'N/A')
-                    return na, (120, 120, 140)
-                res = self._get_value('resolution')
-                if res == 'auto':
-                    return _t('automatic', 'Otomatik' if lang == 'tr' else 'Auto'), (200, 220, 255)
-                return str(res), (200, 220, 255)
-            elif key == 'fps_limit':
+            if key == 'fps_limit':
                 limit = int(self._get_value('fps_limit') or 0)
                 text = 'MAX' if limit <= 0 else str(limit)
                 return text, (200, 220, 255)
@@ -950,9 +913,6 @@ class TabbedSettingsScreen:
         self._close_music_picker()
         self._vsync_prompt_active = False
         self._vsync_prompt_buttons = []
-        self._display_mode_confirm_active = False
-        self._display_mode_confirm_yes_rect = None
-        self._display_mode_confirm_no_rect = None
         self._playlist_edit_active = True
         self._playlist_edit_mode_key = mode_key
         playlist = self.settings_manager.get_mode_music_playlist(mode_key) if self.settings_manager else []
@@ -1617,26 +1577,7 @@ class TabbedSettingsScreen:
 
     def _cycle_selector(self, key: str, delta: int) -> str | None:
         """Selector type ayarı döngüsel değiştir."""
-        if key == 'fullscreen':
-            # Değişimi anında uygulama; önce onay kutusu göster.
-            prev = self.fullscreen
-            target = not prev
-            self._display_mode_confirm_prev_fullscreen = prev
-            self._display_mode_confirm_target_fullscreen = target
-            self._display_mode_confirm_active = True
-            return None
-        elif key == 'resolution':
-            if self.fullscreen:
-                return None
-            idx = 0
-            if self.resolution in self.RESOLUTIONS:
-                idx = self.RESOLUTIONS.index(self.resolution)
-            idx = (idx + delta) % len(self.RESOLUTIONS)
-            self.resolution = self.RESOLUTIONS[idx]
-            self._set_value('resolution', self.resolution)
-            if not self.fullscreen:
-                return 'apply_display_mode'
-        elif key == 'fps_limit':
+        if key == 'fps_limit':
             current = int(self.fps_limit or 0)
             if current not in self.FPS_LIMITS:
                 current = 0
@@ -1753,10 +1694,6 @@ class TabbedSettingsScreen:
                 self._pending_keybind_slot = 'primary'
             return None
 
-        # Display mode restart confirm modal
-        if self._display_mode_confirm_active:
-            return self._handle_display_mode_confirm(event)
-
         # VSync restart prompt
         if self._vsync_prompt_active:
             return self._handle_vsync_prompt(event)
@@ -1817,9 +1754,6 @@ class TabbedSettingsScreen:
             if event.key in (pygame.K_DELETE, pygame.K_BACKSPACE):
                 self._reset_selected_keybind_to_default()
                 return None
-
-            if is_fullscreen_toggle(event.key, getattr(event, 'mod', 0)):
-                return 'toggle_fullscreen'
 
         # Mouse tekerleği
         elif event.type == pygame.MOUSEWHEEL:
@@ -2093,28 +2027,7 @@ class TabbedSettingsScreen:
         return None
 
     def _handle_display_mode_confirm(self, event) -> str | None:
-        """Tam ekran/pencere değişimi için 'yeniden başlatma gerekiyor' onay modalının event handler'ı."""
-        if event.type == pygame.KEYDOWN:
-            if event.key == pygame.K_ESCAPE:
-                # Hayır – değişikliği iptal et
-                self._display_mode_confirm_active = False
-                return None
-            elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
-                # Evet – kaydet ve oyunu kapat
-                self.settings_manager.set('fullscreen', self._display_mode_confirm_target_fullscreen)
-                self.fullscreen = self._display_mode_confirm_target_fullscreen
-                self._display_mode_confirm_active = False
-                return 'quit_game'
-        elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-            pos = normalize_mouse_pos(getattr(event, 'pos', None)) or event.pos
-            if self._display_mode_confirm_yes_rect and self._display_mode_confirm_yes_rect.collidepoint(pos):
-                self.settings_manager.set('fullscreen', self._display_mode_confirm_target_fullscreen)
-                self.fullscreen = self._display_mode_confirm_target_fullscreen
-                self._display_mode_confirm_active = False
-                return 'quit_game'
-            if self._display_mode_confirm_no_rect and self._display_mode_confirm_no_rect.collidepoint(pos):
-                self._display_mode_confirm_active = False
-                return None
+        """Fullscreen-only modda kullanılmaz."""
         return None
 
     # ------------------------------------------------------------------
@@ -2164,10 +2077,6 @@ class TabbedSettingsScreen:
         # VSync prompt
         if self._vsync_prompt_active:
             self._draw_vsync_prompt()
-
-        # Display mode restart confirm modal
-        if self._display_mode_confirm_active:
-            self._draw_display_mode_confirm_panel()
 
         if self._music_picker_open:
             self._draw_music_picker()
@@ -2850,135 +2759,4 @@ class TabbedSettingsScreen:
         retro_style.draw_button(self.screen, btn2, later_text, selected=self._vsync_prompt_choice == 1)
 
     def _draw_display_mode_confirm_panel(self) -> None:
-        """Tam ekran / pencere geçişi 'yeniden başlatma gerekiyor' onay kutusunu çiz.
-
-        Menu._draw_exit_prompt_panel() ile aynı glass-panel + buton stilini kullanır.
-        """
-        width, height = self.screen.get_size()
-
-        # Referans ölçek (Menu._fullscreen_panel_scale aynı mantık)
-        scale = min(width / 1366.0, height / 768.0)
-        panel_scale = max(0.68, min(1.16, scale))
-
-        # Koyu overlay
-        overlay = pygame.Surface((width, height), pygame.SRCALPHA)
-        overlay.fill((0, 0, 0, 220))
-        self.screen.blit(overlay, (0, 0))
-
-        # Panel boyutları
-        side_pad_total = max(80, int(100 * panel_scale))
-        panel_width = min(int(560 * panel_scale), width - side_pad_total)
-        panel_height = min(int(260 * panel_scale), height - max(60, int(80 * panel_scale)))
-        panel_width = max(380, panel_width)
-        panel_height = max(200, panel_height)
-        panel_rect = pygame.Rect(
-            (width - panel_width) // 2,
-            (height - panel_height) // 2,
-            panel_width, panel_height,
-        )
-
-        retro_style.draw_glass_panel(
-            self.screen, panel_rect,
-            alpha=180,
-            border_color=(*retro_style.accent, 140),
-            glow=True,
-        )
-
-        # Başlık
-        title_font = retro_style.get_font(max(20, int(28 * panel_scale)), bold=True)
-        title_text = _t('display_mode_restart_title', 'YENİDEN BAŞLATMA GEREKİYOR')
-        title_surf = title_font.render(title_text, True, retro_style.accent)
-        self.screen.blit(
-            title_surf,
-            title_surf.get_rect(
-                centerx=panel_rect.centerx,
-                top=panel_rect.y + max(12, int(16 * panel_scale)),
-            ),
-        )
-
-        # Gövde metni
-        body_font = retro_style.get_font(max(14, int(17 * panel_scale)), bold=False)
-        body_color = (210, 225, 245)
-        pad_x = max(18, int(26 * panel_scale))
-        body_top = panel_rect.y + max(48, int(60 * panel_scale))
-        body_h = max(55, int(72 * panel_scale))
-        body_rect = pygame.Rect(
-            panel_rect.x + pad_x, body_top,
-            panel_rect.width - pad_x * 2, body_h,
-        )
-        body_text = _t(
-            'display_mode_restart_message',
-            'Bu değişiklik için oyunu kapatıp yeniden açmanız gerekecektir.',
-        )
-        retro_style.draw_wrapped_text(
-            self.screen, body_text, body_font, body_color, body_rect,
-            align='center',
-            line_spacing=max(3, int(5 * panel_scale)),
-        )
-
-        # Butonlar
-        spacing = max(10, int(16 * panel_scale))
-        button_width = min(int(200 * panel_scale), (panel_rect.width - pad_x * 2 - spacing) // 2)
-        button_height = max(38, int(50 * panel_scale))
-        total_width = button_width * 2 + spacing
-        start_x = panel_rect.centerx - total_width // 2
-        button_y = panel_rect.bottom - button_height - max(20, int(40 * panel_scale))
-
-        yes_rect = pygame.Rect(start_x, button_y, button_width, button_height)
-        no_rect = pygame.Rect(start_x + button_width + spacing, button_y, button_width, button_height)
-
-        mouse_pos = get_mouse_pos()
-
-        yes_label = _t('display_mode_restart_yes', 'Evet, kapat')
-        no_label = _t('display_mode_restart_no', 'Hayır, iptal')
-        yes_hint = 'ENTER'
-        no_hint = 'ESC'
-
-        for rect, label, hint, btn_color in (
-            (yes_rect, yes_label, yes_hint, retro_style.success),
-            (no_rect, no_label, no_hint, retro_style.secondary),
-        ):
-            hover = rect.collidepoint(mouse_pos)
-            draw_rect = rect.inflate(6, 4) if hover else rect
-
-            # Arka plan
-            btn_bg = pygame.Surface(draw_rect.size, pygame.SRCALPHA)
-            if hover:
-                pygame.draw.rect(btn_bg, (*btn_color, 35), btn_bg.get_rect(), border_radius=12)
-                highlight_rect = pygame.Rect(4, 2, draw_rect.width - 8, 1)
-                pygame.draw.rect(btn_bg, (*btn_color, 60), highlight_rect)
-            else:
-                pygame.draw.rect(btn_bg, (20, 26, 42, 200), btn_bg.get_rect(), border_radius=12)
-            self.screen.blit(btn_bg, draw_rect.topleft)
-
-            # Neon glow (hover)
-            if hover:
-                glow_surf = pygame.Surface((draw_rect.width + 12, draw_rect.height + 12), pygame.SRCALPHA)
-                glow_rect_g = glow_surf.get_rect()
-                pygame.draw.rect(glow_surf, (*btn_color, 25), glow_rect_g, border_radius=16)
-                pygame.draw.rect(glow_surf, (*btn_color, 15), glow_rect_g.inflate(-4, -4), border_radius=14)
-                self.screen.blit(glow_surf, (draw_rect.x - 6, draw_rect.y - 6))
-
-            # Çerçeve
-            border_width = 3 if hover else 1
-            border_alpha = 220 if hover else 100
-            pygame.draw.rect(self.screen, (*btn_color, border_alpha), draw_rect, border_width, border_radius=12)
-
-            # Metin
-            txt_color = (255, 255, 255) if hover else (220, 230, 245)
-            lbl_font = retro_style.get_fitting_font(
-                label, max(14, int(18 * panel_scale)), draw_rect.width - 40, bold=True,
-            )
-            lbl_surf = lbl_font.render(label, True, txt_color)
-            hint_font = retro_style.get_font(max(10, int(12 * panel_scale)), bold=False)
-            hint_surf = hint_font.render(hint, True, (140, 155, 180) if not hover else (*btn_color,))
-
-            gap = 3
-            total_h = lbl_surf.get_height() + gap + hint_surf.get_height()
-            text_x = draw_rect.x + 14
-            text_start_y = draw_rect.centery - total_h // 2
-            self.screen.blit(lbl_surf, (text_x, text_start_y))
-            self.screen.blit(hint_surf, (text_x, text_start_y + lbl_surf.get_height() + gap))
-
-        self._display_mode_confirm_yes_rect = yes_rect
-        self._display_mode_confirm_no_rect = no_rect
+        return None
