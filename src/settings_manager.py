@@ -117,6 +117,11 @@ MODE_MUSIC_DEFAULTS = {
     },
 }
 
+OBSOLETE_SETTINGS_KEYS = {
+    'theme',
+    'custom_theme_colors',
+}
+
 
 class SettingsManager:
     """Oyun ayarlarını yöneten sınıf"""
@@ -163,7 +168,6 @@ class SettingsManager:
             # Yerleşik (8-bit/sentez) müzikler kaldırıldı: varsayılanlar music/ klasöründeki dosyalardır.
             'menu_music': DEFAULT_MENU_MUSIC_PLAYLIST[0],
             'game_music': DEFAULT_GAME_MUSIC_PLAYLIST[0],
-            'theme': 'Classic',  # Varsayılan tema Classic
             'debug_mode': False,
             'card_mode_debug': False,
             # Gizli ayarlar: ana menüde "arda" yazınca görünür olur.
@@ -183,7 +187,6 @@ class SettingsManager:
             'particle_effects': True,  # Parçacık efektleri varsayılan açık
             'animation_level': 'medium-high',  # Animasyon seviyesi: low, medium, medium-high, high
             'block_styles': {},
-            'custom_theme_colors': {},
             'block_workshop_board': [],
             'block_workshop_sets': [],
             'block_workshop_active_set': None,
@@ -210,13 +213,17 @@ class SettingsManager:
         # Sadece müzik seçimlerini uygular; diğer ayarlara dokunmaz.
         self._apply_bundled_music_defaults()
         self.settings = self.load_settings()
+        removed_obsolete_settings = self._remove_obsolete_settings_inplace(self.settings)
 
         # Eski müzik adlarını mevcut track key'lerine migrate et.
+        migrated_music_preferences = False
         try:
-            if self._migrate_music_preferences_inplace(self.settings):
-                self.save_settings()
+            migrated_music_preferences = self._migrate_music_preferences_inplace(self.settings)
         except Exception:
             pass
+
+        if removed_obsolete_settings or migrated_music_preferences:
+            self.save_settings()
 
         # Gizli debug ayar görünürlüğü runtime-only olmalı.
         # Her uygulama açılışında tekrar gizli başlasın.
@@ -421,6 +428,17 @@ class SettingsManager:
             return self._load_single_file_settings()
         return self._load_split_settings()
 
+    def _remove_obsolete_settings_inplace(self, data):
+        if not isinstance(data, dict):
+            return False
+
+        changed = False
+        for key in OBSOLETE_SETTINGS_KEYS:
+            if key in data:
+                del data[key]
+                changed = True
+        return changed
+
     def _slug_track_name(self, value):
         if value is None:
             return ''
@@ -556,6 +574,7 @@ class SettingsManager:
     def save_settings(self):
         """Ayarları JSON'a kaydet"""
         try:
+            self._remove_obsolete_settings_inplace(self.settings)
             if self._single_file_mode:
                 atomic_write_json(self.filename, self.settings, indent=2, ensure_ascii=False)
             else:
@@ -595,6 +614,9 @@ class SettingsManager:
     
     def set(self, key, value):
         """Ayar değerini güncelle ve kaydet"""
+        if key in OBSOLETE_SETTINGS_KEYS:
+            return
+
         if key == 'controls':
             self.settings[key] = self._merge_controls(value if isinstance(value, dict) else {})
         else:
@@ -610,6 +632,12 @@ class SettingsManager:
     
     def update(self, **kwargs):
         """Birden fazla ayarı güncelle ve kaydet"""
+        for key in OBSOLETE_SETTINGS_KEYS:
+            kwargs.pop(key, None)
+
+        if not kwargs:
+            return
+
         if 'controls' in kwargs:
             controls_value = kwargs.pop('controls')
             self.settings['controls'] = self._merge_controls(controls_value if isinstance(controls_value, dict) else {})

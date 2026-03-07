@@ -35,7 +35,7 @@ from block_styles import BlockStyleManager, TextureSlice
 from sound import SoundManager
 from background import BackgroundManager
 from background_effects import get_shared_falling_blocks_layer
-from themes import ThemeManager, CUSTOM_THEME_NAME
+from themes import ThemeManager
 from mode_skins import apply_board_tint, draw_board_overlay, get_mode_skin
 from retro_style import retro_style as _rs
 from renderers.jelly_renderer import draw_jelly_block, draw_jelly_border
@@ -182,9 +182,6 @@ class OnlinePvPGame:
 
         # Tema
         self.theme_manager = ThemeManager(settings_manager)
-        if self.settings_manager:
-            active_theme = self.settings_manager.get('theme', self.settings_manager.get('active_theme', 'Classic'))
-            self.theme_manager.set_theme(active_theme)
         self.mode_skin = get_mode_skin('pvp')
         self.block_style_manager = BlockStyleManager(self.settings_manager) if self.settings_manager else None
         self._texture_rotation_cache: dict[int, dict] = {}
@@ -303,6 +300,7 @@ class OnlinePvPGame:
         self._join_code_input: str = ''     # "Kod ile Katıl" metin girişi
         self._join_code_active: bool = False  # Metin girişi aktif mi
         self._join_code_error: str = ''     # Giriş hata mesajı
+        self._join_target_lobby_id: int = 0  # Listeden seçilen private lobi ID'si
         self._searching_by_code: bool = False  # Kod ile arama yapılıyor mu
         self._search_code: str = ''         # Aranan kod (lobby_list_complete'de eşleşme için)
 
@@ -365,14 +363,9 @@ class OnlinePvPGame:
             return
         base_color = self.theme_manager.get_piece_color(piece.name) if self.theme_manager else piece.color
         if self.block_style_manager:
-            allow_color_override = bool(
-                self.theme_manager
-                and getattr(self.theme_manager, 'theme_name', None) == CUSTOM_THEME_NAME
-            )
             self.block_style_manager.apply_to_piece(
                 piece,
                 base_color,
-                allow_color_override=allow_color_override,
             )
         else:
             piece.color = base_color
@@ -769,7 +762,19 @@ class OnlinePvPGame:
 
     def _on_lobby_found(self, ev: NetEvent):
         """Tek bir lobi bulundu — metadata ile birlikte biriktir."""
+        payload = {}
+        if ev.data:
+            try:
+                parsed = json.loads(ev.data)
+                if isinstance(parsed, dict):
+                    payload = parsed
+            except Exception:
+                payload = {}
+
         def _read_lobby_data(key: str, fallback: str = '') -> str:
+            payload_value = payload.get(key)
+            if payload_value is not None:
+                return str(payload_value)
             try:
                 value = self.net.get_lobby_data_for(ev.steam_id, key)
                 if value:
@@ -784,14 +789,14 @@ class OnlinePvPGame:
                 pass
             return fallback
 
-        host_name = ''
-        lobby_code = ''
-        visibility = 'public'
-        requires_code = False
         host_name = _read_lobby_data('host_name', '')
         lobby_code = _read_lobby_data('lobby_code', '')
         visibility = (_read_lobby_data('visibility', 'public') or 'public').strip().lower()
-        requires_code = (_read_lobby_data('requires_code', '0') or '0').strip() == '1'
+        requires_code_value = payload.get('requires_code')
+        if isinstance(requires_code_value, bool):
+            requires_code = requires_code_value
+        else:
+            requires_code = (_read_lobby_data('requires_code', '0') or '0').strip().lower() in ('1', 'true', 'yes')
 
         if visibility == 'private':
             requires_code = True
@@ -799,16 +804,26 @@ class OnlinePvPGame:
         elif requires_code:
             visibility = 'private'
 
-        # ev.data genelde "members" bilgisini taşır — parse kontrolü
+        member_count = 0
         try:
-            member_count = int(ev.data) if ev.data and ev.data.isdigit() else 0
-        except (ValueError, AttributeError):
+            if isinstance(payload.get('members'), int):
+                member_count = int(payload.get('members', 0))
+            elif ev.data and ev.data.isdigit():
+                member_count = int(ev.data)
+        except (ValueError, AttributeError, TypeError):
             member_count = 0
+
+        max_members = 2
+        try:
+            if isinstance(payload.get('max_members'), int):
+                max_members = max(2, int(payload.get('max_members', 2)))
+        except (ValueError, TypeError):
+            max_members = 2
 
         self._pending_lobby_list.append({
             'id': ev.steam_id,
             'members': member_count,
-            'max_members': 2,
+            'max_members': max_members,
             'name': host_name or f'Lobi #{len(self._pending_lobby_list) + 1}',
             'code': lobby_code,
             'visibility': visibility,
@@ -938,6 +953,7 @@ class OnlinePvPGame:
         self._join_code_active = False
         self._join_code_input = ''
         self._join_code_error = ''
+        self._join_target_lobby_id = 0
         self._searching_by_code = False
         self._search_code = ''
         self._lobby_list_filter = 'all'
@@ -2284,6 +2300,7 @@ class OnlinePvPGame:
                 self._join_code_active = False
                 self._join_code_input = ''
                 self._join_code_error = ''
+                self._join_target_lobby_id = 0
                 return None
             if self.online_state == OnlineState.PLAYING:
                 self.paused = not self.paused
@@ -2326,6 +2343,7 @@ class OnlinePvPGame:
                             self._join_code_error = ''
                 elif key == pygame.K_TAB:
                     self._join_code_active = False
+                    self._join_target_lobby_id = 0
                 return None
 
             if key == pygame.K_1:
@@ -2464,6 +2482,11 @@ class OnlinePvPGame:
                         except (ValueError, TypeError):
                             pass
                     elif action.startswith('join_private_lobby:'):
+                        lobby_id_str = action.split(':', 1)[1]
+                        try:
+                            self._join_target_lobby_id = int(lobby_id_str)
+                        except (ValueError, TypeError):
+                            self._join_target_lobby_id = 0
                         self._join_code_active = True
                         self._join_code_input = ''
                         self._join_code_error = ''
@@ -2471,6 +2494,7 @@ class OnlinePvPGame:
                         self._status_timer = 2.5
                     elif action == 'join_by_code':
                         # "Kod ile Katıl" butonuna tıklandı
+                        self._join_target_lobby_id = 0
                         self._join_code_active = True
                         self._join_code_input = ''
                         self._join_code_error = ''
@@ -2639,6 +2663,29 @@ class OnlinePvPGame:
             self._join_code_error = t('steam_not_available', 'Steam bağlantısı kurulamadı!')
             return
 
+        target_lobby_id = int(self._join_target_lobby_id or 0)
+        if target_lobby_id > 0:
+            expected_code = ''
+            try:
+                expected_code = (self.net.get_lobby_data_for(target_lobby_id, 'lobby_code') or '').strip()
+            except Exception:
+                expected_code = ''
+
+            if not expected_code:
+                self._join_code_error = t('lobby_code_unavailable', 'Lobi kodu doğrulanamadı, listeyi yenileyin')
+                return
+
+            if expected_code != code:
+                self._join_code_error = t('invalid_lobby_code', 'Girilen lobi kodu yanlış')
+                return
+
+            self.net.join_lobby(target_lobby_id)
+            self._status_msg = t('joining_lobby', 'Lobiye katılınıyor...')
+            self._status_timer = 2.0
+            self._join_code_active = False
+            self._join_target_lobby_id = 0
+            return
+
         # Her zaman 6 haneli kod olarak ara
         self._searching_by_code = True
         self._search_code = code
@@ -2648,6 +2695,7 @@ class OnlinePvPGame:
         self._status_msg = t('searching_by_code', 'Lobi kodu aranıyor...')
         self._status_timer = 3.0
         self._join_code_active = False
+        self._join_target_lobby_id = 0
 
     def _try_direct_join_by_code(self, code: str):
         """Kod araması sonuçsuz kaldığında, kodu doğrudan lobby ID olarak dene."""

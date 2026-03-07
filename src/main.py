@@ -1208,10 +1208,6 @@ def main():
     # DEBUG MODE'u ayarlardan yükle ve global değişkene ata
     constants.DEBUG_MODE = settings_manager.get('debug_mode', False)
     
-    # Kaydedilmiş temayı yükle
-    saved_theme = settings_manager.get('theme', 'Classic')
-    theme_manager.set_theme(saved_theme)
-
     # Menü arka plan görselini ayarlardan uygula.
     try:
         retro_style.set_background_transparency(settings_manager.get('bg_transparency', 0.3))
@@ -2282,8 +2278,6 @@ def main():
                 settings_screen.focus_tab('display')
             elif action == 'gameplay':
                 settings_screen.focus_tab('game')
-            elif action == 'theme':
-                settings_screen.focus_tab('customize', 'theme')
             elif action == 'toggle_fullscreen':
                 _toggle_fullscreen(500, 700)
             elif action == 'quit_game':

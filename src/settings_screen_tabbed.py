@@ -268,12 +268,6 @@ def _build_tab_content(tab_key: str, sm, show_debug: bool = False) -> list[dict]
             })
 
     elif tab_key == 'customize':
-        items.append({'type': 'section', 'loc_key': 'theme', 'label_tr': 'TEMA', 'label_en': 'THEME'})
-        items.append({
-            'type': 'selector', 'key': 'theme',
-            'loc_key': 'theme',
-            'label_tr': 'Tema Seçimi', 'label_en': 'Theme',
-        })
         items.append({'type': 'section', 'loc_key': 'settings_section_blocks', 'label_tr': 'BLOKLAR', 'label_en': 'BLOCKS'})
         items.append({
             'type': 'submenu', 'key': 'block_styles',
@@ -709,9 +703,6 @@ class TabbedSettingsScreen:
                 limit = int(self._get_value('fps_limit') or 0)
                 text = 'MAX' if limit <= 0 else str(limit)
                 return text, (200, 220, 255)
-            elif key == 'theme':
-                name = getattr(self.theme_manager, 'theme_name', '') if self.theme_manager else ''
-                return str(name), (255, 200, 100)
             elif key == 'language':
                 lang_name = get_language_name(self.current_language)
                 return str(lang_name), (100, 255, 200)
@@ -1653,23 +1644,6 @@ class TabbedSettingsScreen:
             idx = (idx + delta) % len(self.FPS_LIMITS)
             self.fps_limit = self.FPS_LIMITS[idx]
             self._set_value('fps_limit', self.fps_limit)
-        elif key == 'theme':
-            if self.theme_manager is None:
-                return None
-            try:
-                names = list(self.theme_manager.get_all_theme_names())
-            except Exception:
-                names = []
-            if not names:
-                return None
-            current_name = getattr(self.theme_manager, 'theme_name', '')
-            try:
-                idx = names.index(current_name)
-            except ValueError:
-                idx = 0
-            idx = (idx + delta) % len(names)
-            self.theme_manager.set_theme(names[idx])
-            self.settings_manager.set('theme', names[idx])
         elif key == 'language':
             lang_idx = (
                 SUPPORTED_LANGUAGES.index(self.current_language)

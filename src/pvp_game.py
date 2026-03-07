@@ -14,7 +14,7 @@ from background_effects import get_shared_falling_blocks_layer
 from mode_skins import apply_board_tint, apply_outer_tint, draw_board_overlay, get_mode_skin
 from retro_style import retro_style
 from renderers.jelly_renderer import draw_jelly_block, draw_jelly_border
-from themes import ThemeManager, CUSTOM_THEME_NAME
+from themes import ThemeManager
 from block_styles import BlockStyleManager, TextureSlice
 from platform_utils import create_display, get_display_flags, normalize_mouse_pos, get_mouse_pos, set_app_icon
 from localization import t
@@ -147,9 +147,6 @@ class PvPGame:
         
         # Tema sistemi (tek oyunculu ile aynı)
         self.theme_manager = ThemeManager(self.settings_manager)
-        if self.settings_manager:
-            active_theme = self.settings_manager.get('theme', self.settings_manager.get('active_theme', 'Classic'))
-            self.theme_manager.set_theme(active_theme)
         self.mode_skin = get_mode_skin('pvp')
 
         # Blok stili / texture sistemi (tek oyunculu ile aynı temel)
@@ -330,14 +327,9 @@ class PvPGame:
             return
         base_color = self.theme_manager.get_piece_color(piece.name) if self.theme_manager else piece.color
         if self.block_style_manager:
-                allow_color_override = bool(
-                    self.theme_manager
-                    and getattr(self.theme_manager, 'theme_name', None) == CUSTOM_THEME_NAME
-                )
                 self.block_style_manager.apply_to_piece(
                     piece,
                     base_color,
-                    allow_color_override=allow_color_override,
                 )
         else:
             piece.color = base_color
