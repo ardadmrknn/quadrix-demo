@@ -24,7 +24,6 @@ from background_effects import FallingBlocksLayer, get_shared_falling_blocks_lay
 from block_styles import BlockStyleManager, ALL_PIECE_NAMES
 from renderers.jelly_renderer import draw_jelly_block
 from workshop_blocks import WORKSHOP_MODES, DEFAULT_PIECE_COLORS
-from themes import CUSTOM_THEME_NAME
 from avatar_presets import resolve_avatar_value
 from localization import t, get_text, get_language, set_language, get_language_name, SUPPORTED_LANGUAGES, get_all_languages, is_language_complete, get_language_flag
 from ui_language_profile import apply_language_ui_profile, get_font_for_language
@@ -7339,13 +7338,6 @@ class BlockStyleSettingsScreen:
         self.font_title = retro_style.get_font(46)
         self.font_option = retro_style.get_font(28)
         self.font_small = retro_style.get_font(20, bold=False)
-        self.mode = 'block_styles'
-        self.mode_labels = {
-            'block_styles': 'block_style_mode_block',
-            'custom_theme': 'block_style_mode_custom'
-        }
-        self.custom_theme_colors = self._read_custom_theme_colors()
-        self._sync_custom_theme_colors()
         self.placement_mode = False
 
         # Mouse çift tık ile renk seçimi
@@ -7360,59 +7352,10 @@ class BlockStyleSettingsScreen:
         self._sb_drag_offset_y: int = 0
         self._layout_start_y: int = 160  # draw() sırasında güncellenir
 
-    def _switch_active_theme_to_custom(self):
-        """Blok görünümü rengi değişince aktif temayı Özel Tema'ya geçir.
-
-        Not: Mevcut Özel Tema renklerini değiştirmez; sadece seçili temayı değiştirir.
-        """
-        if self.settings_manager:
-            self.settings_manager.set('theme', CUSTOM_THEME_NAME)
-        if self.theme_manager:
-            self.theme_manager.set_theme(CUSTOM_THEME_NAME)
-
     def _base_color(self, piece_name):
         return get_piece_base_color(piece_name, self.theme_manager)
 
-    @staticmethod
-    def _clamp_channel(value):
-        try:
-            return max(0, min(255, int(value)))
-        except (TypeError, ValueError):
-            return 0
-
-    def _read_custom_theme_colors(self):
-        if not self.settings_manager:
-            return {}
-        raw = self.settings_manager.get('custom_theme_colors', {}) or {}
-        parsed = {}
-        for name, color in raw.items():
-            if name in ALL_PIECE_NAMES and isinstance(color, (list, tuple)) and len(color) == 3:
-                parsed[name] = tuple(self._clamp_channel(c) for c in color)
-        return parsed
-
-    def _sync_custom_theme_colors(self):
-        latest = self._read_custom_theme_colors()
-        if latest != self.custom_theme_colors:
-            self.custom_theme_colors = latest
-            if self.theme_manager:
-                self.theme_manager.update_custom_theme(self.custom_theme_colors, persist=False)
-
-    def _save_custom_theme_colors(self):
-        if not self.settings_manager:
-            if self.theme_manager:
-                self.theme_manager.update_custom_theme(self.custom_theme_colors, persist=False)
-            return
-        serializable = {name: list(color) for name, color in self.custom_theme_colors.items()}
-        self.settings_manager.set('custom_theme_colors', serializable)
-        if self.theme_manager:
-            self.theme_manager.update_custom_theme(self.custom_theme_colors, persist=False)
-
-    def _get_custom_theme_color(self, piece_name):
-        return self.custom_theme_colors.get(piece_name, self._base_color(piece_name))
-
     def _get_display_color(self, piece_name):
-        if self.mode == 'custom_theme':
-            return self._get_custom_theme_color(piece_name)
         return self.block_style_manager.get_color(piece_name, self._base_color(piece_name))
 
     _CARD_SPACING = 92  # draw() ve mantık hesaplamaları aynı sabit değeri kullanır
@@ -7446,34 +7389,17 @@ class BlockStyleSettingsScreen:
         chosen = pygame_color_picker(self.screen, initial_color=current, piece_name=piece_name)
         if chosen:
             color = (chosen[0], chosen[1], chosen[2])
-            if self.mode == 'custom_theme':
-                self.custom_theme_colors[piece_name] = color
-                self._save_custom_theme_colors()
-                self._switch_active_theme_to_custom()
-                print(f"🎨 {piece_name} {CUSTOM_THEME_NAME} rengini {color} olarak ayarladı")
-            else:
-                self.block_style_manager.set_color(piece_name, color)
-                self._switch_active_theme_to_custom()
-                print(f"🎨 {piece_name} rengi güncellendi: {color}")
+            self.block_style_manager.set_color(piece_name, color)
+            print(f"🎨 {piece_name} rengi güncellendi: {color}")
 
     def _reset_color(self):
         piece_name = self.piece_names[self.selected]
-        if self.mode == 'custom_theme':
-            if piece_name in self.custom_theme_colors:
-                self.custom_theme_colors.pop(piece_name, None)
-                self._save_custom_theme_colors()
-            print(f"↩️ {piece_name} {CUSTOM_THEME_NAME} rengini varsayılan temaya döndürdü")
-        else:
-            self.block_style_manager.reset_color(piece_name)
-            print(f"↩️ {piece_name} rengi varsayılan temaya döndü")
+        self.block_style_manager.reset_color(piece_name)
+        print(f"↩️ {piece_name} rengi varsayılan temaya döndü")
 
     def _reset_all_to_theme(self):
-        # Clear all block style customizations and custom theme colors
         self.block_style_manager.reset_all()
-        self.custom_theme_colors.clear()
-        self._save_custom_theme_colors()
         if self.settings_manager:
-            # Also clear the block_styles in settings so defaults from theme are used
             self.settings_manager.set('block_styles', {})
         print(t('block_style_reset_all_log'))
 
@@ -7513,8 +7439,6 @@ class BlockStyleSettingsScreen:
         title_rect = retro_style.draw_title(self.screen, t('panel_block_styles'), (width // 2, 70), emoji='🎨')
         # Başlığın altındaki tuş ipuçları kaldırıldı (mouse odaklı kullanım)
 
-        self._sync_custom_theme_colors()
-
         self.option_rects = []
         self.color_edit_buttons = []
         self.color_reset_buttons = []
@@ -7524,7 +7448,6 @@ class BlockStyleSettingsScreen:
         card_width = min(780, width - 120)
         card_height = 78
         card_spacing = self._CARD_SPACING
-        snapshot = self.block_style_manager.get_style_snapshot()
 
         for i, piece_name in enumerate(self.piece_names):
             y_pos = start_y + i * card_spacing - self.scroll_offset
@@ -7563,29 +7486,24 @@ class BlockStyleSettingsScreen:
                 checked=False,
                 preview_color=display_color,
             )
-            style = snapshot.get(piece_name, {}) if self.mode == 'block_styles' else {}
             preview_rect = pygame.Rect(card_x + card_width - 130, y_pos + 10, 110, card_height - 20)
 
             # Özel Renk ve Sıfırlama Butonları
-            if self.mode == 'block_styles':
-                btn_h = 28
-                btn_w_custom = 60
-                btn_w_reset = 80
-                
-                # Butonları kartın alt kenarına hizalı fakat metin hizasında konumla
-                btn_y = card_rect.bottom - btn_h - 18
-                
-                # Edit (Özel) - Preview'in solunda
-                edit_btn_x = preview_rect.left - btn_w_custom - 15
-                edit_btn_rect = pygame.Rect(edit_btn_x, btn_y, btn_w_custom, btn_h)
-                self._draw_icon_button(edit_btn_rect, 'edit', is_selected)
-                self.color_edit_buttons.append((edit_btn_rect, i))
-                
-                # Reset (Varsayılan) - Edit butonunun solunda
-                reset_btn_x = edit_btn_rect.left - btn_w_reset - 10
-                reset_btn_rect = pygame.Rect(reset_btn_x, btn_y, btn_w_reset, btn_h)
-                self._draw_icon_button(reset_btn_rect, 'reset', is_selected)
-                self.color_reset_buttons.append((reset_btn_rect, i))
+            btn_h = 28
+            btn_w_custom = 60
+            btn_w_reset = 80
+
+            btn_y = card_rect.bottom - btn_h - 18
+
+            edit_btn_x = preview_rect.left - btn_w_custom - 15
+            edit_btn_rect = pygame.Rect(edit_btn_x, btn_y, btn_w_custom, btn_h)
+            self._draw_icon_button(edit_btn_rect, 'edit', is_selected)
+            self.color_edit_buttons.append((edit_btn_rect, i))
+
+            reset_btn_x = edit_btn_rect.left - btn_w_reset - 10
+            reset_btn_rect = pygame.Rect(reset_btn_x, btn_y, btn_w_reset, btn_h)
+            self._draw_icon_button(reset_btn_rect, 'reset', is_selected)
+            self.color_reset_buttons.append((reset_btn_rect, i))
             
             self._draw_piece_preview(piece_name, display_color, preview_rect, is_selected)
 
@@ -7643,47 +7561,11 @@ class BlockStyleSettingsScreen:
         pygame.draw.rect(preview_surface, border_color, preview_surface.get_rect(), 2, border_radius=12)
         self.screen.blit(preview_surface, rect)
 
-    def _mode_footer_lines(self):
-        if self.mode == 'block_styles':
-            return [
-                t('block_style_footer_line1_block'),
-                t('block_style_footer_line2_block')
-            ]
-        return [
-            t(
-                'block_style_footer_line1_custom',
-                theme=self.theme_manager.theme_name if self.theme_manager else t('theme_label_fallback'),
-            ),
-            t('block_style_footer_line2_custom', theme=CUSTOM_THEME_NAME)
-        ]
-
-    def _toggle_mode(self):
-        self.mode = 'custom_theme' if self.mode == 'block_styles' else 'block_styles'
-        label_key = self.mode_labels.get(self.mode, '')
-        label = t(label_key, default='') if label_key else ''
-        if self.mode == 'custom_theme':
-            label = label.format(theme=CUSTOM_THEME_NAME)
-        print(t('block_style_mode_changed_log').format(mode=label))
-
-    def _copy_from_current_theme(self):
-        if not self.theme_manager:
-            return
-        source_colors = self.theme_manager.current_theme.pieces_colors
-        self.custom_theme_colors = {
-            name: source_colors.get(name, self._base_color(name))
-            for name in self.piece_names
-        }
-        self._save_custom_theme_colors()
-        print(t('block_style_copy_log').format(source=self.theme_manager.theme_name, target=CUSTOM_THEME_NAME))
-
-
     def handle_input(self, event):
         if event.type == pygame.KEYDOWN:
             # Mouse ile seçilebilen öğeler için ok/enter gibi tuş ataması yok.
-            # Geri / tam ekran / mod değiştir gibi global aksiyonlar kalsın.
-            if event.key == pygame.K_TAB:
-                self._toggle_mode()
-            elif event.key == pygame.K_ESCAPE:
+            # Geri / tam ekran gibi global aksiyonlar kalsın.
+            if event.key == pygame.K_ESCAPE:
                 return 'back'
             elif is_fullscreen_toggle(event.key, getattr(event, 'mod', 0)):
                 return 'toggle_fullscreen'
@@ -7693,8 +7575,6 @@ class BlockStyleSettingsScreen:
                     self._reset_all_to_theme()
                 else:
                     self._reset_color()
-            elif event.key == pygame.K_c and self.mode == 'custom_theme':
-                self._copy_from_current_theme()
         elif event.type == pygame.MOUSEWHEEL:
             self.scroll_offset -= event.y * 30
             self._clamp_scroll()
@@ -7754,18 +7634,16 @@ class BlockStyleSettingsScreen:
                         self._clamp_scroll()
                     return None
 
-                # Check color edit/reset buttons (Block Styles Mode)
-                if self.mode == 'block_styles':
-                    for rect, idx in self.color_edit_buttons:
-                        if rect.collidepoint(mouse_pos):
-                            self.selected = idx
-                            self._choose_color()
-                            return None
-                    for rect, idx in self.color_reset_buttons:
-                        if rect.collidepoint(mouse_pos):
-                            self.selected = idx
-                            self._reset_color()
-                            return None
+                for rect, idx in self.color_edit_buttons:
+                    if rect.collidepoint(mouse_pos):
+                        self.selected = idx
+                        self._choose_color()
+                        return None
+                for rect, idx in self.color_reset_buttons:
+                    if rect.collidepoint(mouse_pos):
+                        self.selected = idx
+                        self._reset_color()
+                        return None
 
                 for i, rect in enumerate(self.option_rects):
                     if rect.collidepoint(mouse_pos):
@@ -9215,13 +9093,6 @@ class SettingsScreen:
         self._music_pct_surf = None
         self._sfx_pct_surf = None
 
-        # Theme picker overlay state (Mode Music picker-style)
-        self.theme_picker_open = False
-        self.theme_picker_selected = 0
-        self.theme_picker_scroll = 0
-        self.theme_picker_item_rects: list[tuple[pygame.Rect, int]] = []
-        self._theme_options_cache: list[str] = []
-
         # Language side panel (inline, non-overlay)
         self.language_panel_open = False
         self.language_panel_selected = 0
@@ -9252,36 +9123,6 @@ class SettingsScreen:
         self.font_value_small = retro_style.get_font(20, bold=True)
         self.font_small = retro_style.get_font(22, bold=True)
         self.font_hint = retro_style.get_font(20, bold=True)
-
-    def _get_theme_options(self) -> list[str]:
-        try:
-            themes = list(self.theme_manager.get_all_theme_names()) if self.theme_manager else []
-        except Exception:
-            themes = []
-        # Cache to avoid repeated list allocations every frame
-        if themes:
-            self._theme_options_cache = themes
-        return self._theme_options_cache
-
-    def _open_theme_picker(self) -> None:
-        themes = self._get_theme_options()
-        if not themes:
-            return
-        self.theme_picker_open = True
-        self.theme_picker_scroll = 0
-        self.theme_picker_item_rects = []
-
-        current = getattr(self.theme_manager, 'theme_name', None)
-        try:
-            if not isinstance(current, str):
-                raise ValueError("Current theme is not a string")
-            self.theme_picker_selected = themes.index(current)
-        except Exception:
-            self.theme_picker_selected = 0
-
-    def _close_theme_picker(self) -> None:
-        self.theme_picker_open = False
-        self.theme_picker_item_rects = []
 
     def _get_language_options(self) -> list[tuple[str, str]]:
         langs = []
@@ -9463,157 +9304,11 @@ class SettingsScreen:
             sb_rect = pygame.Rect(panel_rect.right - 22, list_rect.y, 22, list_rect.height)
             retro_style.draw_scrollbar(self.screen, sb_rect, self.language_panel_scroll, total_h, list_rect.height)
 
-    def _theme_picker_max_scroll(self, visible_h: int, item_h: int, gap: int) -> int:
-        themes = self._get_theme_options()
-        total_h = len(themes) * (item_h + gap)
-        return max(0, total_h - max(visible_h, 0))
-
-    def _theme_picker_ensure_visible(self, visible_h: int, item_h: int, gap: int) -> None:
-        y = self.theme_picker_selected * (item_h + gap)
-        if y < self.theme_picker_scroll:
-            self.theme_picker_scroll = y
-        elif y > self.theme_picker_scroll + visible_h - item_h:
-            self.theme_picker_scroll = y - (visible_h - item_h)
-        self.theme_picker_scroll = max(0, min(self.theme_picker_scroll, self._theme_picker_max_scroll(visible_h, item_h, gap)))
-
-    def _apply_theme_choice(self, theme_name: str) -> None:
-        if not theme_name:
-            return
-        if self.theme_manager:
-            self.theme_manager.set_theme(theme_name)
-        if self.settings_manager:
-            self.settings_manager.set('theme', theme_name)
-
-    def _handle_theme_picker_input(self, event):
-        themes = self._get_theme_options()
-        if not themes:
-            self._close_theme_picker()
-            return None
-
-        if event.type == pygame.KEYDOWN:
-            if event.key == pygame.K_ESCAPE:
-                self._close_theme_picker()
-                return None
-            if event.key == pygame.K_UP:
-                self.theme_picker_selected = (self.theme_picker_selected - 1) % len(themes)
-                self._theme_picker_ensure_visible(200, 44, 8)
-                return None
-            if event.key == pygame.K_DOWN:
-                self.theme_picker_selected = (self.theme_picker_selected + 1) % len(themes)
-                self._theme_picker_ensure_visible(200, 44, 8)
-                return None
-            if event.key in (pygame.K_RETURN, pygame.K_SPACE):
-                self._apply_theme_choice(themes[self.theme_picker_selected])
-                self._close_theme_picker()
-                return None
-            if is_fullscreen_toggle(event.key, getattr(event, 'mod', 0)):
-                return 'toggle_fullscreen'
-
-        elif event.type == pygame.MOUSEWHEEL:
-            self.theme_picker_scroll -= event.y * 36
-            self.theme_picker_scroll = max(0, self.theme_picker_scroll)
-            return None
-
-        elif event.type == pygame.MOUSEMOTION:
-            pos = normalize_mouse_pos(getattr(event, 'pos', None)) or event.pos
-            for rect, idx in self.theme_picker_item_rects:
-                if rect.collidepoint(pos):
-                    self.theme_picker_selected = idx
-                    break
-            return None
-
-        elif event.type == pygame.MOUSEBUTTONDOWN:
-            if event.button == 1:
-                pos = normalize_mouse_pos(getattr(event, 'pos', None)) or event.pos
-                # click on an item selects
-                for rect, idx in self.theme_picker_item_rects:
-                    if rect.collidepoint(pos):
-                        self.theme_picker_selected = idx
-                        self._apply_theme_choice(themes[self.theme_picker_selected])
-                        self._close_theme_picker()
-                        return None
-                # click outside closes
-                self._close_theme_picker()
-                return None
-
-        return None
-
-    def _draw_theme_picker(self) -> None:
-        width, height = self.screen.get_size()
-        themes = self._get_theme_options()
-        if not themes:
-            return
-
-        # Dim background
-        dim = pygame.Surface((width, height), pygame.SRCALPHA)
-        dim.fill((0, 0, 0, 140))
-        self.screen.blit(dim, (0, 0))
-
-        panel_w = min(720, width - 120)
-        panel_h = min(520, height - 160)
-        panel_x = (width - panel_w) // 2
-        panel_y = (height - panel_h) // 2
-        panel_rect = pygame.Rect(panel_x, panel_y, panel_w, panel_h)
-
-        retro_style.draw_glass_panel(self.screen, panel_rect, alpha=210, border_color=retro_style.primary, glow=True)
-
-        title_font = retro_style.get_font(28, bold=True)
-        subtitle_font = retro_style.get_font(18)
-        title = title_font.render(t('panel_theme'), True, (235, 245, 255))
-        self.screen.blit(title, (panel_rect.x + 20, panel_rect.y + 18))
-
-        current = getattr(self.theme_manager, 'theme_name', '') if self.theme_manager else ''
-        if current:
-            sub = subtitle_font.render(f'{t("active")}: {current}', True, (170, 190, 220))
-            self.screen.blit(sub, (panel_rect.x + 20, panel_rect.y + 50))
-
-        # List area
-        list_top = panel_rect.y + 86
-        list_left = panel_rect.x + 18
-        list_right = panel_rect.right - 18
-        list_bottom = panel_rect.bottom - 60
-        list_rect = pygame.Rect(list_left, list_top, list_right - list_left, list_bottom - list_top)
-
-        item_h = 44
-        gap = 8
-        self.theme_picker_item_rects = []
-
-        self.theme_picker_scroll = max(0, min(self.theme_picker_scroll, self._theme_picker_max_scroll(list_rect.height, item_h, gap)))
-
-        self.screen.set_clip(list_rect)
-        for idx, name in enumerate(themes):
-            y = list_rect.y + idx * (item_h + gap) - self.theme_picker_scroll
-            if y + item_h < list_rect.y or y > list_rect.bottom:
-                continue
-
-            r = pygame.Rect(list_rect.x, y, list_rect.width, item_h)
-            self.theme_picker_item_rects.append((r, idx))
-            selected = idx == self.theme_picker_selected
-
-            bg = (35, 55, 90, 220) if selected else (18, 24, 40, 170)
-            border = retro_style.accent if selected else (60, 70, 90)
-            pygame.draw.rect(self.screen, bg, r, border_radius=10)
-            pygame.draw.rect(self.screen, border, r, 2 if selected else 1, border_radius=10)
-
-            text_font = retro_style.get_font(22, bold=selected)
-            txt = text_font.render(str(name), True, (255, 255, 255) if selected else (205, 215, 235))
-            self.screen.blit(txt, (r.x + 14, r.y + (r.height - txt.get_height()) // 2))
-
-        self.screen.set_clip(None)
-
-        total_h = len(themes) * (item_h + gap)
-        if total_h > list_rect.height:
-            sb_rect = pygame.Rect(panel_rect.right - 22, list_rect.y, 22, list_rect.height)
-            retro_style.draw_scrollbar(self.screen, sb_rect, self.theme_picker_scroll, total_h, list_rect.height)
-
-        hint = subtitle_font.render(t('theme_picker_hint'), True, (140, 160, 190))
-        self.screen.blit(hint, (panel_rect.x + 20, panel_rect.bottom - 36))
-
     def sync_from_settings_manager(self):
-        """SettingsManager'daki güncel değerleri ekrana yansıt.
+        """SettingsManager'daki guncel degerleri ekrana yansit.
 
-        Not: Pause menüsü gibi başka yerlerden ayarlar değiştirildiğinde,
-        SettingsScreen içindeki cache'lenmiş alanların güncel kalması için.
+        Not: Pause menusu gibi baska yerlerden ayarlar degistirildiginde,
+        SettingsScreen icindeki cache'lenmis alanlarin guncel kalmasi icin.
         """
         if not self.settings_manager:
             return
@@ -9755,7 +9450,6 @@ class SettingsScreen:
             
             # Visuals & Customization
             'graphics',
-            'theme',
             'block_styles',
             'piece_workshop',
             
@@ -9787,7 +9481,6 @@ class SettingsScreen:
             'sfx_volume': 'sfx_volume',
             'tracks': 'tracks_label',
             'graphics': 'graphics',
-            'theme': 'theme',
             'block_styles': 'block_styles',
             'piece_workshop': 'piece_workshop',
             'language': 'language_setting',
@@ -9807,7 +9500,6 @@ class SettingsScreen:
             'sfx_volume': 'SFX Volume',
             'tracks': 'Tracks',
             'graphics': 'Graphics',
-            'theme': 'Theme',
             'block_styles': 'Block Styles',
             'piece_workshop': 'Piece Workshop',
             'language': 'Language',
@@ -9831,7 +9523,6 @@ class SettingsScreen:
             'sfx_volume': 'Adjust SFX volume (Left/Right)',
             'tracks': 'Manage music playlists',
             'graphics': 'Detailed graphics and window settings',
-            'theme': 'Block colors and theme palette',
             'block_styles': 'Open tetromino color/texture editor',
             'piece_workshop': 'Create custom pieces (max 7 blocks)',
             'language': 'Change game language',
@@ -9848,7 +9539,6 @@ class SettingsScreen:
         self.music_hub_selected = 0
         self.music_hub_item_rects = []
         # close other overlays
-        self.theme_picker_open = False
         self._close_language_panel()
         self.music_track_picker_open = False
         self.mode_music_overlay_open = False
@@ -10195,9 +9885,6 @@ class SettingsScreen:
     
     def handle_input(self, event):
         """Ayar girdilerini işle (klavye + mouse)"""
-        if self.theme_picker_open:
-            return self._handle_theme_picker_input(event)
-
         if self.music_hub_open:
             if self.mode_music_overlay_open:
                 action = self.mode_music_overlay.handle_input_overlay(event)
@@ -10272,9 +9959,6 @@ class SettingsScreen:
                     self.mute_all = not self.mute_all
                     self.settings_manager.set('mute_all', self.mute_all)
                     return 'toggle_mute'
-                elif key == 'theme' and event.key in (pygame.K_LEFT, pygame.K_RIGHT, pygame.K_RETURN, pygame.K_SPACE):  # Theme
-                    # Theme selection now uses a picker overlay (Mode Music style)
-                    self._open_theme_picker()
                 elif key == 'controls' and event.key in (pygame.K_RETURN, pygame.K_SPACE):  # Controls
                     return 'controls'
                 elif key == 'block_styles' and event.key in (pygame.K_RETURN, pygame.K_SPACE):  # Block Styles
@@ -10381,9 +10065,6 @@ class SettingsScreen:
                             return 'toggle_mute'
                         elif key == 'tracks':  # Tracks / Müzikler
                             return 'mode_music'
-                        elif key == 'theme':  # Theme
-                            self._open_theme_picker()
-                            return None
                         elif key == 'controls':  # Controls
                             return 'controls'
                         elif key == 'block_styles':  # Block Styles
@@ -10540,10 +10221,6 @@ class SettingsScreen:
             elif key == 'graphics':  # Graphics
                 value = ''
                 value_color = (150, 200, 255)
-            elif key == 'theme':  # Theme
-                theme_name = getattr(self.theme_manager, 'theme_name', '') if self.theme_manager else ''
-                value = f'{theme_name}'
-                value_color = (255, 200, 100)
             elif key == 'block_styles':  # Block Styles
                 value = t('settings_block_styles_hint')
                 value_color = (150, 200, 255)
@@ -10579,7 +10256,7 @@ class SettingsScreen:
                 kind = 'toggle'
             elif key in ('music_volume', 'sfx_volume'):
                 kind = 'slider'
-            elif key in ('controls', 'gameplay', 'tracks', 'graphics', 'theme', 'block_styles', 'piece_workshop'):
+            elif key in ('controls', 'gameplay', 'tracks', 'graphics', 'block_styles', 'piece_workshop'):
                 kind = 'submenu'
             elif value:
                 kind = 'selector'
@@ -10660,9 +10337,6 @@ class SettingsScreen:
             elif self.mode_music_overlay_open:
                 self.mode_music_overlay.screen = self.screen
                 self.mode_music_overlay.draw_overlay()
-
-        if self.theme_picker_open:
-            self._draw_theme_picker()
 
 
 

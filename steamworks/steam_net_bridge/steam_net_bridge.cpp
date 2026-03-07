@@ -26,6 +26,7 @@
 #include <vector>
 #include <deque>
 #include <tuple>
+#include <algorithm>
 #include <mutex>
 #include <cstring>
 
@@ -56,6 +57,7 @@ public:
         , m_currentLobby(k_steamIDNil)
         , m_lobbyReady(false)
         , m_joinRequestedTime(0)
+        , m_lobbyListRequestActive(false)
     {}
 
     ~SteamNetBridge() {
@@ -281,6 +283,8 @@ private:
     bool                        m_lobbyReady;
     // join_requested'dan itibaren geçen süreyi ölçmek için (epoch saniye)
     uint32                      m_joinRequestedTime;
+    bool                        m_lobbyListRequestActive;
+    std::vector<uint64_t>       m_pendingLobbyDataRequests;
 
     // Event kuyruğu
     std::mutex                  m_eventMutex;
@@ -306,6 +310,71 @@ private:
     void push_event(const std::string& type, uint64_t steam_id, const std::string& data) {
         std::lock_guard<std::mutex> lock(m_eventMutex);
         m_events.push_back({type, steam_id, data});
+    }
+
+    static std::string json_escape(const std::string& value) {
+        std::string escaped;
+        escaped.reserve(value.size());
+        for (char ch : value) {
+            switch (ch) {
+                case '\\': escaped += "\\\\"; break;
+                case '"': escaped += "\\\""; break;
+                case '\n': escaped += "\\n"; break;
+                case '\r': escaped += "\\r"; break;
+                case '\t': escaped += "\\t"; break;
+                default: escaped += ch; break;
+            }
+        }
+        return escaped;
+    }
+
+    std::string build_lobby_found_payload(CSteamID lobbyId) {
+        const char* hostNameRaw = m_matchmaking->GetLobbyData(lobbyId, "host_name");
+        const char* lobbyCodeRaw = m_matchmaking->GetLobbyData(lobbyId, "lobby_code");
+        const char* visibilityRaw = m_matchmaking->GetLobbyData(lobbyId, "visibility");
+        const char* requiresCodeRaw = m_matchmaking->GetLobbyData(lobbyId, "requires_code");
+
+        std::string hostName = hostNameRaw ? hostNameRaw : "";
+        std::string lobbyCode = lobbyCodeRaw ? lobbyCodeRaw : "";
+        std::string visibility = visibilityRaw ? visibilityRaw : "";
+        std::string requiresCode = requiresCodeRaw ? requiresCodeRaw : "0";
+        bool requiresCodeBool = requiresCode == "1";
+
+        if (visibility.empty()) {
+            visibility = (requiresCodeBool || !lobbyCode.empty()) ? "private" : "public";
+        }
+        if (visibility == "private") {
+            requiresCodeBool = true;
+        }
+
+        return std::string("{") +
+               "\"members\":" + std::to_string(m_matchmaking->GetNumLobbyMembers(lobbyId)) +
+               ",\"max_members\":" + std::to_string(m_matchmaking->GetLobbyMemberLimit(lobbyId)) +
+               ",\"host_name\":\"" + json_escape(hostName) + "\"" +
+               ",\"lobby_code\":\"" + json_escape(lobbyCode) + "\"" +
+               ",\"visibility\":\"" + json_escape(visibility) + "\"" +
+               ",\"requires_code\":" + std::string(requiresCodeBool ? "true" : "false") +
+               "}";
+    }
+
+    void emit_lobby_found(CSteamID lobbyId) {
+        push_event("lobby_found", lobbyId.ConvertToUint64(), build_lobby_found_payload(lobbyId));
+    }
+
+    bool consume_pending_lobby_data_request(uint64_t lobbyId) {
+        auto it = std::find(m_pendingLobbyDataRequests.begin(), m_pendingLobbyDataRequests.end(), lobbyId);
+        if (it == m_pendingLobbyDataRequests.end()) {
+            return false;
+        }
+        m_pendingLobbyDataRequests.erase(it);
+        return true;
+    }
+
+    void complete_lobby_list_if_ready() {
+        if (m_lobbyListRequestActive && m_pendingLobbyDataRequests.empty()) {
+            m_lobbyListRequestActive = false;
+            push_event("lobby_list_complete", 0, "");
+        }
     }
 
     void _poll_incoming_messages(int channel = 0) {
@@ -359,17 +428,24 @@ private:
 
     void OnLobbyListReceived(LobbyMatchList_t* pResult, bool bIOFailure) {
         if (bIOFailure) {
+            m_lobbyListRequestActive = false;
+            m_pendingLobbyDataRequests.clear();
             push_event("lobby_list_failed", 0, "IO hatasi");
             return;
         }
-        // Her lobi için bir event oluştur
+        m_lobbyListRequestActive = true;
+        m_pendingLobbyDataRequests.clear();
+
+        // Her lobi için metadata iste; veri hazır olunca lobby_found yayınla
         for (uint32 i = 0; i < pResult->m_nLobbiesMatching; i++) {
             CSteamID lobbyId = m_matchmaking->GetLobbyByIndex(i);
-            int memberCount = m_matchmaking->GetNumLobbyMembers(lobbyId);
-            push_event("lobby_found", lobbyId.ConvertToUint64(),
-                        std::to_string(memberCount));
+            if (m_matchmaking->RequestLobbyData(lobbyId)) {
+                m_pendingLobbyDataRequests.push_back(lobbyId.ConvertToUint64());
+            } else {
+                emit_lobby_found(lobbyId);
+            }
         }
-        push_event("lobby_list_complete", pResult->m_nLobbiesMatching, "");
+        complete_lobby_list_if_ready();
     }
 };
 
@@ -394,6 +470,10 @@ void SteamNetBridge::OnLobbyChatUpdate(LobbyChatUpdate_t* pParam) {
 }
 
 void SteamNetBridge::OnLobbyDataUpdate(LobbyDataUpdate_t* pParam) {
+    if (consume_pending_lobby_data_request(pParam->m_ulSteamIDLobby)) {
+        emit_lobby_found(CSteamID(pParam->m_ulSteamIDLobby));
+        complete_lobby_list_if_ready();
+    }
     push_event("lobby_data_updated",
                pParam->m_ulSteamIDLobby,
                std::to_string(pParam->m_ulSteamIDMember));

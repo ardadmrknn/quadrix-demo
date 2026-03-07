@@ -8844,15 +8844,6 @@ class MysteryMode(Game):
             fragments = int((self.board.score / 100) + (self.board.level * 20) + (self.board.lines_cleared * 5))
             self.user_manager.add_fragments(fragments)
 
-    def draw_textured_block(self, x, y, size, color, texture_surface=None, texture_slice: TextureSlice | None = None):
-        """Draw the block and, if Cyberpunk theme is active, add neon glow."""
-        super().draw_textured_block(x, y, size, color, texture_surface, texture_slice)
-        if self.theme_manager and getattr(self.theme_manager, 'theme_name', '').lower() == 'cyberpunk':
-            glow = pygame.Surface((size + 8, size + 8), pygame.SRCALPHA)
-            glow_color = tuple(min(255, int(c * 1.4)) for c in color[:3])
-            pygame.draw.rect(glow, (*glow_color, 35), (0, 0, size + 8, size + 8), border_radius=8)
-            self.screen.blit(glow, (x - 4, y - 4), special_flags=pygame.BLEND_ADD)
-
     # === BLOK ATÖLYESİ KARTI METODLARI ===
 
     def _open_card_workshop_popup(self) -> None:
