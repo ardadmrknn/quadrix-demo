@@ -16,7 +16,6 @@ from pieces import Piece, SHAPE_NAMES, create_piece_by_index, create_piece_by_na
 from constants import *
 from sound import SoundManager
 from score_manager import ScoreManager
-from themes import CUSTOM_THEME_NAME
 from user_manager import DAILY_MAX_FAILURES
 from background import BackgroundManager
 from mode_skins import apply_board_tint, apply_outer_tint, draw_board_overlay, get_mode_skin, get_localized_skin_title, get_localized_skin_subtitle
@@ -648,14 +647,9 @@ class Game:
                     piece.texture_surface_original = surface
                     piece.texture_surface = surface
             else:
-                allow_color_override = bool(
-                    self.theme_manager
-                    and getattr(self.theme_manager, 'theme_name', None) == CUSTOM_THEME_NAME
-                )
                 self.block_style_manager.apply_to_piece(
                     piece,
                     base_color,
-                    allow_color_override=allow_color_override,
                 )
         else:
             piece.color = base_color
