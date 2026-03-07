@@ -10,30 +10,16 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(SPECPATH).resolve()))
 from tools.embed_menu_layout import write_embedded_layout_module
+from tools.versioning import bump_platform_version
 
 # Proje kök dizini
 REPO_ROOT = Path(SPECPATH).resolve()
 SRC_DIR = REPO_ROOT / 'src'
 write_embedded_layout_module(REPO_ROOT)
 
-# ── Otomatik sürüm artırma ──────────────────────────────────────────────────
-# Her derlemede src/version.py'deki PATCH sürümü 1 artar: 1.0.0 → 1.0.1 → ...
-import re as _re
-_ver_file = SRC_DIR / 'version.py'
-_ver_text = _ver_file.read_text(encoding='utf-8')
-_ver_match = _re.search(r'VERSION\s*=\s*"(\d+)\.(\d+)\.(\d+)"', _ver_text)
-_build_match = _re.search(r'BUILD_NUMBER\s*=\s*(\d+)', _ver_text)
-if _ver_match:
-    _major, _minor, _patch = int(_ver_match.group(1)), int(_ver_match.group(2)), int(_ver_match.group(3))
-    _patch += 1
-    _build = int(_build_match.group(1)) + 1 if _build_match else _patch
-    _new_version = f'{_major}.{_minor}.{_patch}'
-    _ver_text = _re.sub(r'VERSION\s*=\s*"[^"]+"', f'VERSION = "{_new_version}"', _ver_text)
-    _ver_text = _re.sub(r'BUILD_NUMBER\s*=\s*\d+', f'BUILD_NUMBER = {_build}', _ver_text)
-    _ver_file.write_text(_ver_text, encoding='utf-8')
-    print(f'[spec] Sürüm güncellendi: {_new_version} (build {_build})')
-else:
-    _new_version = '1.0.0'
+# ── Otomatik surum artirma (Windows lokal override) ─────────────────────────
+_new_version, _build, _version_file = bump_platform_version(REPO_ROOT, 'windows')
+print(f'[spec] Windows surumu guncellendi: {_new_version} (build {_build}) -> {_version_file.name}')
 # ────────────────────────────────────────────────────────────────────────────
 
 block_cipher = None
@@ -127,6 +113,8 @@ hiddenimports = [
     'steam_integration',  # Steam SDK ctypes wrapper
     'steam_net_bridge',    # Steam Networking bridge (Pybind11, Online PvP)
     'version',            # Sürüm bilgisi modülü
+    'version_base',
+    'version_local_windows',
 ]
 
 # src klasöründeki tüm Python modüllerini ekle

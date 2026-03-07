@@ -1727,7 +1727,7 @@ class Game:
                 self.pause_menu_selected = (self.pause_menu_selected + 1) % len(self.pause_menu_options)
                 self.sound.play('move')
                 return None
-            if event.key in (pygame.K_RETURN, pygame.K_SPACE):
+            if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE):
                 option = self.pause_menu_options[self.pause_menu_selected]
                 return apply_option(option)
             if event.key in left_keys or event.key in right_keys:
@@ -1735,7 +1735,9 @@ class Game:
                 delta = 0.1 if event.key in right_keys else -0.1
                 adjust_volume(option, delta=delta)
                 return None
-            if event.key == pygame.K_ESCAPE:
+            if event.key == pygame.K_BACKSPACE:
+                return 'main_menu'
+            if event.key in (pygame.K_ESCAPE, self.control_bindings.get('pause', pygame.K_p)):
                 return 'resume'
             return None
 
@@ -1846,10 +1848,10 @@ class Game:
 
             if option == 'Devam Et':
                 color_code = retro_style.success
-                sub_text = 'ENTER / P'
+                sub_text = 'ESC / P'
             elif option == 'Ana Menü':
                 color_code = retro_style.secondary
-                sub_text = 'ESC'
+                sub_text = 'BACKSPACE'
             elif option == 'Müzik':
                 color_code = retro_style.primary
                 sub_text = t('on') if self.sound.music_enabled else t('off')

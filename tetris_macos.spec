@@ -10,11 +10,15 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(SPECPATH).resolve()))
 from tools.embed_menu_layout import write_embedded_layout_module
+from tools.versioning import bump_platform_version
 
 # Proje kök dizini
 REPO_ROOT = Path(SPECPATH).resolve()
 SRC_DIR = REPO_ROOT / 'src'
 write_embedded_layout_module(REPO_ROOT)
+
+_new_version, _build, _version_file = bump_platform_version(REPO_ROOT, 'macos')
+print(f'[spec] macOS surumu guncellendi: {_new_version} (build {_build}) -> {_version_file.name}')
 
 block_cipher = None
 
@@ -102,6 +106,9 @@ hiddenimports = [
     'subprocess',
     'steam_integration',  # Steam SDK ctypes wrapper (macOS: libsteam_api.dylib)
     'steam_net_bridge',    # Steam Networking bridge (Pybind11, Online PvP)
+    'version',
+    'version_base',
+    'version_local_macos',
 ]
 
 # src klasöründeki tüm Python modüllerini ekle
@@ -222,14 +229,14 @@ app = BUNDLE(
     name='Quadrix.app',
     icon=str(REPO_ROOT / 'assets' / 'Tetris.icns'),
     bundle_identifier='com.burakyasayan.quadrix',
-    version='1.0.0',
+    version=_new_version,
     info_plist={
         'CFBundleName': 'Quadrix',
         'CFBundleDisplayName': 'Quadrix',
         'CFBundleGetInfoString': 'Quadrix Full Edition',
         'CFBundleIdentifier': 'com.burakyasayan.tetris',
-        'CFBundleVersion': '1.0.0',
-        'CFBundleShortVersionString': '1.0.0',
+        'CFBundleVersion': _new_version,
+        'CFBundleShortVersionString': _new_version,
         'CFBundleExecutable': 'Quadrix',
         'CFBundlePackageType': 'APPL',
         'CFBundleSignature': 'TTRS',

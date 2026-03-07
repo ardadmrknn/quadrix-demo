@@ -30,6 +30,9 @@ steam_net_bridge*.pyd
 steam_net_bridge*.so
 steam_net_bridge.cpython-*.so
 
+# Local platform version overrides
+src/version_local_windows.py
+
 # Root-level DLLs (copies/extracts, originals live in dll/)
 steam_api64.dll
 

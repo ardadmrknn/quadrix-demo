@@ -10,11 +10,15 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(SPECPATH).resolve()))
 from tools.embed_menu_layout import write_embedded_layout_module
+from tools.versioning import bump_platform_version
 
 # Proje kök dizini
 REPO_ROOT = Path(SPECPATH).resolve()
 SRC_DIR = REPO_ROOT / 'src'
 write_embedded_layout_module(REPO_ROOT)
+
+_new_version, _build, _version_file = bump_platform_version(REPO_ROOT, 'windows')
+print(f'[spec] Windows surumu guncellendi: {_new_version} (build {_build}) -> {_version_file.name}')
 
 block_cipher = None
 
@@ -94,6 +98,9 @@ hiddenimports = [
     'os',
     'sys',
     'typing',
+    'version',
+    'version_base',
+    'version_local_windows',
 ]
 
 # src klasöründeki tüm Python modüllerini ekle

@@ -187,6 +187,10 @@ LOGO_PATH_CANDIDATES = [
     ROOT_DIR / 'assets' / 'logo.png',
 ]
 
+MAIN_MENU_TITLE_LOGO_PATH_CANDIDATES = [
+    ROOT_DIR / 'assets' / 'main_theme' / 'main_menu_logo.png',
+]
+
 AVATAR_IMAGE_EXTENSIONS = ('.png', '.jpg', '.jpeg', '.bmp', '.webp')
 
 
@@ -371,6 +375,10 @@ class Menu:
         self._logo_size = 0
         self._logo_image_original = None
         self._logo_image_failed = False
+        self._main_menu_title_logo_surface = None
+        self._main_menu_title_logo_signature = None
+        self._main_menu_title_logo_image_original = None
+        self._main_menu_title_logo_image_failed = False
         self.show_exit_prompt = False
         self.exit_yes_rect = None
         self.exit_no_rect = None
@@ -2116,37 +2124,46 @@ class Menu:
             self.screen.blit(shadow, shadow.get_rect(center=(name_rect.centerx + 1, name_rect.centery + 1)))
             self.screen.blit(name_surf, name_surf.get_rect(center=name_rect.center))
 
-        # Başlık: ana UI temasıyla uyumlu neon cyan + kontrollü glow
-        title_text = 'QUADRIX'
         start_x = icon_rect.right + int(36 * scale)
         text_right = hero_rect.right - int(16 * scale)
         text_width = max(80, text_right - start_x)
-        center_y = hero_rect.centery - int(10 * scale)
-
-        title_size = 96
-        min_title_size = 64
-        title_font = retro_style.get_font(title_size, bold=True)
-        title_surf = render_text(title_font, title_text, True, UIColors.NEON_CYAN)
-        while title_surf.get_width() > text_width and title_size > min_title_size:
-            title_size -= 2
+        title_top = hero_rect.y + int(12 * scale)
+        title_bottom = hero_rect.bottom - int(34 * scale)
+        title_height = max(28, title_bottom - title_top)
+        title_center = (start_x + text_width // 2, title_top + title_height // 2)
+        title_surf = self._get_main_menu_title_logo_surface(text_width, title_height)
+        title_rect = None
+        if title_surf is not None:
+            title_rect = title_surf.get_rect(center=title_center)
+            self.screen.blit(title_surf, title_rect)
+        else:
+            title_text = 'QUADRIX'
+            center_y = hero_rect.centery - int(10 * scale)
+            title_size = 96
+            min_title_size = 64
             title_font = retro_style.get_font(title_size, bold=True)
             title_surf = render_text(title_font, title_text, True, UIColors.NEON_CYAN)
+            while title_surf.get_width() > text_width and title_size > min_title_size:
+                title_size -= 2
+                title_font = retro_style.get_font(title_size, bold=True)
+                title_surf = render_text(title_font, title_text, True, UIColors.NEON_CYAN)
 
-        glow = render_text(title_font, title_text, True, UIColors.NEON_CYAN)
-        glow.set_alpha(40)
-        shadow = render_text(title_font, title_text, True, (0, 0, 0))
-        shadow.set_alpha(170)
-        outline = render_text(title_font, title_text, True, UIColors.NEON_CYAN)
-        outline.set_alpha(160)
+            glow = render_text(title_font, title_text, True, UIColors.NEON_CYAN)
+            glow.set_alpha(40)
+            shadow = render_text(title_font, title_text, True, (0, 0, 0))
+            shadow.set_alpha(170)
+            outline = render_text(title_font, title_text, True, UIColors.NEON_CYAN)
+            outline.set_alpha(160)
 
-        title_x = start_x + (text_width - title_surf.get_width()) // 2
-        title_pos = (title_x, center_y - title_surf.get_height() // 2)
-        self.screen.blit(shadow, (title_pos[0] + 4, title_pos[1] + 4))
-        for dx, dy in ((-2, 0), (2, 0), (0, -2), (0, 2)):
-            self.screen.blit(glow, (title_pos[0] + dx, title_pos[1] + dy))
-        for dx, dy in ((-1, 0), (1, 0), (0, -1), (0, 1)):
-            self.screen.blit(outline, (title_pos[0] + dx, title_pos[1] + dy))
-        self.screen.blit(title_surf, title_pos)
+            title_x = start_x + (text_width - title_surf.get_width()) // 2
+            title_pos = (title_x, center_y - title_surf.get_height() // 2)
+            self.screen.blit(shadow, (title_pos[0] + 4, title_pos[1] + 4))
+            for dx, dy in ((-2, 0), (2, 0), (0, -2), (0, 2)):
+                self.screen.blit(glow, (title_pos[0] + dx, title_pos[1] + dy))
+            for dx, dy in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+                self.screen.blit(outline, (title_pos[0] + dx, title_pos[1] + dy))
+            self.screen.blit(title_surf, title_pos)
+            title_rect = title_surf.get_rect(topleft=title_pos)
 
         # Başlık altı bilgilendirme metni
         subtitle_text = t('menu_header_subtitle')
@@ -2159,7 +2176,8 @@ class Menu:
             bold=False,
         )
         subtitle_rect = subtitle_surf.get_rect()
-        subtitle_rect.midtop = (start_x + text_width // 2, title_pos[1] + title_surf.get_height() - 6)
+        subtitle_anchor_y = title_rect.bottom - 6 if title_rect else hero_rect.centery
+        subtitle_rect.midtop = (start_x + text_width // 2, subtitle_anchor_y)
         # Panel dışına taşmasın
         if subtitle_rect.right > hero_rect.right - 16:
             subtitle_rect.right = hero_rect.right - 16
@@ -3271,6 +3289,50 @@ class Menu:
         if image is not None:
             return self._compose_logo_surface(image, size)
         return self._build_vector_logo_surface(size)
+
+    def _get_main_menu_title_logo_surface(self, max_width, max_height):
+        max_width = max(64, int(max_width))
+        max_height = max(24, int(max_height))
+        signature = (max_width, max_height)
+        if self._main_menu_title_logo_surface is None or self._main_menu_title_logo_signature != signature:
+            image = self._load_main_menu_title_logo_image()
+            if image is not None:
+                self._main_menu_title_logo_surface = self._compose_main_menu_title_logo_surface(image, max_width, max_height)
+            else:
+                self._main_menu_title_logo_surface = None
+            self._main_menu_title_logo_signature = signature
+        return self._main_menu_title_logo_surface
+
+    def _load_main_menu_title_logo_image(self):
+        if self._main_menu_title_logo_image_original is not None or self._main_menu_title_logo_image_failed:
+            return self._main_menu_title_logo_image_original
+        for candidate in MAIN_MENU_TITLE_LOGO_PATH_CANDIDATES:
+            if candidate.exists():
+                try:
+                    loaded = load_image(str(candidate), convert_alpha=True)
+                    bounds = loaded.get_bounding_rect(min_alpha=1)
+                    if bounds.width > 0 and bounds.height > 0:
+                        loaded = loaded.subsurface(bounds).copy()
+                    self._main_menu_title_logo_image_original = loaded
+                    print(f"[LOGO] Ana menü başlık logosu yüklendi: {candidate}")
+                    return self._main_menu_title_logo_image_original
+                except Exception as exc:  # pragma: no cover - diagnostics only
+                    print(f"[LOGO] Ana menü başlık logosu yüklenemedi ({candidate}): {exc}")
+        self._main_menu_title_logo_image_failed = True
+        return None
+
+    def _compose_main_menu_title_logo_surface(self, image, max_width, max_height):
+        width, height = image.get_size()
+        if width <= 0 or height <= 0:
+            return None
+        scale_ratio = min(max_width / width, max_height / height)
+        if scale_ratio <= 0:
+            return None
+        target_size = (
+            max(1, int(width * scale_ratio)),
+            max(1, int(height * scale_ratio)),
+        )
+        return pygame.transform.smoothscale(image, target_size)
 
     def _load_logo_image(self):
         if self._logo_image_original is not None or self._logo_image_failed:
