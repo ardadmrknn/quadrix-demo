@@ -140,7 +140,7 @@ try:
     from .steam_leaderboards import SteamLeaderboardService  # type: ignore
     from .user_screens import UserSelectionScreen, UserManagementScreen  # type: ignore
     from .localization import set_language, t  # type: ignore
-    from .platform_utils import request_window_focus, init_platform_display, get_display_flags, create_display, get_native_resolution, normalize_mouse_pos, get_mouse_pos, set_app_icon  # type: ignore
+    from .platform_utils import request_window_focus, init_platform_display, get_display_flags, create_display, get_native_resolution, normalize_mouse_pos, get_mouse_pos, set_app_icon, resolve_frame_rate_cap  # type: ignore
     from .retro_style import retro_style  # type: ignore
     from .background_effects import (  # type: ignore
         start_screen_transition, update_screen_transition,
@@ -174,7 +174,7 @@ except Exception:
     from steam_leaderboards import SteamLeaderboardService
     from user_screens import UserSelectionScreen, UserManagementScreen
     from localization import set_language, t
-    from platform_utils import request_window_focus, init_platform_display, get_display_flags, create_display, get_native_resolution, normalize_mouse_pos, get_mouse_pos, set_app_icon
+    from platform_utils import request_window_focus, init_platform_display, get_display_flags, create_display, get_native_resolution, normalize_mouse_pos, get_mouse_pos, set_app_icon, resolve_frame_rate_cap
     from retro_style import retro_style
     from background_effects import (
         start_screen_transition, update_screen_transition,
@@ -2985,12 +2985,11 @@ def main():
     gamepad_mgr = get_gamepad_manager()
 
     while running:
-        # FPS limiti: 0 = MAX (sınırsız). VSync açıksa pratikte monitör Hz ile sınırlanır.
         try:
             fps_limit = int(settings_manager.get('fps_limit', 0) or 0)
         except Exception:
             fps_limit = 0
-        delta_ms = clock.tick(fps_limit if fps_limit > 0 else 0)
+        delta_ms = clock.tick(resolve_frame_rate_cap(fps_limit))
 
         # ── Gamepad Bağlam Güncelleme ──────────────────────────────────
         # Oyun/PvP sırasında gamepad bağlamını 'game' olarak ayarla.

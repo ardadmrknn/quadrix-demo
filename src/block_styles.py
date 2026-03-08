@@ -26,6 +26,98 @@ class TextureSlice:
     rotation: int = 0  # clockwise rotation steps (0-3)
 
 
+class TextureRenderCache:
+    """Caches rotated texture variants and per-cell scaled slices."""
+
+    def __init__(self, max_scaled_variants_per_surface: int = 512) -> None:
+        self.max_scaled_variants_per_surface = max(32, int(max_scaled_variants_per_surface))
+        self._rotation_cache: Dict[int, Dict[str, object]] = {}
+        self._scaled_slice_cache: Dict[int, Dict[str, object]] = {}
+
+    def clear(self) -> None:
+        self._rotation_cache.clear()
+        self._scaled_slice_cache.clear()
+
+    def get_rotated_surface(self, surface: pygame.Surface | None, rotation: int | None) -> Optional[pygame.Surface]:
+        rotation = (rotation or 0) % 4
+        if surface is None or rotation == 0:
+            return surface
+
+        surf_id = id(surface)
+        cache_entry = self._rotation_cache.get(surf_id)
+        if not cache_entry or cache_entry.get('surface') is not surface:
+            cache_entry = {'surface': surface, 'variants': {}}
+            self._rotation_cache[surf_id] = cache_entry
+
+        variants = cache_entry['variants']
+        if rotation not in variants:
+            variants[rotation] = pygame.transform.rotate(surface, -90 * rotation)
+        return variants[rotation]
+
+    def render_slice(
+        self,
+        surface: pygame.Surface | None,
+        slice_info: TextureSlice,
+        size: int,
+        bounds: Optional[Dict[str, float]] = None,
+    ) -> Optional[pygame.Surface]:
+        rotated = self.get_rotated_surface(surface, getattr(slice_info, 'rotation', 0))
+        if rotated is None:
+            return None
+
+        size = max(1, int(size))
+        slice_width = max(1, int(slice_info.width))
+        slice_height = max(1, int(slice_info.height))
+        bounds = bounds or {'x': 0.0, 'y': 0.0, 'w': 1.0, 'h': 1.0}
+        bounds_key = (
+            round(float(bounds.get('x', 0.0)), 6),
+            round(float(bounds.get('y', 0.0)), 6),
+            round(float(bounds.get('w', 1.0)), 6),
+            round(float(bounds.get('h', 1.0)), 6),
+        )
+
+        surf_id = id(surface)
+        cache_entry = self._scaled_slice_cache.get(surf_id)
+        if not cache_entry or cache_entry.get('surface') is not surface:
+            cache_entry = {'surface': surface, 'variants': {}}
+            self._scaled_slice_cache[surf_id] = cache_entry
+
+        variant_key = (
+            size,
+            getattr(slice_info, 'rotation', 0) % 4,
+            slice_info.piece_name,
+            int(slice_info.rel_x),
+            int(slice_info.rel_y),
+            slice_width,
+            slice_height,
+            bounds_key,
+        )
+        variants = cache_entry['variants']
+        cached = variants.get(variant_key)
+        if cached is not None:
+            return cached
+
+        tex_w, tex_h = rotated.get_size()
+        u0 = bounds_key[0] + (slice_info.rel_x / slice_width) * bounds_key[2]
+        u1 = bounds_key[0] + ((slice_info.rel_x + 1) / slice_width) * bounds_key[2]
+        v0 = bounds_key[1] + (slice_info.rel_y / slice_height) * bounds_key[3]
+        v1 = bounds_key[1] + ((slice_info.rel_y + 1) / slice_height) * bounds_key[3]
+        rect = pygame.Rect(
+            int(u0 * tex_w),
+            int(v0 * tex_h),
+            max(1, int((u1 - u0) * tex_w)),
+            max(1, int((v1 - v0) * tex_h)),
+        )
+        rect.clamp_ip(rotated.get_rect())
+        cell_surface = rotated.subsurface(rect)
+        scaled = pygame.transform.smoothscale(cell_surface, (size, size))
+
+        if len(variants) >= self.max_scaled_variants_per_surface:
+            variants.clear()
+        variants[variant_key] = scaled
+        return scaled
+
+
 class BlockStyleManager:
     """Loads/saves custom block colors and textures."""
 

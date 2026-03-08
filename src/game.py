@@ -10,7 +10,7 @@ from typing import Dict, List
 import pygame
 from dataclasses import replace
 
-from block_styles import BlockStyleManager, TextureSlice
+from block_styles import BlockStyleManager, TextureSlice, TextureRenderCache
 from board import Board
 from pieces import Piece, SHAPE_NAMES, create_piece_by_index, create_piece_by_name
 from constants import *
@@ -28,6 +28,7 @@ from platform_utils import get_display_flags, create_display, set_app_icon, norm
 from ui_theme import UIFonts, UIColors
 from asset_manager import load_image
 from gamepad_manager import get_gamepad_manager, is_gamepad_connected
+from effect_surface_cache import EffectSurfaceCache
 
 def resource_path(relative_path):
     """PyInstaller ile derlenen exe için doğru path'i al"""
@@ -179,6 +180,12 @@ class Game:
             return bool(sm.get('particle_effects', False))
         except Exception:
             return False
+
+    def _get_ambient_sprite(self, radius: int, alpha: int, glow: bool) -> pygame.Surface:
+        radius = max(1, int(radius))
+        alpha = max(0, min(255, int(alpha)))
+        draw_radius = radius * (2 if glow else 1)
+        return self._effect_surface_cache.get_circle_surface(draw_radius, (200, 200, 255, alpha))
     
     def __init__(self, difficulty='Normal', sound_enabled=True, effects_enabled=True, achievement_manager=None, theme_manager=None, screen=None, fullscreen=True, settings_manager=None, user_manager=None, game_mode='classic', sound_manager=None, block_style_manager: BlockStyleManager | None = None, score_manager: ScoreManager | None = None, piece_rng_seed: int | None = None):
         """Oyunu başlat"""
@@ -249,7 +256,8 @@ class Game:
             self.block_style_manager = BlockStyleManager(self.settings_manager)
         else:
             self.block_style_manager = None
-        self._texture_rotation_cache: dict[int, dict] = {}
+        self._texture_render_cache = TextureRenderCache()
+        self._effect_surface_cache = EffectSurfaceCache()
         
         # Ses yöneticisi (menü ile paylaşılabilir)
         self.sound = sound_manager or SoundManager()
@@ -961,27 +969,10 @@ class Game:
         return
     
     def _render_texture_slice(self, surface, slice_info: TextureSlice, size: int) -> pygame.Surface | None:
-        rotation = getattr(slice_info, 'rotation', 0)
-        rotated = self._get_rotated_surface(surface, rotation)
-        if rotated is None:
-            return None
-        tex_w, tex_h = rotated.get_size()
         bounds = {'x': 0.0, 'y': 0.0, 'w': 1.0, 'h': 1.0}
         if self.block_style_manager:
             bounds = self.block_style_manager.get_slice_bounds(slice_info.piece_name)
-        u0 = bounds['x'] + (slice_info.rel_x / slice_info.width) * bounds['w']
-        u1 = bounds['x'] + ((slice_info.rel_x + 1) / slice_info.width) * bounds['w']
-        v0 = bounds['y'] + (slice_info.rel_y / slice_info.height) * bounds['h']
-        v1 = bounds['y'] + ((slice_info.rel_y + 1) / slice_info.height) * bounds['h']
-        rect = pygame.Rect(
-            int(u0 * tex_w),
-            int(v0 * tex_h),
-            max(1, int((u1 - u0) * tex_w)),
-            max(1, int((v1 - v0) * tex_h)),
-        )
-        rect.clamp_ip(rotated.get_rect())
-        cell_surface = rotated.subsurface(rect)
-        return pygame.transform.smoothscale(cell_surface, (size, size))
+        return self._texture_render_cache.render_slice(surface, slice_info, size, bounds)
 
     def _draw_texture_cell(self, x, y, size, color, surface, slice_info: TextureSlice) -> None:
         scaled = self._render_texture_slice(surface, slice_info, size)
@@ -1000,19 +991,7 @@ class Game:
         pygame.draw.rect(self.screen, inner, (x + 2, y + 2, size - 4, size - 4), 1, border_radius=3)
 
     def _get_rotated_surface(self, surface, rotation):
-        rotation = rotation % 4 if rotation is not None else 0
-        if not surface or rotation == 0:
-            return surface
-        surf_id = id(surface)
-        cache_entry = self._texture_rotation_cache.get(surf_id)
-        if not cache_entry or cache_entry['surface'] is not surface:
-            cache_entry = {'surface': surface, 'variants': {}}
-            self._texture_rotation_cache[surf_id] = cache_entry
-        variants = cache_entry['variants']
-        if rotation not in variants:
-            angle = -90 * rotation
-            variants[rotation] = pygame.transform.rotate(surface, angle)
-        return variants[rotation]
+        return self._texture_render_cache.get_rotated_surface(surface, rotation)
     
     def draw_board_background(self, offset_x, offset_y, board_width, board_height):
         """Board arka planını çiz - override edilebilir"""
@@ -2455,13 +2434,11 @@ class Game:
             
             # Glow efekti
             if size > 1:
-                glow_surface = pygame.Surface((size * 4, size * 4), pygame.SRCALPHA)
-                pygame.draw.circle(glow_surface, (*color, pulse_alpha // 3), (size * 2, size * 2), size * 2)
+                glow_surface = self._get_ambient_sprite(size, pulse_alpha // 3, glow=True)
                 self.screen.blit(glow_surface, (pos[0] - size * 2, pos[1] - size * 2))
             
             # Ana nokta
-            particle_surface = pygame.Surface((size * 2, size * 2), pygame.SRCALPHA)
-            pygame.draw.circle(particle_surface, (*color, pulse_alpha), (size, size), size)
+            particle_surface = self._get_ambient_sprite(size, pulse_alpha, glow=False)
             self.screen.blit(particle_surface, (pos[0] - size, pos[1] - size))
     
     def draw_particles(self):
@@ -2509,19 +2486,17 @@ class Game:
                 except Exception:
                     halo_color = (150, 150, 150)
                     
-                halo_surface = pygame.Surface((halo_size * 2, halo_size * 2), pygame.SRCALPHA)
-                pygame.draw.circle(halo_surface, (*halo_color, int(alpha * 0.3)), (halo_size, halo_size), halo_size)
+                halo_surface = self._effect_surface_cache.get_circle_surface(halo_size, (*halo_color, int(alpha * 0.3)))
                 self.screen.blit(halo_surface, (pos[0] - halo_size, pos[1] - halo_size))
                 
                 # Orta halo
                 mid_size = size + 2
                 try:
-                     mid_color = tuple(min(255, int(c * 0.8)) for c in color[:3])
+                    mid_color = tuple(min(255, int(c * 0.8)) for c in color[:3])
                 except Exception:
-                     mid_color = (200, 200, 200)
+                    mid_color = (200, 200, 200)
 
-                mid_surface = pygame.Surface((mid_size * 2, mid_size * 2), pygame.SRCALPHA)
-                pygame.draw.circle(mid_surface, (*mid_color, int(alpha * 0.5)), (mid_size, mid_size), mid_size)
+                mid_surface = self._effect_surface_cache.get_circle_surface(mid_size, (*mid_color, int(alpha * 0.5)))
                 self.screen.blit(mid_surface, (pos[0] - mid_size, pos[1] - mid_size))
             
             # Ana parçacık
@@ -3330,9 +3305,8 @@ class Game:
                     if progress > 0:
                         lit_width = min(int(progress * board_width), int(board_width))
                         if lit_width > 0:
-                            lit_surface = pygame.Surface((lit_width, cell_size), pygame.SRCALPHA)
                             fade_alpha = int(180 * (1.0 - progress * 0.8))
-                            lit_surface.fill((255, 255, 255, fade_alpha))
+                            lit_surface = self._effect_surface_cache.get_filled_surface((lit_width, cell_size), (255, 255, 255, fade_alpha))
                             self.screen.blit(lit_surface, (offset_x, row_y))
         
         # Dalga efektleri çiz
@@ -3340,9 +3314,8 @@ class Game:
             for wave in self.line_clear_wave_effects:
                 if wave['alpha'] > 0:
                     # Yatay dalga çizgisi
-                    wave_surface = pygame.Surface((int(wave['radius'] * 2), 6), pygame.SRCALPHA)
                     wave_color = (*wave['color'], wave['alpha'])
-                    pygame.draw.ellipse(wave_surface, wave_color, wave_surface.get_rect())
+                    wave_surface = self._effect_surface_cache.get_ellipse_surface((int(wave['radius'] * 2), 6), wave_color)
                     wave_x = wave['x'] - wave['radius']
                     wave_y = wave['y'] - 3
                     self.screen.blit(wave_surface, (int(wave_x), int(wave_y)))

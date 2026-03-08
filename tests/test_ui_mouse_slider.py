@@ -147,3 +147,15 @@ def test_set_slider_from_x_step_zero_uses_raw_percent(monkeypatch):
     assert result == "change_bg_transparency"
     assert captured[-1] == ("bg_transparency", 0.33)
     assert screen.bg_transparency == 0.33
+
+
+def test_get_display_value_shows_automatic_for_zero_fps_limit(monkeypatch):
+    mod = _import_module(monkeypatch)
+    screen, _ = _make_screen(mod)
+    screen.fps_limit = 0
+    screen._get_value = lambda key: getattr(screen, key)
+
+    text, color = screen._get_display_value({"type": "selector", "key": "fps_limit"})
+
+    assert text == "automatic"
+    assert color == (200, 220, 255)

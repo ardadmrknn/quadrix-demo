@@ -43,6 +43,7 @@ from gamepad_manager import get_gamepad_manager, is_gamepad_connected
 from steam_leaderboards import SteamLeaderboardService
 from achievements import ACHIEVEMENTS, get_achievement_name
 from user_manager import DAILY_MAX_FAILURES
+from surface_lru_cache import SurfaceLRUCache
 try:
     from menu_layout_embedded import EMBEDDED_MENU_LAYOUT
 except Exception:
@@ -452,6 +453,7 @@ class Menu:
         self._sos_fill_overlay_cache = None
         self._sos_fill_overlay_cache_signature = None
         self._tile_flavor_scaled_cache = {}
+        self._dashboard_tile_surface_cache = SurfaceLRUCache(max_entries=32)
 
         # Ana menü sağ-alt: Steam skor paneli (Kart Ustalığı)
         # publisher_key ve app_id sadece ortam değişkenleriyle aktif olur;
@@ -1083,6 +1085,103 @@ class Menu:
         panel_key: str = '',
         panel_context: dict[str, Any] | None = None,
     ) -> pygame.Rect:
+        if self._can_cache_dashboard_tile_surface(panel_key, selected, hover):
+            cache_key = self._get_dashboard_tile_surface_cache_key(
+                rect,
+                title,
+                accent_color,
+                subtitle,
+                panel_key,
+                panel_context,
+            )
+            cached_surface = self._dashboard_tile_surface_cache.get(cache_key)
+            if cached_surface is None:
+                cached_surface = pygame.Surface(rect.size, pygame.SRCALPHA)
+                local_rect = pygame.Rect(0, 0, rect.width, rect.height)
+                self._render_main_dashboard_tile(
+                    cached_surface,
+                    local_rect,
+                    title,
+                    False,
+                    accent_color,
+                    subtitle=subtitle,
+                    hover=False,
+                    panel_key=panel_key,
+                    panel_context=panel_context,
+                )
+                self._dashboard_tile_surface_cache.put(cache_key, cached_surface)
+            self.screen.blit(cached_surface, rect.topleft)
+            return rect
+
+        return self._render_main_dashboard_tile(
+            self.screen,
+            rect,
+            title,
+            selected,
+            accent_color,
+            subtitle=subtitle,
+            hover=hover,
+            panel_key=panel_key,
+            panel_context=panel_context,
+        )
+
+    def _can_cache_dashboard_tile_surface(self, panel_key: str, selected: bool, hover: bool) -> bool:
+        if selected or hover:
+            return False
+        return panel_key in {'daily_challenge', 'achievements', 'piece_workshop', 'block_styles'}
+
+    def _get_dashboard_tile_surface_cache_key(
+        self,
+        rect: pygame.Rect,
+        title: str,
+        accent_color: tuple[int, int, int],
+        subtitle: str,
+        panel_key: str,
+        panel_context: dict[str, Any] | None,
+    ) -> tuple:
+        context = panel_context or {}
+        if panel_key == 'daily_challenge':
+            context_key = (
+                str(context.get('daily_title') or ''),
+                int(context.get('daily_lives', 0) or 0),
+                int(context.get('daily_max_lives', DAILY_MAX_FAILURES) or DAILY_MAX_FAILURES),
+            )
+        elif panel_key == 'achievements':
+            context_key = (
+                tuple(str(item) for item in (context.get('recent_achievements', []) or [])),
+                int(context.get('achievement_percent', 0) or 0),
+            )
+        else:
+            context_key = ()
+        try:
+            menu_transparency = round(float(getattr(retro_style, '_menu_transparency', 1.0)), 4)
+        except Exception:
+            menu_transparency = 1.0
+        return (
+            panel_key,
+            str(get_language()),
+            int(rect.width),
+            int(rect.height),
+            str(title),
+            str(subtitle),
+            tuple(int(c) for c in accent_color[:3]),
+            round(float(self._menu_panel_content_scale()), 4),
+            menu_transparency,
+            context_key,
+        )
+
+    def _render_main_dashboard_tile(
+        self,
+        target_surface: pygame.Surface,
+        rect: pygame.Rect,
+        title: str,
+        selected: bool,
+        accent_color: tuple[int, int, int],
+        subtitle: str = '',
+        hover: bool = False,
+        panel_key: str = '',
+        panel_context: dict[str, Any] | None = None,
+    ) -> pygame.Rect:
         """Ana menüdeki büyük kutu/panel kartını çiz."""
         panel_scale = self._menu_panel_content_scale()
         sp = lambda v, minimum=1: max(minimum, int(round(v * panel_scale)))
@@ -1093,31 +1192,27 @@ class Menu:
         draw_rect = rect.inflate(hover_growth_w, hover_growth_h) if is_highlighted else rect
 
         alpha = 230 if is_highlighted else 180
-        retro_style.draw_glass_panel(self.screen, draw_rect, alpha=alpha, border_color=accent_color)
+        retro_style.draw_glass_panel(target_surface, draw_rect, alpha=alpha, border_color=accent_color)
 
         if is_highlighted:
-            # Neon glow efekti: altta kalsın (flavor/görselin altında)
-            # Panel sınırı dışına taşmaması için draw_rect ile kırpılıyor
-            prev_clip = self.screen.get_clip()
-            self.screen.set_clip(draw_rect)
+            prev_clip = target_surface.get_clip()
+            target_surface.set_clip(draw_rect)
             for glow_i in range(3, 0, -1):
                 glow_rect = draw_rect.inflate(glow_i * 4, glow_i * 4)
                 glow_alpha = max(10, 60 - glow_i * 18)
                 glow_surf = pygame.Surface((glow_rect.width, glow_rect.height), pygame.SRCALPHA)
                 pygame.draw.rect(glow_surf, (*accent_color[:3], glow_alpha), glow_surf.get_rect(), width=2, border_radius=14 + glow_i * 2)
-                self.screen.blit(glow_surf, glow_rect.topleft)
-            self.screen.set_clip(prev_clip)
+                target_surface.blit(glow_surf, glow_rect.topleft)
+            target_surface.set_clip(prev_clip)
 
-        # Katman sırası: panel arka planı -> flavor görsel -> panel üst çizimleri
-        self._draw_dashboard_tile_flavor(draw_rect, panel_key, accent_color, hover)
+        self._draw_dashboard_tile_flavor(draw_rect, panel_key, accent_color, hover, target_surface=target_surface)
 
-        # Her zaman tüm karta (yazı alanı dahil) hafif siyah overlay uygula
         fill = pygame.Surface(draw_rect.size, pygame.SRCALPHA)
         fill.fill((0, 0, 0, 48 if is_highlighted else 38))
-        self.screen.blit(fill, draw_rect.topleft)
+        target_surface.blit(fill, draw_rect.topleft)
 
         pygame.draw.rect(
-            self.screen,
+            target_surface,
             (*accent_color[:3], 255 if is_highlighted else 140),
             draw_rect,
             3 if is_highlighted else 2,
@@ -1128,7 +1223,6 @@ class Menu:
         title_area = pygame.Rect(draw_rect.x + sp(16), draw_rect.y + sp(10), draw_rect.width - sp(24), title_area_h)
         title_font_size = max(sp(16), min(sp(26), int(min(draw_rect.width, draw_rect.height) * 0.12)))
 
-        # Çık butonu: yazıyı ortaya yayıp büyük göster
         if panel_key == 'exit':
             title_font_size = max(sp(22), min(sp(32), int(draw_rect.height * 0.40)))
             title_font = retro_style.get_font(title_font_size, bold=True)
@@ -1137,19 +1231,18 @@ class Menu:
                     break
                 title_font_size -= 1
                 title_font = retro_style.get_font(title_font_size, bold=True)
-            # Dikey ortalama: tek satır, rect merkezine yerleştir
             t_surf = title_font.render(title, True, accent_color)
-            self.screen.blit(t_surf, t_surf.get_rect(center=draw_rect.center))
-            # Border en üste
+            target_surface.blit(t_surf, t_surf.get_rect(center=draw_rect.center))
             pygame.draw.rect(
-                self.screen,
+                target_surface,
                 (*accent_color[:3], 255 if is_highlighted else 140),
-                draw_rect, 3 if is_highlighted else 2, border_radius=14,
+                draw_rect,
+                3 if is_highlighted else 2,
+                border_radius=14,
             )
             return draw_rect
         title_font = retro_style.get_font(title_font_size, bold=True)
 
-        # Eğer başlık tek satıra sığmıyorsa font küçültülerek tek satıra indirilir.
         _min_title_font = max(sp(11), sp(12))
         while title_font_size > _min_title_font:
             if title_font.size(title)[0] <= title_area.width:
@@ -1157,7 +1250,6 @@ class Menu:
             title_font_size -= 1
             title_font = retro_style.get_font(title_font_size, bold=True)
 
-        # Başlık metninin gerçek boyutunu ölç, tam o alana koyu arka plan çiz
         _title_lines = retro_style.wrap_text(title, title_font, title_area.width)
         _line_h = title_font.get_linesize()
         _title_text_h = max(_line_h, len(_title_lines) * _line_h + max(0, len(_title_lines) - 1) * sp(2))
@@ -1166,16 +1258,12 @@ class Menu:
         _tbg_w = min(draw_rect.width - sp(8), title_area.width + _tbg_pad_x * 2)
         _tbg_h = _title_text_h + _tbg_pad_y * 2
         _tbg = pygame.Surface((_tbg_w, _tbg_h), pygame.SRCALPHA)
-        pygame.draw.rect(_tbg, (8, 12, 30, 210), _tbg.get_rect(),
-                         border_top_left_radius=14, border_top_right_radius=14,
-                         border_bottom_left_radius=8, border_bottom_right_radius=8)
-        pygame.draw.rect(_tbg, (*accent_color[:3], 110), _tbg.get_rect(), 1,
-                         border_top_left_radius=14, border_top_right_radius=14,
-                         border_bottom_left_radius=8, border_bottom_right_radius=8)
-        self.screen.blit(_tbg, (draw_rect.x + sp(4), draw_rect.y))
+        pygame.draw.rect(_tbg, (8, 12, 30, 210), _tbg.get_rect(), border_top_left_radius=14, border_top_right_radius=14, border_bottom_left_radius=8, border_bottom_right_radius=8)
+        pygame.draw.rect(_tbg, (*accent_color[:3], 110), _tbg.get_rect(), 1, border_top_left_radius=14, border_top_right_radius=14, border_bottom_left_radius=8, border_bottom_right_radius=8)
+        target_surface.blit(_tbg, (draw_rect.x + sp(4), draw_rect.y))
 
         retro_style.draw_wrapped_text(
-            self.screen,
+            target_surface,
             title,
             title_font,
             accent_color,
@@ -1185,19 +1273,16 @@ class Menu:
         )
 
         if subtitle:
-            # Açıklama metni: küçük panellerde taşmayı önlemek için çok satırlı mini alt-panel
             tutorial_subtitle = panel_key == 'tutorial_mode'
             badge_subtitle = panel_key in ('piece_workshop', 'block_styles')
 
             if badge_subtitle:
-                # ── Buton/badge stili alt yazı (piece_workshop & block_styles) ──
                 sub_pad_x = sp(12)
                 sub_pad_y = sp(7)
                 sub_max_w = draw_rect.width - sp(12)
                 text_w = max(40, sub_max_w - sub_pad_x * 2)
                 font_size = max(sp(13), min(sp(17), int(draw_rect.height * 0.075)))
                 sub_font = retro_style.get_font(font_size, bold=True)
-                # Tek satıra sığana kadar font küçült
                 badge_lines = retro_style.wrap_text(subtitle, sub_font, text_w)
                 while len(badge_lines) > 1 and font_size > sp(10):
                     font_size -= 1
@@ -1207,34 +1292,29 @@ class Menu:
                 line_h = sub_font.get_linesize()
                 line_gap = max(1, sp(2))
                 total_text_h = len(badge_lines) * line_h + max(0, len(badge_lines) - 1) * line_gap
-                max_line_w = max((sub_font.size(l)[0] for l in badge_lines), default=0)
+                max_line_w = max((sub_font.size(line)[0] for line in badge_lines), default=0)
                 sub_bg_w = min(sub_max_w, max(max_line_w + sub_pad_x * 2, sub_max_w))
                 sub_bg_h = total_text_h + sub_pad_y * 2
                 sub_bg_x = draw_rect.x + (draw_rect.width - sub_bg_w) // 2
                 sub_bg_y = draw_rect.bottom - sub_bg_h - sp(10)
 
-                # Glow efekti (hover'da daha belirgin)
                 if is_highlighted:
                     glow_surf = pygame.Surface((sub_bg_w + 10, sub_bg_h + 10), pygame.SRCALPHA)
                     pygame.draw.rect(glow_surf, (*accent_color[:3], 35), glow_surf.get_rect(), border_radius=12)
-                    self.screen.blit(glow_surf, (sub_bg_x - 5, sub_bg_y - 5))
+                    target_surface.blit(glow_surf, (sub_bg_x - 5, sub_bg_y - 5))
 
-                # Badge arka planı
                 sub_bg = pygame.Surface((sub_bg_w, sub_bg_h), pygame.SRCALPHA)
                 pygame.draw.rect(sub_bg, (12, 20, 45, 210), sub_bg.get_rect(), border_radius=9)
-                # Üst highlight (cam efekti)
                 for hy in range(min(5, sub_bg_h // 3)):
                     ha = int(22 * (1 - hy / 5))
                     pygame.draw.line(sub_bg, (255, 255, 255, ha), (4, hy), (sub_bg_w - 4, hy))
-                # Tam kenarlık (buton gibi)
                 border_a = 200 if is_highlighted else 130
                 pygame.draw.rect(sub_bg, (*accent_color[:3], border_a), sub_bg.get_rect(), 2, border_radius=9)
-                self.screen.blit(sub_bg, (sub_bg_x, sub_bg_y))
-                # Her satırı ortala
+                target_surface.blit(sub_bg, (sub_bg_x, sub_bg_y))
                 line_y = sub_bg_y + sub_pad_y
-                for bl in badge_lines:
-                    bl_surf = sub_font.render(bl, True, UIColors.TEXT_PRIMARY)
-                    self.screen.blit(bl_surf, bl_surf.get_rect(centerx=sub_bg_x + sub_bg_w // 2, y=line_y))
+                for line in badge_lines:
+                    bl_surf = sub_font.render(line, True, UIColors.TEXT_PRIMARY)
+                    target_surface.blit(bl_surf, bl_surf.get_rect(centerx=sub_bg_x + sub_bg_w // 2, y=line_y))
                     line_y += line_h + line_gap
             else:
                 sub_base_size = sp(20) if tutorial_subtitle else (sp(16) if draw_rect.height < 160 else sp(15))
@@ -1264,30 +1344,26 @@ class Menu:
                 line_gap = max(1, sp(2))
                 text_h = len(wrapped_lines) * line_h + max(0, len(wrapped_lines) - 1) * line_gap
                 max_line_w = max((sub_font.size(line)[0] for line in wrapped_lines), default=0)
-
                 sub_bg_w = min(sub_max_w, max_line_w + sub_pad_x * 2 + 8)
                 sub_bg_h = text_h + sub_pad_y * 2
                 sub_bg_x = draw_rect.x + sp(18)
                 sub_bg_y = draw_rect.bottom - sub_bg_h - sp(8)
 
-                # Alt-panel arka plan
                 sub_bg = pygame.Surface((sub_bg_w, sub_bg_h), pygame.SRCALPHA)
                 pygame.draw.rect(sub_bg, (15, 22, 42, 170), sub_bg.get_rect(), border_radius=8)
-                # Sol accent çizgi
                 pygame.draw.rect(sub_bg, (*accent_color[:3], 140), pygame.Rect(0, 3, 3, sub_bg_h - 6), border_radius=2)
-                # Kenarlık
                 pygame.draw.rect(sub_bg, (*accent_color[:3], 55), sub_bg.get_rect(), 1, border_radius=8)
-                self.screen.blit(sub_bg, (sub_bg_x, sub_bg_y))
+                target_surface.blit(sub_bg, (sub_bg_x, sub_bg_y))
 
                 subtitle_color = UIColors.TEXT_PRIMARY if tutorial_subtitle else UIColors.TEXT_SECONDARY
                 line_y = sub_bg_y + sub_pad_y
                 for line in wrapped_lines:
                     line_surf = sub_font.render(line, True, subtitle_color)
-                    self.screen.blit(line_surf, (sub_bg_x + sub_pad_x + sp(4), line_y))
+                    target_surface.blit(line_surf, (sub_bg_x + sub_pad_x + sp(4), line_y))
                     line_y += line_h + line_gap
 
         if panel_context and panel_key:
-            self._draw_panel_micro_content(draw_rect, panel_key, accent_color, panel_context, hover)
+            self._draw_panel_micro_content(draw_rect, panel_key, accent_color, panel_context, hover, target_surface=target_surface)
 
         return draw_rect
 
@@ -1297,8 +1373,10 @@ class Menu:
         panel_key: str,
         accent_color: tuple[int, int, int],
         hover: bool,
+        target_surface: pygame.Surface | None = None,
     ) -> None:
         """Panel adına göre arka plan dekoratif efekt (tetris blokları kaldırıldı)."""
+        target = target_surface or self.screen
         panel_flavor_map = {
             'new_gen_tetris': {
                 'path': str(ROOT_DIR / 'assets' / 'main_theme' / 'kart_panel_effect.png'),
@@ -1378,14 +1456,14 @@ class Menu:
                     back_x = back_zone.centerx - cover_w // 2
                     back_y = back_zone.centery - cover_h // 2
 
-                    prev_clip = self.screen.get_clip()
-                    self.screen.set_clip(back_zone)
-                    self.screen.blit(scaled_back, (back_x, back_y))
+                    prev_clip = target.get_clip()
+                    target.set_clip(back_zone)
+                    target.blit(scaled_back, (back_x, back_y))
                     hover_alpha = 90 if hover else 98
                     flavor_overlay = pygame.Surface(back_zone.size, pygame.SRCALPHA)
                     flavor_overlay.fill((0, 0, 0, hover_alpha))
-                    self.screen.blit(flavor_overlay, back_zone.topleft)
-                    self.screen.set_clip(prev_clip)
+                    target.blit(flavor_overlay, back_zone.topleft)
+                    target.set_clip(prev_clip)
             return
 
         img_path = flavor['path']
@@ -1469,10 +1547,10 @@ class Menu:
         if effective_clip.width <= 0 or effective_clip.height <= 0:
             return
 
-        prev_clip = self.screen.get_clip()
-        self.screen.set_clip(effective_clip)
-        self.screen.blit(scaled, (draw_x, draw_y))
-        self.screen.set_clip(prev_clip)
+        prev_clip = target.get_clip()
+        target.set_clip(effective_clip)
+        target.blit(scaled, (draw_x, draw_y))
+        target.set_clip(prev_clip)
 
     def show_info(self, message, duration=180):
         """Kısa bilgi mesajı göster"""
@@ -1651,8 +1729,10 @@ class Menu:
         accent_color: tuple[int, int, int],
         panel_context: dict[str, Any],
         hover: bool,
+        target_surface: pygame.Surface | None = None,
     ) -> None:
         """Panel kartları için kısa açıklama/durum öğeleri çiz."""
+        target = target_surface or self.screen
         lang = get_language()
         panel_scale = self._menu_panel_content_scale()
         s = lambda v, minimum=1: max(minimum, int(round(v * panel_scale)))
@@ -1772,7 +1852,7 @@ class Menu:
                 alive = i < lives
                 heart_surf = self._blue_heart_cache if alive else self._gray_heart_cache
                 if heart_surf:
-                    self.screen.blit(heart_surf, (hx, hy))
+                    target.blit(heart_surf, (hx, hy))
                 else:
                     # Fallback: basit daire kalp
                     color = (0, 180, 255) if alive else (60, 60, 75)
@@ -1780,10 +1860,10 @@ class Menu:
                     r = heart_img_size // 3
                     cx_fb = hx + heart_img_size // 2
                     cy_fb = hy + heart_img_size // 2
-                    pygame.draw.circle(self.screen, (*color, alpha), (cx_fb - r // 2, cy_fb - 2), r)
-                    pygame.draw.circle(self.screen, (*color, alpha), (cx_fb + r // 2, cy_fb - 2), r)
+                    pygame.draw.circle(target, (*color, alpha), (cx_fb - r // 2, cy_fb - 2), r)
+                    pygame.draw.circle(target, (*color, alpha), (cx_fb + r // 2, cy_fb - 2), r)
                     tip = [(cx_fb - r, cy_fb + 2), (cx_fb + r, cy_fb + 2), (cx_fb, cy_fb + r + 4)]
-                    pygame.draw.polygon(self.screen, (*color, alpha), tip)
+                    pygame.draw.polygon(target, (*color, alpha), tip)
 
             # --- Alt yazı (görev açıklaması) — cam panel kutucuğu içinde ---
             text_y = rect.y + max(s(56), int(rect.height * 0.52))
@@ -1802,8 +1882,8 @@ class Menu:
                 ha = int(20 * (1 - hy / 6))
                 pygame.draw.line(t_box, (255, 255, 255, ha), (4, hy), (t_box_w - 4, hy))
             pygame.draw.rect(t_box, (*accent_color[:3], 80), t_box.get_rect(), 1, border_radius=9)
-            self.screen.blit(t_box, (t_box_x, t_box_y))
-            self.screen.blit(text_surf, text_surf.get_rect(midleft=(t_box_x + t_pad_x + s(2), text_y + text_surf.get_height() // 2)))
+            target.blit(t_box, (t_box_x, t_box_y))
+            target.blit(text_surf, text_surf.get_rect(midleft=(t_box_x + t_pad_x + s(2), text_y + text_surf.get_height() // 2)))
 
         elif panel_key == 'achievements':
             items = panel_context.get('recent_achievements', [])[:3]
@@ -1854,21 +1934,21 @@ class Menu:
                 name_surf = name_font.render(label, True, text_color)
                 card_surf.blit(name_surf, name_surf.get_rect(midleft=(32, card_h // 2)))
 
-                self.screen.blit(card_surf, card_rect.topleft)
+                target.blit(card_surf, card_rect.topleft)
 
             # --- Tamamlanma çubuğu ---
             bar_w = max(84, content_w)
             bar_h = s(8)
             bar_x = rect.x + pad_l
             bar_y = rect.bottom - s(24)
-            pygame.draw.rect(self.screen, (28, 40, 58, 190), pygame.Rect(bar_x, bar_y, bar_w, bar_h), border_radius=5)
+            pygame.draw.rect(target, (28, 40, 58, 190), pygame.Rect(bar_x, bar_y, bar_w, bar_h), border_radius=5)
             fill_w = int(bar_w * max(0, min(100, percent)) / 100.0)
             if fill_w > 0:
-                pygame.draw.rect(self.screen, (*gold, 220), pygame.Rect(bar_x, bar_y, fill_w, bar_h), border_radius=5)
+                pygame.draw.rect(target, (*gold, 220), pygame.Rect(bar_x, bar_y, fill_w, bar_h), border_radius=5)
             pct_label = t('menu_dashboard_completion_percent', percent=percent)
             pct_font = retro_style.get_fitting_font(pct_label, base_size=s(14), max_width=bar_w, bold=False, min_size=max(9, s(10)))
             pct_surf = pct_font.render(pct_label, True, UIColors.TEXT_SECONDARY)
-            self.screen.blit(pct_surf, pct_surf.get_rect(midleft=(bar_x, bar_y - s(10))))
+            target.blit(pct_surf, pct_surf.get_rect(midleft=(bar_x, bar_y - s(10))))
 
         elif panel_key == 'campaign_mode':
             last_level = int(panel_context.get('campaign_last_level', 1) or 1)

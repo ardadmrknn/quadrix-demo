@@ -179,6 +179,43 @@ class TestGetWindowsPhysicalResolution(unittest.TestCase):
         self.assertEqual((w, h), (1920, 1080))
 
 
+class TestResolveFrameRateCap(unittest.TestCase):
+    """Auto FPS cap çözümleme ve cache davranışı."""
+
+    def setUp(self):
+        platform_utils.invalidate_refresh_rate_cache()
+        self._orig_ttl = platform_utils._REFRESH_RATE_CACHE_TTL_S
+        platform_utils._REFRESH_RATE_CACHE_TTL_S = 999.0
+
+    def tearDown(self):
+        platform_utils._REFRESH_RATE_CACHE_TTL_S = self._orig_ttl
+        platform_utils.invalidate_refresh_rate_cache()
+
+    def test_explicit_limit_skips_refresh_lookup(self):
+        with patch.object(platform_utils, "get_max_refresh_rate", side_effect=AssertionError("refresh lookup olmamali")):
+            self.assertEqual(platform_utils.resolve_frame_rate_cap(144), 144)
+
+    def test_auto_limit_uses_cached_refresh_query(self):
+        with patch.object(platform_utils, "_query_max_refresh_rate", side_effect=[165, 240]) as query_mock:
+            self.assertEqual(platform_utils.resolve_frame_rate_cap(0), 165)
+            self.assertEqual(platform_utils.resolve_frame_rate_cap(0), 165)
+            self.assertEqual(query_mock.call_count, 1)
+
+    def test_auto_limit_falls_back_for_invalid_refresh_rate(self):
+        with patch.object(platform_utils, "get_max_refresh_rate", return_value=0):
+            self.assertEqual(platform_utils.resolve_frame_rate_cap(0, fallback=144), 144)
+
+    def test_query_max_refresh_rate_prefers_current_window_refresh_rate(self):
+        with patch.object(platform_utils.pygame.display, "get_current_refresh_rate", return_value=144, create=True), \
+             patch.object(platform_utils.pygame.display, "get_desktop_refresh_rates", return_value=[60, 240], create=True):
+            self.assertEqual(platform_utils._query_max_refresh_rate(), 144)
+
+    def test_query_max_refresh_rate_falls_back_to_desktop_refresh_rates(self):
+        with patch.object(platform_utils.pygame.display, "get_current_refresh_rate", return_value=0, create=True), \
+             patch.object(platform_utils.pygame.display, "get_desktop_refresh_rates", return_value=[60, 165], create=True):
+            self.assertEqual(platform_utils._query_max_refresh_rate(), 165)
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 class TestCreateDisplayWindowsBorderlessCenteredEnv(unittest.TestCase):
     """Windows borderless fullscreen:

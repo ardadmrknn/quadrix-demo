@@ -1,6 +1,6 @@
 # Quadrix surum bilgisi
 # Repo tarafinda takip edilen temel surum version_base.py icindedir.
-# Platforma ozel lokal build numaralari varsa buradan override edilir.
+# Windows icin lokal build override varsa buradan uygulanir.
 
 from __future__ import annotations
 
@@ -13,7 +13,6 @@ from version_base import VERSION as BASE_VERSION
 
 _PLATFORM_OVERRIDE_MODULES = {
 	'win32': 'version_local_windows',
-	'darwin': 'version_local_macos',
 }
 
 

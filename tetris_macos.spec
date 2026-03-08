@@ -4,21 +4,31 @@ Quadrix Oyunu - macOS .app için PyInstaller Spec Dosyası
 Versiyon: 1.0.0
 """
 
+import importlib.util
 import os
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(SPECPATH).resolve()))
 from tools.embed_menu_layout import write_embedded_layout_module
-from tools.versioning import bump_platform_version
 
 # Proje kök dizini
 REPO_ROOT = Path(SPECPATH).resolve()
 SRC_DIR = REPO_ROOT / 'src'
-write_embedded_layout_module(REPO_ROOT)
 
-_new_version, _build, _version_file = bump_platform_version(REPO_ROOT, 'macos')
-print(f'[spec] macOS surumu guncellendi: {_new_version} (build {_build}) -> {_version_file.name}')
+
+def _load_version_string(version_file: Path) -> str:
+    spec = importlib.util.spec_from_file_location('version_base_spec', version_file)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f'version modulu yuklenemedi: {version_file}')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return str(getattr(module, 'VERSION'))
+
+
+APP_VERSION = _load_version_string(SRC_DIR / 'version_base.py')
+
+write_embedded_layout_module(REPO_ROOT)
 
 block_cipher = None
 
@@ -108,7 +118,6 @@ hiddenimports = [
     'steam_net_bridge',    # Steam Networking bridge (Pybind11, Online PvP)
     'version',
     'version_base',
-    'version_local_macos',
 ]
 
 # src klasöründeki tüm Python modüllerini ekle
@@ -229,14 +238,14 @@ app = BUNDLE(
     name='Quadrix.app',
     icon=str(REPO_ROOT / 'assets' / 'Tetris.icns'),
     bundle_identifier='com.burakyasayan.quadrix',
-    version=_new_version,
+    version=APP_VERSION,
     info_plist={
         'CFBundleName': 'Quadrix',
         'CFBundleDisplayName': 'Quadrix',
         'CFBundleGetInfoString': 'Quadrix Full Edition',
         'CFBundleIdentifier': 'com.burakyasayan.tetris',
-        'CFBundleVersion': _new_version,
-        'CFBundleShortVersionString': _new_version,
+        'CFBundleVersion': APP_VERSION,
+        'CFBundleShortVersionString': APP_VERSION,
         'CFBundleExecutable': 'Quadrix',
         'CFBundlePackageType': 'APPL',
         'CFBundleSignature': 'TTRS',
