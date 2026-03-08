@@ -35,6 +35,7 @@ function Resolve-QuadrixPython {
 
 $pythonExe = Resolve-QuadrixPython
 $buildLog = Join-Path $repoRoot 'build_stdout.log'
+$buildErrLog = Join-Path $repoRoot 'build_stderr.log'
 
 Write-Host '==============================================' -ForegroundColor Cyan
 Write-Host '  Quadrix Windows Clean Build' -ForegroundColor Cyan
@@ -70,17 +71,51 @@ if ($RebuildBridge -or -not $bridgeExists) {
     if (-not (Test-Path $bridgeBat)) {
         throw 'steamworks\steam_net_bridge\build.bat bulunamadi.'
     }
-    & $bridgeBat
-    if ($LASTEXITCODE -ne 0) {
-        throw 'Bridge derlemesi basarisiz.'
+    Push-Location (Split-Path -Parent $bridgeBat)
+    try {
+        & .\build.bat
+        if ($LASTEXITCODE -ne 0) {
+            throw 'Bridge derlemesi basarisiz.'
+        }
+    }
+    finally {
+        Pop-Location
     }
 }
 
 Write-Host 'PyInstaller build baslatiliyor...' -ForegroundColor Cyan
 $pyInstallerArgs = @('-m', 'PyInstaller', $SpecFile, '--noconfirm', '--clean')
-& $pythonExe @pyInstallerArgs 2>&1 | Tee-Object -FilePath $buildLog
-if ($LASTEXITCODE -ne 0) {
+$env:PYTHONLEGACYWINDOWSSTDIO = '1'
+if (Test-Path $buildLog) {
+    Remove-Item $buildLog -Force
+}
+if (Test-Path $buildErrLog) {
+    Remove-Item $buildErrLog -Force
+}
+
+$process = Start-Process -FilePath $pythonExe `
+    -ArgumentList $pyInstallerArgs `
+    -WorkingDirectory $repoRoot `
+    -RedirectStandardOutput $buildLog `
+    -RedirectStandardError $buildErrLog `
+    -Wait `
+    -PassThru
+
+if ($process.ExitCode -ne 0) {
+    if (Test-Path $buildLog) {
+        Get-Content $buildLog | Select-Object -Last 80
+    }
+    if (Test-Path $buildErrLog) {
+        Get-Content $buildErrLog | Select-Object -Last 80
+    }
     throw 'PyInstaller build basarisiz.'
+}
+
+if (Test-Path $buildLog) {
+    Get-Content $buildLog | Select-Object -Last 60
+}
+if (Test-Path $buildErrLog) {
+    Get-Content $buildErrLog | Select-Object -Last 60
 }
 
 Write-Host 'Windows clean build tamamlandi.' -ForegroundColor Green

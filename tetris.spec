@@ -10,6 +10,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(SPECPATH).resolve()))
 from tools.embed_menu_layout import write_embedded_layout_module
+from tools.bridge_artifacts import get_bridge_binaries
 from tools.versioning import bump_platform_version
 
 # Proje kök dizini
@@ -149,15 +150,9 @@ else:
     binaries = []
 
 # Steam Networking bridge (Pybind11 C++ modülü) — Online PvP için
-import glob as _glob
-_bridge_patterns = [
-    str(REPO_ROOT / 'steam_net_bridge*.pyd'),
-    str(REPO_ROOT / 'steam_net_bridge*.so'),
-]
-for _pat in _bridge_patterns:
-    for _bridge_path in _glob.glob(_pat):
-        binaries.append((_bridge_path, '.'))
-        print(f'[spec] steam_net_bridge eklendi: {_bridge_path}')
+for _bridge_path in get_bridge_binaries(REPO_ROOT):
+    binaries.append((_bridge_path, '.'))
+    print(f'[spec] steam_net_bridge eklendi: {_bridge_path}')
 
 # MinGW runtime DLL'leri — steam_net_bridge.pyd bunlara bağımlı (GCC ile derlendi)
 _mingw_dlls = ['libgcc_s_seh-1.dll', 'libstdc++-6.dll', 'libwinpthread-1.dll']
