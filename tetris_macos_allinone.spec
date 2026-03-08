@@ -250,11 +250,7 @@ else:
 # ═══════════════════════════════════════════════════════════════════
 #  STEAM NET BRIDGE - Online PvP (Pybind11 C++ modülü)
 # ═══════════════════════════════════════════════════════════════════
-import glob as _glob
-_bridge_matches = (
-    _glob.glob(str(REPO_ROOT / 'steam_net_bridge*.pyd')) +
-    _glob.glob(str(REPO_ROOT / 'steam_net_bridge*.so'))
-)
+_bridge_matches = get_bridge_binaries(REPO_ROOT)
 if _bridge_matches:
     _bridge_path = _bridge_matches[0]
     _steam_binaries.append((_bridge_path, '.'))
