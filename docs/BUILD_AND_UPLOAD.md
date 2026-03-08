@@ -143,15 +143,7 @@ DLL bulunamazsa `init()` sessizce `False` döner; tüm Steam özellikleri no-op 
 
 macOS build Mac üzerinde yapılmalıdır:
 
-macOS yerel sürüm dosyası build sırasında otomatik üretilir ve gitignore altındadır:
-
-```bash
-ls src/version_local_macos.py
-```
-
-- `src/version_local_macos.py` repoda tutulmaz; ilk macOS build sırasında lokal olarak oluşturulur
-- macOS build artışları bu dosyayı yerelde güncelleyebilir; normal geliştirme akışında commit edilmez
-- Dosya silinirse sonraki macOS build onu yeniden üretir
+macOS build artık ayrı bir yerel sürüm dosyası üretmez; runtime doğrudan `src/version_base.py` içindeki sürümü kullanır.
 
 ```bash
 # Mac'te proje kökünde:

@@ -15,10 +15,11 @@ from mode_skins import apply_board_tint, apply_outer_tint, draw_board_overlay, g
 from retro_style import retro_style
 from renderers.jelly_renderer import draw_jelly_block, draw_jelly_border
 from themes import ThemeManager
-from block_styles import BlockStyleManager, TextureSlice
-from platform_utils import create_display, get_display_flags, normalize_mouse_pos, get_mouse_pos, set_app_icon
+from block_styles import BlockStyleManager, TextureSlice, TextureRenderCache
+from platform_utils import create_display, get_display_flags, normalize_mouse_pos, get_mouse_pos, set_app_icon, resolve_frame_rate_cap
 from localization import t
 from ui_theme import UIColors, UIFonts
+from effect_surface_cache import EffectSurfaceCache
 
 def resource_path(relative_path):
     """PyInstaller ile derlenen exe için doğru path'i al"""
@@ -149,7 +150,7 @@ class PvPGame:
 
         # Blok stili / texture sistemi (tek oyunculu ile aynı temel)
         self.block_style_manager = BlockStyleManager(self.settings_manager) if self.settings_manager else None
-        self._texture_rotation_cache = {}
+        self._texture_render_cache = TextureRenderCache()
         
         # İki oyuncu
         self.board1 = Board()  # Oyuncu 1 (Sol - WASD)
@@ -307,6 +308,7 @@ class PvPGame:
 
         # Ambient particle sprite cache (surface allocation azalt)
         self._ambient_sprite_cache = {}
+        self._effect_surface_cache = EffectSurfaceCache()
 
         # PvP draw cache (surface allocation azalt)
         self._board_accent_overlay_cache = {}
@@ -2540,44 +2542,13 @@ class PvPGame:
         return (0, 0)
     
     def _get_rotated_surface(self, surface, rotation):
-        rotation = (rotation or 0) % 4
-        if surface is None or rotation == 0:
-            return surface
-        surf_id = id(surface)
-        cache_entry = self._texture_rotation_cache.get(surf_id)
-        if not cache_entry or cache_entry.get('surface') is not surface:
-            cache_entry = {'surface': surface, 'variants': {}}
-            self._texture_rotation_cache[surf_id] = cache_entry
-        variants = cache_entry['variants']
-        if rotation not in variants:
-            angle = -90 * rotation
-            variants[rotation] = pygame.transform.rotate(surface, angle)
-        return variants[rotation]
+        return self._texture_render_cache.get_rotated_surface(surface, rotation)
 
     def _render_texture_slice(self, surface, slice_info, size):
-        rotated = self._get_rotated_surface(surface, getattr(slice_info, 'rotation', 0))
-        if rotated is None:
-            return None
-
-        tex_w, tex_h = rotated.get_size()
         bounds = {'x': 0.0, 'y': 0.0, 'w': 1.0, 'h': 1.0}
         if self.block_style_manager:
             bounds = self.block_style_manager.get_slice_bounds(slice_info.piece_name)
-
-        u0 = bounds['x'] + (slice_info.rel_x / slice_info.width) * bounds['w']
-        u1 = bounds['x'] + ((slice_info.rel_x + 1) / slice_info.width) * bounds['w']
-        v0 = bounds['y'] + (slice_info.rel_y / slice_info.height) * bounds['h']
-        v1 = bounds['y'] + ((slice_info.rel_y + 1) / slice_info.height) * bounds['h']
-
-        rect = pygame.Rect(
-            int(u0 * tex_w),
-            int(v0 * tex_h),
-            max(1, int((u1 - u0) * tex_w)),
-            max(1, int((v1 - v0) * tex_h)),
-        )
-        rect.clamp_ip(rotated.get_rect())
-        cell_surface = rotated.subsurface(rect)
-        return pygame.transform.smoothscale(cell_surface, (size, size))
+        return self._texture_render_cache.render_slice(surface, slice_info, size, bounds)
 
     def _draw_texture_cell(self, x, y, size, texture_surface, texture_slice, dst):
         scaled = self._render_texture_slice(texture_surface, texture_slice, size)
@@ -2612,15 +2583,13 @@ class PvPGame:
                 # Dış halo
                 halo_size = size + 4
                 halo_color = tuple(min(255, int(c * 0.6)) for c in color[:3])
-                halo_surface = pygame.Surface((halo_size * 2, halo_size * 2), pygame.SRCALPHA)
-                pygame.draw.circle(halo_surface, (*halo_color, int(alpha * 0.3)), (halo_size, halo_size), halo_size)
+                halo_surface = self._effect_surface_cache.get_circle_surface(halo_size, (*halo_color, int(alpha * 0.3)))
                 self.screen.blit(halo_surface, (pos[0] - halo_size, pos[1] - halo_size))
                 
                 # Orta halo
                 mid_size = size + 2
                 mid_color = tuple(min(255, int(c * 0.8)) for c in color[:3])
-                mid_surface = pygame.Surface((mid_size * 2, mid_size * 2), pygame.SRCALPHA)
-                pygame.draw.circle(mid_surface, (*mid_color, int(alpha * 0.5)), (mid_size, mid_size), mid_size)
+                mid_surface = self._effect_surface_cache.get_circle_surface(mid_size, (*mid_color, int(alpha * 0.5)))
                 self.screen.blit(mid_surface, (pos[0] - mid_size, pos[1] - mid_size))
             
             # Ana parçacık
@@ -3014,8 +2983,10 @@ class PvPGame:
                     if sweep_progress > 0:
                         lit_width = min(int(sweep_progress * board_width), int(board_width))
                         if lit_width > 0:
-                            lit_surface = pygame.Surface((lit_width, cell_size), pygame.SRCALPHA)
-                            lit_surface.fill((255, 255, 255, int(180 * (1.0 - sweep_progress * 0.8))))
+                            lit_surface = self._effect_surface_cache.get_filled_surface(
+                                (lit_width, cell_size),
+                                (255, 255, 255, int(180 * (1.0 - sweep_progress * 0.8))),
+                            )
                             self.screen.blit(lit_surface, (offset_x, row_y))
         
         # Flash overlay - temizlenen satırlar için beyaz parlama
@@ -3085,9 +3056,8 @@ class PvPGame:
             for wave in wave_effects:
                 if wave['alpha'] > 0:
                     # Yatay dalga çizgisi (ana oyunla aynı)
-                    wave_surface = pygame.Surface((int(wave['radius'] * 2), 6), pygame.SRCALPHA)
                     wave_color = (*wave['color'], wave['alpha'])
-                    pygame.draw.ellipse(wave_surface, wave_color, wave_surface.get_rect())
+                    wave_surface = self._effect_surface_cache.get_ellipse_surface((int(wave['radius'] * 2), 6), wave_color)
                     wave_x = wave['x'] - wave['radius']
                     wave_y = wave['y'] - 3
                     self.screen.blit(wave_surface, (int(wave_x), int(wave_y)))
@@ -3852,7 +3822,7 @@ class PvPGame:
                 fps_limit = int(self.settings_manager.get('fps_limit', 0) or 0) if self.settings_manager else 0
             except Exception:
                 fps_limit = 0
-            delta_time = self.clock.tick(fps_limit if fps_limit > 0 else 0)
+            delta_time = self.clock.tick(resolve_frame_rate_cap(fps_limit))
             
             running = self.handle_input()
             self.update(delta_time)

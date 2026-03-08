@@ -7,6 +7,7 @@ import os
 import platform
 import subprocess
 import sys
+import time
 
 import pygame
 
@@ -15,6 +16,10 @@ import pygame
 IS_MACOS = sys.platform == 'darwin'
 IS_WINDOWS = sys.platform == 'win32'
 IS_LINUX = sys.platform.startswith('linux')
+
+_REFRESH_RATE_CACHE_HZ = 0
+_REFRESH_RATE_CACHE_AT = 0.0
+_REFRESH_RATE_CACHE_TTL_S = 1.0
 
 # macOS: SDL Fullscreen Spaces ayarı.
 # Çerçevesiz tam ekran (NOFRAME borderless) kullanıldığı için bu değer
@@ -141,23 +146,105 @@ def get_display_flags(resizable: bool = True, fullscreen: bool = False, vsync: b
     return flags
 
 
-def get_max_refresh_rate() -> int:
-    """Get the maximum refresh rate of the primary display.
-    
+def invalidate_refresh_rate_cache() -> None:
+    """Invalidate the cached display refresh rate."""
+    global _REFRESH_RATE_CACHE_HZ, _REFRESH_RATE_CACHE_AT
+    _REFRESH_RATE_CACHE_HZ = 0
+    _REFRESH_RATE_CACHE_AT = 0.0
+
+
+def _query_max_refresh_rate() -> int:
+    """Query the active window refresh rate directly from pygame/SDL."""
+    try:
+        if hasattr(pygame.display, 'get_current_refresh_rate'):
+            refresh_rate = int(pygame.display.get_current_refresh_rate() or 0)
+            if refresh_rate > 0:
+                return refresh_rate
+    except Exception:
+        pass
+
+    try:
+        if hasattr(pygame.display, 'get_desktop_refresh_rates'):
+            refresh_rates = [
+                int(rate)
+                for rate in (pygame.display.get_desktop_refresh_rates() or [])
+                if int(rate or 0) > 0
+            ]
+            if refresh_rates:
+                return max(refresh_rates)
+    except Exception:
+        pass
+
+    try:
+        if hasattr(pygame.display, 'get_num_displays'):
+            num = int(pygame.display.get_num_displays() or 0)
+            if num > 0 and hasattr(pygame.display, 'get_current_display_mode'):
+                refresh_rates = []
+                for display_idx in range(num):
+                    mode = pygame.display.get_current_display_mode(display_idx)
+                    rate = int(getattr(mode, 'refresh_rate', 0) or 0)
+                    if rate > 0:
+                        refresh_rates.append(rate)
+                if refresh_rates:
+                    return max(refresh_rates)
+    except Exception:
+        pass
+
+    return 60
+
+
+def get_max_refresh_rate(force_refresh: bool = False) -> int:
+    """Get the cached maximum refresh rate of the primary display.
+
+    The raw display query is cached briefly because the main loop may ask for
+    the auto FPS cap every frame.
+
     Returns:
         int: The refresh rate in Hz, or 60 as fallback.
     """
+    global _REFRESH_RATE_CACHE_HZ, _REFRESH_RATE_CACHE_AT
+
+    now = time.monotonic()
+    if (
+        not force_refresh
+        and _REFRESH_RATE_CACHE_HZ > 0
+        and (now - _REFRESH_RATE_CACHE_AT) < _REFRESH_RATE_CACHE_TTL_S
+    ):
+        return _REFRESH_RATE_CACHE_HZ
+
+    refresh_rate = int(_query_max_refresh_rate() or 60)
+    if refresh_rate <= 0:
+        refresh_rate = 60
+
+    _REFRESH_RATE_CACHE_HZ = refresh_rate
+    _REFRESH_RATE_CACHE_AT = now
+    return refresh_rate
+
+
+def resolve_frame_rate_cap(requested_limit: int | None, fallback: int = 60) -> int:
+    """Resolve the effective FPS cap.
+
+    Ayarlarda 0 veya negatif değer "otomatik" anlamına gelir ve mevcut
+    ekran yenileme hızına kilitlenir. Geçersiz ekran verisi gelirse fallback
+    kullanılır.
+    """
     try:
-        # SDL2 can provide display mode info
-        if hasattr(pygame.display, 'get_num_displays'):
-            num = pygame.display.get_num_displays()
-            if num > 0 and hasattr(pygame.display, 'get_current_display_mode'):
-                mode = pygame.display.get_current_display_mode(0)
-                if hasattr(mode, 'refresh_rate') and mode.refresh_rate > 0:
-                    return mode.refresh_rate
-        return 60
+        limit = int(requested_limit or 0)
     except Exception:
-        return 60
+        limit = 0
+
+    if limit > 0:
+        return max(1, limit)
+
+    try:
+        refresh_rate = int(round(float(get_max_refresh_rate())))
+    except Exception:
+        refresh_rate = 0
+
+    if refresh_rate < 24 or refresh_rate > 1000:
+        refresh_rate = int(fallback or 60)
+
+    return max(1, refresh_rate)
 
 
 def request_window_focus():
@@ -468,6 +555,7 @@ def create_display(
                 os.environ['SDL_VIDEO_WINDOW_POS'] = '0,0'
                 flags = pygame.NOFRAME | pygame.DOUBLEBUF
                 surface = pygame.display.set_mode((native_w, native_h), flags)
+                invalidate_refresh_rate_cache()
                 return surface
             else:
                 # Pencere modu - çerçeveli, yeniden boyutlandırılabilir
@@ -481,13 +569,16 @@ def create_display(
                 os.environ['SDL_VIDEO_WINDOW_POS'] = 'center'
                 flags = pygame.RESIZABLE
                 surface = pygame.display.set_mode((width, height), flags)
+                invalidate_refresh_rate_cache()
                 return surface
         except pygame.error as e:
             print(f"[UYARI] macOS display hatası: {e}")
             try:
                 surface = pygame.display.set_mode((width or 800, height or 600), pygame.RESIZABLE)
+                invalidate_refresh_rate_cache()
                 return surface
             except pygame.error:
+                invalidate_refresh_rate_cache()
                 return pygame.Surface((width or 800, height or 600))
     
     # Windows/Linux için standart handling
@@ -511,6 +602,7 @@ def create_display(
                 # Borderless başarısız; exclusive fullscreen'e düş
                 excl_flags = pygame.FULLSCREEN | pygame.DOUBLEBUF
                 surface = pygame.display.set_mode((0, 0), excl_flags)
+            invalidate_refresh_rate_cache()
             return surface
         except pygame.error:
             pass
@@ -534,13 +626,16 @@ def create_display(
             surface = pygame.display.set_mode((0, 0), flags)
         else:
             surface = pygame.display.set_mode((width, height), flags)
+        invalidate_refresh_rate_cache()
         return surface
     except pygame.error:
         try:
             fallback_flags = pygame.DOUBLEBUF | pygame.RESIZABLE
             surface = pygame.display.set_mode((width or 800, height or 600), fallback_flags)
+            invalidate_refresh_rate_cache()
             return surface
         except pygame.error:
+            invalidate_refresh_rate_cache()
             return pygame.Surface((width or 800, height or 600))
     finally:
         if fullscreen and old_centered_excl is not None:

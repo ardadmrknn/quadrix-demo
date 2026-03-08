@@ -177,7 +177,7 @@ class SettingsManager:
             'fullscreen': True,  # Oyun yalnızca tam ekran çalışır
             'steam_overlay_gl': 'auto',  # Mevcut konfigürasyon uyumluluğu için korunur
             'vsync': True,  # VSYNC açık - screen tearing önleme
-            # FPS limiti: 0 = MAX (sınırsız). Değerler: 30/45/60/90/120/0
+            # FPS limiti: 0 = otomatik ekran yenileme hızı. Değerler: 30/45/60/90/120/0
             'fps_limit': 0,
             'show_ghost': True,
             'bg_transparency': 0.3,

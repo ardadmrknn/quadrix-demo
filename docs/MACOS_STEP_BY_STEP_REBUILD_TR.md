@@ -29,21 +29,12 @@ git rev-parse HEAD
 
 Windows cihazdaki commit ile ayni olmasi gerekir.
 
-## 2. macOS local surum dosyasini yerel hale getir
+## 2. macOS local surum dosyasi gerekmez
 
-Bu adim sadece ilk bootstrap sonrasinda gerekli.
+Bu akış kaldirildi.
 
-```bash
-git update-index --skip-worktree src/version_local_macos.py
-```
-
-Amac:
-- src/version_local_macos.py dosyasi build aldikca lokal artabilsin
-- tekrar repoya gitmesin
-
-Bu dosya hakkinda aciklama burada:
-
-- docs/MACOS_LOCAL_VERSION_BOOTSTRAP_TR.md
+- macOS build artik yerel bir version dosyasi uretmez.
+- Surum bilgisi dogrudan src/version_base.py uzerinden kullanilir.
 
 ## 3. Steamworks SDK var mi kontrol et
 
@@ -126,4 +117,3 @@ Temiz macOS build alindiktan sonra su sirayla test et:
 - build_macos_app.sh
 - docs/ONLINE_PVP_CLEAN_REBUILD_TR.md
 - docs/MACOS_LOCAL_VERSION_BOOTSTRAP_TR.md
-- src/version_local_macos.py

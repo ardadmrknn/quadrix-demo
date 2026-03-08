@@ -35,14 +35,14 @@ class GraphicsMenu:
         
         # Mevcut ayarları yükle (varsayılanlar settings_manager ile aynı olmalı)
         self.vsync = settings_manager.get('vsync', True)
-        self.fps_limit = settings_manager.get('fps_limit', 0)  # 0 = MAX (sınırsız)
+        self.fps_limit = settings_manager.get('fps_limit', 0)  # 0 = otomatik ekran yenileme hızı
         self.show_ghost = settings_manager.get('show_ghost', True)
         self.background_enabled = settings_manager.get('background_enabled', True)
         self.bg_transparency = settings_manager.get('bg_transparency', 0.3)
         self.menu_transparency = settings_manager.get('menu_transparency', 1.0)
         self.particle_effects = settings_manager.get('particle_effects', False)  # Varsayılan kapalı
 
-        # FPS limit seçenekleri (0 = MAX/Sınırsız, VSync varsa monitör Hz ile sınırlanır)
+        # FPS limit seçenekleri (0 = otomatik ekran yenileme hızı)
         self.fps_limits = [0, 60, 90, 120, 144, 240]
         
         self.scroll_offset = 0
@@ -367,7 +367,7 @@ class GraphicsMenu:
                 limit = int(self.fps_limit)
             except Exception:
                 limit = 0
-            return 'MAX' if limit <= 0 else f'{limit}'
+            return t('automatic') if limit <= 0 else f'{limit}'
         elif index == 2:  # Gölge Göster
             return t('on') if self.show_ghost else t('off')
         elif index == 3:  # Arka Plan Göster

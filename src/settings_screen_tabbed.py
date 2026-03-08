@@ -664,7 +664,7 @@ class TabbedSettingsScreen:
         elif itype == 'selector':
             if key == 'fps_limit':
                 limit = int(self._get_value('fps_limit') or 0)
-                text = 'MAX' if limit <= 0 else str(limit)
+                text = t('automatic') if limit <= 0 else str(limit)
                 return text, (200, 220, 255)
             elif key == 'language':
                 lang_name = get_language_name(self.current_language)

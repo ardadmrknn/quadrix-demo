@@ -7,7 +7,6 @@ from pathlib import Path
 
 LOCAL_VERSION_FILES = {
     'windows': 'version_local_windows.py',
-    'macos': 'version_local_macos.py',
 }
 
 
@@ -43,16 +42,10 @@ def _select_seed_version(
 
 
 def _render_version_module(version: str, build_number: int, platform_name: str) -> str:
-    if platform_name == 'macos':
-        header = (
-            '# Bu dosya build sirasinda macOS icin lokal olarak uretilir.\n'
-            '# Git reposuna eklenmez; platforma ozel build numarasi burada tutulur.\n\n'
-        )
-    else:
-        header = (
-            '# Bu dosya build sirasinda lokal olarak guncellenir.\n'
-            '# Git reposuna eklenmez; platforma ozel build numarasi burada tutulur.\n\n'
-        )
+    header = (
+        '# Bu dosya build sirasinda lokal olarak guncellenir.\n'
+        '# Git reposuna eklenmez; platforma ozel build numarasi burada tutulur.\n\n'
+    )
 
     return (
         header

@@ -31,7 +31,7 @@ from constants import (
 )
 from board import Board
 from pieces import Piece, SHAPES
-from block_styles import BlockStyleManager, TextureSlice
+from block_styles import BlockStyleManager, TextureSlice, TextureRenderCache
 from sound import SoundManager
 from background import BackgroundManager
 from background_effects import get_shared_falling_blocks_layer
@@ -39,6 +39,7 @@ from themes import ThemeManager
 from mode_skins import apply_board_tint, draw_board_overlay, get_mode_skin
 from retro_style import retro_style as _rs
 from renderers.jelly_renderer import draw_jelly_block, draw_jelly_border
+from effect_surface_cache import EffectSurfaceCache
 
 # Convenience aliases for retro_style singleton methods
 get_font = _rs.get_font
@@ -85,7 +86,7 @@ except ImportError:
 
 try:
     from platform_utils import create_display, set_app_icon, resource_path
-    from platform_utils import normalize_mouse_pos, get_mouse_pos
+    from platform_utils import normalize_mouse_pos, get_mouse_pos, resolve_frame_rate_cap
 except ImportError:
     def create_display(w, h, **kw):
         flags = pygame.RESIZABLE
@@ -100,6 +101,32 @@ except ImportError:
         return pygame.mouse.get_pos()
     def set_app_icon(path):
         pass
+    def resolve_frame_rate_cap(requested_limit, fallback=60):
+        try:
+            limit = int(requested_limit or 0)
+        except Exception:
+            limit = 0
+        if limit > 0:
+            return max(1, limit)
+        try:
+            if hasattr(pygame.display, 'get_current_refresh_rate'):
+                refresh_rate = int(pygame.display.get_current_refresh_rate() or 0)
+                if 24 <= refresh_rate <= 1000:
+                    return refresh_rate
+        except Exception:
+            pass
+        try:
+            if hasattr(pygame.display, 'get_desktop_refresh_rates'):
+                rates = [
+                    int(rate)
+                    for rate in (pygame.display.get_desktop_refresh_rates() or [])
+                    if 24 <= int(rate or 0) <= 1000
+                ]
+                if rates:
+                    return max(rates)
+        except Exception:
+            pass
+        return max(1, int(fallback or 60))
 
 
 # ─────────────── Online PvP Durumları ───────────────
@@ -184,7 +211,8 @@ class OnlinePvPGame:
             self.theme_manager.set_theme(active_theme)
         self.mode_skin = get_mode_skin('pvp')
         self.block_style_manager = BlockStyleManager(self.settings_manager) if self.settings_manager else None
-        self._texture_rotation_cache: dict[int, dict] = {}
+        self._texture_render_cache = TextureRenderCache()
+        self._effect_surface_cache = EffectSurfaceCache()
         self._board_grid_cache = {'key': None, 'surface': None}
         self._board_accent_overlay_cache: dict[tuple[int, int, tuple[int, int, int]], pygame.Surface] = {}
         self._line_clear_flash_cache: dict[tuple[int, int], pygame.Surface] = {}
@@ -529,43 +557,13 @@ class OnlinePvPGame:
         return TextureSlice(style_key, rel_x, rel_y, width, height, rotation)
 
     def _get_rotated_surface(self, surface, rotation):
-        rotation = (rotation or 0) % 4
-        if surface is None or rotation == 0:
-            return surface
-        surf_id = id(surface)
-        cache_entry = self._texture_rotation_cache.get(surf_id)
-        if not cache_entry or cache_entry.get('surface') is not surface:
-            cache_entry = {'surface': surface, 'variants': {}}
-            self._texture_rotation_cache[surf_id] = cache_entry
-        variants = cache_entry['variants']
-        if rotation not in variants:
-            variants[rotation] = pygame.transform.rotate(surface, -90 * rotation)
-        return variants[rotation]
+        return self._texture_render_cache.get_rotated_surface(surface, rotation)
 
     def _render_texture_slice(self, surface, slice_info, size):
-        rotated = self._get_rotated_surface(surface, getattr(slice_info, 'rotation', 0))
-        if rotated is None:
-            return None
-
-        tex_w, tex_h = rotated.get_size()
         bounds = {'x': 0.0, 'y': 0.0, 'w': 1.0, 'h': 1.0}
         if self.block_style_manager:
             bounds = self.block_style_manager.get_slice_bounds(slice_info.piece_name)
-
-        u0 = bounds['x'] + (slice_info.rel_x / slice_info.width) * bounds['w']
-        u1 = bounds['x'] + ((slice_info.rel_x + 1) / slice_info.width) * bounds['w']
-        v0 = bounds['y'] + (slice_info.rel_y / slice_info.height) * bounds['h']
-        v1 = bounds['y'] + ((slice_info.rel_y + 1) / slice_info.height) * bounds['h']
-
-        rect = pygame.Rect(
-            int(u0 * tex_w),
-            int(v0 * tex_h),
-            max(1, int((u1 - u0) * tex_w)),
-            max(1, int((v1 - v0) * tex_h)),
-        )
-        rect.clamp_ip(rotated.get_rect())
-        cell_surface = rotated.subsurface(rect)
-        return pygame.transform.smoothscale(cell_surface, (size, size))
+        return self._texture_render_cache.render_slice(surface, slice_info, size, bounds)
 
     def _draw_texture_cell(self, x, y, size, texture_surface, texture_slice, dst):
         scaled = self._render_texture_slice(texture_surface, texture_slice, size)
@@ -1597,11 +1595,9 @@ class OnlinePvPGame:
             pos = (int(particle['x']), int(particle['y']))
             size = particle['size']
             if size > 1:
-                glow_surface = pygame.Surface((size * 4, size * 4), pygame.SRCALPHA)
-                pygame.draw.circle(glow_surface, (*color, pulse_alpha // 3), (size * 2, size * 2), size * 2)
+                glow_surface = self._effect_surface_cache.get_circle_surface(size * 2, (*color, pulse_alpha // 3))
                 self.screen.blit(glow_surface, (pos[0] - size * 2, pos[1] - size * 2))
-            particle_surface = pygame.Surface((size * 2, size * 2), pygame.SRCALPHA)
-            pygame.draw.circle(particle_surface, (*color, pulse_alpha), (size, size), size)
+            particle_surface = self._effect_surface_cache.get_circle_surface(size, (*color, pulse_alpha))
             self.screen.blit(particle_surface, (pos[0] - size, pos[1] - size))
 
     def draw_particles(self):
@@ -1615,14 +1611,12 @@ class OnlinePvPGame:
             if particle.get('glow', False) and size > 2:
                 halo_size = size + 4
                 halo_color = tuple(min(255, int(c * 0.6)) for c in color[:3])
-                halo_surface = pygame.Surface((halo_size * 2, halo_size * 2), pygame.SRCALPHA)
-                pygame.draw.circle(halo_surface, (*halo_color, int(alpha * 0.3)), (halo_size, halo_size), halo_size)
+                halo_surface = self._effect_surface_cache.get_circle_surface(halo_size, (*halo_color, int(alpha * 0.3)))
                 self.screen.blit(halo_surface, (pos[0] - halo_size, pos[1] - halo_size))
 
                 mid_size = size + 2
                 mid_color = tuple(min(255, int(c * 0.8)) for c in color[:3])
-                mid_surface = pygame.Surface((mid_size * 2, mid_size * 2), pygame.SRCALPHA)
-                pygame.draw.circle(mid_surface, (*mid_color, int(alpha * 0.5)), (mid_size, mid_size), mid_size)
+                mid_surface = self._effect_surface_cache.get_circle_surface(mid_size, (*mid_color, int(alpha * 0.5)))
                 self.screen.blit(mid_surface, (pos[0] - mid_size, pos[1] - mid_size))
 
             pygame.draw.circle(self.screen, color, pos, size)
@@ -3902,8 +3896,10 @@ class OnlinePvPGame:
                     if progress > 0:
                         lit_width = min(int(progress * board_w), board_w)
                         if lit_width > 0:
-                            lit_surface = pygame.Surface((lit_width, cell_size), pygame.SRCALPHA)
-                            lit_surface.fill((255, 255, 255, int(180 * (1.0 - progress * 0.8))))
+                            lit_surface = self._effect_surface_cache.get_filled_surface(
+                                (lit_width, cell_size),
+                                (255, 255, 255, int(180 * (1.0 - progress * 0.8))),
+                            )
                             self.screen.blit(lit_surface, (x, row_y))
 
         if self.my_line_flash_rows and self.my_line_glow_alpha > 0:
@@ -3914,11 +3910,9 @@ class OnlinePvPGame:
             alpha = max(0, min(255, int(wave.get('alpha', 0))))
             if radius <= 0 or alpha <= 0:
                 continue
-            wave_surface = pygame.Surface((radius * 2 + 6, 6), pygame.SRCALPHA)
-            pygame.draw.ellipse(
-                wave_surface,
+            wave_surface = self._effect_surface_cache.get_ellipse_surface(
+                (radius * 2 + 6, 6),
                 (*wave.get('color', (255, 255, 255))[:3], alpha),
-                wave_surface.get_rect(),
             )
             wave_x = int(wave['x'] - radius)
             wave_y = int(wave['y'] - 3)
@@ -4028,8 +4022,10 @@ class OnlinePvPGame:
                     if progress > 0:
                         lit_width = min(int(progress * board_w), board_w)
                         if lit_width > 0:
-                            lit_surface = pygame.Surface((lit_width, cell_size), pygame.SRCALPHA)
-                            lit_surface.fill((255, 255, 255, int(180 * (1.0 - progress * 0.8))))
+                            lit_surface = self._effect_surface_cache.get_filled_surface(
+                                (lit_width, cell_size),
+                                (255, 255, 255, int(180 * (1.0 - progress * 0.8))),
+                            )
                             self.screen.blit(lit_surface, (x, row_y))
 
         if self.opp_line_flash_rows and self.opp_line_glow_alpha > 0:
@@ -4042,11 +4038,9 @@ class OnlinePvPGame:
             radius = int(wave.get('radius', 0))
             if radius <= 0:
                 continue
-            wave_surface = pygame.Surface((radius * 2 + 6, 6), pygame.SRCALPHA)
-            pygame.draw.ellipse(
-                wave_surface,
+            wave_surface = self._effect_surface_cache.get_ellipse_surface(
+                (radius * 2 + 6, 6),
                 (*wave.get('color', (255, 255, 255))[:3], alpha),
-                wave_surface.get_rect(),
             )
             wave_x = int(wave.get('x', x + board_w // 2) - radius)
             wave_y = int(wave.get('y', y + board_h // 2) - 3)
@@ -4221,7 +4215,7 @@ class OnlinePvPGame:
                 except Exception:
                     fps_limit = 0
 
-                delta_time = self.clock.tick(fps_limit if fps_limit > 0 else 60)
+                delta_time = self.clock.tick(resolve_frame_rate_cap(fps_limit))
 
                 result = self.handle_input()
                 if result is False:

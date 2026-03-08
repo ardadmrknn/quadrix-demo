@@ -92,8 +92,22 @@ write_embedded_layout_module('.')
 echo -e "${CYAN}${BOLD}🔨 PyInstaller ile .app oluşturuluyor...${NC}"
 BUILD_START=$(date +%s)
 
-$PYTHON_CMD -m PyInstaller "$SPEC_FILE" --noconfirm --clean --log-level WARN 2>&1 | \
-    grep -E "Building|ERROR|WARNING|INFO.*Platform" || true
+BUILD_LOG=$(mktemp)
+set +e
+$PYTHON_CMD -m PyInstaller "$SPEC_FILE" --noconfirm --clean --log-level WARN 2>&1 | tee "$BUILD_LOG" | \
+    grep -E "Building|ERROR|WARNING|INFO.*Platform"
+PIPE_EXIT_CODES=(${PIPESTATUS[@]})
+set -e
+
+if [[ ${PIPE_EXIT_CODES[0]} -ne 0 ]]; then
+    echo ""
+    echo -e "${RED}PyInstaller hata verdi. Son log satirlari:${NC}"
+    tail -n 40 "$BUILD_LOG"
+    rm -f "$BUILD_LOG"
+    exit ${PIPE_EXIT_CODES[0]}
+fi
+
+rm -f "$BUILD_LOG"
 
 BUILD_END=$(date +%s)
 APP_PATH="$DIST_DIR/$APP_NAME.app"
