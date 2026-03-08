@@ -780,12 +780,6 @@ class OnlinePvPGame:
                     return value
             except Exception:
                 pass
-            try:
-                value = self.net.get_lobby_data(key)
-                if value:
-                    return value
-            except Exception:
-                pass
             return fallback
 
         host_name = _read_lobby_data('host_name', '')
