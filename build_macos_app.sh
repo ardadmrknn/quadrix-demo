@@ -16,9 +16,11 @@ DIST_DIR="dist"
 BUILD_DIR="build"
 
 CLEAN_BUILD=false
+REBUILD_BRIDGE=false
 for arg in "$@"; do
     case "$arg" in
         --clean) CLEAN_BUILD=true ;;
+        --rebuild-bridge) REBUILD_BRIDGE=true ;;
     esac
 done
 
@@ -53,13 +55,19 @@ echo ""
 
 if $CLEAN_BUILD; then
     echo -e "${YELLOW}🧹 Temizleniyor...${NC}"
-    rm -rf "$BUILD_DIR/$APP_NAME" "$DIST_DIR/$APP_NAME" "$DIST_DIR/$APP_NAME.app"
+    rm -rf "$BUILD_DIR" "$DIST_DIR"
+fi
+
+if $REBUILD_BRIDGE; then
+    echo -e "${YELLOW}♻️ Bridge artifactleri temizleniyor...${NC}"
+    rm -rf steamworks/steam_net_bridge/build_*
+    rm -f steam_net_bridge*.so
 fi
 
 # Steam Net Bridge (Online PvP için zorunlu)
 echo -e "${CYAN}🔧 Steam Net Bridge kontrolü...${NC}"
 BRIDGE_SO=$(ls steam_net_bridge*.so 2>/dev/null | head -1 || true)
-if [[ -z "$BRIDGE_SO" ]]; then
+if [[ -z "$BRIDGE_SO" || "$REBUILD_BRIDGE" == true ]]; then
     echo -e "${YELLOW}  Bridge bulunamadı, derleniyor...${NC}"
     if [[ ! -f "steamworks/steam_net_bridge/build.sh" ]]; then
         echo -e "${RED}HATA: steamworks/steam_net_bridge/build.sh bulunamadı!${NC}"; exit 1

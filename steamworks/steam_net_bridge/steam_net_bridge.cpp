@@ -58,6 +58,8 @@ public:
         , m_lobbyReady(false)
         , m_joinRequestedTime(0)
         , m_lobbyListRequestActive(false)
+        , m_pendingLobbyVisibility("private")
+        , m_pendingLobbyRequiresCode(true)
     {}
 
     ~SteamNetBridge() {
@@ -85,12 +87,14 @@ public:
 
     void create_lobby(int max_members = 2) {
         if (!m_matchmaking) return;
+        set_pending_lobby_metadata(k_ELobbyTypePrivate);
         SteamAPICall_t call = m_matchmaking->CreateLobby(k_ELobbyTypePrivate, max_members);
         m_lobbyCreatedResult.Set(call, this, &SteamNetBridge::OnLobbyCreated);
     }
 
     void create_public_lobby(int max_members = 2) {
         if (!m_matchmaking) return;
+        set_pending_lobby_metadata(k_ELobbyTypePublic);
         SteamAPICall_t call = m_matchmaking->CreateLobby(k_ELobbyTypePublic, max_members);
         m_lobbyCreatedResult.Set(call, this, &SteamNetBridge::OnLobbyCreated);
     }
@@ -166,6 +170,7 @@ public:
     void create_lobby_with_type(int lobby_type, int max_members = 2) {
         if (!m_matchmaking) return;
         ELobbyType type = static_cast<ELobbyType>(lobby_type);
+        set_pending_lobby_metadata(type);
         SteamAPICall_t call = m_matchmaking->CreateLobby(type, max_members);
         m_lobbyCreatedResult.Set(call, this, &SteamNetBridge::OnLobbyCreated);
     }
@@ -285,6 +290,8 @@ private:
     uint32                      m_joinRequestedTime;
     bool                        m_lobbyListRequestActive;
     std::vector<uint64_t>       m_pendingLobbyDataRequests;
+    std::string                 m_pendingLobbyVisibility;
+    bool                        m_pendingLobbyRequiresCode;
 
     // Event kuyruğu
     std::mutex                  m_eventMutex;
@@ -310,6 +317,17 @@ private:
     void push_event(const std::string& type, uint64_t steam_id, const std::string& data) {
         std::lock_guard<std::mutex> lock(m_eventMutex);
         m_events.push_back({type, steam_id, data});
+    }
+
+    void set_pending_lobby_metadata(ELobbyType lobbyType) {
+        if (lobbyType == k_ELobbyTypePublic) {
+            m_pendingLobbyVisibility = "public";
+            m_pendingLobbyRequiresCode = false;
+            return;
+        }
+
+        m_pendingLobbyVisibility = "private";
+        m_pendingLobbyRequiresCode = true;
     }
 
     static std::string json_escape(const std::string& value) {
@@ -411,6 +429,12 @@ private:
         // Lobi metadata'sını ayarla
         m_matchmaking->SetLobbyData(m_currentLobby, "game", "quadrix");
         m_matchmaking->SetLobbyData(m_currentLobby, "version", "1.0");
+        m_matchmaking->SetLobbyData(m_currentLobby, "visibility", m_pendingLobbyVisibility.c_str());
+        m_matchmaking->SetLobbyData(
+            m_currentLobby,
+            "requires_code",
+            m_pendingLobbyRequiresCode ? "1" : "0"
+        );
 
         push_event("lobby_created", pResult->m_ulSteamIDLobby, "");
     }

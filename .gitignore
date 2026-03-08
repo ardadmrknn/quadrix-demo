@@ -23,6 +23,8 @@ dist/
 *.egg-info/
 *.spec.bak
 build_log.txt
+build_stdout.log
+build_stderr.log
 stderr.log
 
 # Compiled bridge artifacts (platform-specific, built locally)

@@ -1,1 +1,0 @@
-/usr/bin/c++ -O3 -DNDEBUG -arch arm64 -arch x86_64 -bundle -Wl,-headerpad_max_install_names -Xlinker -undefined -Xlinker dynamic_lookup -flto -o steam_net_bridge.cpython-312-darwin.so CMakeFiles/steam_net_bridge.dir/steam_net_bridge.cpp.o  /Users/burakyasayan/quadrix-main/steamworks/steam_net_bridge/../sdk/redistributable_bin/osx/libsteam_api.dylib
