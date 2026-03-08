@@ -114,6 +114,32 @@ def _apply_leaderboard_cli_overrides(argv: list[str]) -> None:
             i += consumed - 1
         i += 1
 
+
+def _persist_active_game_run(game) -> None:
+    """Aktif oyunun skor/istatistik kaydını tek noktadan tamamla."""
+    if game is None:
+        return
+
+    finalize_run = getattr(game, 'finalize_run', None)
+    if not callable(finalize_run):
+        return
+
+    try:
+        raw_playtime = getattr(game, 'game_time', 0)
+        playtime = max(0, int(raw_playtime or 0)) // 1000
+    except Exception:
+        playtime = None
+
+    try:
+        finalize_run(playtime)
+    except TypeError:
+        try:
+            finalize_run()
+        except Exception as exc:
+            print(f"[Save] Oyun cikis kaydi tamamlanamadi: {exc}")
+    except Exception as exc:
+        print(f"[Save] Oyun cikis kaydi tamamlanamadi: {exc}")
+
 try:
     from .game import Game  # type: ignore
     from .block_styles import BlockStyleManager  # type: ignore
@@ -2474,6 +2500,7 @@ def main():
         
         # QUIT olayı kontrolü - önce kontrol et
         if result is False:
+            _persist_active_game_run(game)
             running = False
             return False
         
@@ -2489,46 +2516,7 @@ def main():
             game._cached_offset_key = None  # Cache'i temizle
             game._cached_cell_size_key = None
         elif result in ('menu', 'campaign_select', 'main_menu'):
-            if not game.game_over:
-                playtime = game.game_time // 1000
-                if user_manager:
-                    user_manager.update_user_stats(
-                        games=1,
-                        score=game.board.score,
-                        lines=game.board.lines_cleared,
-                        tetrises=game.board.tetrises,
-                        combos=game.board.combo,
-                        highest_combo=game.board.combo,
-                        level=game.board.level,
-                        playtime=playtime,
-                        mode=game.game_mode,
-                    )
-                    print(f"Kullanıcı istatistikleri güncellendi (ESC): {game.game_mode.upper()} - {game.board.score} puan")
-
-                if achievement_manager:
-                    achievement_manager.stats['total_games'] = achievement_manager.stats.get('total_games', 0) + 1
-                    achievement_manager.stats['total_lines'] = achievement_manager.stats.get('total_lines', 0) + game.board.lines_cleared
-
-                    new_achievements = achievement_manager.update_stats(
-                        score=game.board.score,
-                        lines=game.board.lines_cleared,
-                        level=game.board.level,
-                        tetrises=game.board.tetrises,
-                        combo=game.board.combo,
-                    )
-
-                    for ach_id in new_achievements:
-                        achievement = achievement_manager.get_achievement(ach_id)
-                        if achievement:
-                            print(f"Başarı Açıldı: {achievement['name']} - {achievement['description']}")
-
-                score_manager.add_score(
-                    game.board.score,
-                    game.board.lines_cleared,
-                    game.board.level,
-                    game.board.tetrises,
-                    playtime,
-                )
+            _persist_active_game_run(game)
 
             if isinstance(game, DailyChallengeMode):
                 game.record_daily_outcome(game.challenge_completed)
