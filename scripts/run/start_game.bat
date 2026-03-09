@@ -3,7 +3,7 @@ REM Quadrix Windows Başlatıcı
 REM Bu script oyunu Windows'ta hızlıca başlatır
 
 setlocal EnableDelayedExpansion
-cd /d "%~dp0"
+cd /d "%~dp0\..\.."
 
 echo ============================================
 echo     QUADRIX - Full Edition (Windows)
@@ -49,7 +49,7 @@ REM Gerekli paketleri kontrol et
 %PYTHON_EXE% -c "import pygame, numpy" >nul 2>&1
 if !errorlevel! neq 0 (
     echo [INFO] Gerekli paketler yukleniyor...
-    %PYTHON_EXE% -m pip install -r requirements.txt --quiet
+    %PYTHON_EXE% -m pip install -r packaging\requirements\requirements.txt --quiet
     if !errorlevel! neq 0 (
         echo [HATA] Paket yukleme basarisiz!
         pause

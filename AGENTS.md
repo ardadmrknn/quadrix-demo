@@ -8,9 +8,9 @@ plans/
 - **Language:** Python 3.12
 - **Framework:** Pygame 2.x
 - **Source Directory:** `src/`
-- **Tests:** Root-level `test_*.py` files, run with `pytest` (also `run_tests.sh`)
+- **Tests:** `tests/` altındaki `test_*.py` dosyaları, `pytest` veya `scripts/test/run_tests.sh` ile çalıştırılır
 - **Entry Point:** `main.py` (Turkish), `src/main_en.py` (English fallback)
-- **Build:** `build_macos_app.sh`, spec files (`tetris_macos.spec`, `tetris.spec`, etc.)
+- **Build:** `scripts/build/build_macos_app.sh`, spec files `packaging/specs/` altında
 
 ## Key Subsystems
 
@@ -90,7 +90,7 @@ plans/
 ## Conventions
 - Tüm kaynak kod `src/` altında; `src/campaign/` alt paketi kampanya sistemine aittir
 - Ayarlar `src/settings_manager.py` ve `settings.txt` üzerinden yönetilir
-- Testler root dizininde `test_*.py` deseniyle; `pytest` veya `./run_tests.sh -q` ile çalıştırılır
+- Testler `tests/` altında `test_*.py` deseniyle; `pytest` veya `./scripts/test/run_tests.sh -q` ile çalıştırılır
 - Web frontend yok; tüm UI Pygame tabanlıdır (Frontend-Engineer-subagent KULLANILMAZ)
 - Font ölçekleme: `menu.py` → `_menu_panel_content_scale()` (1920×1080 ref), `level_select.py` → `max(0.72, min(1.0, w/1400, h/900))`, `extras_menu.py` → `_extras_ui_scale()` (base_window_size ref)
 - `UIFonts` sınıfı (`src/ui_theme.py`) tüm in-game UI fontlarının tek kaynağıdır

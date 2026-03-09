@@ -1,10 +1,15 @@
-import sys
-from docx import Document
 import re
+from pathlib import Path
+
+from docx import Document
+
+
+REPO_ROOT = Path(__file__).resolve().parents[3]
+SOURCE_DOC = REPO_ROOT / 'docs' / 'archive' / 'reference' / 'Gorev_Modu_Rehberi.docx'
 
 def read_docx():
     try:
-        doc = Document('Gorev_Modu_Rehberi.docx')
+        doc = Document(SOURCE_DOC)
     except Exception as e:
         print(f"Error reading docx: {e}")
         return

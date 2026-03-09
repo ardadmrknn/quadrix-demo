@@ -114,7 +114,7 @@ def _resolve_root_dir() -> Path:
 
 def _resolve_menu_layout_runtime_path() -> Path:
     """Source-run layout override path (development only)."""
-    project_layout = Path(__file__).resolve().parent.parent / 'menu_layout_runtime.json'
+    project_layout = Path(__file__).resolve().parent.parent / 'config' / 'runtime' / 'menu_layout_runtime.json'
     return project_layout
 
 def _circle_crop_bitmap(src: pygame.Surface | None, diameter: int) -> pygame.Surface:
@@ -1126,9 +1126,10 @@ class Menu:
         )
 
     def _can_cache_dashboard_tile_surface(self, panel_key: str, selected: bool, hover: bool) -> bool:
-        if selected or hover:
-            return False
-        return panel_key in {'daily_challenge', 'achievements', 'piece_workshop', 'block_styles'}
+        # These tiles looked washed out because their idle state was rendered on
+        # an off-screen SRCALPHA surface and then composited back onto the menu,
+        # unlike the rest of the dashboard tiles which render directly.
+        return False
 
     def _get_dashboard_tile_surface_cache_key(
         self,
@@ -1959,22 +1960,45 @@ class Menu:
             info_y = rect.y + max(s(50), int(rect.height * 0.35))
 
             if next_level == last_level:
-                lv_main = t('menu_dashboard_campaign_level_single', level=next_level)
+                lv_lines = [t('menu_dashboard_campaign_level_single', level=next_level)]
                 lv_sub = ''
             else:
                 lv_main = t('menu_dashboard_campaign_levels', last=last_level, next=next_level)
+                lv_lines = [segment.strip() for segment in lv_main.split('·') if segment.strip()]
+                if not lv_lines:
+                    lv_lines = [lv_main]
                 lv_sub = level_name
 
             lv_pad_x = s(10)
             lv_pad_y = s(6)
-            lv_font = retro_style.get_fitting_font(lv_main, base_size=s(18), max_width=content_w - lv_pad_x * 2, bold=True, min_size=max(11, s(13)))
-            lv_surf = lv_font.render(lv_main, True, accent_color)
+            lv_max_text_w = max(80, content_w - lv_pad_x * 2 - 8)
+            lv_font_size = s(18)
+            lv_font = retro_style.get_font(lv_font_size, bold=True)
+            lv_min_size = max(11, s(13))
+            while lv_font_size > lv_min_size:
+                if all(lv_font.size(line)[0] <= lv_max_text_w for line in lv_lines):
+                    break
+                lv_font_size -= 1
+                lv_font = retro_style.get_font(lv_font_size, bold=True)
 
-            # Panel yüksekliği: level adı varsa daha yüksek
-            lv_panel_h = lv_surf.get_height() + lv_pad_y * 2
+            lv_surfs = [lv_font.render(line, True, accent_color) for line in lv_lines]
+            lv_line_gap = s(2)
+            lv_main_h = sum(surf.get_height() for surf in lv_surfs) + max(0, len(lv_surfs) - 1) * lv_line_gap
+            lv_main_w = max((surf.get_width() for surf in lv_surfs), default=0)
+
+            name_surf = None
+            name_gap = s(6)
             if lv_sub:
-                lv_panel_h += s(18)
-            lv_panel_w = max(lv_surf.get_width() + lv_pad_x * 2 + 8, min(content_w, 180))
+                name_font = retro_style.get_fitting_font(lv_sub, base_size=s(14), max_width=lv_max_text_w, bold=False, min_size=max(10, s(11)))
+                name_surf = name_font.render(lv_sub, True, UIColors.TEXT_SECONDARY)
+
+            lv_panel_h = lv_main_h + lv_pad_y * 2
+            if name_surf is not None:
+                lv_panel_h += name_gap + name_surf.get_height()
+            lv_panel_w = max(lv_main_w + lv_pad_x * 2 + 8, min(content_w, 180))
+            if name_surf is not None:
+                lv_panel_w = max(lv_panel_w, min(content_w, name_surf.get_width() + lv_pad_x * 2 + 8))
+            lv_panel_w = min(content_w, lv_panel_w)
             lv_panel_x = rect.x + pad_l
             lv_panel_y = info_y
 
@@ -1987,16 +2011,17 @@ class Menu:
                 pygame.draw.line(lv_bg, (255, 255, 255, ha), (6, hy), (lv_panel_w - 6, hy))
             # Kenarlık
             pygame.draw.rect(lv_bg, (*accent_color[:3], 80), lv_bg.get_rect(), 1, border_radius=10)
-            self.screen.blit(lv_bg, (lv_panel_x, lv_panel_y))
+            target.blit(lv_bg, (lv_panel_x, lv_panel_y))
 
-            # Level metni
-            self.screen.blit(lv_surf, lv_surf.get_rect(midleft=(lv_panel_x + lv_pad_x + 4, lv_panel_y + lv_pad_y + lv_surf.get_height() // 2)))
+            # Level metinleri
+            text_y = lv_panel_y + lv_pad_y
+            for lv_line_surf in lv_surfs:
+                target.blit(lv_line_surf, (lv_panel_x + lv_pad_x + 4, text_y))
+                text_y += lv_line_surf.get_height() + lv_line_gap
 
             # --- Level adı (panel içinde) ---
-            if lv_sub:
-                name_font = retro_style.get_fitting_font(lv_sub, base_size=s(14), max_width=lv_panel_w - s(20), bold=False, min_size=max(10, s(11)))
-                name_surf = name_font.render(lv_sub, True, UIColors.TEXT_SECONDARY)
-                self.screen.blit(name_surf, name_surf.get_rect(midleft=(lv_panel_x + lv_pad_x + s(4), lv_panel_y + lv_pad_y + lv_surf.get_height() + s(10))))
+            if name_surf is not None:
+                target.blit(name_surf, (lv_panel_x + lv_pad_x + s(4), text_y + max(0, name_gap - lv_line_gap)))
 
             # --- Hızlı Devam butonu (sağ-alt köşe) ---
             btn_w = max(s(115), 116, min(s(150), rect.width - s(26)))
@@ -10761,7 +10786,7 @@ class CreditsScreen:
         _cl = {}
         try:
             import json as _json
-            _cl_path = ROOT_DIR / 'credits_layout.json'
+            _cl_path = ROOT_DIR / 'config' / 'runtime' / 'credits_layout.json'
             if _cl_path.exists():
                 _cl = _json.loads(_cl_path.read_text(encoding='utf-8'))
         except Exception:

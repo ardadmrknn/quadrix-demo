@@ -5,12 +5,13 @@
 #
 set -euo pipefail
 
-# Script dizinine git
+# Repo köküne git
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-REQ_FILE="$SCRIPT_DIR/requirements-macos.txt"
-FALLBACK_REQ="$SCRIPT_DIR/requirements.txt"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+REQ_FILE="$REPO_ROOT/packaging/requirements/requirements-macos.txt"
+FALLBACK_REQ="$REPO_ROOT/packaging/requirements/requirements.txt"
 
-cd "$SCRIPT_DIR"
+cd "$REPO_ROOT"
 
 # Renk kodları
 RED='\033[0;31m'
@@ -40,7 +41,7 @@ elif [[ "${OSTYPE:-}" == linux* ]]; then
 else
     PLATFORM="Unknown"
     echo -e "${YELLOW}!${NC} Bilinmeyen platform: ${OSTYPE:-unknown}"
-    echo -e "${YELLOW}!${NC} Windows için start_game.bat kullanın."
+    echo -e "${YELLOW}!${NC} Windows için scripts/run/start_game.bat kullanın."
 fi
 
 # Başlatıcıya özel flag'leri oyuna göndermemek için ayır
@@ -141,10 +142,10 @@ install_packages() {
     fi
     
     if [ -f "$REQ_FILE" ]; then
-        echo -e "${YELLOW}→${NC} macOS paketleri yükleniyor (requirements-macos.txt)..."
+        echo -e "${YELLOW}→${NC} macOS paketleri yükleniyor (packaging/requirements/requirements-macos.txt)..."
         "$PYTHON_BIN" -m pip install "${pip_args[@]}" --requirement "$REQ_FILE" --quiet
     elif [ -f "$FALLBACK_REQ" ]; then
-        echo -e "${YELLOW}→${NC} Paketler yükleniyor (requirements.txt)..."
+        echo -e "${YELLOW}→${NC} Paketler yükleniyor (packaging/requirements/requirements.txt)..."
         "$PYTHON_BIN" -m pip install "${pip_args[@]}" --requirement "$FALLBACK_REQ" --quiet
     else
         echo -e "${YELLOW}→${NC} Minimum paketler yükleniyor..."
@@ -176,7 +177,7 @@ echo ""
 # macOS'ta pencereyi öne getirmek için osascript kullan (opsiyonel)
 if [[ "$PLATFORM" == "macOS" ]]; then
     # Oyunu başlat ve Terminal'i geri planda bırak
-    exec "$PYTHON_BIN" src/main.py "$@"
+    exec "$PYTHON_BIN" main.py "$@"
 else
-    exec "$PYTHON_BIN" src/main.py "$@"
+    exec "$PYTHON_BIN" main.py "$@"
 fi

@@ -137,11 +137,12 @@ if !ERRORLEVEL! neq 0 (
     exit /b 1
 )
 
-REM DLL'i proje köküne kopyala
+REM DLL'i local_artifacts/bridge klasorune kopyala
 echo.
-echo [KOPYALAMA] steam_net_bridge.pyd dosyasi proje kokune kopyalaniyor...
+echo [KOPYALAMA] steam_net_bridge.pyd dosyasi local_artifacts/bridge klasorune kopyalaniyor...
+if not exist "..\..\..\local_artifacts\bridge" mkdir "..\..\..\local_artifacts\bridge"
 for /r "Release" %%f in (steam_net_bridge*.pyd) do (
-    copy /Y "%%f" "..\..\.." >nul
+    copy /Y "%%f" "..\..\..\local_artifacts\bridge" >nul
     echo   → %%~nxf kopyalandi
 )
 
@@ -149,7 +150,7 @@ cd ..
 echo.
 echo ═══════════════════════════════════════════
 echo   Derleme basarili!
-echo   steam_net_bridge (Python !PY_TAG!) proje kokunde hazir.
+echo   steam_net_bridge (Python !PY_TAG!) local_artifacts/bridge altinda hazir.
 echo ═══════════════════════════════════════════
 echo.
 endlocal

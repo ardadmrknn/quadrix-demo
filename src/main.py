@@ -1908,7 +1908,7 @@ def main():
             elif action in ('extras', 'Ekstralar', 'Oyun Modları', 'Extras', 'Game Modes', t('extras')):
                 confirm_exit = False
                 state = 'extras'
-            elif action in ('achievements', 'Başarılar', 'Achievements'):
+            elif action in ('achievements', 'Başarılar', 'Başarımlar', 'Achievements'):
                 confirm_exit = False
                 state = 'achievements'
             elif action in ('high_scores', 'High Scores', t('high_scores'), 'Yüksek Skorlar', 'En Yuksek Skorlar'):

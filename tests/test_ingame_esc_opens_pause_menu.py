@@ -33,6 +33,14 @@ def _keydown_event(key):
     return types.SimpleNamespace(type=game_module.pygame.KEYDOWN, key=key, mod=0)
 
 
+def _focus_loss_event(module):
+    return types.SimpleNamespace(
+        type=module.pygame.ACTIVEEVENT,
+        gain=0,
+        state=getattr(module.pygame, 'APPINPUTFOCUS', 0) or getattr(module.pygame, 'APPACTIVE', 0),
+    )
+
+
 def test_gameplay_esc_opens_pause_menu_not_exit_prompt(monkeypatch):
     game = _make_game_instance()
     game.game_over = False
@@ -60,6 +68,18 @@ def test_paused_esc_resumes_game(monkeypatch):
     game.handle_input()
 
     assert game.paused is False
+
+
+def test_focus_loss_pauses_gameplay(monkeypatch):
+    game = _make_game_instance()
+    game.pause_menu_selected = 4
+
+    monkeypatch.setattr(game_module.pygame.event, 'get', lambda: [_focus_loss_event(game_module)])
+
+    game.handle_input()
+
+    assert game.paused is True
+    assert game.pause_menu_selected == 0
 
 
 def test_game_over_esc_returns_menu(monkeypatch):
@@ -130,6 +150,20 @@ def test_pvp_gameplay_esc_opens_pause(monkeypatch):
     assert pvp.pause_menu_selected == 0
 
 
+def test_pvp_focus_loss_pauses_gameplay(monkeypatch):
+    pvp = _make_pvp_instance()
+    pvp.game_over = False
+    pvp.paused = False
+    pvp.pause_menu_selected = 2
+
+    monkeypatch.setattr(pvp_module.pygame.event, 'get', lambda: [_focus_loss_event(pvp_module)])
+
+    pvp.handle_input()
+
+    assert pvp.paused is True
+    assert pvp.pause_menu_selected == 0
+
+
 # ---------------------------------------------------------------------------
 # HardcoreGame K_p → pause_menu_selected sıfırlama
 # ---------------------------------------------------------------------------
@@ -166,6 +200,22 @@ def test_hardcore_k_p_resets_pause_menu_selected(monkeypatch):
 
     monkeypatch.setattr(modes_module.pygame.event, 'get', lambda: [_keydown_event(modes_module.pygame.K_p)])
     # video sistemi başlatılmadığından key.get_pressed mock'lanmalı (defaultdict ile tüm key'ler False)
+    monkeypatch.setattr(modes_module.pygame.key, 'get_pressed', lambda: collections.defaultdict(bool))
+
+    hc.handle_input()
+
+    assert hc.paused is True
+    assert hc.pause_menu_selected == 0
+
+
+def test_hardcore_focus_loss_pauses_gameplay(monkeypatch):
+    import collections
+
+    hc = _make_hardcore_instance()
+    hc.paused = False
+    hc.pause_menu_selected = 6
+
+    monkeypatch.setattr(modes_module.pygame.event, 'get', lambda: [_focus_loss_event(modes_module)])
     monkeypatch.setattr(modes_module.pygame.key, 'get_pressed', lambda: collections.defaultdict(bool))
 
     hc.handle_input()

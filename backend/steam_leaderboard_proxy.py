@@ -43,11 +43,15 @@ DEFAULT_MODE_TO_LEADERBOARD = {
 def _read_app_id_from_file() -> int:
     try:
         root = Path(__file__).resolve().parents[1]
-        appid_path = root / "steam_appid.txt"
-        if not appid_path.exists():
-            return 0
-        raw = appid_path.read_text(encoding="utf-8").strip()
-        return int(raw or 0)
+        candidates = [
+            root / "config" / "runtime" / "steam_appid.txt",
+            root / "steam_appid.txt",
+        ]
+        for appid_path in candidates:
+            if not appid_path.exists():
+                continue
+            raw = appid_path.read_text(encoding="utf-8").strip()
+            return int(raw or 0)
     except Exception:
         return 0
 

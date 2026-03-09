@@ -14,7 +14,7 @@ REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
 
 
 def _read_spec(name: str) -> str:
-    path = REPO_ROOT / name
+    path = REPO_ROOT / 'packaging' / 'specs' / name
     return path.read_text(encoding="utf-8")
 
 
@@ -85,7 +85,7 @@ def test_specs_include_quadrix_data_runtime_hook(spec_name):
 @pytest.mark.parametrize("spec_name", SPEC_FILES)
 def test_specs_are_parseable_python(spec_name):
     """Her spec dosyası compile() ile syntax hatası olmadan parse edilebilmeli."""
-    path = REPO_ROOT / spec_name
+    path = REPO_ROOT / 'packaging' / 'specs' / spec_name
     source = path.read_text(encoding="utf-8")
     try:
         compile(source, spec_name, "exec")

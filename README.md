@@ -12,8 +12,8 @@ py main.py
 ```
 
 Alternatif:
-- `start_game.bat`
-- `run_game.ps1`
+- `scripts/run/start_game.bat`
+- `scripts/run/run_game.ps1`
 
 ### macOS / Linux
 
@@ -29,13 +29,13 @@ python3 main.py
 Kurulum:
 
 ```powershell
-pip install -r requirements.txt
+pip install -r packaging/requirements/requirements.txt
 ```
 
 macOS için:
 
 ```bash
-pip3 install -r requirements-macos.txt
+pip3 install -r packaging/requirements/requirements-macos.txt
 ```
 
 ## Proje Yapısı
@@ -46,6 +46,8 @@ Kısa özet:
 - `tests/` → pytest testleri
 - `backend/` → Steam leaderboard proxy
 - `docs/` → teknik dokümantasyon
+- `scripts/` → çalıştırma, build ve yayın scriptleri
+- `packaging/` → PyInstaller hook ve paketleme yardımcıları
 - `assets/`, `music/`, `backgrounds/`, `font/` → içerik varlıkları
 - `diary/` → değişiklik günlükleri
 - `reports/` → raporlar ve loglar
@@ -83,9 +85,10 @@ py -m pytest tests/test_steam_achievements_sync.py -v
 
 ## Dokümanlar
 
-- Tam oyun/özellik notları: [README_FULL.md](README_FULL.md)
-- Türkçe rehber (eski/sade): [README_TR.md](README_TR.md)
-- Platform desteği: [PLATFORM_SUPPORT.md](PLATFORM_SUPPORT.md)
+- Tam oyun/özellik notları: [docs/guides/README_FULL.md](docs/guides/README_FULL.md)
+- Türkçe rehber (eski/sade): [docs/guides/README_TR.md](docs/guides/README_TR.md)
+- macOS rehberi: [docs/guides/README_MACOS.md](docs/guides/README_MACOS.md)
+- Arşiv platform notları: [docs/archive/PLATFORM_SUPPORT.md](docs/archive/PLATFORM_SUPPORT.md)
 
 ## Katkı
 

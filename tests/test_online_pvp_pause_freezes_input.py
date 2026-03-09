@@ -53,6 +53,14 @@ def _keydown_event(key: int):
     return types.SimpleNamespace(key=key, mod=0)
 
 
+def _focus_loss_event():
+    return types.SimpleNamespace(
+        type=online_pvp_module.pygame.ACTIVEEVENT,
+        gain=0,
+        state=getattr(online_pvp_module.pygame, 'APPINPUTFOCUS', 0) or getattr(online_pvp_module.pygame, 'APPACTIVE', 0),
+    )
+
+
 def test_online_pvp_opponent_pause_blocks_local_gameplay_input():
     game = _make_online_game()
     game.opponent_paused = True
@@ -107,3 +115,28 @@ def test_online_pvp_remote_pause_message_freezes_local_active_input():
     assert game.das_direction == 0
     assert game.das_timer == 0
     assert game.das_active is False
+
+
+def test_online_pvp_focus_loss_pauses_and_notifies_peer(monkeypatch):
+    game = _make_online_game()
+    game.gamepad = None
+    game.soft_dropping = True
+    game.das_direction = -1
+    game.das_timer = 12
+    game.das_active = True
+
+    monkeypatch.setattr(online_pvp_module.pygame.event, 'get', lambda: [_focus_loss_event()])
+
+    result = game.handle_input()
+
+    assert result is True
+    assert game.paused is True
+    assert game.soft_dropping is False
+    assert game.das_direction == 0
+    assert game.das_timer == 0
+    assert game.das_active is False
+    game.net.send.assert_called_once_with(
+        {'type': online_pvp_module.MsgType.PAUSE_REQUEST},
+        reliable=True,
+        channel=online_pvp_module.CHANNEL_CONTROL,
+    )

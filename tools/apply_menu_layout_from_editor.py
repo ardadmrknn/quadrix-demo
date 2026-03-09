@@ -5,7 +5,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 EDITOR_STATE = ROOT / "tools" / "menu_layout_editor_state.json"
-RUNTIME_LAYOUT = ROOT / "menu_layout_runtime.json"
+RUNTIME_LAYOUT = ROOT / "config" / "runtime" / "menu_layout_runtime.json"
 
 KEY_ALIASES = {
     "pvp": "pvp_2_players",

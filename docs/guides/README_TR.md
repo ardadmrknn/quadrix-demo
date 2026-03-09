@@ -18,7 +18,7 @@ cd "c:\Users\arda demirkan\Desktop\tetris\tetris-game"
 
 Pygame kütüphanesini yükleyin:
 ```powershell
-pip install -r requirements.txt
+pip install -r packaging/requirements/requirements.txt
 ```
 
 veya doğrudan:

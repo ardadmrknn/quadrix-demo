@@ -8,13 +8,14 @@ from pathlib import Path
 
 def get_bridge_binary_patterns(repo_root: str | Path) -> list[str]:
     repo_root = Path(repo_root)
+    bridge_dir = repo_root / 'local_artifacts' / 'bridge'
     if sys.platform == 'win32':
-        return [str(repo_root / 'steam_net_bridge*.pyd')]
+        return [str(bridge_dir / 'steam_net_bridge*.pyd')]
     if sys.platform == 'darwin':
-        return [str(repo_root / 'steam_net_bridge*.so')]
+        return [str(bridge_dir / 'steam_net_bridge*.so')]
     return [
-        str(repo_root / 'steam_net_bridge*.pyd'),
-        str(repo_root / 'steam_net_bridge*.so'),
+        str(bridge_dir / 'steam_net_bridge*.pyd'),
+        str(bridge_dir / 'steam_net_bridge*.so'),
     ]
 
 

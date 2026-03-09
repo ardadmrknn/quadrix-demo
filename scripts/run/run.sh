@@ -4,6 +4,7 @@
 # (venv kullanılmaz; paketler sistem Python'una kurulu olmalı)
 #
 cd "$(dirname "$0")" || exit 1
+cd ../.. || exit 1
 
 # VENV KESİNLİKLE YASAK: yanlışlıkla oluştuysa otomatik sil.
 if [[ -d ".venv" ]]; then

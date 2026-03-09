@@ -115,10 +115,12 @@ if [[ $? -ne 0 ]]; then
     exit 1
 fi
 
-# Çıktı dosyasını proje köküne kopyala
+# Çıktı dosyasını local_artifacts/bridge altına kopyala
 PROJECT_ROOT="$SCRIPT_DIR/../.."
+TARGET_DIR="$PROJECT_ROOT/local_artifacts/bridge"
+mkdir -p "$TARGET_DIR"
 echo ""
-echo "[KOPYALAMA] Modül dosyası proje köküne kopyalanıyor..."
+echo "[KOPYALAMA] Modül dosyası local_artifacts/bridge klasörüne kopyalanıyor..."
 
 ARTIFACT=""
 if [[ -n "$EXT_SUFFIX" ]]; then
@@ -133,13 +135,13 @@ if [[ -z "$ARTIFACT" ]]; then
     exit 1
 fi
 
-cp "$ARTIFACT" "$PROJECT_ROOT/"
+cp "$ARTIFACT" "$TARGET_DIR/"
 echo "  → $(basename "$ARTIFACT") kopyalandı"
 
 cd ..
 echo ""
 echo -e "${GREEN}═══════════════════════════════════════════${NC}"
 echo -e "${GREEN}  Derleme başarılı!${NC}"
-echo -e "${GREEN}  $(basename "$ARTIFACT") proje kökünde hazır.${NC}"
+echo -e "${GREEN}  $(basename "$ARTIFACT") local_artifacts/bridge altında hazır.${NC}"
 echo -e "${GREEN}═══════════════════════════════════════════${NC}"
 echo ""

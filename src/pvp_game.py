@@ -33,6 +33,61 @@ def resource_path(relative_path):
 class PvPGame:
     """2 oyunculu PvP oyun sınıfı"""
 
+    @staticmethod
+    def _is_focus_loss_event(event) -> bool:
+        event_type = getattr(event, 'type', None)
+        if event_type is None:
+            return False
+
+        focus_loss_types = (
+            getattr(pygame, 'WINDOWFOCUSLOST', None),
+            getattr(pygame, 'WINDOWMINIMIZED', None),
+            getattr(pygame, 'WINDOWHIDDEN', None),
+            getattr(pygame, 'APP_WILLENTERBACKGROUND', None),
+            getattr(pygame, 'APP_DIDENTERBACKGROUND', None),
+        )
+        if any(focus_type is not None and event_type == focus_type for focus_type in focus_loss_types):
+            return True
+
+        window_event_type = getattr(pygame, 'WINDOWEVENT', None)
+        if window_event_type is not None and event_type == window_event_type:
+            window_subtype = getattr(event, 'event', None)
+            if any(
+                focus_type is not None and window_subtype == focus_type
+                for focus_type in focus_loss_types[:3]
+            ):
+                return True
+
+        active_event_type = getattr(pygame, 'ACTIVEEVENT', None)
+        if active_event_type is not None and event_type == active_event_type:
+            gain = getattr(event, 'gain', 1)
+            state = getattr(event, 'state', 0)
+            focus_mask = 0
+            for attr_name in ('APPINPUTFOCUS', 'APPACTIVE'):
+                attr_value = getattr(pygame, attr_name, 0)
+                if isinstance(attr_value, int):
+                    focus_mask |= attr_value
+            return gain == 0 and (state == 0 or focus_mask == 0 or bool(state & focus_mask))
+
+        return False
+
+    def _pause_for_focus_loss(self) -> bool:
+        if getattr(self, 'paused', False):
+            return False
+        if getattr(self, 'game_over', False) or getattr(self, 'show_exit_prompt', False):
+            return False
+        if getattr(self, 'name_input_active', False):
+            return False
+
+        self.paused = True
+        self.pause_menu_selected = 0
+        if hasattr(self, 'sound') and self.sound:
+            try:
+                self.sound.duck_music()
+            except Exception:
+                pass
+        return True
+
     def _ui_scale(self, min_scale: float = 0.72, max_scale: float = 1.20) -> float:
         """Pencere boyutuna bağlı genel UI ölçeği."""
         try:
@@ -849,6 +904,10 @@ class PvPGame:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 return False
+
+            if self._is_focus_loss_event(event):
+                self._pause_for_focus_loss()
+                continue
             
             if event.type == pygame.VIDEORESIZE:
                 req_w = max(event.w, 800)

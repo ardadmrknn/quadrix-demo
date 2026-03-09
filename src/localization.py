@@ -221,7 +221,7 @@ TRANSLATIONS = {
     },
     # ======================= BAŞARILAR =======================
     'achievements': {
-        'tr': 'Başarılar',
+        'tr': 'Başarımlar',
         'en': 'Achievements',
         'de': 'Erfolge',
         'fr': 'Succès',
@@ -2557,7 +2557,7 @@ TRANSLATIONS = {
     },
     # ======================= BAŞARILAR =======================
     'achievements': {
-        'tr': 'Başarılar',
+        'tr': 'Başarımlar',
         'en': 'Achievements',
         'de': 'Erfolge',
         'fr': 'Succès',
@@ -12633,7 +12633,7 @@ TRANSLATIONS = {
         'ko': '미완료',
     },
     'ach_achievements': {
-        'tr': 'Başarılar',
+        'tr': 'Başarımlar',
         'en': 'Achievements',
         'de': 'Erfolge',
         'fr': 'Succès',
@@ -14451,7 +14451,7 @@ TRANSLATIONS = {
     },
     # ========== BAŞARILAR EKRANI ==========
     'achievements_title': {
-        'tr': 'BAŞARILAR',
+        'tr': 'BAŞARIMLAR',
         'en': 'ACHIEVEMENTS',
         'de': 'ERFOLGE',
         'fr': 'SUCCÈS',

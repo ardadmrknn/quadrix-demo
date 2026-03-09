@@ -63,7 +63,7 @@ def _normalize_payload(raw: Any) -> dict[str, Any]:
 
 def write_embedded_layout_module(repo_root: str | Path | None = None) -> Path:
     root = Path(repo_root).resolve() if repo_root is not None else Path(__file__).resolve().parents[1]
-    source_json = root / "menu_layout_runtime.json"
+    source_json = root / "config" / "runtime" / "menu_layout_runtime.json"
     target_py = root / "src" / "menu_layout_embedded.py"
 
     payload: dict[str, Any]
@@ -76,7 +76,7 @@ def write_embedded_layout_module(repo_root: str | Path | None = None) -> Path:
     else:
         payload = dict(DEFAULT_PAYLOAD)
 
-    payload["source"] = "menu_layout_runtime.json"
+    payload["source"] = "config/runtime/menu_layout_runtime.json"
 
     embedded_json = json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
     module_content = (

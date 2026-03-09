@@ -243,11 +243,11 @@ def available(self) -> bool:
 
 **Çözüm:** Module-global `_dll_dirs: list[Any] = []` listesinde saklanıyor.
 
-### 7.4 PyInstaller Paketleme (tetris.spec)
+### 7.4 PyInstaller Paketleme (packaging/specs/tetris.spec)
 
-- `steam_net_bridge*.pyd` pattern'i ile tüm bridge dosyaları dahil edilir
+- `local_artifacts/bridge/steam_net_bridge*.pyd` pattern'i ile tüm bridge dosyaları dahil edilir
 - `steam_api64.dll` root'a binary olarak eklenir
-- EXE build: `pyinstaller tetris.spec`
+- EXE build: `pyinstaller packaging/specs/tetris.spec`
 
 ---
 
@@ -298,14 +298,14 @@ cmake -B build -G "Visual Studio 17 2022" -A x64 ^
   -Dpybind11_DIR="<pybind11_cmake_dir>"
 cmake --build build --config Release
 
-# Çıktıyı proje köküne kopyala:
-copy build\Release\steam_net_bridge.cp311-win_amd64.pyd ..\..\
+# Çıktıyı local_artifacts/bridge altına kopyala:
+copy build\Release\steam_net_bridge.cp311-win_amd64.pyd ..\..\local_artifacts\bridge\
 ```
 
 ### EXE Build
 
 ```powershell
-pyinstaller tetris.spec
+pyinstaller packaging/specs/tetris.spec
 # Çıktı: dist/Quadrix.exe (~300 MB, onefile)
 ```
 
@@ -328,8 +328,8 @@ steamworks\sdk\tools\ContentBuilder\builder\steamcmd.exe ^
 | `ImportError: steam_net_bridge` | Python sürüm uyumsuzluğu (cp311 vs cp312) | Doğru Python sürümü için `.pyd` derle |
 | Segfault oyun sırasında | Pump thread ve bridge aynı anda `RunCallbacks()` çağırıyor | `pause_pump()` / `resume_pump()` akışını kontrol et |
 | Mesajlar ulaşmıyor | Session request reddediliyor | OnSessionRequest filtreleme: lobby üyeliği veya 30s allowlist kontrolü |
-| "Lobi oluşturulamadı" | `SteamAPI_Init()` başarısız | Steam istemcisinin açık olduğundan ve `steam_appid.txt` dosyasının doğru olduğundan emin ol |
-| EXE'de bridge çalışmıyor | PyInstaller'a `.pyd` ve `steam_api64.dll` eklenmemiş | `tetris.spec` datas/binaries bölümünü kontrol et |
+| "Lobi oluşturulamadı" | `SteamAPI_Init()` başarısız | Steam istemcisinin açık olduğundan ve `config/runtime/steam_appid.txt` dosyasının doğru olduğundan emin ol |
+| EXE'de bridge çalışmıyor | PyInstaller'a `.pyd` ve `steam_api64.dll` eklenmemiş | `packaging/specs/tetris.spec` datas/binaries bölümünü kontrol et |
 | Clipboard yapıştır timeout | macOS `pbpaste` / Linux `xclip` yanıt vermiyor | `subprocess.run(timeout=1)` + `TimeoutExpired` → `process.kill()` |
 
 ---
@@ -378,7 +378,7 @@ main.py
 1. `pip install pygame-ce pybind11` (pygame değil, **pygame-ce**)
 2. Steamworks SDK: `steamworks/sdk/` altında header ve lib dosyaları
 3. Visual Studio 2022 (MSVC) veya uygun C++ derleyici
-4. Bridge derle → `.pyd` dosyalarını proje köküne koy
-5. `steam_api64.dll` → proje kökü veya `dll/win64/`
-6. `steam_appid.txt` → proje kökü (içeriği: `4428040`)
-7. `pyinstaller tetris.spec` → `dist/Quadrix.exe`
+4. Bridge derle → `.pyd` dosyalarını `local_artifacts/bridge/` altına koy
+5. `steam_api64.dll` → `dll/win64/`
+6. `config/runtime/steam_appid.txt` içeriğini doğrula (`4428040`)
+7. `pyinstaller packaging/specs/tetris.spec` → `dist/Quadrix.exe`

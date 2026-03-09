@@ -75,6 +75,9 @@ if __name__ == "__main__":
     # Ensure repo root is on the Python path so "src" package resolves.
     if repo_root not in sys.path:
         sys.path.insert(0, repo_root)
+    bridge_artifacts_dir = os.path.join(repo_root, "local_artifacts", "bridge")
+    if os.path.isdir(bridge_artifacts_dir) and bridge_artifacts_dir not in sys.path:
+        sys.path.insert(0, bridge_artifacts_dir)
 
     try:
         from src.main import main as game_main

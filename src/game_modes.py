@@ -1101,6 +1101,10 @@ class HardcoreMode(Game):
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 return False
+
+            if self._is_focus_loss_event(event):
+                self._pause_for_focus_loss()
+                continue
             
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:

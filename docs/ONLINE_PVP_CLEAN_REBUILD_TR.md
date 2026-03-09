@@ -14,21 +14,21 @@ Amac: lobby visibility gibi platformlar arasi tutarsizliklarda eski artifact kay
 PowerShell:
 
 ```powershell
-./build_windows_exe.ps1 -Clean -RebuildBridge
+./scripts/build/build_windows_exe.ps1 -Clean -RebuildBridge
 ```
 
 Ne yapar:
 - build/ ve dist/ klasorlerini siler
-- kok dizindeki eski steam_net_bridge artifactlerini siler
+- local_artifacts/bridge altindaki eski steam_net_bridge artifactlerini siler
 - steamworks/steam_net_bridge/build.bat ile bridge'i yeniden derler
 - PyInstaller'i temiz modda yeniden calistirir
 
-Varsayilan spec: tetris.spec
+Varsayilan spec: packaging/specs/tetris.spec
 
 Farkli spec ornegi:
 
 ```powershell
-./build_windows_exe.ps1 -Clean -RebuildBridge -SpecFile tetris_playtest.spec
+./scripts/build/build_windows_exe.ps1 -Clean -RebuildBridge -SpecFile tetris_playtest.spec
 ```
 
 ## macOS temiz rebuild
@@ -36,7 +36,7 @@ Farkli spec ornegi:
 Terminal:
 
 ```bash
-./build_macos_app.sh --clean --rebuild-bridge
+./scripts/build/build_macos_app.sh --clean --rebuild-bridge
 ```
 
 Ne yapar:
