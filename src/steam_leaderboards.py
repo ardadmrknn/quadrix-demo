@@ -12,6 +12,8 @@ from typing import Any
 
 import requests
 
+from leaderboard_rank_utils import rerank_entries_for_local_subset
+
 STEAM_WEB_API_BASE = "https://partner.steam-api.com"
 DEFAULT_LOCAL_BACKEND_URL = "http://127.0.0.1:8787"
 
@@ -480,26 +482,26 @@ class SteamLeaderboardService:
                 )
                 entries = self._normalize_entries(payload.get("entries"))
                 if entries:
-                    return entries
+                    return rerank_entries_for_local_subset(entries)
 
             # Proxy auth başarısız veya boş döndü — direct Steam Web API'ye geç
             if self._is_direct_mode():
-                return self._fetch_direct_entries(
+                return rerank_entries_for_local_subset(self._fetch_direct_entries(
                     mode,
                     data_request="RequestFriends",
                     limit=safe_limit,
                     steam_id=sid,
-                )
+                ))
 
             self.last_error = "friends_auth_required"
             return []
 
-        return self._fetch_direct_entries(
+        return rerank_entries_for_local_subset(self._fetch_direct_entries(
             mode,
             data_request="RequestFriends",
             limit=safe_limit,
             steam_id=sid,
-        )
+        ))
 
     def fetch_all_mode_highscores(self, modes: list[str], limit: int = 3) -> dict[str, list[dict[str, Any]]]:
         mode_scores: dict[str, list[dict[str, Any]]] = {}

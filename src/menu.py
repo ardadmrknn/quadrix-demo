@@ -437,6 +437,7 @@ class Menu:
 
         # Emoji icon cache (assets/emoji/ klasöründen yüklenen PNG'ler)
         self._emoji_icon_cache = {}
+        self._main_theme_icon_cache = {}
 
         # Grid overlay cache (menu arka planındaki ince ızgara)
         self._grid_overlay_cache = None
@@ -1226,15 +1227,30 @@ class Menu:
         title_font_size = max(sp(16), min(sp(26), int(min(draw_rect.width, draw_rect.height) * 0.12)))
 
         if panel_key == 'exit':
+            exit_icon_size = max(sp(22), min(sp(28), int(draw_rect.height * 0.42))) + 3
+            exit_icon = self._load_main_theme_icon('quit', exit_icon_size)
             title_font_size = max(sp(22), min(sp(32), int(draw_rect.height * 0.40)))
             title_font = retro_style.get_font(title_font_size, bold=True)
             while title_font_size > sp(14):
-                if title_font.size(title)[0] <= draw_rect.width - sp(16):
+                text_w = title_font.size(title)[0]
+                total_w = text_w if exit_icon is None else text_w + exit_icon_size + sp(10)
+                if total_w <= draw_rect.width - sp(16):
                     break
                 title_font_size -= 1
                 title_font = retro_style.get_font(title_font_size, bold=True)
             t_surf = title_font.render(title, True, accent_color)
-            target_surface.blit(t_surf, t_surf.get_rect(center=draw_rect.center))
+            if exit_icon is not None:
+                total_w = exit_icon.get_width() + sp(10) + t_surf.get_width()
+                start_x = draw_rect.centerx - total_w // 2
+                icon_rect = exit_icon.get_rect()
+                icon_rect.x = start_x
+                icon_rect.centery = draw_rect.centery
+                target_surface.blit(exit_icon, icon_rect)
+                text_rect = t_surf.get_rect()
+                text_rect.midleft = (icon_rect.right + sp(10), draw_rect.centery)
+                target_surface.blit(t_surf, text_rect)
+            else:
+                target_surface.blit(t_surf, t_surf.get_rect(center=draw_rect.center))
             pygame.draw.rect(
                 target_surface,
                 (*accent_color[:3], 255 if is_highlighted else 140),
@@ -3056,17 +3072,38 @@ class Menu:
             rank_font = retro_style.get_font(s(16), bold=True)
             score_font = retro_style.get_font(s(16), bold=True)
 
+            rank_icon = None
+            rank_number_surf = None
+            if rank in (1, 2, 3):
+                rank_icon_size = max(s(14), min(s(20), row_rect.height - s(10)))
+                rank_icon_name = {1: 'first', 2: 'second', 3: 'third'}[rank]
+                rank_icon = self._load_main_theme_icon(rank_icon_name, rank_icon_size)
+                rank_number_surf = rank_font.render(str(rank), True, rank_color)
+
             rank_surf = rank_font.render(f'#{rank}', True, rank_color)
             score_surf = score_font.render(f"{score:,}".replace(',', '.'), True, (235, 245, 255))
 
             # Sıra numarası
             rank_x = row_rect.x + s(10)
-            rank_y = row_rect.centery - rank_surf.get_height() // 2
-            self.screen.blit(rank_surf, (rank_x, rank_y))
+            rank_block_w = rank_surf.get_width()
+            if rank_icon is not None and rank_number_surf is not None:
+                rank_gap = max(1, s(3))
+                rank_block_w = rank_icon.get_width() + rank_gap + rank_number_surf.get_width()
+                rank_icon_rect = rank_icon.get_rect()
+                rank_icon_rect.x = rank_x
+                rank_icon_rect.centery = row_rect.centery
+                self.screen.blit(rank_icon, rank_icon_rect)
+
+                rank_number_rect = rank_number_surf.get_rect()
+                rank_number_rect.midleft = (rank_icon_rect.right + rank_gap, row_rect.centery)
+                self.screen.blit(rank_number_surf, rank_number_rect)
+            else:
+                rank_y = row_rect.centery - rank_surf.get_height() // 2
+                self.screen.blit(rank_surf, (rank_x, rank_y))
 
             # Avatar
             av_size = max(20, min(s(32), row_rect.height - s(8)))
-            av_x = rank_x + rank_surf.get_width() + s(8)
+            av_x = rank_x + rank_block_w + s(8)
             av_y = row_rect.centery - av_size // 2
             av_rect_draw = pygame.Rect(av_x, av_y, av_size, av_size)
             border_c = medal_c[:3] if idx < 3 else UIColors.TEXT_MUTED[:3]
@@ -3830,6 +3867,26 @@ class Menu:
         self._emoji_icon_cache[key] = False
         return None
 
+    def _load_main_theme_icon(self, name: str, size: int) -> pygame.Surface | None:
+        """assets/main_theme klasöründeki icon_*.png menü ikonlarını yükle ve cache'le."""
+        key = (name, size)
+        cached = self._main_theme_icon_cache.get(key)
+        if cached is not None:
+            return cached if cached is not False else None
+
+        try:
+            path = ROOT_DIR / 'assets' / 'main_theme' / f'icon_{name}.png'
+            if path.exists():
+                img = pygame.image.load(str(path)).convert_alpha()
+                img = pygame.transform.smoothscale(img, (size, size))
+                self._main_theme_icon_cache[key] = img
+                return img
+        except Exception:
+            pass
+
+        self._main_theme_icon_cache[key] = False
+        return None
+
     def _draw_showcase_cards(self):
         """Ana menünün sol tarafına Parça Atölyesi ve Blok Görünümleri showcase kartları çiz.
 
@@ -4269,6 +4326,7 @@ class Menu:
         """Ana menüde köşe butonlarını çiz."""
         width, height = self.screen.get_size()
         scale = self._ui_scale()
+        icon_size_boost = 3
         btn_size = max(42, int(52 * scale))
         margin = max(14, int(18 * scale))
         gap = max(6, int(8 * scale))  # Butonlar arası boşluk
@@ -4276,8 +4334,8 @@ class Menu:
         # --- SOL ÜST: Ayarlar (dişli) ---
         self.corner_settings_rect = pygame.Rect(margin, margin, btn_size, btn_size)
         self.corner_settings_rect = self._apply_layout_override_rect('settings_button', self.corner_settings_rect, width, height, min_w=30, min_h=30)
-        settings_icon_size = int(min(self.corner_settings_rect.w, self.corner_settings_rect.h) * 0.56)
-        gear_icon = self._load_emoji_icon('gear', settings_icon_size) or self._draw_gear_icon(settings_icon_size)
+        settings_icon_size = int(min(self.corner_settings_rect.w, self.corner_settings_rect.h) * 0.56) + icon_size_boost
+        gear_icon = self._load_main_theme_icon('settings', settings_icon_size) or self._load_emoji_icon('gear', settings_icon_size) or self._draw_gear_icon(settings_icon_size)
         self._draw_corner_button(
             self.corner_settings_rect,
             icon_surface=gear_icon,
@@ -4288,8 +4346,8 @@ class Menu:
         language_y = margin + btn_size + gap
         self.corner_language_rect = pygame.Rect(margin, language_y, btn_size, btn_size)
         self.corner_language_rect = self._apply_layout_override_rect('language_button', self.corner_language_rect, width, height, min_w=30, min_h=30)
-        language_icon_size = int(min(self.corner_language_rect.w, self.corner_language_rect.h) * 0.56) + 2
-        world_icon = self._load_emoji_icon('language_icon', language_icon_size)
+        language_icon_size = int(min(self.corner_language_rect.w, self.corner_language_rect.h) * 0.56) + icon_size_boost
+        world_icon = self._load_main_theme_icon('language', language_icon_size) or self._load_emoji_icon('language_icon', language_icon_size)
         if world_icon is None:
             world_icon = self._render_emoji_surface('🌍', language_icon_size)
         self._draw_corner_button(
@@ -4305,8 +4363,9 @@ class Menu:
 
         # Emoji ikonunu dene, yoksa vektörel çiz
         emoji_icon_name = 'mute' if self._is_muted else 'sound'
-        mute_icon_size = int(min(self.corner_mute_rect.w, self.corner_mute_rect.h) * 0.56)
-        emoji_icon = self._load_emoji_icon(emoji_icon_name, mute_icon_size)
+        main_theme_sound_name = 'sound_off' if self._is_muted else 'sound_on'
+        mute_icon_size = int(min(self.corner_mute_rect.w, self.corner_mute_rect.h) * 0.56) + icon_size_boost
+        emoji_icon = self._load_main_theme_icon(main_theme_sound_name, mute_icon_size) or self._load_emoji_icon(emoji_icon_name, mute_icon_size)
         if emoji_icon is None:
             emoji_icon = self._draw_speaker_icon(mute_icon_size, muted=self._is_muted)
 
@@ -4324,8 +4383,8 @@ class Menu:
         switch_y = sos_bottom + gap
         self.corner_switch_user_rect = pygame.Rect(switch_x, switch_y, btn_size, btn_size)
         self.corner_switch_user_rect = self._apply_layout_override_rect('switch_user_button', self.corner_switch_user_rect, width, height, min_w=30, min_h=30)
-        switch_icon_size = int(min(self.corner_switch_user_rect.w, self.corner_switch_user_rect.h) * 0.56)
-        user_icon = self._load_emoji_icon('person', switch_icon_size) or self._draw_user_switch_icon(switch_icon_size)
+        switch_icon_size = int(min(self.corner_switch_user_rect.w, self.corner_switch_user_rect.h) * 0.56) + icon_size_boost
+        user_icon = self._load_main_theme_icon('user_change', switch_icon_size) or self._load_emoji_icon('person', switch_icon_size) or self._draw_user_switch_icon(switch_icon_size)
         self._draw_corner_button(
             self.corner_switch_user_rect,
             icon_surface=user_icon,
@@ -4336,8 +4395,8 @@ class Menu:
         credits_y = height - margin - btn_size
         self.corner_credits_rect = pygame.Rect(margin, credits_y, btn_size, btn_size)
         self.corner_credits_rect = self._apply_layout_override_rect('credits_button', self.corner_credits_rect, width, height, min_w=30, min_h=30)
-        credits_icon_size = int(min(self.corner_credits_rect.w, self.corner_credits_rect.h) * 0.56)
-        credits_icon = self._load_emoji_icon('star', credits_icon_size) or self._draw_credits_icon(credits_icon_size)
+        credits_icon_size = int(min(self.corner_credits_rect.w, self.corner_credits_rect.h) * 0.56) + icon_size_boost
+        credits_icon = self._load_main_theme_icon('credits', credits_icon_size) or self._load_emoji_icon('star', credits_icon_size) or self._draw_credits_icon(credits_icon_size)
         self._draw_corner_button(
             self.corner_credits_rect,
             icon_surface=credits_icon,
@@ -4348,8 +4407,8 @@ class Menu:
         ach_x = margin + btn_size + gap
         self.corner_achievements_rect = pygame.Rect(ach_x, credits_y, btn_size, btn_size)
         self.corner_achievements_rect = self._apply_layout_override_rect('high_scores_button', self.corner_achievements_rect, width, height, min_w=30, min_h=30)
-        high_scores_icon_size = int(min(self.corner_achievements_rect.w, self.corner_achievements_rect.h) * 0.56)
-        trophy_icon = self._load_emoji_icon('trophy', high_scores_icon_size) or self._draw_trophy_icon(high_scores_icon_size)
+        high_scores_icon_size = int(min(self.corner_achievements_rect.w, self.corner_achievements_rect.h) * 0.56) + icon_size_boost
+        trophy_icon = self._load_main_theme_icon('scores', high_scores_icon_size) or self._load_emoji_icon('trophy', high_scores_icon_size) or self._draw_trophy_icon(high_scores_icon_size)
         self._draw_corner_button(
             self.corner_achievements_rect,
             icon_surface=trophy_icon,
@@ -4360,8 +4419,8 @@ class Menu:
         guide_y = credits_y - btn_size - gap
         self.corner_guide_rect = pygame.Rect(margin, guide_y, btn_size, btn_size)
         self.corner_guide_rect = self._apply_layout_override_rect('guide_button', self.corner_guide_rect, width, height, min_w=30, min_h=30)
-        guide_icon_size = int(min(self.corner_guide_rect.w, self.corner_guide_rect.h) * 0.56)
-        book_icon = self._load_emoji_icon('book', guide_icon_size) or self._draw_book_icon(guide_icon_size)
+        guide_icon_size = int(min(self.corner_guide_rect.w, self.corner_guide_rect.h) * 0.56) + icon_size_boost
+        book_icon = self._load_main_theme_icon('guide', guide_icon_size) or self._load_emoji_icon('book', guide_icon_size) or self._draw_book_icon(guide_icon_size)
         self._draw_corner_button(
             self.corner_guide_rect,
             icon_surface=book_icon,
