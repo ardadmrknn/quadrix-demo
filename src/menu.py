@@ -5547,6 +5547,40 @@ class HighScoreScreen:
 
 class AchievementScreen:
     """Başarılar ekranı"""
+
+    _CATEGORY_ORDER = ('all', 'general', 'mastery', 'competition', 'campaign', 'modes')
+    _CATEGORY_ACCENTS = {
+        'all': (236, 203, 92),
+        'general': (74, 226, 244),
+        'mastery': (224, 86, 210),
+        'competition': (238, 94, 128),
+        'campaign': (196, 238, 72),
+        'modes': (110, 196, 244),
+    }
+    _CATEGORY_COPY = {
+        'tr': {
+            'all': ('Tümü', 'Oyundaki tüm başarımların genel görünümü'),
+            'general': ('Genel', 'Başlangıç, skor, satır, seviye ve oyun kilometre taşları'),
+            'mastery': ('Ustalık', 'Daha beceri odaklı ve temiz oynanış isteyen başarımlar'),
+            'competition': ('Rekabet', 'PvP galibiyetleri ve rakibe karşı ilerleme'),
+            'campaign': ('Görev Modu', 'Görev modu yıldızları ve bölüm hedefleri'),
+            'modes': ('Modlar', 'Sprint, Ultra, Survival ve diğer mod başarımları'),
+            'categories_title': 'Kategoriler',
+            'empty_title': 'Bu kategoride başarı yok',
+            'hint_text': '↑/↓ scroll • ESC geri',
+        },
+        'default': {
+            'all': ('All', 'Overview of every achievement in the game'),
+            'general': ('General', 'Starter, score, lines, level and play-count milestones'),
+            'mastery': ('Mastery', 'More skill-heavy achievements for clean play'),
+            'competition': ('Competition', 'PvP wins and versus-focused progress'),
+            'campaign': ('Campaign', 'Mission stars and chapter completion goals'),
+            'modes': ('Modes', 'Sprint, Ultra, Survival and other mode-specific goals'),
+            'categories_title': 'Categories',
+            'empty_title': 'No achievements in this category',
+            'hint_text': '↑/↓ scroll • ESC back',
+        },
+    }
     
     def __init__(self, screen, achievement_manager):
         """Başarı ekranını başlat"""
@@ -5556,6 +5590,8 @@ class AchievementScreen:
         self.font_name = retro_style.get_font(30)
         self.font_desc = retro_style.get_font(20, bold=False)
         self.font_progress = retro_style.get_font(24)
+        self.font_tab = retro_style.get_font(18, bold=True)
+        self.font_hint = retro_style.get_font(16, bold=False)
         self._refresh_fonts_for_language(force=True)
         self.scroll_offset = 0
         self._sb_thumb_rect: 'pygame.Rect | None' = None
@@ -5563,6 +5599,9 @@ class AchievementScreen:
         self._sb_drag_active: bool = False
         self._sb_drag_offset_y: int = 0
         self._max_scroll_cache: int = 0
+        self.selected_category = 'all'
+        self._category_tab_rects: dict[str, pygame.Rect] = {}
+        self._category_hover: str | None = None
         # Menüyle aynı shared katman: ekran geçişlerinde animasyon kesilmesin.
         self.background_fx = get_shared_falling_blocks_layer('default')
 
@@ -5582,17 +5621,175 @@ class AchievementScreen:
         cjk_name = get_font_for_language(lang, 30)
         cjk_desc = get_font_for_language(lang, 20)
         cjk_progress = get_font_for_language(lang, 24)
+        cjk_tab = get_font_for_language(lang, 18)
+        cjk_hint = get_font_for_language(lang, 16)
 
-        if cjk_name and cjk_desc and cjk_progress:
+        if cjk_name and cjk_desc and cjk_progress and cjk_tab and cjk_hint:
             self.font_name = cjk_name
             self.font_desc = cjk_desc
             self.font_progress = cjk_progress
+            self.font_tab = cjk_tab
+            self.font_hint = cjk_hint
         else:
             self.font_name = retro_style.get_font(30)
             self.font_desc = retro_style.get_font(20, bold=False)
             self.font_progress = retro_style.get_font(24)
+            self.font_tab = retro_style.get_font(18, bold=True)
+            self.font_hint = retro_style.get_font(16, bold=False)
 
         self._font_lang = lang
+
+    def _copy_for_language(self) -> dict[str, Any]:
+        try:
+            lang = get_language()
+        except Exception:
+            lang = 'en'
+        return self._CATEGORY_COPY['tr'] if lang == 'tr' else self._CATEGORY_COPY['default']
+
+    def _category_text(self, category_id: str) -> tuple[str, str]:
+        copy = self._copy_for_language()
+        return copy.get(category_id, self._CATEGORY_COPY['default']['all'])
+
+    def _category_for_achievement(self, achievement_id: str) -> str:
+        if achievement_id.startswith('campaign_'):
+            return 'campaign'
+        if achievement_id.startswith('pvp_'):
+            return 'competition'
+        if achievement_id.startswith(('sprint_', 'ultra_', 'survival_', 'cascade_', 'hardcore_', 'daily_', 'wide_')):
+            return 'modes'
+        if achievement_id in {'combo_5', 'perfect_clear', 'no_mistakes', 'tetris_5', 'tetris_10'}:
+            return 'mastery'
+        return 'general'
+
+    def _select_category(self, category_id: str) -> None:
+        if category_id not in self._CATEGORY_ORDER:
+            return
+        if self.selected_category == category_id:
+            return
+        self.selected_category = category_id
+        self.scroll_offset = 0
+        self._sb_drag_active = False
+        self._sb_drag_offset_y = 0
+
+    def _get_all_achievements(self) -> list[dict[str, Any]]:
+        return self.achievement_manager.get_all_achievements()
+
+    def _get_visible_achievements(self, achievements: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        if self.selected_category == 'all':
+            return achievements
+        return [
+            achievement
+            for achievement in achievements
+            if self._category_for_achievement(str(achievement.get('id', ''))) == self.selected_category
+        ]
+
+    def _build_category_stats(self, achievements: list[dict[str, Any]]) -> dict[str, dict[str, int]]:
+        stats = {
+            category_id: {'total': 0, 'unlocked': 0}
+            for category_id in self._CATEGORY_ORDER
+        }
+        for achievement in achievements:
+            category_id = self._category_for_achievement(str(achievement.get('id', '')))
+            unlocked = bool(achievement.get('unlocked'))
+            stats['all']['total'] += 1
+            stats[category_id]['total'] += 1
+            if unlocked:
+                stats['all']['unlocked'] += 1
+                stats[category_id]['unlocked'] += 1
+        return stats
+
+    def _get_category_at_pos(self, mouse_pos: tuple[int, int]) -> str | None:
+        for category_id, rect in self._category_tab_rects.items():
+            if rect.collidepoint(mouse_pos):
+                return category_id
+        return None
+
+    def _draw_category_emblem(self, rect: pygame.Rect, category_id: str, accent: tuple[int, int, int], active: bool = True) -> None:
+        panel_alpha = 205 if active else 155
+        retro_style.draw_glass_panel(
+            self.screen,
+            rect,
+            alpha=panel_alpha,
+            border_color=accent,
+            glow=active,
+        )
+
+        inner = rect.inflate(-12, -12)
+        color = accent if active else (150, 160, 180)
+        stroke = max(2, min(inner.width, inner.height) // 9)
+
+        if category_id == 'all':
+            block = max(4, min(inner.width, inner.height) // 3)
+            gap = max(2, block // 4)
+            start_x = inner.centerx - (block + gap // 2)
+            start_y = inner.centery - (block + gap // 2)
+            for row in range(2):
+                for col in range(2):
+                    sq = pygame.Rect(start_x + col * (block + gap), start_y + row * (block + gap), block, block)
+                    pygame.draw.rect(self.screen, color, sq, border_radius=4)
+            return
+
+        if category_id == 'general':
+            bar_w = max(3, inner.width // 6)
+            gap = max(3, bar_w)
+            heights = [int(inner.height * 0.45), int(inner.height * 0.7), int(inner.height * 0.95)]
+            start_x = inner.centerx - (bar_w * 3 + gap * 2) // 2
+            for idx, height in enumerate(heights):
+                bar = pygame.Rect(start_x + idx * (bar_w + gap), inner.bottom - height, bar_w, height)
+                pygame.draw.rect(self.screen, color, bar, border_radius=4)
+            return
+
+        if category_id == 'mastery':
+            cx, cy = inner.center
+            outer_r = max(8, min(inner.width, inner.height) // 2)
+            inner_r = max(4, outer_r // 2)
+            points: list[tuple[int, int]] = []
+            for idx in range(10):
+                radius = outer_r if idx % 2 == 0 else inner_r
+                angle = -math.pi / 2 + idx * (math.pi / 5)
+                points.append((int(cx + math.cos(angle) * radius), int(cy + math.sin(angle) * radius)))
+            pygame.draw.polygon(self.screen, color, points)
+            return
+
+        if category_id == 'competition':
+            pad = max(2, stroke)
+            pygame.draw.line(self.screen, color, (inner.left + pad, inner.top + pad), (inner.right - pad, inner.bottom - pad), stroke)
+            pygame.draw.line(self.screen, color, (inner.left + pad, inner.bottom - pad), (inner.right - pad, inner.top + pad), stroke)
+            return
+
+        if category_id == 'campaign':
+            pole = pygame.Rect(inner.left + max(4, inner.width // 5), inner.top + 2, stroke, inner.height - 4)
+            pygame.draw.rect(self.screen, color, pole, border_radius=3)
+            flag = [
+                (pole.right, inner.top + 4),
+                (inner.right - 2, inner.top + inner.height // 4),
+                (pole.right, inner.top + inner.height // 2),
+            ]
+            pygame.draw.polygon(self.screen, color, flag)
+            return
+
+        cell_w = max(4, (inner.width - 6) // 2)
+        cell_h = max(4, (inner.height - 6) // 2)
+        for row in range(2):
+            for col in range(2):
+                box = pygame.Rect(inner.x + col * (cell_w + 6), inner.y + row * (cell_h + 6), cell_w, cell_h)
+                pygame.draw.rect(self.screen, color, box, border_radius=4)
+
+    def _blend_color(self, color_a: tuple[int, int, int], color_b: tuple[int, int, int], ratio: float) -> tuple[int, int, int]:
+        ratio = max(0.0, min(1.0, ratio))
+        return (
+            int(color_a[0] * (1.0 - ratio) + color_b[0] * ratio),
+            int(color_a[1] * (1.0 - ratio) + color_b[1] * ratio),
+            int(color_a[2] * (1.0 - ratio) + color_b[2] * ratio),
+        )
+
+    def _content_accent(self, category_id: str) -> tuple[int, int, int]:
+        base = self._CATEGORY_ACCENTS.get(category_id, UIColors.NEON_CYAN)
+        return self._blend_color(base, UIColors.TEXT_SECONDARY, 0.34)
+
+    def _row_accent(self, category_id: str) -> tuple[int, int, int]:
+        base = self._CATEGORY_ACCENTS.get(category_id, UIColors.NEON_CYAN)
+        return self._blend_color(base, (210, 220, 235), 0.22)
     
     def handle_input(self, event):
         """Input işle"""
@@ -5608,6 +5805,7 @@ class AchievementScreen:
             self.scroll_offset = max(0, min(self.scroll_offset, self._max_scroll_cache))
         elif event.type == pygame.MOUSEMOTION:
             mouse_pos = normalize_mouse_pos(getattr(event, 'pos', None)) or event.pos
+            self._category_hover = self._get_category_at_pos(mouse_pos)
             if self._sb_drag_active and self._sb_container_rect:
                 _az = max(10, 10 + 2)
                 track_y = self._sb_container_rect.top + _az + 2
@@ -5620,6 +5818,10 @@ class AchievementScreen:
         elif event.type == pygame.MOUSEBUTTONDOWN:
             if event.button == 1:
                 mouse_pos = normalize_mouse_pos(getattr(event, 'pos', None)) or event.pos
+                category_id = self._get_category_at_pos(mouse_pos)
+                if category_id is not None:
+                    self._select_category(category_id)
+                    return None
                 if self._sb_thumb_rect and self._sb_thumb_rect.collidepoint(mouse_pos):
                     self._sb_drag_active = True
                     self._sb_drag_offset_y = mouse_pos[1] - self._sb_thumb_rect.y
@@ -5645,8 +5847,12 @@ class AchievementScreen:
         retro_style.draw_background(self.screen)
         self.background_fx.update(self.screen)
         self.background_fx.draw(self.screen)
+        copy = self._copy_for_language()
 
         title_rect = retro_style.draw_title(self.screen, t('achievements_title'), (width // 2, 70), emoji='☆')
+        hint_surf = self.font_hint.render(copy['hint_text'], True, UIColors.TEXT_SECONDARY)
+        hint_rect = hint_surf.get_rect(center=(width // 2, title_rect.bottom + 18))
+        self.screen.blit(hint_surf, hint_rect)
 
         def _ellipsize(text: str, font: pygame.font.Font, max_width: int) -> str:
             if max_width <= 0:
@@ -5772,76 +5978,189 @@ class AchievementScreen:
             # Varsayılan: küçük kare
             pygame.draw.rect(self.screen, glyph, inner, border_radius=4)
 
-        # Skorlar ekranıyla aynı dar/ortalanmış içerik genişliği
-        content_width = min(980, max(0, width - 240))
-        content_x = (width - content_width) // 2
+        achievements = self._get_all_achievements()
+        category_stats = self._build_category_stats(achievements)
+        visible_achievements = self._get_visible_achievements(achievements)
+        selected_total = category_stats[self.selected_category]['total']
+        selected_unlocked = category_stats[self.selected_category]['unlocked']
+        progress = (selected_unlocked / selected_total * 100) if selected_total > 0 else 0.0
+        selected_color = self._CATEGORY_ACCENTS.get(self.selected_category, UIColors.NEON_CYAN)
+        primary_accent = self._content_accent(self.selected_category)
 
-        progress = self.achievement_manager.get_progress()
-        unlocked_count = len(self.achievement_manager.unlocked)
-        total_count = len(self.achievement_manager.get_all_achievements())
-        summary_rect = pygame.Rect(content_x, title_rect.bottom + 20, content_width, 150)
-        retro_style.draw_panel(self.screen, summary_rect, title=t('progress'))
+        outer_width = min(1180, max(0, width - 72))
+        outer_x = (width - outer_width) // 2
+        body_top = hint_rect.bottom + 18
+        body_bottom_margin = 36
+        body_height = max(360, height - body_top - body_bottom_margin)
+        side_width = max(220, min(260, int(outer_width * 0.24)))
+        gutter = 18
+        content_width = outer_width - side_width - gutter
+        side_rect = pygame.Rect(outer_x, body_top, side_width, body_height)
+        content_rect = pygame.Rect(side_rect.right + gutter, body_top, content_width, body_height)
 
-        progress_text_str = t('menu_achievements_progress', count=unlocked_count, total=total_count, percent=f'{progress:.1f}')
-        progress_text = self.font_progress.render(
-            progress_text_str,
-            True,
-            (220, 230, 240),
+        retro_style.draw_glass_panel(
+            self.screen,
+            side_rect,
+            alpha=170,
+            border_color=UIColors.GLASS_BORDER[:3],
+            glow=False,
         )
-        self.screen.blit(progress_text, progress_text.get_rect(midtop=(width // 2, summary_rect.y + 30)))
+        retro_style.draw_glass_panel(
+            self.screen,
+            content_rect,
+            alpha=170,
+            border_color=primary_accent,
+            glow=False,
+        )
 
-        bar_rect = pygame.Rect(summary_rect.x + 30, summary_rect.bottom - 60, summary_rect.width - 60, 26)
-        pygame.draw.rect(self.screen, (26, 28, 52), bar_rect, border_radius=12)
-        # Segment (tetromino blok) progress bar
+        panel_title = self.font_progress.render(copy['categories_title'], True, UIColors.TEXT_PRIMARY)
+        self.screen.blit(panel_title, (side_rect.x + 18, side_rect.y + 18))
+        side_percent = int(round(progress)) if selected_total else 0
+        side_summary = self.font_tab.render(f"%{side_percent}", True, selected_color)
+        self.screen.blit(side_summary, (side_rect.right - side_summary.get_width() - 18, side_rect.y + 20))
+
+        self._category_tab_rects = {}
+        tab_top = side_rect.y + 68
+        tab_gap = 10
+        tab_height = 62
+        tab_width = side_rect.width - 24
+        for index, category_id in enumerate(self._CATEGORY_ORDER):
+            label, _ = self._category_text(category_id)
+            stats = category_stats[category_id]
+            tab_rect = pygame.Rect(side_rect.x + 12, tab_top + index * (tab_height + tab_gap), tab_width, tab_height)
+            self._category_tab_rects[category_id] = tab_rect
+            is_selected = category_id == self.selected_category
+            is_hovered = category_id == self._category_hover
+            accent = self._CATEGORY_ACCENTS.get(category_id, UIColors.NEON_CYAN)
+
+            tab_surf = pygame.Surface(tab_rect.size, pygame.SRCALPHA)
+            bg_alpha = 205 if is_selected else (186 if is_hovered else 152)
+            pygame.draw.rect(tab_surf, (18, 24, 48, bg_alpha), tab_surf.get_rect(), border_radius=14)
+            if is_selected:
+                glow_h = min(18, tab_rect.height // 2)
+                for glow_y in range(glow_h):
+                    glow_alpha = int(36 * (1 - glow_y / max(1, glow_h)))
+                    pygame.draw.line(tab_surf, (*accent, glow_alpha), (6, glow_y), (tab_rect.width - 6, glow_y))
+            self.screen.blit(tab_surf, tab_rect.topleft)
+            strip_rect = pygame.Rect(tab_rect.x + 4, tab_rect.y + 8, 5 if is_selected else 3, tab_rect.height - 16)
+            pygame.draw.rect(self.screen, accent, strip_rect, border_radius=3)
+            pygame.draw.rect(
+                self.screen,
+                accent if is_selected else (accent[0], accent[1], accent[2], 120),
+                tab_rect,
+                2 if is_selected else 1,
+                border_radius=14,
+            )
+
+            icon_rect = pygame.Rect(tab_rect.x + 12, tab_rect.y + 9, 32, 32)
+            self._draw_category_emblem(icon_rect, category_id, accent, active=is_selected)
+
+            label_surf = self.font_tab.render(label, True, UIColors.TEXT_PRIMARY)
+            self.screen.blit(label_surf, (icon_rect.right + 10, tab_rect.y + 10))
+            count_text = f"{stats['unlocked']}/{stats['total']}"
+            count_surf = self.font_hint.render(count_text, True, accent if is_selected else UIColors.TEXT_SECONDARY)
+            count_rect = count_surf.get_rect(right=tab_rect.right - 14, centery=tab_rect.y + 21)
+            self.screen.blit(count_surf, count_rect)
+
+            tab_percent = (stats['unlocked'] / stats['total']) if stats['total'] else 0.0
+            progress_track = pygame.Rect(icon_rect.right + 10, tab_rect.bottom - 16, tab_rect.width - (icon_rect.width + 44), 6)
+            pygame.draw.rect(self.screen, (36, 42, 68), progress_track, border_radius=4)
+            if tab_percent > 0:
+                fill_w = max(10, int(progress_track.width * tab_percent))
+                pygame.draw.rect(self.screen, accent, pygame.Rect(progress_track.x, progress_track.y, fill_w, progress_track.height), border_radius=4)
+
+        content_inner = content_rect.inflate(-16, -16)
+        summary_rect = pygame.Rect(content_inner.x, content_inner.y, content_inner.width, 96)
+        retro_style.draw_glass_panel(self.screen, summary_rect, alpha=180, border_color=primary_accent, glow=False)
+        summary_wash = pygame.Surface((summary_rect.width, max(1, summary_rect.height // 3)), pygame.SRCALPHA)
+        pygame.draw.rect(summary_wash, (*selected_color, 18), summary_wash.get_rect(), border_radius=16)
+        self.screen.blit(summary_wash, summary_rect.topleft)
+
+        selected_label, _ = self._category_text(self.selected_category)
+        hero_icon = pygame.Rect(summary_rect.x + 18, summary_rect.y + 14, 46, 46)
+        self._draw_category_emblem(hero_icon, self.selected_category, selected_color, active=True)
+        hero_percent_font = retro_style.get_font(24, bold=True)
+        hero_count_font = retro_style.get_font(18, bold=True)
+        title_x = hero_icon.right + 12
+        category_title_surf = self.font_name.render(selected_label, True, primary_accent)
+        self.screen.blit(category_title_surf, (title_x, summary_rect.y + 10))
+
+        percent_surf = hero_percent_font.render(f"%{int(round(progress))}", True, UIColors.TEXT_PRIMARY)
+        percent_rect = percent_surf.get_rect(topright=(summary_rect.right - 20, summary_rect.y + 14))
+        self.screen.blit(percent_surf, percent_rect)
+        count_surf = hero_count_font.render(f"{selected_unlocked}/{selected_total}", True, selected_color)
+        count_rect = count_surf.get_rect(topright=(summary_rect.right - 22, percent_rect.bottom - 2))
+        self.screen.blit(count_surf, count_rect)
+
+        progress_text_str = t(
+            'menu_achievements_progress',
+            count=selected_unlocked,
+            total=selected_total,
+            percent=f'{progress:.1f}',
+        )
+        progress_text = self.font_hint.render(progress_text_str, True, (220, 230, 240))
+        self.screen.blit(progress_text, (title_x, summary_rect.y + 42))
+
+        bar_rect = pygame.Rect(summary_rect.x + 18, summary_rect.bottom - 16, summary_rect.width - 36, 8)
+        pygame.draw.rect(self.screen, (26, 28, 52), bar_rect, border_radius=9)
         segment_count = 20
-        inner = bar_rect.inflate(-8, -8)
-        gap = 4
+        inner = bar_rect.inflate(-4, -2)
+        gap = 3
         total_gap = gap * (segment_count - 1)
         seg_w = max(2, (inner.width - total_gap) // segment_count)
         seg_h = inner.height
         filled_segments = int(round((progress / 100.0) * segment_count))
         filled_segments = max(0, min(segment_count, filled_segments))
+        bar_color = selected_color
         for idx in range(segment_count):
             x = inner.x + idx * (seg_w + gap)
             seg_rect = pygame.Rect(x, inner.y, seg_w, seg_h)
-            seg_color = UIColors.NEON_CYAN if idx < filled_segments else (38, 44, 72)
-            pygame.draw.rect(self.screen, seg_color, seg_rect, border_radius=6)
-        pygame.draw.rect(self.screen, UIColors.NEON_CYAN, bar_rect, 2, border_radius=12)
+            seg_color = bar_color if idx < filled_segments else (38, 44, 72)
+            pygame.draw.rect(self.screen, seg_color, seg_rect, border_radius=5)
+        pygame.draw.rect(self.screen, bar_color, bar_rect, 2, border_radius=9)
 
-        list_top = summary_rect.bottom + 20
+        list_top = summary_rect.bottom + 12
         item_height = 92
         item_spacing = 14
-        achievements = self.achievement_manager.get_all_achievements()
-        total_content = len(achievements) * (item_height + item_spacing)
-        visible_height = height - list_top - 140
+        list_height = max(120, content_inner.bottom - list_top)
+        total_content = len(visible_achievements) * (item_height + item_spacing)
+        visible_height = list_height
         max_scroll = max(0, total_content - max(0, visible_height))
         self.scroll_offset = max(0, min(self.scroll_offset, max_scroll))
 
         # Panellerin üst panele taşmasını ve alta çıkmasını engelle
-        clip_rect = pygame.Rect(0, list_top, width, max(0, visible_height))
+        clip_rect = pygame.Rect(content_inner.x, list_top, content_inner.width - 28, max(0, visible_height))
         prev_clip = self.screen.get_clip()
         self.screen.set_clip(clip_rect)
 
-        for i, ach in enumerate(achievements):
+        if not visible_achievements:
+            empty_surf = self.font_progress.render(copy['empty_title'], True, UIColors.TEXT_SECONDARY)
+            self.screen.blit(empty_surf, empty_surf.get_rect(center=clip_rect.center))
+
+        for i, ach in enumerate(visible_achievements):
             y_pos = list_top + i * (item_height + item_spacing) - self.scroll_offset
             if y_pos < list_top - item_height or y_pos > height - 120:
                 continue
 
-            row_rect = pygame.Rect(content_x, y_pos, content_width, item_height)
+            row_rect = pygame.Rect(content_inner.x, y_pos, content_inner.width - 28, item_height)
             # Locked/Unlocked farkını ana neon/glass tema ile ver
             unlocked = bool(ach.get('unlocked'))
             row_alpha = 205 if unlocked else 170
-            border_color = UIColors.NEON_CYAN if unlocked else UIColors.GLASS_BORDER[:3]
+            category_color = self._CATEGORY_ACCENTS.get(
+                self._category_for_achievement(str(ach.get('id', ''))),
+                UIColors.NEON_CYAN,
+            )
+            row_accent = self._row_accent(self._category_for_achievement(str(ach.get('id', ''))))
+            border_color = row_accent if unlocked else UIColors.GLASS_BORDER[:3]
             retro_style.draw_glass_panel(
                 self.screen,
                 row_rect,
                 alpha=row_alpha,
                 border_color=border_color,
-                glow=unlocked,
+                glow=False,
             )
-
             slot_rect = pygame.Rect(0, 0, 60, 60)
-            slot_rect.center = (row_rect.x + 45, row_rect.centery)
+            slot_rect.center = (row_rect.x + 46, row_rect.centery)
             _draw_achievement_icon(slot_rect, str(ach.get('id', '')), unlocked)
 
             # Typography: daha temiz hiyerarşi + ellipsis
@@ -5849,7 +6168,7 @@ class AchievementScreen:
             text_left = row_rect.x + 90
             text_max_w = max(0, row_rect.width - (text_left - row_rect.x) - right_info_pad)
 
-            name_color = UIColors.NEON_CYAN if unlocked else (220, 225, 235)
+            name_color = row_accent if unlocked else (220, 225, 235)
             name_text = _ellipsize(str(ach.get('name', '')), self.font_name, text_max_w)
             name_surface = self.font_name.render(name_text, True, name_color)
             self.screen.blit(name_surface, (text_left, row_rect.y + 12))
@@ -5859,26 +6178,32 @@ class AchievementScreen:
             desc_surface = self.font_desc.render(desc_text, True, desc_color)
             self.screen.blit(desc_surface, (text_left, row_rect.y + 52))
 
+            meta_top = row_rect.y + 16
+            category_label = self._category_text(self._category_for_achievement(str(ach.get('id', ''))))[0]
+            if self.selected_category == 'all':
+                category_meta = self.font_hint.render(category_label, True, self._blend_color(category_color, UIColors.TEXT_SECONDARY, 0.35))
+                category_meta_rect = category_meta.get_rect(right=row_rect.right - 18, top=meta_top)
+                self.screen.blit(category_meta, category_meta_rect)
+                meta_y = category_meta_rect.bottom + 10
+            else:
+                meta_y = row_rect.centery - self.font_desc.get_height() // 2
+
             if ach['unlocked'] and ach['unlock_date']:
                 date_surface = self.font_desc.render(ach['unlock_date'], True, (180, 255, 200))
-                date_rect = date_surface.get_rect(right=row_rect.right - 20, centery=row_rect.centery)
+                date_rect = date_surface.get_rect(right=row_rect.right - 18, top=meta_y)
                 self.screen.blit(date_surface, date_rect)
             elif not ach.get('unlocked'):
-                progress_text = ach.get('progress_text')
-                if progress_text:
-                    progress_surface = self.font_desc.render(progress_text, True, (160, 180, 210))
-                    progress_rect = progress_surface.get_rect(
-                        right=row_rect.right - 20,
-                        centery=row_rect.centery,
-                    )
-                    self.screen.blit(progress_surface, progress_rect)
+                progress_text = str(ach.get('progress_text') or '')
+                progress_surface = self.font_desc.render(progress_text, True, (160, 180, 210))
+                progress_rect = progress_surface.get_rect(right=row_rect.right - 18, top=meta_y)
+                self.screen.blit(progress_surface, progress_rect)
 
         self.screen.set_clip(prev_clip)
 
         # Scrollbar çiz — panellerin hemen dışına, sağ tarafa
         if total_content > visible_height:
             scrollbar_rect = pygame.Rect(
-                content_x + content_width + 4,
+                content_inner.right + 2,
                 list_top,
                 22,
                 visible_height
