@@ -3878,6 +3878,9 @@ class Menu:
             path = ROOT_DIR / 'assets' / 'main_theme' / f'icon_{name}.png'
             if path.exists():
                 img = pygame.image.load(str(path)).convert_alpha()
+                trim_rect = img.get_bounding_rect(min_alpha=1)
+                if trim_rect.width > 0 and trim_rect.height > 0:
+                    img = img.subsurface(trim_rect).copy()
                 img = pygame.transform.smoothscale(img, (size, size))
                 self._main_theme_icon_cache[key] = img
                 return img
@@ -4327,6 +4330,8 @@ class Menu:
         width, height = self.screen.get_size()
         scale = self._ui_scale()
         icon_size_boost = 3
+        standard_icon_scale = 0.62
+        emphasized_icon_scale = 0.68
         btn_size = max(42, int(52 * scale))
         margin = max(14, int(18 * scale))
         gap = max(6, int(8 * scale))  # Butonlar arası boşluk
@@ -4334,7 +4339,7 @@ class Menu:
         # --- SOL ÜST: Ayarlar (dişli) ---
         self.corner_settings_rect = pygame.Rect(margin, margin, btn_size, btn_size)
         self.corner_settings_rect = self._apply_layout_override_rect('settings_button', self.corner_settings_rect, width, height, min_w=30, min_h=30)
-        settings_icon_size = int(min(self.corner_settings_rect.w, self.corner_settings_rect.h) * 0.56) + icon_size_boost
+        settings_icon_size = int(min(self.corner_settings_rect.w, self.corner_settings_rect.h) * standard_icon_scale) + icon_size_boost
         gear_icon = self._load_main_theme_icon('settings', settings_icon_size) or self._load_emoji_icon('gear', settings_icon_size) or self._draw_gear_icon(settings_icon_size)
         self._draw_corner_button(
             self.corner_settings_rect,
@@ -4346,7 +4351,7 @@ class Menu:
         language_y = margin + btn_size + gap
         self.corner_language_rect = pygame.Rect(margin, language_y, btn_size, btn_size)
         self.corner_language_rect = self._apply_layout_override_rect('language_button', self.corner_language_rect, width, height, min_w=30, min_h=30)
-        language_icon_size = int(min(self.corner_language_rect.w, self.corner_language_rect.h) * 0.56) + icon_size_boost
+        language_icon_size = int(min(self.corner_language_rect.w, self.corner_language_rect.h) * standard_icon_scale) + icon_size_boost
         world_icon = self._load_main_theme_icon('language', language_icon_size) or self._load_emoji_icon('language_icon', language_icon_size)
         if world_icon is None:
             world_icon = self._render_emoji_surface('🌍', language_icon_size)
@@ -4364,7 +4369,7 @@ class Menu:
         # Emoji ikonunu dene, yoksa vektörel çiz
         emoji_icon_name = 'mute' if self._is_muted else 'sound'
         main_theme_sound_name = 'sound_off' if self._is_muted else 'sound_on'
-        mute_icon_size = int(min(self.corner_mute_rect.w, self.corner_mute_rect.h) * 0.56) + icon_size_boost
+        mute_icon_size = int(min(self.corner_mute_rect.w, self.corner_mute_rect.h) * standard_icon_scale) + icon_size_boost
         emoji_icon = self._load_main_theme_icon(main_theme_sound_name, mute_icon_size) or self._load_emoji_icon(emoji_icon_name, mute_icon_size)
         if emoji_icon is None:
             emoji_icon = self._draw_speaker_icon(mute_icon_size, muted=self._is_muted)
@@ -4383,7 +4388,7 @@ class Menu:
         switch_y = sos_bottom + gap
         self.corner_switch_user_rect = pygame.Rect(switch_x, switch_y, btn_size, btn_size)
         self.corner_switch_user_rect = self._apply_layout_override_rect('switch_user_button', self.corner_switch_user_rect, width, height, min_w=30, min_h=30)
-        switch_icon_size = int(min(self.corner_switch_user_rect.w, self.corner_switch_user_rect.h) * 0.56) + icon_size_boost
+        switch_icon_size = int(min(self.corner_switch_user_rect.w, self.corner_switch_user_rect.h) * standard_icon_scale) + icon_size_boost
         user_icon = self._load_main_theme_icon('user_change', switch_icon_size) or self._load_emoji_icon('person', switch_icon_size) or self._draw_user_switch_icon(switch_icon_size)
         self._draw_corner_button(
             self.corner_switch_user_rect,
@@ -4395,7 +4400,7 @@ class Menu:
         credits_y = height - margin - btn_size
         self.corner_credits_rect = pygame.Rect(margin, credits_y, btn_size, btn_size)
         self.corner_credits_rect = self._apply_layout_override_rect('credits_button', self.corner_credits_rect, width, height, min_w=30, min_h=30)
-        credits_icon_size = int(min(self.corner_credits_rect.w, self.corner_credits_rect.h) * 0.56) + icon_size_boost
+        credits_icon_size = int(min(self.corner_credits_rect.w, self.corner_credits_rect.h) * emphasized_icon_scale) + icon_size_boost
         credits_icon = self._load_main_theme_icon('credits', credits_icon_size) or self._load_emoji_icon('star', credits_icon_size) or self._draw_credits_icon(credits_icon_size)
         self._draw_corner_button(
             self.corner_credits_rect,
@@ -4407,7 +4412,7 @@ class Menu:
         ach_x = margin + btn_size + gap
         self.corner_achievements_rect = pygame.Rect(ach_x, credits_y, btn_size, btn_size)
         self.corner_achievements_rect = self._apply_layout_override_rect('high_scores_button', self.corner_achievements_rect, width, height, min_w=30, min_h=30)
-        high_scores_icon_size = int(min(self.corner_achievements_rect.w, self.corner_achievements_rect.h) * 0.56) + icon_size_boost
+        high_scores_icon_size = int(min(self.corner_achievements_rect.w, self.corner_achievements_rect.h) * emphasized_icon_scale) + icon_size_boost
         trophy_icon = self._load_main_theme_icon('scores', high_scores_icon_size) or self._load_emoji_icon('trophy', high_scores_icon_size) or self._draw_trophy_icon(high_scores_icon_size)
         self._draw_corner_button(
             self.corner_achievements_rect,
@@ -4419,7 +4424,7 @@ class Menu:
         guide_y = credits_y - btn_size - gap
         self.corner_guide_rect = pygame.Rect(margin, guide_y, btn_size, btn_size)
         self.corner_guide_rect = self._apply_layout_override_rect('guide_button', self.corner_guide_rect, width, height, min_w=30, min_h=30)
-        guide_icon_size = int(min(self.corner_guide_rect.w, self.corner_guide_rect.h) * 0.56) + icon_size_boost
+        guide_icon_size = int(min(self.corner_guide_rect.w, self.corner_guide_rect.h) * standard_icon_scale) + icon_size_boost
         book_icon = self._load_main_theme_icon('guide', guide_icon_size) or self._load_emoji_icon('book', guide_icon_size) or self._draw_book_icon(guide_icon_size)
         self._draw_corner_button(
             self.corner_guide_rect,
