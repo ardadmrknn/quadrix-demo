@@ -22,6 +22,8 @@ import time
 from pathlib import Path
 from typing import Any, Callable
 
+from leaderboard_rank_utils import rerank_entries_for_local_subset
+
 # ---------------------------------------------------------------------------
 # DLL yükleyici
 # ---------------------------------------------------------------------------
@@ -1988,6 +1990,9 @@ def fetch_leaderboard_entries(
                         })
                 except Exception as e:
                     print(f"[Steam] GetDownloadedLeaderboardEntry[{idx}] hatası: {e}")
+
+            if int(request_type) == _LB_REQUEST_FRIENDS:
+                entries = rerank_entries_for_local_subset(entries)
 
             result_holder[0] = entries
             print(f"[Steam] SDK leaderboard OK: {lb_name} -> {len(entries)} giris")
