@@ -1,35 +1,36 @@
 # -*- mode: python ; coding: utf-8 -*-
 """
-Quadrix Oyunu - PyInstaller Spec Dosyası (Steam Playtest)
-Playtest AppID: 4428040
-
-Kullanım:
-    python -m PyInstaller packaging/specs/tetris_playtest.spec --noconfirm
+Quadrix Oyunu - macOS .app için PyInstaller Spec Dosyası
+Versiyon: 1.0.0
 """
 
+import importlib.util
 import os
 import sys
 from pathlib import Path
 
-REPO_ROOT = Path(SPECPATH).resolve().parents[1]
-sys.path.insert(0, str(REPO_ROOT))
+sys.path.insert(0, str(Path(SPECPATH).resolve()))
 from tools.embed_menu_layout import write_embedded_layout_module
-from tools.bridge_artifacts import get_bridge_binaries
-from tools.versioning import bump_platform_version
 
 # Proje kök dizini
+REPO_ROOT = Path(SPECPATH).resolve()
 SRC_DIR = REPO_ROOT / 'src'
+
+
+def _load_version_string(version_file: Path) -> str:
+    spec = importlib.util.spec_from_file_location('version_base_spec', version_file)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f'version modulu yuklenemedi: {version_file}')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return str(getattr(module, 'VERSION'))
+
+
+APP_VERSION = _load_version_string(SRC_DIR / 'version_base.py')
+
 write_embedded_layout_module(REPO_ROOT)
 
-_new_version, _build, _version_file = bump_platform_version(REPO_ROOT, 'windows')
-print(f'[spec] Windows surumu guncellendi: {_new_version} (build {_build}) -> {_version_file.name}')
-
 block_cipher = None
-
-# Playtest AppID'yi ortam değişkeni olarak göm
-# Not: steam_appid.txt config/runtime altında mevcut; bu env tanımı
-# PyInstaller boot kancasının STEAM_APP_ID'yi ayarlaması için eklenir.
-os.environ.setdefault('STEAM_APP_ID', '4428040')
 
 # Oyun runtime'ında kullanılan tüm kaynakları topla
 datas = [
@@ -52,21 +53,23 @@ datas = [
     (str(REPO_ROOT / 'campaign_levels.csv'), '.'),
 
     # Runtime yapılandırmaları
-    (str(REPO_ROOT / 'config' / 'runtime' / 'steam_appid.txt'), '.'),
-    (str(REPO_ROOT / 'config' / 'runtime' / 'settings.txt'), '.'),
-    (str(REPO_ROOT / 'config' / 'runtime' / 'menu_layout_runtime.json'), '.'),
-    (str(REPO_ROOT / 'config' / 'runtime' / 'credits_layout.json'), '.'),
+    (str(REPO_ROOT / 'steam_appid.txt'), '.'),
+    (str(REPO_ROOT / 'settings.txt'), '.'),
+    (str(REPO_ROOT / 'menu_layout_runtime.json'), '.'),
+    (str(REPO_ROOT / 'credits_layout.json'), '.'),
 
     # src içi kaynaklar
     (str(SRC_DIR / 'splashscreen'), 'src/splashscreen'),
     (str(SRC_DIR / 'avatars'), 'src/avatars'),
+    (str(SRC_DIR / 'assets'), 'src/assets'),
     (str(SRC_DIR / 'settings.json'), 'src'),
 ]
 
 # Sadece var olan dizinleri ekle
 datas = [(src, dst) for src, dst in datas if os.path.exists(src)]
 
-# pygame varsayılan font (freesansbold.ttf) — paketli ortamda eksik olabilir (belt-and-suspenders)
+# pygame-ce varsayılan font (freesansbold.ttf) — paketli ortamda eksik olabilir (belt-and-suspenders)
+# NOT: pygame-ce de 'pygame' namespace altında kurulur, bu yüzden import pygame çalışır.
 try:
     import pygame as _pg
     _freesans = Path(_pg.__file__).resolve().parent / 'freesansbold.ttf'
@@ -92,6 +95,7 @@ hiddenimports = [
     'pygame.color',
     'pygame.key',
     'pygame.mouse',
+    'pygame.cursors',
     'json',
     'csv',
     'pathlib',
@@ -107,10 +111,13 @@ hiddenimports = [
     'os',
     'sys',
     'typing',
+    'array',
+    'shutil',
+    'subprocess',
+    'steam_integration',  # Steam SDK ctypes wrapper (macOS: libsteam_api.dylib)
     'steam_net_bridge',    # Steam Networking bridge (Pybind11, Online PvP)
     'version',
     'version_base',
-    'version_local_windows',
 ]
 
 # src klasöründeki tüm Python modüllerini ekle
@@ -136,23 +143,14 @@ if campaign_dir.exists():
         if module_name != '__init__':
             hiddenimports.append(f'campaign.{module_name}')
 
-# Steamworks DLL - dll/win64/ klasöründen al, EXE içine göm (onefile)
-# Steam, DLL'i _MEIPASS'tan ctypes ile yükler; ayrı dosya gerekmez.
-steam_dll_src = str(REPO_ROOT / 'dll' / 'win64' / 'steam_api64.dll')
-if os.path.exists(steam_dll_src):
-    binaries = [(steam_dll_src, '.')]  # EXE içine gömülür, _MEIPASS'a çıkarılır
-else:
-    binaries = []
-    print(f"WARNING: steam_api64.dll not found at {steam_dll_src}")
-
-# Steamworks macOS dylib - dll/osx/ klasöründen al (.app bundle için)
-# macOS üzerinde build edildiğinde Contents/MacOS/ içine yerleşir (Steam'in beklediği konum)
+# Steamworks macOS dylib - aynı klasörde varsa ekle
+# Steamworks dylib - dll/osx/ klasöründen al
+# macOS .app bundle'da Contents/MacOS/ içine yerleşir (Steam'in beklediği konum)
 steam_dylib_src = str(REPO_ROOT / 'dll' / 'osx' / 'libsteam_api.dylib')
 if os.path.exists(steam_dylib_src):
-    binaries.append((steam_dylib_src, '.'))
-    print(f'[spec] libsteam_api.dylib eklendi: {steam_dylib_src}')
+    binaries = [(steam_dylib_src, '.')]  # Contents/MacOS/ içine kopyalanır
 else:
-    print(f'[spec] libsteam_api.dylib bulunamadı (macOS build değilse normaldir): {steam_dylib_src}')
+    binaries = []
 
 # Steam Networking bridge (Pybind11 C++ modülü) — Online PvP için
 for _bridge_path in get_bridge_binaries(REPO_ROOT):
@@ -175,6 +173,7 @@ a = Analysis(
         'tkinter.colorchooser',
         'tkinter.filedialog',
         'tkinter.simpledialog',
+        # Gereksiz büyük modülleri hariç tut (boyutu azaltmak için)
         'matplotlib',
         'numpy',
         'pygame.surfarray',
@@ -187,6 +186,8 @@ a = Analysis(
         'IPython',
         'notebook',
         'jupyter',
+        'PyQt5',
+        'PySide2',
     ],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
@@ -199,21 +200,53 @@ pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 exe = EXE(
     pyz,
     a.scripts,
-    a.binaries,
-    a.zipfiles,
-    a.datas,
     [],
+    exclude_binaries=True,
     name='Quadrix',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
     upx=False,
-    upx_exclude=[],
-    runtime_tmpdir=None,
-    console=False,
+    console=False,  # GUI uygulama - konsol penceresi yok
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+)
+
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.zipfiles,
+    a.datas,
+    strip=False,
+    upx=False,
+    upx_exclude=[],
+    name='Quadrix',
+)
+
+# macOS .app bundle oluştur
+app = BUNDLE(
+    coll,
+    name='Quadrix.app',
+    icon=str(REPO_ROOT / 'assets' / 'Tetris.icns'),
+    bundle_identifier='com.burakyasayan.quadrix',
+    version=APP_VERSION,
+    info_plist={
+        'CFBundleName': 'Quadrix',
+        'CFBundleDisplayName': 'Quadrix',
+        'CFBundleGetInfoString': 'Quadrix Full Edition',
+        'CFBundleIdentifier': 'com.burakyasayan.tetris',
+        'CFBundleVersion': APP_VERSION,
+        'CFBundleShortVersionString': APP_VERSION,
+        'CFBundleExecutable': 'Quadrix',
+        'CFBundlePackageType': 'APPL',
+        'CFBundleSignature': 'TTRS',
+        'NSHighResolutionCapable': True,
+        'NSRequiresAquaSystemAppearance': False,  # Dark mode desteği
+        'LSMinimumSystemVersion': '10.13.0',
+        'LSApplicationCategoryType': 'public.app-category.games',
+        'NSHumanReadableCopyright': '© 2026 Burak Yasayan. Tüm hakları saklıdır.',
+    },
 )

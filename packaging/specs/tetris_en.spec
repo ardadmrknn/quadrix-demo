@@ -8,12 +8,12 @@ import os
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(SPECPATH).resolve()))
+REPO_ROOT = Path(SPECPATH).resolve().parents[1]
+sys.path.insert(0, str(REPO_ROOT))
 from tools.embed_menu_layout import write_embedded_layout_module
 from tools.versioning import bump_platform_version
 
 # Proje kök dizini
-REPO_ROOT = Path(SPECPATH).resolve()
 SRC_DIR = REPO_ROOT / 'src'
 write_embedded_layout_module(REPO_ROOT)
 
@@ -43,10 +43,10 @@ datas = [
     (str(REPO_ROOT / 'campaign_levels.csv'), '.'),
 
     # Runtime yapılandırmaları
-    (str(REPO_ROOT / 'steam_appid.txt'), '.'),
-    (str(REPO_ROOT / 'settings.txt'), '.'),
-    (str(REPO_ROOT / 'menu_layout_runtime.json'), '.'),
-    (str(REPO_ROOT / 'credits_layout.json'), '.'),
+    (str(REPO_ROOT / 'config' / 'runtime' / 'steam_appid.txt'), '.'),
+    (str(REPO_ROOT / 'config' / 'runtime' / 'settings.txt'), '.'),
+    (str(REPO_ROOT / 'config' / 'runtime' / 'menu_layout_runtime.json'), '.'),
+    (str(REPO_ROOT / 'config' / 'runtime' / 'credits_layout.json'), '.'),
 
     # src içi kaynaklar
     (str(SRC_DIR / 'splashscreen'), 'src/splashscreen'),
