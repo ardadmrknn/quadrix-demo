@@ -2,13 +2,16 @@
 import os, sys, time, ctypes, urllib.request, urllib.parse, json, random
 import pytest
 
-PUBLISHER_KEY = "4B6B6D93520B540A3F7B79E98472F375"
 APP_ID = 4428040
 LB_ID_MYSTERY = 19198572
 
 
 def test_leaderboard_write():
     """Steam liderlik tablosuna yazma testi (yalnizca Windows + Steam acikken calisir)."""
+    publisher_key = os.environ.get("STEAM_WEB_API_KEY", "").strip()
+    if not publisher_key:
+        pytest.skip("STEAM_WEB_API_KEY tanimli degil; partner API yazma testi atlandi")
+
     if sys.platform != "win32":
         pytest.skip("Bu test yalnizca Windows'ta calisir")
 
@@ -76,7 +79,7 @@ def test_leaderboard_write():
         time.sleep(0.05)
     dll.SteamAPI_Shutdown()
 
-    params = urllib.parse.urlencode({"key": PUBLISHER_KEY, "appid": APP_ID, "leaderboardid": LB_ID_MYSTERY, "steamid": steam_id, "score": test_score, "scoremethod": "KeepBest"}).encode()
+    params = urllib.parse.urlencode({"key": publisher_key, "appid": APP_ID, "leaderboardid": LB_ID_MYSTERY, "steamid": steam_id, "score": test_score, "scoremethod": "KeepBest"}).encode()
     req = urllib.request.Request("https://partner.steam-api.com/ISteamLeaderboards/SetLeaderboardScore/v1/", data=params, method="POST")
     req.add_header("Content-Type", "application/x-www-form-urlencoded")
     with urllib.request.urlopen(req, timeout=10) as resp:
