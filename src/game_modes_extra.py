@@ -5954,6 +5954,8 @@ class MysteryMode(Game):
         self._card_workshop_grid = None
         self._card_workshop_cursor_x = 0
         self._card_workshop_cursor_y = 0
+        self._card_workshop_peek_active = False
+        self._card_workshop_peek_rect = None
         # Geri Sarma state'i sıfırla
         self._rewind_available = False
         self._last_placed_piece = None
@@ -8850,6 +8852,8 @@ class MysteryMode(Game):
         self._card_workshop_grid = [[None for _ in range(7)] for _ in range(7)]
         self._card_workshop_cursor_x = 3
         self._card_workshop_cursor_y = 3
+        self._card_workshop_peek_active = False
+        self._card_workshop_peek_rect = None
         self._card_workshop_color = (0, 255, 255)
         self._card_workshop_message = "Blok atolyesi! Maks 7 blok. ENTER ile tamamla."
         self._card_workshop_message_timer = 5.0
@@ -8866,6 +8870,8 @@ class MysteryMode(Game):
         self._card_workshop_grid = None
         self._card_workshop_cursor_x = 0
         self._card_workshop_cursor_y = 0
+        self._card_workshop_peek_active = False
+        self._card_workshop_peek_rect = None
         self._card_workshop_message = ""
         self._card_workshop_message_timer = 0
 
@@ -8981,7 +8987,12 @@ class MysteryMode(Game):
 
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_ESCAPE:
-                self._close_card_workshop_popup()
+                if getattr(self, '_card_workshop_peek_active', False):
+                    self._card_workshop_peek_active = False
+                else:
+                    self._close_card_workshop_popup()
+                return True
+            if getattr(self, '_card_workshop_peek_active', False):
                 return True
             elif event.key == pygame.K_RETURN:
                 self._card_workshop_finish()
@@ -9029,8 +9040,14 @@ class MysteryMode(Game):
                             self._card_workshop_message_timer = 1.0
                 return True
         elif event.type == pygame.MOUSEBUTTONDOWN:
+            pos = normalize_mouse_pos(getattr(event, 'pos', None)) or getattr(event, 'pos', None)
+            peek_rect = getattr(self, '_card_workshop_peek_rect', None)
+            if event.button == 1 and pos and peek_rect and peek_rect.collidepoint(pos):
+                self._card_workshop_peek_active = not getattr(self, '_card_workshop_peek_active', False)
+                return True
+            if getattr(self, '_card_workshop_peek_active', False):
+                return True
             # Mouse ile tıklanabilir grid
-            pos = getattr(event, 'pos', None)
             if pos and hasattr(self, '_card_workshop_grid_rect'):
                 gr = self._card_workshop_grid_rect
                 if gr.collidepoint(pos):
@@ -9086,6 +9103,27 @@ class MysteryMode(Game):
         if not getattr(self, '_card_workshop_active', False):
             return
 
+        if getattr(self, '_card_workshop_peek_active', False):
+            peek_btn_size = 48
+            peek_btn_x = self.window_width - peek_btn_size - 20
+            peek_btn_y = self.window_height - peek_btn_size - 20
+            self._card_workshop_peek_rect = pygame.Rect(peek_btn_x, peek_btn_y, peek_btn_size, peek_btn_size)
+
+            center = self._card_workshop_peek_rect.center
+            radius = peek_btn_size // 2
+            pygame.draw.circle(self.screen, (255, 255, 255), center, radius)
+            pygame.draw.circle(self.screen, (100, 200, 255), center, radius, 2)
+
+            peek_icon_surf = self._get_cached_peek_icon(int(peek_btn_size * 0.65))
+            if peek_icon_surf:
+                icon_rect = peek_icon_surf.get_rect(center=self._card_workshop_peek_rect.center)
+                self.screen.blit(peek_icon_surf, icon_rect)
+            else:
+                fallback_font = retro_style.get_font(20, bold=True)
+                eye_surf = fallback_font.render("X", True, (100, 200, 255))
+                self.screen.blit(eye_surf, eye_surf.get_rect(center=self._card_workshop_peek_rect.center))
+            return
+
         # Popup boyutları
         popup_width = 500
         popup_height = 520
@@ -9106,6 +9144,28 @@ class MysteryMode(Game):
         # Panel
         popup_rect = pygame.Rect(popup_x, popup_y, popup_width, popup_height)
         retro_style.draw_glass_panel(self.screen, popup_rect, alpha=240, border_color=(255, 200, 80), glow=True)
+
+        peek_btn_size = 36
+        peek_btn_x = popup_rect.right - peek_btn_size - 16
+        peek_btn_y = popup_rect.y + 14
+        self._card_workshop_peek_rect = pygame.Rect(peek_btn_x, peek_btn_y, peek_btn_size, peek_btn_size)
+
+        mouse_pos = get_mouse_pos() if pygame.mouse.get_focused() else None
+        peek_hovered = mouse_pos is not None and self._card_workshop_peek_rect.collidepoint(mouse_pos)
+        center = self._card_workshop_peek_rect.center
+        radius = peek_btn_size // 2
+        pygame.draw.circle(self.screen, (255, 255, 255), center, radius)
+        border_color = (116, 190, 255) if peek_hovered else (180, 180, 200)
+        pygame.draw.circle(self.screen, border_color, center, radius, 2)
+
+        peek_icon_surf = self._get_cached_peek_icon(int(peek_btn_size * 0.65))
+        if peek_icon_surf:
+            icon_rect = peek_icon_surf.get_rect(center=self._card_workshop_peek_rect.center)
+            self.screen.blit(peek_icon_surf, icon_rect)
+        else:
+            fallback_font = retro_style.get_font(16, bold=True)
+            eye_surf = fallback_font.render("O", True, (116, 190, 255) if peek_hovered else (180, 180, 200))
+            self.screen.blit(eye_surf, eye_surf.get_rect(center=self._card_workshop_peek_rect.center))
 
         # Başlık
         title_font = self.mystery_font_large

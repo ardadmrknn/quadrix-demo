@@ -476,8 +476,9 @@ class Menu:
         self._steam_player_cache: dict[str, dict] = {}
         # Avatar image cache: avatar_url -> bytes (arka planda indirildi)
         self._steam_avatar_bytes: dict[str, bytes] = {}
-        # Avatar surface cache: avatar_url -> pygame.Surface (main thread'de oluşturuldu)
-        self._steam_avatar_surf: dict[str, pygame.Surface | None] = {}
+        # Avatar surface cache: (avatar_url, pixel_size) -> pygame.Surface.
+        # Liste uzunluğu/sekme değişince satır yüksekliği değişebildiği için boyut cache anahtarına dahildir.
+        self._steam_avatar_surf: dict[tuple[str, int], pygame.Surface | None] = {}
 
         # Main header (QUADRIX yanı) için aktif Steam avatar cache
         self._steam_header_avatar_url = ''
@@ -3037,18 +3038,19 @@ class Menu:
             avatar_surf: pygame.Surface | None = None
             avatar_url = str(player_info.get('avatarmedium') or player_info.get('avatar') or '').strip()
             if avatar_url:
-                if avatar_url not in self._steam_avatar_surf:
+                av_size_pre = max(20, min(s(32), row_rect.height - s(8)))
+                avatar_cache_key = (avatar_url, av_size_pre)
+                if avatar_cache_key not in self._steam_avatar_surf:
                     raw_bytes = self._steam_avatar_bytes.get(avatar_url)
                     if raw_bytes:
                         try:
                             import io as _io
-                            av_size_pre = max(20, min(s(32), row_rect.height - s(8)))
                             loaded = pygame.image.load(_io.BytesIO(raw_bytes))
                             src = loaded.convert() if _IS_MACOS else loaded.convert_alpha()
-                            self._steam_avatar_surf[avatar_url] = _circle_crop_bitmap(src, av_size_pre)
+                            self._steam_avatar_surf[avatar_cache_key] = _circle_crop_bitmap(src, av_size_pre)
                         except Exception:
-                            self._steam_avatar_surf[avatar_url] = None
-                avatar_surf = self._steam_avatar_surf.get(avatar_url)
+                            self._steam_avatar_surf[avatar_cache_key] = None
+                avatar_surf = self._steam_avatar_surf.get(avatar_cache_key)
 
             rank_color = medal_c if idx < 3 else UIColors.TEXT_SECONDARY
             rank_font = retro_style.get_font(s(16), bold=True)
@@ -5379,6 +5381,20 @@ class HighScoreScreen:
                 return 'back'
         elif event.type == pygame.MOUSEWHEEL:
             self.scroll_y = max(0, min(self.max_scroll, self.scroll_y - int(event.y) * 40))
+
+    def _get_mode_scores(self, mode_key: str) -> list:
+        """Yüksek skor ekranında öncelik her zaman aktif kullanıcının yerel skorlarıdır."""
+        if self.user_manager:
+            try:
+                return self.user_manager.get_mode_highscores(mode_key, limit=3)
+            except Exception:
+                pass
+
+        steam_scores = self.steam_mode_scores.get(mode_key, [])
+        if steam_scores:
+            return steam_scores[:3]
+
+        return []
     
     def draw(self):
         """High score ekranını çiz - Kutucuklu grid görünüm"""
@@ -5428,13 +5444,7 @@ class HighScoreScreen:
                 continue
             
             # Skorları al
-            steam_scores = self.steam_mode_scores.get(mode_key, [])
-            if steam_scores:
-                scores = steam_scores[:3]
-            elif self.user_manager:
-                scores = self.user_manager.get_mode_highscores(mode_key, limit=3)
-            else:
-                scores = []
+            scores = self._get_mode_scores(mode_key)
             
             self._draw_mode_card(card_rect, t(mode_label_key), mode_color, scores)
         
