@@ -57,11 +57,11 @@ elseif(UNIX)
         "${STEAM_LIB_DIR}/libsteam_api.so")
 endif()
 
-# ── Çıktıyı projenin kök dizinine kopyala ──────────────────────────
-# (src/ içinden import edilebilmesi için)
-set(QUADRIX_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../..")
+# ── Çıktıyı runtime bridge dizinine kur ────────────────────────────
+# (PyInstaller spec ve runtime import'u burayı öncelikli kullanır)
+set(QUADRIX_BRIDGE_OUTPUT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../local_artifacts/bridge")
 
 install(TARGETS steam_net_bridge
-    LIBRARY DESTINATION "${QUADRIX_ROOT}"
-    RUNTIME DESTINATION "${QUADRIX_ROOT}"
+    LIBRARY DESTINATION "${QUADRIX_BRIDGE_OUTPUT_DIR}"
+    RUNTIME DESTINATION "${QUADRIX_BRIDGE_OUTPUT_DIR}"
 )

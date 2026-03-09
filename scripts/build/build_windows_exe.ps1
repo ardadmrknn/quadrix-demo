@@ -51,6 +51,40 @@ function Resolve-QuadrixPython {
     throw 'Python bulunamadi. QUADRIX_PYTHON ayarlayin veya Python 3.12 kurun.'
 }
 
+function Get-BridgeArtifactPaths {
+    $patterns = @(
+        (Join-Path $repoRoot 'local_artifacts\bridge\steam_net_bridge*.pyd'),
+        (Join-Path $repoRoot 'local_artifacts\bridge\steam_net_bridge*.so'),
+        (Join-Path $repoRoot 'steam_net_bridge*.pyd'),
+        (Join-Path $repoRoot 'steam_net_bridge*.so'),
+        (Join-Path $repoRoot 'steamworks\steam_net_bridge\build*\Release\steam_net_bridge*.pyd'),
+        (Join-Path $repoRoot 'steamworks\steam_net_bridge\build*\Release\steam_net_bridge*.so')
+    )
+
+    $items = @()
+    foreach ($pattern in $patterns) {
+        $items += Get-ChildItem -Path $pattern -File -ErrorAction SilentlyContinue
+    }
+
+    return @($items | Sort-Object FullName -Unique)
+}
+
+function Sync-BridgeArtifactsToRuntimeDir {
+    $targetDir = Join-Path $repoRoot 'local_artifacts\bridge'
+    New-Item -ItemType Directory -Force -Path $targetDir | Out-Null
+
+    $copied = @()
+    foreach ($artifact in Get-BridgeArtifactPaths) {
+        if ($artifact.DirectoryName -eq $targetDir) {
+            continue
+        }
+        Copy-Item -Path $artifact.FullName -Destination (Join-Path $targetDir $artifact.Name) -Force
+        $copied += $artifact.FullName
+    }
+
+    return $copied
+}
+
 $pythonExe = Resolve-QuadrixPython
 $resolvedSpecFile = Resolve-SpecPath $SpecFile
 $logDir = Join-Path $repoRoot 'reports\logs'
@@ -83,9 +117,11 @@ if ($RebuildBridge) {
     Write-Host 'Eski bridge artifactleri temizleniyor...' -ForegroundColor Yellow
     Get-ChildItem -Path (Join-Path $repoRoot 'local_artifacts\bridge') -Filter 'steam_net_bridge*.pyd' -ErrorAction SilentlyContinue | Remove-Item -Force
     Get-ChildItem -Path (Join-Path $repoRoot 'local_artifacts\bridge') -Filter 'steam_net_bridge*.so' -ErrorAction SilentlyContinue | Remove-Item -Force
+    Get-ChildItem -Path (Join-Path $repoRoot 'steam_net_bridge*.pyd') -ErrorAction SilentlyContinue | Remove-Item -Force
+    Get-ChildItem -Path (Join-Path $repoRoot 'steam_net_bridge*.so') -ErrorAction SilentlyContinue | Remove-Item -Force
 }
 
-$bridgeExists = @(Get-ChildItem -Path (Join-Path $repoRoot 'local_artifacts\bridge') -Filter 'steam_net_bridge*.pyd' -ErrorAction SilentlyContinue).Count -gt 0
+$bridgeExists = @(Get-BridgeArtifactPaths).Count -gt 0
 if ($RebuildBridge -or -not $bridgeExists) {
     Write-Host 'Steam bridge derleniyor...' -ForegroundColor Cyan
     $bridgeBat = Join-Path $repoRoot 'steamworks\steam_net_bridge\build.bat'
@@ -102,6 +138,21 @@ if ($RebuildBridge -or -not $bridgeExists) {
     finally {
         Pop-Location
     }
+}
+
+$bridgeArtifacts = @(Get-BridgeArtifactPaths)
+if ($bridgeArtifacts.Count -eq 0) {
+    throw 'Bridge artefact bulunamadi. Online PvP pakete eklenemeyecek.'
+}
+
+$syncedArtifacts = @(Sync-BridgeArtifactsToRuntimeDir)
+if ($syncedArtifacts.Count -gt 0) {
+    Write-Host 'Bridge artefactleri local_artifacts\bridge altina senkronize edildi.' -ForegroundColor Green
+}
+
+$runtimeBridgeArtifacts = @(Get-ChildItem -Path (Join-Path $repoRoot 'local_artifacts\bridge\steam_net_bridge*.pyd') -File -ErrorAction SilentlyContinue)
+if ($runtimeBridgeArtifacts.Count -eq 0) {
+    throw 'Bridge artefact local_artifacts\bridge altina senkronize edilemedi.'
 }
 
 Write-Host 'PyInstaller build baslatiliyor...' -ForegroundColor Cyan

@@ -22,6 +22,7 @@ import json
 import time
 import sys
 import os
+from pathlib import Path
 from typing import Any, Callable
 
 # ---------- C++ Bridge import ----------
@@ -36,46 +37,116 @@ _bridge_import_attempted = False
 _dll_dirs: list[Any] = []
 
 
+def _dedupe_paths(paths: list[str]) -> list[str]:
+    seen: set[str] = set()
+    out: list[str] = []
+    for path in paths:
+        normalized = os.path.normpath(str(path))
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        out.append(normalized)
+    return out
+
+
+def _get_bridge_search_roots() -> list[str]:
+    roots: list[str] = []
+
+    meipass = getattr(sys, '_MEIPASS', None)
+    if isinstance(meipass, str) and meipass:
+        roots.append(meipass)
+
+    exe_path = getattr(sys, 'executable', '')
+    if exe_path:
+        try:
+            roots.append(str(Path(exe_path).resolve().parent))
+        except Exception:
+            pass
+
+    try:
+        roots.append(str(Path.cwd()))
+    except Exception:
+        pass
+
+    try:
+        roots.append(str(Path(__file__).resolve().parent.parent))
+    except Exception:
+        pass
+
+    return _dedupe_paths(roots)
+
+
+def _get_bridge_candidate_dirs() -> list[str]:
+    candidates: list[str] = []
+    for root_str in _get_bridge_search_roots():
+        root = Path(root_str)
+        candidates.extend([
+            str(root / 'local_artifacts' / 'bridge'),
+            str(root),
+            str(root / 'dist'),
+        ])
+
+        bridge_build_root = root / 'steamworks' / 'steam_net_bridge'
+        try:
+            candidates.extend(
+                str(path)
+                for path in sorted(bridge_build_root.glob('build*/Release'))
+            )
+        except Exception:
+            pass
+
+    return _dedupe_paths(candidates)
+
+
+def _get_bridge_dll_search_dirs() -> list[str]:
+    candidates: list[str] = []
+
+    meipass = getattr(sys, '_MEIPASS', None)
+    if isinstance(meipass, str) and meipass and sys.platform == 'darwin':
+        meipass_path = Path(meipass)
+        candidates.extend([
+            str(meipass_path.parent / 'Frameworks'),
+            str(meipass_path.parent / 'MacOS'),
+            str(meipass_path),
+        ])
+
+    for root_str in _get_bridge_search_roots():
+        root = Path(root_str)
+        candidates.append(str(root))
+        if sys.platform == 'darwin':
+            candidates.append(str(root / 'dll' / 'osx'))
+        elif sys.platform.startswith('linux'):
+            candidates.append(str(root / 'dll' / 'linux64'))
+        else:
+            candidates.append(str(root / 'dll' / 'win64'))
+
+    candidates.extend(_get_bridge_candidate_dirs())
+    return _dedupe_paths(candidates)
+
+
 def _try_import_bridge():
     """C++ köprü modülünü yükle (lazy — yalnızca SteamNetworking.init() içinden çağrılır)."""
     global _bridge, _bridge_available, _bridge_import_attempted
     _bridge_import_attempted = True
 
-    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    bridge_artifacts_dir = os.path.join(project_root, 'local_artifacts', 'bridge')
+    search_roots = _get_bridge_search_roots()
+    bridge_candidate_dirs = _get_bridge_candidate_dirs()
     tried_paths: list[str] = []
 
     # steam_api64.dll / libsteam_api.dylib arama yoluna DLL dizinlerini ekle
     # (bridge modülü link-time'da bu DLL'e bağımlı)
     if sys.platform == 'win32':
-        dll_search_dirs: list[str] = []
-        # PyInstaller bundle
-        if getattr(sys, '_MEIPASS', None):
-            dll_search_dirs.append(str(sys._MEIPASS))
-        # Proje kökü
-        dll_search_dirs.append(project_root)
-        # dll/win64 alt dizini
-        dll_search_dirs.append(os.path.join(project_root, 'dll', 'win64'))
-        for d in dll_search_dirs:
+        for d in _get_bridge_dll_search_dirs():
             tried_paths.append(d)
             if os.path.isdir(d):
                 try:
                     # handle module-global listede saklanır — GC'den korunur
-                    _dll_dirs.append(os.add_dll_directory(d))
+                    if hasattr(os, 'add_dll_directory'):
+                        _dll_dirs.append(os.add_dll_directory(d))
                 except OSError:
                     pass
     elif sys.platform == 'darwin':
-        # PyInstaller frozen bundle için açık aday yollar; deterministik sırada sys.path'e eklenir
-        candidates: list[str] = []
-        meipass = getattr(sys, '_MEIPASS', None)
-        if meipass:
-            candidates.append(os.path.normpath(os.path.join(meipass, '..', 'Frameworks')))
-            candidates.append(os.path.normpath(os.path.join(meipass, '..', 'MacOS')))
-            candidates.append(str(meipass))
-        candidates.append(os.path.join(project_root, 'dll', 'osx'))
-        candidates.append(bridge_artifacts_dir)
-        candidates.append(project_root)
-        for d in candidates:
+        for d in _get_bridge_dll_search_dirs():
             tried_paths.append(d)
             if os.path.isdir(d):
                 if d not in sys.path:
@@ -84,10 +155,14 @@ def _try_import_bridge():
                 if d not in dyld:
                     os.environ['DYLD_LIBRARY_PATH'] = d + ':' + dyld
 
-    if os.path.isdir(bridge_artifacts_dir):
-        tried_paths.append(bridge_artifacts_dir)
-        if bridge_artifacts_dir not in sys.path:
-            sys.path.insert(0, bridge_artifacts_dir)
+    for root in search_roots:
+        if os.path.isdir(root) and root not in sys.path:
+            sys.path.insert(0, root)
+
+    for bridge_dir in bridge_candidate_dirs:
+        tried_paths.append(bridge_dir)
+        if os.path.isdir(bridge_dir) and bridge_dir not in sys.path:
+            sys.path.insert(0, bridge_dir)
 
     try:
         import steam_net_bridge as snb
@@ -95,21 +170,11 @@ def _try_import_bridge():
         _bridge_available = True
         return True
     except Exception as exc:
-        # Proje kökünden de dene (build sonrası .pyd burada olabilir)
-        if project_root not in sys.path:
-            sys.path.insert(0, project_root)
-            tried_paths.append(project_root + ' (sys.path fallback)')
-        try:
-            import steam_net_bridge as snb
-            _bridge = snb
-            _bridge_available = True
-            return True
-        except Exception as exc2:
-            print(f"[SteamNet] steam_net_bridge yuklenemedi: {exc2}")
-            print(f"           Denenen yollar: {tried_paths}")
-            print("           steamworks/steam_net_bridge/build.bat calistirin.")
-            _bridge_available = False
-            return False
+        print(f"[SteamNet] steam_net_bridge yuklenemedi: {exc}")
+        print(f"           Denenen yollar: {_dedupe_paths(tried_paths)}")
+        print("           build.bat ile derleyin veya artifacti local_artifacts/bridge altina koyun.")
+        _bridge_available = False
+        return False
 
 # NOT: _try_import_bridge() artık import zamanında OTOMATİK çağrılmıyor.
 # Bridge yüklemesi YALNIZCA SteamNetworking.init() içinde (lazy) gerçekleşir.
