@@ -4,7 +4,7 @@ Quadrix Oyunu - PyInstaller Spec Dosyası (Steam Playtest)
 Playtest AppID: 4428040
 
 Kullanım:
-    python -m PyInstaller tetris_playtest.spec --noconfirm
+    python -m PyInstaller packaging/specs/tetris_playtest.spec --noconfirm
 """
 
 import os

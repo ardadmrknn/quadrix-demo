@@ -7,7 +7,7 @@ Tüm asset'ler, sesler, görseller, fontlar, ayarlar tek bir .app içine paketle
 Windows'taki tek-EXE deneyiminin macOS karşılığıdır.
 
 Kullanım:
-    python3 -m PyInstaller tetris_macos_allinone.spec --noconfirm
+    python3 -m PyInstaller packaging/specs/tetris_macos_allinone.spec --noconfirm
 
 Sonuç: dist/Quadrix.app
 """
