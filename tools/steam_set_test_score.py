@@ -196,9 +196,14 @@ def _load_leaderboard_id(*, key: str, app_id: int, mode: str) -> int:
 def _read_app_id_from_file() -> str:
     try:
         from pathlib import Path
-        p = Path(__file__).resolve().parents[1] / "steam_appid.txt"
-        if p.exists():
-            return p.read_text(encoding="utf-8").strip()
+        root = Path(__file__).resolve().parents[1]
+        candidates = [
+            root / "config" / "runtime" / "steam_appid.txt",
+            root / "steam_appid.txt",
+        ]
+        for p in candidates:
+            if p.exists():
+                return p.read_text(encoding="utf-8").strip()
     except Exception:
         pass
     return ""

@@ -4,12 +4,13 @@
 # Bu dosyaya çift tıklayarak oyunu başlatabilirsiniz!
 #
 # NOT: Bu dosyayı çalıştırılabilir yapmak için:
-#      chmod +x Quadrix.command
+#      chmod +x scripts/run/Tetris.command
 #
 
-# Script dizinine git
+# Repo köküne git
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-cd "$SCRIPT_DIR" || exit 1
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+cd "$REPO_ROOT" || exit 1
 
 # Terminal penceresini güzel ayarla
 printf '\e]0;Quadrix - Full Edition\a'
@@ -21,8 +22,8 @@ export SDL_AUDIODRIVER="coreaudio"
 export SDL_VIDEODRIVER="cocoa"
 
 # Ana başlatıcıyı çalıştır
-if [[ -x "./start_game.sh" ]]; then
-    ./start_game.sh "$@"
+if [[ -x "./scripts/run/start_game.sh" ]]; then
+    ./scripts/run/start_game.sh "$@"
 else
     # Fallback: direkt Python ile başlat
     if command -v python3.12 >/dev/null 2>&1; then

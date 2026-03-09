@@ -40,11 +40,11 @@ Aşağıdaki değişiklikler derleme sürecine **dahil edilmelidir**:
    - `find_package(pybind11 REQUIRED)`
 
 4. Spec dosyaları bridge binary’sini topluyor
-   - `tetris.spec`
-   - `tetris_macos.spec`
-   - `tetris_playtest.spec`
+   - `packaging/specs/tetris.spec`
+   - `packaging/specs/tetris_macos.spec`
+   - `packaging/specs/tetris_playtest.spec`
    
-   Bu dosyalar proje kökündeki `steam_net_bridge*.pyd` ve `steam_net_bridge*.so` dosyalarını
+   Bu dosyalar `local_artifacts/bridge/` altındaki `steam_net_bridge*.pyd` ve `steam_net_bridge*.so` dosyalarını
    `binaries` listesine ekleyecek şekilde yapılandırılmıştır.
 
 ---
@@ -65,11 +65,11 @@ set QUADRIX_PYTHON=C:\Users\<kullanici>\AppData\Local\Programs\Python\Python312\
 build.bat
 ```
 
-## 2) Proje kökünde bridge artifact doğrula
+## 2) local_artifacts/bridge altında bridge artifact doğrula
 
 ```powershell
 cd ..\..
-dir steam_net_bridge*.pyd
+dir local_artifacts\bridge\steam_net_bridge*.pyd
 ```
 
 Beklenen örnek: `steam_net_bridge.cp312-win_amd64.pyd`
@@ -77,7 +77,7 @@ Beklenen örnek: `steam_net_bridge.cp312-win_amd64.pyd`
 ## 3) EXE derle
 
 ```powershell
-py -m PyInstaller tetris.spec --noconfirm
+py -m PyInstaller packaging/specs/tetris.spec --noconfirm
 ```
 
 ## 4) Build log’da bridge’in toplandığını doğrula
@@ -111,11 +111,11 @@ export QUADRIX_MACOS_ARCHS="arm64;x86_64"
 ./build.sh
 ```
 
-## 2) Proje kökünde bridge artifact doğrula
+## 2) local_artifacts/bridge altında bridge artifact doğrula
 
 ```bash
 cd ../..
-ls -1 steam_net_bridge*.so
+ls -1 local_artifacts/bridge/steam_net_bridge*.so
 ```
 
 ## 3) .app derle
@@ -123,13 +123,13 @@ ls -1 steam_net_bridge*.so
 - Standart spec ile:
 
 ```bash
-pyinstaller tetris_macos.spec --noconfirm
+pyinstaller packaging/specs/tetris_macos.spec --noconfirm
 ```
 
 - veya all-in-one script ile:
 
 ```bash
-./build_macos_app.sh
+./scripts/build/build_macos_app.sh
 ```
 
 ---

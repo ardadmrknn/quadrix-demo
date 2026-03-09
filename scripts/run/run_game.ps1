@@ -5,17 +5,18 @@
 .DESCRIPTION
     Bu script oyunu Windows'ta PowerShell ile başlatır.
     Kullanım: Sağ tık -> PowerShell ile Çalıştır
-              veya terminalde: .\run_game.ps1
+              veya terminalde: .\scripts\run\run_game.ps1
 .NOTES
     Python 3.10+ gereklidir.
 #>
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-# Script dizinine git
+# Repo köküne git
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
 if (-not $scriptDir) { $scriptDir = Get-Location }
-Set-Location $scriptDir
+$repoRoot = Split-Path -Parent (Split-Path -Parent $scriptDir)
+Set-Location $repoRoot
 
 Write-Host "============================================" -ForegroundColor Cyan
 Write-Host "    QUADRIX - Full Edition (PowerShell)" -ForegroundColor Green
@@ -70,7 +71,7 @@ try {
     Invoke-Expression $checkCmd 2>$null
 } catch {
     Write-Host "[INFO] Gerekli paketler yukleniyor..." -ForegroundColor Yellow
-    & $pythonCmd @pythonArgs -m pip install -r requirements.txt --quiet
+    & $pythonCmd @pythonArgs -m pip install -r packaging\requirements\requirements.txt --quiet
     Write-Host "[OK] Paketler yuklendi." -ForegroundColor Green
 }
 

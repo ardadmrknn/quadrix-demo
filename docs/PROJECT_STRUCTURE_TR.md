@@ -36,21 +36,32 @@ v2/
 ├─ avatars/                         # Avatar varlıkları
 │
 ├─ docs/                            # Teknik ve operasyonel dokümanlar
+│  ├─ guides/                       # Kullanım rehberleri ve README varyantları
+│  └─ archive/                      # Eski/manuel test ve referans dokümanları
 ├─ diary/                           # Günlük/değişiklik notları
 ├─ reports/                         # Üretilen raporlar/loglar
 │  ├─ localization_audit/
 │  └─ logs/
+├─ scripts/                         # Çalıştırma, build ve yayın scriptleri
+│  ├─ build/
+│  └─ run/
+├─ packaging/                       # Paketleme yardımcıları
+│  ├─ pyinstaller/hooks/            # PyInstaller runtime hook'ları
+│  ├─ requirements/                 # Paket bağımlılık listeleri
+│  └─ specs/                        # PyInstaller spec dosyaları
+├─ config/
+│  └─ runtime/                      # Runtime ayar ve layout dosyalari
+├─ local_artifacts/                 # Lokal build artifactleri
+│  ├─ bridge/
+│  └─ dll/
+├─ data/
+│  └─ legacy/                       # Eski/manuel veri artifaktlari
 ├─ tools/                           # Yardımcı araçlar
 │  └─ maintenance/root_helpers/     # Tek-seferlik bakım scriptleri
 ├─ plans/                           # Plan ve roadmap belgeleri
 ├─ archive/                         # Arşivlenen (aktif olmayan) dosyalar
 │
-├─ tetris.spec                      # PyInstaller build spec (Win)
-├─ tetris_macos.spec                # PyInstaller build spec (macOS)
-├─ tetris_playtest.spec             # Playtest build spec
-├─ requirements.txt                 # Python bağımlılıkları
-├─ requirements-macos.txt           # macOS bağımlılıkları
-└─ pytest.ini                       # Test yapılandırması
+└─ pyproject.toml                   # Proje ve test yapılandırması
 ```
 
 ## Önemli Dosyalar
@@ -65,10 +76,10 @@ v2/
 
 - Oyunu başlatma (Windows):
   - `py main.py`
-  - veya `start_game.bat`
+  - veya `scripts/run/start_game.bat`
 - Test çalıştırma:
   - `py -m pytest -q`
-  - veya `./run_tests.sh -q`
+  - veya `./scripts/test/run_tests.sh -q`
 
 ## Notlar
 

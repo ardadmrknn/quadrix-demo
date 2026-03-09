@@ -503,26 +503,24 @@ class MysteryCardManager:
         
         for card in selected_cards:
             value = self._roll_value(card)
-            rarity = card.get("rarity", "common")
-            self.pending_choices.append(
+            preview_card = dict(card)
+            preview_card.update(
                 {
-                    "id": card["id"],
-                    "title": card["title"],
                     "value": value,
-                    "description": card["description"].format(value=value, freeze_duration=card.get("freeze_duration", "")),
-                    "color": card["color"],
+                    "description": _format_card_text(str(card.get("description", "")), card, value),
                     "bg": card.get("bg", (34, 34, 46)),
                     "icon": card.get("icon", "*"),
                     "tag": card.get("tag", "Bonus"),
-                    "style": card.get("style", {}),
+                    "style": dict(card.get("style", {})),
                     "icon_image": card.get("icon_image"),
                     "persistent": card.get("persistent", False),
-                    "payload": card.get("payload", {}),
-                    "rarity": rarity,
+                    "payload": dict(card.get("payload", {})),
+                    "rarity": card.get("rarity", "common"),
                     "single_use": card.get("single_use", False),
                     "_group_id": card.get("_group_id"),
                 }
             )
+            self.pending_choices.append(preview_card)
         return self.pending_choices
     
     def _weighted_sample(self, cards: List[Dict], count: int) -> List[Dict]:

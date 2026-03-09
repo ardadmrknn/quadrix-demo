@@ -26,9 +26,9 @@ HISTORY_LIMIT = 400
 INDENT_OFFSETS = (8, 10, 12, 16, 20, 24, 30, 40, 48, 60)
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
-RUNTIME_LAYOUT_FILE = ROOT_DIR / "menu_layout_runtime.json"
+RUNTIME_LAYOUT_FILE = ROOT_DIR / "config" / "runtime" / "menu_layout_runtime.json"
 EDITOR_STATE_FILE = Path(__file__).with_name("menu_layout_editor_state.json")
-CREDITS_LAYOUT_FILE = ROOT_DIR / "credits_layout.json"
+CREDITS_LAYOUT_FILE = ROOT_DIR / "config" / "runtime" / "credits_layout.json"
 LAYOUT_FILE = RUNTIME_LAYOUT_FILE
 
 BG_COLOR = (10, 16, 28)

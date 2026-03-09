@@ -29,7 +29,7 @@ Aşağıdaki placeholder değerleri gerçek ID'lerle değiştir:
 Önce oyunun dağıtım dosyasını üret:
 
 ```powershell
-python -m PyInstaller tetris.spec --noconfirm
+python -m PyInstaller packaging/specs/tetris.spec --noconfirm
 ```
 
 ## 4) SteamCMD ile Playtest yükle

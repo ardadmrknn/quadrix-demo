@@ -7,7 +7,7 @@ Tüm asset'ler, sesler, görseller, fontlar, ayarlar tek bir .app içine paketle
 Windows'taki tek-EXE deneyiminin macOS karşılığıdır.
 
 Kullanım:
-    python3 -m PyInstaller packaging/specs/tetris_macos_allinone.spec --noconfirm
+    python3 -m PyInstaller tetris_macos_allinone.spec --noconfirm
 
 Sonuç: dist/Quadrix.app
 """
@@ -18,11 +18,10 @@ import sys
 from pathlib import Path
 
 # ── Build-time menü layout embedleme ──
-REPO_ROOT = Path(SPECPATH).resolve().parents[1]
-sys.path.insert(0, str(REPO_ROOT))
+sys.path.insert(0, str(Path(SPECPATH).resolve()))
 from tools.embed_menu_layout import write_embedded_layout_module
-from tools.bridge_artifacts import get_bridge_binaries
 
+REPO_ROOT = Path(SPECPATH).resolve()
 SRC_DIR = REPO_ROOT / 'src'
 
 
@@ -69,9 +68,9 @@ datas = [
     (str(REPO_ROOT / 'campaign_levels.csv'), '.'),
 
     # ── Runtime yapılandırmaları ──
-    (str(REPO_ROOT / 'config' / 'runtime' / 'steam_appid.txt'), '.'),
-    (str(REPO_ROOT / 'config' / 'runtime' / 'settings.txt'), '.'),
-    (str(REPO_ROOT / 'config' / 'runtime' / 'menu_layout_runtime.json'), '.'),
+    (str(REPO_ROOT / 'steam_appid.txt'), '.'),
+    (str(REPO_ROOT / 'settings.txt'), '.'),
+    (str(REPO_ROOT / 'menu_layout_runtime.json'), '.'),
 
     # ── src içi kaynaklar ──
     (str(SRC_DIR / 'splashscreen'), 'src/splashscreen'),
@@ -80,7 +79,7 @@ datas = [
 ]
 
 # credits_layout.json (opsiyonel)
-_credits = REPO_ROOT / 'config' / 'runtime' / 'credits_layout.json'
+_credits = REPO_ROOT / 'credits_layout.json'
 if _credits.exists():
     datas.append((str(_credits), '.'))
 

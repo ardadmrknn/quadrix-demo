@@ -4,11 +4,11 @@
 # ═══════════════════════════════════════════════════════════════════
 #
 #  Kullanım:
-#    ./steam_upload_macos.sh                          # Varsayılan (playtest)
-#    ./steam_upload_macos.sh --full                   # Tam sürüm (tüm depotlar)
-#    ./steam_upload_macos.sh --build-first            # Önce .app derle, sonra yükle
-#    ./steam_upload_macos.sh --build-first --full     # Derle + tam sürüm yükle
-#    ./steam_upload_macos.sh --desc "Beta 2"          # Özel build açıklaması
+#    ./scripts/build/steam_upload_macos.sh                          # Varsayılan (playtest)
+#    ./scripts/build/steam_upload_macos.sh --full                   # Tam sürüm (tüm depotlar)
+#    ./scripts/build/steam_upload_macos.sh --build-first            # Önce .app derle, sonra yükle
+#    ./scripts/build/steam_upload_macos.sh --build-first --full     # Derle + tam sürüm yükle
+#    ./scripts/build/steam_upload_macos.sh --desc "Beta 2"          # Özel build açıklaması
 #
 #  Gereksinimler:
 #    - SteamCMD kurulu olmalı
@@ -29,7 +29,8 @@ NC='\033[0m'
 
 # ── Proje dizini ──
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$SCRIPT_DIR"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+cd "$REPO_ROOT"
 
 # ── Python (NFC normalizasyon için) ──
 if command -v python3.12 &>/dev/null; then
@@ -108,10 +109,10 @@ echo ""
 # ── 3. Opsiyonel: Önce build al ──
 if $BUILD_FIRST; then
     echo -e "${CYAN}🔨 Önce macOS .app build alınıyor...${NC}"
-    if [[ -x "./build_macos_app.sh" ]]; then
-        ./build_macos_app.sh --clean
+    if [[ -x "./scripts/build/build_macos_app.sh" ]]; then
+        ./scripts/build/build_macos_app.sh --clean
     else
-        echo -e "${RED}HATA: build_macos_app.sh bulunamadı veya çalıştırılabilir değil.${NC}"
+        echo -e "${RED}HATA: scripts/build/build_macos_app.sh bulunamadı veya çalıştırılabilir değil.${NC}"
         exit 1
     fi
     echo ""
@@ -121,7 +122,7 @@ fi
 APP_PATH="dist/Quadrix.app"
 if [[ ! -d "$APP_PATH" ]]; then
     echo -e "${RED}HATA: $APP_PATH bulunamadı!${NC}"
-    echo "  Önce build alın: ./build_macos_app.sh"
+    echo "  Önce build alın: ./scripts/build/build_macos_app.sh"
     echo "  Veya: $0 --build-first"
     exit 1
 fi

@@ -6,7 +6,7 @@
 
 Bu projede **venv kesinlikle kullanılmaz**.
 
-- `start_game.sh` ve `run.sh` çalışırken yanlışlıkla oluşmuş bir `.venv/` klasörü görürse **otomatik siler**.
+- `scripts/run/start_game.sh` ve `scripts/run/run.sh` çalışırken yanlışlıkla oluşmuş bir `.venv/` klasörü görürse **otomatik siler**.
 - VS Code workspace ayarları sistem Python'u kullanacak şekilde ayarlanmıştır.
 
 ### 1. Python Kurulumu
@@ -20,7 +20,7 @@ Eğer Python yüklü değilse:
 - Veya Homebrew ile: `brew install python3`
 
 ### 2. Gerekli Kütüphaneler
-`start_game.sh` ilk çalıştırıldığında gerekli paketler eksikse `pygame` ve `numpy` paketlerini otomatik yüklemeyi dener (venv kullanmaz). Elle kurmak isterseniz:
+`scripts/run/start_game.sh` ilk çalıştırıldığında gerekli paketler eksikse `pygame` ve `numpy` paketlerini otomatik yüklemeyi dener (venv kullanmaz). Elle kurmak isterseniz:
 ```bash
 pip3 install pygame numpy
 ```
@@ -37,17 +37,17 @@ pip3 install pygame numpy
 cd ~/Desktop/tetris_macos  # veya oyunun bulunduğu konum
 
 # Script'leri çalıştırılabilir yapın (sadece ilk seferde)
-chmod +x start_game.sh run.sh Quadrix.command
+chmod +x scripts/run/start_game.sh scripts/run/run.sh scripts/run/Tetris.command
 
 # Oyunu başlatın (ilk seferinde paketleri yükler)
-./start_game.sh
+./scripts/run/start_game.sh
 
 # Sonraki başlatmalar için hızlı versiyon:
-./run.sh
+./scripts/run/run.sh
 ```
 
 **Yöntem 2: Çift Tıklama ile (Finder) ⭐ En Kolay**
-1. Finder'da `Quadrix.command` dosyasını bulun
+1. Finder'da `scripts/run/Tetris.command` dosyasını bulun
 2. Çift tıklayın - Terminal otomatik açılır ve oyun başlar
 3. (İlk seferde: Sağ tık → "Aç" → "Aç" onayı gerekebilir)
 
@@ -57,12 +57,12 @@ cd ~/Desktop/tetris_macos
 python3 src/main.py
 ```
 
-> `start_game.sh` venv oluşturmaz. Seçilen Python (tercihen `python3.12`) ile çalışır ve sadece macOS'ta gereken paketleri (`pygame`, `numpy`) `requirements-macos.txt` içinden yüklemeyi dener.
+> `scripts/run/start_game.sh` venv oluşturmaz. Seçilen Python (tercihen `python3.12`) ile çalışır ve sadece macOS'ta gereken paketleri (`pygame`, `numpy`) `packaging/requirements/requirements-macos.txt` içinden yüklemeyi dener.
 
 **Script tam olarak ne yapar?**
 1. macOS/Linux ortamında çalıştığınızı doğrular.
 2. Python 3.10+ sürümünü algılar (mümkünse `python3.12`).
-3. Gerekliyse `requirements-macos.txt` içindeki hafif bağımlılıkları yükler (yalnızca `pygame` + `numpy`).
+3. Gerekliyse `packaging/requirements/requirements-macos.txt` içindeki hafif bağımlılıkları yükler (yalnızca `pygame` + `numpy`).
 4. Oyunu `python3.12 src/main.py` (veya bulduğu en uygun Python) ile başlatır.
 
 ## 🎨 Özellikler
@@ -172,26 +172,30 @@ Tetris_Python_Final/
 ├── achievements_*.json     # Kullanıcı başarı kayıtları (kullanıcı oluştukça)
 ├── highscores_*.json       # Kullanıcı skor kayıtları
 ├── settings.json           # Varsayılan ayarlar
-├── start_game.sh           # macOS / Linux başlatıcısı
-├── start_game.bat          # Windows başlatıcısı
-├── requirements-macos.txt  # Hafif macOS bağımlılık listesi
-└── requirements.txt        # Tam Windows geliştirme bağımlılıkları
+├── scripts/
+│   └── run/
+│       ├── start_game.sh   # macOS / Linux başlatıcısı
+│       └── start_game.bat  # Windows başlatıcısı
+├── packaging/
+│   └── requirements/
+│       ├── requirements-macos.txt  # Hafif macOS bağımlılık listesi
+│       └── requirements.txt        # Tam Windows geliştirme bağımlılıkları
 ```
 
 ## 🐛 Sorun Giderme
 
 ### "Permission Denied" Hatası
 ```bash
-chmod +x start_game.sh
+chmod +x scripts/run/start_game.sh
 ```
 
 ### "env: bash\r: No such file or directory" Hatası
 Dosya Windows ortamında düzenlendiğinde satır sonları CRLF olabilir. macOS'ta düzeltmek için:
 ```bash
 cd ~/Desktop/Tetris_Python_Final
-python3 -c "from pathlib import Path; p=Path('start_game.sh'); p.write_text(p.read_text().replace('\r\n','\n'))"
+python3 -c "from pathlib import Path; p=Path('scripts/run/start_game.sh'); p.write_text(p.read_text().replace('\r\n','\n'))"
 ```
-veya Homebrew ile `dos2unix start_game.sh` komutunu kullanın.
+veya Homebrew ile `dos2unix scripts/run/start_game.sh` komutunu kullanın.
 
 ### "Module not found: pygame"
 ```bash

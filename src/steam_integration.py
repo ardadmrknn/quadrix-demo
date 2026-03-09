@@ -116,6 +116,7 @@ def _read_app_id_from_runtime_sources(default: str = '4428040') -> str:
 
     try:
         project_root = Path(__file__).resolve().parent.parent
+        candidates.append(project_root / 'config' / 'runtime' / 'steam_appid.txt')
         candidates.append(project_root / 'steam_appid.txt')
     except Exception:
         pass

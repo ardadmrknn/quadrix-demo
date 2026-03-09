@@ -26,7 +26,7 @@ sdk\redistributable_bin\win64\steam_api64.dll  →  dll\win64\steam_api64.dll
 sdk\redistributable_bin\osx\libsteam_api.dylib  →  dll\osx\libsteam_api.dylib
 ```
 
-`tetris.spec` bu dosyayı otomatik olarak bulur ve EXE içine gömer:
+`packaging/specs/tetris.spec` bu dosyayı otomatik olarak bulur ve EXE içine gömer:
 ```python
 steam_dll_src = str(REPO_ROOT / 'dll' / 'win64' / 'steam_api64.dll')
 binaries = [(steam_dll_src, '.')]   # _MEIPASS'a çıkarılır, EXE yanında ayrı dosya gerekmez
@@ -41,16 +41,16 @@ binaries = [(steam_dll_src, '.')]   # _MEIPASS'a çıkarılır, EXE yanında ayr
 
 ```powershell
 cd "C:\Users\arda demirkan\Desktop\v2_23022026\v2"
-py -m PyInstaller tetris.spec --noconfirm
+py -m PyInstaller packaging/specs/tetris.spec --noconfirm
 ```
 
 - Çıktı: `dist\Quadrix.exe` (~315 MB, onefile)
 - `steam_api64.dll` EXE **içine gömülür** — çalışma anında `_MEIPASS` geçici klasörüne çıkarılır
-- `steam_appid.txt` (içerik: `4428040`) proje kökünde bulunmalı; PyInstaller bunu `datas` ile pakete ekler
+- `config/runtime/steam_appid.txt` (içerik: `4428040`) dosyası mevcut olmalı; PyInstaller bunu `datas` ile pakete ekler
 
 Build log kaydetmek için:
 ```powershell
-py -m PyInstaller tetris.spec --noconfirm 2>&1 | Tee-Object build_log.txt
+py -m PyInstaller packaging/specs/tetris.spec --noconfirm 2>&1 | Tee-Object reports/logs/build_log.txt
 ```
 
 ---
@@ -148,7 +148,7 @@ macOS build artık ayrı bir yerel sürüm dosyası üretmez; runtime doğrudan 
 ```bash
 # Mac'te proje kökünde:
 cp dll/osx/libsteam_api.dylib libsteam_api.dylib   # ya da spec otomatik bulur
-pyinstaller tetris_macos.spec --noconfirm
+pyinstaller packaging/specs/tetris_macos.spec --noconfirm
 ```
 
 Çıktı: `dist/Quadrix.app` — `libsteam_api.dylib` `Contents/MacOS/` içine kopyalanır.
@@ -162,7 +162,7 @@ macOS upload için `steamworks\scripts\app_build_playtest_macos.vdf` kullanılı
 ```
 1. dll\win64\steam_api64.dll var mı? kontrol et
 2. app_build_playtest.vdf → Desc tarihini güncelle
-3. py -m PyInstaller tetris.spec --noconfirm
+3. py -m PyInstaller packaging/specs/tetris.spec --noconfirm
 4. .\tools\steam_upload_playtest.ps1 -SteamCmdPath C:\steamcmd\steamcmd.exe -SteamUser vibecode_production
 5. BuildID'yi partner.steamgames.com'dan Playtest branch'ine al
 ```

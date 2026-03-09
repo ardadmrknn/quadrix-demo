@@ -1,37 +1,30 @@
 # -*- mode: python ; coding: utf-8 -*-
 """
-Quadrix Oyunu - PyInstaller Spec Dosyası (Steam Playtest)
-Playtest AppID: 4428040
-
-Kullanım:
-    python -m PyInstaller packaging/specs/tetris_playtest.spec --noconfirm
+Quadrix Oyunu - PyInstaller Spec Dosyası
+Tek EXE dosyasına paketleme için yapılandırma
 """
 
 import os
 import sys
 from pathlib import Path
 
-REPO_ROOT = Path(SPECPATH).resolve().parents[1]
-sys.path.insert(0, str(REPO_ROOT))
+sys.path.insert(0, str(Path(SPECPATH).resolve()))
 from tools.embed_menu_layout import write_embedded_layout_module
 from tools.bridge_artifacts import get_bridge_binaries
 from tools.versioning import bump_platform_version
 
 # Proje kök dizini
+REPO_ROOT = Path(SPECPATH).resolve()
 SRC_DIR = REPO_ROOT / 'src'
 write_embedded_layout_module(REPO_ROOT)
 
+# ── Otomatik surum artirma (Windows lokal override) ─────────────────────────
 _new_version, _build, _version_file = bump_platform_version(REPO_ROOT, 'windows')
 print(f'[spec] Windows surumu guncellendi: {_new_version} (build {_build}) -> {_version_file.name}')
+# ────────────────────────────────────────────────────────────────────────────
 
 block_cipher = None
 
-# Playtest AppID'yi ortam değişkeni olarak göm
-# Not: steam_appid.txt config/runtime altında mevcut; bu env tanımı
-# PyInstaller boot kancasının STEAM_APP_ID'yi ayarlaması için eklenir.
-os.environ.setdefault('STEAM_APP_ID', '4428040')
-
-# Oyun runtime'ında kullanılan tüm kaynakları topla
 datas = [
     # Tüm görsel/ses asset ağacı
     (str(REPO_ROOT / 'assets'), 'assets'),
@@ -41,21 +34,21 @@ datas = [
     (str(REPO_ROOT / 'backgrounds'), 'backgrounds'),
     (str(REPO_ROOT / 'avatars'), 'avatars'),
 
-    # Dil/font profilleri için font dosyaları
-    (str(REPO_ROOT / 'font'), 'font'),
-
     # Apple emoji görselleri: runtime'da kullanılmaz.
     # Emojiler assets/ui/emoji/ altında ASCII adlarla mevcuttur.
     # (str(REPO_ROOT / 'apple_emojis'), 'apple_emojis'),
+
+    # Dil/font profilleri için font dosyaları
+    (str(REPO_ROOT / 'font'), 'font'),
 
     # Kampanya level tanımları
     (str(REPO_ROOT / 'campaign_levels.csv'), '.'),
 
     # Runtime yapılandırmaları
-    (str(REPO_ROOT / 'config' / 'runtime' / 'steam_appid.txt'), '.'),
-    (str(REPO_ROOT / 'config' / 'runtime' / 'settings.txt'), '.'),
-    (str(REPO_ROOT / 'config' / 'runtime' / 'menu_layout_runtime.json'), '.'),
-    (str(REPO_ROOT / 'config' / 'runtime' / 'credits_layout.json'), '.'),
+    (str(REPO_ROOT / 'steam_appid.txt'), '.'),
+    (str(REPO_ROOT / 'settings.txt'), '.'),
+    (str(REPO_ROOT / 'menu_layout_runtime.json'), '.'),
+    (str(REPO_ROOT / 'credits_layout.json'), '.'),
 
     # src içi kaynaklar
     (str(SRC_DIR / 'splashscreen'), 'src/splashscreen'),
@@ -75,7 +68,18 @@ try:
         print(f'[spec] freesansbold.ttf eklendi: {_freesans}')
 except Exception as _e:
     print(f'[spec] freesansbold.ttf eklenemedi: {_e}')
-
+# setuptools jaraco.text Lorem ipsum.txt \u2014 pkg_resources import crash\u0131n\u0131 \u00f6nle
+try:
+    import setuptools as _st
+    _jaraco_dir = Path(_st.__file__).resolve().parent / '_vendor' / 'jaraco' / 'text'
+    _lorem = _jaraco_dir / 'Lorem ipsum.txt'
+    if _lorem.exists():
+        datas.append((str(_lorem), str(Path('setuptools') / '_vendor' / 'jaraco' / 'text')))
+        print(f'[spec] Lorem ipsum.txt eklendi: {_lorem}')
+    else:
+        print(f'[spec] Lorem ipsum.txt bulunamad\u0131: {_lorem}')
+except Exception as _e:
+    print(f'[spec] Lorem ipsum.txt eklenemedi: {_e}')
 # Gizli importlar (dinamik olarak yüklenen modüller)
 hiddenimports = [
     'pygame',
@@ -107,8 +111,9 @@ hiddenimports = [
     'os',
     'sys',
     'typing',
+    'steam_integration',  # Steam SDK ctypes wrapper
     'steam_net_bridge',    # Steam Networking bridge (Pybind11, Online PvP)
-    'version',
+    'version',            # Sürüm bilgisi modülü
     'version_base',
     'version_local_windows',
 ]
@@ -143,21 +148,22 @@ if os.path.exists(steam_dll_src):
     binaries = [(steam_dll_src, '.')]  # EXE içine gömülür, _MEIPASS'a çıkarılır
 else:
     binaries = []
-    print(f"WARNING: steam_api64.dll not found at {steam_dll_src}")
-
-# Steamworks macOS dylib - dll/osx/ klasöründen al (.app bundle için)
-# macOS üzerinde build edildiğinde Contents/MacOS/ içine yerleşir (Steam'in beklediği konum)
-steam_dylib_src = str(REPO_ROOT / 'dll' / 'osx' / 'libsteam_api.dylib')
-if os.path.exists(steam_dylib_src):
-    binaries.append((steam_dylib_src, '.'))
-    print(f'[spec] libsteam_api.dylib eklendi: {steam_dylib_src}')
-else:
-    print(f'[spec] libsteam_api.dylib bulunamadı (macOS build değilse normaldir): {steam_dylib_src}')
 
 # Steam Networking bridge (Pybind11 C++ modülü) — Online PvP için
 for _bridge_path in get_bridge_binaries(REPO_ROOT):
     binaries.append((_bridge_path, '.'))
     print(f'[spec] steam_net_bridge eklendi: {_bridge_path}')
+
+# MinGW runtime DLL'leri — steam_net_bridge.pyd bunlara bağımlı (GCC ile derlendi)
+_mingw_dlls = ['libgcc_s_seh-1.dll', 'libstdc++-6.dll', 'libwinpthread-1.dll']
+_mingw_dir = REPO_ROOT / 'dll' / 'win64'
+for _dll_name in _mingw_dlls:
+    _dll_path = _mingw_dir / _dll_name
+    if _dll_path.exists():
+        binaries.append((str(_dll_path), '.'))
+        print(f'[spec] MinGW DLL eklendi: {_dll_path.name}')
+    else:
+        print(f'[spec] UYARI: MinGW DLL bulunamadı: {_dll_path}')
 
 a = Analysis(
     [str(SRC_DIR / 'main.py')],  # Ana giriş noktası
@@ -175,8 +181,11 @@ a = Analysis(
         'tkinter.colorchooser',
         'tkinter.filedialog',
         'tkinter.simpledialog',
+        # Gereksiz büyük modülleri hariç tut (boyutu azaltmak için)
         'matplotlib',
+        # NumPy bu projede artık kullanılmıyor; EXE taşınabilirliğini artırmak için hariç tut.
         'numpy',
+        # pygame.surfarray NumPy'yi çekebilir; oyunda kullanılmadığı için hariç tut.
         'pygame.surfarray',
         'pandas',
         'scipy',
@@ -207,13 +216,15 @@ exe = EXE(
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=False,
+    upx=False,  # UPX kapalı: bazı sistemlerde .pyd/.dll yükleme sorunlarını azaltır
     upx_exclude=[],
     runtime_tmpdir=None,
-    console=False,
+    console=False,  # Konsol penceresi gösterme (GUI uygulama)
+    icon=str(REPO_ROOT / 'assets' / 'quadrix_icon.ico'),  # Uygulama simgesi
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+
 )

@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+cd "$REPO_ROOT"
+
 # Run pytest using Python 3.12 explicitly (avoids accidentally picking up a pytest
 # installed for a different Python like macOS system Python 3.9).
 if [[ -x "/opt/homebrew/bin/python3.12" ]]; then

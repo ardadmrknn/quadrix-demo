@@ -20,7 +20,7 @@ dosyasını çift tıklayarak çalıştırın.
 
 ### Yöntem 2: Manuel Komut
 ```powershell
-python -m PyInstaller tetris.spec --noconfirm
+python -m PyInstaller packaging/specs/tetris.spec --noconfirm
 ```
 
 ### Yöntem 3: Sıfırdan (spec dosyası olmadan)
@@ -41,7 +41,7 @@ pyinstaller --onefile --noconsole --name Quadrix ^
 ```
 tetris_macos/
 ├── build_exe.bat      # Windows build script
-├── tetris.spec        # PyInstaller yapılandırma dosyası
+├── packaging/specs/   # PyInstaller yapılandırma dosyaları
 ├── dist/
 │   └── Quadrix.exe     # ✨ Paylaşılacak oyun dosyası (82+ MB)
 └── build/             # (geçici build dosyaları)

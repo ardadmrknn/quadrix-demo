@@ -170,7 +170,7 @@ Bu plan, Online PvP modunun (`OnlinePvPGame` + `SteamNetworking` + C++ `steam_ne
 
 **Files to Modify/Create:**
 - tetris_macos.spec / tetris_macos_allinone.spec / tetris_playtest.spec (hangisi aktifse)
-- docs/BUILD_AND_UPLOAD.md veya BUILD_README.md (gerekirse küçük not)
+- docs/BUILD_AND_UPLOAD.md veya docs/archive/BUILD_README.md (gerekirse küçük not)
 
 **What to change (core):**
 1. Spec’lerde `binaries` / `datas` içine:

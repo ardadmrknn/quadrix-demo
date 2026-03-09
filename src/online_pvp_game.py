@@ -144,6 +144,58 @@ class OnlineState:
 class OnlinePvPGame:
     """Steam P2P üzerinden Online 1v1 Tetris maçı."""
 
+    @staticmethod
+    def _is_focus_loss_event(event) -> bool:
+        event_type = getattr(event, 'type', None)
+        if event_type is None:
+            return False
+
+        focus_loss_types = (
+            getattr(pygame, 'WINDOWFOCUSLOST', None),
+            getattr(pygame, 'WINDOWMINIMIZED', None),
+            getattr(pygame, 'WINDOWHIDDEN', None),
+            getattr(pygame, 'APP_WILLENTERBACKGROUND', None),
+            getattr(pygame, 'APP_DIDENTERBACKGROUND', None),
+        )
+        if any(focus_type is not None and event_type == focus_type for focus_type in focus_loss_types):
+            return True
+
+        window_event_type = getattr(pygame, 'WINDOWEVENT', None)
+        if window_event_type is not None and event_type == window_event_type:
+            window_subtype = getattr(event, 'event', None)
+            if any(
+                focus_type is not None and window_subtype == focus_type
+                for focus_type in focus_loss_types[:3]
+            ):
+                return True
+
+        active_event_type = getattr(pygame, 'ACTIVEEVENT', None)
+        if active_event_type is not None and event_type == active_event_type:
+            gain = getattr(event, 'gain', 1)
+            state = getattr(event, 'state', 0)
+            focus_mask = 0
+            for attr_name in ('APPINPUTFOCUS', 'APPACTIVE'):
+                attr_value = getattr(pygame, attr_name, 0)
+                if isinstance(attr_value, int):
+                    focus_mask |= attr_value
+            return gain == 0 and (state == 0 or focus_mask == 0 or bool(state & focus_mask))
+
+        return False
+
+    def _pause_for_focus_loss(self) -> bool:
+        if self.online_state != OnlineState.PLAYING:
+            return False
+        if getattr(self, 'game_over', False) or getattr(self, 'paused', False) or getattr(self, 'opponent_paused', False):
+            return False
+
+        self.paused = True
+        self._freeze_active_gameplay_input()
+        try:
+            self.net.send({'type': MsgType.PAUSE_REQUEST}, reliable=True, channel=CHANNEL_CONTROL)
+        except Exception:
+            pass
+        return True
+
     # ── Responsive ölçek (pvp_game.py ile aynı pattern) ──
 
     def _ui_scale(self, min_scale: float = 0.72, max_scale: float = 1.20) -> float:
@@ -2248,6 +2300,10 @@ class OnlinePvPGame:
         for event in all_events:
             if event.type == pygame.QUIT:
                 return False
+
+            if self._is_focus_loss_event(event):
+                self._pause_for_focus_loss()
+                continue
 
             if event.type == pygame.VIDEORESIZE:
                 self.window_width = max(800, event.w)

@@ -53,7 +53,7 @@
 
 ```powershell
 cd "c:\Users\arda demirkan\Desktop\tetris\tetris-game"
-pip install -r requirements.txt
+pip install -r packaging/requirements/requirements.txt
 ```
 
 veya tek tek:
@@ -241,9 +241,9 @@ tetris-game/
 │   ├── sound.py             # Ses yönetimi
 │   ├── score_manager.py     # High score sistemi
 │   └── menu.py              # Menü UI bileşenleri
-├── requirements.txt         # Python bağımlılıkları
+├── packaging/requirements/  # Python bağımlılıkları
 ├── highscores.json          # Skorlar (otomatik oluşur)
-└── README_TR.md            # Bu dosya
+└── docs/guides/README_TR.md # Bu dosya
 ```
 
 ---

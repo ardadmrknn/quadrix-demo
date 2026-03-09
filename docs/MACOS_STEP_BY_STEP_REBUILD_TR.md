@@ -59,7 +59,7 @@ Eger python3.12 yoksa script python3 ile de devam edebilir, ama tercihen 3.12 ku
 Su komutu calistir:
 
 ```bash
-./build_macos_app.sh --clean --rebuild-bridge
+./scripts/build/build_macos_app.sh --clean --rebuild-bridge
 ```
 
 Bu komut sunlari yapar:
@@ -114,6 +114,6 @@ Temiz macOS build alindiktan sonra su sirayla test et:
 
 ## 10. Gerekli ilgili dosyalar
 
-- build_macos_app.sh
+- scripts/build/build_macos_app.sh
 - docs/ONLINE_PVP_CLEAN_REBUILD_TR.md
 - docs/MACOS_LOCAL_VERSION_BOOTSTRAP_TR.md

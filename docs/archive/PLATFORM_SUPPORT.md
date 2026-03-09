@@ -174,7 +174,7 @@ pip install pygame
 ### Yükleme
 ```bash
 # Tüm bağımlılıklar
-pip3 install -r requirements.txt
+pip3 install -r packaging/requirements/requirements.txt
 
 # Sadece pygame
 pip3 install pygame

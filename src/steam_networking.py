@@ -42,6 +42,7 @@ def _try_import_bridge():
     _bridge_import_attempted = True
 
     project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    bridge_artifacts_dir = os.path.join(project_root, 'local_artifacts', 'bridge')
     tried_paths: list[str] = []
 
     # steam_api64.dll / libsteam_api.dylib arama yoluna DLL dizinlerini ekle
@@ -72,6 +73,7 @@ def _try_import_bridge():
             candidates.append(os.path.normpath(os.path.join(meipass, '..', 'MacOS')))
             candidates.append(str(meipass))
         candidates.append(os.path.join(project_root, 'dll', 'osx'))
+        candidates.append(bridge_artifacts_dir)
         candidates.append(project_root)
         for d in candidates:
             tried_paths.append(d)
@@ -81,6 +83,11 @@ def _try_import_bridge():
                 dyld = os.environ.get('DYLD_LIBRARY_PATH', '')
                 if d not in dyld:
                     os.environ['DYLD_LIBRARY_PATH'] = d + ':' + dyld
+
+    if os.path.isdir(bridge_artifacts_dir):
+        tried_paths.append(bridge_artifacts_dir)
+        if bridge_artifacts_dir not in sys.path:
+            sys.path.insert(0, bridge_artifacts_dir)
 
     try:
         import steam_net_bridge as snb

@@ -1,13 +1,31 @@
 param(
     [switch]$Clean,
     [switch]$RebuildBridge,
-    [string]$SpecFile = 'tetris.spec'
+    [string]$SpecFile = 'packaging/specs/tetris.spec'
 )
 
 $ErrorActionPreference = 'Stop'
 
-$repoRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$repoRoot = Split-Path -Parent (Split-Path -Parent $scriptDir)
 Set-Location $repoRoot
+
+function Resolve-SpecPath([string]$specFile) {
+    if ([string]::IsNullOrWhiteSpace($specFile)) {
+        return Join-Path $repoRoot 'packaging\specs\tetris.spec'
+    }
+    if ([System.IO.Path]::IsPathRooted($specFile)) {
+        return $specFile
+    }
+    if (Test-Path $specFile) {
+        return (Resolve-Path $specFile).Path
+    }
+    $packagedSpec = Join-Path $repoRoot (Join-Path 'packaging\specs' $specFile)
+    if (Test-Path $packagedSpec) {
+        return (Resolve-Path $packagedSpec).Path
+    }
+    return (Join-Path $repoRoot $specFile)
+}
 
 function Resolve-QuadrixPython {
     if ($env:QUADRIX_PYTHON -and (Test-Path $env:QUADRIX_PYTHON)) {
@@ -34,14 +52,17 @@ function Resolve-QuadrixPython {
 }
 
 $pythonExe = Resolve-QuadrixPython
-$buildLog = Join-Path $repoRoot 'build_stdout.log'
-$buildErrLog = Join-Path $repoRoot 'build_stderr.log'
+$resolvedSpecFile = Resolve-SpecPath $SpecFile
+$logDir = Join-Path $repoRoot 'reports\logs'
+New-Item -ItemType Directory -Force -Path $logDir | Out-Null
+$buildLog = Join-Path $logDir 'build_stdout.log'
+$buildErrLog = Join-Path $logDir 'build_stderr.log'
 
 Write-Host '==============================================' -ForegroundColor Cyan
 Write-Host '  Quadrix Windows Clean Build' -ForegroundColor Cyan
 Write-Host '==============================================' -ForegroundColor Cyan
 Write-Host "Python: $pythonExe" -ForegroundColor Green
-Write-Host "Spec: $SpecFile" -ForegroundColor Green
+Write-Host "Spec: $resolvedSpecFile" -ForegroundColor Green
 
 if ($Clean) {
     Write-Host 'Temiz build klasorleri siliniyor...' -ForegroundColor Yellow
@@ -60,11 +81,11 @@ if ($Clean) {
 
 if ($RebuildBridge) {
     Write-Host 'Eski bridge artifactleri temizleniyor...' -ForegroundColor Yellow
-    Get-ChildItem -Path $repoRoot -Filter 'steam_net_bridge*.pyd' -ErrorAction SilentlyContinue | Remove-Item -Force
-    Get-ChildItem -Path $repoRoot -Filter 'steam_net_bridge*.so' -ErrorAction SilentlyContinue | Remove-Item -Force
+    Get-ChildItem -Path (Join-Path $repoRoot 'local_artifacts\bridge') -Filter 'steam_net_bridge*.pyd' -ErrorAction SilentlyContinue | Remove-Item -Force
+    Get-ChildItem -Path (Join-Path $repoRoot 'local_artifacts\bridge') -Filter 'steam_net_bridge*.so' -ErrorAction SilentlyContinue | Remove-Item -Force
 }
 
-$bridgeExists = @(Get-ChildItem -Path $repoRoot -Filter 'steam_net_bridge*.pyd' -ErrorAction SilentlyContinue).Count -gt 0
+$bridgeExists = @(Get-ChildItem -Path (Join-Path $repoRoot 'local_artifacts\bridge') -Filter 'steam_net_bridge*.pyd' -ErrorAction SilentlyContinue).Count -gt 0
 if ($RebuildBridge -or -not $bridgeExists) {
     Write-Host 'Steam bridge derleniyor...' -ForegroundColor Cyan
     $bridgeBat = Join-Path $repoRoot 'steamworks\steam_net_bridge\build.bat'
@@ -84,7 +105,7 @@ if ($RebuildBridge -or -not $bridgeExists) {
 }
 
 Write-Host 'PyInstaller build baslatiliyor...' -ForegroundColor Cyan
-$pyInstallerArgs = @('-m', 'PyInstaller', $SpecFile, '--noconfirm', '--clean')
+$pyInstallerArgs = @('-m', 'PyInstaller', $resolvedSpecFile, '--noconfirm', '--clean')
 $env:PYTHONLEGACYWINDOWSSTDIO = '1'
 if (Test-Path $buildLog) {
     Remove-Item $buildLog -Force

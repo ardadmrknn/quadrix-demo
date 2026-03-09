@@ -100,7 +100,7 @@ Ana sorun teknik olarak koddan çok Steam lisans sahipliği: leaderboard yazma �
 **Files to Modify/Create:**
 - `src/steam_integration.py`: Partner API fallback’i feature flag ile koşullandır (`STEAM_PARTNER_WRITE_FALLBACK=1` gibi).
 - `src/settings_manager.py` veya mevcut config noktası: fallback’in default kapalı olması.
-- `README_TR.md` (update): fallback’in yalnızca debug/staff hesapları için olduğu notu.
+- `docs/guides/README_TR.md` (update): fallback’in yalnızca debug/staff hesapları için olduğu notu.
 
 **Tests to Write:**
 - `test_partner_fallback_flag.py` (new): flag kapalıyken fallback çağrılmamalı.

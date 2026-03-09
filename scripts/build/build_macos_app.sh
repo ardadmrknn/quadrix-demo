@@ -8,10 +8,11 @@ RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
 CYAN='\033[0;36m'; BOLD='\033[1m'; NC='\033[0m'
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$SCRIPT_DIR"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+cd "$REPO_ROOT"
 
 APP_NAME="Quadrix"
-SPEC_FILE="tetris_macos_allinone.spec"
+SPEC_FILE="packaging/specs/tetris_macos_allinone.spec"
 DIST_DIR="dist"
 BUILD_DIR="build"
 
