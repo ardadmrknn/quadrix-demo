@@ -10,15 +10,26 @@ import shutil
 from datetime import datetime, timezone
 from typing import Any
 
-from atomic_io import atomic_write_json
-from data_paths import (
-    get_local_data_dir,
-    iter_legacy_paths,
-    migrate_legacy_file,
-    resolve_cloud_path,
-    resolve_local_path,
-    resolve_profile_path,
-)
+try:
+    from .atomic_io import atomic_write_json  # type: ignore
+    from .data_paths import (  # type: ignore
+        get_local_data_dir,
+        iter_legacy_paths,
+        migrate_legacy_file,
+        resolve_cloud_path,
+        resolve_local_path,
+        resolve_profile_path,
+    )
+except Exception:
+    from atomic_io import atomic_write_json
+    from data_paths import (
+        get_local_data_dir,
+        iter_legacy_paths,
+        migrate_legacy_file,
+        resolve_cloud_path,
+        resolve_local_path,
+        resolve_profile_path,
+    )
 
 
 USERS_SCHEMA_VERSION = 2

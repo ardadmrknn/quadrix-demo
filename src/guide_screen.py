@@ -372,6 +372,7 @@ class GuideScreen:
         # Animasyon
         self.tab_hover = -1
         self.back_hover = False
+        self.tutorial_hover = False
         self.anim_time = 0
         
         # Cache
@@ -988,6 +989,9 @@ class GuideScreen:
             # ESC - Geri
             if event.key == pygame.K_ESCAPE:
                 return 'back'
+
+            if event.key == pygame.K_t:
+                return self._get_tutorial_action()
             
             # Tab değiştirme - Yukarı/Aşağı tuşları
             if event.key == pygame.K_UP:
@@ -1095,6 +1099,9 @@ class GuideScreen:
                     self.card_index = 0
                     return None
 
+                if self._check_tutorial_button_click(pos):
+                    return self._get_tutorial_action()
+
                 # Geri buton kontrolü
                 if self._check_back_button_click(pos):
                     return 'back'
@@ -1128,9 +1135,48 @@ class GuideScreen:
                 self.scroll_y = int(ratio * self.max_scroll)
                 return None
             self.tab_hover = self._get_tab_at_pos(pos)
+            self.tutorial_hover = self._check_tutorial_button_hover(pos)
             self.back_hover = self._check_back_button_hover(pos)
         
         return None
+
+    def _get_selected_section_id(self) -> str:
+        return GUIDE_SECTIONS[self.selected_tab]['id']
+
+    def _get_tutorial_action(self) -> str:
+        lesson_map = {
+            'how_to_play': 'move_intro',
+            'game_modes': 'board_gap_fill',
+            'cards': 'card_rescue_pick',
+        }
+        lesson_id = lesson_map.get(self._get_selected_section_id())
+        if lesson_id:
+            return f'tutorial_lesson:{lesson_id}'
+        return 'tutorial_hub'
+
+    def _get_tutorial_button_label(self) -> str:
+        if self._get_selected_section_id() == 'tips_faq':
+            return t('guide_open_tutorial_hub')
+        return t('guide_open_related_tutorial')
+
+    def _get_bottom_button_rects(self) -> Tuple[pygame.Rect, pygame.Rect]:
+        width, height = self.screen.get_size()
+        tutorial_w = min(280, max(220, width - 40))
+        back_w = min(200, max(180, width - 40))
+        btn_h = 50
+        gap = 16
+
+        if tutorial_w + back_w + gap <= width - 40:
+            total_w = tutorial_w + back_w + gap
+            start_x = (width - total_w) // 2
+            y = height - btn_h - 25
+            tutorial_rect = pygame.Rect(start_x, y, tutorial_w, btn_h)
+            back_rect = pygame.Rect(start_x + tutorial_w + gap, y, back_w, btn_h)
+            return tutorial_rect, back_rect
+
+        tutorial_rect = pygame.Rect((width - tutorial_w) // 2, height - btn_h - 85, tutorial_w, btn_h)
+        back_rect = pygame.Rect((width - back_w) // 2, height - btn_h - 25, back_w, btn_h)
+        return tutorial_rect, back_rect
 
     def _check_tab_click(self, pos: Tuple[int, int]) -> Optional[int]:
         for i, rect in enumerate(self._tab_rects):
@@ -1143,6 +1189,14 @@ class GuideScreen:
             if rect.collidepoint(pos):
                 return i
         return -1
+
+    def _check_tutorial_button_click(self, pos: Tuple[int, int]) -> bool:
+        btn_rect = self._get_tutorial_button_rect()
+        return btn_rect.collidepoint(pos)
+
+    def _check_tutorial_button_hover(self, pos: Tuple[int, int]) -> bool:
+        btn_rect = self._get_tutorial_button_rect()
+        return btn_rect.collidepoint(pos)
     
     def _check_back_button_click(self, pos: Tuple[int, int]) -> bool:
         btn_rect = self._get_back_button_rect()
@@ -1151,11 +1205,14 @@ class GuideScreen:
     def _check_back_button_hover(self, pos: Tuple[int, int]) -> bool:
         btn_rect = self._get_back_button_rect()
         return btn_rect.collidepoint(pos)
+
+    def _get_tutorial_button_rect(self) -> pygame.Rect:
+        tutorial_rect, _ = self._get_bottom_button_rects()
+        return tutorial_rect
     
     def _get_back_button_rect(self) -> pygame.Rect:
-        width, height = self.screen.get_size()
-        btn_w, btn_h = 200, 50
-        return pygame.Rect((width - btn_w) // 2, height - btn_h - 25, btn_w, btn_h)
+        _, back_rect = self._get_bottom_button_rects()
+        return back_rect
     
     def draw(self):
         """Kılavuz ekranını çiz"""
@@ -1190,7 +1247,8 @@ class GuideScreen:
         if self.selected_tab == 2:
             self._draw_card_navigation(content_x, content_width, height)
         
-        # Alt geri butonu
+        # Alt aksiyonlar
+        self._draw_tutorial_button()
         self._draw_back_button()
         
         # Hint text
@@ -1327,30 +1385,43 @@ class GuideScreen:
             bar_width=10,
         )
     
-    def _draw_back_button(self):
-        btn_rect = self._get_back_button_rect()
-        
-        if self.back_hover:
+    def _draw_action_button(
+        self,
+        btn_rect: pygame.Rect,
+        is_hovered: bool,
+        text: str,
+        accent_color: Tuple[int, int, int],
+    ):
+        if is_hovered:
             glow_rect = btn_rect.inflate(10, 10)
             glow_surf = pygame.Surface(glow_rect.size, pygame.SRCALPHA)
-            pygame.draw.rect(glow_surf, (*retro_style.secondary[:3], 35), glow_surf.get_rect(), border_radius=12)
+            pygame.draw.rect(glow_surf, (*accent_color[:3], 35), glow_surf.get_rect(), border_radius=12)
             self.screen.blit(glow_surf, glow_rect.topleft)
             bg_color = (35, 45, 70, 220)
-            border_color = retro_style.secondary
+            border_color = accent_color
         else:
             bg_color = (25, 32, 52, 200)
             border_color = (80, 100, 130)
-        
+
         btn_surf = pygame.Surface(btn_rect.size, pygame.SRCALPHA)
         pygame.draw.rect(btn_surf, bg_color, btn_surf.get_rect(), border_radius=12)
         self.screen.blit(btn_surf, btn_rect.topleft)
         pygame.draw.rect(self.screen, border_color, btn_rect, 2, border_radius=12)
-        
-        text = t('back') + " (ESC)"
+
         text_surf = retro_style.render_fit_text(text, (255, 255, 255), btn_rect.width - 30, 20, bold=True)
         text_x = btn_rect.centerx - text_surf.get_width() // 2
         text_y = btn_rect.centery - text_surf.get_height() // 2
         self.screen.blit(text_surf, (text_x, text_y))
+
+    def _draw_tutorial_button(self):
+        btn_rect = self._get_tutorial_button_rect()
+        text = self._get_tutorial_button_label() + " (T)"
+        self._draw_action_button(btn_rect, self.tutorial_hover, text, retro_style.primary)
+
+    def _draw_back_button(self):
+        btn_rect = self._get_back_button_rect()
+        text = t('back') + " (ESC)"
+        self._draw_action_button(btn_rect, self.back_hover, text, retro_style.secondary)
     
     def _draw_card_navigation(self, content_x: int, content_width: int, height: int):
         """Kart navigasyon helper — sayfa göstergesi geri butonuyla çakıştığı için kaldırıldı."""
@@ -1360,10 +1431,16 @@ class GuideScreen:
         hint_font = retro_style.get_font(14, bold=False)
         
         if self.selected_tab == 2:
-            hint_text = "1-4: Tab   ←/→/↑/↓: Sayfa Değiştir   Page Up/Down: Sayfa Değiştir   ESC: Geri"
+            hint_text = t('guide_hint_cards_navigation')
         else:
-            hint_text = "1-4: Tab Seç   ↑/↓: Scroll   ←/→: Tab Değiştir   ESC: Geri"
+            hint_text = t('guide_hint_navigation')
         
-        hint_surf = hint_font.render(hint_text, True, retro_style.text_muted)
+        hint_surf = retro_style.render_fit_text(
+            hint_text,
+            retro_style.text_muted,
+            max(120, width - 40),
+            hint_font.get_height(),
+            bold=False,
+        )
         hint_x = width // 2 - hint_surf.get_width() // 2
         self.screen.blit(hint_surf, (hint_x, 80))

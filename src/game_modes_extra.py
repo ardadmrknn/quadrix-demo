@@ -1502,6 +1502,12 @@ class MysteryCardUI:
         cards: List[Dict],
         hint_text: str,
         card_mode_debug: bool = False,
+        *,
+        forced_hover_index: int | None = None,
+        show_secondary_actions: bool = True,
+        show_peek_button: bool = True,
+        header_title: str | None = None,
+        header_lines: List[str] | None = None,
     ) -> None:
         alpha = int(max(0, min(255, self.fade_alpha)))
         if alpha <= 0 or not cards:
@@ -1511,7 +1517,7 @@ class MysteryCardUI:
         s = lambda v, minimum=1: max(minimum, int(round(v * ui_scale)))
 
         # Peek modu aktifse sadece göz butonunu göster (sağ alt köşe)
-        if self.peek_mode_active:
+        if show_peek_button and self.peek_mode_active:
             # Göz butonu - sağ alt köşede sabit
             peek_btn_size = s(48)
             peek_btn_x = window_width - peek_btn_size - s(20)
@@ -1540,6 +1546,8 @@ class MysteryCardUI:
                 eye_surf = eye_font.render("X", True, (100, 200, 255))
                 screen.blit(eye_surf, eye_surf.get_rect(center=self.peek_button_rect.center))
             return
+        elif not show_peek_button:
+            self.peek_button_rect = None
 
         # Arka plan overlay: genel UI (panel) temasıyla uyumlu.
         overlay = pygame.Surface((window_width, window_height), pygame.SRCALPHA)
@@ -1556,10 +1564,20 @@ class MysteryCardUI:
             card_width = s(300)
             card_height = s(380)
             spacing = s(48)
+        header_font = fonts.get('panel_header') or fonts.get('heading') or fonts.get('medium')
+        line_font = fonts.get('small') or fonts.get('desc')
+        header_content_height = 0
+        if header_title:
+            header_content_height += header_font.get_height() + s(8)
+        visible_header_lines = [str(raw_line) for raw_line in list(header_lines or [])[:4] if raw_line]
+        for _line in visible_header_lines:
+            header_content_height += line_font.get_height() + s(4)
+        top_content_padding = max(s(120), s(28) + header_content_height + s(24))
+        panel_height = min(window_height - s(40), card_height + s(220) + max(0, top_content_padding - s(120)))
         total_width = card_count * card_width + (card_count - 1) * spacing
         panel_width = min(total_width + s(120), window_width - s(40))
         panel_x = max(s(20), window_width // 2 - panel_width // 2)
-        panel_rect = pygame.Rect(panel_x, s(60), panel_width, card_height + s(220))
+        panel_rect = pygame.Rect(panel_x, s(60), panel_width, panel_height)
         retro_style.draw_glass_panel(
             screen,
             panel_rect,
@@ -1568,45 +1586,54 @@ class MysteryCardUI:
             glow=False,
         )
 
-        # Göz butonu - panelin sağ üst köşesinde
-        peek_btn_size = s(40)
-        peek_btn_x = panel_rect.right - peek_btn_size - s(16)
-        peek_btn_y = panel_rect.y + s(16)
-        self.peek_button_rect = pygame.Rect(peek_btn_x, peek_btn_y, peek_btn_size, peek_btn_size)
-        
-        # Göz butonu arka planı - Yuvarlak beyaz
         mouse_pos = get_mouse_pos() if pygame.mouse.get_focused() else None
-        peek_hovered = mouse_pos and self.peek_button_rect.collidepoint(mouse_pos)
-        center = self.peek_button_rect.center
-        radius = peek_btn_size // 2
-        pygame.draw.circle(screen, (255, 255, 255), center, radius)  # Beyaz daire
-        border_color = (100, 200, 255) if peek_hovered else (180, 180, 200)
-        pygame.draw.circle(screen, border_color, center, radius, 2)  # Kenarlık
-        
-        # Göz ikonu - PNG ikon kullan
-        peek_icon_path = os.path.join(os.path.dirname(__file__), '..', 'assets', 'kart_secim_sagust.png')
-        if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
-            peek_icon_path = os.path.join(sys._MEIPASS, 'assets', 'kart_secim_sagust.png')
-        try:
-            peek_icon = load_image(peek_icon_path)
-            icon_size = int(peek_btn_size * 0.65)
-            peek_icon = pygame.transform.smoothscale(peek_icon, (icon_size, icon_size))
-            icon_rect = peek_icon.get_rect(center=self.peek_button_rect.center)
-            screen.blit(peek_icon, icon_rect)
-        except Exception:
-            # Fallback: metin göster
-            eye_font = fonts.get('small')
-            eye_surf = eye_font.render("O", True, (100, 200, 255) if peek_hovered else (180, 180, 200))
-            screen.blit(eye_surf, eye_surf.get_rect(center=self.peek_button_rect.center))
+        if show_peek_button:
+            # Göz butonu - panelin sağ üst köşesinde
+            peek_btn_size = s(40)
+            peek_btn_x = panel_rect.right - peek_btn_size - s(16)
+            peek_btn_y = panel_rect.y + s(16)
+            self.peek_button_rect = pygame.Rect(peek_btn_x, peek_btn_y, peek_btn_size, peek_btn_size)
+
+            # Göz butonu arka planı - Yuvarlak beyaz
+            peek_hovered = mouse_pos and self.peek_button_rect.collidepoint(mouse_pos)
+            center = self.peek_button_rect.center
+            radius = peek_btn_size // 2
+            pygame.draw.circle(screen, (255, 255, 255), center, radius)
+            border_color = (100, 200, 255) if peek_hovered else (180, 180, 200)
+            pygame.draw.circle(screen, border_color, center, radius, 2)
+
+            peek_icon_path = os.path.join(os.path.dirname(__file__), '..', 'assets', 'kart_secim_sagust.png')
+            if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+                peek_icon_path = os.path.join(sys._MEIPASS, 'assets', 'kart_secim_sagust.png')
+            try:
+                peek_icon = load_image(peek_icon_path)
+                icon_size = int(peek_btn_size * 0.65)
+                peek_icon = pygame.transform.smoothscale(peek_icon, (icon_size, icon_size))
+                icon_rect = peek_icon.get_rect(center=self.peek_button_rect.center)
+                screen.blit(peek_icon, icon_rect)
+            except Exception:
+                eye_font = fonts.get('small')
+                eye_surf = eye_font.render("O", True, (100, 200, 255) if peek_hovered else (180, 180, 200))
+                screen.blit(eye_surf, eye_surf.get_rect(center=self.peek_button_rect.center))
+        else:
+            self.peek_button_rect = None
 
         header_x = panel_rect.x + s(40)
         header_y = panel_rect.y + s(28)
+        if header_title:
+            header_surf = header_font.render(str(header_title), True, (235, 242, 250))
+            screen.blit(header_surf, (header_x, header_y))
+            header_y += header_surf.get_height() + s(8)
+        for raw_line in visible_header_lines:
+            line_surf = line_font.render(str(raw_line), True, (185, 198, 222))
+            screen.blit(line_surf, (header_x, header_y))
+            header_y += line_surf.get_height() + s(4)
         # (Removed) Selection hint text like "1 / 2 / 3 ... seç"
         # (Kaldırıldı) Sağ üst "Tamamen rastgele" butonu
         self.randomize_pill_rect = None
 
         # Compute start_x and top for grid vs single row layout
-        top = panel_rect.y + s(120)
+        top = panel_rect.y + top_content_padding
         if card_mode_debug:
             # Compute number of columns that fit comfortably
             # Allow a dynamic count up to 4 columns based on panel width
@@ -1620,7 +1647,7 @@ class MysteryCardUI:
                 card_width = max(s(120), fit_width)
             rows = (card_count + cols - 1) // cols
             # Resize panel rect height to fit rows
-            desired_height = s(120) + rows * (card_height + spacing) + s(80)
+            desired_height = top_content_padding + rows * (card_height + spacing) + s(80)
             panel_rect.height = min(desired_height, window_height - s(120))
             retro_style.draw_glass_panel(
                 screen,
@@ -1675,6 +1702,10 @@ class MysteryCardUI:
             widget.update(dt=self._last_dt if hasattr(self, '_last_dt') else 16.0, mouse_pos=mouse_pos)
             self.card_rects.append(rect)
             hovering_allowed = not self.is_interaction_locked()
+            if hovering_allowed and forced_hover_index is not None and idx == forced_hover_index:
+                widget.hover = True
+                widget.target_scale = max(widget.target_scale, 1.06)
+                widget.scale = max(widget.scale, 1.03)
             hovered = widget.hover if hovering_allowed else idx == self.selection_index
             if hovered and hovering_allowed:
                 self.hover_index = idx
@@ -1687,36 +1718,38 @@ class MysteryCardUI:
             self.card_widgets[idx].render(screen, debug=card_mode_debug)
 
         # Alt aksiyon: Kart almadan devam et + Yeniden Çek
-        btn_font = fonts.get('small')
-        btn_h = s(44)
-        btn_y = panel_rect.bottom - btn_h - s(26)
-        total_btn_area_w = min(s(660), panel_rect.width - s(80))
-        gap = s(12)
-        each_w = (total_btn_area_w - gap) // 2
-        start_x = panel_rect.centerx - total_btn_area_w // 2
-        # Skip butonu (sol)
-        self.skip_button_rect = pygame.Rect(start_x, btn_y, each_w, btn_h)
-        retro_style.draw_glass_panel(
-            screen,
-            self.skip_button_rect,
-            alpha=155,
-            border_color=retro_style.glass_border[:3],
-            glow=False,
-        )
-        skip_label = btn_font.render(t('card_skip_selection'), True, retro_style.text_primary)
-        screen.blit(skip_label, skip_label.get_rect(center=self.skip_button_rect.center))
-        # Reroll butonu (sağ)
-        reroll_x = start_x + each_w + gap
-        self.reroll_button_rect = pygame.Rect(reroll_x, btn_y, each_w, btn_h)
-        retro_style.draw_glass_panel(
-            screen,
-            self.reroll_button_rect,
-            alpha=175,
-            border_color=(220, 170, 40),
-            glow=False,
-        )
-        reroll_label = btn_font.render(t('card_reroll_selection'), True, (255, 215, 80))
-        screen.blit(reroll_label, reroll_label.get_rect(center=self.reroll_button_rect.center))
+        if show_secondary_actions:
+            btn_font = fonts.get('small')
+            btn_h = s(44)
+            btn_y = panel_rect.bottom - btn_h - s(26)
+            total_btn_area_w = min(s(660), panel_rect.width - s(80))
+            gap = s(12)
+            each_w = (total_btn_area_w - gap) // 2
+            start_x = panel_rect.centerx - total_btn_area_w // 2
+            self.skip_button_rect = pygame.Rect(start_x, btn_y, each_w, btn_h)
+            retro_style.draw_glass_panel(
+                screen,
+                self.skip_button_rect,
+                alpha=155,
+                border_color=retro_style.glass_border[:3],
+                glow=False,
+            )
+            skip_label = btn_font.render(t('card_skip_selection'), True, retro_style.text_primary)
+            screen.blit(skip_label, skip_label.get_rect(center=self.skip_button_rect.center))
+            reroll_x = start_x + each_w + gap
+            self.reroll_button_rect = pygame.Rect(reroll_x, btn_y, each_w, btn_h)
+            retro_style.draw_glass_panel(
+                screen,
+                self.reroll_button_rect,
+                alpha=175,
+                border_color=(220, 170, 40),
+                glow=False,
+            )
+            reroll_label = btn_font.render(t('card_reroll_selection'), True, (255, 215, 80))
+            screen.blit(reroll_label, reroll_label.get_rect(center=self.reroll_button_rect.center))
+        else:
+            self.skip_button_rect = None
+            self.reroll_button_rect = None
 
         # Draw a scrollbar thumb in debug grid mode to indicate scroll position
         if card_mode_debug and self.grid_max_scroll > 0:
