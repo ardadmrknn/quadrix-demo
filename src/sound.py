@@ -268,77 +268,401 @@ class SoundManager:
     def create_sounds(self):
         """Basit ses efektleri oluştur"""
         try:
-            self.create_beep('move', 440, 50)
-            self.create_beep('rotate', 523, 50)
-            self.create_beep('drop', 330, 100)
-            self.create_beep('line', 660, 150)
-            self.create_beep('tetris', 880, 300)
-            
-            # Game over effect try loading from file first
-            # Game over effect try loading from file first
-            # WAV dosyası daha uyumlu olduğu için onu önceliyoruz
-            game_over_wav = self.assets_root / 'assets' / 'effect' / 'game_over_effect.wav'
-            game_over_mp3 = self.assets_root / 'assets' / 'effect' / 'game_over_effect.mp3'
-            
-            game_over_path = None
-            if game_over_wav.exists():
-                game_over_path = game_over_wav
-            elif game_over_mp3.exists():
-                game_over_path = game_over_mp3
+            sound_keys = (
+                'move', 'rotate', 'drop', 'line', 'clear', 'lock', 'hold',
+                'click', 'pause', 'select', 'confirm', 'cancel', 'deny',
+                'combo', 'levelup', 'tetris', 'gameover', 'card_reveal',
+                'tutorial_success', 'tutorial_progress', 'tutorial_complete',
+                'sniper_shot',
+            )
+            for key in sound_keys:
+                self.create_gameplay_sfx(key)
 
-            loaded_game_over = False
-            if game_over_path:
-                print(f"🔍 Game over sound aranıyor: {game_over_path}")
-                try:
-                    self.sounds['gameover'] = pygame.mixer.Sound(str(game_over_path))
-                    self.sounds['gameover'].set_volume(self.sfx_volume)
-                    loaded_game_over = True
-                    print("✅ Game over sound dosyadan yüklendi!")
-                except Exception as e:
-                    print(f"❌ Game over sound yüklenemedi: {e}")
-            else:
-                print("❌ Game over sound dosyası bulunamadı!")
-            
-            if not loaded_game_over:
-                self.create_beep('gameover', 220, 500)
-                print("⚠️ Game over için varsayılan beep sesi oluşturuldu.")
-
-            # Kart açılma efekti (opsiyonel dosya)
-            card_reveal_wav = self.assets_root / 'assets' / 'effect' / 'card_reveal.wav'
-            card_reveal_mp3 = self.assets_root / 'assets' / 'effect' / 'card_reveal.mp3'
-            card_reveal_path = None
-            if card_reveal_wav.exists():
-                card_reveal_path = card_reveal_wav
-            elif card_reveal_mp3.exists():
-                card_reveal_path = card_reveal_mp3
-            if card_reveal_path:
-                try:
-                    self.sounds['card_reveal'] = pygame.mixer.Sound(str(card_reveal_path))
-                    self.sounds['card_reveal'].set_volume(self.sfx_volume)
-                except Exception:
-                    self.create_beep('card_reveal', 760, 60)
-            else:
-                self.create_beep('card_reveal', 760, 60)
-                
-            self.create_beep('select', 550, 40)
-            self.create_beep('confirm', 700, 80)
-            self.create_beep('cancel', 280, 80)
-            self.create_beep('deny', 200, 120)
-            self.create_beep('combo', 750, 100)
-            self.create_beep('levelup', 900, 200)
-            self.create_beep('clear', 600, 100)
-            self.create_beep('lock', 400, 60)
-            self.create_beep('hold', 480, 50)
-            
-            # Tutorial özel sesleri
-            self.create_beep('tutorial_success', 800, 150)
-            self.create_beep('tutorial_progress', 600, 80)
-            self.create_beep('tutorial_complete', 1000, 250)
-            
-            # Sniper özel sesi
-            self.create_beep('sniper_shot', 1200, 120)  # Yüksek frekanslı keskin ses
+            self._register_sound_alias('game_over', 'gameover')
+            self._register_sound_alias('level_up', 'levelup')
         except Exception:
             self.enabled = False
+
+    def create_gameplay_sfx(self, name):
+        """Tema uyumlu kisa synth efektleri olustur."""
+        profiles = {
+            'move': {
+                'duration_ms': 34,
+                'attack_ms': 2,
+                'release_ms': 20,
+                'noise_amount': 0.003,
+                'transient_amount': 0.012,
+                'stereo_width': 0.006,
+                'layers': [
+                    {'wave': 'triangle', 'start_freq': 520.0, 'end_freq': 430.0, 'amplitude': 0.42},
+                    {'wave': 'sine', 'start_freq': 690.0, 'end_freq': 560.0, 'amplitude': 0.12},
+                    {'wave': 'sine', 'start_freq': 260.0, 'end_freq': 220.0, 'amplitude': 0.15},
+                ],
+            },
+            'rotate': {
+                'duration_ms': 50,
+                'attack_ms': 2,
+                'release_ms': 28,
+                'noise_amount': 0.002,
+                'transient_amount': 0.008,
+                'stereo_width': 0.012,
+                'layers': [
+                    {'wave': 'triangle', 'start_freq': 360.0, 'end_freq': 560.0, 'amplitude': 0.34},
+                    {'wave': 'sine', 'start_freq': 540.0, 'end_freq': 760.0, 'amplitude': 0.18},
+                    {'wave': 'sine', 'start_freq': 720.0, 'end_freq': 920.0, 'amplitude': 0.10},
+                ],
+            },
+            'drop': {
+                'duration_ms': 108,
+                'attack_ms': 1,
+                'release_ms': 76,
+                'noise_amount': 0.020,
+                'transient_amount': 0.080,
+                'stereo_width': 0.006,
+                'layers': [
+                    {'wave': 'sine', 'start_freq': 240.0, 'end_freq': 118.0, 'amplitude': 0.64},
+                    {'wave': 'triangle', 'start_freq': 420.0, 'end_freq': 170.0, 'amplitude': 0.24},
+                    {'wave': 'sine', 'start_freq': 96.0, 'end_freq': 72.0, 'amplitude': 0.18},
+                ],
+            },
+            'lock': {
+                'duration_ms': 64,
+                'attack_ms': 1,
+                'release_ms': 42,
+                'noise_amount': 0.018,
+                'transient_amount': 0.055,
+                'stereo_width': 0.004,
+                'layers': [
+                    {'wave': 'triangle', 'start_freq': 320.0, 'end_freq': 200.0, 'amplitude': 0.58},
+                    {'wave': 'sine', 'start_freq': 170.0, 'end_freq': 140.0, 'amplitude': 0.22},
+                    {'wave': 'sine', 'start_freq': 610.0, 'end_freq': 420.0, 'amplitude': 0.10},
+                ],
+            },
+            'hold': {
+                'duration_ms': 72,
+                'attack_ms': 2,
+                'release_ms': 46,
+                'noise_amount': 0.008,
+                'transient_amount': 0.020,
+                'stereo_width': 0.018,
+                'layers': [
+                    {'wave': 'triangle', 'start_freq': 510.0, 'end_freq': 650.0, 'amplitude': 0.40},
+                    {'wave': 'sine', 'start_freq': 760.0, 'end_freq': 930.0, 'amplitude': 0.18},
+                    {'wave': 'sine', 'start_freq': 255.0, 'end_freq': 280.0, 'amplitude': 0.14},
+                ],
+            },
+            'clear': {
+                'duration_ms': 148,
+                'attack_ms': 3,
+                'release_ms': 84,
+                'noise_amount': 0.010,
+                'transient_amount': 0.014,
+                'stereo_width': 0.022,
+                'layers': [
+                    {'wave': 'triangle', 'start_freq': 520.0, 'end_freq': 640.0, 'amplitude': 0.34},
+                    {'wave': 'sine', 'start_freq': 655.0, 'end_freq': 820.0, 'amplitude': 0.24},
+                    {'wave': 'sine', 'start_freq': 780.0, 'end_freq': 980.0, 'amplitude': 0.16},
+                    {'wave': 'sine', 'start_freq': 260.0, 'end_freq': 310.0, 'amplitude': 0.14},
+                ],
+            },
+            'line': {
+                'duration_ms': 164,
+                'attack_ms': 3,
+                'release_ms': 92,
+                'noise_amount': 0.004,
+                'transient_amount': 0.010,
+                'stereo_width': 0.020,
+                'layers': [
+                    {'wave': 'triangle', 'start_freq': 392.0, 'end_freq': 494.0, 'amplitude': 0.24},
+                    {'wave': 'sine', 'start_freq': 494.0, 'end_freq': 659.0, 'amplitude': 0.22},
+                    {'wave': 'sine', 'start_freq': 587.0, 'end_freq': 784.0, 'amplitude': 0.18},
+                    {'wave': 'sine', 'start_freq': 196.0, 'end_freq': 247.0, 'amplitude': 0.12},
+                ],
+            },
+            'tetris': {
+                'duration_ms': 260,
+                'attack_ms': 3,
+                'release_ms': 120,
+                'noise_amount': 0.003,
+                'transient_amount': 0.010,
+                'stereo_width': 0.026,
+                'layers': [
+                    {'wave': 'triangle', 'start_freq': 392.0, 'end_freq': 523.0, 'amplitude': 0.22},
+                    {'wave': 'sine', 'start_freq': 523.0, 'end_freq': 784.0, 'amplitude': 0.20},
+                    {'wave': 'sine', 'start_freq': 659.0, 'end_freq': 1047.0, 'amplitude': 0.16},
+                    {'wave': 'sine', 'start_freq': 196.0, 'end_freq': 261.0, 'amplitude': 0.10},
+                ],
+            },
+            'click': {
+                'duration_ms': 28,
+                'attack_ms': 1,
+                'release_ms': 18,
+                'noise_amount': 0.004,
+                'transient_amount': 0.016,
+                'stereo_width': 0.004,
+                'layers': [
+                    {'wave': 'triangle', 'start_freq': 620.0, 'end_freq': 520.0, 'amplitude': 0.30},
+                    {'wave': 'sine', 'start_freq': 920.0, 'end_freq': 760.0, 'amplitude': 0.10},
+                ],
+            },
+            'pause': {
+                'duration_ms': 86,
+                'attack_ms': 2,
+                'release_ms': 52,
+                'noise_amount': 0.004,
+                'transient_amount': 0.012,
+                'stereo_width': 0.010,
+                'layers': [
+                    {'wave': 'triangle', 'start_freq': 420.0, 'end_freq': 320.0, 'amplitude': 0.24},
+                    {'wave': 'sine', 'start_freq': 280.0, 'end_freq': 220.0, 'amplitude': 0.18},
+                ],
+            },
+            'select': {
+                'duration_ms': 34,
+                'attack_ms': 1,
+                'release_ms': 22,
+                'noise_amount': 0.003,
+                'transient_amount': 0.014,
+                'stereo_width': 0.008,
+                'layers': [
+                    {'wave': 'triangle', 'start_freq': 560.0, 'end_freq': 640.0, 'amplitude': 0.24},
+                    {'wave': 'sine', 'start_freq': 820.0, 'end_freq': 900.0, 'amplitude': 0.08},
+                ],
+            },
+            'confirm': {
+                'duration_ms': 92,
+                'attack_ms': 2,
+                'release_ms': 54,
+                'noise_amount': 0.003,
+                'transient_amount': 0.014,
+                'stereo_width': 0.014,
+                'layers': [
+                    {'wave': 'triangle', 'start_freq': 520.0, 'end_freq': 700.0, 'amplitude': 0.24},
+                    {'wave': 'sine', 'start_freq': 660.0, 'end_freq': 920.0, 'amplitude': 0.18},
+                    {'wave': 'sine', 'start_freq': 260.0, 'end_freq': 320.0, 'amplitude': 0.12},
+                ],
+            },
+            'cancel': {
+                'duration_ms': 96,
+                'attack_ms': 2,
+                'release_ms': 58,
+                'noise_amount': 0.004,
+                'transient_amount': 0.012,
+                'stereo_width': 0.010,
+                'layers': [
+                    {'wave': 'triangle', 'start_freq': 430.0, 'end_freq': 300.0, 'amplitude': 0.26},
+                    {'wave': 'sine', 'start_freq': 320.0, 'end_freq': 220.0, 'amplitude': 0.18},
+                ],
+            },
+            'deny': {
+                'duration_ms': 112,
+                'attack_ms': 1,
+                'release_ms': 66,
+                'noise_amount': 0.010,
+                'transient_amount': 0.016,
+                'stereo_width': 0.006,
+                'layers': [
+                    {'wave': 'triangle', 'start_freq': 240.0, 'end_freq': 170.0, 'amplitude': 0.30},
+                    {'wave': 'sine', 'start_freq': 310.0, 'end_freq': 210.0, 'amplitude': 0.14},
+                ],
+            },
+            'combo': {
+                'duration_ms': 118,
+                'attack_ms': 2,
+                'release_ms': 70,
+                'noise_amount': 0.004,
+                'transient_amount': 0.012,
+                'stereo_width': 0.020,
+                'layers': [
+                    {'wave': 'triangle', 'start_freq': 480.0, 'end_freq': 640.0, 'amplitude': 0.20},
+                    {'wave': 'sine', 'start_freq': 640.0, 'end_freq': 860.0, 'amplitude': 0.18},
+                    {'wave': 'sine', 'start_freq': 240.0, 'end_freq': 320.0, 'amplitude': 0.12},
+                ],
+            },
+            'levelup': {
+                'duration_ms': 182,
+                'attack_ms': 3,
+                'release_ms': 96,
+                'noise_amount': 0.004,
+                'transient_amount': 0.012,
+                'stereo_width': 0.024,
+                'layers': [
+                    {'wave': 'triangle', 'start_freq': 440.0, 'end_freq': 660.0, 'amplitude': 0.22},
+                    {'wave': 'sine', 'start_freq': 660.0, 'end_freq': 990.0, 'amplitude': 0.20},
+                    {'wave': 'sine', 'start_freq': 220.0, 'end_freq': 330.0, 'amplitude': 0.10},
+                ],
+            },
+            'gameover': {
+                'duration_ms': 420,
+                'attack_ms': 2,
+                'release_ms': 180,
+                'noise_amount': 0.006,
+                'transient_amount': 0.008,
+                'stereo_width': 0.010,
+                'layers': [
+                    {'wave': 'triangle', 'start_freq': 220.0, 'end_freq': 130.0, 'amplitude': 0.24},
+                    {'wave': 'sine', 'start_freq': 330.0, 'end_freq': 165.0, 'amplitude': 0.18},
+                    {'wave': 'sine', 'start_freq': 110.0, 'end_freq': 70.0, 'amplitude': 0.12},
+                ],
+            },
+            'card_reveal': {
+                'duration_ms': 126,
+                'attack_ms': 2,
+                'release_ms': 74,
+                'noise_amount': 0.006,
+                'transient_amount': 0.010,
+                'stereo_width': 0.028,
+                'layers': [
+                    {'wave': 'triangle', 'start_freq': 620.0, 'end_freq': 760.0, 'amplitude': 0.18},
+                    {'wave': 'sine', 'start_freq': 880.0, 'end_freq': 1180.0, 'amplitude': 0.16},
+                    {'wave': 'sine', 'start_freq': 1180.0, 'end_freq': 1520.0, 'amplitude': 0.08},
+                ],
+            },
+            'tutorial_success': {
+                'duration_ms': 124,
+                'attack_ms': 2,
+                'release_ms': 70,
+                'noise_amount': 0.003,
+                'transient_amount': 0.012,
+                'stereo_width': 0.020,
+                'layers': [
+                    {'wave': 'triangle', 'start_freq': 520.0, 'end_freq': 700.0, 'amplitude': 0.22},
+                    {'wave': 'sine', 'start_freq': 700.0, 'end_freq': 980.0, 'amplitude': 0.16},
+                ],
+            },
+            'tutorial_progress': {
+                'duration_ms': 72,
+                'attack_ms': 1,
+                'release_ms': 40,
+                'noise_amount': 0.003,
+                'transient_amount': 0.010,
+                'stereo_width': 0.014,
+                'layers': [
+                    {'wave': 'triangle', 'start_freq': 460.0, 'end_freq': 560.0, 'amplitude': 0.20},
+                    {'wave': 'sine', 'start_freq': 640.0, 'end_freq': 760.0, 'amplitude': 0.10},
+                ],
+            },
+            'tutorial_complete': {
+                'duration_ms': 210,
+                'attack_ms': 3,
+                'release_ms': 110,
+                'noise_amount': 0.004,
+                'transient_amount': 0.012,
+                'stereo_width': 0.028,
+                'layers': [
+                    {'wave': 'triangle', 'start_freq': 520.0, 'end_freq': 784.0, 'amplitude': 0.20},
+                    {'wave': 'sine', 'start_freq': 784.0, 'end_freq': 1175.0, 'amplitude': 0.18},
+                    {'wave': 'sine', 'start_freq': 260.0, 'end_freq': 392.0, 'amplitude': 0.08},
+                ],
+            },
+            'sniper_shot': {
+                'duration_ms': 96,
+                'attack_ms': 1,
+                'release_ms': 48,
+                'noise_amount': 0.020,
+                'transient_amount': 0.080,
+                'stereo_width': 0.004,
+                'layers': [
+                    {'wave': 'triangle', 'start_freq': 1400.0, 'end_freq': 920.0, 'amplitude': 0.18},
+                    {'wave': 'sine', 'start_freq': 240.0, 'end_freq': 120.0, 'amplitude': 0.16},
+                ],
+            },
+        }
+        profile = profiles.get(name)
+        if profile is None:
+            raise KeyError(f"Bilinmeyen gameplay SFX profili: {name}")
+        self.create_layered_sfx(name, **profile)
+
+    def _register_sound_alias(self, alias, target):
+        sound = self.sounds.get(target)
+        if sound is not None:
+            self.sounds[alias] = sound
+
+    def create_layered_sfx(
+        self,
+        name,
+        *,
+        layers,
+        duration_ms,
+        attack_ms=2,
+        release_ms=24,
+        noise_amount=0.0,
+        transient_amount=0.0,
+        stereo_width=0.0,
+    ):
+        """Katmanli, kisa synth efektleri olustur."""
+        try:
+            mixer_info = pygame.mixer.get_init()
+            sample_rate = int(mixer_info[0]) if mixer_info else 44100
+            num_samples = max(1, int(duration_ms * sample_rate / 1000))
+            attack_samples = max(1, int(attack_ms * sample_rate / 1000))
+            release_samples = max(1, int(release_ms * sample_rate / 1000))
+            transient_samples = max(1, int(min(duration_ms * 0.35, 12) * sample_rate / 1000))
+            pcm = array('h')
+            phases = [[0.0, 0.0] for _ in layers]
+            inv_rate = 1.0 / float(sample_rate)
+            amplitude_scale = 0.80
+
+            for i in range(num_samples):
+                progress = i / float(max(1, num_samples - 1))
+                env = self._sfx_envelope(i, num_samples, attack_samples, release_samples)
+                noise_env = max(0.0, 1.0 - (progress * 1.8))
+                transient_env = max(0.0, 1.0 - (i / float(transient_samples))) if i < transient_samples else 0.0
+                left = 0.0
+                right = 0.0
+
+                for layer_idx, layer in enumerate(layers):
+                    start_freq = float(layer['start_freq'])
+                    end_freq = float(layer.get('end_freq', start_freq))
+                    layer_amp = float(layer.get('amplitude', 1.0))
+                    wave = layer.get('wave', 'sine')
+                    freq = start_freq + (end_freq - start_freq) * progress
+                    detune = stereo_width * (layer_idx + 1)
+                    freq_l = max(1.0, freq * (1.0 - detune))
+                    freq_r = max(1.0, freq * (1.0 + detune))
+                    phases[layer_idx][0] += 2.0 * math.pi * freq_l * inv_rate
+                    phases[layer_idx][1] += 2.0 * math.pi * freq_r * inv_rate
+                    left += self._oscillator_sample(phases[layer_idx][0], wave) * layer_amp
+                    right += self._oscillator_sample(phases[layer_idx][1], wave) * layer_amp
+
+                if noise_amount > 0.0:
+                    noise = (random.random() * 2.0 - 1.0) * noise_amount * noise_env
+                    left += noise
+                    right += noise * (1.0 - stereo_width * 0.5)
+
+                if transient_amount > 0.0 and transient_env > 0.0:
+                    transient = transient_amount * transient_env
+                    left += transient
+                    right += transient * 0.92
+
+                left *= env * amplitude_scale
+                right *= env * amplitude_scale
+                left = max(-1.0, min(1.0, left))
+                right = max(-1.0, min(1.0, right))
+                pcm.append(int(left * 32767))
+                pcm.append(int(right * 32767))
+
+            sound = pygame.mixer.Sound(buffer=pcm.tobytes())
+            self.sounds[name] = sound
+        except Exception:
+            self.enabled = False
+
+    def _sfx_envelope(self, index, total_samples, attack_samples, release_samples):
+        if total_samples <= 1:
+            return 1.0
+        if index < attack_samples:
+            return 0.5 - 0.5 * math.cos(math.pi * (index / float(max(1, attack_samples))))
+        release_start = max(0, total_samples - release_samples)
+        if index >= release_start:
+            release_progress = (index - release_start) / float(max(1, release_samples))
+            return 0.5 + 0.5 * math.cos(math.pi * min(1.0, release_progress))
+        return 1.0
+
+    def _oscillator_sample(self, phase, wave):
+        phase = math.fmod(phase, 2.0 * math.pi)
+        if wave == 'triangle':
+            return (2.0 / math.pi) * math.asin(math.sin(phase))
+        return math.sin(phase)
     
     def create_beep(self, name, frequency, duration):
         """Basit bir bip sesi oluştur"""
@@ -847,7 +1171,7 @@ class SoundManager:
                 print(f"❌ Game Over sesi çalma hatası: {e}")
         else:
             print("⚠️ Game Over sesi yüklü değil, beep kullanılıyor.")
-            self.create_beep('gameover', 220, 500)
+            self.create_gameplay_sfx('gameover')
             self.sounds['gameover'].play()
 
     def get_available_tracks(self):
