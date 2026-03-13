@@ -1782,6 +1782,7 @@ def main():
                             fullscreen,
                             settings_manager,
                             user_manager,
+                            launch_lesson_id='move_intro',
                             sound_manager=menu_sound,
                             score_manager=score_manager,
                             block_style_manager=block_style_manager
@@ -2253,7 +2254,7 @@ def main():
         return _handle_settings(delta_ms)
 
     def _handle_guide(delta_ms):
-        nonlocal running, state, guide_screen
+        nonlocal game, running, state, guide_screen
 
         if guide_screen is None:
             state = 'menu'
@@ -2267,6 +2268,43 @@ def main():
                 state = 'menu'
             elif action == 'toggle_fullscreen':
                 _toggle_fullscreen(500, 700)
+            elif action == 'tutorial_hub':
+                menu_sound.stop_music()
+                game = TutorialMode(
+                    'Normal',
+                    settings_screen.sound_enabled,
+                    settings_screen.effects_enabled,
+                    achievement_manager,
+                    theme_manager,
+                    screen,
+                    fullscreen,
+                    settings_manager,
+                    user_manager,
+                    sound_manager=menu_sound,
+                    score_manager=score_manager,
+                    block_style_manager=block_style_manager
+                )
+                state = 'game'
+            elif action and action.startswith('tutorial_lesson:'):
+                lesson_id = action.split(':', 1)[1]
+                menu_sound.stop_music()
+                game = TutorialMode(
+                    'Normal',
+                    settings_screen.sound_enabled,
+                    settings_screen.effects_enabled,
+                    achievement_manager,
+                    theme_manager,
+                    screen,
+                    fullscreen,
+                    settings_manager,
+                    user_manager,
+                    launch_lesson_id=lesson_id,
+                    lesson_flow_scope='chapter',
+                    sound_manager=menu_sound,
+                    score_manager=score_manager,
+                    block_style_manager=block_style_manager
+                )
+                state = 'game'
         guide_screen.draw()
         return True
 
@@ -2782,6 +2820,7 @@ def main():
                             fullscreen,
                             settings_manager,
                             user_manager,
+                            launch_lesson_id='move_intro',
                             sound_manager=menu_sound,
                             score_manager=score_manager,
                             block_style_manager=block_style_manager

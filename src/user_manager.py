@@ -1,21 +1,51 @@
 """Kullanıcı profil yönetim sistemi"""
+from copy import deepcopy
 import json
 import os
 from datetime import datetime, date
 
-from atomic_io import atomic_write_json
-from data_paths import get_profiles_data_dir, iter_legacy_paths, migrate_legacy_file, resolve_cloud_path, resolve_profile_path
-from localization import t
-from storage_layout import (
-    USERS_SCHEMA_VERSION,
-    get_current_user_state_path,
-    get_users_cloud_path,
-    make_profile_id,
-    normalize_avatar_asset,
-    read_json_file,
-    utc_now_iso,
-    write_json_file,
-)
+try:
+    from .atomic_io import atomic_write_json  # type: ignore
+    from .data_paths import get_profiles_data_dir, iter_legacy_paths, migrate_legacy_file, resolve_cloud_path, resolve_profile_path  # type: ignore
+    from .localization import t  # type: ignore
+    from .storage_layout import (  # type: ignore
+        USERS_SCHEMA_VERSION,
+        get_current_user_state_path,
+        get_users_cloud_path,
+        make_profile_id,
+        normalize_avatar_asset,
+        read_json_file,
+        utc_now_iso,
+        write_json_file,
+    )
+    from .tutorial_progress import (  # type: ignore
+        build_default_tutorial_progress,
+        ensure_progress_shape,
+        get_chapter_completion,
+        mark_chapter_completed,
+        mark_lesson_completed,
+    )
+except Exception:
+    from atomic_io import atomic_write_json
+    from data_paths import get_profiles_data_dir, iter_legacy_paths, migrate_legacy_file, resolve_cloud_path, resolve_profile_path
+    from localization import t
+    from storage_layout import (
+        USERS_SCHEMA_VERSION,
+        get_current_user_state_path,
+        get_users_cloud_path,
+        make_profile_id,
+        normalize_avatar_asset,
+        read_json_file,
+        utc_now_iso,
+        write_json_file,
+    )
+    from tutorial_progress import (
+        build_default_tutorial_progress,
+        ensure_progress_shape,
+        get_chapter_completion,
+        mark_chapter_completed,
+        mark_lesson_completed,
+    )
 
 DAILY_MAX_FAILURES = 3
 DAILY_HISTORY_LIMIT = 40
@@ -173,6 +203,23 @@ class UserManager:
                     if isinstance(profile, dict) and 'tutorial_completed' not in profile:
                         profile['tutorial_completed'] = False
                         updated = True
+                    if isinstance(profile, dict):
+                        normalized_progress = profile.get('tutorial_progress')
+                        if 'tutorial_progress' not in profile:
+                            normalized_progress = build_default_tutorial_progress()
+                            updated = True
+                        normalized_progress = ensure_progress_shape(normalized_progress)
+                        basics_state = get_chapter_completion(normalized_progress, 'basics')
+                        if bool(profile.get('tutorial_completed', False)) and not basics_state.get('completed', False):
+                            normalized_progress = mark_chapter_completed(normalized_progress, 'basics', stars_per_lesson=1)
+                            basics_state = get_chapter_completion(normalized_progress, 'basics')
+                            updated = True
+                        if normalized_progress != profile.get('tutorial_progress'):
+                            profile['tutorial_progress'] = normalized_progress
+                            updated = True
+                        if bool(profile.get('tutorial_completed', False)) != bool(basics_state.get('completed', False)):
+                            profile['tutorial_completed'] = bool(basics_state.get('completed', False))
+                            updated = True
                     # Steam ID alanı (yeni alan — eski profiller için None)
                     if isinstance(profile, dict) and 'steam_id' not in profile:
                         profile['steam_id'] = None
@@ -434,6 +481,7 @@ class UserManager:
                 'pvp': {'games': 0, 'wins': 0, 'losses': 0}
             },
             'tutorial_completed': False,
+            'tutorial_progress': build_default_tutorial_progress(),
             'steam_id': normalized_steam_id,
             'last_modified_utc': utc_now_iso(),
         }
@@ -769,6 +817,57 @@ class UserManager:
         user = username or self.current_user
         if user and user in self.users:
             self.users[user]['tutorial_completed'] = completed
+            if completed:
+                progress = self.users[user].get('tutorial_progress')
+                self.users[user]['tutorial_progress'] = mark_chapter_completed(progress, 'basics', stars_per_lesson=1)
+            else:
+                self.users[user]['tutorial_progress'] = build_default_tutorial_progress()
+            self._touch_profile(user)
+            self.save_users()
+
+    def get_tutorial_progress(self, username=None):
+        """Kullanıcının tutorial progress verisini döndür."""
+        user = username or self.current_user
+        if user and user in self.users:
+            progress = self.users[user].get('tutorial_progress')
+            normalized = ensure_progress_shape(progress)
+            if normalized != progress:
+                self.users[user]['tutorial_progress'] = normalized
+                self._touch_profile(user)
+                self.save_users()
+            return deepcopy(normalized)
+        return build_default_tutorial_progress()
+
+    def set_tutorial_progress(self, progress, username=None):
+        """Kullanıcının tutorial progress verisini kaydet."""
+        user = username or self.current_user
+        if user and user in self.users:
+            normalized = ensure_progress_shape(progress)
+            self.users[user]['tutorial_progress'] = normalized
+            basics_state = get_chapter_completion(normalized, 'basics')
+            self.users[user]['tutorial_completed'] = bool(basics_state.get('completed', False))
+            self._touch_profile(user)
+            self.save_users()
+
+    def mark_tutorial_lesson_completed(self, lesson_id: str, stars: int, stats=None, username=None):
+        """Belirli bir tutorial dersini tamamlandı olarak işaretle."""
+        user = username or self.current_user
+        if not (user and user in self.users):
+            return
+        current_progress = self.users[user].get('tutorial_progress')
+        updated_progress = mark_lesson_completed(current_progress, lesson_id, stars, stats=stats)
+        self.users[user]['tutorial_progress'] = updated_progress
+        basics_state = get_chapter_completion(updated_progress, 'basics')
+        self.users[user]['tutorial_completed'] = bool(basics_state.get('completed', False))
+        self._touch_profile(user)
+        self.save_users()
+
+    def reset_tutorial_progress(self, username=None):
+        """Kullanıcının tutorial ilerlemesini sıfırla."""
+        user = username or self.current_user
+        if user and user in self.users:
+            self.users[user]['tutorial_progress'] = build_default_tutorial_progress()
+            self.users[user]['tutorial_completed'] = False
             self._touch_profile(user)
             self.save_users()
 

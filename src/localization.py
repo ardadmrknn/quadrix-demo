@@ -2622,6 +2622,330 @@ TRANSLATIONS = {
         'zh': '欢迎来到俄罗斯方块！想学习基础操作吗？',
         'ko': '테트리스에 오신 것을 환영합니다! 기본 조작을 배워볼까요?',
     },
+    'tutorial_board_basics_title': {
+        'tr': 'Tahta Okuma',
+        'en': 'Board Reading',
+    },
+    'tutorial_board_basics_desc': {
+        'tr': 'Tahtayi okuyup temiz ve guvenli yerlestirme yapmayi ogren.',
+        'en': 'Learn how to read the board and place pieces cleanly and safely.',
+    },
+    'tutorial_board_gap_fill_title': {
+        'tr': 'Genis Boslugu Oku',
+        'en': 'Read the Wide Gap',
+    },
+    'tutorial_board_gap_fill_desc': {
+        'tr': 'Iki hucrelik boslugu dogru parcayla kapat ve iki satiri ayni anda temizle.',
+        'en': 'Fill the two-cell gap with the right piece and clear two lines at once.',
+    },
+    'tutorial_board_keep_low_title': {
+        'tr': 'Kuleyi Alcak Tut',
+        'en': 'Keep the Stack Low',
+    },
+    'tutorial_board_keep_low_desc': {
+        'tr': 'Her temizleme hemen gerekmez; bazen en iyi hamle yuksekligi arttirmamaktir.',
+        'en': 'Not every turn needs a clear; sometimes the best move is keeping the stack low.',
+    },
+    'tutorial_board_vertical_well_title': {
+        'tr': 'Kuyuyu Oku',
+        'en': 'Read the Well',
+    },
+    'tutorial_board_vertical_well_desc': {
+        'tr': 'Hazir kuyuyu gor ve I parcasi ile tek hamlede Quadrix yap.',
+        'en': 'Spot the prepared well and score a Quadrix with the I piece in one move.',
+    },
+    'tutorial_card_academy_title': {
+        'tr': 'Kart Akademisi',
+        'en': 'Card Academy',
+    },
+    'tutorial_card_academy_desc': {
+        'tr': 'Kart secimini board durumuna gore okumayi ogren.',
+        'en': 'Learn to evaluate card picks based on the board state.',
+    },
+    'tutorial_card_rescue_title': {
+        'tr': 'Kurtarma Karti Sec',
+        'en': 'Pick the Rescue Card',
+    },
+    'tutorial_card_rescue_desc': {
+        'tr': 'Tehlikeli tahtada once hangi kartin seni kurtardigini ogren.',
+        'en': 'Learn which card actually rescues you on a dangerous board.',
+    },
+    'tutorial_card_long_term_title': {
+        'tr': 'Uzun Vadeli Yatirim',
+        'en': 'Long-Term Investment',
+    },
+    'tutorial_card_long_term_desc': {
+        'tr': 'Guvenli oyunda anlik kart yerine kalici deger ureten secimi bul.',
+        'en': 'Choose the card that creates lasting value when the board is already safe.',
+    },
+    'tutorial_card_synergy_title': {
+        'tr': 'Sinerjiyi Oku',
+        'en': 'Read the Synergy',
+    },
+    'tutorial_card_synergy_desc': {
+        'tr': 'Mevcut build ile hangi kartin buyudugunu okumayi ogren.',
+        'en': 'Learn which card scales with the build you already have.',
+    },
+    'tutorial_card_choose_hint': {
+        'tr': 'Sol/Sag ile sec, Enter ile onayla, 1-3 kisayollarini kullan.',
+        'en': 'Use Left/Right to choose, Enter to confirm, or press 1-3.',
+    },
+    'tutorial_card_context_title': {
+        'tr': 'Ders Baglami',
+        'en': 'Lesson Context',
+    },
+    'tutorial_board_gap_fill_goal': {
+        'tr': 'Hedef: Iki satiri ayni anda temizle.',
+        'en': 'Goal: Clear two lines at once.',
+    },
+    'tutorial_board_gap_fill_tip': {
+        'tr': 'Genis bosluklari okuyup uygun parcayi secmek kart modundaki kararlarin temelidir.',
+        'en': 'Reading wide gaps and matching the right piece is the basis of card-mode decisions.',
+    },
+    'tutorial_board_keep_low_goal': {
+        'tr': 'Hedef: Yeni delik acmadan yuksekligi arttirma.',
+        'en': 'Goal: Avoid increasing the stack while creating no new holes.',
+    },
+    'tutorial_board_keep_low_tip': {
+        'tr': 'Her temizleme hemen gerekmez; bazen en iyi hamle kuleyi buyutmemektir.',
+        'en': 'Not every move needs a clear; sometimes the best play is simply not stacking higher.',
+    },
+    'tutorial_board_vertical_well_goal': {
+        'tr': 'Hedef: Kuyuyu okuyup I parcasi ile Quadrix yap.',
+        'en': 'Goal: Read the well and score a Quadrix with the I piece.',
+    },
+    'tutorial_board_vertical_well_tip': {
+        'tr': 'Kart modunda da en guclu kararlar once kuyuyu hazirlayip sonra dogru parcayi beklemektir.',
+        'en': 'In card mode too, the strongest decisions come from preparing the well first and waiting for the right piece.',
+    },
+    'tutorial_card_rescue_goal': {
+        'tr': 'Hedef: Tehlikeli tahtada en dogru kurtarma kartini sec.',
+        'en': 'Goal: Choose the best rescue card on a dangerous board.',
+    },
+    'tutorial_card_rescue_tip': {
+        'tr': 'Parlak kart her zaman dogru kart degildir. Once tahtanin ihtiyacini oku.',
+        'en': 'The flashy card is not always the right one. Read what the board actually needs first.',
+    },
+    'tutorial_card_rescue_context_1': {
+        'tr': 'Durum: Delikli ve yuksek bir tahta.',
+        'en': 'Situation: A tall board with holes.',
+    },
+    'tutorial_card_rescue_context_2': {
+        'tr': 'Oncelik: Nefes aldiran hamle secmek.',
+        'en': 'Priority: Pick the move that gives you breathing room.',
+    },
+    'tutorial_card_long_term_goal': {
+        'tr': 'Hedef: Guvenli oyunda en iyi uzun vadeli yatirimi sec.',
+        'en': 'Goal: Choose the best long-term investment on a stable board.',
+    },
+    'tutorial_card_long_term_tip': {
+        'tr': 'Tahta sakinse anlik kart yerine run boyunca deger ureten perk daha guclu olabilir.',
+        'en': 'If the board is stable, a perk with long-run value can be stronger than an instant card.',
+    },
+    'tutorial_card_long_term_context_1': {
+        'tr': 'Durum: Duzenli ve alcak bir tahta.',
+        'en': 'Situation: A clean and low board.',
+    },
+    'tutorial_card_long_term_context_2': {
+        'tr': 'Oncelik: Uzun vadeli deger kazanmak.',
+        'en': 'Priority: Build long-term value.',
+    },
+    'tutorial_card_synergy_goal': {
+        'tr': 'Hedef: Mevcut build ile en iyi sinerji kartini sec.',
+        'en': 'Goal: Pick the card with the best synergy for your current build.',
+    },
+    'tutorial_card_synergy_tip': {
+        'tr': 'Kart secimi tek kart gucu degil, mevcut build ile nasil calistigi uzerinden okunur.',
+        'en': 'Card selection is not just raw power; it depends on how the card works with your current build.',
+    },
+    'tutorial_card_synergy_context_1': {
+        'tr': 'Aktif perkler: Ekstra Cep, Esnek Sinir.',
+        'en': 'Active perks: Extra Pocket, Flexible Boundary.',
+    },
+    'tutorial_card_synergy_context_2': {
+        'tr': 'Oncelik: Build\'i buyuten secimi bulmak.',
+        'en': 'Priority: Find the choice that scales your build.',
+    },
+    'tutorial_card_choice_title_correct': {
+        'tr': 'Dogru Secim',
+        'en': 'Correct Choice',
+    },
+    'tutorial_card_choice_title_acceptable': {
+        'tr': 'Kabul Edilebilir',
+        'en': 'Acceptable Choice',
+    },
+    'tutorial_card_choice_feedback_generic': {
+        'tr': 'Secimin bu tahta ihtiyacina iyi uymuyor.',
+        'en': 'That choice does not fit the board state well.',
+    },
+    'tutorial_card_rescue_feedback_clear_rows': {
+        'tr': 'Dogru secim. Alt Supur tahtaya hemen alan acar ve baskiyi dusurur.',
+        'en': 'Correct. Clear Rows immediately opens space and lowers the pressure.',
+    },
+    'tutorial_card_rescue_feedback_peak_sculpt': {
+        'tr': 'Kabul edilebilir secim. Tepeyi kesmek baskiyi azaltir ama alt taraftaki karmasayi tam cozmez.',
+        'en': 'Acceptable. Cutting the peak reduces pressure, but it does not fully solve the messy lower board.',
+    },
+    'tutorial_card_rescue_feedback_speed_burst': {
+        'tr': 'Zayif secim. Hiz karti bu tahtada hatayi buyutur; once hayatta kalman gerekir.',
+        'en': 'Weak choice. A speed card amplifies mistakes on this board; survival comes first.',
+    },
+    'tutorial_card_long_term_feedback_second_pocket': {
+        'tr': 'Dogru secim. Guvenli tahtada Ekstra Cep gibi kalici bir perk tum run boyunca deger uretir.',
+        'en': 'Correct. On a stable board, a persistent perk like Extra Pocket creates value for the whole run.',
+    },
+    'tutorial_card_long_term_feedback_clear_rows': {
+        'tr': 'Zayif secim. Tahta zaten rahat; anlik temizlik burada gereksiz deger kaybi.',
+        'en': 'Weak choice. The board is already stable, so instant cleanup wastes value here.',
+    },
+    'tutorial_card_long_term_feedback_row_shuffle': {
+        'tr': 'Zayif secim. Sans karti sakin bir tahtayi sebepsiz yere bozabilir.',
+        'en': 'Weak choice. A random card can disrupt a calm board for no good reason.',
+    },
+    'tutorial_card_synergy_feedback_perk_synergy': {
+        'tr': 'Dogru secim. Halihazirda aktif perklerin oldugu icin Sinerji Bonus hemen buyuyen bir carpana donusur.',
+        'en': 'Correct. Because you already have active perks, Synergy Bonus immediately turns into a scaling multiplier.',
+    },
+    'tutorial_card_synergy_feedback_line_bonus': {
+        'tr': 'Zayif secim. Puan Carpani faydali olsa da bu dersin odagi mevcut perk zincirini buyutmek; tek basina build sinerjisi kurmaz.',
+        'en': 'Weak choice. Score Multiplier is useful, but this lesson is about expanding your existing perk chain; by itself it does not create build synergy.',
+    },
+    'tutorial_card_synergy_feedback_row_shuffle': {
+        'tr': 'Zayif secim. Rastgelelik eklemek yerine aktif perklerden daha fazla deger cikarmalisin.',
+        'en': 'Weak choice. Instead of adding randomness, you should extract more value from your active perks.',
+    },
+    'tutorial_next_board_lessons_prompt': {
+        'tr': 'ENTER ile tahta derslerine gec.',
+        'en': 'Press ENTER to continue to board lessons.',
+    },
+    'tutorial_result_feedback_clean': {
+        'tr': 'Temiz hamle. Tahtayi kontrol ederek ilerledin.',
+        'en': 'Clean move. You kept the board under control.',
+    },
+    'tutorial_result_feedback_need_more_lines': {
+        'tr': 'Hedef satir sayisina ulasamadın. Tahtadaki ana boslugu tekrar oku.',
+        'en': 'You did not reach the line-clear target. Re-read the key gap on the board.',
+    },
+    'tutorial_result_feedback_created_holes': {
+        'tr': 'Hamle yeni delikler aciyor. Kart modunda bu tur hatalar sonraki secimleri zayiflatir.',
+        'en': 'That move creates new holes. In card mode, mistakes like this weaken your next decisions.',
+    },
+    'tutorial_result_feedback_stack_too_high': {
+        'tr': 'Hamle kuleyi gereksiz buyuttu. Once guvenli tarafi kullan.',
+        'en': 'That move grew the stack too much. Use the safer side first.',
+    },
+    'tutorial_result_action_next_lesson': {
+        'tr': 'ENTER: Sonraki ders',
+        'en': 'ENTER: Next lesson',
+    },
+    'tutorial_result_action_to_menu': {
+        'tr': 'ENTER: Menuye don',
+        'en': 'ENTER: Return to menu',
+    },
+    'tutorial_result_action_to_hub': {
+        'tr': 'ENTER: Ders merkezine don',
+        'en': 'ENTER: Return to lesson hub',
+    },
+    'tutorial_result_action_retry': {
+        'tr': 'ENTER / R: Tekrar dene',
+        'en': 'ENTER / R: Retry',
+    },
+    'tutorial_result_completed': {
+        'tr': 'Ders Tamamlandi',
+        'en': 'Lesson Complete',
+    },
+    'tutorial_result_retry_title': {
+        'tr': 'Tekrar Dene',
+        'en': 'Try Again',
+    },
+    'tutorial_result_title': {
+        'tr': 'Sonuc',
+        'en': 'Result',
+    },
+    'tutorial_result_stars': {
+        'tr': 'Yildiz: {stars}/3',
+        'en': 'Stars: {stars}/3',
+    },
+    'tutorial_result_metrics': {
+        'tr': 'Satir {lines}  Delik {holes}  Yukseklik {height}',
+        'en': 'Lines {lines}  Holes {holes}  Height {height}',
+    },
+    'tutorial_lesson_counter': {
+        'tr': 'DERS {current}/{total}',
+        'en': 'LESSON {current}/{total}',
+    },
+    'tutorial_last_lesson': {
+        'tr': 'SON DERS',
+        'en': 'FINAL LESSON',
+    },
+    'tutorial_card_hint_selected': {
+        'tr': 'ENTER ile sec',
+        'en': 'Press ENTER to pick',
+    },
+    'tutorial_card_hint_controls': {
+        'tr': 'Secmek icin numara veya ok tuslari',
+        'en': 'Use number keys or arrows to pick',
+    },
+    'tutorial_result_selected_label': {
+        'tr': 'Secilen',
+        'en': 'Selected',
+    },
+    'tutorial_result_ideal_label': {
+        'tr': 'Ideal',
+        'en': 'Ideal',
+    },
+    'tutorial_hub_title': {
+        'tr': 'Egitim Merkezi',
+        'en': 'Training Hub',
+    },
+    'tutorial_hub_subtitle': {
+        'tr': 'Tamamlanan dersleri tekrar oyna veya yeni bolumleri ac. Yildiz: {total_stars}',
+        'en': 'Replay completed lessons or unlock new chapters. Stars: {total_stars}',
+    },
+    'tutorial_hub_chapters': {
+        'tr': 'Bolumler',
+        'en': 'Chapters',
+    },
+    'tutorial_hub_lessons': {
+        'tr': 'Dersler',
+        'en': 'Lessons',
+    },
+    'tutorial_hub_chapter_status': {
+        'tr': '{completed}/{total} ders  |  {stars} yildiz',
+        'en': '{completed}/{total} lessons  |  {stars} stars',
+    },
+    'tutorial_hub_lesson_status': {
+        'tr': 'Yildiz: {stars}/3',
+        'en': 'Stars: {stars}/3',
+    },
+    'tutorial_hub_locked': {
+        'tr': 'Kilitli',
+        'en': 'Locked',
+    },
+    'tutorial_hub_completed': {
+        'tr': 'Tamamlandi',
+        'en': 'Completed',
+    },
+    'tutorial_hub_in_progress': {
+        'tr': 'Devam ediyor',
+        'en': 'In progress',
+    },
+    'tutorial_hub_locked_hint': {
+        'tr': 'Bu bolum onceki egitimler tamamlaninca acilir.',
+        'en': 'This chapter unlocks after you complete the previous training.',
+    },
+    'tutorial_hub_controls': {
+        'tr': 'Sol/Sag: bolum  Yukari/Asagi: ders  Enter: baslat  ESC: menu',
+        'en': 'Left/Right: chapter  Up/Down: lesson  Enter: start  ESC: menu',
+    },
+    'tutorial_hub_back': {
+        'tr': 'Menuye Don',
+        'en': 'Return to Menu',
+    },
+    'tutorial_hub_start': {
+        'tr': 'Dersi Baslat',
+        'en': 'Start Lesson',
+    },
     'tutorial_welcome_move': {
         'tr': 'Hareket kontrollerini öğrenelim!',
         'en': 'Let\'s learn movement controls!',
@@ -14621,6 +14945,58 @@ TRANSLATIONS = {
         'ja': 'ヒントとFAQ',
         'zh': '提示与FAQ',
         'ko': '팁 & FAQ',
+    },
+    'guide_open_related_tutorial': {
+        'tr': 'İlgili Eğitimi Aç',
+        'en': 'Open Related Tutorial',
+        'de': 'Passendes Tutorial öffnen',
+        'fr': 'Ouvrir le tutoriel lié',
+        'es': 'Abrir tutorial relacionado',
+        'it': 'Apri tutorial correlato',
+        'pt': 'Abrir tutorial relacionado',
+        'ru': 'Open Related Tutorial',
+        'ja': '関連チュートリアルを開く',
+        'zh': '打开相关教程',
+        'ko': '관련 튜토리얼 열기',
+    },
+    'guide_open_tutorial_hub': {
+        'tr': 'Eğitim Merkezini Aç',
+        'en': 'Open Tutorial Hub',
+        'de': 'Tutorial-Zentrale öffnen',
+        'fr': 'Ouvrir le hub tutoriel',
+        'es': 'Abrir centro de tutoriales',
+        'it': 'Apri hub tutoriale',
+        'pt': 'Abrir central de tutoriais',
+        'ru': 'Open Tutorial Hub',
+        'ja': 'チュートリアルハブを開く',
+        'zh': '打开教程中心',
+        'ko': '튜토리얼 허브 열기',
+    },
+    'guide_hint_navigation': {
+        'tr': '1-4: Tab Seç   ↑/↓: Scroll   ←/→: Tab Değiştir   T: Eğitim   ESC: Geri',
+        'en': '1-4: Select Tab   Up/Down: Scroll   Left/Right: Change Tab   T: Tutorial   ESC: Back',
+        'de': '1-4: Tab wählen   Hoch/Runter: Scrollen   Links/Rechts: Tab wechseln   T: Tutorial   ESC: Zurück',
+        'fr': '1-4: Onglet   Haut/Bas: Défiler   Gauche/Droite: Changer d’onglet   T: Tutoriel   ESC: Retour',
+        'es': '1-4: Elegir pestaña   Arriba/Abajo: Desplazar   Izquierda/Derecha: Cambiar pestaña   T: Tutorial   ESC: Atrás',
+        'it': '1-4: Seleziona scheda   Su/Giù: Scorri   Sinistra/Destra: Cambia scheda   T: Tutorial   ESC: Indietro',
+        'pt': '1-4: Selecionar aba   Cima/Baixo: Rolagem   Esquerda/Direita: Trocar aba   T: Tutorial   ESC: Voltar',
+        'ru': '1-4: Select Tab   Up/Down: Scroll   Left/Right: Change Tab   T: Tutorial   ESC: Back',
+        'ja': '1-4: タブ選択   ↑/↓: スクロール   ←/→: タブ切替   T: チュートリアル   ESC: 戻る',
+        'zh': '1-4：选择标签   上/下：滚动   左/右：切换标签   T：教程   ESC：返回',
+        'ko': '1-4: 탭 선택   위/아래: 스크롤   왼쪽/오른쪽: 탭 변경   T: 튜토리얼   ESC: 뒤로',
+    },
+    'guide_hint_cards_navigation': {
+        'tr': '1-4: Tab   ←/→/↑/↓: Sayfa Değiştir   Page Up/Down: Sayfa Değiştir   T: Eğitim   ESC: Geri',
+        'en': '1-4: Tab   Left/Right/Up/Down: Change Page   Page Up/Down: Change Page   T: Tutorial   ESC: Back',
+        'de': '1-4: Tab   Links/Rechts/Hoch/Runter: Seite wechseln   Bild auf/ab: Seite wechseln   T: Tutorial   ESC: Zurück',
+        'fr': '1-4: Onglet   Gauche/Droite/Haut/Bas: Changer de page   Page préc./suiv.: Changer de page   T: Tutoriel   ESC: Retour',
+        'es': '1-4: Pestaña   Izquierda/Derecha/Arriba/Abajo: Cambiar página   RePág/AvPág: Cambiar página   T: Tutorial   ESC: Atrás',
+        'it': '1-4: Scheda   Sinistra/Destra/Su/Giù: Cambia pagina   PagSu/PagGiù: Cambia pagina   T: Tutorial   ESC: Indietro',
+        'pt': '1-4: Aba   Esquerda/Direita/Cima/Baixo: Mudar página   Page Up/Down: Mudar página   T: Tutorial   ESC: Voltar',
+        'ru': '1-4: Tab   Left/Right/Up/Down: Change Page   Page Up/Down: Change Page   T: Tutorial   ESC: Back',
+        'ja': '1-4: タブ   ←/→/↑/↓: ページ切替   Page Up/Down: ページ切替   T: チュートリアル   ESC: 戻る',
+        'zh': '1-4：标签   左/右/上/下：翻页   Page Up/Down：翻页   T：教程   ESC：返回',
+        'ko': '1-4: 탭   왼쪽/오른쪽/위/아래: 페이지 변경   Page Up/Down: 페이지 변경   T: 튜토리얼   ESC: 뒤로',
     },
     'guide_main_objective_title': {
         'tr': 'ANA AMAÇ',
