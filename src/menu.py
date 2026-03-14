@@ -1202,7 +1202,14 @@ class Menu:
         draw_rect = rect.inflate(hover_growth_w, hover_growth_h) if is_highlighted else rect
 
         alpha = 230 if is_highlighted else 180
-        retro_style.draw_glass_panel(target_surface, draw_rect, alpha=alpha, border_color=accent_color)
+        flat_title_band_panels = {'daily_challenge', 'achievements', 'piece_workshop', 'block_styles'}
+        retro_style.draw_glass_panel(
+            target_surface,
+            draw_rect,
+            alpha=alpha,
+            border_color=accent_color,
+            top_highlight=panel_key not in flat_title_band_panels,
+        )
 
         if is_highlighted:
             prev_clip = target_surface.get_clip()

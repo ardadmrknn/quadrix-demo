@@ -178,3 +178,38 @@ def test_dashboard_tile_cache_key_changes_with_menu_transparency(monkeypatch):
     )
 
     assert key_default != key_transparent
+
+
+def test_problem_panels_disable_glass_top_highlight(monkeypatch):
+    menu = _make_menu_stub()
+    menu.screen = pygame.Surface((640, 480), pygame.SRCALPHA)
+    menu._draw_dashboard_tile_flavor = lambda *args, **kwargs: None
+    menu._draw_panel_micro_content = lambda *args, **kwargs: None
+
+    class _StubFont:
+        def size(self, text):
+            return (max(1, len(text)) * 10, 20)
+
+        def get_linesize(self):
+            return 20
+
+        def render(self, text, antialias, color):
+            return pygame.Surface((max(1, len(text)) * 10, 20), pygame.SRCALPHA)
+
+    calls = []
+
+    def _fake_draw_glass_panel(*args, **kwargs):
+        calls.append(kwargs)
+
+    monkeypatch.setattr(menu_module.retro_style, 'draw_glass_panel', _fake_draw_glass_panel)
+    monkeypatch.setattr(menu_module.retro_style, 'draw_wrapped_text', lambda *args, **kwargs: pygame.Rect(0, 0, 0, 0))
+    monkeypatch.setattr(menu_module.retro_style, 'get_font', lambda *args, **kwargs: _StubFont())
+    monkeypatch.setattr(menu_module.retro_style, 'wrap_text', lambda text, font, width: [text])
+
+    rect = pygame.Rect(20, 30, 220, 160)
+
+    menu._render_main_dashboard_tile(menu.screen, rect, 'Başarımlar', False, (255, 220, 0), panel_key='achievements')
+    menu._render_main_dashboard_tile(menu.screen, rect, 'Kart Ustalığı', False, (255, 0, 255), panel_key='new_gen_tetris')
+
+    assert calls[0]['top_highlight'] is False
+    assert calls[1]['top_highlight'] is True

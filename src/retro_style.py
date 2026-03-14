@@ -731,9 +731,15 @@ class RetroStyle:
         alpha: int = 140,
         border_color: tuple | None = None,
         glow: bool = False,
-        blur_effect: bool = True
+        blur_effect: bool = True,
+        top_highlight: bool = True,
     ) -> None:
-        """Glassmorphism panel çiz"""
+        """Glassmorphism panel çiz.
+
+        `top_highlight=False` kullanıldığında panelin üst kenarındaki cam parlaması
+        çizilmez. Bu, başlık arkasında istenmeyen açık/gri bant görünümünü önlemek
+        gereken menü kartlarında kullanılır.
+        """
         alpha = self._scale_menu_alpha(alpha)
 
         # Glow efekti (opsiyonel)
@@ -750,7 +756,7 @@ class RetroStyle:
         
         # Ana panel (yarı saydam)
         base_rgb = (self.glass_bg[0], self.glass_bg[1], self.glass_bg[2])
-        panel_key = (rect.size, base_rgb, alpha)
+        panel_key = (rect.size, base_rgb, alpha, bool(top_highlight))
         panel = self._lru_get(self._glass_panel_cache, self._glass_panel_cache_order, panel_key)
         if panel is None:
             panel = pygame.Surface(rect.size, pygame.SRCALPHA)
@@ -758,7 +764,7 @@ class RetroStyle:
 
             # Üst kenar highlight (cam efekti)
             highlight_height = min(rect.height // 3, 40)
-            if highlight_height > 0:
+            if top_highlight and highlight_height > 0:
                 for y in range(highlight_height):
                     h_alpha = int(25 * (1 - y / highlight_height))
                     pygame.draw.line(panel, (255, 255, 255, h_alpha), (0, y), (rect.width, y))

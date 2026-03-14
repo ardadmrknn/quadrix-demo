@@ -134,23 +134,42 @@ def _draw_piece_real(surf: pygame.Surface, cx: int, cy: int,
 # ═════════════════════════════════════════════════════════════════════
 
 def _build_sv_surface(w: int, h: int, hue: float) -> pygame.Surface:
-    """SV gradyan — PixelArray ile hızlı."""
-    surf = pygame.Surface((w, h))
-    try:
-        for x in range(w):
-            s_val = x / max(1, w - 1)
-            for y in range(h):
-                v_val = 1.0 - y / max(1, h - 1)
-                r, g, b = _hsv_to_rgb(hue, s_val, v_val)
-                surf.set_at((x, y), (r, g, b))
-    except Exception:
-        # Fallback
-        for x in range(w):
-            s_val = x / max(1, w - 1)
-            for y in range(h):
-                v_val = 1.0 - y / max(1, h - 1)
-                r, g, b = _hsv_to_rgb(hue, s_val, v_val)
-                surf.set_at((x, y), (r, g, b))
+    """SV gradyan — 2 şerit + ölçekleme + BLEND_RGB_MULT ile hızlı.
+
+    Eski yöntem: w×h adet set_at() (~90.000 çağrı 300×300 için).
+    Yeni yöntem:
+      1. Yatay doygunluk şeridi (w×1): beyaz → saf hue rengi   → w piksel
+      2. Dikey parlaklık şeridi  (1×h): beyaz(üst) → siyah(alt) → h piksel
+      Toplam: w+h set_at() çağrısı + 2 transform.scale + 1 blit.
+        Görsel olarak HSV yüzeyiyle eşdeğer davranır; integer yuvarlama nedeniyle
+        bazı piksellerde 1-3 seviyelik fark oluşabilir, ancak gerçek kullanımda
+        ayırt edilemez.
+    """
+    hue_rgb = _hsv_to_rgb(hue, 1.0, 1.0)
+
+    # Yatay doygunluk şeridi: beyaz (sol) → saf hue rengi (sağ)
+    sat_strip = pygame.Surface((w, 1))
+    for x in range(w):
+        s = x / max(1, w - 1)
+        r = int(round(255 * (1.0 - s) + hue_rgb[0] * s))
+        g = int(round(255 * (1.0 - s) + hue_rgb[1] * s))
+        b = int(round(255 * (1.0 - s) + hue_rgb[2] * s))
+        sat_strip.set_at((x, 0), (r, g, b))
+
+    # Tam boyuta ölçekle: her satır aynı yatay gradyanı tekrarlar
+    surf = pygame.transform.scale(sat_strip, (w, h))
+
+    # Dikey parlaklık şeridi: tam beyaz (üst) → tam siyah (alt)
+    val_strip = pygame.Surface((1, h))
+    for y in range(h):
+        brightness = int(round(255 * (1.0 - y / max(1, h - 1))))
+        val_strip.set_at((0, y), (brightness, brightness, brightness))
+
+    val_overlay = pygame.transform.scale(val_strip, (w, h))
+
+    # BLEND_RGB_MULT: her pikseli v katsayısıyla karartır → altta siyah
+    surf.blit(val_overlay, (0, 0), special_flags=pygame.BLEND_RGB_MULT)
+
     return surf
 
 
