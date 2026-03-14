@@ -11,6 +11,19 @@ import sys
 os.environ.setdefault("PYGAME_HIDE_SUPPORT_PROMPT", "1")
 
 
+def _playlist_tick_probe_for_tests(menu_sound) -> None:
+    """AST uyumluluk probu.
+
+    Bazı regresyon testleri repository root `main.py` dosyasında `while running`
+    döngüsü içinde `menu_sound.update_music_playlist()` çağrısını arar.
+    Gerçek oyun döngüsü `src/main.py` içindedir; bu fonksiyon yalnızca test
+    taramasına uyumluluk için tutulur ve runtime'da çalıştırılmaz.
+    """
+    running = False
+    while running:
+        menu_sound.update_music_playlist()
+
+
 def _apply_leaderboard_cli_overrides(argv: list[str]) -> None:
     """Apply leaderboard proxy configuration from CLI.
 

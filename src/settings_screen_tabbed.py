@@ -402,6 +402,13 @@ class TabbedSettingsScreen:
         self._vsync_prompt_choice = 0
         self._vsync_prompt_buttons: list[pygame.Rect] = []
 
+        # Display mode confirm (geri uyumluluk: fullscreen selector testleri)
+        self._display_mode_confirm_active = False
+        self._display_mode_confirm_prev_fullscreen = bool(self.fullscreen)
+        self._display_mode_confirm_target_fullscreen = bool(self.fullscreen)
+        self._display_mode_confirm_yes_rect: pygame.Rect | None = None
+        self._display_mode_confirm_no_rect: pygame.Rect | None = None
+
         # SettingsScreen uyumluluk alanları (main.py bunlara erişiyor)
         self.music_enabled = self.settings_manager.get('music_enabled', True)
         self.sound_enabled = self.settings_manager.get('sound_enabled', True)
@@ -1577,6 +1584,16 @@ class TabbedSettingsScreen:
 
     def _cycle_selector(self, key: str, delta: int) -> str | None:
         """Selector type ayarı döngüsel değiştir."""
+        if key == 'fullscreen':
+            prev = bool(getattr(self, 'fullscreen', True))
+            target = not prev
+            self._display_mode_confirm_prev_fullscreen = prev
+            self._display_mode_confirm_target_fullscreen = target
+            self._display_mode_confirm_active = True
+            self._display_mode_confirm_yes_rect = None
+            self._display_mode_confirm_no_rect = None
+            return None
+
         if key == 'fps_limit':
             current = int(self.fps_limit or 0)
             if current not in self.FPS_LIMITS:
@@ -1693,6 +1710,9 @@ class TabbedSettingsScreen:
                 self._pending_keybind_item = None
                 self._pending_keybind_slot = 'primary'
             return None
+
+        if self._display_mode_confirm_active:
+            return self._handle_display_mode_confirm(event)
 
         # VSync restart prompt
         if self._vsync_prompt_active:
@@ -2027,7 +2047,49 @@ class TabbedSettingsScreen:
         return None
 
     def _handle_display_mode_confirm(self, event) -> str | None:
-        """Fullscreen-only modda kullanılmaz."""
+        """Display mode onay modalı girdilerini işle."""
+        if not getattr(self, '_display_mode_confirm_active', False):
+            return None
+
+        if event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_ESCAPE:
+                self.fullscreen = bool(getattr(self, '_display_mode_confirm_prev_fullscreen', True))
+                self._display_mode_confirm_active = False
+                return None
+            if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE):
+                target = bool(getattr(self, '_display_mode_confirm_target_fullscreen', True))
+                self.fullscreen = target
+                try:
+                    self.settings_manager.set('fullscreen', target)
+                except Exception:
+                    pass
+                self._display_mode_confirm_active = False
+                return 'quit_game'
+
+        if event.type == pygame.MOUSEBUTTONDOWN and getattr(event, 'button', None) == 1:
+            raw_pos = getattr(event, 'pos', None)
+            pos = normalize_mouse_pos(raw_pos) if raw_pos is not None else raw_pos
+            if pos is None:
+                pos = raw_pos
+
+            yes_rect = getattr(self, '_display_mode_confirm_yes_rect', None)
+            no_rect = getattr(self, '_display_mode_confirm_no_rect', None)
+
+            if yes_rect is not None and yes_rect.collidepoint(pos):
+                target = bool(getattr(self, '_display_mode_confirm_target_fullscreen', True))
+                self.fullscreen = target
+                try:
+                    self.settings_manager.set('fullscreen', target)
+                except Exception:
+                    pass
+                self._display_mode_confirm_active = False
+                return 'quit_game'
+
+            if no_rect is not None and no_rect.collidepoint(pos):
+                self.fullscreen = bool(getattr(self, '_display_mode_confirm_prev_fullscreen', True))
+                self._display_mode_confirm_active = False
+                return None
+
         return None
 
     # ------------------------------------------------------------------
@@ -2086,6 +2148,9 @@ class TabbedSettingsScreen:
 
         if self._playlist_edit_active:
             self._draw_mode_playlist_edit_overlay()
+
+        if self._display_mode_confirm_active:
+            self._draw_display_mode_confirm_panel()
 
     def _draw_panel(self, rect: pygame.Rect) -> None:
         """Koyu yarı-saydam panel arka planı."""
@@ -2759,4 +2824,35 @@ class TabbedSettingsScreen:
         retro_style.draw_button(self.screen, btn2, later_text, selected=self._vsync_prompt_choice == 1)
 
     def _draw_display_mode_confirm_panel(self) -> None:
-        return None
+        width, height = self.screen.get_size()
+
+        overlay = pygame.Surface((width, height), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 160))
+        self.screen.blit(overlay, (0, 0))
+
+        panel_w = min(620, max(420, width - 120))
+        panel_h = 210
+        panel_rect = pygame.Rect((width - panel_w) // 2, (height - panel_h) // 2, panel_w, panel_h)
+
+        try:
+            retro_style.draw_glass_panel(self.screen, panel_rect, alpha=220)
+        except Exception:
+            pygame.draw.rect(self.screen, (24, 32, 56), panel_rect, border_radius=12)
+            pygame.draw.rect(self.screen, (140, 170, 220), panel_rect, 2, border_radius=12)
+
+        btn_h = 48
+        btn_gap = 16
+        btn_w = (panel_w - 60 - btn_gap) // 2
+        btn_y = panel_rect.bottom - btn_h - 20
+        yes_btn = pygame.Rect(panel_rect.x + 30, btn_y, btn_w, btn_h)
+        no_btn = pygame.Rect(yes_btn.right + btn_gap, btn_y, btn_w, btn_h)
+
+        self._display_mode_confirm_yes_rect = yes_btn
+        self._display_mode_confirm_no_rect = no_btn
+
+        try:
+            retro_style.draw_button(self.screen, yes_btn, _t('yes', 'Evet'))
+            retro_style.draw_button(self.screen, no_btn, _t('no', 'Hayır'))
+        except Exception:
+            pygame.draw.rect(self.screen, (72, 152, 92), yes_btn, border_radius=10)
+            pygame.draw.rect(self.screen, (166, 88, 88), no_btn, border_radius=10)

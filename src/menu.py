@@ -1128,10 +1128,17 @@ class Menu:
         )
 
     def _can_cache_dashboard_tile_surface(self, panel_key: str, selected: bool, hover: bool) -> bool:
-        # These tiles looked washed out because their idle state was rendered on
-        # an off-screen SRCALPHA surface and then composited back onto the menu,
-        # unlike the rest of the dashboard tiles which render directly.
-        return False
+        if selected or hover:
+            return False
+
+        # Sadece statik içerikli kartları cache'le.
+        # Campaign gibi dinamik/animasyon ağırlıklı kartlar cache dışı kalır.
+        cacheable_panels = {
+            'daily_challenge',
+            'piece_workshop',
+            'achievements',
+        }
+        return panel_key in cacheable_panels
 
     def _get_dashboard_tile_surface_cache_key(
         self,
