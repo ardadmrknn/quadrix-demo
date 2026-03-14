@@ -4,8 +4,8 @@
     {
       "label": "pytest (py3.12)",
       "type": "shell",
-      "command": "py",
-      "args": ["-3.12", "-m", "pytest", "-q"],
+      "command": "./scripts/test/run_tests.sh",
+      "args": ["-q"],
       "problemMatcher": [],
       "group": "test"
     }

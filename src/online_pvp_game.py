@@ -1138,10 +1138,6 @@ class OnlinePvPGame:
                 self._start_countdown()
 
             elif msg_type == MsgType.GARBAGE_ATTACK:
-                if not ONLINE_PVP_GARBAGE_ENABLED:
-                    self.pending_garbage = 0
-                    self._garbage_gap = 0
-                    continue
                 lines = self._clamp_int(data.get('lines', 0), 0, 20, 'lines')
                 raw_gap = data.get('gap', -1)
                 # gap: -1 sentinel (rastgele gap) ya da [0, BOARD_WIDTH-1]
@@ -2774,12 +2770,13 @@ class OnlinePvPGame:
         import subprocess
         try:
             if sys.platform == 'win32':
+                create_no_window = int(getattr(subprocess, 'CREATE_NO_WINDOW', 0) or 0)
                 process = subprocess.Popen(
                     ['powershell', '-command', f'Set-Clipboard -Value "{text}"'],
                     stdin=subprocess.PIPE,
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
-                    creationflags=subprocess.CREATE_NO_WINDOW,
+                    creationflags=create_no_window,
                 )
                 try:
                     process.wait(timeout=2)
@@ -2813,10 +2810,11 @@ class OnlinePvPGame:
         try:
             import subprocess
             if sys.platform == 'win32':
+                create_no_window = int(getattr(subprocess, 'CREATE_NO_WINDOW', 0) or 0)
                 result = subprocess.run(
                     ['powershell', '-command', 'Get-Clipboard'],
                     capture_output=True, text=True, timeout=2,
-                    creationflags=subprocess.CREATE_NO_WINDOW,
+                    creationflags=create_no_window,
                 )
                 return result.stdout.strip()
             elif sys.platform == 'darwin':

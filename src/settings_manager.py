@@ -443,9 +443,6 @@ class SettingsManager:
             return False
 
         changed = False
-        if data.get('fullscreen') is not True:
-            data['fullscreen'] = True
-            changed = True
 
         for key in ('borderless_fullscreen', 'resolution'):
             if key in data:
@@ -633,9 +630,6 @@ class SettingsManager:
         if key in OBSOLETE_SETTINGS_KEYS:
             return
 
-        if key == 'fullscreen':
-            value = True
-
         if key == 'controls':
             self.settings[key] = self._merge_controls(value if isinstance(value, dict) else {})
         else:
@@ -655,9 +649,6 @@ class SettingsManager:
         """Birden fazla ayarı güncelle ve kaydet"""
         for key in OBSOLETE_SETTINGS_KEYS:
             kwargs.pop(key, None)
-
-        if 'fullscreen' in kwargs:
-            kwargs['fullscreen'] = True
 
         if not kwargs:
             return

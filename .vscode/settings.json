@@ -3,6 +3,7 @@
     "python.defaultInterpreterPath": "/opt/homebrew/bin/python3.12",
     "python.terminal.activateEnvironment": false,
     "python.testing.pytestEnabled": true,
+    "python.testing.pytestPath": "./scripts/test/run_tests.sh",
     "python.testing.unittestEnabled": false,
     "python.testing.autoTestDiscoverOnSaveEnabled": false,
     "python.testing.pytestArgs": ["-q"],

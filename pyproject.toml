@@ -33,7 +33,7 @@ macos = [
 ]
 
 [tool.pytest.ini_options]
-pythonpath = ["src"]
+pythonpath = [".", "src"]
 addopts = "-ra"
 testpaths = ["tests"]
 

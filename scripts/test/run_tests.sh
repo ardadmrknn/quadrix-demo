@@ -16,6 +16,13 @@ else
   exit 1
 fi
 
+# Gerekli test bağımlılıkları yoksa kullanıcı düzeyine kur (venv kullanmadan).
+if ! "$PY" -c "import pytest, pygame, numpy, PIL, requests" >/dev/null 2>&1; then
+  echo "[setup] Installing test dependencies for Python 3.12 (user-level)"
+  "$PY" -m pip install --user --upgrade pip
+  "$PY" -m pip install --user -e ".[dev]" requests
+fi
+
 # Headless-friendly defaults for pygame tests.
 # These env vars only apply to this command (won't affect running the game).
 export SDL_VIDEODRIVER="${SDL_VIDEODRIVER:-dummy}"
