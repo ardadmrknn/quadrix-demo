@@ -99,6 +99,26 @@ def _dt_to_seconds(dt: float) -> float:
     return s
 
 
+def _level_progress_in_current_level(board: Any, lines_needed: int) -> int:
+    """Seviye içi satır ilerlemesini güvenli şekilde hesapla.
+
+    Mystery modunda gerçek seviye artışı `level_lines_cleared` ile hesaplanır.
+    HUD'da aynı kaynağı kullanarak ilerleme metninin desync olmasını engeller.
+    """
+    needed = max(1, int(lines_needed or 1))
+    try:
+        progress_total = getattr(board, 'level_lines_cleared', None)
+        if progress_total is None:
+            progress_total = getattr(board, 'lines_cleared', 0)
+        progress_total = int(progress_total or 0)
+    except Exception:
+        try:
+            progress_total = int(getattr(board, 'lines_cleared', 0) or 0)
+        except Exception:
+            progress_total = 0
+    return progress_total % needed
+
+
 CARD_LOCALIZATION_ALIASES = {
     'speed_burst_rare': 'speed_burst',
     'speed_burst_epic': 'speed_burst',
@@ -6772,7 +6792,7 @@ class MysteryMode(Game):
         level = getattr(self.board, 'level', 1)
         # Seviye içindeki satır sayısı: use card manager threshold to stay consistent
         lines_needed = int(getattr(self.card_manager, 'threshold', 5))
-        lines_in_level = int(self.board.lines_cleared % lines_needed)
+        lines_in_level = _level_progress_in_current_level(self.board, lines_needed)
         # Sağdaki standart HUD paneli ile aynı stil: glass panel (alpha=90)
         pad_x = max(10, int(15 * ui_scale))
         pad_top = max(10, int(14 * ui_scale))

@@ -13,19 +13,21 @@ from __future__ import annotations
 
 import os
 import sys
+from types import SimpleNamespace
 
 ROOT_DIR = os.path.dirname(os.path.dirname(__file__))
 SRC_DIR = os.path.join(ROOT_DIR, 'src')
 if SRC_DIR not in sys.path:
     sys.path.insert(0, SRC_DIR)
 
-from game_modes_extra import (
+from src.game_modes_extra import (
     CARD_LOCALIZATION_ALIASES,
     _SafeCardFormatDict,
     _build_card_format_context,
     _card_type_label_key,
     _dt_to_seconds,
     _format_card_text,
+    _level_progress_in_current_level,
     _resolve_card_localization_id,
     _ui_safe_icon_text,
     get_card_description,
@@ -64,6 +66,21 @@ def test_dt_to_seconds_typical_60fps():
 def test_dt_to_seconds_typical_30fps():
     result = _dt_to_seconds(33.0)
     assert abs(result - 0.033) < 1e-6
+
+
+def test_level_progress_prefers_level_lines_cleared_when_available():
+    board = SimpleNamespace(level_lines_cleared=9, lines_cleared=27)
+    assert _level_progress_in_current_level(board, 5) == 4
+
+
+def test_level_progress_falls_back_to_lines_cleared():
+    board = SimpleNamespace(lines_cleared=12)
+    assert _level_progress_in_current_level(board, 5) == 2
+
+
+def test_level_progress_guards_zero_threshold():
+    board = SimpleNamespace(level_lines_cleared=8)
+    assert _level_progress_in_current_level(board, 0) == 0
 
 
 # ---------------------------------------------------------------------------

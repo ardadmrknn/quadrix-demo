@@ -67,7 +67,8 @@ fi
 
 # Steam Net Bridge (Online PvP için zorunlu)
 echo -e "${CYAN}🔧 Steam Net Bridge kontrolü...${NC}"
-BRIDGE_SO=$(ls steam_net_bridge*.so 2>/dev/null | head -1 || true)
+BRIDGE_SO=$(ls steam_net_bridge*.so 2>/dev/null | head -1 || \
+            ls local_artifacts/bridge/steam_net_bridge*.so 2>/dev/null | head -1 || true)
 if [[ -z "$BRIDGE_SO" || "$REBUILD_BRIDGE" == true ]]; then
     echo -e "${YELLOW}  Bridge bulunamadı, derleniyor...${NC}"
     if [[ ! -f "steamworks/steam_net_bridge/build.sh" ]]; then
@@ -75,7 +76,8 @@ if [[ -z "$BRIDGE_SO" || "$REBUILD_BRIDGE" == true ]]; then
     fi
     chmod +x steamworks/steam_net_bridge/build.sh
     (cd steamworks/steam_net_bridge && ./build.sh)
-    BRIDGE_SO=$(ls steam_net_bridge*.so 2>/dev/null | head -1 || true)
+    BRIDGE_SO=$(ls steam_net_bridge*.so 2>/dev/null | head -1 || \
+                ls local_artifacts/bridge/steam_net_bridge*.so 2>/dev/null | head -1 || true)
     if [[ -z "$BRIDGE_SO" ]]; then
         echo -e "${RED}HATA: Bridge derlemesi başarısız!${NC}"; exit 1
     fi
