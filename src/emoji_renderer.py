@@ -81,7 +81,6 @@ EMOJI_MAP: dict[str, str] = {
     '🖼': 'palette',
     '🎨': 'palette',
     '🧱': 'puzzle',         # brick → puzzle fallback
-    '⚙': 'gamepad',         # gear → gamepad fallback (ayarlar)
     '📦': 'package',
     '📐': 'direct_hit',     # triangular ruler → direct_hit
 
@@ -100,8 +99,6 @@ EMOJI_MAP: dict[str, str] = {
     '🎊': 'confetti',
     '🎆': 'fireworks',
 
-    # --- Avatar ---
-    '👤': 'gamepad',        # person silhouette → gamepad
     '😀': 'star',
     '😎': 'crown',
 

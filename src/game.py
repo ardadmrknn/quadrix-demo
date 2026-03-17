@@ -1993,8 +1993,6 @@ class Game:
         if not self._particle_effects_enabled():
             return
         
-        import math
-        
         # Her hücreden 6-10 parçacık
         particle_count = random.randint(6, 10)
         
@@ -2130,10 +2128,9 @@ class Game:
             
             # Merkezi patlama - yıldız şeklinde
             for i in range(16):
-                angle = (i / 16) * 2 * 3.14159
+                angle = (i / 16) * 2 * math.pi
                 star_speed = random.uniform(6, 14)
                 
-                import math
                 particle = {
                     'x': float(center_x),
                     'y': float(center_y),
@@ -2486,7 +2483,6 @@ class Game:
     
     def draw_ambient_particles(self):
         """Ambient parçacıkları çiz"""
-        import math
         for particle in self.ambient_particles:
             # Nabız efekti ile alpha değişimi
             pulse_alpha = int(particle['alpha'] + math.sin(particle['pulse']) * 30)
@@ -4097,7 +4093,6 @@ class Game:
 
     def _draw_game_over_overlay(self, skin, *, alt_theme: dict | None = None):
         """Oyun bittiğinde animasyonlu yıldız sistemli modern panel göster."""
-        import math
         ui_scale = self._ui_scale(min_scale=0.68, max_scale=1.16)
         s = lambda v, minimum=1: self._sx(v, ui_scale, minimum)
 
@@ -4694,7 +4689,6 @@ class Game:
             return 1.0 - pow(1.0 - v, 3)
 
         def _get_notif_panel_surface(width: int, height: int) -> tuple[pygame.Surface, pygame.Surface]:
-            import math
             cache_key = (int(width), int(height))
             cached = self._achievement_notif_surface_cache.get(cache_key)
             if cached is not None:
@@ -4883,8 +4877,6 @@ class Game:
 
         Not: Glow/alpha için küçük bir SRCALPHA surface'e çizip ekrana blit eder.
         """
-        import math
-
         fill_ratio = float(max(0.0, min(1.0, fill_ratio)))
         scale = float(max(0.7, min(1.6, scale)))
         glow_intensity = float(max(0.0, min(1.0, glow_intensity)))

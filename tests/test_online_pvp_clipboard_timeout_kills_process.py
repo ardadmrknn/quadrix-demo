@@ -100,7 +100,7 @@ class TestWindowsClipboardTimeoutKillsProcess(unittest.TestCase):
     def test_windows_clipboard_timeout_kills_process(self):
         obj = _make_bare_instance()
         mock_process = MagicMock()
-        mock_process.wait.side_effect = subprocess.TimeoutExpired(cmd='powershell', timeout=2)
+        mock_process.communicate.side_effect = subprocess.TimeoutExpired(cmd='clip', timeout=2)
         mock_process.returncode = 0
         with patch('sys.platform', 'win32'), patch('subprocess.Popen', return_value=mock_process):
             result = obj._copy_to_clipboard("test_text")
@@ -111,8 +111,8 @@ class TestWindowsClipboardTimeoutKillsProcess(unittest.TestCase):
     def test_windows_clipboard_success_returns_true(self):
         obj = _make_bare_instance()
         mock_process = MagicMock()
-        mock_process.wait.return_value = None
-        mock_process.wait.side_effect = None
+        mock_process.communicate.return_value = (b'', b'')
+        mock_process.communicate.side_effect = None
         mock_process.returncode = 0
         with patch('sys.platform', 'win32'), patch('subprocess.Popen', return_value=mock_process):
             result = obj._copy_to_clipboard("hello world")

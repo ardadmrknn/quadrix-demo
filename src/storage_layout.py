@@ -99,7 +99,7 @@ def make_profile_id(username: str, steam_id: str | None = None, created_at: str 
             str(created_at or ""),
         ]
     )
-    digest = hashlib.sha1(seed.encode("utf-8")).hexdigest()[:10]
+    digest = hashlib.sha256(seed.encode("utf-8")).hexdigest()[:10]
     return f"{slug}_{digest}"
 
 
