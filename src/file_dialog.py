@@ -78,6 +78,15 @@ def _try_tkinter(title: str, filetypes) -> Optional[str]:
     return filepath if filepath else ""
 
 
+def _escape_applescript_string(value: str) -> str:
+    """AppleScript string literal'i için güvenli escape.
+
+    Çift tırnak ve backslash karakterlerini escape eder;
+    komut enjeksiyonunu önler.
+    """
+    return value.replace('\\', '\\\\').replace('"', '\\"')
+
+
 def _macos_file_dialog(title: str, filetypes) -> Optional[str]:
     """macOS AppleScript ile native dosya diyalogu aç."""
     # Uzantıları çıkar
@@ -89,15 +98,18 @@ def _macos_file_dialog(title: str, filetypes) -> Optional[str]:
                 if token and token != "*":
                     allowed_exts.append(token)
 
-    # AppleScript oluştur
+    # AppleScript oluştur — title ve uzantılar escape edilerek enjeksiyon önlenir
+    safe_title = _escape_applescript_string(title)
     of_type_clause = ""
     if allowed_exts:
-        ext_list = ", ".join(f'"{e}"' for e in allowed_exts)
+        ext_list = ", ".join(
+            f'"{_escape_applescript_string(e)}"' for e in allowed_exts
+        )
         of_type_clause = f" of type {{{ext_list}}}"
 
     script = (
         'tell application "System Events"\n'
-        f'  set theFile to choose file with prompt "{title}"{of_type_clause}\n'
+        f'  set theFile to choose file with prompt "{safe_title}"{of_type_clause}\n'
         '  return POSIX path of theFile\n'
         'end tell'
     )

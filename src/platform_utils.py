@@ -347,7 +347,9 @@ def set_app_icon(assets_dir: str) -> None:
     if IS_MACOS:
         icns_path = os.path.join(assets_dir, 'Tetris.icns')
         if not os.path.exists(icns_path):
-            icns_path = icon_png  # Fallback: PNG kullan
+            # Fallback: PNG kullan (kandidatlardan bulunanı al)
+            _fallback_png = os.path.join(assets_dir, 'Tetris_icon.png')
+            icns_path = _fallback_png if os.path.exists(_fallback_png) else icns_path
         try:
             from AppKit import NSApplication, NSImage
             abs_path = os.path.abspath(icns_path)

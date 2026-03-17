@@ -2766,20 +2766,27 @@ class OnlinePvPGame:
             pass
 
     def _copy_to_clipboard(self, text: str) -> bool:
-        """Metni sistem panosuna kopyala — cross-platform."""
+        """Metni sistem panosuna kopyala — cross-platform.
+
+        Tüm platformlarda metin stdin üzerinden aktarılır;
+        komut satırına doğrudan enjeksiyon yapılmaz.
+        """
         import subprocess
         try:
             if sys.platform == 'win32':
+                # clip.exe — Windows'ta native; stdin'den okur, enjeksiyon riski yok.
                 create_no_window = int(getattr(subprocess, 'CREATE_NO_WINDOW', 0) or 0)
                 process = subprocess.Popen(
-                    ['powershell', '-command', f'Set-Clipboard -Value "{text}"'],
+                    ['clip'],
                     stdin=subprocess.PIPE,
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
                     creationflags=create_no_window,
                 )
                 try:
-                    process.wait(timeout=2)
+                    # clip.exe BOM'lu UTF-16 girdiyi güvenilir şekilde tanır.
+                    # Python 'utf-16' encoding otomatik BOM ekler.
+                    process.communicate(text.encode('utf-16'), timeout=2)
                 except subprocess.TimeoutExpired:
                     process.kill()
                     return False

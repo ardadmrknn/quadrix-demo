@@ -1,4 +1,4 @@
-﻿"""Ana menü ve UI bileşenleri"""
+"""Ana menü ve UI bileşenleri"""
 
 import math
 import re
@@ -5165,8 +5165,6 @@ class ControlSettingsScreen:
 
     def _draw_gamepad_tab(self, width, height, tab_y, tab_h):
         """Gamepad sekmesi çizimi - alt-sekmeli yapı ile."""
-        from gamepad_manager import get_gamepad_manager, is_gamepad_connected
-
         gpm = get_gamepad_manager()
         cfg = self._gamepad_cfg()
 
