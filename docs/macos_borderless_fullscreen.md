@@ -335,7 +335,7 @@ def toggle_fullscreen(current_fullscreen: bool, settings_manager) -> None:
 ┌─────────────────────────────────────────────────────────┐
 │                    UYGULAMA BAŞLATMA                     │
 │                                                         │
-│  settings.txt → fullscreen = 1?                         │
+│  config/runtime/settings.txt → fullscreen = 1?          │
 │    ├── EVET → create_display(fullscreen=True)            │
 │    │   ├── [macOS] NOFRAME + native resolution           │
 │    │   │   └── PyObjC → HideMenuBar + HideDock           │

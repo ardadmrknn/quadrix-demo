@@ -2,6 +2,10 @@
 
 **Pygame** kullanılarak geliştirilmiş, tam özellikli profesyonel Quadrix oyunu.
 
+## 🌍 Dil Desteği
+
+Desteklenen diller: TR, EN, DE, FR, ES, IT, PT, RU, JA, ZH, KO
+
 ## 🌟 Özellikler
 
 ### Oynanış
@@ -46,25 +50,30 @@
 ## 📦 Kurulum
 
 ### 1. Gereksinimler
-- **Python 3.8+** yüklü olmalı
+- **Python 3.12** önerilir
 - İndirmek için: [Python İndir](https://www.python.org/downloads/)
 
 ### 2. Kütüphaneleri Yükle
 
 ```powershell
-cd "c:\Users\arda demirkan\Desktop\tetris\tetris-game"
+cd "<repo-klasor-yolu>"
 pip install -r packaging/requirements/requirements.txt
 ```
 
 veya tek tek:
 ```powershell
-pip install pygame numpy
+pip install pygame-ce numpy Pillow
 ```
 
 ### 3. Oyunu Başlat
 
 ```powershell
-python src/main.py
+py main.py
+```
+
+macOS/Linux:
+```bash
+python3 main.py
 ```
 
 ---
@@ -173,12 +182,12 @@ Tüm veriler `highscores.json` dosyasında saklanır.
 
 ### "pip komutu tanınmıyor"
 ```powershell
-python -m pip install pygame numpy
+python -m pip install -r packaging/requirements/requirements.txt
 ```
 
 ### "ModuleNotFoundError: No module named 'pygame'"
 ```powershell
-pip install --upgrade pygame
+pip install --upgrade pygame-ce
 ```
 
 ### "ModuleNotFoundError: No module named 'numpy'"
@@ -231,7 +240,7 @@ pip install numpy
 ## 📝 Dosya Yapısı
 
 ```
-tetris-game/
+quadrix-main/
 ├── src/
 │   ├── main.py              # Ana giriş noktası + menü sistemi
 │   ├── game.py              # Oyun mantığı (700+ satır)
@@ -261,7 +270,7 @@ Gelecek güncellemelerde eklenebilir:
 
 ## 📄 Lisans
 
-MIT License - Açık kaynak, özgürce kullanabilirsiniz.
+Proprietary - Ayrıntı için proje sahibi lisans politikasına bakın.
 
 ---
 
@@ -273,6 +282,6 @@ Eğlenceli oyunlar! 🎮✨
 
 ---
 
-**Versiyon**: 2.0 Full Edition  
-**Tarih**: 2025  
+**Versiyon**: 1.0.26  
+**Tarih**: 2026  
 **Geliştirici**: Python & Pygame ile yapıldı ❤️

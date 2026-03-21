@@ -2,10 +2,14 @@
 
 Pygame kullanılarak geliştirilmiş klasik Quadrix oyunu.
 
+## Dil Desteği
+
+Desteklenen diller: TR, EN, DE, FR, ES, IT, PT, RU, JA, ZH, KO
+
 ## Kurulum Adımları
 
 ### 1. Python Kurulumu
-- Python 3.8 veya üstü yüklü olmalı
+- Python 3.12 önerilir
 - İndirmek için: [Python İndir](https://www.python.org/downloads/)
 - Kurulum sırasında "Add Python to PATH" seçeneğini işaretleyin
 
@@ -13,7 +17,7 @@ Pygame kullanılarak geliştirilmiş klasik Quadrix oyunu.
 
 PowerShell veya komut satırında proje klasörüne gidin:
 ```powershell
-cd "c:\Users\arda demirkan\Desktop\tetris\tetris-game"
+cd "<repo-klasor-yolu>"
 ```
 
 Pygame kütüphanesini yükleyin:
@@ -21,15 +25,20 @@ Pygame kütüphanesini yükleyin:
 pip install -r packaging/requirements/requirements.txt
 ```
 
-veya doğrudan:
+veya doğrudan temel bağımlılıklar:
 ```powershell
-pip install pygame
+pip install pygame-ce numpy Pillow
 ```
 
 ## Oyunu Başlatma
 
 ```powershell
-python src/main.py
+py main.py
+```
+
+macOS/Linux:
+```bash
+python3 main.py
 ```
 
 ## Nasıl Oynanır
@@ -73,12 +82,12 @@ Oyunda 7 farklı Tetromino parçası vardır:
 
 ### "pip" komutu tanınmıyor hatası
 ```powershell
-python -m pip install pygame
+python -m pip install -r packaging/requirements/requirements.txt
 ```
 
 ### ModuleNotFoundError: No module named 'pygame'
 ```powershell
-pip install --upgrade pygame
+pip install --upgrade pygame-ce
 ```
 
 ### Oyun açılmıyor
@@ -94,4 +103,4 @@ pip install --upgrade pygame
 
 ## Lisans
 
-MIT License - Açık kaynak, özgürce kullanabilirsiniz.
+Proprietary - Ayrıntı için proje sahibi lisans politikasına bakın.
