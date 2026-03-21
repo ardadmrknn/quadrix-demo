@@ -69,7 +69,7 @@ plans/
 ### Localization & Language
 - **Localization:** `src/localization.py` — `t()` fonksiyonu
 - **UI Language Profile:** `src/ui_language_profile.py` — CJK font desteği
-- **Desteklenen diller:** TR, EN, DE, FR, ES, IT, PT, JA, ZH, KO
+- **Desteklenen diller:** TR, EN, DE, FR, ES, IT, PT, RU, JA, ZH, KO
 
 ### Input & Platform
 - **Gamepad:** `src/gamepad_manager.py`

@@ -213,9 +213,11 @@ Online PvP başlangıçta yalnızca macOS'ta çalışıyordu. Windows desteği i
 **Derleme ortamı:**
 - MSVC (Visual Studio 2022 Community)
 - CMake
-- Python 3.11 + 3.12 (iki sürüm için ayrı `.pyd`)
+- Python 3.11 + 3.12 (bridge derlemesi için, iki sürüm için ayrı `.pyd`)
 - Steamworks SDK header'ları: `steamworks/sdk/public/steam/`
 - Link kütüphanesi: `steamworks/sdk/redistributable_bin/win64/steam_api64.lib`
+
+> Not: Oyun runtime gereksinimi proje seviyesinde `pyproject.toml` içinde `>=3.12` olarak tanımlıdır.
 
 **Çıktılar (proje kökünde):**
 - `steam_net_bridge.cp311-win_amd64.pyd` (Python 3.11)

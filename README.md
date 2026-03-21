@@ -3,6 +3,21 @@
 Quadrix; Pygame tabanlı, çok modlu bir Tetris türevi oyundur.
 Projede kampanya, PvP, geniş ayar menüleri, başarım sistemi ve Steam entegrasyonu bulunur.
 
+## Dil Desteği
+
+Desteklenen diller:
+- Türkçe (TR)
+- English (EN)
+- Deutsch (DE)
+- Français (FR)
+- Español (ES)
+- Italiano (IT)
+- Português (PT)
+- Русский (RU)
+- 日本語 (JA)
+- 中文 (ZH)
+- 한국어 (KO)
+
 ## Hızlı Başlangıç
 
 ### Windows
@@ -68,6 +83,12 @@ Detaylı yapı dokümanı: [docs/PROJECT_STRUCTURE_TR.md](docs/PROJECT_STRUCTURE
 Tüm testler:
 
 ```powershell
+./scripts/test/run_tests.sh -q
+```
+
+Alternatif:
+
+```powershell
 py -m pytest -q
 ```
 
@@ -95,3 +116,7 @@ py -m pytest tests/test_steam_achievements_sync.py -v
 - Kod stilini mevcut yapıyla uyumlu tutun.
 - Yeni test eklerken `tests/` klasörünü kullanın.
 - Geçici analiz/script çıktıları için kök dizin yerine `tools/` ve `reports/` kullanın.
+
+## Lisans
+
+Proprietary

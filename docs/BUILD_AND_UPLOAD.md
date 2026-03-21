@@ -9,9 +9,9 @@
 
 | Araç | Konum / Sürüm |
 |------|---------------|
-| Python | 3.12 (`C:\Users\arda demirkan\AppData\Local\Programs\Python\Python312`) |
+| Python | 3.12 (`py --version` ile doğrula) |
 | PyInstaller | 6.16.0 (`py -m pip install pyinstaller`) |
-| steamcmd | `C:\steamcmd\steamcmd.exe` |
+| steamcmd | Kurulu olmalı (`steamcmd.exe` yolu makineye göre değişir) |
 | steam_api64.dll | `dll\win64\steam_api64.dll` (Steamworks SDK'dan — partner.steamgames.com/downloads/list) |
 | Hesap | `vibecode_production` (Steam Partner, MFA aktif) |
 
@@ -40,7 +40,7 @@ binaries = [(steam_dll_src, '.')]   # _MEIPASS'a çıkarılır, EXE yanında ayr
 ## 2. Build (Windows EXE)
 
 ```powershell
-cd "C:\Users\arda demirkan\Desktop\v2_23022026\v2"
+cd "<repo-klasor-yolu>"
 py -m PyInstaller packaging/specs/tetris.spec --noconfirm
 ```
 
@@ -99,7 +99,7 @@ py -m PyInstaller packaging/specs/tetris.spec --noconfirm 2>&1 | Tee-Object repo
 ```powershell
 C:\steamcmd\steamcmd.exe `
     +login vibecode_production `
-    +run_app_build "C:\Users\arda demirkan\Desktop\v2_23022026\v2\steamworks\scripts\app_build_playtest.vdf" `
+    +run_app_build "steamworks\scripts\app_build_playtest.vdf" `
     +quit
 ```
 
