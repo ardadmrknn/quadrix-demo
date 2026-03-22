@@ -1529,7 +1529,13 @@ class TutorialMode(Game):
                 self.board.last_cleared_lines = []
 
         if self.line_clear_sweep_active:
-            self.line_clear_sweep_progress += dt_frames * 0.06
+            cell_size = self.get_cell_size()
+            board_pixel_width = self.board_width * cell_size
+            sweep_width = max(1, int(cell_size * 1.5))
+            sweep_travel_px = max(1.0, float(board_pixel_width + sweep_width))
+            block_px_per_frame = self.block_fall_speed * 60.0
+            sweep_speed = block_px_per_frame / sweep_travel_px
+            self.line_clear_sweep_progress += dt_frames * sweep_speed
             if self.line_clear_sweep_progress >= 1.0:
                 self.line_clear_sweep_progress = 1.0
                 self.line_clear_sweep_active = False
