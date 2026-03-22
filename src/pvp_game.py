@@ -305,7 +305,7 @@ class PvPGame:
         self.p2_falling_block_animations = []
         self.p1_drop_trails = []
         self.p2_drop_trails = []
-        self.block_fall_speed = 0.08
+        self.block_fall_speed = 0.12
         
         # Arka plan parçacıkları (ambient effect)
         self.ambient_particles = []
@@ -431,15 +431,21 @@ class PvPGame:
         animations = []
         lines_count = len(cleared_rows)
         cell_size = self.cell_size
+        board_pixel_width = board.width * cell_size
+        sweep_width = max(1, int(cell_size * 1.5))
+        sweep_travel_px = max(1.0, float(board_pixel_width + sweep_width))
         for row in range(board.height):
             for col in range(board.width):
                 if board.occupancy[row][col]:
+                    column_center_px = (col + 0.5) * cell_size
+                    sweep_trigger = column_center_px / sweep_travel_px
+                    sweep_trigger = max(0.0, min(1.0, sweep_trigger))
                     animations.append({
                         'row': row,
                         'col': col,
                         'current_offset': -lines_count * cell_size,
                         'target_offset': 0,
-                        'sweep_trigger': col / max(1, board.width - 1),
+                        'sweep_trigger': sweep_trigger,
                         'started': False,
                     })
         if player == 1:
@@ -2792,14 +2798,24 @@ class PvPGame:
                 self.p2_line_glow_alpha = 0
 
         if self.p1_line_sweep_active:
-            self.p1_line_sweep_progress += dt_frames * 0.06
+            board_pixel_width = self.board1.width * self.cell_size
+            sweep_width = max(1, int(self.cell_size * 1.5))
+            sweep_travel_px = max(1.0, float(board_pixel_width + sweep_width))
+            block_px_per_frame = self.block_fall_speed * 60.0
+            sweep_speed = block_px_per_frame / sweep_travel_px
+            self.p1_line_sweep_progress += dt_frames * sweep_speed
             if self.p1_line_sweep_progress >= 1.0:
                 self.p1_line_sweep_progress = 1.0
                 self.p1_line_sweep_active = False
                 self.p1_line_sweep_rows = []
 
         if self.p2_line_sweep_active:
-            self.p2_line_sweep_progress += dt_frames * 0.06
+            board_pixel_width = self.board2.width * self.cell_size
+            sweep_width = max(1, int(self.cell_size * 1.5))
+            sweep_travel_px = max(1.0, float(board_pixel_width + sweep_width))
+            block_px_per_frame = self.block_fall_speed * 60.0
+            sweep_speed = block_px_per_frame / sweep_travel_px
+            self.p2_line_sweep_progress += dt_frames * sweep_speed
             if self.p2_line_sweep_progress >= 1.0:
                 self.p2_line_sweep_progress = 1.0
                 self.p2_line_sweep_active = False

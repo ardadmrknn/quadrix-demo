@@ -407,7 +407,7 @@ class OnlinePvPGame:
         self.opp_line_sweep_active: bool = False
         self.opp_falling_block_animations: list[dict] = []
         self._pending_opp_particle_rows: list[int] = []
-        self.block_fall_speed: float = 0.08
+        self.block_fall_speed: float = 0.12
         # Ekran titremesi
         self.screen_shake: float = 0
         self.shake_intensity: int = 0
@@ -558,29 +558,41 @@ class OnlinePvPGame:
         animations = []
         lines_count = len(rows)
         if board is not None:
+            board_pixel_width = board.width * cell_size
+            sweep_width = max(1, int(cell_size * 1.5))
+            sweep_travel_px = max(1.0, float(board_pixel_width + sweep_width))
             for row in range(board.height):
                 for col in range(board.width):
                     if board.occupancy[row][col]:
+                        column_center_px = (col + 0.5) * cell_size
+                        sweep_trigger = column_center_px / sweep_travel_px
+                        sweep_trigger = max(0.0, min(1.0, sweep_trigger))
                         animations.append({
                             'row': row,
                             'col': col,
                             'current_offset': -lines_count * cell_size,
                             'target_offset': 0,
-                            'sweep_trigger': col / max(1, board.width - 1),
+                            'sweep_trigger': sweep_trigger,
                             'started': False,
                         })
         elif snapshot_grid is not None:
+            board_pixel_width = BOARD_WIDTH * cell_size
+            sweep_width = max(1, int(cell_size * 1.5))
+            sweep_travel_px = max(1.0, float(board_pixel_width + sweep_width))
             max_rows = min(BOARD_HEIGHT, len(snapshot_grid))
             for row in range(max_rows):
                 max_cols = min(BOARD_WIDTH, len(snapshot_grid[row]))
                 for col in range(max_cols):
                     if snapshot_grid[row][col] is not None:
+                        column_center_px = (col + 0.5) * cell_size
+                        sweep_trigger = column_center_px / sweep_travel_px
+                        sweep_trigger = max(0.0, min(1.0, sweep_trigger))
                         animations.append({
                             'row': row,
                             'col': col,
                             'current_offset': -lines_count * cell_size,
                             'target_offset': 0,
-                            'sweep_trigger': col / max(1, BOARD_WIDTH - 1),
+                            'sweep_trigger': sweep_trigger,
                             'started': False,
                         })
 
@@ -2042,14 +2054,24 @@ class OnlinePvPGame:
                 self.opp_line_glow_alpha = 0
 
         if self.my_line_sweep_active:
-            self.my_line_sweep_progress += dt_frames * 0.06
+            board_pixel_width = BOARD_WIDTH * self.cell_size
+            sweep_width = max(1, int(self.cell_size * 1.5))
+            sweep_travel_px = max(1.0, float(board_pixel_width + sweep_width))
+            block_px_per_frame = self.block_fall_speed * 60.0
+            sweep_speed = block_px_per_frame / sweep_travel_px
+            self.my_line_sweep_progress += dt_frames * sweep_speed
             if self.my_line_sweep_progress >= 1.0:
                 self.my_line_sweep_progress = 1.0
                 self.my_line_sweep_active = False
                 self.my_line_sweep_rows = []
 
         if self.opp_line_sweep_active:
-            self.opp_line_sweep_progress += dt_frames * 0.06
+            board_pixel_width = BOARD_WIDTH * self.cell_size
+            sweep_width = max(1, int(self.cell_size * 1.5))
+            sweep_travel_px = max(1.0, float(board_pixel_width + sweep_width))
+            block_px_per_frame = self.block_fall_speed * 60.0
+            sweep_speed = block_px_per_frame / sweep_travel_px
+            self.opp_line_sweep_progress += dt_frames * sweep_speed
             if self.opp_line_sweep_progress >= 1.0:
                 self.opp_line_sweep_progress = 1.0
                 self.opp_line_sweep_active = False

@@ -446,10 +446,18 @@ class Game:
         self.line_clear_sweep_progress = 0.0  # 0.0 - 1.0 arası ilerleme
         self.line_clear_sweep_active = False
         self.line_clear_wave_effects = []  # Dalga efektleri listesi
+        self.line_clear_pending_rows = []
+        self.line_clear_pending_colors = {}
+        self._sweep_cat_asset_checked = False
+        self._sweep_cat_base_surface = None
+        self._sweep_cat_surface_cache = {}
+        self._sweep_cat_frame_base_surfaces = []
+        self._sweep_cat_frame_surface_cache = {}
+        self._sweep_cat_paw_profile = None
         
         # Blok düşme animasyonu sistemi
         self.falling_block_animations = []  # Düşen blokların animasyon verileri
-        self.block_fall_speed = 0.08  # Düşme hızı - çok daha yavaş
+        self.block_fall_speed = 0.12  # Düşme hızı
         
         # Drop trail efekti (hard drop ve soft drop için)
         self.drop_trails = []  # [{x, y, color, alpha, width, height}]
@@ -2159,6 +2167,9 @@ class Game:
         # Kaç satır silindi?
         lines_count = len(cleared_rows)
         cell_size = self.get_cell_size()
+        board_pixel_width = self.board.width * cell_size
+        sweep_width = self._get_line_sweep_length_px(cell_size, lines_count)
+        sweep_travel_px = max(1.0, float(board_pixel_width + sweep_width))
         
         # Board zaten güncellendi, tüm dolu hücrelere düşme animasyonu ver
         # Her blok, sweep o sütuna geldiğinde düşmeye başlayacak
@@ -2167,9 +2178,10 @@ class Game:
                 if self.board.occupancy[y][x]:
                     # Bu blok lines_count satır yukarıdan düşüyor
                     offset = -lines_count * cell_size
-                    # Sweep trigger: bu sütunun yatay pozisyonu (0.0 - 1.0)
-                    # Sweep bu değere ulaştığında blok düşmeye başlayacak
-                    sweep_trigger = x / max(1, self.board.width - 1)
+                    # Sweep trigger: ışık çubuğu bu sütunun merkezine geldiğinde başlat
+                    column_center_px = (x + 0.5) * cell_size
+                    sweep_trigger = column_center_px / sweep_travel_px
+                    sweep_trigger = max(0.0, min(1.0, sweep_trigger))
                     self.falling_block_animations.append({
                         'row': y,
                         'col': x,
@@ -2178,6 +2190,321 @@ class Game:
                         'sweep_trigger': sweep_trigger,  # Sweep bu değere gelince başla
                         'started': False  # Henüz başlamadı
                     })
+
+    def _get_line_sweep_length_px(self, cell_size: int, cleared_count: int) -> int:
+        """Satır temizleme sweep genişliği (piksel)."""
+        if cleared_count >= 4:
+            blocks = 2
+        elif cleared_count >= 3:
+            blocks = 3
+        elif cleared_count == 2:
+            blocks = 2
+        else:
+            blocks = 1
+        return max(1, int(blocks * cell_size))
+
+    def _detect_custom_cat_paw_profile(self, src_surface: pygame.Surface):
+        """Custom cat sprite'ta ayak bölgelerini alt koyu piksellerden tahmin et."""
+        try:
+            width, height = src_surface.get_size()
+        except Exception:
+            return None
+
+        if width <= 4 or height <= 4:
+            return None
+
+        scan_start = max(0, int(height * 0.65))
+        min_alpha = 40
+        dark_limit = 95
+
+        columns = []
+        for x in range(width):
+            dark_count = 0
+            min_dark_y = None
+            max_dark_y = -1
+            for y in range(scan_start, height):
+                r, g, b, a = src_surface.get_at((x, y))
+                if a < min_alpha:
+                    continue
+                if r <= dark_limit and g <= dark_limit and b <= dark_limit:
+                    dark_count += 1
+                    if min_dark_y is None:
+                        min_dark_y = y
+                    if y > max_dark_y:
+                        max_dark_y = y
+
+            if dark_count > 0 and min_dark_y is not None:
+                columns.append((x, dark_count, min_dark_y, max_dark_y))
+
+        if not columns:
+            return None
+
+        clusters = []
+        current = [columns[0]]
+        for item in columns[1:]:
+            if item[0] - current[-1][0] <= 1:
+                current.append(item)
+            else:
+                clusters.append(current)
+                current = [item]
+        if current:
+            clusters.append(current)
+
+        cluster_info = []
+        for cluster in clusters:
+            c_start = cluster[0][0]
+            c_end = cluster[-1][0]
+            c_width = c_end - c_start + 1
+            if c_width > max(3, width // 5):
+                continue
+
+            total_dark = sum(v[1] for v in cluster)
+            max_dark_y = max(v[3] for v in cluster)
+            min_dark_y = min(v[2] for v in cluster)
+            weighted_center = int(round(sum(v[0] * v[1] for v in cluster) / float(max(1, total_dark))))
+
+            # Alt kenara yakın, dar kümeleri ayak adayı olarak öne çıkar.
+            bottom_bonus = max(0, max_dark_y - scan_start)
+            score = (total_dark * 2) + (bottom_bonus * 3) - c_width
+            if max_dark_y < height - 3:
+                score -= 8
+
+            cluster_info.append({
+                'center_x': weighted_center,
+                'score': score,
+                'min_y': min_dark_y,
+                'max_y': max_dark_y,
+            })
+
+        if len(cluster_info) < 2:
+            return None
+
+        cluster_info.sort(key=lambda c: c['score'], reverse=True)
+        selected = cluster_info[:4]
+        selected.sort(key=lambda c: c['center_x'])
+
+        leg_top_y = min(c['min_y'] for c in selected)
+        baseline_y = max(c['max_y'] for c in selected)
+        denom_w = float(max(1, width - 1))
+        denom_h = float(max(1, height - 1))
+        x_norms = [max(0.0, min(1.0, c['center_x'] / denom_w)) for c in selected]
+
+        return {
+            'x_norms': x_norms,
+            'leg_top_norm': max(0.0, min(1.0, leg_top_y / denom_h)),
+            'baseline_norm': max(0.0, min(1.0, baseline_y / denom_h)),
+        }
+
+    def _trim_transparent_surface(self, src_surface: pygame.Surface) -> pygame.Surface:
+        """Sprite etrafındaki şeffaf boşlukları kırp."""
+        try:
+            trim_rect = src_surface.get_bounding_rect(min_alpha=8)
+        except Exception:
+            return src_surface
+
+        if trim_rect.width <= 0 or trim_rect.height <= 0:
+            return src_surface
+        if trim_rect.width == src_surface.get_width() and trim_rect.height == src_surface.get_height():
+            return src_surface
+        return src_surface.subsurface(trim_rect).copy()
+
+    def _sanitize_sprite_alpha(self, src_surface: pygame.Surface, alpha_cutoff: int = 140) -> pygame.Surface:
+        """Pixel-art sprite için yarı saydam artefaktları temizle (0/255 alpha)."""
+        try:
+            surface = src_surface.copy()
+            width, height = surface.get_size()
+            cutoff = max(1, min(254, int(alpha_cutoff)))
+            for y in range(height):
+                for x in range(width):
+                    r, g, b, a = surface.get_at((x, y))
+                    if a < cutoff:
+                        surface.set_at((x, y), (r, g, b, 0))
+                    else:
+                        surface.set_at((x, y), (r, g, b, 255))
+            return surface
+        except Exception:
+            return src_surface
+
+    def _get_custom_sweep_cat_surface(self, target_w: int, target_h: int, phase: int = 0):
+        """Varsa kullanıcı PNG'sini (tek veya frame dizisi) yükle ve animasyonlu döndür."""
+        target_w = max(1, int(target_w))
+        target_h = max(1, int(target_h))
+        phase_index = int(phase) % 8
+
+        if not self._sweep_cat_asset_checked:
+            self._sweep_cat_asset_checked = True
+            self._sweep_cat_surface_cache = {}
+            self._sweep_cat_frame_surface_cache = {}
+            self._sweep_cat_frame_base_surfaces = []
+            self._sweep_cat_paw_profile = None
+            try:
+                custom_path = resource_path(os.path.join('assets', 'ui', 'line_sweep_cat.png'))
+                if os.path.exists(custom_path):
+                    self._sweep_cat_base_surface = pygame.image.load(custom_path).convert_alpha()
+                    self._sweep_cat_base_surface = self._trim_transparent_surface(self._sweep_cat_base_surface)
+                    self._sweep_cat_base_surface = self._sanitize_sprite_alpha(self._sweep_cat_base_surface)
+                    self._sweep_cat_paw_profile = self._detect_custom_cat_paw_profile(self._sweep_cat_base_surface)
+            except Exception:
+                self._sweep_cat_base_surface = None
+                self._sweep_cat_paw_profile = None
+
+            try:
+                frame_dir = resource_path(os.path.join('assets', 'ui', 'line_sweep_cat_frames'))
+                if os.path.isdir(frame_dir):
+                    frame_files = [
+                        name
+                        for name in sorted(os.listdir(frame_dir))
+                        if name.lower().endswith('.png')
+                    ]
+                    for frame_name in frame_files:
+                        frame_path = os.path.join(frame_dir, frame_name)
+                        try:
+                            frame_surface = pygame.image.load(frame_path).convert_alpha()
+                        except Exception:
+                            continue
+                        if frame_surface.get_width() > 0 and frame_surface.get_height() > 0:
+                            frame_surface = self._trim_transparent_surface(frame_surface)
+                            frame_surface = self._sanitize_sprite_alpha(frame_surface)
+                            self._sweep_cat_frame_base_surfaces.append(frame_surface)
+                            if self._sweep_cat_paw_profile is None:
+                                self._sweep_cat_paw_profile = self._detect_custom_cat_paw_profile(frame_surface)
+            except Exception:
+                self._sweep_cat_frame_base_surfaces = []
+
+        frame_bases = self._sweep_cat_frame_base_surfaces
+        if frame_bases:
+            frame_index = int(phase) % len(frame_bases)
+            frame_key = (target_h, frame_index)
+            cached_frame = self._sweep_cat_frame_surface_cache.get(frame_key)
+            if cached_frame is not None:
+                return cached_frame
+
+            frame_base = frame_bases[frame_index]
+            bw, bh = frame_base.get_size()
+            if bw <= 0 or bh <= 0:
+                return None
+
+            scale = target_h / float(bh)
+            sw = max(1, int(round(bw * scale)))
+            sh = max(1, int(round(target_h)))
+            frame_surface = pygame.transform.scale(frame_base, (sw, sh))
+            self._sweep_cat_frame_surface_cache[frame_key] = frame_surface
+            return frame_surface
+
+        base = self._sweep_cat_base_surface
+        if base is None:
+            return None
+
+        key = (target_h, phase_index)
+        cached = self._sweep_cat_surface_cache.get(key)
+        if cached is not None:
+            return cached
+
+        bw, bh = base.get_size()
+        if bw <= 0 or bh <= 0:
+            return None
+
+        scale = target_h / float(bh)
+        sw = max(1, int(round(bw * scale)))
+        sh = max(1, int(round(target_h)))
+        scaled = pygame.transform.scale(base, (sw, sh))
+
+        # Tek PNG için GIF benzeri pseudo-animasyon:
+        # Ayak profili varsa sadece ayak kolonlarını oynat, yoksa güvenli fallback kullan.
+        surface = scaled.copy()
+        paw_profile = self._sweep_cat_paw_profile
+        if paw_profile and paw_profile.get('x_norms'):
+            leg_top = int(paw_profile.get('leg_top_norm', 0.72) * sh)
+            leg_top = max(0, min(sh - 1, leg_top))
+            leg_h = max(1, sh - leg_top)
+            step_pattern = (0, 1, 2, 1, 0, -1, -2, -1)
+
+            for idx, x_norm in enumerate(paw_profile['x_norms'][:4]):
+                center_x = int(max(0.0, min(1.0, x_norm)) * (sw - 1))
+                patch_w = max(2, sw // 11)
+                patch_x = max(0, min(sw - patch_w, center_x - patch_w // 2))
+                src_rect = pygame.Rect(patch_x, leg_top, patch_w, leg_h)
+                step = step_pattern[(phase_index + idx) % 8]
+                surface.blit(scaled, (patch_x, leg_top + step), src_rect)
+        else:
+            body_cut = max(1, int(sh * 0.70))
+            leg_h = max(1, sh - body_cut)
+            left_w = max(1, sw // 2)
+            right_w = max(1, sw - left_w)
+            step_pattern = (0, 1, 2, 1, 0, -1, -2, -1)
+            step = step_pattern[phase_index]
+            left_src = pygame.Rect(0, body_cut, left_w, leg_h)
+            right_src = pygame.Rect(left_w, body_cut, right_w, leg_h)
+            surface.blit(scaled, (0, body_cut + step), left_src)
+            surface.blit(scaled, (left_w, body_cut - step), right_src)
+
+        self._sweep_cat_surface_cache[key] = surface
+        return surface
+
+    def _draw_rainbow_cat_sweep(self, board_rect, sweep_x: int, sweep_width: int, phase: int):
+        sweep_height = max(1, int(board_rect.height))
+        sweep_y = board_rect.y
+
+        # Custom sprite'ı satır grubunun yüksekliğine göre ölçekle.
+        # Sadece sweep_width'e bağlı kalınca çoklu satır temizlemede küçük kalıyordu.
+        custom_target_w = max(sweep_width, int(sweep_height * 1.65))
+        custom_cat = self._get_custom_sweep_cat_surface(custom_target_w, sweep_height, phase)
+        one_col_w = max(1, int(round(board_rect.width / float(max(1, self.board_width)))))
+
+        if custom_cat is not None:
+            cat_w = custom_cat.get_width()
+            cat_h = custom_cat.get_height()
+            cat_x = sweep_x
+            cat_y = sweep_y + max(0, (sweep_height - cat_h) // 2)
+            tail_attach_x = cat_x + max(1, int(cat_w * 0.14))
+            trail_x = board_rect.x
+            trail_right = max(trail_x + one_col_w, tail_attach_x)
+            tail_width = max(1, trail_right - trail_x)
+        else:
+            trail_x = sweep_x
+            tail_width = sweep_width
+
+        rainbow = [
+            (255, 0, 0),
+            (255, 128, 0),
+            (255, 230, 0),
+            (0, 220, 0),
+            (0, 150, 255),
+            (130, 80, 255),
+        ]
+
+        stripe_h = max(1, sweep_height // 6)
+        for i in range(6):
+            color = rainbow[(i + phase) % 6]
+            stripe_y = sweep_y + i * stripe_h
+            if i == 5:
+                stripe_h_i = max(1, (sweep_y + sweep_height) - stripe_y)
+            else:
+                stripe_h_i = stripe_h
+
+            stripe_rect = pygame.Rect(trail_x, stripe_y, tail_width, stripe_h_i)
+            clip = stripe_rect.clip(board_rect)
+            if clip.width <= 0 or clip.height <= 0:
+                continue
+
+            pygame.draw.rect(self.screen, color, clip)
+            if (i + phase) % 2 == 0 and clip.width > 4:
+                pygame.draw.line(
+                    self.screen,
+                    (255, 255, 255),
+                    (clip.x + 1, clip.y),
+                    (clip.x + clip.width - 2, clip.y),
+                    1,
+                )
+
+        if custom_cat is not None:
+            custom_rect = custom_cat.get_rect()
+            custom_rect.x = cat_x
+            custom_rect.y = cat_y
+            clip = custom_rect.clip(board_rect)
+            if clip.width > 0 and clip.height > 0:
+                src = pygame.Rect(clip.x - custom_rect.x, clip.y - custom_rect.y, clip.width, clip.height)
+                self.screen.blit(custom_cat, clip.topleft, src)
         
     def _get_block_fall_offset(self, row: int, col: int) -> float:
         """Belirli bir hücre için düşme animasyonu offset'ini döndür."""
@@ -2690,6 +3017,20 @@ class Game:
         if lines_cleared > 0:
             # Temizlenen satırları efekt için kaydet (board.lock_piece içinde zaten set edildi)
             cleared_rows = list(self.board.last_cleared_lines) if self.board.last_cleared_lines else []
+            self.line_clear_pending_rows = []
+            self.line_clear_pending_colors = {}
+            if cleared_rows and self.effects_enabled:
+                self.line_clear_pending_rows = list(cleared_rows)
+                try:
+                    pending_colors = {}
+                    if hasattr(self.board, 'last_cleared_colors'):
+                        for row in cleared_rows:
+                            row_colors = self.board.last_cleared_colors.get(row)
+                            if row_colors:
+                                pending_colors[row] = list(row_colors)
+                    self.line_clear_pending_colors = pending_colors
+                except Exception:
+                    self.line_clear_pending_colors = {}
             
             # Sweep ve animasyon başlat
             if self.effects_enabled and cleared_rows:
@@ -3070,12 +3411,21 @@ class Game:
         
         # Sweep efekti güncelle (soldan sağa ışık süpürmesi)
         if self.line_clear_sweep_active:
-            # Hızlı ama görünür sweep - yaklaşık 0.3 saniye
-            self.line_clear_sweep_progress += dt_frames * 0.06
+            # Sweep hızı, blok düşüşü ile aynı piksel/frame hızında ilerler
+            cell_size = self.get_cell_size()
+            board_pixel_width = self.board_width * cell_size
+            cleared_count = max(1, len(self.line_clear_sweep_rows))
+            sweep_width = self._get_line_sweep_length_px(cell_size, cleared_count)
+            sweep_travel_px = max(1.0, float(board_pixel_width + sweep_width))
+            block_px_per_frame = self.block_fall_speed * 60.0
+            sweep_speed = block_px_per_frame / sweep_travel_px
+            self.line_clear_sweep_progress += dt_frames * sweep_speed
             if self.line_clear_sweep_progress >= 1.0:
                 self.line_clear_sweep_progress = 1.0
                 self.line_clear_sweep_active = False
                 self.line_clear_sweep_rows = []
+                self.line_clear_pending_rows = []
+                self.line_clear_pending_colors = {}
         
         # Dalga efektlerini güncelle
         for wave in self.line_clear_wave_effects[:]:
@@ -3325,6 +3675,38 @@ class Game:
                 
                 block_size = cell_size - 2
                 self.draw_textured_block(block_x, block_y, block_size, color, texture_surface, texture_slice)
+
+        if (
+            self.effects_enabled
+            and (not suppress_line_clear_effects)
+            and self.line_clear_sweep_active
+            and self.line_clear_pending_rows
+            and self.line_clear_pending_colors
+        ):
+            cleared_count = max(1, len(self.line_clear_sweep_rows))
+            sweep_width = self._get_line_sweep_length_px(cell_size, cleared_count)
+            sweep_x = offset_x + int(self.line_clear_sweep_progress * (board_width + sweep_width)) - sweep_width
+            sweep_front_x = sweep_x + sweep_width
+            block_size = cell_size - 2
+
+            for row in self.line_clear_pending_rows:
+                if not (0 <= row < self.board_height):
+                    continue
+                row_colors = self.line_clear_pending_colors.get(row)
+                if not row_colors:
+                    continue
+                max_cols = min(self.board_width, len(row_colors))
+                for x in range(max_cols):
+                    color = row_colors[x]
+                    if color == BLACK:
+                        continue
+                    cell_center_x = offset_x + x * cell_size + cell_size // 2
+                    # Küp, ışığın ön kenarı hücreye ulaştığında temizlenir.
+                    if cell_center_x <= sweep_front_x:
+                        continue
+                    block_x = offset_x + x * cell_size + 1
+                    block_y = offset_y + row * cell_size + 1
+                    self.draw_textured_block(block_x, block_y, block_size, color, None, None)
         
         # ===== DROP TRAIL EFEKTLERİ =====
         if self.effects_enabled and self.drop_trails:
@@ -3339,38 +3721,31 @@ class Game:
             and self.line_clear_sweep_active
         ):
             progress = self.line_clear_sweep_progress
-            sweep_width = int(cell_size * 1.5)  # Işık çubuğunun genişliği
-            
-            for row in self.line_clear_sweep_rows:
-                if 0 <= row < self.board_height:
-                    row_y = offset_y + row * cell_size
-                    
-                    # Sweep pozisyonu (soldan sağa)
-                    sweep_x = offset_x + int(progress * (board_width + sweep_width)) - sweep_width
-                    
-                    # Işık çubuğu çiz (gradient efekti ile)
-                    for i in range(sweep_width):
-                        # Işık yoğunluğu - ortada parlak, kenarlarda sönük
-                        intensity = 1.0 - abs(i - sweep_width // 2) / (sweep_width // 2)
-                        alpha = int(255 * intensity * (1.0 - progress * 0.3))
-                        
-                        line_x = sweep_x + i
-                        if offset_x <= line_x < offset_x + board_width:
-                            pygame.draw.line(
-                                self.screen,
-                                (255, 255, 255),
-                                (line_x, row_y),
-                                (line_x, row_y + cell_size),
-                                1
-                            )
-                    
-                    # Sweep'in geçtiği yeri beyazlatma efekti
-                    if progress > 0:
-                        lit_width = min(int(progress * board_width), int(board_width))
-                        if lit_width > 0:
-                            fade_alpha = int(180 * (1.0 - progress * 0.8))
-                            lit_surface = self._effect_surface_cache.get_filled_surface((lit_width, cell_size), (255, 255, 255, fade_alpha))
-                            self.screen.blit(lit_surface, (offset_x, row_y))
+            cleared_count = max(1, len(self.line_clear_sweep_rows))
+            sweep_width = self._get_line_sweep_length_px(cell_size, cleared_count)
+            valid_rows = sorted({r for r in self.line_clear_sweep_rows if 0 <= r < self.board_height})
+            if valid_rows:
+                top_row = valid_rows[0]
+                bottom_row = valid_rows[-1]
+                group_y = offset_y + top_row * cell_size
+                group_h = max(cell_size, (bottom_row - top_row + 1) * cell_size)
+                phase = (pygame.time.get_ticks() // 80) % 8
+
+                # Sweep pozisyonu (soldan sağa)
+                sweep_x = offset_x + int(progress * (board_width + sweep_width)) - sweep_width
+                board_group_rect = pygame.Rect(offset_x, group_y, board_width, group_h)
+                self._draw_rainbow_cat_sweep(board_group_rect, sweep_x, sweep_width, phase)
+
+                # Hafif beyaz vurgu (temizlenen satırların tamamında)
+                glow_alpha = int(70 * (1.0 - progress * 0.4))
+                if glow_alpha > 0:
+                    glow_w = min(sweep_width, int(board_width))
+                    glow_x = max(offset_x, sweep_x)
+                    if glow_w > 0:
+                        for row in valid_rows:
+                            row_y = offset_y + row * cell_size
+                            glow_surface = self._effect_surface_cache.get_filled_surface((glow_w, cell_size), (255, 255, 255, glow_alpha))
+                            self.screen.blit(glow_surface, (glow_x, row_y))
         
         # Dalga efektleri çiz
         if self.effects_enabled and (not suppress_line_clear_effects):
@@ -4844,7 +5219,6 @@ class Game:
                 )
         except Exception:
             best = 0.0
-
         # Eğer bu oyun yeni rekor ise, 5.0 yıldız olsun.
         best = max(best, score)
         if best <= 0.0:
@@ -5067,6 +5441,8 @@ class Game:
         self.line_clear_sweep_rows = []
         self.line_clear_sweep_progress = 0.0
         self.line_clear_sweep_active = False
+        self.line_clear_pending_rows = []
+        self.line_clear_pending_colors = {}
         self.falling_block_animations = []
         self.drop_trails = []  # Drop trail efektlerini sıfırla
         
