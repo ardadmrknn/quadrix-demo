@@ -845,8 +845,6 @@ class OnlinePvPGame:
         """P2P session'ı erken kurmak için küçük bir ping gönder."""
         if not self._net_initialized:
             return False
-        if not self.net.opponent_steam_id:
-            return False
         ok = self.net.send({'type': 'session_ping'}, reliable=True, channel=CHANNEL_GAME)
         if not ok:
             print("[OnlinePvP] session_ping gonderilemedi!")
@@ -871,8 +869,17 @@ class OnlinePvPGame:
         """READY sinyalini session hazırsa gönder; değilse session ping ile tetikle."""
         if not self._net_initialized:
             return False
-        if not self.net.opponent_steam_id:
-            return False
+        has_opponent_id = bool(getattr(self.net, 'opponent_steam_id', 0))
+
+        if not has_opponent_id:
+            self._ready_send_pending = True
+            ok = bool(self.net.send_ready())
+            if ok:
+                self._ready_send_pending = False
+                print(f"[OnlinePvP] READY lobby fallback gonderildi ({reason or 'no_reason'}).")
+            else:
+                print(f"[OnlinePvP] READY lobby fallback basarisiz ({reason or 'no_reason'}).")
+            return ok
 
         if not self._session_established:
             self._ready_send_pending = True
@@ -2168,7 +2175,6 @@ class OnlinePvPGame:
         if (
             self.online_state == OnlineState.READY_CHECK
             and self._net_initialized
-            and self.net.opponent_steam_id
             and not self._session_established
         ):
             self._session_ping_timer -= float(delta_time)

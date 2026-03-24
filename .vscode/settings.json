@@ -18,5 +18,5 @@
             "matchCommandLine": true
         }
     },
-    "cmake.sourceDirectory": "C:/Users/arda demirkan/Desktop/v2_23022026/v2/steamworks/steam_net_bridge"
+    "cmake.sourceDirectory": "/Users/burakyasayan/quadrix-main/steamworks/steam_net_bridge"
 }
