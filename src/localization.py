@@ -11399,6 +11399,12 @@ TRANSLATIONS = {
         'pt': 'O oponente saiu', 'ru': 'Соперник вышел', 'ja': '相手が退出しました',
         'zh': '对手已离开', 'ko': '상대가 나갔습니다',
     },
+    'p2p_session_rejected': {
+        'tr': 'P2P oturumu reddedildi, tekrar deneniyor...', 'en': 'P2P session rejected, retrying...', 'de': 'P2P-Sitzung abgelehnt, erneuter Versuch...',
+        'fr': 'Session P2P refusée, nouvelle tentative...', 'es': 'Sesión P2P rechazada, reintentando...', 'it': 'Sessione P2P rifiutata, nuovo tentativo...',
+        'pt': 'Sessão P2P rejeitada, tentando novamente...', 'ru': 'P2P-сессия отклонена, повторная попытка...', 'ja': 'P2Pセッションが拒否されました。再試行しています...',
+        'zh': 'P2P 会话被拒绝，正在重试...', 'ko': 'P2P 세션이 거부되어 다시 시도 중...',
+    },
     'opponent_wants_rematch': {
         'tr': 'Rakip tekrar oynamak istiyor!', 'en': 'Opponent wants a rematch!', 'de': 'Der Gegner will eine Revanche!',
         'fr': 'L’adversaire veut une revanche !', 'es': '¡El oponente quiere revancha!', 'it': 'L’avversario vuole la rivincita!',

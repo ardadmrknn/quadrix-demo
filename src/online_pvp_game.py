@@ -191,7 +191,7 @@ class OnlinePvPGame:
         self.paused = True
         self._freeze_active_gameplay_input()
         try:
-            self.net.send({'type': MsgType.PAUSE_REQUEST}, reliable=True, channel=CHANNEL_CONTROL)
+            self._send_control_message(MsgType.PAUSE_REQUEST, reason='focus_loss_pause')
         except Exception:
             pass
         return True
@@ -331,6 +331,18 @@ class OnlinePvPGame:
         # Flags
         self.my_ready = False
         self.opponent_ready = False
+        self._ready_resend_timer = 0.0
+        self._READY_RESEND_INTERVAL_MS = 1000.0
+        self._session_ping_timer = 0.0
+        self._SESSION_PING_INTERVAL_MS = 2000.0
+        self._SESSION_PING_BACKOFF_BASE_MS = 500.0
+        self._SESSION_PING_BACKOFF_MAX_MS = 4000.0
+        self._session_ping_backoff_ms = 0.0
+        self._game_start_pending_payload: tuple[int, list[int]] | None = None
+        self._game_start_retry_timer = 0.0
+        self._GAME_START_RETRY_INTERVAL_MS = 1000.0
+        self._session_established = False
+        self._ready_send_pending = False
         self.game_over = False
         self.winner: str = ''  # 'me', 'opponent', 'draw'
         self.my_eliminated = False
@@ -717,6 +729,9 @@ class OnlinePvPGame:
             self.net.on('lobby_create_failed', self._on_lobby_error)
             self.net.on('lobby_join_failed', self._on_lobby_error)
             self.net.on('lobby_list_failed', self._on_lobby_list_error)
+            # P2P session olayları
+            self.net.on('session_accepted', self._on_session_accepted)
+            self.net.on('session_rejected', self._on_session_rejected)
         else:
             # Init başarısız — pump'u tekrar başlat
             try:
@@ -787,15 +802,93 @@ class OnlinePvPGame:
         # Rakip zaten lobideyse bul
         if self.net.opponent_steam_id:
             self.online_state = OnlineState.READY_CHECK
+            self._session_established = False
+            self._session_ping_timer = 0.0
+            self._send_session_ping()
 
     def _on_member_joined(self, ev: NetEvent):
         if ev.steam_id != self.net.my_steam_id:
             self.online_state = OnlineState.READY_CHECK
+            self._session_established = False
+            self._session_ping_timer = 0.0
             print(f"[OnlinePvP] Rakip katıldı: {self.net.opponent_name}")
+            self._send_session_ping()
             try:
                 self.sound.play('click')
             except Exception:
                 pass
+
+    def _on_session_accepted(self, ev: NetEvent):
+        self._session_established = True
+        self._session_ping_backoff_ms = 0.0
+        self._session_ping_timer = 0.0
+        print(f"[OnlinePvP] P2P session kabul edildi: {ev.steam_id}")
+        if self.online_state == OnlineState.READY_CHECK and self.my_ready and not self.opponent_ready:
+            self._send_ready_signal(reason='session_accepted')
+
+    def _on_session_rejected(self, ev: NetEvent):
+        self._session_established = False
+        print(f"[OnlinePvP] P2P session REDDEDİLDİ: {ev.steam_id} sebep={ev.data}")
+        self._status_msg = t('p2p_session_rejected', 'P2P oturumu reddedildi, tekrar deneniyor...')
+        self._status_timer = 3.0
+        if self._session_ping_backoff_ms <= 0:
+            self._session_ping_backoff_ms = self._SESSION_PING_BACKOFF_BASE_MS
+        else:
+            self._session_ping_backoff_ms = min(
+                self._SESSION_PING_BACKOFF_MAX_MS,
+                self._session_ping_backoff_ms * 2.0,
+            )
+        self._session_ping_timer = float(self._session_ping_backoff_ms)
+        print(f"[OnlinePvP] session_ping backoff: {int(self._session_ping_backoff_ms)}ms")
+
+    def _send_session_ping(self):
+        """P2P session'ı erken kurmak için küçük bir ping gönder."""
+        if not self._net_initialized:
+            return False
+        if not self.net.opponent_steam_id:
+            return False
+        ok = self.net.send({'type': 'session_ping'}, reliable=True, channel=CHANNEL_GAME)
+        if not ok:
+            print("[OnlinePvP] session_ping gonderilemedi!")
+        else:
+            print("[OnlinePvP] session_ping gonderildi — P2P session kurulacak")
+            self._session_ping_backoff_ms = 0.0
+        return bool(ok)
+
+    def _send_control_message(self, msg_type: str, reason: str = '') -> bool:
+        """Kontrol kanalından mesaj gönder ve sonucu logla."""
+        if getattr(self, '_net_initialized', True) is False:
+            return False
+        net = getattr(self, 'net', None)
+        if net is None:
+            return False
+        ok = bool(net.send({'type': msg_type}, reliable=True, channel=CHANNEL_CONTROL))
+        if not ok:
+            print(f"[OnlinePvP] control send basarisiz: {msg_type} ({reason or 'no_reason'})")
+        return ok
+
+    def _send_ready_signal(self, reason: str = '') -> bool:
+        """READY sinyalini session hazırsa gönder; değilse session ping ile tetikle."""
+        if not self._net_initialized:
+            return False
+        if not self.net.opponent_steam_id:
+            return False
+
+        if not self._session_established:
+            self._ready_send_pending = True
+            ping_ok = self._send_session_ping()
+            if not ping_ok:
+                print(f"[OnlinePvP] READY beklemede ({reason or 'no_reason'}): session yok, ping başarısız.")
+            else:
+                print(f"[OnlinePvP] READY beklemede ({reason or 'no_reason'}): session onayı bekleniyor.")
+            return False
+
+        ok = bool(self.net.send_ready())
+        if ok:
+            self._ready_send_pending = False
+        else:
+            print(f"[OnlinePvP] send_ready başarısız ({reason or 'no_reason'}).")
+        return ok
 
     def _on_member_left(self, ev: NetEvent):
         if ev.steam_id == self.net.opponent_steam_id:
@@ -820,6 +913,13 @@ class OnlinePvPGame:
             # Ready durumlarını sıfırla
             self.my_ready = False
             self.opponent_ready = False
+            self._ready_resend_timer = 0.0
+            self._session_established = False
+            self._ready_send_pending = False
+            self._session_ping_timer = 0.0
+            self._session_ping_backoff_ms = 0.0
+            self._game_start_pending_payload = None
+            self._game_start_retry_timer = 0.0
 
     def _on_lobby_found(self, ev: NetEvent):
         """Tek bir lobi bulundu — metadata ile birlikte biriktir."""
@@ -998,6 +1098,13 @@ class OnlinePvPGame:
         self.online_state = OnlineState.LOBBY_MENU
         self.my_ready = False
         self.opponent_ready = False
+        self._ready_resend_timer = 0.0
+        self._session_established = False
+        self._ready_send_pending = False
+        self._session_ping_timer = 0.0
+        self._session_ping_backoff_ms = 0.0
+        self._game_start_pending_payload = None
+        self._game_start_retry_timer = 0.0
         self._reset_match_result_state()
         self.paused = False
         self.opponent_paused = False
@@ -1133,9 +1240,19 @@ class OnlinePvPGame:
                 print(f"[OnlinePvP] Bilinmeyen gönderici {msg.sender} — mesaj ignore edildi.")
                 continue
 
+            if (not bool(getattr(self, '_session_established', False))) and opponent_id and msg.sender == opponent_id:
+                self._session_established = True
+                print(f"[OnlinePvP] P2P session mesajla doğrulandı: {msg.sender}")
+                if self.online_state == OnlineState.READY_CHECK and self.my_ready and not self.opponent_ready:
+                    self._send_ready_signal(reason='message_session_established')
+
             if msg_type == MsgType.READY:
                 self.opponent_ready = True
                 self._check_both_ready()
+
+            elif msg_type == 'session_ping':
+                if self.online_state == OnlineState.READY_CHECK and self.my_ready and not self.opponent_ready:
+                    self._send_ready_signal(reason='peer_session_ping')
 
             elif msg_type == MsgType.GAME_START:
                 try:
@@ -1218,6 +1335,7 @@ class OnlinePvPGame:
                 # Rakip rematch istiyor
                 self.opponent_ready = False
                 self.my_ready = False
+                self._ready_resend_timer = 0.0
                 self._reset_match_result_state()
                 self.online_state = OnlineState.READY_CHECK
                 self._status_msg = t('opponent_wants_rematch', 'Rakip tekrar oynamak istiyor!')
@@ -1227,11 +1345,25 @@ class OnlinePvPGame:
         """İki oyuncu da hazırsa oyun başlamayı tetikle."""
         if self.my_ready and self.opponent_ready:
             if self.net.is_host:
-                # Host başlama sinyali gönderir
-                self.game_seed = random.randint(1, 999999)
-                self._generate_pieces(self.game_seed, 200)
-                self.net.send_game_start(self.game_seed, self.piece_sequence[:200])
-                self._start_countdown()
+                # Host başlama sinyalini hazırlar ve gönderir.
+                pending_payload = getattr(self, '_game_start_pending_payload', None)
+                if not pending_payload:
+                    self.game_seed = random.randint(1, 999999)
+                    self._generate_pieces(self.game_seed, 200)
+                    self._game_start_pending_payload = (self.game_seed, self.piece_sequence[:200])
+                    self._game_start_retry_timer = 0.0
+                    pending_payload = self._game_start_pending_payload
+
+                if float(getattr(self, '_game_start_retry_timer', 0.0)) <= 0:
+                    seed, pieces = pending_payload
+                    start_ok = bool(self.net.send_game_start(seed, pieces))
+                    if start_ok:
+                        self._game_start_pending_payload = None
+                        self._game_start_retry_timer = 0.0
+                        self._start_countdown()
+                    else:
+                        self._game_start_retry_timer = self._GAME_START_RETRY_INTERVAL_MS
+                        print("[OnlinePvP] GAME_START gonderilemedi (host), retry planlandi.")
 
     def _freeze_active_gameplay_input(self):
         """Pause geçişlerinde aktif gameplay input durumlarını temizle."""
@@ -2032,6 +2164,62 @@ class OnlinePvPGame:
             self.net.tick()
             self._process_messages()
 
+        # READY_CHECK: hazır sinyalini her saniyede bir yeniden gönder
+        if (
+            self.online_state == OnlineState.READY_CHECK
+            and self._net_initialized
+            and self.net.opponent_steam_id
+            and not self._session_established
+        ):
+            self._session_ping_timer -= float(delta_time)
+            if self._session_ping_timer <= 0:
+                self._send_session_ping()
+                self._session_ping_timer = max(
+                    self._SESSION_PING_INTERVAL_MS,
+                    float(self._session_ping_backoff_ms or 0.0),
+                )
+
+        if (
+            self.online_state == OnlineState.READY_CHECK
+            and self._net_initialized
+            and self.my_ready
+            and self._ready_send_pending
+            and self.net.opponent_steam_id
+            and self._session_established
+        ):
+            self._send_ready_signal(reason='pending_flush')
+
+        if (
+            self.online_state == OnlineState.READY_CHECK
+            and self.my_ready
+            and not self.opponent_ready
+            and self._net_initialized
+        ):
+            self._ready_resend_timer -= float(delta_time)
+            if self._ready_resend_timer <= 0:
+                self._send_ready_signal(reason='ready_resend')
+                self._ready_resend_timer = self._READY_RESEND_INTERVAL_MS
+
+        if (
+            self.online_state == OnlineState.READY_CHECK
+            and self._net_initialized
+            and self.net.is_host
+            and self.my_ready
+            and self.opponent_ready
+            and bool(getattr(self, '_game_start_pending_payload', None))
+        ):
+            self._game_start_retry_timer = float(getattr(self, '_game_start_retry_timer', 0.0)) - float(delta_time)
+            if self._game_start_retry_timer <= 0:
+                seed, pieces = self._game_start_pending_payload
+                start_ok = bool(self.net.send_game_start(seed, pieces))
+                if start_ok:
+                    self._game_start_pending_payload = None
+                    self._game_start_retry_timer = 0.0
+                    self._start_countdown()
+                else:
+                    self._game_start_retry_timer = self._GAME_START_RETRY_INTERVAL_MS
+                    print("[OnlinePvP] GAME_START retry basarisiz, tekrar denenecek.")
+
         self.update_particles(dt_ms=delta_time)
         self.update_ambient_particles(dt_ms=delta_time)
         self.update_screen_shake(dt_ms=delta_time)
@@ -2376,11 +2564,9 @@ class OnlinePvPGame:
                 self._freeze_active_gameplay_input()
                 # Rakibe bildir
                 if self.paused:
-                    self.net.send({'type': MsgType.PAUSE_REQUEST},
-                                 reliable=True, channel=CHANNEL_CONTROL)
+                    self._send_control_message(MsgType.PAUSE_REQUEST, reason='esc_pause')
                 else:
-                    self.net.send({'type': MsgType.RESUME},
-                                 reliable=True, channel=CHANNEL_CONTROL)
+                    self._send_control_message(MsgType.RESUME, reason='esc_resume')
                 return None
             elif self.online_state == OnlineState.WAITING:
                 self._return_to_pvp_lobby_menu()
@@ -2444,7 +2630,7 @@ class OnlinePvPGame:
         if self.online_state == OnlineState.READY_CHECK:
             if key == pygame.K_RETURN:
                 self.my_ready = True
-                self.net.send_ready()
+                self._send_ready_signal(reason='keypress_enter')
                 self._check_both_ready()
             return None
 
@@ -2539,7 +2725,7 @@ class OnlinePvPGame:
                         self._do_invite_friend()
                     elif action == 'ready':
                         self.my_ready = True
-                        self.net.send_ready()
+                        self._send_ready_signal(reason='button_ready')
                         self._check_both_ready()
                     elif action == 'rematch':
                         self._request_rematch()
@@ -2699,10 +2885,13 @@ class OnlinePvPGame:
         """Rakibe rematch isteği gönder ve ready check'e geç."""
         self.my_ready = False
         self.opponent_ready = False
+        self._ready_resend_timer = 0.0
+        self._game_start_pending_payload = None
+        self._game_start_retry_timer = 0.0
         self._reset_match_result_state()
         self.online_state = OnlineState.READY_CHECK
         # Rakibe rematch isteği bildir
-        self.net.send({'type': MsgType.REMATCH}, reliable=True, channel=CHANNEL_CONTROL)
+        self._send_control_message(MsgType.REMATCH, reason='request_rematch')
         try:
             self.sound.play('click')
         except Exception:
@@ -2822,15 +3011,27 @@ class OnlinePvPGame:
                     return False
                 return process.returncode == 0
             else:
-                process = subprocess.Popen(
+                for command in (
                     ['xclip', '-selection', 'clipboard'],
-                    stdin=subprocess.PIPE)
-                try:
-                    process.communicate(text.encode('utf-8'), timeout=2)
-                except subprocess.TimeoutExpired:
-                    process.kill()
-                    return False
-                return process.returncode == 0
+                    ['wl-copy'],
+                    ['xsel', '--clipboard', '--input'],
+                ):
+                    try:
+                        process = subprocess.Popen(command, stdin=subprocess.PIPE)
+                    except FileNotFoundError:
+                        continue
+                    except OSError:
+                        continue
+                    try:
+                        process.communicate(text.encode('utf-8'), timeout=2)
+                    except subprocess.TimeoutExpired:
+                        process.kill()
+                        continue
+                    except Exception:
+                        continue
+                    if process.returncode == 0:
+                        return True
+                return False
         except Exception:
             return False
 
@@ -2851,10 +3052,27 @@ class OnlinePvPGame:
                     ['pbpaste'], capture_output=True, text=True, timeout=2)
                 return result.stdout.strip()
             else:
-                result = subprocess.run(
+                for command in (
                     ['xclip', '-selection', 'clipboard', '-o'],
-                    capture_output=True, text=True, timeout=2)
-                return result.stdout.strip()
+                    ['wl-paste', '--no-newline'],
+                    ['xsel', '--clipboard', '--output'],
+                ):
+                    try:
+                        result = subprocess.run(
+                            command,
+                            capture_output=True,
+                            text=True,
+                            timeout=2,
+                        )
+                    except FileNotFoundError:
+                        continue
+                    except subprocess.TimeoutExpired:
+                        continue
+                    except OSError:
+                        continue
+                    if result.returncode == 0:
+                        return result.stdout.strip()
+                return ''
         except Exception:
             return ''
 

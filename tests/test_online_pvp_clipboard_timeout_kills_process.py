@@ -156,6 +156,39 @@ class TestLinuxClipboardTimeoutKillsProcess(unittest.TestCase):
         self.assertTrue(called, "Linux TimeoutExpired sonrasi process.kill/terminate cagrilmadi")
         self.assertFalse(result, "Linux TimeoutExpired sonrasi False donmeli")
 
+    def test_linux_clipboard_timeout_then_fallback_success(self):
+        obj = _make_bare_instance()
+        first = MagicMock()
+        first.communicate.side_effect = subprocess.TimeoutExpired(cmd='xclip', timeout=2)
+        first.returncode = 1
+
+        second = MagicMock()
+        second.communicate.return_value = (b'', b'')
+        second.returncode = 0
+
+        with patch('sys.platform', 'linux'), patch('subprocess.Popen', side_effect=[first, second]):
+            result = obj._copy_to_clipboard("test_text")
+
+        self.assertTrue(first.kill.called or first.terminate.called)
+        self.assertTrue(result, "Ilk backend timeout olsa da fallback ile True donmeli")
+
+
+class TestLinuxClipboardPasteFallback(unittest.TestCase):
+
+    def test_linux_paste_timeout_then_fallback_success(self):
+        obj = _make_bare_instance()
+
+        with patch('sys.platform', 'linux'), patch(
+            'subprocess.run',
+            side_effect=[
+                subprocess.TimeoutExpired(cmd='xclip', timeout=2),
+                subprocess.CompletedProcess(args=['wl-paste'], returncode=0, stdout='ABC123\n', stderr=''),
+            ],
+        ):
+            result = obj._paste_from_clipboard()
+
+        self.assertEqual(result, 'ABC123')
+
 
 class TestClampIntStaticMethod(unittest.TestCase):
 

@@ -10,6 +10,13 @@ from typing import Dict, List
 import pygame
 from dataclasses import replace
 
+try:
+    import numpy as _np
+    _NUMPY_AVAILABLE = True
+except ImportError:
+    _np = None
+    _NUMPY_AVAILABLE = False
+
 from block_styles import BlockStyleManager, TextureSlice, TextureRenderCache
 from board import Board
 from pieces import Piece, SHAPE_NAMES, create_piece_by_index, create_piece_by_name
@@ -2218,23 +2225,50 @@ class Game:
         dark_limit = 95
 
         columns = []
-        for x in range(width):
-            dark_count = 0
-            min_dark_y = None
-            max_dark_y = -1
-            for y in range(scan_start, height):
-                r, g, b, a = src_surface.get_at((x, y))
-                if a < min_alpha:
-                    continue
-                if r <= dark_limit and g <= dark_limit and b <= dark_limit:
-                    dark_count += 1
-                    if min_dark_y is None:
-                        min_dark_y = y
-                    if y > max_dark_y:
-                        max_dark_y = y
 
-            if dark_count > 0 and min_dark_y is not None:
-                columns.append((x, dark_count, min_dark_y, max_dark_y))
+        if _NUMPY_AVAILABLE:
+            try:
+                rgb_arr = pygame.surfarray.array3d(src_surface)    # (w, h, 3)
+                alpha_arr = pygame.surfarray.array_alpha(src_surface)  # (w, h)
+
+                rgb_scan = rgb_arr[:, scan_start:, :]
+                alpha_scan = alpha_arr[:, scan_start:]
+
+                visible = alpha_scan >= min_alpha
+                dark = _np.all(rgb_scan <= dark_limit, axis=2)
+                dark_visible = visible & dark
+
+                dark_counts = dark_visible.sum(axis=1)
+                valid_x = _np.where(dark_counts > 0)[0]
+
+                for x in valid_x:
+                    col = dark_visible[x]
+                    dark_ys = _np.where(col)[0]
+                    dark_count = int(dark_counts[x])
+                    min_dark_y = int(dark_ys[0]) + scan_start
+                    max_dark_y = int(dark_ys[-1]) + scan_start
+                    columns.append((int(x), dark_count, min_dark_y, max_dark_y))
+            except Exception:
+                columns = []
+
+        if not columns:
+            for x in range(width):
+                dark_count = 0
+                min_dark_y = None
+                max_dark_y = -1
+                for y in range(scan_start, height):
+                    r, g, b, a = src_surface.get_at((x, y))
+                    if a < min_alpha:
+                        continue
+                    if r <= dark_limit and g <= dark_limit and b <= dark_limit:
+                        dark_count += 1
+                        if min_dark_y is None:
+                            min_dark_y = y
+                        if y > max_dark_y:
+                            max_dark_y = y
+
+                if dark_count > 0 and min_dark_y is not None:
+                    columns.append((x, dark_count, min_dark_y, max_dark_y))
 
         if not columns:
             return None
@@ -2312,8 +2346,16 @@ class Game:
         """Pixel-art sprite için yarı saydam artefaktları temizle (0/255 alpha)."""
         try:
             surface = src_surface.copy()
-            width, height = surface.get_size()
             cutoff = max(1, min(254, int(alpha_cutoff)))
+            if _NUMPY_AVAILABLE:
+                try:
+                    alpha_view = pygame.surfarray.pixels_alpha(surface)
+                    alpha_view[:] = _np.where(alpha_view < cutoff, 0, 255)
+                    del alpha_view
+                    return surface
+                except Exception:
+                    pass
+            width, height = surface.get_size()
             for y in range(height):
                 for x in range(width):
                     r, g, b, a = surface.get_at((x, y))
@@ -2552,15 +2594,32 @@ class Game:
                         min(255, color[1] + 50),
                         min(255, color[2] + 50)
                     )
-                    
+
+                    w = max(1, int(trail_width))
+                    h = max(1, int(trail_height))
+                    trail_surface = pygame.Surface((w, h), pygame.SRCALPHA)
+                    segments = max(1, h // 4)
+                    segment_height = h / segments
+                    for i in range(segments):
+                        seg_alpha = int(255 * (1 - i / segments))
+                        y_pos = int(i * segment_height)
+                        seg_h = int(segment_height) + 1
+                        trail_surface.fill((*bright_color, seg_alpha), (0, y_pos, w, seg_h))
+
+                    if _NUMPY_AVAILABLE:
+                        base_alpha = pygame.surfarray.array_alpha(trail_surface).astype(_np.float32)
+                    else:
+                        base_alpha = None
+
                     self.drop_trails.append({
                         'x': block_x + (cell_size - trail_width) // 2,
                         'y': block_y,
-                        'width': trail_width,
-                        'height': trail_height,
-                        'color': bright_color,
-                        'alpha': alpha,
-                        'fade_speed': 15 if trail_type == 'hard' else 20  # Sönme hızı
+                        'alpha': float(alpha),
+                        'fade_speed': 15 if trail_type == 'hard' else 20,
+                        '_surf': trail_surface,
+                        '_base_alpha': base_alpha,
+                        '_init_alpha': float(alpha),
+                        '_color': bright_color,
                     })
     
     def _update_drop_trails(self, dt_frames: float):
@@ -2573,28 +2632,26 @@ class Game:
     def _draw_drop_trails(self):
         """Drop trail efektlerini çiz."""
         for trail in self.drop_trails:
-            if trail['alpha'] > 0:
-                # Gradient trail çiz - üstten alta sönüyor
-                trail_surface = pygame.Surface((int(trail['width']), int(trail['height'])), pygame.SRCALPHA)
-                
-                # Gradient efekti
-                segments = max(1, int(trail['height'] // 4))
-                segment_height = trail['height'] / segments
-                
+            if trail['alpha'] <= 0:
+                continue
+            surf = trail['_surf']
+            if _NUMPY_AVAILABLE and trail['_base_alpha'] is not None:
+                scale = trail['alpha'] / trail['_init_alpha']
+                view = pygame.surfarray.pixels_alpha(surf)
+                _np.copyto(view, trail['_base_alpha'] * scale, casting='unsafe')
+                del view
+            else:
+                w, h = surf.get_size()
+                segments = max(1, h // 4)
+                segment_height = h / segments
+                surf.fill((0, 0, 0, 0))
+                color = trail['_color']
                 for i in range(segments):
-                    # Üstten alta alpha azalıyor
-                    segment_alpha = int(trail['alpha'] * (1 - i / segments))
+                    seg_alpha = int(trail['alpha'] * (1 - i / segments))
                     y_pos = int(i * segment_height)
-                    height = int(segment_height) + 1
-                    
-                    color_with_alpha = (*trail['color'], segment_alpha)
-                    pygame.draw.rect(
-                        trail_surface, 
-                        color_with_alpha, 
-                        (0, y_pos, int(trail['width']), height)
-                    )
-                
-                self.screen.blit(trail_surface, (int(trail['x']), int(trail['y'])))
+                    seg_h = int(segment_height) + 1
+                    surf.fill((*color, seg_alpha), (0, y_pos, w, seg_h))
+            self.screen.blit(surf, (int(trail['x']), int(trail['y'])))
     
     def create_firework(self, x, y):
         """Havai fişek efekti oluştur"""
