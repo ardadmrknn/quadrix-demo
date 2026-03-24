@@ -603,11 +603,11 @@ class SteamNetworking:
         }
         if piece_sequence:
             msg['pieces'] = piece_sequence[:200]  # İlk 200 parça
-        self.send(msg, reliable=True, channel=CHANNEL_CONTROL)
+        return self.send(msg, reliable=True, channel=CHANNEL_CONTROL)
 
     def send_ready(self):
         """Hazır sinyali gönder."""
-        self.send({'type': MsgType.READY}, reliable=True, channel=CHANNEL_CONTROL)
+        return self.send({'type': MsgType.READY}, reliable=True, channel=CHANNEL_CONTROL)
 
     def send_game_over(self, score: int = 0, lines: int = 0):
         """Oyun bitti sinyali gönder."""
