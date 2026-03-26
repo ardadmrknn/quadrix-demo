@@ -1266,7 +1266,7 @@ class SoundManager:
                 print(f"❌ Game Over sesi çalma hatası: {e}")
         else:
             print("⚠️ Game Over sesi yüklü değil, beep kullanılıyor.")
-            self.create_gameplay_sfx('gameover')
+            self.create_beep('gameover', 220, 500)
             self.sounds['gameover'].play()
 
     def get_available_tracks(self):
