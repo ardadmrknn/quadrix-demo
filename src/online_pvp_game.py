@@ -343,6 +343,9 @@ class OnlinePvPGame:
         self._GAME_START_RETRY_INTERVAL_MS = 1000.0
         self._session_established = False
         self._ready_send_pending = False
+        self._pending_disconnect_steam_id = 0
+        self._disconnect_grace_timer = 0.0
+        self._DISCONNECT_GRACE_MS = 5000.0
         self.game_over = False
         self.winner: str = ''  # 'me', 'opponent', 'draw'
         self.my_eliminated = False
@@ -420,6 +423,7 @@ class OnlinePvPGame:
         self.opp_falling_block_animations: list[dict] = []
         self._pending_opp_particle_rows: list[int] = []
         self.block_fall_speed: float = 0.12
+        self.cell_size: int = 24  # update() sweep animasyonu için; _draw_game() güncelleyecek
         # Ekran titremesi
         self.screen_shake: float = 0
         self.shake_intensity: int = 0
@@ -719,7 +723,7 @@ class OnlinePvPGame:
             self.net.on('lobby_joined', self._on_lobby_joined)
             self.net.on('lobby_member_joined', self._on_member_joined)
             self.net.on('lobby_member_left', self._on_member_left)
-            self.net.on('lobby_member_disconnected', self._on_member_left)
+            self.net.on('lobby_member_disconnected', self._on_member_disconnected)
             # Lobi listesi — C++ per-lobi event gönderiyor, tek JSON değil
             self.net.on('lobby_found', self._on_lobby_found)
             self.net.on('lobby_list_complete', self._on_lobby_list_complete)
@@ -809,6 +813,8 @@ class OnlinePvPGame:
     def _on_member_joined(self, ev: NetEvent):
         if ev.steam_id != self.net.my_steam_id:
             self.online_state = OnlineState.READY_CHECK
+            self._pending_disconnect_steam_id = 0
+            self._disconnect_grace_timer = 0.0
             self._session_established = False
             self._session_ping_timer = 0.0
             print(f"[OnlinePvP] Rakip katıldı: {self.net.opponent_name}")
@@ -817,6 +823,40 @@ class OnlinePvPGame:
                 self.sound.play('click')
             except Exception:
                 pass
+
+    def _on_member_disconnected(self, ev: NetEvent):
+        my_id = int(getattr(self.net, 'my_steam_id', 0) or 0)
+        opponent_id = int(getattr(self.net, 'opponent_steam_id', 0) or 0)
+        target_id = int(ev.steam_id or opponent_id or getattr(self, '_pending_disconnect_steam_id', 0) or 0)
+        if not target_id or target_id == my_id:
+            return
+
+        if opponent_id and ev.steam_id and int(ev.steam_id) != opponent_id:
+            try:
+                members = set(self.net.get_lobby_members() or [])
+            except Exception:
+                members = set()
+            if members and target_id not in members:
+                return
+
+        if self.online_state == OnlineState.PLAYING:
+            self._pending_disconnect_steam_id = target_id
+            self._disconnect_grace_timer = float(self._DISCONNECT_GRACE_MS)
+            self._session_established = False
+            self._session_ping_timer = 0.0
+            self._send_session_ping()
+            self._status_msg = t(
+                'opponent_connection_unstable',
+                'Rakip baglantisi kararsiz, yeniden baglanmasi bekleniyor...',
+            )
+            self._status_timer = 2.5
+            print(
+                f"[OnlinePvP] lobby_member_disconnected alindi: {self._pending_disconnect_steam_id} "
+                f"(grace={int(self._DISCONNECT_GRACE_MS)}ms)"
+            )
+            return
+
+        self._on_member_left(ev)
 
     def _on_session_accepted(self, ev: NetEvent):
         self._session_established = True
@@ -903,35 +943,61 @@ class OnlinePvPGame:
         return ok
 
     def _on_member_left(self, ev: NetEvent):
-        if ev.steam_id == self.net.opponent_steam_id:
-            # Rakip ayrılınca parça verisini temizle
-            self.opponent_piece_data = None
-            self._opponent_piece_seq = 0
-            if self.online_state == OnlineState.PLAYING:
-                self.online_state = OnlineState.DISCONNECTED
-                self.game_over = True
-                self.winner = 'me'
-            elif self.online_state == OnlineState.COUNTDOWN:
-                # Geri sayım sırasında rakip çıktı — lobiye dön
-                self.online_state = OnlineState.WAITING
-                self.countdown_value = 3
-                self.countdown_timer = 0
-                self._status_msg = t('opponent_left', 'Rakip ayrıldı')
-                self._status_timer = 3.0
-            else:
-                self.online_state = OnlineState.WAITING
-                self._status_msg = t('opponent_left', 'Rakip ayrıldı')
-                self._status_timer = 3.0
-            # Ready durumlarını sıfırla
-            self.my_ready = False
-            self.opponent_ready = False
-            self._ready_resend_timer = 0.0
+        my_id = int(getattr(self.net, 'my_steam_id', 0) or 0)
+        target_id = int(
+            ev.steam_id
+            or getattr(self.net, 'opponent_steam_id', 0)
+            or getattr(self, '_pending_disconnect_steam_id', 0)
+            or 0
+        )
+        if not target_id or target_id == my_id:
+            return
+
+        # Rakip ayrılınca parça verisini temizle
+        self.opponent_piece_data = None
+        self._opponent_piece_seq = 0
+        if self.online_state == OnlineState.PLAYING:
+            self._pending_disconnect_steam_id = target_id
+            self._disconnect_grace_timer = max(
+                float(getattr(self, '_disconnect_grace_timer', 0.0)),
+                float(self._DISCONNECT_GRACE_MS),
+            )
             self._session_established = False
-            self._ready_send_pending = False
             self._session_ping_timer = 0.0
-            self._session_ping_backoff_ms = 0.0
-            self._game_start_pending_payload = None
-            self._game_start_retry_timer = 0.0
+            self._send_session_ping()
+            self._status_msg = t(
+                'opponent_connection_unstable',
+                'Rakip baglantisi kararsiz, yeniden baglanmasi bekleniyor...',
+            )
+            self._status_timer = 2.5
+            print(
+                f"[OnlinePvP] lobby_member_left alindi: {self._pending_disconnect_steam_id} "
+                f"(grace={int(self._DISCONNECT_GRACE_MS)}ms)"
+            )
+            return
+        elif self.online_state == OnlineState.COUNTDOWN:
+            # Geri sayım sırasında rakip çıktı — lobiye dön
+            self.online_state = OnlineState.WAITING
+            self.countdown_value = 3
+            self.countdown_timer = 0
+            self._status_msg = t('opponent_left', 'Rakip ayrıldı')
+            self._status_timer = 3.0
+        else:
+            self.online_state = OnlineState.WAITING
+            self._status_msg = t('opponent_left', 'Rakip ayrıldı')
+            self._status_timer = 3.0
+        # Ready durumlarını sıfırla
+        self.my_ready = False
+        self.opponent_ready = False
+        self._ready_resend_timer = 0.0
+        self._session_established = False
+        self._ready_send_pending = False
+        self._pending_disconnect_steam_id = 0
+        self._disconnect_grace_timer = 0.0
+        self._session_ping_timer = 0.0
+        self._session_ping_backoff_ms = 0.0
+        self._game_start_pending_payload = None
+        self._game_start_retry_timer = 0.0
 
     def _on_lobby_found(self, ev: NetEvent):
         """Tek bir lobi bulundu — metadata ile birlikte biriktir."""
@@ -1113,6 +1179,8 @@ class OnlinePvPGame:
         self._ready_resend_timer = 0.0
         self._session_established = False
         self._ready_send_pending = False
+        self._pending_disconnect_steam_id = 0
+        self._disconnect_grace_timer = 0.0
         self._session_ping_timer = 0.0
         self._session_ping_backoff_ms = 0.0
         self._game_start_pending_payload = None
@@ -1284,6 +1352,11 @@ class OnlinePvPGame:
                 if not rebound:
                     print(f"[OnlinePvP] Bilinmeyen gönderici {msg.sender} — mesaj ignore edildi.")
                     continue
+
+            pending_disconnect_id = int(getattr(self, '_pending_disconnect_steam_id', 0) or 0)
+            if msg.sender and (msg.sender == opponent_id or (pending_disconnect_id and msg.sender == pending_disconnect_id)):
+                self._pending_disconnect_steam_id = 0
+                self._disconnect_grace_timer = 0.0
 
             if (not bool(getattr(self, '_session_established', False))) and opponent_id and msg.sender == opponent_id:
                 self._session_established = True
@@ -1472,6 +1545,8 @@ class OnlinePvPGame:
         self._reset_match_result_state()
         self.pending_garbage = 0
         self._garbage_gap = 0
+        self._pending_disconnect_steam_id = 0
+        self._disconnect_grace_timer = 0.0
         self.state_snapshot_timer = 0
         self.soft_dropping = False
         self.paused = False
@@ -2208,6 +2283,35 @@ class OnlinePvPGame:
         if self._net_initialized:
             self.net.tick()
             self._process_messages()
+
+        if (
+            self.online_state == OnlineState.PLAYING
+            and int(getattr(self, '_pending_disconnect_steam_id', 0) or 0)
+            and float(getattr(self, '_disconnect_grace_timer', 0.0)) > 0
+        ):
+            self._disconnect_grace_timer -= float(delta_time)
+            if self._disconnect_grace_timer <= 0:
+                pending_id = int(getattr(self, '_pending_disconnect_steam_id', 0) or 0)
+                try:
+                    members = set(self.net.get_lobby_members() or [])
+                except Exception:
+                    members = set()
+
+                if pending_id and pending_id in members:
+                    self._pending_disconnect_steam_id = 0
+                    self._disconnect_grace_timer = 0.0
+                    if not getattr(self.net, 'opponent_steam_id', 0):
+                        try:
+                            self.net._opponent_steam_id = pending_id
+                        except Exception:
+                            pass
+                elif pending_id:
+                    print(f"[OnlinePvP] Disconnect grace timeout: {pending_id}")
+                    self.online_state = OnlineState.DISCONNECTED
+                    self.game_over = True
+                    self.winner = 'me'
+                    self._pending_disconnect_steam_id = 0
+                    self._disconnect_grace_timer = 0.0
 
         # READY_CHECK: hazır sinyalini her saniyede bir yeniden gönder
         if (
@@ -3917,6 +4021,7 @@ class OnlinePvPGame:
         # Layout hesapla
         cell_size = min((h - s(180)) // BOARD_HEIGHT, (w - s(260)) // (BOARD_WIDTH * 2 + 8))
         cell_size = max(s(14), min(cell_size, s(36)))
+        self.cell_size = cell_size  # update() sweep animasyonu için sakla
         board_w = BOARD_WIDTH * cell_size
         board_h = BOARD_HEIGHT * cell_size
         mini_cell = max(s(10), cell_size - 4)

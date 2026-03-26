@@ -249,8 +249,11 @@ public:
         // Steam callback'lerini işle
         SteamAPI_RunCallbacks();
 
-        // Gelen ağ mesajlarını kuyruğa al
-        _poll_incoming_messages();
+        // Gelen ağ mesajlarını TÜM kanallardan kuyruğa al
+        // CHANNEL_GAME=0, CHANNEL_STATE=1, CHANNEL_CONTROL=2
+        _poll_incoming_messages(0);
+        _poll_incoming_messages(1);
+        _poll_incoming_messages(2);
     }
 
     std::vector<NetEvent> poll_events() {
@@ -478,6 +481,7 @@ private:
 void SteamNetBridge::OnLobbyChatUpdate(LobbyChatUpdate_t* pParam) {
     uint64_t changed_id = pParam->m_ulSteamIDUserChanged;
     uint32 state = pParam->m_rgfChatMemberStateChange;
+    std::string state_info = std::to_string(state);
 
     if (state & k_EChatMemberStateChangeEntered) {
         std::string name = m_friends
@@ -486,10 +490,10 @@ void SteamNetBridge::OnLobbyChatUpdate(LobbyChatUpdate_t* pParam) {
         push_event("lobby_member_joined", changed_id, name);
     }
     if (state & k_EChatMemberStateChangeLeft) {
-        push_event("lobby_member_left", changed_id, "");
+        push_event("lobby_member_left", changed_id, state_info);
     }
     if (state & k_EChatMemberStateChangeDisconnected) {
-        push_event("lobby_member_disconnected", changed_id, "");
+        push_event("lobby_member_disconnected", changed_id, state_info);
     }
 }
 

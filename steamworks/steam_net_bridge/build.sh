@@ -138,6 +138,17 @@ fi
 cp "$ARTIFACT" "$TARGET_DIR/"
 echo "  → $(basename "$ARTIFACT") kopyalandı"
 
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    STEAM_DYLIB_SRC="$SDK_DIR/redistributable_bin/osx/libsteam_api.dylib"
+    if [[ -f "$STEAM_DYLIB_SRC" ]]; then
+        cp "$STEAM_DYLIB_SRC" "$TARGET_DIR/"
+        echo "  → libsteam_api.dylib kopyalandı"
+    else
+        echo -e "${RED}[HATA] libsteam_api.dylib bulunamadı: $STEAM_DYLIB_SRC${NC}"
+        exit 1
+    fi
+fi
+
 cd ..
 echo ""
 echo -e "${GREEN}═══════════════════════════════════════════${NC}"
