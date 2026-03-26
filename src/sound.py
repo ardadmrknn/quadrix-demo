@@ -271,12 +271,47 @@ class SoundManager:
             sound_keys = (
                 'move', 'rotate', 'drop', 'line', 'clear', 'lock', 'hold',
                 'click', 'pause', 'select', 'confirm', 'cancel', 'deny',
-                'combo', 'levelup', 'tetris', 'gameover', 'card_reveal',
+                'combo', 'levelup', 'tetris',
                 'tutorial_success', 'tutorial_progress', 'tutorial_complete',
                 'sniper_shot',
             )
             for key in sound_keys:
                 self.create_gameplay_sfx(key)
+
+            game_over_wav = self.assets_root / 'assets' / 'effect' / 'game_over_effect.wav'
+            game_over_mp3 = self.assets_root / 'assets' / 'effect' / 'game_over_effect.mp3'
+            game_over_path = None
+            if game_over_wav.exists():
+                game_over_path = game_over_wav
+            elif game_over_mp3.exists():
+                game_over_path = game_over_mp3
+
+            loaded_game_over = False
+            if game_over_path:
+                try:
+                    self.sounds['gameover'] = pygame.mixer.Sound(str(game_over_path))
+                    self.sounds['gameover'].set_volume(self.sfx_volume)
+                    loaded_game_over = True
+                except Exception:
+                    loaded_game_over = False
+            if not loaded_game_over:
+                self.create_beep('gameover', 220, 500)
+
+            card_reveal_wav = self.assets_root / 'assets' / 'effect' / 'card_reveal.wav'
+            card_reveal_mp3 = self.assets_root / 'assets' / 'effect' / 'card_reveal.mp3'
+            card_reveal_path = None
+            if card_reveal_wav.exists():
+                card_reveal_path = card_reveal_wav
+            elif card_reveal_mp3.exists():
+                card_reveal_path = card_reveal_mp3
+            if card_reveal_path:
+                try:
+                    self.sounds['card_reveal'] = pygame.mixer.Sound(str(card_reveal_path))
+                    self.sounds['card_reveal'].set_volume(self.sfx_volume)
+                except Exception:
+                    self.create_beep('card_reveal', 760, 60)
+            else:
+                self.create_beep('card_reveal', 760, 60)
 
             self._register_sound_alias('game_over', 'gameover')
             self._register_sound_alias('level_up', 'levelup')
@@ -490,32 +525,6 @@ class SoundManager:
                     {'wave': 'triangle', 'start_freq': 440.0, 'end_freq': 660.0, 'amplitude': 0.22},
                     {'wave': 'sine', 'start_freq': 660.0, 'end_freq': 990.0, 'amplitude': 0.20},
                     {'wave': 'sine', 'start_freq': 220.0, 'end_freq': 330.0, 'amplitude': 0.10},
-                ],
-            },
-            'gameover': {
-                'duration_ms': 420,
-                'attack_ms': 2,
-                'release_ms': 180,
-                'noise_amount': 0.006,
-                'transient_amount': 0.008,
-                'stereo_width': 0.010,
-                'layers': [
-                    {'wave': 'triangle', 'start_freq': 220.0, 'end_freq': 130.0, 'amplitude': 0.24},
-                    {'wave': 'sine', 'start_freq': 330.0, 'end_freq': 165.0, 'amplitude': 0.18},
-                    {'wave': 'sine', 'start_freq': 110.0, 'end_freq': 70.0, 'amplitude': 0.12},
-                ],
-            },
-            'card_reveal': {
-                'duration_ms': 126,
-                'attack_ms': 2,
-                'release_ms': 74,
-                'noise_amount': 0.006,
-                'transient_amount': 0.010,
-                'stereo_width': 0.028,
-                'layers': [
-                    {'wave': 'triangle', 'start_freq': 620.0, 'end_freq': 760.0, 'amplitude': 0.18},
-                    {'wave': 'sine', 'start_freq': 880.0, 'end_freq': 1180.0, 'amplitude': 0.16},
-                    {'wave': 'sine', 'start_freq': 1180.0, 'end_freq': 1520.0, 'amplitude': 0.08},
                 ],
             },
             'tutorial_success': {
@@ -1171,7 +1180,7 @@ class SoundManager:
                 print(f"❌ Game Over sesi çalma hatası: {e}")
         else:
             print("⚠️ Game Over sesi yüklü değil, beep kullanılıyor.")
-            self.create_gameplay_sfx('gameover')
+            self.create_beep('gameover', 220, 500)
             self.sounds['gameover'].play()
 
     def get_available_tracks(self):
