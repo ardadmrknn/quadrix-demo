@@ -223,9 +223,9 @@ class NetMessage:
 # Tüm mesajlar CHANNEL_GAME (0) üzerinden gönderilmelidir.
 # C++ tarafı düzeltildiğinde kanal ayrımı tekrar devreye alınabilir.
 
-CHANNEL_GAME = 0       # Tüm mesajlar — C++ bridge tek kanal polluyor
-CHANNEL_STATE = 0      # (Geçici: 0 — C++ çoklu kanal desteği eklenince 1 yapılacak)
-CHANNEL_CONTROL = 0    # (Geçici: 0 — C++ çoklu kanal desteği eklenince 2 yapılacak)
+CHANNEL_GAME = 0       # Oyun mesajları (garbage, session_ping)
+CHANNEL_STATE = 1      # Durum mesajları (board_state, piece_position, score_update)
+CHANNEL_CONTROL = 2    # Kontrol mesajları (ready, game_start, game_over, pause, resume, rematch)
 
 
 # ---------- Lobi tipleri (Steam ELobbyType) ----------
@@ -710,6 +710,16 @@ class SteamNetworking:
 
         elif event.type == 'lobby_member_left' or event.type == 'lobby_member_disconnected':
             if event.steam_id == self._opponent_steam_id:
+                try:
+                    members = set(self.get_lobby_members() or [])
+                except Exception:
+                    members = set()
+                if members and event.steam_id in members:
+                    print(
+                        f"[SteamNet] Gecici {event.type} ignore edildi: "
+                        f"{event.steam_id} hala lobide gorunuyor"
+                    )
+                    return
                 print(f"[SteamNet] Rakip ayrıldı: {self._opponent_name}")
                 self._opponent_steam_id = 0
                 self._opponent_name = ''

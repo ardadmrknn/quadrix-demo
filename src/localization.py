@@ -11399,6 +11399,12 @@ TRANSLATIONS = {
         'pt': 'O oponente saiu', 'ru': 'Соперник вышел', 'ja': '相手が退出しました',
         'zh': '对手已离开', 'ko': '상대가 나갔습니다',
     },
+    'opponent_connection_unstable': {
+        'tr': 'Rakip bağlantısı kararsız, yeniden bağlanması bekleniyor...', 'en': 'Opponent connection is unstable, waiting for reconnect...', 'de': 'Verbindung des Gegners ist instabil, warte auf erneute Verbindung...',
+        'fr': 'La connexion de l’adversaire est instable, en attente de reconnexion...', 'es': 'La conexión del oponente es inestable, esperando reconexión...', 'it': 'La connessione dell’avversario è instabile, in attesa di riconnessione...',
+        'pt': 'A conexão do oponente está instável, aguardando reconexão...', 'ru': 'Соединение соперника нестабильно, ожидается переподключение...', 'ja': '相手の接続が不安定です。再接続を待機中...',
+        'zh': '对手连接不稳定，正在等待重连...', 'ko': '상대 연결이 불안정하여 재연결을 기다리는 중...',
+    },
     'p2p_session_rejected': {
         'tr': 'P2P oturumu reddedildi, tekrar deneniyor...', 'en': 'P2P session rejected, retrying...', 'de': 'P2P-Sitzung abgelehnt, erneuter Versuch...',
         'fr': 'Session P2P refusée, nouvelle tentative...', 'es': 'Sesión P2P rechazada, reintentando...', 'it': 'Sessione P2P rifiutata, nuovo tentativo...',

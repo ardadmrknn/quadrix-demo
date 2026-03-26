@@ -69,6 +69,17 @@ fi
 echo -e "${CYAN}🔧 Steam Net Bridge kontrolü...${NC}"
 BRIDGE_SO=$(ls steam_net_bridge*.so 2>/dev/null | head -1 || \
             ls local_artifacts/bridge/steam_net_bridge*.so 2>/dev/null | head -1 || true)
+BRIDGE_SRC="steamworks/steam_net_bridge/steam_net_bridge.cpp"
+
+if [[ -n "$BRIDGE_SO" && -f "$BRIDGE_SO" && -f "$BRIDGE_SRC" ]]; then
+    BRIDGE_SO_MTIME=$($PYTHON_CMD -c "import os; print(int(os.path.getmtime('$BRIDGE_SO')))")
+    BRIDGE_SRC_MTIME=$($PYTHON_CMD -c "import os; print(int(os.path.getmtime('$BRIDGE_SRC')))")
+    if (( BRIDGE_SRC_MTIME > BRIDGE_SO_MTIME )); then
+        echo -e "${YELLOW}  Bridge kaynak dosyası daha yeni, yeniden derleme zorlanıyor...${NC}"
+        REBUILD_BRIDGE=true
+    fi
+fi
+
 if [[ -z "$BRIDGE_SO" || "$REBUILD_BRIDGE" == true ]]; then
     echo -e "${YELLOW}  Bridge bulunamadı, derleniyor...${NC}"
     if [[ ! -f "steamworks/steam_net_bridge/build.sh" ]]; then

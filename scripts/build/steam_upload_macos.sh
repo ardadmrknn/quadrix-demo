@@ -130,6 +130,42 @@ fi
 APP_SIZE=$(du -sh "$APP_PATH" | cut -f1)
 echo -e "${GREEN}✓${NC} App: $APP_PATH ($APP_SIZE)"
 
+# ── 4c. Stale build kontrolü (kaynak dosyalar app'ten daha yeni mi?) ──
+APP_MTIME=$($PYTHON_CMD -c "import os; print(int(os.path.getmtime('$APP_PATH')))")
+CRITICAL_FILES=(
+    "src/online_pvp_game.py"
+    "src/steam_networking.py"
+    "steamworks/steam_net_bridge/steam_net_bridge.cpp"
+)
+
+STALE_FILES=()
+for f in "${CRITICAL_FILES[@]}"; do
+    [[ -f "$f" ]] || continue
+    SRC_MTIME=$($PYTHON_CMD -c "import os; print(int(os.path.getmtime('$f')))")
+    if (( SRC_MTIME > APP_MTIME )); then
+        STALE_FILES+=("$f")
+    fi
+done
+
+APP_BRIDGE_SO=$(ls "$APP_PATH"/Contents/Frameworks/steam_net_bridge*.so 2>/dev/null | head -1 || true)
+if [[ -n "$APP_BRIDGE_SO" && -f "steamworks/steam_net_bridge/steam_net_bridge.cpp" ]]; then
+    BRIDGE_SO_MTIME=$($PYTHON_CMD -c "import os; print(int(os.path.getmtime('$APP_BRIDGE_SO')))")
+    BRIDGE_SRC_MTIME=$($PYTHON_CMD -c "import os; print(int(os.path.getmtime('steamworks/steam_net_bridge/steam_net_bridge.cpp')))")
+    if (( BRIDGE_SRC_MTIME > BRIDGE_SO_MTIME )); then
+        STALE_FILES+=("steamworks/steam_net_bridge/steam_net_bridge.cpp (app içindeki bridge eski)")
+    fi
+fi
+
+if (( ${#STALE_FILES[@]} > 0 )) && [[ "${QUADRIX_ALLOW_STALE_UPLOAD:-0}" != "1" ]]; then
+    echo -e "${RED}HATA: dist/Quadrix.app güncel değil. Aşağıdaki dosyalar app build'inden daha yeni:${NC}"
+    for f in "${STALE_FILES[@]}"; do
+        echo -e "  - $f"
+    done
+    echo -e "${YELLOW}Çözüm:${NC} $0 --build-first"
+    echo -e "${YELLOW}Zorla devam (önerilmez):${NC} QUADRIX_ALLOW_STALE_UPLOAD=1 $0 ..."
+    exit 1
+fi
+
 # ── 4b. NFC normalizasyon (macOS NFD → NFC) ──
 # macOS dosya adlarını decomposed (NFD) formda saklar (ü = u+combining).
 # SteamCMD bu encoding'i manifest'te kabul etmiyor (HTTP 400).
@@ -227,6 +263,7 @@ echo -e "   (Steam Guard doğrulaması istenebilir)"
 echo ""
 
 # SteamCMD x86_64 binary → Apple Silicon'da arch -x86_64 gerekli
+set +e
 if [[ "$(uname -m)" == "arm64" ]]; then
     arch -x86_64 "$STEAMCMD_PATH" \
         +login "$STEAM_USER" \
@@ -240,6 +277,7 @@ else
 fi
 
 UPLOAD_EXIT=$?
+    set -e
 
 # Temp dosyaları temizle
 rm -f "$TEMP_VDF" "/tmp/depot_build_macos.vdf" "/tmp/depot_build_playtest_windows.vdf"
