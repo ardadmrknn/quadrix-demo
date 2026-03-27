@@ -779,8 +779,33 @@ class ZenMode(Game):
     
     def lock_and_new_piece(self):
         """Parçayı kilitle - ZEN MODUNDA OYUN ASLA BİTMEZ"""
+        # Lock explosion - her hücre için parçacık patlaması
+        if self.effects_enabled:
+            cell_size = self.get_cell_size()
+            offset_x, offset_y = self.get_board_offset()
+            piece_cells = self.current_piece.get_cells()
+            cm = getattr(self.current_piece, 'color_matrix', None)
+            for cell_x, cell_y in piece_cells:
+                screen_x = offset_x + cell_x * cell_size + cell_size // 2
+                screen_y = offset_y + cell_y * cell_size + cell_size // 2
+                cell_color = self.current_piece.color
+                if cm is not None:
+                    try:
+                        lx = cell_x - self.current_piece.x
+                        ly = cell_y - self.current_piece.y
+                        v = cm[ly][lx]
+                        if v is not None:
+                            cell_color = v
+                    except Exception:
+                        pass
+                self.create_lock_explosion(x=screen_x, y=screen_y, color=cell_color, cell_size=cell_size)
+
         # Normal kilitleme işlemi
         lines_cleared = self.board.lock_piece(self.current_piece)
+
+        # Satır temizlenmiyorsa blok kilitlenme sesi çal
+        if lines_cleared == 0:
+            self.sound.play('lock')
         
         # Satır temizleme animasyonu ve bonuslar
         if lines_cleared > 0:
@@ -792,6 +817,20 @@ class ZenMode(Game):
             
             # Temizlenen satırları efekt için kaydet
             cleared_rows = list(self.board.last_cleared_lines) if self.board.last_cleared_lines else []
+            self.line_clear_pending_rows = []
+            self.line_clear_pending_colors = {}
+            if cleared_rows and self.effects_enabled:
+                self.line_clear_pending_rows = list(cleared_rows)
+                try:
+                    pending_colors = {}
+                    if hasattr(self.board, 'last_cleared_colors'):
+                        for row in cleared_rows:
+                            row_colors = self.board.last_cleared_colors.get(row)
+                            if row_colors:
+                                pending_colors[row] = list(row_colors)
+                    self.line_clear_pending_colors = pending_colors
+                except Exception:
+                    self.line_clear_pending_colors = {}
             
             if self.effects_enabled and cleared_rows:
                 cell_size = self.get_cell_size()
@@ -829,8 +868,15 @@ class ZenMode(Game):
             # Mesaj ve ses
             if lines_cleared == 4:
                 self.zen_message = t('zen_message_tetris')
-                self.zen_message_timer = 2.0  # önceki 120 frame ~ 2 saniye
+                self.zen_message_timer = 2.0
+                self.combo_message = "QUADRIX! 4 Satır Yok Edildi!"
                 self.sound.play('tetris')
+                # Gamepad titreşimi - QUADRIX! (güçlü)
+                try:
+                    from gamepad_manager import get_gamepad_manager
+                    get_gamepad_manager().rumble(0.8, 1.0, 400)
+                except Exception:
+                    pass
                 
                 # QUADRIX için güçlü ekran titremesi
                 self.trigger_screen_shake(intensity=15, duration=20)
@@ -840,23 +886,90 @@ class ZenMode(Game):
                     center_x = self.window_width // 2
                     center_y = self.window_height // 2
                     self.create_particles(
-                        count=100,
+                        count=150,
                         x=center_x,
                         y=center_y,
-                        colors=[YELLOW, ORANGE, CYAN, MAGENTA],
-                        speed=8
+                        colors=[YELLOW, ORANGE, (255, 215, 0), CYAN],
+                        speed=10
                     )
+                self.combo_message_time = 120
             elif lines_cleared >= 2:
                 self.zen_message = t('zen_message_lines', lines=lines_cleared)
-                self.zen_message_timer = 1.5  # önceki 90 frame ~ 1.5 saniye
+                self.zen_message_timer = 1.5
+                if lines_cleared == 2:
+                    clear_name = "DOUBLE!"
+                elif lines_cleared == 3:
+                    clear_name = "TRIPLE!"
+                else:
+                    clear_name = f"{lines_cleared}x CLEAR!"
+                combo_count = getattr(self.board, 'combo', 0)
+                if combo_count > 1:
+                    self.combo_message = f"{clear_name}  x{combo_count} Combo"
+                else:
+                    self.combo_message = clear_name
                 self.sound.play('line')
+                # Gamepad titreşimi - çoklu satır (orta)
+                try:
+                    from gamepad_manager import get_gamepad_manager
+                    get_gamepad_manager().rumble(0.4, 0.5, 200)
+                except Exception:
+                    pass
+                # Çoklu satır için renkli parçacıklar
+                if self.effects_enabled:
+                    center_x = self.window_width // 2
+                    center_y = self.window_height // 2
+                    self.create_particles(
+                        count=50 * lines_cleared,
+                        x=center_x,
+                        y=center_y,
+                        colors=[CYAN, MAGENTA, GREEN],
+                        speed=6
+                    )
+                self.combo_message_time = 120
             else:
+                combo_count = getattr(self.board, 'combo', 0)
+                if combo_count > 1:
+                    self.combo_message = f"x{combo_count} Combo!"
+                    self.combo_message_time = 90
+                else:
+                    self.combo_message = ""
+                    self.combo_message_time = 0
                 self.sound.play('line')
+
+            # Başarı kontrolü
+            if self.achievement_manager:
+                new_achievements = self.achievement_manager.update_stats(
+                    score=self.board.score,
+                    lines=self.board.lines_cleared,
+                    level=self.board.level,
+                    tetrises=self.board.tetrises,
+                    combo=self.board.combo,
+                    game_mode=self.game_mode,
+                )
+                for ach_id in new_achievements:
+                    achievement = self.achievement_manager.get_achievement(ach_id)
+                    if achievement:
+                        self.achievement_notifications.append({
+                            'achievement': achievement,
+                            'time': pygame.time.get_ticks(),
+                            'alpha': 255,
+                        })
+                        self.sound.play('tetris')
+
+            # Satırları temizle (efekt bilgisi alındıktan sonra)
+            self.board.last_cleared_lines = []
+            if hasattr(self.board, 'last_cleared_colors'):
+                self.board.last_cleared_colors = {}
         
         # Kuyruktan ilk parçayı al ve kuyruğa yeni parça ekle
         self.current_piece = self.next_piece_queue.pop(0)
         self.next_piece_queue.append(self.spawn_new_piece())
+        # Lock-delay state sıfırla
+        self.grounded = False
+        self.lock_timer = 0
+        self.lock_reset_count = 0
         self.can_hold = True
+        self.can_hold2 = True
         self.fall_speed = 1000  # Zen Mode her zaman yavaş
         
         # Tema renklerini uygula

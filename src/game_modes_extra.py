@@ -6863,7 +6863,7 @@ class MysteryMode(Game):
         except Exception:
             pass
         if self.sound_enabled:
-            self.sound.play_sound("pause")
+            self.sound.play_sound("card_open")
         # Debug log about overlay opening and the number of pending choices (if debug mode set)
         try:
             if getattr(self, 'settings_manager', None) and self.settings_manager.get('debug_mode', False):
@@ -7040,7 +7040,7 @@ class MysteryMode(Game):
             # Ses efekti
             if self.sound_enabled:
                 try:
-                    self.sound.play_sound("move")
+                    self.sound.play_sound("card_magnet")
                 except Exception:
                     pass
                     
@@ -7706,7 +7706,7 @@ class MysteryMode(Game):
             self._spawn_card_particles(color)
 
         if self.sound_enabled:
-            self.sound.play_sound("levelup")
+            self.sound.play_sound("card_activate")
 
     # === SNIPER SHOT YARDIMCI METODLARI ===
     def _open_sniper_overlay(self) -> bool:
@@ -7864,7 +7864,7 @@ class MysteryMode(Game):
             # Ses efekti
             if self.sound_enabled:
                 try:
-                    self.sound.play_sound("confirm")
+                    self.sound.play_sound("card_save")
                 except Exception:
                     pass
             
@@ -7925,7 +7925,7 @@ class MysteryMode(Game):
             # Ses efekti
             if self.sound_enabled:
                 try:
-                    self.sound.play_sound("levelup")
+                    self.sound.play_sound("card_restore")
                 except Exception:
                     pass
             
@@ -9044,7 +9044,7 @@ class MysteryMode(Game):
             pass
         if self.sound_enabled:
             try:
-                self.sound.play_sound('levelup')
+                self.sound.play_sound('card_activate')
             except Exception:
                 pass
 

@@ -40,6 +40,7 @@ from mode_skins import apply_board_tint, draw_board_overlay, get_mode_skin
 from retro_style import retro_style as _rs
 from renderers.jelly_renderer import draw_jelly_block, draw_jelly_border
 from effect_surface_cache import EffectSurfaceCache
+from sweep_effects import SweepCatState, draw_rainbow_cat_sweep
 
 # Convenience aliases for retro_style singleton methods
 get_font = _rs.get_font
@@ -265,6 +266,7 @@ class OnlinePvPGame:
         self.block_style_manager = BlockStyleManager(self.settings_manager) if self.settings_manager else None
         self._texture_render_cache = TextureRenderCache()
         self._effect_surface_cache = EffectSurfaceCache()
+        self._sweep_cat_state = SweepCatState()
         self._board_grid_cache = {'key': None, 'surface': None}
         self._board_accent_overlay_cache: dict[tuple[int, int, tuple[int, int, int]], pygame.Surface] = {}
         self._line_clear_flash_cache: dict[tuple[int, int], pygame.Surface] = {}
@@ -421,6 +423,9 @@ class OnlinePvPGame:
         self.opp_line_sweep_progress: float = 0.0
         self.opp_line_sweep_active: bool = False
         self.opp_falling_block_animations: list[dict] = []
+        # Combo mesaj sistemi
+        self.my_combo_message: str = ""
+        self.my_combo_message_time: float = 0
         self._pending_opp_particle_rows: list[int] = []
         self.block_fall_speed: float = 0.12
         self.cell_size: int = 24  # update() sweep animasyonu için; _draw_game() güncelleyecek
@@ -1274,6 +1279,12 @@ class OnlinePvPGame:
             return
 
         self.my_eliminated = True
+        # Gamepad titreşimi - game over (uzun, güçlü)
+        try:
+            from gamepad_manager import get_gamepad_manager
+            get_gamepad_manager().rumble(1.0, 1.0, 600)
+        except Exception:
+            pass
         if self.my_board:
             self.net.send_game_over(self.my_board.score, self.my_board.lines_cleared)
         self._finalize_elimination_result()
@@ -1979,8 +1990,26 @@ class OnlinePvPGame:
             })
 
         lines = len(rows)
+
+        # Gamepad titreşimi - satır temizleme
+        if not is_opponent:
+            try:
+                from gamepad_manager import get_gamepad_manager
+                if lines >= 4:
+                    get_gamepad_manager().rumble(0.8, 1.0, 400)
+                elif lines >= 2:
+                    get_gamepad_manager().rumble(0.4, 0.5, 200)
+            except Exception:
+                pass
+
         if lines < 4:
             self.trigger_screen_shake(intensity=3 + lines * 2, duration=8)
+            # Multi-line parçacık efekti (2-3 satır)
+            if lines >= 2:
+                center_x = board_x + (BOARD_WIDTH * cell_size) // 2
+                center_y = board_y + (BOARD_HEIGHT * cell_size) // 2
+                self.create_particles(50 * lines, center_x, center_y,
+                                      [(0, 255, 255), (100, 200, 255), (150, 220, 255)], speed=6)
         else:
             center_x = board_x + (BOARD_WIDTH * cell_size) // 2
             center_y = board_y + (BOARD_HEIGHT * cell_size) // 2
@@ -2389,6 +2418,12 @@ class OnlinePvPGame:
                 self.opp_line_flash_rows = []
                 self.opp_line_glow_alpha = 0
 
+        # Combo mesaj timer
+        if self.my_combo_message_time > 0:
+            self.my_combo_message_time = max(0, self.my_combo_message_time - dt_frames)
+            if self.my_combo_message_time <= 0:
+                self.my_combo_message = ""
+
         if self.my_line_sweep_active:
             board_pixel_width = BOARD_WIDTH * self.cell_size
             sweep_width = max(1, int(self.cell_size * 1.5))
@@ -2549,10 +2584,12 @@ class OnlinePvPGame:
         lines = self.my_board.lock_piece(self.my_piece)
         cleared_rows = list(self.my_board.last_cleared_lines) if lines > 0 else []
 
-        try:
-            self.sound.play('lock')
-        except Exception:
-            pass
+        # Satır temizlenmiyorsa blok kilitlenme sesi çal (çakışma önlenir)
+        if lines == 0:
+            try:
+                self.sound.play('lock')
+            except Exception:
+                pass
 
         if lines > 0:
             if ONLINE_PVP_GARBAGE_ENABLED:
@@ -2567,6 +2604,26 @@ class OnlinePvPGame:
                 self.sound.play('line' if lines < 4 else 'tetris')
             except Exception:
                 pass
+            # Combo mesajı (DOUBLE/TRIPLE/QUADRIX)
+            if lines == 4:
+                self.my_combo_message = "QUADRIX!"
+                self.my_combo_message_time = 120
+            elif lines >= 2:
+                if lines == 2:
+                    self.my_combo_message = "DOUBLE!"
+                elif lines == 3:
+                    self.my_combo_message = "TRIPLE!"
+                else:
+                    self.my_combo_message = f"{lines}x CLEAR!"
+                combo_count = getattr(self.my_board, 'combo', 0)
+                if combo_count > 1:
+                    self.my_combo_message += f"  x{combo_count} Combo"
+                self.my_combo_message_time = 120
+            else:
+                combo_count = getattr(self.my_board, 'combo', 0)
+                if combo_count > 1:
+                    self.my_combo_message = f"x{combo_count} Combo!"
+                    self.my_combo_message_time = 90
             if self.my_board.last_cleared_lines and self.effects_enabled and my_board_rect:
                 cell_size = my_board_rect.width // BOARD_WIDTH
                 self._trigger_line_clear_feedback(
@@ -4057,6 +4114,20 @@ class OnlinePvPGame:
         # ─ Sağ tahta (rakip) ─
         self._draw_opponent_board(opp_x, board_top, cell_size)
 
+        # ─ Combo mesajı (DOUBLE/TRIPLE/QUADRIX) ─
+        if self.my_combo_message_time > 0 and self.my_combo_message:
+            alpha = min(255, int(self.my_combo_message_time * 255 / 30)) if self.my_combo_message_time < 30 else 255
+            msg_cx = my_x + board_w // 2
+            msg_cy = board_top + board_h // 3
+            msg_font = _rs.get_font(s(28, minimum=18), bold=True)
+            shadow = msg_font.render(self.my_combo_message, True, (0, 0, 0))
+            shadow.set_alpha(alpha)
+            self.screen.blit(shadow, shadow.get_rect(center=(msg_cx + 2, msg_cy + 2)))
+            color = (255, 215, 0) if 'QUADRIX' in self.my_combo_message else (255, 255, 255)
+            txt = msg_font.render(self.my_combo_message, True, color)
+            txt.set_alpha(alpha)
+            self.screen.blit(txt, txt.get_rect(center=(msg_cx, msg_cy)))
+
         # ─ Header paneller (pvp_game stili) ─
         my_name = self.net._get_name(self.net.my_steam_id) if self.net.my_steam_id else 'Sen'
         opp_name = self.net.opponent_name or t('opponent', 'Rakip')
@@ -4331,26 +4402,35 @@ class OnlinePvPGame:
 
         if self.my_line_sweep_rows and self.my_line_sweep_active:
             progress = self.my_line_sweep_progress
-            sweep_width = max(3, int(cell_size * 1.5))
-            for row in self.my_line_sweep_rows:
-                if 0 <= row < BOARD_HEIGHT:
-                    row_y = y + row * cell_size
-                    sweep_x = x + int(progress * (board_w + sweep_width)) - sweep_width
-                    for i in range(sweep_width):
-                        half = max(1, sweep_width // 2)
-                        intensity = 1.0 - abs(i - half) / half
-                        alpha = int(255 * intensity * (1.0 - progress * 0.3))
-                        line_x = sweep_x + i
-                        if x <= line_x < x + board_w and alpha > 0:
-                            pygame.draw.line(self.screen, (255, 255, 255), (line_x, row_y), (line_x, row_y + cell_size), 1)
-                    if progress > 0:
-                        lit_width = min(int(progress * board_w), board_w)
-                        if lit_width > 0:
-                            lit_surface = self._effect_surface_cache.get_filled_surface(
-                                (lit_width, cell_size),
-                                (255, 255, 255, int(180 * (1.0 - progress * 0.8))),
-                            )
-                            self.screen.blit(lit_surface, (x, row_y))
+            valid_rows = sorted({r for r in self.my_line_sweep_rows if 0 <= r < BOARD_HEIGHT})
+            if valid_rows:
+                cleared_count = max(1, len(valid_rows))
+                if cleared_count >= 4:
+                    sw_blocks = 2
+                elif cleared_count >= 3:
+                    sw_blocks = 3
+                elif cleared_count == 2:
+                    sw_blocks = 2
+                else:
+                    sw_blocks = 1
+                sweep_width = max(1, int(sw_blocks * cell_size))
+                top_row = valid_rows[0]
+                bottom_row = valid_rows[-1]
+                group_y = y + top_row * cell_size
+                group_h = max(cell_size, (bottom_row - top_row + 1) * cell_size)
+                phase = (pygame.time.get_ticks() // 80) % 8
+                sweep_x = x + int(progress * (board_w + sweep_width)) - sweep_width
+                board_group_rect = pygame.Rect(x, group_y, board_w, group_h)
+                draw_rainbow_cat_sweep(self.screen, self._sweep_cat_state, board_group_rect, sweep_x, sweep_width, phase, BOARD_WIDTH)
+                glow_a = int(70 * (1.0 - progress * 0.4))
+                if glow_a > 0:
+                    glow_w = min(sweep_width, int(board_w))
+                    glow_x = max(x, sweep_x)
+                    if glow_w > 0:
+                        for row in valid_rows:
+                            row_y = y + row * cell_size
+                            glow_surface = self._effect_surface_cache.get_filled_surface((glow_w, cell_size), (255, 255, 255, glow_a))
+                            self.screen.blit(glow_surface, (glow_x, row_y))
 
         if self.my_line_flash_rows and self.my_line_glow_alpha > 0:
             self._draw_line_clear_flash_overlay(x, y, board_w, cell_size, self.my_line_flash_rows, self.my_line_glow_alpha)
@@ -4457,26 +4537,35 @@ class OnlinePvPGame:
 
         if self.opp_line_sweep_rows and self.opp_line_sweep_active:
             progress = self.opp_line_sweep_progress
-            sweep_width = max(3, int(cell_size * 1.5))
-            for row in self.opp_line_sweep_rows:
-                if 0 <= row < BOARD_HEIGHT:
-                    row_y = y + row * cell_size
-                    sweep_x = x + int(progress * (board_w + sweep_width)) - sweep_width
-                    for i in range(sweep_width):
-                        half = max(1, sweep_width // 2)
-                        intensity = 1.0 - abs(i - half) / half
-                        alpha = int(255 * intensity * (1.0 - progress * 0.3))
-                        line_x = sweep_x + i
-                        if x <= line_x < x + board_w and alpha > 0:
-                            pygame.draw.line(self.screen, (255, 255, 255), (line_x, row_y), (line_x, row_y + cell_size), 1)
-                    if progress > 0:
-                        lit_width = min(int(progress * board_w), board_w)
-                        if lit_width > 0:
-                            lit_surface = self._effect_surface_cache.get_filled_surface(
-                                (lit_width, cell_size),
-                                (255, 255, 255, int(180 * (1.0 - progress * 0.8))),
-                            )
-                            self.screen.blit(lit_surface, (x, row_y))
+            valid_rows = sorted({r for r in self.opp_line_sweep_rows if 0 <= r < BOARD_HEIGHT})
+            if valid_rows:
+                cleared_count = max(1, len(valid_rows))
+                if cleared_count >= 4:
+                    sw_blocks = 2
+                elif cleared_count >= 3:
+                    sw_blocks = 3
+                elif cleared_count == 2:
+                    sw_blocks = 2
+                else:
+                    sw_blocks = 1
+                sweep_width = max(1, int(sw_blocks * cell_size))
+                top_row = valid_rows[0]
+                bottom_row = valid_rows[-1]
+                group_y = y + top_row * cell_size
+                group_h = max(cell_size, (bottom_row - top_row + 1) * cell_size)
+                phase = (pygame.time.get_ticks() // 80) % 8
+                sweep_x = x + int(progress * (board_w + sweep_width)) - sweep_width
+                board_group_rect = pygame.Rect(x, group_y, board_w, group_h)
+                draw_rainbow_cat_sweep(self.screen, self._sweep_cat_state, board_group_rect, sweep_x, sweep_width, phase, BOARD_WIDTH)
+                glow_a = int(70 * (1.0 - progress * 0.4))
+                if glow_a > 0:
+                    glow_w = min(sweep_width, int(board_w))
+                    glow_x = max(x, sweep_x)
+                    if glow_w > 0:
+                        for row in valid_rows:
+                            row_y = y + row * cell_size
+                            glow_surface = self._effect_surface_cache.get_filled_surface((glow_w, cell_size), (255, 255, 255, glow_a))
+                            self.screen.blit(glow_surface, (glow_x, row_y))
 
         if self.opp_line_flash_rows and self.opp_line_glow_alpha > 0:
             self._draw_line_clear_flash_overlay(x, y, board_w, cell_size, self.opp_line_flash_rows, self.opp_line_glow_alpha)

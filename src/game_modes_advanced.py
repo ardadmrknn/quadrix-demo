@@ -208,9 +208,14 @@ class SurvivalMode(Game):
         self.game_over_by_virus = True
         self.survival_victory = False
         self.survival_victory = False
+        # Gamepad titreşimi - game over (uzun, güçlü)
+        try:
+            from gamepad_manager import get_gamepad_manager
+            get_gamepad_manager().rumble(1.0, 1.0, 600)
+        except Exception:
+            pass
         if self.sound:
             self.sound.play_game_over_sequence()
-        self.trigger_screen_shake(intensity=30, duration=60)
         self.trigger_screen_shake(intensity=30, duration=60)
         
         print(f"☠️ VİRÜS GALİP! {self.consumed_count} blok yenildi.")
@@ -420,16 +425,32 @@ class SurvivalMode(Game):
         """Parçayı kilitle ve satır temizleme - Survival kurallarıyla"""
         locked_cells = [(x, y) for x, y in self.current_piece.get_cells() if y >= 0]
 
+        # Lock explosion - her hücre için parçacık patlaması
         if self.effects_enabled:
-            board_width = BOARD_WIDTH * 25
-            offset_x = (self.window_width - board_width) // 2
-            offset_y = (self.window_height - BOARD_HEIGHT * 25) // 2
-            piece_center_x = offset_x + (self.current_piece.x + 2) * 25
-            piece_center_y = offset_y + (self.current_piece.y + 2) * 25
-            self.create_particles(15, piece_center_x, piece_center_y,
-                [self.current_piece.color], speed=3)
+            cell_size = self.get_cell_size()
+            offset_x, offset_y = self.get_board_offset()
+            piece_cells = self.current_piece.get_cells()
+            cm = getattr(self.current_piece, 'color_matrix', None)
+            for cell_x, cell_y in piece_cells:
+                screen_x = offset_x + cell_x * cell_size + cell_size // 2
+                screen_y = offset_y + cell_y * cell_size + cell_size // 2
+                cell_color = self.current_piece.color
+                if cm is not None:
+                    try:
+                        lx = cell_x - self.current_piece.x
+                        ly = cell_y - self.current_piece.y
+                        v = cm[ly][lx]
+                        if v is not None:
+                            cell_color = v
+                    except Exception:
+                        pass
+                self.create_lock_explosion(x=screen_x, y=screen_y, color=cell_color, cell_size=cell_size)
 
         lines_cleared = self.board.lock_piece(self.current_piece)
+
+        # Satır temizlenmiyorsa blok kilitlenme sesi çal
+        if lines_cleared == 0:
+            self.sound.play('lock')
 
         if lines_cleared > 0:
             self.line_clear_animation = 30
@@ -439,10 +460,33 @@ class SurvivalMode(Game):
             self._remove_infections_on_lines(cleared_lines)
             self._shift_infections_after_clear(cleared_lines)
 
+            # Pending rows/colors kaydet (sweep animasyonu için)
+            self.line_clear_pending_rows = []
+            self.line_clear_pending_colors = {}
+            if self.effects_enabled and cleared_lines:
+                self.line_clear_pending_rows = list(cleared_lines)
+                try:
+                    pending_colors = {}
+                    if hasattr(self.board, 'last_cleared_colors'):
+                        for row in cleared_lines:
+                            row_colors = self.board.last_cleared_colors.get(row)
+                            if row_colors:
+                                pending_colors[row] = list(row_colors)
+                    self.line_clear_pending_colors = pending_colors
+                except Exception:
+                    self.line_clear_pending_colors = {}
+
             if lines_cleared == 4:
-                self.combo_message = f"QUADRIX! +{self.board.combo}x COMBO"
+                self.combo_message = "QUADRIX! 4 Satır Yok Edildi!"
+                self.combo_message_time = 120
                 self.sound.play('tetris')
                 self.trigger_screen_shake(intensity=15, duration=20)
+                # Gamepad titreşimi - QUADRIX! (güçlü)
+                try:
+                    from gamepad_manager import get_gamepad_manager
+                    get_gamepad_manager().rumble(0.8, 1.0, 400)
+                except Exception:
+                    pass
                 
                 # Quadrix partikülleri
                 if self.effects_enabled:
@@ -458,8 +502,25 @@ class SurvivalMode(Game):
                         speed=10
                     )
             elif lines_cleared >= 2:
-                self.combo_message = f"{lines_cleared} SATIR!"
+                if lines_cleared == 2:
+                    clear_name = "DOUBLE!"
+                elif lines_cleared == 3:
+                    clear_name = "TRIPLE!"
+                else:
+                    clear_name = f"{lines_cleared}x CLEAR!"
+                combo_count = getattr(self.board, 'combo', 0)
+                if combo_count > 1:
+                    self.combo_message = f"{clear_name}  x{combo_count} Combo"
+                else:
+                    self.combo_message = clear_name
                 self.sound.play('line')
+                self.combo_message_time = 120
+                # Gamepad titreşimi - çoklu satır (orta)
+                try:
+                    from gamepad_manager import get_gamepad_manager
+                    get_gamepad_manager().rumble(0.4, 0.5, 200)
+                except Exception:
+                    pass
                 
                 # Çoklu satır partikülleri
                 if self.effects_enabled:
@@ -475,13 +536,20 @@ class SurvivalMode(Game):
                         speed=6 + lines_cleared
                     )
             else:
+                combo_count = getattr(self.board, 'combo', 0)
+                if combo_count > 1:
+                    self.combo_message = f"x{combo_count} Combo!"
+                    self.combo_message_time = 90
+                else:
+                    self.combo_message = ""
+                    self.combo_message_time = 0
                 self.sound.play('line')
             
             # Standart satır temizleme efektleri (Flash, Wave, Particles)
             if self.effects_enabled:
                 cell_size = self.get_cell_size()
                 offset_x, offset_y = self.get_board_offset()
-                cleared_rows_list = list(self.board.last_cleared_lines)
+                cleared_rows_list = list(self.board.last_cleared_lines) if self.board.last_cleared_lines else cleared_lines
                 
                 # Flash
                 self.line_clear_flash_rows = cleared_rows_list
@@ -520,8 +588,11 @@ class SurvivalMode(Game):
                 # Shake
                 if lines_cleared < 4:
                     self.trigger_screen_shake(intensity=3 + lines_cleared * 2, duration=8)
-                
-            self.combo_message_time = 120
+
+            # Satırları temizle (efekt bilgisi alındıktan sonra)
+            self.board.last_cleared_lines = []
+            if hasattr(self.board, 'last_cleared_colors'):
+                self.board.last_cleared_colors = {}
 
             if self.achievement_manager:
                 new_achievements = self.achievement_manager.update_stats(
@@ -544,13 +615,24 @@ class SurvivalMode(Game):
 
         self.current_piece = self.next_piece_queue.pop(0)
         self.next_piece_queue.append(self.spawn_new_piece())
+        # Lock-delay state sıfırla
+        self.grounded = False
+        self.lock_timer = 0
+        self.lock_reset_count = 0
         self.can_hold = True
+        self.can_hold2 = True
         self.fall_speed = self.get_current_speed()
         self.apply_theme_to_pieces()
 
         # Top-out kontrolü
         if not self.board.is_valid_position(self.current_piece):
             self.game_over = True
+            # Gamepad titreşimi - game over (uzun, güçlü)
+            try:
+                from gamepad_manager import get_gamepad_manager
+                get_gamepad_manager().rumble(1.0, 1.0, 600)
+            except Exception:
+                pass
             if self.sound:
                 self.sound.play_game_over_sequence()
             self.finalize_run(playtime=self.survival_time // 1000)
@@ -954,6 +1036,27 @@ class CascadeMode(Game):
         
     def lock_and_new_piece(self):
         """Parçayı kilitle - Cascade effect ile"""
+        # Lock explosion - her hücre için parçacık patlaması
+        if self.effects_enabled:
+            cell_size = self.get_cell_size()
+            offset_x, offset_y = self.get_board_offset()
+            piece_cells = self.current_piece.get_cells()
+            cm = getattr(self.current_piece, 'color_matrix', None)
+            for cell_x, cell_y in piece_cells:
+                screen_x = offset_x + cell_x * cell_size + cell_size // 2
+                screen_y = offset_y + cell_y * cell_size + cell_size // 2
+                cell_color = self.current_piece.color
+                if cm is not None:
+                    try:
+                        lx = cell_x - self.current_piece.x
+                        ly = cell_y - self.current_piece.y
+                        v = cm[ly][lx]
+                        if v is not None:
+                            cell_color = v
+                    except Exception:
+                        pass
+                self.create_lock_explosion(x=screen_x, y=screen_y, color=cell_color, cell_size=cell_size)
+
         # Parçayı tahtaya yerleştir (occupancy/texture/owners ile tutarlı)
         piece = self.current_piece
         piece_w = len(piece.shape[0]) if getattr(piece, 'shape', None) else 0
@@ -977,6 +1080,9 @@ class CascadeMode(Game):
                     except Exception:
                         pass
         
+        # İlk lock sesi için satır durumunu takip et
+        _any_lines_cleared = False
+
         # Satırları kontrol et ve cascade başlat
         total_cleared = 0
         cascade_level = 0
@@ -990,6 +1096,15 @@ class CascadeMode(Game):
 
             if not lines_to_clear:
                 break
+
+            # Pending rows/colors kaydet (sweep animasyonu için)
+            if self.effects_enabled:
+                self.line_clear_pending_rows = list(lines_to_clear)
+                pending_colors = {}
+                for row in lines_to_clear:
+                    row_colors = [self.board.grid[row][x] for x in range(self.board_width)]
+                    pending_colors[row] = list(row_colors)
+                self.line_clear_pending_colors = pending_colors
 
             # === Satır temizleme animasyonu (Game'dekiyle uyumlu) ===
             # Not: Satırlar hemen silinecek olsa da flash/wave overlay'leri
@@ -1044,6 +1159,7 @@ class CascadeMode(Game):
                 except Exception:
                     pass
 
+            _any_lines_cleared = True
             cascade_level += 1
             total_cleared += len(lines_to_clear)
 
@@ -1088,6 +1204,19 @@ class CascadeMode(Game):
             # Quadrix kontrolü
             if len(lines_to_clear) >= 4:
                 self.board.tetrises += 1
+                # Gamepad titreşimi - QUADRIX!
+                try:
+                    from gamepad_manager import get_gamepad_manager
+                    get_gamepad_manager().rumble(0.8, 1.0, 400)
+                except Exception:
+                    pass
+            elif len(lines_to_clear) >= 2:
+                # Gamepad titreşimi - multi-line
+                try:
+                    from gamepad_manager import get_gamepad_manager
+                    get_gamepad_manager().rumble(0.4, 0.5, 200)
+                except Exception:
+                    pass
         
         # Cascade seviyesini kaydet (görsel için)
         if cascade_level > 0:
@@ -1095,12 +1224,54 @@ class CascadeMode(Game):
             # Daha minimal bildirim için daha kısa süre
             self.cascade_message_time = 90  # ~1.5 saniye
         
+        # Satır temizlenmiyorsa blok kilitlenme sesi çal
+        if not _any_lines_cleared:
+            self.sound.play('lock')
+
         # Skor/istatistik güncelle
         if total_cleared > 0:
             self.board.lines_cleared += total_cleared
             self.board.level = (self.board.lines_cleared // 5) + 1
             self.board.score += self.cascade_bonus
             self.board.combo += 1
+
+            # Back-to-back tracking
+            if total_cleared >= 4:
+                if getattr(self.board, 'back_to_back', False):
+                    self.board.score += int(self.cascade_bonus * 0.5)  # B2B bonus
+                self.board.back_to_back = True
+            else:
+                self.board.back_to_back = False
+
+            # Perfect clear kontrolü
+            if all(not any(row) for row in self.board.occupancy):
+                self.board.score += 3000 * self.board.level
+
+            # Combo mesajı (base game ile tutarlı)
+            if total_cleared >= 4:
+                self.combo_message = "QUADRIX! 4 Satır Yok Edildi!"
+                self.combo_message_time = 120
+            elif total_cleared >= 2:
+                if total_cleared == 2:
+                    clear_name = "DOUBLE!"
+                elif total_cleared == 3:
+                    clear_name = "TRIPLE!"
+                else:
+                    clear_name = f"{total_cleared}x CLEAR!"
+                combo_count = getattr(self.board, 'combo', 0)
+                if combo_count > 1:
+                    self.combo_message = f"{clear_name}  x{combo_count} Combo"
+                else:
+                    self.combo_message = clear_name
+                self.combo_message_time = 120
+            else:
+                combo_count = getattr(self.board, 'combo', 0)
+                if combo_count > 1:
+                    self.combo_message = f"x{combo_count} Combo!"
+                    self.combo_message_time = 90
+                else:
+                    self.combo_message = ""
+                    self.combo_message_time = 0
             
             # Parçacıklar
             if self.effects_enabled:
@@ -1108,6 +1279,26 @@ class CascadeMode(Game):
                 board_offset_x, board_offset_y = self.get_board_offset()
                 self.create_cascade_particles(board_offset_x, board_offset_y, cell_size)
             
+            # Başarı kontrolü
+            if self.achievement_manager:
+                new_achievements = self.achievement_manager.update_stats(
+                    score=self.board.score,
+                    lines=self.board.lines_cleared,
+                    level=self.board.level,
+                    tetrises=self.board.tetrises,
+                    combo=self.board.combo,
+                    game_mode=self.game_mode,
+                )
+                for ach_id in new_achievements:
+                    achievement = self.achievement_manager.get_achievement(ach_id)
+                    if achievement:
+                        self.achievement_notifications.append({
+                            'achievement': achievement,
+                            'time': pygame.time.get_ticks(),
+                            'alpha': 255,
+                        })
+                        self.sound.play('tetris')
+
             # Cascade bonusunu sıfırla
             self.cascade_bonus = 0
         else:
@@ -1116,12 +1307,24 @@ class CascadeMode(Game):
         # Yeni parça
         self.current_piece = self.next_piece_queue.pop(0)
         self.next_piece_queue.append(self.spawn_new_piece())
+        # Lock-delay state sıfırla
+        self.grounded = False
+        self.lock_timer = 0
+        self.lock_reset_count = 0
         self.can_hold = True
+        self.can_hold2 = True
         self.apply_theme_to_pieces()
+        self.fall_speed = self.get_current_speed()
         
         # Game over kontrolü
         if not self.board.is_valid_position(self.current_piece):
             self.game_over = True
+            # Gamepad titreşimi - game over (uzun, güçlü)
+            try:
+                from gamepad_manager import get_gamepad_manager
+                get_gamepad_manager().rumble(1.0, 1.0, 600)
+            except Exception:
+                pass
             if self.sound:
                 self.sound.play_game_over_sequence()
             
