@@ -8605,7 +8605,7 @@ TRANSLATIONS = {
         'ko': '미니 폭탄',
     },
     'card_mini_bomb_desc': {
-        'tr': 'Mevcut parça kilitlenince kendi hücreleri + temas ettiği komşu blokları patlatır.',
+        'tr': 'Kilitlenince komşu blokları da patlatır.',
         'en': 'When locked, explodes its own cells + touching neighbor blocks.',
         'de': 'Beim Platzieren sprengt es seine eigenen Zellen + berührende Nachbarblöcke.',
         'fr': 'Une fois verrouillée, explose ses propres cellules + les blocs voisins touchés.',
@@ -8683,7 +8683,7 @@ TRANSLATIONS = {
         'ko': '폭탄 마스터',
     },
     'card_bomb_master_desc': {
-        'tr': '3 hak: M tuşuyla mevcut parçayı mini bomba yap. Kilitlenince temas ettiği blokları patlatır.',
+        'tr': '3 hak: M ile parçayı bomba yap; kilitlenince çevresini patlatır.',
         'en': '3 uses: Press M to turn the current piece into a mini bomb. On lock, it explodes the blocks it touches.',
         'de': '3 Verwendungen: Drücke M, um das aktuelle Teil in eine Mini-Bombe zu verwandeln. Beim Platzieren sprengt es die berührten Blöcke.',
         'fr': '3 utilisations : appuyez sur M pour transformer la pièce actuelle en mini-bombe. À la pose, elle explose les blocs touchés.',

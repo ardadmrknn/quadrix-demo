@@ -746,7 +746,7 @@ class MysteryCardManager:
                 "title": "Mini Bomba",
                 "base": 1,
                 "value_range": (1, 1),
-                "description": "Mevcut parça kilitlenince kendi hücreleri + temas ettiği komşu blokları patlatır.",
+                "description": "Kilitlenince komşu blokları da patlatır.",
                 "color": (255, 110, 80),
                 "bg": (50, 12, 10),
                 "icon": "B",
@@ -870,7 +870,7 @@ class MysteryCardManager:
                 "title": "Bomba Ustası",
                 "base": 3,
                 "value_range": (3, 3),
-                "description": "3 hak: M tuşuyla mevcut parçayı mini bomba yap. Kilitlenince temas ettiği blokları patlatır.",
+                "description": "3 hak: M ile parçayı bomba yap; kilitlenince çevresini patlatır.",
                 "color": (255, 90, 60),
                 "bg": (50, 12, 10),
                 "icon": "💣",
@@ -2160,7 +2160,7 @@ class MysteryCardUI:
         card_desc_text = get_card_description(card, card.get("value"), card.get("description", ""))
         desc_lines = self._wrap_text(card_desc_text, desc_wrap_width)
         # Cap description lines in overlay to avoid oversizing the card
-        max_desc_lines_overlay = 3
+        max_desc_lines_overlay = 4
         if len(desc_lines) > max_desc_lines_overlay:
             desc_lines = desc_lines[:max_desc_lines_overlay]
             last = desc_lines[-1]
@@ -3874,7 +3874,7 @@ class UICard:
 
         # Description text wrap
         desc_font = self.fonts.get('desc')
-        wrap_limit_pixels = rect.width - 48
+        wrap_limit_pixels = rect.width - 36
         lines = []
         raw_desc = get_card_description(
             self.card,
@@ -3893,8 +3893,17 @@ class UICard:
                 cur = w
         if cur:
             lines.append(cur)
-        desc_lines = lines[:3]
-        desc_y = icon_rect.bottom + 100
+        max_desc_lines = 4
+        if len(lines) > max_desc_lines:
+            desc_lines = lines[:max_desc_lines]
+            last = desc_lines[-1]
+            ellipsis_str = '...'
+            while desc_font.size(last + ellipsis_str)[0] > wrap_limit_pixels and len(last) > 0:
+                last = last[:-1]
+            desc_lines[-1] = last.rstrip() + ellipsis_str
+        else:
+            desc_lines = lines
+        desc_y = icon_rect.bottom + 90
         if desc_lines:
             desc_line_h = desc_font.get_linesize()
             desc_pad_x = 12
@@ -6844,12 +6853,6 @@ class MysteryMode(Game):
         self.card_selection_active = True
         self.card_ui.reset()
         self._pending_card_choice_index = None
-        # Kart seçimi açıkken satır temizleme flash/dalga efektlerini çizme.
-        # Böylece altta "yarım kalmış" animasyonlar görünmez.
-        try:
-            self.suppress_line_clear_effects = True
-        except Exception:
-            pass
         # While the overlay is active we consume events; KEYUP events for left/right
         # may never reach the base Game handler. Reset DAS to avoid "stuck" drift.
         try:
@@ -6872,10 +6875,6 @@ class MysteryMode(Game):
         self.card_selection_active = False
         self.card_ui.clear_selection_feedback()
         self._pending_card_choice_index = None
-        try:
-            self.suppress_line_clear_effects = False
-        except Exception:
-            pass
         # Same reason as above: ensure gameplay resumes with a clean horizontal
         # repeat state even if KEYUP was consumed during overlay.
         try:
