@@ -36,6 +36,7 @@ from ui_theme import UIFonts, UIColors
 from asset_manager import load_image
 from gamepad_manager import get_gamepad_manager, is_gamepad_connected
 from effect_surface_cache import EffectSurfaceCache
+from sweep_effects import SweepCatState, draw_rainbow_cat_sweep
 
 def resource_path(relative_path):
     """PyInstaller ile derlenen exe için doğru path'i al"""
@@ -461,6 +462,7 @@ class Game:
         self._sweep_cat_frame_base_surfaces = []
         self._sweep_cat_frame_surface_cache = {}
         self._sweep_cat_paw_profile = None
+        self._sweep_cat_state = SweepCatState()
         
         # Blok düşme animasyonu sistemi
         self.falling_block_animations = []  # Düşen blokların animasyon verileri
@@ -1497,8 +1499,6 @@ class Game:
                         if self._has_adjacent_block(self.current_piece):
                             before_piece = self.current_piece
                             self.lock_and_new_piece()
-                            if self.current_piece is not before_piece:
-                                self.sound.play('drop')
                         # Komşu blok yoksa - kilitleme yapma
                         continue
                     # otherwise behave as default hard drop
@@ -1524,7 +1524,6 @@ class Game:
                     
                     # Hard drop used to give bonus points; now removed per new scoring rules.
                     self.lock_and_new_piece()
-                    self.sound.play('drop')
                     # Gamepad titreşimi - hard drop
                     try:
                         get_gamepad_manager().rumble(0.3, 0.6, 120)
@@ -3070,6 +3069,10 @@ class Game:
         
         lines_cleared = self.board.lock_piece(self.current_piece)
 
+        # Satır temizlenmiyorsa blok kilitlenme sesi çal
+        if lines_cleared == 0:
+            self.sound.play('lock')
+
         # Satır temizleme efektleri
         if lines_cleared > 0:
             # Temizlenen satırları efekt için kaydet (board.lock_piece içinde zaten set edildi)
@@ -3787,7 +3790,7 @@ class Game:
                 # Sweep pozisyonu (soldan sağa)
                 sweep_x = offset_x + int(progress * (board_width + sweep_width)) - sweep_width
                 board_group_rect = pygame.Rect(offset_x, group_y, board_width, group_h)
-                self._draw_rainbow_cat_sweep(board_group_rect, sweep_x, sweep_width, phase)
+                draw_rainbow_cat_sweep(self.screen, self._sweep_cat_state, board_group_rect, sweep_x, sweep_width, phase, self.board_width)
 
                 # Hafif beyaz vurgu (temizlenen satırların tamamında)
                 glow_alpha = int(70 * (1.0 - progress * 0.4))

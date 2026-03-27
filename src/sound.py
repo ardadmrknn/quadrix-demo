@@ -274,6 +274,8 @@ class SoundManager:
                 'combo', 'levelup', 'tetris',
                 'tutorial_success', 'tutorial_progress', 'tutorial_complete',
                 'sniper_shot',
+                'card_open', 'card_magnet', 'card_save', 'card_activate',
+                'card_restore',
             )
             for key in sound_keys:
                 self.create_gameplay_sfx(key)
@@ -309,9 +311,9 @@ class SoundManager:
                     self.sounds['card_reveal'] = pygame.mixer.Sound(str(card_reveal_path))
                     self.sounds['card_reveal'].set_volume(self.sfx_volume)
                 except Exception:
-                    self.create_beep('card_reveal', 760, 60)
+                    self.create_gameplay_sfx('card_reveal')
             else:
-                self.create_beep('card_reveal', 760, 60)
+                self.create_gameplay_sfx('card_reveal')
 
             self._register_sound_alias('game_over', 'gameover')
             self._register_sound_alias('level_up', 'levelup')
@@ -565,15 +567,99 @@ class SoundManager:
                 ],
             },
             'sniper_shot': {
-                'duration_ms': 96,
+                'duration_ms': 104,
+                'attack_ms': 1,
+                'release_ms': 54,
+                'noise_amount': 0.028,
+                'transient_amount': 0.10,
+                'stereo_width': 0.006,
+                'layers': [
+                    {'wave': 'triangle', 'start_freq': 1800.0, 'end_freq': 700.0, 'amplitude': 0.20},
+                    {'wave': 'sine', 'start_freq': 350.0, 'end_freq': 120.0, 'amplitude': 0.20},
+                    {'wave': 'sine', 'start_freq': 2800.0, 'end_freq': 1400.0, 'amplitude': 0.08},
+                ],
+            },
+            # ── Kart moduna özel sesler ──
+            'card_reveal': {
+                'duration_ms': 78,
                 'attack_ms': 1,
                 'release_ms': 48,
-                'noise_amount': 0.020,
-                'transient_amount': 0.080,
-                'stereo_width': 0.004,
+                'noise_amount': 0.005,
+                'transient_amount': 0.012,
+                'stereo_width': 0.022,
                 'layers': [
-                    {'wave': 'triangle', 'start_freq': 1400.0, 'end_freq': 920.0, 'amplitude': 0.18},
-                    {'wave': 'sine', 'start_freq': 240.0, 'end_freq': 120.0, 'amplitude': 0.16},
+                    {'wave': 'triangle', 'start_freq': 523.0, 'end_freq': 659.0, 'amplitude': 0.28},
+                    {'wave': 'sine', 'start_freq': 784.0, 'end_freq': 988.0, 'amplitude': 0.14},
+                    {'wave': 'sine', 'start_freq': 262.0, 'end_freq': 330.0, 'amplitude': 0.12},
+                ],
+            },
+            'card_open': {
+                'duration_ms': 150,
+                'attack_ms': 4,
+                'release_ms': 94,
+                'noise_amount': 0.008,
+                'transient_amount': 0.006,
+                'stereo_width': 0.032,
+                'layers': [
+                    {'wave': 'triangle', 'start_freq': 330.0, 'end_freq': 440.0, 'amplitude': 0.24},
+                    {'wave': 'sine', 'start_freq': 440.0, 'end_freq': 659.0, 'amplitude': 0.18},
+                    {'wave': 'sine', 'start_freq': 165.0, 'end_freq': 220.0, 'amplitude': 0.14},
+                    {'wave': 'sine', 'start_freq': 554.0, 'end_freq': 831.0, 'amplitude': 0.07},
+                ],
+            },
+            'card_magnet': {
+                'duration_ms': 82,
+                'attack_ms': 1,
+                'release_ms': 50,
+                'noise_amount': 0.015,
+                'transient_amount': 0.030,
+                'stereo_width': 0.010,
+                'layers': [
+                    {'wave': 'triangle', 'start_freq': 392.0, 'end_freq': 294.0, 'amplitude': 0.32},
+                    {'wave': 'sine', 'start_freq': 587.0, 'end_freq': 440.0, 'amplitude': 0.16},
+                    {'wave': 'sine', 'start_freq': 196.0, 'end_freq': 147.0, 'amplitude': 0.14},
+                ],
+            },
+            'card_save': {
+                'duration_ms': 148,
+                'attack_ms': 3,
+                'release_ms': 88,
+                'noise_amount': 0.003,
+                'transient_amount': 0.008,
+                'stereo_width': 0.026,
+                'layers': [
+                    {'wave': 'triangle', 'start_freq': 392.0, 'end_freq': 587.0, 'amplitude': 0.24},
+                    {'wave': 'sine', 'start_freq': 587.0, 'end_freq': 880.0, 'amplitude': 0.16},
+                    {'wave': 'sine', 'start_freq': 784.0, 'end_freq': 1175.0, 'amplitude': 0.08},
+                    {'wave': 'sine', 'start_freq': 196.0, 'end_freq': 294.0, 'amplitude': 0.10},
+                ],
+            },
+            'card_activate': {
+                'duration_ms': 230,
+                'attack_ms': 3,
+                'release_ms': 128,
+                'noise_amount': 0.004,
+                'transient_amount': 0.010,
+                'stereo_width': 0.032,
+                'layers': [
+                    {'wave': 'triangle', 'start_freq': 262.0, 'end_freq': 523.0, 'amplitude': 0.22},
+                    {'wave': 'sine', 'start_freq': 330.0, 'end_freq': 659.0, 'amplitude': 0.17},
+                    {'wave': 'sine', 'start_freq': 392.0, 'end_freq': 784.0, 'amplitude': 0.13},
+                    {'wave': 'sine', 'start_freq': 523.0, 'end_freq': 1047.0, 'amplitude': 0.06},
+                ],
+            },
+            'card_restore': {
+                'duration_ms': 160,
+                'attack_ms': 2,
+                'release_ms': 96,
+                'noise_amount': 0.006,
+                'transient_amount': 0.010,
+                'stereo_width': 0.028,
+                'layers': [
+                    {'wave': 'triangle', 'start_freq': 587.0, 'end_freq': 392.0, 'amplitude': 0.24},
+                    {'wave': 'sine', 'start_freq': 880.0, 'end_freq': 587.0, 'amplitude': 0.16},
+                    {'wave': 'sine', 'start_freq': 1175.0, 'end_freq': 784.0, 'amplitude': 0.08},
+                    {'wave': 'sine', 'start_freq': 294.0, 'end_freq': 196.0, 'amplitude': 0.10},
                 ],
             },
         }

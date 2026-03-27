@@ -20,6 +20,7 @@ from platform_utils import create_display, get_display_flags, normalize_mouse_po
 from localization import t
 from ui_theme import UIColors, UIFonts
 from effect_surface_cache import EffectSurfaceCache
+from sweep_effects import SweepCatState, draw_rainbow_cat_sweep
 
 def resource_path(relative_path):
     """PyInstaller ile derlenen exe için doğru path'i al"""
@@ -307,6 +308,12 @@ class PvPGame:
         self.p2_drop_trails = []
         self.block_fall_speed = 0.12
         
+        # Combo mesaj sistemi (DOUBLE/TRIPLE/QUADRIX gösterimi)
+        self.p1_combo_message = ""
+        self.p1_combo_message_time = 0
+        self.p2_combo_message = ""
+        self.p2_combo_message_time = 0
+        
         # Arka plan parçacıkları (ambient effect)
         self.ambient_particles = []
         self.create_ambient_particles()
@@ -364,6 +371,7 @@ class PvPGame:
         # Ambient particle sprite cache (surface allocation azalt)
         self._ambient_sprite_cache = {}
         self._effect_surface_cache = EffectSurfaceCache()
+        self._sweep_cat_state = SweepCatState()
 
         # PvP draw cache (surface allocation azalt)
         self._board_accent_overlay_cache = {}
@@ -748,6 +756,30 @@ class PvPGame:
         cached['key'] = key
         cached['surface'] = surface
         return surface
+
+    def _draw_combo_messages(self, offset_x1, offset_x2, start_y, board_width, board_height):
+        """Combo mesajlarını (DOUBLE/TRIPLE/QUADRIX) her oyuncunun tahtası üzerinde çiz."""
+        for msg, timer, ox in [
+            (self.p1_combo_message, self.p1_combo_message_time, offset_x1),
+            (self.p2_combo_message, self.p2_combo_message_time, offset_x2),
+        ]:
+            if timer <= 0 or not msg:
+                continue
+            alpha = min(255, int(timer * 255 / 30)) if timer < 30 else 255
+            center_x = ox + board_width // 2
+            center_y = start_y + board_height // 3
+            font = self.font_large
+            # Gölge
+            shadow_surf = font.render(msg, True, (0, 0, 0))
+            shadow_surf.set_alpha(alpha)
+            sr = shadow_surf.get_rect(center=(center_x + 2, center_y + 2))
+            self.screen.blit(shadow_surf, sr)
+            # Ana metin (QUADRIX altın, diğerleri beyaz)
+            color = (255, 215, 0) if 'QUADRIX' in msg else (255, 255, 255)
+            text_surf = font.render(msg, True, color)
+            text_surf.set_alpha(alpha)
+            tr = text_surf.get_rect(center=(center_x, center_y))
+            self.screen.blit(text_surf, tr)
 
     def _draw_player_header(self, rect: pygame.Rect, name: str, accent_color, score: int, lines: int, controls_label: str):
         skin = self.mode_skin
@@ -1157,7 +1189,6 @@ class PvPGame:
                             )
                         
                         self.lock_and_new_piece(1)
-                        self.sound.play('drop')
                 
                 # OYUNCU 2 KONTROLLER (Ok tuşları + Space)
                 if not self.board2.is_game_over():
@@ -1227,7 +1258,6 @@ class PvPGame:
                             )
                         
                         self.lock_and_new_piece(2)
-                        self.sound.play('drop')
             
             # Game over ekranında mouse tıklama kontrolü
             if self.game_over and event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
@@ -2009,6 +2039,10 @@ class PvPGame:
             
             lines = self.board1.lock_piece(self.current_piece1)
             self._mark_locked_board_dirty(1)
+
+            # Satır temizlenmiyorsa blok kilitlenme sesi çal
+            if lines == 0:
+                self.sound.play('lock')
             
             if lines > 0:
                 # Gelişmiş satır temizleme efektleri (ana oyundaki gibi)
@@ -2051,6 +2085,49 @@ class PvPGame:
                 
                 self.sound.play('line' if lines < 4 else 'tetris')
                 
+                # Combo mesajı (DOUBLE/TRIPLE/QUADRIX)
+                if lines == 4:
+                    self.p1_combo_message = "QUADRIX!"
+                    self.p1_combo_message_time = 120
+                elif lines >= 2:
+                    if lines == 2:
+                        self.p1_combo_message = "DOUBLE!"
+                    elif lines == 3:
+                        self.p1_combo_message = "TRIPLE!"
+                    else:
+                        self.p1_combo_message = f"{lines}x CLEAR!"
+                    combo_count = getattr(self.board1, 'combo', 0)
+                    if combo_count > 1:
+                        self.p1_combo_message += f"  x{combo_count} Combo"
+                    self.p1_combo_message_time = 120
+                else:
+                    combo_count = getattr(self.board1, 'combo', 0)
+                    if combo_count > 1:
+                        self.p1_combo_message = f"x{combo_count} Combo!"
+                        self.p1_combo_message_time = 90
+
+                # Gamepad titreşimi - satır temizleme
+                try:
+                    from gamepad_manager import get_gamepad_manager
+                    if lines >= 4:
+                        get_gamepad_manager().rumble(0.8, 1.0, 400)
+                    elif lines >= 2:
+                        get_gamepad_manager().rumble(0.4, 0.5, 200)
+                except Exception:
+                    pass
+
+                # Multi-line parçacık efekti (2-3 satır)
+                if lines < 4 and lines >= 2 and self.effects_enabled:
+                    center_x = self.p1_offset_x + (BOARD_WIDTH * self.cell_size) // 2
+                    center_y = self.p1_offset_y + (BOARD_HEIGHT * self.cell_size) // 2
+                    self.create_particles(
+                        count=50 * lines,
+                        x=center_x,
+                        y=center_y,
+                        colors=[CYAN, (100, 200, 255), (150, 220, 255)],
+                        speed=6
+                    )
+
                 # Quadrix için özel efekt (ana oyunla aynı)
                 if lines == 4 and self.effects_enabled:
                     center_x = self.p1_offset_x + (BOARD_WIDTH * self.cell_size) // 2
@@ -2076,6 +2153,12 @@ class PvPGame:
                     self.winner = 2
                     self.game_over = True
                     self.match_end_reason = 'elimination'
+                    # Gamepad titreşimi - game over
+                    try:
+                        from gamepad_manager import get_gamepad_manager
+                        get_gamepad_manager().rumble(1.0, 1.0, 600)
+                    except Exception:
+                        pass
                     self.sound.play('gameover')
                     return
                 # İki oyuncu da öldüyse kazananı belirle
@@ -2107,6 +2190,10 @@ class PvPGame:
             
             lines = self.board2.lock_piece(self.current_piece2)
             self._mark_locked_board_dirty(2)
+
+            # Satır temizlenmiyorsa blok kilitlenme sesi çal
+            if lines == 0:
+                self.sound.play('lock')
             
             if lines > 0:
                 # Gelişmiş satır temizleme efektleri (ana oyundaki gibi)
@@ -2149,6 +2236,49 @@ class PvPGame:
                 
                 self.sound.play('line' if lines < 4 else 'tetris')
                 
+                # Combo mesajı (DOUBLE/TRIPLE/QUADRIX)
+                if lines == 4:
+                    self.p2_combo_message = "QUADRIX!"
+                    self.p2_combo_message_time = 120
+                elif lines >= 2:
+                    if lines == 2:
+                        self.p2_combo_message = "DOUBLE!"
+                    elif lines == 3:
+                        self.p2_combo_message = "TRIPLE!"
+                    else:
+                        self.p2_combo_message = f"{lines}x CLEAR!"
+                    combo_count = getattr(self.board2, 'combo', 0)
+                    if combo_count > 1:
+                        self.p2_combo_message += f"  x{combo_count} Combo"
+                    self.p2_combo_message_time = 120
+                else:
+                    combo_count = getattr(self.board2, 'combo', 0)
+                    if combo_count > 1:
+                        self.p2_combo_message = f"x{combo_count} Combo!"
+                        self.p2_combo_message_time = 90
+
+                # Gamepad titreşimi - satır temizleme
+                try:
+                    from gamepad_manager import get_gamepad_manager
+                    if lines >= 4:
+                        get_gamepad_manager().rumble(0.8, 1.0, 400)
+                    elif lines >= 2:
+                        get_gamepad_manager().rumble(0.4, 0.5, 200)
+                except Exception:
+                    pass
+
+                # Multi-line parçacık efekti (2-3 satır)
+                if lines < 4 and lines >= 2 and self.effects_enabled:
+                    center_x = self.p2_offset_x + (BOARD_WIDTH * self.cell_size) // 2
+                    center_y = self.p2_offset_y + (BOARD_HEIGHT * self.cell_size) // 2
+                    self.create_particles(
+                        count=50 * lines,
+                        x=center_x,
+                        y=center_y,
+                        colors=[MAGENTA, (200, 100, 255), (220, 150, 255)],
+                        speed=6
+                    )
+
                 # Quadrix için özel efekt (ana oyunla aynı)
                 if lines == 4 and self.effects_enabled:
                     center_x = self.p2_offset_x + (BOARD_WIDTH * self.cell_size) // 2
@@ -2173,6 +2303,12 @@ class PvPGame:
                     self.winner = 1
                     self.game_over = True
                     self.match_end_reason = 'elimination'
+                    # Gamepad titreşimi - game over
+                    try:
+                        from gamepad_manager import get_gamepad_manager
+                        get_gamepad_manager().rumble(1.0, 1.0, 600)
+                    except Exception:
+                        pass
                     self.sound.play('gameover')
                     return
                 # İki oyuncu da öldüyse kazananı belirle
@@ -2205,6 +2341,12 @@ class PvPGame:
                 print(f"🤝 BERABERE! (Süre bitti, Skor: {score1}-{score2})")
 
             self.game_over = True
+            # Gamepad titreşimi - game over
+            try:
+                from gamepad_manager import get_gamepad_manager
+                get_gamepad_manager().rumble(1.0, 1.0, 600)
+            except Exception:
+                pass
             self.sound.play('gameover')
 
             # Kullanıcı istatistiklerini güncelle
@@ -2238,6 +2380,12 @@ class PvPGame:
                 print(f"🤝 BERABERE! (Satır: {lines1}-{lines2}, Skor: {score1}-{score2})")
         
         self.game_over = True
+        # Gamepad titreşimi - game over
+        try:
+            from gamepad_manager import get_gamepad_manager
+            get_gamepad_manager().rumble(1.0, 1.0, 600)
+        except Exception:
+            pass
         self.sound.play('gameover')
         
         # Kullanıcı istatistiklerini güncelle
@@ -2797,6 +2945,16 @@ class PvPGame:
                 self.p2_line_flash_rows = []
                 self.p2_line_glow_alpha = 0
 
+        # Combo mesaj timerlerini güncelle
+        if self.p1_combo_message_time > 0:
+            self.p1_combo_message_time = max(0, self.p1_combo_message_time - dt_frames)
+            if self.p1_combo_message_time <= 0:
+                self.p1_combo_message = ""
+        if self.p2_combo_message_time > 0:
+            self.p2_combo_message_time = max(0, self.p2_combo_message_time - dt_frames)
+            if self.p2_combo_message_time <= 0:
+                self.p2_combo_message = ""
+
         if self.p1_line_sweep_active:
             board_pixel_width = self.board1.width * self.cell_size
             sweep_width = max(1, int(self.cell_size * 1.5))
@@ -3037,32 +3195,40 @@ class PvPGame:
         sweep_active = self.p1_line_sweep_active if board is self.board1 else self.p2_line_sweep_active
 
         if self.effects_enabled and sweep_rows and sweep_active:
-            sweep_width = max(3, int(cell_size * 1.5))
-            for row in sweep_rows:
-                if 0 <= row < BOARD_HEIGHT:
-                    row_y = offset_y + row * cell_size
-                    sweep_x = offset_x + int(sweep_progress * (board_width + sweep_width)) - sweep_width
-                    for i in range(sweep_width):
-                        half = max(1, sweep_width // 2)
-                        intensity = 1.0 - abs(i - half) / half
-                        alpha = int(255 * intensity * (1.0 - sweep_progress * 0.3))
-                        line_x = sweep_x + i
-                        if offset_x <= line_x < offset_x + board_width and alpha > 0:
-                            pygame.draw.line(
-                                self.screen,
-                                (255, 255, 255),
-                                (line_x, row_y),
-                                (line_x, row_y + cell_size),
-                                1,
-                            )
-                    if sweep_progress > 0:
-                        lit_width = min(int(sweep_progress * board_width), int(board_width))
-                        if lit_width > 0:
-                            lit_surface = self._effect_surface_cache.get_filled_surface(
-                                (lit_width, cell_size),
-                                (255, 255, 255, int(180 * (1.0 - sweep_progress * 0.8))),
-                            )
-                            self.screen.blit(lit_surface, (offset_x, row_y))
+            valid_rows = sorted({r for r in sweep_rows if 0 <= r < BOARD_HEIGHT})
+            if valid_rows:
+                cleared_count = max(1, len(valid_rows))
+                # Sweep genişliği (base game ile aynı mantık)
+                if cleared_count >= 4:
+                    sw_blocks = 2
+                elif cleared_count >= 3:
+                    sw_blocks = 3
+                elif cleared_count == 2:
+                    sw_blocks = 2
+                else:
+                    sw_blocks = 1
+                sweep_width = max(1, int(sw_blocks * cell_size))
+
+                top_row = valid_rows[0]
+                bottom_row = valid_rows[-1]
+                group_y = offset_y + top_row * cell_size
+                group_h = max(cell_size, (bottom_row - top_row + 1) * cell_size)
+                phase = (pygame.time.get_ticks() // 80) % 8
+
+                sweep_x = offset_x + int(sweep_progress * (board_width + sweep_width)) - sweep_width
+                board_group_rect = pygame.Rect(offset_x, group_y, board_width, group_h)
+                draw_rainbow_cat_sweep(self.screen, self._sweep_cat_state, board_group_rect, sweep_x, sweep_width, phase, BOARD_WIDTH)
+
+                # Hafif beyaz vurgu
+                glow_a = int(70 * (1.0 - sweep_progress * 0.4))
+                if glow_a > 0:
+                    glow_w = min(sweep_width, int(board_width))
+                    glow_x = max(offset_x, sweep_x)
+                    if glow_w > 0:
+                        for row in valid_rows:
+                            row_y = offset_y + row * cell_size
+                            glow_surface = self._effect_surface_cache.get_filled_surface((glow_w, cell_size), (255, 255, 255, glow_a))
+                            self.screen.blit(glow_surface, (glow_x, row_y))
         
         # Flash overlay - temizlenen satırlar için beyaz parlama
         if self.effects_enabled and flash_rows and glow_alpha > 0:
@@ -3193,6 +3359,9 @@ class PvPGame:
         
         # OYUNCU 2 (Sağ)
         self.draw_board(self.board2, self.current_piece2, offset_x2, start_y, cell_size)
+        
+        # Combo mesajları (DOUBLE/TRIPLE/QUADRIX - her oyuncunun tahtası üzerinde)
+        self._draw_combo_messages(offset_x1, offset_x2, start_y, board_width, board_height)
         
         # ORTADAKİ VS PANELİ
         center_x = self.window_width // 2
@@ -3454,6 +3623,12 @@ class PvPGame:
         self.p2_falling_block_animations = []
         self.p1_drop_trails = []
         self.p2_drop_trails = []
+        
+        # Combo mesajlarını sıfırla
+        self.p1_combo_message = ""
+        self.p1_combo_message_time = 0
+        self.p2_combo_message = ""
+        self.p2_combo_message_time = 0
         
         # Partiküller ve ambient efektler sıfırla
         self.particles = []
