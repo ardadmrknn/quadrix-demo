@@ -3708,10 +3708,8 @@ class Game:
         locked_offset_x = offset_x
         locked_offset_y = offset_y
         
-        suppress_line_clear_effects = bool(getattr(self, 'suppress_line_clear_effects', False))
-        
         for y in range(self.board_height):  # Dinamik yükseklik
-            flash = (not suppress_line_clear_effects) and (y in self.board.last_cleared_lines) and self.line_clear_flash
+            flash = (y in self.board.last_cleared_lines) and self.line_clear_flash
             for x in range(self.board_width):  # Dinamik genişlik
                 cell_color = self.board.grid[y][x]
                 locked_slice = self.board.texture_grid[y][x]
@@ -3735,7 +3733,6 @@ class Game:
 
         if (
             self.effects_enabled
-            and (not suppress_line_clear_effects)
             and self.line_clear_sweep_active
             and self.line_clear_pending_rows
             and self.line_clear_pending_colors
@@ -3773,7 +3770,6 @@ class Game:
         # Sweep efekti - soldan sağa ışık süpürmesi (retro arcade tarzı)
         if (
             self.effects_enabled
-            and (not suppress_line_clear_effects)
             and self.line_clear_sweep_rows
             and self.line_clear_sweep_active
         ):
@@ -3805,7 +3801,7 @@ class Game:
                             self.screen.blit(glow_surface, (glow_x, row_y))
         
         # Dalga efektleri çiz
-        if self.effects_enabled and (not suppress_line_clear_effects):
+        if self.effects_enabled:
             for wave in self.line_clear_wave_effects:
                 if wave['alpha'] > 0:
                     # Yatay dalga çizgisi
