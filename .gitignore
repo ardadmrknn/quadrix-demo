@@ -16,6 +16,7 @@ htmlcov/
 # OS/editor
 .DS_Store
 .vscode/*.log
+.vscode/c_cpp_properties.json
 
 # Build artifacts
 build/

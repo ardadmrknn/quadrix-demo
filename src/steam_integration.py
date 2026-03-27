@@ -781,11 +781,18 @@ def shutdown() -> None:
                 pass
 
         if _dll and _init_ok:
-            with _pump_lock:
+            acquired = _pump_lock.acquire(timeout=1.5)
+            if acquired:
                 try:
                     _dll.SteamAPI_Shutdown()
                 except Exception:
                     pass
+                finally:
+                    _pump_lock.release()
+            else:
+                # Pump thread RunCallbacks içinde takılı — lock alınamadı.
+                # Daemon thread olduğu için process çıkışında OS temizler.
+                print("[Steam] Pump lock alınamadı, SteamAPI_Shutdown atlanıyor")
 
         _isteam_friends = None
         _isteam_user = None
