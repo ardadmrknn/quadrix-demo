@@ -38,7 +38,8 @@ function Resolve-QuadrixPython {
             if ($LASTEXITCODE -eq 0 -and $resolved) {
                 return $resolved.Trim()
             }
-        } catch {
+        }
+        catch {
         }
     }
 
@@ -155,7 +156,8 @@ if ($runtimeBridgeArtifacts.Count -eq 0) {
 }
 
 Write-Host 'PyInstaller build baslatiliyor...' -ForegroundColor Cyan
-$pyInstallerArgs = @('-m', 'PyInstaller', $resolvedSpecFile, '--noconfirm', '--clean')
+$quotedSpecFile = '"{0}"' -f $resolvedSpecFile
+$pyInstallerArgs = @('-m', 'PyInstaller', $quotedSpecFile, '--noconfirm', '--clean')
 $env:PYTHONLEGACYWINDOWSSTDIO = '1'
 if (Test-Path $buildLog) {
     Remove-Item $buildLog -Force
