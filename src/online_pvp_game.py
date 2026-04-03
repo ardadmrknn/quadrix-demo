@@ -905,7 +905,7 @@ class OnlinePvPGame:
         net = getattr(self, 'net', None)
         if net is None:
             return False
-        ok = bool(net.send({'type': msg_type}, reliable=True, channel=CHANNEL_CONTROL))
+        ok = bool(net.send({'type': msg_type}, reliable=True, channel=CHANNEL_GAME))
         if not ok:
             print(f"[OnlinePvP] control send basarisiz: {msg_type} ({reason or 'no_reason'})")
         return ok
@@ -1029,12 +1029,12 @@ class OnlinePvPGame:
 
         host_name = _read_lobby_data('host_name', '')
         lobby_code = _read_lobby_data('lobby_code', '')
-        visibility = (_read_lobby_data('visibility', 'public') or 'public').strip().lower()
+        visibility = (_read_lobby_data('visibility', 'private') or 'private').strip().lower()
         requires_code_value = payload.get('requires_code')
         if isinstance(requires_code_value, bool):
             requires_code = requires_code_value
         else:
-            requires_code = (_read_lobby_data('requires_code', '0') or '0').strip().lower() in ('1', 'true', 'yes')
+            requires_code = (_read_lobby_data('requires_code', '1') or '1').strip().lower() in ('1', 'true', 'yes')
 
         if visibility == 'private':
             requires_code = True

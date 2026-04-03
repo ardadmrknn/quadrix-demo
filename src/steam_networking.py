@@ -219,13 +219,15 @@ class NetMessage:
 
 
 # ---------- Kanal sabitleri ----------
-# NOT: C++ bridge şu an yalnızca kanal 0'ı polluyor (_poll_incoming_messages).
-# Tüm mesajlar CHANNEL_GAME (0) üzerinden gönderilmelidir.
-# C++ tarafı düzeltildiğinde kanal ayrımı tekrar devreye alınabilir.
+# ÖNEMLİ: Platformlar arası uyumluluk için TÜM mesajlar CHANNEL_GAME (0)
+# üzerinden gönderilir. C++ bridge üç kanalı da pollar ancak macOS (.so)
+# ve Windows (.pyd) derlemeleri senkronizasyon dışında kalabilir; eski ikili
+# dosyalar yalnızca kanal 0 yoklar. Bu yüzden kanal sabitleri tanımlıdır
+# ama gönderimde hep CHANNEL_GAME kullanılır.
 
-CHANNEL_GAME = 0       # Oyun mesajları (garbage, session_ping)
-CHANNEL_STATE = 1      # Durum mesajları (board_state, piece_position, score_update)
-CHANNEL_CONTROL = 2    # Kontrol mesajları (ready, game_start, game_over, pause, resume, rematch)
+CHANNEL_GAME = 0       # TÜM mesajlar bu kanal üzerinden gönderilir
+CHANNEL_STATE = 0      # (eski: 1) — artık CHANNEL_GAME ile aynı
+CHANNEL_CONTROL = 0    # (eski: 2) — artık CHANNEL_GAME ile aynı
 
 
 # ---------- Lobi tipleri (Steam ELobbyType) ----------
@@ -273,6 +275,26 @@ class MsgType:
     SCORE_UPDATE    = 'score_update'
     ELIMINATED      = 'eliminated'
     PIECE_POSITION  = 'piece_pos'    # Aktif parça pozisyonu (gerçek zamanlı)
+
+
+# ---------- Aktif instance takibi (shutdown sırasında temizlik için) ----------
+
+_active_instances: list['SteamNetworking'] = []
+
+
+def shutdown_all_instances():
+    """Tüm aktif SteamNetworking instance'larını kapat.
+
+    steam_integration.shutdown() ÖNCESİNDE çağrılmalı.
+    Aksi halde C++ bridge destructor'ı, SteamAPI_Shutdown() sonrası
+    geçersiz interface'lere erişmeye çalışır ve macOS'ta donma oluşur.
+    """
+    for inst in list(_active_instances):
+        try:
+            inst.shutdown()
+        except Exception:
+            pass
+    _active_instances.clear()
 
 
 # ---------- Ana Sınıf ----------
@@ -369,6 +391,7 @@ class SteamNetworking:
             if ok:
                 self._initialized = True
                 self._my_steam_id = self._bridge_instance.get_my_steam_id()
+                _active_instances.append(self)
                 print(f"[SteamNet] Başlatıldı. Steam ID: {self._my_steam_id}")
             else:
                 print("[SteamNet] init() False döndürdü — bridge instance sıfırlanıyor")
@@ -381,15 +404,27 @@ class SteamNetworking:
             return False
 
     def shutdown(self):
-        """Temizle."""
+        """Temizle. SteamAPI_Shutdown() öncesinde çağrılmalı."""
         if self._bridge_instance:
             try:
-                self._bridge_instance.leave_lobby()
+                # Önce C++ shutdown() dene (lobi çıkışı + pointer temizliği)
+                self._bridge_instance.shutdown()
+            except (AttributeError, TypeError):
+                # Eski bridge sürümü — fallback
+                try:
+                    self._bridge_instance.leave_lobby()
+                except Exception:
+                    pass
             except Exception as e:
-                print(f"[SteamNet] shutdown leave_lobby hatası: {e}")
+                print(f"[SteamNet] shutdown hatası: {e}")
             self._bridge_instance = None
         self._initialized = False
         self._state = 'idle'
+        # Instance takibinden çıkar
+        try:
+            _active_instances.remove(self)
+        except ValueError:
+            pass
 
     # ============ Lobi İşlemleri ============
 
@@ -571,7 +606,7 @@ class SteamNetworking:
     def send_board_state(self, board_data: dict):
         """Tahta durumunu gönder (unreliable — kayıp packet önemsiz)."""
         board_data['type'] = MsgType.BOARD_STATE
-        self.send(board_data, reliable=False, channel=CHANNEL_STATE)
+        self.send(board_data, reliable=False, channel=CHANNEL_GAME)
 
     def send_piece_position(self, shape_index: int, x: int, y: int,
                             rotation: int, seq: int):
@@ -583,7 +618,7 @@ class SteamNetworking:
             'y': y,
             'r': rotation,
             'seq': seq,
-        }, reliable=False, channel=CHANNEL_STATE)
+        }, reliable=False, channel=CHANNEL_GAME)
 
     def send_score_update(self, score: int, lines: int, level: int):
         """Skor güncellemesi gönder."""
@@ -592,7 +627,7 @@ class SteamNetworking:
             'score': score,
             'lines': lines,
             'level': level,
-        }, reliable=False, channel=CHANNEL_STATE)
+        }, reliable=False, channel=CHANNEL_GAME)
 
     def send_game_start(self, seed: int, piece_sequence: list[int] | None = None):
         """Oyun başlat sinyali gönder (host gönderir)."""
@@ -603,11 +638,11 @@ class SteamNetworking:
         }
         if piece_sequence:
             msg['pieces'] = piece_sequence[:200]  # İlk 200 parça
-        return self.send(msg, reliable=True, channel=CHANNEL_CONTROL)
+        return self.send(msg, reliable=True, channel=CHANNEL_GAME)
 
     def send_ready(self):
         """Hazır sinyali gönder."""
-        return self.send({'type': MsgType.READY}, reliable=True, channel=CHANNEL_CONTROL)
+        return self.send({'type': MsgType.READY}, reliable=True, channel=CHANNEL_GAME)
 
     def send_game_over(self, score: int = 0, lines: int = 0):
         """Oyun bitti sinyali gönder."""
@@ -615,7 +650,7 @@ class SteamNetworking:
             'type': MsgType.GAME_OVER,
             'score': score,
             'lines': lines,
-        }, reliable=True, channel=CHANNEL_CONTROL)
+        }, reliable=True, channel=CHANNEL_GAME)
 
     # ============ Event Handler ============
 

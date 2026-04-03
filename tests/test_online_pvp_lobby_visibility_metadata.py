@@ -22,6 +22,7 @@ def _make_game():
 
 
 def test_lobby_found_does_not_fallback_to_current_lobby_metadata():
+    """Metadata boş geldiğinde güvenli varsayılan 'private' olmalı (public değil)."""
     game = _make_game()
     game.net = types.SimpleNamespace(
         get_lobby_data_for=lambda lobby_id, key: '',
@@ -38,8 +39,9 @@ def test_lobby_found_does_not_fallback_to_current_lobby_metadata():
 
     assert len(game._pending_lobby_list) == 1
     lobby = game._pending_lobby_list[0]
-    assert lobby['visibility'] == 'public'
-    assert lobby['requires_code'] is False
+    # Metadata boş → güvenli varsayılan: private (public'e düşmemeli)
+    assert lobby['visibility'] == 'private'
+    assert lobby['requires_code'] is True
 
 
 def test_lobby_found_uses_per_lobby_metadata_for_private_visibility():

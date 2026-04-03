@@ -60,15 +60,19 @@ public:
         , m_lobbyListRequestActive(false)
         , m_pendingLobbyVisibility("private")
         , m_pendingLobbyRequiresCode(true)
+        , m_isShutdown(false)
     {}
 
     ~SteamNetBridge() {
-        leave_lobby();
+        // Destructor'da Steam API çağrısı YAPMA!
+        // SteamAPI_Shutdown() çağrıldıktan sonra interface pointer'ları geçersiz
+        // olur ve macOS'ta donmaya neden olur. Temizlik için shutdown() kullanın.
     }
 
     // ============ Başlatma ============
 
     bool init() {
+        if (m_isShutdown) return false;
         m_matchmaking = SteamMatchmaking();
         m_messages    = SteamNetworkingMessages();
         m_friends     = SteamFriends();
@@ -83,17 +87,36 @@ public:
         return true;
     }
 
+    // ============ Temiz Kapanma ============
+
+    void shutdown() {
+        // SteamAPI_Shutdown() ÖNCESINDE çağrılmalı.
+        // Aktıf lobiyi terket ve interface pointer'larını sıfırla.
+        if (m_isShutdown) return;
+        m_isShutdown = true;
+
+        if (m_matchmaking && m_currentLobby.IsValid() && m_currentLobby != k_steamIDNil) {
+            m_matchmaking->LeaveLobby(m_currentLobby);
+            m_currentLobby = k_steamIDNil;
+            m_lobbyReady = false;
+        }
+
+        m_matchmaking = nullptr;
+        m_messages    = nullptr;
+        m_friends     = nullptr;
+    }
+
     // ============ Lobi İşlemleri ============
 
     void create_lobby(int max_members = 2) {
-        if (!m_matchmaking) return;
+        if (!m_matchmaking || m_isShutdown) return;
         set_pending_lobby_metadata(k_ELobbyTypePrivate);
         SteamAPICall_t call = m_matchmaking->CreateLobby(k_ELobbyTypePrivate, max_members);
         m_lobbyCreatedResult.Set(call, this, &SteamNetBridge::OnLobbyCreated);
     }
 
     void create_public_lobby(int max_members = 2) {
-        if (!m_matchmaking) return;
+        if (!m_matchmaking || m_isShutdown) return;
         set_pending_lobby_metadata(k_ELobbyTypePublic);
         SteamAPICall_t call = m_matchmaking->CreateLobby(k_ELobbyTypePublic, max_members);
         m_lobbyCreatedResult.Set(call, this, &SteamNetBridge::OnLobbyCreated);
@@ -107,7 +130,7 @@ public:
     }
 
     void leave_lobby() {
-        if (!m_matchmaking) return;
+        if (!m_matchmaking || m_isShutdown) return;
         if (m_currentLobby.IsValid() && m_currentLobby != k_steamIDNil) {
             m_matchmaking->LeaveLobby(m_currentLobby);
             push_event("lobby_left", m_currentLobby.ConvertToUint64(), "");
@@ -117,18 +140,18 @@ public:
     }
 
     void set_lobby_data(const std::string& key, const std::string& value) {
-        if (!m_matchmaking || !m_currentLobby.IsValid()) return;
+        if (!m_matchmaking || m_isShutdown || !m_currentLobby.IsValid()) return;
         m_matchmaking->SetLobbyData(m_currentLobby, key.c_str(), value.c_str());
     }
 
     std::string get_lobby_data(const std::string& key) {
-        if (!m_matchmaking || !m_currentLobby.IsValid()) return "";
+        if (!m_matchmaking || m_isShutdown || !m_currentLobby.IsValid()) return "";
         const char* val = m_matchmaking->GetLobbyData(m_currentLobby, key.c_str());
         return val ? std::string(val) : "";
     }
 
     std::string get_lobby_data_for(uint64_t lobby_id, const std::string& key) {
-        if (!m_matchmaking) return "";
+        if (!m_matchmaking || m_isShutdown) return "";
         CSteamID lid(lobby_id);
         if (!lid.IsValid()) return "";
         const char* val = m_matchmaking->GetLobbyData(lid, key.c_str());
@@ -137,7 +160,7 @@ public:
 
     std::vector<uint64_t> get_lobby_members() {
         std::vector<uint64_t> members;
-        if (!m_matchmaking || !m_currentLobby.IsValid()) return members;
+        if (!m_matchmaking || m_isShutdown || !m_currentLobby.IsValid()) return members;
         int count = m_matchmaking->GetNumLobbyMembers(m_currentLobby);
         for (int i = 0; i < count; i++) {
             CSteamID member = m_matchmaking->GetLobbyMemberByIndex(m_currentLobby, i);
@@ -147,7 +170,7 @@ public:
     }
 
     uint64_t get_lobby_owner() {
-        if (!m_matchmaking || !m_currentLobby.IsValid()) return 0;
+        if (!m_matchmaking || m_isShutdown || !m_currentLobby.IsValid()) return 0;
         return m_matchmaking->GetLobbyOwner(m_currentLobby).ConvertToUint64();
     }
 
@@ -161,14 +184,14 @@ public:
     }
 
     void invite_friend() {
-        if (!m_friends || !m_currentLobby.IsValid()) return;
+        if (!m_friends || m_isShutdown || !m_currentLobby.IsValid()) return;
         m_friends->ActivateGameOverlayInviteDialog(m_currentLobby);
     }
 
     // ============ Lobi Tipi Yönetimi ============
 
     void create_lobby_with_type(int lobby_type, int max_members = 2) {
-        if (!m_matchmaking) return;
+        if (!m_matchmaking || m_isShutdown) return;
         ELobbyType type = static_cast<ELobbyType>(lobby_type);
         set_pending_lobby_metadata(type);
         SteamAPICall_t call = m_matchmaking->CreateLobby(type, max_members);
@@ -176,13 +199,13 @@ public:
     }
 
     bool set_lobby_type(int lobby_type) {
-        if (!m_matchmaking || !m_currentLobby.IsValid()) return false;
+        if (!m_matchmaking || m_isShutdown || !m_currentLobby.IsValid()) return false;
         return m_matchmaking->SetLobbyType(m_currentLobby,
                                            static_cast<ELobbyType>(lobby_type));
     }
 
     bool set_lobby_joinable(bool joinable) {
-        if (!m_matchmaking || !m_currentLobby.IsValid()) return false;
+        if (!m_matchmaking || m_isShutdown || !m_currentLobby.IsValid()) return false;
         return m_matchmaking->SetLobbyJoinable(m_currentLobby, joinable);
     }
 
@@ -190,13 +213,13 @@ public:
 
     void add_request_lobby_list_string_filter(const std::string& key,
                                               const std::string& value) {
-        if (!m_matchmaking) return;
+        if (!m_matchmaking || m_isShutdown) return;
         m_matchmaking->AddRequestLobbyListStringFilter(
             key.c_str(), value.c_str(), k_ELobbyComparisonEqual);
     }
 
     void request_lobby_list() {
-        if (!m_matchmaking) return;
+        if (!m_matchmaking || m_isShutdown) return;
         // Quadrix lobilerini filtrele
         m_matchmaking->AddRequestLobbyListStringFilter("game", "quadrix",
             k_ELobbyComparisonEqual);
@@ -207,7 +230,7 @@ public:
     // ============ Ağ Mesajları ============
 
     bool send_message(uint64_t target_steam_id, const std::string& data, bool reliable, int channel = 0) {
-        if (!m_messages) return false;
+        if (!m_messages || m_isShutdown) return false;
 
         SteamNetworkingIdentity identity;
         identity.SetSteamID64(target_steam_id);
@@ -229,7 +252,7 @@ public:
 
     bool send_message_to_lobby(const std::string& data, bool reliable, int channel = 0) {
         // Lobi'deki tüm üyelere gönder (kendimiz hariç)
-        if (!m_matchmaking || !m_currentLobby.IsValid()) return false;
+        if (!m_matchmaking || m_isShutdown || !m_currentLobby.IsValid()) return false;
         uint64_t my_id = SteamUser()->GetSteamID().ConvertToUint64();
         auto members = get_lobby_members();
         bool all_ok = true;
@@ -246,6 +269,7 @@ public:
     // ============ Polling (Python her frame bunu çağırır) ============
 
     void run_callbacks() {
+        if (m_isShutdown) return;
         // Steam callback'lerini işle
         SteamAPI_RunCallbacks();
 
@@ -273,11 +297,12 @@ public:
     // ============ Yardımcı ============
 
     uint64_t get_my_steam_id() {
+        if (m_isShutdown) return 0;
         return SteamUser() ? SteamUser()->GetSteamID().ConvertToUint64() : 0;
     }
 
     std::string get_friend_persona_name(uint64_t steam_id) {
-        if (!m_friends) return "";
+        if (!m_friends || m_isShutdown) return "";
         CSteamID sid(steam_id);
         const char* name = m_friends->GetFriendPersonaName(sid);
         return name ? std::string(name) : "";
@@ -295,6 +320,7 @@ private:
     std::vector<uint64_t>       m_pendingLobbyDataRequests;
     std::string                 m_pendingLobbyVisibility;
     bool                        m_pendingLobbyRequiresCode;
+    bool                        m_isShutdown;
 
     // Event kuyruğu
     std::mutex                  m_eventMutex;
@@ -362,7 +388,10 @@ private:
         bool requiresCodeBool = requiresCode == "1";
 
         if (visibility.empty()) {
-            visibility = (requiresCodeBool || !lobbyCode.empty()) ? "private" : "public";
+            // Metadata görünmez / boş — güvenli varsayılan: private
+            // (yanlış public'ten iyidir; private lobi "kod gir" gösterir, public ise doğrudan katılım sağlar)
+            visibility = "private";
+            requiresCodeBool = true;
         }
         if (visibility == "private") {
             requiresCodeBool = true;
@@ -399,7 +428,7 @@ private:
     }
 
     void _poll_incoming_messages(int channel = 0) {
-        if (!m_messages) return;
+        if (!m_messages || m_isShutdown) return;
         SteamNetworkingMessage_t* pMessages[64];
         int count = m_messages->ReceiveMessagesOnChannel(channel, pMessages, 64);
         if (count > 0) {
@@ -479,6 +508,7 @@ private:
 // ---------- Otomatik Callback Implementasyonları ----------
 
 void SteamNetBridge::OnLobbyChatUpdate(LobbyChatUpdate_t* pParam) {
+    if (m_isShutdown) return;
     uint64_t changed_id = pParam->m_ulSteamIDUserChanged;
     uint32 state = pParam->m_rgfChatMemberStateChange;
     std::string state_info = std::to_string(state);
@@ -498,6 +528,13 @@ void SteamNetBridge::OnLobbyChatUpdate(LobbyChatUpdate_t* pParam) {
 }
 
 void SteamNetBridge::OnLobbyDataUpdate(LobbyDataUpdate_t* pParam) {
+    if (m_isShutdown) return;
+    if (!pParam->m_bSuccess) {
+        // Veri alınamadı — pending'den çıkar ama lobby_found yayınlama
+        consume_pending_lobby_data_request(pParam->m_ulSteamIDLobby);
+        complete_lobby_list_if_ready();
+        return;
+    }
     if (consume_pending_lobby_data_request(pParam->m_ulSteamIDLobby)) {
         emit_lobby_found(CSteamID(pParam->m_ulSteamIDLobby));
         complete_lobby_list_if_ready();
@@ -508,6 +545,7 @@ void SteamNetBridge::OnLobbyDataUpdate(LobbyDataUpdate_t* pParam) {
 }
 
 void SteamNetBridge::OnGameLobbyJoinRequested(GameLobbyJoinRequested_t* pParam) {
+    if (m_isShutdown) return;
     // Kullanıcı Steam overlay'den "Oyuna Katıl" dedi
     // Allowlist penceresini başlat (lobby yokken 30s kabul)
     m_joinRequestedTime = SteamUtils() ? SteamUtils()->GetServerRealTime() : 0;
@@ -516,7 +554,7 @@ void SteamNetBridge::OnGameLobbyJoinRequested(GameLobbyJoinRequested_t* pParam) 
 }
 
 void SteamNetBridge::OnSessionRequest(SteamNetworkingMessagesSessionRequest_t* pParam) {
-    if (!m_messages) return;
+    if (!m_messages || m_isShutdown) return;
 
     uint64_t remote_id = pParam->m_identityRemote.GetSteamID64();
 
@@ -579,6 +617,7 @@ PYBIND11_MODULE(steam_net_bridge, m) {
     py::class_<SteamNetBridge>(m, "SteamNetBridge")
         .def(py::init<>())
         .def("init",                  &SteamNetBridge::init)
+        .def("shutdown",              &SteamNetBridge::shutdown)
         // Lobi
         .def("create_lobby",          &SteamNetBridge::create_lobby, py::arg("max_members") = 2)
         .def("create_public_lobby",   &SteamNetBridge::create_public_lobby, py::arg("max_members") = 2)

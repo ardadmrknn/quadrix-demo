@@ -3141,6 +3141,14 @@ def main():
 
         # FPS limitleme frame başında uygulanıyor.
     
+    # Aktif Steam networking instance'larını kapat (C++ bridge temizliği)
+    # Bu, steam_integration.shutdown() ÖNCESİNDE yapılmalı.
+    try:
+        from steam_networking import shutdown_all_instances as _shutdown_net
+        _shutdown_net()
+    except Exception:
+        pass
+
     try:
         import steam_integration as _steam_shutdown
         _steam_shutdown.shutdown()
