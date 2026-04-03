@@ -11,13 +11,13 @@ import os
 import sys
 from pathlib import Path
 
+# Proje kök dizini (spec dosyası packaging/specs/ altında)
 REPO_ROOT = Path(SPECPATH).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 from tools.embed_menu_layout import write_embedded_layout_module
 from tools.bridge_artifacts import get_bridge_binaries
 from tools.versioning import bump_platform_version
 
-# Proje kök dizini
 SRC_DIR = REPO_ROOT / 'src'
 write_embedded_layout_module(REPO_ROOT)
 
@@ -27,7 +27,7 @@ print(f'[spec] Windows surumu guncellendi: {_new_version} (build {_build}) -> {_
 block_cipher = None
 
 # Playtest AppID'yi ortam değişkeni olarak göm
-# Not: steam_appid.txt config/runtime altında mevcut; bu env tanımı
+# Not: steam_appid.txt runtime paketine config/runtime altından dahil edilir; bu env tanımı
 # PyInstaller boot kancasının STEAM_APP_ID'yi ayarlaması için eklenir.
 os.environ.setdefault('STEAM_APP_ID', '4428040')
 

@@ -5696,11 +5696,9 @@ class MysteryMode(Game):
                 self.fall_speed = self.get_current_speed()
                 # Aktif efekt görselini kaldır
                 try:
-                    if hasattr(self, '_active_effect_visuals'):
-                        self._active_effect_visuals = [
-                            v for v in self._active_effect_visuals 
-                            if not (v.get('id', '') or '').startswith('speed_burst')
-                        ]
+                    visuals = getattr(self, '_active_effect_visuals', None)
+                    if isinstance(visuals, dict):
+                        visuals.pop('speed_burst', None)
                 except Exception:
                     pass
                 self._sync_active_cards()

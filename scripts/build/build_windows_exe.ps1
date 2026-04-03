@@ -26,7 +26,6 @@ function Resolve-SpecPath([string]$specFile) {
     }
     return (Join-Path $repoRoot $specFile)
 }
-
 function Resolve-QuadrixPython {
     if ($env:QUADRIX_PYTHON -and (Test-Path $env:QUADRIX_PYTHON)) {
         return $env:QUADRIX_PYTHON

@@ -2543,6 +2543,19 @@ TRANSLATIONS = {
         'ko': '날짜',
     },
     # ======================= BAŞARILAR =======================
+    'achievements': {
+        'tr': 'Başarımlar',
+        'en': 'Achievements',
+        'de': 'Erfolge',
+        'fr': 'Succès',
+        'es': 'Logros',
+        'it': 'Obiettivi',
+        'pt': 'Conquistas',
+        'ru': 'Достижения',
+        'ja': '実績',
+        'zh': '成就',
+        'ko': '업적',
+    },
     'achievement_unlocked': {
         'tr': 'Başarım Açıldı!',
         'en': 'Achievement Unlocked!',

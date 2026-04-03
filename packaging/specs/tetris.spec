@@ -8,13 +8,13 @@ import os
 import sys
 from pathlib import Path
 
+# Proje kök dizini (spec dosyası packaging/specs/ altında)
 REPO_ROOT = Path(SPECPATH).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 from tools.embed_menu_layout import write_embedded_layout_module
 from tools.bridge_artifacts import get_bridge_binaries
 from tools.versioning import bump_platform_version
 
-# Proje kök dizini
 SRC_DIR = REPO_ROOT / 'src'
 write_embedded_layout_module(REPO_ROOT)
 
