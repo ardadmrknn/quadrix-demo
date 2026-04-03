@@ -56,13 +56,6 @@
       "h_pct": 0.214815,
       "title": "Parça Atölyesi"
     },
-    "block_styles": {
-      "x_pct": 0.480208,
-      "y_pct": 0.524074,
-      "w_pct": 0.106771,
-      "h_pct": 0.241667,
-      "title": "Blok Görünümleri"
-    },
     "campaign_mode": {
       "x_pct": 0.3375,
       "y_pct": 0.252778,
@@ -71,11 +64,11 @@
       "title": "Görev Modu"
     },
     "pvp_2_players": {
-      "x_pct": 0.339062,
-      "y_pct": 0.788889,
-      "w_pct": 0.247917,
-      "h_pct": 0.112037,
-      "title": "PvP (Local + Online)"
+      "x_pct": 0.141146,
+      "y_pct": 0.72037,
+      "w_pct": 0.182292,
+      "h_pct": 0.17963,
+      "title": "PvP"
     },
     "new_gen_tetris": {
       "x_pct": 0.141146,
@@ -83,13 +76,6 @@
       "w_pct": 0.182292,
       "h_pct": 0.438889,
       "title": "Kart Ustalığı"
-    },
-    "daily_challenge": {
-      "x_pct": 0.141146,
-      "y_pct": 0.72037,
-      "w_pct": 0.182292,
-      "h_pct": 0.17963,
-      "title": "Günlük"
     },
     "sos_button": {
       "x_pct": 0.944271,
@@ -160,6 +146,20 @@
       "w_pct": 0.036458,
       "h_pct": 0.064815,
       "title": "Dil Butonu"
+    },
+    "coop_mode": {
+      "x_pct": 0.339062,
+      "y_pct": 0.788889,
+      "w_pct": 0.247917,
+      "h_pct": 0.112037,
+      "title": "Co-op Modu"
+    },
+    "store": {
+      "x_pct": 0.480208,
+      "y_pct": 0.524074,
+      "w_pct": 0.106771,
+      "h_pct": 0.241667,
+      "title": "Mağaza"
     }
   },
   "panels": [
@@ -255,16 +255,16 @@
       ]
     },
     {
-      "key": "block_styles",
-      "title": "Blok Görünümleri",
+      "key": "store",
+      "title": "Mağaza",
       "x": 922,
       "y": 566,
       "w": 205,
       "h": 261,
       "color": [
-        0,
-        240,
-        255
+        255,
+        205,
+        70
       ]
     },
     {
@@ -281,16 +281,16 @@
       ]
     },
     {
-      "key": "pvp_2_players",
-      "title": "PvP (Local + Online)",
+      "key": "coop_mode",
+      "title": "Co-op Modu",
       "x": 651,
       "y": 852,
       "w": 476,
       "h": 121,
       "color": [
-        255,
-        155,
-        0
+        80,
+        230,
+        160
       ]
     },
     {
@@ -307,16 +307,16 @@
       ]
     },
     {
-      "key": "daily_challenge",
-      "title": "Günlük",
+      "key": "pvp_2_players",
+      "title": "PvP",
       "x": 271,
       "y": 778,
       "w": 350,
       "h": 194,
       "color": [
-        0,
         255,
-        180
+        155,
+        0
       ]
     },
     {

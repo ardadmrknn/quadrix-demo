@@ -10,6 +10,7 @@ Yeni mantık:
 
 import pygame
 import uuid
+from pathlib import Path
 from typing import Dict, List, Optional, Any
 from retro_style import retro_style
 from block_styles import ALL_PIECE_NAMES
@@ -18,6 +19,9 @@ from workshop_blocks import WORKSHOP_MODES, WORKSHOP_MODE_KEYS
 from renderers.jelly_renderer import draw_jelly_block
 from background_effects import get_shared_falling_blocks_layer
 from localization import t
+
+
+ROOT_DIR = Path(__file__).resolve().parent.parent
 
 
 class PieceWorkshopScreen:
@@ -64,6 +68,7 @@ class PieceWorkshopScreen:
         self.custom_color_button_rect = pygame.Rect(0, 0, 0, 0)
         self.save_button_rect = pygame.Rect(0, 0, 0, 0)
         self.delete_button_rect = pygame.Rect(0, 0, 0, 0)
+        self.block_styles_card_rect = pygame.Rect(0, 0, 0, 0)
         self.palette_rect = pygame.Rect(0, 0, 0, 0)
         self._last_custom_click_ms: int = 0
         
@@ -570,6 +575,9 @@ class PieceWorkshopScreen:
                         self._clamp_pieces_scroll()
                     return None
 
+                if self.block_styles_card_rect and self.block_styles_card_rect.collidepoint(pos):
+                    return 'block_styles'
+
                 # Palette interactions (color selection)
                 if self._handle_palette_click(pos):
                     return None
@@ -758,8 +766,10 @@ class PieceWorkshopScreen:
         
         # Grid alanı
         grid_top = title_rect.bottom + 40
-        # Footer/alt kontrol paneli kaldırıldığı için daha fazla dikey alan kullanılabilir.
-        cell_size = min(45, (height - grid_top - 120) // self.GRID_SIZE, (width - 300) // self.GRID_SIZE)
+        # Alt blok görünümleri kartı, üstteki düzenleme ızgarasıyla aynı kare alanı paylaşır.
+        # Bu yüzden iki 7x7 alanı ve aradaki butonları aynı ekrana sığdıracak yükseklik hesaplanır.
+        mirrored_grid_height_limit = (height - grid_top - 120) // (self.GRID_SIZE * 2)
+        cell_size = min(45, mirrored_grid_height_limit, (width - 300) // self.GRID_SIZE)
         cell_size = max(30, cell_size)
         self.last_cell_size = cell_size
         
@@ -821,11 +831,24 @@ class PieceWorkshopScreen:
                 (60, 65, 75)  # Gri (deaktif)
             )
 
+        panel_start_x = grid_rect.right + 30
+
+        card_gap = 18
+        card_bottom_margin = 28
+        card_top_limit = self.save_button_rect.bottom + card_gap
+        card_bottom_limit = height - card_bottom_margin
+        desired_card_size = int(round(grid_pixel_size * 1.20))
+        card_size = max(1, min(desired_card_size, panel_start_x - 18, card_bottom_limit - card_top_limit))
+        card_x = int(round(container_rect.centerx - (card_size / 2)))
+        card_x = max(18, min(card_x, panel_start_x - card_size))
+        card_y = card_top_limit + max(0, (card_bottom_limit - card_top_limit - card_size) // 2)
+        self.block_styles_card_rect = pygame.Rect(card_x, card_y, card_size, card_size)
+        self._draw_block_styles_card(self.block_styles_card_rect)
+
 
         
         # --- SAĞ PANEL (Palette + Custom Color + Pieces) ---
         
-        panel_start_x = grid_rect.right + 30
         panel_y = grid_y
         available_height = height - grid_y - 20
         
@@ -857,9 +880,6 @@ class PieceWorkshopScreen:
             
             if pieces_w > 120:
                 self._draw_pieces_panel(pieces_x, panel_y, pieces_w, available_height)
-        else:
-            # Fallback (palet hatası olursa)
-            pass
         
         # Mesaj
         if self.message_timer > 0:
@@ -1251,3 +1271,129 @@ class PieceWorkshopScreen:
         font = retro_style.get_font(14, bold=False)
         text = font.render(label, True, (255, 255, 255))
         self.screen.blit(text, text.get_rect(center=rect.center))
+
+    def _draw_block_styles_card(self, rect: pygame.Rect) -> None:
+        """Parça Atölyesi içinde Blok Görünümleri kısayol kartı çiz."""
+        if rect.width <= 0 or rect.height <= 0:
+            return
+
+        mouse_pos = get_mouse_pos()
+        hovered = rect.collidepoint(mouse_pos)
+        accent = (190, 120, 255)
+        panel_scale = max(0.82, min(1.12, min(rect.width / 300.0, rect.height / 290.0)))
+        s = lambda v, minimum=1: max(minimum, int(round(v * panel_scale)))
+
+        retro_style.draw_glass_panel(
+            self.screen,
+            rect,
+            alpha=210 if hovered else 182,
+            border_color=accent,
+        )
+        pygame.draw.rect(self.screen, (*accent, 180 if hovered else 130), rect, 2 if hovered else 1, border_radius=14)
+
+        if hovered:
+            glow_rect = rect.inflate(8, 8)
+            glow = pygame.Surface(glow_rect.size, pygame.SRCALPHA)
+            pygame.draw.rect(glow, (*accent, 36), glow.get_rect(), border_radius=18)
+            self.screen.blit(glow, glow_rect.topleft)
+
+        title_area = pygame.Rect(rect.x + s(14), rect.y + s(12), rect.width - s(28), max(s(34), int(rect.height * 0.17)))
+        title_font = retro_style.get_font(max(16, s(18)), bold=True)
+        title_surf = title_font.render(t('block_styles'), True, accent)
+
+        title_bg_w = min(rect.width - s(10), title_surf.get_width() + s(26))
+        title_bg_h = title_surf.get_height() + s(18)
+        title_bg = pygame.Surface((title_bg_w, title_bg_h), pygame.SRCALPHA)
+        pygame.draw.rect(title_bg, (8, 12, 30, 210), title_bg.get_rect(), border_top_left_radius=14, border_top_right_radius=14, border_bottom_left_radius=8, border_bottom_right_radius=8)
+        pygame.draw.rect(title_bg, (*accent, 110), title_bg.get_rect(), 1, border_top_left_radius=14, border_top_right_radius=14, border_bottom_left_radius=8, border_bottom_right_radius=8)
+        inner_rect = rect.inflate(-s(2), -s(2))
+        image_top = inner_rect.y
+        image_bottom = inner_rect.bottom
+        image_rect = pygame.Rect(
+            inner_rect.x,
+            image_top,
+            inner_rect.width,
+            max(s(144), image_bottom - image_top),
+        )
+
+        bg_path = ROOT_DIR / 'assets' / 'main_theme' / 'blok_gorunum.png'
+        bg_image = getattr(self, '_block_styles_card_bg', None)
+        bg_failed = getattr(self, '_block_styles_card_bg_failed', False)
+        if bg_image is None and not bg_failed:
+            try:
+                bg_image = pygame.image.load(str(bg_path)).convert_alpha()
+                self._block_styles_card_bg = bg_image
+            except Exception:
+                self._block_styles_card_bg_failed = True
+                bg_image = None
+
+        image_panel = pygame.Surface(image_rect.size, pygame.SRCALPHA)
+        pygame.draw.rect(image_panel, (12, 18, 36, 120), image_panel.get_rect(), border_radius=12)
+        self.screen.blit(image_panel, image_rect.topleft)
+
+        if bg_image is not None:
+            src_w, src_h = bg_image.get_size()
+            if src_w > 0 and src_h > 0:
+                zoom = 1.18 if hovered else 1.12
+                scale = max(
+                    (image_rect.width * zoom) / max(1, src_w),
+                    (image_rect.height * zoom) / max(1, src_h),
+                )
+                cover_w = max(1, int(src_w * scale))
+                cover_h = max(1, int(src_h * scale))
+                scaled = pygame.transform.smoothscale(bg_image, (cover_w, cover_h))
+                focus_x = 0.50
+                focus_y = 0.54
+                draw_x = image_rect.x - int((cover_w - image_rect.width) * focus_x)
+                draw_y = image_rect.y - int((cover_h - image_rect.height) * focus_y)
+                prev_clip = self.screen.get_clip()
+                self.screen.set_clip(image_rect)
+                self.screen.blit(scaled, (draw_x, draw_y))
+                overlay = pygame.Surface(image_rect.size, pygame.SRCALPHA)
+                overlay.fill((0, 0, 0, 96 if hovered else 108))
+                self.screen.blit(overlay, image_rect.topleft)
+                self.screen.set_clip(prev_clip)
+        else:
+            preview_colors = [
+                (0, 255, 255),
+                (255, 165, 0),
+                (255, 0, 255),
+                (100, 200, 255),
+                (50, 205, 50),
+            ]
+            block_size = max(18, min(34, image_rect.width // 8, image_rect.height // 5))
+            origin_x = image_rect.x + max(14, image_rect.width // 5)
+            origin_y = image_rect.y + max(16, image_rect.height // 3)
+            block_offsets = [(0, 0), (1, 0), (0, 1), (3, 1), (4, 1)]
+            for color, (ox, oy) in zip(preview_colors, block_offsets):
+                block_rect = pygame.Rect(
+                    origin_x + ox * (block_size + 6),
+                    origin_y + oy * (block_size + 6),
+                    block_size,
+                    block_size,
+                )
+                self._draw_block_effect(block_rect, color, glow_alpha=28 if hovered else 18)
+
+        self.screen.blit(title_bg, (rect.x + s(8), rect.y + s(4)))
+        self.screen.blit(title_surf, (rect.x + s(18), rect.y + s(12)))
+
+        subtitle = t('block_styles_showcase_desc')
+        sub_pad_x = s(14)
+        sub_pad_y = s(7)
+        sub_max_w = rect.width - s(28)
+        font_size = max(12, s(13))
+        sub_font = retro_style.get_font(font_size, bold=True)
+        sub_lines = retro_style.wrap_text(subtitle, sub_font, max(s(60), sub_max_w - sub_pad_x * 2))[:1]
+        line_h = sub_font.get_linesize()
+        sub_bg_h = line_h + sub_pad_y * 2
+        sub_bg_w = min(sub_max_w, max(sub_font.size(sub_lines[0])[0] + sub_pad_x * 2 + 8, s(150))) if sub_lines else s(150)
+        sub_bg_x = rect.x + s(14)
+        sub_bg_y = rect.bottom - s(14) - sub_bg_h
+        sub_bg = pygame.Surface((sub_bg_w, sub_bg_h), pygame.SRCALPHA)
+        pygame.draw.rect(sub_bg, (12, 20, 45, 210), sub_bg.get_rect(), border_radius=9)
+        pygame.draw.rect(sub_bg, (*accent, 160), sub_bg.get_rect(), 2 if hovered else 1, border_radius=9)
+        self.screen.blit(sub_bg, (sub_bg_x, sub_bg_y))
+        if sub_lines:
+            sub_surf = sub_font.render(sub_lines[0], True, (235, 243, 255))
+            text_y = sub_bg_y + (sub_bg_h - sub_surf.get_height()) // 2
+            self.screen.blit(sub_surf, (sub_bg_x + sub_pad_x, text_y))

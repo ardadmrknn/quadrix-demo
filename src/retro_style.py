@@ -733,6 +733,7 @@ class RetroStyle:
         glow: bool = False,
         blur_effect: bool = True,
         top_highlight: bool = True,
+        draw_border: bool = True,
     ) -> None:
         """Glassmorphism panel çiz.
 
@@ -774,8 +775,9 @@ class RetroStyle:
         screen.blit(panel, rect.topleft)
         
         # Kenar çizgisi
-        border = border_color if border_color else (*self.glass_border[:3], self._scale_menu_alpha(80))
-        pygame.draw.rect(screen, border, rect, 2, border_radius=12)
+        if draw_border:
+            border = border_color if border_color else (*self.glass_border[:3], self._scale_menu_alpha(80))
+            pygame.draw.rect(screen, border, rect, 2, border_radius=12)
 
     def draw_title(self, screen: pygame.Surface, text: str, center: tuple[int, int], emoji: str | None = None) -> pygame.Rect:
         """Modern başlık - glow efektli

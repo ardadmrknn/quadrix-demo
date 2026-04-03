@@ -97,16 +97,16 @@
       ]
     },
     {
-      "key": "block_styles",
-      "title": "Blok Görünümleri",
+      "key": "store",
+      "title": "Mağaza",
       "x": 922,
       "y": 566,
       "w": 205,
       "h": 261,
       "color": [
-        0,
-        240,
-        255
+        255,
+        205,
+        70
       ]
     },
     {
@@ -123,16 +123,16 @@
       ]
     },
     {
-      "key": "pvp_2_players",
-      "title": "Online PvP Co-op",
+      "key": "coop_mode",
+      "title": "Co-op Modu",
       "x": 651,
       "y": 852,
       "w": 476,
       "h": 121,
       "color": [
-        255,
-        155,
-        0
+        80,
+        230,
+        160
       ]
     },
     {
@@ -149,16 +149,16 @@
       ]
     },
     {
-      "key": "daily_challenge",
-      "title": "Günlük",
+      "key": "pvp_2_players",
+      "title": "PvP",
       "x": 271,
       "y": 778,
       "w": 350,
       "h": 194,
       "color": [
-        0,
         255,
-        180
+        155,
+        0
       ]
     },
     {

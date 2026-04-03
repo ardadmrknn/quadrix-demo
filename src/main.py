@@ -1365,6 +1365,7 @@ def main():
     game = None
     pvp_game = None
     game_return_state = 'menu'
+    block_styles_return_state = 'menu'
     _campaign_needs_refresh = False  # Campaign progress yenileme flag'i
 
     # Ana menü gizli kısayolları (GTA hileleri gibi).
@@ -1935,11 +1936,18 @@ def main():
             elif action == 'main_menu':
                 confirm_exit = False
                 state = 'menu'
+            elif action == 'coop_mode':
+                confirm_exit = False
+                menu.show_info(t('menu_dashboard_sub_coop_mode'))
+            elif action == 'store':
+                confirm_exit = False
+                menu.show_info(t('menu_dashboard_sub_store'))
             elif action == 'piece_workshop':
                 confirm_exit = False
                 state = 'piece_workshop'
             elif action == 'block_styles':
                 confirm_exit = False
+                block_styles_return_state = 'menu'
                 state = 'block_styles'
             elif action == 'language_changed':
                 # Ana menüden dil değiştirildiğinde tüm ekranları senkronize et
@@ -2200,6 +2208,7 @@ def main():
                 except Exception:
                     pass
             elif action == 'block_styles':
+                block_styles_return_state = 'settings'
                 state = 'block_styles'
             elif action == 'block_workshop':
                 block_workshop_screen.refresh_styles()
@@ -2321,14 +2330,14 @@ def main():
         return _handle_settings(delta_ms)
 
     def _handle_block_styles(delta_ms):
-        nonlocal running, state
+        nonlocal running, state, block_styles_return_state
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
             action = block_style_screen.handle_input(event)
             if action == 'back':
-                state = 'menu'
+                state = block_styles_return_state
             elif action == 'toggle_fullscreen':
                 _toggle_fullscreen(500, 700)
         block_style_screen.draw()
@@ -2353,7 +2362,7 @@ def main():
         return True
 
     def _handle_piece_workshop(delta_ms):
-        nonlocal running, state
+        nonlocal running, state, block_styles_return_state
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -2361,6 +2370,9 @@ def main():
             action = piece_workshop_screen.handle_input(event)
             if action == 'back':
                 state = 'menu'
+            elif action == 'block_styles':
+                block_styles_return_state = 'piece_workshop'
+                state = 'block_styles'
             elif action == 'toggle_fullscreen':
                 _toggle_fullscreen(500, 700)
         piece_workshop_screen.draw()
@@ -2381,7 +2393,7 @@ def main():
         return True
 
     def _handle_extras(delta_ms):
-        nonlocal running, state, game, game_return_state
+        nonlocal running, state, game, game_return_state, pvp_game
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -2436,6 +2448,22 @@ def main():
                 effects = settings_screen.effects_enabled
                 game = HardcoreMode(difficulty, sound, effects, achievement_manager, theme_manager, screen, fullscreen, settings_manager, user_manager, 'hardcore', score_manager=score_manager)
                 state = 'game'
+            elif action in ('pvp_2_players', 'PvP (2 Oyuncu)', 'PvP (2 Players)'):
+                if not _show_mode_intro_popup(screen, 'pvp', settings_manager):
+                    continue
+                menu_sound.stop_music()
+                sound = settings_screen.sound_enabled
+                effects = settings_screen.effects_enabled
+                pvp_game = PvPGame(
+                    sound,
+                    effects,
+                    screen,
+                    fullscreen,
+                    user_manager,
+                    settings_manager,
+                    sound_manager=menu_sound,
+                )
+                state = 'pvp'
             elif action in ('Quadrix 2', 'Quadrix Extra'):
                 if not _show_mode_intro_popup(screen, 'tetris2', settings_manager):
                     continue
@@ -2500,6 +2528,31 @@ def main():
                 )
                 _handle_online_pvp._game = online_pvp_game
                 state = 'online_pvp'
+            elif action in ('daily_challenge', t('daily_challenge')):
+                allowed, reason = user_manager.can_play_daily() if user_manager else (False, 'Kullanıcı bulunamadı!')
+                if not allowed:
+                    state = 'menu'
+                    menu.show_info(reason or 'Daily Challenge kilitli!')
+                    continue
+                menu_sound.stop_music()
+                game_return_state = 'extras'
+                difficulty = settings_screen.difficulty
+                sound = settings_screen.sound_enabled
+                effects = settings_screen.effects_enabled
+                game = DailyChallengeMode(
+                    difficulty,
+                    sound,
+                    effects,
+                    achievement_manager,
+                    theme_manager,
+                    screen,
+                    fullscreen,
+                    settings_manager,
+                    user_manager,
+                    'daily',
+                    score_manager=score_manager,
+                )
+                state = 'game'
             elif action == 'Classic Mode':
                 if not _show_mode_intro_popup(screen, 'classic', settings_manager):
                     continue

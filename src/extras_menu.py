@@ -77,6 +77,16 @@ MODE_IMAGE_PROMPTS = {
         'filename': 'hardcore_mode_icon.png',
         'alt_emoji': '💀'
     },
+    'daily_challenge': {
+        'prompt': 'A glowing daily challenge emblem with a bright task badge, warm orange-gold highlights, futuristic mission card framing, subtle reward sparkle, transparent background, 256x256 icon',
+        'filename': 'daily_mode_icon.png',
+        'alt_emoji': '📅'
+    },
+    'pvp_2_players': {
+        'prompt': 'Two mirrored local versus playfields facing each other with a bold VS slash, red neon energy, couch competitive vibe, clean cyber UI icon, transparent background, 256x256 icon',
+        'filename': 'pvp_mode_icon.png',
+        'alt_emoji': 'VS'
+    },
     'Online PvP': {
         'prompt': "SUBJECT: two mirrored cyber Tetromino cores linked by a luminous network bridge, with a sharp stylized 'VS' split and packet-like digital sparks; subtle Steam-inspired circular node pattern in the backdrop; conveys 'online duel, synchronized real-time battle, and precision competitive play'. STYLE: clean cyber UI icon, holographic edge highlights, controlled impact trails near the VS split, sharp edges, transparent background, 256x256. COLOR: Neon Cyan and Electric Blue primary with vivid Orange conflict accents and bright white sync sparks; deep indigo-violet competitive shadows, high-energy pulse glow.",
         'filename': 'online_pvp_mode_icon.png',
@@ -154,6 +164,14 @@ class ExtrasScreen:
                 'image_data': MODE_IMAGE_PROMPTS.get('Ultra Mode')
             },
             {
+                'id': 'daily_challenge',
+                'name_key': 'daily_challenge',
+                'desc_key': 'menu_dashboard_sub_daily_challenge',
+                'color': (255, 180, 100),
+                'hover_color': (255, 205, 130),
+                'image_data': MODE_IMAGE_PROMPTS.get('daily_challenge')
+            },
+            {
                 'id': 'Zen Mode', 
                 'name_key': 'mode_label_zen',
                 'desc_key': 'extras_zen_desc',
@@ -205,6 +223,14 @@ class ExtrasScreen:
                 'color': (180, 30, 30),  # Koyu kırmızı
                 'hover_color': (220, 50, 50),
                 'image_data': MODE_IMAGE_PROMPTS.get('Hardcore Mode')
+            },
+            {
+                'id': 'pvp_2_players',
+                'name_key': 'menu_dashboard_pvp_local_label',
+                'desc_key': 'extras_local_pvp_desc',
+                'color': (255, 100, 100),
+                'hover_color': (255, 128, 128),
+                'image_data': MODE_IMAGE_PROMPTS.get('pvp_2_players')
             },
             {
                 'id': 'Online PvP',
@@ -509,15 +535,15 @@ class ExtrasScreen:
         prev_clip = self.screen.get_clip()
         self.screen.set_clip(pygame.Rect(0, start_y, width, visible_h))
 
-        # Toplam grid genişliği
-        grid_width = self.cols * self.card_size[0] + (self.cols - 1) * self.spacing
-        start_x = (width - grid_width) // 2
-        
         for idx, item in enumerate(self.items):
-            col = idx % self.cols
             row = idx // self.cols
+            row_start_idx = row * self.cols
+            row_count = min(self.cols, len(self.items) - row_start_idx)
+            row_width = row_count * self.card_size[0] + max(0, row_count - 1) * self.spacing
+            row_start_x = (width - row_width) // 2
+            col = idx - row_start_idx
             
-            x_pos = start_x + col * (self.card_size[0] + self.spacing)
+            x_pos = row_start_x + col * (self.card_size[0] + self.spacing)
             y_pos = start_y + row * (self.card_size[1] + self.spacing) - self.scroll_offset
             
             # Görünürlük kontrolü

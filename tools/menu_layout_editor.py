@@ -79,14 +79,14 @@ def _default_panels() -> list[Panel]:
         Panel("new_gen_tetris_sticker", "Kart Ustalığı Sticker", pygame.Rect(108, 248, 434, 330), (140, 110, 255)),
         Panel("piece_workshop", "Parça Atölyesi", pygame.Rect(595, 188, 300, 290), (255, 0, 180)),
         Panel("extras", "Oyun Modları", pygame.Rect(910, 188, 300, 290), (0, 240, 255)),
-        Panel("pvp_2_players", "PvP (Local + Online)", pygame.Rect(595, 500, 615, 200), (255, 155, 0)),
+        Panel("coop_mode", "Co-op Modu", pygame.Rect(595, 500, 615, 200), (80, 230, 160)),
         Panel("tutorial_mode", "Eğitim", pygame.Rect(1215, 188, 230, 290), (120, 225, 255)),
         Panel("tutorial_mode_sticker", "Eğitim Sticker", pygame.Rect(1234, 250, 190, 175), (110, 185, 255)),
         Panel("achievements", "Başarımlar", pygame.Rect(1460, 188, 380, 290), (255, 220, 40)),
         Panel("steam_scores", "Steam Skor Tablosu", pygame.Rect(1460, 490, 380, 370), (80, 230, 120)),
-        Panel("daily_challenge", "Günlük", pygame.Rect(80, 750, 490, 250), (0, 255, 180)),
+        Panel("pvp_2_players", "PvP", pygame.Rect(80, 750, 490, 250), (255, 155, 0)),
         Panel("campaign_mode", "Görev Modu", pygame.Rect(595, 720, 300, 260), (0, 240, 255)),
-        Panel("block_styles", "Blok Görünümleri", pygame.Rect(910, 500, 300, 290), (0, 240, 255)),
+        Panel("store", "Mağaza", pygame.Rect(910, 500, 300, 290), (255, 205, 70)),
 
         Panel("guide_button", "Kılavuz Butonu", pygame.Rect(30, 880, 56, 56), (100, 200, 255)),
         Panel("credits_button", "Emeği Geçenler Butonu", pygame.Rect(30, 950, 56, 56), (255, 220, 40)),
@@ -236,7 +236,36 @@ def load_layout() -> list[Panel]:
     defaults = _default_panels()
     default_map = {p.key: p for p in defaults}
 
+    def _migrate_loaded_panels(loaded: list[Panel]) -> list[Panel]:
+        has_daily = any(panel.key == "daily_challenge" for panel in loaded)
+        has_store = any(panel.key == "store" for panel in loaded)
+        has_coop = any(panel.key == "coop_mode" for panel in loaded)
+
+        migrated: list[Panel] = []
+        seen: dict[str, int] = {}
+        for panel in loaded:
+            new_key = panel.key
+            if panel.key == "daily_challenge":
+                new_key = "pvp_2_players"
+            elif panel.key == "pvp_2_players" and has_daily and not has_coop:
+                new_key = "coop_mode"
+            elif panel.key == "block_styles" and not has_store:
+                new_key = "store"
+
+            dp = default_map.get(new_key)
+            if dp is None:
+                continue
+
+            new_panel = Panel(dp.key, dp.title, panel.rect.copy(), dp.color)
+            if new_key in seen:
+                migrated[seen[new_key]] = new_panel
+            else:
+                seen[new_key] = len(migrated)
+                migrated.append(new_panel)
+        return migrated
+
     def _merge_missing(loaded: list[Panel]) -> list[Panel]:
+        loaded = _migrate_loaded_panels(loaded)
         if not loaded:
             return defaults[:]
         existing = {p.key for p in loaded}

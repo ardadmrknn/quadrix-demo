@@ -117,6 +117,25 @@ def _resolve_menu_layout_runtime_path() -> Path:
     project_layout = Path(__file__).resolve().parent.parent / 'config' / 'runtime' / 'menu_layout_runtime.json'
     return project_layout
 
+
+def _point_in_polygon(point: tuple[int, int], polygon: list[tuple[int, int]] | tuple[tuple[int, int], ...] | None) -> bool:
+    """Return True when point lies inside a simple polygon."""
+    if not polygon or len(polygon) < 3:
+        return False
+
+    px, py = point
+    inside = False
+    j = len(polygon) - 1
+    for i, (xi, yi) in enumerate(polygon):
+        xj, yj = polygon[j]
+        intersects = ((yi > py) != (yj > py)) and (
+            px < (xj - xi) * (py - yi) / max(1e-9, (yj - yi)) + xi
+        )
+        if intersects:
+            inside = not inside
+        j = i
+    return inside
+
 def _circle_crop_bitmap(src: pygame.Surface | None, diameter: int) -> pygame.Surface:
     """Center-crop a bitmap and apply a circular alpha mask safely on all platforms."""
     diameter = max(8, int(diameter))
@@ -400,6 +419,8 @@ class Menu:
         self.tutorial_enter_rect: 'pygame.Rect | None' = None
         self.pvp_local_rect: 'pygame.Rect | None' = None
         self.pvp_online_rect: 'pygame.Rect | None' = None
+        self.pvp_local_polygon: list[tuple[int, int]] | None = None
+        self.pvp_online_polygon: list[tuple[int, int]] | None = None
         self._pvp_split_selection = 'local'  # 'local' | 'online' (klavye alt seçim)
         self._hero_avatar_surface = None
         self._hero_avatar_signature = None
@@ -545,12 +566,12 @@ class Menu:
             'new_gen_tetris',
             'piece_workshop',
             'extras',
-            'pvp_2_players',
+            'coop_mode',
             'tutorial_mode',
             'achievements',
-            'daily_challenge',
+            'pvp_2_players',
             'campaign_mode',
-            'block_styles',
+            'store',
 
             # Köşe/kısayol aksiyonları (sadece fare ile erişilir)
             'high_scores',
@@ -563,7 +584,7 @@ class Menu:
             'exit',
         ]
         # Tuş navigasyonu sadece merkez paneller arasında gezinir
-        self._nav_panel_max_idx = 8  # Son merkez panel indeksi (block_styles)
+        self._nav_panel_max_idx = 8  # Son merkez panel indeksi (store)
 
     def _ui_scale(self) -> float:
         """Ana menü için pencereye bağlı UI ölçeği üret.
@@ -910,7 +931,7 @@ class Menu:
                         mouse_pos_now = get_mouse_pos()
                     except Exception:
                         mouse_pos_now = None
-                    if mouse_pos_now and self.pvp_online_rect and self.pvp_online_rect.collidepoint(mouse_pos_now):
+                    if mouse_pos_now and self.pvp_online_polygon and _point_in_polygon(mouse_pos_now, self.pvp_online_polygon):
                         return 'online_pvp'
                     return 'online_pvp' if self._pvp_split_selection == 'online' else 'pvp_2_players'
 
@@ -959,9 +980,9 @@ class Menu:
             # Tuş navigasyonu aktifken fare hover seçimi değiştirmez
             if getattr(self, '_nav_source', 'mouse') != 'keyboard':
                 mouse_pos = normalize_mouse_pos(getattr(event, 'pos', None)) or event.pos
-                if self.pvp_local_rect and self.pvp_local_rect.collidepoint(mouse_pos):
+                if self.pvp_local_polygon and _point_in_polygon(mouse_pos, self.pvp_local_polygon):
                     self._pvp_split_selection = 'local'
-                elif self.pvp_online_rect and self.pvp_online_rect.collidepoint(mouse_pos):
+                elif self.pvp_online_polygon and _point_in_polygon(mouse_pos, self.pvp_online_polygon):
                     self._pvp_split_selection = 'online'
                 self._mouse_in_panel = False
                 for i, rect in enumerate(self.option_rects):
@@ -987,11 +1008,11 @@ class Menu:
             if self.tutorial_enter_rect and self.tutorial_enter_rect.collidepoint(mouse_pos):
                 return 'tutorial_mode'
 
-            if self.pvp_local_rect and self.pvp_local_rect.collidepoint(mouse_pos):
+            if self.pvp_local_polygon and _point_in_polygon(mouse_pos, self.pvp_local_polygon):
                 self._pvp_split_selection = 'local'
                 return 'pvp_2_players'
 
-            if self.pvp_online_rect and self.pvp_online_rect.collidepoint(mouse_pos):
+            if self.pvp_online_polygon and _point_in_polygon(mouse_pos, self.pvp_online_polygon):
                 self._pvp_split_selection = 'online'
                 return 'online_pvp'
 
@@ -1196,30 +1217,67 @@ class Menu:
         panel_scale = self._menu_panel_content_scale()
         sp = lambda v, minimum=1: max(minimum, int(round(v * panel_scale)))
 
+        def _draw_pvp_dual_outline(
+            surface: pygame.Surface,
+            outline_rect: pygame.Rect,
+            line_width: int,
+            orange_alpha: int,
+            cyan_alpha: int,
+            corner_radius: int,
+        ) -> None:
+            outline_orange = pygame.Surface(outline_rect.size, pygame.SRCALPHA)
+            outline_cyan = pygame.Surface(outline_rect.size, pygame.SRCALPHA)
+            local_rect = outline_orange.get_rect()
+            pygame.draw.rect(outline_orange, (*UIColors.NEON_ORANGE[:3], orange_alpha), local_rect, line_width, border_radius=corner_radius)
+            pygame.draw.rect(outline_cyan, (*UIColors.NEON_CYAN[:3], cyan_alpha), local_rect, line_width, border_radius=corner_radius)
+
+            orange_mask = pygame.Surface(outline_rect.size, pygame.SRCALPHA)
+            cyan_mask = pygame.Surface(outline_rect.size, pygame.SRCALPHA)
+            pygame.draw.polygon(
+                orange_mask,
+                (255, 255, 255, 255),
+                [(0, 0), (0, local_rect.height - 1), (local_rect.width - 1, local_rect.height - 1)],
+            )
+            pygame.draw.polygon(
+                cyan_mask,
+                (255, 255, 255, 255),
+                [(0, 0), (local_rect.width - 1, 0), (local_rect.width - 1, local_rect.height - 1)],
+            )
+            outline_orange.blit(orange_mask, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+            outline_cyan.blit(cyan_mask, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+            surface.blit(outline_orange, outline_rect.topleft)
+            surface.blit(outline_cyan, outline_rect.topleft)
+
         is_highlighted = selected or hover
         hover_growth_w = sp(10)
         hover_growth_h = sp(8)
         draw_rect = rect.inflate(hover_growth_w, hover_growth_h) if is_highlighted else rect
+        pvp_outline_side: str | None = None
+        pvp_orange_alpha = 190
+        pvp_cyan_alpha = 190
 
         alpha = 230 if is_highlighted else 180
-        flat_title_band_panels = {'daily_challenge', 'achievements', 'piece_workshop', 'block_styles'}
+        flat_title_band_panels = {'achievements', 'piece_workshop', 'coop_mode', 'store'}
+        draw_panel_border = panel_key != 'pvp_2_players'
         retro_style.draw_glass_panel(
             target_surface,
             draw_rect,
             alpha=alpha,
             border_color=accent_color,
             top_highlight=panel_key not in flat_title_band_panels,
+            draw_border=draw_panel_border,
         )
 
         if is_highlighted:
             prev_clip = target_surface.get_clip()
             target_surface.set_clip(draw_rect)
-            for glow_i in range(3, 0, -1):
-                glow_rect = draw_rect.inflate(glow_i * 4, glow_i * 4)
-                glow_alpha = max(10, 60 - glow_i * 18)
-                glow_surf = pygame.Surface((glow_rect.width, glow_rect.height), pygame.SRCALPHA)
-                pygame.draw.rect(glow_surf, (*accent_color[:3], glow_alpha), glow_surf.get_rect(), width=2, border_radius=14 + glow_i * 2)
-                target_surface.blit(glow_surf, glow_rect.topleft)
+            if panel_key != 'pvp_2_players':
+                for glow_i in range(3, 0, -1):
+                    glow_rect = draw_rect.inflate(glow_i * 4, glow_i * 4)
+                    glow_alpha = max(10, 60 - glow_i * 18)
+                    glow_surf = pygame.Surface((glow_rect.width, glow_rect.height), pygame.SRCALPHA)
+                    pygame.draw.rect(glow_surf, (*accent_color[:3], glow_alpha), glow_surf.get_rect(), width=2, border_radius=14 + glow_i * 2)
+                    target_surface.blit(glow_surf, glow_rect.topleft)
             target_surface.set_clip(prev_clip)
 
         self._draw_dashboard_tile_flavor(draw_rect, panel_key, accent_color, hover, target_surface=target_surface)
@@ -1228,16 +1286,57 @@ class Menu:
         fill.fill((0, 0, 0, 48 if is_highlighted else 38))
         target_surface.blit(fill, draw_rect.topleft)
 
-        pygame.draw.rect(
-            target_surface,
-            (*accent_color[:3], 255 if is_highlighted else 140),
-            draw_rect,
-            3 if is_highlighted else 2,
-            border_radius=14,
-        )
+        pvp_micro_prepass = bool(panel_context) and panel_key == 'pvp_2_players'
+        if pvp_micro_prepass:
+            self._draw_panel_micro_content(draw_rect, panel_key, accent_color, panel_context, hover, target_surface=target_surface)
+            try:
+                mouse_pos = get_mouse_pos()
+            except Exception:
+                mouse_pos = None
+
+            if mouse_pos and self.pvp_local_polygon and _point_in_polygon(mouse_pos, self.pvp_local_polygon):
+                pvp_outline_side = 'local'
+            elif mouse_pos and self.pvp_online_polygon and _point_in_polygon(mouse_pos, self.pvp_online_polygon):
+                pvp_outline_side = 'online'
+            elif selected:
+                pvp_outline_side = self._pvp_split_selection
+
+            pvp_orange_alpha = 222 if is_highlighted else 190
+            pvp_cyan_alpha = 222 if is_highlighted else 190
+            if pvp_outline_side == 'local':
+                pvp_orange_alpha = 255 if is_highlighted else 232
+                pvp_cyan_alpha = 182 if is_highlighted else 160
+            elif pvp_outline_side == 'online':
+                pvp_orange_alpha = 182 if is_highlighted else 160
+                pvp_cyan_alpha = 255 if is_highlighted else 232
+
+        hide_panel_title = panel_key == 'pvp_2_players'
+
+        if panel_key == 'pvp_2_players':
+            _draw_pvp_dual_outline(
+                target_surface,
+                draw_rect,
+                3 if is_highlighted else 2,
+                pvp_orange_alpha,
+                pvp_cyan_alpha,
+                14,
+            )
+        else:
+            pygame.draw.rect(
+                target_surface,
+                (*accent_color[:3], 255 if is_highlighted else 140),
+                draw_rect,
+                3 if is_highlighted else 2,
+                border_radius=14,
+            )
 
         title_area_h = max(sp(32), int(draw_rect.height * 0.40))
-        title_area = pygame.Rect(draw_rect.x + sp(16), draw_rect.y + sp(10), draw_rect.width - sp(24), title_area_h)
+        title_area = pygame.Rect(
+            draw_rect.x + sp(12),
+            draw_rect.y + sp(10),
+            max(sp(24), draw_rect.width - sp(24)),
+            title_area_h,
+        )
         title_font_size = max(sp(16), min(sp(26), int(min(draw_rect.width, draw_rect.height) * 0.12)))
 
         if panel_key == 'exit':
@@ -1273,6 +1372,10 @@ class Menu:
                 border_radius=14,
             )
             return draw_rect
+
+        if hide_panel_title:
+            return draw_rect
+
         title_font = retro_style.get_font(title_font_size, bold=True)
 
         _min_title_font = max(sp(11), sp(12))
@@ -1300,7 +1403,7 @@ class Menu:
             title_font,
             accent_color,
             title_area,
-            align='left' if draw_rect.width > 170 else 'center',
+            align='center',
             line_spacing=2,
         )
 
@@ -1330,10 +1433,10 @@ class Menu:
                 sub_bg_x = draw_rect.x + (draw_rect.width - sub_bg_w) // 2
                 sub_bg_y = draw_rect.bottom - sub_bg_h - sp(10)
 
-                if is_highlighted:
-                    glow_surf = pygame.Surface((sub_bg_w + 10, sub_bg_h + 10), pygame.SRCALPHA)
-                    pygame.draw.rect(glow_surf, (*accent_color[:3], 35), glow_surf.get_rect(), border_radius=12)
-                    target_surface.blit(glow_surf, (sub_bg_x - 5, sub_bg_y - 5))
+                glow_pad = sp(10)
+                glow_surf = pygame.Surface((sub_bg_w + glow_pad, sub_bg_h + glow_pad), pygame.SRCALPHA)
+                pygame.draw.rect(glow_surf, (*accent_color[:3], 42 if is_highlighted else 22), glow_surf.get_rect(), border_radius=12)
+                target_surface.blit(glow_surf, (sub_bg_x - glow_pad // 2, sub_bg_y - glow_pad // 2))
 
                 sub_bg = pygame.Surface((sub_bg_w, sub_bg_h), pygame.SRCALPHA)
                 pygame.draw.rect(sub_bg, (12, 20, 45, 210), sub_bg.get_rect(), border_radius=9)
@@ -1381,6 +1484,11 @@ class Menu:
                 sub_bg_x = draw_rect.x + sp(18)
                 sub_bg_y = draw_rect.bottom - sub_bg_h - sp(8)
 
+                glow_pad = sp(10)
+                glow_surf = pygame.Surface((sub_bg_w + glow_pad, sub_bg_h + glow_pad), pygame.SRCALPHA)
+                pygame.draw.rect(glow_surf, (*accent_color[:3], 34 if is_highlighted else 18), glow_surf.get_rect(), border_radius=12)
+                target_surface.blit(glow_surf, (sub_bg_x - glow_pad // 2, sub_bg_y - glow_pad // 2))
+
                 sub_bg = pygame.Surface((sub_bg_w, sub_bg_h), pygame.SRCALPHA)
                 pygame.draw.rect(sub_bg, (15, 22, 42, 170), sub_bg.get_rect(), border_radius=8)
                 pygame.draw.rect(sub_bg, (*accent_color[:3], 140), pygame.Rect(0, 3, 3, sub_bg_h - 6), border_radius=2)
@@ -1394,7 +1502,7 @@ class Menu:
                     target_surface.blit(line_surf, (sub_bg_x + sub_pad_x + sp(4), line_y))
                     line_y += line_h + line_gap
 
-        if panel_context and panel_key:
+        if panel_context and panel_key and not pvp_micro_prepass:
             self._draw_panel_micro_content(draw_rect, panel_key, accent_color, panel_context, hover, target_surface=target_surface)
 
         return draw_rect
@@ -1773,26 +1881,45 @@ class Menu:
         content_w = rect.width - pad_l - pad_r
 
         if panel_key == 'pvp_2_players':
-            # Tek panel içinde 2 yarı: sol Local PvP, sağ Online PvP
-            # Layout editör uyumu için yarılar pvp_2_players rect'inden türetilir.
+            # PvP paneli diagonal olarak iki alana ayrılır: Local ve Online.
+            # Layout editör uyumu için tüm geometri pvp_2_players rect'inden türetilir.
             mouse_pos = get_mouse_pos()
 
-            split_top = rect.y + max(s(56), int(rect.height * 0.34))
-            split_bottom = rect.bottom - s(12)
-            split_h = max(s(40), split_bottom - split_top)
-            split_rect = pygame.Rect(rect.x + s(10), split_top, max(s(120), rect.width - s(20)), split_h)
+            split_rect = pygame.Rect(
+                rect.x + s(4),
+                rect.y + s(4),
+                max(1, rect.width - s(8)),
+                max(1, rect.height - s(8)),
+            )
+            corner_radius = max(8, s(14))
 
-            divider_gap = s(6)
-            left_w = max(s(48), (split_rect.width - divider_gap) // 2)
-            right_w = max(s(48), split_rect.width - left_w - divider_gap)
-            local_rect = pygame.Rect(split_rect.x, split_rect.y, left_w, split_rect.height)
-            online_rect = pygame.Rect(split_rect.x + left_w + divider_gap, split_rect.y, right_w, split_rect.height)
+            local_poly = [
+                (split_rect.left, split_rect.top),
+                (split_rect.left, split_rect.bottom),
+                (split_rect.right, split_rect.bottom),
+            ]
+            online_poly = [
+                (split_rect.left, split_rect.top),
+                (split_rect.right, split_rect.top),
+                (split_rect.right, split_rect.bottom),
+            ]
 
-            self.pvp_local_rect = local_rect
-            self.pvp_online_rect = online_rect
+            self.pvp_local_polygon = local_poly
+            self.pvp_online_polygon = online_poly
 
-            local_hover = local_rect.collidepoint(mouse_pos)
-            online_hover = online_rect.collidepoint(mouse_pos)
+            local_min_x = min(pt[0] for pt in local_poly)
+            local_min_y = min(pt[1] for pt in local_poly)
+            local_max_x = max(pt[0] for pt in local_poly)
+            local_max_y = max(pt[1] for pt in local_poly)
+            online_min_x = min(pt[0] for pt in online_poly)
+            online_min_y = min(pt[1] for pt in online_poly)
+            online_max_x = max(pt[0] for pt in online_poly)
+            online_max_y = max(pt[1] for pt in online_poly)
+            self.pvp_local_rect = pygame.Rect(local_min_x, local_min_y, max(1, local_max_x - local_min_x), max(1, local_max_y - local_min_y))
+            self.pvp_online_rect = pygame.Rect(online_min_x, online_min_y, max(1, online_max_x - online_min_x), max(1, online_max_y - online_min_y))
+
+            local_hover = _point_in_polygon(mouse_pos, local_poly)
+            online_hover = _point_in_polygon(mouse_pos, online_poly)
             if local_hover:
                 self._pvp_split_selection = 'local'
             elif online_hover:
@@ -1816,35 +1943,180 @@ class Menu:
                     local_hover = True
                     online_hover = False
 
-            # Orta bölme çizgisi
-            divider_x = local_rect.right + divider_gap // 2
-            pygame.draw.line(self.screen, (*accent_color[:3], 130), (divider_x, split_rect.y + s(4)), (divider_x, split_rect.bottom - s(4)), 1)
-
             halves = [
-                (local_rect, UIColors.NEON_ORANGE, t('menu_dashboard_pvp_local_label', 'Local PvP'), t('menu_dashboard_pvp_local_sub', '2 Oyuncu'), local_hover),
-                (online_rect, UIColors.NEON_CYAN, t('menu_dashboard_pvp_online_label', 'Online PvP'), t('menu_dashboard_pvp_online_sub', 'Steam 1v1'), online_hover),
+                (
+                    'local',
+                    local_poly,
+                    UIColors.NEON_ORANGE,
+                    (82, 30, 10),
+                    t('menu_dashboard_pvp_local_label', 'Local PvP'),
+                    t('menu_dashboard_pvp_local_sub', '2 Oyuncu'),
+                    local_hover,
+                    (s(22), split_rect.height - s(24)),
+                ),
+                (
+                    'online',
+                    online_poly,
+                    UIColors.NEON_CYAN,
+                    (8, 50, 62),
+                    t('menu_dashboard_pvp_online_label', 'Online PvP'),
+                    t('menu_dashboard_pvp_online_sub', 'Steam 1v1'),
+                    online_hover,
+                    (split_rect.width - s(22), s(24)),
+                ),
             ]
 
-            for half_rect, half_color, label, sub, is_hover in halves:
-                half_surf = pygame.Surface(half_rect.size, pygame.SRCALPHA)
-                bg_alpha = 210 if is_hover else 160
-                pygame.draw.rect(half_surf, (12, 22, 40, bg_alpha), half_surf.get_rect(), border_radius=10)
-                for hy in range(min(7, half_rect.height // 4)):
-                    ha = int(18 * (1 - hy / max(1, min(7, half_rect.height // 4))))
-                    pygame.draw.line(half_surf, (255, 255, 255, ha), (4, hy), (half_rect.width - 4, hy))
-                pygame.draw.rect(half_surf, (*half_color[:3], 210 if is_hover else 120), half_surf.get_rect(), 2 if is_hover else 1, border_radius=10)
-                self.screen.blit(half_surf, half_rect.topleft)
+            def _diag_x(y_pos: int) -> int:
+                rel = (y_pos - split_rect.top) / max(1, split_rect.height)
+                rel = max(0.0, min(1.0, rel))
+                return int(round(split_rect.left + rel * split_rect.width))
 
-                label_font = retro_style.get_fitting_font(label, base_size=s(18), max_width=half_rect.width - s(14), bold=True, min_size=max(10, s(11)))
+            poly_overlay = pygame.Surface((split_rect.width, split_rect.height), pygame.SRCALPHA)
+            poly_rect = poly_overlay.get_rect()
+            pygame.draw.rect(poly_overlay, (6, 10, 26, 212 if hover else 192), poly_rect, border_radius=corner_radius)
+            sheen_rows = min(max(5, split_rect.height // 14), 14)
+            for hy in range(sheen_rows):
+                sheen_alpha = int((34 if hover else 26) * (1 - hy / max(1, sheen_rows)))
+                pygame.draw.line(poly_overlay, (255, 255, 255, sheen_alpha), (s(8), hy), (split_rect.width - s(8), hy))
+
+            for side, half_poly, half_color, half_fill, label, sub, is_hover, glow_center in halves:
+                rel_poly = [(x - split_rect.x, y - split_rect.y) for x, y in half_poly]
+                half_surface = pygame.Surface((split_rect.width, split_rect.height), pygame.SRCALPHA)
+                pygame.draw.polygon(half_surface, (*half_fill, 182 if is_hover else 146), rel_poly)
+
+                max_radius = max(s(44), int(min(split_rect.width, split_rect.height) * 0.92))
+                inner_radius = max(s(26), int(max_radius * 0.58))
+                pygame.draw.circle(half_surface, (*half_color[:3], 78 if is_hover else 56), glow_center, max_radius)
+                pygame.draw.circle(half_surface, (*half_color[:3], 54 if is_hover else 34), glow_center, inner_radius)
+
+                band_count = 4
+                for band_idx in range(band_count):
+                    band_alpha = max(8, (22 if is_hover else 14) - band_idx * 3)
+                    if side == 'local':
+                        start = (-split_rect.width // 5, split_rect.height - int((band_idx + 1) * split_rect.height / (band_count + 1)))
+                        end = (int((band_idx + 1) * split_rect.width / (band_count + 2)), split_rect.height + split_rect.height // 5)
+                    else:
+                        start = (split_rect.width - int((band_idx + 1) * split_rect.width / (band_count + 2)), -split_rect.height // 5)
+                        end = (split_rect.width + split_rect.width // 5, int((band_idx + 1) * split_rect.height / (band_count + 1)))
+                    pygame.draw.line(half_surface, (*half_color[:3], band_alpha), start, end, max(2, s(3)))
+
+                poly_mask = pygame.Surface((split_rect.width, split_rect.height), pygame.SRCALPHA)
+                pygame.draw.polygon(poly_mask, (255, 255, 255, 255), rel_poly)
+                half_surface.blit(poly_mask, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+                poly_overlay.blit(half_surface, (0, 0))
+
+            diagonal_glow_w = max(4, s(5))
+            pygame.draw.line(poly_overlay, (255, 255, 255, 28 if hover else 18), (0, 0), (split_rect.width - 1, split_rect.height - 1), diagonal_glow_w)
+            pygame.draw.line(poly_overlay, (*UIColors.NEON_ORANGE[:3], 120 if hover else 84), (0, 0), (split_rect.width - 1, split_rect.height - 1), 2)
+            pygame.draw.line(poly_overlay, (*UIColors.NEON_CYAN[:3], 92 if hover else 58), (0, min(split_rect.height - 1, s(2))), (max(0, split_rect.width - 1 - s(2)), split_rect.height - 1), 1)
+
+            rounded_mask = pygame.Surface((split_rect.width, split_rect.height), pygame.SRCALPHA)
+            pygame.draw.rect(rounded_mask, (255, 255, 255, 255), rounded_mask.get_rect(), border_radius=corner_radius)
+            poly_overlay.blit(rounded_mask, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+
+            target.blit(poly_overlay, split_rect.topleft)
+
+            chip_margin = s(14)
+            chip_pad_x = s(14)
+            chip_pad_y = s(9)
+            chip_gap = s(4)
+            chip_strip_w = max(3, s(4))
+            chip_text_inset = max(s(6), chip_strip_w + s(5))
+            diag_gap = s(18)
+            top_chip_margin = chip_margin
+
+            chip_specs = [
+                ('local', UIColors.NEON_ORANGE, t('menu_dashboard_pvp_local_label', 'Local PvP'), t('menu_dashboard_pvp_local_sub', '2 Oyuncu'), local_hover),
+                ('online', UIColors.NEON_CYAN, t('menu_dashboard_pvp_online_label', 'Online PvP'), t('menu_dashboard_pvp_online_sub', 'Steam 1v1'), online_hover),
+            ]
+
+            for side, chip_color, label, sub, is_hover in chip_specs:
+                provisional_font_w = max(s(54), int(split_rect.width * 0.32))
+                label_font = retro_style.get_fitting_font(label, base_size=s(18), max_width=provisional_font_w, bold=True, min_size=max(10, s(11)))
+                sub_font = retro_style.get_fitting_font(sub, base_size=s(13), max_width=provisional_font_w, bold=False, min_size=max(9, s(10)))
+                provisional_label = label_font.render(label, True, UIColors.TEXT_PRIMARY)
+                provisional_sub = sub_font.render(sub, True, UIColors.TEXT_SECONDARY)
+                provisional_h = provisional_label.get_height() + provisional_sub.get_height() + chip_pad_y * 2 + chip_gap
+                chip_center_y = split_rect.bottom - chip_margin - provisional_h // 2 if side == 'local' else split_rect.top + top_chip_margin + provisional_h // 2
+                diag_limit = _diag_x(chip_center_y)
+
+                if side == 'local':
+                    available_w = diag_limit - split_rect.left - chip_margin - diag_gap
+                else:
+                    available_w = split_rect.right - chip_margin - (diag_limit + diag_gap)
+                chip_max_w = max(s(88), min(int(split_rect.width * 0.48), available_w))
+                text_max_w = max(s(54), chip_max_w - chip_pad_x * 2 - chip_text_inset)
+
+                label_font = retro_style.get_fitting_font(label, base_size=s(18), max_width=text_max_w, bold=True, min_size=max(10, s(11)))
+                sub_font = retro_style.get_fitting_font(sub, base_size=s(13), max_width=text_max_w, bold=False, min_size=max(9, s(10)))
                 label_surf = label_font.render(label, True, UIColors.TEXT_PRIMARY)
-                label_rect = label_surf.get_rect(centerx=half_rect.centerx, y=half_rect.y + s(10))
-                self.screen.blit(label_surf, label_rect)
+                sub_surf = sub_font.render(sub, True, (214, 224, 238) if is_hover else UIColors.TEXT_SECONDARY)
 
-                sub_font = retro_style.get_fitting_font(sub, base_size=s(13), max_width=half_rect.width - s(12), bold=False, min_size=max(9, s(10)))
-                sub_surf = sub_font.render(sub, True, UIColors.TEXT_SECONDARY)
-                sub_rect = sub_surf.get_rect(centerx=half_rect.centerx, bottom=half_rect.bottom - s(10))
-                self.screen.blit(sub_surf, sub_rect)
+                chip_w = min(chip_max_w, max(s(88), max(label_surf.get_width(), sub_surf.get_width()) + chip_pad_x * 2 + chip_text_inset))
+                chip_h = label_surf.get_height() + sub_surf.get_height() + chip_pad_y * 2 + chip_gap
 
+                if side == 'local':
+                    chip_x = split_rect.left + chip_margin
+                    chip_y = split_rect.bottom - chip_margin - chip_h
+                    text_left = chip_x + chip_pad_x + chip_text_inset
+                    label_rect = label_surf.get_rect(topleft=(text_left, chip_y + chip_pad_y))
+                    sub_rect = sub_surf.get_rect(topleft=(text_left, label_rect.bottom + chip_gap))
+                    strip_rect = pygame.Rect(s(6), s(7), chip_strip_w, max(s(10), chip_h - s(14)))
+                else:
+                    chip_x = split_rect.right - chip_margin - chip_w
+                    chip_y = split_rect.top + top_chip_margin
+                    text_right = chip_x + chip_w - chip_pad_x - chip_text_inset
+                    label_rect = label_surf.get_rect(topright=(text_right, chip_y + chip_pad_y))
+                    sub_rect = sub_surf.get_rect(topright=(text_right, label_rect.bottom + chip_gap))
+                    strip_rect = pygame.Rect(chip_w - s(6) - chip_strip_w, s(7), chip_strip_w, max(s(10), chip_h - s(14)))
+
+                chip_shadow = pygame.Surface((chip_w + s(8), chip_h + s(8)), pygame.SRCALPHA)
+                pygame.draw.rect(chip_shadow, (*chip_color[:3], 34 if is_hover else 22), chip_shadow.get_rect(), border_radius=14)
+                target.blit(chip_shadow, (chip_x - s(4), chip_y - s(4)))
+
+                chip_surf = pygame.Surface((chip_w, chip_h), pygame.SRCALPHA)
+                pygame.draw.rect(chip_surf, (8, 14, 30, 230 if is_hover else 210), chip_surf.get_rect(), border_radius=12)
+                for hy in range(min(6, chip_h // 3)):
+                    ha = int(20 * (1 - hy / 6))
+                    pygame.draw.line(chip_surf, (255, 255, 255, ha), (4, hy), (chip_w - 4, hy))
+                pygame.draw.rect(chip_surf, (*chip_color[:3], 224 if is_hover else 184), strip_rect, border_radius=3)
+                pygame.draw.rect(chip_surf, (255, 255, 255, 20), chip_surf.get_rect().inflate(-2, -2), 1, border_radius=10)
+                pygame.draw.rect(chip_surf, (*chip_color[:3], 210 if is_hover else 136), chip_surf.get_rect(), 2 if is_hover else 1, border_radius=12)
+                target.blit(chip_surf, (chip_x, chip_y))
+                target.blit(label_surf, label_rect)
+                target.blit(sub_surf, sub_rect)
+
+            if hover:
+                accent_surf = pygame.Surface((split_rect.width, split_rect.height), pygame.SRCALPHA)
+                pygame.draw.line(accent_surf, (*UIColors.NEON_CYAN[:3], 24), (split_rect.width - 1, 0), (0, split_rect.height - 1), max(2, s(3)))
+                target.blit(accent_surf, split_rect.topleft)
+
+            return
+
+        if panel_key in {'coop_mode', 'store'}:
+            message_key = 'menu_dashboard_sub_coop_mode' if panel_key == 'coop_mode' else 'menu_dashboard_sub_store'
+            message = t(message_key)
+            badge_w = min(content_w, max(s(128), rect.width - s(24)))
+            badge_h = max(s(44), min(s(62), rect.height - s(36)))
+            badge_x = rect.x + (rect.width - badge_w) // 2
+            badge_y = rect.bottom - badge_h - s(12)
+            badge_rect = pygame.Rect(badge_x, badge_y, badge_w, badge_h)
+
+            badge_glow = pygame.Surface((badge_w + s(10), badge_h + s(10)), pygame.SRCALPHA)
+            pygame.draw.rect(badge_glow, (*accent_color[:3], 30 if hover else 18), badge_glow.get_rect(), border_radius=12)
+            target.blit(badge_glow, (badge_x - s(5), badge_y - s(5)))
+
+            badge_surf = pygame.Surface((badge_w, badge_h), pygame.SRCALPHA)
+            pygame.draw.rect(badge_surf, (14, 24, 44, 190), badge_surf.get_rect(), border_radius=10)
+            pygame.draw.rect(badge_surf, (*accent_color[:3], 135), badge_surf.get_rect(), 1, border_radius=10)
+            for hy in range(min(6, badge_h // 3)):
+                ha = int(20 * (1 - hy / 6))
+                pygame.draw.line(badge_surf, (255, 255, 255, ha), (4, hy), (badge_w - 4, hy))
+            target.blit(badge_surf, badge_rect.topleft)
+
+            msg_font = retro_style.get_fitting_font(message, base_size=s(15), max_width=badge_w - s(20), bold=True, min_size=max(10, s(11)))
+            msg_surf = msg_font.render(message, True, UIColors.TEXT_PRIMARY)
+            target.blit(msg_surf, msg_surf.get_rect(center=badge_rect.center))
             return
 
         if panel_key == 'daily_challenge':
@@ -2033,6 +2305,10 @@ class Menu:
             lv_panel_x = rect.x + pad_l
             lv_panel_y = info_y
 
+            lv_glow = pygame.Surface((lv_panel_w + s(10), lv_panel_h + s(10)), pygame.SRCALPHA)
+            pygame.draw.rect(lv_glow, (*accent_color[:3], 20 if hover else 12), lv_glow.get_rect(), border_radius=12)
+            target.blit(lv_glow, (lv_panel_x - s(5), lv_panel_y - s(5)))
+
             # Panel arka plan
             lv_bg = pygame.Surface((lv_panel_w, lv_panel_h), pygame.SRCALPHA)
             pygame.draw.rect(lv_bg, (12, 28, 48, 185), lv_bg.get_rect(), border_radius=10)
@@ -2071,10 +2347,9 @@ class Menu:
                 pygame.draw.line(btn_surf, (255, 255, 255, ha), (4, hy), (btn_w - 4, hy))
             border_alpha = 240 if btn_hover else 175
             pygame.draw.rect(btn_surf, (*accent_color[:3], border_alpha), btn_surf.get_rect(), 2, border_radius=11)
-            if btn_hover:
-                glow = pygame.Surface((btn_w + 10, btn_h + 10), pygame.SRCALPHA)
-                pygame.draw.rect(glow, (*accent_color[:3], 40), glow.get_rect(), border_radius=14)
-                self.screen.blit(glow, (btn_rect.x - 5, btn_rect.y - 5))
+            glow = pygame.Surface((btn_w + 10, btn_h + 10), pygame.SRCALPHA)
+            pygame.draw.rect(glow, (*accent_color[:3], 40 if btn_hover else 18), glow.get_rect(), border_radius=14)
+            self.screen.blit(glow, (btn_rect.x - 5, btn_rect.y - 5))
             btn_label = t('menu_dashboard_quick_continue')
             btn_font = retro_style.get_fitting_font(btn_label, base_size=max(s(18), 15), max_width=btn_w - s(32), bold=True, min_size=max(14, s(13)))
             btn_text_surf = btn_font.render(btn_label, True, UIColors.TEXT_PRIMARY)
@@ -2107,10 +2382,9 @@ class Menu:
                 pygame.draw.line(btn_surf, (255, 255, 255, ha), (4, hy), (btn_w - 4, hy))
             border_alpha = 240 if btn_hover else 175
             pygame.draw.rect(btn_surf, (*accent_color[:3], border_alpha), btn_surf.get_rect(), 2, border_radius=11)
-            if btn_hover:
-                glow = pygame.Surface((btn_w + 10, btn_h + 10), pygame.SRCALPHA)
-                pygame.draw.rect(glow, (*accent_color[:3], 40), glow.get_rect(), border_radius=14)
-                self.screen.blit(glow, (btn_rect.x - 5, btn_rect.y - 5))
+            glow = pygame.Surface((btn_w + 10, btn_h + 10), pygame.SRCALPHA)
+            pygame.draw.rect(glow, (*accent_color[:3], 40 if btn_hover else 18), glow.get_rect(), border_radius=14)
+            self.screen.blit(glow, (btn_rect.x - 5, btn_rect.y - 5))
             btn_font = retro_style.get_fitting_font(btn_label, base_size=max(s(20), 17), max_width=btn_w - s(32), bold=True, min_size=max(15, s(14)))
             btn_text_surf = btn_font.render(btn_label, True, UIColors.TEXT_PRIMARY)
             # Sol tarafta üçgen ok ikonu
@@ -2140,10 +2414,9 @@ class Menu:
                 pygame.draw.line(btn_surf, (255, 255, 255, ha), (4, hy), (btn_w - 4, hy))
             border_alpha = 240 if btn_hover else 175
             pygame.draw.rect(btn_surf, (*accent_color[:3], border_alpha), btn_surf.get_rect(), 2, border_radius=11)
-            if btn_hover:
-                glow = pygame.Surface((btn_w + 10, btn_h + 10), pygame.SRCALPHA)
-                pygame.draw.rect(glow, (*accent_color[:3], 40), glow.get_rect(), border_radius=14)
-                self.screen.blit(glow, (btn_rect.x - 5, btn_rect.y - 5))
+            glow = pygame.Surface((btn_w + 10, btn_h + 10), pygame.SRCALPHA)
+            pygame.draw.rect(glow, (*accent_color[:3], 40 if btn_hover else 18), glow.get_rect(), border_radius=14)
+            self.screen.blit(glow, (btn_rect.x - 5, btn_rect.y - 5))
             btn_font = retro_style.get_fitting_font(btn_label, base_size=max(s(18), 15), max_width=btn_w - s(32), bold=True, min_size=max(14, s(13)))
             btn_text_surf = btn_font.render(btn_label, True, UIColors.TEXT_PRIMARY)
             # Sol tarafta üçgen ok ikonu
@@ -2173,10 +2446,9 @@ class Menu:
                 pygame.draw.line(btn_surf, (255, 255, 255, ha), (4, hy), (btn_w - 4, hy))
             border_alpha = 240 if btn_hover else 175
             pygame.draw.rect(btn_surf, (*accent_color[:3], border_alpha), btn_surf.get_rect(), 2, border_radius=10)
-            if btn_hover:
-                glow = pygame.Surface((btn_w + 10, btn_h + 10), pygame.SRCALPHA)
-                pygame.draw.rect(glow, (*accent_color[:3], 40), glow.get_rect(), border_radius=14)
-                self.screen.blit(glow, (btn_rect.x - 5, btn_rect.y - 5))
+            glow = pygame.Surface((btn_w + 10, btn_h + 10), pygame.SRCALPHA)
+            pygame.draw.rect(glow, (*accent_color[:3], 40 if btn_hover else 18), glow.get_rect(), border_radius=14)
+            self.screen.blit(glow, (btn_rect.x - 5, btn_rect.y - 5))
             btn_font = retro_style.get_fitting_font(btn_label, base_size=s(17), max_width=btn_w - s(20), bold=True, min_size=max(11, s(12)))
             btn_text_surf = btn_font.render(btn_label, True, UIColors.TEXT_PRIMARY)
             btn_surf.blit(btn_text_surf, btn_text_surf.get_rect(center=(btn_w // 2, btn_h // 2)))
@@ -2403,12 +2675,12 @@ class Menu:
 
         action_rect_map: dict[str, pygame.Rect] = {
             'new_gen_tetris': pygame.Rect(x1, y1, col1, row1 + row2 + gap),
-            'daily_challenge': pygame.Rect(x1 + lower_side_inset, lower_start, max(96, col1 - (lower_side_inset * 2)), lower_h),
+            'pvp_2_players': pygame.Rect(x1 + lower_side_inset, lower_start, max(96, col1 - (lower_side_inset * 2)), lower_h),
             'piece_workshop': pygame.Rect(x2, y1, col2, row1),
             'campaign_mode': pygame.Rect(x2 + lower_side_inset, lower_start, max(96, col2 - (lower_side_inset * 2)), lower_h),
             'extras': pygame.Rect(x3, y1, col3, row1),
-            'block_styles': pygame.Rect(x3 + lower_side_inset, lower_start, max(96, col3 - (lower_side_inset * 2)), lower_h),
-            'pvp_2_players': pygame.Rect(x4, y1, col4, row1 + row2 + gap),
+            'store': pygame.Rect(x3 + lower_side_inset, lower_start, max(96, col3 - (lower_side_inset * 2)), lower_h),
+            'coop_mode': pygame.Rect(x4, y1, col4, row1 + row2 + gap),
             'tutorial_mode': pygame.Rect(x5, y1, tutorial_w, row1),
             'achievements': pygame.Rect(x5 + tutorial_w + right_gap, y1, achievements_w, row1),
         }
@@ -2425,39 +2697,41 @@ class Menu:
         self.tutorial_enter_rect = None
         self.pvp_local_rect = None
         self.pvp_online_rect = None
+        self.pvp_local_polygon = None
+        self.pvp_online_polygon = None
 
         action_title_map = {
             'new_gen_tetris': t('new_gen_tetris'),
-            'daily_challenge': t('daily_challenge'),
+            'pvp_2_players': t('menu_dashboard_pvp_title'),
             'piece_workshop': t('piece_workshop'),
             'campaign_mode': t('menu_dashboard_campaign_title'),
             'extras': t('extras'),
-            'block_styles': t('block_styles'),
-            'pvp_2_players': t('menu_dashboard_pvp_title'),
+            'store': t('store'),
+            'coop_mode': t('coop_mode'),
             'tutorial_mode': t('tutorial_mode'),
             'achievements': t('achievements'),
         }
 
         action_subtitle_map = {
             'new_gen_tetris': '',
-            'daily_challenge': '',
+            'pvp_2_players': '',
             'piece_workshop': t('menu_dashboard_sub_piece_workshop'),
             'campaign_mode': '',
             'extras': '',
-            'block_styles': t('menu_dashboard_sub_block_styles'),
-            'pvp_2_players': '',
+            'store': '',
+            'coop_mode': '',
             'tutorial_mode': '',
             'achievements': '',
         }
 
         action_color_map = {
             'new_gen_tetris': UIColors.NEON_MAGENTA,
-            'daily_challenge': (0, 200, 255),        # Mavi (kalp teması)
+            'pvp_2_players': UIColors.NEON_ORANGE,
             'piece_workshop': UIColors.NEON_MAGENTA,
             'campaign_mode': UIColors.NEON_GREEN,
             'extras': UIColors.NEON_CYAN,
-            'block_styles': (180, 120, 255),           # Mor
-            'pvp_2_players': UIColors.NEON_ORANGE,
+            'store': (255, 205, 70),
+            'coop_mode': (80, 230, 160),
             'tutorial_mode': (0, 210, 210),            # Teal
             'achievements': UIColors.NEON_GOLD,
         }
