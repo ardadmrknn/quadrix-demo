@@ -65,6 +65,69 @@ def test_restore_time_capsule_only_restores_board_blocks():
     assert mode.time_capsule_saved is False
 
 
+def test_speed_burst_expiry_resets_state_and_clears_visual():
+    _, MysteryMode = _import_game_modes_extra()
+    mode = MysteryMode.__new__(MysteryMode)
+    mode._score_multiplier_timer = 0.0
+    mode._score_multiplier_value = 1.0
+    mode.speed_effect_timer = 0.0
+    mode.speed_effect_multiplier = 1.0
+    mode.combo_aura_timer = 0.0
+    mode.combo_aura_bonus = 0
+    mode.time_warp_timer = 0.0
+    mode.gravity_freeze_timer = 0.0
+    mode._speed_burst_timer = 0.05
+    mode._speed_burst_speed_mult = 1.4
+    mode._speed_burst_line_mult = 1.5
+    mode._active_effect_visuals = {
+        'speed_burst': {
+            'title': 'Hız Patlaması',
+            'color': (255, 180, 50),
+            'icon': '⚡',
+            'tag': 'Epic',
+            'rarity': 'epic',
+            'style': {},
+            'icon_image': None,
+            'value': 30,
+            'payload': {'speed_multiplier': 1.4, 'line_multiplier': 1.5},
+        }
+    }
+    mode.card_manager = types.SimpleNamespace(active_cards=[], catalog=[], force_piece_queue=[])
+    mode.line_bonus_remaining = 0
+    mode.line_bonus_amount = 0
+    mode._line_clear_multiplier_remaining = 0
+    mode._line_clear_multiplier_value = 1.0
+    mode._armed_nova_clusters = 0
+    mode.tunnel_charges_remaining = 0
+    mode.current_piece = None
+    mode.hammer_charges_remaining = 0
+    mode.bomb_master_charges = 0
+    mode._hold_destroyer_charges = 0
+    mode._freeze_drop_charges = 0
+    mode._freeze_drop_active = False
+    mode._sniper_charges = 0
+    mode.time_capsule_available = False
+    mode.time_capsule_saved = False
+    mode.phase_shift_uses_remaining = 0
+    mode.perk_manager = types.SimpleNamespace(
+        is_active=lambda _key: False,
+        get_multiplier=lambda: 1.0,
+        rewind_uses=0,
+    )
+    mode.get_current_speed = lambda: 900
+    mode.fall_speed = 600
+
+    mode._update_effect_timers(100)
+
+    assert mode._speed_burst_timer == 0
+    assert mode._speed_burst_speed_mult == 1.0
+    assert mode._speed_burst_line_mult == 1.0
+    assert mode.fall_speed == 900
+    assert isinstance(mode._active_effect_visuals, dict)
+    assert 'speed_burst' not in mode._active_effect_visuals
+    assert mode.card_manager.active_cards == []
+
+
 def test_handle_input_r_consumes_event_without_reposting(monkeypatch):
     Game, MysteryMode = _import_game_modes_extra()
     mode = MysteryMode.__new__(MysteryMode)
