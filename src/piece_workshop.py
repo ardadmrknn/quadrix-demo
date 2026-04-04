@@ -9,6 +9,7 @@ Yeni mantık:
 """
 
 import pygame
+import sys
 import uuid
 from pathlib import Path
 from typing import Dict, List, Optional, Any
@@ -21,7 +22,14 @@ from background_effects import get_shared_falling_blocks_layer
 from localization import t
 
 
-ROOT_DIR = Path(__file__).resolve().parent.parent
+def _resolve_root_dir() -> Path:
+    meipass = getattr(sys, '_MEIPASS', None)
+    if isinstance(meipass, str) and meipass:
+        return Path(meipass)
+    return Path(__file__).resolve().parent.parent
+
+
+ROOT_DIR = _resolve_root_dir()
 
 
 class PieceWorkshopScreen:

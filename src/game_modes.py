@@ -97,21 +97,6 @@ class SprintMode(Game):
         self.settings_manager.set('sprint_best_times', times)
         self.settings_manager.save()
     
-    def handle_input(self):
-        """Kullanıcı girdilerini işle - Bitiş durumunu yönet"""
-        if self.is_finished:
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT:
-                    return False
-                if event.type == pygame.KEYDOWN:
-                    if event.key == pygame.K_ESCAPE:
-                        return 'menu'
-                    if event.key == pygame.K_r:
-                        self.restart()
-                        return True
-            return True
-        return super().handle_input()
-
     def update(self, dt):
         """Sprint modunu güncelle"""
         # Pause durumu değişikliğini izle (timer'ı durdurmak/başlatmak için)
@@ -128,8 +113,7 @@ class SprintMode(Game):
             if self.board.lines_cleared >= self.target_lines and not self.is_finished:
                 self.is_finished = True
                 self.finish_time = pygame.time.get_ticks()
-                # Game over flag'ini true yapmıyoruz ki overlay çizilsin
-                # self.game_over = True 
+                self.game_over = True
                 elapsed = max(0, self._effective_elapsed_ms()) / 1000
                 
                 # En iyi süreyi kaydet
@@ -139,7 +123,7 @@ class SprintMode(Game):
                 
                 # Başarılı bitiş sesi
                 if self.sound_enabled and self.sound:
-                    self.sound.play('level_up') # Veya uygun başka bir ses
+                    self.sound.play('level_up')
     
     def _effective_elapsed_ms(self):
         """Pause süresini düşerek net geçen süreyi (ms) döndür."""
@@ -339,43 +323,21 @@ class SprintMode(Game):
         prog_text = prog_font.render(f"{self.board.lines_cleared} / {self.target_lines}", True, (180, 180, 180))
         self.screen.blit(prog_text, prog_text.get_rect(centerx=timer_rect.centerx, top=bar_y + s(12)))
 
-        # === BİTİŞ EKRANI (Ortada) ===
-        if not self.is_finished:
-            return
-        width = self.window_width
-        height = self.window_height
-        elapsed, _, _, _ = self._format_elapsed()
-        font_large = self.sprint_font_large
-        font_medium = self.sprint_font_medium
-
-        congrats = font_large.render(t('sprint_congrats_title'), True, (255, 215, 0)) # YELLOW
-        congrats_rect = congrats.get_rect(center=(width // 2, height // 2 - 50))
-        pygame.draw.rect(self.screen, (0, 0, 0, 200), congrats_rect.inflate(40, 20))
-        self.screen.blit(congrats, congrats_rect)
-
-        finish_msg = font_medium.render(
-            t('sprint_finish_message', lines=self.target_lines, time=f"{elapsed:.2f}"),
-            True, (100, 255, 100) # GREEN
-        )
-        finish_rect = finish_msg.get_rect(center=(width // 2, height // 2))
-        self.screen.blit(finish_msg, finish_rect)
-        
-        # Yeni rekor mu?
-        if self.best_times and elapsed <= self.best_times[0]:
-            from emoji_renderer import emoji_surface
-            _nr_text = font_medium.render(t('new_high_score'), True, (255, 215, 0))
-            _nr_emoji = emoji_surface('🎉', _nr_text.get_height()) 
-            _nr_w = _nr_text.get_width() + (_nr_emoji.get_width() * 2 + 16 if _nr_emoji else 0)
-            _nr_surf = pygame.Surface((_nr_w, _nr_text.get_height()), pygame.SRCALPHA)
-            _x = 0
-            if _nr_emoji:
-                _nr_surf.blit(_nr_emoji, (0, 0))
-                _x = _nr_emoji.get_width() + 8
-            _nr_surf.blit(_nr_text, (_x, 0))
-            if _nr_emoji:
-                _nr_surf.blit(_nr_emoji, (_x + _nr_text.get_width() + 8, 0))
-            record_rect = _nr_surf.get_rect(center=(width // 2, height // 2 + 50))
-            self.screen.blit(_nr_surf, record_rect)
+    def _draw_game_over_overlay(self, skin, *, alt_theme=None):
+        """Sprint bitiş ekranı - ana tema overlay'i ile."""
+        if alt_theme is None:
+            alt_theme = {
+                'title_text': t('sprint_congrats_title'),
+                'panel_border_color': (80, 220, 120),
+                'panel_glow_color':   (50, 180, 90),
+                'panel_fill_tint':    (8, 24, 14),
+                'card_fill_tint':     (12, 32, 20),
+                'card_border_color':  (60, 160, 100),
+                'gradient_tint':      (4, 14, 8),
+                'skip_stars': True,
+                'state_prefix': 'sprint_',
+            }
+        super()._draw_game_over_overlay(skin, alt_theme=alt_theme)
 
     def restart(self):
         """Reset sprint-specific timing/state on restart"""
@@ -385,6 +347,7 @@ class SprintMode(Game):
         self.is_finished = False
         self._total_paused_ms = 0
         self._pause_start_tick = None
+        self._sprint_game_over_active = False
         # En iyi süreleri yeniden yükle
         self.best_times = self._load_best_times()
 
@@ -439,21 +402,6 @@ class UltraMode(Game):
         h_ratio = float(self.window_height) / float(base_h)
         return max(min_scale, min(max_scale, min(w_ratio, h_ratio)))
     
-    def handle_input(self):
-        """Kullanıcı girdilerini işle - Bitiş durumunu yönet"""
-        if self.is_finished:
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT:
-                    return False
-                if event.type == pygame.KEYDOWN:
-                    if event.key == pygame.K_ESCAPE:
-                        return 'menu'
-                    if event.key == pygame.K_r:
-                        self.restart()
-                        return True
-            return True
-        return super().handle_input()
-
     def update(self, dt):
         """Ultra modunu güncelle"""
         if not self.is_finished:
@@ -462,8 +410,7 @@ class UltraMode(Game):
             if elapsed >= self.time_limit:
                 self.is_finished = True
                 self.finish_time = pygame.time.get_ticks()
-                # Game over flag'ini anında açmıyoruz, overlay çizilsin
-                # self.game_over = True
+                self.game_over = True
                 self.finalize_run(playtime=int(elapsed))
                 
                 # Başarılı bitiş sesi (süre doldu)
@@ -578,6 +525,7 @@ class UltraMode(Game):
         self.start_time = pygame.time.get_ticks()
         self.is_finished = False
         self.finish_time = None
+        self._ultra_game_over_active = False
 
     def draw_mode_overlay(self):
         """Ultra modu HUD - Sağda Geri Sayım Sayacı."""
@@ -671,62 +619,21 @@ class UltraMode(Game):
         score_text = info_font.render(f"{t('score')}: {self.board.score}", True, (200, 200, 200))
         self.screen.blit(score_text, score_text.get_rect(centerx=timer_rect.centerx, top=bar_y + s(12)))
 
-        # === BİTİŞ EKRANI ===
-        if not self.is_finished:
-            return
-            
-        width = self.window_width
-        height = self.window_height
-        font_large = self.ultra_font_large
-        font_medium = self.ultra_font_medium
-        
-        # Eksik değişken tanımı eklendi
-        clamped_elapsed = self.time_limit
-        
-        congrats = font_large.render(f"{t('pvp_time_up')}!", True, (255, 215, 0)) # YELLOW
-        congrats_rect = congrats.get_rect(center=(width // 2, height // 2 - 50))
-        pygame.draw.rect(self.screen, (0, 0, 0, 200), congrats_rect.inflate(40, 20))
-        self.screen.blit(congrats, congrats_rect)
-        
-        formatted_score = f"{self.board.score:,}".replace(',', '.')
-        score_msg = font_medium.render(
-            t('ultra_final_score', score=formatted_score),
-            True, (100, 255, 100) # GREEN
-        )
-        score_rect = score_msg.get_rect(center=(width // 2, height // 2))
-        self.screen.blit(score_msg, score_rect)
-        
-        # Yeni Rekor?
-        if hasattr(self, 'best_scores') and self.best_scores and self.board.score >= self.best_scores[0]:
-             from emoji_renderer import emoji_surface
-             _ur_text = font_medium.render(t('new_high_score'), True, NEON_ORANGE)
-             _ur_emoji = emoji_surface('🏆', _ur_text.get_height())
-             _ur_w = _ur_text.get_width() + (_ur_emoji.get_width() * 2 + 16 if _ur_emoji else 0)
-             _ur_surf = pygame.Surface((_ur_w, _ur_text.get_height()), pygame.SRCALPHA)
-             _ux = 0
-             if _ur_emoji:
-                 _ur_surf.blit(_ur_emoji, (0, 0))
-                 _ux = _ur_emoji.get_width() + 8
-             _ur_surf.blit(_ur_text, (_ux, 0))
-             if _ur_emoji:
-                 _ur_surf.blit(_ur_emoji, (_ux + _ur_text.get_width() + 8, 0))
-             new_rect = _ur_surf.get_rect(center=(width//2, height // 2 + 50))
-             self.screen.blit(_ur_surf, new_rect)
-        
-        # Display other stats
-        lines_msg = font_medium.render(
-            f"{t('lines_cleared')}: {self.board.lines_cleared}",
-            True, NEON_CYAN
-        )
-        lines_rect = lines_msg.get_rect(center=(width // 2, height // 2 + 90))
-        self.screen.blit(lines_msg, lines_rect)
-
-        time_msg = font_medium.render(
-            t('ultra_played_time', seconds=clamped_elapsed),
-            True, (255, 255, 255)
-        )
-        time_rect = time_msg.get_rect(center=(width // 2, height // 2 + 130))
-        self.screen.blit(time_msg, time_rect)
+    def _draw_game_over_overlay(self, skin, *, alt_theme=None):
+        """Ultra bitiş ekranı - ana tema overlay'i ile."""
+        if alt_theme is None:
+            alt_theme = {
+                'title_text': f"{t('pvp_time_up')}!",
+                'panel_border_color': (180, 100, 255),
+                'panel_glow_color':   (140, 60, 220),
+                'panel_fill_tint':    (16, 8, 30),
+                'card_fill_tint':     (22, 12, 40),
+                'card_border_color':  (120, 70, 180),
+                'gradient_tint':      (10, 4, 18),
+                'skip_stars': True,
+                'state_prefix': 'ultra_',
+            }
+        super()._draw_game_over_overlay(skin, alt_theme=alt_theme)
 
 
 class ZenMode(Game):
