@@ -23,7 +23,7 @@ TR Desc:     İlk satırını temizle
 Hidden:      No
 
 #3
-API Name:    ACH_FIRST_TETRIS
+API Name:    ACH_FIRST_QUADRIS
 EN Name:     First Quadrix
 EN Desc:     Make your first 4-line Quadrix
 TR Name:     İlk Quadrix
