@@ -20,8 +20,6 @@ STEAM_ACHIEVEMENT_MAP: dict[str, str] = {
     'first_game':       'ACH_FIRST_GAME',
     'first_line':       'ACH_FIRST_LINE',
     'first_tetris':     'ACH_FIRST_TETRIS',
-    'perfect_clear':    'ACH_PERFECT_CLEAR',
-    'no_mistakes':      'ACH_NO_MISTAKES',
     # Skor
     'score_1k':         'ACH_SCORE_1K',
     'score_10k':        'ACH_SCORE_10K',
@@ -221,29 +219,17 @@ ACHIEVEMENTS = {
         'icon': '🔥',
         'check': lambda stats: stats.get('max_combo', 0) >= 5
     },
-    'perfect_clear': {
-        'name': 'Mükemmel Temizlik',
-        'description': 'Tahtayı tamamen temizle',
-        'icon': '💯',
-        'check': lambda stats: stats.get('perfect_clears', 0) >= 1
-    },
-    'no_mistakes': {
-        'name': 'Kusursuz',
-        'description': 'Daily Challenge: No Mistakes görevini tamamla',
-        'icon': '👌',
-        'check': lambda stats: stats.get('perfect_game', False)
-    },
     
     # PvP başarıları
     'pvp_first_win': {
         'name': 'İlk Zafer',
-        'description': 'PvP\'de ilk galibiyetini al',
+        'description': 'Online PvP\'de ilk galibiyetini al',
         'icon': '⚔️',
         'check': lambda stats: stats.get('pvp_wins', 0) >= 1
     },
     'pvp_10_wins': {
         'name': 'Savaşçı',
-        'description': 'PvP\'de 10 galibiyet',
+        'description': 'Online PvP\'de 10 galibiyet',
         'icon': '🛡️',
         'check': lambda stats: stats.get('pvp_wins', 0) >= 10
     },
@@ -291,29 +277,29 @@ ACHIEVEMENTS = {
     # Sprint
     'sprint_sub60': {
         'name': 'Hızlı Parmaklar',
-        'description': 'Sprint modunda 40 satırı 60 saniyeden kısa sürede bitir',
+        'description': 'Sprint modunda 40 satırı 240 saniyeden kısa sürede bitir',
         'icon': '⏱️',
-        'check': lambda stats: stats.get('sprint_best_time', 999) <= 60
+        'check': lambda stats: stats.get('sprint_best_time', 999) <= 240
     },
     'sprint_sub45': {
-        'name': 'Işık Hızı',
-        'description': 'Sprint modunda 40 satırı 45 saniyeden kısa sürede bitir',
+        'name': 'Sprint Uzmanı',
+        'description': 'Sprint modunda 40 satırı 200 saniyeden kısa sürede bitir',
         'icon': '⚡',
-        'check': lambda stats: stats.get('sprint_best_time', 999) <= 45
+        'check': lambda stats: stats.get('sprint_best_time', 999) <= 200
     },
 
     # Ultra
     'ultra_50k': {
         'name': 'Ultra Usta',
-        'description': 'Ultra modunda 50.000+ puan yap',
+        'description': 'Ultra modunda 10.000+ puan yap',
         'icon': '💪',
-        'check': lambda stats: stats.get('ultra_max_score', 0) >= 50000
+        'check': lambda stats: stats.get('ultra_max_score', 0) >= 10000
     },
     'ultra_100k': {
         'name': 'Ultra Efsane',
-        'description': 'Ultra modunda 100.000+ puan yap',
+        'description': 'Ultra modunda 15.000+ puan yap',
         'icon': '👑',
-        'check': lambda stats: stats.get('ultra_max_score', 0) >= 100000
+        'check': lambda stats: stats.get('ultra_max_score', 0) >= 15000
     },
 
     # Survival
@@ -417,9 +403,7 @@ class AchievementManager:
             'max_lines': 0,
             'max_level': 1,
             'max_combo': 0,
-            'perfect_clears': 0,
             'pvp_wins': 0,
-            'perfect_game': False,
             'campaign_total_stars': 0,
             'campaign_level_50_stars': 0,
             'campaign_level_100_stars': 0,
@@ -433,7 +417,15 @@ class AchievementManager:
             if os.path.exists(self.filename):
                 with open(self.filename, 'r', encoding='utf-8') as f:
                     data = json.load(f)
-                    self.unlocked = data.get('unlocked', {})
+                    loaded_unlocked = data.get('unlocked', {})
+                    if isinstance(loaded_unlocked, dict):
+                        self.unlocked = {
+                            achievement_id: unlock_date
+                            for achievement_id, unlock_date in loaded_unlocked.items()
+                            if achievement_id in ACHIEVEMENTS
+                        }
+                    else:
+                        self.unlocked = {}
                     loaded_stats = data.get('stats', {})
                     
                     # Stats'ı güncelle (varsayılanlarla birleştir)
@@ -470,9 +462,7 @@ class AchievementManager:
                 'max_lines': self.stats.get('max_lines', 0),
                 'max_level': self.stats.get('max_level', 1),
                 'max_combo': self.stats.get('max_combo', 0),
-                'perfect_clears': self.stats.get('perfect_clears', 0),
                 'pvp_wins': self.stats.get('pvp_wins', 0),
-                'perfect_game': self.stats.get('perfect_game', False),
                 'campaign_total_stars': self.stats.get('campaign_total_stars', 0),
                 'campaign_level_50_stars': self.stats.get('campaign_level_50_stars', 0),
                 'campaign_level_100_stars': self.stats.get('campaign_level_100_stars', 0),
@@ -490,7 +480,11 @@ class AchievementManager:
                     clean_stats[mk] = val
             
             data = {
-                'unlocked': self.unlocked,
+                'unlocked': {
+                    achievement_id: unlock_date
+                    for achievement_id, unlock_date in self.unlocked.items()
+                    if achievement_id in ACHIEVEMENTS
+                },
                 'stats': clean_stats
             }
             atomic_write_json(self.filename, data, indent=2, ensure_ascii=False)
@@ -517,11 +511,7 @@ class AchievementManager:
             # tetrises gibi toplam değerler
             elif key in ['tetrises']:
                 self.stats[f'total_{key}'] = max(self.stats.get(f'total_{key}', 0), value)
-            # perfect_game gibi boolean değerler
-            elif key in ['perfect_game']:
-                if value:
-                    self.stats[key] = True
-            # Diğer değerler (pvp_wins, perfect_clears vb.)
+            # Diğer değerler
             else:
                 if isinstance(value, bool):
                     self.stats[key] = value
@@ -701,10 +691,6 @@ class AchievementManager:
             return ("total_lines", 1, False)
         if achievement_id == "first_tetris":
             return ("total_tetrises", 1, False)
-        if achievement_id == "perfect_clear":
-            return ("perfect_clears", 1, False)
-        if achievement_id == "no_mistakes":
-            return ("perfect_game", 1, True)
         if achievement_id == "pvp_first_win":
             return ("pvp_wins", 1, False)
 
@@ -750,13 +736,13 @@ class AchievementManager:
 
         # ── Mod-bazlı başarımlar ──────────────────────────────────────────
         if achievement_id == "sprint_sub60":
-            return ("sprint_best_time", 60, False)
+            return ("sprint_best_time", 240, False)
         if achievement_id == "sprint_sub45":
-            return ("sprint_best_time", 45, False)
+            return ("sprint_best_time", 200, False)
         if achievement_id == "ultra_50k":
-            return ("ultra_max_score", 50000, False)
+            return ("ultra_max_score", 10000, False)
         if achievement_id == "ultra_100k":
-            return ("ultra_max_score", 100000, False)
+            return ("ultra_max_score", 15000, False)
         if achievement_id == "survival_5min":
             return ("survival_max_time", 300, False)
         if achievement_id == "survival_10min":
@@ -845,7 +831,7 @@ class AchievementManager:
     def get_progress(self):
         """İlerleme yüzdesini al"""
         total = len(ACHIEVEMENTS)
-        unlocked = len(self.unlocked)
+        unlocked = sum(1 for achievement_id in self.unlocked if achievement_id in ACHIEVEMENTS)
         return (unlocked / total * 100) if total > 0 else 0
     
     def get_new_achievements(self):

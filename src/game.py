@@ -3327,6 +3327,7 @@ class Game:
             stats = self.achievement_manager.stats
             stats['total_games'] = stats.get('total_games', 0) + 1
             stats['total_lines'] = stats.get('total_lines', 0) + self.board.lines_cleared
+            stats['total_tetrises'] = stats.get('total_tetrises', 0) + self.board.tetrises
             new_achievements = self.achievement_manager.update_stats(
                 score=self.board.score,
                 lines=self.board.lines_cleared,

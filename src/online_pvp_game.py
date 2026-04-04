@@ -219,6 +219,7 @@ class OnlinePvPGame:
         screen=None,
         fullscreen=True,
         user_manager=None,
+        achievement_manager=None,
         settings_manager=None,
         sound_manager=None,
     ):
@@ -226,6 +227,7 @@ class OnlinePvPGame:
             pygame.init()
 
         self.user_manager = user_manager
+        self.achievement_manager = achievement_manager
         self.settings_manager = settings_manager
 
         # Ekran
@@ -1238,6 +1240,27 @@ class OnlinePvPGame:
         self.opponent_eliminated = False
         self._opponent_final_score = 0
         self._opponent_final_lines = 0
+        self._match_result_recorded = False
+
+    def _record_match_result(self):
+        """Online PvP galibiyetini achievement stats'a tek sefer yansıt."""
+        if getattr(self, '_match_result_recorded', False):
+            return
+        self._match_result_recorded = True
+
+        if self.winner != 'me':
+            return
+
+        achievement_manager = getattr(self, 'achievement_manager', None)
+        if not achievement_manager:
+            return
+
+        try:
+            stats = achievement_manager.stats
+            stats['pvp_wins'] = int(stats.get('pvp_wins', 0) or 0) + 1
+            achievement_manager.update_stats()
+        except Exception as exc:
+            print(f"[OnlinePvP] Başarım istatistiği güncellenemedi: {exc}")
 
     def _finalize_elimination_result(self):
         """Local PvP ile aynı elenme kuralıyla kazananı hesapla."""
@@ -1272,6 +1295,8 @@ class OnlinePvPGame:
                 self.sound.play(sound_name)
             except Exception:
                 pass
+
+        self._record_match_result()
 
     def _mark_local_eliminated(self):
         """Kendi elenmeni işle ve final skorunu rakibe gönder."""
@@ -2339,6 +2364,7 @@ class OnlinePvPGame:
                     self.online_state = OnlineState.DISCONNECTED
                     self.game_over = True
                     self.winner = 'me'
+                    self._record_match_result()
                     self._pending_disconnect_steam_id = 0
                     self._disconnect_grace_timer = 0.0
 

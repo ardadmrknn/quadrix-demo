@@ -54,42 +54,6 @@
 		}
 		"hidden"		"0"
 	}
-	"4"
-	{
-		"name"		"ACH_PERFECT_CLEAR"
-		"display"
-		{
-			"name"
-			{
-				"english"		"Perfect Clear"
-				"turkish"		"Mükemmel Temizlik"
-			}
-			"desc"
-			{
-				"english"		"Clear the entire board"
-				"turkish"		"Tahtayı tamamen temizle"
-			}
-		}
-		"hidden"		"0"
-	}
-	"5"
-	{
-		"name"		"ACH_NO_MISTAKES"
-		"display"
-		{
-			"name"
-			{
-				"english"		"Flawless"
-				"turkish"		"Kusursuz"
-			}
-			"desc"
-			{
-				"english"		"Complete a Daily Challenge: No Mistakes"
-				"turkish"		"Daily Challenge: No Mistakes görevini tamamla"
-			}
-		}
-		"hidden"		"1"
-	}
 	"6"
 	{
 		"name"		"ACH_SCORE_1K"
@@ -426,8 +390,8 @@
 			}
 			"desc"
 			{
-				"english"		"Win your first PvP match"
-				"turkish"		"PvP'de ilk galibiyetini al"
+				"english"		"Win your first online PvP match"
+				"turkish"		"Online PvP'de ilk galibiyetini al"
 			}
 		}
 		"hidden"		"0"
@@ -444,8 +408,8 @@
 			}
 			"desc"
 			{
-				"english"		"Win 10 PvP matches"
-				"turkish"		"PvP'de 10 galibiyet"
+				"english"		"Win 10 online PvP matches"
+				"turkish"		"Online PvP'de 10 galibiyet"
 			}
 		}
 		"hidden"		"0"
@@ -570,8 +534,8 @@
 			}
 			"desc"
 			{
-				"english"		"Finish Sprint in under 60 seconds"
-				"turkish"		"Sprint modunda 40 satırı 60 saniyeden kısa sürede bitir"
+				"english"		"Finish Sprint in under 240 seconds"
+				"turkish"		"Sprint modunda 40 satırı 240 saniyeden kısa sürede bitir"
 			}
 		}
 		"hidden"		"0"
@@ -583,13 +547,13 @@
 		{
 			"name"
 			{
-				"english"		"Light Speed"
-				"turkish"		"Işık Hızı"
+				"english"		"Sprint Specialist"
+				"turkish"		"Sprint Uzmanı"
 			}
 			"desc"
 			{
-				"english"		"Finish Sprint in under 45 seconds"
-				"turkish"		"Sprint modunda 40 satırı 45 saniyeden kısa sürede bitir"
+				"english"		"Finish Sprint in under 200 seconds"
+				"turkish"		"Sprint modunda 40 satırı 200 saniyeden kısa sürede bitir"
 			}
 		}
 		"hidden"		"1"
@@ -606,8 +570,8 @@
 			}
 			"desc"
 			{
-				"english"		"Score 50,000+ in Ultra mode"
-				"turkish"		"Ultra modunda 50.000+ puan yap"
+				"english"		"Score 10,000+ in Ultra mode"
+				"turkish"		"Ultra modunda 10.000+ puan yap"
 			}
 		}
 		"hidden"		"0"
@@ -624,8 +588,8 @@
 			}
 			"desc"
 			{
-				"english"		"Score 100,000+ in Ultra mode"
-				"turkish"		"Ultra modunda 100.000+ puan yap"
+				"english"		"Score 15,000+ in Ultra mode"
+				"turkish"		"Ultra modunda 15.000+ puan yap"
 			}
 		}
 		"hidden"		"1"

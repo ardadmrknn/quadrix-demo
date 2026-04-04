@@ -30,22 +30,6 @@ TR Name:     İlk Quadrix
 TR Desc:     İlk 4 satırlık Quadrix'ini yap
 Hidden:      No
 
-#4
-API Name:    ACH_PERFECT_CLEAR
-EN Name:     Perfect Clear
-EN Desc:     Clear the entire board
-TR Name:     Mükemmel Temizlik
-TR Desc:     Tahtayı tamamen temizle
-Hidden:      No
-
-#5
-API Name:    ACH_NO_MISTAKES
-EN Name:     Flawless
-EN Desc:     Complete a Daily Challenge: No Mistakes
-TR Name:     Kusursuz
-TR Desc:     Daily Challenge: No Mistakes görevini tamamla
-Hidden:      Yes
-
 #6
 API Name:    ACH_SCORE_1K
 EN Name:     Beginner
@@ -193,17 +177,17 @@ Hidden:      No
 #24
 API Name:    ACH_PVP_FIRST_WIN
 EN Name:     First Victory
-EN Desc:     Win your first PvP match
+EN Desc:     Win your first online PvP match
 TR Name:     İlk Zafer
-TR Desc:     PvP'de ilk galibiyetini al
+TR Desc:     Online PvP'de ilk galibiyetini al
 Hidden:      No
 
 #25
 API Name:    ACH_PVP_10_WINS
 EN Name:     Warrior
-EN Desc:     Win 10 PvP matches
+EN Desc:     Win 10 online PvP matches
 TR Name:     Savaşçı
-TR Desc:     PvP'de 10 galibiyet
+TR Desc:     Online PvP'de 10 galibiyet
 Hidden:      No
 
 #26
@@ -257,33 +241,33 @@ Hidden:      Yes
 #32
 API Name:    ACH_SPRINT_SUB60
 EN Name:     Fast Fingers
-EN Desc:     Finish Sprint in under 60 seconds
+EN Desc:     Finish Sprint in under 240 seconds
 TR Name:     Hızlı Parmaklar
-TR Desc:     Sprint modunda 40 satırı 60 saniyeden kısa sürede bitir
+TR Desc:     Sprint modunda 40 satırı 240 saniyeden kısa sürede bitir
 Hidden:      No
 
 #33
 API Name:    ACH_SPRINT_SUB45
-EN Name:     Light Speed
-EN Desc:     Finish Sprint in under 45 seconds
-TR Name:     Işık Hızı
-TR Desc:     Sprint modunda 40 satırı 45 saniyeden kısa sürede bitir
+EN Name:     Sprint Specialist
+EN Desc:     Finish Sprint in under 200 seconds
+TR Name:     Sprint Uzmanı
+TR Desc:     Sprint modunda 40 satırı 200 saniyeden kısa sürede bitir
 Hidden:      Yes
 
 #34
 API Name:    ACH_ULTRA_50K
 EN Name:     Ultra Master
-EN Desc:     Score 50,000+ in Ultra mode
+EN Desc:     Score 10,000+ in Ultra mode
 TR Name:     Ultra Usta
-TR Desc:     Ultra modunda 50.000+ puan yap
+TR Desc:     Ultra modunda 10.000+ puan yap
 Hidden:      No
 
 #35
 API Name:    ACH_ULTRA_100K
 EN Name:     Ultra Legend
-EN Desc:     Score 100,000+ in Ultra mode
+EN Desc:     Score 15,000+ in Ultra mode
 TR Name:     Ultra Efsane
-TR Desc:     Ultra modunda 100.000+ puan yap
+TR Desc:     Ultra modunda 15.000+ puan yap
 Hidden:      Yes
 
 #36

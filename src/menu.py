@@ -1777,6 +1777,11 @@ class Menu:
             unlocked = raw.get('unlocked', {}) if isinstance(raw, dict) else {}
             if not isinstance(unlocked, dict):
                 unlocked = {}
+            unlocked = {
+                achievement_id: unlock_date
+                for achievement_id, unlock_date in unlocked.items()
+                if achievement_id in ACHIEVEMENTS
+            }
 
             def _unlock_sort_key(item: tuple[str, str]):
                 date_text = str(item[1] or '')
@@ -6007,7 +6012,7 @@ class AchievementScreen:
             return 'competition'
         if achievement_id.startswith(('sprint_', 'ultra_', 'survival_', 'cascade_', 'hardcore_', 'daily_', 'wide_')):
             return 'modes'
-        if achievement_id in {'combo_5', 'perfect_clear', 'no_mistakes', 'tetris_5', 'tetris_10'}:
+        if achievement_id in {'combo_5', 'tetris_5', 'tetris_10'}:
             return 'mastery'
         return 'general'
 

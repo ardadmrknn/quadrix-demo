@@ -17,45 +17,43 @@ Her başarım için 64×64 px simge (açık) ve gri simge (kilitli) gereklidir.
 | 1 | `ACH_FIRST_GAME` | İlk Adım | İlk oyununu tamamla | Hayır |
 | 2 | `ACH_FIRST_LINE` | İlk Satır | İlk satırını temizle | Hayır |
 | 3 | `ACH_FIRST_TETRIS` | İlk Quadrix | İlk 4 satırlık Quadrix'ini yap | Hayır |
-| 4 | `ACH_PERFECT_CLEAR` | Mükemmel Temizlik | Tahtayı tamamen temizle | Hayır |
-| 5 | `ACH_NO_MISTAKES` | Kusursuz | Daily Challenge: No Mistakes görevini tamamla | Evet |
-| 6 | `ACH_SCORE_1K` | Başlangıç | Bir oyunda 1,000 puana ulaş | Hayır |
-| 7 | `ACH_SCORE_10K` | Deneyimli | Bir oyunda 10,000 puana ulaş | Hayır |
-| 8 | `ACH_SCORE_50K` | Usta | Bir oyunda 50,000 puana ulaş | Hayır |
-| 9 | `ACH_SCORE_100K` | Efsane | Bir oyunda 100,000 puana ulaş | Evet |
-| 10 | `ACH_LINES_10` | Temizlikçi | Bir oyunda 10 satır temizle | Hayır |
-| 11 | `ACH_LINES_50` | Süpürge | Bir oyunda 50 satır temizle | Hayır |
-| 12 | `ACH_LINES_100` | Temizlik Robotu | Bir oyunda 100 satır temizle | Hayır |
-| 13 | `ACH_LINES_200` | Temizlik Makinesi | Bir oyunda 200 satır temizle | Evet |
-| 14 | `ACH_TETRIS_5` | Quadrix Ustası | 5 Quadrix yap | Hayır |
-| 15 | `ACH_TETRIS_10` | Quadrix Tanrısı | 10 Quadrix yap | Hayır |
-| 16 | `ACH_LEVEL_5` | Hızlanıyor | Bir oyunda seviye 5'e ulaş | Hayır |
-| 17 | `ACH_LEVEL_10` | Hız Canavarı | Bir oyunda seviye 10'a ulaş | Hayır |
-| 18 | `ACH_LEVEL_15` | Süpersonik | Bir oyunda seviye 15'e ulaş | Hayır |
-| 19 | `ACH_LEVEL_20` | Işık Hızı | Bir oyunda seviye 20'ye ulaş | Evet |
-| 20 | `ACH_GAMES_10` | Sadık Oyuncu | 10 oyun oyna | Hayır |
-| 21 | `ACH_GAMES_50` | Müdavim | 50 oyun oyna | Hayır |
-| 22 | `ACH_GAMES_100` | Profesyonel | 100 oyun oyna | Hayır |
-| 23 | `ACH_COMBO_5` | Kombo Ustası | Bir oyunda 5x kombo yap | Hayır |
-| 24 | `ACH_PVP_FIRST_WIN` | İlk Zafer | PvP'de ilk galibiyetini al | Hayır |
-| 25 | `ACH_PVP_10_WINS` | Savaşçı | PvP'de 10 galibiyet | Hayır |
-| 26 | `ACH_CAMPAIGN_STARS_10` | Yıldız Toplayıcı | Görev modunda toplam 10 yıldız kazan | Hayır |
-| 27 | `ACH_CAMPAIGN_STARS_30` | Yıldız Avcısı | Görev modunda toplam 30 yıldız kazan | Hayır |
-| 28 | `ACH_CAMPAIGN_STARS_50` | Yıldız Ustası | Görev modunda toplam 50 yıldız kazan | Hayır |
-| 29 | `ACH_CAMPAIGN_STARS_100` | Yıldız Tanrısı | Görev modunda toplam 100 yıldız kazan | Evet |
-| 30 | `ACH_CAMPAIGN_LVL50_3STAR` | Yarı Mükemmel | 50. bölümü 3 yıldızla tamamla | Evet |
-| 31 | `ACH_CAMPAIGN_LVL100_3STAR` | Efsane Kahraman | 100. bölümü 3 yıldızla tamamla | Evet |
-| 32 | `ACH_SPRINT_SUB60` | Hızlı Parmaklar | Sprint modunda 40 satırı 60 saniyeden kısa sürede bitir | Hayır |
-| 33 | `ACH_SPRINT_SUB45` | Işık Hızı | Sprint modunda 40 satırı 45 saniyeden kısa sürede bitir | Evet |
-| 34 | `ACH_ULTRA_50K` | Ultra Usta | Ultra modunda 50.000+ puan yap | Hayır |
-| 35 | `ACH_ULTRA_100K` | Ultra Efsane | Ultra modunda 100.000+ puan yap | Evet |
-| 36 | `ACH_SURVIVAL_5MIN` | Hayatta Kalan | Survival modunda 5 dakika hayatta kal | Hayır |
-| 37 | `ACH_SURVIVAL_10MIN` | Sağ Kalan | Survival modunda 10 dakika hayatta kal | Hayır |
-| 38 | `ACH_CASCADE_CHAIN_10` | Zincir Reaksiyonu | Cascade modunda 10x+ zincir combo yap | Hayır |
-| 39 | `ACH_HARDCORE_LEVEL10` | Hardcore Savaşçı | Hardcore modunda seviye 10'a ulaş | Evet |
-| 40 | `ACH_DAILY_7_STREAK` | Haftalık Rutin | Günlük Challenge'da 7 gün üst üste oyna | Hayır |
-| 41 | `ACH_DAILY_30_STREAK` | Disiplin Ustası | Günlük Challenge'da 30 gün üst üste oyna | Evet |
-| 42 | `ACH_WIDE_200_LINES` | Geniş Açı | Wide modunda tek oyunda 200 satır temizle | Hayır |
+| 4 | `ACH_SCORE_1K` | Başlangıç | Bir oyunda 1,000 puana ulaş | Hayır |
+| 5 | `ACH_SCORE_10K` | Deneyimli | Bir oyunda 10,000 puana ulaş | Hayır |
+| 6 | `ACH_SCORE_50K` | Usta | Bir oyunda 50,000 puana ulaş | Hayır |
+| 7 | `ACH_SCORE_100K` | Efsane | Bir oyunda 100,000 puana ulaş | Evet |
+| 8 | `ACH_LINES_10` | Temizlikçi | Bir oyunda 10 satır temizle | Hayır |
+| 9 | `ACH_LINES_50` | Süpürge | Bir oyunda 50 satır temizle | Hayır |
+| 10 | `ACH_LINES_100` | Temizlik Robotu | Bir oyunda 100 satır temizle | Hayır |
+| 11 | `ACH_LINES_200` | Temizlik Makinesi | Bir oyunda 200 satır temizle | Evet |
+| 12 | `ACH_TETRIS_5` | Quadrix Ustası | 5 Quadrix yap | Hayır |
+| 13 | `ACH_TETRIS_10` | Quadrix Tanrısı | 10 Quadrix yap | Hayır |
+| 14 | `ACH_LEVEL_5` | Hızlanıyor | Bir oyunda seviye 5'e ulaş | Hayır |
+| 15 | `ACH_LEVEL_10` | Hız Canavarı | Bir oyunda seviye 10'a ulaş | Hayır |
+| 16 | `ACH_LEVEL_15` | Süpersonik | Bir oyunda seviye 15'e ulaş | Hayır |
+| 17 | `ACH_LEVEL_20` | Işık Hızı | Bir oyunda seviye 20'ye ulaş | Evet |
+| 18 | `ACH_GAMES_10` | Sadık Oyuncu | 10 oyun oyna | Hayır |
+| 19 | `ACH_GAMES_50` | Müdavim | 50 oyun oyna | Hayır |
+| 20 | `ACH_GAMES_100` | Profesyonel | 100 oyun oyna | Hayır |
+| 21 | `ACH_COMBO_5` | Kombo Ustası | Bir oyunda 5x kombo yap | Hayır |
+| 22 | `ACH_PVP_FIRST_WIN` | İlk Zafer | Online PvP'de ilk galibiyetini al | Hayır |
+| 23 | `ACH_PVP_10_WINS` | Savaşçı | Online PvP'de 10 galibiyet | Hayır |
+| 24 | `ACH_CAMPAIGN_STARS_10` | Yıldız Toplayıcı | Görev modunda toplam 10 yıldız kazan | Hayır |
+| 25 | `ACH_CAMPAIGN_STARS_30` | Yıldız Avcısı | Görev modunda toplam 30 yıldız kazan | Hayır |
+| 26 | `ACH_CAMPAIGN_STARS_50` | Yıldız Ustası | Görev modunda toplam 50 yıldız kazan | Hayır |
+| 27 | `ACH_CAMPAIGN_STARS_100` | Yıldız Tanrısı | Görev modunda toplam 100 yıldız kazan | Evet |
+| 28 | `ACH_CAMPAIGN_LVL50_3STAR` | Yarı Mükemmel | 50. bölümü 3 yıldızla tamamla | Evet |
+| 29 | `ACH_CAMPAIGN_LVL100_3STAR` | Efsane Kahraman | 100. bölümü 3 yıldızla tamamla | Evet |
+| 30 | `ACH_SPRINT_SUB60` | Hızlı Parmaklar | Sprint modunda 40 satırı 240 saniyeden kısa sürede bitir | Hayır |
+| 31 | `ACH_SPRINT_SUB45` | Sprint Uzmanı | Sprint modunda 40 satırı 200 saniyeden kısa sürede bitir | Evet |
+| 32 | `ACH_ULTRA_50K` | Ultra Usta | Ultra modunda 10.000+ puan yap | Hayır |
+| 33 | `ACH_ULTRA_100K` | Ultra Efsane | Ultra modunda 15.000+ puan yap | Evet |
+| 34 | `ACH_SURVIVAL_5MIN` | Hayatta Kalan | Survival modunda 5 dakika hayatta kal | Hayır |
+| 35 | `ACH_SURVIVAL_10MIN` | Sağ Kalan | Survival modunda 10 dakika hayatta kal | Hayır |
+| 36 | `ACH_CASCADE_CHAIN_10` | Zincir Reaksiyonu | Cascade modunda 10x+ zincir combo yap | Hayır |
+| 37 | `ACH_HARDCORE_LEVEL10` | Hardcore Savaşçı | Hardcore modunda seviye 10'a ulaş | Evet |
+| 38 | `ACH_DAILY_7_STREAK` | Haftalık Rutin | Günlük Challenge'da 7 gün üst üste oyna | Hayır |
+| 39 | `ACH_DAILY_30_STREAK` | Disiplin Ustası | Günlük Challenge'da 30 gün üst üste oyna | Evet |
+| 40 | `ACH_WIDE_200_LINES` | Geniş Açı | Wide modunda tek oyunda 200 satır temizle | Hayır |
 
 ### Yerelleştirme (Localization)
 
@@ -71,8 +69,6 @@ Her başarım için Steamworks konsolunda şu diller eklenmelidir:
 | `ACH_FIRST_GAME` | First Step | Complete your first game |
 | `ACH_FIRST_LINE` | First Line | Clear your first line |
 | `ACH_FIRST_TETRIS` | First Quadrix | Make your first 4-line Quadrix |
-| `ACH_PERFECT_CLEAR` | Perfect Clear | Clear the entire board |
-| `ACH_NO_MISTAKES` | Flawless | Complete a Daily Challenge: No Mistakes |
 | `ACH_SCORE_1K` | Beginner | Reach 1,000 points in a single game |
 | `ACH_SCORE_10K` | Experienced | Reach 10,000 points in a single game |
 | `ACH_SCORE_50K` | Master | Reach 50,000 points in a single game |
@@ -91,18 +87,18 @@ Her başarım için Steamworks konsolunda şu diller eklenmelidir:
 | `ACH_GAMES_50` | Regular | Play 50 games |
 | `ACH_GAMES_100` | Professional | Play 100 games |
 | `ACH_COMBO_5` | Combo Master | Perform a 5x combo in a single game |
-| `ACH_PVP_FIRST_WIN` | First Victory | Win your first PvP match |
-| `ACH_PVP_10_WINS` | Warrior | Win 10 PvP matches |
+| `ACH_PVP_FIRST_WIN` | First Victory | Win your first online PvP match |
+| `ACH_PVP_10_WINS` | Warrior | Win 10 online PvP matches |
 | `ACH_CAMPAIGN_STARS_10` | Star Collector | Earn 10 stars in Campaign mode |
 | `ACH_CAMPAIGN_STARS_30` | Star Hunter | Earn 30 stars in Campaign mode |
 | `ACH_CAMPAIGN_STARS_50` | Star Master | Earn 50 stars in Campaign mode |
 | `ACH_CAMPAIGN_STARS_100` | Star God | Earn 100 stars in Campaign mode |
 | `ACH_CAMPAIGN_LVL50_3STAR` | Half Perfect | Complete level 50 with 3 stars |
 | `ACH_CAMPAIGN_LVL100_3STAR` | Legendary Hero | Complete level 100 with 3 stars |
-| `ACH_SPRINT_SUB60` | Fast Fingers | Finish Sprint in under 60 seconds |
-| `ACH_SPRINT_SUB45` | Light Speed | Finish Sprint in under 45 seconds |
-| `ACH_ULTRA_50K` | Ultra Master | Score 50,000+ in Ultra mode |
-| `ACH_ULTRA_100K` | Ultra Legend | Score 100,000+ in Ultra mode |
+| `ACH_SPRINT_SUB60` | Fast Fingers | Finish Sprint in under 240 seconds |
+| `ACH_SPRINT_SUB45` | Sprint Specialist | Finish Sprint in under 200 seconds |
+| `ACH_ULTRA_50K` | Ultra Master | Score 10,000+ in Ultra mode |
+| `ACH_ULTRA_100K` | Ultra Legend | Score 15,000+ in Ultra mode |
 | `ACH_SURVIVAL_5MIN` | Survivor | Stay alive 5 minutes in Survival mode |
 | `ACH_SURVIVAL_10MIN` | Last Standing | Stay alive 10 minutes in Survival mode |
 | `ACH_CASCADE_CHAIN_10` | Chain Reaction | Perform a 10x+ chain combo in Cascade mode |
@@ -229,6 +225,6 @@ Referans VDF (makine tarafından okunabilir): `tools/steam_achievements.vdf`
 4. Hidden olanları işaretle
 5. 64×64 px simgeleri yükle (kazanılmış: renkli, kazanılmamış: gri)
 6. Kaydet → sonraki başarıma geç
-7. 42 başarımın tamamı girildikten sonra **"Publish Changes"**
+7. 40 başarımın tamamı girildikten sonra **"Publish Changes"**
 
 İstatistikler de aynı sayfanın "Stats" sekmesinden tek tek girilir (17 adet).

@@ -2440,14 +2440,13 @@ class DailyChallengeMode(Game):
             return
         self.user_manager.register_daily_result(success, challenge_id=self.challenge.get('id'))
         status = self.user_manager.get_daily_status()
-
-        # Achievement hook: "No Mistakes" daily challenge başarıyla tamamlanırsa
-        # achievements.py içindeki 'no_mistakes' (perfect_game) tetiklensin.
-        try:
-            if success and self.challenge.get('no_mistakes') and self.achievement_manager:
-                self.achievement_manager.update_stats(perfect_game=True)
-        except Exception:
-            pass
+        if self.achievement_manager and status:
+            try:
+                self.achievement_manager.update_stats(
+                    daily_max_streak=int(status.get('streak', 0) or 0)
+                )
+            except Exception:
+                pass
 
         if success:
             reward_fragments = int(self.challenge.get('reward_fragments', 0) or 0)

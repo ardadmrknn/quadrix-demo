@@ -1890,6 +1890,7 @@ def main():
                     screen=screen,
                     fullscreen=fullscreen,
                     user_manager=user_manager,
+                    achievement_manager=achievement_manager,
                     settings_manager=settings_manager,
                     sound_manager=menu_sound,
                 )
@@ -2523,6 +2524,7 @@ def main():
                     screen=screen,
                     fullscreen=fullscreen,
                     user_manager=user_manager,
+                    achievement_manager=achievement_manager,
                     settings_manager=settings_manager,
                     sound_manager=menu_sound,
                 )

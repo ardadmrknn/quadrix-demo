@@ -96,6 +96,48 @@ def test_steam_achievement_map_keys_are_valid():
         assert game_id in achievements.ACHIEVEMENTS, f"{game_id} ACHIEVEMENTS'ta yok"
 
 
+def test_removed_achievements_are_no_longer_defined():
+    """Kaldırılan başarım ID'leri runtime tanımlarında yer almamalı."""
+    import achievements
+    importlib.reload(achievements)
+
+    assert "perfect_clear" not in achievements.ACHIEVEMENTS
+    assert "no_mistakes" not in achievements.ACHIEVEMENTS
+    assert "perfect_clear" not in achievements.STEAM_ACHIEVEMENT_MAP
+    assert "no_mistakes" not in achievements.STEAM_ACHIEVEMENT_MAP
+
+
+def test_sprint_targets_use_new_thresholds():
+    """Sprint başarımları yeni 240/200 saniye eşiklerini kullanmalı."""
+    import achievements
+    importlib.reload(achievements)
+
+    mgr = achievements.AchievementManager.__new__(achievements.AchievementManager)
+
+    assert mgr._progress_spec_for("sprint_sub60") == ("sprint_best_time", 240, False)
+    assert mgr._progress_spec_for("sprint_sub45") == ("sprint_best_time", 200, False)
+
+
+def test_ultra_targets_use_new_thresholds():
+    """Ultra başarımları yeni 10k/15k skor eşiklerini kullanmalı."""
+    import achievements
+    importlib.reload(achievements)
+
+    mgr = achievements.AchievementManager.__new__(achievements.AchievementManager)
+
+    assert mgr._progress_spec_for("ultra_50k") == ("ultra_max_score", 10000, False)
+    assert mgr._progress_spec_for("ultra_100k") == ("ultra_max_score", 15000, False)
+
+
+def test_achievement_names_are_unique():
+    """Varsayılan başarım adları çakışmamalı."""
+    import achievements
+    importlib.reload(achievements)
+
+    names = [data["name"] for data in achievements.ACHIEVEMENTS.values()]
+    assert len(names) == len(set(names))
+
+
 # ── unlock() Steam entegrasyonu ──────────────────────────────────────────
 
 def test_unlock_calls_steam_on_new_achievement():
