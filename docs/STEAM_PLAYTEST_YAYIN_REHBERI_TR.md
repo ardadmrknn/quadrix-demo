@@ -1,77 +1,119 @@
-# Steam Playtest Yayın Rehberi (Quadrix)
+# Steam Playtest Yayin Rehberi (Quadrix)
 
-Bu rehber, Steam dokümanlarındaki `Uploading to Steam` ve `Steam Playtest` akışlarını bu repo için pratik hale getirir.
+> Bu dosya `tools/sync_markdown_docs.py` tarafindan uretilir.
+> Rehberdeki teknik degerler helper script/spec/VDF dosyalarindan cekilir.
 
-## 1) Steamworks panelinde zorunlu hazırlık
+Bu rehber Steam tarafinda manuel kalan adimlarla, repo tarafinda otomatiklesen adimlari ayirir.
 
-1. Ana oyunun **Associated Packages & DLC** sayfasından bir **Playtest AppID** oluştur.
-2. Playtest uygulamasında en az şu ayarları tamamla ve publish et:
-   - Library capsule / community assets
-   - General Installation > en az 1 launch option
-   - Depots > en az 1 depot (Windows için)
-3. Ana oyunun store sayfasında **Special Settings** altından Playtest kayıt alanını görünür yap (isteğe bağlı zamanlama).
+## 1) Steamworks Panelinde Manuel Hazirlik
 
-## 2) Bu repodaki SteamPipe scriptlerini doldur
+1. Playtest AppID icin package, depot ve launch option tanimla.
+2. Build hesabinin AppID icin yetkili oldugunu dogrula.
+3. Yukleme bittikten sonra BuildID'yi dogru branch'e ata.
+4. Gerekirse Playtest `Playable` durumunu ac ve katilim tipini sec.
 
-Dosyalar:
-- `steamworks/scripts/app_build_playtest.vdf`
-- `steamworks/scripts/depot_build_playtest_windows.vdf`
+## 2) Repo Tarafinda Guncel Gercekler
 
-Aşağıdaki placeholder değerleri gerçek ID'lerle değiştir:
-- `__PLAYTEST_APP_ID__`
-- `__PLAYTEST_DEPOT_WINDOWS_ID__`
-- `__BUILD_DESC__` (örn. `2026-02-17-rc1`)
+- Playtest AppID: `4428040`
+- Windows depot: `4428041` via `depot_build_playtest_windows.vdf`
+- macOS depot: `4428043` via `depot_build_macos.vdf`
+- Windows upload helper: `tools/steam_upload_playtest.ps1`
+- macOS upload helper: `scripts/build/steam_upload_macos.sh`
+- Windows helper temp VDF patchliyor: `evet`
+- macOS helper temp VDF patchliyor: `evet`
 
-> Not: `ContentRoot` şu an `..\\..\\dist\\` olarak ayarlı. PyInstaller çıktını farklı klasöre alıyorsan güncelle.
+Onemli fark:
 
-## 3) Build al
+- Artik repo icindeki VDF dosyasina her build icin `Desc`, `ContentRoot` veya `BuildOutput` yazman gerekmiyor.
+- Helper scriptler bu alanlari gecici VDF olusturarak dolduruyor.
+- Track edilen VDF dosyasinda kalan `Desc` degeri sadece sablon deger.
 
-Önce oyunun dağıtım dosyasını üret:
+## 3) Windows Playtest Akisi
+
+### Build
 
 ```powershell
-python -m PyInstaller packaging/specs/tetris.spec --noconfirm
+pwsh -File .\scripts\build\build_windows_exe.ps1 -Clean
 ```
 
-## 4) SteamCMD ile Playtest yükle
-
-Steamworks SDK içindeki `steamcmd.exe` yolunu kullan.
-
-### Önerilen (bu repodaki helper script)
+### Upload
 
 ```powershell
-pwsh -File .\tools\steam_upload_playtest.ps1 \
-  -SteamCmdPath "C:\SteamworksSDK\tools\ContentBuilder\builder\steamcmd.exe" \
-  -SteamUser "BUILD_ACCOUNT" \
-  -AppBuildScript ".\steamworks\scripts\app_build_playtest.vdf"
+pwsh -File .\tools\steam_upload_playtest.ps1 `
+    -SteamCmdPath "C:\SteamworksSDK\tools\ContentBuilder\builder\steamcmd.exe" `
+    -SteamUser "BUILD_ACCOUNT" `
+    -BuildDescription "Playtest build YYYY-MM-DD"
 ```
 
-İlk girişte Steam Guard doğrulaması gerekebilir. CI/CD için Steam `config.vdf` token'ını koru.
-
-### Doğrudan steamcmd
+Dusuk seviye fallback:
 
 ```powershell
+py -m PyInstaller packaging\specs\tetris.spec --noconfirm
 "C:\SteamworksSDK\tools\ContentBuilder\builder\steamcmd.exe" +login BUILD_ACCOUNT +run_app_build ".\steamworks\scripts\app_build_playtest.vdf" +quit
 ```
 
-## 5) Build’i canlıya al ve oyuncu kabul et
+## 4) macOS Playtest Akisi
 
-1. Playtest app için **Builds** sayfasına git, yüklenen BuildID’nin `playtest` branch’inde live olduğundan emin ol.
-2. Playtest panelinde:
-   - `Playable` durumunu aç
-   - Katılım türünü seç (`Limited` veya `Open`)
-   - Gerekirse ülke filtreleri uygula
-3. Oyuncu davetini mağaza kaydı veya Playtest key ile yönet.
+### Build
 
-## 6) Güvenlik ve mevcut backend notu
+```bash
+./scripts/build/build_macos_app.sh --clean
+```
 
-Leaderboard için proxy modeli zaten var:
-- `backend/steam_leaderboard_proxy.py`
-- `src/steam_leaderboards.py`
+### Upload
 
-Playtest için kod tarafında ekstra zorunlu değişiklik yok; ayrı Playtest AppID kullandığın için backend ortamında `STEAM_APP_ID` değerini Playtest AppID’ye göre ayırman yeterli.
+```bash
+./scripts/build/steam_upload_macos.sh --build-first --desc "macOS build YYYY-MM-DD"
+```
 
-## 7) Sık görülen hatalar
+Notlar:
 
-- `Invalid content configuration`: Branch’e live build atanmamış veya launch option/depot-package eşleşmesi eksik.
-- `Failed to get application info`: AppID yanlış veya build hesabının yetkisi yok.
-- Mac/Linux dosya inmiyor: ilgili depolar package’e eklenmemiş.
+- Script varsayilan olarak `steamworks/scripts/app_build_playtest_macos.vdf` kullanir.
+- `--full` verilirse `steamworks/scripts/app_build_full.vdf` secilir.
+- `--build-first` tavsiye edilen guvenli akistir.
+- Stale app tespit edilirse upload durdurulur; zorlamak icin `QUADRIX_ALLOW_STALE_UPLOAD=1` gerekir.
+
+## 5) Guncel VDF Sablonlari
+
+### Windows
+
+```vdf
+"AppBuild"
+{
+    "AppID" "4428040"
+    "Desc" "Playtest build"
+    "SetLive" ""
+    "ContentRoot" ""
+    "BuildOutput" ""
+
+    "Depots"
+    {
+        "4428041" "depot_build_playtest_windows.vdf"
+    }
+}
+```
+
+### macOS
+
+```vdf
+"AppBuild"
+{
+    "AppID" "4428040"
+    "Desc" "macOS Playtest build 2026-02-19"
+    "SetLive" ""
+    "ContentRoot" ""
+    "BuildOutput" ""
+
+    "Depots"
+    {
+        "4428043" "depot_build_macos.vdf"
+    }
+}
+```
+
+## 6) Kod Degisince Ne Olur?
+
+- Kod degisikligi tek basina Steam build'ini degistirmez.
+- Sen yeni build aldiginda guncel kod pakete girer.
+- Sen upload yaptiginda yeni build Steam'e gider.
+- Branch'e canli alma adimi hala Steamworks panelinde manuel yapilir.

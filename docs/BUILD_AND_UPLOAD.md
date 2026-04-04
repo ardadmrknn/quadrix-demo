@@ -1,168 +1,150 @@
 # Build & Steam Upload Rehberi
 
-> Quadrix — Windows Playtest (AppID: 4428040 · Depot: 4428041)  
-> Son güncelleme: 2026-02-24
+> Bu dosya `tools/sync_markdown_docs.py` tarafindan uretilir.
+> Kalici degisiklik icin kaynak script/spec/VDF dosyasini veya sync scriptini guncelle.
 
----
+## Kisa Cevap
 
-## Gereksinimler
+- Kod degisince Steam build kendiliginden guncellenmez.
+- Guncel kodun pakete girmesi icin build komutunu sen calistirirsin.
+- Steam'e yeni build gitmesi icin upload komutunu sen calistirirsin.
+- Upload sirasinda `Desc`, `ContentRoot` ve `BuildOutput` alanlari helper script tarafindan gecici VDF uzerinde doldurulur.
+- CI su an otomatik Steam upload yapmiyor; sadece test/lint calistiriyor.
 
-| Araç | Konum / Sürüm |
-|------|---------------|
-| Python | 3.12 (`py --version` ile doğrula) |
-| PyInstaller | 6.16.0 (`py -m pip install pyinstaller`) |
-| steamcmd | Kurulu olmalı (`steamcmd.exe` yolu makineye göre değişir) |
-| steam_api64.dll | `dll\win64\steam_api64.dll` (Steamworks SDK'dan — partner.steamgames.com/downloads/list) |
-| Hesap | `vibecode_production` (Steam Partner, MFA aktif) |
+## Kaynak Gercekler
 
----
+### Windows
 
-## 1. DLL Hazırlığı
+- Canonical build helper: `scripts/build/build_windows_exe.ps1`
+- Canonical upload helper: `tools/steam_upload_playtest.ps1`
+- Canonical spec: `packaging/specs/tetris.spec`
+- Playtest AppID: `4428040`
+- Playtest depot: `4428041`
+- Upload helper temp VDF patchliyor: `evet`
+- Build helper bridge derleyebiliyor: `evet`
 
-Steamworks SDK ZIP'ini partner.steamgames.com/downloads/list adresinden indirip:
+### macOS
 
-```
-sdk\redistributable_bin\win64\steam_api64.dll  →  dll\win64\steam_api64.dll
-sdk\redistributable_bin\osx\libsteam_api.dylib  →  dll\osx\libsteam_api.dylib
-```
+- Canonical build helper: `scripts/build/build_macos_app.sh`
+- Canonical upload helper: `scripts/build/steam_upload_macos.sh`
+- Canonical spec: `packaging/specs/tetris_macos_allinone.spec`
+- Uretilen uygulama adi: `Quadrix.app`
+- Playtest AppID: `4428040`
+- Playtest depot: `4428043`
+- Upload helper temp VDF patchliyor: `evet`
+- Upload helper `--build-first` destekliyor: `evet`
+- Upload helper stale build guard kullaniyor: `evet`
 
-`packaging/specs/tetris.spec` bu dosyayı otomatik olarak bulur ve EXE içine gömer:
-```python
-steam_dll_src = str(REPO_ROOT / 'dll' / 'win64' / 'steam_api64.dll')
-binaries = [(steam_dll_src, '.')]   # _MEIPASS'a çıkarılır, EXE yanında ayrı dosya gerekmez
-```
+### Otomatik Sürüm Artirma
 
-> **ÖNEMLİ (Online PvP):** EXE/.app derlemeden önce `steam_net_bridge` derlemesi zorunludur.  
-> Zorunlu adımlar ve platform bazlı komutlar için: [EXE_APP_BRIDGE_ENTEGRASYON_ZORUNLULUKLARI_TR.md](EXE_APP_BRIDGE_ENTEGRASYON_ZORUNLULUKLARI_TR.md)
+Windows local version bump bu spec dosyalarinda aktif:
 
----
+- `packaging/specs/tetris.spec`
+- `packaging/specs/tetris_en.spec`
+- `packaging/specs/tetris_playtest.spec`
 
-## 2. Build (Windows EXE)
+macOS tarafinda local override bump yok; runtime dogrudan `src/version_base.py` surumunu okur.
+
+### Bridge Toplayan Spec Dosyalari
+
+- `packaging/specs/tetris.spec`
+- `packaging/specs/tetris_macos.spec`
+- `packaging/specs/tetris_macos_allinone.spec`
+- `packaging/specs/tetris_playtest.spec`
+
+## Onerilen Komutlar
+
+### Windows build
 
 ```powershell
-cd "<repo-klasor-yolu>"
-py -m PyInstaller packaging/specs/tetris.spec --noconfirm
+pwsh -File .\scripts\build\build_windows_exe.ps1 -Clean
 ```
 
-- Çıktı: `dist\Quadrix.exe` (~315 MB, onefile)
-- `steam_api64.dll` EXE **içine gömülür** — çalışma anında `_MEIPASS` geçici klasörüne çıkarılır
-- `config/runtime/steam_appid.txt` (içerik: `4428040`) dosyası mevcut olmalı; PyInstaller bunu `datas` ile pakete ekler
+### Windows upload
 
-Build log kaydetmek için:
 ```powershell
-py -m PyInstaller packaging/specs/tetris.spec --noconfirm 2>&1 | Tee-Object reports/logs/build_log.txt
+pwsh -File .\tools\steam_upload_playtest.ps1 `
+    -SteamCmdPath "C:\steamcmd\steamcmd.exe" `
+    -SteamUser "BUILD_ACCOUNT" `
+    -BuildDescription "Playtest build YYYY-MM-DD" `
+    -SetLive ""
 ```
 
----
+Dusuk seviye fallback:
 
-## 3. VDF Politikası (Ortak Dosya)
+```powershell
+py -m PyInstaller packaging\specs\tetris.spec --noconfirm
+```
 
-`steamworks\scripts\app_build_playtest.vdf` artık **ortak şablon** dosyadır. Bu dosyada makineye özel `ContentRoot / BuildOutput` veya günlük `Desc` değişikliği commit etmeyin:
+### macOS build
+
+```bash
+./scripts/build/build_macos_app.sh --clean
+```
+
+### macOS upload
+
+```bash
+./scripts/build/steam_upload_macos.sh --build-first --desc "macOS build YYYY-MM-DD"
+```
+
+Dusuk seviye fallback:
+
+```bash
+pyinstaller packaging/specs/tetris_macos_allinone.spec --noconfirm
+```
+
+## VDF Politicasi
+
+- Windows helper varsayilan olarak `steamworks/scripts/app_build_playtest.vdf` dosyasini kullanir.
+- macOS helper varsayilan olarak `steamworks/scripts/app_build_playtest_macos.vdf` dosyasini kullanir; `--full` ile `steamworks/scripts/app_build_full.vdf` secilir.
+- Track edilen VDF sablonlarinda makineye ozel `ContentRoot` ve `BuildOutput` degeri tutulmaz.
+- `Desc` alani helper script tarafindan runtime'da override edilebilir; VDF icindeki default deger yalnizca sablon gorevi gorur.
+
+### Guncel Windows Playtest VDF Sablosu
 
 ```vdf
 "AppBuild"
 {
-    "AppID"        "4428040"
-    "Desc"         "Playtest build"
-    "SetLive"      ""
-    "ContentRoot"  ""
-    "BuildOutput"  ""
+    "AppID" "4428040"
+    "Desc" "Playtest build"
+    "SetLive" ""
+    "ContentRoot" ""
+    "BuildOutput" ""
 
     "Depots"
     {
-        "4428041"  "depot_build_playtest_windows.vdf"
+        "4428041" "depot_build_playtest_windows.vdf"
     }
 }
 ```
 
-- `SetLive ""` → sadece upload, branch'e otomatik push **yapılmaz**
-- Runtime değerleri upload scripti tarafından geçici VDF'e yazılır
+### Guncel macOS Playtest VDF Sablosu
 
----
+```vdf
+"AppBuild"
+{
+    "AppID" "4428040"
+    "Desc" "macOS Playtest build 2026-02-19"
+    "SetLive" ""
+    "ContentRoot" ""
+    "BuildOutput" ""
 
-## 4. Steam Upload
-
-### Yöntem A — PS1 scripti (önerilen)
-
-```powershell
-.\tools\steam_upload_playtest.ps1 `
-    -SteamCmdPath "C:\steamcmd\steamcmd.exe" `
-    -SteamUser "vibecode_production" `
-    -BuildDescription "Playtest build 2026-03-03 v1.0.27" `
-    -SetLive ""
+    "Depots"
+    {
+        "4428043" "depot_build_macos.vdf"
+    }
+}
 ```
 
-Şifre sorulursa girilir; Steam Guard kodu (e-posta) sorulabilir.
+## Ne Manuel Kaldi?
 
-### Yöntem B — Doğrudan steamcmd
+- Steam build komutunu elle calistirmak
+- Steam Guard / partner hesabiyla giris yapmak
+- Steamworks panelinde yuklenen BuildID'yi branch'e atamak
+- Gerekirse Playtest `Playable` / branch canli ayarlarini acmak
 
-```powershell
-C:\steamcmd\steamcmd.exe `
-    +login vibecode_production `
-    +run_app_build "steamworks\scripts\app_build_playtest.vdf" `
-    +quit
-```
+## CI Durumu
 
-### Upload Sonrası
-
-Başarılı upload çıktısından BuildID okunur:
-```
-BuildID : 22071739   (2026-02-24 v3 steam-sdk-dll)
-```
-
-Steamworks Partner panelinden (partner.steamgames.com/apps/builds/4428040) build'ı **Playtest** branch'ine al.
-
----
-
-## 5. Steam SDK Entegrasyonu (`src/steam_integration.py`)
-
-Build'a dahil edilen ctypes tabanlı Steamworks SDK wrapper:
-
-| Fonksiyon | Açıklama |
-|-----------|----------|
-| `init()` | `SteamAPI_Init()` çağırır; persona adını okur |
-| `get_persona_name()` | Oturum açık Steam kullanıcı adı |
-| `get_auth_session_ticket()` | Arkadaş skor doğrulaması için token |
-| `submit_score(mode, score)` | `UploadLeaderboardScore` (KeepBest), async |
-| `fetch_global_scores(mode)` | SDK üzerinden global skor listesi |
-| `fetch_friend_scores(mode)` | SDK üzerinden arkadaş skor listesi |
-
-DLL yükleme öncelik sırası (`_find_dll()`):
-1. `sys._MEIPASS` (PyInstaller bundle)
-2. Çalışma dizini (`cwd`)
-3. Proje kökü
-4. `dll/win64/` (geliştirme ortamı)
-5. `dist/`
-6. `C:\Program Files (x86)\Steam`
-
-DLL bulunamazsa `init()` sessizce `False` döner; tüm Steam özellikleri no-op olarak çalışır.
-
----
-
-## 6. macOS Build
-
-macOS build Mac üzerinde yapılmalıdır:
-
-macOS build artık ayrı bir yerel sürüm dosyası üretmez; runtime doğrudan `src/version_base.py` içindeki sürümü kullanır.
-
-```bash
-# Mac'te proje kökünde:
-cp dll/osx/libsteam_api.dylib libsteam_api.dylib   # ya da spec otomatik bulur
-pyinstaller packaging/specs/tetris_macos.spec --noconfirm
-```
-
-Çıktı: `dist/Quadrix.app` — `libsteam_api.dylib` `Contents/MacOS/` içine kopyalanır.
-
-macOS upload için `steamworks\scripts\app_build_playtest_macos.vdf` kullanılır.
-
----
-
-## 7. Hızlı Özet
-
-```
-1. dll\win64\steam_api64.dll var mı? kontrol et
-2. app_build_playtest.vdf → Desc tarihini güncelle
-3. py -m PyInstaller packaging/specs/tetris.spec --noconfirm
-4. .\tools\steam_upload_playtest.ps1 -SteamCmdPath C:\steamcmd\steamcmd.exe -SteamUser vibecode_production
-5. BuildID'yi partner.steamgames.com'dan Playtest branch'ine al
-```
+- GitHub Actions Steam upload yapiyor mu: `hayir`
+- Mevcut CI amaci: test ve lint
