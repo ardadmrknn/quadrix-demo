@@ -18,6 +18,31 @@ if str(SRC_DIR) not in sys.path:
 from campaign import campaign_mode as campaign_mode_module
 
 
+class _FakeFont:
+    def __init__(self, size: int):
+        self._size = max(1, int(size))
+
+    def render(self, text, antialias, color):
+        width, height = self.size(text)
+        surface = pygame.Surface((width, height), pygame.SRCALPHA)
+        rgb = tuple(color[:3]) if isinstance(color, tuple) else (255, 255, 255)
+        surface.fill((*rgb, 255))
+        return surface
+
+    def size(self, text):
+        return max(1, int(len(str(text or '')) * self._size * 0.55)), self.get_height()
+
+    def get_height(self):
+        return self._size
+
+    def get_linesize(self):
+        return self._size
+
+
+def _make_fake_font(size: int, bold: bool = False):
+    return _FakeFont(size)
+
+
 def _build_mode(size: tuple[int, int]) -> campaign_mode_module.CampaignMode:
     mode = campaign_mode_module.CampaignMode.__new__(campaign_mode_module.CampaignMode)
     mode.screen = pygame.Surface(size, pygame.SRCALPHA)
@@ -26,12 +51,10 @@ def _build_mode(size: tuple[int, int]) -> campaign_mode_module.CampaignMode:
 
 
 def _install_right_hud_test_stubs(monkeypatch) -> None:
-    pygame.font.init()
-
     retro_style_stub = types.ModuleType('retro_style')
     retro_style_stub.retro_style = SimpleNamespace(
         draw_glass_panel=lambda surface, rect, alpha=90, border_color=(255, 255, 255), glow=False: pygame.draw.rect(surface, border_color, rect, 1),
-        get_font=lambda size, bold=False: pygame.font.Font(None, max(1, int(size))),
+        get_font=lambda size, bold=False: _make_fake_font(size, bold=bold),
     )
     localization_stub = types.ModuleType('localization')
     localization_stub.t = lambda key, *args, **kwargs: key

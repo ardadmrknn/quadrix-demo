@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 import pathlib
 import sys
+from types import SimpleNamespace
 
 import pygame
 
@@ -20,6 +21,31 @@ from game_modes_extra import MysteryCardUI
 TutorialMode = tutorial_module.TutorialMode
 
 
+class _FakeFont:
+    def __init__(self, size: int):
+        self._size = max(1, int(size))
+
+    def render(self, text, antialias, color):
+        width, height = self.size(text)
+        surface = pygame.Surface((width, height), pygame.SRCALPHA)
+        rgb = tuple(color[:3]) if isinstance(color, tuple) else (255, 255, 255)
+        surface.fill((*rgb, 255))
+        return surface
+
+    def size(self, text):
+        return max(1, int(len(str(text or '')) * self._size * 0.55)), self.get_height()
+
+    def get_height(self):
+        return self._size
+
+    def get_linesize(self):
+        return self._size
+
+
+def _make_fake_font(size: int, bold: bool = False):
+    return _FakeFont(size)
+
+
 def _build_tutorial(size: tuple[int, int], *, window_size: tuple[int, int] | None = None):
     tutorial = TutorialMode.__new__(TutorialMode)
     tutorial.screen = pygame.Surface(size, pygame.SRCALPHA)
@@ -31,6 +57,42 @@ def _build_tutorial(size: tuple[int, int], *, window_size: tuple[int, int] | Non
     tutorial.get_board_offset = lambda: (420, 108)
     tutorial.get_cell_size = lambda: 24
     return tutorial
+
+
+def _install_tutorial_draw_stubs(monkeypatch):
+    captured_rects = []
+
+    def draw_glass_panel(surface, rect, alpha=0, border_color=(255, 255, 255), glow=False):
+        captured_rects.append(rect.copy())
+        pygame.draw.rect(surface, border_color[:3], rect, 1)
+
+    retro_style_stub = SimpleNamespace(
+        draw_glass_panel=draw_glass_panel,
+        draw_uniform_button=lambda surface, rect, label, sub_text='', color_code=None, selected=False, **kwargs: captured_rects.append(rect.copy()),
+        get_font=lambda size, bold=False: _make_fake_font(size, bold=bold),
+        secondary=(220, 120, 120),
+        success=(90, 220, 140),
+        primary=(110, 160, 255),
+    )
+
+    monkeypatch.setattr(tutorial_module, 'retro_style', retro_style_stub)
+    monkeypatch.setattr(tutorial_module, 't', lambda key, *args, **kwargs: kwargs.get('default', key))
+    monkeypatch.setattr(tutorial_module, 'get_mouse_pos', lambda: (0, 0))
+    monkeypatch.setattr(tutorial_module.pygame.mouse, 'get_focused', lambda: False)
+    monkeypatch.setattr(tutorial_module, 'get_tutorial_card_title', lambda card: str(card.get('title') or 'Kart'))
+    monkeypatch.setattr(tutorial_module, 'get_tutorial_card_rarity_label', lambda card: 'Nadir')
+    monkeypatch.setattr(tutorial_module, 'get_tutorial_card_type_label', lambda card: 'Tip')
+    monkeypatch.setattr(tutorial_module, 'get_tutorial_card_description', lambda card: str(card.get('description') or 'Aciklama'))
+    return captured_rects
+
+
+def _assert_rects_within_surface(rects, size=(800, 600)):
+    assert rects
+    for rect in rects:
+        assert rect.x >= 0
+        assert rect.y >= 0
+        assert rect.right <= size[0]
+        assert rect.bottom <= size[1]
 
 
 def test_tutorial_modal_scale_uses_active_canvas_and_preserves_1366_baseline():
@@ -118,3 +180,130 @@ def test_tutorial_resize_syncs_window_metrics_to_created_surface(monkeypatch):
         int(tutorial_module.TUTORIAL_MODAL_REFERENCE_SIZE[0]),
         int(tutorial_module.TUTORIAL_MODAL_REFERENCE_SIZE[1]),
     )
+
+
+def test_tutorial_success_effects_use_active_canvas_center():
+    tutorial = _build_tutorial((2560, 1440), window_size=(1366, 768))
+
+    tutorial._create_success_effects()
+
+    assert len(tutorial.success_particles) == 20
+    assert all(1230 <= particle['x'] <= 1330 for particle in tutorial.success_particles)
+    assert all(670 <= particle['y'] <= 770 for particle in tutorial.success_particles)
+
+
+def test_tutorial_overlay_and_tip_panel_live_draw_use_active_canvas(monkeypatch):
+    captured_rects = _install_tutorial_draw_stubs(monkeypatch)
+
+    tutorial = _build_tutorial((800, 600), window_size=(1366, 768))
+    tutorial.lesson_catalog = [{'id': 'lesson-1'}]
+    tutorial._lesson_index = lambda: 1
+    tutorial.lesson_result_active = False
+    tutorial.next_lesson_id = 'lesson-2'
+    tutorial.in_transition = False
+    tutorial.overlay_message = 'Aktif canvas test mesaji'
+    tutorial.sub_message = 'Ilerleme bilgisi'
+    tutorial.tip_message = 'Parcayi bosluk olusturmadan yerlestir.'
+    tutorial.step = 1
+    tutorial.step_move_left_count = 2
+    tutorial.step_move_right_count = 1
+    tutorial.step_rotate_count = 0
+    tutorial.soft_drop_counter = 0
+    tutorial.step_target = 3
+    tutorial._get_board_lesson_objectives = lambda: [{'text': 'Satir acilimini koru'}]
+
+    tutorial._draw_tutorial_overlay()
+
+    assert len(captured_rects) >= 2
+    _assert_rects_within_surface(captured_rects[:2])
+
+
+def test_tutorial_hub_live_draw_rects_stay_within_active_canvas(monkeypatch):
+    captured_rects = _install_tutorial_draw_stubs(monkeypatch)
+
+    tutorial = _build_tutorial((800, 600), window_size=(1366, 768))
+    tutorial.hub_selected_chapter_id = 'chapter-1'
+    tutorial.hub_selected_lesson_id = 'lesson-1'
+    tutorial._get_total_tutorial_stars = lambda: 4
+    tutorial._get_hub_chapter_entries = lambda: [
+        {
+            'chapter': {
+                'id': 'chapter-1',
+                'title': 'Baslangic',
+                'description_fallback': 'Temel hareketleri ogren.',
+            },
+            'unlocked': True,
+            'completed_lessons': 1,
+            'total_lessons': 1,
+            'stars': 3,
+            'completed': True,
+        }
+    ]
+    tutorial._get_hub_lesson_entries = lambda chapter_id: [
+        {
+            'lesson': {
+                'id': 'lesson-1',
+                'title': 'Saga Kaydir',
+                'description': 'Parcayi guvenli sekilde saga tasi.',
+            },
+            'stars': 2,
+            'completed': False,
+        }
+    ]
+    tutorial._lesson_title = lambda item=None: str((item or {}).get('title') or 'Ders')
+    tutorial._lesson_description = lambda item: str(item.get('description') or '')
+
+    tutorial._draw_tutorial_hub()
+
+    _assert_rects_within_surface(captured_rects)
+    assert tutorial.hub_back_rect.right <= 800
+    assert tutorial.hub_start_rect.bottom <= 600
+
+
+def test_tutorial_card_choice_overlay_fallback_live_draw_uses_active_canvas(monkeypatch):
+    captured_rects = _install_tutorial_draw_stubs(monkeypatch)
+
+    tutorial = _build_tutorial((800, 600), window_size=(1366, 768))
+    tutorial.card_ui = None
+    tutorial.card_choice_state = {
+        'scenario': {
+            'context_lines': ['Durumu incele', 'En guvenli karti sec'],
+            'choices': [
+                {'title': 'Kart A', 'description': 'Tetikleme aciklamasi'},
+                {'title': 'Kart B', 'description': 'Dengeleyici etki'},
+            ],
+        },
+        'selected_index': 1,
+    }
+    tutorial._lesson_title = lambda lesson=None: 'Kart Secimi'
+
+    tutorial._draw_card_choice_overlay()
+
+    assert len(captured_rects) >= 3
+    _assert_rects_within_surface(captured_rects)
+
+
+def test_tutorial_lesson_result_panel_live_draw_uses_active_canvas(monkeypatch):
+    captured_rects = _install_tutorial_draw_stubs(monkeypatch)
+
+    tutorial = _build_tutorial((800, 600), window_size=(1366, 768))
+    tutorial.lesson_result = {
+        'success': True,
+        'title': 'Ders Sonucu',
+        'stars': 2,
+        'feedback': 'Hamle akisi guclendi.',
+        'objective_results': [
+            {'text': 'Tek bosluk birakma', 'passed': True},
+            {'text': 'Satir yuksekligini kontrol et', 'passed': False},
+        ],
+        'coach_text': 'Bir sonraki denemede delik sayisini azalt.',
+        'line_delta': 1,
+        'hole_delta': -1,
+        'height_delta': 0,
+        'action_text': 'ENTER',
+    }
+
+    tutorial._draw_lesson_result_panel()
+
+    assert len(captured_rects) == 1
+    _assert_rects_within_surface(captured_rects)

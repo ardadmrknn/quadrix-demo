@@ -4161,10 +4161,11 @@ class MysteryMode(Game):
 
     def _get_side_panel_widths(self, board_pixel_width: int | None = None) -> tuple[int, int]:
         """Mystery mode için sol/sağ panel genişliklerini pencereye göre hesapla."""
-        window_width = int(self.window_width)
+        active_width, active_height = self._active_ui_size()
+        window_width = int(active_width)
 
         if board_pixel_width is None:
-            board_area_h = max(240, int(self.window_height) - INFO_PANEL_HEIGHT)
+            board_area_h = max(240, int(active_height) - INFO_PANEL_HEIGHT)
             est_cell_h = max(12, min(40, board_area_h // max(1, int(self.board_height))))
             board_pixel_width = int(self.board_width) * est_cell_h
 
@@ -4511,8 +4512,9 @@ class MysteryMode(Game):
         - Sağ panel: SIDE_PANEL_WIDTH (220px default)
         - Oyun alanı bu iki panel arasında ortalanmalı
         """
-        current_size = (self.window_width, self.window_height)
+        current_size = self._active_ui_size()
         if not hasattr(self, '_cached_offset_key') or self._cached_offset_key != current_size:
+            active_width, active_height = current_size
             cell_size = self.get_cell_size()
             board_width = self.board_width * cell_size
             board_height = self.board_height * cell_size
@@ -4522,15 +4524,15 @@ class MysteryMode(Game):
             self._mystery_right_panel_width = right_panel_width
 
             usable_left = left_panel_width + 14
-            usable_right = int(self.window_width) - right_panel_width - 14
+            usable_right = int(active_width) - right_panel_width - 14
             usable_width = max(0, usable_right - usable_left)
 
             # Tahtayı iki panel arasındaki bantta ortala.
             offset_x = usable_left + max(0, (usable_width - board_width) // 2)
-            offset_x = max(8, min(offset_x, int(self.window_width) - board_width - 8))
+            offset_x = max(8, min(offset_x, int(active_width) - board_width - 8))
 
             # Dikeyde ortala.
-            offset_y = (int(self.window_height) - board_height) // 2
+            offset_y = (int(active_height) - board_height) // 2
             
             self._cached_offset = (offset_x, offset_y)
             self._cached_offset_key = current_size
@@ -4539,14 +4541,15 @@ class MysteryMode(Game):
 
     def get_cell_size(self):
         """Mystery mode için hücre boyutunu iki yan paneli de dikkate alarak hesapla."""
-        current_size = (self.window_width, self.window_height, int(self.board_width), int(self.board_height))
+        active_width, active_height = self._active_ui_size()
+        current_size = (active_width, active_height, int(self.board_width), int(self.board_height))
         if not hasattr(self, '_cached_cell_size_key') or self._cached_cell_size_key != current_size:
             left_panel_width, right_panel_width = self._get_side_panel_widths()
             self._mystery_left_panel_width = left_panel_width
             self._mystery_right_panel_width = right_panel_width
 
-            board_area_width = int(self.window_width) - left_panel_width - right_panel_width - 40
-            board_area_height = int(self.window_height) - INFO_PANEL_HEIGHT
+            board_area_width = int(active_width) - left_panel_width - right_panel_width - 40
+            board_area_height = int(active_height) - INFO_PANEL_HEIGHT
 
             cell_width = max(8, board_area_width // max(1, int(self.board_width)))
             cell_height = max(8, board_area_height // max(1, int(self.board_height)))
@@ -5047,10 +5050,10 @@ class MysteryMode(Game):
                     self.sound.play_sound('clear')
                 self.board.score += cleared_cells * 40
                 if self.effects_enabled and locked_cells:
-                    offset_x = (self.window_width - BOARD_WIDTH * 25) // 2
-                    offset_y = (self.window_height - BOARD_HEIGHT * 25) // 2
-                    px = offset_x + int(cx * 25) + 12
-                    py = offset_y + int(cy * 25) + 12
+                    cell_size = self.get_cell_size()
+                    offset_x, offset_y = self.get_board_offset()
+                    px = offset_x + int(cx * cell_size) + cell_size // 2
+                    py = offset_y + int(cy * cell_size) + cell_size // 2
                     self.create_power_particles(px, py, (255, 100, 50), count=60)
                 # clear any new full rows created by explosion
                 prev_score_ex = int(getattr(self.board, 'score', 0))
@@ -5118,10 +5121,10 @@ class MysteryMode(Game):
                 if self.sound_enabled:
                     self.sound.play_sound('clear')
                 if self.effects_enabled:
-                    offset_x = (self.window_width - BOARD_WIDTH * 25) // 2
-                    offset_y = (self.window_height - BOARD_HEIGHT * 25) // 2
-                    px = offset_x + int(cx * 25) + 12
-                    py = offset_y + int(cy * 25) + 12
+                    cell_size = self.get_cell_size()
+                    offset_x, offset_y = self.get_board_offset()
+                    px = offset_x + int(cx * cell_size) + cell_size // 2
+                    py = offset_y + int(cy * cell_size) + cell_size // 2
                     self.create_power_particles(px, py, self.mode_skin.accent, count=80)
                 cleared_lines = int(self.board.clear_lines(source='card'))
                 if cleared_lines > 0:
@@ -5136,16 +5139,15 @@ class MysteryMode(Game):
             self._apply_line_bonus_reward(gained)
             # Spawn XP homing particles for Cascade Protocol (Mystery Mode)
             if self.effects_enabled:
-                board_width = BOARD_WIDTH * 25
-                board_height = BOARD_HEIGHT * 25
-                offset_x = (self.window_width - board_width) // 2
-                offset_y = (self.window_height - board_height) // 2
-                xp_bar_x = self.window_width - 120
+                active_width, _ = self._active_ui_size()
+                cell_size = self.get_cell_size()
+                offset_x, offset_y = self.get_board_offset()
+                xp_bar_x = active_width - 120
                 xp_bar_y = offset_y + 40
                 for row in self.board.last_cleared_lines:
                     for col in range(self.board_width):
-                        cell_x = offset_x + col * 25 + 12
-                        cell_y = offset_y + row * 25 + 12
+                        cell_x = offset_x + col * cell_size + cell_size // 2
+                        cell_y = offset_y + row * cell_size + cell_size // 2
                         for _ in range(2):
                             particle = {
                                 'x': float(cell_x),
@@ -5320,7 +5322,8 @@ class MysteryMode(Game):
                         delta = None
                     self._post_external_line_clear(1, award_energy=False, score_delta=delta, source='ability')
                     if self.effects_enabled:
-                        self.create_power_particles(self.window_width - 120, 60, self.mode_skin.accent)
+                        active_width, _ = self._active_ui_size()
+                        self.create_power_particles(active_width - 120, 60, self.mode_skin.accent)
             self._last_ability_keys['z'] = bool(keys[pygame.K_z])
 
             # Hayalet Parça (G): Mevcut parçayı hayalet yap - blokların içinden geçebilir.
@@ -6185,6 +6188,7 @@ class MysteryMode(Game):
     def _draw_sniper_board_overlay(self) -> None:
         """Sniper modu için gelişmiş blok seçim overlay'i."""
         try:
+            active_width, active_height = self._active_ui_size()
             # Mevcut tahta parametreleri
             board_x, board_y = self.get_board_offset()
             cell_size = self.get_cell_size()
@@ -6208,7 +6212,7 @@ class MysteryMode(Game):
             self._sniper_hover_pos = mouse_pos
             
             # === FULL SCREEN DARK OVERLAY ===
-            dim_overlay = pygame.Surface((self.window_width, self.window_height), pygame.SRCALPHA)
+            dim_overlay = pygame.Surface((active_width, active_height), pygame.SRCALPHA)
             dim_overlay.fill((0, 0, 0, 120))
             self.screen.blit(dim_overlay, (0, 0))
             
@@ -6359,6 +6363,7 @@ class MysteryMode(Game):
     def _draw_sniper_instructions(self, board_x: int, board_y: int, cell_size: int, target_valid: bool) -> None:
         """Sniper modu için ana UI temasına uygun talimat paneli çizer."""
         try:
+            active_width, active_height = self._active_ui_size()
             # Sağ HUD panelinin stats kutusunun altındaki boş alana yerleştir
             # _hud_mode_info_area = (x, y, w, h) — Kombo/Stats paneli bittikten sonraki alan
             mode_area = getattr(self, '_hud_mode_info_area', None)
@@ -6366,7 +6371,7 @@ class MysteryMode(Game):
                 area_x, area_y, area_w, area_h = mode_area
                 panel_x = area_x
                 # Ekran sağ kenarına kadar genişlet
-                panel_width = int(self.window_width) - area_x - 8
+                panel_width = int(active_width) - area_x - 8
                 # İçeriğe sıkı fit: 3 satır metin + üst/alt padding + aralar
                 desired_panel_h = 120
                 panel_y = area_y + 4
@@ -6377,12 +6382,17 @@ class MysteryMode(Game):
                 panel_x = board_x
                 panel_width = self.board.width * cell_size
                 desired_panel_h = 110
-                panel_y = max(8, min(panel_y, self.window_height - desired_panel_h - 8))
+                panel_y = max(8, min(panel_y, active_height - desired_panel_h - 8))
 
             panel_height = desired_panel_h
             
             # Panel rect
             panel_rect = pygame.Rect(panel_x, panel_y, panel_width, panel_height)
+            panel_rect.width = max(220, min(panel_rect.width, active_width - 16))
+            panel_rect.height = max(80, min(panel_rect.height, active_height - 16))
+            panel_rect.x = max(8, min(panel_rect.x, active_width - panel_rect.width - 8))
+            panel_rect.y = max(8, min(panel_rect.y, active_height - panel_rect.height - 8))
+            self._sniper_instruction_panel_rect = panel_rect.copy()
             
             # Opak (saydam olmayan) koyu arka plan
             pygame.draw.rect(self.screen, (18, 22, 38), panel_rect, border_radius=10)
@@ -6582,17 +6592,19 @@ class MysteryMode(Game):
         pad_bottom = max(10, int(14 * ui_scale))
         content_indent = max(8, int(10 * ui_scale))
         hud_panel = getattr(self, '_hud_panel_rect', None)
+        _, active_height = self._active_ui_size()
         if hud_panel is not None:
             try:
-                target_bottom = int(getattr(hud_panel, 'bottom', self.window_height - 30))
+                target_bottom = int(getattr(hud_panel, 'bottom', active_height - 30))
             except Exception:
-                target_bottom = self.window_height - 30
+                target_bottom = active_height - 30
         else:
-            target_bottom = self.window_height - 30
+            target_bottom = active_height - 30
         panel_h = max(0, int(target_bottom - cards_y))
         if panel_h <= 0:
             return 0
         cards_panel_rect = pygame.Rect(panel_x, cards_y, panel_width, panel_h)
+        self._active_cards_panel_rect = cards_panel_rect.copy()
         try:
             self._draw_hud_glass_panel(cards_panel_rect)
         except Exception:
@@ -6669,17 +6681,19 @@ class MysteryMode(Game):
         panel_gap_bottom = s(10)
         panel_h_max = s(66)
         panel_h_min = s(42)
-        available_below = int(self.window_height - (board_y + board_h) - panel_gap_top - panel_gap_bottom)
+        active_width, active_height = self._active_ui_size()
+        available_below = int(active_height - (board_y + board_h) - panel_gap_top - panel_gap_bottom)
         if available_below < panel_h_min:
             return
 
         desired_w = int(board_w + s(260))
-        panel_w = max(int(board_w), min(desired_w, int(self.window_width - s(16))))
+        panel_w = max(int(board_w), min(desired_w, int(active_width - s(16))))
         panel_h = min(panel_h_max, available_below)
         panel_x = int(board_x + (board_w - panel_w) // 2)
-        panel_x = max(s(8), min(panel_x, self.window_width - panel_w - s(8)))
+        panel_x = max(s(8), min(panel_x, active_width - panel_w - s(8)))
         panel_y = int(board_y + board_h + panel_gap_top)
         panel_rect = pygame.Rect(panel_x, panel_y, panel_w, panel_h)
+        self._persistent_cards_panel_rect = panel_rect.copy()
 
         try:
             self._draw_hud_glass_panel(panel_rect)
@@ -8554,15 +8568,13 @@ class MysteryMode(Game):
         self.board.score += cleared_cells * 40
         # spawn particles for nova
         if self.effects_enabled:
-            board_width = BOARD_WIDTH * 25
-            board_height = BOARD_HEIGHT * 25
-            offset_x = (self.window_width - board_width) // 2
-            offset_y = (self.window_height - board_height) // 2
+            cell_size = self.get_cell_size()
+            offset_x, offset_y = self.get_board_offset()
             for _ in range(min(10, clusters * 2)):
                 cx = random.randint(0, BOARD_WIDTH - 1)
                 cy = random.randint(0, BOARD_HEIGHT - 1)
-                x = offset_x + cx * 25 + 12
-                y = offset_y + cy * 25 + 12
+                x = offset_x + cx * cell_size + cell_size // 2
+                y = offset_y + cy * cell_size + cell_size // 2
                 self.create_power_particles(x, y, self.mode_skin.accent, count=8)
 
     def _shave_peaks(self, layers: int) -> None:
@@ -8662,8 +8674,9 @@ class MysteryMode(Game):
     def _spawn_card_particles(self, color: tuple[int, int, int]) -> None:
         if not self.effects_enabled:
             return
-        center_x = self.window_width // 2
-        center_y = self.window_height // 2
+        active_width, active_height = self._active_ui_size()
+        center_x = active_width // 2
+        center_y = active_height // 2
         self.create_particles(count=30, x=center_x, y=center_y, colors=[color], speed=6)
 
     def _clear_rows(self, count: int) -> None:
@@ -9164,10 +9177,16 @@ class MysteryMode(Game):
         if not getattr(self, '_card_workshop_active', False):
             return
 
+        active_width, active_height = self._active_ui_size()
+        ui_scale = self._card_ui_scale()
+
+        def s(value: int) -> int:
+            return max(1, int(round(value * ui_scale)))
+
         if getattr(self, '_card_workshop_peek_active', False):
-            peek_btn_size = 48
-            peek_btn_x = self.window_width - peek_btn_size - 20
-            peek_btn_y = self.window_height - peek_btn_size - 20
+            peek_btn_size = s(48)
+            peek_btn_x = active_width - peek_btn_size - s(20)
+            peek_btn_y = active_height - peek_btn_size - s(20)
             self._card_workshop_peek_rect = pygame.Rect(peek_btn_x, peek_btn_y, peek_btn_size, peek_btn_size)
 
             center = self._card_workshop_peek_rect.center
@@ -9180,35 +9199,37 @@ class MysteryMode(Game):
                 icon_rect = peek_icon_surf.get_rect(center=self._card_workshop_peek_rect.center)
                 self.screen.blit(peek_icon_surf, icon_rect)
             else:
-                fallback_font = retro_style.get_font(20, bold=True)
+                fallback_font = retro_style.get_font(s(20), bold=True)
                 eye_surf = fallback_font.render("X", True, (100, 200, 255))
                 self.screen.blit(eye_surf, eye_surf.get_rect(center=self._card_workshop_peek_rect.center))
             return
 
         # Popup boyutları
-        popup_width = 500
-        popup_height = 520
-        popup_x = (self.window_width - popup_width) // 2
-        popup_y = (self.window_height - popup_height) // 2
+        popup_width = min(s(500), max(s(320), active_width - s(24)))
+        popup_height = min(s(520), max(s(340), active_height - s(24)))
+        popup_x = max(s(12), (active_width - popup_width) // 2)
+        popup_y = max(s(12), (active_height - popup_height) // 2)
 
         # Arka plan overlay
-        overlay = pygame.Surface((self.window_width, self.window_height), pygame.SRCALPHA)
+        overlay = pygame.Surface((active_width, active_height), pygame.SRCALPHA)
         overlay.fill((0, 0, 0, 200))
         self.screen.blit(overlay, (0, 0))
 
         # Dış glow
-        glow_rect = pygame.Rect(popup_x - 15, popup_y - 15, popup_width + 30, popup_height + 30)
+        glow_padding = s(15)
+        glow_rect = pygame.Rect(popup_x - glow_padding, popup_y - glow_padding, popup_width + glow_padding * 2, popup_height + glow_padding * 2)
         glow_surf = pygame.Surface((glow_rect.width, glow_rect.height), pygame.SRCALPHA)
-        pygame.draw.rect(glow_surf, (255, 200, 80, 40), glow_surf.get_rect(), border_radius=20)
+        pygame.draw.rect(glow_surf, (255, 200, 80, 40), glow_surf.get_rect(), border_radius=s(20))
         self.screen.blit(glow_surf, glow_rect.topleft)
 
         # Panel
         popup_rect = pygame.Rect(popup_x, popup_y, popup_width, popup_height)
+        self._card_workshop_popup_rect = popup_rect.copy()
         retro_style.draw_glass_panel(self.screen, popup_rect, alpha=240, border_color=(255, 200, 80), glow=True)
 
-        peek_btn_size = 36
-        peek_btn_x = popup_rect.right - peek_btn_size - 16
-        peek_btn_y = popup_rect.y + 14
+        peek_btn_size = s(36)
+        peek_btn_x = popup_rect.right - peek_btn_size - s(16)
+        peek_btn_y = popup_rect.y + s(14)
         self._card_workshop_peek_rect = pygame.Rect(peek_btn_x, peek_btn_y, peek_btn_size, peek_btn_size)
 
         mouse_pos = get_mouse_pos() if pygame.mouse.get_focused() else None
@@ -9224,82 +9245,141 @@ class MysteryMode(Game):
             icon_rect = peek_icon_surf.get_rect(center=self._card_workshop_peek_rect.center)
             self.screen.blit(peek_icon_surf, icon_rect)
         else:
-            fallback_font = retro_style.get_font(16, bold=True)
+            fallback_font = retro_style.get_font(s(16), bold=True)
             eye_surf = fallback_font.render("O", True, (116, 190, 255) if peek_hovered else (180, 180, 200))
             self.screen.blit(eye_surf, eye_surf.get_rect(center=self._card_workshop_peek_rect.center))
+
+        count_text = f"Blok: {self._card_workshop_count_blocks()}/7"
+        info_font = self.mystery_font_small
+        count_surf = info_font.render(count_text, True, (200, 200, 210))
+
+        msg_timer = getattr(self, '_card_workshop_message_timer', 0)
+        msg_surf = None
+        if msg_timer > 0:
+            msg = getattr(self, '_card_workshop_message', '')
+            msg_surf = info_font.render(msg, True, (255, 220, 100))
+
+        compact_controls = popup_height <= s(380) or popup_width <= s(360)
+        controls = [
+            "Yon tuslari: Hareket | SPACE: Yerlestir/Sil",
+            "ENTER: Tamamla | ESC: Iptal",
+            "Mouse: Sol tik yerlestir/sil",
+        ]
+        if compact_controls:
+            controls = [
+                "Yon: Hareket | SPACE: Yerlestir/Sil",
+                "ENTER: Tamamla | ESC: Iptal",
+                "Sol tik: Yerlestir/Sil",
+            ]
+        control_font = retro_style.get_font(s(14 if compact_controls else 15), bold=False)
+        control_surfs = [
+            control_font.render(line, True, (140, 140, 155))
+            for line in controls
+        ]
 
         # Başlık
         title_font = self.mystery_font_large
         title_surf = title_font.render("Blok Atolyesi", True, (255, 220, 100))
-        self.screen.blit(title_surf, (popup_x + (popup_width - title_surf.get_width()) // 2, popup_y + 12))
+        title_rect = title_surf.get_rect(centerx=popup_rect.centerx, top=popup_y + s(12))
+        self.screen.blit(title_surf, title_rect)
 
         # Ayırıcı çizgi
-        pygame.draw.line(self.screen, (255, 200, 80, 150), (popup_x + 20, popup_y + 48), (popup_x + popup_width - 20, popup_y + 48), 2)
+        separator_margin = s(20)
+        separator_y = max(title_rect.bottom + s(10), self._card_workshop_peek_rect.bottom + s(8))
+        min_separator_y = popup_y + s(48)
+        max_separator_y = popup_rect.bottom - max(s(110), len(control_surfs) * control_font.get_height() + s(52))
+        separator_y = max(min_separator_y, min(separator_y, max_separator_y))
+        pygame.draw.line(
+            self.screen,
+            (255, 200, 80, 150),
+            (popup_x + separator_margin, separator_y),
+            (popup_x + popup_width - separator_margin, separator_y),
+            max(1, s(2)),
+        )
+
+        info_gap = s(10)
+        message_gap = s(6)
+        controls_gap = s(12)
+        control_line_gap = s(5 if compact_controls else 7)
+        controls_total_height = sum(surf.get_height() for surf in control_surfs)
+        if control_surfs:
+            controls_total_height += control_line_gap * (len(control_surfs) - 1)
+        info_height = count_surf.get_height()
+        if msg_surf is not None:
+            info_height += message_gap + msg_surf.get_height()
 
         # Grid
-        cell_size = 48
+        grid_top = separator_y + s(14)
+        available_grid_height = popup_rect.bottom - s(14) - controls_total_height - controls_gap - info_height - info_gap - grid_top
+        available_grid_width = popup_rect.width - s(32)
+        cell_size = max(1, min(s(48), available_grid_height // 7, available_grid_width // 7))
         grid_width = 7 * cell_size
         grid_x = popup_x + (popup_width - grid_width) // 2
-        grid_y = popup_y + 60
+        grid_y = grid_top
         self._card_workshop_grid_rect = pygame.Rect(grid_x, grid_y, grid_width, grid_width)
 
         # Grid arka planı
-        grid_bg = pygame.Surface((grid_width + 4, grid_width + 4), pygame.SRCALPHA)
-        pygame.draw.rect(grid_bg, (20, 20, 30, 200), grid_bg.get_rect(), border_radius=8)
-        self.screen.blit(grid_bg, (grid_x - 2, grid_y - 2))
+        grid_padding = s(2)
+        grid_bg = pygame.Surface((grid_width + grid_padding * 2, grid_width + grid_padding * 2), pygame.SRCALPHA)
+        pygame.draw.rect(grid_bg, (20, 20, 30, 200), grid_bg.get_rect(), border_radius=s(8))
+        self.screen.blit(grid_bg, (grid_x - grid_padding, grid_y - grid_padding))
 
         # Hücreleri çiz
         for gy in range(7):
             for gx in range(7):
                 cx = grid_x + gx * cell_size
                 cy = grid_y + gy * cell_size
-                cell_rect = pygame.Rect(cx, cy, cell_size - 1, cell_size - 1)
+                cell_rect = pygame.Rect(cx, cy, max(1, cell_size - 1), max(1, cell_size - 1))
 
                 if self._card_workshop_grid[gy][gx] is not None:
                     color = self._card_workshop_grid[gy][gx]['color']
-                    pygame.draw.rect(self.screen, color, cell_rect, border_radius=4)
+                    pygame.draw.rect(self.screen, color, cell_rect, border_radius=s(4))
                     # 3D efekt
                     lighter = tuple(min(255, int(c * 1.4)) for c in color[:3])
                     darker = tuple(max(0, int(c * 0.4)) for c in color[:3])
-                    pygame.draw.line(self.screen, lighter, (cx, cy), (cx + cell_size - 2, cy), 2)
-                    pygame.draw.line(self.screen, lighter, (cx, cy), (cx, cy + cell_size - 2), 2)
-                    pygame.draw.line(self.screen, darker, (cx + 1, cy + cell_size - 2), (cx + cell_size - 2, cy + cell_size - 2), 2)
-                    pygame.draw.line(self.screen, darker, (cx + cell_size - 2, cy + 1), (cx + cell_size - 2, cy + cell_size - 2), 2)
+                    line_width = max(1, s(2))
+                    pygame.draw.line(self.screen, lighter, (cx, cy), (cx + cell_size - 2, cy), line_width)
+                    pygame.draw.line(self.screen, lighter, (cx, cy), (cx, cy + cell_size - 2), line_width)
+                    pygame.draw.line(self.screen, darker, (cx + 1, cy + cell_size - 2), (cx + cell_size - 2, cy + cell_size - 2), line_width)
+                    pygame.draw.line(self.screen, darker, (cx + cell_size - 2, cy + 1), (cx + cell_size - 2, cy + cell_size - 2), line_width)
                 else:
-                    pygame.draw.rect(self.screen, (40, 40, 50), cell_rect, border_radius=2)
-                    pygame.draw.rect(self.screen, (60, 60, 70), cell_rect, width=1, border_radius=2)
+                    pygame.draw.rect(self.screen, (40, 40, 50), cell_rect, border_radius=s(2))
+                    pygame.draw.rect(self.screen, (60, 60, 70), cell_rect, width=1, border_radius=s(2))
 
                 # Cursor
                 if gx == self._card_workshop_cursor_x and gy == self._card_workshop_cursor_y:
-                    pygame.draw.rect(self.screen, (255, 255, 255), cell_rect, width=2, border_radius=4)
+                    pygame.draw.rect(self.screen, (255, 255, 255), cell_rect, width=max(1, s(2)), border_radius=s(4))
 
         # Bilgi alanı
-        info_y = grid_y + grid_width + 12
-        block_count = self._card_workshop_count_blocks()
-        info_font = self.mystery_font_small
-        
-        # Blok sayısı
-        count_text = f"Blok: {block_count}/7"
-        count_surf = info_font.render(count_text, True, (200, 200, 210))
-        self.screen.blit(count_surf, (popup_x + 20, info_y))
+        info_y = grid_y + grid_width + info_gap
+        count_rect = count_surf.get_rect(topleft=(popup_x + s(20), info_y))
+        self.screen.blit(count_surf, count_rect)
 
-        # Mesaj
-        msg_timer = getattr(self, '_card_workshop_message_timer', 0)
-        if msg_timer > 0:
-            msg = getattr(self, '_card_workshop_message', '')
-            msg_surf = info_font.render(msg, True, (255, 220, 100))
-            self.screen.blit(msg_surf, (popup_x + (popup_width - msg_surf.get_width()) // 2, info_y + 30))
+        info_bottom = count_rect.bottom
+        if msg_surf is not None:
+            msg_rect = msg_surf.get_rect(midtop=(popup_rect.centerx, count_rect.bottom + message_gap))
+            self.screen.blit(msg_surf, msg_rect)
+            info_bottom = max(info_bottom, msg_rect.bottom)
+        self._card_workshop_info_rect = pygame.Rect(
+            popup_x + s(20),
+            info_y,
+            popup_width - s(40),
+            max(1, info_bottom - info_y),
+        )
 
         # Kontroller
-        controls_y = info_y + 60
-        controls = [
-            "Yön tuslari: Hareket | SPACE: Yerlestir/Sil",
-            "ENTER: Tamamla | ESC: Iptal",
-            "Mouse: Sol tik yerlestir/sil",
-        ]
-        for i, line in enumerate(controls):
-            ctrl_surf = info_font.render(line, True, (140, 140, 155))
-            self.screen.blit(ctrl_surf, (popup_x + (popup_width - ctrl_surf.get_width()) // 2, controls_y + i * 20))
+        controls_y = popup_rect.bottom - s(14) - controls_total_height
+        self._card_workshop_controls_rect = pygame.Rect(
+            popup_x + s(16),
+            controls_y,
+            popup_width - s(32),
+            max(1, controls_total_height),
+        )
+        control_y = controls_y
+        for ctrl_surf in control_surfs:
+            ctrl_rect = ctrl_surf.get_rect(center=(popup_rect.centerx, control_y + ctrl_surf.get_height() // 2))
+            self.screen.blit(ctrl_surf, ctrl_rect)
+            control_y += ctrl_surf.get_height() + control_line_gap
 
     # === RENK TEMİZLEME KARTI METODU ===
 
@@ -9448,6 +9528,12 @@ class MysteryMode(Game):
         """Parça seçim popup'ını çizer."""
         if not getattr(self, '_piece_selection_active', False):
             return
+
+        active_width, active_height = self._active_ui_size()
+        ui_scale = self._card_ui_scale()
+
+        def s(value: int) -> int:
+            return max(1, int(round(value * ui_scale)))
         
         # Mouse'u görünür yap (her frame'de)
         pygame.mouse.set_visible(True)
@@ -9456,24 +9542,26 @@ class MysteryMode(Game):
         piece_names = ['I', 'O', 'T', 'S', 'Z', 'J', 'L']
         
         # Popup boyutları (daha büyük)
-        popup_width = 700
-        popup_height = 220
-        popup_x = (self.window_width - popup_width) // 2
-        popup_y = (self.window_height - popup_height) // 2
+        popup_width = min(s(700), max(s(480), active_width - s(24)))
+        popup_height = min(s(220), max(s(180), active_height - s(24)))
+        popup_x = max(s(12), (active_width - popup_width) // 2)
+        popup_y = max(s(12), (active_height - popup_height) // 2)
         
         # Arka plan overlay - daha koyu
-        overlay = pygame.Surface((self.window_width, self.window_height), pygame.SRCALPHA)
+        overlay = pygame.Surface((active_width, active_height), pygame.SRCALPHA)
         overlay.fill((0, 0, 0, 200))
         self.screen.blit(overlay, (0, 0))
         
         # Dış glow efekti
-        glow_rect = pygame.Rect(popup_x - 15, popup_y - 15, popup_width + 30, popup_height + 30)
+        glow_padding = s(15)
+        glow_rect = pygame.Rect(popup_x - glow_padding, popup_y - glow_padding, popup_width + glow_padding * 2, popup_height + glow_padding * 2)
         glow_surf = pygame.Surface((glow_rect.width, glow_rect.height), pygame.SRCALPHA)
-        pygame.draw.rect(glow_surf, (180, 100, 255, 40), glow_surf.get_rect(), border_radius=20)
+        pygame.draw.rect(glow_surf, (180, 100, 255, 40), glow_surf.get_rect(), border_radius=s(20))
         self.screen.blit(glow_surf, glow_rect.topleft)
         
         # Popup paneli
         popup_rect = pygame.Rect(popup_x, popup_y, popup_width, popup_height)
+        self._piece_selection_popup_rect = popup_rect.copy()
         retro_style.draw_glass_panel(
             self.screen,
             popup_rect,
@@ -9483,8 +9571,8 @@ class MysteryMode(Game):
         )
         
         # Üst dekoratif çizgi
-        line_y = popup_y + 50
-        pygame.draw.line(self.screen, (180, 100, 255, 150), (popup_x + 30, line_y), (popup_x + popup_width - 30, line_y), 2)
+        line_y = popup_y + s(50)
+        pygame.draw.line(self.screen, (180, 100, 255, 150), (popup_x + s(30), line_y), (popup_x + popup_width - s(30), line_y), max(1, s(2)))
         
         # Başlık - hangi sıradaki parçayı seçtiğini göster
         target_idx = getattr(self, '_future_changer_target_index', 0)
@@ -9492,14 +9580,14 @@ class MysteryMode(Game):
         title_text = f"{target_idx + 1}. Sıradaki Parçayı Seç"
         title_surf = title_font.render(title_text, True, (255, 255, 255))
         title_x = popup_x + (popup_width - title_surf.get_width()) // 2
-        self.screen.blit(title_surf, (title_x, popup_y + 12))
+        self.screen.blit(title_surf, (title_x, popup_y + s(12)))
         
         # Parça butonları (daha büyük)
-        button_size = 80
-        button_spacing = 18
+        button_size = s(80)
+        button_spacing = s(18)
         total_buttons_width = len(piece_names) * button_size + (len(piece_names) - 1) * button_spacing
         start_x = popup_x + (popup_width - total_buttons_width) // 2
-        button_y = popup_y + 65
+        button_y = popup_y + s(65)
         
         mouse_pos = get_mouse_pos() if pygame.mouse.get_focused() else None
         self._piece_selection_rects = []
@@ -9525,28 +9613,28 @@ class MysteryMode(Game):
             
             # Hover'da glow efekti
             if hovered:
-                glow_surf = pygame.Surface((button_size + 16, button_size + 16), pygame.SRCALPHA)
-                pygame.draw.rect(glow_surf, (180, 100, 255, 80), glow_surf.get_rect(), border_radius=14)
-                self.screen.blit(glow_surf, (btn_x - 8, button_y - 8))
+                glow_surf = pygame.Surface((button_size + s(16), button_size + s(16)), pygame.SRCALPHA)
+                pygame.draw.rect(glow_surf, (180, 100, 255, 80), glow_surf.get_rect(), border_radius=s(14))
+                self.screen.blit(glow_surf, (btn_x - s(8), button_y - s(8)))
                 # İç border
-                pygame.draw.rect(self.screen, (200, 150, 255), btn_rect, 2, border_radius=12)
+                pygame.draw.rect(self.screen, (200, 150, 255), btn_rect, max(1, s(2)), border_radius=s(12))
             else:
                 # Normal border
-                pygame.draw.rect(self.screen, (80, 60, 100), btn_rect, 1, border_radius=12)
+                pygame.draw.rect(self.screen, (80, 60, 100), btn_rect, 1, border_radius=s(12))
             
             # Parça şeklini oyun içi bloklarla çiz
             self._draw_game_piece_preview(btn_rect, name, hovered)
         
         # Alt dekoratif çizgi
-        line_y2 = popup_y + popup_height - 40
-        pygame.draw.line(self.screen, (180, 100, 255, 100), (popup_x + 30, line_y2), (popup_x + popup_width - 30, line_y2), 1)
+        line_y2 = popup_y + popup_height - s(40)
+        pygame.draw.line(self.screen, (180, 100, 255, 100), (popup_x + s(30), line_y2), (popup_x + popup_width - s(30), line_y2), 1)
         
         # İptal butonu - daha şık
         cancel_font = self.mystery_font_small
         cancel_text = "ESC: Iptal"
         cancel_surf = cancel_font.render(cancel_text, True, (150, 130, 170))
         cancel_x = popup_x + (popup_width - cancel_surf.get_width()) // 2
-        self.screen.blit(cancel_surf, (cancel_x, popup_y + popup_height - 30))
+        self.screen.blit(cancel_surf, (cancel_x, popup_y + popup_height - s(30)))
 
     def _draw_game_piece_preview(self, rect: pygame.Rect, piece_name: str, hovered: bool = False) -> None:
         """Oyun içi blok stilini kullanarak parça önizlemesi çizer."""

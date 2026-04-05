@@ -191,7 +191,8 @@ class SurvivalMode(Game):
         print(f"🏆 SURVIVAL KAZANILDI! Bonus: {bonus} puan")
         
         if self.effects_enabled:
-            cx, cy = self.window_width // 2, self.window_height // 2
+            active_width, active_height = self._active_ui_size()
+            cx, cy = active_width // 2, active_height // 2
             self.create_particles(200, cx, cy, 
                 [(255, 215, 0), (255, 200, 40), (0, 255, 221), (255, 255, 255)], speed=12)
         
@@ -216,7 +217,8 @@ class SurvivalMode(Game):
         print(f"☠️ VİRÜS GALİP! {self.consumed_count} blok yenildi.")
         
         if self.effects_enabled:
-            cx, cy = self.window_width // 2, self.window_height // 2
+            active_width, active_height = self._active_ui_size()
+            cx, cy = active_width // 2, active_height // 2
             self.create_particles(100, cx, cy, 
                 [(255, 50, 50), (100, 0, 0), (50, 150, 50)], speed=8)
         
@@ -672,6 +674,7 @@ class SurvivalMode(Game):
             return
         
         from retro_style import retro_style
+        active_width, active_height = self._active_ui_size()
         
         cell_size = self.get_cell_size()
         offset_x, offset_y = self.get_board_offset()
@@ -680,7 +683,7 @@ class SurvivalMode(Game):
         # Antivirus flash efekti
         if self.antivirus_flash > 0:
             flash_alpha = int(100 * (self.antivirus_flash / 500))
-            flash_surf = pygame.Surface((self.window_width, self.window_height), pygame.SRCALPHA)
+            flash_surf = pygame.Surface((active_width, active_height), pygame.SRCALPHA)
             flash_surf.fill((100, 255, 100, flash_alpha))
             self.screen.blit(flash_surf, (0, 0))
         
@@ -735,10 +738,11 @@ class SurvivalMode(Game):
         ui_scale = self._survival_panel_scale()
         s = lambda v, minimum=1: max(minimum, int(round(v * ui_scale)))
         f = lambda size, bold=False, minimum=9: retro_style.get_font(max(minimum, s(size)), bold=bold)
+        active_width, active_height = self._active_ui_size()
         
         # Panel boyutları - BÜYÜTÜLDÜ
-        panel_w = s(260)
-        panel_h = s(390)
+        panel_w = min(s(260), max(s(220), int(active_width) - s(24)))
+        panel_h = min(s(390), max(s(300), int(active_height) - s(24)))
         
         # Board konumunu al
         board_x, board_y = self.get_board_offset()
@@ -748,9 +752,12 @@ class SurvivalMode(Game):
         panel_x = board_x - panel_w - s(15)
         # Üst kenarı board ile aynı hizada
         panel_y = board_y
+        panel_x = max(s(8), min(panel_x, int(active_width) - panel_w - s(8)))
+        panel_y = max(s(8), min(panel_y, int(active_height) - panel_h - s(8)))
         
         # === ANA PANEL ===
         panel_rect = pygame.Rect(panel_x, panel_y, panel_w, panel_h)
+        self._survival_panel_rect = panel_rect
         
         # Tehlike seviyesine göre border rengi ve glow
         danger_ratio = self.consumed_count / self.MAX_CONSUMED
@@ -2113,7 +2120,8 @@ class DailyChallengeMode(Game):
             return
         super().draw_mode_overlay()
         if self.fog_overlay and not self.game_over:
-            fog = pygame.Surface((self.window_width, self.window_height), pygame.SRCALPHA)
+            active_width, active_height = self._active_ui_size()
+            fog = pygame.Surface((active_width, active_height), pygame.SRCALPHA)
             fog.fill((10, 12, 30, 110))
             self.screen.blit(fog, (0, 0))
 

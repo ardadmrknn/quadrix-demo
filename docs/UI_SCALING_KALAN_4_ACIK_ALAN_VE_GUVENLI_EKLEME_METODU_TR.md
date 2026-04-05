@@ -1,14 +1,14 @@
 # UI Scaling Kalan 4 Acik Alan ve Guvenli Ekleme Metodu
 
 Tarih: 2026-04-05
-Durum: Repo snapshot'ina gore acik kalan UI scaling alanlari; Faz 8 helper/tutorial migration'i audit hardening ile dogrulandi ve kalan is daha dar iki zincirde toplandi
+Durum: Repo snapshot'ina gore Faz 8 gameplay overlay lane'i bagimsiz audit revizyonu tamamlanarak kapatildi; bu not artik kapanis referansi olarak tutulur
 Kapsam: Campaign popup/HUD, gameplay overlay ve popup kopru yuzeyleri
 
 ## ÖNEMLİ REF.
 
 bu dosya incelenirken "plans\2026-03-09-non-main-menu-ui-scaling-plan.md" kaynak dosyası da incelenmelidir
 
-## GUNCELLEME (2026-04-05 / Faz 8 helper + tutorial modal + audit hardening)
+## GUNCELLEME (2026-04-05 / Faz 8 kapanis revizyonu)
 
 - `src/campaign/campaign_ui.py` icindeki campaign modal/popup ailesi ortak modal scale yardimcisina tasinmisti.
 - `src/campaign/campaign_mode.py` icindeki campaign yan panel/HUD ailesi de ortak content scale yardimcisina tasindi.
@@ -16,11 +16,20 @@ bu dosya incelenirken "plans\2026-03-09-non-main-menu-ui-scaling-plan.md" kaynak
 - Audit turunda `src/game.py` icindeki pause menu, sag HUD ve game-over overlay anchor/cache zinciri aktif canvas boyutuna hizalandi; stale `window_width/window_height` kullanan cizim yolu kapatildi.
 - `src/game_modes_extra.py` icinde canli `MysteryMode` kart UI scale/font yolu aktif canvas + sabit `1366x768` baseline'a cekildi; fullscreen/native referans geri sismesi kapatildi.
 - `src/tutorial.py` icindeki tutorial overlay, tip paneli, hub, lesson-result paneli ve kart secim font paketi ortak aktif-canvas modal scale wrapper'ina tasindi; tutorial kart overlay'i sabit `1366x768` baseline'a sabitlendi ve resize akisi olusturulan surface boyutunu geri okuyacak sekilde senkronlandi.
-- Bu dokumandaki lane siniflandirmasinda ilk 2 lane kapanmis, 3. lane helper + canli anchor katmaninda stabilize edilmis, 4. lane'de tutorial scale kaynagi ve resize senkronu kapanmis durumdadir.
-- Aktif kalan acik alanlar artik sunlardir:
-  1. Gameplay overlay ve mod panel ailesinde layout/popup sabitlerinin tek tek tasinmasi
-  2. Popup kopru ailesinde `src/main.py` fullscreen popup zinciri ve gerekiyorsa tutorial callout mikro layout polish'i
-- Regression kilitleri olarak `tests/test_phase6_campaign_modal_ui_scaling.py`, `tests/test_phase7_campaign_hud_ui_scaling.py`, `tests/test_phase8_overlay_ui_scaling.py` ve `tests/test_phase8_tutorial_ui_scaling.py` mevcuttur; genisletilmis Faz 8 audit paketi `88 passed`, capraz Faz 3-8 + ESC/pause paketi `154 passed` ile dogrulanmistir.
+- `src/main.py` icindeki mode intro, zen start ve tutorial prompt popup zinciri ortak fullscreen popup scale wrapper'i + aktif surface backdrop senkronu ile sertlestirildi.
+- Capraz-faz audit turunda `src/main.py` popup loop'lari recover edilen display surface'i ana `screen` referansina geri senkronlar hale getirildi; `_apply_screen(...)` zinciri `campaign_level_select`, `guide_screen` ve online PvP oyun nesnesini de kapsayacak sekilde genisletildi.
+- `src/game.py` icinde geometri helper'lari, combo/milestone/achievement konumlari ve ambient/confetti/firework varsayilanlari aktif canvas boyutuna hizalandi.
+- `src/game_modes.py` icindeki `HardcoreMode._draw_right_hud_panel(...)` override'i aktif canvas boyutuna hizalandi; stale `window_width/window_height` ile kuculen sag panel ve mode-info alan zinciri kapatildi.
+- `src/game_modes_advanced.py` icinde Survival panel rect'i aktif canvas icinde clamp'lendi; antivirus flash, victory/game-over partikulleri ve Daily fog overlay'i de aktif canvas boyutuna hizalandi.
+- `src/game_modes_extra.py` icinde Mystery board geometri helper'lari, active-cards/perk panel fallback'leri, Sniper dim overlay + instruction paneli, kart atolyesi / parca secim popup'lari ve kart efekt partikullerinin merkezi aktif canvas + mevcut board helper akışina hizalandi.
+- Bagimsiz audit revizyonunda `src/game_modes_extra.py` icindeki minimum `800x600` Mystery workshop popup tasmasi kapatildi; popup yuksekligi tek basina clamp'lenmek yerine grid + bilgi + kontrol alanlari ortak yukseklik butcesinden turetilir hale getirildi.
+- `src/game_modes.py` icinde Zen mode satir temizleme ve auto-clear partikullerinin merkezleri aktif canvas boyutuna cekildi.
+- `src/tutorial.py` icinde tutorial başarı kutlama partikulleri aktif canvas merkezine tasindi.
+- `tests/test_phase8_main_popup_ui_scaling.py` icinde mode intro / zen start / tutorial prompt popup loop'lari recover edilmis aktif surface uzerinde smoke test ile kapsandi.
+- `tests/test_phase8_tutorial_ui_scaling.py` icinde tutorial overlay+tip paneli, hub, kart secim fallback'i ve lesson-result paneli canli draw rect'leri aktif canvas sinirlariyla kilitlendi.
+- Faz 6-8 UI scaling test stub'lari gercek `pygame.font.Font` ve kirlenebilir `retro_style` import zincirine bagimli olmaktan cikarildi; tam pytest icinde order-dependent test kirilmalari kapatildi.
+- Bu dokumandaki gameplay overlay lane'i kapanmistir; tutorial callout mikro polish'i ancak ileride bagimsiz bir polish istegi olursa ele alinmalidir, Faz 8 blocker'i degildir.
+- Regression kilitleri olarak `tests/test_phase6_campaign_modal_ui_scaling.py`, `tests/test_phase7_campaign_hud_ui_scaling.py`, `tests/test_phase8_overlay_ui_scaling.py`, `tests/test_phase8_tutorial_ui_scaling.py` ve `tests/test_phase8_main_popup_ui_scaling.py` mevcuttur; Faz 6-8 birlesik UI scaling paketi `55 passed`, capraz Faz 3-8 + ESC/pause paketi `87 passed`, tam pytest paketi `563 passed, 6 skipped` ile dogrulanmistir.
 - Audit notu: campaign fail ekraninin aktif runtime cizimi `src/campaign/campaign_mode.py` icindeki game-over overlay zincirinden gelir; `src/campaign/campaign_ui.py` fail overlay'i uyumluluk/test yolu olarak kalir.
 
 ## 1. Amac
@@ -157,9 +166,8 @@ Bu bolunme, mevcut davranisi korurken degisikligin etki alanini daraltir.
 
 ### Mevcut risk
 
-- Ortak helper'a gecis helper ve canli anchor katmaninda yapildi, ancak mod-bazli layout/popup sabitleri hala dosya icinde parcali duruyor.
-- Buyumeyi 1.0'da kilitleyen ana helper omurgasi temizlendi; kalan risk sabit popup/panel olculerinin modlara gore ayri akislarda yasamasi.
-- Fazla sayida popup ve overlay ayni aileye bagli; tek hamlede degistirmek hala yuksek regresyon riski tasir.
+- Gameplay overlay lane'i icin aktif stale-metric riski ve minimum workshop popup icerik tasmasi kapatildi.
+- Kalan risk artik Faz 8 blocker'i degil; gelecekte yeni mod/popup eklenirse ayni aktif-canvas otoritesi ve icerik-yukseklik butcesi korunmalidir.
 
 ### Guvenli ekleme metodu
 
@@ -202,7 +210,7 @@ Bu bolunme, mevcut davranisi korurken degisikligin etki alanini daraltir.
 ### Mevcut risk
 
 - Bu yuzeyler bazen gameplay ile menu arasinda kopru gorevi goruyor.
-- Tutorial tarafinda temel scale kaynagi ve resize senkronu kapanmis olsa da `src/main.py` popup kopru geometrisi ve tutorial callout mikro layoutlari hala hassas.
+- `src/main.py` popup kopru geometrisi ortak scale ve aktif surface backdrop zincirine alinmis olsa da tutorial callout mikro layoutlari hala hassas olabilir.
 - Buradaki geometri, sadece cizim degil, event rect ve akis baslatma mantigina da dokundugu icin Faz 8'in geri kalanindan ayri ele alinmali.
 
 ### Guvenli ekleme metodu
@@ -217,7 +225,7 @@ Bu bolunme, mevcut davranisi korurken degisikligin etki alanini daraltir.
 
 - Main popup helper'larini compatibility wrapper olarak tut.
 - Tutorial tarafinda sadece scale kaynaginin merkezilesmesini yap; step state ve animation matematiklerini elleme.
-- Bu aile en sona kalmali; once campaign ve gameplay panel aileleri stabilize edilmeli.
+- Bu ailede `src/main.py` popup bridge zinciri kapandi; kalan tutorial/callout mikro polish'i en sona kalmali.
 
 ### Ilk dogrulama kapisi
 

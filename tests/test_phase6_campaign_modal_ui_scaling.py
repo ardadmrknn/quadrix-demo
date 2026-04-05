@@ -17,10 +17,33 @@ if str(SRC_DIR) not in sys.path:
 from campaign import campaign_ui
 
 
-def _install_modal_test_stubs(monkeypatch, *, with_retro: bool = True):
-    pygame.font.init()
+class _FakeFont:
+    def __init__(self, size: int):
+        self._size = max(1, int(size))
 
-    monkeypatch.setattr(campaign_ui.UIFonts, 'get', lambda size: pygame.font.Font(None, max(1, int(size))))
+    def render(self, text, antialias, color):
+        width, height = self.size(text)
+        surface = pygame.Surface((width, height), pygame.SRCALPHA)
+        rgb = tuple(color[:3]) if isinstance(color, tuple) else (255, 255, 255)
+        surface.fill((*rgb, 255))
+        return surface
+
+    def size(self, text):
+        return max(1, int(len(str(text or '')) * self._size * 0.55)), self.get_height()
+
+    def get_height(self):
+        return self._size
+
+    def get_linesize(self):
+        return self._size
+
+
+def _make_fake_font(size: int, bold: bool = False):
+    return _FakeFont(size)
+
+
+def _install_modal_test_stubs(monkeypatch, *, with_retro: bool = True):
+    monkeypatch.setattr(campaign_ui.UIFonts, 'get', lambda size: _make_fake_font(size))
     monkeypatch.setattr(campaign_ui, 't', lambda key, *args, **kwargs: key)
     monkeypatch.setattr(campaign_ui, 'get_mouse_pos', lambda: (0, 0))
 
@@ -44,7 +67,7 @@ def _install_modal_test_stubs(monkeypatch, *, with_retro: bool = True):
                 1,
                 border_radius=8,
             ),
-            get_font=lambda size, bold=False: pygame.font.Font(None, max(1, int(size))),
+            get_font=lambda size, bold=False: _make_fake_font(size, bold=bold),
         )
     monkeypatch.setitem(sys.modules, 'retro_style', retro_style_stub)
 

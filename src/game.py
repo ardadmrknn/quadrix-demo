@@ -1331,8 +1331,9 @@ class Game:
     
     def update_fonts(self):
         """Pencere boyutuna göre fontları güncelle"""
-        scale = min(self.window_width / DEFAULT_WINDOW_WIDTH, 
-                   self.window_height / DEFAULT_WINDOW_HEIGHT)
+        active_width, active_height = self._active_ui_size()
+        scale = min(active_width / DEFAULT_WINDOW_WIDTH, 
+                   active_height / DEFAULT_WINDOW_HEIGHT)
         self.font_large = UIFonts.get(int(FONT_SIZE_LARGE * scale))
         self.font_medium = UIFonts.get(int(FONT_SIZE_MEDIUM * scale))
         self.font_small = UIFonts.get(int(FONT_SIZE_SMALL * scale))
@@ -1340,11 +1341,12 @@ class Game:
     def get_cell_size(self):
         """Pencere boyutuna göre hücre boyutunu hesapla - CACHE'LENMİŞ"""
         # Cache kontrolü
-        current_size = (self.window_width, self.window_height)
+        current_size = self._active_ui_size()
         if not hasattr(self, '_cached_cell_size_key') or self._cached_cell_size_key != current_size:
+            active_width, active_height = current_size
             # Tahta için kullanılabilir alan
-            board_area_width = int(self.window_width) - SIDE_PANEL_WIDTH
-            board_area_height = int(self.window_height) - INFO_PANEL_HEIGHT
+            board_area_width = int(active_width) - SIDE_PANEL_WIDTH
+            board_area_height = int(active_height) - INFO_PANEL_HEIGHT
             
             # Her iki boyuta göre en uygun hücre boyutunu seç
             cell_width = board_area_width // self.board_width  # Dinamik genişlik
@@ -1358,14 +1360,15 @@ class Game:
     def get_board_offset(self):
         """Tahtanın ekrandaki pozisyonunu hesapla (ortalamak için) - CACHE'LENMİŞ"""
         # Cache kontrolü
-        current_size = (self.window_width, self.window_height)
+        current_size = self._active_ui_size()
         if not hasattr(self, '_cached_offset_key') or self._cached_offset_key != current_size:
+            active_width, active_height = current_size
             cell_size = self.get_cell_size()
             board_width = self.board_width * cell_size  # Dinamik genişlik
             board_height = self.board_height * cell_size  # Dinamik yükseklik
             
-            offset_x = (int(self.window_width) - SIDE_PANEL_WIDTH - board_width) // 2
-            offset_y = (int(self.window_height) - board_height) // 2 - 25  # Biraz yukarı taşı
+            offset_x = (int(active_width) - SIDE_PANEL_WIDTH - board_width) // 2
+            offset_y = (int(active_height) - board_height) // 2 - 25  # Biraz yukarı taşı
             
             self._cached_offset = (offset_x, offset_y)
             self._cached_offset_key = current_size
@@ -2100,10 +2103,11 @@ class Game:
         adjusted_count = max(1, int(count * mult))
         
         # Varsayılan konum
+        active_width, active_height = self._active_ui_size()
         if x is None:
-            x = random.randint(0, self.window_width)
+            x = random.randint(0, active_width)
         if y is None:
-            y = random.randint(0, self.window_height // 2)
+            y = random.randint(0, active_height // 2)
         
         # Varsayılan renkler
         if colors is None:
@@ -2827,10 +2831,11 @@ class Game:
             return
         
         # Ekranın farklı noktalarında 3-5 havai fişek
+        active_width, active_height = self._active_ui_size()
         firework_count = random.randint(3, 5)
         for _ in range(firework_count):
-            x = random.randint(self.window_width // 4, 3 * self.window_width // 4)
-            y = random.randint(self.window_height // 4, 2 * self.window_height // 3)
+            x = random.randint(active_width // 4, 3 * active_width // 4)
+            y = random.randint(active_height // 4, 2 * active_height // 3)
             self.create_firework(x, y)
     
     def update_particles(self, dt_ms: float | None = None):
@@ -2893,11 +2898,12 @@ class Game:
         # Animasyon seviyesine göre parçacık sayısı
         base_count = random.randint(50, 100)
         count = int(base_count * getattr(self, 'animation_multiplier', 1.0))
+        active_width, active_height = self._active_ui_size()
         
         for _ in range(count):
             particle = {
-                'x': random.uniform(0, self.window_width),
-                'y': random.uniform(0, self.window_height),
+                'x': random.uniform(0, active_width),
+                'y': random.uniform(0, active_height),
                 'vx': random.uniform(-0.5, 0.5),
                 'vy': random.uniform(0.2, 0.8),  # Yavaşça aşağı düşer
                 'size': random.randint(1, 3),
@@ -2974,6 +2980,7 @@ class Game:
             dt = 16.666
         dt = max(0.0, min(100.0, dt))
         dt_frames = dt / 16.666
+        active_width, active_height = self._active_ui_size()
 
         for particle in self.ambient_particles:
             # Hareket
@@ -2984,14 +2991,14 @@ class Game:
             particle['pulse'] += particle['pulse_speed'] * dt_frames
             
             # Ekran dışına çıktıysa yukarıdan tekrar başlat
-            if particle['y'] > self.window_height:
+            if particle['y'] > active_height:
                 particle['y'] = -10
-                particle['x'] = random.uniform(0, self.window_width)
+                particle['x'] = random.uniform(0, active_width)
             
             # Yanlara çıktıysa
             if particle['x'] < -10:
-                particle['x'] = self.window_width + 10
-            elif particle['x'] > self.window_width + 10:
+                particle['x'] = active_width + 10
+            elif particle['x'] > active_width + 10:
                 particle['x'] = -10
     
     def draw_ambient_particles(self):
@@ -3282,8 +3289,9 @@ class Game:
                 # Quadrix için ekstra görkemli parçacıklar
                 if self.effects_enabled:
                     # Ekranın ortasından altın renkli patlama
-                    center_x = self.window_width // 2
-                    center_y = self.window_height // 2
+                    active_width, active_height = self._active_ui_size()
+                    center_x = active_width // 2
+                    center_y = active_height // 2
                     self.create_particles(
                         count=150,
                         x=center_x,
@@ -3316,8 +3324,9 @@ class Game:
                 
                 # Çoklu satır için renkli parçacıklar
                 if self.effects_enabled:
-                    center_x = self.window_width // 2
-                    center_y = self.window_height // 2
+                    active_width, active_height = self._active_ui_size()
+                    center_x = active_width // 2
+                    center_y = active_height // 2
                     self.create_particles(
                         count=50 * lines_cleared,
                         x=center_x,
@@ -4361,9 +4370,10 @@ class Game:
             
             # Daha büyük font
             combo_font = UIFonts.get(int(self.font_large.get_height() * 1.2), bold=True)
+            active_width, _ = self._active_ui_size()
             
             combo_surf = combo_font.render(msg, True, msg_color)
-            combo_rect = combo_surf.get_rect(center=(self.window_width // 2, 35))
+            combo_rect = combo_surf.get_rect(center=(active_width // 2, 35))
             
             # Fade-out alpha uygula
             if alpha < 255:
@@ -4371,7 +4381,7 @@ class Game:
             
             # Gölge (koyu renk)
             shadow = combo_font.render(msg, True, (0, 0, 0))
-            shadow_rect = shadow.get_rect(center=(self.window_width // 2 + 3, 38))
+            shadow_rect = shadow.get_rect(center=(active_width // 2 + 3, 38))
             if alpha < 255:
                 shadow.set_alpha(alpha)
             self.screen.blit(shadow, shadow_rect)
@@ -4422,7 +4432,8 @@ class Game:
             # Animasyonlu panel boyutu
             animated_w = int(panel_width * scale_factor)
             animated_h = int(panel_height * scale_factor)
-            animated_x = (self.window_width - animated_w) // 2
+            active_width, _ = self._active_ui_size()
+            animated_x = (active_width - animated_w) // 2
             animated_y = 50  # YUKARIDA - daha üstte
             
             panel_rect = pygame.Rect(animated_x, animated_y, animated_w, animated_h)
@@ -5331,7 +5342,8 @@ class Game:
             # Bildirim kutusu
             box_width = 392
             box_height = 104
-            box_x = self.window_width - box_width - 20
+            active_width, _ = self._active_ui_size()
+            box_x = active_width - box_width - 20
             box_y = y_offset
 
             # Yumuşak giriş animasyonu (ilk 300ms)
@@ -5515,8 +5527,9 @@ class Game:
 
         capacity = max(0, 200 - len(self._confetti_particles))
         emit_count = min(emit_count, capacity)
+        active_width, active_height = self._active_ui_size()
         for _ in range(emit_count):
-            x = random.randint(0, self.window_width)
+            x = random.randint(0, active_width)
             particle = {
                 'x': float(x),
                 'y': float(-10),
@@ -5549,7 +5562,7 @@ class Game:
             p['life'] = float(p.get('life', 0.0)) - dt_frames
 
             # Ekran dışına çıktı veya öldü
-            if p['y'] > self.window_height + 20 or p['life'] <= 0:
+            if p['y'] > active_height + 20 or p['life'] <= 0:
                 self._confetti_particles.remove(p)
     
     def _draw_confetti(self):

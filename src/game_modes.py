@@ -783,8 +783,9 @@ class ZenMode(Game):
                 
                 # Ekstra parçacıklar
                 if self.effects_enabled:
-                    center_x = self.window_width // 2
-                    center_y = self.window_height // 2
+                    active_width, active_height = self._active_ui_size()
+                    center_x = active_width // 2
+                    center_y = active_height // 2
                     self.create_particles(
                         count=150,
                         x=center_x,
@@ -816,8 +817,9 @@ class ZenMode(Game):
                     pass
                 # Çoklu satır için renkli parçacıklar
                 if self.effects_enabled:
-                    center_x = self.window_width // 2
-                    center_y = self.window_height // 2
+                    active_width, active_height = self._active_ui_size()
+                    center_x = active_width // 2
+                    center_y = active_height // 2
                     self.create_particles(
                         count=50 * lines_cleared,
                         x=center_x,
@@ -936,8 +938,9 @@ class ZenMode(Game):
         
         # Parçacık efekti
         if self.effects_enabled:
-            center_x = self.window_width // 2
-            center_y = self.window_height // 4
+            active_width, active_height = self._active_ui_size()
+            center_x = active_width // 2
+            center_y = active_height // 4
             self.create_particles(
                 count=50,
                 x=center_x,
@@ -1357,13 +1360,18 @@ class HardcoreMode(Game):
         from retro_style import retro_style
         ui_scale = self._ui_scale(min_scale=0.70, max_scale=1.16)
         s = lambda v, minimum=1: self._sx(v, ui_scale, minimum)
+        active_width, active_height = self._active_ui_size()
         # Sağ panel pozisyonu
         info_x = offset_x + board_width + s(25)
         header_y = offset_y + s(10)
         
         # Panel boyutları
-        panel_width = min(s(220), max(s(180), self.window_width - (offset_x + board_width + s(40))))
-        panel_height = min(board_height, self.window_height - header_y - s(40))
+        min_panel_width = s(180)
+        available_right = int(active_width) - (int(offset_x) + int(board_width) + s(40))
+        panel_width = min(s(220), max(min_panel_width, available_right))
+        panel_width = max(min_panel_width, min(panel_width, max(min_panel_width, int(active_width) - s(24))))
+        info_x = min(info_x, int(active_width) - panel_width - s(12))
+        panel_height = min(board_height, int(active_height) - header_y - s(40))
         
         panel_rect = pygame.Rect(info_x, header_y, panel_width, panel_height)
         
@@ -1451,5 +1459,5 @@ class HardcoreMode(Game):
             int(content_x),
             int(mode_info_y),
             int(content_w),
-            int(max(0, self.window_height - mode_info_y - 8)),
+            int(max(0, active_height - mode_info_y - s(8))),
         )

@@ -1161,8 +1161,9 @@ class TutorialMode(Game):
         self.success_text_scale = 1.5
         
         # Parçacık efektleri
-        center_x = self.window_width // 2
-        center_y = self.window_height // 2
+        active_width, active_height = self._active_ui_size()
+        center_x = active_width // 2
+        center_y = active_height // 2
         
         for _ in range(20):
             particle = {

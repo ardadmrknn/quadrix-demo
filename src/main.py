@@ -174,6 +174,7 @@ try:
         ScreenTransition
     )
     from .gamepad_manager import get_gamepad_manager, is_gamepad_connected  # type: ignore
+    from .ui_scaling import get_scale  # type: ignore
 except Exception:
     from game import Game, prewarm_common_mode_entry_backgrounds
     from block_styles import BlockStyleManager
@@ -208,6 +209,7 @@ except Exception:
         ScreenTransition
     )
     from gamepad_manager import get_gamepad_manager, is_gamepad_connected
+    from ui_scaling import get_scale
 import pygame
 from pathlib import Path
 
@@ -422,6 +424,31 @@ def _maybe_recover_windows_display(screen, *, settings_manager=None):
     return screen
 
 
+def _get_actual_display_surface():
+    """Gorunen display surface'ini dondur; GL varsa offscreen yerine gerçek display'i kullan."""
+    try:
+        from gl_compat import get_display_surface, is_gl_active
+        if is_gl_active():
+            actual = get_display_surface()
+            if actual is not None:
+                return actual
+    except Exception:
+        pass
+
+    try:
+        return pygame.display.get_surface()
+    except Exception:
+        return None
+
+
+def _refresh_screen_from_display(current_screen):
+    """Popup/recover sonrasinda varsa en guncel display surface'i dondur."""
+    actual = _get_actual_display_surface()
+    if actual is not None:
+        return actual
+    return current_screen
+
+
 def _get_steam_overlay_gl_mode(settings_manager=None) -> str:
     """Return normalized Steam overlay GL mode: auto|off|force."""
     raw_value = os.environ.get('QUADRIX_STEAM_OVERLAY_GL')
@@ -464,16 +491,14 @@ def _show_mode_intro_popup(screen, mode_key, settings_manager=None):
     dont_show_checked = False
     
     # Arka planı bir kez yakala (screenshot)
-    bg_capture = screen.copy()
-    dim_surface = pygame.Surface(screen.get_size(), pygame.SRCALPHA)
-    dim_surface.fill((0, 0, 0, 160))
-    bg_capture.blit(dim_surface, (0, 0))
+    bg_capture = _capture_popup_backdrop(screen, dim_alpha=160)
     
     start_time = pygame.time.get_ticks()
     
     while running_popup:
         clock.tick(60)
         screen = _maybe_recover_windows_display(screen, settings_manager=settings_manager)
+        bg_capture = _ensure_popup_backdrop(bg_capture, screen, dim_alpha=160)
         
         # Dinamik layout hesapla (resize durumuna karşı)
         width, height = screen.get_size()
@@ -612,9 +637,33 @@ def _show_mode_intro_popup(screen, mode_key, settings_manager=None):
 
 def _fullscreen_popup_scale(screen) -> float:
     """Popup/panel ölçeği (fullscreen referans: 1920x1080)."""
-    width, height = screen.get_size()
-    scale = min(width / 1920.0, height / 1080.0)
-    return max(0.65, min(1.35, scale))
+    return get_scale(
+        screen,
+        min_scale=0.65,
+        max_scale=1.35,
+        reference_size=(1920.0, 1080.0),
+    )
+
+
+def _capture_popup_backdrop(screen, *, dim_alpha: int) -> pygame.Surface:
+    """Popup arka planini aktif surface boyutunda yakalayip karartir."""
+    backdrop = screen.copy()
+    dim_surface = pygame.Surface(screen.get_size(), pygame.SRCALPHA)
+    dim_surface.fill((0, 0, 0, max(0, min(255, int(dim_alpha)))))
+    backdrop.blit(dim_surface, (0, 0))
+    return backdrop
+
+
+def _ensure_popup_backdrop(
+    backdrop: pygame.Surface | None,
+    screen,
+    *,
+    dim_alpha: int,
+) -> pygame.Surface:
+    """Display recover/resize sonrasi popup backdrop'unu aktif surface ile senkron tut."""
+    if backdrop is None or backdrop.get_size() != screen.get_size():
+        return _capture_popup_backdrop(screen, dim_alpha=dim_alpha)
+    return backdrop
 
 
 def _show_zen_start_popup(screen, board_height=20, settings_manager=None):
@@ -654,16 +703,14 @@ def _show_zen_start_popup(screen, board_height=20, settings_manager=None):
     selected_rows = max(MIN_ROWS, min(MAX_ROWS, last_selection))
     
     # Arka planı yakala (Intro popup stili)
-    bg_capture = screen.copy()
-    dim_surface = pygame.Surface(screen.get_size(), pygame.SRCALPHA)
-    dim_surface.fill((0, 0, 0, 160))
-    bg_capture.blit(dim_surface, (0, 0))
+    bg_capture = _capture_popup_backdrop(screen, dim_alpha=160)
     
     result = False
     
     while running_popup:
         clock.tick(60)
         screen = _maybe_recover_windows_display(screen, settings_manager=settings_manager)
+        bg_capture = _ensure_popup_backdrop(bg_capture, screen, dim_alpha=160)
         
         width, height = screen.get_size()
         popup_scale = _fullscreen_popup_scale(screen)
@@ -831,14 +878,12 @@ def _show_tutorial_prompt(screen):
     result = False
     
     # Arka planı yakala
-    bg_capture = screen.copy()
-    dim_surface = pygame.Surface(screen.get_size(), pygame.SRCALPHA)
-    dim_surface.fill((0, 0, 0, 220))
-    bg_capture.blit(dim_surface, (0, 0))
+    bg_capture = _capture_popup_backdrop(screen, dim_alpha=220)
     
     while running_popup:
         clock.tick(60)
         screen = _maybe_recover_windows_display(screen)
+        bg_capture = _ensure_popup_backdrop(bg_capture, screen, dim_alpha=220)
         
         width, height = screen.get_size()
         popup_scale = _fullscreen_popup_scale(screen)
@@ -1425,21 +1470,6 @@ def main():
         if constants.DEBUG_MODE:
             print("🔇 Sessiz mod: AÇIK (M tuşu)" if settings_screen.mute_all else "🔊 Sessiz mod: KAPALI (M tuşu)")
 
-    def _get_actual_display_surface():
-        """Return the visible display surface, not the GL offscreen game surface."""
-        try:
-            from gl_compat import get_display_surface, is_gl_active
-            if is_gl_active():
-                actual = get_display_surface()
-                if actual is not None:
-                    return actual
-        except Exception:
-            pass
-        try:
-            return pygame.display.get_surface()
-        except Exception:
-            return None
-
     def _apply_screen(new_screen):
         """Ekran yeniden oluşturulduğunda tüm ekran referanslarını güncelle."""
         nonlocal screen
@@ -1479,8 +1509,11 @@ def main():
             extras_screen,
             user_selection_screen,
             user_management_screen,
+            campaign_level_select,
+            guide_screen,
             graphics_menu,
             gameplay_settings_menu,
+            getattr(_handle_online_pvp, '_game', None),
         ):
             if obj is not None and hasattr(obj, 'screen'):
                 obj.screen = new_screen
@@ -1503,6 +1536,15 @@ def main():
             borderless=True,
         )
         _apply_screen(new_screen)
+
+    def _run_popup_and_sync_screen(popup_callable, *args, **kwargs):
+        """Popup loop'u display recover yapsa bile ana screen referansini senkron tut."""
+        nonlocal screen
+        result = popup_callable(screen, *args, **kwargs)
+        refreshed_screen = _refresh_screen_from_display(screen)
+        if refreshed_screen is not screen:
+            _apply_screen(refreshed_screen)
+        return result
         # Mod değişimi sonrası birikmiş resize/video event'lerini temizle
         # (bunlar sonraki frame'de ikinci bir geçiş tetikleyebilir)
         try:
@@ -1777,7 +1819,7 @@ def main():
             elif action in ('single_player', 'Tek Oyunculu', 'Single Player'):
                 # Tutorial Check
                 if not user_manager.is_tutorial_completed():
-                    if _show_tutorial_prompt(screen):
+                    if _run_popup_and_sync_screen(_show_tutorial_prompt):
                         # Start Tutorial
                         menu_sound.stop_music()
                         game = TutorialMode(
@@ -1801,7 +1843,7 @@ def main():
                         # Skip Tutorial
                         user_manager.set_tutorial_completed(True)
 
-                if not _show_mode_intro_popup(screen, 'classic', settings_manager):
+                if not _run_popup_and_sync_screen(_show_mode_intro_popup, 'classic', settings_manager=settings_manager):
                     continue
                 confirm_exit = False
                 target_game_music = settings_screen.game_music.lower()
@@ -1848,7 +1890,7 @@ def main():
                 )
                 state = 'game'
             elif action in ('new_gen_tetris', 'Yeni Nesil Quadrix', 'Kart Ustalığı', 'New Gen Quadrix', 'Card Mastery'):
-                if not _show_mode_intro_popup(screen, 'mystery', settings_manager):
+                if not _run_popup_and_sync_screen(_show_mode_intro_popup, 'mystery', settings_manager=settings_manager):
                     continue
                 confirm_exit = False
                 menu_sound.stop_music()
@@ -1871,8 +1913,8 @@ def main():
                 )
                 state = 'game'
             elif action in ('pvp_2_players', 'PvP (2 Oyuncu)', 'PvP (2 Players)'):
-                if not _show_mode_intro_popup(screen, 'pvp', settings_manager):
-                     continue
+                if not _run_popup_and_sync_screen(_show_mode_intro_popup, 'pvp', settings_manager=settings_manager):
+                    continue
                 confirm_exit = False
                 # Menü müziğini durdur; PvP kendi müziğini başlatacak.
                 menu_sound.stop_music()
@@ -1889,7 +1931,7 @@ def main():
                 )
                 state = 'pvp'
             elif action in ('online_pvp', 'Online PvP'):
-                if not _show_mode_intro_popup(screen, 'online_pvp', settings_manager):
+                if not _run_popup_and_sync_screen(_show_mode_intro_popup, 'online_pvp', settings_manager=settings_manager):
                     continue
                 confirm_exit = False
                 # Menü müziğini durdur; online PvP kendi müziğini başlatacak.
@@ -2419,7 +2461,7 @@ def main():
             elif action == 'Campaign Mode':
                 state = 'campaign_select'
             elif action == 'Sprint Mode':
-                if not _show_mode_intro_popup(screen, 'sprint', settings_manager):
+                if not _run_popup_and_sync_screen(_show_mode_intro_popup, 'sprint', settings_manager=settings_manager):
                     continue
                 menu_sound.stop_music()
                 game_return_state = 'extras'
@@ -2429,7 +2471,7 @@ def main():
                 game = SprintMode(difficulty, sound, effects, achievement_manager, theme_manager, screen, fullscreen, settings_manager, user_manager, 'sprint', score_manager=score_manager, sound_manager=menu_sound)
                 state = 'game'
             elif action == 'Ultra Mode':
-                if not _show_mode_intro_popup(screen, 'ultra', settings_manager):
+                if not _run_popup_and_sync_screen(_show_mode_intro_popup, 'ultra', settings_manager=settings_manager):
                     continue
                 menu_sound.stop_music()
                 game_return_state = 'extras'
@@ -2440,7 +2482,11 @@ def main():
                 state = 'game'
             elif action == 'Zen Mode':
                 # Zen Mode için optimize edilmiş başlangıç penceresi (Intro + Ayar)
-                auto_clear_rows = _show_zen_start_popup(screen, board_height=20, settings_manager=settings_manager)
+                auto_clear_rows = _run_popup_and_sync_screen(
+                    _show_zen_start_popup,
+                    board_height=20,
+                    settings_manager=settings_manager,
+                )
                 if auto_clear_rows is False:
                     continue  # İptal edildi
                 menu_sound.stop_music()
@@ -2450,7 +2496,7 @@ def main():
                 game = ZenMode('Kolay', sound, effects, achievement_manager, theme_manager, screen, fullscreen, settings_manager, user_manager, 'zen', score_manager=score_manager, auto_clear_rows=auto_clear_rows, sound_manager=menu_sound)
                 state = 'game'
             elif action == 'Hardcore Mode':
-                if not _show_mode_intro_popup(screen, 'hardcore', settings_manager):
+                if not _run_popup_and_sync_screen(_show_mode_intro_popup, 'hardcore', settings_manager=settings_manager):
                     continue
                 menu_sound.stop_music()
                 game_return_state = 'extras'
@@ -2460,7 +2506,7 @@ def main():
                 game = HardcoreMode(difficulty, sound, effects, achievement_manager, theme_manager, screen, fullscreen, settings_manager, user_manager, 'hardcore', score_manager=score_manager, sound_manager=menu_sound)
                 state = 'game'
             elif action in ('pvp_2_players', 'PvP (2 Oyuncu)', 'PvP (2 Players)'):
-                if not _show_mode_intro_popup(screen, 'pvp', settings_manager):
+                if not _run_popup_and_sync_screen(_show_mode_intro_popup, 'pvp', settings_manager=settings_manager):
                     continue
                 menu_sound.stop_music()
                 sound = settings_screen.sound_enabled
@@ -2476,7 +2522,7 @@ def main():
                 )
                 state = 'pvp'
             elif action in ('Quadrix 2', 'Quadrix Extra'):
-                if not _show_mode_intro_popup(screen, 'tetris2', settings_manager):
+                if not _run_popup_and_sync_screen(_show_mode_intro_popup, 'tetris2', settings_manager=settings_manager):
                     continue
                 menu_sound.stop_music()
                 game_return_state = 'extras'
@@ -2486,7 +2532,7 @@ def main():
                 game = Tetris2Mode(difficulty, sound, effects, achievement_manager, theme_manager, screen, fullscreen, settings_manager, user_manager, 'tetris2', score_manager=score_manager, sound_manager=menu_sound)
                 state = 'game'
             elif action in ('Mystery Mode', 'Kart Ustalığı', 'Yeni Nesil Quadrix', 'New Gen Quadrix', 'Card Mastery'):
-                if not _show_mode_intro_popup(screen, 'mystery', settings_manager):
+                if not _run_popup_and_sync_screen(_show_mode_intro_popup, 'mystery', settings_manager=settings_manager):
                     continue
                 menu_sound.stop_music()
                 game_return_state = 'extras'
@@ -2496,7 +2542,7 @@ def main():
                 game = MysteryMode(difficulty, sound, effects, achievement_manager, theme_manager, screen, fullscreen, settings_manager, user_manager, 'mystery', score_manager=score_manager, sound_manager=menu_sound)
                 state = 'game'
             elif action == 'Wide Mode':
-                if not _show_mode_intro_popup(screen, 'wide', settings_manager):
+                if not _run_popup_and_sync_screen(_show_mode_intro_popup, 'wide', settings_manager=settings_manager):
                     continue
                 menu_sound.stop_music()
                 game_return_state = 'extras'
@@ -2506,7 +2552,7 @@ def main():
                 game = WideMode(difficulty, sound, effects, achievement_manager, theme_manager, screen, fullscreen, settings_manager, user_manager, 'wide', score_manager=score_manager, sound_manager=menu_sound)
                 state = 'game'
             elif action == 'Survival Mode':
-                if not _show_mode_intro_popup(screen, 'survival', settings_manager):
+                if not _run_popup_and_sync_screen(_show_mode_intro_popup, 'survival', settings_manager=settings_manager):
                     continue
                 menu_sound.stop_music()
                 game_return_state = 'extras'
@@ -2516,7 +2562,7 @@ def main():
                 game = SurvivalMode(difficulty, sound, effects, achievement_manager, theme_manager, screen, fullscreen, settings_manager, user_manager, 'survival', score_manager=score_manager, sound_manager=menu_sound)
                 state = 'game'
             elif action == 'Cascade Mode':
-                if not _show_mode_intro_popup(screen, 'cascade', settings_manager):
+                if not _run_popup_and_sync_screen(_show_mode_intro_popup, 'cascade', settings_manager=settings_manager):
                     continue
                 menu_sound.stop_music()
                 game_return_state = 'extras'
@@ -2526,7 +2572,7 @@ def main():
                 game = CascadeMode(difficulty, sound, effects, achievement_manager, theme_manager, screen, fullscreen, settings_manager, user_manager, 'cascade', score_manager=score_manager, sound_manager=menu_sound)
                 state = 'game'
             elif action == 'Online PvP':
-                if not _show_mode_intro_popup(screen, 'online_pvp', settings_manager):
+                if not _run_popup_and_sync_screen(_show_mode_intro_popup, 'online_pvp', settings_manager=settings_manager):
                     continue
                 # Menü müziğini durdur; online PvP kendi müziğini başlatacak.
                 menu_sound.stop_music()
@@ -2567,7 +2613,7 @@ def main():
                 )
                 state = 'game'
             elif action == 'Classic Mode':
-                if not _show_mode_intro_popup(screen, 'classic', settings_manager):
+                if not _run_popup_and_sync_screen(_show_mode_intro_popup, 'classic', settings_manager=settings_manager):
                     continue
                 menu_sound.stop_music()
                 game_return_state = 'extras'
@@ -2877,7 +2923,7 @@ def main():
                 # Yeni kullanıcı oluşturulduğunda tutorial pop-up göster
                 if action == 'new_user_created':
                     user_manager.set_tutorial_completed(False)
-                    if _show_tutorial_prompt(screen):
+                    if _run_popup_and_sync_screen(_show_tutorial_prompt):
                         menu_sound.stop_music()
                         game = TutorialMode(
                             'Normal',
