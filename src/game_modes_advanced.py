@@ -72,14 +72,9 @@ class SurvivalMode(Game):
         
         self._init_survival_state()
 
-    def _survival_panel_scale(self, min_scale: float = 0.58, max_scale: float = 1.0) -> float:
-        """Tam ekran referansına göre panel ölçeği (küçülür, büyümez)."""
-        base_w, base_h = getattr(self, '_survival_panel_base_size', (self.window_width, self.window_height))
-        base_w = max(1, int(base_w))
-        base_h = max(1, int(base_h))
-        w_ratio = float(self.window_width) / float(base_w)
-        h_ratio = float(self.window_height) / float(base_h)
-        return max(min_scale, min(max_scale, min(w_ratio, h_ratio)))
+    def _survival_panel_scale(self, min_scale: float = 0.58, max_scale: float = 1.12) -> float:
+        """Survival panel ölçeği: aktif canvas bazlı ortak UI scale wrapper'ı."""
+        return self._ui_scale(min_scale=min_scale, max_scale=max_scale)
 
     def _init_survival_state(self):
         """Survival moduna özgü değişkenleri sıfırla"""

@@ -70,14 +70,9 @@ class SprintMode(Game):
         
         # NOT: Müzik Game.__init__ içinde ayarlardan seçilen müzikle çalacak
 
-    def _counter_scale_from_base(self, min_scale: float = 0.62, max_scale: float = 1.0) -> float:
-        """Sayaç paneli ölçeği: tam ekran referansına göre küçülür, büyümez."""
-        base_w, base_h = getattr(self, '_sprint_counter_base_size', (self.window_width, self.window_height))
-        base_w = max(1, int(base_w))
-        base_h = max(1, int(base_h))
-        w_ratio = float(self.window_width) / float(base_w)
-        h_ratio = float(self.window_height) / float(base_h)
-        return max(min_scale, min(max_scale, min(w_ratio, h_ratio)))
+    def _counter_scale_from_base(self, min_scale: float = 0.62, max_scale: float = 1.12) -> float:
+        """Sayaç paneli ölçeği: aktif canvas bazlı ortak UI scale wrapper'ı."""
+        return self._ui_scale(min_scale=min_scale, max_scale=max_scale)
     
     def _load_best_times(self):
         """Settings'den en iyi süreleri yükle"""
@@ -395,14 +390,9 @@ class UltraMode(Game):
         
         # NOT: Müzik Game.__init__ içinde ayarlardan seçilen müzikle çalacak
 
-    def _counter_scale_from_base(self, min_scale: float = 0.62, max_scale: float = 1.0) -> float:
-        """Sayaç paneli ölçeği: tam ekran referansına göre küçülür, büyümez."""
-        base_w, base_h = getattr(self, '_ultra_counter_base_size', (self.window_width, self.window_height))
-        base_w = max(1, int(base_w))
-        base_h = max(1, int(base_h))
-        w_ratio = float(self.window_width) / float(base_w)
-        h_ratio = float(self.window_height) / float(base_h)
-        return max(min_scale, min(max_scale, min(w_ratio, h_ratio)))
+    def _counter_scale_from_base(self, min_scale: float = 0.62, max_scale: float = 1.12) -> float:
+        """Sayaç paneli ölçeği: aktif canvas bazlı ortak UI scale wrapper'ı."""
+        return self._ui_scale(min_scale=min_scale, max_scale=max_scale)
     
     def update(self, dt):
         """Ultra modunu güncelle"""

@@ -17,6 +17,7 @@ try:
     from ..localization import t  # type: ignore
     from ..retro_style import retro_style  # type: ignore
     from ..platform_utils import get_mouse_pos  # type: ignore
+    from ..ui_scaling import get_content_scale, scale_px  # type: ignore
 except Exception:
     from game import Game
     from constants import COLORS, BLACK, BOARD_WIDTH, BOARD_HEIGHT
@@ -24,6 +25,7 @@ except Exception:
     from localization import t
     from retro_style import retro_style
     from platform_utils import get_mouse_pos
+    from ui_scaling import get_content_scale, scale_px
 
 from .level_data import get_level, get_total_levels, LevelConfig, get_world_info
 from .objectives import (
@@ -44,6 +46,9 @@ from .special_blocks import (
     create_level_special_blocks,
 )
 from .campaign_ui import campaign_ui_effects
+
+
+CAMPAIGN_HUD_REFERENCE_SIZE = (1366.0, 768.0)
 
 
 class CampaignMode(Game):
@@ -366,6 +371,7 @@ class CampaignMode(Game):
         self.star_icon_medium = None
         self.star_icon_large = None
         self.tick_icon = None
+        self._campaign_icon_scale_cache = {}
         
         # Yıldız ikonunu yükle
         star_paths = [
@@ -394,6 +400,34 @@ class CampaignMode(Game):
         tick_color = (0, 255, 100)  # Yeşil
         pygame.draw.line(self.tick_icon, tick_color, (3, 9), (7, 14), 3)
         pygame.draw.line(self.tick_icon, tick_color, (7, 14), (15, 5), 3)
+
+    def _get_scaled_campaign_icon(self, cache_key: str, target_size: int, base_surface: Optional[pygame.Surface]) -> Optional[pygame.Surface]:
+        if base_surface is None or target_size <= 0:
+            return None
+
+        cache = getattr(self, '_campaign_icon_scale_cache', None)
+        if cache is None:
+            cache = {}
+            self._campaign_icon_scale_cache = cache
+
+        key = (cache_key, int(target_size))
+        cached = cache.get(key)
+        if cached is not None:
+            return cached
+
+        if base_surface.get_width() == target_size and base_surface.get_height() == target_size:
+            scaled = base_surface
+        else:
+            scaled = pygame.transform.smoothscale(base_surface, (target_size, target_size))
+        cache[key] = scaled
+        return scaled
+
+    def _get_campaign_star_icon(self, target_size: int) -> Optional[pygame.Surface]:
+        base_surface = self.star_icon_large or self.star_icon_medium or self.star_icon_small
+        return self._get_scaled_campaign_icon('star', target_size, base_surface)
+
+    def _get_campaign_tick_icon(self, target_size: int) -> Optional[pygame.Surface]:
+        return self._get_scaled_campaign_icon('tick', target_size, self.tick_icon)
     
     def _create_objectives(self) -> List[Objective]:
         """Level konfigürasyonundan görevleri oluştur"""
@@ -876,6 +910,65 @@ class CampaignMode(Game):
         self._piece_rng_seed = self._quick_retry_seed
         super().restart()
         self._reset_level_state()
+
+    def _get_campaign_hud_scale(self, surface_or_size=None) -> float:
+        """Campaign HUD ailesi icin ortak ekran bazli scale."""
+        target = surface_or_size or getattr(self, 'screen', None)
+        if target is None:
+            target = (
+                getattr(self, 'window_width', int(CAMPAIGN_HUD_REFERENCE_SIZE[0])),
+                getattr(self, 'window_height', int(CAMPAIGN_HUD_REFERENCE_SIZE[1])),
+            )
+        return get_content_scale(
+            target,
+            profile='dense',
+            reference_size=CAMPAIGN_HUD_REFERENCE_SIZE,
+        )
+
+    def _scale_campaign_hud_px(self, value: int | float, ui_scale: float, minimum: int = 1) -> int:
+        return scale_px(value, ui_scale, minimum=minimum)
+
+    def _get_campaign_left_panel_rect(self, board_offset_x: int, board_offset_y: int) -> pygame.Rect:
+        screen_w, screen_h = self.screen.get_size()
+        ui_scale = self._get_campaign_hud_scale((screen_w, screen_h))
+        s = lambda value, minimum=1: self._scale_campaign_hud_px(value, ui_scale, minimum=minimum)
+
+        safe_left_margin = s(10)
+        board_gap = s(20, minimum=0)
+        actual_left_space = max(0, int(board_offset_x) - board_gap - safe_left_margin)
+        panel_width = min(s(340), max(s(220), actual_left_space))
+
+        max_panel_h = max(s(260), int(screen_h) - int(board_offset_y) - s(14, minimum=0))
+        panel_height = min(max_panel_h, max(s(500), min(s(620), max_panel_h)))
+
+        panel_x = max(safe_left_margin, int(board_offset_x) - panel_width - board_gap)
+        panel_y = int(board_offset_y)
+        return pygame.Rect(panel_x, panel_y, panel_width, panel_height)
+
+    def _get_campaign_right_hud_panel_rect(
+        self,
+        offset_x: int,
+        offset_y: int,
+        board_width: int,
+        board_height: int,
+    ) -> pygame.Rect:
+        screen_w, screen_h = self.screen.get_size()
+        ui_scale = self._get_campaign_hud_scale((screen_w, screen_h))
+        s = lambda value, minimum=1: self._scale_campaign_hud_px(value, ui_scale, minimum=minimum)
+
+        header_y = int(offset_y) + s(10, minimum=0)
+        info_x = int(offset_x) + int(board_width) + s(25, minimum=0)
+
+        available_right = int(screen_w) - (int(offset_x) + int(board_width) + s(40, minimum=0))
+        panel_width = min(s(220), max(s(140), available_right))
+        panel_width = max(s(120), min(panel_width, max(s(120), int(screen_w) - s(24, minimum=0))))
+
+        info_x = min(info_x, int(screen_w) - panel_width - s(12, minimum=0))
+
+        available_panel_h = max(s(180), int(screen_h) - header_y - s(40, minimum=0))
+        panel_height = min(int(board_height), available_panel_h)
+        panel_height = min(panel_height, max(s(180), int(screen_h) - header_y - s(12, minimum=0)))
+        return pygame.Rect(info_x, header_y, panel_width, panel_height)
     
     # === UI/HUD ===
     
@@ -900,18 +993,13 @@ class CampaignMode(Game):
             2: (255, 200, 100),          # Bronz
             3: UIColors.NEON_GOLD,       # Altın
         }
-        
-        # Panel boyutları - daha geniş ve adaptif (okunabilirlik odaklı)
-        available_left = max(240, int(board_offset_x) - 26)
-        panel_width = max(280, min(340, available_left))
-        max_panel_h = int(self.screen.get_height() - board_offset_y - 14)
-        panel_height = max(500, min(620, max_panel_h))
-        panel_x = board_offset_x - panel_width - 20
-        if panel_x < 10:
-            panel_x = 10
-        panel_y = board_offset_y
-        
-        panel_rect = pygame.Rect(panel_x, panel_y, panel_width, panel_height)
+
+        ui_scale = self._get_campaign_hud_scale(self.screen)
+        s = lambda value, minimum=1: self._scale_campaign_hud_px(value, ui_scale, minimum=minimum)
+        panel_rect = self._get_campaign_left_panel_rect(board_offset_x, board_offset_y)
+        self._campaign_left_panel_rect = panel_rect
+        panel_width = panel_rect.width
+        panel_height = panel_rect.height
         
         # Glass panel
         retro_style.draw_glass_panel(
@@ -945,22 +1033,22 @@ class CampaignMode(Game):
             return lines[:max_lines]
 
         # Başlık arka planı (okunabilirlik)
-        header_bg = pygame.Rect(panel_rect.x + 10, panel_rect.y + 10, panel_width - 20, 60)
+        header_bg = pygame.Rect(panel_rect.x + s(10), panel_rect.y + s(10), panel_width - s(20), s(60, minimum=40))
         header_surf = pygame.Surface(header_bg.size, pygame.SRCALPHA)
         header_surf.fill((*UIColors.BG_MEDIUM, 190))
         self.screen.blit(header_surf, header_bg.topleft)
-        pygame.draw.rect(self.screen, THEME_BORDER, header_bg, 1, border_radius=10)
+        pygame.draw.rect(self.screen, THEME_BORDER, header_bg, 1, border_radius=s(10, minimum=6))
 
         # İçerik arka planı
-        content_bg = pygame.Rect(panel_rect.x + 10, panel_rect.y + 74, panel_width - 20, panel_height - 86)
+        content_bg = pygame.Rect(panel_rect.x + s(10), panel_rect.y + s(74, minimum=50), panel_width - s(20), panel_height - s(86, minimum=60))
         content_surf = pygame.Surface(content_bg.size, pygame.SRCALPHA)
         content_surf.fill((*UIColors.BG_DARK, 160))
         self.screen.blit(content_surf, content_bg.topleft)
-        pygame.draw.rect(self.screen, UIColors.GLASS_BORDER[:3], content_bg, 1, border_radius=10)
+        pygame.draw.rect(self.screen, UIColors.GLASS_BORDER[:3], content_bg, 1, border_radius=s(10, minimum=6))
         
         # === LEVEL BİLGİSİ ===
-        header_font = UIFonts.get(15)
-        title_font = UIFonts.get(16, bold=True)
+        header_font = UIFonts.get(s(15, minimum=10))
+        title_font = UIFonts.get(s(16, minimum=11), bold=True)
         lang = get_language()
         level_name = self.level_config.name.get(lang, self.level_config.name.get('en', f"{t('level')} {self.current_level_num}"))
         world_info = get_world_info(self.level_config.world)
@@ -968,48 +1056,49 @@ class CampaignMode(Game):
         
         # Dünya ve Level
         world_text = header_font.render(world_name, True, UIColors.TEXT_PRIMARY)
-        self.screen.blit(world_text, (panel_rect.x + 18, panel_rect.y + 16))
+        self.screen.blit(world_text, (panel_rect.x + s(18), panel_rect.y + s(16)))
         
         level_label = f"{t('level')} {self.current_level_num}: {level_name}"
-        level_lines = wrap_text_lines(title_font, level_label, panel_width - 42, max_lines=2)
-        base_y = panel_rect.y + 42
+        level_lines = wrap_text_lines(title_font, level_label, panel_width - s(42), max_lines=2)
+        base_y = panel_rect.y + s(42)
         for idx, line in enumerate(level_lines):
             level_text = title_font.render(line, True, NEON_GOLD)
-            self.screen.blit(level_text, (panel_rect.x + 18, base_y + idx * 22))
+            self.screen.blit(level_text, (panel_rect.x + s(18), base_y + idx * s(22, minimum=14)))
         
         # Ayırıcı çizgi
         pygame.draw.line(
             self.screen, THEME_BORDER,
-            (panel_rect.x + 15, panel_rect.y + 78),
-            (panel_rect.right - 15, panel_rect.y + 78), 1
+            (panel_rect.x + s(15), panel_rect.y + s(78, minimum=54)),
+            (panel_rect.right - s(15), panel_rect.y + s(78, minimum=54)), 1
         )
         
         # === GÖREVLER ===
-        obj_font = UIFonts.get(14)
-        progress_font = UIFonts.get(13)
-        y_offset = panel_rect.y + 102
+        obj_font = UIFonts.get(s(14, minimum=10))
+        progress_font = UIFonts.get(s(13, minimum=10))
+        y_offset = panel_rect.y + s(102, minimum=72)
         
         for obj in self.objectives:
             # Görev durumu
             status_color = NEON_GREEN if obj.completed else UIColors.TEXT_PRIMARY
             
             # X pozisyonu
-            x_pos = panel_rect.x + 15
+            x_pos = panel_rect.x + s(15)
             
             # Görev durum simgesi (daha belirgin)
-            icon_size = 18
-            icon_center = (x_pos + icon_size // 2, y_offset + 12)
+            icon_size = s(18, minimum=12)
+            icon_radius = max(1, s(9, minimum=5))
+            icon_center = (x_pos + icon_size // 2, y_offset + s(12, minimum=8))
             if obj.completed:
-                pygame.draw.circle(self.screen, (12, 120, 70), icon_center, 9)
-                pygame.draw.circle(self.screen, (40, 255, 155), icon_center, 9, 1)
-                pygame.draw.line(self.screen, (220, 255, 230), (x_pos + 4, y_offset + 12), (x_pos + 8, y_offset + 16), 2)
-                pygame.draw.line(self.screen, (220, 255, 230), (x_pos + 8, y_offset + 16), (x_pos + 15, y_offset + 7), 2)
+                pygame.draw.circle(self.screen, (12, 120, 70), icon_center, icon_radius)
+                pygame.draw.circle(self.screen, (40, 255, 155), icon_center, icon_radius, 1)
+                pygame.draw.line(self.screen, (220, 255, 230), (x_pos + s(4, minimum=2), y_offset + s(12, minimum=8)), (x_pos + s(8, minimum=4), y_offset + s(16, minimum=10)), max(1, s(2, minimum=1)))
+                pygame.draw.line(self.screen, (220, 255, 230), (x_pos + s(8, minimum=4), y_offset + s(16, minimum=10)), (x_pos + s(15, minimum=9), y_offset + s(7, minimum=4)), max(1, s(2, minimum=1)))
             else:
-                pygame.draw.circle(self.screen, (*UIColors.BG_MEDIUM, 210), icon_center, 9)
-                pygame.draw.circle(self.screen, UIColors.TEXT_MUTED, icon_center, 9, 1)
-                pygame.draw.line(self.screen, UIColors.TEXT_MUTED, (x_pos + 5, y_offset + 7), (x_pos + 14, y_offset + 16), 2)
-                pygame.draw.line(self.screen, UIColors.TEXT_MUTED, (x_pos + 14, y_offset + 7), (x_pos + 5, y_offset + 16), 2)
-            x_pos += 24
+                pygame.draw.circle(self.screen, (*UIColors.BG_MEDIUM, 210), icon_center, icon_radius)
+                pygame.draw.circle(self.screen, UIColors.TEXT_MUTED, icon_center, icon_radius, 1)
+                pygame.draw.line(self.screen, UIColors.TEXT_MUTED, (x_pos + s(5, minimum=3), y_offset + s(7, minimum=4)), (x_pos + s(14, minimum=8), y_offset + s(16, minimum=10)), max(1, s(2, minimum=1)))
+                pygame.draw.line(self.screen, UIColors.TEXT_MUTED, (x_pos + s(14, minimum=8), y_offset + s(7, minimum=4)), (x_pos + s(5, minimum=3), y_offset + s(16, minimum=10)), max(1, s(2, minimum=1)))
+            x_pos += s(24, minimum=16)
             
             # Görev açıklaması - parantez kısmını temizle
             desc = obj.get_description(lang)
@@ -1019,29 +1108,30 @@ class CampaignMode(Game):
                 desc = desc.split('(')[0].strip()
             
             # Görev adı (sarmalı)
-            desc_lines = wrap_text_lines(obj_font, desc, panel_rect.right - 22 - x_pos, max_lines=2)
+            desc_lines = wrap_text_lines(obj_font, desc, panel_rect.right - s(22) - x_pos, max_lines=2)
             text_y = y_offset
             for line in desc_lines:
                 desc_surface = obj_font.render(line, True, status_color)
                 self.screen.blit(desc_surface, (x_pos, text_y))
-                text_y += 21
+                text_y += s(21, minimum=14)
             
             # 2. Satır - İlerleme
-            progress_y = text_y + 2
+            progress_y = text_y + s(2, minimum=0)
             progress_text = obj.get_progress_text()
             progress_surface = progress_font.render(progress_text, True, status_color)
             self.screen.blit(progress_surface, (x_pos, progress_y))
             
             # İlerleme barı
-            bar_y = progress_y + 22
-            bar_width = panel_width - 54
-            bar_height = 8
+            bar_y = progress_y + s(22, minimum=14)
+            bar_width = panel_width - s(54)
+            bar_height = s(8, minimum=4)
+            bar_radius = max(1, s(4, minimum=2))
             
             # Arka plan
             pygame.draw.rect(
                 self.screen, UIColors.SLIDER_BG,
-                (panel_rect.x + 25, bar_y, bar_width, bar_height),
-                border_radius=4
+                (panel_rect.x + s(25), bar_y, bar_width, bar_height),
+                border_radius=bar_radius
             )
             
             # Doluluk
@@ -1050,28 +1140,28 @@ class CampaignMode(Game):
                 fill_color = NEON_GREEN if obj.completed else UIColors.SLIDER_FILL
                 pygame.draw.rect(
                     self.screen, fill_color,
-                    (panel_rect.x + 25, bar_y, fill_width, bar_height),
-                    border_radius=4
+                    (panel_rect.x + s(25), bar_y, fill_width, bar_height),
+                    border_radius=bar_radius
                 )
             
-            y_offset = bar_y + bar_height + 14
+            y_offset = bar_y + bar_height + s(14, minimum=8)
         
         # === YILDIZ KOŞULLARI ===
         # Ayırıcı çizgi
-        star_section_y = y_offset + 8
+        star_section_y = y_offset + s(8, minimum=4)
         pygame.draw.line(
             self.screen, THEME_BORDER,
-            (panel_rect.x + 20, star_section_y),
-            (panel_rect.right - 20, star_section_y), 1
+            (panel_rect.x + s(20), star_section_y),
+            (panel_rect.right - s(20), star_section_y), 1
         )
         
-        star_font = UIFonts.get(13)
-        star_y = star_section_y + 10
+        star_font = UIFonts.get(s(13, minimum=10))
+        star_y = star_section_y + s(10, minimum=6)
         
         # Başlık
         star_title = star_font.render(f"{t('campaign_star_conditions_title')}:", True, UIColors.TEXT_PRIMARY)
-        self.screen.blit(star_title, (panel_rect.x + 20, star_y))
-        star_y += 26
+        self.screen.blit(star_title, (panel_rect.x + s(20), star_y))
+        star_y += s(26, minimum=18)
         
         # Her yıldız koşulunu göster
         star_conditions = self.level_config.stars
@@ -1123,25 +1213,26 @@ class CampaignMode(Game):
                 cond_text = desc.get(lang, desc.get('en', str(cond_type)))
             
             # X pozisyonu
-            x_pos = panel_rect.x + 20
+            x_pos = panel_rect.x + s(20)
             
             # Yıldız PNG'lerini çiz (eğer yüklüyse)
-            star_icon = self.star_icon_medium or self.star_icon_small
+            star_icon = self._get_campaign_star_icon(s(20, minimum=14))
             if star_icon:
                 # star_num kadar yıldız çiz
                 for i in range(star_num):
-                    self.screen.blit(star_icon, (x_pos + i * 18, star_y + 1))
-                x_pos += star_num * 18 + 8
+                    self.screen.blit(star_icon, (x_pos + i * s(18, minimum=12), star_y + s(1, minimum=0)))
+                x_pos += star_num * s(18, minimum=12) + s(8, minimum=4)
             else:
                 # Fallback: * sembolleri
                 star_symbols = "*" * star_num
                 star_surf = star_font.render(star_symbols, True, star_color)
                 self.screen.blit(star_surf, (x_pos, star_y))
-                x_pos += star_surf.get_width() + 8
+                x_pos += star_surf.get_width() + s(8, minimum=4)
             
             # Koşul metni (sarmalı)
-            tick_slot = 24 if earned_stars_num >= star_num else 0
-            max_text_w = max(60, panel_rect.right - 20 - x_pos - tick_slot)
+            tick_icon = self._get_campaign_tick_icon(s(18, minimum=14)) if earned_stars_num >= star_num else None
+            tick_slot = (tick_icon.get_width() + s(8, minimum=4)) if tick_icon else 0
+            max_text_w = max(s(60, minimum=40), panel_rect.right - s(20) - x_pos - tick_slot)
             cond_lines = wrap_text_lines(star_font, cond_text, max_text_w, max_lines=2)
             text_y = star_y
             text_width = 0
@@ -1149,30 +1240,30 @@ class CampaignMode(Game):
                 text_surface = star_font.render(line, True, star_color)
                 self.screen.blit(text_surface, (x_pos, text_y))
                 text_width = max(text_width, text_surface.get_width())
-                text_y += 20
+                text_y += s(20, minimum=14)
             
             # Tik işareti (koşul tamamlandıysa)
             is_completed = earned_stars_num >= star_num
-            if is_completed and self.tick_icon:
-                tick_x = x_pos + text_width + 8
-                self.screen.blit(self.tick_icon, (tick_x, star_y + 1))
+            if is_completed and tick_icon:
+                tick_x = x_pos + text_width + s(8, minimum=4)
+                self.screen.blit(tick_icon, (tick_x, star_y + s(1, minimum=0)))
             
-            used_h = max(20, len(cond_lines) * 20)
-            star_y += used_h + 6
+            used_h = max(s(20, minimum=14), len(cond_lines) * s(20, minimum=14))
+            star_y += used_h + s(6, minimum=4)
         
         # === BLOK SINIRI GÖSTERİMİ (Premium) ===
-        limit_font = UIFonts.small()
-        limit_title_font = UIFonts.body()
+        limit_font = UIFonts.get(s(12, minimum=10))
+        limit_title_font = UIFonts.get(s(14, minimum=11), bold=True)
         
         # Ayırıcı çizgi
-        block_section_y = star_y + 8
+        block_section_y = star_y + s(8, minimum=4)
         pygame.draw.line(
             self.screen, THEME_BORDER,
-            (panel_rect.x + 20, block_section_y),
-            (panel_rect.right - 20, block_section_y), 1
+            (panel_rect.x + s(20), block_section_y),
+            (panel_rect.right - s(20), block_section_y), 1
         )
         
-        block_y = block_section_y + 10
+        block_y = block_section_y + s(10, minimum=6)
         
         # Blok limiti her zaman var
         block_limit = self.level_config.move_limit or 0
@@ -1198,44 +1289,45 @@ class CampaignMode(Game):
         # Başlık: "Kalan Blok" ikonu ile
         block_title = t('campaign_block_limit_title')
         title_surf = limit_title_font.render(block_title, True, UIColors.TEXT_PRIMARY)
-        self.screen.blit(title_surf, (panel_rect.x + 20, block_y))
+        self.screen.blit(title_surf, (panel_rect.x + s(20), block_y))
         
         # Sayı gösterimi (sağ hizalı) 
         count_text = f"{remaining_blocks}/{block_limit}"
         count_surf = limit_title_font.render(count_text, True, block_color)
-        count_x = panel_rect.right - 20 - count_surf.get_width()
+        count_x = panel_rect.right - s(20) - count_surf.get_width()
         self.screen.blit(count_surf, (count_x, block_y))
         
-        block_y += 22
+        block_y += s(22, minimum=14)
         
         # Progress bar 
-        bar_x = panel_rect.x + 20
-        bar_width = panel_width - 40
-        bar_height = 10
+        bar_x = panel_rect.x + s(20)
+        bar_width = panel_width - s(40)
+        bar_height = s(10, minimum=5)
+        bar_radius = max(1, s(5, minimum=2))
         
         # Bar arka planı (koyu)
         bar_bg_rect = pygame.Rect(bar_x, block_y, bar_width, bar_height)
-        pygame.draw.rect(self.screen, UIColors.SLIDER_BG, bar_bg_rect, border_radius=5)
+        pygame.draw.rect(self.screen, UIColors.SLIDER_BG, bar_bg_rect, border_radius=bar_radius)
         
         # Doluluk barı (kalan blok oranı)
         fill_ratio = remaining_blocks / block_limit if block_limit > 0 else 1.0
         fill_width = int(bar_width * fill_ratio)
         if fill_width > 0:
             fill_rect = pygame.Rect(bar_x, block_y, fill_width, bar_height)
-            pygame.draw.rect(self.screen, block_color, fill_rect, border_radius=5)
+            pygame.draw.rect(self.screen, block_color, fill_rect, border_radius=bar_radius)
             
             # Parlak kenar efekti (üst kısım)
-            if fill_width > 4:
-                highlight_rect = pygame.Rect(bar_x + 2, block_y + 1, fill_width - 4, 3)
+            if fill_width > s(4, minimum=2):
+                highlight_rect = pygame.Rect(bar_x + s(2, minimum=1), block_y + s(1, minimum=0), fill_width - s(4, minimum=2), s(3, minimum=1))
                 highlight_color = tuple(min(255, c + 80) for c in block_color)
                 highlight_surf = pygame.Surface(highlight_rect.size, pygame.SRCALPHA)
                 highlight_surf.fill((*highlight_color, 100))
                 self.screen.blit(highlight_surf, highlight_rect.topleft)
         
         # Bar kenarlığı
-        pygame.draw.rect(self.screen, THEME_BORDER, bar_bg_rect, 1, border_radius=5)
+        pygame.draw.rect(self.screen, THEME_BORDER, bar_bg_rect, 1, border_radius=bar_radius)
         
-        block_y += bar_height + 8
+        block_y += bar_height + s(8, minimum=4)
         
         # Zaman limiti (varsa)
         if self.level_config.time_limit:
@@ -1243,7 +1335,7 @@ class CampaignMode(Game):
             time_color = UIColors.NEON_RED if remaining < 30 else UIColors.TEXT_SECONDARY
             time_text = t('campaign_remaining_time', seconds=int(remaining))
             time_surface = limit_font.render(time_text, True, time_color)
-            self.screen.blit(time_surface, (panel_rect.x + 20, block_y))
+            self.screen.blit(time_surface, (panel_rect.x + s(20), block_y))
         
         return 0
     
@@ -1251,6 +1343,9 @@ class CampaignMode(Game):
         """Mod overlay'ini çiz"""
         from retro_style import retro_style
         from ui_theme import UIColors, UIFonts
+
+        ui_scale = self._get_campaign_hud_scale(self.screen)
+        s = lambda value, minimum=1: self._scale_campaign_hud_px(value, ui_scale, minimum=minimum)
         
         # Sol paneli çiz
         self.draw_mode_info(0, 0)
@@ -1260,17 +1355,17 @@ class CampaignMode(Game):
         
         if target_rect:
             rx, ry, rw, rh = target_rect
-            rh = min(rh, 160)
+            rh = min(rh, s(160, minimum=110))
             info_rect = pygame.Rect(rx, ry, rw, rh)
         else:
             hud_panel = getattr(self, '_hud_panel_rect', None)
             if hud_panel:
-                info_rect = pygame.Rect(hud_panel.x, hud_panel.bottom + 20, hud_panel.width, 140)
+                info_rect = pygame.Rect(hud_panel.x, hud_panel.bottom + s(20, minimum=10), hud_panel.width, s(140, minimum=100))
             else:
                 offset_x, offset_y = self.get_board_offset()
                 info_rect = pygame.Rect(
-                    offset_x + self.board.width * self.get_cell_size() + 20,
-                    offset_y + 300, 240, 140
+                    offset_x + self.board.width * self.get_cell_size() + s(20, minimum=10),
+                    offset_y + s(300, minimum=220), s(240, minimum=180), s(140, minimum=100)
                 )
         
         # Glass panel
@@ -1284,20 +1379,20 @@ class CampaignMode(Game):
         )
 
         # Oranlı yerleşim
-        padding = 14
+        padding = s(14, minimum=8)
         inner_x = info_rect.x + padding
         inner_y = info_rect.y + padding
         inner_w = info_rect.width - padding * 2
         inner_h = info_rect.height - padding * 2
 
         # Toplam ilerleme (başlık kaldırıldı)
-        progress_font = UIFonts.small()
+        progress_font = UIFonts.get(s(13, minimum=10))
         progress_text = f"{t('level')} {self.current_level_num}/100"
         progress_surface = progress_font.render(progress_text, True, UIColors.TEXT_SECONDARY)
         self.screen.blit(progress_surface, (inner_x, inner_y))
 
         # Geçen süre (yıldız yerleşimi için önce hesapla)
-        time_font = UIFonts.small()
+        time_font = UIFonts.get(s(13, minimum=10))
         mins = int(self.elapsed_time // 60)
         secs = int(self.elapsed_time % 60)
         time_text = f"{t('time')}: {mins}:{secs:02d}"
@@ -1305,28 +1400,28 @@ class CampaignMode(Game):
         time_y = info_rect.bottom - padding - time_surface.get_height()
 
         # Yıldızlar (panel oranına göre büyüt, minimum büyük boyut)
-        star_area_top = inner_y + progress_surface.get_height() + 6
-        star_area_bottom = time_y - 6
+        star_area_top = inner_y + progress_surface.get_height() + s(6, minimum=2)
+        star_area_bottom = time_y - s(6, minimum=2)
         star_area_h = max(0, star_area_bottom - star_area_top)
-        star_gap = max(10, int(inner_w * 0.06))
+        star_gap = max(s(10, minimum=6), int(inner_w * 0.06))
         max_star_size_by_w = int((inner_w - star_gap * 2) / 3)
         desired_star_size = int(info_rect.height * 0.35)
         star_size = min(max_star_size_by_w, desired_star_size)
-        star_size = max(44, star_size)
+        star_size = max(s(44, minimum=28), star_size)
         if star_area_h > 0 and star_size > star_area_h:
-            star_size = max(44, min(star_size, star_area_h))
+            star_size = max(s(44, minimum=28), min(star_size, star_area_h))
         stars_total_w = star_size * 3 + star_gap * 2
         star_start_x = info_rect.x + (info_rect.width - stars_total_w) // 2
         star_y = star_area_top + max(0, (star_area_h - star_size) // 2)
-        star_font = UIFonts.get(max(28, star_size), bold=True)
+        star_font = UIFonts.get(max(s(28, minimum=18), star_size), bold=True)
         
         for i in range(3):
             star_x = star_start_x + i * (star_size + star_gap)
             star_color = UIColors.NEON_GOLD if i < self.earned_stars else UIColors.TEXT_MUTED
             
             # Yıldız PNG kullan (varsa)
-            if self.star_icon_medium:
-                scaled_star = pygame.transform.smoothscale(self.star_icon_medium, (star_size, star_size))
+            scaled_star = self._get_campaign_star_icon(star_size)
+            if scaled_star:
                 if i < self.earned_stars:
                     self.screen.blit(scaled_star, (star_x, star_y))
                 else:
@@ -1529,29 +1624,28 @@ class CampaignMode(Game):
         """Campaign moduna özel HUD paneli - Boss/Mini Boss kuralları ile"""
         from retro_style import retro_style
         from localization import t
-        
-        # Sağ panel - bilgi paneli arka planı
-        info_x = offset_x + board_width + 25
-        header_y = offset_y + 10
-        
-        # Panel genişliği ve yüksekliği hesapla
-        panel_width = min(220, max(180, self.window_width - (offset_x + board_width + 40)))
-        panel_height = min(board_height, self.window_height - header_y - 40)
-        
-        panel_rect = pygame.Rect(info_x, header_y, panel_width, panel_height)
+
+        screen_w, screen_h = self.screen.get_size()
+        ui_scale = self._get_campaign_hud_scale((screen_w, screen_h))
+        s = lambda value, minimum=1: self._scale_campaign_hud_px(value, ui_scale, minimum=minimum)
+
+        panel_rect = self._get_campaign_right_hud_panel_rect(offset_x, offset_y, board_width, board_height)
+        info_x = panel_rect.x
+        header_y = panel_rect.y
+        panel_width = panel_rect.width
         
         # Ana panel arka planı (Glassmorphism)
         self._draw_hud_glass_panel(panel_rect)
         
         # İçerik Y pozisyonu
-        curr_y = header_y + 20
-        content_x = info_x + 15
-        content_w = panel_width - 30
+        curr_y = header_y + s(20, minimum=12)
+        content_x = info_x + s(15, minimum=10)
+        content_w = panel_width - s(30, minimum=20)
         
         # Başlık - Neon Glow
         badge_text = t('campaign_title')
         title_center = (info_x + panel_width // 2, curr_y)
-        title_font = retro_style.get_font(28, bold=True)
+        title_font = retro_style.get_font(s(28, minimum=18), bold=True)
         
         # Boss level ise özel renk
         if self.is_boss:
@@ -1568,7 +1662,7 @@ class CampaignMode(Game):
         title_rect = title_surf.get_rect(center=title_center)
         self.screen.blit(title_surf, title_rect)
         
-        curr_y += 35
+        curr_y += s(35, minimum=22)
         
         # Level bilgisi
         level_text = f"{t('level')} {self.current_level_num}"
@@ -1577,21 +1671,21 @@ class CampaignMode(Game):
         elif self.is_mini_boss:
             level_text += f" ({t('campaign_mini_boss')})"
         
-        sub_font = retro_style.get_font(16)
+        sub_font = retro_style.get_font(s(16, minimum=11))
         sub_surf = sub_font.render(level_text, True, text_color)
         sub_rect = sub_surf.get_rect(center=(title_center[0], curr_y))
         self.screen.blit(sub_surf, sub_rect)
-        curr_y += 25
+        curr_y += s(25, minimum=16)
         
-        curr_y += 10
+        curr_y += s(10, minimum=6)
         
         # --- NEXT PIECES ---
-        next_label = retro_style.get_font(18).render(t('next'), True, label_color)
+        next_label = retro_style.get_font(s(18, minimum=12)).render(t('next'), True, label_color)
         self.screen.blit(next_label, (content_x, curr_y))
         
-        curr_y += 25
-        box_size = 60
-        gap = 15
+        curr_y += s(25, minimum=16)
+        box_size = min(s(60, minimum=44), max(s(42, minimum=32), int(content_w * 0.34)))
+        gap = max(s(10, minimum=6), int(content_w * 0.08))
         
         for i in range(2):
             bx = content_x + i * (box_size + gap)
@@ -1599,14 +1693,14 @@ class CampaignMode(Game):
             box_rect = pygame.Rect(bx, by, box_size, box_size)
             
             # Kutu arkaplanı
-            if not self._draw_custom_frame(box_rect, "box_frame.png", padding=4):
-                pygame.draw.rect(self.screen, (20, 25, 40, 180), box_rect, border_radius=8)
-                pygame.draw.rect(self.screen, (60, 70, 100), box_rect, 1, border_radius=8)
+            if not self._draw_custom_frame(box_rect, "box_frame.png", padding=s(4, minimum=2)):
+                pygame.draw.rect(self.screen, (20, 25, 40, 180), box_rect, border_radius=s(8, minimum=4))
+                pygame.draw.rect(self.screen, (60, 70, 100), box_rect, 1, border_radius=s(8, minimum=4))
             
             # Boss ise ? göster
             if self._hide_next_pieces:
                 # Soru işareti göster
-                q_font = retro_style.get_font(36, bold=True)
+                q_font = retro_style.get_font(s(36, minimum=20), bold=True)
                 q_surf = q_font.render("?", True, (255, 100, 100))
                 q_rect = q_surf.get_rect(center=box_rect.center)
                 self.screen.blit(q_surf, q_rect)
@@ -1618,7 +1712,7 @@ class CampaignMode(Game):
                 ph = len(p.shape) if p.shape else 1
                 pcm = getattr(p, 'color_matrix', None)
                 
-                mini_cell = 12
+                mini_cell = max(s(12, minimum=8), int(box_size * 0.2))
                 px_w = pw * mini_cell
                 px_h = ph * mini_cell
                 off_x = bx + (box_size - px_w) // 2
@@ -1640,23 +1734,23 @@ class CampaignMode(Game):
                                     pass
                             self.draw_textured_block(cx, cy, mini_cell - 1, c, p_tex, s_info)
         
-        curr_y += box_size + 20
+        curr_y += box_size + s(20, minimum=10)
         
         # --- HOLD PIECE ---
-        hold_label = retro_style.get_font(18).render(t('hold'), True, label_color)
+        hold_label = retro_style.get_font(s(18, minimum=12)).render(t('hold'), True, label_color)
         self.screen.blit(hold_label, (content_x, curr_y))
         
-        curr_y += 25
-        hold_box_rect = pygame.Rect(content_x, curr_y, box_size + 20, box_size)
+        curr_y += s(25, minimum=16)
+        hold_box_rect = pygame.Rect(content_x, curr_y, box_size + s(20, minimum=12), box_size)
         
-        if not self._draw_custom_frame(hold_box_rect, "box_frame.png", padding=4):
-            pygame.draw.rect(self.screen, (20, 25, 40, 180), hold_box_rect, border_radius=8)
-            pygame.draw.rect(self.screen, (60, 70, 100), hold_box_rect, 1, border_radius=8)
+        if not self._draw_custom_frame(hold_box_rect, "box_frame.png", padding=s(4, minimum=2)):
+            pygame.draw.rect(self.screen, (20, 25, 40, 180), hold_box_rect, border_radius=s(8, minimum=4))
+            pygame.draw.rect(self.screen, (60, 70, 100), hold_box_rect, 1, border_radius=s(8, minimum=4))
         
         # Mini boss veya boss ise X göster
         if self._show_hold_x:
             # Büyük X çiz
-            x_font = retro_style.get_font(48, bold=True)
+            x_font = retro_style.get_font(s(48, minimum=24), bold=True)
             x_surf = x_font.render("X", True, (255, 80, 80))
             x_rect = x_surf.get_rect(center=hold_box_rect.center)
             self.screen.blit(x_surf, x_rect)
@@ -1666,7 +1760,7 @@ class CampaignMode(Game):
             hp_tex = getattr(hp, 'texture_surface', None)
             pw = len(hp.shape[0]) if hp.shape else 1
             ph = len(hp.shape) if hp.shape else 1
-            mini_cell = 14
+            mini_cell = max(s(14, minimum=9), int(box_size * 0.22))
             px_w = pw * mini_cell
             px_h = ph * mini_cell
             off_x = hold_box_rect.x + (hold_box_rect.width - px_w) // 2
@@ -1697,13 +1791,14 @@ class CampaignMode(Game):
                 lock_surf.fill((0, 0, 0, 100))
                 self.screen.blit(lock_surf, hold_box_rect.topleft)
                 lx, ly = hold_box_rect.center
-                pygame.draw.line(self.screen, (200, 50, 50), (lx-10, ly-10), (lx+10, ly+10), 3)
-                pygame.draw.line(self.screen, (200, 50, 50), (lx-10, ly+10), (lx+10, ly-10), 3)
+                pygame.draw.line(self.screen, (200, 50, 50), (lx - s(10, minimum=6), ly - s(10, minimum=6)), (lx + s(10, minimum=6), ly + s(10, minimum=6)), max(1, s(3, minimum=2)))
+                pygame.draw.line(self.screen, (200, 50, 50), (lx - s(10, minimum=6), ly + s(10, minimum=6)), (lx + s(10, minimum=6), ly - s(10, minimum=6)), max(1, s(3, minimum=2)))
         
-        curr_y += box_size + 30
+        curr_y += box_size + s(30, minimum=18)
         
         # --- SCORE & STATS ---
-        stats_h = 240
+        available_stats_h = max(s(120, minimum=100), panel_rect.bottom - curr_y - s(12, minimum=0))
+        stats_h = min(available_stats_h, max(s(150, minimum=120), min(s(240, minimum=150), available_stats_h)))
         stats_rect = pygame.Rect(content_x, curr_y, content_w, stats_h)
         self._hud_stats_rect = stats_rect
         self._hud_panel_rect = panel_rect
@@ -1716,21 +1811,22 @@ class CampaignMode(Game):
             a = 180 + int(40 * (i / stats_h))
             pygame.draw.line(stats_surf, (20, 24, 35, a), (0, i), (content_w, i))
         self.screen.blit(stats_surf, stats_rect.topleft)
-        pygame.draw.rect(self.screen, (50, 60, 80), stats_rect, 1, border_radius=12)
+        pygame.draw.rect(self.screen, (50, 60, 80), stats_rect, 1, border_radius=s(12, minimum=6))
         
-        stat_y_cur = curr_y + 15
+        stat_y_cur = curr_y + s(15, minimum=8)
         
         def draw_stat_row(label, value, y_pos, color_val=accent_color):
-            l_surf = retro_style.get_font(16).render(label, True, (160, 170, 190))
-            self.screen.blit(l_surf, (content_x + 15, y_pos))
+            l_surf = retro_style.get_font(s(16, minimum=11)).render(label, True, (160, 170, 190))
+            self.screen.blit(l_surf, (content_x + s(15, minimum=8), y_pos))
             
-            v_surf = retro_style.get_font(24, bold=True).render(str(value), True, color_val)
-            v_rect = v_surf.get_rect(topright=(content_x + content_w - 15, y_pos - 4))
+            v_surf = retro_style.get_font(s(24, minimum=15), bold=True).render(str(value), True, color_val)
+            v_rect = v_surf.get_rect(topright=(content_x + content_w - s(15, minimum=8), y_pos - s(4, minimum=2)))
             self.screen.blit(v_surf, v_rect)
             
-            line_y = y_pos + 32
-            pygame.draw.line(self.screen, (255, 255, 255, 30), (content_x + 10, line_y), (content_x + content_w - 10, line_y))
-            return 45
+            line_y = y_pos + s(32, minimum=20)
+            inset = s(10, minimum=6)
+            pygame.draw.line(self.screen, (255, 255, 255, 30), (content_x + inset, line_y), (content_x + content_w - inset, line_y))
+            return s(45, minimum=28)
         
         stat_y_cur += draw_stat_row(t('score'), f'{self.board.score:,}'.replace(',', '.'), stat_y_cur, accent_color)
         stat_y_cur += draw_stat_row(t('lines'), str(self.board.lines_cleared), stat_y_cur, text_color)
@@ -1742,10 +1838,10 @@ class CampaignMode(Game):
             draw_stat_row('Quadrix', str(self.board.tetrises), stat_y_cur, (100, 255, 100))
         
         # Mod info
-        mode_info_y = stats_rect.bottom + 15
+        mode_info_y = stats_rect.bottom + s(15, minimum=8)
         self._hud_mode_info_area = (
             int(content_x),
             int(mode_info_y),
             int(content_w),
-            int(max(0, self.window_height - mode_info_y - 8)),
+            int(max(0, screen_h - mode_info_y - 8)),
         )

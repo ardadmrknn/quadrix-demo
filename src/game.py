@@ -37,6 +37,10 @@ from asset_manager import load_image
 from gamepad_manager import get_gamepad_manager, is_gamepad_connected
 from effect_surface_cache import EffectSurfaceCache
 from sweep_effects import SweepCatState, draw_rainbow_cat_sweep
+from ui_scaling import get_scale
+
+
+GAMEPLAY_UI_REFERENCE_SIZE = (1366.0, 768.0)
 
 def resource_path(relative_path):
     """PyInstaller ile derlenen exe için doğru path'i al"""
@@ -162,13 +166,29 @@ def prewarm_common_mode_entry_backgrounds(settings_manager=None) -> list[str]:
 class Game:
     """Ana oyun sınıfı"""
 
+    def _active_ui_size(self) -> tuple[int, int]:
+        """Aktif canvas boyutunu döndür; stale window ölçüsüne düşmemeye çalış."""
+        screen = getattr(self, 'screen', None)
+        if screen is not None and hasattr(screen, 'get_size'):
+            try:
+                width, height = screen.get_size()
+                return max(1, int(width)), max(1, int(height))
+            except Exception:
+                pass
+
+        return (
+            max(1, int(getattr(self, 'window_width', GAMEPLAY_UI_REFERENCE_SIZE[0]))),
+            max(1, int(getattr(self, 'window_height', GAMEPLAY_UI_REFERENCE_SIZE[1]))),
+        )
+
     def _ui_scale(self, min_scale: float = 0.72, max_scale: float = 1.20) -> float:
-        """Pencere boyutuna bağlı genel UI ölçeği."""
-        try:
-            scale = min(float(self.window_width) / 1366.0, float(self.window_height) / 768.0)
-        except Exception:
-            scale = 1.0
-        return max(min_scale, min(max_scale, scale))
+        """Aktif canvas boyutuna bağlı genel UI ölçeği."""
+        return get_scale(
+            self._active_ui_size(),
+            min_scale=min_scale,
+            max_scale=max_scale,
+            reference_size=GAMEPLAY_UI_REFERENCE_SIZE,
+        )
 
     def _sx(self, value: int | float, scale: float | None = None, minimum: int = 1) -> int:
         """Sabit piksel değeri UI ölçeği ile dönüştür."""
@@ -1965,7 +1985,7 @@ class Game:
     
     def _draw_pause_menu(self):
         """Duraklama menüsünü ana menü çıkış paneli stilinde çiz."""
-        width, height = self.window_width, self.window_height
+        width, height = self._active_ui_size()
         ui_scale = self._ui_scale()
 
         # Dim overlay (exit confirm style)
@@ -4020,16 +4040,17 @@ class Game:
         
     def _draw_right_hud_panel(self, offset_x, offset_y, board_width, board_height, skin, ui_skin, text_color, accent_color, label_color):
         """Sağ taraftaki HUD panelini çiz - alt sınıflar override edebilir"""
+        active_width, active_height = self._active_ui_size()
         # Sağ panel - bilgi paneli arka planı
         info_x = offset_x + board_width + 25
         header_y = offset_y + 10
         
         # Panel genişliği ve yüksekliği hesapla
-        available_right = int(self.window_width) - (int(offset_x) + int(board_width) + 40)
+        available_right = int(active_width) - (int(offset_x) + int(board_width) + 40)
         panel_width = min(220, max(120, available_right))
-        panel_width = max(120, min(panel_width, max(120, int(self.window_width) - 24)))
-        info_x = min(info_x, int(self.window_width) - panel_width - 12)
-        panel_height = min(board_height, self.window_height - header_y - 40)
+        panel_width = max(120, min(panel_width, max(120, int(active_width) - 24)))
+        info_x = min(info_x, int(active_width) - panel_width - 12)
+        panel_height = min(board_height, active_height - header_y - 40)
         
         panel_rect = pygame.Rect(info_x, header_y, panel_width, panel_height)
 
@@ -4311,7 +4332,7 @@ class Game:
             int(content_x),
             int(mode_info_y),
             int(content_w),
-            int(max(0, self.window_height - mode_info_y - 8)),
+            int(max(0, active_height - mode_info_y - 8)),
         )
     
     def _draw_base_scene_effects(self, skin):
@@ -4635,6 +4656,7 @@ class Game:
 
     def _draw_game_over_overlay(self, skin, *, alt_theme: dict | None = None):
         """Oyun bittiğinde animasyonlu yıldız sistemli modern panel göster."""
+        active_width, active_height = self._active_ui_size()
         ui_scale = self._ui_scale(min_scale=0.68, max_scale=1.16)
         s = lambda v, minimum=1: self._sx(v, ui_scale, minimum)
 
@@ -4675,8 +4697,8 @@ class Game:
         if getattr(self, '_game_over_peek_active', False):
             # Peek modunda sadece sağ alt köşede göz butonu göster
             peek_btn_size = s(48)
-            peek_btn_x = self.window_width - peek_btn_size - s(20)
-            peek_btn_y = self.window_height - peek_btn_size - s(20)
+            peek_btn_x = active_width - peek_btn_size - s(20)
+            peek_btn_y = active_height - peek_btn_size - s(20)
             self._game_over_peek_rect = pygame.Rect(peek_btn_x, peek_btn_y, peek_btn_size, peek_btn_size)
             
             # Yuvarlak beyaz arka plan
@@ -4788,14 +4810,14 @@ class Game:
         # ============================================
         # ÇİZİM - FADE OVERLAY (cache'li gradient)
         # ============================================
-        _go_cache_key = (self.window_width, self.window_height)
+        _go_cache_key = (active_width, active_height)
         if getattr(self, _cache_key_attr, None) != _go_cache_key:
             _gradient_tint = _theme.get('gradient_tint', (5, 8, 18))
-            _go_surf = pygame.Surface((self.window_width, self.window_height), pygame.SRCALPHA)
-            for y in range(self.window_height):
-                _a = int(240 * 0.8 + 40 * (y / self.window_height))
+            _go_surf = pygame.Surface((active_width, active_height), pygame.SRCALPHA)
+            for y in range(active_height):
+                _a = int(240 * 0.8 + 40 * (y / active_height))
                 _a = min(_a, 240)
-                pygame.draw.line(_go_surf, (*_gradient_tint, _a), (0, y), (self.window_width, y))
+                pygame.draw.line(_go_surf, (*_gradient_tint, _a), (0, y), (active_width, y))
             setattr(self, _cache_attr, _go_surf)
             setattr(self, _cache_key_attr, _go_cache_key)
         _go_cached_surf = getattr(self, _cache_attr, None)
@@ -4807,13 +4829,13 @@ class Game:
         self._draw_confetti()
 
         # Panel boyutları
-        panel_width = min(max(s(700), self.window_width - s(560)), self.window_width - s(260))
+        panel_width = min(max(s(700), active_width - s(560)), active_width - s(260))
         panel_width = max(s(620), panel_width)
-        panel_height = min(max(s(430), self.window_height - s(240)), self.window_height - s(130))
+        panel_height = min(max(s(430), active_height - s(240)), active_height - s(130))
         panel_height = max(s(360), panel_height)
         panel_rect = pygame.Rect(
-            (self.window_width - panel_width) // 2,
-            (self.window_height - panel_height) // 2,
+            (active_width - panel_width) // 2,
+            (active_height - panel_height) // 2,
             panel_width,
             panel_height,
         )

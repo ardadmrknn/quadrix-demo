@@ -31,6 +31,11 @@ try:
 except Exception:
     from ui_theme import UIColors
 
+try:
+    from .ui_scaling import get_scale  # type: ignore
+except Exception:
+    from ui_scaling import get_scale
+
 from constants import BLACK, BOARD_WIDTH, BOARD_HEIGHT, FAST_FALL_SPEED, SPEED_INCREASE_PER_LEVEL, SIDE_PANEL_WIDTH, INFO_PANEL_HEIGHT
 from block_styles import TextureSlice
 
@@ -51,6 +56,7 @@ def _get_ui_icon_dir() -> str:
 
 
 UI_ICON_DIR = _get_ui_icon_dir()
+MYSTERY_OVERLAY_REFERENCE_SIZE = (1366.0, 768.0)
 
 
 def _get_card_assets_dir() -> str:
@@ -1431,7 +1437,7 @@ class MysteryCardUI:
         self._reveal_sfx_callback = callback
 
     def set_overlay_reference_size(self, width: int, height: int) -> None:
-        """Kart seçim overlay'i için fullscreen referans boyutunu ayarla."""
+        """Kart seçim overlay'i için isteğe bağlı referans boyutunu ayarla."""
         w = max(1, int(width))
         h = max(1, int(height))
         self._overlay_base_size = (w, h)
@@ -1489,31 +1495,22 @@ class MysteryCardUI:
                 return True
         return False
 
-    def _get_overlay_scale(self, window_width: int, window_height: int, *, min_scale: float = 0.62, max_scale: float = 1.0) -> float:
-        """Kart seçim overlay'i için fullscreen bazlı ölçek.
-
-        Referans olarak görülen en büyük pencere boyutu tutulur; böylece
-        fullscreen görünüm baz alınır ve pencere küçülünce orantılı küçülür.
-        Ayrıca okunabilirlik için, mutlak pencere boyutuna bağlı yumuşak
-        bir alt sınır uygulanır (kart metin/ikonları aşırı küçülmesin).
-        """
+    def _get_overlay_scale(self, window_width: int, window_height: int, *, min_scale: float = 0.62, max_scale: float = 1.12) -> float:
+        """Kart seçim overlay'i için aktif canvas bazlı ortak scale wrapper'ı."""
         w = max(1, int(window_width))
         h = max(1, int(window_height))
-
-        if self._overlay_base_size is None:
-            self._overlay_base_size = (w, h)
-        else:
-            bw, bh = self._overlay_base_size
-            self._overlay_base_size = (max(bw, w), max(bh, h))
-
-        bw, bh = self._overlay_base_size
-        ratio = min(w / float(max(1, bw)), h / float(max(1, bh)))
 
         rw, rh = self._overlay_readable_min_size
         readable_floor = min(1.0, min(w / float(max(1, rw)), h / float(max(1, rh))))
 
         effective_min_scale = max(min_scale, readable_floor)
-        return max(effective_min_scale, min(max_scale, ratio))
+        ref_w, ref_h = self._overlay_base_size or MYSTERY_OVERLAY_REFERENCE_SIZE
+        return get_scale(
+            (w, h),
+            min_scale=effective_min_scale,
+            max_scale=max_scale,
+            reference_size=(float(ref_w), float(ref_h)),
+        )
 
     def draw_selection_overlay(
         self,
@@ -4139,35 +4136,28 @@ class MysteryMode(Game):
     def _card_ui_scale(self) -> float:
         """Kart modu HUD/font ölçeği."""
         try:
-            ref_w, ref_h = getattr(self, '_card_ui_reference_size', (1366, 768))
+            ref_w, ref_h = getattr(self, '_card_ui_reference_size', MYSTERY_OVERLAY_REFERENCE_SIZE)
             ref_w = max(1, int(ref_w))
             ref_h = max(1, int(ref_h))
-            w = max(1, int(self.window_width))
-            h = max(1, int(self.window_height))
-            scale = min(float(w) / float(ref_w), float(h) / float(ref_h))
+            w, h = self._active_ui_size()
 
             rw, rh = getattr(self, '_card_ui_readable_min_size', (1180, 760))
             readable_floor = min(1.0, min(float(w) / max(1.0, float(rw)), float(h) / max(1.0, float(rh))))
             effective_min = max(0.62, readable_floor)
         except Exception:
-            scale = 1.0
+            w, h = MYSTERY_OVERLAY_REFERENCE_SIZE
+            ref_w, ref_h = MYSTERY_OVERLAY_REFERENCE_SIZE
             effective_min = 0.62
-        return max(effective_min, min(1.08, scale))
+        return get_scale(
+            (w, h),
+            min_scale=effective_min,
+            max_scale=1.12,
+            reference_size=(float(ref_w), float(ref_h)),
+        )
 
     def _get_card_ui_reference_size(self) -> tuple[int, int]:
-        """Kart UI için fullscreen baz referans çözünürlüğünü döndür."""
-        try:
-            info = pygame.display.Info()
-            ref_w = int(getattr(info, 'current_w', 0) or 0)
-            ref_h = int(getattr(info, 'current_h', 0) or 0)
-        except Exception:
-            ref_w, ref_h = 0, 0
-
-        if ref_w <= 0 or ref_h <= 0:
-            ref_w = int(getattr(self, 'window_width', 1366) or 1366)
-            ref_h = int(getattr(self, 'window_height', 768) or 768)
-
-        return max(1, ref_w), max(1, ref_h)
+        """Kart UI için Faz 8 baseline referans çözünürlüğünü döndür."""
+        return int(MYSTERY_OVERLAY_REFERENCE_SIZE[0]), int(MYSTERY_OVERLAY_REFERENCE_SIZE[1])
 
     def _get_side_panel_widths(self, board_pixel_width: int | None = None) -> tuple[int, int]:
         """Mystery mode için sol/sağ panel genişliklerini pencereye göre hesapla."""
@@ -4286,8 +4276,8 @@ class MysteryMode(Game):
 
         self._card_ui_font_signature = (
             self._card_ui_lang,
-            int(self.window_width),
-            int(self.window_height),
+            int(self._active_ui_size()[0]),
+            int(self._active_ui_size()[1]),
             profile_signature,
         )
 
@@ -4300,8 +4290,8 @@ class MysteryMode(Game):
 
         signature = (
             lang,
-            int(self.window_width),
-            int(self.window_height),
+            int(self._active_ui_size()[0]),
+            int(self._active_ui_size()[1]),
             (
                 getattr(retro_style, '_font_path', None),
                 getattr(retro_style, '_default_font_path', None),
@@ -6118,6 +6108,7 @@ class MysteryMode(Game):
 
     def draw_mode_overlay(self) -> None:
         self._ensure_card_ui_fonts()
+        active_width, active_height = self._active_ui_size()
         # Card selection overlay should be visually clean: hide the status panel
         # (it reads like an extra black overlay/band above the selection UI).
         if not self.card_selection_active:
@@ -6150,15 +6141,15 @@ class MysteryMode(Game):
             fonts = self._build_card_ui_font_pack()
             self.card_ui.draw_selection_overlay(
                 self.screen,
-                self.window_width,
-                self.window_height,
+                active_width,
+                active_height,
                 fonts,
                 self.card_manager.pending_choices,
                 self.card_manager.get_selection_hint(),
                 bool(self.settings_manager.get('card_mode_debug', False)),
             )
         elif self.card_message and self.card_message_timer > 0 and not getattr(self, '_sniper_overlay_active', False):
-            max_width = max(220, int(self.window_width - 48))
+            max_width = max(220, int(active_width - 48))
             message = None
             for size in range(22, 9, -1):
                 font = retro_style.get_font(size, bold=True)
@@ -6173,7 +6164,7 @@ class MysteryMode(Game):
                     22,
                     bold=True,
                 )
-            rect = message.get_rect(center=(self.window_width // 2, 44))
+            rect = message.get_rect(center=(active_width // 2, 44))
             self.screen.blit(message, rect)
         
         # === SNIPER OVERLAY: Oyun alanı üzerinde blok seçim modu ===

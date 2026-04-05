@@ -1,22 +1,26 @@
 # UI Scaling Kalan 4 Acik Alan ve Guvenli Ekleme Metodu
 
 Tarih: 2026-04-05
-Durum: Repo snapshot'ina gore acik kalan UI scaling alanlari ve dusuk riskli uygulama sirasi
+Durum: Repo snapshot'ina gore acik kalan UI scaling alanlari; Faz 8 helper/tutorial migration'i audit hardening ile dogrulandi ve kalan is daha dar iki zincirde toplandi
 Kapsam: Campaign popup/HUD, gameplay overlay ve popup kopru yuzeyleri
 
 ## ÖNEMLİ REF.
 
 bu dosya incelenirken "plans\2026-03-09-non-main-menu-ui-scaling-plan.md" kaynak dosyası da incelenmelidir
 
-## GUNCELLEME (2026-04-05 / Faz 6)
+## GUNCELLEME (2026-04-05 / Faz 8 helper + tutorial modal + audit hardening)
 
-- `src/campaign/campaign_ui.py` icindeki campaign modal/popup ailesi ortak modal scale yardimcisina tasindi.
-- Bu dokumandaki 4 acik alan siniflandirmasindan ilk lane kapanmistir.
+- `src/campaign/campaign_ui.py` icindeki campaign modal/popup ailesi ortak modal scale yardimcisina tasinmisti.
+- `src/campaign/campaign_mode.py` icindeki campaign yan panel/HUD ailesi de ortak content scale yardimcisina tasindi.
+- `src/game.py`, `src/game_modes.py`, `src/game_modes_advanced.py` ve `src/game_modes_extra.py` icindeki ilk helper dalgasi ortak aktif-canvas scale zincirine alindi.
+- Audit turunda `src/game.py` icindeki pause menu, sag HUD ve game-over overlay anchor/cache zinciri aktif canvas boyutuna hizalandi; stale `window_width/window_height` kullanan cizim yolu kapatildi.
+- `src/game_modes_extra.py` icinde canli `MysteryMode` kart UI scale/font yolu aktif canvas + sabit `1366x768` baseline'a cekildi; fullscreen/native referans geri sismesi kapatildi.
+- `src/tutorial.py` icindeki tutorial overlay, tip paneli, hub, lesson-result paneli ve kart secim font paketi ortak aktif-canvas modal scale wrapper'ina tasindi; tutorial kart overlay'i sabit `1366x768` baseline'a sabitlendi ve resize akisi olusturulan surface boyutunu geri okuyacak sekilde senkronlandi.
+- Bu dokumandaki lane siniflandirmasinda ilk 2 lane kapanmis, 3. lane helper + canli anchor katmaninda stabilize edilmis, 4. lane'de tutorial scale kaynagi ve resize senkronu kapanmis durumdadir.
 - Aktif kalan acik alanlar artik sunlardir:
-  1. Campaign yan panel/HUD ailesi
-  2. Gameplay overlay ve mod panel ailesi
-  3. Popup kopru ve tutorial/callout ailesi
-- Regression kilidi olarak `tests/test_phase6_campaign_modal_ui_scaling.py` eklendi.
+  1. Gameplay overlay ve mod panel ailesinde layout/popup sabitlerinin tek tek tasinmasi
+  2. Popup kopru ailesinde `src/main.py` fullscreen popup zinciri ve gerekiyorsa tutorial callout mikro layout polish'i
+- Regression kilitleri olarak `tests/test_phase6_campaign_modal_ui_scaling.py`, `tests/test_phase7_campaign_hud_ui_scaling.py`, `tests/test_phase8_overlay_ui_scaling.py` ve `tests/test_phase8_tutorial_ui_scaling.py` mevcuttur; genisletilmis Faz 8 audit paketi `88 passed`, capraz Faz 3-8 + ESC/pause paketi `154 passed` ile dogrulanmistir.
 - Audit notu: campaign fail ekraninin aktif runtime cizimi `src/campaign/campaign_mode.py` icindeki game-over overlay zincirinden gelir; `src/campaign/campaign_ui.py` fail overlay'i uyumluluk/test yolu olarak kalir.
 
 ## 1. Amac
@@ -153,17 +157,18 @@ Bu bolunme, mevcut davranisi korurken degisikligin etki alanini daraltir.
 
 ### Mevcut risk
 
-- Farkli dosyalarda farkli shrink-only helper'lar var.
-- Bazi yardimcilar buyumeyi 1.0'da kesiyor.
-- Fazla sayida popup ve overlay ayni aileye bagli; tek hamlede degistirmek yuksek regresyon riski tasir.
+- Ortak helper'a gecis helper ve canli anchor katmaninda yapildi, ancak mod-bazli layout/popup sabitleri hala dosya icinde parcali duruyor.
+- Buyumeyi 1.0'da kilitleyen ana helper omurgasi temizlendi; kalan risk sabit popup/panel olculerinin modlara gore ayri akislarda yasamasi.
+- Fazla sayida popup ve overlay ayni aileye bagli; tek hamlede degistirmek hala yuksek regresyon riski tasir.
 
 ### Guvenli ekleme metodu
 
 1. Ilk hedef, tum cagri noktalarini degistirmek degil, mevcut helper'lari ortak `ui_scaling` uzerine yeniden baglamaktir.
 2. `game.py` icindeki `_ui_scale()` yerel wrapper olarak korunmali ama hesabi ortak helper'a devredilmeli.
 3. `game_modes.py`, `game_modes_advanced.py` ve `game_modes_extra.py` icindeki helper isimleri korunmali; sadece ic mantik ortak helper ile uyumlu hale getirilmeli.
-4. Sabit popup boyutlari bir anda responsive yeniden yazilmamali; once `popup_width = s(500)` gibi kontrollu gecis uygulanmali.
-5. Kart overlay ve sayac panelleri ayni dalgada olmamali; once ortak helper baglantisi, sonra popup sabitleri ele alinmali.
+4. Aktif canvas ve gercek render surface boyutu draw anchor, cache ve font imza zincirinde tek otorite kalmali; stale pencere metrikleri yeni yollara geri sokulmamalidir.
+5. Sabit popup boyutlari bir anda responsive yeniden yazilmamali; once `popup_width = s(500)` gibi kontrollu gecis uygulanmali.
+6. Kart overlay ve sayac panelleri ayni dalgada olmamali; once ortak helper baglantisi, sonra popup sabitleri ele alinmali.
 
 ### En az bozan teknik desen
 
@@ -197,15 +202,15 @@ Bu bolunme, mevcut davranisi korurken degisikligin etki alanini daraltir.
 ### Mevcut risk
 
 - Bu yuzeyler bazen gameplay ile menu arasinda kopru gorevi goruyor.
-- Buradaki geometri, sadece cizim degil, event rect ve akis baslatma mantigina da dokunuyor.
-- Faz 8 ile ayni ailede gorunse de uygulama davranisi farkli oldugu icin ayri ele alinmali.
+- Tutorial tarafinda temel scale kaynagi ve resize senkronu kapanmis olsa da `src/main.py` popup kopru geometrisi ve tutorial callout mikro layoutlari hala hassas.
+- Buradaki geometri, sadece cizim degil, event rect ve akis baslatma mantigina da dokundugu icin Faz 8'in geri kalanindan ayri ele alinmali.
 
 ### Guvenli ekleme metodu
 
 1. `main.py` icindeki `_fullscreen_popup_scale(...)` helper'i silinmemeli; ortak helper'a baglanan yerel compatibility wrapper olarak korunmali.
 2. Popup panel hesaplarinda sadece boyut/padding/font zinciri ortak scale kaynagina alinmali.
 3. Event rect ve state gecis mantigi aynen korunmali.
-4. `tutorial.py` icinde mevcut `_sx(...)` kullanimlari korunabilir; ilk adimda sadece kaynak `ui_scale` hesaplamasi ortak helper ile hizalanmali.
+4. `tutorial.py` tarafinda ortak scale kaynagi ve gercek surface boyutu senkronu korunmali; yeni degisiklikler `_apply_tutorial_resize(...)` benzeri yolu bypass etmemeli.
 5. Tutorial ekranlarinda metin wrap ve kart/callout rect mantigi ayni commit'te topluca refactor edilmemeli.
 
 ### En az bozan teknik desen

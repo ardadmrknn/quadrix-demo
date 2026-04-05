@@ -22,7 +22,7 @@ try:
         build_occupancy_from_rows,
         capture_board_metrics,
         evaluate_scenario,
-        enrich_scenario_outcome,
+            enrich_scenario_outcome,
         get_scenario,
     )
     from .tutorial_cards import (  # type: ignore
@@ -34,6 +34,7 @@ try:
         get_tutorial_card_type_label,
     )
     from .game_modes_extra import MysteryCardUI  # type: ignore
+    from .ui_scaling import get_modal_scale  # type: ignore
 except Exception:
     from game import Game
     from localization import t
@@ -70,6 +71,7 @@ except Exception:
         from game_modes_extra import MysteryCardUI
     except Exception:
         MysteryCardUI = None
+    from ui_scaling import get_modal_scale
 
 
 def _tutorial_make_card_ui_font(size, bold=False):
@@ -94,6 +96,9 @@ def _tutorial_make_card_ui_font(size, bold=False):
     except Exception:
         pass
     return retro_style.get_font(size, bold=bold)
+
+
+TUTORIAL_MODAL_REFERENCE_SIZE = (1366.0, 768.0)
 
 class TutorialMode(Game):
     def __init__(self, difficulty='Normal', sound_enabled=True, effects_enabled=True, 
@@ -169,8 +174,7 @@ class TutorialMode(Game):
         self.hub_back_rect = None
         self.hub_progress_snapshot = build_default_tutorial_progress()
         self._load_lesson_catalog()
-        if self.card_ui:
-            self.card_ui.set_overlay_reference_size(self.window_width, self.window_height)
+        self._sync_tutorial_card_overlay_reference()
         
         initial_lesson_id = launch_lesson_id or get_first_lesson_id()
         if launch_lesson_id:
@@ -186,6 +190,81 @@ class TutorialMode(Game):
         if self._is_card_choice_lesson_active() and not getattr(self, 'lesson_result_active', False):
             return True
         return super().wants_mouse_visible()
+
+    def _sync_tutorial_card_overlay_reference(self) -> None:
+        if self.card_ui:
+            self.card_ui.set_overlay_reference_size(
+                int(TUTORIAL_MODAL_REFERENCE_SIZE[0]),
+                int(TUTORIAL_MODAL_REFERENCE_SIZE[1]),
+            )
+
+    def _tutorial_modal_scale(self, min_scale: float = 0.72, max_scale: float = 1.18) -> float:
+        scale = get_modal_scale(
+            self._active_ui_size(),
+            reference_size=TUTORIAL_MODAL_REFERENCE_SIZE,
+        )
+        return max(min_scale, min(max_scale, scale))
+
+    def _tutorial_overlay_rect(self) -> pygame.Rect:
+        board_offset_x, board_offset_y = self.get_board_offset()
+        cell_size = self.get_cell_size()
+        ui_scale = self._tutorial_modal_scale(min_scale=0.70, max_scale=1.18)
+        s = lambda v, minimum=1: self._sx(v, ui_scale, minimum)
+
+        panel_width = s(260)
+        panel_height = s(320)
+        panel_margin = s(20)
+        panel_x = board_offset_x - panel_width - panel_margin
+        base_panel_size = s(260)
+        base_panel_y = board_offset_y + (self.board_height * cell_size - base_panel_size) // 2
+        panel_y = base_panel_y - (panel_height - base_panel_size)
+
+        if panel_x < s(10):
+            panel_x = s(10)
+
+        return pygame.Rect(panel_x, panel_y, panel_width, panel_height)
+
+    def _tutorial_hub_panel_rect(self) -> pygame.Rect:
+        active_width, active_height = self._active_ui_size()
+        ui_scale = self._tutorial_modal_scale(min_scale=0.72, max_scale=1.12)
+        s = lambda v, minimum=1: self._sx(v, ui_scale, minimum)
+
+        panel_width = min(active_width - s(48), s(1180))
+        panel_height = min(active_height - s(48), s(720))
+        return pygame.Rect(
+            (active_width - panel_width) // 2,
+            (active_height - panel_height) // 2,
+            panel_width,
+            panel_height,
+        )
+
+    def _tutorial_lesson_result_panel_rect(self, is_board_result: bool) -> pygame.Rect:
+        active_width, active_height = self._active_ui_size()
+        ui_scale = self._tutorial_modal_scale(min_scale=0.72, max_scale=1.18)
+        s = lambda v, minimum=1: self._sx(v, ui_scale, minimum)
+
+        panel_width = s(430 if is_board_result else 380)
+        panel_height = s(340 if is_board_result else 210)
+        return pygame.Rect(
+            (active_width - panel_width) // 2,
+            (active_height - panel_height) // 2,
+            panel_width,
+            panel_height,
+        )
+
+    def _apply_tutorial_resize(self, width: int, height: int) -> None:
+        requested_width = max(int(width), MIN_WINDOW_WIDTH)
+        requested_height = max(int(height), MIN_WINDOW_HEIGHT)
+        self.screen = create_display(
+            requested_width,
+            requested_height,
+            fullscreen=False,
+            resizable=True,
+        )
+        self.window_width = self.screen.get_width()
+        self.window_height = self.screen.get_height()
+        self.update_fonts()
+        self._sync_tutorial_card_overlay_reference()
 
     def _load_lesson_catalog(self):
         self.lesson_catalog = list(get_lessons())
@@ -585,7 +664,7 @@ class TutorialMode(Game):
         }
         if self.card_ui:
             self.card_ui.reset()
-            self.card_ui.set_overlay_reference_size(self.window_width, self.window_height)
+            self._sync_tutorial_card_overlay_reference()
         self.base_fall_speed = 0
         self.fall_speed = 0
         self.soft_drop_counter = 0
@@ -628,7 +707,7 @@ class TutorialMode(Game):
         self._sync_lesson_runtime_state()
 
     def _build_tutorial_card_ui_font_pack(self):
-        ui_scale = max(0.72, min(1.0, min(self.window_width / 1366.0, self.window_height / 768.0)))
+        ui_scale = self._tutorial_modal_scale(min_scale=0.72, max_scale=1.12)
 
         def font(base_size, min_size, bold=False):
             size = max(min_size, int(round(base_size * ui_scale)))
@@ -1289,17 +1368,7 @@ class TutorialMode(Game):
 
             # --- STANDARD EVENTS ---
             if event.type == pygame.VIDEORESIZE:
-                self.window_width = max(event.w, MIN_WINDOW_WIDTH)
-                self.window_height = max(event.h, MIN_WINDOW_HEIGHT)
-                self.screen = create_display(
-                    self.window_width,
-                    self.window_height,
-                    fullscreen=False,
-                    resizable=True,
-                )
-                self.update_fonts()
-                if self.card_ui:
-                    self.card_ui.set_overlay_reference_size(self.window_width, self.window_height)
+                self._apply_tutorial_resize(event.w, event.h)
                 continue
 
             if self.hub_active:
@@ -1877,30 +1946,10 @@ class TutorialMode(Game):
                 cursor_y += subtitle_line_height
         
     def _draw_tutorial_overlay(self):
-        # Oyun alanının sol tarafına konumlandırılmış kare panel
-        # Board offset'ini al
-        board_offset_x, board_offset_y = self.get_board_offset()
-        cell_size = self.get_cell_size()
-        ui_scale = self._ui_scale(min_scale=0.70, max_scale=1.18)
+        ui_scale = self._tutorial_modal_scale(min_scale=0.70, max_scale=1.18)
         s = lambda v, minimum=1: self._sx(v, ui_scale, minimum)
-        
-        # Panel boyutları - yukarı doğru uzatılmış
-        panel_width = s(260)
-        panel_height = s(320)
-        panel_margin = s(20)
-        
-        # Panel sol tarafta, board'un solunda
-        panel_x = board_offset_x - panel_width - panel_margin
-        # Dikey konum: eski alt kenarı koru, paneli yukarı doğru uzat
-        base_panel_size = s(260)
-        base_panel_y = board_offset_y + (self.board_height * cell_size - base_panel_size) // 2
-        panel_y = base_panel_y - (panel_height - base_panel_size)
-        
-        # Ekran sınırlarını kontrol et
-        if panel_x < s(10):
-            panel_x = s(10)
-        
-        rect = pygame.Rect(panel_x, panel_y, panel_width, panel_height)
+
+        rect = self._tutorial_overlay_rect()
         retro_style.draw_glass_panel(self.screen, rect, alpha=220, border_color=(0, 200, 255))
         
         # Step Counter (üst kısım) - daha büyük font
@@ -1988,7 +2037,8 @@ class TutorialMode(Game):
         - Tavsiyeyi karakterin konuşma balonunda göster.
         - Karakter ifadesini adıma göre değiştir (örn. Move, Rotate, Hold).
         """
-        ui_scale = self._ui_scale(min_scale=0.70, max_scale=1.18)
+        _, active_height = self._active_ui_size()
+        ui_scale = self._tutorial_modal_scale(min_scale=0.70, max_scale=1.18)
         s = lambda v, minimum=1: self._sx(v, ui_scale, minimum)
 
         objectives = self._get_board_lesson_objectives()
@@ -1999,7 +2049,7 @@ class TutorialMode(Game):
         tip_gap = s(14)
 
         tip_rect = pygame.Rect(main_rect.x, main_rect.bottom + tip_gap, tip_width, tip_height)
-        if tip_rect.bottom > self.window_height - s(10):
+        if tip_rect.bottom > active_height - s(10):
             tip_rect.y = max(s(10), main_rect.y - tip_height - tip_gap)
 
         retro_style.draw_glass_panel(self.screen, tip_rect, alpha=210, border_color=(0, 200, 255))
@@ -2064,21 +2114,15 @@ class TutorialMode(Game):
         return
 
     def _draw_tutorial_hub(self):
-        ui_scale = self._ui_scale(min_scale=0.72, max_scale=1.12)
+        active_width, active_height = self._active_ui_size()
+        ui_scale = self._tutorial_modal_scale(min_scale=0.72, max_scale=1.12)
         s = lambda v, minimum=1: self._sx(v, ui_scale, minimum)
 
-        overlay = pygame.Surface((self.window_width, self.window_height), pygame.SRCALPHA)
+        overlay = pygame.Surface((active_width, active_height), pygame.SRCALPHA)
         overlay.fill((4, 8, 18, 228))
         self.screen.blit(overlay, (0, 0))
 
-        panel_width = min(self.window_width - s(48), s(1180))
-        panel_height = min(self.window_height - s(48), s(720))
-        panel_rect = pygame.Rect(
-            (self.window_width - panel_width) // 2,
-            (self.window_height - panel_height) // 2,
-            panel_width,
-            panel_height,
-        )
+        panel_rect = self._tutorial_hub_panel_rect()
         retro_style.draw_glass_panel(self.screen, panel_rect, alpha=230, border_color=(70, 190, 255))
 
         title_font = retro_style.get_font(s(28, minimum=18), bold=True)
@@ -2264,11 +2308,13 @@ class TutorialMode(Game):
         if not choices:
             return
 
+        active_width, active_height = self._active_ui_size()
+
         if self.card_ui:
             fonts = self._build_tutorial_card_ui_font_pack()
             header_lines = []
             wrap_font = fonts.get('small') or fonts.get('desc')
-            wrap_width = max(240, self.window_width - 280)
+            wrap_width = max(240, active_width - 280)
             for raw_line in list(scenario.get('context_lines', []) or [])[:2]:
                 header_lines.extend(self._wrap_text(str(raw_line), wrap_font, wrap_width, max_lines=2))
             header_lines = header_lines[:4]
@@ -2284,8 +2330,8 @@ class TutorialMode(Game):
                 forced_hover_index = int(self.card_choice_state.get('selected_index', 0) or 0)
             self.card_ui.draw_selection_overlay(
                 self.screen,
-                self.window_width,
-                self.window_height,
+                active_width,
+                active_height,
                 fonts,
                 choices,
                 '',
@@ -2298,13 +2344,13 @@ class TutorialMode(Game):
             )
             return
 
-        ui_scale = self._ui_scale(min_scale=0.70, max_scale=1.10)
+        ui_scale = self._tutorial_modal_scale(min_scale=0.70, max_scale=1.10)
         s = lambda v, minimum=1: self._sx(v, ui_scale, minimum)
 
-        context_width = min(self.window_width - s(40), s(980))
+        context_width = min(active_width - s(40), s(980))
         context_height = s(92)
         context_rect = pygame.Rect(
-            (self.window_width - context_width) // 2,
+            (active_width - context_width) // 2,
             s(24),
             context_width,
             context_height,
@@ -2327,7 +2373,7 @@ class TutorialMode(Game):
         card_width = min(s(290), max(s(180), (context_width - (card_gap * (len(choices) - 1))) // len(choices)))
         card_height = s(280)
         total_width = card_width * len(choices) + card_gap * (len(choices) - 1)
-        start_x = (self.window_width - total_width) // 2
+        start_x = (active_width - total_width) // 2
         y = context_rect.bottom + s(18)
         selected_index = int(self.card_choice_state.get('selected_index', 0) or 0)
 
@@ -2373,22 +2419,16 @@ class TutorialMode(Game):
         if not isinstance(self.lesson_result, dict):
             return
 
-        ui_scale = self._ui_scale(min_scale=0.72, max_scale=1.18)
+        active_width, active_height = self._active_ui_size()
+        ui_scale = self._tutorial_modal_scale(min_scale=0.72, max_scale=1.18)
         s = lambda v, minimum=1: self._sx(v, ui_scale, minimum)
         objective_results = list(self.lesson_result.get('objective_results') or [])
         coach_text = str(self.lesson_result.get('coach_text') or '')
         is_board_result = bool(objective_results)
-        overlay = pygame.Surface((self.window_width, self.window_height), pygame.SRCALPHA)
+        overlay = pygame.Surface((active_width, active_height), pygame.SRCALPHA)
         overlay.fill((0, 0, 0, 120))
         self.screen.blit(overlay, (0, 0))
-        panel_width = s(430 if is_board_result else 380)
-        panel_height = s(340 if is_board_result else 210)
-        rect = pygame.Rect(
-            (self.window_width - panel_width) // 2,
-            (self.window_height - panel_height) // 2,
-            panel_width,
-            panel_height,
-        )
+        rect = self._tutorial_lesson_result_panel_rect(is_board_result)
         retro_style.draw_glass_panel(self.screen, rect, alpha=235, border_color=(40, 220, 140) if self.lesson_result.get('success') else (220, 120, 80))
 
         title_font = retro_style.get_font(s(24, minimum=16), bold=True)

@@ -1,7 +1,7 @@
 # Ana Menu Disi UI Scaling Duzeltme Plani
 
 Tarih: 2026-03-09
-Durum: Aktif plan, Faz 6 uygulandi; audit tamamlandi, hedefli regresyonlar gecti ve manuel smoke/onayi bekleniyor
+Durum: Aktif plan, Faz 8 helper/tutorial migration'i audit-hardening ile guclendirildi; capraz regresyonlar gecti ve kalan is mod-bazli layout sabitleri ile popup bridge zincirinde toplandi
 Kapsam: Ana menu disindaki ekranlar, paneller, modal pencereler ve yogun liste/grid UI'leri
 
 Onemli husus: 1080p ustu cozumunurluk destegi, mevcut macOS piksel ve cozumunurluk ayarlarinin yani sira Retina/fullscreen davranisini bozmadan getirilmelidir. Windows non-retina iyilestirmesi ana hedef olsa da macOS mevcut davranisi korunacak bir regresyon siniri olarak ele alinacaktir.
@@ -416,6 +416,14 @@ Kabul kriteri:
 
 - Panel buyuse de board okunurlugu ve gameplay alani bozulmayacak.
 
+Guncel durum (2026-04-05):
+
+- `src/campaign/campaign_mode.py` icine yerel campaign HUD scale wrapper'i eklendi.
+- Sol panel rect'i, sag HUD panel rect'i ve alt progress/info paneli ayni `get_content_scale(..., profile='dense')` kaynagindan besleniyor.
+- `1366x768` baseline korunurken panel cap'leri `scaled_cap` mantigina alindi.
+- Regression kilidi olarak `tests/test_phase7_campaign_hud_ui_scaling.py` eklendi ve Faz 5-7 campaign paketinde hedefli regresyonlar gecti.
+- Audit/hardening turunda sol paneldeki yildiz/tik ikonlari da ayni HUD scale zincirine alindi; sag HUD ic metrikleri aktif canvas boyutuna hizalandi ve `_hud_panel_rect` / `_hud_mode_info_area` kontrati korunarak Faz 8 overlay ailesiyle uyum acik birakildi.
+
 ### Faz 8: Oyun ici popup ailesi ve mod overlay'leri
 
 Amaç:
@@ -436,6 +444,14 @@ Yapilacaklar:
 - `max_scale=1.0` kalan tum overlay/panel helper'lari gozden gecirilecek.
 - Her mod ekrani birlikte degil, tek tek ele alinacak.
 
+Guncel durum (2026-04-05 / helper + tutorial modal + audit hardening):
+
+- `src/game.py` icindeki temel `_ui_scale()` aktif canvas boyutuna gecirildi ve ortak `get_scale(...)` matematiğine baglandi; audit turunda pause menu, sag HUD ve game-over overlay anchor/cache zinciri de ayni aktif-canvas kaynagina hizalandi.
+- `src/game_modes.py` icindeki Sprint / Ultra sayac helper'lari, `src/game_modes_advanced.py` icindeki Survival panel helper'i ve `src/game_modes_extra.py` icindeki Mystery overlay helper'i ortak aktif-canvas scale mantigina baglandi.
+- Mystery overlay tarafinda "gorulen en buyuk pencere" referansi kaldirildi; audit turunda canli `MysteryMode` kart UI scale/font imza zinciri de aktif canvas + sabit `1366x768` baseline'a cekildi.
+- `src/tutorial.py` icinde tutorial overlay, tip paneli, hub, ders sonuc paneli ve kart secim font paketi ortak aktif-canvas modal scale wrapper'ina baglandi; tutorial kart overlay'i mevcut pencere boyutunu referans diye kilitlemek yerine sabit `1366x768` baseline'i kullaniyor ve resize akisi artik olusturulan surface boyutunu geri okuyup pencere metriklerini senkronluyor.
+- Regression kilitleri olarak `tests/test_phase8_overlay_ui_scaling.py` ve `tests/test_phase8_tutorial_ui_scaling.py` genisletildi; audit hedefli paket `88 passed`, Faz 3-8 capraz UI scaling paketi ve ESC/pause uyumluluk kontrolu ise `154 passed` ile gecti.
+
 ### Mevcut repo durumu ozeti (2026-04-05)
 
 Bu ozet, not yazildigi andaki repo snapshot'ina gore eklenmistir; plandaki hedeflerin ne kadarinin koda yansidigi hizli gorunsun diye tutulur.
@@ -450,14 +466,15 @@ Bu ozet, not yazildigi andaki repo snapshot'ina gore eklenmistir; plandaki hedef
 | Faz 4 - User screens migration'i          | Tamamlandi   | `src/user_screens.py` icinde native display referansi ana scaling yolundan cikarildi; `UserSelectionScreen` ortak helper ile aktif canvas tabanli buyuyebiliyor, `UserManagementScreen` ayni helper ailesine ve ortak liste geometri metriklerine tasindi. `tests/test_phase4_ui_scaling.py` eklendi; son tam pytest sonucu `501 passed, 6 skipped`.                                                                   |
 | Faz 5 - Settings migration'i              | Tamamlandi   | `src/settings_screen_tabbed.py` ortak helper tabanli yerel `ui_scale` / `s()` akisina tasindi; panel, tab, content, row, scrollbar ve overlay/prompt boyutlari ayni layout helper ailesinden besleniyor. Scroll/input tarafinda draw ile ayni geometri kaynaklari kullaniliyor. `tests/test_phase5_settings_ui_scaling.py` eklendi; settings odakli suite ve tam pytest paketi `501 passed, 6 skipped` ile gecti.      |
 | Faz 6 - Campaign modal ailesi             | Tamamlandi   | `src/campaign/campaign_ui.py` icine yerel modal scale wrapper'i eklendi; `1366x768` baseline korunarak level complete / fail overlay icindeki panel, header/footer, buton ve font boyutlari ortak `get_modal_scale(...)` kaynagina baglandi. `tests/test_phase6_campaign_modal_ui_scaling.py` ile 1366 baseline korunumu ve buyuk cozumunurlukte retry/menu buton geometrisinin buyudugu dogrulandi.                   |
-| Faz 7-8 - Campaign HUD / overlay ailesi   | Acik         | `src/campaign/campaign_mode.py` ve gameplay overlay dosyalarinda ortak `content_scale` / `modal_scale` mantigina gecis repo snapshot'inda henuz gorulmuyor.                                                                                                                                                                                                                                                            |
+| Faz 7 - Campaign HUD ailesi               | Tamamlandi   | `src/campaign/campaign_mode.py` icinde sol panel, sag HUD paneli ve alt progress/info paneli yerel wrapper uzerinden ortak `get_content_scale(..., profile='dense')` kaynagina tasindi; `1366x768` baseline korunurken panel cap/padding/font geometriği ayni scale ailesine baglandi. `tests/test_phase7_campaign_hud_ui_scaling.py` ile buyume ve anchor geometriği kilitlendi.                         |
+| Faz 8 - Campaign / gameplay overlay ailesi| Kismen       | `src/game.py` temel `_ui_scale()` helper'i aktif canvas tabanli ortak `get_scale(...)` matematiğine tasindi; audit turunda pause/HUD/game-over draw anchor'lari da aktif canvas'a hizalandi. `src/game_modes.py` Sprint/Ultra sayaç helper'lari, `src/game_modes_advanced.py` Survival panel helper'i ve `src/game_modes_extra.py` Mystery overlay helper'i ortak scale zincirine baglandi; canli `MysteryMode` font/overlay yolu sabit `1366x768` baseline + aktif canvas ile sertlestirildi. `src/tutorial.py` icindeki tutorial overlay/hub/lesson-result/kart-secim yuzeyleri ortak modal scale wrapper'ina alindi ve resize yolu olusturulan surface boyutunu geri okuyacak sekilde senkronlandi. Genisletilmis Faz 8 audit paketi `88 passed`, Faz 3-8 capraz paket + ESC/pause kontrolu `154 passed`. Sonraki adim mod-bazli gameplay overlay/layout sabitlerini ve `src/main.py` popup bridge zincirini tasimak. |
 | macOS regresyon siniri                    | Kismen hazir | Repo'da HiDPI/Retina ve fullscreen davranisini korumaya yonelik mevcut bilgi ve kod parcalari var; 1080p ustu destek bunlari bozmadan ilerlemeli.                                                                                                                                                                                                                                                                      |
 
 Ozet sonuc:
 
-- Faz 6 uygulandi; en yakin uygulanabilir sonraki adim Faz 7'deki campaign yan panel / HUD ailesidir.
+- Faz 8'de helper dalgasi ve tutorial modal/layout dalgasi audit-hardening ile canli draw yollarina kadar tamamlandi; en yakin uygulanabilir sonraki adim gameplay overlay / mod panel layout sabitlerini mod-bazli ilerletmek ve ardindan `src/main.py` popup bridge zincirini tasimaktir.
 - Faz 3 audit/hardening turunda height-only resize ve dil degisimi sirasinda stale content cache riski kapatildi; graphics menu scrollbar geometriği de draw clip alanina hizalandi.
-- Ortak helper artik settings_screen_tabbed ve campaign modal ailesi dahil menu-disi temel ekranlara tasinmis durumda; sonraki fazlarda ayni desen campaign/gameplay overlay tarafina uygulanabilir.
+- Ortak helper artik settings_screen_tabbed, campaign modal ailesi, campaign HUD ailesi, gameplay overlay helper katmani ve tutorial modal/layout ailesine tasinmis durumda; Faz 8 audit'iyle aktif-canvas anchor, canli MysteryMode referansi ve tutorial resize-surface senkronu kapanmis oldu. Sonraki adim gameplay mod panel sabitlerini ve ana popup kopru zincirini ayni desenle tasimaktir.
 
 ## 7. Teknik Uygulama Kurallari
 
