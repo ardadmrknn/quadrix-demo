@@ -2,12 +2,15 @@
 import pygame
 import os
 import sys
+from collections import OrderedDict
 from pathlib import Path
 
 from asset_manager import load_image
 
 # macOS detection
 _IS_MACOS = sys.platform == 'darwin'
+_BACKGROUND_IMAGE_CACHE: "OrderedDict[tuple[str, bool], pygame.Surface]" = OrderedDict()
+_BACKGROUND_IMAGE_CACHE_MAX_ITEMS = 16
 
 def resource_path(relative_path):
     """PyInstaller ile derlenen exe için doğru path'i al"""
@@ -20,6 +23,40 @@ def resource_path(relative_path):
 
     return os.path.normpath(str(base_path / relative_path))
 
+
+def _resolve_existing_image_path(image_path: str) -> str | None:
+    if os.path.isabs(image_path) and os.path.exists(image_path):
+        return os.path.normpath(image_path)
+
+    full_path = resource_path(image_path)
+    if os.path.exists(full_path):
+        return os.path.normpath(full_path)
+
+    return None
+
+
+def _get_cached_background_image(resolved_path: str) -> pygame.Surface:
+    convert_for_display = (not _IS_MACOS) and pygame.display.get_surface() is not None
+    cache_key = (resolved_path, bool(convert_for_display))
+    cached = _BACKGROUND_IMAGE_CACHE.get(cache_key)
+    if cached is not None:
+        _BACKGROUND_IMAGE_CACHE.move_to_end(cache_key)
+        return cached
+
+    image = load_image(resolved_path, convert_alpha=False)
+    if convert_for_display:
+        try:
+            image = image.convert_alpha() if image.get_alpha() is not None else image.convert()
+        except Exception:
+            pass
+
+    _BACKGROUND_IMAGE_CACHE[cache_key] = image
+    _BACKGROUND_IMAGE_CACHE.move_to_end(cache_key)
+    while len(_BACKGROUND_IMAGE_CACHE) > _BACKGROUND_IMAGE_CACHE_MAX_ITEMS:
+        _BACKGROUND_IMAGE_CACHE.popitem(last=False)
+
+    return image
+
 class BackgroundManager:
     """Oyun arka planı için resim yöneticisi"""
     
@@ -29,6 +66,14 @@ class BackgroundManager:
         self.background_surface = None
         self.transparency = 0.3  # 0.0 (tamamen saydam) - 1.0 (opak)
         self.enabled = True
+
+    @classmethod
+    def prewarm_image(cls, image_path):
+        resolved_path = _resolve_existing_image_path(image_path)
+        if resolved_path is None:
+            return False
+        _get_cached_background_image(resolved_path)
+        return True
         
     def load_image(self, image_path):
         """
@@ -38,39 +83,16 @@ class BackgroundManager:
             image_path: Resim dosyasının yolu (absolute veya relative)
         """
         try:
-            # Önce absolute path olarak dene (custom background için)
-            if os.path.isabs(image_path) and os.path.exists(image_path):
-                img = load_image(image_path, convert_alpha=False)
-                # macOS: convert/convert_alpha bazen crash yapabiliyor
-                if not _IS_MACOS:
-                    try:
-                        if pygame.display.get_surface() is not None:
-                            img = img.convert_alpha() if img.get_alpha() is not None else img.convert()
-                    except Exception:
-                        pass
-                self.background_image = img
-                print(f"✅ Özel arka plan resmi yüklendi: {os.path.basename(image_path)}")
+            resolved_path = _resolve_existing_image_path(image_path)
+            if resolved_path is not None:
+                self.background_image = _get_cached_background_image(resolved_path)
+                print(f"✅ Arka plan resmi yüklendi: {os.path.basename(resolved_path)}")
                 return True
-            
-            # Değilse PyInstaller için doğru path'i al (relative path)
-            full_path = resource_path(image_path)
-            if os.path.exists(full_path):
-                img = load_image(full_path, convert_alpha=False)
-                # macOS: convert/convert_alpha bazen crash yapabiliyor
-                if not _IS_MACOS:
-                    try:
-                        if pygame.display.get_surface() is not None:
-                            img = img.convert_alpha() if img.get_alpha() is not None else img.convert()
-                    except Exception:
-                        pass
-                self.background_image = img
-                print(f"✅ Arka plan resmi yüklendi: {image_path}")
-                return True
-            else:
-                # Do not print per-path 'not found' messages here, the caller will
-                # decide whether to print a summary. Avoid spamming the terminal
-                # when multiple fallback paths are checked.
-                return False
+
+            # Do not print per-path 'not found' messages here, the caller will
+            # decide whether to print a summary. Avoid spamming the terminal
+            # when multiple fallback paths are checked.
+            return False
         except Exception as e:
             print(f"⚠️ Arka plan resmi yüklenemedi: {e}")
             return False

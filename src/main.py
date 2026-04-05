@@ -141,7 +141,7 @@ def _persist_active_game_run(game) -> None:
         print(f"[Save] Oyun cikis kaydi tamamlanamadi: {exc}")
 
 try:
-    from .game import Game  # type: ignore
+    from .game import Game, prewarm_common_mode_entry_backgrounds  # type: ignore
     from .block_styles import BlockStyleManager  # type: ignore
     from .tutorial import TutorialMode  # type: ignore
     from .splash_screen import SplashScreen  # type: ignore
@@ -175,7 +175,7 @@ try:
     )
     from .gamepad_manager import get_gamepad_manager, is_gamepad_connected  # type: ignore
 except Exception:
-    from game import Game
+    from game import Game, prewarm_common_mode_entry_backgrounds
     from block_styles import BlockStyleManager
     from tutorial import TutorialMode
     from splash_screen import SplashScreen
@@ -1320,6 +1320,10 @@ def main():
     print("=" * 60)
 
     menu = Menu(screen, user_manager, settings_manager=settings_manager)
+    try:
+        prewarm_common_mode_entry_backgrounds(settings_manager=settings_manager)
+    except Exception:
+        pass
     # Köşe butonundaki ses durumunu başlangıçta senkronize et
     try:
         menu.set_muted(settings_manager.get('mute_all', False))
@@ -1623,6 +1627,7 @@ def main():
                                 settings_manager,
                                 user_manager,
                                 'daily',
+                                sound_manager=menu_sound,
                                 score_manager=score_manager,
                             )
                             state = 'game'
@@ -1656,6 +1661,7 @@ def main():
                             settings_manager,
                             user_manager,
                             'daily',
+                            sound_manager=menu_sound,
                             score_manager=score_manager,
                         )
                         state = 'game'
@@ -1763,6 +1769,7 @@ def main():
                     fullscreen=fullscreen,
                     settings_manager=settings_manager,
                     user_manager=user_manager,
+                    sound_manager=menu_sound,
                     score_manager=score_manager,
                 )
                 state = 'game'
@@ -1859,6 +1866,7 @@ def main():
                     settings_manager,
                     user_manager,
                     'mystery',
+                    sound_manager=menu_sound,
                     score_manager=score_manager,
                 )
                 state = 'game'
@@ -2000,6 +2008,8 @@ def main():
         menu.show_daily_prompt = confirm_daily
         menu.daily_prompt_selected = daily_prompt_selected
         menu.daily_prompt_challenge = daily_prompt_challenge
+        if state != 'menu':
+            return True
         menu.draw()
         return True
 
@@ -2416,7 +2426,7 @@ def main():
                 difficulty = settings_screen.difficulty
                 sound = settings_screen.sound_enabled
                 effects = settings_screen.effects_enabled
-                game = SprintMode(difficulty, sound, effects, achievement_manager, theme_manager, screen, fullscreen, settings_manager, user_manager, 'sprint', score_manager=score_manager)
+                game = SprintMode(difficulty, sound, effects, achievement_manager, theme_manager, screen, fullscreen, settings_manager, user_manager, 'sprint', score_manager=score_manager, sound_manager=menu_sound)
                 state = 'game'
             elif action == 'Ultra Mode':
                 if not _show_mode_intro_popup(screen, 'ultra', settings_manager):
@@ -2426,7 +2436,7 @@ def main():
                 difficulty = settings_screen.difficulty
                 sound = settings_screen.sound_enabled
                 effects = settings_screen.effects_enabled
-                game = UltraMode(difficulty, sound, effects, achievement_manager, theme_manager, screen, fullscreen, settings_manager, user_manager, 'ultra', score_manager=score_manager)
+                game = UltraMode(difficulty, sound, effects, achievement_manager, theme_manager, screen, fullscreen, settings_manager, user_manager, 'ultra', score_manager=score_manager, sound_manager=menu_sound)
                 state = 'game'
             elif action == 'Zen Mode':
                 # Zen Mode için optimize edilmiş başlangıç penceresi (Intro + Ayar)
@@ -2437,7 +2447,7 @@ def main():
                 game_return_state = 'extras'
                 sound = settings_screen.sound_enabled
                 effects = settings_screen.effects_enabled
-                game = ZenMode('Kolay', sound, effects, achievement_manager, theme_manager, screen, fullscreen, settings_manager, user_manager, 'zen', score_manager=score_manager, auto_clear_rows=auto_clear_rows)
+                game = ZenMode('Kolay', sound, effects, achievement_manager, theme_manager, screen, fullscreen, settings_manager, user_manager, 'zen', score_manager=score_manager, auto_clear_rows=auto_clear_rows, sound_manager=menu_sound)
                 state = 'game'
             elif action == 'Hardcore Mode':
                 if not _show_mode_intro_popup(screen, 'hardcore', settings_manager):
@@ -2447,7 +2457,7 @@ def main():
                 difficulty = settings_screen.difficulty
                 sound = settings_screen.sound_enabled
                 effects = settings_screen.effects_enabled
-                game = HardcoreMode(difficulty, sound, effects, achievement_manager, theme_manager, screen, fullscreen, settings_manager, user_manager, 'hardcore', score_manager=score_manager)
+                game = HardcoreMode(difficulty, sound, effects, achievement_manager, theme_manager, screen, fullscreen, settings_manager, user_manager, 'hardcore', score_manager=score_manager, sound_manager=menu_sound)
                 state = 'game'
             elif action in ('pvp_2_players', 'PvP (2 Oyuncu)', 'PvP (2 Players)'):
                 if not _show_mode_intro_popup(screen, 'pvp', settings_manager):
@@ -2473,7 +2483,7 @@ def main():
                 difficulty = settings_screen.difficulty
                 sound = settings_screen.sound_enabled
                 effects = settings_screen.effects_enabled
-                game = Tetris2Mode(difficulty, sound, effects, achievement_manager, theme_manager, screen, fullscreen, settings_manager, user_manager, 'tetris2', score_manager=score_manager)
+                game = Tetris2Mode(difficulty, sound, effects, achievement_manager, theme_manager, screen, fullscreen, settings_manager, user_manager, 'tetris2', score_manager=score_manager, sound_manager=menu_sound)
                 state = 'game'
             elif action in ('Mystery Mode', 'Kart Ustalığı', 'Yeni Nesil Quadrix', 'New Gen Quadrix', 'Card Mastery'):
                 if not _show_mode_intro_popup(screen, 'mystery', settings_manager):
@@ -2483,7 +2493,7 @@ def main():
                 difficulty = settings_screen.difficulty
                 sound = settings_screen.sound_enabled
                 effects = settings_screen.effects_enabled
-                game = MysteryMode(difficulty, sound, effects, achievement_manager, theme_manager, screen, fullscreen, settings_manager, user_manager, 'mystery', score_manager=score_manager)
+                game = MysteryMode(difficulty, sound, effects, achievement_manager, theme_manager, screen, fullscreen, settings_manager, user_manager, 'mystery', score_manager=score_manager, sound_manager=menu_sound)
                 state = 'game'
             elif action == 'Wide Mode':
                 if not _show_mode_intro_popup(screen, 'wide', settings_manager):
@@ -2493,7 +2503,7 @@ def main():
                 difficulty = settings_screen.difficulty
                 sound = settings_screen.sound_enabled
                 effects = settings_screen.effects_enabled
-                game = WideMode(difficulty, sound, effects, achievement_manager, theme_manager, screen, fullscreen, settings_manager, user_manager, 'wide', score_manager=score_manager)
+                game = WideMode(difficulty, sound, effects, achievement_manager, theme_manager, screen, fullscreen, settings_manager, user_manager, 'wide', score_manager=score_manager, sound_manager=menu_sound)
                 state = 'game'
             elif action == 'Survival Mode':
                 if not _show_mode_intro_popup(screen, 'survival', settings_manager):
@@ -2503,7 +2513,7 @@ def main():
                 difficulty = settings_screen.difficulty
                 sound = settings_screen.sound_enabled
                 effects = settings_screen.effects_enabled
-                game = SurvivalMode(difficulty, sound, effects, achievement_manager, theme_manager, screen, fullscreen, settings_manager, user_manager, 'survival', score_manager=score_manager)
+                game = SurvivalMode(difficulty, sound, effects, achievement_manager, theme_manager, screen, fullscreen, settings_manager, user_manager, 'survival', score_manager=score_manager, sound_manager=menu_sound)
                 state = 'game'
             elif action == 'Cascade Mode':
                 if not _show_mode_intro_popup(screen, 'cascade', settings_manager):
@@ -2513,7 +2523,7 @@ def main():
                 difficulty = settings_screen.difficulty
                 sound = settings_screen.sound_enabled
                 effects = settings_screen.effects_enabled
-                game = CascadeMode(difficulty, sound, effects, achievement_manager, theme_manager, screen, fullscreen, settings_manager, user_manager, 'cascade', score_manager=score_manager)
+                game = CascadeMode(difficulty, sound, effects, achievement_manager, theme_manager, screen, fullscreen, settings_manager, user_manager, 'cascade', score_manager=score_manager, sound_manager=menu_sound)
                 state = 'game'
             elif action == 'Online PvP':
                 if not _show_mode_intro_popup(screen, 'online_pvp', settings_manager):
@@ -2552,6 +2562,7 @@ def main():
                     settings_manager,
                     user_manager,
                     'daily',
+                    sound_manager=menu_sound,
                     score_manager=score_manager,
                 )
                 state = 'game'
@@ -2579,6 +2590,8 @@ def main():
                 )
                 state = 'game'
 
+        if state != 'extras':
+            return True
         extras_screen.draw()
         return True
 
@@ -2681,6 +2694,7 @@ def main():
                     fullscreen=fullscreen,
                     settings_manager=settings_manager,
                     user_manager=user_manager,
+                    sound_manager=menu_sound,
                     score_manager=score_manager,
                 )
                 return True
@@ -2967,6 +2981,7 @@ def main():
                         fullscreen=fullscreen,
                         settings_manager=settings_manager,
                         user_manager=user_manager,
+                        sound_manager=menu_sound,
                         score_manager=score_manager,
                     )
                     

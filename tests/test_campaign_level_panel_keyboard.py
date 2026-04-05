@@ -6,11 +6,13 @@ Modülü tam import yerine sadece değiştirilen metodları izole ederek test ed
 Kapsam:
 1. _move_selection() → hovered_level None olmalı
 2. _start_world_transition() → hovered_level None olmalı
-3. _init_fonts() 1920×1080'de scale <= 1.0 sınırına uymalı
+3. _init_fonts() ve _get_ui_scale() aynı ortak ölçek kaynağından beslenmeli
 """
 from __future__ import annotations
 import sys
 import types
+
+from ui_scaling import get_scale
 
 
 # ---------------------------------------------------------------------------
@@ -170,34 +172,34 @@ def test_start_world_transition_different_world_resets_hover():
 
 
 # ---------------------------------------------------------------------------
-# Test 3: Font ölçeği formülü sınırını doğrula
+# Test 3: Font ve layout aynı ortak ölçek kaynağını kullanmalı
 # ---------------------------------------------------------------------------
 
-def test_init_fonts_scale_formula_1080p_capped():
-    """1920×1080'de yeni formül 1.0'da cap'lenmeli (eski 1.2 veriyordu)."""
-    w, h = 1920, 1080
-    new_scale = max(0.72, min(1.0, w / 1400, h / 900))
-    assert new_scale <= 1.0
-    assert abs(new_scale - 1.0) < 0.001
+def test_init_fonts_scale_formula_1400x900_reference_is_one():
+    """Level select için 1400×900 ortak referans noktası 1.0 olmalı."""
+    scale = get_scale((1400, 900), min_scale=0.72, max_scale=1.18, reference_size=(1400.0, 900.0))
+    assert abs(scale - 1.0) < 0.001
 
 
-def test_old_formula_exceeds_1():
-    """ESKİ formülün 1.2'ye çıktığını belgelemek; yeni formül daha küçük."""
-    w, h = 1920, 1080
-    old_scale = max(0.72, min(1.2, w / 1400, h / 900))
-    new_scale = max(0.72, min(1.0, w / 1400, h / 900))
-    assert old_scale == 1.2
-    assert new_scale < old_scale, "Yeni formül eskisinden küçük → yazılar ilk hâline döner"
+def test_init_fonts_scale_formula_1080p_can_grow_above_one():
+    """1080p üstünde font/layout ölçeği 1.0 üstüne çıkabilmeli ama clamp'lenmeli."""
+    scale = get_scale((1920, 1080), min_scale=0.72, max_scale=1.18, reference_size=(1400.0, 900.0))
+    assert scale > 1.0
+    assert abs(scale - 1.18) < 0.001
 
 
-def test_init_fonts_scale_formula_720p():
-    w, h = 1280, 720
-    scale = max(0.72, min(1.0, w / 1400, h / 900))
-    assert 0.72 <= scale <= 1.0
+def test_init_fonts_scale_formula_1366x768_stays_above_floor():
+    scale = get_scale((1366, 768), min_scale=0.72, max_scale=1.18, reference_size=(1400.0, 900.0))
+    assert 0.84 <= scale < 1.0
 
 
 def test_init_fonts_scale_formula_small_window():
-    w, h = 800, 600
-    scale = max(0.72, min(1.0, w / 1400, h / 900))
+    scale = get_scale((800, 600), min_scale=0.72, max_scale=1.18, reference_size=(1400.0, 900.0))
     assert scale == 0.72
+
+
+def test_layout_and_font_scales_share_same_formula():
+    font_scale = get_scale((2560, 1440), min_scale=0.72, max_scale=1.18, reference_size=(1400.0, 900.0))
+    layout_scale = get_scale((2560, 1440), min_scale=0.72, max_scale=1.18, reference_size=(1400.0, 900.0))
+    assert font_scale == layout_scale
 

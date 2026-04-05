@@ -313,6 +313,7 @@ class Tetris2Mode(Game):
         user_manager=None,
         game_mode: str = "tetris2",
         score_manager=None,
+        sound_manager=None,
     ) -> None:
         self.extra_piece_count = 0
         # BigSquare (3x3) Quadrix Extra'da havuza dahil edilmez; her 15 parçada 1 gelir.
@@ -328,6 +329,7 @@ class Tetris2Mode(Game):
             settings_manager,
             user_manager,
             game_mode,
+            sound_manager=sound_manager,
             score_manager=score_manager,
         )
         self.mode_name = "QUADRIX EXTRA"
@@ -4350,6 +4352,7 @@ class MysteryMode(Game):
         user_manager=None,
         game_mode: str = "mystery",
         score_manager=None,
+        sound_manager=None,
     ) -> None:
         # spawn_new_piece içinde kullanılacağı için önce manager yaratılır
         self.card_manager = MysteryCardManager(self)
@@ -4374,6 +4377,7 @@ class MysteryMode(Game):
             settings_manager,
             user_manager,
             game_mode,
+            sound_manager=sound_manager,
             score_manager=score_manager,
         )
         self.mode_name = t('mode_label_card_mastery')
@@ -9669,6 +9673,7 @@ class WideMode(Game):
         user_manager=None,
         game_mode: str = "wide",
         score_manager=None,
+        sound_manager=None,
     ) -> None:
         self.board_width = 15
         self.board_height = 23
@@ -9687,6 +9692,7 @@ class WideMode(Game):
             settings_manager,
             user_manager,
             game_mode,
+            sound_manager=sound_manager,
             score_manager=score_manager,
         )
         self.mode_name = "WIDE MODE"

@@ -62,6 +62,7 @@ class CampaignMode(Game):
         settings_manager = None,
         user_manager = None,
         score_manager = None,
+        sound_manager = None,
     ):
         """Campaign modunu başlat
         
@@ -91,6 +92,7 @@ class CampaignMode(Game):
             settings_manager=settings_manager,
             user_manager=user_manager,
             game_mode='campaign',
+            sound_manager=sound_manager,
             score_manager=score_manager,
             piece_rng_seed=self._piece_seed,
         )

@@ -19,8 +19,35 @@ from renderers.jelly_renderer import draw_jelly_block
 from platform_utils import normalize_mouse_pos, get_mouse_pos
 from localization import t, get_language
 from steam_leaderboards import SteamLeaderboardService
+from ui_scaling import get_scale, scale_px
 
 _AVATAR_EXTS = ('.png', '.jpg', '.jpeg', '.webp', '.bmp')
+_USER_SCREEN_REFERENCE_SIZE = (1600.0, 900.0)
+
+
+def _get_user_screen_scale(
+    screen_or_size,
+    *,
+    readable_min_size: tuple[float, float],
+    reference_size: tuple[float, float] = _USER_SCREEN_REFERENCE_SIZE,
+    min_scale: float,
+    max_scale: float,
+) -> float:
+    readable_floor = get_scale(
+        screen_or_size,
+        min_scale=0.0,
+        max_scale=1.0,
+        reference_size=readable_min_size,
+    )
+    return max(
+        readable_floor,
+        get_scale(
+            screen_or_size,
+            min_scale=min_scale,
+            max_scale=max_scale,
+            reference_size=reference_size,
+        ),
+    )
 
 
 def _darken_rgb(color: tuple[int, int, int], factor: float) -> tuple[int, int, int]:
@@ -91,8 +118,8 @@ class UserSelectionScreen:
         """Kullanıcı seçim ekranını başlat"""
         self.screen = screen
         self.user_manager = user_manager
-        self._ui_reference_size = self._get_ui_reference_size()
-        self._ui_readable_min_size = (1180, 760)
+        self._ui_reference_size = _USER_SCREEN_REFERENCE_SIZE
+        self._ui_readable_min_size = (1180.0, 760.0)
         self._ui_scale_current = 1.0
         # Tipografi ölçeği (tema tutarlılığı)
         # H1: 56 (retro_style.draw_title içinde), alt başlık: 20-22, bölüm/label: 18
@@ -204,38 +231,23 @@ class UserSelectionScreen:
         )
         self._ensure_steam_avatar_async()
 
-    def _get_ui_reference_size(self) -> tuple[int, int]:
+    def _ui_scale(self, min_scale: float = 0.62, max_scale: float = 1.18) -> float:
         try:
-            info = pygame.display.Info()
-            ref_w = int(getattr(info, 'current_w', 0) or 0)
-            ref_h = int(getattr(info, 'current_h', 0) or 0)
-        except Exception:
-            ref_w, ref_h = 0, 0
-
-        if ref_w <= 0 or ref_h <= 0:
-            ref_w, ref_h = self.screen.get_size()
-        return max(1, ref_w), max(1, ref_h)
-
-    def _ui_scale(self, min_scale: float = 0.62, max_scale: float = 1.0) -> float:
-        try:
-            w, h = self.screen.get_size()
-            w = max(1, int(w))
-            h = max(1, int(h))
-            ref_w, ref_h = self._ui_reference_size
-            ratio = min(float(w) / max(1.0, float(ref_w)), float(h) / max(1.0, float(ref_h)))
-
-            rw, rh = self._ui_readable_min_size
-            readable_floor = min(1.0, min(float(w) / max(1.0, float(rw)), float(h) / max(1.0, float(rh))))
-            effective_min = max(min_scale, readable_floor)
-            return max(effective_min, min(max_scale, ratio))
+            return _get_user_screen_scale(
+                self.screen,
+                readable_min_size=self._ui_readable_min_size,
+                reference_size=self._ui_reference_size,
+                min_scale=min_scale,
+                max_scale=max_scale,
+            )
         except Exception:
             return 1.0
 
     def _sx(self, value: int | float, minimum: int = 1) -> int:
-        return max(minimum, int(round(float(value) * float(self._ui_scale_current))))
+        return scale_px(value, self._ui_scale_current, minimum=minimum)
 
     def _apply_responsive_metrics(self) -> None:
-        self._ui_scale_current = self._ui_scale(min_scale=0.62, max_scale=1.0)
+        self._ui_scale_current = self._ui_scale(min_scale=0.62, max_scale=1.18)
 
         title_size = max(28, self._sx(self._base_font_title_size, minimum=28))
         normal_size = max(16, self._sx(self._base_font_normal_size, minimum=16))
@@ -540,6 +552,14 @@ class UserSelectionScreen:
     def _can_edit_selected(self):
         return self.users_list and not self._is_add_index(self.selected_user)
 
+    def _user_entry_index(self, username: str | None) -> int:
+        if not username:
+            return 0
+        try:
+            return self.users_list.index(username) + 1
+        except ValueError:
+            return 0
+
     def get_selected_username(self):
         if self._can_edit_selected():
             return self.users_list[self.selected_user - 1]
@@ -583,7 +603,7 @@ class UserSelectionScreen:
 
     def _begin_edit_existing(self, username):
         if username in self.users_list:
-            self.selected_user = self.users_list.index(username)
+            self.selected_user = self._user_entry_index(username)
         user_data = self.user_manager.get_user_data(username) or {}
         self.form_mode = 'edit'
         self.edit_target_username = username
@@ -848,7 +868,7 @@ class UserSelectionScreen:
             return
         self.users_list = list(self.user_manager.get_all_users().keys())
         if self.users_list:
-            self.selected_user = min(self.selected_user, len(self.users_list) - 1)
+            self.selected_user = min(self.selected_user, len(self.users_list))
         else:
             self.selected_user = 0
         self._ensure_visible()
@@ -979,7 +999,7 @@ class UserSelectionScreen:
             self.user_manager.update_user_profile(
                 username, avatar_color=self.avatar_colors[self.selected_color_index])
             self.users_list = list(self.user_manager.get_all_users().keys())
-            self.selected_user = len(self.users_list) - 1 if self.users_list else 0
+            self.selected_user = self._user_entry_index(username)
             self.user_manager.select_user(username)
             self.state = 'select'
             self._ensure_visible()
@@ -1004,7 +1024,7 @@ class UserSelectionScreen:
         if success:
             self.users_list = list(self.user_manager.get_all_users().keys())
             if self.edit_target_username in self.users_list:
-                self.selected_user = self.users_list.index(self.edit_target_username)
+                self.selected_user = self._user_entry_index(self.edit_target_username)
             self.user_manager.select_user(self.edit_target_username)
             self.state = 'select'
             self.form_mode = 'create'
@@ -1298,7 +1318,7 @@ class UserSelectionScreen:
                     return v
             return str(value)
 
-        stats = [
+            stats = [
             (t('user_last_played'), _format_last_played(user_data.get('last_played'))),
             (t('total_games'), f"{user_data.get('total_games', 0)}"),
             (t('total_score'), f"{user_data.get('total_score', 0):,}".replace(',', '.')),
@@ -1724,9 +1744,19 @@ class UserManagementScreen:
         """Kullanıcı yönetim ekranını başlat"""
         self.screen = screen
         self.user_manager = user_manager
-        self.font_title = UIFonts.get(56)
-        self.font_normal = UIFonts.get(36)
-        self.font_small = UIFonts.get(26)
+        self._ui_reference_size = _USER_SCREEN_REFERENCE_SIZE
+        self._ui_readable_min_size = (1366.0, 768.0)
+        self._ui_scale_current = 1.0
+        self._base_font_title_size = 56
+        self._base_font_normal_size = 36
+        self._base_font_small_size = 26
+        self.font_title_size = self._base_font_title_size
+        self.font_normal_size = self._base_font_normal_size
+        self.font_small_size = self._base_font_small_size
+        self._font_scale_signature = None
+        self.font_title = UIFonts.get(self.font_title_size)
+        self.font_normal = UIFonts.get(self.font_normal_size)
+        self.font_small = UIFonts.get(self.font_small_size)
         
         self.users_list = list(user_manager.get_all_users().keys())
         self.selected_user = 0
@@ -1773,11 +1803,84 @@ class UserManagementScreen:
         
         # Scroll için
         self.scroll_offset = 0
-        self.max_visible = 5
+        self.max_visible = 6
         
         # Avatar editör
         self.avatar_editor = AvatarEditor(screen)
         self.custom_avatar_path = None
+        self._apply_responsive_metrics()
+
+    def _ui_scale(self, min_scale: float = 0.72, max_scale: float = 1.18) -> float:
+        try:
+            return _get_user_screen_scale(
+                self.screen,
+                readable_min_size=self._ui_readable_min_size,
+                reference_size=self._ui_reference_size,
+                min_scale=min_scale,
+                max_scale=max_scale,
+            )
+        except Exception:
+            return 1.0
+
+    def _s(self, value: int | float, minimum: int = 1) -> int:
+        return scale_px(value, self._ui_scale_current, minimum=minimum)
+
+    def _apply_responsive_metrics(self) -> None:
+        self._ui_scale_current = self._ui_scale()
+        title_size = max(28, self._s(self._base_font_title_size, minimum=28))
+        normal_size = max(18, self._s(self._base_font_normal_size, minimum=18))
+        small_size = max(14, self._s(self._base_font_small_size, minimum=14))
+        signature = (title_size, normal_size, small_size)
+        if signature == self._font_scale_signature:
+            return
+
+        self.font_title_size = title_size
+        self.font_normal_size = normal_size
+        self.font_small_size = small_size
+        self.font_title = UIFonts.get(self.font_title_size)
+        self.font_normal = UIFonts.get(self.font_normal_size)
+        self.font_small = UIFonts.get(self.font_small_size)
+        self._font_scale_signature = signature
+
+    def _list_layout_metrics(self) -> dict[str, int]:
+        s = self._s
+        width, _ = self.screen.get_size()
+        header_height = s(120)
+        card_width = min(s(700), width - s(100))
+        card_height = s(100)
+        gap = s(15)
+        card_x = width // 2 - card_width // 2
+        cards_start_y = header_height + s(30)
+        return {
+            'header_height': header_height,
+            'card_width': card_width,
+            'card_height': card_height,
+            'gap': gap,
+            'card_x': card_x,
+            'cards_start_y': cards_start_y,
+        }
+
+    def _clamp_scroll_offset(self) -> None:
+        max_scroll = max(0, len(self.users_list) - self.max_visible)
+        self.scroll_offset = max(0, min(self.scroll_offset, max_scroll))
+
+    def _ensure_list_visible(self) -> None:
+        if not self.users_list:
+            self.selected_user = 0
+            self.scroll_offset = 0
+            return
+
+        self.selected_user = max(0, min(self.selected_user, len(self.users_list) - 1))
+        self._clamp_scroll_offset()
+        if self.selected_user < self.scroll_offset:
+            self.scroll_offset = self.selected_user
+        elif self.selected_user >= self.scroll_offset + self.max_visible:
+            self.scroll_offset = self.selected_user - self.max_visible + 1
+        self._clamp_scroll_offset()
+
+    def _visible_users(self) -> list[str]:
+        self._clamp_scroll_offset()
+        return self.users_list[self.scroll_offset:self.scroll_offset + self.max_visible]
     
     def handle_input(self, event):
         """Girdi işle"""
@@ -1794,15 +1897,18 @@ class UserManagementScreen:
     
     def _handle_list_input(self, event):
         """Liste girdisi"""
+        self._apply_responsive_metrics()
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_ESCAPE:
                 return 'back'
             elif event.key == pygame.K_UP:
                 if self.users_list:
                     self.selected_user = (self.selected_user - 1) % len(self.users_list)
+                    self._ensure_list_visible()
             elif event.key == pygame.K_DOWN:
                 if self.users_list:
                     self.selected_user = (self.selected_user + 1) % len(self.users_list)
+                    self._ensure_list_visible()
             elif event.key == pygame.K_RETURN or event.key == pygame.K_SPACE:
                 # Kullanıcı profilini görüntüle
                 if self.users_list:
@@ -1833,16 +1939,18 @@ class UserManagementScreen:
             pos = normalize_mouse_pos(getattr(event, 'pos', None)) or event.pos
             
             # Hangi kullanıcıya tıklandığını bul
-            width, height = self.screen.get_size()
-            card_width = min(900, width - 100)
-            card_x = width // 2 - card_width // 2
-            list_start_y = 200
+            metrics = self._list_layout_metrics()
+            card_width = metrics['card_width']
+            card_x = metrics['card_x']
+            list_start_y = metrics['cards_start_y']
+            card_height = metrics['card_height']
+            gap = metrics['gap']
             
-            visible_users = self.users_list[self.scroll_offset:self.scroll_offset + self.max_visible]
+            visible_users = self._visible_users()
             
             for i, username in enumerate(visible_users):
-                card_y = list_start_y + i * 110
-                card_rect = pygame.Rect(card_x, card_y, card_width, 100)
+                card_y = list_start_y + i * (card_height + gap)
+                card_rect = pygame.Rect(card_x, card_y, card_width, card_height)
                 
                 if card_rect.collidepoint(pos):
                     clicked_index = self.scroll_offset + i
@@ -1863,6 +1971,10 @@ class UserManagementScreen:
                     self.last_click_time = current_time
                     self.last_click_index = clicked_index
                     break
+
+        elif event.type == pygame.MOUSEWHEEL:
+            self.scroll_offset -= event.y
+            self._clamp_scroll_offset()
         
         return None
     
@@ -1874,6 +1986,7 @@ class UserManagementScreen:
                 success, msg = self.user_manager.delete_user(self.confirm_username)
                 self.users_list = list(self.user_manager.get_all_users().keys())
                 self.selected_user = min(self.selected_user, len(self.users_list) - 1) if self.users_list else 0
+                self._ensure_list_visible()
                 self.message = msg
                 self.message_timer = 120
                 self.state = 'list'
@@ -1940,6 +2053,7 @@ class UserManagementScreen:
         else:
             self.selected_user = 0
             username = self.users_list[0]
+        self._ensure_list_visible()
         self.edit_username = username
         self.custom_avatar_path = None
         self._init_edit_fields()
@@ -2023,6 +2137,8 @@ class UserManagementScreen:
             self.message_timer -= 1
             if self.message_timer == 0:
                 self.message = ''
+        if self.state == 'list':
+            self._ensure_list_visible()
     
     def draw(self):
         """Ekranı çiz"""
@@ -2039,7 +2155,11 @@ class UserManagementScreen:
     
     def _draw_list(self):
         """Kullanıcı listesini çiz - Geliştirilmiş tasarım"""
+        self._apply_responsive_metrics()
+        self._ensure_list_visible()
+        s = self._s
         width, height = self.screen.get_size()
+        metrics = self._list_layout_metrics()
         
         # Koyu gradient arka plan (siyah)
         for i in range(height):
@@ -2049,7 +2169,7 @@ class UserManagementScreen:
             pygame.draw.line(self.screen, (color_r, color_g, color_b), (0, i), (width, i))
         
         # Üst başlık paneli
-        header_height = 120
+        header_height = metrics['header_height']
         header_rect = pygame.Rect(0, 0, width, header_height)
         
         # Header gradient
@@ -2060,48 +2180,47 @@ class UserManagementScreen:
         
         # Başlık
         title = self.font_title.render(t('user_management'), True, WHITE)
-        title_rect = title.get_rect(center=(width // 2, 45))
+        title_rect = title.get_rect(center=(width // 2, s(45)))
         self.screen.blit(title, title_rect)
         
         # Aktif kullanıcı göstergesi
         current = self.user_manager.get_current_user()
         if current:
-            current_bg = pygame.Rect(width // 2 - 200, 85, 400, 35)
-            pygame.draw.rect(self.screen, (100, 200, 100), current_bg, border_radius=17)
+            current_bg = pygame.Rect(width // 2 - s(200), s(85), s(400), s(35))
+            pygame.draw.rect(self.screen, (100, 200, 100), current_bg, border_radius=s(17))
             current_text = f"{t('user_active')}: {current}"
             current_surf = self.font_small.render(current_text, True, WHITE)
             current_rect = current_surf.get_rect(center=current_bg.center)
             self.screen.blit(current_surf, current_rect)
         else:
             current_surf = self.font_small.render(t('user_no_active'), True, (200, 100, 100))
-            current_rect = current_surf.get_rect(center=(width // 2, 102))
+            current_rect = current_surf.get_rect(center=(width // 2, s(102)))
             self.screen.blit(current_surf, current_rect)
         
         # Kullanıcı kartları bölümü
-        cards_start_y = header_height + 30
-        card_width = min(700, width - 100)
-        card_height = 100
-        card_x = width // 2 - card_width // 2
-        gap = 15
+        cards_start_y = metrics['cards_start_y']
+        card_width = metrics['card_width']
+        card_height = metrics['card_height']
+        card_x = metrics['card_x']
+        gap = metrics['gap']
         
-        # Scroll kontrol (maksimum 6 kullanıcı göster)
-        max_visible = min(6, len(self.users_list))
+        # Scroll kontrol (maksimum gorunen sayi)
+        max_visible = min(self.max_visible, len(self.users_list))
+        visible_users = self._visible_users()
+        max_visible = len(visible_users)
         
-        for i in range(max_visible):
-            if i >= len(self.users_list):
-                break
-            
-            username = self.users_list[i]
+        for i, username in enumerate(visible_users):
+            global_index = self.scroll_offset + i
             user_data = self.user_manager.get_user_data(username)
             is_current = (username == current)
-            is_selected = (i == self.selected_user)
+            is_selected = (global_index == self.selected_user)
             
             y = cards_start_y + i * (card_height + gap)
             
             # Kart gölgesi
             if is_selected:
-                shadow_rect = pygame.Rect(card_x + 4, y + 4, card_width, card_height)
-                pygame.draw.rect(self.screen, (0, 0, 0, 100), shadow_rect, border_radius=15)
+                shadow_rect = pygame.Rect(card_x + s(4), y + s(4), card_width, card_height)
+                pygame.draw.rect(self.screen, (0, 0, 0, 100), shadow_rect, border_radius=s(15))
             
             # Ana kart
             card_rect = pygame.Rect(card_x, y, card_width, card_height)
@@ -2122,15 +2241,15 @@ class UserManagementScreen:
                     card_color = (30, 40, 60)
                     border_color = (60, 80, 120)
             
-            pygame.draw.rect(self.screen, card_color, card_rect, border_radius=15)
-            pygame.draw.rect(self.screen, border_color, card_rect, 3 if is_selected else 2, border_radius=15)
+            pygame.draw.rect(self.screen, card_color, card_rect, border_radius=s(15))
+            pygame.draw.rect(self.screen, border_color, card_rect, s(3) if is_selected else s(2), border_radius=s(15))
             
             # Avatar bölümü
             avatar = user_data.get('avatar', '__default__')
             avatar_color = user_data.get('avatar_color', (100, 150, 255))
             
-            avatar_size = 70
-            avatar_bg_x = card_x + 20
+            avatar_size = s(70)
+            avatar_bg_x = card_x + s(20)
             avatar_bg_y = y + (card_height - avatar_size) // 2
             avatar_bg_rect = pygame.Rect(avatar_bg_x, avatar_bg_y, avatar_size, avatar_size)
 
@@ -2138,7 +2257,7 @@ class UserManagementScreen:
             center = avatar_bg_rect.center
             radius = avatar_size // 2
             pygame.draw.circle(self.screen, avatar_color, center, radius)
-            pygame.draw.circle(self.screen, WHITE if is_selected else (200, 200, 200), center, radius, 3 if is_selected else 2)
+            pygame.draw.circle(self.screen, WHITE if is_selected else (200, 200, 200), center, radius, s(3) if is_selected else s(2))
             avatar_img = _load_avatar_image(avatar, avatar_size - 2)
             if avatar_img is None:
                 avatar_img = _render_placeholder_avatar(avatar_size - 2)
@@ -2146,24 +2265,24 @@ class UserManagementScreen:
             self.screen.blit(avatar_surf, avatar_surf.get_rect(center=center))
             
             # Kullanıcı bilgileri
-            info_x = card_x + 110
+            info_x = card_x + s(110)
             
             # Kullanıcı adı
             name_color = (255, 255, 100) if is_current else WHITE
             name_surf = self.font_normal.render(username, True, name_color)
-            name_rect = name_surf.get_rect(midleft=(info_x, y + 28))
+            name_rect = name_surf.get_rect(midleft=(info_x, y + s(28)))
             self.screen.blit(name_surf, name_rect)
             
             # Aktif badge
             if is_current:
-                badge_x = name_rect.right + 15
-                badge_rect = pygame.Rect(badge_x, y + 18, 70, 24)
-                pygame.draw.rect(self.screen, (255, 200, 0), badge_rect, border_radius=12)
+                badge_x = name_rect.right + s(15)
+                badge_rect = pygame.Rect(badge_x, y + s(18), s(70), s(24))
+                pygame.draw.rect(self.screen, (255, 200, 0), badge_rect, border_radius=s(12))
                 badge_text = self.font_small.render(t('user_active').upper(), True, (50, 50, 50))
                 self.screen.blit(badge_text, badge_text.get_rect(center=badge_rect.center))
             
             # İstatistikler (ikon yok)
-            stats_y = y + 60
+            stats_y = y + s(60)
             stats_text = t(
                 'user_stats_summary',
                 games=user_data.get('total_games', 0),
@@ -2171,7 +2290,7 @@ class UserManagementScreen:
                 lines=user_data.get('total_lines', 0),
             )
             stats_surf = self.font_small.render(stats_text, True, (200, 200, 200))
-            self.screen.blit(stats_surf, (info_x, stats_y + 2))
+            self.screen.blit(stats_surf, (info_x, stats_y + s(2)))
         
         # Eğer kullanıcı yoksa
         if not self.users_list:
@@ -2181,24 +2300,25 @@ class UserManagementScreen:
         
         # Mesaj gösterimi
         if self.message:
-            msg_y = cards_start_y + max_visible * (card_height + gap) + 20
-            msg_bg_rect = pygame.Rect(width // 2 - 250, msg_y, 500, 50)
-            pygame.draw.rect(self.screen, (50, 200, 100), msg_bg_rect, border_radius=25)
+            msg_y = cards_start_y + max_visible * (card_height + gap) + s(20)
+            msg_bg_rect = pygame.Rect(width // 2 - s(250), msg_y, s(500), s(50))
+            pygame.draw.rect(self.screen, (50, 200, 100), msg_bg_rect, border_radius=s(25))
             msg_surf = self.font_normal.render(self.message, True, WHITE)
             msg_rect = msg_surf.get_rect(center=msg_bg_rect.center)
             self.screen.blit(msg_surf, msg_rect)
         
         # Alt bar - talimatlar (modern buton tasarımı)
-        bottom_bar_y = height - 80
-        inst_bg_rect = pygame.Rect(0, bottom_bar_y, width, 80)
+        bottom_bar_y = height - s(80)
+        inst_bg_rect = pygame.Rect(0, bottom_bar_y, width, s(80))
         
         # Gradient alt bar
-        for i in range(80):
-            alpha = 1 - (i / 80)
+        footer_height = inst_bg_rect.height
+        for i in range(footer_height):
+            alpha = 1 - (i / max(1, footer_height))
             color = (int(20 * alpha), int(25 * alpha), int(40 * alpha))
             pygame.draw.line(self.screen, color, (0, bottom_bar_y + i), (width, bottom_bar_y + i))
         
-        pygame.draw.line(self.screen, (70, 100, 180), (0, bottom_bar_y), (width, bottom_bar_y), 2)
+        pygame.draw.line(self.screen, (70, 100, 180), (0, bottom_bar_y), (width, bottom_bar_y), s(2))
         
         # Kontrol butonları
         buttons = [
@@ -2209,29 +2329,31 @@ class UserManagementScreen:
             ('ESC', t('menu_back'), (120, 120, 120))
         ]
         
-        total_width = sum(140 for _ in buttons) - 20
+        total_width = len(buttons) * s(140) - s(20)
         button_x = width // 2 - total_width // 2
-        button_y = bottom_bar_y + 20
+        button_y = bottom_bar_y + s(20)
         
         for key, label, color in buttons:
             # Key badge
-            key_width = 80 if len(key) > 1 else 50
-            key_bg = pygame.Rect(button_x, button_y, key_width, 35)
-            pygame.draw.rect(self.screen, color, key_bg, border_radius=8)
-            pygame.draw.rect(self.screen, tuple(min(255, c + 40) for c in color), key_bg, 2, border_radius=8)
+            key_width = s(80) if len(key) > 1 else s(50)
+            key_bg = pygame.Rect(button_x, button_y, key_width, s(35))
+            pygame.draw.rect(self.screen, color, key_bg, border_radius=s(8))
+            pygame.draw.rect(self.screen, tuple(min(255, c + 40) for c in color), key_bg, s(2), border_radius=s(8))
             
             key_surf = self.font_small.render(key, True, WHITE)
             self.screen.blit(key_surf, key_surf.get_rect(center=key_bg.center))
             
             # Label
             label_surf = self.font_small.render(label, True, (180, 180, 180))
-            label_rect = label_surf.get_rect(midtop=(button_x + key_width // 2, button_y + 40))
+            label_rect = label_surf.get_rect(midtop=(button_x + key_width // 2, button_y + s(40)))
             self.screen.blit(label_surf, label_rect)
             
-            button_x += 140
+            button_x += s(140)
     
     def _draw_confirm_delete(self):
         """Silme onayı çiz - Modern overlay tasarım"""
+        self._apply_responsive_metrics()
+        s = self._s
         width, height = self.screen.get_size()
         
         # Yarı saydam koyu overlay
@@ -2240,27 +2362,27 @@ class UserManagementScreen:
         self.screen.blit(overlay, (0, 0))
         
         # Onay kutusu - daha büyük ve merkezi
-        box_width = 600
-        box_height = 280
+        box_width = min(s(600), width - s(80))
+        box_height = min(s(280), height - s(120))
         box_rect = pygame.Rect(width // 2 - box_width // 2, height // 2 - box_height // 2, box_width, box_height)
         
         # Gölge
-        shadow_rect = box_rect.inflate(10, 10)
-        pygame.draw.rect(self.screen, (0, 0, 0), shadow_rect, border_radius=20)
+        shadow_rect = box_rect.inflate(s(10), s(10))
+        pygame.draw.rect(self.screen, (0, 0, 0), shadow_rect, border_radius=s(20))
         
         # Ana kutu
-        pygame.draw.rect(self.screen, (40, 50, 70), box_rect, border_radius=20)
-        pygame.draw.rect(self.screen, (255, 100, 100), box_rect, 4, border_radius=20)
+        pygame.draw.rect(self.screen, (40, 50, 70), box_rect, border_radius=s(20))
+        pygame.draw.rect(self.screen, (255, 100, 100), box_rect, s(4), border_radius=s(20))
         
         # Uyarı ikonu
-        warning_rect = pygame.Rect(0, 0, 80, 80)
-        warning_rect.center = (width // 2, box_rect.top + 60)
-        pygame.draw.circle(self.screen, (255, 200, 100), warning_rect.center, 32)
-        pygame.draw.circle(self.screen, (60, 30, 20), warning_rect.center, 32, 4)
+        warning_rect = pygame.Rect(0, 0, s(80), s(80))
+        warning_rect.center = (width // 2, box_rect.top + s(60))
+        pygame.draw.circle(self.screen, (255, 200, 100), warning_rect.center, s(32))
+        pygame.draw.circle(self.screen, (60, 30, 20), warning_rect.center, s(32), s(4))
         
         # Başlık
         title_surf = self.font_normal.render(t('user_will_delete'), True, (255, 150, 150))
-        title_rect = title_surf.get_rect(center=(width // 2, box_rect.top + 120))
+        title_rect = title_surf.get_rect(center=(width // 2, box_rect.top + s(120)))
         self.screen.blit(title_surf, title_rect)
         
         # Mesajlar
@@ -2270,38 +2392,40 @@ class UserManagementScreen:
         msg1_surf = self.font_normal.render(msg1, True, WHITE)
         msg2_surf = self.font_normal.render(msg2, True, WHITE)
         
-        self.screen.blit(msg1_surf, msg1_surf.get_rect(center=(width // 2, box_rect.top + 160)))
-        self.screen.blit(msg2_surf, msg2_surf.get_rect(center=(width // 2, box_rect.top + 190)))
+        self.screen.blit(msg1_surf, msg1_surf.get_rect(center=(width // 2, box_rect.top + s(160))))
+        self.screen.blit(msg2_surf, msg2_surf.get_rect(center=(width // 2, box_rect.top + s(190))))
         
         # Uyarı metni
         warning_surf = self.font_small.render(t('user_delete_warning'), True, (255, 200, 100))
-        warning_rect = warning_surf.get_rect(center=(width // 2, box_rect.bottom - 70))
+        warning_rect = warning_surf.get_rect(center=(width // 2, box_rect.bottom - s(70)))
         self.screen.blit(warning_surf, warning_rect)
         
         # Butonlar
-        button_y = box_rect.bottom - 40
-        button_width = 120
-        button_height = 35
-        gap = 30
+        button_y = box_rect.bottom - s(40)
+        button_width = s(120)
+        button_height = s(35)
+        gap = s(30)
         
         # Hayır butonu (sol)
         no_button = pygame.Rect(width // 2 - button_width - gap // 2, button_y - button_height // 2, button_width, button_height)
-        pygame.draw.rect(self.screen, (100, 200, 100), no_button, border_radius=10)
-        pygame.draw.rect(self.screen, (150, 255, 150), no_button, 2, border_radius=10)
+        pygame.draw.rect(self.screen, (100, 200, 100), no_button, border_radius=s(10))
+        pygame.draw.rect(self.screen, (150, 255, 150), no_button, s(2), border_radius=s(10))
         
         no_text = self.font_normal.render(t('user_no'), True, WHITE)
         self.screen.blit(no_text, no_text.get_rect(center=no_button.center))
         
         # Evet butonu (sağ)
         yes_button = pygame.Rect(width // 2 + gap // 2, button_y - button_height // 2, button_width, button_height)
-        pygame.draw.rect(self.screen, (200, 100, 100), yes_button, border_radius=10)
-        pygame.draw.rect(self.screen, (255, 150, 150), yes_button, 2, border_radius=10)
+        pygame.draw.rect(self.screen, (200, 100, 100), yes_button, border_radius=s(10))
+        pygame.draw.rect(self.screen, (255, 150, 150), yes_button, s(2), border_radius=s(10))
         
         yes_text = self.font_normal.render(t('user_yes'), True, WHITE)
         self.screen.blit(yes_text, yes_text.get_rect(center=yes_button.center))
     
     def _draw_view_profile(self):
         """Profil görüntüleme ekranını çiz - Geliştirilmiş tasarım"""
+        self._apply_responsive_metrics()
+        s = self._s
         width, height = self.screen.get_size()
         
         # Koyu gradient arka plan (siyah)
@@ -2316,22 +2440,22 @@ class UserManagementScreen:
             return
         
         # Ana profil kartı - daha modern tasarım
-        card_width = min(900, width - 100)
-        card_height = height - 140
+        card_width = min(s(900), width - s(100))
+        card_height = height - s(140)
         card_x = width // 2 - card_width // 2
-        card_y = 70
+        card_y = s(70)
         
         # Kart gölgesi
-        shadow_rect = pygame.Rect(card_x + 5, card_y + 5, card_width, card_height)
-        pygame.draw.rect(self.screen, (0, 0, 0, 100), shadow_rect, border_radius=20)
+        shadow_rect = pygame.Rect(card_x + s(5), card_y + s(5), card_width, card_height)
+        pygame.draw.rect(self.screen, (0, 0, 0, 100), shadow_rect, border_radius=s(20))
         
         # Ana kart
         card_rect = pygame.Rect(card_x, card_y, card_width, card_height)
-        pygame.draw.rect(self.screen, (25, 30, 45), card_rect, border_radius=20)
-        pygame.draw.rect(self.screen, (70, 100, 180), card_rect, 3, border_radius=20)
+        pygame.draw.rect(self.screen, (25, 30, 45), card_rect, border_radius=s(20))
+        pygame.draw.rect(self.screen, (70, 100, 180), card_rect, s(3), border_radius=s(20))
         
         # Üst banner - renkli
-        banner_height = 180
+        banner_height = s(180)
         banner_rect = pygame.Rect(card_x, card_y, card_width, banner_height)
         avatar_color = user_data.get('avatar_color', (100, 150, 255))
         
@@ -2344,29 +2468,29 @@ class UserManagementScreen:
                            (card_x + card_width, card_y + i))
         
         # Banner üst köşeleri yuvarla
-        pygame.draw.rect(self.screen, (70, 100, 180), banner_rect, 3, border_radius=20)
+        pygame.draw.rect(self.screen, (70, 100, 180), banner_rect, s(3), border_radius=s(20))
         
         # Avatar - daha büyük ve merkezi
         avatar = user_data.get('avatar', '__default__')
-        avatar_size = 140
+        avatar_size = s(140)
         
         # Avatar arka planı - daire çerçeve
-        avatar_bg_x = width // 2 - avatar_size // 2 - 10
-        avatar_bg_y = card_y + banner_height - avatar_size // 2 - 10
-        avatar_bg_size = avatar_size + 20
+        avatar_bg_x = width // 2 - avatar_size // 2 - s(10)
+        avatar_bg_y = card_y + banner_height - avatar_size // 2 - s(10)
+        avatar_bg_size = avatar_size + s(20)
         avatar_bg_rect = pygame.Rect(avatar_bg_x, avatar_bg_y, avatar_bg_size, avatar_bg_size)
         avatar_center = avatar_bg_rect.center
         avatar_radius = avatar_bg_size // 2
         
         # Outer glow (daire)
         for i in range(3):
-            glow_radius = avatar_radius + i * 6
+            glow_radius = avatar_radius + i * s(6)
             glow_color = tuple(min(255, c + 40) for c in avatar_color)
-            pygame.draw.circle(self.screen, glow_color, avatar_center, glow_radius, 2)
+            pygame.draw.circle(self.screen, glow_color, avatar_center, glow_radius, s(2))
 
         # Ana avatar arka plan (daire)
         pygame.draw.circle(self.screen, WHITE, avatar_center, avatar_radius)
-        pygame.draw.circle(self.screen, avatar_color, avatar_center, avatar_radius, 4)
+        pygame.draw.circle(self.screen, avatar_color, avatar_center, avatar_radius, s(4))
 
         avatar_img = _load_avatar_image(avatar, avatar_size + 18)
         if avatar_img is None:
@@ -2375,7 +2499,7 @@ class UserManagementScreen:
         self.screen.blit(avatar_surf, avatar_surf.get_rect(center=avatar_center))
         
         # İçerik başlangıç y konumu
-        content_y = card_y + banner_height + avatar_size // 2 + 30
+        content_y = card_y + banner_height + avatar_size // 2 + s(30)
         
         # Kullanıcı adı - daha büyük ve stilize
         name_surf = self.font_title.render(self.edit_username, True, WHITE)
@@ -2390,23 +2514,23 @@ class UserManagementScreen:
         else:
             bio_text = t('user_no_bio')
             bio_surf = self.font_small.render(bio_text, True, (120, 120, 140))
-        bio_rect = bio_surf.get_rect(center=(width // 2, content_y + 50))
+        bio_rect = bio_surf.get_rect(center=(width // 2, content_y + s(50)))
         self.screen.blit(bio_surf, bio_rect)
         
         # Favori mod badge
         fav_mode = user_data.get('favorite_mode', t('mode_label_classic'))
-        badge_y = content_y + 95
-        badge_width = 250
-        badge_height = 40
+        badge_y = content_y + s(95)
+        badge_width = s(250)
+        badge_height = s(40)
         badge_rect = pygame.Rect(width // 2 - badge_width // 2, badge_y, badge_width, badge_height)
-        pygame.draw.rect(self.screen, (255, 100, 100), badge_rect, border_radius=20)
-        pygame.draw.rect(self.screen, (255, 150, 150), badge_rect, 2, border_radius=20)
+        pygame.draw.rect(self.screen, (255, 100, 100), badge_rect, border_radius=s(20))
+        pygame.draw.rect(self.screen, (255, 150, 150), badge_rect, s(2), border_radius=s(20))
         
         fav_text = self.font_small.render(f'{t("user_favorite")}: {fav_mode}', True, WHITE)
         self.screen.blit(fav_text, fav_text.get_rect(center=badge_rect.center))
         
         # İstatistik kartları - Grid layout
-        stats_y = content_y + 155
+        stats_y = content_y + s(155)
         
         # Ana istatistikler - 3x2 grid
         main_stats = [
@@ -2418,35 +2542,35 @@ class UserManagementScreen:
             (t('highest_level'), user_data.get('highest_level', 1)),
         ]
         
-        stat_card_width = 280
-        stat_card_height = 75
-        gap = 15
+        stat_card_width = s(280)
+        stat_card_height = s(75)
+        gap = s(15)
         cols = 3
         
         for i, (label, value) in enumerate(main_stats):
             row = i // cols
             col = i % cols
             
-            x = card_x + 30 + col * (stat_card_width + gap)
+            x = card_x + s(30) + col * (stat_card_width + gap)
             y = stats_y + row * (stat_card_height + gap)
             
             # Stat kartı
             stat_rect = pygame.Rect(x, y, stat_card_width, stat_card_height)
-            pygame.draw.rect(self.screen, (35, 45, 70), stat_rect, border_radius=12)
-            pygame.draw.rect(self.screen, (60, 80, 130), stat_rect, 2, border_radius=12)
+            pygame.draw.rect(self.screen, (35, 45, 70), stat_rect, border_radius=s(12))
+            pygame.draw.rect(self.screen, (60, 80, 130), stat_rect, s(2), border_radius=s(12))
             
             # Label ve Value
             label_surf = self.font_small.render(label, True, (150, 160, 180))
             value_surf = self.font_normal.render(str(value), True, WHITE)
             
-            label_rect = label_surf.get_rect(topleft=(x + 18, y + 12))
-            value_rect = value_surf.get_rect(topleft=(x + 18, y + 38))
+            label_rect = label_surf.get_rect(topleft=(x + s(18), y + s(12)))
+            value_rect = value_surf.get_rect(topleft=(x + s(18), y + s(38)))
             
             self.screen.blit(label_surf, label_rect)
             self.screen.blit(value_surf, value_rect)
         
         # Mod bazlı istatistikler bölümü
-        mode_section_y = stats_y + 2 * (stat_card_height + gap) + 30
+        mode_section_y = stats_y + 2 * (stat_card_height + gap) + s(30)
         
         # Başlık
         mode_title_surf = self.font_normal.render(t('user_mode_stats'), True, (235, 240, 250))
@@ -2455,7 +2579,7 @@ class UserManagementScreen:
         
         # Mod istatistikleri
         game_stats = user_data.get('game_stats', {})
-        mode_cards_y = mode_section_y + 40
+        mode_cards_y = mode_section_y + s(40)
         
         # Oynanan modları topla
         modes_to_show = []
@@ -2468,26 +2592,26 @@ class UserManagementScreen:
                     modes_to_show.append((mode, stats))
         
         if modes_to_show:
-            mode_card_width = 200
-            mode_card_height = 60
+            mode_card_width = s(200)
+            mode_card_height = s(60)
             max_modes_per_row = 4
             
             for i, (mode, stats) in enumerate(modes_to_show[:8]):  # Max 8 mod
                 row = i // max_modes_per_row
                 col = i % max_modes_per_row
                 
-                x = card_x + 30 + col * (mode_card_width + gap)
+                x = card_x + s(30) + col * (mode_card_width + gap)
                 y = mode_cards_y + row * (mode_card_height + gap)
                 
                 # Mod kartı
                 mode_rect = pygame.Rect(x, y, mode_card_width, mode_card_height)
-                pygame.draw.rect(self.screen, (40, 50, 80), mode_rect, border_radius=10)
-                pygame.draw.rect(self.screen, (80, 100, 150), mode_rect, 2, border_radius=10)
+                pygame.draw.rect(self.screen, (40, 50, 80), mode_rect, border_radius=s(10))
+                pygame.draw.rect(self.screen, (80, 100, 150), mode_rect, s(2), border_radius=s(10))
                 
                 # Mod adı
                 mode_name = mode.upper()
                 mode_name_surf = self.font_small.render(mode_name, True, (200, 220, 255))
-                mode_name_rect = mode_name_surf.get_rect(midtop=(x + mode_card_width // 2, y + 8))
+                mode_name_rect = mode_name_surf.get_rect(midtop=(x + mode_card_width // 2, y + s(8)))
                 self.screen.blit(mode_name_surf, mode_name_rect)
                 
                 # Mod stat
@@ -2497,27 +2621,27 @@ class UserManagementScreen:
                     stat_text = t('user_mode_games', games=stats.get('games', 0))
                 
                 stat_surf = self.font_small.render(stat_text, True, WHITE)
-                stat_rect = stat_surf.get_rect(midbottom=(x + mode_card_width // 2, y + mode_card_height - 8))
+                stat_rect = stat_surf.get_rect(midbottom=(x + mode_card_width // 2, y + mode_card_height - s(8)))
                 self.screen.blit(stat_surf, stat_rect)
         else:
             # Henüz oyun oynamamış
             no_games = self.font_small.render(t('user_no_games'), True, (100, 100, 120))
-            no_games_rect = no_games.get_rect(center=(width // 2, mode_cards_y + 30))
+            no_games_rect = no_games.get_rect(center=(width // 2, mode_cards_y + s(30)))
             self.screen.blit(no_games, no_games_rect)
         
         # Mesaj gösterimi
         if self.message:
-            msg_bg_rect = pygame.Rect(width // 2 - 200, height - 115, 400, 50)
-            pygame.draw.rect(self.screen, (50, 200, 100), msg_bg_rect, border_radius=25)
+            msg_bg_rect = pygame.Rect(width // 2 - s(200), height - s(115), s(400), s(50))
+            pygame.draw.rect(self.screen, (50, 200, 100), msg_bg_rect, border_radius=s(25))
             msg_surf = self.font_normal.render(self.message, True, WHITE)
             msg_rect = msg_surf.get_rect(center=msg_bg_rect.center)
             self.screen.blit(msg_surf, msg_rect)
         
         # Alt bar - talimatlar
-        bottom_bar_y = height - 55
-        inst_bg_rect = pygame.Rect(0, bottom_bar_y, width, 55)
+        bottom_bar_y = height - s(55)
+        inst_bg_rect = pygame.Rect(0, bottom_bar_y, width, s(55))
         pygame.draw.rect(self.screen, (20, 25, 40), inst_bg_rect)
-        pygame.draw.line(self.screen, (70, 100, 180), (0, bottom_bar_y), (width, bottom_bar_y), 2)
+        pygame.draw.line(self.screen, (70, 100, 180), (0, bottom_bar_y), (width, bottom_bar_y), s(2))
         
         # Talimat butonları
         buttons = [
@@ -2525,22 +2649,24 @@ class UserManagementScreen:
             ('ESC', t('menu_back'), (200, 100, 100))
         ]
         
-        button_x = width // 2 - 150
+        button_x = width // 2 - s(150)
         for key, label, color in buttons:
             # Key badge
             key_surf = self.font_small.render(key, True, WHITE)
-            key_bg = pygame.Rect(button_x, bottom_bar_y + 12, 60, 30)
-            pygame.draw.rect(self.screen, color, key_bg, border_radius=5)
+            key_bg = pygame.Rect(button_x, bottom_bar_y + s(12), s(60), s(30))
+            pygame.draw.rect(self.screen, color, key_bg, border_radius=s(5))
             self.screen.blit(key_surf, key_surf.get_rect(center=key_bg.center))
             
             # Label
             label_surf = self.font_small.render(label, True, (200, 200, 200))
-            self.screen.blit(label_surf, (button_x + 70, bottom_bar_y + 17))
+            self.screen.blit(label_surf, (button_x + s(70), bottom_bar_y + s(17)))
             
-            button_x += 200
+            button_x += s(200)
     
     def _draw_edit_profile(self):
         """Profil düzenleme ekranını çiz - Geliştirilmiş tasarım"""
+        self._apply_responsive_metrics()
+        s = self._s
         width, height = self.screen.get_size()
         
         # Koyu gradient arka plan (siyah)
@@ -2551,20 +2677,20 @@ class UserManagementScreen:
             pygame.draw.line(self.screen, (color_r, color_g, color_b), (0, i), (width, i))
         
         # Üst başlık
-        header_height = 100
+        header_height = s(100)
         for i in range(header_height):
             alpha = i / header_height
             color = (int(20 + alpha * 30), int(30 + alpha * 40), int(60 + alpha * 40))
             pygame.draw.line(self.screen, color, (0, i), (width, i))
         
         title = self.font_title.render(f'{self.edit_username} - {t("user_edit_profile")}', True, WHITE)
-        title_rect = title.get_rect(center=(width // 2, 50))
+        title_rect = title.get_rect(center=(width // 2, s(50)))
         self.screen.blit(title, title_rect)
         
         # Ana kart
-        card_width = min(800, width - 100)
+        card_width = min(s(800), width - s(100))
         card_x = width // 2 - card_width // 2
-        card_y = 130
+        card_y = s(130)
         
         # Düzenleme alanları
         current_avatar_choice = self.avatars[self.temp_avatar_index] if self.avatars else '__default__'
@@ -2575,8 +2701,8 @@ class UserManagementScreen:
             (3, t('user_field_favorite_mode'), self.temp_favorite_mode, 'text')
         ]
         
-        field_height = 90
-        field_gap = 20
+        field_height = s(90)
+        field_gap = s(20)
         
         for idx, (field_id, label, value, field_type) in enumerate(fields_data):
             is_selected = (self.edit_field == field_id)
@@ -2597,21 +2723,21 @@ class UserManagementScreen:
             
             # Gölge (seçili ise)
             if is_selected:
-                shadow_rect = field_rect.inflate(6, 6)
-                pygame.draw.rect(self.screen, (0, 0, 0, 80), shadow_rect, border_radius=15)
+                shadow_rect = field_rect.inflate(s(6), s(6))
+                pygame.draw.rect(self.screen, (0, 0, 0, 80), shadow_rect, border_radius=s(15))
             
-            pygame.draw.rect(self.screen, bg_color, field_rect, border_radius=15)
-            pygame.draw.rect(self.screen, border_color, field_rect, border_width, border_radius=15)
+            pygame.draw.rect(self.screen, bg_color, field_rect, border_radius=s(15))
+            pygame.draw.rect(self.screen, border_color, field_rect, max(1, s(border_width)), border_radius=s(15))
             
             # Label (sol taraf)
             label_surf = self.font_normal.render(label, True, WHITE if is_selected else (180, 180, 180))
-            label_rect = label_surf.get_rect(midleft=(field_rect.x + 30, field_rect.centery))
+            label_rect = label_surf.get_rect(midleft=(field_rect.x + s(30), field_rect.centery))
             self.screen.blit(label_surf, label_rect)
             
             # Value (sağ taraf)
             if field_type == 'avatar':
-                avatar_bg_size = 75
-                avatar_bg_x = field_rect.right - avatar_bg_size - 80
+                avatar_bg_size = s(75)
+                avatar_bg_x = field_rect.right - avatar_bg_size - s(80)
                 avatar_bg_y = field_rect.centery - avatar_bg_size // 2
                 avatar_bg_rect = pygame.Rect(avatar_bg_x, avatar_bg_y, avatar_bg_size, avatar_bg_size)
                 center = avatar_bg_rect.center
@@ -2623,17 +2749,17 @@ class UserManagementScreen:
                     avatar_img = _render_placeholder_avatar(avatar_bg_size - 2)
                 avatar_surf = _circle_crop_surface(avatar_img, avatar_bg_size - 2)
                 self.screen.blit(avatar_surf, avatar_surf.get_rect(center=center))
-                pygame.draw.circle(self.screen, WHITE, center, radius, 2)
+                pygame.draw.circle(self.screen, WHITE, center, radius, s(2))
                 
             elif field_type == 'color':
                 # Renk önizleme - büyük daire
-                color_size = 60
-                color_x = field_rect.right - 100
+                color_size = s(60)
+                color_x = field_rect.right - s(100)
                 color_y = field_rect.centery - color_size // 2
                 color_rect = pygame.Rect(color_x, color_y, color_size, color_size)
                 
                 pygame.draw.ellipse(self.screen, self.avatar_colors[self.temp_color_index], color_rect)
-                pygame.draw.ellipse(self.screen, WHITE, color_rect, 3)
+                pygame.draw.ellipse(self.screen, WHITE, color_rect, s(3))
                 
                 # Renk adı
                 color_names = [
@@ -2648,7 +2774,7 @@ class UserManagementScreen:
                 ]
                 color_name = color_names[self.temp_color_index]
                 name_surf = self.font_small.render(color_name, True, WHITE if is_selected else (180, 180, 180))
-                name_rect = name_surf.get_rect(midright=(color_x - 15, field_rect.centery))
+                name_rect = name_surf.get_rect(midright=(color_x - s(15), field_rect.centery))
                 self.screen.blit(name_surf, name_rect)
                 
             else:  # text
@@ -2663,29 +2789,29 @@ class UserManagementScreen:
                     display_value = display_value[:max_chars] + '...'
                 
                 value_surf = self.font_normal.render(display_value, True, WHITE if is_selected else (200, 200, 200))
-                value_rect = value_surf.get_rect(midright=(field_rect.right - 30, field_rect.centery))
+                value_rect = value_surf.get_rect(midright=(field_rect.right - s(30), field_rect.centery))
                 self.screen.blit(value_surf, value_rect)
             
             # Ok işaretleri (seçili ise ve bio değilse)
             if is_selected and field_id != 2:
-                arrow_size = 30
-                left_arrow_x = field_rect.right - 250
-                right_arrow_x = field_rect.right - 50
+                arrow_size = s(30)
+                left_arrow_x = field_rect.right - s(250)
+                right_arrow_x = field_rect.right - s(50)
                 
                 # Sol ok
-                left_bg = pygame.Rect(left_arrow_x, field_rect.centery - 15, arrow_size, arrow_size)
-                pygame.draw.rect(self.screen, (100, 150, 255), left_bg, border_radius=5)
+                left_bg = pygame.Rect(left_arrow_x, field_rect.centery - arrow_size // 2, arrow_size, arrow_size)
+                pygame.draw.rect(self.screen, (100, 150, 255), left_bg, border_radius=s(5))
                 arrow_left = self.font_normal.render('<', True, WHITE)
                 self.screen.blit(arrow_left, arrow_left.get_rect(center=left_bg.center))
                 
                 # Sağ ok
-                right_bg = pygame.Rect(right_arrow_x, field_rect.centery - 15, arrow_size, arrow_size)
-                pygame.draw.rect(self.screen, (100, 150, 255), right_bg, border_radius=5)
+                right_bg = pygame.Rect(right_arrow_x, field_rect.centery - arrow_size // 2, arrow_size, arrow_size)
+                pygame.draw.rect(self.screen, (100, 150, 255), right_bg, border_radius=s(5))
                 arrow_right = self.font_normal.render('>', True, WHITE)
                 self.screen.blit(arrow_right, arrow_right.get_rect(center=right_bg.center))
         
         # Yardım metni
-        help_y = card_y + 4 * (field_height + field_gap) + 20
+        help_y = card_y + 4 * (field_height + field_gap) + s(20)
         help_texts = []
         
         if self.edit_field == 0:
@@ -2712,19 +2838,20 @@ class UserManagementScreen:
         
         for i, text in enumerate(help_texts):
             help_surf = self.font_small.render(text, True, (150, 170, 200))
-            help_rect = help_surf.get_rect(center=(width // 2, help_y + i * 30))
+            help_rect = help_surf.get_rect(center=(width // 2, help_y + i * s(30)))
             self.screen.blit(help_surf, help_rect)
         
         # Alt bar - kontroller
-        bottom_bar_y = height - 90
+        bottom_bar_y = height - s(90)
         
         # Gradient alt bar
-        for i in range(90):
-            alpha = 1 - (i / 90)
+        footer_height = height - bottom_bar_y
+        for i in range(footer_height):
+            alpha = 1 - (i / max(1, footer_height))
             color = (int(20 * alpha), int(25 * alpha), int(40 * alpha))
             pygame.draw.line(self.screen, color, (0, bottom_bar_y + i), (width, bottom_bar_y + i))
         
-        pygame.draw.line(self.screen, (70, 100, 180), (0, bottom_bar_y), (width, bottom_bar_y), 2)
+        pygame.draw.line(self.screen, (70, 100, 180), (0, bottom_bar_y), (width, bottom_bar_y), s(2))
         
         # Kontrol butonları
         buttons = [
@@ -2735,26 +2862,26 @@ class UserManagementScreen:
             ('ESC', t('cancel'), (200, 100, 100))
         ]
         
-        total_width = sum(150 for _ in buttons) - 20
+        total_width = len(buttons) * s(150) - s(20)
         button_x = width // 2 - total_width // 2
-        button_y = bottom_bar_y + 15
+        button_y = bottom_bar_y + s(15)
         
         for key, label, color in buttons:
             # Key badge
-            key_width = 90 if len(key) > 3 else 60
-            key_bg = pygame.Rect(button_x, button_y, key_width, 35)
-            pygame.draw.rect(self.screen, color, key_bg, border_radius=8)
-            pygame.draw.rect(self.screen, tuple(min(255, c + 40) for c in color), key_bg, 2, border_radius=8)
+            key_width = s(90) if len(key) > 3 else s(60)
+            key_bg = pygame.Rect(button_x, button_y, key_width, s(35))
+            pygame.draw.rect(self.screen, color, key_bg, border_radius=s(8))
+            pygame.draw.rect(self.screen, tuple(min(255, c + 40) for c in color), key_bg, s(2), border_radius=s(8))
             
             key_surf = self.font_small.render(key, True, WHITE)
             self.screen.blit(key_surf, key_surf.get_rect(center=key_bg.center))
             
             # Label
             label_surf = self.font_small.render(label, True, (180, 180, 180))
-            label_rect = label_surf.get_rect(midtop=(button_x + key_width // 2, button_y + 40))
+            label_rect = label_surf.get_rect(midtop=(button_x + key_width // 2, button_y + s(40)))
             self.screen.blit(label_surf, label_rect)
             
-            button_x += 150
+            button_x += s(150)
     
 
 

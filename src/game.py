@@ -49,6 +49,116 @@ def resource_path(relative_path):
     return os.path.normpath(str(base_path / relative_path))
 
 
+def _resolve_first_existing_path(possible_paths: list[str]) -> str | None:
+    for path in possible_paths:
+        if path and os.path.exists(path):
+            return path
+    return None
+
+
+def _main_background_candidates() -> list[str]:
+    return [
+        resource_path('backgrounds/outer_background.png'),
+        resource_path('backgrounds/outer_background.jpg'),
+        resource_path('backgrounds/background.png'),
+        resource_path('backgrounds/background.jpg'),
+        resource_path('backgrounds/anime_bg.png'),
+        resource_path('backgrounds/waifu.png'),
+        resource_path('../assets/backgrounds/outer_background.png'),
+        resource_path('../assets/backgrounds/outer_background.jpg'),
+        resource_path('../assets/backgrounds/background.png'),
+        resource_path('../assets/backgrounds/background.jpg'),
+        resource_path('../assets/backgrounds/anime_bg.png'),
+        resource_path('../assets/backgrounds/waifu.png'),
+    ]
+
+
+def _single_background_candidates() -> list[str]:
+    return [
+        resource_path('backgrounds/game_background.png'),
+        resource_path('backgrounds/game_background.jpg'),
+        resource_path('backgrounds/single_background.png'),
+        resource_path('backgrounds/single_background.jpg'),
+        resource_path('backgrounds/single_bg.png'),
+        resource_path('backgrounds/game_area_bg.png'),
+        resource_path('backgrounds/board_background.png'),
+        resource_path('../assets/backgrounds/game_background.png'),
+        resource_path('../assets/backgrounds/game_background.jpg'),
+        resource_path('../assets/backgrounds/single_background.png'),
+        resource_path('../assets/backgrounds/single_background.jpg'),
+        resource_path('../assets/backgrounds/single_bg.png'),
+        resource_path('../assets/backgrounds/game_area_bg.png'),
+        resource_path('../assets/backgrounds/board_background.png'),
+    ]
+
+
+def _outer_background_candidates() -> list[str]:
+    return [
+        resource_path('backgrounds/outer_background.png'),
+        resource_path('backgrounds/outer_background.jpg'),
+        resource_path('backgrounds/background.png'),
+        resource_path('backgrounds/background.jpg'),
+        resource_path('backgrounds/bos.jpg'),
+        resource_path('../assets/backgrounds/outer_background.png'),
+        resource_path('../assets/backgrounds/outer_background.jpg'),
+        resource_path('../assets/backgrounds/background.png'),
+        resource_path('../assets/backgrounds/background.jpg'),
+        resource_path('../assets/backgrounds/bos.jpg'),
+    ]
+
+
+def get_mode_entry_background_paths(settings_manager=None, game_mode: str = 'classic') -> list[str]:
+    resolved_paths: list[str] = []
+
+    def _append_path(path: str | None) -> None:
+        if path and os.path.exists(path) and path not in resolved_paths:
+            resolved_paths.append(path)
+
+    custom_bg = settings_manager.get('bg_main', None) if settings_manager else None
+    if custom_bg and os.path.exists(custom_bg):
+        _append_path(custom_bg)
+    else:
+        _append_path(_resolve_first_existing_path(_main_background_candidates()))
+
+    custom_single = settings_manager.get('bg_single', None) if settings_manager else None
+    if custom_single and os.path.exists(custom_single):
+        _append_path(custom_single)
+    else:
+        _append_path(_resolve_first_existing_path(_single_background_candidates()))
+
+    if str(game_mode or '').lower() == 'classic':
+        klasik_path = resource_path('assets/klasik.png')
+        if os.path.exists(klasik_path):
+            _append_path(klasik_path)
+
+    custom_outer = settings_manager.get('bg_outer', None) if settings_manager else None
+    if custom_outer and os.path.exists(custom_outer):
+        _append_path(custom_outer)
+    else:
+        _append_path(_resolve_first_existing_path(_outer_background_candidates()))
+
+    return resolved_paths
+
+
+def prewarm_common_mode_entry_backgrounds(settings_manager=None) -> list[str]:
+    prepared_paths: list[str] = []
+    seen_paths: set[str] = set()
+
+    for game_mode in ('classic', 'sprint'):
+        for path in get_mode_entry_background_paths(settings_manager=settings_manager, game_mode=game_mode):
+            normalized_path = os.path.normpath(path)
+            if normalized_path in seen_paths:
+                continue
+            seen_paths.add(normalized_path)
+            try:
+                if BackgroundManager.prewarm_image(path):
+                    prepared_paths.append(path)
+            except Exception:
+                pass
+
+    return prepared_paths
+
+
 class Game:
     """Ana oyun sınıfı"""
 

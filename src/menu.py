@@ -475,6 +475,7 @@ class Menu:
         self._sos_fill_overlay_cache = None
         self._sos_fill_overlay_cache_signature = None
         self._tile_flavor_scaled_cache = {}
+        self._dashboard_flavor_prewarm_signature = None
         self._dashboard_tile_surface_cache = SurfaceLRUCache(max_entries=32)
 
         # Ana menü sağ-alt: Steam skor paneli (Kart Ustalığı)
@@ -1201,6 +1202,157 @@ class Menu:
             context_key,
         )
 
+    def _get_dashboard_tile_flavor_map(self) -> dict[str, dict[str, Any]]:
+        return {
+            'new_gen_tetris': {
+                'path': str(ROOT_DIR / 'assets' / 'main_theme' / 'kart_panel_effect.png'),
+                'cache_attr': '_kart_panel_effect_image',
+                'fail_attr': '_kart_panel_effect_load_failed',
+                'override_key': 'new_gen_tetris_sticker',
+            },
+            'tutorial_mode': {
+                'path': str(ROOT_DIR / 'assets' / 'main_theme' / 'egitim_panel_effect.png'),
+                'cache_attr': '_tutorial_panel_effect_image',
+                'fail_attr': '_tutorial_panel_effect_load_failed',
+                'override_key': 'tutorial_mode_sticker',
+            },
+            'piece_workshop': {
+                'path': str(ROOT_DIR / 'assets' / 'main_theme' / 'atolye_panel_back_effect.png'),
+                'cache_attr': '_piece_workshop_panel_effect_image',
+                'fail_attr': '_piece_workshop_panel_effect_load_failed',
+                'fit_full': True,
+            },
+            'campaign_mode': {
+                'path': str(ROOT_DIR / 'assets' / 'main_theme' / 'campaign_panel.png'),
+                'cache_attr': '_campaign_panel_effect_image',
+                'fail_attr': '_campaign_panel_effect_load_failed',
+                'base_zoom': 0.94,
+                'hover_zoom': 0.98,
+                'fit_full': True,
+            },
+            'store': {
+                'path': str(ROOT_DIR / 'assets' / 'main_theme' / 'market_panel.png'),
+                'cache_attr': '_store_panel_effect_image',
+                'fail_attr': '_store_panel_effect_load_failed',
+                'fit_full': True,
+            },
+            'extras': {
+                'path': str(ROOT_DIR / 'assets' / 'main_theme' / 'modes.png'),
+                'cache_attr': '_extras_panel_effect_image',
+                'fail_attr': '_extras_panel_effect_load_failed',
+                'fit_full': True,
+            },
+            'block_styles': {
+                'path': str(ROOT_DIR / 'assets' / 'main_theme' / 'blok_gorunum.png'),
+                'cache_attr': '_block_styles_panel_effect_image',
+                'fail_attr': '_block_styles_panel_effect_load_failed',
+                'fit_full': True,
+            },
+        }
+
+    def _load_dashboard_tile_flavor_source(self, flavor: dict[str, Any]) -> pygame.Surface | None:
+        cache_attr = str(flavor['cache_attr'])
+        fail_attr = str(flavor['fail_attr'])
+        cached_image = getattr(self, cache_attr, None)
+        load_failed = getattr(self, fail_attr, False)
+
+        if cached_image is None and not load_failed:
+            try:
+                loaded = load_image(str(flavor['path']), convert_alpha=True)
+                if loaded is not None:
+                    setattr(self, cache_attr, loaded)
+                else:
+                    setattr(self, fail_attr, True)
+            except Exception:
+                setattr(self, fail_attr, True)
+
+        return getattr(self, cache_attr, None)
+
+    def _get_fit_full_dashboard_flavor_geometry(
+        self,
+        rect: pygame.Rect,
+        flavor: dict[str, Any],
+        source: pygame.Surface,
+        hover: bool,
+    ) -> tuple[pygame.Rect, int, int] | None:
+        panel_scale = self._menu_panel_content_scale()
+        s = lambda v, minimum=1: max(minimum, int(round(v * panel_scale)))
+
+        back_zone = rect.inflate(-s(2), -s(2))
+        src_w, src_h = source.get_size()
+        if src_w <= 0 or src_h <= 0 or back_zone.width < s(32) or back_zone.height < s(32):
+            return None
+
+        base_zoom = float(flavor.get('base_zoom', 1.0))
+        hover_zoom = float(flavor.get('hover_zoom', 1.06))
+        zoom = hover_zoom if hover else base_zoom
+        cover_w = max(1, int(back_zone.width * zoom))
+        cover_h = max(1, int(cover_w * (src_h / max(1, src_w))))
+        if cover_h < back_zone.height * zoom:
+            cover_h = max(1, int(back_zone.height * zoom))
+            cover_w = max(1, int(cover_h * (src_w / max(1, src_h))))
+
+        return back_zone, cover_w, cover_h
+
+    def _get_scaled_fit_full_dashboard_flavor(
+        self,
+        panel_key: str,
+        rect: pygame.Rect,
+        flavor: dict[str, Any],
+        hover: bool,
+    ) -> tuple[pygame.Surface, pygame.Rect] | None:
+        source = self._load_dashboard_tile_flavor_source(flavor)
+        if source is None:
+            return None
+
+        geometry = self._get_fit_full_dashboard_flavor_geometry(rect, flavor, source, hover)
+        if geometry is None:
+            return None
+
+        back_zone, cover_w, cover_h = geometry
+        src_w, src_h = source.get_size()
+        scaled_back_key = (
+            'fit_full',
+            panel_key,
+            src_w,
+            src_h,
+            cover_w,
+            cover_h,
+            bool(hover),
+        )
+        scaled_back = self._tile_flavor_scaled_cache.get(scaled_back_key)
+        if scaled_back is None:
+            scaled_back = pygame.transform.smoothscale(source, (cover_w, cover_h))
+            self._tile_flavor_scaled_cache[scaled_back_key] = scaled_back
+
+        return scaled_back, back_zone
+
+    def _prewarm_dashboard_entry_assets(self, action_rect_map: dict[str, pygame.Rect]) -> None:
+        fit_full_keys = ('piece_workshop', 'campaign_mode', 'store', 'extras')
+        signature = (
+            self.screen.get_size(),
+            round(float(self._menu_panel_content_scale()), 4),
+            tuple(
+                (panel_key, rect.x, rect.y, rect.width, rect.height)
+                for panel_key in fit_full_keys
+                for rect in [action_rect_map.get(panel_key)]
+                if rect is not None
+            ),
+        )
+        if self._dashboard_flavor_prewarm_signature == signature:
+            return
+
+        flavor_map = self._get_dashboard_tile_flavor_map()
+        for panel_key in fit_full_keys:
+            rect = action_rect_map.get(panel_key)
+            flavor = flavor_map.get(panel_key)
+            if rect is None or flavor is None or not bool(flavor.get('fit_full', False)):
+                continue
+            for hover in (False, True):
+                self._get_scaled_fit_full_dashboard_flavor(panel_key, rect, flavor, hover)
+
+        self._dashboard_flavor_prewarm_signature = signature
+
     def _render_main_dashboard_tile(
         self,
         target_surface: pygame.Surface,
@@ -1280,11 +1432,16 @@ class Menu:
                     target_surface.blit(glow_surf, glow_rect.topleft)
             target_surface.set_clip(prev_clip)
 
-        self._draw_dashboard_tile_flavor(draw_rect, panel_key, accent_color, hover, target_surface=target_surface)
+        draw_flavor_on_top = panel_key == 'new_gen_tetris'
+        if not draw_flavor_on_top:
+            self._draw_dashboard_tile_flavor(draw_rect, panel_key, accent_color, hover, target_surface=target_surface)
 
         fill = pygame.Surface(draw_rect.size, pygame.SRCALPHA)
         fill.fill((0, 0, 0, 48 if is_highlighted else 38))
         target_surface.blit(fill, draw_rect.topleft)
+
+        if draw_flavor_on_top:
+            self._draw_dashboard_tile_flavor(draw_rect, panel_key, accent_color, hover, target_surface=target_surface)
 
         pvp_micro_prepass = bool(panel_context) and panel_key == 'pvp_2_players'
         if pvp_micro_prepass:
@@ -1517,34 +1674,7 @@ class Menu:
     ) -> None:
         """Panel adına göre arka plan dekoratif efekt (tetris blokları kaldırıldı)."""
         target = target_surface or self.screen
-        panel_flavor_map = {
-            'new_gen_tetris': {
-                'path': str(ROOT_DIR / 'assets' / 'main_theme' / 'kart_panel_effect.png'),
-                'cache_attr': '_kart_panel_effect_image',
-                'fail_attr': '_kart_panel_effect_load_failed',
-                'override_key': 'new_gen_tetris_sticker',
-            },
-            'tutorial_mode': {
-                'path': str(ROOT_DIR / 'assets' / 'main_theme' / 'egitim_panel_effect.png'),
-                'cache_attr': '_tutorial_panel_effect_image',
-                'fail_attr': '_tutorial_panel_effect_load_failed',
-                'override_key': 'tutorial_mode_sticker',
-            },
-            'piece_workshop': {
-                'path': str(ROOT_DIR / 'assets' / 'main_theme' / 'atolye_panel_back_effect.png'),
-                'cache_attr': '_piece_workshop_panel_effect_image',
-                'fail_attr': '_piece_workshop_panel_effect_load_failed',
-                'fit_full': True,
-            },
-            'block_styles': {
-                'path': str(ROOT_DIR / 'assets' / 'main_theme' / 'blok_gorunum.png'),
-                'cache_attr': '_block_styles_panel_effect_image',
-                'fail_attr': '_block_styles_panel_effect_load_failed',
-                'fit_full': True,
-            },
-        }
-
-        flavor = panel_flavor_map.get(panel_key)
+        flavor = self._get_dashboard_tile_flavor_map().get(panel_key)
         if flavor is None:
             return
 
@@ -1552,80 +1682,25 @@ class Menu:
         s = lambda v, minimum=1: max(minimum, int(round(v * panel_scale)))
 
         if bool(flavor.get('fit_full', False)):
-            full_img_path = flavor['path']
-            full_cache_attr = str(flavor['cache_attr'])
-            full_fail_attr = str(flavor['fail_attr'])
-            full_cached_image = getattr(self, full_cache_attr, None)
-            full_load_failed = getattr(self, full_fail_attr, False)
+            scaled_back_result = self._get_scaled_fit_full_dashboard_flavor(panel_key, rect, flavor, hover)
+            if scaled_back_result is not None:
+                scaled_back, back_zone = scaled_back_result
+                cover_w, cover_h = scaled_back.get_size()
+                back_x = back_zone.centerx - cover_w // 2
+                back_y = back_zone.centery - cover_h // 2
 
-            if full_cached_image is None and not full_load_failed:
-                try:
-                    loaded = load_image(full_img_path, convert_alpha=True)
-                    if loaded is not None:
-                        setattr(self, full_cache_attr, loaded)
-                    else:
-                        setattr(self, full_fail_attr, True)
-                except Exception:
-                    setattr(self, full_fail_attr, True)
-
-            full_source = getattr(self, full_cache_attr, None)
-            if full_source is not None:
-                back_zone = rect.inflate(-s(2), -s(2))
-                src_w, src_h = full_source.get_size()
-                if src_w > 0 and src_h > 0 and back_zone.width >= s(32) and back_zone.height >= s(32):
-                    zoom = 1.06 if hover else 1.0
-                    cover_w = max(1, int(back_zone.width * zoom))
-                    cover_h = max(1, int(cover_w * (src_h / max(1, src_w))))
-                    if cover_h < back_zone.height * zoom:
-                        cover_h = max(1, int(back_zone.height * zoom))
-                        cover_w = max(1, int(cover_h * (src_w / max(1, src_h))))
-
-                    scaled_back_key = (
-                        'fit_full',
-                        panel_key,
-                        src_w,
-                        src_h,
-                        cover_w,
-                        cover_h,
-                        bool(hover),
-                    )
-                    scaled_back = self._tile_flavor_scaled_cache.get(scaled_back_key)
-                    if scaled_back is None:
-                        scaled_back = pygame.transform.smoothscale(full_source, (cover_w, cover_h))
-                        self._tile_flavor_scaled_cache[scaled_back_key] = scaled_back
-                    back_x = back_zone.centerx - cover_w // 2
-                    back_y = back_zone.centery - cover_h // 2
-
-                    prev_clip = target.get_clip()
-                    target.set_clip(back_zone)
-                    target.blit(scaled_back, (back_x, back_y))
-                    hover_alpha = 90 if hover else 98
-                    flavor_overlay = pygame.Surface(back_zone.size, pygame.SRCALPHA)
-                    flavor_overlay.fill((0, 0, 0, hover_alpha))
-                    target.blit(flavor_overlay, back_zone.topleft)
-                    target.set_clip(prev_clip)
+                prev_clip = target.get_clip()
+                target.set_clip(back_zone)
+                target.blit(scaled_back, (back_x, back_y))
+                hover_alpha = 90 if hover else 98
+                flavor_overlay = pygame.Surface(back_zone.size, pygame.SRCALPHA)
+                flavor_overlay.fill((0, 0, 0, hover_alpha))
+                target.blit(flavor_overlay, back_zone.topleft)
+                target.set_clip(prev_clip)
             return
 
-        img_path = flavor['path']
-        cache_attr = str(flavor['cache_attr'])
-        fail_attr = str(flavor['fail_attr'])
         override_key = str(flavor['override_key'])
-        cached_image = getattr(self, cache_attr, None)
-        load_failed = getattr(self, fail_attr, False)
-
-        if cached_image is None and not load_failed:
-            try:
-                loaded = load_image(img_path, convert_alpha=True)
-                if loaded is not None:
-                    setattr(self, cache_attr, loaded)
-                else:
-                    setattr(self, fail_attr, True)
-                    return
-            except Exception:
-                setattr(self, fail_attr, True)
-                return
-
-        source = getattr(self, cache_attr, None)
+        source = self._load_dashboard_tile_flavor_source(flavor)
         if source is None:
             return
 
@@ -2260,115 +2335,87 @@ class Menu:
             target.blit(pct_surf, pct_surf.get_rect(midleft=(bar_x, bar_y - s(10))))
 
         elif panel_key == 'campaign_mode':
-            last_level = int(panel_context.get('campaign_last_level', 1) or 1)
             next_level = int(panel_context.get('campaign_next_level', 1) or 1)
             level_name = str(panel_context.get('campaign_level_name', '') or '')
 
-            # --- Level bilgi paneli (stilize) ---
-            info_y = rect.y + max(s(50), int(rect.height * 0.35))
+            lv_label = t('menu_dashboard_campaign_next_level', level=next_level)
+            lv_sub = level_name
 
-            if next_level == last_level:
-                lv_lines = [t('menu_dashboard_campaign_level_single', level=next_level)]
-                lv_sub = ''
-            else:
-                lv_main = t('menu_dashboard_campaign_levels', last=last_level, next=next_level)
-                lv_lines = [segment.strip() for segment in lv_main.split('·') if segment.strip()]
-                if not lv_lines:
-                    lv_lines = [lv_main]
-                lv_sub = level_name
+            lv_pad_x = s(12)
+            lv_pad_y = s(8)
+            lv_panel_max_w = max(96, content_w - s(6))
+            lv_text_max_w = max(72, lv_panel_max_w - lv_pad_x * 2 - s(10))
 
-            lv_pad_x = s(10)
-            lv_pad_y = s(6)
-            lv_max_text_w = max(80, content_w - lv_pad_x * 2 - 8)
-            lv_font_size = s(18)
-            lv_font = retro_style.get_font(lv_font_size, bold=True)
-            lv_min_size = max(11, s(13))
-            while lv_font_size > lv_min_size:
-                if all(lv_font.size(line)[0] <= lv_max_text_w for line in lv_lines):
-                    break
-                lv_font_size -= 1
-                lv_font = retro_style.get_font(lv_font_size, bold=True)
-
-            lv_surfs = [lv_font.render(line, True, accent_color) for line in lv_lines]
-            lv_line_gap = s(2)
-            lv_main_h = sum(surf.get_height() for surf in lv_surfs) + max(0, len(lv_surfs) - 1) * lv_line_gap
-            lv_main_w = max((surf.get_width() for surf in lv_surfs), default=0)
+            lv_font = retro_style.get_fitting_font(
+                lv_label,
+                base_size=s(18),
+                max_width=lv_text_max_w,
+                bold=True,
+                min_size=max(11, s(13)),
+            )
+            lv_main_surf = lv_font.render(lv_label, True, accent_color)
 
             name_surf = None
-            name_gap = s(6)
+            name_gap = s(5)
             if lv_sub:
-                name_font = retro_style.get_fitting_font(lv_sub, base_size=s(14), max_width=lv_max_text_w, bold=False, min_size=max(10, s(11)))
+                name_font = retro_style.get_fitting_font(
+                    lv_sub,
+                    base_size=s(14),
+                    max_width=lv_text_max_w,
+                    bold=False,
+                    min_size=max(10, s(11)),
+                )
                 name_surf = name_font.render(lv_sub, True, UIColors.TEXT_SECONDARY)
 
-            lv_panel_h = lv_main_h + lv_pad_y * 2
+            lv_panel_inner_w = lv_main_surf.get_width()
+            if name_surf is not None:
+                lv_panel_inner_w = max(lv_panel_inner_w, name_surf.get_width())
+
+            lv_panel_w = min(
+                lv_panel_max_w,
+                max(s(124), lv_panel_inner_w + lv_pad_x * 2 + s(10)),
+            )
+            lv_panel_h = lv_main_surf.get_height() + lv_pad_y * 2
             if name_surf is not None:
                 lv_panel_h += name_gap + name_surf.get_height()
-            lv_panel_w = max(lv_main_w + lv_pad_x * 2 + 8, min(content_w, 180))
-            if name_surf is not None:
-                lv_panel_w = max(lv_panel_w, min(content_w, name_surf.get_width() + lv_pad_x * 2 + 8))
-            lv_panel_w = min(content_w, lv_panel_w)
+
             lv_panel_x = rect.x + pad_l
-            lv_panel_y = info_y
+            min_panel_y = rect.y + max(s(56), int(rect.height * 0.42))
+            lv_panel_y = max(min_panel_y, rect.bottom - lv_panel_h - s(14))
+            lv_panel_rect = pygame.Rect(lv_panel_x, lv_panel_y, lv_panel_w, lv_panel_h)
+
+            quick_hover = False
+            try:
+                quick_hover = lv_panel_rect.collidepoint(get_mouse_pos())
+            except Exception:
+                quick_hover = False
 
             lv_glow = pygame.Surface((lv_panel_w + s(10), lv_panel_h + s(10)), pygame.SRCALPHA)
-            pygame.draw.rect(lv_glow, (*accent_color[:3], 20 if hover else 12), lv_glow.get_rect(), border_radius=12)
+            glow_alpha = 38 if quick_hover else (20 if hover else 12)
+            pygame.draw.rect(lv_glow, (*accent_color[:3], glow_alpha), lv_glow.get_rect(), border_radius=12)
             target.blit(lv_glow, (lv_panel_x - s(5), lv_panel_y - s(5)))
 
-            # Panel arka plan
             lv_bg = pygame.Surface((lv_panel_w, lv_panel_h), pygame.SRCALPHA)
-            pygame.draw.rect(lv_bg, (12, 28, 48, 185), lv_bg.get_rect(), border_radius=10)
-            # Üst highlight
+            bg_alpha = 205 if quick_hover else 185
+            pygame.draw.rect(lv_bg, (12, 28, 48, bg_alpha), lv_bg.get_rect(), border_radius=10)
             for hy in range(min(6, lv_panel_h // 4)):
                 ha = int(20 * (1 - hy / 6))
                 pygame.draw.line(lv_bg, (255, 255, 255, ha), (6, hy), (lv_panel_w - 6, hy))
-            # Kenarlık
-            pygame.draw.rect(lv_bg, (*accent_color[:3], 80), lv_bg.get_rect(), 1, border_radius=10)
+            border_alpha = 145 if quick_hover else 80
+            pygame.draw.rect(lv_bg, (*accent_color[:3], border_alpha), lv_bg.get_rect(), 2 if quick_hover else 1, border_radius=10)
             target.blit(lv_bg, (lv_panel_x, lv_panel_y))
 
-            # Level metinleri
+            # Ana ekranda kutucuk hitbox'ını sakla: tıklanınca doğrudan ilgili seviyeyi başlat.
+            if target is self.screen:
+                self.campaign_quick_play_rect = lv_panel_rect
+                self.campaign_quick_level = next_level
+
+            text_x = lv_panel_x + lv_pad_x + s(4)
             text_y = lv_panel_y + lv_pad_y
-            for lv_line_surf in lv_surfs:
-                target.blit(lv_line_surf, (lv_panel_x + lv_pad_x + 4, text_y))
-                text_y += lv_line_surf.get_height() + lv_line_gap
+            target.blit(lv_main_surf, (text_x, text_y))
 
-            # --- Level adı (panel içinde) ---
             if name_surf is not None:
-                target.blit(name_surf, (lv_panel_x + lv_pad_x + s(4), text_y + max(0, name_gap - lv_line_gap)))
-
-            # --- Hızlı Devam butonu (sağ-alt köşe) ---
-            btn_w = max(s(115), 116, min(s(150), rect.width - s(26)))
-            btn_h = max(s(38), 36)
-            btn_x = rect.right - btn_w - s(10)
-            btn_y = rect.bottom - btn_h - s(10)
-            btn_rect = pygame.Rect(btn_x, btn_y, btn_w, btn_h)
-            btn_hover = btn_rect.collidepoint(get_mouse_pos())
-
-            btn_surf = pygame.Surface((btn_w, btn_h), pygame.SRCALPHA)
-            bg_alpha = 225 if btn_hover else 185
-            pygame.draw.rect(btn_surf, (15, 25, 40, bg_alpha), btn_surf.get_rect(), border_radius=11)
-            # Üst highlight
-            for hy in range(min(12, btn_h // 3)):
-                ha = int(30 * (1 - hy / 12))
-                pygame.draw.line(btn_surf, (255, 255, 255, ha), (4, hy), (btn_w - 4, hy))
-            border_alpha = 240 if btn_hover else 175
-            pygame.draw.rect(btn_surf, (*accent_color[:3], border_alpha), btn_surf.get_rect(), 2, border_radius=11)
-            glow = pygame.Surface((btn_w + 10, btn_h + 10), pygame.SRCALPHA)
-            pygame.draw.rect(glow, (*accent_color[:3], 40 if btn_hover else 18), glow.get_rect(), border_radius=14)
-            self.screen.blit(glow, (btn_rect.x - 5, btn_rect.y - 5))
-            btn_label = t('menu_dashboard_quick_continue')
-            btn_font = retro_style.get_fitting_font(btn_label, base_size=max(s(18), 15), max_width=btn_w - s(32), bold=True, min_size=max(14, s(13)))
-            btn_text_surf = btn_font.render(btn_label, True, UIColors.TEXT_PRIMARY)
-            btn_surf.blit(btn_text_surf, btn_text_surf.get_rect(center=(btn_w // 2 + s(5), btn_h // 2)))
-            # Sol tarafta üçgen ok ikonu
-            arrow_x = s(12)
-            arrow_cy = btn_h // 2
-            arrow_size = s(7)
-            arrow_pts = [(arrow_x, arrow_cy - arrow_size), (arrow_x, arrow_cy + arrow_size), (arrow_x + arrow_size + 2, arrow_cy)]
-            pygame.draw.polygon(btn_surf, (*accent_color[:3], 230), arrow_pts)
-
-            self.screen.blit(btn_surf, btn_rect.topleft)
-            self.campaign_quick_play_rect = btn_rect
-            self.campaign_quick_level = next_level
+                target.blit(name_surf, (text_x, text_y + lv_main_surf.get_height() + name_gap))
 
         elif panel_key == 'new_gen_tetris':
             btn_label = t('menu_dashboard_play')
@@ -2691,6 +2738,8 @@ class Menu:
         }
         for action_key, action_rect in list(action_rect_map.items()):
             action_rect_map[action_key] = self._apply_layout_override_rect(action_key, action_rect, width, height, min_w=90, min_h=70)
+
+        self._prewarm_dashboard_entry_assets(action_rect_map)
 
         mystery_lb_rect = pygame.Rect(x5, lower_start, col5, leaderboard_h)
         mystery_lb_rect = self._apply_layout_override_rect('steam_scores', mystery_lb_rect, width, height, min_w=180, min_h=140)

@@ -12,6 +12,7 @@ from ui_theme import UIColors, UIFonts, UIStyle, lerp_color
 from ui_components import draw_glass_card
 from asset_manager import load_image
 from localization import t, get_language
+from ui_scaling import get_scale
 
 
 def _get_base_path() -> Path:
@@ -116,10 +117,6 @@ class ExtrasScreen:
         """Ekstralar ekranını başlat"""
         self.screen = screen
         self.user_manager = user_manager
-        self._base_window_size = self.screen.get_size()
-        
-        # Modern UI fontları (daha net / daha büyük)
-        self._refresh_fonts()
         self._lang_cache = get_language()
         self._layout_signature = (self.screen.get_width(), self.screen.get_height(), self._lang_cache)
 
@@ -242,9 +239,6 @@ class ExtrasScreen:
             },
         ]
         
-        # Simge yükle
-        self._load_mode_icons()
-        
         self.selected = 0
         self.option_rects = []
         self.scroll_offset = 0
@@ -255,41 +249,45 @@ class ExtrasScreen:
         self._sb_drag_offset_y: int = 0
         self._cached_max_scroll: int = 0
         self.background_fx = get_shared_falling_blocks_layer('default')
-        
+
         # Grid ayarları (UI temasına göre)
-        base_w, _ = self._base_window_size
-        if base_w > 1200:
-            self.base_cols = 4
-            self.base_card_size = (285, 240)
-        elif base_w > 900:
-            self.base_cols = 3
-            self.base_card_size = (320, 250)
-        else:
-            self.base_cols = 2
-            self.base_card_size = (360, 270)
+        self.base_cols, self.base_card_size = self._resolve_grid_preset(self.screen.get_width())
 
         self.cols = self.base_cols
         self.card_size = self.base_card_size
         self.base_spacing = UIStyle.SPACING_LARGE
         self.spacing = self.base_spacing
+
+        self._apply_scaled_layout()
+        self._refresh_fonts()
+        self._load_mode_icons()
         
         # Hover animasyon
         self.hover_progress = {}
         for i in range(len(self._items_base)):
             self.hover_progress[i] = 0.0
 
-    def _extras_ui_scale(self, min_scale: float = 0.60, max_scale: float = 1.0) -> float:
-        """Tam ekran referansına göre UI ölçeği (yalnızca küçülür)."""
-        base_w, base_h = self._base_window_size
-        base_w = max(1, int(base_w))
-        base_h = max(1, int(base_h))
-        w_ratio = self.screen.get_width() / float(base_w)
-        h_ratio = self.screen.get_height() / float(base_h)
-        return max(min_scale, min(max_scale, min(w_ratio, h_ratio)))
+    def _resolve_grid_preset(self, width: int) -> tuple[int, tuple[int, int]]:
+        width = max(1, int(width))
+        if width > 1200:
+            return 4, (285, 240)
+        if width > 900:
+            return 3, (320, 250)
+        return 2, (360, 270)
+
+    def _extras_ui_scale(self, min_scale: float = 0.60, max_scale: float = 1.18) -> float:
+        """Aktif ekran boyutuna göre ortak UI ölçeği."""
+        return get_scale(
+            self.screen,
+            min_scale=min_scale,
+            max_scale=max_scale,
+            reference_size=(1366.0, 768.0),
+        )
 
     def _apply_scaled_layout(self) -> None:
         """Mevcut pencereye göre kart, ikon ve boşluk ölçeğini uygula."""
         width = self.screen.get_width()
+        self.base_cols, self.base_card_size = self._resolve_grid_preset(width)
         ui_scale = self._extras_ui_scale()
 
         self.icon_size = max(52, int(round(self.base_icon_size * ui_scale)))

@@ -54,6 +54,9 @@ class _FakeFont:
 
 
 class _FakeSurface:
+    def __init__(self, width=1024, height=768):
+        self._size = (width, height)
+
     def fill(self, *a, **kw):
         return None
 
@@ -61,13 +64,13 @@ class _FakeSurface:
         return None
 
     def get_width(self):
-        return 1024
+        return self._size[0]
 
     def get_height(self):
-        return 768
+        return self._size[1]
 
     def get_size(self):
-        return (1024, 768)
+        return self._size
 
     def set_alpha(self, *a, **kw):
         return None
@@ -220,3 +223,23 @@ def test_mode_id_to_stats_key_classic():
     assert mod.ExtrasScreen.MODE_ID_TO_STATS_KEY.get('Classic Mode') == 'classic', (
         f"Got: {mod.ExtrasScreen.MODE_ID_TO_STATS_KEY.get('Classic Mode')!r}"
     )
+
+
+def test_extras_ui_scale_can_grow_above_one_on_large_displays():
+    """Faz 2: ortak helper ile extras ekranı 1080p üstünde büyüyebilmeli."""
+    screen = _FakeSurface(2560, 1440)
+    user_manager_mock = types.SimpleNamespace(get_mode_highscore=lambda *a, **kw: 0)
+
+    extras = ExtrasScreen(screen, user_manager=user_manager_mock)
+
+    assert extras._extras_ui_scale() > 1.0
+
+
+def test_extras_ui_scale_preserves_1366_baseline():
+    """Faz 2 uyumluluk: klasik 1366x768 baseline gereksiz yere küçülmemeli."""
+    screen = _FakeSurface(1366, 768)
+    user_manager_mock = types.SimpleNamespace(get_mode_highscore=lambda *a, **kw: 0)
+
+    extras = ExtrasScreen(screen, user_manager=user_manager_mock)
+
+    assert abs(extras._extras_ui_scale() - 1.0) < 0.001

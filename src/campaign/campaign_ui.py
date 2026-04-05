@@ -15,6 +15,7 @@ from typing import Dict, Any, List, Optional, Tuple, TYPE_CHECKING
 from ui_theme import UIColors, UIFonts, UIStyle
 from platform_utils import get_mouse_pos
 from localization import t
+from ui_scaling import get_modal_scale, scale_px
 
 # Oyunun renk paleti (merkezi tema)
 NEON_CYAN = UIColors.NEON_CYAN
@@ -25,6 +26,8 @@ NEON_BLUE = UIColors.NEON_CYAN
 GOLD = UIColors.NEON_GOLD
 SILVER = UIColors.TEXT_SECONDARY
 BRONZE = (205, 127, 50)
+
+CAMPAIGN_MODAL_REFERENCE_SIZE = (1366.0, 768.0)
 
 # Özel blok renkleri - neon temaya uygun
 SPECIAL_BLOCK_COLORS = {
@@ -102,6 +105,13 @@ class CampaignUIEffects:
         if size not in self._font_cache:
             self._font_cache[size] = UIFonts.get(size)
         return self._font_cache[size]
+
+    def _get_modal_ui_scale(self, surface_or_size: Any) -> float:
+        return get_modal_scale(surface_or_size, reference_size=CAMPAIGN_MODAL_REFERENCE_SIZE)
+
+    @staticmethod
+    def _scale_modal_px(value: int | float, scale: float, minimum: int = 1) -> int:
+        return scale_px(value, scale, minimum=minimum)
     
     # ==========================================
     # POWER-UP BAR
@@ -578,6 +588,8 @@ class CampaignUIEffects:
         
         screen_w, screen_h = surface.get_size()
         anim_time = self.level_complete_animation['time']
+        ui_scale = self._get_modal_ui_scale((screen_w, screen_h))
+        s = lambda value, minimum=1: self._scale_modal_px(value, ui_scale, minimum=minimum)
         
         # Fade-in animasyonu (0-0.4 saniye) - game.py stilinde
         fade_duration = 0.4
@@ -604,22 +616,22 @@ class CampaignUIEffects:
             surface.blit(overlay, (0, 0))
         
         # Panel boyutları (game.py stilinde)
-        panel_width = min(max(460, screen_w - 320), screen_w - 220)
-        panel_width = max(380, panel_width)
-        panel_height = min(max(380, screen_h - 160), screen_h - 80)
-        panel_height = max(340, panel_height)
+        panel_width = min(max(s(460), screen_w - s(320)), screen_w - s(220))
+        panel_width = max(s(380), panel_width)
+        panel_height = min(max(s(380), screen_h - s(160)), screen_h - s(80))
+        panel_height = max(s(340), panel_height)
         
         panel_x = (screen_w - panel_width) // 2
         panel_y = (screen_h - panel_height) // 2
         
         # Panel slide-in animasyonu
         if anim_time < 0.3:
-            panel_y += int(50 * (1 - anim_time / 0.3))
+            panel_y += int(s(50, minimum=0) * (1 - anim_time / 0.3))
         
         panel_rect = pygame.Rect(panel_x, panel_y, panel_width, panel_height)
         
         # Panel padding
-        pad_x = 32
+        pad_x = s(32)
         inner_left = panel_rect.x + pad_x
         inner_right = panel_rect.right - pad_x
         inner_w = inner_right - inner_left
@@ -629,9 +641,9 @@ class CampaignUIEffects:
         if retro_style:
             try:
                 # Panel glow efekti
-                glow_rect = panel_rect.inflate(24, 24)
+                glow_rect = panel_rect.inflate(s(24, minimum=0), s(24, minimum=0))
                 glow_surf = pygame.Surface(glow_rect.size, pygame.SRCALPHA)
-                pygame.draw.rect(glow_surf, (*NEON_CYAN, 25), glow_surf.get_rect(), border_radius=20)
+                pygame.draw.rect(glow_surf, (*NEON_CYAN, 25), glow_surf.get_rect(), border_radius=s(20))
                 surface.blit(glow_surf, glow_rect.topleft)
                 
                 # Glass panel
@@ -644,9 +656,9 @@ class CampaignUIEffects:
         if not use_retro:
             # Fallback: premium manuel panel
             # Glow efekti
-            glow_rect = panel_rect.inflate(24, 24)
+            glow_rect = panel_rect.inflate(s(24, minimum=0), s(24, minimum=0))
             glow_surf = pygame.Surface(glow_rect.size, pygame.SRCALPHA)
-            pygame.draw.rect(glow_surf, (*NEON_CYAN, 20), glow_surf.get_rect(), border_radius=18)
+            pygame.draw.rect(glow_surf, (*NEON_CYAN, 20), glow_surf.get_rect(), border_radius=s(18))
             surface.blit(glow_surf, glow_rect.topleft)
             
             # Panel arka plan (glassmorphism benzeri)
@@ -654,43 +666,45 @@ class CampaignUIEffects:
             panel_surf.fill((10, 15, 35, 220))
             
             # Üst highlight (cam efekti)
-            for i in range(20):
-                alpha = int(35 * (1 - i / 20))
+            highlight_h = s(20)
+            for i in range(highlight_h):
+                alpha = int(35 * (1 - i / max(1, highlight_h)))
                 pygame.draw.line(panel_surf, (255, 255, 255, alpha), (0, i), (panel_width, i))
             
             surface.blit(panel_surf, panel_rect.topleft)
             
             # Neon border
-            pygame.draw.rect(surface, NEON_CYAN, panel_rect, 2, border_radius=14)
+            pygame.draw.rect(surface, NEON_CYAN, panel_rect, 2, border_radius=s(14))
         
         # Üst başlık bandı (tema uyumlu)
-        header_h = 88
-        header_rect = pygame.Rect(panel_rect.x + 8, panel_rect.y + 8, panel_width - 16, header_h)
+        header_h = s(88)
+        header_rect = pygame.Rect(panel_rect.x + s(8), panel_rect.y + s(8), panel_width - s(16), header_h)
         header_surf = pygame.Surface(header_rect.size, pygame.SRCALPHA)
         header_surf.fill((12, 18, 40, 230))
-        for i in range(12):
-            alpha = int(30 * (1 - i / 12))
+        header_highlight_h = s(12)
+        for i in range(header_highlight_h):
+            alpha = int(30 * (1 - i / max(1, header_highlight_h)))
             pygame.draw.line(header_surf, (255, 255, 255, alpha), (0, i), (header_rect.width, i))
         surface.blit(header_surf, header_rect.topleft)
-        pygame.draw.line(surface, (*NEON_CYAN, 140), (header_rect.x + 10, header_rect.bottom - 2), (header_rect.right - 10, header_rect.bottom - 2), 2)
+        pygame.draw.line(surface, (*NEON_CYAN, 140), (header_rect.x + s(10), header_rect.bottom - s(2, minimum=0)), (header_rect.right - s(10), header_rect.bottom - s(2, minimum=0)), max(1, s(2)))
 
         # BAŞLIK - premium kısa
         title_text = t('campaign_congrats_title')
         title_color = NEON_CYAN
 
         if retro_style:
-            title_font = retro_style.get_font(40, bold=True)
-            subtitle_font = retro_style.get_font(21, bold=False)
+            title_font = retro_style.get_font(s(40, minimum=18), bold=True)
+            subtitle_font = retro_style.get_font(s(21, minimum=11), bold=False)
         else:
-            title_font = self._get_font(40)
-            subtitle_font = self._get_font(21)
+            title_font = self._get_font(s(40, minimum=18))
+            subtitle_font = self._get_font(s(21, minimum=11))
 
         title = title_font.render(title_text, True, title_color)
-        title_rect = title.get_rect(centerx=header_rect.centerx, top=header_rect.y + 6)
+        title_rect = title.get_rect(centerx=header_rect.centerx, top=header_rect.y + s(6))
 
         # Glow efekti
         glow_surf = title_font.render(title_text, True, title_color)
-        for dx, dy, a in [(-2, 0, 26), (2, 0, 26), (0, -2, 22), (0, 2, 22)]:
+        for dx, dy, a in [(-s(2, minimum=0), 0, 26), (s(2, minimum=0), 0, 26), (0, -s(2, minimum=0), 22), (0, s(2, minimum=0), 22)]:
             glow_surf.set_alpha(a)
             surface.blit(glow_surf, (title_rect.x + dx, title_rect.y + dy))
         surface.blit(title, title_rect)
@@ -698,9 +712,9 @@ class CampaignUIEffects:
         # ============================================
         # YILDIZ SİSTEMİ (game.py stilinde 3 yıldız)
         # ============================================
-        star_size = 40
-        star_area_y = header_rect.bottom + 8
-        star_spacing = 10
+        star_size = s(40, minimum=20)
+        star_area_y = header_rect.bottom + s(8)
+        star_spacing = s(10, minimum=4)
         total_stars = 3
         total_star_width = total_stars * star_size + (total_stars - 1) * star_spacing
         star_start_x = header_rect.centerx - total_star_width // 2
@@ -708,7 +722,7 @@ class CampaignUIEffects:
         # Alt başlık (level adı) - yıldızların hemen solunda, aynı hizada
         subtitle = subtitle_font.render(level_name, True, (205, 215, 235))
         subtitle_rect = subtitle.get_rect()
-        subtitle_rect.midright = (star_start_x - 8, star_area_y + star_size // 2)
+        subtitle_rect.midright = (star_start_x - s(8), star_area_y + star_size // 2)
         surface.blit(subtitle, subtitle_rect)
         
         # Yıldız reveal animasyonu
@@ -746,11 +760,11 @@ class CampaignUIEffects:
                                    glow_intensity=glow_intensity)
         
         # Yıldız sayısı göstergesi
-        rating_y = star_area_y + star_size + 6
+        rating_y = star_area_y + star_size + s(6)
         if retro_style:
-            rating_font = retro_style.get_font(18, bold=True)
+            rating_font = retro_style.get_font(s(18, minimum=10), bold=True)
         else:
-            rating_font = self._get_font(18)
+            rating_font = self._get_font(s(18, minimum=10))
         
         displayed_rating = min(stars, shown_progress)
         rating_text = f"{int(displayed_rating)} / 3"
@@ -760,21 +774,22 @@ class CampaignUIEffects:
         surface.blit(rating_surf, rating_surf.get_rect(centerx=panel_rect.centerx, top=rating_y))
 
         # Yıldız ilerleme barı
-        bar_w = 220
-        bar_h = 6
+        bar_w = s(220, minimum=140)
+        bar_h = s(6, minimum=3)
         bar_x = panel_rect.centerx - bar_w // 2
-        bar_y = rating_y + 22
-        pygame.draw.rect(surface, (35, 45, 70), (bar_x, bar_y, bar_w, bar_h), border_radius=4)
+        bar_y = rating_y + s(22)
+        progress_radius = max(1, s(4, minimum=2))
+        pygame.draw.rect(surface, (35, 45, 70), (bar_x, bar_y, bar_w, bar_h), border_radius=progress_radius)
         fill_ratio = max(0.0, min(1.0, shown_progress / 3.0))
         fill_w = int(bar_w * fill_ratio)
         if fill_w > 0:
-            pygame.draw.rect(surface, (*GOLD, 200), (bar_x, bar_y, fill_w, bar_h), border_radius=4)
+            pygame.draw.rect(surface, (*GOLD, 200), (bar_x, bar_y, fill_w, bar_h), border_radius=progress_radius)
         
         # ============================================
         # SKOR KARTI (game.py stilinde)
         # ============================================
-        score_top = bar_y + 16
-        score_rect = pygame.Rect(inner_left, score_top, inner_w, 70)
+        score_top = bar_y + s(16)
+        score_rect = pygame.Rect(inner_left, score_top, inner_w, s(70, minimum=48))
         
         # Skor arka plan
         score_bg = pygame.Surface(score_rect.size, pygame.SRCALPHA)
@@ -782,18 +797,18 @@ class CampaignUIEffects:
         surface.blit(score_bg, score_rect.topleft)
         
         # Skor kenar - neon glow
-        pygame.draw.rect(surface, (*NEON_CYAN, 180), score_rect, 2, border_radius=10)
+        pygame.draw.rect(surface, (*NEON_CYAN, 180), score_rect, 2, border_radius=s(10))
         
         # Skor label
         if retro_style:
-            score_label_font = retro_style.get_font(16, bold=True)
-            score_value_font = retro_style.get_font(32, bold=True)
+            score_label_font = retro_style.get_font(s(16, minimum=10), bold=True)
+            score_value_font = retro_style.get_font(s(32, minimum=16), bold=True)
         else:
-            score_label_font = self._get_font(16)
-            score_value_font = self._get_font(32)
+            score_label_font = self._get_font(s(16, minimum=10))
+            score_value_font = self._get_font(s(32, minimum=16))
         
         score_label = score_label_font.render(t('score'), True, (205, 215, 235))
-        surface.blit(score_label, (score_rect.x + 16, score_rect.y + 10))
+        surface.blit(score_label, (score_rect.x + s(16), score_rect.y + s(10)))
         
         # Animasyonlu skor
         score_anim_start = 0.3
@@ -810,46 +825,46 @@ class CampaignUIEffects:
             score_text = score_text.replace(',', '.')
         score_value = score_value_font.render(score_text, True, (255, 255, 255))
         score_value_rect = score_value.get_rect()
-        score_value_rect.midright = (score_rect.right - 16, score_rect.centery + 4)
+        score_value_rect.midright = (score_rect.right - s(16), score_rect.centery + s(4, minimum=0))
         
         # Gölge
         score_shadow = score_value_font.render(score_text, True, (0, 0, 0))
         score_shadow.set_alpha(100)
         shadow_rect = score_value_rect.copy()
-        shadow_rect.x += 2
-        shadow_rect.y += 2
+        shadow_rect.x += s(2, minimum=0)
+        shadow_rect.y += s(2, minimum=0)
         surface.blit(score_shadow, shadow_rect)
         surface.blit(score_value, score_value_rect)
         
         # ============================================
         # DETAYLI PANELLER (Hedefler / İstatistik / Ödüller / Yıldız Koşulları / Sonraki Level)
         # ============================================
-        footer_h = 40
-        content_top = score_rect.bottom + 10
-        content_bottom = panel_rect.bottom - footer_h - 14
-        content_height = max(160, content_bottom - content_top)
+        footer_h = s(40, minimum=24)
+        content_top = score_rect.bottom + s(10)
+        content_bottom = panel_rect.bottom - footer_h - s(14)
+        content_height = max(s(160, minimum=120), content_bottom - content_top)
 
         # İki kolonlu düzen: solda hedefler + istatistik, sağda ödüller + yıldız koşulları + sonraki level
-        col_gap = max(16, int(inner_w * 0.035))
+        col_gap = max(s(16, minimum=8), int(inner_w * 0.035))
         col_left_w = int(inner_w * 0.48)
         col_right_w = inner_w - col_left_w - col_gap
         left_x = inner_left
         right_x = inner_left + col_left_w + col_gap
 
-        row_gap = 12
+        row_gap = s(12, minimum=8)
         left_total = content_height - row_gap
         right_total = content_height - row_gap * 2
 
-        left_top_h = max(150, int(left_total * 0.58))
-        left_bottom_h = max(120, left_total - left_top_h)
+        left_top_h = max(s(150, minimum=110), int(left_total * 0.58))
+        left_bottom_h = max(s(120, minimum=90), left_total - left_top_h)
         if left_top_h + left_bottom_h > left_total:
-            left_bottom_h = max(120, left_total - left_top_h)
+            left_bottom_h = max(s(120, minimum=90), left_total - left_top_h)
 
-        right_top_h = max(120, int(right_total * 0.30))
-        right_mid_h = max(120, int(right_total * 0.30))
-        right_bottom_h = max(130, right_total - right_top_h - right_mid_h)
+        right_top_h = max(s(120, minimum=90), int(right_total * 0.30))
+        right_mid_h = max(s(120, minimum=90), int(right_total * 0.30))
+        right_bottom_h = max(s(130, minimum=100), right_total - right_top_h - right_mid_h)
         if right_top_h + right_mid_h + right_bottom_h > right_total:
-            right_bottom_h = max(130, right_total - right_top_h - right_mid_h)
+            right_bottom_h = max(s(130, minimum=100), right_total - right_top_h - right_mid_h)
 
         left_top_rect = pygame.Rect(left_x, content_top, col_left_w, left_top_h)
         left_mid_rect = pygame.Rect(left_x, left_top_rect.bottom + row_gap, col_left_w, left_bottom_h)
@@ -859,13 +874,13 @@ class CampaignUIEffects:
         right_bottom_rect = pygame.Rect(right_x, right_mid_rect.bottom + row_gap, col_right_w, right_bottom_h)
 
         if retro_style:
-            section_title_font = retro_style.get_font(21, bold=True)
-            section_line_font = retro_style.get_font(18, bold=False)
-            section_small_font = retro_style.get_font(17, bold=False)
+            section_title_font = retro_style.get_font(s(21, minimum=11), bold=True)
+            section_line_font = retro_style.get_font(s(18, minimum=10), bold=False)
+            section_small_font = retro_style.get_font(s(17, minimum=10), bold=False)
         else:
-            section_title_font = self._get_font(21)
-            section_line_font = self._get_font(18)
-            section_small_font = self._get_font(17)
+            section_title_font = self._get_font(s(21, minimum=11))
+            section_line_font = self._get_font(s(18, minimum=10))
+            section_small_font = self._get_font(s(17, minimum=10))
 
         muted = UIColors.TEXT_PRIMARY
         muted_dim = UIColors.TEXT_SECONDARY
@@ -907,22 +922,22 @@ class CampaignUIEffects:
                     alpha = int(22 * (1 - i / 10))
                     pygame.draw.line(panel_bg, (255, 255, 255, alpha), (0, i), (rect.width, i))
                 surface.blit(panel_bg, rect.topleft)
-                pygame.draw.rect(surface, (*accent, 140), rect, 1, border_radius=10)
+                pygame.draw.rect(surface, (*accent, 140), rect, 1, border_radius=s(10))
 
-            pad = 12
-            header_h = 32
-            header_rect = pygame.Rect(rect.x + 8, rect.y + 6, rect.width - 16, header_h)
+            pad = s(12)
+            header_h = s(32, minimum=22)
+            header_rect = pygame.Rect(rect.x + s(8), rect.y + s(6), rect.width - s(16), header_h)
             header_surf = pygame.Surface(header_rect.size, pygame.SRCALPHA)
             header_surf.fill((12, 18, 40, 210))
             surface.blit(header_surf, header_rect.topleft)
-            pygame.draw.line(surface, (*accent, 150), (header_rect.x + 6, header_rect.bottom - 1), (header_rect.right - 6, header_rect.bottom - 1), 1)
+            pygame.draw.line(surface, (*accent, 150), (header_rect.x + s(6), header_rect.bottom - s(1, minimum=0)), (header_rect.right - s(6), header_rect.bottom - s(1, minimum=0)), 1)
 
             title_text = title
             title_surf = section_title_font.render(title_text, True, accent)
-            surface.blit(title_surf, (rect.x + pad, header_rect.y + 4))
+            surface.blit(title_surf, (rect.x + pad, header_rect.y + s(4, minimum=0)))
 
             x = rect.x + pad
-            y = header_rect.bottom + 6
+            y = header_rect.bottom + s(6, minimum=2)
             max_y = rect.bottom - pad
             max_w = rect.width - pad * 2
 
@@ -949,7 +964,7 @@ class CampaignUIEffects:
                         line_alpha = int(255 * min(1.0, (anim_time - line_delay) / 0.25))
                     line_surf.set_alpha(line_alpha)
                     surface.blit(line_surf, (x, y))
-                    y += line_surf.get_height() + 4
+                    y += line_surf.get_height() + s(4, minimum=2)
                     line_index += 1
 
         # Hedefler
@@ -994,46 +1009,52 @@ class CampaignUIEffects:
         draw_panel(right_bottom_rect, t('campaign_next_level_title'), next_lines, accent=NEON_MAGENTA, icon=None, start_delay=0.9)
 
         # Footer kontrol şeridi
-        footer_rect = pygame.Rect(panel_rect.x + 12, panel_rect.bottom - footer_h - 6, panel_width - 24, footer_h)
+        footer_rect = pygame.Rect(panel_rect.x + s(12), panel_rect.bottom - footer_h - s(6), panel_width - s(24), footer_h)
         footer_surf = pygame.Surface(footer_rect.size, pygame.SRCALPHA)
         footer_surf.fill((10, 12, 26, 210))
         surface.blit(footer_surf, footer_rect.topleft)
-        pygame.draw.line(surface, (*NEON_CYAN, 100), (footer_rect.x + 10, footer_rect.y + 2), (footer_rect.right - 10, footer_rect.y + 2), 1)
+        pygame.draw.line(surface, (*NEON_CYAN, 100), (footer_rect.x + s(10), footer_rect.y + s(2, minimum=0)), (footer_rect.right - s(10), footer_rect.y + s(2, minimum=0)), 1)
 
         if retro_style:
-            footer_font = retro_style.get_font(16, bold=False)
+            footer_font = retro_style.get_font(s(16, minimum=10), bold=False)
         else:
-            footer_font = self._get_font(16)
+            footer_font = self._get_font(s(16, minimum=10))
 
         # Tekrar Dene butonu (footer'ın sol tarafı)
+        btn_vpad = s(4, minimum=2)
+        retry_btn_w = min(s(160, minimum=110), int(footer_rect.width * 0.35))
+        retry_btn_rect = pygame.Rect(
+            footer_rect.x + s(6),
+            footer_rect.y + btn_vpad,
+            retry_btn_w,
+            footer_rect.height - btn_vpad * 2,
+        )
+        self._complete_buttons = {'retry': retry_btn_rect}
+        footer_text = t('campaign_footer_controls')
+        footer_surf_text = footer_font.render(footer_text, True, UIColors.TEXT_SECONDARY)
         if retro_style:
-            btn_vpad = 4
-            retry_btn_w = min(160, int(footer_rect.width * 0.35))
-            retry_btn_rect = pygame.Rect(
-                footer_rect.x + 6,
-                footer_rect.y + btn_vpad,
-                retry_btn_w,
-                footer_rect.height - btn_vpad * 2,
-            )
-            self._complete_buttons = {'retry': retry_btn_rect}
             _mouse_pos = get_mouse_pos()
             retro_style.draw_uniform_button(
                 surface, retry_btn_rect, t('campaign_retry'),
                 sub_text='R', color_code=retro_style.primary,
                 state='hover' if retry_btn_rect.collidepoint(_mouse_pos) else 'normal',
             )
-            # Kontrol metni sağa hizalı
-            footer_text = t('campaign_footer_controls')
-            footer_surf_text = footer_font.render(footer_text, True, UIColors.TEXT_SECONDARY)
-            text_right = footer_rect.right - 8
-            text_rect = footer_surf_text.get_rect()
-            text_rect.midright = (text_right, footer_rect.centery)
-            surface.blit(footer_surf_text, text_rect)
         else:
-            self._complete_buttons = {}
-            footer_text = t('campaign_footer_controls')
-            footer_surf_text = footer_font.render(footer_text, True, UIColors.TEXT_SECONDARY)
-            surface.blit(footer_surf_text, footer_surf_text.get_rect(center=footer_rect.center))
+            _mouse_pos = get_mouse_pos()
+            hovered = retry_btn_rect.collidepoint(_mouse_pos)
+            fallback_fill = (18, 30, 56, 230) if not hovered else (24, 40, 70, 245)
+            button_surf = pygame.Surface(retry_btn_rect.size, pygame.SRCALPHA)
+            button_surf.fill(fallback_fill)
+            surface.blit(button_surf, retry_btn_rect.topleft)
+            pygame.draw.rect(surface, (*NEON_CYAN, 180), retry_btn_rect, 1, border_radius=s(10, minimum=6))
+            retry_text = footer_font.render(t('campaign_retry'), True, UIColors.TEXT_PRIMARY)
+            retry_text_rect = retry_text.get_rect(center=retry_btn_rect.center)
+            surface.blit(retry_text, retry_text_rect)
+
+        text_right = footer_rect.right - s(8)
+        text_rect = footer_surf_text.get_rect()
+        text_rect.midright = (text_right, footer_rect.centery)
+        surface.blit(footer_surf_text, text_rect)
 
         # ============================================
         # Buton çizimi kaldırıldı (alt kısım temiz kalsın)
@@ -1127,6 +1148,8 @@ class CampaignUIEffects:
         
         screen_w, screen_h = surface.get_size()
         anim_time = self.level_failed_animation['time']
+        ui_scale = self._get_modal_ui_scale((screen_w, screen_h))
+        s = lambda value, minimum=1: self._scale_modal_px(value, ui_scale, minimum=minimum)
         
         # Kırmızı renk paleti
         FAIL_RED = UIColors.NEON_RED
@@ -1157,17 +1180,17 @@ class CampaignUIEffects:
             surface.blit(overlay, (0, 0))
         
         # Panel boyutları
-        panel_width = min(max(420, screen_w - 160), screen_w - 80)
-        panel_width = max(360, panel_width)
-        panel_height = min(max(260, screen_h - 200), screen_h - 100)
-        panel_height = max(220, panel_height)
+        panel_width = min(max(s(420), screen_w - s(160)), screen_w - s(80))
+        panel_width = max(s(360), panel_width)
+        panel_height = min(max(s(260), screen_h - s(200)), screen_h - s(100))
+        panel_height = max(s(220), panel_height)
         
         panel_x = (screen_w - panel_width) // 2
         panel_y = (screen_h - panel_height) // 2
         
         # Shake efekti (ilk 0.5 saniyede)
         if anim_time < 0.5:
-            shake = int(8 * math.sin(anim_time * 45) * (1 - anim_time / 0.5))
+            shake = int(s(8, minimum=0) * math.sin(anim_time * 45) * (1 - anim_time / 0.5))
             panel_x += shake
         
         panel_rect = pygame.Rect(panel_x, panel_y, panel_width, panel_height)
@@ -1177,9 +1200,9 @@ class CampaignUIEffects:
         if retro_style:
             try:
                 # Panel glow efekti (kırmızı)
-                glow_rect = panel_rect.inflate(20, 20)
+                glow_rect = panel_rect.inflate(s(20, minimum=0), s(20, minimum=0))
                 glow_surf = pygame.Surface(glow_rect.size, pygame.SRCALPHA)
-                pygame.draw.rect(glow_surf, (*FAIL_RED, 20), glow_surf.get_rect(), border_radius=18)
+                pygame.draw.rect(glow_surf, (*FAIL_RED, 20), glow_surf.get_rect(), border_radius=s(18))
                 surface.blit(glow_surf, glow_rect.topleft)
                 
                 # Glass panel (kırmızı border)
@@ -1190,36 +1213,37 @@ class CampaignUIEffects:
         
         if not use_retro:
             # Fallback: premium manuel panel
-            glow_rect = panel_rect.inflate(20, 20)
+            glow_rect = panel_rect.inflate(s(20, minimum=0), s(20, minimum=0))
             glow_surf = pygame.Surface(glow_rect.size, pygame.SRCALPHA)
-            pygame.draw.rect(glow_surf, (*FAIL_RED, 15), glow_surf.get_rect(), border_radius=16)
+            pygame.draw.rect(glow_surf, (*FAIL_RED, 15), glow_surf.get_rect(), border_radius=s(16))
             surface.blit(glow_surf, glow_rect.topleft)
             
             panel_surf = pygame.Surface((panel_width, panel_height), pygame.SRCALPHA)
             panel_surf.fill((25, 12, 15, 225))
             
             # Üst highlight
-            for i in range(15):
-                alpha = int(25 * (1 - i / 15))
+            highlight_h = s(15)
+            for i in range(highlight_h):
+                alpha = int(25 * (1 - i / max(1, highlight_h)))
                 pygame.draw.line(panel_surf, (255, 200, 200, alpha), (0, i), (panel_width, i))
             
             surface.blit(panel_surf, panel_rect.topleft)
-            pygame.draw.rect(surface, FAIL_RED, panel_rect, 2, border_radius=14)
+            pygame.draw.rect(surface, FAIL_RED, panel_rect, 2, border_radius=s(14))
         
         # BAŞLIK - glow efektli
         title_text = t('campaign_failed_title')
         
         if retro_style:
-            title_font = retro_style.get_font(48, bold=True)
+            title_font = retro_style.get_font(s(48, minimum=22), bold=True)
         else:
-            title_font = self._get_font(48)
+            title_font = self._get_font(s(48, minimum=22))
         
         title = title_font.render(title_text, True, FAIL_RED)
-        title_rect = title.get_rect(centerx=panel_rect.centerx, top=panel_rect.y + 28)
+        title_rect = title.get_rect(centerx=panel_rect.centerx, top=panel_rect.y + s(28))
         
         # Glow efekti
         glow_surf = title_font.render(title_text, True, FAIL_RED)
-        for dx, dy, a in [(-2, 0, 30), (2, 0, 30), (0, -2, 25), (0, 2, 25)]:
+        for dx, dy, a in [(-s(2, minimum=0), 0, 30), (s(2, minimum=0), 0, 30), (0, -s(2, minimum=0), 25), (0, s(2, minimum=0), 25)]:
             glow_surf.set_alpha(a)
             surface.blit(glow_surf, (title_rect.x + dx, title_rect.y + dy))
         surface.blit(title, title_rect)
@@ -1227,12 +1251,12 @@ class CampaignUIEffects:
         # Sebep (varsa)
         if reason:
             if retro_style:
-                reason_font = retro_style.get_font(20, bold=False)
+                reason_font = retro_style.get_font(s(20, minimum=11), bold=False)
             else:
-                reason_font = self._get_font(20)
+                reason_font = self._get_font(s(20, minimum=11))
             
             reason_surf = reason_font.render(reason, True, (220, 180, 170))
-            reason_rect = reason_surf.get_rect(centerx=panel_rect.centerx, top=title_rect.bottom + 16)
+            reason_rect = reason_surf.get_rect(centerx=panel_rect.centerx, top=title_rect.bottom + s(16))
             surface.blit(reason_surf, reason_rect)
         
         # Buton ipuçları + tıklanabilir butonlar
@@ -1240,14 +1264,14 @@ class CampaignUIEffects:
             hint_text = t('campaign_failed_hint')
             
             if retro_style:
-                hint_font = retro_style.get_font(15, bold=False)
+                hint_font = retro_style.get_font(s(15, minimum=10), bold=False)
             else:
-                hint_font = self._get_font(15)
+                hint_font = self._get_font(s(15, minimum=10))
             
             # Butonları panel altına yerleştir
-            btn_h = 40
-            btn_margin = 10
-            btn_gap = 8
+            btn_h = s(40, minimum=28)
+            btn_margin = s(10, minimum=6)
+            btn_gap = s(8, minimum=4)
             btn_w = (panel_rect.width - btn_margin * 2 - btn_gap) // 2
             btn_y = panel_rect.bottom - btn_h - btn_margin
 
@@ -1270,7 +1294,7 @@ class CampaignUIEffects:
             
             # Hint metni butonların üstünde
             hint_surf = hint_font.render(hint_text, True, (160, 145, 145))
-            hint_rect = hint_surf.get_rect(centerx=panel_rect.centerx, bottom=btn_y - 6)
+            hint_rect = hint_surf.get_rect(centerx=panel_rect.centerx, bottom=btn_y - s(6, minimum=2))
             
             # Yanıp sönen efekt
             flash = 0.6 + 0.4 * math.sin(anim_time * 3.5)

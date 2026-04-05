@@ -5,6 +5,7 @@ from retro_style import retro_style
 from platform_utils import normalize_mouse_pos
 from background_effects import get_shared_falling_blocks_layer
 from localization import t
+from ui_scaling import get_scale, scale_px
 
 
 class GraphicsMenu:
@@ -14,7 +15,7 @@ class GraphicsMenu:
         """Grafik menüsünü başlat"""
         self.screen = screen
         self.settings_manager = settings_manager
-        self.font_hint = retro_style.get_font(20, bold=False)
+        self.font_hint = retro_style.get_font(self._s(20, minimum=12), bold=False)
 
         # Arka plan efektleri (ayarlar ekranı ile tutarlı düşen bloklar)
         self.background_fx = get_shared_falling_blocks_layer('default')
@@ -51,11 +52,66 @@ class GraphicsMenu:
         self._sb_container_rect: 'pygame.Rect | None' = None
         self._sb_drag_active: bool = False
         self._sb_drag_offset_y: int = 0
+        self._last_visible_height: int = 0
 
         # VSync changes require restart (SDL hint/env is read on init).
         self._vsync_restart_prompt_active = False
         self._vsync_restart_choice = 0  # 0: restart now, 1: later
         self._vsync_prompt_buttons: list[pygame.Rect] = []
+
+    def _ui_scale(self, min_scale: float = 0.72, max_scale: float = 1.18) -> float:
+        return get_scale(
+            self.screen,
+            min_scale=min_scale,
+            max_scale=max_scale,
+            reference_size=(1366.0, 768.0),
+        )
+
+    def _s(self, value: int | float, minimum: int = 1, *, scale: float | None = None) -> int:
+        active_scale = self._ui_scale() if scale is None else float(scale)
+        return scale_px(value, active_scale, minimum=minimum)
+
+    def _layout_metrics(self) -> dict[str, int | float]:
+        width, height = self.screen.get_size()
+        scale = self._ui_scale()
+        horizontal_margin = self._s(120, minimum=84, scale=scale)
+        available_width = max(self._s(260, minimum=220, scale=scale), width - horizontal_margin)
+        return {
+            'scale': scale,
+            'title_y': self._s(70, minimum=50, scale=scale),
+            'card_width': min(self._s(620, minimum=420, scale=scale), available_width),
+            'card_height': self._s(74, minimum=56, scale=scale),
+            'spacing': self._s(82, minimum=62, scale=scale),
+            'start_offset': self._s(40, minimum=28, scale=scale),
+            'clip_top_gap': self._s(10, minimum=8, scale=scale),
+            'clip_bottom_margin': self._s(80, minimum=60, scale=scale),
+            'row_cutoff_margin': self._s(160, minimum=120, scale=scale),
+            'scroll_step': self._s(30, minimum=18, scale=scale),
+            'visible_height_offset': self._s(280, minimum=210, scale=scale),
+            'scrollbar_gap': self._s(8, minimum=6, scale=scale),
+            'scrollbar_width': self._s(20, minimum=16, scale=scale),
+            'scrollbar_bar_width': self._s(10, minimum=8, scale=scale),
+            'scrollbar_padding': self._s(2, minimum=2, scale=scale),
+            'scrollbar_track_min': self._s(4, minimum=4, scale=scale),
+            'scrollbar_thumb_fallback': self._s(30, minimum=20, scale=scale),
+            'prompt_width': min(self._s(680, minimum=480, scale=scale), width - self._s(120, minimum=84, scale=scale)),
+            'prompt_height': self._s(220, minimum=180, scale=scale),
+            'prompt_font_size': self._s(22, minimum=15, scale=scale),
+            'prompt_top_padding': self._s(60, minimum=40, scale=scale),
+            'prompt_line_gap': self._s(28, minimum=20, scale=scale),
+            'prompt_button_height': self._s(56, minimum=44, scale=scale),
+            'prompt_button_gap': self._s(18, minimum=12, scale=scale),
+            'prompt_side_padding': self._s(30, minimum=18, scale=scale),
+            'prompt_bottom_padding': self._s(24, minimum=16, scale=scale),
+        }
+
+    def _scrollbar_track_metrics(self) -> tuple[int, int, int]:
+        metrics = self._layout_metrics()
+        bar_width = int(metrics['scrollbar_bar_width'])
+        padding = int(metrics['scrollbar_padding'])
+        arrow_zone = max(bar_width, bar_width + padding)
+        track_padding = int(metrics['scrollbar_track_min'])
+        return arrow_zone, padding, track_padding
     
     @property
     def options(self):
@@ -87,17 +143,17 @@ class GraphicsMenu:
                 return 'back'
         
         elif event.type == pygame.MOUSEWHEEL:
-            self.scroll_offset -= event.y * 30
+            self.scroll_offset -= event.y * int(self._layout_metrics()['scroll_step'])
             self.scroll_offset = max(0, min(self.scroll_offset, self._max_scroll()))
         
         elif event.type == pygame.MOUSEMOTION:
             mouse_pos = normalize_mouse_pos(getattr(event, 'pos', None)) or event.pos
             # Scrollbar drag
             if self._sb_drag_active and self._sb_container_rect:
-                _az = max(10, 10 + 2)  # bar_width=10 (varsayılan)
-                track_y = self._sb_container_rect.top + _az + 2
-                track_h = max(4, self._sb_container_rect.height - _az * 2 - 4)
-                thumb_h = self._sb_thumb_rect.height if self._sb_thumb_rect else 30
+                _az, _pad, _track_min = self._scrollbar_track_metrics()
+                track_y = self._sb_container_rect.top + _az + _pad
+                track_h = max(_track_min, self._sb_container_rect.height - _az * 2 - _track_min)
+                thumb_h = self._sb_thumb_rect.height if self._sb_thumb_rect else int(self._layout_metrics()['scrollbar_thumb_fallback'])
                 max_scroll = self._max_scroll()
                 new_thumb_top = mouse_pos[1] - self._sb_drag_offset_y - track_y
                 new_thumb_top = max(0, min(new_thumb_top, track_h - thumb_h))
@@ -118,10 +174,10 @@ class GraphicsMenu:
                     return None
                 # Scrollbar track alanına tıklama → o pozisyona zıpla
                 if self._sb_container_rect and self._sb_container_rect.collidepoint(mouse_pos):
-                    _az = max(10, 10 + 2)
-                    _ty = self._sb_container_rect.top + _az + 2
-                    _th = max(4, self._sb_container_rect.height - _az * 2 - 4)
-                    _tmh = self._sb_thumb_rect.height if self._sb_thumb_rect else 20
+                    _az, _pad, _track_min = self._scrollbar_track_metrics()
+                    _ty = self._sb_container_rect.top + _az + _pad
+                    _th = max(_track_min, self._sb_container_rect.height - _az * 2 - _track_min)
+                    _tmh = self._sb_thumb_rect.height if self._sb_thumb_rect else int(self._layout_metrics()['scrollbar_thumb_fallback'])
                     _max = self._max_scroll()
                     _rel = mouse_pos[1] - _ty - _tmh // 2
                     self.scroll_offset = int(max(0.0, min(1.0, _rel / max(1, _th - _tmh))) * _max)
@@ -229,29 +285,30 @@ class GraphicsMenu:
     def draw(self):
         """Grafik menüsünü çiz - Oynanış stili ile uyumlu"""
         width, height = self.screen.get_size()
+        metrics = self._layout_metrics()
         retro_style.draw_background(self.screen)
         self.background_fx.update(self.screen)
         self.background_fx.draw(self.screen)
 
-        title_rect = retro_style.draw_title(self.screen, t('graphics_settings'), (width // 2, 70), emoji='⚙')
+        title_rect = retro_style.draw_title(self.screen, t('graphics_settings'), (width // 2, int(metrics['title_y'])), emoji='⚙')
 
         self.option_rects = []
-        card_width = min(620, width - 120)
-        card_height = 74
-        spacing = 82
+        card_width = int(metrics['card_width'])
+        card_height = int(metrics['card_height'])
+        spacing = int(metrics['spacing'])
 
-        max_scroll = self._max_scroll()
+        clip_top = title_rect.bottom + int(metrics['clip_top_gap'])
+        clip_h = max(1, height - clip_top - int(metrics['clip_bottom_margin']))
+        max_scroll = self._max_scroll(visible_height=clip_h)
         self.scroll_offset = max(0, min(self.scroll_offset, max_scroll))
-        start_y = title_rect.bottom + 40 - self.scroll_offset
+        start_y = title_rect.bottom + int(metrics['start_offset']) - self.scroll_offset
 
-        clip_top = title_rect.bottom + 10
-        clip_h = max(1, height - clip_top - 80)
         prev_clip = self.screen.get_clip()
         self.screen.set_clip(pygame.Rect(0, clip_top, width, clip_h))
 
         for i, option in enumerate(self.options):
             y_pos = start_y + i * spacing
-            if y_pos < title_rect.bottom + 10 or y_pos > height - 160:
+            if y_pos < title_rect.bottom + int(metrics['clip_top_gap']) or y_pos > height - int(metrics['row_cutoff_margin']):
                 self.option_rects.append(pygame.Rect(0, 0, 0, 0))
                 continue
 
@@ -309,12 +366,22 @@ class GraphicsMenu:
 
         # Scrollbar (sürüklenebilir)
         total_h = len(self.options) * spacing
-        visible_h = max(1, height - 280)
+        visible_h = clip_h
         if total_h > visible_h:
-            sb_rect = pygame.Rect(width // 2 + card_width // 2 + 8, clip_top, 20, clip_h)
+            sb_rect = pygame.Rect(
+                width // 2 + card_width // 2 + int(metrics['scrollbar_gap']),
+                clip_top,
+                int(metrics['scrollbar_width']),
+                clip_h,
+            )
             self._sb_container_rect = sb_rect
             self._sb_thumb_rect = retro_style.draw_scrollbar(
-                self.screen, sb_rect, self.scroll_offset, total_h, visible_h,
+                self.screen,
+                sb_rect,
+                self.scroll_offset,
+                total_h,
+                visible_h,
+                bar_width=int(metrics['scrollbar_bar_width']),
             )
         else:
             self._sb_thumb_rect = None
@@ -325,13 +392,14 @@ class GraphicsMenu:
 
     def _draw_vsync_restart_prompt(self):
         width, height = self.screen.get_size()
+        metrics = self._layout_metrics()
 
         overlay = pygame.Surface((width, height), pygame.SRCALPHA)
         overlay.fill((0, 0, 0, 150))
         self.screen.blit(overlay, (0, 0))
 
-        panel_w = min(680, width - 120)
-        panel_h = 220
+        panel_w = int(metrics['prompt_width'])
+        panel_h = int(metrics['prompt_height'])
         panel_rect = pygame.Rect((width - panel_w) // 2, (height - panel_h) // 2, panel_w, panel_h)
         retro_style.draw_panel(self.screen, panel_rect, title=t('vsync_changed'))
 
@@ -340,18 +408,19 @@ class GraphicsMenu:
             t('vsync_restart_msg2'),
             t('vsync_restart_msg3')
         ]
-        font = retro_style.get_font(22, bold=False)
-        y = panel_rect.y + 60
+        font = retro_style.get_font(int(metrics['prompt_font_size']), bold=False)
+        y = panel_rect.y + int(metrics['prompt_top_padding'])
         for line in msg_lines:
             surf = font.render(line, True, (220, 230, 245))
             self.screen.blit(surf, surf.get_rect(center=(panel_rect.centerx, y)))
-            y += 28
+            y += int(metrics['prompt_line_gap'])
 
-        btn_h = 56
-        btn_gap = 18
-        btn_w = (panel_w - 60 - btn_gap) // 2
-        btn_y = panel_rect.bottom - btn_h - 24
-        btn1 = pygame.Rect(panel_rect.x + 30, btn_y, btn_w, btn_h)
+        btn_h = int(metrics['prompt_button_height'])
+        btn_gap = int(metrics['prompt_button_gap'])
+        side_padding = int(metrics['prompt_side_padding'])
+        btn_w = (panel_w - side_padding * 2 - btn_gap) // 2
+        btn_y = panel_rect.bottom - btn_h - int(metrics['prompt_bottom_padding'])
+        btn1 = pygame.Rect(panel_rect.x + side_padding, btn_y, btn_w, btn_h)
         btn2 = pygame.Rect(btn1.right + btn_gap, btn_y, btn_w, btn_h)
         self._vsync_prompt_buttons = [btn1, btn2]
 
@@ -382,9 +451,16 @@ class GraphicsMenu:
             return ''
         return ''
 
-    def _max_scroll(self):
+    def _max_scroll(self, visible_height: int | None = None):
         """Listede kaydırılabilecek maksimum mesafe."""
-        height = self.screen.get_height()
-        visible = height - 280
-        total = len(self.options) * 82
+        metrics = self._layout_metrics()
+        if visible_height is not None:
+            visible = max(1, int(visible_height))
+            self._last_visible_height = visible
+        elif self._last_visible_height > 0:
+            visible = self._last_visible_height
+        else:
+            height = self.screen.get_height()
+            visible = max(1, height - int(metrics['visible_height_offset']))
+        total = len(self.options) * int(metrics['spacing'])
         return max(0, total - max(visible, 0))

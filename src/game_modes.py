@@ -33,7 +33,7 @@ class SprintMode(Game):
         """Sprint modda hızlanma yok - sabit hız"""
         return 900
     
-    def __init__(self, difficulty='Normal', sound_enabled=True, effects_enabled=True, achievement_manager=None, theme_manager=None, screen=None, fullscreen=False, settings_manager=None, user_manager=None, game_mode='sprint', score_manager=None):
+    def __init__(self, difficulty='Normal', sound_enabled=True, effects_enabled=True, achievement_manager=None, theme_manager=None, screen=None, fullscreen=False, settings_manager=None, user_manager=None, game_mode='sprint', score_manager=None, sound_manager=None):
         """Sprint modunu başlat"""
         super().__init__(
             difficulty,
@@ -46,6 +46,7 @@ class SprintMode(Game):
             settings_manager,
             user_manager,
             game_mode,
+            sound_manager=sound_manager,
             score_manager=score_manager,
         )
         self.mode_name = "SPRINT MODE"
@@ -363,7 +364,7 @@ class UltraMode(Game):
         """Ultra modda hızlanma yok - sabit hız"""
         return 900
     
-    def __init__(self, difficulty='Normal', sound_enabled=True, effects_enabled=True, achievement_manager=None, theme_manager=None, screen=None, fullscreen=False, settings_manager=None, user_manager=None, game_mode='ultra', score_manager=None):
+    def __init__(self, difficulty='Normal', sound_enabled=True, effects_enabled=True, achievement_manager=None, theme_manager=None, screen=None, fullscreen=False, settings_manager=None, user_manager=None, game_mode='ultra', score_manager=None, sound_manager=None):
         """Ultra modunu başlat"""
         super().__init__(
             difficulty,
@@ -376,6 +377,7 @@ class UltraMode(Game):
             settings_manager,
             user_manager,
             game_mode,
+            sound_manager=sound_manager,
             score_manager=score_manager,
         )
         self.mode_name = "ULTRA MODE"
@@ -639,7 +641,7 @@ class UltraMode(Game):
 class ZenMode(Game):
     """Zen Mode - Süresiz, rahat oyun (game over yok, otomatik temizlik)"""
     
-    def __init__(self, difficulty='Kolay', sound_enabled=True, effects_enabled=True, achievement_manager=None, theme_manager=None, screen=None, fullscreen=False, settings_manager=None, user_manager=None, game_mode='zen', score_manager=None, auto_clear_rows=None):
+    def __init__(self, difficulty='Kolay', sound_enabled=True, effects_enabled=True, achievement_manager=None, theme_manager=None, screen=None, fullscreen=False, settings_manager=None, user_manager=None, game_mode='zen', score_manager=None, auto_clear_rows=None, sound_manager=None):
         """Zen modunu başlat
         
         Args:
@@ -656,6 +658,7 @@ class ZenMode(Game):
             settings_manager,
             user_manager,
             game_mode,
+            sound_manager=sound_manager,
             score_manager=score_manager,
         )
         self.mode_name = "ZEN MODE"
@@ -1064,7 +1067,7 @@ class HardcoreMode(Game):
     
     def __init__(self, difficulty='Normal', sound_enabled=True, effects_enabled=True, 
                  achievement_manager=None, theme_manager=None, screen=None, fullscreen=False, 
-                 settings_manager=None, user_manager=None, game_mode='hardcore', score_manager=None):
+                 settings_manager=None, user_manager=None, game_mode='hardcore', score_manager=None, sound_manager=None):
         """Hardcore modunu başlat"""
         super().__init__(
             difficulty,
@@ -1077,6 +1080,7 @@ class HardcoreMode(Game):
             settings_manager,
             user_manager,
             game_mode,
+            sound_manager=sound_manager,
             score_manager=score_manager,
         )
         self.mode_name = "HARDCORE MODE"

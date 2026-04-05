@@ -1,7 +1,7 @@
 # Quadrix Performans ve Termal Optimizasyon Planı
 
 Tarih: 2026-03-08
-Durum: Aktif plan, Faz 5 tamamlandi ve onay bekleniyor
+Durum: Aktif plan, Faz 6 tamamlandi ve onay bekleniyor
 Kapsam: macOS + Windows termal yük, CPU/GPU kullanımını düşürme, görsel kaliteyi ve hissedilen akıcılığı koruma
 
 ## 0. Mevcut Karar ve Reset Notu
@@ -135,6 +135,15 @@ Teknik etkisi:
 - Python tarafında allocation baskısı artar.
 - Pygame alpha blending yükü büyür.
 - Özellikle yüksek çözünürlükte menü ve overlay ekranlarında ekstra ısı üretir.
+
+### 4.7 Bazi mod girislerinde SoundManager fallback yolu tekrar calisiyor
+
+Bazi mode entry dallari, ana menude zaten var olan paylasilan ses yoneticisini kullanmak yerine Game veya ilgili mod constructor'larinin fallback yoluna dusuyordu.
+
+Teknik etkisi:
+- Her mode girisinde yeni SoundManager() kurulumu tetiklenebiliyordu.
+- Kurulum icindeki SFX uretimi ve muzik taramasi ana thread'de senkron calistigi icin giris oncesi blokaj olusuyordu.
+- Onceki render/cache iyilestirmeleri yerinde olsa bile, tekrar eden bu init maliyeti her giriste yeni bir donma uretebiliyordu.
 
 ## 5. Risk Sınıflandırması
 
@@ -367,6 +376,51 @@ Faz 5 doğrulama özeti:
 Faz 5 risk notu:
 - Direct upload yalnızca little-endian, pitch uyumlu, 32-bit yüzeylerde devreye giriyor; beklenmeyen formatlarda fallback korunuyor.
 - Gerçek OpenGL context davranışı dar birim testle değil, Windows + Steam overlay smoke ile nihai teyit gerektirir.
+
+### Faz 6: Mod girisinde ortak init tekrarini temizleme
+
+Amaç:
+- Her mod girişinde tekrarlanan ağır ses altyapısı kurulumunu ortadan kaldırmak.
+- Menüden oyuna geçişte hissedilen 2-3 saniyelik blokajı kök nedende azaltmak.
+
+Yapılacaklar:
+- Menüden açılan ilgili oyun akışlarını paylaşılan menu_sound örneğine hizalamak.
+- sound_manager almayan ilgili mode constructor'larını bu parametreyi kabul edip base sınıfa iletecek şekilde tamamlamak.
+- Taze SoundManager() kurulumunun yalnızca bilinçli fallback yolu olarak kalmasını sağlamak.
+- Önceki fazların regresyon setini tekrar geçirip bu değişikliğin önceki kazanımları bozmadığını doğrulamak.
+
+Beklenen kazanım:
+- Her girişte tekrarlanan donma belirgin azalır.
+- Mode-entry latency daha istikrarlı hale gelir.
+- Önceki cache/render optimizasyonları artık tekrarlanan ses kurulumu tarafından maskelenmez.
+
+Risk:
+- Orta
+
+Faz 6 uygulama sonucu:
+- src/main.py içindeki ilgili mod açılışları paylaşılan menu_sound örneğini kullanacak şekilde hizalandı.
+- Sprint, Ultra, Zen, Hardcore, Survival, Cascade, Daily Challenge, Quadrix Extra, Mystery, Wide ve Campaign constructor'larında sound_manager forwarding zinciri tamamlandı.
+- Fresh SoundManager() kurulumuna düşen mod giriş yolları kaldırıldı; fallback yalnızca paylaşılan ses yöneticisi verilmeyen bağımsız çağrılar için kaldı.
+- Bulguyu açıklayan ayrı kök neden dokümanı eklendi: docs/HER_MOD_GIRISINDE_DONMA_SOUNDMANAGER_KOK_NEDENI_TR.md
+
+Faz 6 doğrulama özeti:
+- Faz 1-5 hedefli regresyon seti tekrar çalıştırıldı ve temiz geçti.
+- Yeni AST regresyon testi eklendi; mode-entry call site'larının menu_sound kullandığı ve değiştirilen constructor'ların sound_manager forwarding yaptığı doğrulandı.
+- Ölçüm karşılaştırmalarında fresh SoundManager kurulumunun baskın maliyet olduğu ve paylaşılan ses yöneticisiyle giriş süresinin anlamlı düştüğü görüldü.
+- Çalıştırılan dar test seti:
+  - tests/test_platform_utils_display_toggle.py
+  - tests/test_ui_mouse_slider.py
+  - tests/test_block_styles_texture_render_cache.py
+  - tests/test_effect_surface_cache.py
+  - tests/test_surface_lru_cache.py
+  - tests/test_menu_dashboard_tile_cache.py
+  - tests/test_gl_compat_upload.py
+  - tests/test_mode_entry_shared_sound_manager.py
+- Toplam sonuç: 44 test geçti.
+
+Faz 6 risk notu:
+- Game/PvP fallback SoundManager() yolu bilinçli olarak korunuyor; gelecekte yeni bir mode entry eklendiğinde menu_sound enjeksiyonu unutulursa aynı tip regresyon tekrar edebilir.
+- Bu riski düşürmek için AST regresyon testi call site ve constructor forwarding zincirini sabitliyor.
 
 ## 7. Doğrulama Stratejisi
 
@@ -786,8 +840,20 @@ Amaç hatırlatma:
 - [x] Faz 3: Allocation azaltma ve effect surface cache
 - [x] Faz 4: Menü ve UI statik/dinamik katman ayrımı
 - [x] Faz 5: Windows GL compat ince ayarı
+- [x] Faz 6: Mod girisinde ortak init tekrarini temizleme
 
 ## 13. Güncelleme Kaydı
+
+### 2026-04-05
+- Faz 1-5 hedefli regresyon seti tekrar çalıştırıldı; önceki performans fazlarında otomatik bozulma görülmedi.
+- Faz 1-5 kontrol turunda çalıştırılan dar set toplam 42 test ile temiz geçti.
+- Her mod girişinde görülen donmanın kök nedeni ayrı faz olarak işlendi: bazı mode entry yolları paylaşılan menu_sound yerine fresh SoundManager() fallback'ine düşüyordu.
+- src/main.py içindeki ilgili mod açılışları paylaşılan menu_sound kullanımına hizalandı; değiştirilen mode constructor'larında sound_manager forwarding tamamlandı.
+- Mode entry zinciri için yeni AST regresyon testi eklendi:
+  - tests/test_mode_entry_shared_sound_manager.py
+- Faz 1-6 toplu doğrulama seti tekrar çalıştırıldı ve 44/44 geçti.
+- Kök neden ve çözüm akışı ayrıca dokümante edildi:
+  - docs/HER_MOD_GIRISINDE_DONMA_SOUNDMANAGER_KOK_NEDENI_TR.md
 
 ### 2026-03-08
 - İlk plan dosyası oluşturuldu.

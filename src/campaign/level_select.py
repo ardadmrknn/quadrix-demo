@@ -16,6 +16,7 @@ from platform_utils import get_mouse_pos, normalize_mouse_pos
 from ui_theme import UIColors, UIFonts, UIStyle
 from retro_style import retro_style as _retro_style
 from localization import t, get_language
+from ui_scaling import get_scale
 
 # Neon renk paleti (merkezi tema)
 NEON_CYAN = UIColors.NEON_CYAN
@@ -181,19 +182,21 @@ class CampaignLevelSelect:
     
     def _init_fonts(self) -> None:
         """Fontları başlat"""
-        # max_scale=1.0 ile cap'lendi; 1080p ve üstünde puntoların gereğinden büyümesi önlenir
-        scale = max(0.72, min(1.0, self.window_width / 1400, self.window_height / 900))
+        scale = self._get_ui_scale(min_scale=0.72, max_scale=1.18)
         self.font_title = _retro_style.get_font(int(48 * scale), bold=True)
         self.font_large = _retro_style.get_font(int(36 * scale), bold=True)
         self.font_medium = _retro_style.get_font(int(18 * scale), bold=False)
         self.font_small = _retro_style.get_font(int(15 * scale), bold=False)
         self.font_tiny = _retro_style.get_font(int(13 * scale), bold=False)
 
-    def _get_ui_scale(self, min_scale: float = 0.72, max_scale: float = 1.26) -> float:
+    def _get_ui_scale(self, min_scale: float = 0.72, max_scale: float = 1.18) -> float:
         """Pencere boyutuna göre ortak UI ölçek katsayısı"""
-        width = self.screen.get_width()
-        height = self.screen.get_height()
-        return max(min_scale, min(max_scale, min(width / 1366.0, height / 768.0)))
+        return get_scale(
+            self.screen,
+            min_scale=min_scale,
+            max_scale=max_scale,
+            reference_size=(1400.0, 900.0),
+        )
     
     def _load_progress(self) -> Dict[str, Any]:
         """Campaign ilerlemesini yükle"""

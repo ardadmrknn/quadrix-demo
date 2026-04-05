@@ -1,7 +1,7 @@
-"""Tutorial senaryo verisi ve evaluator yardimcilari.
+"""Tutorial senaryo verisi ve evaluator yardımcıları.
 
-Bu modul pygame runtime'ina bagimli olmadan tutorial board dersleri icin
-senaryo tanimlarini ve board metrik hesaplamalarini sunar.
+Bu modül, pygame runtime'ına bağımlı olmadan tutorial board dersleri için
+senaryo tanımlarını ve board metrik hesaplamalarını sunar.
 """
 
 from __future__ import annotations
@@ -25,9 +25,38 @@ SCENARIOS: Dict[str, Dict[str, Any]] = {
         "current_piece": {"name": "O", "x": 4, "y": 0, "rotation": 0},
         "next_queue": ["T", "L", "I"],
         "allow_hold": False,
-        "goal_text": "Hedef: Iki satiri ayni anda temizle.",
+        "goal_text": "Hedef: İki satırı aynı anda temizle.",
         "tip_key": "tutorial_board_gap_fill_tip",
-        "tip_text": "Genis bosluklari okuyup uygun parcayi secmek kart modundaki kararlarin temelidir.",
+        "tip_text": "Geniş boşlukları okuyup doğru parçayı seçmek, kart modundaki kararların temelidir.",
+        "objectives": [
+            {
+                "id": "clear_lines",
+                "text": "2 satırı temizle",
+                "metric": "line_delta",
+                "comparison": "min",
+                "value": 2,
+            },
+            {
+                "id": "avoid_holes",
+                "text": "Yeni delik oluşturma",
+                "metric": "hole_delta",
+                "comparison": "max",
+                "value": 0,
+            },
+            {
+                "id": "keep_height_stable",
+                "text": "İdeal: yüksekliği artırma",
+                "metric": "height_delta",
+                "comparison": "max",
+                "value": 0,
+            },
+        ],
+        "coach_feedback": {
+            "clean": "Geniş boşluğu tek hamlede doğru okudun. Bu bakış kart kararlarında da işine yarar.",
+            "need_more_lines": "Ana boşluğu doğrudan kapatacak yerleşimi ara; yan hamlelere kaydığında hedef kaçıyor.",
+            "created_holes": "Çözüm üretirken yeni delik açma. Önce yüzeyi sade tut, sonra temizliği al.",
+            "stack_too_high": "Aynı problemi daha alçak ve güvenli bir yerleşimle çözmeyi dene.",
+        },
         "evaluation": {
             "required_line_clears": 2,
             "max_new_holes": 0,
@@ -46,9 +75,38 @@ SCENARIOS: Dict[str, Dict[str, Any]] = {
         "current_piece": {"name": "O", "x": 4, "y": 0, "rotation": 0},
         "next_queue": ["T", "I", "L"],
         "allow_hold": False,
-        "goal_text": "Hedef: Yeni delik acmadan yuksekligi arttirma.",
+        "goal_text": "Hedef: Yeni delik açmadan yüksekliği artırma.",
         "tip_key": "tutorial_board_keep_low_tip",
-        "tip_text": "Her temizleme hemen gerekmez; bazen en iyi hamle kuleyi buyutmemektir.",
+        "tip_text": "Her hamlede satır temizlemek gerekmez; bazen en iyi hamle kuleyi büyütmemektir.",
+        "objectives": [
+            {
+                "id": "height_limit",
+                "text": "Yüksekliği +1'den fazla artırma",
+                "metric": "height_delta",
+                "comparison": "max",
+                "value": 1,
+            },
+            {
+                "id": "avoid_holes",
+                "text": "Yeni delik oluşturma",
+                "metric": "hole_delta",
+                "comparison": "max",
+                "value": 0,
+            },
+            {
+                "id": "ideal_height",
+                "text": "İdeal: yüksekliği hiç artırma",
+                "metric": "height_delta",
+                "comparison": "max",
+                "value": 0,
+            },
+        ],
+        "coach_feedback": {
+            "clean": "Temiz kalmak için her hamlede satır temizlemen gerekmediğini doğru gösterdin.",
+            "need_more_lines": "Bu derste asıl öncelik satır değil, yüzeyi sakin tutmak. Önce güvenli tarafı seç.",
+            "created_holes": "Tahtayı düşük tutmaya çalışırken yeni delik açarsan sonraki hamlelerin zorlaşır.",
+            "stack_too_high": "Yüksekliği zorlamadan çözülebilecek açık tarafı tekrar ara.",
+        },
         "evaluation": {
             "required_line_clears": 0,
             "max_new_holes": 0,
@@ -67,9 +125,38 @@ SCENARIOS: Dict[str, Dict[str, Any]] = {
         "current_piece": {"name": "I", "x": 3, "y": 0, "rotation": 0},
         "next_queue": ["O", "T", "L"],
         "allow_hold": False,
-        "goal_text": "Hedef: Kuyuyu okuyup I parcasi ile Quadrix yap.",
+        "goal_text": "Hedef: Kuyuyu okuyup I parçasıyla Quadrix yap.",
         "tip_key": "tutorial_board_vertical_well_tip",
-        "tip_text": "Kart modunda da en guclu kararlar once kuyuyu hazirlayip sonra dogru parcayi beklemektir.",
+        "tip_text": "Kart modunda da en güçlü kararlar, önce kuyuyu hazırlayıp sonra doğru parçayı beklemektir.",
+        "objectives": [
+            {
+                "id": "quadrix",
+                "text": "4 satır temizle",
+                "metric": "line_delta",
+                "comparison": "min",
+                "value": 4,
+            },
+            {
+                "id": "avoid_holes",
+                "text": "Yeni delik oluşturma",
+                "metric": "hole_delta",
+                "comparison": "max",
+                "value": 0,
+            },
+            {
+                "id": "ideal_height_drop",
+                "text": "İdeal: yüksekliği azalt",
+                "metric": "height_delta",
+                "comparison": "max",
+                "value": -1,
+            },
+        ],
+        "coach_feedback": {
+            "clean": "Kuyuyu sabırla koruyup doğru anda kapattın. Quadrix hazırlığı mantığını doğru okudun.",
+            "need_more_lines": "I parçasını doğrudan kuyuyla buluşturacak hattı koru; yan yüzeyi bozma.",
+            "created_holes": "Kuyuyu çözmeye çalışırken yeni delik bırakırsan güçlü plan boşa gider.",
+            "stack_too_high": "Bu dersin gücü yüksek kuleye çıkmakta değil, hazır çözümü sabırla tamamlamakta.",
+        },
         "evaluation": {
             "required_line_clears": 4,
             "max_new_holes": 0,
@@ -222,3 +309,47 @@ def evaluate_scenario(
         "height_delta": height_delta,
         "required_line_clears": required_line_clears,
     }
+
+
+def enrich_scenario_outcome(outcome: Dict[str, Any] | None, scenario: Dict[str, Any] | None) -> Dict[str, Any]:
+    enriched = deepcopy(outcome) if isinstance(outcome, dict) else {}
+    scenario_data = deepcopy(scenario) if isinstance(scenario, dict) else {}
+    if not enriched or not scenario_data:
+        return enriched
+
+    metric_values = {
+        "line_delta": int(enriched.get("line_delta", 0) or 0),
+        "hole_delta": int(enriched.get("hole_delta", 0) or 0),
+        "height_delta": int(enriched.get("height_delta", 0) or 0),
+    }
+
+    objective_results: List[Dict[str, Any]] = []
+    for objective in list(scenario_data.get("objectives") or []):
+        if not isinstance(objective, dict):
+            continue
+        metric_name = str(objective.get("metric") or "")
+        if metric_name not in metric_values:
+            continue
+        comparison = str(objective.get("comparison") or "max")
+        target_value = int(objective.get("value", 0) or 0)
+        actual_value = metric_values[metric_name]
+        passed = actual_value >= target_value if comparison == "min" else actual_value <= target_value
+        objective_results.append(
+            {
+                "id": objective.get("id"),
+                "text": str(objective.get("text") or ""),
+                "passed": bool(passed),
+            }
+        )
+
+    if objective_results:
+        enriched["objective_results"] = objective_results
+
+    coach_feedback = scenario_data.get("coach_feedback")
+    feedback_key = str(enriched.get("feedback_key") or "")
+    if isinstance(coach_feedback, dict) and feedback_key:
+        coach_text = coach_feedback.get(feedback_key)
+        if coach_text:
+            enriched["coach_text"] = str(coach_text)
+
+    return enriched

@@ -23,6 +23,7 @@ from localization import (
 from ui_language_profile import apply_language_ui_profile, get_font_for_language
 from menu import get_control_actions, get_mode_music_entries, get_campaign_phase_entries, BUILT_IN_TRACK_CHOICES, SUPPORTED_MUSIC_EXTENSIONS
 from gamepad_manager import get_gamepad_manager, reload_gamepad_settings
+from ui_scaling import get_scale, scale_px
 
 
 # ---------------------------------------------------------------------------
@@ -52,6 +53,8 @@ TAB_DEFS = [
     {'key': 'customize', 'loc_key': 'settings_tab_customize', 'label_tr': 'ÖZELLEŞTİRME', 'label_en': 'CUSTOMIZE'},
     {'key': 'other',     'loc_key': 'settings_tab_other', 'label_tr': 'DİĞER', 'label_en': 'OTHER'},
 ]
+
+_SETTINGS_REFERENCE_SIZE = (1366.0, 768.0)
 
 
 def _tab_label(tab_def: dict) -> str:
@@ -379,8 +382,19 @@ class TabbedSettingsScreen:
         self.scroll_offset = 0
         self.option_rects: list[pygame.Rect] = []
 
+        self._ui_reference_size = _SETTINGS_REFERENCE_SIZE
+        self._ui_scale_current = 1.0
+        self._font_scale_signature = None
+        self._base_font_title_size = 36
+        self._base_font_tab_size = 20
+        self._base_font_section_size = 20
+        self._base_font_label_size = 24
+        self._base_font_value_size = 22
+        self._base_font_small_size = 18
+        self._base_font_hint_size = 16
+
         # Font'lar
-        self._refresh_fonts()
+        self._apply_responsive_metrics()
 
         # Tüm ayar değerlerini settings_manager'dan yükle
         self._load_all_settings()
@@ -464,6 +478,7 @@ class TabbedSettingsScreen:
 
         # Slider mouse cache + drag state
         self._slider_bar_rects: dict = {}
+        self._slider_action_rects: dict = {}
         self._slider_drag_active: bool = False
         self._slider_drag_key: str = ''
         self._slider_drag_item: dict | None = None
@@ -477,6 +492,269 @@ class TabbedSettingsScreen:
         self._settings_sb_container_rect: pygame.Rect | None = None
         self._settings_sb_drag_active: bool = False
         self._settings_sb_drag_offset_y: int = 0
+
+    def _ui_scale(self, min_scale: float = 0.72, max_scale: float = 1.16) -> float:
+        try:
+            return get_scale(
+                self.screen,
+                min_scale=min_scale,
+                max_scale=max_scale,
+                reference_size=getattr(self, '_ui_reference_size', _SETTINGS_REFERENCE_SIZE),
+            )
+        except Exception:
+            return 1.0
+
+    def _s(self, value: int | float, minimum: int = 1) -> int:
+        return scale_px(value, getattr(self, '_ui_scale_current', 1.0), minimum=minimum)
+
+    def _font(self, size: int | float, *, bold: bool = False, minimum: int = 8):
+        return retro_style.get_font(self._s(size, minimum=minimum), bold=bold)
+
+    def _fit_font(
+        self,
+        text: str,
+        size: int | float,
+        max_width: int,
+        *,
+        bold: bool = False,
+        minimum: int = 8,
+    ):
+        return retro_style.get_fitting_font(
+            text,
+            self._s(size, minimum=minimum),
+            max_width,
+            bold=bold,
+            min_size=self._s(minimum, minimum=minimum),
+        )
+
+    def _apply_responsive_metrics(self) -> None:
+        self._ui_scale_current = self._ui_scale()
+        self._refresh_fonts()
+
+    def _screen_size(self, default: tuple[int, int] = (1366, 768)) -> tuple[int, int]:
+        screen = getattr(self, 'screen', None)
+        if screen is None:
+            return default
+        try:
+            if hasattr(screen, 'get_size'):
+                width, height = screen.get_size()
+            elif hasattr(screen, 'get_width') and hasattr(screen, 'get_height'):
+                width, height = screen.get_width(), screen.get_height()
+            else:
+                return default
+            return max(1, int(width)), max(1, int(height))
+        except Exception:
+            return default
+
+    def _layout_metrics(self) -> dict[str, int | pygame.Rect]:
+        self._apply_responsive_metrics()
+        width, height = self._screen_size()
+
+        panel_max_w = self._s(1200, minimum=760)
+        panel_min_w = self._s(700, minimum=540)
+        panel_max_h = self._s(850, minimum=560)
+        panel_min_h = self._s(500, minimum=420)
+        panel_w = min(panel_max_w, max(panel_min_w, int(width * 0.88)))
+        panel_h = min(panel_max_h, max(panel_min_h, int(height * 0.88)))
+        panel = pygame.Rect((width - panel_w) // 2, (height - panel_h) // 2, panel_w, panel_h)
+
+        tab_bar = pygame.Rect(
+            panel.x,
+            panel.y + self._s(56, minimum=42),
+            panel.width,
+            self._s(44, minimum=34),
+        )
+        content = pygame.Rect(
+            panel.x + self._s(18, minimum=12),
+            panel.y + self._s(110, minimum=84),
+            panel.width - self._s(36, minimum=24),
+            panel.height - self._s(124, minimum=96),
+        )
+
+        return {
+            'panel': panel,
+            'tab_bar': tab_bar,
+            'content': content,
+            'panel_shadow_pad': self._s(10, minimum=8),
+            'panel_shadow_offset': self._s(5, minimum=4),
+            'panel_shadow_radius': self._s(16, minimum=12),
+            'panel_border_radius': self._s(14, minimum=10),
+            'panel_border_width': self._s(2, minimum=1),
+            'title_pad_x': self._s(20, minimum=14),
+            'title_pad_y': self._s(10, minimum=8),
+            'title_rule_y': self._s(48, minimum=36),
+            'title_rule_inset': self._s(10, minimum=8),
+            'tab_inner_margin': self._s(10, minimum=8),
+            'tab_gap': self._s(6, minimum=4),
+            'tab_indicator_height': self._s(3, minimum=2),
+            'row_height': self._s(58, minimum=44),
+            'section_height': self._s(40, minimum=30),
+            'row_inset_x': self._s(8, minimum=6),
+            'row_inset_y': self._s(2, minimum=1),
+            'row_inner_height_delta': self._s(6, minimum=4),
+            'scroll_step': self._s(30, minimum=18),
+            'scrollbar_gap': self._s(6, minimum=4),
+            'scrollbar_bar_width': self._s(10, minimum=8),
+            'scrollbar_padding': self._s(2, minimum=2),
+            'scrollbar_track_min': self._s(4, minimum=4),
+            'scrollbar_thumb_fallback': self._s(30, minimum=20),
+        }
+
+    def _content_total_height(self, row_h: int | None = None, section_h: int | None = None) -> int:
+        metrics = self._layout_metrics()
+        row_height = int(row_h if row_h is not None else metrics['row_height'])
+        section_height = int(section_h if section_h is not None else metrics['section_height'])
+        total = 0
+        for item in getattr(self, '_tab_items', []):
+            total += section_height if item.get('type') == 'section' else row_height
+        return total
+
+    def _settings_scrollbar_layout(
+        self,
+        panel: pygame.Rect | None = None,
+        content: pygame.Rect | None = None,
+    ) -> dict[str, int | pygame.Rect]:
+        metrics = self._layout_metrics()
+        panel_rect = panel or metrics['panel']
+        content_rect = content or metrics['content']
+        bar_width = int(metrics['scrollbar_bar_width'])
+        padding = int(metrics['scrollbar_padding'])
+        container = pygame.Rect(
+            panel_rect.right + int(metrics['scrollbar_gap']),
+            content_rect.y,
+            bar_width + padding * 2,
+            content_rect.height,
+        )
+        arrow_zone = max(bar_width, bar_width + padding)
+        track_y = container.top + arrow_zone + padding
+        track_h = max(
+            int(metrics['scrollbar_track_min']),
+            container.height - arrow_zone * 2 - int(metrics['scrollbar_track_min']),
+        )
+        track_bottom = track_y + track_h
+        return {
+            'container': container,
+            'bar_width': bar_width,
+            'padding': padding,
+            'arrow_zone': arrow_zone,
+            'track_y': track_y,
+            'track_h': track_h,
+            'up_arrow_rect': pygame.Rect(
+                container.x,
+                container.top,
+                container.width,
+                max(0, track_y - container.top),
+            ),
+            'down_arrow_rect': pygame.Rect(
+                container.x,
+                track_bottom,
+                container.width,
+                max(0, container.bottom - track_bottom),
+            ),
+            'thumb_fallback': int(metrics['scrollbar_thumb_fallback']),
+        }
+
+    def _campaign_phase_overlay_metrics(self) -> dict[str, int | pygame.Rect]:
+        self._apply_responsive_metrics()
+        width, height = self._screen_size((1280, 720))
+        panel_w = min(self._s(680, minimum=520), width - self._s(100, minimum=72))
+        panel_h = min(self._s(540, minimum=420), height - self._s(80, minimum=60))
+        panel_rect = pygame.Rect((width - panel_w) // 2, (height - panel_h) // 2, panel_w, panel_h)
+        item_h = self._s(68, minimum=52)
+        gap = self._s(10, minimum=6)
+        return {
+            'panel': panel_rect,
+            'title_x': panel_rect.x + self._s(24, minimum=16),
+            'title_y': panel_rect.y + self._s(18, minimum=14),
+            'list_y': panel_rect.y + self._s(70, minimum=54),
+            'item_h': item_h,
+            'gap': gap,
+            'item_x': panel_rect.x + self._s(20, minimum=14),
+            'item_w': panel_rect.width - self._s(40, minimum=28),
+        }
+
+    def _music_picker_metrics(self) -> dict[str, int | pygame.Rect]:
+        self._apply_responsive_metrics()
+        width, height = self._screen_size((1280, 720))
+        panel_w = min(self._s(880, minimum=640), width - self._s(140, minimum=96))
+        panel_h = min(self._s(680, minimum=500), height - self._s(120, minimum=84))
+        panel_rect = pygame.Rect((width - panel_w) // 2, (height - panel_h) // 2, panel_w, panel_h)
+        panel_right = panel_rect.x + panel_rect.width
+        list_rect = pygame.Rect(
+            panel_rect.x + self._s(20, minimum=14),
+            panel_rect.y + self._s(90, minimum=68),
+            panel_rect.width - self._s(40, minimum=28),
+            panel_rect.height - self._s(130, minimum=96),
+        )
+        return {
+            'panel': panel_rect,
+            'list_rect': list_rect,
+            'item_h': self._s(52, minimum=40),
+            'gap': self._s(8, minimum=6),
+            'scroll_step': self._s(36, minimum=24),
+            'title_x': panel_rect.x + self._s(20, minimum=14),
+            'title_y': panel_rect.y + self._s(18, minimum=14),
+            'subtitle_y': panel_rect.y + self._s(52, minimum=40),
+            'scrollbar_x': panel_right - self._s(12, minimum=8),
+            'scrollbar_w': self._s(6, minimum=4),
+        }
+
+    def _playlist_overlay_metrics(self) -> dict[str, int | pygame.Rect]:
+        self._apply_responsive_metrics()
+        width, height = self._screen_size((1280, 720))
+        panel_w = min(self._s(920, minimum=680), width - self._s(120, minimum=84))
+        panel_h = min(self._s(730, minimum=540), height - self._s(90, minimum=64))
+        panel_rect = pygame.Rect((width - panel_w) // 2, (height - panel_h) // 2, panel_w, panel_h)
+        panel_right = panel_rect.x + panel_rect.width
+        panel_bottom = panel_rect.y + panel_rect.height
+        list_rect = pygame.Rect(
+            panel_rect.x + self._s(20, minimum=14),
+            panel_rect.y + self._s(86, minimum=64),
+            panel_rect.width - self._s(40, minimum=28),
+            panel_rect.height - self._s(156, minimum=116),
+        )
+
+        picker_w = min(self._s(760, minimum=560), width - self._s(180, minimum=120))
+        picker_h = min(self._s(580, minimum=420), height - self._s(180, minimum=120))
+        picker_rect = pygame.Rect((width - picker_w) // 2, (height - picker_h) // 2, picker_w, picker_h)
+        picker_right = picker_rect.x + picker_rect.width
+        picker_list_rect = pygame.Rect(
+            picker_rect.x + self._s(18, minimum=14),
+            picker_rect.y + self._s(62, minimum=48),
+            picker_rect.width - self._s(36, minimum=28),
+            picker_rect.height - self._s(84, minimum=64),
+        )
+        return {
+            'panel': panel_rect,
+            'list_rect': list_rect,
+            'item_h': self._s(52, minimum=40),
+            'gap': self._s(8, minimum=6),
+            'scroll_step': self._s(30, minimum=18),
+            'title_x': panel_rect.x + self._s(20, minimum=14),
+            'title_y': panel_rect.y + self._s(16, minimum=12),
+            'subtitle_y': panel_rect.y + self._s(50, minimum=38),
+            'scrollbar_rect': pygame.Rect(
+                panel_right - self._s(22, minimum=16),
+                list_rect.y,
+                self._s(22, minimum=16),
+                list_rect.height,
+            ),
+            'hint_x': panel_rect.x + self._s(20, minimum=14),
+            'hint_y': panel_bottom - self._s(28, minimum=20),
+            'picker': picker_rect,
+            'picker_list_rect': picker_list_rect,
+            'picker_item_h': self._s(48, minimum=38),
+            'picker_gap': self._s(8, minimum=6),
+            'picker_scroll_step': self._s(36, minimum=24),
+            'picker_title_x': picker_rect.x + self._s(18, minimum=14),
+            'picker_title_y': picker_rect.y + self._s(14, minimum=10),
+            'picker_scrollbar_rect': pygame.Rect(
+                picker_right - self._s(22, minimum=16),
+                picker_list_rect.y,
+                self._s(22, minimum=16),
+                picker_list_rect.height,
+            ),
+        }
 
     # ------------------------------------------------------------------
     # Ayar yükleme
@@ -513,13 +791,31 @@ class TabbedSettingsScreen:
         self._show_debug_settings = bool(sm.get('show_debug_settings', False))
 
     def _refresh_fonts(self) -> None:
-        self.font_title = retro_style.get_font(36)
-        self.font_tab = retro_style.get_font(20, bold=True)
-        self.font_section = retro_style.get_font(20, bold=True)
-        self.font_label = retro_style.get_font(24, bold=True)
-        self.font_value = retro_style.get_font(22, bold=True)
-        self.font_small = retro_style.get_font(18, bold=False)
-        self.font_hint = retro_style.get_font(16, bold=False)
+        title_size = max(24, self._s(getattr(self, '_base_font_title_size', 36), minimum=24))
+        tab_size = max(14, self._s(getattr(self, '_base_font_tab_size', 20), minimum=14))
+        section_size = max(14, self._s(getattr(self, '_base_font_section_size', 20), minimum=14))
+        label_size = max(16, self._s(getattr(self, '_base_font_label_size', 24), minimum=16))
+        value_size = max(15, self._s(getattr(self, '_base_font_value_size', 22), minimum=15))
+        small_size = max(12, self._s(getattr(self, '_base_font_small_size', 18), minimum=12))
+        hint_size = max(11, self._s(getattr(self, '_base_font_hint_size', 16), minimum=11))
+        language_signature = getattr(self, 'current_language', None)
+        if not language_signature:
+            try:
+                language_signature = get_language()
+            except Exception:
+                language_signature = ''
+        signature = (title_size, tab_size, section_size, label_size, value_size, small_size, hint_size, str(language_signature))
+        if signature == getattr(self, '_font_scale_signature', None):
+            return
+
+        self.font_title = retro_style.get_font(title_size)
+        self.font_tab = retro_style.get_font(tab_size, bold=True)
+        self.font_section = retro_style.get_font(section_size, bold=True)
+        self.font_label = retro_style.get_font(label_size, bold=True)
+        self.font_value = retro_style.get_font(value_size, bold=True)
+        self.font_small = retro_style.get_font(small_size, bold=False)
+        self.font_hint = retro_style.get_font(hint_size, bold=False)
+        self._font_scale_signature = signature
 
     def _build_track_options(self) -> list[dict]:
         """Müzik seçici için parça seçeneklerini üret.
@@ -1003,101 +1299,6 @@ class TabbedSettingsScreen:
 
         return None
 
-    def _draw_campaign_phase_select_overlay(self) -> None:
-        """Kampanya faz seçici overlay panelini çiz."""
-        width, height = self.screen.get_size()
-        dim = pygame.Surface((width, height), pygame.SRCALPHA)
-        dim.fill((0, 0, 0, 145))
-        self.screen.blit(dim, (0, 0))
-
-        panel_w = min(680, width - 100)
-        panel_h = min(540, height - 80)
-        panel_rect = pygame.Rect((width - panel_w) // 2, (height - panel_h) // 2, panel_w, panel_h)
-        retro_style.draw_glass_panel(
-            self.screen,
-            panel_rect,
-            alpha=220,
-            border_color=(100, 200, 255),
-            glow=True,
-        )
-
-        title_font = retro_style.get_font(26, bold=True)
-        title_text = _t('campaign_phase_selector_title', 'Görev Modu – Dünya Seçimi')
-        title_surf = title_font.render(title_text, True, (235, 245, 255))
-        self.screen.blit(title_surf, (panel_rect.x + 24, panel_rect.y + 18))
-
-        phases = get_campaign_phase_entries()
-        item_h = 68
-        gap = 10
-        list_y = panel_rect.y + 70
-        self._campaign_phase_item_rects = []
-
-        # Dünya renkleri (kampanya dünyalarına eşleşen)
-        world_colors = {
-            1: (80, 200, 120),   # Yeşil - Başlangıç Vadisi
-            2: (100, 180, 255),  # Mavi - Buz Diyarı
-            3: (255, 120, 60),   # Turuncu - Lav Mağarası
-            4: (180, 130, 255),  # Mor - Fırtına Kalesi
-            5: (255, 220, 80),   # Altın - Yıldız Kulesi
-        }
-
-        label_font = retro_style.get_font(20, bold=True)
-        sub_font = retro_style.get_font(15)
-        track_count_font = retro_style.get_font(14)
-
-        for i, (mode_key, world_num, label, level_range) in enumerate(phases):
-            y = list_y + i * (item_h + gap)
-            item_rect = pygame.Rect(panel_rect.x + 20, y, panel_rect.width - 40, item_h)
-            self._campaign_phase_item_rects.append((item_rect, i))
-
-            is_selected = (i == self._campaign_phase_selected)
-            color = world_colors.get(world_num, (150, 170, 200))
-
-            # Arka plan
-            bg_surf = pygame.Surface(item_rect.size, pygame.SRCALPHA)
-            bg_alpha = 70 if is_selected else 35
-            bg_color = (*color, bg_alpha)
-            pygame.draw.rect(bg_surf, bg_color, bg_surf.get_rect(), border_radius=12)
-            self.screen.blit(bg_surf, item_rect.topleft)
-
-            # Seçim kenarlığı
-            border_alpha = 255 if is_selected else 60
-            border_color = (*color[:3],)
-            if is_selected:
-                pygame.draw.rect(self.screen, border_color, item_rect, width=2, border_radius=12)
-            else:
-                border_surf = pygame.Surface(item_rect.size, pygame.SRCALPHA)
-                pygame.draw.rect(border_surf, (*border_color, border_alpha), border_surf.get_rect(), width=1, border_radius=12)
-                self.screen.blit(border_surf, item_rect.topleft)
-
-            # Dünya renk göstergesi (sol tarafta dikey çubuk)
-            indicator_rect = pygame.Rect(item_rect.x + 8, item_rect.y + 10, 4, item_rect.height - 20)
-            pygame.draw.rect(self.screen, color, indicator_rect, border_radius=2)
-
-            # Faz adı
-            text_color = (255, 255, 255) if is_selected else (210, 220, 235)
-            label_surf = label_font.render(label, True, text_color)
-            self.screen.blit(label_surf, (item_rect.x + 22, item_rect.y + 12))
-
-            # Level aralığı
-            range_surf = sub_font.render(level_range, True, (160, 175, 200))
-            self.screen.blit(range_surf, (item_rect.x + 22, item_rect.y + 40))
-
-            # Sağda parça sayısı
-            try:
-                playlist = self.settings_manager.get_mode_music_playlist(mode_key)
-                count = len(playlist) if playlist else 0
-            except Exception:
-                count = 0
-            if count > 0:
-                count_text = f"{count} {_t('track_count_unit', 'parça')}"
-                count_color = (150, 220, 255)
-            else:
-                count_text = _t('track_default_label', 'Varsayılan')
-                count_color = (120, 140, 170)
-            count_surf = track_count_font.render(count_text, True, count_color)
-            self.screen.blit(count_surf, (item_rect.right - count_surf.get_width() - 16, item_rect.y + (item_h - count_surf.get_height()) // 2))
-
     def _save_mode_playlist(self) -> str | None:
         if not self.settings_manager or not self._playlist_edit_mode_key:
             return None
@@ -1118,25 +1319,35 @@ class TabbedSettingsScreen:
         total_h = total_items * (item_h + gap)
         return max(0, total_h - max(visible_h, 0))
 
-    def _playlist_ensure_visible(self, visible_h: int, item_h: int, gap: int) -> None:
-        y = self._playlist_edit_selected * (item_h + gap)
+    def _playlist_ensure_visible(self, visible_h: int | None = None, item_h: int | None = None, gap: int | None = None) -> None:
+        metrics = self._playlist_overlay_metrics()
+        list_rect = metrics['list_rect']
+        row_height = int(item_h if item_h is not None else metrics['item_h'])
+        row_gap = int(gap if gap is not None else metrics['gap'])
+        visible_height = int(visible_h if visible_h is not None else list_rect.height)
+        y = self._playlist_edit_selected * (row_height + row_gap)
         if y < self._playlist_edit_scroll:
             self._playlist_edit_scroll = y
-        elif y > self._playlist_edit_scroll + visible_h - item_h:
-            self._playlist_edit_scroll = y - (visible_h - item_h)
+        elif y > self._playlist_edit_scroll + visible_height - row_height:
+            self._playlist_edit_scroll = y - (visible_height - row_height)
         total_items = len(self._playlist_edit_items) + 1
-        max_scroll = self._playlist_list_max_scroll(total_items, item_h, gap, visible_h)
+        max_scroll = self._playlist_list_max_scroll(total_items, row_height, row_gap, visible_height)
         self._playlist_edit_scroll = max(0, min(self._playlist_edit_scroll, max_scroll))
 
-    def _playlist_picker_ensure_visible(self, visible_h: int, item_h: int, gap: int) -> None:
-        y = self._playlist_edit_picker_selected * (item_h + gap)
+    def _playlist_picker_ensure_visible(self, visible_h: int | None = None, item_h: int | None = None, gap: int | None = None) -> None:
+        metrics = self._playlist_overlay_metrics()
+        picker_list_rect = metrics['picker_list_rect']
+        row_height = int(item_h if item_h is not None else metrics['picker_item_h'])
+        row_gap = int(gap if gap is not None else metrics['picker_gap'])
+        visible_height = int(visible_h if visible_h is not None else picker_list_rect.height)
+        y = self._playlist_edit_picker_selected * (row_height + row_gap)
         if y < self._playlist_edit_picker_scroll:
             self._playlist_edit_picker_scroll = y
-        elif y > self._playlist_edit_picker_scroll + visible_h - item_h:
-            self._playlist_edit_picker_scroll = y - (visible_h - item_h)
+        elif y > self._playlist_edit_picker_scroll + visible_height - row_height:
+            self._playlist_edit_picker_scroll = y - (visible_height - row_height)
         self._playlist_edit_picker_scroll = max(
             0,
-            min(self._playlist_edit_picker_scroll, self._picker_max_scroll(visible_h, item_h, gap)),
+            min(self._playlist_edit_picker_scroll, self._picker_max_scroll(visible_height, row_height, row_gap)),
         )
 
     def _open_mode_playlist_picker(self) -> None:
@@ -1150,6 +1361,10 @@ class TabbedSettingsScreen:
 
     def _handle_mode_playlist_edit_input(self, event) -> str | None:
         if self._playlist_edit_picker_open:
+            metrics = self._playlist_overlay_metrics()
+            picker_list_rect = metrics['picker_list_rect']
+            picker_item_h = int(metrics['picker_item_h'])
+            picker_gap = int(metrics['picker_gap'])
             if not self._track_options:
                 self._close_mode_playlist_picker()
                 return None
@@ -1160,11 +1375,11 @@ class TabbedSettingsScreen:
                     return None
                 if event.key == pygame.K_UP:
                     self._playlist_edit_picker_selected = (self._playlist_edit_picker_selected - 1) % len(self._track_options)
-                    self._playlist_picker_ensure_visible(200, 48, 8)
+                    self._playlist_picker_ensure_visible(picker_list_rect.height, picker_item_h, picker_gap)
                     return None
                 if event.key == pygame.K_DOWN:
                     self._playlist_edit_picker_selected = (self._playlist_edit_picker_selected + 1) % len(self._track_options)
-                    self._playlist_picker_ensure_visible(200, 48, 8)
+                    self._playlist_picker_ensure_visible(picker_list_rect.height, picker_item_h, picker_gap)
                     return None
                 if event.key in (pygame.K_RETURN, pygame.K_SPACE):
                     chosen = self._track_options[self._playlist_edit_picker_selected].get('value')
@@ -1174,8 +1389,9 @@ class TabbedSettingsScreen:
                     return self._save_mode_playlist()
 
             elif event.type == pygame.MOUSEWHEEL:
-                self._playlist_edit_picker_scroll -= event.y * 36
-                self._playlist_edit_picker_scroll = max(0, self._playlist_edit_picker_scroll)
+                max_scroll = self._picker_max_scroll(picker_list_rect.height, picker_item_h, picker_gap)
+                self._playlist_edit_picker_scroll -= event.y * int(metrics['picker_scroll_step'])
+                self._playlist_edit_picker_scroll = max(0, min(self._playlist_edit_picker_scroll, max_scroll))
                 return None
 
             elif event.type == pygame.MOUSEMOTION:
@@ -1202,17 +1418,21 @@ class TabbedSettingsScreen:
             return None
 
         total_items = len(self._playlist_edit_items) + 1
+        metrics = self._playlist_overlay_metrics()
+        list_rect = metrics['list_rect']
+        item_h = int(metrics['item_h'])
+        gap = int(metrics['gap'])
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_ESCAPE:
                 self._close_mode_playlist_editor()
                 return None
             if event.key == pygame.K_UP:
                 self._playlist_edit_selected = (self._playlist_edit_selected - 1) % max(total_items, 1)
-                self._playlist_ensure_visible(200, 52, 8)
+                self._playlist_ensure_visible(list_rect.height, item_h, gap)
                 return None
             if event.key == pygame.K_DOWN:
                 self._playlist_edit_selected = (self._playlist_edit_selected + 1) % max(total_items, 1)
-                self._playlist_ensure_visible(200, 52, 8)
+                self._playlist_ensure_visible(list_rect.height, item_h, gap)
                 return None
             if event.key in (pygame.K_RETURN, pygame.K_SPACE):
                 if self._playlist_edit_selected == 0:
@@ -1242,8 +1462,9 @@ class TabbedSettingsScreen:
                 return None
 
         elif event.type == pygame.MOUSEWHEEL:
-            self._playlist_edit_scroll -= event.y * 30
-            self._playlist_edit_scroll = max(0, self._playlist_edit_scroll)
+            max_scroll = self._playlist_list_max_scroll(total_items, item_h, gap, list_rect.height)
+            self._playlist_edit_scroll -= event.y * int(metrics['scroll_step'])
+            self._playlist_edit_scroll = max(0, min(self._playlist_edit_scroll, max_scroll))
             return None
 
         elif event.type == pygame.MOUSEMOTION:
@@ -1269,26 +1490,35 @@ class TabbedSettingsScreen:
         total_h = len(self._track_options) * (item_h + gap)
         return max(0, total_h - max(visible_h, 0))
 
-    def _picker_ensure_visible(self, visible_h: int, item_h: int, gap: int) -> None:
-        y = self._music_picker_selected * (item_h + gap)
+    def _picker_ensure_visible(self, visible_h: int | None = None, item_h: int | None = None, gap: int | None = None) -> None:
+        metrics = self._music_picker_metrics()
+        list_rect = metrics['list_rect']
+        row_height = int(item_h if item_h is not None else metrics['item_h'])
+        row_gap = int(gap if gap is not None else metrics['gap'])
+        visible_height = int(visible_h if visible_h is not None else list_rect.height)
+        y = self._music_picker_selected * (row_height + row_gap)
         if y < self._music_picker_scroll:
             self._music_picker_scroll = y
-        elif y > self._music_picker_scroll + visible_h - item_h:
-            self._music_picker_scroll = y - (visible_h - item_h)
-        self._music_picker_scroll = max(0, min(self._music_picker_scroll, self._picker_max_scroll(visible_h, item_h, gap)))
+        elif y > self._music_picker_scroll + visible_height - row_height:
+            self._music_picker_scroll = y - (visible_height - row_height)
+        self._music_picker_scroll = max(0, min(self._music_picker_scroll, self._picker_max_scroll(visible_height, row_height, row_gap)))
 
     def _handle_music_picker_input(self, event) -> None:
+        metrics = self._music_picker_metrics()
+        list_rect = metrics['list_rect']
+        item_h = int(metrics['item_h'])
+        gap = int(metrics['gap'])
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_ESCAPE:
                 self._close_music_picker()
                 return
             if event.key == pygame.K_UP:
                 self._music_picker_selected = (self._music_picker_selected - 1) % len(self._track_options)
-                self._picker_ensure_visible(200, 52, 8)
+                self._picker_ensure_visible(list_rect.height, item_h, gap)
                 return
             if event.key == pygame.K_DOWN:
                 self._music_picker_selected = (self._music_picker_selected + 1) % len(self._track_options)
-                self._picker_ensure_visible(200, 52, 8)
+                self._picker_ensure_visible(list_rect.height, item_h, gap)
                 return
             if event.key in (pygame.K_RETURN, pygame.K_SPACE):
                 if self._music_picker_mode_key is not None:
@@ -1299,8 +1529,9 @@ class TabbedSettingsScreen:
                 return
 
         elif event.type == pygame.MOUSEWHEEL:
-            self._music_picker_scroll -= event.y * 36
-            self._music_picker_scroll = max(0, self._music_picker_scroll)
+            max_scroll = self._picker_max_scroll(list_rect.height, item_h, gap)
+            self._music_picker_scroll -= event.y * int(metrics['scroll_step'])
+            self._music_picker_scroll = max(0, min(self._music_picker_scroll, max_scroll))
             return
 
         elif event.type == pygame.MOUSEMOTION:
@@ -1324,146 +1555,6 @@ class TabbedSettingsScreen:
                     return
             self._close_music_picker()
             return
-
-    def _draw_mode_playlist_edit_overlay(self) -> None:
-        width, height = self.screen.get_size()
-        dim = pygame.Surface((width, height), pygame.SRCALPHA)
-        dim.fill((0, 0, 0, 145))
-        self.screen.blit(dim, (0, 0))
-
-        panel_w = min(920, width - 120)
-        panel_h = min(730, height - 90)
-        panel_rect = pygame.Rect((width - panel_w) // 2, (height - panel_h) // 2, panel_w, panel_h)
-        retro_style.draw_glass_panel(
-            self.screen,
-            panel_rect,
-            alpha=215,
-            border_color=retro_style.primary,
-            glow=True,
-        )
-
-        title_font = retro_style.get_font(28, bold=True)
-        subtitle_font = retro_style.get_font(18)
-        title = title_font.render(_t('mode_music_playlist_editor', 'Bölüm Müzikleri'), True, (235, 245, 255))
-        self.screen.blit(title, (panel_rect.x + 20, panel_rect.y + 16))
-
-        mode_key = self._playlist_edit_mode_key or ''
-        mode_name = str(mode_key)
-        for mk, label in get_mode_music_entries():
-            if mk == mode_key:
-                mode_name = str(label)
-                break
-        # Kampanya faz anahtarları için faz adını göster
-        if mode_key.startswith('campaign_world'):
-            for mk, _wn, label, _lr in get_campaign_phase_entries():
-                if mk == mode_key:
-                    mode_name = str(label)
-                    break
-        subtitle = subtitle_font.render(mode_name, True, (170, 190, 220))
-        self.screen.blit(subtitle, (panel_rect.x + 20, panel_rect.y + 50))
-
-        list_rect = pygame.Rect(panel_rect.x + 20, panel_rect.y + 86, panel_rect.width - 40, panel_rect.height - 156)
-        item_h = 52
-        gap = 8
-        total_items = len(self._playlist_edit_items) + 1
-
-        max_scroll = self._playlist_list_max_scroll(total_items, item_h, gap, list_rect.height)
-        self._playlist_edit_scroll = max(0, min(self._playlist_edit_scroll, max_scroll))
-
-        self._playlist_edit_item_rects = []
-        self.screen.set_clip(list_rect)
-        for idx in range(total_items):
-            y = list_rect.y + idx * (item_h + gap) - self._playlist_edit_scroll
-            if y + item_h < list_rect.y or y > list_rect.bottom:
-                continue
-
-            rect = pygame.Rect(list_rect.x, y, list_rect.width, item_h)
-            self._playlist_edit_item_rects.append((rect, idx))
-
-            if idx == 0:
-                text = '+ Ekle'
-            else:
-                value = self._playlist_edit_items[idx - 1]
-                text = self._track_label_for_value(value)
-
-            retro_style.draw_uniform_button(
-                self.screen,
-                rect,
-                text,
-                color_code=retro_style.primary,
-                selected=(idx == self._playlist_edit_selected),
-            )
-        self.screen.set_clip(None)
-
-        total_h = total_items * (item_h + gap)
-        if total_h > list_rect.height:
-            sb_rect = pygame.Rect(panel_rect.right - 22, list_rect.y, 22, list_rect.height)
-            retro_style.draw_scrollbar(self.screen, sb_rect, self._playlist_edit_scroll, total_h, list_rect.height)
-
-        hint_text = 'ESC: Kapat   ENTER: Seç/Ekle   DELETE: Sil   ←/→: Taşı'
-        hint_surf = self.font_hint.render(hint_text, True, (180, 200, 220))
-        self.screen.blit(hint_surf, (panel_rect.x + 20, panel_rect.bottom - 28))
-
-        if not self._playlist_edit_picker_open:
-            return
-
-        picker_dim = pygame.Surface((width, height), pygame.SRCALPHA)
-        picker_dim.fill((0, 0, 0, 95))
-        self.screen.blit(picker_dim, (0, 0))
-
-        picker_w = min(760, width - 180)
-        picker_h = min(580, height - 180)
-        picker_rect = pygame.Rect((width - picker_w) // 2, (height - picker_h) // 2, picker_w, picker_h)
-        retro_style.draw_glass_panel(
-            self.screen,
-            picker_rect,
-            alpha=220,
-            border_color=retro_style.primary,
-            glow=True,
-        )
-
-        picker_title = title_font.render(t('tracks'), True, (235, 245, 255))
-        self.screen.blit(picker_title, (picker_rect.x + 18, picker_rect.y + 14))
-
-        picker_list_rect = pygame.Rect(picker_rect.x + 18, picker_rect.y + 62, picker_rect.width - 36, picker_rect.height - 84)
-        p_item_h = 48
-        p_gap = 8
-
-        self._playlist_edit_picker_scroll = max(
-            0,
-            min(self._playlist_edit_picker_scroll, self._picker_max_scroll(picker_list_rect.height, p_item_h, p_gap)),
-        )
-
-        self._playlist_edit_picker_rects = []
-        self.screen.set_clip(picker_list_rect)
-        for idx, option in enumerate(self._track_options):
-            y = picker_list_rect.y + idx * (p_item_h + p_gap) - self._playlist_edit_picker_scroll
-            if y + p_item_h < picker_list_rect.y or y > picker_list_rect.bottom:
-                continue
-
-            rect = pygame.Rect(picker_list_rect.x, y, picker_list_rect.width, p_item_h)
-            self._playlist_edit_picker_rects.append((rect, idx))
-
-            label = str(option.get('label', ''))
-            retro_style.draw_uniform_button(
-                self.screen,
-                rect,
-                label,
-                color_code=retro_style.primary,
-                selected=(idx == self._playlist_edit_picker_selected),
-            )
-        self.screen.set_clip(None)
-
-        picker_total_h = len(self._track_options) * (p_item_h + p_gap)
-        if picker_total_h > picker_list_rect.height:
-            sb_rect = pygame.Rect(picker_rect.right - 22, picker_list_rect.y, 22, picker_list_rect.height)
-            retro_style.draw_scrollbar(
-                self.screen,
-                sb_rect,
-                self._playlist_edit_picker_scroll,
-                picker_total_h,
-                picker_list_rect.height,
-            )
 
     # ------------------------------------------------------------------
     # Ayar değiştirme
@@ -1612,6 +1703,7 @@ class TabbedSettingsScreen:
             self.current_language = SUPPORTED_LANGUAGES[lang_idx]
             set_language(self.current_language)
             apply_language_ui_profile(self.current_language)
+            self._font_scale_signature = None
             self._refresh_fonts()
             self._set_value('language', self.current_language)
             self._rebuild_tab_content()
@@ -1623,32 +1715,21 @@ class TabbedSettingsScreen:
     # ------------------------------------------------------------------
 
     def _panel_rect(self) -> pygame.Rect:
-        w, h = self.screen.get_size()
-        pw = min(1200, max(700, int(w * 0.88)))
-        ph = min(850, max(500, int(h * 0.88)))
-        px = (w - pw) // 2
-        py = (h - ph) // 2
-        return pygame.Rect(px, py, pw, ph)
+        return self._layout_metrics()['panel']
 
     def _tab_bar_rect(self, panel: pygame.Rect) -> pygame.Rect:
-        return pygame.Rect(panel.x, panel.y + 56, panel.width, 44)
+        return self._layout_metrics()['tab_bar']
 
     def _content_rect(self, panel: pygame.Rect) -> pygame.Rect:
-        return pygame.Rect(
-            panel.x + 18, panel.y + 110,
-            panel.width - 36, panel.height - 124,
-        )
+        return self._layout_metrics()['content']
 
     # ------------------------------------------------------------------
     # Kaydırma sınırları
     # ------------------------------------------------------------------
 
     def _max_scroll(self, content_rect: pygame.Rect) -> int:
-        row_h = 58
-        section_h = 40
-        total = 0
-        for item in self._tab_items:
-            total += section_h if item['type'] == 'section' else row_h
+        metrics = self._layout_metrics()
+        total = self._content_total_height(int(metrics['row_height']), int(metrics['section_height']))
         return max(0, total - content_rect.height)
 
     # ------------------------------------------------------------------
@@ -1718,6 +1799,8 @@ class TabbedSettingsScreen:
         if self._vsync_prompt_active:
             return self._handle_vsync_prompt(event)
 
+        self._apply_responsive_metrics()
+
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_ESCAPE:
                 # Drag state'leri temizle
@@ -1779,7 +1862,8 @@ class TabbedSettingsScreen:
         elif event.type == pygame.MOUSEWHEEL:
             panel = self._panel_rect()
             content = self._content_rect(panel)
-            self.scroll_offset -= event.y * 30
+            metrics = self._layout_metrics()
+            self.scroll_offset -= event.y * int(metrics['scroll_step'])
             self.scroll_offset = max(0, min(self.scroll_offset, self._max_scroll(content)))
 
         # Mouse hareket
@@ -1787,12 +1871,12 @@ class TabbedSettingsScreen:
             pos = normalize_mouse_pos(getattr(event, 'pos', None)) or event.pos
             # Settings scrollbar drag
             if self._settings_sb_drag_active and self._settings_sb_container_rect:
-                _az = max(10, 10 + 2)  # bar_width=10
-                track_y = self._settings_sb_container_rect.top + _az + 2
-                track_h = max(4, self._settings_sb_container_rect.height - _az * 2 - 4)
-                thumb_h = self._settings_sb_thumb_rect.height if self._settings_sb_thumb_rect else 30
                 panel = self._panel_rect()
                 content = self._content_rect(panel)
+                scrollbar = self._settings_scrollbar_layout(panel, content)
+                track_y = int(scrollbar['track_y'])
+                track_h = int(scrollbar['track_h'])
+                thumb_h = self._settings_sb_thumb_rect.height if self._settings_sb_thumb_rect else int(scrollbar['thumb_fallback'])
                 max_scroll = self._max_scroll(content)
                 new_thumb_top = pos[1] - self._settings_sb_drag_offset_y - track_y
                 new_thumb_top = max(0, min(new_thumb_top, track_h - thumb_h))
@@ -1819,13 +1903,22 @@ class TabbedSettingsScreen:
 
             # Settings scrollbar track alanına tıklama → o pozisyona zıpla
             if self._settings_sb_container_rect and self._settings_sb_container_rect.collidepoint(pos):
-                _az = max(10, 10 + 2)
-                _ty = self._settings_sb_container_rect.top + _az + 2
-                _th = max(4, self._settings_sb_container_rect.height - _az * 2 - 4)
-                _tmh = self._settings_sb_thumb_rect.height if self._settings_sb_thumb_rect else 20
                 panel = self._panel_rect()
                 content = self._content_rect(panel)
+                scrollbar = self._settings_scrollbar_layout(panel, content)
+                up_arrow_rect = scrollbar['up_arrow_rect']
+                down_arrow_rect = scrollbar['down_arrow_rect']
+                _ty = int(scrollbar['track_y'])
+                _th = int(scrollbar['track_h'])
+                _tmh = self._settings_sb_thumb_rect.height if self._settings_sb_thumb_rect else int(scrollbar['thumb_fallback'])
                 _max = self._max_scroll(content)
+                step = int(self._layout_metrics()['scroll_step'])
+                if up_arrow_rect.collidepoint(pos):
+                    self.scroll_offset = max(0, self.scroll_offset - step)
+                    return None
+                if down_arrow_rect.collidepoint(pos):
+                    self.scroll_offset = min(_max, self.scroll_offset + step)
+                    return None
                 _rel = pos[1] - _ty - _tmh // 2
                 self.scroll_offset = int(max(0.0, min(1.0, _rel / max(1, _th - _tmh))) * _max)
                 return None
@@ -1849,6 +1942,8 @@ class TabbedSettingsScreen:
                         if item.get('type') == 'slider':
                             key = item.get('key', '')
                             bar_rect = self._slider_bar_rects.get(key)
+                            slider_action_rects = getattr(self, '_slider_action_rects', {})
+                            action_rects = slider_action_rects.get(key, {})
                             if bar_rect:
                                 if bar_rect.collidepoint(pos):
                                     # Bar içine tıklandı: değer set et + drag başlat
@@ -1859,13 +1954,11 @@ class TabbedSettingsScreen:
                                     self._slider_drag_bar_rect = bar_rect
                                     return result
                                 else:
-                                    # Bar dışında ama satır içinde: < > arrow hit test
-                                    # Soldaki ok bölgesi: bar_rect'in solundaki ~20px
-                                    left_zone = pygame.Rect(bar_rect.x - 24, rect.y, 24, rect.height)
-                                    right_zone = pygame.Rect(bar_rect.right, rect.y, rect.right - bar_rect.right, rect.height)
-                                    if left_zone.collidepoint(pos):
+                                    left_zone = action_rects.get('left_rect')
+                                    right_zone = action_rects.get('right_rect')
+                                    if left_zone is not None and left_zone.collidepoint(pos):
                                         return self._handle_setting_action(pygame.K_LEFT)
-                                    elif right_zone.collidepoint(pos):
+                                    elif right_zone is not None and right_zone.collidepoint(pos):
                                         return self._handle_setting_action(pygame.K_RIGHT)
                                     else:
                                         return None
@@ -2009,8 +2102,9 @@ class TabbedSettingsScreen:
             return
         panel = self._panel_rect()
         content = self._content_rect(panel)
-        row_h = 58
-        section_h = 40
+        metrics = self._layout_metrics()
+        row_h = int(metrics['row_height'])
+        section_h = int(metrics['section_height'])
 
         item_idx = self._selectable_indices[self.selected]
         y_offset = 0
@@ -2104,6 +2198,7 @@ class TabbedSettingsScreen:
     # ------------------------------------------------------------------
 
     def draw(self) -> None:
+        self._apply_responsive_metrics()
         width, height = self.screen.get_size()
 
         # Smooth slider animasyonları
@@ -2154,52 +2249,64 @@ class TabbedSettingsScreen:
 
     def _draw_panel(self, rect: pygame.Rect) -> None:
         """Koyu yarı-saydam panel arka planı."""
+        metrics = self._layout_metrics()
+        shadow_pad = int(metrics['panel_shadow_pad'])
+        shadow_offset = int(metrics['panel_shadow_offset'])
+        shadow_radius = int(metrics['panel_shadow_radius'])
+        border_radius = int(metrics['panel_border_radius'])
+        border_width = int(metrics['panel_border_width'])
+
         # Gölge
-        shadow = pygame.Surface((rect.width + 10, rect.height + 10), pygame.SRCALPHA)
-        pygame.draw.rect(shadow, (0, 0, 0, 60), shadow.get_rect(), border_radius=16)
-        self.screen.blit(shadow, (rect.x + 5, rect.y + 5))
+        shadow = pygame.Surface((rect.width + shadow_pad, rect.height + shadow_pad), pygame.SRCALPHA)
+        pygame.draw.rect(shadow, (0, 0, 0, 60), shadow.get_rect(), border_radius=shadow_radius)
+        self.screen.blit(shadow, (rect.x + shadow_offset, rect.y + shadow_offset))
 
         # Ana panel
         panel_surf = pygame.Surface(rect.size, pygame.SRCALPHA)
         panel_surf.fill((12, 16, 32, 235))
         # Üst kenar highlight
-        for y in range(min(30, rect.height // 4)):
-            alpha = int(15 * (1 - y / 30))
+        highlight_depth = min(self._s(30, minimum=18), rect.height // 4)
+        for y in range(highlight_depth):
+            alpha = int(15 * (1 - y / max(1, highlight_depth)))
             pygame.draw.line(panel_surf, (255, 255, 255, alpha), (0, y), (rect.width, y))
         self.screen.blit(panel_surf, rect.topleft)
 
         # Kenar çizgisi
-        pygame.draw.rect(self.screen, (60, 70, 100), rect, 2, border_radius=14)
+        pygame.draw.rect(self.screen, (60, 70, 100), rect, border_width, border_radius=border_radius)
 
         # Üst kenar vurgulu çizgi
         pygame.draw.line(
             self.screen, (80, 140, 220),
-            (rect.x + 2, rect.y + 1), (rect.right - 2, rect.y + 1), 1,
+            (rect.x + border_width, rect.y + 1), (rect.right - border_width, rect.y + 1), 1,
         )
 
     def _draw_title(self, panel: pygame.Rect) -> None:
         """Başlık ve kapatma butonu."""
+        metrics = self._layout_metrics()
         lang = get_language()
         title_text = _t('panel_settings', 'AYARLAR' if lang == 'tr' else 'SETTINGS')
         title_surf = self.font_title.render(title_text, True, (220, 235, 255))
-        self.screen.blit(title_surf, (panel.x + 20, panel.y + 10))
+        self.screen.blit(title_surf, (panel.x + int(metrics['title_pad_x']), panel.y + int(metrics['title_pad_y'])))
         self._close_btn_rect = None
 
         # Başlık altı çizgi
-        line_y = panel.y + 48
-        pygame.draw.line(self.screen, (50, 60, 90), (panel.x + 10, line_y), (panel.right - 10, line_y), 1)
+        line_y = panel.y + int(metrics['title_rule_y'])
+        inset = int(metrics['title_rule_inset'])
+        pygame.draw.line(self.screen, (50, 60, 90), (panel.x + inset, line_y), (panel.right - inset, line_y), 1)
 
     def _draw_tab_bar(self, bar_rect: pygame.Rect) -> None:
         """Sekme çubuğunu çiz."""
+        metrics = self._layout_metrics()
         self._tab_rects = []
         num_tabs = len(TAB_DEFS)
-        tab_gap = 6
+        tab_gap = int(metrics['tab_gap'])
         total_gap = tab_gap * (num_tabs - 1)
-        available_w = bar_rect.width - 20
+        inner_margin = int(metrics['tab_inner_margin'])
+        available_w = bar_rect.width - inner_margin * 2
         tab_w = (available_w - total_gap) // num_tabs
 
         for i, tab_def in enumerate(TAB_DEFS):
-            tx = bar_rect.x + 10 + i * (tab_w + tab_gap)
+            tx = bar_rect.x + inner_margin + i * (tab_w + tab_gap)
             tab_rect = pygame.Rect(tx, bar_rect.y, tab_w, bar_rect.height)
             self._tab_rects.append(tab_rect)
 
@@ -2216,24 +2323,27 @@ class TabbedSettingsScreen:
 
             # Alt çizgi (aktif sekme)
             if is_active:
-                indicator_rect = pygame.Rect(tab_rect.x, tab_rect.bottom - 3, tab_rect.width, 3)
+                indicator_h = int(metrics['tab_indicator_height'])
+                indicator_rect = pygame.Rect(tab_rect.x, tab_rect.bottom - indicator_h, tab_rect.width, indicator_h)
                 pygame.draw.rect(self.screen, (80, 180, 255), indicator_rect)
 
             # Tab metni
             color = (255, 255, 255) if is_active else (140, 155, 180)
-            tab_font = retro_style.get_fitting_font(label, 18, tab_w - 10, bold=is_active)
+            tab_font = self._fit_font(label, 18, tab_w - self._s(10, minimum=8), bold=is_active, minimum=12)
             text_surf = tab_font.render(label, True, color)
             text_rect = text_surf.get_rect(center=tab_rect.center)
             self.screen.blit(text_surf, text_rect)
 
     def _draw_content(self, content_rect: pygame.Rect) -> None:
         """Mevcut sekmenin içeriğini çiz."""
+        metrics = self._layout_metrics()
         self.option_rects = []
         self._keybind_slot_rects = []
         self._help_icon_rects = []
         self._slider_bar_rects = {}
-        row_h = 58
-        section_h = 40
+        self._slider_action_rects = {}
+        row_h = int(metrics['row_height'])
+        section_h = int(metrics['section_height'])
         sel_item_index = 0  # seçilebilir öğe sayacı
 
         # Clip area
@@ -2245,13 +2355,18 @@ class TabbedSettingsScreen:
 
             if itype == 'section':
                 # Bölüm başlığı
-                if y + section_h > content_rect.y - 20 and y < content_rect.bottom:
+                if y + section_h > content_rect.y - self._s(20, minimum=14) and y < content_rect.bottom:
                     self._draw_section_header(content_rect.x, y, content_rect.width, section_h, item)
                 y += section_h
                 continue
 
             # Ayar satırı – sol/sağ padding artırıldı
-            row_rect = pygame.Rect(content_rect.x + 8, y + 2, content_rect.width - 16, row_h - 6)
+            row_rect = pygame.Rect(
+                content_rect.x + int(metrics['row_inset_x']),
+                y + int(metrics['row_inset_y']),
+                content_rect.width - int(metrics['row_inset_x']) * 2,
+                row_h - int(metrics['row_inner_height_delta']),
+            )
 
             is_selected = False
             if sel_item_index < len(self._selectable_indices):
@@ -2273,21 +2388,15 @@ class TabbedSettingsScreen:
         # Scrollbar – panel'in dışına/sağına konumlandırılmış, sürüklenebilir
         panel = self._panel_rect()
         max_scroll = self._max_scroll(content_rect)
-        total_h = 0
-        for item in self._tab_items:
-            total_h += section_h if item['type'] == 'section' else row_h
+        total_h = self._content_total_height(row_h, section_h)
         if max_scroll > 0:
-            # bar_width=10 → container.right = panel.right+20 → track_x = panel.right+6
-            sb_bar_w = 10
-            sb_container = pygame.Rect(
-                panel.right + 6, content_rect.y,
-                sb_bar_w + 4, content_rect.height,
-            )
+            scrollbar = self._settings_scrollbar_layout(panel, content_rect)
+            sb_container = scrollbar['container']
             self._settings_sb_container_rect = sb_container
             self._settings_sb_thumb_rect = retro_style.draw_scrollbar(
                 self.screen, sb_container,
                 self.scroll_offset, total_h, content_rect.height,
-                bar_width=sb_bar_w,
+                bar_width=int(scrollbar['bar_width']),
             )
         else:
             self._settings_sb_thumb_rect = None
@@ -2299,19 +2408,21 @@ class TabbedSettingsScreen:
         self, x: int, y: int, w: int, h: int, item: dict,
     ) -> None:
         """Bölüm başlığını çiz (renkli, küçük font)."""
+        s = self._s
         label = _item_label(item)
         # Accent renkli metin
         color = (80, 200, 180)  # Teal/Cyan
         surf = self.font_section.render(label, True, color)
-        self.screen.blit(surf, (x + 24, y + h - surf.get_height() - 4))
+        self.screen.blit(surf, (x + s(24, minimum=16), y + h - surf.get_height() - s(4, minimum=2)))
         # Alt çizgi
         line_y = y + h - 1
-        pygame.draw.line(self.screen, (40, 55, 75), (x + 20, line_y), (x + w - 20, line_y), 1)
+        pygame.draw.line(self.screen, (40, 55, 75), (x + s(20, minimum=14), line_y), (x + w - s(20, minimum=14), line_y), 1)
 
     def _draw_setting_item(
         self, rect: pygame.Rect, item: dict, selected: bool,
     ) -> dict | None:
         """Bir ayar satırını çiz."""
+        s = self._s
         itype = item['type']
         label = _item_label(item)
 
@@ -2322,23 +2433,24 @@ class TabbedSettingsScreen:
         row_surf.fill((*bg_color, bg_alpha))
         if selected:
             # Üst highlight
-            for yy in range(min(8, rect.height // 4)):
-                a = int(15 * (1 - yy / 8))
+            highlight_depth = min(s(8, minimum=6), rect.height // 4)
+            for yy in range(highlight_depth):
+                a = int(15 * (1 - yy / max(1, highlight_depth)))
                 pygame.draw.line(row_surf, (255, 255, 255, a), (0, yy), (rect.width, yy))
         self.screen.blit(row_surf, rect.topleft)
 
         # Kenar
         if selected:
-            pygame.draw.rect(self.screen, (80, 160, 255, 180), rect, 1, border_radius=6)
+            pygame.draw.rect(self.screen, (80, 160, 255, 180), rect, 1, border_radius=s(6, minimum=4))
         else:
-            pygame.draw.rect(self.screen, (40, 50, 70), rect, 1, border_radius=6)
+            pygame.draw.rect(self.screen, (40, 50, 70), rect, 1, border_radius=s(6, minimum=4))
 
         # Label – sol padding artırıldı
         label_color = (255, 255, 255) if selected else (190, 200, 215)
         max_label_w = int(rect.width * 0.42)
-        label_font = retro_style.get_fitting_font(label, 22, max_label_w, bold=True)
+        label_font = self._fit_font(label, 22, max_label_w, bold=True, minimum=14)
         label_surf = label_font.render(label, True, label_color)
-        label_x = rect.x + 24
+        label_x = rect.x + s(24, minimum=16)
         label_y = rect.centery - label_surf.get_height() // 2
         self.screen.blit(label_surf, (label_x, label_y))
 
@@ -2384,8 +2496,9 @@ class TabbedSettingsScreen:
         selected: bool,
     ) -> None:
         """Etiketin sağına soru işareti ikonu çiz ve hover alanını kaydet."""
-        icon_r = 9
-        icon_cx = label_x + label_surf.get_width() + 16 + icon_r
+        s = self._s
+        icon_r = s(9, minimum=6)
+        icon_cx = label_x + label_surf.get_width() + s(16, minimum=10) + icon_r
         icon_cx = min(icon_cx, row_rect.x + int(row_rect.width * 0.48))
         icon_cy = row_rect.centery
         icon_rect = pygame.Rect(icon_cx - icon_r, icon_cy - icon_r, icon_r * 2, icon_r * 2)
@@ -2395,7 +2508,7 @@ class TabbedSettingsScreen:
         pygame.draw.circle(self.screen, (*base_color, fill_alpha), (icon_cx, icon_cy), icon_r)
         pygame.draw.circle(self.screen, (*base_color, 220), (icon_cx, icon_cy), icon_r, 1)
 
-        q_font = retro_style.get_font(14, bold=True)
+        q_font = self._font(14, bold=True, minimum=10)
         q_surf = q_font.render('?', True, (235, 245, 255))
         self.screen.blit(q_surf, q_surf.get_rect(center=(icon_cx, icon_cy + 1)))
 
@@ -2420,6 +2533,7 @@ class TabbedSettingsScreen:
 
     def _draw_help_tooltip(self, content_rect: pygame.Rect) -> None:
         """? ikonuna hover edildiğinde açıklama tooltip'i çiz."""
+        s = self._s
         if not self._help_icon_rects:
             return
 
@@ -2436,19 +2550,19 @@ class TabbedSettingsScreen:
             return
 
         font = self.font_hint
-        max_text_w = min(420, max(240, int(content_rect.width * 0.45)))
+        max_text_w = min(s(420, minimum=260), max(s(240, minimum=180), int(content_rect.width * 0.45)))
         lines = self._wrap_help_text(hovered_text, font, max_text_w)
 
-        line_h = font.get_height() + 3
-        tooltip_w = min(460, max(260, max(font.size(line)[0] for line in lines) + 24))
-        tooltip_h = max(42, len(lines) * line_h + 16)
+        line_h = font.get_height() + s(3, minimum=2)
+        tooltip_w = min(s(460, minimum=280), max(s(260, minimum=200), max(font.size(line)[0] for line in lines) + s(24, minimum=18)))
+        tooltip_h = max(s(42, minimum=34), len(lines) * line_h + s(16, minimum=12))
 
         screen_w, screen_h = self.screen.get_size()
-        tip_x = hovered_rect.right + 12
-        if tip_x + tooltip_w > screen_w - 10:
-            tip_x = hovered_rect.left - tooltip_w - 12
+        tip_x = hovered_rect.right + s(12, minimum=8)
+        if tip_x + tooltip_w > screen_w - s(10, minimum=8):
+            tip_x = hovered_rect.left - tooltip_w - s(12, minimum=8)
         tip_y = hovered_rect.centery - tooltip_h // 2
-        tip_y = max(10, min(screen_h - tooltip_h - 10, tip_y))
+        tip_y = max(s(10, minimum=8), min(screen_h - tooltip_h - s(10, minimum=8), tip_y))
 
         tip_rect = pygame.Rect(tip_x, tip_y, tooltip_w, tooltip_h)
         retro_style.draw_glass_panel(
@@ -2459,27 +2573,26 @@ class TabbedSettingsScreen:
             glow=True,
         )
 
-        text_y = tip_rect.y + 8
+        text_y = tip_rect.y + s(8, minimum=6)
         for line in lines:
             line_surf = font.render(line, True, (225, 235, 250))
-            self.screen.blit(line_surf, (tip_rect.x + 12, text_y))
+            self.screen.blit(line_surf, (tip_rect.x + s(12, minimum=8), text_y))
             text_y += line_h
 
     def _draw_music_picker(self) -> None:
+        metrics = self._music_picker_metrics()
         width, height = self.screen.get_size()
         dim = pygame.Surface((width, height), pygame.SRCALPHA)
         dim.fill((0, 0, 0, 140))
         self.screen.blit(dim, (0, 0))
 
-        panel_w = min(880, width - 140)
-        panel_h = min(680, height - 120)
-        panel_rect = pygame.Rect((width - panel_w) // 2, (height - panel_h) // 2, panel_w, panel_h)
+        panel_rect = metrics['panel']
         retro_style.draw_glass_panel(self.screen, panel_rect, alpha=210, border_color=retro_style.primary, glow=True)
 
-        title_font = retro_style.get_font(28, bold=True)
-        subtitle_font = retro_style.get_font(18)
+        title_font = self._font(28, bold=True, minimum=18)
+        subtitle_font = self._font(18, minimum=12)
         title = title_font.render(t('tracks'), True, (235, 245, 255))
-        self.screen.blit(title, (panel_rect.x + 20, panel_rect.y + 18))
+        self.screen.blit(title, (int(metrics['title_x']), int(metrics['title_y'])))
 
         mode_name = ''
         mode_key = self._music_picker_mode_key
@@ -2488,11 +2601,11 @@ class TabbedSettingsScreen:
                 mode_name = label
                 break
         sub = subtitle_font.render(mode_name, True, (170, 190, 220))
-        self.screen.blit(sub, (panel_rect.x + 20, panel_rect.y + 52))
+        self.screen.blit(sub, (int(metrics['title_x']), int(metrics['subtitle_y'])))
 
-        list_rect = pygame.Rect(panel_rect.x + 20, panel_rect.y + 90, panel_rect.width - 40, panel_rect.height - 130)
-        item_h = 52
-        gap = 8
+        list_rect = metrics['list_rect']
+        item_h = int(metrics['item_h'])
+        gap = int(metrics['gap'])
 
         self._music_picker_scroll = max(0, min(self._music_picker_scroll, self._picker_max_scroll(list_rect.height, item_h, gap)))
 
@@ -2519,11 +2632,12 @@ class TabbedSettingsScreen:
 
         total_h = len(self._track_options) * (item_h + gap)
         if total_h > list_rect.height:
-            sb_rect = pygame.Rect(panel_rect.right - 12, list_rect.y, 6, list_rect.height)
+            sb_rect = pygame.Rect(int(metrics['scrollbar_x']), list_rect.y, int(metrics['scrollbar_w']), list_rect.height)
             retro_style.draw_scrollbar(self.screen, sb_rect, self._music_picker_scroll, total_h, list_rect.height)
 
     def _draw_toggle_badge(self, rect: pygame.Rect, item: dict, selected: bool) -> None:
         """Toggle tipi ayar için < AÇIK/KAPALI > badge."""
+        s = self._s
         value_text, value_color = self._get_display_value(item)
         key = item.get('key', '')
         is_on = bool(self._get_value(key))
@@ -2533,25 +2647,26 @@ class TabbedSettingsScreen:
         else:
             badge_color = (60, 160, 90) if is_on else (180, 70, 70)
 
-        badge_font = retro_style.get_fitting_font(value_text, 16, 100, bold=True)
+        badge_font = self._fit_font(value_text, 16, s(100, minimum=72), bold=True, minimum=11)
         badge_surf = badge_font.render(value_text, True, (255, 255, 255))
-        bw = badge_surf.get_width() + 24
-        bh = badge_surf.get_height() + 10
-        badge_rect = pygame.Rect(rect.right - bw - 40, rect.centery - bh // 2, bw, bh)
+        bw = badge_surf.get_width() + s(24, minimum=18)
+        bh = badge_surf.get_height() + s(10, minimum=8)
+        badge_rect = pygame.Rect(rect.right - bw - s(40, minimum=28), rect.centery - bh // 2, bw, bh)
         pygame.draw.rect(self.screen, badge_color, badge_rect, border_radius=bh // 2)
         self.screen.blit(badge_surf, badge_surf.get_rect(center=badge_rect.center))
 
         # < > okları
         if selected:
-            arrow_font = retro_style.get_font(18, bold=True)
+            arrow_font = self._font(18, bold=True, minimum=12)
             arrow_color = (80, 160, 255)
             left_arrow = arrow_font.render('<', True, arrow_color)
             right_arrow = arrow_font.render('>', True, arrow_color)
-            self.screen.blit(left_arrow, left_arrow.get_rect(midright=(badge_rect.left - 6, rect.centery)))
-            self.screen.blit(right_arrow, right_arrow.get_rect(midleft=(badge_rect.right + 6, rect.centery)))
+            self.screen.blit(left_arrow, left_arrow.get_rect(midright=(badge_rect.left - s(6, minimum=4), rect.centery)))
+            self.screen.blit(right_arrow, right_arrow.get_rect(midleft=(badge_rect.right + s(6, minimum=4), rect.centery)))
 
     def _draw_inline_slider(self, rect: pygame.Rect, item: dict, selected: bool) -> None:
         """Slider tipi ayar için sürgü çiz."""
+        s = self._s
         key = item.get('key', '')
         min_val = item.get('min', 0)
         max_val = item.get('max', 1)
@@ -2575,36 +2690,53 @@ class TabbedSettingsScreen:
             value_text = f'{int(current)} {item.get("suffix", "")}'.strip()
 
         # Layout
-        slider_right = rect.right - 20
-        value_font = retro_style.get_font(18, bold=True)
+        slider_right = rect.right - s(20, minimum=14)
+        value_font = self._font(18, bold=True, minimum=12)
         value_surf = value_font.render(value_text, True, (220, 235, 255))
 
         # > oku
-        arrow_font = retro_style.get_font(16, bold=True)
+        arrow_font = self._font(16, bold=True, minimum=11)
         arrow_color = (80, 160, 255) if selected else (100, 120, 150)
 
         right_arrow = arrow_font.render('>', True, arrow_color)
         right_x = slider_right - right_arrow.get_width()
-        self.screen.blit(right_arrow, right_arrow.get_rect(midleft=(right_x, rect.centery)))
+        right_arrow_rect = right_arrow.get_rect(midleft=(right_x, rect.centery))
+        self.screen.blit(right_arrow, right_arrow_rect)
 
         # Değer metni
-        val_x = right_x - value_surf.get_width() - 8
+        val_x = right_x - value_surf.get_width() - s(8, minimum=6)
         self.screen.blit(value_surf, value_surf.get_rect(midright=(val_x + value_surf.get_width(), rect.centery)))
 
         # Slider bar – %45 noktasından başla
-        bar_right = val_x - 12
+        bar_right = val_x - s(12, minimum=8)
         bar_left = rect.x + int(rect.width * 0.45)
 
         # < oku
         left_arrow = arrow_font.render('<', True, arrow_color)
-        self.screen.blit(left_arrow, left_arrow.get_rect(midright=(bar_left - 4, rect.centery)))
-        bar_left += 2
+        left_arrow_rect = left_arrow.get_rect(midright=(bar_left - s(4, minimum=3), rect.centery))
+        self.screen.blit(left_arrow, left_arrow_rect)
+        bar_left += s(2, minimum=1)
 
-        if bar_right > bar_left + 30:
-            bar_h = 14
+        if bar_right > bar_left + s(30, minimum=20):
+            bar_h = s(14, minimum=10)
             r = bar_h // 2
             bar_rect = pygame.Rect(bar_left, rect.centery - bar_h // 2, bar_right - bar_left, bar_h)
             self._slider_bar_rects[key] = bar_rect
+            left_zone_x = max(rect.x, left_arrow_rect.x - s(10, minimum=6))
+            self._slider_action_rects[key] = {
+                'left_rect': pygame.Rect(
+                    left_zone_x,
+                    rect.y,
+                    max(0, bar_rect.x - left_zone_x),
+                    rect.height,
+                ),
+                'right_rect': pygame.Rect(
+                    bar_rect.right,
+                    rect.y,
+                    max(0, rect.right - bar_rect.right),
+                    rect.height,
+                ),
+            }
 
             # Slider rengi (dolgu + knob için ortak) – neon palette
             if key in ('music_volume', 'menu_music_volume'):
@@ -2624,9 +2756,9 @@ class TabbedSettingsScreen:
             track_surf = pygame.Surface((bar_rect.width, bar_h), pygame.SRCALPHA)
             pygame.draw.rect(track_surf, (20, 28, 48, 200), track_surf.get_rect(), border_radius=r)
             pygame.draw.rect(track_surf, (60, 80, 120, 130), track_surf.get_rect(), 1, border_radius=r)
-            hl_t = pygame.Surface((max(1, bar_rect.width - 6), 2), pygame.SRCALPHA)
+            hl_t = pygame.Surface((max(1, bar_rect.width - s(6, minimum=4)), s(2, minimum=2)), pygame.SRCALPHA)
             hl_t.fill((255, 255, 255, 14))
-            track_surf.blit(hl_t, (3, 3))
+            track_surf.blit(hl_t, (s(3, minimum=2), s(3, minimum=2)))
             self.screen.blit(track_surf, bar_rect.topleft)
 
             # Dolgu – parlak pill + üst vurgu şeridi
@@ -2635,9 +2767,9 @@ class TabbedSettingsScreen:
                 fill_surf = pygame.Surface((fill_w, bar_h), pygame.SRCALPHA)
                 pygame.draw.rect(fill_surf, (*fill_color, 220), fill_surf.get_rect(), border_radius=r)
                 # üst parlak vurgu
-                hl_f = pygame.Surface((max(1, fill_w - 8), 3), pygame.SRCALPHA)
+                hl_f = pygame.Surface((max(1, fill_w - s(8, minimum=6)), s(3, minimum=2)), pygame.SRCALPHA)
                 hl_f.fill((255, 255, 255, 70))
-                fill_surf.blit(hl_f, (4, 2))
+                fill_surf.blit(hl_f, (s(4, minimum=3), s(2, minimum=1)))
                 # hafif glow overlay
                 glow_c = tuple(min(255, c + 55) for c in fill_color)
                 pygame.draw.rect(fill_surf, (*glow_c, 45), fill_surf.get_rect(), border_radius=r)
@@ -2645,14 +2777,15 @@ class TabbedSettingsScreen:
 
             # Knob – glow + dış halka + iç daire + vurgu nokta
             knob_x = bar_rect.x + fill_w
-            knob_r = 9
+            knob_r = s(9, minimum=6)
             is_active = selected or (self._slider_drag_active and self._slider_drag_key == key)
             if is_active:
-                glow_surf = pygame.Surface((knob_r * 2 + 12, knob_r * 2 + 12), pygame.SRCALPHA)
+                glow_pad = s(6, minimum=4)
+                glow_surf = pygame.Surface((knob_r * 2 + glow_pad * 2, knob_r * 2 + glow_pad * 2), pygame.SRCALPHA)
                 for gi, ga in enumerate([20, 40, 60]):
-                    gr = knob_r + 6 - gi * 2
-                    pygame.draw.circle(glow_surf, (*fill_color, ga), (knob_r + 6, knob_r + 6), gr)
-                self.screen.blit(glow_surf, (knob_x - knob_r - 6, rect.centery - knob_r - 6))
+                    gr = knob_r + glow_pad - gi * s(2, minimum=1)
+                    pygame.draw.circle(glow_surf, (*fill_color, ga), (knob_r + glow_pad, knob_r + glow_pad), gr)
+                self.screen.blit(glow_surf, (knob_x - knob_r - glow_pad, rect.centery - knob_r - glow_pad))
             pygame.draw.circle(self.screen, fill_color, (knob_x, rect.centery), knob_r, 2)
             knob_inner = (255, 255, 255) if is_active else (200, 212, 230)
             pygame.draw.circle(self.screen, knob_inner, (knob_x, rect.centery), knob_r - 2)
@@ -2660,6 +2793,7 @@ class TabbedSettingsScreen:
 
     def _draw_selector_value(self, rect: pygame.Rect, item: dict, selected: bool) -> dict | None:
         """Selector tipi ayar için < değer > göster."""
+        s = self._s
         if item.get('type') == 'keybind' and item.get('section') == 'single_player':
             action_key = item.get('action_key')
             row = self._control_config.get('single_player', {}).get(action_key, {})
@@ -2677,11 +2811,11 @@ class TabbedSettingsScreen:
                 else:
                     primary_text = waiting_text
 
-            panel_h = max(30, rect.height - 18)
-            gap = 10
-            total_w = min(340, int(rect.width * 0.46))
-            each_w = max(90, (total_w - gap) // 2)
-            right_margin = 24
+            panel_h = max(s(30, minimum=24), rect.height - s(18, minimum=12))
+            gap = s(10, minimum=6)
+            total_w = min(s(340, minimum=240), int(rect.width * 0.46))
+            each_w = max(s(90, minimum=72), (total_w - gap) // 2)
+            right_margin = s(24, minimum=16)
             right_x = rect.right - right_margin - each_w
             left_x = right_x - gap - each_w
 
@@ -2697,10 +2831,10 @@ class TabbedSettingsScreen:
             def _draw_slot(slot_rect: pygame.Rect, text: str, active: bool) -> None:
                 bg = (32, 48, 80, 230) if active else (20, 30, 54, 200)
                 border = (90, 180, 255) if active else (55, 78, 112)
-                pygame.draw.rect(self.screen, bg, slot_rect, border_radius=8)
-                pygame.draw.rect(self.screen, border, slot_rect, 1, border_radius=8)
+                pygame.draw.rect(self.screen, bg, slot_rect, border_radius=s(8, minimum=6))
+                pygame.draw.rect(self.screen, border, slot_rect, 1, border_radius=s(8, minimum=6))
                 txt_color = (235, 245, 255) if active else (180, 205, 235)
-                txt_font = retro_style.get_fitting_font(text, 20, slot_rect.width - 12, bold=active)
+                txt_font = self._fit_font(text, 20, slot_rect.width - s(12, minimum=8), bold=active, minimum=11)
                 txt_surf = txt_font.render(text, True, txt_color)
                 self.screen.blit(txt_surf, txt_surf.get_rect(center=slot_rect.center))
 
@@ -2722,11 +2856,11 @@ class TabbedSettingsScreen:
                 else:
                     primary_text = waiting_text
 
-            panel_h = max(30, rect.height - 18)
-            gap = 10
-            total_w = min(340, int(rect.width * 0.46))
-            each_w = max(90, (total_w - gap) // 2)
-            right_margin = 24
+            panel_h = max(s(30, minimum=24), rect.height - s(18, minimum=12))
+            gap = s(10, minimum=6)
+            total_w = min(s(340, minimum=240), int(rect.width * 0.46))
+            each_w = max(s(90, minimum=72), (total_w - gap) // 2)
+            right_margin = s(24, minimum=16)
             right_x = rect.right - right_margin - each_w
             left_x = right_x - gap - each_w
 
@@ -2742,10 +2876,10 @@ class TabbedSettingsScreen:
             def _draw_slot(slot_rect: pygame.Rect, text: str, active: bool) -> None:
                 bg = (32, 48, 80, 230) if active else (20, 30, 54, 200)
                 border = (90, 180, 255) if active else (55, 78, 112)
-                pygame.draw.rect(self.screen, bg, slot_rect, border_radius=8)
-                pygame.draw.rect(self.screen, border, slot_rect, 1, border_radius=8)
+                pygame.draw.rect(self.screen, bg, slot_rect, border_radius=s(8, minimum=6))
+                pygame.draw.rect(self.screen, border, slot_rect, 1, border_radius=s(8, minimum=6))
                 txt_color = (235, 245, 255) if active else (180, 205, 235)
-                txt_font = retro_style.get_fitting_font(text, 20, slot_rect.width - 12, bold=active)
+                txt_font = self._fit_font(text, 20, slot_rect.width - s(12, minimum=8), bold=active, minimum=11)
                 txt_surf = txt_font.render(text, True, txt_color)
                 self.screen.blit(txt_surf, txt_surf.get_rect(center=slot_rect.center))
 
@@ -2756,45 +2890,47 @@ class TabbedSettingsScreen:
 
         value_text, value_color = self._get_display_value(item)
 
-        arrow_font = retro_style.get_font(18, bold=True)
+        arrow_font = self._font(18, bold=True, minimum=12)
         arrow_color = (80, 160, 255) if selected else (100, 120, 150)
 
-        val_font = retro_style.get_fitting_font(value_text, 20, 180, bold=True)
+        val_font = self._fit_font(value_text, 20, s(180, minimum=120), bold=True, minimum=11)
         val_surf = val_font.render(value_text, True, value_color)
 
-        total_w = val_surf.get_width() + 50
-        cx = rect.right - 30 - total_w // 2
+        total_w = val_surf.get_width() + s(50, minimum=34)
+        cx = rect.right - s(30, minimum=20) - total_w // 2
 
         left_arrow = arrow_font.render('<', True, arrow_color)
         right_arrow = arrow_font.render('>', True, arrow_color)
 
-        la_rect = left_arrow.get_rect(center=(cx - val_surf.get_width() // 2 - 16, rect.centery))
-        ra_rect = right_arrow.get_rect(center=(cx + val_surf.get_width() // 2 + 16, rect.centery))
+        la_rect = left_arrow.get_rect(center=(cx - val_surf.get_width() // 2 - s(16, minimum=10), rect.centery))
+        ra_rect = right_arrow.get_rect(center=(cx + val_surf.get_width() // 2 + s(16, minimum=10), rect.centery))
         self.screen.blit(left_arrow, la_rect)
         self.screen.blit(val_surf, val_surf.get_rect(center=(cx, rect.centery)))
         self.screen.blit(right_arrow, ra_rect)
         # Hit zone'ları büyüt, kolay tıklanabilir olsun
-        la_hit = la_rect.inflate(20, rect.height)
-        ra_hit = ra_rect.inflate(20, rect.height)
+        la_hit = la_rect.inflate(s(20, minimum=14), rect.height)
+        ra_hit = ra_rect.inflate(s(20, minimum=14), rect.height)
         return {'left_rect': la_hit, 'right_rect': ra_hit}
 
     def _draw_submenu_arrow(self, rect: pygame.Rect, selected: bool) -> None:
         """Submenu tipi ayar için > oku."""
-        arrow_font = retro_style.get_font(22, bold=True)
+        arrow_font = self._font(22, bold=True, minimum=14)
         color = (80, 160, 255) if selected else (100, 120, 150)
         arrow = arrow_font.render('>', True, color)
-        self.screen.blit(arrow, arrow.get_rect(center=(rect.right - 28, rect.centery)))
+        self.screen.blit(arrow, arrow.get_rect(center=(rect.right - self._s(28, minimum=20), rect.centery)))
 
     def _draw_vsync_prompt(self) -> None:
         """VSync restart gerekliliği popup'ı."""
+        s = self._s
+        self._apply_responsive_metrics()
         width, height = self.screen.get_size()
 
         overlay = pygame.Surface((width, height), pygame.SRCALPHA)
         overlay.fill((0, 0, 0, 150))
         self.screen.blit(overlay, (0, 0))
 
-        panel_w = min(580, width - 120)
-        panel_h = 200
+        panel_w = min(s(580, minimum=420), width - s(120, minimum=84))
+        panel_h = s(200, minimum=170)
         panel_rect = pygame.Rect((width - panel_w) // 2, (height - panel_h) // 2, panel_w, panel_h)
         retro_style.draw_panel(self.screen, panel_rect, title=_t('vsync_changed', 'VSync Değişti'))
 
@@ -2803,18 +2939,19 @@ class TabbedSettingsScreen:
             _t('vsync_restart_msg1', 'VSync değişikliği yeniden başlatma gerektirir.' if lang == 'tr' else 'VSync change requires restart.'),
             _t('vsync_restart_msg2', 'Şimdi yeniden başlatmak ister misiniz?' if lang == 'tr' else 'Would you like to restart now?'),
         ]
-        font = retro_style.get_font(20, bold=False)
-        y = panel_rect.y + 60
+        font = self._font(20, minimum=13)
+        y = panel_rect.y + s(60, minimum=44)
         for line in msg_lines:
             surf = font.render(line, True, (220, 230, 245))
             self.screen.blit(surf, surf.get_rect(center=(panel_rect.centerx, y)))
-            y += 28
+            y += s(28, minimum=20)
 
-        btn_h = 48
-        btn_gap = 16
-        btn_w = (panel_w - 60 - btn_gap) // 2
-        btn_y = panel_rect.bottom - btn_h - 20
-        btn1 = pygame.Rect(panel_rect.x + 30, btn_y, btn_w, btn_h)
+        btn_h = s(48, minimum=38)
+        btn_gap = s(16, minimum=12)
+        side_pad = s(30, minimum=20)
+        btn_w = (panel_w - side_pad * 2 - btn_gap) // 2
+        btn_y = panel_rect.bottom - btn_h - s(20, minimum=14)
+        btn1 = pygame.Rect(panel_rect.x + side_pad, btn_y, btn_w, btn_h)
         btn2 = pygame.Rect(btn1.right + btn_gap, btn_y, btn_w, btn_h)
         self._vsync_prompt_buttons = [btn1, btn2]
 
@@ -2824,27 +2961,30 @@ class TabbedSettingsScreen:
         retro_style.draw_button(self.screen, btn2, later_text, selected=self._vsync_prompt_choice == 1)
 
     def _draw_display_mode_confirm_panel(self) -> None:
+        s = self._s
+        self._apply_responsive_metrics()
         width, height = self.screen.get_size()
 
         overlay = pygame.Surface((width, height), pygame.SRCALPHA)
         overlay.fill((0, 0, 0, 160))
         self.screen.blit(overlay, (0, 0))
 
-        panel_w = min(620, max(420, width - 120))
-        panel_h = 210
+        panel_w = min(s(620, minimum=460), max(s(420, minimum=340), width - s(120, minimum=84)))
+        panel_h = s(210, minimum=180)
         panel_rect = pygame.Rect((width - panel_w) // 2, (height - panel_h) // 2, panel_w, panel_h)
 
         try:
             retro_style.draw_glass_panel(self.screen, panel_rect, alpha=220)
         except Exception:
-            pygame.draw.rect(self.screen, (24, 32, 56), panel_rect, border_radius=12)
-            pygame.draw.rect(self.screen, (140, 170, 220), panel_rect, 2, border_radius=12)
+            pygame.draw.rect(self.screen, (24, 32, 56), panel_rect, border_radius=s(12, minimum=8))
+            pygame.draw.rect(self.screen, (140, 170, 220), panel_rect, s(2, minimum=1), border_radius=s(12, minimum=8))
 
-        btn_h = 48
-        btn_gap = 16
-        btn_w = (panel_w - 60 - btn_gap) // 2
-        btn_y = panel_rect.bottom - btn_h - 20
-        yes_btn = pygame.Rect(panel_rect.x + 30, btn_y, btn_w, btn_h)
+        btn_h = s(48, minimum=38)
+        btn_gap = s(16, minimum=12)
+        side_pad = s(30, minimum=20)
+        btn_w = (panel_w - side_pad * 2 - btn_gap) // 2
+        btn_y = panel_rect.bottom - btn_h - s(20, minimum=14)
+        yes_btn = pygame.Rect(panel_rect.x + side_pad, btn_y, btn_w, btn_h)
         no_btn = pygame.Rect(yes_btn.right + btn_gap, btn_y, btn_w, btn_h)
 
         self._display_mode_confirm_yes_rect = yes_btn
@@ -2854,5 +2994,220 @@ class TabbedSettingsScreen:
             retro_style.draw_button(self.screen, yes_btn, _t('yes', 'Evet'))
             retro_style.draw_button(self.screen, no_btn, _t('no', 'Hayır'))
         except Exception:
-            pygame.draw.rect(self.screen, (72, 152, 92), yes_btn, border_radius=10)
-            pygame.draw.rect(self.screen, (166, 88, 88), no_btn, border_radius=10)
+            pygame.draw.rect(self.screen, (72, 152, 92), yes_btn, border_radius=s(10, minimum=8))
+            pygame.draw.rect(self.screen, (166, 88, 88), no_btn, border_radius=s(10, minimum=8))
+
+    def _draw_campaign_phase_select_overlay(self) -> None:
+        """Kampanya faz seçici overlay panelini çiz."""
+        metrics = self._campaign_phase_overlay_metrics()
+        width, height = self.screen.get_size()
+        dim = pygame.Surface((width, height), pygame.SRCALPHA)
+        dim.fill((0, 0, 0, 145))
+        self.screen.blit(dim, (0, 0))
+
+        panel_rect = metrics['panel']
+        retro_style.draw_glass_panel(
+            self.screen,
+            panel_rect,
+            alpha=220,
+            border_color=(100, 200, 255),
+            glow=True,
+        )
+
+        title_font = self._font(26, bold=True, minimum=18)
+        title_text = _t('campaign_phase_selector_title', 'Görev Modu – Dünya Seçimi')
+        title_surf = title_font.render(title_text, True, (235, 245, 255))
+        self.screen.blit(title_surf, (int(metrics['title_x']), int(metrics['title_y'])))
+
+        phases = get_campaign_phase_entries()
+        item_h = int(metrics['item_h'])
+        gap = int(metrics['gap'])
+        list_y = int(metrics['list_y'])
+        item_x = int(metrics['item_x'])
+        item_w = int(metrics['item_w'])
+        self._campaign_phase_item_rects = []
+
+        world_colors = {
+            1: (80, 200, 120),
+            2: (100, 180, 255),
+            3: (255, 120, 60),
+            4: (180, 130, 255),
+            5: (255, 220, 80),
+        }
+
+        label_font = self._font(20, bold=True, minimum=13)
+        sub_font = self._font(15, minimum=11)
+        track_count_font = self._font(14, minimum=10)
+
+        for i, (mode_key, world_num, label, level_range) in enumerate(phases):
+            y = list_y + i * (item_h + gap)
+            item_rect = pygame.Rect(item_x, y, item_w, item_h)
+            self._campaign_phase_item_rects.append((item_rect, i))
+
+            is_selected = i == self._campaign_phase_selected
+            color = world_colors.get(world_num, (150, 170, 200))
+
+            bg_surf = pygame.Surface(item_rect.size, pygame.SRCALPHA)
+            bg_alpha = 70 if is_selected else 35
+            bg_color = (*color, bg_alpha)
+            pygame.draw.rect(bg_surf, bg_color, bg_surf.get_rect(), border_radius=self._s(12, minimum=8))
+            self.screen.blit(bg_surf, item_rect.topleft)
+
+            border_alpha = 255 if is_selected else 60
+            border_color = (*color[:3],)
+            if is_selected:
+                pygame.draw.rect(self.screen, border_color, item_rect, width=self._s(2, minimum=1), border_radius=self._s(12, minimum=8))
+            else:
+                border_surf = pygame.Surface(item_rect.size, pygame.SRCALPHA)
+                pygame.draw.rect(border_surf, (*border_color, border_alpha), border_surf.get_rect(), width=1, border_radius=self._s(12, minimum=8))
+                self.screen.blit(border_surf, item_rect.topleft)
+
+            indicator_rect = pygame.Rect(item_rect.x + self._s(8, minimum=6), item_rect.y + self._s(10, minimum=8), self._s(4, minimum=3), item_rect.height - self._s(20, minimum=16))
+            pygame.draw.rect(self.screen, color, indicator_rect, border_radius=max(2, indicator_rect.width // 2))
+
+            text_color = (255, 255, 255) if is_selected else (210, 220, 235)
+            label_surf = label_font.render(label, True, text_color)
+            self.screen.blit(label_surf, (item_rect.x + self._s(22, minimum=16), item_rect.y + self._s(12, minimum=8)))
+
+            range_surf = sub_font.render(level_range, True, (160, 175, 200))
+            self.screen.blit(range_surf, (item_rect.x + self._s(22, minimum=16), item_rect.y + self._s(40, minimum=28)))
+
+            try:
+                playlist = self.settings_manager.get_mode_music_playlist(mode_key)
+                count = len(playlist) if playlist else 0
+            except Exception:
+                count = 0
+            if count > 0:
+                count_text = f"{count} {_t('track_count_unit', 'parça')}"
+                count_color = (150, 220, 255)
+            else:
+                count_text = _t('track_default_label', 'Varsayılan')
+                count_color = (120, 140, 170)
+            count_surf = track_count_font.render(count_text, True, count_color)
+            self.screen.blit(count_surf, (item_rect.right - count_surf.get_width() - self._s(16, minimum=12), item_rect.y + (item_h - count_surf.get_height()) // 2))
+
+    def _draw_mode_playlist_edit_overlay(self) -> None:
+        metrics = self._playlist_overlay_metrics()
+        width, height = self.screen.get_size()
+        dim = pygame.Surface((width, height), pygame.SRCALPHA)
+        dim.fill((0, 0, 0, 145))
+        self.screen.blit(dim, (0, 0))
+
+        panel_rect = metrics['panel']
+        retro_style.draw_glass_panel(
+            self.screen,
+            panel_rect,
+            alpha=215,
+            border_color=retro_style.primary,
+            glow=True,
+        )
+
+        title_font = self._font(28, bold=True, minimum=18)
+        subtitle_font = self._font(18, minimum=12)
+        title = title_font.render(_t('mode_music_playlist_editor', 'Bölüm Müzikleri'), True, (235, 245, 255))
+        self.screen.blit(title, (int(metrics['title_x']), int(metrics['title_y'])))
+
+        mode_key = self._playlist_edit_mode_key or ''
+        mode_name = str(mode_key)
+        for mk, label in get_mode_music_entries():
+            if mk == mode_key:
+                mode_name = str(label)
+                break
+        if mode_key.startswith('campaign_world'):
+            for mk, _wn, label, _lr in get_campaign_phase_entries():
+                if mk == mode_key:
+                    mode_name = str(label)
+                    break
+        subtitle = subtitle_font.render(mode_name, True, (170, 190, 220))
+        self.screen.blit(subtitle, (int(metrics['title_x']), int(metrics['subtitle_y'])))
+
+        list_rect = metrics['list_rect']
+        item_h = int(metrics['item_h'])
+        gap = int(metrics['gap'])
+        total_items = len(self._playlist_edit_items) + 1
+
+        max_scroll = self._playlist_list_max_scroll(total_items, item_h, gap, list_rect.height)
+        self._playlist_edit_scroll = max(0, min(self._playlist_edit_scroll, max_scroll))
+
+        self._playlist_edit_item_rects = []
+        self.screen.set_clip(list_rect)
+        for idx in range(total_items):
+            y = list_rect.y + idx * (item_h + gap) - self._playlist_edit_scroll
+            if y + item_h < list_rect.y or y > list_rect.bottom:
+                continue
+
+            rect = pygame.Rect(list_rect.x, y, list_rect.width, item_h)
+            self._playlist_edit_item_rects.append((rect, idx))
+
+            text = '+ Ekle' if idx == 0 else self._track_label_for_value(self._playlist_edit_items[idx - 1])
+            retro_style.draw_uniform_button(
+                self.screen,
+                rect,
+                text,
+                color_code=retro_style.primary,
+                selected=(idx == self._playlist_edit_selected),
+            )
+        self.screen.set_clip(None)
+
+        total_h = total_items * (item_h + gap)
+        if total_h > list_rect.height:
+            retro_style.draw_scrollbar(self.screen, metrics['scrollbar_rect'], self._playlist_edit_scroll, total_h, list_rect.height)
+
+        hint_text = 'ESC: Kapat   ENTER: Seç/Ekle   DELETE: Sil   ←/→: Taşı'
+        hint_surf = self.font_hint.render(hint_text, True, (180, 200, 220))
+        self.screen.blit(hint_surf, (int(metrics['hint_x']), int(metrics['hint_y'])))
+
+        if not self._playlist_edit_picker_open:
+            return
+
+        picker_dim = pygame.Surface((width, height), pygame.SRCALPHA)
+        picker_dim.fill((0, 0, 0, 95))
+        self.screen.blit(picker_dim, (0, 0))
+
+        picker_rect = metrics['picker']
+        retro_style.draw_glass_panel(
+            self.screen,
+            picker_rect,
+            alpha=220,
+            border_color=retro_style.primary,
+            glow=True,
+        )
+
+        picker_title = title_font.render(t('tracks'), True, (235, 245, 255))
+        self.screen.blit(picker_title, (int(metrics['picker_title_x']), int(metrics['picker_title_y'])))
+
+        picker_list_rect = metrics['picker_list_rect']
+        p_item_h = int(metrics['picker_item_h'])
+        p_gap = int(metrics['picker_gap'])
+
+        self._playlist_edit_picker_scroll = max(0, min(self._playlist_edit_picker_scroll, self._picker_max_scroll(picker_list_rect.height, p_item_h, p_gap)))
+
+        self._playlist_edit_picker_rects = []
+        self.screen.set_clip(picker_list_rect)
+        for idx, option in enumerate(self._track_options):
+            y = picker_list_rect.y + idx * (p_item_h + p_gap) - self._playlist_edit_picker_scroll
+            if y + p_item_h < picker_list_rect.y or y > picker_list_rect.bottom:
+                continue
+
+            rect = pygame.Rect(picker_list_rect.x, y, picker_list_rect.width, p_item_h)
+            self._playlist_edit_picker_rects.append((rect, idx))
+
+            label = str(option.get('label', ''))
+            retro_style.draw_uniform_button(
+                self.screen,
+                rect,
+                label,
+                color_code=retro_style.primary,
+                selected=(idx == self._playlist_edit_picker_selected),
+            )
+        self.screen.set_clip(None)
+
+        picker_total_h = len(self._track_options) * (p_item_h + p_gap)
+        if picker_total_h > picker_list_rect.height:
+            retro_style.draw_scrollbar(
+                self.screen,
+                metrics['picker_scrollbar_rect'],
+                self._playlist_edit_picker_scroll,
+                picker_total_h,
+                picker_list_rect.height,
+            )

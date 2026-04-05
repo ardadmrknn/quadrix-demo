@@ -374,18 +374,23 @@ class ScreenTransition:
         if cover_width > 0:
             left_rect = pygame.Rect(0, 0, cover_width, height)
             right_rect = pygame.Rect(width - cover_width, 0, cover_width, height)
-            
-            # Gradyan efektli perde rengi
-            overlay = pygame.Surface((cover_width, height), pygame.SRCALPHA)
-            for x in range(cover_width):
-                # Kenardan merkeze doğru gradient
-                ratio = x / max(1, cover_width)
-                alpha = int(220 + 35 * ratio)  # 220-255 arası
-                pygame.draw.line(overlay, (15, 20, 30, alpha), (x, 0), (x, height))
-            
-            screen.blit(overlay, left_rect.topleft)
-            flipped = pygame.transform.flip(overlay, True, False)
-            screen.blit(flipped, right_rect.topleft)
+
+            left_overlay = pygame.Surface(left_rect.size, pygame.SRCALPHA)
+            right_overlay = pygame.Surface(right_rect.size, pygame.SRCALPHA)
+            left_overlay.fill((15, 20, 30, 236))
+            right_overlay.fill((15, 20, 30, 236))
+
+            edge_steps = min(8, cover_width)
+            for step in range(edge_steps):
+                ratio = step / max(1, edge_steps - 1)
+                alpha = int(54 * (1.0 - ratio))
+                left_x = max(0, cover_width - edge_steps + step)
+                right_x = min(cover_width - 1, step)
+                pygame.draw.line(left_overlay, (48, 62, 82, alpha), (left_x, 0), (left_x, height))
+                pygame.draw.line(right_overlay, (48, 62, 82, alpha), (right_x, 0), (right_x, height))
+
+            screen.blit(left_overlay, left_rect.topleft)
+            screen.blit(right_overlay, right_rect.topleft)
     
     def _draw_circle(self, screen: pygame.Surface, width: int, height: int):
         """Daire efekti - ortadan açılıp kapanan."""

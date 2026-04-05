@@ -59,12 +59,12 @@ class SurvivalMode(Game):
     
     def __init__(self, difficulty='Normal', sound_enabled=True, effects_enabled=True, 
                  achievement_manager=None, theme_manager=None, screen=None, fullscreen=False, 
-                 settings_manager=None, user_manager=None, game_mode='survival', score_manager=None):
+                 settings_manager=None, user_manager=None, game_mode='survival', score_manager=None, sound_manager=None):
         """Survival mode'u başlat"""
         super().__init__(
             difficulty, sound_enabled, effects_enabled, achievement_manager,
             theme_manager, screen, fullscreen, settings_manager, user_manager,
-            game_mode, score_manager=score_manager,
+            game_mode, sound_manager=sound_manager, score_manager=score_manager,
         )
 
         # Survival panel ölçeği için referans (tam ekran/büyük pencere baz alınır)
@@ -992,7 +992,7 @@ class CascadeMode(Game):
     TOPLAM: 800 bonus puan! 🎉
     """
     
-    def __init__(self, difficulty='Normal', sound_enabled=True, effects_enabled=True, achievement_manager=None, theme_manager=None, screen=None, fullscreen=False, settings_manager=None, user_manager=None, game_mode='cascade', score_manager=None):
+    def __init__(self, difficulty='Normal', sound_enabled=True, effects_enabled=True, achievement_manager=None, theme_manager=None, screen=None, fullscreen=False, settings_manager=None, user_manager=None, game_mode='cascade', score_manager=None, sound_manager=None):
         """Cascade mode'u başlat"""
         super().__init__(
             difficulty,
@@ -1005,6 +1005,7 @@ class CascadeMode(Game):
             settings_manager,
             user_manager,
             game_mode,
+            sound_manager=sound_manager,
             score_manager=score_manager,
         )
         
@@ -1928,7 +1929,7 @@ class DailyChallengeMode(Game):
         materialized = cls._materialize_texts(base, lang)
         return cls._enrich_challenge_ui(materialized, lang)
     
-    def __init__(self, difficulty='Normal', sound_enabled=True, effects_enabled=True, achievement_manager=None, theme_manager=None, screen=None, fullscreen=False, settings_manager=None, user_manager=None, game_mode='daily', score_manager=None):
+    def __init__(self, difficulty='Normal', sound_enabled=True, effects_enabled=True, achievement_manager=None, theme_manager=None, screen=None, fullscreen=False, settings_manager=None, user_manager=None, game_mode='daily', score_manager=None, sound_manager=None):
         """Daily Challenge'ı başlat"""
         super().__init__(
             difficulty,
@@ -1941,6 +1942,7 @@ class DailyChallengeMode(Game):
             settings_manager,
             user_manager,
             game_mode,
+            sound_manager=sound_manager,
             score_manager=score_manager,
         )
         

@@ -8,7 +8,8 @@ from constants import *
 from retro_style import retro_style
 from background_effects import get_shared_falling_blocks_layer
 from platform_utils import normalize_mouse_pos, is_fullscreen_toggle
-from localization import t
+from localization import t, get_language
+from ui_scaling import get_scale, scale_px
 
 
 # ==============================================================================
@@ -364,6 +365,7 @@ class GuideScreen:
         self.scroll_y = 0
         self.max_scroll = 0
         self.scroll_speed = 40
+        self._base_scroll_speed = 40
         
         # Kart galerisi için index
         self.card_index = 0
@@ -377,7 +379,7 @@ class GuideScreen:
         
         # Cache
         self._content_cache: Dict = {}
-        self._last_width = 0
+        self._last_content_signature: Optional[Tuple[int, int, str]] = None
         self._icon_cache: Dict[str, pygame.Surface] = {}
         
         # Tab rect'leri (mouse için)
@@ -392,6 +394,44 @@ class GuideScreen:
 
         # Falling blocks arka plan
         self.falling_blocks = get_shared_falling_blocks_layer()
+
+    def _ui_scale(self, min_scale: float = 0.72, max_scale: float = 1.18) -> float:
+        return get_scale(
+            self.screen,
+            min_scale=min_scale,
+            max_scale=max_scale,
+            reference_size=(1366.0, 768.0),
+        )
+
+    def _s(self, value: int | float, minimum: int = 1, *, scale: float | None = None) -> int:
+        active_scale = self._ui_scale() if scale is None else float(scale)
+        return scale_px(value, active_scale, minimum=minimum)
+
+    def _font(
+        self,
+        size: int | float,
+        *,
+        bold: bool = False,
+        minimum: int = 9,
+        scale: float | None = None,
+    ):
+        return retro_style.get_font(self._s(size, minimum=minimum, scale=scale), bold=bold)
+
+    def _scroll_step(self) -> int:
+        return self._s(self._base_scroll_speed, minimum=24)
+
+    def _scrollbar_track_metrics(self) -> tuple[int, int, int, int]:
+        scale = self._ui_scale()
+        bar_width = self._s(10, minimum=8, scale=scale)
+        padding = self._s(2, minimum=2, scale=scale)
+        arrow_zone = max(bar_width, bar_width + padding)
+        track_min = self._s(4, minimum=4, scale=scale)
+        thumb_fallback = self._s(20, minimum=16, scale=scale)
+        return arrow_zone, padding, track_min, thumb_fallback
+
+    def _content_cache_signature(self, width: int) -> Tuple[int, int, str]:
+        scale_key = int(round(self._ui_scale() * 1000))
+        return int(width), scale_key, str(get_language())
     
     def _load_card_icon(self, icon_name: str, size: int = 80) -> Optional[pygame.Surface]:
         """Kart ikonunu yükle ve cache'le"""
@@ -496,15 +536,15 @@ class GuideScreen:
         return self._build_default_content_surface(section, width)
     
     def _build_default_content_surface(self, section: Dict, width: int) -> pygame.Surface:
+        scale = self._ui_scale()
         
         # Font hazırla - Okunabilirlik için büyütüldü
-        subtitle_font = retro_style.get_font(24, bold=True)
-        body_font = retro_style.get_font(20, bold=False)  # 18 -> 20
-        header_font = retro_style.get_font(22, bold=True) # Bölüm başlıkları için
+        body_font = self._font(20, bold=False, minimum=13, scale=scale)
+        header_font = self._font(22, bold=True, minimum=14, scale=scale)
         
-        padding = 30 # Padding artırıldı
+        padding = self._s(30, minimum=20, scale=scale)
         content_width = width - padding * 2
-        line_height = 36 # Satır aralığı artırıldı
+        line_height = self._s(36, minimum=24, scale=scale)
         
         # Önce yüksekliği hesapla
         total_height = padding
@@ -513,12 +553,12 @@ class GuideScreen:
         for key in section.get('content_keys', []):
             text = t(key)
             lines = self._wrap_text(text, body_font, content_width)
-            total_height += len(lines) * line_height + 24
+            total_height += len(lines) * line_height + self._s(24, minimum=16, scale=scale)
         
-        total_height += padding + 60
+        total_height += padding + self._s(60, minimum=40, scale=scale)
         
         # Surface oluştur
-        surface = pygame.Surface((width, max(total_height, 400)), pygame.SRCALPHA)
+        surface = pygame.Surface((width, max(total_height, self._s(400, minimum=320, scale=scale))), pygame.SRCALPHA)
         
         # İçeriği çiz
         y = padding
@@ -536,14 +576,14 @@ class GuideScreen:
                     color = retro_style.accent
                     # Köşeli parantezleri kaldır ve ortala
                     render_text = line.strip('[]')
-                    y += 10 # Başlık öncesi biraz boşluk
+                    y += self._s(10, minimum=6, scale=scale)
                 
                 # Soru satırları (Q:)
                 elif line.startswith('Q:'):
                     current_font = body_font # Font aynı kalsın ama renk değişsin
                     color = (255, 200, 100) # Turuncu
                     render_text = line
-                    y += 5
+                    y += self._s(5, minimum=3, scale=scale)
                     
                 # Madde işaretleri
                 elif line.startswith('•') or line.startswith('-'):
@@ -564,7 +604,7 @@ class GuideScreen:
                 surface.blit(line_surf, (padding, y))
                 y += line_height
             
-            y += 24 # Paragraflar arası boşluk
+            y += self._s(24, minimum=16, scale=scale)
         
         return surface
     
@@ -670,11 +710,12 @@ class GuideScreen:
 
     def _build_how_to_play_surface(self, width: int) -> pygame.Surface:
         """Nasıl Oynanır bölümü - Grid layout kartlar"""
-        padding = 15
-        card_spacing = 15
+        scale = self._ui_scale()
+        padding = self._s(15, minimum=10, scale=scale)
+        card_spacing = self._s(15, minimum=10, scale=scale)
         cols = 3
         card_width = (width - padding * 2 - card_spacing * (cols - 1)) // cols
-        card_height = 320  # İçeriğin sığması için yükseklik
+        card_height = self._s(320, minimum=250, scale=scale)
         
         # Dinamik kontroller
         controls_text = self._get_dynamic_controls_text()
@@ -743,17 +784,17 @@ class GuideScreen:
             
             
             
-            title_font = retro_style.get_font(22, bold=True)
+            title_font = self._font(22, bold=True, minimum=14, scale=scale)
             title_surf = title_font.render(title_text, True, card['color'])
-            surface.blit(title_surf, (card_rect.x + 20, card_rect.y + 20))
+            surface.blit(title_surf, (card_rect.x + self._s(20, minimum=14, scale=scale), card_rect.y + self._s(20, minimum=14, scale=scale)))
             
             # Ayırıcı çizgi
             pygame.draw.line(surface, (*card['color'], 100), 
-                           (card_rect.x + 20, card_rect.y + 55),
-                           (card_rect.right - 20, card_rect.y + 55), 1)
+                           (card_rect.x + self._s(20, minimum=14, scale=scale), card_rect.y + self._s(55, minimum=38, scale=scale)),
+                           (card_rect.right - self._s(20, minimum=14, scale=scale), card_rect.y + self._s(55, minimum=38, scale=scale)), 1)
             
             # İçerik
-            content_font = retro_style.get_font(16, bold=False)
+            content_font = self._font(16, bold=False, minimum=11, scale=scale)
             
             # Manuel içerik veya localization anahtarı
             if card.get('manual_content'):
@@ -761,9 +802,9 @@ class GuideScreen:
             else:
                 content_text = t(card['content_key'])
                 
-            content_lines = self._wrap_text(content_text, content_font, card_width - 40)
+            content_lines = self._wrap_text(content_text, content_font, card_width - self._s(40, minimum=28, scale=scale))
             
-            content_y = card_rect.y + 70
+            content_y = card_rect.y + self._s(70, minimum=50, scale=scale)
             max_lines = 11 # Karta sığacak satır sayısı
             
             for line in content_lines[:max_lines]:
@@ -777,18 +818,19 @@ class GuideScreen:
                     line_color = retro_style.accent
                     
                 line_surf = content_font.render(line, True, line_color)
-                surface.blit(line_surf, (card_rect.x + 20, content_y))
-                content_y += 22
+                surface.blit(line_surf, (card_rect.x + self._s(20, minimum=14, scale=scale), content_y))
+                content_y += self._s(22, minimum=16, scale=scale)
                 
         return surface
     
     def _build_game_modes_surface(self, width: int) -> pygame.Surface:
         """Oyun Modları bölümü - 3 sütunlu grid, gerçek mod ikonları ile"""
-        padding = 20
-        card_spacing = 15
+        scale = self._ui_scale()
+        padding = self._s(20, minimum=12, scale=scale)
+        card_spacing = self._s(15, minimum=10, scale=scale)
         cols = 3  # 3 sütunlu grid
         card_width = (width - padding * 2 - card_spacing * (cols - 1)) // cols
-        card_height = 280  # Daha büyük kartlar (Okunabilirlik için artırıldı)
+        card_height = self._s(280, minimum=220, scale=scale)
         
         # Mod verileri - gerçek ikon dosyaları
         modes = [
@@ -830,45 +872,46 @@ class GuideScreen:
             pygame.draw.rect(surface, mode['color'], card_rect, 2, border_radius=12)
             
             # İkon yükle (icon_cache kullan — disk I/O engellemez)
-            icon_size = 100  # Daha büyük ikonlar
+            icon_size = self._s(100, minimum=72, scale=scale)
             if mode['icon']:
                 icon_key = os.path.join('mode_icons', mode['icon'])
                 icon = self._load_card_icon(icon_key, icon_size)
                 if icon:
                     icon_x = card_rect.centerx - icon_size // 2
-                    surface.blit(icon, (icon_x, card_rect.y + 25))
+                    surface.blit(icon, (icon_x, card_rect.y + self._s(25, minimum=16, scale=scale)))
             
             # Mod ismi
-            name_font = retro_style.get_font(16, bold=True)
+            name_font = self._font(16, bold=True, minimum=11, scale=scale)
             name_text = t(mode.get('name_key', '')) if mode.get('name_key') else mode.get('name', '')
             if not name_text:
                 name_text = mode.get('name', '')
             name_surf = name_font.render(name_text, True, mode['color'])
             name_x = card_rect.centerx - name_surf.get_width() // 2
-            surface.blit(name_surf, (name_x, card_rect.y + 135))
+            surface.blit(name_surf, (name_x, card_rect.y + self._s(135, minimum=100, scale=scale)))
             
             # Açıklama - daha kısa, 3 sütuna sığacak şekilde
-            desc_font = retro_style.get_font(14, bold=False)  # Font büyütüldü
+            desc_font = self._font(14, bold=False, minimum=10, scale=scale)
             desc_text = t(mode['key'])
             # Metni kısalt
-            desc_lines = self._wrap_text(desc_text, desc_font, card_width - 16)
+            desc_lines = self._wrap_text(desc_text, desc_font, card_width - self._s(16, minimum=12, scale=scale))
             
-            desc_y = card_rect.y + 165
+            desc_y = card_rect.y + self._s(165, minimum=122, scale=scale)
             for line in desc_lines[:5]:  # Max 5 satır
                 line_surf = desc_font.render(line, True, retro_style.text_secondary)
                 line_x = card_rect.centerx - line_surf.get_width() // 2
                 surface.blit(line_surf, (line_x, desc_y))
-                desc_y += 18
+                desc_y += self._s(18, minimum=13, scale=scale)
         
         return surface
     
     def _build_card_gallery_surface(self, width: int) -> pygame.Surface:
         """Kart galerisi - Tek liste aşağı aksın (Oyun Modları ile aynı stil)"""
-        padding = 20
-        card_spacing = 15
+        scale = self._ui_scale()
+        padding = self._s(20, minimum=12, scale=scale)
+        card_spacing = self._s(15, minimum=10, scale=scale)
         cols = 3
         card_width = (width - padding * 2 - card_spacing * (cols - 1)) // cols
-        card_height = 280  # Oyun Modları ile aynı yükseklik
+        card_height = self._s(280, minimum=220, scale=scale)
         
         # Tüm kartları göster
         page_cards = CARD_DATA
@@ -896,12 +939,12 @@ class GuideScreen:
             pygame.draw.rect(surface, card['color'], card_rect, 2, border_radius=12)
             
             # İkon - BÜYÜK (Oyun Modları gibi)
-            icon_size = 100
+            icon_size = self._s(100, minimum=72, scale=scale)
             icon = self._load_card_icon(card.get('icon') or '', icon_size)
             
             if icon:
                 icon_x = card_rect.centerx - icon_size // 2
-                icon_y = card_rect.y + 25  # Üstten boşluk
+                icon_y = card_rect.y + self._s(25, minimum=16, scale=scale)
                 
                 # İkon çerçevesi
                 border_rect = pygame.Rect(icon_x - 2, icon_y - 2, icon_size + 4, icon_size + 4)
@@ -915,7 +958,7 @@ class GuideScreen:
                 pass
             
             # Kart İsmi - BÜYÜK (Oyun Modları gibi)
-            title_font = retro_style.get_font(22, bold=True)
+            title_font = self._font(22, bold=True, minimum=14, scale=scale)
             name_key = card.get('name_key', '')
             card_name = t(name_key) if name_key else ''
             if not card_name or card_name == name_key:
@@ -923,26 +966,26 @@ class GuideScreen:
             
             # Sığdırma kontrolü (çok uzun isimler için font küçült)
             if len(card_name) > 16:
-                 title_font = retro_style.get_font(18, bold=True)
+                 title_font = self._font(18, bold=True, minimum=12, scale=scale)
             
             title_surf = title_font.render(card_name, True, card['color'])
-            title_rect = title_surf.get_rect(center=(card_rect.centerx, card_rect.y + 145)) # 10px aşağı alındı
+            title_rect = title_surf.get_rect(center=(card_rect.centerx, card_rect.y + self._s(145, minimum=108, scale=scale)))
             surface.blit(title_surf, title_rect)
             
             # Açıklama - BÜYÜK (Oyun Modları gibi)
-            desc_font = retro_style.get_font(16, bold=False) # Font büyütüldü (14 -> 16)
+            desc_font = self._font(16, bold=False, minimum=11, scale=scale)
             desc_key = card.get('desc_key', '')
             desc_text = t(desc_key) if desc_key else ''
             if not desc_text or desc_text == desc_key:
                 desc_text = card.get('desc_fallback') or f"{card['id']} kartı."
             
-            desc_y = card_rect.y + 175 # Açıklama da aşağı kaydırıldı
-            desc_width = card_width - 16
+            desc_y = card_rect.y + self._s(175, minimum=130, scale=scale)
+            desc_width = card_width - self._s(16, minimum=12, scale=scale)
             
             # Metni sığdır
             lines = self._wrap_text(desc_text, desc_font, desc_width)
             
-            line_height = 20 # Satır aralığı artırıldı
+            line_height = self._s(20, minimum=14, scale=scale)
             max_lines = 5
             
             for line_idx, line in enumerate(lines[:max_lines]):
@@ -986,6 +1029,7 @@ class GuideScreen:
     def handle_input(self, event) -> Optional[str]:
         """Girdi işle"""
         if event.type == pygame.KEYDOWN:
+            scroll_step = self._scroll_step()
             # ESC - Geri
             if event.key == pygame.K_ESCAPE:
                 return 'back'
@@ -996,7 +1040,7 @@ class GuideScreen:
             # Tab değiştirme - Yukarı/Aşağı tuşları
             if event.key == pygame.K_UP:
                 if self.scroll_y > 0:
-                    self.scroll_y = max(0, self.scroll_y - self.scroll_speed)
+                    self.scroll_y = max(0, self.scroll_y - scroll_step)
                 elif self.selected_tab == 2:
                     # Önceki sayfa (3 kart geri)
                     cards_per_page = 9
@@ -1005,7 +1049,7 @@ class GuideScreen:
             
             elif event.key == pygame.K_DOWN:
                 if self.scroll_y < self.max_scroll:
-                    self.scroll_y = min(self.max_scroll, self.scroll_y + self.scroll_speed)
+                    self.scroll_y = min(self.max_scroll, self.scroll_y + scroll_step)
                 elif self.selected_tab == 2:
                     # Sonraki sayfa (3 kart ileri)
                     cards_per_page = 9
@@ -1047,7 +1091,7 @@ class GuideScreen:
                     if self.card_index >= cards_per_page:
                         self.card_index = max(0, (self.card_index // cards_per_page - 1) * cards_per_page)
                 else:
-                    self.scroll_y = max(0, self.scroll_y - 200)
+                    self.scroll_y = max(0, self.scroll_y - self._s(200, minimum=140))
             
             elif event.key == pygame.K_PAGEDOWN:
                 if self.selected_tab == 2:
@@ -1057,7 +1101,7 @@ class GuideScreen:
                     if next_page_start < self.max_cards:
                         self.card_index = next_page_start
                 else:
-                    self.scroll_y = min(self.max_scroll, self.scroll_y + 200)
+                    self.scroll_y = min(self.max_scroll, self.scroll_y + self._s(200, minimum=140))
             
             # Tab numaraları (1-4)
             elif pygame.K_1 <= event.key <= pygame.K_4:
@@ -1083,10 +1127,10 @@ class GuideScreen:
 
                 # Scrollbar track alanına tıklama → o pozisyona zıpla
                 if self._sb_container_rect and self._sb_container_rect.collidepoint(pos):
-                    _az = max(10, 10 + 2)
-                    _ty = self._sb_container_rect.top + _az + 2
-                    _th = max(4, self._sb_container_rect.height - _az * 2 - 4)
-                    _tmh = self._sb_thumb_rect.height if self._sb_thumb_rect else 20
+                    _az, _pad, _track_min, _thumb_default = self._scrollbar_track_metrics()
+                    _ty = self._sb_container_rect.top + _az + _pad
+                    _th = max(_track_min, self._sb_container_rect.height - _az * 2 - _track_min)
+                    _tmh = self._sb_thumb_rect.height if self._sb_thumb_rect else _thumb_default
                     _rel = pos[1] - _ty - _tmh // 2
                     self.scroll_y = int(max(0.0, min(1.0, _rel / max(1, _th - _tmh))) * self.max_scroll)
                     return None
@@ -1108,9 +1152,9 @@ class GuideScreen:
 
             # Mouse wheel scroll (eski button 4/5 protokolü)
             elif event.button == 4:
-                self.scroll_y = max(0, self.scroll_y - self.scroll_speed)
+                self.scroll_y = max(0, self.scroll_y - self._scroll_step())
             elif event.button == 5:
-                self.scroll_y = min(self.max_scroll, self.scroll_y + self.scroll_speed)
+                self.scroll_y = min(self.max_scroll, self.scroll_y + self._scroll_step())
 
         elif event.type == pygame.MOUSEBUTTONUP:
             if event.button == 1:
@@ -1118,17 +1162,17 @@ class GuideScreen:
                 self._sb_drag_offset_y = 0
 
         elif event.type == pygame.MOUSEWHEEL:
-            self.scroll_y = max(0, min(self.max_scroll, self.scroll_y - event.y * self.scroll_speed))
+            self.scroll_y = max(0, min(self.max_scroll, self.scroll_y - event.y * self._scroll_step()))
 
         elif event.type == pygame.MOUSEMOTION:
             pos = normalize_mouse_pos(event.pos) if hasattr(event, 'pos') else event.pos
             # Scrollbar drag
             if self._sb_drag_active and self._sb_container_rect:
                 sb_c = self._sb_container_rect
-                arrow_zone = max(10, 10 + 2)
-                track_y = sb_c.top + arrow_zone + 2
-                track_h = max(4, sb_c.height - arrow_zone * 2 - 4)
-                thumb_h = self._sb_thumb_rect.height if self._sb_thumb_rect else 20
+                arrow_zone, padding, track_min, thumb_default = self._scrollbar_track_metrics()
+                track_y = sb_c.top + arrow_zone + padding
+                track_h = max(track_min, sb_c.height - arrow_zone * 2 - track_min)
+                thumb_h = self._sb_thumb_rect.height if self._sb_thumb_rect else thumb_default
                 new_thumb_top = pos[1] - self._sb_drag_offset_y - track_y
                 new_thumb_top = max(0, min(new_thumb_top, track_h - thumb_h))
                 ratio = new_thumb_top / max(1, track_h - thumb_h)
@@ -1161,21 +1205,23 @@ class GuideScreen:
 
     def _get_bottom_button_rects(self) -> Tuple[pygame.Rect, pygame.Rect]:
         width, height = self.screen.get_size()
-        tutorial_w = min(280, max(220, width - 40))
-        back_w = min(200, max(180, width - 40))
-        btn_h = 50
-        gap = 16
+        scale = self._ui_scale()
+        outer_margin = self._s(40, minimum=32, scale=scale)
+        tutorial_w = min(self._s(280, minimum=220, scale=scale), max(self._s(220, minimum=180, scale=scale), width - outer_margin))
+        back_w = min(self._s(200, minimum=180, scale=scale), max(self._s(180, minimum=150, scale=scale), width - outer_margin))
+        btn_h = self._s(50, minimum=38, scale=scale)
+        gap = self._s(16, minimum=12, scale=scale)
 
-        if tutorial_w + back_w + gap <= width - 40:
+        if tutorial_w + back_w + gap <= width - outer_margin:
             total_w = tutorial_w + back_w + gap
             start_x = (width - total_w) // 2
-            y = height - btn_h - 25
+            y = height - btn_h - self._s(25, minimum=18, scale=scale)
             tutorial_rect = pygame.Rect(start_x, y, tutorial_w, btn_h)
             back_rect = pygame.Rect(start_x + tutorial_w + gap, y, back_w, btn_h)
             return tutorial_rect, back_rect
 
-        tutorial_rect = pygame.Rect((width - tutorial_w) // 2, height - btn_h - 85, tutorial_w, btn_h)
-        back_rect = pygame.Rect((width - back_w) // 2, height - btn_h - 25, back_w, btn_h)
+        tutorial_rect = pygame.Rect((width - tutorial_w) // 2, height - btn_h - self._s(85, minimum=64, scale=scale), tutorial_w, btn_h)
+        back_rect = pygame.Rect((width - back_w) // 2, height - btn_h - self._s(25, minimum=18, scale=scale), back_w, btn_h)
         return tutorial_rect, back_rect
 
     def _check_tab_click(self, pos: Tuple[int, int]) -> Optional[int]:
@@ -1217,6 +1263,7 @@ class GuideScreen:
     def draw(self):
         """Kılavuz ekranını çiz"""
         width, height = self.screen.get_size()
+        scale = self._ui_scale()
         
         self.anim_time += 16
         
@@ -1229,13 +1276,14 @@ class GuideScreen:
             self.falling_blocks.draw(self.screen)
         
         # Layout hesapla
-        tab_panel_width = min(240, int(width * 0.28))
-        content_x = tab_panel_width + 30
-        content_width = width - content_x - 30
-        content_height = height - 180
+        tab_panel_width = min(self._s(240, minimum=180, scale=scale), int(width * 0.28))
+        content_gap = self._s(30, minimum=20, scale=scale)
+        content_x = tab_panel_width + content_gap
+        content_width = width - content_x - content_gap
+        content_height = height - self._s(180, minimum=140, scale=scale)
         
         # Başlık
-        retro_style.draw_title(self.screen, t('guide_title'), (width // 2, 50))
+        retro_style.draw_title(self.screen, t('guide_title'), (width // 2, self._s(50, minimum=40, scale=scale)))
         
         # Sol tab paneli
         self._draw_tab_panel(tab_panel_width, height)
@@ -1255,22 +1303,24 @@ class GuideScreen:
         self._draw_hints(width, height)
     
     def _draw_tab_panel(self, panel_width: int, height: int):
+        scale = self._ui_scale()
         tabs = self._get_tabs()
-        tab_height = 64
-        tab_start_y = 110
-        gap = 8
+        tab_height = self._s(64, minimum=48, scale=scale)
+        tab_start_y = self._s(110, minimum=88, scale=scale)
+        gap = self._s(8, minimum=6, scale=scale)
+        left_margin = self._s(16, minimum=12, scale=scale)
         
         self._tab_rects = []
         
         for i, tab in enumerate(tabs):
-            tab_rect = pygame.Rect(16, tab_start_y + i * (tab_height + gap), panel_width, tab_height)
+            tab_rect = pygame.Rect(left_margin, tab_start_y + i * (tab_height + gap), panel_width, tab_height)
             self._tab_rects.append(tab_rect)
             
             is_selected = (i == self.selected_tab)
             is_hovered = (i == self.tab_hover)
             
             if is_selected:
-                glow_rect = tab_rect.inflate(8, 8)
+                glow_rect = tab_rect.inflate(self._s(8, minimum=6, scale=scale), self._s(8, minimum=6, scale=scale))
                 glow_surf = pygame.Surface(glow_rect.size, pygame.SRCALPHA)
                 pygame.draw.rect(glow_surf, (*retro_style.primary[:3], 40), glow_surf.get_rect(), border_radius=12)
                 self.screen.blit(glow_surf, glow_rect.topleft)
@@ -1287,40 +1337,42 @@ class GuideScreen:
             tab_surf = pygame.Surface(tab_rect.size, pygame.SRCALPHA)
             pygame.draw.rect(tab_surf, bg_color, tab_surf.get_rect(), border_radius=12)
             
+            highlight_depth = min(self._s(15, minimum=10, scale=scale), tab_rect.height // 4)
             if is_selected or is_hovered:
-                for y in range(min(15, tab_rect.height // 4)):
-                    h_alpha = int(25 * (1 - y / 15))
+                for y in range(highlight_depth):
+                    h_alpha = int(25 * (1 - y / max(1, highlight_depth)))
                     pygame.draw.line(tab_surf, (255, 255, 255, h_alpha), (0, y), (tab_rect.width, y))
             
             self.screen.blit(tab_surf, tab_rect.topleft)
             pygame.draw.rect(self.screen, border_color, tab_rect, 2, border_radius=12)
             
             strip_color = retro_style.primary if is_selected else (retro_style.secondary if is_hovered else (80, 100, 130))
-            strip_w = 6 if is_selected else 4
-            strip_rect = pygame.Rect(tab_rect.x + 3, tab_rect.y + 6, strip_w, tab_rect.height - 12)
+            strip_w = self._s(6 if is_selected else 4, minimum=3, scale=scale)
+            strip_rect = pygame.Rect(tab_rect.x + self._s(3, minimum=2, scale=scale), tab_rect.y + self._s(6, minimum=4, scale=scale), strip_w, tab_rect.height - self._s(12, minimum=8, scale=scale))
             pygame.draw.rect(self.screen, strip_color, strip_rect, border_radius=3)
             
-            num_font = retro_style.get_font(14, bold=True)
+            num_font = self._font(14, bold=True, minimum=10, scale=scale)
             num_color = retro_style.accent if is_selected else retro_style.text_muted
             num_surf = num_font.render(str(i + 1), True, num_color)
-            self.screen.blit(num_surf, (tab_rect.x + 16, tab_rect.y + 8))
+            self.screen.blit(num_surf, (tab_rect.x + self._s(16, minimum=12, scale=scale), tab_rect.y + self._s(8, minimum=5, scale=scale)))
             
             text_color = retro_style.text_primary if is_selected else retro_style.text_secondary
-            title_surf = retro_style.render_fit_text(tab['title'], text_color, panel_width - 40, 20, bold=is_selected)
-            self.screen.blit(title_surf, (tab_rect.x + 16, tab_rect.centery - title_surf.get_height() // 2 + 4))
+            title_surf = retro_style.render_fit_text(tab['title'], text_color, panel_width - self._s(40, minimum=28, scale=scale), self._s(20, minimum=14, scale=scale), bold=is_selected)
+            self.screen.blit(title_surf, (tab_rect.x + self._s(16, minimum=12, scale=scale), tab_rect.centery - title_surf.get_height() // 2 + self._s(4, minimum=2, scale=scale)))
 
         self._draw_tab_panel_mascot(panel_width, height, tab_start_y, tab_height, gap, len(tabs))
 
     def _draw_tab_panel_mascot(self, panel_width: int, height: int, tab_start_y: int, tab_height: int, gap: int, tab_count: int):
         """Tab listesinin altındaki boş alana maskot paneli çiz"""
-        top_y = tab_start_y + tab_count * (tab_height + gap) + 16
-        bottom_y = min(height - 20, self._get_back_button_rect().top - 12)
+        scale = self._ui_scale()
+        top_y = tab_start_y + tab_count * (tab_height + gap) + self._s(16, minimum=12, scale=scale)
+        bottom_y = min(height - self._s(20, minimum=14, scale=scale), self._get_back_button_rect().top - self._s(12, minimum=8, scale=scale))
         available_height = bottom_y - top_y
 
-        if available_height < 110:
+        if available_height < self._s(110, minimum=84, scale=scale):
             return
 
-        panel_rect = pygame.Rect(16, top_y, panel_width, available_height)
+        panel_rect = pygame.Rect(self._s(16, minimum=12, scale=scale), top_y, panel_width, available_height)
         panel_surf = pygame.Surface(panel_rect.size, pygame.SRCALPHA)
         pygame.draw.rect(panel_surf, (16, 24, 40, 175), panel_surf.get_rect(), border_radius=14)
         self.screen.blit(panel_surf, panel_rect.topleft)
@@ -1335,43 +1387,46 @@ class GuideScreen:
 
 
     def _draw_content_panel(self, x: int, width: int, height: int):
-        panel_rect = pygame.Rect(x, 100, width, height)
+        scale = self._ui_scale()
+        panel_rect = pygame.Rect(x, self._s(100, minimum=80, scale=scale), width, height)
         
         retro_style.draw_glass_panel(self.screen, panel_rect, alpha=170, border_color=retro_style.primary, glow=True)
         
         cache_key = (self.selected_tab, self.card_index if self.selected_tab == 2 else 0)
-        if width != self._last_width or cache_key not in self._content_cache:
+        content_signature = self._content_cache_signature(width)
+        if content_signature != self._last_content_signature or cache_key not in self._content_cache:
             self._content_cache.clear()
-            self._last_width = width
+            self._last_content_signature = content_signature
         
         if cache_key not in self._content_cache:
-            content_surface = self._build_content_surface(self.selected_tab, width - 50)
+            content_surface = self._build_content_surface(self.selected_tab, width - self._s(50, minimum=36, scale=scale))
             self._content_cache[cache_key] = content_surface
         
         content_surface = self._content_cache[cache_key]
         
-        self.max_scroll = max(0, content_surface.get_height() - height + 50)
+        self.max_scroll = max(0, content_surface.get_height() - height + self._s(50, minimum=36, scale=scale))
         self.scroll_y = min(self.scroll_y, self.max_scroll)
         
         try:
-            visible_height = min(height - 40, content_surface.get_height() - self.scroll_y)
+            visible_height = min(height - self._s(40, minimum=28, scale=scale), content_surface.get_height() - self.scroll_y)
             if visible_height > 0:
                 visible_content = content_surface.subsurface(
-                    pygame.Rect(0, self.scroll_y, min(width - 50, content_surface.get_width()), visible_height)
+                    pygame.Rect(0, self.scroll_y, min(width - self._s(50, minimum=36, scale=scale), content_surface.get_width()), visible_height)
                 )
-                self.screen.blit(visible_content, (x + 25, panel_rect.y + 20))
+                self.screen.blit(visible_content, (x + self._s(25, minimum=18, scale=scale), panel_rect.y + self._s(20, minimum=14, scale=scale)))
         except ValueError:
-            self.screen.blit(content_surface, (x + 25, panel_rect.y + 20 - self.scroll_y))
+            self.screen.blit(content_surface, (x + self._s(25, minimum=18, scale=scale), panel_rect.y + self._s(20, minimum=14, scale=scale) - self.scroll_y))
         
         if self.max_scroll > 0:
             self._draw_scrollbar(panel_rect, height)
 
     def _draw_scrollbar(self, panel_rect: pygame.Rect, height: int):
+        scale = self._ui_scale()
         sb_container = pygame.Rect(
-            panel_rect.right - 22,
-            panel_rect.y + 8,
-            22,
-            height - 16,
+            panel_rect.right - self._s(22, minimum=16, scale=scale),
+            panel_rect.y + self._s(8, minimum=6, scale=scale),
+            self._s(22, minimum=16, scale=scale),
+            height - self._s(16, minimum=12, scale=scale),
         )
         self._sb_container_rect = sb_container
         self._sb_last_panel_rect = panel_rect
@@ -1382,7 +1437,7 @@ class GuideScreen:
             self.scroll_y,
             content_height,
             height,
-            bar_width=10,
+            bar_width=self._s(10, minimum=8, scale=scale),
         )
     
     def _draw_action_button(
@@ -1392,8 +1447,9 @@ class GuideScreen:
         text: str,
         accent_color: Tuple[int, int, int],
     ):
+        scale = self._ui_scale()
         if is_hovered:
-            glow_rect = btn_rect.inflate(10, 10)
+            glow_rect = btn_rect.inflate(self._s(10, minimum=8, scale=scale), self._s(10, minimum=8, scale=scale))
             glow_surf = pygame.Surface(glow_rect.size, pygame.SRCALPHA)
             pygame.draw.rect(glow_surf, (*accent_color[:3], 35), glow_surf.get_rect(), border_radius=12)
             self.screen.blit(glow_surf, glow_rect.topleft)
@@ -1408,7 +1464,7 @@ class GuideScreen:
         self.screen.blit(btn_surf, btn_rect.topleft)
         pygame.draw.rect(self.screen, border_color, btn_rect, 2, border_radius=12)
 
-        text_surf = retro_style.render_fit_text(text, (255, 255, 255), btn_rect.width - 30, 20, bold=True)
+        text_surf = retro_style.render_fit_text(text, (255, 255, 255), btn_rect.width - self._s(30, minimum=24, scale=scale), self._s(20, minimum=14, scale=scale), bold=True)
         text_x = btn_rect.centerx - text_surf.get_width() // 2
         text_y = btn_rect.centery - text_surf.get_height() // 2
         self.screen.blit(text_surf, (text_x, text_y))
@@ -1428,7 +1484,8 @@ class GuideScreen:
         pass  # Sayfa X/Y metni geri butonuyla iç içe geçiyordu; kaldırıldı
     
     def _draw_hints(self, width: int, height: int):
-        hint_font = retro_style.get_font(14, bold=False)
+        scale = self._ui_scale()
+        hint_font = self._font(14, bold=False, minimum=10, scale=scale)
         
         if self.selected_tab == 2:
             hint_text = t('guide_hint_cards_navigation')
@@ -1438,9 +1495,9 @@ class GuideScreen:
         hint_surf = retro_style.render_fit_text(
             hint_text,
             retro_style.text_muted,
-            max(120, width - 40),
+            max(self._s(120, minimum=96, scale=scale), width - self._s(40, minimum=28, scale=scale)),
             hint_font.get_height(),
             bold=False,
         )
         hint_x = width // 2 - hint_surf.get_width() // 2
-        self.screen.blit(hint_surf, (hint_x, 80))
+        self.screen.blit(hint_surf, (hint_x, self._s(80, minimum=60, scale=scale)))

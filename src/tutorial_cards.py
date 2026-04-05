@@ -1,8 +1,8 @@
-"""Tutorial kart dersi verisi ve saf helper'lar.
+"""Tutorial kart dersi verisi ve saf yardımcılar.
 
-Bu modul, kart akademisi icin kontrollu kart secim senaryolari sunar.
-Gercek kart kimlikleri korunur; UI'da gosterilen baslik ve aciklamalar
-localization anahtarlarindan cozulur.
+Bu modül, kart akademisi için kontrollü kart seçim senaryoları sunar.
+Gerçek kart kimlikleri korunur; UI'da gösterilen başlık ve açıklamalar
+localization anahtarlarından çözülür.
 """
 
 from __future__ import annotations
@@ -71,8 +71,8 @@ CARD_LIBRARY: Dict[str, Dict[str, Any]] = {
     "clear_rows": {
         "id": "clear_rows",
         "localization_id": "clear_rows",
-        "title": "Alt Supur",
-        "description": "En alttaki {value} satiri temizler. Bloklar asagi oturur.",
+        "title": "Alt Süpür",
+        "description": "En alttaki {value} satırı temizler. Bloklar aşağı oturur.",
         "value": 2,
         "rarity": "uncommon",
         "tag": "Uncommon",
@@ -82,7 +82,7 @@ CARD_LIBRARY: Dict[str, Dict[str, Any]] = {
         "id": "peak_sculpt",
         "localization_id": "peak_sculpt",
         "title": "Tepe Kesici",
-        "description": "En yuksek {value} blogu keser, tahtayi duzlestirir.",
+        "description": "En yüksek {value} bloğu keser, tahtayı düzleştirir.",
         "value": 3,
         "rarity": "uncommon",
         "tag": "Uncommon",
@@ -91,8 +91,8 @@ CARD_LIBRARY: Dict[str, Dict[str, Any]] = {
     "speed_burst_legendary": {
         "id": "speed_burst_legendary",
         "localization_id": "speed_burst",
-        "title": "Hiz Patlamasi",
-        "description": "{value} saniye boyunca %60 hizli dusus + temizlenen her satir icin 1.75x puan!",
+        "title": "Hız Patlaması",
+        "description": "{value} saniye boyunca %60 hızlı düşüş + temizlenen her satır için 1.75x puan!",
         "value": 40,
         "rarity": "legendary",
         "tag": "Legendary",
@@ -103,7 +103,7 @@ CARD_LIBRARY: Dict[str, Dict[str, Any]] = {
         "id": "perk_second_pocket",
         "localization_id": "perk_second_pocket",
         "title": "Ekstra Cep",
-        "description": "PERK: V tusuyla ikinci bir parca saklayabilirsin.",
+        "description": "PERK: V tuşuyla ikinci bir parça saklayabilirsin.",
         "value": 1,
         "rarity": "legendary",
         "tag": "Legendary",
@@ -112,8 +112,8 @@ CARD_LIBRARY: Dict[str, Dict[str, Any]] = {
     "row_shuffle": {
         "id": "row_shuffle",
         "localization_id": "row_shuffle",
-        "title": "Blok Karistirici",
-        "description": "Alt {value} satirdaki bloklari karistirir, sansini dene!",
+        "title": "Blok Karıştırıcı",
+        "description": "Alt {value} satırdaki blokları karıştırır, şansını dene!",
         "value": 3,
         "rarity": "common",
         "tag": "Common",
@@ -122,8 +122,8 @@ CARD_LIBRARY: Dict[str, Dict[str, Any]] = {
     "perk_synergy": {
         "id": "perk_synergy",
         "localization_id": "perk_synergy",
-        "title": "Sinerji Bonus",
-        "description": "PERK: Her aktif kart icin +%10 skor bonusu.",
+        "title": "Sinerji Bonusu",
+        "description": "PERK: Her aktif kart için +%10 skor bonusu.",
         "value": 1,
         "rarity": "rare",
         "tag": "Rare",
@@ -132,8 +132,8 @@ CARD_LIBRARY: Dict[str, Dict[str, Any]] = {
     "line_bonus": {
         "id": "line_bonus",
         "localization_id": "line_bonus",
-        "title": "Puan Carpani",
-        "description": "Sonraki {value} satir temizlemede 2x puan.",
+        "title": "Puan Çarpanı",
+        "description": "Sonraki {value} satır temizlemede 2x puan.",
         "value": 4,
         "rarity": "rare",
         "tag": "Rare",
@@ -147,15 +147,15 @@ CARD_CHOICE_SCENARIOS: Dict[str, Dict[str, Any]] = {
     "rescue_pick": {
         "goal_key": "tutorial_card_rescue_goal",
         "tip_key": "tutorial_card_rescue_tip",
-        "goal_text": "Hedef: Tehlikeli tahtada en dogru kurtarma kartini sec.",
-        "tip_text": "Parlak kart her zaman dogru kart degildir. Once tahtanin ihtiyacini oku.",
+        "goal_text": "Hedef: Tehlikeli tahtada en doğru kurtarma kartını seç.",
+        "tip_text": "Parlak kart her zaman doğru kart değildir. Önce tahtanın neye ihtiyacı olduğunu oku.",
         "context_keys": [
             "tutorial_card_rescue_context_1",
             "tutorial_card_rescue_context_2",
         ],
         "context_lines": [
-            "Durum: Delikli ve yuksek bir tahta.",
-            "Oncelik: Nefes aldiran hamle secmek.",
+            "Durum: Delikli ve yüksek bir tahta.",
+            "Öncelik: Nefes aldıran hamleyi seçmek.",
         ],
         "board_rows": [
             "XXXXXX.XXX",
@@ -176,23 +176,23 @@ CARD_CHOICE_SCENARIOS: Dict[str, Dict[str, Any]] = {
             "speed_burst_legendary": "tutorial_card_rescue_feedback_speed_burst",
         },
         "feedback_by_card": {
-            "clear_rows": "Dogru secim. Alt Supur tahtaya hemen alan acar ve baskiyi dusurur.",
-            "peak_sculpt": "Kabul edilebilir secim. Tepeyi kesmek baskiyi azaltir ama alt taraftaki karmasayi tam cozmez.",
-            "speed_burst_legendary": "Zayif secim. Hiz karti bu tahtada hatayi buyutur; once hayatta kalman gerekir.",
+            "clear_rows": "Doğru seçim. Alt Süpür tahtada hemen alan açar ve baskıyı düşürür.",
+            "peak_sculpt": "Kabul edilebilir seçim. Tepeyi kesmek baskıyı azaltır ama alt taraftaki karmaşayı tam çözmez.",
+            "speed_burst_legendary": "Zayıf seçim. Hız kartı bu tahtada hatayı büyütür; önce hayatta kalman gerekir.",
         },
     },
     "long_term_pick": {
         "goal_key": "tutorial_card_long_term_goal",
         "tip_key": "tutorial_card_long_term_tip",
-        "goal_text": "Hedef: Guvenli oyunda en iyi uzun vadeli yatirimi sec.",
-        "tip_text": "Tahta sakinse anlik kart yerine run boyunca deger ureten perk daha guclu olabilir.",
+        "goal_text": "Hedef: Güvenli tahtada en iyi uzun vadeli kartı seç.",
+        "tip_text": "Tahta sakinse anlık kart yerine, run boyunca değer üreten perk daha güçlü olabilir.",
         "context_keys": [
             "tutorial_card_long_term_context_1",
             "tutorial_card_long_term_context_2",
         ],
         "context_lines": [
-            "Durum: Duzenli ve alçak bir tahta.",
-            "Oncelik: Uzun vadeli deger kazanmak.",
+            "Durum: Düzenli ve alçak bir tahta.",
+            "Öncelik: Uzun vadeli değer kazanmak.",
         ],
         "board_rows": [
             "....XX....",
@@ -210,23 +210,23 @@ CARD_CHOICE_SCENARIOS: Dict[str, Dict[str, Any]] = {
             "row_shuffle": "tutorial_card_long_term_feedback_row_shuffle",
         },
         "feedback_by_card": {
-            "perk_second_pocket": "Dogru secim. Guvenli tahtada Ekstra Cep gibi kalici bir perk tum run boyunca deger uretir.",
-            "clear_rows": "Zayif secim. Tahta zaten rahat; anlik temizlik burada gereksiz deger kaybi.",
-            "row_shuffle": "Zayif secim. Sans karti sakin bir tahtayi sebepsiz yere bozabilir.",
+            "perk_second_pocket": "Doğru seçim. Güvenli tahtada Ekstra Cep gibi kalıcı bir perk tüm run boyunca değer üretir.",
+            "clear_rows": "Zayıf seçim. Tahta zaten rahat; anlık temizlik burada gereksiz değer kaybı.",
+            "row_shuffle": "Zayıf seçim. Şans kartı sakin bir tahtayı sebepsiz yere bozabilir.",
         },
     },
     "synergy_pick": {
         "goal_key": "tutorial_card_synergy_goal",
         "tip_key": "tutorial_card_synergy_tip",
-        "goal_text": "Hedef: Mevcut build ile en iyi sinerji kartini sec.",
-        "tip_text": "Kart secimi tek kart gucu degil, mevcut build ile nasil calistigi uzerinden okunur.",
+        "goal_text": "Hedef: Mevcut build ile en iyi sinerji kartını seç.",
+        "tip_text": "Kart seçimi, tek kart gücünden çok mevcut build ile nasıl çalıştığı üzerinden okunur.",
         "context_keys": [
             "tutorial_card_synergy_context_1",
             "tutorial_card_synergy_context_2",
         ],
         "context_lines": [
-            "Aktif perkler: Ekstra Cep, Esnek Sinir.",
-            "Oncelik: Build'i buyuten secimi bulmak.",
+            "Aktif perkler: Ekstra Cep, Esnek Sınır.",
+            "Öncelik: Build'i büyüten seçimi bulmak.",
         ],
         "board_rows": [
             ".....X....",
@@ -245,9 +245,9 @@ CARD_CHOICE_SCENARIOS: Dict[str, Dict[str, Any]] = {
             "row_shuffle": "tutorial_card_synergy_feedback_row_shuffle",
         },
         "feedback_by_card": {
-            "perk_synergy": "Dogru secim. Halihazirda aktif perklerin oldugu icin Sinerji Bonus hemen buyuyen bir carpana donusur.",
-            "line_bonus": "Zayif secim. Puan Carpani faydali olsa da bu dersin odagi mevcut perk zincirini buyutmek; tek basina build sinerjisi kurmaz.",
-            "row_shuffle": "Zayif secim. Rastgelelik eklemek yerine aktif perklerden daha fazla deger cikarmalisin.",
+            "perk_synergy": "Doğru seçim. Zaten aktif perklerin olduğu için Sinerji Bonusu hemen büyüyen bir çarpana dönüşür.",
+            "line_bonus": "Zayıf seçim. Puan Çarpanı faydalı olsa da bu dersin odağı mevcut perk zincirini büyütmek; tek başına build sinerjisi kurmaz.",
+            "row_shuffle": "Zayıf seçim. Rastgelelik eklemek yerine aktif perklerden daha fazla değer çıkarmalısın.",
         },
     },
 }
