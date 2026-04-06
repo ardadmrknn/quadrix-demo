@@ -644,12 +644,13 @@ class SteamNetworking:
         """Hazır sinyali gönder."""
         return self.send({'type': MsgType.READY}, reliable=True, channel=CHANNEL_GAME)
 
-    def send_game_over(self, score: int = 0, lines: int = 0):
+    def send_game_over(self, score: int = 0, lines: int = 0, board_filled: bool | int = True):
         """Oyun bitti sinyali gönder."""
         self.send({
             'type': MsgType.GAME_OVER,
             'score': score,
             'lines': lines,
+            'board_filled': 1 if board_filled else 0,
         }, reliable=True, channel=CHANNEL_GAME)
 
     # ============ Event Handler ============

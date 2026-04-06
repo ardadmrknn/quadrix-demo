@@ -233,8 +233,8 @@ class OnlinePvPGame:
         # Ekran
         if screen is not None:
             self.screen = screen
-            self.window_width = screen.get_width()
-            self.window_height = screen.get_height()
+            self.window_width = self.screen.get_width()
+            self.window_height = self.screen.get_height()
         else:
             self.screen = create_display(0, 0, fullscreen=True, resizable=False, borderless=True)
             self.window_width = self.screen.get_width()
@@ -354,8 +354,11 @@ class OnlinePvPGame:
         self.winner: str = ''  # 'me', 'opponent', 'draw'
         self.my_eliminated = False
         self.opponent_eliminated = False
+        self._my_final_board_filled = False
+        self._opponent_final_board_filled = False
         self._opponent_final_score = 0
         self._opponent_final_lines = 0
+        self._match_result_recorded = False
         self.paused = False
         self.opponent_paused = False
 
@@ -1238,6 +1241,8 @@ class OnlinePvPGame:
         self.winner = ''
         self.my_eliminated = False
         self.opponent_eliminated = False
+        self._my_final_board_filled = False
+        self._opponent_final_board_filled = False
         self._opponent_final_score = 0
         self._opponent_final_lines = 0
         self._match_result_recorded = False
@@ -1262,29 +1267,87 @@ class OnlinePvPGame:
         except Exception as exc:
             print(f"[OnlinePvP] Başarım istatistiği güncellenemedi: {exc}")
 
+    def _get_opponent_result_metrics(self) -> tuple[int, int, bool]:
+        """Rakibin final değerlendirmede kullanılacak metriklerini döndür."""
+        live_score = int(getattr(self, 'opponent_score', 0) or 0)
+        live_lines = int(getattr(self, 'opponent_lines', 0) or 0)
+        if getattr(self, 'opponent_eliminated', False):
+            final_score = int(getattr(self, '_opponent_final_score', 0) or 0)
+            final_lines = int(getattr(self, '_opponent_final_lines', 0) or 0)
+            # Eski/eksik payload'larda final skor gelmeyebilir; o durumda son bilinen
+            # canlı değeri koru. Skor ve temizlenen satırlar monoton arttığı için max güvenlidir.
+            opp_score = max(live_score, final_score)
+            opp_lines = max(live_lines, final_lines)
+        else:
+            opp_score = live_score
+            opp_lines = live_lines
+
+        opp_board_filled = bool(
+            getattr(self, '_opponent_final_board_filled', False)
+            or getattr(self, 'opponent_eliminated', False)
+        )
+        return opp_score, opp_lines, opp_board_filled
+
+    def _resolve_majority_match_winner(self) -> tuple[str, dict[str, int]]:
+        """3 kriterli 0/1 puanlamayla kazananı belirle."""
+        my_score = int(getattr(self.my_board, 'score', 0) or 0)
+        my_lines = int(getattr(self.my_board, 'lines_cleared', 0) or 0)
+        my_board_filled = bool(
+            getattr(self, '_my_final_board_filled', False)
+            or getattr(self, 'my_eliminated', False)
+        )
+        opp_score, opp_lines, opp_board_filled = self._get_opponent_result_metrics()
+
+        my_points = 0
+        opp_points = 0
+
+        if my_score > opp_score:
+            my_points += 1
+        elif opp_score > my_score:
+            opp_points += 1
+
+        if my_lines > opp_lines:
+            my_points += 1
+        elif opp_lines > my_lines:
+            opp_points += 1
+
+        if not my_board_filled:
+            my_points += 1
+        if not opp_board_filled:
+            opp_points += 1
+
+        if my_points >= 2 and opp_points < 2:
+            winner = 'me'
+        elif opp_points >= 2 and my_points < 2:
+            winner = 'opponent'
+        else:
+            winner = 'draw'
+
+        return winner, {
+            'my_score': my_score,
+            'opp_score': opp_score,
+            'my_lines': my_lines,
+            'opp_lines': opp_lines,
+            'my_board_point': 0 if my_board_filled else 1,
+            'opp_board_point': 0 if opp_board_filled else 1,
+            'my_points': my_points,
+            'opp_points': opp_points,
+        }
+
     def _finalize_elimination_result(self):
-        """Local PvP ile aynı elenme kuralıyla kazananı hesapla."""
+        """3 metrikli çoğunluk kuralıyla kazananı hesapla."""
         if not self.my_eliminated and not self.opponent_eliminated:
             return
 
-        my_score = int(getattr(self.my_board, 'score', 0) or 0)
-        opp_score = int(self._opponent_final_score or self.opponent_score or 0)
+        self.winner, result = self._resolve_majority_match_winner()
         was_game_over = self.online_state == OnlineState.GAME_OVER
 
-        if self.my_eliminated and not self.opponent_eliminated:
-            self.winner = 'opponent'
-        elif self.opponent_eliminated and not self.my_eliminated:
-            self.winner = 'me'
-        else:
-            if my_score > opp_score:
-                self.winner = 'me'
-                print(f"[OnlinePvP] Cifte elenme - BEN kazandim ({my_score} > {opp_score})")
-            elif opp_score > my_score:
-                self.winner = 'opponent'
-                print(f"[OnlinePvP] Cifte elenme - RAKIP kazandi ({opp_score} > {my_score})")
-            else:
-                self.winner = 'draw'
-                print(f"[OnlinePvP] Cifte elenme - BERABERE ({my_score} = {opp_score})")
+        print(
+            "[OnlinePvP] Sonuc puanlama "
+            f"my(score={result['my_score']}, lines={result['my_lines']}, board={result['my_board_point']}) "
+            f"opp(score={result['opp_score']}, lines={result['opp_lines']}, board={result['opp_board_point']}) "
+            f"=> totals {result['my_points']}-{result['opp_points']} winner={self.winner}"
+        )
 
         self.game_over = True
         self.online_state = OnlineState.GAME_OVER
@@ -1303,28 +1366,49 @@ class OnlinePvPGame:
         if self.my_eliminated:
             return
 
+        already_game_over = bool(getattr(self, 'game_over', False))
         self.my_eliminated = True
+        self._my_final_board_filled = True
         # Gamepad titreşimi - game over (uzun, güçlü)
         try:
             from gamepad_manager import get_gamepad_manager
             get_gamepad_manager().rumble(1.0, 1.0, 600)
         except Exception:
             pass
-        if self.my_board:
-            self.net.send_game_over(self.my_board.score, self.my_board.lines_cleared)
-        self._finalize_elimination_result()
+        if (
+            self.my_board
+            and getattr(self, 'net', None)
+            and self.online_state in (OnlineState.PLAYING, OnlineState.GAME_OVER)
+        ):
+            try:
+                self.net.send_game_over(
+                    self.my_board.score,
+                    self.my_board.lines_cleared,
+                    board_filled=True,
+                )
+            except Exception as exc:
+                print(f"[OnlinePvP] Final GAME_OVER gonderimi basarisiz: {exc}")
+        if not already_game_over:
+            self._finalize_elimination_result()
 
-    def _mark_opponent_eliminated(self, score: int | None = None, lines: int | None = None):
+    def _mark_opponent_eliminated(
+        self,
+        score: int | None = None,
+        lines: int | None = None,
+        board_filled: bool = True,
+    ):
         """Rakibin elendiğini işle."""
         self.opponent_piece_data = None
         self.opponent_eliminated = True
+        self._opponent_final_board_filled = bool(board_filled)
         if score is not None:
             self._opponent_final_score = int(score)
             self.opponent_score = int(score)
         if lines is not None:
             self._opponent_final_lines = int(lines)
             self.opponent_lines = int(lines)
-        self._finalize_elimination_result()
+        if not getattr(self, 'game_over', False):
+            self._finalize_elimination_result()
 
     @staticmethod
     def _validate_grid(grid) -> bool:
@@ -1471,6 +1555,7 @@ class OnlinePvPGame:
                     self._mark_opponent_eliminated(
                         score=self._clamp_int(data.get('score', self.opponent_score), 0, 999999, 'opp_final_score'),
                         lines=self._clamp_int(data.get('lines', self.opponent_lines), 0, 999999, 'opp_final_lines'),
+                        board_filled=bool(self._clamp_int(data.get('board_filled', 1), 0, 1, 'opp_board_filled')),
                     )
 
             elif msg_type == MsgType.ELIMINATED:
@@ -4643,7 +4728,7 @@ class OnlinePvPGame:
             sub_text = t('draw_sub', 'Esit gucte rakipler!')
 
         pw = min(s(540), w - s(80))
-        ph = s(340)
+        ph = s(360)
         panel = pygame.Rect(cx - pw // 2, cy - ph // 2, pw, ph)
 
         # Ana panel — glow border
@@ -4671,38 +4756,71 @@ class OnlinePvPGame:
         sub_s = sub_f.render(sub_text, True, _rs.text_secondary)
         self.screen.blit(sub_s, sub_s.get_rect(center=(cx, panel.y + s(135))))
 
-        # Skor karşılaştırma paneli
-        score_panel_y = panel.y + s(158)
-        score_panel_h = s(50)
-        score_panel_r = pygame.Rect(cx - s(180), score_panel_y, s(360), score_panel_h)
+        # Sonuç sıralaması paneli: kazanan üstte, kaybeden altta
+        score_panel_y = panel.y + s(156)
+        score_panel_h = s(86)
+        score_panel_r = pygame.Rect(panel.x + s(28), score_panel_y, panel.width - s(56), score_panel_h)
         draw_glass_panel(self.screen, score_panel_r, alpha=140,
                          border_color=_rs.glass_border)
 
-        score_font = _rs.get_font(s(15, minimum=11), bold=False)
         my_name = self.net._get_name(self.net.my_steam_id) if self.net.my_steam_id else 'Sen'
         opp_name = self.net.opponent_name or t('opponent', 'Rakip')
-        my_score = self.my_board.score if self.my_board else 0
-        my_lines = self.my_board.lines_cleared if self.my_board else 0
+        my_score = int(getattr(self.my_board, 'score', 0) or 0)
+        my_lines = int(getattr(self.my_board, 'lines_cleared', 0) or 0)
+        opp_score, opp_lines, _ = self._get_opponent_result_metrics()
 
-        # Sol — benim skorumum
-        my_txt = score_font.render(
-            f'{my_name}: {my_score:,} · {my_lines} satır'.replace(',', '.'),
-            True, UIColors.NEON_CYAN)
-        self.screen.blit(my_txt, my_txt.get_rect(
-            midleft=(score_panel_r.x + s(12), score_panel_r.centery)))
+        ranked_rows = [
+            {'name': my_name, 'score': my_score, 'lines': my_lines, 'color': UIColors.NEON_CYAN},
+            {'name': opp_name, 'score': opp_score, 'lines': opp_lines, 'color': UIColors.NEON_MAGENTA},
+        ]
+        if self.winner == 'me':
+            ranked_rows = [ranked_rows[0], ranked_rows[1]]
+        elif self.winner == 'opponent':
+            ranked_rows = [ranked_rows[1], ranked_rows[0]]
 
-        # Sağ — rakip skoru
-        opp_txt = score_font.render(
-            f'{opp_name}: {self.opponent_score:,} · {self.opponent_lines} satır'.replace(',', '.'),
-            True, UIColors.NEON_MAGENTA)
-        self.screen.blit(opp_txt, opp_txt.get_rect(
-            midright=(score_panel_r.right - s(12), score_panel_r.centery)))
+        row_gap = s(6)
+        row_pad_x = s(12)
+        row_pad_y = s(8)
+        row_h = max(s(32), (score_panel_r.height - row_pad_y * 2 - row_gap) // 2)
+        row_w = score_panel_r.width - row_pad_x * 2
+        rank_font = _rs.get_font(s(18, minimum=12), bold=True)
+        stat_font = _rs.get_font(s(12, minimum=9), bold=False)
+
+        for idx, row in enumerate(ranked_rows):
+            row_rect = pygame.Rect(
+                score_panel_r.x + row_pad_x,
+                score_panel_r.y + row_pad_y + idx * (row_h + row_gap),
+                row_w,
+                row_h,
+            )
+            pygame.draw.rect(self.screen, (18, 24, 38), row_rect, border_radius=s(10))
+            pygame.draw.rect(
+                self.screen,
+                row['color'] if idx == 0 else (90, 100, 122),
+                row_rect,
+                2 if idx == 0 else 1,
+                border_radius=s(10),
+            )
+
+            rank_s = rank_font.render(f'{idx + 1}.', True, row['color'])
+            rank_rect = rank_s.get_rect(midleft=(row_rect.x + s(10), row_rect.centery - s(8, minimum=0)))
+            self.screen.blit(rank_s, rank_rect)
+
+            main_text = f"{row['name']}: {row['score']:,}".replace(',', '.')
+            main_font = _rs.get_fitting_font(main_text, s(16, minimum=11), row_rect.width - rank_rect.width - s(34))
+            main_s = main_font.render(main_text, True, row['color'])
+            main_x = rank_rect.right + s(8)
+            self.screen.blit(main_s, main_s.get_rect(midleft=(main_x, row_rect.centery - s(8, minimum=0))))
+
+            stat_text = f"{row['lines']} satır"
+            stat_s = stat_font.render(stat_text, True, _rs.text_secondary)
+            self.screen.blit(stat_s, stat_s.get_rect(midleft=(main_x, row_rect.centery + s(9, minimum=0))))
 
         # Butonlar — daha belirgin stiller
         btn_w = s(140)
         btn_h = s(48)
         btn_gap = s(20)
-        btn_y = panel.y + s(228)
+        btn_y = score_panel_r.bottom + s(20)
 
         rematch_r = pygame.Rect(cx - btn_w - btn_gap // 2, btn_y, btn_w, btn_h)
         exit_r = pygame.Rect(cx + btn_gap // 2, btn_y, btn_w, btn_h)
