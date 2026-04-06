@@ -74,3 +74,55 @@ def test_lobby_found_uses_per_lobby_metadata_for_private_visibility():
     assert lobby['visibility'] == 'private'
     assert lobby['requires_code'] is True
     assert lobby['code'] == ''
+
+
+def test_lobby_found_infers_public_when_requires_code_is_false():
+    game = _make_game()
+    game.net = types.SimpleNamespace(
+        get_lobby_data_for=lambda lobby_id, key: '',
+        get_lobby_data=lambda key: '',
+    )
+
+    event = NetEvent(
+        'lobby_found',
+        steam_id=44,
+        data='{"host_name":"mac-host","requires_code":false,"members":1,"max_members":2}',
+    )
+
+    game._on_lobby_found(event)
+
+    assert len(game._pending_lobby_list) == 1
+    lobby = game._pending_lobby_list[0]
+    assert lobby['visibility'] == 'public'
+    assert lobby['requires_code'] is False
+
+
+def test_lobby_found_keeps_public_visibility_when_requires_code_missing():
+    game = _make_game()
+
+    def _get_lobby_data_for(_lobby_id, key):
+        mapping = {
+            'visibility': 'public',
+            'requires_code': '',
+            'host_name': 'mac-host',
+            'lobby_code': '',
+        }
+        return mapping.get(key, '')
+
+    game.net = types.SimpleNamespace(
+        get_lobby_data_for=_get_lobby_data_for,
+        get_lobby_data=lambda key: '',
+    )
+
+    event = NetEvent(
+        'lobby_found',
+        steam_id=45,
+        data='{"members":1,"max_members":2}',
+    )
+
+    game._on_lobby_found(event)
+
+    assert len(game._pending_lobby_list) == 1
+    lobby = game._pending_lobby_list[0]
+    assert lobby['visibility'] == 'public'
+    assert lobby['requires_code'] is False

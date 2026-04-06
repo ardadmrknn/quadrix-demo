@@ -47,7 +47,7 @@ get_font = _rs.get_font
 draw_glass_panel = _rs.draw_glass_panel
 get_fitting_font = _rs.get_fitting_font
 from ui_theme import UIFonts, UIColors, UIStyle
-from localization import t
+from localization import t, get_language
 from steam_networking import (
     SteamNetworking, MsgType, NetEvent, NetMessage,
     CHANNEL_GAME, CHANNEL_STATE, CHANNEL_CONTROL,
@@ -59,6 +59,42 @@ ONLINE_PVP_DAS_DELAY_MS = 160
 ONLINE_PVP_DAS_REPEAT_MS = 105
 ONLINE_PVP_SOFT_DROP_SPEED_MS = 55
 ONLINE_PVP_GARBAGE_ENABLED = False
+
+
+def _parse_lobby_bool(value: object) -> bool | None:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return None
+
+    normalized = str(value).strip().lower()
+    if not normalized:
+        return None
+    if normalized in ('1', 'true', 'yes'):
+        return True
+    if normalized in ('0', 'false', 'no'):
+        return False
+    return None
+
+
+def _normalize_lobby_visibility(visibility_value: object, requires_code_value: object, lobby_code: str) -> tuple[str, bool, str]:
+    visibility = str(visibility_value or '').strip().lower()
+    requires_code = _parse_lobby_bool(requires_code_value)
+    normalized_code = (lobby_code or '').strip()
+
+    if visibility not in ('public', 'private'):
+        if requires_code is not None:
+            visibility = 'private' if requires_code else 'public'
+        elif normalized_code:
+            visibility = 'private'
+        else:
+            visibility = 'private'
+            requires_code = True
+
+    if visibility == 'private' or requires_code:
+        return 'private', True, ''
+
+    return 'public', False, normalized_code
 
 # Steam pump thread kontrolü — bridge aktifken pump duraklatılır (race condition önleme)
 try:
@@ -1034,18 +1070,16 @@ class OnlinePvPGame:
 
         host_name = _read_lobby_data('host_name', '')
         lobby_code = _read_lobby_data('lobby_code', '')
-        visibility = (_read_lobby_data('visibility', 'private') or 'private').strip().lower()
+        visibility_value = _read_lobby_data('visibility', '')
         requires_code_value = payload.get('requires_code')
-        if isinstance(requires_code_value, bool):
-            requires_code = requires_code_value
-        else:
-            requires_code = (_read_lobby_data('requires_code', '1') or '1').strip().lower() in ('1', 'true', 'yes')
+        if requires_code_value is None:
+            requires_code_value = _read_lobby_data('requires_code', '')
 
-        if visibility == 'private':
-            requires_code = True
-            lobby_code = ''
-        elif requires_code:
-            visibility = 'private'
+        visibility, requires_code, lobby_code = _normalize_lobby_visibility(
+            visibility_value,
+            requires_code_value,
+            lobby_code,
+        )
 
         member_count = 0
         try:
@@ -1288,8 +1322,31 @@ class OnlinePvPGame:
         )
         return opp_score, opp_lines, opp_board_filled
 
-    def _resolve_majority_match_winner(self) -> tuple[str, dict[str, int]]:
-        """3 kriterli 0/1 puanlamayla kazananı belirle."""
+    def _get_result_player_names(self) -> tuple[str, str]:
+        """Sonuç ekranı için oyuncu adlarını güvenli biçimde döndür."""
+        lang = get_language()
+        my_name = 'Sen' if lang == 'tr' else 'You'
+        try:
+            my_steam_id = int(getattr(self.net, 'my_steam_id', 0) or 0)
+        except Exception:
+            my_steam_id = 0
+
+        try:
+            if my_steam_id and hasattr(self.net, '_get_name'):
+                resolved = self.net._get_name(my_steam_id)
+                if resolved:
+                    my_name = str(resolved)
+        except Exception:
+            pass
+
+        try:
+            opp_name = getattr(self.net, 'opponent_name', None) or ('Rakip' if lang == 'tr' else 'Opponent')
+        except Exception:
+            opp_name = 'Rakip' if lang == 'tr' else 'Opponent'
+        return str(my_name), str(opp_name)
+
+    def _build_majority_result_breakdown(self) -> dict[str, object]:
+        """3 kriterli sonuç hesabı için tüm karşılaştırma verisini çıkar."""
         my_score = int(getattr(self.my_board, 'score', 0) or 0)
         my_lines = int(getattr(self.my_board, 'lines_cleared', 0) or 0)
         my_board_filled = bool(
@@ -1297,24 +1354,53 @@ class OnlinePvPGame:
             or getattr(self, 'my_eliminated', False)
         )
         opp_score, opp_lines, opp_board_filled = self._get_opponent_result_metrics()
-
-        my_points = 0
-        opp_points = 0
+        my_name, opp_name = self._get_result_player_names()
 
         if my_score > opp_score:
-            my_points += 1
+            score_state = 'me'
+            my_score_point = 1
+            opp_score_point = 0
         elif opp_score > my_score:
-            opp_points += 1
+            score_state = 'opponent'
+            my_score_point = 0
+            opp_score_point = 1
+        else:
+            score_state = 'draw'
+            my_score_point = 0
+            opp_score_point = 0
 
         if my_lines > opp_lines:
-            my_points += 1
+            lines_state = 'me'
+            my_lines_point = 1
+            opp_lines_point = 0
         elif opp_lines > my_lines:
-            opp_points += 1
+            lines_state = 'opponent'
+            my_lines_point = 0
+            opp_lines_point = 1
+        else:
+            lines_state = 'draw'
+            my_lines_point = 0
+            opp_lines_point = 0
 
-        if not my_board_filled:
-            my_points += 1
-        if not opp_board_filled:
-            opp_points += 1
+        if not my_board_filled and not opp_board_filled:
+            board_state = 'both'
+            my_board_point = 1
+            opp_board_point = 1
+        elif not my_board_filled and opp_board_filled:
+            board_state = 'me'
+            my_board_point = 1
+            opp_board_point = 0
+        elif my_board_filled and not opp_board_filled:
+            board_state = 'opponent'
+            my_board_point = 0
+            opp_board_point = 1
+        else:
+            board_state = 'none'
+            my_board_point = 0
+            opp_board_point = 0
+
+        my_points = my_score_point + my_lines_point + my_board_point
+        opp_points = opp_score_point + opp_lines_point + opp_board_point
 
         if my_points >= 2 and opp_points < 2:
             winner = 'me'
@@ -1323,16 +1409,298 @@ class OnlinePvPGame:
         else:
             winner = 'draw'
 
-        return winner, {
+        return {
+            'winner': winner,
+            'my_name': my_name,
+            'opp_name': opp_name,
             'my_score': my_score,
             'opp_score': opp_score,
             'my_lines': my_lines,
             'opp_lines': opp_lines,
+            'score_state': score_state,
+            'lines_state': lines_state,
+            'board_state': board_state,
+            'my_board_filled': my_board_filled,
+            'opp_board_filled': opp_board_filled,
             'my_board_point': 0 if my_board_filled else 1,
             'opp_board_point': 0 if opp_board_filled else 1,
             'my_points': my_points,
             'opp_points': opp_points,
         }
+
+    @staticmethod
+    def _pick_result_text_variant(options: list[str], seed: int) -> str:
+        """Deterministik metin varyasyonu seç."""
+        if not options:
+            return ''
+        return options[abs(int(seed)) % len(options)]
+
+    @staticmethod
+    def _join_result_fragments(parts: list[str]) -> str:
+        """Kısa ifade listelerini doğal cümle parçasına çevir."""
+        clean_parts = [str(part).strip() for part in parts if str(part).strip()]
+        if not clean_parts:
+            return ''
+        if len(clean_parts) == 1:
+            return clean_parts[0]
+        if len(clean_parts) == 2:
+            return f"{clean_parts[0]} ve {clean_parts[1]}"
+        return f"{', '.join(clean_parts[:-1])} ve {clean_parts[-1]}"
+
+    def _build_majority_result_reason_text(self, result: dict[str, object] | None = None) -> str:
+        """Kazanan/kaybeden nedenini 2-3 cümlelik kalıp metinle açıkla."""
+        if result is None:
+            result = self._build_majority_result_breakdown()
+
+        lang = get_language()
+        my_name = str(result.get('my_name', 'Sen' if lang == 'tr' else 'You'))
+        opp_name = str(result.get('opp_name', 'Rakip' if lang == 'tr' else 'Opponent'))
+        winner = str(result.get('winner', 'draw'))
+        score_state = str(result.get('score_state', 'draw'))
+        lines_state = str(result.get('lines_state', 'draw'))
+        board_state = str(result.get('board_state', 'none'))
+        my_points = int(result.get('my_points', 0) or 0)
+        opp_points = int(result.get('opp_points', 0) or 0)
+        seed = (
+            int(result.get('my_score', 0) or 0) * 3
+            + int(result.get('opp_score', 0) or 0) * 5
+            + int(result.get('my_lines', 0) or 0) * 7
+            + int(result.get('opp_lines', 0) or 0) * 11
+            + my_points * 13
+            + opp_points * 17
+        )
+
+        if lang != 'tr':
+            def side_name_en(side: str) -> str:
+                return my_name if side == 'me' else opp_name
+
+            def join_en(parts: list[str]) -> str:
+                clean_parts = [str(part).strip() for part in parts if str(part).strip()]
+                if not clean_parts:
+                    return ''
+                if len(clean_parts) == 1:
+                    return clean_parts[0]
+                if len(clean_parts) == 2:
+                    return f"{clean_parts[0]} and {clean_parts[1]}"
+                return f"{', '.join(clean_parts[:-1])}, and {clean_parts[-1]}"
+
+            my_unique_en: list[str] = []
+            opp_unique_en: list[str] = []
+            shared_en: list[str] = []
+
+            if score_state == 'me':
+                my_unique_en.append('finished with the higher score')
+            elif score_state == 'opponent':
+                opp_unique_en.append('finished with the higher score')
+            else:
+                shared_en.append('the score stayed tied')
+
+            if lines_state == 'me':
+                my_unique_en.append('cleared more lines')
+            elif lines_state == 'opponent':
+                opp_unique_en.append('cleared more lines')
+            else:
+                shared_en.append('line clears stayed even')
+
+            if board_state == 'me':
+                my_unique_en.append('kept the board open')
+            elif board_state == 'opponent':
+                opp_unique_en.append('kept the board open')
+            elif board_state == 'both':
+                shared_en.append('both players kept their boards open')
+            else:
+                shared_en.append('both players topped out')
+
+            if winner == 'draw':
+                summary_options = [
+                    'The match ended with no side taking enough criteria to win.',
+                    'The majority scoring ended in a draw.',
+                    'Neither side claimed enough result criteria to secure the round.',
+                ]
+                summary = self._pick_result_text_variant(summary_options, seed)
+                detail_parts = []
+                if my_unique_en:
+                    detail_parts.append(f"{my_name} {join_en(my_unique_en)}")
+                if opp_unique_en:
+                    detail_parts.append(f"{opp_name} {join_en(opp_unique_en)}")
+                if shared_en:
+                    detail_parts.append(join_en(shared_en).capitalize())
+                if detail_parts:
+                    return f"{summary} {'. '.join(detail_parts)}.".strip()
+                return summary
+
+            winner_side = winner
+            loser_side = 'opponent' if winner_side == 'me' else 'me'
+            winner_name = side_name_en(winner_side)
+            loser_name = side_name_en(loser_side)
+            winner_points = my_points if winner_side == 'me' else opp_points
+            loser_points = opp_points if winner_side == 'me' else my_points
+            winner_unique_en = my_unique_en if winner_side == 'me' else opp_unique_en
+            loser_unique_en = opp_unique_en if winner_side == 'me' else my_unique_en
+
+            summary_options = [
+                f"{winner_name} won the match by taking {winner_points} of the 3 result criteria.",
+                f"The decision score finished {winner_points}-{loser_points} in favor of {winner_name}.",
+                f"{winner_name} secured the round by claiming {winner_points} result criteria.",
+            ]
+            summary = self._pick_result_text_variant(summary_options, seed)
+            winner_clause = f"{winner_name} {join_en(winner_unique_en)}"
+            if loser_unique_en:
+                detail_options = [
+                    f"Even though {loser_name} {join_en(loser_unique_en)}, {winner_clause}.",
+                    f"{loser_name} {join_en(loser_unique_en)}, but {winner_clause}.",
+                ]
+            elif shared_en:
+                detail_options = [
+                    f"{join_en(shared_en).capitalize()}, but {winner_clause}.",
+                    f"{join_en(shared_en).capitalize()}. That still left the edge to {winner_clause}.",
+                ]
+            else:
+                detail_options = [
+                    f"{winner_clause}. {loser_name} fell behind on all three criteria.",
+                    f"{winner_clause} and left {loser_name} without a single criterion point.",
+                ]
+            detail = self._pick_result_text_variant(detail_options, seed + 23)
+            return f"{summary} {detail}".strip()
+
+        def side_name(side: str) -> str:
+            return my_name if side == 'me' else opp_name
+
+        def subject_clause(side: str, criteria: list[str], *, concessive: bool, seed_offset: int) -> str:
+            name = side_name(side)
+            option_map = {
+                'score': {
+                    False: ['skorda öne geçti', 'daha yüksek puana ulaştı', 'skor üstünlüğünü aldı'],
+                    True: ['skorda önde olsa da', 'daha yüksek puana ulaşsa da', 'skor üstünlüğünü alsa da'],
+                },
+                'lines': {
+                    False: ['daha çok satır temizledi', 'satır temizliğinde öne geçti', 'satır sayısında üstün kaldı'],
+                    True: ['daha çok satır temizlese de', 'satır temizliğinde önde olsa da', 'satır sayısında üstün görünse de'],
+                },
+                'board': {
+                    False: ['oyun alanını açık tuttu', 'tahtasını taşırmadı', 'alan kontrolünü korudu'],
+                    True: ['oyun alanını açık tutsa da', 'tahtasını taşırmasa da', 'alan kontrolünü korusa da'],
+                },
+            }
+            fragments = []
+            for idx, criterion in enumerate(criteria):
+                fragments.append(
+                    self._pick_result_text_variant(
+                        option_map[criterion][concessive],
+                        seed + seed_offset + idx * 9,
+                    )
+                )
+            return f"{name} {self._join_result_fragments(fragments)}"
+
+        def shared_clause(tokens: list[str], *, seed_offset: int) -> str:
+            option_map = {
+                'score_tie': ['skor başlığı eşit kaldı', 'skor taraflara üstünlük vermedi'],
+                'lines_tie': ['satır temizliği dengede kaldı', 'satır sayısı eşitlendi'],
+                'board_both': ['iki oyuncu da oyun alanını açık tuttu', 'iki tahta da dolmadan kaldı'],
+                'board_none': ['iki oyuncu da oyun alanını doldurdu', 'iki tahta da taşınca alan puanı çıkmadı'],
+            }
+            fragments = []
+            for idx, token in enumerate(tokens):
+                fragments.append(
+                    self._pick_result_text_variant(option_map[token], seed + seed_offset + idx * 7)
+                )
+            return self._join_result_fragments(fragments)
+
+        my_unique: list[str] = []
+        opp_unique: list[str] = []
+        shared: list[str] = []
+
+        if score_state == 'me':
+            my_unique.append('score')
+        elif score_state == 'opponent':
+            opp_unique.append('score')
+        else:
+            shared.append('score_tie')
+
+        if lines_state == 'me':
+            my_unique.append('lines')
+        elif lines_state == 'opponent':
+            opp_unique.append('lines')
+        else:
+            shared.append('lines_tie')
+
+        if board_state == 'me':
+            my_unique.append('board')
+        elif board_state == 'opponent':
+            opp_unique.append('board')
+        elif board_state == 'both':
+            shared.append('board_both')
+        else:
+            shared.append('board_none')
+
+        if winner == 'draw':
+            summary_options = [
+                'Üç ölçütün sonunda taraflar birbirine üstünlük kuramadı.',
+                'Sonuç puanlaması kazanan çıkarmadı.',
+                'Maç, karar ölçütleri dengelendiği için berabere bitti.',
+            ]
+            summary = self._pick_result_text_variant(summary_options, seed)
+            details: list[str] = []
+            if my_unique:
+                details.append(subject_clause('me', my_unique, concessive=False, seed_offset=41))
+            if opp_unique:
+                details.append(subject_clause('opponent', opp_unique, concessive=False, seed_offset=53))
+            shared_text = shared_clause(shared, seed_offset=67) if shared else ''
+            if details and shared_text:
+                detail = f"{'. '.join(details)}. {shared_text.capitalize()} ve iki puana ulaşan çıkmadı."
+            elif details:
+                detail = f"{'. '.join(details)}. Bu yüzden denge bozulmadı."
+            else:
+                detail = f"{shared_text.capitalize()}. Bu yüzden denge bozulmadı." if shared_text else 'Başlıklar dengede kaldı.'
+            return f"{summary} {detail}".strip()
+
+        winner_side = winner
+        loser_side = 'opponent' if winner_side == 'me' else 'me'
+        winner_name = side_name(winner_side)
+        winner_points = my_points if winner_side == 'me' else opp_points
+        loser_points = opp_points if winner_side == 'me' else my_points
+        winner_unique = my_unique if winner_side == 'me' else opp_unique
+        loser_unique = opp_unique if winner_side == 'me' else my_unique
+
+        summary_options = [
+            f"{winner_name}, üç ölçütün {winner_points} tanesini alarak maçı kazandı.",
+            f"Karar puanlaması {winner_points}-{loser_points} bitti; üstünlük {winner_name} tarafına yazıldı.",
+            f"{winner_name}, sonuç ölçütlerinde {winner_points} başlık toplayıp raundu kapattı.",
+        ]
+        summary = self._pick_result_text_variant(summary_options, seed)
+        winner_text = subject_clause(winner_side, winner_unique, concessive=False, seed_offset=79)
+        shared_text = shared_clause(shared, seed_offset=97) if shared else ''
+
+        if loser_unique:
+            loser_text = subject_clause(loser_side, loser_unique[:1], concessive=True, seed_offset=89)
+            if shared_text:
+                detail_options = [
+                    f"{loser_text} {winner_text}. {shared_text.capitalize()}.",
+                    f"{loser_text} {winner_text}; {shared_text}.",
+                ]
+            else:
+                detail_options = [
+                    f"{loser_text} {winner_text}.",
+                    f"{loser_text} maçın yönünü {winner_text} ile çevirdi.",
+                ]
+        elif shared_text:
+            detail_options = [
+                f"{shared_text.capitalize()}. Buna rağmen {winner_text} maçı belirledi.",
+                f"{shared_text.capitalize()} ama farkı {winner_text} yarattı.",
+            ]
+        else:
+            detail_options = [
+                f"{winner_text}. {side_name(loser_side)} bu turda hiç ölçüt alamadı.",
+                f"{winner_text}. {side_name(loser_side)} üç başlığın tamamında geride kaldı.",
+            ]
+
+        detail = self._pick_result_text_variant(detail_options, seed + 23)
+        return f"{summary} {detail}".strip()
+
+    def _resolve_majority_match_winner(self) -> tuple[str, dict[str, object]]:
+        """3 kriterli 0/1 puanlamayla kazananı belirle."""
+        result = self._build_majority_result_breakdown()
+        return str(result['winner']), result
 
     def _finalize_elimination_result(self):
         """3 metrikli çoğunluk kuralıyla kazananı hesapla."""
@@ -4727,8 +5095,41 @@ class OnlinePvPGame:
             icon_text = '='
             sub_text = t('draw_sub', 'Esit gucte rakipler!')
 
-        pw = min(s(540), w - s(80))
-        ph = s(360)
+        my_name, opp_name = self._get_result_player_names()
+        result_breakdown = self._build_majority_result_breakdown()
+        reason_text = self._build_majority_result_reason_text(result_breakdown)
+
+        pw = min(s(560), w - s(72))
+        score_panel_h = s(88)
+        btn_w = s(140)
+        btn_h = s(48)
+        hint_f = _rs.get_font(s(12, minimum=9), bold=False)
+        reason_font_px = max(9, s(12, minimum=9))
+        reason_wrap_w = max(s(280), pw - s(96))
+        reason_font = _rs.get_font(reason_font_px, bold=False)
+        reason_lines = _rs.wrap_text(reason_text, reason_font, reason_wrap_w)
+        while len(reason_lines) > 4 and reason_font_px > 9:
+            reason_font_px -= 1
+            reason_font = _rs.get_font(reason_font_px, bold=False)
+            reason_lines = _rs.wrap_text(reason_text, reason_font, reason_wrap_w)
+        reason_line_gap = max(2, s(2, minimum=2))
+        reason_panel_h = max(
+            s(62),
+            len(reason_lines) * reason_font.get_linesize()
+            + max(0, len(reason_lines) - 1) * reason_line_gap
+            + s(20),
+        )
+        content_bottom = (
+            s(156)
+            + score_panel_h
+            + s(16)
+            + reason_panel_h
+            + s(18)
+            + btn_h
+            + s(14)
+            + hint_f.get_height()
+        )
+        ph = max(s(430), content_bottom + s(18))
         panel = pygame.Rect(cx - pw // 2, cy - ph // 2, pw, ph)
 
         # Ana panel — glow border
@@ -4758,13 +5159,10 @@ class OnlinePvPGame:
 
         # Sonuç sıralaması paneli: kazanan üstte, kaybeden altta
         score_panel_y = panel.y + s(156)
-        score_panel_h = s(86)
         score_panel_r = pygame.Rect(panel.x + s(28), score_panel_y, panel.width - s(56), score_panel_h)
         draw_glass_panel(self.screen, score_panel_r, alpha=140,
                          border_color=_rs.glass_border)
 
-        my_name = self.net._get_name(self.net.my_steam_id) if self.net.my_steam_id else 'Sen'
-        opp_name = self.net.opponent_name or t('opponent', 'Rakip')
         my_score = int(getattr(self.my_board, 'score', 0) or 0)
         my_lines = int(getattr(self.my_board, 'lines_cleared', 0) or 0)
         opp_score, opp_lines, _ = self._get_opponent_result_metrics()
@@ -4778,13 +5176,12 @@ class OnlinePvPGame:
         elif self.winner == 'opponent':
             ranked_rows = [ranked_rows[1], ranked_rows[0]]
 
-        row_gap = s(6)
-        row_pad_x = s(12)
-        row_pad_y = s(8)
-        row_h = max(s(32), (score_panel_r.height - row_pad_y * 2 - row_gap) // 2)
+        row_gap = s(8)
+        row_pad_x = s(10)
+        row_pad_y = s(10)
+        row_h = max(s(28), (score_panel_r.height - row_pad_y * 2 - row_gap) // 2)
         row_w = score_panel_r.width - row_pad_x * 2
-        rank_font = _rs.get_font(s(18, minimum=12), bold=True)
-        stat_font = _rs.get_font(s(12, minimum=9), bold=False)
+        stat_font = _rs.get_font(s(11, minimum=9), bold=False)
 
         for idx, row in enumerate(ranked_rows):
             row_rect = pygame.Rect(
@@ -4802,25 +5199,51 @@ class OnlinePvPGame:
                 border_radius=s(10),
             )
 
-            rank_s = rank_font.render(f'{idx + 1}.', True, row['color'])
-            rank_rect = rank_s.get_rect(midleft=(row_rect.x + s(10), row_rect.centery - s(8, minimum=0)))
-            self.screen.blit(rank_s, rank_rect)
+            accent_r = pygame.Rect(
+                row_rect.x + s(7),
+                row_rect.y + s(6),
+                s(4),
+                max(s(12), row_rect.height - s(12)),
+            )
+            pygame.draw.rect(self.screen, row['color'], accent_r, border_radius=s(3))
 
-            main_text = f"{row['name']}: {row['score']:,}".replace(',', '.')
-            main_font = _rs.get_fitting_font(main_text, s(16, minimum=11), row_rect.width - rank_rect.width - s(34))
+            main_text = f"{idx + 1}. {row['name']}  ·  {row['score']:,} puan".replace(',', '.')
+            main_font = _rs.get_fitting_font(main_text, s(15, minimum=11), row_rect.width - s(28))
             main_s = main_font.render(main_text, True, row['color'])
-            main_x = rank_rect.right + s(8)
-            self.screen.blit(main_s, main_s.get_rect(midleft=(main_x, row_rect.centery - s(8, minimum=0))))
+            self.screen.blit(
+                main_s,
+                main_s.get_rect(center=(row_rect.centerx, row_rect.centery - s(7, minimum=0))),
+            )
 
-            stat_text = f"{row['lines']} satır"
+            stat_text = f"{row['lines']} satır temizliği"
             stat_s = stat_font.render(stat_text, True, _rs.text_secondary)
-            self.screen.blit(stat_s, stat_s.get_rect(midleft=(main_x, row_rect.centery + s(9, minimum=0))))
+            self.screen.blit(
+                stat_s,
+                stat_s.get_rect(center=(row_rect.centerx, row_rect.centery + s(10, minimum=0))),
+            )
+
+        reason_panel_y = score_panel_r.bottom + s(16)
+        reason_panel_r = pygame.Rect(panel.x + s(34), reason_panel_y, panel.width - s(68), reason_panel_h)
+        draw_glass_panel(
+            self.screen,
+            reason_panel_r,
+            alpha=118,
+            border_color=(*result_color[:3], 120),
+        )
+        reason_inner_r = reason_panel_r.inflate(-s(16), -s(10))
+        reason_total_h = (
+            len(reason_lines) * reason_font.get_linesize()
+            + max(0, len(reason_lines) - 1) * reason_line_gap
+        )
+        reason_y = reason_inner_r.centery - reason_total_h // 2
+        for line in reason_lines:
+            line_s = reason_font.render(line, True, _rs.text_secondary)
+            self.screen.blit(line_s, line_s.get_rect(midtop=(reason_inner_r.centerx, reason_y)))
+            reason_y += reason_font.get_linesize() + reason_line_gap
 
         # Butonlar — daha belirgin stiller
-        btn_w = s(140)
-        btn_h = s(48)
         btn_gap = s(20)
-        btn_y = score_panel_r.bottom + s(20)
+        btn_y = reason_panel_r.bottom + s(18)
 
         rematch_r = pygame.Rect(cx - btn_w - btn_gap // 2, btn_y, btn_w, btn_h)
         exit_r = pygame.Rect(cx + btn_gap // 2, btn_y, btn_w, btn_h)
@@ -4837,7 +5260,6 @@ class OnlinePvPGame:
         self._lobby_buttons.append({'rect': rematch_r, 'action': 'rematch'})
         self._lobby_buttons.append({'rect': exit_r, 'action': 'exit_menu'})
 
-        hint_f = _rs.get_font(s(12, minimum=9), bold=False)
         ht = hint_f.render('[R] Tekrar  ·  [ESC] Çıkış', True, _rs.text_muted)
         self.screen.blit(ht, ht.get_rect(center=(cx, panel.bottom - s(20))))
 

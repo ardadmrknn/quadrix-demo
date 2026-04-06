@@ -13,3 +13,18 @@ def test_bridge_sets_visibility_metadata_on_lobby_created():
     assert 'm_matchmaking->SetLobbyData(m_currentLobby, "visibility", m_pendingLobbyVisibility.c_str())' in content
     assert '"requires_code"' in content
     assert 'set_pending_lobby_metadata(k_ELobbyTypePublic);' in content
+
+
+def test_bridge_retries_incomplete_lobby_metadata_before_emitting():
+    content = CPP_PATH.read_text(encoding='utf-8')
+
+    assert 'remember_pending_lobby_data_request(lobbyId.ConvertToUint64())' in content
+    assert 'bool retry_pending_lobby_data_request(CSteamID lobbyId)' in content
+    assert 'bool is_lobby_metadata_ready_for_listing(CSteamID lobbyId) const' in content
+
+
+def test_bridge_infers_public_visibility_from_explicit_requires_code():
+    content = CPP_PATH.read_text(encoding='utf-8')
+
+    assert 'if (hasRequiresCode) {' in content
+    assert 'visibility = requiresCodeBool ? "private" : "public";' in content

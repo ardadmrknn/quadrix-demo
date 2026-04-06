@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import types
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import online_pvp_game as online_pvp_module
 import steam_networking as steam_networking_module
@@ -34,6 +34,8 @@ def _make_game(*, my_score: int, my_lines: int, opponent_score: int, opponent_li
         get_messages=lambda: [],
         opponent_steam_id=42,
         my_steam_id=1,
+        opponent_name='Bort',
+        _get_name=lambda _steam_id: 'Madelyn',
         get_lobby_members=lambda: [1, 42],
     )
     game.achievement_manager = None
@@ -120,6 +122,47 @@ def test_local_elimination_after_remote_result_still_sends_final_stats():
 
     assert game.winner == 'opponent'
     game.net.send_game_over.assert_called_once_with(55000, 55, board_filled=True)
+
+
+def test_result_reason_mentions_board_fill_and_line_gap_when_higher_score_loses():
+    game = _make_game(my_score=55000, my_lines=55, opponent_score=56000, opponent_lines=60)
+    game.net.opponent_name = 'Borf'
+
+    game._mark_local_eliminated()
+    reason = game._build_majority_result_reason_text()
+
+    assert 'Borf' in reason
+    assert 'Madelyn' in reason
+    assert 'oyun alan' in reason
+    assert 'satır' in reason
+
+
+def test_result_reason_mentions_open_board_when_filled_player_still_wins():
+    game = _make_game(my_score=56000, my_lines=60, opponent_score=55000, opponent_lines=55)
+    game.net.opponent_name = 'Borf'
+
+    game._mark_local_eliminated()
+    reason = game._build_majority_result_reason_text()
+
+    assert 'Borf' in reason
+    assert 'oyun alan' in reason or 'tahta' in reason or 'alan kontrol' in reason
+    assert 'puan' in reason or 'skor' in reason
+    assert 'satır' in reason
+
+
+def test_result_reason_uses_english_fallback_for_non_turkish_language():
+    game = _make_game(my_score=55000, my_lines=55, opponent_score=56000, opponent_lines=60)
+    game.net.opponent_name = 'Borf'
+
+    with patch.object(online_pvp_module, 'get_language', return_value='en'):
+        game._mark_local_eliminated()
+        reason = game._build_majority_result_reason_text()
+
+    assert 'Borf' in reason
+    assert 'Madelyn' in reason
+    assert 'higher score' in reason or 'decision score' in reason
+    assert 'lines' in reason
+    assert 'board' in reason or 'topped out' in reason
 
 
 def test_send_game_over_payload_includes_board_filled_flag():
