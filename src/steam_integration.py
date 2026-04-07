@@ -743,7 +743,7 @@ def shutdown() -> None:
     global _dll, _dll_loaded, _init_ok
     global _isteam_friends, _isteam_user, _isteam_user_stats, _isteam_utils, _isteam_apps
     global _pump_thread, _pump_running, _pump_paused, _pump_pause_count
-    global _precache_thread, _shutdown_requested, _exit_requested
+    global _precache_thread, _shutdown_requested
 
     if sys.platform != 'darwin':
         with _init_lock:
@@ -816,7 +816,6 @@ def shutdown() -> None:
         if _shutdown_requested and not _init_ok and _dll is None:
             return
 
-        _exit_requested = True
         _shutdown_requested = True
         _pump_running = False
         _pump_pause_count = 0
