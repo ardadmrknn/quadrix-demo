@@ -9,6 +9,7 @@ Yeni dil eklemek için:
 """
 
 import importlib.util
+import json
 import os
 import threading
 
@@ -96,6 +97,13 @@ LANGUAGE_METADATA = {
         'complete': False,
     },
 }
+
+_TRANSLATION_OVERRIDES_PATH = os.path.join(
+    os.path.dirname(__file__),
+    'localization_auto_overrides.json',
+)
+_TRANSLATION_OVERRIDES_CACHE = None
+_TRANSLATION_OVERRIDES_MTIME = None
 
 # Tüm oyun metinleri
 TRANSLATIONS = {
@@ -2612,11 +2620,11 @@ TRANSLATIONS = {
     'tutorial_welcome_title': {
         'tr': 'QUADRIX EĞİTİMİ',
         'en': 'QUADRIX TUTORIAL',
-        'de': 'QUADRIX TUTORIAL',
+        'de': 'QUADRIX ANLEITUNG',
         'fr': 'QUADRIX TUTORIAL',
-        'es': 'QUADRIX TUTORIAL',
-        'it': 'QUADRIX TUTORIAL',
-        'pt': 'QUADRIX TUTORIAL',
+        'es': 'TUTORIAL DE QUADRIX',
+        'it': 'TUTORIALE QUADRIX',
+        'pt': 'TUTORIAL DO QUADRIX',
         'ru': 'Добро пожаловать!',
         'ja': 'テトリスチュートリアル',
         'zh': '俄罗斯方块教程',
@@ -5013,9 +5021,9 @@ TRANSLATIONS = {
         'it': 'M{index} {name}',
         'pt': 'M{index} {name}',
         'ru': 'М{index} {name}',
-        'ja': 'W{index} {name}',
-        'zh': 'W{index} {name}',
-        'ko': 'W{index} {name}',
+        'ja': '世界{index} {name}',
+        'zh': '世界{index} {name}',
+        'ko': '월드{index} {name}',
     },
     'campaign_world_short_1': {
         'tr': 'Vadi',
@@ -10042,11 +10050,11 @@ TRANSLATIONS = {
     'settings_tab_audio': {
         'tr': 'SES',
         'en': 'AUDIO',
-        'de': 'AUDIO',
-        'fr': 'AUDIO',
-        'es': 'AUDIO',
-        'it': 'AUDIO',
-        'pt': 'AUDIO',
+        'de': 'TON',
+        'fr': 'SON',
+        'es': 'SONIDO',
+        'it': 'SUONO',
+        'pt': 'SOM',
         'ru': 'ЗВУК',
         'ja': '音声',
         'zh': '音频',
@@ -13395,6 +13403,293 @@ TRANSLATIONS = {
         'zh': '以3星完成第100关',
         'ko': '100레벨을 별 3개로 클리어',
     },
+    # Mod bazlı achievement çevirileri
+    'ach_sprint_sub60_name': {
+        'tr': 'Hızlı Parmaklar',
+        'en': 'Fast Fingers',
+        'de': 'Fast Fingers',
+        'fr': 'Fast Fingers',
+        'es': 'Fast Fingers',
+        'it': 'Fast Fingers',
+        'pt': 'Fast Fingers',
+        'ru': 'Fast Fingers',
+        'ja': 'Fast Fingers',
+        'zh': 'Fast Fingers',
+        'ko': 'Fast Fingers',
+    },
+    'ach_sprint_sub60_desc': {
+        'tr': 'Sprint modunda 40 satırı 240 saniyeden kısa sürede bitir',
+        'en': 'Finish 40 lines in under 240 seconds in Sprint mode',
+        'de': 'Finish 40 lines in under 240 seconds in Sprint mode',
+        'fr': 'Finish 40 lines in under 240 seconds in Sprint mode',
+        'es': 'Finish 40 lines in under 240 seconds in Sprint mode',
+        'it': 'Finish 40 lines in under 240 seconds in Sprint mode',
+        'pt': 'Finish 40 lines in under 240 seconds in Sprint mode',
+        'ru': 'Finish 40 lines in under 240 seconds in Sprint mode',
+        'ja': 'Finish 40 lines in under 240 seconds in Sprint mode',
+        'zh': 'Finish 40 lines in under 240 seconds in Sprint mode',
+        'ko': 'Finish 40 lines in under 240 seconds in Sprint mode',
+    },
+    'ach_sprint_sub45_name': {
+        'tr': 'Sprint Uzmanı',
+        'en': 'Sprint Expert',
+        'de': 'Sprint Expert',
+        'fr': 'Sprint Expert',
+        'es': 'Sprint Expert',
+        'it': 'Sprint Expert',
+        'pt': 'Sprint Expert',
+        'ru': 'Sprint Expert',
+        'ja': 'Sprint Expert',
+        'zh': 'Sprint Expert',
+        'ko': 'Sprint Expert',
+    },
+    'ach_sprint_sub45_desc': {
+        'tr': 'Sprint modunda 40 satırı 200 saniyeden kısa sürede bitir',
+        'en': 'Finish 40 lines in under 200 seconds in Sprint mode',
+        'de': 'Finish 40 lines in under 200 seconds in Sprint mode',
+        'fr': 'Finish 40 lines in under 200 seconds in Sprint mode',
+        'es': 'Finish 40 lines in under 200 seconds in Sprint mode',
+        'it': 'Finish 40 lines in under 200 seconds in Sprint mode',
+        'pt': 'Finish 40 lines in under 200 seconds in Sprint mode',
+        'ru': 'Finish 40 lines in under 200 seconds in Sprint mode',
+        'ja': 'Finish 40 lines in under 200 seconds in Sprint mode',
+        'zh': 'Finish 40 lines in under 200 seconds in Sprint mode',
+        'ko': 'Finish 40 lines in under 200 seconds in Sprint mode',
+    },
+    'ach_ultra_50k_name': {
+        'tr': 'Ultra Usta',
+        'en': 'Ultra Master',
+        'de': 'Ultra Master',
+        'fr': 'Ultra Master',
+        'es': 'Ultra Master',
+        'it': 'Ultra Master',
+        'pt': 'Ultra Master',
+        'ru': 'Ultra Master',
+        'ja': 'Ultra Master',
+        'zh': 'Ultra Master',
+        'ko': 'Ultra Master',
+    },
+    'ach_ultra_50k_desc': {
+        'tr': 'Ultra modunda 10.000+ puan yap',
+        'en': 'Score 10,000+ points in Ultra mode',
+        'de': 'Score 10,000+ points in Ultra mode',
+        'fr': 'Score 10,000+ points in Ultra mode',
+        'es': 'Score 10,000+ points in Ultra mode',
+        'it': 'Score 10,000+ points in Ultra mode',
+        'pt': 'Score 10,000+ points in Ultra mode',
+        'ru': 'Score 10,000+ points in Ultra mode',
+        'ja': 'Score 10,000+ points in Ultra mode',
+        'zh': 'Score 10,000+ points in Ultra mode',
+        'ko': 'Score 10,000+ points in Ultra mode',
+    },
+    'ach_ultra_100k_name': {
+        'tr': 'Ultra Efsane',
+        'en': 'Ultra Legend',
+        'de': 'Ultra Legend',
+        'fr': 'Ultra Legend',
+        'es': 'Ultra Legend',
+        'it': 'Ultra Legend',
+        'pt': 'Ultra Legend',
+        'ru': 'Ultra Legend',
+        'ja': 'Ultra Legend',
+        'zh': 'Ultra Legend',
+        'ko': 'Ultra Legend',
+    },
+    'ach_ultra_100k_desc': {
+        'tr': 'Ultra modunda 15.000+ puan yap',
+        'en': 'Score 15,000+ points in Ultra mode',
+        'de': 'Score 15,000+ points in Ultra mode',
+        'fr': 'Score 15,000+ points in Ultra mode',
+        'es': 'Score 15,000+ points in Ultra mode',
+        'it': 'Score 15,000+ points in Ultra mode',
+        'pt': 'Score 15,000+ points in Ultra mode',
+        'ru': 'Score 15,000+ points in Ultra mode',
+        'ja': 'Score 15,000+ points in Ultra mode',
+        'zh': 'Score 15,000+ points in Ultra mode',
+        'ko': 'Score 15,000+ points in Ultra mode',
+    },
+    'ach_survival_5min_name': {
+        'tr': 'Hayatta Kalan',
+        'en': 'Survivor',
+        'de': 'Survivor',
+        'fr': 'Survivor',
+        'es': 'Survivor',
+        'it': 'Survivor',
+        'pt': 'Survivor',
+        'ru': 'Survivor',
+        'ja': 'Survivor',
+        'zh': 'Survivor',
+        'ko': 'Survivor',
+    },
+    'ach_survival_5min_desc': {
+        'tr': 'Survival modunda 5 dakika hayatta kal',
+        'en': 'Survive 5 minutes in Survival mode',
+        'de': 'Survive 5 minutes in Survival mode',
+        'fr': 'Survive 5 minutes in Survival mode',
+        'es': 'Survive 5 minutes in Survival mode',
+        'it': 'Survive 5 minutes in Survival mode',
+        'pt': 'Survive 5 minutes in Survival mode',
+        'ru': 'Survive 5 minutes in Survival mode',
+        'ja': 'Survive 5 minutes in Survival mode',
+        'zh': 'Survive 5 minutes in Survival mode',
+        'ko': 'Survive 5 minutes in Survival mode',
+    },
+    'ach_survival_10min_name': {
+        'tr': 'Sağ Kalan',
+        'en': 'Endurance Survivor',
+        'de': 'Endurance Survivor',
+        'fr': 'Endurance Survivor',
+        'es': 'Endurance Survivor',
+        'it': 'Endurance Survivor',
+        'pt': 'Endurance Survivor',
+        'ru': 'Endurance Survivor',
+        'ja': 'Endurance Survivor',
+        'zh': 'Endurance Survivor',
+        'ko': 'Endurance Survivor',
+    },
+    'ach_survival_10min_desc': {
+        'tr': 'Survival modunda 10 dakika hayatta kal',
+        'en': 'Survive 10 minutes in Survival mode',
+        'de': 'Survive 10 minutes in Survival mode',
+        'fr': 'Survive 10 minutes in Survival mode',
+        'es': 'Survive 10 minutes in Survival mode',
+        'it': 'Survive 10 minutes in Survival mode',
+        'pt': 'Survive 10 minutes in Survival mode',
+        'ru': 'Survive 10 minutes in Survival mode',
+        'ja': 'Survive 10 minutes in Survival mode',
+        'zh': 'Survive 10 minutes in Survival mode',
+        'ko': 'Survive 10 minutes in Survival mode',
+    },
+    'ach_cascade_chain_10_name': {
+        'tr': 'Zincir Reaksiyonu',
+        'en': 'Chain Reaction',
+        'de': 'Chain Reaction',
+        'fr': 'Chain Reaction',
+        'es': 'Chain Reaction',
+        'it': 'Chain Reaction',
+        'pt': 'Chain Reaction',
+        'ru': 'Chain Reaction',
+        'ja': 'Chain Reaction',
+        'zh': 'Chain Reaction',
+        'ko': 'Chain Reaction',
+    },
+    'ach_cascade_chain_10_desc': {
+        'tr': 'Cascade modunda 10x+ zincir combo yap',
+        'en': 'Make a 10x+ chain combo in Cascade mode',
+        'de': 'Make a 10x+ chain combo in Cascade mode',
+        'fr': 'Make a 10x+ chain combo in Cascade mode',
+        'es': 'Make a 10x+ chain combo in Cascade mode',
+        'it': 'Make a 10x+ chain combo in Cascade mode',
+        'pt': 'Make a 10x+ chain combo in Cascade mode',
+        'ru': 'Make a 10x+ chain combo in Cascade mode',
+        'ja': 'Make a 10x+ chain combo in Cascade mode',
+        'zh': 'Make a 10x+ chain combo in Cascade mode',
+        'ko': 'Make a 10x+ chain combo in Cascade mode',
+    },
+    'ach_hardcore_level10_name': {
+        'tr': 'Hardcore Savaşçı',
+        'en': 'Hardcore Warrior',
+        'de': 'Hardcore Warrior',
+        'fr': 'Hardcore Warrior',
+        'es': 'Hardcore Warrior',
+        'it': 'Hardcore Warrior',
+        'pt': 'Hardcore Warrior',
+        'ru': 'Hardcore Warrior',
+        'ja': 'Hardcore Warrior',
+        'zh': 'Hardcore Warrior',
+        'ko': 'Hardcore Warrior',
+    },
+    'ach_hardcore_level10_desc': {
+        'tr': 'Hardcore modunda seviye 10\'a ulaş',
+        'en': 'Reach level 10 in Hardcore mode',
+        'de': 'Reach level 10 in Hardcore mode',
+        'fr': 'Reach level 10 in Hardcore mode',
+        'es': 'Reach level 10 in Hardcore mode',
+        'it': 'Reach level 10 in Hardcore mode',
+        'pt': 'Reach level 10 in Hardcore mode',
+        'ru': 'Reach level 10 in Hardcore mode',
+        'ja': 'Reach level 10 in Hardcore mode',
+        'zh': 'Reach level 10 in Hardcore mode',
+        'ko': 'Reach level 10 in Hardcore mode',
+    },
+    'ach_daily_7_streak_name': {
+        'tr': 'Haftalık Rutin',
+        'en': 'Weekly Routine',
+        'de': 'Weekly Routine',
+        'fr': 'Weekly Routine',
+        'es': 'Weekly Routine',
+        'it': 'Weekly Routine',
+        'pt': 'Weekly Routine',
+        'ru': 'Weekly Routine',
+        'ja': 'Weekly Routine',
+        'zh': 'Weekly Routine',
+        'ko': 'Weekly Routine',
+    },
+    'ach_daily_7_streak_desc': {
+        'tr': 'Günlük Challenge\'da 7 gün üst üste oyna',
+        'en': 'Play Daily Challenge 7 days in a row',
+        'de': 'Play Daily Challenge 7 days in a row',
+        'fr': 'Play Daily Challenge 7 days in a row',
+        'es': 'Play Daily Challenge 7 days in a row',
+        'it': 'Play Daily Challenge 7 days in a row',
+        'pt': 'Play Daily Challenge 7 days in a row',
+        'ru': 'Play Daily Challenge 7 days in a row',
+        'ja': 'Play Daily Challenge 7 days in a row',
+        'zh': 'Play Daily Challenge 7 days in a row',
+        'ko': 'Play Daily Challenge 7 days in a row',
+    },
+    'ach_daily_30_streak_name': {
+        'tr': 'Disiplin Ustası',
+        'en': 'Discipline Master',
+        'de': 'Discipline Master',
+        'fr': 'Discipline Master',
+        'es': 'Discipline Master',
+        'it': 'Discipline Master',
+        'pt': 'Discipline Master',
+        'ru': 'Discipline Master',
+        'ja': 'Discipline Master',
+        'zh': 'Discipline Master',
+        'ko': 'Discipline Master',
+    },
+    'ach_daily_30_streak_desc': {
+        'tr': 'Günlük Challenge\'da 30 gün üst üste oyna',
+        'en': 'Play Daily Challenge 30 days in a row',
+        'de': 'Play Daily Challenge 30 days in a row',
+        'fr': 'Play Daily Challenge 30 days in a row',
+        'es': 'Play Daily Challenge 30 days in a row',
+        'it': 'Play Daily Challenge 30 days in a row',
+        'pt': 'Play Daily Challenge 30 days in a row',
+        'ru': 'Play Daily Challenge 30 days in a row',
+        'ja': 'Play Daily Challenge 30 days in a row',
+        'zh': 'Play Daily Challenge 30 days in a row',
+        'ko': 'Play Daily Challenge 30 days in a row',
+    },
+    'ach_wide_200_lines_name': {
+        'tr': 'Geniş Açı',
+        'en': 'Wide Angle',
+        'de': 'Wide Angle',
+        'fr': 'Wide Angle',
+        'es': 'Wide Angle',
+        'it': 'Wide Angle',
+        'pt': 'Wide Angle',
+        'ru': 'Wide Angle',
+        'ja': 'Wide Angle',
+        'zh': 'Wide Angle',
+        'ko': 'Wide Angle',
+    },
+    'ach_wide_200_lines_desc': {
+        'tr': 'Wide modunda tek oyunda 200 satır temizle',
+        'en': 'Clear 200 lines in a single game in Wide mode',
+        'de': 'Clear 200 lines in a single game in Wide mode',
+        'fr': 'Clear 200 lines in a single game in Wide mode',
+        'es': 'Clear 200 lines in a single game in Wide mode',
+        'it': 'Clear 200 lines in a single game in Wide mode',
+        'pt': 'Clear 200 lines in a single game in Wide mode',
+        'ru': 'Clear 200 lines in a single game in Wide mode',
+        'ja': 'Clear 200 lines in a single game in Wide mode',
+        'zh': 'Clear 200 lines in a single game in Wide mode',
+        'ko': 'Clear 200 lines in a single game in Wide mode',
+    },
     # Genel achievement UI çevirileri
     'ach_unlocked': {
         'tr': 'Başarı Açıldı!',
@@ -16537,12 +16832,12 @@ TRANSLATIONS = {
     'guide_tips_intro': {
         'tr': '[UZMAN İPUÇLARI]',
         'en': '[EXPERT TIPS]',
-        'de': '[EXPERT TIPS]',
-        'fr': '[EXPERT TIPS]',
-        'es': '[EXPERT TIPS]',
-        'it': '[EXPERT TIPS]',
-        'pt': '[EXPERT TIPS]',
-        'ru': '[EXPERT TIPS]',
+        'de': '[PROFI-TIPPS]',
+        'fr': '[CONSEILS EXPERTS]',
+        'es': '[CONSEJOS EXPERTOS]',
+        'it': '[SUGGERIMENTI PRO]',
+        'pt': '[DICAS AVANCADAS]',
+        'ru': '[СОВЕТЫ ЭКСПЕРТА]',
         'ja': '[上級者のヒント]',
         'zh': '[专家提示]',
         'ko': '[전문가 팁]',
@@ -17997,6 +18292,45 @@ TRANSLATIONS = {
         'zh': '取消',
         'ko': '취소',
     },
+    'color_picker_new_badge': {
+        'tr': 'YENI',
+        'en': 'NEW',
+        'de': 'NEW',
+        'fr': 'NEW',
+        'es': 'NEW',
+        'it': 'NEW',
+        'pt': 'NEW',
+        'ru': 'NEW',
+        'ja': 'NEW',
+        'zh': 'NEW',
+        'ko': 'NEW',
+    },
+    'color_picker_old_badge': {
+        'tr': 'ESKI',
+        'en': 'OLD',
+        'de': 'OLD',
+        'fr': 'OLD',
+        'es': 'OLD',
+        'it': 'OLD',
+        'pt': 'OLD',
+        'ru': 'OLD',
+        'ja': 'OLD',
+        'zh': 'OLD',
+        'ko': 'OLD',
+    },
+    'color_picker_preset_label': {
+        'tr': 'HAZIR RENKLER',
+        'en': 'PRESETS',
+        'de': 'PRESETS',
+        'fr': 'PRESETS',
+        'es': 'PRESETS',
+        'it': 'PRESETS',
+        'pt': 'PRESETS',
+        'ru': 'PRESETS',
+        'ja': 'PRESETS',
+        'zh': 'PRESETS',
+        'ko': 'PRESETS',
+    },
     'piece_workshop_custom_color_active': {
         'tr': 'Özel renk aktif',
         'en': 'Custom color active',
@@ -18414,6 +18748,45 @@ TRANSLATIONS = {
         'ja': '⌨️ DEL: Clear  |  {modifier}+S: Save  |  [ ]: Switch package',
         'zh': '⌨️ DEL: Clear  |  {modifier}+S: Save  |  [ ]: Switch package',
         'ko': '⌨️ DEL: Clear  |  {modifier}+S: Save  |  [ ]: Switch package',
+    },
+    'card_workshop_controls_line1': {
+        'tr': 'Yon tuslari: Hareket | SPACE: Yerlestir/Sil',
+        'en': 'Arrows: Move | SPACE: Place/Erase',
+        'de': 'Arrows: Move | SPACE: Place/Erase',
+        'fr': 'Arrows: Move | SPACE: Place/Erase',
+        'es': 'Arrows: Move | SPACE: Place/Erase',
+        'it': 'Arrows: Move | SPACE: Place/Erase',
+        'pt': 'Arrows: Move | SPACE: Place/Erase',
+        'ru': 'Arrows: Move | SPACE: Place/Erase',
+        'ja': 'Arrows: Move | SPACE: Place/Erase',
+        'zh': 'Arrows: Move | SPACE: Place/Erase',
+        'ko': 'Arrows: Move | SPACE: Place/Erase',
+    },
+    'card_workshop_controls_line2': {
+        'tr': 'ENTER: Tamamla | ESC: Iptal',
+        'en': 'ENTER: Confirm | ESC: Cancel',
+        'de': 'ENTER: Confirm | ESC: Cancel',
+        'fr': 'ENTER: Confirm | ESC: Cancel',
+        'es': 'ENTER: Confirm | ESC: Cancel',
+        'it': 'ENTER: Confirm | ESC: Cancel',
+        'pt': 'ENTER: Confirm | ESC: Cancel',
+        'ru': 'ENTER: Confirm | ESC: Cancel',
+        'ja': 'ENTER: Confirm | ESC: Cancel',
+        'zh': 'ENTER: Confirm | ESC: Cancel',
+        'ko': 'ENTER: Confirm | ESC: Cancel',
+    },
+    'card_workshop_controls_line3': {
+        'tr': 'Mouse: Sol tik yerlestir/sil',
+        'en': 'Mouse: Left click place/erase',
+        'de': 'Mouse: Left click place/erase',
+        'fr': 'Mouse: Left click place/erase',
+        'es': 'Mouse: Left click place/erase',
+        'it': 'Mouse: Left click place/erase',
+        'pt': 'Mouse: Left click place/erase',
+        'ru': 'Mouse: Left click place/erase',
+        'ja': 'Mouse: Left click place/erase',
+        'zh': 'Mouse: Left click place/erase',
+        'ko': 'Mouse: Left click place/erase',
     },
     'block_workshop_message_loaded': {
         'tr': 'Son kayıt yüklendi',
@@ -19561,6 +19934,57 @@ TRANSLATIONS = {
         'ko': 'Profile updated',
     },
 }
+
+
+def _load_translation_overrides() -> dict[str, dict[str, str]]:
+    global _TRANSLATION_OVERRIDES_CACHE, _TRANSLATION_OVERRIDES_MTIME
+
+    try:
+        current_mtime = os.path.getmtime(_TRANSLATION_OVERRIDES_PATH)
+    except Exception:
+        current_mtime = None
+    if (
+        _TRANSLATION_OVERRIDES_CACHE is not None
+        and _TRANSLATION_OVERRIDES_MTIME == current_mtime
+    ):
+        return _TRANSLATION_OVERRIDES_CACHE
+
+    normalized: dict[str, dict[str, str]] = {}
+    try:
+        with open(_TRANSLATION_OVERRIDES_PATH, 'r', encoding='utf-8') as f:
+            raw = json.load(f)
+        if isinstance(raw, dict):
+            for key, value in raw.items():
+                if not isinstance(value, dict):
+                    continue
+                clean_lang_map: dict[str, str] = {}
+                for lang, text in value.items():
+                    if isinstance(lang, str) and isinstance(text, str):
+                        clean_lang_map[lang] = text
+                if clean_lang_map:
+                    normalized[str(key)] = clean_lang_map
+    except Exception:
+        normalized = {}
+
+    _TRANSLATION_OVERRIDES_CACHE = normalized
+    _TRANSLATION_OVERRIDES_MTIME = current_mtime
+    return _TRANSLATION_OVERRIDES_CACHE
+
+
+def _merge_translation_overrides(table: dict[str, dict]) -> None:
+    overrides = _load_translation_overrides()
+    if not overrides:
+        return
+    for key, lang_map in overrides.items():
+        entry = table.get(key)
+        if not isinstance(entry, dict):
+            continue
+        entry.update(lang_map)
+
+
+_merge_translation_overrides(TRANSLATIONS)
+
+
 def _ensure_language_fallback(lang_code: str, fallback_order: tuple[str, ...] = ('en', 'tr')) -> None:
     """Eksik dil anahtarlarını fallback ile tamamla (runtime)."""
     for key, translations in TRANSLATIONS.items():
@@ -19665,6 +20089,7 @@ def refresh_localization_if_changed(force: bool = False) -> bool:
             return False
 
         TRANSLATIONS = fresh_table
+        _merge_translation_overrides(TRANSLATIONS)
         _ensure_cjk_from_japanese()
         _ensure_language_fallback('de', ('en', 'tr'))
         _ensure_language_fallback('fr', ('en', 'tr'))

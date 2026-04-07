@@ -9260,16 +9260,19 @@ class MysteryMode(Game):
             msg_surf = info_font.render(msg, True, (255, 220, 100))
 
         compact_controls = popup_height <= s(380) or popup_width <= s(360)
+        controls_line_1 = t('card_workshop_controls_line1', 'Arrows: Move | SPACE: Place/Erase')
+        controls_line_2 = t('card_workshop_controls_line2', 'ENTER: Confirm | ESC: Cancel')
+        controls_line_3 = t('card_workshop_controls_line3', 'Mouse: Left click place/erase')
         controls = [
-            "Yon tuslari: Hareket | SPACE: Yerlestir/Sil",
-            "ENTER: Tamamla | ESC: Iptal",
-            "Mouse: Sol tik yerlestir/sil",
+            controls_line_1,
+            controls_line_2,
+            controls_line_3,
         ]
         if compact_controls:
             controls = [
-                "Yon: Hareket | SPACE: Yerlestir/Sil",
-                "ENTER: Tamamla | ESC: Iptal",
-                "Sol tik: Yerlestir/Sil",
+                controls_line_1,
+                controls_line_2,
+                controls_line_3,
             ]
         control_font = retro_style.get_font(s(14 if compact_controls else 15), bold=False)
         control_surfs = [
@@ -9279,7 +9282,7 @@ class MysteryMode(Game):
 
         # Başlık
         title_font = self.mystery_font_large
-        title_surf = title_font.render("Blok Atolyesi", True, (255, 220, 100))
+        title_surf = title_font.render(t('block_workshop_title', 'BLOCK WORKSHOP'), True, (255, 220, 100))
         title_rect = title_surf.get_rect(centerx=popup_rect.centerx, top=popup_y + s(12))
         self.screen.blit(title_surf, title_rect)
 
