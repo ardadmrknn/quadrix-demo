@@ -774,8 +774,44 @@ class PvPGame:
             shadow_surf.set_alpha(alpha)
             sr = shadow_surf.get_rect(center=(center_x + 2, center_y + 2))
             self.screen.blit(shadow_surf, sr)
-            # Ana metin (QUADRIX altın, diğerleri beyaz)
-            color = (255, 215, 0) if 'QUADRIX' in msg else (255, 255, 255)
+            # Ana metin (QUADRIX altın, TRIPLE magenta, DOUBLE cyan)
+            combo_count = 0
+            if 'Combo' in msg:
+                combo_prefix = msg.split('Combo', 1)[0]
+                combo_x_idx = combo_prefix.rfind('x')
+                if combo_x_idx != -1:
+                    combo_digits = []
+                    for ch in combo_prefix[combo_x_idx + 1:]:
+                        if ch.isdigit():
+                            combo_digits.append(ch)
+                        elif combo_digits:
+                            break
+                        elif ch.isspace():
+                            continue
+                        else:
+                            break
+                    if combo_digits:
+                        try:
+                            combo_count = int(''.join(combo_digits))
+                        except Exception:
+                            combo_count = 0
+
+            if 'QUADRIX' in msg:
+                color = (255, 215, 0)
+            elif combo_count >= 8:
+                color = (255, 85, 170)
+            elif combo_count >= 6:
+                color = (255, 170, 0)
+            elif combo_count >= 4:
+                color = (100, 255, 100)
+            elif combo_count >= 2:
+                color = (0, 255, 221)
+            elif 'TRIPLE' in msg:
+                color = (255, 0, 255)
+            elif 'DOUBLE' in msg:
+                color = (0, 255, 221)
+            else:
+                color = (255, 255, 255)
             text_surf = font.render(msg, True, color)
             text_surf.set_alpha(alpha)
             tr = text_surf.get_rect(center=(center_x, center_y))

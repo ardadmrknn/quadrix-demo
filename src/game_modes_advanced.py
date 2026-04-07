@@ -474,7 +474,7 @@ class SurvivalMode(Game):
                     self.line_clear_pending_colors = {}
 
             if lines_cleared == 4:
-                self.combo_message = "QUADRIX! 4 Satır Yok Edildi!"
+                self.combo_message = "QUADRIX!"
                 self.combo_message_time = 120
                 self.sound.play('tetris')
                 self.trigger_screen_shake(intensity=15, duration=20)
@@ -1252,7 +1252,7 @@ class CascadeMode(Game):
 
             # Combo mesajı (base game ile tutarlı)
             if total_cleared >= 4:
-                self.combo_message = "QUADRIX! 4 Satır Yok Edildi!"
+                self.combo_message = "QUADRIX!"
                 self.combo_message_time = 120
             elif total_cleared >= 2:
                 if total_cleared == 2:
