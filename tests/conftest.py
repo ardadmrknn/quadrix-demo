@@ -52,6 +52,15 @@ _MODULES_THAT_GET_STUBBED = {
 }
 
 
+_PYGAME_RUNTIME_STUB_TESTS = {
+	"test_campaign_debug_unlock_all.py",
+	"test_online_pvp_message_validation.py",
+	"test_platform_effective_ui_size.py",
+	"test_platform_utils_display_toggle.py",
+	"test_settings_env_default_language_ru.py",
+}
+
+
 def _looks_like_test_stub(mod) -> bool:
 	if not isinstance(mod, types.ModuleType):
 		return True
@@ -88,6 +97,25 @@ def _purge_leaked_test_stubs(*, skip_pygame: bool = False) -> None:
 	for name in list(sys.modules.keys()):
 		if name == "pygame" or name.startswith("pygame."):
 			sys.modules.pop(name, None)
+
+
+def _purge_leaked_pygame_stubs() -> None:
+	root_module = sys.modules.get("pygame")
+	purge_root = root_module is not None and _looks_like_test_stub(root_module)
+
+	for name in list(sys.modules.keys()):
+		if name != "pygame" and not name.startswith("pygame."):
+			continue
+		module_obj = sys.modules.get(name)
+		if purge_root or _looks_like_test_stub(module_obj):
+			sys.modules.pop(name, None)
+
+
+def _test_requires_runtime_pygame_stub(request: pytest.FixtureRequest) -> bool:
+	module_file = getattr(request.module, "__file__", None)
+	if not module_file:
+		return False
+	return Path(str(module_file)).name in _PYGAME_RUNTIME_STUB_TESTS
 
 
 def pytest_sessionstart(session):
@@ -136,7 +164,10 @@ def pytest_pycollect_makemodule(module_path, parent):
 
 
 @pytest.fixture(autouse=True)
-def _isolate_test_module_stubs():
+def _isolate_test_module_stubs(request: pytest.FixtureRequest):
 	_purge_leaked_test_stubs(skip_pygame=True)
+	if not _test_requires_runtime_pygame_stub(request):
+		_purge_leaked_pygame_stubs()
 	yield
 	_purge_leaked_test_stubs(skip_pygame=True)
+	_purge_leaked_pygame_stubs()
