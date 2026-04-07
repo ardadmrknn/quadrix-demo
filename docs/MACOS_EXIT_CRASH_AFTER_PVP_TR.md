@@ -1,13 +1,26 @@
-# macOS — Online PvP Sonrası Çıkışta Crash
+# macOS — Online PvP Sonrası Çıkışta Crash / Donma
 
 ## Belirti
 
 1. Online PvP oynandı.
 2. Ana menüye dönüldü.
 3. ESC → "Oyundan Çık" onaylandı.
-4. Uygulama **SIGSEGV** ile çöktü (macOS).
+4. Uygulama **donuyor** (macOS "Yanıt Vermiyor") veya **çöküyor** (SIGSEGV).
 
-## Kök Neden (3 katman)
+## Güncel Kod Notu
+
+Bu dosyadaki analiz katmanları korunmuştur; ancak **güncel implementasyon** artık
+platform-genel bir `shutdown_barrier` refactor'ı kullanmaz.
+
+Aktif çözüm bilinçli olarak **yalnızca macOS'a özeldir**:
+
+1. Çıkış onayında macOS için erken `request_shutdown()` sinyali verilir.
+2. Menü leaderboard/avatar işleri bu sinyali görürse erken döner.
+3. `steam_integration.shutdown()` macOS'ta kısa bir global worker deadline uygular.
+4. Deadline sonunda worker hâlâ yaşıyorsa `SteamAPI_Shutdown()` macOS'ta atlanır.
+5. Windows/Linux mevcut genel shutdown akışında bırakılmıştır.
+
+## Kök Neden (5 katman)
 
 ### 1. İzlenmeyen daemon thread'ler (`menu.py`)
 
@@ -22,12 +35,33 @@ Bu thread'ler `threading.Thread(daemon=True).start()` ile başlatılıp
 `steam_integration._worker_threads` kümesine **eklenmiyordu**.
 `steam_integration.shutdown()` bu thread'leri tanımadığı için `SteamAPI_Shutdown()` çağrılmadan önce **join etmiyordu**.
 
-Kullanıcı hızlıca ESC → çıkış yaptığında, leaderboard thread'i hâlâ
-`_dll.SteamAPI_ISteamUser_GetAuthSessionTicket()` gibi ctypes çağrıları
-yapıyordu. `SteamAPI_Shutdown()` tamamlandıktan sonra bu çağrılar
-serbest bırakılmış belleğe erişim (use-after-free) → **SIGSEGV**.
+### 2. `shutdown()` ana thread'i 3-6s bloke ediyordu
 
-### 2. `_atexit_cleanup` race condition (`steam_integration.py`)
+`shutdown()` tamamen `_init_lock` içinde çalışıyor:
+- pump_thread.join(0.35s)
+- precache_thread.join(0.35s)
+- N × worker_thread.join(0.6s)  ← her worker için ayrı ayrı
+- _pump_lock.acquire(1.5s)
+
+Toplam: **3-6 saniye ana thread tamamen bloke** → macOS "Yanıt Vermiyor"
+
+### 3. Nested worker deadlock (`fetch_leaderboard_entries`)
+
+`_fetch_worker` içinden `fetch_leaderboard_entries()` çağrıldığında:
+- Yeni bir tracked worker başlatılıyor
+- `result_event.wait(timeout=9s)` ile **çağıran thread bloklanıyor**
+- Sıralı olarak global + friends = **toplam 18s** bloklanma potansiyeli
+- `shutdown()` bunu 0.6s join timeout ile bekliyor → worker hayatta kalıyor
+
+### 4. Worker hayatta kalırken `SteamAPI_Shutdown()` çağrılıyordu
+
+Join timeout'u aşan worker'lar hâlâ Steam DLL fonksiyonları çağırıyordu.
+`SteamAPI_Shutdown()` sonrası bu çağrılar freed memory'e erişim → **crash**.
+
+### 5. Erken shutdown sinyali yoktu
+
+`running = False` ile `shutdown()` çağrısı arasında worker'lara "kapanıyoruz"
+sinyali verilmiyordu. Worker'lar gereksiz yere uzun süre yaşıyordu.
 
 ```python
 # ESKİ (hatalı)
@@ -110,6 +144,83 @@ for _ in range(5):
     time.sleep(0.05)
 ```
 
+### Düzeltme 4: Erken shutdown sinyali (`request_shutdown()`)
+
+**Dosya:** `src/main.py` + `src/steam_integration.py`
+
+"Evet, çık" basıldığında `running = False` ÖNCE `request_shutdown()` çağrılır:
+
+```python
+# main.py — confirm_exit handler
+try:
+    import steam_integration as _si_early
+    _si_early.request_shutdown()
+except Exception:
+    pass
+running = False
+```
+
+```python
+# steam_integration.py
+def request_shutdown() -> None:
+    global _shutdown_requested
+    _shutdown_requested = True
+```
+
+Bu sayede `running = False` → ana döngüden çıkış → cleanup bloğu
+arasındaki birkaç frame boyunca worker thread'ler **kapanıyoruz** sinyalini
+alır ve `_shutdown_requested` kontrolü ile kendilerini kapatır.
+
+### Düzeltme 5: Worker join — global deadline + güvenli SteamAPI_Shutdown
+
+**Dosya:** `src/steam_integration.py`
+
+```python
+# Global deadline ile worker'ları bekle (toplamda max 2s)
+_global_deadline = time.monotonic() + 2.0
+for worker_thread in worker_threads:
+    remaining = _global_deadline - time.monotonic()
+    if remaining <= 0:
+        break
+    worker_thread.join(timeout=max(0.05, remaining))
+
+# Hâlâ yaşayan worker varsa SteamAPI_Shutdown() ÇAĞIRMA
+any_alive = any(t.is_alive() for t in worker_threads)
+if any_alive:
+    print("[Steam] Worker hâlâ aktif, SteamAPI_Shutdown atlanıyor")
+else:
+    # Güvenli — tüm worker'lar bitti
+    _dll.SteamAPI_Shutdown()
+```
+
+### Düzeltme 6: `fetch_leaderboard_entries` shutdown-aware bekleme
+
+**Dosya:** `src/steam_integration.py`
+
+```python
+# ESKİ
+result_event.wait(timeout=timeout + 1)  # ← 9s blok
+
+# YENİ — 0.25s aralıklarla _shutdown_requested kontrol et
+while not result_event.is_set():
+    if _shutdown_requested:
+        break
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        break
+    result_event.wait(timeout=min(0.25, remaining))
+```
+
+### Düzeltme 7: `_fetch_worker` içine shutdown kontrolleri
+
+**Dosya:** `src/menu.py`
+
+`_fetch_worker` içinde her Steam API çağrısı arasına `_shutdown_requested`
+kontrolü eklendi:
+- Worker başlangıcında
+- `fetch_global_scores()` öncesinde
+- `fetch_friend_scores()` öncesinde
+
 ## Shutdown Sıralaması (Düzeltme Sonrası)
 
 ```
@@ -119,19 +230,26 @@ PvP biter → _cleanup() → net.shutdown() → _resume_steam_pump()
             → _start_tracked_worker(_fetch_worker)   ← İZLENEN
             → _start_tracked_worker(_worker)         ← İZLENEN
 
-ESC → confirm_exit → running = False
+ESC → confirm_exit
+         → request_shutdown()                        ← ERKEN SİNYAL
+            _shutdown_requested = True
+            worker'lar _shutdown_requested kontrol eder ve çıkar
+         → running = False
+         → (birkaç frame geçer — worker'lar kapanır)
          → shutdown_all_instances()                  (networking bridge'leri kapat)
          → steam_integration.shutdown()
-            1. _shutdown_requested = True
+            1. _shutdown_requested = True (zaten)
             2. _pump_running = False, _pump_paused = True
             3. pump_thread.join(0.35s)
             4. precache_thread.join(0.35s)
-            5. _worker_threads join (0.6s each)      ← leaderboard/avatar dahil
-            6. _pump_lock acquire → SteamAPI_Shutdown()
-            7. _dll = None
+            5. worker_threads join (global deadline 2s)
+            6. any_alive kontrolü:
+               - Tüm worker'lar bitti → SteamAPI_Shutdown() ✓
+               - Yaşayan var → SteamAPI_Shutdown() ATLANIR (OS temizler)
+            7. _dll = None, _init_ok = False
          → pygame.quit()
 ```
 
 ## Test Sonuçları
 
-621 test geçti, 7 atlandı (Steam SDK ve platform-özel testler).
+615 test geçti, 7 atlandı (Steam SDK ve platform-özel testler).

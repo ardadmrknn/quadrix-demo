@@ -13,6 +13,7 @@ import threading
 import time
 import unittest
 from types import SimpleNamespace
+from unittest.mock import patch
 
 
 _src_dir = os.path.join(os.path.dirname(__file__), '..', 'src')
@@ -35,6 +36,7 @@ class TestSteamShutdownWaitsWorkers(unittest.TestCase):
         self._orig_dll = steam_integration._dll
         self._orig_dll_loaded = steam_integration._dll_loaded
         self._orig_init_ok = steam_integration._init_ok
+        self._orig_exit_requested = steam_integration._exit_requested
         self._orig_shutdown_requested = steam_integration._shutdown_requested
         self._orig_pump_thread = steam_integration._pump_thread
         self._orig_pump_running = steam_integration._pump_running
@@ -48,6 +50,7 @@ class TestSteamShutdownWaitsWorkers(unittest.TestCase):
         self._orig_isteam_utils = steam_integration._isteam_utils
         self._orig_isteam_apps = steam_integration._isteam_apps
 
+        steam_integration._exit_requested = False
         steam_integration._shutdown_requested = False
         steam_integration._pump_thread = None
         steam_integration._pump_running = False
@@ -60,6 +63,7 @@ class TestSteamShutdownWaitsWorkers(unittest.TestCase):
         steam_integration._dll = self._orig_dll
         steam_integration._dll_loaded = self._orig_dll_loaded
         steam_integration._init_ok = self._orig_init_ok
+        steam_integration._exit_requested = self._orig_exit_requested
         steam_integration._shutdown_requested = self._orig_shutdown_requested
         steam_integration._pump_thread = self._orig_pump_thread
         steam_integration._pump_running = self._orig_pump_running
@@ -73,6 +77,61 @@ class TestSteamShutdownWaitsWorkers(unittest.TestCase):
         steam_integration._isteam_user_stats = self._orig_isteam_user_stats
         steam_integration._isteam_utils = self._orig_isteam_utils
         steam_integration._isteam_apps = self._orig_isteam_apps
+
+    def test_request_shutdown_stops_new_workers_only_on_macos(self):
+        steam_integration._dll = SimpleNamespace()
+        steam_integration._dll_loaded = True
+        steam_integration._init_ok = True
+
+        with patch.object(steam_integration.sys, 'platform', 'darwin'):
+            steam_integration.request_shutdown()
+
+            self.assertTrue(steam_integration.should_cancel_background_work())
+            self.assertTrue(steam_integration.is_available())
+            started = steam_integration._start_tracked_worker(lambda: None, name='blocked-worker')
+            self.assertIsNone(started)
+
+    def test_request_shutdown_is_noop_off_macos(self):
+        release_event = threading.Event()
+
+        def worker() -> None:
+            release_event.wait(timeout=0.2)
+
+        with patch.object(steam_integration.sys, 'platform', 'linux'):
+            steam_integration.request_shutdown()
+            self.assertFalse(steam_integration.should_cancel_background_work())
+            started = steam_integration._start_tracked_worker(worker, name='non-macos-worker')
+
+        self.assertIsNotNone(started)
+        self.assertIn(started, steam_integration._worker_threads)
+
+        release_event.set()
+        started.join(timeout=0.5)
+
+    def test_macos_shutdown_skips_api_shutdown_if_worker_is_still_alive(self):
+        release_event = threading.Event()
+        order: list[str] = []
+
+        def worker() -> None:
+            release_event.wait(timeout=1.2)
+
+        started = steam_integration._start_tracked_worker(worker, name='macos-stuck-worker')
+        self.assertIsNotNone(started, 'Test worker baslatilamadi')
+
+        def fake_shutdown() -> None:
+            order.append('api_shutdown')
+
+        steam_integration._dll = SimpleNamespace(SteamAPI_Shutdown=fake_shutdown)
+        steam_integration._dll_loaded = True
+        steam_integration._init_ok = True
+
+        with patch.object(steam_integration.sys, 'platform', 'darwin'):
+            steam_integration.shutdown()
+
+        self.assertNotIn('api_shutdown', order, 'macOS yolunda yaşayan worker varken SteamAPI_Shutdown çağrıldı')
+
+        release_event.set()
+        started.join(timeout=0.5)
 
     def test_shutdown_waits_for_tracked_worker_before_api_shutdown(self):
         order: list[str] = []

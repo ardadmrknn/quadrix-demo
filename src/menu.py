@@ -3148,7 +3148,17 @@ class Menu:
             self._mystery_lb_error = t('menu_lb_loading')
 
         def _fetch_worker():
+            def _should_abort() -> bool:
+                try:
+                    import steam_integration as _si_cancel
+                    return _si_cancel.should_cancel_background_work()
+                except Exception:
+                    return False
+
             try:
+                if _should_abort():
+                    return
+
                 # Steam SDK varsa, ticket ve steam_id'yi servise ilet
                 try:
                     import steam_integration as _si
@@ -3198,10 +3208,14 @@ class Menu:
                 if service_configured:
                     global_entries = service.fetch_mode_highscores('mystery', limit=10)
                     global_error = service.last_error
+                    if _should_abort():
+                        return
 
                 # --- Yol 3: SDK global verisini her zaman birleştir (anlık güncelleme) ---
                 sdk_global: list[dict] = []
                 if _sdk_available:
+                    if _should_abort():
+                        return
                     try:
                         import steam_integration as _si
                         sdk_global = _si.fetch_global_scores('mystery', limit=10) or []
@@ -3209,6 +3223,8 @@ class Menu:
                             print(f"[Steam] SDK leaderboard merge OK: mystery global → {len(sdk_global)} giriş")
                     except Exception as _sdk_err:
                         print(f"[Steam] SDK leaderboard fallback hatası: {_sdk_err}")
+                    if _should_abort():
+                        return
                 if sdk_global:
                     global_entries = _merge_entries(global_entries, sdk_global)
                     global_error = ''
@@ -3217,6 +3233,8 @@ class Menu:
                 # Steam Web API GetLeaderboardEntries datarequest=2 arkadaş filtresini
                 # desteklemez (global sonuç döner). SDK her zaman önce denenmeli.
                 if _sdk_available:
+                    if _should_abort():
+                        return
                     try:
                         import steam_integration as _si
                         sdk_friends = _si.fetch_friend_scores('mystery', limit=10)
@@ -3225,10 +3243,14 @@ class Menu:
                             print(f"[Steam] SDK friend leaderboard OK: mystery → {len(sdk_friends)} giriş")
                     except Exception as _sdk_err:
                         print(f"[Steam] SDK friend leaderboard hatası: {_sdk_err}")
+                    if _should_abort():
+                        return
 
                 if not friend_entries and service_configured:
                     friend_entries = service.fetch_mode_friend_highscores('mystery', limit=10)
                     friend_error = service.last_error
+                    if _should_abort():
+                        return
 
                 # Global listeye arkadaş girişlerini de ekle/güncelle
                 if friend_entries:
@@ -3270,6 +3292,8 @@ class Menu:
                 if new_ids:
                     try:
                         summaries = service.fetch_player_summaries(new_ids)
+                        if _should_abort():
+                            return
                         self._steam_player_cache.update(summaries)
                         # Avatar URL'lerini arka planda indir
                         def _download_avatars(to_download: dict):
@@ -3293,8 +3317,7 @@ class Menu:
             finally:
                 self._mystery_lb_loading = False
 
-        # İzlenen worker olarak başlat — shutdown() sırasında join edilir,
-        # SteamAPI_Shutdown() öncesi thread'in bitmesi beklenir.
+        # İzlenen worker olarak başlat; macOS çıkış yolunda Steam çağrıları erken iptal edilir.
         try:
             import steam_integration as _si_track
             if _si_track._start_tracked_worker(_fetch_worker, name="menu-lb-fetch") is None:
@@ -4022,10 +4045,21 @@ class Menu:
         self._steam_header_avatar_fetch_attempted = True
 
         def _worker():
+            def _should_abort() -> bool:
+                try:
+                    import steam_integration as _si_cancel
+                    return _si_cancel.should_cancel_background_work()
+                except Exception:
+                    return False
+
             try:
+                if _should_abort():
+                    return
                 summaries = {}
                 if self._leaderboard_service.is_configured():
                     summaries = self._leaderboard_service.fetch_player_summaries([steam_id])
+                    if _should_abort():
+                        return
                 if summaries:
                     self._steam_player_cache.update(summaries)
                 info = self._steam_player_cache.get(steam_id, {})
@@ -4050,7 +4084,7 @@ class Menu:
             finally:
                 self._steam_header_avatar_loading = False
 
-        # İzlenen worker olarak başlat — shutdown() sırasında join edilir.
+        # İzlenen worker olarak başlat; macOS çıkış yolunda Steam çağrıları erken iptal edilir.
         try:
             import steam_integration as _si_track
             if _si_track._start_tracked_worker(_worker, name="menu-avatar-fetch") is None:

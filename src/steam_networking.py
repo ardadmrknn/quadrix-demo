@@ -297,6 +297,24 @@ def shutdown_all_instances():
     _active_instances.clear()
 
 
+# atexit güvenlik ağı: anormal çıkışlarda (exception ile main()'den erken
+# dönme vb.) bridge'ler steam_integration.shutdown() ÖNCESİNDE kapansın.
+# Bunun güvenilir olması için steam_integration modülünü ÖNCE import edip onun
+# atexit cleanup'ini kaydettiriyoruz; ardından bu modül kendi handler'ını
+# kaydediyor. Python atexit LIFO olduğundan shutdown_all_instances() önce,
+# steam_integration.shutdown() sonra çalışır.
+try:
+    from . import steam_integration as _steam_integration_atexit  # type: ignore
+except Exception:
+    try:
+        import steam_integration as _steam_integration_atexit  # type: ignore
+    except Exception:
+        _steam_integration_atexit = None
+
+import atexit as _atexit
+_atexit.register(shutdown_all_instances)
+
+
 # ---------- Ana Sınıf ----------
 
 class SteamNetworking:

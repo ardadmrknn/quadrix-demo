@@ -62,12 +62,18 @@ _pump_lock = threading.Lock()  # RunCallbacks çakmasını önle
 _precache_thread: threading.Thread | None = None
 _worker_threads: set[threading.Thread] = set()
 _worker_threads_lock = threading.Lock()
+_exit_requested = False
 _shutdown_requested = False
+
+
+def should_cancel_background_work() -> bool:
+    """Arka plan işi macOS erken çıkışında veya gerçek shutdown'da iptal edilmeli mi?"""
+    return _shutdown_requested or (sys.platform == 'darwin' and _exit_requested)
 
 
 def _start_tracked_worker(target: Callable[[], Any], *, name: str) -> threading.Thread | None:
     """Steam API kullanan kısa ömürlü worker thread'lerini izleyerek başlat."""
-    if _shutdown_requested:
+    if should_cancel_background_work():
         return None
 
     thread_ref: list[threading.Thread | None] = [None]
@@ -84,7 +90,7 @@ def _start_tracked_worker(target: Callable[[], Any], *, name: str) -> threading.
     worker = threading.Thread(target=_runner, name=name, daemon=True)
     thread_ref[0] = worker
     with _worker_threads_lock:
-        if _shutdown_requested:
+        if should_cancel_background_work():
             return None
         _worker_threads.add(worker)
     worker.start()
@@ -570,13 +576,14 @@ def init() -> bool:
     İkinci çağrıda mevcut durumu döndürür (idempotent).
     """
     global _dll, _dll_loaded, _init_ok, _isteam_friends, _isteam_user, _isteam_user_stats, _isteam_utils
-    global _isteam_apps, _pump_thread, _pump_running, _precache_thread, _shutdown_requested
+    global _isteam_apps, _pump_thread, _pump_running, _precache_thread, _shutdown_requested, _exit_requested
 
     with _init_lock:
         if _dll_loaded:
             return _init_ok
 
         _dll_loaded = True
+        _exit_requested = False
         _shutdown_requested = False
 
         # ── Steam AppID env var — onefile PyInstaller için zorunlu ──────────────
@@ -736,12 +743,80 @@ def shutdown() -> None:
     global _dll, _dll_loaded, _init_ok
     global _isteam_friends, _isteam_user, _isteam_user_stats, _isteam_utils, _isteam_apps
     global _pump_thread, _pump_running, _pump_paused, _pump_pause_count
-    global _precache_thread, _shutdown_requested
+    global _precache_thread, _shutdown_requested, _exit_requested
+
+    if sys.platform != 'darwin':
+        with _init_lock:
+            if _shutdown_requested and not _init_ok and _dll is None:
+                return
+
+            _shutdown_requested = True
+            _pump_running = False
+            _pump_pause_count = 0
+            _pump_paused = True
+            _pump_paused_event.set()
+
+            pump_thread = _pump_thread
+            precache_thread = _precache_thread
+            _pump_thread = None
+            _precache_thread = None
+
+            if pump_thread and pump_thread.is_alive() and pump_thread is not threading.current_thread():
+                try:
+                    pump_thread.join(timeout=0.35)
+                except Exception:
+                    pass
+
+            if precache_thread and precache_thread.is_alive() and precache_thread is not threading.current_thread():
+                try:
+                    precache_thread.join(timeout=0.35)
+                except Exception:
+                    pass
+
+            with _worker_threads_lock:
+                worker_threads = [
+                    thread
+                    for thread in _worker_threads
+                    if thread.is_alive() and thread is not threading.current_thread()
+                ]
+                for thread in worker_threads:
+                    _worker_threads.discard(thread)
+
+            for worker_thread in worker_threads:
+                try:
+                    worker_thread.join(timeout=0.6)
+                except Exception:
+                    pass
+
+            if _dll and _init_ok:
+                acquired = _pump_lock.acquire(timeout=1.5)
+                if acquired:
+                    try:
+                        _dll.SteamAPI_Shutdown()
+                    except Exception:
+                        pass
+                    finally:
+                        _pump_lock.release()
+                else:
+                    # Pump thread RunCallbacks içinde takılı — lock alınamadı.
+                    # Daemon thread olduğu için process çıkışında OS temizler.
+                    print("[Steam] Pump lock alınamadı, SteamAPI_Shutdown atlanıyor")
+
+            _isteam_friends = None
+            _isteam_user = None
+            _isteam_user_stats = None
+            _isteam_utils = None
+            _isteam_apps = None
+            _dll = None
+            _dll_loaded = False
+            _init_ok = False
+        return
 
     with _init_lock:
         if _shutdown_requested and not _init_ok and _dll is None:
             return
 
+        _exit_requested = True
         _shutdown_requested = True
         _pump_running = False
         _pump_pause_count = 0
@@ -750,20 +825,17 @@ def shutdown() -> None:
 
         pump_thread = _pump_thread
         precache_thread = _precache_thread
+        dll = _dll if (_dll and _init_ok) else None
         _pump_thread = None
         _precache_thread = None
 
-        if pump_thread and pump_thread.is_alive() and pump_thread is not threading.current_thread():
-            try:
-                pump_thread.join(timeout=0.35)
-            except Exception:
-                pass
-
-        if precache_thread and precache_thread.is_alive() and precache_thread is not threading.current_thread():
-            try:
-                precache_thread.join(timeout=0.35)
-            except Exception:
-                pass
+        # Interface pointer'larını ERKEN temizle — worker thread'ler bir sonraki
+        # iterasyonlarında None görüp çıkacak (TOCTOU yerel-kopya ile korunur).
+        _isteam_friends = None
+        _isteam_user = None
+        _isteam_user_stats = None
+        _isteam_utils = None
+        _isteam_apps = None
 
         with _worker_threads_lock:
             worker_threads = [
@@ -774,34 +846,64 @@ def shutdown() -> None:
             for thread in worker_threads:
                 _worker_threads.discard(thread)
 
-        for worker_thread in worker_threads:
-            try:
-                worker_thread.join(timeout=0.6)
-            except Exception:
-                pass
+    if pump_thread and pump_thread.is_alive() and pump_thread is not threading.current_thread():
+        try:
+            pump_thread.join(timeout=0.15)
+        except Exception:
+            pass
 
-        if _dll and _init_ok:
-            acquired = _pump_lock.acquire(timeout=1.5)
+    if precache_thread and precache_thread.is_alive() and precache_thread is not threading.current_thread():
+        try:
+            precache_thread.join(timeout=0.25)
+        except Exception:
+            pass
+
+    worker_deadline = time.monotonic() + 0.75
+    for worker_thread in worker_threads:
+        remaining = worker_deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        try:
+            worker_thread.join(timeout=max(0.05, remaining))
+        except Exception:
+            pass
+
+    any_worker_alive = any(t.is_alive() for t in worker_threads)
+
+    if dll is not None:
+        if any_worker_alive:
+            print(
+                f"[Steam] {sum(1 for t in worker_threads if t.is_alive())} worker hâlâ aktif, "
+                "SteamAPI_Shutdown macOS'ta atlanıyor"
+            )
+        else:
+            acquired = _pump_lock.acquire(timeout=0.25)
             if acquired:
                 try:
-                    _dll.SteamAPI_Shutdown()
+                    dll.SteamAPI_Shutdown()
                 except Exception:
                     pass
                 finally:
                     _pump_lock.release()
             else:
-                # Pump thread RunCallbacks içinde takılı — lock alınamadı.
-                # Daemon thread olduğu için process çıkışında OS temizler.
                 print("[Steam] Pump lock alınamadı, SteamAPI_Shutdown atlanıyor")
 
-        _isteam_friends = None
-        _isteam_user = None
-        _isteam_user_stats = None
-        _isteam_utils = None
-        _isteam_apps = None
+    with _init_lock:
+        # Interface pointer'lar zaten yukarıda temizlendi; _dll ve bayrakları temizle
         _dll = None
         _dll_loaded = False
         _init_ok = False
+
+
+def request_shutdown() -> None:
+    """macOS çıkış yolunda yeni Steam işi başlamasını engelle.
+
+    Steam API'yi hemen kapatmaz; yalnızca macOS için erken çıkış sinyali bırakır.
+    Windows/Linux akışları bu çağrıdan etkilenmez.
+    """
+    global _exit_requested
+    if sys.platform == 'darwin':
+        _exit_requested = True
 
 
 def _atexit_cleanup() -> None:
@@ -860,14 +962,13 @@ def is_steam_achievement_unlocked(api_name: str) -> bool | None:
         return None
     try:
         name_bytes = api_name.encode('utf-8') if isinstance(api_name, str) else api_name
-        achieved = ctypes.c_bool(False)
+        unlocked = ctypes.c_bool(False)
         ok = _dll.SteamAPI_ISteamUserStats_GetAchievement(
-            _isteam_user_stats, name_bytes, ctypes.byref(achieved)
+            _isteam_user_stats, name_bytes, ctypes.byref(unlocked)
         )
-        if ok:
-            return bool(achieved.value)
-        return None
-    except Exception:
+        return bool(unlocked.value) if ok else None
+    except Exception as e:
+        print(f"[Steam] Achievement get hatası ({api_name}): {e}")
         return None
 
 
@@ -907,14 +1008,7 @@ def sync_all_achievements(unlocked_ids: dict[str, str], id_map: dict[str, str]) 
 
 
 def clear_steam_achievement(api_name: str) -> bool:
-    """Steam'de bir başarımın kilidini geri al (test/geliştirme amaçlı).
-
-    Args:
-        api_name: Steamworks konsolunda tanımlı API Name (ör. 'ACH_FIRST_GAME').
-
-    Returns:
-        True → başarıyla temizlendi ve store edildi.
-    """
+    """Steam'de bir başarımın kilidini geri al (test/geliştirme amaçlı)."""
     if not is_available() or not _isteam_user_stats or not _dll:
         return False
     try:
@@ -1146,10 +1240,11 @@ def _callback_pump_loop() -> None:
     while _pump_running:
         if _shutdown_requested:
             break
-        if _dll and _init_ok and not _pump_paused:
+        dll = _dll  # Yerel kopya — TOCTOU önleme
+        if dll is not None and _init_ok and not _pump_paused:
             with _pump_lock:
                 try:
-                    _dll.SteamAPI_RunCallbacks()
+                    dll.SteamAPI_RunCallbacks()
                 except Exception:
                     pass
         else:
@@ -1212,11 +1307,11 @@ def _precache_all_leaderboard_handles() -> None:
     """Init sonrası tüm leaderboard handle'larını arka planda önceden al."""
     # Pump thread'inin başlaması için biraz bekle
     time.sleep(1.0)
-    if _shutdown_requested or not is_available() or not _isteam_user_stats:
+    if should_cancel_background_work() or not is_available() or not _isteam_user_stats:
         return
     print("[Steam] Leaderboard handle'ları önceden yükleniyor...")
     for mode, lb_name in _MODE_TO_LB.items():
-        if _shutdown_requested:
+        if should_cancel_background_work():
             break
         if lb_name not in _lb_handle_cache:
             _find_leaderboard_handle_by_api(lb_name, timeout=8.0)
@@ -1406,7 +1501,7 @@ def get_auth_session_ticket() -> str | None:
             _auth_ticket_hex_cache = ticket_bytes.hex()
             # Ticket'ın geçerli hale gelmesi için callbacks pump
             for _ in range(5):
-                if _shutdown_requested:
+                if should_cancel_background_work():
                     break
                 run_callbacks()
                 time.sleep(0.05)
@@ -1472,21 +1567,27 @@ def _get_api_call_result(api_call_handle: int, result_struct, callback_id: int,
     Bu, C++'daki CCallResult mekanizmasının Python karşılığıdır.
     Returns: dolu result_struct örneği veya None (hata/timeout).
     """
-    if not _isteam_utils or not _dll:
-        print(f"[Steam] _get_api_call_result: utils={_isteam_utils} dll={_dll is not None}")
+    # Yerel kopyalar — shutdown() global'leri None yapınca TOCTOU race önlenir.
+    dll = _dll
+    utils = _isteam_utils
+    if not utils or not dll:
+        print(f"[Steam] _get_api_call_result: utils={utils} dll={dll is not None}")
         return None
     failed = ctypes.c_bool(False)
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        if _shutdown_requested or not _init_ok or not _dll or not _isteam_utils:
+        # Her iterasyonda global'den tekrar al — shutdown anında None olabilir
+        dll = _dll
+        utils = _isteam_utils
+        if should_cancel_background_work() or not _init_ok or dll is None or utils is None:
             return None
         # run_callbacks() burada ÇAĞRILMIYOR — pump thread her 30ms'de hallediyor
         # İki thread'den aynı anda RunCallbacks çağırmak race condition yaratır
         try:
             # Önce tamamlandı mı kontrol et
             try:
-                completed = _dll.SteamAPI_ISteamUtils_IsAPICallCompleted(
-                    _isteam_utils, ctypes.c_uint64(api_call_handle), ctypes.byref(failed)
+                completed = dll.SteamAPI_ISteamUtils_IsAPICallCompleted(
+                    utils, ctypes.c_uint64(api_call_handle), ctypes.byref(failed)
                 )
                 if completed and failed.value:
                     print(f"[Steam] API call {api_call_handle} failed flag set")
@@ -1494,8 +1595,8 @@ def _get_api_call_result(api_call_handle: int, result_struct, callback_id: int,
             except Exception:
                 pass  # IsAPICallCompleted olmayabilir, sorun değil
 
-            ok = _dll.SteamAPI_ISteamUtils_GetAPICallResult(
-                _isteam_utils,
+            ok = dll.SteamAPI_ISteamUtils_GetAPICallResult(
+                utils,
                 ctypes.c_uint64(api_call_handle),
                 ctypes.byref(result_struct),
                 ctypes.sizeof(result_struct),
@@ -1517,14 +1618,19 @@ def _get_api_call_result(api_call_handle: int, result_struct, callback_id: int,
 
 def _find_leaderboard_handle_by_api(lb_name: str, timeout: float = 6.0) -> int | None:
     """FindLeaderboard + GetAPICallResult ile leaderboard handle'ını al."""
-    if _shutdown_requested or not is_available() or not _isteam_user_stats:
+    if should_cancel_background_work() or not is_available() or not _isteam_user_stats:
         return None
     # Cache'de varsa direkt döndür
     if lb_name in _lb_handle_cache:
         return _lb_handle_cache[lb_name]
+    # Yerel kopyalar — TOCTOU race önleme
+    dll = _dll
+    stats = _isteam_user_stats
+    if dll is None or stats is None:
+        return None
     try:
-        api_call = _dll.SteamAPI_ISteamUserStats_FindLeaderboard(  # type: ignore[union-attr]
-            _isteam_user_stats,
+        api_call = dll.SteamAPI_ISteamUserStats_FindLeaderboard(
+            stats,
             lb_name.encode('utf-8'),
         )
         if not api_call:
@@ -1746,42 +1852,48 @@ def submit_score(mode: str, score: int) -> bool:
     steam_id_str = get_steam_id_str() if sdk_ok else None
 
     def _worker():
-        if _shutdown_requested:
+        if should_cancel_background_work():
             return
         sdk_success = False
 
         # --- Yol 1: Client SDK ---
-        if sdk_ok and _isteam_user_stats:
-            try:
-                if _shutdown_requested or not _dll or not _init_ok:
-                    return
-                handle = _lb_handle_cache.get(lb_name) or _find_leaderboard_handle_by_api(lb_name)
-                if _shutdown_requested:
-                    return
-                if handle:
-                    api_call = _dll.SteamAPI_ISteamUserStats_UploadLeaderboardScore(  # type: ignore[union-attr]
-                        _isteam_user_stats,
-                        ctypes.c_uint64(handle),
-                        1,   # k_ELeaderboardUploadScoreMethodKeepBest (0=None, 1=KeepBest, 2=ForceUpdate)
-                        ctypes.c_int32(score),
-                        None, 0,
-                    )
-                    if api_call:
-                        up_result = _LeaderboardScoreUploaded()
-                        confirmed = _get_api_call_result(
-                            api_call, up_result, _CB_LEADERBOARD_SCORE_UPLOADED, timeout=8.0)
-                        if confirmed and confirmed.m_bSuccess:
-                            sdk_success = True
-                            print(f"[Steam] SDK skor OK -> {lb_name}: {score} "
-                                  f"rank={confirmed.m_nGlobalRankNew} degisti={bool(confirmed.m_bScoreChanged)}")
+        if sdk_ok:
+            # Yerel kopyalar — TOCTOU race önleme
+            dll = _dll
+            stats = _isteam_user_stats
+            if dll is None or stats is None:
+                pass  # SDK yok, fallback'e geç
+            else:
+                try:
+                    if should_cancel_background_work() or not _init_ok:
+                        return
+                    handle = _lb_handle_cache.get(lb_name) or _find_leaderboard_handle_by_api(lb_name)
+                    if should_cancel_background_work():
+                        return
+                    if handle:
+                        api_call = dll.SteamAPI_ISteamUserStats_UploadLeaderboardScore(
+                            stats,
+                            ctypes.c_uint64(handle),
+                            1,   # k_ELeaderboardUploadScoreMethodKeepBest (0=None, 1=KeepBest, 2=ForceUpdate)
+                            ctypes.c_int32(score),
+                            None, 0,
+                        )
+                        if api_call:
+                            up_result = _LeaderboardScoreUploaded()
+                            confirmed = _get_api_call_result(
+                                api_call, up_result, _CB_LEADERBOARD_SCORE_UPLOADED, timeout=8.0)
+                            if confirmed and confirmed.m_bSuccess:
+                                sdk_success = True
+                                print(f"[Steam] SDK skor OK -> {lb_name}: {score} "
+                                      f"rank={confirmed.m_nGlobalRankNew} degisti={bool(confirmed.m_bScoreChanged)}")
+                            else:
+                                print(f"[Steam] SDK skor FAIL (success=0) -> {lb_name}, Partner API deneniyor...")
                         else:
-                            print(f"[Steam] SDK skor FAIL (success=0) -> {lb_name}, Partner API deneniyor...")
+                            print(f"[Steam] UploadLeaderboardScore cagri basarisiz: {lb_name}")
                     else:
-                        print(f"[Steam] UploadLeaderboardScore cagri basarisiz: {lb_name}")
-                else:
-                    print(f"[Steam] Handle alinamadi: {lb_name}")
-            except Exception as e:
-                print(f"[Steam] SDK submit hatasi ({lb_name}): {e}")
+                        print(f"[Steam] Handle alinamadi: {lb_name}")
+                except Exception as e:
+                    print(f"[Steam] SDK submit hatasi ({lb_name}): {e}")
 
         # --- Yol 2: Partner Server API fallback ---
         if not sdk_success and steam_id_str:
@@ -1921,13 +2033,18 @@ def fetch_leaderboard_entries(
 
     def _worker():
         try:
-            if _shutdown_requested or not _dll or not _init_ok or not _isteam_user_stats:
+            # Yerel kopyalar — TOCTOU race önleme
+            dll = _dll
+            stats = _isteam_user_stats
+            if should_cancel_background_work() or dll is None or not _init_ok or stats is None:
                 result_event.set()
                 return
             handle = _lb_handle_cache.get(lb_name)
             if not handle:
                 handle = _find_leaderboard_handle_by_api(lb_name, timeout=min(5.0, timeout * 0.6))
-            if _shutdown_requested or not _dll or not _init_ok or not _isteam_user_stats:
+            dll = _dll
+            stats = _isteam_user_stats
+            if should_cancel_background_work() or dll is None or not _init_ok or stats is None:
                 result_event.set()
                 return
             if not handle:
@@ -1946,8 +2063,8 @@ def fetch_leaderboard_entries(
                 half = max(1, safe_limit // 2)
                 range_start = -half
                 range_end = half
-            api_call = _dll.SteamAPI_ISteamUserStats_DownloadLeaderboardEntries(  # type: ignore[union-attr]
-                _isteam_user_stats,
+            api_call = dll.SteamAPI_ISteamUserStats_DownloadLeaderboardEntries(
+                stats,
                 ctypes.c_uint64(handle),
                 request_type,
                 range_start,
@@ -1978,15 +2095,17 @@ def fetch_leaderboard_entries(
                 result_event.set()
                 return
 
-            # Her girişi oku
+            # Her girişi oku — dll/stats yerellerini yenile
+            dll = _dll
+            stats = _isteam_user_stats
             entries: list[dict[str, Any]] = []
             for idx in range(min(entry_count, safe_limit)):
-                if _shutdown_requested or not _dll or not _init_ok or not _isteam_user_stats:
+                if should_cancel_background_work() or dll is None or not _init_ok or stats is None:
                     break
                 entry = _LeaderboardEntry()
                 try:
-                    ok = _dll.SteamAPI_ISteamUserStats_GetDownloadedLeaderboardEntry(  # type: ignore[union-attr]
-                        _isteam_user_stats,
+                    ok = dll.SteamAPI_ISteamUserStats_GetDownloadedLeaderboardEntry(
+                        stats,
                         ctypes.c_uint64(entries_handle),
                         idx,
                         ctypes.byref(entry),
@@ -2016,7 +2135,17 @@ def fetch_leaderboard_entries(
     t_worker = _start_tracked_worker(_worker, name=f"steam-fetch-{lb_name}")
     if t_worker is None:
         return result_holder[0]
-    result_event.wait(timeout=timeout + 1)
+    # Erken çıkış-aware bekleme: 0.25s aralıklarla iptal sinyalini kontrol et.
+    # Bu sayede shutdown sinyali geldiğinde en fazla 0.25s sonra döner,
+    # çağıran worker thread de hemen çıkabilir.
+    _wait_deadline = time.monotonic() + timeout + 1
+    while not result_event.is_set():
+        if should_cancel_background_work():
+            break
+        remaining = _wait_deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        result_event.wait(timeout=min(0.25, remaining))
     return result_holder[0]
 
 
