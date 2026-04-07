@@ -509,6 +509,8 @@ class Game:
             saved_sfx_vol = self.settings_manager.get('sfx_volume', 0.5)
             self.sound.set_music_volume(saved_music_vol)
             self.sound.set_volume(saved_sfx_vol)
+        if hasattr(self.sound, 'unduck_music'):
+            self.sound.unduck_music()
         self.control_bindings = self._resolve_single_player_controls()
         self.alt_control_bindings = self._resolve_single_player_secondary_controls(self.control_bindings)
         

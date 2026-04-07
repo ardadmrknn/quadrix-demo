@@ -92,6 +92,37 @@ def _find_super_init_sound_keyword(init_node: ast.FunctionDef):
     return None
 
 
+def _find_self_method_call_lines(function_node: ast.FunctionDef, owner_attr: str, method_name: str) -> list[int]:
+    matches: list[int] = []
+    for node in ast.walk(function_node):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        if not isinstance(func, ast.Attribute) or func.attr != method_name:
+            continue
+        owner = func.value
+        if not isinstance(owner, ast.Attribute) or owner.attr != owner_attr:
+            continue
+        if not isinstance(owner.value, ast.Name) or owner.value.id != "self":
+            continue
+        matches.append(node.lineno)
+    return sorted(matches)
+
+
+def _find_name_method_call_lines(tree: ast.AST, name: str, method_name: str) -> list[int]:
+    matches: list[int] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        if not isinstance(func, ast.Attribute) or func.attr != method_name:
+            continue
+        if not isinstance(func.value, ast.Name) or func.value.id != name:
+            continue
+        matches.append(node.lineno)
+    return sorted(matches)
+
+
 def test_main_mode_entries_reuse_shared_menu_sound():
     tree = _parse(MAIN_PY)
     seen = {name: 0 for name in TARGET_MODE_CALLS}
@@ -133,4 +164,49 @@ def test_changed_mode_constructors_forward_sound_manager():
     assert not missing_forward, (
         "sound_manager is not forwarded to Game.__init__: "
         + ", ".join(missing_forward)
+    )
+
+
+def test_gameplay_mode_constructors_reset_pause_duck_before_starting_music():
+    constructor_targets = [
+        (ROOT / "src/game.py", "Game", "sound", "unduck_music", "_start_music_playlist"),
+        (ROOT / "src/pvp_game.py", "PvPGame", "sound", "unduck_music", "_start_pvp_music"),
+        (ROOT / "src/online_pvp_game.py", "OnlinePvPGame", "sound", "unduck_music", "_start_pvp_music"),
+    ]
+
+    missing_calls = []
+    misordered_calls = []
+
+    for path, class_name, owner_attr, reset_method, start_method in constructor_targets:
+        init_node = _find_class_init(path, class_name)
+        assert init_node is not None, f"{class_name}.__init__ not found in {path.name}"
+
+        reset_lines = _find_self_method_call_lines(init_node, owner_attr, reset_method)
+        start_lines = _find_self_method_call_lines(init_node, "", start_method)
+        if not start_lines:
+            for node in ast.walk(init_node):
+                if not isinstance(node, ast.Call):
+                    continue
+                func = node.func
+                if isinstance(func, ast.Attribute) and func.attr == start_method:
+                    owner = func.value
+                    if isinstance(owner, ast.Name) and owner.id == "self":
+                        start_lines.append(node.lineno)
+        start_lines = sorted(start_lines)
+
+        if not reset_lines:
+            missing_calls.append(class_name)
+            continue
+        if start_lines and reset_lines[0] > start_lines[0]:
+            misordered_calls.append(class_name)
+
+    assert not missing_calls, "Pause duck reset missing before music start: " + ", ".join(missing_calls)
+    assert not misordered_calls, "Pause duck reset happens after music start: " + ", ".join(misordered_calls)
+
+
+def test_main_menu_music_restarts_clear_pause_duck_state():
+    tree = _parse(MAIN_PY)
+    unduck_calls = _find_name_method_call_lines(tree, "menu_sound", "unduck_music")
+    assert len(unduck_calls) >= 4, (
+        "Expected initial menu start and menu return flows to clear pause duck state via menu_sound.unduck_music()"
     )

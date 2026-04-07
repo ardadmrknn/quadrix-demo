@@ -11,6 +11,8 @@ Desteklenen kontrolcüler:
   - Genel SDL2 uyumlu gamepad'ler
 """
 
+import math
+
 import pygame
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
@@ -166,6 +168,15 @@ class GamepadState:
     stick_repeat_y: float = 0.0
     stick_initial_delay_x: bool = False
     stick_initial_delay_y: bool = False
+    # Sağ stick fare emülasyonu için ham eksenler ve drift filtresi durumu
+    raw_right_x: float = 0.0
+    raw_right_y: float = 0.0
+    mouse_neutral_x: float = 0.0
+    mouse_neutral_y: float = 0.0
+    mouse_neutral_ready: bool = False
+    mouse_control_active: bool = False
+    mouse_accum_x: float = 0.0
+    mouse_accum_y: float = 0.0
 
 
 class GamepadManager:
@@ -194,6 +205,10 @@ class GamepadManager:
     MOUSE_SENSITIVITY = 1.0
     MOUSE_DEADZONE = 0.12       # Fare için ayrı (düşük) deadzone
     MOUSE_ACCEL_EXPONENT = 2.0  # Kuadratik ivme (hassas + hızlı)
+    MOUSE_ACTIVATE_THRESHOLD = 0.30
+    MOUSE_RELEASE_THRESHOLD = 0.14
+    MOUSE_NEUTRAL_TRACK_THRESHOLD = 0.24
+    MOUSE_NEUTRAL_FOLLOW_RATE = 0.08
 
     # Bağlam: 'game' = oyun içi, 'menu' = menü/UI
     # B butonu oyun içinde rotate, menüde back olarak çalışır
@@ -640,8 +655,17 @@ class GamepadManager:
                     gp.left_stick.x = self._apply_deadzone(raw_x)
                     gp.left_stick.y = self._apply_deadzone(raw_y)
                 if num_axes >= 4:
-                    gp.right_stick.x = self._apply_deadzone(gp.joystick.get_axis(2))
-                    gp.right_stick.y = self._apply_deadzone(gp.joystick.get_axis(3))
+                    raw_right_x = self._sanitize_axis(gp.joystick.get_axis(2))
+                    raw_right_y = self._sanitize_axis(gp.joystick.get_axis(3))
+                    gp.raw_right_x = raw_right_x
+                    gp.raw_right_y = raw_right_y
+                    gp.right_stick.x = self._apply_deadzone(raw_right_x)
+                    gp.right_stick.y = self._apply_deadzone(raw_right_y)
+                    self._update_mouse_neutral(gp)
+                else:
+                    gp.raw_right_x = 0.0
+                    gp.raw_right_y = 0.0
+                    self._reset_mouse_emulation(gp)
                 if num_axes >= 6:
                     gp.left_trigger = max(0.0, (gp.joystick.get_axis(4) + 1.0) / 2.0)
                     gp.right_trigger = max(0.0, (gp.joystick.get_axis(5) + 1.0) / 2.0)
@@ -711,6 +735,62 @@ class GamepadManager:
         if value > self.DIGITAL_THRESHOLD:
             return +1
         return 0
+
+    def _reset_mouse_emulation(self, gp: GamepadState) -> None:
+        gp.mouse_control_active = False
+        gp.mouse_accum_x = 0.0
+        gp.mouse_accum_y = 0.0
+
+    def _sanitize_axis(self, value: float | int | None) -> float:
+        try:
+            axis = float(value)
+        except Exception:
+            return 0.0
+        if not math.isfinite(axis):
+            return 0.0
+        return max(-1.0, min(1.0, axis))
+
+    def _update_mouse_neutral(self, gp: GamepadState) -> None:
+        raw_x = self._sanitize_axis(getattr(gp, 'raw_right_x', 0.0))
+        raw_y = self._sanitize_axis(getattr(gp, 'raw_right_y', 0.0))
+
+        if not gp.mouse_neutral_ready:
+            gp.mouse_neutral_x = raw_x
+            gp.mouse_neutral_y = raw_y
+            gp.mouse_neutral_ready = True
+            return
+
+        if gp.mouse_control_active:
+            return
+
+        drift_x = raw_x - gp.mouse_neutral_x
+        drift_y = raw_y - gp.mouse_neutral_y
+        if math.hypot(drift_x, drift_y) > self.MOUSE_NEUTRAL_TRACK_THRESHOLD:
+            return
+
+        follow = float(self.MOUSE_NEUTRAL_FOLLOW_RATE)
+        gp.mouse_neutral_x += drift_x * follow
+        gp.mouse_neutral_y += drift_y * follow
+
+    def _get_mouse_axes(self, gp: GamepadState) -> tuple[float, float]:
+        neutral_x = gp.mouse_neutral_x if gp.mouse_neutral_ready else 0.0
+        neutral_y = gp.mouse_neutral_y if gp.mouse_neutral_ready else 0.0
+        raw_x = self._sanitize_axis(getattr(gp, 'raw_right_x', 0.0)) - neutral_x
+        raw_y = self._sanitize_axis(getattr(gp, 'raw_right_y', 0.0)) - neutral_y
+        return (
+            max(-1.0, min(1.0, raw_x)),
+            max(-1.0, min(1.0, raw_y)),
+        )
+
+    def _apply_mouse_radial_deadzone(self, raw_x: float, raw_y: float, deadzone: float) -> tuple[float, float]:
+        magnitude = math.hypot(raw_x, raw_y)
+        if magnitude <= deadzone:
+            return (0.0, 0.0)
+
+        scaled_mag = (magnitude - deadzone) / max(1e-6, 1.0 - deadzone)
+        scaled_mag = max(0.0, min(1.0, scaled_mag))
+        scale = scaled_mag / magnitude
+        return (raw_x * scale, raw_y * scale)
 
     def _make_key_event(self, key: int, event_type: int) -> pygame.event.Event:
         """Sentetik KEYDOWN veya KEYUP eventi oluştur"""
@@ -835,39 +915,36 @@ class GamepadManager:
         try:
             surface = pygame.display.get_surface()
             if not surface:
+                self._reset_mouse_emulation(gp)
                 return events
 
             js = gp.joystick
             if not js or not js.get_init():
+                self._reset_mouse_emulation(gp)
                 return events
 
-            num_axes = js.get_numaxes()
-            if num_axes < 4:
+            if js.get_numaxes() < 4:
+                self._reset_mouse_emulation(gp)
                 return events
 
-            # --- Ham değerleri oku (sınıf deadzone'ünü ATLA) ---
-            raw_rx = js.get_axis(2)
-            raw_ry = js.get_axis(3)
+            raw_rx, raw_ry = self._get_mouse_axes(gp)
+            magnitude = math.hypot(raw_rx, raw_ry)
+            activation_threshold = max(float(self.MOUSE_ACTIVATE_THRESHOLD), float(self.MOUSE_DEADZONE))
+            release_threshold = max(float(self.MOUSE_RELEASE_THRESHOLD), float(self.MOUSE_DEADZONE))
 
-            dz = self.MOUSE_DEADZONE
-
-            # Deadzone filtresi
-            if abs(raw_rx) < dz:
-                raw_rx = 0.0
-            if abs(raw_ry) < dz:
-                raw_ry = 0.0
-
-            if raw_rx == 0.0 and raw_ry == 0.0:
+            if not gp.mouse_control_active:
+                if magnitude < activation_threshold:
+                    gp.mouse_accum_x = 0.0
+                    gp.mouse_accum_y = 0.0
+                    return events
+                gp.mouse_control_active = True
+            elif magnitude <= release_threshold:
+                self._reset_mouse_emulation(gp)
                 return events
 
-            # Deadzone sonrası normalize (0–1 aralığına)
-            def _norm(val: float) -> float:
-                sign = 1.0 if val > 0 else -1.0
-                n = (abs(val) - dz) / (1.0 - dz)
-                return sign * max(0.0, min(1.0, n))
-
-            rx = _norm(raw_rx)
-            ry = _norm(raw_ry)
+            rx, ry = self._apply_mouse_radial_deadzone(raw_rx, raw_ry, release_threshold)
+            if rx == 0.0 and ry == 0.0:
+                return events
 
             # Kuadratik ivme eğrisi: küçük stick = hassas, büyük stick = hızlı
             exp = self.MOUSE_ACCEL_EXPONENT
@@ -882,22 +959,18 @@ class GamepadManager:
             fdy = ay * speed * scale
 
             # Biriken alt-piksel hareketini takip et
-            if not hasattr(gp, '_mouse_accum_x'):
-                gp._mouse_accum_x = 0.0
-                gp._mouse_accum_y = 0.0
+            gp.mouse_accum_x += fdx
+            gp.mouse_accum_y += fdy
 
-            gp._mouse_accum_x += fdx
-            gp._mouse_accum_y += fdy
-
-            dx = int(gp._mouse_accum_x)
-            dy = int(gp._mouse_accum_y)
+            dx = int(gp.mouse_accum_x)
+            dy = int(gp.mouse_accum_y)
 
             if dx == 0 and dy == 0:
                 return events
 
             # Harcanan tam pikselleri düş
-            gp._mouse_accum_x -= dx
-            gp._mouse_accum_y -= dy
+            gp.mouse_accum_x -= dx
+            gp.mouse_accum_y -= dy
 
             # Mouse API'leri logical (window) space'te çalışır
             if hasattr(pygame.display, 'get_window_size'):
@@ -918,7 +991,7 @@ class GamepadManager:
                 )
             )
         except Exception:
-            pass
+            self._reset_mouse_emulation(gp)
         return events
 
     def _generate_mouse_click_events(self, gp: GamepadState) -> List[pygame.event.Event]:

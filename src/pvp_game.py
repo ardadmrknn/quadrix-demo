@@ -179,6 +179,11 @@ class PvPGame:
         self.sound.sfx_enabled = sound_enabled  # Ses efektleri ayarı
         if self.settings_manager:
             self.sound.music_enabled = self.settings_manager.get('music_enabled', True)
+            self.sound.sfx_enabled = self.settings_manager.get('sound_enabled', sound_enabled)
+            self.sound.set_music_volume(self.settings_manager.get('music_volume', 0.3))
+            self.sound.set_volume(self.settings_manager.get('sfx_volume', 0.5))
+        if hasattr(self.sound, 'unduck_music'):
+            self.sound.unduck_music()
         self.current_music_track = None
         self.effects_enabled = effects_enabled
         self._start_pvp_music()

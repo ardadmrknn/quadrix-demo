@@ -1324,7 +1324,7 @@ class UserSelectionScreen:
                     return v
             return str(value)
 
-            stats = [
+        stats = [
             (t('user_last_played'), _format_last_played(user_data.get('last_played'))),
             (t('total_games'), f"{user_data.get('total_games', 0)}"),
             (t('total_score'), f"{user_data.get('total_score', 0):,}".replace(',', '.')),

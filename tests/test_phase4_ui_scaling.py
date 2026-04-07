@@ -135,14 +135,28 @@ class _DummyUserManager:
         return True, 'deleted'
 
 
-def _patch_user_screens(monkeypatch):
+def _patch_user_screens(monkeypatch, *, real_fonts: bool = False):
     monkeypatch.setattr(user_screens, 'get_shared_falling_blocks_layer', lambda *args, **kwargs: _DummyFx())
     monkeypatch.setattr(user_screens, 'AvatarEditor', _DummyAvatarEditor)
     monkeypatch.setattr(user_screens, 'SteamLeaderboardService', _DummySteamService)
     monkeypatch.setattr(user_screens, 'get_avatar_entries', lambda: [{'value': '__default__'}])
     monkeypatch.setattr(user_screens.UserSelectionScreen, '_ensure_steam_avatar_async', lambda self: None)
-    monkeypatch.setattr(user_screens.retro_style, 'get_font', lambda size, bold=True: _DummyFont(size))
-    monkeypatch.setattr(user_screens.UIFonts, 'get', lambda size: _DummyFont(size))
+    if real_fonts:
+        if not pygame.font.get_init():
+            pygame.font.init()
+        monkeypatch.setattr(
+            user_screens.retro_style,
+            'get_font',
+            lambda size, bold=True: pygame.font.Font(None, max(12, int(size))),
+        )
+        monkeypatch.setattr(
+            user_screens.UIFonts,
+            'get',
+            lambda size: pygame.font.Font(None, max(12, int(size))),
+        )
+    else:
+        monkeypatch.setattr(user_screens.retro_style, 'get_font', lambda size, bold=True: _DummyFont(size))
+        monkeypatch.setattr(user_screens.UIFonts, 'get', lambda size: _DummyFont(size))
 
 
 def test_user_selection_ui_scale_preserves_1366_baseline(monkeypatch):
@@ -202,6 +216,33 @@ def test_user_selection_transition_keeps_original_screen_scale_source(monkeypatc
     assert captured['scale'] == 0.96
     assert screen.screen is surface
     assert getattr(screen, '_ui_scale_surface', None) is None
+
+
+def test_user_selection_profile_panel_draws_selected_user_without_name_error(monkeypatch):
+    _patch_user_screens(monkeypatch, real_fonts=True)
+    monkeypatch.setattr(user_screens.retro_style, 'draw_panel', lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        user_screens.retro_style,
+        'render_fit_text',
+        lambda text, color, max_width, font_size, bold=True, min_size=None: pygame.font.Font(
+            None, max(12, int(font_size))
+        ).render(str(text), True, color),
+    )
+
+    surface = pygame.Surface((1366, 768), pygame.SRCALPHA)
+    screen = user_screens.UserSelectionScreen(surface, _DummyUserManager())
+    screen.selected_user = 1
+    monkeypatch.setattr(
+        screen,
+        '_get_avatar_surface',
+        lambda avatar_value, size: pygame.Surface((size, size), pygame.SRCALPHA),
+    )
+    monkeypatch.setattr(screen, '_should_use_steam_avatar_for_user', lambda *args, **kwargs: False)
+
+    screen._draw_profile_panel(pygame.Rect(440, 120, 880, 520))
+
+    assert screen._profile_edit_button_rect is not None
+    assert screen._profile_delete_button_rect is not None
 
 
 def test_user_selection_responsive_metrics_grow_on_large_displays(monkeypatch):

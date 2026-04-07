@@ -1361,6 +1361,7 @@ def main():
         saved_sfx_vol = settings_manager.get('sfx_volume', 0.5)
         
         # Ana menüdeyken menu_music_volume kullan
+        menu_sound.unduck_music()
         menu_sound.set_music_volume(saved_menu_music_vol)
         menu_sound.set_volume(saved_sfx_vol)
         
@@ -2710,6 +2711,7 @@ def main():
             if settings_screen.music_enabled:
                 # Ana menüye dönünce menu_music_volume uygula
                 _menu_vol = settings_manager.get('menu_music_volume', 0.3)
+                menu_sound.unduck_music()
                 menu_sound.set_music_volume(_menu_vol)
                 menu_music = settings_manager.get('menu_music', 'main_1')
                 try:
@@ -2801,6 +2803,7 @@ def main():
             pvp_game = None
             if settings_screen.music_enabled and not getattr(settings_screen, 'mute_all', False):
                 _menu_vol = settings_manager.get('menu_music_volume', 0.3)
+                menu_sound.unduck_music()
                 menu_sound.set_music_volume(_menu_vol)
                 menu_music = settings_manager.get('menu_music', 'main_1')
                 try:
@@ -2873,6 +2876,7 @@ def main():
             _handle_online_pvp._game = None
             if settings_screen.music_enabled and not getattr(settings_screen, 'mute_all', False):
                 _menu_vol = settings_manager.get('menu_music_volume', 0.3)
+                menu_sound.unduck_music()
                 menu_sound.set_music_volume(_menu_vol)
                 menu_music = settings_manager.get('menu_music', 'main_1')
                 try:
