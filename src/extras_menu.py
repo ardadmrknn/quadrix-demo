@@ -12,7 +12,7 @@ from ui_theme import UIColors, UIFonts, UIStyle, lerp_color
 from ui_components import draw_glass_card
 from asset_manager import load_image
 from localization import t, get_language
-from ui_scaling import get_scale
+from ui_scaling import get_effective_scale
 
 
 def _get_base_path() -> Path:
@@ -275,9 +275,9 @@ class ExtrasScreen:
             return 3, (320, 250)
         return 2, (360, 270)
 
-    def _extras_ui_scale(self, min_scale: float = 0.60, max_scale: float = 1.18) -> float:
+    def _extras_ui_scale(self, min_scale: float = 0.60, max_scale: float = 1.24) -> float:
         """Aktif ekran boyutuna göre ortak UI ölçeği."""
-        return get_scale(
+        return get_effective_scale(
             self.screen,
             min_scale=min_scale,
             max_scale=max_scale,

@@ -123,6 +123,8 @@ OBSOLETE_SETTINGS_KEYS = {
     'resolution',
 }
 
+VALID_UI_SCALE_PRESETS = {'compact', 'normal', 'large'}
+
 
 class SettingsManager:
     """Oyun ayarlarını yöneten sınıf"""
@@ -179,6 +181,8 @@ class SettingsManager:
             'vsync': True,  # VSYNC açık - screen tearing önleme
             # FPS limiti: 0 = otomatik ekran yenileme hızı. Değerler: 30/45/60/90/120/0
             'fps_limit': 0,
+            # Effective UI zinciri için manuel fallback preset'i.
+            'ui_scale_preset': 'normal',
             'show_ghost': True,
             'bg_transparency': 0.3,
             # Menü/UI panel şeffaflığı (RetroStyle glass/panel/button yüzeyleri).
@@ -232,6 +236,8 @@ class SettingsManager:
             self.settings['show_debug_settings'] = False
         except Exception:
             pass
+
+        self._sync_ui_scale_preset()
 
         now = time.monotonic()
         self._last_save_monotonic = now
@@ -438,6 +444,13 @@ class SettingsManager:
                 changed = True
         return changed
 
+    @staticmethod
+    def _normalize_ui_scale_preset_value(value):
+        preset = str(value or '').strip().lower()
+        if preset not in VALID_UI_SCALE_PRESETS:
+            return 'normal'
+        return preset
+
     def _normalize_display_settings_inplace(self, data):
         if not isinstance(data, dict):
             return False
@@ -449,7 +462,33 @@ class SettingsManager:
                 del data[key]
                 changed = True
 
+        normalized_preset = self._normalize_ui_scale_preset_value(
+            data.get('ui_scale_preset', self.default_settings.get('ui_scale_preset', 'normal'))
+        )
+        if data.get('ui_scale_preset') != normalized_preset:
+            data['ui_scale_preset'] = normalized_preset
+            changed = True
+
         return changed
+
+    def _sync_ui_scale_preset(self):
+        if not isinstance(getattr(self, 'settings', None), dict):
+            return
+
+        preset = self._normalize_ui_scale_preset_value(
+            self.settings.get('ui_scale_preset', self.default_settings.get('ui_scale_preset', 'normal'))
+        )
+        self.settings['ui_scale_preset'] = preset
+
+        try:
+            try:
+                from .ui_scaling import set_ui_scale_preset  # type: ignore
+            except Exception:
+                from ui_scaling import set_ui_scale_preset
+
+            set_ui_scale_preset(preset)
+        except Exception:
+            pass
 
     def _slug_track_name(self, value):
         if value is None:
@@ -588,6 +627,7 @@ class SettingsManager:
         try:
             self._normalize_display_settings_inplace(self.settings)
             self._remove_obsolete_settings_inplace(self.settings)
+            self._sync_ui_scale_preset()
             if self._single_file_mode:
                 atomic_write_json(self.filename, self.settings, indent=2, ensure_ascii=False)
             else:
@@ -636,6 +676,7 @@ class SettingsManager:
             self.settings[key] = value
 
         self._normalize_display_settings_inplace(self.settings)
+        self._sync_ui_scale_preset()
 
         # Debounced keys: disk yazımını geciktir.
         if key in getattr(self, '_debounced_keys', set()):
@@ -658,6 +699,7 @@ class SettingsManager:
             self.settings['controls'] = self._merge_controls(controls_value if isinstance(controls_value, dict) else {})
         self.settings.update(kwargs)
         self._normalize_display_settings_inplace(self.settings)
+        self._sync_ui_scale_preset()
 
         debounced_keys = getattr(self, '_debounced_keys', set())
         should_debounce = any(k in debounced_keys for k in kwargs.keys())
@@ -673,6 +715,7 @@ class SettingsManager:
         self.settings = copy.deepcopy(self.default_settings)
         self.settings['campaign_progress'] = {}
         self._normalize_display_settings_inplace(self.settings)
+        self._sync_ui_scale_preset()
         self.settings['controls'] = self._merge_controls(self.settings.get('controls', {}))
         self.save_settings()
         if constants.DEBUG_MODE:

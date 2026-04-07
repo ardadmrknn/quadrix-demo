@@ -1,3 +1,4 @@
+import math
 import pathlib
 import sys
 import importlib
@@ -113,6 +114,26 @@ def test_fullscreen_popup_scale_uses_shared_reference_and_clamps_bounds():
     assert main_module._fullscreen_popup_scale((800, 600)) == 0.65
 
 
+def test_fullscreen_popup_scale_stays_raw_surface_scaled_until_popup_geometry_migrates(monkeypatch):
+    captured = {}
+
+    def fake_get_scale(screen, *, min_scale, max_scale, reference_size):
+        captured['screen'] = screen
+        captured['min_scale'] = min_scale
+        captured['max_scale'] = max_scale
+        captured['reference_size'] = reference_size
+        return 1.23
+
+    monkeypatch.setattr(main_module, 'get_scale', fake_get_scale)
+
+    screen = pygame.Surface((2560, 1660), pygame.SRCALPHA)
+    assert math.isclose(main_module._fullscreen_popup_scale(screen), 1.23)
+    assert captured['screen'] is screen
+    assert captured['min_scale'] == 0.65
+    assert captured['max_scale'] == 1.35
+    assert captured['reference_size'] == (1920.0, 1080.0)
+
+
 def test_capture_popup_backdrop_matches_surface_size_and_dims_pixels():
     screen = pygame.Surface((120, 80))
     screen.fill((255, 255, 255))
@@ -166,6 +187,40 @@ def test_refresh_screen_from_display_keeps_current_screen_when_display_missing(m
     monkeypatch.setattr(main_module, '_get_actual_display_surface', lambda: None)
 
     assert main_module._refresh_screen_from_display(current_screen) is current_screen
+
+
+def test_apply_screen_to_targets_rebinds_long_lived_screen_owners():
+    old_screen = pygame.Surface((1366, 768), pygame.SRCALPHA)
+    new_screen = pygame.Surface((800, 600), pygame.SRCALPHA)
+
+    settings_screen = SimpleNamespace(screen=old_screen)
+    extras_screen = SimpleNamespace(screen=old_screen)
+    guide_screen = SimpleNamespace(screen=old_screen)
+    user_selection_editor = SimpleNamespace(screen=old_screen)
+    user_management_editor = SimpleNamespace(screen=old_screen)
+    user_selection_screen = SimpleNamespace(screen=old_screen, avatar_editor=user_selection_editor)
+    user_management_screen = SimpleNamespace(screen=old_screen, avatar_editor=user_management_editor)
+    no_screen = SimpleNamespace(value=123)
+
+    main_module._apply_screen_to_targets(
+        new_screen,
+        settings_screen,
+        extras_screen,
+        guide_screen,
+        user_selection_screen,
+        user_management_screen,
+        None,
+        no_screen,
+    )
+
+    assert settings_screen.screen is new_screen
+    assert extras_screen.screen is new_screen
+    assert guide_screen.screen is new_screen
+    assert user_selection_screen.screen is new_screen
+    assert user_management_screen.screen is new_screen
+    assert user_selection_editor.screen is new_screen
+    assert user_management_editor.screen is new_screen
+    assert no_screen.value == 123
 
 
 def test_mode_intro_popup_live_loop_reanchors_to_recovered_surface(monkeypatch):

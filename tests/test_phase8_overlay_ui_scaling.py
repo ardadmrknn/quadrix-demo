@@ -137,7 +137,42 @@ def test_game_ui_scale_uses_active_canvas_and_preserves_1366_baseline():
 
     game.screen = pygame.Surface((2560, 1440), pygame.SRCALPHA)
 
-    assert math.isclose(game._ui_scale(), 1.2)
+    assert math.isclose(game._ui_scale(), 1.24)
+
+
+def test_game_ui_scale_uses_effective_ui_size_when_available(monkeypatch):
+    game = _build_game((2560, 1660), window_size=(1366, 768))
+    captured = {}
+
+    def fake_resolve(screen_or_size, *, use_effective_display_size=False, display_surface=None):
+        captured['screen'] = screen_or_size
+        captured['use_effective_display_size'] = use_effective_display_size
+        captured['display_surface'] = display_surface
+        return (1200, 700)
+
+    monkeypatch.setattr(game_module, 'resolve_ui_scale_size', fake_resolve)
+
+    expected = min(1200 / 1366.0, 700 / 768.0)
+    expected = max(0.72, min(1.24, expected))
+
+    assert math.isclose(game._ui_scale(), expected)
+    assert captured['screen'] is game.screen
+    assert captured['use_effective_display_size'] is True
+    assert captured['display_surface'] is None
+
+
+def test_game_overlay_ui_scale_stays_raw_surface_scaled_until_overlay_geometry_migrates(monkeypatch):
+    game = _build_game((2560, 1660), window_size=(1366, 768))
+
+    def fail_if_called(*args, **kwargs):
+        raise AssertionError('resolve_ui_scale_size should not be used for raw overlay scale')
+
+    monkeypatch.setattr(game_module, 'resolve_ui_scale_size', fail_if_called)
+
+    expected = min(2560 / 1366.0, 1660 / 768.0)
+    expected = max(0.68, min(1.16, expected))
+
+    assert math.isclose(game._overlay_ui_scale(min_scale=0.68, max_scale=1.16), expected)
 
 
 @pytest.mark.parametrize('mode_cls', [modes_module.SprintMode, modes_module.UltraMode])

@@ -47,6 +47,7 @@ LOCAL_SETTINGS_KEYS = {
     "resolution",
     "vsync",
     "fps_limit",
+    "ui_scale_preset",
     "last_texture_dir",
     "custom_background",
     "bg_main",

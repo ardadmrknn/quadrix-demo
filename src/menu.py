@@ -34,11 +34,11 @@ from platform_utils import (
     build_support_email_body_template,
     normalize_mouse_pos,
     get_mouse_pos,
-    get_native_resolution,
 )
 from ui_theme import UIColors, UIFonts
 from asset_manager import load_image
 from text_cache import render_text
+from ui_scaling import apply_ui_scale_preset, get_scale, resolve_ui_scale_size
 from gamepad_manager import get_gamepad_manager, is_gamepad_connected
 from steam_leaderboards import SteamLeaderboardService
 from achievements import ACHIEVEMENTS, get_achievement_name
@@ -594,32 +594,60 @@ class Menu:
         Çok küçük ekranlarda aşırı sıkışmayı, çok büyük ekranlarda da
         kontrolsüz büyümeyi engellemek için clamp uygulanır.
         """
-        width, height = self.screen.get_size()
-        scale = min(width / 1366.0, height / 768.0)
-        return max(0.78, min(1.20, scale))
+        return apply_ui_scale_preset(
+            get_scale(
+                self._effective_ui_size(),
+                min_scale=0.78,
+                max_scale=1.24,
+                reference_size=(1366.0, 768.0),
+            ),
+            min_scale=0.78,
+            max_scale=1.24,
+        )
+
+    def _effective_ui_size(self) -> tuple[int, int]:
+        """Menu okunabilirligi icin effective UI size kullan, cizim geometriğini bozma."""
+        screen = getattr(self, 'screen', None)
+        if screen is not None and hasattr(screen, 'get_size'):
+            display_surface = None
+            try:
+                active_display_surface = pygame.display.get_surface()
+                if active_display_surface is not None and screen is active_display_surface:
+                    display_surface = True
+            except Exception:
+                pass
+
+            try:
+                width, height = resolve_ui_scale_size(
+                    screen,
+                    use_effective_display_size=True,
+                    display_surface=display_surface,
+                )
+                return max(1, int(width)), max(1, int(height))
+            except Exception:
+                pass
+
+            try:
+                width, height = screen.get_size()
+                return max(1, int(width)), max(1, int(height))
+            except Exception:
+                pass
+
+        return (1366, 768)
 
     def _fullscreen_panel_scale(self) -> float:
         """Modal/popup paneller için fullscreen referanslı ölçek.
 
-        Referans: oyun içi çıkış popup'ı ile aynı ölçek davranışı.
-        Borderless fullscreen'de native çözünürlüğü temel alır.
+        Panel rect/hitbox zinciri hala fiziksel surface koordinat uzayinda oldugu
+        icin bu helper Faz 3'te ham surface bazinda kalir. Effective-size rollout'u
+        modal geometri zinciri birlikte tasindiginda acilacak.
         """
-        width, height = self.screen.get_size()
-        ref_w, ref_h = width, height
-
-        try:
-            if self.settings_manager is not None:
-                is_fullscreen = bool(self.settings_manager.get('fullscreen', False))
-                is_borderless = bool(self.settings_manager.get('borderless_fullscreen', True))
-                if is_fullscreen and is_borderless:
-                    native_w, native_h = get_native_resolution()
-                    if native_w > 0 and native_h > 0:
-                        ref_w, ref_h = native_w, native_h
-        except Exception:
-            pass
-
-        scale = min(ref_w / 1366.0, ref_h / 768.0)
-        return max(0.68, min(1.16, scale))
+        return get_scale(
+            self.screen,
+            min_scale=0.68,
+            max_scale=1.16,
+            reference_size=(1366.0, 768.0),
+        )
 
     def _menu_panel_content_scale(self) -> float:
         """Ana menü kart içerikleri için ekran boyutuna bağlı ölçek.
@@ -628,10 +656,17 @@ class Menu:
         içerik (metin/padding/mikro öğeler) de aynı referansla ölçeklenmelidir.
         Aksi halde düşük çözünürlükte içerik fazla büyük kalır ve panel içinde
         sıkışma/taşma hissi oluşur.
+
+        Not: Kart rect zinciri hala fiziksel surface geometrisine bağlı olduğu için
+        Faz 3'te icerik scale'i raw surface uzerinde kalir. Effective-size rollout'u
+        panel geometri zinciri birlikte tasindiginda acilacak.
         """
-        width, height = self.screen.get_size()
-        scale = min(width / 1920.0, height / 1080.0)
-        return max(0.72, min(1.16, scale))
+        return get_scale(
+            self.screen,
+            min_scale=0.72,
+            max_scale=1.16,
+            reference_size=(1920.0, 1080.0),
+        )
 
     def _is_modal_open(self) -> bool:
         """Herhangi bir modal pencere açık mı kontrol et."""

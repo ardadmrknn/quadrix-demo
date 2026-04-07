@@ -19,7 +19,7 @@ from renderers.jelly_renderer import draw_jelly_block
 from platform_utils import normalize_mouse_pos, get_mouse_pos
 from localization import t, get_language
 from steam_leaderboards import SteamLeaderboardService
-from ui_scaling import get_scale, scale_px
+from ui_scaling import get_effective_scale, get_scale, scale_px
 
 _AVATAR_EXTS = ('.png', '.jpg', '.jpeg', '.webp', '.bmp')
 _USER_SCREEN_REFERENCE_SIZE = (1600.0, 900.0)
@@ -33,7 +33,9 @@ def _get_user_screen_scale(
     min_scale: float,
     max_scale: float,
 ) -> float:
-    readable_floor = get_scale(
+    scale_fn = get_effective_scale if hasattr(screen_or_size, 'get_size') else get_scale
+
+    readable_floor = scale_fn(
         screen_or_size,
         min_scale=0.0,
         max_scale=1.0,
@@ -41,7 +43,7 @@ def _get_user_screen_scale(
     )
     return max(
         readable_floor,
-        get_scale(
+        scale_fn(
             screen_or_size,
             min_scale=min_scale,
             max_scale=max_scale,
@@ -234,7 +236,7 @@ class UserSelectionScreen:
     def _ui_scale(self, min_scale: float = 0.62, max_scale: float = 1.18) -> float:
         try:
             return _get_user_screen_scale(
-                self.screen,
+                getattr(self, '_ui_scale_surface', None) or self.screen,
                 readable_min_size=self._ui_readable_min_size,
                 reference_size=self._ui_reference_size,
                 min_scale=min_scale,
@@ -1091,12 +1093,16 @@ class UserSelectionScreen:
                 y_off = int((1.0 - t) * 10)
                 original = self.screen
                 temp = pygame.Surface(original.get_size(), pygame.SRCALPHA)
+                self._ui_scale_surface = original
                 self.screen = temp
-                if self.state == 'select':
-                    self._draw_select_screen()
-                elif self.state in ('create_new', 'edit_existing'):
-                    self._draw_form_screen()
-                self.screen = original
+                try:
+                    if self.state == 'select':
+                        self._draw_select_screen()
+                    elif self.state in ('create_new', 'edit_existing'):
+                        self._draw_form_screen()
+                finally:
+                    self.screen = original
+                    self._ui_scale_surface = None
                 temp.set_alpha(alpha)
                 original.blit(temp, (0, y_off))
                 return
@@ -1813,7 +1819,7 @@ class UserManagementScreen:
     def _ui_scale(self, min_scale: float = 0.72, max_scale: float = 1.18) -> float:
         try:
             return _get_user_screen_scale(
-                self.screen,
+                getattr(self, '_ui_scale_surface', None) or self.screen,
                 readable_min_size=self._ui_readable_min_size,
                 reference_size=self._ui_reference_size,
                 min_scale=min_scale,

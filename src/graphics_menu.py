@@ -5,7 +5,7 @@ from retro_style import retro_style
 from platform_utils import normalize_mouse_pos
 from background_effects import get_shared_falling_blocks_layer
 from localization import t
-from ui_scaling import get_scale, scale_px
+from ui_scaling import get_effective_scale, scale_px
 
 
 class GraphicsMenu:
@@ -59,8 +59,8 @@ class GraphicsMenu:
         self._vsync_restart_choice = 0  # 0: restart now, 1: later
         self._vsync_prompt_buttons: list[pygame.Rect] = []
 
-    def _ui_scale(self, min_scale: float = 0.72, max_scale: float = 1.18) -> float:
-        return get_scale(
+    def _ui_scale(self, min_scale: float = 0.72, max_scale: float = 1.24) -> float:
+        return get_effective_scale(
             self.screen,
             min_scale=min_scale,
             max_scale=max_scale,

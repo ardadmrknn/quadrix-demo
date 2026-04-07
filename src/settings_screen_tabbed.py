@@ -23,7 +23,7 @@ from localization import (
 from ui_language_profile import apply_language_ui_profile, get_font_for_language
 from menu import get_control_actions, get_mode_music_entries, get_campaign_phase_entries, BUILT_IN_TRACK_CHOICES, SUPPORTED_MUSIC_EXTENSIONS
 from gamepad_manager import get_gamepad_manager, reload_gamepad_settings
-from ui_scaling import get_scale, scale_px
+from ui_scaling import UI_SCALE_PRESETS, get_effective_scale, normalize_ui_scale_preset, scale_px
 
 
 # ---------------------------------------------------------------------------
@@ -56,6 +56,12 @@ TAB_DEFS = [
 
 _SETTINGS_REFERENCE_SIZE = (1366.0, 768.0)
 
+_UI_SCALE_PRESET_LABELS = {
+    'compact': ('Kompakt', 'Compact'),
+    'normal': ('Normal', 'Normal'),
+    'large': ('Buyuk', 'Large'),
+}
+
 
 def _tab_label(tab_def: dict) -> str:
     loc_key = tab_def.get('loc_key')
@@ -68,6 +74,12 @@ def _tab_label(tab_def: dict) -> str:
     if lang == 'tr':
         return tab_def['label_tr']
     return tab_def['label_en']
+
+
+def _ui_scale_preset_label(preset: str) -> str:
+    normalized = normalize_ui_scale_preset(preset)
+    tr_label, en_label = _UI_SCALE_PRESET_LABELS[normalized]
+    return tr_label if get_language() == 'tr' else en_label
 
 
 # Ayar tipleri:
@@ -114,6 +126,10 @@ def _build_tab_content(tab_key: str, sm, show_debug: bool = False) -> list[dict]
             'type': 'selector', 'key': 'fps_limit',
             'loc_key': 'fps_limit',
             'label_tr': 'FPS Limiti', 'label_en': 'FPS Limit',
+        })
+        items.append({
+            'type': 'selector', 'key': 'ui_scale_preset',
+            'label_tr': 'Arayuz Olcegi', 'label_en': 'UI Scale',
         })
 
         items.append({'type': 'section', 'loc_key': 'settings_section_visual', 'label_tr': 'GÖRSEL', 'label_en': 'VISUAL'})
@@ -493,9 +509,9 @@ class TabbedSettingsScreen:
         self._settings_sb_drag_active: bool = False
         self._settings_sb_drag_offset_y: int = 0
 
-    def _ui_scale(self, min_scale: float = 0.72, max_scale: float = 1.16) -> float:
+    def _ui_scale(self, min_scale: float = 0.72, max_scale: float = 1.22) -> float:
         try:
-            return get_scale(
+            return get_effective_scale(
                 self.screen,
                 min_scale=min_scale,
                 max_scale=max_scale,
@@ -771,6 +787,7 @@ class TabbedSettingsScreen:
         self.resolution = 'auto'
         self.vsync = sm.get('vsync', True)
         self.fps_limit = sm.get('fps_limit', 0)
+        self.ui_scale_preset = normalize_ui_scale_preset(sm.get('ui_scale_preset', 'normal'))
         self.show_fps = sm.get('show_fps', False)
         self.show_ghost = sm.get('show_ghost', True)
         self.background_enabled = sm.get('background_enabled', True)
@@ -969,6 +986,8 @@ class TabbedSettingsScreen:
                 limit = int(self._get_value('fps_limit') or 0)
                 text = t('automatic') if limit <= 0 else str(limit)
                 return text, (200, 220, 255)
+            elif key == 'ui_scale_preset':
+                return _ui_scale_preset_label(self._get_value('ui_scale_preset')), (100, 255, 200)
             elif key == 'language':
                 lang_name = get_language_name(self.current_language)
                 return str(lang_name), (100, 255, 200)
@@ -1693,6 +1712,12 @@ class TabbedSettingsScreen:
             idx = (idx + delta) % len(self.FPS_LIMITS)
             self.fps_limit = self.FPS_LIMITS[idx]
             self._set_value('fps_limit', self.fps_limit)
+        elif key == 'ui_scale_preset':
+            current = normalize_ui_scale_preset(getattr(self, 'ui_scale_preset', 'normal'))
+            idx = UI_SCALE_PRESETS.index(current)
+            idx = (idx + delta) % len(UI_SCALE_PRESETS)
+            self.ui_scale_preset = UI_SCALE_PRESETS[idx]
+            self._set_value('ui_scale_preset', self.ui_scale_preset)
         elif key == 'language':
             lang_idx = (
                 SUPPORTED_LANGUAGES.index(self.current_language)
@@ -2485,6 +2510,8 @@ class TabbedSettingsScreen:
         if key == 'soft_drop_speed':
             value = t('soft_drop_desc')
             return value if value != 'soft_drop_desc' else 'Aşağı tuşuna basılı tutarken parçanın düşme hızı. Düşük değer daha hızlıdır.'
+        if key == 'ui_scale_preset':
+            return 'Yalnizca effective UI yolundaki tam ekran panelleri etkiler. Popup ve campaign overlay zinciri ayni kalir.'
         return None
 
     def _draw_label_help_icon(

@@ -247,3 +247,33 @@ def test_toggle_on_off_idempotent():
 
     apply_campaign_unlock_toggle(inst)
     assert inst.debug_unlock_all is False
+
+
+def test_level_select_ui_scale_stays_raw_surface_scaled_until_campaign_flow_aligns():
+    class _FakeScreen:
+        def get_size(self):
+            return (2560, 1660)
+
+    inst = object.__new__(CampaignLevelSelect)
+    inst.screen = _FakeScreen()
+
+    captured = {}
+    original = getattr(mod, 'get_scale')
+
+    def fake_get_scale(screen, *, min_scale, max_scale, reference_size):
+        captured['screen'] = screen
+        captured['min_scale'] = min_scale
+        captured['max_scale'] = max_scale
+        captured['reference_size'] = reference_size
+        return 0.98
+
+    mod.get_scale = fake_get_scale
+    try:
+        assert inst._get_ui_scale() == 0.98
+    finally:
+        mod.get_scale = original
+
+    assert captured['screen'] is inst.screen
+    assert captured['min_scale'] == 0.72
+    assert captured['max_scale'] == 1.18
+    assert captured['reference_size'] == (1400.0, 900.0)

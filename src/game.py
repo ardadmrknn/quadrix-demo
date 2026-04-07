@@ -37,7 +37,7 @@ from asset_manager import load_image
 from gamepad_manager import get_gamepad_manager, is_gamepad_connected
 from effect_surface_cache import EffectSurfaceCache
 from sweep_effects import SweepCatState, draw_rainbow_cat_sweep
-from ui_scaling import get_scale
+from ui_scaling import apply_ui_scale_preset, get_scale, resolve_ui_scale_size
 
 
 GAMEPLAY_UI_REFERENCE_SIZE = (1366.0, 768.0)
@@ -181,8 +181,45 @@ class Game:
             max(1, int(getattr(self, 'window_height', GAMEPLAY_UI_REFERENCE_SIZE[1]))),
         )
 
-    def _ui_scale(self, min_scale: float = 0.72, max_scale: float = 1.20) -> float:
+    def _effective_ui_size(self) -> tuple[int, int]:
+        """UI ölçeği için logical/effective boyutu dene, geometri için raw canvas'i koru."""
+        screen = getattr(self, 'screen', None)
+        if screen is not None and hasattr(screen, 'get_size'):
+            display_surface = None
+            try:
+                active_display_surface = pygame.display.get_surface()
+                if active_display_surface is not None and screen is active_display_surface:
+                    display_surface = True
+            except Exception:
+                pass
+
+            try:
+                width, height = resolve_ui_scale_size(
+                    screen,
+                    use_effective_display_size=True,
+                    display_surface=display_surface,
+                )
+                return max(1, int(width)), max(1, int(height))
+            except Exception:
+                pass
+
+        return self._active_ui_size()
+
+    def _ui_scale(self, min_scale: float = 0.72, max_scale: float = 1.24) -> float:
         """Aktif canvas boyutuna bağlı genel UI ölçeği."""
+        return apply_ui_scale_preset(
+            get_scale(
+                self._effective_ui_size(),
+                min_scale=min_scale,
+                max_scale=max_scale,
+                reference_size=GAMEPLAY_UI_REFERENCE_SIZE,
+            ),
+            min_scale=min_scale,
+            max_scale=max_scale,
+        )
+
+    def _overlay_ui_scale(self, min_scale: float = 0.72, max_scale: float = 1.20) -> float:
+        """Raw canvas geometriğine bagli overlay/popup paneller icin yüzey ölçeği."""
         return get_scale(
             self._active_ui_size(),
             min_scale=min_scale,
@@ -1989,7 +2026,7 @@ class Game:
     def _draw_pause_menu(self):
         """Duraklama menüsünü ana menü çıkış paneli stilinde çiz."""
         width, height = self._active_ui_size()
-        ui_scale = self._ui_scale()
+        ui_scale = self._overlay_ui_scale()
 
         # Dim overlay (exit confirm style)
         overlay = pygame.Surface((width, height), pygame.SRCALPHA)
@@ -4525,7 +4562,7 @@ class Game:
 
     def _draw_exit_prompt_overlay(self):
         width, height = self.screen.get_size()
-        ui_scale = self._ui_scale(min_scale=0.68, max_scale=1.16)
+        ui_scale = self._overlay_ui_scale(min_scale=0.68, max_scale=1.16)
 
         def _fit_font_size(text: str, base_size: int, min_size: int, max_width: int, bold: bool = False) -> pygame.font.Font:
             size = max(min_size, int(base_size))
@@ -4668,7 +4705,7 @@ class Game:
     def _draw_game_over_overlay(self, skin, *, alt_theme: dict | None = None):
         """Oyun bittiğinde animasyonlu yıldız sistemli modern panel göster."""
         active_width, active_height = self._active_ui_size()
-        ui_scale = self._ui_scale(min_scale=0.68, max_scale=1.16)
+        ui_scale = self._overlay_ui_scale(min_scale=0.68, max_scale=1.16)
         s = lambda v, minimum=1: self._sx(v, ui_scale, minimum)
 
         # Alt tema ve state prefix desteği

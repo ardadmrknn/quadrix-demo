@@ -235,6 +235,40 @@ def test_extras_ui_scale_can_grow_above_one_on_large_displays():
     assert extras._extras_ui_scale() > 1.0
 
 
+def test_extras_ui_scale_uses_effective_helper_when_available(monkeypatch):
+    screen = _FakeSurface(2560, 1660)
+    user_manager_mock = types.SimpleNamespace(get_mode_highscore=lambda *a, **kw: 0)
+    captured = {}
+
+    def fake_get_effective_scale(surface, *, min_scale, max_scale, reference_size, display_surface=None):
+        captured['surface'] = surface
+        captured['min_scale'] = min_scale
+        captured['max_scale'] = max_scale
+        captured['reference_size'] = reference_size
+        captured['display_surface'] = display_surface
+        return 0.95
+
+    monkeypatch.setattr(mod, 'get_effective_scale', fake_get_effective_scale)
+
+    extras = ExtrasScreen(screen, user_manager=user_manager_mock)
+
+    assert extras._extras_ui_scale() == 0.95
+    assert captured['surface'] is screen
+    assert captured['min_scale'] == 0.60
+    assert captured['max_scale'] == 1.24
+    assert captured['reference_size'] == (1366.0, 768.0)
+    assert captured['display_surface'] is None
+
+
+def test_extras_ui_scale_hits_phase5_relaxed_cap_on_large_displays():
+    screen = _FakeSurface(2560, 1440)
+    user_manager_mock = types.SimpleNamespace(get_mode_highscore=lambda *a, **kw: 0)
+
+    extras = ExtrasScreen(screen, user_manager=user_manager_mock)
+
+    assert abs(extras._extras_ui_scale() - 1.24) < 0.001
+
+
 def test_extras_ui_scale_preserves_1366_baseline():
     """Faz 2 uyumluluk: klasik 1366x768 baseline gereksiz yere küçülmemeli."""
     screen = _FakeSurface(1366, 768)

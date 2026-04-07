@@ -395,6 +395,214 @@ def get_display_scale_factor() -> float:
     return 1.0
 
 
+def _coerce_positive_size(width: int | float, height: int | float) -> tuple[int, int]:
+    return max(1, int(width)), max(1, int(height))
+
+
+def _get_surface_size(screen: pygame.Surface | None) -> tuple[int, int] | None:
+    if screen is None or not hasattr(screen, 'get_size'):
+        return None
+    try:
+        width, height = screen.get_size()
+        return _coerce_positive_size(width, height)
+    except Exception:
+        return None
+
+
+def _resolve_display_surface_context(
+    screen: pygame.Surface | None,
+    display_surface: bool | None,
+) -> tuple[pygame.Surface | None, pygame.Surface | None, bool]:
+    try:
+        active_display_surface = pygame.display.get_surface()
+    except Exception:
+        active_display_surface = None
+
+    target_surface = screen if screen is not None else active_display_surface
+    if display_surface is None:
+        is_display_surface = screen is None
+        if screen is not None:
+            is_display_surface = (
+                active_display_surface is not None and screen is active_display_surface
+            )
+    else:
+        is_display_surface = bool(display_surface)
+
+    return target_surface, active_display_surface, is_display_surface
+
+
+def get_window_logical_size(
+    screen: pygame.Surface | None = None,
+    *,
+    display_surface: bool | None = None,
+) -> tuple[int, int]:
+    """Return the window size in logical UI units.
+
+    For the active display surface this prefers SDL/pygame window size when
+    available, which reflects logical points on HiDPI platforms. For offscreen
+    surfaces it returns the surface size unchanged.
+    """
+    target_surface, _active_display_surface, is_display_surface = _resolve_display_surface_context(
+        screen,
+        display_surface,
+    )
+    target_size = _get_surface_size(target_surface)
+    if target_size is None:
+        return _coerce_positive_size(*get_native_resolution())
+
+    if is_display_surface and hasattr(pygame.display, 'get_window_size'):
+        try:
+            win_w, win_h = pygame.display.get_window_size()
+            if win_w > 0 and win_h > 0:
+                return _coerce_positive_size(win_w, win_h)
+        except Exception:
+            pass
+
+    return target_size
+
+
+def _get_windows_active_hwnd() -> int | None:
+    if not IS_WINDOWS:
+        return None
+    try:
+        info = pygame.display.get_wm_info() if hasattr(pygame.display, 'get_wm_info') else {}
+    except Exception:
+        info = {}
+
+    if isinstance(info, dict):
+        hwnd = info.get('window') or info.get('hwnd')
+        try:
+            hwnd = int(hwnd or 0)
+        except Exception:
+            hwnd = 0
+        if hwnd > 0:
+            return hwnd
+    return None
+
+
+def _get_windows_system_scale_factor() -> float:
+    """Return the best-effort Windows desktop UI scale factor.
+
+    The value is 1.0 on non-Windows platforms or when the DPI query fails.
+    """
+    if not IS_WINDOWS:
+        return 1.0
+
+    try:
+        import ctypes
+
+        user32 = getattr(getattr(ctypes, 'windll', None), 'user32', None)
+        if user32 is None:
+            return 1.0
+
+        get_dpi_for_system = getattr(user32, 'GetDpiForSystem', None)
+        if callable(get_dpi_for_system):
+            dpi = int(get_dpi_for_system() or 0)
+            if dpi > 0:
+                factor = dpi / 96.0
+                if 0.5 <= factor <= 8.0:
+                    return factor
+
+        gdi32 = getattr(getattr(ctypes, 'windll', None), 'gdi32', None)
+        get_dc = getattr(user32, 'GetDC', None)
+        release_dc = getattr(user32, 'ReleaseDC', None)
+        get_device_caps = getattr(gdi32, 'GetDeviceCaps', None)
+        if callable(get_dc) and callable(release_dc) and callable(get_device_caps):
+            dc = get_dc(0)
+            try:
+                dpi = int(get_device_caps(dc, 88) or 0)
+            finally:
+                try:
+                    release_dc(0, dc)
+                except Exception:
+                    pass
+            if dpi > 0:
+                factor = dpi / 96.0
+                if 0.5 <= factor <= 8.0:
+                    return factor
+    except Exception:
+        pass
+
+    return 1.0
+
+
+def _get_windows_window_scale_factor(hwnd: int | None = None) -> float:
+    """Return the best-effort DPI scale factor for the active Windows window."""
+    if not IS_WINDOWS:
+        return 1.0
+
+    if hwnd is None:
+        hwnd = _get_windows_active_hwnd()
+
+    try:
+        import ctypes
+
+        user32 = getattr(getattr(ctypes, 'windll', None), 'user32', None)
+        shcore = getattr(getattr(ctypes, 'windll', None), 'shcore', None)
+        if user32 is not None and hwnd:
+            get_dpi_for_window = getattr(user32, 'GetDpiForWindow', None)
+            if callable(get_dpi_for_window):
+                dpi = int(get_dpi_for_window(hwnd) or 0)
+                if dpi > 0:
+                    factor = dpi / 96.0
+                    if 0.5 <= factor <= 8.0:
+                        return factor
+
+            monitor_from_window = getattr(user32, 'MonitorFromWindow', None)
+            get_dpi_for_monitor = getattr(shcore, 'GetDpiForMonitor', None)
+            if callable(monitor_from_window) and callable(get_dpi_for_monitor):
+                monitor = monitor_from_window(hwnd, 2)
+                if monitor:
+                    dpi_x = ctypes.c_uint()
+                    dpi_y = ctypes.c_uint()
+                    hr = int(get_dpi_for_monitor(monitor, 0, ctypes.byref(dpi_x), ctypes.byref(dpi_y)) or 0)
+                    if hr == 0 and dpi_x.value > 0:
+                        factor = dpi_x.value / 96.0
+                        if 0.5 <= factor <= 8.0:
+                            return factor
+    except Exception:
+        pass
+
+    return _get_windows_system_scale_factor()
+
+
+def get_effective_ui_size(
+    screen: pygame.Surface | None = None,
+    *,
+    display_surface: bool | None = None,
+) -> tuple[int, int]:
+    """Return the size that UI scale calculations should use.
+
+    Render surfaces still use physical surface sizes. This helper only provides
+    a more human-facing size baseline for font/panel/layout scaling.
+    """
+    target_surface, active_display_surface, is_display_surface = _resolve_display_surface_context(
+        screen,
+        display_surface,
+    )
+    width, height = get_window_logical_size(
+        screen,
+        display_surface=display_surface,
+    )
+
+    if not is_display_surface:
+        return _coerce_positive_size(width, height)
+
+    if IS_WINDOWS:
+        surface_size = _get_surface_size(active_display_surface or target_surface)
+        if surface_size is not None:
+            surf_w, surf_h = surface_size
+            # SDL/Pygame bazı build'lerde get_window_size ile logical boyutu zaten
+            # döndürebilir. Bu durumda ikinci kez DPI normalizasyonu yapma.
+            if abs(int(surf_w) - int(width)) <= 1 and abs(int(surf_h) - int(height)) <= 1:
+                scale_factor = _get_windows_window_scale_factor()
+                if scale_factor > 1.01:
+                    width = int(round(float(width) / float(scale_factor)))
+                    height = int(round(float(height) / float(scale_factor)))
+
+    return _coerce_positive_size(width, height)
+
+
 def _macos_logical_resolution() -> tuple[int, int] | None:
     """macOS'ta NSScreen API ile logical (points) ekran çözünürlüğünü döndür.
 

@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import math
 import types
 
 import guide_screen
 import graphics_menu
+import menu as menu_module
+import ui_scaling as ui_scaling_module
 
 
 class _FakeScreen:
@@ -42,6 +45,13 @@ class _DummySettings:
         self.values[key] = value
 
 
+def _build_menu(size: tuple[int, int]):
+    menu = menu_module.Menu.__new__(menu_module.Menu)
+    menu.screen = _FakeScreen(*size)
+    menu.settings_manager = None
+    return menu
+
+
 def test_graphics_menu_ui_scale_preserves_1366_baseline(monkeypatch):
     monkeypatch.setattr(graphics_menu, 'get_shared_falling_blocks_layer', lambda *args, **kwargs: _DummyFx())
     monkeypatch.setattr(graphics_menu.retro_style, 'get_font', lambda *args, **kwargs: types.SimpleNamespace())
@@ -49,6 +59,89 @@ def test_graphics_menu_ui_scale_preserves_1366_baseline(monkeypatch):
     menu = graphics_menu.GraphicsMenu(_FakeScreen(1366, 768), _DummySettings())
 
     assert abs(menu._ui_scale() - 1.0) < 0.001
+
+
+def test_graphics_menu_ui_scale_uses_effective_helper_when_available(monkeypatch):
+    monkeypatch.setattr(graphics_menu, 'get_shared_falling_blocks_layer', lambda *args, **kwargs: _DummyFx())
+    monkeypatch.setattr(graphics_menu.retro_style, 'get_font', lambda *args, **kwargs: types.SimpleNamespace())
+    captured = {}
+
+    def fake_get_effective_scale(screen, *, min_scale, max_scale, reference_size, display_surface=None):
+        captured['screen'] = screen
+        captured['min_scale'] = min_scale
+        captured['max_scale'] = max_scale
+        captured['reference_size'] = reference_size
+        captured['display_surface'] = display_surface
+        return 0.93
+
+    monkeypatch.setattr(graphics_menu, 'get_effective_scale', fake_get_effective_scale)
+
+    menu = graphics_menu.GraphicsMenu(_FakeScreen(2560, 1660), _DummySettings())
+
+    assert math.isclose(menu._ui_scale(), 0.93)
+    assert captured['min_scale'] == 0.72
+    assert captured['max_scale'] == 1.24
+    assert captured['reference_size'] == (1366.0, 768.0)
+    assert captured['display_surface'] is None
+
+
+def test_graphics_menu_ui_scale_hits_phase5_relaxed_cap_on_large_displays(monkeypatch):
+    monkeypatch.setattr(graphics_menu, 'get_shared_falling_blocks_layer', lambda *args, **kwargs: _DummyFx())
+    monkeypatch.setattr(graphics_menu.retro_style, 'get_font', lambda *args, **kwargs: types.SimpleNamespace())
+
+    menu = graphics_menu.GraphicsMenu(_FakeScreen(2560, 1440), _DummySettings())
+
+    assert math.isclose(menu._ui_scale(), 1.24)
+
+
+def test_main_menu_ui_scale_preserves_1366_baseline():
+    menu = _build_menu((1366, 768))
+
+    assert abs(menu._ui_scale() - 1.0) < 0.001
+
+
+def test_main_menu_ui_scale_hits_phase5_relaxed_cap_on_large_displays():
+    menu = _build_menu((2560, 1440))
+
+    assert math.isclose(menu._ui_scale(), 1.24)
+
+
+def test_main_menu_manual_ui_scale_preset_only_affects_general_ui():
+    menu = _build_menu((2560, 1440))
+    previous = ui_scaling_module.get_ui_scale_preset()
+
+    try:
+        ui_scaling_module.set_ui_scale_preset('large')
+        ui_scale = menu._ui_scale()
+        fullscreen_scale = menu._fullscreen_panel_scale()
+        content_scale = menu._menu_panel_content_scale()
+    finally:
+        ui_scaling_module.set_ui_scale_preset(previous)
+
+    assert math.isclose(ui_scale, 1.24 * 1.08)
+    assert math.isclose(fullscreen_scale, 1.16)
+    assert math.isclose(content_scale, 1.16)
+
+
+def test_main_menu_scales_use_effective_ui_size_when_available(monkeypatch):
+    menu = _build_menu((2560, 1660))
+    captured = []
+
+    def fake_resolve(screen_or_size, *, use_effective_display_size=False, display_surface=None):
+        captured.append((screen_or_size, use_effective_display_size, display_surface))
+        return (1200, 700)
+
+    monkeypatch.setattr(menu_module, 'resolve_ui_scale_size', fake_resolve)
+
+    ui_scale = menu._ui_scale()
+    fullscreen_scale = menu._fullscreen_panel_scale()
+    content_scale = menu._menu_panel_content_scale()
+
+    assert all(use_effective for _, use_effective, _ in captured)
+    assert math.isclose(ui_scale, max(0.78, min(1.24, min(1200 / 1366.0, 700 / 768.0))))
+    assert math.isclose(fullscreen_scale, 1.16)
+    assert math.isclose(content_scale, 1.16)
+    assert len(captured) == 1
 
 
 def test_graphics_menu_layout_metrics_grow_on_large_displays(monkeypatch):
@@ -68,6 +161,37 @@ def test_guide_screen_ui_scale_preserves_1366_baseline(monkeypatch):
     guide = guide_screen.GuideScreen(_FakeScreen(1366, 768))
 
     assert abs(guide._ui_scale() - 1.0) < 0.001
+
+
+def test_guide_screen_ui_scale_uses_effective_helper_when_available(monkeypatch):
+    monkeypatch.setattr(guide_screen, 'get_shared_falling_blocks_layer', lambda *args, **kwargs: _DummyFx())
+    captured = {}
+
+    def fake_get_effective_scale(screen, *, min_scale, max_scale, reference_size, display_surface=None):
+        captured['screen'] = screen
+        captured['min_scale'] = min_scale
+        captured['max_scale'] = max_scale
+        captured['reference_size'] = reference_size
+        captured['display_surface'] = display_surface
+        return 0.94
+
+    monkeypatch.setattr(guide_screen, 'get_effective_scale', fake_get_effective_scale)
+
+    guide = guide_screen.GuideScreen(_FakeScreen(2560, 1660))
+
+    assert math.isclose(guide._ui_scale(), 0.94)
+    assert captured['min_scale'] == 0.72
+    assert captured['max_scale'] == 1.24
+    assert captured['reference_size'] == (1366.0, 768.0)
+    assert captured['display_surface'] is None
+
+
+def test_guide_screen_ui_scale_hits_phase5_relaxed_cap_on_large_displays(monkeypatch):
+    monkeypatch.setattr(guide_screen, 'get_shared_falling_blocks_layer', lambda *args, **kwargs: _DummyFx())
+
+    guide = guide_screen.GuideScreen(_FakeScreen(2560, 1440))
+
+    assert math.isclose(guide._ui_scale(), 1.24)
 
 
 def test_guide_screen_buttons_and_scroll_step_grow_on_large_displays(monkeypatch):

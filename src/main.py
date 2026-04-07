@@ -449,6 +449,22 @@ def _refresh_screen_from_display(current_screen):
     return current_screen
 
 
+def _apply_screen_to_targets(new_screen, *targets):
+    """Yeni display surface'ini screen sahibi uzun omurlu nesnelere yay."""
+    for target in targets:
+        if target is not None and hasattr(target, 'screen'):
+            try:
+                target.screen = new_screen
+            except Exception:
+                pass
+        nested_avatar_editor = getattr(target, 'avatar_editor', None) if target is not None else None
+        if nested_avatar_editor is not None and hasattr(nested_avatar_editor, 'screen'):
+            try:
+                nested_avatar_editor.screen = new_screen
+            except Exception:
+                pass
+
+
 def _get_steam_overlay_gl_mode(settings_manager=None) -> str:
     """Return normalized Steam overlay GL mode: auto|off|force."""
     raw_value = os.environ.get('QUADRIX_STEAM_OVERLAY_GL')
@@ -1495,7 +1511,8 @@ def main():
         except Exception:
             pass
 
-        for obj in (
+        _apply_screen_to_targets(
+            new_screen,
             menu,
             highscore_screen,
             settings_screen,
@@ -1514,14 +1531,9 @@ def main():
             graphics_menu,
             gameplay_settings_menu,
             getattr(_handle_online_pvp, '_game', None),
-        ):
-            if obj is not None and hasattr(obj, 'screen'):
-                obj.screen = new_screen
-
-        if game is not None and hasattr(game, 'screen'):
-            game.screen = new_screen
-        if pvp_game is not None and hasattr(pvp_game, 'screen'):
-            pvp_game.screen = new_screen
+            game,
+            pvp_game,
+        )
 
     def _rebuild_display(width, height, *, fullscreen_value=None, resizable=True, borderless_value=None):
         """create_display çağır ve yeni screen'i her yere uygula."""

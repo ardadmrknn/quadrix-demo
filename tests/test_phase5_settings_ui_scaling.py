@@ -262,6 +262,62 @@ def test_settings_ui_scale_preserves_1366_baseline(monkeypatch):
     assert abs(screen._ui_scale() - 1.0) < 0.001
 
 
+def test_settings_ui_scale_uses_effective_helper_when_available(monkeypatch):
+    mod = _import_module(monkeypatch)
+    captured = {}
+
+    def fake_get_effective_scale(screen, *, min_scale, max_scale, reference_size, display_surface=None):
+        captured['screen'] = screen
+        captured['min_scale'] = min_scale
+        captured['max_scale'] = max_scale
+        captured['reference_size'] = reference_size
+        captured['display_surface'] = display_surface
+        return 0.96
+
+    monkeypatch.setattr(mod, 'get_effective_scale', fake_get_effective_scale)
+
+    screen = _make_screen(mod, 2560, 1660)
+
+    assert screen._ui_scale() == 0.96
+    assert captured['screen'] is screen.screen
+    assert captured['min_scale'] == 0.72
+    assert captured['max_scale'] == 1.22
+    assert captured['display_surface'] is None
+
+
+def test_settings_ui_scale_hits_phase5_relaxed_cap_on_large_displays(monkeypatch):
+    mod = _import_module(monkeypatch)
+    screen = _make_screen(mod, 2560, 1440)
+
+    assert abs(screen._ui_scale() - 1.22) < 0.001
+
+
+def test_display_tab_includes_ui_scale_preset_selector(monkeypatch):
+    mod = _import_module(monkeypatch)
+
+    items = mod._build_tab_content('display', object(), False)
+
+    assert any(item.get('key') == 'ui_scale_preset' and item.get('type') == 'selector' for item in items)
+
+
+def test_ui_scale_preset_selector_cycles_and_persists(monkeypatch):
+    mod = _import_module(monkeypatch)
+    screen = _make_screen(mod, 1366, 768)
+    calls = []
+
+    screen.settings_manager = types.SimpleNamespace(
+        set=lambda key, value: calls.append((key, value)),
+        get=lambda key, default=None: default,
+    )
+    screen.ui_scale_preset = 'normal'
+
+    result = screen._cycle_selector('ui_scale_preset', 1)
+
+    assert result is None
+    assert screen.ui_scale_preset == 'large'
+    assert calls == [('ui_scale_preset', 'large')]
+
+
 def test_settings_panel_and_content_rects_grow_on_large_displays(monkeypatch):
     mod = _import_module(monkeypatch)
     baseline = _make_screen(mod, 1366, 768)
