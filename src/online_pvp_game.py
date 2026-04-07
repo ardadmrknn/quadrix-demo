@@ -4607,7 +4607,43 @@ class OnlinePvPGame:
             shadow = msg_font.render(self.my_combo_message, True, (0, 0, 0))
             shadow.set_alpha(alpha)
             self.screen.blit(shadow, shadow.get_rect(center=(msg_cx + 2, msg_cy + 2)))
-            color = (255, 215, 0) if 'QUADRIX' in self.my_combo_message else (255, 255, 255)
+            combo_count = 0
+            if 'Combo' in self.my_combo_message:
+                combo_prefix = self.my_combo_message.split('Combo', 1)[0]
+                combo_x_idx = combo_prefix.rfind('x')
+                if combo_x_idx != -1:
+                    combo_digits = []
+                    for ch in combo_prefix[combo_x_idx + 1:]:
+                        if ch.isdigit():
+                            combo_digits.append(ch)
+                        elif combo_digits:
+                            break
+                        elif ch.isspace():
+                            continue
+                        else:
+                            break
+                    if combo_digits:
+                        try:
+                            combo_count = int(''.join(combo_digits))
+                        except Exception:
+                            combo_count = 0
+
+            if 'QUADRIX' in self.my_combo_message:
+                color = (255, 215, 0)
+            elif combo_count >= 8:
+                color = (255, 85, 170)
+            elif combo_count >= 6:
+                color = (255, 170, 0)
+            elif combo_count >= 4:
+                color = (100, 255, 100)
+            elif combo_count >= 2:
+                color = (0, 255, 221)
+            elif 'TRIPLE' in self.my_combo_message:
+                color = (255, 0, 255)
+            elif 'DOUBLE' in self.my_combo_message:
+                color = (0, 255, 221)
+            else:
+                color = (255, 255, 255)
             txt = msg_font.render(self.my_combo_message, True, color)
             txt.set_alpha(alpha)
             self.screen.blit(txt, txt.get_rect(center=(msg_cx, msg_cy)))

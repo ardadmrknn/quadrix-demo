@@ -805,10 +805,12 @@ def shutdown() -> None:
 
 
 def _atexit_cleanup() -> None:
-    """Uygulama çıkışında pump ref-count'u ve paused flag'ini sıfırla, Steam'i kapat."""
-    global _pump_pause_count, _pump_paused
-    _pump_pause_count = 0
-    _pump_paused = False
+    """Uygulama çıkışında Steam'i kapat.
+
+    NOT: _pump_paused'ı False yapmak tehlikelidir — shutdown() çağrılmadan
+    önce pump thread kısa süreliğine RunCallbacks çağırabilir.  shutdown()
+    kendi içinde zaten pump_paused=True ve pump_running=False ayarlar.
+    """
     shutdown()
 
 
@@ -1404,6 +1406,8 @@ def get_auth_session_ticket() -> str | None:
             _auth_ticket_hex_cache = ticket_bytes.hex()
             # Ticket'ın geçerli hale gelmesi için callbacks pump
             for _ in range(5):
+                if _shutdown_requested:
+                    break
                 run_callbacks()
                 time.sleep(0.05)
             return _auth_ticket_hex_cache

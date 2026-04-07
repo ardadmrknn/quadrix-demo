@@ -769,7 +769,7 @@ class ZenMode(Game):
             if lines_cleared == 4:
                 self.zen_message = t('zen_message_tetris')
                 self.zen_message_timer = 2.0
-                self.combo_message = "QUADRIX! 4 Satır Yok Edildi!"
+                self.combo_message = "QUADRIX!"
                 self.sound.play('tetris')
                 # Gamepad titreşimi - QUADRIX! (güçlü)
                 try:

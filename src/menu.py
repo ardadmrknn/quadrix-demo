@@ -3293,7 +3293,16 @@ class Menu:
             finally:
                 self._mystery_lb_loading = False
 
-        threading.Thread(target=_fetch_worker, daemon=True).start()
+        # İzlenen worker olarak başlat — shutdown() sırasında join edilir,
+        # SteamAPI_Shutdown() öncesi thread'in bitmesi beklenir.
+        try:
+            import steam_integration as _si_track
+            if _si_track._start_tracked_worker(_fetch_worker, name="menu-lb-fetch") is None:
+                # Shutdown devam ediyor, worker başlatılamadı
+                self._mystery_lb_loading = False
+                return
+        except Exception:
+            threading.Thread(target=_fetch_worker, daemon=True).start()
 
     def _draw_mystery_leaderboard_panel(self, panel_rect: pygame.Rect | None = None):
         """Ana menü sağ-alt: Kart Ustalığı Steam skor paneli."""
@@ -4041,7 +4050,14 @@ class Menu:
             finally:
                 self._steam_header_avatar_loading = False
 
-        threading.Thread(target=_worker, daemon=True).start()
+        # İzlenen worker olarak başlat — shutdown() sırasında join edilir.
+        try:
+            import steam_integration as _si_track
+            if _si_track._start_tracked_worker(_worker, name="menu-avatar-fetch") is None:
+                self._steam_header_avatar_loading = False
+                return
+        except Exception:
+            threading.Thread(target=_worker, daemon=True).start()
 
     def _get_steam_header_avatar_bitmap(self, target_size: int):
         self._ensure_steam_header_avatar_async()
