@@ -1,0 +1,65 @@
+{
+  "achievement_count": 40,
+  "languages": {
+    "tr": {
+      "missing_or_key_fallback_count": 0,
+      "missing_or_key_fallback_keys": [],
+      "same_as_en_count": 0,
+      "same_as_en_keys": []
+    },
+    "de": {
+      "missing_or_key_fallback_count": 0,
+      "missing_or_key_fallback_keys": [],
+      "same_as_en_count": 0,
+      "same_as_en_keys": []
+    },
+    "fr": {
+      "missing_or_key_fallback_count": 0,
+      "missing_or_key_fallback_keys": [],
+      "same_as_en_count": 0,
+      "same_as_en_keys": []
+    },
+    "es": {
+      "missing_or_key_fallback_count": 0,
+      "missing_or_key_fallback_keys": [],
+      "same_as_en_count": 0,
+      "same_as_en_keys": []
+    },
+    "it": {
+      "missing_or_key_fallback_count": 0,
+      "missing_or_key_fallback_keys": [],
+      "same_as_en_count": 0,
+      "same_as_en_keys": []
+    },
+    "pt": {
+      "missing_or_key_fallback_count": 0,
+      "missing_or_key_fallback_keys": [],
+      "same_as_en_count": 0,
+      "same_as_en_keys": []
+    },
+    "ru": {
+      "missing_or_key_fallback_count": 0,
+      "missing_or_key_fallback_keys": [],
+      "same_as_en_count": 0,
+      "same_as_en_keys": []
+    },
+    "ja": {
+      "missing_or_key_fallback_count": 0,
+      "missing_or_key_fallback_keys": [],
+      "same_as_en_count": 0,
+      "same_as_en_keys": []
+    },
+    "zh": {
+      "missing_or_key_fallback_count": 0,
+      "missing_or_key_fallback_keys": [],
+      "same_as_en_count": 0,
+      "same_as_en_keys": []
+    },
+    "ko": {
+      "missing_or_key_fallback_count": 0,
+      "missing_or_key_fallback_keys": [],
+      "same_as_en_count": 0,
+      "same_as_en_keys": []
+    }
+  }
+}

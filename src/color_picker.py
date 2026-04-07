@@ -18,6 +18,7 @@ from typing import Dict, List, Optional, Tuple
 import pygame
 
 from platform_utils import get_mouse_pos
+from localization import t
 
 # ── Tetromino şekilleri ──────────────────────────────────────────────
 _PIECE_SHAPES: Dict[str, List[List[int]]] = {
@@ -624,7 +625,7 @@ def pygame_color_picker(
 
             # ── YENİ bölümü ──
             new_y = prev_rect.y + 36
-            badge_s = font_badge.render("YENİ", True, (0, 255, 150))
+            badge_s = font_badge.render(t('color_picker_new_badge', 'YENI'), True, (0, 255, 150))
             bx = prev_rect.centerx - badge_s.get_width() // 2
             bp = pygame.Surface((badge_s.get_width() + 12, badge_s.get_height() + 6), pygame.SRCALPHA)
             pygame.draw.rect(bp, (0, 255, 150, 40), bp.get_rect(), border_radius=4)
@@ -643,7 +644,7 @@ def pygame_color_picker(
                 screen.blit(sep_surf, (prev_rect.x + 12, sep_y_pos))
 
             # ── ESKİ bölümü ──
-            old_tag = font_badge.render("ESKİ", True, (140, 140, 165))
+            old_tag = font_badge.render(t('color_picker_old_badge', 'ESKI'), True, (140, 140, 165))
             screen.blit(old_tag,
                         (prev_rect.centerx - old_tag.get_width() // 2,
                          sep_y_pos + 8))
@@ -695,8 +696,10 @@ def pygame_color_picker(
         pygame.draw.rect(screen, (0, 255, 150), (new_r.x, new_r.y, 3, new_r.h), border_radius=1)
 
         # Etiketler (okunabilir boyutta)
-        for txt, r, col in [("ESKİ", old_r, (220, 220, 235)),
-                             ("YENİ", new_r, (0, 255, 150))]:
+        for txt, r, col in [
+            (t('color_picker_old_badge', 'ESKI'), old_r, (220, 220, 235)),
+            (t('color_picker_new_badge', 'YENI'), new_r, (0, 255, 150)),
+        ]:
             ls = font_label.render(txt, True, col)
             bg_s = pygame.Surface((ls.get_width() + 12, ls.get_height() + 6), pygame.SRCALPHA)
             bg_s.fill((0, 0, 0, 150))
@@ -735,7 +738,7 @@ def pygame_color_picker(
             vy += 21
 
         # ── Preset Renk Paleti ──────────────────────────────────────
-        screen.blit(font_preset_label.render("PRESET", True, (90, 90, 120)),
+        screen.blit(font_preset_label.render(t('color_picker_preset_label', 'PRESET'), True, (90, 90, 120)),
                     (preset_x, preset_y - 4))
 
         for i, pr in enumerate(preset_rects):
@@ -793,7 +796,7 @@ def pygame_color_picker(
         except Exception:
             cl = "İptal"
 
-        _draw_premium_button(screen, ok_rect, "Onayla", font_btn,
+        _draw_premium_button(screen, ok_rect, t('confirm', 'Confirm'), font_btn,
                              (0, 180, 100), h_ok,
                              btn_cache=ok_btn_h if h_ok else ok_btn_n)
         _draw_premium_button(screen, cancel_rect, cl, font_btn,
@@ -801,7 +804,8 @@ def pygame_color_picker(
                              btn_cache=cancel_btn_h if h_cancel else cancel_btn_n)
 
         # ── Kısayol ipucu ──
-        screen.blit(font_hint.render("ESC: İptal  ·  ENTER: Onayla", True, (65, 65, 95)),
+        hint_text = f"ESC: {t('cancel', 'Cancel')}  ·  ENTER: {t('confirm', 'Confirm')}"
+        screen.blit(font_hint.render(hint_text, True, (65, 65, 95)),
                     (dx + pad, btn_y + btn_h + 4))
 
         pygame.display.flip()

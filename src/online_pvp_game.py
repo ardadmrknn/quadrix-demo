@@ -4462,7 +4462,7 @@ class OnlinePvPGame:
             ready_badge = pygame.Rect(my_cx - s(50), status_y, s(100), s(24))
             draw_glass_panel(self.screen, ready_badge, alpha=180,
                              border_color=UIColors.NEON_GREEN)
-            rt = status_font.render('HAZIR', True, UIColors.NEON_GREEN)
+            rt = status_font.render(t('campaign_status_ready', 'READY'), True, UIColors.NEON_GREEN)
             self.screen.blit(rt, rt.get_rect(center=ready_badge.center))
         else:
             wt = status_font.render(t('not_ready', 'Bekleniyor...'), True, _rs.text_muted)
@@ -4472,7 +4472,7 @@ class OnlinePvPGame:
             ready_badge2 = pygame.Rect(opp_cx - s(50), status_y, s(100), s(24))
             draw_glass_panel(self.screen, ready_badge2, alpha=180,
                              border_color=UIColors.NEON_GREEN)
-            rt2 = status_font.render('HAZIR', True, UIColors.NEON_GREEN)
+            rt2 = status_font.render(t('campaign_status_ready', 'READY'), True, UIColors.NEON_GREEN)
             self.screen.blit(rt2, rt2.get_rect(center=ready_badge2.center))
         else:
             wt2 = status_font.render(t('not_ready', 'Bekleniyor...'), True, _rs.text_muted)
@@ -5260,7 +5260,7 @@ class OnlinePvPGame:
         self._lobby_buttons.append({'rect': rematch_r, 'action': 'rematch'})
         self._lobby_buttons.append({'rect': exit_r, 'action': 'exit_menu'})
 
-        ht = hint_f.render('[R] Tekrar  ·  [ESC] Çıkış', True, _rs.text_muted)
+        ht = hint_f.render(t('campaign_failed_hint', '[R] Retry | [ESC] Menu'), True, _rs.text_muted)
         self.screen.blit(ht, ht.get_rect(center=(cx, panel.bottom - s(20))))
 
     # ─── Bağlantı Koptu ───

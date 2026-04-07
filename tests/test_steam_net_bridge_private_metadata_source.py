@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pathlib
+import re
 
 
 ROOT_DIR = pathlib.Path(__file__).resolve().parent.parent
@@ -26,5 +27,8 @@ def test_bridge_retries_incomplete_lobby_metadata_before_emitting():
 def test_bridge_infers_public_visibility_from_explicit_requires_code():
     content = CPP_PATH.read_text(encoding='utf-8')
 
-    assert 'if (hasRequiresCode) {' in content
+    assert re.search(
+        r'if\s*\(hasRequiresCode\)\s*\{?\s*visibility = requiresCodeBool \? "private" : "public";',
+        content,
+    )
     assert 'visibility = requiresCodeBool ? "private" : "public";' in content

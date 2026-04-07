@@ -853,8 +853,8 @@ def _show_zen_start_popup(screen, board_height=20, settings_manager=None):
         
         # Etiket
         if selected_rows < MAX_ROWS:
-               lbl = retro_style.get_font(max(10, int(14 * popup_scale))).render("satır", True, (150, 150, 150))
-               screen.blit(lbl, lbl.get_rect(center=(panel_rect.centerx, selector_center_y + max(20, int(35 * popup_scale)))))
+            lbl = retro_style.get_font(max(10, int(14 * popup_scale))).render(t('lines', 'Satır'), True, (150, 150, 150))
+            screen.blit(lbl, lbl.get_rect(center=(panel_rect.centerx, selector_center_y + max(20, int(35 * popup_scale)))))
 
         # Sağ Ok
         right_hover = right_arrow_rect.collidepoint(mpos)
