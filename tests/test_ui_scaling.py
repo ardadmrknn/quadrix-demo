@@ -116,6 +116,26 @@ def test_apply_ui_scale_preset_compact_honors_minimum():
     assert math.isclose(adjusted, 0.72)
 
 
+def test_apply_ui_scale_preset_is_more_visible_near_baseline_for_compact():
+    adjusted = apply_ui_scale_preset(1.0, min_scale=0.72, max_scale=1.24, preset="compact")
+
+    assert math.isclose(adjusted, 0.90)
+
+
+def test_apply_ui_scale_preset_is_more_visible_near_baseline_for_large():
+    adjusted = apply_ui_scale_preset(1.0, min_scale=0.72, max_scale=1.24, preset="large")
+
+    assert math.isclose(adjusted, 1.12)
+
+
+def test_apply_ui_scale_preset_m2_air_like_scale_has_clear_spread():
+    compact = apply_ui_scale_preset(0.94, min_scale=0.72, max_scale=1.24, preset="compact")
+    large = apply_ui_scale_preset(0.94, min_scale=0.72, max_scale=1.24, preset="large")
+
+    assert math.isclose(compact, 0.84)
+    assert math.isclose(large, 1.06)
+
+
 def test_get_effective_scale_applies_large_preset_after_clamp(monkeypatch):
     screen = _FakeScreen(2560, 1660)
     previous = get_ui_scale_preset()

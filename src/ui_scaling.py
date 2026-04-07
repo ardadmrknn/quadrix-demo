@@ -12,6 +12,14 @@ UI_SCALE_PRESET_MULTIPLIERS = {
     "large": 1.08,
 }
 
+UI_SCALE_PRESET_OFFSETS = {
+    "compact": -0.10,
+    "normal": 0.0,
+    "large": 0.12,
+}
+
+UI_SCALE_PRESET_OFFSET_THRESHOLD = 1.10
+
 UI_SCALE_PRESETS = tuple(UI_SCALE_PRESET_MULTIPLIERS.keys())
 
 _UI_SCALE_PRESET = "normal"
@@ -65,11 +73,16 @@ def apply_ui_scale_preset(
     if min_scale > max_scale:
         raise ValueError("min_scale max_scale degerinden buyuk olamaz")
 
-    multiplier = get_ui_scale_multiplier(preset)
+    normalized = normalize_ui_scale_preset(_UI_SCALE_PRESET if preset is None else preset)
+    multiplier = float(UI_SCALE_PRESET_MULTIPLIERS[normalized])
     if multiplier == 1.0:
         return float(scale)
 
-    adjusted = float(scale) * multiplier
+    if float(scale) <= float(UI_SCALE_PRESET_OFFSET_THRESHOLD):
+        adjusted = float(scale) + float(UI_SCALE_PRESET_OFFSETS[normalized])
+    else:
+        adjusted = float(scale) * multiplier
+
     if multiplier < 1.0:
         return max(float(min_scale), adjusted)
 
@@ -265,6 +278,8 @@ __all__ = [
     "MODAL_SCALE_PROFILES",
     "REFERENCE_SIZE",
     "UI_SCALE_PRESET_MULTIPLIERS",
+    "UI_SCALE_PRESET_OFFSETS",
+    "UI_SCALE_PRESET_OFFSET_THRESHOLD",
     "UI_SCALE_PRESETS",
     "apply_ui_scale_preset",
     "get_content_scale",
