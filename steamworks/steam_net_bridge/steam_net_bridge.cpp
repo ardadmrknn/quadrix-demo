@@ -527,7 +527,7 @@ private:
                ",\"lobby_code\":\"" + json_escape(lobbyCode) + "\"" +
                ",\"visibility\":" + visibilityJson +
                ",\"requires_code\":" + requiresCodeJson +
-             ",\"metadata_ready\":" + metadataReadyJson +
+               ",\"metadata_ready\":" + metadataReadyJson +
                "}";
     }
 
@@ -897,9 +897,9 @@ PYBIND11_MODULE(steam_net_bridge, m)
         .def("add_request_lobby_list_string_filter",
              &SteamNetBridge::add_request_lobby_list_string_filter,
              py::arg("key"), py::arg("value"))
-           .def("add_request_lobby_list_distance_filter",
-               &SteamNetBridge::add_request_lobby_list_distance_filter,
-               py::arg("distance_filter"))
+        .def("add_request_lobby_list_distance_filter",
+             &SteamNetBridge::add_request_lobby_list_distance_filter,
+             py::arg("distance_filter"))
         .def("request_lobby_list", &SteamNetBridge::request_lobby_list)
         // Mesajlaşma
         .def("send_message", &SteamNetBridge::send_message,
