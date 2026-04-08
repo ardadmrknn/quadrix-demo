@@ -1279,8 +1279,12 @@ def pause_pump() -> None:
     _pump_paused = True
     # Pump döngüsünün mevcut iterasyonunun bitmesini BEKle (lock ile garanti)
     # Lock al ve bırak — pump döngüsü RunCallbacks'ten çıkana kadar burada bekler
-    with _pump_lock:
-        pass
+    # Timeout ile: RunCallbacks takılırsa sonsuz bekleme olmasın
+    acquired = _pump_lock.acquire(timeout=0.5)
+    if acquired:
+        _pump_lock.release()
+    else:
+        print(f"[Steam] Pump lock acquire timeout (pause_pump), devam ediliyor (count={_pump_pause_count})")
     # Ek güvenlik için pump'un pause gördüğünden emin ol (best-effort)
     if not _pump_paused_event.wait(timeout=0.15):
         print(f"[Steam] Pump pause ack timeout (best-effort devam, count={_pump_pause_count})")

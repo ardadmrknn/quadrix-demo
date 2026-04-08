@@ -3286,8 +3286,42 @@ def main():
             pass
 
         # FPS limitleme frame başında uygulanıyor.
-    
-    # macOS: pencereyi önce kapat; kısa teardown beklemelerinde beachball azaltılır.
+
+    # ── macOS güvenlik ağı: cleanup 3 saniyede bitmezse zorla çık ──────
+    # pygame.display.quit() veya pygame.quit() macOS'ta Cocoa/SDL etkileşimi
+    # nedeniyle takılabilir (özellikle Online PvP sonrası Steam overlay aktifken).
+    # SIGALRM ile os._exit(0)'a ulaşmayı GARANTİ altına alıyoruz.
+    if sys.platform == 'darwin':
+        try:
+            import signal as _sig_alarm
+            def _macos_force_exit(signum, frame):
+                os._exit(0)
+            _sig_alarm.signal(_sig_alarm.SIGALRM, _macos_force_exit)
+            _sig_alarm.alarm(3)
+        except Exception:
+            pass
+
+    # ── macOS: pump thread'i ÖNCE durdur ───────────────────────────────
+    # pygame.display.quit() SDL penceresini yok eder. Eğer pump thread
+    # aynı anda SteamAPI_RunCallbacks() çağırıyorsa, Steam overlay
+    # (SDL/Cocoa hook'lu) yok edilen pencereyle etkileşmeye çalışır
+    # ve macOS'ta deadlock/donma oluşur. Bu yüzden display kapatmadan
+    # ÖNCE pump thread'i durdurup mevcut RunCallbacks() çağrısının
+    # bitmesini bekliyoruz.
+    if sys.platform == 'darwin':
+        try:
+            import steam_integration as _si_pre
+            _si_pre._pump_running = False
+            _si_pre._shutdown_requested = True
+            _si_pre._pump_paused = True
+            _si_pre._pump_paused_event.set()
+            # Mevcut RunCallbacks() çağrısının bitmesini kısa süre bekle
+            if _si_pre._pump_lock.acquire(timeout=0.2):
+                _si_pre._pump_lock.release()
+        except Exception:
+            pass
+
+    # macOS: pencereyi kapat (pump thread artık durmuş — overlay çakışması yok).
     if sys.platform == 'darwin':
         try:
             pygame.display.quit()
@@ -3308,10 +3342,16 @@ def main():
     except Exception:
         pass
 
-    pygame.quit()
+    try:
+        pygame.quit()
+    except Exception:
+        pass
     
     # Ayarları son kez kaydet
-    settings_manager.save_settings()
+    try:
+        settings_manager.save_settings()
+    except Exception:
+        pass
     
     print("\n" + "=" * 60)
     print("Oyun kapandı. Skorunuz kaydedildi!")
