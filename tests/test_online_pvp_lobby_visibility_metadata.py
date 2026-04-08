@@ -3,6 +3,7 @@ from __future__ import annotations
 import pathlib
 import sys
 import types
+from unittest.mock import Mock
 
 
 ROOT_DIR = pathlib.Path(__file__).resolve().parent.parent
@@ -151,3 +152,79 @@ def test_lobby_found_uses_explicit_visibility_even_when_metadata_ready_is_false(
     assert lobby['visibility'] == 'private'
     assert lobby['requires_code'] is True
     assert lobby['metadata_ready'] is True
+
+
+def test_lobby_data_updated_refreshes_cached_lobby_entry():
+    game = _make_game()
+    game._lobby_list = [{
+        'id': 99,
+        'name': 'Unknown host',
+        'code': '',
+        'visibility': 'unknown',
+        'requires_code': False,
+        'metadata_ready': False,
+    }]
+    game._code_search_retry_count = 0
+    game._code_search_retry_timer = 0.0
+    game._code_search_retry_code = ''
+    game._code_search_retry_use_full_scan = False
+    game._join_target_lobby_id = 0
+    game._status_msg = ''
+    game._status_timer = 0.0
+    game.net = types.SimpleNamespace(
+        get_lobby_data_for=lambda _lobby_id, key: {
+            'host_name': 'Public host',
+            'visibility': 'public',
+            'requires_code': '0',
+            'metadata_ready': '1',
+            'lobby_code': '',
+        }.get(key, ''),
+        get_lobby_data=lambda key: '',
+        join_lobby=Mock(),
+    )
+
+    game._on_lobby_data_updated(NetEvent('lobby_data_updated', 99, '99'))
+
+    lobby = game._lobby_list[0]
+    assert lobby['name'] == 'Public host'
+    assert lobby['visibility'] == 'public'
+    assert lobby['requires_code'] is False
+    assert lobby['metadata_ready'] is True
+    game.net.join_lobby.assert_not_called()
+
+
+def test_lobby_data_updated_can_complete_pending_code_join():
+    game = _make_game()
+    game._lobby_list = [{
+        'id': 77,
+        'name': 'Pending host',
+        'code': '',
+        'visibility': 'unknown',
+        'requires_code': False,
+        'metadata_ready': False,
+    }]
+    game._code_search_retry_count = 1
+    game._code_search_retry_timer = 1500.0
+    game._code_search_retry_code = '123456'
+    game._code_search_retry_use_full_scan = True
+    game._join_target_lobby_id = 0
+    game._status_msg = ''
+    game._status_timer = 0.0
+    game.net = types.SimpleNamespace(
+        get_lobby_data_for=lambda _lobby_id, key: {
+            'host_name': 'Private host',
+            'visibility': 'private',
+            'requires_code': '1',
+            'metadata_ready': '1',
+            'lobby_code': '123456',
+        }.get(key, ''),
+        get_lobby_data=lambda key: '',
+        join_lobby=Mock(),
+    )
+
+    game._on_lobby_data_updated(NetEvent('lobby_data_updated', 77, '77'))
+
+    game.net.join_lobby.assert_called_once_with(77)
+    assert game._code_search_retry_code == ''
+    assert game._code_search_retry_timer == 0.0
+    assert game._code_search_retry_use_full_scan is False

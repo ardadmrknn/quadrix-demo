@@ -453,6 +453,8 @@ class OnlinePvPGame:
         self._auto_lobby_refresh_timer = 0.0
         self._auto_lobby_refresh_interval = 10000.0
         self._pending_lobby_list: list[dict] = []  # Lobi listesi birikim tampon
+        self._lobby_presence_probe_timer = 0.0
+        self._LOBBY_PRESENCE_PROBE_INTERVAL_MS = 350.0
 
         # Durum mesajı (hata/bilgi)
         self._status_msg: str = ''
@@ -807,6 +809,7 @@ class OnlinePvPGame:
             self.net.on('lobby_member_disconnected', self._on_member_disconnected)
             # Lobi listesi — C++ per-lobi event gönderiyor, tek JSON değil
             self.net.on('lobby_found', self._on_lobby_found)
+            self.net.on('lobby_data_updated', self._on_lobby_data_updated)
             self.net.on('lobby_list_complete', self._on_lobby_list_complete)
             # Steam overlay "Oyuna Katıl" isteği
             self.net.on('join_requested', self._on_join_requested)
@@ -834,6 +837,7 @@ class OnlinePvPGame:
 
     def _on_lobby_created(self, ev: NetEvent):
         self.online_state = OnlineState.WAITING
+        self._lobby_presence_probe_timer = 0.0
         print(f"[OnlinePvP] Lobi oluşturuldu: {ev.steam_id}")
 
         self._lobby_id_str = str(ev.steam_id)
@@ -866,27 +870,16 @@ class OnlinePvPGame:
 
     def _on_lobby_joined(self, ev: NetEvent):
         self.online_state = OnlineState.WAITING
+        self._lobby_presence_probe_timer = 0.0
         self._join_target_lobby_id = 0
         # Rakip zaten lobideyse bul
         if self.net.opponent_steam_id:
-            self.online_state = OnlineState.READY_CHECK
-            self._session_established = False
-            self._session_ping_timer = 0.0
-            self._send_session_ping()
+            self._promote_to_ready_check(self.net.opponent_steam_id, self.net.opponent_name)
 
     def _on_member_joined(self, ev: NetEvent):
         if ev.steam_id != self.net.my_steam_id:
-            self.online_state = OnlineState.READY_CHECK
-            self._pending_disconnect_steam_id = 0
-            self._disconnect_grace_timer = 0.0
-            self._session_established = False
-            self._session_ping_timer = 0.0
             print(f"[OnlinePvP] Rakip katıldı: {self.net.opponent_name}")
-            self._send_session_ping()
-            try:
-                self.sound.play('click')
-            except Exception:
-                pass
+            self._promote_to_ready_check(ev.steam_id, ev.data or self.net.opponent_name, play_sound=True)
 
     def _on_member_disconnected(self, ev: NetEvent):
         my_id = int(getattr(self.net, 'my_steam_id', 0) or 0)
@@ -1130,6 +1123,127 @@ class OnlinePvPGame:
             'metadata_ready': metadata_ready,
         }
 
+    def _update_cached_lobby_snapshot(self, lobby_id: int, snapshot: dict) -> bool:
+        if not lobby_id or not isinstance(snapshot, dict):
+            return False
+
+        updated = False
+        for collection_name in ('_pending_lobby_list', '_lobby_list'):
+            collection = getattr(self, collection_name, None)
+            if not isinstance(collection, list):
+                continue
+            for index, lobby in enumerate(collection):
+                if int(lobby.get('id', 0) or 0) != lobby_id:
+                    continue
+                lobby['name'] = snapshot.get('name') or lobby.get('name') or f'Lobi #{index + 1}'
+                lobby['code'] = snapshot.get('code', lobby.get('code', ''))
+                lobby['visibility'] = snapshot.get('visibility', lobby.get('visibility', 'unknown'))
+                lobby['requires_code'] = bool(snapshot.get('requires_code', lobby.get('requires_code', False)))
+                lobby['metadata_ready'] = bool(snapshot.get('metadata_ready', lobby.get('metadata_ready', False)))
+                updated = True
+        return updated
+
+    def _refresh_cached_lobby_metadata(
+        self,
+        lobby_id: int,
+        payload: dict | None = None,
+        *,
+        prefer_live: bool = True,
+    ) -> dict | None:
+        normalized_lobby_id = int(lobby_id or 0)
+        if not normalized_lobby_id:
+            return None
+        snapshot = self._get_lobby_metadata_snapshot(
+            normalized_lobby_id,
+            payload,
+            prefer_live=prefer_live,
+        )
+        if self._update_cached_lobby_snapshot(normalized_lobby_id, snapshot):
+            return snapshot
+        return None
+
+    def _try_resolve_pending_code_join(self, lobby_id: int, snapshot: dict | None = None) -> bool:
+        pending_code = str(getattr(self, '_code_search_retry_code', '') or '').strip()
+        if not pending_code:
+            return False
+
+        effective_snapshot = snapshot
+        if effective_snapshot is None:
+            effective_snapshot = self._get_lobby_metadata_snapshot(lobby_id, prefer_live=True)
+
+        if not effective_snapshot.get('metadata_ready'):
+            return False
+
+        requires_code = bool(effective_snapshot.get('requires_code', False))
+        lobby_code = str(effective_snapshot.get('code', '') or '').strip()
+        if lobby_code != pending_code:
+            return False
+
+        self._code_search_retry_count = 0
+        self._code_search_retry_timer = 0.0
+        self._code_search_retry_code = ''
+        self._code_search_retry_use_full_scan = False
+        self._join_target_lobby_id = 0
+        self.net.join_lobby(lobby_id)
+        self._status_msg = t('joining_lobby', 'Lobiye katılınıyor...')
+        self._status_timer = 2.0
+        return True
+
+    def _promote_to_ready_check(self, opponent_id: int = 0, opponent_name: str = '', play_sound: bool = False):
+        normalized_opponent_id = int(opponent_id or getattr(self.net, 'opponent_steam_id', 0) or 0)
+        state_changed = self.online_state != OnlineState.READY_CHECK
+
+        if normalized_opponent_id and not getattr(self.net, 'opponent_steam_id', 0):
+            try:
+                self.net._opponent_steam_id = normalized_opponent_id
+            except Exception:
+                pass
+        if opponent_name and not getattr(self.net, 'opponent_name', ''):
+            try:
+                self.net._opponent_name = opponent_name
+            except Exception:
+                pass
+
+        self.online_state = OnlineState.READY_CHECK
+        self._pending_disconnect_steam_id = 0
+        self._disconnect_grace_timer = 0.0
+
+        if state_changed or not self._session_established:
+            self._session_established = False
+            self._session_ping_timer = 0.0
+            self._send_session_ping()
+
+        if play_sound and state_changed:
+            try:
+                self.sound.play('click')
+            except Exception:
+                pass
+
+    def _sync_lobby_presence_from_members(self) -> bool:
+        if self.online_state not in (OnlineState.WAITING, OnlineState.READY_CHECK):
+            return False
+
+        try:
+            members = list(self.net.get_lobby_members() or [])
+        except Exception:
+            return False
+
+        my_id = int(getattr(self.net, 'my_steam_id', 0) or 0)
+        opponent_ids = [int(member_id) for member_id in members if int(member_id or 0) and int(member_id or 0) != my_id]
+        if not opponent_ids:
+            return False
+
+        opponent_id = opponent_ids[0]
+        opponent_name = getattr(self.net, 'opponent_name', '')
+        if not opponent_name:
+            try:
+                opponent_name = self.net._get_name(opponent_id)
+            except Exception:
+                opponent_name = ''
+
+        self._promote_to_ready_check(opponent_id, opponent_name, play_sound=self.online_state == OnlineState.WAITING)
+        return True
+
     def _find_lobby_match_by_code(self, code: str) -> tuple[int, bool, bool]:
         normalized_code = (code or '').strip()
         if not normalized_code:
@@ -1210,6 +1324,11 @@ class OnlinePvPGame:
             'metadata_ready': snapshot['metadata_ready'],
             'found_time': time.time(),
         })
+
+    def _on_lobby_data_updated(self, ev: NetEvent):
+        snapshot = self._refresh_cached_lobby_metadata(ev.steam_id, prefer_live=True)
+        if snapshot is not None:
+            self._try_resolve_pending_code_join(ev.steam_id, snapshot)
 
     def _on_lobby_list_complete(self, ev: NetEvent):
         """Lobi listesi tamamlandı — sonuçları onayla."""
@@ -2946,6 +3065,15 @@ class OnlinePvPGame:
         if self._net_initialized:
             self.net.tick()
             self._process_messages()
+
+        if self._net_initialized and self.online_state in (OnlineState.WAITING, OnlineState.READY_CHECK):
+            self._lobby_presence_probe_timer = max(
+                0.0,
+                float(getattr(self, '_lobby_presence_probe_timer', 0.0)) - float(delta_time),
+            )
+            if self._lobby_presence_probe_timer <= 0.0:
+                self._sync_lobby_presence_from_members()
+                self._lobby_presence_probe_timer = self._LOBBY_PRESENCE_PROBE_INTERVAL_MS
 
         if (
             self.online_state == OnlineState.PLAYING
