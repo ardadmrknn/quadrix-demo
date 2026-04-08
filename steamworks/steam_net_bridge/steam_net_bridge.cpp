@@ -309,8 +309,13 @@ public:
     {
         if (!m_matchmaking || m_isShutdown)
             return;
-        set_pending_lobby_metadata(k_ELobbyTypePrivate);
-        SteamAPICall_t call = m_matchmaking->CreateLobby(k_ELobbyTypePrivate, max_members);
+        // Quadrix'te "ozel" lobi kod ile bulunabilir olmalidir.
+        // Steam dokumanina gore RequestLobbyList sadece Public ve Invisible
+        // lobileri dondurur; Private/FriendsOnly lobileri listelemez.
+        // Bu nedenle oyun-ici private/public semantigini metadata ile,
+        // Steam-search discoverability'yi ise Invisible lobby type ile ayiriyoruz.
+        set_pending_lobby_metadata(k_ELobbyTypeInvisible);
+        SteamAPICall_t call = m_matchmaking->CreateLobby(k_ELobbyTypeInvisible, max_members);
         m_lobbyCreatedResult.Set(call, this, &SteamNetBridge::OnLobbyCreated);
     }
 

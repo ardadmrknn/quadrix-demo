@@ -20,20 +20,26 @@ def _make_game() -> online_pvp_module.OnlinePvPGame:
     game = online_pvp_module.OnlinePvPGame.__new__(online_pvp_module.OnlinePvPGame)
     game._lobby_list = []
     game._pending_lobby_list = []
+    game._deferred_lobby_entries = {}
     game._lobby_list_fetching = False
     game._lobby_list_scroll = 0
+    game._lobby_list_filter = 'all'
     game._searching_by_code = False
     game._search_code = ''
     game._join_code_input = ''
     game._join_code_active = True
     game._join_code_error = ''
     game._join_target_lobby_id = 0
+    game._authorized_private_join_lobby_id = 0
+    game._authorized_private_join_code = ''
+    game._invite_authorized_lobby_id = 0
     game._status_msg = ''
     game._status_timer = 0.0
     game._code_search_retry_count = 0
     game._code_search_retry_timer = 0.0
     game._code_search_retry_code = ''
     game._code_search_retry_use_full_scan = False
+    game._auto_lobby_refresh_interval = 0.0
     game._init_networking = Mock(return_value=True)
     game.net = types.SimpleNamespace(
         join_lobby=Mock(),
@@ -109,6 +115,8 @@ def test_try_join_by_code_joins_selected_private_lobby_when_live_code_matches():
     game.net.join_lobby.assert_called_once_with(77)
     game.net.search_lobby_by_code.assert_not_called()
     assert game._join_target_lobby_id == 0
+    assert game._authorized_private_join_lobby_id == 77
+    assert game._authorized_private_join_code == '123456'
 
 
 def test_try_join_by_code_rejects_wrong_code_for_selected_private_lobby():
@@ -157,6 +165,8 @@ def test_try_join_by_code_accepts_generated_code_when_private_metadata_code_is_m
     game.net.join_lobby.assert_called_once_with(77)
     game.net.search_lobby_by_code.assert_not_called()
     assert game._join_target_lobby_id == 0
+    assert game._authorized_private_join_lobby_id == 77
+    assert game._authorized_private_join_code == generate_lobby_code(77)
 
 
 def test_on_lobby_list_complete_does_not_join_ambiguous_code_collision():
@@ -196,3 +206,39 @@ def test_on_lobby_list_complete_matches_generated_private_code_without_metadata_
     game._on_lobby_list_complete(online_pvp_module.NetEvent('lobby_list_complete', 0, ''))
 
     game.net.join_lobby.assert_called_once_with(77)
+    assert game._authorized_private_join_lobby_id == 77
+    assert game._authorized_private_join_code == generate_lobby_code(77)
+
+
+def test_on_lobby_list_complete_can_match_private_code_from_deferred_lobby_entries():
+    game = _make_game()
+    game._searching_by_code = True
+    game._search_code = '123456'
+    game._deferred_lobby_entries = {
+        77: {
+            'id': 77,
+            'name': 'Bekleyen özel lobi',
+            'code': '',
+            'visibility': 'unknown',
+            'requires_code': False,
+            'metadata_ready': False,
+        }
+    }
+
+    def _get_lobby_data_for(lobby_id, key):
+        assert lobby_id == 77
+        mapping = {
+            'visibility': 'private',
+            'requires_code': '1',
+            'metadata_ready': '1',
+            'lobby_code': '123456',
+        }
+        return mapping.get(key, '')
+
+    game.net.get_lobby_data_for = _get_lobby_data_for
+
+    game._on_lobby_list_complete(online_pvp_module.NetEvent('lobby_list_complete', 0, ''))
+
+    game.net.join_lobby.assert_called_once_with(77)
+    assert game._authorized_private_join_lobby_id == 77
+    assert game._authorized_private_join_code == '123456'

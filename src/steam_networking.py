@@ -463,19 +463,13 @@ class SteamNetworking:
             if public:
                 self._bridge_instance.create_public_lobby(max_members)
             else:
-                # Özel lobi: Invisible (arama sonuçlarında filtre ile bulunabilir,
-                # ancak arkadaş listesinde görünmez). Bu sayede hem Steam davet
-                # hem de lobi kodu ile katılım çalışır.
+                # Ozel lobi: search'te bulunabilir ama arkadas listesinde görünmez.
+                # FriendsOnly fallback'i search disi kaldigi icin kullanmiyoruz.
                 try:
                     self._bridge_instance.create_lobby_with_type(
                         LobbyType.INVISIBLE, max_members)
                 except (AttributeError, TypeError):
-                    # C++ bridge eski sürüm — fallback: FriendsOnly
-                    try:
-                        self._bridge_instance.create_lobby_with_type(
-                            LobbyType.FRIENDS_ONLY, max_members)
-                    except (AttributeError, TypeError):
-                        self._bridge_instance.create_lobby(max_members)
+                    self._bridge_instance.create_lobby(max_members)
             print(f"[SteamNet] Lobi oluşturuluyor... (public={public})")
         except Exception as e:
             print(f"[SteamNet] create_lobby hatası: {e}")

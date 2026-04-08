@@ -19,6 +19,14 @@ from steam_networking import NetEvent
 def _make_game():
     game = online_pvp_module.OnlinePvPGame.__new__(online_pvp_module.OnlinePvPGame)
     game._pending_lobby_list = []
+    game._lobby_list = []
+    game._deferred_lobby_entries = {}
+    game._lobby_list_fetching = False
+    game._authorized_private_join_lobby_id = 0
+    game._authorized_private_join_code = ''
+    game._invite_authorized_lobby_id = 0
+    game._status_msg = ''
+    game._status_timer = 0.0
     return game
 
 
@@ -38,8 +46,8 @@ def test_lobby_found_does_not_fallback_to_current_lobby_metadata():
 
     game._on_lobby_found(event)
 
-    assert len(game._pending_lobby_list) == 1
-    lobby = game._pending_lobby_list[0]
+    assert game._pending_lobby_list == []
+    lobby = game._deferred_lobby_entries[42]
     assert lobby['visibility'] == 'unknown'
     assert lobby['requires_code'] is False
     assert lobby['metadata_ready'] is False
@@ -225,15 +233,52 @@ def test_lobby_data_updated_can_complete_pending_code_join():
     game._on_lobby_data_updated(NetEvent('lobby_data_updated', 77, '77'))
 
     game.net.join_lobby.assert_called_once_with(77)
+    assert game._authorized_private_join_lobby_id == 77
+    assert game._authorized_private_join_code == '123456'
     assert game._code_search_retry_code == ''
     assert game._code_search_retry_timer == 0.0
     assert game._code_search_retry_use_full_scan is False
 
 
-def test_resolve_lobby_display_state_defaults_unknown_metadata_to_public():
+def test_lobby_data_updated_promotes_deferred_lobby_entry_once_visibility_is_known():
+    game = _make_game()
+    game._deferred_lobby_entries = {
+        88: {
+            'id': 88,
+            'name': 'Bekleyen lobi',
+            'code': '',
+            'visibility': 'unknown',
+            'requires_code': False,
+            'metadata_ready': False,
+        }
+    }
+    game.net = types.SimpleNamespace(
+        get_lobby_data_for=lambda _lobby_id, key: {
+            'host_name': 'Private host',
+            'visibility': 'private',
+            'requires_code': '1',
+            'metadata_ready': '1',
+            'lobby_code': '654321',
+        }.get(key, ''),
+        get_lobby_data=lambda key: '',
+        join_lobby=Mock(),
+        lobby_id=0,
+    )
+
+    game._on_lobby_data_updated(NetEvent('lobby_data_updated', 88, '88'))
+
+    assert 88 not in game._deferred_lobby_entries
+    assert len(game._lobby_list) == 1
+    lobby = game._lobby_list[0]
+    assert lobby['visibility'] == 'private'
+    assert lobby['requires_code'] is True
+    assert lobby['code'] == '654321'
+
+
+def test_resolve_lobby_display_state_keeps_unknown_metadata_unknown():
     visibility, requires_code = online_pvp_module._resolve_lobby_display_state('unknown', False, '')
 
-    assert visibility == 'public'
+    assert visibility == 'unknown'
     assert requires_code is False
 
 
@@ -242,3 +287,41 @@ def test_resolve_lobby_display_state_keeps_private_when_code_exists():
 
     assert visibility == 'private'
     assert requires_code is True
+
+
+def test_validate_joined_lobby_access_accepts_authorized_private_join_by_code():
+    game = _make_game()
+    game.net = types.SimpleNamespace(
+        lobby_id=77,
+        get_lobby_data_for=lambda _lobby_id, key: {
+            'visibility': 'private',
+            'requires_code': '1',
+            'metadata_ready': '1',
+            'lobby_code': '123456',
+        }.get(key, ''),
+    )
+    game._return_to_pvp_lobby_menu = Mock()
+    game._remember_private_join_authorization(77, '123456')
+
+    assert game._validate_joined_lobby_access() is True
+    assert game._authorized_private_join_lobby_id == 0
+    assert game._authorized_private_join_code == ''
+    game._return_to_pvp_lobby_menu.assert_not_called()
+
+
+def test_validate_joined_lobby_access_rejects_unauthorized_private_join():
+    game = _make_game()
+    game.net = types.SimpleNamespace(
+        lobby_id=77,
+        get_lobby_data_for=lambda _lobby_id, key: {
+            'visibility': 'private',
+            'requires_code': '1',
+            'metadata_ready': '1',
+            'lobby_code': '123456',
+        }.get(key, ''),
+    )
+    game._return_to_pvp_lobby_menu = Mock()
+
+    assert game._validate_joined_lobby_access() is False
+    game._return_to_pvp_lobby_menu.assert_called_once_with()
+    assert 'kod veya davet gerekli' in game._status_msg.lower()

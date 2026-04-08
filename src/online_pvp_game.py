@@ -128,7 +128,7 @@ def _resolve_lobby_display_state(
 
     if requires_code or normalized_code:
         return 'private', True
-    return 'public', False
+    return 'unknown', False
 
 
 def _resolve_private_lobby_code(lobby_id: int, requires_code: bool, lobby_code: str) -> str:
@@ -472,6 +472,9 @@ class OnlinePvPGame:
         self._auto_lobby_refresh_timer = 0.0
         self._auto_lobby_refresh_interval = 10000.0
         self._pending_lobby_list: list[dict] = []  # Lobi listesi birikim tampon
+        self._deferred_lobby_entries: dict[int, dict] = {}
+        self._deferred_lobby_refresh_timer = 0.0
+        self._DEFERRED_LOBBY_REFRESH_INTERVAL_MS = 500.0
         self._lobby_presence_probe_timer = 0.0
         self._LOBBY_PRESENCE_PROBE_INTERVAL_MS = 350.0
 
@@ -496,6 +499,9 @@ class OnlinePvPGame:
         self._code_search_retry_timer: float = 0.0  # Retry geri sayımı (ms)
         self._code_search_retry_code: str = ''   # Retry edilecek kod
         self._code_search_retry_use_full_scan: bool = False
+        self._authorized_private_join_lobby_id: int = 0
+        self._authorized_private_join_code: str = ''
+        self._invite_authorized_lobby_id: int = 0
 
         # ─── Görsel Efektler (local PvP ile birebir) ───
         self.effects_enabled = True
@@ -891,6 +897,8 @@ class OnlinePvPGame:
         self.online_state = OnlineState.WAITING
         self._lobby_presence_probe_timer = 0.0
         self._join_target_lobby_id = 0
+        if not self._validate_joined_lobby_access():
+            return
         # Rakip zaten lobideyse bul
         if self.net.opponent_steam_id:
             self._promote_to_ready_check(self.net.opponent_steam_id, self.net.opponent_name)
@@ -1162,6 +1170,115 @@ class OnlinePvPGame:
                 updated = True
         return updated
 
+    def _upsert_lobby_entry(self, collection_name: str, entry: dict):
+        collection = getattr(self, collection_name, None)
+        if not isinstance(collection, list):
+            return
+        lobby_id = int(entry.get('id', 0) or 0)
+        if not lobby_id:
+            return
+        for index, lobby in enumerate(collection):
+            if int(lobby.get('id', 0) or 0) == lobby_id:
+                collection[index] = entry
+                return
+        collection.append(entry)
+
+    def _remember_deferred_lobby_entry(self, entry: dict):
+        lobby_id = int(entry.get('id', 0) or 0)
+        if lobby_id:
+            self._deferred_lobby_entries[lobby_id] = entry
+
+    def _iter_known_lobby_entries(self) -> list[dict]:
+        seen_ids: set[int] = set()
+        entries: list[dict] = []
+        for collection in (getattr(self, '_lobby_list', []), list(getattr(self, '_deferred_lobby_entries', {}).values())):
+            for lobby in collection:
+                lobby_id = int(lobby.get('id', 0) or 0)
+                if not lobby_id or lobby_id in seen_ids:
+                    continue
+                seen_ids.add(lobby_id)
+                entries.append(lobby)
+        return entries
+
+    def _promote_deferred_lobby_entry(self, lobby_id: int, snapshot: dict | None = None) -> bool:
+        normalized_lobby_id = int(lobby_id or 0)
+        if not normalized_lobby_id:
+            return False
+        deferred_entry = self._deferred_lobby_entries.get(normalized_lobby_id)
+        if not deferred_entry:
+            return False
+        effective_snapshot = snapshot
+        if effective_snapshot is None:
+            effective_snapshot = self._get_lobby_metadata_snapshot(
+                normalized_lobby_id,
+                deferred_entry,
+                prefer_live=True,
+            )
+        if effective_snapshot.get('visibility') == 'unknown':
+            return False
+
+        promoted_entry = dict(deferred_entry)
+        promoted_entry['name'] = effective_snapshot.get('name') or deferred_entry.get('name') or promoted_entry.get('name', '')
+        promoted_entry['code'] = effective_snapshot.get('code', deferred_entry.get('code', ''))
+        promoted_entry['visibility'] = effective_snapshot.get('visibility', deferred_entry.get('visibility', 'unknown'))
+        promoted_entry['requires_code'] = bool(effective_snapshot.get('requires_code', deferred_entry.get('requires_code', False)))
+        promoted_entry['metadata_ready'] = bool(effective_snapshot.get('metadata_ready', deferred_entry.get('metadata_ready', False)))
+        target_collection = '_pending_lobby_list' if self._lobby_list_fetching else '_lobby_list'
+        self._upsert_lobby_entry(target_collection, promoted_entry)
+        self._deferred_lobby_entries.pop(normalized_lobby_id, None)
+        return True
+
+    def _refresh_deferred_lobby_entries(self):
+        for lobby_id in list(getattr(self, '_deferred_lobby_entries', {}).keys()):
+            self._promote_deferred_lobby_entry(lobby_id)
+
+    def _remember_private_join_authorization(self, lobby_id: int, code: str):
+        self._authorized_private_join_lobby_id = int(lobby_id or 0)
+        self._authorized_private_join_code = str(code or '').strip()
+
+    def _clear_private_join_authorization(self, lobby_id: int | None = None):
+        normalized_lobby_id = int(lobby_id or 0)
+        if not normalized_lobby_id or self._authorized_private_join_lobby_id == normalized_lobby_id:
+            self._authorized_private_join_lobby_id = 0
+            self._authorized_private_join_code = ''
+        if not normalized_lobby_id or self._invite_authorized_lobby_id == normalized_lobby_id:
+            self._invite_authorized_lobby_id = 0
+
+    def _reject_private_lobby_join(self):
+        self._return_to_pvp_lobby_menu()
+        self._status_msg = t('private_lobby_code_required', 'Bu özel lobi için geçerli kod veya davet gerekli')
+        self._status_timer = 3.0
+
+    def _validate_joined_lobby_access(self) -> bool:
+        current_lobby_id = int(getattr(self.net, 'lobby_id', 0) or 0)
+        if not current_lobby_id:
+            return True
+
+        snapshot = self._get_lobby_metadata_snapshot(current_lobby_id, prefer_live=True)
+        if snapshot.get('visibility') == 'unknown' and not snapshot.get('metadata_ready'):
+            return True
+        if not snapshot.get('requires_code'):
+            self._clear_private_join_authorization(current_lobby_id)
+            return True
+
+        expected_code = _resolve_private_lobby_code(
+            current_lobby_id,
+            True,
+            str(snapshot.get('code', '') or ''),
+        )
+        authorized_by_code = (
+            self._authorized_private_join_lobby_id == current_lobby_id
+            and self._authorized_private_join_code
+            and self._authorized_private_join_code == expected_code
+        )
+        authorized_by_invite = self._invite_authorized_lobby_id == current_lobby_id
+        if authorized_by_code or authorized_by_invite:
+            self._clear_private_join_authorization(current_lobby_id)
+            return True
+
+        self._reject_private_lobby_join()
+        return False
+
     def _refresh_cached_lobby_metadata(
         self,
         lobby_id: int,
@@ -1193,7 +1310,6 @@ class OnlinePvPGame:
         if not effective_snapshot.get('metadata_ready'):
             return False
 
-        requires_code = bool(effective_snapshot.get('requires_code', False))
         lobby_code = str(effective_snapshot.get('code', '') or '').strip()
         if lobby_code != pending_code:
             return False
@@ -1203,6 +1319,7 @@ class OnlinePvPGame:
         self._code_search_retry_code = ''
         self._code_search_retry_use_full_scan = False
         self._join_target_lobby_id = 0
+        self._remember_private_join_authorization(lobby_id, pending_code)
         self.net.join_lobby(lobby_id)
         self._status_msg = t('joining_lobby', 'Lobiye katılınıyor...')
         self._status_timer = 2.0
@@ -1272,7 +1389,7 @@ class OnlinePvPGame:
         matched_ids: list[int] = []
         pending_metadata = False
 
-        for lobby in self._lobby_list:
+        for lobby in self._iter_known_lobby_entries():
             lobby_id = int(lobby.get('id', 0) or 0)
             if not lobby_id:
                 continue
@@ -1332,7 +1449,7 @@ class OnlinePvPGame:
         except (ValueError, TypeError):
             max_members = 2
 
-        self._pending_lobby_list.append({
+        entry = {
             'id': ev.steam_id,
             'members': member_count,
             'max_members': max_members,
@@ -1342,12 +1459,20 @@ class OnlinePvPGame:
             'requires_code': snapshot['requires_code'],
             'metadata_ready': snapshot['metadata_ready'],
             'found_time': time.time(),
-        })
+        }
+        if snapshot['visibility'] == 'unknown':
+            self._remember_deferred_lobby_entry(entry)
+            return
+        self._upsert_lobby_entry('_pending_lobby_list', entry)
 
     def _on_lobby_data_updated(self, ev: NetEvent):
-        snapshot = self._refresh_cached_lobby_metadata(ev.steam_id, prefer_live=True)
-        if snapshot is not None:
-            self._try_resolve_pending_code_join(ev.steam_id, snapshot)
+        current_lobby_id = int(getattr(self.net, 'lobby_id', 0) or 0)
+        snapshot = self._get_lobby_metadata_snapshot(ev.steam_id, prefer_live=True)
+        self._refresh_cached_lobby_metadata(ev.steam_id, prefer_live=True)
+        self._promote_deferred_lobby_entry(ev.steam_id, snapshot)
+        self._try_resolve_pending_code_join(ev.steam_id, snapshot)
+        if current_lobby_id and int(ev.steam_id or 0) == current_lobby_id:
+            self._validate_joined_lobby_access()
 
     def _on_lobby_list_complete(self, ev: NetEvent):
         """Lobi listesi tamamlandı — sonuçları onayla."""
@@ -1366,6 +1491,7 @@ class OnlinePvPGame:
             if matched_lobby_id:
                 self._code_search_retry_count = 0
                 self._join_target_lobby_id = 0
+                self._remember_private_join_authorization(matched_lobby_id, self._search_code)
                 self.net.join_lobby(matched_lobby_id)
                 self._status_msg = t('joining_lobby', 'Lobiye katılınıyor...')
                 self._status_timer = 2.0
@@ -1427,6 +1553,7 @@ class OnlinePvPGame:
         # UI'ı güncelle — gelen join_requested sonrası lobby_joined event'i
         # otomatik olarak WAITING state'e geçirecek.
         # Burada sadece kullanıcıya geri bildirim veriyoruz.
+        self._invite_authorized_lobby_id = int(ev.steam_id or 0)
         self._status_msg = t('joining_lobby', 'Lobiye katılınıyor...')
         self._status_timer = 2.0
 
@@ -1439,6 +1566,7 @@ class OnlinePvPGame:
         self._lobby_list_fetching = True
         self._auto_lobby_refresh_timer = self._auto_lobby_refresh_interval
         self._pending_lobby_list.clear()
+        self._deferred_lobby_entries.clear()
         if self._lobby_list_filter == 'public':
             self.net.add_lobby_search_filter('visibility', 'public')
         self.net.request_lobby_list(worldwide=True)
@@ -1452,6 +1580,7 @@ class OnlinePvPGame:
         self._search_code = normalized_code
         self._lobby_list_fetching = True
         self._pending_lobby_list.clear()
+        self._deferred_lobby_entries.clear()
         self._code_search_retry_use_full_scan = bool(fallback_scan)
         if fallback_scan:
             self.net.request_lobby_list(worldwide=True)
@@ -1519,12 +1648,14 @@ class OnlinePvPGame:
         self._code_search_retry_timer = 0.0
         self._code_search_retry_code = ''
         self._code_search_retry_use_full_scan = False
+        self._clear_private_join_authorization()
         self._lobby_list_filter = 'all'
         self._lobby_list_fetching = False
         self._auto_lobby_refresh_requested = False
         self._auto_lobby_refresh_timer = 0.0
         self._auto_connect_retry_timer = 0.0
         self._pending_lobby_list.clear()
+        self._deferred_lobby_entries.clear()
         self._status_msg = ''
         self._status_timer = 0
         self._invite_after_lobby = False
@@ -3085,6 +3216,19 @@ class OnlinePvPGame:
             self.net.tick()
             self._process_messages()
 
+        if (
+            self.online_state == OnlineState.LOBBY_MENU
+            and self._net_initialized
+            and self._deferred_lobby_entries
+        ):
+            self._deferred_lobby_refresh_timer = max(
+                0.0,
+                float(getattr(self, '_deferred_lobby_refresh_timer', 0.0)) - float(delta_time),
+            )
+            if self._deferred_lobby_refresh_timer <= 0.0:
+                self._refresh_deferred_lobby_entries()
+                self._deferred_lobby_refresh_timer = self._DEFERRED_LOBBY_REFRESH_INTERVAL_MS
+
         if self._net_initialized and self.online_state in (OnlineState.WAITING, OnlineState.READY_CHECK):
             self._lobby_presence_probe_timer = max(
                 0.0,
@@ -3931,6 +4075,7 @@ class OnlinePvPGame:
                     self._status_timer = 3.0
                     return
                 self._join_target_lobby_id = 0
+                self._remember_private_join_authorization(target_lobby_id, code)
                 self.net.join_lobby(target_lobby_id)
                 self._status_msg = t('joining_lobby', 'Lobiye katılınıyor...')
                 self._status_timer = 2.0
@@ -4363,8 +4508,11 @@ class OnlinePvPGame:
                     raw_requires_code,
                     l_code,
                 )
-                accent_color = UIColors.NEON_ORANGE if requires_code else UIColors.NEON_GREEN
-                bdr = accent_color if hover or requires_code else (*_rs.glass_border[:3],)
+                if visibility == 'unknown':
+                    accent_color = UIColors.NEON_CYAN
+                else:
+                    accent_color = UIColors.NEON_ORANGE if requires_code else UIColors.NEON_GREEN
+                bdr = accent_color if hover or requires_code or visibility == 'unknown' else (*_rs.glass_border[:3],)
                 draw_glass_panel(self.screen, ir,
                                  alpha=205 if hover else 150, border_color=bdr, glow=hover)
 
@@ -4391,7 +4539,9 @@ class OnlinePvPGame:
                                  (ir.x + s(20), ir.y + s(10)))
 
                 badge_font = _rs.get_font(s(11, minimum=9), bold=False)
-                if requires_code:
+                if visibility == 'unknown':
+                    badge_text = t('lobby_loading', 'Lobi yukleniyor')
+                elif requires_code:
                     badge_text = t('private_locked', 'Kilitli Ozel Lobi')
                 else:
                     badge_text = t('open_lobby', 'Acik lobi')
@@ -4411,7 +4561,9 @@ class OnlinePvPGame:
                 # Detay satırı: üye sayısı + lobi kodu
                 cf = _rs.get_font(s(12, minimum=9), bold=False)
                 detail_parts = [f'{members}/{mx} oyuncu']
-                if requires_code:
+                if visibility == 'unknown':
+                    detail_parts.append(t('lobby_loading_wait', 'Bilgiler yukleniyor'))
+                elif requires_code:
                     detail_parts.append(t('code_required', 'Katilmak icin kod gerekli'))
                 elif l_code:
                     detail_parts.append(f'Kod: {l_code}')
@@ -4437,9 +4589,14 @@ class OnlinePvPGame:
                 jw, jh = s(92), s(34)
                 jb = pygame.Rect(ir.right - jw - s(12), ir.centery - jh // 2, jw, jh)
                 jh_hover = jb.collidepoint(mouse_pos)
-                action = f'join_private_lobby:{lid}' if requires_code else f'join_lobby:{lid}'
-                button_label = t('enter_code', 'Kod Gir') if requires_code else t('join', 'Katıl')
-                button_color = UIColors.NEON_ORANGE if requires_code else UIColors.NEON_GREEN
+                if visibility == 'unknown':
+                    action = ''
+                    button_label = t('waiting', 'Bekleyin')
+                    button_color = UIColors.NEON_CYAN
+                else:
+                    action = f'join_private_lobby:{lid}' if requires_code else f'join_lobby:{lid}'
+                    button_label = t('enter_code', 'Kod Gir') if requires_code else t('join', 'Katıl')
+                    button_color = UIColors.NEON_ORANGE if requires_code else UIColors.NEON_GREEN
                 _rs.draw_uniform_button(self.screen, jb,
                                         button_label,
                                         color_code=button_color,

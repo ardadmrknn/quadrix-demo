@@ -20,6 +20,13 @@ def test_bridge_sets_visibility_metadata_on_lobby_created():
     assert 'm_matchmaking->SetLobbyJoinable(m_currentLobby, true);' in content
 
 
+def test_bridge_uses_invisible_lobby_type_for_searchable_private_code_lobbies():
+    content = CPP_PATH.read_text(encoding='utf-8')
+
+    assert 'set_pending_lobby_metadata(k_ELobbyTypeInvisible);' in content
+    assert 'CreateLobby(k_ELobbyTypeInvisible, max_members);' in content
+
+
 def test_bridge_retries_incomplete_lobby_metadata_without_blocking_list_completion():
     content = CPP_PATH.read_text(encoding='utf-8')
 
