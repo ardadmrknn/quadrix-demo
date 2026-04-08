@@ -228,3 +228,17 @@ def test_lobby_data_updated_can_complete_pending_code_join():
     assert game._code_search_retry_code == ''
     assert game._code_search_retry_timer == 0.0
     assert game._code_search_retry_use_full_scan is False
+
+
+def test_resolve_lobby_display_state_defaults_unknown_metadata_to_public():
+    visibility, requires_code = online_pvp_module._resolve_lobby_display_state('unknown', False, '')
+
+    assert visibility == 'public'
+    assert requires_code is False
+
+
+def test_resolve_lobby_display_state_keeps_private_when_code_exists():
+    visibility, requires_code = online_pvp_module._resolve_lobby_display_state('unknown', False, '123456')
+
+    assert visibility == 'private'
+    assert requires_code is True

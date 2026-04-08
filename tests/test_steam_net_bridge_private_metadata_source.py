@@ -20,13 +20,15 @@ def test_bridge_sets_visibility_metadata_on_lobby_created():
     assert 'm_matchmaking->SetLobbyJoinable(m_currentLobby, true);' in content
 
 
-def test_bridge_retries_incomplete_lobby_metadata_before_emitting():
+def test_bridge_retries_incomplete_lobby_metadata_without_blocking_list_completion():
     content = CPP_PATH.read_text(encoding='utf-8')
 
+    assert 'emit_lobby_found(lobbyId);' in content
+    assert 'push_event("lobby_list_complete", 0, "");' in content
     assert 'remember_pending_lobby_data_request(lobbyId.ConvertToUint64())' in content
     assert 'bool retry_pending_lobby_data_request(CSteamID lobbyId)' in content
     assert 'bool is_lobby_metadata_ready_for_listing(CSteamID lobbyId) const' in content
-    assert 'metadata_ready' in content
+    assert 'push_event("lobby_data_updated",' in content
 
 
 def test_bridge_infers_public_visibility_from_explicit_requires_code():

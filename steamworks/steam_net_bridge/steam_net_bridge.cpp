@@ -912,24 +912,25 @@ private:
             push_event("lobby_list_failed", 0, "IO hatasi");
             return;
         }
-        m_lobbyListRequestActive = true;
+        m_lobbyListRequestActive = false;
         m_pendingLobbyDataRequests.clear();
         m_pendingLobbyDataRetryCounts.clear();
 
-        // Her lobi için metadata iste; veri hazır olunca lobby_found yayınla
+        // Listeyi Steam'in ek metadata callback'lerine bağlama.
+        // Bazi live lobi kayitlari RequestLobbyData callback'ini hic getirmiyor,
+        // bu da Python tarafinda tum listenin sonsuza kadar "yukleniyor"
+        // kalmasina neden oluyor. Mevcut snapshot'i hemen yayinla;
+        // metadata gelirse arka planda lobby_data_updated ile tazelenecek.
         for (uint32 i = 0; i < pResult->m_nLobbiesMatching; i++)
         {
             CSteamID lobbyId = m_matchmaking->GetLobbyByIndex(i);
+            emit_lobby_found(lobbyId);
             if (m_matchmaking->RequestLobbyData(lobbyId))
             {
                 remember_pending_lobby_data_request(lobbyId.ConvertToUint64());
             }
-            else
-            {
-                emit_lobby_found(lobbyId);
-            }
         }
-        complete_lobby_list_if_ready();
+        push_event("lobby_list_complete", 0, "");
     }
 };
 
@@ -966,29 +967,32 @@ void SteamNetBridge::OnLobbyDataUpdate(LobbyDataUpdate_t *pParam)
         return;
     CSteamID lobbyId(pParam->m_ulSteamIDLobby);
     uint64_t lobbyIdValue = lobbyId.ConvertToUint64();
+    bool hasPendingRequest = has_pending_lobby_data_request(lobbyIdValue);
 
     if (!pParam->m_bSuccess)
     {
-        if (has_pending_lobby_data_request(lobbyIdValue) && retry_pending_lobby_data_request(lobbyId))
+        if (hasPendingRequest && retry_pending_lobby_data_request(lobbyId))
         {
             return;
         }
-        // Veri alınamadı — pending'den çıkar ama lobby_found yayınlama
         consume_pending_lobby_data_request(lobbyIdValue);
-        complete_lobby_list_if_ready();
         return;
     }
 
-    if (
-        has_pending_lobby_data_request(lobbyIdValue) && !is_lobby_metadata_ready_for_listing(lobbyId) && retry_pending_lobby_data_request(lobbyId))
+    if (hasPendingRequest && !is_lobby_metadata_ready_for_listing(lobbyId))
     {
-        return;
+        push_event("lobby_data_updated",
+                   pParam->m_ulSteamIDLobby,
+                   std::to_string(pParam->m_ulSteamIDMember));
+        if (retry_pending_lobby_data_request(lobbyId))
+        {
+            return;
+        }
     }
 
-    if (consume_pending_lobby_data_request(lobbyIdValue))
+    if (hasPendingRequest)
     {
-        emit_lobby_found(lobbyId);
-        complete_lobby_list_if_ready();
+        consume_pending_lobby_data_request(lobbyIdValue);
     }
     push_event("lobby_data_updated",
                pParam->m_ulSteamIDLobby,

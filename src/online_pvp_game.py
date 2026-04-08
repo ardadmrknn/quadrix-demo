@@ -112,6 +112,25 @@ def _normalize_lobby_visibility(
     return 'unknown', False, normalized_code, False
 
 
+def _resolve_lobby_display_state(
+    visibility_value: object,
+    requires_code_value: object,
+    lobby_code: str,
+) -> tuple[str, bool]:
+    visibility = str(visibility_value or '').strip().lower()
+    requires_code = bool(requires_code_value)
+    normalized_code = (lobby_code or '').strip()
+
+    if visibility in ('public', 'private'):
+        if visibility == 'private' or requires_code:
+            return 'private', True
+        return 'public', False
+
+    if requires_code or normalized_code:
+        return 'private', True
+    return 'public', False
+
+
 def _resolve_private_lobby_code(lobby_id: int, requires_code: bool, lobby_code: str) -> str:
     normalized_code = (lobby_code or '').strip()
     if normalized_code or not requires_code or not lobby_id:
@@ -4336,10 +4355,16 @@ class OnlinePvPGame:
                 iy = content_top + i * item_step
                 ir = pygame.Rect(list_x + s(8), iy, list_w - s(16), item_h)
                 hover = ir.collidepoint(mouse_pos)
-                metadata_ready = bool(lobby.get('metadata_ready', True))
-                requires_code = bool(lobby.get('requires_code', False)) if metadata_ready else False
-                accent_color = UIColors.NEON_CYAN if not metadata_ready else (UIColors.NEON_ORANGE if requires_code else UIColors.NEON_GREEN)
-                bdr = accent_color if hover or requires_code or not metadata_ready else (*_rs.glass_border[:3],)
+                raw_requires_code = bool(lobby.get('requires_code', False))
+                l_code = str(lobby.get('code', '') or '')
+                raw_visibility = str(lobby.get('visibility', 'public') or 'public').lower()
+                visibility, requires_code = _resolve_lobby_display_state(
+                    raw_visibility,
+                    raw_requires_code,
+                    l_code,
+                )
+                accent_color = UIColors.NEON_ORANGE if requires_code else UIColors.NEON_GREEN
+                bdr = accent_color if hover or requires_code else (*_rs.glass_border[:3],)
                 draw_glass_panel(self.screen, ir,
                                  alpha=205 if hover else 150, border_color=bdr, glow=hover)
 
@@ -4355,8 +4380,6 @@ class OnlinePvPGame:
                 members = lobby.get('members', '?')
                 mx = lobby.get('max_members', 2)
                 lid = lobby.get('id', 0)
-                l_code = lobby.get('code', '')
-                visibility = str(lobby.get('visibility', 'public') or 'public').lower()
                 try:
                     member_ratio = min(1.0, max(0.0, float(members) / max(1.0, float(mx))))
                 except Exception:
@@ -4368,9 +4391,7 @@ class OnlinePvPGame:
                                  (ir.x + s(20), ir.y + s(10)))
 
                 badge_font = _rs.get_font(s(11, minimum=9), bold=False)
-                if not metadata_ready:
-                    badge_text = t('lobby_syncing', 'Lobi Dogrulaniyor')
-                elif requires_code:
+                if requires_code:
                     badge_text = t('private_locked', 'Kilitli Ozel Lobi')
                 else:
                     badge_text = t('open_lobby', 'Acik lobi')
@@ -4390,9 +4411,7 @@ class OnlinePvPGame:
                 # Detay satırı: üye sayısı + lobi kodu
                 cf = _rs.get_font(s(12, minimum=9), bold=False)
                 detail_parts = [f'{members}/{mx} oyuncu']
-                if not metadata_ready:
-                    detail_parts.append(t('lobby_syncing_detail', 'Lobi bilgisi guncelleniyor'))
-                elif requires_code:
+                if requires_code:
                     detail_parts.append(t('code_required', 'Katilmak icin kod gerekli'))
                 elif l_code:
                     detail_parts.append(f'Kod: {l_code}')
@@ -4418,14 +4437,9 @@ class OnlinePvPGame:
                 jw, jh = s(92), s(34)
                 jb = pygame.Rect(ir.right - jw - s(12), ir.centery - jh // 2, jw, jh)
                 jh_hover = jb.collidepoint(mouse_pos)
-                if not metadata_ready:
-                    action = ''
-                    button_label = t('please_wait', 'Bekleyin')
-                    button_color = UIColors.NEON_CYAN
-                else:
-                    action = f'join_private_lobby:{lid}' if requires_code else f'join_lobby:{lid}'
-                    button_label = t('enter_code', 'Kod Gir') if requires_code else t('join', 'Katıl')
-                    button_color = UIColors.NEON_ORANGE if requires_code else UIColors.NEON_GREEN
+                action = f'join_private_lobby:{lid}' if requires_code else f'join_lobby:{lid}'
+                button_label = t('enter_code', 'Kod Gir') if requires_code else t('join', 'Katıl')
+                button_color = UIColors.NEON_ORANGE if requires_code else UIColors.NEON_GREEN
                 _rs.draw_uniform_button(self.screen, jb,
                                         button_label,
                                         color_code=button_color,
