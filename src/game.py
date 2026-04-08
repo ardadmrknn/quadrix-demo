@@ -3314,7 +3314,7 @@ class Game:
             
             # Mesaj ve ses
             if lines_cleared == 4:
-                self.combo_message = "QUADRIX!"
+                self.combo_message = "QUADRIX! 4 Satır Yok Edildi!"
                 self.sound.play('tetris')
                 # Gamepad titreşimi - QUADRIX! (güçlü)
                 try:
@@ -4389,64 +4389,42 @@ class Game:
         if self.effects_enabled:
             self.draw_particles()
         
-        # Combo mesajı (PvP stili: oyun alanının içinde)
-        if self.combo_message_time > 0 and self.combo_message:
+        # Combo mesajı
+        if self.combo_message_time > 0:
+            # Mesaj tipine göre renk ayarla
             msg = self.combo_message
-            alpha = min(255, int(self.combo_message_time * 255 / 30)) if self.combo_message_time < 30 else 255
-
-            cell_size = self.get_cell_size()
-            board_w = self.board_width * cell_size
-            board_h = self.board_height * cell_size
-            board_x, board_y = self.get_board_offset()
-
-            msg_cx = board_x + board_w // 2
-            msg_cy = board_y + board_h // 3
-            msg_font = self.font_large
-
-            shadow = msg_font.render(msg, True, (0, 0, 0))
-            shadow.set_alpha(alpha)
-            self.screen.blit(shadow, shadow.get_rect(center=(msg_cx + 2, msg_cy + 2)))
-
-            combo_count = 0
-            if 'Combo' in msg:
-                combo_prefix = msg.split('Combo', 1)[0]
-                combo_x_idx = combo_prefix.rfind('x')
-                if combo_x_idx != -1:
-                    combo_digits = []
-                    for ch in combo_prefix[combo_x_idx + 1:]:
-                        if ch.isdigit():
-                            combo_digits.append(ch)
-                        elif combo_digits:
-                            break
-                        elif ch.isspace():
-                            continue
-                        else:
-                            break
-                    if combo_digits:
-                        try:
-                            combo_count = int(''.join(combo_digits))
-                        except Exception:
-                            combo_count = 0
-
             if 'QUADRIX' in msg:
-                color = (255, 215, 0)
-            elif combo_count >= 8:
-                color = (255, 85, 170)
-            elif combo_count >= 6:
-                color = (255, 170, 0)
-            elif combo_count >= 4:
-                color = (100, 255, 100)
-            elif combo_count >= 2:
-                color = (0, 255, 221)
+                msg_color = (255, 215, 0)       # Altın
             elif 'TRIPLE' in msg:
-                color = (255, 0, 255)
+                msg_color = (255, 0, 255)        # Magenta
             elif 'DOUBLE' in msg:
-                color = (0, 255, 221)
+                msg_color = (0, 255, 221)        # Cyan
+            elif 'Combo' in msg:
+                msg_color = (100, 255, 100)      # Yeşil
             else:
-                color = (255, 255, 255)
-            txt = msg_font.render(msg, True, color)
-            txt.set_alpha(alpha)
-            self.screen.blit(txt, txt.get_rect(center=(msg_cx, msg_cy)))
+                msg_color = YELLOW
+            
+            # Fade-out efekti (son 30 frame'de solma)
+            alpha = min(255, int(self.combo_message_time * 255 / 30)) if self.combo_message_time < 30 else 255
+            
+            # Daha büyük font
+            combo_font = UIFonts.get(int(self.font_large.get_height() * 1.2), bold=True)
+            active_width, _ = self._active_ui_size()
+            
+            combo_surf = combo_font.render(msg, True, msg_color)
+            combo_rect = combo_surf.get_rect(center=(active_width // 2, 35))
+            
+            # Fade-out alpha uygula
+            if alpha < 255:
+                combo_surf.set_alpha(alpha)
+            
+            # Gölge (koyu renk)
+            shadow = combo_font.render(msg, True, (0, 0, 0))
+            shadow_rect = shadow.get_rect(center=(active_width // 2 + 3, 38))
+            if alpha < 255:
+                shadow.set_alpha(alpha)
+            self.screen.blit(shadow, shadow_rect)
+            self.screen.blit(combo_surf, combo_rect)
         
         # Havai fişek milestone mesajı - Modern UI teması (Yukarıda, skor bazlı renkler)
         if self.firework_active and self.firework_time > 0:

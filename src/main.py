@@ -1638,20 +1638,6 @@ def main():
         # (display Surface quit vb.)
         os._exit(0)
 
-    def _request_app_exit() -> None:
-        """Gerçek uygulama çıkışı için ortak yol.
-
-        macOS'ta Steam tarafına erken çıkış sinyali gönderir.
-        """
-        nonlocal running
-        if sys.platform == 'darwin':
-            try:
-                import steam_integration as _si_exit
-                _si_exit.request_shutdown()
-            except Exception:
-                pass
-        running = False
-
     def _handle_menu(delta_ms):
         nonlocal running, state, confirm_exit, confirm_daily, daily_prompt_selected, daily_prompt_challenge, game, pvp_game, guide_screen
         nonlocal cheat_buffer, cheat_last_key_ms
@@ -1662,7 +1648,7 @@ def main():
                 toggle_global_mute()
                 continue
             if event.type == pygame.QUIT:
-                _request_app_exit()
+                running = False
                 continue
 
             if confirm_daily:
@@ -1745,12 +1731,12 @@ def main():
                     if event.key in (pygame.K_ESCAPE, pygame.K_n):
                         confirm_exit = False
                     elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_y):
-                        _request_app_exit()
+                        running = False
                     continue
                 if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                     pos = normalize_mouse_pos(getattr(event, 'pos', None)) or event.pos
                     if menu.exit_yes_rect and menu.exit_yes_rect.collidepoint(pos):
-                        _request_app_exit()
+                        running = False
                     elif menu.exit_no_rect and menu.exit_no_rect.collidepoint(pos):
                         confirm_exit = False
                     continue
@@ -2087,7 +2073,7 @@ def main():
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
-                _request_app_exit()
+                running = False
             if _check_fullscreen_toggle(event):
                 _toggle_fullscreen(500, 700)
             action = credits_screen.handle_input(event)
@@ -2101,7 +2087,7 @@ def main():
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
-                _request_app_exit()
+                running = False
             if _check_fullscreen_toggle(event):
                 _toggle_fullscreen(500, 700)
             action = highscore_screen.handle_input(event)
@@ -2115,7 +2101,7 @@ def main():
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
-                _request_app_exit()
+                running = False
 
             action = settings_screen.handle_input(event)
             if action == 'back':
@@ -2306,7 +2292,7 @@ def main():
                 _toggle_fullscreen(500, 700)
             elif action == 'quit_game':
                 # Kullanıcı onay kutusunda 'Evet' seçti; oyunu kapat (oto yeniden açılma yok)
-                _request_app_exit()
+                running = False
 
         settings_screen.draw()
         return True
@@ -2316,7 +2302,7 @@ def main():
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
-                _request_app_exit()
+                running = False
                 return True
 
             if _check_fullscreen_toggle(event):
@@ -2351,7 +2337,7 @@ def main():
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
-                _request_app_exit()
+                running = False
             action = guide_screen.handle_input(event)
             if action == 'back':
                 state = 'menu'
@@ -2414,7 +2400,7 @@ def main():
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
-                _request_app_exit()
+                running = False
             action = block_style_screen.handle_input(event)
             if action == 'back':
                 state = block_styles_return_state
@@ -2432,7 +2418,7 @@ def main():
                     block_workshop_screen.save_on_exit()
                 except Exception:
                     pass
-                _request_app_exit()
+                running = False
             action = block_workshop_screen.handle_input(event)
             if action == 'back':
                 state = 'menu'
@@ -2446,7 +2432,7 @@ def main():
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
-                _request_app_exit()
+                running = False
             action = piece_workshop_screen.handle_input(event)
             if action == 'back':
                 state = 'menu'
@@ -2463,7 +2449,7 @@ def main():
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
-                _request_app_exit()
+                running = False
             if _check_fullscreen_toggle(event):
                 _toggle_fullscreen(500, 700)
             action = achievement_screen.handle_input(event)
@@ -2477,7 +2463,7 @@ def main():
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
-                _request_app_exit()
+                running = False
 
             if _check_fullscreen_toggle(event):
                 _toggle_fullscreen(500, 700)
@@ -2680,7 +2666,7 @@ def main():
         # QUIT olayı kontrolü - önce kontrol et
         if result is False:
             _persist_active_game_run(game)
-            _request_app_exit()
+            running = False
             return False
         
         if result == 'toggle_fullscreen':
@@ -2799,7 +2785,7 @@ def main():
         
         # QUIT olayı kontrolü - önce kontrol et
         if result is False:
-            _request_app_exit()
+            running = False
             return False
         
         if result == 'toggle_fullscreen':
@@ -2869,7 +2855,7 @@ def main():
                 online_pvp._cleanup()
             except Exception:
                 pass
-            _request_app_exit()
+            running = False
             return False
 
         if result == 'toggle_fullscreen':
@@ -2934,7 +2920,7 @@ def main():
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
-                _request_app_exit()
+                running = False
             action = user_selection_screen.handle_input(event)
             if action in ('user_selected', 'new_user_created'):
                 achievements_file = user_manager.get_achievements_file()
@@ -2990,7 +2976,7 @@ def main():
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
-                _request_app_exit()
+                running = False
             action = user_management_screen.handle_input(event)
             if action == 'back':
                 achievements_file = user_manager.get_achievements_file()
@@ -3023,7 +3009,7 @@ def main():
         
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
-                _request_app_exit()
+                running = False
                 return True
             
             action = campaign_level_select.handle_input(event)
@@ -3287,13 +3273,6 @@ def main():
 
         # FPS limitleme frame başında uygulanıyor.
     
-    # macOS: pencereyi önce kapat; kısa teardown beklemelerinde beachball azaltılır.
-    if sys.platform == 'darwin':
-        try:
-            pygame.display.quit()
-        except Exception:
-            pass
-
     # Aktif Steam networking instance'larını kapat (C++ bridge temizliği)
     # Bu, steam_integration.shutdown() ÖNCESİNDE yapılmalı.
     try:
@@ -3318,11 +3297,6 @@ def main():
     print("Ayarlarınız kaydedildi! ⚙️")
     print("Oynadığınız için teşekkürler! 🎮")
     print("=" * 60)
-
-    # macOS: daemon thread'ler (pump, worker) interpreter kapanışını engelleyebilir.
-    # Tüm temizlik bitti; zorla çık ki Cocoa event loop / daemon thread askıda kalmasın.
-    if sys.platform == 'darwin':
-        os._exit(0)
 
 
 if __name__ == "__main__":
