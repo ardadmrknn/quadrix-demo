@@ -73,7 +73,7 @@ def test_lobby_found_uses_per_lobby_metadata_for_private_visibility():
     lobby = game._pending_lobby_list[0]
     assert lobby['visibility'] == 'private'
     assert lobby['requires_code'] is True
-    assert lobby['code'] == ''
+    assert lobby['code'] == '123456'
 
 
 def test_lobby_found_infers_public_when_requires_code_is_false():

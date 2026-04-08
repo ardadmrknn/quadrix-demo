@@ -27,8 +27,9 @@ def test_bridge_retries_incomplete_lobby_metadata_before_emitting():
 def test_bridge_infers_public_visibility_from_explicit_requires_code():
     content = CPP_PATH.read_text(encoding='utf-8')
 
+    # hasRequiresCode dalında requires_code boolean'dan visibility türetiliyor
     assert re.search(
-        r'if\s*\(hasRequiresCode\)\s*\{?\s*visibility = requiresCodeBool \? "private" : "public";',
+        r'else\s+if\s*\(hasRequiresCode\)',
         content,
     )
-    assert 'visibility = requiresCodeBool ? "private" : "public";' in content
+    assert r'visibilityJson = rc ? "\"private\"" : "\"public\"";' in content

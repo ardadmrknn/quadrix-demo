@@ -402,7 +402,7 @@ private:
         m_events.push_back({type, steam_id, data});
     }
 
-    static constexpr int kMaxLobbyDataRequestRetries = 3;
+    static constexpr int kMaxLobbyDataRequestRetries = 5;
 
     void set_pending_lobby_metadata(ELobbyType lobbyType)
     {
@@ -413,6 +413,8 @@ private:
             return;
         }
 
+        // Invisible ve FriendsOnly lobileri de özel lobi olarak işle
+        // (kod ile girilebilir, public listede görünmez)
         m_pendingLobbyVisibility = "private";
         m_pendingLobbyRequiresCode = true;
     }
@@ -457,37 +459,48 @@ private:
 
         std::string hostName = hostNameRaw ? hostNameRaw : "";
         std::string lobbyCode = lobbyCodeRaw ? lobbyCodeRaw : "";
-        std::string visibility = visibilityRaw ? visibilityRaw : "";
-        std::string requiresCode = requiresCodeRaw ? requiresCodeRaw : "0";
+        bool hasVisibility = visibilityRaw && visibilityRaw[0] != '\0';
         bool hasRequiresCode = requiresCodeRaw && requiresCodeRaw[0] != '\0';
-        bool requiresCodeBool = requiresCode == "1";
 
-        if (visibility.empty())
+        // visibility & requires_code: metadata varsa olduğu gibi geç,
+        // yoksa JSON null olarak gönder — Python live read ile ikinci şans verir.
+        // Böylece henüz propague olmamış metadata "private" varsayılmaz.
+        std::string visibilityJson;
+        std::string requiresCodeJson;
+
+        if (hasVisibility)
         {
+            std::string vis(visibilityRaw);
+            visibilityJson = "\"" + json_escape(vis) + "\"";
+
             if (hasRequiresCode)
             {
-                visibility = requiresCodeBool ? "private" : "public";
-            }
-            else if (!lobbyCode.empty())
-            {
-                visibility = "private";
-                requiresCodeBool = true;
+                bool rc = std::string(requiresCodeRaw) == "1";
+                requiresCodeJson = rc ? "true" : "false";
             }
             else
             {
-                // Metadata görünmez / boş — güvenli varsayılan: private
-                // (yanlış public'ten iyidir; private lobi "kod gir" gösterir, public ise doğrudan katılım sağlar)
-                visibility = "private";
-                requiresCodeBool = true;
+                // visibility var, requires_code yok — türet
+                requiresCodeJson = (vis == "public") ? "false" : "true";
             }
         }
-        if (visibility == "private")
+        else if (hasRequiresCode)
         {
-            requiresCodeBool = true;
+            bool rc = std::string(requiresCodeRaw) == "1";
+            visibilityJson = rc ? "\"private\"" : "\"public\"";
+            requiresCodeJson = rc ? "true" : "false";
         }
-        else if (!hasRequiresCode)
+        else if (!lobbyCode.empty())
         {
-            requiresCodeBool = false;
+            // Sadece lobby_code var — private olarak türet
+            visibilityJson = "\"private\"";
+            requiresCodeJson = "true";
+        }
+        else
+        {
+            // Hiçbir metadata yok — null gönder, Python live read denesin
+            visibilityJson = "null";
+            requiresCodeJson = "null";
         }
 
         return std::string("{") +
@@ -495,8 +508,8 @@ private:
                ",\"max_members\":" + std::to_string(m_matchmaking->GetLobbyMemberLimit(lobbyId)) +
                ",\"host_name\":\"" + json_escape(hostName) + "\"" +
                ",\"lobby_code\":\"" + json_escape(lobbyCode) + "\"" +
-               ",\"visibility\":\"" + json_escape(visibility) + "\"" +
-               ",\"requires_code\":" + std::string(requiresCodeBool ? "true" : "false") +
+               ",\"visibility\":" + visibilityJson +
+               ",\"requires_code\":" + requiresCodeJson +
                "}";
     }
 
