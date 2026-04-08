@@ -23,15 +23,150 @@
 #include <steam/isteamfriends.h>
 
 #include <string>
+#include <array>
 #include <vector>
 #include <deque>
 #include <tuple>
 #include <algorithm>
 #include <unordered_map>
 #include <mutex>
+#include <cmath>
+#include <cstdint>
+#include <cstdio>
 #include <cstring>
 
 namespace py = pybind11;
+
+namespace
+{
+uint32_t md5_left_rotate(uint32_t value, uint32_t shift)
+{
+    return (value << shift) | (value >> (32 - shift));
+}
+
+std::array<uint8_t, 16> md5_digest(const std::string &input)
+{
+    static constexpr uint32_t kShifts[64] = {
+        7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22,
+        5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20,
+        4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23,
+        6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21,
+    };
+
+    std::array<uint32_t, 64> table{};
+    for (size_t index = 0; index < table.size(); ++index)
+    {
+        table[index] = static_cast<uint32_t>(
+            std::floor(std::abs(std::sin(static_cast<double>(index + 1))) * 4294967296.0));
+    }
+
+    std::vector<uint8_t> message(input.begin(), input.end());
+    const uint64_t bitLength = static_cast<uint64_t>(message.size()) * 8ull;
+    message.push_back(0x80);
+    while ((message.size() % 64) != 56)
+    {
+        message.push_back(0x00);
+    }
+    for (int shift = 0; shift < 8; ++shift)
+    {
+        message.push_back(static_cast<uint8_t>((bitLength >> (shift * 8)) & 0xffu));
+    }
+
+    uint32_t a0 = 0x67452301u;
+    uint32_t b0 = 0xefcdab89u;
+    uint32_t c0 = 0x98badcfeu;
+    uint32_t d0 = 0x10325476u;
+
+    for (size_t offset = 0; offset < message.size(); offset += 64)
+    {
+        uint32_t words[16] = {};
+        for (int wordIndex = 0; wordIndex < 16; ++wordIndex)
+        {
+            const size_t wordOffset = offset + static_cast<size_t>(wordIndex) * 4;
+            words[wordIndex] =
+                static_cast<uint32_t>(message[wordOffset]) |
+                (static_cast<uint32_t>(message[wordOffset + 1]) << 8) |
+                (static_cast<uint32_t>(message[wordOffset + 2]) << 16) |
+                (static_cast<uint32_t>(message[wordOffset + 3]) << 24);
+        }
+
+        uint32_t a = a0;
+        uint32_t b = b0;
+        uint32_t c = c0;
+        uint32_t d = d0;
+
+        for (uint32_t index = 0; index < 64; ++index)
+        {
+            uint32_t f = 0;
+            uint32_t g = 0;
+
+            if (index < 16)
+            {
+                f = (b & c) | ((~b) & d);
+                g = index;
+            }
+            else if (index < 32)
+            {
+                f = (d & b) | ((~d) & c);
+                g = (5 * index + 1) % 16;
+            }
+            else if (index < 48)
+            {
+                f = b ^ c ^ d;
+                g = (3 * index + 5) % 16;
+            }
+            else
+            {
+                f = c ^ (b | (~d));
+                g = (7 * index) % 16;
+            }
+
+            const uint32_t rotated = a + f + table[index] + words[g];
+            const uint32_t previousD = d;
+            d = c;
+            c = b;
+            b = b + md5_left_rotate(rotated, kShifts[index]);
+            a = previousD;
+        }
+
+        a0 += a;
+        b0 += b;
+        c0 += c;
+        d0 += d;
+    }
+
+    std::array<uint8_t, 16> digest{};
+    const uint32_t state[4] = {a0, b0, c0, d0};
+    for (size_t stateIndex = 0; stateIndex < 4; ++stateIndex)
+    {
+        const uint32_t value = state[stateIndex];
+        const size_t digestOffset = stateIndex * 4;
+        digest[digestOffset] = static_cast<uint8_t>(value & 0xffu);
+        digest[digestOffset + 1] = static_cast<uint8_t>((value >> 8) & 0xffu);
+        digest[digestOffset + 2] = static_cast<uint8_t>((value >> 16) & 0xffu);
+        digest[digestOffset + 3] = static_cast<uint8_t>((value >> 24) & 0xffu);
+    }
+    return digest;
+}
+
+std::string generate_lobby_code(uint64_t lobbyId)
+{
+    if (!lobbyId)
+    {
+        return "000000";
+    }
+
+    const auto digest = md5_digest(std::to_string(lobbyId));
+    const uint32_t prefix =
+        (static_cast<uint32_t>(digest[0]) << 24) |
+        (static_cast<uint32_t>(digest[1]) << 16) |
+        (static_cast<uint32_t>(digest[2]) << 8) |
+        static_cast<uint32_t>(digest[3]);
+    char buffer[7] = {};
+    std::snprintf(buffer, sizeof(buffer), "%06u", prefix % 1000000u);
+    return std::string(buffer);
+}
+} // namespace
 
 // ---------- Event / Message yapıları ----------
 
@@ -661,6 +796,12 @@ private:
         m_currentLobby = CSteamID(pResult->m_ulSteamIDLobby);
         m_lobbyReady = true;
 
+        const uint64_t lobbyIdValue = m_currentLobby.ConvertToUint64();
+        const std::string lobbyIdText = std::to_string(lobbyIdValue);
+        const std::string lobbyCode = m_pendingLobbyRequiresCode
+                          ? generate_lobby_code(lobbyIdValue)
+                          : "";
+
         // Lobi metadata'sını ayarla
         m_matchmaking->SetLobbyData(m_currentLobby, "game", "quadrix");
         m_matchmaking->SetLobbyData(m_currentLobby, "version", "1.0");
@@ -669,7 +810,11 @@ private:
             m_currentLobby,
             "requires_code",
             m_pendingLobbyRequiresCode ? "1" : "0");
-        m_matchmaking->SetLobbyData(m_currentLobby, "metadata_ready", "0");
+        m_matchmaking->SetLobbyData(m_currentLobby, "lobby_code", lobbyCode.c_str());
+        m_matchmaking->SetLobbyData(
+            m_currentLobby,
+            "lobby_code_full",
+            m_pendingLobbyRequiresCode ? lobbyIdText.c_str() : "");
         if (m_friends)
         {
             const char *personaName = m_friends->GetPersonaName();
@@ -678,7 +823,8 @@ private:
                 m_matchmaking->SetLobbyData(m_currentLobby, "host_name", personaName);
             }
         }
-        m_matchmaking->SetLobbyJoinable(m_currentLobby, false);
+        m_matchmaking->SetLobbyData(m_currentLobby, "metadata_ready", "1");
+        m_matchmaking->SetLobbyJoinable(m_currentLobby, true);
 
         push_event("lobby_created", pResult->m_ulSteamIDLobby, "");
     }

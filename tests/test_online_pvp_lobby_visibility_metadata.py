@@ -129,3 +129,25 @@ def test_lobby_found_keeps_public_visibility_when_requires_code_missing():
     assert lobby['visibility'] == 'public'
     assert lobby['requires_code'] is False
     assert lobby['metadata_ready'] is True
+
+
+def test_lobby_found_uses_explicit_visibility_even_when_metadata_ready_is_false():
+    game = _make_game()
+    game.net = types.SimpleNamespace(
+        get_lobby_data_for=lambda lobby_id, key: '',
+        get_lobby_data=lambda key: '',
+    )
+
+    event = NetEvent(
+        'lobby_found',
+        steam_id=46,
+        data='{"host_name":"mac-host","visibility":"private","requires_code":true,"metadata_ready":false,"members":1,"max_members":2}',
+    )
+
+    game._on_lobby_found(event)
+
+    assert len(game._pending_lobby_list) == 1
+    lobby = game._pending_lobby_list[0]
+    assert lobby['visibility'] == 'private'
+    assert lobby['requires_code'] is True
+    assert lobby['metadata_ready'] is True

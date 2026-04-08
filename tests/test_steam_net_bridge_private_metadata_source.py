@@ -14,8 +14,10 @@ def test_bridge_sets_visibility_metadata_on_lobby_created():
     assert 'm_matchmaking->SetLobbyData(m_currentLobby, "visibility", m_pendingLobbyVisibility.c_str())' in content
     assert '"requires_code"' in content
     assert 'set_pending_lobby_metadata(k_ELobbyTypePublic);' in content
-    assert 'm_matchmaking->SetLobbyData(m_currentLobby, "metadata_ready", "0")' in content
-    assert 'm_matchmaking->SetLobbyJoinable(m_currentLobby, false);' in content
+    assert 'generate_lobby_code(lobbyIdValue)' in content
+    assert 'm_matchmaking->SetLobbyData(m_currentLobby, "lobby_code", lobbyCode.c_str())' in content
+    assert 'm_matchmaking->SetLobbyData(m_currentLobby, "metadata_ready", "1")' in content
+    assert 'm_matchmaking->SetLobbyJoinable(m_currentLobby, true);' in content
 
 
 def test_bridge_retries_incomplete_lobby_metadata_before_emitting():

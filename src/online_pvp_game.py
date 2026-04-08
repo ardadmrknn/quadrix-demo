@@ -87,8 +87,13 @@ def _normalize_lobby_visibility(
     requires_code = _parse_lobby_bool(requires_code_value)
     normalized_code = (lobby_code or '').strip()
     metadata_ready = _parse_lobby_bool(metadata_ready_value)
+    has_explicit_metadata = (
+        visibility in ('public', 'private')
+        or requires_code is not None
+        or bool(normalized_code)
+    )
 
-    if metadata_ready is False:
+    if metadata_ready is False and not has_explicit_metadata:
         return 'unknown', False, normalized_code, False
 
     if visibility in ('public', 'private'):
@@ -105,6 +110,16 @@ def _normalize_lobby_visibility(
         return 'private', True, normalized_code, True
 
     return 'unknown', False, normalized_code, False
+
+
+def _resolve_private_lobby_code(lobby_id: int, requires_code: bool, lobby_code: str) -> str:
+    normalized_code = (lobby_code or '').strip()
+    if normalized_code or not requires_code or not lobby_id:
+        return normalized_code
+    try:
+        return generate_lobby_code(lobby_id)
+    except Exception:
+        return normalized_code
 
 # Steam pump thread kontrolü — bridge aktifken pump duraklatılır (race condition önleme)
 try:
@@ -459,6 +474,7 @@ class OnlinePvPGame:
         self._code_search_retry_count: int = 0   # Kod araması retry sayacı
         self._code_search_retry_timer: float = 0.0  # Retry geri sayımı (ms)
         self._code_search_retry_code: str = ''   # Retry edilecek kod
+        self._code_search_retry_use_full_scan: bool = False
 
         # ─── Görsel Efektler (local PvP ile birebir) ───
         self.effects_enabled = True
@@ -821,35 +837,12 @@ class OnlinePvPGame:
         print(f"[OnlinePvP] Lobi oluşturuldu: {ev.steam_id}")
 
         self._lobby_id_str = str(ev.steam_id)
-        try:
-            self.net.set_lobby_data('visibility', 'public' if self._creating_public_lobby else 'private')
-            self.net.set_lobby_data('requires_code', '0' if self._creating_public_lobby else '1')
-
-            # Public lobi için kod üretme/gösterme.
-            if self._creating_public_lobby:
-                self._lobby_code = ''
-                self.net.set_lobby_data('lobby_code', '')
-                self.net.set_lobby_data('lobby_code_full', '')
-                print(f"[OnlinePvP] Public lobi hazır. Lobby ID: {self._lobby_id_str}")
-            else:
-                self._lobby_code = generate_lobby_code(ev.steam_id)
-                # Metadata'ya kaydet (kod ile arama desteği için)
-                self.net.set_lobby_data('lobby_code', self._lobby_code)
-                self.net.set_lobby_data('lobby_code_full', self._lobby_id_str)
-                print(f"[OnlinePvP] Lobi Kodu: {self._lobby_code}  |  Tam ID: {self._lobby_id_str}")
-
-            # Host adını metadata'ya kaydet (lobi listesinde gösterilmek üzere)
-            host_name = ''
-            try:
-                host_name = self.net._get_name(self.net.my_steam_id)
-            except Exception:
-                pass
-            if host_name:
-                self.net.set_lobby_data('host_name', host_name)
-
-            self.net.set_lobby_data('metadata_ready', '1')
-        finally:
-            self.net.set_lobby_joinable(True)
+        if self._creating_public_lobby:
+            self._lobby_code = ''
+            print(f"[OnlinePvP] Public lobi hazır. Lobby ID: {self._lobby_id_str}")
+        else:
+            self._lobby_code = generate_lobby_code(ev.steam_id)
+            print(f"[OnlinePvP] Lobi Kodu: {self._lobby_code}  |  Tam ID: {self._lobby_id_str}")
 
         # Davet bekletilmişse şimdi aç
         if self._invite_after_lobby:
@@ -1127,6 +1120,7 @@ class OnlinePvPGame:
             lobby_code,
             metadata_ready_value,
         )
+        lobby_code = _resolve_private_lobby_code(lobby_id, requires_code, lobby_code)
         return {
             'id': lobby_id,
             'name': host_name,
@@ -1229,6 +1223,7 @@ class OnlinePvPGame:
         # Kod ile arama yapılıyorsa otomatik katıl
         if self._searching_by_code:
             self._searching_by_code = False
+            self._code_search_retry_use_full_scan = False
             matched_lobby_id, pending_metadata, ambiguous_match = self._find_lobby_match_by_code(self._search_code)
             if matched_lobby_id:
                 self._code_search_retry_count = 0
@@ -1240,6 +1235,7 @@ class OnlinePvPGame:
                 self._code_search_retry_count = 0
                 self._code_search_retry_timer = 0.0
                 self._code_search_retry_code = ''
+                self._code_search_retry_use_full_scan = False
                 self._status_msg = t('lobby_code_ambiguous', 'Bu kod birden fazla lobiyle eslesiyor')
                 self._status_timer = 3.0
             elif count == 0 or pending_metadata:
@@ -1248,6 +1244,7 @@ class OnlinePvPGame:
                 self._code_search_retry_count = 0
                 self._code_search_retry_timer = 0.0
                 self._code_search_retry_code = ''
+                self._code_search_retry_use_full_scan = False
                 self._status_msg = t('lobby_not_found_by_code', 'Bu kodla lobi bulunamadı')
                 self._status_timer = 3.0
             self._search_code = ''
@@ -1271,6 +1268,7 @@ class OnlinePvPGame:
         self._code_search_retry_count = 0
         self._code_search_retry_timer = 0.0
         self._code_search_retry_code = ''
+        self._code_search_retry_use_full_scan = False
         if self._searching_by_code:
             self._searching_by_code = False
             self._search_code = ''
@@ -1305,8 +1303,22 @@ class OnlinePvPGame:
         self._pending_lobby_list.clear()
         if self._lobby_list_filter == 'public':
             self.net.add_lobby_search_filter('visibility', 'public')
-        self.net.request_lobby_list()
+        self.net.request_lobby_list(worldwide=True)
         return True
+
+    def _begin_code_search(self, code: str, fallback_scan: bool = False):
+        normalized_code = (code or '').strip()
+        if not normalized_code:
+            return
+        self._searching_by_code = True
+        self._search_code = normalized_code
+        self._lobby_list_fetching = True
+        self._pending_lobby_list.clear()
+        self._code_search_retry_use_full_scan = bool(fallback_scan)
+        if fallback_scan:
+            self.net.request_lobby_list(worldwide=True)
+            return
+        self.net.search_lobby_by_code(normalized_code)
 
     def _set_lobby_list_filter(self, lobby_filter: str, refresh: bool = True) -> bool:
         """Lobi listesi filtresini güncelle."""
@@ -1325,6 +1337,7 @@ class OnlinePvPGame:
             self._code_search_retry_count += 1
             self._code_search_retry_timer = 1500.0  # 1.5 saniye
             self._code_search_retry_code = self._search_code
+            self._code_search_retry_use_full_scan = self._code_search_retry_count >= 2
             self._status_msg = t('searching_by_code', 'Lobi kodu aranıyor...')
             self._status_timer = 3.0
             print(f"[OnlinePvP] Kod araması retry #{self._code_search_retry_count} — 1.5s sonra tekrar denenecek")
@@ -1332,6 +1345,7 @@ class OnlinePvPGame:
             self._code_search_retry_count = 0
             self._code_search_retry_timer = 0.0
             self._code_search_retry_code = ''
+            self._code_search_retry_use_full_scan = False
             self._status_msg = t('lobby_not_found_by_code', 'Bu kodla lobi bulunamadı')
             self._status_timer = 3.0
 
@@ -1366,6 +1380,7 @@ class OnlinePvPGame:
         self._code_search_retry_count = 0
         self._code_search_retry_timer = 0.0
         self._code_search_retry_code = ''
+        self._code_search_retry_use_full_scan = False
         self._lobby_list_filter = 'all'
         self._lobby_list_fetching = False
         self._auto_lobby_refresh_requested = False
@@ -2920,13 +2935,11 @@ class OnlinePvPGame:
             self._code_search_retry_timer = max(0.0, self._code_search_retry_timer - float(delta_time))
             if self._code_search_retry_timer <= 0:
                 code = self._code_search_retry_code
+                use_full_scan = bool(self._code_search_retry_use_full_scan)
                 self._code_search_retry_code = ''
+                self._code_search_retry_use_full_scan = False
                 if self._net_initialized and code:
-                    self._searching_by_code = True
-                    self._search_code = code
-                    self._lobby_list_fetching = True
-                    self._pending_lobby_list.clear()
-                    self.net.search_lobby_by_code(code)
+                    self._begin_code_search(code, fallback_scan=use_full_scan)
                     print(f"[OnlinePvP] Kod araması retry tetiklendi: {code}")
 
         # Steam callback'leri işle
@@ -3781,11 +3794,8 @@ class OnlinePvPGame:
         self._code_search_retry_count = 0
         self._code_search_retry_timer = 0.0
         self._code_search_retry_code = ''
-        self._searching_by_code = True
-        self._search_code = code
-        self._lobby_list_fetching = True
-        self._pending_lobby_list.clear()
-        self.net.search_lobby_by_code(code)
+        self._code_search_retry_use_full_scan = False
+        self._begin_code_search(code, fallback_scan=False)
         self._status_msg = t('searching_by_code', 'Lobi kodu aranıyor...')
         self._status_timer = 3.0
         self._join_code_active = False
