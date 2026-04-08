@@ -11713,6 +11713,24 @@ TRANSLATIONS = {
         'pt': 'Lobby aberto', 'ru': 'Открытое лобби', 'ja': '公開ロビー',
         'zh': '开放大厅', 'ko': '공개 로비',
     },
+    'lobby_syncing': {
+        'tr': 'Lobi Doğrulanıyor', 'en': 'Lobby Syncing', 'de': 'Lobby wird synchronisiert',
+        'fr': 'Salon en synchronisation', 'es': 'Sala sincronizándose', 'it': 'Lobby in sincronizzazione',
+        'pt': 'Lobby sincronizando', 'ru': 'Лобби синхронизируется', 'ja': 'ロビーを同期中',
+        'zh': '大厅同步中', 'ko': '로비 동기화 중',
+    },
+    'lobby_syncing_detail': {
+        'tr': 'Lobi bilgisi güncelleniyor', 'en': 'Lobby metadata is updating', 'de': 'Lobby-Metadaten werden aktualisiert',
+        'fr': 'Les métadonnées du salon se mettent à jour', 'es': 'Los metadatos de la sala se están actualizando', 'it': 'I metadati della lobby si stanno aggiornando',
+        'pt': 'Os metadados do lobby estão sendo atualizados', 'ru': 'Метаданные лобби обновляются', 'ja': 'ロビー情報を更新中',
+        'zh': '大厅信息正在更新', 'ko': '로비 정보 업데이트 중',
+    },
+    'lobby_code_ambiguous': {
+        'tr': 'Bu kod birden fazla lobiyle eşleşiyor', 'en': 'This code matches multiple lobbies', 'de': 'Dieser Code passt zu mehreren Lobbys',
+        'fr': 'Ce code correspond à plusieurs salons', 'es': 'Este código coincide con varias salas', 'it': 'Questo codice corrisponde a più lobby',
+        'pt': 'Este código corresponde a vários lobbies', 'ru': 'Этот код соответствует нескольким лобби', 'ja': 'このコードは複数のロビーに一致します',
+        'zh': '该代码匹配多个大厅', 'ko': '이 코드는 여러 로비와 일치합니다',
+    },
     'opponent_left': {
         'tr': 'Rakip ayrıldı', 'en': 'Opponent left', 'de': 'Gegner hat verlassen',
         'fr': 'L’adversaire est parti', 'es': 'El oponente se fue', 'it': 'L’avversario ha abbandonato',

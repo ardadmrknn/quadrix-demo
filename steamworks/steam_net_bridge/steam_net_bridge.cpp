@@ -254,6 +254,14 @@ public:
             key.c_str(), value.c_str(), k_ELobbyComparisonEqual);
     }
 
+    void add_request_lobby_list_distance_filter(int distance_filter)
+    {
+        if (!m_matchmaking || m_isShutdown)
+            return;
+        m_matchmaking->AddRequestLobbyListDistanceFilter(
+            static_cast<ELobbyDistanceFilter>(distance_filter));
+    }
+
     void request_lobby_list()
     {
         if (!m_matchmaking || m_isShutdown)
@@ -456,17 +464,26 @@ private:
         const char *lobbyCodeRaw = m_matchmaking->GetLobbyData(lobbyId, "lobby_code");
         const char *visibilityRaw = m_matchmaking->GetLobbyData(lobbyId, "visibility");
         const char *requiresCodeRaw = m_matchmaking->GetLobbyData(lobbyId, "requires_code");
+        const char *metadataReadyRaw = m_matchmaking->GetLobbyData(lobbyId, "metadata_ready");
 
         std::string hostName = hostNameRaw ? hostNameRaw : "";
         std::string lobbyCode = lobbyCodeRaw ? lobbyCodeRaw : "";
         bool hasVisibility = visibilityRaw && visibilityRaw[0] != '\0';
         bool hasRequiresCode = requiresCodeRaw && requiresCodeRaw[0] != '\0';
+        bool hasMetadataReady = metadataReadyRaw && metadataReadyRaw[0] != '\0';
 
         // visibility & requires_code: metadata varsa olduğu gibi geç,
         // yoksa JSON null olarak gönder — Python live read ile ikinci şans verir.
         // Böylece henüz propague olmamış metadata "private" varsayılmaz.
         std::string visibilityJson;
         std::string requiresCodeJson;
+        std::string metadataReadyJson = "null";
+
+        if (hasMetadataReady)
+        {
+            bool ready = std::string(metadataReadyRaw) == "1";
+            metadataReadyJson = ready ? "true" : "false";
+        }
 
         if (hasVisibility)
         {
@@ -510,6 +527,7 @@ private:
                ",\"lobby_code\":\"" + json_escape(lobbyCode) + "\"" +
                ",\"visibility\":" + visibilityJson +
                ",\"requires_code\":" + requiresCodeJson +
+             ",\"metadata_ready\":" + metadataReadyJson +
                "}";
     }
 
@@ -540,6 +558,12 @@ private:
         if (!m_matchmaking)
         {
             return false;
+        }
+
+        const char *metadataReadyRaw = m_matchmaking->GetLobbyData(lobbyId, "metadata_ready");
+        if (metadataReadyRaw && metadataReadyRaw[0] != '\0')
+        {
+            return std::string(metadataReadyRaw) == "1";
         }
 
         const char *visibilityRaw = m_matchmaking->GetLobbyData(lobbyId, "visibility");
@@ -645,6 +669,16 @@ private:
             m_currentLobby,
             "requires_code",
             m_pendingLobbyRequiresCode ? "1" : "0");
+        m_matchmaking->SetLobbyData(m_currentLobby, "metadata_ready", "0");
+        if (m_friends)
+        {
+            const char *personaName = m_friends->GetPersonaName();
+            if (personaName && personaName[0] != '\0')
+            {
+                m_matchmaking->SetLobbyData(m_currentLobby, "host_name", personaName);
+            }
+        }
+        m_matchmaking->SetLobbyJoinable(m_currentLobby, false);
 
         push_event("lobby_created", pResult->m_ulSteamIDLobby, "");
     }
@@ -863,6 +897,9 @@ PYBIND11_MODULE(steam_net_bridge, m)
         .def("add_request_lobby_list_string_filter",
              &SteamNetBridge::add_request_lobby_list_string_filter,
              py::arg("key"), py::arg("value"))
+           .def("add_request_lobby_list_distance_filter",
+               &SteamNetBridge::add_request_lobby_list_distance_filter,
+               py::arg("distance_filter"))
         .def("request_lobby_list", &SteamNetBridge::request_lobby_list)
         // Mesajlaşma
         .def("send_message", &SteamNetBridge::send_message,

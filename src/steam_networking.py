@@ -239,6 +239,13 @@ class LobbyType:
     INVISIBLE = 3     # Arama sonuçlarında görünür ama arkadaş listesinde görünmez
 
 
+class LobbyDistanceFilter:
+    CLOSE = 0
+    DEFAULT = 1
+    FAR = 2
+    WORLDWIDE = 3
+
+
 # ---------- Lobi kodu yardımcıları ----------
 
 def generate_lobby_code(lobby_id: int) -> str:
@@ -533,6 +540,14 @@ class SteamNetworking:
             except (AttributeError, TypeError):
                 pass
 
+    def add_lobby_search_distance_filter(self, distance_filter: int):
+        """Sonraki request_lobby_list() çağrısına uzaklık filtresi ekle."""
+        if self._bridge_instance:
+            try:
+                self._bridge_instance.add_request_lobby_list_distance_filter(distance_filter)
+            except (AttributeError, TypeError):
+                pass
+
     def set_lobby_data(self, key: str, value: str):
         """Lobi metadata'sı ayarla."""
         if self._bridge_instance:
@@ -570,9 +585,15 @@ class SteamNetworking:
                 print(f"[SteamNet] get_lobby_members hatası: {e}")
         return []
 
-    def request_lobby_list(self):
+    def request_lobby_list(self, worldwide: bool = False):
         """Lobi listesini iste. Sonuç poll_events() ile gelir."""
         if self._bridge_instance:
+            if worldwide:
+                try:
+                    self._bridge_instance.add_request_lobby_list_distance_filter(
+                        LobbyDistanceFilter.WORLDWIDE)
+                except (AttributeError, TypeError):
+                    pass
             try:
                 self._bridge_instance.request_lobby_list()
             except Exception as e:
@@ -585,6 +606,11 @@ class SteamNetworking:
         Sonuç poll_events() ile lobby_found / lobby_list_complete olarak gelir.
         """
         if self._bridge_instance:
+            try:
+                self._bridge_instance.add_request_lobby_list_distance_filter(
+                    LobbyDistanceFilter.WORLDWIDE)
+            except (AttributeError, TypeError):
+                pass
             try:
                 self._bridge_instance.add_request_lobby_list_string_filter(
                     'lobby_code', code.strip())
