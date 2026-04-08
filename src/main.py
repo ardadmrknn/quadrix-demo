@@ -1648,6 +1648,12 @@ def main():
                 toggle_global_mute()
                 continue
             if event.type == pygame.QUIT:
+                if sys.platform == 'darwin':
+                    try:
+                        import steam_integration as _si_quit
+                        _si_quit.request_shutdown()
+                    except Exception:
+                        pass
                 running = False
                 continue
 
@@ -1731,11 +1737,23 @@ def main():
                     if event.key in (pygame.K_ESCAPE, pygame.K_n):
                         confirm_exit = False
                     elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_y):
+                        if sys.platform == 'darwin':
+                            try:
+                                import steam_integration as _si_exit
+                                _si_exit.request_shutdown()
+                            except Exception:
+                                pass
                         running = False
                     continue
                 if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                     pos = normalize_mouse_pos(getattr(event, 'pos', None)) or event.pos
                     if menu.exit_yes_rect and menu.exit_yes_rect.collidepoint(pos):
+                        if sys.platform == 'darwin':
+                            try:
+                                import steam_integration as _si_exit2
+                                _si_exit2.request_shutdown()
+                            except Exception:
+                                pass
                         running = False
                     elif menu.exit_no_rect and menu.exit_no_rect.collidepoint(pos):
                         confirm_exit = False
@@ -2855,6 +2873,7 @@ def main():
                 online_pvp._cleanup()
             except Exception:
                 pass
+            _handle_online_pvp._game = None
             running = False
             return False
 
@@ -3273,27 +3292,35 @@ def main():
 
         # FPS limitleme frame başında uygulanıyor.
 
-    # ── macOS güvenlik ağı: cleanup 3 saniyede bitmezse zorla çık ──────
-    # pygame.display.quit() veya pygame.quit() macOS'ta Cocoa/SDL etkileşimi
-    # nedeniyle takılabilir (özellikle Online PvP sonrası Steam overlay aktifken).
-    # SIGALRM ile os._exit(0)'a ulaşmayı GARANTİ altına alıyoruz.
+    # ── macOS: erken shutdown sinyali (merkezi) ────────────────────────
+    # Hangi handler running=False yaparsa yapsın, worker thread'lere
+    # "kapanıyoruz" sinyali burada gönderilir. Bu sayede leaderboard/avatar
+    # worker'ları Steam SDK çağrılarını bırakır ve cleanup hızlanır.
     if sys.platform == 'darwin':
         try:
-            import signal as _sig_alarm
-            def _macos_force_exit(signum, frame):
-                os._exit(0)
-            _sig_alarm.signal(_sig_alarm.SIGALRM, _macos_force_exit)
-            _sig_alarm.alarm(3)
+            import steam_integration as _si_early
+            _si_early.request_shutdown()
         except Exception:
             pass
 
-    # ── macOS: pump thread'i ÖNCE durdur ───────────────────────────────
-    # pygame.display.quit() SDL penceresini yok eder. Eğer pump thread
-    # aynı anda SteamAPI_RunCallbacks() çağırıyorsa, Steam overlay
-    # (SDL/Cocoa hook'lu) yok edilen pencereyle etkileşmeye çalışır
-    # ve macOS'ta deadlock/donma oluşur. Bu yüzden display kapatmadan
-    # ÖNCE pump thread'i durdurup mevcut RunCallbacks() çağrısının
-    # bitmesini bekliyoruz.
+    # ── macOS: SIGALRM güvenlik ağı (kernel seviyesi) ──────────────────
+    # pygame.display.quit() / pygame.quit() macOS'ta GIL'i bırakmadan
+    # Cocoa/SDL C kodunda BLOKE olabiliyor. Bu durumda:
+    #   - Python signal handler çalışamaz (yalnızca bytecode aralarında çalışır)
+    #   - Watchdog thread os._exit() çağıramaz (GIL'e ihtiyacı var)
+    # SIG_DFL + alarm: SIGALRM kernel tarafından işlenir, GIL bağımsız.
+    # C kodu takılsa bile kernel process'i anında sonlandırır.
+    if sys.platform == 'darwin':
+        try:
+            import signal as _sig
+            _sig.signal(_sig.SIGALRM, _sig.SIG_DFL)
+            _sig.alarm(3)
+        except Exception:
+            pass
+
+    # ── macOS: pump thread'i durdur ────────────────────────────────────
+    # Pump thread SteamAPI_RunCallbacks() çağırıyorken bridge/SDL temizliği
+    # yapılırsa deadlock oluşur. Önce pump'u durdur.
     if sys.platform == 'darwin':
         try:
             import steam_integration as _si_pre
@@ -3301,21 +3328,48 @@ def main():
             _si_pre._shutdown_requested = True
             _si_pre._pump_paused = True
             _si_pre._pump_paused_event.set()
-            # Mevcut RunCallbacks() çağrısının bitmesini kısa süre bekle
-            if _si_pre._pump_lock.acquire(timeout=0.2):
+            # Mevcut RunCallbacks() çağrısının bitmesini bekle
+            if _si_pre._pump_lock.acquire(timeout=0.5):
                 _si_pre._pump_lock.release()
+            # Pump thread'inin döngüden çıkmasını da bekle
+            _pt = _si_pre._pump_thread
+            if _pt is not None and _pt.is_alive():
+                _pt.join(timeout=0.15)
         except Exception:
             pass
 
-    # macOS: pencereyi kapat (pump thread artık durmuş — overlay çakışması yok).
+    # ── macOS: minimal cleanup — pygame çağrısı YOK ───────────────────
+    # pygame.display.quit() ve pygame.quit() macOS'ta Cocoa/SDL deadlock
+    # oluşturup process'i DONDURUYOR. Bu çağrılar macOS'ta atlanır.
+    # os._exit(0) tüm kaynakları (SDL penceresi, thread'ler, bellek) temizler.
+    # Steam de process çıkışını graceful handle eder (SteamAPI_Shutdown opsiyonel).
     if sys.platform == 'darwin':
+        # C++ bridge temizliği (lobi çıkışı — hızlı, bloke etmez)
         try:
-            pygame.display.quit()
+            from steam_networking import shutdown_all_instances as _shutdown_net
+            _shutdown_net()
+        except Exception:
+            pass
+        # Ayarları kaydet (dosya I/O — bloke etmez)
+        try:
+            settings_manager.save_settings()
         except Exception:
             pass
 
-    # Aktif Steam networking instance'larını kapat (C++ bridge temizliği)
-    # Bu, steam_integration.shutdown() ÖNCESİNDE yapılmalı.
+        print("\n" + "=" * 60)
+        print("Oyun kapandı. Skorunuz kaydedildi!")
+        print("Ayarlarınız kaydedildi! ⚙️")
+        print("Oynadığınız için teşekkürler! 🎮")
+        print("=" * 60)
+
+        # SIGALRM iptal — normal çıkışa ulaştık
+        try:
+            _sig.alarm(0)
+        except Exception:
+            pass
+        os._exit(0)
+
+    # ── Windows/Linux: tam cleanup ─────────────────────────────────────
     try:
         from steam_networking import shutdown_all_instances as _shutdown_net
         _shutdown_net()
@@ -3328,17 +3382,10 @@ def main():
     except Exception:
         pass
 
-    try:
-        pygame.quit()
-    except Exception:
-        pass
-    
-    # Ayarları son kez kaydet
-    try:
-        settings_manager.save_settings()
-    except Exception:
-        pass
-    
+    pygame.quit()
+
+    settings_manager.save_settings()
+
     print("\n" + "=" * 60)
     print("Oyun kapandı. Skorunuz kaydedildi!")
     print("Ayarlarınız kaydedildi! ⚙️")
