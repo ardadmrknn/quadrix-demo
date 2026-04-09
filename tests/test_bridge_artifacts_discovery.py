@@ -24,6 +24,24 @@ def test_get_bridge_binaries_finds_current_legacy_and_build_outputs(monkeypatch,
 
     results = get_bridge_binaries(tmp_path)
 
-    assert str(current) in results
+    assert results[0] == str(current)
     assert str(legacy_root) in results
     assert str(build_output) in results
+
+
+def test_get_bridge_binaries_prefers_current_python_tag_before_legacy_builds(monkeypatch, tmp_path: Path):
+    monkeypatch.setattr(sys, 'platform', 'win32')
+
+    current = tmp_path / 'local_artifacts' / 'bridge' / 'steam_net_bridge.cp312-win_amd64.pyd'
+    wrong_python = tmp_path / 'local_artifacts' / 'bridge' / 'steam_net_bridge.cp311-win_amd64.pyd'
+    stale_build = tmp_path / 'steamworks' / 'steam_net_bridge' / 'build_win64' / 'Release' / 'steam_net_bridge.cp312-win_amd64.pyd'
+
+    _touch(wrong_python)
+    _touch(stale_build)
+    _touch(current)
+
+    results = get_bridge_binaries(tmp_path)
+
+    assert results[0] == str(current)
+    assert results.index(str(current)) < results.index(str(stale_build))
+    assert results.index(str(current)) < results.index(str(wrong_python))

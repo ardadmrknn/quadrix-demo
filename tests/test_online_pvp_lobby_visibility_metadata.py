@@ -13,7 +13,7 @@ if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
 import online_pvp_game as online_pvp_module
-from steam_networking import NetEvent
+from steam_networking import NetEvent, generate_lobby_code
 
 
 def _make_game():
@@ -343,6 +343,42 @@ def test_validate_joined_lobby_access_accepts_authorized_private_join_by_code():
     assert game._authorized_private_join_lobby_id == 0
     assert game._authorized_private_join_code == ''
     game._return_to_pvp_lobby_menu.assert_not_called()
+
+
+def test_validate_joined_lobby_access_accepts_private_lobby_owner_without_code():
+    game = _make_game()
+    game.net = types.SimpleNamespace(
+        lobby_id=77,
+        my_steam_id=55,
+        is_host=False,
+        get_lobby_owner=lambda: 55,
+        get_lobby_data_for=lambda _lobby_id, key: {
+            'visibility': 'private',
+            'requires_code': '1',
+            'metadata_ready': '1',
+            'lobby_code': '123456',
+        }.get(key, ''),
+    )
+    game._return_to_pvp_lobby_menu = Mock()
+
+    assert game._validate_joined_lobby_access() is True
+    game._return_to_pvp_lobby_menu.assert_not_called()
+
+
+def test_on_lobby_created_authorizes_private_host_lobby_code():
+    game = _make_game()
+    game.online_state = None
+    game._lobby_presence_probe_timer = 0.0
+    game._lobby_id_str = ''
+    game._lobby_code = ''
+    game._creating_public_lobby = False
+    game._invite_after_lobby = False
+    game.net = types.SimpleNamespace(invite_friend=Mock())
+
+    game._on_lobby_created(NetEvent('lobby_created', 77, ''))
+
+    assert game._authorized_private_join_lobby_id == 77
+    assert game._authorized_private_join_code == generate_lobby_code(77)
 
 
 def test_validate_joined_lobby_access_rejects_unauthorized_private_join():

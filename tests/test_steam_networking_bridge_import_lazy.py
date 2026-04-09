@@ -112,6 +112,24 @@ class TestBridgeImportIsLazy(unittest.TestCase):
         finally:
             builtins.__import__ = original
 
+    def test_prepend_sys_path_preserves_candidate_priority(self):
+        _unload_steam_networking()
+
+        import src.steam_networking as sn
+
+        original_sys_path = list(sys.path)
+        original_isdir = sn.os.path.isdir
+        try:
+            sys.path[:] = ['existing-path']
+            sn.os.path.isdir = lambda path: path in ('first-path', 'second-path')
+
+            sn._prepend_sys_path(['first-path', 'second-path'])
+
+            self.assertEqual(sys.path[:2], ['first-path', 'second-path'])
+        finally:
+            sys.path[:] = original_sys_path
+            sn.os.path.isdir = original_isdir
+
 
 if __name__ == '__main__':
     unittest.main()

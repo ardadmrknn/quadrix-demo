@@ -55,11 +55,35 @@ def get_bridge_binary_patterns(repo_root: str | Path) -> list[str]:
     return _dedupe_paths(patterns)
 
 
+def _get_current_python_bridge_tags() -> tuple[str, ...]:
+    major = sys.version_info.major
+    minor = sys.version_info.minor
+    return (
+        f'cp{major}{minor}',
+        f'cpython-{major}{minor}',
+    )
+
+
+def _bridge_binary_sort_key(path: str, candidate_dirs: list[str]) -> tuple[int, int, str]:
+    normalized_path = os.path.normpath(path)
+    parent_dir = os.path.normpath(str(Path(normalized_path).parent))
+    try:
+        candidate_index = candidate_dirs.index(parent_dir)
+    except ValueError:
+        candidate_index = len(candidate_dirs)
+
+    file_name = Path(normalized_path).name.lower()
+    current_python_tags = _get_current_python_bridge_tags()
+    python_tag_priority = 0 if any(tag in file_name for tag in current_python_tags) else 1
+    return (candidate_index, python_tag_priority, file_name)
+
+
 def get_bridge_binaries(repo_root: str | Path) -> list[str]:
+    candidate_dirs = _iter_bridge_candidate_dirs(repo_root)
     matches: list[str] = []
     for pattern in get_bridge_binary_patterns(repo_root):
         matches.extend(glob.glob(pattern))
 
     matches = [os.path.normpath(path) for path in matches]
-    matches = sorted(set(matches))
+    matches = sorted(set(matches), key=lambda path: _bridge_binary_sort_key(path, candidate_dirs))
     return matches

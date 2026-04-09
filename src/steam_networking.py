@@ -49,6 +49,12 @@ def _dedupe_paths(paths: list[str]) -> list[str]:
     return out
 
 
+def _prepend_sys_path(paths: list[str]):
+    for path in reversed(_dedupe_paths(paths)):
+        if os.path.isdir(path) and path not in sys.path:
+            sys.path.insert(0, path)
+
+
 def _get_bridge_search_roots() -> list[str]:
     roots: list[str] = []
 
@@ -155,19 +161,17 @@ def _try_import_bridge():
                 if d not in dyld:
                     os.environ['DYLD_LIBRARY_PATH'] = d + ':' + dyld
 
-    for root in search_roots:
-        if os.path.isdir(root) and root not in sys.path:
-            sys.path.insert(0, root)
+    _prepend_sys_path(search_roots)
 
     for bridge_dir in bridge_candidate_dirs:
         tried_paths.append(bridge_dir)
-        if os.path.isdir(bridge_dir) and bridge_dir not in sys.path:
-            sys.path.insert(0, bridge_dir)
+    _prepend_sys_path(bridge_candidate_dirs)
 
     try:
         import steam_net_bridge as snb
         _bridge = snb
         _bridge_available = True
+        print(f"[SteamNet] steam_net_bridge yüklendi: {getattr(snb, '__file__', '<builtin>')}")
         return True
     except Exception as exc:
         print(f"[SteamNet] steam_net_bridge yuklenemedi: {exc}")
@@ -445,6 +449,10 @@ class SteamNetworking:
             self._bridge_instance = None
         self._initialized = False
         self._state = 'idle'
+        self._is_host = False
+        self._lobby_id = 0
+        self._opponent_steam_id = 0
+        self._opponent_name = ''
         # Instance takibinden çıkar
         try:
             _active_instances.remove(self)
@@ -495,6 +503,7 @@ class SteamNetworking:
             except Exception as e:
                 print(f"[SteamNet] leave_lobby hatası: {e}")
         self._state = 'idle'
+        self._is_host = False
         self._opponent_steam_id = 0
         self._opponent_name = ''
         self._lobby_id = 0
@@ -578,6 +587,17 @@ class SteamNetworking:
             except Exception as e:
                 print(f"[SteamNet] get_lobby_members hatası: {e}")
         return []
+
+    def get_lobby_owner(self) -> int:
+        """Lobi sahibinin Steam ID'sini döndür."""
+        if self._bridge_instance:
+            try:
+                return int(self._bridge_instance.get_lobby_owner() or 0)
+            except (AttributeError, TypeError):
+                pass
+            except Exception as e:
+                print(f"[SteamNet] get_lobby_owner hatası: {e}")
+        return 0
 
     def request_lobby_list(self, worldwide: bool = False):
         """Lobi listesini iste. Sonuç poll_events() ile gelir."""
@@ -808,6 +828,8 @@ class SteamNetworking:
         elif event.type == 'lobby_create_failed' or event.type == 'lobby_join_failed':
             print(f"[SteamNet] HATA: {event.type} — {event.data}")
             self._state = 'idle'
+            self._lobby_id = 0
+            self._is_host = False
 
     def _find_opponent(self):
         """Lobideki rakibi bul."""

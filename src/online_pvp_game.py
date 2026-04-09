@@ -871,6 +871,7 @@ class OnlinePvPGame:
             print(f"[OnlinePvP] Public lobi hazır. Lobby ID: {self._lobby_id_str}")
         else:
             self._lobby_code = generate_lobby_code(ev.steam_id)
+            self._remember_private_join_authorization(ev.steam_id, self._lobby_code)
             print(f"[OnlinePvP] Lobi Kodu: {self._lobby_code}  |  Tam ID: {self._lobby_id_str}")
 
         # Davet bekletilmişse şimdi aç
@@ -1252,6 +1253,16 @@ class OnlinePvPGame:
     def _validate_joined_lobby_access(self) -> bool:
         current_lobby_id = int(getattr(self.net, 'lobby_id', 0) or 0)
         if not current_lobby_id:
+            return True
+
+        my_steam_id = int(getattr(self.net, 'my_steam_id', 0) or 0)
+        lobby_owner_id = 0
+        try:
+            lobby_owner_id = int(getattr(self.net, 'get_lobby_owner', lambda: 0)() or 0)
+        except Exception:
+            lobby_owner_id = 0
+        if (my_steam_id and lobby_owner_id == my_steam_id) or bool(getattr(self.net, 'is_host', False)):
+            self._clear_private_join_authorization(current_lobby_id)
             return True
 
         snapshot = self._get_lobby_metadata_snapshot(current_lobby_id, prefer_live=True)

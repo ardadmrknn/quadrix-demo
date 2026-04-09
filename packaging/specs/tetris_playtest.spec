@@ -155,9 +155,13 @@ else:
     print(f'[spec] libsteam_api.dylib bulunamadı (macOS build değilse normaldir): {steam_dylib_src}')
 
 # Steam Networking bridge (Pybind11 C++ modülü) — Online PvP için
-for _bridge_path in get_bridge_binaries(REPO_ROOT):
+_bridge_matches = get_bridge_binaries(REPO_ROOT)
+if _bridge_matches:
+    _bridge_path = _bridge_matches[0]
     binaries.append((_bridge_path, '.'))
     print(f'[spec] steam_net_bridge eklendi: {_bridge_path}')
+else:
+    print('[spec] UYARI: steam_net_bridge bulunamadı')
 
 a = Analysis(
     [str(SRC_DIR / 'main.py')],  # Ana giriş noktası
