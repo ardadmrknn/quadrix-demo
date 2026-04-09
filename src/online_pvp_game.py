@@ -1461,8 +1461,10 @@ class OnlinePvPGame:
             'found_time': time.time(),
         }
         if snapshot['visibility'] == 'unknown':
+            # Metadata gecikse bile lobby kartini browse listesinde goster.
+            # Boylece private lobby callback gelmediginde tamamen kaybolmaz;
+            # sonraki live read / lobby_data_updated karti upgrade eder.
             self._remember_deferred_lobby_entry(entry)
-            return
         self._upsert_lobby_entry('_pending_lobby_list', entry)
 
     def _on_lobby_data_updated(self, ev: NetEvent):

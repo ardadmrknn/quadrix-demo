@@ -854,8 +854,11 @@ private:
     {
         if (bIOFailure || pResult->m_eResult != k_EResultOK)
         {
+            std::string errorData = std::string("result=") + std::to_string((int)pResult->m_eResult) +
+                                    ",visibility=" + m_pendingLobbyVisibility +
+                                    ",requires_code=" + (m_pendingLobbyRequiresCode ? std::string("1") : std::string("0"));
             push_event("lobby_create_failed", 0,
-                       "Hata kodu: " + std::to_string((int)pResult->m_eResult));
+                       errorData);
             return;
         }
         m_currentLobby = CSteamID(pResult->m_ulSteamIDLobby);

@@ -85,6 +85,32 @@ function Sync-BridgeArtifactsToRuntimeDir {
     return $copied
 }
 
+function Test-BridgeArtifactsStale {
+    $sourcePaths = @(
+        (Join-Path $repoRoot 'steamworks\steam_net_bridge\steam_net_bridge.cpp'),
+        (Join-Path $repoRoot 'steamworks\steam_net_bridge\build.bat')
+    ) | Where-Object { Test-Path $_ }
+
+    $artifacts = @(Get-BridgeArtifactPaths)
+    if ($artifacts.Count -eq 0) {
+        return $true
+    }
+    if ($sourcePaths.Count -eq 0) {
+        return $false
+    }
+
+    $latestSourceWrite = $sourcePaths |
+    ForEach-Object { (Get-Item $_).LastWriteTimeUtc } |
+    Sort-Object -Descending |
+    Select-Object -First 1
+    $latestArtifactWrite = $artifacts |
+    ForEach-Object { $_.LastWriteTimeUtc } |
+    Sort-Object -Descending |
+    Select-Object -First 1
+
+    return $latestSourceWrite -gt $latestArtifactWrite
+}
+
 $pythonExe = Resolve-QuadrixPython
 $resolvedSpecFile = Resolve-SpecPath $SpecFile
 $logDir = Join-Path $repoRoot 'reports\logs'
@@ -122,6 +148,11 @@ if ($RebuildBridge) {
 }
 
 $bridgeExists = @(Get-BridgeArtifactPaths).Count -gt 0
+if (-not $RebuildBridge -and $bridgeExists -and (Test-BridgeArtifactsStale)) {
+    Write-Host 'Bridge kaynak dosyalari artefactlerden daha yeni, rebuild zorlanacak...' -ForegroundColor Yellow
+    $RebuildBridge = $true
+}
+
 if ($RebuildBridge -or -not $bridgeExists) {
     Write-Host 'Steam bridge derleniyor...' -ForegroundColor Cyan
     $bridgeBat = Join-Path $repoRoot 'steamworks\steam_net_bridge\build.bat'

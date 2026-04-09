@@ -20,18 +20,26 @@ def _make_game():
     game = online_pvp_module.OnlinePvPGame.__new__(online_pvp_module.OnlinePvPGame)
     game._pending_lobby_list = []
     game._lobby_list = []
+    game._lobby_list_scroll = 0
     game._deferred_lobby_entries = {}
     game._lobby_list_fetching = False
     game._authorized_private_join_lobby_id = 0
     game._authorized_private_join_code = ''
     game._invite_authorized_lobby_id = 0
+    game._searching_by_code = False
+    game._search_code = ''
+    game._code_search_retry_count = 0
+    game._code_search_retry_timer = 0.0
+    game._code_search_retry_code = ''
+    game._code_search_retry_use_full_scan = False
+    game._join_target_lobby_id = 0
     game._status_msg = ''
     game._status_timer = 0.0
     return game
 
 
 def test_lobby_found_does_not_fallback_to_current_lobby_metadata():
-    """Metadata tamamen boşsa lobi hazır değil olarak işaretlenmeli."""
+    """Metadata tamamen boşsa lobi sync durumunda görünür kalmalı."""
     game = _make_game()
     game.net = types.SimpleNamespace(
         get_lobby_data_for=lambda lobby_id, key: '',
@@ -46,11 +54,39 @@ def test_lobby_found_does_not_fallback_to_current_lobby_metadata():
 
     game._on_lobby_found(event)
 
-    assert game._pending_lobby_list == []
+    assert len(game._pending_lobby_list) == 1
+    pending_lobby = game._pending_lobby_list[0]
+    assert pending_lobby['visibility'] == 'unknown'
+    assert pending_lobby['requires_code'] is False
+    assert pending_lobby['metadata_ready'] is False
     lobby = game._deferred_lobby_entries[42]
     assert lobby['visibility'] == 'unknown'
     assert lobby['requires_code'] is False
     assert lobby['metadata_ready'] is False
+
+
+def test_lobby_list_complete_keeps_unknown_lobby_visible_while_metadata_syncs():
+    game = _make_game()
+    game._pending_lobby_list = [{
+        'id': 42,
+        'name': 'Bekleyen lobi',
+        'code': '',
+        'visibility': 'unknown',
+        'requires_code': False,
+        'metadata_ready': False,
+        'members': 1,
+        'max_members': 2,
+        'found_time': 0,
+    }]
+    game.net = types.SimpleNamespace(join_lobby=Mock())
+
+    game._on_lobby_list_complete(NetEvent('lobby_list_complete', 0, ''))
+
+    assert len(game._lobby_list) == 1
+    lobby = game._lobby_list[0]
+    assert lobby['visibility'] == 'unknown'
+    assert lobby['metadata_ready'] is False
+    game.net.join_lobby.assert_not_called()
 
 
 def test_lobby_found_uses_per_lobby_metadata_for_private_visibility():

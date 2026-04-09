@@ -11,6 +11,9 @@ CPP_PATH = ROOT_DIR / 'steamworks' / 'steam_net_bridge' / 'steam_net_bridge.cpp'
 def test_bridge_sets_visibility_metadata_on_lobby_created():
     content = CPP_PATH.read_text(encoding='utf-8')
 
+    assert 'std::string errorData = std::string("result=") + std::to_string((int)pResult->m_eResult) +' in content
+    assert '",visibility=" + m_pendingLobbyVisibility +' in content
+    assert '",requires_code=" + (m_pendingLobbyRequiresCode ? std::string("1") : std::string("0"));' in content
     assert 'm_matchmaking->SetLobbyData(m_currentLobby, "visibility", m_pendingLobbyVisibility.c_str())' in content
     assert '"requires_code"' in content
     assert 'set_pending_lobby_metadata(k_ELobbyTypePublic);' in content

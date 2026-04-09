@@ -18,5 +18,8 @@
             "matchCommandLine": true
         }
     },
-    "cmake.sourceDirectory": "/Users/burakyasayan/quadrix-main/steamworks/steam_net_bridge"
+    "cmake.sourceDirectory": "${workspaceFolder}/steamworks/steam_net_bridge",
+    "cmake.configureSettings": {
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+    }
 }
