@@ -464,6 +464,7 @@ class SteamNetworking:
     def create_lobby(self, max_members: int = 2, public: bool = False):
         """Yeni lobi oluştur. Sonuç poll_events() ile gelir."""
         if not self._bridge_instance:
+            print("[SteamNet] create_lobby: bridge_instance yok")
             return
         try:
             self._state = 'lobby'
@@ -472,16 +473,25 @@ class SteamNetworking:
                 self._bridge_instance.create_public_lobby(max_members)
             else:
                 # Ozel lobi: search'te bulunabilir ama arkadas listesinde görünmez.
-                # FriendsOnly fallback'i search disi kaldigi icin kullanmiyoruz.
+                # Steam dokümantasyonuna göre RequestLobbyList sadece Public ve
+                # Invisible lobileri döndürür. create_lobby() da zaten Invisible
+                # tipi kullanır; create_lobby_with_type sadece açık tip belirtmek
+                # için tercih edilir.
                 try:
                     self._bridge_instance.create_lobby_with_type(
                         LobbyType.INVISIBLE, max_members)
                 except (AttributeError, TypeError):
+                    # Eski bridge sürümü — create_lobby zaten INVISIBLE kullanır
+                    self._bridge_instance.create_lobby(max_members)
+                except Exception as inner_exc:
+                    print(f"[SteamNet] create_lobby_with_type hatası, fallback: {inner_exc}")
                     self._bridge_instance.create_lobby(max_members)
             print(f"[SteamNet] Lobi oluşturuluyor... (public={public})")
         except Exception as e:
             print(f"[SteamNet] create_lobby hatası: {e}")
             import traceback; traceback.print_exc()
+            self._state = 'idle'
+            self._is_host = False
 
     def join_lobby(self, lobby_id: int):
         """Mevcut lobiye katıl."""

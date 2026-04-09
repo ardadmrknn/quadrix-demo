@@ -1424,6 +1424,25 @@ class OnlinePvPGame:
                         matched_ids.append(lobby_id)
                 continue
 
+            # Metadata henüz hazır değil — yine de kod eşleşmesi dene.
+            # Cross-platform metadata propagasyonu gecikmeli olabilir;
+            # lobby_code metadata'sı yoksa lobby_id'den derive edilen kodu
+            # karşılaştırarak erken match sağla.
+            snapshot_code = str(snapshot.get('code', '') or '').strip()
+            if snapshot_code and snapshot_code == normalized_code:
+                if lobby_id not in matched_ids:
+                    matched_ids.append(lobby_id)
+                continue
+            # Snapshot'ta kod yoksa lobby_id'den hesapla ve dene
+            try:
+                derived_code = generate_lobby_code(lobby_id)
+                if derived_code == normalized_code:
+                    if lobby_id not in matched_ids:
+                        matched_ids.append(lobby_id)
+                    continue
+            except Exception:
+                pass
+
             pending_metadata = True
 
         if len(matched_ids) == 1:
@@ -1531,11 +1550,48 @@ class OnlinePvPGame:
             self._status_msg = t('no_lobbies_found', 'Lobi bulunamadı')
             self._status_timer = 2.5
 
+        # Unknown visibility'li entry'ler için ek metadata sorgusu başlat.
+        # Cross-platform metadata propagasyonu gecikmeli olabilir; deferred
+        # refresh zamanlayıcısını sıfırlayarak hemen tazeleme dene.
+        self._refresh_unknown_lobby_entries()
+
+    def _refresh_unknown_lobby_entries(self):
+        """_lobby_list'teki unknown visibility'li entry'leri live-read ile güncelle."""
+        if not getattr(self, '_net_initialized', False):
+            return
+        for lobby in self._lobby_list:
+            if str(lobby.get('visibility', '') or '').lower() != 'unknown':
+                continue
+            lobby_id = int(lobby.get('id', 0) or 0)
+            if not lobby_id:
+                continue
+            snapshot = self._get_lobby_metadata_snapshot(lobby_id, prefer_live=True)
+            if snapshot.get('visibility') not in (None, '', 'unknown'):
+                lobby['name'] = snapshot.get('name') or lobby.get('name', '')
+                lobby['code'] = snapshot.get('code', lobby.get('code', ''))
+                lobby['visibility'] = snapshot.get('visibility', 'unknown')
+                lobby['requires_code'] = bool(snapshot.get('requires_code', False))
+                lobby['metadata_ready'] = bool(snapshot.get('metadata_ready', False))
+                self._deferred_lobby_entries.pop(lobby_id, None)
+
     def _on_lobby_error(self, ev: NetEvent):
         """Lobi oluşturma/katılma hatası."""
         print(f"[OnlinePvP] Lobi hatası: {ev.type} — {ev.data}")
         self.online_state = OnlineState.LOBBY_MENU
-        self._status_msg = t('lobby_error', 'Lobi işlemi başarısız oldu!')
+        self._lobby_list_fetching = False
+        # Detaylı hata mesajı oluştur
+        error_detail = ''
+        if ev.data:
+            try:
+                # C++ "result=X,visibility=...,requires_code=..." formatında gönderir
+                for part in str(ev.data).split(','):
+                    if part.startswith('result='):
+                        code = part.split('=', 1)[1]
+                        error_detail = f' (kod: {code})'
+                        break
+            except Exception:
+                pass
+        self._status_msg = t('lobby_error', 'Lobi işlemi başarısız oldu!') + error_detail
         self._status_timer = 4.0
 
     def _on_lobby_list_error(self, ev: NetEvent):
@@ -3229,10 +3285,17 @@ class OnlinePvPGame:
             self.net.tick()
             self._process_messages()
 
+        _has_unknown_lobbies = (
+            bool(self._deferred_lobby_entries)
+            or any(
+                str(l.get('visibility', '') or '').lower() == 'unknown'
+                for l in getattr(self, '_lobby_list', [])
+            )
+        )
         if (
             self.online_state == OnlineState.LOBBY_MENU
             and self._net_initialized
-            and self._deferred_lobby_entries
+            and _has_unknown_lobbies
         ):
             self._deferred_lobby_refresh_timer = max(
                 0.0,
@@ -3240,6 +3303,7 @@ class OnlinePvPGame:
             )
             if self._deferred_lobby_refresh_timer <= 0.0:
                 self._refresh_deferred_lobby_entries()
+                self._refresh_unknown_lobby_entries()
                 self._deferred_lobby_refresh_timer = self._DEFERRED_LOBBY_REFRESH_INTERVAL_MS
 
         if self._net_initialized and self.online_state in (OnlineState.WAITING, OnlineState.READY_CHECK):
@@ -3745,12 +3809,16 @@ class OnlinePvPGame:
                     self._join_code_active = False
                 return None
 
-            if key == pygame.K_1:
+            if key == pygame.K_1 or key == pygame.K_RETURN or key == pygame.K_KP_ENTER:
                 if self._init_networking():
                     self._create_lobby(public=False)
+                    self._status_msg = t('creating_lobby', 'Özel lobi oluşturuluyor...')
+                    self._status_timer = 2.0
             elif key == pygame.K_2:
                 if self._init_networking():
                     self._create_lobby(public=True)
+                    self._status_msg = t('creating_lobby', 'Herkese açık lobi oluşturuluyor...')
+                    self._status_timer = 2.0
             elif key == pygame.K_3:
                 self._request_lobby_list()
             elif key == pygame.K_i:
@@ -3854,9 +3922,13 @@ class OnlinePvPGame:
                     if action == 'create_private':
                         if self._init_networking():
                             self._create_lobby(public=False)
+                            self._status_msg = t('creating_lobby', 'Özel lobi oluşturuluyor...')
+                            self._status_timer = 2.0
                     elif action == 'create_public':
                         if self._init_networking():
                             self._create_lobby(public=True)
+                            self._status_msg = t('creating_lobby', 'Herkese açık lobi oluşturuluyor...')
+                            self._status_timer = 2.0
                     elif action == 'find_match':
                         self._request_lobby_list()
                     elif action == 'filter_all_lobbies':
@@ -4063,7 +4135,7 @@ class OnlinePvPGame:
             self._join_code_error = t('enter_lobby_code', 'Lobi kodu girin')
             return
 
-        if len(code) != 6:
+        if len(code) != 6 or not code.isdigit():
             self._join_code_error = t('enter_six_digit_code', '6 haneli lobi kodu girin')
             return
 
@@ -4322,7 +4394,7 @@ class OnlinePvPGame:
 
         buttons_private = [
             ('create_private', t('create_private_lobby', 'Özel Lobi Oluştur'),
-             _rs.primary, 'ENTER'),
+             _rs.primary, '1 / ENTER'),
             ('join_by_code', t('join_by_code', 'Kod ile Katıl'),
              UIColors.NEON_CYAN, 'J'),
             ('invite_friend', t('invite_friend', 'Arkadaş Davet Et'),
