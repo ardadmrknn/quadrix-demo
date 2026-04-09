@@ -1444,7 +1444,7 @@ class Menu:
         pvp_cyan_alpha = 190
 
         alpha = 230 if is_highlighted else 180
-        flat_title_band_panels = {'achievements', 'piece_workshop', 'coop_mode', 'store'}
+        flat_title_band_panels = {'achievements', 'piece_workshop', 'store'}
         draw_panel_border = panel_key != 'pvp_2_players'
         retro_style.draw_glass_panel(
             target_surface,
@@ -2208,8 +2208,8 @@ class Menu:
 
             return
 
-        if panel_key in {'coop_mode', 'store'}:
-            message_key = 'menu_dashboard_sub_coop_mode' if panel_key == 'coop_mode' else 'menu_dashboard_sub_store'
+        if panel_key in {'store'}:
+            message_key = 'menu_dashboard_sub_store'
             message = t(message_key)
             badge_w = min(content_w, max(s(128), rect.width - s(24)))
             badge_h = max(s(44), min(s(62), rect.height - s(36)))
@@ -2808,7 +2808,7 @@ class Menu:
             'campaign_mode': '',
             'extras': '',
             'store': '',
-            'coop_mode': '',
+            'coop_mode': t('menu_dashboard_sub_coop_mode'),
             'tutorial_mode': '',
             'achievements': '',
         }

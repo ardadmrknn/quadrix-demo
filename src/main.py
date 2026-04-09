@@ -146,11 +146,14 @@ try:
     from .tutorial import TutorialMode  # type: ignore
     from .splash_screen import SplashScreen  # type: ignore
     from .pvp_game import PvPGame  # type: ignore
+    from .coop_game import CoopGame  # type: ignore
     from .online_pvp_game import OnlinePvPGame  # type: ignore
     from .game_modes import SprintMode, UltraMode, ZenMode, HardcoreMode  # type: ignore
     from .game_modes_extra import Tetris2Mode, MysteryMode, WideMode  # type: ignore
     from .game_modes_advanced import SurvivalMode, CascadeMode, DailyChallengeMode  # type: ignore
     from .campaign import CampaignMode, CampaignLevelSelect  # type: ignore
+    from .campaign.coop_campaign_mode import CoopCampaignMode  # type: ignore
+    from .campaign.coop_level_select import CoopLevelSelect  # type: ignore
     from .menu import Menu, HighScoreScreen, SettingsScreen, BlockStyleSettingsScreen, BlockWorkshopScreen, AchievementScreen, CreditsScreen, ControlSettingsScreen, MusicSettingsScreen  # type: ignore
     from .settings_screen_tabbed import TabbedSettingsScreen  # type: ignore
     from .extras_menu import ExtrasScreen  # type: ignore
@@ -181,11 +184,14 @@ except Exception:
     from tutorial import TutorialMode
     from splash_screen import SplashScreen
     from pvp_game import PvPGame
+    from coop_game import CoopGame
     from online_pvp_game import OnlinePvPGame
     from game_modes import SprintMode, UltraMode, ZenMode, HardcoreMode
     from game_modes_extra import Tetris2Mode, MysteryMode, WideMode
     from game_modes_advanced import SurvivalMode, CascadeMode, DailyChallengeMode
     from campaign import CampaignMode, CampaignLevelSelect
+    from campaign.coop_campaign_mode import CoopCampaignMode
+    from campaign.coop_level_select import CoopLevelSelect
     from menu import Menu, HighScoreScreen, SettingsScreen, BlockStyleSettingsScreen, BlockWorkshopScreen, AchievementScreen, CreditsScreen, ControlSettingsScreen, MusicSettingsScreen
     from settings_screen_tabbed import TabbedSettingsScreen
     from extras_menu import ExtrasScreen
@@ -1430,6 +1436,10 @@ def main():
     confirm_exit = False
     game = None
     pvp_game = None
+    coop_game = None
+    coop_campaign_game = None
+    coop_level_select = None
+    _coop_campaign_needs_refresh = False
     game_return_state = 'menu'
     block_styles_return_state = 'menu'
     _campaign_needs_refresh = False  # Campaign progress yenileme flag'i
@@ -1639,8 +1649,9 @@ def main():
         os._exit(0)
 
     def _handle_menu(delta_ms):
-        nonlocal running, state, confirm_exit, confirm_daily, daily_prompt_selected, daily_prompt_challenge, game, pvp_game, guide_screen
+        nonlocal running, state, confirm_exit, confirm_daily, daily_prompt_selected, daily_prompt_challenge, game, pvp_game, coop_game, guide_screen
         nonlocal cheat_buffer, cheat_last_key_ms
+        nonlocal coop_level_select, _coop_campaign_needs_refresh
 
         for event in pygame.event.get():
             # Global M tuşu - Sessiz mod
@@ -2020,7 +2031,29 @@ def main():
                 state = 'menu'
             elif action == 'coop_mode':
                 confirm_exit = False
-                menu.show_info(t('menu_dashboard_sub_coop_mode'))
+                menu_sound.stop_music()
+                sound = settings_screen.sound_enabled
+                effects = settings_screen.effects_enabled
+                coop_game = CoopGame(
+                    sound,
+                    effects,
+                    screen,
+                    fullscreen,
+                    user_manager,
+                    settings_manager,
+                    sound_manager=menu_sound,
+                )
+                state = 'coop'
+            elif action == 'coop_campaign':
+                confirm_exit = False
+                if coop_level_select is None:
+                    coop_level_select = CoopLevelSelect(
+                        screen=screen,
+                        settings_manager=settings_manager,
+                        user_manager=user_manager,
+                    )
+                _coop_campaign_needs_refresh = True
+                state = 'coop_campaign_select'
             elif action == 'store':
                 confirm_exit = False
                 menu.show_info(t('menu_dashboard_sub_store'))
@@ -2477,7 +2510,7 @@ def main():
         return True
 
     def _handle_extras(delta_ms):
-        nonlocal running, state, game, game_return_state, pvp_game
+        nonlocal running, state, game, game_return_state, pvp_game, coop_level_select, _coop_campaign_needs_refresh
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -2666,6 +2699,15 @@ def main():
                     score_manager=score_manager,
                 )
                 state = 'game'
+            elif action == 'coop_campaign':
+                if coop_level_select is None:
+                    coop_level_select = CoopLevelSelect(
+                        screen=screen,
+                        settings_manager=settings_manager,
+                        user_manager=user_manager,
+                    )
+                _coop_campaign_needs_refresh = True
+                state = 'coop_campaign_select'
 
         if state != 'extras':
             return True
@@ -2845,6 +2887,44 @@ def main():
                 pvp_game.sound.update_music_playlist()
         except Exception:
             pass
+        return True
+
+    def _handle_coop(delta_ms):
+        nonlocal running, state, coop_game
+
+        if not coop_game:
+            state = 'menu'
+            return False
+
+        result = coop_game.handle_input()
+
+        if result is False:
+            running = False
+            return False
+
+        if result == 'menu':
+            state = 'menu'
+            coop_game = None
+            if settings_screen.music_enabled and not getattr(settings_screen, 'mute_all', False):
+                _menu_vol = settings_manager.get('menu_music_volume', 0.3)
+                menu_sound.unduck_music()
+                menu_sound.set_music_volume(_menu_vol)
+                menu_music = settings_manager.get('menu_music', 'main_1')
+                try:
+                    playlist = settings_manager.get_menu_music_playlist()
+                    playlist_keys = [menu_sound.ensure_track_available(p) for p in playlist]
+                    playlist_keys = [p for p in playlist_keys if p]
+                    if playlist_keys:
+                        do_shuffle = bool(settings_manager.get('music_shuffle', False))
+                        menu_sound.set_music_playlist(playlist_keys, loop=True, autoplay=True, force=True, shuffle=do_shuffle)
+                    else:
+                        menu_sound.play_music(menu_music.lower(), loop=True)
+                except Exception:
+                    menu_sound.play_music(menu_music.lower(), loop=True)
+            return False
+
+        coop_game.update(delta_ms)
+        coop_game.draw()
         return True
 
     def _handle_online_pvp(delta_ms):
@@ -3078,6 +3158,122 @@ def main():
         campaign_level_select.draw()
         return True
 
+    # --- Co-op Campaign Level Select ---
+    def _handle_coop_campaign_select(delta_ms):
+        nonlocal running, state, coop_campaign_game, coop_level_select, _coop_campaign_needs_refresh
+
+        if coop_level_select is None:
+            coop_level_select = CoopLevelSelect(
+                screen=screen,
+                settings_manager=settings_manager,
+                user_manager=user_manager,
+            )
+
+        if _coop_campaign_needs_refresh:
+            coop_level_select.progress = coop_level_select._load_progress()
+            _coop_campaign_needs_refresh = False
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                running = False
+                return True
+
+            action = coop_level_select.handle_input(event)
+
+            if action == 'back':
+                state = 'menu'
+                return True
+
+            if action and action.startswith('play_'):
+                try:
+                    level_num = int(action.split('_')[1])
+                    menu_sound.stop_music()
+                    sound = settings_screen.sound_enabled
+                    effects = settings_screen.effects_enabled
+
+                    coop_campaign_game = CoopCampaignMode(
+                        current_level=level_num,
+                        sound_enabled=sound,
+                        effects_enabled=effects,
+                        screen=screen,
+                        fullscreen=fullscreen,
+                        user_manager=user_manager,
+                        settings_manager=settings_manager,
+                        sound_manager=menu_sound,
+                    )
+                    state = 'coop_campaign'
+                    return True
+                except (ValueError, IndexError):
+                    pass
+
+        coop_level_select.update(delta_ms / 1000.0)
+        coop_level_select.draw()
+        return True
+
+    # --- Co-op Campaign Game ---
+    def _handle_coop_campaign(delta_ms):
+        nonlocal running, state, coop_campaign_game, _coop_campaign_needs_refresh
+
+        if not coop_campaign_game:
+            state = 'menu'
+            return False
+
+        result = coop_campaign_game.handle_input()
+
+        if result is False:
+            running = False
+            return False
+
+        if result == 'menu':
+            state = 'coop_campaign_select'
+            _coop_campaign_needs_refresh = True
+            coop_campaign_game = None
+            # Menü müziğini geri getir
+            if settings_screen.music_enabled and not getattr(settings_screen, 'mute_all', False):
+                _menu_vol = settings_manager.get('menu_music_volume', 0.3)
+                menu_sound.unduck_music()
+                menu_sound.set_music_volume(_menu_vol)
+                menu_music = settings_manager.get('menu_music', 'main_1')
+                try:
+                    playlist = settings_manager.get_menu_music_playlist()
+                    playlist_keys = [menu_sound.ensure_track_available(p) for p in playlist]
+                    playlist_keys = [p for p in playlist_keys if p]
+                    if playlist_keys:
+                        do_shuffle = bool(settings_manager.get('music_shuffle', False))
+                        menu_sound.set_music_playlist(playlist_keys, loop=True, autoplay=True, force=True, shuffle=do_shuffle)
+                    else:
+                        menu_sound.play_music(menu_music.lower(), loop=True)
+                except Exception:
+                    menu_sound.play_music(menu_music.lower(), loop=True)
+            return False
+
+        if result == 'next_level':
+            nxt = coop_campaign_game.get_next_level_num()
+            if nxt:
+                sound = settings_screen.sound_enabled
+                effects = settings_screen.effects_enabled
+                coop_campaign_game = CoopCampaignMode(
+                    current_level=nxt,
+                    sound_enabled=sound,
+                    effects_enabled=effects,
+                    screen=screen,
+                    fullscreen=fullscreen,
+                    user_manager=user_manager,
+                    settings_manager=settings_manager,
+                    sound_manager=menu_sound,
+                )
+                return True
+            else:
+                # Son level — level select'e dön
+                _coop_campaign_needs_refresh = True
+                state = 'coop_campaign_select'
+                coop_campaign_game = None
+                return False
+
+        coop_campaign_game.update(delta_ms)
+        coop_campaign_game.draw()
+        return True
+
     STATE_HANDLERS = {
         'menu': _handle_menu,
         'credits': _handle_credits,
@@ -3095,10 +3291,13 @@ def main():
         'extras': _handle_extras,
         'game': _handle_game,
         'pvp': _handle_pvp,
+        'coop': _handle_coop,
         'online_pvp': _handle_online_pvp,
         'user_selection': _handle_user_selection,
         'user_management': _handle_user_management,
         'campaign_select': _handle_campaign_select,
+        'coop_campaign_select': _handle_coop_campaign_select,
+        'coop_campaign': _handle_coop_campaign,
     }
     
     running = True
@@ -3109,17 +3308,17 @@ def main():
     # Ekran geçiş efekti için state takibi
     _previous_state = state
     # Menü state'inden başlandığında basılı tutma tekrarı aktif
-    if state not in ('game', 'pvp', 'online_pvp'):
+    if state not in ('game', 'pvp', 'coop', 'coop_campaign', 'online_pvp'):
         pygame.key.set_repeat(350, 80)
 
     # Geçiş tipleri (state çiftlerine göre)
     def _get_transition_type(from_state: str, to_state: str) -> str:
         """State geçişi için uygun efekt tipini belirle."""
         # Oyuna giriş için perde efekti (campaign'den de oyuna girerken)
-        if to_state == 'game' or to_state == 'pvp' or to_state == 'online_pvp':
+        if to_state in ('game', 'pvp', 'coop', 'coop_campaign', 'online_pvp'):
             return 'wipe'
         # Oyundan çıkış için fade
-        if from_state == 'game' or from_state == 'pvp' or from_state == 'online_pvp':
+        if from_state in ('game', 'pvp', 'coop', 'coop_campaign', 'online_pvp'):
             return 'fade'
         # Campaign select özel geçişleri
         if from_state == 'menu' and to_state == 'campaign_select':
@@ -3229,7 +3428,7 @@ def main():
             start_screen_transition(screen, None, duration_ms=duration, transition_type=transition_type)
             _previous_state = state
             # Menü ekranlarında basılı tutma tekrarı aktif, oyunda devre dışı
-            if state in ('game', 'pvp', 'online_pvp'):
+            if state in ('game', 'pvp', 'coop', 'online_pvp'):
                 pygame.key.set_repeat(0)
             else:
                 pygame.key.set_repeat(350, 80)
@@ -3250,11 +3449,13 @@ def main():
                 pygame.mouse.set_visible(bool(getattr(game, 'wants_mouse_visible', lambda: False)()))
             elif state == 'pvp' and pvp_game is not None:
                 pygame.mouse.set_visible(bool(getattr(pvp_game, 'wants_mouse_visible', lambda: False)()))
+            elif state == 'coop' and coop_game is not None:
+                pygame.mouse.set_visible(bool(getattr(coop_game, 'wants_mouse_visible', lambda: False)()))
             else:
                 pygame.mouse.set_visible(True)
         except Exception:
             # Güvenli varsayılan
-            pygame.mouse.set_visible(state not in ('game', 'pvp'))
+            pygame.mouse.set_visible(state not in ('game', 'pvp', 'coop'))
 
         did_draw = bool(handler(delta_ms))
 

@@ -17,6 +17,7 @@ plans/
 ### Core Game Engine
 - **Game Loop:** `src/game.py`, `src/board.py`, `src/pieces.py`
 - **PvP Mode:** `src/pvp_game.py`
+- **Co-op Mode:** `src/coop_game.py`, `src/coop_board.py` — yerel 2 oyunculu kooperatif, 20×20 ortak board
 - **Game Modes:** `src/game_modes.py`, `src/game_modes_advanced.py`, `src/game_modes_extra.py`
 - **Gameplay Settings:** `src/gameplay_settings.py`
 - **Constants:** `src/constants.py`
@@ -29,6 +30,12 @@ plans/
 - **Power-ups:** `src/campaign/power_ups.py`
 - **Special Blocks:** `src/campaign/special_blocks.py`
 - **Campaign UI:** `src/campaign/campaign_ui.py`
+
+### Co-op Campaign System
+- **Co-op Campaign Mode:** `src/campaign/coop_campaign_mode.py` — CoopCampaignMode(CoopGame), görev/yıldız/ilerleme katmanı
+- **Co-op Level Select:** `src/campaign/coop_level_select.py` — 2 dünya, 20 level, yıldız/kilit sistemi
+- **Co-op Level Data:** `src/campaign/coop_level_data.py` — 20 level konfigürasyonu, CoopLevelConfig dataclass
+- **Co-op Objectives:** `src/campaign/coop_objectives.py` — SharedHoldObjective, BalancedContributionObjective, FreezeRecoveryObjective, CoopComboObjective
 
 ### UI / Menu
 - **Main Menu:** `src/menu.py` — dashboard tiles, `_menu_panel_content_scale()` (ref: 1920×1080), `_draw_main_dashboard_tile()`

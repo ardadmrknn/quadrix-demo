@@ -237,6 +237,14 @@ class ExtrasScreen:
                 'hover_color': (40, 230, 255),
                 'image_data': MODE_IMAGE_PROMPTS.get('Online PvP')
             },
+            {
+                'id': 'coop_campaign',
+                'name_key': 'coop_campaign_title',
+                'desc_key': 'coop_campaign_desc',
+                'color': (80, 230, 160),
+                'hover_color': (110, 255, 190),
+                'image_data': MODE_IMAGE_PROMPTS.get('coop_campaign')
+            },
         ]
         
         self.selected = 0

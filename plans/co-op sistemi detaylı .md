@@ -1,8 +1,8 @@
-# QUADRIX Co-op Modu — Detaylı Tasarım Belgesi
+# QUADRIX Co-op Modu — V1 Tasarım Belgesi
 
-**Versiyon:** 1.0  
-**Tarih:** 21.03.2026  
-**Statü:** Final Tasarım  
+**Versiyon:** 1.1  
+**Tarih:** 09.04.2026  
+**Statü:** V1 Scope Sabitlendi  
 **Format:** Markdown
 
 ---
@@ -10,12 +10,13 @@
 ## 📑 İçindekiler
 
 1. [Genel Bakış](#genel-bakış)
-2. [Temel Mekanikler](#temel-mekanikler)
-3. [Oyun Kuralları](#oyun-kuralları)
+2. [V1 Kapsamı](#v1-kapsamı)
+3. [Temel Mekanikler](#temel-mekanikler)
 4. [UI/UX Tasarımı](#uiux-tasarımı)
-5. [Teknik Mimarı](#teknik-mimarı)
+5. [Teknik Mimari](#teknik-mimari)
 6. [Geliştirilecek Dosyalar](#geliştirilecek-dosyalar)
 7. [Geliştirme Sırası](#geliştirme-sırası)
+8. [Sonraki Fazlar](#sonraki-fazlar)
 
 ---
 
@@ -23,18 +24,64 @@
 
 ### Konsept
 
-QUADRIX Co-op Modu, iki oyuncuyu **20 sütunlu ortak bir oyun alanına** yerleştirerek tasarlanmış bir kooperatif puzzle oyunudur. Sol taraf (10 sütun) Oyuncu 1, sağ taraf (10 sütun) Oyuncu 2 tarafından kontrol edilir. Satırlar yalnızca tüm 20 hücre dolduğunda temizlenir — bu mekanik doğal olarak **iletişim, koordinasyon ve karşılıklı bağımlılık** yaratır.
+QUADRIX Co-op Modu, iki oyuncuyu **20 sütunlu ortak bir oyun alanına** yerleştiren yerel bir kooperatif modudur. Sol tarafın 10 sütunu Oyuncu 1'e, sağ tarafın 10 sütunu Oyuncu 2'ye aittir. Satırlar yalnızca tüm 20 hücre dolduğunda temizlenir. Bu yapı oyunu yarış değil, koordinasyon oyunu haline getirir.
+
+### V1 Hedefi
+
+Bu belge artık ilk oynanabilir sürüme odaklıdır. İlk sürümün hedefi:
+
+- Aynı cihazda iki oyunculu, sorunsuz çalışan **local endless co-op**
+- Tek ortak 20x20 tahta
+- İki aktif parça, bağımsız parça akışları
+- Ortak hold slotu ile takım içi anlık parça aktarımı
+- Spawn bazlı freeze sistemi
 
 ### Hedef Kitle
 
-- Arkadaşlarla aynı cihazda oynayan casual oyuncular
-- Online co-op'u Steam üzerinden deneyimlemek isteyenler
-- Takım çalışmasını önemseyen oyun grupları
+- Aynı cihazda birlikte oynamak isteyen iki oyuncu
+- Koordinasyon ve iletişim odaklı puzzle deneyimi arayanlar
+- Gelecekte online co-op'a genişleyebilecek bir temel bekleyen oyuncular
 
 ### Oyun Süresi
 
-- **Sonsuz Mod:** 5-30 dakika
-- **Kampanya Hedefleri:** 3-10 dakika per seviye
+- **Local Endless V1:** 5-30 dakika
+
+---
+
+## ✅ V1 Kapsamı
+
+### V1 İçinde Olanlar
+
+- Local endless co-op
+- P1: WASD, P2: yön tuşları
+- Tek ortak board
+- Ortak team score
+- Katkı yüzdesi göstergesi
+- Tek ortak hold slotu
+- Freeze ve unfreeze akışı
+
+### V1 Dışında Olanlar
+
+- Online co-op
+- Campaign objective entegrasyonu
+- Ayrı co-op achievement seti
+- Ayrı co-op settings ekranı
+- Gelişmiş netcode / Steam lobby akışı
+
+### Sabitlenen Tasarım Kararları
+
+| Konu | Karar |
+|------|-------|
+| İlk sürüm | Sadece local endless co-op |
+| Teknik başlangıç | PvP akışını temel alan coop fork yaklaşımı |
+| Freeze tetikleme | Yeni parça spawn edilemezse freeze |
+| Çift freeze | Anında game over |
+| Unfreeze | Alan açıldıktan sonra bir sonraki düşüş tickinde |
+| Hold | Tek ortak slot, iki oyuncu da anında kullanabilir |
+| Kontroller | P1 WASD, P2 yön tuşları |
+| Skor | Team score + katkı yüzdesi |
+| Online | Daha sonraki faz |
+| Campaign | Daha sonraki faz |
 
 ---
 
@@ -48,130 +95,127 @@ QUADRIX Co-op Modu, iki oyuncuyu **20 sütunlu ortak bir oyun alanına** yerleş
 │                   │                     │
 │  [████████░░]     │  [░░████████]       │
 │  [██████░░░░]     │  [██░░░░░░░░]       │
-│  [████████████]   │  [████████████]     │ ← 20/20 dolu!
-├─────────────────┼─────────────────┤
-│ P1: 3 satır hazır │ P2: 3 satır hazır │
+│  [██████████]     │  [██████████]       │ ← 20/20 dolu!
 └─────────────────────────────────────────┘
 ```
 
-- **Toplam:** 20 sütun × satır sayısı normal oyun alanındaki satır sayısı olacak
-- **P1 Bölgesi:** Sütun 1-10
-- **P2 Bölgesi:** Sütun 11-20
-- **Orta Çizgi:** Ince ve belirgin divider
+- **Toplam board:** 20 sütun × 20 satır
+- **P1 bölgesi:** sütun 0-9
+- **P2 bölgesi:** sütun 10-19
+- **Orta çizgi:** ince, sürekli görünen sert ayraç
+- Parçalar hiçbir koşulda karşı tarafa geçemez
 
 ### 2. Satır Temizleme Mantığı
 
-Bir satır **yalnızca tüm 20 hücre doluysa** temizlenir:
+Bir satır yalnızca tüm 20 hücre doluysa temizlenir:
 
 ```
 Satır Durumu                  Sonuç
 ─────────────────────────────────────────
-│████████████│░░░░░░░░░░│   → Temizlenmez
-│████████████│██████████│   → ✅ TEMİZLENİR
+│██████████│░░░░░░░░░░│   → Temizlenmez
+│██████████│██████████│   → ✅ TEMİZLENİR
 │░░░░░░░░░░│██████████│   → Temizlenmez
 ```
 
-**Skor Hesabı:**
-- 1 satır temizleme: 100 puan (Team Score + Bireysel katkı kaydedilir)
-- 2 satır aynı anda: 300 puan (senkron bonus +100)
-- 3 satır: 500 puan
-- 4 satır: 800 puan
+### 3. Parça Dağılımı
 
----
-
-## 📋 Oyun Kuralları
-
-### Kural 1: Dondurma Sistemi
-
-**Durum:** Oyuncu 2'nin tahtası doldu (20 satır)
-
-```
-T=0s    : P2 son parçasını yerleştirdi
-T=0.5s  : P2 tahtası tamamen dolu → DONDURULDU
-          • P2'nin ekranında "Waiting for P1..." yazar
-          • P2'ye yeni parça GELMİYOR
-          • P2 input almıyor (tuşlar çalışmıyor)
-
-T=5s    : P1 kendi yarısını doldurup satırı temizledi
-T=5.5s  : Satır temizlendi → P2'nin tahtasında boşluk oluştu
-          • P2 dondurma kurtuldu → eline parça geliyor
-          • P2 yeniden kontrol alıyor
-```
-
-**Teknik Detay:**
-```python
-# CoopGame._check_freeze_status() içinde
-def _check_freeze_status(self) -> None:
-    if self._is_player_section_full(player=1):
-        self.board.p1_frozen = True
-    if self._is_player_section_full(player=2):
-        self.board.p2_frozen = True
-
-def _is_player_section_full(self, player: int) -> bool:
-    """Oyuncunun bölgesindeki en üst satırda dolu hücre var mı?"""
-    cols = self.board.P1_COLS if player == 1 else self.board.P2_COLS
-    return any(self.board.occupancy[0][col] for col in cols)
-```
-
-### Kural 2: Parça Sınırı (Sert Sınır)
-
-Parçalar **orta çizgide kesin olarak durur** — karşı tarafa hiçbir şekilde geçemez:
-
-```
-Parça: L-Tetromino (P1'de)
-├─ Sütun 8, 9 doldururken 10'a ulaşmaya çalışırsa
-└─ DUVARA ÇARPAR → Sütun 10'a geçemez
-
-Sonuç: Parça rotasyon/hareket yapamaz, geçersiz konumdadır
-```
-
-### Kural 3: Parça Dağılımı (Bağımsız)
-
-P1 ve P2 **tamamen farklı rastgele parça sıraları** alır:
+P1 ve P2 tamamen bağımsız parça akışları alır:
 
 ```
 Sıra    P1 Parçası    P2 Parçası
 ────────────────────────────────
-1       I (Çubuk)     Z (Zikzak)
-2       O (Kare)      T (T-şekli)
-3       L (L-şekli)   S (S-şekli)
+1       I             Z
+2       O             T
+3       L             S
 ...     ...           ...
 ```
 
-**Avantaj:** Oyuncuların farklı stratejileri öğrenmesi, farklı zorluklar yaşaması daha organik co-op hissini yaratır.
+Bu sayede iki oyuncu aynı problemi farklı şekillerde çözer ve co-op hissi doğal kalır.
 
-### Kural 4: Hız Sistemi (Aynı Hız)
+### 4. Dondurma Sistemi
 
-Her iki oyuncu **aynı seviyede hızlanır:**
+Freeze, oyuncunun yeni parçası kendi alanında **spawn edilemediği anda** devreye girer.
+
+**Davranış:**
+
+- O oyuncuya yeni aktif parça verilmez
+- Input geçici olarak kapanır
+- Ekranda bekleme overlay'i görünür
+- Diğer oyuncu oyuna devam eder
+
+**Unfreeze:**
+
+- Satır temizliği sonrası ilgili oyuncunun alanında spawn boşluğu oluşursa
+- Oyuncu hemen değil, **bir sonraki düşüş tickinde** yeniden oyuna döner
+
+**Çift freeze:**
+
+- İki oyuncu da aynı anda spawn edemez duruma düşerse oyun biter
 
 ```
-Temizlenen Satır    Seviye    Düşüş Hızı (ms)
-─────────────────────────────────────────────
-0-10                1         800ms
-11-30               2         700ms
-31-60               3         600ms
-...
+T=0s    : P2 parçasını kilitledi
+T=0.1s  : Yeni P2 parçası spawn testinden geçemedi → P2 frozen
+T=4s    : P1 ortak satırı tamamladı ve temizledi
+T=4.1s  : P2 alanında yeniden boşluk oluştu
+T=4.8s  : Bir sonraki düşüş tickinde P2 için spawn tekrar denendi → oyun devam
 ```
 
-Her oyuncu kendi satır sayısını izlerken, **hız global**dir. Biri daha hızlı temizlese bile diğeri yavaşlamaz.
+### 5. Parça Sınırı
 
-### Kural 5: Skor Sistemi (Hibrit)
+Parçalar orta çizgide sert duvara çarpar:
 
 ```
-Ekranda Gösterilen:
-
-╔════════════════════════════════════╗
-║       TEAM SCORE: 2,400            ║
-╠════════════════════════════════════╣
-║ P1 Katkı: 1,200 (50%)              ║
-║ P2 Katkı: 1,200 (50%)              ║
-╚════════════════════════════════════╝
+Parça: L-Tetromino (P1'de)
+├─ Sağa kayarken P2 alanına taşmaya çalışırsa
+└─ Hareket veya rotasyon geçersiz sayılır
 ```
 
-**Hesaplama:**
-- Satır temizlenmesi = +100 puan / satır
-- Her iki oyuncu da eşit kredisi alır (doldurdukları sütunları sayar)
-- Bireysel katkı oranı = (P1 dolu sütun sayısı / 10) × toplam skor
+Bu kural rotasyon sırasında da geçerlidir.
+
+### 6. Hız Sistemi
+
+V1'de hız **ortak global hız** olarak çalışır. İki oyuncu farklı akışta parça oynasa da düşüş temposu tek değerdir.
+
+- Seviye artışı takımın toplam temizlediği satırlara bağlıdır
+- İki oyuncudan biri daha rahat oynasa bile diğerine ayrı hız uygulanmaz
+- Amaç rekabet değil, ortak ritimdir
+
+### 7. Skor Sistemi
+
+V1 HUD'da ana skor kaynağı **team score** olacaktır.
+
+- Team score, co-op board'un tek resmi skoru olarak tutulur
+- Katkı yüzdesi, temizlenen satır anlarındaki katkıdan türetilen yardımcı bir göstergedir
+- V1'de katkı yüzdesi yalnızca görsel geri bildirimdir; asıl ilerleme metriği team score'dur
+
+**Katkı yüzdesi kuralı:**
+
+- Her clear anında katkı iki taraf arasında paylaştırılır
+- V1'de bu gösterim yaklaşık bir HUD metriğidir
+- Sert 10+10 alan bölünmesi nedeniyle bu oran çoğu senaryoda 50/50'ye yakın görünür
+- Gerçek parça sahipliği takibi V1 dışında bırakılmıştır
+
+### 8. Ortak Hold Sistemi
+
+V1'in en ayırt edici mekaniklerinden biri **tek ortak hold slotu** olacaktır.
+
+**Kural:**
+
+- Hold slotu takımın ortak deposudur
+- P1 elindeki parçayı hold'a koyabilir
+- P2 isterse o parçayı hemen çekebilir
+- Aynı şekilde P2'nin bıraktığı parça da P1 tarafından kullanılabilir
+
+**Handoff davranışı:**
+
+- Hold'daki parça oyuncular arasında stratejik aktarım aracıdır
+- Amaç klasik kişisel hold değil, aktif takım koordinasyonudur
+
+**Denge kuralı:**
+
+- Her oyuncu, elindeki aktif parça için bir kez hold kullanabilir
+- Aynı aktif parça sonsuz hold zincirine sokulamaz
+- Ancak diğer oyuncu hold slotunu kendi aktif parçasıyla hemen kullanabilir
 
 ---
 
@@ -181,418 +225,321 @@ Ekranda Gösterilen:
 
 ```
 ┌────────────────────────────────────────────────────┐
-│  QUADRIX CO-OP  |  Level: 2  |  Time: 3:45         │
+│  QUADRIX CO-OP   LEVEL 3   TIME 04:12              │
+├────────────────────────────────────────────────────┤
+│                 TEAM SCORE: 4,800                  │
+│             P1 Katkı %50   P2 Katkı %50            │
 ├────────────────────────────────────────────────────┤
 │                                                    │
-│  ┌──────────────────────────────────────────────┐ │
-│  │ P1 SCORE: 1,200  │  TEAM: 2,400  │  P2: 1,200
-│  ├──────────┬───────┼───────┬────────┤           │
-│  │          │       │       │        │           │
-│  │  ████    │  ███  │ ████  │  ████  │           │
-│  │ ████░    │ ░█████ │  ███░ │ ░████  │           │
-│  │████░░░  │ ░░████ │ ░░███ │ ░░███░ │           │
-│  │          │       │ (P2 bekleniyor)            │
-│  └──────────┴───────┼───────┴────────┘           │
-│  Next P1: [I]       │  Next P2: [Z]              │
-│  Hold: [O]          │  Hold: [T]                 │
+│  ┌──────────────────────────────────────────────┐  │
+│  │              20 SÜTUN ORTAK BOARD           │  │
+│  │      P1 ALANI        │       P2 ALANI       │  │
+│  │                      │   (WAITING FOR P1)   │  │
+│  └──────────────────────────────────────────────┘  │
+│                                                    │
+│  Next P1: [I]     Shared Hold: [T]     Next P2:[Z]│
 └────────────────────────────────────────────────────┘
 ```
 
-### 2. Dondurma Ekranı (P2 Dolu)
+### 2. Freeze Overlay
 
 ```
 ┌────────────────────────────────────────────────────┐
-│  P2 WAITING FOR P1                                 │
+│  P2 WAITING FOR SPACE                              │
 ├────────────────────────────────────────────────────┤
-│  P2'nin tahtası TAMAMEN DOLU                       │
+│  P2 yeni parçasını spawn edemiyor                  │
 │                                                    │
-│  ⏳ P1 1 daha satır temizlemeli...                │
+│  P1 ortak satırı tamamlayıp alan açmalı            │
 │                                                    │
-│  [Animasyonlu pulse efekti]                        │
-│  "Come on P1!" sesi (opsiyonel)                    │
+│  Satır temizlenirse P2 bir sonraki tickte döner    │
 └────────────────────────────────────────────────────┘
 ```
 
 ### 3. Satır Temizleme Animasyonu
 
-```
-Seçenek A: Orta çizgiden patla
-├─ Satır 15 de 20 hücre dolmuş
-├─ Orta çizgiden başlayarak iki tarafa açılan efekt
-└─ "SYNCED!" yazısı ekrana patlayan partiküller ile
+- Orta çizgiye doğru veya orta çizgiden dışarı açılan takım vurgusu
+- Tek oyuncu başarısı gibi değil, ortak clear hissi veren efekt
+- Sesler mevcut clear seslerinden başlayabilir; V1'de yeni ses paketi şart değil
 
-Seçenek B: Takım kutlaması
-├─ Her iki tarafta da farklı renkli flash
-├─ Ses: Güçlü drum + cheering
-└─ +100 combo bonus göstergesi
-```
+### 4. Hold Göstergesi
 
-### 4. Minimal Görsel Ayırım
+Shared hold slotu HUD'da tam ortada veya iki oyuncunun arasında konumlanmalıdır.
 
-- **Orta çizgi:** İnce, gri veya açık renkli divider (5-10px)
-- **Blok renkleri:** Her iki tarafta da aynı (Tetris standart 7 renk)
-- **Arka plan:** Birleşik, her iki tarafta da aynı
-- **Hiçbir renk tonlama:** P1'i mavi, P2'yi kırmızı yapmuyoruz
+- Kişisel hold kutusu yerine tek ortak kutu
+- Son bırakan oyuncu küçük ikon veya metinle işaretlenebilir
+- V1'de bu işaretleme opsiyoneldir
+
+### 5. Minimal Görsel Ayırım
+
+- Orta çizgi sürekli görünür
+- P1 ve P2 renk tonlarıyla ayrılmaz
+- Aynı tema ve aynı blok paleti korunur
+- Co-op hissi görsel kutuplaşmayla değil, mekanikle oluşturulur
 
 ---
 
-## 🏗️ Teknik Mimarı
+## 🏗️ Teknik Mimari
 
-### Mimarı Diyagramı
+### Mimari Yaklaşım
+
+V1, sıfırdan bağımsız bir sistem yerine **PvP akışını temel alan coop fork yaklaşımı** ile geliştirilecektir.
+
+Bu şu anlama gelir:
+
+- PvP'deki pencere, pause, input ritmi ve genel oyun akışı referans alınır
+- Ancak iki ayrı board modeli bırakılır
+- Yerine tek ortak 20 sütunlu board kullanılır
+- Rekabet mantıkları çıkarılır, koordinasyon mantıkları eklenir
+
+**Önemli karar:**
+
+- Amaç doğrudan PvPGame'i aynen kullanmak değildir
+- Amaç PvP'deki hazır iki oyunculu akıştan faydalanıp co-op'a uygun tek-board yapıya dönüştürmektir
+- Bu nedenle başlangıç implementasyonu pratikte bir fork/kopyala-budala yaklaşımı olabilir
+
+### Yüksek Seviye Diyagram
 
 ```
 ┌─────────────────────────────────────────────────┐
-│           coop_game.py  (CoopGame)              │
-│  (Ana oyun döngüsü, dondurma mantığı,           │
-│   team score, input yönetimi)                   │
+│              coop_game.py  (CoopGame)           │
+│  PvP akışından türetilmiş yerel co-op döngüsü   │
+│  tek ortak board, çift aktif parça, shared hold │
 └────────┬───────────────────────────────┬────────┘
          │                               │
-    ┌────▼─────────┐        ┌────────────▼────┐
-    │ coop_board.py│        │ coop_renderer.py│
-    │ (CoopBoard)  │        │ (Render logic,  │
-    │ width=20     │        │  orta çizgi,    │
-    │ Board extend)│        │  freeze overlay)│
-    └──────────────┘        └─────────────────┘
+    ┌────▼─────────┐               ┌─────▼──────────┐
+    │ coop_board.py│               │ main/menu akışı│
+    │ width = 20   │               │ coop_mode route│
+    └──────────────┘               └────────────────┘
          │
-         ├──► board.py          (Board — base class, width parametresiyle)
-         ├──► pieces.py         (Piece, create_piece_by_index, SHAPES)
-         ├──► constants.py      (BOARD_HEIGHT, COLORS, BLACK...)
-         ├──► sound.py          (SoundManager — ses geri bildirimi)
-         ├──► localization.py   (t() — çeviri fonksiyonu)
-         ├──► retro_style.py    (draw_glass_panel, get_font)
-         ├──► ui_theme.py       (UIFonts, UIColors)
-         ├──► gamepad_manager.py (İki oyuncu input)
-         └──► platform_utils.py  (create_display, normalize_mouse_pos)
+         ├──► board.py          (genişlik parametreli temel board)
+         ├──► pvp_game.py       (referans alınan iki oyunculu akış)
+         ├──► game.py           (genel draw/spawn/board ölçek mantığı)
+         ├──► pieces.py         (parça üretimi)
+         ├──► localization.py   (yeni HUD ve durum metinleri)
+         └──► main.py           (placeholder coop action yerine gerçek launch)
 ```
 
-> **Önemli:** `CoopGame` doğrudan `object`'ten türetilecek. `PvPGame`'den miras almak **yanlıştır** — `PvPGame` 2 ayrı `Board`, eleme sistemi ve VS paneli başlatır; bunların hiçbiri co-op'ta gerekmez. `PvPGame`'in ortak utility metodları (`_ui_scale`, `_sx`, ses yönetimi) `CoopGame` içine kopyalanacak.
-
-### Sınıf Yapısı
+### Temel State Yapısı
 
 ```python
-# ───────────────────────────────────────
-# src/coop_board.py
-# ───────────────────────────────────────
-from board import Board
-from constants import BLACK
-
-class CoopBoard(Board):
-    """20 sütunlu co-op oyun tahtası.
-    
-    P1 bölgesi: sütun 0-9
-    P2 bölgesi: sütun 10-19
-    Satır yalnızca tüm 20 hücre doluysa temizlenir.
-    """
-    TOTAL_COLS: int = 20
-    P1_COLS: range = range(0, 10)
-    P2_COLS: range = range(10, 20)
-
-    def __init__(self) -> None:
-        # Board.__init__ width/height parametrelerini zaten destekliyor.
-        # super() çağrısı tüm grid'leri (occupancy, texture_grid, gold,
-        # owners...) doğru şekilde başlatır.
-        super().__init__(width=20, height=20)
-        self.p1_frozen: bool = False
-        self.p2_frozen: bool = False
-
-    def is_valid_position(self, piece, dx: int = 0, dy: int = 0,
-                          player: int = 0) -> bool:
-        """Parça sınır kontrolü — player verilmişse bölge sınırı da kontrol edilir.
-        
-        Board.is_valid_position imzasıyla uyumlu (dx, dy).
-        Ek player parametresi orta çizgiyi zorlar.
-        """
-        if player != 0:
-            allowed_cols = self.P1_COLS if player == 1 else self.P2_COLS
-            # piece.get_cells() -> [(abs_x, abs_y), ...]
-            for px, py in piece.get_cells():
-                if (px + dx) not in allowed_cols:
-                    return False
-        # Zemin/occupancy kontrolü üst sınıfa bırakılır
-        return super().is_valid_position(piece, dx, dy)
-
-    # Board.clear_lines() width=20 üzerinden çalışacağı için
-    # override GEREKMİYOR. Mevcut cascade loop doğru çalışır.
-
-
-# ───────────────────────────────────────
-# src/coop_game.py  (iskelet)
-# ───────────────────────────────────────
-from coop_board import CoopBoard
-from pieces import Piece, create_piece_by_index
-from sound import SoundManager
-from localization import t
-from ui_theme import UIFonts
-import random
-
 class CoopGame:
-    """Co-op oyun döngüsü — PvPGame'den değil object'ten türer."""
-
-    def __init__(self, screen, sound_manager=None,
-                 settings_manager=None) -> None:
-        self.screen = screen
-        self.settings_manager = settings_manager
-        self.sound: SoundManager = sound_manager or SoundManager()
-
-        # Tek ortak tahta (20 sütun)
+    def __init__(self, ...):
         self.board = CoopBoard()
 
-        # Birbirinden bağımsız parça sıraları
-        self.p1_current_piece: Piece | None = self._spawn_piece(player=1)
-        self.p1_next_piece:    Piece | None = self._spawn_piece(player=1)
-        self.p2_current_piece: Piece | None = self._spawn_piece(player=2)
-        self.p2_next_piece:    Piece | None = self._spawn_piece(player=2)
+        self.p1_current_piece = ...
+        self.p1_next_piece = ...
+        self.p2_current_piece = ...
+        self.p2_next_piece = ...
 
-        # Skor
-        self.team_score: int = 0
-        self.p1_contribution: int = 0  # Bireysel katkı (puan bazlı)
-        self.p2_contribution: int = 0
+        self.shared_hold_piece = None
+        self.p1_hold_used = False
+        self.p2_hold_used = False
 
-        # Oyun durumu
-        self.game_over: bool = False
-        self.paused: bool = False
+        self.p1_frozen = False
+        self.p2_frozen = False
 
-        # Zamanlama
-        self.fall_time_p1: int = 0
-        self.fall_time_p2: int = 0
-        self.fall_speed:   int = 800  # ms — her iki oyuncu aynı global hız
-
-    # ── Parça üretimi ─────────────────────────────────────
-    def _spawn_piece(self, player: int) -> Piece:
-        """Oyuncunun bölgesinde merkeze konumlanmış yeni parça."""
-        start_x = 3 if player == 1 else 13  # P1: 0-9, P2: 10-19
-        idx = random.randint(0, 6)
-        return create_piece_by_index(idx, x=start_x, y=0)
-
-    # ── Dondurma mantığı ──────────────────────────────────
-    def _is_player_section_full(self, player: int) -> bool:
-        """Oyuncunun bölgesinin en üst satırında dolu hücre var mı?"""
-        cols = self.board.P1_COLS if player == 1 else self.board.P2_COLS
-        return any(self.board.occupancy[0][col] for col in cols)
-
-    def _check_freeze_status(self) -> None:
-        if self._is_player_section_full(player=1):
-            self.board.p1_frozen = True
-        if self._is_player_section_full(player=2):
-            self.board.p2_frozen = True
-
-    def _apply_unfreeze_if_needed(self) -> None:
-        """Satır temizlendikten sonra donmuş oyuncuyu kurtarır."""
-        if self.board.p1_frozen and not self._is_player_section_full(1):
-            self.board.p1_frozen = False
-        if self.board.p2_frozen and not self._is_player_section_full(2):
-            self.board.p2_frozen = False
-
-    # ── Skor ─────────────────────────────────────────────
-    @staticmethod
-    def _calc_score(cleared: int, level: int = 1) -> int:
-        """Nintendo Guideline benzeri puan hesabı."""
-        table = [0, 100, 300, 500, 800]
-        return table[min(cleared, 4)] * level
-
-    # ── Ana güncelleme döngüsü ────────────────────────────
-    def update(self, dt_ms: int) -> None:
-        """Her frame çağrılır. dt_ms = delta time milisaniye."""
-        # P1 düşüş
-        if not self.board.p1_frozen:
-            self.fall_time_p1 += dt_ms
-            if self.fall_time_p1 >= self.fall_speed:
-                self.fall_time_p1 = 0
-                self._step_piece(player=1)
-
-        # P2 düşüş (dondurulmamışsa)
-        if not self.board.p2_frozen:
-            self.fall_time_p2 += dt_ms
-            if self.fall_time_p2 >= self.fall_speed:
-                self.fall_time_p2 = 0
-                self._step_piece(player=2)
-
-        # Satır temizleme (her iki oyuncudan sonra)
-        cleared = self.board.clear_lines()   # Board.clear_lines() width=20 ile çalışır
-        if cleared > 0:
-            gained = self._calc_score(cleared)
-            self.team_score += gained
-            self._apply_unfreeze_if_needed()
-            # Seviye = (toplam satır // 5) + 1 → Board otomatik hesaplar
-
-    def _step_piece(self, player: int) -> None:
-        """Parçayı bir adım aşağı düşür; zemine değdiyse kilitle."""
-        piece = self.p1_current_piece if player == 1 else self.p2_current_piece
-        if piece is None:
-            return
-        if self.board.is_valid_position(piece, dy=1, player=player):
-            piece.y += 1
-        else:
-            self.board.lock_piece(piece)   # Board.lock_piece() → clear_lines'ı çağırır
-            self._check_freeze_status()
-            # Yeni parça üret
-            if player == 1:
-                self.p1_current_piece = self.p1_next_piece
-                self.p1_next_piece    = self._spawn_piece(1)
-            else:
-                self.p2_current_piece = self.p2_next_piece
-                self.p2_next_piece    = self._spawn_piece(2)
+        self.team_score = 0
+        self.p1_contribution_pct = 50
+        self.p2_contribution_pct = 50
 ```
+
+### Kritik Metotlar
+
+- `_spawn_piece(player)`
+- `_try_spawn_for_player(player)`
+- `_lock_piece(player)`
+- `_update_freeze_state_after_lock(player)`
+- `_try_unfreeze_players()`
+- `_use_shared_hold(player)`
+- `update(dt_ms)`
+- `handle_input()`
+- `draw()`
+
+### V1 İçin Uygulama Notları
+
+- Mevcut geniş board desteği yeniden kullanılmalıdır
+- Çekirdek draw mantığı ilk aşamada coop_game içinde kalabilir
+- Ayrı coop_renderer dosyası V1 için zorunlu değildir
+- Mevcut PvP tuş düzeni doğrudan başlangıç varsayılanı olarak kullanılabilir
 
 ---
 
 ## 📁 Geliştirilecek Dosyalar
 
-### Yeni Dosyalar
+## V1 Yeni Dosyalar
 
-| Dosya | Amaç | Dayandığı API / Sınıf |
-|---|---|---|
-| `src/coop_board.py` | 20 sütunlu ortak tahta | `Board(width=20, height=20)` — `super().__init__()` ile |
-| `src/coop_game.py` | Co-op oyun döngüsü | `object` — bağımsız, `PvPGame`'den türemez |
-| `src/coop_renderer.py` | Co-op render pipeline | `retro_style.draw_glass_panel()`, `UIFonts`, `UIColors` |
+| Dosya | Amaç |
+|---|---|
+| `src/coop_board.py` | 20 sütunlu ortak tahta ve orta çizgi sınır kontrolü |
+| `src/coop_game.py` | Yerel co-op ana oyun sınıfı |
 
-> **Not:** Ayrı bir `CoopPlayer` sınıfına gerek yok. Parça durumu `CoopGame` içinde `p1_current_piece` / `p2_current_piece` alanları olarak tutulur. `Piece` ve `create_piece_by_index` doğrudan `pieces.py`'den kullanılır.
+## V1 Modifiye Edilecek Dosyalar
 
-### Modifiye Edilecek Dosyalar
+| Dosya | Değişiklik |
+|---|---|
+| `src/main.py` | `coop_mode` placeholder yerine gerçek oyun akışı başlatılır |
+| `src/menu.py` | Mevcut co-op kartı placeholder durumundan çıkarılır |
+| `src/localization.py` | Co-op HUD, freeze ve shared hold metinleri eklenir |
 
-| Dosya | Değişiklik | İlgili Fonksiyon/Bölge |
-|---|---|---|
-| `src/menu.py` | "Co-op" mod kartı ekle | `_draw_main_dashboard_tile()`, `_menu_panel_content_scale()` |
-| `src/game_modes.py` | `CoopMode` sınıfı/kaydı ekle | Dosyanın sonuna eklenir |
-| `src/localization.py` | `coop_*` anahtar kelimeleri ekle | Her dil bloğuna (TR, EN, DE ...) |
-| `src/campaign/objectives.py` | Co-op hedef tipleri ekle | `CoopSurvive`, `CoopClear`, `CoopSync` |
-| `src/gamepad_manager.py` | Co-op tuş bağlaması | Mevcut `pvp` kontrol şeması yanına `coop` bloğu |
-| `src/steam_networking.py` | Online co-op session | `PvPSession` benzeri `CoopSession` — bu dosya online altyapıyı barındırır |
-| `src/ui_components.py` | Dondurma overlay bileşeni | `draw_freeze_overlay(screen, player, message)` |
+## V1'de Bilinçli Olarak Dokunulmayacak Alanlar
+
+| Dosya/Alan | Neden |
+|---|---|
+| `src/steam_networking.py` | Online co-op V1 scope dışında |
+| `src/campaign/objectives.py` | Campaign entegrasyonu V1 scope dışında |
+| `src/game_modes.py` | V1 co-op ayrı entry akışıyla ilerleyebilir |
+| `src/sound.py` | İlk sürüm mevcut seslerle çıkabilir |
 
 ---
 
 ## 🚀 Geliştirme Sırası
 
-### Faz 1: Temel Mekanik (Hafta 1)
+### Faz 1: Core Local Co-op
 
-**Hedef:** Yerel 2 oyuncu koşu durumu
+**Hedef:** Oynanabilir, local endless çekirdek döngü
 
 1. `coop_board.py` oluştur
-   - 20 sütun grid
-   - `is_valid_position()` — sert sınır kontrolü
-   - `check_and_clear_rows()` — 20 hücre temizleme
-   - Dondurma state'leri
+   - 20 sütunlu board
+   - P1 ve P2 sütun sınırları
+   - Orta çizgi sert duvar kontrolü
 
-2. `coop_player.py` oluştur
-   - `player_id` (1 veya 2) ile kontrol
-   - Kendi yarısını temsil etsin
+2. `coop_game.py` oluştur
+   - PvP akışını temel alan yerel co-op sınıfı
+   - Tek ortak board
+   - İki aktif parça ve iki next akışı
+   - Spawn bazlı freeze sistemi
+   - Çift freeze = game over
 
-3. `coop_game.py` oluştur
-   - `PvPGame` fork'la
-   - Dondurma mantığı
-   - Team Score + bireysel katkı
+3. Shared hold sistemini ekle
+   - Tek ortak hold slotu
+   - İki oyuncu için anlık handoff
+   - Parça başına tek hold kullanım kuralı
 
-**Test:** Bir oyuncu doldurmuş, diğeri tamamladığında satır temizlensin
+**Test:**
 
-### Faz 2: Render & UI (Hafta 1-2)
+- P1 ve P2 aynı anda oynayabilmeli
+- Parçalar karşı tarafa taşmamalı
+- Tek oyuncu freeze olunca diğeri devam edebilmeli
+- İki oyuncu da spawn edemezse oyun bitmeli
 
-4. `coop_renderer.py` oluştur
-   - Orta çizgi
-   - İki oyuncu skoru (hibrit gösterim)
-   - Orta çizgide satır temizleme animasyonu
+### Faz 2: HUD ve Oyun Akışı
 
-5. `menu.py` genişlet
-   - Main menu > Mode > Co-op Local/Online
+**Hedef:** Oyunun okunabilir ve anlaşılır hale gelmesi
 
-6. `ui_components.py` ekle
-   - "Waiting for P1/P2..." overlay
+4. HUD düzenini kur
+   - Team score
+   - Katkı yüzdesi
+   - Shared hold göstergesi
+   - Freeze overlay
 
-**Test:** Oyun visual olarak anlaşılır hale gelsin
+5. Mevcut co-op menü aksiyonunu bağla
+   - `coop_mode` artık bilgi mesajı vermek yerine oyunu açmalı
 
-### Faz 3: Yerel Input (Hafta 2)
+6. Co-op metinlerini ekle
+   - freeze bekleme mesajları
+   - shared hold etiketleri
+   - coop başlık ve kısa açıklamalar
 
-7. Input binding
-   - P1: OK tuşları (↑ dönüş, ← sola, → sağa, ↓ aşağı)
-   - P2: WASD (W dönüş, A sola, D sağa, S aşağı)
-   - `gamepad_manager.py` zaten var, gerek varsa tuş ataması özelleştir
+**Test:**
 
-**Test:** İki oyuncu aynı klavyeden rahat oynasın
+- Menüden co-op açılabilmeli
+- HUD'da roller ve durumlar net anlaşılmalı
+- Shared hold nerede olduğu ilk bakışta belli olmalı
 
-### Faz 4: Kampanya & Hedefler (Hafta 2-3)
+### Faz 3: Input ve Polish
 
-8. `campaign/objectives.py` genişlet
-   - `CoopSurvive(duration=120)` — 2 dakika hayatta kal
-   - `CoopClear(count=10)` — 10 satır temizle
-   - `CoopSync(count=5)` — 5 kez senkronize temizle
+**Hedef:** Rahat oynanan ilk sürüm
 
-9. Campaign level'ları oluştur
-   - Co-op Easy: 5 satır temizle
-   - Co-op Normal: 10 satır / 3 dakika
-   - Co-op Hard: 20 satır / dayanma
+7. Varsayılan keyboard düzenini sabitle
+   - P1: WASD
+   - P2: yön tuşları
 
-**Test:** Hedefler düzgün tetiklenir, yıldız sistemi çalışır
+8. Freeze ve hold davranışlarını oynanış testinden geçir
+   - özellikle anlık handoff hissi
+   - yanlışlıkla spam veya sonsuz döngü üretmemesi
 
-### Faz 5: Online Co-op (Hafta 3-4)
+9. İlk dengeleme turu
+   - hız hissi
+   - hold kullanım değeri
+   - freeze baskısı
 
-10. `steam_networking.py` genişlet
-    - Mevcut `PvPSession` altyapısını incele, benzer `CoopSession` sınıfı ekle
-    - `online_pvp_game.py`'den **fork alma** — sadece networking katmanını al
-    - Her frame'de P1/P2 parça state'ini karşı tarafa gönder (parça tipi, x, y, rotasyon)
-    - Dondurma sinyali ayrıca iletilmeli: `frozen_player: int | None`
+**Test:**
 
-11. Steam entegrasyon (`steam_integration.py` + `steam_networking.py`)
-    - Co-op session invite (mevcut `invite` fonksiyonu genişletilir)
-    - P1/P2 rol atamı: lobi sahibi P1, davet edilen P2
-    - Senkronizasyon testi: 200ms+ gecikme senaryosu
-
-**Test:** Arkadaşla internet üzerinden oynayın; dondurma state'i her iki tarafta senkronize görünmeli
-
-### Faz 6: Ses & Feedback (Hafta 4)
-
-12. `sound.py` genişlet
-    - Dondurma sesi (P2'ye "hızlan" sinyali)
-    - Satır temizleme (senkronize)
-    - Team bonus (combo ses)
-
-**Test:** Ses geri bildirimi tam hissi tamamlasın
-
-### Faz 7: Polish & Balans (Hafta 4-5)
-
-13. Playtest & bug fix
-14. Skor dengeleme
-15. Hız eğrisini test
-16. Steam achievement entegrasyonu (opsiyonel)
+- İki oyuncu aynı klavyede rahat oynayabilmeli
+- Hold taktiksel hissettirmeli
+- Oyun kaotik ama anlaşılır kalmalı
 
 ---
 
-## 📊 Tasarım Kararları Özeti
+## ⏭️ Sonraki Fazlar
 
-| Soru | Cevap | Karar |
-|------|-------|-------|
-| Kaybetme koşulu | Ortak can barı | P2 dolarsa dondurulur |
-| Dondurma mekanizmi | Tam dondurma | Input + parça durdurulur |
-| Parça sınırı | Sert sınır | Orta çizgide duvar |
-| Skor sistemi | Hibrit | Team + bireysel katkı |
-| Hız sistemi | Aynı hız | Her iki oyuncu seviyelenir |
-| Mod yapısı | İkisi de | Sonsuz + kampanya hedefleri |
-| Online | Evet | Yerel + Steam online |
-| Görsel | Minimal | Ince çizgi, aynı renkler |
-| Parça dağılımı | Bağımsız | Farklı rastgele sıralar |
-| Kontrol (local) | Tek klavye | P1: OK tuşları, P2: WASD |
+### Faz 4: Campaign Entegrasyonu
+
+Bu faz V1 sonrasına bırakılmıştır.
+
+Planlanan başlıklar:
+
+- Co-op objective türleri
+- Co-op level setleri
+- Yıldız sistemi ile entegrasyon
+
+### Faz 5: Online Co-op
+
+Bu faz V1 sonrasına bırakılmıştır.
+
+Planlanan başlıklar:
+
+- Steam lobby / invite akışı
+- Shared board authority modeli
+- Senkronizasyon stratejisi
+- Gecikme toleransı ve disconnect kuralları
+
+### Faz 6: Ses ve Özel Efektler
+
+- Co-op'a özel clear vurguları
+- Freeze sesleri
+- Shared hold geri bildirimi
+
+---
+
+## 📊 V1 Tasarım Kararları Özeti
+
+| Soru | Karar |
+|------|-------|
+| İlk sürüm nedir? | Local endless co-op |
+| Mimari başlangıç nedir? | PvP tabanlı coop fork |
+| Kaybetme koşulu nedir? | İki oyuncu da spawn edemezse game over |
+| Tek freeze olursa ne olur? | Oyuncu donar, diğeri devam eder |
+| Unfreeze ne zaman olur? | Alan açıldıktan sonraki düşüş tickinde |
+| Hold sistemi nedir? | Tek ortak slot, anlık takım handoff |
+| Kontrol düzeni nedir? | P1 WASD, P2 yön tuşları |
+| Skor nasıl gösterilir? | Team score + katkı yüzdesi |
+| Online var mı? | V1'de yok |
+| Campaign var mı? | V1'de yok |
 
 ---
 
 ## 🎯 Başarı Kriterleri
 
-Co-op modu aşağıdaki durumlarda **başarılı** kabul edilir:
+V1 co-op modu aşağıdaki durumlarda başarılı kabul edilir:
 
-- ✅ İki oyuncu sorunsuz lokal oyun oynayabiliyor
-- ✅ Dondurma mekanizmi düzgün çalışıyor (visual feedback net)
-- ✅ Satır temizleme animasyonu tatmin edici
-- ✅ Team Score doğru hesaplanıyor
-- ✅ Kampanya hedefleri co-op için kullanılabiliyor
-- ✅ Steam online session'ında senkronizasyon sorunsuz
-- ✅ Playtest sonrası oynanış **eğlenceli ve stresli** (iyi şekilde)
+- ✅ İki oyuncu menüden co-op modunu açıp aynı cihazda oynayabiliyor
+- ✅ 20 sütunlu ortak board sorunsuz çalışıyor
+- ✅ Orta çizgi sert sınır gibi davranıyor
+- ✅ Freeze sistemi spawn bazlı ve anlaşılır çalışıyor
+- ✅ Tek oyuncu freeze olduğunda diğer oyuncu akışı sürdürebiliyor
+- ✅ Çift freeze senaryosu temiz şekilde game over'a gidiyor
+- ✅ Shared hold gerçekten takım içi strateji yaratıyor
+- ✅ HUD ilk bakışta okunuyor
 
 ---
 
 ## 📝 Notlar
 
-- **Performans:** 20 sütun x 20 satır = 400 hücre. Standart 10x20'den iki kat — optimizasyon gerekebilir.
-- **Ağ Gecikmesi:** Online'da senkronizasyon kritik; mevcut Steam networking test edilmeli.
-- **UI Ölçekleme:** 20 sütun ekranda yer kaplar — Quadrix'teki responsive ölçekleme formülleri ayarlanmalı.
-- **Ses Tasarımı:** Dondurma feedback'i oyunu heyecanlı kılacak — ses önemli.
+- Mevcut geniş tahta desteği ve iki oyunculu PvP akışı V1 için önemli referans noktalarıdır.
+- Katkı yüzdesi V1'de yardımcı HUD verisidir; kesin istatistik sistemi değildir.
+- Shared hold, co-op modunun ana ayırt edici özelliği olduğu için V1'de özellikle test edilmelidir.
+- Online ve campaign fazları ayrı tasarım kararları gerektirdiğinden bilinçli olarak ertelenmiştir.
 
 ---
 
