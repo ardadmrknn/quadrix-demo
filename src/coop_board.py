@@ -18,6 +18,8 @@ class CoopBoard(Board):
         # Son clear işlemindeki katkı bilgisi
         self.last_clear_p1_cells = 0
         self.last_clear_p2_cells = 0
+        # Son clear işlemindeki satır renkleri (sweep animasyonu için)
+        self.last_clear_row_colors: dict[int, list] = {}
 
     # ------------------------------------------------------------------
     # Bölge yardımcıları
@@ -98,8 +100,11 @@ class CoopBoard(Board):
         # Temizlenecek satırları tespit et (Board ile aynı mantık)
         p1_cells = 0
         p2_cells = 0
+        row_colors: dict[int, list] = {}
         for y in range(self.height):
             if all(self.occupancy[y][x] for x in range(self.width)):
+                # Satır renklerini sil işleminden ÖNCE kaydet
+                row_colors[y] = [self.grid[y][x] for x in range(self.width)]
                 for x in range(self.width):
                     owner = self.owners[y][x]
                     if owner == "P1":
@@ -109,5 +114,6 @@ class CoopBoard(Board):
 
         self.last_clear_p1_cells = p1_cells
         self.last_clear_p2_cells = p2_cells
+        self.last_clear_row_colors = row_colors
 
         return super().clear_lines(source)

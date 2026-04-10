@@ -43,6 +43,12 @@ class _Draw:
     def rect(*a, **kw): pass
     @staticmethod
     def line(*a, **kw): pass
+    @staticmethod
+    def circle(*a, **kw): pass
+    @staticmethod
+    def polygon(*a, **kw): pass
+    @staticmethod
+    def lines(*a, **kw): pass
 _pg.draw = _Draw()
 
 class _Rect:
@@ -66,6 +72,10 @@ class _Mouse:
     @staticmethod
     def get_pos(): return (0, 0)
 _pg.mouse = _Mouse()
+class _Time:
+    @staticmethod
+    def get_ticks(): return 0
+_pg.time = _Time()
 
 _pg.event = types.ModuleType('pygame.event')
 _pg.event.get = lambda: []
@@ -80,7 +90,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 for mod_name in ('sound', 'background', 'background_effects', 'mode_skins',
                  'retro_style', 'renderers', 'renderers.jelly_renderer',
                  'themes', 'block_styles', 'platform_utils', 'localization',
-                 'ui_theme'):
+                 'ui_theme', 'sweep_effects', 'asset_manager'):
     if mod_name not in sys.modules:
         m = types.ModuleType(mod_name)
         sys.modules[mod_name] = m
@@ -97,13 +107,22 @@ import ui_theme as _ut
 class _FakeFont:
     def render(self, *a, **kw): return _Surf()
     def size(self, t): return (len(t)*8, 16)
+    def get_height(self): return 16
+    def get_linesize(self): return 18
 class _UIFonts:
     @staticmethod
     def get(sz): return _FakeFont()
 class _UIColors:
     BG_DARK = (10, 10, 20)
+    BG_MEDIUM = (20, 25, 45)
+    NEON_CYAN = (0, 240, 255)
+    NEON_GOLD = (255, 210, 0)
+    NEON_RED = (255, 50, 80)
+class _UIStyle:
+    pass
 _ut.UIFonts = _UIFonts
 _ut.UIColors = _UIColors
+_ut.UIStyle = _UIStyle
 
 # platform_utils stub
 import platform_utils as _pu
@@ -135,6 +154,7 @@ class _BM:
     def load_image(self, *a): return False
     def is_loaded(self): return False
     def draw(self, *a): pass
+    def draw_full_screen(self, *a): pass
 _bg.BackgroundManager = _BM
 
 import background_effects as _be
@@ -152,23 +172,49 @@ _ms.get_localized_skin_subtitle = lambda *a: ''
 
 import retro_style as _rs
 class _RS:
-    accent = (0,200,200); secondary = (100,100,120)
+    primary = (0, 255, 221); accent = (255, 165, 0); secondary = (255, 0, 255)
+    success = (60, 200, 120)
+    text_primary = (230, 235, 245); text_secondary = (180, 200, 220); text_muted = (120, 140, 170)
+    glass_bg = (15, 20, 40, 140); glass_border = (80, 120, 180, 100)
+    bg_color = (8, 12, 28); bg_secondary = (12, 18, 38)
     def get_font(self, *a, **kw): return _FakeFont()
+    def get_fitting_font(self, *a, **kw): return _FakeFont()
+    def get_mono_font(self, *a, **kw): return _FakeFont()
+    def render_fit_text(self, *a, **kw): return _pg.Surface((10, 10))
     def draw_glass_panel(self, *a, **kw): pass
     def draw_uniform_button(self, *a, **kw): pass
+    def draw_volume_bar(self, *a, **kw): pass
+    def _scale_menu_alpha(self, a): return a
 _rs.retro_style = _RS()
 
 import themes as _th
-_th.ThemeManager = lambda *a, **kw: type('T', (), {'current_theme': None})()
+_th.ThemeManager = lambda *a, **kw: type('T', (), {'current_theme': None, 'get_piece_color': lambda self, name: (200, 200, 200)})()
 
 import block_styles as _bs
-_bs.BlockStyleManager = lambda *a, **kw: type('B', (), {'apply_to_piece': lambda s, p: None})()
+_bs.BlockStyleManager = lambda *a, **kw: type('B', (), {
+    'apply_to_piece': lambda s, p, *a2, **kw2: None,
+    'get_texture_surface': lambda s, name: None,
+    'get_slice_bounds': lambda s, name: {'x': 0.0, 'y': 0.0, 'w': 1.0, 'h': 1.0},
+})()
 _bs.TextureSlice = None
 _bs.TextureRenderCache = lambda: {}
 
 import renderers.jelly_renderer as _jr
 _jr.draw_jelly_block = lambda *a, **kw: None
 _jr.draw_jelly_border = lambda *a, **kw: None
+
+# sweep_effects stub
+import sweep_effects as _se
+if not hasattr(_se, 'SweepCatState'):
+    class _SCS: pass
+    _se.SweepCatState = _SCS
+if not hasattr(_se, 'draw_rainbow_cat_sweep'):
+    _se.draw_rainbow_cat_sweep = lambda *a, **kw: None
+
+# asset_manager stub
+import asset_manager as _am
+if not hasattr(_am, 'load_image'):
+    _am.load_image = lambda *a, **kw: _Surf()
 
 # ====== Pre-register campaign package to bypass heavy __init__.py ======
 # campaign/__init__.py imports CampaignMode → game.py → many heavy deps.

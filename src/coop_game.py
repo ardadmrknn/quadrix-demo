@@ -4,9 +4,11 @@ PvP akışını temel alarak tek ortak 20×20 board üzerinde çalışır.
 P1 (sol 10 sütun, WASD) ve P2 (sağ 10 sütun, yön tuşları) bağımsız
 parça akışları alır; satırlar yalnızca 20/20 dolu olduğunda temizlenir.
 """
+from __future__ import annotations
 
 import pygame
 import random
+import math
 import sys
 import os
 from pathlib import Path
@@ -14,7 +16,8 @@ from pathlib import Path
 from coop_board import CoopBoard
 from pieces import Piece, SHAPES
 from constants import (
-    BOARD_WIDTH, BOARD_HEIGHT, BLACK, DAS_DELAY, DAS_REPEAT,
+    BOARD_WIDTH, BOARD_HEIGHT, BLACK, WHITE, CYAN, YELLOW, MAGENTA, GREEN, RED,
+    DAS_DELAY, DAS_REPEAT,
 )
 from sound import SoundManager
 from background import BackgroundManager
@@ -29,6 +32,8 @@ from platform_utils import (
 )
 from localization import t
 from ui_theme import UIColors, UIFonts
+from sweep_effects import SweepCatState, draw_rainbow_cat_sweep
+from asset_manager import load_image
 
 
 def _resource_path(relative_path: str) -> str:
@@ -258,6 +263,45 @@ class CoopGame:
         self._side_panel_width = 120
         self._board_grid_cache: dict = {'key': None, 'surface': None}
 
+        # --- Visual Effects (Game base ile uyumlu) ---
+        self.particles: list = []
+        self.ambient_particles: list = []
+        self.screen_shake = 0
+        self.shake_intensity = 3
+        self._screen_shake_initial = 0.0
+        self.drop_trails: list = []
+        self.line_clear_flash = False
+        self._flash_timer = 0.0
+        self.line_clear_sweep_active = False
+        self.line_clear_sweep_progress = 0.0
+        self.line_clear_sweep_rows: list[int] = []
+        self.line_clear_pending_rows: list[int] = []
+        self.line_clear_pending_colors: dict = {}
+        self.line_clear_wave_effects: list = []
+        self._sweep_cat_state = SweepCatState()
+        self._effect_surface_cache = None
+        try:
+            from effect_surface_cache import EffectSurfaceCache as _ESC
+            self._effect_surface_cache = _ESC()
+        except Exception:
+            pass
+        self.animation_multiplier = 1.0
+
+        # Falling blocks background layer
+        self.falling_blocks = None
+        if self.effects_enabled:
+            try:
+                self.falling_blocks = get_shared_falling_blocks_layer()
+            except Exception:
+                self.falling_blocks = None
+
+        # Outer background (tam ekran arka plan)
+        self.outer_background = BackgroundManager()
+        self._load_outer_background()
+
+        # Ambient particles init
+        self._init_ambient_particles()
+
     # ==================================================================
     # Kontrol çözümleme
     # ==================================================================
@@ -372,6 +416,329 @@ class CoopGame:
             if self.board_background.load_image(path):
                 break
 
+    def _load_outer_background(self):
+        for name in ('backgrounds/outer_background.png', 'backgrounds/outer_background.jpg',
+                      'backgrounds/background.png', 'backgrounds/background.jpg'):
+            path = _resource_path(name)
+            if self.outer_background.load_image(path):
+                break
+
+    def _init_ambient_particles(self):
+        """Arka plan ambient parçacıklarını oluştur."""
+        if not self.effects_enabled:
+            return
+        count = 20
+        for _ in range(count):
+            p = {
+                'x': float(random.randint(0, max(1, self.window_width))),
+                'y': float(random.randint(0, max(1, self.window_height))),
+                'vx': random.uniform(-0.15, 0.15),
+                'vy': random.uniform(0.2, 0.6),
+                'alpha': random.randint(40, 120),
+                'size': random.randint(2, 5),
+                'pulse': random.uniform(0, 6.28),
+                'pulse_speed': random.uniform(0.03, 0.08),
+                'color': random.choice([(80, 200, 255), (160, 80, 255), (80, 255, 160), (255, 200, 80)]),
+            }
+            self.ambient_particles.append(p)
+
+    # ------------------------------------------------------------------
+    # Particle effects toggle
+    # ------------------------------------------------------------------
+
+    def _particle_effects_enabled(self) -> bool:
+        if not self.effects_enabled:
+            return False
+        sm = self.settings_manager
+        if sm is None:
+            return False
+        try:
+            return bool(sm.get('particle_effects', False))
+        except Exception:
+            return False
+
+    # ------------------------------------------------------------------
+    # Textured block rendering (Game base ile uyumlu)
+    # ------------------------------------------------------------------
+
+    def draw_textured_block(self, x, y, size, color, texture_surface=None, texture_slice: TextureSlice | None = None):
+        if color is None:
+            color = (128, 128, 128)
+        if texture_surface is not None and texture_slice is not None:
+            self._draw_texture_cell(x, y, size, color, texture_surface, texture_slice)
+            draw_jelly_border(self.screen, x, y, size, color)
+            return
+        draw_jelly_block(self.screen, x, y, size, color)
+
+    def _make_texture_slice(self, piece: Piece | None, rel_x: int, rel_y: int,
+                             piece_width: int | None = None, piece_height: int | None = None) -> TextureSlice | None:
+        if not piece or not getattr(piece, 'texture_surface', None):
+            return None
+        width = piece_width if piece_width is not None else (len(piece.shape[0]) if piece.shape else 1)
+        height = piece_height if piece_height is not None else (len(piece.shape) if piece.shape else 1)
+        width = width or 1
+        height = height or 1
+        rotation = getattr(piece, 'rotation_state', 0)
+        style_key = getattr(piece, 'style_key', None) or piece.name
+        return TextureSlice(style_key, rel_x, rel_y, width, height, rotation)
+
+    def _render_texture_slice(self, surface, slice_info: TextureSlice, size: int):
+        bounds = {'x': 0.0, 'y': 0.0, 'w': 1.0, 'h': 1.0}
+        if self.block_style_manager:
+            bounds = self.block_style_manager.get_slice_bounds(slice_info.piece_name)
+        return self._texture_render_cache.render_slice(surface, slice_info, size, bounds)
+
+    def _draw_texture_cell(self, x, y, size, color, surface, slice_info: TextureSlice) -> None:
+        scaled = self._render_texture_slice(surface, slice_info, size)
+        if scaled is None:
+            return
+        self.screen.blit(scaled, (x, y))
+        self._draw_texture_border(x, y, size, color, textured=True)
+
+    def _draw_texture_border(self, x, y, size, color, textured=False) -> None:
+        if textured:
+            border_color = (255, 255, 255)
+            inner = (220, 220, 220)
+        else:
+            border_color = tuple(min(255, int(c * 1.2)) for c in color[:3])
+            inner = tuple(max(0, int(c * 0.5)) for c in color[:3])
+        pygame.draw.rect(self.screen, border_color, (x, y, size, size), 2, border_radius=4)
+        pygame.draw.rect(self.screen, inner, (x + 2, y + 2, size - 4, size - 4), 1, border_radius=3)
+
+    def _draw_custom_frame(self, rect: pygame.Rect, asset_name: str, padding: int = 0, hole_punch: bool = False) -> bool:
+        try:
+            found_path = None
+            for folder in ["assets/game_ui", "assets/ui"]:
+                p = _resource_path(f"{folder}/{asset_name}")
+                if os.path.exists(p):
+                    found_path = p
+                    break
+            if not found_path:
+                return False
+            target_w = int(rect.width + (padding * 2))
+            target_h = int(rect.height + (padding * 2))
+            img = load_image(found_path, size=(target_w, target_h), convert_alpha=True)
+            draw_x = rect.centerx - (target_w // 2)
+            draw_y = rect.centery - (target_h // 2)
+            if hole_punch and padding > 0:
+                self.screen.blit(img, (draw_x, draw_y), (0, 0, target_w, padding))
+                self.screen.blit(img, (draw_x, draw_y + target_h - padding), (0, target_h - padding, target_w, padding))
+                self.screen.blit(img, (draw_x, draw_y + padding), (0, padding, padding, rect.height))
+                self.screen.blit(img, (draw_x + target_w - padding, draw_y + padding), (target_w - padding, padding, padding, rect.height))
+            else:
+                self.screen.blit(img, (draw_x, draw_y))
+            return True
+        except Exception:
+            return False
+
+    # ------------------------------------------------------------------
+    # Screen shake
+    # ------------------------------------------------------------------
+
+    def get_shake_offset(self):
+        if self.screen_shake > 0:
+            shake_x = random.randint(-self.shake_intensity, self.shake_intensity)
+            shake_y = random.randint(-self.shake_intensity, self.shake_intensity)
+            initial = float(self._screen_shake_initial) if self._screen_shake_initial else 15.0
+            decay = max(0.0, min(1.0, float(self.screen_shake) / max(1.0, initial)))
+            return (int(shake_x * decay), int(shake_y * decay))
+        return (0, 0)
+
+    def trigger_screen_shake(self, duration: int = 8, intensity: int = 3):
+        if not self._particle_effects_enabled():
+            return
+        self.screen_shake = duration
+        self.shake_intensity = intensity
+        self._screen_shake_initial = float(duration)
+
+    # ------------------------------------------------------------------
+    # Particles
+    # ------------------------------------------------------------------
+
+    def create_lock_explosion(self, x, y, color, cell_size=25):
+        if not self._particle_effects_enabled():
+            return
+        base_color = color[:3]
+        bright = tuple(min(255, int(c * 1.3)) for c in base_color)
+        dim = tuple(max(0, int(c * 0.7)) for c in base_color)
+        white_t = tuple(min(255, c + 80) for c in base_color)
+        palette = [base_color, bright, dim, white_t, (255, 255, 255)]
+        for i in range(random.randint(6, 10)):
+            angle = (i / 8) * 2 * math.pi + random.uniform(-0.3, 0.3)
+            speed = random.uniform(2, 5)
+            self.particles.append({
+                'x': float(x), 'y': float(y),
+                'vx': math.cos(angle) * speed,
+                'vy': math.sin(angle) * speed - 1.5,
+                'life': random.randint(20, 45),
+                'max_life': 45,
+                'color': random.choice(palette),
+                'size': random.randint(2, 5),
+            })
+
+    def create_particles(self, count, x=None, y=None, colors=None, speed=5):
+        if not self._particle_effects_enabled():
+            return
+        if x is None:
+            x = random.randint(0, max(1, self.window_width))
+        if y is None:
+            y = random.randint(0, max(1, self.window_height // 2))
+        if colors is None:
+            colors = [CYAN, YELLOW, MAGENTA, GREEN, RED]
+        for _ in range(max(1, int(count * self.animation_multiplier))):
+            self.particles.append({
+                'x': float(x), 'y': float(y),
+                'vx': random.uniform(-1, 1) * speed,
+                'vy': random.uniform(-1, 1) * speed,
+                'life': random.randint(30, 60),
+                'max_life': 60,
+                'color': random.choice(colors),
+                'size': random.randint(2, 5),
+            })
+
+    def update_particles(self, dt_ms: float = 16.666):
+        dt = max(0.0, min(100.0, float(dt_ms)))
+        dt_frames = dt / 16.666
+        alive = []
+        for p in self.particles:
+            p['x'] += p['vx'] * dt_frames
+            p['y'] += p['vy'] * dt_frames
+            p['vy'] += 0.15 * dt_frames  # gravity
+            p['life'] -= 1
+            if p['life'] > 0:
+                alive.append(p)
+        self.particles = alive
+
+    def draw_particles(self):
+        if not self._effect_surface_cache:
+            return
+        cs = self.cell_size
+        ox, oy = self.board_offset_x, self.board_offset_y
+        bw = self.board.width * cs
+        bh = self.board.height * cs
+        for p in self.particles:
+            if p['life'] <= 0:
+                continue
+            ratio = p['life'] / max(1, p['max_life'])
+            alpha = int(255 * ratio)
+            size = max(1, int(p['size'] * (0.3 + 0.7 * ratio)))
+            px, py = int(p['x']), int(p['y'])
+            # Board sınırları dışında çizme
+            if px < ox - 20 or px > ox + bw + 20 or py < oy - 20 or py > oy + bh + 20:
+                continue
+            # Glow halo
+            glow_size = size * 3
+            glow_surf = self._effect_surface_cache.get_ellipse_surface(
+                (glow_size, glow_size), (*p['color'][:3], max(10, alpha // 4)))
+            self.screen.blit(glow_surf, (px - glow_size // 2, py - glow_size // 2))
+            # Core
+            core_surf = self._effect_surface_cache.get_filled_surface(
+                (size, size), (*p['color'][:3], alpha))
+            self.screen.blit(core_surf, (px - size // 2, py - size // 2))
+
+    def update_ambient_particles(self, dt_ms: float = 16.666):
+        dt = max(0.0, min(100.0, float(dt_ms)))
+        dt_frames = dt / 16.666
+        for p in self.ambient_particles:
+            p['x'] += p['vx'] * dt_frames
+            p['y'] += p['vy'] * dt_frames
+            p['pulse'] += p['pulse_speed'] * dt_frames
+            if p['y'] > self.window_height:
+                p['y'] = -10
+                p['x'] = random.uniform(0, self.window_width)
+            if p['x'] < -10:
+                p['x'] = self.window_width + 10
+            elif p['x'] > self.window_width + 10:
+                p['x'] = -10
+
+    def draw_ambient_particles(self):
+        if not self._effect_surface_cache:
+            return
+        for p in self.ambient_particles:
+            pulse_alpha = int(p['alpha'] + math.sin(p['pulse']) * 30)
+            pulse_alpha = max(30, min(180, pulse_alpha))
+            glow_size = p['size'] * 3
+            glow_surf = self._effect_surface_cache.get_ellipse_surface(
+                (glow_size, glow_size), (*p['color'][:3], pulse_alpha // 3))
+            self.screen.blit(glow_surf, (int(p['x']) - glow_size // 2, int(p['y']) - glow_size // 2))
+            core_surf = self._effect_surface_cache.get_filled_surface(
+                (p['size'], p['size']), (*p['color'][:3], pulse_alpha))
+            self.screen.blit(core_surf, (int(p['x']) - p['size'] // 2, int(p['y']) - p['size'] // 2))
+
+    # ------------------------------------------------------------------
+    # Drop trails
+    # ------------------------------------------------------------------
+
+    def create_drop_trail(self, x_px: int, y_start: int, y_end: int, color, cell_size: int):
+        if not self._particle_effects_enabled():
+            return
+        trail_h = max(1, y_end - y_start)
+        surf = pygame.Surface((cell_size, trail_h), pygame.SRCALPHA)
+        segments = max(1, trail_h // 4)
+        seg_h = trail_h / segments
+        for i in range(segments):
+            seg_alpha = int(120 * (1 - i / segments))
+            y_pos = int(i * seg_h)
+            surf.fill((*color[:3], seg_alpha), (0, y_pos, cell_size, int(seg_h) + 1))
+        self.drop_trails.append({
+            'x': float(x_px), 'y': float(y_start),
+            'alpha': 120.0, '_init_alpha': 120.0,
+            '_surf': surf, '_color': color[:3],
+            '_base_alpha': None,
+        })
+
+    def update_drop_trails(self, dt_ms: float = 16.666):
+        dt = max(0.0, min(100.0, float(dt_ms)))
+        fade_speed = 250.0  # alpha/saniye
+        alive = []
+        for t_obj in self.drop_trails:
+            t_obj['alpha'] -= fade_speed * dt / 1000.0
+            if t_obj['alpha'] > 0:
+                t_obj['_surf'].set_alpha(int(t_obj['alpha']))
+                alive.append(t_obj)
+        self.drop_trails = alive
+
+    def _draw_drop_trails(self):
+        for trail in self.drop_trails:
+            if trail['alpha'] > 0:
+                self.screen.blit(trail['_surf'], (int(trail['x']), int(trail['y'])))
+
+    # ------------------------------------------------------------------
+    # Line clear effects
+    # ------------------------------------------------------------------
+
+    def _start_line_clear_sweep(self, cleared_rows: list[int]):
+        """Satır temizleme sweep efektini başlat.
+
+        Renk verisi calling code tarafından self.line_clear_pending_colors'a
+        önceden yazılır (clear_lines ÖNCE kaydeder, sonra satırları siler).
+        """
+        if not cleared_rows or not self.effects_enabled:
+            return
+        self.line_clear_sweep_active = True
+        self.line_clear_sweep_progress = 0.0
+        self.line_clear_sweep_rows = list(cleared_rows)
+        # Flash
+        self.line_clear_flash = True
+        self._flash_timer = 80.0  # ms
+
+    def _update_line_clear_effects(self, dt_ms: float):
+        if self.line_clear_flash:
+            self._flash_timer -= dt_ms
+            if self._flash_timer <= 0:
+                self.line_clear_flash = False
+        if self.line_clear_sweep_active:
+            speed = 0.003  # progress/ms
+            self.line_clear_sweep_progress += speed * dt_ms
+            if self.line_clear_sweep_progress >= 1.0:
+                self.line_clear_sweep_active = False
+                self.line_clear_sweep_rows = []
+                self.line_clear_pending_rows = []
+                self.line_clear_pending_colors = {}
+
+    def _get_line_sweep_length_px(self, cell_size: int, cleared_count: int) -> int:
+        return max(cell_size * 3, cell_size * cleared_count * 2)
+
     # ==================================================================
     # Event sistemi (kampanya entegrasyonu)
     # ==================================================================
@@ -421,8 +788,21 @@ class CoopGame:
         piece = self.p1_current_piece if player == 'P1' else self.p2_current_piece
         if piece is None:
             return
+        start_y = piece.y
         while self.board.is_valid_position_for_player(piece, player, dy=1):
             piece.y += 1
+        # Drop trail efekti
+        if piece.y > start_y and self.effects_enabled:
+            cs = self.cell_size
+            ox, oy = self.board_offset_x, self.board_offset_y
+            for px, py_abs in piece.get_cells():
+                row_offset = py_abs - piece.y  # local row within piece
+                trail_x = ox + px * cs
+                trail_y_start = oy + (start_y + row_offset) * cs
+                trail_y_end = oy + py_abs * cs
+                if trail_y_end > trail_y_start:
+                    self.create_drop_trail(trail_x, trail_y_start, trail_y_end, piece.color, cs)
+            self.trigger_screen_shake(5, 2)
         self._lock_and_new_piece(player)
 
     # ==================================================================
@@ -485,7 +865,17 @@ class CoopGame:
 
         prev_score = self.board.score
 
-        # Kilitle — owners'a "P1" / "P2" yazılır
+        # Lock explosion parçacıkları
+        if self._particle_effects_enabled():
+            cs = self.cell_size
+            ox, oy = self.board_offset_x, self.board_offset_y
+            for px, py in piece.get_cells():
+                if py >= 0:
+                    cx = ox + px * cs + cs // 2
+                    cy = oy + py * cs + cs // 2
+                    self.create_lock_explosion(cx, cy, piece.color, cs)
+
+        # Kilitle (lock_piece_for_player → Board.lock_piece → clear_lines zinciri)
         cleared = self.board.lock_piece_for_player(piece, player)
 
         # Parça yerleştirildi event'i
@@ -516,6 +906,18 @@ class CoopGame:
 
             # Ses
             self.sound.play('line' if cleared < 4 else 'tetris')
+
+            # Line clear visual effects — CoopBoard.clear_lines() satır renklerini kaydetmiştir
+            cleared_rows = list(getattr(self.board, 'last_clear_row_colors', {}).keys())
+            if cleared_rows:
+                self.line_clear_pending_colors = dict(self.board.last_clear_row_colors)
+                self.line_clear_pending_rows = list(cleared_rows)
+                self._start_line_clear_sweep(cleared_rows)
+            # Tetris shake
+            if cleared >= 4:
+                self.trigger_screen_shake(12, 5)
+            elif cleared >= 2:
+                self.trigger_screen_shake(6, 2)
 
             # Event yayınla
             self._emit_event('lines_cleared', {
@@ -783,6 +1185,15 @@ class CoopGame:
         except Exception:
             pass
 
+        # Efekt güncellemeleri (paused/gameover'da da çalışmalı — animasyon fade'leri)
+        if self.effects_enabled:
+            self.update_particles(delta_time)
+            self.update_ambient_particles(delta_time)
+            self.update_drop_trails(delta_time)
+            self._update_line_clear_effects(delta_time)
+            if self.screen_shake > 0:
+                self.screen_shake -= 1
+
         if self.game_over or self.paused:
             return
 
@@ -1029,33 +1440,98 @@ class CoopGame:
     def _render_game(self) -> None:
         """Oyun sahnesini çiz (flip çağırmaz — alt sınıflar overlay ekleyebilir)."""
         self._calculate_layout()
-        self.screen.fill(self.mode_skin.outer_bg)
 
-        # Arka plan
-        if self.background.is_loaded():
+        skin = self.mode_skin or get_mode_skin('pvp')
+        # Board skin: classic görünüm + modun renk aksentleri
+        try:
+            from dataclasses import replace as _replace
+            classic = get_mode_skin('classic')
+            board_skin = _replace(
+                classic,
+                accent=getattr(skin, 'accent', getattr(classic, 'accent', (0, 210, 255))),
+                panel_border=getattr(skin, 'accent', getattr(classic, 'panel_border', (0, 210, 255))),
+                board_border=getattr(skin, 'accent', getattr(classic, 'board_border', (0, 210, 255))),
+                board_tint=getattr(skin, 'board_tint', getattr(classic, 'board_tint', None)),
+                grid_color=getattr(skin, 'grid_color', getattr(classic, 'grid_color', (50, 50, 80))),
+                overlay='none',
+                overlay_alpha=0,
+            )
+        except Exception:
+            board_skin = skin
+
+        # === Arka plan ===
+        if self.outer_background.is_loaded():
+            self.outer_background.draw_full_screen(self.screen)
+        elif self.background.is_loaded():
             self.background.draw(self.screen, (0, 0, self.window_width, self.window_height))
-        apply_outer_tint(self.screen, self.mode_skin)
+        else:
+            self.screen.fill(skin.outer_bg)
+        apply_outer_tint(self.screen, skin)
+
+        # Falling blocks layer
+        if self.effects_enabled and self.falling_blocks:
+            self.falling_blocks.update(self.screen)
+            self.falling_blocks.draw(self.screen)
+
+        # Ambient particles (arka plan üstünde, board altında)
+        if self.effects_enabled:
+            self.draw_ambient_particles()
+
+        # Screen shake offset
+        shake_x, shake_y = self.get_shake_offset()
 
         cs = self.cell_size
-        bw = self.board.width * cs  # 20 * cs
-        bh = self.board.height * cs  # 20 * cs
-        ox = self.board_offset_x
-        oy = self.board_offset_y
+        bw = self.board.width * cs
+        bh = self.board.height * cs
+        ox = self.board_offset_x + shake_x
+        oy = self.board_offset_y + shake_y
 
-        # Board arka planı
+        # === Board arka planı ===
         board_rect = pygame.Rect(ox, oy, bw, bh)
         if self.board_background.is_loaded():
             self.board_background.draw(self.screen, board_rect)
         else:
-            pygame.draw.rect(self.screen, (6, 6, 16), board_rect)
-        apply_board_tint(self.screen, board_rect, self.mode_skin)
-        draw_board_overlay(self.screen, board_rect, self.mode_skin)
+            pygame.draw.rect(self.screen, (4, 4, 12), board_rect)
+        apply_board_tint(self.screen, board_rect, board_skin)
+        draw_board_overlay(self.screen, board_rect, board_skin)
 
         # Grid çizgileri
         self._draw_grid(ox, oy, cs, bw, bh)
 
         # Kilitli bloklar
         self._draw_locked_blocks(ox, oy, cs)
+
+        # Line clear sweep efekti
+        if (self.effects_enabled and self.line_clear_sweep_active
+                and self.line_clear_pending_rows and self.line_clear_pending_colors):
+            cleared_count = max(1, len(self.line_clear_sweep_rows))
+            sweep_width = self._get_line_sweep_length_px(cs, cleared_count)
+            valid_rows = sorted({r for r in self.line_clear_sweep_rows if 0 <= r < self.board.height})
+            if valid_rows:
+                top_row = valid_rows[0]
+                bottom_row = valid_rows[-1]
+                group_y = oy + top_row * cs
+                group_h = max(cs, (bottom_row - top_row + 1) * cs)
+                phase = (pygame.time.get_ticks() // 80) % 8
+                sweep_x = ox + int(self.line_clear_sweep_progress * (bw + sweep_width)) - sweep_width
+                board_group_rect = pygame.Rect(ox, group_y, bw, group_h)
+                draw_rainbow_cat_sweep(self.screen, self._sweep_cat_state, board_group_rect,
+                                       sweep_x, sweep_width, phase, self.board.width)
+                # Glow
+                glow_alpha = int(70 * (1.0 - self.line_clear_sweep_progress * 0.4))
+                if glow_alpha > 0 and self._effect_surface_cache:
+                    glow_w = min(sweep_width, bw)
+                    glow_x = max(ox, sweep_x)
+                    if glow_w > 0:
+                        for row in valid_rows:
+                            row_y = oy + row * cs
+                            glow_surface = self._effect_surface_cache.get_filled_surface(
+                                (glow_w, cs), (255, 255, 255, glow_alpha))
+                            self.screen.blit(glow_surface, (glow_x, row_y))
+
+        # Drop trails
+        if self.effects_enabled and self.drop_trails:
+            self._draw_drop_trails()
 
         # Orta çizgi
         self._draw_midline(ox, oy, cs, bh)
@@ -1068,11 +1544,20 @@ class CoopGame:
         self._draw_piece(self.p1_current_piece, ox, oy, cs)
         self._draw_piece(self.p2_current_piece, ox, oy, cs)
 
+        # Board frame (PNG)
+        if not self._draw_custom_frame(board_rect, "board_frame.png", padding=88, hole_punch=True):
+            border_color = getattr(board_skin, 'board_border', (0, 210, 255))
+            pygame.draw.rect(self.screen, border_color, board_rect, 3)
+
         # HUD
         self._draw_hud(ox, oy, cs, bw, bh)
 
         # Side paneller (next + hold)
         self._draw_side_panels(ox, oy, cs, bw, bh)
+
+        # Particles
+        if self.effects_enabled and self.particles:
+            self.draw_particles()
 
         # Freeze overlay
         if self.p1_frozen:
@@ -1146,21 +1631,22 @@ class CoopGame:
 
     def _draw_locked_blocks(self, ox, oy, cs) -> None:
         board = self.board
+        block_size = cs - 2
         for y in range(board.height):
+            flash = (y in self.line_clear_sweep_rows) and self.line_clear_flash
             for x in range(board.width):
-                if board.occupancy[y][x]:
-                    color = board.grid[y][x]
-                    rect = pygame.Rect(ox + x * cs, oy + y * cs, cs, cs)
-                    ts = board.texture_grid[y][x]
-                    if ts and self._texture_render_cache:
-                        try:
-                            draw_jelly_block(self.screen, rect, color, texture_slice=ts,
-                                             render_cache=self._texture_render_cache)
-                            continue
-                        except Exception:
-                            pass
-                    pygame.draw.rect(self.screen, color, rect)
-                    pygame.draw.rect(self.screen, (0, 0, 0), rect, 1)
+                if not board.occupancy[y][x]:
+                    continue
+                cell_color = WHITE if flash else board.grid[y][x]
+                locked_slice = board.texture_grid[y][x]
+                texture_surface = None
+                texture_slice = None
+                if not flash and locked_slice and self.block_style_manager:
+                    texture_surface = self.block_style_manager.get_texture_surface(locked_slice.piece_name)
+                    texture_slice = locked_slice if texture_surface else None
+                block_x = ox + x * cs + 1
+                block_y = oy + y * cs + 1
+                self.draw_textured_block(block_x, block_y, block_size, cell_color, texture_surface, texture_slice)
 
     def _draw_midline(self, ox, oy, cs, bh) -> None:
         mx = ox + CoopBoard.MIDLINE * cs
@@ -1176,36 +1662,84 @@ class CoopGame:
     def _draw_piece(self, piece: Piece | None, ox, oy, cs) -> None:
         if piece is None:
             return
-        for px, py in piece.get_cells():
-            if py < 0:
-                continue
-            rect = pygame.Rect(ox + px * cs, oy + py * cs, cs, cs)
-            ts = getattr(piece, 'texture_surface', None)
-            if ts and self._texture_render_cache:
-                try:
-                    draw_jelly_block(self.screen, rect, piece.color, texture_slice=ts,
-                                     render_cache=self._texture_render_cache)
+        current_texture = getattr(piece, 'texture_surface', None)
+        piece_shape = piece.shape
+        piece_width = len(piece_shape[0]) if piece_shape else 1
+        piece_height = len(piece_shape) if piece_shape else 1
+        block_size = cs - 2
+        for local_y, row in enumerate(piece.shape):
+            for local_x, cell in enumerate(row):
+                if not cell:
                     continue
-                except Exception:
-                    pass
-            pygame.draw.rect(self.screen, piece.color, rect)
-            pygame.draw.rect(self.screen, (0, 0, 0), rect, 1)
+                x = piece.x + local_x
+                y = piece.y + local_y
+                if y < 0:
+                    continue
+                block_x = ox + x * cs + 1
+                block_y = oy + y * cs + 1
+                draw_color = piece.color
+                cm = getattr(piece, 'color_matrix', None)
+                if cm is not None:
+                    try:
+                        v = cm[local_y][local_x]
+                        if v is not None:
+                            draw_color = v
+                    except Exception:
+                        pass
+                slice_info = self._make_texture_slice(piece, local_x, local_y, piece_width, piece_height)
+                self.draw_textured_block(block_x, block_y, block_size, draw_color, current_texture, slice_info)
 
     def _draw_ghost(self, player: str, ox, oy, cs) -> None:
         piece = self.p1_current_piece if player == 'P1' else self.p2_current_piece
         if piece is None:
             return
+        if not self.effects_enabled:
+            return
         ghost_y = piece.y
         while self.board.is_valid_position_for_player(piece, player, dy=1):
             piece.y += 1
         if piece.y != ghost_y:
-            for px, py in piece.get_cells():
-                if py < 0:
-                    continue
-                rect = pygame.Rect(ox + px * cs, oy + py * cs, cs, cs)
-                s = pygame.Surface((cs, cs), pygame.SRCALPHA)
-                s.fill((*piece.color[:3], 40))
-                self.screen.blit(s, rect.topleft)
+            current_texture = getattr(piece, 'texture_surface', None)
+            piece_shape = piece.shape
+            piece_width = len(piece_shape[0]) if piece_shape else 1
+            piece_height = len(piece_shape) if piece_shape else 1
+            block_size = cs - 2
+            for local_y, row in enumerate(piece.shape):
+                for local_x, cell in enumerate(row):
+                    if not cell:
+                        continue
+                    x = piece.x + local_x
+                    y = piece.y + local_y
+                    if y < 0:
+                        continue
+                    block_x = ox + x * cs + 1
+                    block_y = oy + y * cs + 1
+                    ghost_color = piece.color
+                    cm = getattr(piece, 'color_matrix', None)
+                    if cm is not None:
+                        try:
+                            v = cm[local_y][local_x]
+                            if v is not None:
+                                ghost_color = v
+                        except Exception:
+                            pass
+                    ghost_slice = None
+                    if current_texture:
+                        ghost_slice = self._make_texture_slice(piece, local_x, local_y, piece_width, piece_height)
+                    if current_texture and ghost_slice:
+                        ghost_img = self._render_texture_slice(current_texture, ghost_slice, block_size)
+                        if ghost_img:
+                            ghost_img.set_alpha(80)
+                            self.screen.blit(ghost_img, (block_x, block_y))
+                            self._draw_texture_border(block_x, block_y, block_size, ghost_color, textured=True)
+                            continue
+                    # Yarı saydam renkli gölge
+                    s = pygame.Surface((block_size, block_size))
+                    s.set_alpha(50)
+                    s.fill(ghost_color)
+                    self.screen.blit(s, (block_x, block_y))
+                    pygame.draw.rect(self.screen, ghost_color,
+                                     (block_x, block_y, block_size, block_size), 2)
         piece.y = ghost_y
 
     def _draw_hud(self, ox, oy, cs, bw, bh) -> None:
@@ -1315,12 +1849,26 @@ class CoopGame:
         label_surf = label_font.render(label, True, retro_style.text_secondary)
         self.screen.blit(label_surf, (x, y))
         py = y + label_surf.get_height() + 4
+        block_size = cs - 2
+        current_texture = getattr(piece, 'texture_surface', None)
+        piece_width = len(piece.shape[0]) if piece.shape else 1
+        piece_height = len(piece.shape) if piece.shape else 1
         for row_i, row in enumerate(piece.shape):
             for col_i, cell in enumerate(row):
                 if cell:
-                    rect = pygame.Rect(x + col_i * cs, py + row_i * cs, cs, cs)
-                    pygame.draw.rect(self.screen, piece.color, rect)
-                    pygame.draw.rect(self.screen, (0, 0, 0), rect, 1)
+                    bx = x + col_i * cs + 1
+                    by = py + row_i * cs + 1
+                    draw_color = piece.color
+                    cm = getattr(piece, 'color_matrix', None)
+                    if cm is not None:
+                        try:
+                            v = cm[row_i][col_i]
+                            if v is not None:
+                                draw_color = v
+                        except Exception:
+                            pass
+                    slice_info = self._make_texture_slice(piece, col_i, row_i, piece_width, piece_height)
+                    self.draw_textured_block(bx, by, block_size, draw_color, current_texture, slice_info)
 
     def _draw_freeze_overlay(self, player: str, ox, oy, cs, bh) -> None:
         if player == 'P1':
@@ -1361,6 +1909,16 @@ class CoopGame:
         overlay.fill((0, 0, 0, 185))
         self.screen.blit(overlay, (0, 0))
 
+        # Lokalize seçenek etiketleri (Game base ile aynı yapı)
+        option_labels = {
+            'resume': t('resume', default='Resume'),
+            'music': t('music', default='Music'),
+            'music_volume': t('music_volume', default='Music Volume'),
+            'sound_effects': t('sound_effects', default='Sound Effects'),
+            'sfx_volume': t('sfx_volume', default='SFX Volume'),
+            'main_menu': t('main_menu', default='Main Menu'),
+        }
+
         pw = min(self._sx(520, ui), w - self._sx(100, ui))
         count = len(self.pause_menu_options)
         item_h = self._sx(56, ui)
@@ -1379,40 +1937,68 @@ class CoopGame:
 
         self._pause_option_rects = []
         self._pause_volume_rects = {}
+        _pause_mouse_pos = get_mouse_pos()
+
         start_y = pr.y + top_pad
         for i, opt in enumerate(self.pause_menu_options):
             y = start_y + i * (item_h + gap)
             btn_rect = pygame.Rect(pr.x + self._sx(22, ui), y, pr.width - self._sx(44, ui), item_h)
             self._pause_option_rects.append(btn_rect)
-            selected = i == self.pause_menu_selected
-            label = self._pause_option_label(opt)
-            retro_style.draw_uniform_button(self.screen, btn_rect, label,
-                                             color_code=retro_style.accent if selected else retro_style.secondary,
-                                             selected=selected)
-            if opt in ('music_volume', 'sfx_volume'):
-                vol = self.sound.music_volume if opt == 'music_volume' else self.sound.sfx_volume
-                bar_rect = pygame.Rect(btn_rect.x + 10, btn_rect.bottom - 8, btn_rect.width - 20, 4)
-                pygame.draw.rect(self.screen, (60, 60, 80), bar_rect)
-                fill = pygame.Rect(bar_rect.x, bar_rect.y, int(bar_rect.width * vol), bar_rect.height)
-                pygame.draw.rect(self.screen, retro_style.accent, fill)
-                self._pause_volume_rects[opt] = bar_rect
 
-    def _pause_option_label(self, opt: str) -> str:
-        if opt == 'resume':
-            return t('coop_resume', default='Resume')
-        if opt == 'music':
-            state = "ON" if self.sound.music_enabled else "OFF"
-            return f"{t('music', default='Music')}: {state}"
-        if opt == 'music_volume':
-            return f"{t('music_volume', default='Music Vol')}: {int(self.sound.music_volume * 100)}%"
-        if opt == 'sound_effects':
-            state = "ON" if self.sound.sfx_enabled else "OFF"
-            return f"{t('sound_effects', default='SFX')}: {state}"
-        if opt == 'sfx_volume':
-            return f"{t('sfx_volume', default='SFX Vol')}: {int(self.sound.sfx_volume * 100)}%"
-        if opt == 'main_menu':
-            return t('coop_main_menu', default='Main Menu')
-        return opt
+            selected = i == self.pause_menu_selected
+            label = option_labels.get(opt, opt)
+            sub_text = None
+            color_code = retro_style.primary
+
+            if opt == 'resume':
+                color_code = retro_style.success if hasattr(retro_style, 'success') else (60, 200, 120)
+                sub_text = 'ESC / P'
+            elif opt == 'main_menu':
+                color_code = retro_style.secondary
+                sub_text = 'BACKSPACE'
+            elif opt == 'music':
+                color_code = retro_style.primary
+                sub_text = t('on', default='ON') if self.sound.music_enabled else t('off', default='OFF')
+            elif opt == 'sound_effects':
+                color_code = retro_style.primary
+                sub_text = t('on', default='ON') if self.sound.sfx_enabled else t('off', default='OFF')
+            elif opt == 'music_volume':
+                color_code = retro_style.accent
+                sub_text = f"{int(self.sound.music_volume * 100)}%  < >"
+            elif opt == 'sfx_volume':
+                color_code = retro_style.accent
+                sub_text = f"{int(self.sound.sfx_volume * 100)}%  < >"
+
+            _pm_hover = btn_rect.collidepoint(_pause_mouse_pos)
+            retro_style.draw_uniform_button(
+                self.screen, btn_rect, label,
+                sub_text=sub_text,
+                color_code=color_code,
+                selected=selected,
+                state='hover' if _pm_hover else 'normal',
+            )
+
+            # Volume bars
+            if opt == 'music_volume':
+                bar_rect = pygame.Rect(
+                    btn_rect.right - self._sx(150, ui),
+                    btn_rect.y + self._sx(18, ui),
+                    self._sx(90, ui),
+                    self._sx(18, ui),
+                )
+                self._pause_volume_rects[opt] = bar_rect
+                retro_style.draw_volume_bar(self.screen, bar_rect.x, bar_rect.y, bar_rect.width, bar_rect.height,
+                                             self.sound.music_volume, (0, 210, 255), int(self.sound.music_volume * 100), selected, ui)
+            elif opt == 'sfx_volume':
+                bar_rect = pygame.Rect(
+                    btn_rect.right - self._sx(150, ui),
+                    btn_rect.y + self._sx(18, ui),
+                    self._sx(90, ui),
+                    self._sx(18, ui),
+                )
+                self._pause_volume_rects[opt] = bar_rect
+                retro_style.draw_volume_bar(self.screen, bar_rect.x, bar_rect.y, bar_rect.width, bar_rect.height,
+                                             self.sound.sfx_volume, (255, 185, 0), int(self.sound.sfx_volume * 100), selected, ui)
 
     def _draw_game_over_screen(self) -> None:
         w, h = self.window_width, self.window_height
