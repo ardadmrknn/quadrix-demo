@@ -1521,6 +1521,10 @@ def main():
             set_app_icon(_icon_assets_dir)
         except Exception:
             pass
+        try:
+            setup_custom_cursor()
+        except Exception:
+            pass
 
         _apply_screen_to_targets(
             new_screen,
@@ -1544,6 +1548,9 @@ def main():
             getattr(_handle_online_pvp, '_game', None),
             game,
             pvp_game,
+            coop_game,
+            coop_campaign_game,
+            coop_level_select,
         )
 
     def _rebuild_display(width, height, *, fullscreen_value=None, resizable=True, borderless_value=None):
@@ -2925,6 +2932,11 @@ def main():
 
         coop_game.update(delta_ms)
         coop_game.draw()
+        try:
+            if getattr(coop_game, 'sound', None):
+                coop_game.sound.update_music_playlist()
+        except Exception:
+            pass
         return True
 
     def _handle_online_pvp(delta_ms):
@@ -3272,6 +3284,11 @@ def main():
 
         coop_campaign_game.update(delta_ms)
         coop_campaign_game.draw()
+        try:
+            if getattr(coop_campaign_game, 'sound', None):
+                coop_campaign_game.sound.update_music_playlist()
+        except Exception:
+            pass
         return True
 
     STATE_HANDLERS = {

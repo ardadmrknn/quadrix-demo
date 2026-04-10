@@ -11,6 +11,8 @@ TARGET_MODE_CALLS = {
     "Game",
     "TutorialMode",
     "PvPGame",
+    "CoopGame",
+    "CoopCampaignMode",
     "OnlinePvPGame",
     "SprintMode",
     "UltraMode",
@@ -26,6 +28,7 @@ TARGET_MODE_CALLS = {
 }
 
 CONSTRUCTOR_TARGETS = {
+    "src/campaign/coop_campaign_mode.py": ("CoopCampaignMode",),
     "src/game_modes.py": (
         "SprintMode",
         "UltraMode",
@@ -171,6 +174,7 @@ def test_gameplay_mode_constructors_reset_pause_duck_before_starting_music():
     constructor_targets = [
         (ROOT / "src/game.py", "Game", "sound", "unduck_music", "_start_music_playlist"),
         (ROOT / "src/pvp_game.py", "PvPGame", "sound", "unduck_music", "_start_pvp_music"),
+        (ROOT / "src/coop_game.py", "CoopGame", "sound", "unduck_music", "_start_music"),
         (ROOT / "src/online_pvp_game.py", "OnlinePvPGame", "sound", "unduck_music", "_start_pvp_music"),
     ]
 

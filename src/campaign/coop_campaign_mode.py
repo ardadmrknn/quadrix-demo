@@ -53,6 +53,7 @@ class CoopCampaignMode(CoopGame):
         self.level_config: Optional[CoopLevelConfig] = get_coop_level(current_level)
         if not self.level_config:
             raise ValueError(f"Geçersiz co-op level numarası: {current_level}")
+        self._music_mode_key = 'campaign'
 
         # CoopGame'i başlat
         super().__init__(
@@ -192,7 +193,7 @@ class CoopCampaignMode(CoopGame):
             return
         self.level_failed = True
         self.fail_reason = reason
-        self.game_over = True
+        self._activate_game_over()
 
     def _restart_level(self) -> None:
         """Level'ı tamamen yeniden başlat."""

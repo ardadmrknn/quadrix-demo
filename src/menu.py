@@ -245,6 +245,7 @@ def get_control_actions():
             ('soft_drop', t('ctrl_soft_drop')),
             ('hard_drop', t('ctrl_hard_drop')),
             ('rotate', t('ctrl_rotate')),
+            ('hold', t('ctrl_hold')),
         ],
         'pvp.player2': [
             ('move_left', t('ctrl_move_left')),
@@ -252,6 +253,7 @@ def get_control_actions():
             ('soft_drop', t('ctrl_soft_drop')),
             ('hard_drop', t('ctrl_hard_drop')),
             ('rotate', t('ctrl_rotate')),
+            ('hold', t('ctrl_hold')),
         ],
     }
 
@@ -271,6 +273,7 @@ def get_mode_music_entries():
         ('survival', t('music_survival')),
         ('cascade', t('music_cascade')),
         ('pvp', t('music_pvp')),
+        ('coop', t('music_coop')),
         ('hardcore', t('music_hardcore')),
     ]
 
@@ -321,6 +324,7 @@ CONTROL_ACTIONS = {
         ('soft_drop', 'Hızlı indir'),
         ('hard_drop', 'Anında bırak'),
         ('rotate', 'Döndür'),
+        ('hold', 'Hold / değiştir'),
     ],
     'pvp.player2': [
         ('move_left', 'Sola kay'),
@@ -328,6 +332,7 @@ CONTROL_ACTIONS = {
         ('soft_drop', 'Hızlı indir'),
         ('hard_drop', 'Anında bırak'),
         ('rotate', 'Döndür'),
+        ('hold', 'Hold / değiştir'),
     ],
 }
 
@@ -6737,6 +6742,7 @@ class ModeMusicScreen:
             ('survival', t('music_survival')),
             ('cascade', t('music_cascade')),
             ('pvp', t('music_pvp')),
+            ('coop', t('music_coop')),
             ('hardcore', t('music_hardcore')),
         ]
         self.selected = 0
@@ -7417,6 +7423,7 @@ class MusicSettingsScreen:
             ('survival', t('music_survival')),
             ('cascade', t('music_cascade')),
             ('pvp', t('music_pvp')),
+            ('coop', t('music_coop')),
             ('hardcore', t('music_hardcore')),
         ]
         self.mode_selected = 0

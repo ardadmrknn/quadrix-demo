@@ -53,9 +53,21 @@ _pg.draw = _Draw()
 
 class _Rect:
     def __init__(self, *a):
-        self.x=0; self.y=0; self.width=0; self.height=0; self.size=(0,0)
-        self.topleft=(0,0); self.center=(0,0); self.centerx=0; self.centery=0; self.bottom=0
-        self.w=0; self.h=0
+        if len(a) == 4:
+            self.x, self.y, self.width, self.height = a
+        elif len(a) == 2 and isinstance(a[0], tuple) and isinstance(a[1], tuple):
+            self.x, self.y = a[0]
+            self.width, self.height = a[1]
+        else:
+            self.x=0; self.y=0; self.width=0; self.height=0
+        self.w=self.width; self.h=self.height
+        self.size=(self.width,self.height)
+        self.topleft=(self.x,self.y)
+        self.top=self.y; self.left=self.x
+        self.right=self.x + self.width
+        self.bottom=self.y + self.height
+        self.center=(self.x + self.width // 2, self.y + self.height // 2)
+        self.centerx=self.center[0]; self.centery=self.center[1]
     def collidepoint(self, *a): return False
 _pg.Rect = _Rect
 
@@ -135,6 +147,7 @@ _pu.set_app_icon = lambda: None
 import sound as _snd
 class _SM:
     enabled = True; sfx_enabled = True; music_enabled = True; music_volume = 0.3; sfx_volume = 0.5
+    def __init__(self): self.game_over_sequence_calls = 0
     def play(self, *a): pass
     def stop_music(self): pass
     def duck_music(self): pass
@@ -145,6 +158,7 @@ class _SM:
     def set_music_playlist(self, *a, **kw): pass
     def play_music(self, *a, **kw): pass
     current_track_name = 'main_1'
+    def play_game_over_sequence(self): self.game_over_sequence_calls += 1
 _snd.SoundManager = _SM
 
 # background / background_effects / mode_skins / retro_style / themes / block_styles stubs
@@ -591,6 +605,23 @@ def test_format_time():
     assert CoopCampaignMode._format_time(0) == '00:00'
     assert CoopCampaignMode._format_time(61000) == '01:01'
     assert CoopCampaignMode._format_time(600000) == '10:00'
+
+
+def test_campaign_fail_uses_shared_game_over_activation_path():
+    from campaign.coop_campaign_mode import CoopCampaignMode
+
+    mode = object.__new__(CoopCampaignMode)
+    mode.level_failed = False
+    mode.fail_reason = ''
+    mode.game_over = False
+    mode.sound = _SM()
+
+    mode._handle_level_failed('timeout')
+
+    assert mode.level_failed is True
+    assert mode.fail_reason == 'timeout'
+    assert mode.game_over is True
+    assert mode.sound.game_over_sequence_calls == 1
 
 
 # =====================================================================

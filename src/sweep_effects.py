@@ -307,6 +307,7 @@ def draw_rainbow_cat_sweep(
     sweep_width: int,
     phase: int,
     board_width_cells: int,
+    stripe_highlight_enabled: bool = True,
 ) -> None:
     """Rainbow + opsiyonel kedi sprite sweep efektini çiz."""
     sweep_height = max(1, int(board_rect.height))
@@ -341,7 +342,7 @@ def draw_rainbow_cat_sweep(
             continue
 
         pygame.draw.rect(screen, color, clip)
-        if (i + phase) % 2 == 0 and clip.width > 4:
+        if stripe_highlight_enabled and (i + phase) % 2 == 0 and clip.width > 4:
             pygame.draw.line(screen, (255, 255, 255), (clip.x + 1, clip.y), (clip.x + clip.width - 2, clip.y), 1)
 
     if custom_cat is not None:

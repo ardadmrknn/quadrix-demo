@@ -55,6 +55,7 @@ class CoopGame:
     _P1_HOLD_KEY = pygame.K_e
     _P2_HOLD_KEY = pygame.K_RSHIFT
     _SOFT_DROP_SPEED = 50  # ms
+    _LINE_CLEAR_SWEEP_BLOCK_FALL_SPEED = 0.144
 
     # ------------------------------------------------------------------
     # Statik yardımcılar (PvP ile ortak)
@@ -148,6 +149,8 @@ class CoopGame:
             self.sound.set_volume(self.settings_manager.get('sfx_volume', 0.5))
         if hasattr(self.sound, 'unduck_music'):
             self.sound.unduck_music()
+        self._music_mode_key = getattr(self, '_music_mode_key', 'coop')
+        self.current_music_track = None
         self.effects_enabled = effects_enabled
         self._start_music()
 
@@ -163,7 +166,7 @@ class CoopGame:
 
         # --- Tema / blok stili ---
         self.theme_manager = ThemeManager(self.settings_manager)
-        self.mode_skin = get_mode_skin('pvp')  # co-op varsayılan olarak PvP skin kullanır
+        self.mode_skin = get_mode_skin('classic')
         self.block_style_manager = BlockStyleManager(self.settings_manager) if self.settings_manager else None
         self._texture_render_cache = TextureRenderCache()
 
@@ -211,6 +214,10 @@ class CoopGame:
         self.p2_contribution_pct = 50
         self.p1_total_cells = 0
         self.p2_total_cells = 0
+        self.p1_score_contribution = 0
+        self.p2_score_contribution = 0
+        self.p1_score_contribution_pct = 0
+        self.p2_score_contribution_pct = 0
 
         # Freeze
         self.p1_frozen = False
@@ -218,11 +225,11 @@ class CoopGame:
         self._p1_pending_unfreeze = False
         self._p2_pending_unfreeze = False
 
-        # Shared hold
-        self.shared_hold_piece: Piece | None = None
+        # Oyuncu bazlı hold
+        self.p1_hold_piece: Piece | None = None
+        self.p2_hold_piece: Piece | None = None
         self.p1_hold_used = False
         self.p2_hold_used = False
-        self.hold_last_player: str | None = None
 
         # Zamanlama
         self.p1_fall_time = 0.0
@@ -351,6 +358,74 @@ class CoopGame:
                 return fallback
         return fallback
 
+    @staticmethod
+    def _key_label(key_code) -> str:
+        key_name = ''
+        try:
+            name_getter = getattr(pygame.key, 'name', None)
+            if callable(name_getter):
+                key_name = name_getter(int(key_code)) or ''
+        except Exception:
+            key_name = ''
+
+        if not key_name:
+            fallback_names = {
+                getattr(pygame, 'K_RSHIFT', None): 'RShift',
+                getattr(pygame, 'K_LSHIFT', None): 'LShift',
+                getattr(pygame, 'K_SPACE', None): 'Space',
+                getattr(pygame, 'K_RETURN', None): 'Enter',
+                getattr(pygame, 'K_KP_ENTER', None): 'Enter',
+                getattr(pygame, 'K_LEFT', None): 'Left',
+                getattr(pygame, 'K_RIGHT', None): 'Right',
+                getattr(pygame, 'K_UP', None): 'Up',
+                getattr(pygame, 'K_DOWN', None): 'Down',
+            }
+            key_name = fallback_names.get(key_code, str(key_code))
+
+        compact_names = {
+            'right shift': 'RShift',
+            'left shift': 'LShift',
+            'right ctrl': 'RCtrl',
+            'left ctrl': 'LCtrl',
+            'kp enter': 'Enter',
+            'return': 'Enter',
+            'backspace': 'Bksp',
+        }
+        normalized = compact_names.get(str(key_name).strip().lower(), str(key_name).strip())
+        if len(normalized) <= 2:
+            return normalized.upper()
+        if normalized.islower():
+            return normalized.title()
+        return normalized
+
+    @staticmethod
+    def _fmt_score(value: int) -> str:
+        return f"{int(value):,}".replace(',', '.')
+
+    def _score_contribution_text(self, player: str, score_value: int, percent_value: int) -> str:
+        return t(
+            'coop_score_contribution',
+            default='{player} {score} (%{percent})',
+            player=player,
+            score=self._fmt_score(score_value),
+            percent=percent_value,
+        )
+
+    def _score_contribution_texts(self) -> tuple[str, str]:
+        return (
+            self._score_contribution_text('P1', self.p1_score_contribution, self.p1_score_contribution_pct),
+            self._score_contribution_text('P2', self.p2_score_contribution, self.p2_score_contribution_pct),
+        )
+
+    def _next_label(self, player: str) -> str:
+        return t('coop_next_panel_label', default='{player} NEXT', player=player)
+
+    def _hold_label(self, player: str) -> str:
+        controls_key = 'player1' if player == 'P1' else 'player2'
+        hold_key = self.pvp_controls.get(controls_key, {}).get('hold')
+        key_label = self._key_label(hold_key)
+        return t('coop_hold_panel_label', default='{player} Hold ({binding})', player=player, binding=key_label)
+
     # ==================================================================
     # Parça üretimi (bağımsız bag'ler)
     # ==================================================================
@@ -396,13 +471,84 @@ class CoopGame:
     def _start_music(self):
         if not getattr(self.sound, 'music_enabled', True):
             return
+        ensure_track_available = getattr(self.sound, 'ensure_track_available', None)
+        playlist_values = []
+        mode_key = getattr(self, '_music_mode_key', 'coop')
+        if self.settings_manager:
+            try:
+                playlist_values = self.settings_manager.get_music_playlist_for_mode(mode_key)
+            except Exception:
+                playlist_values = []
+        if playlist_values:
+            track_keys = []
+            for value in playlist_values:
+                track_key = ensure_track_available(value) if callable(ensure_track_available) else value
+                if track_key:
+                    track_keys.append(track_key)
+            if track_keys:
+                do_shuffle = bool(self.settings_manager.get('music_shuffle', False)) if self.settings_manager else False
+                start_index = 0 if do_shuffle else random.randrange(len(track_keys))
+                self.sound.set_music_playlist(
+                    track_keys,
+                    loop=True,
+                    start_index=start_index,
+                    autoplay=True,
+                    force=True,
+                    shuffle=do_shuffle,
+                )
+                self.current_music_track = track_keys[start_index]
+                return
+
+        preferred = None
+        if self.settings_manager:
+            overrides = {}
+            get_mode_music_overrides = getattr(self.settings_manager, 'get_mode_music_overrides', None)
+            if callable(get_mode_music_overrides):
+                try:
+                    overrides = get_mode_music_overrides() or {}
+                except Exception:
+                    overrides = {}
+            preferred = overrides.get(mode_key) if isinstance(overrides, dict) else None
+            legacy_key = f'{mode_key}_music'
+            if not preferred:
+                preferred = self.settings_manager.get(legacy_key)
+            if not preferred:
+                preferred = self.settings_manager.get('game_music')
+
+        fallback_track = 'pvp_1' if mode_key == 'coop' else 'klasik_1'
+        raw_track = preferred or fallback_track
+        track_key = ensure_track_available(raw_track) if callable(ensure_track_available) else raw_track
+        if track_key:
+            self.sound.set_music_playlist([track_key], loop=True, autoplay=True, force=True)
+            self.current_music_track = track_key
+
+    def _play_game_over_sequence(self) -> None:
+        if not getattr(self, 'sound', None):
+            return
+
+        play_game_over_sequence = getattr(self.sound, 'play_game_over_sequence', None)
+        if callable(play_game_over_sequence):
+            try:
+                play_game_over_sequence()
+                return
+            except Exception:
+                pass
+
         try:
-            shuffle = False
-            if self.settings_manager:
-                shuffle = bool(self.settings_manager.get('music_shuffle', False))
-            self.sound.set_music_playlist(shuffle=shuffle)
+            self.sound.stop_music()
         except Exception:
             pass
+
+        try:
+            self.sound.play('gameover')
+        except Exception:
+            pass
+
+    def _activate_game_over(self) -> None:
+        if self.game_over:
+            return
+        self.game_over = True
+        self._play_game_over_sequence()
 
     def _load_backgrounds(self):
         for name in ('backgrounds/main_background.png', 'backgrounds/main_background.jpg',
@@ -728,9 +874,17 @@ class CoopGame:
             if self._flash_timer <= 0:
                 self.line_clear_flash = False
         if self.line_clear_sweep_active:
-            speed = 0.003  # progress/ms
-            self.line_clear_sweep_progress += speed * dt_ms
+            cell_size = max(1, int(self.cell_size))
+            board_pixel_width = self.board.width * cell_size
+            cleared_count = max(1, len(self.line_clear_sweep_rows))
+            sweep_width = self._get_line_sweep_length_px(cell_size, cleared_count)
+            sweep_travel_px = max(1.0, float(board_pixel_width + sweep_width))
+            dt_frames = max(0.0, min(100.0, float(dt_ms))) * 60.0 / 1000.0
+            block_px_per_frame = self._LINE_CLEAR_SWEEP_BLOCK_FALL_SPEED * 60.0
+            sweep_speed = block_px_per_frame / sweep_travel_px
+            self.line_clear_sweep_progress += dt_frames * sweep_speed
             if self.line_clear_sweep_progress >= 1.0:
+                self.line_clear_sweep_progress = 1.0
                 self.line_clear_sweep_active = False
                 self.line_clear_sweep_rows = []
                 self.line_clear_pending_rows = []
@@ -738,6 +892,45 @@ class CoopGame:
 
     def _get_line_sweep_length_px(self, cell_size: int, cleared_count: int) -> int:
         return max(cell_size * 3, cell_size * cleared_count * 2)
+
+    def _draw_pending_line_clear_rows(self, ox: int, oy: int, cs: int, bw: int) -> None:
+        """Sweep öncesi temizlenen satırların snapshot'unu çiz.
+
+        Board clear_lines() satırları anında sildiği için, sweep ilerlerken
+        görünür kalması gereken bloklar pending snapshot'tan çizilir.
+        """
+        if (
+            not self.effects_enabled
+            or not self.line_clear_sweep_active
+            or not self.line_clear_pending_rows
+            or not self.line_clear_pending_colors
+        ):
+            return
+
+        cleared_count = max(1, len(self.line_clear_sweep_rows or self.line_clear_pending_rows))
+        sweep_width = self._get_line_sweep_length_px(cs, cleared_count)
+        sweep_x = ox + int(self.line_clear_sweep_progress * (bw + sweep_width)) - sweep_width
+        sweep_front_x = sweep_x + sweep_width
+        block_size = cs - 2
+
+        for row in self.line_clear_pending_rows:
+            if not (0 <= row < self.board.height):
+                continue
+            row_colors = self.line_clear_pending_colors.get(row)
+            if not row_colors:
+                continue
+            max_cols = min(self.board.width, len(row_colors))
+            for x in range(max_cols):
+                color = row_colors[x]
+                if color == BLACK:
+                    continue
+                cell_center_x = ox + x * cs + cs // 2
+                # Işığın ön kenarı hücreye ulaştığında snapshot artık görünmez.
+                if cell_center_x <= sweep_front_x:
+                    continue
+                block_x = ox + x * cs + 1
+                block_y = oy + row * cs + 1
+                self.draw_textured_block(block_x, block_y, block_size, color, None, None)
 
     # ==================================================================
     # Event sistemi (kampanya entegrasyonu)
@@ -806,7 +999,7 @@ class CoopGame:
         self._lock_and_new_piece(player)
 
     # ==================================================================
-    # Shared hold
+    # Hold
     # ==================================================================
 
     def _use_shared_hold(self, player: str) -> None:
@@ -816,23 +1009,36 @@ class CoopGame:
             return
 
         current = self.p1_current_piece if player == 'P1' else self.p2_current_piece
+        held_piece = self.p1_hold_piece if player == 'P1' else self.p2_hold_piece
+        if current is None:
+            return
 
-        if self.shared_hold_piece is None:
-            # Hold boş — aktif parçayı koy, bag'den yeni çek
-            self.shared_hold_piece = current
-            new_piece = self._next_piece(player)
+        if held_piece is None:
+            # Hold boş — aktif parçayı sakla, mevcut next parçasını oyuna al
+            if player == 'P1':
+                self.p1_hold_piece = current
+                new_piece = self.p1_next_piece
+            else:
+                self.p2_hold_piece = current
+                new_piece = self.p2_next_piece
             self._place_at_spawn(new_piece, player)
             if not self.board.is_valid_position_for_player(new_piece, player):
-                # Bag parçası bile sığmıyor — freeze
+                # Next parçası bile sığmıyor — freeze
+                if player == 'P1':
+                    self.p1_hold_piece = None
+                else:
+                    self.p2_hold_piece = None
                 self._freeze_player(player)
                 return
             if player == 'P1':
                 self.p1_current_piece = new_piece
+                self.p1_next_piece = self._next_piece('P1')
             else:
                 self.p2_current_piece = new_piece
+                self.p2_next_piece = self._next_piece('P2')
         else:
             # Hold dolu — swap
-            held = self.shared_hold_piece
+            held = held_piece
             self._place_at_spawn(held, player)
             # Rotasyonu sıfırla
             while held.rotation_state != 0:
@@ -840,17 +1046,17 @@ class CoopGame:
             if not self.board.is_valid_position_for_player(held, player):
                 # Swap iptal — hold'daki parça sığmıyor
                 return
-            self.shared_hold_piece = current
             if player == 'P1':
+                self.p1_hold_piece = current
                 self.p1_current_piece = held
             else:
+                self.p2_hold_piece = current
                 self.p2_current_piece = held
 
         if player == 'P1':
             self.p1_hold_used = True
         else:
             self.p2_hold_used = True
-        self.hold_last_player = player
         self.sound.play('hold')
         self._emit_event('hold_used', {'player': player})
 
@@ -888,6 +1094,14 @@ class CoopGame:
             # Skor delta'sını al (Board kendi hesaplamasını yaptı)
             delta = self.board.score - prev_score
             self.team_score += delta
+            if player == 'P1':
+                self.p1_score_contribution += delta
+            else:
+                self.p2_score_contribution += delta
+            total_score_contribution = self.p1_score_contribution + self.p2_score_contribution
+            if total_score_contribution > 0:
+                self.p1_score_contribution_pct = round(100 * self.p1_score_contribution / total_score_contribution)
+                self.p2_score_contribution_pct = 100 - self.p1_score_contribution_pct
             self.total_lines_cleared += cleared
 
             # Seviye & hız
@@ -968,8 +1182,7 @@ class CoopGame:
 
     def _check_double_freeze(self) -> None:
         if self.p1_frozen and self.p2_frozen:
-            self.game_over = True
-            self.sound.play('gameover')
+            self._activate_game_over()
 
     def _try_unfreeze_players(self) -> None:
         """Satır temizliği sonrası çağrılır. Hemen unfreeze etmez, pending flag set eder."""
@@ -1329,6 +1542,18 @@ class CoopGame:
     def pause_menu_options(self):
         return list(self._pause_menu_keys)
 
+    def wants_mouse_visible(self) -> bool:
+        """Gameplay sırasında mouse görünür mü?
+
+        Co-op normal oynanışta imleci gizler; pause ve oyun sonu gibi
+        overlay ekranlarında tekrar görünür olmalıdır.
+        """
+        if getattr(self, 'paused', False):
+            return True
+        if getattr(self, 'game_over', False):
+            return True
+        return False
+
     def _handle_pause_menu_input(self, event):
         def apply_option(opt):
             if opt == 'resume':
@@ -1441,7 +1666,7 @@ class CoopGame:
         """Oyun sahnesini çiz (flip çağırmaz — alt sınıflar overlay ekleyebilir)."""
         self._calculate_layout()
 
-        skin = self.mode_skin or get_mode_skin('pvp')
+        skin = self.mode_skin or get_mode_skin('classic')
         # Board skin: classic görünüm + modun renk aksentleri
         try:
             from dataclasses import replace as _replace
@@ -1501,6 +1726,9 @@ class CoopGame:
         # Kilitli bloklar
         self._draw_locked_blocks(ox, oy, cs)
 
+        # Sweep tamamlanana kadar temizlenen satırların snapshot'unu koru.
+        self._draw_pending_line_clear_rows(ox, oy, cs, bw)
+
         # Line clear sweep efekti
         if (self.effects_enabled and self.line_clear_sweep_active
                 and self.line_clear_pending_rows and self.line_clear_pending_colors):
@@ -1516,18 +1744,8 @@ class CoopGame:
                 sweep_x = ox + int(self.line_clear_sweep_progress * (bw + sweep_width)) - sweep_width
                 board_group_rect = pygame.Rect(ox, group_y, bw, group_h)
                 draw_rainbow_cat_sweep(self.screen, self._sweep_cat_state, board_group_rect,
-                                       sweep_x, sweep_width, phase, self.board.width)
-                # Glow
-                glow_alpha = int(70 * (1.0 - self.line_clear_sweep_progress * 0.4))
-                if glow_alpha > 0 and self._effect_surface_cache:
-                    glow_w = min(sweep_width, bw)
-                    glow_x = max(ox, sweep_x)
-                    if glow_w > 0:
-                        for row in valid_rows:
-                            row_y = oy + row * cs
-                            glow_surface = self._effect_surface_cache.get_filled_surface(
-                                (glow_w, cs), (255, 255, 255, glow_alpha))
-                            self.screen.blit(glow_surface, (glow_x, row_y))
+                                       sweep_x, sweep_width, phase, self.board.width,
+                                       stripe_highlight_enabled=False)
 
         # Drop trails
         if self.effects_enabled and self.drop_trails:
@@ -1754,7 +1972,7 @@ class CoopGame:
                                       top_highlight=False)
 
         title_font = retro_style.get_font(self._sx(26, ui, minimum=16), bold=True)
-        title_surf = title_font.render("QUADRIX CO-OP", True, retro_style.primary)
+        title_surf = title_font.render(t('coop_title', default='QUADRIX CO-OP'), True, retro_style.primary)
         self.screen.blit(title_surf, title_surf.get_rect(centerx=cx, top=10))
 
         score_font = retro_style.get_font(self._sx(20, ui, minimum=14), bold=True)
@@ -1786,10 +2004,16 @@ class CoopGame:
             self.screen.blit(surf, (start_x, info_y))
             start_x += surf.get_width() + gap
 
-        contrib_txt = f"P1 %{self.p1_contribution_pct}  —  P2 %{self.p2_contribution_pct}"
-        contrib_font = retro_style.get_font(self._sx(14, ui, minimum=10))
-        contrib_surf = contrib_font.render(contrib_txt, True, (80, 230, 160))
-        self.screen.blit(contrib_surf, contrib_surf.get_rect(centerx=cx, top=info_y + stat_font.get_height() + 2))
+        contrib_y = info_y + stat_font.get_height() + 2
+        contrib_w = max(120, bw // 2 - self._sx(20, ui, minimum=12))
+        p1_txt, p2_txt = self._score_contribution_texts()
+        contrib_base = self._sx(14, ui, minimum=10)
+        p1_font = retro_style.get_fitting_font(p1_txt, contrib_base, contrib_w, bold=False, min_size=9)
+        p2_font = retro_style.get_fitting_font(p2_txt, contrib_base, contrib_w, bold=False, min_size=9)
+        p1_surf = p1_font.render(p1_txt, True, (90, 235, 170))
+        p2_surf = p2_font.render(p2_txt, True, (120, 210, 255))
+        self.screen.blit(p1_surf, p1_surf.get_rect(centerx=ox + bw * 0.25, top=contrib_y))
+        self.screen.blit(p2_surf, p2_surf.get_rect(centerx=ox + bw * 0.75, top=contrib_y))
 
     def _draw_side_panels(self, ox, oy, cs, bw, bh) -> None:
         panel_w = self._side_panel_width
@@ -1797,66 +2021,100 @@ class CoopGame:
         ui = self._ui_scale()
 
         no_preview = getattr(self, '_no_preview', False)
+        no_hold = getattr(self, '_no_hold', False)
+        left_color = getattr(retro_style, 'primary', (0, 255, 221))
+        right_color = getattr(retro_style, 'secondary', getattr(retro_style, 'accent', (255, 180, 80)))
+        card_h = preview_cs * 4 + 36
+        top_y = oy + 16
+        stack_gap = self._sx(16, ui, minimum=10)
 
+        def draw_preview_card(rect: pygame.Rect, piece: Piece | None, label: str, *, accent_color, disabled: bool = False):
+            border_c = (100, 50, 60, 90) if disabled else (*accent_color[:3], 90)
+            retro_style.draw_glass_panel(self.screen, rect, alpha=90,
+                                          border_color=border_c, top_highlight=False)
+            content_x = rect.x + 6
+            content_y = rect.y + 12
+
+            if disabled:
+                label_font = retro_style.get_fitting_font(label, self._sx(14, ui, minimum=10), rect.width - 16, bold=False, min_size=9)
+                label_surf = label_font.render(label, True, retro_style.text_muted)
+                self.screen.blit(label_surf, label_surf.get_rect(centerx=rect.centerx, top=content_y))
+                x_font = retro_style.get_font(self._sx(32, ui, minimum=20), bold=True)
+                x_surf = x_font.render('X', True, (200, 50, 50))
+                self.screen.blit(x_surf, x_surf.get_rect(center=rect.center))
+                return
+
+            if piece is not None:
+                self._draw_piece_preview(piece, content_x, content_y, preview_cs, label, panel_width=rect.width - 12)
+                return
+
+            label_font = retro_style.get_fitting_font(label, self._sx(14, ui, minimum=10), rect.width - 16, bold=False, min_size=9)
+            label_surf = label_font.render(label, True, retro_style.text_muted)
+            self.screen.blit(label_surf, label_surf.get_rect(centerx=rect.centerx, top=content_y))
+            empty_font = retro_style.get_font(self._sx(16, ui, minimum=11))
+            empty_surf = empty_font.render('[ - ]', True, (50, 55, 75))
+            self.screen.blit(empty_surf, empty_surf.get_rect(centerx=rect.centerx, centery=rect.centery + self._sx(8, ui, minimum=4)))
+
+        def draw_stack_connector(top_rect: pygame.Rect | None, bottom_rect: pygame.Rect, color):
+            if top_rect is None:
+                return
+            line_x = getattr(top_rect, 'centerx', top_rect.x + top_rect.width // 2)
+            top_bottom = getattr(top_rect, 'bottom', top_rect.y + top_rect.height)
+            bottom_top = getattr(bottom_rect, 'top', bottom_rect.y)
+            line_y1 = top_bottom + 3
+            line_y2 = bottom_top - 3
+            if line_y2 <= line_y1:
+                return
+            pygame.draw.line(self.screen, (*color[:3], 95), (line_x, line_y1), (line_x, line_y2), 2)
+            pygame.draw.line(self.screen, (*color[:3], 80), (line_x - 4, line_y2 - 6), (line_x, line_y2), 2)
+            pygame.draw.line(self.screen, (*color[:3], 80), (line_x + 4, line_y2 - 6), (line_x, line_y2), 2)
+
+        p1_panel_x = ox - panel_w - 8
+        p2_panel_x = ox + bw + 8
+        p1_next_rect = None
+        p2_next_rect = None
         if not no_preview:
             # P1 next (sol panel) — glass panel
-            p1_panel_x = ox - panel_w - 8
-            p1_rect = pygame.Rect(p1_panel_x - 6, oy + 16, panel_w + 12, preview_cs * 4 + 36)
-            retro_style.draw_glass_panel(self.screen, p1_rect, alpha=90,
-                                          border_color=(60, 70, 90), top_highlight=False)
-            self._draw_piece_preview(self.p1_next_piece, p1_panel_x, oy + 28, preview_cs, "P1 NEXT")
+            p1_next_rect = pygame.Rect(p1_panel_x - 6, top_y, panel_w + 12, card_h)
+            draw_preview_card(p1_next_rect, self.p1_next_piece, self._next_label('P1'), accent_color=left_color)
 
             # P2 next (sağ panel) — glass panel
-            p2_panel_x = ox + bw + 8
-            p2_rect = pygame.Rect(p2_panel_x - 6, oy + 16, panel_w + 12, preview_cs * 4 + 36)
-            retro_style.draw_glass_panel(self.screen, p2_rect, alpha=90,
-                                          border_color=(60, 70, 90), top_highlight=False)
-            self._draw_piece_preview(self.p2_next_piece, p2_panel_x, oy + 28, preview_cs, "P2 NEXT")
+            p2_next_rect = pygame.Rect(p2_panel_x - 6, top_y, panel_w + 12, card_h)
+            draw_preview_card(p2_next_rect, self.p2_next_piece, self._next_label('P2'), accent_color=right_color)
 
-        # Shared hold (ortada, board altı) — glass panel
-        hold_label = t('coop_shared_hold', default='Shared Hold')
-        stat_font = retro_style.get_font(self._sx(14, ui, minimum=10))
-        hold_y = oy + bh + self._sx(58, ui, minimum=44)
-        hold_w = max(preview_cs * 5 + 20, stat_font.size(hold_label)[0] + 20)
-        hold_h = preview_cs * 3 + 36
-        hold_rect = pygame.Rect(self.window_width // 2 - hold_w // 2, hold_y - 6, hold_w, hold_h)
-        no_hold = getattr(self, '_no_hold', False)
-        border_c = (100, 50, 60) if no_hold else (*retro_style.primary[:3], 80)
-        retro_style.draw_glass_panel(self.screen, hold_rect, alpha=90,
-                                      border_color=border_c, top_highlight=False)
+        hold_top = (p1_next_rect.bottom + stack_gap) if p1_next_rect is not None else top_y
+        p1_hold_rect = pygame.Rect(p1_panel_x - 6, hold_top, panel_w + 12, card_h)
+        p2_hold_rect = pygame.Rect(p2_panel_x - 6, hold_top, panel_w + 12, card_h)
+        draw_preview_card(p1_hold_rect, self.p1_hold_piece, self._hold_label('P1'), accent_color=left_color, disabled=no_hold)
+        draw_preview_card(p2_hold_rect, self.p2_hold_piece, self._hold_label('P2'), accent_color=right_color, disabled=no_hold)
+        draw_stack_connector(p1_next_rect, p1_hold_rect, left_color)
+        draw_stack_connector(p2_next_rect, p2_hold_rect, right_color)
 
-        if no_hold:
-            # Hold engelli — kırmızı X
-            label_surf = stat_font.render(hold_label, True, retro_style.text_muted)
-            self.screen.blit(label_surf, label_surf.get_rect(centerx=self.window_width // 2, top=hold_y))
-            x_font = retro_style.get_font(self._sx(36, ui, minimum=20), bold=True)
-            x_surf = x_font.render('✕', True, (200, 50, 50))
-            self.screen.blit(x_surf, x_surf.get_rect(center=hold_rect.center))
-        elif self.shared_hold_piece:
-            self._draw_piece_preview(self.shared_hold_piece, self.window_width // 2 - preview_cs * 2, hold_y, preview_cs, hold_label)
-        else:
-            label_surf = stat_font.render(hold_label, True, retro_style.text_muted)
-            self.screen.blit(label_surf, label_surf.get_rect(centerx=self.window_width // 2, top=hold_y))
-            empty_font = retro_style.get_font(self._sx(16, ui, minimum=11))
-            empty_surf = empty_font.render("[ — ]", True, (50, 55, 75))
-            self.screen.blit(empty_surf, empty_surf.get_rect(centerx=self.window_width // 2, top=hold_y + stat_font.get_height() + 4))
-
-    def _draw_piece_preview(self, piece: Piece | None, x, y, cs, label: str) -> None:
+    def _draw_piece_preview(self, piece: Piece | None, x, y, cs, label: str, panel_width: int | None = None) -> None:
+        ui = self._ui_scale()
+        max_width = None if panel_width is None else max(40, panel_width - 6)
+        label_font = retro_style.get_fitting_font(label, self._sx(14, ui, minimum=10), max_width, bold=False, min_size=9)
+        label_surf = label_font.render(label, True, retro_style.text_secondary)
+        label_x = x if panel_width is None else x + max(0, (panel_width - label_surf.get_width()) // 2)
+        self.screen.blit(label_surf, (label_x, y))
         if piece is None:
             return
-        ui = self._ui_scale()
-        label_font = retro_style.get_font(self._sx(14, ui, minimum=10))
-        label_surf = label_font.render(label, True, retro_style.text_secondary)
-        self.screen.blit(label_surf, (x, y))
         py = y + label_surf.get_height() + 4
         block_size = cs - 2
         current_texture = getattr(piece, 'texture_surface', None)
         piece_width = len(piece.shape[0]) if piece.shape else 1
         piece_height = len(piece.shape) if piece.shape else 1
+        active_cells = [(col_i, row_i) for row_i, row in enumerate(piece.shape) for col_i, cell in enumerate(row) if cell]
+        min_col = min((col_i for col_i, _ in active_cells), default=0)
+        max_col = max((col_i for col_i, _ in active_cells), default=piece_width - 1)
+        preview_offset_x = 0
+        if panel_width is not None:
+            preview_width = max(1, (max_col - min_col + 1) * cs)
+            preview_offset_x = max(0, (panel_width - preview_width) // 2) - min_col * cs
         for row_i, row in enumerate(piece.shape):
             for col_i, cell in enumerate(row):
                 if cell:
-                    bx = x + col_i * cs + 1
+                    bx = x + preview_offset_x + col_i * cs + 1
                     by = py + row_i * cs + 1
                     draw_color = piece.color
                     cm = getattr(piece, 'color_matrix', None)
@@ -2060,15 +2318,18 @@ class CoopGame:
         y_cursor += score_surf.get_height() + self._sx(12, ui)
 
         # İstatistikler
-        info_font = retro_style.get_font(self._sx(16, ui, minimum=11))
+        info_base = self._sx(16, ui, minimum=11)
+        info_max_width = pr.width - self._sx(36, ui, minimum=24)
         minutes = int(self.elapsed_time) // 60000
         seconds = (int(self.elapsed_time) // 1000) % 60
+        p1_txt, p2_txt = self._score_contribution_texts()
         info_lines = [
             f"{t('coop_total_lines', default='Total Lines')}: {self.total_lines_cleared}",
-            f"P1 %{self.p1_contribution_pct}  —  P2 %{self.p2_contribution_pct}",
+            f"{p1_txt}  —  {p2_txt}",
             f"{t('coop_total_time', default='Total Time')}: {minutes}:{seconds:02d}",
         ]
         for line in info_lines:
+            info_font = retro_style.get_fitting_font(line, info_base, info_max_width, bold=False, min_size=9)
             surf = info_font.render(line, True, retro_style.text_secondary)
             self.screen.blit(surf, surf.get_rect(centerx=cx, top=y_cursor))
             y_cursor += surf.get_height() + self._sx(4, ui)

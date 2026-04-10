@@ -23,8 +23,10 @@ def test_mode_music_defaults_match_selected_playlists(tmp_path):
 
     assert sm.get_music_playlist_for_mode('classic') == ['file:klasik_1.mp3']
     assert sm.get_music_playlist_for_mode('survival') == ['file:survival_2.mp3', 'file:survival_1.mp3']
+    assert sm.get_music_playlist_for_mode('coop') == ['file:pvp_1.mp3']
     assert sm.get_music_playlist_for_mode('campaign_world4') == ['file:d4_1.mp3', 'file:d4_2.mp3', 'file:d4_3.mp3']
     assert sm.get_music_preference_for_mode('classic') == 'file:klasik_1.mp3'
+    assert sm.get_music_preference_for_mode('coop') == 'file:pvp_1.mp3'
     assert sm.get_music_preference_for_mode('campaign') == DEFAULT_CAMPAIGN_MUSIC_PLAYLIST[0]
 
 
@@ -44,3 +46,4 @@ def test_merge_mode_music_playlists_preserves_defaults_and_overrides():
 
     assert merged == expected
     assert MODE_MUSIC_DEFAULTS['classic'] == 'file:klasik_1.mp3'
+    assert MODE_MUSIC_DEFAULTS['coop'] == 'file:pvp_1.mp3'

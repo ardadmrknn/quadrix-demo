@@ -40,6 +40,7 @@ DEFAULT_CONTROLS = {
             'soft_drop': 's',
             'hard_drop': 'left shift',
             'rotate': 'w',
+            'hold': 'e',
         },
         'player2': {
             'move_left': 'left',
@@ -47,6 +48,7 @@ DEFAULT_CONTROLS = {
             'soft_drop': 'down',
             'hard_drop': 'space',
             'rotate': 'up',
+            'hold': 'right shift',
         },
     },
     'gamepad': {
@@ -101,6 +103,7 @@ DEFAULT_MODE_MUSIC_PLAYLISTS = {
     'mystery': ['file:kart_1.mp3', 'file:kart_2.mp3', 'file:kart_3.mp3'],
     'cascade': ['file:cascade_1.mp3', 'file:cascade_2.mp3'],
     'pvp': ['file:pvp_1.mp3'],
+    'coop': ['file:pvp_1.mp3'],
     'hardcore': ['file:hardcore_1.mp3', 'file:hardcore_2.mp3'],
     'wide': ['file:wide_1.mp3', 'file:wide_2.mp3'],
     'zen': ['file:zen_1.mp3'],
@@ -882,6 +885,10 @@ class SettingsManager:
 
         if key == 'campaign':
             return self.settings.get('campaign_music_playlist', ['klasik_1'])
+
+        default_playlist = DEFAULT_MODE_MUSIC_PLAYLISTS.get(key)
+        if default_playlist:
+            return list(default_playlist)
 
         return self.get_game_music_playlist()
 
