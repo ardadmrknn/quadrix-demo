@@ -33,7 +33,7 @@ Bu belge artık ilk oynanabilir sürüme odaklıdır. İlk sürümün hedefi:
 - Aynı cihazda iki oyunculu, sorunsuz çalışan **local endless co-op**
 - Tek ortak 20x20 tahta
 - İki aktif parça, bağımsız parça akışları
-- Ortak hold slotu ile takım içi anlık parça aktarımı
+- Oyuncu bazlı hold slotları ile esnek parça saklama
 - Spawn bazlı freeze sistemi
 
 ### Hedef Kitle
@@ -57,7 +57,7 @@ Bu belge artık ilk oynanabilir sürüme odaklıdır. İlk sürümün hedefi:
 - Tek ortak board
 - Ortak team score
 - Katkı yüzdesi göstergesi
-- Tek ortak hold slotu
+- Oyuncu bazlı iki hold slotu
 - Freeze ve unfreeze akışı
 
 ### V1 Dışında Olanlar
@@ -77,7 +77,7 @@ Bu belge artık ilk oynanabilir sürüme odaklıdır. İlk sürümün hedefi:
 | Freeze tetikleme | Yeni parça spawn edilemezse freeze |
 | Çift freeze | Anında game over |
 | Unfreeze | Alan açıldıktan sonra bir sonraki düşüş tickinde |
-| Hold | Tek ortak slot, iki oyuncu da anında kullanabilir |
+| Hold | Oyuncu bazlı ayrı slotlar, her oyuncu kendi hold'unu kullanır |
 | Kontroller | P1 WASD, P2 yön tuşları |
 | Skor | Team score + katkı yüzdesi |
 | Online | Daha sonraki faz |
@@ -195,27 +195,27 @@ V1 HUD'da ana skor kaynağı **team score** olacaktır.
 - Sert 10+10 alan bölünmesi nedeniyle bu oran çoğu senaryoda 50/50'ye yakın görünür
 - Gerçek parça sahipliği takibi V1 dışında bırakılmıştır
 
-### 8. Ortak Hold Sistemi
+### 8. Oyuncu Bazlı Hold Sistemi
 
-V1'in en ayırt edici mekaniklerinden biri **tek ortak hold slotu** olacaktır.
+V1 implementasyonunda hold sistemi **oyuncu bazlı iki ayrı slot** olarak çalışacaktır.
 
 **Kural:**
 
-- Hold slotu takımın ortak deposudur
-- P1 elindeki parçayı hold'a koyabilir
-- P2 isterse o parçayı hemen çekebilir
-- Aynı şekilde P2'nin bıraktığı parça da P1 tarafından kullanılabilir
+- P1 yalnızca kendi hold slotunu kullanır
+- P2 yalnızca kendi hold slotunu kullanır
+- Her oyuncu kendi aktif parçasını kendi hold alanında saklar
+- Hold akışı, iki oyuncunun input ve panel düzenini sade tutacak şekilde ayrılmıştır
 
-**Handoff davranışı:**
+**Davranış:**
 
-- Hold'daki parça oyuncular arasında stratejik aktarım aracıdır
-- Amaç klasik kişisel hold değil, aktif takım koordinasyonudur
+- Amaç, aynı ortak board üzerinde oynarken her oyuncunun kendi kurtarma aracını korumasıdır
+- Koordinasyon, ortak board temizliği ve katkı ritminden gelir; hold aktarımından değil
 
 **Denge kuralı:**
 
 - Her oyuncu, elindeki aktif parça için bir kez hold kullanabilir
 - Aynı aktif parça sonsuz hold zincirine sokulamaz
-- Ancak diğer oyuncu hold slotunu kendi aktif parçasıyla hemen kullanabilir
+- Diğer oyuncu kendi hold slotunu bağımsız olarak kullanabilir
 
 ---
 
@@ -237,7 +237,7 @@ V1'in en ayırt edici mekaniklerinden biri **tek ortak hold slotu** olacaktır.
 │  │                      │   (WAITING FOR P1)   │  │
 │  └──────────────────────────────────────────────┘  │
 │                                                    │
-│  Next P1: [I]     Shared Hold: [T]     Next P2:[Z]│
+│  P1 Hold:[T]  Next P1:[I]  Next P2:[Z]  P2 Hold:[L]│
 └────────────────────────────────────────────────────┘
 ```
 
@@ -263,11 +263,11 @@ V1'in en ayırt edici mekaniklerinden biri **tek ortak hold slotu** olacaktır.
 
 ### 4. Hold Göstergesi
 
-Shared hold slotu HUD'da tam ortada veya iki oyuncunun arasında konumlanmalıdır.
+Hold kutuları oyuncuların kendi next panelleriyle eşleşecek şekilde yan panellerde konumlanmalıdır.
 
-- Kişisel hold kutusu yerine tek ortak kutu
-- Son bırakan oyuncu küçük ikon veya metinle işaretlenebilir
-- V1'de bu işaretleme opsiyoneldir
+- Sol tarafta P1 next + P1 hold
+- Sağ tarafta P2 next + P2 hold
+- Her hold kutusu kendi oyuncusunun tuş bağını göstermelidir
 
 ### 5. Minimal Görsel Ayırım
 
@@ -303,7 +303,7 @@ Bu şu anlama gelir:
 ┌─────────────────────────────────────────────────┐
 │              coop_game.py  (CoopGame)           │
 │  PvP akışından türetilmiş yerel co-op döngüsü   │
-│  tek ortak board, çift aktif parça, shared hold │
+│  tek ortak board, çift aktif parça, ayrı hold slotları │
 └────────┬───────────────────────────────┬────────┘
          │                               │
     ┌────▼─────────┐               ┌─────▼──────────┐
@@ -331,7 +331,8 @@ class CoopGame:
         self.p2_current_piece = ...
         self.p2_next_piece = ...
 
-        self.shared_hold_piece = None
+      self.p1_hold_piece = None
+      self.p2_hold_piece = None
         self.p1_hold_used = False
         self.p2_hold_used = False
 
@@ -379,7 +380,7 @@ class CoopGame:
 |---|---|
 | `src/main.py` | `coop_mode` placeholder yerine gerçek oyun akışı başlatılır |
 | `src/menu.py` | Mevcut co-op kartı placeholder durumundan çıkarılır |
-| `src/localization.py` | Co-op HUD, freeze ve shared hold metinleri eklenir |
+| `src/localization.py` | Co-op HUD, freeze ve hold panel metinleri eklenir |
 
 ## V1'de Bilinçli Olarak Dokunulmayacak Alanlar
 
@@ -410,10 +411,10 @@ class CoopGame:
    - Spawn bazlı freeze sistemi
    - Çift freeze = game over
 
-3. Shared hold sistemini ekle
-   - Tek ortak hold slotu
-   - İki oyuncu için anlık handoff
-   - Parça başına tek hold kullanım kuralı
+3. Oyuncu bazlı hold sistemini ekle
+   - P1 ve P2 için ayrı hold slotları
+   - Her oyuncu için parça başına tek hold kullanım kuralı
+   - Hold kutularını oyuncu panelleriyle hizala
 
 **Test:**
 
@@ -429,7 +430,7 @@ class CoopGame:
 4. HUD düzenini kur
    - Team score
    - Katkı yüzdesi
-   - Shared hold göstergesi
+   - P1/P2 hold göstergeleri
    - Freeze overlay
 
 5. Mevcut co-op menü aksiyonunu bağla
@@ -437,14 +438,14 @@ class CoopGame:
 
 6. Co-op metinlerini ekle
    - freeze bekleme mesajları
-   - shared hold etiketleri
+   - hold panel etiketleri
    - coop başlık ve kısa açıklamalar
 
 **Test:**
 
 - Menüden co-op açılabilmeli
 - HUD'da roller ve durumlar net anlaşılmalı
-- Shared hold nerede olduğu ilk bakışta belli olmalı
+- Hold kutuları ilk bakışta hangi oyuncuya ait olduğu anlaşılır olmalı
 
 ### Faz 3: Input ve Polish
 
@@ -498,7 +499,7 @@ Planlanan başlıklar:
 
 - Co-op'a özel clear vurguları
 - Freeze sesleri
-- Shared hold geri bildirimi
+- Hold geri bildirimi
 
 ---
 
@@ -511,7 +512,7 @@ Planlanan başlıklar:
 | Kaybetme koşulu nedir? | İki oyuncu da spawn edemezse game over |
 | Tek freeze olursa ne olur? | Oyuncu donar, diğeri devam eder |
 | Unfreeze ne zaman olur? | Alan açıldıktan sonraki düşüş tickinde |
-| Hold sistemi nedir? | Tek ortak slot, anlık takım handoff |
+| Hold sistemi nedir? | Oyuncu bazlı ayrı slotlar, parça başına tek kullanım |
 | Kontrol düzeni nedir? | P1 WASD, P2 yön tuşları |
 | Skor nasıl gösterilir? | Team score + katkı yüzdesi |
 | Online var mı? | V1'de yok |
@@ -529,7 +530,7 @@ V1 co-op modu aşağıdaki durumlarda başarılı kabul edilir:
 - ✅ Freeze sistemi spawn bazlı ve anlaşılır çalışıyor
 - ✅ Tek oyuncu freeze olduğunda diğer oyuncu akışı sürdürebiliyor
 - ✅ Çift freeze senaryosu temiz şekilde game over'a gidiyor
-- ✅ Shared hold gerçekten takım içi strateji yaratıyor
+- ✅ Hold sistemi iki oyuncu için de okunaklı ve taktiksel hissettiriyor
 - ✅ HUD ilk bakışta okunuyor
 
 ---
@@ -538,8 +539,36 @@ V1 co-op modu aşağıdaki durumlarda başarılı kabul edilir:
 
 - Mevcut geniş tahta desteği ve iki oyunculu PvP akışı V1 için önemli referans noktalarıdır.
 - Katkı yüzdesi V1'de yardımcı HUD verisidir; kesin istatistik sistemi değildir.
-- Shared hold, co-op modunun ana ayırt edici özelliği olduğu için V1'de özellikle test edilmelidir.
+- Hold sistemi, iki oyunculu akışın temel ergonomi parçası olduğu için V1'de özellikle test edilmelidir.
 - Online ve campaign fazları ayrı tasarım kararları gerektirdiğinden bilinçli olarak ertelenmiştir.
+
+---
+
+## 10.04.2026 Güncel Durum Eki
+
+Bu belgenin üst bölümleri ilk V1 kapsamını ve o sıradaki tasarım kararlarını tarihsel kayıt olarak korur. Repo daha sonra bu ilk kapsamın ötesine geçtiği için aşağıdaki ek bölüm, eski metni silmeden güncel implementasyon durumunu özetler.
+
+### İlk V1 Tasarımından Sonra Gerçekte Uygulanan Alanlar
+
+- Local endless co-op teslim edildi ve menüden erişilebilir hale geldi.
+- Co-op campaign, ilk planda sonraki faz olarak görünse de daha sonra ayrı bir katman olarak uygulandı.
+- Oyuncu bazlı iki hold slotu, freeze/unfreeze akışı, ortak skor ve katkı yüzdeleri gerçek runtime davranışı olarak yerleşti.
+- Genişletilmiş game over ekranı, restart akışı ve göz/peek davranışı eklendi.
+- Co-op için mod bazlı müzik playlist seçimi ve ortak game over müzik kesme akışı bağlandı.
+
+### Sonradan Netleşen Davranış ve Mimari Notlar
+
+- Hold sistemi artık tarihsel bir öneri değil, resmi runtime davranışı olarak oyuncu bazlı ayrı slot modeline oturmuştur.
+- Co-op görsel dili PvP tint'inden ayrılmış, classic temele daha yakın hale getirilmiştir.
+- Satır temizleme Luna sweep'i ana oyundaki zaman/mesafe temelli hesap yaklaşımına hizalanmıştır.
+- Particle effects ayarı artık tek bir açık/kapalı anahtar değil; `off`, `low`, `medium`, `high` seviye modeliyle çalışır.
+- Screen shake, particle toggle'dan bağımsız genel efekt katmanı olarak ele alınır.
+
+### Doğrulama ve Audit Notu
+
+- Co-op ve ilişkili modlar için birden fazla audit turu yapıldı.
+- Son geniş doğrulama koşusunda test seti `748 passed, 7 skipped` sonucuna ulaştı.
+- Ayrıntılı oturum kaydı için `reports/2026-04-10-coop-chat-oturumu-detayli-dokum.md` dosyasındaki ek bölümler birlikte okunmalıdır.
 
 ---
 

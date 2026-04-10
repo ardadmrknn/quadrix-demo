@@ -83,8 +83,10 @@ class CoopBoard(Board):
         # Board.lock_piece piece.name yazar; biz player string'i istiyoruz.
         original_name = piece.name
         piece.name = player  # "P1" veya "P2"
-        cleared = super().lock_piece(piece)
-        piece.name = original_name  # Orijinal parça ismini geri yükle
+        try:
+            cleared = super().lock_piece(piece)
+        finally:
+            piece.name = original_name  # Orijinal parça ismini geri yükle
         return cleared
 
     # ------------------------------------------------------------------

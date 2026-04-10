@@ -161,9 +161,10 @@ def _build_tab_content(tab_key: str, sm, show_debug: bool = False) -> list[dict]
             'min': 0.0, 'max': 1.0, 'step': 0.1, 'suffix': '%', 'percent': True,
         })
         items.append({
-            'type': 'toggle', 'key': 'particle_effects',
+            'type': 'slider', 'key': 'particle_effects',
             'loc_key': 'particle_effects',
             'label_tr': 'Parçacık Efektleri', 'label_en': 'Particle Effects',
+            'min': 0, 'max': 3, 'step': 1,
         })
 
     elif tab_key == 'audio':
@@ -793,7 +794,7 @@ class TabbedSettingsScreen:
         self.background_enabled = sm.get('background_enabled', True)
         self.bg_transparency = sm.get('bg_transparency', 0.3)
         self.menu_transparency = sm.get('menu_transparency', 1.0)
-        self.particle_effects = sm.get('particle_effects', True)
+        self.particle_effects = self._particle_effects_level_to_slider_value(sm.get('particle_effects', 'medium'))
         # Audio
         self.music_enabled = sm.get('music_enabled', True)
         self.music_volume = sm.get('music_volume', 0.3)
@@ -950,8 +951,68 @@ class TabbedSettingsScreen:
 
     def _set_value(self, key: str, value) -> None:
         """Ayar değerini güncelle ve kaydet."""
+        if key == 'particle_effects':
+            slider_value = self._particle_effects_level_to_slider_value(value)
+            setattr(self, key, slider_value)
+            self.settings_manager.set(key, self._particle_effects_level_from_slider_value(slider_value))
+            return
         setattr(self, key, value)
         self.settings_manager.set(key, value)
+
+    def _particle_effects_level_to_slider_value(self, value) -> int:
+        helper = getattr(self.settings_manager, 'particle_effects_slider_value', None)
+        if callable(helper):
+            try:
+                return int(helper(value))
+            except Exception:
+                pass
+        if isinstance(value, bool):
+            return 2 if value else 0
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            return max(0, min(3, int(round(value))))
+        mapping = {
+            'off': 0,
+            'kapali': 0,
+            'kapalı': 0,
+            'false': 0,
+            '0': 0,
+            'low': 1,
+            'az': 1,
+            '1': 1,
+            'medium': 2,
+            'orta': 2,
+            'true': 2,
+            'on': 2,
+            'acik': 2,
+            'açık': 2,
+            '2': 2,
+            'high': 3,
+            'cok': 3,
+            'çok': 3,
+            '3': 3,
+        }
+        return mapping.get(str(value or '').strip().lower(), 2)
+
+    def _particle_effects_level_from_slider_value(self, slider_value: int) -> str:
+        helper = getattr(self.settings_manager, 'particle_effects_level_from_slider', None)
+        if callable(helper):
+            try:
+                return str(helper(slider_value))
+            except Exception:
+                pass
+        mapping = {0: 'off', 1: 'low', 2: 'medium', 3: 'high'}
+        return mapping.get(max(0, min(3, int(round(slider_value)))), 'medium')
+
+    def _particle_effects_label(self, slider_value: int | None = None) -> str:
+        slider = self.particle_effects if slider_value is None else self._particle_effects_level_to_slider_value(slider_value)
+        level = self._particle_effects_level_from_slider_value(slider)
+        labels = {
+            'off': _t('off', 'Kapalı'),
+            'low': _t('particle_effects_low', 'Az'),
+            'medium': _t('particle_effects_medium', 'Orta'),
+            'high': _t('particle_effects_high', 'Çok'),
+        }
+        return labels.get(level, _t('particle_effects_medium', 'Orta'))
 
     def _get_display_value(self, item: dict) -> tuple[str, tuple[int, int, int]]:
         """Bir ayar öğesinin görüntülenecek değerini ve rengini döndür."""
@@ -975,6 +1036,8 @@ class TabbedSettingsScreen:
 
         elif itype == 'slider':
             val = self._get_value(key)
+            if key == 'particle_effects':
+                return self._particle_effects_label(int(val)), (140, 220, 255)
             if item.get('percent'):
                 text = f'{int(float(val) * 100)}%'
             else:
@@ -2711,7 +2774,9 @@ class TabbedSettingsScreen:
         ratio = max(0.0, min(1.0, ratio))
 
         # Değer metni
-        if item.get('percent'):
+        if key == 'particle_effects':
+            value_text = self._particle_effects_label(int(current))
+        elif item.get('percent'):
             value_text = f'{int(current * 100)}%'
         else:
             value_text = f'{int(current)} {item.get("suffix", "")}'.strip()
@@ -2774,6 +2839,8 @@ class TabbedSettingsScreen:
                 fill_color = (0, 255, 160)    # neon green
             elif key == 'menu_transparency':
                 fill_color = (190, 60, 255)   # neon purple
+            elif key == 'particle_effects':
+                fill_color = (255, 170, 70)   # amber
             elif key in ('das_delay', 'das_repeat', 'soft_drop_speed'):
                 fill_color = (255, 80, 160)   # neon pink
             else:

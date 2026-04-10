@@ -233,7 +233,7 @@ if not hasattr(_am, 'load_image'):
 # ====== Pre-register campaign package to bypass heavy __init__.py ======
 # campaign/__init__.py imports CampaignMode → game.py → many heavy deps.
 # We register campaign as an empty package, then import submodules directly.
-import importlib
+_original_campaign_module = sys.modules.get('campaign')
 _campaign_pkg = types.ModuleType('campaign')
 _campaign_pkg.__path__ = [os.path.join(os.path.dirname(__file__), '..', 'src', 'campaign')]
 _campaign_pkg.__package__ = 'campaign'
@@ -244,8 +244,6 @@ from campaign.coop_level_data import (
     get_coop_level, get_coop_world_levels,
     TOTAL_COOP_LEVELS, COOP_WORLDS, CoopLevelConfig,
 )
-# coop_objectives needs campaign.objectives — import objectives first
-from campaign import objectives as _objectives_mod
 from campaign.coop_objectives import (
     create_coop_objective,
     SharedHoldObjective,
@@ -253,6 +251,13 @@ from campaign.coop_objectives import (
     FreezeRecoveryObjective,
     CoopComboObjective,
 )
+from campaign.coop_campaign_mode import CoopCampaignMode
+from campaign.coop_level_select import CoopLevelSelect
+
+if _original_campaign_module is None:
+    sys.modules.pop('campaign', None)
+else:
+    sys.modules['campaign'] = _original_campaign_module
 
 
 # =====================================================================
@@ -477,13 +482,11 @@ class _FakeSettingsManager:
 
 def test_campaign_mode_import():
     """CoopCampaignMode import edilebilmeli."""
-    from campaign.coop_campaign_mode import CoopCampaignMode
     assert CoopCampaignMode is not None
 
 
 def test_campaign_mode_star_conditions():
     """Yıldız koşul kontrol metodu doğru çalışmalı."""
-    from campaign.coop_campaign_mode import CoopCampaignMode
     # CoopCampaignMode'u __new__ ile oluştur (CoopGame init'ini atla)
     mode = object.__new__(CoopCampaignMode)
     mode.objectives = []
@@ -515,7 +518,6 @@ def test_campaign_mode_star_conditions():
 
 def test_campaign_mode_calculate_stars():
     """Yıldız hesaplaması — sequential kontrol."""
-    from campaign.coop_campaign_mode import CoopCampaignMode
     mode = object.__new__(CoopCampaignMode)
     mode.objectives = []
     mode.team_score = 2000
@@ -543,7 +545,6 @@ def test_campaign_mode_calculate_stars():
 
 def test_save_and_load_progress():
     """Progress kaydetme ve yükleme."""
-    from campaign.coop_campaign_mode import CoopCampaignMode
     sm = _FakeSettingsManager()
 
     mode = object.__new__(CoopCampaignMode)
@@ -564,7 +565,6 @@ def test_save_and_load_progress():
 
 def test_save_progress_best_score_preserved():
     """Daha düşük skorlu yeni tamamlama eski best_score'u korumalı."""
-    from campaign.coop_campaign_mode import CoopCampaignMode
     sm = _FakeSettingsManager()
 
     # İlk tamamlama — yüksek skor
@@ -591,7 +591,6 @@ def test_save_progress_best_score_preserved():
 
 
 def test_get_next_level():
-    from campaign.coop_campaign_mode import CoopCampaignMode
     mode = object.__new__(CoopCampaignMode)
     mode.current_level_num = 5
     assert mode.get_next_level_num() == 6
@@ -601,15 +600,12 @@ def test_get_next_level():
 
 
 def test_format_time():
-    from campaign.coop_campaign_mode import CoopCampaignMode
     assert CoopCampaignMode._format_time(0) == '00:00'
     assert CoopCampaignMode._format_time(61000) == '01:01'
     assert CoopCampaignMode._format_time(600000) == '10:00'
 
 
 def test_campaign_fail_uses_shared_game_over_activation_path():
-    from campaign.coop_campaign_mode import CoopCampaignMode
-
     mode = object.__new__(CoopCampaignMode)
     mode.level_failed = False
     mode.fail_reason = ''
@@ -629,11 +625,9 @@ def test_campaign_fail_uses_shared_game_over_activation_path():
 # =====================================================================
 
 def test_level_select_import():
-    from campaign.coop_level_select import CoopLevelSelect
     assert CoopLevelSelect is not None
 
 def test_level_select_unlocking():
-    from campaign.coop_level_select import CoopLevelSelect
     sm = _FakeSettingsManager()
     sel = CoopLevelSelect(screen=_Surf(), settings_manager=sm)
     # Level 1 her zaman açık
@@ -642,7 +636,6 @@ def test_level_select_unlocking():
     assert not sel._is_level_unlocked(2)
 
 def test_level_select_unlocking_with_progress():
-    from campaign.coop_level_select import CoopLevelSelect
     sm = _FakeSettingsManager()
     sm.set('coop_campaign_progress', {
         'completed_levels': {'1': {'completed': True, 'stars': 1}},
@@ -654,7 +647,6 @@ def test_level_select_unlocking_with_progress():
     assert not sel._is_level_unlocked(3)
 
 def test_level_select_stars():
-    from campaign.coop_level_select import CoopLevelSelect
     sm = _FakeSettingsManager()
     sm.set('coop_campaign_progress', {
         'completed_levels': {'2': {'completed': True, 'stars': 3}},

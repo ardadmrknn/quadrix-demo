@@ -3435,14 +3435,14 @@ def main():
                     menu.notify_menu_activated()
                 except Exception:
                     pass
-            # Geçiş efekti başlat (state zaten değişti, sadece görsel efekt)
-            transition_type = _get_transition_type(_previous_state, state)
-            # Campaign select için daha uzun süre (daha belirgin efekt)
-            if 'campaign_select' in (_previous_state, state):
-                duration = 450
-            else:
-                duration = 350
-            start_screen_transition(screen, None, duration_ms=duration, transition_type=transition_type)
+            # Coop kendi açılış perdesini çiziyor; aynı anda global transition başlatma.
+            if state != 'coop':
+                transition_type = _get_transition_type(_previous_state, state)
+                if 'campaign_select' in (_previous_state, state):
+                    duration = 450
+                else:
+                    duration = 350
+                start_screen_transition(screen, None, duration_ms=duration, transition_type=transition_type)
             _previous_state = state
             # Menü ekranlarında basılı tutma tekrarı aktif, oyunda devre dışı
             if state in ('game', 'pvp', 'coop', 'online_pvp'):

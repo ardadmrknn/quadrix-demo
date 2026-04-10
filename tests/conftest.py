@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 import os
 import sys
 import types
@@ -118,6 +119,17 @@ def _test_requires_runtime_pygame_stub(request: pytest.FixtureRequest) -> bool:
 	return Path(str(module_file)).name in _PYGAME_RUNTIME_STUB_TESTS
 
 
+def _reset_ui_scale_preset() -> None:
+	"""UI scale preset process-global oldugu icin testler arasi sizmamasini sagla."""
+	try:
+		ui_scaling = importlib.import_module("ui_scaling")
+		reset_preset = getattr(ui_scaling, "set_ui_scale_preset", None)
+		if callable(reset_preset):
+			reset_preset("normal")
+	except Exception:
+		pass
+
+
 def pytest_sessionstart(session):
 	# macOS/Linux'ta os.add_dll_directory yok; bazı testler patch() ile bu
 	# attribute'u hedefliyor. Attribute'in varlığını garanti ederek
@@ -132,6 +144,7 @@ def pytest_sessionstart(session):
 		os.add_dll_directory = _dummy_add_dll_directory  # type: ignore[attr-defined]
 
 	_purge_leaked_test_stubs()
+	_reset_ui_scale_preset()
 
 
 def pytest_collectstart(collector):
@@ -166,8 +179,10 @@ def pytest_pycollect_makemodule(module_path, parent):
 @pytest.fixture(autouse=True)
 def _isolate_test_module_stubs(request: pytest.FixtureRequest):
 	_purge_leaked_test_stubs(skip_pygame=True)
+	_reset_ui_scale_preset()
 	if not _test_requires_runtime_pygame_stub(request):
 		_purge_leaked_pygame_stubs()
 	yield
 	_purge_leaked_test_stubs(skip_pygame=True)
 	_purge_leaked_pygame_stubs()
+	_reset_ui_scale_preset()

@@ -152,11 +152,11 @@ Her faz bittiğinde **Faz Sonu İnceleme** adımı çalıştırılır:
 - [ ] `self.p1_frozen = False`
 - [ ] `self.p2_frozen = False`
 
-### 2.5 `__init__` — Shared hold sistemi
-- [ ] `self.shared_hold_piece = None`
+### 2.5 `__init__` — Oyuncu bazlı hold sistemi
+- [ ] `self.p1_hold_piece = None`
+- [ ] `self.p2_hold_piece = None`
 - [ ] `self.p1_hold_used = False` — P1 aktif parçası için hold kullanıldı mı
 - [ ] `self.p2_hold_used = False` — P2 aktif parçası için hold kullanıldı mı
-- [ ] `self.hold_last_player = None` — son hold'a koyan oyuncu (görsel gösterim için)
 
 ### 2.6 `__init__` — Zamanlama
 - [ ] `self.p1_fall_time = 0`, `self.p2_fall_time = 0` — gravity accumulator
@@ -349,27 +349,25 @@ Her faz bittiğinde **Faz Sonu İnceleme** adımı çalıştırılır:
 
 ---
 
-## FAZ 5 — Shared Hold Sistemi
+## FAZ 5 — Oyuncu Bazlı Hold Sistemi
 
 ### 5.1 `_use_shared_hold(player)` metodu
 - [ ] `if player == 'P1' and self.p1_hold_used: return` — zaten kullandıysa engelle
 - [ ] `if player == 'P2' and self.p2_hold_used: return`
 
 ### 5.2 Hold slotu boşsa
-- [ ] Oyuncunun aktif parçasını `self.shared_hold_piece`'e koy
-- [ ] Bag'den yeni parça çek ve oyuncuya ver
+- [ ] Oyuncunun aktif parçasını kendi hold slotuna koy (`self.p1_hold_piece` / `self.p2_hold_piece`)
+- [ ] İlgili oyuncunun next parçasını oyuna ver
 - [ ] Yeni parça spawn pozisyonuna yerleştir
 - [ ] `self.pX_hold_used = True`
-- [ ] `self.hold_last_player = player`
 
 ### 5.3 Hold slotunda parça varsa (swap)
-- [ ] Hold'daki parçayı çek → eski: `held = self.shared_hold_piece`
-- [ ] Oyuncunun aktif parçasını hold'a koy → `self.shared_hold_piece = current`
+- [ ] Oyuncunun kendi hold slotundaki parçayı çek → eski: `held = self.pX_hold_piece`
+- [ ] Oyuncunun aktif parçasını yine kendi hold slotuna koy
 - [ ] Çekilen parçayı oyuncuya ver: `self.pX_current_piece = held`
 - [ ] Çekilen parçanın pozisyonunu oyuncunun spawn pozisyonuna sıfırla
 - [ ] Çekilen parçanın rotasyonunu sıfırla (state 0)
 - [ ] `self.pX_hold_used = True`
-- [ ] `self.hold_last_player = player`
 
 ### 5.4 Hold parçası alan kontrolü
 - [ ] Swap sonrası çekilen parçanın oyuncunun alanında geçerli pozisyonda olduğunu kontrol et
@@ -382,14 +380,13 @@ Her faz bittiğinde **Faz Sonu İnceleme** adımı çalıştırılır:
 - [ ] Bu, her aktif parça için bir kez hold kullanılabilmesini garanti eder
 
 ### ✅ Faz 5 Sonu İnceleme
-- [ ] P1 hold yapıyor → parça shared slot'a gidiyor, P1 yeni parça alıyor
-- [ ] P2 hold yapıyor → dolu slot'tan swap yapıyor, P1'in bıraktığı parça P2'ye geliyor
+- [ ] P1 hold yapıyor → parça P1 hold slotuna gidiyor, P1 yeni parça alıyor
+- [ ] P2 hold yapıyor → parça P2 hold slotuna gidiyor, P2 yeni parça alıyor
 - [ ] Aynı aktif parça için iki kez hold yapılamıyor
 - [ ] Parça kilitlenince hold hakkı sıfırlanıyor
 - [ ] Hold'dan çekilen parça doğru oyuncu alanında spawn oluyor
 - [ ] Hold'dan çekilen parça sığmazsa swap iptal ediliyor (crash yok)
 - [ ] Sonsuz hold döngüsü yok (parça başına tek kullanım kuralı)
-- [ ] `self.hold_last_player` doğru güncelleniyor
 - [ ] `./scripts/test/run_tests.sh -q` geçiyor
 
 ---
@@ -414,7 +411,7 @@ Her faz bittiğinde **Faz Sonu İnceleme** adımı çalıştırılır:
 - [ ] `self._draw_active_pieces()` — P1 ve P2 aktif parçaları
 - [ ] `self._draw_ghost_pieces()` — her iki oyuncu için ghost/shadow
 - [ ] `self._draw_hud()` — skor, seviye, zaman, katkı
-- [ ] `self._draw_side_panels()` — next parçalar + shared hold
+- [ ] `self._draw_side_panels()` — next parçalar + oyuncu hold panelleri
 - [ ] `if self.p1_frozen: self._draw_freeze_overlay('P1')`
 - [ ] `if self.p2_frozen: self._draw_freeze_overlay('P2')`
 - [ ] `if self.paused: self._draw_pause_menu()`
@@ -454,10 +451,10 @@ Her faz bittiğinde **Faz Sonu İnceleme** adımı çalıştırılır:
 ### 6.8 `_draw_side_panels()` metodu
 - [ ] Sol panel: P1 next parça önizlemesi
 - [ ] Sağ panel: P2 next parça önizlemesi
-- [ ] Orta veya araya yerleştirilmiş: Shared Hold kutusu
-- [ ] Hold kutusunda `self.shared_hold_piece` çizilir (varsa)
-- [ ] Hold kutusunun yanında "SHARED HOLD" etiketi
-- [ ] Son bırakan oyuncu küçük metinle gösterilebilir (opsiyonel)
+- [ ] Sol panel: P1 hold kutusu
+- [ ] Sağ panel: P2 hold kutusu
+- [ ] Her hold kutusunda ilgili oyuncunun hold parçası çizilir (varsa)
+- [ ] Hold etiketinde oyuncu adı ve tuş bağı gösterilir
 
 ### 6.9 `_draw_freeze_overlay(player)` metodu
 - [ ] Frozen oyuncunun board alanı üzerine yarı saydam overlay
@@ -558,7 +555,7 @@ Her faz bittiğinde **Faz Sonu İnceleme** adımı çalıştırılır:
   - [ ] `coop_level` → TR: "Seviye", EN: "Level"
   - [ ] `coop_lines` → TR: "Satırlar", EN: "Lines"
   - [ ] `coop_contribution` → TR: "Katkı", EN: "Contribution"
-  - [ ] `coop_shared_hold` → TR: "Ortak Hold", EN: "Shared Hold"
+  - [ ] `coop_hold_panel_label` → TR: "{player} Saklanan ({binding})", EN: "{player} Hold ({binding})"
 
 ### 8.2 Freeze ve durum metinleri
 - [ ] `coop_frozen_waiting` → TR: "Alan Bekleniyor...", EN: "Waiting for Space..."
@@ -694,7 +691,7 @@ Her faz bittiğinde **Faz Sonu İnceleme** adımı çalıştırılır:
   - [ ] Tek ortak board ✓
   - [ ] Ortak team score ✓
   - [ ] Katkı yüzdesi göstergesi ✓
-  - [ ] Tek ortak hold slotu ✓
+  - [ ] Oyuncu bazlı iki hold slotu ✓
   - [ ] Freeze ve unfreeze akışı ✓
   - [ ] Spawn bazlı freeze ✓
   - [ ] Çift freeze = game over ✓
@@ -730,7 +727,7 @@ Her faz bittiğinde **Faz Sonu İnceleme** adımı çalıştırılır:
 | 2 | CoopGame init | `src/coop_game.py` — sınıf yapısı + tüm attr'ler |
 | 3 | Input | handle_input — iki oyunculu tuş yönetimi |
 | 4 | Update | Gravity, lock, clear, freeze, unfreeze, skor döngüsü |
-| 5 | Shared Hold | Hold swap, handoff, parça başına tek kullanım |
+| 5 | Player Hold | Oyuncu bazlı hold swap, parça başına tek kullanım |
 | 6 | Render | draw — board, HUD, side panel, freeze, pause, game over |
 | 7 | Entegrasyon | main.py + menu.py bağlantısı |
 | 8 | Lokalizasyon | TR/EN metinler |
@@ -742,3 +739,36 @@ Her faz bittiğinde **Faz Sonu İnceleme** adımı çalıştırılır:
 
 **Toplam yeni dosyalar:** 4 (coop_board.py, coop_game.py, test_coop_board.py, test_coop_game.py)  
 **Modifiye dosyalar:** 3 (main.py, menu.py, localization.py) + opsiyonel (AGENTS.md, tasarım belgesi)
+
+---
+
+## 10.04.2026 Uygulama Sonrası Durum Eki
+
+Bu dosyadaki üst fazlar ve checkbox listeleri ilk plan kaydı olarak bilinçli şekilde korunmuştur. Aşağıdaki bölüm, son implementasyon ve audit turlarından sonra repo içindeki gerçek durumu ek kayıt olarak özetler.
+
+### Gerçekleşen Ana Teslimler
+
+- `src/coop_board.py` ve `src/coop_game.py` üretildi ve aktif kullanıma alındı.
+- Menüden girilebilen local endless co-op akışı tamamlandı.
+- `src/campaign/coop_campaign_mode.py`, `src/campaign/coop_level_select.py`, `src/campaign/coop_level_data.py` ve `src/campaign/coop_objectives.py` ile co-op campaign katmanı da eklendi.
+- Oyuncu bazlı ayrı hold slotları, freeze/unfreeze akışı, restart, game over overlay ve peek/göz davranışı runtime'da çalışır hale geldi.
+- Co-op için mod bazlı müzik akışı, ayar ekranı entegrasyonu ve ortak game over sequence bağlantısı kuruldu.
+
+### İlk Plandan Sonra Eklenen Kapsam
+
+- Bu planda V1 dışı bırakılan co-op campaign artık uygulanmış durumdadır.
+- Görsel parity çalışmalarıyla co-op sahnesindeki mor PvP ton kaldırıldı ve Luna sweep ana oyun matematiğine hizalandı.
+- Parçacık ayarı boolean toggledan çıkıp `off / low / medium / high` seviyelerine taşındı.
+- Co-op ve campaign test altyapısı gerçek runtime yüzeyine göre genişletildi.
+
+### Son Audit Turlarıyla Temizlenen Ek Kalite Noktaları
+
+- Screen shake davranışı particle toggle'dan ayrıldı; genel efekt anahtarına bağlandı.
+- Co-op ambient particle başlangıcı, `particle_effects = off` durumunda sessizce çalışmayacak şekilde düzeltildi.
+- `src/pvp_game.py` içinde sonradan override edilen eski parçacık/shake blokları dead code olarak temizlendi.
+- Co-op ile ilişkili ayar, render ve test yolları tekrar A'dan Z'ye tarandı.
+
+### Doğrulama Notu
+
+- Son tam doğrulama sonucu: `748 passed, 7 skipped`
+- Üstteki checklist yapısı tarihsel plan kaydı olarak bırakılmıştır; güncel teknik durum bu ek bölüm ve ayrıntılı rapor ile birlikte okunmalıdır.

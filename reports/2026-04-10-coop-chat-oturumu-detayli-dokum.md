@@ -1196,3 +1196,281 @@ Dolayısıyla bu belgenin güncel ve tam sonucu artık üç katmanlıdır:
 1. Co-op'un ana runtime kırılımları giderildi.
 2. Co-op'un gizli görsel/efekt ve test altyapısı sorunları temizlendi.
 3. Co-op'un görsel parity, müzik akışı ve game over davranışı ana oyunla daha tutarlı hale getirildi.
+
+## 36. Sonraki Senkronizasyon Kontrolü: Başka PC'den Gelen Co-op Durumu
+
+Bu rapor güncellendikten sonra repo başka bir makinede ilerletilmiş haliyle tekrar incelendi. Bu yeni kontrolde iki önemli sonuç çıktı.
+
+### 36.1. Hold Davranışı Artık Oyuncu Bazlı Ayrı Slotlara Kaymış Durumda
+
+İlk tasarım ve todo belgeleri tek ortak hold slotu varsayımıyla yazılmıştı. Ancak güncel implementasyon şu davranışa geçmiş durumdaydı:
+
+- P1 kendi hold slotunu kullanıyor
+- P2 kendi hold slotunu kullanıyor
+- HUD üzerinde P1 hold ve P2 hold kutuları ayrı ayrı çiziliyor
+- Testler de bu yeni davranışı doğruluyor
+
+Bu yüzden bu son kontrolde tasarım ve todo belgeleri, mevcut runtime davranışına hizalanacak şekilde güncellendi. Ortak hold anlatısı yerine oyuncu bazlı ayrı hold modeli resmi hale getirildi.
+
+### 36.2. Windows'ta Hard Drop Shake'in Çalışmama Kök Nedeni Bulundu
+
+Yeni kullanıcı geri bildirimi, hard drop sonrasındaki küçük ekran sarsıntısının macOS'ta görünmesine rağmen Windows'ta görünmediği yönündeydi.
+
+İnceleme sonucunda kök neden platforma özel render farkı değil, yanlış feature gate olduğu görüldü:
+
+- `trigger_screen_shake()` akışı genel efekt açık mı diye bakmak yerine `particle_effects` ayarına bağlı çalışıyordu.
+- Screen shake aslında motion feedback katmanıdır; particle toggle'a bağlı olması gerekmiyordu.
+- Bu yüzden bazı ortamlarda parçacık ayarı kapalıyken shake de sessizce kapanıyordu.
+
+Yapılan düzeltme:
+
+- Screen shake, particle toggle'dan ayrıldı.
+- Artık genel `effects_enabled` açık olduğu sürece hard drop shake ve benzeri shake çağrıları platformdan bağımsız çalışabilecek.
+
+Bu değişiklik, özellikle Windows tarafındaki görünmeyen shake davranışını düzeltmek için yapıldı.
+
+### 36.3. Kullanıcıya Görünen Hold Metinleri de Yeni Davranışa Göre Hizalandı
+
+Kod oyuncu bazlı hold'a geçmiş olmasına rağmen bazı kullanıcı görünen metinler ve objective açıklamaları hâlâ “Shared Hold / Ortak Hold” dili kullanıyordu.
+
+Bu son senkronizasyonda:
+
+- hold objective metinleri daha genel “Hold” kullanımına çekildi
+- eski shared hold terimleri yeni davranışla çelişmeyecek hale getirildi
+
+### 36.4. Doğrulama
+
+Bu son senkronizasyon ve shake düzeltmesinden sonra co-op odaklı hedefli test seti tekrar çalıştırıldı.
+
+Sonuç:
+
+- `68 passed`
+
+Bu sonuç, en azından co-op gameplay + campaign katmanında yeni bir kırılma oluşmadığını doğruladı.
+
+## 37. Kart Ustalığı Paritesi Sonrası Co-op Game Over ve Gameplay Senkronizasyonu
+
+Bu rapora eski kayıtlar korunarak eklenen bu yeni bölüm, aynı sohbet akışında daha sonra yapılan co-op parity ve davranış düzeltmelerini toplar.
+
+### 37.1. Co-op Game Over Ekranı Kart Ustalığı Dilinde Yeniden Kuruldu
+
+İlk co-op game over ekranı işlevsel olsa da Kart Ustalığı / MysteryMode sonuç ekranının sunduğu görsel ritim ve bilgi yoğunluğunu taşımıyordu.
+
+Bu son fazda `src/coop_game.py` içindeki game over çizimi şu yönde yeniden kuruldu:
+
+- Tam ekran degrade tint ile daha güçlü terminal durum atmosferi verildi
+- Büyük cam panel ve kart tabanlı sonuç yerleşimi eklendi
+- Takım skoru, durum başlığı, fail nedeni ve özet istatistikler ayrı bilgi bloklarına ayrıldı
+- P1 ve P2 katkı oranları bağımsız kartlar halinde gösterildi
+- Co-op'a özel daha büyük ve okunaklı bir sonuç kompozisyonu kuruldu
+
+Bu çalışma, ana oyunun Kart Ustalığı hissini doğrudan kopyalamak yerine co-op'ın iki oyunculu özet ihtiyacına göre uyarlanmış bir parity yaklaşımıyla yapıldı.
+
+### 37.2. Game Over Verisi Snapshot Olarak Donduruldu ve Restart Akışı Eklendi
+
+Yeni overlay sadece daha şık çizilmedi; aynı zamanda data akışı da sağlamlaştırıldı.
+
+Eklenen yapı:
+
+- Game over anında skor, satır, seviye, süre ve katkı yüzdeleri snapshot olarak donduruluyor
+- Overlay artık canlı runtime state yerine bu snapshot üzerinden çiziliyor
+- Böylece sonuç ekranı açıkken son frame'lerdeki değişken state akışı panele sızmıyor
+
+Ayrıca co-op game over ekranına gerçek restart akışı eklendi:
+
+- `R` ile aynı co-op oturumu yeniden başlatılabiliyor
+- Ekrandaki restart butonu da aynı akışı çağırıyor
+- ESC ve menü butonu ayrı bir dönüş yolu olarak korunuyor
+- Mouse etkileşimi artık “ekranda herhangi bir yere tıklayınca çık” davranışı yerine gerçek buton hitbox'larına bağlı çalışıyor
+
+### 37.3. Genel Pytest Önündeki Kırılmanın Kök Nedeni Co-op Test Sızıntısıydı
+
+Bu parity fazından sonra genel pytest yalnızca gerçek runtime sorunlarını değil, gizli test altyapısı problemlerini de görünür hale getirdi.
+
+Özellikle `tests/test_coop_campaign.py` içinde kullanılan geçici `campaign` package stub'ı temizlenmeden süreç geneline sızdığı için sonraki modül import'larını bozuyordu.
+
+Bulunan kök neden:
+
+- test modülü `sys.modules['campaign']` içine sahte paket yazıyordu
+- bu kayıt test bitince geri alınmadığında başka testlerin import yolunu kirletiyordu
+- `tests/test_main_persist_active_game_run.py` gibi dosyalar bu yüzden kendi hataları olmadan fail veriyordu
+
+Yapılan düzeltme:
+
+- geçici `campaign` stub'ı sadece import ihtiyacı süresince tutuldu
+- orijinal modül kaydı test sonunda geri yüklendi ya da temizlendi
+- tekrar import edilen semboller, aynı dosya içinde zaten import edilen local referanslarla değiştirildi
+
+Bu sayede tam pytest artık gerçek kırılmaları göstermeye başladı; sahte import kirliliği temizlendi.
+
+### 37.4. Yeni Game Over Overlay İçin Lokalizasyon Katmanı Tamamlandı
+
+Game over ekranı zenginleştikçe co-op'a özel yeni metin anahtarları da gerekti.
+
+Bu turda `src/localization.py` içine şu gruplar eklendi:
+
+- P1 ve P2 için ayrı terminal durum başlıkları
+- double-freeze, tek oyuncu freeze ve genel fail reason metinleri
+- yeni subtitle ve hint satırları
+- seviye etiketi gibi kart içinde kullanılan ek UI anahtarları
+
+Bu adım özellikle localization completeness testinin tekrar yeşile dönmesi için gerekliydi.
+
+### 37.5. Soft Drop Kilitlenmesi Ana Oyunla Hizalandı
+
+Kullanıcı geri bildirimi, co-op modunda soft drop sırasında parçanın yere değer değmez anında kilitlendiği; buna karşılık Kart Ustalığı ve ana oyunda kısa bir lock delay hissi olduğu yönündeydi.
+
+İnceleme sonucu co-op tarafında iki ayrı yolun fazla agresif olduğu görüldü:
+
+- soft drop aşağı inemediği frame'de doğrudan lock çağırıyordu
+- gravity tick'i de aşağı inemediği anda aynı frame'de lock'a gidiyordu
+
+Ana oyundaki davranışa parity için co-op'a oyuncu bazlı lock delay state'i eklendi:
+
+- `enable_lock_delay`
+- `lock_delay`
+- `p1_grounded`, `p2_grounded`
+- `p1_lock_timer`, `p2_lock_timer`
+
+Bu refactor ile:
+
+- soft drop ve gravity ortak `_step_piece_down()` yoluna bağlandı
+- aşağı hareket edememe artık anında lock değil, grounded state üretiyor
+- gerçek lock yalnızca lock delay süresi dolunca tetikleniyor
+- spawn, hold, freeze ve unfreeze yolları ilgili oyuncunun grounded state'ini temizliyor
+
+Sonuç olarak co-op'un düşüş hissi Kart Ustalığı ve ana oyunla belirgin biçimde hizalandı.
+
+### 37.6. Sağ Üst Göz Butonu Co-op Game Over'a İşleviyle Birlikte Taşındı
+
+Parity çalışmasının son adımında Kart Ustalığı'ndaki sağ üst göz butonu da co-op game over ekranına eklendi.
+
+Bu sadece ikon yerleştirme değil, tam davranış portu olacak şekilde yapıldı:
+
+- panel açıkken sağ üst köşede göz butonu çiziliyor
+- göz tıklanınca overlay geçici olarak kapanıyor ve oyuncular board'u çıplak haliyle görebiliyor
+- peek modundayken sağ altta sadece göz butonu kalıyor
+- restart ve menü butonları peek aktifken devre dışı bırakılıyor
+- göze tekrar tıklanınca sonuç paneli geri geliyor
+
+Bu akış, co-op sonuç ekranına Kart Ustalığı'ndaki “önce board'a bir daha bak, sonra karar ver” ergonomisini taşıdı.
+
+### 37.7. Doğrulama Zinciri
+
+Bu son parity ve davranış düzeltmeleri birkaç aşamada doğrulandı.
+
+Ara doğrulamalar:
+
+- co-op campaign import sızıntısı temizlendikten sonra ilgili hedefli çift koşu yeşile döndü
+- soft drop parity değişikliğinden sonra co-op + co-op campaign odaklı koşuda `73 passed` alındı
+- game over göz/peek butonu eklendikten sonra yalnızca `tests/test_coop.py` için `36 passed` alındı
+
+Genel doğrulama:
+
+- parity, localization ve soft drop fazı sonunda tam test seti `737 passed, 7 skipped` oldu
+- göz/peek eklemesi ve son test güncellemelerinden sonra tam test seti `739 passed, 7 skipped` oldu
+
+Dolayısıyla co-op tarafındaki bu son faz artık yalnızca görsel bir makyaj değildir.
+
+Bu fazın birleşik çıktısı şudur:
+
+- Co-op game over ekranı Kart Ustalığı seviyesinde daha zengin bir sonuç paneline taşındı
+- restart, button hitbox ve peek ergonomisi eklendi
+- soft drop lock davranışı ana oyunla hizalandı
+- test izolasyonu ve localization completeness kırılımları temizlendi
+- tam pytest yeniden yeşile döndü
+
+## 38. Sonraki Audit Eki: Particle Seviye Sistemi ve Son Co-op Tutarlılık Turu
+
+Bu yeni bölüm, önceki kayıtları silmeden aynı sohbet akışının daha sonraki kısmında yapılan son kalite turunu ekler. Bu tur, sadece co-op değil ayar sistemi, ana oyun, PvP ve online PvP ile paylaşılan efekt katmanını da yeniden taradı; çünkü co-op davranışı bu ortak efekt yolundan besleniyordu.
+
+### 38.1. Particle Effects Ayarı Çok Seviyeli Hale Getirildi
+
+Bu fazda `particle_effects` ayarı basit bir açık/kapalı değerden çıkarıldı ve dört seviyeli yapıya taşındı:
+
+- `off`
+- `low`
+- `medium`
+- `high`
+
+Bu değişiklik settings, UI, localization ve runtime katmanlarına birlikte yansıtıldı.
+
+Ana sonuçlar:
+
+- `src/settings_manager.py` içinde normalize edici yardımcılar eklendi.
+- `src/settings_screen_tabbed.py` içindeki modern ayarlar ekranında particle effects artık slider olarak çalışır hale geldi.
+- `src/graphics_menu.py` içindeki eski grafik menüsü de yeni seviyeleri döndürecek şekilde güncellendi.
+- `src/localization.py` içine `particle_effects_low`, `particle_effects_medium` ve `particle_effects_high` anahtarları eklendi.
+
+Bu sayede co-op da dahil tüm modlar aynı kullanıcı ayarını aynı anlamla okuyabilir hale geldi.
+
+### 38.2. Co-op İçin Görünmeyen Bir Ambient Particle Tutarsızlığı Bulundu
+
+Son A'dan Z'ye audit sırasında `src/coop_game.py` içindeki `_init_ambient_particles()` yolu yeniden incelendi.
+
+Bulgu şuydu:
+
+- Metot yalnızca `effects_enabled` kontrol ediyordu.
+- Bu yüzden `particle_effects = off` olsa bile başlangıç ambient particle'ları sessizce oluşabiliyordu.
+- Ana oyundaki `create_ambient_particles()` davranışı ile tutarsız bir sonuç üretiyordu.
+
+Yapılan düzeltme:
+
+- `_init_ambient_particles()` artık doğrudan `_particle_effects_enabled()` kontrolünü kullanır.
+
+Bu değişiklik, co-op'ın particle ayarına gerçek anlamda saygı göstermesini sağladı.
+
+### 38.3. Screen Shake Ayrı Bir Feedback Katmanı Olarak Yeniden Ayrıştırıldı
+
+Bu turda co-op ile ilişkili bir başka kök tutarsızlık da yeniden doğrulandı.
+
+Bulgu:
+
+- Bazı modlarda `trigger_screen_shake()` akışı `particle_effects` ayarına bağlı kapatılıyordu.
+- Oysa screen shake, particle yoğunluğu ayarıyla aynı şey değildir; hareket geri bildirimi katmanıdır.
+
+Yapılan düzeltme:
+
+- `src/game.py`, `src/pvp_game.py` ve `src/online_pvp_game.py` içindeki shake kapıları `particle_effects` yerine genel `effects_enabled` anahtarına bağlandı.
+- `src/coop_game.py` bu davranışı zaten aynı yönde taşıdığı için co-op ile diğer modlar yeniden hizalanmış oldu.
+
+Bu ayrım özellikle hard drop ve benzeri anlarda shake'in particle kapalı olsa bile kaybolmamasını sağladı.
+
+### 38.4. PvP Tarafında Override Edilen Eski Efekt Kodları Temizlendi
+
+Audit sırasında sadece aktif bug'lar değil, gelecekte kafa karıştıracak yapılar da incelendi.
+
+`src/pvp_game.py` içinde aynı sınıf içinde daha aşağıda tekrar tanımlanan bazı eski metod gövdeleri bulundu:
+
+- eski `trigger_screen_shake()`
+- eski `create_particles()`
+- eski `create_line_clear_particles()`
+
+Python'da son tanım kazandığı için bu bloklar fiilen dead code durumundaydı. Bu turda kaldırılarak dosyanın gerçek runtime yüzeyi sadeleştirildi.
+
+### 38.5. Test Katmanı da Yeni Davranışa Göre Genişletildi
+
+Bu fazda testler de yeni seviye modeline ve shake davranışına göre güncellendi.
+
+Öne çıkan eklemeler:
+
+- `tests/test_settings_particle_levels.py` içinde normalizasyon, slider dönüşümü, eski boolean migration ve helper davranışları için yeni testler eklendi.
+- `tests/test_coop.py` içinde shake çarpanı ve particle seviye yoğunluğu için yeni beklentiler yazıldı.
+
+Bu testler, co-op'ın ortak ayar sisteminden aldığı davranışın gerçekten istediğimiz şekilde kaldığını doğrulamak için özellikle önemliydi.
+
+### 38.6. Son Doğrulama Sonucu
+
+Bu ek audit ve düzeltme turundan sonra tam test seti yeniden çalıştırıldı.
+
+Sonuç:
+
+- `748 passed, 7 skipped`
+
+Dolayısıyla bu yeni ek fazın birleşik sonucu şudur:
+
+1. Particle effects ayarı çok seviyeli ve normalize bir sisteme taşındı.
+2. Co-op başlangıç ambient particle yolu bu yeni ayarla gerçekten tutarlı hale getirildi.
+3. Screen shake katmanı particle toggle'dan ayrılarak daha doğru bir efekt modeline oturtuldu.
+4. PvP tarafındaki override edilmiş eski efekt kodları temizlenerek bakım maliyeti düşürüldü.
+5. Tam test koşusunda yeni regresyon oluşmadığı doğrulandı.

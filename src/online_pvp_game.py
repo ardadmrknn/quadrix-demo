@@ -556,10 +556,52 @@ class OnlinePvPGame:
         sm = getattr(self, 'settings_manager', None)
         if sm is None:
             return True  # Ayar yoksa açık say
+        helper = getattr(sm, 'particle_effects_enabled', None)
+        if callable(helper):
+            try:
+                return bool(helper())
+            except Exception:
+                pass
         try:
-            return bool(sm.get('particle_effects', True))
+            value = sm.get('particle_effects', True)
         except Exception:
             return True
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            return int(value) > 0
+        return str(value).strip().lower() not in ('off', 'false', '0', 'kapali', 'kapalı')
+
+    def _particle_effects_multiplier(self) -> float:
+        if not self._particle_effects_enabled():
+            return 0.0
+        sm = getattr(self, 'settings_manager', None)
+        if sm is None:
+            return 1.0
+        helper = getattr(sm, 'get_particle_effects_multiplier', None)
+        if callable(helper):
+            try:
+                return max(0.0, float(helper()))
+            except Exception:
+                pass
+        try:
+            value = sm.get('particle_effects', True)
+        except Exception:
+            return 1.0
+        if isinstance(value, bool):
+            return 1.0 if value else 0.0
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            return {0: 0.0, 1: 0.55, 2: 1.0, 3: 1.7}.get(max(0, min(3, int(round(value)))), 1.0)
+        return {
+            'off': 0.0,
+            'low': 0.55,
+            'az': 0.55,
+            'medium': 1.0,
+            'orta': 1.0,
+            'high': 1.7,
+            'çok': 1.7,
+            'cok': 1.7,
+        }.get(str(value).strip().lower(), 1.0)
 
     def _apply_block_style(self, piece: Piece | None):
         if not piece:
@@ -2568,7 +2610,7 @@ class OnlinePvPGame:
 
     def trigger_screen_shake(self, intensity=10, duration=15):
         """Ekran titremesi efekti başlat."""
-        if not self._particle_effects_enabled():
+        if not getattr(self, 'effects_enabled', True):
             return
         self._screen_shake_initial = max(1.0, float(duration))
         self.screen_shake = float(duration)
@@ -2606,7 +2648,7 @@ class OnlinePvPGame:
             y = random.randint(0, self.window_height // 2)
         if colors is None:
             colors = [(0, 255, 255), (255, 215, 0), (255, 0, 255), (0, 255, 120), (255, 90, 90)]
-        for _ in range(count):
+        for _ in range(max(1, int(count * self._particle_effects_multiplier()))):
             particle = {
                 'x': float(x),
                 'y': float(y),
@@ -2631,7 +2673,7 @@ class OnlinePvPGame:
         white_tint = tuple(min(255, c + 80) for c in base_color)
         color_palette = [base_color, bright_color, dim_color, white_tint, (255, 255, 255)]
 
-        particle_count = random.randint(6, 10)
+        particle_count = max(1, int(random.randint(6, 10) * self._particle_effects_multiplier()))
         for i in range(particle_count):
             angle = (i / particle_count) * 2 * math.pi + random.uniform(-0.3, 0.3)
             speed = random.uniform(2, 5)
@@ -2757,7 +2799,7 @@ class OnlinePvPGame:
                 except Exception:
                     cell_color = random.choice(sparkle_colors)
 
-                for _ in range(random.randint(6, 10)):
+                for _ in range(max(1, int(random.randint(6, 10) * self._particle_effects_multiplier()))):
                     speed = random.uniform(4, 12)
                     self.particles.append({
                         'x': float(cell_x + random.randint(-3, 3)),
@@ -2772,7 +2814,7 @@ class OnlinePvPGame:
                     })
 
                 if col % 2 == 0:
-                    for _ in range(random.randint(2, 4)):
+                    for _ in range(max(1, int(random.randint(2, 4) * self._particle_effects_multiplier()))):
                         spark_color = random.choice(sparkle_colors)
                         spark_speed = random.uniform(8, 15)
                         self.particles.append({
@@ -2790,8 +2832,9 @@ class OnlinePvPGame:
 
             center_x = board_offset_x + (BOARD_WIDTH * cell_size) // 2
             center_y = board_offset_y + row * cell_size + cell_size // 2
-            for i in range(16):
-                angle = (i / 16) * 2 * math.pi
+            star_count = max(4, int(16 * self._particle_effects_multiplier()))
+            for i in range(star_count):
+                angle = (i / star_count) * 2 * math.pi
                 star_speed = random.uniform(6, 14)
                 self.particles.append({
                     'x': float(center_x),
@@ -2832,7 +2875,7 @@ class OnlinePvPGame:
         if not self._particle_effects_enabled():
             return
         self.ambient_particles.clear()
-        for _ in range(random.randint(50, 100)):
+        for _ in range(max(10, int(random.randint(50, 100) * self._particle_effects_multiplier()))):
             self.ambient_particles.append({
                 'x': random.uniform(0, self.window_width),
                 'y': random.uniform(0, self.window_height),

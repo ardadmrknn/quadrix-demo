@@ -414,10 +414,52 @@ class Game:
         if sm is None:
             # Sade varsayılan: ayar yöneticisi yoksa FX kapalı.
             return False
+        helper = getattr(sm, 'particle_effects_enabled', None)
+        if callable(helper):
+            try:
+                return bool(helper())
+            except Exception:
+                pass
         try:
-            return bool(sm.get('particle_effects', False))
+            value = sm.get('particle_effects', False)
         except Exception:
             return False
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            return int(value) > 0
+        return str(value).strip().lower() not in ('off', 'false', '0', 'kapali', 'kapalı')
+
+    def _particle_effects_multiplier(self) -> float:
+        if not self._particle_effects_enabled():
+            return 0.0
+        sm = getattr(self, 'settings_manager', None)
+        if sm is None:
+            return 0.0
+        helper = getattr(sm, 'get_particle_effects_multiplier', None)
+        if callable(helper):
+            try:
+                return max(0.0, float(helper()))
+            except Exception:
+                pass
+        try:
+            value = sm.get('particle_effects', False)
+        except Exception:
+            return 0.0
+        if isinstance(value, bool):
+            return 1.0 if value else 0.0
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            return {0: 0.0, 1: 0.55, 2: 1.0, 3: 1.7}.get(max(0, min(3, int(round(value)))), 1.0)
+        return {
+            'off': 0.0,
+            'low': 0.55,
+            'az': 0.55,
+            'medium': 1.0,
+            'orta': 1.0,
+            'high': 1.7,
+            'çok': 1.7,
+            'cok': 1.7,
+        }.get(str(value).strip().lower(), 1.0)
 
     def _get_ambient_sprite(self, radius: int, alpha: int, glow: bool) -> pygame.Surface:
         radius = max(1, int(radius))
@@ -2139,7 +2181,7 @@ class Game:
         
         # Animasyon çarpanına göre parçacık sayısını ayarla
         mult = getattr(self, 'animation_multiplier', 1.0)
-        adjusted_count = max(1, int(count * mult))
+        adjusted_count = max(1, int(count * mult * self._particle_effects_multiplier()))
         
         # Varsayılan konum
         active_width, active_height = self._active_ui_size()
@@ -2181,7 +2223,7 @@ class Game:
             return
         
         # Her hücreden 6-10 parçacık
-        particle_count = random.randint(6, 10)
+        particle_count = max(1, int(random.randint(6, 10) * self._particle_effects_multiplier()))
         
         # Renk varyasyonları oluştur (orijinal renk + parlak/koyu versiyonlar)
         base_color = color
@@ -2267,7 +2309,7 @@ class Game:
                 
                 # === ANA PATLAMA PARÇACIKLARı ===
                 # Her hücreden 6-10 ana parçacık
-                for _ in range(random.randint(6, 10)):
+                for _ in range(max(1, int(random.randint(6, 10) * self._particle_effects_multiplier()))):
                     angle = random.uniform(0, 2 * 3.14159)
                     speed = random.uniform(4, 12)
                     
@@ -2291,7 +2333,7 @@ class Game:
                 # === KIVILCIM PARÇACIKLARı ===
                 # Her 2 hücreden 1 kıvılcım
                 if col % 2 == 0:
-                    for _ in range(random.randint(2, 4)):
+                    for _ in range(max(1, int(random.randint(2, 4) * self._particle_effects_multiplier()))):
                         spark_color = random.choice(sparkle_colors)
                         spark_speed = random.uniform(8, 15)
                         
@@ -2314,8 +2356,9 @@ class Game:
             center_y = board_offset_y + row * cell_size + cell_size // 2
             
             # Merkezi patlama - yıldız şeklinde
-            for i in range(16):
-                angle = (i / 16) * 2 * math.pi
+            star_count = max(4, int(16 * self._particle_effects_multiplier()))
+            for i in range(star_count):
+                angle = (i / star_count) * 2 * math.pi
                 star_speed = random.uniform(6, 14)
                 
                 particle = {
@@ -2846,7 +2889,7 @@ class Game:
         main_color = random.choice(colors)
         
         # Dairesel patlama - 360 derece
-        particle_count = random.randint(40, 60)
+        particle_count = max(1, int(random.randint(40, 60) * self._particle_effects_multiplier()))
         for i in range(particle_count):
             angle = (i / particle_count) * 2 * 3.14159
             speed = random.uniform(3, 8)
@@ -2936,7 +2979,7 @@ class Game:
             return
         # Animasyon seviyesine göre parçacık sayısı
         base_count = random.randint(50, 100)
-        count = int(base_count * getattr(self, 'animation_multiplier', 1.0))
+        count = int(base_count * getattr(self, 'animation_multiplier', 1.0) * self._particle_effects_multiplier())
         active_width, active_height = self._active_ui_size()
         
         for _ in range(count):
@@ -2957,7 +3000,7 @@ class Game:
 
         Eski davranış: duration her frame 1 azalırdı. Şimdi dt ile ölçekleniyor.
         """
-        if not self._particle_effects_enabled():
+        if not getattr(self, 'effects_enabled', True):
             return
         mult = getattr(self, 'animation_multiplier', 1.0)
         self._screen_shake_initial = max(1.0, float(duration) * float(mult))

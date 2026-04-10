@@ -10,6 +10,8 @@ from ui_scaling import get_effective_scale, scale_px
 
 class GraphicsMenu:
     """Grafik ayarları ekranı"""
+
+    _PARTICLE_EFFECT_LEVELS = ('off', 'low', 'medium', 'high')
     
     def __init__(self, screen, settings_manager):
         """Grafik menüsünü başlat"""
@@ -41,7 +43,9 @@ class GraphicsMenu:
         self.background_enabled = settings_manager.get('background_enabled', True)
         self.bg_transparency = settings_manager.get('bg_transparency', 0.3)
         self.menu_transparency = settings_manager.get('menu_transparency', 1.0)
-        self.particle_effects = settings_manager.get('particle_effects', False)  # Varsayılan kapalı
+        self.particle_effects = self._normalize_particle_effects_value(
+            settings_manager.get('particle_effects', 'medium')
+        )
 
         # FPS limit seçenekleri (0 = otomatik ekran yenileme hızı)
         self.fps_limits = [0, 60, 90, 120, 144, 240]
@@ -227,6 +231,61 @@ class GraphicsMenu:
                     return None
 
         return None
+
+    def _normalize_particle_effects_value(self, value):
+        helper = getattr(self.settings_manager, 'normalize_particle_effects_value', None)
+        if callable(helper):
+            try:
+                return str(helper(value))
+            except Exception:
+                pass
+        if isinstance(value, bool):
+            return 'medium' if value else 'off'
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            mapping = {0: 'off', 1: 'low', 2: 'medium', 3: 'high'}
+            return mapping.get(max(0, min(3, int(round(value)))), 'medium')
+        mapping = {
+            'off': 'off',
+            'kapali': 'off',
+            'kapalı': 'off',
+            'false': 'off',
+            '0': 'off',
+            'low': 'low',
+            'az': 'low',
+            '1': 'low',
+            'medium': 'medium',
+            'orta': 'medium',
+            'true': 'medium',
+            'on': 'medium',
+            'acik': 'medium',
+            'açık': 'medium',
+            '2': 'medium',
+            'high': 'high',
+            'cok': 'high',
+            'çok': 'high',
+            '3': 'high',
+        }
+        return mapping.get(str(value or '').strip().lower(), 'medium')
+
+    def _cycle_particle_effects(self, increase=True):
+        current = self._normalize_particle_effects_value(self.particle_effects)
+        levels = self._PARTICLE_EFFECT_LEVELS
+        idx = levels.index(current) if current in levels else levels.index('medium')
+        if increase:
+            idx = min(len(levels) - 1, idx + 1)
+        else:
+            idx = max(0, idx - 1)
+        self.particle_effects = levels[idx]
+        self.settings_manager.set('particle_effects', self.particle_effects)
+
+    def _particle_effects_label(self):
+        labels = {
+            'off': t('off'),
+            'low': t('particle_effects_low'),
+            'medium': t('particle_effects_medium'),
+            'high': t('particle_effects_high'),
+        }
+        return labels.get(self._normalize_particle_effects_value(self.particle_effects), t('particle_effects_medium'))
     
     def _toggle_setting(self):
         """Seçili ayarı değiştir"""
@@ -244,8 +303,7 @@ class GraphicsMenu:
             self.settings_manager.set('background_enabled', self.background_enabled)
             return 'toggle_background_enabled'
         elif self.selected == 6:  # Parçacık Efektleri
-            self.particle_effects = not self.particle_effects
-            self.settings_manager.set('particle_effects', self.particle_effects)
+            self._cycle_particle_effects(True)
 
         return None
 
@@ -279,6 +337,9 @@ class GraphicsMenu:
                 self.menu_transparency = max(0.0, float(self.menu_transparency) - 0.1)
             self.settings_manager.set('menu_transparency', round(self.menu_transparency, 1))
             return 'change_menu_transparency'
+
+        elif self.selected == 6:  # Parçacık Efektleri
+            self._cycle_particle_effects(increase)
 
         return None
     
@@ -330,10 +391,10 @@ class GraphicsMenu:
                     strip_color=strip_color,
                 )
                 continue
-            elif i in (0, 2, 3, 6):  # Toggle seçenekler (vsync, show_ghost, show_background, particle)
+            elif i in (0, 2, 3):  # Toggle seçenekler
                 kind = 'toggle'
                 strip_color = (112, 160, 255)  # mavi
-            elif i in (1, 4, 5):  # Selector seçenekler (fps limit, şeffaflık)
+            elif i in (1, 4, 5, 6):  # Selector seçenekler (fps limit, şeffaflık, particle)
                 kind = 'selector'
                 strip_color = (100, 220, 150)  # yeşil
             else:
@@ -446,7 +507,7 @@ class GraphicsMenu:
         elif index == 5:  # Menü Şeffaflığı
             return f'{int(self.menu_transparency * 100)}%'
         elif index == 6:  # Parçacık Efektleri
-            return t('on') if self.particle_effects else t('off')
+            return self._particle_effects_label()
         elif index == 7:  # Geri
             return ''
         return ''

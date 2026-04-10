@@ -126,10 +126,52 @@ class PvPGame:
         sm = getattr(self, 'settings_manager', None)
         if sm is None:
             return False
+        helper = getattr(sm, 'particle_effects_enabled', None)
+        if callable(helper):
+            try:
+                return bool(helper())
+            except Exception:
+                pass
         try:
-            return bool(sm.get('particle_effects', False))
+            value = sm.get('particle_effects', False)
         except Exception:
             return False
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            return int(value) > 0
+        return str(value).strip().lower() not in ('off', 'false', '0', 'kapali', 'kapalı')
+
+    def _particle_effects_multiplier(self) -> float:
+        if not self._particle_effects_enabled():
+            return 0.0
+        sm = getattr(self, 'settings_manager', None)
+        if sm is None:
+            return 0.0
+        helper = getattr(sm, 'get_particle_effects_multiplier', None)
+        if callable(helper):
+            try:
+                return max(0.0, float(helper()))
+            except Exception:
+                pass
+        try:
+            value = sm.get('particle_effects', False)
+        except Exception:
+            return 0.0
+        if isinstance(value, bool):
+            return 1.0 if value else 0.0
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            return {0: 0.0, 1: 0.55, 2: 1.0, 3: 1.7}.get(max(0, min(3, int(round(value)))), 1.0)
+        return {
+            'off': 0.0,
+            'low': 0.55,
+            'az': 0.55,
+            'medium': 1.0,
+            'orta': 1.0,
+            'high': 1.7,
+            'çok': 1.7,
+            'cok': 1.7,
+        }.get(str(value).strip().lower(), 1.0)
     
     def __init__(
         self,
@@ -1941,81 +1983,6 @@ class PvPGame:
                     # Alt sınıra ulaştı, parçayı kilitle
                     self.lock_and_new_piece(2)
                     self.p2_soft_drop_active = False
-    
-    def trigger_screen_shake(self, intensity=10, duration=15):
-        """Ekran titremesi efekti başlat"""
-        if not self._particle_effects_enabled():
-            return
-        self.shake_intensity = intensity
-        self.screen_shake = duration
-
-    def create_particles(self, count, x, y, colors, speed=5):
-        """Genel amaçlı parçacık oluşturucu"""
-        if not self._particle_effects_enabled():
-            return
-        
-        for _ in range(count):
-            angle = random.uniform(0, 2 * 3.14159)
-            s = random.uniform(speed * 0.5, speed * 1.5)
-            
-            # Yukarı doğru hafif eğim
-            vx = math.cos(angle) * s
-            vy = math.sin(angle) * s - (speed * 0.2)
-            
-            self.particles.append({
-                'x': float(x),
-                'y': float(y),
-                'vx': vx,
-                'vy': vy,
-                'life': random.randint(30, 60),
-                'max_life': 60,
-                'color': random.choice(colors),
-                'size': random.randint(3, 6),
-                'glow': True
-            })
-
-    def create_line_clear_particles(self, cleared_rows, board_offset_x, board_offset_y, cell_size, board=None):
-        """Satır temizlendiğinde parçacık efektleri"""
-        if not self._particle_effects_enabled():
-            return
-        
-        sparkle_colors = [
-            (255, 255, 255), (255, 255, 200), (255, 215, 0),
-            (0, 255, 255), (255, 100, 255)
-        ]
-        
-        for row in cleared_rows:
-            for col in range(BOARD_WIDTH):
-                cell_x = board_offset_x + col * cell_size + cell_size // 2
-                cell_y = board_offset_y + row * cell_size + cell_size // 2
-                
-                cell_color = random.choice(sparkle_colors)
-                # Renk bilgisi board'dan alınıyorsa
-                if board and hasattr(board, 'last_cleared_colors') and row in board.last_cleared_colors:
-                    try:
-                        row_colors = board.last_cleared_colors[row]
-                        if col < len(row_colors) and row_colors[col] != BLACK:
-                            cell_color = row_colors[col]
-                    except Exception:
-                        pass
-                
-                # Her hücre için parçacıklar
-                for _ in range(random.randint(4, 7)):
-                    speed = random.uniform(4, 8)
-                    vx = speed * random.uniform(-1, 1)
-                    vy = speed * random.uniform(-1, 0.5) - 2
-                    
-                    self.particles.append({
-                        'x': float(cell_x + random.randint(-5, 5)),
-                        'y': float(cell_y + random.randint(-5, 5)),
-                        'vx': vx,
-                        'vy': vy,
-                        'life': random.randint(40, 80),
-                        'max_life': 80,
-                        'color': cell_color,
-                        'size': random.randint(3, 5),
-                        'glow': True
-                    })
 
     def lock_and_new_piece(self, player):
         """Parçayı kilitle ve yeni parça oluştur"""
@@ -2422,7 +2389,7 @@ class PvPGame:
         if colors is None:
             colors = [CYAN, YELLOW, MAGENTA, GREEN, RED]
         
-        for _ in range(count):
+        for _ in range(max(1, int(count * self._particle_effects_multiplier()))):
             particle = {
                 'x': float(x),
                 'y': float(y),
@@ -2471,7 +2438,7 @@ class PvPGame:
                 
                 # === ANA PATLAMA PARÇACIKLARı ===
                 # Her hücreden 6-10 ana parçacık
-                for _ in range(random.randint(6, 10)):
+                for _ in range(max(1, int(random.randint(6, 10) * self._particle_effects_multiplier()))):
                     speed = random.uniform(4, 12)
                     
                     # Yatay hareket daha baskın (satır boyunca saçılım)
@@ -2494,7 +2461,7 @@ class PvPGame:
                 # === KIVILCIM PARÇACIKLARı ===
                 # Her 2 hücreden 1 kıvılcım
                 if col % 2 == 0:
-                    for _ in range(random.randint(2, 4)):
+                    for _ in range(max(1, int(random.randint(2, 4) * self._particle_effects_multiplier()))):
                         spark_color = random.choice(sparkle_colors)
                         spark_speed = random.uniform(8, 15)
                         
@@ -2517,8 +2484,9 @@ class PvPGame:
             center_y = board_offset_y + row * cell_size + cell_size // 2
             
             # Merkezi patlama - yıldız şeklinde
-            for i in range(16):
-                angle = (i / 16) * 2 * math.pi
+            star_count = max(4, int(16 * self._particle_effects_multiplier()))
+            for i in range(star_count):
+                angle = (i / star_count) * 2 * math.pi
                 star_speed = random.uniform(6, 14)
                 
                 particle = {
@@ -2568,7 +2536,7 @@ class PvPGame:
         white_tint = tuple(min(255, c + 80) for c in base_color)
         color_palette = [base_color, bright_color, dim_color, white_tint, (255, 255, 255)]
 
-        particle_count = random.randint(6, 10)
+        particle_count = max(1, int(random.randint(6, 10) * self._particle_effects_multiplier()))
         for i in range(particle_count):
             angle = (i / particle_count) * 2 * math.pi + random.uniform(-0.3, 0.3)
             speed = random.uniform(2, 5)
@@ -2677,7 +2645,7 @@ class PvPGame:
         """Arka plan için ambient parçacıklar oluştur"""
         if not self._particle_effects_enabled():
             return
-        for _ in range(random.randint(50, 100)):
+        for _ in range(max(10, int(random.randint(50, 100) * self._particle_effects_multiplier()))):
             particle = {
                 'x': random.uniform(0, self.window_width),
                 'y': random.uniform(0, self.window_height),
@@ -2732,7 +2700,7 @@ class PvPGame:
     
     def trigger_screen_shake(self, intensity=10, duration=15):
         """Ekran titremesi efekti başlat (dt tabanlı)"""
-        if not self._particle_effects_enabled():
+        if not getattr(self, 'effects_enabled', True):
             return
         self._screen_shake_initial = max(1.0, float(duration))
         self.screen_shake = float(duration)

@@ -32,13 +32,17 @@ CoopSurvivalObjective = TimeObjective
 # -----------------------------------------------------------------------
 
 class SharedHoldObjective(Objective):
-    """Shared Hold'u N Kez Kullan Görevi"""
+    """Hold'u N kez kullan görevi.
+
+    Sınıf adı geriye dönük config anahtarı uyumu için korunur; güncel co-op
+    davranışı oyuncu bazlı ayrı hold slotları kullanır.
+    """
 
     def __init__(self, target: int = 3):
         super().__init__(
             target,
-            f"Ortak Hold'u {target} Kez Kullan",
-            f"Use Shared Hold {target} Times",
+            f"Hold'u {target} Kez Kullan",
+            f"Use Hold {target} Times",
             description_key='coop_obj_shared_hold',
             description_params={
                 'target': lambda lang, v=target: Objective._format_number(v, lang)
