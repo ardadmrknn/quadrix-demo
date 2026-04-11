@@ -38,6 +38,14 @@ from gamepad_manager import get_gamepad_manager, is_gamepad_connected
 from effect_surface_cache import EffectSurfaceCache
 from sweep_effects import SweepCatState, draw_rainbow_cat_sweep
 from ui_scaling import apply_ui_scale_preset, get_scale, resolve_ui_scale_size
+from screen_shake import (
+    DEFAULT_SCREEN_SHAKE_DURATION_SECONDS,
+    HARD_DROP_SCREEN_SHAKE_DURATION_SECONDS,
+    HARD_DROP_SCREEN_SHAKE_INTENSITY,
+    begin_screen_shake,
+    sample_screen_shake_offset,
+    step_screen_shake,
+)
 
 
 GAMEPLAY_UI_REFERENCE_SIZE = (1366.0, 768.0)
@@ -698,8 +706,9 @@ class Game:
         self.falling_blocks = get_shared_falling_blocks_layer('default') if self.effects_enabled else None
         
         # Screen shake efekti
-        self.screen_shake = 0  # Kalan shake süresi
+        self.screen_shake = 0.0  # ms cinsinden kalan shake süresi
         self.shake_intensity = 0  # Titreme şiddeti
+        self._screen_shake_initial = 0.0
 
         # HUD seçenekleri
         self.controls_under_stats = False
@@ -1736,6 +1745,10 @@ class Game:
                             trail_type='hard'
                         )
                     
+                    # Hard drop ekran sarsıntısı
+                    if self.effects_enabled and drop_distance > 0:
+                        self.trigger_hard_drop_screen_shake()
+
                     # Hard drop used to give bonus points; now removed per new scoring rules.
                     self.lock_and_new_piece()
                     # Gamepad titreşimi - hard drop
@@ -2995,41 +3008,28 @@ class Game:
             }
             self.ambient_particles.append(particle)
     
-    def trigger_screen_shake(self, intensity=10, duration=15):
-        """Ekran titremesi efekti başlat (dt tabanlı; duration ~60 FPS frame sayısı gibi).
+    def trigger_hard_drop_screen_shake(self):
+        """Tüm modlarla ortak hard drop shake davranışı."""
+        self.trigger_screen_shake(
+            intensity=HARD_DROP_SCREEN_SHAKE_INTENSITY,
+            duration=HARD_DROP_SCREEN_SHAKE_DURATION_SECONDS,
+        )
 
-        Eski davranış: duration her frame 1 azalırdı. Şimdi dt ile ölçekleniyor.
+    def trigger_screen_shake(self, intensity=10, duration=DEFAULT_SCREEN_SHAKE_DURATION_SECONDS):
+        """Ekran titremesi efekti başlat.
+
+        duration saniye cinsindendir. Yeni çağrı mevcut shake'i uzatmaz,
+        doğrudan yeni shake durumunu başlatır.
         """
-        if not getattr(self, 'effects_enabled', True):
-            return
-        mult = getattr(self, 'animation_multiplier', 1.0)
-        self._screen_shake_initial = max(1.0, float(duration) * float(mult))
-        self.screen_shake = float(self._screen_shake_initial)
-        self.shake_intensity = int(intensity * mult)  # Pixel cinsinden şiddet
+        begin_screen_shake(self, intensity=intensity, duration=duration)
     
     def update_screen_shake(self, dt_ms: float | None = None):
-        """Ekran titremesini güncelle (dt tabanlı)."""
-        if self.screen_shake <= 0:
-            return
-        try:
-            dt = float(dt_ms) if dt_ms is not None else float(getattr(self, '_last_dt_ms', 16.666))
-        except Exception:
-            dt = 16.666
-        dt = max(0.0, min(100.0, dt))
-        dt_frames = dt / 16.666
-        self.screen_shake = max(0.0, float(self.screen_shake) - dt_frames)
+        """Ekran titremesini güncelle (ms tabanlı)."""
+        step_screen_shake(self, dt_ms=dt_ms)
     
     def get_shake_offset(self):
         """Ekran titremesi için offset hesapla"""
-        if self.screen_shake > 0:
-            # Rastgele yönde titreme
-            shake_x = random.randint(-self.shake_intensity, self.shake_intensity)
-            shake_y = random.randint(-self.shake_intensity, self.shake_intensity)
-            # Süre azaldıkça şiddet azalsın
-            initial = float(getattr(self, '_screen_shake_initial', 15.0))
-            decay = max(0.0, min(1.0, float(self.screen_shake) / max(1.0, initial)))
-            return (int(shake_x * decay), int(shake_y * decay))
-        return (0, 0)
+        return sample_screen_shake_offset(self)
     
     def create_power_particles(self, x, y, color, count=30):
         """Güçlendirilmiş parçacık efekti (combo, cascade için)"""
@@ -3344,7 +3344,7 @@ class Game:
                 
                 # Küçük ekran titremesi (1-3 satır için hafif, 4 satır için güçlü)
                 if lines_cleared < 4:
-                    self.trigger_screen_shake(intensity=3 + lines_cleared * 2, duration=8)
+                    self.trigger_screen_shake(intensity=3 + lines_cleared * 2, duration=8 / 60.0)
             
             # Animasyon frame sayacı
             self.line_clear_animation = 30 if self.effects_enabled else 0
@@ -3366,7 +3366,7 @@ class Game:
                     pass
                 
                 # SCREEN SHAKE - QUADRIX!
-                self.trigger_screen_shake(intensity=15, duration=20)
+                self.trigger_screen_shake(intensity=15, duration=20 / 60.0)
                 
                 # Quadrix için ekstra görkemli parçacıklar
                 if self.effects_enabled:

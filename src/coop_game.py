@@ -34,6 +34,14 @@ from localization import t
 from ui_theme import UIColors, UIFonts
 from sweep_effects import SweepCatState, draw_rainbow_cat_sweep
 from asset_manager import load_image
+from screen_shake import (
+    DEFAULT_SCREEN_SHAKE_DURATION_SECONDS,
+    HARD_DROP_SCREEN_SHAKE_DURATION_SECONDS,
+    HARD_DROP_SCREEN_SHAKE_INTENSITY,
+    begin_screen_shake,
+    sample_screen_shake_offset,
+    step_screen_shake,
+)
 
 
 def _resource_path(relative_path: str) -> str:
@@ -58,8 +66,6 @@ class CoopGame:
     _LINE_CLEAR_SWEEP_BLOCK_FALL_SPEED = 0.144
     _OPENING_CURTAIN_DURATION_MS = 350
     _FRAME_MS = 1000.0 / 60.0
-    _SCREEN_SHAKE_DURATION_MULT = 1.65
-    _SCREEN_SHAKE_INTENSITY_MULT = 1.45
 
     # ------------------------------------------------------------------
     # Statik yardımcılar (PvP ile ortak)
@@ -923,21 +929,21 @@ class CoopGame:
     # ------------------------------------------------------------------
 
     def get_shake_offset(self):
-        if self.screen_shake > 0:
-            shake_x = random.randint(-self.shake_intensity, self.shake_intensity)
-            shake_y = random.randint(-self.shake_intensity, self.shake_intensity)
-            initial = float(self._screen_shake_initial) if self._screen_shake_initial else (15.0 * self._FRAME_MS)
-            decay = max(0.0, min(1.0, float(self.screen_shake) / max(1.0, initial)))
-            return (int(shake_x * decay), int(shake_y * decay))
-        return (0, 0)
+        return sample_screen_shake_offset(self)
 
-    def trigger_screen_shake(self, duration: int = 8, intensity: int = 3):
-        if not self._screen_shake_enabled():
-            return
-        duration_ms = max(0.0, float(duration) * self._FRAME_MS * self._SCREEN_SHAKE_DURATION_MULT)
-        self.screen_shake = duration_ms
-        self.shake_intensity = max(1, int(round(float(intensity) * self._SCREEN_SHAKE_INTENSITY_MULT)))
-        self._screen_shake_initial = duration_ms
+    def trigger_hard_drop_screen_shake(self) -> None:
+        self.trigger_screen_shake(
+            intensity=HARD_DROP_SCREEN_SHAKE_INTENSITY,
+            duration=HARD_DROP_SCREEN_SHAKE_DURATION_SECONDS,
+        )
+
+    def trigger_screen_shake(self, intensity: int = 10, duration: float = DEFAULT_SCREEN_SHAKE_DURATION_SECONDS) -> None:
+        begin_screen_shake(
+            self,
+            intensity=intensity,
+            duration=duration,
+            enabled=self._screen_shake_enabled(),
+        )
 
     # ------------------------------------------------------------------
     # Particles
@@ -1240,7 +1246,7 @@ class CoopGame:
                 trail_y_end = oy + py_abs * cs
                 if trail_y_end > trail_y_start:
                     self.create_drop_trail(trail_x, trail_y_start, trail_y_end, piece.color, cs)
-            self.trigger_screen_shake(5, 2)
+            self.trigger_hard_drop_screen_shake()
         self._lock_and_new_piece(player)
 
     def _reset_player_lock_state(self, player: str) -> None:
@@ -1447,9 +1453,9 @@ class CoopGame:
                 self._start_line_clear_sweep(cleared_rows)
             # Tetris shake
             if cleared >= 4:
-                self.trigger_screen_shake(12, 5)
+                self.trigger_screen_shake(intensity=7, duration=20 / 60.0)
             elif cleared >= 2:
-                self.trigger_screen_shake(6, 2)
+                self.trigger_screen_shake(intensity=3, duration=10 / 60.0)
 
             # Event yayınla
             self._emit_event('lines_cleared', {
@@ -1744,8 +1750,7 @@ class CoopGame:
             self.update_ambient_particles(delta_time)
             self.update_drop_trails(delta_time)
             self._update_line_clear_effects(delta_time)
-            if self.screen_shake > 0:
-                self.screen_shake = max(0.0, self.screen_shake - delta_time)
+            step_screen_shake(self, dt_ms=delta_time)
 
         if self.game_over or self.paused:
             return

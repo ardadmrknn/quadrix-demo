@@ -763,7 +763,7 @@ class ZenMode(Game):
                 
                 # Ekran titremesi (1-3 satır için hafif)
                 if lines_cleared < 4:
-                    self.trigger_screen_shake(intensity=3 + lines_cleared * 2, duration=8)
+                    self.trigger_screen_shake(intensity=3 + lines_cleared * 2, duration=8 / 60.0)
             
             # Mesaj ve ses
             if lines_cleared == 4:
@@ -779,7 +779,7 @@ class ZenMode(Game):
                     pass
                 
                 # QUADRIX için güçlü ekran titremesi
-                self.trigger_screen_shake(intensity=15, duration=20)
+                self.trigger_screen_shake(intensity=15, duration=20 / 60.0)
                 
                 # Ekstra parçacıklar
                 if self.effects_enabled:

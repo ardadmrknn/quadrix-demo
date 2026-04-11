@@ -269,6 +269,7 @@ from board import Board
 from pieces import Piece, SHAPES
 from coop_board import CoopBoard
 from coop_game import CoopGame
+from screen_shake import HARD_DROP_SCREEN_SHAKE_DURATION_SECONDS, HARD_DROP_SCREEN_SHAKE_INTENSITY
 
 for mod_name, original in _ORIGINAL_MODULES.items():
     if original is None:
@@ -608,19 +609,30 @@ def test_screen_shake_does_not_depend_on_particle_setting():
         sound_manager=_SM(),
     )
 
-    cg.trigger_screen_shake(5, 2)
+    cg.trigger_screen_shake(intensity=5, duration=0.2)
 
-    assert round(cg.screen_shake, 3) == round(5 * cg._FRAME_MS * cg._SCREEN_SHAKE_DURATION_MULT, 3)
-    assert cg.shake_intensity == round(2 * cg._SCREEN_SHAKE_INTENSITY_MULT)
+    assert round(cg.screen_shake, 3) == 200.0
+    assert cg.shake_intensity == 5
 
 def test_screen_shake_decays_by_elapsed_time():
     cg = CoopGame(sound_enabled=False, effects_enabled=True, screen=_Surf(), sound_manager=_SM())
 
-    cg.trigger_screen_shake(6, 3)
+    cg.trigger_screen_shake(intensity=3, duration=0.6)
     initial = cg.screen_shake
     cg.update(cg._FRAME_MS * 2)
 
     assert round(initial - cg.screen_shake, 3) == round(cg._FRAME_MS * 2, 3)
+
+def test_hard_drop_screen_shake_restarts_current_shake():
+    cg = CoopGame(sound_enabled=False, effects_enabled=True, screen=_Surf(), sound_manager=_SM())
+
+    cg.trigger_screen_shake(intensity=9, duration=0.5)
+    cg.update(100)
+    cg.trigger_hard_drop_screen_shake()
+
+    assert round(cg.screen_shake, 3) == round(HARD_DROP_SCREEN_SHAKE_DURATION_SECONDS * 1000.0, 3)
+    assert round(cg._screen_shake_initial, 3) == round(HARD_DROP_SCREEN_SHAKE_DURATION_SECONDS * 1000.0, 3)
+    assert cg.shake_intensity == HARD_DROP_SCREEN_SHAKE_INTENSITY
 
 def test_particles_decay_by_elapsed_time_not_update_count():
     cg = CoopGame(sound_enabled=False, effects_enabled=True, screen=_Surf(), sound_manager=_SM())

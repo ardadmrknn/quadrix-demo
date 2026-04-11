@@ -3342,6 +3342,10 @@ def main():
             return 'slide_left'
         if from_state == 'campaign_select' and to_state == 'menu':
             return 'slide_right'
+        if from_state == 'piece_workshop' and to_state == 'block_styles':
+            return 'slide_left'
+        if from_state == 'block_styles' and to_state == 'piece_workshop':
+            return 'slide_right'
         # Showcase ekranları (ana menüden açılan): ileri sola, geri sağa
         showcase_states = ['piece_workshop', 'block_styles', 'block_workshop']
         if from_state == 'menu' and to_state in showcase_states:

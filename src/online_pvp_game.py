@@ -41,6 +41,14 @@ from retro_style import retro_style as _rs
 from renderers.jelly_renderer import draw_jelly_block, draw_jelly_border
 from effect_surface_cache import EffectSurfaceCache
 from sweep_effects import SweepCatState, draw_rainbow_cat_sweep
+from screen_shake import (
+    DEFAULT_SCREEN_SHAKE_DURATION_SECONDS,
+    HARD_DROP_SCREEN_SHAKE_DURATION_SECONDS,
+    HARD_DROP_SCREEN_SHAKE_INTENSITY,
+    begin_screen_shake,
+    sample_screen_shake_offset,
+    step_screen_shake,
+)
 
 # Convenience aliases for retro_style singleton methods
 get_font = _rs.get_font
@@ -533,9 +541,9 @@ class OnlinePvPGame:
         self.block_fall_speed: float = 0.12
         self.cell_size: int = 24  # update() sweep animasyonu için; _draw_game() güncelleyecek
         # Ekran titremesi
-        self.screen_shake: float = 0
+        self.screen_shake: float = 0.0
         self.shake_intensity: int = 0
-        self._screen_shake_initial: float = 15.0
+        self._screen_shake_initial: float = 0.0
         # Rakip önceki lines sayısı (satır artışını tespit için)
         self._opponent_lines_prev: int = 0
         # dt saklama
@@ -2594,8 +2602,9 @@ class OnlinePvPGame:
         self._pending_opp_particle_rows = []
         self.particles.clear()
         self.drop_trails.clear()
-        self.screen_shake = 0
+        self.screen_shake = 0.0
         self.shake_intensity = 0
+        self._screen_shake_initial = 0.0
 
     def _get_next_piece(self) -> Piece:
         """Sıradaki parçayı al."""
@@ -2608,35 +2617,23 @@ class OnlinePvPGame:
         self._apply_block_style(piece)
         return piece
 
-    def trigger_screen_shake(self, intensity=10, duration=15):
-        """Ekran titremesi efekti başlat."""
-        if not getattr(self, 'effects_enabled', True):
-            return
-        self._screen_shake_initial = max(1.0, float(duration))
-        self.screen_shake = float(duration)
-        self.shake_intensity = int(intensity)
+    def trigger_hard_drop_screen_shake(self) -> None:
+        self.trigger_screen_shake(
+            intensity=HARD_DROP_SCREEN_SHAKE_INTENSITY,
+            duration=HARD_DROP_SCREEN_SHAKE_DURATION_SECONDS,
+        )
+
+    def trigger_screen_shake(self, intensity=10, duration=DEFAULT_SCREEN_SHAKE_DURATION_SECONDS):
+        """Ekran titremesi efekti başlat (saniye tabanlı)."""
+        begin_screen_shake(self, intensity=intensity, duration=duration)
 
     def update_screen_shake(self, dt_ms: float | None = None):
-        """Ekran titremesini güncelle."""
-        if self.screen_shake <= 0:
-            return
-        try:
-            dt = float(dt_ms) if dt_ms is not None else float(getattr(self, '_last_dt_ms', 16.666))
-        except Exception:
-            dt = 16.666
-        dt = max(0.0, min(100.0, dt))
-        dt_frames = dt / 16.666
-        self.screen_shake = max(0.0, self.screen_shake - dt_frames)
+        """Ekran titremesini güncelle (ms tabanlı)."""
+        step_screen_shake(self, dt_ms=dt_ms)
 
     def get_shake_offset(self) -> tuple[int, int]:
         """Ekran titremesi için offset hesapla."""
-        if self.screen_shake <= 0:
-            return (0, 0)
-        initial = max(1.0, float(getattr(self, '_screen_shake_initial', 15.0)))
-        decay = self.screen_shake / initial
-        shake_x = random.randint(-self.shake_intensity, self.shake_intensity)
-        shake_y = random.randint(-self.shake_intensity, self.shake_intensity)
-        return (int(shake_x * decay), int(shake_y * decay))
+        return sample_screen_shake_offset(self)
 
     def create_particles(self, count, x=None, y=None, colors=None, speed=5):
         """Genel amaçlı parçacık oluşturucu."""
@@ -3002,7 +2999,7 @@ class OnlinePvPGame:
                 pass
 
         if lines < 4:
-            self.trigger_screen_shake(intensity=3 + lines * 2, duration=8)
+            self.trigger_screen_shake(intensity=3 + lines * 2, duration=8 / 60.0)
             # Multi-line parçacık efekti (2-3 satır)
             if lines >= 2:
                 center_x = board_x + (BOARD_WIDTH * cell_size) // 2
@@ -3014,7 +3011,7 @@ class OnlinePvPGame:
             center_y = board_y + (BOARD_HEIGHT * cell_size) // 2
             extra_colors = [(255, 215, 0), (255, 165, 0), (255, 255, 255), (0, 255, 255)]
             self.create_particles(150, center_x, center_y, extra_colors, speed=10)
-            self.trigger_screen_shake(intensity=15, duration=20)
+            self.trigger_screen_shake(intensity=15, duration=20 / 60.0)
 
     # ============================================================
     #  ÇÖP SATIR MEKANİĞİ
@@ -4088,6 +4085,8 @@ class OnlinePvPGame:
                 drop_distance,
                 trail_type='hard',
             )
+        if self.effects_enabled and drop_distance > 0:
+            self.trigger_hard_drop_screen_shake()
         self._send_piece_position()
         try:
             self.sound.play('drop')

@@ -1651,9 +1651,12 @@ class TutorialMode(Game):
         return True
 
     def _perform_hard_drop(self):
+        start_y = self.current_piece.y
         while self.board.is_valid_position(self.current_piece):
             self.current_piece.y += 1
         self.current_piece.y -= 1
+        if self.effects_enabled and self.current_piece.y > start_y:
+            self.trigger_hard_drop_screen_shake()
         self.lock_and_new_piece()
         self.sound.play('drop')
 

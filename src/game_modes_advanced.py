@@ -182,7 +182,7 @@ class SurvivalMode(Game):
         self.game_over = True
         self.survival_victory = True
         self.sound.play('tetris')
-        self.trigger_screen_shake(intensity=25, duration=50)
+        self.trigger_screen_shake(intensity=25, duration=50 / 60.0)
         
         # Bonus puan
         bonus = (self.MAX_CONSUMED - self.consumed_count) * 500 + self.board.lines_cleared * 100
@@ -212,7 +212,7 @@ class SurvivalMode(Game):
             pass
         if self.sound:
             self.sound.play_game_over_sequence()
-        self.trigger_screen_shake(intensity=30, duration=60)
+        self.trigger_screen_shake(intensity=30, duration=60 / 60.0)
         
         print(f"☠️ VİRÜS GALİP! {self.consumed_count} blok yenildi.")
         
@@ -230,7 +230,7 @@ class SurvivalMode(Game):
         
         self.consumed_count = 0
         self.sound.play('level_up')
-        self.trigger_screen_shake(intensity=15, duration=30)
+        self.trigger_screen_shake(intensity=15, duration=30 / 60.0)
         
         # Yeşil flash efekti
         self.antivirus_flash = 500  # 500ms flash
@@ -477,7 +477,7 @@ class SurvivalMode(Game):
                 self.combo_message = "QUADRIX!"
                 self.combo_message_time = 120
                 self.sound.play('tetris')
-                self.trigger_screen_shake(intensity=15, duration=20)
+                self.trigger_screen_shake(intensity=15, duration=20 / 60.0)
                 # Gamepad titreşimi - QUADRIX! (güçlü)
                 try:
                     from gamepad_manager import get_gamepad_manager
@@ -584,7 +584,7 @@ class SurvivalMode(Game):
                 
                 # Shake
                 if lines_cleared < 4:
-                    self.trigger_screen_shake(intensity=3 + lines_cleared * 2, duration=8)
+                    self.trigger_screen_shake(intensity=3 + lines_cleared * 2, duration=8 / 60.0)
 
             # Satırları temizle (efekt bilgisi alındıktan sonra)
             self.board.last_cleared_lines = []
@@ -1156,9 +1156,9 @@ class CascadeMode(Game):
                 # Hafif shake
                 try:
                     if len(cleared_rows) < 4:
-                        self.trigger_screen_shake(intensity=3 + len(cleared_rows) * 2, duration=8)
+                        self.trigger_screen_shake(intensity=3 + len(cleared_rows) * 2, duration=8 / 60.0)
                     else:
-                        self.trigger_screen_shake(intensity=12, duration=14)
+                        self.trigger_screen_shake(intensity=12, duration=14 / 60.0)
                 except Exception:
                     pass
 

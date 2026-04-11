@@ -21,6 +21,14 @@ from localization import t
 from ui_theme import UIColors, UIFonts
 from effect_surface_cache import EffectSurfaceCache
 from sweep_effects import SweepCatState, draw_rainbow_cat_sweep
+from screen_shake import (
+    DEFAULT_SCREEN_SHAKE_DURATION_SECONDS,
+    HARD_DROP_SCREEN_SHAKE_DURATION_SECONDS,
+    HARD_DROP_SCREEN_SHAKE_INTENSITY,
+    begin_screen_shake,
+    sample_screen_shake_offset,
+    step_screen_shake,
+)
 
 def resource_path(relative_path):
     """PyInstaller ile derlenen exe için doğru path'i al"""
@@ -369,8 +377,9 @@ class PvPGame:
         self.name_background_fx = get_shared_falling_blocks_layer('default') if self.effects_enabled else None
         
         # Screen shake efekti
-        self.screen_shake = 0
+        self.screen_shake = 0.0
         self.shake_intensity = 0
+        self._screen_shake_initial = 0.0
         
         # Havai fişek sistemi (her 1000 puan) - Her oyuncu için ayrı
         self.p1_last_milestone = 0
@@ -1235,6 +1244,10 @@ class PvPGame:
                                 trail_type='hard',
                             )
                         
+                        # Hard drop ekran sarsıntısı
+                        if self.effects_enabled and drop_distance > 0:
+                            self.trigger_hard_drop_screen_shake()
+
                         self.lock_and_new_piece(1)
                 
                 # OYUNCU 2 KONTROLLER (Ok tuşları + Space)
@@ -1304,6 +1317,10 @@ class PvPGame:
                                 trail_type='hard',
                             )
                         
+                        # Hard drop ekran sarsıntısı
+                        if self.effects_enabled and drop_distance > 0:
+                            self.trigger_hard_drop_screen_shake()
+
                         self.lock_and_new_piece(2)
             
             # Game over ekranında mouse tıklama kontrolü
@@ -2052,7 +2069,7 @@ class PvPGame:
                     
                     # Ekran titremesi (ana oyunla aynı)
                     if lines < 4:
-                        self.trigger_screen_shake(intensity=3 + lines * 2, duration=8)
+                        self.trigger_screen_shake(intensity=3 + lines * 2, duration=8 / 60.0)
                     self._start_block_fall_animation(1, self.board1, cleared_rows)
                 
                 self.sound.play('line' if lines < 4 else 'tetris')
@@ -2111,7 +2128,7 @@ class PvPGame:
                         colors=[YELLOW, ORANGE, (255, 215, 0), CYAN],
                         speed=10
                     )
-                    self.trigger_screen_shake(intensity=15, duration=20)
+                    self.trigger_screen_shake(intensity=15, duration=20 / 60.0)
             
             self.current_piece1 = self.next_piece1
             self.next_piece1 = self.get_next_piece()
@@ -2203,7 +2220,7 @@ class PvPGame:
                     
                     # Ekran titremesi (ana oyunla aynı)
                     if lines < 4:
-                        self.trigger_screen_shake(intensity=3 + lines * 2, duration=8)
+                        self.trigger_screen_shake(intensity=3 + lines * 2, duration=8 / 60.0)
                     self._start_block_fall_animation(2, self.board2, cleared_rows)
                 
                 self.sound.play('line' if lines < 4 else 'tetris')
@@ -2262,7 +2279,7 @@ class PvPGame:
                         colors=[YELLOW, ORANGE, (255, 215, 0), MAGENTA],
                         speed=10
                     )
-                    self.trigger_screen_shake(intensity=15, duration=20)
+                    self.trigger_screen_shake(intensity=15, duration=20 / 60.0)
             
             self.current_piece2 = self.next_piece2
             self.next_piece2 = self.get_next_piece()
@@ -2698,34 +2715,23 @@ class PvPGame:
             particle_surface = self._get_ambient_sprite(size, pulse_alpha, glow=False)
             self.screen.blit(particle_surface, (pos[0] - particle_surface.get_width() // 2, pos[1] - particle_surface.get_height() // 2))
     
-    def trigger_screen_shake(self, intensity=10, duration=15):
-        """Ekran titremesi efekti başlat (dt tabanlı)"""
-        if not getattr(self, 'effects_enabled', True):
-            return
-        self._screen_shake_initial = max(1.0, float(duration))
-        self.screen_shake = float(duration)
-        self.shake_intensity = intensity
+    def trigger_hard_drop_screen_shake(self):
+        self.trigger_screen_shake(
+            intensity=HARD_DROP_SCREEN_SHAKE_INTENSITY,
+            duration=HARD_DROP_SCREEN_SHAKE_DURATION_SECONDS,
+        )
+
+    def trigger_screen_shake(self, intensity=10, duration=DEFAULT_SCREEN_SHAKE_DURATION_SECONDS):
+        """Ekran titremesi efekti başlat (saniye tabanlı)."""
+        begin_screen_shake(self, intensity=intensity, duration=duration)
     
     def update_screen_shake(self, dt_ms: float | None = None):
-        """Ekran titremesini güncelle (dt tabanlı)"""
-        if self.screen_shake > 0:
-            try:
-                dt = float(dt_ms) if dt_ms is not None else float(getattr(self, '_last_dt_ms', 16.666))
-            except Exception:
-                dt = 16.666
-            dt = max(0.0, min(100.0, dt))
-            dt_frames = dt / 16.666
-            self.screen_shake = max(0, self.screen_shake - dt_frames)
+        """Ekran titremesini güncelle (ms tabanlı)."""
+        step_screen_shake(self, dt_ms=dt_ms)
     
     def get_shake_offset(self):
         """Ekran titremesi için offset hesapla"""
-        if self.screen_shake > 0:
-            initial = getattr(self, '_screen_shake_initial', 15.0)
-            decay = self.screen_shake / initial
-            shake_x = random.randint(-self.shake_intensity, self.shake_intensity)
-            shake_y = random.randint(-self.shake_intensity, self.shake_intensity)
-            return (int(shake_x * decay), int(shake_y * decay))
-        return (0, 0)
+        return sample_screen_shake_offset(self)
     
     def _get_rotated_surface(self, surface, rotation):
         return self._texture_render_cache.get_rotated_surface(surface, rotation)
@@ -3001,7 +3007,7 @@ class PvPGame:
             self.p1_firework_active = True
             self.p1_firework_time = 120
             self.sound.play('tetris')
-            self.trigger_screen_shake(intensity=12, duration=15)  # Screen shake
+            self.trigger_screen_shake(intensity=12, duration=15 / 60.0)  # Screen shake
             # Oyuncu 1 hızını artır
             old_speed = self.fall_speed1
             self.fall_speed1 = max(self.min_fall_speed, self.fall_speed1 - self.speed_increase_per_milestone)
@@ -3015,7 +3021,7 @@ class PvPGame:
             self.p2_firework_active = True
             self.p2_firework_time = 120
             self.sound.play('tetris')
-            self.trigger_screen_shake(intensity=12, duration=15)  # Screen shake
+            self.trigger_screen_shake(intensity=12, duration=15 / 60.0)  # Screen shake
             # Oyuncu 2 hızını artır
             old_speed = self.fall_speed2
             self.fall_speed2 = max(self.min_fall_speed, self.fall_speed2 - self.speed_increase_per_milestone)
@@ -3609,8 +3615,9 @@ class PvPGame:
         self.create_ambient_particles()
         
         # Screen shake sıfırla
-        self.screen_shake = 0
+        self.screen_shake = 0.0
         self.shake_intensity = 0
+        self._screen_shake_initial = 0.0
         
         if preserve_session and (self.player1_name and self.player2_name):
             # Aynı oturumla devam et: isim/ayar ekranını tekrar sorma.
