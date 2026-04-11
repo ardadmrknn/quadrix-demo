@@ -1,20 +1,44 @@
 from __future__ import annotations
 
+import copy
 from types import SimpleNamespace
 
 import gamepad_manager as gamepad_manager_module
-from gamepad_manager import GamepadManager, GamepadState
+from gamepad_manager import GamepadManager, GamepadState, DEFAULT_GAMEPAD_BINDINGS
 
 
 class _DummyJoystick:
-    def __init__(self, axes: tuple[float, ...]):
+    def __init__(
+        self,
+        axes: tuple[float, ...],
+        *,
+        buttons: dict[int, bool] | None = None,
+        hats: tuple[tuple[int, int], ...] = (),
+    ):
         self.axes = axes
+        self.buttons = buttons or {}
+        self.hats = hats
 
     def get_init(self) -> bool:
         return True
 
     def get_numaxes(self) -> int:
         return len(self.axes)
+
+    def get_axis(self, index: int) -> float:
+        return self.axes[index]
+
+    def get_numbuttons(self) -> int:
+        return max(self.buttons.keys(), default=-1) + 1
+
+    def get_button(self, index: int) -> int:
+        return 1 if self.buttons.get(index, False) else 0
+
+    def get_numhats(self) -> int:
+        return len(self.hats)
+
+    def get_hat(self, index: int) -> tuple[int, int]:
+        return self.hats[index]
 
 
 class _DummySurface:
@@ -27,6 +51,9 @@ class _DummySurface:
 
 def _make_manager() -> GamepadManager:
     manager = GamepadManager.__new__(GamepadManager)
+    manager.enabled = True
+    manager.gamepads = {}
+    manager.rumble_enabled = False
     manager.MOUSE_SPEED = 20.0
     manager.MOUSE_SENSITIVITY = 1.0
     manager.MOUSE_DEADZONE = 0.12
@@ -35,8 +62,13 @@ def _make_manager() -> GamepadManager:
     manager.MOUSE_RELEASE_THRESHOLD = 0.14
     manager.MOUSE_NEUTRAL_TRACK_THRESHOLD = 0.24
     manager.MOUSE_NEUTRAL_FOLLOW_RATE = 0.08
+    manager.DEADZONE = 0.35
+    manager.DIGITAL_THRESHOLD = 0.6
+    manager.TRIGGER_THRESHOLD = 0.5
     manager._context = GamepadManager.CONTEXT_MENU
     manager._menu_pointer_active = False
+    manager._bindings = copy.deepcopy(DEFAULT_GAMEPAD_BINDINGS)
+    manager._check_connections = lambda: None
     return manager
 
 
@@ -128,3 +160,106 @@ def test_intentional_right_stick_input_moves_mouse(monkeypatch):
     assert display['calls']
     assert display['calls'][-1][1] < 360
     assert gp.mouse_control_active is True
+
+
+def test_dpad_button_fallback_generates_left_key_events(monkeypatch):
+    manager = _make_manager()
+    manager._context = GamepadManager.CONTEXT_GAME
+
+    gp_pygame = gamepad_manager_module.pygame
+    if not hasattr(gp_pygame, 'event'):
+        monkeypatch.setattr(gp_pygame, 'event', SimpleNamespace(), raising=False)
+    monkeypatch.setattr(
+        gp_pygame.event,
+        'Event',
+        lambda event_type, **payload: SimpleNamespace(type=event_type, **payload),
+        raising=False,
+    )
+
+    gp = GamepadState(joystick=_DummyJoystick((0.0, 0.0), buttons={13: True}))
+    manager.gamepads[0] = gp
+
+    events = manager.update(16.0)
+
+    assert any(
+        event.type == gp_pygame.KEYDOWN and event.key == gp_pygame.K_LEFT
+        for event in events
+    )
+    assert gp.dpad == (-1, 0)
+    assert manager.is_direction_held('left') is True
+
+    gp.joystick.buttons = {13: False}
+    events = manager.update(16.0)
+
+    assert any(
+        event.type == gp_pygame.KEYUP and event.key == gp_pygame.K_LEFT
+        for event in events
+    )
+    assert gp.dpad == (0, 0)
+    assert manager.is_direction_held('left') is False
+
+
+def test_menu_dpad_hold_repeats_down_navigation(monkeypatch):
+    manager = _make_manager()
+
+    gp_pygame = gamepad_manager_module.pygame
+    if not hasattr(gp_pygame, 'event'):
+        monkeypatch.setattr(gp_pygame, 'event', SimpleNamespace(), raising=False)
+    monkeypatch.setattr(
+        gp_pygame.event,
+        'Event',
+        lambda event_type, **payload: SimpleNamespace(type=event_type, **payload),
+        raising=False,
+    )
+
+    gp = GamepadState(joystick=_DummyJoystick((0.0, 0.0), buttons={12: True}))
+    manager.gamepads[0] = gp
+
+    first_events = manager.update(16.0)
+    repeat_events = manager.update(manager.STICK_INITIAL_DELAY + 1)
+
+    assert any(
+        event.type == gp_pygame.KEYDOWN and event.key == gp_pygame.K_DOWN
+        for event in first_events
+    )
+    assert any(
+        event.type == gp_pygame.KEYDOWN and event.key == gp_pygame.K_DOWN
+        for event in repeat_events
+    )
+    assert any(
+        event.type == gp_pygame.KEYUP and event.key == gp_pygame.K_DOWN
+        for event in repeat_events
+    )
+
+
+def test_menu_left_stick_hold_repeats_down_navigation(monkeypatch):
+    manager = _make_manager()
+
+    gp_pygame = gamepad_manager_module.pygame
+    if not hasattr(gp_pygame, 'event'):
+        monkeypatch.setattr(gp_pygame, 'event', SimpleNamespace(), raising=False)
+    monkeypatch.setattr(
+        gp_pygame.event,
+        'Event',
+        lambda event_type, **payload: SimpleNamespace(type=event_type, **payload),
+        raising=False,
+    )
+
+    gp = GamepadState(joystick=_DummyJoystick((0.0, 1.0)))
+    manager.gamepads[0] = gp
+
+    first_events = manager.update(16.0)
+    repeat_events = manager.update(manager.STICK_INITIAL_DELAY + 1)
+
+    assert any(
+        event.type == gp_pygame.KEYDOWN and event.key == gp_pygame.K_DOWN
+        for event in first_events
+    )
+    assert any(
+        event.type == gp_pygame.KEYDOWN and event.key == gp_pygame.K_DOWN
+        for event in repeat_events
+    )
+    assert any(
+        event.type == gp_pygame.KEYUP and event.key == gp_pygame.K_DOWN
+        for event in repeat_events
+    )

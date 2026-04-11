@@ -138,6 +138,21 @@ class GameplaySettingsMenu:
             new_value = current + (step * delta)
             new_value = max(min_val, min(max_val, new_value))
             self._set_setting_value(setting, new_value)
+
+    def _ensure_visible(self):
+        """Seçili satırı görünür bölgede tut."""
+        _, card_height, spacing = self._layout_metrics()
+        height = self.screen.get_height()
+        title_rect_bottom = 70 + 48
+        visible_height = max(1, (height - 160) - (title_rect_bottom + 40))
+
+        item_y = self.selected * spacing
+        if item_y < self.scroll_offset:
+            self.scroll_offset = item_y
+        elif item_y + card_height > self.scroll_offset + visible_height:
+            self.scroll_offset = item_y + card_height - visible_height
+
+        self.scroll_offset = max(0, min(self.scroll_offset, self._max_scroll(title_rect_bottom, height)))
     
     def handle_input(self, event):
         """Input işle"""
@@ -147,8 +162,10 @@ class GameplaySettingsMenu:
                 return 'back'
             elif event.key == pygame.K_UP:
                 self.selected = (self.selected - 1) % (len(self.settings) + 1)  # +1 for Geri
+                self._ensure_visible()
             elif event.key == pygame.K_DOWN:
                 self.selected = (self.selected + 1) % (len(self.settings) + 1)
+                self._ensure_visible()
             elif event.key == pygame.K_LEFT:
                 self._adjust_value(-1)
             elif event.key == pygame.K_RIGHT:

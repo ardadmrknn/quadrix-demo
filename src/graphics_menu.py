@@ -121,6 +121,21 @@ class GraphicsMenu:
     def options(self):
         """Dil değiştiğinde dinamik olarak çevirilmiş seçenekleri döndür"""
         return [t(key) for key in self._option_keys]
+
+    def _ensure_visible(self) -> None:
+        """Seçili öğeyi görünür scroll alanında tut."""
+        metrics = self._layout_metrics()
+        card_height = int(metrics['card_height'])
+        spacing = int(metrics['spacing'])
+        visible_height = self._last_visible_height or max(1, self.screen.get_height() - int(metrics['visible_height_offset']))
+
+        item_y = self.selected * spacing
+        if item_y < self.scroll_offset:
+            self.scroll_offset = item_y
+        elif item_y + card_height > self.scroll_offset + visible_height:
+            self.scroll_offset = item_y + card_height - visible_height
+
+        self.scroll_offset = max(0, min(self.scroll_offset, self._max_scroll(visible_height=visible_height)))
     
     def handle_input(self, event):
         """Grafik menüsü input işle"""
@@ -130,8 +145,10 @@ class GraphicsMenu:
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_UP:
                 self.selected = (self.selected - 1) % len(self.options)
+                self._ensure_visible()
             elif event.key == pygame.K_DOWN:
                 self.selected = (self.selected + 1) % len(self.options)
+                self._ensure_visible()
             elif event.key in (pygame.K_LEFT, pygame.K_RIGHT):
                 action = self._change_setting(event.key == pygame.K_RIGHT)
                 if action:

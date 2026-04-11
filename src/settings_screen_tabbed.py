@@ -252,22 +252,11 @@ def _build_tab_content(tab_key: str, sm, show_debug: bool = False) -> list[dict]
             ('hold', _t('gp_hold', 'Hold / Değiştir')),
             ('hold2', _t('gp_hold2', 'İkincil Hold')),
             ('pause', _t('gp_pause', 'Duraklat')),
-            ('main_menu_prompt', _t('gp_main_menu_prompt', 'Ana Menü Onayı')),
             ('discard_held', _t('gp_discard_held', 'Tutulanı At')),
-            ('lt', _t('gp_lt', 'Sol Tetik')),
-            ('rt', _t('gp_rt', 'Sağ Tetik')),
             ('menu_confirm', _t('gp_menu_confirm', 'Menü Onay')),
             ('menu_back', _t('gp_menu_back', 'Menü Geri')),
             ('menu_tab_next', _t('gp_menu_tab_next', 'Sekme Sonraki')),
             ('menu_tab_prev', _t('gp_menu_tab_prev', 'Sekme Önceki')),
-            ('card_rewind', _t('gp_card_rewind', 'Kart: Rewind')),
-            ('card_sniper', _t('gp_card_sniper', 'Kart: Sniper')),
-            ('card_time_capsule_save', _t('gp_card_time_capsule_save', 'Kart: Time Capsule Kaydet')),
-            ('card_time_capsule_restore', _t('gp_card_time_capsule_restore', 'Kart: Time Capsule Yükle')),
-            ('card_phase_shift', _t('gp_card_phase_shift', 'Kart: Phase Shift')),
-            ('card_ghost', _t('gp_card_ghost', 'Kart: Ghost')),
-            ('card_hammer', _t('gp_card_hammer', 'Kart: Hammer')),
-            ('card_bomb', _t('gp_card_bomb', 'Kart: Bomb')),
         ]
         items.append({'type': 'section', 'loc_key': 'tab_gamepad', 'label_tr': 'GAMEPAD', 'label_en': 'GAMEPAD'})
         for action_key, label in gamepad_actions:
@@ -1922,9 +1911,10 @@ class TabbedSettingsScreen:
                 self._switch_tab(1)
                 return None
 
+            # Gamepad sol/sağ ok tuşları (d-pad / sol stick) sekme değiştirmesin;
+            # sekme geçişi yalnızca LB/RB (K_LEFTBRACKET / K_RIGHTBRACKET) ile yapılır.
             if getattr(event, 'from_gamepad', False) and event.key in (pygame.K_LEFT, pygame.K_RIGHT):
-                self._switch_tab(-1 if event.key == pygame.K_LEFT else 1)
-                return None
+                pass  # Yok say — aşağıda ayar değiştirme olarak işlenecek
 
             # Yukarı / Aşağı - satır seçimi
             if event.key == pygame.K_UP:

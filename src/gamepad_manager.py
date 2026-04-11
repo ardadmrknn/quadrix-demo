@@ -11,12 +11,25 @@ Desteklenen kontrolcüler:
   - Genel SDL2 uyumlu gamepad'ler
 """
 
+import copy
 import math
+import sys
 
 import pygame
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 from platform_utils import get_mouse_pos as _gmp
+
+# src.main kismi import basarisiz olup absolute fallback'e dustugunde ayni dosya
+# hem `src.gamepad_manager` hem `gamepad_manager` olarak yuklenebiliyordu.
+# Bu da iki ayri singleton olusturup ayarlar ekraninin guncelledigi binding'lerin
+# oyun tarafina yansimamasi sonucunu doguruyordu.
+_current_module = sys.modules.get(__name__)
+if _current_module is not None:
+    if __name__ == 'src.gamepad_manager':
+        sys.modules['gamepad_manager'] = _current_module
+    elif __name__ == 'gamepad_manager':
+        sys.modules['src.gamepad_manager'] = _current_module
 
 # Xbox / PlayStation / Nintendo buton indeksleri (SDL GameController layout)
 # SDL GameController standardında butonlar:
@@ -67,11 +80,10 @@ DEFAULT_GAMEPAD_BINDINGS = {
     'hold':         {'button': 9},   # LB / L1
     'hold2':        {'button': 2},   # X (Xbox) / Square (PS)
     'pause':        {'button': 6},   # Start / Options / +
-    'main_menu_prompt': {'button': None},  # Ana menü onayi (ESC)
     'lt':           {'trigger': 'left'},  # LT / L2 (analog trigger)
     'rt':           {'trigger': 'right'}, # RT / R2 (analog trigger)
     'restart':      {'button': None}, # Devre dışı
-    'discard_held': {'button': 7},   # L3 (Left Stick Click)
+    'discard_held': {'button': 3},   # Y (Xbox) / Triangle (PS)
     # Kart modu aksiyonlari (varsayilan: atanmis degil)
     'card_rewind': {'button': None},
     'card_sniper': {'button': None},
@@ -109,7 +121,6 @@ ACTION_TO_KEY = {
     'hold': pygame.K_c,
     'hold2': pygame.K_v,
     'pause': pygame.K_p,
-    'main_menu_prompt': pygame.K_ESCAPE,
     'lt': pygame.K_q,        # LT → varsayılan olarak Q (kullanıcı değiştirebilir)
     'rt': pygame.K_e,        # RT → varsayılan olarak E
     'restart': pygame.K_r,
@@ -163,6 +174,10 @@ class GamepadState:
     # D-pad (hat)
     dpad: Tuple[int, int] = (0, 0)  # (x, y) : -1/0/+1
     prev_dpad: Tuple[int, int] = (0, 0)
+    dpad_repeat_x: float = 0.0
+    dpad_repeat_y: float = 0.0
+    dpad_initial_delay_x: bool = False
+    dpad_initial_delay_y: bool = False
     # Stick tekrar (DAS benzeri) sayaçları
     stick_repeat_x: float = 0.0
     stick_repeat_y: float = 0.0
@@ -235,6 +250,9 @@ class GamepadManager:
         # True iken A butonu K_RETURN yerine MOUSEBUTTONDOWN üretir.
         self._menu_pointer_active = False
 
+        # Instance-level binding kopyası (global DEFAULT_GAMEPAD_BINDINGS mutasyona uğramaz)
+        self._bindings = copy.deepcopy(DEFAULT_GAMEPAD_BINDINGS)
+
         # Ayarlardan oku (varsa)
         self._load_settings()
 
@@ -256,16 +274,19 @@ class GamepadManager:
             ms = gp_cfg.get('mouse_sensitivity', 1.0)
             if isinstance(ms, (int, float)):
                 self.MOUSE_SENSITIVITY = max(0.1, min(3.0, float(ms)))
+            # Her reload'da temiz bir kopya ile başla (önceki mutasyonlar sıfırlanır)
+            self._bindings = copy.deepcopy(DEFAULT_GAMEPAD_BINDINGS)
+
             # Eski çakışan ayarları temizle (rotate/restart UI'dan kaldırıldı)
             _deprecated = {'rotate', 'rotate_alt', 'restart'}
             for dep_action in _deprecated:
-                if dep_action in DEFAULT_GAMEPAD_BINDINGS:
-                    DEFAULT_GAMEPAD_BINDINGS[dep_action] = {'button': None, 'button_secondary': None}
+                if dep_action in self._bindings:
+                    self._bindings[dep_action] = {'button': None, 'button_secondary': None}
 
             # Buton eşlemelerini güncelle
             button_actions = [
                 'hard_drop', 'hold', 'hold2', 'pause',
-                'main_menu_prompt', 'menu_back', 'menu_confirm', 'menu_tab_next', 'menu_tab_prev',
+                'menu_back', 'menu_confirm', 'menu_tab_next', 'menu_tab_prev',
                 'discard_held', 'lt', 'rt',
                 'card_rewind', 'card_sniper', 'card_time_capsule_save',
                 'card_time_capsule_restore', 'card_phase_shift',
@@ -273,10 +294,13 @@ class GamepadManager:
             ]
             for action in button_actions:
                 raw = gp_cfg.get(action)
-                if action not in DEFAULT_GAMEPAD_BINDINGS:
+                if action not in self._bindings:
+                    continue
+                # Config'de bu aksiyon yok → default'a dokunma
+                if raw is None:
                     continue
 
-                binding = DEFAULT_GAMEPAD_BINDINGS[action]
+                binding = self._bindings[action]
                 binding.pop('button', None)
                 binding.pop('button_secondary', None)
                 binding.pop('trigger', None)
@@ -450,15 +474,16 @@ class GamepadManager:
         if direction == 'right' and dx == 1:
             return True
 
-        # Sol stick kontrolü (dijital eşik geçildi mi?)
-        if direction == 'down' and gp.left_stick.digital_y == 1:
-            return True
-        if direction == 'up' and gp.left_stick.digital_y == -1:
-            return True
-        if direction == 'left' and gp.left_stick.digital_x == -1:
-            return True
-        if direction == 'right' and gp.left_stick.digital_x == 1:
-            return True
+        # Sol stick kontrolü: sadece menü/UI'da; oyun içinde D-pad yeterli
+        if self._context != self.CONTEXT_GAME:
+            if direction == 'down' and gp.left_stick.digital_y == 1:
+                return True
+            if direction == 'up' and gp.left_stick.digital_y == -1:
+                return True
+            if direction == 'left' and gp.left_stick.digital_x == -1:
+                return True
+            if direction == 'right' and gp.left_stick.digital_x == 1:
+                return True
 
         return False
 
@@ -469,7 +494,7 @@ class GamepadManager:
         kart yetenekleri (G, H, B vb.) için doğrudan gamepad buton
         durumunu kontrol etmek gerekir.
         """
-        binding = DEFAULT_GAMEPAD_BINDINGS.get(action)
+        binding = self._bindings.get(action)
         if not binding:
             return False
         gp = self.get_active_gamepad()
@@ -492,7 +517,7 @@ class GamepadManager:
 
         Önceki frame'de basılı değilken şimdi basılıysa True döner.
         """
-        binding = DEFAULT_GAMEPAD_BINDINGS.get(action)
+        binding = self._bindings.get(action)
         if not binding:
             return False
         gp = self.get_active_gamepad()
@@ -529,7 +554,7 @@ class GamepadManager:
             gp = self.get_active_gamepad()
             gp_type = gp.gamepad_type if gp else GamepadType.UNKNOWN
 
-        binding = DEFAULT_GAMEPAD_BINDINGS.get(action, {})
+        binding = self._bindings.get(action, {})
 
         # D-pad aksiyonları
         dpad_dir = binding.get('dpad')
@@ -690,10 +715,8 @@ class GamepadManager:
                         gp.left_trigger = max(0.0, min(1.0, raw_lt))
                         gp.right_trigger = max(0.0, min(1.0, raw_rt))
 
-                # D-pad (hat) oku
-                num_hats = gp.joystick.get_numhats()
-                if num_hats > 0:
-                    gp.dpad = gp.joystick.get_hat(0)
+                # D-pad: önce hat, gerekirse button 11-14 fallback
+                gp.dpad = self._read_dpad_state(gp)
 
                 # Dijital yön hesapla (analog stick → dijital)
                 gp.left_stick.digital_x = self._to_digital(gp.left_stick.x)
@@ -702,7 +725,7 @@ class GamepadManager:
                 # Olayları üret
                 synthetic.extend(self._generate_button_events(gp))
                 synthetic.extend(self._generate_trigger_events(gp))
-                synthetic.extend(self._generate_dpad_events(gp))
+                synthetic.extend(self._generate_dpad_events(gp, delta_ms))
                 synthetic.extend(self._generate_stick_events(gp, delta_ms))
                 synthetic.extend(self._generate_mouse_events(gp, delta_ms))
                 synthetic.extend(self._generate_mouse_click_events(gp))
@@ -755,6 +778,41 @@ class GamepadManager:
         if value > self.DIGITAL_THRESHOLD:
             return +1
         return 0
+
+    def _buttons_to_dpad(self, gp: GamepadState) -> tuple[int, int]:
+        """Buton 11-14 üzerinden D-pad durumunu çöz.
+
+        Bazı cihazlar D-pad'i hat yerine SDL button 11-14 olarak raporlar.
+        """
+        x = 0
+        y = 0
+        if gp.buttons.get(13, False):
+            x -= 1
+        if gp.buttons.get(14, False):
+            x += 1
+        if gp.buttons.get(11, False):
+            y += 1
+        if gp.buttons.get(12, False):
+            y -= 1
+        return (max(-1, min(1, x)), max(-1, min(1, y)))
+
+    def _read_dpad_state(self, gp: GamepadState) -> tuple[int, int]:
+        """D-pad durumunu hat + button fallback ile oku."""
+        hat_x = 0
+        hat_y = 0
+        try:
+            js = gp.joystick
+            if js and js.get_numhats() > 0:
+                hat_x, hat_y = js.get_hat(0)
+        except Exception:
+            hat_x, hat_y = 0, 0
+
+        btn_x, btn_y = self._buttons_to_dpad(gp)
+        if hat_x == 0 and btn_x != 0:
+            hat_x = btn_x
+        if hat_y == 0 and btn_y != 0:
+            hat_y = btn_y
+        return (hat_x, hat_y)
 
     def _reset_mouse_emulation(self, gp: GamepadState) -> None:
         gp.mouse_control_active = False
@@ -831,14 +889,14 @@ class GamepadManager:
         Ayarlardan okunan buton eşlemelerini kullanır."""
         events = []
         in_game = (self._context == self.CONTEXT_GAME)
-        cfg_bindings = DEFAULT_GAMEPAD_BINDINGS
+        cfg_bindings = self._bindings
 
         # Ayarlardan okunan buton eşlemelerini dinamik olarak oluştur
         if in_game:
             # Oyun içi: buton → aksiyon eşlemesi
             game_actions_list = [
                 'hard_drop', 'hold', 'hold2',
-                'pause', 'main_menu_prompt', 'discard_held',
+                'pause', 'discard_held',
                 'lt', 'rt',
                 'card_rewind', 'card_sniper', 'card_time_capsule_save',
                 'card_time_capsule_restore', 'card_phase_shift',
@@ -897,7 +955,7 @@ class GamepadManager:
         # Trigger eventleri sadece oyun bağlamında üret
         if self._context == self.CONTEXT_GAME:
             # Tüm aksiyonları tara, trigger binding olanları bul
-            for action, binding in DEFAULT_GAMEPAD_BINDINGS.items():
+            for action, binding in self._bindings.items():
                 trigger_dirs = self._iter_trigger_dirs(binding)
                 if not trigger_dirs:
                     continue
@@ -1033,10 +1091,10 @@ class GamepadManager:
         """
         events: List[pygame.event.Event] = []
 
-        # --- A butonu → sol tık (oyun içi popup/overlay'lerde) ---
+        # --- A butonu → sol tık (oyun içi popup/overlay ve genel tıklama) ---
         if self._context == self.CONTEXT_GAME:
             try:
-                confirm_binding = DEFAULT_GAMEPAD_BINDINGS.get('menu_confirm', {})
+                confirm_binding = self._bindings.get('menu_confirm', {})
                 for a_btn in self._iter_button_indices(confirm_binding):
                     a_now = gp.buttons.get(a_btn, False)
                     a_prev = gp.prev_buttons.get(a_btn, False)
@@ -1065,7 +1123,7 @@ class GamepadManager:
         # Pointer modu aktifken A butonu → sol tık (imlecin altını tıklar)
         if self._menu_pointer_active:
             try:
-                confirm_binding = DEFAULT_GAMEPAD_BINDINGS.get('menu_confirm', {})
+                confirm_binding = self._bindings.get('menu_confirm', {})
                 for a_btn in self._iter_button_indices(confirm_binding):
                     a_now = gp.buttons.get(a_btn, False)
                     a_prev = gp.prev_buttons.get(a_btn, False)
@@ -1123,15 +1181,46 @@ class GamepadManager:
         # Hareket dışı aksiyonlar (D-Pad yönünü override eden)
         movement_actions = {'move_left', 'move_right', 'soft_drop',
                            'menu_up', 'menu_down', 'menu_left', 'menu_right'}
-        for action, binding in DEFAULT_GAMEPAD_BINDINGS.items():
+        for action, binding in self._bindings.items():
             if action in movement_actions:
                 continue
-            btn = binding.get('button')
-            if btn in dpad_btn_to_dir:
-                overridden.add(dpad_btn_to_dir[btn])
+            for btn in self._iter_button_indices(binding):
+                if btn in dpad_btn_to_dir:
+                    overridden.add(dpad_btn_to_dir[btn])
         return overridden
 
-    def _generate_dpad_events(self, gp: GamepadState) -> List[pygame.event.Event]:
+    def _generate_repeat_pulses(
+        self,
+        direction: int,
+        delta_ms: float,
+        repeat_timer: float,
+        initial_delay_done: bool,
+        negative_key: int,
+        positive_key: int,
+    ) -> Tuple[List[pygame.event.Event], float, bool]:
+        """Basılı tutulan yön için klavye benzeri tekrar pulse'ları üret."""
+        if direction == 0:
+            return [], 0.0, False
+
+        repeat_timer += delta_ms
+        events: List[pygame.event.Event] = []
+        key = negative_key if direction == -1 else positive_key
+
+        if not initial_delay_done:
+            if repeat_timer >= self.STICK_INITIAL_DELAY:
+                initial_delay_done = True
+                repeat_timer = 0.0
+                events.append(self._make_key_event(key, pygame.KEYDOWN))
+                events.append(self._make_key_event(key, pygame.KEYUP))
+        else:
+            while repeat_timer >= self.STICK_REPEAT_INTERVAL:
+                repeat_timer -= self.STICK_REPEAT_INTERVAL
+                events.append(self._make_key_event(key, pygame.KEYDOWN))
+                events.append(self._make_key_event(key, pygame.KEYUP))
+
+        return events, repeat_timer, initial_delay_done
+
+    def _generate_dpad_events(self, gp: GamepadState, delta_ms: float) -> List[pygame.event.Event]:
         """D-pad yönlendirme olaylarını üret.
         D-Pad butonları (11-14) bir kart aksiyonuna atandıysa
         o yön için ok-tuşu üretilmez (çakışma engellenir)."""
@@ -1155,6 +1244,25 @@ class GamepadManager:
                 events.append(self._make_key_event(pygame.K_LEFT, pygame.KEYDOWN))
             elif dx == 1 and 'right' not in suppressed:
                 events.append(self._make_key_event(pygame.K_RIGHT, pygame.KEYDOWN))
+            gp.dpad_repeat_x = 0.0
+            gp.dpad_initial_delay_x = False
+        elif dx != 0 and self._context == self.CONTEXT_MENU:
+            repeat_events, gp.dpad_repeat_x, gp.dpad_initial_delay_x = self._generate_repeat_pulses(
+                dx,
+                delta_ms,
+                gp.dpad_repeat_x,
+                gp.dpad_initial_delay_x,
+                pygame.K_LEFT,
+                pygame.K_RIGHT,
+            )
+            if dx == -1 and 'left' in suppressed:
+                repeat_events = []
+            elif dx == 1 and 'right' in suppressed:
+                repeat_events = []
+            events.extend(repeat_events)
+        else:
+            gp.dpad_repeat_x = 0.0
+            gp.dpad_initial_delay_x = False
 
         # D-pad Y ekseni (yukarı/aşağı)
         # Not: SDL hat'ında Y ekseni ters: yukarı = +1, aşağı = -1
@@ -1168,6 +1276,25 @@ class GamepadManager:
                 events.append(self._make_key_event(pygame.K_DOWN, pygame.KEYDOWN))
             elif dy == 1 and 'up' not in suppressed:  # yukarı basıldı
                 events.append(self._make_key_event(pygame.K_UP, pygame.KEYDOWN))
+            gp.dpad_repeat_y = 0.0
+            gp.dpad_initial_delay_y = False
+        elif dy != 0 and self._context == self.CONTEXT_MENU:
+            repeat_events, gp.dpad_repeat_y, gp.dpad_initial_delay_y = self._generate_repeat_pulses(
+                -dy,
+                delta_ms,
+                gp.dpad_repeat_y,
+                gp.dpad_initial_delay_y,
+                pygame.K_UP,
+                pygame.K_DOWN,
+            )
+            if dy == -1 and 'down' in suppressed:
+                repeat_events = []
+            elif dy == 1 and 'up' in suppressed:
+                repeat_events = []
+            events.extend(repeat_events)
+        else:
+            gp.dpad_repeat_y = 0.0
+            gp.dpad_initial_delay_y = False
 
         # D-pad navigasyonu yapıldıysa pointer modundan çık
         if events and self._context == self.CONTEXT_MENU:
@@ -1177,7 +1304,15 @@ class GamepadManager:
     # ─── Analog Stick Olayları ──────────────────────────────────────────────
 
     def _generate_stick_events(self, gp: GamepadState, delta_ms: float) -> List[pygame.event.Event]:
-        """Analog stick'i dijital yöne çevirip DAS benzeri tekrar ile olay üret"""
+        """Analog stick'i dijital yöne çevirip DAS benzeri tekrar ile olay üret.
+
+        Oyun içinde sol stick devre dışıdır — blok hareketi yalnızca D-pad ile.
+        Menü/UI ekranlarında sol stick navigasyon için kullanılır.
+        """
+        # Oyun bağlamında sol stick ile blok hareket etmesin
+        if self._context == self.CONTEXT_GAME:
+            return []
+
         events = []
         stick = gp.left_stick
 
@@ -1233,22 +1368,15 @@ class GamepadManager:
                 gp.stick_repeat_y = 0
                 gp.stick_initial_delay_y = False
         elif stick.digital_y != 0:
-            # Aşağı yön tutulduğunda tekrar göndermeye gerek yok
-            # (soft drop game.py'de is_direction_held ile sürekli kontrol ediliyor)
-            # Sadece yukarı yön için DAS tekrar gerekebilir
-            if stick.digital_y == -1:
-                gp.stick_repeat_y += delta_ms
-                if not gp.stick_initial_delay_y:
-                    if gp.stick_repeat_y >= self.STICK_INITIAL_DELAY:
-                        gp.stick_initial_delay_y = True
-                        gp.stick_repeat_y = 0
-                        events.append(self._make_key_event(pygame.K_UP, pygame.KEYDOWN))
-                        events.append(self._make_key_event(pygame.K_UP, pygame.KEYUP))
-                else:
-                    if gp.stick_repeat_y >= self.STICK_REPEAT_INTERVAL:
-                        gp.stick_repeat_y -= self.STICK_REPEAT_INTERVAL
-                        events.append(self._make_key_event(pygame.K_UP, pygame.KEYDOWN))
-                        events.append(self._make_key_event(pygame.K_UP, pygame.KEYUP))
+            repeat_events, gp.stick_repeat_y, gp.stick_initial_delay_y = self._generate_repeat_pulses(
+                stick.digital_y,
+                delta_ms,
+                gp.stick_repeat_y,
+                gp.stick_initial_delay_y,
+                pygame.K_UP,
+                pygame.K_DOWN,
+            )
+            events.extend(repeat_events)
 
         # Sol stick navigasyonu yapıldıysa pointer modundan çık
         if events and self._context == self.CONTEXT_MENU:

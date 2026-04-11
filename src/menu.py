@@ -5184,7 +5184,6 @@ class ControlSettingsScreen:
             ('hard_drop',  t('gp_hard_drop'),       'button'),
             ('hold',       t('gp_hold'),            'button'),
             ('pause',      t('gp_pause'),           'button'),
-            ('main_menu_prompt', t('gp_main_menu_prompt'), 'button'),
             ('discard_held', t('gp_discard_held'),  'button'),
         ]
 
@@ -7663,8 +7662,12 @@ class MusicSettingsScreen:
                 return None
             if event.key == pygame.K_UP:
                 self.mode_selected = (self.mode_selected - 1) % len(self.modes)
+                visible_h = max(1, self.screen.get_height() - ((getattr(self, '_title_rect', None).bottom + 40) if getattr(self, '_title_rect', None) else 150) - 120)
+                self.mode_scroll = self._ensure_visible(self.mode_selected, 74, 12, visible_h, self.mode_scroll)
             elif event.key == pygame.K_DOWN:
                 self.mode_selected = (self.mode_selected + 1) % len(self.modes)
+                visible_h = max(1, self.screen.get_height() - ((getattr(self, '_title_rect', None).bottom + 40) if getattr(self, '_title_rect', None) else 150) - 120)
+                self.mode_scroll = self._ensure_visible(self.mode_selected, 74, 12, visible_h, self.mode_scroll)
             elif event.key in (pygame.K_RETURN, pygame.K_SPACE):
                 mode_key = self.modes[self.mode_selected][0]
                 self._load_playlist('mode', mode_key)
@@ -7703,8 +7706,12 @@ class MusicSettingsScreen:
                 return None
             if event.key == pygame.K_UP:
                 self.playlist_selected = (self.playlist_selected - 1) % total_items
+                visible_h = max(1, self.screen.get_height() - ((getattr(self, '_title_rect', None).bottom + 40) if getattr(self, '_title_rect', None) else 150) - 120)
+                self.playlist_scroll = self._ensure_visible(self.playlist_selected, 74, 12, visible_h, self.playlist_scroll)
             elif event.key == pygame.K_DOWN:
                 self.playlist_selected = (self.playlist_selected + 1) % total_items
+                visible_h = max(1, self.screen.get_height() - ((getattr(self, '_title_rect', None).bottom + 40) if getattr(self, '_title_rect', None) else 150) - 120)
+                self.playlist_scroll = self._ensure_visible(self.playlist_selected, 74, 12, visible_h, self.playlist_scroll)
             elif event.key in (pygame.K_RETURN, pygame.K_SPACE):
                 if self.playlist_selected == 0:
                     self._open_picker()

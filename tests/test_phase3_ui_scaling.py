@@ -4,6 +4,7 @@ import math
 import types
 
 import guide_screen
+import gameplay_settings as gameplay_settings_module
 import graphics_menu
 import menu as menu_module
 import ui_scaling as ui_scaling_module
@@ -242,3 +243,63 @@ def test_graphics_menu_max_scroll_reuses_draw_visible_height(monkeypatch):
 
     assert menu._max_scroll(visible_height=200) == expected
     assert menu._max_scroll() == expected
+
+
+def test_graphics_menu_keyboard_nav_keeps_selected_row_visible(monkeypatch):
+    monkeypatch.setattr(graphics_menu, 'get_shared_falling_blocks_layer', lambda *args, **kwargs: _DummyFx())
+    monkeypatch.setattr(graphics_menu.retro_style, 'get_font', lambda *args, **kwargs: types.SimpleNamespace())
+
+    menu = graphics_menu.GraphicsMenu(_FakeScreen(800, 360), _DummySettings())
+    menu._last_visible_height = 120
+    menu.selected = len(menu.options) - 2
+
+    event = types.SimpleNamespace(type=graphics_menu.pygame.KEYDOWN, key=graphics_menu.pygame.K_DOWN)
+    menu.handle_input(event)
+
+    assert menu.selected == len(menu.options) - 1
+    assert menu.scroll_offset > 0
+
+
+def test_gameplay_settings_keyboard_nav_keeps_selected_row_visible(monkeypatch):
+    monkeypatch.setattr(gameplay_settings_module, 'get_shared_falling_blocks_layer', lambda *args, **kwargs: _DummyFx())
+    monkeypatch.setattr(gameplay_settings_module.retro_style, 'get_font', lambda *args, **kwargs: types.SimpleNamespace())
+
+    menu = gameplay_settings_module.GameplaySettingsMenu(_FakeScreen(800, 260), _DummySettings())
+    menu.selected = len(menu.settings) - 1
+
+    event = types.SimpleNamespace(type=gameplay_settings_module.pygame.KEYDOWN, key=gameplay_settings_module.pygame.K_DOWN)
+    menu.handle_input(event)
+
+    assert menu.selected == len(menu.settings)
+    assert menu.scroll_offset > 0
+
+
+def test_music_mode_select_keyboard_nav_keeps_selected_row_visible():
+    music = menu_module.MusicSettingsScreen.__new__(menu_module.MusicSettingsScreen)
+    music.screen = _FakeScreen(500, 320)
+    music.modes = [(f'mode-{i}', f'Mode {i}') for i in range(12)]
+    music.mode_selected = 7
+    music.mode_scroll = 0
+    music._title_rect = types.SimpleNamespace(bottom=80)
+
+    event = types.SimpleNamespace(type=menu_module.pygame.KEYDOWN, key=menu_module.pygame.K_DOWN)
+    menu_module.MusicSettingsScreen._handle_mode_input(music, event)
+
+    assert music.mode_selected == 8
+    assert music.mode_scroll > 0
+
+
+def test_music_playlist_keyboard_nav_keeps_selected_row_visible():
+    music = menu_module.MusicSettingsScreen.__new__(menu_module.MusicSettingsScreen)
+    music.screen = _FakeScreen(500, 320)
+    music.playlist = [f'track-{i}' for i in range(12)]
+    music.playlist_selected = 7
+    music.playlist_scroll = 0
+    music.playlist_target = 'mode'
+    music._title_rect = types.SimpleNamespace(bottom=80)
+
+    event = types.SimpleNamespace(type=menu_module.pygame.KEYDOWN, key=menu_module.pygame.K_DOWN)
+    menu_module.MusicSettingsScreen._handle_playlist_input(music, event)
+
+    assert music.playlist_selected == 8
+    assert music.playlist_scroll > 0
