@@ -220,10 +220,10 @@ class GamepadManager:
     MOUSE_SENSITIVITY = 1.0
     MOUSE_DEADZONE = 0.12       # Fare için ayrı (düşük) deadzone
     MOUSE_ACCEL_EXPONENT = 2.0  # Kuadratik ivme (hassas + hızlı)
-    MOUSE_ACTIVATE_THRESHOLD = 0.30
-    MOUSE_RELEASE_THRESHOLD = 0.14
-    MOUSE_NEUTRAL_TRACK_THRESHOLD = 0.24
-    MOUSE_NEUTRAL_FOLLOW_RATE = 0.08
+    MOUSE_ACTIVATE_THRESHOLD = 0.18
+    MOUSE_RELEASE_THRESHOLD = 0.08
+    MOUSE_NEUTRAL_TRACK_THRESHOLD = 0.12
+    MOUSE_NEUTRAL_FOLLOW_RATE = 0.03
 
     # Bağlam: 'game' = oyun içi, 'menu' = menü/UI
     # B butonu oyun içinde rotate, menüde back olarak çalışır
@@ -797,21 +797,29 @@ class GamepadManager:
         return (max(-1, min(1, x)), max(-1, min(1, y)))
 
     def _read_dpad_state(self, gp: GamepadState) -> tuple[int, int]:
-        """D-pad durumunu hat + button fallback ile oku."""
+        """D-pad durumunu hat + button fallback ile oku.
+
+        Hat raporu olan kontrolcülerde hat yetkilidir; buton 11-14
+        farklı fonksiyonlara ait olabilir (touchpad, share vb.).
+        Buton fallback yalnızca hat olmayan kontrolcülerde kullanılır.
+        """
         hat_x = 0
         hat_y = 0
+        has_hat = False
         try:
             js = gp.joystick
             if js and js.get_numhats() > 0:
+                has_hat = True
                 hat_x, hat_y = js.get_hat(0)
         except Exception:
             hat_x, hat_y = 0, 0
 
-        btn_x, btn_y = self._buttons_to_dpad(gp)
-        if hat_x == 0 and btn_x != 0:
-            hat_x = btn_x
-        if hat_y == 0 and btn_y != 0:
-            hat_y = btn_y
+        if not has_hat:
+            btn_x, btn_y = self._buttons_to_dpad(gp)
+            if hat_x == 0 and btn_x != 0:
+                hat_x = btn_x
+            if hat_y == 0 and btn_y != 0:
+                hat_y = btn_y
         return (hat_x, hat_y)
 
     def _reset_mouse_emulation(self, gp: GamepadState) -> None:
@@ -1074,8 +1082,11 @@ class GamepadManager:
                 )
             )
             # Sağ stick fare hareketi → pointer modunu aktifle
+            # Yalnızca belirgin stick itişinde aktifle; küçük drift/artık
+            # hareket D-pad/sol stick navigasyonunu geçersiz kılmasın.
             if self._context == self.CONTEXT_MENU:
-                self._menu_pointer_active = True
+                if magnitude >= activation_threshold:
+                    self._menu_pointer_active = True
         except Exception:
             self._reset_mouse_emulation(gp)
         return events
