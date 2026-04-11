@@ -5958,13 +5958,14 @@ class MysteryMode(Game):
         # Gamepad action kontrolü (event loop dışında)
         if not self.game_over and not self.paused:
             try:
-                from gamepad_manager import gamepad_manager
-                if gamepad_manager and gamepad_manager.enabled:
+                from gamepad_manager import get_gamepad_manager
+                _gpm = get_gamepad_manager()
+                if _gpm and _gpm.enabled:
                     # Zaman Kapsulu Toggle: save/restore actionlarından biri tetiklenirse tek akış çalışır
                     if not self.card_selection_active and not time_capsule_keyboard_handled:
                         tc_pressed = (
-                            gamepad_manager.was_action_just_pressed('card_time_capsule_save')
-                            or gamepad_manager.was_action_just_pressed('card_time_capsule_restore')
+                            _gpm.was_action_just_pressed('card_time_capsule_save')
+                            or _gpm.was_action_just_pressed('card_time_capsule_restore')
                         )
                         if tc_pressed:
                             self._toggle_time_capsule()

@@ -35,6 +35,8 @@ def _make_manager() -> GamepadManager:
     manager.MOUSE_RELEASE_THRESHOLD = 0.14
     manager.MOUSE_NEUTRAL_TRACK_THRESHOLD = 0.24
     manager.MOUSE_NEUTRAL_FOLLOW_RATE = 0.08
+    manager._context = GamepadManager.CONTEXT_MENU
+    manager._menu_pointer_active = False
     return manager
 
 

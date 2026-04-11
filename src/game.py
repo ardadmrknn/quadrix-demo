@@ -50,6 +50,21 @@ from screen_shake import (
 
 GAMEPLAY_UI_REFERENCE_SIZE = (1366.0, 768.0)
 
+
+def _gp_btn(raw) -> int:
+    """Gamepad ayarlardaki buton değerini int'e çevir.
+
+    Ayarlar hem düz int (eski format) hem dict {'primary': N, 'secondary': M}
+    (yeni format) saklayabilir. Her iki durumda da primary buton indeksini döndürür.
+    """
+    if isinstance(raw, int):
+        return raw
+    if isinstance(raw, dict):
+        v = raw.get('primary', -1)
+        return int(v) if isinstance(v, (int, float)) else -1
+    return -1
+
+
 def resource_path(relative_path):
     """PyInstaller ile derlenen exe için doğru path'i al"""
     try:
@@ -1516,10 +1531,10 @@ class Game:
                 if event.type == pygame.JOYBUTTONDOWN:
                     try:
                         gp_cfg = self.settings_manager.get_controls().get('gamepad', {})
-                        if event.button == gp_cfg.get('menu_back', 1):
+                        if event.button == _gp_btn(gp_cfg.get('menu_back', 1)):
                             self.show_exit_prompt = False
                             continue
-                        if event.button == gp_cfg.get('menu_confirm', 0):
+                        if event.button == _gp_btn(gp_cfg.get('menu_confirm', 0)):
                             return 'menu'
                     except Exception:
                         pass
@@ -1575,9 +1590,9 @@ class Game:
             if event.type == pygame.JOYBUTTONDOWN and self.game_over:
                 try:
                     gp_cfg = self.settings_manager.get_controls().get('gamepad', {})
-                    if event.button == gp_cfg.get('menu_back', 1):
+                    if event.button == _gp_btn(gp_cfg.get('menu_back', 1)):
                         return 'menu'
-                    if event.button == gp_cfg.get('restart', 3):
+                    if event.button == _gp_btn(gp_cfg.get('restart', 3)):
                         if self.can_restart():
                             self.restart()
                             continue
@@ -1604,7 +1619,7 @@ class Game:
             if event.type == pygame.JOYBUTTONDOWN and self.paused and not self.game_over:
                 try:
                     gp_cfg = self.settings_manager.get_controls().get('gamepad', {})
-                    if event.button == gp_cfg.get('menu_back', 1):
+                    if event.button == _gp_btn(gp_cfg.get('menu_back', 1)):
                         self.paused = False
                         if hasattr(self, 'sound') and self.sound:
                             self.sound.unduck_music()

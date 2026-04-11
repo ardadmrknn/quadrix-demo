@@ -230,6 +230,11 @@ class GamepadManager:
         # Aktif bağlam (oyun içi veya menü)
         self._context = self.CONTEXT_MENU
 
+        # Menü pointer modu: sağ stick (fare) son kullanıldıysa True,
+        # d-pad / sol stick son kullanıldıysa False.
+        # True iken A butonu K_RETURN yerine MOUSEBUTTONDOWN üretir.
+        self._menu_pointer_active = False
+
         # Ayarlardan oku (varsa)
         self._load_settings()
 
@@ -667,8 +672,23 @@ class GamepadManager:
                     gp.raw_right_y = 0.0
                     self._reset_mouse_emulation(gp)
                 if num_axes >= 6:
-                    gp.left_trigger = max(0.0, (gp.joystick.get_axis(4) + 1.0) / 2.0)
-                    gp.right_trigger = max(0.0, (gp.joystick.get_axis(5) + 1.0) / 2.0)
+                    raw_lt = gp.joystick.get_axis(4)
+                    raw_rt = gp.joystick.get_axis(5)
+                    # SDL GameController: trigger aralığı -1 (bırak) → +1 (tam bas).
+                    # Bazı sürücüler/platformlar (macOS Bluetooth) 0→1 raporlayabilir.
+                    # İlk frame'de kalibrasyon: eğer her iki trigger da ~0.0 civarındaysa
+                    # sürücü muhtemelen 0→1 aralığı kullanıyordur.
+                    if not getattr(gp, '_trigger_calibrated', False):
+                        gp._trigger_calibrated = True
+                        # Her iki trigger da -0.5'ten küçükse → -1..+1 aralığı (standart)
+                        # Aksi halde (0 civarı) → 0..1 aralığı
+                        gp._trigger_range_full = (raw_lt < -0.5 and raw_rt < -0.5)
+                    if getattr(gp, '_trigger_range_full', True):
+                        gp.left_trigger = max(0.0, (raw_lt + 1.0) / 2.0)
+                        gp.right_trigger = max(0.0, (raw_rt + 1.0) / 2.0)
+                    else:
+                        gp.left_trigger = max(0.0, min(1.0, raw_lt))
+                        gp.right_trigger = max(0.0, min(1.0, raw_rt))
 
                 # D-pad (hat) oku
                 num_hats = gp.joystick.get_numhats()
@@ -845,6 +865,11 @@ class GamepadManager:
             if action is None:
                 continue
 
+            # Menü pointer modunda menu_confirm → K_RETURN üretme;
+            # A butonu _generate_mouse_click_events'te tıklama olarak işlenir.
+            if not in_game and action == 'menu_confirm' and self._menu_pointer_active:
+                continue
+
             pressed_now = gp.buttons.get(btn_idx, False)
             pressed_prev = gp.prev_buttons.get(btn_idx, False)
 
@@ -990,6 +1015,9 @@ class GamepadManager:
                     buttons=(0, 0, 0),
                 )
             )
+            # Sağ stick fare hareketi → pointer modunu aktifle
+            if self._context == self.CONTEXT_MENU:
+                self._menu_pointer_active = True
         except Exception:
             self._reset_mouse_emulation(gp)
         return events
@@ -997,9 +1025,11 @@ class GamepadManager:
     def _generate_mouse_click_events(self, gp: GamepadState) -> List[pygame.event.Event]:
         """A butonu ve R3 ile sol tık üretimi.
 
-        Menüde: R3 (sağ stick bas) = sol tık.
-        Oyun içinde: A butonu (menu_confirm) popup/overlay aktifken
-        sol tık olarak da çalışır (normal gameplay'de çalışmaz).
+        Menüde:
+          - R3 (sağ stick bas) = her zaman sol tık.
+          - Pointer modu aktifken A butonu = sol tık (imlecin altına tıkla).
+        Oyun içinde:
+          - A butonu popup/overlay aktifken sol tık.
         """
         events: List[pygame.event.Event] = []
 
@@ -1007,8 +1037,7 @@ class GamepadManager:
         if self._context == self.CONTEXT_GAME:
             try:
                 confirm_binding = DEFAULT_GAMEPAD_BINDINGS.get('menu_confirm', {})
-                a_btn = confirm_binding.get('button', 0)
-                if a_btn is not None:
+                for a_btn in self._iter_button_indices(confirm_binding):
                     a_now = gp.buttons.get(a_btn, False)
                     a_prev = gp.prev_buttons.get(a_btn, False)
                     if a_now and not a_prev:
@@ -1031,9 +1060,36 @@ class GamepadManager:
                 pass
             return events
 
-        # --- Menü bağlamı: R3 = sol tık ---
+        # --- Menü bağlamı ---
+
+        # Pointer modu aktifken A butonu → sol tık (imlecin altını tıklar)
+        if self._menu_pointer_active:
+            try:
+                confirm_binding = DEFAULT_GAMEPAD_BINDINGS.get('menu_confirm', {})
+                for a_btn in self._iter_button_indices(confirm_binding):
+                    a_now = gp.buttons.get(a_btn, False)
+                    a_prev = gp.prev_buttons.get(a_btn, False)
+                    if a_now and not a_prev:
+                        events.append(
+                            pygame.event.Event(
+                                pygame.MOUSEBUTTONDOWN,
+                                button=1,
+                                pos=_gmp(),
+                            )
+                        )
+                    elif not a_now and a_prev:
+                        events.append(
+                            pygame.event.Event(
+                                pygame.MOUSEBUTTONUP,
+                                button=1,
+                                pos=_gmp(),
+                            )
+                        )
+            except Exception:
+                pass
+
+        # R3 = her zaman sol tık (sağ stick basma)
         try:
-            # R3 = buton 8 (Right Stick Click)
             btn_idx = 8
             pressed_now = gp.buttons.get(btn_idx, False)
             pressed_prev = gp.prev_buttons.get(btn_idx, False)
@@ -1113,6 +1169,9 @@ class GamepadManager:
             elif dy == 1 and 'up' not in suppressed:  # yukarı basıldı
                 events.append(self._make_key_event(pygame.K_UP, pygame.KEYDOWN))
 
+        # D-pad navigasyonu yapıldıysa pointer modundan çık
+        if events and self._context == self.CONTEXT_MENU:
+            self._menu_pointer_active = False
         return events
 
     # ─── Analog Stick Olayları ──────────────────────────────────────────────
@@ -1191,6 +1250,9 @@ class GamepadManager:
                         events.append(self._make_key_event(pygame.K_UP, pygame.KEYDOWN))
                         events.append(self._make_key_event(pygame.K_UP, pygame.KEYUP))
 
+        # Sol stick navigasyonu yapıldıysa pointer modundan çık
+        if events and self._context == self.CONTEXT_MENU:
+            self._menu_pointer_active = False
         return events
 
     # ─── Titreşim (Rumble) ──────────────────────────────────────────────────

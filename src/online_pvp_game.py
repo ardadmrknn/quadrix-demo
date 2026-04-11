@@ -169,9 +169,9 @@ except ImportError:
     def _activate_overlay_to_user(action='', sid=0): return False
 
 try:
-    from gamepad_manager import GamepadManager
+    from gamepad_manager import get_gamepad_manager as _get_gamepad_manager
 except ImportError:
-    GamepadManager = None
+    _get_gamepad_manager = None
 
 try:
     from platform_utils import create_display, set_app_icon, resource_path
@@ -381,9 +381,9 @@ class OnlinePvPGame:
 
         # ─── Gamepad ───
         self.gamepad = None
-        if GamepadManager is not None:
+        if _get_gamepad_manager is not None:
             try:
-                self.gamepad = GamepadManager()
+                self.gamepad = _get_gamepad_manager()
             except Exception:
                 self.gamepad = None
 

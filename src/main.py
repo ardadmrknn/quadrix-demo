@@ -3393,8 +3393,11 @@ def main():
         # Oyun/PvP sırasında gamepad bağlamını 'game' olarak ayarla.
         # Böylece B=rotate, A=hard_drop vb. oyun aksiyonları çalışır.
         # Menü/ayar ekranlarında bağlam 'menu' kalır (B=back, A=confirm).
+        # Not: online_pvp kendi bağlam yönetimini yapar (lobi=menu, playing=game).
         try:
-            if state in ('game', 'pvp'):
+            if state == 'online_pvp':
+                pass  # online_pvp kendi set_context + update çağrısını yapar
+            elif state in ('game', 'pvp', 'coop'):
                 gamepad_mgr.set_context('game')
             else:
                 gamepad_mgr.set_context('menu')
@@ -3406,10 +3409,12 @@ def main():
         # event kuyruğuna post et.  Böylece tüm handler'lar (menü, oyun,
         # ayarlar vb.) otomatik olarak gamepad girişini klavye olayı
         # gibi işler — ek kod değişikliği gerekmez.
+        # online_pvp kendi handle_input() içinde update() çağırır (çift güncelleme önlenir).
         try:
-            gp_events = gamepad_mgr.update(delta_ms)
-            for gp_ev in gp_events:
-                pygame.event.post(gp_ev)
+            if state != 'online_pvp':
+                gp_events = gamepad_mgr.update(delta_ms)
+                for gp_ev in gp_events:
+                    pygame.event.post(gp_ev)
         except Exception:
             pass
         # ────────────────────────────────────────────────────────────────
