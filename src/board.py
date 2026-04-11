@@ -41,6 +41,9 @@ class Board:
         self.flexible_border_active: bool = False
         # Quadrix scoring state
         self.back_to_back = False
+        # Lock-out state: sticky game-over flag + last lock result.
+        self._locked_out: bool = False
+        self._last_lock_out: bool = False
 
     def _cell_filled(self, x: int, y: int) -> bool:
         return self.occupancy[y][x]
@@ -71,7 +74,17 @@ class Board:
                 return False
         return True
 
-    def lock_piece(self, piece) -> int:
+    def lock_piece(self, piece, *, track_game_over: bool = True) -> int:
+        # Track if piece touches top row (row 0 or above)
+        self._last_lock_out = False
+        _touches_top = False
+        for ly, row in enumerate(piece.shape):
+            for lx, c in enumerate(row):
+                if c and (piece.y + ly) <= 0:
+                    _touches_top = True
+                    break
+            if _touches_top:
+                break
         piece_w = len(piece.shape[0]) if piece.shape else 0
         piece_h = len(piece.shape) if piece.shape else 0
         color_matrix = getattr(piece, 'color_matrix', None)
@@ -107,7 +120,15 @@ class Board:
                     else:
                         self.texture_grid[y][x] = None
         
-        return self.clear_lines()
+        cleared = self.clear_lines()
+
+        # Lock-out: piece touched top AND row 0 still occupied after line clears
+        if _touches_top and any(self._cell_filled(x, 0) for x in range(self.width)):
+            self._last_lock_out = True
+            if track_game_over:
+                self._locked_out = True
+
+        return cleared
 
     def clear_lines(self, source: str = "player") -> int:
         """Tüm dolu satırları tek seferde sil (cascade dahil).
@@ -338,7 +359,24 @@ class Board:
             self.grid[y][x] = (212, 175, 55)  # gold-like color
 
     def is_game_over(self) -> bool:
-        return any(self._cell_filled(x, 0) for x in range(self.width))
+        """Tetris Guideline lock-out: True when a piece locked at or above top row."""
+        return self._locked_out
+
+    def consume_last_lock_out(self) -> bool:
+        """Return whether the most recent lock produced a lock-out and clear that event."""
+        last_lock_out = self._last_lock_out
+        self._last_lock_out = False
+        return last_lock_out
+
+    def clear_lock_out(self) -> None:
+        """Clear both sticky and per-lock lock-out flags."""
+        self._locked_out = False
+        self._last_lock_out = False
+
+    def mark_locked_out(self) -> None:
+        """Force the board into a lock-out state for modes that resolve it manually."""
+        self._locked_out = True
+        self._last_lock_out = True
 
     def get_grid_state(self) -> List[List[int]]:
         return [[1 if c else 0 for c in row] for row in self.occupancy]
@@ -357,4 +395,5 @@ class Board:
         self.last_cleared_lines = []
         self.last_cleared_colors = {}
         self.back_to_back = False
+        self.clear_lock_out()
 

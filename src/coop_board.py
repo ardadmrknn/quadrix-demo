@@ -5,7 +5,7 @@ yönetir. Orta çizgi sert duvar olarak davranır — parçalar karşı tarafa g
 """
 
 from board import Board
-from pieces import Piece
+from pieces import Piece, get_piece_spawn_y
 
 
 class CoopBoard(Board):
@@ -56,15 +56,16 @@ class CoopBoard(Board):
                 return False
         return True
 
-    def get_spawn_position(self, player: str) -> tuple[int, int]:
+    def get_spawn_position(self, player: str, piece: Piece | None = None) -> tuple[int, int]:
         """Oyuncunun parça spawn koordinatını döndür."""
+        spawn_y = get_piece_spawn_y(piece) if piece is not None else 0
         if player == "P1":
-            return (3, 0)
-        return (13, 0)  # 10 + 3
+            return (3, spawn_y)
+        return (13, spawn_y)  # 10 + 3
 
     def can_spawn(self, piece: Piece, player: str) -> bool:
         """Spawn pozisyonunda parça yerleştirilebilir mi?"""
-        sx, sy = self.get_spawn_position(player)
+        sx, sy = self.get_spawn_position(player, piece)
         piece.x = sx
         piece.y = sy
         return self.is_valid_position_for_player(piece, player)
@@ -84,7 +85,7 @@ class CoopBoard(Board):
         original_name = piece.name
         piece.name = player  # "P1" veya "P2"
         try:
-            cleared = super().lock_piece(piece)
+            cleared = super().lock_piece(piece, track_game_over=False)
         finally:
             piece.name = original_name  # Orijinal parça ismini geri yükle
         return cleared

@@ -6,7 +6,7 @@ import sys
 import os
 from pathlib import Path
 from board import Board
-from pieces import Piece, create_piece_by_index, SHAPES
+from pieces import Piece, create_piece_by_index, SHAPES, get_piece_spawn_y, skip_hidden_rows
 from constants import *
 from sound import SoundManager
 from background import BackgroundManager
@@ -274,11 +274,13 @@ class PvPGame:
         
         # Oyuncu 1 parçaları
         self.current_piece1 = self.get_next_piece()
+        skip_hidden_rows(self.current_piece1, self.board1)
         self.next_piece1 = self.get_next_piece()
         
         # Oyuncu 2 parçaları (aynı sıra)
         self.current_piece_index = 0  # Sıfırla
         self.current_piece2 = self.get_next_piece()
+        skip_hidden_rows(self.current_piece2, self.board2)
         self.next_piece2 = self.get_next_piece()
         
         # Tema renklerini parçalara uygula
@@ -987,6 +989,7 @@ class PvPGame:
         piece_index = self.piece_sequence[self.current_piece_index]
         self.current_piece_index += 1
         piece = Piece(x=3, y=0, shape_index=piece_index)
+        piece.y = get_piece_spawn_y(piece)
 
         # Tema + blok stili uygula
         self._apply_block_style(piece)
@@ -2029,6 +2032,23 @@ class PvPGame:
             lines = self.board1.lock_piece(self.current_piece1)
             self._mark_locked_board_dirty(1)
 
+            # Lock-out kontrolü (Tetris Guideline)
+            if self.board1.is_game_over():
+                self.p1_eliminated = True
+                if not self.p2_eliminated:
+                    self.winner = 2
+                    self.game_over = True
+                    self.match_end_reason = 'elimination'
+                    try:
+                        from gamepad_manager import get_gamepad_manager
+                        get_gamepad_manager().rumble(1.0, 1.0, 600)
+                    except Exception:
+                        pass
+                    self.sound.play('gameover')
+                    return
+                self.determine_winner()
+                return
+
             # Satır temizlenmiyorsa blok kilitlenme sesi çal
             if lines == 0:
                 self.sound.play('lock')
@@ -2131,28 +2151,8 @@ class PvPGame:
                     self.trigger_screen_shake(intensity=15, duration=20 / 60.0)
             
             self.current_piece1 = self.next_piece1
+            skip_hidden_rows(self.current_piece1, self.board1)
             self.next_piece1 = self.get_next_piece()
-            
-            if not self.board1.is_valid_position(self.current_piece1):
-                # Oyuncu 1 öldü - Oyun devam eder, sadece işaretle
-                print("🔴 Oyuncu 1 öldü! Oyuncu 2 devam ediyor...")
-                self.p1_eliminated = True
-                # Tek taraf elendiyse maç biter
-                if not self.p2_eliminated:
-                    self.winner = 2
-                    self.game_over = True
-                    self.match_end_reason = 'elimination'
-                    # Gamepad titreşimi - game over
-                    try:
-                        from gamepad_manager import get_gamepad_manager
-                        get_gamepad_manager().rumble(1.0, 1.0, 600)
-                    except Exception:
-                        pass
-                    self.sound.play('gameover')
-                    return
-                # İki oyuncu da öldüyse kazananı belirle
-                if self.board2.is_game_over():
-                    self.determine_winner()
         
         else:  # player == 2
             if self.effects_enabled:
@@ -2179,6 +2179,23 @@ class PvPGame:
             
             lines = self.board2.lock_piece(self.current_piece2)
             self._mark_locked_board_dirty(2)
+
+            # Lock-out kontrolü (Tetris Guideline)
+            if self.board2.is_game_over():
+                self.p2_eliminated = True
+                if not self.p1_eliminated:
+                    self.winner = 1
+                    self.game_over = True
+                    self.match_end_reason = 'elimination'
+                    try:
+                        from gamepad_manager import get_gamepad_manager
+                        get_gamepad_manager().rumble(1.0, 1.0, 600)
+                    except Exception:
+                        pass
+                    self.sound.play('gameover')
+                    return
+                self.determine_winner()
+                return
 
             # Satır temizlenmiyorsa blok kilitlenme sesi çal
             if lines == 0:
@@ -2282,27 +2299,8 @@ class PvPGame:
                     self.trigger_screen_shake(intensity=15, duration=20 / 60.0)
             
             self.current_piece2 = self.next_piece2
+            skip_hidden_rows(self.current_piece2, self.board2)
             self.next_piece2 = self.get_next_piece()
-            
-            if not self.board2.is_valid_position(self.current_piece2):
-                # Oyuncu 2 öldü - Oyun devam eder, sadece işaretle
-                print("🔴 Oyuncu 2 öldü! Oyuncu 1 devam ediyor...")
-                self.p2_eliminated = True
-                if not self.p1_eliminated:
-                    self.winner = 1
-                    self.game_over = True
-                    self.match_end_reason = 'elimination'
-                    # Gamepad titreşimi - game over
-                    try:
-                        from gamepad_manager import get_gamepad_manager
-                        get_gamepad_manager().rumble(1.0, 1.0, 600)
-                    except Exception:
-                        pass
-                    self.sound.play('gameover')
-                    return
-                # İki oyuncu da öldüyse kazananı belirle
-                if self.board1.is_game_over():
-                    self.determine_winner()
     
     def determine_winner(self):
         """Kazananı belirle.
@@ -3524,11 +3522,13 @@ class PvPGame:
         
         # Oyuncu 1 parçaları
         self.current_piece1 = self.get_next_piece()
+        skip_hidden_rows(self.current_piece1, self.board1)
         self.next_piece1 = self.get_next_piece()
         
         # Oyuncu 2 parçaları (aynı sıra)
         self.current_piece_index = 0
         self.current_piece2 = self.get_next_piece()
+        skip_hidden_rows(self.current_piece2, self.board2)
         self.next_piece2 = self.get_next_piece()
         
         # Tema renklerini parçalara uygula

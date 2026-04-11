@@ -702,6 +702,8 @@ class ZenMode(Game):
 
         # Normal kilitleme işlemi
         lines_cleared = self.board.lock_piece(self.current_piece)
+        # Zen Mode: lock-out flag'ini temizle, oyun asla bitmez
+        self.board.clear_lock_out()
 
         # Satır temizlenmiyorsa blok kilitlenme sesi çal
         if lines_cleared == 0:
@@ -865,6 +867,7 @@ class ZenMode(Game):
         
         # Kuyruktan ilk parçayı al ve kuyruğa yeni parça ekle
         self.current_piece = self.next_piece_queue.pop(0)
+        self._skip_hidden_rows(self.current_piece)
         self.next_piece_queue.append(self.spawn_new_piece())
         # Lock-delay state sıfırla
         self.grounded = False
@@ -909,9 +912,9 @@ class ZenMode(Game):
             message = t('zen_message_rows_cleared', rows=rows_to_clear)
             cleared_desc = f"üst {rows_to_clear} satır"
         
-        # Parçayı yukarı taşı ve ortala
-        self.current_piece.y = 0
-        self.current_piece.x = max(0, board_width // 2 - 2)
+        # Parçayı spawn konumuna geri al
+        self._position_piece_at_spawn(self.current_piece)
+        self._skip_hidden_rows(self.current_piece)
         
         # Temizlikten sonra parça hala geçersizse (çok az satır temizlendi), tüm tahtayı temizle
         if not clear_entire_board and self.auto_clear_rows is not None:
@@ -921,8 +924,8 @@ class ZenMode(Game):
                 self.board.grid = [[BLACK for _ in range(board_width)] for _ in range(board_height)]
                 self.board.texture_grid = [[None for _ in range(board_width)] for _ in range(board_height)]
                 self.board.occupancy = [[False for _ in range(board_width)] for _ in range(board_height)]
-                self.current_piece.y = 0
-                self.current_piece.x = max(0, board_width // 2 - 2)
+                self._position_piece_at_spawn(self.current_piece)
+                self._skip_hidden_rows(self.current_piece)
                 message = t('zen_message_full_clear_fallback')
                 cleared_desc = "tüm satırlar (fallback)"
         

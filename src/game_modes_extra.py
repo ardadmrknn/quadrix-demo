@@ -4860,16 +4860,15 @@ class MysteryMode(Game):
             queued_piece = self.current_piece
             try:
                 if queued_piece is not None:
-                    queued_piece.x = self._compute_spawn_x(queued_piece.get_width())
-                    queued_piece.y = 0
+                    self._position_piece_at_spawn(queued_piece)
             except Exception:
                 pass
             self.next_piece_queue.insert(0, queued_piece)
             
             # Son parçayı tekrar aktif parça yap
             restored_piece = copy.deepcopy(last['piece'])
-            restored_piece.x = 3  # Başlangıç X pozisyonu
-            restored_piece.y = 0  # Yukarıdan başla
+            self._position_piece_at_spawn(restored_piece)
+            self._skip_hidden_rows(restored_piece)
             # Rengi koru
             if last.get('color'):
                 restored_piece.color = last['color']

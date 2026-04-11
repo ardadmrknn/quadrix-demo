@@ -464,6 +464,31 @@ def test_double_freeze_game_over():
     assert cg.game_over
     assert sound.game_over_sequence_calls == 1
 
+def test_single_side_lock_out_freezes_player_instead_of_ending_run():
+    sound = _SM()
+    cg = CoopGame(sound_enabled=False, effects_enabled=False, screen=_Surf(), sound_manager=sound)
+
+    for y in range(4):
+        for x in range(10):
+            cg.board.occupancy[y][x] = True
+            cg.board.grid[y][x] = (255, 0, 0)
+            cg.board.owners[y][x] = 'P1'
+
+    piece = Piece(x=3, y=0, shape_index=1)
+    cg._apply_block_style(piece)
+    cg.p1_current_piece = piece
+
+    cg._lock_and_new_piece('P1')
+
+    assert cg.game_over is False
+    assert cg.p1_frozen is True
+    assert cg.p2_frozen is False
+    assert cg.p1_current_piece is None
+    assert cg.p2_current_piece is not None
+    assert cg.board.is_game_over() is False
+    assert cg.board.consume_last_lock_out() is False
+    assert sound.game_over_sequence_calls == 0
+
 def test_activate_game_over_captures_overlay_snapshot():
     cg = CoopGame(sound_enabled=False, effects_enabled=False, screen=_Surf(), sound_manager=_SM())
     cg.team_score = 2340

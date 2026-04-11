@@ -51,6 +51,47 @@ EXTRA_COLORS = [
 
 SHAPE_NAMES = ['I', 'O', 'T', 'S', 'Z', 'J', 'L']
 EXTRA_SHAPE_NAMES = ['Plus', 'Y', 'Domino', 'BigSquare']
+HIDDEN_SPAWN_ROWS = 2
+
+
+def get_piece_top_filled_row(piece_or_shape) -> int:
+    """Return the first row index that contains a filled cell."""
+    shape = getattr(piece_or_shape, 'shape', None)
+    if shape is None:
+        shape = piece_or_shape
+    if not shape:
+        return 0
+    try:
+        for row_index, row in enumerate(shape):
+            if any(row):
+                return row_index
+    except TypeError:
+        return 0
+    return 0
+
+
+def get_piece_spawn_y(piece_or_shape, hidden_rows: int = HIDDEN_SPAWN_ROWS) -> int:
+    """Spawn pieces in a small hidden buffer above the visible board."""
+    return -(get_piece_top_filled_row(piece_or_shape) + max(0, int(hidden_rows or 0)))
+
+
+def skip_hidden_rows(piece, board) -> None:
+    """Instantly drop *piece* through hidden spawn rows for immediate visibility.
+
+    After a piece is placed at its spawn position (negative y), this moves it
+    down through the hidden zone until it either becomes visible (y >= 0) or
+    can no longer move without overlapping existing blocks.
+    """
+    if piece is None or board is None:
+        return
+    cur_y = getattr(piece, 'y', 0)
+    if cur_y >= 0:
+        return
+    try:
+        while piece.y < 0 and board.is_valid_position(piece, dy=1):
+            piece.y += 1
+    except (AttributeError, TypeError):
+        pass
 
 
 class Piece:

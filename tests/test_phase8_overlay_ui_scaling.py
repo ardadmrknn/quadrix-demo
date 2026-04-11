@@ -640,6 +640,9 @@ def test_zen_line_clear_particles_use_active_canvas_center(lines_cleared):
         tetrises=1,
         combo=2,
         is_valid_position=lambda piece: True,
+        _locked_out=False,
+        clear_lock_out=lambda: None,
+        is_game_over=lambda: False,
     )
 
     modes_module.ZenMode.lock_and_new_piece(mode)
@@ -734,6 +737,7 @@ def test_base_game_line_clear_particles_use_active_canvas_center(monkeypatch, li
         tetrises=1,
         combo=2,
         is_valid_position=lambda piece: True,
+        is_game_over=lambda: False,
     )
     game.achievement_manager = None
     game.achievement_notifications = []

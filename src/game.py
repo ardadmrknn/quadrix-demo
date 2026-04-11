@@ -19,7 +19,7 @@ except ImportError:
 
 from block_styles import BlockStyleManager, TextureSlice, TextureRenderCache
 from board import Board
-from pieces import Piece, SHAPE_NAMES, create_piece_by_index, create_piece_by_name
+from pieces import Piece, SHAPE_NAMES, create_piece_by_index, create_piece_by_name, get_piece_spawn_y, skip_hidden_rows
 from constants import *
 from sound import SoundManager
 from score_manager import ScoreManager
@@ -631,6 +631,7 @@ class Game:
         # Önce kuyruğu doldur, sonra kuyruktan al (senkronizasyon için)
         self.next_piece_queue = [self.spawn_new_piece() for _ in range(3)]  # Sonraki 3 parça
         self.current_piece = self.next_piece_queue.pop(0)  # Kuyruktan ilk parçayı al
+        self._skip_hidden_rows(self.current_piece)
         self.held_piece = None  # Saklanan parça
         # Second pocket (V) - used by Mystery Mode perk and unit tests
         self.second_held_piece = None
@@ -1092,8 +1093,7 @@ class Game:
             piece = create_piece_by_name(piece_name, x=0, y=0)
         except ValueError:
             piece = create_piece_by_index(0, x=0, y=0)
-        piece.x = self._compute_spawn_x(piece.get_width())
-        piece.y = 0
+        self._position_piece_at_spawn(piece)
         # Reset per-piece shape mutation flag
         setattr(piece, '_shape_mutated', False)
         return piece
@@ -1238,16 +1238,39 @@ class Game:
         piece.texture_surface = None
         piece.texture_surface_original = None
         piece.rotation_state = 0
-        width = len(piece.shape[0]) if piece.shape else 1
-        piece.x = self._compute_spawn_x(width)
-        piece.y = 0
+        self._position_piece_at_spawn(piece)
         return piece
 
     def _compute_spawn_x(self, piece_width: int) -> int:
         piece_width = max(1, piece_width)
-        preferred = max(0, (self.board_width // 2) - 2)
-        max_x = max(0, self.board_width - piece_width)
+        board_width = int(getattr(self, 'board_width', getattr(getattr(self, 'board', None), 'width', BOARD_WIDTH)) or BOARD_WIDTH)
+        preferred = max(0, (board_width // 2) - 2)
+        max_x = max(0, board_width - piece_width)
         return max(0, min(preferred, max_x))
+
+    def _compute_spawn_y(self, piece) -> int:
+        return get_piece_spawn_y(piece)
+
+    def _position_piece_at_spawn(self, piece, spawn_x: int | None = None):
+        if piece is None:
+            return None
+        try:
+            piece_width = piece.get_width()
+        except Exception:
+            shape = getattr(piece, 'shape', None)
+            piece_width = len(shape[0]) if shape else 1
+        piece.x = self._compute_spawn_x(piece_width) if spawn_x is None else spawn_x
+        piece.y = self._compute_spawn_y(piece)
+        return piece
+
+    def _skip_hidden_rows(self, piece):
+        """Instantly drop piece through hidden spawn rows for immediate visibility.
+
+        Called when a piece becomes the active current_piece so the player
+        sees it without waiting for gravity to carry it through the hidden zone.
+        """
+        skip_hidden_rows(piece, getattr(self, 'board', None))
+        return piece
     
     def draw_textured_block(self, x, y, size, color, texture_surface=None, texture_slice: TextureSlice | None = None):
         """Draw either a textured block or the default shaded block.
@@ -1704,11 +1727,12 @@ class Game:
                             if getattr(self, 'second_held_piece', None) is None:
                                 self.second_held_piece = self.current_piece
                                 self.current_piece = self.next_piece_queue.pop(0)
+                                self._skip_hidden_rows(self.current_piece)
                                 self.next_piece_queue.append(self.spawn_new_piece())
                             else:
                                 self.current_piece, self.second_held_piece = self.second_held_piece, self.current_piece
-                                self.current_piece.x = 3
-                                self.current_piece.y = 0
+                                self._position_piece_at_spawn(self.current_piece)
+                                self._skip_hidden_rows(self.current_piece)
                             self.can_hold2 = False
                             self.apply_theme_to_pieces()
                             self.sound.play('move')
@@ -1772,6 +1796,7 @@ class Game:
                                 self.held_piece = self.current_piece
                                 # Kuyruktan ilk parçayı al
                                 self.current_piece = self.next_piece_queue.pop(0)
+                                self._skip_hidden_rows(self.current_piece)
                                 # Kuyruğa yeni parça ekle
                                 self.next_piece_queue.append(self.spawn_new_piece())
                                 try:
@@ -1782,8 +1807,8 @@ class Game:
                             else:
                                 held_name = getattr(self.current_piece, 'name', None)
                                 self.current_piece, self.held_piece = self.held_piece, self.current_piece
-                                self.current_piece.x = 3
-                                self.current_piece.y = 0
+                                self._position_piece_at_spawn(self.current_piece)
+                                self._skip_hidden_rows(self.current_piece)
                                 try:
                                     if self.user_manager and held_name:
                                         self.user_manager.record_hold_piece(held_name)
@@ -3288,6 +3313,19 @@ class Game:
         
         lines_cleared = self.board.lock_piece(self.current_piece)
 
+        # Lock-out kontrolü (Tetris Guideline): parça üst satırda kilitlendi
+        if self.board.is_game_over():
+            self.game_over = True
+            try:
+                from gamepad_manager import get_gamepad_manager
+                get_gamepad_manager().rumble(1.0, 1.0, 600)
+            except Exception:
+                pass
+            if self.sound:
+                self.sound.play_game_over_sequence()
+            self.finalize_run()
+            return
+
         # Satır temizlenmiyorsa blok kilitlenme sesi çal
         if lines_cleared == 0:
             self.sound.play('lock')
@@ -3456,6 +3494,7 @@ class Game:
         
         # Kuyruktan ilk parçayı al ve kuyruğa yeni parça ekle
         self.current_piece = self.next_piece_queue.pop(0)
+        self._skip_hidden_rows(self.current_piece)
         self.next_piece_queue.append(self.spawn_new_piece())
         # Yeni aktif parça için lock-delay state'ini temizle
         self.grounded = False
@@ -3467,22 +3506,6 @@ class Game:
         
         # Tema renklerini uygula
         self.apply_theme_to_pieces()
-        
-        # Yeni parça geçerli pozisyonda değilse oyun biter
-        if not self.board.is_valid_position(self.current_piece):
-            self.game_over = True
-            
-            # Gamepad titreşimi - game over (uzun, güçlü)
-            try:
-                get_gamepad_manager().rumble(1.0, 1.0, 600)
-            except Exception:
-                pass
-            
-            # Müzik durdur + Ses çal (özel metod)
-            if self.sound:
-                self.sound.play_game_over_sequence()
-            
-            self.finalize_run()
     
     def finalize_run(self, playtime: int | None = None) -> None:
         """Persist score, stats, and achievements once per run."""
@@ -3756,6 +3779,10 @@ class Game:
         # --- LOCK DELAY (Yere Değince Bekleme) ---
         # Oyun bitmediyse ve parça varsa
         if not self.game_over and not self.paused and self.current_piece:
+            # Üst 3 satırda (row 0-2) lock delay 0.8s, diğer satırlarda normal
+            effective_lock_delay = getattr(self, 'lock_delay', 500)
+            if self.current_piece.y <= 2:
+                effective_lock_delay = 800  # 0.8 saniye
             # Altı dolu mu? (Yerde mi?)
             try:
                 if not self.board.is_valid_position(self.current_piece, dy=1):
@@ -3767,7 +3794,7 @@ class Game:
                     # Lock Delay aktifse timer işlet
                     if getattr(self, 'enable_lock_delay', True):
                         self.lock_timer += dt
-                        if self.lock_timer >= getattr(self, 'lock_delay', 500):
+                        if self.lock_timer >= effective_lock_delay:
                             # Süre doldu, kilitle!
                             if getattr(self, 'allow_auto_lock', True):
                                 self.lock_and_new_piece()
@@ -5702,6 +5729,7 @@ class Game:
         # Önce kuyruğu doldur, sonra kuyruktan al (senkronizasyon için)
         self.next_piece_queue = [self.spawn_new_piece() for _ in range(3)]  # Sonraki 3 parça
         self.current_piece = self.next_piece_queue.pop(0)  # Kuyruktan ilk parçayı al
+        self._skip_hidden_rows(self.current_piece)
         self.held_piece = None
         self.second_held_piece = None
         self.can_hold = True

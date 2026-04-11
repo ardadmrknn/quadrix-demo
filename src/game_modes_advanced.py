@@ -445,6 +445,19 @@ class SurvivalMode(Game):
 
         lines_cleared = self.board.lock_piece(self.current_piece)
 
+        # Lock-out kontrolü (Tetris Guideline)
+        if self.board.is_game_over():
+            self.game_over = True
+            try:
+                from gamepad_manager import get_gamepad_manager
+                get_gamepad_manager().rumble(1.0, 1.0, 600)
+            except Exception:
+                pass
+            if self.sound:
+                self.sound.play_game_over_sequence()
+            self.finalize_run(playtime=self.survival_time // 1000)
+            return
+
         # Satır temizlenmiyorsa blok kilitlenme sesi çal
         if lines_cleared == 0:
             self.sound.play('lock')
@@ -611,6 +624,7 @@ class SurvivalMode(Game):
             self.board.combo = 0
 
         self.current_piece = self.next_piece_queue.pop(0)
+        self._skip_hidden_rows(self.current_piece)
         self.next_piece_queue.append(self.spawn_new_piece())
         # Lock-delay state sıfırla
         self.grounded = False
@@ -620,19 +634,6 @@ class SurvivalMode(Game):
         self.can_hold2 = True
         self.fall_speed = self.get_current_speed()
         self.apply_theme_to_pieces()
-
-        # Top-out kontrolü
-        if not self.board.is_valid_position(self.current_piece):
-            self.game_over = True
-            # Gamepad titreşimi - game over (uzun, güçlü)
-            try:
-                from gamepad_manager import get_gamepad_manager
-                get_gamepad_manager().rumble(1.0, 1.0, 600)
-            except Exception:
-                pass
-            if self.sound:
-                self.sound.play_game_over_sequence()
-            self.finalize_run(playtime=self.survival_time // 1000)
 
     def _remove_infections_on_lines(self, cleared_rows):
         """Temizlenen satırlardaki enfeksiyonları kaldır"""
@@ -1062,6 +1063,15 @@ class CascadeMode(Game):
 
         # Parçayı tahtaya yerleştir (occupancy/texture/owners ile tutarlı)
         piece = self.current_piece
+        # Lock-out kontrolü (Tetris Guideline): parça üst satırda kilitlendi mi?
+        _lock_out = False
+        for ly, row in enumerate(piece.shape):
+            for lx, c in enumerate(row):
+                if c and (piece.y + ly) <= 0:
+                    _lock_out = True
+                    break
+            if _lock_out:
+                break
         piece_w = len(piece.shape[0]) if getattr(piece, 'shape', None) else 0
         piece_h = len(piece.shape) if getattr(piece, 'shape', None) else 0
         for ly, row in enumerate(piece.shape):
@@ -1227,6 +1237,20 @@ class CascadeMode(Game):
             # Daha minimal bildirim için daha kısa süre
             self.cascade_message_time = 90  # ~1.5 saniye
         
+        # Lock-out kontrolü (Tetris Guideline): cascade sonrası row 0 dolu mu?
+        if _lock_out and any(self.board.occupancy[0][x] for x in range(self.board_width)):
+            self.board.mark_locked_out()
+            self.game_over = True
+            try:
+                from gamepad_manager import get_gamepad_manager
+                get_gamepad_manager().rumble(1.0, 1.0, 600)
+            except Exception:
+                pass
+            if self.sound:
+                self.sound.play_game_over_sequence()
+            self.finalize_run()
+            return
+
         # Satır temizlenmiyorsa blok kilitlenme sesi çal
         if not _any_lines_cleared:
             self.sound.play('lock')
@@ -1309,6 +1333,7 @@ class CascadeMode(Game):
         
         # Yeni parça
         self.current_piece = self.next_piece_queue.pop(0)
+        self._skip_hidden_rows(self.current_piece)
         self.next_piece_queue.append(self.spawn_new_piece())
         # Lock-delay state sıfırla
         self.grounded = False
@@ -1318,21 +1343,6 @@ class CascadeMode(Game):
         self.can_hold2 = True
         self.apply_theme_to_pieces()
         self.fall_speed = self.get_current_speed()
-        
-        # Game over kontrolü
-        if not self.board.is_valid_position(self.current_piece):
-            self.game_over = True
-            # Gamepad titreşimi - game over (uzun, güçlü)
-            try:
-                from gamepad_manager import get_gamepad_manager
-                get_gamepad_manager().rumble(1.0, 1.0, 600)
-            except Exception:
-                pass
-            if self.sound:
-                self.sound.play_game_over_sequence()
-            
-            playtime = self.game_time // 1000
-            self.finalize_run(playtime=playtime)
     
     def apply_cascade_gravity(self, cleared_rows):
         """Temizlenen satırların üstündeki blokları aşağı düşür"""

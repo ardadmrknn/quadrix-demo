@@ -30,7 +30,7 @@ from constants import (
     DEFAULT_LOCK_DELAY,
 )
 from board import Board
-from pieces import Piece, SHAPES
+from pieces import Piece, SHAPES, get_piece_spawn_y, skip_hidden_rows
 from block_styles import BlockStyleManager, TextureSlice, TextureRenderCache
 from sound import SoundManager
 from background import BackgroundManager
@@ -2552,6 +2552,7 @@ class OnlinePvPGame:
             self._generate_pieces(self.game_seed, 200)
 
         self.my_piece = self._get_next_piece()
+        skip_hidden_rows(self.my_piece, self.my_board)
         self.my_next_piece = self._get_next_piece()
         self.next_piece = self.my_next_piece  # side panel referansı
         self.hold_piece = None
@@ -2614,6 +2615,7 @@ class OnlinePvPGame:
         idx = self.piece_sequence[self.piece_index]
         self.piece_index += 1
         piece = Piece(x=3, y=0, shape_index=idx)
+        piece.y = get_piece_spawn_y(piece)
         self._apply_block_style(piece)
         return piece
 
@@ -3172,6 +3174,7 @@ class OnlinePvPGame:
             self.hold_piece = Piece(x=0, y=0, shape_index=current_shape_index)
             self._apply_block_style(self.hold_piece)
             self.my_piece = Piece(x=3, y=0, shape_index=old_hold)
+            self.my_piece.y = get_piece_spawn_y(self.my_piece)
             self._apply_block_style(self.my_piece)
 
         self.hold_used = True
@@ -3181,11 +3184,15 @@ class OnlinePvPGame:
         except Exception:
             pass
 
+        # Instantly drop through hidden rows, then validate
+        skip_hidden_rows(self.my_piece, self.my_board)
+
         # Hold sonrası parça geçerli pozisyonda mı kontrol et
         if not self.my_board.is_valid_position(self.my_piece):
-            # Yukarı kaydır
+            # Yukarı kaydır — spawn Y'den daha negatife git
+            spawn_y = self.my_piece.y
             for offset in range(1, 4):
-                self.my_piece.y = -offset
+                self.my_piece.y = spawn_y - offset
                 if self.my_board.is_valid_position(self.my_piece):
                     break
 
@@ -3627,6 +3634,11 @@ class OnlinePvPGame:
         lines = self.my_board.lock_piece(self.my_piece)
         cleared_rows = list(self.my_board.last_cleared_lines) if lines > 0 else []
 
+        # Lock-out kontrolü (Tetris Guideline)
+        if self.my_board.is_game_over():
+            self._mark_local_eliminated()
+            return
+
         # Satır temizlenmiyorsa blok kilitlenme sesi çal (çakışma önlenir)
         if lines == 0:
             try:
@@ -3686,6 +3698,7 @@ class OnlinePvPGame:
 
         # Yeni parça
         self.my_piece = self.my_next_piece
+        skip_hidden_rows(self.my_piece, self.my_board)
         self.my_next_piece = self._get_next_piece()
         self.next_piece = self.my_next_piece
         self.lock_timer = 0
@@ -3694,10 +3707,6 @@ class OnlinePvPGame:
         # Yeni parça pozisyonunu hemen gönder
         self._send_piece_position()
         self._send_board_snapshot(clear_rows=cleared_rows)
-
-        # Oyun bitti mi?
-        if not self.my_board.is_valid_position(self.my_piece):
-            self._mark_local_eliminated()
 
     def _update_das(self, delta_time: int):
         """DAS (Delayed Auto Shift) güncelle."""

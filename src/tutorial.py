@@ -1242,7 +1242,8 @@ class TutorialMode(Game):
         if force_new or not self.current_piece or self.current_piece.name == 'O':
             self.current_piece = self._create_named_piece('T')
             self.current_piece.x = 4
-            self.current_piece.y = 0
+            self.current_piece.y = self._compute_spawn_y(self.current_piece)
+            self._skip_hidden_rows(self.current_piece)
             self.apply_theme_to_pieces()
 
     def _setup_line_clear_scenario(self):
@@ -1266,7 +1267,8 @@ class TutorialMode(Game):
         if not self.current_piece:
             self.current_piece = self.spawn_new_piece()
         self.current_piece.x = 3
-        self.current_piece.y = 0
+        self.current_piece.y = self._compute_spawn_y(self.current_piece)
+        self._skip_hidden_rows(self.current_piece)
         self.apply_theme_to_pieces()
     
     # --------------------------------------------------------------------------
@@ -1632,11 +1634,13 @@ class TutorialMode(Game):
                             if self.held_piece is None:
                                 self.held_piece = self.current_piece
                                 self.current_piece = self.next_piece_queue.pop(0)
+                                self._skip_hidden_rows(self.current_piece)
                                 self.next_piece_queue.append(self.spawn_new_piece())
                             else:
                                 self.current_piece, self.held_piece = self.held_piece, self.current_piece
                                 self.current_piece.x = 3
-                                self.current_piece.y = 0
+                                self.current_piece.y = self._compute_spawn_y(self.current_piece)
+                                self._skip_hidden_rows(self.current_piece)
                             self.can_hold = False
                             self.sound.play('move')
                             self._create_mini_success_effect(t('tutorial_success_hold'))

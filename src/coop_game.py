@@ -14,7 +14,7 @@ import os
 from pathlib import Path
 
 from coop_board import CoopBoard
-from pieces import Piece, SHAPES
+from pieces import Piece, SHAPES, skip_hidden_rows
 from constants import (
     BOARD_WIDTH, BOARD_HEIGHT, BLACK, WHITE, CYAN, YELLOW, MAGENTA, GREEN, RED,
     DAS_DELAY, DAS_REPEAT, DEFAULT_LOCK_DELAY,
@@ -623,15 +623,18 @@ class CoopGame:
             self._refill_bag(player)
             bag = self._p1_bag if player == 'P1' else self._p2_bag
         idx = bag.pop(0)
-        sx, sy = self.board.get_spawn_position(player)
-        piece = Piece(x=sx, y=sy, shape_index=idx)
+        piece = Piece(x=0, y=0, shape_index=idx)
+        self._place_at_spawn(piece, player)
         self._apply_block_style(piece)
         return piece
 
     def _place_at_spawn(self, piece: Piece, player: str) -> None:
-        sx, sy = self.board.get_spawn_position(player)
+        sx, sy = self.board.get_spawn_position(player, piece)
         piece.x = sx
         piece.y = sy
+        # Instantly drop through hidden spawn rows for immediate visibility
+        while piece.y < 0 and self.board.is_valid_position_for_player(piece, player, dy=1):
+            piece.y += 1
 
     def _apply_block_style(self, piece: Piece) -> None:
         if not piece:
@@ -1407,6 +1410,7 @@ class CoopGame:
 
         # Kilitle (lock_piece_for_player → Board.lock_piece → clear_lines zinciri)
         cleared = self.board.lock_piece_for_player(piece, player)
+        player_locked_out = self.board.consume_last_lock_out()
 
         # Parça yerleştirildi event'i
         self._emit_event('piece_placed', {'player': player, 'piece': piece})
@@ -1479,6 +1483,10 @@ class CoopGame:
             self.p2_hold_used = False
 
         self._reset_player_lock_state(player)
+
+        if player_locked_out:
+            self._freeze_player(player)
+            return
 
         # Yeni parça spawn
         self._try_spawn_for_player(player)
