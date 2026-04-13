@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import os
 import sys
+from types import SimpleNamespace
 
 # conftest.py src'yi zaten ekler; burada güvenlik için tekrar ekliyoruz.
 ROOT_DIR = os.path.dirname(os.path.dirname(__file__))
@@ -26,6 +27,7 @@ from guide_screen import (
     _get_ui_icon_dir,
     _get_maskot_dir,
 )
+from game_modes_extra import MysteryCardManager
 
 # ---------------------------------------------------------------------------
 # CARD_DATA bütünlüğü
@@ -91,6 +93,38 @@ def test_card_data_has_expected_rarities():
     for expected_rarity in ('common', 'uncommon', 'rare', 'epic', 'legendary'):
         assert expected_rarity in rarities_present, \
             f"CARD_DATA'da '{expected_rarity}' rarity eksik"
+
+
+def test_card_data_includes_three_recent_debug_cards():
+    """Kart debug görünümündeki son eklenen 3 kart kılavuzda yer almalı."""
+    guide_ids = {card['id'] for card in CARD_DATA}
+    expected = {'block_workshop_card', 'gambler_dice', 'hold_destroyer'}
+    assert expected <= guide_ids, \
+        f"Kılavuz kart galerisinde eksik debug kartları var: {sorted(expected - guide_ids)}"
+
+
+def test_card_data_matches_unique_mystery_catalog_set():
+    """Kılavuz kart galerisi, Mystery kart debug ekranındaki benzersiz kart setiyle eşleşmeli."""
+    mode = SimpleNamespace(settings_manager=SimpleNamespace(get=lambda _key, default=False: True))
+    manager = MysteryCardManager(mode)
+
+    unique_catalog_ids = []
+    seen = set()
+    for card in manager.catalog:
+        catalog_id = str(card.get('_group_id') or card.get('id') or '').strip()
+        if catalog_id and catalog_id not in seen:
+            seen.add(catalog_id)
+            unique_catalog_ids.append(catalog_id)
+
+    guide_ids = {card['id'] for card in CARD_DATA}
+    catalog_ids = set(unique_catalog_ids)
+
+    assert guide_ids == catalog_ids, \
+        (
+            "Kılavuz kart seti Mystery debug kataloğundan ayrıştı. "
+            f"Guide-only: {sorted(guide_ids - catalog_ids)}, "
+            f"Catalog-only: {sorted(catalog_ids - guide_ids)}"
+        )
 
 
 # ---------------------------------------------------------------------------

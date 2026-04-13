@@ -86,6 +86,8 @@ except Exception:
 # SOS / Contact links
 CONTACT_EMAIL = 'vibecode.production@gmail.com'
 INSTAGRAM_URL = 'https://www.instagram.com/vibecode.production/'
+LINKEDIN_ARDA_URL = 'www.linkedin.com/in/arda-demirkan'
+LINKEDIN_BURAK_URL = 'www.linkedin.com/in/burakyasayan'
 
 
 def _build_gmail_compose_url(to_email: str, subject: str = '', body: str = '') -> str:
@@ -11464,6 +11466,7 @@ class CreditsScreen:
             'credits_special_thanks_1',
             'credits_special_thanks_2',
             'credits_special_thanks_3',
+            'credits_special_thanks_4',
         ]
         self._credits_mascot_left = None
         self._credits_mascot_right = None
@@ -11773,10 +11776,18 @@ class CreditsScreen:
         # Özel Teşekkürler Bölümü
         thanks_y = cards_bottom + s(30)
         thanks_w = min(s(700), center_w - s(20))
-        thanks_h = s(120)
+        thanks_line_gap = s(22)
+        thanks_h = max(s(120), s(62) + len(self.special_thanks) * thanks_line_gap)
         thanks_rect = pygame.Rect(center_left + (center_w - thanks_w) // 2, thanks_y, thanks_w, thanks_h)
 
-        social_h = s(40)
+        social_text = t('credits_social_info').format(
+            email=CONTACT_EMAIL,
+            linkedin_arda=LINKEDIN_ARDA_URL,
+            linkedin_burak=LINKEDIN_BURAK_URL,
+        )
+        social_lines = [line.strip() for line in social_text.splitlines() if line.strip()]
+        social_line_gap = max(s(14), self.font_small.get_linesize())
+        social_h = max(s(40), s(16) + len(social_lines) * social_line_gap)
         social_y = thanks_y + thanks_h + s(20)
         overflow = (social_y + social_h) - content_bottom
         if overflow > 0:
@@ -11791,8 +11802,16 @@ class CreditsScreen:
         
         # Teşekkür listesi
         for i, key in enumerate(self.special_thanks):
-            line_surf = self.font_body.render(t(key), True, (200, 210, 230))
-            self.screen.blit(line_surf, line_surf.get_rect(center=(thanks_rect.centerx, thanks_rect.y + s(55) + i * s(22))))
+            line_text = t(key)
+            line_font = retro_style.get_fitting_font(
+                line_text,
+                base_size=s(16),
+                max_width=thanks_rect.width - s(28),
+                bold=False,
+                min_size=max(9, s(10)),
+            )
+            line_surf = line_font.render(line_text, True, (200, 210, 230))
+            self.screen.blit(line_surf, line_surf.get_rect(center=(thanks_rect.centerx, thanks_rect.y + s(58) + i * thanks_line_gap)))
         
         # Sosyal Medya Bilgileri
         social_w = min(s(750), center_w - s(12))
@@ -11800,9 +11819,20 @@ class CreditsScreen:
         
         retro_style.draw_glass_panel(self.screen, social_rect, alpha=80, border_color=(100, 130, 180))
 
-        social_text = t('credits_social_info').format(email=CONTACT_EMAIL)
-        social_surf = self.font_small.render(social_text, True, (180, 200, 240))
-        self.screen.blit(social_surf, social_surf.get_rect(center=social_rect.center))
+        social_start_y = social_rect.centery - ((len(social_lines) - 1) * social_line_gap) // 2
+        for i, line in enumerate(social_lines):
+            social_font = retro_style.get_fitting_font(
+                line,
+                base_size=s(14),
+                max_width=social_rect.width - s(20),
+                bold=False,
+                min_size=max(8, s(9)),
+            )
+            social_surf = social_font.render(line, True, (180, 200, 240))
+            self.screen.blit(
+                social_surf,
+                social_surf.get_rect(center=(social_rect.centerx, social_start_y + i * social_line_gap)),
+            )
         
         # Copyright ve Footer
         copyright_surf = self.font_footer.render(t('credits_copyright'), True, (140, 150, 170))

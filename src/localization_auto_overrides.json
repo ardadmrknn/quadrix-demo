@@ -1389,7 +1389,7 @@
     "ru": "Автоматизация игры, взаимодействие с меню, тесты"
   },
   "credits_desc_suno": {
-    "ru": "Атмосферные треки, звуковые эффекты"
+    "ru": "Атмосферные треки и тематическая музыка"
   },
   "credits_role_aiux": {
     "it": "IA e esperienza utente",
@@ -1400,22 +1400,25 @@
     "ru": "РАЗРАБОТЧИКИ"
   },
   "credits_role_music": {
-    "ru": "МУЗЫКА И Спецэффекты"
+    "ru": "МУЗЫКА"
   },
   "credits_screen_title": {
     "de": "KREDITE"
   },
   "credits_social_info": {
-    "ru": "Инстаграм: @vibecode.production |  Гитхаб: github.com/ardadmrknn |  Электронная почта: {email}"
+    "ru": "Инстаграм: @vibecode.production |  Эл. почта: {email}\nLinkedIn: {linkedin_arda}  |  {linkedin_burak}"
   },
   "credits_special_thanks_1": {
-    "ru": "Сообщество Python и Pygame"
+    "ru": "Все, кто играл и делился отзывами"
   },
   "credits_special_thanks_2": {
-    "ru": "Все кто играл и оставлял отзывы"
+    "ru": "Все, кто помогал отчётами об ошибках, идеями и терпеливым тестированием"
   },
   "credits_special_thanks_3": {
-    "ru": "Огромная толпа любителей классической Quadrix"
+    "ru": "Огромная аудитория, которая любит Quadrix"
+  },
+  "credits_special_thanks_4": {
+    "ru": "Сообщество, которое поддержало этот проект и помогло ему вырасти"
   },
   "credits_supporters_desc": {
     "ru": "Нажмите: Посмотреть тестировщиков"
