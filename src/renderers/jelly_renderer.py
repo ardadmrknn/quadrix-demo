@@ -10,12 +10,25 @@ from __future__ import annotations
 
 import pygame
 from typing import Tuple
+from collections import OrderedDict
 
 Color = Tuple[int, int, int]
 
+# LRU cache for pre-rendered jelly block surfaces.
+# Key: (size, color_r, color_g, color_b)  Value: pygame.Surface
+_JELLY_BLOCK_CACHE: OrderedDict[tuple, pygame.Surface] = OrderedDict()
+_JELLY_BLOCK_CACHE_MAX = 128
+
+
+def _render_jelly_block_surface(size: int, color: Color) -> pygame.Surface:
+    """Render a jelly block onto a new surface (internal, used by cache)."""
+    surf = pygame.Surface((size, size), pygame.SRCALPHA)
+    _draw_jelly_block_onto(surf, 0, 0, size, color)
+    return surf
+
 
 def draw_jelly_block(screen: pygame.Surface, x: int, y: int, size: int, color: Color) -> None:
-    """Draw a glassy "jelly" block onto the given surface.
+    """Draw a glassy "jelly" block onto the given surface (cached).
 
     Parameters:
         screen: pygame Surface to draw onto.
@@ -23,6 +36,22 @@ def draw_jelly_block(screen: pygame.Surface, x: int, y: int, size: int, color: C
         size: width/height in pixels.
         color: RGB color tuple, 0-255.
     """
+    key = (size, color[0], color[1], color[2])
+    cached = _JELLY_BLOCK_CACHE.get(key)
+    if cached is not None:
+        _JELLY_BLOCK_CACHE.move_to_end(key)
+        screen.blit(cached, (x, y))
+        return
+    surf = _render_jelly_block_surface(size, color)
+    _JELLY_BLOCK_CACHE[key] = surf
+    _JELLY_BLOCK_CACHE.move_to_end(key)
+    while len(_JELLY_BLOCK_CACHE) > _JELLY_BLOCK_CACHE_MAX:
+        _JELLY_BLOCK_CACHE.popitem(last=False)
+    screen.blit(surf, (x, y))
+
+
+def _draw_jelly_block_onto(screen: pygame.Surface, x: int, y: int, size: int, color: Color) -> None:
+    """Draw the actual jelly block layers (no caching)."""
     # Base fill (slightly saturated)
     base_color = tuple(min(255, int(c * 1.05)) for c in color[:3])
     pygame.draw.rect(screen, base_color, (x, y, size, size))

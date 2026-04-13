@@ -252,10 +252,9 @@ class CoopGame:
         self._pause_settings_screen = None
         self._opening_curtain_active = True
         self._opening_curtain_duration_ms = self._OPENING_CURTAIN_DURATION_MS
-        try:
-            self._opening_curtain_start_ms = int(pygame.time.get_ticks())
-        except Exception:
-            self._opening_curtain_start_ms = 0
+        self._opening_curtain_start_ms = 0  # deferred — set on first draw frame
+        self._opening_curtain_deferred = True
+        self._curtain_base_cache: dict = {'key': None, 'surface': None}
 
         # Skor
         self.team_score = 0
@@ -328,6 +327,16 @@ class CoopGame:
         self.board_offset_y = 0
         self._side_panel_width = 120
         self._board_grid_cache: dict = {'key': None, 'surface': None}
+
+        # --- Per-frame surface caches (perf) ---
+        self._midline_cache: dict = {'key': None, 'glow': None, 'line': None}
+        self._ghost_surf_cache: dict = {'key': None, 'surface': None}
+        self._freeze_overlay_cache: dict = {'P1': {'key': None, 'surface': None}, 'P2': {'key': None, 'surface': None}}
+        self._board_skin_cache: dict = {'skin_id': None, 'board_skin': None}
+        self._frame_path_cache: dict = {}
+        self._cached_das_delay: float = float(DAS_DELAY)
+        self._cached_das_repeat: float = float(DAS_REPEAT)
+        self._das_settings_dirty: bool = True
 
         # --- Visual Effects (Game base ile uyumlu) ---
         self.particles: list = []
@@ -533,6 +542,8 @@ class CoopGame:
 
         self.falling_blocks = get_shared_falling_blocks_layer('default') if getattr(self, 'effects_enabled', True) else None
         self._layout_key = None
+        self._das_settings_dirty = True
+        self._board_skin_cache = {'skin_id': None, 'board_skin': None}
 
         pause_settings = getattr(self, '_pause_settings_screen', None)
         if pause_settings is not None:
@@ -1087,12 +1098,15 @@ class CoopGame:
 
     def _draw_custom_frame(self, rect: pygame.Rect, asset_name: str, padding: int = 0, hole_punch: bool = False) -> bool:
         try:
-            found_path = None
-            for folder in ["assets/game_ui", "assets/ui"]:
-                p = _resource_path(f"{folder}/{asset_name}")
-                if os.path.exists(p):
-                    found_path = p
-                    break
+            # Cache the file path lookup
+            found_path = self._frame_path_cache.get(asset_name)
+            if found_path is None:
+                for folder in ["assets/game_ui", "assets/ui"]:
+                    p = _resource_path(f"{folder}/{asset_name}")
+                    if os.path.exists(p):
+                        found_path = p
+                        break
+                self._frame_path_cache[asset_name] = found_path or ''
             if not found_path:
                 return False
             target_w = int(rect.width + (padding * 2))
@@ -2081,16 +2095,20 @@ class CoopGame:
     # ------------------------------------------------------------------
 
     def _update_das(self, dt: float) -> None:
-        try:
-            delay = float(self.settings_manager.get('das_delay', DAS_DELAY)) if self.settings_manager else float(DAS_DELAY)
-        except Exception:
-            delay = float(DAS_DELAY)
-        try:
-            repeat = float(self.settings_manager.get('das_repeat', DAS_REPEAT)) if self.settings_manager else float(DAS_REPEAT)
-        except Exception:
-            repeat = float(DAS_REPEAT)
-        delay = max(0.0, delay)
-        repeat = max(1.0, repeat)
+        if self._das_settings_dirty:
+            try:
+                self._cached_das_delay = float(self.settings_manager.get('das_delay', DAS_DELAY)) if self.settings_manager else float(DAS_DELAY)
+            except Exception:
+                self._cached_das_delay = float(DAS_DELAY)
+            try:
+                self._cached_das_repeat = float(self.settings_manager.get('das_repeat', DAS_REPEAT)) if self.settings_manager else float(DAS_REPEAT)
+            except Exception:
+                self._cached_das_repeat = float(DAS_REPEAT)
+            self._cached_das_delay = max(0.0, self._cached_das_delay)
+            self._cached_das_repeat = max(1.0, self._cached_das_repeat)
+            self._das_settings_dirty = False
+        delay = self._cached_das_delay
+        repeat = self._cached_das_repeat
 
         for player in ('P1', 'P2'):
             frozen = self.p1_frozen if player == 'P1' else self.p2_frozen
@@ -2289,22 +2307,28 @@ class CoopGame:
         self._calculate_layout()
 
         skin = self.mode_skin or get_mode_skin('classic')
-        # Board skin: classic görünüm + modun renk aksentleri
-        try:
-            from dataclasses import replace as _replace
-            classic = get_mode_skin('classic')
-            board_skin = _replace(
-                classic,
-                accent=getattr(skin, 'accent', getattr(classic, 'accent', (0, 210, 255))),
-                panel_border=getattr(skin, 'accent', getattr(classic, 'panel_border', (0, 210, 255))),
-                board_border=getattr(skin, 'accent', getattr(classic, 'board_border', (0, 210, 255))),
-                board_tint=getattr(skin, 'board_tint', getattr(classic, 'board_tint', None)),
-                grid_color=getattr(skin, 'grid_color', getattr(classic, 'grid_color', (50, 50, 80))),
-                overlay='none',
-                overlay_alpha=0,
-            )
-        except Exception:
-            board_skin = skin
+        # Board skin: classic görünüm + modun renk aksentleri (cached)
+        skin_id = id(skin)
+        bsc = self._board_skin_cache
+        if bsc.get('skin_id') != skin_id:
+            try:
+                from dataclasses import replace as _replace
+                classic = get_mode_skin('classic')
+                board_skin = _replace(
+                    classic,
+                    accent=getattr(skin, 'accent', getattr(classic, 'accent', (0, 210, 255))),
+                    panel_border=getattr(skin, 'accent', getattr(classic, 'panel_border', (0, 210, 255))),
+                    board_border=getattr(skin, 'accent', getattr(classic, 'board_border', (0, 210, 255))),
+                    board_tint=getattr(skin, 'board_tint', getattr(classic, 'board_tint', None)),
+                    grid_color=getattr(skin, 'grid_color', getattr(classic, 'grid_color', (50, 50, 80))),
+                    overlay='none',
+                    overlay_alpha=0,
+                )
+            except Exception:
+                board_skin = skin
+            bsc['skin_id'] = skin_id
+            bsc['board_skin'] = board_skin
+        board_skin = bsc['board_skin']
 
         # === Arka plan ===
         if self.outer_background.is_loaded():
@@ -2315,13 +2339,16 @@ class CoopGame:
             self.screen.fill(skin.outer_bg)
         apply_outer_tint(self.screen, skin)
 
+        # Skip background effects during opening curtain (fully covered by overlay)
+        _curtain_active = getattr(self, '_opening_curtain_active', False)
+
         # Falling blocks layer
-        if self.effects_enabled and self.falling_blocks:
+        if self.effects_enabled and self.falling_blocks and not _curtain_active:
             self.falling_blocks.update(self.screen)
             self.falling_blocks.draw(self.screen)
 
         # Ambient particles (arka plan üstünde, board altında)
-        if self.effects_enabled:
+        if self.effects_enabled and not _curtain_active:
             self.draw_ambient_particles()
 
         # Screen shake offset
@@ -2425,6 +2452,11 @@ class CoopGame:
         if not getattr(self, '_opening_curtain_active', False):
             return
 
+        # Deferred start: timer on first draw frame (skips __init__ overhead)
+        if getattr(self, '_opening_curtain_deferred', False):
+            self._opening_curtain_start_ms = int(pygame.time.get_ticks())
+            self._opening_curtain_deferred = False
+
         duration_ms = max(1, int(getattr(self, '_opening_curtain_duration_ms', self._OPENING_CURTAIN_DURATION_MS) or self._OPENING_CURTAIN_DURATION_MS))
         start_ms = int(getattr(self, '_opening_curtain_start_ms', 0) or 0)
         try:
@@ -2436,33 +2468,41 @@ class CoopGame:
         progress = min(1.0, elapsed_ms / max(1, duration_ms))
         if progress >= 1.0:
             self._opening_curtain_active = False
+            self._curtain_base_cache = {'key': None, 'surface': None}
             return
 
         eased = self._ease_in_out_quad(progress)
         cover_width = int((self.window_width / 2) * (1.0 - eased))
         if cover_width <= 0:
             self._opening_curtain_active = False
+            self._curtain_base_cache = {'key': None, 'surface': None}
             return
 
-        left_rect = pygame.Rect(0, 0, cover_width, self.window_height)
-        right_rect = pygame.Rect(self.window_width - cover_width, 0, cover_width, self.window_height)
+        # Precomputed full-height base surface (cached, only recreated on height change)
+        wh = self.window_height
+        ccache = self._curtain_base_cache
+        if ccache.get('key') != wh:
+            base = pygame.Surface((1, wh), pygame.SRCALPHA)
+            base.fill((15, 20, 30, 236))
+            ccache['key'] = wh
+            ccache['surface'] = base
 
-        left_overlay = pygame.Surface(left_rect.size, pygame.SRCALPHA)
-        right_overlay = pygame.Surface(right_rect.size, pygame.SRCALPHA)
-        left_overlay.fill((15, 20, 30, 236))
-        right_overlay.fill((15, 20, 30, 236))
+        # Left curtain — scale cached 1px strip to cover_width
+        try:
+            left_scaled = pygame.transform.scale(ccache['surface'], (cover_width, wh))
+        except Exception:
+            left_scaled = pygame.Surface((cover_width, wh), pygame.SRCALPHA)
+            left_scaled.fill((15, 20, 30, 236))
+        self.screen.blit(left_scaled, (0, 0))
 
-        edge_steps = min(8, cover_width)
-        for step in range(edge_steps):
-            ratio = step / max(1, edge_steps - 1)
-            alpha = int(54 * (1.0 - ratio))
-            left_x = max(0, cover_width - edge_steps + step)
-            right_x = min(cover_width - 1, step)
-            pygame.draw.line(left_overlay, (48, 62, 82, alpha), (left_x, 0), (left_x, self.window_height))
-            pygame.draw.line(right_overlay, (48, 62, 82, alpha), (right_x, 0), (right_x, self.window_height))
+        # Right curtain
+        self.screen.blit(left_scaled, (self.window_width - cover_width, 0))
 
-        self.screen.blit(left_overlay, left_rect.topleft)
-        self.screen.blit(right_overlay, right_rect.topleft)
+        # Soft edge (lightweight — 2 px lines directly on screen)
+        edge_alpha = 45
+        primary = (48, 62, 82, edge_alpha)
+        pygame.draw.line(self.screen, primary, (cover_width, 0), (cover_width, wh))
+        pygame.draw.line(self.screen, primary, (self.window_width - cover_width - 1, 0), (self.window_width - cover_width - 1, wh))
 
     def draw(self) -> None:
         self._render_game()
@@ -2542,14 +2582,21 @@ class CoopGame:
 
     def _draw_midline(self, ox, oy, cs, bh) -> None:
         mx = ox + CoopBoard.MIDLINE * cs
-        # Neon cyan çizgi + hafif glow
+        # Neon cyan çizgi + hafif glow (cached)
         glow_w = 7
-        glow_surf = pygame.Surface((glow_w, bh), pygame.SRCALPHA)
-        glow_surf.fill((*retro_style.primary[:3], 18))
-        self.screen.blit(glow_surf, (mx - glow_w // 2, oy))
-        line_surf = pygame.Surface((2, bh), pygame.SRCALPHA)
-        line_surf.fill((*retro_style.primary[:3], 90))
-        self.screen.blit(line_surf, (mx - 1, oy))
+        primary = retro_style.primary[:3]
+        cache_key = (glow_w, bh, primary)
+        cached = self._midline_cache
+        if cached.get('key') != cache_key:
+            glow_surf = pygame.Surface((glow_w, bh), pygame.SRCALPHA)
+            glow_surf.fill((*primary, 18))
+            line_surf = pygame.Surface((2, bh), pygame.SRCALPHA)
+            line_surf.fill((*primary, 90))
+            cached['key'] = cache_key
+            cached['glow'] = glow_surf
+            cached['line'] = line_surf
+        self.screen.blit(cached['glow'], (mx - glow_w // 2, oy))
+        self.screen.blit(cached['line'], (mx - 1, oy))
 
     def _draw_piece(self, piece: Piece | None, ox, oy, cs) -> None:
         if piece is None:
@@ -2587,52 +2634,61 @@ class CoopGame:
             return
         if not self.effects_enabled:
             return
+        # Offset-based ghost y calculation (piece.y is NOT mutated)
         ghost_y = piece.y
-        while self.board.is_valid_position_for_player(piece, player, dy=1):
-            piece.y += 1
-        if piece.y != ghost_y:
-            current_texture = getattr(piece, 'texture_surface', None)
-            piece_shape = piece.shape
-            piece_width = len(piece_shape[0]) if piece_shape else 1
-            piece_height = len(piece_shape) if piece_shape else 1
-            block_size = cs - 2
-            for local_y, row in enumerate(piece.shape):
-                for local_x, cell in enumerate(row):
-                    if not cell:
+        offset = 0
+        while self.board.is_valid_position_for_player(piece, player, dy=offset + 1):
+            offset += 1
+        if offset == 0:
+            return
+        drop_y = ghost_y + offset
+        current_texture = getattr(piece, 'texture_surface', None)
+        piece_shape = piece.shape
+        piece_width = len(piece_shape[0]) if piece_shape else 1
+        piece_height = len(piece_shape) if piece_shape else 1
+        block_size = cs - 2
+        # Reusable ghost surface for non-textured blocks
+        gcache = self._ghost_surf_cache
+        if gcache.get('key') != block_size:
+            s = pygame.Surface((block_size, block_size))
+            s.set_alpha(50)
+            gcache['key'] = block_size
+            gcache['surface'] = s
+        ghost_base_surf = gcache['surface']
+        for local_y, row in enumerate(piece.shape):
+            for local_x, cell in enumerate(row):
+                if not cell:
+                    continue
+                x = piece.x + local_x
+                y = drop_y + local_y
+                if y < 0:
+                    continue
+                block_x = ox + x * cs + 1
+                block_y = oy + y * cs + 1
+                ghost_color = piece.color
+                cm = getattr(piece, 'color_matrix', None)
+                if cm is not None:
+                    try:
+                        v = cm[local_y][local_x]
+                        if v is not None:
+                            ghost_color = v
+                    except Exception:
+                        pass
+                ghost_slice = None
+                if current_texture:
+                    ghost_slice = self._make_texture_slice(piece, local_x, local_y, piece_width, piece_height)
+                if current_texture and ghost_slice:
+                    ghost_img = self._render_texture_slice(current_texture, ghost_slice, block_size)
+                    if ghost_img:
+                        ghost_img.set_alpha(80)
+                        self.screen.blit(ghost_img, (block_x, block_y))
+                        self._draw_texture_border(block_x, block_y, block_size, ghost_color, textured=True)
                         continue
-                    x = piece.x + local_x
-                    y = piece.y + local_y
-                    if y < 0:
-                        continue
-                    block_x = ox + x * cs + 1
-                    block_y = oy + y * cs + 1
-                    ghost_color = piece.color
-                    cm = getattr(piece, 'color_matrix', None)
-                    if cm is not None:
-                        try:
-                            v = cm[local_y][local_x]
-                            if v is not None:
-                                ghost_color = v
-                        except Exception:
-                            pass
-                    ghost_slice = None
-                    if current_texture:
-                        ghost_slice = self._make_texture_slice(piece, local_x, local_y, piece_width, piece_height)
-                    if current_texture and ghost_slice:
-                        ghost_img = self._render_texture_slice(current_texture, ghost_slice, block_size)
-                        if ghost_img:
-                            ghost_img.set_alpha(80)
-                            self.screen.blit(ghost_img, (block_x, block_y))
-                            self._draw_texture_border(block_x, block_y, block_size, ghost_color, textured=True)
-                            continue
-                    # Yarı saydam renkli gölge
-                    s = pygame.Surface((block_size, block_size))
-                    s.set_alpha(50)
-                    s.fill(ghost_color)
-                    self.screen.blit(s, (block_x, block_y))
-                    pygame.draw.rect(self.screen, ghost_color,
-                                     (block_x, block_y, block_size, block_size), 2)
-        piece.y = ghost_y
+                # Yarı saydam renkli gölge (reuse cached surface)
+                ghost_base_surf.fill(ghost_color)
+                self.screen.blit(ghost_base_surf, (block_x, block_y))
+                pygame.draw.rect(self.screen, ghost_color,
+                                 (block_x, block_y, block_size, block_size), 2)
 
     def _draw_hud(self, ox, oy, cs, bw, bh) -> None:
         ui = self._ui_scale()
@@ -2645,8 +2701,14 @@ class CoopGame:
                                       border_color=(60, 70, 90), glow=False,
                                       top_highlight=False)
 
-        title_font = retro_style.get_font(self._sx(26, ui, minimum=16), bold=True)
-        title_surf = title_font.render(t('coop_title', default='QUADRIX CO-OP'), True, retro_style.primary)
+        # Title (cached — doesn't change during gameplay)
+        title_size = self._sx(26, ui, minimum=16)
+        hud_cache = getattr(self, '_hud_title_cache', None)
+        if hud_cache is None or hud_cache.get('size') != title_size:
+            title_font = retro_style.get_font(title_size, bold=True)
+            title_surf = title_font.render(t('coop_title', default='QUADRIX CO-OP'), True, retro_style.primary)
+            self._hud_title_cache = {'size': title_size, 'surf': title_surf}
+        title_surf = self._hud_title_cache['surf']
         self.screen.blit(title_surf, title_surf.get_rect(centerx=cx, top=10))
 
         score_font = retro_style.get_font(self._sx(20, ui, minimum=14), bold=True)
@@ -2808,17 +2870,19 @@ class CoopGame:
         else:
             area = pygame.Rect(ox + CoopBoard.MIDLINE * cs, oy, CoopBoard.MIDLINE * cs, bh)
 
-        # Gradient koyu overlay (üst şeffaf → alt koyu)
-        overlay = pygame.Surface(area.size, pygame.SRCALPHA)
-        for row in range(area.height):
-            alpha = int(80 + 80 * (row / max(1, area.height)))
-            pygame.draw.line(overlay, (5, 8, 20, alpha), (0, row), (area.width, row))
-        self.screen.blit(overlay, area.topleft)
-
-        # Buz çerçevesi — neon cyan kenarlık
-        border_surf = pygame.Surface(area.size, pygame.SRCALPHA)
-        pygame.draw.rect(border_surf, (*retro_style.primary[:3], 45), border_surf.get_rect(), 3)
-        self.screen.blit(border_surf, area.topleft)
+        # Gradient koyu overlay (cached)
+        cache_key = (area.width, area.height)
+        fcache = self._freeze_overlay_cache[player]
+        if fcache.get('key') != cache_key:
+            overlay = pygame.Surface(area.size, pygame.SRCALPHA)
+            for row in range(area.height):
+                alpha = int(80 + 80 * (row / max(1, area.height)))
+                pygame.draw.line(overlay, (5, 8, 20, alpha), (0, row), (area.width, row))
+            # Buz çerçevesi — neon cyan kenarlık
+            pygame.draw.rect(overlay, (*retro_style.primary[:3], 45), overlay.get_rect(), 3)
+            fcache['key'] = cache_key
+            fcache['surface'] = overlay
+        self.screen.blit(fcache['surface'], area.topleft)
 
         # Mesaj kutusu
         ui = self._ui_scale()
