@@ -14,10 +14,10 @@ import os
 from pathlib import Path
 
 from coop_board import CoopBoard
-from pieces import Piece, SHAPES
+from pieces import Piece, SHAPES, skip_hidden_rows
 from constants import (
     BOARD_WIDTH, BOARD_HEIGHT, BLACK, WHITE, CYAN, YELLOW, MAGENTA, GREEN, RED,
-    DAS_DELAY, DAS_REPEAT,
+    DAS_DELAY, DAS_REPEAT, DEFAULT_LOCK_DELAY,
 )
 from sound import SoundManager
 from background import BackgroundManager
@@ -34,6 +34,14 @@ from localization import t
 from ui_theme import UIColors, UIFonts
 from sweep_effects import SweepCatState, draw_rainbow_cat_sweep
 from asset_manager import load_image
+from screen_shake import (
+    DEFAULT_SCREEN_SHAKE_DURATION_SECONDS,
+    HARD_DROP_SCREEN_SHAKE_DURATION_SECONDS,
+    HARD_DROP_SCREEN_SHAKE_INTENSITY,
+    begin_screen_shake,
+    sample_screen_shake_offset,
+    step_screen_shake,
+)
 
 
 def _resource_path(relative_path: str) -> str:
@@ -65,6 +73,8 @@ class CoopGame:
     _P2_HOLD_KEY = pygame.K_RSHIFT
     _SOFT_DROP_SPEED = 50  # ms
     _LINE_CLEAR_SWEEP_BLOCK_FALL_SPEED = 0.144
+    _OPENING_CURTAIN_DURATION_MS = 350
+    _FRAME_MS = 1000.0 / 60.0
 
     # ------------------------------------------------------------------
     # Statik yardımcılar (PvP ile ortak)
@@ -116,6 +126,12 @@ class CoopGame:
         if scale is None:
             scale = self._ui_scale()
         return max(minimum, int(round(float(value) * float(scale))))
+
+    @staticmethod
+    def _ease_in_out_quad(t: float) -> float:
+        if t < 0.5:
+            return 2 * t * t
+        return 1 - pow(-2 * t + 2, 2) / 2
 
     # ------------------------------------------------------------------
     # __init__
@@ -207,6 +223,14 @@ class CoopGame:
         # Oyun durumu
         # ==================================================================
         self.game_over = False
+        self._game_over_snapshot = None
+        self._game_over_start_time = 0
+        self._game_over_restart_rect = None
+        self._game_over_exit_rect = None
+        self._game_over_peek_active = False
+        self._game_over_peek_rect = None
+        self._peek_icon_cache = None
+        self._peek_icon_cache_key = None
         self.paused = False
         self.pause_menu_selected = 0
         self._pause_menu_keys = ['resume', 'settings', 'music', 'music_volume', 'sound_effects', 'sfx_volume', 'main_menu']
@@ -216,6 +240,12 @@ class CoopGame:
         self._pause_vol_drag_option = ''
         self._pause_settings_active = False
         self._pause_settings_screen = None
+        self._opening_curtain_active = True
+        self._opening_curtain_duration_ms = self._OPENING_CURTAIN_DURATION_MS
+        try:
+            self._opening_curtain_start_ms = int(pygame.time.get_ticks())
+        except Exception:
+            self._opening_curtain_start_ms = 0
 
         # Skor
         self.team_score = 0
@@ -264,6 +294,14 @@ class CoopGame:
         self.p2_soft_drop_active = False
         self.p2_soft_drop_timer = 0.0
 
+        # Lock delay (Kart Ustalığı / ana oyun davranışı)
+        self.enable_lock_delay = True
+        self.lock_delay = DEFAULT_LOCK_DELAY
+        self.p1_grounded = False
+        self.p2_grounded = False
+        self.p1_lock_timer = 0.0
+        self.p2_lock_timer = 0.0
+
         # Event callback'leri (kampanya modu gibi alt sınıflar için)
         self._event_listeners: list = []
 
@@ -284,7 +322,7 @@ class CoopGame:
         # --- Visual Effects (Game base ile uyumlu) ---
         self.particles: list = []
         self.ambient_particles: list = []
-        self.screen_shake = 0
+        self.screen_shake = 0.0
         self.shake_intensity = 3
         self._screen_shake_initial = 0.0
         self.drop_trails: list = []
@@ -621,15 +659,18 @@ class CoopGame:
             self._refill_bag(player)
             bag = self._p1_bag if player == 'P1' else self._p2_bag
         idx = bag.pop(0)
-        sx, sy = self.board.get_spawn_position(player)
-        piece = Piece(x=sx, y=sy, shape_index=idx)
+        piece = Piece(x=0, y=0, shape_index=idx)
+        self._place_at_spawn(piece, player)
         self._apply_block_style(piece)
         return piece
 
     def _place_at_spawn(self, piece: Piece, player: str) -> None:
-        sx, sy = self.board.get_spawn_position(player)
+        sx, sy = self.board.get_spawn_position(player, piece)
         piece.x = sx
         piece.y = sy
+        # Instantly drop through hidden spawn rows for immediate visibility
+        while piece.y < 0 and self.board.is_valid_position_for_player(piece, player, dy=1):
+            piece.y += 1
 
     def _apply_block_style(self, piece: Piece) -> None:
         if not piece:
@@ -699,6 +740,147 @@ class CoopGame:
             self.sound.set_music_playlist([track_key], loop=True, autoplay=True, force=True)
             self.current_music_track = track_key
 
+    @staticmethod
+    def _format_elapsed_time(ms_value: int) -> str:
+        total_seconds = max(0, int(ms_value) // 1000)
+        minutes, seconds = divmod(total_seconds, 60)
+        hours, minutes = divmod(minutes, 60)
+        if hours:
+            return f'{hours:02d}:{minutes:02d}:{seconds:02d}'
+        return f'{minutes:02d}:{seconds:02d}'
+
+    def _wrap_overlay_text(self, font, text: str, max_width: int) -> list[str]:
+        raw_lines = [segment.strip() for segment in str(text or '').splitlines() if segment.strip()]
+        if not raw_lines:
+            return ['']
+
+        wrapped: list[str] = []
+        for raw_line in raw_lines:
+            words = raw_line.split()
+            if not words:
+                wrapped.append('')
+                continue
+            current = words[0]
+            for word in words[1:]:
+                candidate = f'{current} {word}'
+                try:
+                    candidate_width = font.size(candidate)[0]
+                except Exception:
+                    candidate_width = len(candidate) * 8
+                if candidate_width <= max_width:
+                    current = candidate
+                else:
+                    wrapped.append(current)
+                    current = word
+            wrapped.append(current)
+        return wrapped
+
+    def _get_cached_peek_icon(self, icon_size: int):
+        cache_key = max(1, int(icon_size))
+        if getattr(self, '_peek_icon_cache_key', None) == cache_key:
+            return self._peek_icon_cache
+
+        try:
+            peek_icon = load_image(_resource_path('assets/kart_secim_sagust.png'))
+            smoothscale = getattr(getattr(pygame, 'transform', None), 'smoothscale', None)
+            if callable(smoothscale):
+                peek_icon = smoothscale(peek_icon, (cache_key, cache_key))
+            self._peek_icon_cache = peek_icon
+            self._peek_icon_cache_key = cache_key
+            return peek_icon
+        except Exception:
+            self._peek_icon_cache = None
+            self._peek_icon_cache_key = cache_key
+            return None
+
+    def _draw_game_over_peek_button(
+        self,
+        rect: pygame.Rect,
+        *,
+        hovered: bool,
+        fallback_label: str,
+        border_color: tuple[int, int, int] | None = None,
+    ) -> None:
+        resolved_border_color = border_color or ((116, 190, 255) if hovered else (110, 134, 188))
+        pygame.draw.circle(self.screen, (255, 255, 255), rect.center, min(rect.width, rect.height) // 2)
+        pygame.draw.circle(self.screen, resolved_border_color, rect.center, min(rect.width, rect.height) // 2, 2)
+
+        icon_size = max(12, int(min(rect.width, rect.height) * 0.65))
+        peek_icon_surf = self._get_cached_peek_icon(icon_size)
+        if peek_icon_surf is not None:
+            self.screen.blit(peek_icon_surf, peek_icon_surf.get_rect(center=rect.center))
+            return
+
+        fallback_font = retro_style.get_font(max(10, int(icon_size * 0.5)), bold=True)
+        fallback_color = border_color or ((116, 190, 255) if hovered else (160, 182, 220))
+        eye_surf = fallback_font.render(fallback_label, True, fallback_color)
+        self.screen.blit(eye_surf, eye_surf.get_rect(center=rect.center))
+
+    def _capture_game_over_snapshot(self) -> dict[str, object]:
+        p1_score = int(getattr(self, 'p1_score_contribution', 0) or 0)
+        p2_score = int(getattr(self, 'p2_score_contribution', 0) or 0)
+        p1_pct = int(getattr(self, 'p1_score_contribution_pct', 0) or 0)
+        p2_pct = int(getattr(self, 'p2_score_contribution_pct', 0) or 0)
+        p1_frozen = bool(getattr(self, 'p1_frozen', False))
+        p2_frozen = bool(getattr(self, 'p2_frozen', False))
+        return {
+            'team_score': int(getattr(self, 'team_score', 0) or 0),
+            'total_lines': int(getattr(self, 'total_lines_cleared', 0) or 0),
+            'level': int(getattr(self, 'level', 1) or 1),
+            'elapsed_ms': int(getattr(self, 'elapsed_time', 0) or 0),
+            'p1_score': p1_score,
+            'p2_score': p2_score,
+            'p1_pct': p1_pct,
+            'p2_pct': p2_pct,
+            'p1_text': self._score_contribution_text('P1', p1_score, p1_pct),
+            'p2_text': self._score_contribution_text('P2', p2_score, p2_pct),
+            'p1_frozen': p1_frozen,
+            'p2_frozen': p2_frozen,
+            'both_frozen': p1_frozen and p2_frozen,
+        }
+
+    def _ensure_game_over_snapshot(self) -> dict[str, object]:
+        snapshot = getattr(self, '_game_over_snapshot', None)
+        if not isinstance(snapshot, dict):
+            snapshot = self._capture_game_over_snapshot()
+            self._game_over_snapshot = snapshot
+        if not getattr(self, '_game_over_start_time', 0):
+            try:
+                self._game_over_start_time = int(pygame.time.get_ticks())
+            except Exception:
+                self._game_over_start_time = 0
+        return snapshot
+
+    def _game_over_status_text(self, snapshot: dict[str, object]) -> str:
+        if snapshot.get('both_frozen'):
+            return t('coop_game_over_both_frozen', default='Both players stuck!')
+        if snapshot.get('p1_frozen'):
+            return t('coop_game_over_p1_frozen', default='P1 alanı kapandı')
+        if snapshot.get('p2_frozen'):
+            return t('coop_game_over_p2_frozen', default='P2 alanı kapandı')
+        return t('coop_game_over_status_default', default='Takım koşusu sonlandı')
+
+    def _game_over_reason_text(self, snapshot: dict[str, object]) -> str:
+        if snapshot.get('both_frozen'):
+            return t(
+                'coop_game_over_reason_double_freeze',
+                default='İki oyuncunun spawn alanı aynı anda kapandı. Ortak koşu burada sona erdi.',
+            )
+        if snapshot.get('p1_frozen'):
+            return t(
+                'coop_game_over_reason_p1_frozen',
+                default='P1 spawn alanı kilitlendi ve takım bu turu geri çevirecek boşluğu açamadı.',
+            )
+        if snapshot.get('p2_frozen'):
+            return t(
+                'coop_game_over_reason_p2_frozen',
+                default='P2 spawn alanı kilitlendi ve takım bu turu kurtaracak alanı açamadı.',
+            )
+        return t(
+            'coop_game_over_reason_default',
+            default='Ortak board ilerleyemediği için takım koşusu güvenli şekilde kapatıldı.',
+        )
+
     def _play_game_over_sequence(self) -> None:
         if not getattr(self, 'sound', None):
             return
@@ -725,7 +907,29 @@ class CoopGame:
         if self.game_over:
             return
         self.game_over = True
+        self._game_over_snapshot = self._capture_game_over_snapshot()
+        try:
+            self._game_over_start_time = int(pygame.time.get_ticks())
+        except Exception:
+            self._game_over_start_time = 0
+        self._game_over_restart_rect = None
+        self._game_over_exit_rect = None
+        self._game_over_peek_active = False
+        self._game_over_peek_rect = None
         self._play_game_over_sequence()
+
+    def restart(self) -> None:
+        screen = self.screen
+        sound_manager = self.sound
+        self.__init__(
+            sound_enabled=self.sound_enabled,
+            effects_enabled=self.effects_enabled,
+            screen=screen,
+            fullscreen=self.fullscreen,
+            user_manager=self.user_manager,
+            settings_manager=self.settings_manager,
+            sound_manager=sound_manager,
+        )
 
     def _load_backgrounds(self):
         for name in ('backgrounds/main_background.png', 'backgrounds/main_background.jpg',
@@ -748,9 +952,9 @@ class CoopGame:
 
     def _init_ambient_particles(self):
         """Arka plan ambient parçacıklarını oluştur."""
-        if not self.effects_enabled:
+        if not self._particle_effects_enabled():
             return
-        count = 20
+        count = max(8, int(20 * max(0.5, self._particle_effects_multiplier())))
         for _ in range(count):
             p = {
                 'x': float(random.randint(0, max(1, self.window_width))),
@@ -775,10 +979,52 @@ class CoopGame:
         sm = self.settings_manager
         if sm is None:
             return False
+        helper = getattr(sm, 'particle_effects_enabled', None)
+        if callable(helper):
+            try:
+                return bool(helper())
+            except Exception:
+                pass
         try:
-            return bool(sm.get('particle_effects', False))
+            value = sm.get('particle_effects', False)
         except Exception:
             return False
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            return int(value) > 0
+        return str(value).strip().lower() not in ('off', 'false', '0', 'kapali', 'kapalı')
+
+    def _particle_effects_multiplier(self) -> float:
+        if not self._particle_effects_enabled():
+            return 0.0
+        sm = self.settings_manager
+        if sm is None:
+            return 0.0
+        helper = getattr(sm, 'get_particle_effects_multiplier', None)
+        if callable(helper):
+            try:
+                return max(0.0, float(helper()))
+            except Exception:
+                pass
+        try:
+            value = sm.get('particle_effects', False)
+        except Exception:
+            return 0.0
+        if isinstance(value, bool):
+            return 1.0 if value else 0.0
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            return {0: 0.0, 1: 0.55, 2: 1.0, 3: 1.7}.get(max(0, min(3, int(round(value)))), 1.0)
+        return {
+            'off': 0.0,
+            'low': 0.55,
+            'az': 0.55,
+            'medium': 1.0,
+            'orta': 1.0,
+            'high': 1.7,
+            'çok': 1.7,
+            'cok': 1.7,
+        }.get(str(value).strip().lower(), 1.0)
 
     # ------------------------------------------------------------------
     # Textured block rendering (Game base ile uyumlu)
@@ -859,20 +1105,25 @@ class CoopGame:
     # ------------------------------------------------------------------
 
     def get_shake_offset(self):
-        if self.screen_shake > 0:
-            shake_x = random.randint(-self.shake_intensity, self.shake_intensity)
-            shake_y = random.randint(-self.shake_intensity, self.shake_intensity)
-            initial = float(self._screen_shake_initial) if self._screen_shake_initial else 15.0
-            decay = max(0.0, min(1.0, float(self.screen_shake) / max(1.0, initial)))
-            return (int(shake_x * decay), int(shake_y * decay))
-        return (0, 0)
+        return sample_screen_shake_offset(self)
 
-    def trigger_screen_shake(self, duration: int = 8, intensity: int = 3):
-        if not self._particle_effects_enabled():
-            return
-        self.screen_shake = duration
-        self.shake_intensity = intensity
-        self._screen_shake_initial = float(duration)
+    def _screen_shake_enabled(self) -> bool:
+        """Screen shake genel efekt anahtarına bağlıdır, particle toggle'a değil."""
+        return bool(self.effects_enabled)
+
+    def trigger_hard_drop_screen_shake(self) -> None:
+        self.trigger_screen_shake(
+            intensity=HARD_DROP_SCREEN_SHAKE_INTENSITY,
+            duration=HARD_DROP_SCREEN_SHAKE_DURATION_SECONDS,
+        )
+
+    def trigger_screen_shake(self, intensity: int = 10, duration: float = DEFAULT_SCREEN_SHAKE_DURATION_SECONDS) -> None:
+        begin_screen_shake(
+            self,
+            intensity=intensity,
+            duration=duration,
+            enabled=self._screen_shake_enabled(),
+        )
 
     # ------------------------------------------------------------------
     # Particles
@@ -886,15 +1137,17 @@ class CoopGame:
         dim = tuple(max(0, int(c * 0.7)) for c in base_color)
         white_t = tuple(min(255, c + 80) for c in base_color)
         palette = [base_color, bright, dim, white_t, (255, 255, 255)]
-        for i in range(random.randint(6, 10)):
-            angle = (i / 8) * 2 * math.pi + random.uniform(-0.3, 0.3)
+        particle_count = max(1, int(random.randint(6, 10) * self._particle_effects_multiplier()))
+        for i in range(particle_count):
+            angle = (i / max(1, particle_count)) * 2 * math.pi + random.uniform(-0.3, 0.3)
             speed = random.uniform(2, 5)
+            life_ms = random.randint(20, 45) * self._FRAME_MS
             self.particles.append({
                 'x': float(x), 'y': float(y),
                 'vx': math.cos(angle) * speed,
                 'vy': math.sin(angle) * speed - 1.5,
-                'life': random.randint(20, 45),
-                'max_life': 45,
+                'life': life_ms,
+                'max_life': life_ms,
                 'color': random.choice(palette),
                 'size': random.randint(2, 5),
             })
@@ -908,13 +1161,14 @@ class CoopGame:
             y = random.randint(0, max(1, self.window_height // 2))
         if colors is None:
             colors = [CYAN, YELLOW, MAGENTA, GREEN, RED]
-        for _ in range(max(1, int(count * self.animation_multiplier))):
+        for _ in range(max(1, int(count * self.animation_multiplier * self._particle_effects_multiplier()))):
+            life_ms = random.randint(30, 60) * self._FRAME_MS
             self.particles.append({
                 'x': float(x), 'y': float(y),
                 'vx': random.uniform(-1, 1) * speed,
                 'vy': random.uniform(-1, 1) * speed,
-                'life': random.randint(30, 60),
-                'max_life': 60,
+                'life': life_ms,
+                'max_life': life_ms,
                 'color': random.choice(colors),
                 'size': random.randint(2, 5),
             })
@@ -927,7 +1181,7 @@ class CoopGame:
             p['x'] += p['vx'] * dt_frames
             p['y'] += p['vy'] * dt_frames
             p['vy'] += 0.15 * dt_frames  # gravity
-            p['life'] -= 1
+            p['life'] -= dt
             if p['life'] > 0:
                 alive.append(p)
         self.particles = alive
@@ -1172,8 +1426,80 @@ class CoopGame:
                 trail_y_end = oy + py_abs * cs
                 if trail_y_end > trail_y_start:
                     self.create_drop_trail(trail_x, trail_y_start, trail_y_end, piece.color, cs)
-            self.trigger_screen_shake(5, 2)
+            self.trigger_hard_drop_screen_shake()
         self._lock_and_new_piece(player)
+
+    def _reset_player_lock_state(self, player: str) -> None:
+        if player == 'P1':
+            self.p1_grounded = False
+            self.p1_lock_timer = 0.0
+        else:
+            self.p2_grounded = False
+            self.p2_lock_timer = 0.0
+
+    def _mark_player_grounded(self, player: str) -> None:
+        if player == 'P1':
+            if not self.p1_grounded:
+                self.p1_grounded = True
+                self.p1_lock_timer = 0.0
+        else:
+            if not self.p2_grounded:
+                self.p2_grounded = True
+                self.p2_lock_timer = 0.0
+
+    def _player_touching_ground(self, player: str) -> bool:
+        piece = self.p1_current_piece if player == 'P1' else self.p2_current_piece
+        if piece is None:
+            return False
+        return not self.board.is_valid_position_for_player(piece, player, dy=1)
+
+    def _step_piece_down(self, player: str) -> bool:
+        piece = self.p1_current_piece if player == 'P1' else self.p2_current_piece
+        if piece is None:
+            return False
+
+        piece.y += 1
+        if not self.board.is_valid_position_for_player(piece, player):
+            piece.y -= 1
+            if getattr(self, 'enable_lock_delay', True):
+                self._mark_player_grounded(player)
+            else:
+                self._lock_and_new_piece(player)
+            return False
+
+        self._reset_player_lock_state(player)
+        return True
+
+    def _update_lock_delay(self, dt: float) -> set[str]:
+        locked_players: set[str] = set()
+        if not getattr(self, 'enable_lock_delay', True):
+            return locked_players
+
+        lock_delay = max(0.0, float(getattr(self, 'lock_delay', DEFAULT_LOCK_DELAY)))
+        for player in ('P1', 'P2'):
+            frozen = self.p1_frozen if player == 'P1' else self.p2_frozen
+            piece = self.p1_current_piece if player == 'P1' else self.p2_current_piece
+            if frozen or piece is None:
+                self._reset_player_lock_state(player)
+                continue
+
+            if self._player_touching_ground(player):
+                self._mark_player_grounded(player)
+                if player == 'P1':
+                    self.p1_lock_timer += dt
+                    if self.p1_lock_timer >= lock_delay:
+                        locked_players.add('P1')
+                else:
+                    self.p2_lock_timer += dt
+                    if self.p2_lock_timer >= lock_delay:
+                        locked_players.add('P2')
+            else:
+                self._reset_player_lock_state(player)
+
+        for player in locked_players:
+            self._lock_and_new_piece(player)
+
+        return locked_players
 
     # ==================================================================
     # Hold
@@ -1234,6 +1560,7 @@ class CoopGame:
             self.p1_hold_used = True
         else:
             self.p2_hold_used = True
+        self._reset_player_lock_state(player)
         self.sound.play('hold')
         self._emit_event('hold_used', {'player': player})
 
@@ -1260,6 +1587,7 @@ class CoopGame:
 
         # Kilitle (lock_piece_for_player → Board.lock_piece → clear_lines zinciri)
         cleared = self.board.lock_piece_for_player(piece, player)
+        player_locked_out = self.board.consume_last_lock_out()
 
         # Parça yerleştirildi event'i
         self._emit_event('piece_placed', {'player': player, 'piece': piece})
@@ -1306,9 +1634,9 @@ class CoopGame:
                 self._start_line_clear_sweep(cleared_rows)
             # Tetris shake
             if cleared >= 4:
-                self.trigger_screen_shake(12, 5)
+                self.trigger_screen_shake(intensity=7, duration=20 / 60.0)
             elif cleared >= 2:
-                self.trigger_screen_shake(6, 2)
+                self.trigger_screen_shake(intensity=3, duration=10 / 60.0)
 
             # Event yayınla
             self._emit_event('lines_cleared', {
@@ -1331,6 +1659,12 @@ class CoopGame:
         else:
             self.p2_hold_used = False
 
+        self._reset_player_lock_state(player)
+
+        if player_locked_out:
+            self._freeze_player(player)
+            return
+
         # Yeni parça spawn
         self._try_spawn_for_player(player)
 
@@ -1344,6 +1678,7 @@ class CoopGame:
             else:
                 self.p2_current_piece = next_piece
                 self.p2_next_piece = self._next_piece('P2')
+            self._reset_player_lock_state(player)
         else:
             self._freeze_player(player)
 
@@ -1354,6 +1689,7 @@ class CoopGame:
         else:
             self.p2_frozen = True
             self.p2_current_piece = None
+        self._reset_player_lock_state(player)
         self._emit_event('player_frozen', {'player': player})
         self._check_double_freeze()
 
@@ -1385,6 +1721,7 @@ class CoopGame:
             if self.board.is_valid_position_for_player(next_p, 'P1'):
                 self.p1_current_piece = next_p
                 self.p1_next_piece = self._next_piece('P1')
+                self._reset_player_lock_state('P1')
             else:
                 self._freeze_player('P1')
         else:
@@ -1396,6 +1733,7 @@ class CoopGame:
             if self.board.is_valid_position_for_player(next_p, 'P2'):
                 self.p2_current_piece = next_p
                 self.p2_next_piece = self._next_piece('P2')
+                self._reset_player_lock_state('P2')
             else:
                 self._freeze_player('P2')
 
@@ -1458,9 +1796,23 @@ class CoopGame:
                     continue
 
             if event.type != pygame.KEYDOWN and event.type != pygame.KEYUP:
-                # Game over'da mouse tıklama — menüye dön
+                # Game over butonları
                 if self.game_over and event.type == pygame.MOUSEBUTTONDOWN and getattr(event, 'button', None) == 1:
-                    return 'menu'
+                    pos = normalize_mouse_pos(getattr(event, 'pos', None)) or get_mouse_pos()
+                    peek_rect = getattr(self, '_game_over_peek_rect', None)
+                    if peek_rect is not None and peek_rect.collidepoint(pos):
+                        self._game_over_peek_active = not getattr(self, '_game_over_peek_active', False)
+                        continue
+                    if getattr(self, '_game_over_peek_active', False):
+                        continue
+                    restart_rect = getattr(self, '_game_over_restart_rect', None)
+                    exit_rect = getattr(self, '_game_over_exit_rect', None)
+                    if restart_rect is not None and restart_rect.collidepoint(pos):
+                        self.restart()
+                        continue
+                    if exit_rect is not None and exit_rect.collidepoint(pos):
+                        return 'menu'
+                    continue
                 continue
 
             # -- KEYDOWN --
@@ -1474,7 +1826,13 @@ class CoopGame:
                     self.sound.duck_music()
                     continue
 
-                if self.game_over or self.paused:
+                if self.game_over:
+                    if event.key == pygame.K_r:
+                        self.restart()
+                        continue
+                    continue
+
+                if self.paused:
                     continue
 
                 c1 = self.pvp_controls['player1']
@@ -1499,9 +1857,7 @@ class CoopGame:
                     elif event.key == c1['soft_drop']:
                         self.p1_soft_drop_active = True
                         self.p1_soft_drop_timer = 0
-                        self.p1_current_piece.y += 1
-                        if not self.board.is_valid_position_for_player(self.p1_current_piece, 'P1'):
-                            self.p1_current_piece.y -= 1
+                        self._step_piece_down('P1')
                     elif event.key == c1['rotate']:
                         self._try_rotate('P1')
                         self.sound.play('rotate')
@@ -1530,9 +1886,7 @@ class CoopGame:
                     elif event.key == c2['soft_drop']:
                         self.p2_soft_drop_active = True
                         self.p2_soft_drop_timer = 0
-                        self.p2_current_piece.y += 1
-                        if not self.board.is_valid_position_for_player(self.p2_current_piece, 'P2'):
-                            self.p2_current_piece.y -= 1
+                        self._step_piece_down('P2')
                     elif event.key == c2['rotate']:
                         self._try_rotate('P2')
                         self.sound.play('rotate')
@@ -1587,8 +1941,7 @@ class CoopGame:
             self.update_ambient_particles(delta_time)
             self.update_drop_trails(delta_time)
             self._update_line_clear_effects(delta_time)
-            if self.screen_shake > 0:
-                self.screen_shake -= 1
+            step_screen_shake(self, dt_ms=delta_time)
 
         if self.game_over or self.paused:
             return
@@ -1600,16 +1953,14 @@ class CoopGame:
         self._update_das(delta_time)
         # Soft drop güncelle
         self._update_soft_drop(delta_time)
+        locked_players = self._update_lock_delay(delta_time)
 
         # --- P1 gravity ---
-        if not self.p1_frozen and self.p1_current_piece is not None:
+        if 'P1' not in locked_players and not self.p1_frozen and self.p1_current_piece is not None:
             self.p1_fall_time += delta_time
             if self.p1_fall_time >= self.fall_speed:
                 self.p1_fall_time = 0
-                self.p1_current_piece.y += 1
-                if not self.board.is_valid_position_for_player(self.p1_current_piece, 'P1'):
-                    self.p1_current_piece.y -= 1
-                    self._lock_and_new_piece('P1')
+                self._step_piece_down('P1')
         elif self._p1_pending_unfreeze:
             # Düşüş tick bekleniyor — bir sonraki frame
             self.p1_fall_time += delta_time
@@ -1618,14 +1969,11 @@ class CoopGame:
                 self._do_unfreeze('P1')
 
         # --- P2 gravity ---
-        if not self.p2_frozen and self.p2_current_piece is not None:
+        if 'P2' not in locked_players and not self.p2_frozen and self.p2_current_piece is not None:
             self.p2_fall_time += delta_time
             if self.p2_fall_time >= self.fall_speed:
                 self.p2_fall_time = 0
-                self.p2_current_piece.y += 1
-                if not self.board.is_valid_position_for_player(self.p2_current_piece, 'P2'):
-                    self.p2_current_piece.y -= 1
-                    self._lock_and_new_piece('P2')
+                self._step_piece_down('P2')
         elif self._p2_pending_unfreeze:
             self.p2_fall_time += delta_time
             if self.p2_fall_time >= self.fall_speed:
@@ -1702,20 +2050,12 @@ class CoopGame:
                 self.p1_soft_drop_timer += dt
                 if self.p1_soft_drop_timer >= speed:
                     self.p1_soft_drop_timer = 0
-                    piece.y += 1
-                    if not self.board.is_valid_position_for_player(piece, 'P1'):
-                        piece.y -= 1
-                        self._lock_and_new_piece('P1')
-                        self.p1_soft_drop_active = False
+                    self._step_piece_down('P1')
             else:
                 self.p2_soft_drop_timer += dt
                 if self.p2_soft_drop_timer >= speed:
                     self.p2_soft_drop_timer = 0
-                    piece.y += 1
-                    if not self.board.is_valid_position_for_player(piece, 'P2'):
-                        piece.y -= 1
-                        self._lock_and_new_piece('P2')
-                        self.p2_soft_drop_active = False
+                    self._step_piece_down('P2')
 
     # ==================================================================
     # Pause menü (PvP ile aynı yapı)
@@ -1981,12 +2321,56 @@ class CoopGame:
             else:
                 self._draw_pause_menu()
 
-        # Game over
-        if self.game_over:
+        # Game over (kampanya overlay'i varsa atla — alt sınıf kendi overlay'ini çizer)
+        if self.game_over and not getattr(self, 'level_failed', False) and not getattr(self, 'level_complete', False):
             self._draw_game_over_screen()
+
+    def _draw_opening_curtain(self) -> None:
+        if not getattr(self, '_opening_curtain_active', False):
+            return
+
+        duration_ms = max(1, int(getattr(self, '_opening_curtain_duration_ms', self._OPENING_CURTAIN_DURATION_MS) or self._OPENING_CURTAIN_DURATION_MS))
+        start_ms = int(getattr(self, '_opening_curtain_start_ms', 0) or 0)
+        try:
+            now_ms = int(pygame.time.get_ticks())
+        except Exception:
+            now_ms = start_ms + duration_ms
+
+        elapsed_ms = max(0, now_ms - start_ms)
+        progress = min(1.0, elapsed_ms / max(1, duration_ms))
+        if progress >= 1.0:
+            self._opening_curtain_active = False
+            return
+
+        eased = self._ease_in_out_quad(progress)
+        cover_width = int((self.window_width / 2) * (1.0 - eased))
+        if cover_width <= 0:
+            self._opening_curtain_active = False
+            return
+
+        left_rect = pygame.Rect(0, 0, cover_width, self.window_height)
+        right_rect = pygame.Rect(self.window_width - cover_width, 0, cover_width, self.window_height)
+
+        left_overlay = pygame.Surface(left_rect.size, pygame.SRCALPHA)
+        right_overlay = pygame.Surface(right_rect.size, pygame.SRCALPHA)
+        left_overlay.fill((15, 20, 30, 236))
+        right_overlay.fill((15, 20, 30, 236))
+
+        edge_steps = min(8, cover_width)
+        for step in range(edge_steps):
+            ratio = step / max(1, edge_steps - 1)
+            alpha = int(54 * (1.0 - ratio))
+            left_x = max(0, cover_width - edge_steps + step)
+            right_x = min(cover_width - 1, step)
+            pygame.draw.line(left_overlay, (48, 62, 82, alpha), (left_x, 0), (left_x, self.window_height))
+            pygame.draw.line(right_overlay, (48, 62, 82, alpha), (right_x, 0), (right_x, self.window_height))
+
+        self.screen.blit(left_overlay, left_rect.topleft)
+        self.screen.blit(right_overlay, right_rect.topleft)
 
     def draw(self) -> None:
         self._render_game()
+        self._draw_opening_curtain()
         pygame.display.flip()
 
     # ------------------------------------------------------------------
@@ -2455,82 +2839,291 @@ class CoopGame:
 
     def _draw_game_over_screen(self) -> None:
         w, h = self.window_width, self.window_height
-        ui = self._ui_scale()
+        ui = self._ui_scale(0.70, 1.16)
+        s = lambda value, minimum=1: self._sx(value, ui, minimum)
+        snapshot = self._ensure_game_over_snapshot()
+        try:
+            now_ms = int(pygame.time.get_ticks())
+        except Exception:
+            now_ms = int(getattr(self, '_game_over_start_time', 0) or 0)
+        start_ms = int(getattr(self, '_game_over_start_time', 0) or now_ms)
+        elapsed_sec = max(0.0, (now_ms - start_ms) / 1000.0)
+        fade_progress = min(1.0, elapsed_sec / 0.35)
+        score_progress = min(1.0, max(0.0, (elapsed_sec - 0.12) / 1.15))
+        displayed_score = int(int(snapshot.get('team_score', 0) or 0) * (1 - (1 - score_progress) ** 3))
+        self._game_over_restart_rect = None
+        self._game_over_exit_rect = None
+        self._game_over_peek_rect = None
 
-        # Gradient overlay (kırmızımsı tint — ana tema fail stili)
+        if getattr(self, '_game_over_peek_active', False):
+            peek_btn_size = s(48)
+            peek_rect = pygame.Rect(w - peek_btn_size - s(20), h - peek_btn_size - s(20), peek_btn_size, peek_btn_size)
+            self._game_over_peek_rect = peek_rect
+            self._draw_game_over_peek_button(
+                peek_rect,
+                hovered=False,
+                fallback_label='X',
+                border_color=(100, 200, 255),
+            )
+            return
+
         overlay = pygame.Surface((w, h), pygame.SRCALPHA)
         for row in range(h):
-            ratio = row / max(1, h)
-            alpha = int(180 * 0.75 + 40 * ratio)
-            overlay.fill((20, 5, 8, min(255, alpha)), (0, row, w, 1))
+            ratio = row / max(1, h - 1)
+            alpha = int((155 + 70 * ratio) * fade_progress)
+            red = int(18 + 18 * (1.0 - ratio))
+            green = int(7 + 10 * ratio)
+            blue = int(14 + 24 * ratio)
+            overlay.fill((red, green, blue, min(240, alpha)), (0, row, w, 1))
         self.screen.blit(overlay, (0, 0))
 
-        # Merkez panel
-        pw = min(self._sx(440, ui), w - self._sx(80, ui))
-        ph = self._sx(280, ui)
-        pr = pygame.Rect((w - pw) // 2, (h - ph) // 2, pw, ph)
-
-        # Glow
-        glow_rect = pr.inflate(self._sx(20, ui), self._sx(20, ui))
+        panel_w = min(max(s(780), w - s(340)), w - s(72))
+        panel_h = min(max(s(560), h - s(120)), h - s(52))
+        panel_rect = pygame.Rect((w - panel_w) // 2, (h - panel_h) // 2, panel_w, panel_h)
+        glow_rect = panel_rect.inflate(s(26), s(26))
         glow_surf = pygame.Surface(glow_rect.size, pygame.SRCALPHA)
-        pygame.draw.rect(glow_surf, (160, 25, 40, 20), glow_surf.get_rect(), border_radius=16)
+        pygame.draw.rect(glow_surf, (165, 32, 58, 34), glow_surf.get_rect(), border_radius=22)
         self.screen.blit(glow_surf, glow_rect.topleft)
 
-        fail_red = (255, 50, 80)
-        retro_style.draw_glass_panel(self.screen, pr, alpha=210,
-                                      border_color=(*fail_red, 160), glow=False)
+        retro_style.draw_glass_panel(
+            self.screen,
+            panel_rect,
+            alpha=216,
+            border_color=(230, 92, 122),
+            glow=False,
+            top_highlight=False,
+        )
+        panel_tint = pygame.Surface(panel_rect.size, pygame.SRCALPHA)
+        panel_tint.fill((28, 8, 16, 208))
+        highlight_h = min(panel_rect.height // 3, s(44))
+        for row in range(highlight_h):
+            hi_alpha = int(24 * (1 - row / max(1, highlight_h)))
+            pygame.draw.line(panel_tint, (255, 255, 255, hi_alpha), (0, row), (panel_rect.width, row))
+        self.screen.blit(panel_tint, panel_rect.topleft)
+        pygame.draw.rect(self.screen, (240, 92, 122), panel_rect, 2, border_radius=18)
 
-        cx = pr.centerx
-        y_cursor = pr.y + self._sx(20, ui)
+        mouse_pos = get_mouse_pos()
+        peek_btn_size = s(36)
+        peek_rect = pygame.Rect(panel_rect.right - peek_btn_size - s(16), panel_rect.y + s(16), peek_btn_size, peek_btn_size)
+        self._game_over_peek_rect = peek_rect
+        peek_hovered = mouse_pos is not None and peek_rect.collidepoint(mouse_pos)
+        self._draw_game_over_peek_button(peek_rect, hovered=peek_hovered, fallback_label='O')
 
-        # Başlık + glow
-        title = t('coop_game_over', default='GAME OVER')
-        title_font = retro_style.get_font(self._sx(40, ui, minimum=24), bold=True)
-        # Glow katmanları
-        for offset in (2, 1):
-            glow = title_font.render(title, True, fail_red)
-            glow.set_alpha(25)
-            for dx, dy in ((offset, 0), (-offset, 0), (0, offset), (0, -offset)):
-                self.screen.blit(glow, glow.get_rect(centerx=cx + dx, top=y_cursor + dy))
-        title_surf = title_font.render(title, True, fail_red)
-        self.screen.blit(title_surf, title_surf.get_rect(centerx=cx, top=y_cursor))
-        y_cursor += title_surf.get_height() + self._sx(8, ui)
+        inner_left = panel_rect.x + s(28)
+        inner_right = panel_rect.right - s(28)
+        inner_width = inner_right - inner_left
 
-        if self.p1_frozen and self.p2_frozen:
-            sub = t('coop_game_over_both_frozen', default='Both players stuck!')
-            sub_font = retro_style.get_font(self._sx(18, ui, minimum=12))
-            sub_surf = sub_font.render(sub, True, retro_style.accent)
-            self.screen.blit(sub_surf, sub_surf.get_rect(centerx=cx, top=y_cursor))
-            y_cursor += sub_surf.get_height() + self._sx(10, ui)
-        else:
-            y_cursor += self._sx(6, ui)
+        title_color = (255, 78, 112)
+        subtitle_color = (196, 212, 236)
+        status_color = (255, 188, 88)
+        p1_color = (88, 226, 182)
+        p2_color = (114, 210, 255)
 
-        # Skor
-        score_txt = f"{t('coop_final_score', default='Final Score')}: {self.team_score:,}".replace(',', '.')
-        score_font = retro_style.get_font(self._sx(24, ui, minimum=16), bold=True)
-        score_surf = score_font.render(score_txt, True, retro_style.text_primary)
-        self.screen.blit(score_surf, score_surf.get_rect(centerx=cx, top=y_cursor))
-        y_cursor += score_surf.get_height() + self._sx(12, ui)
+        def draw_metric_card(rect: pygame.Rect, label: str, value: str, accent: tuple[int, int, int], note: str | None = None):
+            card_bg = (
+                min(52, 10 + accent[0] // 10),
+                min(58, 12 + accent[1] // 10),
+                min(72, 20 + accent[2] // 10),
+            )
+            card_border = (
+                min(230, 42 + accent[0] // 2),
+                min(230, 48 + accent[1] // 2),
+                min(240, 54 + accent[2] // 2),
+            )
+            card_fill = pygame.Surface(rect.size, pygame.SRCALPHA)
+            card_fill.fill((*card_bg, 220))
+            self.screen.blit(card_fill, rect.topleft)
+            pygame.draw.rect(self.screen, card_border, rect, 1, border_radius=12)
+            pygame.draw.rect(self.screen, accent, (rect.x + s(8), rect.y + s(8), s(5), rect.height - s(16)), border_radius=2)
 
-        # İstatistikler
-        info_base = self._sx(16, ui, minimum=11)
-        info_max_width = pr.width - self._sx(36, ui, minimum=24)
-        minutes = int(self.elapsed_time) // 60000
-        seconds = (int(self.elapsed_time) // 1000) % 60
-        p1_txt, p2_txt = self._score_contribution_texts()
-        info_lines = [
-            f"{t('coop_total_lines', default='Total Lines')}: {self.total_lines_cleared}",
-            f"{p1_txt}  —  {p2_txt}",
-            f"{t('coop_total_time', default='Total Time')}: {minutes}:{seconds:02d}",
-        ]
-        for line in info_lines:
-            info_font = retro_style.get_fitting_font(line, info_base, info_max_width, bold=False, min_size=9)
-            surf = info_font.render(line, True, retro_style.text_secondary)
-            self.screen.blit(surf, surf.get_rect(centerx=cx, top=y_cursor))
-            y_cursor += surf.get_height() + self._sx(4, ui)
+            label_font = retro_style.get_fitting_font(label, s(15), rect.width - s(34), bold=True, min_size=9)
+            label_surf = label_font.render(label, True, (205, 220, 240))
+            self.screen.blit(label_surf, (rect.x + s(20), rect.y + s(10)))
 
-        # Alt ipucu
-        hint = t('coop_press_continue', default='Press ESC to return')
-        hint_font = retro_style.get_font(self._sx(14, ui, minimum=10))
-        hint_surf = hint_font.render(hint, True, retro_style.text_muted)
-        self.screen.blit(hint_surf, hint_surf.get_rect(centerx=cx, bottom=pr.bottom - self._sx(12, ui)))
+            value_font = retro_style.get_fitting_font(value, s(28), rect.width - s(34), bold=True, min_size=12)
+            value_surf = value_font.render(value, True, accent)
+            value_y = rect.y + s(10) + label_font.get_height() + s(4)
+            self.screen.blit(value_surf, (rect.x + s(20), value_y))
+
+            if note:
+                note_font = retro_style.get_fitting_font(note, s(13), rect.width - s(34), bold=False, min_size=9)
+                note_surf = note_font.render(note, True, (175, 194, 220))
+                note_y = rect.bottom - s(10) - note_font.get_height()
+                self.screen.blit(note_surf, (rect.x + s(20), note_y))
+
+        tag_text = t('coop_title', default='QUADRIX CO-OP')
+        tag_font = retro_style.get_font(s(14), bold=True)
+        tag_w = min(inner_width, tag_font.size(tag_text)[0] + s(24))
+        tag_rect = pygame.Rect(inner_left, panel_rect.y + s(22), tag_w, s(28))
+        pygame.draw.rect(self.screen, (34, 56, 84), tag_rect, border_radius=tag_rect.height // 2)
+        pygame.draw.rect(self.screen, (96, 188, 255), tag_rect, 1, border_radius=tag_rect.height // 2)
+        tag_surf = tag_font.render(tag_text, True, (170, 220, 255))
+        tag_x = tag_rect.x + (tag_rect.width - tag_font.size(tag_text)[0]) // 2
+        tag_y = tag_rect.y + (tag_rect.height - tag_font.get_height()) // 2
+        self.screen.blit(tag_surf, (tag_x, tag_y))
+
+        title_text = t('coop_game_over', default='GAME OVER')
+        title_font = retro_style.get_font(s(46), bold=True)
+        title_w, title_h = title_font.size(title_text)
+        title_x = panel_rect.centerx - title_w // 2
+        title_y = tag_rect.bottom + s(14)
+        for dx, dy, alpha in [(-2, 0, 32), (2, 0, 32), (0, -2, 28), (0, 2, 28), (-2, -2, 18), (2, 2, 18)]:
+            glow = title_font.render(title_text, True, title_color)
+            glow.set_alpha(alpha)
+            self.screen.blit(glow, (title_x + dx, title_y + dy))
+        title_surf = title_font.render(title_text, True, title_color)
+        self.screen.blit(title_surf, (title_x, title_y))
+
+        subtitle_text = t(
+            'coop_game_over_subtitle',
+            default='Takım koşusu kapandı. Son durum özeti aşağıda.',
+        )
+        subtitle_font = retro_style.get_font(s(18), bold=False)
+        subtitle_w, subtitle_h = subtitle_font.size(subtitle_text)
+        subtitle_x = panel_rect.centerx - subtitle_w // 2
+        subtitle_y = title_y + title_h + s(8)
+        subtitle_surf = subtitle_font.render(subtitle_text, True, subtitle_color)
+        self.screen.blit(subtitle_surf, (subtitle_x, subtitle_y))
+
+        score_rect = pygame.Rect(inner_left, subtitle_y + subtitle_h + s(18), inner_width, s(86))
+        score_fill = pygame.Surface(score_rect.size, pygame.SRCALPHA)
+        score_fill.fill((42, 12, 24, 228))
+        self.screen.blit(score_fill, score_rect.topleft)
+        pygame.draw.rect(self.screen, (112, 180, 255), score_rect, 2, border_radius=14)
+
+        score_label_font = retro_style.get_font(s(16), bold=True)
+        score_label_text = t('coop_team_score', default='Team Score')
+        score_label_surf = score_label_font.render(score_label_text, True, (204, 220, 244))
+        self.screen.blit(score_label_surf, (score_rect.x + s(18), score_rect.y + s(14)))
+
+        score_value_text = self._fmt_score(displayed_score)
+        score_value_font = retro_style.get_font(s(38), bold=True)
+        score_value_w, score_value_h = score_value_font.size(score_value_text)
+        score_value_x = score_rect.right - s(18) - score_value_w
+        score_value_y = score_rect.y + s(10)
+        score_shadow = score_value_font.render(score_value_text, True, (0, 0, 0))
+        score_shadow.set_alpha(110)
+        self.screen.blit(score_shadow, (score_value_x + 2, score_value_y + 2))
+        score_value_surf = score_value_font.render(score_value_text, True, WHITE)
+        self.screen.blit(score_value_surf, (score_value_x, score_value_y))
+
+        status_text = self._game_over_status_text(snapshot)
+        status_font = retro_style.get_fitting_font(status_text, s(15), score_rect.width - s(36), bold=True, min_size=10)
+        status_w, status_h = status_font.size(status_text)
+        status_x = score_rect.x + (score_rect.width - status_w) // 2
+        status_y = score_rect.bottom - s(14) - status_h
+        status_surf = status_font.render(status_text, True, status_color)
+        self.screen.blit(status_surf, (status_x, status_y))
+
+        reason_text = self._game_over_reason_text(snapshot)
+        reason_title_font = retro_style.get_font(s(18), bold=True)
+        reason_body_font = retro_style.get_font(s(16), bold=False)
+        reason_lines = self._wrap_overlay_text(reason_body_font, reason_text, inner_width - s(40))
+        reason_body_h = len(reason_lines) * reason_body_font.get_linesize()
+        reason_gap = s(4)
+        reason_rect_h = max(s(94), s(22) + reason_title_font.get_height() + reason_gap + reason_body_h + s(20))
+        reason_rect = pygame.Rect(inner_left, score_rect.bottom + s(14), inner_width, reason_rect_h)
+        reason_fill = pygame.Surface(reason_rect.size, pygame.SRCALPHA)
+        reason_fill.fill((32, 14, 22, 205))
+        self.screen.blit(reason_fill, reason_rect.topleft)
+        pygame.draw.rect(self.screen, (192, 86, 118), reason_rect, 1, border_radius=14)
+
+        reason_title = status_text
+        reason_title_surf = reason_title_font.render(reason_title, True, title_color)
+        reason_title_y = reason_rect.y + s(14)
+        self.screen.blit(reason_title_surf, (reason_rect.x + s(18), reason_title_y))
+        body_y = reason_title_y + reason_title_font.get_height() + reason_gap
+        for line in reason_lines:
+            line_surf = reason_body_font.render(line, True, subtitle_color)
+            self.screen.blit(line_surf, (reason_rect.x + s(18), body_y))
+            body_y += reason_body_font.get_linesize()
+
+        stat_gap = s(14)
+        stat_w = (inner_width - 2 * stat_gap) // 3
+        stat_h = s(78)
+        stat_top = reason_rect.bottom + s(14)
+        draw_metric_card(
+            pygame.Rect(inner_left, stat_top, stat_w, stat_h),
+            t('coop_total_lines', default='Total Lines'),
+            str(int(snapshot.get('total_lines', 0) or 0)),
+            (78, 224, 255),
+        )
+        draw_metric_card(
+            pygame.Rect(inner_left + stat_w + stat_gap, stat_top, stat_w, stat_h),
+            t('coop_level', default='Level'),
+            str(int(snapshot.get('level', 1) or 1)),
+            (255, 186, 82),
+        )
+        draw_metric_card(
+            pygame.Rect(inner_left + (stat_w + stat_gap) * 2, stat_top, stat_w, stat_h),
+            t('coop_total_time', default='Total Time'),
+            self._format_elapsed_time(int(snapshot.get('elapsed_ms', 0) or 0)),
+            (114, 245, 176),
+        )
+
+        contrib_top = stat_top + stat_h + s(14)
+        contrib_w = (inner_width - stat_gap) // 2
+        contrib_h = s(92)
+        draw_metric_card(
+            pygame.Rect(inner_left, contrib_top, contrib_w, contrib_h),
+            'P1',
+            f"%{int(snapshot.get('p1_pct', 0) or 0)}",
+            p1_color,
+            str(snapshot.get('p1_text', '')),
+        )
+        draw_metric_card(
+            pygame.Rect(inner_left + contrib_w + stat_gap, contrib_top, contrib_w, contrib_h),
+            'P2',
+            f"%{int(snapshot.get('p2_pct', 0) or 0)}",
+            p2_color,
+            str(snapshot.get('p2_text', '')),
+        )
+
+        footer_surfaces = []
+        current_user = None
+        if getattr(self, 'user_manager', None):
+            get_current_user = getattr(self.user_manager, 'get_current_user', None)
+            if callable(get_current_user):
+                try:
+                    current_user = get_current_user()
+                except Exception:
+                    current_user = None
+        footer_font = retro_style.get_font(s(14), bold=False)
+        if current_user:
+            profile_text = t('saved_profile', default='Saved profile: {}').format(current_user)
+            footer_surfaces.append((footer_font.render(profile_text, True, (178, 198, 224)), footer_font.size(profile_text)[0]))
+        hint_text = t('coop_game_over_hint', default='R ile yeniden başlat, ESC ile menüye dön.')
+        footer_surfaces.append((footer_font.render(hint_text, True, (164, 182, 208)), footer_font.size(hint_text)[0]))
+
+        button_gap = s(16)
+        button_w = min((inner_width - button_gap) // 2, s(248))
+        button_h = s(48)
+        restart_rect = pygame.Rect(panel_rect.centerx - button_gap // 2 - button_w, panel_rect.bottom - s(72), button_w, button_h)
+        button_rect = pygame.Rect(panel_rect.centerx + button_gap // 2, panel_rect.bottom - s(72), button_w, button_h)
+        footer_y = restart_rect.y - s(12)
+        line_h = footer_font.get_linesize()
+        total_footer_h = len(footer_surfaces) * line_h
+        current_y = footer_y - total_footer_h
+        for surf, width in footer_surfaces:
+            surf_x = panel_rect.centerx - width // 2
+            self.screen.blit(surf, (surf_x, current_y))
+            current_y += line_h
+
+        retro_style.draw_uniform_button(
+            self.screen,
+            restart_rect,
+            t('campaign_retry', default='Yeniden Başlat'),
+            sub_text='R',
+            color_code=(72, 216, 158),
+            state='hover' if restart_rect.collidepoint(mouse_pos) else 'normal',
+        )
+        retro_style.draw_uniform_button(
+            self.screen,
+            button_rect,
+            t('back_to_menu', default='Back to Menu'),
+            sub_text='ESC',
+            color_code=(220, 86, 112),
+            state='hover' if button_rect.collidepoint(mouse_pos) else 'normal',
+        )
+        self._game_over_restart_rect = restart_rect
+        self._game_over_exit_rect = button_rect

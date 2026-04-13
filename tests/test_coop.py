@@ -51,6 +51,8 @@ class _Draw:
     def rect(*a, **kw): pass
     @staticmethod
     def line(*a, **kw): pass
+    @staticmethod
+    def circle(*a, **kw): pass
 _pg.draw = _Draw()
 class _Rect:
     def __init__(self, *a):
@@ -662,7 +664,8 @@ def test_game_over_summary_renders_same_score_contribution_text_as_hud():
         _rs.retro_style.get_font = original_get_font
         _rs.retro_style.get_fitting_font = original_get_fitting_font
 
-    assert 'P1 460 (%40)  —  P2 680 (%60)' in rendered_texts
+    assert 'P1 460 (%40)' in rendered_texts
+    assert 'P2 680 (%60)' in rendered_texts
 
 def test_draw_no_crash():
     """draw() çağrıldığında hata atmamalı."""

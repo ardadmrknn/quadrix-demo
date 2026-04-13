@@ -785,21 +785,16 @@ class Menu:
                 cross_dist = abs(ry - cy)
                 score = main_dist + cross_dist * 0.5
             else:
-                # Yukarı/aşağı: yatay örtüşme (overlap) kontrolü
-                # İki panelin X aralıkları örtüşüyor mu?
+                # Yukarı/aşağı: yalnızca yatay örtüşmesi olan paneller aday
                 overlap_left = max(cur.left, r.left)
                 overlap_right = min(cur.right, r.right)
                 has_overlap = overlap_left < overlap_right
+                if not has_overlap:
+                    continue
 
                 main_dist = abs(ry - cy)
                 cross_dist = abs(rx - cx)
-
-                if has_overlap:
-                    # Örtüşen paneller: çapraz sapma çok düşük cezalı
-                    score = main_dist + cross_dist * 0.1
-                else:
-                    # Örtüşmeyen paneller: çapraz sapma çok ağır cezalı
-                    score = main_dist + cross_dist * 5.0
+                score = main_dist + cross_dist * 0.1
 
             if score < best_score:
                 best_score = score
@@ -958,13 +953,17 @@ class Menu:
 
             if current_option == 'pvp_2_players':
                 if event.key in nav['left']:
-                    self._pvp_split_selection = 'local'
-                    self._nav_source = 'keyboard'
-                    return None
+                    if self._pvp_split_selection != 'local':
+                        self._pvp_split_selection = 'local'
+                        self._nav_source = 'keyboard'
+                        return None
+                    # Zaten local — sol komşuya git (fall through)
                 elif event.key in nav['right']:
-                    self._pvp_split_selection = 'online'
-                    self._nav_source = 'keyboard'
-                    return None
+                    if self._pvp_split_selection != 'online':
+                        self._pvp_split_selection = 'online'
+                        self._nav_source = 'keyboard'
+                        return None
+                    # Zaten online — sağ komşuya git (fall through)
                 elif event.key in (pygame.K_RETURN, pygame.K_SPACE):
                     if getattr(self, '_nav_source', 'mouse') == 'mouse' and not getattr(self, '_mouse_in_panel', True):
                         return None
@@ -980,28 +979,29 @@ class Menu:
                 new_idx = self._find_spatial_neighbor('up')
                 if new_idx != self.selected:
                     self.selected = new_idx
-                else:
-                    # Fallback: merkez paneller arasında wrap
-                    self.selected = (self.selected - 1) % (max_nav + 1)
-                navigated = True
-                self._ensure_visible()
+                    navigated = True
+                    self._ensure_visible()
             elif event.key in nav['down']:
                 new_idx = self._find_spatial_neighbor('down')
                 if new_idx != self.selected:
                     self.selected = new_idx
-                else:
-                    self.selected = (self.selected + 1) % (max_nav + 1)
-                navigated = True
-                self._ensure_visible()
+                    navigated = True
+                    self._ensure_visible()
             elif event.key in nav['left']:
                 new_idx = self._find_spatial_neighbor('left')
                 if new_idx != self.selected:
+                    # PVP tile'a sağdan girerken online tarafına düş
+                    if 0 <= new_idx < len(self.options) and self.options[new_idx] == 'pvp_2_players':
+                        self._pvp_split_selection = 'online'
                     self.selected = new_idx
                     navigated = True
                     self._ensure_visible()
             elif event.key in nav['right']:
                 new_idx = self._find_spatial_neighbor('right')
                 if new_idx != self.selected:
+                    # PVP tile'a soldan girerken local tarafına düş
+                    if 0 <= new_idx < len(self.options) and self.options[new_idx] == 'pvp_2_players':
+                        self._pvp_split_selection = 'local'
                     self.selected = new_idx
                     navigated = True
                     self._ensure_visible()
@@ -7663,8 +7663,12 @@ class MusicSettingsScreen:
                 return None
             if event.key == pygame.K_UP:
                 self.mode_selected = (self.mode_selected - 1) % len(self.modes)
+                visible_h = max(1, self.screen.get_height() - ((getattr(self, '_title_rect', None).bottom + 40) if getattr(self, '_title_rect', None) else 150) - 120)
+                self.mode_scroll = self._ensure_visible(self.mode_selected, 74, 12, visible_h, self.mode_scroll)
             elif event.key == pygame.K_DOWN:
                 self.mode_selected = (self.mode_selected + 1) % len(self.modes)
+                visible_h = max(1, self.screen.get_height() - ((getattr(self, '_title_rect', None).bottom + 40) if getattr(self, '_title_rect', None) else 150) - 120)
+                self.mode_scroll = self._ensure_visible(self.mode_selected, 74, 12, visible_h, self.mode_scroll)
             elif event.key in (pygame.K_RETURN, pygame.K_SPACE):
                 mode_key = self.modes[self.mode_selected][0]
                 self._load_playlist('mode', mode_key)
@@ -7703,8 +7707,12 @@ class MusicSettingsScreen:
                 return None
             if event.key == pygame.K_UP:
                 self.playlist_selected = (self.playlist_selected - 1) % total_items
+                visible_h = max(1, self.screen.get_height() - ((getattr(self, '_title_rect', None).bottom + 40) if getattr(self, '_title_rect', None) else 150) - 120)
+                self.playlist_scroll = self._ensure_visible(self.playlist_selected, 74, 12, visible_h, self.playlist_scroll)
             elif event.key == pygame.K_DOWN:
                 self.playlist_selected = (self.playlist_selected + 1) % total_items
+                visible_h = max(1, self.screen.get_height() - ((getattr(self, '_title_rect', None).bottom + 40) if getattr(self, '_title_rect', None) else 150) - 120)
+                self.playlist_scroll = self._ensure_visible(self.playlist_selected, 74, 12, visible_h, self.playlist_scroll)
             elif event.key in (pygame.K_RETURN, pygame.K_SPACE):
                 if self.playlist_selected == 0:
                     self._open_picker()

@@ -165,8 +165,7 @@ def test_runtime_added_button_joins_nav_without_hardcoded_index_updates():
         pygame.Rect(180, 0, 120, 120),
         pygame.Rect(360, 0, 120, 120),
     ]
-    menu._nav_option_keys = {'left_mode', 'runtime_mode', 'right_mode'}
-    menu._nav_panel_max_idx = 0
+    menu._nav_panel_max_idx = 2
     menu.selected = 0
     menu.pvp_local_polygon = None
     menu.pvp_online_polygon = None
@@ -193,8 +192,7 @@ def test_pvp_online_right_uses_parent_tile_center_for_external_nav():
         pygame.Rect(0, 0, 180, 120),
         pygame.Rect(220, 50, 100, 80),
     ]
-    menu._nav_option_keys = {'pvp_2_players', 'campaign_mode'}
-    menu._nav_panel_max_idx = 0
+    menu._nav_panel_max_idx = 1
     menu.selected = 0
     menu._pvp_split_selection = 'online'
     menu.pvp_local_polygon = [(0, 0), (0, 120), (180, 120)]
