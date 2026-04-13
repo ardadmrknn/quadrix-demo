@@ -6,7 +6,6 @@ _pg = types.ModuleType('pygame')
 _pg.K_a = 97; _pg.K_d = 100; _pg.K_w = 119; _pg.K_s = 115
 _pg.K_LEFT = 276; _pg.K_RIGHT = 275; _pg.K_UP = 273; _pg.K_DOWN = 274
 _pg.K_SPACE = 32; _pg.K_LSHIFT = 304; _pg.K_RSHIFT = 303; _pg.K_ESCAPE = 27; _pg.K_RETURN = 13; _pg.K_KP_ENTER = 271; _pg.K_BACKSPACE = 8; _pg.K_p = 112; _pg.K_e = 101
-_pg.K_r = 114
 _pg.QUIT = 256; _pg.KEYDOWN = 768; _pg.KEYUP = 769; _pg.VIDEORESIZE = 65281; _pg.MOUSEMOTION = 1024; _pg.MOUSEBUTTONDOWN = 1025; _pg.MOUSEBUTTONUP = 1026; _pg.MOUSEWHEEL = 1027; _pg.SRCALPHA = 65536
 _pg.init = lambda: None; _pg.get_init = lambda: True
 class _Key:
@@ -52,8 +51,6 @@ class _Draw:
     def rect(*a, **kw): pass
     @staticmethod
     def line(*a, **kw): pass
-    @staticmethod
-    def circle(*a, **kw): pass
 _pg.draw = _Draw()
 class _Rect:
     def __init__(self, *a):
@@ -223,7 +220,6 @@ class _RS:
     def get_font(self, *a, **kw): return _FakeFont()
     def get_fitting_font(self, *a, **kw): return _FakeFont()
     def get_mono_font(self, *a, **kw): return _FakeFont()
-    def wrap_text(self, text, font, max_width): return [text]
     def render_fit_text(self, *a, **kw): return _pg.Surface((10, 10))
     def draw_glass_panel(self, *a, **kw): pass
     def draw_uniform_button(self, *a, **kw): pass
@@ -269,7 +265,6 @@ from board import Board
 from pieces import Piece, SHAPES
 from coop_board import CoopBoard
 from coop_game import CoopGame
-from screen_shake import HARD_DROP_SCREEN_SHAKE_DURATION_SECONDS, HARD_DROP_SCREEN_SHAKE_INTENSITY
 
 for mod_name, original in _ORIGINAL_MODULES.items():
     if original is None:
@@ -464,107 +459,6 @@ def test_double_freeze_game_over():
     assert cg.game_over
     assert sound.game_over_sequence_calls == 1
 
-def test_single_side_lock_out_freezes_player_instead_of_ending_run():
-    sound = _SM()
-    cg = CoopGame(sound_enabled=False, effects_enabled=False, screen=_Surf(), sound_manager=sound)
-
-    for y in range(4):
-        for x in range(10):
-            cg.board.occupancy[y][x] = True
-            cg.board.grid[y][x] = (255, 0, 0)
-            cg.board.owners[y][x] = 'P1'
-
-    piece = Piece(x=3, y=0, shape_index=1)
-    cg._apply_block_style(piece)
-    cg.p1_current_piece = piece
-
-    cg._lock_and_new_piece('P1')
-
-    assert cg.game_over is False
-    assert cg.p1_frozen is True
-    assert cg.p2_frozen is False
-    assert cg.p1_current_piece is None
-    assert cg.p2_current_piece is not None
-    assert cg.board.is_game_over() is False
-    assert cg.board.consume_last_lock_out() is False
-    assert sound.game_over_sequence_calls == 0
-
-def test_activate_game_over_captures_overlay_snapshot():
-    cg = CoopGame(sound_enabled=False, effects_enabled=False, screen=_Surf(), sound_manager=_SM())
-    cg.team_score = 2340
-    cg.total_lines_cleared = 11
-    cg.level = 4
-    cg.elapsed_time = 91000
-    cg.p1_score_contribution = 1200
-    cg.p2_score_contribution = 1140
-    cg.p1_score_contribution_pct = 51
-    cg.p2_score_contribution_pct = 49
-    cg.p1_frozen = True
-    cg.p2_frozen = True
-
-    cg._activate_game_over()
-
-    assert cg._game_over_snapshot['team_score'] == 2340
-    assert cg._game_over_snapshot['total_lines'] == 11
-    assert cg._game_over_snapshot['both_frozen'] is True
-    assert cg._game_over_snapshot['p1_text'] == 'P1 1.200 (%51)'
-    assert cg._game_over_snapshot['p2_text'] == 'P2 1.140 (%49)'
-
-def test_game_over_key_r_restarts_same_coop_session():
-    cg = CoopGame(sound_enabled=False, effects_enabled=False, screen=_Surf(), sound_manager=_SM())
-    cg.team_score = 345
-    cg.game_over = True
-    cg._game_over_snapshot = cg._capture_game_over_snapshot()
-
-    original_event_get = _pg.event.get
-    _pg.event.get = lambda: [types.SimpleNamespace(type=_pg.KEYDOWN, key=_pg.K_r)]
-    try:
-        result = cg.handle_input()
-    finally:
-        _pg.event.get = original_event_get
-
-    assert result is True
-    assert cg.game_over is False
-    assert cg.team_score == 0
-    assert cg._game_over_snapshot is None
-
-def test_game_over_mouse_peek_toggle_blocks_other_buttons():
-    cg = CoopGame(sound_enabled=False, effects_enabled=False, screen=_Surf(), sound_manager=_SM())
-    cg.game_over = True
-    cg.team_score = 345
-
-    class _HitRect:
-        def __init__(self, hit_pos):
-            self.hit_pos = hit_pos
-
-        def collidepoint(self, pos):
-            return pos == self.hit_pos
-
-    cg._game_over_peek_rect = _HitRect((10, 10))
-    cg._game_over_restart_rect = _HitRect((20, 20))
-    cg._game_over_exit_rect = _HitRect((30, 30))
-
-    original_event_get = _pg.event.get
-    try:
-        _pg.event.get = lambda: [types.SimpleNamespace(type=_pg.MOUSEBUTTONDOWN, button=1, pos=(10, 10))]
-        result = cg.handle_input()
-        assert result is True
-        assert cg._game_over_peek_active is True
-
-        _pg.event.get = lambda: [types.SimpleNamespace(type=_pg.MOUSEBUTTONDOWN, button=1, pos=(20, 20))]
-        result = cg.handle_input()
-        assert result is True
-        assert cg._game_over_peek_active is True
-        assert cg.game_over is True
-        assert cg.team_score == 345
-
-        _pg.event.get = lambda: [types.SimpleNamespace(type=_pg.MOUSEBUTTONDOWN, button=1, pos=(10, 10))]
-        result = cg.handle_input()
-        assert result is True
-        assert cg._game_over_peek_active is False
-    finally:
-        _pg.event.get = original_event_get
-
 def test_level_progression():
     cg = CoopGame(sound_enabled=False, effects_enabled=False, screen=_Surf(), sound_manager=_SM())
     cg.total_lines_cleared = 10
@@ -594,114 +488,6 @@ def test_hard_drop():
     # Hard drop sonrası yeni parça spawn olmalı veya freeze
     # (spawn olabilir ya da piece None olabilir freeze durumunda)
     assert cg.p1_current_piece is not None or cg.p1_frozen
-
-def test_soft_drop_ground_contact_does_not_lock_immediately():
-    cg = CoopGame(sound_enabled=False, effects_enabled=False, screen=_Surf(), sound_manager=_SM())
-    piece = Piece(x=3, y=18, shape_index=1)
-    cg._apply_block_style(piece)
-    cg.p1_current_piece = piece
-    cg.p1_soft_drop_active = True
-    cg.p1_soft_drop_timer = 0
-
-    cg.update(cg._SOFT_DROP_SPEED)
-
-    assert cg.p1_current_piece is piece
-    assert cg.p1_grounded is True
-    assert 0 < cg.p1_lock_timer < cg.lock_delay
-
-def test_soft_drop_ground_contact_locks_after_delay_expires():
-    cg = CoopGame(sound_enabled=False, effects_enabled=False, screen=_Surf(), sound_manager=_SM())
-    piece = Piece(x=3, y=18, shape_index=1)
-    cg._apply_block_style(piece)
-    cg.p1_current_piece = piece
-    cg.p1_soft_drop_active = True
-    cg.p1_soft_drop_timer = 0
-
-    cg.update(cg._SOFT_DROP_SPEED)
-    cg._update_lock_delay(cg.lock_delay)
-
-    assert cg.p1_current_piece is not piece or cg.p1_frozen
-    assert cg.p1_grounded is False
-    assert cg.p1_lock_timer == 0
-
-def test_screen_shake_does_not_depend_on_particle_setting():
-    settings = _FakeSettings(values={'particle_effects': False})
-    cg = CoopGame(
-        sound_enabled=False,
-        effects_enabled=True,
-        screen=_Surf(),
-        settings_manager=settings,
-        sound_manager=_SM(),
-    )
-
-    cg.trigger_screen_shake(intensity=5, duration=0.2)
-
-    assert round(cg.screen_shake, 3) == 200.0
-    assert cg.shake_intensity == 5
-
-def test_screen_shake_decays_by_elapsed_time():
-    cg = CoopGame(sound_enabled=False, effects_enabled=True, screen=_Surf(), sound_manager=_SM())
-
-    cg.trigger_screen_shake(intensity=3, duration=0.6)
-    initial = cg.screen_shake
-    cg.update(cg._FRAME_MS * 2)
-
-    assert round(initial - cg.screen_shake, 3) == round(cg._FRAME_MS * 2, 3)
-
-def test_hard_drop_screen_shake_restarts_current_shake():
-    cg = CoopGame(sound_enabled=False, effects_enabled=True, screen=_Surf(), sound_manager=_SM())
-
-    cg.trigger_screen_shake(intensity=9, duration=0.5)
-    cg.update(100)
-    cg.trigger_hard_drop_screen_shake()
-
-    assert round(cg.screen_shake, 3) == round(HARD_DROP_SCREEN_SHAKE_DURATION_SECONDS * 1000.0, 3)
-    assert round(cg._screen_shake_initial, 3) == round(HARD_DROP_SCREEN_SHAKE_DURATION_SECONDS * 1000.0, 3)
-    assert cg.shake_intensity == HARD_DROP_SCREEN_SHAKE_INTENSITY
-
-def test_particles_decay_by_elapsed_time_not_update_count():
-    cg = CoopGame(sound_enabled=False, effects_enabled=True, screen=_Surf(), sound_manager=_SM())
-    cg.particles = [{
-        'x': 0.0,
-        'y': 0.0,
-        'vx': 0.0,
-        'vy': 0.0,
-        'life': 3 * cg._FRAME_MS,
-        'max_life': 3 * cg._FRAME_MS,
-        'color': (255, 255, 255),
-        'size': 2,
-    }]
-
-    cg.update_particles(cg._FRAME_MS)
-    assert round(cg.particles[0]['life'], 3) == round(2 * cg._FRAME_MS, 3)
-
-    cg.update_particles(2 * cg._FRAME_MS)
-    assert cg.particles == []
-
-def test_particle_effect_level_scales_spawn_count():
-    low = CoopGame(
-        sound_enabled=False,
-        effects_enabled=True,
-        screen=_Surf(),
-        settings_manager=_FakeSettings(values={'particle_effects': 'low'}),
-        sound_manager=_SM(),
-    )
-    high = CoopGame(
-        sound_enabled=False,
-        effects_enabled=True,
-        screen=_Surf(),
-        settings_manager=_FakeSettings(values={'particle_effects': 'high'}),
-        sound_manager=_SM(),
-    )
-
-    low.animation_multiplier = 1.0
-    high.animation_multiplier = 1.0
-
-    low.create_particles(10, x=100, y=100, colors=[(255, 255, 255)], speed=0)
-    high.create_particles(10, x=100, y=100, colors=[(255, 255, 255)], speed=0)
-
-    assert len(low.particles) == 5
-    assert len(high.particles) == 17
 
 def test_lock_and_new_piece_caches_clear_row_snapshot():
     cg = CoopGame(sound_enabled=False, effects_enabled=True, screen=_Surf(), sound_manager=_SM())
@@ -876,24 +662,7 @@ def test_game_over_summary_renders_same_score_contribution_text_as_hud():
         _rs.retro_style.get_font = original_get_font
         _rs.retro_style.get_fitting_font = original_get_fitting_font
 
-    assert 'P1 460 (%40)' in rendered_texts
-    assert 'P2 680 (%60)' in rendered_texts
-    assert 'Takım koşusu kapandı. Son durum özeti aşağıda.' in rendered_texts
-    assert cg._game_over_peek_rect is not None
-    assert cg._game_over_restart_rect is not None
-    assert cg._game_over_exit_rect is not None
-
-def test_game_over_peek_draw_hides_overlay_buttons():
-    cg = CoopGame(sound_enabled=False, effects_enabled=False, screen=_Surf(), sound_manager=_SM())
-    cg.game_over = True
-    cg._game_over_snapshot = cg._capture_game_over_snapshot()
-    cg._game_over_peek_active = True
-
-    cg._draw_game_over_screen()
-
-    assert cg._game_over_peek_rect is not None
-    assert cg._game_over_restart_rect is None
-    assert cg._game_over_exit_rect is None
+    assert 'P1 460 (%40)  —  P2 680 (%60)' in rendered_texts
 
 def test_draw_no_crash():
     """draw() çağrıldığında hata atmamalı."""
@@ -905,23 +674,6 @@ def test_update_no_crash():
     cg = CoopGame(sound_enabled=False, effects_enabled=False, screen=_Surf(), sound_manager=_SM())
     cg.update(16.0)  # 16ms frame
     cg.update(16.0)
-
-def test_opening_curtain_starts_active_for_new_coop_session():
-    cg = CoopGame(sound_enabled=False, effects_enabled=False, screen=_Surf(), sound_manager=_SM())
-
-    assert cg._opening_curtain_active is True
-    assert cg._opening_curtain_duration_ms == cg._OPENING_CURTAIN_DURATION_MS
-
-def test_opening_curtain_turns_off_after_duration():
-    cg = CoopGame(sound_enabled=False, effects_enabled=False, screen=_Surf(), sound_manager=_SM())
-    original_get_ticks = _pg.time.get_ticks
-    _pg.time.get_ticks = staticmethod(lambda: cg._opening_curtain_start_ms + cg._opening_curtain_duration_ms + 1)
-    try:
-        cg._draw_opening_curtain()
-    finally:
-        _pg.time.get_ticks = original_get_ticks
-
-    assert cg._opening_curtain_active is False
 
 def test_wants_mouse_visible_for_pause_and_game_over():
     cg = CoopGame(sound_enabled=False, effects_enabled=False, screen=_Surf(), sound_manager=_SM())

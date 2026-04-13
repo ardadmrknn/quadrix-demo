@@ -387,8 +387,6 @@ class Menu:
         self.scroll_offset = 0  # Kaydırma için
         self._nav_source = 'mouse'  # 'mouse' veya 'keyboard' — input kaynağı ayrımı
         self._mouse_in_panel = False  # Mouse option_rects üzerinde mi?
-        self._nav_option_keys: set[str] = set()
-        self._nav_geometry_overrides: dict[str, list[dict[str, Any]]] = {}
         self.fullscreen = False  # Tam ekran durumu
         self.background_fx = get_shared_falling_blocks_layer('default')
         # Belirli menü kartlarının içinde (cam panel arkasında) domino yağmuru
@@ -591,9 +589,8 @@ class Menu:
             # Çıkış
             'exit',
         ]
-        # Legacy fallback: runtime'da draw() action_rect_map'ten dinamik nav seti kurulur.
+        # Tuş navigasyonu sadece merkez paneller arasında gezinir
         self._nav_panel_max_idx = 8  # Son merkez panel indeksi (store)
-        self._nav_option_keys = set()
 
     def _ui_scale(self) -> float:
         """Ana menü için pencereye bağlı UI ölçeği üret.
@@ -761,11 +758,12 @@ class Menu:
         best_idx = cur_idx
         best_score = float('inf')
 
-        nav_indices = set(self._get_nav_option_indices())
+        max_nav = getattr(self, '_nav_panel_max_idx', len(rects) - 1)
         for i, r in enumerate(rects):
             if i == cur_idx:
                 continue
-            if i not in nav_indices:
+            # Sadece merkez paneller arasında gezin
+            if i > max_nav:
                 continue
             if r.width <= 0 or r.height <= 0:
                 continue
@@ -808,316 +806,6 @@ class Menu:
                 best_idx = i
 
         return best_idx
-
-    def _get_nav_option_indices(self) -> list[int]:
-        options = getattr(self, 'options', None)
-        if not isinstance(options, list):
-            return []
-
-        nav_keys = getattr(self, '_nav_option_keys', None)
-        if isinstance(nav_keys, set) and nav_keys:
-            return [idx for idx, option in enumerate(options) if option in nav_keys]
-
-        max_nav = getattr(self, '_nav_panel_max_idx', len(options) - 1)
-        if max_nav < 0:
-            return []
-        return list(range(min(len(options) - 1, max_nav) + 1))
-
-    def _clear_nav_geometries(self) -> None:
-        self._nav_geometry_overrides = {}
-
-    def _set_nav_option_keys(self, option_keys) -> None:
-        options = getattr(self, 'options', None)
-        if not isinstance(options, list):
-            self._nav_option_keys = set()
-            return
-
-        option_key_set = set(option_keys or [])
-        self._nav_option_keys = {option for option in options if option in option_key_set}
-
-    def _register_nav_polygon(
-        self,
-        option_key: str,
-        polygon: list[tuple[int, int]] | tuple[tuple[int, int], ...] | None,
-        *,
-        target_name: str | None = None,
-        pvp_split: str | None = None,
-        group_origin: tuple[int | float, int | float] | None = None,
-    ) -> None:
-        if option_key not in getattr(self, 'options', []):
-            return
-        if not polygon or len(polygon) < 3:
-            return
-
-        normalized_polygon = [(int(x), int(y)) for x, y in polygon]
-        if len(normalized_polygon) < 3:
-            return
-
-        name = target_name or option_key
-        existing = self._nav_geometry_overrides.get(option_key, [])
-        existing = [entry for entry in existing if entry.get('name') != name]
-        existing.append({
-            'name': name,
-            'polygon': normalized_polygon,
-            'pvp_split': pvp_split,
-            'group_origin': group_origin,
-        })
-        self._nav_geometry_overrides[option_key] = existing
-
-    def _build_axis_nav_targets(self) -> list[dict[str, Any]]:
-        options = getattr(self, 'options', None)
-        rects = getattr(self, 'option_rects', None)
-        if not isinstance(options, list) or not isinstance(rects, list):
-            return []
-
-        nav_indices = self._get_nav_option_indices()
-        if not nav_indices:
-            return []
-
-        targets: list[dict[str, Any]] = []
-        geometry_overrides = getattr(self, '_nav_geometry_overrides', {})
-        for idx in nav_indices:
-            if idx < 0 or idx >= len(options):
-                continue
-            option = options[idx]
-            rect = rects[idx] if idx < len(rects) else None
-
-            option_overrides = geometry_overrides.get(option, []) if isinstance(geometry_overrides, dict) else []
-            if not option_overrides and option == 'pvp_2_players':
-                local_poly, online_poly = self._get_pvp_nav_polygons(rect)
-                group_origin = None
-                if rect is not None and rect.width > 0 and rect.height > 0:
-                    group_origin = (float(rect.centerx), float(rect.centery))
-                if local_poly:
-                    option_overrides.append({'name': 'pvp_local', 'polygon': local_poly, 'pvp_split': 'local', 'group_origin': group_origin})
-                if online_poly:
-                    option_overrides.append({'name': 'pvp_online', 'polygon': online_poly, 'pvp_split': 'online', 'group_origin': group_origin})
-
-            if option_overrides:
-                for entry in option_overrides:
-                    polygon = entry.get('polygon')
-                    center = self._polygon_centroid(polygon)
-                    if not polygon or center is None:
-                        continue
-                    entry_group_origin = entry.get('group_origin')
-                    if entry_group_origin is None:
-                        group_origin = center
-                    else:
-                        group_origin = (float(entry_group_origin[0]), float(entry_group_origin[1]))
-                    targets.append({
-                        'name': entry.get('name', option),
-                        'selected': idx,
-                        'pvp_split': entry.get('pvp_split'),
-                        'polygon': polygon,
-                        'center': center,
-                        'group_origin': group_origin,
-                    })
-                continue
-
-            if rect is None or rect.width <= 0 or rect.height <= 0:
-                continue
-            polygon = self._rect_to_polygon(rect)
-            center = self._polygon_centroid(polygon)
-            if center is None:
-                continue
-            targets.append({
-                'name': option,
-                'selected': idx,
-                'pvp_split': None,
-                'polygon': polygon,
-                'center': center,
-                'group_origin': center,
-            })
-
-        return targets
-
-    @staticmethod
-    def _rect_to_polygon(rect: pygame.Rect) -> list[tuple[float, float]]:
-        return [
-            (float(rect.left), float(rect.top)),
-            (float(rect.right), float(rect.top)),
-            (float(rect.right), float(rect.bottom)),
-            (float(rect.left), float(rect.bottom)),
-        ]
-
-    @staticmethod
-    def _polygon_centroid(polygon: list[tuple[int, int]] | tuple[tuple[int, int], ...] | None) -> tuple[float, float] | None:
-        if not polygon:
-            return None
-        pts = [(float(x), float(y)) for x, y in polygon]
-        if len(pts) < 3:
-            return None
-
-        twice_area = 0.0
-        centroid_x = 0.0
-        centroid_y = 0.0
-        for i, (x1, y1) in enumerate(pts):
-            x2, y2 = pts[(i + 1) % len(pts)]
-            cross = x1 * y2 - x2 * y1
-            twice_area += cross
-            centroid_x += (x1 + x2) * cross
-            centroid_y += (y1 + y2) * cross
-
-        if abs(twice_area) < 1e-6:
-            avg_x = sum(x for x, _ in pts) / len(pts)
-            avg_y = sum(y for _, y in pts) / len(pts)
-            return avg_x, avg_y
-
-        factor = 1.0 / (3.0 * twice_area)
-        return centroid_x * factor, centroid_y * factor
-
-    @staticmethod
-    def _cross_2d(vec_a: tuple[float, float], vec_b: tuple[float, float]) -> float:
-        return vec_a[0] * vec_b[1] - vec_a[1] * vec_b[0]
-
-    def _ray_polygon_hit_distance(
-        self,
-        origin: tuple[float, float],
-        direction: str,
-        polygon: list[tuple[int, int]] | tuple[tuple[int, int], ...] | list[tuple[float, float]],
-    ) -> float | None:
-        if not polygon or len(polygon) < 3:
-            return None
-
-        direction_vectors = {
-            'left': (-1.0, 0.0),
-            'right': (1.0, 0.0),
-            'up': (0.0, -1.0),
-            'down': (0.0, 1.0),
-        }
-        ray = direction_vectors.get(direction)
-        if ray is None:
-            return None
-
-        best_distance = None
-        epsilon = 1e-6
-        ox, oy = origin
-        pts = [(float(x), float(y)) for x, y in polygon]
-
-        for i, start in enumerate(pts):
-            end = pts[(i + 1) % len(pts)]
-            edge = (end[0] - start[0], end[1] - start[1])
-            delta = (start[0] - ox, start[1] - oy)
-            denom = self._cross_2d(ray, edge)
-
-            if abs(denom) < epsilon:
-                if abs(self._cross_2d(delta, ray)) >= epsilon:
-                    continue
-                projections = []
-                for px, py in (start, end):
-                    proj = (px - ox) * ray[0] + (py - oy) * ray[1]
-                    if proj > epsilon:
-                        projections.append(proj)
-                if projections:
-                    dist = min(projections)
-                    if best_distance is None or dist < best_distance:
-                        best_distance = dist
-                continue
-
-            t = self._cross_2d(delta, edge) / denom
-            u = self._cross_2d(delta, ray) / denom
-            if t > epsilon and -epsilon <= u <= 1.0 + epsilon:
-                if best_distance is None or t < best_distance:
-                    best_distance = t
-
-        return best_distance
-
-    def _get_pvp_nav_polygons(self, fallback_rect: pygame.Rect | None) -> tuple[list[tuple[int, int]] | None, list[tuple[int, int]] | None]:
-        local_poly = self.pvp_local_polygon
-        online_poly = self.pvp_online_polygon
-        if local_poly and online_poly:
-            return local_poly, online_poly
-
-        if fallback_rect is None or fallback_rect.width <= 0 or fallback_rect.height <= 0:
-            return None, None
-
-        split_rect = pygame.Rect(fallback_rect)
-        local_poly = [
-            (split_rect.left, split_rect.top),
-            (split_rect.left, split_rect.bottom),
-            (split_rect.right, split_rect.bottom),
-        ]
-        online_poly = [
-            (split_rect.left, split_rect.top),
-            (split_rect.right, split_rect.top),
-            (split_rect.right, split_rect.bottom),
-        ]
-        return local_poly, online_poly
-
-    def _find_axis_ray_nav_target(self, direction: str) -> dict[str, Any] | None:
-        options = getattr(self, 'options', None)
-        selected = getattr(self, 'selected', -1)
-        if not isinstance(options, list):
-            return None
-        nav_indices = self._get_nav_option_indices()
-        if not nav_indices or not (0 <= selected < len(options)):
-            return None
-        if selected not in set(nav_indices):
-            return None
-
-        current_split = 'online' if getattr(self, '_pvp_split_selection', 'local') == 'online' else 'local'
-        targets = self._build_axis_nav_targets()
-
-        if not targets:
-            return None
-
-        current_option = options[selected]
-        current_name = current_option
-        if current_option == 'pvp_2_players':
-            current_name = 'pvp_online' if current_split == 'online' else 'pvp_local'
-
-        current_target = next((target for target in targets if target['name'] == current_name), None)
-        if current_target is None:
-            return None
-
-        best_internal_target = None
-        best_internal_distance = None
-        for target in targets:
-            if target['name'] == current_name or target['selected'] != current_target['selected']:
-                continue
-            dist = self._ray_polygon_hit_distance(current_target['center'], direction, target['polygon'])
-            if dist is None:
-                continue
-            if (
-                best_internal_distance is None
-                or dist < best_internal_distance
-                or (abs(dist - best_internal_distance) < 1e-6 and target['selected'] < best_internal_target['selected'])
-            ):
-                best_internal_distance = dist
-                best_internal_target = target
-
-        best_external_target = None
-        best_external_distance = None
-        external_origin = current_target.get('group_origin', current_target['center'])
-        for target in targets:
-            if target['selected'] == current_target['selected']:
-                continue
-            dist = self._ray_polygon_hit_distance(external_origin, direction, target['polygon'])
-            if dist is None:
-                continue
-            if (
-                best_external_distance is None
-                or dist < best_external_distance
-                or (abs(dist - best_external_distance) < 1e-6 and target['selected'] < best_external_target['selected'])
-            ):
-                best_external_distance = dist
-                best_external_target = target
-
-        best_target = best_internal_target or best_external_target
-
-        if best_target is None:
-            return {
-                'handled': True,
-                'selected': selected,
-                'pvp_split': current_split,
-            }
-
-        next_split = best_target['pvp_split'] if best_target['pvp_split'] is not None else current_split
-        return {
-            'handled': True,
-            'selected': best_target['selected'],
-            'pvp_split': next_split,
-        }
 
 
     def _load_layout_overrides(self) -> dict[str, Any]:
@@ -1262,52 +950,49 @@ class Menu:
             return None
 
         # --- Normal (modal kapalı) girdi işleme ---
+        max_nav = getattr(self, '_nav_panel_max_idx', len(self.options) - 1)
         if event.type == pygame.KEYDOWN:
             nav = self._get_nav_keys()
             navigated = False
             current_option = self.options[self.selected] if (0 <= self.selected < len(self.options)) else ''
-            direction = None
-            if event.key in nav['up']:
-                direction = 'up'
-            elif event.key in nav['down']:
-                direction = 'down'
-            elif event.key in nav['left']:
-                direction = 'left'
-            elif event.key in nav['right']:
-                direction = 'right'
 
-            if current_option == 'pvp_2_players' and event.key in (pygame.K_RETURN, pygame.K_SPACE):
-                if getattr(self, '_nav_source', 'mouse') == 'mouse' and not getattr(self, '_mouse_in_panel', True):
+            if current_option == 'pvp_2_players':
+                if event.key in nav['left']:
+                    self._pvp_split_selection = 'local'
+                    self._nav_source = 'keyboard'
                     return None
-                try:
-                    mouse_pos_now = get_mouse_pos()
-                except Exception:
-                    mouse_pos_now = None
-                if mouse_pos_now and self.pvp_online_polygon and _point_in_polygon(mouse_pos_now, self.pvp_online_polygon):
-                    return 'online_pvp'
-                return 'online_pvp' if self._pvp_split_selection == 'online' else 'pvp_2_players'
+                elif event.key in nav['right']:
+                    self._pvp_split_selection = 'online'
+                    self._nav_source = 'keyboard'
+                    return None
+                elif event.key in (pygame.K_RETURN, pygame.K_SPACE):
+                    if getattr(self, '_nav_source', 'mouse') == 'mouse' and not getattr(self, '_mouse_in_panel', True):
+                        return None
+                    try:
+                        mouse_pos_now = get_mouse_pos()
+                    except Exception:
+                        mouse_pos_now = None
+                    if mouse_pos_now and self.pvp_online_polygon and _point_in_polygon(mouse_pos_now, self.pvp_online_polygon):
+                        return 'online_pvp'
+                    return 'online_pvp' if self._pvp_split_selection == 'online' else 'pvp_2_players'
 
-            dashboard_nav = self._find_axis_ray_nav_target(direction) if direction else None
-            if dashboard_nav is not None:
-                previous_selected = self.selected
-                previous_split = 'online' if getattr(self, '_pvp_split_selection', 'local') == 'online' else 'local'
-                self.selected = dashboard_nav['selected']
-                self._pvp_split_selection = dashboard_nav['pvp_split']
-                if self.selected != previous_selected:
-                    self._ensure_visible()
-                navigated = self.selected != previous_selected or self._pvp_split_selection != previous_split
-            elif event.key in nav['up']:
+            if event.key in nav['up']:
                 new_idx = self._find_spatial_neighbor('up')
                 if new_idx != self.selected:
                     self.selected = new_idx
-                    navigated = True
-                    self._ensure_visible()
+                else:
+                    # Fallback: merkez paneller arasında wrap
+                    self.selected = (self.selected - 1) % (max_nav + 1)
+                navigated = True
+                self._ensure_visible()
             elif event.key in nav['down']:
                 new_idx = self._find_spatial_neighbor('down')
                 if new_idx != self.selected:
                     self.selected = new_idx
-                    navigated = True
-                    self._ensure_visible()
+                else:
+                    self.selected = (self.selected + 1) % (max_nav + 1)
+                navigated = True
+                self._ensure_visible()
             elif event.key in nav['left']:
                 new_idx = self._find_spatial_neighbor('left')
                 if new_idx != self.selected:
@@ -2339,12 +2024,8 @@ class Menu:
                 (split_rect.right, split_rect.bottom),
             ]
 
-            split_origin = (split_rect.centerx, split_rect.centery)
-
             self.pvp_local_polygon = local_poly
             self.pvp_online_polygon = online_poly
-            self._register_nav_polygon('pvp_2_players', local_poly, target_name='pvp_local', pvp_split='local', group_origin=split_origin)
-            self._register_nav_polygon('pvp_2_players', online_poly, target_name='pvp_online', pvp_split='online', group_origin=split_origin)
 
             local_min_x = min(pt[0] for pt in local_poly)
             local_min_y = min(pt[1] for pt in local_poly)
@@ -3099,8 +2780,6 @@ class Menu:
             action_rect_map[action_key] = self._apply_layout_override_rect(action_key, action_rect, width, height, min_w=90, min_h=70)
 
         self._prewarm_dashboard_entry_assets(action_rect_map)
-        self._set_nav_option_keys(action_rect_map.keys())
-        self._clear_nav_geometries()
 
         mystery_lb_rect = pygame.Rect(x5, lower_start, col5, leaderboard_h)
         mystery_lb_rect = self._apply_layout_override_rect('steam_scores', mystery_lb_rect, width, height, min_w=180, min_h=140)
@@ -5505,6 +5184,7 @@ class ControlSettingsScreen:
             ('hard_drop',  t('gp_hard_drop'),       'button'),
             ('hold',       t('gp_hold'),            'button'),
             ('pause',      t('gp_pause'),           'button'),
+            ('main_menu_prompt', t('gp_main_menu_prompt'), 'button'),
             ('discard_held', t('gp_discard_held'),  'button'),
         ]
 
@@ -7983,12 +7663,8 @@ class MusicSettingsScreen:
                 return None
             if event.key == pygame.K_UP:
                 self.mode_selected = (self.mode_selected - 1) % len(self.modes)
-                visible_h = max(1, self.screen.get_height() - ((getattr(self, '_title_rect', None).bottom + 40) if getattr(self, '_title_rect', None) else 150) - 120)
-                self.mode_scroll = self._ensure_visible(self.mode_selected, 74, 12, visible_h, self.mode_scroll)
             elif event.key == pygame.K_DOWN:
                 self.mode_selected = (self.mode_selected + 1) % len(self.modes)
-                visible_h = max(1, self.screen.get_height() - ((getattr(self, '_title_rect', None).bottom + 40) if getattr(self, '_title_rect', None) else 150) - 120)
-                self.mode_scroll = self._ensure_visible(self.mode_selected, 74, 12, visible_h, self.mode_scroll)
             elif event.key in (pygame.K_RETURN, pygame.K_SPACE):
                 mode_key = self.modes[self.mode_selected][0]
                 self._load_playlist('mode', mode_key)
@@ -8027,12 +7703,8 @@ class MusicSettingsScreen:
                 return None
             if event.key == pygame.K_UP:
                 self.playlist_selected = (self.playlist_selected - 1) % total_items
-                visible_h = max(1, self.screen.get_height() - ((getattr(self, '_title_rect', None).bottom + 40) if getattr(self, '_title_rect', None) else 150) - 120)
-                self.playlist_scroll = self._ensure_visible(self.playlist_selected, 74, 12, visible_h, self.playlist_scroll)
             elif event.key == pygame.K_DOWN:
                 self.playlist_selected = (self.playlist_selected + 1) % total_items
-                visible_h = max(1, self.screen.get_height() - ((getattr(self, '_title_rect', None).bottom + 40) if getattr(self, '_title_rect', None) else 150) - 120)
-                self.playlist_scroll = self._ensure_visible(self.playlist_selected, 74, 12, visible_h, self.playlist_scroll)
             elif event.key in (pygame.K_RETURN, pygame.K_SPACE):
                 if self.playlist_selected == 0:
                     self._open_picker()

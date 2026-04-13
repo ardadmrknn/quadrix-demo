@@ -3342,10 +3342,6 @@ def main():
             return 'slide_left'
         if from_state == 'campaign_select' and to_state == 'menu':
             return 'slide_right'
-        if from_state == 'piece_workshop' and to_state == 'block_styles':
-            return 'slide_left'
-        if from_state == 'block_styles' and to_state == 'piece_workshop':
-            return 'slide_right'
         # Showcase ekranları (ana menüden açılan): ileri sola, geri sağa
         showcase_states = ['piece_workshop', 'block_styles', 'block_workshop']
         if from_state == 'menu' and to_state in showcase_states:
@@ -3393,11 +3389,8 @@ def main():
         # Oyun/PvP sırasında gamepad bağlamını 'game' olarak ayarla.
         # Böylece B=rotate, A=hard_drop vb. oyun aksiyonları çalışır.
         # Menü/ayar ekranlarında bağlam 'menu' kalır (B=back, A=confirm).
-        # Not: online_pvp kendi bağlam yönetimini yapar (lobi=menu, playing=game).
         try:
-            if state == 'online_pvp':
-                pass  # online_pvp kendi set_context + update çağrısını yapar
-            elif state in ('game', 'pvp', 'coop'):
+            if state in ('game', 'pvp'):
                 gamepad_mgr.set_context('game')
             else:
                 gamepad_mgr.set_context('menu')
@@ -3409,12 +3402,10 @@ def main():
         # event kuyruğuna post et.  Böylece tüm handler'lar (menü, oyun,
         # ayarlar vb.) otomatik olarak gamepad girişini klavye olayı
         # gibi işler — ek kod değişikliği gerekmez.
-        # online_pvp kendi handle_input() içinde update() çağırır (çift güncelleme önlenir).
         try:
-            if state != 'online_pvp':
-                gp_events = gamepad_mgr.update(delta_ms)
-                for gp_ev in gp_events:
-                    pygame.event.post(gp_ev)
+            gp_events = gamepad_mgr.update(delta_ms)
+            for gp_ev in gp_events:
+                pygame.event.post(gp_ev)
         except Exception:
             pass
         # ────────────────────────────────────────────────────────────────
@@ -3444,14 +3435,14 @@ def main():
                     menu.notify_menu_activated()
                 except Exception:
                     pass
-            # Coop kendi açılış perdesini çiziyor; aynı anda global transition başlatma.
-            if state != 'coop':
-                transition_type = _get_transition_type(_previous_state, state)
-                if 'campaign_select' in (_previous_state, state):
-                    duration = 450
-                else:
-                    duration = 350
-                start_screen_transition(screen, None, duration_ms=duration, transition_type=transition_type)
+            # Geçiş efekti başlat (state zaten değişti, sadece görsel efekt)
+            transition_type = _get_transition_type(_previous_state, state)
+            # Campaign select için daha uzun süre (daha belirgin efekt)
+            if 'campaign_select' in (_previous_state, state):
+                duration = 450
+            else:
+                duration = 350
+            start_screen_transition(screen, None, duration_ms=duration, transition_type=transition_type)
             _previous_state = state
             # Menü ekranlarında basılı tutma tekrarı aktif, oyunda devre dışı
             if state in ('game', 'pvp', 'coop', 'online_pvp'):

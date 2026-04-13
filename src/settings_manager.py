@@ -64,7 +64,7 @@ DEFAULT_CONTROLS = {
         'hold2': {'primary': 2, 'secondary': -1},         # X (Xbox) / Square (PS)
         'pause': {'primary': 6, 'secondary': -1},         # Start / Options / +
         'restart': {'primary': 3, 'secondary': -1},       # Y (Xbox) / Triangle (PS)
-        'discard_held': {'primary': 3, 'secondary': -1},  # Y (Xbox) / Triangle (PS)
+        'discard_held': {'primary': 7, 'secondary': -1},  # L3 (Left Stick Click)
         'lt': {'primary': 100, 'secondary': -1},          # LT / L2 (trigger pseudo-index)
         'rt': {'primary': 101, 'secondary': -1},          # RT / R2 (trigger pseudo-index)
         # Kart modu butonlari (varsayilan: atanmis degil)
@@ -81,24 +81,8 @@ DEFAULT_CONTROLS = {
         'menu_back': {'primary': 1, 'secondary': -1},     # B / Circle - menüde geri
         'menu_tab_next': {'primary': 10, 'secondary': -1}, # RB / R1 - sonraki sekme
         'menu_tab_prev': {'primary': 9, 'secondary': -1},  # LB / L1 - önceki sekme
+        'main_menu_prompt': {'primary': -1, 'secondary': -1},
     },
-}
-
-PARTICLE_EFFECT_LEVELS = ('off', 'low', 'medium', 'high')
-PARTICLE_EFFECT_SLIDER_TO_LEVEL = {
-    0: 'off',
-    1: 'low',
-    2: 'medium',
-    3: 'high',
-}
-PARTICLE_EFFECT_LEVEL_TO_SLIDER = {
-    level: slider for slider, level in PARTICLE_EFFECT_SLIDER_TO_LEVEL.items()
-}
-PARTICLE_EFFECT_MULTIPLIERS = {
-    'off': 0.0,
-    'low': 0.55,
-    'medium': 1.0,
-    'high': 1.7,
 }
 
 DEFAULT_MENU_MUSIC_PLAYLIST = ['main_1']
@@ -207,7 +191,7 @@ class SettingsManager:
             # Menü/UI panel şeffaflığı (RetroStyle glass/panel/button yüzeyleri).
             # 0.0 (tamamen saydam) - 1.0 (opak)
             'menu_transparency': 1.0,
-            'particle_effects': 'medium',  # off, low, medium, high
+            'particle_effects': True,  # Parçacık efektleri varsayılan açık
             'animation_level': 'medium-high',  # Animasyon seviyesi: low, medium, medium-high, high
             'block_styles': {},
             'block_workshop_board': [],
@@ -470,64 +454,6 @@ class SettingsManager:
             return 'normal'
         return preset
 
-    @classmethod
-    def normalize_particle_effects_value(cls, value):
-        if isinstance(value, bool):
-            return 'medium' if value else 'off'
-
-        if isinstance(value, (int, float)) and not isinstance(value, bool):
-            slider = max(0, min(3, int(round(value))))
-            return PARTICLE_EFFECT_SLIDER_TO_LEVEL.get(slider, 'medium')
-
-        text = str(value or '').strip().lower()
-        if not text:
-            return 'medium'
-
-        aliases = {
-            'false': 'off',
-            '0': 'off',
-            'off': 'off',
-            'kapali': 'off',
-            'kapalı': 'off',
-            'true': 'medium',
-            'on': 'medium',
-            'acik': 'medium',
-            'açık': 'medium',
-            '1': 'low',
-            '2': 'medium',
-            '3': 'high',
-            'low': 'low',
-            'az': 'low',
-            'medium': 'medium',
-            'orta': 'medium',
-            'high': 'high',
-            'cok': 'high',
-            'çok': 'high',
-        }
-        normalized = aliases.get(text, text)
-        if normalized not in PARTICLE_EFFECT_LEVELS:
-            return 'medium'
-        return normalized
-
-    @classmethod
-    def particle_effects_slider_value(cls, value) -> int:
-        level = cls.normalize_particle_effects_value(value)
-        return PARTICLE_EFFECT_LEVEL_TO_SLIDER.get(level, 2)
-
-    @classmethod
-    def particle_effects_level_from_slider(cls, slider_value: int) -> str:
-        slider = max(0, min(3, int(round(slider_value))))
-        return PARTICLE_EFFECT_SLIDER_TO_LEVEL.get(slider, 'medium')
-
-    @classmethod
-    def particle_effects_multiplier_for_value(cls, value) -> float:
-        level = cls.normalize_particle_effects_value(value)
-        return float(PARTICLE_EFFECT_MULTIPLIERS.get(level, 1.0))
-
-    @classmethod
-    def particle_effects_enabled_for_value(cls, value) -> bool:
-        return cls.normalize_particle_effects_value(value) != 'off'
-
     def _normalize_display_settings_inplace(self, data):
         if not isinstance(data, dict):
             return False
@@ -544,13 +470,6 @@ class SettingsManager:
         )
         if data.get('ui_scale_preset') != normalized_preset:
             data['ui_scale_preset'] = normalized_preset
-            changed = True
-
-        normalized_particle_effects = self.normalize_particle_effects_value(
-            data.get('particle_effects', self.default_settings.get('particle_effects', 'medium'))
-        )
-        if data.get('particle_effects') != normalized_particle_effects:
-            data['particle_effects'] = normalized_particle_effects
             changed = True
 
         return changed
@@ -748,17 +667,6 @@ class SettingsManager:
     def get(self, key, default=None):
         """Ayar değerini al"""
         return self.settings.get(key, default)
-
-    def get_particle_effects_level(self) -> str:
-        return self.normalize_particle_effects_value(
-            self.get('particle_effects', self.default_settings.get('particle_effects', 'medium'))
-        )
-
-    def get_particle_effects_multiplier(self) -> float:
-        return self.particle_effects_multiplier_for_value(self.get_particle_effects_level())
-
-    def particle_effects_enabled(self) -> bool:
-        return self.get_particle_effects_level() != 'off'
     
     def set(self, key, value):
         """Ayar değerini güncelle ve kaydet"""
