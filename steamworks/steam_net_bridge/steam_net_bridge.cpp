@@ -631,7 +631,7 @@ private:
     {
         std::string escaped;
         escaped.reserve(value.size());
-        for (char ch : value)
+        for (unsigned char ch : value)
         {
             switch (ch)
             {
@@ -650,8 +650,24 @@ private:
             case '\t':
                 escaped += "\\t";
                 break;
+            case '\b':
+                escaped += "\\b";
+                break;
+            case '\f':
+                escaped += "\\f";
+                break;
             default:
-                escaped += ch;
+                if (ch < 0x20)
+                {
+                    // JSON spec: control characters must be escaped as \uXXXX
+                    char buf[8];
+                    snprintf(buf, sizeof(buf), "\\u%04x", ch);
+                    escaped += buf;
+                }
+                else
+                {
+                    escaped += static_cast<char>(ch);
+                }
                 break;
             }
         }
@@ -989,22 +1005,29 @@ void SteamNetBridge::OnLobbyDataUpdate(LobbyDataUpdate_t *pParam)
 
     if (hasPendingRequest && !is_lobby_metadata_ready_for_listing(lobbyId))
     {
-        push_event("lobby_data_updated",
-                   pParam->m_ulSteamIDLobby,
-                   std::to_string(pParam->m_ulSteamIDMember));
         if (retry_pending_lobby_data_request(lobbyId))
         {
+            // Retry başarılı — daha sonra tekrar callback gelecek.
+            // Yine de mevcut durumu Python'a bildir (JSON payload ile).
+            push_event("lobby_data_updated",
+                       pParam->m_ulSteamIDLobby,
+                       build_lobby_found_payload(lobbyId));
             return;
         }
+        // Retry hakkı doldu — mevcut snapshot'ı gönder
     }
 
     if (hasPendingRequest)
     {
         consume_pending_lobby_data_request(lobbyIdValue);
     }
+
+    // Metadata güncellemesini Python'a bildir.
+    // Ayrıca lobinin güncel metadata snapshot'ını da gönder;
+    // Python tarafı live-read yapmak yerine bu payload'ı kullanabilir.
     push_event("lobby_data_updated",
                pParam->m_ulSteamIDLobby,
-               std::to_string(pParam->m_ulSteamIDMember));
+               build_lobby_found_payload(lobbyId));
 }
 
 void SteamNetBridge::OnGameLobbyJoinRequested(GameLobbyJoinRequested_t *pParam)

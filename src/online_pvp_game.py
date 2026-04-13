@@ -481,6 +481,7 @@ class OnlinePvPGame:
         self._lobby_list_filter: str = 'all'
         self._lobby_list_scroll = 0
         self._lobby_list_fetching = False
+        self._lobby_list_fetch_start_time: float = 0
         self._auto_lobby_refresh_requested = False
         self._auto_lobby_refresh_timer = 0.0
         self._auto_lobby_refresh_interval = 10000.0
@@ -515,6 +516,7 @@ class OnlinePvPGame:
         self._authorized_private_join_lobby_id: int = 0
         self._authorized_private_join_code: str = ''
         self._invite_authorized_lobby_id: int = 0
+        self._pending_access_revalidation_lobby_id: int = 0
 
         # ─── Görsel Efektler (local PvP ile birebir) ───
         self.effects_enabled = True
@@ -1321,8 +1323,23 @@ class OnlinePvPGame:
             return True
 
         snapshot = self._get_lobby_metadata_snapshot(current_lobby_id, prefer_live=True)
+
         if snapshot.get('visibility') == 'unknown' and not snapshot.get('metadata_ready'):
+            # Metadata henüz propague olmamış — koşullu olarak izin ver.
+            # Davet veya kod ile giriş yapılmışsa güvenle geçir;
+            # aksi halde lobby_data_updated event'inde tekrar doğrulama yapılacak.
+            authorized_by_code = (
+                self._authorized_private_join_lobby_id == current_lobby_id
+                and bool(self._authorized_private_join_code)
+            )
+            authorized_by_invite = self._invite_authorized_lobby_id == current_lobby_id
+            if authorized_by_code or authorized_by_invite:
+                return True
+            # Yetkilendirme yok ama metadata da yok — geçici izin ver,
+            # metadata geldiğinde _on_lobby_data_updated tekrar kontrol edecek
+            self._pending_access_revalidation_lobby_id = current_lobby_id
             return True
+
         if not snapshot.get('requires_code'):
             self._clear_private_join_authorization(current_lobby_id)
             return True
@@ -1518,6 +1535,17 @@ class OnlinePvPGame:
                 payload = {}
         snapshot = self._get_lobby_metadata_snapshot(ev.steam_id, payload)
 
+        # Payload'ta metadata gelmemişse (cross-platform propagasyon
+        # gecikmesi), hemen live-read dene. Steam yerel cache'inde
+        # metadata zaten bulunabilir; C++ bridge payload'u oluştururken
+        # henüz replike olmamış olsa bile Python tarafından doğrudan
+        # GetLobbyData çağrısı başarılı olabilir.
+        if snapshot['visibility'] == 'unknown':
+            live_snapshot = self._get_lobby_metadata_snapshot(
+                ev.steam_id, payload, prefer_live=True)
+            if live_snapshot['visibility'] != 'unknown':
+                snapshot = live_snapshot
+
         member_count = 0
         try:
             if isinstance(payload.get('members'), int):
@@ -1554,24 +1582,47 @@ class OnlinePvPGame:
 
     def _on_lobby_data_updated(self, ev: NetEvent):
         current_lobby_id = int(getattr(self.net, 'lobby_id', 0) or 0)
-        snapshot = self._get_lobby_metadata_snapshot(ev.steam_id, prefer_live=True)
-        self._refresh_cached_lobby_metadata(ev.steam_id, prefer_live=True)
+
+        # C++ bridge artık lobby_data_updated event'inde güncel metadata
+        # payload'ını JSON olarak gönderebilir. Varsa parse et.
+        payload = None
+        if ev.data:
+            try:
+                parsed = json.loads(ev.data)
+                if isinstance(parsed, dict):
+                    payload = parsed
+            except (json.JSONDecodeError, ValueError, TypeError):
+                payload = None
+
+        snapshot = self._get_lobby_metadata_snapshot(
+            ev.steam_id, payload, prefer_live=True)
+        self._refresh_cached_lobby_metadata(
+            ev.steam_id, payload, prefer_live=True)
         self._promote_deferred_lobby_entry(ev.steam_id, snapshot)
         self._try_resolve_pending_code_join(ev.steam_id, snapshot)
         if current_lobby_id and int(ev.steam_id or 0) == current_lobby_id:
+            # Ertelenmiş erişim yeniden-doğrulaması: _validate_joined_lobby_access
+            # metadata unknown iken geçici izin vermiş olabilir. Metadata
+            # artık hazır olduğunda tekrar doğrula.
+            pending_revalidation = int(
+                getattr(self, '_pending_access_revalidation_lobby_id', 0) or 0)
+            if pending_revalidation == current_lobby_id and snapshot.get('metadata_ready'):
+                self._pending_access_revalidation_lobby_id = 0
             self._validate_joined_lobby_access()
 
     def _on_lobby_list_complete(self, ev: NetEvent):
         """Lobi listesi tamamlandı — sonuçları onayla."""
         self._lobby_list_fetching = False
+        self._lobby_list_fetch_start_time = 0
         self._lobby_list = self._pending_lobby_list[:]
         self._pending_lobby_list.clear()
         self._lobby_list_scroll = 0
-        count = len(self._lobby_list)
-        print(f"[OnlinePvP] {count} lobi bulundu.")
 
-        # Kod ile arama yapılıyorsa otomatik katıl
+        # Kod ile arama yapılıyorsa filtre uygulamadan önce işle.
+        # Kod araması private lobiler dahil tüm sonuçlara ihtiyaç duyar.
         if self._searching_by_code:
+            count = len(self._lobby_list)
+            print(f"[OnlinePvP] Kod araması: {count} lobi arasında aranıyor.")
             self._searching_by_code = False
             self._code_search_retry_use_full_scan = False
             matched_lobby_id, pending_metadata, ambiguous_match = self._find_lobby_match_by_code(self._search_code)
@@ -1601,6 +1652,23 @@ class OnlinePvPGame:
             self._search_code = ''
             return
 
+        # Client-side visibility filtreleme.
+        # Sunucu tarafı filtre kaldırıldı (cross-platform metadata
+        # propagasyonu güvenilmez). Filtreleme burada yapılır.
+        # Not: 'public' filtresi unknown lobileri de gösterir —
+        # metadata propague olduktan sonra private olanlar
+        # _refresh_unknown_lobby_entries tarafından güncellenir
+        # ve bir sonraki list refresh'te filtrelenir.
+        if self._lobby_list_filter == 'public':
+            self._lobby_list = [
+                l for l in self._lobby_list
+                if str(l.get('visibility', 'unknown') or 'unknown').lower()
+                in ('public', 'unknown')
+            ]
+
+        count = len(self._lobby_list)
+        print(f"[OnlinePvP] {count} lobi bulundu (filtre={self._lobby_list_filter}).")
+
         if count == 0:
             self._status_msg = t('no_lobbies_found', 'Lobi bulunamadı')
             self._status_timer = 2.5
@@ -1609,9 +1677,23 @@ class OnlinePvPGame:
         # Cross-platform metadata propagasyonu gecikmeli olabilir; deferred
         # refresh zamanlayıcısını sıfırlayarak hemen tazeleme dene.
         self._refresh_unknown_lobby_entries()
+        # Eğer public filtresi aktifse, refresh sonrası artık private olduğu
+        # anlaşılan lobileri listeden kaldır.
+        if self._lobby_list_filter == 'public':
+            self._lobby_list = [
+                l for l in self._lobby_list
+                if str(l.get('visibility', 'unknown') or 'unknown').lower()
+                in ('public', 'unknown')
+            ]
 
     def _refresh_unknown_lobby_entries(self):
-        """_lobby_list'teki unknown visibility'li entry'leri live-read ile güncelle."""
+        """_lobby_list'teki unknown visibility'li entry'leri live-read ile güncelle.
+
+        Cross-platform metadata propagasyonu gecikmeli olabilir;
+        her 500ms'de bir live read yaparak henüz çözülmemiş lobileri
+        günceller. Ek olarak, eğer live read'lerden sadece lobby_code
+        geldiyse visibility'yi türetir.
+        """
         if not getattr(self, '_net_initialized', False):
             return
         for lobby in self._lobby_list:
@@ -1628,12 +1710,54 @@ class OnlinePvPGame:
                 lobby['requires_code'] = bool(snapshot.get('requires_code', False))
                 lobby['metadata_ready'] = bool(snapshot.get('metadata_ready', False))
                 self._deferred_lobby_entries.pop(lobby_id, None)
+                continue
+
+            # Live read hala unknown döndü — lobby_code veya
+            # lobby_code_full alanlarını doğrudan oku ve türet.
+            # Cross-platform'da bazen sadece bazı alanlar propague olur.
+            try:
+                raw_code = self.net.get_lobby_data_for(lobby_id, 'lobby_code')
+                raw_code_full = self.net.get_lobby_data_for(lobby_id, 'lobby_code_full')
+                raw_game = self.net.get_lobby_data_for(lobby_id, 'game')
+            except Exception:
+                raw_code = ''
+                raw_code_full = ''
+                raw_game = ''
+
+            if raw_code or raw_code_full:
+                # lobby_code var → private lobi olduğunu biliyoruz
+                lobby['visibility'] = 'private'
+                lobby['requires_code'] = True
+                lobby['code'] = raw_code or _resolve_private_lobby_code(lobby_id, True, '')
+                lobby['metadata_ready'] = True
+                self._deferred_lobby_entries.pop(lobby_id, None)
+                try:
+                    raw_host = self.net.get_lobby_data_for(lobby_id, 'host_name')
+                    if raw_host:
+                        lobby['name'] = raw_host
+                except Exception:
+                    pass
+            elif raw_game == 'quadrix':
+                # game=quadrix metadata'sı var ama visibility yok —
+                # muhtemelen public lobi (private olsaydı lobby_code olurdu)
+                lobby['visibility'] = 'public'
+                lobby['requires_code'] = False
+                lobby['metadata_ready'] = True
+                lobby['code'] = ''
+                self._deferred_lobby_entries.pop(lobby_id, None)
+                try:
+                    raw_host = self.net.get_lobby_data_for(lobby_id, 'host_name')
+                    if raw_host:
+                        lobby['name'] = raw_host
+                except Exception:
+                    pass
 
     def _on_lobby_error(self, ev: NetEvent):
         """Lobi oluşturma/katılma hatası."""
         print(f"[OnlinePvP] Lobi hatası: {ev.type} — {ev.data}")
         self.online_state = OnlineState.LOBBY_MENU
         self._lobby_list_fetching = False
+        self._lobby_list_fetch_start_time = 0
         # Detaylı hata mesajı oluştur
         error_detail = ''
         if ev.data:
@@ -1652,6 +1776,7 @@ class OnlinePvPGame:
     def _on_lobby_list_error(self, ev: NetEvent):
         """Lobi listesi alınamadı."""
         self._lobby_list_fetching = False
+        self._lobby_list_fetch_start_time = 0
         self._lobby_list = []
         self._code_search_retry_count = 0
         self._code_search_retry_timer = 0.0
@@ -1682,17 +1807,30 @@ class OnlinePvPGame:
         self._status_timer = 2.0
 
     def _request_lobby_list(self) -> bool:
-        """Seçili filtreye göre lobi listesini yenile."""
+        """Seçili filtreye göre lobi listesini yenile.
+
+        'public' filter: Server-side + client-side visibility filtresi.
+        'all' filter: Tüm Quadrix lobileri (private dahil).
+
+        Sunucu tarafı filtre cross-platform metadata propagasyonuna
+        bağlıdır; yeni oluşturulan lobiler metadata replicate olana
+        kadar filtre tarafından yanlış elenebilir. Bu nedenle 'public'
+        filtre mod yalnızca UI'daki ek client-side filtreyle desteklenir.
+        """
         if not self._init_networking():
             return False
         if self._lobby_list_fetching:
             return True
         self._lobby_list_fetching = True
+        self._lobby_list_fetch_start_time = time.time()
         self._auto_lobby_refresh_timer = self._auto_lobby_refresh_interval
         self._pending_lobby_list.clear()
         self._deferred_lobby_entries.clear()
-        if self._lobby_list_filter == 'public':
-            self.net.add_lobby_search_filter('visibility', 'public')
+        # Not: Sunucu tarafı visibility filtresi kaldırıldı.
+        # Cross-platform metadata propagasyon gecikmeleri nedeniyle
+        # sunucu tarafı filtre özel lobileri herkese açık gibi
+        # gösterebilir veya yeni oluşturulan lobileri tamamen gizleyebilir.
+        # Filtreleme artık _on_lobby_list_complete içinde client-side yapılır.
         self.net.request_lobby_list(worldwide=True)
         return True
 
@@ -1703,12 +1841,16 @@ class OnlinePvPGame:
         self._searching_by_code = True
         self._search_code = normalized_code
         self._lobby_list_fetching = True
+        self._lobby_list_fetch_start_time = time.time()
         self._pending_lobby_list.clear()
         self._deferred_lobby_entries.clear()
         self._code_search_retry_use_full_scan = bool(fallback_scan)
         if fallback_scan:
+            # Tam tarama: Tüm Quadrix lobilerini getir, client-side kod eşleştir
             self.net.request_lobby_list(worldwide=True)
             return
+        # Önce sunucu tarafı lobby_code filtresi dene (hızlı ama
+        # cross-platform metadata gecikmelerinde başarısız olabilir)
         self.net.search_lobby_by_code(normalized_code)
 
     def _set_lobby_list_filter(self, lobby_filter: str, refresh: bool = True) -> bool:
@@ -1723,15 +1865,23 @@ class OnlinePvPGame:
         return changed
 
     def _code_search_fail_or_retry(self):
-        """Kod araması başarısız — retry hakkı varsa zamanlayıcı kur, yoksa hata göster."""
+        """Kod araması başarısız — retry hakkı varsa zamanlayıcı kur, yoksa hata göster.
+
+        İlk retry'dan itibaren full scan (worldwide, filtre yok) kullanır.
+        Cross-platform metadata propagasyon gecikmelerinde sunucu tarafı
+        lobby_code filtresi boş döner; full scan + client-side kod karşılaştırma
+        + lobby_id türetmeli eşleştirme çok daha güvenilirdir.
+        """
         if self._code_search_retry_count < 2 and self._search_code:
             self._code_search_retry_count += 1
-            self._code_search_retry_timer = 1500.0  # 1.5 saniye
+            self._code_search_retry_timer = 1200.0  # 1.2 saniye (daha hızlı retry)
             self._code_search_retry_code = self._search_code
-            self._code_search_retry_use_full_scan = self._code_search_retry_count >= 2
+            # İlk retry'dan itibaren full scan kullan — sunucu tarafı
+            # lobby_code filtresi cross-platform'da güvenilmez
+            self._code_search_retry_use_full_scan = True
             self._status_msg = t('searching_by_code', 'Lobi kodu aranıyor...')
             self._status_timer = 3.0
-            print(f"[OnlinePvP] Kod araması retry #{self._code_search_retry_count} — 1.5s sonra tekrar denenecek")
+            print(f"[OnlinePvP] Kod araması retry #{self._code_search_retry_count} — full scan ile 1.2s sonra tekrar denenecek")
         else:
             self._code_search_retry_count = 0
             self._code_search_retry_timer = 0.0
@@ -1773,8 +1923,10 @@ class OnlinePvPGame:
         self._code_search_retry_code = ''
         self._code_search_retry_use_full_scan = False
         self._clear_private_join_authorization()
+        self._pending_access_revalidation_lobby_id = 0
         self._lobby_list_filter = 'all'
         self._lobby_list_fetching = False
+        self._lobby_list_fetch_start_time = 0
         self._auto_lobby_refresh_requested = False
         self._auto_lobby_refresh_timer = 0.0
         self._auto_connect_retry_timer = 0.0
@@ -3316,6 +3468,25 @@ class OnlinePvPGame:
             if self._auto_lobby_refresh_timer <= 0:
                 self._request_lobby_list()
 
+        # Lobby list fetching timeout — eğer 8+ saniye boyunca callback
+        # gelmezse (lobby_list_complete veya lobby_list_failed kaybolmuş),
+        # _lobby_list_fetching'i sıfırla. Aksi halde UI sonsuza kadar
+        # "Aranıyor..." durumunda takılır.
+        if (
+            self._lobby_list_fetching
+            and self._lobby_list_fetch_start_time > 0
+            and (time.time() - self._lobby_list_fetch_start_time) > 8.0
+        ):
+            print("[OnlinePvP] Lobi listesi fetch timeout (8s) — sıfırlanıyor")
+            self._lobby_list_fetching = False
+            if self._searching_by_code:
+                self._searching_by_code = False
+                self._code_search_fail_or_retry()
+            elif not self._lobby_list:
+                self._lobby_list = self._pending_lobby_list[:]
+                self._pending_lobby_list.clear()
+            self._lobby_list_fetch_start_time = 0
+
         # Kod araması retry zamanlayıcısı — sadece LOBBY_MENU'deyken çalışır
         if (
             self.online_state == OnlineState.LOBBY_MENU
@@ -3356,6 +3527,26 @@ class OnlinePvPGame:
             if self._deferred_lobby_refresh_timer <= 0.0:
                 self._refresh_deferred_lobby_entries()
                 self._refresh_unknown_lobby_entries()
+                # Unknown lobiler 10+ saniye boyunca çözülemediyse, listeden kaldır.
+                # Eski/bozuk lobiler "Lobi yükleniyor" durumunda sonsuza kadar
+                # kalmasın — kullanıcı deneyimini bozar.
+                _now = time.time()
+                _UNKNOWN_LOBBY_TIMEOUT_S = 10.0
+                _stale_ids: set[int] = set()
+                for _lobby in getattr(self, '_lobby_list', []):
+                    if str(_lobby.get('visibility', '') or '').lower() != 'unknown':
+                        continue
+                    _found_t = float(_lobby.get('found_time', 0) or 0)
+                    if _found_t > 0 and (_now - _found_t) > _UNKNOWN_LOBBY_TIMEOUT_S:
+                        _stale_ids.add(int(_lobby.get('id', 0) or 0))
+                if _stale_ids:
+                    self._lobby_list = [
+                        l for l in self._lobby_list
+                        if int(l.get('id', 0) or 0) not in _stale_ids
+                    ]
+                    for _sid in _stale_ids:
+                        self._deferred_lobby_entries.pop(_sid, None)
+                    print(f"[OnlinePvP] {len(_stale_ids)} stale unknown lobi kaldırıldı")
                 self._deferred_lobby_refresh_timer = self._DEFERRED_LOBBY_REFRESH_INTERVAL_MS
 
         if self._net_initialized and self.online_state in (OnlineState.WAITING, OnlineState.READY_CHECK):
@@ -4643,7 +4834,7 @@ class OnlinePvPGame:
                 hover = ir.collidepoint(mouse_pos)
                 raw_requires_code = bool(lobby.get('requires_code', False))
                 l_code = str(lobby.get('code', '') or '')
-                raw_visibility = str(lobby.get('visibility', 'public') or 'public').lower()
+                raw_visibility = str(lobby.get('visibility', 'unknown') or 'unknown').lower()
                 visibility, requires_code = _resolve_lobby_display_state(
                     raw_visibility,
                     raw_requires_code,

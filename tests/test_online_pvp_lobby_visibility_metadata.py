@@ -23,9 +23,13 @@ def _make_game():
     game._lobby_list_scroll = 0
     game._deferred_lobby_entries = {}
     game._lobby_list_fetching = False
+    game._lobby_list_fetch_start_time = 0
+    game._lobby_list_filter = 'all'
+    game._net_initialized = False
     game._authorized_private_join_lobby_id = 0
     game._authorized_private_join_code = ''
     game._invite_authorized_lobby_id = 0
+    game._pending_access_revalidation_lobby_id = 0
     game._searching_by_code = False
     game._search_code = ''
     game._code_search_retry_count = 0
