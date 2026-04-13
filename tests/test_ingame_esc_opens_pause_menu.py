@@ -95,6 +95,32 @@ def test_game_over_esc_returns_menu(monkeypatch):
     assert result == 'menu'
 
 
+def test_game_over_ignores_gamepad_mouse_click(monkeypatch):
+    game = _make_game_instance()
+    game.game_over = True
+    game._game_over_peek_active = False
+    game._game_over_peek_rect = None
+    restart_calls = []
+
+    class _HitRect:
+        def collidepoint(self, pos):
+            return True
+
+    game._game_over_click_targets = {'restart': _HitRect(), 'menu': _HitRect()}
+    game.restart = lambda: restart_calls.append(True)
+
+    monkeypatch.setattr(game_module, 'normalize_mouse_pos', lambda pos: pos)
+    monkeypatch.setattr(
+        game_module.pygame.event,
+        'get',
+        lambda: [types.SimpleNamespace(type=game_module.pygame.MOUSEBUTTONDOWN, button=1, pos=(12, 34), from_gamepad=True)],
+    )
+
+    game.handle_input()
+
+    assert restart_calls == []
+
+
 # ---------------------------------------------------------------------------
 # PvP game_over + ESC regression
 # ---------------------------------------------------------------------------
@@ -133,6 +159,33 @@ def test_pvp_game_over_esc_returns_menu(monkeypatch):
 
     assert result == 'menu'
     assert pvp.paused is False
+
+
+def test_pvp_game_over_ignores_gamepad_mouse_click(monkeypatch):
+    pvp = _make_pvp_instance()
+    pvp.game_over = True
+    pvp._game_over_peek_active = False
+    pvp._game_over_peek_rect = None
+    restart_calls = []
+
+    class _HitRect:
+        def collidepoint(self, pos):
+            return True
+
+    pvp._game_over_restart_rect = _HitRect()
+    pvp._game_over_menu_rect = _HitRect()
+    pvp.restart = lambda preserve_session=True: restart_calls.append(preserve_session)
+
+    monkeypatch.setattr(pvp_module, 'normalize_mouse_pos', lambda pos: pos)
+    monkeypatch.setattr(
+        pvp_module.pygame.event,
+        'get',
+        lambda: [types.SimpleNamespace(type=pvp_module.pygame.MOUSEBUTTONDOWN, button=1, pos=(12, 34), from_gamepad=True)],
+    )
+
+    pvp.handle_input()
+
+    assert restart_calls == []
 
 
 def test_pvp_gameplay_esc_opens_pause(monkeypatch):

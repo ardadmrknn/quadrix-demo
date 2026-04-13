@@ -395,6 +395,24 @@ class GuideScreen:
         # Falling blocks arka plan
         self.falling_blocks = get_shared_falling_blocks_layer()
 
+    def _set_selected_tab(self, tab_index: int) -> None:
+        """Seçili sekmeyi güvenli biçimde güncelle ve içerik durumunu sıfırla."""
+        if not GUIDE_SECTIONS:
+            self.selected_tab = 0
+            self.scroll_y = 0
+            self.card_index = 0
+            return
+
+        self.selected_tab = max(0, min(len(GUIDE_SECTIONS) - 1, int(tab_index)))
+        self.scroll_y = 0
+        self.card_index = 0
+
+    def _switch_tab(self, delta: int) -> None:
+        """Seçili sekmeyi göreli olarak değiştir."""
+        if not GUIDE_SECTIONS:
+            return
+        self._set_selected_tab(self.selected_tab + int(delta))
+
     def _ui_scale(self, min_scale: float = 0.72, max_scale: float = 1.24) -> float:
         return get_effective_scale(
             self.screen,
@@ -1037,79 +1055,41 @@ class GuideScreen:
             if event.key == pygame.K_t:
                 return self._get_tutorial_action()
             
-            # Tab değiştirme - Yukarı/Aşağı tuşları
+            # Yukarı/Aşağı - scroll
             if event.key == pygame.K_UP:
                 if self.scroll_y > 0:
                     self.scroll_y = max(0, self.scroll_y - scroll_step)
-                elif self.selected_tab == 2:
-                    # Önceki sayfa (3 kart geri)
-                    cards_per_page = 9
-                    if self.card_index >= cards_per_page:
-                        self.card_index = max(0, (self.card_index // cards_per_page - 1) * cards_per_page)
             
             elif event.key == pygame.K_DOWN:
                 if self.scroll_y < self.max_scroll:
                     self.scroll_y = min(self.max_scroll, self.scroll_y + scroll_step)
-                elif self.selected_tab == 2:
-                    # Sonraki sayfa (3 kart ileri)
-                    cards_per_page = 9
-                    next_page_start = ((self.card_index // cards_per_page) + 1) * cards_per_page
-                    if next_page_start < self.max_cards:
-                        self.card_index = next_page_start
+
+            # LB/RB (gamepad) -> K_LEFTBRACKET / K_RIGHTBRACKET sentetik tuşları.
+            # Bu kısayollar sekmeler arasında gezinmek için klavye akışından ayrı tutulur.
+            elif event.key == pygame.K_LEFTBRACKET:
+                self._switch_tab(-1)
+            elif event.key == pygame.K_RIGHTBRACKET:
+                self._switch_tab(1)
             
-            # Sol/Sağ - Kart sayfası veya tab değiştirme
+            # Sol/Sağ - sekme değiştirme
             elif event.key == pygame.K_LEFT:
-                if self.selected_tab == 2:
-                    # Önceki sayfa (3 kart geri)
-                    cards_per_page = 9
-                    if self.card_index >= cards_per_page:
-                        self.card_index = max(0, (self.card_index // cards_per_page - 1) * cards_per_page)
-                        self.scroll_y = 0
-                elif self.selected_tab > 0:
-                    self.selected_tab -= 1
-                    self.scroll_y = 0
-                    self.card_index = 0
+                self._switch_tab(-1)
             
             elif event.key == pygame.K_RIGHT:
-                if self.selected_tab == 2:
-                    # Sonraki sayfa (3 kart ileri)
-                    cards_per_page = 9
-                    next_page_start = ((self.card_index // cards_per_page) + 1) * cards_per_page
-                    if next_page_start < self.max_cards:
-                        self.card_index = next_page_start
-                        self.scroll_y = 0
-                elif self.selected_tab < len(GUIDE_SECTIONS) - 1:
-                    self.selected_tab += 1
-                    self.scroll_y = 0
-                    self.card_index = 0
+                self._switch_tab(1)
             
-            # Page Up/Down - Kart sayfası veya scroll
+            # Page Up/Down - scroll
             elif event.key == pygame.K_PAGEUP:
-                if self.selected_tab == 2:
-                    # Önceki sayfa (3 kart geri)
-                    cards_per_page = 9
-                    if self.card_index >= cards_per_page:
-                        self.card_index = max(0, (self.card_index // cards_per_page - 1) * cards_per_page)
-                else:
-                    self.scroll_y = max(0, self.scroll_y - self._s(200, minimum=140))
+                self.scroll_y = max(0, self.scroll_y - self._s(200, minimum=140))
             
             elif event.key == pygame.K_PAGEDOWN:
-                if self.selected_tab == 2:
-                    # Sonraki sayfa (3 kart ileri)
-                    cards_per_page = 9
-                    next_page_start = ((self.card_index // cards_per_page) + 1) * cards_per_page
-                    if next_page_start < self.max_cards:
-                        self.card_index = next_page_start
-                else:
-                    self.scroll_y = min(self.max_scroll, self.scroll_y + self._s(200, minimum=140))
+                self.scroll_y = min(self.max_scroll, self.scroll_y + self._s(200, minimum=140))
             
             # Tab numaraları (1-4)
             elif pygame.K_1 <= event.key <= pygame.K_4:
                 new_tab = event.key - pygame.K_1
                 if new_tab < len(GUIDE_SECTIONS):
-                    self.selected_tab = new_tab
-                    self.scroll_y = 0
-                    self.card_index = 0
+                    self._set_selected_tab(new_tab)
             
             # Tam ekran
             if is_fullscreen_toggle(event.key, getattr(event, 'mod', 0)):
@@ -1138,9 +1118,7 @@ class GuideScreen:
                 # Tab tıklama kontrolü
                 tab_clicked = self._check_tab_click(pos)
                 if tab_clicked is not None and tab_clicked != self.selected_tab:
-                    self.selected_tab = tab_clicked
-                    self.scroll_y = 0
-                    self.card_index = 0
+                    self._set_selected_tab(tab_clicked)
                     return None
 
                 if self._check_tutorial_button_click(pos):
@@ -1392,7 +1370,7 @@ class GuideScreen:
         
         retro_style.draw_glass_panel(self.screen, panel_rect, alpha=170, border_color=retro_style.primary, glow=True)
         
-        cache_key = (self.selected_tab, self.card_index if self.selected_tab == 2 else 0)
+        cache_key = self.selected_tab
         content_signature = self._content_cache_signature(width)
         if content_signature != self._last_content_signature or cache_key not in self._content_cache:
             self._content_cache.clear()
@@ -1486,11 +1464,7 @@ class GuideScreen:
     def _draw_hints(self, width: int, height: int):
         scale = self._ui_scale()
         hint_font = self._font(14, bold=False, minimum=10, scale=scale)
-        
-        if self.selected_tab == 2:
-            hint_text = t('guide_hint_cards_navigation')
-        else:
-            hint_text = t('guide_hint_navigation')
+        hint_text = t('guide_hint_navigation')
         
         hint_surf = retro_style.render_fit_text(
             hint_text,

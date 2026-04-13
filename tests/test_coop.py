@@ -689,3 +689,28 @@ def test_wants_mouse_visible_for_pause_and_game_over():
     cg.paused = False
     cg.game_over = True
     assert cg.wants_mouse_visible() is True
+
+
+def test_game_over_ignores_gamepad_mouse_click():
+    cg = CoopGame(sound_enabled=False, effects_enabled=False, screen=_Surf(), sound_manager=_SM())
+    cg.game_over = True
+    cg._game_over_peek_active = False
+    cg._game_over_peek_rect = None
+
+    class _HitRect:
+        def collidepoint(self, pos):
+            return True
+
+    restart_calls = []
+    cg._game_over_restart_rect = _HitRect()
+    cg._game_over_exit_rect = _HitRect()
+    cg.restart = lambda: restart_calls.append(True)
+
+    original_get = _pg.event.get
+    _pg.event.get = lambda: [types.SimpleNamespace(type=_pg.MOUSEBUTTONDOWN, button=1, pos=(10, 10), from_gamepad=True)]
+    try:
+        cg.handle_input()
+    finally:
+        _pg.event.get = original_get
+
+    assert restart_calls == []

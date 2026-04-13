@@ -34,6 +34,16 @@ from localization import t
 from ui_theme import UIColors, UIFonts
 from sweep_effects import SweepCatState, draw_rainbow_cat_sweep
 from asset_manager import load_image
+
+try:
+    from gamepad_manager import normalize_gamepad_event_button
+except ImportError:
+    def normalize_gamepad_event_button(event):
+        button = getattr(event, 'button', None)
+        if isinstance(button, (int, float)) and not isinstance(button, bool):
+            return int(button)
+        return None
+
 from screen_shake import (
     DEFAULT_SCREEN_SHAKE_DURATION_SECONDS,
     HARD_DROP_SCREEN_SHAKE_DURATION_SECONDS,
@@ -547,10 +557,11 @@ class CoopGame:
         if not getattr(self, '_pause_settings_active', False):
             return None
 
-        if event.type == pygame.JOYBUTTONDOWN:
+        event_button = normalize_gamepad_event_button(event)
+        if event_button is not None:
             try:
                 gp_cfg = self.settings_manager.get_controls().get('gamepad', {})
-                if event.button == _gp_btn(gp_cfg.get('menu_back', 1)):
+                if event_button == _gp_btn(gp_cfg.get('menu_back', 1)):
                     self._close_pause_settings()
                     return None
             except Exception:
@@ -1798,6 +1809,8 @@ class CoopGame:
             if event.type != pygame.KEYDOWN and event.type != pygame.KEYUP:
                 # Game over butonları
                 if self.game_over and event.type == pygame.MOUSEBUTTONDOWN and getattr(event, 'button', None) == 1:
+                    if getattr(event, 'from_gamepad', False):
+                        continue
                     pos = normalize_mouse_pos(getattr(event, 'pos', None)) or get_mouse_pos()
                     peek_rect = getattr(self, '_game_over_peek_rect', None)
                     if peek_rect is not None and peek_rect.collidepoint(pos):

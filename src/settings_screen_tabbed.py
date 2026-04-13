@@ -23,6 +23,35 @@ from localization import (
 from ui_language_profile import apply_language_ui_profile, get_font_for_language
 from menu import get_control_actions, get_mode_music_entries, get_campaign_phase_entries, BUILT_IN_TRACK_CHOICES, SUPPORTED_MUSIC_EXTENSIONS
 from gamepad_manager import get_gamepad_manager, reload_gamepad_settings
+
+try:
+    from gamepad_manager import normalize_gamepad_event_button, normalize_gamepad_trigger_event
+except ImportError:
+    def normalize_gamepad_event_button(event):
+        button = getattr(event, 'button', None)
+        if isinstance(button, (int, float)) and not isinstance(button, bool):
+            return int(button)
+        return None
+
+    def normalize_gamepad_trigger_event(event):
+        if getattr(event, 'type', None) != getattr(pygame, 'JOYAXISMOTION', None):
+            return None
+        axis = getattr(event, 'axis', None)
+        try:
+            axis_index = int(axis)
+        except Exception:
+            return None
+        if axis_index not in (4, 5):
+            return None
+        try:
+            trigger_val = float(getattr(event, 'value', 0.0))
+        except Exception:
+            trigger_val = 0.0
+        if trigger_val < 0.0:
+            trigger_val = (trigger_val + 1.0) / 2.0
+        if trigger_val >= 0.5:
+            return 100 if axis_index == 4 else 101
+        return None
 from ui_scaling import UI_SCALE_PRESETS, get_effective_scale, normalize_ui_scale_preset, scale_px
 
 
@@ -1838,22 +1867,21 @@ class TabbedSettingsScreen:
                     self._pending_keybind_item = None
                     self._pending_keybind_slot = 'primary'
                     return None
-                if event.type == pygame.JOYBUTTONDOWN:
-                    self._apply_captured_gamepad_button(event.button)
+                button_index = normalize_gamepad_event_button(event)
+                if button_index is not None:
+                    self._apply_captured_gamepad_button(button_index)
                     self._waiting_for_key = False
                     self._pending_keybind_item = None
                     self._pending_keybind_slot = 'primary'
                     self._swallow_next_keydown = True
                     return None
-                if event.type == pygame.JOYAXISMOTION and event.axis in (4, 5):
-                    trigger_val = (event.value + 1.0) / 2.0
-                    if trigger_val >= 0.5:
-                        trigger_index = 100 if event.axis == 4 else 101
-                        self._apply_captured_gamepad_button(trigger_index)
-                        self._waiting_for_key = False
-                        self._pending_keybind_item = None
-                        self._pending_keybind_slot = 'primary'
-                        self._swallow_next_keydown = True
+                trigger_index = normalize_gamepad_trigger_event(event)
+                if trigger_index is not None:
+                    self._apply_captured_gamepad_button(trigger_index)
+                    self._waiting_for_key = False
+                    self._pending_keybind_item = None
+                    self._pending_keybind_slot = 'primary'
+                    self._swallow_next_keydown = True
                     return None
                 return None
 

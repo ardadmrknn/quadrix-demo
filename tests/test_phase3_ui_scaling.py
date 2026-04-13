@@ -233,6 +233,92 @@ def test_guide_screen_content_cache_signature_tracks_language(monkeypatch):
     assert signature_tr != signature_en
 
 
+def test_guide_screen_lb_shortcut_switches_to_previous_tab(monkeypatch):
+    monkeypatch.setattr(guide_screen, 'get_shared_falling_blocks_layer', lambda *args, **kwargs: _DummyFx())
+
+    guide = guide_screen.GuideScreen(_FakeScreen(1366, 768))
+    guide.selected_tab = 2
+    guide.scroll_y = 120
+    guide.card_index = 9
+
+    event = types.SimpleNamespace(
+        type=guide_screen.pygame.KEYDOWN,
+        key=guide_screen.pygame.K_LEFTBRACKET,
+        mod=0,
+    )
+
+    guide.handle_input(event)
+
+    assert guide.selected_tab == 1
+    assert guide.scroll_y == 0
+    assert guide.card_index == 0
+
+
+def test_guide_screen_rb_shortcut_switches_to_next_tab(monkeypatch):
+    monkeypatch.setattr(guide_screen, 'get_shared_falling_blocks_layer', lambda *args, **kwargs: _DummyFx())
+
+    guide = guide_screen.GuideScreen(_FakeScreen(1366, 768))
+    guide.selected_tab = 2
+    guide.scroll_y = 120
+    guide.card_index = 9
+
+    event = types.SimpleNamespace(
+        type=guide_screen.pygame.KEYDOWN,
+        key=guide_screen.pygame.K_RIGHTBRACKET,
+        mod=0,
+    )
+
+    guide.handle_input(event)
+
+    assert guide.selected_tab == 3
+    assert guide.scroll_y == 0
+    assert guide.card_index == 0
+
+
+def test_guide_screen_left_on_cards_switches_to_previous_tab(monkeypatch):
+    monkeypatch.setattr(guide_screen, 'get_shared_falling_blocks_layer', lambda *args, **kwargs: _DummyFx())
+
+    guide = guide_screen.GuideScreen(_FakeScreen(1366, 768))
+    guide.selected_tab = 2
+    guide.scroll_y = 120
+    guide.card_index = 9
+
+    event = types.SimpleNamespace(
+        type=guide_screen.pygame.KEYDOWN,
+        key=guide_screen.pygame.K_LEFT,
+        mod=0,
+        from_gamepad=True,
+    )
+
+    guide.handle_input(event)
+
+    assert guide.selected_tab == 1
+    assert guide.scroll_y == 0
+    assert guide.card_index == 0
+
+
+def test_guide_screen_right_on_cards_switches_to_next_tab(monkeypatch):
+    monkeypatch.setattr(guide_screen, 'get_shared_falling_blocks_layer', lambda *args, **kwargs: _DummyFx())
+
+    guide = guide_screen.GuideScreen(_FakeScreen(1366, 768))
+    guide.selected_tab = 2
+    guide.scroll_y = 120
+    guide.card_index = 9
+
+    event = types.SimpleNamespace(
+        type=guide_screen.pygame.KEYDOWN,
+        key=guide_screen.pygame.K_RIGHT,
+        mod=0,
+        from_gamepad=True,
+    )
+
+    guide.handle_input(event)
+
+    assert guide.selected_tab == 3
+    assert guide.scroll_y == 0
+    assert guide.card_index == 0
+
+
 def test_graphics_menu_max_scroll_reuses_draw_visible_height(monkeypatch):
     monkeypatch.setattr(graphics_menu, 'get_shared_falling_blocks_layer', lambda *args, **kwargs: _DummyFx())
     monkeypatch.setattr(graphics_menu.retro_style, 'get_font', lambda *args, **kwargs: types.SimpleNamespace())

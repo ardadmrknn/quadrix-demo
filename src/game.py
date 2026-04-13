@@ -35,6 +35,15 @@ from platform_utils import get_display_flags, create_display, set_app_icon, norm
 from ui_theme import UIFonts, UIColors
 from asset_manager import load_image
 from gamepad_manager import get_gamepad_manager, is_gamepad_connected
+
+try:
+    from gamepad_manager import normalize_gamepad_event_button
+except ImportError:
+    def normalize_gamepad_event_button(event):
+        button = getattr(event, 'button', None)
+        if isinstance(button, (int, float)) and not isinstance(button, bool):
+            return int(button)
+        return None
 from effect_surface_cache import EffectSurfaceCache
 from sweep_effects import SweepCatState, draw_rainbow_cat_sweep
 from ui_scaling import apply_ui_scale_preset, get_scale, resolve_ui_scale_size
@@ -659,6 +668,7 @@ class Game:
         self.can_hold = True  # Bu turda hold kullanılabilir mi?
         self.discard_held_uses = 5  # B tuşu ile saklanan parçayı silme hakkı (oyun başına 5)
         self.game_over = False
+        self._game_over_click_targets = {}
         self.paused = False
         self.game_over_warning = ""
         self.game_over_warning_timer = 0.0
@@ -1042,10 +1052,11 @@ class Game:
         if not getattr(self, '_pause_settings_active', False):
             return None
 
-        if event.type == pygame.JOYBUTTONDOWN:
+        event_button = normalize_gamepad_event_button(event)
+        if event_button is not None:
             try:
                 gp_cfg = self.settings_manager.get_controls().get('gamepad', {})
-                if event.button == _gp_btn(gp_cfg.get('menu_back', 1)):
+                if event_button == _gp_btn(gp_cfg.get('menu_back', 1)):
                     self._close_pause_settings()
                     return None
             except Exception:
@@ -1703,13 +1714,14 @@ class Game:
                         return 'menu'
                     continue
                 # Gamepad: B=kapat, A=onayla (menüye dön)
-                if event.type == pygame.JOYBUTTONDOWN:
+                event_button = normalize_gamepad_event_button(event)
+                if event_button is not None:
                     try:
                         gp_cfg = self.settings_manager.get_controls().get('gamepad', {})
-                        if event.button == _gp_btn(gp_cfg.get('menu_back', 1)):
+                        if event_button == _gp_btn(gp_cfg.get('menu_back', 1)):
                             self.show_exit_prompt = False
                             continue
-                        if event.button == _gp_btn(gp_cfg.get('menu_confirm', 0)):
+                        if event_button == _gp_btn(gp_cfg.get('menu_confirm', 0)):
                             return 'menu'
                     except Exception:
                         pass
@@ -1744,6 +1756,8 @@ class Game:
             # Mouse clicks (game over overlay)
             if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 if self.game_over:
+                    if getattr(event, 'from_gamepad', False):
+                        continue
                     pos = normalize_mouse_pos(getattr(event, 'pos', None)) or get_mouse_pos()
                     # Peek butonu kontrolü
                     peek_rect = getattr(self, '_game_over_peek_rect', None)
@@ -1768,12 +1782,13 @@ class Game:
                 continue
 
             # Gamepad buton: game over overlay'de B=menü, Y=restart
-            if event.type == pygame.JOYBUTTONDOWN and self.game_over:
+            event_button = normalize_gamepad_event_button(event)
+            if event_button is not None and self.game_over:
                 try:
                     gp_cfg = self.settings_manager.get_controls().get('gamepad', {})
-                    if event.button == _gp_btn(gp_cfg.get('menu_back', 1)):
+                    if event_button == _gp_btn(gp_cfg.get('menu_back', 1)):
                         return 'menu'
-                    if event.button == _gp_btn(gp_cfg.get('restart', 3)):
+                    if event_button == _gp_btn(gp_cfg.get('restart', 3)):
                         if self.can_restart():
                             self.restart()
                             continue
@@ -1797,10 +1812,10 @@ class Game:
                 continue
 
             # Gamepad buton: pause menüsünde B=devam et (resume)
-            if event.type == pygame.JOYBUTTONDOWN and self.paused and not self.game_over:
+            if event_button is not None and self.paused and not self.game_over:
                 try:
                     gp_cfg = self.settings_manager.get_controls().get('gamepad', {})
-                    if event.button == _gp_btn(gp_cfg.get('menu_back', 1)):
+                    if event_button == _gp_btn(gp_cfg.get('menu_back', 1)):
                         self.paused = False
                         if hasattr(self, 'sound') and self.sound:
                             self.sound.unduck_music()
@@ -5960,6 +5975,7 @@ class Game:
         self._game_over_pending = False
         self._game_over_peek_active = False
         self._game_over_peek_rect = None
+        self._game_over_click_targets = {}
         self._game_over_start_time = 0
         self._final_score = 0
         self._final_lines = 0

@@ -35,6 +35,15 @@ from screen_shake import (
     step_screen_shake,
 )
 
+try:
+    from gamepad_manager import normalize_gamepad_event_button
+except ImportError:
+    def normalize_gamepad_event_button(event):
+        button = getattr(event, 'button', None)
+        if isinstance(button, (int, float)) and not isinstance(button, bool):
+            return int(button)
+        return None
+
 def resource_path(relative_path):
     """PyInstaller ile derlenen exe için doğru path'i al"""
     try:
@@ -745,10 +754,11 @@ class PvPGame:
         if not getattr(self, '_pause_settings_active', False):
             return None
 
-        if event.type == pygame.JOYBUTTONDOWN:
+        event_button = normalize_gamepad_event_button(event)
+        if event_button is not None:
             try:
                 gp_cfg = self.settings_manager.get_controls().get('gamepad', {})
-                if event.button == _gp_btn(gp_cfg.get('menu_back', 1)):
+                if event_button == _gp_btn(gp_cfg.get('menu_back', 1)):
                     self._close_pause_settings()
                     return None
             except Exception:
@@ -1516,6 +1526,8 @@ class PvPGame:
             
             # Game over ekranında mouse tıklama kontrolü
             if self.game_over and event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                if getattr(event, 'from_gamepad', False):
+                    continue
                 pos = normalize_mouse_pos(getattr(event, 'pos', None)) or event.pos
                 # Peek butonu kontrolü
                 peek_rect = getattr(self, '_game_over_peek_rect', None)

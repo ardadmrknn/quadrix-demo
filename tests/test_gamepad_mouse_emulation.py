@@ -3,8 +3,10 @@ from __future__ import annotations
 import copy
 from types import SimpleNamespace
 
+import pygame
+
 import gamepad_manager as gamepad_manager_module
-from gamepad_manager import GamepadManager, GamepadState, DEFAULT_GAMEPAD_BINDINGS
+from gamepad_manager import GamepadManager, GamepadState, GamepadType, DEFAULT_GAMEPAD_BINDINGS
 
 
 class _DummyJoystick:
@@ -14,10 +16,12 @@ class _DummyJoystick:
         *,
         buttons: dict[int, bool] | None = None,
         hats: tuple[tuple[int, int], ...] = (),
+        instance_id: int = 0,
     ):
         self.axes = axes
         self.buttons = buttons or {}
         self.hats = hats
+        self.instance_id = instance_id
 
     def get_init(self) -> bool:
         return True
@@ -39,6 +43,35 @@ class _DummyJoystick:
 
     def get_hat(self, index: int) -> tuple[int, int]:
         return self.hats[index]
+
+    def get_instance_id(self) -> int:
+        return self.instance_id
+
+    def get_id(self) -> int:
+        return self.instance_id
+
+
+class _DummyController:
+    def __init__(
+        self,
+        *,
+        buttons: dict[int, bool] | None = None,
+        axes: tuple[float, ...] = (0.0, 0.0, 0.0, 0.0, 0.0, 0.0),
+    ):
+        self.buttons = buttons or {}
+        self.axes = axes
+
+    def get_init(self) -> bool:
+        return True
+
+    def get_button(self, index: int) -> bool:
+        return bool(self.buttons.get(index, False))
+
+    def get_axis(self, index: int) -> float:
+        return self.axes[index]
+
+    def attached(self) -> bool:
+        return True
 
 
 class _DummySurface:
@@ -263,3 +296,154 @@ def test_menu_left_stick_hold_repeats_down_navigation(monkeypatch):
         event.type == gp_pygame.KEYUP and event.key == gp_pygame.K_DOWN
         for event in repeat_events
     )
+
+
+def test_game_context_confirm_clicks_are_tagged_from_gamepad(monkeypatch):
+    manager = _make_manager()
+    manager._context = GamepadManager.CONTEXT_GAME
+
+    gp_pygame = gamepad_manager_module.pygame
+    if not hasattr(gp_pygame, 'event'):
+        monkeypatch.setattr(gp_pygame, 'event', SimpleNamespace(), raising=False)
+    monkeypatch.setattr(
+        gp_pygame.event,
+        'Event',
+        lambda event_type, **payload: SimpleNamespace(type=event_type, **payload),
+        raising=False,
+    )
+    monkeypatch.setattr(gamepad_manager_module, '_gmp', lambda: (320, 240))
+
+    gp = GamepadState(joystick=_DummyJoystick((0.0, 0.0), buttons={0: True}), buttons={0: True})
+    gp.prev_buttons = {}
+
+    events = manager._generate_mouse_click_events(gp)
+
+    assert len(events) == 1
+    assert events[0].type == gp_pygame.MOUSEBUTTONDOWN
+    assert events[0].button == 1
+    assert events[0].pos == (320, 240)
+    assert events[0].from_gamepad is True
+
+
+def test_windows_xinput_raw_lb_maps_to_canonical_menu_tab_prev(monkeypatch):
+    manager = _make_manager()
+
+    gp_pygame = gamepad_manager_module.pygame
+    if not hasattr(gp_pygame, 'event'):
+        monkeypatch.setattr(gp_pygame, 'event', SimpleNamespace(), raising=False)
+    monkeypatch.setattr(
+        gp_pygame.event,
+        'Event',
+        lambda event_type, **payload: SimpleNamespace(type=event_type, **payload),
+        raising=False,
+    )
+
+    gp = GamepadState(
+        joystick=_DummyJoystick((0.0, 0.0), buttons={4: True}, instance_id=11),
+        gamepad_type=GamepadType.XBOX,
+        instance_id=11,
+    )
+    manager.gamepads[0] = gp
+
+    events = manager.update(16.0)
+
+    assert any(
+        event.type == gp_pygame.KEYDOWN and event.key == gp_pygame.K_LEFTBRACKET
+        for event in events
+    )
+    assert gp.buttons.get(9) is True
+
+
+def test_controller_capture_prefers_canonical_button_indices():
+    manager = _make_manager()
+    gp = GamepadState(
+        joystick=_DummyJoystick((0.0, 0.0), buttons={5: True}, instance_id=17),
+        controller=_DummyController(buttons={10: True}),
+        gamepad_type=GamepadType.XBOX,
+        instance_id=17,
+    )
+    gp.buttons = {10: True}
+    gp.prev_buttons = {}
+    manager.gamepads[0] = gp
+
+    resolved = manager.resolve_capture_button_index(5, joy_id=0, instance_id=17)
+
+    assert resolved == 10
+
+
+def test_normalize_gamepad_event_button_maps_windows_raw_rb_with_controller_state(monkeypatch):
+    manager = _make_manager()
+    gp = GamepadState(
+        joystick=_DummyJoystick((0.0, 0.0), buttons={5: True}, instance_id=41),
+        controller=_DummyController(buttons={10: True}),
+        gamepad_type=GamepadType.XBOX,
+        instance_id=41,
+    )
+    gp.buttons = {}
+    gp.prev_buttons = {}
+    manager.gamepads[0] = gp
+    monkeypatch.setattr(gamepad_manager_module, '_instance', manager)
+
+    event = SimpleNamespace(type=pygame.JOYBUTTONDOWN, button=5, joy=0, instance_id=41)
+
+    resolved = gamepad_manager_module.normalize_gamepad_event_button(event)
+
+    assert resolved == 10
+
+
+def test_normalize_gamepad_event_button_maps_windows_raw_lb_fallback(monkeypatch):
+    manager = _make_manager()
+    gp = GamepadState(
+        joystick=_DummyJoystick((0.0, 0.0), buttons={4: True}, instance_id=43),
+        controller=_DummyController(buttons={}),
+        gamepad_type=GamepadType.XBOX,
+        instance_id=43,
+    )
+    gp.buttons = {}
+    gp.prev_buttons = {}
+    manager.gamepads[0] = gp
+    monkeypatch.setattr(gamepad_manager_module, '_instance', manager)
+
+    event = SimpleNamespace(type=pygame.JOYBUTTONDOWN, button=4, joy=0, instance_id=43)
+
+    resolved = gamepad_manager_module.normalize_gamepad_event_button(event)
+
+    assert resolved == 9
+
+
+def test_controller_capture_prefers_canonical_trigger_indices():
+    manager = _make_manager()
+    gp = GamepadState(
+        joystick=_DummyJoystick((0.0, 0.0), instance_id=23),
+        controller=_DummyController(axes=(0.0, 0.0, 0.0, 0.0, 0.0, 0.82)),
+        gamepad_type=GamepadType.XBOX,
+        instance_id=23,
+    )
+    gp.left_trigger = 0.0
+    gp.right_trigger = 0.82
+    manager.gamepads[0] = gp
+
+    resolved = manager.resolve_capture_trigger_index(2, 0.1, joy_id=0, instance_id=23)
+
+    assert resolved == 101
+
+
+def test_controller_presence_does_not_override_stable_joystick_mouse_axes(monkeypatch):
+    manager = _make_manager()
+    display = _patch_display(monkeypatch)
+    monkeypatch.setattr(gamepad_manager_module, '_gmp', lambda: display['pos'])
+
+    gp = GamepadState(
+        joystick=_DummyJoystick((0.0, 0.0, 0.0, 0.0, -1.0, -1.0), instance_id=31),
+        controller=_DummyController(axes=(0.0, 0.0, -0.92, -0.96, 0.0, 0.0)),
+        gamepad_type=GamepadType.XBOX,
+        instance_id=31,
+    )
+    manager.gamepads[0] = gp
+
+    events = manager.update(16.0)
+
+    assert events == []
+    assert display['calls'] == []
+    assert gp.raw_right_x == 0.0
+    assert gp.raw_right_y == 0.0

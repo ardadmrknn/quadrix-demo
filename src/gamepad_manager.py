@@ -18,7 +18,12 @@ import sys
 import pygame
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
-from platform_utils import get_mouse_pos as _gmp
+from platform_utils import IS_WINDOWS, get_mouse_pos as _gmp
+
+try:
+    from pygame._sdl2 import controller as _sdl2_controller
+except Exception:
+    _sdl2_controller = None
 
 # src.main kismi import basarisiz olup absolute fallback'e dustugunde ayni dosya
 # hem `src.gamepad_manager` hem `gamepad_manager` olarak yuklenebiliyordu.
@@ -30,6 +35,62 @@ if _current_module is not None:
         sys.modules['gamepad_manager'] = _current_module
     elif __name__ == 'gamepad_manager':
         sys.modules['src.gamepad_manager'] = _current_module
+
+
+CONTROLLER_BUTTON_A = getattr(pygame, 'CONTROLLER_BUTTON_A', 0)
+CONTROLLER_BUTTON_B = getattr(pygame, 'CONTROLLER_BUTTON_B', 1)
+CONTROLLER_BUTTON_X = getattr(pygame, 'CONTROLLER_BUTTON_X', 2)
+CONTROLLER_BUTTON_Y = getattr(pygame, 'CONTROLLER_BUTTON_Y', 3)
+CONTROLLER_BUTTON_BACK = getattr(pygame, 'CONTROLLER_BUTTON_BACK', 4)
+CONTROLLER_BUTTON_GUIDE = getattr(pygame, 'CONTROLLER_BUTTON_GUIDE', 5)
+CONTROLLER_BUTTON_START = getattr(pygame, 'CONTROLLER_BUTTON_START', 6)
+CONTROLLER_BUTTON_LEFTSTICK = getattr(pygame, 'CONTROLLER_BUTTON_LEFTSTICK', 7)
+CONTROLLER_BUTTON_RIGHTSTICK = getattr(pygame, 'CONTROLLER_BUTTON_RIGHTSTICK', 8)
+CONTROLLER_BUTTON_LEFTSHOULDER = getattr(pygame, 'CONTROLLER_BUTTON_LEFTSHOULDER', 9)
+CONTROLLER_BUTTON_RIGHTSHOULDER = getattr(pygame, 'CONTROLLER_BUTTON_RIGHTSHOULDER', 10)
+CONTROLLER_BUTTON_DPAD_UP = getattr(pygame, 'CONTROLLER_BUTTON_DPAD_UP', 11)
+CONTROLLER_BUTTON_DPAD_DOWN = getattr(pygame, 'CONTROLLER_BUTTON_DPAD_DOWN', 12)
+CONTROLLER_BUTTON_DPAD_LEFT = getattr(pygame, 'CONTROLLER_BUTTON_DPAD_LEFT', 13)
+CONTROLLER_BUTTON_DPAD_RIGHT = getattr(pygame, 'CONTROLLER_BUTTON_DPAD_RIGHT', 14)
+
+CONTROLLER_AXIS_LEFTX = getattr(pygame, 'CONTROLLER_AXIS_LEFTX', 0)
+CONTROLLER_AXIS_LEFTY = getattr(pygame, 'CONTROLLER_AXIS_LEFTY', 1)
+CONTROLLER_AXIS_RIGHTX = getattr(pygame, 'CONTROLLER_AXIS_RIGHTX', 2)
+CONTROLLER_AXIS_RIGHTY = getattr(pygame, 'CONTROLLER_AXIS_RIGHTY', 3)
+CONTROLLER_AXIS_TRIGGERLEFT = getattr(pygame, 'CONTROLLER_AXIS_TRIGGERLEFT', 4)
+CONTROLLER_AXIS_TRIGGERRIGHT = getattr(pygame, 'CONTROLLER_AXIS_TRIGGERRIGHT', 5)
+
+CANONICAL_CONTROLLER_BUTTONS = (
+    CONTROLLER_BUTTON_A,
+    CONTROLLER_BUTTON_B,
+    CONTROLLER_BUTTON_X,
+    CONTROLLER_BUTTON_Y,
+    CONTROLLER_BUTTON_BACK,
+    CONTROLLER_BUTTON_GUIDE,
+    CONTROLLER_BUTTON_START,
+    CONTROLLER_BUTTON_LEFTSTICK,
+    CONTROLLER_BUTTON_RIGHTSTICK,
+    CONTROLLER_BUTTON_LEFTSHOULDER,
+    CONTROLLER_BUTTON_RIGHTSHOULDER,
+    CONTROLLER_BUTTON_DPAD_UP,
+    CONTROLLER_BUTTON_DPAD_DOWN,
+    CONTROLLER_BUTTON_DPAD_LEFT,
+    CONTROLLER_BUTTON_DPAD_RIGHT,
+)
+
+WINDOWS_XINPUT_RAW_BUTTON_TO_CANONICAL = {
+    0: CONTROLLER_BUTTON_A,
+    1: CONTROLLER_BUTTON_B,
+    2: CONTROLLER_BUTTON_X,
+    3: CONTROLLER_BUTTON_Y,
+    4: CONTROLLER_BUTTON_LEFTSHOULDER,
+    5: CONTROLLER_BUTTON_RIGHTSHOULDER,
+    6: CONTROLLER_BUTTON_BACK,
+    7: CONTROLLER_BUTTON_START,
+    8: CONTROLLER_BUTTON_LEFTSTICK,
+    9: CONTROLLER_BUTTON_RIGHTSTICK,
+    10: CONTROLLER_BUTTON_GUIDE,
+}
 
 # Xbox / PlayStation / Nintendo buton indeksleri (SDL GameController layout)
 # SDL GameController standardında butonlar:
@@ -157,9 +218,11 @@ class StickState:
 class GamepadState:
     """Tek bir gamepad'in tam durumu"""
     joystick: pygame.joystick.JoystickType = None
+    controller: Optional[object] = None
     gamepad_type: str = GamepadType.UNKNOWN
     name: str = ''
     guid: str = ''
+    instance_id: Optional[int] = None
     # Buton basılı durumları (buton_index → bool)
     buttons: Dict[int, bool] = field(default_factory=dict)
     prev_buttons: Dict[int, bool] = field(default_factory=dict)
@@ -235,6 +298,11 @@ class GamepadManager:
         # pygame.joystick modülünü başlat
         if not pygame.joystick.get_init():
             pygame.joystick.init()
+        try:
+            if _sdl2_controller is not None and not _sdl2_controller.get_init():
+                _sdl2_controller.init()
+        except Exception:
+            pass
 
         self.gamepads: Dict[int, GamepadState] = {}
         self.enabled = True
@@ -362,6 +430,8 @@ class GamepadManager:
             js = pygame.joystick.Joystick(device_index)
             js.init()
 
+            controller = self._create_controller(js, device_index)
+
             gp_type = self._detect_type(js)
             name = js.get_name()
             guid = ''
@@ -370,11 +440,21 @@ class GamepadManager:
             except Exception:
                 pass
 
+            if controller is not None:
+                try:
+                    controller_name = getattr(controller, 'name', '') or ''
+                    if controller_name:
+                        name = controller_name
+                except Exception:
+                    pass
+
             state = GamepadState(
                 joystick=js,
+                controller=controller,
                 gamepad_type=gp_type,
                 name=name,
                 guid=guid,
+                instance_id=self._get_joystick_instance_id(js),
             )
             self.gamepads[device_index] = state
             print(f"🎮 Gamepad bağlandı: {name} [{gp_type}] (ID: {device_index})")
@@ -406,6 +486,219 @@ class GamepadManager:
             return GamepadType.NINTENDO
 
         return GamepadType.UNKNOWN
+
+    def _get_joystick_instance_id(self, js: pygame.joystick.JoystickType) -> Optional[int]:
+        if js is None:
+            return None
+        for attr_name in ('get_instance_id', 'get_id'):
+            getter = getattr(js, attr_name, None)
+            if not callable(getter):
+                continue
+            try:
+                value = getter()
+            except Exception:
+                continue
+            if isinstance(value, int):
+                return value
+        return None
+
+    def _create_controller(self, js: pygame.joystick.JoystickType, device_index: int):
+        if js is None or _sdl2_controller is None:
+            return None
+
+        try:
+            if not _sdl2_controller.get_init():
+                _sdl2_controller.init()
+        except Exception:
+            return None
+
+        factories = []
+        from_joystick = getattr(_sdl2_controller.Controller, 'from_joystick', None)
+        if callable(from_joystick):
+            factories.append(lambda: from_joystick(js))
+
+        is_controller = getattr(_sdl2_controller, 'is_controller', None)
+        if callable(is_controller):
+            try:
+                if is_controller(device_index):
+                    factories.append(lambda: _sdl2_controller.Controller(device_index))
+            except Exception:
+                pass
+        else:
+            factories.append(lambda: _sdl2_controller.Controller(device_index))
+
+        for factory in factories:
+            try:
+                controller = factory()
+            except Exception:
+                continue
+            if controller is None:
+                continue
+            try:
+                if hasattr(controller, 'get_init') and not controller.get_init() and hasattr(controller, 'init'):
+                    controller.init()
+            except Exception:
+                pass
+            return controller
+
+        return None
+
+    def _normalize_raw_button_index(self, gp: Optional[GamepadState], raw_button_index: int) -> int:
+        try:
+            raw_index = int(raw_button_index)
+        except Exception:
+            return raw_button_index
+
+        if gp is None or not IS_WINDOWS:
+            return raw_index
+        if getattr(gp, 'gamepad_type', GamepadType.UNKNOWN) not in (GamepadType.XBOX, GamepadType.UNKNOWN):
+            return raw_index
+        return WINDOWS_XINPUT_RAW_BUTTON_TO_CANONICAL.get(raw_index, raw_index)
+
+    def _read_button_states(self, gp: GamepadState) -> Dict[int, bool]:
+        controller = getattr(gp, 'controller', None)
+        if controller is not None:
+            buttons: Dict[int, bool] = {}
+            for btn_idx in CANONICAL_CONTROLLER_BUTTONS:
+                try:
+                    buttons[btn_idx] = bool(controller.get_button(btn_idx))
+                except Exception:
+                    buttons.setdefault(btn_idx, False)
+            return buttons
+
+        buttons: Dict[int, bool] = {}
+        js = gp.joystick
+        if js is None:
+            return buttons
+
+        try:
+            num_buttons = js.get_numbuttons()
+        except Exception:
+            return buttons
+
+        for raw_idx in range(num_buttons):
+            try:
+                pressed = bool(js.get_button(raw_idx))
+            except Exception:
+                pressed = False
+            canonical_idx = self._normalize_raw_button_index(gp, raw_idx)
+            buttons[canonical_idx] = buttons.get(canonical_idx, False) or pressed
+        return buttons
+
+    def _normalize_controller_axis_value(self, value, *, trigger: bool = False) -> float:
+        try:
+            axis = float(value)
+        except Exception:
+            return 0.0
+        if not math.isfinite(axis):
+            return 0.0
+
+        if trigger:
+            if axis > 1.5:
+                axis = axis / 32767.0
+            elif axis < -0.001:
+                axis = (axis + 1.0) / 2.0
+            return max(0.0, min(1.0, axis))
+
+        if abs(axis) > 1.5:
+            scale = 32768.0 if axis < 0.0 else 32767.0
+            axis = axis / scale
+        return max(-1.0, min(1.0, axis))
+
+    def _read_controller_axis(self, gp: GamepadState, axis_index: int, *, trigger: bool = False) -> float:
+        controller = getattr(gp, 'controller', None)
+        if controller is None:
+            return 0.0
+        try:
+            raw_value = controller.get_axis(axis_index)
+        except Exception:
+            return 0.0
+        return self._normalize_controller_axis_value(raw_value, trigger=trigger)
+
+    def _find_gamepad_for_event(self, joy_id=None, instance_id=None) -> Optional[GamepadState]:
+        target_instance = None
+        if isinstance(instance_id, (int, float)) and not isinstance(instance_id, bool):
+            target_instance = int(instance_id)
+        target_joy = None
+        if isinstance(joy_id, (int, float)) and not isinstance(joy_id, bool):
+            target_joy = int(joy_id)
+
+        if target_instance is not None:
+            for gp in self.gamepads.values():
+                if getattr(gp, 'instance_id', None) == target_instance:
+                    return gp
+                if self._get_joystick_instance_id(getattr(gp, 'joystick', None)) == target_instance:
+                    return gp
+
+        if target_joy is not None:
+            direct_match = self.gamepads.get(target_joy)
+            if direct_match is not None:
+                return direct_match
+            for device_index, gp in self.gamepads.items():
+                if device_index == target_joy:
+                    return gp
+                js = getattr(gp, 'joystick', None)
+                getter = getattr(js, 'get_id', None)
+                if callable(getter):
+                    try:
+                        if int(getter()) == target_joy:
+                            return gp
+                    except Exception:
+                        pass
+
+        return self.get_active_gamepad()
+
+    def resolve_capture_button_index(self, raw_button_index: int, *, joy_id=None, instance_id=None) -> int:
+        gp = self._find_gamepad_for_event(joy_id=joy_id, instance_id=instance_id)
+        if gp is not None and getattr(gp, 'controller', None) is not None:
+            controller = gp.controller
+            current_pressed = {}
+            for btn_idx in CANONICAL_CONTROLLER_BUTTONS:
+                try:
+                    current_pressed[btn_idx] = bool(controller.get_button(btn_idx))
+                except Exception:
+                    current_pressed[btn_idx] = bool(gp.buttons.get(btn_idx, False))
+
+            newly_pressed = [
+                btn_idx
+                for btn_idx, is_pressed in current_pressed.items()
+                if is_pressed and not gp.prev_buttons.get(btn_idx, False)
+            ]
+            if len(newly_pressed) == 1:
+                return newly_pressed[0]
+            if newly_pressed:
+                return newly_pressed[-1]
+
+            pressed = [btn_idx for btn_idx, is_pressed in current_pressed.items() if is_pressed]
+            if len(pressed) == 1:
+                return pressed[0]
+
+        return self._normalize_raw_button_index(gp, raw_button_index)
+
+    def resolve_capture_trigger_index(self, raw_axis, raw_value, *, joy_id=None, instance_id=None) -> Optional[int]:
+        gp = self._find_gamepad_for_event(joy_id=joy_id, instance_id=instance_id)
+        if gp is not None and getattr(gp, 'controller', None) is not None:
+            left = float(getattr(gp, 'left_trigger', 0.0) or 0.0)
+            right = float(getattr(gp, 'right_trigger', 0.0) or 0.0)
+            if left >= self.TRIGGER_THRESHOLD or right >= self.TRIGGER_THRESHOLD:
+                return 100 if left >= right else 101
+
+        try:
+            axis_index = int(raw_axis)
+        except Exception:
+            return None
+        if axis_index not in (4, 5):
+            return None
+
+        try:
+            trigger_value = float(raw_value)
+        except Exception:
+            trigger_value = 0.0
+        if trigger_value < 0.0:
+            trigger_value = (trigger_value + 1.0) / 2.0
+        if trigger_value >= self.TRIGGER_THRESHOLD:
+            return 100 if axis_index == 4 else 101
+        return None
 
     def get_active_gamepad(self) -> Optional[GamepadState]:
         """İlk aktif gamepad'i döndür"""
@@ -672,21 +965,39 @@ class GamepadManager:
                 gp.left_stick.prev_digital_x = gp.left_stick.digital_x
                 gp.left_stick.prev_digital_y = gp.left_stick.digital_y
 
-                # Butonları oku
-                num_buttons = gp.joystick.get_numbuttons()
-                for b in range(num_buttons):
-                    gp.buttons[b] = gp.joystick.get_button(b)
+                gp.buttons = self._read_button_states(gp)
 
-                # Analog eksenleri oku
-                num_axes = gp.joystick.get_numaxes()
+                controller = getattr(gp, 'controller', None)
+                num_axes = 0
+                try:
+                    num_axes = gp.joystick.get_numaxes()
+                except Exception:
+                    num_axes = 0
+
                 if num_axes >= 2:
-                    raw_x = gp.joystick.get_axis(0)
-                    raw_y = gp.joystick.get_axis(1)
+                    raw_x = self._sanitize_axis(gp.joystick.get_axis(0))
+                    raw_y = self._sanitize_axis(gp.joystick.get_axis(1))
                     gp.left_stick.x = self._apply_deadzone(raw_x)
                     gp.left_stick.y = self._apply_deadzone(raw_y)
+                elif controller is not None:
+                    raw_x = self._read_controller_axis(gp, CONTROLLER_AXIS_LEFTX)
+                    raw_y = self._read_controller_axis(gp, CONTROLLER_AXIS_LEFTY)
+                    gp.left_stick.x = self._apply_deadzone(raw_x)
+                    gp.left_stick.y = self._apply_deadzone(raw_y)
+
                 if num_axes >= 4:
                     raw_right_x = self._sanitize_axis(gp.joystick.get_axis(2))
                     raw_right_y = self._sanitize_axis(gp.joystick.get_axis(3))
+                    gp.raw_right_x = raw_right_x
+                    gp.raw_right_y = raw_right_y
+                    gp.right_stick.x = self._apply_deadzone(raw_right_x)
+                    gp.right_stick.y = self._apply_deadzone(raw_right_y)
+                    self._update_mouse_neutral(gp)
+                elif controller is not None:
+                    # Button canonicalization icin SDL controller kullansak da
+                    # sag stick mouse emulasyonu joystick axis yolunda daha stabil.
+                    raw_right_x = self._read_controller_axis(gp, CONTROLLER_AXIS_RIGHTX)
+                    raw_right_y = self._read_controller_axis(gp, CONTROLLER_AXIS_RIGHTY)
                     gp.raw_right_x = raw_right_x
                     gp.raw_right_y = raw_right_y
                     gp.right_stick.x = self._apply_deadzone(raw_right_x)
@@ -696,6 +1007,7 @@ class GamepadManager:
                     gp.raw_right_x = 0.0
                     gp.raw_right_y = 0.0
                     self._reset_mouse_emulation(gp)
+
                 if num_axes >= 6:
                     raw_lt = gp.joystick.get_axis(4)
                     raw_rt = gp.joystick.get_axis(5)
@@ -714,6 +1026,16 @@ class GamepadManager:
                     else:
                         gp.left_trigger = max(0.0, min(1.0, raw_lt))
                         gp.right_trigger = max(0.0, min(1.0, raw_rt))
+                elif controller is not None:
+                    gp.left_trigger = self._read_controller_axis(gp, CONTROLLER_AXIS_TRIGGERLEFT, trigger=True)
+                    gp.right_trigger = self._read_controller_axis(gp, CONTROLLER_AXIS_TRIGGERRIGHT, trigger=True)
+                    gp._trigger_calibrated = True
+                    gp._trigger_range_full = False
+                else:
+                    gp.left_trigger = 0.0
+                    gp.right_trigger = 0.0
+                    gp._trigger_calibrated = False
+                    gp._trigger_range_full = True
 
                 # D-pad: önce hat, gerekirse button 11-14 fallback
                 gp.dpad = self._read_dpad_state(gp)
@@ -803,6 +1125,20 @@ class GamepadManager:
         farklı fonksiyonlara ait olabilir (touchpad, share vb.).
         Buton fallback yalnızca hat olmayan kontrolcülerde kullanılır.
         """
+        controller = getattr(gp, 'controller', None)
+        if controller is not None:
+            try:
+                left = bool(controller.get_button(CONTROLLER_BUTTON_DPAD_LEFT))
+                right = bool(controller.get_button(CONTROLLER_BUTTON_DPAD_RIGHT))
+                up = bool(controller.get_button(CONTROLLER_BUTTON_DPAD_UP))
+                down = bool(controller.get_button(CONTROLLER_BUTTON_DPAD_DOWN))
+                return (
+                    max(-1, min(1, (-1 if left else 0) + (1 if right else 0))),
+                    max(-1, min(1, (1 if up else 0) + (-1 if down else 0))),
+                )
+            except Exception:
+                pass
+
         hat_x = 0
         hat_y = 0
         has_hat = False
@@ -1014,7 +1350,7 @@ class GamepadManager:
                 self._reset_mouse_emulation(gp)
                 return events
 
-            if js.get_numaxes() < 4:
+            if getattr(gp, 'controller', None) is None and js.get_numaxes() < 4:
                 self._reset_mouse_emulation(gp)
                 return events
 
@@ -1115,6 +1451,7 @@ class GamepadManager:
                                 pygame.MOUSEBUTTONDOWN,
                                 button=1,
                                 pos=_gmp(),
+                                from_gamepad=True,
                             )
                         )
                     elif not a_now and a_prev:
@@ -1123,6 +1460,7 @@ class GamepadManager:
                                 pygame.MOUSEBUTTONUP,
                                 button=1,
                                 pos=_gmp(),
+                                from_gamepad=True,
                             )
                         )
             except Exception:
@@ -1144,6 +1482,7 @@ class GamepadManager:
                                 pygame.MOUSEBUTTONDOWN,
                                 button=1,
                                 pos=_gmp(),
+                                from_gamepad=True,
                             )
                         )
                     elif not a_now and a_prev:
@@ -1152,6 +1491,7 @@ class GamepadManager:
                                 pygame.MOUSEBUTTONUP,
                                 button=1,
                                 pos=_gmp(),
+                                from_gamepad=True,
                             )
                         )
             except Exception:
@@ -1168,6 +1508,7 @@ class GamepadManager:
                         pygame.MOUSEBUTTONDOWN,
                         button=1,
                         pos=_gmp(),
+                        from_gamepad=True,
                     )
                 )
             elif not pressed_now and pressed_prev:
@@ -1176,6 +1517,7 @@ class GamepadManager:
                         pygame.MOUSEBUTTONUP,
                         button=1,
                         pos=_gmp(),
+                        from_gamepad=True,
                     )
                 )
         except Exception:
@@ -1411,7 +1753,11 @@ class GamepadManager:
         if not gp or not gp.joystick:
             return
         try:
-            gp.joystick.rumble(low_frequency, high_frequency, duration_ms)
+            controller = getattr(gp, 'controller', None)
+            if controller is not None:
+                controller.rumble(low_frequency, high_frequency, duration_ms)
+            else:
+                gp.joystick.rumble(low_frequency, high_frequency, duration_ms)
         except Exception:
             pass  # Tüm kontrolcüler rumble desteklemez
 
@@ -1421,7 +1767,11 @@ class GamepadManager:
         if not gp or not gp.joystick:
             return
         try:
-            gp.joystick.stop_rumble()
+            controller = getattr(gp, 'controller', None)
+            if controller is not None and hasattr(controller, 'stop_rumble'):
+                controller.stop_rumble()
+            else:
+                gp.joystick.stop_rumble()
         except Exception:
             pass
 
@@ -1430,6 +1780,11 @@ class GamepadManager:
     def cleanup(self):
         """Tüm gamepad'leri temizle"""
         for gp in self.gamepads.values():
+            try:
+                if getattr(gp, 'controller', None):
+                    gp.controller.quit()
+            except Exception:
+                pass
             try:
                 if gp.joystick:
                     gp.joystick.quit()
@@ -1465,3 +1820,62 @@ def reload_gamepad_settings():
     global _instance
     if _instance is not None:
         _instance._load_settings()
+
+
+def normalize_gamepad_event_button(event) -> Optional[int]:
+    event_type = getattr(event, 'type', None)
+    controller_down = getattr(pygame, 'CONTROLLERBUTTONDOWN', None)
+    controller_up = getattr(pygame, 'CONTROLLERBUTTONUP', None)
+    if event_type in (controller_down, controller_up):
+        raw_button = getattr(event, 'button', None)
+        if isinstance(raw_button, (int, float)) and not isinstance(raw_button, bool):
+            return int(raw_button)
+        return None
+
+    valid_types = (getattr(pygame, 'JOYBUTTONDOWN', None), getattr(pygame, 'JOYBUTTONUP', None))
+    if event_type not in valid_types:
+        return None
+
+    raw_button = getattr(event, 'button', None)
+    if not isinstance(raw_button, (int, float)) or isinstance(raw_button, bool):
+        return None
+
+    manager = get_gamepad_manager()
+    return manager.resolve_capture_button_index(
+        int(raw_button),
+        joy_id=getattr(event, 'joy', None),
+        instance_id=getattr(event, 'instance_id', None),
+    )
+
+
+def normalize_gamepad_trigger_event(event) -> Optional[int]:
+    event_type = getattr(event, 'type', None)
+    controller_axis_motion = getattr(pygame, 'CONTROLLERAXISMOTION', None)
+    if event_type == controller_axis_motion:
+        axis = getattr(event, 'axis', None)
+        try:
+            axis_index = int(axis)
+        except Exception:
+            return None
+        if axis_index not in (CONTROLLER_AXIS_TRIGGERLEFT, CONTROLLER_AXIS_TRIGGERRIGHT):
+            return None
+        try:
+            trigger_value = float(getattr(event, 'value', 0.0))
+        except Exception:
+            trigger_value = 0.0
+        if trigger_value < 0.0:
+            trigger_value = (trigger_value + 1.0) / 2.0
+        if trigger_value >= get_gamepad_manager().TRIGGER_THRESHOLD:
+            return 100 if axis_index == CONTROLLER_AXIS_TRIGGERLEFT else 101
+        return None
+
+    if event_type != getattr(pygame, 'JOYAXISMOTION', None):
+        return None
+
+    manager = get_gamepad_manager()
+    return manager.resolve_capture_trigger_index(
+        getattr(event, 'axis', None),
+        getattr(event, 'value', 0.0),
+        joy_id=getattr(event, 'joy', None),
+        instance_id=getattr(event, 'instance_id', None),
+    )
