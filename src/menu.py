@@ -456,6 +456,11 @@ class Menu:
         self.pvp_local_polygon: list[tuple[int, int]] | None = None
         self.pvp_online_polygon: list[tuple[int, int]] | None = None
         self._pvp_split_selection = 'local'  # 'local' | 'online' (klavye alt seçim)
+        self.coop_local_rect: 'pygame.Rect | None' = None
+        self.coop_online_rect: 'pygame.Rect | None' = None
+        self.coop_local_polygon: list[tuple[int, int]] | None = None
+        self.coop_online_polygon: list[tuple[int, int]] | None = None
+        self._coop_split_selection = 'local'  # 'local' | 'online' (klavye alt seçim)
         self._hero_avatar_surface = None
         self._hero_avatar_signature = None
 
@@ -1004,6 +1009,28 @@ class Menu:
                         return 'online_pvp'
                     return 'online_pvp' if self._pvp_split_selection == 'online' else 'pvp_2_players'
 
+            if current_option == 'coop_mode':
+                if event.key in nav['left']:
+                    if self._coop_split_selection != 'local':
+                        self._coop_split_selection = 'local'
+                        self._nav_source = 'keyboard'
+                        return None
+                elif event.key in nav['right']:
+                    if self._coop_split_selection != 'online':
+                        self._coop_split_selection = 'online'
+                        self._nav_source = 'keyboard'
+                        return None
+                elif event.key in (pygame.K_RETURN, pygame.K_SPACE):
+                    if getattr(self, '_nav_source', 'mouse') == 'mouse' and not getattr(self, '_mouse_in_panel', True):
+                        return None
+                    try:
+                        mouse_pos_now = get_mouse_pos()
+                    except Exception:
+                        mouse_pos_now = None
+                    if mouse_pos_now and self.coop_online_polygon and _point_in_polygon(mouse_pos_now, self.coop_online_polygon):
+                        return 'online_coop'
+                    return 'online_coop' if self._coop_split_selection == 'online' else 'coop_mode'
+
             if event.key in nav['up']:
                 new_idx = self._find_spatial_neighbor('up')
                 if new_idx != self.selected:
@@ -1022,6 +1049,9 @@ class Menu:
                     # PVP tile'a sağdan girerken online tarafına düş
                     if 0 <= new_idx < len(self.options) and self.options[new_idx] == 'pvp_2_players':
                         self._pvp_split_selection = 'online'
+                    # Co-op tile'a sağdan girerken online tarafına düş
+                    if 0 <= new_idx < len(self.options) and self.options[new_idx] == 'coop_mode':
+                        self._coop_split_selection = 'online'
                     self.selected = new_idx
                     navigated = True
                     self._ensure_visible()
@@ -1031,6 +1061,9 @@ class Menu:
                     # PVP tile'a soldan girerken local tarafına düş
                     if 0 <= new_idx < len(self.options) and self.options[new_idx] == 'pvp_2_players':
                         self._pvp_split_selection = 'local'
+                    # Co-op tile'a soldan girerken local tarafına düş
+                    if 0 <= new_idx < len(self.options) and self.options[new_idx] == 'coop_mode':
+                        self._coop_split_selection = 'local'
                     self.selected = new_idx
                     navigated = True
                     self._ensure_visible()
@@ -1054,6 +1087,10 @@ class Menu:
                     self._pvp_split_selection = 'local'
                 elif self.pvp_online_polygon and _point_in_polygon(mouse_pos, self.pvp_online_polygon):
                     self._pvp_split_selection = 'online'
+                if self.coop_local_polygon and _point_in_polygon(mouse_pos, self.coop_local_polygon):
+                    self._coop_split_selection = 'local'
+                elif self.coop_online_polygon and _point_in_polygon(mouse_pos, self.coop_online_polygon):
+                    self._coop_split_selection = 'online'
                 self._mouse_in_panel = False
                 for i, rect in enumerate(self.option_rects):
                     if rect.collidepoint(mouse_pos):
@@ -1085,6 +1122,14 @@ class Menu:
             if self.pvp_online_polygon and _point_in_polygon(mouse_pos, self.pvp_online_polygon):
                 self._pvp_split_selection = 'online'
                 return 'online_pvp'
+
+            if self.coop_local_polygon and _point_in_polygon(mouse_pos, self.coop_local_polygon):
+                self._coop_split_selection = 'local'
+                return 'coop_mode'
+
+            if self.coop_online_polygon and _point_in_polygon(mouse_pos, self.coop_online_polygon):
+                self._coop_split_selection = 'online'
+                return 'online_coop'
 
             # SOS panel/button click handling (main menu only)
             if self.sos_button_rect and self.sos_button_rect.collidepoint(mouse_pos):
@@ -1469,6 +1514,38 @@ class Menu:
             surface.blit(outline_orange, outline_rect.topleft)
             surface.blit(outline_cyan, outline_rect.topleft)
 
+        def _draw_coop_dual_outline(
+            surface: pygame.Surface,
+            outline_rect: pygame.Rect,
+            line_width: int,
+            green_alpha: int,
+            cyan_alpha: int,
+            corner_radius: int,
+        ) -> None:
+            COOP_GREEN = (80, 230, 160)
+            outline_green = pygame.Surface(outline_rect.size, pygame.SRCALPHA)
+            outline_cyan = pygame.Surface(outline_rect.size, pygame.SRCALPHA)
+            local_rect = outline_green.get_rect()
+            pygame.draw.rect(outline_green, (*COOP_GREEN, green_alpha), local_rect, line_width, border_radius=corner_radius)
+            pygame.draw.rect(outline_cyan, (*UIColors.NEON_CYAN[:3], cyan_alpha), local_rect, line_width, border_radius=corner_radius)
+
+            green_mask = pygame.Surface(outline_rect.size, pygame.SRCALPHA)
+            cyan_mask = pygame.Surface(outline_rect.size, pygame.SRCALPHA)
+            pygame.draw.polygon(
+                green_mask,
+                (255, 255, 255, 255),
+                [(0, 0), (0, local_rect.height - 1), (local_rect.width - 1, local_rect.height - 1)],
+            )
+            pygame.draw.polygon(
+                cyan_mask,
+                (255, 255, 255, 255),
+                [(0, 0), (local_rect.width - 1, 0), (local_rect.width - 1, local_rect.height - 1)],
+            )
+            outline_green.blit(green_mask, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+            outline_cyan.blit(cyan_mask, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+            surface.blit(outline_green, outline_rect.topleft)
+            surface.blit(outline_cyan, outline_rect.topleft)
+
         is_highlighted = selected or hover
         hover_growth_w = sp(10)
         hover_growth_h = sp(8)
@@ -1479,7 +1556,7 @@ class Menu:
 
         alpha = 230 if is_highlighted else 180
         flat_title_band_panels = {'achievements', 'piece_workshop', 'store'}
-        draw_panel_border = panel_key != 'pvp_2_players'
+        draw_panel_border = panel_key not in ('pvp_2_players', 'coop_mode')
         retro_style.draw_glass_panel(
             target_surface,
             draw_rect,
@@ -1492,7 +1569,7 @@ class Menu:
         if is_highlighted:
             prev_clip = target_surface.get_clip()
             target_surface.set_clip(draw_rect)
-            if panel_key != 'pvp_2_players':
+            if panel_key not in ('pvp_2_players', 'coop_mode'):
                 for glow_i in range(3, 0, -1):
                     glow_rect = draw_rect.inflate(glow_i * 4, glow_i * 4)
                     glow_alpha = max(10, 60 - glow_i * 18)
@@ -1513,6 +1590,7 @@ class Menu:
             self._draw_dashboard_tile_flavor(draw_rect, panel_key, accent_color, hover, target_surface=target_surface)
 
         pvp_micro_prepass = bool(panel_context) and panel_key == 'pvp_2_players'
+        coop_micro_prepass = bool(panel_context) and panel_key == 'coop_mode'
         if pvp_micro_prepass:
             self._draw_panel_micro_content(draw_rect, panel_key, accent_color, panel_context, hover, target_surface=target_surface)
             try:
@@ -1536,7 +1614,33 @@ class Menu:
                 pvp_orange_alpha = 182 if is_highlighted else 160
                 pvp_cyan_alpha = 255 if is_highlighted else 232
 
-        hide_panel_title = panel_key == 'pvp_2_players'
+        coop_outline_side: str | None = None
+        coop_green_alpha = 190
+        coop_cyan_alpha = 190
+        if coop_micro_prepass:
+            self._draw_panel_micro_content(draw_rect, panel_key, accent_color, panel_context, hover, target_surface=target_surface)
+            try:
+                mouse_pos = get_mouse_pos()
+            except Exception:
+                mouse_pos = None
+
+            if mouse_pos and self.coop_local_polygon and _point_in_polygon(mouse_pos, self.coop_local_polygon):
+                coop_outline_side = 'local'
+            elif mouse_pos and self.coop_online_polygon and _point_in_polygon(mouse_pos, self.coop_online_polygon):
+                coop_outline_side = 'online'
+            elif selected:
+                coop_outline_side = self._coop_split_selection
+
+            coop_green_alpha = 222 if is_highlighted else 190
+            coop_cyan_alpha = 222 if is_highlighted else 190
+            if coop_outline_side == 'local':
+                coop_green_alpha = 255 if is_highlighted else 232
+                coop_cyan_alpha = 182 if is_highlighted else 160
+            elif coop_outline_side == 'online':
+                coop_green_alpha = 182 if is_highlighted else 160
+                coop_cyan_alpha = 255 if is_highlighted else 232
+
+        hide_panel_title = panel_key in ('pvp_2_players', 'coop_mode')
 
         if panel_key == 'pvp_2_players':
             _draw_pvp_dual_outline(
@@ -1545,6 +1649,16 @@ class Menu:
                 3 if is_highlighted else 2,
                 pvp_orange_alpha,
                 pvp_cyan_alpha,
+                14,
+            )
+        elif panel_key == 'coop_mode':
+            # Co-op: yeşil (local) + cyan (online) çift kontur
+            _draw_coop_dual_outline(
+                target_surface,
+                draw_rect,
+                3 if is_highlighted else 2,
+                coop_green_alpha,
+                coop_cyan_alpha,
                 14,
             )
         else:
@@ -1728,7 +1842,7 @@ class Menu:
                     target_surface.blit(line_surf, (sub_bg_x + sub_pad_x + sp(4), line_y))
                     line_y += line_h + line_gap
 
-        if panel_context and panel_key and not pvp_micro_prepass:
+        if panel_context and panel_key and not pvp_micro_prepass and not coop_micro_prepass:
             self._draw_panel_micro_content(draw_rect, panel_key, accent_color, panel_context, hover, target_surface=target_surface)
 
         return draw_rect
@@ -2238,6 +2352,222 @@ class Menu:
             if hover:
                 accent_surf = pygame.Surface((split_rect.width, split_rect.height), pygame.SRCALPHA)
                 pygame.draw.line(accent_surf, (*UIColors.NEON_CYAN[:3], 24), (split_rect.width - 1, 0), (0, split_rect.height - 1), max(2, s(3)))
+                target.blit(accent_surf, split_rect.topleft)
+
+            return
+
+        if panel_key == 'coop_mode':
+            # Co-op paneli diagonal olarak iki alana ayrılır: Local ve Online.
+            mouse_pos = get_mouse_pos()
+
+            split_rect = pygame.Rect(
+                rect.x + s(4),
+                rect.y + s(4),
+                max(1, rect.width - s(8)),
+                max(1, rect.height - s(8)),
+            )
+            corner_radius = max(8, s(14))
+
+            local_poly = [
+                (split_rect.left, split_rect.top),
+                (split_rect.left, split_rect.bottom),
+                (split_rect.right, split_rect.bottom),
+            ]
+            online_poly = [
+                (split_rect.left, split_rect.top),
+                (split_rect.right, split_rect.top),
+                (split_rect.right, split_rect.bottom),
+            ]
+
+            self.coop_local_polygon = local_poly
+            self.coop_online_polygon = online_poly
+
+            local_min_x = min(pt[0] for pt in local_poly)
+            local_min_y = min(pt[1] for pt in local_poly)
+            local_max_x = max(pt[0] for pt in local_poly)
+            local_max_y = max(pt[1] for pt in local_poly)
+            online_min_x = min(pt[0] for pt in online_poly)
+            online_min_y = min(pt[1] for pt in online_poly)
+            online_max_x = max(pt[0] for pt in online_poly)
+            online_max_y = max(pt[1] for pt in online_poly)
+            self.coop_local_rect = pygame.Rect(local_min_x, local_min_y, max(1, local_max_x - local_min_x), max(1, local_max_y - local_min_y))
+            self.coop_online_rect = pygame.Rect(online_min_x, online_min_y, max(1, online_max_x - online_min_x), max(1, online_max_y - online_min_y))
+
+            local_hover = _point_in_polygon(mouse_pos, local_poly)
+            online_hover = _point_in_polygon(mouse_pos, online_poly)
+            if local_hover:
+                self._coop_split_selection = 'local'
+            elif online_hover:
+                self._coop_split_selection = 'online'
+
+            keyboard_focus = False
+            try:
+                keyboard_focus = (
+                    getattr(self, '_nav_source', 'mouse') == 'keyboard'
+                    and 0 <= self.selected < len(self.options)
+                    and self.options[self.selected] == 'coop_mode'
+                )
+            except Exception:
+                keyboard_focus = False
+
+            if keyboard_focus:
+                if self._coop_split_selection == 'online':
+                    online_hover = True
+                    local_hover = False
+                else:
+                    local_hover = True
+                    online_hover = False
+
+            # Co-op renk paleti: local = yeşil, online = cyan
+            COOP_LOCAL_COLOR = (80, 230, 160)
+            COOP_ONLINE_COLOR = UIColors.NEON_CYAN
+
+            halves = [
+                (
+                    'local',
+                    local_poly,
+                    COOP_LOCAL_COLOR,
+                    (10, 52, 36),
+                    t('menu_dashboard_coop_local_label', 'Local Co-op'),
+                    t('menu_dashboard_coop_local_sub', '2 Oyuncu'),
+                    local_hover,
+                    (s(22), split_rect.height - s(24)),
+                ),
+                (
+                    'online',
+                    online_poly,
+                    COOP_ONLINE_COLOR,
+                    (8, 50, 62),
+                    t('menu_dashboard_coop_online_label', 'Online Co-op'),
+                    t('menu_dashboard_coop_online_sub', 'Steam 2P'),
+                    online_hover,
+                    (split_rect.width - s(22), s(24)),
+                ),
+            ]
+
+            def _coop_diag_x(y_pos: int) -> int:
+                rel = (y_pos - split_rect.top) / max(1, split_rect.height)
+                rel = max(0.0, min(1.0, rel))
+                return int(round(split_rect.left + rel * split_rect.width))
+
+            poly_overlay = pygame.Surface((split_rect.width, split_rect.height), pygame.SRCALPHA)
+            poly_rect = poly_overlay.get_rect()
+            pygame.draw.rect(poly_overlay, (6, 10, 26, 212 if hover else 192), poly_rect, border_radius=corner_radius)
+            sheen_rows = min(max(5, split_rect.height // 14), 14)
+            for hy in range(sheen_rows):
+                sheen_alpha = int((34 if hover else 26) * (1 - hy / max(1, sheen_rows)))
+                pygame.draw.line(poly_overlay, (255, 255, 255, sheen_alpha), (s(8), hy), (split_rect.width - s(8), hy))
+
+            for side, half_poly, half_color, half_fill, label, sub, is_hover, glow_center in halves:
+                rel_poly = [(x - split_rect.x, y - split_rect.y) for x, y in half_poly]
+                half_surface = pygame.Surface((split_rect.width, split_rect.height), pygame.SRCALPHA)
+                pygame.draw.polygon(half_surface, (*half_fill, 182 if is_hover else 146), rel_poly)
+
+                max_radius = max(s(44), int(min(split_rect.width, split_rect.height) * 0.92))
+                inner_radius = max(s(26), int(max_radius * 0.58))
+                pygame.draw.circle(half_surface, (*half_color[:3], 78 if is_hover else 56), glow_center, max_radius)
+                pygame.draw.circle(half_surface, (*half_color[:3], 54 if is_hover else 34), glow_center, inner_radius)
+
+                band_count = 4
+                for band_idx in range(band_count):
+                    band_alpha = max(8, (22 if is_hover else 14) - band_idx * 3)
+                    if side == 'local':
+                        start = (-split_rect.width // 5, split_rect.height - int((band_idx + 1) * split_rect.height / (band_count + 1)))
+                        end = (int((band_idx + 1) * split_rect.width / (band_count + 2)), split_rect.height + split_rect.height // 5)
+                    else:
+                        start = (split_rect.width - int((band_idx + 1) * split_rect.width / (band_count + 2)), -split_rect.height // 5)
+                        end = (split_rect.width + split_rect.width // 5, int((band_idx + 1) * split_rect.height / (band_count + 1)))
+                    pygame.draw.line(half_surface, (*half_color[:3], band_alpha), start, end, max(2, s(3)))
+
+                poly_mask = pygame.Surface((split_rect.width, split_rect.height), pygame.SRCALPHA)
+                pygame.draw.polygon(poly_mask, (255, 255, 255, 255), rel_poly)
+                half_surface.blit(poly_mask, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+                poly_overlay.blit(half_surface, (0, 0))
+
+            diagonal_glow_w = max(4, s(5))
+            pygame.draw.line(poly_overlay, (255, 255, 255, 28 if hover else 18), (0, 0), (split_rect.width - 1, split_rect.height - 1), diagonal_glow_w)
+            pygame.draw.line(poly_overlay, (*COOP_LOCAL_COLOR[:3], 120 if hover else 84), (0, 0), (split_rect.width - 1, split_rect.height - 1), 2)
+            pygame.draw.line(poly_overlay, (*COOP_ONLINE_COLOR[:3], 92 if hover else 58), (0, min(split_rect.height - 1, s(2))), (max(0, split_rect.width - 1 - s(2)), split_rect.height - 1), 1)
+
+            rounded_mask = pygame.Surface((split_rect.width, split_rect.height), pygame.SRCALPHA)
+            pygame.draw.rect(rounded_mask, (255, 255, 255, 255), rounded_mask.get_rect(), border_radius=corner_radius)
+            poly_overlay.blit(rounded_mask, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+
+            target.blit(poly_overlay, split_rect.topleft)
+
+            chip_margin = s(14)
+            chip_pad_x = s(14)
+            chip_pad_y = s(9)
+            chip_gap = s(4)
+            chip_strip_w = max(3, s(4))
+            chip_text_inset = max(s(6), chip_strip_w + s(5))
+            diag_gap = s(18)
+            top_chip_margin = chip_margin
+
+            chip_specs = [
+                ('local', COOP_LOCAL_COLOR, t('menu_dashboard_coop_local_label', 'Local Co-op'), t('menu_dashboard_coop_local_sub', '2 Oyuncu'), local_hover),
+                ('online', COOP_ONLINE_COLOR, t('menu_dashboard_coop_online_label', 'Online Co-op'), t('menu_dashboard_coop_online_sub', 'Steam 2P'), online_hover),
+            ]
+
+            for side, chip_color, label, sub, is_hover in chip_specs:
+                provisional_font_w = max(s(54), int(split_rect.width * 0.32))
+                label_font = retro_style.get_fitting_font(label, base_size=s(18), max_width=provisional_font_w, bold=True, min_size=max(10, s(11)))
+                sub_font = retro_style.get_fitting_font(sub, base_size=s(13), max_width=provisional_font_w, bold=False, min_size=max(9, s(10)))
+                provisional_label = label_font.render(label, True, UIColors.TEXT_PRIMARY)
+                provisional_sub = sub_font.render(sub, True, UIColors.TEXT_SECONDARY)
+                provisional_h = provisional_label.get_height() + provisional_sub.get_height() + chip_pad_y * 2 + chip_gap
+                chip_center_y = split_rect.bottom - chip_margin - provisional_h // 2 if side == 'local' else split_rect.top + top_chip_margin + provisional_h // 2
+                diag_limit = _coop_diag_x(chip_center_y)
+
+                if side == 'local':
+                    available_w = diag_limit - split_rect.left - chip_margin - diag_gap
+                else:
+                    available_w = split_rect.right - chip_margin - (diag_limit + diag_gap)
+                chip_max_w = max(s(88), min(int(split_rect.width * 0.48), available_w))
+                text_max_w = max(s(54), chip_max_w - chip_pad_x * 2 - chip_text_inset)
+
+                label_font = retro_style.get_fitting_font(label, base_size=s(18), max_width=text_max_w, bold=True, min_size=max(10, s(11)))
+                sub_font = retro_style.get_fitting_font(sub, base_size=s(13), max_width=text_max_w, bold=False, min_size=max(9, s(10)))
+                label_surf = label_font.render(label, True, UIColors.TEXT_PRIMARY)
+                sub_surf = sub_font.render(sub, True, (214, 224, 238) if is_hover else UIColors.TEXT_SECONDARY)
+
+                chip_w = min(chip_max_w, max(s(88), max(label_surf.get_width(), sub_surf.get_width()) + chip_pad_x * 2 + chip_text_inset))
+                chip_h = label_surf.get_height() + sub_surf.get_height() + chip_pad_y * 2 + chip_gap
+
+                if side == 'local':
+                    chip_x = split_rect.left + chip_margin
+                    chip_y = split_rect.bottom - chip_margin - chip_h
+                    text_left = chip_x + chip_pad_x + chip_text_inset
+                    label_rect = label_surf.get_rect(topleft=(text_left, chip_y + chip_pad_y))
+                    sub_rect = sub_surf.get_rect(topleft=(text_left, label_rect.bottom + chip_gap))
+                    strip_rect = pygame.Rect(s(6), s(7), chip_strip_w, max(s(10), chip_h - s(14)))
+                else:
+                    chip_x = split_rect.right - chip_margin - chip_w
+                    chip_y = split_rect.top + top_chip_margin
+                    text_right = chip_x + chip_w - chip_pad_x - chip_text_inset
+                    label_rect = label_surf.get_rect(topright=(text_right, chip_y + chip_pad_y))
+                    sub_rect = sub_surf.get_rect(topright=(text_right, label_rect.bottom + chip_gap))
+                    strip_rect = pygame.Rect(chip_w - s(6) - chip_strip_w, s(7), chip_strip_w, max(s(10), chip_h - s(14)))
+
+                chip_shadow = pygame.Surface((chip_w + s(8), chip_h + s(8)), pygame.SRCALPHA)
+                pygame.draw.rect(chip_shadow, (*chip_color[:3], 34 if is_hover else 22), chip_shadow.get_rect(), border_radius=14)
+                target.blit(chip_shadow, (chip_x - s(4), chip_y - s(4)))
+
+                chip_surf = pygame.Surface((chip_w, chip_h), pygame.SRCALPHA)
+                pygame.draw.rect(chip_surf, (8, 14, 30, 230 if is_hover else 210), chip_surf.get_rect(), border_radius=12)
+                for hy in range(min(6, chip_h // 3)):
+                    ha = int(20 * (1 - hy / 6))
+                    pygame.draw.line(chip_surf, (255, 255, 255, ha), (4, hy), (chip_w - 4, hy))
+                pygame.draw.rect(chip_surf, (*chip_color[:3], 224 if is_hover else 184), strip_rect, border_radius=3)
+                pygame.draw.rect(chip_surf, (255, 255, 255, 20), chip_surf.get_rect().inflate(-2, -2), 1, border_radius=10)
+                pygame.draw.rect(chip_surf, (*chip_color[:3], 210 if is_hover else 136), chip_surf.get_rect(), 2 if is_hover else 1, border_radius=12)
+                target.blit(chip_surf, (chip_x, chip_y))
+                target.blit(label_surf, label_rect)
+                target.blit(sub_surf, sub_rect)
+
+            if hover:
+                accent_surf = pygame.Surface((split_rect.width, split_rect.height), pygame.SRCALPHA)
+                pygame.draw.line(accent_surf, (*COOP_ONLINE_COLOR[:3], 24), (split_rect.width - 1, 0), (0, split_rect.height - 1), max(2, s(3)))
                 target.blit(accent_surf, split_rect.topleft)
 
             return

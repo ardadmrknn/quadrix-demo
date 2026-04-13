@@ -279,13 +279,25 @@ class MsgType:
     RESUME          = 'resume'
     REMATCH         = 'rematch'
 
-    # Oyun
+    # Oyun (PvP)
     GARBAGE_ATTACK  = 'garbage'
     PIECE_LOCKED    = 'piece_locked'
     BOARD_STATE     = 'board_state'
     SCORE_UPDATE    = 'score_update'
     ELIMINATED      = 'eliminated'
     PIECE_POSITION  = 'piece_pos'    # Aktif parça pozisyonu (gerçek zamanlı)
+
+    # Co-op: Guest → Host
+    GUEST_INPUT     = 'guest_input'   # Reliable: action, seq, ts
+    GUEST_READY     = 'guest_ready'   # Reliable
+    GUEST_PAUSE     = 'guest_pause'   # Reliable
+
+    # Co-op: Host → Guest
+    COOP_BOARD_STATE  = 'coop_board'  # Unreliable ~100ms: grid, owners, score, ...
+    COOP_PIECE_STATE  = 'coop_piece'  # Unreliable ~50ms: p1/p2 current/next/hold/ghost
+    COOP_LOCK_EVENT   = 'coop_lock'   # Reliable: player, piece, cleared_lines, ...
+    COOP_GAME_EVENT   = 'coop_event'  # Reliable: game_over, pause, resume, ...
+    COOP_GAME_START   = 'coop_start'  # Reliable one-time: seed, bags, config
 
 
 # ---------- Aktif instance takibi (shutdown sırasında temizlik için) ----------
