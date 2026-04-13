@@ -1937,6 +1937,89 @@ class CoopGame:
         return True
 
     # ==================================================================
+    # inject_remote_input — Online Co-op: Host injects guest actions
+    # ==================================================================
+
+    def inject_remote_input(self, player: str, action: str):
+        """Online Co-op için uzaktan gelen input aksiyonunu uygula.
+
+        Args:
+            player: 'P1' veya 'P2'
+            action: 'move_left', 'move_right', 'soft_drop', 'hard_drop',
+                    'rotate', 'hold', 'soft_drop_start', 'soft_drop_stop',
+                    'das_start_left', 'das_start_right', 'das_stop'
+        """
+        if self.game_over or self.paused:
+            return
+
+        frozen = self.p1_frozen if player == 'P1' else self.p2_frozen
+        piece = self.p1_current_piece if player == 'P1' else self.p2_current_piece
+        if frozen or piece is None:
+            return
+
+        if action == 'move_left':
+            if self._try_move(player, -1):
+                self.sound.play('move')
+            if player == 'P1':
+                self.p1_das_direction = -1
+                self.p1_das_timer = 0
+                self.p1_das_repeat_timer = 0
+                self.p1_das_charged = False
+            else:
+                self.p2_das_direction = -1
+                self.p2_das_timer = 0
+                self.p2_das_repeat_timer = 0
+                self.p2_das_charged = False
+
+        elif action == 'move_right':
+            if self._try_move(player, 1):
+                self.sound.play('move')
+            if player == 'P1':
+                self.p1_das_direction = 1
+                self.p1_das_timer = 0
+                self.p1_das_repeat_timer = 0
+                self.p1_das_charged = False
+            else:
+                self.p2_das_direction = 1
+                self.p2_das_timer = 0
+                self.p2_das_repeat_timer = 0
+                self.p2_das_charged = False
+
+        elif action == 'soft_drop_start':
+            if player == 'P1':
+                self.p1_soft_drop_active = True
+                self.p1_soft_drop_timer = 0
+            else:
+                self.p2_soft_drop_active = True
+                self.p2_soft_drop_timer = 0
+            self._step_piece_down(player)
+
+        elif action == 'soft_drop_stop':
+            if player == 'P1':
+                self.p1_soft_drop_active = False
+            else:
+                self.p2_soft_drop_active = False
+
+        elif action == 'rotate':
+            self._try_rotate(player)
+            self.sound.play('rotate')
+
+        elif action == 'hard_drop':
+            self._hard_drop(player)
+            self.sound.play('drop')
+
+        elif action == 'hold':
+            self._use_shared_hold(player)
+
+        elif action == 'das_stop':
+            if player == 'P1':
+                self.p1_das_direction = 0
+                self.p1_das_charged = False
+            else:
+                self.p2_das_direction = 0
+                self.p2_das_charged = False
+
+    # ==================================================================
     # update
     # ==================================================================
 

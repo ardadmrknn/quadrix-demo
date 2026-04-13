@@ -148,6 +148,7 @@ try:
     from .pvp_game import PvPGame  # type: ignore
     from .coop_game import CoopGame  # type: ignore
     from .online_pvp_game import OnlinePvPGame  # type: ignore
+    from .online_coop_game import OnlineCoopGame  # type: ignore
     from .game_modes import SprintMode, UltraMode, ZenMode, HardcoreMode  # type: ignore
     from .game_modes_extra import Tetris2Mode, MysteryMode, WideMode  # type: ignore
     from .game_modes_advanced import SurvivalMode, CascadeMode, DailyChallengeMode  # type: ignore
@@ -2051,6 +2052,20 @@ def main():
                     sound_manager=menu_sound,
                 )
                 state = 'coop'
+            elif action == 'online_coop':
+                if not _run_popup_and_sync_screen(_show_mode_intro_popup, 'online_coop', settings_manager=settings_manager):
+                    continue
+                confirm_exit = False
+                menu_sound.stop_music()
+                _online_coop_game = OnlineCoopGame(
+                    screen=screen,
+                    fullscreen=fullscreen,
+                    user_manager=user_manager,
+                    settings_manager=settings_manager,
+                    sound_manager=menu_sound,
+                )
+                _handle_online_coop._game = _online_coop_game
+                state = 'online_coop'
             elif action == 'coop_campaign':
                 confirm_exit = False
                 if coop_level_select is None:
@@ -3026,6 +3041,92 @@ def main():
 
     _handle_online_pvp._game = None
 
+    def _handle_online_coop(delta_ms):
+        nonlocal running, state
+        online_coop = getattr(_handle_online_coop, '_game', None)
+
+        if not online_coop:
+            state = 'menu'
+            return False
+
+        try:
+            result = online_coop.handle_input()
+        except Exception as e:
+            print(f"[OnlineCoop] handle_input hatası: {e}")
+            import traceback; traceback.print_exc()
+            try:
+                online_coop._cleanup()
+            except Exception:
+                pass
+            _handle_online_coop._game = None
+            state = 'menu'
+            return False
+
+        if result is False:
+            try:
+                online_coop._cleanup()
+            except Exception:
+                pass
+            _handle_online_coop._game = None
+            running = False
+            return False
+
+        if result == 'toggle_fullscreen':
+            _toggle_fullscreen(500, 700)
+            if not running:
+                return False
+            online_coop.screen = screen
+            online_coop.window_width = screen.get_width()
+            online_coop.window_height = screen.get_height()
+            online_coop.fullscreen = fullscreen
+        elif result == 'menu':
+            state = 'menu'
+            try:
+                online_coop._cleanup()
+            except Exception:
+                pass
+            _handle_online_coop._game = None
+            if settings_screen.music_enabled and not getattr(settings_screen, 'mute_all', False):
+                _menu_vol = settings_manager.get('menu_music_volume', 0.3)
+                menu_sound.unduck_music()
+                menu_sound.set_music_volume(_menu_vol)
+                menu_music = settings_manager.get('menu_music', 'main_1')
+                try:
+                    playlist = settings_manager.get_menu_music_playlist()
+                    playlist_keys = [menu_sound.ensure_track_available(p) for p in playlist]
+                    playlist_keys = [p for p in playlist_keys if p]
+                    if playlist_keys:
+                        do_shuffle = bool(settings_manager.get('music_shuffle', False))
+                        menu_sound.set_music_playlist(playlist_keys, loop=True, autoplay=True, force=True, shuffle=do_shuffle)
+                    else:
+                        menu_sound.play_music(menu_music.lower(), loop=True)
+                except Exception:
+                    menu_sound.play_music(menu_music.lower(), loop=True)
+                print(f"🎵 Ana sayfa müziği başlatıldı: {menu_music}")
+            return False
+
+        try:
+            online_coop.update(delta_ms)
+            online_coop.draw()
+        except Exception as e:
+            print(f"[OnlineCoop] update/draw hatası: {e}")
+            import traceback; traceback.print_exc()
+            try:
+                online_coop._cleanup()
+            except Exception:
+                pass
+            _handle_online_coop._game = None
+            state = 'menu'
+            return False
+        try:
+            if getattr(online_coop, 'sound', None):
+                online_coop.sound.update_music_playlist()
+        except Exception:
+            pass
+        return True
+
+    _handle_online_coop._game = None
+
     def _handle_user_selection(delta_ms):
         nonlocal running, state, score_manager, achievement_manager, highscore_screen, achievement_screen, game
 
@@ -3310,6 +3411,7 @@ def main():
         'pvp': _handle_pvp,
         'coop': _handle_coop,
         'online_pvp': _handle_online_pvp,
+        'online_coop': _handle_online_coop,
         'user_selection': _handle_user_selection,
         'user_management': _handle_user_management,
         'campaign_select': _handle_campaign_select,
@@ -3325,17 +3427,17 @@ def main():
     # Ekran geçiş efekti için state takibi
     _previous_state = state
     # Menü state'inden başlandığında basılı tutma tekrarı aktif
-    if state not in ('game', 'pvp', 'coop', 'coop_campaign', 'online_pvp'):
+    if state not in ('game', 'pvp', 'coop', 'coop_campaign', 'online_pvp', 'online_coop'):
         pygame.key.set_repeat(350, 80)
 
     # Geçiş tipleri (state çiftlerine göre)
     def _get_transition_type(from_state: str, to_state: str) -> str:
         """State geçişi için uygun efekt tipini belirle."""
         # Oyuna giriş için perde efekti (campaign'den de oyuna girerken)
-        if to_state in ('game', 'pvp', 'coop', 'coop_campaign', 'online_pvp'):
+        if to_state in ('game', 'pvp', 'coop', 'coop_campaign', 'online_pvp', 'online_coop'):
             return 'wipe'
         # Oyundan çıkış için fade
-        if from_state in ('game', 'pvp', 'coop', 'coop_campaign', 'online_pvp'):
+        if from_state in ('game', 'pvp', 'coop', 'coop_campaign', 'online_pvp', 'online_coop'):
             return 'fade'
         # Campaign select özel geçişleri
         if from_state == 'menu' and to_state == 'campaign_select':
