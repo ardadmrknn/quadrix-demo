@@ -56,6 +56,11 @@ draw_glass_panel = _rs.draw_glass_panel
 get_fitting_font = _rs.get_fitting_font
 from ui_theme import UIFonts, UIColors, UIStyle
 from localization import t, get_language
+from combo_popup_style import (
+    COMBO_POPUP_SHADOW_COLOR,
+    get_combo_popup_alpha,
+    get_combo_popup_color,
+)
 from steam_networking import (
     SteamNetworking, MsgType, NetEvent, NetMessage,
     CHANNEL_GAME, CHANNEL_STATE, CHANNEL_CONTROL,
@@ -5232,16 +5237,18 @@ class OnlinePvPGame:
 
         # ─ Combo mesajı (DOUBLE/TRIPLE/QUADRIX) ─
         if self.my_combo_message_time > 0 and self.my_combo_message:
-            alpha = min(255, int(self.my_combo_message_time * 255 / 30)) if self.my_combo_message_time < 30 else 255
+            alpha = get_combo_popup_alpha(self.my_combo_message_time)
             msg_cx = my_x + board_w // 2
             msg_cy = board_top + board_h // 3
             msg_font = _rs.get_font(s(28, minimum=18), bold=True)
-            shadow = msg_font.render(self.my_combo_message, True, (0, 0, 0))
-            shadow.set_alpha(alpha)
+            shadow = msg_font.render(self.my_combo_message, True, COMBO_POPUP_SHADOW_COLOR)
+            if alpha < 255:
+                shadow.set_alpha(alpha)
             self.screen.blit(shadow, shadow.get_rect(center=(msg_cx + 2, msg_cy + 2)))
-            color = (255, 215, 0) if 'QUADRIX' in self.my_combo_message else (255, 255, 255)
+            color = get_combo_popup_color(self.my_combo_message)
             txt = msg_font.render(self.my_combo_message, True, color)
-            txt.set_alpha(alpha)
+            if alpha < 255:
+                txt.set_alpha(alpha)
             self.screen.blit(txt, txt.get_rect(center=(msg_cx, msg_cy)))
 
         # ─ Header paneller (pvp_game stili) ─

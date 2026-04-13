@@ -44,6 +44,15 @@ def _resource_path(relative_path: str) -> str:
     return os.path.normpath(str(base_path / relative_path))
 
 
+def _gp_btn(raw) -> int:
+    if isinstance(raw, int):
+        return raw
+    if isinstance(raw, dict):
+        value = raw.get('primary', -1)
+        return int(value) if isinstance(value, (int, float)) else -1
+    return -1
+
+
 # ---------------------------------------------------------------------------
 # CoopGame
 # ---------------------------------------------------------------------------
@@ -200,11 +209,13 @@ class CoopGame:
         self.game_over = False
         self.paused = False
         self.pause_menu_selected = 0
-        self._pause_menu_keys = ['resume', 'music', 'music_volume', 'sound_effects', 'sfx_volume', 'main_menu']
+        self._pause_menu_keys = ['resume', 'settings', 'music', 'music_volume', 'sound_effects', 'sfx_volume', 'main_menu']
         self._pause_option_rects: list[pygame.Rect] = []
         self._pause_volume_rects: dict[str, pygame.Rect] = {}
         self._pause_vol_drag_active = False
         self._pause_vol_drag_option = ''
+        self._pause_settings_active = False
+        self._pause_settings_screen = None
 
         # Skor
         self.team_score = 0
@@ -357,6 +368,172 @@ class CoopGame:
             except ValueError:
                 return fallback
         return fallback
+
+    def _ensure_pause_settings_screen(self):
+        pause_settings = getattr(self, '_pause_settings_screen', None)
+        if pause_settings is not None:
+            pause_settings.screen = self.screen
+            return pause_settings
+
+        try:
+            try:
+                from settings_screen_tabbed import TabbedSettingsScreen
+            except Exception:
+                from .settings_screen_tabbed import TabbedSettingsScreen  # type: ignore
+            pause_settings = TabbedSettingsScreen(
+                self.screen,
+                getattr(self, 'theme_manager', None),
+                getattr(self, 'settings_manager', None),
+                getattr(self, 'sound', None),
+            )
+        except Exception:
+            return None
+
+        self._pause_settings_screen = pause_settings
+        return pause_settings
+
+    def _sync_runtime_settings_from_manager(self):
+        settings_manager = getattr(self, 'settings_manager', None)
+        if settings_manager is None:
+            return
+
+        sound = getattr(self, 'sound', None)
+        if sound is not None:
+            try:
+                sound.music_enabled = bool(settings_manager.get('music_enabled', getattr(sound, 'music_enabled', True)))
+            except Exception:
+                pass
+            try:
+                sound.sfx_enabled = bool(settings_manager.get('sound_enabled', getattr(sound, 'sfx_enabled', True)))
+            except Exception:
+                pass
+            try:
+                sound.set_music_volume(float(settings_manager.get('music_volume', getattr(sound, 'music_volume', 0.3))))
+            except Exception:
+                pass
+            try:
+                sound.set_volume(float(settings_manager.get('sfx_volume', getattr(sound, 'sfx_volume', 0.5))))
+            except Exception:
+                pass
+            if hasattr(sound, 'set_muted'):
+                try:
+                    sound.set_muted(bool(settings_manager.get('mute_all', False)))
+                except Exception:
+                    pass
+            try:
+                if sound.music_enabled:
+                    if not pygame.mixer.music.get_busy():
+                        self._start_music()
+                else:
+                    sound.stop_music()
+            except Exception:
+                pass
+
+        self.sound_enabled = bool(getattr(sound, 'sfx_enabled', getattr(self, 'sound_enabled', True)))
+        try:
+            self.effects_enabled = bool(settings_manager.get('effects_enabled', getattr(self, 'effects_enabled', True)))
+        except Exception:
+            pass
+
+        try:
+            self.pvp_controls = self._resolve_controls()
+        except Exception:
+            pass
+
+        theme_manager = getattr(self, 'theme_manager', None)
+        if theme_manager is not None:
+            try:
+                theme_manager.set_theme(settings_manager.get('theme', settings_manager.get('active_theme', 'Classic')))
+            except Exception:
+                pass
+
+        for attr_name in ('p1_current_piece', 'p1_next_piece', 'p2_current_piece', 'p2_next_piece', 'p1_hold_piece', 'p2_hold_piece'):
+            piece = getattr(self, attr_name, None)
+            if piece is None:
+                continue
+            try:
+                self._apply_block_style(piece)
+            except Exception:
+                pass
+
+        try:
+            background_enabled = bool(settings_manager.get('background_enabled', True))
+        except Exception:
+            background_enabled = True
+        try:
+            bg_transparency = float(settings_manager.get('bg_transparency', 1.0))
+        except Exception:
+            bg_transparency = None
+
+        for attr_name in ('background', 'board_background', 'outer_background'):
+            background = getattr(self, attr_name, None)
+            if background is None:
+                continue
+            if hasattr(background, 'enabled'):
+                try:
+                    background.enabled = background_enabled
+                except Exception:
+                    pass
+        if bg_transparency is not None:
+            for attr_name in ('background', 'board_background'):
+                background = getattr(self, attr_name, None)
+                if background is not None and hasattr(background, 'set_transparency'):
+                    try:
+                        background.set_transparency(bg_transparency)
+                    except Exception:
+                        pass
+
+        self.falling_blocks = get_shared_falling_blocks_layer('default') if getattr(self, 'effects_enabled', True) else None
+        self._layout_key = None
+
+        pause_settings = getattr(self, '_pause_settings_screen', None)
+        if pause_settings is not None:
+            pause_settings.screen = self.screen
+
+    def _open_pause_settings(self):
+        pause_settings = self._ensure_pause_settings_screen()
+        if pause_settings is None:
+            return
+        pause_settings.screen = self.screen
+        try:
+            pause_settings.sync_from_settings_manager()
+        except Exception:
+            pass
+        self._pause_settings_active = True
+
+    def _close_pause_settings(self):
+        self._pause_settings_active = False
+        self._sync_runtime_settings_from_manager()
+
+    def _handle_pause_settings_input(self, event):
+        if not getattr(self, '_pause_settings_active', False):
+            return None
+
+        if event.type == pygame.JOYBUTTONDOWN:
+            try:
+                gp_cfg = self.settings_manager.get_controls().get('gamepad', {})
+                if event.button == _gp_btn(gp_cfg.get('menu_back', 1)):
+                    self._close_pause_settings()
+                    return None
+            except Exception:
+                pass
+
+        pause_settings = self._ensure_pause_settings_screen()
+        if pause_settings is None:
+            self._pause_settings_active = False
+            return None
+
+        pause_settings.screen = self.screen
+        action = pause_settings.handle_input(event)
+        if action == 'back':
+            self._close_pause_settings()
+            return None
+        if action in ('quit_game', 'restart_now'):
+            self._close_pause_settings()
+            return None
+        if action:
+            self._sync_runtime_settings_from_manager()
+        return None
 
     @staticmethod
     def _key_label(key_code) -> str:
@@ -1251,6 +1428,12 @@ class CoopGame:
                 self._layout_key = None
                 continue
 
+            if self.paused and not self.game_over and getattr(self, '_pause_settings_active', False):
+                pause_settings_action = self._handle_pause_settings_input(event)
+                if pause_settings_action is not None:
+                    return pause_settings_action
+                continue
+
             # -- Pause menü input --
             if self.paused and not self.game_over:
                 if event.type in (pygame.MOUSEMOTION, pygame.MOUSEWHEEL, pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP):
@@ -1558,6 +1741,9 @@ class CoopGame:
         def apply_option(opt):
             if opt == 'resume':
                 return 'resume'
+            if opt == 'settings':
+                self._open_pause_settings()
+                return None
             if opt == 'music':
                 self.sound.music_enabled = not self.sound.music_enabled
                 if self.settings_manager:
@@ -1785,7 +1971,15 @@ class CoopGame:
 
         # Pause
         if self.paused and not self.game_over:
-            self._draw_pause_menu()
+            if getattr(self, '_pause_settings_active', False):
+                pause_settings = self._ensure_pause_settings_screen()
+                if pause_settings is not None:
+                    pause_settings.screen = self.screen
+                    pause_settings.draw()
+                else:
+                    self._draw_pause_menu()
+            else:
+                self._draw_pause_menu()
 
         # Game over
         if self.game_over:
@@ -2170,6 +2364,7 @@ class CoopGame:
         # Lokalize seçenek etiketleri (Game base ile aynı yapı)
         option_labels = {
             'resume': t('resume', default='Resume'),
+            'settings': t('settings', default='Settings'),
             'music': t('music', default='Music'),
             'music_volume': t('music_volume', default='Music Volume'),
             'sound_effects': t('sound_effects', default='Sound Effects'),

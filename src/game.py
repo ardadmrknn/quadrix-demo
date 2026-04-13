@@ -38,6 +38,11 @@ from gamepad_manager import get_gamepad_manager, is_gamepad_connected
 from effect_surface_cache import EffectSurfaceCache
 from sweep_effects import SweepCatState, draw_rainbow_cat_sweep
 from ui_scaling import apply_ui_scale_preset, get_scale, resolve_ui_scale_size
+from combo_popup_style import (
+    COMBO_POPUP_SHADOW_COLOR,
+    get_combo_popup_alpha,
+    get_combo_popup_color,
+)
 from screen_shake import (
     DEFAULT_SCREEN_SHAKE_DURATION_SECONDS,
     HARD_DROP_SCREEN_SHAKE_DURATION_SECONDS,
@@ -660,11 +665,13 @@ class Game:
         
         # Duraklama menüsü
         self.pause_menu_selected = 0
-        self.pause_menu_options = ['Devam Et', 'Yeniden Başlat', 'Müzik', 'Müzik Seviyesi', 'Ses Efektleri', 'Efekt Seviyesi', 'Ana Menü']
+        self.pause_menu_options = ['Devam Et', 'Yeniden Başlat', 'Ayarlar', 'Müzik', 'Müzik Seviyesi', 'Ses Efektleri', 'Efekt Seviyesi', 'Ana Menü']
         self._pause_option_rects: list[pygame.Rect] = []
         self._pause_volume_rects: dict[str, pygame.Rect] = {}
         self._pause_vol_drag_active: bool = False
         self._pause_vol_drag_option: str = ''
+        self._pause_settings_active: bool = False
+        self._pause_settings_screen = None
         
         # Tema renklerini parçalara uygula
         self.apply_theme_to_pieces()
@@ -892,6 +899,174 @@ class Game:
                 if resolved.get(action) == primary:
                     resolved[action] = None
         return resolved
+
+    def _ensure_pause_settings_screen(self):
+        pause_settings = getattr(self, '_pause_settings_screen', None)
+        if pause_settings is not None:
+            pause_settings.screen = self.screen
+            return pause_settings
+
+        try:
+            try:
+                from settings_screen_tabbed import TabbedSettingsScreen
+            except Exception:
+                from .settings_screen_tabbed import TabbedSettingsScreen  # type: ignore
+            pause_settings = TabbedSettingsScreen(
+                self.screen,
+                getattr(self, 'theme_manager', None),
+                getattr(self, 'settings_manager', None),
+                getattr(self, 'sound', None),
+            )
+        except Exception:
+            return None
+
+        self._pause_settings_screen = pause_settings
+        return pause_settings
+
+    def _sync_runtime_settings_from_manager(self):
+        settings_manager = getattr(self, 'settings_manager', None)
+        if settings_manager is None:
+            return
+
+        sound = getattr(self, 'sound', None)
+        if sound is not None:
+            try:
+                sound.music_enabled = bool(settings_manager.get('music_enabled', getattr(sound, 'music_enabled', True)))
+            except Exception:
+                pass
+            try:
+                sound.sfx_enabled = bool(settings_manager.get('sound_enabled', getattr(sound, 'sfx_enabled', True)))
+            except Exception:
+                pass
+            try:
+                sound.set_music_volume(float(settings_manager.get('music_volume', getattr(sound, 'music_volume', 0.3))))
+            except Exception:
+                pass
+            try:
+                sound.set_volume(float(settings_manager.get('sfx_volume', getattr(sound, 'sfx_volume', 0.5))))
+            except Exception:
+                pass
+            if hasattr(sound, 'set_muted'):
+                try:
+                    sound.set_muted(bool(settings_manager.get('mute_all', False)))
+                except Exception:
+                    pass
+            try:
+                if sound.music_enabled:
+                    if not pygame.mixer.music.get_busy():
+                        self._start_music_playlist(force=True)
+                else:
+                    sound.stop_music()
+            except Exception:
+                pass
+
+        try:
+            self.sound_enabled = bool(settings_manager.get('sound_enabled', getattr(self, 'sound_enabled', True)))
+        except Exception:
+            pass
+        try:
+            self.effects_enabled = bool(settings_manager.get('effects_enabled', getattr(self, 'effects_enabled', True)))
+        except Exception:
+            pass
+
+        try:
+            self.control_bindings = self._resolve_single_player_controls()
+            self.alt_control_bindings = self._resolve_single_player_secondary_controls(self.control_bindings)
+        except Exception:
+            pass
+
+        theme_manager = getattr(self, 'theme_manager', None)
+        if theme_manager is not None:
+            try:
+                theme_manager.set_theme(settings_manager.get('theme', settings_manager.get('active_theme', 'Classic')))
+            except Exception:
+                pass
+
+        try:
+            self.apply_theme_to_pieces()
+        except Exception:
+            pass
+
+        try:
+            bg_enabled = bool(settings_manager.get('background_enabled', True))
+        except Exception:
+            bg_enabled = True
+        try:
+            bg_transparency = float(settings_manager.get('bg_transparency', 0.3))
+        except Exception:
+            bg_transparency = None
+
+        for attr_name in ('background_manager', 'single_background', 'outer_background'):
+            background = getattr(self, attr_name, None)
+            if background is None:
+                continue
+            if hasattr(background, 'enabled'):
+                try:
+                    background.enabled = bg_enabled
+                except Exception:
+                    pass
+            if bg_transparency is not None and hasattr(background, 'set_transparency'):
+                try:
+                    background.set_transparency(bg_transparency)
+                except Exception:
+                    pass
+
+        self.falling_blocks = get_shared_falling_blocks_layer('default') if getattr(self, 'effects_enabled', True) else None
+        self._cached_offset_key = None
+        self._cached_cell_size_key = None
+        try:
+            self.update_fonts()
+        except Exception:
+            pass
+
+        pause_settings = getattr(self, '_pause_settings_screen', None)
+        if pause_settings is not None:
+            pause_settings.screen = self.screen
+
+    def _open_pause_settings(self):
+        pause_settings = self._ensure_pause_settings_screen()
+        if pause_settings is None:
+            return
+        pause_settings.screen = self.screen
+        try:
+            pause_settings.sync_from_settings_manager()
+        except Exception:
+            pass
+        self._pause_settings_active = True
+
+    def _close_pause_settings(self):
+        self._pause_settings_active = False
+        self._sync_runtime_settings_from_manager()
+
+    def _handle_pause_settings_input(self, event):
+        if not getattr(self, '_pause_settings_active', False):
+            return None
+
+        if event.type == pygame.JOYBUTTONDOWN:
+            try:
+                gp_cfg = self.settings_manager.get_controls().get('gamepad', {})
+                if event.button == _gp_btn(gp_cfg.get('menu_back', 1)):
+                    self._close_pause_settings()
+                    return None
+            except Exception:
+                pass
+
+        pause_settings = self._ensure_pause_settings_screen()
+        if pause_settings is None:
+            self._pause_settings_active = False
+            return None
+
+        pause_settings.screen = self.screen
+        action = pause_settings.handle_input(event)
+        if action == 'back':
+            self._close_pause_settings()
+            return None
+        if action in ('quit_game', 'restart_now'):
+            self._close_pause_settings()
+            return None
+        if action:
+            self._sync_runtime_settings_from_manager()
+        return None
 
     @staticmethod
     def _binding_to_keycode(binding, fallback):
@@ -1586,6 +1761,12 @@ class Game:
                         if targets['menu'].collidepoint(pos):
                             return 'menu'
 
+            if self.paused and not self.game_over and getattr(self, '_pause_settings_active', False):
+                pause_settings_action = self._handle_pause_settings_input(event)
+                if pause_settings_action is not None:
+                    return pause_settings_action
+                continue
+
             # Gamepad buton: game over overlay'de B=menü, Y=restart
             if event.type == pygame.JOYBUTTONDOWN and self.game_over:
                 try:
@@ -1996,6 +2177,9 @@ class Game:
                 return 'resume'
             if option == 'Yeniden Başlat':
                 return 'restart'
+            if option == 'Ayarlar':
+                self._open_pause_settings()
+                return None
             if option == 'Müzik':
                 self.sound.music_enabled = not self.sound.music_enabled
                 if self.settings_manager:
@@ -2134,6 +2318,7 @@ class Game:
         option_labels = {
             'Devam Et': t('resume'),
             'Yeniden Başlat': t('campaign_retry'),
+            'Ayarlar': t('settings', default='Ayarlar'),
             'Müzik': t('music'),
             'Müzik Seviyesi': t('music_volume'),
             'Ses Efektleri': t('sound_effects'),
@@ -3410,7 +3595,7 @@ class Game:
             
             # Mesaj ve ses
             if lines_cleared == 4:
-                self.combo_message = "QUADRIX! 4 Satır Yok Edildi!"
+                self.combo_message = "QUADRIX!"
                 self.sound.play('tetris')
                 # Gamepad titreşimi - QUADRIX! (güçlü)
                 try:
@@ -3920,6 +4105,7 @@ class Game:
         
         # Screen shake offset al
         shake_x, shake_y = self.get_shake_offset()
+        self._last_draw_shake_offset = (shake_x, shake_y)
         
         cell_size = self.get_cell_size()
         base_offset_x, base_offset_y = self.get_board_offset()
@@ -4474,42 +4660,30 @@ class Game:
         if self.effects_enabled:
             self.draw_particles()
         
-        # Combo mesajı
-        if self.combo_message_time > 0:
-            # Mesaj tipine göre renk ayarla
+        # Combo mesajı (PvP stili: oyun alanının içinde)
+        if self.combo_message_time > 0 and self.combo_message:
             msg = self.combo_message
-            if 'QUADRIX' in msg:
-                msg_color = (255, 215, 0)       # Altın
-            elif 'TRIPLE' in msg:
-                msg_color = (255, 0, 255)        # Magenta
-            elif 'DOUBLE' in msg:
-                msg_color = (0, 255, 221)        # Cyan
-            elif 'Combo' in msg:
-                msg_color = (100, 255, 100)      # Yeşil
-            else:
-                msg_color = YELLOW
-            
-            # Fade-out efekti (son 30 frame'de solma)
-            alpha = min(255, int(self.combo_message_time * 255 / 30)) if self.combo_message_time < 30 else 255
-            
-            # Daha büyük font
-            combo_font = UIFonts.get(int(self.font_large.get_height() * 1.2), bold=True)
-            active_width, _ = self._active_ui_size()
-            
-            combo_surf = combo_font.render(msg, True, msg_color)
-            combo_rect = combo_surf.get_rect(center=(active_width // 2, 35))
-            
-            # Fade-out alpha uygula
-            if alpha < 255:
-                combo_surf.set_alpha(alpha)
-            
-            # Gölge (koyu renk)
-            shadow = combo_font.render(msg, True, (0, 0, 0))
-            shadow_rect = shadow.get_rect(center=(active_width // 2 + 3, 38))
+            alpha = get_combo_popup_alpha(self.combo_message_time)
+            shake_x, shake_y = getattr(self, '_last_draw_shake_offset', (0, 0))
+
+            cell_size = self.get_cell_size()
+            board_w = self.board_width * cell_size
+            board_h = self.board_height * cell_size
+            board_x, board_y = self.get_board_offset()
+
+            msg_cx = board_x + shake_x + board_w // 2
+            msg_cy = board_y + shake_y + board_h // 3
+            msg_font = self.font_large
+
+            shadow = msg_font.render(msg, True, COMBO_POPUP_SHADOW_COLOR)
             if alpha < 255:
                 shadow.set_alpha(alpha)
-            self.screen.blit(shadow, shadow_rect)
-            self.screen.blit(combo_surf, combo_rect)
+            self.screen.blit(shadow, shadow.get_rect(center=(msg_cx + 2, msg_cy + 2)))
+
+            txt = msg_font.render(msg, True, get_combo_popup_color(msg))
+            if alpha < 255:
+                txt.set_alpha(alpha)
+            self.screen.blit(txt, txt.get_rect(center=(msg_cx, msg_cy)))
         
         # Havai fişek milestone mesajı - Modern UI teması (Yukarıda, skor bazlı renkler)
         if self.firework_active and self.firework_time > 0:
@@ -4641,7 +4815,15 @@ class Game:
 
         # Duraklatma menüsü: mod overlay'lerinden sonra çiz ki her zaman üstte kalsın.
         if self.paused and not self.game_over and not self.show_exit_prompt:
-            self._draw_pause_menu()
+            if getattr(self, '_pause_settings_active', False):
+                pause_settings = self._ensure_pause_settings_screen()
+                if pause_settings is not None:
+                    pause_settings.screen = self.screen
+                    pause_settings.draw()
+                else:
+                    self._draw_pause_menu()
+            else:
+                self._draw_pause_menu()
 
         if self.show_exit_prompt:
             self._draw_exit_prompt_overlay()
