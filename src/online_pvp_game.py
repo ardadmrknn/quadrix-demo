@@ -1809,18 +1809,28 @@ class OnlinePvPGame:
                     raw_vis = ''
                     raw_req = ''
                 if raw_meta_ready == '1':
-                    # Tam metadata propague olmuş. visibility alanını kontrol et.
+                    # metadata_ready=1 gelmiş. Ancak cross-platform'da
+                    # SetLobbyData çağrıları bağımsız propagate olabilir;
+                    # metadata_ready=1, visibility/requires_code'dan ÖNCE
+                    # karşı platforma ulaşabilir. Bu nedenle visibility
+                    # ve requires_code boşsa "public" varsaymıyoruz —
+                    # partial propagation olarak unknown bırakıyoruz.
                     if raw_vis == 'private' or raw_req == '1':
                         # Private lobi ama lobby_code henüz propague olmamış
                         lobby['visibility'] = 'private'
                         lobby['requires_code'] = True
                         lobby['code'] = _resolve_private_lobby_code(
                             lobby_id, True, '')
-                    else:
-                        # lobby_code yok + visibility private değil → public
+                    elif raw_vis == 'public' or raw_req == '0':
+                        # Açıkça public olarak işaretlenmiş
                         lobby['visibility'] = 'public'
                         lobby['requires_code'] = False
                         lobby['code'] = ''
+                    else:
+                        # metadata_ready=1 var ama visibility/requires_code
+                        # henüz propague olmamış — partial propagation.
+                        # Unknown bırak, sonraki refresh çözecektir.
+                        continue
                     lobby['metadata_ready'] = True
                     self._deferred_lobby_entries.pop(lobby_id, None)
                     try:

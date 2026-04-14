@@ -621,3 +621,114 @@ def test_on_lobby_created_resets_stale_validated_id():
 
     assert game._lobby_access_validated_id == 0
     assert game._pending_access_revalidation_lobby_id == 0
+
+
+def test_refresh_unknown_does_not_mark_public_on_partial_propagation():
+    """metadata_ready=1 ama visibility/requires_code boş ise public yapılmamalı.
+
+    Cross-platform'da SetLobbyData çağrıları bağımsız propagate olabilir.
+    metadata_ready=1 diğer alanlardan önce ulaşabilir. Bu durumda
+    lobi 'unknown' kalmalı, 'public' olarak yanlış işaretlenmemeli.
+    """
+    game = _make_game()
+    game._net_initialized = True
+
+    # Partial propagation senaryosu:
+    # game=quadrix ve metadata_ready=1 gelmiş ama visibility/requires_code boş
+    partial_metadata = {
+        'game': 'quadrix',
+        'metadata_ready': '1',
+        'visibility': '',
+        'requires_code': '',
+        'lobby_code': '',
+        'host_name': 'MacUser',
+    }
+    game.net = types.SimpleNamespace(
+        get_lobby_data_for=lambda lid, key: partial_metadata.get(key, ''),
+    )
+
+    # Unknown visibility'li bir lobi ekle
+    game._lobby_list = [{
+        'id': 12345,
+        'name': 'MacUser',
+        'code': '',
+        'visibility': 'unknown',
+        'requires_code': False,
+        'metadata_ready': False,
+        'found_time': 0,
+    }]
+    game._deferred_lobby_entries = {12345: game._lobby_list[0]}
+
+    game._refresh_unknown_lobby_entries()
+
+    # Partial propagation: unknown kalmalı, 'public' olmamalı
+    assert game._lobby_list[0]['visibility'] == 'unknown'
+
+
+def test_refresh_unknown_resolves_to_private_on_full_propagation():
+    """Tam metadata propagasyonu geldiğinde lobi doğru şekilde private olmalı."""
+    game = _make_game()
+    game._net_initialized = True
+
+    full_metadata = {
+        'game': 'quadrix',
+        'metadata_ready': '1',
+        'visibility': 'private',
+        'requires_code': '1',
+        'lobby_code': '123456',
+        'host_name': 'MacUser',
+    }
+    game.net = types.SimpleNamespace(
+        get_lobby_data_for=lambda lid, key: full_metadata.get(key, ''),
+    )
+
+    game._lobby_list = [{
+        'id': 12345,
+        'name': 'MacUser',
+        'code': '',
+        'visibility': 'unknown',
+        'requires_code': False,
+        'metadata_ready': False,
+        'found_time': 0,
+    }]
+    game._deferred_lobby_entries = {12345: game._lobby_list[0]}
+
+    game._refresh_unknown_lobby_entries()
+
+    # Tam metadata: private olarak çözülmeli
+    assert game._lobby_list[0]['visibility'] == 'private'
+    assert game._lobby_list[0]['requires_code'] is True
+
+
+def test_refresh_unknown_resolves_to_public_on_explicit_public():
+    """Açıkça visibility=public geldiğinde lobi public olarak çözülmeli."""
+    game = _make_game()
+    game._net_initialized = True
+
+    public_metadata = {
+        'game': 'quadrix',
+        'metadata_ready': '1',
+        'visibility': 'public',
+        'requires_code': '0',
+        'lobby_code': '',
+        'host_name': 'WinUser',
+    }
+    game.net = types.SimpleNamespace(
+        get_lobby_data_for=lambda lid, key: public_metadata.get(key, ''),
+    )
+
+    game._lobby_list = [{
+        'id': 12345,
+        'name': 'WinUser',
+        'code': '',
+        'visibility': 'unknown',
+        'requires_code': False,
+        'metadata_ready': False,
+        'found_time': 0,
+    }]
+    game._deferred_lobby_entries = {12345: game._lobby_list[0]}
+
+    game._refresh_unknown_lobby_entries()
+
+    assert game._lobby_list[0]['visibility'] == 'public'
+    assert game._lobby_list[0]['requires_code'] is False
