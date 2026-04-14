@@ -139,6 +139,9 @@ def _resolve_lobby_display_state(
             return 'private', True
         return 'public', False
 
+    if visibility == 'stale_unknown':
+        return 'stale_unknown', False
+
     if requires_code or normalized_code:
         return 'private', True
     return 'unknown', False
@@ -967,7 +970,7 @@ class OnlinePvPGame:
                 self.net.set_lobby_data('metadata_ready', '1')
             except Exception as _meta_err:
                 print(f"[OnlinePvP] Özel lobi metadata hatası: {_meta_err}")
-            print(f"[OnlinePvP] Lobi Kodu: {self._lobby_code}  |  Tam ID: {self._lobby_id_str}")
+            print(f"[OnlinePvP] Özel lobi hazır. Lobby ID: {self._lobby_id_str}")
 
         # Davet bekletilmişse şimdi aç
         if self._invite_after_lobby:
@@ -1183,6 +1186,9 @@ class OnlinePvPGame:
         self._session_ping_backoff_ms = 0.0
         self._game_start_pending_payload = None
         self._game_start_retry_timer = 0.0
+        # Aynı lobide kalınıyor ama metadata revalidation gerekirse
+        # pending flag'i korunsun — sadece match state temizleniyor.
+        # _lobby_access_validated_id sıfırlanMAZ (lobiden ayrılmıyoruz).
 
     def _get_lobby_metadata_snapshot(
         self,
@@ -1310,17 +1316,24 @@ class OnlinePvPGame:
             return False
         effective_snapshot = snapshot
         if effective_snapshot is None:
-            # ÖNEMLİ: Payload olarak deferred_entry'yi GEÇMİYORUZ.
-            # Deferred entry'de requires_code=False (Python bool) ve
-            # metadata_ready=False gibi varsayılan değerler bulunur.
-            # Live Steam okuması boş dönerse, fallback olarak bu değerler
-            # kullanılır ve _parse_lobby_bool(False) → False (None değil!)
-            # dönerek _normalize_lobby_visibility tarafından "açıkça kod
-            # gerekmez" → "public" olarak yanlış sınıflandırılır.
-            # None payload ile yalnızca live Steam verisi kullanılır.
+            # Deferred entry'yi payload olarak kullan AMA Python bool
+            # varsayımlarını (requires_code=False, metadata_ready=False)
+            # temizle. Bu değerler _parse_lobby_bool tarafından "açıkça
+            # kod gerekmez" olarak yorumlanır ve yanlış 'public'
+            # sınıflandırma üretir. Sadece STRING değerler payload'da kalır.
+            sanitized_payload = {}
+            for _k, _v in deferred_entry.items():
+                if _k in ('requires_code', 'metadata_ready'):
+                    # Python bool varsayımlarını dışla — sadece string kabul et
+                    if isinstance(_v, str):
+                        sanitized_payload[_k] = _v
+                elif _k == 'visibility' and _v == 'unknown':
+                    pass  # 'unknown' payload'da olmamalı
+                else:
+                    sanitized_payload[_k] = _v
             effective_snapshot = self._get_lobby_metadata_snapshot(
                 normalized_lobby_id,
-                None,
+                sanitized_payload or None,
                 prefer_live=True,
             )
         if effective_snapshot.get('visibility') == 'unknown':
@@ -1434,6 +1447,8 @@ class OnlinePvPGame:
             )
             authorized_by_invite = self._invite_authorized_lobby_id == current_lobby_id
             if authorized_by_code or authorized_by_invite:
+                # Davet/kod yetkilendirmesini temizle — tek kullanımlık
+                self._clear_private_join_authorization(current_lobby_id)
                 self._lobby_access_validated_id = current_lobby_id
                 return True
             # Yetkilendirme yok ama metadata da yok — geçici izin ver,
@@ -1770,7 +1785,7 @@ class OnlinePvPGame:
             self._lobby_list = [
                 l for l in self._lobby_list
                 if str(l.get('visibility', 'unknown') or 'unknown').lower()
-                in ('public', 'unknown')
+                in ('public', 'unknown', 'stale_unknown')
             ]
 
         count = len(self._lobby_list)
@@ -1790,7 +1805,7 @@ class OnlinePvPGame:
             self._lobby_list = [
                 l for l in self._lobby_list
                 if str(l.get('visibility', 'unknown') or 'unknown').lower()
-                in ('public', 'unknown')
+                in ('public', 'unknown', 'stale_unknown')
             ]
 
     def _refresh_unknown_lobby_entries(self):
@@ -1804,7 +1819,8 @@ class OnlinePvPGame:
         if not getattr(self, '_net_initialized', False):
             return
         for lobby in self._lobby_list:
-            if str(lobby.get('visibility', '') or '').lower() != 'unknown':
+            _vis = str(lobby.get('visibility', '') or '').lower()
+            if _vis not in ('unknown', 'stale_unknown'):
                 continue
             lobby_id = int(lobby.get('id', 0) or 0)
             if not lobby_id:
@@ -3671,7 +3687,7 @@ class OnlinePvPGame:
                 self._code_search_retry_use_full_scan = False
                 if self._net_initialized and code:
                     self._begin_code_search(code, fallback_scan=use_full_scan)
-                    print(f"[OnlinePvP] Kod araması retry tetiklendi: {code}")
+                    print(f"[OnlinePvP] Kod araması retry tetiklendi (full_scan={use_full_scan})")
 
         # Steam callback'leri işle
         if self._net_initialized:
@@ -3681,7 +3697,7 @@ class OnlinePvPGame:
         _has_unknown_lobbies = (
             bool(self._deferred_lobby_entries)
             or any(
-                str(l.get('visibility', '') or '').lower() == 'unknown'
+                str(l.get('visibility', '') or '').lower() in ('unknown', 'stale_unknown')
                 for l in getattr(self, '_lobby_list', [])
             )
         )
@@ -3697,18 +3713,32 @@ class OnlinePvPGame:
             if self._deferred_lobby_refresh_timer <= 0.0:
                 self._refresh_deferred_lobby_entries()
                 self._refresh_unknown_lobby_entries()
-                # Unknown lobiler 10+ saniye boyunca çözülemediyse, listeden kaldır.
-                # Eski/bozuk lobiler "Lobi yükleniyor" durumunda sonsuza kadar
-                # kalmasın — kullanıcı deneyimini bozar.
+                # Unknown lobiler 5+ saniye boyunca çözülemediyse,
+                # katılabilir duruma getir. Steam cross-platform metadata
+                # propagasyonu güvenilmez olabilir (özellikle macOS→Windows).
+                # Lobiyi silmek yerine kullanıcıya kod ile katılma imkanı
+                # ver. Katıldıktan sonra _validate_joined_lobby_access
+                # metadata'yı doğrudan okuyarak erişim kontrolü yapar.
                 _now = time.time()
-                _UNKNOWN_LOBBY_TIMEOUT_S = 10.0
+                _UNKNOWN_LOBBY_JOINABLE_TIMEOUT_S = 5.0
+                _UNKNOWN_LOBBY_REMOVE_TIMEOUT_S = 120.0
                 _stale_ids: set[int] = set()
                 for _lobby in getattr(self, '_lobby_list', []):
                     if str(_lobby.get('visibility', '') or '').lower() != 'unknown':
                         continue
                     _found_t = float(_lobby.get('found_time', 0) or 0)
-                    if _found_t > 0 and (_now - _found_t) > _UNKNOWN_LOBBY_TIMEOUT_S:
-                        _stale_ids.add(int(_lobby.get('id', 0) or 0))
+                    if not _found_t:
+                        continue
+                    _elapsed = _now - _found_t
+                    _lid = int(_lobby.get('id', 0) or 0)
+                    if _elapsed > _UNKNOWN_LOBBY_REMOVE_TIMEOUT_S:
+                        # 2 dakikadan uzun süredir çözülemedi → kaldır
+                        _stale_ids.add(_lid)
+                    elif _elapsed > _UNKNOWN_LOBBY_JOINABLE_TIMEOUT_S:
+                        # 5 saniye sonra: metadata gelmedi, lobiye katılmayı
+                        # denesin diye 'stale_unknown' olarak işaretle.
+                        # UI bu durumda "Katıl" butonu gösterecek.
+                        _lobby['visibility'] = 'stale_unknown'
                 if _stale_ids:
                     self._lobby_list = [
                         l for l in self._lobby_list
@@ -5011,11 +5041,11 @@ class OnlinePvPGame:
                     raw_requires_code,
                     l_code,
                 )
-                if visibility == 'unknown':
-                    accent_color = UIColors.NEON_CYAN
+                if visibility in ('unknown', 'stale_unknown'):
+                    accent_color = UIColors.NEON_CYAN if visibility == 'unknown' else UIColors.NEON_ORANGE
                 else:
                     accent_color = UIColors.NEON_ORANGE if requires_code else UIColors.NEON_GREEN
-                bdr = accent_color if hover or requires_code or visibility == 'unknown' else (*_rs.glass_border[:3],)
+                bdr = accent_color if hover or requires_code or visibility in ('unknown', 'stale_unknown') else (*_rs.glass_border[:3],)
                 draw_glass_panel(self.screen, ir,
                                  alpha=205 if hover else 150, border_color=bdr, glow=hover)
 
@@ -5044,6 +5074,8 @@ class OnlinePvPGame:
                 badge_font = _rs.get_font(s(11, minimum=9), bold=False)
                 if visibility == 'unknown':
                     badge_text = t('lobby_loading', 'Lobi yukleniyor')
+                elif visibility == 'stale_unknown':
+                    badge_text = t('lobby_try_join', 'Katilmak icin deneyin')
                 elif requires_code:
                     badge_text = t('private_locked', 'Kilitli Ozel Lobi')
                 else:
@@ -5066,6 +5098,8 @@ class OnlinePvPGame:
                 detail_parts = [f'{members}/{mx} oyuncu']
                 if visibility == 'unknown':
                     detail_parts.append(t('lobby_loading_wait', 'Bilgiler yukleniyor'))
+                elif visibility == 'stale_unknown':
+                    detail_parts.append(t('lobby_join_prompt', 'Kod ile veya dogrudan katilabilirsiniz'))
                 elif requires_code:
                     detail_parts.append(t('code_required', 'Katilmak icin kod gerekli'))
                 elif l_code:
@@ -5096,6 +5130,14 @@ class OnlinePvPGame:
                     action = ''
                     button_label = t('waiting', 'Bekleyin')
                     button_color = UIColors.NEON_CYAN
+                elif visibility == 'stale_unknown':
+                    # Metadata çözülemedi — kullanıcıya kod diyalogu ile
+                    # katılma imkanı ver. Kod girerse private olarak katılır,
+                    # girmezse public olarak dener. _validate_joined_lobby_access
+                    # katıldıktan sonra erişim kontrolü yapar.
+                    action = f'join_private_lobby:{lid}'
+                    button_label = t('try_join', 'Katil')
+                    button_color = UIColors.NEON_ORANGE
                 else:
                     action = f'join_private_lobby:{lid}' if requires_code else f'join_lobby:{lid}'
                     button_label = t('enter_code', 'Kod Gir') if requires_code else t('join', 'Katıl')

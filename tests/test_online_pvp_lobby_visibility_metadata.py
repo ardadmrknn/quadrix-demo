@@ -812,3 +812,87 @@ def test_promote_deferred_resolves_private_on_full_propagation():
     assert len(game._lobby_list) == 1
     assert game._lobby_list[0]['visibility'] == 'private'
     assert game._lobby_list[0]['requires_code'] is True
+
+
+def test_refresh_unknown_also_resolves_stale_unknown():
+    """stale_unknown lobiler de _refresh_unknown_lobby_entries tarafından çözülmeli."""
+    game = _make_game()
+    game._net_initialized = True
+
+    full_metadata = {
+        'game': 'quadrix',
+        'metadata_ready': '1',
+        'visibility': 'private',
+        'requires_code': '1',
+        'lobby_code': '654321',
+        'host_name': 'LateUser',
+    }
+    game.net = types.SimpleNamespace(
+        get_lobby_data_for=lambda lid, key: full_metadata.get(key, ''),
+    )
+
+    game._lobby_list = [{
+        'id': 99999,
+        'name': 'LateUser',
+        'code': '',
+        'visibility': 'stale_unknown',
+        'requires_code': False,
+        'metadata_ready': False,
+        'found_time': 0,
+    }]
+    game._deferred_lobby_entries = {}
+
+    game._refresh_unknown_lobby_entries()
+
+    assert game._lobby_list[0]['visibility'] == 'private'
+    assert game._lobby_list[0]['requires_code'] is True
+
+
+def test_invite_authorization_cleared_after_unknown_metadata_validation():
+    """Davet yetkilendirmesi, unknown metadata ile validation geçtikten sonra
+    temizlenmeli. Aksi halde stale _invite_authorized_lobby_id, aynı lobby_id'ye
+    sonraki katılımda yetkisiz erişime izin verebilir."""
+    game = _make_game()
+    game.net = types.SimpleNamespace(
+        lobby_id=77,
+        my_steam_id=99,
+        is_host=False,
+        get_lobby_owner=lambda: 55,
+        get_lobby_data_for=lambda _lid, key: '',  # metadata yok
+    )
+    game._return_to_pvp_lobby_menu = Mock()
+
+    # Davet ile yetkilendir
+    game._invite_authorized_lobby_id = 77
+
+    result = game._validate_joined_lobby_access()
+    assert result is True
+    assert game._lobby_access_validated_id == 77
+    # Davet yetkilendirmesi temizlenmeli
+    assert game._invite_authorized_lobby_id == 0
+
+
+def test_invite_authorization_cleared_after_private_metadata_validation():
+    """Davet yetkilendirmesi, private metadata ile validation geçtikten sonra
+    da temizlenmeli."""
+    game = _make_game()
+    game.net = types.SimpleNamespace(
+        lobby_id=77,
+        my_steam_id=99,
+        is_host=False,
+        get_lobby_owner=lambda: 55,
+        get_lobby_data_for=lambda _lid, key: {
+            'visibility': 'private',
+            'requires_code': '1',
+            'metadata_ready': '1',
+            'lobby_code': '123456',
+        }.get(key, ''),
+    )
+    game._return_to_pvp_lobby_menu = Mock()
+    game._invite_authorized_lobby_id = 77
+
+    result = game._validate_joined_lobby_access()
+    assert result is True
+    assert game._lobby_access_validated_id == 77
+    assert game._invite_authorized_lobby_id == 0
+    game._return_to_pvp_lobby_menu.assert_not_called()
