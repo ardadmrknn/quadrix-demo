@@ -349,7 +349,7 @@ def get_localized_skin_subtitle(skin: ModeSkin) -> str:
     return translated if translated != key else skin.subtitle
 
 
-def apply_outer_tint(screen: pygame.Surface, skin: ModeSkin) -> None:
+def apply_outer_tint(screen: pygame.Surface, skin: ModeSkin, rect: pygame.Rect | tuple[int, int, int, int] | None = None) -> None:
     """Overlay a subtle color tint on top of whatever background is active."""
     if skin.outer_tint[-1] <= 0:
         return
@@ -365,7 +365,14 @@ def apply_outer_tint(screen: pygame.Surface, skin: ModeSkin) -> None:
         overlay = pygame.Surface(screen.get_size(), pygame.SRCALPHA)
         overlay.fill(skin.outer_tint)
         _OUTER_TINT_CACHE[key] = overlay
-    screen.blit(overlay, (0, 0))
+    if rect is None:
+        screen.blit(overlay, (0, 0))
+        return
+
+    area = pygame.Rect(rect)
+    if area.width <= 0 or area.height <= 0:
+        return
+    screen.blit(overlay, area.topleft, area)
 
 
 def apply_board_tint(screen: pygame.Surface, rect: pygame.Rect, skin: ModeSkin) -> None:

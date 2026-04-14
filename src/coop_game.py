@@ -143,6 +143,10 @@ class CoopGame:
             return 2 * t * t
         return 1 - pow(-2 * t + 2, 2) / 2
 
+    @staticmethod
+    def _ease_out_cubic(t: float) -> float:
+        return 1 - pow(1 - t, 3)
+
     # ------------------------------------------------------------------
     # __init__
     # ------------------------------------------------------------------
@@ -254,7 +258,6 @@ class CoopGame:
         self._opening_curtain_duration_ms = self._OPENING_CURTAIN_DURATION_MS
         self._opening_curtain_start_ms = 0  # deferred — set on first draw frame
         self._opening_curtain_deferred = True
-        self._curtain_base_cache: dict = {'key': None, 'surface': None}
 
         # Skor
         self.team_score = 0
@@ -333,6 +336,7 @@ class CoopGame:
         self._ghost_surf_cache: dict = {'key': None, 'surface': None}
         self._freeze_overlay_cache: dict = {'P1': {'key': None, 'surface': None}, 'P2': {'key': None, 'surface': None}}
         self._board_skin_cache: dict = {'skin_id': None, 'board_skin': None}
+        self._outer_bg_composite_cache: dict = {'key': None, 'surface': None}
         self._frame_path_cache: dict = {}
         self._cached_das_delay: float = float(DAS_DELAY)
         self._cached_das_repeat: float = float(DAS_REPEAT)
@@ -372,10 +376,16 @@ class CoopGame:
 
         # Outer background (tam ekran arka plan)
         self.outer_background = BackgroundManager()
+        if self.settings_manager:
+            self.outer_background.set_transparency(self.settings_manager.get('bg_transparency', 1.0))
+        else:
+            self.outer_background.set_transparency(1.0)
         self._load_outer_background()
 
         # Ambient particles init
         self._init_ambient_particles()
+        self._sync_runtime_settings_from_manager()
+        self._prewarm_startup_render_caches()
 
     # ==================================================================
     # Kontrol çözümleme
@@ -532,7 +542,7 @@ class CoopGame:
                 except Exception:
                     pass
         if bg_transparency is not None:
-            for attr_name in ('background', 'board_background'):
+            for attr_name in ('background', 'board_background', 'outer_background'):
                 background = getattr(self, attr_name, None)
                 if background is not None and hasattr(background, 'set_transparency'):
                     try:
@@ -544,6 +554,7 @@ class CoopGame:
         self._layout_key = None
         self._das_settings_dirty = True
         self._board_skin_cache = {'skin_id': None, 'board_skin': None}
+        self._outer_bg_composite_cache = {'key': None, 'surface': None}
 
         pause_settings = getattr(self, '_pause_settings_screen', None)
         if pause_settings is not None:
@@ -2072,7 +2083,6 @@ class CoopGame:
                 self.p1_fall_time = 0
                 self._step_piece_down('P1')
         elif self._p1_pending_unfreeze:
-            # Düşüş tick bekleniyor — bir sonraki frame
             self.p1_fall_time += delta_time
             if self.p1_fall_time >= self.fall_speed:
                 self.p1_fall_time = 0
@@ -2305,6 +2315,12 @@ class CoopGame:
     def _render_game(self) -> None:
         """Oyun sahnesini çiz (flip çağırmaz — alt sınıflar overlay ekleyebilir)."""
         self._calculate_layout()
+        curtain_cover_width = self._get_opening_curtain_cover_width()
+        visible_outer_rect = None
+        if curtain_cover_width > 0:
+            visible_width = max(0, self.window_width - (curtain_cover_width * 2))
+            if visible_width > 0:
+                visible_outer_rect = pygame.Rect(curtain_cover_width, 0, visible_width, self.window_height)
 
         skin = self.mode_skin or get_mode_skin('classic')
         # Board skin: classic görünüm + modun renk aksentleri (cached)
@@ -2331,24 +2347,26 @@ class CoopGame:
         board_skin = bsc['board_skin']
 
         # === Arka plan ===
-        if self.outer_background.is_loaded():
-            self.outer_background.draw_full_screen(self.screen)
+        outer_background_composite = self._get_outer_background_composite(skin)
+        if visible_outer_rect is not None and outer_background_composite is not None:
+            self.screen.fill(skin.outer_bg)
+            self.screen.blit(outer_background_composite, visible_outer_rect.topleft, visible_outer_rect)
+        elif outer_background_composite is not None:
+            self.screen.blit(outer_background_composite, (0, 0))
         elif self.background.is_loaded():
             self.background.draw(self.screen, (0, 0, self.window_width, self.window_height))
+            apply_outer_tint(self.screen, skin, visible_outer_rect)
         else:
             self.screen.fill(skin.outer_bg)
-        apply_outer_tint(self.screen, skin)
-
-        # Skip background effects during opening curtain (fully covered by overlay)
-        _curtain_active = getattr(self, '_opening_curtain_active', False)
+            apply_outer_tint(self.screen, skin, visible_outer_rect)
 
         # Falling blocks layer
-        if self.effects_enabled and self.falling_blocks and not _curtain_active:
+        if self.effects_enabled and self.falling_blocks:
             self.falling_blocks.update(self.screen)
             self.falling_blocks.draw(self.screen)
 
         # Ambient particles (arka plan üstünde, board altında)
-        if self.effects_enabled and not _curtain_active:
+        if self.effects_enabled:
             self.draw_ambient_particles()
 
         # Screen shake offset
@@ -2449,10 +2467,45 @@ class CoopGame:
             self._draw_game_over_screen()
 
     def _draw_opening_curtain(self) -> None:
-        if not getattr(self, '_opening_curtain_active', False):
+        cover_width = self._get_opening_curtain_cover_width()
+        if cover_width <= 0:
             return
 
-        # Deferred start: timer on first draw frame (skips __init__ overhead)
+        wh = self.window_height
+        left_rect = pygame.Rect(0, 0, cover_width, wh)
+        right_rect = pygame.Rect(self.window_width - cover_width, 0, cover_width, wh)
+        curtain_color = (15, 20, 30)
+        pygame.draw.rect(self.screen, curtain_color, left_rect)
+        pygame.draw.rect(self.screen, curtain_color, right_rect)
+
+        edge_width = min(6, cover_width)
+        if edge_width > 0:
+            left_edge_x = cover_width - 1
+            right_edge_x = self.window_width - cover_width
+            edge_colors = [
+                (92, 118, 152),
+                (66, 84, 108),
+                (46, 58, 77),
+            ]
+            for offset, color in enumerate(edge_colors):
+                if offset >= edge_width:
+                    break
+                lx = left_edge_x - offset
+                rx = right_edge_x + offset
+                pygame.draw.line(self.screen, color, (lx, 0), (lx, wh))
+                pygame.draw.line(self.screen, color, (rx, 0), (rx, wh))
+
+            accent_inset = min(edge_width - 1, max(1, edge_width // 2))
+            if accent_inset > 0:
+                inner_left_x = max(0, left_edge_x - accent_inset)
+                inner_right_x = min(self.window_width - 1, right_edge_x + accent_inset)
+                pygame.draw.line(self.screen, (24, 30, 42), (inner_left_x, 0), (inner_left_x, wh))
+                pygame.draw.line(self.screen, (24, 30, 42), (inner_right_x, 0), (inner_right_x, wh))
+
+    def _get_opening_curtain_cover_width(self) -> int:
+        if not getattr(self, '_opening_curtain_active', False):
+            return 0
+
         if getattr(self, '_opening_curtain_deferred', False):
             self._opening_curtain_start_ms = int(pygame.time.get_ticks())
             self._opening_curtain_deferred = False
@@ -2468,41 +2521,83 @@ class CoopGame:
         progress = min(1.0, elapsed_ms / max(1, duration_ms))
         if progress >= 1.0:
             self._opening_curtain_active = False
-            self._curtain_base_cache = {'key': None, 'surface': None}
-            return
+            return 0
 
-        eased = self._ease_in_out_quad(progress)
-        cover_width = int((self.window_width / 2) * (1.0 - eased))
+        eased = self._ease_out_cubic(progress)
+        cover_width = int(round((self.window_width / 2) * (1.0 - eased)))
         if cover_width <= 0:
             self._opening_curtain_active = False
-            self._curtain_base_cache = {'key': None, 'surface': None}
-            return
+            return 0
+        return cover_width
 
-        # Precomputed full-height base surface (cached, only recreated on height change)
-        wh = self.window_height
-        ccache = self._curtain_base_cache
-        if ccache.get('key') != wh:
-            base = pygame.Surface((1, wh), pygame.SRCALPHA)
-            base.fill((15, 20, 30, 236))
-            ccache['key'] = wh
-            ccache['surface'] = base
+    def _get_outer_background_composite(self, skin) -> pygame.Surface | None:
+        outer_bg = getattr(self, 'outer_background', None)
+        if outer_bg is None or not outer_bg.is_loaded():
+            return None
 
-        # Left curtain — scale cached 1px strip to cover_width
+        cache = getattr(self, '_outer_bg_composite_cache', None)
+        if not isinstance(cache, dict):
+            cache = {'key': None, 'surface': None}
+            self._outer_bg_composite_cache = cache
+
+        cache_key = (
+            int(self.window_width),
+            int(self.window_height),
+            tuple(getattr(skin, 'outer_bg', (0, 0, 0))),
+            tuple(getattr(skin, 'outer_tint', (0, 0, 0, 0))),
+            round(float(getattr(outer_bg, 'transparency', 1.0) or 0.0), 3),
+            id(getattr(outer_bg, 'background_image', None)),
+        )
+        if cache.get('key') == cache_key and cache.get('surface') is not None:
+            return cache['surface']
+
+        composed = pygame.Surface((self.window_width, self.window_height))
+        composed.fill(getattr(skin, 'outer_bg', (0, 0, 0)))
+
+        bg_surface = outer_bg.get_full_screen_surface(self.screen)
+        if bg_surface is not None:
+            composed.blit(bg_surface, (0, 0))
+
+        outer_tint = tuple(getattr(skin, 'outer_tint', (0, 0, 0, 0)))
+        if len(outer_tint) >= 4 and int(outer_tint[3]) > 0:
+            tint_surface = pygame.Surface((self.window_width, self.window_height), pygame.SRCALPHA)
+            tint_surface.fill(outer_tint)
+            composed.blit(tint_surface, (0, 0))
+
         try:
-            left_scaled = pygame.transform.scale(ccache['surface'], (cover_width, wh))
+            if pygame.display.get_surface() is not None:
+                composed = composed.convert()
         except Exception:
-            left_scaled = pygame.Surface((cover_width, wh), pygame.SRCALPHA)
-            left_scaled.fill((15, 20, 30, 236))
-        self.screen.blit(left_scaled, (0, 0))
+            pass
 
-        # Right curtain
-        self.screen.blit(left_scaled, (self.window_width - cover_width, 0))
+        cache['key'] = cache_key
+        cache['surface'] = composed
+        return composed
 
-        # Soft edge (lightweight — 2 px lines directly on screen)
-        edge_alpha = 45
-        primary = (48, 62, 82, edge_alpha)
-        pygame.draw.line(self.screen, primary, (cover_width, 0), (cover_width, wh))
-        pygame.draw.line(self.screen, primary, (self.window_width - cover_width - 1, 0), (self.window_width - cover_width - 1, wh))
+    def _prewarm_startup_render_caches(self) -> None:
+        try:
+            self._calculate_layout()
+            skin = self.mode_skin or get_mode_skin('classic')
+            self._get_outer_background_composite(skin)
+
+            cs = self.cell_size
+            bw = self.board.width * cs
+            bh = self.board.height * cs
+            ox = self.board_offset_x
+            oy = self.board_offset_y
+            board_rect = pygame.Rect(ox, oy, bw, bh)
+
+            warm_surface = pygame.Surface((self.window_width, self.window_height), pygame.SRCALPHA)
+            original_screen = self.screen
+            self.screen = warm_surface
+            try:
+                self._draw_custom_frame(board_rect, "board_frame.png", padding=88, hole_punch=True)
+                self._draw_hud(ox, oy, cs, bw, bh)
+                self._draw_side_panels(ox, oy, cs, bw, bh)
+            finally:
+                self.screen = original_screen
+        except Exception:
+            pass
 
     def draw(self) -> None:
         self._render_game()

@@ -3485,7 +3485,15 @@ def main():
             fps_limit = int(settings_manager.get('fps_limit', 0) or 0)
         except Exception:
             fps_limit = 0
-        delta_ms = clock.tick(resolve_frame_rate_cap(fps_limit))
+        frame_cap = resolve_frame_rate_cap(fps_limit)
+        if (
+            sys.platform == 'darwin'
+            and state in ('game', 'pvp', 'coop', 'coop_campaign', 'online_pvp', 'online_coop')
+            and hasattr(clock, 'tick_busy_loop')
+        ):
+            delta_ms = clock.tick_busy_loop(frame_cap)
+        else:
+            delta_ms = clock.tick(frame_cap)
 
         # ── Gamepad Bağlam Güncelleme ──────────────────────────────────
         # Oyun/PvP sırasında gamepad bağlamını 'game' olarak ayarla.
@@ -3608,8 +3616,11 @@ def main():
 
         # Geçiş efektini çiz (her şeyin üstüne)
         if did_draw:
-            draw_screen_transition(screen)
-            pygame.display.flip()
+            transition_overlay_active = is_screen_transition_active()
+            handler_flips_display = state in ('coop', 'coop_campaign', 'online_coop')
+            if transition_overlay_active or not handler_flips_display:
+                draw_screen_transition(screen)
+                pygame.display.flip()
 
         # Sık değişen ayarları (slider vb.) toplu kaydet.
         try:

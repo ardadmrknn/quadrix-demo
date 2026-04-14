@@ -161,6 +161,38 @@ class BackgroundManager:
     def is_loaded(self):
         """Arka plan resmi yüklü mü?"""
         return self.background_image is not None
+
+    def _ensure_full_screen_cache(self, screen):
+        if not self.enabled or self.background_image is None:
+            return None
+
+        screen_width, screen_height = screen.get_size()
+        current_size = (screen_width, screen_height)
+
+        if not hasattr(self, '_cached_full_screen') or not hasattr(self, '_cached_screen_size') or self._cached_screen_size != current_size:
+            scaled = pygame.transform.scale(
+                self.background_image,
+                (screen_width, screen_height)
+            )
+            if _IS_MACOS:
+                self._cached_full_screen = scaled
+            else:
+                try:
+                    self._cached_full_screen = scaled.convert()
+                except Exception:
+                    self._cached_full_screen = scaled
+            self._cached_screen_size = current_size
+            self._cached_full_alpha = None
+
+        alpha = int(255 * max(0.0, min(1.0, float(getattr(self, 'transparency', 1.0)))))
+        cached_alpha = getattr(self, '_cached_full_alpha', None)
+        if cached_alpha != alpha:
+            try:
+                self._cached_full_screen.set_alpha(None if alpha >= 255 else alpha)
+            except Exception:
+                self._cached_full_screen.set_alpha(alpha)
+            self._cached_full_alpha = alpha
+        return self._cached_full_screen
     
     def draw_full_screen(self, screen):
         """
@@ -173,38 +205,26 @@ class BackgroundManager:
         if not self.enabled or self.background_image is None:
             return
         
-        # Ekran boyutunu al
-        screen_width, screen_height = screen.get_size()
-        current_size = (screen_width, screen_height)
-        
-        # Cache kontrolü - sadece boyut değiştiğinde yeniden scale et
-        if not hasattr(self, '_cached_full_screen') or not hasattr(self, '_cached_screen_size') or self._cached_screen_size != current_size:
-            # Resmi ekran boyutuna ölçeklendir ve cache'le
-            scaled = pygame.transform.scale(
-                self.background_image,
-                (screen_width, screen_height)
-            )
-            # macOS: convert bazen crash yapabiliyor
-            if _IS_MACOS:
-                self._cached_full_screen = scaled
-            else:
-                try:
-                    self._cached_full_screen = scaled.convert()
-                except Exception:
-                    self._cached_full_screen = scaled
-            self._cached_screen_size = current_size
-            self._cached_full_alpha = None
+        cached_surface = self._ensure_full_screen_cache(screen)
+        if cached_surface is None:
+            return
 
-        # Transparanlığı uygula (menüler + oyun dış alanı aynı davranmalı)
-        alpha = int(255 * max(0.0, min(1.0, float(getattr(self, 'transparency', 1.0)))))
-        cached_alpha = getattr(self, '_cached_full_alpha', None)
-        if cached_alpha != alpha:
-            try:
-                # alpha=255 -> per-surface alpha kapat (daha hızlı)
-                self._cached_full_screen.set_alpha(None if alpha >= 255 else alpha)
-            except Exception:
-                self._cached_full_screen.set_alpha(alpha)
-            self._cached_full_alpha = alpha
+        screen.blit(cached_surface, (0, 0))
 
-        # Cache'lenmiş resmi çiz (her frame aynı)
-        screen.blit(self._cached_full_screen, (0, 0))
+    def get_full_screen_surface(self, screen):
+        """Cache'lenmiş tam ekran arka plan yüzeyini döndür."""
+        return self._ensure_full_screen_cache(screen)
+
+    def draw_full_screen_region(self, screen, region_rect):
+        """Çözünürlük cache'ini koruyarak tam ekran arka planın yalnızca istenen bölgesini çiz."""
+        if not self.enabled or self.background_image is None:
+            return
+        rect = pygame.Rect(region_rect)
+        if rect.width <= 0 or rect.height <= 0:
+            return
+
+        cached_surface = self._ensure_full_screen_cache(screen)
+        if cached_surface is None:
+            return
+
+        screen.blit(cached_surface, rect.topleft, rect)
