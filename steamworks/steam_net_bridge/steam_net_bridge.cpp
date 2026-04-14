@@ -1142,8 +1142,8 @@ PYBIND11_MODULE(steam_net_bridge, m)
              &SteamNetBridge::add_request_lobby_list_distance_filter,
              py::arg("distance_filter"))
         .def("request_lobby_list", &SteamNetBridge::request_lobby_list)
-           .def("request_lobby_data", &SteamNetBridge::request_lobby_data,
-               py::arg("lobby_id"))
+        .def("request_lobby_data", &SteamNetBridge::request_lobby_data,
+             py::arg("lobby_id"))
         // Mesajlaşma
         .def("send_message", &SteamNetBridge::send_message,
              py::arg("target_steam_id"), py::arg("data"),
