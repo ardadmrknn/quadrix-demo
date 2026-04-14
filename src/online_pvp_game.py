@@ -484,7 +484,7 @@ class OnlinePvPGame:
         self._lobby_list_fetch_start_time: float = 0
         self._auto_lobby_refresh_requested = False
         self._auto_lobby_refresh_timer = 0.0
-        self._auto_lobby_refresh_interval = 10000.0
+        self._auto_lobby_refresh_interval = 5000.0
         self._pending_lobby_list: list[dict] = []  # Lobi listesi birikim tampon
         self._deferred_lobby_entries: dict[int, dict] = {}
         self._deferred_lobby_refresh_timer = 0.0
@@ -923,12 +923,45 @@ class OnlinePvPGame:
         print(f"[OnlinePvP] Lobi oluşturuldu: {ev.steam_id}")
 
         self._lobby_id_str = str(ev.steam_id)
+        # Eski C++ bridge uyumluluğu: C++ OnLobbyCreated metadata_ready=1
+        # yazmış olabilir. Hassas alanları yazmadan önce metadata_ready=0'a çek;
+        # böylece diğer platform geçici "public" metadata okumasını önle.
+        try:
+            self.net.set_lobby_data('metadata_ready', '0')
+        except Exception:
+            pass
+
         if self._creating_public_lobby:
             self._lobby_code = ''
+            # Public lobi metadata'sını yaz.
+            # C++ sadece game, version, host_name ve metadata_ready=0 yazar;
+            # visibility/requires_code gibi hassas alanlar Python'dan yazılır
+            # (race condition önlemi).
+            try:
+                self.net.set_lobby_data('visibility', 'public')
+                self.net.set_lobby_data('requires_code', '0')
+                self.net.set_lobby_data('lobby_code', '')
+                self.net.set_lobby_data('lobby_code_full', '')
+                self.net.set_lobby_data('metadata_ready', '1')
+            except Exception as _meta_err:
+                print(f"[OnlinePvP] Public lobi metadata hatası: {_meta_err}")
             print(f"[OnlinePvP] Public lobi hazır. Lobby ID: {self._lobby_id_str}")
         else:
             self._lobby_code = generate_lobby_code(ev.steam_id)
             self._remember_private_join_authorization(ev.steam_id, self._lobby_code)
+            # Özel lobi metadata'sını yaz.
+            # C++ lobi tipi Public olarak oluşturuldu (cross-platform keşif
+            # güvenilirliği için). Tüm metadata Python'dan yazılır;
+            # metadata_ready=1 en son set edilir — böylece diğer platform
+            # "public" metadata okuduğu race window kapanır.
+            try:
+                self.net.set_lobby_data('visibility', 'private')
+                self.net.set_lobby_data('requires_code', '1')
+                self.net.set_lobby_data('lobby_code', self._lobby_code)
+                self.net.set_lobby_data('lobby_code_full', self._lobby_id_str)
+                self.net.set_lobby_data('metadata_ready', '1')
+            except Exception as _meta_err:
+                print(f"[OnlinePvP] Özel lobi metadata hatası: {_meta_err}")
             print(f"[OnlinePvP] Lobi Kodu: {self._lobby_code}  |  Tam ID: {self._lobby_id_str}")
 
         # Davet bekletilmişse şimdi aç
@@ -1738,19 +1771,64 @@ class OnlinePvPGame:
                 except Exception:
                     pass
             elif raw_game == 'quadrix':
-                # game=quadrix metadata'sı var ama visibility yok —
-                # muhtemelen public lobi (private olsaydı lobby_code olurdu)
-                lobby['visibility'] = 'public'
-                lobby['requires_code'] = False
-                lobby['metadata_ready'] = True
-                lobby['code'] = ''
-                self._deferred_lobby_entries.pop(lobby_id, None)
+                # game=quadrix metadata'sı var ama visibility/lobby_code yok.
+                # metadata_ready=1 olmalı; yoksa partial propagation olabilir
+                # (game=quadrix server-side filtre olarak daima önce gelir,
+                # diğer alanlar henüz propague olmamış olabilir).
                 try:
-                    raw_host = self.net.get_lobby_data_for(lobby_id, 'host_name')
-                    if raw_host:
-                        lobby['name'] = raw_host
+                    raw_meta_ready = self.net.get_lobby_data_for(
+                        lobby_id, 'metadata_ready')
+                    raw_vis = self.net.get_lobby_data_for(
+                        lobby_id, 'visibility')
+                    raw_req = self.net.get_lobby_data_for(
+                        lobby_id, 'requires_code')
                 except Exception:
-                    pass
+                    raw_meta_ready = ''
+                    raw_vis = ''
+                    raw_req = ''
+                if raw_meta_ready == '1':
+                    # Tam metadata propague olmuş. visibility alanını kontrol et.
+                    if raw_vis == 'private' or raw_req == '1':
+                        # Private lobi ama lobby_code henüz propague olmamış
+                        lobby['visibility'] = 'private'
+                        lobby['requires_code'] = True
+                        lobby['code'] = _resolve_private_lobby_code(
+                            lobby_id, True, '')
+                    else:
+                        # lobby_code yok + visibility private değil → public
+                        lobby['visibility'] = 'public'
+                        lobby['requires_code'] = False
+                        lobby['code'] = ''
+                    lobby['metadata_ready'] = True
+                    self._deferred_lobby_entries.pop(lobby_id, None)
+                    try:
+                        raw_host = self.net.get_lobby_data_for(
+                            lobby_id, 'host_name')
+                        if raw_host:
+                            lobby['name'] = raw_host
+                    except Exception:
+                        pass
+                elif raw_vis in ('public', 'private') or raw_req in ('0', '1'):
+                    # metadata_ready henüz yok ama visibility/requires_code
+                    # gelmiş — türet
+                    is_private = raw_vis == 'private' or raw_req == '1'
+                    lobby['visibility'] = 'private' if is_private else 'public'
+                    lobby['requires_code'] = is_private
+                    lobby['metadata_ready'] = False
+                    lobby['code'] = (
+                        _resolve_private_lobby_code(lobby_id, True, '')
+                        if is_private else ''
+                    )
+                    self._deferred_lobby_entries.pop(lobby_id, None)
+                    try:
+                        raw_host = self.net.get_lobby_data_for(
+                            lobby_id, 'host_name')
+                        if raw_host:
+                            lobby['name'] = raw_host
+                    except Exception:
+                        pass
+                # else: metadata henüz tam propague olmamış —
+                # unknown bırak, sonraki refresh'te çözülür
 
     def _on_lobby_error(self, ev: NetEvent):
         """Lobi oluşturma/katılma hatası."""

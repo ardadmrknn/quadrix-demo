@@ -481,23 +481,15 @@ class SteamNetworking:
         try:
             self._state = 'lobby'
             self._is_host = True
-            if public:
-                self._bridge_instance.create_public_lobby(max_members)
-            else:
-                # Ozel lobi: search'te bulunabilir ama arkadas listesinde görünmez.
-                # Steam dokümantasyonuna göre RequestLobbyList sadece Public ve
-                # Invisible lobileri döndürür. create_lobby() da zaten Invisible
-                # tipi kullanır; create_lobby_with_type sadece açık tip belirtmek
-                # için tercih edilir.
-                try:
-                    self._bridge_instance.create_lobby_with_type(
-                        LobbyType.INVISIBLE, max_members)
-                except (AttributeError, TypeError):
-                    # Eski bridge sürümü — create_lobby zaten INVISIBLE kullanır
-                    self._bridge_instance.create_lobby(max_members)
-                except Exception as inner_exc:
-                    print(f"[SteamNet] create_lobby_with_type hatası, fallback: {inner_exc}")
-                    self._bridge_instance.create_lobby(max_members)
+            # Tüm lobileri k_ELobbyTypePublic olarak oluştur.
+            # k_ELobbyTypeInvisible cross-platform keşif sorunlarına
+            # yol açabilir (metadata propagasyonu macOS↔Windows arasında
+            # güvenilmez). Public tip, RequestLobbyList'te her zaman görünür.
+            # Özel lobi gizliliği metadata ile yönetilir (visibility,
+            # requires_code, lobby_code) — _on_lobby_created'da ayarlanır.
+            # C++ OnLobbyCreated sadece game/version/host_name/metadata_ready=0
+            # yazar; hassas metadata (visibility vs.) Python tarafından yazılır.
+            self._bridge_instance.create_public_lobby(max_members)
             print(f"[SteamNet] Lobi oluşturuluyor... (public={public})")
         except Exception as e:
             print(f"[SteamNet] create_lobby hatası: {e}")

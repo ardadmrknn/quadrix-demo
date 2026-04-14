@@ -880,25 +880,15 @@ private:
         m_currentLobby = CSteamID(pResult->m_ulSteamIDLobby);
         m_lobbyReady = true;
 
-        const uint64_t lobbyIdValue = m_currentLobby.ConvertToUint64();
-        const std::string lobbyIdText = std::to_string(lobbyIdValue);
-        const std::string lobbyCode = m_pendingLobbyRequiresCode
-                                          ? generate_lobby_code(lobbyIdValue)
-                                          : "";
-
-        // Lobi metadata'sını ayarla
+        // Sadece temel keşif metadata'sını yaz.
+        // visibility, requires_code, lobby_code gibi hassas alanlar
+        // Python tarafından (_on_lobby_created) yazılır. Böylece
+        // "C++ public yazar → diğer platform okur → Python private
+        // override yapar" şeklinde bir race window önlenir.
+        // metadata_ready=0 olarak işaretle; Python tüm alanları
+        // doğru şekilde yazdıktan sonra metadata_ready=1 yapacak.
         m_matchmaking->SetLobbyData(m_currentLobby, "game", "quadrix");
         m_matchmaking->SetLobbyData(m_currentLobby, "version", "1.0");
-        m_matchmaking->SetLobbyData(m_currentLobby, "visibility", m_pendingLobbyVisibility.c_str());
-        m_matchmaking->SetLobbyData(
-            m_currentLobby,
-            "requires_code",
-            m_pendingLobbyRequiresCode ? "1" : "0");
-        m_matchmaking->SetLobbyData(m_currentLobby, "lobby_code", lobbyCode.c_str());
-        m_matchmaking->SetLobbyData(
-            m_currentLobby,
-            "lobby_code_full",
-            m_pendingLobbyRequiresCode ? lobbyIdText.c_str() : "");
         if (m_friends)
         {
             const char *personaName = m_friends->GetPersonaName();
@@ -907,7 +897,7 @@ private:
                 m_matchmaking->SetLobbyData(m_currentLobby, "host_name", personaName);
             }
         }
-        m_matchmaking->SetLobbyData(m_currentLobby, "metadata_ready", "1");
+        m_matchmaking->SetLobbyData(m_currentLobby, "metadata_ready", "0");
         m_matchmaking->SetLobbyJoinable(m_currentLobby, true);
 
         push_event("lobby_created", pResult->m_ulSteamIDLobby, "");

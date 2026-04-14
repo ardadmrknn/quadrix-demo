@@ -60,24 +60,26 @@ def test_search_lobby_by_code_keeps_string_filter_when_distance_filter_is_unavai
     net._bridge_instance.request_lobby_list.assert_called_once_with()
 
 
-def test_create_lobby_prefers_invisible_type_for_private_code_lobbies():
+def test_create_lobby_always_uses_public_type():
+    """Tüm lobiler k_ELobbyTypePublic olarak oluşturulur.
+
+    Cross-platform keşif sorunlarını önlemek için hem public hem
+    private lobiler create_public_lobby ile açılır.  Özel lobi
+    gizliliği metadata katmanında yönetilir.
+    """
     net = steam_networking_module.SteamNetworking()
     net._bridge_instance = Mock()
 
     net.create_lobby(public=False)
 
-    net._bridge_instance.create_lobby_with_type.assert_called_once_with(
-        steam_networking_module.LobbyType.INVISIBLE,
-        2,
-    )
-    net._bridge_instance.create_lobby.assert_not_called()
+    net._bridge_instance.create_public_lobby.assert_called_once_with(2)
 
 
-def test_create_lobby_falls_back_to_default_create_when_typed_api_is_missing():
+def test_create_lobby_uses_public_type_for_public_lobbies():
+    """public=True durumunda da create_public_lobby çağrılır."""
     net = steam_networking_module.SteamNetworking()
-    bridge = Mock(spec=['create_lobby'])
-    net._bridge_instance = bridge
+    net._bridge_instance = Mock()
 
-    net.create_lobby(public=False)
+    net.create_lobby(public=True)
 
-    net._bridge_instance.create_lobby.assert_called_once_with(2)
+    net._bridge_instance.create_public_lobby.assert_called_once_with(2)

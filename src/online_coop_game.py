@@ -284,21 +284,31 @@ class OnlineCoopGame:
         else:
             self._lobby_code = generate_lobby_code(ev.steam_id)
 
-        # Co-op metadata set
+        # Eski C++ bridge uyumluluğu: C++ OnLobbyCreated metadata_ready=1
+        # yazmış olabilir. Hassas alanları yazmadan önce metadata_ready=0'a çek.
         try:
-            self.net.set_lobby_data('game', 'quadrix')
+            self.net.set_lobby_data('metadata_ready', '0')
+        except Exception:
+            pass
+
+        # Co-op metadata set
+        # Not: '1'/'0' formatı C++ bridge (build_lobby_found_payload) ve
+        # PvP koduyla tutarlılık için kullanılır. C++ requires_code=='1'
+        # kontrolü yapar; 'true'/'false' kullanılmamalı.
+        try:
             self.net.set_lobby_data('mode', 'coop')
             self.net.set_lobby_data('sub_mode', self.selected_submode)
             visibility = 'public' if self._creating_public_lobby else 'private'
             self.net.set_lobby_data('visibility', visibility)
             if self._lobby_code:
                 self.net.set_lobby_data('lobby_code', self._lobby_code)
-            self.net.set_lobby_data('requires_code', 'true' if self._lobby_code else 'false')
+                self.net.set_lobby_data('lobby_code_full', self._lobby_id_str)
+            self.net.set_lobby_data('requires_code', '1' if self._lobby_code else '0')
             host_name = ''
             if self.user_manager:
                 host_name = getattr(self.user_manager, 'display_name', '') or ''
             self.net.set_lobby_data('host_name', host_name or 'Host')
-            self.net.set_lobby_data('metadata_ready', 'true')
+            self.net.set_lobby_data('metadata_ready', '1')
         except Exception as e:
             print(f"[OnlineCoop] Metadata set hatası: {e}")
 

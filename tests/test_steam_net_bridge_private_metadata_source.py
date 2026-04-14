@@ -9,18 +9,29 @@ CPP_PATH = ROOT_DIR / 'steamworks' / 'steam_net_bridge' / 'steam_net_bridge.cpp'
 
 
 def test_bridge_sets_visibility_metadata_on_lobby_created():
+    """C++ OnLobbyCreated yalnızca temel keşif metadata'sı yazar.
+
+    Hassas alanlar (visibility, requires_code, lobby_code) Python
+    tarafından yazılır; böylece C++ public yazar → diğer platform
+    okur → Python private override yapar şeklinde bir race window
+    önlenir.  metadata_ready=0 olarak işaretlenir, Python tüm
+    alanları doğru yazdıktan sonra 1 yapar.
+    """
     content = CPP_PATH.read_text(encoding='utf-8')
 
+    # Hata durumunda error data hâlâ pending visibility bilgisini içerir
     assert 'std::string errorData = std::string("result=") + std::to_string((int)pResult->m_eResult) +' in content
     assert '",visibility=" + m_pendingLobbyVisibility +' in content
     assert '",requires_code=" + (m_pendingLobbyRequiresCode ? std::string("1") : std::string("0"));' in content
-    assert 'm_matchmaking->SetLobbyData(m_currentLobby, "visibility", m_pendingLobbyVisibility.c_str())' in content
-    assert '"requires_code"' in content
-    assert 'set_pending_lobby_metadata(k_ELobbyTypePublic);' in content
-    assert 'generate_lobby_code(lobbyIdValue)' in content
-    assert 'm_matchmaking->SetLobbyData(m_currentLobby, "lobby_code", lobbyCode.c_str())' in content
-    assert 'm_matchmaking->SetLobbyData(m_currentLobby, "metadata_ready", "1")' in content
+
+    # Başarı yolunda C++ yalnızca game/version/host_name/metadata_ready=0 yazar
+    assert 'm_matchmaking->SetLobbyData(m_currentLobby, "game", "quadrix")' in content
+    assert 'm_matchmaking->SetLobbyData(m_currentLobby, "version", "1.0")' in content
+    assert 'm_matchmaking->SetLobbyData(m_currentLobby, "metadata_ready", "0")' in content
     assert 'm_matchmaking->SetLobbyJoinable(m_currentLobby, true);' in content
+
+    # set_pending_lobby_metadata hâlâ create_public_lobby tarafından çağrılır
+    assert 'set_pending_lobby_metadata(k_ELobbyTypePublic);' in content
 
 
 def test_bridge_uses_invisible_lobby_type_for_searchable_private_code_lobbies():
