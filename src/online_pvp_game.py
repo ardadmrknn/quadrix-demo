@@ -517,6 +517,7 @@ class OnlinePvPGame:
         self._authorized_private_join_code: str = ''
         self._invite_authorized_lobby_id: int = 0
         self._pending_access_revalidation_lobby_id: int = 0
+        self._lobby_access_validated_id: int = 0  # Erişim doğrulaması geçen lobi ID
 
         # ─── Görsel Efektler (local PvP ile birebir) ───
         self.effects_enabled = True
@@ -920,6 +921,8 @@ class OnlinePvPGame:
     def _on_lobby_created(self, ev: NetEvent):
         self.online_state = OnlineState.WAITING
         self._lobby_presence_probe_timer = 0.0
+        self._lobby_access_validated_id = 0
+        self._pending_access_revalidation_lobby_id = 0
         print(f"[OnlinePvP] Lobi oluşturuldu: {ev.steam_id}")
 
         self._lobby_id_str = str(ev.steam_id)
@@ -988,6 +991,11 @@ class OnlinePvPGame:
         self.online_state = OnlineState.WAITING
         self._lobby_presence_probe_timer = 0.0
         self._join_target_lobby_id = 0
+        # Yeni lobiye her katılışta önceki doğrulama durumunu sıfırla.
+        # Önceki lobiden kalan stale validated_id, aynı lobby_id'ye
+        # tekrar katılırken yetkilendirilmemiş erişime izin verebilir.
+        self._lobby_access_validated_id = 0
+        self._pending_access_revalidation_lobby_id = 0
         if not self._validate_joined_lobby_access():
             return
         # Rakip zaten lobideyse bul
@@ -1345,6 +1353,12 @@ class OnlinePvPGame:
         if not current_lobby_id:
             return True
 
+        # Daha önce bu lobi için erişim doğrulandıysa tekrar kontrol etme.
+        # Bu sayede _on_lobby_data_updated'dan gelen tekrarlı çağrılar
+        # temizlenmiş auth nedeniyle yanlış reject tetiklemez.
+        if self._lobby_access_validated_id == current_lobby_id:
+            return True
+
         my_steam_id = int(getattr(self.net, 'my_steam_id', 0) or 0)
         lobby_owner_id = 0
         try:
@@ -1353,6 +1367,7 @@ class OnlinePvPGame:
             lobby_owner_id = 0
         if (my_steam_id and lobby_owner_id == my_steam_id) or bool(getattr(self.net, 'is_host', False)):
             self._clear_private_join_authorization(current_lobby_id)
+            self._lobby_access_validated_id = current_lobby_id
             return True
 
         snapshot = self._get_lobby_metadata_snapshot(current_lobby_id, prefer_live=True)
@@ -1367,6 +1382,7 @@ class OnlinePvPGame:
             )
             authorized_by_invite = self._invite_authorized_lobby_id == current_lobby_id
             if authorized_by_code or authorized_by_invite:
+                self._lobby_access_validated_id = current_lobby_id
                 return True
             # Yetkilendirme yok ama metadata da yok — geçici izin ver,
             # metadata geldiğinde _on_lobby_data_updated tekrar kontrol edecek
@@ -1375,6 +1391,7 @@ class OnlinePvPGame:
 
         if not snapshot.get('requires_code'):
             self._clear_private_join_authorization(current_lobby_id)
+            self._lobby_access_validated_id = current_lobby_id
             return True
 
         expected_code = _resolve_private_lobby_code(
@@ -1390,6 +1407,7 @@ class OnlinePvPGame:
         authorized_by_invite = self._invite_authorized_lobby_id == current_lobby_id
         if authorized_by_code or authorized_by_invite:
             self._clear_private_join_authorization(current_lobby_id)
+            self._lobby_access_validated_id = current_lobby_id
             return True
 
         self._reject_private_lobby_join()
@@ -1637,11 +1655,15 @@ class OnlinePvPGame:
             # Ertelenmiş erişim yeniden-doğrulaması: _validate_joined_lobby_access
             # metadata unknown iken geçici izin vermiş olabilir. Metadata
             # artık hazır olduğunda tekrar doğrula.
+            # SADECE pending revalidation aktifken doğrula. Aksi halde
+            # her lobby_data_updated event'inde tekrar validation çalışır
+            # ve daha önce temizlenmiş auth nedeniyle oyuncu kick yiyebilir.
             pending_revalidation = int(
                 getattr(self, '_pending_access_revalidation_lobby_id', 0) or 0)
-            if pending_revalidation == current_lobby_id and snapshot.get('metadata_ready'):
-                self._pending_access_revalidation_lobby_id = 0
-            self._validate_joined_lobby_access()
+            if pending_revalidation == current_lobby_id:
+                if snapshot.get('metadata_ready'):
+                    self._pending_access_revalidation_lobby_id = 0
+                self._validate_joined_lobby_access()
 
     def _on_lobby_list_complete(self, ev: NetEvent):
         """Lobi listesi tamamlandı — sonuçları onayla."""
@@ -2002,6 +2024,7 @@ class OnlinePvPGame:
         self._code_search_retry_use_full_scan = False
         self._clear_private_join_authorization()
         self._pending_access_revalidation_lobby_id = 0
+        self._lobby_access_validated_id = 0
         self._lobby_list_filter = 'all'
         self._lobby_list_fetching = False
         self._lobby_list_fetch_start_time = 0

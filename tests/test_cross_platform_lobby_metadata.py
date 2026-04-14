@@ -46,6 +46,7 @@ def _make_pvp_game():
     game._authorized_private_join_code = ''
     game._invite_authorized_lobby_id = 0
     game._pending_access_revalidation_lobby_id = 0
+    game._lobby_access_validated_id = 0
     game._searching_by_code = False
     game._search_code = ''
     game._code_search_retry_count = 0

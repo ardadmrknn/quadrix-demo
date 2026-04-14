@@ -30,6 +30,7 @@ def _make_game():
     game._authorized_private_join_code = ''
     game._invite_authorized_lobby_id = 0
     game._pending_access_revalidation_lobby_id = 0
+    game._lobby_access_validated_id = 0
     game._searching_by_code = False
     game._search_code = ''
     game._code_search_retry_count = 0
@@ -401,3 +402,222 @@ def test_validate_joined_lobby_access_rejects_unauthorized_private_join():
     assert game._validate_joined_lobby_access() is False
     game._return_to_pvp_lobby_menu.assert_called_once_with()
     assert 'kod veya davet gerekli' in game._status_msg.lower()
+
+
+# ============================================================
+# Bug B fix: _on_lobby_data_updated tekrarlı validation kick'i
+# ============================================================
+
+def test_lobby_data_updated_does_not_re_validate_after_successful_access():
+    """lobby_data_updated, erişim doğrulanmış lobide tekrar validation çağırmamalı.
+
+    Bug: macOS Windows özel lobiye katılıyor, ilk validation geçiyor,
+    sonra lobby_data_updated gelince auth temizlenmiş olduğu için
+    ikinci validation KICK atıyordu.
+    """
+    game = _make_game()
+    game.online_state = online_pvp_module.OnlineState.WAITING
+    game._net_initialized = True
+
+    private_metadata = {
+        'visibility': 'private',
+        'requires_code': '1',
+        'metadata_ready': '1',
+        'lobby_code': '123456',
+    }
+    game.net = types.SimpleNamespace(
+        lobby_id=77,
+        my_steam_id=99,
+        is_host=False,
+        opponent_steam_id=0,
+        get_lobby_owner=lambda: 55,
+        get_lobby_data_for=lambda _lid, key: private_metadata.get(key, ''),
+    )
+    game._return_to_pvp_lobby_menu = Mock()
+
+    # İlk validation: kod ile yetkilendirilmiş
+    game._remember_private_join_authorization(77, '123456')
+    assert game._validate_joined_lobby_access() is True
+    assert game._lobby_access_validated_id == 77
+
+    # Auth temizlenmiş (validation başarılı olunca temizlenir)
+    assert game._authorized_private_join_lobby_id == 0
+
+    # lobby_data_updated event'i: tekrar validation çağrılmamalı
+    game._on_lobby_data_updated(NetEvent(
+        'lobby_data_updated', 77,
+        '{"visibility":"private","requires_code":true,"metadata_ready":true,"lobby_code":"123456"}',
+    ))
+    game._return_to_pvp_lobby_menu.assert_not_called()
+
+
+def test_lobby_data_updated_revalidates_when_pending():
+    """pending_access_revalidation aktifken lobby_data_updated validation çağırmalı."""
+    game = _make_game()
+    game.online_state = online_pvp_module.OnlineState.WAITING
+    game._net_initialized = True
+
+    game.net = types.SimpleNamespace(
+        lobby_id=77,
+        my_steam_id=99,
+        is_host=False,
+        opponent_steam_id=0,
+        get_lobby_owner=lambda: 55,
+        get_lobby_data_for=lambda _lid, key: {
+            'visibility': 'private',
+            'requires_code': '1',
+            'metadata_ready': '1',
+            'lobby_code': '654321',
+        }.get(key, ''),
+    )
+    game._return_to_pvp_lobby_menu = Mock()
+    game._pending_access_revalidation_lobby_id = 77
+
+    # Pending revalidation + auth yok → reject
+    game._on_lobby_data_updated(NetEvent(
+        'lobby_data_updated', 77,
+        '{"visibility":"private","requires_code":true,"metadata_ready":true}',
+    ))
+    game._return_to_pvp_lobby_menu.assert_called()
+
+
+def test_validated_access_id_prevents_repeated_validation():
+    """_lobby_access_validated_id set edildikten sonra aynı lobi için validation skip."""
+    game = _make_game()
+    game.net = types.SimpleNamespace(
+        lobby_id=77,
+        my_steam_id=99,
+        is_host=False,
+        get_lobby_owner=lambda: 55,
+        get_lobby_data_for=lambda _lid, key: {
+            'visibility': 'private',
+            'requires_code': '1',
+            'metadata_ready': '1',
+            'lobby_code': '123456',
+        }.get(key, ''),
+    )
+    game._return_to_pvp_lobby_menu = Mock()
+    game._lobby_access_validated_id = 77
+
+    # Auth yok ama validated_id set → skip, True döner
+    assert game._validate_joined_lobby_access() is True
+    game._return_to_pvp_lobby_menu.assert_not_called()
+
+
+def test_validated_access_id_resets_on_lobby_leave():
+    """_return_to_pvp_lobby_menu çağrıldığında _lobby_access_validated_id sıfırlanmalı."""
+    game = _make_game()
+    game.online_state = online_pvp_module.OnlineState.WAITING
+    game.my_ready = False
+    game.opponent_ready = False
+    game._ready_resend_timer = 0.0
+    game._session_established = False
+    game._ready_send_pending = False
+    game._pending_disconnect_steam_id = 0
+    game._disconnect_grace_timer = 0.0
+    game._session_ping_timer = 0.0
+    game._session_ping_backoff_ms = 0.0
+    game._game_start_pending_payload = None
+    game._game_start_retry_timer = 0.0
+    game.paused = False
+    game.opponent_paused = False
+    game.opponent_piece_data = None
+    game._opponent_piece_seq = 0
+    game._lobby_code = ''
+    game._lobby_id_str = ''
+    game._join_code_active = False
+    game._join_code_input = ''
+    game._join_code_error = ''
+    game._auto_lobby_refresh_requested = False
+    game._auto_lobby_refresh_timer = 0.0
+    game._auto_connect_retry_timer = 0.0
+    game._invite_after_lobby = False
+    game._creating_public_lobby = False
+    game._pending_lobby_list = []
+    game._deferred_lobby_entries = {}
+    game._lobby_list_fetching = False
+    game._lobby_list_fetch_start_time = 0
+    game.net = types.SimpleNamespace(leave_lobby=Mock())
+    game._lobby_access_validated_id = 77
+    game._reset_match_result_state = Mock()
+
+    game._return_to_pvp_lobby_menu()
+
+    assert game._lobby_access_validated_id == 0
+
+
+def test_validate_sets_validated_id_on_unknown_metadata_with_auth():
+    """Metadata unknown + authorized by code → _lobby_access_validated_id set edilmeli."""
+    game = _make_game()
+    game.net = types.SimpleNamespace(
+        lobby_id=77,
+        my_steam_id=99,
+        is_host=False,
+        get_lobby_owner=lambda: 55,
+        get_lobby_data_for=lambda _lid, key: '',
+    )
+    game._return_to_pvp_lobby_menu = Mock()
+    game._remember_private_join_authorization(77, '123456')
+
+    result = game._validate_joined_lobby_access()
+    assert result is True
+    assert game._lobby_access_validated_id == 77
+    game._return_to_pvp_lobby_menu.assert_not_called()
+
+
+def test_on_lobby_joined_resets_stale_validated_id():
+    """Yeni lobiye katılırken önceki lobiden kalan validated_id sıfırlanmalı.
+
+    Stale validated_id aynı lobby_id'ye tekrar katılındığında (kick sonrası)
+    validation atlanmasına ve yetkisiz erişime izin verebilir.
+    """
+    game = _make_game()
+    game.online_state = online_pvp_module.OnlineState.LOBBY_MENU
+    game._lobby_presence_probe_timer = 0.0
+    game._join_target_lobby_id = 0
+    game.net = types.SimpleNamespace(
+        lobby_id=77,
+        my_steam_id=99,
+        is_host=False,
+        opponent_steam_id=0,
+        get_lobby_owner=lambda: 55,
+        get_lobby_data_for=lambda _lid, key: {
+            'visibility': 'private',
+            'requires_code': '1',
+            'metadata_ready': '1',
+            'lobby_code': '123456',
+        }.get(key, ''),
+    )
+    game._return_to_pvp_lobby_menu = Mock()
+
+    # Önceki oturumdan kalan stale validated_id (aynı lobby_id)
+    game._lobby_access_validated_id = 77
+
+    # Auth yokken katılma: stale ID sıfırlanmalı, doğrulama başarısız → kick
+    game._on_lobby_joined(NetEvent('lobby_joined', 77, ''))
+
+    game._return_to_pvp_lobby_menu.assert_called_once()
+
+
+def test_on_lobby_created_resets_stale_validated_id():
+    """Yeni lobi oluşturulurken önceki lobiden kalan state sıfırlanmalı."""
+    game = _make_game()
+    game.online_state = None
+    game._lobby_presence_probe_timer = 0.0
+    game._lobby_id_str = ''
+    game._lobby_code = ''
+    game._creating_public_lobby = False
+    game._invite_after_lobby = False
+    game.net = types.SimpleNamespace(
+        set_lobby_data=Mock(),
+        invite_friend=Mock(),
+    )
+
+    # Önceki oturumdan kalan stale state
+    game._lobby_access_validated_id = 42
+    game._pending_access_revalidation_lobby_id = 42
+
+    game._on_lobby_created(NetEvent('lobby_created', 77, ''))
+
+    assert game._lobby_access_validated_id == 0
+    assert game._pending_access_revalidation_lobby_id == 0
