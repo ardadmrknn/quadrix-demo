@@ -705,6 +705,35 @@ class TestRefreshUnknownLobbyEntriesCrossPlatform:
         assert entry['requires_code'] is True
         assert entry['code'] == self.CODE
 
+    def test_refresh_re_requests_lobby_data_while_unknown_persists(self):
+        """Canlı metadata hala boşsa bridge üzerinden aktif refresh istemelidir."""
+        game = _make_pvp_game()
+        game._UNKNOWN_LOBBY_DATA_REQUEST_INTERVAL_S = 60.0
+        game._lobby_list = [{
+            'id': self.LOBBY_ID,
+            'name': 'Host',
+            'code': '',
+            'visibility': 'unknown',
+            'requires_code': False,
+            'metadata_ready': False,
+            'members': 1,
+            'max_members': 2,
+            'found_time': time.time(),
+        }]
+        request_lobby_data = Mock(return_value=True)
+        game.net = types.SimpleNamespace(
+            get_lobby_data_for=_make_live_data_reader({}),
+            request_lobby_data=request_lobby_data,
+        )
+
+        game._refresh_unknown_lobby_entries()
+        game._refresh_unknown_lobby_entries()
+
+        request_lobby_data.assert_called_once_with(self.LOBBY_ID)
+        entry = game._lobby_list[0]
+        assert entry['visibility'] == 'unknown'
+        assert entry['metadata_ready'] is False
+
     def test_refresh_resolves_unknown_with_only_lobby_code(self):
         """Sadece lobby_code gelmiş → private türetilir."""
         game = _make_pvp_game()

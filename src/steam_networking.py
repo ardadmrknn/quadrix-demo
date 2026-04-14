@@ -593,6 +593,17 @@ class SteamNetworking:
                 print(f"[SteamNet] get_lobby_data_for hatası: {e}")
         return ''
 
+    def request_lobby_data(self, lobby_id: int) -> bool:
+        """Belirli bir lobi için metadata yenilemesi iste."""
+        if self._bridge_instance:
+            try:
+                return bool(self._bridge_instance.request_lobby_data(lobby_id))
+            except (AttributeError, TypeError):
+                pass
+            except Exception as e:
+                print(f"[SteamNet] request_lobby_data hatası: {e}")
+        return False
+
     def get_lobby_members(self) -> list[int]:
         """Lobideki üyelerin Steam ID listesi."""
         if self._bridge_instance:

@@ -489,6 +489,8 @@ class OnlinePvPGame:
         self._deferred_lobby_entries: dict[int, dict] = {}
         self._deferred_lobby_refresh_timer = 0.0
         self._DEFERRED_LOBBY_REFRESH_INTERVAL_MS = 500.0
+        self._unknown_lobby_metadata_requests: dict[int, float] = {}
+        self._UNKNOWN_LOBBY_DATA_REQUEST_INTERVAL_S = 1.25
         self._lobby_presence_probe_timer = 0.0
         self._LOBBY_PRESENCE_PROBE_INTERVAL_MS = 350.0
 
@@ -1333,11 +1335,53 @@ class OnlinePvPGame:
         target_collection = '_pending_lobby_list' if self._lobby_list_fetching else '_lobby_list'
         self._upsert_lobby_entry(target_collection, promoted_entry)
         self._deferred_lobby_entries.pop(normalized_lobby_id, None)
+        self._clear_lobby_metadata_refresh_request(normalized_lobby_id)
         return True
 
     def _refresh_deferred_lobby_entries(self):
         for lobby_id in list(getattr(self, '_deferred_lobby_entries', {}).keys()):
             self._promote_deferred_lobby_entry(lobby_id)
+
+    def _request_lobby_metadata_refresh(self, lobby_id: int) -> bool:
+        normalized_lobby_id = int(lobby_id or 0)
+        if not normalized_lobby_id or not getattr(self, '_net_initialized', False):
+            return False
+
+        request_times = getattr(self, '_unknown_lobby_metadata_requests', None)
+        if not isinstance(request_times, dict):
+            request_times = {}
+            self._unknown_lobby_metadata_requests = request_times
+
+        min_interval = float(
+            getattr(self, '_UNKNOWN_LOBBY_DATA_REQUEST_INTERVAL_S', 1.25) or 1.25)
+        now = time.time()
+        last_request = float(request_times.get(normalized_lobby_id, 0.0) or 0.0)
+        if last_request > 0.0 and (now - last_request) < max(0.1, min_interval):
+            return False
+
+        request_fn = getattr(self.net, 'request_lobby_data', None)
+        if not callable(request_fn):
+            return False
+
+        try:
+            requested = bool(request_fn(normalized_lobby_id))
+        except Exception:
+            return False
+
+        if requested:
+            request_times[normalized_lobby_id] = now
+        return requested
+
+    def _clear_lobby_metadata_refresh_request(self, lobby_id: int | None = None):
+        request_times = getattr(self, '_unknown_lobby_metadata_requests', None)
+        if not isinstance(request_times, dict):
+            return
+
+        normalized_lobby_id = int(lobby_id or 0)
+        if normalized_lobby_id:
+            request_times.pop(normalized_lobby_id, None)
+            return
+        request_times.clear()
 
     def _remember_private_join_authorization(self, lobby_id: int, code: str):
         self._authorized_private_join_lobby_id = int(lobby_id or 0)
@@ -1765,6 +1809,7 @@ class OnlinePvPGame:
             lobby_id = int(lobby.get('id', 0) or 0)
             if not lobby_id:
                 continue
+            self._request_lobby_metadata_refresh(lobby_id)
             snapshot = self._get_lobby_metadata_snapshot(lobby_id, prefer_live=True)
             if snapshot.get('visibility') not in (None, '', 'unknown'):
                 lobby['name'] = snapshot.get('name') or lobby.get('name', '')
@@ -1773,6 +1818,7 @@ class OnlinePvPGame:
                 lobby['requires_code'] = bool(snapshot.get('requires_code', False))
                 lobby['metadata_ready'] = bool(snapshot.get('metadata_ready', False))
                 self._deferred_lobby_entries.pop(lobby_id, None)
+                self._clear_lobby_metadata_refresh_request(lobby_id)
                 continue
 
             # Live read hala unknown döndü — lobby_code veya
@@ -1794,6 +1840,7 @@ class OnlinePvPGame:
                 lobby['code'] = raw_code or _resolve_private_lobby_code(lobby_id, True, '')
                 lobby['metadata_ready'] = True
                 self._deferred_lobby_entries.pop(lobby_id, None)
+                self._clear_lobby_metadata_refresh_request(lobby_id)
                 try:
                     raw_host = self.net.get_lobby_data_for(lobby_id, 'host_name')
                     if raw_host:
@@ -1841,6 +1888,7 @@ class OnlinePvPGame:
                         continue
                     lobby['metadata_ready'] = True
                     self._deferred_lobby_entries.pop(lobby_id, None)
+                    self._clear_lobby_metadata_refresh_request(lobby_id)
                     try:
                         raw_host = self.net.get_lobby_data_for(
                             lobby_id, 'host_name')
@@ -1860,6 +1908,7 @@ class OnlinePvPGame:
                         if is_private else ''
                     )
                     self._deferred_lobby_entries.pop(lobby_id, None)
+                    self._clear_lobby_metadata_refresh_request(lobby_id)
                     try:
                         raw_host = self.net.get_lobby_data_for(
                             lobby_id, 'host_name')
@@ -1944,6 +1993,7 @@ class OnlinePvPGame:
         self._auto_lobby_refresh_timer = self._auto_lobby_refresh_interval
         self._pending_lobby_list.clear()
         self._deferred_lobby_entries.clear()
+        self._clear_lobby_metadata_refresh_request()
         # Not: Sunucu tarafı visibility filtresi kaldırıldı.
         # Cross-platform metadata propagasyon gecikmeleri nedeniyle
         # sunucu tarafı filtre özel lobileri herkese açık gibi
@@ -1962,6 +2012,7 @@ class OnlinePvPGame:
         self._lobby_list_fetch_start_time = time.time()
         self._pending_lobby_list.clear()
         self._deferred_lobby_entries.clear()
+        self._clear_lobby_metadata_refresh_request()
         self._code_search_retry_use_full_scan = bool(fallback_scan)
         if fallback_scan:
             # Tam tarama: Tüm Quadrix lobilerini getir, client-side kod eşleştir
@@ -3665,6 +3716,7 @@ class OnlinePvPGame:
                     ]
                     for _sid in _stale_ids:
                         self._deferred_lobby_entries.pop(_sid, None)
+                        self._clear_lobby_metadata_refresh_request(_sid)
                     print(f"[OnlinePvP] {len(_stale_ids)} stale unknown lobi kaldırıldı")
                 self._deferred_lobby_refresh_timer = self._DEFERRED_LOBBY_REFRESH_INTERVAL_MS
 

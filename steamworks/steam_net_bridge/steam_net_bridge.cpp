@@ -376,6 +376,16 @@ public:
         return val ? std::string(val) : "";
     }
 
+    bool request_lobby_data(uint64_t lobby_id)
+    {
+        if (!m_matchmaking || m_isShutdown)
+            return false;
+        CSteamID lid(lobby_id);
+        if (!lid.IsValid())
+            return false;
+        return m_matchmaking->RequestLobbyData(lid);
+    }
+
     std::vector<uint64_t> get_lobby_members()
     {
         std::vector<uint64_t> members;
@@ -1132,6 +1142,8 @@ PYBIND11_MODULE(steam_net_bridge, m)
              &SteamNetBridge::add_request_lobby_list_distance_filter,
              py::arg("distance_filter"))
         .def("request_lobby_list", &SteamNetBridge::request_lobby_list)
+           .def("request_lobby_data", &SteamNetBridge::request_lobby_data,
+               py::arg("lobby_id"))
         // Mesajlaşma
         .def("send_message", &SteamNetBridge::send_message,
              py::arg("target_steam_id"), py::arg("data"),

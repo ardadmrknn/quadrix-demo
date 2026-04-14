@@ -60,6 +60,15 @@ def test_search_lobby_by_code_keeps_string_filter_when_distance_filter_is_unavai
     net._bridge_instance.request_lobby_list.assert_called_once_with()
 
 
+def test_request_lobby_data_forwards_to_bridge():
+    net = steam_networking_module.SteamNetworking()
+    net._bridge_instance = Mock()
+    net._bridge_instance.request_lobby_data.return_value = True
+
+    assert net.request_lobby_data(42) is True
+    net._bridge_instance.request_lobby_data.assert_called_once_with(42)
+
+
 def test_create_lobby_always_uses_public_type():
     """Tüm lobiler k_ELobbyTypePublic olarak oluşturulur.
 

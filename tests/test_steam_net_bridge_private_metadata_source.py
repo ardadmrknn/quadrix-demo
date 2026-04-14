@@ -68,3 +68,11 @@ def test_bridge_exports_distance_filter_for_worldwide_code_search():
 
     assert 'void add_request_lobby_list_distance_filter(int distance_filter)' in content
     assert 'AddRequestLobbyListDistanceFilter(' in content
+
+
+def test_bridge_exports_request_lobby_data_for_unknown_refresh():
+    content = CPP_PATH.read_text(encoding='utf-8')
+
+    assert 'bool request_lobby_data(uint64_t lobby_id)' in content
+    assert 'return m_matchmaking->RequestLobbyData(lid);' in content
+    assert '.def("request_lobby_data", &SteamNetBridge::request_lobby_data,' in content
