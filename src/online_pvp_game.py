@@ -1308,9 +1308,17 @@ class OnlinePvPGame:
             return False
         effective_snapshot = snapshot
         if effective_snapshot is None:
+            # ÖNEMLİ: Payload olarak deferred_entry'yi GEÇMİYORUZ.
+            # Deferred entry'de requires_code=False (Python bool) ve
+            # metadata_ready=False gibi varsayılan değerler bulunur.
+            # Live Steam okuması boş dönerse, fallback olarak bu değerler
+            # kullanılır ve _parse_lobby_bool(False) → False (None değil!)
+            # dönerek _normalize_lobby_visibility tarafından "açıkça kod
+            # gerekmez" → "public" olarak yanlış sınıflandırılır.
+            # None payload ile yalnızca live Steam verisi kullanılır.
             effective_snapshot = self._get_lobby_metadata_snapshot(
                 normalized_lobby_id,
-                deferred_entry,
+                None,
                 prefer_live=True,
             )
         if effective_snapshot.get('visibility') == 'unknown':

@@ -732,3 +732,83 @@ def test_refresh_unknown_resolves_to_public_on_explicit_public():
 
     assert game._lobby_list[0]['visibility'] == 'public'
     assert game._lobby_list[0]['requires_code'] is False
+
+
+def test_promote_deferred_does_not_resolve_public_on_partial_propagation():
+    """Deferred entry promote sırasında partial propagation public yapmamalı.
+
+    macOS private lobisi Windows'a tam propagate olmadan, deferred entry'nin
+    requires_code=False varsayım değeri payload fallback'i olarak okunmamalı.
+    Bu değer _parse_lobby_bool(False) → False (None değil) üretir ve
+    _normalize_lobby_visibility tarafından 'public' olarak sınıflandırılır.
+    """
+    game = _make_game()
+    game._net_initialized = True
+    game._lobby_list_fetching = False
+
+    # macOS metadata henüz propagate olmamış → live read boş
+    game.net = types.SimpleNamespace(
+        get_lobby_data_for=lambda lid, key: '',
+    )
+
+    # Unknown visibility ile deferred entry (requires_code=False varsayım)
+    deferred_entry = {
+        'id': 12345,
+        'name': 'MacUser',
+        'code': '',
+        'visibility': 'unknown',
+        'requires_code': False,
+        'metadata_ready': False,
+        'found_time': 0,
+    }
+    game._deferred_lobby_entries = {12345: dict(deferred_entry)}
+    game._lobby_list = []
+
+    result = game._promote_deferred_lobby_entry(12345)
+
+    # Metadata yokken promote ETMEMELI — unknown kalmalı
+    assert result is False
+    # _lobby_list'e public olarak EKLENMEMELİ
+    public_entries = [
+        l for l in game._lobby_list
+        if l.get('visibility') == 'public'
+    ]
+    assert len(public_entries) == 0
+
+
+def test_promote_deferred_resolves_private_on_full_propagation():
+    """Tam metadata geldiğinde deferred entry doğru şekilde private olmalı."""
+    game = _make_game()
+    game._net_initialized = True
+    game._lobby_list_fetching = False
+
+    # Tam metadata propagate olmuş
+    full_metadata = {
+        'visibility': 'private',
+        'requires_code': '1',
+        'lobby_code': '123456',
+        'host_name': 'MacUser',
+        'metadata_ready': '1',
+    }
+    game.net = types.SimpleNamespace(
+        get_lobby_data_for=lambda lid, key: full_metadata.get(key, ''),
+    )
+
+    deferred_entry = {
+        'id': 12345,
+        'name': 'MacUser',
+        'code': '',
+        'visibility': 'unknown',
+        'requires_code': False,
+        'metadata_ready': False,
+        'found_time': 0,
+    }
+    game._deferred_lobby_entries = {12345: dict(deferred_entry)}
+    game._lobby_list = []
+
+    result = game._promote_deferred_lobby_entry(12345)
+
+    assert result is True
+    assert len(game._lobby_list) == 1
+    assert game._lobby_list[0]['visibility'] == 'private'
+    assert game._lobby_list[0]['requires_code'] is True
