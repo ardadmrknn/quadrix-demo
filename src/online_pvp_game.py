@@ -522,6 +522,7 @@ class OnlinePvPGame:
         self._authorized_private_join_code: str = ''
         self._invite_authorized_lobby_id: int = 0
         self._pending_access_revalidation_lobby_id: int = 0
+        self._pending_revalidation_start_time: float = 0.0
         self._lobby_access_validated_id: int = 0  # Erişim doğrulaması geçen lobi ID
 
         # ─── Görsel Efektler (local PvP ile birebir) ───
@@ -928,6 +929,7 @@ class OnlinePvPGame:
         self._lobby_presence_probe_timer = 0.0
         self._lobby_access_validated_id = 0
         self._pending_access_revalidation_lobby_id = 0
+        self._pending_revalidation_start_time = 0.0
         print(f"[OnlinePvP] Lobi oluşturuldu: {ev.steam_id}")
 
         self._lobby_id_str = str(ev.steam_id)
@@ -1001,6 +1003,33 @@ class OnlinePvPGame:
         # tekrar katılırken yetkilendirilmemiş erişime izin verebilir.
         self._lobby_access_validated_id = 0
         self._pending_access_revalidation_lobby_id = 0
+        self._pending_revalidation_start_time = 0.0
+
+        # C++ bridge lobby_joined event'inde metadata payload gönderebilir.
+        # Varsa parse et — _validate_joined_lobby_access tarafından
+        # kullanılacak snapshot'a katkı sağlar.
+        if ev.data:
+            try:
+                _parsed = json.loads(ev.data)
+                if isinstance(_parsed, dict):
+                    joined_lobby_id = int(getattr(self.net, 'lobby_id', 0) or 0)
+                    if joined_lobby_id:
+                        self._refresh_cached_lobby_metadata(
+                            joined_lobby_id, _parsed, prefer_live=True)
+            except (json.JSONDecodeError, ValueError, TypeError):
+                pass
+
+        # Cross-platform metadata propagasyonu: lobiye katıldıktan sonra
+        # metadata'yı açıkça iste. macOS→Windows arası metadata
+        # gecikebilir; RequestLobbyData, OnLobbyDataUpdate callback'ini
+        # tetikleyerek güncel veriyi indirir.
+        joined_lobby_id = int(getattr(self.net, 'lobby_id', 0) or 0)
+        if joined_lobby_id:
+            try:
+                self.net.request_lobby_data(joined_lobby_id)
+            except Exception:
+                pass
+
         if not self._validate_joined_lobby_access():
             return
         # Rakip zaten lobideyse bul
@@ -1454,6 +1483,7 @@ class OnlinePvPGame:
             # Yetkilendirme yok ama metadata da yok — geçici izin ver,
             # metadata geldiğinde _on_lobby_data_updated tekrar kontrol edecek
             self._pending_access_revalidation_lobby_id = current_lobby_id
+            self._pending_revalidation_start_time = time.time()
             return True
 
         if not snapshot.get('requires_code'):
@@ -1691,6 +1721,16 @@ class OnlinePvPGame:
             'metadata_ready': snapshot['metadata_ready'],
             'found_time': time.time(),
         }
+        # Auto-refresh sonrası found_time sıfırlanmasını önle:
+        # Önceki listede aynı lobi unknown olarak varsa eski found_time'ı koru.
+        # Bu sayede stale_unknown timeout'u yeniden başlamaz.
+        _prev_found_time = 0.0
+        for _prev in getattr(self, '_lobby_list', []):
+            if int(_prev.get('id', 0) or 0) == int(ev.steam_id or 0):
+                _prev_found_time = float(_prev.get('found_time', 0) or 0)
+                break
+        if _prev_found_time and entry['visibility'] == 'unknown':
+            entry['found_time'] = _prev_found_time
         if snapshot['visibility'] == 'unknown':
             # Metadata gecikse bile lobby kartini browse listesinde goster.
             # Boylece private lobby callback gelmediginde tamamen kaybolmaz;
@@ -1730,6 +1770,7 @@ class OnlinePvPGame:
             if pending_revalidation == current_lobby_id:
                 if snapshot.get('metadata_ready'):
                     self._pending_access_revalidation_lobby_id = 0
+                    self._pending_revalidation_start_time = 0.0
                 self._validate_joined_lobby_access()
 
     def _on_lobby_list_complete(self, ev: NetEvent):
@@ -1900,8 +1941,13 @@ class OnlinePvPGame:
                     else:
                         # metadata_ready=1 var ama visibility/requires_code
                         # henüz propague olmamış — partial propagation.
-                        # Unknown bırak, sonraki refresh çözecektir.
-                        continue
+                        # metadata_ready=1 Python tarafında EN SON yazılır;
+                        # varsa diğer alanlar da yazılmış ama bu platforma
+                        # ulaşmamıştır. 'public' varsay — katılma sonrası
+                        # _validate_joined_lobby_access asıl kontrolü yapar.
+                        lobby['visibility'] = 'public'
+                        lobby['requires_code'] = False
+                        lobby['code'] = ''
                     lobby['metadata_ready'] = True
                     self._deferred_lobby_entries.pop(lobby_id, None)
                     self._clear_lobby_metadata_refresh_request(lobby_id)
@@ -2109,6 +2155,7 @@ class OnlinePvPGame:
         self._code_search_retry_use_full_scan = False
         self._clear_private_join_authorization()
         self._pending_access_revalidation_lobby_id = 0
+        self._pending_revalidation_start_time = 0.0
         self._lobby_access_validated_id = 0
         self._lobby_list_filter = 'all'
         self._lobby_list_fetching = False
@@ -3720,7 +3767,7 @@ class OnlinePvPGame:
                 # ver. Katıldıktan sonra _validate_joined_lobby_access
                 # metadata'yı doğrudan okuyarak erişim kontrolü yapar.
                 _now = time.time()
-                _UNKNOWN_LOBBY_JOINABLE_TIMEOUT_S = 5.0
+                _UNKNOWN_LOBBY_JOINABLE_TIMEOUT_S = 2.0
                 _UNKNOWN_LOBBY_REMOVE_TIMEOUT_S = 120.0
                 _stale_ids: set[int] = set()
                 for _lobby in getattr(self, '_lobby_list', []):
@@ -3750,6 +3797,48 @@ class OnlinePvPGame:
                         self._clear_lobby_metadata_refresh_request(_sid)
                     print(f"[OnlinePvP] {len(_stale_ids)} stale unknown lobi kaldırıldı")
                 self._deferred_lobby_refresh_timer = self._DEFERRED_LOBBY_REFRESH_INTERVAL_MS
+
+        # ── Ertelenmiş erişim yeniden-doğrulama timeout'u ──
+        # _validate_joined_lobby_access metadata unknown iken geçici izin
+        # vermiş olabilir. Cross-platform'da OnLobbyDataUpdate callback'i
+        # gelmeyebilir. 3 saniye sonra metadata'yı tekrar oku; 5 saniye
+        # sonra hala unknown ise otomatik kabul et (kullanıcı bilinçli katıldı).
+        _pending_reval = int(
+            getattr(self, '_pending_access_revalidation_lobby_id', 0) or 0)
+        if (
+            _pending_reval
+            and self._net_initialized
+            and self.online_state == OnlineState.WAITING
+        ):
+            _reval_start = float(
+                getattr(self, '_pending_revalidation_start_time', 0) or 0)
+            _reval_elapsed = time.time() - _reval_start if _reval_start else 0.0
+            # Saniyede en fazla bir kez kontrol et (her frame değil)
+            _reval_last_check = float(
+                getattr(self, '_pending_reval_last_check_time', 0) or 0)
+            _reval_check_due = (time.time() - _reval_last_check) >= 1.0
+            if _reval_elapsed > 3.0 and _reval_check_due:
+                self._pending_reval_last_check_time = time.time()
+                # Metadata'yı tekrar iste ve live-read dene
+                try:
+                    self.net.request_lobby_data(_pending_reval)
+                except Exception:
+                    pass
+                _snap = self._get_lobby_metadata_snapshot(
+                    _pending_reval, prefer_live=True)
+                if _snap.get('visibility') not in (None, '', 'unknown'):
+                    # Metadata geldi — normal validasyona devam et
+                    self._pending_access_revalidation_lobby_id = 0
+                    self._pending_revalidation_start_time = 0.0
+                    self._validate_joined_lobby_access()
+                elif _reval_elapsed > 5.0:
+                    # 5 saniye doldu, metadata hala unknown —
+                    # kullanıcı lobiye bilinçli katıldı, otomatik kabul et
+                    print("[OnlinePvP] Pending revalidation timeout (5s) — "
+                          f"otomatik kabul: lobby={_pending_reval}")
+                    self._pending_access_revalidation_lobby_id = 0
+                    self._pending_revalidation_start_time = 0.0
+                    self._lobby_access_validated_id = _pending_reval
 
         if self._net_initialized and self.online_state in (OnlineState.WAITING, OnlineState.READY_CHECK):
             self._lobby_presence_probe_timer = max(

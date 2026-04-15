@@ -1,7 +1,7 @@
 # UI Scaling Audit: Retina ve 1080p Ustu Ekranlar
 
 **Created:** 2026-04-15
-**Status:** Analysis Complete, Implementation Plan Ready
+**Status:** Analysis Updated with MacBook Air M2 Runtime Notes
 
 ## Kapsam
 
@@ -14,7 +14,24 @@ Ek olarak su hipotez degerlendirildi:
 
 - Yuksek cozumunurluklu 13 inch Retina ve 16.1 inch buyuk ekranlarda oyun fiilen ayni olcek/geometri ile yerlestigi icin, buyuk ekranda ekran kullanim orani dusuyor olabilir.
 
-Bu inceleme statik kod analizi, mevcut testler ve dokumantasyon uzerinden yapildi. Bu ortamda gercek MacBook M2 Air veya 16.1 inch hedef cihazda canli runtime dogrulamasi yapilmadi.
+Bu guncellemede statik kod analizi, mevcut testler, dokumantasyon ve sinirli cihaz-runtime dogrulamasi birlikte kullanildi. Mevcut makinede sistem bilgisi, AppKit/NSScreen metrikleri ve ilgili testler dogrulandi; ancak oyunun tum popup/menu/gameplay akislarinin canli goruntu karsilastirmasi bu turda yapilmadi.
+
+## Bu Cihazda Dogrulanan Veriler
+
+Bu workspace'in calistigi cihaz uzerinde asagidaki veriler runtime olarak dogrulandi:
+
+- Model: MacBook Air M2 (`Mac14,2`)
+- Dahili panel: `2560x1664 Retina` (`system_profiler SPDisplaysDataType`)
+- AppKit logical frame: `1470x956` point (`NSScreen.mainScreen().frame()`)
+- AppKit backing rect: `2940x1912` pixel (`NSScreen.convertRectToBacking_(frame)`)
+- `backingScaleFactor`: `2.0`
+- `src/platform_utils.py::get_native_resolution()` bu cihazda `1470x956` donduruyor
+- Ilgili regresyonlar calistirildi: `tests/test_platform_effective_ui_size.py`, `tests/test_phase3_ui_scaling.py`, `tests/test_phase8_overlay_ui_scaling.py`, `tests/test_phase8_main_popup_ui_scaling.py` -> `73 passed`
+
+Bu veri seti iki kritik noktayi netlestiriyor:
+
+1. Bu MacBook'ta logical size `1440x900` degil, su anki display mode icin `1470x956`.
+2. Raw/backing boyutu, panelin native `2560x1664` pikselinden bile buyuk bir uzayda (`2940x1912`) temsil edilebiliyor. Bu nedenle raw-surface bazli clamp'ler yalnizca Retina 2x degil, macOS'in scaled mode davranisindan da etkileniyor.
 
 ## Ozet Sonuc
 
@@ -27,6 +44,7 @@ Sonuc olarak:
 
 - Retina ekranlarda effective-size duzeltmeleri sadece bu zinciri kullanan ekranlarda etkili oluyor.
 - Oyun alani ve HUD gibi kritik alanlar buyuk ekranlarda daha fazla yer kaplamak yerine daha cok bosluk birakiyor.
+- Mevcut MacBook Air M2'de classic gameplay geometri problemi, Retina normalize edilse bile ayri olarak devam ediyor; cunku `1470x956` logical boyutta bile `get_cell_size()` klasik `10x20` tahta icin yine `40` tavana vuruyor.
 
 ## Mevcut Yapi
 
@@ -50,6 +68,14 @@ macOS tarafinda su kararlar alinmis:
 - `docs/macos_borderless_fullscreen.md` de bu secimin, native fullscreen crash riskini engellemek icin bilerek yapildigini dogruluyor.
 
 Bu tasarimda pencere logical size uzerinden kurulur, fakat aktif display surface fiziksel piksel boyutunda olabilir. Kodun bazi bolumleri logical size, bazi bolumleri fiziksel surface size kullandigi icin Retina davranisi tek tip degil.
+
+Mevcut MacBook Air M2 dogrulamasi bu noktayi daha da guclendiriyor:
+
+- Panel native boyutu `2560x1664`
+- AppKit logical frame `1470x956`
+- AppKit backing rect `2940x1912`
+
+Yani macOS scaled mode altinda `logical size`, `native panel pixel size` ve `backing/raw pixel size` ayni sey degil. Bu nedenle raw surface kullanan helper'lar sadece Retina 2x degil, scaled mode yuzunden de oldugundan buyuk bir koordinat uzayina bakabiliyor.
 
 ### 3. Effective-size katmani var, ama sadece parcali kullaniliyor
 
@@ -86,6 +112,16 @@ Asagidaki yollar hala raw surface boyutundan hesap yapıyor:
 
 Bu ayrim, Retina'da "bazi ekran degisiyor, bazi ekran hic degismiyor" hissini tam olarak acikliyor.
 
+### 6. Mouse/input zinciri Retina icin buyuk olcude normalize edilmis durumda
+
+Mevcut audit, MacBook tarafindaki ana problemin temel mouse koordinati degil gorsel/layout scaling oldugunu da gosteriyor:
+
+- `src/platform_utils.py::normalize_mouse_pos(...)`
+- `src/platform_utils.py::get_mouse_pos()`
+- `src/main.py`, `src/menu.py` ve `src/game.py` icindeki bircok click/hover call-site'i bu helper'lari kullaniyor
+
+Bu, popup/menu migrasyonunda hitbox parity'sinin yine de test edilmesi gerektigi gercegini degistirmiyor; ancak mevcut kok neden pointer normalization eksikligi degil.
+
 ## Bulgular
 
 ### Bulgı 1: Retina'da olcekleme degisiklikleri tum oyuna uygulanmiyor
@@ -104,6 +140,20 @@ Ozellikle `tests/test_phase3_ui_scaling.py` mevcut niyeti acikca dogruluyor:
 - Ama `menu._fullscreen_panel_scale()` ve `menu._menu_panel_content_scale()` etkilenmiyor.
 
 Yani bug yalnizca "Retina detection calismiyor" degil; asil sorun, Retina'yi normalize eden helper'in butun gorunur UI katmanlarina tasinmamis olmasi.
+
+### Bulgi 1A: Bu MacBook'ta raw/backing ayrismasi generic Retina orneginden daha sert
+
+Ilk plan versiyonundaki `1440x900 logical / 2880x1800 physical` senaryosu, genel bir Retina ornegiydi. Mevcut cihazda runtime dogrulamasi su tabloyu verdi:
+
+- logical frame: `1470x956`
+- backing rect: `2940x1912`
+- native panel: `2560x1664`
+
+Bu su anlama geliyor:
+
+- `raw surface` kullanan helper'lar, bu cihazda panelin native pikselinden bile buyuk bir backing uzayina bakabilir.
+- Dolayisiyla `menu._fullscreen_panel_scale()`, `menu._menu_panel_content_scale()`, `main._fullscreen_popup_scale()` ve `game._overlay_ui_scale()` gibi clamp'li helper'lar cap'e cok daha erken vurur.
+- Bu nedenle MacBook tarafinda "yaptigim olcek degisikligi uygulanmadi" hissi, yalnizca logical-vs-physical 2x farkindan degil, scaled desktop mode davranisindan da beslenebilir.
 
 ### Bulgı 2: Buyuk ekranlarda oyun kucuk kaliyor, cunku gameplay geometri buyumuyor
 
@@ -185,35 +235,49 @@ Mevcut testler su alanlari koruyor:
 - `tests/test_platform_effective_ui_size.py` macOS icin `2880x1800 surface -> 1440x900 effective` davranisini dogruluyor.
 - `tests/test_phase3_ui_scaling.py`, `tests/test_phase5_settings_ui_scaling.py`, `tests/test_ui_scaling.py` effective-scale helper cap davranisini dogruluyor.
 - `tests/test_phase8_overlay_ui_scaling.py` overlay yolunun bilerek raw kaldigini ve `game.get_cell_size()` icinde `40` cap'inin aktif oldugunu dogruluyor.
+- Bu guncellemede ilgili testlerin secili alt kumesi calistirildi ve mevcut durumda geciyor.
 
 Eksik olanlar:
 
 - Buyuk ekranlarda gameplay alaninin ekran kullanim oranini test eden regression test yok.
 - Tek oyuncu/coop board geometri buyumesinin istenen davranişi icin kabul testi yok.
 - Retina macOS'ta menu popup/content ile gameplay overlay yollarinin effective-size migrasyonunu test eden entegre senaryo yok.
+- Mevcut MacBook Air M2 scaled mode'unu dogrudan modelleyen `1470x956 logical / 2940x1912 backing` regression testi yok.
 
 ## Sayisal Etki Ozeti
 
-### Senaryo A: MacBook Retina mantigi
+### Senaryo A: Bu MacBook Air M2'de gorulen Retina + scaled mode mantigi
 
 Varsayim:
 
-- Logical window size: 1440x900
-- Physical display surface: 2880x1800
+- Logical frame: `1470x956`
+- Cocoa backing rect: `2940x1912`
+- Panel native resolution: `2560x1664`
 
 Effective-size kullanan ekranlar icin:
 
-- 1366x768 referansli UI scale yaklasik `min(1440/1366, 900/768) = 1.05`
+- 1366x768 referansli UI scale yaklasik `min(1470/1366, 956/768) = 1.07`
 
 Raw surface kullanan popup/content yollarinda:
 
-- 1920x1080 referansli scale `min(2880/1920, 1800/1080) = 1.5+`
+- 1920x1080 referansli scale `min(2940/1920, 1912/1080) = 1.53+`
 - Ama cap nedeniyle 1.16 veya 1.35'e sabitleniyor.
+
+Classic gameplay geometri icin:
+
+- `SIDE_PANEL_WIDTH = 180`, `INFO_PANEL_HEIGHT = 120`
+- logical bazda bile `min((1470-180)//10, (956-120)//20, 40) = 40`
+
+Bu kritik cunku su sonuca goturur:
+
+- menu/popup tarafinda raw-vs-effective ayrismasi gercekten var
+- ama gameplay occupancy bug'i bunun otesinde, mevcut MacBook logical boyutunda bile kendi basina tekrarliyor
 
 Sonuc:
 
 - Effective-size duzeltmesi sadece onu kullanan katmanda gorunur.
 - Raw katmanlar Retina'da dogal olarak cap'e vurur ve degisiklikler "uygulanmamis" gibi hissedilir.
+- Gameplay geometri tarafinda ise effective-size'a gecmek tek basina yetmez; `40` cap kaldigi surece bu cihazda da oyun ayni kucuk merkez hissini verir.
 
 ### Senaryo B: 16.1 inch yuksek cozumunurluklu ekran
 
@@ -240,7 +304,8 @@ Sonuc:
 1. UI olceginin tek otoriteden hesaplanmamasi.
 2. Gameplay geometri ile UI tipografisinin ayni problem sanilmasi.
 3. Retina uyumlulugunun helper katmaninda cozulup draw/layout zincirlerine tam tasinmamasi.
-4. Yuksek cozumunurlukte erken tavana vuran sabitler:
+4. Ekran aileleri arasinda referans boyutlarinin tutarsiz olmasi (`1366x768`, `1400x900`, `1920x1080`).
+5. Yuksek cozumunurlukte erken tavana vuran sabitler:
    - single player cell cap = 40
    - coop cell cap = 40
    - single player HUD panel width max = 220
@@ -380,7 +445,14 @@ Burada da sadece `40 -> 52` gibi bir degisiklik yeterli degil. `src/game.py` ile
 #### `src/campaign/campaign_mode.py`
 
 - Campaign kendi `_draw_right_hud_panel(...)` yoluna sahip.
-- Base gameplay board rect'i degisirse campaign hud panel rect'i de yeniden kontrol edilmeli.
+- Ayrica `_get_campaign_hud_scale(...)` ve `_get_campaign_right_hud_panel_rect(...)` ile base `Game` HUD'undan ayrismis kendi layout politikasini kullaniyor.
+- Base gameplay board rect'i degisirse campaign hud panel rect'i ve boss/mini-boss icerik akisinin birlikte yeniden kontrol edilmesi gerekiyor.
+
+#### `src/campaign/coop_campaign_mode.py`
+
+- Bu sinif ayri bir layout helper override etmiyor; `CoopGame` mirasi uzerinden `_ui_scale()` ve `_calculate_layout()` sonucunu kullaniyor.
+- Bu nedenle `src/coop_game.py` tarafindaki occupancy degisikligi co-op campaign'e dogrudan yansiyacak.
+- Kabul testleri yalnizca coop sandbox modu degil, coop campaign akisini da kapsamalı.
 
 #### `src/game_modes_extra.py`
 
@@ -442,6 +514,7 @@ Sebep:
 #### `src/campaign/level_select.py`
 
 - `_get_ui_scale()` hala raw `get_scale(...)` kullaniyor.
+- Ayrica bu ekran `1400x900` referansina bagli; ana menu ve popup aileleriyle ayni baseline'i paylasmiyor.
 - Bu ekran buyuk ihtimalle birinci gorunen root cause degil, ama Retina parity icin backlog'a alinmali.
 
 ## Kodda Ne Oynanmamali?
@@ -519,6 +592,8 @@ Boylece effective-size migrasyonu yapildiginda click alanlari kaymaz.
 
 Kod degistiginde su testler muhtemelen guncellenecek:
 
+- `tests/test_platform_effective_ui_size.py`
+  - generic macOS logical/effective davranisi korunurken, mevcut MacBook scaled mode case'i eklenebilir
 - `tests/test_phase8_overlay_ui_scaling.py`
   - bugun `game.get_cell_size()` icin `40` cap davranisini bekliyor
 - `tests/test_coop.py`
@@ -528,9 +603,11 @@ Kod degistiginde su testler muhtemelen guncellenecek:
 
 Yeni eklenmesi gereken testler:
 
-- `2560x1440`, `2560x1600`, `2880x1800 logical/physical ayrismasi`
+- mevcut MacBook Air M2 case'i: `1470x956 logical`, `2940x1912 backing`, `2560x1664 native panel` notu ile helper regression
+- `2560x1440`, `2560x1600`, `2880x1800` gibi buyuk ekran senaryolari
 - single player board occupancy regression
 - coop board occupancy regression
+- campaign HUD / right panel parity regression
 - popup rect + button hitbox parity regression
 
 ## En Hizli Kullanici Gozuyle Kazanim Nerede?
@@ -651,7 +728,7 @@ Eklenmesi gereken testler:
 
 Manuel dogrulama matrisi:
 
-- MacBook Air M2 Retina
+- MacBook Air M2 Retina (`Mac14,2`) - current scaled mode: `1470x956 logical`, `2940x1912 backing`, panel native `2560x1664`
 - 16.1 inch 1080p ustu Windows laptop ekranı
 - Windows 100%, 125%, 150% DPI scaling
 - Borderless fallback ve display recover senaryolari

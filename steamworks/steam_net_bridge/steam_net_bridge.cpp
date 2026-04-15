@@ -686,6 +686,8 @@ private:
 
     std::string build_lobby_found_payload(CSteamID lobbyId)
     {
+        if (!m_matchmaking)
+            return "{}";
         const char *hostNameRaw = m_matchmaking->GetLobbyData(lobbyId, "host_name");
         const char *lobbyCodeRaw = m_matchmaking->GetLobbyData(lobbyId, "lobby_code");
         const char *visibilityRaw = m_matchmaking->GetLobbyData(lobbyId, "visibility");
@@ -923,7 +925,22 @@ private:
         }
         m_currentLobby = CSteamID(pResult->m_ulSteamIDLobby);
         m_lobbyReady = true;
-        push_event("lobby_joined", pResult->m_ulSteamIDLobby, "");
+
+        // Cross-platform metadata propagasyonu: lobiye katıldıktan sonra
+        // metadata'yı açıkça iste. macOS→Windows arası metadata
+        // otomatik olarak önbelleğe alınmayabilir; RequestLobbyData,
+        // callback tetikleyerek güncel metadata'nın Python'a ulaşmasını sağlar.
+        if (m_matchmaking)
+        {
+            m_matchmaking->RequestLobbyData(m_currentLobby);
+        }
+
+        // lobby_joined event'ini metadata snapshot'ı ile gönder.
+        // Böylece Python tarafı katılım anında mevcut metadata'yı
+        // doğrudan kullanabilir (ayrıca RequestLobbyData callback'i ile
+        // güncel veri de gelecek).
+        push_event("lobby_joined", pResult->m_ulSteamIDLobby,
+                   build_lobby_found_payload(m_currentLobby));
     }
 
     void OnLobbyListReceived(LobbyMatchList_t *pResult, bool bIOFailure)

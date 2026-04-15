@@ -627,11 +627,13 @@ def test_on_lobby_created_resets_stale_validated_id():
 
 
 def test_refresh_unknown_does_not_mark_public_on_partial_propagation():
-    """metadata_ready=1 ama visibility/requires_code boş ise public yapılmamalı.
+    """metadata_ready=1 ama visibility/requires_code boş ise, cross-platform
+    metadata gecikmesinde takılmamak için 'public' olarak kabul edilmeli.
 
-    Cross-platform'da SetLobbyData çağrıları bağımsız propagate olabilir.
-    metadata_ready=1 diğer alanlardan önce ulaşabilir. Bu durumda
-    lobi 'unknown' kalmalı, 'public' olarak yanlış işaretlenmemeli.
+    metadata_ready=1 Python tarafında EN SON yazılır; dolayısıyla diğer
+    alanlar da yazılmış ama karşı platforma henüz ulaşmamıştır. Kullanıcıyı
+    bekletmek yerine 'public' varsay — katılma sonrası
+    _validate_joined_lobby_access asıl erişim kontrolünü yapar.
     """
     game = _make_game()
     game._net_initialized = True
@@ -664,8 +666,9 @@ def test_refresh_unknown_does_not_mark_public_on_partial_propagation():
 
     game._refresh_unknown_lobby_entries()
 
-    # Partial propagation: unknown kalmalı, 'public' olmamalı
-    assert game._lobby_list[0]['visibility'] == 'unknown'
+    # metadata_ready=1 geldiğinde 'public' olarak kabul et
+    assert game._lobby_list[0]['visibility'] == 'public'
+    assert game._lobby_list[0]['requires_code'] is False
 
 
 def test_refresh_unknown_resolves_to_private_on_full_propagation():
