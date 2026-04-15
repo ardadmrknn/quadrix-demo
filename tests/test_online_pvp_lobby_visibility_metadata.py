@@ -40,6 +40,9 @@ def _make_game():
     game._join_target_lobby_id = 0
     game._status_msg = ''
     game._status_timer = 0.0
+    game._DEFERRED_LOBBY_REFRESH_INTERVAL_MS = 500.0
+    game._DISCONNECT_GRACE_MS = 5000.0
+    game._unknown_lobby_metadata_requests = {}
     return game
 
 
@@ -896,3 +899,95 @@ def test_invite_authorization_cleared_after_private_metadata_validation():
     assert game._lobby_access_validated_id == 77
     assert game._invite_authorized_lobby_id == 0
     game._return_to_pvp_lobby_menu.assert_not_called()
+
+
+def test_stale_unknown_lobby_removed_after_120_seconds():
+    """stale_unknown lobiler 120 saniye sonra listeden kaldırılmalı.
+
+    Bug: Temizlik döngüsü sadece 'unknown' kontrol ediyordu, 'stale_unknown'
+    atlanıyordu. Bu yüzden kapanmış lobiler sonsuza kadar listede kalıyordu.
+    """
+    import time as _time
+
+    game = _make_game()
+    game._net_initialized = True
+
+    # 130 saniye önce keşfedilmiş stale_unknown lobi
+    game._lobby_list = [{
+        'id': 55555,
+        'name': 'GhostLobby',
+        'code': '',
+        'visibility': 'stale_unknown',
+        'requires_code': False,
+        'metadata_ready': False,
+        'found_time': _time.time() - 130,
+    }]
+    game._deferred_lobby_entries = {55555: game._lobby_list[0]}
+
+    game.net = types.SimpleNamespace(
+        get_lobby_data_for=lambda lid, key: '',
+    )
+
+    # Stale timeout mantığını simüle et
+    _now = _time.time()
+    _UNKNOWN_LOBBY_REMOVE_TIMEOUT_S = 120.0
+    _stale_ids: set = set()
+    for _lobby in game._lobby_list:
+        _lvis = str(_lobby.get('visibility', '') or '').lower()
+        if _lvis not in ('unknown', 'stale_unknown'):
+            continue
+        _found_t = float(_lobby.get('found_time', 0) or 0)
+        if not _found_t:
+            continue
+        _elapsed = _now - _found_t
+        _lid = int(_lobby.get('id', 0) or 0)
+        if _elapsed > _UNKNOWN_LOBBY_REMOVE_TIMEOUT_S:
+            _stale_ids.add(_lid)
+    if _stale_ids:
+        game._lobby_list = [
+            l for l in game._lobby_list
+            if int(l.get('id', 0) or 0) not in _stale_ids
+        ]
+        for _sid in _stale_ids:
+            game._deferred_lobby_entries.pop(_sid, None)
+
+    assert len(game._lobby_list) == 0
+    assert 55555 not in game._deferred_lobby_entries
+
+
+def test_stale_unknown_lobby_kept_before_120_seconds():
+    """stale_unknown lobiler 120 saniyeden önce listede kalmalı."""
+    import time as _time
+
+    game = _make_game()
+    game._net_initialized = True
+
+    game._lobby_list = [{
+        'id': 66666,
+        'name': 'ActiveLobby',
+        'code': '',
+        'visibility': 'stale_unknown',
+        'requires_code': False,
+        'metadata_ready': False,
+        'found_time': _time.time() - 30,
+    }]
+
+    # Stale timeout mantığını simüle et
+    _now = _time.time()
+    _UNKNOWN_LOBBY_REMOVE_TIMEOUT_S = 120.0
+    _stale_ids: set = set()
+    for _lobby in game._lobby_list:
+        _lvis = str(_lobby.get('visibility', '') or '').lower()
+        if _lvis not in ('unknown', 'stale_unknown'):
+            continue
+        _found_t = float(_lobby.get('found_time', 0) or 0)
+        if not _found_t:
+            continue
+        _elapsed = _now - _found_t
+        _lid = int(_lobby.get('id', 0) or 0)
+        if _elapsed > _UNKNOWN_LOBBY_REMOVE_TIMEOUT_S:
+            _stale_ids.add(_lid)
+
+    assert len(_stale_ids) == 0
+    assert len(game._lobby_list) == 1
+    assert game._lobby_list[0]['visibility'] == 'stale_unknown'

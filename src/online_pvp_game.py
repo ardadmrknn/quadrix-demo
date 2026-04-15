@@ -3724,7 +3724,8 @@ class OnlinePvPGame:
                 _UNKNOWN_LOBBY_REMOVE_TIMEOUT_S = 120.0
                 _stale_ids: set[int] = set()
                 for _lobby in getattr(self, '_lobby_list', []):
-                    if str(_lobby.get('visibility', '') or '').lower() != 'unknown':
+                    _lvis = str(_lobby.get('visibility', '') or '').lower()
+                    if _lvis not in ('unknown', 'stale_unknown'):
                         continue
                     _found_t = float(_lobby.get('found_time', 0) or 0)
                     if not _found_t:
@@ -3734,7 +3735,7 @@ class OnlinePvPGame:
                     if _elapsed > _UNKNOWN_LOBBY_REMOVE_TIMEOUT_S:
                         # 2 dakikadan uzun süredir çözülemedi → kaldır
                         _stale_ids.add(_lid)
-                    elif _elapsed > _UNKNOWN_LOBBY_JOINABLE_TIMEOUT_S:
+                    elif _lvis == 'unknown' and _elapsed > _UNKNOWN_LOBBY_JOINABLE_TIMEOUT_S:
                         # 5 saniye sonra: metadata gelmedi, lobiye katılmayı
                         # denesin diye 'stale_unknown' olarak işaretle.
                         # UI bu durumda "Katıl" butonu gösterecek.
