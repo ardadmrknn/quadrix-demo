@@ -543,6 +543,7 @@ def test_base_game_right_hud_uses_active_canvas_when_window_size_is_stale(monkey
 
     game_module.Game._draw_right_hud_panel(game, 430, 70, 300, 620, None, None, (255, 255, 255), (0, 255, 255), (180, 180, 180))
 
+    assert game._hud_panel_rect.width > 220
     assert game._hud_panel_rect.right <= 2560
     assert game._hud_mode_info_area[3] > 500
 
@@ -687,19 +688,42 @@ def test_base_game_geometry_uses_active_canvas_when_window_size_is_stale():
     cell_size = game.get_cell_size()
     offset_x, offset_y = game.get_board_offset()
 
-    expected_cell = min(
-        (2560 - game_module.SIDE_PANEL_WIDTH) // game.board_width,
-        (1440 - game_module.INFO_PANEL_HEIGHT) // game.board_height,
-        40,
-    )
-    expected_board_w = game.board_width * expected_cell
-    expected_board_h = game.board_height * expected_cell
+    assert cell_size == (1440 - game_module.INFO_PANEL_HEIGHT) // game.board_height
+    assert offset_x > 600
+    assert offset_x + (game.board_width * cell_size) < 2560
+    assert offset_y >= 0
+    assert offset_y + (game.board_height * cell_size) < 1440
 
-    assert cell_size == expected_cell
-    assert (offset_x, offset_y) == (
-        (2560 - game_module.SIDE_PANEL_WIDTH - expected_board_w) // 2,
-        (1440 - expected_board_h) // 2 - 25,
+
+def test_base_game_large_display_layout_can_grow_beyond_legacy_40px_cap():
+    game = _build_game((2560, 1440), window_size=(1366, 768))
+    game.board_width = 10
+    game.board_height = 20
+
+    layout = game._get_gameplay_layout_metrics()
+
+    assert game.get_cell_size() > 40
+    assert layout.panel_width > 220
+    assert layout.board_x + layout.board_width < 2560
+    assert layout.board_y + layout.board_height < 1440
+
+
+def test_base_game_layout_projects_effective_retina_metrics_back_to_raw_pixels(monkeypatch):
+    game = _build_game((2940, 1912), window_size=(1470, 956))
+    game.board_width = 10
+    game.board_height = 20
+
+    monkeypatch.setattr(
+        game_module,
+        'resolve_ui_scale_size',
+        lambda screen_or_size, *, use_effective_display_size=False, display_surface=None: (1470, 956),
     )
+
+    layout = game._get_gameplay_layout_metrics()
+
+    assert layout.logical_cell_size > 40
+    assert layout.cell_size >= 80
+    assert layout.panel_width >= 440
 
 
 @pytest.mark.parametrize('lines_cleared', [2, 4])

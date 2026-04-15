@@ -34,6 +34,12 @@ from localization import t
 from ui_theme import UIColors, UIFonts
 from sweep_effects import SweepCatState, draw_rainbow_cat_sweep
 from asset_manager import load_image
+from gameplay_layout import (
+    GAMEPLAY_OCCUPANCY_REFERENCE_SIZE,
+    compute_coop_layout,
+    get_display_pixel_ratio,
+)
+from ui_scaling import apply_ui_scale_preset, get_scale, resolve_ui_scale_size
 
 try:
     from gamepad_manager import normalize_gamepad_event_button
@@ -125,12 +131,57 @@ class CoopGame:
     # UI ölçek yardımcıları
     # ------------------------------------------------------------------
 
+    def _active_ui_size(self) -> tuple[int, int]:
+        screen = getattr(self, 'screen', None)
+        if screen is not None and hasattr(screen, 'get_size'):
+            try:
+                width, height = screen.get_size()
+                return max(1, int(width)), max(1, int(height))
+            except Exception:
+                pass
+        return (
+            max(1, int(getattr(self, 'window_width', GAMEPLAY_OCCUPANCY_REFERENCE_SIZE[0]))),
+            max(1, int(getattr(self, 'window_height', GAMEPLAY_OCCUPANCY_REFERENCE_SIZE[1]))),
+        )
+
+    def _effective_ui_size(self) -> tuple[int, int]:
+        screen = getattr(self, 'screen', None)
+        if screen is not None and hasattr(screen, 'get_size'):
+            display_surface = None
+            try:
+                active_display_surface = pygame.display.get_surface()
+                if active_display_surface is not None and screen is active_display_surface:
+                    display_surface = True
+            except Exception:
+                pass
+
+            try:
+                width, height = resolve_ui_scale_size(
+                    screen,
+                    use_effective_display_size=True,
+                    display_surface=display_surface,
+                )
+                return max(1, int(width)), max(1, int(height))
+            except Exception:
+                pass
+
+        return self._active_ui_size()
+
+    def _display_pixel_ratio(self) -> float:
+        return get_display_pixel_ratio(self._active_ui_size(), self._effective_ui_size())
+
     def _ui_scale(self, mn: float = 0.72, mx: float = 1.20) -> float:
-        try:
-            s = min(float(self.window_width) / 1366.0, float(self.window_height) / 768.0)
-        except Exception:
-            s = 1.0
-        return max(mn, min(mx, s))
+        logical_scale = apply_ui_scale_preset(
+            get_scale(
+                self._effective_ui_size(),
+                min_scale=mn,
+                max_scale=mx,
+                reference_size=GAMEPLAY_OCCUPANCY_REFERENCE_SIZE,
+            ),
+            min_scale=mn,
+            max_scale=mx,
+        )
+        return float(logical_scale) * float(self._display_pixel_ratio())
 
     def _sx(self, value, scale=None, minimum=1) -> int:
         if scale is None:
@@ -2609,31 +2660,33 @@ class CoopGame:
     # ------------------------------------------------------------------
 
     def _calculate_layout(self) -> None:
-        key = (int(self.window_width), int(self.window_height))
+        active_size = self._active_ui_size()
+        effective_size = self._effective_ui_size()
+        key = (
+            int(active_size[0]),
+            int(active_size[1]),
+            int(effective_size[0]),
+            int(effective_size[1]),
+            int(getattr(self.board, 'width', 20)),
+            int(getattr(self.board, 'height', 20)),
+        )
         if self._layout_key == key:
             return
         self._layout_key = key
-        w, h = key
+        self.window_width, self.window_height = active_size
 
-        side_panel = 120  # sol ve sağ paneller için alan
-        top_margin = 80
-        bottom_margin = 40
+        metrics = compute_coop_layout(
+            active_size=active_size,
+            effective_size=effective_size,
+            board_width=getattr(self.board, 'width', 20),
+            board_height=getattr(self.board, 'height', 20),
+        )
+        self._coop_layout_metrics = metrics
 
-        avail_h = max(200, h - top_margin - bottom_margin)
-        avail_w = max(200, w - 2 * side_panel - 40)
-
-        cell_by_h = avail_h // self.board.height
-        cell_by_w = avail_w // self.board.width
-        cs = int(min(40, cell_by_h, cell_by_w))
-        cs = max(16, cs)
-
-        bw = self.board.width * cs
-        bh = self.board.height * cs
-
-        self.cell_size = cs
-        self.board_offset_x = (w - bw) // 2
-        self.board_offset_y = top_margin + (avail_h - bh) // 2
-        self._side_panel_width = min(side_panel, (w - bw) // 2 - 10)
+        self.cell_size = metrics.cell_size
+        self.board_offset_x = metrics.board_x
+        self.board_offset_y = metrics.board_y
+        self._side_panel_width = metrics.side_panel_width
         self._board_grid_cache['key'] = None
 
     # ------------------------------------------------------------------
@@ -2848,14 +2901,14 @@ class CoopGame:
 
     def _draw_side_panels(self, ox, oy, cs, bw, bh) -> None:
         panel_w = self._side_panel_width
-        preview_cs = max(12, min(20, panel_w // 5))
+        preview_cs = max(12, min(max(12, panel_w // 4), self._sx(22, self._ui_scale(), minimum=12)))
         ui = self._ui_scale()
 
         no_preview = getattr(self, '_no_preview', False)
         no_hold = getattr(self, '_no_hold', False)
         left_color = getattr(retro_style, 'primary', (0, 255, 221))
         right_color = getattr(retro_style, 'secondary', getattr(retro_style, 'accent', (255, 180, 80)))
-        card_h = preview_cs * 4 + 36
+        card_h = preview_cs * 4 + self._sx(36, ui, minimum=36)
         top_y = oy + 16
         stack_gap = self._sx(16, ui, minimum=10)
 

@@ -45,6 +45,15 @@ class _Surf:
         return R()
     def get_size(self): return (1920, 1080)
     def convert_alpha(self): return self
+
+
+class _SizedSurf(_Surf):
+    def __init__(self, width=1920, height=1080):
+        self._size = (width, height)
+
+    def get_width(self): return self._size[0]
+    def get_height(self): return self._size[1]
+    def get_size(self): return self._size
 _pg.Surface = _Surf
 class _Draw:
     @staticmethod
@@ -266,6 +275,7 @@ if not hasattr(_am, 'load_image'):
 from board import Board
 from pieces import Piece, SHAPES
 from coop_board import CoopBoard
+import coop_game as coop_game_module
 from coop_game import CoopGame
 
 for mod_name, original in _ORIGINAL_MODULES.items():
@@ -617,6 +627,38 @@ def test_side_panels_hold_labels_follow_custom_bindings():
     assert 'P2 Hold (RShift)' in labels
     assert labels['P1 Hold (O)'] is cg.p1_hold_piece
     assert labels['P2 Hold (RShift)'] is cg.p2_hold_piece
+
+
+def test_coop_layout_can_grow_beyond_legacy_large_display_caps():
+    cg = CoopGame(sound_enabled=False, effects_enabled=False, screen=_SizedSurf(2560, 1440), sound_manager=_SM())
+    cg.window_width = 1366
+    cg.window_height = 768
+    cg._layout_key = None
+
+    cg._calculate_layout()
+
+    assert cg.cell_size > 40
+    assert cg._side_panel_width > 120
+    assert cg.board_offset_x > 0
+    assert cg.board_offset_x + (cg.board.width * cg.cell_size) < 2560
+
+
+def test_coop_layout_projects_effective_retina_metrics_into_raw_surface():
+    cg = CoopGame(sound_enabled=False, effects_enabled=False, screen=_SizedSurf(2940, 1912), sound_manager=_SM())
+    cg.window_width = 1470
+    cg.window_height = 956
+    cg._layout_key = None
+
+    original_resolve = coop_game_module.resolve_ui_scale_size
+    coop_game_module.resolve_ui_scale_size = lambda screen_or_size, *, use_effective_display_size=False, display_surface=None: (1470, 956)
+    try:
+        cg._calculate_layout()
+    finally:
+        coop_game_module.resolve_ui_scale_size = original_resolve
+
+    assert cg.cell_size >= 80
+    assert cg._side_panel_width >= 200
+    assert cg.board_offset_x + (cg.board.width * cg.cell_size) < 2940
 
 def test_score_contribution_texts_match_bottom_hud_and_game_over_summary():
     cg = CoopGame(sound_enabled=False, effects_enabled=False, screen=_Surf(), sound_manager=_SM())

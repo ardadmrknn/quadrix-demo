@@ -45,6 +45,7 @@ except ImportError:
             return int(button)
         return None
 from effect_surface_cache import EffectSurfaceCache
+from gameplay_layout import compute_single_player_layout, get_display_pixel_ratio
 from sweep_effects import SweepCatState, draw_rainbow_cat_sweep
 from ui_scaling import apply_ui_scale_preset, get_scale, resolve_ui_scale_size
 from combo_popup_style import (
@@ -263,6 +264,81 @@ class Game:
             max_scale=max_scale,
             reference_size=GAMEPLAY_UI_REFERENCE_SIZE,
         )
+
+    def _display_pixel_ratio(self) -> float:
+        return get_display_pixel_ratio(self._active_ui_size(), self._effective_ui_size())
+
+    def _get_gameplay_layout_metrics(self):
+        board_width = max(
+            1,
+            int(
+                getattr(
+                    self,
+                    'board_width',
+                    getattr(getattr(self, 'board', None), 'width', 10),
+                )
+            ),
+        )
+        board_height = max(
+            1,
+            int(
+                getattr(
+                    self,
+                    'board_height',
+                    getattr(getattr(self, 'board', None), 'height', 20),
+                )
+            ),
+        )
+        active_size = self._active_ui_size()
+        effective_size = self._effective_ui_size()
+        cache_key = (
+            int(active_size[0]),
+            int(active_size[1]),
+            int(effective_size[0]),
+            int(effective_size[1]),
+            board_width,
+            board_height,
+        )
+        if getattr(self, '_gameplay_layout_cache_key', None) != cache_key:
+            self._gameplay_layout_cache = compute_single_player_layout(
+                active_size=active_size,
+                effective_size=effective_size,
+                board_width=board_width,
+                board_height=board_height,
+                info_panel_height=INFO_PANEL_HEIGHT,
+            )
+            self._gameplay_layout_cache_key = cache_key
+        return self._gameplay_layout_cache
+
+    def _get_right_hud_panel_metrics(self, offset_x, offset_y, board_width, board_height):
+        layout = self._get_gameplay_layout_metrics()
+        active_width, active_height = self._active_ui_size()
+
+        panel_x = int(offset_x) + int(board_width) + int(layout.panel_gap)
+        max_panel_x = max(int(layout.outer_margin), int(active_width) - int(layout.outer_margin) - 80)
+        panel_x = max(int(layout.outer_margin), min(panel_x, max_panel_x))
+
+        available_right = max(80, int(active_width) - int(layout.outer_margin) - panel_x)
+        panel_width = min(int(layout.panel_width), available_right)
+        panel_width = max(min(available_right, 80), panel_width)
+
+        panel_y = int(offset_y) + max(1, int(layout.panel_y - layout.board_y))
+        panel_height = min(
+            int(board_height),
+            max(80, int(active_height) - panel_y - int(layout.panel_bottom_margin)),
+        )
+
+        pixel_ratio = max(1.0, float(getattr(layout, 'pixel_ratio', 1.0) or 1.0))
+        logical_panel_width = float(panel_width) / pixel_ratio
+        hud_scale = max(0.72, min(1.18, logical_panel_width / 220.0))
+        hud_px_scale = hud_scale * pixel_ratio
+
+        return {
+            'rect': pygame.Rect(panel_x, panel_y, panel_width, panel_height),
+            'hud_scale': hud_scale,
+            'hud_px_scale': hud_px_scale,
+            'pixel_ratio': pixel_ratio,
+        }
 
     def _sx(self, value: int | float, scale: float | None = None, minimum: int = 1) -> int:
         """Sabit piksel değeri UI ölçeği ile dönüştür."""
@@ -1645,49 +1721,22 @@ class Game:
     
     def update_fonts(self):
         """Pencere boyutuna göre fontları güncelle"""
-        active_width, active_height = self._active_ui_size()
-        scale = min(active_width / DEFAULT_WINDOW_WIDTH, 
+        active_width, active_height = self._effective_ui_size()
+        scale = min(active_width / DEFAULT_WINDOW_WIDTH,
                    active_height / DEFAULT_WINDOW_HEIGHT)
+        scale *= self._display_pixel_ratio()
         self.font_large = UIFonts.get(int(FONT_SIZE_LARGE * scale))
         self.font_medium = UIFonts.get(int(FONT_SIZE_MEDIUM * scale))
         self.font_small = UIFonts.get(int(FONT_SIZE_SMALL * scale))
     
     def get_cell_size(self):
         """Pencere boyutuna göre hücre boyutunu hesapla - CACHE'LENMİŞ"""
-        # Cache kontrolü
-        current_size = self._active_ui_size()
-        if not hasattr(self, '_cached_cell_size_key') or self._cached_cell_size_key != current_size:
-            active_width, active_height = current_size
-            # Tahta için kullanılabilir alan
-            board_area_width = int(active_width) - SIDE_PANEL_WIDTH
-            board_area_height = int(active_height) - INFO_PANEL_HEIGHT
-            
-            # Her iki boyuta göre en uygun hücre boyutunu seç
-            cell_width = board_area_width // self.board_width  # Dinamik genişlik
-            cell_height = board_area_height // self.board_height  # Dinamik yükseklik
-            
-            self._cached_cell_size = min(cell_width, cell_height, 40)  # Max 40px
-            self._cached_cell_size_key = current_size
-        
-        return self._cached_cell_size
+        return int(self._get_gameplay_layout_metrics().cell_size)
     
     def get_board_offset(self):
         """Tahtanın ekrandaki pozisyonunu hesapla (ortalamak için) - CACHE'LENMİŞ"""
-        # Cache kontrolü
-        current_size = self._active_ui_size()
-        if not hasattr(self, '_cached_offset_key') or self._cached_offset_key != current_size:
-            active_width, active_height = current_size
-            cell_size = self.get_cell_size()
-            board_width = self.board_width * cell_size  # Dinamik genişlik
-            board_height = self.board_height * cell_size  # Dinamik yükseklik
-            
-            offset_x = (int(active_width) - SIDE_PANEL_WIDTH - board_width) // 2
-            offset_y = (int(active_height) - board_height) // 2 - 25  # Biraz yukarı taşı
-            
-            self._cached_offset = (offset_x, offset_y)
-            self._cached_offset_key = current_size
-        
-        return self._cached_offset
+        layout = self._get_gameplay_layout_metrics()
+        return int(layout.board_x), int(layout.board_y)
     
     def handle_input(self):
         """
@@ -4375,20 +4424,14 @@ class Game:
     def _draw_right_hud_panel(self, offset_x, offset_y, board_width, board_height, skin, ui_skin, text_color, accent_color, label_color):
         """Sağ taraftaki HUD panelini çiz - alt sınıflar override edebilir"""
         active_width, active_height = self._active_ui_size()
-        # Sağ panel - bilgi paneli arka planı
-        info_x = offset_x + board_width + 25
-        header_y = offset_y + 10
-        
-        # Panel genişliği ve yüksekliği hesapla
-        available_right = int(active_width) - (int(offset_x) + int(board_width) + 40)
-        panel_width = min(220, max(120, available_right))
-        panel_width = max(120, min(panel_width, max(120, int(active_width) - 24)))
-        info_x = min(info_x, int(active_width) - panel_width - 12)
-        panel_height = min(board_height, active_height - header_y - 40)
-        
-        panel_rect = pygame.Rect(info_x, header_y, panel_width, panel_height)
-
-        hud_scale = max(0.72, min(1.05, panel_width / 220.0))
+        panel_metrics = self._get_right_hud_panel_metrics(offset_x, offset_y, board_width, board_height)
+        panel_rect = panel_metrics['rect']
+        info_x = panel_rect.x
+        header_y = panel_rect.y
+        panel_width = panel_rect.width
+        panel_height = panel_rect.height
+        hud_scale = panel_metrics['hud_px_scale']
+        pixel_ratio = panel_metrics['pixel_ratio']
         
         # Ana panel arka planı (Glassmorphism)
         self._draw_hud_glass_panel(panel_rect)
@@ -4423,7 +4466,7 @@ class Game:
         
         curr_y += max(14, int(25 * hud_scale))
         # 2 Sonraki parça yanyana
-        box_size = max(42, min(60, int(60 * hud_scale)))
+        box_size = max(42, min(int(round(90 * pixel_ratio)), int(60 * hud_scale)))
         gap = max(8, int(15 * hud_scale))
         
         for i in range(2):
@@ -4482,8 +4525,8 @@ class Game:
         self.screen.blit(d_surf, (content_x + content_w - d_surf.get_width(), curr_y + 2))
         
         curr_y += max(14, int(25 * hud_scale))
-        hold_box_rect = pygame.Rect(content_x, curr_y, box_size + 20, box_size)
-        hold_box_rect = pygame.Rect(content_x, curr_y, box_size + 20, box_size)
+        hold_box_rect = pygame.Rect(content_x, curr_y, box_size + max(12, int(20 * pixel_ratio)), box_size)
+        hold_box_rect = pygame.Rect(content_x, curr_y, box_size + max(12, int(20 * pixel_ratio)), box_size)
         if not self._draw_custom_frame(hold_box_rect, "box_frame.png", padding=4):
             pygame.draw.rect(self.screen, (20, 25, 40, 180), hold_box_rect, border_radius=8)
             pygame.draw.rect(self.screen, (60, 70, 100), hold_box_rect, 1, border_radius=8)

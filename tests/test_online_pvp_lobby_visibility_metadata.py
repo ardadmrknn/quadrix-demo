@@ -550,7 +550,9 @@ def test_validated_access_id_resets_on_lobby_leave():
 
 
 def test_validate_sets_validated_id_on_unknown_metadata_with_auth():
-    """Metadata unknown + authorized by code → _lobby_access_validated_id set edilmeli."""
+    """Metadata unknown + authorized by code → geçici izin ama _lobby_access_validated_id
+    set edilMEMELİ. Kod doğrulaması metadata gelene kadar ertelenir;
+    _pending_access_revalidation_lobby_id set edilmeli."""
     game = _make_game()
     game.net = types.SimpleNamespace(
         lobby_id=77,
@@ -564,7 +566,13 @@ def test_validate_sets_validated_id_on_unknown_metadata_with_auth():
 
     result = game._validate_joined_lobby_access()
     assert result is True
-    assert game._lobby_access_validated_id == 77
+    # Kod yetkilendirmesi metadata gelene kadar doğrulanmadı —
+    # kalıcı onay değil, pending revalidation set edilmeli.
+    assert game._lobby_access_validated_id == 0
+    assert game._pending_access_revalidation_lobby_id == 77
+    # Kod yetkilendirmesi temizlenmemeli — metadata geldiğinde kullanılacak.
+    assert game._authorized_private_join_lobby_id == 77
+    assert game._authorized_private_join_code == '123456'
     game._return_to_pvp_lobby_menu.assert_not_called()
 
 
@@ -627,13 +635,13 @@ def test_on_lobby_created_resets_stale_validated_id():
 
 
 def test_refresh_unknown_does_not_mark_public_on_partial_propagation():
-    """metadata_ready=1 ama visibility/requires_code boş ise, cross-platform
-    metadata gecikmesinde takılmamak için 'public' olarak kabul edilmeli.
+    """metadata_ready=1 ama visibility/requires_code boş ise,
+    partial propagation olarak 'unknown' kalmalı.
 
-    metadata_ready=1 Python tarafında EN SON yazılır; dolayısıyla diğer
-    alanlar da yazılmış ama karşı platforma henüz ulaşmamıştır. Kullanıcıyı
-    bekletmek yerine 'public' varsay — katılma sonrası
-    _validate_joined_lobby_access asıl erişim kontrolünü yapar.
+    Cross-platform'da SetLobbyData çağrıları bağımsız propagate olabilir;
+    metadata_ready=1 diğer alanlardan ÖNCE karşı platforma ulaşabilir.
+    'public' varsaymak private lobiye kodsuz giriş açığı oluşturur.
+    Unknown bırak — sonraki refresh veya lobby_data_updated çözer.
     """
     game = _make_game()
     game._net_initialized = True
@@ -666,8 +674,8 @@ def test_refresh_unknown_does_not_mark_public_on_partial_propagation():
 
     game._refresh_unknown_lobby_entries()
 
-    # metadata_ready=1 geldiğinde 'public' olarak kabul et
-    assert game._lobby_list[0]['visibility'] == 'public'
+    # Partial propagation: unknown kalmalı (public varsaymak tehlikeli)
+    assert game._lobby_list[0]['visibility'] == 'unknown'
     assert game._lobby_list[0]['requires_code'] is False
 
 
