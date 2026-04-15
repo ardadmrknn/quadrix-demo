@@ -662,3 +662,28 @@ def test_level_select_stars():
     sel = CoopLevelSelect(screen=_Surf(), settings_manager=sm)
     assert sel._get_level_stars(2) == 3
     assert sel._get_level_stars(1) == 0  # tamamlanmamış
+
+
+def test_level_select_ui_scale_uses_projected_effective_scale(monkeypatch):
+    from campaign import coop_level_select as coop_level_select_module
+    from campaign.coop_level_select import CoopLevelSelect
+
+    sel = CoopLevelSelect(screen=_Surf(), settings_manager=_FakeSettingsManager())
+    captured = {}
+
+    def fake_get_projected_scale(target, *, min_scale, max_scale, reference_size, display_surface=None):
+        captured['target'] = target
+        captured['min_scale'] = min_scale
+        captured['max_scale'] = max_scale
+        captured['reference_size'] = reference_size
+        captured['display_surface'] = display_surface
+        return 1.05
+
+    monkeypatch.setattr(coop_level_select_module, 'get_projected_effective_scale', fake_get_projected_scale)
+
+    assert sel._ui_scale() == 1.05
+    assert captured['target'] is sel.screen
+    assert captured['min_scale'] == 0.72
+    assert captured['max_scale'] == 1.18
+    assert captured['reference_size'] == (1400.0, 900.0)
+    assert captured['display_surface'] is None

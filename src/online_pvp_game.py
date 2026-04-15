@@ -512,6 +512,7 @@ class OnlinePvPGame:
         self._join_code_active: bool = False  # Metin girişi aktif mi
         self._join_code_error: str = ''     # Giriş hata mesajı
         self._join_target_lobby_id: int = 0  # Listeden seçilen özel lobi hedefi
+        self._pending_browser_join_lobby_id: int = 0
         self._searching_by_code: bool = False  # Kod ile arama yapılıyor mu
         self._search_code: str = ''         # Aranan kod (lobby_list_complete'de eşleşme için)
         self._code_search_retry_count: int = 0   # Kod araması retry sayacı
@@ -1437,6 +1438,84 @@ class OnlinePvPGame:
         if not normalized_lobby_id or self._invite_authorized_lobby_id == normalized_lobby_id:
             self._invite_authorized_lobby_id = 0
 
+    def _open_private_lobby_code_prompt(self, lobby_id: int):
+        normalized_lobby_id = int(lobby_id or 0)
+        self._pending_browser_join_lobby_id = 0
+        self._join_target_lobby_id = normalized_lobby_id
+        self._join_code_active = True
+        self._join_code_input = ''
+        self._join_code_error = ''
+        self._status_msg = t('enter_lobby_code', 'Lobi kodu girin')
+        self._status_timer = 2.5
+
+    def _start_lobby_browser_join(self, lobby_id: int, snapshot: dict | None = None) -> bool:
+        normalized_lobby_id = int(lobby_id or 0)
+        if not normalized_lobby_id:
+            return False
+
+        effective_snapshot = snapshot
+        if effective_snapshot is None:
+            effective_snapshot = self._get_lobby_metadata_snapshot(
+                normalized_lobby_id,
+                prefer_live=True,
+            )
+
+        visibility = str(effective_snapshot.get('visibility', 'unknown') or 'unknown').lower()
+        requires_code = bool(effective_snapshot.get('requires_code', False))
+
+        if visibility == 'public' and not requires_code:
+            self._pending_browser_join_lobby_id = 0
+            self._join_target_lobby_id = 0
+            self._join_code_active = False
+            self.net.join_lobby(normalized_lobby_id)
+            self._status_msg = t('joining_lobby', 'Lobiye katılınıyor...')
+            self._status_timer = 2.0
+            return True
+
+        if visibility == 'private' or requires_code:
+            self._open_private_lobby_code_prompt(normalized_lobby_id)
+            return True
+
+        self._pending_browser_join_lobby_id = normalized_lobby_id
+        self._join_target_lobby_id = 0
+        self._join_code_active = False
+        self._request_lobby_metadata_refresh(normalized_lobby_id)
+        self._status_msg = 'Lobi ayarlari kontrol ediliyor...'
+        self._status_timer = 2.5
+        return False
+
+    def _complete_pending_browser_join(self, lobby_id: int, snapshot: dict | None = None) -> bool:
+        pending_lobby_id = int(getattr(self, '_pending_browser_join_lobby_id', 0) or 0)
+        normalized_lobby_id = int(lobby_id or 0)
+        if not pending_lobby_id or pending_lobby_id != normalized_lobby_id:
+            return False
+
+        effective_snapshot = snapshot
+        if effective_snapshot is None:
+            effective_snapshot = self._get_lobby_metadata_snapshot(
+                normalized_lobby_id,
+                prefer_live=True,
+            )
+
+        visibility = str(effective_snapshot.get('visibility', 'unknown') or 'unknown').lower()
+        requires_code = bool(effective_snapshot.get('requires_code', False))
+
+        if visibility == 'public' and not requires_code:
+            self._pending_browser_join_lobby_id = 0
+            self._join_target_lobby_id = 0
+            self._join_code_active = False
+            self.net.join_lobby(normalized_lobby_id)
+            self._status_msg = t('joining_lobby', 'Lobiye katılınıyor...')
+            self._status_timer = 2.0
+            return True
+
+        if visibility == 'private' or requires_code:
+            self._pending_browser_join_lobby_id = 0
+            self._open_private_lobby_code_prompt(normalized_lobby_id)
+            return True
+
+        return False
+
     def _reject_private_lobby_join(self):
         # Private lobiden erişim reddedildi — lobi menüsüne dön ve
         # kullanıcıya kod giriş alanını aç, böylece kodla tekrar deneyebilir.
@@ -1768,6 +1847,7 @@ class OnlinePvPGame:
             ev.steam_id, payload, prefer_live=True)
         self._promote_deferred_lobby_entry(ev.steam_id, snapshot)
         self._try_resolve_pending_code_join(ev.steam_id, snapshot)
+        self._complete_pending_browser_join(ev.steam_id, snapshot)
         if current_lobby_id and int(ev.steam_id or 0) == current_lobby_id:
             # Ertelenmiş erişim yeniden-doğrulaması: _validate_joined_lobby_access
             # metadata unknown iken geçici izin vermiş olabilir. Metadata
@@ -1933,6 +2013,7 @@ class OnlinePvPGame:
                 lobby['metadata_ready'] = bool(snapshot.get('metadata_ready', False))
                 self._deferred_lobby_entries.pop(lobby_id, None)
                 self._clear_lobby_metadata_refresh_request(lobby_id)
+                self._complete_pending_browser_join(lobby_id, snapshot)
                 continue
 
             # Live read hala unknown döndü — lobby_code veya
@@ -1955,6 +2036,14 @@ class OnlinePvPGame:
                 lobby['metadata_ready'] = True
                 self._deferred_lobby_entries.pop(lobby_id, None)
                 self._clear_lobby_metadata_refresh_request(lobby_id)
+                self._complete_pending_browser_join(lobby_id, {
+                    'id': lobby_id,
+                    'name': lobby.get('name', ''),
+                    'code': lobby['code'],
+                    'visibility': lobby['visibility'],
+                    'requires_code': lobby['requires_code'],
+                    'metadata_ready': lobby['metadata_ready'],
+                })
                 try:
                     raw_host = self.net.get_lobby_data_for(lobby_id, 'host_name')
                     if raw_host:
@@ -2008,6 +2097,14 @@ class OnlinePvPGame:
                     lobby['metadata_ready'] = True
                     self._deferred_lobby_entries.pop(lobby_id, None)
                     self._clear_lobby_metadata_refresh_request(lobby_id)
+                    self._complete_pending_browser_join(lobby_id, {
+                        'id': lobby_id,
+                        'name': lobby.get('name', ''),
+                        'code': lobby.get('code', ''),
+                        'visibility': lobby['visibility'],
+                        'requires_code': lobby['requires_code'],
+                        'metadata_ready': lobby['metadata_ready'],
+                    })
                     try:
                         raw_host = self.net.get_lobby_data_for(
                             lobby_id, 'host_name')
@@ -2028,6 +2125,14 @@ class OnlinePvPGame:
                     )
                     self._deferred_lobby_entries.pop(lobby_id, None)
                     self._clear_lobby_metadata_refresh_request(lobby_id)
+                    self._complete_pending_browser_join(lobby_id, {
+                        'id': lobby_id,
+                        'name': lobby.get('name', ''),
+                        'code': lobby.get('code', ''),
+                        'visibility': lobby['visibility'],
+                        'requires_code': lobby['requires_code'],
+                        'metadata_ready': lobby['metadata_ready'],
+                    })
                     try:
                         raw_host = self.net.get_lobby_data_for(
                             lobby_id, 'host_name')
@@ -2204,6 +2309,7 @@ class OnlinePvPGame:
         self._join_code_input = ''
         self._join_code_error = ''
         self._join_target_lobby_id = 0
+        self._pending_browser_join_lobby_id = 0
         self._searching_by_code = False
         self._search_code = ''
         self._code_search_retry_count = 0
@@ -3817,12 +3923,10 @@ class OnlinePvPGame:
             if self._deferred_lobby_refresh_timer <= 0.0:
                 self._refresh_deferred_lobby_entries()
                 self._refresh_unknown_lobby_entries()
-                # Unknown lobiler 5+ saniye boyunca çözülemediyse,
-                # katılabilir duruma getir. Steam cross-platform metadata
-                # propagasyonu güvenilmez olabilir (özellikle macOS→Windows).
-                # Lobiyi silmek yerine kullanıcıya kod ile katılma imkanı
-                # ver. Katıldıktan sonra _validate_joined_lobby_access
-                # metadata'yı doğrudan okuyarak erişim kontrolü yapar.
+                # Unknown lobiler çözülmezse stale_unknown olarak işaretle.
+                # UI bu durumda private/public varsaymaz; join isteği önce
+                # metadata'yı yeniden doğrular ve ancak sonra public/private
+                # akışını açar.
                 _now = time.time()
                 _UNKNOWN_LOBBY_JOINABLE_TIMEOUT_S = 2.0
                 _UNKNOWN_LOBBY_REMOVE_TIMEOUT_S = 120.0
@@ -3840,9 +3944,9 @@ class OnlinePvPGame:
                         # 2 dakikadan uzun süredir çözülemedi → kaldır
                         _stale_ids.add(_lid)
                     elif _lvis == 'unknown' and _elapsed > _UNKNOWN_LOBBY_JOINABLE_TIMEOUT_S:
-                        # 5 saniye sonra: metadata gelmedi, lobiye katılmayı
-                        # denesin diye 'stale_unknown' olarak işaretle.
-                        # UI bu durumda "Katıl" butonu gösterecek.
+                        # Metadata gecikmesi uzadı — kartı stale_unknown yap,
+                        # böylece kullanıcı aksiyonuna rağmen private/public
+                        # varsayımı yapılmasın.
                         _lobby['visibility'] = 'stale_unknown'
                 if _stale_ids:
                     self._lobby_list = [
@@ -4568,14 +4672,15 @@ class OnlinePvPGame:
                     elif action.startswith('join_private_lobby:'):
                         lobby_id_str = action.split(':', 1)[1]
                         try:
-                            self._join_target_lobby_id = int(lobby_id_str)
+                            self._open_private_lobby_code_prompt(int(lobby_id_str))
                         except (ValueError, TypeError):
                             self._join_target_lobby_id = 0
-                        self._join_code_active = True
-                        self._join_code_input = ''
-                        self._join_code_error = ''
-                        self._status_msg = t('enter_lobby_code', 'Lobi kodu girin')
-                        self._status_timer = 2.5
+                    elif action.startswith('resolve_lobby_join:'):
+                        lobby_id_str = action.split(':', 1)[1]
+                        try:
+                            self._start_lobby_browser_join(int(lobby_id_str))
+                        except (ValueError, TypeError):
+                            pass
                     elif action == 'join_by_code':
                         # "Kod ile Katıl" butonuna tıklandı
                         self._join_target_lobby_id = 0
@@ -4584,12 +4689,6 @@ class OnlinePvPGame:
                         self._join_code_error = ''
                     elif action == 'join_code_submit':
                         self._try_join_by_code()
-                    elif action == 'join_code_skip':
-                        target_lid = int(getattr(self, '_join_target_lobby_id', 0) or 0)
-                        if target_lid:
-                            self._join_target_lobby_id = 0
-                            self._join_code_active = False
-                            self.net.join_lobby(target_lid)
                     elif action == 'copy_lobby_code':
                         self._copy_lobby_code()
                     elif action == 'copy_lobby_id':
@@ -5276,6 +5375,8 @@ class OnlinePvPGame:
                     detail_parts.append(t('code_required', 'Katilmak icin kod gerekli'))
                 elif visibility == 'public':
                     detail_parts.append(t('open_lobby', 'Acik lobi'))
+                elif visibility in ('unknown', 'stale_unknown'):
+                    detail_parts.append('Erisim ayarlari kontrol edilecek')
                 detail_text = '  ·  '.join(detail_parts)
                 self.screen.blit(cf.render(detail_text, True, _rs.text_secondary),
                                  (ir.x + s(20), ir.y + s(34)))
@@ -5297,13 +5398,9 @@ class OnlinePvPGame:
                 jb = pygame.Rect(ir.right - jw - s(12), ir.centery - jh // 2, jw, jh)
                 jh_hover = jb.collidepoint(mouse_pos)
                 if visibility in ('unknown', 'stale_unknown'):
-                    # Cross-platform metadata propagasyonu güvenilmez;
-                    # lobiye katılmadan visibility bilinemez.  Kod diyalogu
-                    # açarak özel lobiler için kodu iste, herkese açık
-                    # lobiler için "Kodsuz Dene" seçeneği sun.
-                    action = f'join_private_lobby:{lid}'
-                    button_label = t('enter_code', 'Kod Gir')
-                    button_color = UIColors.NEON_ORANGE
+                    action = f'resolve_lobby_join:{lid}'
+                    button_label = t('join', 'Katıl')
+                    button_color = UIColors.NEON_CYAN
                 else:
                     action = f'join_private_lobby:{lid}' if requires_code else f'join_lobby:{lid}'
                     button_label = t('enter_code', 'Kod Gir') if requires_code else t('join', 'Katıl')
@@ -5425,9 +5522,7 @@ class OnlinePvPGame:
         # Gönder butonu
         sub_btn_w = btn_w - s(32)
         sub_btn_h = s(38)
-        has_target = bool(int(getattr(self, '_join_target_lobby_id', 0) or 0))
-        # Hedef lobi varsa "Kodsuz Dene" butonu için alan ayır
-        sub_y = y + panel_h - (sub_btn_h * 2 + s(8) + s(16) if has_target else sub_btn_h + s(16))
+        sub_y = y + panel_h - sub_btn_h - s(16)
         sub_rect = pygame.Rect(x + s(16), sub_y, sub_btn_w, sub_btn_h)
         sub_hover = sub_rect.collidepoint(mouse_pos)
         _rs.draw_uniform_button(self.screen, sub_rect,
@@ -5436,17 +5531,6 @@ class OnlinePvPGame:
                                 color_code=UIColors.NEON_GREEN,
                                 state='hover' if sub_hover else 'normal')
         self._lobby_buttons.append({'rect': sub_rect, 'action': 'join_code_submit'})
-
-        # Hedef lobi varsa "Kodsuz Dene" butonu — herkese açık lobiler için
-        if has_target:
-            skip_y = sub_y + sub_btn_h + s(8)
-            skip_rect = pygame.Rect(x + s(16), skip_y, sub_btn_w, sub_btn_h)
-            skip_hover = skip_rect.collidepoint(mouse_pos)
-            _rs.draw_uniform_button(self.screen, skip_rect,
-                                    t('try_without_code', 'Kodsuz Dene'),
-                                    color_code=UIColors.NEON_CYAN,
-                                    state='hover' if skip_hover else 'normal')
-            self._lobby_buttons.append({'rect': skip_rect, 'action': 'join_code_skip'})
 
     # ─── Bekleme Ekranı ───
 

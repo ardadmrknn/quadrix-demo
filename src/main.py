@@ -178,7 +178,7 @@ try:
         ScreenTransition
     )
     from .gamepad_manager import get_gamepad_manager, is_gamepad_connected  # type: ignore
-    from .ui_scaling import get_scale  # type: ignore
+    from .ui_scaling import get_projected_effective_scale  # type: ignore
 except Exception:
     from game import Game, prewarm_common_mode_entry_backgrounds
     from block_styles import BlockStyleManager
@@ -216,7 +216,7 @@ except Exception:
         ScreenTransition
     )
     from gamepad_manager import get_gamepad_manager, is_gamepad_connected
-    from ui_scaling import get_scale
+    from ui_scaling import get_projected_effective_scale
 import pygame
 from pathlib import Path
 
@@ -659,8 +659,8 @@ def _show_mode_intro_popup(screen, mode_key, settings_manager=None):
 
 
 def _fullscreen_popup_scale(screen) -> float:
-    """Popup/panel ölçeği (fullscreen referans: 1920x1080)."""
-    return get_scale(
+    """Popup/panel olcegi: logical UI size ile karar ver, raw surface'e projekte et."""
+    return get_projected_effective_scale(
         screen,
         min_scale=0.65,
         max_scale=1.35,

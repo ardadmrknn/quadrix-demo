@@ -114,17 +114,18 @@ def test_fullscreen_popup_scale_uses_shared_reference_and_clamps_bounds():
     assert main_module._fullscreen_popup_scale((800, 600)) == 0.65
 
 
-def test_fullscreen_popup_scale_stays_raw_surface_scaled_until_popup_geometry_migrates(monkeypatch):
+def test_fullscreen_popup_scale_uses_projected_effective_scale(monkeypatch):
     captured = {}
 
-    def fake_get_scale(screen, *, min_scale, max_scale, reference_size):
+    def fake_get_projected_scale(screen, *, min_scale, max_scale, reference_size, display_surface=None):
         captured['screen'] = screen
         captured['min_scale'] = min_scale
         captured['max_scale'] = max_scale
         captured['reference_size'] = reference_size
+        captured['display_surface'] = display_surface
         return 1.23
 
-    monkeypatch.setattr(main_module, 'get_scale', fake_get_scale)
+    monkeypatch.setattr(main_module, 'get_projected_effective_scale', fake_get_projected_scale)
 
     screen = pygame.Surface((2560, 1660), pygame.SRCALPHA)
     assert math.isclose(main_module._fullscreen_popup_scale(screen), 1.23)
@@ -132,6 +133,7 @@ def test_fullscreen_popup_scale_stays_raw_surface_scaled_until_popup_geometry_mi
     assert captured['min_scale'] == 0.65
     assert captured['max_scale'] == 1.35
     assert captured['reference_size'] == (1920.0, 1080.0)
+    assert captured['display_surface'] is None
 
 
 def test_capture_popup_backdrop_matches_surface_size_and_dims_pixels():

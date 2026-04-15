@@ -249,31 +249,35 @@ def test_toggle_on_off_idempotent():
     assert inst.debug_unlock_all is False
 
 
-def test_level_select_ui_scale_stays_raw_surface_scaled_until_campaign_flow_aligns():
+def test_level_select_ui_scale_uses_projected_effective_scale():
     class _FakeScreen:
         def get_size(self):
             return (2560, 1660)
 
     inst = object.__new__(CampaignLevelSelect)
     inst.screen = _FakeScreen()
+    inst.window_width = 2560
+    inst.window_height = 1660
 
     captured = {}
-    original = getattr(mod, 'get_scale')
+    original = getattr(mod, 'get_projected_effective_scale')
 
-    def fake_get_scale(screen, *, min_scale, max_scale, reference_size):
+    def fake_get_projected_scale(screen, *, min_scale, max_scale, reference_size, display_surface=None):
         captured['screen'] = screen
         captured['min_scale'] = min_scale
         captured['max_scale'] = max_scale
         captured['reference_size'] = reference_size
+        captured['display_surface'] = display_surface
         return 0.98
 
-    mod.get_scale = fake_get_scale
+    mod.get_projected_effective_scale = fake_get_projected_scale
     try:
         assert inst._get_ui_scale() == 0.98
     finally:
-        mod.get_scale = original
+        mod.get_projected_effective_scale = original
 
     assert captured['screen'] is inst.screen
     assert captured['min_scale'] == 0.72
     assert captured['max_scale'] == 1.18
     assert captured['reference_size'] == (1400.0, 900.0)
+    assert captured['display_surface'] is None

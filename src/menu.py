@@ -38,7 +38,7 @@ from platform_utils import (
 from ui_theme import UIColors, UIFonts
 from asset_manager import load_image
 from text_cache import render_text
-from ui_scaling import apply_ui_scale_preset, get_scale, resolve_ui_scale_size
+from ui_scaling import apply_ui_scale_preset, get_projected_effective_scale, get_scale, resolve_ui_scale_size
 from gamepad_manager import get_gamepad_manager, is_gamepad_connected
 
 try:
@@ -677,13 +677,8 @@ class Menu:
         return (1366, 768)
 
     def _fullscreen_panel_scale(self) -> float:
-        """Modal/popup paneller için fullscreen referanslı ölçek.
-
-        Panel rect/hitbox zinciri hala fiziksel surface koordinat uzayinda oldugu
-        icin bu helper Faz 3'te ham surface bazinda kalir. Effective-size rollout'u
-        modal geometri zinciri birlikte tasindiginda acilacak.
-        """
-        return get_scale(
+        """Modal/popup paneller icin effective-size tabanli, raw surface'e projekte edilmis olcek."""
+        return get_projected_effective_scale(
             self.screen,
             min_scale=0.68,
             max_scale=1.16,
@@ -691,18 +686,8 @@ class Menu:
         )
 
     def _menu_panel_content_scale(self) -> float:
-        """Ana menü kart içerikleri için ekran boyutuna bağlı ölçek.
-
-        Dashboard panel rect'leri runtime layout'ta yüzde bazlı ölçeklendiği için
-        içerik (metin/padding/mikro öğeler) de aynı referansla ölçeklenmelidir.
-        Aksi halde düşük çözünürlükte içerik fazla büyük kalır ve panel içinde
-        sıkışma/taşma hissi oluşur.
-
-        Not: Kart rect zinciri hala fiziksel surface geometrisine bağlı olduğu için
-        Faz 3'te icerik scale'i raw surface uzerinde kalir. Effective-size rollout'u
-        panel geometri zinciri birlikte tasindiginda acilacak.
-        """
-        return get_scale(
+        """Ana menu kart icerik olcegi: logical UI size ile karar ver, raw surface'e projekte et."""
+        return get_projected_effective_scale(
             self.screen,
             min_scale=0.72,
             max_scale=1.16,
@@ -11803,6 +11788,26 @@ class CreditsScreen:
         self._credits_mascot_loaded = False
 
     def _get_credits_reference_size(self) -> tuple[int, int]:
+        screen = getattr(self, 'screen', None)
+        if screen is not None and hasattr(screen, 'get_size'):
+            display_surface = None
+            try:
+                active_display_surface = pygame.display.get_surface()
+                if active_display_surface is not None and screen is active_display_surface:
+                    display_surface = True
+            except Exception:
+                pass
+
+            try:
+                ref_w, ref_h = resolve_ui_scale_size(
+                    screen,
+                    use_effective_display_size=True,
+                    display_surface=display_surface,
+                )
+                return max(1, int(ref_w)), max(1, int(ref_h))
+            except Exception:
+                pass
+
         try:
             info = pygame.display.Info()
             ref_w = int(getattr(info, 'current_w', 0) or 0)
@@ -11814,10 +11819,13 @@ class CreditsScreen:
         return max(1, ref_w), max(1, ref_h)
 
     def _credits_ui_scale(self, min_scale: float = 0.62, max_scale: float = 1.05) -> float:
-        width, height = self.screen.get_size()
         ref_w, ref_h = self._credits_ui_reference_size
-        scale = min(float(width) / max(1.0, float(ref_w)), float(height) / max(1.0, float(ref_h)))
-        return max(min_scale, min(max_scale, scale))
+        return get_projected_effective_scale(
+            self.screen,
+            min_scale=min_scale,
+            max_scale=max_scale,
+            reference_size=(float(ref_w), float(ref_h)),
+        )
 
     def _credits_sx(self, value: int | float, minimum: int = 1) -> int:
         return max(minimum, int(round(float(value) * self._credits_ui_scale())))

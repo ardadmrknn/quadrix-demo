@@ -16,7 +16,7 @@ from platform_utils import get_mouse_pos, normalize_mouse_pos
 from ui_theme import UIColors, UIFonts, UIStyle
 from retro_style import retro_style as _retro_style
 from localization import t, get_language
-from ui_scaling import get_scale
+from ui_scaling import get_projected_effective_scale
 
 # Neon renk paleti (merkezi tema)
 NEON_CYAN = UIColors.NEON_CYAN
@@ -191,8 +191,14 @@ class CampaignLevelSelect:
 
     def _get_ui_scale(self, min_scale: float = 0.72, max_scale: float = 1.18) -> float:
         """Pencere boyutuna göre ortak UI ölçek katsayısı"""
-        return get_scale(
-            self.screen,
+        target = getattr(self, 'screen', None)
+        if target is None:
+            target = (
+                getattr(self, 'window_width', 1400),
+                getattr(self, 'window_height', 900),
+            )
+        return get_projected_effective_scale(
+            target,
             min_scale=min_scale,
             max_scale=max_scale,
             reference_size=(1400.0, 900.0),

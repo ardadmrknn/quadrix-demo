@@ -1281,7 +1281,7 @@ class HardcoreMode(Game):
     def draw_mode_info(self, info_x, info_y):
         """Hardcore mod bilgileri - sol panel"""
         from retro_style import retro_style
-        ui_scale = self._ui_scale(min_scale=0.70, max_scale=1.16)
+        ui_scale = self._overlay_ui_scale(min_scale=0.70, max_scale=1.16)
         s = lambda v, minimum=1: self._sx(v, ui_scale, minimum)
         
         board_offset_x, board_offset_y = self.get_board_offset()
@@ -1361,7 +1361,7 @@ class HardcoreMode(Game):
     def _draw_right_hud_panel(self, offset_x, offset_y, board_width, board_height, skin, ui_skin, text_color, accent_color, label_color):
         """Hardcore mod için özel sağ panel - sıradaki ve saklanan parçalar YOK"""
         from retro_style import retro_style
-        ui_scale = self._ui_scale(min_scale=0.70, max_scale=1.16)
+        ui_scale = self._overlay_ui_scale(min_scale=0.70, max_scale=1.16)
         s = lambda v, minimum=1: self._sx(v, ui_scale, minimum)
         active_width, active_height = self._active_ui_size()
         # Sağ panel pozisyonu

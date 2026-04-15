@@ -15,6 +15,7 @@ from ui_scaling import (
     get_effective_modal_scale,
     get_effective_scale,
     get_modal_scale,
+    get_projected_effective_scale,
     get_scale,
     get_ui_scale_preset,
     normalize_ui_scale_preset,
@@ -101,6 +102,42 @@ def test_get_effective_scale_uses_effective_display_size_when_opted_in(monkeypat
 
     expected = min(1707 / 1920.0, 1107 / 1080.0)
     expected = max(0.65, min(1.35, expected))
+    assert math.isclose(scale, expected)
+
+
+def test_get_projected_effective_scale_projects_logical_scale_back_to_raw_surface(monkeypatch):
+    screen = _FakeScreen(2560, 1664)
+
+    monkeypatch.setattr(
+        ui_scaling_module,
+        "_get_effective_display_size",
+        lambda screen_or_size, display_surface=None: (1280, 832),
+    )
+
+    scale = get_projected_effective_scale(
+        screen,
+        min_scale=0.68,
+        max_scale=1.20,
+        reference_size=(1366.0, 768.0),
+        display_surface=True,
+    )
+
+    expected_logical = min(1280 / 1366.0, 832 / 768.0)
+    expected_logical = max(0.68, min(1.20, expected_logical))
+    expected = expected_logical * 2.0
+    assert math.isclose(scale, expected)
+
+
+def test_get_projected_effective_scale_falls_back_to_raw_scale_for_tuple_input():
+    scale = get_projected_effective_scale(
+        (2560, 1440),
+        min_scale=0.68,
+        max_scale=1.20,
+        reference_size=(1366.0, 768.0),
+    )
+
+    expected = min(2560 / 1366.0, 1440 / 768.0)
+    expected = max(0.68, min(1.20, expected))
     assert math.isclose(scale, expected)
 
 

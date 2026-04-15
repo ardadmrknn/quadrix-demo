@@ -32,9 +32,9 @@ except Exception:
     from ui_theme import UIColors
 
 try:
-    from .ui_scaling import get_scale  # type: ignore
+    from .ui_scaling import get_projected_effective_scale  # type: ignore
 except Exception:
-    from ui_scaling import get_scale
+    from ui_scaling import get_projected_effective_scale
 
 from constants import BLACK, BOARD_WIDTH, BOARD_HEIGHT, FAST_FALL_SPEED, SPEED_INCREASE_PER_LEVEL, SIDE_PANEL_WIDTH, INFO_PANEL_HEIGHT
 from block_styles import TextureSlice
@@ -1495,18 +1495,23 @@ class MysteryCardUI:
                 return True
         return False
 
-    def _get_overlay_scale(self, window_width: int, window_height: int, *, min_scale: float = 0.62, max_scale: float = 1.12) -> float:
+    def _get_overlay_scale(self, screen_or_width, window_height: int | None = None, *, min_scale: float = 0.62, max_scale: float = 1.12) -> float:
         """Kart seçim overlay'i için aktif canvas bazlı ortak scale wrapper'ı."""
-        w = max(1, int(window_width))
-        h = max(1, int(window_height))
+        if hasattr(screen_or_width, 'get_size'):
+            target = screen_or_width
+            w, h = target.get_size()
+        else:
+            w = max(1, int(screen_or_width))
+            h = max(1, int(window_height or 0))
+            target = (w, h)
 
         rw, rh = self._overlay_readable_min_size
         readable_floor = min(1.0, min(w / float(max(1, rw)), h / float(max(1, rh))))
 
         effective_min_scale = max(min_scale, readable_floor)
         ref_w, ref_h = self._overlay_base_size or MYSTERY_OVERLAY_REFERENCE_SIZE
-        return get_scale(
-            (w, h),
+        return get_projected_effective_scale(
+            target,
             min_scale=effective_min_scale,
             max_scale=max_scale,
             reference_size=(float(ref_w), float(ref_h)),
@@ -1532,7 +1537,7 @@ class MysteryCardUI:
         if alpha <= 0 or not cards:
             return
 
-        ui_scale = self._get_overlay_scale(window_width, window_height)
+        ui_scale = self._get_overlay_scale(screen)
         s = lambda v, minimum=1: max(minimum, int(round(v * ui_scale)))
 
         # Peek modu aktifse sadece göz butonunu göster (sağ alt köşe)
@@ -4148,8 +4153,11 @@ class MysteryMode(Game):
             w, h = MYSTERY_OVERLAY_REFERENCE_SIZE
             ref_w, ref_h = MYSTERY_OVERLAY_REFERENCE_SIZE
             effective_min = 0.62
-        return get_scale(
-            (w, h),
+        target = getattr(self, 'screen', None)
+        if target is None:
+            target = (w, h)
+        return get_projected_effective_scale(
+            target,
             min_scale=effective_min,
             max_scale=1.12,
             reference_size=(float(ref_w), float(ref_h)),

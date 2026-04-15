@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 import math
 import pathlib
 import sys
@@ -22,6 +23,12 @@ import game_modes_advanced as advanced_modes_module
 import game_modes_extra as extra_modes_module
 import retro_style as retro_style_module
 from game_modes_extra import MysteryCardUI
+
+
+def test_src_game_modes_extra_package_import_exposes_projected_scale_helper():
+    package_module = importlib.import_module('src.game_modes_extra')
+
+    assert hasattr(package_module, 'get_projected_effective_scale')
 
 
 class _FakeFont:
@@ -161,18 +168,26 @@ def test_game_ui_scale_uses_effective_ui_size_when_available(monkeypatch):
     assert captured['display_surface'] is None
 
 
-def test_game_overlay_ui_scale_stays_raw_surface_scaled_until_overlay_geometry_migrates(monkeypatch):
+def test_game_overlay_ui_scale_uses_projected_effective_scale(monkeypatch):
     game = _build_game((2560, 1660), window_size=(1366, 768))
+    captured = {}
 
-    def fail_if_called(*args, **kwargs):
-        raise AssertionError('resolve_ui_scale_size should not be used for raw overlay scale')
+    def fake_get_projected_scale(screen_or_size, *, min_scale, max_scale, reference_size, display_surface=None):
+        captured['screen_or_size'] = screen_or_size
+        captured['min_scale'] = min_scale
+        captured['max_scale'] = max_scale
+        captured['reference_size'] = reference_size
+        captured['display_surface'] = display_surface
+        return 1.87
 
-    monkeypatch.setattr(game_module, 'resolve_ui_scale_size', fail_if_called)
+    monkeypatch.setattr(game_module, 'get_projected_effective_scale', fake_get_projected_scale)
 
-    expected = min(2560 / 1366.0, 1660 / 768.0)
-    expected = max(0.68, min(1.16, expected))
-
-    assert math.isclose(game._overlay_ui_scale(min_scale=0.68, max_scale=1.16), expected)
+    assert math.isclose(game._overlay_ui_scale(min_scale=0.68, max_scale=1.16), 1.87)
+    assert captured['screen_or_size'] is game.screen
+    assert captured['min_scale'] == 0.68
+    assert captured['max_scale'] == 1.16
+    assert captured['reference_size'] == game_module.GAMEPLAY_UI_REFERENCE_SIZE
+    assert captured['display_surface'] is None
 
 
 @pytest.mark.parametrize('mode_cls', [modes_module.SprintMode, modes_module.UltraMode])
@@ -351,6 +366,29 @@ def test_mystery_overlay_scale_can_grow_above_one_without_largest_seen_state():
     assert math.isclose(another_ui._get_overlay_scale(1366, 768), 1.0)
 
 
+def test_mystery_overlay_scale_uses_projected_effective_scale_when_screen_passed(monkeypatch):
+    ui = MysteryCardUI()
+    screen = pygame.Surface((2560, 1660), pygame.SRCALPHA)
+    captured = {}
+
+    def fake_get_projected_scale(target, *, min_scale, max_scale, reference_size, display_surface=None):
+        captured['target'] = target
+        captured['min_scale'] = min_scale
+        captured['max_scale'] = max_scale
+        captured['reference_size'] = reference_size
+        captured['display_surface'] = display_surface
+        return 1.64
+
+    monkeypatch.setattr(extra_modes_module, 'get_projected_effective_scale', fake_get_projected_scale)
+
+    assert math.isclose(ui._get_overlay_scale(screen), 1.64)
+    assert captured['target'] is screen
+    assert captured['min_scale'] >= 0.62
+    assert captured['max_scale'] == 1.12
+    assert captured['reference_size'] == tuple(float(v) for v in extra_modes_module.MYSTERY_OVERLAY_REFERENCE_SIZE)
+    assert captured['display_surface'] is None
+
+
 def test_mystery_mode_card_ui_scale_uses_active_canvas_and_phase8_baseline():
     mode = _build_mystery_mode((1366, 768), window_size=(800, 600))
 
@@ -359,6 +397,28 @@ def test_mystery_mode_card_ui_scale_uses_active_canvas_and_phase8_baseline():
     mode.screen = pygame.Surface((2560, 1440), pygame.SRCALPHA)
 
     assert math.isclose(mode._card_ui_scale(), 1.12)
+
+
+def test_mystery_mode_card_ui_scale_uses_projected_effective_scale(monkeypatch):
+    mode = _build_mystery_mode((2560, 1660), window_size=(1366, 768))
+    captured = {}
+
+    def fake_get_projected_scale(target, *, min_scale, max_scale, reference_size, display_surface=None):
+        captured['target'] = target
+        captured['min_scale'] = min_scale
+        captured['max_scale'] = max_scale
+        captured['reference_size'] = reference_size
+        captured['display_surface'] = display_surface
+        return 1.58
+
+    monkeypatch.setattr(extra_modes_module, 'get_projected_effective_scale', fake_get_projected_scale)
+
+    assert math.isclose(mode._card_ui_scale(), 1.58)
+    assert captured['target'] is mode.screen
+    assert captured['min_scale'] >= 0.62
+    assert captured['max_scale'] == 1.12
+    assert captured['reference_size'] == tuple(float(v) for v in extra_modes_module.MYSTERY_OVERLAY_REFERENCE_SIZE)
+    assert captured['display_surface'] is None
 
 
 def test_mystery_mode_live_overlay_uses_active_canvas(monkeypatch):

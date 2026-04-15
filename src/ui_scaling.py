@@ -205,6 +205,64 @@ def get_effective_scale(
     )
 
 
+def _get_effective_projection_ratio(
+    screen_or_size: Any,
+    *,
+    display_surface: bool | None = None,
+) -> float:
+    active_w, active_h = _coerce_size(screen_or_size)
+
+    try:
+        effective_w, effective_h = resolve_ui_scale_size(
+            screen_or_size,
+            use_effective_display_size=True,
+            display_surface=display_surface,
+        )
+    except Exception:
+        effective_w, effective_h = active_w, active_h
+
+    effective_w = max(1, int(effective_w))
+    effective_h = max(1, int(effective_h))
+
+    ratio_x = active_w / float(effective_w)
+    ratio_y = active_h / float(effective_h)
+    ratio = min(ratio_x, ratio_y)
+    if ratio < 0.5 or ratio > 4.0:
+        return 1.0
+    return float(ratio)
+
+
+def get_projected_effective_scale(
+    screen_or_size: Any,
+    *,
+    min_scale: float,
+    max_scale: float,
+    reference_size: tuple[float, float] = REFERENCE_SIZE,
+    display_surface: bool | None = None,
+) -> float:
+    """Resolve scale from effective UI size, then project it into raw pixels."""
+    try:
+        effective_size = resolve_ui_scale_size(
+            screen_or_size,
+            use_effective_display_size=True,
+            display_surface=display_surface,
+        )
+    except Exception:
+        effective_size = _coerce_size(screen_or_size)
+
+    base_scale = get_scale(
+        effective_size,
+        min_scale=min_scale,
+        max_scale=max_scale,
+        reference_size=reference_size,
+    )
+    pixel_ratio = _get_effective_projection_ratio(
+        screen_or_size,
+        display_surface=display_surface,
+    )
+    return float(base_scale) * float(pixel_ratio)
+
+
 def get_content_scale(
     screen_or_size: Any,
     profile: str = "standard",
@@ -287,6 +345,7 @@ __all__ = [
     "get_effective_modal_scale",
     "get_effective_scale",
     "get_modal_scale",
+    "get_projected_effective_scale",
     "get_scale",
     "get_ui_scale_multiplier",
     "get_ui_scale_preset",

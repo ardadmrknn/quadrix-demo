@@ -38,6 +38,10 @@ def _make_game():
     game._code_search_retry_code = ''
     game._code_search_retry_use_full_scan = False
     game._join_target_lobby_id = 0
+    game._pending_browser_join_lobby_id = 0
+    game._join_code_active = False
+    game._join_code_input = ''
+    game._join_code_error = ''
     game._status_msg = ''
     game._status_timer = 0.0
     game._DEFERRED_LOBBY_REFRESH_INTERVAL_MS = 500.0
@@ -748,6 +752,83 @@ def test_refresh_unknown_resolves_to_public_on_explicit_public():
     assert game._lobby_list[0]['requires_code'] is False
 
 
+def test_start_lobby_browser_join_waits_for_unknown_metadata():
+    game = _make_game()
+    game.online_state = online_pvp_module.OnlineState.LOBBY_MENU
+    game._request_lobby_metadata_refresh = Mock(return_value=True)
+    game.net = types.SimpleNamespace(
+        join_lobby=Mock(),
+        get_lobby_data_for=lambda _lid, _key: '',
+    )
+
+    result = game._start_lobby_browser_join(77)
+
+    assert result is False
+    assert game._pending_browser_join_lobby_id == 77
+    assert game._join_code_active is False
+    game.net.join_lobby.assert_not_called()
+    game._request_lobby_metadata_refresh.assert_called_once_with(77)
+
+
+def test_on_lobby_data_updated_completes_pending_public_browser_join():
+    game = _make_game()
+    game.online_state = online_pvp_module.OnlineState.LOBBY_MENU
+    game._pending_browser_join_lobby_id = 77
+    game.net = types.SimpleNamespace(
+        lobby_id=0,
+        join_lobby=Mock(),
+        get_lobby_data_for=lambda _lid, key: {
+            'visibility': 'public',
+            'requires_code': '0',
+            'metadata_ready': '1',
+            'host_name': 'MacHost',
+            'lobby_code': '',
+        }.get(key, ''),
+    )
+
+    game._on_lobby_data_updated(
+        NetEvent(
+            'lobby_data_updated',
+            77,
+            '{"host_name":"MacHost","visibility":"public","requires_code":false,"metadata_ready":true}',
+        )
+    )
+
+    game.net.join_lobby.assert_called_once_with(77)
+    assert game._pending_browser_join_lobby_id == 0
+    assert game._join_code_active is False
+
+
+def test_on_lobby_data_updated_opens_code_prompt_for_pending_private_browser_join():
+    game = _make_game()
+    game.online_state = online_pvp_module.OnlineState.LOBBY_MENU
+    game._pending_browser_join_lobby_id = 88
+    game.net = types.SimpleNamespace(
+        lobby_id=0,
+        join_lobby=Mock(),
+        get_lobby_data_for=lambda _lid, key: {
+            'visibility': 'private',
+            'requires_code': '1',
+            'metadata_ready': '1',
+            'host_name': 'MacHost',
+            'lobby_code': '123456',
+        }.get(key, ''),
+    )
+
+    game._on_lobby_data_updated(
+        NetEvent(
+            'lobby_data_updated',
+            88,
+            '{"host_name":"MacHost","visibility":"private","requires_code":true,"metadata_ready":true,"lobby_code":"123456"}',
+        )
+    )
+
+    game.net.join_lobby.assert_not_called()
+    assert game._pending_browser_join_lobby_id == 0
+    assert game._join_target_lobby_id == 88
+    assert game._join_code_active is True
+
+
 def test_promote_deferred_does_not_resolve_public_on_partial_propagation():
     """Deferred entry promote sırasında partial propagation public yapmamalı.
 
@@ -1002,3 +1083,10 @@ def test_stale_unknown_lobby_kept_before_120_seconds():
     assert len(_stale_ids) == 0
     assert len(game._lobby_list) == 1
     assert game._lobby_list[0]['visibility'] == 'stale_unknown'
+
+
+def test_source_no_longer_offers_try_without_code_button():
+    content = (ROOT_DIR / 'src' / 'online_pvp_game.py').read_text(encoding='utf-8')
+
+    assert 'join_code_skip' not in content
+    assert 'try_without_code' not in content

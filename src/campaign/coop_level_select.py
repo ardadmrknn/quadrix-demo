@@ -17,6 +17,7 @@ from platform_utils import get_mouse_pos, normalize_mouse_pos
 from ui_theme import UIColors, UIFonts, UIStyle
 from localization import t, get_language
 from retro_style import retro_style
+from ui_scaling import get_projected_effective_scale
 
 
 # Dünya renk paleti (neon temaya uyumlu)
@@ -322,8 +323,15 @@ class CoopLevelSelect:
             pygame.draw.polygon(surface, edge, points, 1)
 
     def _ui_scale(self) -> float:
-        try:
-            s = min(float(self.window_width) / 1400.0, float(self.window_height) / 900.0)
-        except Exception:
-            s = 1.0
-        return max(0.72, min(1.18, s))
+        target = getattr(self, 'screen', None)
+        if target is None:
+            target = (
+                getattr(self, 'window_width', 1400),
+                getattr(self, 'window_height', 900),
+            )
+        return get_projected_effective_scale(
+            target,
+            min_scale=0.72,
+            max_scale=1.18,
+            reference_size=(1400.0, 900.0),
+        )

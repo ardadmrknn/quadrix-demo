@@ -126,23 +126,74 @@ def test_main_menu_manual_ui_scale_preset_only_affects_general_ui():
 
 def test_main_menu_scales_use_effective_ui_size_when_available(monkeypatch):
     menu = _build_menu((2560, 1660))
-    captured = []
+    captured_resolve = []
+    captured_projected = []
 
     def fake_resolve(screen_or_size, *, use_effective_display_size=False, display_surface=None):
-        captured.append((screen_or_size, use_effective_display_size, display_surface))
+        captured_resolve.append((screen_or_size, use_effective_display_size, display_surface))
         return (1200, 700)
 
+    def fake_projected(screen_or_size, *, min_scale, max_scale, reference_size, display_surface=None):
+        captured_projected.append((screen_or_size, min_scale, max_scale, reference_size, display_surface))
+        if reference_size == (1366.0, 768.0):
+            return 1.8755490483162518
+        return 1.536
+
     monkeypatch.setattr(menu_module, 'resolve_ui_scale_size', fake_resolve)
+    monkeypatch.setattr(menu_module, 'get_projected_effective_scale', fake_projected)
 
     ui_scale = menu._ui_scale()
     fullscreen_scale = menu._fullscreen_panel_scale()
     content_scale = menu._menu_panel_content_scale()
 
-    assert all(use_effective for _, use_effective, _ in captured)
+    assert all(use_effective for _, use_effective, _ in captured_resolve)
     assert math.isclose(ui_scale, max(0.78, min(1.24, min(1200 / 1366.0, 700 / 768.0))))
-    assert math.isclose(fullscreen_scale, 1.16)
-    assert math.isclose(content_scale, 1.16)
-    assert len(captured) == 1
+    assert math.isclose(fullscreen_scale, 1.8755490483162518)
+    assert math.isclose(content_scale, 1.536)
+    assert len(captured_resolve) == 1
+    assert captured_projected == [
+        (menu.screen, 0.68, 1.16, (1366.0, 768.0), None),
+        (menu.screen, 0.72, 1.16, (1920.0, 1080.0), None),
+    ]
+
+
+def test_credits_reference_size_prefers_effective_ui_size(monkeypatch):
+    credits = menu_module.CreditsScreen.__new__(menu_module.CreditsScreen)
+    credits.screen = _FakeScreen(2560, 1660)
+
+    def fake_resolve(screen_or_size, *, use_effective_display_size=False, display_surface=None):
+        assert screen_or_size is credits.screen
+        assert use_effective_display_size is True
+        assert display_surface is None
+        return (1470, 956)
+
+    monkeypatch.setattr(menu_module, 'resolve_ui_scale_size', fake_resolve)
+
+    assert credits._get_credits_reference_size() == (1470, 956)
+
+
+def test_credits_ui_scale_uses_projected_effective_scale(monkeypatch):
+    credits = menu_module.CreditsScreen.__new__(menu_module.CreditsScreen)
+    credits.screen = _FakeScreen(2560, 1660)
+    credits._credits_ui_reference_size = (1470, 956)
+    captured = {}
+
+    def fake_projected(screen_or_size, *, min_scale, max_scale, reference_size, display_surface=None):
+        captured['screen_or_size'] = screen_or_size
+        captured['min_scale'] = min_scale
+        captured['max_scale'] = max_scale
+        captured['reference_size'] = reference_size
+        captured['display_surface'] = display_surface
+        return 1.92
+
+    monkeypatch.setattr(menu_module, 'get_projected_effective_scale', fake_projected)
+
+    assert math.isclose(credits._credits_ui_scale(), 1.92)
+    assert captured['screen_or_size'] is credits.screen
+    assert captured['min_scale'] == 0.62
+    assert captured['max_scale'] == 1.05
+    assert captured['reference_size'] == (1470.0, 956.0)
+    assert captured['display_surface'] is None
 
 
 def test_graphics_menu_layout_metrics_grow_on_large_displays(monkeypatch):

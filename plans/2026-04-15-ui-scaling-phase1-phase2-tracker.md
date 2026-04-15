@@ -1,11 +1,11 @@
 # UI Scaling Phase 1-2 Tracker
 
 Created: 2026-04-15
-Status: Phase 1-2 applied, targeted validation complete
+Status: Implementation complete for planned scaling phases; remaining manual multi-device spot checks are external validation
 
 ## Scope
 
-Bu dosya, Retina ve buyuk ekran olcekleme calismasinin Phase 1 ve Phase 2 uygulama durumunu takip eder.
+Bu dosya, Retina ve buyuk ekran olcekleme calismasinin Phase 1 ve Phase 2 uygulama durumunu ve sonraki core Phase 3 modal projection guncellemelerini takip eder.
 
 Bu turda hedeflenen alanlar:
 
@@ -82,7 +82,7 @@ Etkisi:
 
 ### Gecen hedefli regresyonlar
 
-Calistirildi ve gecti:
+Onceki turda calistirildi ve gecti:
 
 - `tests/test_phase8_overlay_ui_scaling.py`
 - `tests/test_coop.py`
@@ -94,6 +94,29 @@ Calistirildi ve gecti:
 Toplam gecerli toplu kosu:
 
 - `113 passed`
+
+Bu turda ek olarak calistirildi ve gecti:
+
+- `tests/test_ui_scaling.py`
+- `tests/test_phase3_ui_scaling.py`
+- `tests/test_phase8_main_popup_ui_scaling.py`
+- `tests/test_phase8_overlay_ui_scaling.py`
+- `tests/test_platform_effective_ui_size.py`
+- `tests/test_phase8_tutorial_ui_scaling.py`
+- `tests/test_menu_dashboard_tile_cache.py`
+
+Final tamamlama turunda ek olarak calistirildi ve gecti:
+
+- `tests/test_phase7_campaign_hud_ui_scaling.py`
+- `tests/test_campaign_debug_unlock_all.py`
+- `tests/test_coop_campaign.py`
+
+Bu turdaki toplu hedefli kosular:
+
+- `89 passed`
+- `29 passed`
+- `98 passed`
+- `40 passed`
 
 Ek dolayli akıs kontrolleri:
 
@@ -124,15 +147,50 @@ Base game, coop, tutorial, coop campaign ve campaign HUD icin hedefli regresyonl
 
 ### Residual risks
 
-1. [src/game.py](src/game.py#L4424) disindaki ozel HUD override yollari tam olarak ayni merkezi policy'ye tasinmis degil.
-   Ornekler: `HardcoreMode`, `CampaignMode`, `MysteryMode`.
-   Mevcut testler gecti, ama bunlar sonraki fazlarda tekrar audit edilmeli.
+1. Otomatik test ve mevcut macOS cihaz dogrulamasi temiz; ancak Windows DPI varyasyonlari ve farkli fiziksel cihazlar icin manuel spot-check hala dis dogrulama niteliginde.
 
 2. [src/gameplay_layout.py](src/gameplay_layout.py#L92) tek oyunculu minimum hucre boyutunu `14` altina dusurmuyor.
    Mevcut minimum pencere boyutu ve ana modlar icin sorun gorunmedi; yine de sira disi uzun board konfigleri varsa izlenmeli.
 
-3. Phase 3 henuz uygulanmadi.
-   Popup, overlay ve menu content tarafinda raw helper zinciri devam ediyor.
+3. Planned scaling migration tamamlandi.
+   [src/main.py](src/main.py#L661), [src/game.py](src/game.py#L258), [src/menu.py](src/menu.py#L679), [src/menu.py](src/menu.py#L11823), [src/campaign/campaign_mode.py](src/campaign/campaign_mode.py#L914), [src/campaign/level_select.py](src/campaign/level_select.py#L192), [src/campaign/coop_level_select.py](src/campaign/coop_level_select.py#L324) ve [src/game_modes_extra.py](src/game_modes_extra.py#L1498) projected effective scale veya ayni projection mantigi ile hizalandi.
+
+## Phase 3 update
+
+### 4. Shared modal/content projection helper eklendi
+
+Ana degisiklikler:
+
+- [src/ui_scaling.py](src/ui_scaling.py#L202) `get_projected_effective_scale(...)`
+- [src/main.py](src/main.py#L661) `_fullscreen_popup_scale(...)`
+- [src/game.py](src/game.py#L258) `_overlay_ui_scale(...)`
+- [src/menu.py](src/menu.py#L679) `_fullscreen_panel_scale(...)`
+- [src/menu.py](src/menu.py#L693) `_menu_panel_content_scale(...)`
+
+Etkisi:
+
+- popup/modal boyut karari effective/logical UI size uzerinden veriliyor
+- sonuc raw surface piksel uzayina projekte ediliyor
+- bu sayede Retina backing surface uzerinde popup, overlay ve menu kart icerikleri gereksiz kuculmuyor
+- mevcut rect/font/hitbox zinciri korunuyor; sadece scale kaynagi degisiyor
+
+### 5. Kalan ozel campaign/credits/mystery yollar kapatildi
+
+Ana degisiklikler:
+
+- [src/campaign/campaign_mode.py](src/campaign/campaign_mode.py#L914) campaign HUD scale projected effective scale kullaniyor
+- [src/campaign/level_select.py](src/campaign/level_select.py#L192) campaign level select raw scale yerine projected effective scale kullaniyor
+- [src/campaign/coop_level_select.py](src/campaign/coop_level_select.py#L324) coop level select ayni projected helper'a gecirildi
+- [src/menu.py](src/menu.py#L11786) Credits reference size effective/logical boyuttan aliniyor
+- [src/menu.py](src/menu.py#L11808) Credits layout scale raw backing yerine projected effective scale kullaniyor
+- [src/game_modes.py](src/game_modes.py#L1268) Hardcore ozel HUD panelleri overlay projection scale ile hizalandi
+- [src/game_modes_extra.py](src/game_modes_extra.py#L1498) Mystery card overlay ve [src/game_modes_extra.py](src/game_modes_extra.py#L4143) Mystery HUD/card UI projection scale ile hizalandi
+
+Etkisi:
+
+- campaign ve coop campaign flow'larinda raw-only scale zinciri kaldirilmis oldu
+- credits ekraninda logical size karari ile raw Retina backing uzayi tekrar uyumlu hale geldi
+- mystery kart overlay ve hardcore/campaign ozel HUD panelleri ana gameplay policy ile ayni Retina davranisini izliyor
 
 ## Unrelated test/repo issues discovered during review
 
@@ -152,12 +210,13 @@ Bu iki konu Phase 1-2 implementasyonundan bagimsiz gorunuyor, ama takipte tutulm
 - [x] Coop layout bu helper'a baglandi
 - [x] Buyuk ekran regression testleri eklendi
 - [x] Retina effective->raw projection regression testleri eklendi
-- [ ] Popup/overlay/menu migration Phase 3 baslatilacak
-- [ ] Campaign ve hardcore gibi ozel HUD override yollari ortak policy ile daha siki hizalanacak
+- [x] Main popup, game overlay ve menu modal/content helper'lari effective->raw projeksiyonuna tasindi
+- [x] Campaign, Hardcore ve Mystery ozel HUD/overlay yollari hizalandi
+- [x] Credits ve campaign/co-op level select raw-scale yardimcilari hizalandi
 - [ ] Tam pytest kosusunu bloklayan bagimsiz import/test-order sorunlari ayiklanacak
 
 ## Quick status
 
-Phase 1-2 sonucunda oyun alani buyuk ekranlarda gercekten daha fazla alan kullaniyor ve Retina/backing surface farki gameplay geometriyi daha az bozuyor.
+Planned scaling fazlari uygulama ve hedefli otomatik dogrulama acisindan tamamlandi. Oyun alani buyuk ekranlarda daha fazla alan kullaniyor; popup, overlay, campaign flow ve credits dahil Retina/backing surface farki artik tek tip projection mantigiyla ele aliniyor.
 
-Bu turdaki degisiklikler kontrollu ve test destekli ilerledi. Kalan ana is Phase 3: popup, overlay ve menu zincirini ayni mantikla temizlemek.
+Acik tek madde, bu isten bagimsiz olan tam pytest import/order sorunlari ve repo disi manuel coklu cihaz spot-check ihtiyaci.

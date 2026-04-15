@@ -93,6 +93,28 @@ def test_campaign_hud_scale_preserves_1366_baseline_and_caps_large_display():
     assert math.isclose(mode._get_campaign_hud_scale(), 1.12)
 
 
+def test_campaign_hud_scale_uses_projected_effective_scale(monkeypatch):
+    mode = _build_mode((2560, 1660))
+    captured = {}
+
+    def fake_get_projected_scale(target, *, min_scale, max_scale, reference_size, display_surface=None):
+        captured['target'] = target
+        captured['min_scale'] = min_scale
+        captured['max_scale'] = max_scale
+        captured['reference_size'] = reference_size
+        captured['display_surface'] = display_surface
+        return 1.44
+
+    monkeypatch.setattr(campaign_mode_module, 'get_projected_effective_scale', fake_get_projected_scale)
+
+    assert math.isclose(mode._get_campaign_hud_scale(), 1.44)
+    assert captured['target'] is mode.screen
+    assert captured['min_scale'] == 0.74
+    assert captured['max_scale'] == 1.12
+    assert captured['reference_size'] == campaign_mode_module.CAMPAIGN_HUD_REFERENCE_SIZE
+    assert captured['display_surface'] is None
+
+
 def test_campaign_hud_icon_helpers_follow_scaled_target_size():
     mode = _build_mode((800, 600))
     mode.star_icon_small = pygame.Surface((16, 16), pygame.SRCALPHA)

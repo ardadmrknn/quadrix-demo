@@ -25,7 +25,7 @@ except Exception:
     from localization import t
     from retro_style import retro_style
     from platform_utils import get_mouse_pos
-    from ui_scaling import get_content_scale, scale_px
+    from ui_scaling import get_projected_effective_scale, scale_px
 
 from .level_data import get_level, get_total_levels, LevelConfig, get_world_info
 from .objectives import (
@@ -919,9 +919,10 @@ class CampaignMode(Game):
                 getattr(self, 'window_width', int(CAMPAIGN_HUD_REFERENCE_SIZE[0])),
                 getattr(self, 'window_height', int(CAMPAIGN_HUD_REFERENCE_SIZE[1])),
             )
-        return get_content_scale(
+        return get_projected_effective_scale(
             target,
-            profile='dense',
+            min_scale=0.74,
+            max_scale=1.12,
             reference_size=CAMPAIGN_HUD_REFERENCE_SIZE,
         )
 

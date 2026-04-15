@@ -47,7 +47,7 @@ except ImportError:
 from effect_surface_cache import EffectSurfaceCache
 from gameplay_layout import compute_single_player_layout, get_display_pixel_ratio
 from sweep_effects import SweepCatState, draw_rainbow_cat_sweep
-from ui_scaling import apply_ui_scale_preset, get_scale, resolve_ui_scale_size
+from ui_scaling import apply_ui_scale_preset, get_projected_effective_scale, get_scale, resolve_ui_scale_size
 from combo_popup_style import (
     COMBO_POPUP_SHADOW_COLOR,
     get_combo_popup_alpha,
@@ -257,9 +257,9 @@ class Game:
         )
 
     def _overlay_ui_scale(self, min_scale: float = 0.72, max_scale: float = 1.20) -> float:
-        """Raw canvas geometriğine bagli overlay/popup paneller icin yüzey ölçeği."""
-        return get_scale(
-            self._active_ui_size(),
+        """Overlay/modal geometriyi logical UI size ile hesapla, raw surface'e projekte et."""
+        return get_projected_effective_scale(
+            getattr(self, 'screen', self._active_ui_size()),
             min_scale=min_scale,
             max_scale=max_scale,
             reference_size=GAMEPLAY_UI_REFERENCE_SIZE,
