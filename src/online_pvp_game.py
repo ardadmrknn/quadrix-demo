@@ -487,7 +487,7 @@ class OnlinePvPGame:
         self._lobby_list_fetch_start_time: float = 0
         self._auto_lobby_refresh_requested = False
         self._auto_lobby_refresh_timer = 0.0
-        self._auto_lobby_refresh_interval = 5000.0
+        self._auto_lobby_refresh_interval = 8000.0
         self._pending_lobby_list: list[dict] = []  # Lobi listesi birikim tampon
         self._deferred_lobby_entries: dict[int, dict] = {}
         self._deferred_lobby_refresh_timer = 0.0
@@ -1787,9 +1787,56 @@ class OnlinePvPGame:
         """Lobi listesi tamamlandı — sonuçları onayla."""
         self._lobby_list_fetching = False
         self._lobby_list_fetch_start_time = 0
-        self._lobby_list = self._pending_lobby_list[:]
+
+        # Yeni sonuçları al
+        new_entries = self._pending_lobby_list[:]
         self._pending_lobby_list.clear()
-        self._lobby_list_scroll = 0
+
+        # ── Mevcut lobi listesini merge et (flikör önleme) ──
+        # Mevcut listeyi ID→entry map'e dönüştür
+        _old_map: dict[int, dict] = {}
+        for _ol in self._lobby_list:
+            _oid = int(_ol.get('id', 0) or 0)
+            if _oid:
+                _old_map[_oid] = _ol
+
+        # Yeni gelen listeyi ID→entry map'e dönüştür
+        _new_map: dict[int, dict] = {}
+        for _ne in new_entries:
+            _nid = int(_ne.get('id', 0) or 0)
+            if _nid:
+                _new_map[_nid] = _ne
+
+        # Merge stratejisi: mevcut entry'leri koru (found_time, scroll
+        # pozisyonu), metadata'yı güncelle. Yeni lobiler sona ekle.
+        merged: list[dict] = []
+        for _ol in self._lobby_list:
+            _oid = int(_ol.get('id', 0) or 0)
+            if _oid in _new_map:
+                # Mevcut lobi hâlâ var — metadata'yı güncelle
+                _fresh = _new_map[_oid]
+                _ol['members'] = _fresh.get('members', _ol.get('members', '?'))
+                _ol['max_members'] = _fresh.get('max_members', _ol.get('max_members', 2))
+                _ol['name'] = _fresh.get('name') or _ol.get('name', '')
+                # Metadata ilerlemesini koru: unknown → resolved geçişi ok,
+                # resolved → unknown geriye gitmemeli
+                _old_vis = str(_ol.get('visibility', 'unknown') or 'unknown').lower()
+                _new_vis = str(_fresh.get('visibility', 'unknown') or 'unknown').lower()
+                if _new_vis not in ('unknown', 'stale_unknown') or _old_vis in ('unknown', 'stale_unknown'):
+                    _ol['visibility'] = _fresh.get('visibility', _ol.get('visibility'))
+                    _ol['requires_code'] = _fresh.get('requires_code', _ol.get('requires_code'))
+                    _ol['code'] = _fresh.get('code', _ol.get('code', ''))
+                    _ol['metadata_ready'] = _fresh.get('metadata_ready', _ol.get('metadata_ready'))
+                merged.append(_ol)
+            # else: lobi artık listede yok → kaldır (merged'e ekleme)
+
+        # Yeni lobiler (önceki listede yoktu)
+        for _nid, _ne in _new_map.items():
+            if _nid not in _old_map:
+                merged.append(_ne)
+
+        self._lobby_list = merged
+        # Scroll'u koru — sıfırlama
 
         # Kod ile arama yapılıyorsa filtre uygulamadan önce işle.
         # Kod araması private lobiler dahil tüm sonuçlara ihtiyaç duyar.
@@ -5173,10 +5220,10 @@ class OnlinePvPGame:
                     l_code,
                 )
                 if visibility in ('unknown', 'stale_unknown'):
-                    accent_color = UIColors.NEON_CYAN if visibility == 'unknown' else UIColors.NEON_ORANGE
+                    accent_color = UIColors.NEON_ORANGE
                 else:
                     accent_color = UIColors.NEON_ORANGE if requires_code else UIColors.NEON_GREEN
-                bdr = accent_color if hover or requires_code or visibility in ('unknown', 'stale_unknown') else (*_rs.glass_border[:3],)
+                bdr = accent_color if hover or requires_code or visibility in ('unknown', 'stale_unknown') else (*UIColors.NEON_GREEN[:3],)
                 draw_glass_panel(self.screen, ir,
                                  alpha=205 if hover else 150, border_color=bdr, glow=hover)
 
@@ -5204,11 +5251,11 @@ class OnlinePvPGame:
 
                 badge_font = _rs.get_font(s(11, minimum=9), bold=False)
                 if visibility in ('unknown', 'stale_unknown'):
-                    badge_text = t('lobby_try_join', 'Katilmak icin deneyin')
+                    badge_text = t('lobby_label', 'Lobi')
                 elif requires_code:
-                    badge_text = t('private_locked', 'Kilitli Ozel Lobi')
+                    badge_text = '🔒 ' + t('private_lobby', 'Ozel Lobi')
                 else:
-                    badge_text = t('open_lobby', 'Acik lobi')
+                    badge_text = '🔓 ' + t('open_lobby', 'Acik lobi')
                 badge_text_surf = badge_font.render(badge_text, True, accent_color)
                 badge_rect = pygame.Rect(
                     ir.right - badge_text_surf.get_width() - s(22),
@@ -5225,12 +5272,8 @@ class OnlinePvPGame:
                 # Detay satırı: üye sayısı + lobi kodu
                 cf = _rs.get_font(s(12, minimum=9), bold=False)
                 detail_parts = [f'{members}/{mx} oyuncu']
-                if visibility in ('unknown', 'stale_unknown'):
-                    detail_parts.append(t('lobby_join_prompt', 'Kod ile veya dogrudan katilabilirsiniz'))
-                elif requires_code:
+                if requires_code:
                     detail_parts.append(t('code_required', 'Katilmak icin kod gerekli'))
-                elif l_code:
-                    detail_parts.append(f'Kod: {l_code}')
                 elif visibility == 'public':
                     detail_parts.append(t('open_lobby', 'Acik lobi'))
                 detail_text = '  ·  '.join(detail_parts)

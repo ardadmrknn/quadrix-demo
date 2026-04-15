@@ -12285,6 +12285,18 @@ TRANSLATIONS = {
         'pt': 'Lobby aberto', 'ru': 'Открытое лобби', 'ja': '公開ロビー',
         'zh': '开放大厅', 'ko': '공개 로비',
     },
+    'lobby_label': {
+        'tr': 'Lobi', 'en': 'Lobby', 'de': 'Lobby',
+        'fr': 'Salon', 'es': 'Sala', 'it': 'Lobby',
+        'pt': 'Lobby', 'ru': 'Лобби', 'ja': 'ロビー',
+        'zh': '大厅', 'ko': '로비',
+    },
+    'private_lobby': {
+        'tr': 'Özel Lobi', 'en': 'Private Lobby', 'de': 'Private Lobby',
+        'fr': 'Salon privé', 'es': 'Sala privada', 'it': 'Lobby privata',
+        'pt': 'Lobby privado', 'ru': 'Приватное лобби', 'ja': 'プライベートロビー',
+        'zh': '私人大厅', 'ko': '비공개 로비',
+    },
     'lobby_syncing': {
         'tr': 'Lobi Doğrulanıyor', 'en': 'Lobby Syncing', 'de': 'Lobby wird synchronisiert',
         'fr': 'Salon en synchronisation', 'es': 'Sala sincronizándose', 'it': 'Lobby in sincronizzazione',
