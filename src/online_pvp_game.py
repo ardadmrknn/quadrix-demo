@@ -1438,8 +1438,20 @@ class OnlinePvPGame:
             self._invite_authorized_lobby_id = 0
 
     def _reject_private_lobby_join(self):
+        # Private lobiden erişim reddedildi — lobi menüsüne dön ve
+        # kullanıcıya kod giriş alanını aç, böylece kodla tekrar deneyebilir.
+        rejected_lobby_id = int(getattr(self.net, 'lobby_id', 0) or 0)
         self._return_to_pvp_lobby_menu()
-        self._status_msg = t('private_lobby_code_required', 'Bu özel lobi için geçerli kod veya davet gerekli')
+        if rejected_lobby_id:
+            self._join_target_lobby_id = rejected_lobby_id
+            self._join_code_active = True
+            self._join_code_input = ''
+            self._join_code_error = ''
+            self._status_msg = t('private_lobby_code_required',
+                                 'Bu özel lobi için geçerli kod veya davet gerekli')
+        else:
+            self._status_msg = t('private_lobby_code_required',
+                                 'Bu özel lobi için geçerli kod veya davet gerekli')
         self._status_timer = 3.0
 
     def _validate_joined_lobby_access(self) -> bool:
@@ -5162,9 +5174,7 @@ class OnlinePvPGame:
                                  (ir.x + s(20), ir.y + s(10)))
 
                 badge_font = _rs.get_font(s(11, minimum=9), bold=False)
-                if visibility == 'unknown':
-                    badge_text = t('lobby_loading', 'Lobi yukleniyor')
-                elif visibility == 'stale_unknown':
+                if visibility in ('unknown', 'stale_unknown'):
                     badge_text = t('lobby_try_join', 'Katilmak icin deneyin')
                 elif requires_code:
                     badge_text = t('private_locked', 'Kilitli Ozel Lobi')
@@ -5186,9 +5196,7 @@ class OnlinePvPGame:
                 # Detay satırı: üye sayısı + lobi kodu
                 cf = _rs.get_font(s(12, minimum=9), bold=False)
                 detail_parts = [f'{members}/{mx} oyuncu']
-                if visibility == 'unknown':
-                    detail_parts.append(t('lobby_loading_wait', 'Bilgiler yukleniyor'))
-                elif visibility == 'stale_unknown':
+                if visibility in ('unknown', 'stale_unknown'):
                     detail_parts.append(t('lobby_join_prompt', 'Kod ile veya dogrudan katilabilirsiniz'))
                 elif requires_code:
                     detail_parts.append(t('code_required', 'Katilmak icin kod gerekli'))
@@ -5216,18 +5224,15 @@ class OnlinePvPGame:
                 jw, jh = s(92), s(34)
                 jb = pygame.Rect(ir.right - jw - s(12), ir.centery - jh // 2, jw, jh)
                 jh_hover = jb.collidepoint(mouse_pos)
-                if visibility == 'unknown':
-                    action = ''
-                    button_label = t('waiting', 'Bekleyin')
-                    button_color = UIColors.NEON_CYAN
-                elif visibility == 'stale_unknown':
-                    # Metadata çözülemedi — kullanıcıya kod diyalogu ile
-                    # katılma imkanı ver. Kod girerse private olarak katılır,
-                    # girmezse public olarak dener. _validate_joined_lobby_access
-                    # katıldıktan sonra erişim kontrolü yapar.
-                    action = f'join_private_lobby:{lid}'
-                    button_label = t('try_join', 'Katil')
-                    button_color = UIColors.NEON_ORANGE
+                if visibility in ('unknown', 'stale_unknown'):
+                    # Cross-platform metadata propagasyonu güvenilmez;
+                    # lobiye katılmadan metadata beklemeye gerek yok.
+                    # Doğrudan join et — katıldıktan sonra GetLobbyData
+                    # her zaman çalışır, _validate_joined_lobby_access
+                    # erişim kontrolünü o zaman yapar.
+                    action = f'join_lobby:{lid}'
+                    button_label = t('join', 'Katıl')
+                    button_color = UIColors.NEON_GREEN
                 else:
                     action = f'join_private_lobby:{lid}' if requires_code else f'join_lobby:{lid}'
                     button_label = t('enter_code', 'Kod Gir') if requires_code else t('join', 'Katıl')
