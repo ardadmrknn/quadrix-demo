@@ -251,6 +251,304 @@ Sonuc:
 
 - Oyun bugun fiilen tek display mode'da calistigi icin fullscreen mode farklarini kullanarak davranis izole etmek mumkun degil.
 
+## Asil Sorun Tam Olarak Ne?
+
+Bu bug tek bir yerde degil, uc farkli katmanda olusuyor:
+
+### Katman A: Display metric secimi karisik
+
+- Bazi yerler logical/effective size kullaniyor.
+- Bazi yerler raw surface size kullaniyor.
+- Bazi yerler de dogrudan window width/height cache'i veya sabit referans kullaniyor.
+
+Bu nedenle "Retina destegi var" demek teknik olarak dogru olsa da, bu destek oyunun tum gorunen UI'sina yayilmis degil.
+
+### Katman B: Gameplay geometri UI scale'den bagimsiz ve sert sinirli
+
+- Board boyutu font buyumesinden degil, `get_cell_size()` ve layout helper'larindan geliyor.
+- Bu helper'larda 40 px gibi sert ust sinirlar var.
+- Dolayisiyla kullanici font/panel olcegini buyutse bile board ve HUD ayni kalabiliyor.
+
+Bu katman, buyuk ekranda oyunun kucuk kalmasinin asil sebebi.
+
+### Katman C: Kullanici olcek ayari kapsam olarak dar
+
+`ui_scale_preset` bugun yalnizca `apply_ui_scale_preset(...)` veya `get_effective_scale(...)` kullanan yolları etkiliyor.
+
+Etkilenmeyen ornekler:
+
+- `src/game.py::get_cell_size()`
+- `src/game.py::_draw_right_hud_panel(...)`
+- `src/coop_game.py::_calculate_layout()`
+- `src/menu.py::_fullscreen_panel_scale()`
+- `src/menu.py::_menu_panel_content_scale()`
+- `src/main.py::_fullscreen_popup_scale()`
+
+Bu yuzden kullanicinin "olcekleme degisikligi MacBook Retina'da uygulanmiyor" hissi teknik olarak su anlama geliyor:
+
+- preset bazi text/padding/layout yollarina yansiyor,
+- ama kullanicinin gozunun takildigi board/popup/HUD gibi ana gorunen alanlara yansimiyor.
+
+## Neden Kullanici Ayari Sorunu Tek Basina Cozmuyor?
+
+Bugun ayar zinciri su sekilde:
+
+- `src/settings_manager.py` icindeki `_sync_ui_scale_preset()` -> `ui_scaling.set_ui_scale_preset(...)`
+- Bu da `src/ui_scaling.py::apply_ui_scale_preset(...)` uzerinden sadece belirli wrapper'lara etki ediyor.
+
+Pratikte bu su demek:
+
+- `menu._ui_scale()` gibi yollar buyuyor/kuculuyor.
+- Ama `game.get_cell_size()` gibi gameplay geometri hesaplari hic etkilenmiyor.
+- Bu yuzden kullanici ayari ile "oyun daha okunakli" hale gelebilir, ama "oyun ekranda daha buyuk yer kaplasin" problemi cozulmez.
+
+Bu ayrim planin ana karari olmali:
+
+- **UI readability scaling** ve
+- **gameplay occupancy scaling**
+
+ayni sey degil.
+
+## Kodda Nereler Oynanmali?
+
+Asagidaki liste, degisikligin nerede baslayip nereye yayilacagini netlestirir.
+
+### 1. Once degisecek cekirdek dosyalar
+
+#### `src/game.py`
+
+Bu dosya tek oyunculu gameplay'nin asıl kok noktasidir.
+
+Mutlaka degisecek fonksiyonlar:
+
+- `update_fonts()`
+  - su an `_active_ui_size()` kullaniyor
+  - font kararlarini raw canvas yerine effective UI metric'ten almasi daha dogru
+- `get_cell_size()`
+  - `min(cell_width, cell_height, 40)` siniri burada
+  - bu fonksiyon tek oyunculu board'un buyuk ekranlarda neden buyumedigini belirliyor
+- `get_board_offset()`
+  - `SIDE_PANEL_WIDTH` sabiti ve eski board genisligi varsayimi ile merkezi hesapliyor
+  - board buyudugunde HUD ile birlikte yeniden tasarlanmasi gerekiyor
+- `_draw_right_hud_panel(...)`
+  - `panel_width = min(220, max(120, available_right))` burada
+  - panel genisligi ve `hud_scale` buyuk ekranlarda erken kilitleniyor
+- `_overlay_ui_scale(...)`
+  - pause / quit / game-over overlay zincirinin giris noktasi
+  - Retina migrasyonunda bu helper tek basina degil, tum overlay rect zinciri ile birlikte ele alinmali
+
+Bu dosyada yalnizca `40` sayisini buyutmek yetmez. Daha dogru cozum, board rect ve HUD panel rect'i icin ortak bir gameplay layout helper uretmektir.
+
+Onerilen yeni helper yapisi:
+
+- `_compute_gameplay_layout_metrics()` veya benzeri tek kaynakli bir helper
+- Donmesi gereken alanlar:
+  - `cell_size`
+  - `board_rect`
+  - `hud_panel_rect`
+  - `usable_play_band`
+  - `gameplay_scale` ya da `occupancy_profile`
+
+Bu helper kurulmadan parca parca degisiklik yapmak, modlar arasinda yeni sapmalar uretir.
+
+#### `src/coop_game.py`
+
+Bu dosya coop tarafindaki ayni problemin kok noktasi.
+
+Mutlaka degisecek fonksiyonlar:
+
+- `_ui_scale()`
+  - hala `self.window_width / 1366`, `self.window_height / 768` tabanli raw hesap yapiyor
+- `_calculate_layout()`
+  - `side_panel = 120`
+  - `cs = int(min(40, cell_by_h, cell_by_w))`
+  - coop board, sol panel ve sag panel bu noktada tavana vuruyor
+- `_draw_hud(...)`
+  - alt/ust bar yukseklikleri ve fontlar `_ui_scale()` ile buyuyor, ama panel alani `_calculate_layout()` kadar buyumuyor
+- `_draw_side_panels(...)`
+  - yan preview kartlari `_side_panel_width` uzerinden ciziliyor; layout buyumeden bu panel de buyumez
+
+Burada da sadece `40 -> 52` gibi bir degisiklik yeterli degil. `src/game.py` ile uyumlu ikinci bir gameplay occupancy policy gerekiyor.
+
+### 2. Base gameplay degisince audit edilecek bagimli dosyalar
+
+#### `src/game_modes.py`
+
+- `HardcoreMode._draw_right_hud_panel(...)` kendi panel genisligi ve spacing mantigini override ediyor.
+- Base `Game` hud'u buyutulurse bu override tekrar stale hale gelebilir.
+
+#### `src/campaign/campaign_mode.py`
+
+- Campaign kendi `_draw_right_hud_panel(...)` yoluna sahip.
+- Base gameplay board rect'i degisirse campaign hud panel rect'i de yeniden kontrol edilmeli.
+
+#### `src/game_modes_extra.py`
+
+Bu dosya kritik, cunku kendi board geometri override'larini yapiyor:
+
+- `get_board_offset()`
+- `get_cell_size()`
+
+Ozellikle Mystery mode zaten sol ve sag paneli ozel hesapliyor ve yine `40` cap kullaniyor. Base `Game` duzelse bile bu dosya ayri kalirsa buyuk ekran bug'i mod bazli geri doner.
+
+### 3. Retina / popup / raw UI migrasyonu icin degisecek dosyalar
+
+#### `src/menu.py`
+
+Degistirilmesi gereken helper'lar:
+
+- `_fullscreen_panel_scale()`
+- `_menu_panel_content_scale()`
+
+Ama burada sadece helper'lari effective-size'a cevirmek yeterli degil. Bu helper'larin kullandigi tum panel rect/hitbox zinciri de audit edilmeli.
+
+Pratikte su yaklasim daha guvenli:
+
+- once menu icin `panel geometry` ve `panel content` ayrimini aciklastir
+- sonra geometry tarafini effective-size ya da normalized container metric ile tası
+- en son input rect'lerini ayni metric'ten turet
+
+#### `src/main.py`
+
+- `_fullscreen_popup_scale(screen)` bugun raw surface size kullaniyor.
+- Bu helper intro/zen/tutorial benzeri popup girislerinde kullaniliyor.
+- Eger effective-size'a gecilecekse popup rect hesaplari, backdrop clamp ve button rect'leri birlikte tasinmali.
+
+Burada yapilacak en saglikli degisiklik tek helper degil, ortak popup metrics wrapper'i yazmaktir.
+
+Onerilen yeni helper:
+
+- `_get_popup_metrics(screen)`
+- Donmesi gerekenler:
+  - `ui_scale`
+  - `panel_width`
+  - `panel_height`
+  - `padding`
+  - `title/body/button font size`
+
+#### `src/game.py` overlay callers
+
+`_overlay_ui_scale(...)` kullanan su aileler birlikte tasinmali:
+
+- pause menu
+- quit confirm
+- game over / result overlay
+
+Sebep:
+
+- Bunlarin panel rect'i, fontu, button rect'i ve mouse hitbox'i birbirine bagli.
+- Sadece font scale veya sadece panel scale degisirse hover/click alanlari bozulabilir.
+
+#### `src/campaign/level_select.py`
+
+- `_get_ui_scale()` hala raw `get_scale(...)` kullaniyor.
+- Bu ekran buyuk ihtimalle birinci gorunen root cause degil, ama Retina parity icin backlog'a alinmali.
+
+## Kodda Ne Oynanmamali?
+
+Asagidaki kisayollar cazip ama yanlis yon olur:
+
+### 1. Sadece sabitleri buyutmek
+
+Ornek:
+
+- `SIDE_PANEL_WIDTH`
+- `INFO_PANEL_HEIGHT`
+- `DEFAULT_WINDOW_WIDTH`
+- `DEFAULT_WINDOW_HEIGHT`
+
+Bu sabitleri global degistirmek butun modlara dogrudan yayilir ve dusuk cozumunurlukte yeni kirilmalar uretir.
+
+### 2. Sadece `ui_scale_preset` multiplier'larini buyutmek
+
+Bu, gameplay occupancy'yi degistirmez. Sadece etkiledigi ekranlarda text/padding'i buyutur; hatta popup ile icerik arasinda yeni dengesizlik uretir.
+
+### 3. Ilk adim olarak `create_display()` veya fullscreen modelini degistirmek
+
+Display mode semantigi bu bug'in kok nedeni degil. Once layout ve metric secimi duzeltilmeli.
+
+### 4. Tek basina `get_effective_ui_size()` helper'ini degistirmek
+
+Helper bugun amacina uygun calisiyor olabilir; asil problem bu helper'in tutarli kullanilmamasi. Helper'i zorlamak yerine call site'lari duzeltmek daha guvenli.
+
+## Onerilen Kod Degisiklik Biçimi
+
+En temiz yol, mevcut kodu tek tek "buraya da bir cap ekle / buraya da bir scale carp" seviyesinde yamalamak degil.
+
+### Adim 1: Gameplay layout'i merkezi hale getir
+
+`src/game.py` icinde tek noktali metrics helper yaz:
+
+- input:
+  - active canvas size
+  - effective UI size
+  - board width/height
+  - mode/profile bilgisi
+- output:
+  - `cell_size`
+  - `board_rect`
+  - `right_panel_rect`
+  - `hud_scale`
+
+Sonra su fonksiyonlar bu helper'dan beslensin:
+
+- `get_cell_size()`
+- `get_board_offset()`
+- `_draw_right_hud_panel(...)`
+
+### Adim 2: Coop icin ayni politikayi ayri helper'a tası
+
+`src/coop_game.py::_calculate_layout()` tek cikis noktasi kalabilir, ama ic mantigi tek oyuncu ile ayni occupancy politikasini kullanmali.
+
+Minimum beklenti:
+
+- `40` cap profile-based olmali
+- `120` yan panel baseline'i buyuk ekranlarda sabit kalmamali
+
+### Adim 3: Raw popup ailesini metrics tabanli yap
+
+`src/main.py` ve `src/game.py` icindeki popup/overlay code'u icin ortak bir pattern kullan:
+
+- once panel rect hesapla
+- sonra font/padding/button rect'i panel rect'ten turet
+- input hitbox'larini ayni rect'ten besle
+
+Boylece effective-size migrasyonu yapildiginda click alanlari kaymaz.
+
+## Hangi Testler Dogrudan Etkilenecek?
+
+Kod degistiginde su testler muhtemelen guncellenecek:
+
+- `tests/test_phase8_overlay_ui_scaling.py`
+  - bugun `game.get_cell_size()` icin `40` cap davranisini bekliyor
+- `tests/test_coop.py`
+  - coop panel ve layout beklentileri yeni yan panel genislikleriyle degisebilir
+- `tests/test_phase3_ui_scaling.py`
+  - menu raw helper'lari effective-size zincirine alinırsa mevcut beklentiler degisecek
+
+Yeni eklenmesi gereken testler:
+
+- `2560x1440`, `2560x1600`, `2880x1800 logical/physical ayrismasi`
+- single player board occupancy regression
+- coop board occupancy regression
+- popup rect + button hitbox parity regression
+
+## En Hizli Kullanici Gozuyle Kazanim Nerede?
+
+Kullaniciya ilk gorunur duzelme icin en yuksek ROI su sirada:
+
+1. `src/game.py` icinde board + right HUD buyutme
+2. `src/coop_game.py` icinde coop layout buyutme
+3. `src/main.py` popup metrics duzeltmesi
+4. `src/menu.py` raw content/modal scale migrasyonu
+
+Bu sira su yuzden onemli:
+
+- kullanici buyuk ekranda asil olarak oyun alaninin kucuklugunu fark ediyor
+- sonra popup/menu tarafindaki Retina tutarsizligi fark ediliyor
+
+Yani ilk kod degisikligi gameplay occupancy olmali; popup/menu migrasyonu ikinci dalga olmali.
+
 ## Onerilen Strateji
 
 Bu problemi ilk turda fiziksel inch tespitiyle cozmek gerekmiyor. Daha dogru yon su:
