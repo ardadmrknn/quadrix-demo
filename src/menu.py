@@ -1565,7 +1565,7 @@ class Menu:
                     target_surface.blit(glow_surf, glow_rect.topleft)
             target_surface.set_clip(prev_clip)
 
-        draw_flavor_on_top = panel_key == 'new_gen_tetris'
+        draw_flavor_on_top = panel_key in ('new_gen_tetris', 'tutorial_mode')
         if not draw_flavor_on_top:
             self._draw_dashboard_tile_flavor(draw_rect, panel_key, accent_color, hover, target_surface=target_surface)
 
