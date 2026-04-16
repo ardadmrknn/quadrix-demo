@@ -29,6 +29,7 @@ class GraphicsMenu:
             'show_ghost',
             'show_background',
             'bg_transparency',
+            'effects_opacity',
             'menu_transparency',
             'particle_effects',
             'back'
@@ -42,6 +43,7 @@ class GraphicsMenu:
         self.show_ghost = settings_manager.get('show_ghost', True)
         self.background_enabled = settings_manager.get('background_enabled', True)
         self.bg_transparency = settings_manager.get('bg_transparency', 0.3)
+        self.effects_opacity = settings_manager.get('effects_opacity', 1.0)
         self.menu_transparency = settings_manager.get('menu_transparency', 1.0)
         self.particle_effects = self._normalize_particle_effects_value(
             settings_manager.get('particle_effects', 'medium')
@@ -319,7 +321,7 @@ class GraphicsMenu:
             self.background_enabled = not self.background_enabled
             self.settings_manager.set('background_enabled', self.background_enabled)
             return 'toggle_background_enabled'
-        elif self.selected == 6:  # Parçacık Efektleri
+        elif self.selected == 7:  # Parçacık Efektleri
             self._cycle_particle_effects(True)
 
         return None
@@ -347,7 +349,15 @@ class GraphicsMenu:
             self.settings_manager.set('bg_transparency', round(self.bg_transparency, 1))
             return 'change_bg_transparency'
 
-        elif self.selected == 5:  # Menü Şeffaflığı
+        elif self.selected == 5:  # Efekt Şeffaflığı
+            if increase:
+                self.effects_opacity = min(1.0, float(self.effects_opacity) + 0.1)
+            else:
+                self.effects_opacity = max(0.0, float(self.effects_opacity) - 0.1)
+            self.settings_manager.set('effects_opacity', round(self.effects_opacity, 1))
+            return 'change_effects_opacity'
+
+        elif self.selected == 6:  # Menü Şeffaflığı
             if increase:
                 self.menu_transparency = min(1.0, float(self.menu_transparency) + 0.1)
             else:
@@ -355,7 +365,7 @@ class GraphicsMenu:
             self.settings_manager.set('menu_transparency', round(self.menu_transparency, 1))
             return 'change_menu_transparency'
 
-        elif self.selected == 6:  # Parçacık Efektleri
+        elif self.selected == 7:  # Parçacık Efektleri
             self._cycle_particle_effects(increase)
 
         return None
@@ -521,11 +531,13 @@ class GraphicsMenu:
             return t('on') if self.background_enabled else t('off')
         elif index == 4:  # Arka Plan Şeffaflığı
             return f'{int(self.bg_transparency * 100)}%'
-        elif index == 5:  # Menü Şeffaflığı
+        elif index == 5:  # Efekt Şeffaflığı
+            return f'{int(self.effects_opacity * 100)}%'
+        elif index == 6:  # Menü Şeffaflığı
             return f'{int(self.menu_transparency * 100)}%'
-        elif index == 6:  # Parçacık Efektleri
+        elif index == 7:  # Parçacık Efektleri
             return self._particle_effects_label()
-        elif index == 7:  # Geri
+        elif index == 8:  # Geri
             return ''
         return ''
 

@@ -27,6 +27,23 @@ try:
 except Exception:
     pass
 
+# ==================== DUAL-MODULE SINGLETON FIX (retro_style + others) ===========
+# Aynı sorun retro_style ve diğer singleton modüller için de geçerli:
+# bare import (from retro_style import retro_style) → sys.modules['retro_style']
+# ama Python paket çözümlemesi → sys.modules['src.retro_style'] olarak AYRI yüklenebilir.
+# İki farklı modül = iki farklı RetroStyle singleton = set_background_transparency()
+# yalnız bir kopyayı günceller, diğeri default (0.3) kalır.
+for _mod_name in ('retro_style', 'background_effects', 'background', 'ui_theme'):
+    try:
+        _bare_mod = __import__(_mod_name)
+        sys.modules.setdefault(f'src.{_mod_name}', _bare_mod)
+    except Exception:
+        pass
+try:
+    del _mod_name, _bare_mod
+except NameError:
+    pass
+
 # ==================== WORKING DIRECTORY FIX (macOS .app için kritik) ====================
 # Finder'dan açıldığında CWD yanlış olabiliyor, bu yüzden doğru dizine geçiyoruz
 def _fix_working_directory():
@@ -1312,6 +1329,15 @@ def main():
     except Exception:
         pass
 
+    # Falling blocks katmanını effects_opacity ile senkronize et.
+    try:
+        from background_effects import get_shared_falling_blocks_layer as _get_fb_init
+        _fb_init = _get_fb_init('default')
+        if _fb_init is not None:
+            _fb_init.set_opacity_multiplier(float(settings_manager.get('effects_opacity', 1.0)))
+    except Exception:
+        pass
+
     # Menü/UI panel şeffaflığını uygula (arka plan görselinden bağımsız).
     try:
         retro_style.set_menu_transparency(settings_manager.get('menu_transparency', 1.0))
@@ -2307,6 +2333,36 @@ def main():
                         pvp_game.update_transparency(trans_value)
                     except Exception:
                         pass
+                if coop_game:
+                    for _bg_attr in ('background', 'board_background', 'outer_background'):
+                        _bg_obj = getattr(coop_game, _bg_attr, None)
+                        if _bg_obj is not None and hasattr(_bg_obj, 'set_transparency'):
+                            try:
+                                _bg_obj.set_transparency(trans_value)
+                            except Exception:
+                                pass
+                    # Composite cache'i invalidate et
+                    try:
+                        coop_game._outer_bg_composite_cache = {'key': None, 'surface': None}
+                    except Exception:
+                        pass
+            elif action == 'change_effects_opacity':
+                # Efekt şeffaflığı değişti — falling blocks + ambient particles
+                try:
+                    eff_value = float(settings_manager.get('effects_opacity', 1.0))
+                except Exception:
+                    eff_value = 1.0
+                try:
+                    from background_effects import get_shared_falling_blocks_layer as _get_fb
+                    _fb = _get_fb('default')
+                    if _fb is not None:
+                        _fb.set_opacity_multiplier(eff_value)
+                except Exception:
+                    pass
+                # Aktif oyun nesnelerine de yansıt
+                for _gobj in (game, coop_game, pvp_game):
+                    if _gobj is not None:
+                        _gobj.effects_opacity = eff_value
             elif action == 'change_menu_transparency':
                 # Menü şeffaflığı değişti (sekmeli ekrandan)
                 try:

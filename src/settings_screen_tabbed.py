@@ -184,6 +184,12 @@ def _build_tab_content(tab_key: str, sm, show_debug: bool = False) -> list[dict]
             'min': 0.0, 'max': 1.0, 'step': 0.1, 'suffix': '%', 'percent': True,
         })
         items.append({
+            'type': 'slider', 'key': 'effects_opacity',
+            'loc_key': 'effects_opacity',
+            'label_tr': 'Efekt Şeffaflığı', 'label_en': 'Effects Opacity',
+            'min': 0.0, 'max': 1.0, 'step': 0.1, 'suffix': '%', 'percent': True,
+        })
+        items.append({
             'type': 'slider', 'key': 'menu_transparency',
             'loc_key': 'menu_transparency',
             'label_tr': 'Menü Şeffaflığı', 'label_en': 'Menu Transparency',
@@ -811,6 +817,7 @@ class TabbedSettingsScreen:
         self.show_ghost = sm.get('show_ghost', True)
         self.background_enabled = sm.get('background_enabled', True)
         self.bg_transparency = sm.get('bg_transparency', 0.3)
+        self.effects_opacity = sm.get('effects_opacity', 1.0)
         self.menu_transparency = sm.get('menu_transparency', 1.0)
         self.particle_effects = self._particle_effects_level_to_slider_value(sm.get('particle_effects', 'medium'))
         # Audio
@@ -1727,6 +1734,9 @@ class TabbedSettingsScreen:
         elif key == 'bg_transparency':
             self.bg_transparency = new_val
             return 'change_bg_transparency'
+        elif key == 'effects_opacity':
+            self.effects_opacity = new_val
+            return 'change_effects_opacity'
         elif key == 'menu_transparency':
             self.menu_transparency = new_val
             return 'change_menu_transparency'
@@ -1768,6 +1778,9 @@ class TabbedSettingsScreen:
         elif key == 'bg_transparency':
             self.bg_transparency = new_val
             return 'change_bg_transparency'
+        elif key == 'effects_opacity':
+            self.effects_opacity = new_val
+            return 'change_effects_opacity'
         elif key == 'menu_transparency':
             self.menu_transparency = new_val
             return 'change_menu_transparency'

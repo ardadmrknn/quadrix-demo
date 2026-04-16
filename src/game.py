@@ -682,7 +682,7 @@ class Game:
         self.outer_background = BackgroundManager()  # Oyun alanı dışındaki alan için arka plan
         
         # Transparanlık ayarını yükle ve uygula
-        bg_transparency = self.settings_manager.get('bg_transparency', 0.9)
+        bg_transparency = self.settings_manager.get('bg_transparency', 0.3)
         self.background_manager.set_transparency(bg_transparency)
         self.single_background.set_transparency(bg_transparency)
         self.outer_background.set_transparency(bg_transparency)
@@ -1117,6 +1117,13 @@ class Game:
                     pass
 
         self.falling_blocks = get_shared_falling_blocks_layer('default') if getattr(self, 'effects_enabled', True) else None
+        if self.falling_blocks is not None:
+            try:
+                eff_opacity = float(settings_manager.get('effects_opacity', 1.0))
+                self.falling_blocks.set_opacity_multiplier(eff_opacity)
+                self.effects_opacity = eff_opacity
+            except Exception:
+                pass
         self._cached_offset_key = None
         self._cached_cell_size_key = None
         try:
@@ -3393,10 +3400,14 @@ class Game:
     
     def draw_ambient_particles(self):
         """Ambient parçacıkları çiz"""
+        eo = getattr(self, 'effects_opacity', 1.0)
+        if eo <= 0:
+            return
         for particle in self.ambient_particles:
             # Nabız efekti ile alpha değişimi
             pulse_alpha = int(particle['alpha'] + math.sin(particle['pulse']) * 30)
             pulse_alpha = max(30, min(180, pulse_alpha))
+            pulse_alpha = int(pulse_alpha * eo)
             
             # Parçacık rengi (beyaz/hafif mavi)
             color = (200, 200, 255)
@@ -4168,14 +4179,35 @@ class Game:
         label_color = _dim(text_color, 70)
         
         # Önce tüm ekranı dış alan arka planı ile doldur
+        # Menü ile tutarlı görünüm için retro_style.bg_color kullan
+        _fill_color = getattr(retro_style, 'bg_color', bg_color)
+        bg_alpha = 1.0
         if self.outer_background.is_loaded():
+            # Yarı-saydam arka plan (<1.0) önceki frame piksellerinin üzerine
+            # blend olur; önce temiz bir base doldurmak gerekir.
+            try:
+                bg_alpha = float(getattr(self.outer_background, 'transparency', 1.0))
+            except Exception:
+                bg_alpha = 1.0
+            if bg_alpha < 1.0:
+                self.screen.fill(_fill_color)
             # Arka planı tüm ekrana çiz
             self.outer_background.draw_full_screen(self.screen)
         else:
             # Arka plan yoksa sadece renk doldur
-            self.screen.fill(bg_color)
+            self.screen.fill(_fill_color)
 
-        apply_outer_tint(self.screen, ui_skin)
+        # Outer tint: bg_transparency ile orantılı uygula (menüde tint yok,
+        # oyunda da transparan arttıkça tint azalsın → tutarlı görünüm).
+        _ot = tuple(ui_skin.outer_tint)
+        if len(_ot) >= 4 and _ot[3] > 0:
+            _tint_a = int(_ot[3] * bg_alpha) if bg_alpha < 1.0 else _ot[3]
+            if _tint_a > 0:
+                try:
+                    from dataclasses import replace as _dc_replace
+                    apply_outer_tint(self.screen, _dc_replace(ui_skin, outer_tint=(*_ot[:3], _tint_a)))
+                except Exception:
+                    apply_outer_tint(self.screen, ui_skin)
         
         # Menüdeki düşen blok animasyonunu paylaş
         if self.effects_enabled and self.falling_blocks:

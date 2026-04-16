@@ -72,6 +72,11 @@ class FallingBlocksLayer:
         self._last_frame_time = pygame.time.get_ticks()
         self._last_screen_size: tuple[int, int] | None = None
         self._jelly_cell_cache: dict[tuple[int, tuple[int, int, int], int], pygame.Surface] = {}
+        self._opacity_multiplier: float = 1.0
+
+    def set_opacity_multiplier(self, value: float) -> None:
+        """Tüm düşen blokların alfa değerini orantılı olarak ayarla (0.0–1.0)."""
+        self._opacity_multiplier = max(0.0, min(1.0, float(value)))
 
     # Public API -------------------------------------------------------------
     def update(self, screen: pygame.Surface) -> None:
@@ -99,21 +104,28 @@ class FallingBlocksLayer:
         if not self.blocks:
             return
         width, height = screen.get_size()
+        om = getattr(self, '_opacity_multiplier', 1.0)
         
         # Jelly renderer varsa kullan - oyundaki blokların aynısı
         if _HAS_JELLY and draw_jelly_block is not None:
             for block in self.blocks:
+                effective_alpha = max(0, min(255, int(block.alpha * om)))
+                if effective_alpha <= 0:
+                    continue
                 for cell_x, cell_y in block.shape:
                     bx = int(block.x + cell_x * block.size)
                     by = int(block.y + cell_y * block.size)
                     cell_size = block.size - 1
                     if cell_size > 2:
-                        cell_surf = self._get_cached_jelly_cell_surface(cell_size, block.color, block.alpha)
+                        cell_surf = self._get_cached_jelly_cell_surface(cell_size, block.color, effective_alpha)
                         screen.blit(cell_surf, (bx, by))
             return
         
         # Fallback: basit çizim
         for block in self.blocks:
+            effective_alpha = max(0, min(255, int(block.alpha * om)))
+            if effective_alpha <= 0:
+                continue
             for cell_x, cell_y in block.shape:
                 rect = pygame.Rect(
                     int(block.x + cell_x * block.size),
@@ -121,8 +133,10 @@ class FallingBlocksLayer:
                     block.size - 1,
                     block.size - 1,
                 )
-                pygame.draw.rect(screen, block.color, rect, border_radius=3)
-                pygame.draw.rect(screen, (255, 255, 255), rect, 1, border_radius=3)
+                fb_surf = pygame.Surface((rect.width, rect.height), pygame.SRCALPHA)
+                pygame.draw.rect(fb_surf, (*block.color, effective_alpha), fb_surf.get_rect(), border_radius=3)
+                pygame.draw.rect(fb_surf, (255, 255, 255, effective_alpha), fb_surf.get_rect(), 1, border_radius=3)
+                screen.blit(fb_surf, rect.topleft)
 
     def _get_cached_jelly_cell_surface(
         self,

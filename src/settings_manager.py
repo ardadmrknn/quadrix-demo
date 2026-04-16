@@ -205,6 +205,9 @@ class SettingsManager:
             'ui_scale_preset': 'normal',
             'show_ghost': True,
             'bg_transparency': 0.3,
+            # Düşen bloklar ve yıldız efektlerinin opaklığı.
+            # 0.0 (görünmez) - 1.0 (tam opak)
+            'effects_opacity': 1.0,
             # Menü/UI panel şeffaflığı (RetroStyle glass/panel/button yüzeyleri).
             # 0.0 (tamamen saydam) - 1.0 (opak)
             'menu_transparency': 1.0,
@@ -270,6 +273,7 @@ class SettingsManager:
             'menu_music_volume',
             'sfx_volume',
             'bg_transparency',
+            'effects_opacity',
             'menu_transparency',
             'das_delay',
             'das_repeat',

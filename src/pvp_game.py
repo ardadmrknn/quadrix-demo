@@ -270,10 +270,10 @@ class PvPGame:
         
         # Board background'a ayarlardaki transparanlığı uygula
         if self.settings_manager:
-            bg_transparency = self.settings_manager.get('bg_transparency', 1.0)
+            bg_transparency = self.settings_manager.get('bg_transparency', 0.3)
             self.board_background.set_transparency(bg_transparency)
         else:
-            self.board_background.set_transparency(1.0)
+            self.board_background.set_transparency(0.3)
         
         self.load_background_image()
         self.load_board_background()
@@ -704,9 +704,9 @@ class PvPGame:
         except Exception:
             background_enabled = True
         try:
-            bg_transparency = float(settings_manager.get('bg_transparency', 1.0))
+            bg_transparency = float(settings_manager.get('bg_transparency', 0.3))
         except Exception:
-            bg_transparency = None
+            bg_transparency = 0.3
         try:
             menu_transparency = float(settings_manager.get('menu_transparency', 1.0))
         except Exception:
@@ -743,6 +743,13 @@ class PvPGame:
                 pass
 
         self.name_background_fx = get_shared_falling_blocks_layer('default') if getattr(self, 'effects_enabled', True) else None
+        if self.name_background_fx is not None:
+            try:
+                eff_opacity = float(settings_manager.get('effects_opacity', 1.0))
+                self.name_background_fx.set_opacity_multiplier(eff_opacity)
+                self.effects_opacity = eff_opacity
+            except Exception:
+                pass
         self._layout_key = None
         self._vs_panel_dirty = True
         try:
@@ -2920,9 +2927,13 @@ class PvPGame:
     
     def draw_ambient_particles(self):
         """Ambient parçacıkları çiz"""
+        eo = getattr(self, 'effects_opacity', 1.0)
+        if eo <= 0:
+            return
         for particle in self.ambient_particles:
             pulse_alpha = int(particle['alpha'] + math.sin(particle['pulse']) * 30)
             pulse_alpha = max(30, min(180, pulse_alpha))
+            pulse_alpha = int(pulse_alpha * eo)
             
             color = (200, 200, 255)
             pos = (int(particle['x']), int(particle['y']))
@@ -3531,15 +3542,35 @@ class PvPGame:
         start_y = int(self.p1_offset_y + shake_y)
         
         # Arka planları çiz - Ana arka plan (tüm ekran)
+        # Menü ile tutarlı görünüm için retro_style.bg_color kullan
+        _fill_color = getattr(retro_style, 'bg_color', (8, 12, 28))
+        bg_alpha = 1.0
         if self.background.is_loaded():
+            try:
+                bg_alpha = float(getattr(self.background, 'transparency', 1.0))
+            except Exception:
+                bg_alpha = 1.0
+            if bg_alpha < 1.0:
+                self.screen.fill(_fill_color)
             self.background.draw(self.screen, (0, 0, self.window_width, self.window_height))
+        else:
+            self.screen.fill(_fill_color)
 
         # Ana menü benzeri arka plan tetris blokları kayma/düşme efekti (PvP gameplay)
         if self.effects_enabled and self.name_background_fx:
             self.name_background_fx.update(self.screen)
             self.name_background_fx.draw(self.screen)
 
-        apply_outer_tint(self.screen, self.mode_skin)
+        # Outer tint: bg_transparency ile orantılı (menüde tint yok → tutarlılık)
+        _ot = tuple(self.mode_skin.outer_tint)
+        if len(_ot) >= 4 and _ot[3] > 0:
+            _tint_a = int(_ot[3] * bg_alpha) if bg_alpha < 1.0 else _ot[3]
+            if _tint_a > 0:
+                try:
+                    from dataclasses import replace as _dc_replace
+                    apply_outer_tint(self.screen, _dc_replace(self.mode_skin, outer_tint=(*_ot[:3], _tint_a)))
+                except Exception:
+                    apply_outer_tint(self.screen, self.mode_skin)
         
         # Oyuncu başlık panelleri (minimal)
         header_y = int(self.header_top + shake_y)

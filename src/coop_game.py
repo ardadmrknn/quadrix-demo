@@ -248,11 +248,11 @@ class CoopGame:
         # --- Arka plan ---
         self.background = BackgroundManager()
         self.board_background = BackgroundManager()
-        self.background.set_transparency(1.0)
+        self.background.set_transparency(0.3)
         if self.settings_manager:
-            self.board_background.set_transparency(self.settings_manager.get('bg_transparency', 1.0))
+            self.board_background.set_transparency(self.settings_manager.get('bg_transparency', 0.3))
         else:
-            self.board_background.set_transparency(1.0)
+            self.board_background.set_transparency(0.3)
         self._load_backgrounds()
 
         # --- Tema / blok stili ---
@@ -429,9 +429,9 @@ class CoopGame:
         # Outer background (tam ekran arka plan)
         self.outer_background = BackgroundManager()
         if self.settings_manager:
-            self.outer_background.set_transparency(self.settings_manager.get('bg_transparency', 1.0))
+            self.outer_background.set_transparency(self.settings_manager.get('bg_transparency', 0.3))
         else:
-            self.outer_background.set_transparency(1.0)
+            self.outer_background.set_transparency(0.3)
         self._load_outer_background()
 
         # Ambient particles init
@@ -580,7 +580,7 @@ class CoopGame:
         except Exception:
             background_enabled = True
         try:
-            bg_transparency = float(settings_manager.get('bg_transparency', 1.0))
+            bg_transparency = float(settings_manager.get('bg_transparency', 0.3))
         except Exception:
             bg_transparency = None
         try:
@@ -622,6 +622,13 @@ class CoopGame:
                         pass
 
         self.falling_blocks = get_shared_falling_blocks_layer('default') if getattr(self, 'effects_enabled', True) else None
+        if self.falling_blocks is not None:
+            try:
+                eff_opacity = float(settings_manager.get('effects_opacity', 1.0))
+                self.falling_blocks.set_opacity_multiplier(eff_opacity)
+                self.effects_opacity = eff_opacity
+            except Exception:
+                pass
         self._layout_key = None
         self._das_settings_dirty = True
         self._board_skin_cache = {'skin_id': None, 'board_skin': None}
@@ -1338,9 +1345,13 @@ class CoopGame:
     def draw_ambient_particles(self):
         if not self._effect_surface_cache:
             return
+        eo = getattr(self, 'effects_opacity', 1.0)
+        if eo <= 0:
+            return
         for p in self.ambient_particles:
             pulse_alpha = int(p['alpha'] + math.sin(p['pulse']) * 30)
             pulse_alpha = max(30, min(180, pulse_alpha))
+            pulse_alpha = int(pulse_alpha * eo)
             glow_size = p['size'] * 3
             color = tuple(p.get('color', self._AMBIENT_PARTICLE_COLOR))[:3]
             glow_surf = self._effect_surface_cache.get_ellipse_surface(
@@ -2419,17 +2430,35 @@ class CoopGame:
         board_skin = bsc['board_skin']
 
         # === Arka plan ===
+        # Menü ile tutarlı görünüm için retro_style.bg_color kullan
+        _fill_color = getattr(retro_style, 'bg_color', getattr(skin, 'outer_bg', (0, 0, 0)))
         outer_background_composite = self._get_outer_background_composite(skin)
         if visible_outer_rect is not None and outer_background_composite is not None:
-            self.screen.fill(skin.outer_bg)
+            self.screen.fill(_fill_color)
             self.screen.blit(outer_background_composite, visible_outer_rect.topleft, visible_outer_rect)
         elif outer_background_composite is not None:
             self.screen.blit(outer_background_composite, (0, 0))
         elif self.background.is_loaded():
+            # Yarı-saydam arka plan blend artefaktını önlemek için base fill
+            try:
+                _bg_a = float(getattr(self.background, 'transparency', 1.0))
+            except Exception:
+                _bg_a = 1.0
+            if _bg_a < 1.0:
+                self.screen.fill(_fill_color)
             self.background.draw(self.screen, (0, 0, self.window_width, self.window_height))
-            apply_outer_tint(self.screen, skin, visible_outer_rect)
+            # Outer tint: bg_transparency ile orantılı
+            _ot = tuple(skin.outer_tint)
+            if len(_ot) >= 4 and _ot[3] > 0:
+                _tint_a = int(_ot[3] * _bg_a) if _bg_a < 1.0 else _ot[3]
+                if _tint_a > 0:
+                    try:
+                        from dataclasses import replace as _dc_replace
+                        apply_outer_tint(self.screen, _dc_replace(skin, outer_tint=(*_ot[:3], _tint_a)), visible_outer_rect)
+                    except Exception:
+                        apply_outer_tint(self.screen, skin, visible_outer_rect)
         else:
-            self.screen.fill(skin.outer_bg)
+            self.screen.fill(_fill_color)
             apply_outer_tint(self.screen, skin, visible_outer_rect)
 
         # Falling blocks layer
@@ -2624,17 +2653,26 @@ class CoopGame:
             return cache['surface']
 
         composed = pygame.Surface((self.window_width, self.window_height))
-        composed.fill(getattr(skin, 'outer_bg', (0, 0, 0)))
+        # Menü ile tutarlı görünüm için retro_style.bg_color kullan
+        _fill_color = getattr(retro_style, 'bg_color', getattr(skin, 'outer_bg', (0, 0, 0)))
+        composed.fill(_fill_color)
 
         bg_surface = outer_bg.get_full_screen_surface(self.screen)
         if bg_surface is not None:
             composed.blit(bg_surface, (0, 0))
 
+        # Outer tint: bg_transparency ile orantılı (menüde tint yok → tutarlılık)
+        try:
+            _bg_a = float(getattr(outer_bg, 'transparency', 1.0))
+        except Exception:
+            _bg_a = 1.0
         outer_tint = tuple(getattr(skin, 'outer_tint', (0, 0, 0, 0)))
         if len(outer_tint) >= 4 and int(outer_tint[3]) > 0:
-            tint_surface = pygame.Surface((self.window_width, self.window_height), pygame.SRCALPHA)
-            tint_surface.fill(outer_tint)
-            composed.blit(tint_surface, (0, 0))
+            _tint_a = int(outer_tint[3] * _bg_a) if _bg_a < 1.0 else int(outer_tint[3])
+            if _tint_a > 0:
+                tint_surface = pygame.Surface((self.window_width, self.window_height), pygame.SRCALPHA)
+                tint_surface.fill((*outer_tint[:3], _tint_a))
+                composed.blit(tint_surface, (0, 0))
 
         try:
             if pygame.display.get_surface() is not None:
