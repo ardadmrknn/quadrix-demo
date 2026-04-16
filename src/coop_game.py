@@ -1390,14 +1390,29 @@ class CoopGame:
         for t_obj in self.drop_trails:
             t_obj['alpha'] -= fade_speed * dt / 1000.0
             if t_obj['alpha'] > 0:
-                t_obj['_surf'].set_alpha(int(t_obj['alpha']))
                 alive.append(t_obj)
         self.drop_trails = alive
 
     def _draw_drop_trails(self):
         for trail in self.drop_trails:
-            if trail['alpha'] > 0:
-                self.screen.blit(trail['_surf'], (int(trail['x']), int(trail['y'])))
+            if trail['alpha'] <= 0:
+                continue
+            surf = trail['_surf']
+            # macOS Metal/OpenGL: SRCALPHA surface üzerinde set_alpha() hatalı
+            # sonuç verir. Surface'i sıfırlayıp orantılı alpha ile yeniden doldur.
+            w, h = surf.get_size()
+            segments = max(1, h // 4)
+            seg_h = h / segments
+            surf.fill((0, 0, 0, 0))
+            color = trail['_color']
+            scale = trail['alpha'] / trail['_init_alpha']
+            for i in range(segments):
+                seg_alpha = int(120 * scale * (1 - i / segments))
+                if seg_alpha <= 0:
+                    continue
+                y_pos = int(i * seg_h)
+                surf.fill((*color, seg_alpha), (0, y_pos, w, int(seg_h) + 1))
+            self.screen.blit(surf, (int(trail['x']), int(trail['y'])))
 
     # ------------------------------------------------------------------
     # Line clear effects
@@ -2674,8 +2689,10 @@ class CoopGame:
                 tint_surface.fill((*outer_tint[:3], _tint_a))
                 composed.blit(tint_surface, (0, 0))
 
+        # macOS Metal/OpenGL backend'inde .convert() sonrası SRCALPHA blit
+        # (düşen bloklar) hatalı alpha sonucu verir — background.py ile tutarlı.
         try:
-            if pygame.display.get_surface() is not None:
+            if pygame.display.get_surface() is not None and sys.platform != 'darwin':
                 composed = composed.convert()
         except Exception:
             pass
