@@ -1349,6 +1349,12 @@ class Menu:
                 'fail_attr': '_block_styles_panel_effect_load_failed',
                 'fit_full': True,
             },
+            'coop_mode': {
+                'path': str(ROOT_DIR / 'assets' / 'main_theme' / 'coop_panel.png'),
+                'cache_attr': '_coop_panel_effect_image',
+                'fail_attr': '_coop_panel_effect_load_failed',
+                'fit_full': True,
+            },
         }
 
     def _load_dashboard_tile_flavor_source(self, flavor: dict[str, Any]) -> pygame.Surface | None:
@@ -1543,7 +1549,7 @@ class Menu:
 
         alpha = 230 if is_highlighted else 180
         flat_title_band_panels = {'achievements', 'piece_workshop', 'store'}
-        draw_panel_border = panel_key not in ('pvp_2_players', 'coop_mode')
+        draw_panel_border = panel_key not in ('pvp_2_players',)
         retro_style.draw_glass_panel(
             target_surface,
             draw_rect,
@@ -1556,7 +1562,7 @@ class Menu:
         if is_highlighted:
             prev_clip = target_surface.get_clip()
             target_surface.set_clip(draw_rect)
-            if panel_key not in ('pvp_2_players', 'coop_mode'):
+            if panel_key not in ('pvp_2_players',):
                 for glow_i in range(3, 0, -1):
                     glow_rect = draw_rect.inflate(glow_i * 4, glow_i * 4)
                     glow_alpha = max(10, 60 - glow_i * 18)
@@ -1636,16 +1642,6 @@ class Menu:
                 3 if is_highlighted else 2,
                 pvp_orange_alpha,
                 pvp_cyan_alpha,
-                14,
-            )
-        elif panel_key == 'coop_mode':
-            # Co-op: yeşil (local) + cyan (online) çift kontur
-            _draw_coop_dual_outline(
-                target_surface,
-                draw_rect,
-                3 if is_highlighted else 2,
-                coop_green_alpha,
-                coop_cyan_alpha,
                 14,
             )
         else:
@@ -2436,51 +2432,6 @@ class Menu:
                 rel = (y_pos - split_rect.top) / max(1, split_rect.height)
                 rel = max(0.0, min(1.0, rel))
                 return int(round(split_rect.left + rel * split_rect.width))
-
-            poly_overlay = pygame.Surface((split_rect.width, split_rect.height), pygame.SRCALPHA)
-            poly_rect = poly_overlay.get_rect()
-            pygame.draw.rect(poly_overlay, (6, 10, 26, 212 if hover else 192), poly_rect, border_radius=corner_radius)
-            sheen_rows = min(max(5, split_rect.height // 14), 14)
-            for hy in range(sheen_rows):
-                sheen_alpha = int((34 if hover else 26) * (1 - hy / max(1, sheen_rows)))
-                pygame.draw.line(poly_overlay, (255, 255, 255, sheen_alpha), (s(8), hy), (split_rect.width - s(8), hy))
-
-            for side, half_poly, half_color, half_fill, label, sub, is_hover, glow_center in halves:
-                rel_poly = [(x - split_rect.x, y - split_rect.y) for x, y in half_poly]
-                half_surface = pygame.Surface((split_rect.width, split_rect.height), pygame.SRCALPHA)
-                pygame.draw.polygon(half_surface, (*half_fill, 182 if is_hover else 146), rel_poly)
-
-                max_radius = max(s(44), int(min(split_rect.width, split_rect.height) * 0.92))
-                inner_radius = max(s(26), int(max_radius * 0.58))
-                pygame.draw.circle(half_surface, (*half_color[:3], 78 if is_hover else 56), glow_center, max_radius)
-                pygame.draw.circle(half_surface, (*half_color[:3], 54 if is_hover else 34), glow_center, inner_radius)
-
-                band_count = 4
-                for band_idx in range(band_count):
-                    band_alpha = max(8, (22 if is_hover else 14) - band_idx * 3)
-                    if side == 'local':
-                        start = (-split_rect.width // 5, split_rect.height - int((band_idx + 1) * split_rect.height / (band_count + 1)))
-                        end = (int((band_idx + 1) * split_rect.width / (band_count + 2)), split_rect.height + split_rect.height // 5)
-                    else:
-                        start = (split_rect.width - int((band_idx + 1) * split_rect.width / (band_count + 2)), -split_rect.height // 5)
-                        end = (split_rect.width + split_rect.width // 5, int((band_idx + 1) * split_rect.height / (band_count + 1)))
-                    pygame.draw.line(half_surface, (*half_color[:3], band_alpha), start, end, max(2, s(3)))
-
-                poly_mask = pygame.Surface((split_rect.width, split_rect.height), pygame.SRCALPHA)
-                pygame.draw.polygon(poly_mask, (255, 255, 255, 255), rel_poly)
-                half_surface.blit(poly_mask, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
-                poly_overlay.blit(half_surface, (0, 0))
-
-            diagonal_glow_w = max(4, s(5))
-            pygame.draw.line(poly_overlay, (255, 255, 255, 28 if hover else 18), (0, 0), (split_rect.width - 1, split_rect.height - 1), diagonal_glow_w)
-            pygame.draw.line(poly_overlay, (*COOP_LOCAL_COLOR[:3], 120 if hover else 84), (0, 0), (split_rect.width - 1, split_rect.height - 1), 2)
-            pygame.draw.line(poly_overlay, (*COOP_ONLINE_COLOR[:3], 92 if hover else 58), (0, min(split_rect.height - 1, s(2))), (max(0, split_rect.width - 1 - s(2)), split_rect.height - 1), 1)
-
-            rounded_mask = pygame.Surface((split_rect.width, split_rect.height), pygame.SRCALPHA)
-            pygame.draw.rect(rounded_mask, (255, 255, 255, 255), rounded_mask.get_rect(), border_radius=corner_radius)
-            poly_overlay.blit(rounded_mask, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
-
-            target.blit(poly_overlay, split_rect.topleft)
 
             chip_margin = s(14)
             chip_pad_x = s(14)

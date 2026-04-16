@@ -121,7 +121,7 @@ class FallingBlocksLayer:
                         screen.blit(cell_surf, (bx, by))
             return
         
-        # Fallback: basit çizim
+        # Fallback: basit çizim — RGB surface + per-surface alpha (macOS güvenli)
         for block in self.blocks:
             effective_alpha = max(0, min(255, int(block.alpha * om)))
             if effective_alpha <= 0:
@@ -133,9 +133,10 @@ class FallingBlocksLayer:
                     block.size - 1,
                     block.size - 1,
                 )
-                fb_surf = pygame.Surface((rect.width, rect.height), pygame.SRCALPHA)
-                pygame.draw.rect(fb_surf, (*block.color, effective_alpha), fb_surf.get_rect(), border_radius=3)
-                pygame.draw.rect(fb_surf, (255, 255, 255, effective_alpha), fb_surf.get_rect(), 1, border_radius=3)
+                fb_surf = pygame.Surface((rect.width, rect.height))
+                fb_surf.fill(block.color)
+                pygame.draw.rect(fb_surf, (255, 255, 255), fb_surf.get_rect(), 1, border_radius=3)
+                fb_surf.set_alpha(effective_alpha)
                 screen.blit(fb_surf, rect.topleft)
 
     def _get_cached_jelly_cell_surface(
@@ -149,16 +150,15 @@ class FallingBlocksLayer:
         if cached is not None:
             return cached
 
-        cell_surf = pygame.Surface((cell_size, cell_size), pygame.SRCALPHA)
+        # RGB surface kullan (SRCALPHA DEĞİL).
+        # Jelly renderer tüm hücreyi renkle doldurduğundan şeffaf köşe yok —
+        # per-pixel alpha'ya ihtiyaç kalmaz.  Per-surface set_alpha() ile
+        # opaklık ayarlamak macOS Metal/OpenGL dahil tüm platformlarda güvenli
+        # çalışır (SRCALPHA + per-surface alpha çakışması riskini sıfırlar).
+        cell_surf = pygame.Surface((cell_size, cell_size))
         draw_jelly_block(cell_surf, 0, 0, cell_size, color)
-        # macOS'ta SRCALPHA surface üzerinde set_alpha() (per-surface alpha) ile
-        # per-pixel alpha birleşimi Metal/OpenGL backend'inde tutarsız sonuç verir.
-        # Alpha'yı doğrudan piksel kanallarına BLEND_RGBA_MULT ile bake ederek
-        # tüm platformlarda aynı görünümü garanti ederiz.
         if alpha < 255:
-            _alpha_mask = pygame.Surface((cell_size, cell_size), pygame.SRCALPHA)
-            _alpha_mask.fill((255, 255, 255, alpha))
-            cell_surf.blit(_alpha_mask, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+            cell_surf.set_alpha(alpha)
         self._jelly_cell_cache[key] = cell_surf
         return cell_surf
 
