@@ -79,6 +79,20 @@ def _get_cached_surface(key: tuple, build_fn) -> pygame.Surface:
     return surf
 
 
+def _get_menu_transparency_multiplier() -> float:
+    try:
+        from retro_style import retro_style as _retro_style
+        value = float(getattr(_retro_style, '_menu_transparency', 1.0))
+    except Exception:
+        value = 1.0
+    return max(0.0, min(1.0, value))
+
+
+def _scale_menu_alpha(alpha: int) -> int:
+    scaled = int(round(int(alpha) * _get_menu_transparency_multiplier()))
+    return _clamp_int(scaled, 0, 255)
+
+
 # ============================================================================
 # CAM PANEL (GLASSMORPHISM)
 # ============================================================================
@@ -111,17 +125,32 @@ def draw_glass_panel(
     
     if glow_color is None:
         glow_color = UIColors.NEON_CYAN
+
+    panel_alpha = _scale_menu_alpha(alpha)
+    border_alpha = _scale_menu_alpha(150)
+    glow_alpha_outer = _scale_menu_alpha(30)
+    glow_alpha_mid = _scale_menu_alpha(20)
+    glow_alpha_inner = _scale_menu_alpha(10)
     
     # Glow efekti (panel arkasında)
     if glow:
-        glow_key = ("glass_panel_glow", rect.width, rect.height, int(border_radius), tuple(glow_color[:3]))
+        glow_key = (
+            "glass_panel_glow",
+            rect.width,
+            rect.height,
+            int(border_radius),
+            tuple(glow_color[:3]),
+            glow_alpha_outer,
+            glow_alpha_mid,
+            glow_alpha_inner,
+        )
 
         def _build_glow() -> pygame.Surface:
             glow_surf = pygame.Surface((rect.width + 20, rect.height + 20), pygame.SRCALPHA)
             glow_rect = pygame.Rect(10, 10, rect.width, rect.height)
-            pygame.draw.rect(glow_surf, (*glow_color[:3], 30), glow_rect, border_radius=border_radius)
-            pygame.draw.rect(glow_surf, (*glow_color[:3], 20), glow_rect.inflate(6, 6), border_radius=border_radius + 3)
-            pygame.draw.rect(glow_surf, (*glow_color[:3], 10), glow_rect.inflate(12, 12), border_radius=border_radius + 6)
+            pygame.draw.rect(glow_surf, (*glow_color[:3], glow_alpha_outer), glow_rect, border_radius=border_radius)
+            pygame.draw.rect(glow_surf, (*glow_color[:3], glow_alpha_mid), glow_rect.inflate(6, 6), border_radius=border_radius + 3)
+            pygame.draw.rect(glow_surf, (*glow_color[:3], glow_alpha_inner), glow_rect.inflate(12, 12), border_radius=border_radius + 6)
             return glow_surf
 
         glow_surf = _get_cached_surface(glow_key, _build_glow)
@@ -131,10 +160,11 @@ def draw_glass_panel(
         "glass_panel",
         rect.width,
         rect.height,
-        _clamp_int(alpha, 0, 255),
+        panel_alpha,
         tuple(border_color),
         int(border_width),
         int(border_radius),
+        border_alpha,
     )
 
     def _build_panel() -> pygame.Surface:
@@ -143,7 +173,7 @@ def draw_glass_panel(
         # Arka plan
         pygame.draw.rect(
             panel_surf,
-            (*UIColors.BG_MEDIUM, alpha),
+            (*UIColors.BG_MEDIUM, panel_alpha),
             (0, 0, rect.width, rect.height),
             border_radius=border_radius,
         )
@@ -165,7 +195,7 @@ def draw_glass_panel(
         if border_width > 0:
             pygame.draw.rect(
                 panel_surf,
-                (*border_color, 150),
+                (*border_color, border_alpha),
                 (0, 0, rect.width, rect.height),
                 width=border_width,
                 border_radius=border_radius,

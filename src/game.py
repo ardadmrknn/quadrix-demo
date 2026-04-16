@@ -1081,6 +1081,25 @@ class Game:
             bg_transparency = float(settings_manager.get('bg_transparency', 0.3))
         except Exception:
             bg_transparency = None
+        try:
+            menu_transparency = float(settings_manager.get('menu_transparency', 1.0))
+        except Exception:
+            menu_transparency = None
+
+        try:
+            retro_style.set_background_enabled(bg_enabled)
+        except Exception:
+            pass
+        if bg_transparency is not None:
+            try:
+                retro_style.set_background_transparency(bg_transparency)
+            except Exception:
+                pass
+        if menu_transparency is not None:
+            try:
+                retro_style.set_menu_transparency(menu_transparency)
+            except Exception:
+                pass
 
         for attr_name in ('background_manager', 'single_background', 'outer_background'):
             background = getattr(self, attr_name, None)

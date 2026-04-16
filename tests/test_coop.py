@@ -209,7 +209,7 @@ _bg.BackgroundManager = _BM
 
 # background_effects
 import background_effects as _be
-_be.get_shared_falling_blocks_layer = lambda: None
+_be.get_shared_falling_blocks_layer = lambda *args, **kwargs: None
 
 # mode_skins
 import mode_skins as _ms
@@ -228,6 +228,9 @@ class _RS:
     text_primary = (230, 235, 245); text_secondary = (180, 200, 220); text_muted = (120, 140, 170)
     glass_bg = (15, 20, 40, 140); glass_border = (80, 120, 180, 100)
     bg_color = (8, 12, 28); bg_secondary = (12, 18, 38)
+    _menu_transparency = 1.0
+    _bg_transparency = 0.3
+    _background_enabled = True
     def get_font(self, *a, **kw): return _FakeFont()
     def get_fitting_font(self, *a, **kw): return _FakeFont()
     def get_mono_font(self, *a, **kw): return _FakeFont()
@@ -236,6 +239,9 @@ class _RS:
     def draw_uniform_button(self, *a, **kw): pass
     def draw_volume_bar(self, *a, **kw): pass
     def _scale_menu_alpha(self, a): return a
+    def set_menu_transparency(self, value): self._menu_transparency = float(value)
+    def set_background_transparency(self, value): self._bg_transparency = float(value)
+    def set_background_enabled(self, enabled): self._background_enabled = bool(enabled)
 _rs.retro_style = _RS()
 
 # themes
@@ -544,6 +550,38 @@ def test_lock_and_new_piece_tracks_score_contribution_for_scoring_player():
     assert cg.p2_score_contribution == 0
     assert cg.p1_score_contribution_pct == 100
     assert cg.p2_score_contribution_pct == 0
+
+def test_coop_ambient_particles_use_neutral_star_palette_like_other_modes():
+    settings = _FakeSettings(values={'particle_effects': 'medium'})
+    cg = CoopGame(
+        sound_enabled=False,
+        effects_enabled=True,
+        screen=_Surf(),
+        settings_manager=settings,
+        sound_manager=_SM(),
+    )
+
+    assert cg.ambient_particles
+    assert {tuple(p['color']) for p in cg.ambient_particles} == {(200, 200, 255)}
+
+def test_coop_sync_runtime_settings_updates_retro_style_transparency_state():
+    settings = _FakeSettings(values={
+        'background_enabled': False,
+        'bg_transparency': 0.4,
+        'menu_transparency': 0.6,
+    })
+
+    cg = CoopGame(
+        sound_enabled=False,
+        effects_enabled=False,
+        screen=_Surf(),
+        settings_manager=settings,
+        sound_manager=_SM(),
+    )
+
+    assert _rs.retro_style._background_enabled is False
+    assert _rs.retro_style._bg_transparency == 0.4
+    assert _rs.retro_style._menu_transparency == 0.6
 
 def test_draw_pending_line_clear_rows_uses_snapshot_colors():
     cg = CoopGame(sound_enabled=False, effects_enabled=True, screen=_Surf(), sound_manager=_SM())

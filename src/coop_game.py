@@ -87,6 +87,7 @@ class CoopGame:
     # Hold tuşları (hard_drop ile çakışmamak için ayrı tuşlar)
     _P1_HOLD_KEY = pygame.K_e
     _P2_HOLD_KEY = pygame.K_RSHIFT
+    _AMBIENT_PARTICLE_COLOR = (200, 200, 255)
     _SOFT_DROP_SPEED = 50  # ms
     _LINE_CLEAR_SWEEP_BLOCK_FALL_SPEED = 0.144
     _OPENING_CURTAIN_DURATION_MS = 350
@@ -582,6 +583,25 @@ class CoopGame:
             bg_transparency = float(settings_manager.get('bg_transparency', 1.0))
         except Exception:
             bg_transparency = None
+        try:
+            menu_transparency = float(settings_manager.get('menu_transparency', 1.0))
+        except Exception:
+            menu_transparency = None
+
+        try:
+            retro_style.set_background_enabled(background_enabled)
+        except Exception:
+            pass
+        if bg_transparency is not None:
+            try:
+                retro_style.set_background_transparency(bg_transparency)
+            except Exception:
+                pass
+        if menu_transparency is not None:
+            try:
+                retro_style.set_menu_transparency(menu_transparency)
+            except Exception:
+                pass
 
         for attr_name in ('background', 'board_background', 'outer_background'):
             background = getattr(self, attr_name, None)
@@ -1049,7 +1069,7 @@ class CoopGame:
                 'size': random.randint(2, 5),
                 'pulse': random.uniform(0, 6.28),
                 'pulse_speed': random.uniform(0.03, 0.08),
-                'color': random.choice([(80, 200, 255), (160, 80, 255), (80, 255, 160), (255, 200, 80)]),
+                'color': self._AMBIENT_PARTICLE_COLOR,
             }
             self.ambient_particles.append(p)
 
@@ -1322,11 +1342,12 @@ class CoopGame:
             pulse_alpha = int(p['alpha'] + math.sin(p['pulse']) * 30)
             pulse_alpha = max(30, min(180, pulse_alpha))
             glow_size = p['size'] * 3
+            color = tuple(p.get('color', self._AMBIENT_PARTICLE_COLOR))[:3]
             glow_surf = self._effect_surface_cache.get_ellipse_surface(
-                (glow_size, glow_size), (*p['color'][:3], pulse_alpha // 3))
+                (glow_size, glow_size), (*color, pulse_alpha // 3))
             self.screen.blit(glow_surf, (int(p['x']) - glow_size // 2, int(p['y']) - glow_size // 2))
             core_surf = self._effect_surface_cache.get_filled_surface(
-                (p['size'], p['size']), (*p['color'][:3], pulse_alpha))
+                (p['size'], p['size']), (*color, pulse_alpha))
             self.screen.blit(core_surf, (int(p['x']) - p['size'] // 2, int(p['y']) - p['size'] // 2))
 
     # ------------------------------------------------------------------
