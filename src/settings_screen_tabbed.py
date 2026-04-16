@@ -294,6 +294,12 @@ def _build_tab_content(tab_key: str, sm, show_debug: bool = False) -> list[dict]
             ('menu_tab_prev', _t('gp_menu_tab_prev', 'Sekme Önceki')),
         ]
         items.append({'type': 'section', 'loc_key': 'tab_gamepad', 'label_tr': 'GAMEPAD', 'label_en': 'GAMEPAD'})
+        items.append({
+            'type': 'slider', 'key': 'ctrl_gp_rumble',
+            'loc_key': 'gp_rumble',
+            'label_tr': _t('gp_rumble', 'Titreşim'), 'label_en': _t('gp_rumble', 'Vibration'),
+            'min': 0, 'max': 3, 'step': 1,
+        })
         for action_key, label in gamepad_actions:
             items.append({
                 'type': 'keybind', 'key': f'ctrl_gp_{action_key}',
@@ -961,6 +967,7 @@ class TabbedSettingsScreen:
     def sync_from_settings_manager(self) -> None:
         """main.py'den çağrılır – runtime değişiklikleri sync et."""
         self._load_all_settings()
+        self._control_config = self.settings_manager.get_controls()
         show_debug = bool(self.settings_manager.get('show_debug_settings', False))
         if show_debug != self._show_debug_settings:
             self._show_debug_settings = show_debug
@@ -972,10 +979,18 @@ class TabbedSettingsScreen:
 
     def _get_value(self, key: str):
         """Ayar değerini döndür."""
+        if key == 'ctrl_gp_rumble':
+            return self._gamepad_rumble_slider_value()
         return getattr(self, key, self.settings_manager.get(key))
 
     def _set_value(self, key: str, value) -> None:
         """Ayar değerini güncelle ve kaydet."""
+        if key == 'ctrl_gp_rumble':
+            slider_value = self._gamepad_rumble_slider_value(value)
+            gamepad_cfg = self._control_config.setdefault('gamepad', {})
+            gamepad_cfg['rumble'] = self._gamepad_rumble_level_from_slider_value(slider_value)
+            self._persist_controls()
+            return
         if key == 'particle_effects':
             slider_value = self._particle_effects_level_to_slider_value(value)
             setattr(self, key, slider_value)
@@ -983,6 +998,63 @@ class TabbedSettingsScreen:
             return
         setattr(self, key, value)
         self.settings_manager.set(key, value)
+
+    def _gamepad_rumble_slider_value(self, value=None) -> int:
+        raw_value = self._control_config.get('gamepad', {}).get('rumble', 'high') if value is None else value
+        helper = getattr(self.settings_manager, 'gamepad_rumble_slider_value', None)
+        if callable(helper):
+            try:
+                return int(helper(raw_value))
+            except Exception:
+                pass
+        if isinstance(raw_value, bool):
+            return 3 if raw_value else 0
+        if isinstance(raw_value, (int, float)) and not isinstance(raw_value, bool):
+            return max(0, min(3, int(round(raw_value))))
+        mapping = {
+            'off': 0,
+            'false': 0,
+            '0': 0,
+            'yok': 0,
+            'kapali': 0,
+            'kapalı': 0,
+            'low': 1,
+            'az': 1,
+            '1': 1,
+            'medium': 2,
+            'orta': 2,
+            '2': 2,
+            'high': 3,
+            'true': 3,
+            'on': 3,
+            'acik': 3,
+            'açık': 3,
+            'cok': 3,
+            'çok': 3,
+            '3': 3,
+        }
+        return mapping.get(str(raw_value or '').strip().lower(), 3)
+
+    def _gamepad_rumble_level_from_slider_value(self, slider_value: int) -> str:
+        helper = getattr(self.settings_manager, 'gamepad_rumble_level_from_slider', None)
+        if callable(helper):
+            try:
+                return str(helper(slider_value))
+            except Exception:
+                pass
+        mapping = {0: 'off', 1: 'low', 2: 'medium', 3: 'high'}
+        return mapping.get(max(0, min(3, int(round(slider_value)))), 'high')
+
+    def _gamepad_rumble_label(self, slider_value: int | None = None) -> str:
+        slider = self._gamepad_rumble_slider_value() if slider_value is None else self._gamepad_rumble_slider_value(slider_value)
+        level = self._gamepad_rumble_level_from_slider_value(slider)
+        labels = {
+            'off': _t('gp_rumble_off', 'Yok'),
+            'low': _t('gp_rumble_low', 'Az'),
+            'medium': _t('gp_rumble_medium', 'Orta'),
+            'high': _t('gp_rumble_high', 'Çok'),
+        }
+        return labels.get(level, _t('gp_rumble_high', 'Çok'))
 
     def _particle_effects_level_to_slider_value(self, value) -> int:
         helper = getattr(self.settings_manager, 'particle_effects_slider_value', None)
@@ -1063,6 +1135,8 @@ class TabbedSettingsScreen:
             val = self._get_value(key)
             if key == 'particle_effects':
                 return self._particle_effects_label(int(val)), (140, 220, 255)
+            if key == 'ctrl_gp_rumble':
+                return self._gamepad_rumble_label(int(val)), (255, 210, 140)
             if item.get('percent'):
                 text = f'{int(float(val) * 100)}%'
             else:
@@ -2810,6 +2884,8 @@ class TabbedSettingsScreen:
         # Değer metni
         if key == 'particle_effects':
             value_text = self._particle_effects_label(int(current))
+        elif key == 'ctrl_gp_rumble':
+            value_text = self._gamepad_rumble_label(int(current))
         elif item.get('percent'):
             value_text = f'{int(current * 100)}%'
         else:
@@ -2873,7 +2949,7 @@ class TabbedSettingsScreen:
                 fill_color = (0, 255, 160)    # neon green
             elif key == 'menu_transparency':
                 fill_color = (190, 60, 255)   # neon purple
-            elif key == 'particle_effects':
+            elif key in ('particle_effects', 'ctrl_gp_rumble'):
                 fill_color = (255, 170, 70)   # amber
             elif key in ('das_delay', 'das_repeat', 'soft_drop_speed'):
                 fill_color = (255, 80, 160)   # neon pink
