@@ -324,7 +324,7 @@ class RetroStyle:
         """Menü/ekran arka planı transparanlığını ayarla.
 
         Amaç: Ana sayfa vb. ekranlardaki arka plan, oyun alanlarının kullandığı
-        bg_transparency ile aynı davransın.
+        bg_transparency ile aynı davransın .
         """
         try:
             v = float(value)
