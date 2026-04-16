@@ -121,7 +121,10 @@ class FallingBlocksLayer:
                         screen.blit(cell_surf, (bx, by))
             return
         
-        # Fallback: basit çizim — RGB surface + per-surface alpha (macOS güvenli)
+        # Fallback: alpha'yı doğrudan yüzeye bake et.
+        # Per-surface set_alpha() bazı backend kombinasyonlarında düşen blokları
+        # görünmez hale getirebildiği için burada SRCALPHA surface kullanıp
+        # alfa değerini piksel kanalına yazıyoruz.
         for block in self.blocks:
             effective_alpha = max(0, min(255, int(block.alpha * om)))
             if effective_alpha <= 0:
@@ -133,10 +136,9 @@ class FallingBlocksLayer:
                     block.size - 1,
                     block.size - 1,
                 )
-                fb_surf = pygame.Surface((rect.width, rect.height))
-                fb_surf.fill(block.color)
-                pygame.draw.rect(fb_surf, (255, 255, 255), fb_surf.get_rect(), 1, border_radius=3)
-                fb_surf.set_alpha(effective_alpha)
+                fb_surf = pygame.Surface((rect.width, rect.height), pygame.SRCALPHA)
+                pygame.draw.rect(fb_surf, (*block.color, effective_alpha), fb_surf.get_rect(), border_radius=3)
+                pygame.draw.rect(fb_surf, (255, 255, 255, effective_alpha), fb_surf.get_rect(), 1, border_radius=3)
                 screen.blit(fb_surf, rect.topleft)
 
     def _get_cached_jelly_cell_surface(
@@ -150,15 +152,16 @@ class FallingBlocksLayer:
         if cached is not None:
             return cached
 
-        # RGB surface kullan (SRCALPHA DEĞİL).
-        # Jelly renderer tüm hücreyi renkle doldurduğundan şeffaf köşe yok —
-        # per-pixel alpha'ya ihtiyaç kalmaz.  Per-surface set_alpha() ile
-        # opaklık ayarlamak macOS Metal/OpenGL dahil tüm platformlarda güvenli
-        # çalışır (SRCALPHA + per-surface alpha çakışması riskini sıfırlar).
-        cell_surf = pygame.Surface((cell_size, cell_size))
+        cell_surf = pygame.Surface((cell_size, cell_size), pygame.SRCALPHA)
         draw_jelly_block(cell_surf, 0, 0, cell_size, color)
+        # macOS'ta SRCALPHA surface üzerinde set_alpha() ile per-surface alpha
+        # kullanımı Metal/OpenGL backend'inde tutarsız sonuç verebiliyor.
+        # Alpha'yı doğrudan piksel kanallarına bake ederek tüm platformlarda
+        # aynı görünümü koruyoruz.
         if alpha < 255:
-            cell_surf.set_alpha(alpha)
+            alpha_mask = pygame.Surface((cell_size, cell_size), pygame.SRCALPHA)
+            alpha_mask.fill((255, 255, 255, alpha))
+            cell_surf.blit(alpha_mask, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
         self._jelly_cell_cache[key] = cell_surf
         return cell_surf
 
