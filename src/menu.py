@@ -1507,38 +1507,6 @@ class Menu:
             surface.blit(outline_orange, outline_rect.topleft)
             surface.blit(outline_cyan, outline_rect.topleft)
 
-        def _draw_coop_dual_outline(
-            surface: pygame.Surface,
-            outline_rect: pygame.Rect,
-            line_width: int,
-            green_alpha: int,
-            cyan_alpha: int,
-            corner_radius: int,
-        ) -> None:
-            COOP_GREEN = (80, 230, 160)
-            outline_green = pygame.Surface(outline_rect.size, pygame.SRCALPHA)
-            outline_cyan = pygame.Surface(outline_rect.size, pygame.SRCALPHA)
-            local_rect = outline_green.get_rect()
-            pygame.draw.rect(outline_green, (*COOP_GREEN, green_alpha), local_rect, line_width, border_radius=corner_radius)
-            pygame.draw.rect(outline_cyan, (*UIColors.NEON_CYAN[:3], cyan_alpha), local_rect, line_width, border_radius=corner_radius)
-
-            green_mask = pygame.Surface(outline_rect.size, pygame.SRCALPHA)
-            cyan_mask = pygame.Surface(outline_rect.size, pygame.SRCALPHA)
-            pygame.draw.polygon(
-                green_mask,
-                (255, 255, 255, 255),
-                [(0, 0), (0, local_rect.height - 1), (local_rect.width - 1, local_rect.height - 1)],
-            )
-            pygame.draw.polygon(
-                cyan_mask,
-                (255, 255, 255, 255),
-                [(0, 0), (local_rect.width - 1, 0), (local_rect.width - 1, local_rect.height - 1)],
-            )
-            outline_green.blit(green_mask, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
-            outline_cyan.blit(cyan_mask, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
-            surface.blit(outline_green, outline_rect.topleft)
-            surface.blit(outline_cyan, outline_rect.topleft)
-
         is_highlighted = selected or hover
         hover_growth_w = sp(10)
         hover_growth_h = sp(8)
@@ -1607,31 +1575,8 @@ class Menu:
                 pvp_orange_alpha = 182 if is_highlighted else 160
                 pvp_cyan_alpha = 255 if is_highlighted else 232
 
-        coop_outline_side: str | None = None
-        coop_green_alpha = 190
-        coop_cyan_alpha = 190
         if coop_micro_prepass:
             self._draw_panel_micro_content(draw_rect, panel_key, accent_color, panel_context, hover, target_surface=target_surface)
-            try:
-                mouse_pos = get_mouse_pos()
-            except Exception:
-                mouse_pos = None
-
-            if mouse_pos and self.coop_local_polygon and _point_in_polygon(mouse_pos, self.coop_local_polygon):
-                coop_outline_side = 'local'
-            elif mouse_pos and self.coop_online_polygon and _point_in_polygon(mouse_pos, self.coop_online_polygon):
-                coop_outline_side = 'online'
-            elif selected:
-                coop_outline_side = self._coop_split_selection
-
-            coop_green_alpha = 222 if is_highlighted else 190
-            coop_cyan_alpha = 222 if is_highlighted else 190
-            if coop_outline_side == 'local':
-                coop_green_alpha = 255 if is_highlighted else 232
-                coop_cyan_alpha = 182 if is_highlighted else 160
-            elif coop_outline_side == 'online':
-                coop_green_alpha = 182 if is_highlighted else 160
-                coop_cyan_alpha = 255 if is_highlighted else 232
 
         hide_panel_title = panel_key in ('pvp_2_players', 'coop_mode')
 
@@ -2404,29 +2349,6 @@ class Menu:
             # Co-op renk paleti: local = yeşil, online = cyan
             COOP_LOCAL_COLOR = (80, 230, 160)
             COOP_ONLINE_COLOR = UIColors.NEON_CYAN
-
-            halves = [
-                (
-                    'local',
-                    local_poly,
-                    COOP_LOCAL_COLOR,
-                    (10, 52, 36),
-                    t('menu_dashboard_coop_local_label', 'Local Co-op'),
-                    t('menu_dashboard_coop_local_sub', '2 Oyuncu'),
-                    local_hover,
-                    (s(22), split_rect.height - s(24)),
-                ),
-                (
-                    'online',
-                    online_poly,
-                    COOP_ONLINE_COLOR,
-                    (8, 50, 62),
-                    t('menu_dashboard_coop_online_label', 'Online Co-op'),
-                    t('menu_dashboard_coop_online_sub', 'Steam 2P'),
-                    online_hover,
-                    (split_rect.width - s(22), s(24)),
-                ),
-            ]
 
             def _coop_diag_x(y_pos: int) -> int:
                 rel = (y_pos - split_rect.top) / max(1, split_rect.height)
