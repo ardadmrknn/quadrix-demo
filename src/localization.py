@@ -16055,6 +16055,7 @@ TRANSLATIONS = {
         'ko': '효과 불투명도',
     },
     'particle_effects': {
+        'tr': 'Parçacık Efektleri',
         'en': 'Particle Effects',
         'de': 'Partikeleffekte',
         'fr': 'Effets de particules',
