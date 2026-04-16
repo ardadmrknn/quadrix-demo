@@ -53,7 +53,7 @@ DEFAULT_CONTROLS = {
     },
     'gamepad': {
         'enabled': True,
-        'rumble': True,
+        'rumble': 'high',
         'deadzone': 0.35,
         'mouse_sensitivity': 1.0,
         # Oyun içi butonlar
@@ -100,6 +100,23 @@ PARTICLE_EFFECT_MULTIPLIERS = {
     'low': 0.55,
     'medium': 1.0,
     'high': 1.7,
+}
+
+GAMEPAD_RUMBLE_LEVELS = ('off', 'low', 'medium', 'high')
+GAMEPAD_RUMBLE_SLIDER_TO_LEVEL = {
+    0: 'off',
+    1: 'low',
+    2: 'medium',
+    3: 'high',
+}
+GAMEPAD_RUMBLE_LEVEL_TO_SLIDER = {
+    level: slider for slider, level in GAMEPAD_RUMBLE_SLIDER_TO_LEVEL.items()
+}
+GAMEPAD_RUMBLE_MULTIPLIERS = {
+    'off': 0.0,
+    'low': 0.45,
+    'medium': 0.75,
+    'high': 1.0,
 }
 
 DEFAULT_MENU_MUSIC_PLAYLIST = ['main_1']
@@ -533,6 +550,66 @@ class SettingsManager:
     def particle_effects_enabled_for_value(cls, value) -> bool:
         return cls.normalize_particle_effects_value(value) != 'off'
 
+    @classmethod
+    def normalize_gamepad_rumble_value(cls, value):
+        if isinstance(value, bool):
+            return 'high' if value else 'off'
+
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            slider = max(0, min(3, int(round(value))))
+            return GAMEPAD_RUMBLE_SLIDER_TO_LEVEL.get(slider, 'high')
+
+        text = str(value or '').strip().lower()
+        if not text:
+            return 'high'
+
+        aliases = {
+            'false': 'off',
+            '0': 'off',
+            'off': 'off',
+            'yok': 'off',
+            'none': 'off',
+            'kapali': 'off',
+            'kapalı': 'off',
+            'true': 'high',
+            'on': 'high',
+            'acik': 'high',
+            'açık': 'high',
+            '1': 'low',
+            '2': 'medium',
+            '3': 'high',
+            'low': 'low',
+            'az': 'low',
+            'medium': 'medium',
+            'orta': 'medium',
+            'high': 'high',
+            'cok': 'high',
+            'çok': 'high',
+        }
+        normalized = aliases.get(text, text)
+        if normalized not in GAMEPAD_RUMBLE_LEVELS:
+            return 'high'
+        return normalized
+
+    @classmethod
+    def gamepad_rumble_slider_value(cls, value) -> int:
+        level = cls.normalize_gamepad_rumble_value(value)
+        return GAMEPAD_RUMBLE_LEVEL_TO_SLIDER.get(level, 3)
+
+    @classmethod
+    def gamepad_rumble_level_from_slider(cls, slider_value: int) -> str:
+        slider = max(0, min(3, int(round(slider_value))))
+        return GAMEPAD_RUMBLE_SLIDER_TO_LEVEL.get(slider, 'high')
+
+    @classmethod
+    def gamepad_rumble_multiplier_for_value(cls, value) -> float:
+        level = cls.normalize_gamepad_rumble_value(value)
+        return float(GAMEPAD_RUMBLE_MULTIPLIERS.get(level, 1.0))
+
+    @classmethod
+    def gamepad_rumble_enabled_for_value(cls, value) -> bool:
+        return cls.normalize_gamepad_rumble_value(value) != 'off'
+
     def _normalize_display_settings_inplace(self, data):
         if not isinstance(data, dict):
             return False
@@ -764,6 +841,19 @@ class SettingsManager:
 
     def particle_effects_enabled(self) -> bool:
         return self.get_particle_effects_level() != 'off'
+
+    def get_gamepad_rumble_level(self) -> str:
+        controls = self.get_controls()
+        gamepad_cfg = controls.get('gamepad', {})
+        return self.normalize_gamepad_rumble_value(
+            gamepad_cfg.get('rumble', DEFAULT_CONTROLS.get('gamepad', {}).get('rumble', 'high'))
+        )
+
+    def get_gamepad_rumble_multiplier(self) -> float:
+        return self.gamepad_rumble_multiplier_for_value(self.get_gamepad_rumble_level())
+
+    def gamepad_rumble_enabled(self) -> bool:
+        return self.get_gamepad_rumble_level() != 'off'
     
     def set(self, key, value):
         """Ayar değerini güncelle ve kaydet"""
@@ -1002,6 +1092,9 @@ class SettingsManager:
     def _merge_controls(self, existing):
         merged = self.get_default_controls()
         if not isinstance(existing, dict):
+            merged['gamepad']['rumble'] = self.normalize_gamepad_rumble_value(
+                merged['gamepad'].get('rumble', 'high')
+            )
             return merged
         single = existing.get('single_player')
         if isinstance(single, dict):
@@ -1047,5 +1140,9 @@ class SettingsManager:
                                     merged['gamepad'][key][slot] = int(slot_value)
                     elif isinstance(value, (str, int, float, bool)):
                         merged['gamepad'][key] = value
+
+        merged['gamepad']['rumble'] = self.normalize_gamepad_rumble_value(
+            merged['gamepad'].get('rumble', 'high')
+        )
 
         return merged

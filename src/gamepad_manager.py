@@ -309,6 +309,8 @@ class GamepadManager:
 
         # Vibration/rumble desteği
         self.rumble_enabled = True
+        self.rumble_level = 'high'
+        self.rumble_multiplier = 1.0
 
         # Aktif bağlam (oyun içi veya menü)
         self._context = self.CONTEXT_MENU
@@ -335,7 +337,54 @@ class GamepadManager:
             controls = sm.get_controls()
             gp_cfg = controls.get('gamepad', {})
             self.enabled = gp_cfg.get('enabled', True)
-            self.rumble_enabled = gp_cfg.get('rumble', True)
+            normalize_rumble = getattr(SettingsManager, 'normalize_gamepad_rumble_value', None)
+            rumble_multiplier_for_value = getattr(SettingsManager, 'gamepad_rumble_multiplier_for_value', None)
+            rumble_enabled_for_value = getattr(SettingsManager, 'gamepad_rumble_enabled_for_value', None)
+            rumble_value = gp_cfg.get('rumble', 'high')
+            if callable(normalize_rumble):
+                self.rumble_level = str(normalize_rumble(rumble_value))
+            else:
+                if isinstance(rumble_value, bool):
+                    self.rumble_level = 'high' if rumble_value else 'off'
+                elif isinstance(rumble_value, (int, float)) and not isinstance(rumble_value, bool):
+                    slider_value = max(0, min(3, int(round(rumble_value))))
+                    self.rumble_level = {0: 'off', 1: 'low', 2: 'medium', 3: 'high'}.get(slider_value, 'high')
+                else:
+                    rumble_text = str(rumble_value or '').strip().lower()
+                    rumble_aliases = {
+                        'false': 'off',
+                        '0': 'off',
+                        'off': 'off',
+                        'yok': 'off',
+                        'none': 'off',
+                        'kapali': 'off',
+                        'kapalı': 'off',
+                        '1': 'low',
+                        'low': 'low',
+                        'az': 'low',
+                        '2': 'medium',
+                        'medium': 'medium',
+                        'orta': 'medium',
+                        'true': 'high',
+                        'on': 'high',
+                        'acik': 'high',
+                        'açık': 'high',
+                        '3': 'high',
+                        'high': 'high',
+                        'cok': 'high',
+                        'çok': 'high',
+                    }
+                    self.rumble_level = rumble_aliases.get(rumble_text, 'high')
+            if callable(rumble_multiplier_for_value):
+                self.rumble_multiplier = float(rumble_multiplier_for_value(self.rumble_level))
+            else:
+                self.rumble_multiplier = 0.0 if self.rumble_level == 'off' else 1.0
+            if callable(rumble_enabled_for_value):
+                self.rumble_enabled = bool(rumble_enabled_for_value(self.rumble_level))
+            else:
+                self.rumble_enabled = self.rumble_level != 'off'
+            if not self.rumble_enabled or self.rumble_multiplier <= 0.0:
+                self.stop_rumble()
             dz = gp_cfg.get('deadzone', 0.35)
             if isinstance(dz, (int, float)):
                 self.DEADZONE = max(0.1, min(0.9, float(dz)))
@@ -1747,17 +1796,34 @@ class GamepadManager:
             high_frequency: Yüksek frekans motor gücü (0.0 – 1.0)
             duration_ms: Titreşim süresi (ms)
         """
-        if not self.rumble_enabled:
+        if not getattr(self, 'rumble_enabled', True):
+            return
+        multiplier = float(getattr(self, 'rumble_multiplier', 1.0) or 0.0)
+        if multiplier <= 0.0:
             return
         gp = self.get_active_gamepad()
         if not gp or not gp.joystick:
             return
         try:
+            scaled_low = max(0.0, min(1.0, float(low_frequency) * multiplier))
+        except Exception:
+            scaled_low = 0.0
+        try:
+            scaled_high = max(0.0, min(1.0, float(high_frequency) * multiplier))
+        except Exception:
+            scaled_high = 0.0
+        try:
+            scaled_duration = max(0, int(duration_ms))
+        except Exception:
+            scaled_duration = 0
+        if scaled_low <= 0.0 and scaled_high <= 0.0:
+            return
+        try:
             controller = getattr(gp, 'controller', None)
             if controller is not None:
-                controller.rumble(low_frequency, high_frequency, duration_ms)
+                controller.rumble(scaled_low, scaled_high, scaled_duration)
             else:
-                gp.joystick.rumble(low_frequency, high_frequency, duration_ms)
+                gp.joystick.rumble(scaled_low, scaled_high, scaled_duration)
         except Exception:
             pass  # Tüm kontrolcüler rumble desteklemez
 

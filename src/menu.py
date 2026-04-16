@@ -5518,7 +5518,7 @@ class ControlSettingsScreen:
         """Genel ayarlar: etkin, titreşim, deadzone."""
         return [
             ('enabled',    t('gp_enabled'),        'toggle'),
-            ('rumble',     t('gp_rumble'),          'toggle'),
+            ('rumble',     t('gp_rumble'),          'slider'),
             ('deadzone',   t('gp_deadzone'),        'slider'),
             ('mouse_sensitivity', t('gp_mouse_sensitivity'), 'slider'),
         ]
@@ -5566,6 +5566,149 @@ class ControlSettingsScreen:
             cfg = dict(DEFAULT_CONTROLS.get('gamepad', {}))
             self.control_config['gamepad'] = cfg
         return cfg
+
+    def _gamepad_rumble_slider_value(self, value) -> int:
+        helper = getattr(self.settings_manager, 'gamepad_rumble_slider_value', None)
+        if callable(helper):
+            try:
+                return int(helper(value))
+            except Exception:
+                pass
+        if isinstance(value, bool):
+            return 3 if value else 0
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            return max(0, min(3, int(round(value))))
+        mapping = {
+            'off': 0,
+            'false': 0,
+            '0': 0,
+            'yok': 0,
+            'kapali': 0,
+            'kapalı': 0,
+            'low': 1,
+            'az': 1,
+            '1': 1,
+            'medium': 2,
+            'orta': 2,
+            '2': 2,
+            'high': 3,
+            'true': 3,
+            'on': 3,
+            'acik': 3,
+            'açık': 3,
+            'cok': 3,
+            'çok': 3,
+            '3': 3,
+        }
+        return mapping.get(str(value or '').strip().lower(), 3)
+
+    def _gamepad_rumble_level_from_slider_value(self, slider_value: int) -> str:
+        helper = getattr(self.settings_manager, 'gamepad_rumble_level_from_slider', None)
+        if callable(helper):
+            try:
+                return str(helper(slider_value))
+            except Exception:
+                pass
+        mapping = {0: 'off', 1: 'low', 2: 'medium', 3: 'high'}
+        return mapping.get(max(0, min(3, int(round(slider_value)))), 'high')
+
+    def _gamepad_rumble_label(self, slider_value: int | None = None) -> str:
+        current = self._gamepad_cfg().get('rumble', 'high') if slider_value is None else slider_value
+        slider = self._gamepad_rumble_slider_value(current)
+        level = self._gamepad_rumble_level_from_slider_value(slider)
+        labels = {
+            'off': t('gp_rumble_off'),
+            'low': t('gp_rumble_low'),
+            'medium': t('gp_rumble_medium'),
+            'high': t('gp_rumble_high'),
+        }
+        return labels.get(level, t('gp_rumble_high'))
+
+    def _set_gamepad_rumble_from_slider(self, slider_value: int):
+        cfg = self._gamepad_cfg()
+        cfg['rumble'] = self._gamepad_rumble_level_from_slider_value(slider_value)
+
+    def _cycle_gamepad_rumble(self, step: int, *, wrap: bool = False):
+        cfg = self._gamepad_cfg()
+        current = self._gamepad_rumble_slider_value(cfg.get('rumble', 'high'))
+        if wrap:
+            new_value = (current + step) % 4
+        else:
+            new_value = max(0, min(3, current + step))
+        self._set_gamepad_rumble_from_slider(new_value)
+
+    def _draw_gamepad_rumble_row(self, rect, label, selected):
+        retro_style.draw_setting_row(
+            self.screen, rect, label.upper(), None,
+            selected=selected,
+            label_color=(255, 255, 255) if selected else (200, 200, 200),
+            strip_color=(255, 170, 70),
+            kind='default',
+        )
+
+        slider_value = self._gamepad_rumble_slider_value(self._gamepad_cfg().get('rumble', 'high'))
+        ratio = slider_value / 3.0
+        value_text = self._gamepad_rumble_label(slider_value)
+
+        arrow_font = retro_style.get_font(20, bold=True)
+        value_font = retro_style.get_fitting_font(value_text, 18, 90, bold=True)
+        arrow_color = (80, 160, 255) if selected else (100, 120, 150)
+        value_color = (255, 225, 170) if selected else (220, 205, 170)
+
+        right_arrow = arrow_font.render('>', True, arrow_color)
+        right_x = rect.right - 24 - right_arrow.get_width()
+        right_arrow_rect = right_arrow.get_rect(midleft=(right_x, rect.centery))
+        self.screen.blit(right_arrow, right_arrow_rect)
+
+        value_surf = value_font.render(value_text, True, value_color)
+        value_rect = value_surf.get_rect(midright=(right_arrow_rect.left - 10, rect.centery))
+        self.screen.blit(value_surf, value_rect)
+
+        bar_right = value_rect.left - 14
+        bar_left = rect.x + int(rect.width * 0.48)
+
+        left_arrow = arrow_font.render('<', True, arrow_color)
+        left_arrow_rect = left_arrow.get_rect(midright=(bar_left - 6, rect.centery))
+        self.screen.blit(left_arrow, left_arrow_rect)
+
+        bar_left += 2
+        if bar_right <= bar_left + 40:
+            return
+
+        bar_h = 14
+        bar_rect = pygame.Rect(bar_left, rect.centery - bar_h // 2, bar_right - bar_left, bar_h)
+        radius = bar_h // 2
+
+        track_surf = pygame.Surface((bar_rect.width, bar_rect.height), pygame.SRCALPHA)
+        pygame.draw.rect(track_surf, (20, 28, 48, 200), track_surf.get_rect(), border_radius=radius)
+        pygame.draw.rect(track_surf, (60, 80, 120, 130), track_surf.get_rect(), 1, border_radius=radius)
+        highlight = pygame.Surface((max(1, bar_rect.width - 6), 2), pygame.SRCALPHA)
+        highlight.fill((255, 255, 255, 14))
+        track_surf.blit(highlight, (3, 3))
+        self.screen.blit(track_surf, bar_rect.topleft)
+
+        fill_width = int(bar_rect.width * ratio)
+        fill_color = (255, 170, 70)
+        if fill_width > 2:
+            fill_surf = pygame.Surface((fill_width, bar_rect.height), pygame.SRCALPHA)
+            pygame.draw.rect(fill_surf, (*fill_color, 225), fill_surf.get_rect(), border_radius=radius)
+            fill_glow = pygame.Surface((max(1, fill_width - 8), 3), pygame.SRCALPHA)
+            fill_glow.fill((255, 255, 255, 70))
+            fill_surf.blit(fill_glow, (4, 2))
+            self.screen.blit(fill_surf, bar_rect.topleft)
+
+        knob_x = bar_rect.x + fill_width
+        knob_r = 9
+        if selected:
+            glow_pad = 6
+            glow_surf = pygame.Surface((knob_r * 2 + glow_pad * 2, knob_r * 2 + glow_pad * 2), pygame.SRCALPHA)
+            for idx, alpha in enumerate((20, 40, 60)):
+                glow_r = knob_r + glow_pad - idx * 2
+                pygame.draw.circle(glow_surf, (*fill_color, alpha), (knob_r + glow_pad, knob_r + glow_pad), glow_r)
+            self.screen.blit(glow_surf, (knob_x - knob_r - glow_pad, rect.centery - knob_r - glow_pad))
+        pygame.draw.circle(self.screen, fill_color, (knob_x, rect.centery), knob_r, 2)
+        pygame.draw.circle(self.screen, (255, 255, 255) if selected else (210, 220, 235), (knob_x, rect.centery), knob_r - 2)
+        pygame.draw.circle(self.screen, (255, 255, 255), (knob_x - 2, rect.centery - 3), max(1, knob_r // 4))
 
     # ─── Input ──────────────────────────────────────────────────────────
 
@@ -5730,7 +5873,9 @@ class ControlSettingsScreen:
             cfg[row_key] = not cfg.get(row_key, True)
             self._persist_controls()
         elif row_type == 'slider':
-            if row_key == 'deadzone':
+            if row_key == 'rumble':
+                self._cycle_gamepad_rumble(1, wrap=True)
+            elif row_key == 'deadzone':
                 # Enter ile 0.05 artır, sınırlama dahilinde
                 val = cfg.get('deadzone', 0.35)
                 val = round(val + 0.05, 2)
@@ -5762,7 +5907,9 @@ class ControlSettingsScreen:
             cfg[row_key] = not cfg.get(row_key, True)
             self._persist_controls()
         elif row_type == 'slider':
-            if row_key == 'deadzone':
+            if row_key == 'rumble':
+                self._cycle_gamepad_rumble(1 if key == pygame.K_RIGHT else -1)
+            elif row_key == 'deadzone':
                 val = cfg.get('deadzone', 0.35)
                 delta = 0.05 if key == pygame.K_RIGHT else -0.05
                 val = round(max(0.1, min(0.9, val + delta)), 2)
@@ -6013,19 +6160,30 @@ class ControlSettingsScreen:
                     kind='default',
                 )
             elif row_type == 'slider':
-                if row_key == 'deadzone':
+                if row_key == 'rumble':
+                    self._draw_gamepad_rumble_row(rect, label, selected)
+                elif row_key == 'deadzone':
                     val = cfg.get('deadzone', 0.35)
+                    val_text = f'◀  {val:.2f}  ▶'
+                    retro_style.draw_setting_row(
+                        self.screen, rect, label.upper(), val_text,
+                        selected=selected,
+                        label_color=(255, 255, 255) if selected else (200, 200, 200),
+                        value_color=(180, 180, 255),
+                        strip_color=(100, 120, 200),
+                        kind='default',
+                    )
                 else:
                     val = cfg.get('mouse_sensitivity', 1.0)
-                val_text = f'◀  {val:.2f}  ▶'
-                retro_style.draw_setting_row(
-                    self.screen, rect, label.upper(), val_text,
-                    selected=selected,
-                    label_color=(255, 255, 255) if selected else (200, 200, 200),
-                    value_color=(180, 180, 255),
-                    strip_color=(100, 120, 200),
-                    kind='default',
-                )
+                    val_text = f'◀  {val:.2f}  ▶'
+                    retro_style.draw_setting_row(
+                        self.screen, rect, label.upper(), val_text,
+                        selected=selected,
+                        label_color=(255, 255, 255) if selected else (200, 200, 200),
+                        value_color=(180, 180, 255),
+                        strip_color=(100, 120, 200),
+                        kind='default',
+                    )
             elif row_type == 'info':
                 # Bilgi satırı (sadece gösterim)
                 info_value = 'SOL STICK'

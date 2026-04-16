@@ -4,6 +4,8 @@ import copy
 from types import SimpleNamespace
 
 import pygame
+import pytest
+import settings_manager as settings_manager_module
 
 import gamepad_manager as gamepad_manager_module
 from gamepad_manager import GamepadManager, GamepadState, GamepadType, DEFAULT_GAMEPAD_BINDINGS
@@ -22,6 +24,8 @@ class _DummyJoystick:
         self.buttons = buttons or {}
         self.hats = hats
         self.instance_id = instance_id
+        self.rumble_calls: list[tuple[float, float, int]] = []
+        self.stop_rumble_calls = 0
 
     def get_init(self) -> bool:
         return True
@@ -50,6 +54,12 @@ class _DummyJoystick:
     def get_id(self) -> int:
         return self.instance_id
 
+    def rumble(self, low_frequency: float, high_frequency: float, duration_ms: int) -> None:
+        self.rumble_calls.append((low_frequency, high_frequency, duration_ms))
+
+    def stop_rumble(self) -> None:
+        self.stop_rumble_calls += 1
+
 
 class _DummyController:
     def __init__(
@@ -60,6 +70,8 @@ class _DummyController:
     ):
         self.buttons = buttons or {}
         self.axes = axes
+        self.rumble_calls: list[tuple[float, float, int]] = []
+        self.stop_rumble_calls = 0
 
     def get_init(self) -> bool:
         return True
@@ -72,6 +84,12 @@ class _DummyController:
 
     def attached(self) -> bool:
         return True
+
+    def rumble(self, low_frequency: float, high_frequency: float, duration_ms: int) -> None:
+        self.rumble_calls.append((low_frequency, high_frequency, duration_ms))
+
+    def stop_rumble(self) -> None:
+        self.stop_rumble_calls += 1
 
 
 class _DummySurface:
@@ -87,6 +105,8 @@ def _make_manager() -> GamepadManager:
     manager.enabled = True
     manager.gamepads = {}
     manager.rumble_enabled = False
+    manager.rumble_level = 'off'
+    manager.rumble_multiplier = 0.0
     manager.MOUSE_SPEED = 20.0
     manager.MOUSE_SENSITIVITY = 1.0
     manager.MOUSE_DEADZONE = 0.12
@@ -153,6 +173,62 @@ def test_right_stick_drift_does_not_move_mouse(monkeypatch):
     assert events == []
     assert display['calls'] == []
     assert gp.mouse_control_active is False
+
+
+def test_rumble_scales_motor_strength_by_multiplier():
+    manager = _make_manager()
+    joystick = _DummyJoystick((0.0, 0.0))
+    manager.gamepads[0] = GamepadState(joystick=joystick)
+    manager.rumble_enabled = True
+    manager.rumble_level = 'low'
+    manager.rumble_multiplier = 0.45
+
+    manager.rumble(0.8, 1.0, 400)
+
+    assert joystick.rumble_calls == [
+        (pytest.approx(0.36), pytest.approx(0.45), 400),
+    ]
+
+
+def test_rumble_skips_when_level_is_off():
+    manager = _make_manager()
+    joystick = _DummyJoystick((0.0, 0.0))
+    manager.gamepads[0] = GamepadState(joystick=joystick)
+    manager.rumble_enabled = False
+    manager.rumble_level = 'off'
+    manager.rumble_multiplier = 0.0
+
+    manager.rumble(0.8, 1.0, 400)
+
+    assert joystick.rumble_calls == []
+
+
+def test_load_settings_stops_active_rumble_when_disabled(monkeypatch):
+    manager = _make_manager()
+    joystick = _DummyJoystick((0.0, 0.0))
+    manager.gamepads[0] = GamepadState(joystick=joystick)
+    manager.rumble_enabled = True
+    manager.rumble_level = 'high'
+    manager.rumble_multiplier = 1.0
+
+    class _FakeSettingsManager:
+        def get_controls(self):
+            return {
+                'gamepad': {
+                    'enabled': True,
+                    'rumble': 'off',
+                    'deadzone': 0.35,
+                    'mouse_sensitivity': 1.0,
+                }
+            }
+
+    monkeypatch.setattr(settings_manager_module, 'SettingsManager', _FakeSettingsManager)
+
+    manager._load_settings()
+
+    assert manager.rumble_enabled is False
+    assert manager.rumble_multiplier == 0.0
+    assert joystick.stop_rumble_calls == 1
 
 
 def test_initial_right_stick_bias_becomes_neutral_without_cursor_drag(monkeypatch):
