@@ -2374,19 +2374,20 @@ class TabbedSettingsScreen:
         shadow_radius = int(metrics['panel_shadow_radius'])
         border_radius = int(metrics['panel_border_radius'])
         border_width = int(metrics['panel_border_width'])
+        _sma = retro_style._scale_menu_alpha
 
         # Gölge
         shadow = pygame.Surface((rect.width + shadow_pad, rect.height + shadow_pad), pygame.SRCALPHA)
-        pygame.draw.rect(shadow, (0, 0, 0, 60), shadow.get_rect(), border_radius=shadow_radius)
+        pygame.draw.rect(shadow, (0, 0, 0, _sma(60)), shadow.get_rect(), border_radius=shadow_radius)
         self.screen.blit(shadow, (rect.x + shadow_offset, rect.y + shadow_offset))
 
         # Ana panel
         panel_surf = pygame.Surface(rect.size, pygame.SRCALPHA)
-        panel_surf.fill((12, 16, 32, 235))
+        panel_surf.fill((12, 16, 32, _sma(235)))
         # Üst kenar highlight
         highlight_depth = min(self._s(30, minimum=18), rect.height // 4)
         for y in range(highlight_depth):
-            alpha = int(15 * (1 - y / max(1, highlight_depth)))
+            alpha = _sma(int(15 * (1 - y / max(1, highlight_depth))))
             pygame.draw.line(panel_surf, (255, 255, 255, alpha), (0, y), (rect.width, y))
         self.screen.blit(panel_surf, rect.topleft)
 
@@ -2433,11 +2434,12 @@ class TabbedSettingsScreen:
             label = _tab_label(tab_def)
 
             # Tab arka planı
+            _sma = retro_style._scale_menu_alpha
             tab_surf = pygame.Surface(tab_rect.size, pygame.SRCALPHA)
             if is_active:
-                tab_surf.fill((35, 55, 90, 220))
+                tab_surf.fill((35, 55, 90, _sma(220)))
             else:
-                tab_surf.fill((20, 28, 48, 160))
+                tab_surf.fill((20, 28, 48, _sma(160)))
             self.screen.blit(tab_surf, tab_rect.topleft)
 
             # Alt çizgi (aktif sekme)
@@ -2542,11 +2544,12 @@ class TabbedSettingsScreen:
     ) -> dict | None:
         """Bir ayar satırını çiz."""
         s = self._s
+        _sma = retro_style._scale_menu_alpha
         itype = item['type']
         label = _item_label(item)
 
         # Arka plan (alternatif renkler, seçili vurgu)
-        bg_alpha = 180 if selected else 130
+        bg_alpha = _sma(180) if selected else _sma(130)
         bg_color = (28, 38, 60) if selected else (18, 24, 42)
         row_surf = pygame.Surface(rect.size, pygame.SRCALPHA)
         row_surf.fill((*bg_color, bg_alpha))
@@ -2554,13 +2557,13 @@ class TabbedSettingsScreen:
             # Üst highlight
             highlight_depth = min(s(8, minimum=6), rect.height // 4)
             for yy in range(highlight_depth):
-                a = int(15 * (1 - yy / max(1, highlight_depth)))
+                a = _sma(int(15 * (1 - yy / max(1, highlight_depth))))
                 pygame.draw.line(row_surf, (255, 255, 255, a), (0, yy), (rect.width, yy))
         self.screen.blit(row_surf, rect.topleft)
 
         # Kenar
         if selected:
-            pygame.draw.rect(self.screen, (80, 160, 255, 180), rect, 1, border_radius=s(6, minimum=4))
+            pygame.draw.rect(self.screen, (80, 160, 255, _sma(180)), rect, 1, border_radius=s(6, minimum=4))
         else:
             pygame.draw.rect(self.screen, (40, 50, 70), rect, 1, border_radius=s(6, minimum=4))
 
@@ -2878,11 +2881,12 @@ class TabbedSettingsScreen:
                 fill_color = (0, 180, 255)    # neon blue
 
             # Track – pill şekli, derinlik gölgesi
+            _sma = retro_style._scale_menu_alpha
             track_surf = pygame.Surface((bar_rect.width, bar_h), pygame.SRCALPHA)
-            pygame.draw.rect(track_surf, (20, 28, 48, 200), track_surf.get_rect(), border_radius=r)
-            pygame.draw.rect(track_surf, (60, 80, 120, 130), track_surf.get_rect(), 1, border_radius=r)
+            pygame.draw.rect(track_surf, (20, 28, 48, _sma(200)), track_surf.get_rect(), border_radius=r)
+            pygame.draw.rect(track_surf, (60, 80, 120, _sma(130)), track_surf.get_rect(), 1, border_radius=r)
             hl_t = pygame.Surface((max(1, bar_rect.width - s(6, minimum=4)), s(2, minimum=2)), pygame.SRCALPHA)
-            hl_t.fill((255, 255, 255, 14))
+            hl_t.fill((255, 255, 255, _sma(14)))
             track_surf.blit(hl_t, (s(3, minimum=2), s(3, minimum=2)))
             self.screen.blit(track_surf, bar_rect.topleft)
 
@@ -2890,14 +2894,14 @@ class TabbedSettingsScreen:
             fill_w = int(bar_rect.width * ratio)
             if fill_w > 2:
                 fill_surf = pygame.Surface((fill_w, bar_h), pygame.SRCALPHA)
-                pygame.draw.rect(fill_surf, (*fill_color, 220), fill_surf.get_rect(), border_radius=r)
+                pygame.draw.rect(fill_surf, (*fill_color, _sma(220)), fill_surf.get_rect(), border_radius=r)
                 # üst parlak vurgu
                 hl_f = pygame.Surface((max(1, fill_w - s(8, minimum=6)), s(3, minimum=2)), pygame.SRCALPHA)
-                hl_f.fill((255, 255, 255, 70))
+                hl_f.fill((255, 255, 255, _sma(70)))
                 fill_surf.blit(hl_f, (s(4, minimum=3), s(2, minimum=1)))
                 # hafif glow overlay
                 glow_c = tuple(min(255, c + 55) for c in fill_color)
-                pygame.draw.rect(fill_surf, (*glow_c, 45), fill_surf.get_rect(), border_radius=r)
+                pygame.draw.rect(fill_surf, (*glow_c, _sma(45)), fill_surf.get_rect(), border_radius=r)
                 self.screen.blit(fill_surf, bar_rect.topleft)
 
             # Knob – glow + dış halka + iç daire + vurgu nokta

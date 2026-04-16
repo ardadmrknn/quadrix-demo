@@ -151,7 +151,14 @@ class FallingBlocksLayer:
 
         cell_surf = pygame.Surface((cell_size, cell_size), pygame.SRCALPHA)
         draw_jelly_block(cell_surf, 0, 0, cell_size, color)
-        cell_surf.set_alpha(alpha)
+        # macOS'ta SRCALPHA surface üzerinde set_alpha() (per-surface alpha) ile
+        # per-pixel alpha birleşimi Metal/OpenGL backend'inde tutarsız sonuç verir.
+        # Alpha'yı doğrudan piksel kanallarına BLEND_RGBA_MULT ile bake ederek
+        # tüm platformlarda aynı görünümü garanti ederiz.
+        if alpha < 255:
+            _alpha_mask = pygame.Surface((cell_size, cell_size), pygame.SRCALPHA)
+            _alpha_mask.fill((255, 255, 255, alpha))
+            cell_surf.blit(_alpha_mask, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
         self._jelly_cell_cache[key] = cell_surf
         return cell_surf
 
