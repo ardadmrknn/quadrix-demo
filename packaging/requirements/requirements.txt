@@ -122,7 +122,7 @@ pycryptodomex==3.23.0
 pydantic==2.11.7
 pydantic_core==2.33.2
 pyflakes==3.4.0
-pygame-ce>=2.5.6
+pygame-ce>=2.5.7
 pyinstaller-hooks-contrib==2025.9
 pyinstaller==6.16.0
 pyparsing==3.2.3

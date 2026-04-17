@@ -3,7 +3,7 @@
 **Tarih:** 2025-07  
 **Proje:** Quadrix (Pygame Tabanlı Tetris)  
 **Mevcut:** pygame 2.6.1, SDL 2.28.4, Python 3.12  
-**Hedef:** pygame-ce 2.5.6, SDL 2.32.10
+**Hedef:** pygame-ce 2.5.7, SDL 2.32.10
 
 ---
 
@@ -50,13 +50,13 @@ pygame-ce de **aynı temel soruna** sahip. İşte kaynaklar:
 
 2. **Renderer + logical_size**: pygame-ce'nin `Renderer` sınıfı `logical_size` özelliği ile cihazdan bağımsız çözünürlük ayarlayabilir. Bu, GPU hızlandırmalı render kullanarak Retina çözünürlükte çizim yapabilir. Ama bu, **tüm çizim mantığının yeniden yazılmasını** gerektirir (Surface → Texture geçişi).
 
-3. **SDL3 portu (devam ediyor)**: pygame-ce ekibi aktif olarak SDL3'e port çalışması yapıyor (2.5.3-2.5.6 release notlarında büyük porting çalışmaları:  display.c, surface.c, font, joystick, transform, draw, mask vb.). SDL3, HiDPI'yı daha iyi ele alıyor ama bu port henüz tamamlanmadı ve bir `pygame-ce 3.0` sürümü olarak planlanıyor.
+3. **SDL3 portu (devam ediyor)**: pygame-ce ekibi aktif olarak SDL3'e port çalışması yapıyor (2.5.3-2.5.7 release notlarında büyük porting çalışmaları:  display.c, surface.c, font, joystick, transform, draw, mask vb.). SDL3, HiDPI'yı daha iyi ele alıyor ama bu port henüz tamamlanmadı ve bir `pygame-ce 3.0` sürümü olarak planlanıyor.
 
 4. **Metal overlay çözümü** (taiyo66666-hash, Aralık 2025): Pygame penceresinin üzerine Metal view yerleştirip 1:1 pixel rendering yapan bir 3. parti çözüm var. Ama bu maintstream değil, sürdürülebilirliği tartışmalı.
 
 ### HiDPI Sonuç
 
-| Özellik | pygame 2.6.1 | pygame-ce 2.5.6 | pygame-ce 3.0 (gelecek) |
+| Özellik | pygame 2.6.1 | pygame-ce 2.5.7 | pygame-ce 3.0 (gelecek) |
 |---------|-------------|-----------------|------------------------|
 | Software renderer HiDPI | ❌ | ❌ | SDL3 ile ❓ muhtemelen |
 | OpenGL HiDPI (ALLOW_HIGHDPI) | ❌ (SDL2 sorunu) | ❌ (aynı SDL2 sorunu) | SDL3 ile ✅ muhtemelen |
@@ -143,7 +143,7 @@ Quadrix, PyInstaller ile macOS .app olarak paketleniyor (`tetris_macos.spec`). S
 2. `freesansbold.ttf` yolu: pygame-ce de aynı konumda tutuyor (uyumlu)
 3. Hidden imports: `pygame._sdl2.video` eklenebilir (gerekirse)
 4. SDL kütüphane dosyaları: pygame-ce kendi SDL2 bundle'ını içeriyor, ek işlem gerektirmez
-5. `requirements-macos.txt` ve `requirements.txt` güncellenmeli: `pygame==2.6.1` → `pygame-ce>=2.5.6`
+5. `requirements-macos.txt` ve `requirements.txt` güncellenmeli: `pygame==2.6.1` → `pygame-ce>=2.5.7`
 
 ### PyInstaller Risk: DÜŞÜK
 
@@ -204,7 +204,7 @@ Quadrix bir Tetris oyunu olduğundan, en çok etkilenecek alanlar:
 
 ### SDL Sürüm Farkı
 
-| | pygame 2.6.1 | pygame-ce 2.5.6 |
+| | pygame 2.6.1 | pygame-ce 2.5.7 |
 |---|---|---|
 | SDL | 2.28.4 | 2.32.10 |
 | SDL_image | ? | 2.8.8 |
@@ -222,10 +222,10 @@ Daha yeni SDL sürümleri: daha az bug, daha iyi platform desteği, güvenlik d�
 ### pygame-ce Profilil
 
 - **GitHub stars:** ~1,000+ (hızla büyüyor)
-- **Son release:** 2.5.6 (Ekim 2025) — 27 contributor, 429 commit, 106 PR
+- **Son release:** 2.5.7 (Mart 2026)
 - **Active maintainers:** @Starbuck5, @ankith26, @oddbookworm, @damusss, @Matiiss, @aatle, @zoldalma999, @bilhox, @MightyJosip
 - **Release sıklığı:** ~2-3 ayda bir major release
-- **Python desteği:** 3.9-3.14, PyPy 3.11
+- **Python desteği:** 3.10-3.14, PyPy 3.11
 - **Platform desteği:** Windows, macOS (x86_64 + ARM64), Linux (x86_64 + ARM64), WASM (pyscript/pyodide)
 
 ### pygame (orijinal) Durumu
@@ -262,7 +262,7 @@ pygame orijinal proje **fiilen bakımsızdır**:
 
 ### Strateji A: Basit Drop-in Geçiş (ÖNERİLEN)
 
-**Ne:** Sadece `pygame==2.6.1` → `pygame-ce>=2.5.6` değiştir.  
+**Ne:** Sadece `pygame==2.6.1` → `pygame-ce>=2.5.7` değiştir.  
 **Etki:** Performans iyileştirmeleri + daha yeni SDL + aktif bakım.  
 **HiDPI etkisi:** YOK (software renderer aynı).  
 **Çaba:** Minimal (requirements + test).  
