@@ -2431,61 +2431,49 @@ class Menu:
             overlay.blit(rounded_mask, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
             target.blit(overlay, split_rect.topleft)
 
-            chip_margin = s(14)
-            chip_pad_x = s(14)
-            chip_pad_y = s(9)
-            chip_gap = s(4)
+            chip_margin = 0
+            chip_pad_x = s(10)
+            chip_pad_y = s(6)
             chip_strip_w = max(3, s(4))
-            chip_text_inset = max(s(6), chip_strip_w + s(5))
-            divider_gap = s(18)
-            top_chip_margin = chip_margin
+            chip_text_inset = max(s(5), chip_strip_w + s(4))
+            divider_gap = s(12)
 
             chip_specs = [
-                ('local', COOP_LOCAL_COLOR, t('menu_dashboard_coop_local_label', 'Local Co-op'), t('menu_dashboard_coop_local_sub', '2 Oyuncu'), local_hover),
-                ('online', COOP_ONLINE_COLOR, t('menu_dashboard_coop_online_label', 'Online Co-op'), t('menu_dashboard_coop_online_sub', 'Steam 2P'), online_hover),
+                ('local', COOP_LOCAL_COLOR, t('menu_dashboard_coop_local_label', 'Local Co-op'), local_hover),
+                ('online', COOP_ONLINE_COLOR, t('menu_dashboard_coop_online_label', 'Online Co-op'), online_hover),
             ]
 
-            for side, chip_color, label, sub, is_hover in chip_specs:
+            for side, chip_color, label, is_hover in chip_specs:
                 provisional_font_w = max(s(54), int(split_rect.width * 0.32))
                 label_font = retro_style.get_fitting_font(label, base_size=s(18), max_width=provisional_font_w, bold=True, min_size=max(10, s(11)))
-                sub_font = retro_style.get_fitting_font(sub, base_size=s(13), max_width=provisional_font_w, bold=False, min_size=max(9, s(10)))
                 provisional_label = label_font.render(label, True, UIColors.TEXT_PRIMARY)
-                provisional_sub = sub_font.render(sub, True, UIColors.TEXT_SECONDARY)
-                provisional_h = provisional_label.get_height() + provisional_sub.get_height() + chip_pad_y * 2 + chip_gap
+                provisional_h = provisional_label.get_height() + chip_pad_y * 2
 
                 if side == 'local':
                     available_w = divider_x - split_rect.left - chip_margin - divider_gap
                 else:
                     available_w = split_rect.right - chip_margin - (divider_x + divider_gap)
-                chip_max_w = max(s(88), min(int(split_rect.width * 0.48), available_w))
+                chip_max_w = max(s(72), min(int(split_rect.width * 0.48), available_w))
                 text_max_w = max(s(54), chip_max_w - chip_pad_x * 2 - chip_text_inset)
 
                 label_font = retro_style.get_fitting_font(label, base_size=s(18), max_width=text_max_w, bold=True, min_size=max(10, s(11)))
-                sub_font = retro_style.get_fitting_font(sub, base_size=s(13), max_width=text_max_w, bold=False, min_size=max(9, s(10)))
                 label_surf = label_font.render(label, True, UIColors.TEXT_PRIMARY)
-                sub_surf = sub_font.render(sub, True, (214, 224, 238) if is_hover else UIColors.TEXT_SECONDARY)
 
-                chip_w = min(chip_max_w, max(s(88), max(label_surf.get_width(), sub_surf.get_width()) + chip_pad_x * 2 + chip_text_inset))
-                chip_h = label_surf.get_height() + sub_surf.get_height() + chip_pad_y * 2 + chip_gap
+                chip_w = min(chip_max_w, max(s(72), label_surf.get_width() + chip_pad_x * 2 + chip_text_inset))
+                chip_h = label_surf.get_height() + chip_pad_y * 2
 
                 if side == 'local':
-                    chip_x = split_rect.left + chip_margin
-                    chip_y = split_rect.bottom - chip_margin - chip_h
+                    chip_x = split_rect.left
+                    chip_y = split_rect.top
                     text_left = chip_x + chip_pad_x + chip_text_inset
-                    label_rect = label_surf.get_rect(topleft=(text_left, chip_y + chip_pad_y))
-                    sub_rect = sub_surf.get_rect(topleft=(text_left, label_rect.bottom + chip_gap))
-                    strip_rect = pygame.Rect(s(6), s(7), chip_strip_w, max(s(10), chip_h - s(14)))
+                    label_rect = label_surf.get_rect(topleft=(text_left, chip_y + (chip_h - label_surf.get_height()) // 2))
+                    strip_rect = pygame.Rect(s(5), s(5), chip_strip_w, max(s(8), chip_h - s(10)))
                 else:
-                    chip_x = split_rect.right - chip_margin - chip_w
-                    chip_y = split_rect.top + top_chip_margin
+                    chip_x = split_rect.right - chip_w
+                    chip_y = split_rect.bottom - chip_h
                     text_right = chip_x + chip_w - chip_pad_x - chip_text_inset
-                    label_rect = label_surf.get_rect(topright=(text_right, chip_y + chip_pad_y))
-                    sub_rect = sub_surf.get_rect(topright=(text_right, label_rect.bottom + chip_gap))
-                    strip_rect = pygame.Rect(chip_w - s(6) - chip_strip_w, s(7), chip_strip_w, max(s(10), chip_h - s(14)))
-
-                chip_shadow = pygame.Surface((chip_w + s(8), chip_h + s(8)), pygame.SRCALPHA)
-                pygame.draw.rect(chip_shadow, (*chip_color[:3], 34 if is_hover else 22), chip_shadow.get_rect(), border_radius=14)
-                target.blit(chip_shadow, (chip_x - s(4), chip_y - s(4)))
+                    label_rect = label_surf.get_rect(topright=(text_right, chip_y + (chip_h - label_surf.get_height()) // 2))
+                    strip_rect = pygame.Rect(chip_w - s(5) - chip_strip_w, s(5), chip_strip_w, max(s(8), chip_h - s(10)))
 
                 chip_surf = pygame.Surface((chip_w, chip_h), pygame.SRCALPHA)
                 pygame.draw.rect(chip_surf, (8, 14, 30, 230 if is_hover else 210), chip_surf.get_rect(), border_radius=12)
@@ -2497,7 +2485,6 @@ class Menu:
                 pygame.draw.rect(chip_surf, (*chip_color[:3], 210 if is_hover else 136), chip_surf.get_rect(), 2 if is_hover else 1, border_radius=12)
                 target.blit(chip_surf, (chip_x, chip_y))
                 target.blit(label_surf, label_rect)
-                target.blit(sub_surf, sub_rect)
 
             return
 
