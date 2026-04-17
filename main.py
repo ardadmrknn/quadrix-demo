@@ -74,17 +74,17 @@ def _apply_leaderboard_cli_overrides(argv: list[str]) -> None:
 
 
 if __name__ == "__main__":
-    # Windows cp1254 gibi kısıtlı kodlamalarda emoji içeren print'lerin
-    # UnicodeEncodeError fırlatmasını önle — encode edilemeyen karakterler
-    # '?' ile değiştirilir. macOS/Linux (UTF-8) etkilenmez.
+    # Windows terminallerinde Türkçe karakter ve emoji bozulmalarını önle.
+    # cp1254/cp437 codepage uyumsuzluğu yerine UTF-8 kullan.
+    # macOS/Linux zaten UTF-8 olduğundan etkilenmez.
     if hasattr(sys.stdout, "reconfigure"):
         try:
-            sys.stdout.reconfigure(errors="replace")
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
         except Exception:
             pass
     if hasattr(sys.stderr, "reconfigure"):
         try:
-            sys.stderr.reconfigure(errors="replace")
+            sys.stderr.reconfigure(encoding="utf-8", errors="replace")
         except Exception:
             pass
 
