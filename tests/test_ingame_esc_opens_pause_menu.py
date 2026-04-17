@@ -137,13 +137,11 @@ def _make_pvp_instance():
     pvp.name_input_active = False
     pvp.pvp_controls = {
         'pause': pvp_module.pygame.K_p,
-        'toggle_fps': pvp_module.pygame.K_f,
         'player1': {},
         'player2': {},
     }
     pvp._get_fullscreen_toggle_key = lambda: pvp_module.pygame.K_F12
     pvp._handle_pause_menu_input = lambda event: 'resume' if getattr(event, 'key', None) == pvp_module.pygame.K_ESCAPE else None
-    pvp.show_fps = False
     return pvp
 
 

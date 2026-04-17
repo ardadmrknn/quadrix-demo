@@ -627,13 +627,6 @@ class Game:
         except Exception:
             pass
         self.clock = pygame.time.Clock()
-
-        # FPS measurement: when the game is driven from src/main.py, this
-        # clock may not be ticked, so pygame's get_fps() stays at 0.
-        # We compute a rolling FPS from the delta_time passed into update().
-        self._fps_value: float = 0.0
-        self._fps_accum_ms: float = 0.0
-        self._fps_frames: int = 0
         
         # Ayarlar
         self.difficulty = difficulty
@@ -808,7 +801,6 @@ class Game:
         # Combo ve mesajlar
         self.combo_message = ""
         self.combo_message_time = 0
-        self.show_fps = False
         
         # Partiküller
         self.particles = []
@@ -944,7 +936,6 @@ class Game:
             'hold': pygame.K_c,
             'hold2': pygame.K_v,
             'pause': pygame.K_p,
-            'toggle_fps': pygame.K_f,
         }
         if not self.settings_manager:
             return defaults
@@ -971,7 +962,6 @@ class Game:
             'hold': None,
             'hold2': None,
             'pause': None,
-            'toggle_fps': None,
         }
         if not self.settings_manager:
             for action, fallback in defaults.items():
@@ -2118,10 +2108,6 @@ class Game:
                         self.can_hold = True  # Tekrar hold kullanabilir
                         self.sound.play('clear')  # Silme sesi
                         print(f"🗑️ Saklanan parça silindi! Kalan hak: {self.discard_held_uses}")
-                
-                # FPS göster/gizle
-                elif event.key == bindings['toggle_fps']:
-                    self.show_fps = not self.show_fps
 
                 # Shape Mutation (LSHIFT): only if perk_phase is active
                 elif event.key == pygame.K_LSHIFT:
@@ -3896,7 +3882,6 @@ class Game:
         Args:
             delta_time: Son frameden bu yana geçen süre (ms)
         """
-        # Update FPS regardless of pause/game_over so the overlay remains meaningful.
         try:
             dt = float(delta_time or 0)
         except Exception:
@@ -3905,14 +3890,6 @@ class Game:
         self._last_dt_ms = dt
         dt_clamped = max(0.0, min(100.0, dt))
         dt_frames = dt_clamped / 16.666  # ~60 FPS frame scale
-        if dt > 0:
-            self._fps_accum_ms += dt
-            self._fps_frames += 1
-            # Update 2x/sec for stability.
-            if self._fps_accum_ms >= 500.0:
-                self._fps_value = (self._fps_frames * 1000.0) / self._fps_accum_ms
-                self._fps_accum_ms = 0.0
-                self._fps_frames = 0
 
         if self.game_over_warning_timer > 0:
             self.game_over_warning_timer = max(0.0, self.game_over_warning_timer - delta_time / 1000.0)
@@ -4475,7 +4452,7 @@ class Game:
         # Sağ panel - HardcoreMode gibi modlar override edebilir
         self._draw_right_hud_panel(offset_x, offset_y, board_width, board_height, skin, ui_skin, text_color, accent_color, label_color)
         
-        # Efektler - partiküller, combo mesajı, milestone, FPS, game over
+        # Efektler - partiküller, combo mesajı, milestone, game over
         self._draw_base_scene_effects(skin)
         
     def _draw_right_hud_panel(self, offset_x, offset_y, board_width, board_height, skin, ui_skin, text_color, accent_color, label_color):
@@ -4770,7 +4747,7 @@ class Game:
         )
     
     def _draw_base_scene_effects(self, skin):
-        """Temel sahne efektlerini çiz - partiküller, combo, milestone, FPS, game over"""
+        """Temel sahne efektlerini çiz - partiküller, combo, milestone, game over"""
         # Partiküller
         if self.effects_enabled:
             self.draw_particles()
@@ -4900,12 +4877,6 @@ class Game:
             msg_surf = msg_font.render(milestone_msg, True, (220, 230, 250))
             msg_rect = msg_surf.get_rect(centerx=panel_rect.centerx, bottom=panel_rect.bottom - 10)
             self.screen.blit(msg_surf, msg_rect)
-        
-        # FPS göster
-        if self.show_fps:
-            fps = int(self._fps_value or self.clock.get_fps())
-            fps_text = self.font_small.render(f'FPS: {fps}', True, GREEN if fps > 50 else RED)
-            self.screen.blit(fps_text, (10, 10))
         
         # Oyun bitti mesajı
         if self.game_over:

@@ -9787,10 +9787,6 @@ class WideMode(Game):
         )
         self.mode_name = "WIDE MODE"
 
-        # Wide Mode'da üst köşe overlay'leri temiz kalsın.
-        # (Genel FPS overlay'i Game tarafından çiziliyor; bu modda kapatıyoruz.)
-        self.show_fps = False
-
         from background import BackgroundManager
 
         self.wide_background = BackgroundManager()

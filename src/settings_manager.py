@@ -158,6 +158,7 @@ OBSOLETE_SETTINGS_KEYS = {
     'custom_theme_colors',
     'borderless_fullscreen',
     'resolution',
+    'show_fps',
 }
 
 VALID_UI_SCALE_PRESETS = {'compact', 'normal', 'large'}
