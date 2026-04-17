@@ -264,10 +264,10 @@ def setup_custom_cursor() -> bool:
         hotspot = (4, 4)
         cursor = pygame.cursors.Cursor(hotspot, cursor_surface)
         pygame.mouse.set_cursor(cursor)
-        print("🖱️ Özel fare imleci yüklendi")
+        print("[Cursor] Ozel fare imleci yuklendi")
         return True
     except Exception as e:
-        print(f"⚠️ Özel cursor yüklenemedi, varsayılan kullanılıyor: {e}")
+        print(f"[Cursor] Ozel cursor yuklenemedi, varsayilan kullaniliyor: {e}")
         return False
 
 

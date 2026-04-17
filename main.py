@@ -74,6 +74,20 @@ def _apply_leaderboard_cli_overrides(argv: list[str]) -> None:
 
 
 if __name__ == "__main__":
+    # Windows cp1254 gibi kısıtlı kodlamalarda emoji içeren print'lerin
+    # UnicodeEncodeError fırlatmasını önle — encode edilemeyen karakterler
+    # '?' ile değiştirilir. macOS/Linux (UTF-8) etkilenmez.
+    if hasattr(sys.stdout, "reconfigure"):
+        try:
+            sys.stdout.reconfigure(errors="replace")
+        except Exception:
+            pass
+    if hasattr(sys.stderr, "reconfigure"):
+        try:
+            sys.stderr.reconfigure(errors="replace")
+        except Exception:
+            pass
+
     # Repo root dizinine git (bat/sh ile aynı davranış)
     repo_root = os.path.dirname(os.path.abspath(__file__))
     os.chdir(repo_root)  # CWD'yi repo root'a değiştir
