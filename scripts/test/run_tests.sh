@@ -20,7 +20,7 @@ fi
 if ! "$PY" -c "import pytest, pygame, numpy, PIL, requests" >/dev/null 2>&1; then
   echo "[setup] Installing test dependencies for Python 3.12 (user-level)"
   "$PY" -m pip install --user --upgrade pip
-  "$PY" -m pip install --user -e ".[dev]" requests
+  "$PY" -m pip install --user -e ".[dev]"
 fi
 
 # Headless-friendly defaults for pygame tests.

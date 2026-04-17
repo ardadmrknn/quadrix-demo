@@ -13,7 +13,7 @@ PyQt5_sip==12.17.1
 PySocks==1.7.1
 PyYAML==6.0.2
 Pygments==2.19.2
-Werkzeug==3.1.3
+Werkzeug==3.1.8
 altgraph==0.17.4
 attrs==25.4.0
 azure-ai-translation-text==1.0.1
@@ -103,7 +103,7 @@ pandas==2.3.3
 pefile==2023.2.7
 pi_heif==1.1.1
 pillow-avif-plugin==1.5.2
-pillow==12.1.1
+pillow==12.2.0
 platformdirs==4.5.0
 pluggy==1.6.0
 polars-runtime-32==1.35.2
@@ -123,13 +123,13 @@ pydantic==2.11.7
 pydantic_core==2.33.2
 pyflakes==3.4.0
 pygame-ce>=2.5.7
-pyinstaller-hooks-contrib==2025.9
+pyinstaller-hooks-contrib==2026.4
 pyinstaller==6.16.0
 pyparsing==3.2.3
 pypiwin32==223
 pyreadline3==3.5.4
 pytesseract==0.3.10
-pytest==9.0.2
+pytest==9.0.3
 python-bidi==0.6.6
 python-dateutil==2.9.0.post0
 python-dotenv==1.2.1
@@ -140,7 +140,7 @@ referencing==0.37.0
 regex==2025.7.34
 rembg==2.0.68
 requests-toolbelt==1.0.0
-requests==2.32.5
+requests==2.33.1
 rfc3986==1.5.0
 roboflow==1.2.11
 rpds-py==0.29.0

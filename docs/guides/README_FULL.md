@@ -62,7 +62,7 @@ pip install -r packaging/requirements/requirements.txt
 
 veya tek tek:
 ```powershell
-pip install pygame-ce numpy Pillow
+pip install pygame-ce numpy Pillow requests
 ```
 
 ### 3. Oyunu Başlat
