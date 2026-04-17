@@ -598,7 +598,7 @@ class GamepadManager:
         except Exception:
             return raw_button_index
 
-        if gp is None or not IS_WINDOWS:
+        if gp is None:
             return raw_index
         if getattr(gp, 'gamepad_type', GamepadType.UNKNOWN) not in (GamepadType.XBOX, GamepadType.UNKNOWN):
             return raw_index

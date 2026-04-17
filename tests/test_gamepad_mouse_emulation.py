@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import copy
+import sys
+import types
 from types import SimpleNamespace
 
 import pygame
@@ -222,7 +224,9 @@ def test_load_settings_stops_active_rumble_when_disabled(monkeypatch):
                 }
             }
 
-    monkeypatch.setattr(settings_manager_module, 'SettingsManager', _FakeSettingsManager)
+    fake_settings_module = types.ModuleType('settings_manager')
+    fake_settings_module.SettingsManager = _FakeSettingsManager
+    monkeypatch.setitem(sys.modules, 'settings_manager', fake_settings_module)
 
     manager._load_settings()
 

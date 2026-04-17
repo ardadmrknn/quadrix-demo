@@ -66,6 +66,28 @@ def _t(key: str, fallback: str = '') -> str:
     return val
 
 
+def _scale_menu_alpha(alpha: int) -> int:
+    scaler = getattr(retro_style, '_scale_menu_alpha', None)
+    if callable(scaler):
+        try:
+            return int(scaler(alpha))
+        except Exception:
+            pass
+
+    try:
+        value = int(alpha)
+    except Exception:
+        value = 0
+    value = max(0, min(255, value))
+
+    try:
+        multiplier = float(getattr(retro_style, '_menu_transparency', 1.0))
+    except Exception:
+        multiplier = 1.0
+    multiplier = max(0.0, min(1.0, multiplier))
+    return int(value * multiplier)
+
+
 # ---------------------------------------------------------------------------
 # Sekme ve ayar tanımları
 # ---------------------------------------------------------------------------
@@ -2448,7 +2470,7 @@ class TabbedSettingsScreen:
         shadow_radius = int(metrics['panel_shadow_radius'])
         border_radius = int(metrics['panel_border_radius'])
         border_width = int(metrics['panel_border_width'])
-        _sma = retro_style._scale_menu_alpha
+        _sma = _scale_menu_alpha
 
         # Gölge
         shadow = pygame.Surface((rect.width + shadow_pad, rect.height + shadow_pad), pygame.SRCALPHA)
@@ -2508,7 +2530,7 @@ class TabbedSettingsScreen:
             label = _tab_label(tab_def)
 
             # Tab arka planı
-            _sma = retro_style._scale_menu_alpha
+            _sma = _scale_menu_alpha
             tab_surf = pygame.Surface(tab_rect.size, pygame.SRCALPHA)
             if is_active:
                 tab_surf.fill((35, 55, 90, _sma(220)))
@@ -2618,7 +2640,7 @@ class TabbedSettingsScreen:
     ) -> dict | None:
         """Bir ayar satırını çiz."""
         s = self._s
-        _sma = retro_style._scale_menu_alpha
+        _sma = _scale_menu_alpha
         itype = item['type']
         label = _item_label(item)
 
@@ -2957,7 +2979,7 @@ class TabbedSettingsScreen:
                 fill_color = (0, 180, 255)    # neon blue
 
             # Track – pill şekli, derinlik gölgesi
-            _sma = retro_style._scale_menu_alpha
+            _sma = _scale_menu_alpha
             track_surf = pygame.Surface((bar_rect.width, bar_h), pygame.SRCALPHA)
             pygame.draw.rect(track_surf, (20, 28, 48, _sma(200)), track_surf.get_rect(), border_radius=r)
             pygame.draw.rect(track_surf, (60, 80, 120, _sma(130)), track_surf.get_rect(), 1, border_radius=r)

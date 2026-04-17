@@ -31,6 +31,7 @@ _MODULES_THAT_GET_STUBBED = {
 	"ui_components",
 	"themes",
 	"sound",
+	"gamepad_manager",
 	"achievements",
 	"user_manager",
 	"score_manager",
@@ -39,6 +40,7 @@ _MODULES_THAT_GET_STUBBED = {
 	"tutorial_progress",
 	"atomic_io",
 	"data_paths",
+	"campaign",
 	"campaign.level_data",
 	"steam_net_bridge",
 	"game",
@@ -88,6 +90,20 @@ def _purge_leaked_test_stubs(*, skip_pygame: bool = False) -> None:
 				continue
 			if _looks_like_test_stub(module_obj):
 				sys.modules.pop(candidate, None)
+
+	# Bazi test modulleri gercek background_effects modulu icindeki shared-layer
+	# getter'ini module-level lambda ile degistiriyor. Bu, sonraki testlerde gercek
+	# layer fabrikasi yerine test override'inin sizmasina yol aciyor.
+	for candidate in ("background_effects", "src.background_effects"):
+		module_obj = sys.modules.get(candidate)
+		if module_obj is None:
+			continue
+		getter = getattr(module_obj, "get_shared_falling_blocks_layer", None)
+		owner = getattr(getter, "__module__", "")
+		if callable(getter) and owner not in ("background_effects", "src.background_effects"):
+			sys.modules.pop("background_effects", None)
+			sys.modules.pop("src.background_effects", None)
+			break
 
 	if skip_pygame:
 		return

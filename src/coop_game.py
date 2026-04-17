@@ -92,8 +92,8 @@ class CoopGame:
     _LINE_CLEAR_SWEEP_BLOCK_FALL_SPEED = 0.144
     _OPENING_CURTAIN_DURATION_MS = 350
     _FRAME_MS = 1000.0 / 60.0
-    _BACKGROUND_LAYER_NAME = 'default'
-    _BACKGROUND_LAYER_BLOCK_COUNT = 14
+    _BACKGROUND_LAYER_NAME = 'coop'
+    _BACKGROUND_LAYER_BLOCK_COUNT = 19
 
     # ------------------------------------------------------------------
     # Statik yardımcılar (PvP ile ortak)
@@ -2515,7 +2515,7 @@ class CoopGame:
             self.screen.fill(_fill_color)
 
         # Outer tint: bg_transparency ile orantılı
-        _ot = tuple(skin.outer_tint)
+        _ot = tuple(getattr(skin, 'outer_tint', (0, 0, 0, 0)))
         if len(_ot) >= 4 and _ot[3] > 0:
             _tint_a = int(_ot[3] * bg_alpha) if bg_alpha < 1.0 else _ot[3]
             if _tint_a > 0:

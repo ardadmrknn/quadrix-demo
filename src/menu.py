@@ -2230,6 +2230,82 @@ class Menu:
                     local_hover = True
                     online_hover = False
 
+            def _mix_color(color_a: tuple[int, int, int], color_b: tuple[int, int, int], ratio: float) -> tuple[int, int, int]:
+                ratio = max(0.0, min(1.0, ratio))
+                return (
+                    int(round(color_a[0] * (1.0 - ratio) + color_b[0] * ratio)),
+                    int(round(color_a[1] * (1.0 - ratio) + color_b[1] * ratio)),
+                    int(round(color_a[2] * (1.0 - ratio) + color_b[2] * ratio)),
+                )
+
+            beam_local_color = UIColors.NEON_RED
+            beam_online_color = (80, 150, 255)
+            beam_idle_color = _mix_color(UIColors.NEON_ORANGE, beam_online_color, 0.5)
+            if online_hover:
+                beam_color = beam_online_color
+            elif local_hover:
+                beam_color = beam_local_color
+            else:
+                beam_color = beam_idle_color
+
+            # Diyagonal ayrımı yumuşak bir beam olarak vurgula; hover/klavye alt seçimi rengi belirler.
+            beam_surface = pygame.Surface((split_rect.width, split_rect.height), pygame.SRCALPHA)
+            diag_pad = s(8)
+            diag_start = (diag_pad, diag_pad)
+            diag_end = (
+                max(diag_pad + 1, split_rect.width - diag_pad - 1),
+                max(diag_pad + 1, split_rect.height - diag_pad - 1),
+            )
+            now_ms = pygame.time.get_ticks()
+            pulse = 0.5 + 0.5 * math.sin(now_ms * 0.006)
+            beam_active = local_hover or online_hover
+            beam_boost = 1.0 if beam_active else 0.72
+
+            for line_width, alpha in (
+                (max(s(18), 10), int((28 + 18 * pulse) * beam_boost)),
+                (max(s(11), 6), int((68 + 32 * pulse) * beam_boost)),
+                (max(s(5), 3), int((122 + 52 * pulse) * beam_boost)),
+            ):
+                pygame.draw.line(beam_surface, (*beam_color, max(0, min(255, alpha))), diag_start, diag_end, line_width)
+
+            core_color = _mix_color(beam_color, UIColors.TEXT_PRIMARY, 0.6)
+            pygame.draw.line(
+                beam_surface,
+                (*core_color, 210 if beam_active else 178),
+                diag_start,
+                diag_end,
+                max(2, s(2)),
+            )
+
+            sweep_progress = ((now_ms * 0.00045) % 1.35) - 0.18
+            sweep_half = 0.13
+            sweep_start_t = max(0.0, sweep_progress - sweep_half)
+            sweep_end_t = min(1.0, sweep_progress + sweep_half)
+            if sweep_end_t > sweep_start_t:
+                beam_dx = diag_end[0] - diag_start[0]
+                beam_dy = diag_end[1] - diag_start[1]
+                sweep_start = (
+                    int(round(diag_start[0] + beam_dx * sweep_start_t)),
+                    int(round(diag_start[1] + beam_dy * sweep_start_t)),
+                )
+                sweep_end = (
+                    int(round(diag_start[0] + beam_dx * sweep_end_t)),
+                    int(round(diag_start[1] + beam_dy * sweep_end_t)),
+                )
+                sweep_color = _mix_color(beam_color, UIColors.TEXT_PRIMARY, 0.78)
+                pygame.draw.line(
+                    beam_surface,
+                    (*sweep_color, int(132 + 48 * pulse * beam_boost)),
+                    sweep_start,
+                    sweep_end,
+                    max(s(6), 4),
+                )
+
+            rounded_mask = pygame.Surface((split_rect.width, split_rect.height), pygame.SRCALPHA)
+            pygame.draw.rect(rounded_mask, (255, 255, 255, 255), rounded_mask.get_rect(), border_radius=corner_radius)
+            beam_surface.blit(rounded_mask, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+            target.blit(beam_surface, split_rect.topleft)
+
             def _diag_x(y_pos: int) -> int:
                 rel = (y_pos - split_rect.top) / max(1, split_rect.height)
                 rel = max(0.0, min(1.0, rel))
@@ -2398,16 +2474,72 @@ class Menu:
 
             divider_top = s(10)
             divider_bottom = max(divider_top + 1, split_rect.height - s(10))
+            beam_color = _mix_color(COOP_LOCAL_COLOR, COOP_ONLINE_COLOR, 0.5)
+            if local_hover:
+                beam_color = COOP_LOCAL_COLOR
+            elif online_hover:
+                beam_color = COOP_ONLINE_COLOR
+
+            beam_surface = pygame.Surface((split_rect.width, split_rect.height), pygame.SRCALPHA)
+            beam_x = divider_local_x
+            beam_top = max(0, divider_top - s(8))
+            beam_bottom = min(split_rect.height - 1, divider_bottom + s(8))
+            now_ms = pygame.time.get_ticks()
+            pulse = 0.5 + 0.5 * math.sin(now_ms * 0.006)
+            beam_active = local_hover or online_hover
+            beam_boost = 1.0 if beam_active else 0.74
+
+            for line_width, alpha in (
+                (max(s(18), 10), int((26 + 16 * pulse) * beam_boost)),
+                (max(s(11), 6), int((66 + 30 * pulse) * beam_boost)),
+                (max(s(5), 3), int((120 + 48 * pulse) * beam_boost)),
+            ):
+                pygame.draw.line(
+                    beam_surface,
+                    (*beam_color, max(0, min(255, alpha))),
+                    (beam_x, beam_top),
+                    (beam_x, beam_bottom),
+                    line_width,
+                )
+
+            core_color = _mix_color(beam_color, UIColors.TEXT_PRIMARY, 0.62)
+            pygame.draw.line(
+                beam_surface,
+                (*core_color, 214 if beam_active else 184),
+                (beam_x, beam_top),
+                (beam_x, beam_bottom),
+                max(2, divider_w),
+            )
+
+            sweep_progress = ((now_ms * 0.0005) % 1.35) - 0.18
+            sweep_half = 0.14
+            sweep_start_t = max(0.0, sweep_progress - sweep_half)
+            sweep_end_t = min(1.0, sweep_progress + sweep_half)
+            if sweep_end_t > sweep_start_t:
+                beam_height = beam_bottom - beam_top
+                sweep_start_y = int(round(beam_top + beam_height * sweep_start_t))
+                sweep_end_y = int(round(beam_top + beam_height * sweep_end_t))
+                sweep_color = _mix_color(beam_color, UIColors.TEXT_PRIMARY, 0.78)
+                pygame.draw.line(
+                    beam_surface,
+                    (*sweep_color, int(132 + 46 * pulse * beam_boost)),
+                    (beam_x, sweep_start_y),
+                    (beam_x, sweep_end_y),
+                    max(s(6), 4),
+                )
+
+            beam_surface.blit(rounded_mask, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+            overlay.blit(beam_surface, (0, 0))
             pygame.draw.line(
                 overlay,
-                (255, 255, 255, 28 if hover else 18),
+                (255, 255, 255, 42 if hover else 28),
                 (divider_local_x, divider_top),
                 (divider_local_x, divider_bottom),
                 max(3, s(4)),
             )
             pygame.draw.line(
                 overlay,
-                (*COOP_DIVIDER_COLOR, 208 if hover else 164),
+                (*COOP_DIVIDER_COLOR, 168 if hover else 128),
                 (divider_local_x, divider_top),
                 (divider_local_x, divider_bottom),
                 divider_w,

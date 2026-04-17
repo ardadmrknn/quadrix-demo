@@ -172,6 +172,7 @@ class _BM:
 _bg.BackgroundManager = _BM
 
 import background_effects as _be
+_ORIGINAL_SHARED_FALLING_LAYER_GETTER = getattr(_be, 'get_shared_falling_blocks_layer', None)
 _be.get_shared_falling_blocks_layer = lambda: None
 
 import mode_skins as _ms
@@ -253,6 +254,14 @@ from campaign.coop_objectives import (
     FreezeRecoveryObjective,
     CoopComboObjective,
 )
+
+if _ORIGINAL_SHARED_FALLING_LAYER_GETTER is None:
+    try:
+        delattr(_be, 'get_shared_falling_blocks_layer')
+    except AttributeError:
+        pass
+else:
+    _be.get_shared_falling_blocks_layer = _ORIGINAL_SHARED_FALLING_LAYER_GETTER
 
 
 # =====================================================================
