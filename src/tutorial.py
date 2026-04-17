@@ -34,7 +34,7 @@ try:
         get_tutorial_card_type_label,
     )
     from .game_modes_extra import MysteryCardUI  # type: ignore
-    from .ui_scaling import get_modal_scale  # type: ignore
+    from .ui_scaling import get_modal_scale, get_projected_effective_scale  # type: ignore
 except Exception:
     from game import Game
     from localization import t
@@ -71,7 +71,7 @@ except Exception:
         from game_modes_extra import MysteryCardUI
     except Exception:
         MysteryCardUI = None
-    from ui_scaling import get_modal_scale
+    from ui_scaling import get_modal_scale, get_projected_effective_scale
 
 
 def _tutorial_make_card_ui_font(size, bold=False):
@@ -203,11 +203,19 @@ class TutorialMode(Game):
         return self._sx(260, ui_scale) + self._sx(20, ui_scale, minimum=0)
 
     def _tutorial_modal_scale(self, min_scale: float = 0.72, max_scale: float = 1.18) -> float:
-        scale = get_modal_scale(
-            self._active_ui_size(),
-            reference_size=TUTORIAL_MODAL_REFERENCE_SIZE,
-        )
-        return max(min_scale, min(max_scale, scale))
+        try:
+            return get_projected_effective_scale(
+                self.screen,
+                min_scale=min_scale,
+                max_scale=max_scale,
+                reference_size=TUTORIAL_MODAL_REFERENCE_SIZE,
+            )
+        except Exception:
+            scale = get_modal_scale(
+                self._active_ui_size(),
+                reference_size=TUTORIAL_MODAL_REFERENCE_SIZE,
+            )
+            return max(min_scale, min(max_scale, scale))
 
     def _tutorial_overlay_rect(self) -> pygame.Rect:
         board_offset_x, board_offset_y = self.get_board_offset()

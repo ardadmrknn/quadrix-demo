@@ -20,6 +20,7 @@ from workshop_blocks import WORKSHOP_MODES, WORKSHOP_MODE_KEYS
 from renderers.jelly_renderer import draw_jelly_block
 from background_effects import get_shared_falling_blocks_layer
 from localization import t
+from ui_scaling import get_projected_effective_scale
 
 
 def _resolve_root_dir() -> Path:
@@ -111,6 +112,22 @@ class PieceWorkshopScreen:
         self.last_piece_item_height = 50
         self.last_piece_item_gap = 6
         self.last_piece_item_cols = 1
+
+    # ── Responsive ölçek ──
+
+    def _ui_scale(self) -> float:
+        try:
+            return get_projected_effective_scale(
+                self.screen,
+                min_scale=0.68,
+                max_scale=1.24,
+                reference_size=(1366.0, 768.0),
+            )
+        except Exception:
+            return 1.0
+
+    def _s(self, value: int | float, minimum: int = 1) -> int:
+        return max(minimum, int(round(float(value) * self._ui_scale())))
 
     def _default_modes(self) -> List[str]:
         # Yeni parça kaydında başlangıçta hiçbir mod seçili olmasın.
@@ -755,59 +772,58 @@ class PieceWorkshopScreen:
     def draw(self):
         """Modern Parça Atölyesi UI çiz"""
         width, height = self.screen.get_size()
+        _s = self._s
         retro_style.draw_background(self.screen)
         self.background_fx.update(self.screen)
         self.background_fx.draw(self.screen)
         
         # Başlık
-        title_rect = retro_style.draw_title(self.screen, t('piece_workshop_title'), (width // 2, 55), emoji='🧩')
+        title_rect = retro_style.draw_title(self.screen, t('piece_workshop_title'), (width // 2, _s(55)), emoji='🧩')
         
         # Tip
-        tip_font = retro_style.get_font(15, bold=False)
+        tip_font = retro_style.get_font(_s(15), bold=False)
         tip_text = t(
             'piece_workshop_tip',
             max_blocks=self.MAX_BLOCKS,
             modifier=get_modifier_key_name(),
         )
         tip = tip_font.render(tip_text, True, (160, 175, 200))
-        self.screen.blit(tip, tip.get_rect(center=(width // 2, title_rect.bottom + 14)))
+        self.screen.blit(tip, tip.get_rect(center=(width // 2, title_rect.bottom + _s(14))))
         
         # Grid alanı
-        grid_top = title_rect.bottom + 40
-        # Alt blok görünümleri kartı, üstteki düzenleme ızgarasıyla aynı kare alanı paylaşır.
-        # Bu yüzden iki 7x7 alanı ve aradaki butonları aynı ekrana sığdıracak yükseklik hesaplanır.
-        mirrored_grid_height_limit = (height - grid_top - 120) // (self.GRID_SIZE * 2)
-        cell_size = min(45, mirrored_grid_height_limit, (width - 300) // self.GRID_SIZE)
-        cell_size = max(30, cell_size)
+        grid_top = title_rect.bottom + _s(40)
+        mirrored_grid_height_limit = (height - grid_top - _s(120)) // (self.GRID_SIZE * 2)
+        cell_size = min(_s(45), mirrored_grid_height_limit, (width - _s(300)) // self.GRID_SIZE)
+        cell_size = max(_s(30), cell_size)
         self.last_cell_size = cell_size
         
         grid_pixel_size = cell_size * self.GRID_SIZE
-        grid_x = 60
-        grid_y = grid_top + 10
+        grid_x = _s(60)
+        grid_y = grid_top + _s(10)
         grid_rect = pygame.Rect(grid_x, grid_y, grid_pixel_size, grid_pixel_size)
         self.last_grid_rect = grid_rect
         
         # Grid container
-        container_rect = grid_rect.inflate(24, 24)
+        container_rect = grid_rect.inflate(_s(24), _s(24))
         retro_style.draw_glass_panel(self.screen, container_rect, alpha=160, border_color=(60, 90, 140))
         
         # Blok sayısı göstergesi
         block_count = self._count_blocks()
-        counter_font = retro_style.get_font(16, bold=True)
+        counter_font = retro_style.get_font(_s(16), bold=True)
         counter_color = retro_style.primary if block_count < self.MAX_BLOCKS else (255, 100, 100)
         counter_text = t('piece_workshop_counter', count=block_count, max_blocks=self.MAX_BLOCKS)
         counter_surf = counter_font.render(counter_text, True, counter_color)
-        self.screen.blit(counter_surf, (container_rect.x + 10, container_rect.y - 22))
+        self.screen.blit(counter_surf, (container_rect.x + _s(10), container_rect.y - _s(22)))
         
         # Grid çiz
         self._draw_grid(grid_rect, cell_size)
         self._draw_cursor(grid_rect, cell_size)
 
-        # Grid altına butonlar - Kullanıcı ekranı stili
-        btn_h = 42
-        btn_gap = 8
+        # Grid altına butonlar
+        btn_h = _s(42)
+        btn_gap = _s(8)
         total_w = container_rect.width
-        btn_y = container_rect.bottom + 10
+        btn_y = container_rect.bottom + _s(10)
         
         # Parça seçili mi kontrol et (SİL butonu için)
         has_selected_piece = self._active_mode_piece_id() is not None
@@ -839,16 +855,16 @@ class PieceWorkshopScreen:
                 (60, 65, 75)  # Gri (deaktif)
             )
 
-        panel_start_x = grid_rect.right + 30
+        panel_start_x = grid_rect.right + _s(30)
 
-        card_gap = 18
-        card_bottom_margin = 28
+        card_gap = _s(18)
+        card_bottom_margin = _s(28)
         card_top_limit = self.save_button_rect.bottom + card_gap
         card_bottom_limit = height - card_bottom_margin
         desired_card_size = int(round(grid_pixel_size * 1.20))
-        card_size = max(1, min(desired_card_size, panel_start_x - 18, card_bottom_limit - card_top_limit))
+        card_size = max(1, min(desired_card_size, panel_start_x - _s(18), card_bottom_limit - card_top_limit))
         card_x = int(round(container_rect.centerx - (card_size / 2)))
-        card_x = max(18, min(card_x, panel_start_x - card_size))
+        card_x = max(_s(18), min(card_x, panel_start_x - card_size))
         card_y = card_top_limit + max(0, (card_bottom_limit - card_top_limit - card_size) // 2)
         self.block_styles_card_rect = pygame.Rect(card_x, card_y, card_size, card_size)
         self._draw_block_styles_card(self.block_styles_card_rect)
@@ -858,7 +874,7 @@ class PieceWorkshopScreen:
         # --- SAĞ PANEL (Palette + Custom Color + Pieces) ---
         
         panel_y = grid_y
-        available_height = height - grid_y - 20
+        available_height = height - grid_y - _s(20)
         
         # 1. Renk Paleti (Sol kısım)
         # Önce çizim yaparak rect'i güncellememiz lazım, ama _draw_color_palette çizim yapıyor.
@@ -869,9 +885,9 @@ class PieceWorkshopScreen:
         # 2. Özel Renk Butonu (Paletin altına)
         # Palet rect güncellendi (`self.palette_rect`)
         if self.palette_rect.width > 0:
-            custom_btn_y = self.palette_rect.bottom + 12
+            custom_btn_y = self.palette_rect.bottom + _s(12)
             custom_btn_w = self.palette_rect.width
-            custom_btn_h = 74  # Biraz daha aşağı uzatıldı (65 -> 74)
+            custom_btn_h = _s(74)
             
             self.custom_color_button_rect = pygame.Rect(
                 self.palette_rect.x, 
@@ -883,19 +899,18 @@ class PieceWorkshopScreen:
             
             # 3. Kayıtlı Parçalar Paneli (Sağ kısım - Sarı alan)
             # Palet ve butonun sağından başla
-            pieces_x = self.palette_rect.right + 20
-            pieces_w = width - pieces_x - 30
+            pieces_x = self.palette_rect.right + _s(20)
+            pieces_w = width - pieces_x - _s(30)
             
             if pieces_w > 120:
                 self._draw_pieces_panel(pieces_x, panel_y, pieces_w, available_height)
         
         # Mesaj
         if self.message_timer > 0:
-            msg_font = retro_style.get_font(17, bold=True)
+            msg_font = retro_style.get_font(_s(17), bold=True)
             msg_color = (255, 100, 100) if getattr(self, 'message_is_error', False) else retro_style.accent
             msg_surf = msg_font.render(self.message, True, msg_color)
-            # Alt panel kaldırıldı; mesajı küçük bir "toast" gibi alt-orta göster.
-            self.screen.blit(msg_surf, msg_surf.get_rect(center=(width // 2, height - 26)))
+            self.screen.blit(msg_surf, msg_surf.get_rect(center=(width // 2, height - _s(26))))
             self.message_timer -= 1
     
     def _draw_custom_color_button(self, rect: pygame.Rect):
@@ -926,24 +941,24 @@ class PieceWorkshopScreen:
             pygame.draw.rect(self.screen, glow_color, glow, 2, border_radius=14)
 
         # 2. Renk Butonu (Swatch) - Üstte ortalı
-        
-        swatch_size = 32
+        _s = self._s
+        swatch_size = _s(32)
         swatch_x = rect.centerx - swatch_size // 2
-        swatch_y = rect.y + 8 # Biraz daha yukarı alalım (10 -> 8)
+        swatch_y = rect.y + _s(8)
         swatch_rect = pygame.Rect(swatch_x, swatch_y, swatch_size, swatch_size)
         
         # Swatch çizimi
-        pygame.draw.rect(self.screen, base, swatch_rect, border_radius=6)
+        pygame.draw.rect(self.screen, base, swatch_rect, border_radius=_s(6))
         
         # Swatch çerçevesi
         swatch_border = (255, 255, 255) if selected else (255, 255, 255, 100)
-        pygame.draw.rect(self.screen, swatch_border, swatch_rect, 2, border_radius=6)
+        pygame.draw.rect(self.screen, swatch_border, swatch_rect, 2, border_radius=_s(6))
         
         # 3. Yazı - Altta ortalı
         text_color = (200, 220, 255) if selected else (140, 150, 170)
-        font = retro_style.get_font(13, bold=selected) # Biraz küçülttük (14->13) sığması için
-        label = font.render(t('piece_workshop_custom_color'), True, text_color) # Büyük harf daha modern durabilir
-        self.screen.blit(label, label.get_rect(center=(rect.centerx, rect.bottom - 12)))
+        font = retro_style.get_font(_s(13), bold=selected)
+        label = font.render(t('piece_workshop_custom_color'), True, text_color)
+        self.screen.blit(label, label.get_rect(center=(rect.centerx, rect.bottom - _s(12))))
 
     def _draw_grid(self, grid_rect: pygame.Rect, cell_size: int):
         """Grid'i çiz"""
@@ -1002,16 +1017,15 @@ class PieceWorkshopScreen:
     
     def _draw_color_palette(self, x: int, y: int, max_height: int):
         """Renk paleti çiz"""
-        swatch_size = 28
-        spacing = 6
+        _s = self._s
+        swatch_size = _s(28)
+        spacing = _s(6)
         per_row = 3  # 3x4 layout
-        button_h = 50
-        button_gap = 10
         
         # Palette container
         rows = (len(self.color_palette) + per_row - 1) // per_row
-        palette_h = rows * (swatch_size + spacing) + 30 + 10 
-        palette_w = per_row * (swatch_size + spacing) + 16
+        palette_h = rows * (swatch_size + spacing) + _s(30) + _s(10)
+        palette_w = per_row * (swatch_size + spacing) + _s(16)
         palette_rect = pygame.Rect(x, y, palette_w, min(palette_h, max_height))
         self.palette_rect = palette_rect
         self.palette_swatch_rects = []
@@ -1019,45 +1033,45 @@ class PieceWorkshopScreen:
         retro_style.draw_glass_panel(self.screen, palette_rect, alpha=150, border_color=(60, 80, 120))
         
         # Başlık
-        title_font = retro_style.get_font(12, bold=True)
+        title_font = retro_style.get_font(_s(12), bold=True)
         title = title_font.render(t('piece_workshop_palette_title'), True, (180, 195, 220))
-        self.screen.blit(title, (palette_rect.x + 10, palette_rect.y + 6))
+        self.screen.blit(title, (palette_rect.x + _s(10), palette_rect.y + _s(6)))
         
         # Swatchlar
         for idx, color in enumerate(self.color_palette):
             col = idx % per_row
             row = idx // per_row
-            sx = palette_rect.x + 10 + col * (swatch_size + spacing)
-            sy = palette_rect.y + 26 + row * (swatch_size + spacing)
+            sx = palette_rect.x + _s(10) + col * (swatch_size + spacing)
+            sy = palette_rect.y + _s(26) + row * (swatch_size + spacing)
             
             swatch_rect = pygame.Rect(sx, sy, swatch_size, swatch_size)
-            pygame.draw.rect(self.screen, color, swatch_rect, border_radius=4)
+            pygame.draw.rect(self.screen, color, swatch_rect, border_radius=_s(4))
             self.palette_swatch_rects.append((swatch_rect, idx))
             
             if idx == self.selected_color_idx:
-                pygame.draw.rect(self.screen, (255, 255, 255), swatch_rect, 2, border_radius=4)
+                pygame.draw.rect(self.screen, (255, 255, 255), swatch_rect, 2, border_radius=_s(4))
 
             if idx == self.selected_color_idx:
-                pygame.draw.rect(self.screen, (255, 255, 255), swatch_rect, 2, border_radius=4)
+                pygame.draw.rect(self.screen, (255, 255, 255), swatch_rect, 2, border_radius=_s(4))
 
         # Custom color button eski yeri (kaldırıldı)
     
     def _draw_pieces_panel(self, x: int, y: int, w: int, h: int):
         """Kayıtlı parçalar paneli"""
-        # x artık tam başlangıç noktası, 80px offset yok.
+        _s = self._s
         panel_rect = pygame.Rect(x, y, w, h)
         retro_style.draw_glass_panel(self.screen, panel_rect, alpha=170, border_color=retro_style.primary)
         self.last_pieces_panel_rect = panel_rect
         
         # Başlık
-        title_font = retro_style.get_font(16, bold=True)
+        title_font = retro_style.get_font(_s(16), bold=True)
         title = title_font.render(t('piece_workshop_saved_pieces_title'), True, retro_style.primary)
-        self.screen.blit(title, (panel_rect.x + 12, panel_rect.y + 10))
-        count_font = retro_style.get_font(12, bold=False)
+        self.screen.blit(title, (panel_rect.x + _s(12), panel_rect.y + _s(10)))
+        count_font = retro_style.get_font(_s(12), bold=False)
         count_text = count_font.render(t('piece_workshop_piece_count', count=len(self.custom_pieces)), True, (150, 170, 200))
-        self.screen.blit(count_text, (panel_rect.right - count_text.get_width() - 12, panel_rect.y + 14))
+        self.screen.blit(count_text, (panel_rect.right - count_text.get_width() - _s(12), panel_rect.y + _s(14)))
         # İnce ayırıcı çizgi
-        pygame.draw.line(self.screen, (70, 90, 120), (panel_rect.x + 12, panel_rect.y + 34), (panel_rect.right - 12, panel_rect.y + 34), 1)
+        pygame.draw.line(self.screen, (70, 90, 120), (panel_rect.x + _s(12), panel_rect.y + _s(34)), (panel_rect.right - _s(12), panel_rect.y + _s(34)), 1)
         
         self.piece_item_rects = []
         self.mode_tag_rects = []
@@ -1077,17 +1091,17 @@ class PieceWorkshopScreen:
                 raw_modes = piece.get('modes')
                 modes = self._normalize_modes(raw_modes)
                 cols = 3
-                tag_w = (panel_rect.width - 44 - (cols - 1) * 8) // cols
-                tag_h = 28
-                mode_panel_h = 14 + 16 + ((len(WORKSHOP_MODES) + cols - 1) // cols) * (tag_h + 6) + 12
-                mode_panel_rect = pygame.Rect(panel_rect.x + 10, panel_rect.y + 42, panel_rect.width - 20, mode_panel_h)
+                tag_w = (panel_rect.width - _s(44) - (cols - 1) * _s(8)) // cols
+                tag_h = _s(28)
+                mode_panel_h = _s(14) + _s(16) + ((len(WORKSHOP_MODES) + cols - 1) // cols) * (tag_h + _s(6)) + _s(12)
+                mode_panel_rect = pygame.Rect(panel_rect.x + _s(10), panel_rect.y + _s(42), panel_rect.width - _s(20), mode_panel_h)
                 retro_style.draw_glass_panel(self.screen, mode_panel_rect, alpha=120, border_color=(70, 90, 120))
 
-                mode_title_font = retro_style.get_font(12, bold=True)
+                mode_title_font = retro_style.get_font(_s(12), bold=True)
                 mode_title = mode_title_font.render(t('piece_workshop_modes_title'), True, (185, 205, 235))
-                self.screen.blit(mode_title, (mode_panel_rect.x + 10, mode_panel_rect.y + 6))
+                self.screen.blit(mode_title, (mode_panel_rect.x + _s(10), mode_panel_rect.y + _s(6)))
 
-                note_font = retro_style.get_font(11, bold=False)
+                note_font = retro_style.get_font(_s(11), bold=False)
                 if isinstance(raw_modes, list) and len(modes) == 0:
                     note_text = t('piece_workshop_modes_note_none')
                     note_color = (255, 170, 90)
@@ -1095,16 +1109,16 @@ class PieceWorkshopScreen:
                     note_text = t('piece_workshop_modes_note_selected')
                     note_color = (160, 180, 210)
                 note = note_font.render(note_text, True, note_color)
-                self.screen.blit(note, (mode_panel_rect.x + 10, mode_panel_rect.y + 24))
+                self.screen.blit(note, (mode_panel_rect.x + _s(10), mode_panel_rect.y + _s(24)))
 
-                start_x = mode_panel_rect.x + 10
-                start_y = mode_panel_rect.y + 42
+                start_x = mode_panel_rect.x + _s(10)
+                start_y = mode_panel_rect.y + _s(42)
                 for idx, (mode_key, mode_label_key) in enumerate(WORKSHOP_MODES):
                     col = idx % cols
                     row = idx // cols
                     tag_rect = pygame.Rect(
-                        start_x + col * (tag_w + 8),
-                        start_y + row * (tag_h + 6),
+                        start_x + col * (tag_w + _s(8)),
+                        start_y + row * (tag_h + _s(6)),
                         tag_w,
                         tag_h,
                     )
@@ -1113,29 +1127,28 @@ class PieceWorkshopScreen:
                     border = retro_style.accent if idx == self.mode_focus else (95, 110, 145)
                     surf = pygame.Surface(tag_rect.size, pygame.SRCALPHA)
                     surf.fill(fill)
-                    # Üst highlight çizgisi
                     pygame.draw.rect(surf, (255, 255, 255, 32), pygame.Rect(0, 0, tag_rect.width, 2))
-                    pygame.draw.rect(surf, border, surf.get_rect(), 2, border_radius=12)
-                    label_font = retro_style.get_font(12, bold=True)
+                    pygame.draw.rect(surf, border, surf.get_rect(), 2, border_radius=_s(12))
+                    label_font = retro_style.get_font(_s(12), bold=True)
                     label = label_font.render(t(mode_label_key), True, (235, 243, 255))
                     surf.blit(label, label.get_rect(center=surf.get_rect().center))
                     if enabled:
-                        dot_rect = pygame.Rect(tag_rect.width - 11, 6, 5, 5)
-                        pygame.draw.rect(surf, (150, 255, 210), dot_rect, border_radius=3)
+                        dot_rect = pygame.Rect(tag_rect.width - _s(11), _s(6), _s(5), _s(5))
+                        pygame.draw.rect(surf, (150, 255, 210), dot_rect, border_radius=_s(3))
                     self.screen.blit(surf, tag_rect.topleft)
                     self.mode_tag_rects.append(tag_rect)
 
-                list_y = mode_panel_rect.bottom + 10
+                list_y = mode_panel_rect.bottom + _s(10)
 
-        card_gap = 10
-        card_height = 84
-        # Liste alanı (kartların genişliğini sınırla ve ortala)
-        list_area_rect = pygame.Rect(panel_rect.x + 10, list_y, panel_rect.width - 20, panel_rect.bottom - list_y - 10)
+        card_gap = _s(10)
+        card_height = _s(84)
+        # Liste alanı
+        list_area_rect = pygame.Rect(panel_rect.x + _s(10), list_y, panel_rect.width - _s(20), panel_rect.bottom - list_y - _s(10))
         if list_area_rect.height > 20:
             retro_style.draw_glass_panel(self.screen, list_area_rect, alpha=110, border_color=(55, 70, 105))
 
-        list_padding = 10
-        max_row_width = min(list_area_rect.width - list_padding * 2, 720)
+        list_padding = _s(10)
+        max_row_width = min(list_area_rect.width - list_padding * 2, _s(720))
         list_left = list_area_rect.x + (list_area_rect.width - max_row_width) // 2
         list_top = list_area_rect.y + list_padding
 
@@ -1173,7 +1186,7 @@ class PieceWorkshopScreen:
             else:
                 bg_color = (22, 32, 55, 185)
             item_surf = pygame.Surface(item_rect.size, pygame.SRCALPHA)
-            pygame.draw.rect(item_surf, bg_color, item_surf.get_rect(), border_radius=10)
+            pygame.draw.rect(item_surf, bg_color, item_surf.get_rect(), border_radius=_s(10))
             self.screen.blit(item_surf, item_rect.topleft)
 
             # Üst highlight çizgisi
@@ -1189,30 +1202,30 @@ class PieceWorkshopScreen:
             else:
                 border_col = (55, 70, 105)
                 border_w = 1
-            pygame.draw.rect(self.screen, border_col, item_rect, border_w, border_radius=10)
+            pygame.draw.rect(self.screen, border_col, item_rect, border_w, border_radius=_s(10))
 
-            # Parça önizleme (mini) - soldaki grid ile uyumlu stil
-            preview_size = min(62, card_height - 18)
-            preview_rect = pygame.Rect(item_rect.x + 10, item_rect.y + 10, preview_size, preview_size)
-            pygame.draw.rect(self.screen, (18, 26, 46), preview_rect, border_radius=8)
-            pygame.draw.rect(self.screen, (52, 68, 102), preview_rect, 1, border_radius=8)
+            # Parça önizleme (mini)
+            preview_size = min(_s(62), card_height - _s(18))
+            preview_rect = pygame.Rect(item_rect.x + _s(10), item_rect.y + _s(10), preview_size, preview_size)
+            pygame.draw.rect(self.screen, (18, 26, 46), preview_rect, border_radius=_s(8))
+            pygame.draw.rect(self.screen, (52, 68, 102), preview_rect, 1, border_radius=_s(8))
             self._draw_mini_piece(preview_rect, piece)
 
             # İsim
-            name_font = retro_style.get_font(14, bold=True)
+            name_font = retro_style.get_font(_s(14), bold=True)
             name = name_font.render(piece['name'], True, (225, 235, 250))
-            self.screen.blit(name, (preview_rect.right + 10, item_rect.y + 11))
+            self.screen.blit(name, (preview_rect.right + _s(10), item_rect.y + _s(11)))
 
             # Blok sayısı
             cells = piece.get('cells') or []
             block_count = len(cells) if cells else len(piece.get('shape', []))
-            info_font = retro_style.get_font(12, bold=False)
+            info_font = retro_style.get_font(_s(12), bold=False)
             info = info_font.render(t('piece_workshop_block_count', count=block_count), True, (145, 165, 190))
-            self.screen.blit(info, (preview_rect.right + 10, item_rect.y + 35))
+            self.screen.blit(info, (preview_rect.right + _s(10), item_rect.y + _s(35)))
 
             # Mod etiketi (özet)
             modes = self._normalize_modes(piece.get('modes'))
-            mode_font = retro_style.get_font(11, bold=False)
+            mode_font = retro_style.get_font(_s(11), bold=False)
             mode_text = (
                 t('piece_workshop_all_modes')
                 if len(modes) == len(WORKSHOP_MODES)
@@ -1220,7 +1233,7 @@ class PieceWorkshopScreen:
             )
             mode_color = (120, 210, 170) if len(modes) > 0 else (180, 150, 130)
             mode_label = mode_font.render(mode_text, True, mode_color)
-            self.screen.blit(mode_label, (preview_rect.right + 10, item_rect.y + 56))
+            self.screen.blit(mode_label, (preview_rect.right + _s(10), item_rect.y + _s(56)))
     
     def _draw_mini_piece(self, rect: pygame.Rect, piece: Dict):
         """Mini parça önizleme - grid görünümüyle birebir aynı stil"""
@@ -1271,12 +1284,13 @@ class PieceWorkshopScreen:
         """Kullanıcı ekranı stilinde buton çiz"""
         if rect.width <= 0 or rect.height <= 0:
             return
+        _s = self._s
         # Arka plan
-        pygame.draw.rect(self.screen, color, rect, border_radius=12)
+        pygame.draw.rect(self.screen, color, rect, border_radius=_s(12))
         # Beyaz kenar
-        pygame.draw.rect(self.screen, (255, 255, 255, 100), rect, 2, border_radius=12)
+        pygame.draw.rect(self.screen, (255, 255, 255, 100), rect, 2, border_radius=_s(12))
         # Metin
-        font = retro_style.get_font(14, bold=False)
+        font = retro_style.get_font(_s(14), bold=False)
         text = font.render(label, True, (255, 255, 255))
         self.screen.blit(text, text.get_rect(center=rect.center))
 

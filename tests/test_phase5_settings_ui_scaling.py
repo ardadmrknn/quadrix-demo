@@ -140,6 +140,7 @@ def _install_stubs(monkeypatch):
         draw_scrollbar=lambda _screen, rect, *_args, **_kwargs: Rect(rect.x, rect.y, rect.width, max(12, rect.height // 4)),
         get_font=lambda size, bold=False: Font(size),
         get_fitting_font=lambda _text, size, _max_width, bold=False, min_size=None: Font(max(min_size or 1, size)),
+        _scale_menu_alpha=lambda alpha, _fade=1.0: int(alpha),
     )
     monkeypatch.setitem(sys.modules, 'retro_style', retro_style_stub)
 
@@ -266,7 +267,7 @@ def test_settings_ui_scale_uses_effective_helper_when_available(monkeypatch):
     mod = _import_module(monkeypatch)
     captured = {}
 
-    def fake_get_effective_scale(screen, *, min_scale, max_scale, reference_size, display_surface=None):
+    def fake_get_projected_effective_scale(screen, *, min_scale, max_scale, reference_size, display_surface=None):
         captured['screen'] = screen
         captured['min_scale'] = min_scale
         captured['max_scale'] = max_scale
@@ -274,7 +275,7 @@ def test_settings_ui_scale_uses_effective_helper_when_available(monkeypatch):
         captured['display_surface'] = display_surface
         return 0.96
 
-    monkeypatch.setattr(mod, 'get_effective_scale', fake_get_effective_scale)
+    monkeypatch.setattr(mod, 'get_projected_effective_scale', fake_get_projected_effective_scale)
 
     screen = _make_screen(mod, 2560, 1660)
 

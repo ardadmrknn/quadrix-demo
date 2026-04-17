@@ -104,6 +104,7 @@ def _install_stubs(monkeypatch):
     ui_scaling_stub = types.ModuleType('ui_scaling')
     ui_scaling_stub.UI_SCALE_PRESETS = ['compact', 'normal', 'large']
     ui_scaling_stub.get_effective_scale = lambda *args, **kwargs: 1.0
+    ui_scaling_stub.get_projected_effective_scale = lambda *args, **kwargs: 1.0
     ui_scaling_stub.normalize_ui_scale_preset = lambda value: value if value in {'compact', 'normal', 'large'} else 'normal'
     ui_scaling_stub.scale_px = lambda value, scale, minimum=1: max(minimum, int(round(float(value) * float(scale))))
     monkeypatch.setitem(sys.modules, 'ui_scaling', ui_scaling_stub)

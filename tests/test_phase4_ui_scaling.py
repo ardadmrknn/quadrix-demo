@@ -170,13 +170,13 @@ def test_user_selection_ui_scale_preserves_1366_baseline(monkeypatch):
 def test_user_screen_shared_scale_uses_effective_helper_when_available(monkeypatch):
     captured = []
 
-    def fake_get_effective_scale(screen_or_size, *, min_scale, max_scale, reference_size, display_surface=None):
+    def fake_get_projected_effective_scale(screen_or_size, *, min_scale, max_scale, reference_size, display_surface=None):
         captured.append((screen_or_size, min_scale, max_scale, reference_size, display_surface))
         if reference_size == user_screens._USER_SCREEN_REFERENCE_SIZE:
             return 0.97
         return 0.81
 
-    monkeypatch.setattr(user_screens, 'get_effective_scale', fake_get_effective_scale)
+    monkeypatch.setattr(user_screens, 'get_projected_effective_scale', fake_get_projected_effective_scale)
 
     scale = user_screens._get_user_screen_scale(
         _FakeScreen(2560, 1660),
@@ -195,11 +195,11 @@ def test_user_selection_transition_keeps_original_screen_scale_source(monkeypatc
     _patch_user_screens(monkeypatch)
     captured = {}
 
-    def fake_get_effective_scale(screen_or_size, *, min_scale, max_scale, reference_size, display_surface=None):
+    def fake_get_projected_effective_scale(screen_or_size, *, min_scale, max_scale, reference_size, display_surface=None):
         captured['screen'] = screen_or_size
         return 0.96 if reference_size == user_screens._USER_SCREEN_REFERENCE_SIZE else 0.82
 
-    monkeypatch.setattr(user_screens, 'get_effective_scale', fake_get_effective_scale)
+    monkeypatch.setattr(user_screens, 'get_projected_effective_scale', fake_get_projected_effective_scale)
     monkeypatch.setattr(user_screens.pygame.time, 'get_ticks', lambda: 500)
 
     surface = pygame.Surface((2560, 1660), pygame.SRCALPHA)

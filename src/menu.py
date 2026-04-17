@@ -6273,6 +6273,14 @@ class HighScoreScreen:
         # Menüyle aynı shared katman
         self.background_fx = get_shared_falling_blocks_layer('default')
 
+    def _ui_scale(self) -> float:
+        return get_projected_effective_scale(
+            self.screen, min_scale=0.68, max_scale=1.24, reference_size=(1366.0, 768.0),
+        )
+
+    def _s(self, value: int | float, minimum: int = 1) -> int:
+        return max(minimum, int(round(value * self._ui_scale())))
+
     def handle_input(self, event):
         """Input işle"""
         if event.type == pygame.KEYDOWN:
@@ -6302,22 +6310,23 @@ class HighScoreScreen:
     def draw(self):
         """High score ekranını çiz - Kutucuklu grid görünüm"""
         width, height = self.screen.get_size()
+        _s = self._s
         retro_style.draw_background(self.screen)
         self.background_fx.update(self.screen)
         self.background_fx.draw(self.screen)
-        retro_style.draw_title(self.screen, t('high_scores_title'), (width // 2, 50))
+        retro_style.draw_title(self.screen, t('high_scores_title'), (width // 2, _s(50)))
 
         # Grid parametreleri
-        padding = 30
+        padding = _s(30)
         cols = 3
-        card_spacing = 20
-        content_width = min(1200, width - padding * 2)
+        card_spacing = _s(20)
+        content_width = min(_s(1200), width - padding * 2)
         content_x = (width - content_width) // 2
         card_width = (content_width - card_spacing * (cols - 1)) // cols
-        card_height = 200
+        card_height = _s(200)
         
-        content_top = 100
-        visible_height = height - content_top - 60
+        content_top = _s(100)
+        visible_height = height - content_top - _s(60)
         
         # Toplam yükseklik hesapla
         rows = (len(self.MODES) + cols - 1) // cols
@@ -6343,7 +6352,7 @@ class HighScoreScreen:
             self.card_rects.append(card_rect)
             
             # Görünür mü kontrol et
-            if y + card_height < content_top or y > height - 60:
+            if y + card_height < content_top or y > height - _s(60):
                 continue
             
             # Skorları al
@@ -6352,45 +6361,46 @@ class HighScoreScreen:
             self._draw_mode_card(card_rect, t(mode_label_key), mode_color, scores)
         
         # Alt bilgi
-        hint_font = retro_style.get_font(16, bold=False)
+        hint_font = retro_style.get_font(_s(16), bold=False)
         hint_text = t('high_scores_hint')
         hint_surf = hint_font.render(hint_text, True, retro_style.text_muted)
-        self.screen.blit(hint_surf, hint_surf.get_rect(center=(width // 2, height - 25)))
+        self.screen.blit(hint_surf, hint_surf.get_rect(center=(width // 2, height - _s(25))))
         
         # Scroll göstergesi
         if self.max_scroll > 0:
-            self._draw_scroll_indicator(width - 25, content_top, 10, visible_height)
+            self._draw_scroll_indicator(width - _s(25), content_top, _s(10), visible_height)
     
     def _draw_mode_card(self, rect, mode_name, mode_color, scores):
         """Mod kartını çiz"""
+        _s = self._s
         # Kart arka planı
         card_surf = pygame.Surface((rect.width, rect.height), pygame.SRCALPHA)
-        pygame.draw.rect(card_surf, (15, 25, 40, 220), card_surf.get_rect(), border_radius=12)
+        pygame.draw.rect(card_surf, (15, 25, 40, 220), card_surf.get_rect(), border_radius=_s(12))
         self.screen.blit(card_surf, rect.topleft)
         
         # Çerçeve
-        pygame.draw.rect(self.screen, mode_color, rect, 2, border_radius=12)
+        pygame.draw.rect(self.screen, mode_color, rect, 2, border_radius=_s(12))
         
         # Üst başlık bandı
-        header_height = 36
+        header_height = _s(36)
         header_rect = pygame.Rect(rect.x, rect.y, rect.width, header_height)
         header_surf = pygame.Surface((rect.width, header_height), pygame.SRCALPHA)
         pygame.draw.rect(header_surf, (*mode_color, 50), header_surf.get_rect(), 
-                        border_top_left_radius=12, border_top_right_radius=12)
+                        border_top_left_radius=_s(12), border_top_right_radius=_s(12))
         self.screen.blit(header_surf, header_rect.topleft)
         
         # Mod ismi
-        name_font = retro_style.get_font(18, bold=True)
+        name_font = retro_style.get_font(_s(18), bold=True)
         name_surf = name_font.render(mode_name, True, mode_color)
         self.screen.blit(name_surf, name_surf.get_rect(center=(rect.centerx, rect.y + header_height // 2)))
         
         # Skor listesi
-        score_area_y = rect.y + header_height + 10
-        score_area_h = rect.height - header_height - 15
+        score_area_y = rect.y + header_height + _s(10)
+        score_area_h = rect.height - header_height - _s(15)
         
         if not scores:
             # Skor yoksa mesaj
-            no_score_font = retro_style.get_font(14, bold=False)
+            no_score_font = retro_style.get_font(_s(14), bold=False)
             no_score_surf = no_score_font.render(t('no_scores'), True, retro_style.text_muted)
             self.screen.blit(no_score_surf, no_score_surf.get_rect(center=(rect.centerx, score_area_y + score_area_h // 2)))
             return
@@ -6402,16 +6412,16 @@ class HighScoreScreen:
             row_y = score_area_y + i * row_height
             
             # Sıra numarası
-            rank_font = retro_style.get_font(16, bold=True)
+            rank_font = retro_style.get_font(_s(16), bold=True)
             rank_color = mode_color if i == 0 else retro_style.text_secondary
             rank_text = f"#{i + 1}"
             rank_surf = rank_font.render(rank_text, True, rank_color)
-            self.screen.blit(rank_surf, (rect.x + 15, row_y + row_height // 2 - rank_surf.get_height() // 2))
+            self.screen.blit(rank_surf, (rect.x + _s(15), row_y + row_height // 2 - rank_surf.get_height() // 2))
             
             # Skor
             score_val = entry.get('score', 0)
             score_text = f"{score_val:,}".replace(',', '.')
-            score_font = retro_style.get_font(18, bold=True)
+            score_font = retro_style.get_font(_s(18), bold=True)
             score_color = (255, 255, 255) if i == 0 else retro_style.text_primary
             score_surf = score_font.render(score_text, True, score_color)
             self.screen.blit(score_surf, score_surf.get_rect(center=(rect.centerx, row_y + row_height // 2)))
@@ -6419,16 +6429,16 @@ class HighScoreScreen:
             # Tarih (sağda, küçük)
             date_text = entry.get('date', '')[:10] if entry.get('date') else ''
             if date_text:
-                date_font = retro_style.get_font(11, bold=False)
+                date_font = retro_style.get_font(_s(11), bold=False)
                 date_surf = date_font.render(date_text, True, retro_style.text_muted)
-                self.screen.blit(date_surf, (rect.right - date_surf.get_width() - 10, 
+                self.screen.blit(date_surf, (rect.right - date_surf.get_width() - _s(10), 
                                             row_y + row_height // 2 - date_surf.get_height() // 2))
             
             # Ayırıcı çizgi
             if i < len(scores) - 1:
                 line_y = row_y + row_height - 1
                 pygame.draw.line(self.screen, (*mode_color, 40), 
-                               (rect.x + 15, line_y), (rect.right - 15, line_y), 1)
+                               (rect.x + _s(15), line_y), (rect.right - _s(15), line_y), 1)
     
     def _draw_scroll_indicator(self, x, y, width, height):
         """Scroll göstergesini çiz"""
@@ -6490,6 +6500,7 @@ class AchievementScreen:
         self.screen = screen
         self.achievement_manager = achievement_manager
         self._font_lang = None
+        self._cached_font_scale: float = 0.0
         self.font_name = retro_style.get_font(30)
         self.font_desc = retro_style.get_font(20, bold=False)
         self.font_progress = retro_style.get_font(24)
@@ -6508,6 +6519,14 @@ class AchievementScreen:
         # Menüyle aynı shared katman: ekran geçişlerinde animasyon kesilmesin.
         self.background_fx = get_shared_falling_blocks_layer('default')
 
+    def _ui_scale(self) -> float:
+        return get_projected_effective_scale(
+            self.screen, min_scale=0.68, max_scale=1.24, reference_size=(1366.0, 768.0),
+        )
+
+    def _s(self, value: int | float, minimum: int = 1) -> int:
+        return max(minimum, int(round(value * self._ui_scale())))
+
     def _refresh_fonts_for_language(self, force: bool = False) -> None:
         """Aktif dile göre başarı ekranı fontlarını güncelle.
 
@@ -6518,14 +6537,17 @@ class AchievementScreen:
         except Exception:
             lang = 'en'
 
-        if not force and self._font_lang == lang:
+        sc = self._ui_scale()
+        _sf = lambda v: max(1, int(round(v * sc)))
+
+        if not force and self._font_lang == lang and abs(self._cached_font_scale - sc) < 0.01:
             return
 
-        cjk_name = get_font_for_language(lang, 30)
-        cjk_desc = get_font_for_language(lang, 20)
-        cjk_progress = get_font_for_language(lang, 24)
-        cjk_tab = get_font_for_language(lang, 18)
-        cjk_hint = get_font_for_language(lang, 16)
+        cjk_name = get_font_for_language(lang, _sf(30))
+        cjk_desc = get_font_for_language(lang, _sf(20))
+        cjk_progress = get_font_for_language(lang, _sf(24))
+        cjk_tab = get_font_for_language(lang, _sf(18))
+        cjk_hint = get_font_for_language(lang, _sf(16))
 
         if cjk_name and cjk_desc and cjk_progress and cjk_tab and cjk_hint:
             self.font_name = cjk_name
@@ -6534,13 +6556,14 @@ class AchievementScreen:
             self.font_tab = cjk_tab
             self.font_hint = cjk_hint
         else:
-            self.font_name = retro_style.get_font(30)
-            self.font_desc = retro_style.get_font(20, bold=False)
-            self.font_progress = retro_style.get_font(24)
-            self.font_tab = retro_style.get_font(18, bold=True)
-            self.font_hint = retro_style.get_font(16, bold=False)
+            self.font_name = retro_style.get_font(_sf(30))
+            self.font_desc = retro_style.get_font(_sf(20), bold=False)
+            self.font_progress = retro_style.get_font(_sf(24))
+            self.font_tab = retro_style.get_font(_sf(18), bold=True)
+            self.font_hint = retro_style.get_font(_sf(16), bold=False)
 
         self._font_lang = lang
+        self._cached_font_scale = sc
 
     def _copy_for_language(self) -> dict[str, Any]:
         try:
@@ -6747,14 +6770,15 @@ class AchievementScreen:
         """Başarı ekranını çiz"""
         self._refresh_fonts_for_language()
         width, height = self.screen.get_size()
+        _s = self._s
         retro_style.draw_background(self.screen)
         self.background_fx.update(self.screen)
         self.background_fx.draw(self.screen)
         copy = self._copy_for_language()
 
-        title_rect = retro_style.draw_title(self.screen, t('achievements_title'), (width // 2, 70), emoji='☆')
+        title_rect = retro_style.draw_title(self.screen, t('achievements_title'), (width // 2, _s(70)), emoji='☆')
         hint_surf = self.font_hint.render(copy['hint_text'], True, UIColors.TEXT_SECONDARY)
-        hint_rect = hint_surf.get_rect(center=(width // 2, title_rect.bottom + 18))
+        hint_rect = hint_surf.get_rect(center=(width // 2, title_rect.bottom + _s(18)))
         self.screen.blit(hint_surf, hint_rect)
 
         def _ellipsize(text: str, font: pygame.font.Font, max_width: int) -> str:
@@ -6890,13 +6914,13 @@ class AchievementScreen:
         selected_color = self._CATEGORY_ACCENTS.get(self.selected_category, UIColors.NEON_CYAN)
         primary_accent = self._content_accent(self.selected_category)
 
-        outer_width = min(1180, max(0, width - 72))
+        outer_width = min(_s(1180), max(0, width - _s(72)))
         outer_x = (width - outer_width) // 2
-        body_top = hint_rect.bottom + 18
-        body_bottom_margin = 36
-        body_height = max(360, height - body_top - body_bottom_margin)
-        side_width = max(220, min(260, int(outer_width * 0.24)))
-        gutter = 18
+        body_top = hint_rect.bottom + _s(18)
+        body_bottom_margin = _s(36)
+        body_height = max(_s(360), height - body_top - body_bottom_margin)
+        side_width = max(_s(220), min(_s(260), int(outer_width * 0.24)))
+        gutter = _s(18)
         content_width = outer_width - side_width - gutter
         side_rect = pygame.Rect(outer_x, body_top, side_width, body_height)
         content_rect = pygame.Rect(side_rect.right + gutter, body_top, content_width, body_height)
@@ -6917,20 +6941,20 @@ class AchievementScreen:
         )
 
         panel_title = self.font_progress.render(copy['categories_title'], True, UIColors.TEXT_PRIMARY)
-        self.screen.blit(panel_title, (side_rect.x + 18, side_rect.y + 18))
+        self.screen.blit(panel_title, (side_rect.x + _s(18), side_rect.y + _s(18)))
         side_percent = int(round(progress)) if selected_total else 0
         side_summary = self.font_tab.render(f"%{side_percent}", True, selected_color)
-        self.screen.blit(side_summary, (side_rect.right - side_summary.get_width() - 18, side_rect.y + 20))
+        self.screen.blit(side_summary, (side_rect.right - side_summary.get_width() - _s(18), side_rect.y + _s(20)))
 
         self._category_tab_rects = {}
-        tab_top = side_rect.y + 68
-        tab_gap = 10
-        tab_height = 62
-        tab_width = side_rect.width - 24
+        tab_top = side_rect.y + _s(68)
+        tab_gap = _s(10)
+        tab_height = _s(62)
+        tab_width = side_rect.width - _s(24)
         for index, category_id in enumerate(self._CATEGORY_ORDER):
             label, _ = self._category_text(category_id)
             stats = category_stats[category_id]
-            tab_rect = pygame.Rect(side_rect.x + 12, tab_top + index * (tab_height + tab_gap), tab_width, tab_height)
+            tab_rect = pygame.Rect(side_rect.x + _s(12), tab_top + index * (tab_height + tab_gap), tab_width, tab_height)
             self._category_tab_rects[category_id] = tab_rect
             is_selected = category_id == self.selected_category
             is_hovered = category_id == self._category_hover
@@ -6955,44 +6979,44 @@ class AchievementScreen:
                 border_radius=14,
             )
 
-            icon_rect = pygame.Rect(tab_rect.x + 12, tab_rect.y + 9, 32, 32)
+            icon_rect = pygame.Rect(tab_rect.x + _s(12), tab_rect.y + _s(9), _s(32), _s(32))
             self._draw_category_emblem(icon_rect, category_id, accent, active=is_selected)
 
             label_surf = self.font_tab.render(label, True, UIColors.TEXT_PRIMARY)
-            self.screen.blit(label_surf, (icon_rect.right + 10, tab_rect.y + 10))
+            self.screen.blit(label_surf, (icon_rect.right + _s(10), tab_rect.y + _s(10)))
             count_text = f"{stats['unlocked']}/{stats['total']}"
             count_surf = self.font_hint.render(count_text, True, accent if is_selected else UIColors.TEXT_SECONDARY)
-            count_rect = count_surf.get_rect(right=tab_rect.right - 14, centery=tab_rect.y + 21)
+            count_rect = count_surf.get_rect(right=tab_rect.right - _s(14), centery=tab_rect.y + _s(21))
             self.screen.blit(count_surf, count_rect)
 
             tab_percent = (stats['unlocked'] / stats['total']) if stats['total'] else 0.0
-            progress_track = pygame.Rect(icon_rect.right + 10, tab_rect.bottom - 16, tab_rect.width - (icon_rect.width + 44), 6)
+            progress_track = pygame.Rect(icon_rect.right + _s(10), tab_rect.bottom - _s(16), tab_rect.width - (icon_rect.width + _s(44)), _s(6))
             pygame.draw.rect(self.screen, (36, 42, 68), progress_track, border_radius=4)
             if tab_percent > 0:
                 fill_w = max(10, int(progress_track.width * tab_percent))
                 pygame.draw.rect(self.screen, accent, pygame.Rect(progress_track.x, progress_track.y, fill_w, progress_track.height), border_radius=4)
 
-        content_inner = content_rect.inflate(-16, -16)
-        summary_rect = pygame.Rect(content_inner.x, content_inner.y, content_inner.width, 96)
+        content_inner = content_rect.inflate(-_s(16), -_s(16))
+        summary_rect = pygame.Rect(content_inner.x, content_inner.y, content_inner.width, _s(96))
         retro_style.draw_glass_panel(self.screen, summary_rect, alpha=180, border_color=primary_accent, glow=False)
         summary_wash = pygame.Surface((summary_rect.width, max(1, summary_rect.height // 3)), pygame.SRCALPHA)
-        pygame.draw.rect(summary_wash, (*selected_color, 18), summary_wash.get_rect(), border_radius=16)
+        pygame.draw.rect(summary_wash, (*selected_color, 18), summary_wash.get_rect(), border_radius=_s(16))
         self.screen.blit(summary_wash, summary_rect.topleft)
 
         selected_label, _ = self._category_text(self.selected_category)
-        hero_icon = pygame.Rect(summary_rect.x + 18, summary_rect.y + 14, 46, 46)
+        hero_icon = pygame.Rect(summary_rect.x + _s(18), summary_rect.y + _s(14), _s(46), _s(46))
         self._draw_category_emblem(hero_icon, self.selected_category, selected_color, active=True)
-        hero_percent_font = retro_style.get_font(24, bold=True)
-        hero_count_font = retro_style.get_font(18, bold=True)
+        hero_percent_font = retro_style.get_font(_s(24), bold=True)
+        hero_count_font = retro_style.get_font(_s(18), bold=True)
         title_x = hero_icon.right + 12
         category_title_surf = self.font_name.render(selected_label, True, primary_accent)
-        self.screen.blit(category_title_surf, (title_x, summary_rect.y + 10))
+        self.screen.blit(category_title_surf, (title_x, summary_rect.y + _s(10)))
 
         percent_surf = hero_percent_font.render(f"%{int(round(progress))}", True, UIColors.TEXT_PRIMARY)
-        percent_rect = percent_surf.get_rect(topright=(summary_rect.right - 20, summary_rect.y + 14))
+        percent_rect = percent_surf.get_rect(topright=(summary_rect.right - _s(20), summary_rect.y + _s(14)))
         self.screen.blit(percent_surf, percent_rect)
         count_surf = hero_count_font.render(f"{selected_unlocked}/{selected_total}", True, selected_color)
-        count_rect = count_surf.get_rect(topright=(summary_rect.right - 22, percent_rect.bottom - 2))
+        count_rect = count_surf.get_rect(topright=(summary_rect.right - _s(22), percent_rect.bottom - 2))
         self.screen.blit(count_surf, count_rect)
 
         progress_text_str = t(
@@ -7002,9 +7026,9 @@ class AchievementScreen:
             percent=f'{progress:.1f}',
         )
         progress_text = self.font_hint.render(progress_text_str, True, (220, 230, 240))
-        self.screen.blit(progress_text, (title_x, summary_rect.y + 42))
+        self.screen.blit(progress_text, (title_x, summary_rect.y + _s(42)))
 
-        bar_rect = pygame.Rect(summary_rect.x + 18, summary_rect.bottom - 16, summary_rect.width - 36, 8)
+        bar_rect = pygame.Rect(summary_rect.x + _s(18), summary_rect.bottom - _s(16), summary_rect.width - _s(36), _s(8))
         pygame.draw.rect(self.screen, (26, 28, 52), bar_rect, border_radius=9)
         segment_count = 20
         inner = bar_rect.inflate(-4, -2)
@@ -7022,17 +7046,17 @@ class AchievementScreen:
             pygame.draw.rect(self.screen, seg_color, seg_rect, border_radius=5)
         pygame.draw.rect(self.screen, bar_color, bar_rect, 2, border_radius=9)
 
-        list_top = summary_rect.bottom + 12
-        item_height = 92
-        item_spacing = 14
-        list_height = max(120, content_inner.bottom - list_top)
+        list_top = summary_rect.bottom + _s(12)
+        item_height = _s(92)
+        item_spacing = _s(14)
+        list_height = max(_s(120), content_inner.bottom - list_top)
         total_content = len(visible_achievements) * (item_height + item_spacing)
         visible_height = list_height
         max_scroll = max(0, total_content - max(0, visible_height))
         self.scroll_offset = max(0, min(self.scroll_offset, max_scroll))
 
         # Panellerin üst panele taşmasını ve alta çıkmasını engelle
-        clip_rect = pygame.Rect(content_inner.x, list_top, content_inner.width - 28, max(0, visible_height))
+        clip_rect = pygame.Rect(content_inner.x, list_top, content_inner.width - _s(28), max(0, visible_height))
         prev_clip = self.screen.get_clip()
         self.screen.set_clip(clip_rect)
 
@@ -7042,10 +7066,10 @@ class AchievementScreen:
 
         for i, ach in enumerate(visible_achievements):
             y_pos = list_top + i * (item_height + item_spacing) - self.scroll_offset
-            if y_pos < list_top - item_height or y_pos > height - 120:
+            if y_pos < list_top - item_height or y_pos > height - _s(120):
                 continue
 
-            row_rect = pygame.Rect(content_inner.x, y_pos, content_inner.width - 28, item_height)
+            row_rect = pygame.Rect(content_inner.x, y_pos, content_inner.width - _s(28), item_height)
             # Locked/Unlocked farkını ana neon/glass tema ile ver
             unlocked = bool(ach.get('unlocked'))
             row_alpha = 205 if unlocked else 170
@@ -7062,43 +7086,43 @@ class AchievementScreen:
                 border_color=border_color,
                 glow=False,
             )
-            slot_rect = pygame.Rect(0, 0, 60, 60)
-            slot_rect.center = (row_rect.x + 46, row_rect.centery)
+            slot_rect = pygame.Rect(0, 0, _s(60), _s(60))
+            slot_rect.center = (row_rect.x + _s(46), row_rect.centery)
             _draw_achievement_icon(slot_rect, str(ach.get('id', '')), unlocked)
 
             # Typography: daha temiz hiyerarşi + ellipsis
-            right_info_pad = 220
-            text_left = row_rect.x + 90
+            right_info_pad = _s(220)
+            text_left = row_rect.x + _s(90)
             text_max_w = max(0, row_rect.width - (text_left - row_rect.x) - right_info_pad)
 
             name_color = row_accent if unlocked else (220, 225, 235)
             name_text = _ellipsize(str(ach.get('name', '')), self.font_name, text_max_w)
             name_surface = self.font_name.render(name_text, True, name_color)
-            self.screen.blit(name_surface, (text_left, row_rect.y + 12))
+            self.screen.blit(name_surface, (text_left, row_rect.y + _s(12)))
 
             desc_color = (200, 210, 230) if unlocked else (150, 165, 190)
             desc_text = _ellipsize(str(ach.get('description', '')), self.font_desc, text_max_w)
             desc_surface = self.font_desc.render(desc_text, True, desc_color)
-            self.screen.blit(desc_surface, (text_left, row_rect.y + 52))
+            self.screen.blit(desc_surface, (text_left, row_rect.y + _s(52)))
 
-            meta_top = row_rect.y + 16
+            meta_top = row_rect.y + _s(16)
             category_label = self._category_text(self._category_for_achievement(str(ach.get('id', ''))))[0]
             if self.selected_category == 'all':
                 category_meta = self.font_hint.render(category_label, True, self._blend_color(category_color, UIColors.TEXT_SECONDARY, 0.35))
-                category_meta_rect = category_meta.get_rect(right=row_rect.right - 18, top=meta_top)
+                category_meta_rect = category_meta.get_rect(right=row_rect.right - _s(18), top=meta_top)
                 self.screen.blit(category_meta, category_meta_rect)
-                meta_y = category_meta_rect.bottom + 10
+                meta_y = category_meta_rect.bottom + _s(10)
             else:
                 meta_y = row_rect.centery - self.font_desc.get_height() // 2
 
             if ach['unlocked'] and ach['unlock_date']:
                 date_surface = self.font_desc.render(ach['unlock_date'], True, (180, 255, 200))
-                date_rect = date_surface.get_rect(right=row_rect.right - 18, top=meta_y)
+                date_rect = date_surface.get_rect(right=row_rect.right - _s(18), top=meta_y)
                 self.screen.blit(date_surface, date_rect)
             elif not ach.get('unlocked'):
                 progress_text = str(ach.get('progress_text') or '')
                 progress_surface = self.font_desc.render(progress_text, True, (160, 180, 210))
-                progress_rect = progress_surface.get_rect(right=row_rect.right - 18, top=meta_y)
+                progress_rect = progress_surface.get_rect(right=row_rect.right - _s(18), top=meta_y)
                 self.screen.blit(progress_surface, progress_rect)
 
         self.screen.set_clip(prev_clip)
@@ -8781,6 +8805,14 @@ class BlockStyleSettingsScreen:
         self._sb_drag_offset_y: int = 0
         self._layout_start_y: int = 160  # draw() sırasında güncellenir
 
+    def _ui_scale(self) -> float:
+        return get_projected_effective_scale(
+            self.screen, min_scale=0.68, max_scale=1.24, reference_size=(1366.0, 768.0),
+        )
+
+    def _s(self, value: int | float, minimum: int = 1) -> int:
+        return max(minimum, int(round(value * self._ui_scale())))
+
     def _base_color(self, piece_name):
         return get_piece_base_color(piece_name, self.theme_manager)
 
@@ -8841,8 +8873,9 @@ class BlockStyleSettingsScreen:
         bg_color = (60, 80, 100) if is_hovered else (40, 50, 70)
         border_color = (120, 140, 180) if is_hovered else (70, 80, 100)
         
-        pygame.draw.rect(self.screen, bg_color, rect, border_radius=8)
-        pygame.draw.rect(self.screen, border_color, rect, 1, border_radius=8)
+        _s = self._s
+        pygame.draw.rect(self.screen, bg_color, rect, border_radius=_s(8))
+        pygame.draw.rect(self.screen, border_color, rect, 1, border_radius=_s(8))
         
         # Text Label
         center = rect.center
@@ -8856,31 +8889,32 @@ class BlockStyleSettingsScreen:
             label_text = t('block_style_btn_default')
             text_color = (255, 180, 100) if is_hovered else (200, 140, 80)
             
-        font = retro_style.get_font(14, bold=False)
+        font = retro_style.get_font(self._s(14), bold=False)
         txt = font.render(label_text, True, text_color)
         self.screen.blit(txt, txt.get_rect(center=center))
 
     def draw(self):
         width, height = self.screen.get_size()
+        _s = self._s
         retro_style.draw_background(self.screen)
         self.background_fx.update(self.screen)
         self.background_fx.draw(self.screen)
-        title_rect = retro_style.draw_title(self.screen, t('panel_block_styles'), (width // 2, 70), emoji='🎨')
+        title_rect = retro_style.draw_title(self.screen, t('panel_block_styles'), (width // 2, _s(70)), emoji='🎨')
         # Başlığın altındaki tuş ipuçları kaldırıldı (mouse odaklı kullanım)
 
         self.option_rects = []
         self.color_edit_buttons = []
         self.color_reset_buttons = []
         
-        start_y = title_rect.bottom + 40
+        start_y = title_rect.bottom + _s(40)
         self._layout_start_y = start_y  # _clamp_scroll için güncel değer
-        card_width = min(780, width - 120)
-        card_height = 78
-        card_spacing = self._CARD_SPACING
+        card_width = min(_s(780), width - _s(120))
+        card_height = _s(78)
+        card_spacing = _s(self._CARD_SPACING)
 
         for i, piece_name in enumerate(self.piece_names):
             y_pos = start_y + i * card_spacing - self.scroll_offset
-            if y_pos < 140 or y_pos > height - 140:
+            if y_pos < _s(140) or y_pos > height - _s(140):
                 self.option_rects.append(pygame.Rect(0, 0, 0, 0))
                 continue
             card_x = (width - card_width) // 2
@@ -8889,16 +8923,16 @@ class BlockStyleSettingsScreen:
 
             # Kart arkaplanı
             if is_selected:
-                glow = pygame.Surface((card_width + 16, card_height + 16), pygame.SRCALPHA)
-                pygame.draw.rect(glow, (120, 200, 255, 90), glow.get_rect(), border_radius=14)
-                self.screen.blit(glow, (card_x - 8, y_pos - 8))
-                pygame.draw.rect(self.screen, (70, 90, 110), card_rect, border_radius=12)
-                pygame.draw.rect(self.screen, retro_style.accent, card_rect, 3, border_radius=12)
+                glow = pygame.Surface((card_width + _s(16), card_height + _s(16)), pygame.SRCALPHA)
+                pygame.draw.rect(glow, (120, 200, 255, 90), glow.get_rect(), border_radius=_s(14))
+                self.screen.blit(glow, (card_x - _s(8), y_pos - _s(8)))
+                pygame.draw.rect(self.screen, (70, 90, 110), card_rect, border_radius=_s(12))
+                pygame.draw.rect(self.screen, retro_style.accent, card_rect, 3, border_radius=_s(12))
             else:
                 panel = pygame.Surface((card_width, card_height), pygame.SRCALPHA)
                 panel.fill((40, 50, 70, 210))
                 self.screen.blit(panel, (card_x, y_pos))
-                pygame.draw.rect(self.screen, (100, 120, 150), card_rect, 1, border_radius=12)
+                pygame.draw.rect(self.screen, (100, 120, 150), card_rect, 1, border_radius=_s(12))
 
             display_color = self._get_display_color(piece_name)
             display_color = self._get_display_color(piece_name)
@@ -8915,21 +8949,21 @@ class BlockStyleSettingsScreen:
                 checked=False,
                 preview_color=display_color,
             )
-            preview_rect = pygame.Rect(card_x + card_width - 130, y_pos + 10, 110, card_height - 20)
+            preview_rect = pygame.Rect(card_x + card_width - _s(130), y_pos + _s(10), _s(110), card_height - _s(20))
 
             # Özel Renk ve Sıfırlama Butonları
-            btn_h = 28
-            btn_w_custom = 60
-            btn_w_reset = 80
+            btn_h = _s(28)
+            btn_w_custom = _s(60)
+            btn_w_reset = _s(80)
 
-            btn_y = card_rect.bottom - btn_h - 18
+            btn_y = card_rect.bottom - btn_h - _s(18)
 
-            edit_btn_x = preview_rect.left - btn_w_custom - 15
+            edit_btn_x = preview_rect.left - btn_w_custom - _s(15)
             edit_btn_rect = pygame.Rect(edit_btn_x, btn_y, btn_w_custom, btn_h)
             self._draw_icon_button(edit_btn_rect, 'edit', is_selected)
             self.color_edit_buttons.append((edit_btn_rect, i))
 
-            reset_btn_x = edit_btn_rect.left - btn_w_reset - 10
+            reset_btn_x = edit_btn_rect.left - btn_w_reset - _s(10)
             reset_btn_rect = pygame.Rect(reset_btn_x, btn_y, btn_w_reset, btn_h)
             self._draw_icon_button(reset_btn_rect, 'reset', is_selected)
             self.color_reset_buttons.append((reset_btn_rect, i))
@@ -8939,7 +8973,7 @@ class BlockStyleSettingsScreen:
             self.option_rects.append(card_rect)
 
         # Scrollbar çiz
-        visible_height = height - start_y - 140
+        visible_height = height - start_y - _s(140)
         total_content = len(self.piece_names) * card_spacing
         if total_content > visible_height:
             scrollbar_rect = pygame.Rect(

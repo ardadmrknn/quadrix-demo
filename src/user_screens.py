@@ -19,7 +19,7 @@ from renderers.jelly_renderer import draw_jelly_block
 from platform_utils import normalize_mouse_pos, get_mouse_pos
 from localization import t, get_language
 from steam_leaderboards import SteamLeaderboardService
-from ui_scaling import get_effective_scale, get_scale, scale_px
+from ui_scaling import get_projected_effective_scale, get_scale, scale_px
 
 _AVATAR_EXTS = ('.png', '.jpg', '.jpeg', '.webp', '.bmp')
 _USER_SCREEN_REFERENCE_SIZE = (1600.0, 900.0)
@@ -33,7 +33,7 @@ def _get_user_screen_scale(
     min_scale: float,
     max_scale: float,
 ) -> float:
-    scale_fn = get_effective_scale if hasattr(screen_or_size, 'get_size') else get_scale
+    scale_fn = get_projected_effective_scale if hasattr(screen_or_size, 'get_size') else get_scale
 
     readable_floor = scale_fn(
         screen_or_size,

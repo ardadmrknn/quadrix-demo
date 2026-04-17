@@ -2181,7 +2181,7 @@ class MysteryCardUI:
         pygame.draw.rect(desc_surface, (3, 3, 10, desc_bg_alpha), desc_surface.get_rect(), border_radius=14)
         for i, line in enumerate(desc_lines):
             desc_text = fonts["desc"].render(line, True, (230, 230, 240))
-            desc_surface.blit(desc_text, (12, 8 + i * 24))
+            desc_surface.blit(desc_text, (12, 8 + i * line_height_overlay))
         card_surface.blit(desc_surface, (24, value_rect.bottom + 20))
 
         # Add a small index bubble in the top-left like on the screenshot, subtle and readable
@@ -4177,7 +4177,7 @@ class MysteryMode(Game):
             est_cell_h = max(12, min(40, board_area_h // max(1, int(self.board_height))))
             board_pixel_width = int(self.board_width) * est_cell_h
 
-        scale = max(0.80, min(1.20, window_width / 1366.0))
+        scale = max(0.80, min(1.20, self._card_ui_scale()))
 
         left_max = int(getattr(self, 'left_panel_max_width', 420) or 420)
         left_pref = min(left_max, max(220, int(320 * scale)))

@@ -18,6 +18,7 @@ from themes import ThemeManager
 from block_styles import BlockStyleManager, TextureSlice, TextureRenderCache
 from platform_utils import create_display, get_display_flags, normalize_mouse_pos, get_mouse_pos, set_app_icon, resolve_frame_rate_cap
 from localization import t
+from ui_scaling import get_projected_effective_scale
 from ui_theme import UIColors, UIFonts
 from effect_surface_cache import EffectSurfaceCache
 from sweep_effects import SweepCatState, draw_rainbow_cat_sweep
@@ -121,12 +122,16 @@ class PvPGame:
         return True
 
     def _ui_scale(self, min_scale: float = 0.72, max_scale: float = 1.20) -> float:
-        """Pencere boyutuna bağlı genel UI ölçeği."""
+        """Pencere boyutuna bağlı genel UI ölçeği (Retina/HiDPI uyumlu)."""
         try:
-            scale = min(float(self.window_width) / 1366.0, float(self.window_height) / 768.0)
+            return get_projected_effective_scale(
+                self.screen,
+                min_scale=min_scale,
+                max_scale=max_scale,
+                reference_size=(1366.0, 768.0),
+            )
         except Exception:
-            scale = 1.0
-        return max(min_scale, min(max_scale, scale))
+            return 1.0
 
     def _sx(self, value: int | float, scale: float | None = None, minimum: int = 1) -> int:
         """Sabit piksel değerini UI ölçeğine göre dönüştür."""

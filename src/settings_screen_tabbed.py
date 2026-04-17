@@ -52,7 +52,7 @@ except ImportError:
         if trigger_val >= 0.5:
             return 100 if axis_index == 4 else 101
         return None
-from ui_scaling import UI_SCALE_PRESETS, get_effective_scale, normalize_ui_scale_preset, scale_px
+from ui_scaling import UI_SCALE_PRESETS, get_projected_effective_scale, normalize_ui_scale_preset, scale_px
 
 
 # ---------------------------------------------------------------------------
@@ -542,7 +542,7 @@ class TabbedSettingsScreen:
 
     def _ui_scale(self, min_scale: float = 0.72, max_scale: float = 1.22) -> float:
         try:
-            return get_effective_scale(
+            return get_projected_effective_scale(
                 self.screen,
                 min_scale=min_scale,
                 max_scale=max_scale,

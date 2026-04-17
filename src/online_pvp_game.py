@@ -55,6 +55,7 @@ get_font = _rs.get_font
 draw_glass_panel = _rs.draw_glass_panel
 get_fitting_font = _rs.get_fitting_font
 from ui_theme import UIFonts, UIColors, UIStyle
+from ui_scaling import get_projected_effective_scale
 from localization import t, get_language
 from combo_popup_style import (
     COMBO_POPUP_SHADOW_COLOR,
@@ -296,13 +297,16 @@ class OnlinePvPGame:
     # ── Responsive ölçek (pvp_game.py ile aynı pattern) ──
 
     def _ui_scale(self, min_scale: float = 0.72, max_scale: float = 1.20) -> float:
-        """Pencere boyutuna bağlı genel UI ölçeği."""
+        """Pencere boyutuna bağlı genel UI ölçeği (Retina/HiDPI uyumlu)."""
         try:
-            scale = min(float(self.window_width) / 1366.0,
-                        float(self.window_height) / 768.0)
+            return get_projected_effective_scale(
+                self.screen,
+                min_scale=min_scale,
+                max_scale=max_scale,
+                reference_size=(1366.0, 768.0),
+            )
         except Exception:
-            scale = 1.0
-        return max(min_scale, min(max_scale, scale))
+            return 1.0
 
     def _sx(self, value, scale=None, minimum=1) -> int:
         """Sabit piksel değerini UI ölçeğine göre dönüştür."""
