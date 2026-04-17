@@ -137,6 +137,14 @@ class TestFetchPlayerSummariesDirectMode(unittest.TestCase):
         self.assertEqual(result, {})
         self.assertTrue(bool(svc.last_error))
 
+    def test_is_configured_tolerates_none_app_id(self):
+        """Direct mod kontrolü None app_id yüzünden patlamamalı."""
+        svc = _make_direct_only_service()
+        svc.app_id = None
+
+        self.assertFalse(svc.is_configured())
+        self.assertEqual(svc.app_id, 0)
+
     def test_backend_mode_still_uses_backend_endpoint(self):
         """Backend URL varsa backend endpoint kullanılmaya devam etmeli (fallback devreye girmemeli)."""
         from steam_leaderboards import SteamLeaderboardService

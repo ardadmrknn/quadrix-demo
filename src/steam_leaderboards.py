@@ -58,7 +58,7 @@ class SteamLeaderboardService:
         self.client_token = (client_token or os.getenv("LEADERBOARD_CLIENT_TOKEN", "")).strip()
         self.session_token = (session_token or os.getenv("LEADERBOARD_SESSION_TOKEN", "")).strip()
         self.steam_ticket = (steam_ticket or os.getenv("LEADERBOARD_STEAM_TICKET", "")).strip()
-        self.app_id = self._resolve_app_id(app_id)
+        self.app_id = self._normalize_app_id(self._resolve_app_id(app_id))
         self.publisher_key = (publisher_key or os.getenv("STEAM_WEB_API_KEY", "")).strip()
         self.current_steam_id = str(
             current_steam_id
@@ -75,6 +75,24 @@ class SteamLeaderboardService:
     def _resolve_backend_base_url(raw_base: str | None) -> str:
         base = str(raw_base or "").strip().rstrip("/")
         return base
+
+    @staticmethod
+    def _normalize_app_id(raw_app_id: Any) -> int:
+        try:
+            app_id = int(raw_app_id or 0)
+        except Exception:
+            return 0
+        return app_id if app_id > 0 else 0
+
+    def _get_direct_app_id(self) -> int:
+        app_id = self._normalize_app_id(self.app_id)
+        self.app_id = app_id
+        return app_id
+
+    def _get_direct_publisher_key(self) -> str:
+        publisher_key = str(self.publisher_key or "").strip()
+        self.publisher_key = publisher_key
+        return publisher_key
 
     @staticmethod
     def _read_app_id_from_file() -> int:
@@ -132,7 +150,7 @@ class SteamLeaderboardService:
         return bool(self.backend_base_url)
 
     def _is_direct_mode(self) -> bool:
-        return self.app_id > 0 and bool(self.publisher_key)
+        return self._get_direct_app_id() > 0 and bool(self._get_direct_publisher_key())
 
     def set_session_token(self, token: str | None):
         self.session_token = (token or "").strip()
@@ -267,7 +285,11 @@ class SteamLeaderboardService:
             return {}
 
         url = f"{STEAM_WEB_API_BASE}/{endpoint}"
-        merged = {"key": self.publisher_key, "appid": self.app_id, **params}
+        merged = {
+            "key": self._get_direct_publisher_key(),
+            "appid": self._get_direct_app_id(),
+            **params,
+        }
         try:
             response = requests.get(url, params=merged, timeout=self.timeout_seconds)
             response.raise_for_status()
@@ -549,7 +571,7 @@ class SteamLeaderboardService:
             chunk = clean_ids[i : i + chunk_size]
             url = f"{STEAM_WEB_API_BASE}/ISteamUser/GetPlayerSummaries/v2/"
             params: dict[str, Any] = {
-                "key": self.publisher_key,
+                "key": self._get_direct_publisher_key(),
                 "steamids": ",".join(chunk),
             }
             try:
