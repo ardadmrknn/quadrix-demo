@@ -583,6 +583,39 @@ def test_coop_sync_runtime_settings_updates_retro_style_transparency_state():
     assert _rs.retro_style._bg_transparency == 0.4
     assert _rs.retro_style._menu_transparency == 0.6
 
+def test_coop_uses_dedicated_dense_background_layer(monkeypatch):
+    captured_calls = []
+
+    class _Layer:
+        def __init__(self):
+            self.opacity = None
+
+        def set_opacity_multiplier(self, value):
+            self.opacity = float(value)
+
+    layer = _Layer()
+
+    def _fake_get_shared_layer(name='default', **kwargs):
+        captured_calls.append((name, kwargs))
+        return layer
+
+    monkeypatch.setattr(coop_game_module, 'get_shared_falling_blocks_layer', _fake_get_shared_layer)
+
+    settings = _FakeSettings(values={'effects_opacity': 0.6})
+    cg = CoopGame(
+        sound_enabled=False,
+        effects_enabled=True,
+        screen=_Surf(),
+        settings_manager=settings,
+        sound_manager=_SM(),
+    )
+
+    assert cg.falling_blocks is layer
+    assert captured_calls
+    assert all(name == 'coop' for name, _kwargs in captured_calls)
+    assert all(kwargs.get('block_count') == CoopGame._BACKGROUND_LAYER_BLOCK_COUNT for _name, kwargs in captured_calls)
+    assert layer.opacity == 0.6
+
 def test_draw_pending_line_clear_rows_uses_snapshot_colors():
     cg = CoopGame(sound_enabled=False, effects_enabled=True, screen=_Surf(), sound_manager=_SM())
     snapshot_color = (12, 34, 56)

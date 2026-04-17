@@ -92,6 +92,8 @@ class CoopGame:
     _LINE_CLEAR_SWEEP_BLOCK_FALL_SPEED = 0.144
     _OPENING_CURTAIN_DURATION_MS = 350
     _FRAME_MS = 1000.0 / 60.0
+    _BACKGROUND_LAYER_NAME = 'coop'
+    _BACKGROUND_LAYER_BLOCK_COUNT = 19
 
     # ------------------------------------------------------------------
     # Statik yardımcılar (PvP ile ortak)
@@ -422,7 +424,10 @@ class CoopGame:
         self.falling_blocks = None
         if self.effects_enabled:
             try:
-                self.falling_blocks = get_shared_falling_blocks_layer()
+                self.falling_blocks = get_shared_falling_blocks_layer(
+                    self._BACKGROUND_LAYER_NAME,
+                    block_count=self._BACKGROUND_LAYER_BLOCK_COUNT,
+                )
             except Exception:
                 self.falling_blocks = None
 
@@ -621,7 +626,15 @@ class CoopGame:
                     except Exception:
                         pass
 
-        self.falling_blocks = get_shared_falling_blocks_layer('default') if getattr(self, 'effects_enabled', True) else None
+        self.falling_blocks = None
+        if getattr(self, 'effects_enabled', True):
+            try:
+                self.falling_blocks = get_shared_falling_blocks_layer(
+                    self._BACKGROUND_LAYER_NAME,
+                    block_count=self._BACKGROUND_LAYER_BLOCK_COUNT,
+                )
+            except Exception:
+                self.falling_blocks = None
         if self.falling_blocks is not None:
             try:
                 eff_opacity = float(settings_manager.get('effects_opacity', 1.0))
@@ -1027,6 +1040,11 @@ class CoopGame:
         self._game_over_exit_rect = None
         self._game_over_peek_active = False
         self._game_over_peek_rect = None
+        try:
+            from gamepad_manager import get_gamepad_manager
+            get_gamepad_manager().rumble(1.0, 1.0, 600)
+        except Exception:
+            pass
         self._play_game_over_sequence()
 
     def restart(self) -> None:
@@ -1562,6 +1580,11 @@ class CoopGame:
                     self.create_drop_trail(trail_x, trail_y_start, trail_y_end, piece.color, cs)
             self.trigger_hard_drop_screen_shake()
         self._lock_and_new_piece(player)
+        try:
+            from gamepad_manager import get_gamepad_manager
+            get_gamepad_manager().rumble(0.3, 0.6, 120)
+        except Exception:
+            pass
 
     def _reset_player_lock_state(self, player: str) -> None:
         if player == 'P1':
@@ -1771,6 +1794,16 @@ class CoopGame:
                 self.trigger_screen_shake(intensity=7, duration=20 / 60.0)
             elif cleared >= 2:
                 self.trigger_screen_shake(intensity=3, duration=10 / 60.0)
+
+            # Gamepad titreşimi - line clear
+            try:
+                from gamepad_manager import get_gamepad_manager
+                if cleared >= 4:
+                    get_gamepad_manager().rumble(0.8, 1.0, 400)
+                elif cleared >= 2:
+                    get_gamepad_manager().rumble(0.4, 0.5, 200)
+            except Exception:
+                pass
 
             # Event yayınla
             self._emit_event('lines_cleared', {
@@ -2689,10 +2722,10 @@ class CoopGame:
                 tint_surface.fill((*outer_tint[:3], _tint_a))
                 composed.blit(tint_surface, (0, 0))
 
-        # macOS Metal/OpenGL backend'inde .convert() sonrası SRCALPHA blit
-        # (düşen bloklar) hatalı alpha sonucu verir — background.py ile tutarlı.
+        # Display formatına çevrilebildiğinde cache blit maliyeti düşer;
+        # desteklemeyen backend'lerde sessizce ham surface'te kal.
         try:
-            if pygame.display.get_surface() is not None and sys.platform != 'darwin':
+            if pygame.display.get_surface() is not None:
                 composed = composed.convert()
         except Exception:
             pass

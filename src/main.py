@@ -1332,9 +1332,14 @@ def main():
     # Falling blocks katmanını effects_opacity ile senkronize et.
     try:
         from background_effects import get_shared_falling_blocks_layer as _get_fb_init
-        _fb_init = _get_fb_init('default')
-        if _fb_init is not None:
-            _fb_init.set_opacity_multiplier(float(settings_manager.get('effects_opacity', 1.0)))
+        _eff_init = float(settings_manager.get('effects_opacity', 1.0))
+        for _layer_name, _layer_kwargs in (
+            ('default', {}),
+            ('coop', {'block_count': 19}),
+        ):
+            _fb_init = _get_fb_init(_layer_name, **_layer_kwargs)
+            if _fb_init is not None:
+                _fb_init.set_opacity_multiplier(_eff_init)
     except Exception:
         pass
 
@@ -2354,9 +2359,13 @@ def main():
                     eff_value = 1.0
                 try:
                     from background_effects import get_shared_falling_blocks_layer as _get_fb
-                    _fb = _get_fb('default')
-                    if _fb is not None:
-                        _fb.set_opacity_multiplier(eff_value)
+                    for _layer_name, _layer_kwargs in (
+                        ('default', {}),
+                        ('coop', {'block_count': 19}),
+                    ):
+                        _fb = _get_fb(_layer_name, **_layer_kwargs)
+                        if _fb is not None:
+                            _fb.set_opacity_multiplier(eff_value)
                 except Exception:
                     pass
                 # Aktif oyun nesnelerine de yansıt
