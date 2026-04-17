@@ -1608,7 +1608,7 @@ class Menu:
             self._draw_dashboard_tile_flavor(draw_rect, panel_key, accent_color, hover, target_surface=target_surface)
 
         fill = pygame.Surface(draw_rect.size, pygame.SRCALPHA)
-        fill.fill((0, 0, 0, 48 if is_highlighted else 38))
+        pygame.draw.rect(fill, (0, 0, 0, 48 if is_highlighted else 38), fill.get_rect(), border_radius=14)
         target_surface.blit(fill, draw_rect.topleft)
 
         if draw_flavor_on_top:
@@ -1893,14 +1893,17 @@ class Menu:
                 back_x = back_zone.centerx - cover_w // 2
                 back_y = back_zone.centery - cover_h // 2
 
-                prev_clip = target.get_clip()
-                target.set_clip(back_zone)
-                target.blit(scaled_back, (back_x, back_y))
+                corner_radius = max(8, s(12))
+                flavor_surf = pygame.Surface(back_zone.size, pygame.SRCALPHA)
+                flavor_surf.blit(scaled_back, (back_x - back_zone.x, back_y - back_zone.y))
                 hover_alpha = 90 if hover else 98
                 flavor_overlay = pygame.Surface(back_zone.size, pygame.SRCALPHA)
                 flavor_overlay.fill((0, 0, 0, hover_alpha))
-                target.blit(flavor_overlay, back_zone.topleft)
-                target.set_clip(prev_clip)
+                flavor_surf.blit(flavor_overlay, (0, 0))
+                corner_mask = pygame.Surface(back_zone.size, pygame.SRCALPHA)
+                pygame.draw.rect(corner_mask, (255, 255, 255, 255), corner_mask.get_rect(), border_radius=corner_radius)
+                flavor_surf.blit(corner_mask, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+                target.blit(flavor_surf, back_zone.topleft)
             return
 
         override_key = str(flavor['override_key'])

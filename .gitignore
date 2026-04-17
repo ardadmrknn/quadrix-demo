@@ -20,6 +20,7 @@ htmlcov/
 
 # Build artifacts
 build/
+.agents/
 dist/
 *.egg-info/
 *.spec.bak
@@ -27,6 +28,7 @@ build_log.txt
 build_stdout.log
 build_stderr.log
 stderr.log
+skills-lock.json
 
 # Compiled bridge artifacts (platform-specific, built locally)
 steam_net_bridge*.pyd
