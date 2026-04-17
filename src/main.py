@@ -1335,7 +1335,6 @@ def main():
         _eff_init = float(settings_manager.get('effects_opacity', 1.0))
         for _layer_name, _layer_kwargs in (
             ('default', {}),
-            ('coop', {'block_count': 19}),
         ):
             _fb_init = _get_fb_init(_layer_name, **_layer_kwargs)
             if _fb_init is not None:
@@ -2361,7 +2360,6 @@ def main():
                     from background_effects import get_shared_falling_blocks_layer as _get_fb
                     for _layer_name, _layer_kwargs in (
                         ('default', {}),
-                        ('coop', {'block_count': 19}),
                     ):
                         _fb = _get_fb(_layer_name, **_layer_kwargs)
                         if _fb is not None:

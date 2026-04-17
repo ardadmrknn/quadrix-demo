@@ -92,8 +92,8 @@ class CoopGame:
     _LINE_CLEAR_SWEEP_BLOCK_FALL_SPEED = 0.144
     _OPENING_CURTAIN_DURATION_MS = 350
     _FRAME_MS = 1000.0 / 60.0
-    _BACKGROUND_LAYER_NAME = 'coop'
-    _BACKGROUND_LAYER_BLOCK_COUNT = 19
+    _BACKGROUND_LAYER_NAME = 'default'
+    _BACKGROUND_LAYER_BLOCK_COUNT = 14
 
     # ------------------------------------------------------------------
     # Statik yardımcılar (PvP ile ortak)
@@ -424,10 +424,13 @@ class CoopGame:
         self.falling_blocks = None
         if self.effects_enabled:
             try:
-                self.falling_blocks = get_shared_falling_blocks_layer(
-                    self._BACKGROUND_LAYER_NAME,
-                    block_count=self._BACKGROUND_LAYER_BLOCK_COUNT,
-                )
+                if self._BACKGROUND_LAYER_NAME == 'default':
+                    self.falling_blocks = get_shared_falling_blocks_layer(self._BACKGROUND_LAYER_NAME)
+                else:
+                    self.falling_blocks = get_shared_falling_blocks_layer(
+                        self._BACKGROUND_LAYER_NAME,
+                        block_count=self._BACKGROUND_LAYER_BLOCK_COUNT,
+                    )
             except Exception:
                 self.falling_blocks = None
 
@@ -629,10 +632,13 @@ class CoopGame:
         self.falling_blocks = None
         if getattr(self, 'effects_enabled', True):
             try:
-                self.falling_blocks = get_shared_falling_blocks_layer(
-                    self._BACKGROUND_LAYER_NAME,
-                    block_count=self._BACKGROUND_LAYER_BLOCK_COUNT,
-                )
+                if self._BACKGROUND_LAYER_NAME == 'default':
+                    self.falling_blocks = get_shared_falling_blocks_layer(self._BACKGROUND_LAYER_NAME)
+                else:
+                    self.falling_blocks = get_shared_falling_blocks_layer(
+                        self._BACKGROUND_LAYER_NAME,
+                        block_count=self._BACKGROUND_LAYER_BLOCK_COUNT,
+                    )
             except Exception:
                 self.falling_blocks = None
         if self.falling_blocks is not None:
@@ -1083,17 +1089,20 @@ class CoopGame:
         """Arka plan ambient parçacıklarını oluştur."""
         if not self._particle_effects_enabled():
             return
-        count = max(8, int(20 * max(0.5, self._particle_effects_multiplier())))
+        self.ambient_particles.clear()
+        active_width, active_height = self._active_ui_size()
+        base_count = random.randint(50, 100)
+        count = int(base_count * getattr(self, 'animation_multiplier', 1.0) * self._particle_effects_multiplier())
         for _ in range(count):
             p = {
-                'x': float(random.randint(0, max(1, self.window_width))),
-                'y': float(random.randint(0, max(1, self.window_height))),
-                'vx': random.uniform(-0.15, 0.15),
-                'vy': random.uniform(0.2, 0.6),
-                'alpha': random.randint(40, 120),
-                'size': random.randint(2, 5),
+                'x': random.uniform(0, active_width),
+                'y': random.uniform(0, active_height),
+                'vx': random.uniform(-0.5, 0.5),
+                'vy': random.uniform(0.2, 0.8),
+                'alpha': random.randint(50, 150),
+                'size': random.randint(1, 3),
                 'pulse': random.uniform(0, 6.28),
-                'pulse_speed': random.uniform(0.03, 0.08),
+                'pulse_speed': random.uniform(0.02, 0.05),
                 'color': self._AMBIENT_PARTICLE_COLOR,
             }
             self.ambient_particles.append(p)
@@ -1348,16 +1357,17 @@ class CoopGame:
     def update_ambient_particles(self, dt_ms: float = 16.666):
         dt = max(0.0, min(100.0, float(dt_ms)))
         dt_frames = dt / 16.666
+        active_width, active_height = self._active_ui_size()
         for p in self.ambient_particles:
             p['x'] += p['vx'] * dt_frames
             p['y'] += p['vy'] * dt_frames
             p['pulse'] += p['pulse_speed'] * dt_frames
-            if p['y'] > self.window_height:
+            if p['y'] > active_height:
                 p['y'] = -10
-                p['x'] = random.uniform(0, self.window_width)
+                p['x'] = random.uniform(0, active_width)
             if p['x'] < -10:
-                p['x'] = self.window_width + 10
-            elif p['x'] > self.window_width + 10:
+                p['x'] = active_width + 10
+            elif p['x'] > active_width + 10:
                 p['x'] = -10
 
     def draw_ambient_particles(self):
@@ -1370,14 +1380,14 @@ class CoopGame:
             pulse_alpha = int(p['alpha'] + math.sin(p['pulse']) * 30)
             pulse_alpha = max(30, min(180, pulse_alpha))
             pulse_alpha = int(pulse_alpha * eo)
-            glow_size = p['size'] * 3
             color = tuple(p.get('color', self._AMBIENT_PARTICLE_COLOR))[:3]
-            glow_surf = self._effect_surface_cache.get_ellipse_surface(
-                (glow_size, glow_size), (*color, pulse_alpha // 3))
-            self.screen.blit(glow_surf, (int(p['x']) - glow_size // 2, int(p['y']) - glow_size // 2))
-            core_surf = self._effect_surface_cache.get_filled_surface(
-                (p['size'], p['size']), (*color, pulse_alpha))
-            self.screen.blit(core_surf, (int(p['x']) - p['size'] // 2, int(p['y']) - p['size'] // 2))
+            pos = (int(p['x']), int(p['y']))
+            size = max(1, int(p['size']))
+            if size > 1:
+                glow_surf = self._effect_surface_cache.get_circle_surface(size * 2, (*color, pulse_alpha // 3))
+                self.screen.blit(glow_surf, (pos[0] - size * 2, pos[1] - size * 2))
+            particle_surf = self._effect_surface_cache.get_circle_surface(size, (*color, pulse_alpha))
+            self.screen.blit(particle_surf, (pos[0] - size, pos[1] - size))
 
     # ------------------------------------------------------------------
     # Drop trails
@@ -2480,34 +2490,40 @@ class CoopGame:
         # === Arka plan ===
         # Menü ile tutarlı görünüm için retro_style.bg_color kullan
         _fill_color = getattr(retro_style, 'bg_color', getattr(skin, 'outer_bg', (0, 0, 0)))
-        outer_background_composite = self._get_outer_background_composite(skin)
-        if visible_outer_rect is not None and outer_background_composite is not None:
-            self.screen.fill(_fill_color)
-            self.screen.blit(outer_background_composite, visible_outer_rect.topleft, visible_outer_rect)
-        elif outer_background_composite is not None:
-            self.screen.blit(outer_background_composite, (0, 0))
+        bg_alpha = 1.0
+        if self.outer_background.is_loaded():
+            try:
+                bg_alpha = float(getattr(self.outer_background, 'transparency', 1.0))
+            except Exception:
+                bg_alpha = 1.0
+            if bg_alpha < 1.0:
+                self.screen.fill(_fill_color)
+            if visible_outer_rect is not None:
+                self.outer_background.draw_full_screen_region(self.screen, visible_outer_rect)
+            else:
+                self.outer_background.draw_full_screen(self.screen)
         elif self.background.is_loaded():
             # Yarı-saydam arka plan blend artefaktını önlemek için base fill
             try:
-                _bg_a = float(getattr(self.background, 'transparency', 1.0))
+                bg_alpha = float(getattr(self.background, 'transparency', 1.0))
             except Exception:
-                _bg_a = 1.0
-            if _bg_a < 1.0:
+                bg_alpha = 1.0
+            if bg_alpha < 1.0:
                 self.screen.fill(_fill_color)
             self.background.draw(self.screen, (0, 0, self.window_width, self.window_height))
-            # Outer tint: bg_transparency ile orantılı
-            _ot = tuple(skin.outer_tint)
-            if len(_ot) >= 4 and _ot[3] > 0:
-                _tint_a = int(_ot[3] * _bg_a) if _bg_a < 1.0 else _ot[3]
-                if _tint_a > 0:
-                    try:
-                        from dataclasses import replace as _dc_replace
-                        apply_outer_tint(self.screen, _dc_replace(skin, outer_tint=(*_ot[:3], _tint_a)), visible_outer_rect)
-                    except Exception:
-                        apply_outer_tint(self.screen, skin, visible_outer_rect)
         else:
             self.screen.fill(_fill_color)
-            apply_outer_tint(self.screen, skin, visible_outer_rect)
+
+        # Outer tint: bg_transparency ile orantılı
+        _ot = tuple(skin.outer_tint)
+        if len(_ot) >= 4 and _ot[3] > 0:
+            _tint_a = int(_ot[3] * bg_alpha) if bg_alpha < 1.0 else _ot[3]
+            if _tint_a > 0:
+                try:
+                    from dataclasses import replace as _dc_replace
+                    apply_outer_tint(self.screen, _dc_replace(skin, outer_tint=(*_ot[:3], _tint_a)), visible_outer_rect)
+                except Exception:
+                    apply_outer_tint(self.screen, skin, visible_outer_rect)
 
         # Falling blocks layer
         if self.effects_enabled and self.falling_blocks:
@@ -2737,8 +2753,8 @@ class CoopGame:
     def _prewarm_startup_render_caches(self) -> None:
         try:
             self._calculate_layout()
-            skin = self.mode_skin or get_mode_skin('classic')
-            self._get_outer_background_composite(skin)
+            if self.outer_background.is_loaded():
+                self.outer_background.get_full_screen_surface(self.screen)
 
             cs = self.cell_size
             bw = self.board.width * cs
