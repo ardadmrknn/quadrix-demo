@@ -1,4 +1,4 @@
-pygame-ce>=2.5.6
+pygame-ce>=2.5.7
 numpy==1.26.4
 Pillow>=12.1.1
 

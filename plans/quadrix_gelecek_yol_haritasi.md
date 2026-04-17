@@ -2,7 +2,7 @@
 
 > **Tarih:** 28 Şubat 2026  
 > **Mevcut Sürüm:** v1.0.21 (Build 22)  
-> **Motor:** pygame-ce 2.5.6 + SDL 2.32.10  
+> **Motor:** pygame-ce 2.5.7 + SDL 2.32.10  
 > **Diller:** 11 (TR, EN, DE, FR, ES, IT, PT, RU, JA, ZH, KO)  
 > **Mod Sayısı:** 11+ (Classic, Sprint, Ultra, Zen, Hardcore, Survival, Cascade, Daily, Tetris2, Mystery, Wide, PvP, Campaign, Tutorial)
 
