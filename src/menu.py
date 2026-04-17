@@ -3156,7 +3156,7 @@ class Menu:
                 panel_context=panel_context,
             )
             drawn_panel_rects[action_key] = draw_rect
-            if is_selected:
+            if is_selected and action_key not in ('pvp_2_players', 'coop_mode'):
                 pygame.draw.rect(self.screen, (*accent[:3], 220), draw_rect, 2, border_radius=16)
 
         self._draw_mystery_leaderboard_panel(mystery_lb_rect)
