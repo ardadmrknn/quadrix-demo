@@ -5,16 +5,12 @@ premium UI tasarımı.
 """
 from __future__ import annotations
 
-import sys
 import unicodedata
 import pygame
 from localization import t
 import math
 from background import BackgroundManager
 from constants import NEON_CYAN, NEON_MAGENTA, NEON_ORANGE, NEON_LIME, NEON_BLUE
-
-# macOS detection - BLEND flags bazen crash yapabiliyor
-_IS_MACOS = sys.platform == 'darwin'
 
 
 def _is_cjk_char(ch: str) -> bool:
@@ -359,6 +355,22 @@ class RetroStyle:
         """Animasyon zamanını güncelle"""
         self._time += dt_ms / 1000.0
 
+    def _blit_with_subtractive_fallback(
+        self,
+        target: pygame.Surface,
+        overlay: pygame.Surface,
+        pos: tuple[int, int] = (0, 0),
+    ) -> None:
+        """Subtractive blit mümkünse onu kullan, değilse normal alpha blit'e düş."""
+        blend_sub = getattr(pygame, 'BLEND_RGBA_SUB', None)
+        if blend_sub is not None:
+            try:
+                target.blit(overlay, pos, special_flags=blend_sub)
+                return
+            except Exception:
+                pass
+        target.blit(overlay, pos)
+
     def _get_latin_font(self, scaled_size: int, effective_bold: bool) -> pygame.font.Font:
         """Varsayılan latin fontunu döndür (CJK hibrit sistem için)."""
         key = (scaled_size, effective_bold, '__latin__')
@@ -646,28 +658,23 @@ class RetroStyle:
                 pygame.draw.line(surface, (r, g, b), (0, y), (width, y))
 
             # Hafif grid overlay (daha modern görünüm)
-            # macOS: SRCALPHA surface'ler bazen sorunlu olabiliyor
-            if _IS_MACOS:
-                # macOS için basit grid
-                grid_alpha = 18
-                step = 40
-                for x in range(0, width, step):
-                    pygame.draw.line(surface, self.grid_color, (x, 0), (x, height))
-                for y in range(0, height, step):
-                    pygame.draw.line(surface, self.grid_color, (0, y), (width, y))
-            else:
+            grid_alpha = 18
+            step = 40
+            try:
                 grid_surface = pygame.Surface(size, pygame.SRCALPHA)
-                grid_alpha = 18
-                step = 40
                 for x in range(0, width, step):
                     pygame.draw.line(grid_surface, (*self.grid_color, grid_alpha), (x, 0), (x, height))
                 for y in range(0, height, step):
                     pygame.draw.line(grid_surface, (*self.grid_color, grid_alpha), (0, y), (width, y))
                 surface.blit(grid_surface, (0, 0))
+            except Exception:
+                for x in range(0, width, step):
+                    pygame.draw.line(surface, self.grid_color, (x, 0), (x, height))
+                for y in range(0, height, step):
+                    pygame.draw.line(surface, self.grid_color, (0, y), (width, y))
 
             # Merkez glow efekti (neon ambient)
-            # macOS: SRCALPHA + draw.circle bazen crash yapabiliyor
-            if not _IS_MACOS:
+            try:
                 # Not: Az sayıda halka çizmek büyük çözünürlüklerde "daire çerçeve" gibi banding yapıyordu.
                 # Daha fazla adım + daha düşük alfa ile yumuşatıyoruz.
                 glow = pygame.Surface((width, height), pygame.SRCALPHA)
@@ -686,27 +693,24 @@ class RetroStyle:
                     color = (self.primary[0], self.primary[1], self.primary[2], alpha)
                     pygame.draw.circle(glow, color, (cx, cy), radius)
                 surface.blit(glow, (0, 0))
+            except Exception:
+                pass
 
             # Köşe vignette (karartma)
-            # macOS: SRCALPHA vignette atla
-            if not _IS_MACOS:
+            try:
                 vignette = pygame.Surface(size, pygame.SRCALPHA)
                 for i in range(60):
                     alpha = int(50 * (i / 60))
                     rect = pygame.Rect(i, i, width - i * 2, height - i * 2)
                     if rect.width > 0 and rect.height > 0:
                         pygame.draw.rect(vignette, (0, 0, 0, alpha), rect, 1, border_radius=30)
-                # macOS: BLEND_RGBA_SUB bazen crash yapabiliyor
-                if _IS_MACOS:
-                    surface.blit(vignette, (0, 0))
-                else:
-                    surface.blit(vignette, (0, 0), special_flags=pygame.BLEND_RGBA_SUB)
+                self._blit_with_subtractive_fallback(surface, vignette)
+            except Exception:
+                pass
 
             self._bg_cache[size] = surface
         screen.blit(surface, (0, 0))
-        # macOS: scanlines'ı atla
-        if not _IS_MACOS:
-            self._blit_scanlines(screen)
+        self._blit_scanlines(screen)
 
     def _blit_scanlines(self, screen: pygame.Surface) -> None:
         """Hafif CRT scanline efekti (çok hafif)"""
@@ -718,11 +722,7 @@ class RetroStyle:
             for y in range(0, height, 3):
                 pygame.draw.rect(overlay, self.scanline_color, (0, y, width, 1))
             self._scan_cache[size] = overlay
-        # macOS: BLEND_RGBA_SUB bazen crash yapabiliyor
-        if _IS_MACOS:
-            screen.blit(overlay, (0, 0))
-        else:
-            screen.blit(overlay, (0, 0), special_flags=pygame.BLEND_RGBA_SUB)
+        self._blit_with_subtractive_fallback(screen, overlay)
 
     def draw_glass_panel(
         self, 

@@ -1667,6 +1667,11 @@ class TutorialMode(Game):
             self.trigger_hard_drop_screen_shake()
         self.lock_and_new_piece()
         self.sound.play('drop')
+        try:
+            from gamepad_manager import get_gamepad_manager
+            get_gamepad_manager().rumble(0.3, 0.6, 120)
+        except Exception:
+            pass
 
     def _update_overlay_safe_visual_effects(self, delta_time):
         dt = max(0.0, float(delta_time or 0.0))

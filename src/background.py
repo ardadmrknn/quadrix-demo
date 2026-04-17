@@ -6,9 +6,6 @@ from collections import OrderedDict
 from pathlib import Path
 
 from asset_manager import load_image
-
-# macOS detection
-_IS_MACOS = sys.platform == 'darwin'
 _BACKGROUND_IMAGE_CACHE: "OrderedDict[tuple[str, bool], pygame.Surface]" = OrderedDict()
 _BACKGROUND_IMAGE_CACHE_MAX_ITEMS = 16
 
@@ -36,7 +33,7 @@ def _resolve_existing_image_path(image_path: str) -> str | None:
 
 
 def _get_cached_background_image(resolved_path: str) -> pygame.Surface:
-    convert_for_display = (not _IS_MACOS) and pygame.display.get_surface() is not None
+    convert_for_display = pygame.display.get_surface() is not None
     cache_key = (resolved_path, bool(convert_for_display))
     cached = _BACKGROUND_IMAGE_CACHE.get(cache_key)
     if cached is not None:
@@ -122,25 +119,16 @@ class BackgroundManager:
         if self.background_surface is None or \
            self.background_surface.get_size() != (board_rect[2], board_rect[3]):
             # Resmi tahta boyutuna ölçeklendir
-            # macOS: smoothscale yerine scale daha güvenli
-            if _IS_MACOS:
-                scaled_image = pygame.transform.scale(
-                    self.background_image, 
-                    (board_rect[2], board_rect[3])
-                )
-            else:
-                scaled_image = pygame.transform.scale(
-                    self.background_image, 
-                    (board_rect[2], board_rect[3])
-                )
+            scaled_image = pygame.transform.scale(
+                self.background_image,
+                (board_rect[2], board_rect[3])
+            )
 
-            # macOS: convert bazen crash yapabiliyor
-            if not _IS_MACOS:
-                try:
-                    if pygame.display.get_surface() is not None:
-                        scaled_image = scaled_image.convert()
-                except Exception:
-                    pass
+            try:
+                if pygame.display.get_surface() is not None:
+                    scaled_image = scaled_image.convert_alpha() if scaled_image.get_alpha() is not None else scaled_image.convert()
+            except Exception:
+                pass
             
             # Yeni surface oluştur
             self.background_surface = pygame.Surface((board_rect[2], board_rect[3]))
@@ -174,13 +162,12 @@ class BackgroundManager:
                 self.background_image,
                 (screen_width, screen_height)
             )
-            if _IS_MACOS:
-                self._cached_full_screen = scaled
-            else:
-                try:
-                    self._cached_full_screen = scaled.convert()
-                except Exception:
-                    self._cached_full_screen = scaled
+            try:
+                if pygame.display.get_surface() is not None:
+                    scaled = scaled.convert_alpha() if scaled.get_alpha() is not None else scaled.convert()
+            except Exception:
+                pass
+            self._cached_full_screen = scaled
             self._cached_screen_size = current_size
             self._cached_full_alpha = None
 
