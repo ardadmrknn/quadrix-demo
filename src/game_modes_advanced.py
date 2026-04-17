@@ -1461,6 +1461,9 @@ class DailyChallengeMode(Game):
         5: {'difficulty': (2, 4), 'prefer_tags': ('adventure', 'fog', 'garbage', 'combo')},
         6: {'difficulty': (1, 3), 'prefer_tags': ('recovery', 'lines', 'score', 'combo')},
     }
+
+    def _get_left_gameplay_reserve_width(self) -> int:
+        return 320 + 26
     
     # Not: Bu liste "günlük görev envanteri"dir.
     # Amaç: kısa sürede heyecan + baskı hissi verecek hedefler ve net kısıtlar.

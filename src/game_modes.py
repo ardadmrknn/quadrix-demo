@@ -73,6 +73,10 @@ class SprintMode(Game):
     def _counter_scale_from_base(self, min_scale: float = 0.62, max_scale: float = 1.12) -> float:
         """Sayaç paneli ölçeği: aktif canvas bazlı ortak UI scale wrapper'ı."""
         return self._ui_scale(min_scale=min_scale, max_scale=max_scale)
+
+    def _get_left_gameplay_reserve_width(self) -> int:
+        ui_scale = self._ui_scale(min_scale=0.70, max_scale=1.16)
+        return self._sx(240, ui_scale) + self._sx(20, ui_scale, minimum=0)
     
     def _load_best_times(self):
         """Settings'den en iyi süreleri yükle"""
@@ -393,6 +397,10 @@ class UltraMode(Game):
     def _counter_scale_from_base(self, min_scale: float = 0.62, max_scale: float = 1.12) -> float:
         """Sayaç paneli ölçeği: aktif canvas bazlı ortak UI scale wrapper'ı."""
         return self._ui_scale(min_scale=min_scale, max_scale=max_scale)
+
+    def _get_left_gameplay_reserve_width(self) -> int:
+        ui_scale = self._ui_scale(min_scale=0.70, max_scale=1.16)
+        return self._sx(240, ui_scale) + self._sx(20, ui_scale, minimum=0)
     
     def update(self, dt):
         """Ultra modunu güncelle"""
@@ -1101,6 +1109,10 @@ class HardcoreMode(Game):
             if isinstance(scores, list):
                 return sorted([int(s) for s in scores if isinstance(s, (int, float))], reverse=True)[:3]
         return []
+
+    def _get_left_gameplay_reserve_width(self) -> int:
+        ui_scale = self._overlay_ui_scale(min_scale=0.70, max_scale=1.16)
+        return self._sx(220, ui_scale) + self._sx(20, ui_scale, minimum=0)
     
     def _save_best_score(self, score):
         """Yeni skoru kaydet (en iyi 3 tutulur)"""

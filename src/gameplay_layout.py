@@ -96,6 +96,7 @@ def compute_single_player_layout(
     board_width: int,
     board_height: int,
     info_panel_height: int = 120,
+    left_group_reserve_px: int = 0,
 ) -> SinglePlayerLayoutMetrics:
     active_w, active_h = _coerce_size(active_size)
     effective_w, effective_h = _coerce_size(effective_size)
@@ -105,6 +106,10 @@ def compute_single_player_layout(
     scale_x = active_w / float(max(1, effective_w))
     scale_y = active_h / float(max(1, effective_h))
     pixel_ratio = get_display_pixel_ratio((active_w, active_h), (effective_w, effective_h))
+    left_group_reserve_logical = max(
+        0,
+        int(round(float(left_group_reserve_px) / max(scale_x, 0.001))),
+    )
     occupancy_scale = _clamp_float(
         min(
             effective_w / float(GAMEPLAY_OCCUPANCY_REFERENCE_SIZE[0]),
@@ -125,7 +130,11 @@ def compute_single_player_layout(
 
     board_area_width_logical = max(
         160,
-        int(effective_w) - (outer_margin_logical * 2) - panel_gap_logical - panel_pref_logical,
+        int(effective_w)
+        - (outer_margin_logical * 2)
+        - left_group_reserve_logical
+        - panel_gap_logical
+        - panel_pref_logical,
     )
     board_area_height_logical = max(160, int(effective_h) - int(info_panel_height))
 
@@ -136,19 +145,58 @@ def compute_single_player_layout(
     logical_board_width = board_cols * logical_cell_size
     logical_board_height = board_rows * logical_cell_size
 
-    logical_board_x = outer_margin_logical + max(
-        0,
-        (board_area_width_logical - logical_board_width) // 2,
-    )
-    max_board_x = max(
-        outer_margin_logical,
-        int(effective_w) - outer_margin_logical - panel_gap_logical - panel_min_logical - logical_board_width,
-    )
-    logical_board_x = max(outer_margin_logical, min(logical_board_x, max_board_x))
-    logical_panel_x = logical_board_x + logical_board_width + panel_gap_logical
-    logical_available_right = max(80, int(effective_w) - outer_margin_logical - logical_panel_x)
-    logical_panel_width = min(panel_pref_logical, logical_available_right)
-    logical_panel_width = max(min(panel_min_logical, logical_available_right), logical_panel_width)
+    logical_panel_width = panel_pref_logical
+    if left_group_reserve_logical > 0:
+        total_group_width = (
+            left_group_reserve_logical + logical_board_width + panel_gap_logical + logical_panel_width
+        )
+        logical_group_x = max(
+            outer_margin_logical,
+            (int(effective_w) - total_group_width) // 2,
+        )
+        max_group_x = max(
+            outer_margin_logical,
+            int(effective_w) - outer_margin_logical - total_group_width,
+        )
+        logical_group_x = max(outer_margin_logical, min(logical_group_x, max_group_x))
+        logical_board_x = logical_group_x + left_group_reserve_logical
+        logical_panel_x = logical_board_x + logical_board_width + panel_gap_logical
+        logical_available_right = max(80, int(effective_w) - outer_margin_logical - logical_panel_x)
+        logical_panel_width = min(panel_pref_logical, logical_available_right)
+        logical_panel_width = max(min(panel_min_logical, logical_available_right), logical_panel_width)
+
+        total_group_width = (
+            left_group_reserve_logical + logical_board_width + panel_gap_logical + logical_panel_width
+        )
+        logical_group_x = max(
+            outer_margin_logical,
+            (int(effective_w) - total_group_width) // 2,
+        )
+        max_group_x = max(
+            outer_margin_logical,
+            int(effective_w) - outer_margin_logical - total_group_width,
+        )
+        logical_group_x = max(outer_margin_logical, min(logical_group_x, max_group_x))
+        logical_board_x = logical_group_x + left_group_reserve_logical
+        logical_panel_x = logical_board_x + logical_board_width + panel_gap_logical
+    else:
+        logical_board_x = max(
+            outer_margin_logical,
+            (int(effective_w) - logical_board_width) // 2,
+        )
+        max_board_x = max(
+            outer_margin_logical,
+            int(effective_w)
+            - outer_margin_logical
+            - panel_gap_logical
+            - panel_min_logical
+            - logical_board_width,
+        )
+        logical_board_x = max(outer_margin_logical, min(logical_board_x, max_board_x))
+        logical_panel_x = logical_board_x + logical_board_width + panel_gap_logical
+        logical_available_right = max(80, int(effective_w) - outer_margin_logical - logical_panel_x)
+        logical_panel_width = min(panel_pref_logical, logical_available_right)
+        logical_panel_width = max(min(panel_min_logical, logical_available_right), logical_panel_width)
 
     logical_board_y = max(
         8,

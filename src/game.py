@@ -268,6 +268,9 @@ class Game:
     def _display_pixel_ratio(self) -> float:
         return get_display_pixel_ratio(self._active_ui_size(), self._effective_ui_size())
 
+    def _get_left_gameplay_reserve_width(self) -> int:
+        return 0
+
     def _get_gameplay_layout_metrics(self):
         board_width = max(
             1,
@@ -291,6 +294,7 @@ class Game:
         )
         active_size = self._active_ui_size()
         effective_size = self._effective_ui_size()
+        left_group_reserve = max(0, int(self._get_left_gameplay_reserve_width()))
         cache_key = (
             int(active_size[0]),
             int(active_size[1]),
@@ -298,6 +302,7 @@ class Game:
             int(effective_size[1]),
             board_width,
             board_height,
+            left_group_reserve,
         )
         if getattr(self, '_gameplay_layout_cache_key', None) != cache_key:
             self._gameplay_layout_cache = compute_single_player_layout(
@@ -306,6 +311,7 @@ class Game:
                 board_width=board_width,
                 board_height=board_height,
                 info_panel_height=INFO_PANEL_HEIGHT,
+                left_group_reserve_px=left_group_reserve,
             )
             self._gameplay_layout_cache_key = cache_key
         return self._gameplay_layout_cache
@@ -6089,7 +6095,7 @@ class Game:
         
         # Müziği tekrar başlat - ayarlardan seçilen müziği kullan
         # force=True: Game over sonrası müziğin kesinlikle yeniden yüklenmesini sağla
-        if self.sound_enabled and self.sound.music_enabled:
+        if self.sound and self.sound.music_enabled:
             self.sound.stop_music()
             self._start_music_playlist(force=True)
 

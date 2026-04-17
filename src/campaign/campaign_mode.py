@@ -17,7 +17,7 @@ try:
     from ..localization import t  # type: ignore
     from ..retro_style import retro_style  # type: ignore
     from ..platform_utils import get_mouse_pos  # type: ignore
-    from ..ui_scaling import get_content_scale, scale_px  # type: ignore
+    from ..ui_scaling import get_projected_effective_scale, scale_px  # type: ignore
 except Exception:
     from game import Game
     from constants import COLORS, BLACK, BOARD_WIDTH, BOARD_HEIGHT
@@ -928,6 +928,10 @@ class CampaignMode(Game):
 
     def _scale_campaign_hud_px(self, value: int | float, ui_scale: float, minimum: int = 1) -> int:
         return scale_px(value, ui_scale, minimum=minimum)
+
+    def _get_left_gameplay_reserve_width(self) -> int:
+        ui_scale = self._get_campaign_hud_scale(getattr(self, 'screen', None) or self._active_ui_size())
+        return self._scale_campaign_hud_px(340, ui_scale) + self._scale_campaign_hud_px(20, ui_scale, minimum=0)
 
     def _get_campaign_left_panel_rect(self, board_offset_x: int, board_offset_y: int) -> pygame.Rect:
         screen_w, screen_h = self.screen.get_size()

@@ -198,6 +198,10 @@ class TutorialMode(Game):
                 int(TUTORIAL_MODAL_REFERENCE_SIZE[1]),
             )
 
+    def _get_left_gameplay_reserve_width(self) -> int:
+        ui_scale = self._tutorial_modal_scale(min_scale=0.70, max_scale=1.18)
+        return self._sx(260, ui_scale) + self._sx(20, ui_scale, minimum=0)
+
     def _tutorial_modal_scale(self, min_scale: float = 0.72, max_scale: float = 1.18) -> float:
         scale = get_modal_scale(
             self._active_ui_size(),

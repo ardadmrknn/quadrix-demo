@@ -382,6 +382,95 @@ Online co-op için sıfırdan yeni desen üretmek yerine, aşağıdaki Online Pv
 - [ ] Bridge değişikliği yapılacaksa, bunun Python katmanında çözülemeyen somut bir sebebi vardır.
 - [ ] Build/paketleme zinciri mixed-platform QA öncesi güncel artifact kullanır.
 
+### Phase 4.5: Ses/Müzik Tutarlılığı ve Rematch State Sızıntı Koruması
+
+**Objective:** Online co-op'ta pause/disconnect/rematch sırasında ses durumunun tutarlı kalmasını ve rematch zincirinde state sızıntısı olmamasını garanti etmek.
+
+**Files to Modify/Create:**
+
+- `src/online_coop_game.py`
+- Gerekirse `src/main.py`
+
+**Work Items:**
+
+1. Pause sırasında `sound.duck_music()` çağrısı ekle (local co-op bunu yapıyor, online co-op yapmıyor).
+2. Resume/reconnect sırasında `sound.unduck_music()` çağrısı ekle.
+3. Disconnect grace süresinde müzik ducked kalmalı; grace expire + fail state'te müzik restored olmalı.
+4. Guest tarafında host pause event'i geldiğinde ses tutarlılığı sağla.
+5. Rematch akışında kapsamlı state reset listesi çıkar; PvP `_return_to_pvp_lobby_menu()` 30+ alan sıfırlıyor, co-op rematch'te en az şunlar sıfırlanmalı:
+   - `_disconnect_grace_timer`
+   - `_session_ping_timer` / `_session_ping_backoff_ms`
+   - `paused` / guest pause cache
+   - `_guest_board_cache` / `_guest_piece_cache`
+   - `_last_input_ack_seq` / guest pending seq
+   - Score/lines/level display state
+   - Freeze flag display state
+6. Arka arkaya 10+ rematch'te memory leak veya artan latency olmadığını doğrula.
+
+**Acceptance Criteria:**
+
+- [ ] Pause/resume/disconnect sırasında müzik duck/unduck tutarlı.
+- [ ] Rematch sonrası önceki maçtan hiçbir görsel/state artığı kalmaz.
+- [ ] 10 ardışık rematch sonrası performans farkı ölçülemez.
+
+---
+
+### Phase 5.5: Guest Input Rate Limiting ve Payload Boyut Güvenliği
+
+**Objective:** Kötü niyetli veya hatalı client'ın host'u input flood ile boğmasını engellemek ve snapshot payload boyutlarını kontrol altında tutmak.
+
+**Files to Modify/Create:**
+
+- `src/online_coop_game.py`
+
+**Work Items:**
+
+1. Host tarafında guest input rate limiter ekle: örn. saniyede maks 30 input; aşımda sessiz drop.
+2. Gelen COOP_BOARD_STATE payload boyutunu clamp et; 20×20 grid + metadata için makul üst limit belirle (~50KB).
+3. Guest tarafında stale/oversize board snapshot'ı logla ve düş; crash yerine graceful degrade.
+
+**Acceptance Criteria:**
+
+- [ ] Host, saniyede 100+ input gönderen guest'ten etkilenmez.
+- [ ] Beklenenden büyük payload oyunu çökertmez.
+
+---
+
+## Plana Ek Notlar ve Düzeltmeler
+
+### Düzeltme 1: PvP Kontrolleri de Sabit — Phase 5 Net-New Feature
+
+Plan, Phase 5'te "PvP'deki binding kaynağını taşı" diyor. Ancak keşifte doğrulandı: **online_pvp_game.py de hardcoded key kullanıyor** (WASD/Arrow + Space/Shift). Yani bu bir port değil, net-new bir özellik. Phase 5 bunu "local co-op'un `_resolve_controls()` kaynağını online co-op'a bağla" şeklinde yeniden çerçevelemeli. PvP'den taşınacak bir şey yok; `coop_game.py`'deki `settings_manager.get_controls()` akışı referans alınmalı.
+
+### Düzeltme 2: Localization String Envanteri Eksik
+
+Plan Phase 5'te `src/localization.py` modify listesinde ama yeni eklenecek çeviri anahtarları listelenmemiş. Online co-op için en az şu anahtarlar gerekecek:
+
+- `online_coop_connecting` / `online_coop_session_lost`
+- `online_coop_opponent_disconnected` / `online_coop_reconnecting`
+- `online_coop_input_lag_warning`
+- `online_coop_code_ambiguous` / `online_coop_code_expired`
+- Pause overlay ve game over ekranı string'leri
+
+Bu anahtarlar Phase 1–4 sırasında ihtiyaç duyuldukça eklenmeli; toplu bırakılmamalı.
+
+### Düzeltme 3: main.py Cleanup Robustness
+
+`main.py` handler `_handle_online_coop()` exception path'inde `_cleanup()` çağrılıyor ama pump thread state ve müzik state kısmen bozulmuş olabilir. Phase 4'ün cleanup idempotent hale getirme maddesine şu eklensin:
+
+- `main.py` handler'da `finally` bloğu ile müzik unduck + pump resume garantisi
+- Partial crash sonrası menu'ye dönüşte stale `OnlineCoopGame` referansının temizlenmesi
+
+### Düzeltme 4: Board Snapshot Sıkıştırma Tavanı
+
+20×20 grid × 3 byte RGB + 20×20 owner + metadata = her snapshot ~5–8KB. 10Hz'de ~50–80KB/s. Kabul edilebilir ama plan Phase 3'te bant genişliği tavanı belirtmeli. Öneri: snapshot payload'u 15KB'ı aşarsa delta encoding veya run-length compression düşünülsün. Correctness öncelikli ama V1 için ceiling metric olması iyi olur.
+
+### Düzeltme 5: COOP_GAME_START Kullanım Kararı (Phase 0)
+
+Keşifte doğrulandı: `MsgType.COOP_GAME_START = 'coop_start'` tanımlı ama `_start_countdown()` generic `send_game_start(seed, [])` kullanıyor. Phase 0'da **COOP_GAME_START'ı aktif yap** kararı verilmeli — co-op'a özel `sub_mode`, `board_width`, `board_height` gibi config alanları taşıyabilir, gelecekte online campaign'e de genişletilebilir.
+
+---
+
 ## Risks & Mitigation
 
 - **Risk:** Online co-op için PvP kodunu birebir kopyalarken co-op'a özgü akışlar kırılabilir.
@@ -421,3 +510,9 @@ Online co-op için sıfırdan yeni desen üretmek yerine, aşağıdaki Online Pv
 - Pause ve disconnect çözümünde toggle mantığını değil, **authoritative state + sequence** mantığını tercih et.
 - Private lobby ve metadata işlerinde Online PvP tarafındaki cross-platform dersleri doğrudan taşı; aynı hataları ikinci kez üretme.
 - Online campaign'i bu planın içine çekme; endless akış tamamen stabil olmadan yeni kapsam açma.
+- **PvP kontrolleri de hardcoded**; control rebind Phase 5'te net-new feature olarak ele al, port değil. Kaynak: `coop_game.py._resolve_controls()`.
+- **Localization string'leri** phase'ler ilerledikçe anlık ekle; toplu bırakma.
+- **Ses duck/unduck** her pause/resume/disconnect geçişinde tutarlı olmalı; local co-op `sound.duck_music()` referansını izle.
+- **Guest input rate limiting** Phase 3 veya 5.5'te eklenmeli; flood koruması olmadan production'a çıkma.
+- **steam_networking.py** tüm kanalları `CHANNEL_GAME=0` üzerinden yönlendiriyor; multi-channel beklentisi yok. Mesaj tipi ayrımı payload `type` alanında.
+- **Phase execution sırası**: 0 → 1 → 2 → 3 → 4 → 4.5 → 5 → 5.5 → 6 → 7. Phase 4.5 ve 5.5 mevcut phase'lerin doğal uzantıları; bağımsız PR'lar olarak da girebilir.

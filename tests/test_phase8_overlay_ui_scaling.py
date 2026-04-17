@@ -768,6 +768,45 @@ def test_base_game_large_display_layout_can_grow_beyond_legacy_40px_cap():
     assert layout.board_y + layout.board_height < 1440
 
 
+def test_base_game_layout_centers_board_when_no_left_panel_reserve():
+    game = _build_game((1366, 768))
+    game.board_width = 10
+    game.board_height = 20
+
+    layout = game._get_gameplay_layout_metrics()
+
+    expected_board_x = (1366 - layout.board_width) // 2
+    assert abs(layout.board_x - expected_board_x) <= 2
+
+
+def test_base_game_layout_respects_left_panel_reserve_hook():
+    game = _build_game((1366, 768))
+    game.board_width = 10
+    game.board_height = 20
+    game._get_left_gameplay_reserve_width = lambda: 260
+
+    layout = game._get_gameplay_layout_metrics()
+
+    left_margin = layout.board_x - 260
+    right_margin = 1366 - (layout.panel_x + layout.panel_width)
+
+    assert abs(left_margin - right_margin) <= 2
+
+
+def test_base_game_layout_cache_tracks_left_panel_reserve_width():
+    game = _build_game((1366, 768))
+    game.board_width = 10
+    game.board_height = 20
+    game._get_left_gameplay_reserve_width = lambda: 260
+
+    layout_with_left_panel = game._get_gameplay_layout_metrics()
+
+    game._get_left_gameplay_reserve_width = lambda: 0
+    layout_without_left_panel = game._get_gameplay_layout_metrics()
+
+    assert layout_without_left_panel.board_x < layout_with_left_panel.board_x
+
+
 def test_base_game_layout_projects_effective_retina_metrics_back_to_raw_pixels(monkeypatch):
     game = _build_game((2940, 1912), window_size=(1470, 956))
     game.board_width = 10
