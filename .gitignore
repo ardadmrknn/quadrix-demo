@@ -47,6 +47,7 @@ steamworks/steam_net_bridge/build_*/
 # Steam build artifacts
 steamworks/output/*
 !steamworks/output/.gitkeep
+steamworks/output_*/
 steamworks/scripts/.tmp_app_build_*.vdf
 
 # steamcmd auto-downloaded runtime files

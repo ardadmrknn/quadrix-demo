@@ -8955,9 +8955,11 @@ class BlockStyleSettingsScreen:
 
     def _clamp_scroll(self):
         height = self.screen.get_height()
-        start_y = getattr(self, '_layout_start_y', 160)
-        visible = max(0, height - start_y - 140)
-        max_scroll = max(0, len(self.piece_names) * self._CARD_SPACING - visible)
+        _s = self._s
+        start_y = getattr(self, '_layout_start_y', _s(160))
+        visible = max(0, height - start_y - _s(140))
+        card_spacing = _s(self._CARD_SPACING)
+        max_scroll = max(0, len(self.piece_names) * card_spacing - visible)
         self.scroll_offset = max(0, min(self.scroll_offset, max_scroll))
 
     def _move_selection(self, delta):
@@ -8965,13 +8967,15 @@ class BlockStyleSettingsScreen:
         self._ensure_visible()
 
     def _ensure_visible(self):
-        start_y = getattr(self, '_layout_start_y', 160)
-        item_y = start_y + self.selected * self._CARD_SPACING - self.scroll_offset
+        _s = self._s
+        start_y = getattr(self, '_layout_start_y', _s(160))
+        card_spacing = _s(self._CARD_SPACING)
+        item_y = start_y + self.selected * card_spacing - self.scroll_offset
         height = self.screen.get_height()
-        if item_y < 140:
-            self.scroll_offset -= 140 - item_y
-        elif item_y > height - 160:
-            self.scroll_offset += item_y - (height - 160)
+        if item_y < _s(140):
+            self.scroll_offset -= _s(140) - item_y
+        elif item_y > height - _s(160):
+            self.scroll_offset += item_y - (height - _s(160))
         self._clamp_scroll()
 
     def _choose_color(self):

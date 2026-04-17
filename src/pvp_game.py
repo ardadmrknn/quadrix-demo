@@ -949,42 +949,55 @@ class PvPGame:
         self._layout_key = key
         width, height = key
 
+        # HiDPI/Retina: fiziksel piksel → mantıksal piksel oranını hesapla
+        _pr = 1.0
+        try:
+            from platform_utils import get_effective_ui_size
+            eff_w, eff_h = get_effective_ui_size(self.screen)
+            if eff_w > 0 and eff_h > 0:
+                _pr = max(1.0, min(width / float(eff_w), height / float(eff_h)))
+        except Exception:
+            pass
+
+        def _p(val):
+            """Hardcoded piksel değerlerini pixel_ratio ile ölçekle."""
+            return int(round(val * _pr))
+
         # Minimal ve simetrik: iki board + ortada VS panel, her şey pencereye sığacak şekilde ölçeklenir.
-        outer_margin = 24
-        header_height = int(getattr(self, 'header_height', 64) or 64)
-        header_top = int(getattr(self, 'header_top', 28) or 28)
-        board_gap = int(getattr(self, 'board_gap', 24) or 24)
+        outer_margin = _p(24)
+        header_height = _p(int(getattr(self, '_base_header_height', 64) or 64))
+        header_top = _p(int(getattr(self, '_base_header_top', 28) or 28))
+        board_gap = _p(int(getattr(self, '_base_board_gap', 24) or 24))
 
         # Board alanları, üst oyuncu kartlarının hemen altına hizalansın.
-        # Böylece farklı pencere boyutlarında boşluk/taşma daha tutarlı olur.
-        # Biraz yukarı taşı (-25)
-        board_top = header_top + header_height + 24 - 25
+        board_top = header_top + header_height + _p(24) - _p(25)
 
         # Yüksekliğe göre cell_size
-        bottom_margin = 60
+        bottom_margin = _p(60)
         available_h = max(200, height - board_top - bottom_margin)
         cell_by_h = available_h // BOARD_HEIGHT
 
         # Genişliğe göre cell_size (VS paneli dahil)
-        target_center = min(420, max(260, width // 5))
+        target_center = min(_p(420), max(_p(260), width // 5))
         available_w = max(200, width - 2 * outer_margin - target_center - 2 * board_gap)
         cell_by_w = available_w // (2 * BOARD_WIDTH)
 
-        cell_size = int(min(50, cell_by_h, cell_by_w))
-        cell_size = int(max(20, cell_size))
+        max_cell = _p(50)
+        cell_size = int(min(max_cell, cell_by_h, cell_by_w))
+        cell_size = int(max(_p(20), cell_size))
 
         board_width = BOARD_WIDTH * cell_size
         board_height = BOARD_HEIGHT * cell_size
 
         # Ortadaki panel genişliği: kalan boşluğa göre ayarla
         remaining = width - (2 * board_width) - 2 * board_gap
-        center_panel_width = int(min(420, max(240, remaining)))
+        center_panel_width = int(min(_p(420), max(_p(240), remaining)))
         # Çok sıkışık durumlarda paneli küçült
-        if remaining < 240:
-            center_panel_width = int(max(200, remaining))
+        if remaining < _p(240):
+            center_panel_width = int(max(_p(200), remaining))
         # Yine de minimum boşluk bırak
         if width - (2 * board_width + center_panel_width + 2 * board_gap) < 2 * outer_margin:
-            center_panel_width = int(max(200, width - 2 * outer_margin - 2 * board_width - 2 * board_gap))
+            center_panel_width = int(max(_p(200), width - 2 * outer_margin - 2 * board_width - 2 * board_gap))
 
         total_w = 2 * board_width + center_panel_width + 2 * board_gap
         start_x = (width - total_w) // 2
