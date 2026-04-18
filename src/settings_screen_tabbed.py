@@ -23,6 +23,7 @@ from localization import (
 from ui_language_profile import apply_language_ui_profile, get_font_for_language
 from menu import get_control_actions, get_mode_music_entries, get_campaign_phase_entries, BUILT_IN_TRACK_CHOICES, SUPPORTED_MUSIC_EXTENSIONS
 from gamepad_manager import get_gamepad_manager, reload_gamepad_settings
+from promptfont_support import get_gamepad_prompt_glyph, fit_promptfont_glyph_surface
 
 try:
     from gamepad_manager import normalize_gamepad_event_button, normalize_gamepad_trigger_event
@@ -1294,6 +1295,59 @@ class TabbedSettingsScreen:
             return str(gpm.get_button_index_label(btn_index))
         except Exception:
             return f'Btn{btn_index}'
+
+    def _current_gamepad_prompt_type(self) -> str | None:
+        try:
+            gpm = get_gamepad_manager()
+            gp = gpm.get_active_gamepad()
+            if gp is None:
+                return None
+            gp_type = getattr(gp, 'gamepad_type', None)
+            return str(gp_type) if gp_type else None
+        except Exception:
+            return None
+
+    def _get_gamepad_slot_display(self, value, gp_type: str | None) -> dict:
+        fallback_text = self._format_gamepad_button_label(value)
+        if value is None or isinstance(value, bool):
+            return {'mode': 'text', 'text': fallback_text}
+
+        try:
+            btn_index = int(value)
+        except Exception:
+            return {'mode': 'text', 'text': fallback_text}
+
+        glyph_text = get_gamepad_prompt_glyph(btn_index, gp_type)
+        if glyph_text:
+            return {'mode': 'glyph', 'glyph': glyph_text, 'text': fallback_text}
+        return {'mode': 'text', 'text': fallback_text}
+
+    def _draw_gamepad_binding_slot(self, slot_rect: pygame.Rect, display: dict, active: bool) -> None:
+        s = self._s
+        bg = (32, 48, 80, 230) if active else (20, 30, 54, 200)
+        border = (90, 180, 255) if active else (55, 78, 112)
+        pygame.draw.rect(self.screen, bg, slot_rect, border_radius=s(8, minimum=6))
+        pygame.draw.rect(self.screen, border, slot_rect, 1, border_radius=s(8, minimum=6))
+
+        txt_color = (235, 245, 255) if active else (180, 205, 235)
+        if display.get('mode') == 'glyph':
+            glyph_text = str(display.get('glyph', '') or '')
+            glyph_surf = fit_promptfont_glyph_surface(
+                glyph_text,
+                slot_rect.width - s(16, minimum=10),
+                slot_rect.height - s(8, minimum=6),
+                txt_color,
+                preferred_size=max(s(24, minimum=16), slot_rect.height - s(6, minimum=4)),
+                minimum_size=s(12, minimum=9),
+            )
+            if glyph_surf is not None:
+                self.screen.blit(glyph_surf, glyph_surf.get_rect(center=slot_rect.center))
+                return
+
+        text = str(display.get('text', '—') or '—')
+        txt_font = self._fit_font(text, 20, slot_rect.width - s(12, minimum=8), bold=active, minimum=11)
+        txt_surf = txt_font.render(text, True, txt_color)
+        self.screen.blit(txt_surf, txt_surf.get_rect(center=slot_rect.center))
 
     def _get_gamepad_binding_slots(self, action_key: str) -> tuple[int, int]:
         gamepad_cfg = self._control_config.get('gamepad', {})
@@ -3077,15 +3131,16 @@ class TabbedSettingsScreen:
         if item.get('type') == 'keybind' and item.get('section') == 'gamepad':
             action_key = item.get('action_key')
             primary_val, secondary_val = self._get_gamepad_binding_slots(action_key)
-            primary_text = self._format_gamepad_button_label(primary_val)
-            secondary_text = self._format_gamepad_button_label(secondary_val)
+            gp_type = self._current_gamepad_prompt_type()
+            primary_display = self._get_gamepad_slot_display(primary_val, gp_type)
+            secondary_display = self._get_gamepad_slot_display(secondary_val, gp_type)
 
             if self._waiting_for_key and self._pending_keybind_item == item:
                 waiting_text = _t('gp_press_button', 'Butona basın')
                 if self._pending_keybind_slot == 'secondary':
-                    secondary_text = waiting_text
+                    secondary_display = {'mode': 'text', 'text': waiting_text}
                 else:
-                    primary_text = waiting_text
+                    primary_display = {'mode': 'text', 'text': waiting_text}
 
             panel_h = max(s(30, minimum=24), rect.height - s(18, minimum=12))
             gap = s(10, minimum=6)
@@ -3104,18 +3159,8 @@ class TabbedSettingsScreen:
                 is_primary_active = self._pending_keybind_slot != 'secondary'
                 is_secondary_active = self._pending_keybind_slot == 'secondary'
 
-            def _draw_slot(slot_rect: pygame.Rect, text: str, active: bool) -> None:
-                bg = (32, 48, 80, 230) if active else (20, 30, 54, 200)
-                border = (90, 180, 255) if active else (55, 78, 112)
-                pygame.draw.rect(self.screen, bg, slot_rect, border_radius=s(8, minimum=6))
-                pygame.draw.rect(self.screen, border, slot_rect, 1, border_radius=s(8, minimum=6))
-                txt_color = (235, 245, 255) if active else (180, 205, 235)
-                txt_font = self._fit_font(text, 20, slot_rect.width - s(12, minimum=8), bold=active, minimum=11)
-                txt_surf = txt_font.render(text, True, txt_color)
-                self.screen.blit(txt_surf, txt_surf.get_rect(center=slot_rect.center))
-
-            _draw_slot(primary_rect, primary_text, is_primary_active)
-            _draw_slot(secondary_rect, secondary_text, is_secondary_active)
+            self._draw_gamepad_binding_slot(primary_rect, primary_display, is_primary_active)
+            self._draw_gamepad_binding_slot(secondary_rect, secondary_display, is_secondary_active)
 
             return {'primary': primary_rect, 'secondary': secondary_rect}
 

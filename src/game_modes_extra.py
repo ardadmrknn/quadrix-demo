@@ -57,6 +57,7 @@ def _get_ui_icon_dir() -> str:
 
 UI_ICON_DIR = _get_ui_icon_dir()
 MYSTERY_OVERLAY_REFERENCE_SIZE = (1366.0, 768.0)
+CARD_SELECTION_REROLL_LIMIT = 5
 
 
 def _get_card_assets_dir() -> str:
@@ -1435,6 +1436,9 @@ class MysteryCardUI:
         # Kart seçim ekranı için okunabilirlik tabanlı minimum referans boyut
         # (pencere bu boyutlara yakınken kartlar hala rahat okunur kalır)
         self._overlay_readable_min_size: tuple[int, int] = (1180, 760)
+        self._reroll_enabled = False
+        self._reroll_remaining = 0
+        self._reroll_limit = 0
 
     def reset(self) -> None:
         self.card_rects = []
@@ -1448,6 +1452,9 @@ class MysteryCardUI:
         self.reroll_button_rect = None
         self.peek_button_rect = None
         self.peek_mode_active = False
+        self._reroll_enabled = False
+        self._reroll_remaining = 0
+        self._reroll_limit = 0
 
     def set_reveal_sfx_callback(self, callback) -> None:
         self._reveal_sfx_callback = callback
@@ -1457,6 +1464,22 @@ class MysteryCardUI:
         w = max(1, int(width))
         h = max(1, int(height))
         self._overlay_base_size = (w, h)
+
+    def set_reroll_enabled(self, enabled: bool) -> None:
+        self._reroll_enabled = bool(enabled)
+
+    def set_reroll_status(self, remaining: int, limit: int) -> None:
+        try:
+            remaining_value = max(0, int(remaining))
+        except Exception:
+            remaining_value = 0
+        try:
+            limit_value = max(0, int(limit))
+        except Exception:
+            limit_value = 0
+
+        self._reroll_remaining = min(remaining_value, limit_value) if limit_value > 0 else remaining_value
+        self._reroll_limit = limit_value
 
     def update(self, dt: float, overlay_active: bool) -> None:
         # dt gelebilir: ms (oyun döngüsünden) veya saniye. Tutarlı dönüşüm.
@@ -1760,12 +1783,16 @@ class MysteryCardUI:
         # Alt aksiyon: Kart almadan devam et + Yeniden Çek
         if show_secondary_actions:
             btn_font = fonts.get('small')
+            badge_font = fonts.get('tag') or btn_font
             btn_h = s(44)
             btn_y = panel_rect.bottom - btn_h - s(26)
             total_btn_area_w = min(s(660), panel_rect.width - s(80))
             gap = s(12)
             each_w = (total_btn_area_w - gap) // 2
             start_x = panel_rect.centerx - total_btn_area_w // 2
+            reroll_enabled = bool(getattr(self, '_reroll_enabled', False))
+            reroll_remaining = max(0, int(getattr(self, '_reroll_remaining', 0)))
+            reroll_limit = max(0, int(getattr(self, '_reroll_limit', 0)))
             self.skip_button_rect = pygame.Rect(start_x, btn_y, each_w, btn_h)
             retro_style.draw_glass_panel(
                 screen,
@@ -1781,12 +1808,41 @@ class MysteryCardUI:
             retro_style.draw_glass_panel(
                 screen,
                 self.reroll_button_rect,
-                alpha=175,
-                border_color=(220, 170, 40),
+                alpha=175 if reroll_enabled else 120,
+                border_color=(220, 170, 40) if reroll_enabled else (120, 126, 138),
                 glow=False,
             )
-            reroll_label = btn_font.render(t('card_reroll_selection'), True, (255, 215, 80))
+            if not reroll_enabled:
+                disabled_overlay = pygame.Surface(self.reroll_button_rect.size, pygame.SRCALPHA)
+                disabled_overlay.fill((92, 98, 108, 90))
+                screen.blit(disabled_overlay, self.reroll_button_rect.topleft)
+            reroll_label = btn_font.render(
+                t('card_reroll_selection'),
+                True,
+                (255, 215, 80) if reroll_enabled else (154, 158, 168),
+            )
             screen.blit(reroll_label, reroll_label.get_rect(center=self.reroll_button_rect.center))
+            if reroll_limit > 0:
+                badge_text = f"{reroll_remaining}/{reroll_limit}"
+                badge_label = badge_font.render(
+                    badge_text,
+                    True,
+                    (255, 239, 184) if reroll_enabled else (222, 226, 234),
+                )
+                badge_pad_x = s(8)
+                badge_pad_y = s(4)
+                badge_w = badge_label.get_width() + badge_pad_x * 2
+                badge_h = max(badge_label.get_height() + badge_pad_y * 2, s(18))
+                badge_rect = pygame.Rect(0, 0, badge_w, badge_h)
+                badge_rect.right = self.reroll_button_rect.right - s(10)
+                badge_rect.bottom = self.reroll_button_rect.top + s(10)
+                badge_surface = pygame.Surface((badge_w, badge_h), pygame.SRCALPHA)
+                badge_fill = (78, 54, 8, 232) if reroll_enabled else (72, 76, 84, 220)
+                badge_border = (248, 201, 82, 225) if reroll_enabled else (165, 171, 182, 205)
+                pygame.draw.rect(badge_surface, badge_fill, badge_surface.get_rect(), border_radius=badge_h // 2)
+                pygame.draw.rect(badge_surface, badge_border, badge_surface.get_rect(), width=1, border_radius=badge_h // 2)
+                screen.blit(badge_surface, badge_rect.topleft)
+                screen.blit(badge_label, badge_label.get_rect(center=badge_rect.center))
         else:
             self.skip_button_rect = None
             self.reroll_button_rect = None
@@ -2026,13 +2082,18 @@ class MysteryCardUI:
         # Peek modundayken kart seçimi yapılamaz
         if self.peek_mode_active:
             return None
+
+        if self.is_interaction_locked():
+            return None
             
         for idx, rect in enumerate(self.card_rects):
             if rect.collidepoint(pos):
                 return idx
         # Yeniden Çek
         if getattr(self, 'reroll_button_rect', None) and self.reroll_button_rect.collidepoint(pos):
-            return 'REROLL'
+            if getattr(self, '_reroll_enabled', False):
+                return 'REROLL'
+            return None
         # Kart almadan devam et
         if getattr(self, 'skip_button_rect', None) and self.skip_button_rect.collidepoint(pos):
             return 'SKIP'
@@ -4183,6 +4244,70 @@ class MysteryMode(Game):
         """Kart UI için Faz 8 baseline referans çözünürlüğünü döndür."""
         return int(MYSTERY_OVERLAY_REFERENCE_SIZE[0]), int(MYSTERY_OVERLAY_REFERENCE_SIZE[1])
 
+    def _reset_card_selection_rerolls(self) -> None:
+        self.card_selection_rerolls_remaining = max(
+            0,
+            int(getattr(self, 'card_selection_reroll_limit', CARD_SELECTION_REROLL_LIMIT)),
+        )
+
+    def _can_reroll_card_selection(self) -> bool:
+        card_manager = getattr(self, 'card_manager', None)
+        card_ui = getattr(self, 'card_ui', None)
+        pending_choices = getattr(card_manager, 'pending_choices', []) if card_manager is not None else []
+        interaction_locked = False
+        try:
+            if card_ui is not None and hasattr(card_ui, 'is_interaction_locked'):
+                interaction_locked = bool(card_ui.is_interaction_locked())
+        except Exception:
+            interaction_locked = False
+        return (
+            bool(getattr(self, 'card_selection_active', False))
+            and getattr(self, '_pending_card_choice_index', None) is None
+            and int(getattr(self, 'card_selection_rerolls_remaining', 0)) > 0
+            and not interaction_locked
+            and bool(pending_choices)
+        )
+
+    def _try_reroll_card_selection(self) -> bool:
+        if not self._can_reroll_card_selection():
+            return False
+
+        reroll_limit = max(
+            0,
+            int(getattr(self, 'card_selection_reroll_limit', CARD_SELECTION_REROLL_LIMIT)),
+        )
+        previous_choices = list(getattr(self.card_manager, 'pending_choices', []))
+        self.card_selection_rerolls_remaining = max(
+            0,
+            int(getattr(self, 'card_selection_rerolls_remaining', 0)) - 1,
+        )
+        try:
+            new_choices = self.card_manager.prepare_selection()
+        except Exception:
+            self.card_selection_rerolls_remaining = min(
+                reroll_limit,
+                int(getattr(self, 'card_selection_rerolls_remaining', 0)) + 1,
+            )
+            try:
+                self.card_manager.pending_choices = previous_choices
+            except Exception:
+                pass
+            return False
+
+        if not new_choices:
+            self.card_selection_rerolls_remaining = min(
+                reroll_limit,
+                int(getattr(self, 'card_selection_rerolls_remaining', 0)) + 1,
+            )
+            try:
+                self.card_manager.pending_choices = previous_choices
+            except Exception:
+                pass
+            return False
+
+        self.card_ui.reset()
+        return True
+
     def _get_side_panel_widths(self, board_pixel_width: int | None = None) -> tuple[int, int]:
         """Mystery mode için sol/sağ panel genişliklerini pencereye göre hesapla."""
         active_width, active_height = self._active_ui_size()
@@ -4380,6 +4505,8 @@ class MysteryMode(Game):
         # Queue of pending level-up card selections, and dedup tracker
         self.pending_level_ups = 0
         self.last_enqueued_level = 0
+        self.card_selection_reroll_limit = CARD_SELECTION_REROLL_LIMIT
+        self.card_selection_rerolls_remaining = CARD_SELECTION_REROLL_LIMIT
 
         super().__init__(
             difficulty,
@@ -5823,11 +5950,7 @@ class MysteryMode(Game):
                             self._close_card_selection()
                         elif choice == 'REROLL':
                             # Kart havuzunu yeniden çek; overlay açık kalır.
-                            try:
-                                self.card_manager.prepare_selection()
-                            except Exception:
-                                pass
-                            self.card_ui.reset()
+                            self._try_reroll_card_selection()
                         elif choice == 'PEEK':
                             # Peek moduna geçiş/çıkış - sadece UI durumu değişir, burada ek işlem yok
                             pass
@@ -6022,6 +6145,7 @@ class MysteryMode(Game):
         self._pending_card_choice_index = None
         self.pending_level_ups = 0
         self.last_enqueued_level = getattr(self.board, 'level', 0)
+        self._reset_card_selection_rerolls()
         # Reset effect timers and visuals
         self.speed_effect_timer = 0.0
         self.speed_effect_multiplier = 1.0
@@ -6166,6 +6290,19 @@ class MysteryMode(Game):
                 except Exception:
                     pass
             fonts = self._build_card_ui_font_pack()
+            try:
+                if hasattr(self.card_ui, 'set_reroll_status'):
+                    self.card_ui.set_reroll_status(
+                        getattr(self, 'card_selection_rerolls_remaining', 0),
+                        getattr(self, 'card_selection_reroll_limit', CARD_SELECTION_REROLL_LIMIT),
+                    )
+            except Exception:
+                pass
+            try:
+                if hasattr(self.card_ui, 'set_reroll_enabled'):
+                    self.card_ui.set_reroll_enabled(self._can_reroll_card_selection())
+            except Exception:
+                pass
             self.card_ui.draw_selection_overlay(
                 self.screen,
                 active_width,

@@ -768,6 +768,70 @@ class PieceWorkshopScreen:
         if 0 <= rel_x < self.GRID_SIZE and 0 <= rel_y < self.GRID_SIZE:
             return int(rel_x), int(rel_y)
         return None
+
+    def _draw_rounded_panel(
+        self,
+        rect: pygame.Rect,
+        fill_color: tuple,
+        border_color: Optional[tuple] = None,
+        border_width: int = 1,
+        radius: Optional[int] = None,
+        glow_color: Optional[tuple] = None,
+        glow_alpha: int = 0,
+        top_highlight_alpha: int = 0,
+        inner_border_color: Optional[tuple] = None,
+    ) -> None:
+        """Yuvarlatılmış köşeli panel çiz."""
+        if rect.width <= 0 or rect.height <= 0:
+            return
+
+        _s = self._s
+        corner_radius = max(2, radius if radius is not None else _s(12))
+
+        if glow_color is not None and glow_alpha > 0:
+            glow_rect = rect.inflate(_s(6), _s(6))
+            glow_surf = pygame.Surface(glow_rect.size, pygame.SRCALPHA)
+            pygame.draw.rect(
+                glow_surf,
+                (*glow_color[:3], glow_alpha),
+                glow_surf.get_rect(),
+                border_radius=max(2, corner_radius + _s(2)),
+            )
+            self.screen.blit(glow_surf, glow_rect.topleft)
+
+        panel_surf = pygame.Surface(rect.size, pygame.SRCALPHA)
+        panel_bounds = panel_surf.get_rect()
+        pygame.draw.rect(panel_surf, fill_color, panel_bounds, border_radius=corner_radius)
+
+        if top_highlight_alpha > 0:
+            highlight_rect = pygame.Rect(
+                _s(2),
+                _s(2),
+                max(1, panel_bounds.width - _s(4)),
+                max(2, min(panel_bounds.height // 2, _s(16))),
+            )
+            pygame.draw.rect(
+                panel_surf,
+                (255, 255, 255, top_highlight_alpha),
+                highlight_rect,
+                border_radius=max(2, corner_radius - _s(2)),
+            )
+
+        if inner_border_color is not None:
+            inner_rect = panel_bounds.inflate(-_s(4), -_s(4))
+            if inner_rect.width > 0 and inner_rect.height > 0:
+                pygame.draw.rect(
+                    panel_surf,
+                    inner_border_color,
+                    inner_rect,
+                    1,
+                    border_radius=max(2, corner_radius - _s(2)),
+                )
+
+        self.screen.blit(panel_surf, rect.topleft)
+
+        if border_color is not None and border_width > 0:
+            pygame.draw.rect(self.screen, border_color[:3], rect, border_width, border_radius=corner_radius)
     
     def draw(self):
         """Modern Parça Atölyesi UI çiz"""
@@ -779,19 +843,9 @@ class PieceWorkshopScreen:
         
         # Başlık
         title_rect = retro_style.draw_title(self.screen, t('piece_workshop_title'), (width // 2, _s(55)), emoji='🧩')
-        
-        # Tip
-        tip_font = retro_style.get_font(_s(15), bold=False)
-        tip_text = t(
-            'piece_workshop_tip',
-            max_blocks=self.MAX_BLOCKS,
-            modifier=get_modifier_key_name(),
-        )
-        tip = tip_font.render(tip_text, True, (160, 175, 200))
-        self.screen.blit(tip, tip.get_rect(center=(width // 2, title_rect.bottom + _s(14))))
-        
+
         # Grid alanı
-        grid_top = title_rect.bottom + _s(40)
+        grid_top = title_rect.bottom + _s(26)
         mirrored_grid_height_limit = (height - grid_top - _s(120)) // (self.GRID_SIZE * 2)
         cell_size = min(_s(45), mirrored_grid_height_limit, (width - _s(300)) // self.GRID_SIZE)
         cell_size = max(_s(30), cell_size)
@@ -1061,19 +1115,33 @@ class PieceWorkshopScreen:
         """Kayıtlı parçalar paneli"""
         _s = self._s
         panel_rect = pygame.Rect(x, y, w, h)
-        retro_style.draw_glass_panel(self.screen, panel_rect, alpha=170, border_color=retro_style.primary)
+        retro_style.draw_glass_panel(
+            self.screen,
+            panel_rect,
+            alpha=170,
+            border_color=retro_style.primary,
+            top_highlight=False,
+        )
         self.last_pieces_panel_rect = panel_rect
-        
+
+        header_rect = pygame.Rect(panel_rect.x + _s(10), panel_rect.y + _s(10), panel_rect.width - _s(20), _s(30))
+        self._draw_rounded_panel(
+            header_rect,
+            (16, 24, 48, 165),
+            border_color=(78, 110, 160),
+            radius=_s(11),
+            top_highlight_alpha=12,
+            inner_border_color=(255, 255, 255, 12),
+        )
+
         # Başlık
         title_font = retro_style.get_font(_s(16), bold=True)
         title = title_font.render(t('piece_workshop_saved_pieces_title'), True, retro_style.primary)
-        self.screen.blit(title, (panel_rect.x + _s(12), panel_rect.y + _s(10)))
+        self.screen.blit(title, title.get_rect(midleft=(header_rect.x + _s(12), header_rect.centery)))
         count_font = retro_style.get_font(_s(12), bold=False)
         count_text = count_font.render(t('piece_workshop_piece_count', count=len(self.custom_pieces)), True, (150, 170, 200))
-        self.screen.blit(count_text, (panel_rect.right - count_text.get_width() - _s(12), panel_rect.y + _s(14)))
-        # İnce ayırıcı çizgi
-        pygame.draw.line(self.screen, (70, 90, 120), (panel_rect.x + _s(12), panel_rect.y + _s(34)), (panel_rect.right - _s(12), panel_rect.y + _s(34)), 1)
-        
+        self.screen.blit(count_text, count_text.get_rect(midright=(header_rect.right - _s(12), header_rect.centery)))
+
         self.piece_item_rects = []
         self.mode_tag_rects = []
 
@@ -1085,7 +1153,7 @@ class PieceWorkshopScreen:
 
         # Mode selector (for selected piece; if editing, it targets the editing piece)
         active_mode_piece_id = self._active_mode_piece_id()
-        list_y = panel_rect.y + 44
+        list_y = header_rect.bottom + _s(10)
         if active_mode_piece_id:
             piece = self._get_piece_by_id(active_mode_piece_id)
             if piece:
@@ -1095,8 +1163,14 @@ class PieceWorkshopScreen:
                 tag_w = (panel_rect.width - _s(44) - (cols - 1) * _s(8)) // cols
                 tag_h = _s(28)
                 mode_panel_h = _s(14) + _s(16) + ((len(WORKSHOP_MODES) + cols - 1) // cols) * (tag_h + _s(6)) + _s(12)
-                mode_panel_rect = pygame.Rect(panel_rect.x + _s(10), panel_rect.y + _s(42), panel_rect.width - _s(20), mode_panel_h)
-                retro_style.draw_glass_panel(self.screen, mode_panel_rect, alpha=120, border_color=(70, 90, 120))
+                mode_panel_rect = pygame.Rect(panel_rect.x + _s(10), header_rect.bottom + _s(8), panel_rect.width - _s(20), mode_panel_h)
+                retro_style.draw_glass_panel(
+                    self.screen,
+                    mode_panel_rect,
+                    alpha=120,
+                    border_color=(70, 90, 120),
+                    top_highlight=False,
+                )
 
                 mode_title_font = retro_style.get_font(_s(12), bold=True)
                 mode_title = mode_title_font.render(t('piece_workshop_modes_title'), True, (185, 205, 235))
@@ -1124,29 +1198,62 @@ class PieceWorkshopScreen:
                         tag_h,
                     )
                     enabled = mode_key in modes
-                    fill = (65, 135, 105, 190) if enabled else (26, 34, 58, 175)
-                    border = retro_style.accent if idx == self.mode_focus else (95, 110, 145)
-                    surf = pygame.Surface(tag_rect.size, pygame.SRCALPHA)
-                    surf.fill(fill)
-                    pygame.draw.rect(surf, (255, 255, 255, 32), pygame.Rect(0, 0, tag_rect.width, 2))
-                    pygame.draw.rect(surf, border, surf.get_rect(), 2, border_radius=_s(12))
-                    label_font = retro_style.get_font(_s(12), bold=True)
-                    label = label_font.render(t(mode_label_key), True, (235, 243, 255))
-                    surf.blit(label, label.get_rect(center=surf.get_rect().center))
+                    fill = (52, 110, 86, 215) if enabled else (22, 30, 50, 180)
+                    if idx == self.mode_focus:
+                        border = retro_style.accent
+                        glow_color = retro_style.accent
+                        glow_alpha = 34
+                    elif enabled:
+                        border = (112, 188, 150)
+                        glow_color = border
+                        glow_alpha = 16
+                    else:
+                        border = (84, 98, 128)
+                        glow_color = None
+                        glow_alpha = 0
+
+                    self._draw_rounded_panel(
+                        tag_rect,
+                        fill,
+                        border_color=border,
+                        border_width=2,
+                        radius=_s(12),
+                        glow_color=glow_color,
+                        glow_alpha=glow_alpha,
+                        top_highlight_alpha=18 if enabled else 8,
+                        inner_border_color=(255, 255, 255, 18 if enabled else 10),
+                    )
+
+                    mode_label = t(mode_label_key)
+                    label = retro_style.render_fit_text(
+                        mode_label,
+                        (235, 243, 255),
+                        tag_rect.width - _s(22),
+                        _s(12),
+                        bold=True,
+                        min_size=max(9, _s(9)),
+                    )
+                    self.screen.blit(label, label.get_rect(center=tag_rect.center))
                     if enabled:
                         dot_rect = pygame.Rect(tag_rect.width - _s(11), _s(6), _s(5), _s(5))
-                        pygame.draw.rect(surf, (150, 255, 210), dot_rect, border_radius=_s(3))
-                    self.screen.blit(surf, tag_rect.topleft)
+                        dot_rect.move_ip(tag_rect.x, tag_rect.y)
+                        pygame.draw.rect(self.screen, (150, 255, 210), dot_rect, border_radius=_s(3))
                     self.mode_tag_rects.append(tag_rect)
 
                 list_y = mode_panel_rect.bottom + _s(10)
 
         card_gap = _s(10)
-        card_height = _s(84)
+        card_height = _s(92)
         # Liste alanı
         list_area_rect = pygame.Rect(panel_rect.x + _s(10), list_y, panel_rect.width - _s(20), panel_rect.bottom - list_y - _s(10))
         if list_area_rect.height > 20:
-            retro_style.draw_glass_panel(self.screen, list_area_rect, alpha=110, border_color=(55, 70, 105))
+            retro_style.draw_glass_panel(
+                self.screen,
+                list_area_rect,
+                alpha=110,
+                border_color=(55, 70, 105),
+                top_highlight=False,
+            )
 
         list_padding = _s(10)
         max_row_width = min(list_area_rect.width - list_padding * 2, _s(720))
@@ -1181,60 +1288,105 @@ class PieceWorkshopScreen:
             is_editing = piece['id'] == self.editing_piece_id
             is_selected = idx == self.selected_piece_idx
             if is_editing:
-                bg_color = (40, 60, 90, 210)
-            elif is_selected:
-                bg_color = (30, 48, 78, 200)
-            else:
-                bg_color = (22, 32, 55, 185)
-            item_surf = pygame.Surface(item_rect.size, pygame.SRCALPHA)
-            pygame.draw.rect(item_surf, bg_color, item_surf.get_rect(), border_radius=_s(10))
-            self.screen.blit(item_surf, item_rect.topleft)
-
-            # Üst highlight çizgisi
-            pygame.draw.rect(self.screen, (255, 255, 255, 24), pygame.Rect(item_rect.x, item_rect.y, item_rect.width, 2))
-
-            # Kenar
-            if is_editing:
+                bg_color = (44, 64, 94, 225)
                 border_col = retro_style.accent
+                glow_color = retro_style.accent
                 border_w = 2
             elif is_selected:
+                bg_color = (32, 54, 86, 215)
                 border_col = retro_style.primary
+                glow_color = retro_style.primary
                 border_w = 2
             else:
+                bg_color = (22, 32, 55, 190)
                 border_col = (55, 70, 105)
+                glow_color = None
                 border_w = 1
-            pygame.draw.rect(self.screen, border_col, item_rect, border_w, border_radius=_s(10))
+
+            self._draw_rounded_panel(
+                item_rect,
+                bg_color,
+                border_color=border_col,
+                border_width=border_w,
+                radius=_s(12),
+                glow_color=glow_color,
+                glow_alpha=28 if glow_color else 0,
+                top_highlight_alpha=16 if glow_color else 8,
+                inner_border_color=(255, 255, 255, 14 if glow_color else 8),
+            )
 
             # Parça önizleme (mini)
-            preview_size = min(_s(62), card_height - _s(18))
-            preview_rect = pygame.Rect(item_rect.x + _s(10), item_rect.y + _s(10), preview_size, preview_size)
-            pygame.draw.rect(self.screen, (18, 26, 46), preview_rect, border_radius=_s(8))
-            pygame.draw.rect(self.screen, (52, 68, 102), preview_rect, 1, border_radius=_s(8))
+            preview_size = min(_s(62), card_height - _s(22))
+            preview_rect = pygame.Rect(item_rect.x + _s(12), item_rect.y + _s(12), preview_size, preview_size)
+            self._draw_rounded_panel(
+                preview_rect,
+                (16, 24, 42, 225),
+                border_color=border_col if glow_color else (56, 72, 106),
+                radius=_s(8),
+                top_highlight_alpha=10,
+                inner_border_color=(255, 255, 255, 10),
+            )
             self._draw_mini_piece(preview_rect, piece)
 
             # İsim
-            name_font = retro_style.get_font(_s(14), bold=True)
-            name = name_font.render(piece['name'], True, (225, 235, 250))
-            self.screen.blit(name, (preview_rect.right + _s(10), item_rect.y + _s(11)))
+            text_x = preview_rect.right + _s(12)
+            text_max_w = max(_s(70), item_rect.right - text_x - _s(12))
+            name = retro_style.render_fit_text(
+                piece['name'],
+                (225, 235, 250),
+                text_max_w,
+                _s(14),
+                bold=True,
+                min_size=max(10, _s(10)),
+            )
+            name_y = item_rect.y + _s(12)
+            self.screen.blit(name, (text_x, name_y))
 
             # Blok sayısı
             cells = piece.get('cells') or []
             block_count = len(cells) if cells else len(piece.get('shape', []))
-            info_font = retro_style.get_font(_s(12), bold=False)
-            info = info_font.render(t('piece_workshop_block_count', count=block_count), True, (145, 165, 190))
-            self.screen.blit(info, (preview_rect.right + _s(10), item_rect.y + _s(35)))
+            info = retro_style.render_fit_text(
+                t('piece_workshop_block_count', count=block_count),
+                (145, 165, 190),
+                text_max_w,
+                _s(12),
+                bold=False,
+                min_size=max(9, _s(9)),
+            )
+            info_y = name_y + name.get_height() + _s(8)
+            self.screen.blit(info, (text_x, info_y))
 
             # Mod etiketi (özet)
             modes = self._normalize_modes(piece.get('modes'))
-            mode_font = retro_style.get_font(_s(11), bold=False)
             mode_text = (
                 t('piece_workshop_all_modes')
                 if len(modes) == len(WORKSHOP_MODES)
                 else (t('piece_workshop_no_modes') if len(modes) == 0 else t('piece_workshop_mode_count', count=len(modes)))
             )
-            mode_color = (120, 210, 170) if len(modes) > 0 else (180, 150, 130)
-            mode_label = mode_font.render(mode_text, True, mode_color)
-            self.screen.blit(mode_label, (preview_rect.right + _s(10), item_rect.y + _s(56)))
+            mode_color = (130, 228, 182) if len(modes) > 0 else (205, 160, 140)
+            mode_chip = retro_style.render_fit_text(
+                mode_text,
+                mode_color,
+                text_max_w - _s(14),
+                _s(11),
+                bold=True,
+                min_size=max(9, _s(9)),
+            )
+            mode_chip_rect = pygame.Rect(
+                text_x,
+                item_rect.bottom - _s(28),
+                min(text_max_w, mode_chip.get_width() + _s(16)),
+                _s(20),
+            )
+            self._draw_rounded_panel(
+                mode_chip_rect,
+                (20, 38, 58, 195) if len(modes) > 0 else (42, 30, 30, 185),
+                border_color=(86, 162, 132) if len(modes) > 0 else (148, 108, 92),
+                radius=_s(9),
+                top_highlight_alpha=8,
+                inner_border_color=(255, 255, 255, 10),
+            )
+            self.screen.blit(mode_chip, mode_chip.get_rect(center=mode_chip_rect.center))
     
     def _draw_mini_piece(self, rect: pygame.Rect, piece: Dict):
         """Mini parça önizleme - grid görünümüyle birebir aynı stil"""
