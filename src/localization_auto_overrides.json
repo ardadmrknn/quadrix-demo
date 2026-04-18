@@ -2126,11 +2126,11 @@
     "pt": "Deslocador de forma"
   },
   "guide_card_pocket_desc": {
-    "de": "PERK: Drücke V, um ein zweites Stück zu halten. Mehr strategische Optionen!",
-    "es": "VENTAJA: Pulsa V para sujetar una segunda pieza. ¡Más opciones estratégicas!",
-    "fr": "AVANTAGE : Appuyez sur V pour tenir une deuxième pièce. Plus d'options stratégiques!",
-    "it": "VANTAGGIO: premi V per tenere un secondo pezzo. Altre opzioni strategiche!",
-    "pt": "PERK: Pressione V para segurar uma segunda peça. Mais opções estratégicas!"
+    "de": "PERK: Drücke {button}, um ein zweites Stück zu halten. Mehr strategische Optionen!",
+    "es": "VENTAJA: Pulsa {button} para sujetar una segunda pieza. ¡Más opciones estratégicas!",
+    "fr": "AVANTAGE : Appuyez sur {button} pour tenir une deuxième pièce. Plus d'options stratégiques!",
+    "it": "VANTAGGIO: premi {button} per tenere un secondo pezzo. Altre opzioni strategiche!",
+    "pt": "PERK: Pressione {button} para segurar uma segunda peça. Mais opções estratégicas!"
   },
   "guide_card_pocket_name": {
     "de": "Zusätzliche Tasche",

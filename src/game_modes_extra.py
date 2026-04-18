@@ -158,6 +158,7 @@ def _resolve_card_localization_id(card_or_id: Dict[str, Any] | str) -> str:
 
 def _build_card_format_context(card_or_id: Dict[str, Any] | str, value: Any = None) -> Dict[str, Any]:
     context: Dict[str, Any] = {}
+    localization_id = _resolve_card_localization_id(card_or_id)
 
     if isinstance(card_or_id, dict):
         for key, raw_value in card_or_id.items():
@@ -191,6 +192,18 @@ def _build_card_format_context(card_or_id: Dict[str, Any] | str, value: Any = No
 
     if value is not None:
         context['value'] = value
+
+    if localization_id == 'perk_second_pocket':
+        button_label = 'V'
+        try:
+            gpm = get_gamepad_manager()
+            if getattr(gpm, 'enabled', False) and gpm.is_connected():
+                resolved = gpm.get_button_label('hold2')
+                if resolved and resolved != '?':
+                    button_label = resolved
+        except Exception:
+            pass
+        context['button'] = button_label
 
     return context
 
@@ -231,6 +244,9 @@ def get_card_description(card_or_id: Dict[str, Any] | str, value: Any = None, fa
     key = f"card_{localization_id}_desc"
     translated = t(key)
     text = translated if translated != key else fallback
+    if localization_id == 'perk_second_pocket' and '{button}' not in text:
+        button_label = _build_card_format_context(card_or_id, value).get('button', 'V')
+        text = text.replace('V', str(button_label), 1)
     return _format_card_text(text, card_or_id, value)
 
 
@@ -4705,7 +4721,7 @@ class MysteryMode(Game):
             entry = {
                 'id': card.get('id'),
                 'title': card.get('title', ''),
-                'description': card.get('description', ''),
+                'description': get_card_description(card, card.get('value'), card.get('description', '')),
                 'tag': card.get('tag', ''),
                 'color': card.get('color', (180, 180, 180)),
                 'icon': card.get('icon', ''),

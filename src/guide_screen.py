@@ -9,6 +9,7 @@ from retro_style import retro_style
 from background_effects import get_shared_falling_blocks_layer
 from platform_utils import normalize_mouse_pos, is_fullscreen_toggle
 from localization import t, get_language
+from gamepad_manager import get_gamepad_manager
 from ui_scaling import get_projected_effective_scale, scale_px
 
 
@@ -38,6 +39,18 @@ GUIDE_TAB_MASCOT_ICONS = {
     'cards': 'kilavuz_kartlar.png',
     'tips_faq': 'kilavuz_ipuclari.png',
 }
+
+
+def _guide_action_label(action: str, keyboard_label: str) -> str:
+    try:
+        gpm = get_gamepad_manager()
+        if getattr(gpm, 'enabled', False) and gpm.is_connected():
+            resolved = gpm.get_button_label(action)
+            if resolved and resolved != '?':
+                return resolved
+    except Exception:
+        pass
+    return keyboard_label
 
 
 # ==============================================================================
@@ -993,9 +1006,11 @@ class GuideScreen:
             # Açıklama - BÜYÜK (Oyun Modları gibi)
             desc_font = self._font(16, bold=False, minimum=11, scale=scale)
             desc_key = card.get('desc_key', '')
-            desc_text = t(desc_key) if desc_key else ''
+            desc_text = t(desc_key, button=_guide_action_label('hold2', 'V')) if desc_key else ''
             if not desc_text or desc_text == desc_key:
                 desc_text = card.get('desc_fallback') or f"{card['id']} kartı."
+            if card.get('id') == 'perk_second_pocket' and '{button}' not in desc_text:
+                desc_text = desc_text.replace('V', _guide_action_label('hold2', 'V'), 1)
             
             desc_y = card_rect.y + self._s(175, minimum=130, scale=scale)
             desc_width = card_width - self._s(16, minimum=12, scale=scale)

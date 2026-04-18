@@ -299,16 +299,19 @@ def _build_tab_content(tab_key: str, sm, show_debug: bool = False) -> list[dict]
                 'label_tr': label, 'label_en': label,
             })
 
-        gamepad_actions = [
+        ingame_gamepad_actions = [
             ('hard_drop', _t('gp_hard_drop', 'Anında bırak')),
             ('hold', _t('gp_hold', 'Hold / Değiştir')),
-            ('hold2', _t('gp_hold2', 'İkincil Hold')),
+            ('hold2', _t('card_perk_second_pocket_title', 'Ekstra Cep')),
             ('pause', _t('gp_pause', 'Duraklat')),
             ('discard_held', _t('gp_discard_held', 'Tutulanı At')),
+        ]
+        outgame_gamepad_actions = [
             ('menu_confirm', _t('gp_menu_confirm', 'Menü Onay')),
             ('menu_back', _t('gp_menu_back', 'Menü Geri')),
             ('menu_tab_next', _t('gp_menu_tab_next', 'Sekme Sonraki')),
             ('menu_tab_prev', _t('gp_menu_tab_prev', 'Sekme Önceki')),
+            ('main_menu_prompt', _t('gp_main_menu_prompt', 'Ana Menü Onayı')),
         ]
         items.append({'type': 'section', 'loc_key': 'tab_gamepad', 'label_tr': 'GAMEPAD', 'label_en': 'GAMEPAD'})
         items.append({
@@ -317,7 +320,15 @@ def _build_tab_content(tab_key: str, sm, show_debug: bool = False) -> list[dict]
             'label_tr': _t('gp_rumble', 'Titreşim'), 'label_en': _t('gp_rumble', 'Vibration'),
             'min': 0, 'max': 3, 'step': 1,
         })
-        for action_key, label in gamepad_actions:
+        items.append({'type': 'section', 'loc_key': 'settings_gp_section_ingame', 'label_tr': 'GAMEPAD - OYUN İÇİ', 'label_en': 'GAMEPAD - IN-GAME'})
+        for action_key, label in ingame_gamepad_actions:
+            items.append({
+                'type': 'keybind', 'key': f'ctrl_gp_{action_key}',
+                'action_key': action_key, 'section': 'gamepad',
+                'label_tr': label, 'label_en': label,
+            })
+        items.append({'type': 'section', 'loc_key': 'settings_gp_section_outgame', 'label_tr': 'GAMEPAD - OYUN DIŞI', 'label_en': 'GAMEPAD - OUT OF GAME'})
+        for action_key, label in outgame_gamepad_actions:
             items.append({
                 'type': 'keybind', 'key': f'ctrl_gp_{action_key}',
                 'action_key': action_key, 'section': 'gamepad',
