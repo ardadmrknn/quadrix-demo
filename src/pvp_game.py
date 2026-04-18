@@ -312,12 +312,6 @@ class PvPGame:
         self.current_piece2 = self.get_next_piece()
         skip_hidden_rows(self.current_piece2, self.board2)
         self.next_piece2 = self.get_next_piece()
-
-        # Hold slotları
-        self.hold_piece1 = None
-        self.hold_piece2 = None
-        self.p1_can_hold = True
-        self.p2_can_hold = True
         
         # Tema renklerini parçalara uygula
         self.apply_theme_to_pieces()
@@ -491,14 +485,7 @@ class PvPGame:
     
     def apply_theme_to_pieces(self):
         """Tema + blok stili görünümünü mevcut parçalara uygula (ana oyun temeli)."""
-        for piece in (
-            self.current_piece1,
-            self.next_piece1,
-            self.hold_piece1,
-            self.current_piece2,
-            self.next_piece2,
-            self.hold_piece2,
-        ):
+        for piece in (self.current_piece1, self.next_piece1, self.current_piece2, self.next_piece2):
             self._apply_block_style(piece)
 
     def _apply_block_style(self, piece):
@@ -610,7 +597,6 @@ class PvPGame:
                 'soft_drop': pygame.K_s,
                 'hard_drop': pygame.K_LSHIFT,
                 'rotate': pygame.K_w,
-                'hold': pygame.K_e,
             },
             'player2': {
                 'move_left': pygame.K_LEFT,
@@ -618,7 +604,6 @@ class PvPGame:
                 'soft_drop': pygame.K_DOWN,
                 'hard_drop': pygame.K_SPACE,
                 'rotate': pygame.K_UP,
-                'hold': pygame.K_RSHIFT,
             },
             'pause': pygame.K_p,
         }
@@ -950,6 +935,10 @@ class PvPGame:
         midline = pygame.Rect(rect.centerx - max(1, s(1, minimum=1)), inner_rect.y + s(18), max(2, s(2, minimum=1)), inner_rect.height - s(36))
         pygame.draw.rect(surface, (88, 82, 104, 104), midline, border_radius=2)
 
+        ring_radius = max(s(16), min(inner_rect.width, inner_rect.height) // 4)
+        pygame.draw.circle(surface, (120, 126, 158, 38), (rect.centerx, rect.centery + s(4, minimum=0)), ring_radius, 1)
+        pygame.draw.circle(surface, (98, 108, 138, 28), (rect.centerx, rect.centery + s(4, minimum=0)), max(1, ring_radius - s(8)), 1)
+
         info_font = retro_style.get_font(s(14, minimum=10), bold=False)
 
         if self.match_mode == 'timed':
@@ -974,54 +963,12 @@ class PvPGame:
         timer_rect = timer.get_rect(center=timer_pill.center)
         surface.blit(timer, timer_rect)
 
-        sep_y = timer_pill.bottom + s(8)
-        sep_x = inner_rect.x + s(10)
-        sep_w = max(4, inner_rect.width - s(20))
-        pygame.draw.line(surface, (92, 98, 120), (sep_x, sep_y), (sep_x + sep_w, sep_y), 1)
-
-        p1_name = (self.player1_name if self.player1_name else t('player_1')).upper()
-        p2_name = (self.player2_name if self.player2_name else t('player_2')).upper()
-        name_max_w = max(s(40), inner_rect.width - s(16))
-        name_base = s(14, minimum=10)
-        name_min = max(8, s(9, minimum=8))
-
-        p1_surf = retro_style.render_fit_text(
-            p1_name,
-            soft_cyan,
-            name_max_w,
-            name_base,
-            bold=True,
-            min_size=name_min,
-        )
-        p2_surf = retro_style.render_fit_text(
-            p2_name,
-            soft_magenta,
-            name_max_w,
-            name_base,
-            bold=True,
-            min_size=name_min,
-        )
-
         vs_font = retro_style.get_font(s(40, minimum=22), bold=True)
         vs_text = vs_font.render('VS', True, vs_color)
         vs_shadow = vs_font.render('VS', True, (34, 38, 52))
-
-        content_top = sep_y + s(8)
-        content_bottom = inner_rect.bottom - s(8)
-        vs_center_y = (content_top + content_bottom) // 2
-        vs_center = (rect.centerx, vs_center_y)
-
-        p1_rect = p1_surf.get_rect(centerx=rect.centerx, bottom=vs_center_y - s(16, minimum=6))
-        p2_rect = p2_surf.get_rect(centerx=rect.centerx, top=vs_center_y + s(16, minimum=6))
-        if p1_rect.top < content_top:
-            p1_rect.top = content_top
-        if p2_rect.bottom > content_bottom:
-            p2_rect.bottom = content_bottom
-
-        surface.blit(p1_surf, p1_rect)
+        vs_center = (rect.centerx, rect.centery + s(4, minimum=0))
         surface.blit(vs_shadow, vs_shadow.get_rect(center=(vs_center[0], vs_center[1] + 2)))
         surface.blit(vs_text, vs_text.get_rect(center=vs_center))
-        surface.blit(p2_surf, p2_rect)
     
     def calculate_board_positions(self):
         """Oyun tahtalarının ekran pozisyonlarını hesapla"""
@@ -1245,15 +1192,7 @@ class PvPGame:
                     slice_info,
                 )
 
-    def _draw_preview_panel(
-        self,
-        rect: pygame.Rect,
-        accent_color,
-        piece,
-        title_text: str,
-        key_hint: str = '',
-        locked: bool = False,
-    ):
+    def _draw_preview_panel(self, rect: pygame.Rect, accent_color, next_piece, footer_label: str):
         sc = self._ui_scale()
         s = lambda v, minimum=1: self._sx(v, sc, minimum)
 
@@ -1263,18 +1202,14 @@ class PvPGame:
         pygame.draw.rect(self.screen, (*soft_border, 146), rect, 1, border_radius=12)
 
         title_font = retro_style.get_font(s(15, minimum=10), bold=True)
-        title = title_font.render(str(title_text or '').upper(), True, soft_border)
-        self.screen.blit(title, title.get_rect(midleft=(rect.x + s(12), rect.y + s(14))))
+        title = title_font.render(t('next', 'Sonraki').upper(), True, soft_border)
+        self.screen.blit(title, title.get_rect(centerx=rect.centerx, top=rect.y + s(10)))
 
-        if key_hint:
-            hint_font = retro_style.get_font(s(12, minimum=8), bold=False)
-            hint = hint_font.render(str(key_hint).upper(), True, tuple(int(c * 0.82) for c in soft_border))
-            self.screen.blit(hint, hint.get_rect(midright=(rect.right - s(12), rect.y + s(14))))
-
-        preview_height = max(s(74), rect.height - s(44))
+        preview_height = min(rect.height - s(42), s(164))
+        preview_height = max(s(96), preview_height)
         preview_rect = pygame.Rect(
             rect.x + s(12),
-            rect.y + s(30),
+            rect.y + max(s(30), (rect.height - preview_height) // 2),
             rect.width - s(24),
             preview_height,
         )
@@ -1285,24 +1220,12 @@ class PvPGame:
         self.screen.blit(inner_surface, preview_rect.topleft)
         pygame.draw.rect(self.screen, (*soft_border, 84), preview_rect, 1, border_radius=s(10))
 
-        if piece is not None:
-            self._draw_preview_piece(piece, preview_rect)
+        if next_piece is not None:
+            self._draw_preview_piece(next_piece, preview_rect)
         else:
             empty_font = retro_style.get_font(s(22, minimum=14), bold=True)
             empty = empty_font.render('—', True, retro_style.text_muted)
             self.screen.blit(empty, empty.get_rect(center=preview_rect.center))
-
-        if locked:
-            lock_overlay = pygame.Surface(preview_rect.size, pygame.SRCALPHA)
-            lock_overlay.fill((12, 14, 22, 116))
-            self.screen.blit(lock_overlay, preview_rect.topleft)
-            pygame.draw.line(
-                self.screen,
-                (*soft_border, 145),
-                (preview_rect.x + s(10), preview_rect.y + s(10)),
-                (preview_rect.right - s(10), preview_rect.bottom - s(10)),
-                max(1, s(2, minimum=1)),
-            )
     
     def load_background_image(self):
         """Arka plan resmini yükle"""
@@ -1427,90 +1350,13 @@ class PvPGame:
         
         piece_index = self.piece_sequence[self.current_piece_index]
         self.current_piece_index += 1
-        return self._build_spawn_piece(piece_index)
-
-    def _build_spawn_piece(self, shape_index: int):
-        piece = Piece(x=3, y=0, shape_index=int(shape_index))
+        piece = Piece(x=3, y=0, shape_index=piece_index)
         piece.y = get_piece_spawn_y(piece)
+
+        # Tema + blok stili uygula
         self._apply_block_style(piece)
+        
         return piece
-
-    def _try_hold_piece(self, player: int) -> bool:
-        if player == 1:
-            board = self.board1
-            current_attr = 'current_piece1'
-            next_attr = 'next_piece1'
-            hold_attr = 'hold_piece1'
-            can_hold_attr = 'p1_can_hold'
-        else:
-            board = self.board2
-            current_attr = 'current_piece2'
-            next_attr = 'next_piece2'
-            hold_attr = 'hold_piece2'
-            can_hold_attr = 'p2_can_hold'
-
-        if self.game_over or board.is_game_over() or not bool(getattr(self, can_hold_attr, False)):
-            return False
-
-        current_piece = getattr(self, current_attr, None)
-        if current_piece is None:
-            return False
-
-        current_shape_index = int(getattr(current_piece, 'shape_index', 0) or 0)
-        held_piece = getattr(self, hold_attr, None)
-
-        if held_piece is None:
-            setattr(self, hold_attr, self._build_spawn_piece(current_shape_index))
-            new_current = getattr(self, next_attr, None)
-            if new_current is None:
-                new_current = self.get_next_piece()
-            setattr(self, current_attr, new_current)
-            skip_hidden_rows(new_current, board)
-            setattr(self, next_attr, self.get_next_piece())
-        else:
-            held_shape_index = int(getattr(held_piece, 'shape_index', current_shape_index) or current_shape_index)
-            setattr(self, hold_attr, self._build_spawn_piece(current_shape_index))
-            new_current = self._build_spawn_piece(held_shape_index)
-            setattr(self, current_attr, new_current)
-            skip_hidden_rows(new_current, board)
-
-        setattr(self, can_hold_attr, False)
-        self._vs_panel_dirty = True
-
-        active_piece = getattr(self, current_attr, None)
-        if active_piece is not None and not board.is_valid_position(active_piece):
-            if player == 1:
-                self.p1_eliminated = True
-                if not self.p2_eliminated:
-                    self.winner = 2
-                    self.game_over = True
-                    self.match_end_reason = 'elimination'
-                    try:
-                        from gamepad_manager import get_gamepad_manager
-                        get_gamepad_manager().rumble(1.0, 1.0, 600)
-                    except Exception:
-                        pass
-                    self.sound.play('gameover')
-                    return True
-            else:
-                self.p2_eliminated = True
-                if not self.p1_eliminated:
-                    self.winner = 1
-                    self.game_over = True
-                    self.match_end_reason = 'elimination'
-                    try:
-                        from gamepad_manager import get_gamepad_manager
-                        get_gamepad_manager().rumble(1.0, 1.0, 600)
-                    except Exception:
-                        pass
-                    self.sound.play('gameover')
-                    return True
-
-            self.determine_winner()
-            return True
-
-        self.sound.play('move')
-        return True
     
     def handle_input(self):
         """Kullanıcı girdilerini işle"""
@@ -1774,9 +1620,6 @@ class PvPGame:
                             self.trigger_hard_drop_screen_shake()
 
                         self.lock_and_new_piece(1)
-
-                    elif event.key == controls1.get('hold'):
-                        self._try_hold_piece(1)
                 
                 # OYUNCU 2 KONTROLLER (Ok tuşları + Space)
                 if not self.board2.is_game_over():
@@ -1850,9 +1693,6 @@ class PvPGame:
                             self.trigger_hard_drop_screen_shake()
 
                         self.lock_and_new_piece(2)
-
-                    elif event.key == controls2.get('hold'):
-                        self._try_hold_piece(2)
             
             # Game over ekranında mouse tıklama kontrolü
             if self.game_over and event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
@@ -2718,7 +2558,6 @@ class PvPGame:
             self.current_piece1 = self.next_piece1
             skip_hidden_rows(self.current_piece1, self.board1)
             self.next_piece1 = self.get_next_piece()
-            self.p1_can_hold = True
         
         else:  # player == 2
             if self.effects_enabled:
@@ -2867,7 +2706,6 @@ class PvPGame:
             self.current_piece2 = self.next_piece2
             skip_hidden_rows(self.current_piece2, self.board2)
             self.next_piece2 = self.get_next_piece()
-            self.p2_can_hold = True
     
     def determine_winner(self):
         """Kazananı belirle.
@@ -3655,7 +3493,7 @@ class PvPGame:
         accent_overlay = self._board_accent_overlay_cache.get(accent_key)
         if accent_overlay is None:
             accent_overlay = pygame.Surface(board_rect.size, pygame.SRCALPHA).convert_alpha()
-            accent_overlay.fill((*player_accent[:3], 10))
+            accent_overlay.fill((*player_accent[:3], 18))
             self._board_accent_overlay_cache[accent_key] = accent_overlay
         self.screen.blit(accent_overlay, board_rect.topleft)
 
@@ -3884,12 +3722,8 @@ class PvPGame:
         offset_x2 = int(self.p2_offset_x + shake_x)
         preview_x2 = int(self.p2_preview_x + shake_x)
         start_y = int(self.p1_offset_y + shake_y)
-        side_panel_gap = max(self._sx(10), cell_size // 2)
-        side_panel_height_target = max(self._sx(120), cell_size * 4 + self._sx(24))
-        side_panel_height_limit = max(self._sx(84), (board_height - side_panel_gap) // 2)
-        preview_panel_height = max(self._sx(72), min(side_panel_height_target, side_panel_height_limit))
-        next_panel_y = start_y
-        hold_panel_y = start_y + board_height - preview_panel_height
+        preview_panel_height = min(board_height, max(self._sx(158), cell_size * 5 + self._sx(22)))
+        preview_panel_y = start_y + max(0, (board_height - preview_panel_height) // 2)
         vs_panel_height = min(board_height, max(self._sx(176), cell_size * 6 + self._sx(24)))
         vs_panel_y = start_y + max(0, (board_height - vs_panel_height) // 2)
         
@@ -3936,18 +3770,10 @@ class PvPGame:
         self._draw_player_header(p1_header, p1_name, UIColors.NEON_CYAN, int(self.board1.score), int(self.board1.lines_cleared), 'WASD')
         self._draw_player_header(p2_header, p2_name, UIColors.NEON_MAGENTA, int(self.board2.score), int(self.board2.lines_cleared), t('arrows').upper())
 
-        hold_key_p1 = self._key_label(self.pvp_controls.get('player1', {}).get('hold', pygame.K_e))
-        hold_key_p2 = self._key_label(self.pvp_controls.get('player2', {}).get('hold', pygame.K_RSHIFT))
-
-        p1_next_rect = pygame.Rect(preview_x1, next_panel_y, preview_panel_width, preview_panel_height)
-        p2_next_rect = pygame.Rect(preview_x2, next_panel_y, preview_panel_width, preview_panel_height)
-        p1_hold_rect = pygame.Rect(preview_x1, hold_panel_y, preview_panel_width, preview_panel_height)
-        p2_hold_rect = pygame.Rect(preview_x2, hold_panel_y, preview_panel_width, preview_panel_height)
-
-        self._draw_preview_panel(p1_next_rect, UIColors.NEON_CYAN, self.next_piece1, t('next', 'Sonraki'))
-        self._draw_preview_panel(p2_next_rect, UIColors.NEON_MAGENTA, self.next_piece2, t('next', 'Sonraki'))
-        self._draw_preview_panel(p1_hold_rect, UIColors.NEON_CYAN, self.hold_piece1, t('hold', 'Hold'), hold_key_p1, locked=not self.p1_can_hold)
-        self._draw_preview_panel(p2_hold_rect, UIColors.NEON_MAGENTA, self.hold_piece2, t('hold', 'Hold'), hold_key_p2, locked=not self.p2_can_hold)
+        p1_preview_rect = pygame.Rect(preview_x1, preview_panel_y, preview_panel_width, preview_panel_height)
+        p2_preview_rect = pygame.Rect(preview_x2, preview_panel_y, preview_panel_width, preview_panel_height)
+        self._draw_preview_panel(p1_preview_rect, UIColors.NEON_CYAN, self.next_piece1, 'WASD')
+        self._draw_preview_panel(p2_preview_rect, UIColors.NEON_MAGENTA, self.next_piece2, t('arrows').upper())
 
         # OYUNCU 1 (Sol)
         self.draw_board(self.board1, self.current_piece1, offset_x1, start_y, cell_size)
@@ -4154,11 +3980,6 @@ class PvPGame:
         self.current_piece2 = self.get_next_piece()
         skip_hidden_rows(self.current_piece2, self.board2)
         self.next_piece2 = self.get_next_piece()
-
-        self.hold_piece1 = None
-        self.hold_piece2 = None
-        self.p1_can_hold = True
-        self.p2_can_hold = True
         
         # Tema renklerini parçalara uygula
         self.apply_theme_to_pieces()
