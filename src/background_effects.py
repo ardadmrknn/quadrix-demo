@@ -459,7 +459,8 @@ class ScreenTransition:
             else:  # down
                 offset_x = 0
                 offset_y = int(height * progress)
-            
+            # Güvenlik: kayma sırasında açıkta kalan bölgelerde eski piksel izi kalmasın.
+            screen.fill((0, 0, 0))
             screen.blit(self._old_screen_capture, (offset_x, offset_y))
         elif self._old_screen_capture:
             # Tek fazlı veya in fazı: Eski ve yeni ekran birlikte kayıyor
@@ -470,14 +471,14 @@ class ScreenTransition:
                 old_offset_x = int(-width * progress)
                 old_offset_y = 0
                 # Yeni ekran sağdan giriyor
-                new_offset_x = int(width * (1 - progress))
+                new_offset_x = old_offset_x + width
                 new_offset_y = 0
             elif direction == 'right':
                 # Eski ekran sağa kayarak çıkıyor
                 old_offset_x = int(width * progress)
                 old_offset_y = 0
                 # Yeni ekran soldan giriyor
-                new_offset_x = int(-width * (1 - progress))
+                new_offset_x = old_offset_x - width
                 new_offset_y = 0
             elif direction == 'up':
                 # Eski ekran yukarı kayarak çıkıyor
@@ -485,19 +486,21 @@ class ScreenTransition:
                 old_offset_y = int(-height * progress)
                 # Yeni ekran aşağıdan giriyor
                 new_offset_x = 0
-                new_offset_y = int(height * (1 - progress))
+                new_offset_y = old_offset_y + height
             else:  # down
                 # Eski ekran aşağı kayarak çıkıyor
                 old_offset_x = 0
                 old_offset_y = int(height * progress)
                 # Yeni ekran yukarıdan giriyor
                 new_offset_x = 0
-                new_offset_y = int(-height * (1 - progress))
+                new_offset_y = old_offset_y - height
 
-            # Performans: her frame tam ekran screen.copy() yerine mevcut yeni ekranı
-            # yerinde kaydır, sonra eski ekranı üzerine uygun offset ile çiz.
-            if new_offset_x != 0 or new_offset_y != 0:
-                screen.scroll(new_offset_x, new_offset_y)
+            # screen.scroll() açıkta kalan pikselleri temizlemediği için
+            # ghosting/artifact üretir. Güvenli kompozit: yeni ekranı kopyala,
+            # hedefi temizle, ardından yeni+eski ekranları offset ile çiz.
+            new_screen_capture = screen.copy()
+            screen.fill((0, 0, 0))
+            screen.blit(new_screen_capture, (new_offset_x, new_offset_y))
             screen.blit(self._old_screen_capture, (old_offset_x, old_offset_y))
         else:
             # Eski ekran capture yok - sadece fade efekti uygula

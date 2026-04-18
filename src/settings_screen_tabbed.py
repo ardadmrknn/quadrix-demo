@@ -788,56 +788,77 @@ class TabbedSettingsScreen:
         panel_w = min(self._s(920, minimum=680), width - self._s(120, minimum=84))
         panel_h = min(self._s(730, minimum=540), height - self._s(90, minimum=64))
         panel_rect = pygame.Rect((width - panel_w) // 2, (height - panel_h) // 2, panel_w, panel_h)
-        panel_right = panel_rect.x + panel_rect.width
         panel_bottom = panel_rect.y + panel_rect.height
+
+        content_pad_x = self._s(22, minimum=16)
+        list_top = panel_rect.y + self._s(90, minimum=66)
+        action_h = self._s(40, minimum=30)
+        action_gap = self._s(10, minimum=8)
+        action_inset_x = self._s(6, minimum=4)
+        action_y = panel_bottom - self._s(16, minimum=12) - action_h
+        list_bottom_gap = self._s(14, minimum=10)
+
+        list_scrollbar_gap = self._s(6, minimum=4)
+        list_scrollbar_w = self._s(20, minimum=14)
+        list_w = panel_rect.width - (content_pad_x * 2) - list_scrollbar_w - list_scrollbar_gap
+        list_h = max(self._s(120, minimum=92), action_y - list_top - list_bottom_gap)
         list_rect = pygame.Rect(
-            panel_rect.x + self._s(20, minimum=14),
-            panel_rect.y + self._s(86, minimum=64),
-            panel_rect.width - self._s(40, minimum=28),
-            panel_rect.height - self._s(206, minimum=154),
+            panel_rect.x + content_pad_x,
+            list_top,
+            max(1, list_w),
+            max(1, list_h),
         )
 
         picker_w = min(self._s(760, minimum=560), width - self._s(180, minimum=120))
         picker_h = min(self._s(580, minimum=420), height - self._s(180, minimum=120))
         picker_rect = pygame.Rect((width - picker_w) // 2, (height - picker_h) // 2, picker_w, picker_h)
-        picker_right = picker_rect.x + picker_rect.width
+        picker_content_pad_x = self._s(18, minimum=14)
+        picker_scrollbar_gap = self._s(6, minimum=4)
+        picker_scrollbar_w = self._s(20, minimum=14)
         picker_list_rect = pygame.Rect(
-            picker_rect.x + self._s(18, minimum=14),
+            picker_rect.x + picker_content_pad_x,
             picker_rect.y + self._s(62, minimum=48),
-            picker_rect.width - self._s(36, minimum=28),
-            picker_rect.height - self._s(84, minimum=64),
+            max(1, picker_rect.width - (picker_content_pad_x * 2) - picker_scrollbar_w - picker_scrollbar_gap),
+            max(1, picker_rect.height - self._s(90, minimum=68)),
         )
         return {
             'panel': panel_rect,
             'list_rect': list_rect,
             'item_h': self._s(52, minimum=40),
             'gap': self._s(8, minimum=6),
+            'item_inset_x': self._s(6, minimum=4),
+            'list_frame_pad_x': self._s(8, minimum=6),
+            'list_frame_pad_y': self._s(10, minimum=8),
             'scroll_step': self._s(30, minimum=18),
             'title_x': panel_rect.x + self._s(20, minimum=14),
             'title_y': panel_rect.y + self._s(16, minimum=12),
             'subtitle_y': panel_rect.y + self._s(50, minimum=38),
             'scrollbar_rect': pygame.Rect(
-                panel_right - self._s(22, minimum=16),
+                list_rect.right + list_scrollbar_gap,
                 list_rect.y,
-                self._s(22, minimum=16),
+                list_scrollbar_w,
                 list_rect.height,
             ),
             'hint_x': panel_rect.x + self._s(20, minimum=14),
             'hint_y': panel_bottom - self._s(28, minimum=20),
-            'action_h': self._s(38, minimum=30),
-            'action_gap': self._s(10, minimum=8),
-            'action_y': list_rect.bottom + self._s(10, minimum=8),
+            'action_h': action_h,
+            'action_gap': action_gap,
+            'action_inset_x': action_inset_x,
+            'action_y': action_y,
             'picker': picker_rect,
             'picker_list_rect': picker_list_rect,
             'picker_item_h': self._s(48, minimum=38),
             'picker_gap': self._s(8, minimum=6),
+            'picker_item_inset_x': self._s(6, minimum=4),
+            'picker_frame_pad_x': self._s(8, minimum=6),
+            'picker_frame_pad_y': self._s(10, minimum=8),
             'picker_scroll_step': self._s(36, minimum=24),
             'picker_title_x': picker_rect.x + self._s(18, minimum=14),
             'picker_title_y': picker_rect.y + self._s(14, minimum=10),
             'picker_scrollbar_rect': pygame.Rect(
-                picker_right - self._s(22, minimum=16),
+                picker_list_rect.right + picker_scrollbar_gap,
                 picker_list_rect.y,
-                self._s(22, minimum=16),
+                picker_scrollbar_w,
                 picker_list_rect.height,
             ),
         }
@@ -1664,6 +1685,7 @@ class TabbedSettingsScreen:
         try:
             action_h = int(metrics.get('action_h', 0))
             action_gap = int(metrics.get('action_gap', 0))
+            action_inset_x = int(metrics.get('action_inset_x', 0))
             action_y = int(metrics.get('action_y', 0))
         except Exception:
             return {}
@@ -1671,11 +1693,21 @@ class TabbedSettingsScreen:
         if action_h <= 0 or list_rect.width <= 0:
             return {}
 
-        width = max(1, (list_rect.width - (action_gap * 2)) // 3)
+        left = list_rect.x + action_inset_x
+        available_w = max(3, list_rect.width - (action_inset_x * 2) - (action_gap * 2))
+        base_w = max(1, available_w // 3)
+        remainder = max(0, available_w - (base_w * 3))
+        widths = [base_w, base_w, base_w]
+        for i in range(min(remainder, 3)):
+            widths[i] += 1
+
+        x0 = left
+        x1 = x0 + widths[0] + action_gap
+        x2 = x1 + widths[1] + action_gap
         return {
-            'clear': pygame.Rect(list_rect.x, action_y, width, action_h),
-            'reset_default': pygame.Rect(list_rect.x + width + action_gap, action_y, width, action_h),
-            'select_all': pygame.Rect(list_rect.x + (width + action_gap) * 2, action_y, width, action_h),
+            'clear': pygame.Rect(x0, action_y, widths[0], action_h),
+            'reset_default': pygame.Rect(x1, action_y, widths[1], action_h),
+            'select_all': pygame.Rect(x2, action_y, widths[2], action_h),
         }
 
     def _apply_playlist_bulk_action(self, action_key: str) -> str | None:
@@ -3611,8 +3643,17 @@ class TabbedSettingsScreen:
         self.screen.blit(subtitle, (int(metrics['title_x']), int(metrics['subtitle_y'])))
 
         list_rect = metrics['list_rect']
+        list_frame_rect = list_rect.inflate(int(metrics['list_frame_pad_x']) * 2, int(metrics['list_frame_pad_y']) * 2)
+        list_frame = pygame.Surface(list_frame_rect.size, pygame.SRCALPHA)
+        pygame.draw.rect(list_frame, (8, 18, 38, 160), list_frame.get_rect(), border_radius=self._s(14, minimum=10))
+        pygame.draw.rect(list_frame, (92, 148, 205, 92), list_frame.get_rect(), width=1, border_radius=self._s(14, minimum=10))
+        self.screen.blit(list_frame, list_frame_rect.topleft)
+
         item_h = int(metrics['item_h'])
         gap = int(metrics['gap'])
+        item_inset_x = int(metrics.get('item_inset_x', 0))
+        item_x = list_rect.x + item_inset_x
+        item_w = max(1, list_rect.width - item_inset_x * 2)
         total_items = len(self._playlist_edit_items) + 1
 
         max_scroll = self._playlist_list_max_scroll(total_items, item_h, gap, list_rect.height)
@@ -3625,7 +3666,7 @@ class TabbedSettingsScreen:
             if y + item_h < list_rect.y or y > list_rect.bottom:
                 continue
 
-            rect = pygame.Rect(list_rect.x, y, list_rect.width, item_h)
+            rect = pygame.Rect(item_x, y, item_w, item_h)
             self._playlist_edit_item_rects.append((rect, idx))
 
             if idx == self._playlist_edit_selected:
@@ -3658,6 +3699,27 @@ class TabbedSettingsScreen:
         total_h = total_items * (item_h + gap)
         if total_h > list_rect.height:
             retro_style.draw_scrollbar(self.screen, metrics['scrollbar_rect'], self._playlist_edit_scroll, total_h, list_rect.height)
+
+        action_y = int(metrics['action_y'])
+        divider_y = action_y - self._s(8, minimum=6)
+        pygame.draw.line(
+            self.screen,
+            (66, 108, 160),
+            (list_rect.x, divider_y),
+            (list_rect.right, divider_y),
+            max(1, self._s(1, minimum=1)),
+        )
+
+        count_font = self._font(14, minimum=10)
+        track_count_text = f"{len(self._playlist_edit_items)} {_t('track_count_unit', 'parça')}"
+        track_count_surf = count_font.render(track_count_text, True, (138, 168, 206))
+        self.screen.blit(
+            track_count_surf,
+            (
+                list_rect.x,
+                action_y - track_count_surf.get_height() - self._s(12, minimum=8),
+            ),
+        )
 
         action_rects = self._playlist_bulk_action_rects(metrics)
         selectable_tracks = self._playlist_selectable_track_values()
@@ -3702,8 +3764,17 @@ class TabbedSettingsScreen:
         self.screen.blit(picker_title, (int(metrics['picker_title_x']), int(metrics['picker_title_y'])))
 
         picker_list_rect = metrics['picker_list_rect']
+        picker_frame_rect = picker_list_rect.inflate(int(metrics['picker_frame_pad_x']) * 2, int(metrics['picker_frame_pad_y']) * 2)
+        picker_frame = pygame.Surface(picker_frame_rect.size, pygame.SRCALPHA)
+        pygame.draw.rect(picker_frame, (10, 20, 40, 165), picker_frame.get_rect(), border_radius=self._s(14, minimum=10))
+        pygame.draw.rect(picker_frame, (96, 156, 216, 96), picker_frame.get_rect(), width=1, border_radius=self._s(14, minimum=10))
+        self.screen.blit(picker_frame, picker_frame_rect.topleft)
+
         p_item_h = int(metrics['picker_item_h'])
         p_gap = int(metrics['picker_gap'])
+        picker_item_inset_x = int(metrics.get('picker_item_inset_x', 0))
+        picker_item_x = picker_list_rect.x + picker_item_inset_x
+        picker_item_w = max(1, picker_list_rect.width - picker_item_inset_x * 2)
 
         self._playlist_edit_picker_scroll = max(0, min(self._playlist_edit_picker_scroll, self._picker_max_scroll(picker_list_rect.height, p_item_h, p_gap)))
 
@@ -3714,7 +3785,7 @@ class TabbedSettingsScreen:
             if y + p_item_h < picker_list_rect.y or y > picker_list_rect.bottom:
                 continue
 
-            rect = pygame.Rect(picker_list_rect.x, y, picker_list_rect.width, p_item_h)
+            rect = pygame.Rect(picker_item_x, y, picker_item_w, p_item_h)
             self._playlist_edit_picker_rects.append((rect, idx))
 
             label = str(option.get('label', ''))

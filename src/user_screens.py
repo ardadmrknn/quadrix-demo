@@ -1088,9 +1088,9 @@ class UserSelectionScreen:
             if elapsed >= self._transition_duration_ms:
                 self._transition_active = False
             else:
-                t = max(0.0, min(1.0, elapsed / max(1, self._transition_duration_ms)))
-                alpha = int(255 * t)
-                y_off = int((1.0 - t) * 10)
+                transition_progress = max(0.0, min(1.0, elapsed / max(1, self._transition_duration_ms)))
+                alpha = int(255 * transition_progress)
+                y_off = int((1.0 - transition_progress) * 10)
                 original = self.screen
                 temp = pygame.Surface(original.get_size(), pygame.SRCALPHA)
                 self._ui_scale_surface = original

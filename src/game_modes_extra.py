@@ -2829,8 +2829,8 @@ class UICard:
             self.hover = False
             self.target_scale = 1.0
 
-        t = min(1.0, seconds * 12.0)
-        self.scale += (self.target_scale - self.scale) * t
+        interp = min(1.0, seconds * 12.0)
+        self.scale += (self.target_scale - self.scale) * interp
         self.pulse = (self.pulse + seconds * 3.5) % (2 * math.pi)
 
         # --- Sürekli Parçacık ---

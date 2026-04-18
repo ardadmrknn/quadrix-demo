@@ -83,7 +83,7 @@ class SprintMode(Game):
         if self.settings_manager:
             times = self.settings_manager.get('sprint_best_times', [])
             if isinstance(times, list):
-                return sorted([float(t) for t in times if isinstance(t, (int, float))])[:3]
+                return sorted([float(time_value) for time_value in times if isinstance(time_value, (int, float))])[:3]
         return []
     
     def _save_best_time(self, elapsed_seconds):

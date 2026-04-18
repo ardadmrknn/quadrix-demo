@@ -104,6 +104,7 @@ class SplashScreen:
         self.settings_manager = settings_manager
         self._custom_prompt = prompt_text
         self.clock = pygame.time.Clock()
+        self.last_frame: pygame.Surface | None = None
 
         # Windows PrintScreen / focus-loss recovery state
         self._display_was_inactive = False
@@ -255,11 +256,14 @@ class SplashScreen:
 
     def run(self):
         """Run splashscreen loop, returns True if continue, False for quit"""
+        self.last_frame = None
         running = True
         alpha = 0
         fade_in = True
         fade_out = False
-        duration = 1800  # fade-in duration in ms
+        base_fade_in_duration = 1800
+        base_fade_out_duration = 1000
+        duration = int(base_fade_in_duration / 1.25)  # ekrana geliş %25 daha hızlı
         start_time = pygame.time.get_ticks()
         
         # Logo animasyon değişkenleri
@@ -270,7 +274,8 @@ class SplashScreen:
         enter_blink_speed = 400  # ms
         
         exit_start = 0
-        exit_duration = 1000  # Uzun animasyon
+        exit_duration = int(base_fade_out_duration / 0.4)  # kayboluş %50 daha yavaş
+        early_menu_handoff_alpha = 80  # Splash tamamen bitmeden menüye geç
 
         while running:
             dt = self.clock.tick(60)  # 60 FPS for smooth animations
@@ -328,9 +333,13 @@ class SplashScreen:
                 # Logo: Hafif zoom out
                 logo_scale = 1.0 + ease_frac * 0.15
                 
-                # Alpha 5'in altına düşünce hemen geç
-                if alpha <= 5:
+                # Splash tamamen sönmesini bekleme: düşük alpha'da menüye devret.
+                if alpha <= early_menu_handoff_alpha:
                     # Event kuyruğunu temizle - menüye geçerken eski input'lar sorun çıkarmasın
+                    try:
+                        self.last_frame = self.screen.copy()
+                    except Exception:
+                        self.last_frame = None
                     pygame.event.clear()
                     return True
             elif fade_in:
@@ -441,18 +450,18 @@ class SplashScreen:
         f = (h * 6.0) - i
         p = v * (1.0 - s)
         q = v * (1.0 - s * f)
-        t = v * (1.0 - s * (1.0 - f))
+        t_comp = v * (1.0 - s * (1.0 - f))
         i = i % 6
         if i == 0:
-            return (int(v * 255), int(t * 255), int(p * 255))
+            return (int(v * 255), int(t_comp * 255), int(p * 255))
         if i == 1:
             return (int(q * 255), int(v * 255), int(p * 255))
         if i == 2:
-            return (int(p * 255), int(v * 255), int(t * 255))
+            return (int(p * 255), int(v * 255), int(t_comp * 255))
         if i == 3:
             return (int(p * 255), int(q * 255), int(v * 255))
         if i == 4:
-            return (int(t * 255), int(p * 255), int(v * 255))
+            return (int(t_comp * 255), int(p * 255), int(v * 255))
         if i == 5:
             return (int(v * 255), int(p * 255), int(q * 255))
         return (255, 255, 255)

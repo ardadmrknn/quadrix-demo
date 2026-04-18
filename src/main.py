@@ -1357,6 +1357,57 @@ def main():
     # Müzik için SoundManager
     from sound import SoundManager
     menu_sound = SoundManager()
+    initial_mute_all = bool(settings_manager.get('mute_all', False))
+    try:
+        menu_sound.set_muted(initial_mute_all)
+    except Exception:
+        pass
+
+    # Enter sonrası siyah bekleme oluşmaması için ağır ekran kurulumlarını
+    # splash öncesinde hazırla.
+    menu = Menu(screen, user_manager, settings_manager=settings_manager)
+    try:
+        prewarm_common_mode_entry_backgrounds(settings_manager=settings_manager)
+    except Exception:
+        pass
+    # Köşe butonundaki ses durumunu başlangıçta senkronize et
+    try:
+        menu.set_muted(initial_mute_all)
+    except Exception:
+        pass
+    highscore_screen = HighScoreScreen(
+        screen,
+        score_manager,
+        user_manager,
+        steam_mode_scores=_load_steam_mode_scores(limit=3),
+    )
+    settings_screen = TabbedSettingsScreen(screen, theme_manager, settings_manager, menu_sound)
+    mode_music_screen = MusicSettingsScreen(screen, settings_manager, menu_sound)
+    control_settings_screen = ControlSettingsScreen(screen, settings_manager)
+    block_style_screen = BlockStyleSettingsScreen(screen, theme_manager, settings_manager)
+    block_workshop_screen = BlockWorkshopScreen(screen, settings_manager, theme_manager)
+    piece_workshop_screen = PieceWorkshopScreen(screen, settings_manager, theme_manager)  # Yeni parça atölyesi
+    achievement_screen = AchievementScreen(screen, achievement_manager)
+    credits_screen = CreditsScreen(screen)
+    extras_screen = ExtrasScreen(screen, user_manager)  # Ekstralar menüsü
+    user_selection_screen = UserSelectionScreen(screen, user_manager)
+    user_management_screen = UserManagementScreen(screen, user_manager)
+    graphics_menu = None  # Grafikler menüsü
+    gameplay_settings_menu = None  # Oynanış ayarları menüsü
+    guide_screen = None  # Kılavuz ekranı
+
+    # Campaign level seçim ekranı - önceden oluştur (lag önleme)
+    campaign_level_select = CampaignLevelSelect(
+        screen=screen,
+        settings_manager=settings_manager,
+        user_manager=user_manager,
+    )
+
+    # Kaydedilmiş sessiz mod ayarını SoundManager'a uygula.
+    try:
+        menu_sound.set_muted(getattr(settings_screen, 'mute_all', False))
+    except Exception:
+        pass
     
     # Menüler
     # First show splash screen (press Enter to continue)
@@ -1376,9 +1427,75 @@ def main():
     except Exception:
         pass
 
+    _apply_screen_to_targets(
+        screen,
+        menu,
+        highscore_screen,
+        settings_screen,
+        mode_music_screen,
+        control_settings_screen,
+        block_style_screen,
+        block_workshop_screen,
+        piece_workshop_screen,
+        achievement_screen,
+        credits_screen,
+        extras_screen,
+        user_selection_screen,
+        user_management_screen,
+        campaign_level_select,
+    )
+
+    # Splash -> menü geçişini yumuşat: son splash karesini kısa bir süre
+    # menü üstünde eritir (crossfade), böylece ani cut hissi ve siyah boşluk azalır.
+    splash_handoff_frame = getattr(splash, 'last_frame', None)
+    if splash_handoff_frame is not None:
+        try:
+            target_size = screen.get_size()
+            if splash_handoff_frame.get_size() != target_size:
+                if current_platform == 'Darwin':
+                    splash_handoff_frame = pygame.transform.scale(splash_handoff_frame, target_size)
+                else:
+                    splash_handoff_frame = pygame.transform.smoothscale(splash_handoff_frame, target_size)
+        except Exception:
+            try:
+                splash_handoff_frame = pygame.transform.scale(splash_handoff_frame, screen.get_size())
+            except Exception:
+                splash_handoff_frame = None
+
+    if splash_handoff_frame is not None:
+        blend_duration_ms = 260
+        blend_start_ms = pygame.time.get_ticks()
+        blend_clock = pygame.time.Clock()
+
+        while True:
+            now_ms = pygame.time.get_ticks()
+            blend_progress = min(1.0, float(now_ms - blend_start_ms) / max(1, blend_duration_ms))
+            eased = 1.0 - (1.0 - blend_progress) * (1.0 - blend_progress)
+
+            should_abort = False
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    should_abort = True
+                    pygame.event.post(event)
+            if should_abort:
+                break
+
+            menu.draw()
+
+            overlay_alpha = max(0, int(255 * (1.0 - eased)))
+            if overlay_alpha > 0:
+                overlay = splash_handoff_frame.copy()
+                overlay.set_alpha(overlay_alpha)
+                screen.blit(overlay, (0, 0))
+
+            pygame.display.flip()
+
+            if blend_progress >= 1.0:
+                break
+            blend_clock.tick(60)
+
     # Splash screen'den sonra event kuyruğunu temizle
     pygame.event.clear()
-    pygame.time.wait(50)
     pygame.event.clear()
 
     # Kaydedilmiş müzik ayarını kontrol et - ANA SAYFA MÜZİĞİNİ çal
@@ -1386,7 +1503,6 @@ def main():
     print("🎵 ANA MENÜ MÜZİĞİ BAŞLATILIYOR")
     print("=" * 60)
     music_enabled = settings_manager.get('music_enabled', True)
-    initial_mute_all = bool(settings_manager.get('mute_all', False))
     try:
         menu_sound.set_muted(initial_mute_all)
     except Exception:
@@ -1427,50 +1543,6 @@ def main():
             print("   Müzik KAPALI (mute_all=True)")
     print("=" * 60)
 
-    menu = Menu(screen, user_manager, settings_manager=settings_manager)
-    try:
-        prewarm_common_mode_entry_backgrounds(settings_manager=settings_manager)
-    except Exception:
-        pass
-    # Köşe butonundaki ses durumunu başlangıçta senkronize et
-    try:
-        menu.set_muted(initial_mute_all)
-    except Exception:
-        pass
-    highscore_screen = HighScoreScreen(
-        screen,
-        score_manager,
-        user_manager,
-        steam_mode_scores=_load_steam_mode_scores(limit=3),
-    )
-    settings_screen = TabbedSettingsScreen(screen, theme_manager, settings_manager, menu_sound)
-    mode_music_screen = MusicSettingsScreen(screen, settings_manager, menu_sound)
-    control_settings_screen = ControlSettingsScreen(screen, settings_manager)
-    block_style_screen = BlockStyleSettingsScreen(screen, theme_manager, settings_manager)
-    block_workshop_screen = BlockWorkshopScreen(screen, settings_manager, theme_manager)
-    piece_workshop_screen = PieceWorkshopScreen(screen, settings_manager, theme_manager)  # Yeni parça atölyesi
-    achievement_screen = AchievementScreen(screen, achievement_manager)
-    credits_screen = CreditsScreen(screen)
-    extras_screen = ExtrasScreen(screen, user_manager)  # Ekstralar menüsü
-    user_selection_screen = UserSelectionScreen(screen, user_manager)
-    user_management_screen = UserManagementScreen(screen, user_manager)
-    graphics_menu = None  # Grafikler menüsü
-    gameplay_settings_menu = None  # Oynanış ayarları menüsü
-    guide_screen = None  # Kılavuz ekranı
-    
-    # Campaign level seçim ekranı - önceden oluştur (lag önleme)
-    campaign_level_select = CampaignLevelSelect(
-        screen=screen,
-        settings_manager=settings_manager,
-        user_manager=user_manager,
-    )
-
-    # Kaydedilmiş sessiz mod ayarını SoundManager'a uygula.
-    try:
-        menu_sound.set_muted(getattr(settings_screen, 'mute_all', False))
-    except Exception:
-        pass
-    
     # Durum — Steam profili varsa menüye, değilse kullanıcı durumuna göre
     state = 'menu' if (_steam_user_set or user_manager.has_users()) else 'user_selection'
     confirm_exit = False

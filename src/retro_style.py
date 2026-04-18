@@ -684,10 +684,10 @@ class RetroStyle:
                 max_radius = int(math.hypot(width, height))
                 steps = 22
                 for i in range(steps):
-                    t = i / max(steps - 1, 1)
-                    radius = int(max_radius * (1.0 - t * 0.95))
+                    ring_progress = i / max(steps - 1, 1)
+                    radius = int(max_radius * (1.0 - ring_progress * 0.95))
                     # Quadratic falloff for smoother center
-                    alpha = int(18 * ((1.0 - t) ** 2))
+                    alpha = int(18 * ((1.0 - ring_progress) ** 2))
                     if alpha <= 0 or radius <= 0:
                         continue
                     color = (self.primary[0], self.primary[1], self.primary[2], alpha)

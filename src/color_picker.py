@@ -189,8 +189,8 @@ def _build_slider_fill(w: int, h: int, color: Tuple[int, int, int]) -> pygame.Su
     top_c = tuple(min(255, c + 50) for c in color[:3])
     bot_c = tuple(max(0, c - 30) for c in color[:3])
     for y in range(h):
-        t = y / max(1, h - 1)
-        lc = tuple(int(top_c[i] + (bot_c[i] - top_c[i]) * t) for i in range(3))
+        blend_ratio = y / max(1, h - 1)
+        lc = tuple(int(top_c[i] + (bot_c[i] - top_c[i]) * blend_ratio) for i in range(3))
         pygame.draw.line(surf, (*lc, 210), (0, y), (w - 1, y))
     return surf
 
@@ -204,8 +204,8 @@ def _build_button_surf(w: int, h: int, color: Tuple[int, int, int],
     bot = tuple(max(0, c - 25) for c in bc)
     alpha = 240 if hover else 190
     for y in range(h):
-        t = y / max(1, h - 1)
-        lc = tuple(int(top[i] + (bot[i] - top[i]) * t) for i in range(3))
+        blend_ratio = y / max(1, h - 1)
+        lc = tuple(int(top[i] + (bot[i] - top[i]) * blend_ratio) for i in range(3))
         pygame.draw.line(surf, (*lc, alpha), (0, y), (w - 1, y))
     # Round mask
     mask = pygame.Surface((w, h), pygame.SRCALPHA)
@@ -246,9 +246,9 @@ def _build_separator(w: int) -> pygame.Surface:
     surf = pygame.Surface((w, 2), pygame.SRCALPHA)
     hw = w / 2
     for x in range(w):
-        t = 1.0 - abs(x - hw) / max(1, hw)
-        surf.set_at((x, 0), (0, 240, 255, int(55 * t)))
-        surf.set_at((x, 1), (0, 240, 255, int(20 * t)))
+        falloff = 1.0 - abs(x - hw) / max(1, hw)
+        surf.set_at((x, 0), (0, 240, 255, int(55 * falloff)))
+        surf.set_at((x, 1), (0, 240, 255, int(20 * falloff)))
     return surf
 
 
