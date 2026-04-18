@@ -457,6 +457,7 @@ class TutorialMode(Game):
             'move_right_count': 0,
             'rotate_count': 0,
             'soft_drop_frames': 0,
+            'hold_used': False,
             'feedback_key': None,
             'failed_reason': None,
         }
@@ -472,6 +473,7 @@ class TutorialMode(Game):
                 'move_right_count': int(self.step_move_right_count),
                 'rotate_count': int(self.step_rotate_count),
                 'soft_drop_frames': int(self.soft_drop_counter),
+                'hold_used': bool(self.lesson_runtime_state.get('hold_used', False)),
                 'lines_cleared': int(getattr(self.board, 'lines_cleared', 0) or 0),
             }
         )
@@ -486,7 +488,7 @@ class TutorialMode(Game):
         return (
             isinstance(self.active_lesson, dict)
             and self.active_lesson.get('kind') == 'scenario'
-            and self.active_lesson.get('chapter') == 'board_basics'
+            and bool(self.active_lesson.get('scenario_id'))
         )
 
     def _get_active_board_scenario(self):
@@ -519,7 +521,14 @@ class TutorialMode(Game):
         scenario = self._get_active_board_scenario()
         if not isinstance(scenario, dict):
             return dict(outcome)
-        return enrich_scenario_outcome(outcome, scenario)
+        enriched = dict(outcome)
+        hold_used = 1 if isinstance(self.lesson_runtime_state, dict) and self.lesson_runtime_state.get('hold_used', False) else 0
+        enriched['hold_used'] = int(enriched.get('hold_used', hold_used) or 0)
+        if bool(scenario.get('expected_hold_usage')) and enriched['hold_used'] < 1:
+            enriched['success'] = False
+            enriched['stars'] = 0
+            enriched['feedback_key'] = 'need_hold'
+        return enrich_scenario_outcome(enriched, scenario)
 
     def _lesson_index(self, lesson_id=None):
         target_id = lesson_id or self.active_lesson_id
@@ -557,6 +566,40 @@ class TutorialMode(Game):
             lesson_id or self.active_lesson_id,
             chapter_only=self.lesson_flow_scope == 'chapter',
         )
+
+    def _get_next_chapter_target(self, lesson_id=None):
+        source_lesson_id = str(lesson_id or self.active_lesson_id or '')
+        if not source_lesson_id:
+            return None, None
+        current_lesson = self.lesson_lookup.get(source_lesson_id) or get_lesson(source_lesson_id)
+        current_chapter_id = str(current_lesson.get('chapter') or '') if isinstance(current_lesson, dict) else ''
+        next_lesson_id = get_next_lesson_id(source_lesson_id, chapter_only=False)
+        if not next_lesson_id:
+            return None, None
+        next_lesson = self.lesson_lookup.get(str(next_lesson_id)) or get_lesson(next_lesson_id)
+        if not isinstance(next_lesson, dict):
+            return None, None
+        next_chapter_id = str(next_lesson.get('chapter') or '')
+        if not next_chapter_id or next_chapter_id == current_chapter_id:
+            return None, None
+        return next_chapter_id, str(next_lesson.get('id') or '')
+
+    def _continue_after_completion(self):
+        if self.next_lesson_id:
+            self._start_lesson(self.next_lesson_id)
+            return True
+        next_chapter_id, next_lesson_id = self._get_next_chapter_target(self.active_lesson_id)
+        if next_chapter_id and self.hub_return_enabled:
+            self._open_tutorial_hub(
+                preferred_chapter_id=next_chapter_id,
+                preferred_lesson_id=next_lesson_id or None,
+            )
+            return True
+        if self.hub_return_enabled:
+            preferred_chapter_id = self.active_lesson.get('chapter') if isinstance(self.active_lesson, dict) else None
+            self._open_tutorial_hub(preferred_chapter_id=preferred_chapter_id, preferred_lesson_id=self.active_lesson_id)
+            return True
+        return 'menu'
 
     def _wrap_text(self, text, font, max_width, max_lines=None):
         words = str(text or '').split(' ')
@@ -611,11 +654,56 @@ class TutorialMode(Game):
 
     def _build_piece_queue(self, names):
         queue = []
-        for name in list(names or [])[:3]:
+        for name in list(names or []):
             queue.append(self._create_named_piece(str(name)))
         while len(queue) < 3:
             queue.append(self.spawn_new_piece())
         return queue
+
+    def _get_scenario_lock_budget(self):
+        if not isinstance(self.lesson_runtime_state, dict):
+            return 1
+        return max(1, int(self.lesson_runtime_state.get('scenario_max_piece_locks', 1) or 1))
+
+    def _register_scenario_piece_lock(self):
+        if not isinstance(self.lesson_runtime_state, dict):
+            self.lesson_runtime_state = {}
+        lock_count = int(self.lesson_runtime_state.get('scenario_lock_count', 0) or 0) + 1
+        self.lesson_runtime_state['scenario_lock_count'] = lock_count
+        return lock_count
+
+    def _use_scenario_hold(self):
+        if not getattr(self, '_scenario_allow_hold', False):
+            return False
+        if not getattr(self, 'can_hold', False):
+            return False
+        if not self.current_piece or self.in_transition:
+            return False
+
+        if self.held_piece is None:
+            self.held_piece = self.current_piece
+            if self.next_piece_queue:
+                self.current_piece = self.next_piece_queue.pop(0)
+                self._skip_hidden_rows(self.current_piece)
+            else:
+                self.current_piece = self.spawn_new_piece()
+                self._position_piece_at_spawn(self.current_piece)
+                self._skip_hidden_rows(self.current_piece)
+            self.next_piece_queue.append(self.spawn_new_piece())
+        else:
+            self.current_piece, self.held_piece = self.held_piece, self.current_piece
+            self._position_piece_at_spawn(self.current_piece)
+            self._skip_hidden_rows(self.current_piece)
+
+        self.can_hold = False
+        self._register_step_activity()
+        if isinstance(self.lesson_runtime_state, dict):
+            self.lesson_runtime_state['hold_used'] = True
+        self.apply_theme_to_pieces()
+        if self.sound:
+            self.sound.play('hold')
+        self._sync_lesson_runtime_state()
+        return True
 
     def _setup_scenario_lesson(self, lesson):
         scenario = get_scenario(lesson.get('scenario_id')) if isinstance(lesson, dict) else None
@@ -667,6 +755,9 @@ class TutorialMode(Game):
                 'scenario_id': scenario.get('id') or lesson.get('scenario_id'),
                 'initial_metrics': capture_board_metrics(self.board),
                 'attempt_count': attempt_count,
+                'scenario_lock_count': 0,
+                'scenario_max_piece_locks': max(1, int(scenario.get('max_piece_locks', 1) or 1)),
+                'hold_used': False,
             }
         )
         self._sync_lesson_runtime_state()
@@ -815,12 +906,18 @@ class TutorialMode(Game):
         feedback_map = {
             'clean': t('tutorial_result_feedback_clean', default='Temiz hamle. Tahtayı kontrol ederek ilerledin.'),
             'need_more_lines': t('tutorial_result_feedback_need_more_lines', default='Hedef satır sayısına ulaşamadın. Tahtadaki ana boşluğu tekrar oku.'),
+            'need_hold': t('tutorial_result_feedback_need_hold', default='Bu derste doğru çözüm hold kullanmayı gerektiriyor. Önce parçayı saklayıp sonra gelen fırsatı kullan.'),
             'created_holes': t('tutorial_result_feedback_created_holes', default='Bu hamle yeni delikler açıyor. Kart modunda bu tür hatalar sonraki seçimleri zayıflatır.'),
             'stack_too_high': t('tutorial_result_feedback_stack_too_high', default='Bu hamle kuleyi gereksiz büyüttü. Önce güvenli tarafı kullan.'),
         }
         followup_lesson_id = self._get_followup_lesson_id(self.active_lesson_id)
-        action_text = t('tutorial_result_action_next_lesson', default='ENTER: Sonraki ders') if success and followup_lesson_id else t('tutorial_result_action_to_menu', default='ENTER: Menüye dön')
-        if success and not followup_lesson_id and self.hub_return_enabled:
+        next_chapter_id, _ = self._get_next_chapter_target(self.active_lesson_id)
+        action_text = t('tutorial_result_action_to_menu', default='ENTER: Menüye dön')
+        if success and followup_lesson_id:
+            action_text = t('tutorial_result_action_next_lesson', default='ENTER: Sonraki ders')
+        elif success and next_chapter_id and self.hub_return_enabled:
+            action_text = t('tutorial_result_action_next_chapter', default='ENTER: Sonraki bölüme geç')
+        elif success and self.hub_return_enabled:
             action_text = t('tutorial_result_action_to_hub', default='ENTER: Ders merkezine dön')
         if not success:
             action_text = t('tutorial_result_action_retry', default='ENTER / R: Tekrar dene')
@@ -895,6 +992,7 @@ class TutorialMode(Game):
                     'attempt_count': int(self.lesson_runtime_state.get('attempt_count', 0) or 0),
                     'initial_metrics': dict(self.lesson_runtime_state.get('initial_metrics', {})) if isinstance(self.lesson_runtime_state.get('initial_metrics'), dict) else {},
                     'last_result': dict(self.lesson_runtime_state.get('last_result', {})) if isinstance(self.lesson_runtime_state.get('last_result'), dict) else {},
+                    'hold_used': bool(self.lesson_runtime_state.get('hold_used', False)),
                     'selected_card_id': self.lesson_runtime_state.get('selected_card_id'),
                 }
             )
@@ -1128,10 +1226,13 @@ class TutorialMode(Game):
             self.step_target = 1
             self.waiting_for_enter = True
             self.next_lesson_id = self._get_followup_lesson_id(self.active_lesson_id)
+            next_chapter_id, _ = self._get_next_chapter_target(self.active_lesson_id)
             self.overlay_message = self._lesson_title() or t('tutorial_complete')
             self.tip_message = t('tutorial_tip_step_7')
             if self.next_lesson_id:
                 self.sub_message = t('tutorial_next_board_lessons_prompt', default='Enter ile tahta okuma derslerine geç.')
+            elif next_chapter_id and self.hub_return_enabled:
+                self.sub_message = t('tutorial_next_chapter_prompt', default='Enter ile sonraki bölüme geç.')
             else:
                 self.sub_message = t('tutorial_sub_finish')
 
@@ -1436,27 +1537,13 @@ class TutorialMode(Game):
                     if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
                         if self.user_manager:
                             self._mark_active_lesson_completed(stars=1)
-                        if self.next_lesson_id:
-                            self._start_lesson(self.next_lesson_id)
-                            return True
-                        if self.hub_return_enabled:
-                            preferred_chapter_id = self.active_lesson.get('chapter') if isinstance(self.active_lesson, dict) else None
-                            self._open_tutorial_hub(preferred_chapter_id=preferred_chapter_id, preferred_lesson_id=self.active_lesson_id)
-                            return True
-                        return 'menu'
+                        return self._continue_after_completion()
                     continue
 
                 if self.lesson_result_active:
                     if event.key in (pygame.K_r, pygame.K_RETURN, pygame.K_KP_ENTER):
                         if self.lesson_result and self.lesson_result.get('success') and event.key != pygame.K_r:
-                            if self.next_lesson_id:
-                                self._start_lesson(self.next_lesson_id)
-                                return True
-                            if self.hub_return_enabled:
-                                preferred_chapter_id = self.active_lesson.get('chapter') if isinstance(self.active_lesson, dict) else None
-                                self._open_tutorial_hub(preferred_chapter_id=preferred_chapter_id, preferred_lesson_id=self.active_lesson_id)
-                                return True
-                            return 'menu'
+                            return self._continue_after_completion()
                         self._start_lesson(self.active_lesson_id)
                         return True
                     continue
@@ -1524,19 +1611,7 @@ class TutorialMode(Game):
                         self._sync_lesson_runtime_state()
                         self._perform_hard_drop()
                     elif event.key == bindings.get('hold') and getattr(self, '_scenario_allow_hold', False):
-                        if self.current_piece and not self.in_transition:
-                            held = self.held_piece
-                            self.held_piece = self.current_piece
-                            if held:
-                                self.current_piece = held
-                                self.current_piece.x = self.board.width // 2 - 1
-                                self.current_piece.y = 0
-                                self.current_piece.rotation = 0
-                            else:
-                                self._ensure_normal_piece(force_new=True)
-                            self._register_step_activity()
-                            self.sound.play('hold')
-                            self._sync_lesson_runtime_state()
+                        self._use_scenario_hold()
                     continue
                 
                 # --- Step Logic with Filtering ---
@@ -1784,9 +1859,12 @@ class TutorialMode(Game):
         super().lock_and_new_piece()
 
         if self._is_scenario_lesson_active() and not self.in_transition and not self.lesson_result_active:
+            lock_count = self._register_scenario_piece_lock()
             outcome = self._evaluate_active_scenario()
-            if outcome:
+            if outcome and (bool(outcome.get('success')) or lock_count >= self._get_scenario_lock_budget()):
                 self._show_lesson_result(outcome)
+            else:
+                self._sync_lesson_runtime_state()
             return
         
         # Check line clear for Step 5
@@ -1803,7 +1881,11 @@ class TutorialMode(Game):
                 self.next_lesson_id = None
                 self.waiting_for_enter = True
                 self.overlay_message = t('tutorial_quick_start_done', default='Hızlı Başlangıç tamamlandı!')
-                self.sub_message = t('tutorial_quick_start_done_sub', default='Hub\'a dönmek için Enter\'a bas.')
+                next_chapter_id, _ = self._get_next_chapter_target(self.active_lesson_id)
+                if next_chapter_id and self.hub_return_enabled:
+                    self.sub_message = t('tutorial_quick_start_next_chapter_sub', default='Sonraki bölüme geçmek için Enter\'a bas.')
+                else:
+                    self.sub_message = t('tutorial_quick_start_done_sub', default='Hub\'a dönmek için Enter\'a bas.')
             else:
                 # Failed, reset
                 self._setup_line_clear_scenario()
