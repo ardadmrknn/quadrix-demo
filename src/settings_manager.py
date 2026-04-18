@@ -81,7 +81,6 @@ DEFAULT_CONTROLS = {
         'menu_back': {'primary': 1, 'secondary': -1},     # B / Circle - menüde geri
         'menu_tab_next': {'primary': 10, 'secondary': -1}, # RB / R1 - sonraki sekme
         'menu_tab_prev': {'primary': 9, 'secondary': -1},  # LB / L1 - önceki sekme
-        'main_menu_prompt': {'primary': -1, 'secondary': -1},
     },
 }
 

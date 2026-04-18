@@ -6019,34 +6019,58 @@ class OnlinePvPGame:
         mini = max(s(10), cell_size - 4)
         pw = mini * 5 + s(24)
 
+        def _draw_panel_label(label_text: str, panel_rect: pygame.Rect) -> int:
+            max_width = max(s(18), panel_rect.width - s(14))
+            base_size = s(15, minimum=10)
+            min_size = s(8, minimum=8)
+            text = str(label_text or '').strip() or '-'
+
+            font = _rs.get_fitting_font(text, base_size, max_width, bold=True, min_size=min_size)
+            if font.size(text)[0] > max_width:
+                compact = text.rstrip(':').strip() or text
+                if compact != text and font.size(compact)[0] <= max_width:
+                    text = compact
+                else:
+                    trimmed = compact
+                    while trimmed and font.size(trimmed + '...')[0] > max_width:
+                        trimmed = trimmed[:-1].rstrip()
+                    if trimmed:
+                        text = trimmed + '...'
+                    elif font.size('...')[0] <= max_width:
+                        text = '...'
+                    else:
+                        text = ''
+
+            label = font.render(text, True, UIColors.NEON_CYAN)
+            top_y = panel_rect.top + s(6)
+            self.screen.blit(label, label.get_rect(centerx=panel_rect.centerx, top=top_y))
+            return top_y + label.get_height()
+
         # Hold
         hold_h = mini * 5 + s(40)
         hold_rect = pygame.Rect(panel_x, panel_y, pw, hold_h)
         draw_glass_panel(self.screen, hold_rect, alpha=150,
                          border_color=UIColors.NEON_CYAN)
-        hf = _rs.get_font(s(15, minimum=10))
-        hl = hf.render(t('hold', 'Hold'), True, UIColors.NEON_CYAN)
-        self.screen.blit(hl, hl.get_rect(centerx=hold_rect.centerx, top=hold_rect.top + s(6)))
+        hold_label_bottom = _draw_panel_label(t('hold', 'Hold'), hold_rect)
 
         if self.hold_piece:
             self._draw_mini_piece(self.hold_piece, hold_rect.centerx,
-                                  hold_rect.top + s(30), mini)
+                                  hold_label_bottom + s(6), mini)
         elif self.hold_used:
             lock_f = _rs.get_font(s(16, minimum=11))
             lk = lock_f.render('X', True, _rs.text_muted)
             self.screen.blit(lk, lk.get_rect(center=(hold_rect.centerx,
-                                                       hold_rect.top + s(50))))
+                                                       hold_label_bottom + s(24))))
 
         # Next
         next_y = hold_rect.bottom + s(12)
         next_rect = pygame.Rect(panel_x, next_y, pw, hold_h)
         draw_glass_panel(self.screen, next_rect, alpha=150,
                          border_color=UIColors.NEON_CYAN)
-        nl = hf.render(t('next', 'Sonraki'), True, UIColors.NEON_CYAN)
-        self.screen.blit(nl, nl.get_rect(centerx=next_rect.centerx, top=next_rect.top + s(6)))
+        next_label_bottom = _draw_panel_label(t('next', 'Sonraki'), next_rect)
         if self.next_piece:
             self._draw_mini_piece(self.next_piece, next_rect.centerx,
-                                  next_rect.top + s(30), mini)
+                                  next_label_bottom + s(6), mini)
 
     def _draw_mini_piece(self, piece, cx, top_y, mini):
         """Bir parçayı küçük boyutta ortalanmış çiz (hold/next için)."""

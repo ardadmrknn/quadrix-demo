@@ -1683,14 +1683,6 @@
     "ja": "LT (左トリガー)",
     "pt": "LT (gatilho esquerdo)"
   },
-  "gp_main_menu_prompt": {
-    "de": "Eingabeaufforderung im Hauptmenü",
-    "es": "Mensaje del menú principal",
-    "fr": "Invite du menu principal",
-    "it": "Richiesta del menu principale",
-    "ja": "メインメニューのプロンプト",
-    "pt": "Prompt do menu principal"
-  },
   "gp_menu_back": {
     "ja": "戻る"
   },

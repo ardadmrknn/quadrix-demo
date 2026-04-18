@@ -5572,7 +5572,6 @@ class ControlSettingsScreen:
             ('hard_drop',  t('gp_hard_drop'),       'button'),
             ('hold',       t('gp_hold'),            'button'),
             ('pause',      t('gp_pause'),           'button'),
-            ('main_menu_prompt', t('gp_main_menu_prompt'), 'button'),
             ('discard_held', t('gp_discard_held'),  'button'),
         ]
 

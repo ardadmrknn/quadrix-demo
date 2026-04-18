@@ -89,6 +89,9 @@ def _scale_menu_alpha(alpha: int) -> int:
     return int(value * multiplier)
 
 
+_KNOWN_GAMEPAD_PROMPT_TYPES = {'xbox', 'playstation', 'nintendo', 'unknown'}
+
+
 # ---------------------------------------------------------------------------
 # Sekme ve ayar tanımları
 # ---------------------------------------------------------------------------
@@ -312,7 +315,6 @@ def _build_tab_content(tab_key: str, sm, show_debug: bool = False) -> list[dict]
             ('menu_back', _t('gp_menu_back', 'Menü Geri')),
             ('menu_tab_next', _t('gp_menu_tab_next', 'Sekme Sonraki')),
             ('menu_tab_prev', _t('gp_menu_tab_prev', 'Sekme Önceki')),
-            ('main_menu_prompt', _t('gp_main_menu_prompt', 'Ana Menü Onayı')),
         ]
         items.append({'type': 'section', 'loc_key': 'settings_gp_section_ingame', 'label_tr': 'GAMEPAD - OYUN İÇİ', 'label_en': 'GAMEPAD - IN-GAME'})
         items.append({
@@ -515,6 +517,9 @@ class TabbedSettingsScreen:
 
         # ── Kontrol tuş bağlama (keybind) durumu ──
         self._control_config = self.settings_manager.get_controls()
+        self._last_known_gamepad_prompt_type = self._normalize_gamepad_prompt_type(
+            self.settings_manager.get('last_gamepad_prompt_type', None)
+        )
         self._waiting_for_key = False
         self._pending_keybind_item = None  # keybind item dict'i
         self._pending_keybind_slot = 'primary'
@@ -1246,8 +1251,9 @@ class TabbedSettingsScreen:
 
             if self._is_gamepad_keybind_section(section):
                 primary, secondary = self._get_gamepad_binding_slots(action_key)
-                ptxt = self._format_gamepad_button_label(primary)
-                stxt = self._format_gamepad_button_label(secondary)
+                gp_type = self._current_gamepad_prompt_type()
+                ptxt = self._format_gamepad_button_label(primary, gp_type=gp_type)
+                stxt = self._format_gamepad_button_label(secondary, gp_type=gp_type)
                 return f'{ptxt} / {stxt}', (255, 210, 140)
 
             return '—', (180, 220, 255)
@@ -1273,6 +1279,24 @@ class TabbedSettingsScreen:
         self._pending_keybind_item = item
         self._pending_keybind_slot = slot
         self._capture_started_by_gamepad_click = bool(opened_by_gamepad_click)
+
+    def _normalize_gamepad_prompt_type(self, gp_type) -> str | None:
+        if gp_type is None:
+            return None
+        normalized = str(gp_type).strip().lower()
+        if normalized in _KNOWN_GAMEPAD_PROMPT_TYPES:
+            return normalized
+        return None
+
+    def _remember_gamepad_prompt_type(self, gp_type) -> None:
+        normalized = self._normalize_gamepad_prompt_type(gp_type)
+        if not normalized or normalized == self._last_known_gamepad_prompt_type:
+            return
+        self._last_known_gamepad_prompt_type = normalized
+        try:
+            self.settings_manager.set('last_gamepad_prompt_type', normalized)
+        except Exception:
+            pass
 
     def _is_gamepad_keybind_section(self, section: str | None) -> bool:
         return section in ('gamepad', 'gamepad.ingame', 'gamepad.outgame')
@@ -1313,7 +1337,7 @@ class TabbedSettingsScreen:
         except Exception:
             pass
 
-    def _format_gamepad_button_label(self, value) -> str:
+    def _format_gamepad_button_label(self, value, gp_type: str | None = None) -> str:
         unbound = _t('gp_unbound', 'Atanmamış')
         if value is None or isinstance(value, bool):
             return unbound
@@ -1326,7 +1350,8 @@ class TabbedSettingsScreen:
 
         try:
             gpm = get_gamepad_manager()
-            return str(gpm.get_button_index_label(btn_index))
+            resolved_type = self._normalize_gamepad_prompt_type(gp_type) or self._last_known_gamepad_prompt_type
+            return str(gpm.get_button_index_label(btn_index, resolved_type))
         except Exception:
             return f'Btn{btn_index}'
 
@@ -1335,14 +1360,17 @@ class TabbedSettingsScreen:
             gpm = get_gamepad_manager()
             gp = gpm.get_active_gamepad()
             if gp is None:
-                return None
-            gp_type = getattr(gp, 'gamepad_type', None)
-            return str(gp_type) if gp_type else None
+                return self._last_known_gamepad_prompt_type
+            gp_type = self._normalize_gamepad_prompt_type(getattr(gp, 'gamepad_type', None))
+            if gp_type:
+                self._remember_gamepad_prompt_type(gp_type)
+                return gp_type
         except Exception:
-            return None
+            pass
+        return self._last_known_gamepad_prompt_type
 
     def _get_gamepad_slot_display(self, value, gp_type: str | None) -> dict:
-        fallback_text = self._format_gamepad_button_label(value)
+        fallback_text = self._format_gamepad_button_label(value, gp_type=gp_type)
         if value is None or isinstance(value, bool):
             return {'mode': 'text', 'text': fallback_text}
 

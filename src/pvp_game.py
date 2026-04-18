@@ -1201,8 +1201,26 @@ class PvPGame:
         retro_style.draw_glass_panel(self.screen, rect, alpha=122, border_color=soft_border, glow=False)
         pygame.draw.rect(self.screen, (*soft_border, 146), rect, 1, border_radius=12)
 
-        title_font = retro_style.get_font(s(15, minimum=10), bold=True)
-        title = title_font.render(t('next', 'Sonraki').upper(), True, soft_border)
+        title_text = t('next', 'Sonraki').upper()
+        title_max_width = max(s(24), rect.width - s(16))
+        title_font = retro_style.get_fitting_font(
+            title_text,
+            s(15, minimum=10),
+            title_max_width,
+            bold=True,
+            min_size=s(8, minimum=8),
+        )
+        if title_font.size(title_text)[0] > title_max_width:
+            trimmed = title_text.rstrip(':').strip() or title_text
+            while trimmed and title_font.size(trimmed + '...')[0] > title_max_width:
+                trimmed = trimmed[:-1].rstrip()
+            if trimmed:
+                title_text = trimmed + '...'
+            elif title_font.size('...')[0] <= title_max_width:
+                title_text = '...'
+            else:
+                title_text = ''
+        title = title_font.render(title_text, True, soft_border)
         self.screen.blit(title, title.get_rect(centerx=rect.centerx, top=rect.y + s(10)))
 
         preview_height = min(rect.height - s(42), s(164))

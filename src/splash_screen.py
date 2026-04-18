@@ -137,30 +137,6 @@ class SplashScreen:
             except Exception:
                 self.image = None
 
-    def _get_continue_gamepad_action(self, gamepad_mgr=None):
-        mgr = gamepad_mgr
-        if mgr is None:
-            try:
-                mgr = get_gamepad_manager()
-            except Exception:
-                return 'menu_confirm'
-
-        try:
-            if not getattr(mgr, 'enabled', False) or not mgr.is_connected():
-                return 'menu_confirm'
-        except Exception:
-            return 'menu_confirm'
-
-        get_indices = getattr(mgr, 'get_action_button_indices', None)
-        if callable(get_indices):
-            try:
-                if get_indices('main_menu_prompt'):
-                    return 'main_menu_prompt'
-            except Exception:
-                pass
-
-        return 'menu_confirm'
-
     def _get_continue_button_label(self):
         try:
             gamepad_mgr = get_gamepad_manager()
@@ -169,8 +145,7 @@ class SplashScreen:
 
         try:
             if getattr(gamepad_mgr, 'enabled', False) and gamepad_mgr.is_connected():
-                action = self._get_continue_gamepad_action(gamepad_mgr)
-                button_label = gamepad_mgr.get_button_label(action)
+                button_label = gamepad_mgr.get_button_label('menu_confirm')
                 if button_label and button_label != '?':
                     return button_label
         except Exception:
@@ -308,8 +283,7 @@ class SplashScreen:
                 for gp_event in gamepad_mgr.update(dt):
                     pygame.event.post(gp_event)
                 if getattr(gamepad_mgr, 'enabled', False):
-                    continue_action = self._get_continue_gamepad_action(gamepad_mgr)
-                    confirm_pressed = gamepad_mgr.was_action_just_pressed(continue_action)
+                    confirm_pressed = gamepad_mgr.was_action_just_pressed('menu_confirm')
             except Exception:
                 confirm_pressed = False
             
@@ -484,7 +458,7 @@ class SplashScreen:
         prompt_font = retro_style.get_font(22, bold=False)
         prompt_text = self._get_prompt_text()
         button_label = self._get_continue_button_label() or 'Enter'
-        inline_action = 'menu_confirm' if button_label == 'Enter' else self._get_continue_gamepad_action()
+        inline_action = 'menu_confirm'
         
         # Yanıp sönen efekt
         blink = 0.6 + 0.4 * math.sin(now / 300.0)

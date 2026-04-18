@@ -1,282 +1,315 @@
-# Plan: Demo Sürümü Üretim Planı
+# Plan: Demo Surumu Uretim Plani
 
-**Created:** 2026-04-17
-**Status:** Draft — Ready for Review
+**Created:** 2026-04-17  
+**Last Updated:** 2026-04-18 (kod tabani audit senkronu)  
+**Status:** Updated Draft - Ready for Implementation
 
-## Özet
+## Ozet
 
-Quadrix'in Steam Demo (ve/veya Steam Next Fest) için ayrı bir demo sürümü üretilecek. Demo sürümde:
+Quadrix icin Steam Demo (ve/veya Next Fest) paketi hazirlanacak. Demo surumde:
 
-- Belirli modlar kilitli — kart gösterimli, tıklamada "tam sürüm" yönlendirme modal'ı
-- Kampanya yalnızca Dünya 1 (ilk 10 level) — geri kalanı kilitli
-- Yeni bağımsız build spec dosyaları: `tetris_demo.spec` (Windows EXE) + `tetris_demo_macos.spec` (macOS .app)
-- Build-time sabit ile kontrol (`IS_DEMO = True`) — runtime şüphe yok, flag değiştirilemez
+- Bazi modlar kilitli olacak, secimde tam surume yonlendirme verilecek.
+- Solo kampanya yalnizca Dunya 1 (level 1-20) acik olacak.
+- Co-op kampanya yalnizca Dunya 1 (level 1-10) acik olacak.
+- Ayri build spec ve ayri runtime AppID/app-name kullanilacak.
 
-Tam sürüm kodu değişmez. `IS_DEMO = False` olduğunda hiçbir kısıtlama çalışmaz.
-
----
-
-## Context & Analiz
-
-**İlgili Dosyalar:**
-
-| Dosya                                  | Rol                                                           |
-| -------------------------------------- | ------------------------------------------------------------- |
-| `src/constants.py`                     | Oyun sabitleri — `IS_DEMO` buraya eklenmez; ayrı modül tercih |
-| `src/extras_menu.py`                   | Mod kartları — `MODE_ID_TO_STATS_KEY` ile 10 mod tanımlı      |
-| `src/menu.py`                          | Ana menü — Campaign / PvP / Coop giriş noktaları              |
-| `src/campaign/level_select.py`         | Level seçim ekranı — dünya/level kilitleme burada             |
-| `packaging/specs/tetris.spec`          | Windows tam sürüm spec                                        |
-| `packaging/specs/tetris_macos.spec`    | macOS tam sürüm spec                                          |
-| `packaging/specs/tetris_playtest.spec` | Steam Playtest spec — demo spec buna yakın                    |
-| `config/runtime/steam_appid.txt`       | Steam AppID — demo için ayrı dosya gerekebilir                |
-| `scripts/build/build_macos_app.sh`     | macOS build giriş noktası                                     |
-| `tools/versioning.py`                  | Platform build versiyonlama                                   |
-
-**Mevcut Modlar (extras_menu.py):**
-
-| Mod ID        | Öneri    |
-| ------------- | -------- |
-| Classic Mode  | **Açık** |
-| Sprint Mode   | **Açık** |
-| Ultra Mode    | **Açık** |
-| Zen Mode      | **Açık** |
-| Quadrix Extra | Kilitli  |
-| Kart Ustalığı | Kilitli  |
-| Wide Mode     | Kilitli  |
-| Survival Mode | Kilitli  |
-| Cascade Mode  | Kilitli  |
-| Hardcore Mode | Kilitli  |
-
-**Ana Menü Modları:**
-
-| Mod             | Öneri                           |
-| --------------- | ------------------------------- |
-| Kampanya (solo) | **Açık** — Dünya 1 (level 1-10) |
-| Yerel PvP       | **Açık**                        |
-| Yerel Co-op     | **Açık**                        |
-| Online PvP      | Kilitli                         |
-| Online Co-op    | Kilitli                         |
-
-> Kilitli liste `src/demo_config.py` içinde değiştirilebilir — kod dokunmadan ayarlanabilir.
-
-**Demo AppID Politikası:**
-
-Steam'de demo, ana oyundan farklı AppID ile yayınlanır (Steam Next Fest için zorunlu). `config/runtime/steam_appid_demo.txt` ayrı tutulur; spec build sırasında `steam_appid.txt` yerine bu dosya paketlenir.
+Bu plan mevcut kod yapisina gore guncellendi: `ExtrasScreen.handle_input`, `Menu.handle_input`, `CampaignLevelSelect` ve mevcut build scriptleri baz alindi.
 
 ---
 
-## Faz Planı
+## Kod Tabanı Durumu (2026-04-18)
 
-### Faz 1 — Demo Flag Altyapısı
+### Dogrulanan Noktalar
+
+- `src/extras_menu.py`: mod secimi `handle_input` icinden id donuyor, kart cizimi `_draw_modern_mode_card`.
+- `src/menu.py`: online secimler split-polygon akisinda (`online_pvp`, `online_coop`) mouse + keyboard yolundan donuyor.
+- `src/campaign/level_select.py`: sinif adi `CampaignLevelSelect`, kilit kontrolu `_is_level_unlocked`.
+- `src/campaign/coop_level_select.py`: ayri secim sinifi (`CoopLevelSelect`), dunya yapisi 2 dunya / 20 level.
+- Windows build girisi `scripts/build/build_windows_exe.ps1`.
+- macOS build girisi `scripts/build/build_macos_app.sh` ve varsayilan spec `tetris_macos_allinone.spec`.
+- `tools/versioning.py` yalnizca `'windows'` anahtarini destekliyor.
+- `src/data_paths.py` app ayrimi icin `QUADRIX_APP_NAME` env destekliyor.
+
+### Onceki Taslaktan Duzeltilen Hatalar
+
+- Kampanya limiti solo icin 10 degil 20 level.
+- `pygame.webbrowser` yok; dogru kullanim `webbrowser.open`.
+- `extras_menu.py` icinde `_handle_card_click` yok; kilitleme `handle_input` seviyesinde yapilacak.
+- `LevelSelect` yerine `CampaignLevelSelect`.
+- Windows build `.sh` degil mevcut `.ps1` uzerinden akmali.
+- `bump_platform_version(..., 'windows_demo'/'macos_demo')` su an desteklenmiyor.
+- Save ayirimi `data_paths.py` icine hardcode degil app-name/env stratejisiyle yapilmali.
+
+---
+
+## Hedef Kilit Politikasi
+
+### Extras Modlari
+
+Acik:
+
+- Classic Mode
+- Sprint Mode
+- Ultra Mode
+- Zen Mode
+
+Kilitli:
+
+- Quadrix Extra
+- Kart Ustaligi
+- Wide Mode
+- Survival Mode
+- Cascade Mode
+- Hardcore Mode
+
+### Ana Menu
+
+Acik:
+
+- Campaign (solo)
+- PvP local
+- Co-op local
+
+Kilitli:
+
+- Online PvP
+- Online Co-op
+
+### Kampanya
+
+- Solo: Dunya 1 acik, Dunya 2-5 kilitli.
+- Co-op: Dunya 1 acik, Dunya 2 kilitli.
+
+---
+
+## Faz Plani
+
+### Faz 1 - Demo Konfig Altyapisi
 
 **Dosyalar:** `src/demo_config.py` (yeni), `scripts/build/write_demo_config.py` (yeni)
 
-**Yapılacaklar:**
+`src/demo_config.py` taslagi:
 
-1. `src/demo_config.py` oluştur — **default: tam sürüm**
+```python
+# Build pipeline bu dosyayi yazar.
+# Default: full build
+IS_DEMO = False
 
-   ```python
-   # Bu dosya build-time script tarafından üretilir.
-   # Manuel değiştirme: demo test için IS_DEMO = True yap.
-   IS_DEMO: bool = False
-   DEMO_LOCKED_MODES: set = {
-       'Quadrix Extra', 'Kart Ustalığı', 'Wide Mode',
-       'Survival Mode', 'Cascade Mode', 'Hardcore Mode',
-   }
-   DEMO_LOCKED_MAIN_MODES: set = {'online_pvp', 'online_coop'}
-   DEMO_CAMPAIGN_WORLD_LIMIT: int = 1   # Dünya 1 = level 1-10
-   DEMO_STEAM_STORE_URL: str = 'https://store.steampowered.com/app/XXXXXXX'
-   ```
+DEMO_LOCKED_EXTRAS_MODE_IDS = {
+    'Quadrix Extra',
+    'Kart Ustaligi',
+    'Wide Mode',
+    'Survival Mode',
+    'Cascade Mode',
+    'Hardcore Mode',
+}
 
-2. `scripts/build/write_demo_config.py` — build pipeline'ının çağırdığı tek satırlık yazar:
-   ```python
-   # python scripts/build/write_demo_config.py
-   # Çıktıyı src/demo_config.py üzerine yazar, IS_DEMO = True
-   ```
+DEMO_LOCKED_MAIN_ACTIONS = {'online_pvp', 'online_coop'}
 
-**Kural:** `IS_DEMO` runtime'da asla değiştirilemez. Sadece build sırasında yazılır. Kullanıcı ayarı veya env var girilmez.
+# Solo campaign: world*20
+DEMO_SOLO_WORLD_LIMIT = 1
 
----
+# Co-op campaign: world*10
+DEMO_COOP_WORLD_LIMIT = 1
 
-### Faz 2 — Mod Kilitleme (Extras Ekranı)
-
-**Dosyalar:** `src/extras_menu.py`
-
-**Yapılacaklar:**
-
-1. `ExtrasScreen.__init__` başında `from src.demo_config import IS_DEMO, DEMO_LOCKED_MODES` (veya relative import).
-
-2. Kart çizim fonksiyonunda (`_draw_mode_card` veya benzeri) kilitli mod için:
-   - Kart üzerine yarı şeffaf overlay
-   - Sağ üst köşeye `DEMO` etiketi (veya kilit ikonu)
-   - Normal hover/seçim efekti gizli
-
-3. Kart tıklama handler'ında (`_handle_card_click`):
-   - Kilitli mod → `_show_demo_upgrade_modal()` çağır
-   - Normal akış engellensin
-
-4. `_show_demo_upgrade_modal()` — küçük dialog:
-   - "Bu mod tam sürümde mevcut." mesajı
-   - "Steam'de Gör" butonu → `pygame.webbrowser.open(DEMO_STEAM_STORE_URL)` (veya `webbrowser.open`)
-   - "Kapat" butonu
-
----
-
-### Faz 3 — Ana Menü Kilitleri (PvP / Co-op / Online)
-
-**Dosyalar:** `src/menu.py`
-
-**Yapılacaklar:**
-
-1. Online PvP ve Online Co-op tile/buton çiziminde `IS_DEMO` check:
-   - Kilitli görünüm (gri / DEMO badge)
-   - Tıklamada aynı `_show_demo_upgrade_modal()` çağrısı
-
-2. Yerel PvP ve Yerel Co-op etkilenmez.
-
----
-
-### Faz 4 — Kampanya Kısıtlaması
-
-**Dosyalar:** `src/campaign/level_select.py`
-
-**Yapılacaklar:**
-
-1. `LevelSelect._draw_level_button` (veya benzeri) içinde:
-
-   ```python
-   if IS_DEMO and level_num > DEMO_CAMPAIGN_WORLD_LIMIT * 10:
-       # kilitli görünüm
-   ```
-
-   > Dünya 1 = level 1-10; `DEMO_CAMPAIGN_WORLD_LIMIT = 1` → level 11+ kilitli.
-
-2. Level butonu tıklama handler:
-   - Kilitli level → `_show_demo_upgrade_modal()` çağır
-
-3. Dünya kilidi (world 2+) — ayrı görsel: dünya başlığı üzerinde kilit overlay.
-
-**Not:** Co-op kampanya (`src/campaign/coop_level_select.py`) da aynı mantıkla kısıtlanır: `world > DEMO_CAMPAIGN_WORLD_LIMIT` → kilitli.
-
----
-
-### Faz 5 — Demo Build Spec Dosyaları
-
-#### 5a. Windows EXE: `packaging/specs/tetris_demo.spec`
-
-`tetris_playtest.spec` baz alınır, şu farklar:
-
-- `write_demo_config.py` çalıştırılır (IS_DEMO=True yazar) build başında
-- `steam_appid.txt` → demo AppID dosyasından beslenir (`config/runtime/steam_appid_demo.txt`)
-- `os.environ.setdefault('STEAM_APP_ID', '<DEMO_APP_ID>')`
-- EXE adı: `QuadrixDemo` (veya `Quadrix Demo`)
-- `bump_platform_version` → `'windows_demo'` tag'i ile çağrılır
-
-#### 5b. macOS App: `packaging/specs/tetris_demo_macos.spec`
-
-`tetris_macos.spec` baz alınır, aynı farklar uygulanır:
-
-- `write_demo_config.py` çağrısı
-- Demo AppID
-- Bundle name: `Quadrix Demo`
-- `bump_platform_version(REPO_ROOT, 'macos_demo')`
-
-#### 5c. Build Script'leri
-
-`scripts/build/build_demo_windows.sh`:
-
-```bash
-#!/usr/bin/env bash
-set -e
-python scripts/build/write_demo_config.py
-python -m PyInstaller packaging/specs/tetris_demo.spec --noconfirm
+DEMO_STEAM_STORE_URL = 'https://store.steampowered.com/app/XXXXXXX'
+DEMO_APP_NAME = 'quadrix_demo'
 ```
 
-`scripts/build/build_demo_macos.sh`:
+`write_demo_config.py` gereksinimi:
 
-```bash
-#!/usr/bin/env bash
-set -e
-python scripts/build/write_demo_config.py
-python -m PyInstaller packaging/specs/tetris_demo_macos.spec --noconfirm
-# macOS codesign / notarize adımları (tam sürümle aynı)
-```
+- `--mode full|demo` argumani alir.
+- Dosyayi deterministik yazar.
+- Build sonunda `full` geri yazimi destekler.
 
-**Önemli:** `write_demo_config.py` çalıştıktan sonra `src/demo_config.py` `IS_DEMO = True` olur. Build bittikten sonra `git checkout src/demo_config.py` ile geri alınır (CI pipeline'a not).
+Not: import stili proje ile uyumlu olmali (`try: from .demo_config ... except: from demo_config ...`).
 
 ---
 
-### Faz 6 — Demo Splash / Banner
+### Faz 2 - Extras Ekraninda Kilitleme
 
-**Dosyalar:** `src/splash_screen.py` veya `src/menu.py`
+**Dosya:** `src/extras_menu.py`
 
-**Yapılacaklar (opsiyonel, öneri):**
+Uygulama noktasi:
 
-1. `IS_DEMO` aktifken ana menü başlık alanında küçük `DEMO` rozeti / banner.
-2. İlk açılışta tek seferlik "Demo sürümünü oynuyorsunuz" bilgi modal'ı (`demo_intro_shown` flag'i `settings.txt` üzerinde tutulur).
+- Cizim: `_draw_modern_mode_card` icinde locked overlay + `DEMO` badge.
+- Input: `handle_input` icinde `RETURN/SPACE` ve mouse click donuslerinden once locked check.
 
----
+Davranis:
 
-### Faz 7 — Save Data Politikası
-
-**Karar:** Demo save verisi tam sürümle **ayrı** tutulur.
-
-- Steam'de demo farklı AppID → Steam Cloud zaten ayrı.
-- Local save için `data_paths.py` içinde:
-  ```python
-  if IS_DEMO:
-      SAVE_DIR = Path(user_data_dir()) / 'QuadrixDemo'
-  else:
-      SAVE_DIR = Path(user_data_dir()) / 'Quadrix'
-  ```
-- Demo'dan tam sürüme geçiş kolaylığı için "ilerleme aktarımı" bu planın **dışında** — gelecek plan.
+- Kilitli mod secilirse oyun moda gecmez.
+- Ortak helper ile "tam surumde mevcut" modal/toast gosterilir.
+- Istek halinde `webbrowser.open(DEMO_STEAM_STORE_URL)` cagrilir.
 
 ---
 
-### Faz 8 — Testler
+### Faz 3 - Ana Menu Online Kilitleri
 
-**Dosyalar:** `tests/test_demo_mode.py` (yeni)
+**Dosya:** `src/menu.py`
 
-**Test Kapsamı:**
+Uygulama noktasi:
 
-1. `IS_DEMO = False` → `DEMO_LOCKED_MODES` boş sayılır, hiçbir mod kilitlenmez
-2. `IS_DEMO = True` → `DEMO_LOCKED_MODES` içindeki modlar "locked" döner
-3. Kampanya: `IS_DEMO = True`, `level_num = 11` → locked; `level_num = 10` → açık
-4. `write_demo_config.py` çalıştırıldığında `IS_DEMO = True` yazılır
-5. Demo modal kapatma akışı — `_show_demo_upgrade_modal` birim testi
+- Keyboard akisi: `handle_input` icindeki `current_option == 'pvp_2_players'` ve `current_option == 'coop_mode'` `RETURN/SPACE` branch'leri.
+- Mouse akisi: `MOUSEBUTTONDOWN` icindeki `pvp_online_polygon` / `coop_online_polygon` branch'leri.
 
----
+Davranis:
 
-## Uygulama Sırası
-
-```
-Faz 1 (Altyapı)
-  └─ Faz 2 (Extras kilidi)
-  └─ Faz 3 (Menü kilidi)
-  └─ Faz 4 (Kampanya kilidi)
-      └─ Faz 5 (Build spec)
-          └─ Faz 6 (Splash — opsiyonel)
-Faz 7 (Save data — Faz 1 ile paralel yapılabilir)
-Faz 8 (Testler — her fazın sonunda)
-```
+- `online_pvp` veya `online_coop` donmeden once demo kilit kontrolu.
+- Kilitliyse aksiyon iptal + demo upgrade modal/toast.
+- Local PvP / local Co-op davranisi degismez.
 
 ---
 
-## Non-Goals (Bu Planın Dışı)
+### Faz 4 - Kampanya Kilitleme
 
-- Demo → tam sürüm ilerleme aktarımı
-- Demo'ya özel içerik (ekstra tutorial seviyesi vs.)
-- Online demo lobi / matchmaking kısıtlaması (sadece erişim engeli yeterli)
-- Demo indirme süresi optimizasyonu (asset küçültme)
-- macOS notarization otomasyonu (mevcut script kullanılır)
+#### 4a. Solo Kampanya
+
+**Dosya:** `src/campaign/level_select.py`
+
+Uygulama noktasi:
+
+- `CampaignLevelSelect._is_level_unlocked(level_num)` icine demo siniri eklenir.
+- `handle_input` icindeki dunya tab degisiminde demo world limit disina gecis engellenir.
+- `_draw_world_tabs` ve `_draw_level_button` icinde demo kilidi gorseli eklenir.
+
+Kural:
+
+- `DEMO_SOLO_WORLD_LIMIT = 1` iken `level_num > 20` kilitli.
+
+#### 4b. Co-op Kampanya
+
+**Dosya:** `src/campaign/coop_level_select.py`
+
+Uygulama noktasi:
+
+- `CoopLevelSelect._is_level_unlocked(level_num)` demo limiti ile sarilir.
+- `handle_input` icinde world tab click kontrolu eklenir.
+- Grid/tab ciziminde kilitli dunya ve level gorseli verilir.
+
+Kural:
+
+- `DEMO_COOP_WORLD_LIMIT = 1` iken `level_num > 10` kilitli.
 
 ---
 
-## Açık Sorular
+### Faz 5 - Build ve Paketleme
 
-1. **Demo AppID** belli mi? `DEMO_STEAM_STORE_URL` ve `steam_appid_demo.txt` için AppID girilmeli.
-2. **Hangi modlar açık?** Yukarıdaki tablo öneri — onay isteniyor.
-3. **Co-op kampanya demo limiti** → Dünya 1 yeterli mi?
-4. **Demo banner** (Faz 6) isteniyor mu? Opsiyonel işaretlendi.
-5. **Build pipeline CI** var mı? `git checkout src/demo_config.py` adımı CI'ya eklenmeli.
+#### 5a. Demo Spec Dosyalari
+
+Yeni dosyalar:
+
+- `packaging/specs/tetris_demo.spec` (Windows)
+- `packaging/specs/tetris_demo_macos_allinone.spec` (macOS)
+
+Baz alinacaklar:
+
+- Windows: `tetris_playtest.spec`
+- macOS: `tetris_macos_allinone.spec`
+
+Ortak farklar:
+
+- Demo AppID runtime datasina eklenir (`config/runtime/steam_appid_demo.txt` -> paket icinde `steam_appid.txt` hedefi).
+- Build basinda `write_demo_config.py --mode demo`.
+- Build sonunda `write_demo_config.py --mode full` (geri donus garanti).
+
+#### 5b. Windows Build Akisi
+
+Mevcut script baz alinacak:
+
+- `scripts/build/build_windows_exe.ps1 -SpecFile packaging/specs/tetris_demo.spec`
+
+Not:
+
+- Ayrica yeni `.sh` eklemek yerine mevcut `.ps1` tekrar kullanilacak.
+- `tools/versioning.py` iki secenek:
+  - Demo buildde otomatik bump yapmama (onerilen baslangic).
+  - Veya `LOCAL_VERSION_FILES` icine `windows_demo` destegi ekleyip ayri lokal versiyon dosyasi tutma.
+
+#### 5c. macOS Build Akisi
+
+Mevcut script `scripts/build/build_macos_app.sh` su an spec'i sabitliyor. Iki yol:
+
+- Scripti `--spec` parametreli hale getir.
+- Veya demo icin kucuk wrapper script ekle ve `SPEC_FILE=tetris_demo_macos_allinone.spec` ile cagir.
+
+---
+
+### Faz 6 - Demo Kimligi ve Save Ayrimi
+
+**Dosyalar:** `src/main.py` (veya erken bootstrap nokta), `src/demo_config.py`
+
+`data_paths.py` zaten env destekli. Bu yuzden yeni hardcode gerekmez.
+
+Yontem:
+
+- Demo buildde erken asamada:
+  - `os.environ.setdefault('QUADRIX_APP_NAME', DEMO_APP_NAME)`
+
+Sonuc:
+
+- Full ve demo save/cloud/local path dogal ayrilir.
+
+---
+
+### Faz 7 - UI Mesaj Katmani (Opsiyonel ama Onerilen)
+
+Tekrarsiz kilit mesaji icin ortak helper modulu:
+
+- `src/demo_upgrade_prompt.py` (yeni)
+
+Icerik:
+
+- `show_demo_upgrade_prompt(screen, settings_manager, ...)`
+- Web acma: `webbrowser.open`
+- Lokalizasyon anahtarlari: `demo_mode_locked_title`, `demo_mode_locked_body`, `demo_upgrade_cta`
+
+Bu helper `extras_menu.py`, `menu.py`, `campaign/level_select.py`, `campaign/coop_level_select.py` tarafinda tekrar kullanilir.
+
+---
+
+### Faz 8 - Testler
+
+**Dosyalar:**
+
+- `tests/test_demo_mode.py` (yeni)
+- `tests/test_demo_menu_locks.py` (yeni)
+- `tests/test_demo_campaign_limits.py` (yeni)
+
+Kapsam:
+
+1. Demo config: mode writer full/demo gecisleri dogru dosya uretiyor.
+2. Extras: kilitli mod id seciminde mod donus engelleniyor.
+3. Menu: online pvp/coop donusleri demo modda bloklaniyor.
+4. Solo campaign: level 21 kilitli, level 20 acik.
+5. Co-op campaign: level 11 kilitli, level 10 acik.
+6. `QUADRIX_APP_NAME` demo iken path ayrimi dogru.
+
+---
+
+## Uygulama Sirasi
+
+1. Faz 1 (demo config + writer)
+2. Faz 2-4 (oyun ici kilit mekanikleri)
+3. Faz 5 (spec/build entegrasyonu)
+4. Faz 6 (app-name/save ayrimi)
+5. Faz 7 (opsiyonel ortak prompt UI)
+6. Faz 8 (testler)
+
+---
+
+## Non-Goals
+
+- Demo -> full save/progress migration
+- Demo'ya ozel yeni icerik veya ozel tutorial
+- Matchmaking tarafinda demo-ozel lobby kurali
+- Notarization/codesign otomasyonunun yeniden tasarimi
+
+---
+
+## Acik Sorular
+
+1. Demo AppID ve store URL net mi?
+2. Kilitli/acik mod listesi aynen kabul mu?
+3. Demo buildde version bump isteniyor mu, isteniyorsa ayri `windows_demo` version dosyasi acilsin mi?
+4. macOS tarafinda tek script parametreli mi olsun, yoksa demo icin ayri wrapper mi tercih?
+5. UI'da tam modal mi, hafif toast + buton mu isteniyor?

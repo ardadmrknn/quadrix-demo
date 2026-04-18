@@ -773,6 +773,50 @@ class CoopGame:
         key_label = self._key_label(hold_key)
         return t('coop_hold_panel_label', default='{player} Hold ({binding})', player=player, binding=key_label)
 
+    def _render_panel_label_surface(
+        self,
+        label: str,
+        color,
+        max_width: int,
+        *,
+        base_size: int,
+        min_size: int = 8,
+        bold: bool = False,
+    ) -> pygame.Surface:
+        safe_max_width = max(8, int(max_width))
+        text = str(label or '').strip() or '-'
+        base_px = max(int(base_size), int(min_size))
+        min_px = max(6, int(min_size))
+        font = retro_style.get_fitting_font(text, base_px, safe_max_width, bold=bold, min_size=min_px)
+
+        candidate = text
+        if font.size(candidate)[0] > safe_max_width:
+            compact = candidate.rstrip(':').strip() or candidate
+            if compact != candidate and font.size(compact)[0] <= safe_max_width:
+                candidate = compact
+            else:
+                if ' (' in compact:
+                    without_binding = compact.split(' (', 1)[0].strip()
+                    if without_binding and font.size(without_binding)[0] <= safe_max_width:
+                        candidate = without_binding
+                    else:
+                        candidate = compact
+                else:
+                    candidate = compact
+
+                if font.size(candidate)[0] > safe_max_width:
+                    trimmed = candidate
+                    while trimmed and font.size(trimmed + '...')[0] > safe_max_width:
+                        trimmed = trimmed[:-1].rstrip()
+                    if trimmed:
+                        candidate = trimmed + '...'
+                    elif font.size('...')[0] <= safe_max_width:
+                        candidate = '...'
+                    else:
+                        candidate = ''
+
+        return font.render(candidate, True, color)
+
     # ==================================================================
     # Parça üretimi (bağımsız bag'ler)
     # ==================================================================
@@ -3047,8 +3091,14 @@ class CoopGame:
             content_y = rect.y + 12
 
             if disabled:
-                label_font = retro_style.get_fitting_font(label, self._sx(14, ui, minimum=10), rect.width - 16, bold=False, min_size=9)
-                label_surf = label_font.render(label, True, retro_style.text_muted)
+                label_surf = self._render_panel_label_surface(
+                    label,
+                    retro_style.text_muted,
+                    rect.width - 16,
+                    base_size=self._sx(14, ui, minimum=10),
+                    min_size=8,
+                    bold=False,
+                )
                 self.screen.blit(label_surf, label_surf.get_rect(centerx=rect.centerx, top=content_y))
                 x_font = retro_style.get_font(self._sx(32, ui, minimum=20), bold=True)
                 x_surf = x_font.render('X', True, (200, 50, 50))
@@ -3059,8 +3109,14 @@ class CoopGame:
                 self._draw_piece_preview(piece, content_x, content_y, preview_cs, label, panel_width=rect.width - 12)
                 return
 
-            label_font = retro_style.get_fitting_font(label, self._sx(14, ui, minimum=10), rect.width - 16, bold=False, min_size=9)
-            label_surf = label_font.render(label, True, retro_style.text_muted)
+            label_surf = self._render_panel_label_surface(
+                label,
+                retro_style.text_muted,
+                rect.width - 16,
+                base_size=self._sx(14, ui, minimum=10),
+                min_size=8,
+                bold=False,
+            )
             self.screen.blit(label_surf, label_surf.get_rect(centerx=rect.centerx, top=content_y))
             empty_font = retro_style.get_font(self._sx(16, ui, minimum=11))
             empty_surf = empty_font.render('[ - ]', True, (50, 55, 75))
@@ -3104,8 +3160,15 @@ class CoopGame:
     def _draw_piece_preview(self, piece: Piece | None, x, y, cs, label: str, panel_width: int | None = None) -> None:
         ui = self._ui_scale()
         max_width = None if panel_width is None else max(40, panel_width - 6)
-        label_font = retro_style.get_fitting_font(label, self._sx(14, ui, minimum=10), max_width, bold=False, min_size=9)
-        label_surf = label_font.render(label, True, retro_style.text_secondary)
+        label_limit = max_width if max_width is not None else 4096
+        label_surf = self._render_panel_label_surface(
+            label,
+            retro_style.text_secondary,
+            label_limit,
+            base_size=self._sx(14, ui, minimum=10),
+            min_size=8,
+            bold=False,
+        )
         label_x = x if panel_width is None else x + max(0, (panel_width - label_surf.get_width()) // 2)
         self.screen.blit(label_surf, (label_x, y))
         if piece is None:
