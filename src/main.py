@@ -682,6 +682,7 @@ def _fullscreen_popup_scale(screen) -> float:
         min_scale=0.65,
         max_scale=1.35,
         reference_size=(1920.0, 1080.0),
+        apply_preset=False,
     )
 
 

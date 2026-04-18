@@ -683,6 +683,7 @@ class Menu:
             min_scale=0.68,
             max_scale=1.16,
             reference_size=(1366.0, 768.0),
+            apply_preset=False,
         )
 
     def _menu_panel_content_scale(self) -> float:
@@ -692,6 +693,7 @@ class Menu:
             min_scale=0.72,
             max_scale=1.16,
             reference_size=(1920.0, 1080.0),
+            apply_preset=False,
         )
 
     def _is_modal_open(self) -> bool:

@@ -117,7 +117,7 @@ def test_fullscreen_popup_scale_uses_shared_reference_and_clamps_bounds():
 def test_fullscreen_popup_scale_uses_projected_effective_scale(monkeypatch):
     captured = {}
 
-    def fake_get_projected_scale(screen, *, min_scale, max_scale, reference_size, display_surface=None):
+    def fake_get_projected_scale(screen, *, min_scale, max_scale, reference_size, display_surface=None, apply_preset=True):
         captured['screen'] = screen
         captured['min_scale'] = min_scale
         captured['max_scale'] = max_scale

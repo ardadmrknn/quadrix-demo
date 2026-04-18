@@ -133,7 +133,7 @@ def test_main_menu_scales_use_effective_ui_size_when_available(monkeypatch):
         captured_resolve.append((screen_or_size, use_effective_display_size, display_surface))
         return (1200, 700)
 
-    def fake_projected(screen_or_size, *, min_scale, max_scale, reference_size, display_surface=None):
+    def fake_projected(screen_or_size, *, min_scale, max_scale, reference_size, display_surface=None, apply_preset=True):
         captured_projected.append((screen_or_size, min_scale, max_scale, reference_size, display_surface))
         if reference_size == (1366.0, 768.0):
             return 1.8755490483162518

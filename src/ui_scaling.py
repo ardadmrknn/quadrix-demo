@@ -239,6 +239,7 @@ def get_projected_effective_scale(
     max_scale: float,
     reference_size: tuple[float, float] = REFERENCE_SIZE,
     display_surface: bool | None = None,
+    apply_preset: bool = True,
 ) -> float:
     """Resolve scale from effective UI size, then project it into raw pixels."""
     try:
@@ -256,6 +257,12 @@ def get_projected_effective_scale(
         max_scale=max_scale,
         reference_size=reference_size,
     )
+    if apply_preset:
+        base_scale = apply_ui_scale_preset(
+            base_scale,
+            min_scale=min_scale,
+            max_scale=max_scale,
+        )
     pixel_ratio = _get_effective_projection_ratio(
         screen_or_size,
         display_surface=display_surface,
