@@ -11,9 +11,9 @@ from datetime import datetime, timezone
 from typing import Any, Dict
 
 try:
-    from .tutorial_lessons import CHAPTERS, get_lesson, list_lessons_for_chapter  # type: ignore
+    from .tutorial_lessons import CHAPTERS, LEGACY_CHAPTER_MAP, LEGACY_LESSON_MAP, get_lesson, list_lessons_for_chapter  # type: ignore
 except Exception:
-    from tutorial_lessons import CHAPTERS, get_lesson, list_lessons_for_chapter
+    from tutorial_lessons import CHAPTERS, LEGACY_CHAPTER_MAP, LEGACY_LESSON_MAP, get_lesson, list_lessons_for_chapter
 
 
 def _utc_now_iso() -> str:
@@ -187,4 +187,48 @@ def unlock_next_chapter_if_needed(progress: Dict[str, Any]) -> Dict[str, Any]:
         next_entry = chapters.get(next_chapter_id)
         if isinstance(current_entry, dict) and isinstance(next_entry, dict) and bool(current_entry.get("completed", False)):
             next_entry["unlocked"] = True
-    return progress
+
+
+def migrate_legacy_progress(progress: Any) -> Dict[str, Any]:
+    """Eski chapter/lesson ID'lerini yeni V2 ID'lerine taşır.
+
+    Eğer progress zaten yeni ID'leri içeriyorsa dokunmaz.
+    """
+    if not isinstance(progress, dict):
+        return ensure_progress_shape(progress)
+
+    old_chapters = progress.get("chapters", {})
+    if not isinstance(old_chapters, dict):
+        return ensure_progress_shape(progress)
+
+    # Yeni ID'ler zaten varsa migration gerekmez
+    has_new_ids = any(ch_id in old_chapters for ch_id in ("quick_start", "surface_control", "queue_hold"))
+    has_old_ids = any(ch_id in old_chapters for ch_id in LEGACY_CHAPTER_MAP)
+
+    if not has_old_ids or has_new_ids:
+        return ensure_progress_shape(progress)
+
+    migrated_chapters: Dict[str, Any] = {}
+
+    for old_chapter_id, old_chapter_data in old_chapters.items():
+        if not isinstance(old_chapter_data, dict):
+            continue
+        new_chapter_id = LEGACY_CHAPTER_MAP.get(old_chapter_id, old_chapter_id)
+        old_lessons = old_chapter_data.get("lessons", {})
+        if not isinstance(old_lessons, dict):
+            old_lessons = {}
+
+        migrated_lessons: Dict[str, Any] = {}
+        for old_lesson_id, old_lesson_data in old_lessons.items():
+            if not isinstance(old_lesson_data, dict):
+                continue
+            new_lesson_id = LEGACY_LESSON_MAP.get(old_lesson_id, old_lesson_id)
+            migrated_lessons[new_lesson_id] = deepcopy(old_lesson_data)
+
+        migrated_chapter = deepcopy(old_chapter_data)
+        migrated_chapter["lessons"] = migrated_lessons
+        migrated_chapters[new_chapter_id] = migrated_chapter
+
+    progress_copy = deepcopy(progress)
+    progress_copy["chapters"] = migrated_chapters
+    return ensure_progress_shape(progress_copy)

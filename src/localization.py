@@ -3072,6 +3072,71 @@ TRANSLATIONS = {
         'zh': 'Learn to evaluate card picks based on the board state.',
         'ko': 'Learn to evaluate card picks based on the board state.',
     },
+    # ── V2 chapter/lesson keys ──
+    'tutorial_quick_start_title': {
+        'tr': 'Hızlı Başlangıç',
+        'en': 'Quick Start',
+    },
+    'tutorial_quick_start_desc': {
+        'tr': '90 saniyede oynanabilir minimum yetkinliği al.',
+        'en': 'Get the minimum playable competency in 90 seconds.',
+    },
+    'tutorial_surface_control_title': {
+        'tr': 'Yüzey Kontrolü',
+        'en': 'Surface Control',
+    },
+    'tutorial_surface_control_desc': {
+        'tr': 'Temiz yüzey, delik önleme ve kuyu koruma mantığını otur.',
+        'en': 'Learn clean surface, hole prevention and well protection.',
+    },
+    'tutorial_queue_hold_title': {
+        'tr': 'Queue ve Hold',
+        'en': 'Queue & Hold',
+    },
+    'tutorial_queue_hold_desc': {
+        'tr': 'Gelecek planlama ve hold karar mantığını öğren.',
+        'en': 'Learn future planning and hold decision logic.',
+    },
+    'tutorial_recovery_title': {
+        'tr': 'Kurtarma ve Hayatta Kalma',
+        'en': 'Recovery & Survival',
+    },
+    'tutorial_recovery_desc': {
+        'tr': 'Kötü board altında sakin ve doğru önceliklerle oyna.',
+        'en': 'Stay calm and prioritize correctly under a bad board.',
+    },
+    'tutorial_card_foundations_title': {
+        'tr': 'Kart Temelleri',
+        'en': 'Card Foundations',
+    },
+    'tutorial_card_foundations_desc': {
+        'tr': 'Kart ailelerini, risk etiketlerini ve board bağlamını tanı.',
+        'en': 'Learn card families, risk tags and board context.',
+    },
+    'tutorial_card_strategy_title': {
+        'tr': 'Kart Stratejisi ve Sinerji',
+        'en': 'Card Strategy & Synergy',
+    },
+    'tutorial_card_strategy_desc': {
+        'tr': 'Uzun vadeli build mantığı ve risk-getiri dengesini öğren.',
+        'en': 'Learn long-term build logic and risk-reward balance.',
+    },
+    'tutorial_mastery_exams_title': {
+        'tr': 'Sınavlar ve Ustalık Görevleri',
+        'en': 'Mastery Exams',
+    },
+    'tutorial_mastery_exams_desc': {
+        'tr': 'Öğrenilen ilkeleri daha az ipucuyla birleştir.',
+        'en': 'Combine learned principles with fewer hints.',
+    },
+    'tutorial_quick_start_done': {
+        'tr': 'Hızlı Başlangıç tamamlandı!',
+        'en': 'Quick Start completed!',
+    },
+    'tutorial_quick_start_done_sub': {
+        'tr': "Hub'a dönmek için Enter'a bas.",
+        'en': 'Press Enter to return to the hub.',
+    },
     'tutorial_card_rescue_title': {
         'tr': 'Acil kurtarma seçimi',
         'en': 'Pick the Rescue Card',
