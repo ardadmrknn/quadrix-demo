@@ -1071,7 +1071,7 @@ class RetroStyle:
         screen: pygame.Surface,
         rect: pygame.Rect,
         text: str,
-        sub_text: str | None = None,
+        sub_text: str | pygame.Surface | None = None,
         state: str = 'normal',
         color_code: str | tuple[int, int, int] = 'general',
         selected: bool = False,
@@ -1127,20 +1127,23 @@ class RetroStyle:
         sub_surf = None
         sub_pos = None
         if sub_text:
-            is_on = self._is_toggle_on(sub_text)
-            if is_on is not None:
-                badge_text = t('on') if is_on else t('off')
-                badge_color = (60, 180, 100) if is_on else (180, 70, 70)
-                
-                badge_font = self.get_font(14, bold=True)
-                badge_surf = badge_font.render(badge_text, True, (255, 255, 255))
-                badge_rect = pygame.Rect(rect.right - badge_surf.get_width() - 30, 
-                                        rect.centery - 12, badge_surf.get_width() + 16, 24)
-                pygame.draw.rect(screen, badge_color, badge_rect, border_radius=12)
-                screen.blit(badge_surf, badge_surf.get_rect(center=badge_rect.center))
+            if isinstance(sub_text, pygame.Surface):
+                sub_surf = sub_text
             else:
-                sub_font = self.get_fitting_font(sub_text, 16, rect.width - 100, bold=False)
-                sub_surf = sub_font.render(sub_text, True, (160, 175, 200))
+                is_on = self._is_toggle_on(sub_text)
+                if is_on is not None:
+                    badge_text = t('on') if is_on else t('off')
+                    badge_color = (60, 180, 100) if is_on else (180, 70, 70)
+                    
+                    badge_font = self.get_font(14, bold=True)
+                    badge_surf = badge_font.render(badge_text, True, (255, 255, 255))
+                    badge_rect = pygame.Rect(rect.right - badge_surf.get_width() - 30, 
+                                            rect.centery - 12, badge_surf.get_width() + 16, 24)
+                    pygame.draw.rect(screen, badge_color, badge_rect, border_radius=12)
+                    screen.blit(badge_surf, badge_surf.get_rect(center=badge_rect.center))
+                else:
+                    sub_font = self.get_fitting_font(sub_text, 16, rect.width - 100, bold=False)
+                    sub_surf = sub_font.render(sub_text, True, (160, 175, 200))
 
         # Place text. When sub_text exists (non-toggle), stack + vertically center to avoid overlap
         if sub_surf is not None:

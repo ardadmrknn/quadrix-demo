@@ -31,6 +31,8 @@ from platform_utils import (
     create_display, normalize_mouse_pos, get_mouse_pos, set_app_icon,
 )
 from localization import t
+from gamepad_manager import is_gamepad_connected
+from promptfont_support import get_action_prompt_display, render_action_prompt_surface, render_button_index_prompt_surface, render_inline_action_text_surface
 from ui_theme import UIColors, UIFonts
 from sweep_effects import SweepCatState, draw_rainbow_cat_sweep
 from asset_manager import load_image
@@ -3208,6 +3210,7 @@ class CoopGame:
         self._pause_option_rects = []
         self._pause_volume_rects = {}
         _pause_mouse_pos = get_mouse_pos()
+        sub_hint_font = retro_style.get_font(self._sx(16, ui, minimum=10), bold=False)
 
         start_y = pr.y + top_pad
         for i, opt in enumerate(self.pause_menu_options):
@@ -3222,10 +3225,18 @@ class CoopGame:
 
             if opt == 'resume':
                 color_code = retro_style.success if hasattr(retro_style, 'success') else (60, 200, 120)
-                sub_text = 'ESC / P'
+                if is_gamepad_connected():
+                    gp_label = str(get_action_prompt_display('menu_back', 'ESC').get('text') or 'ESC')
+                    sub_text = render_inline_action_text_surface(f'{gp_label} / ESC / P', gp_label, 'menu_back', sub_hint_font, (160, 175, 200))
+                else:
+                    sub_text = 'ESC / P'
             elif opt == 'main_menu':
                 color_code = retro_style.secondary
-                sub_text = 'BACKSPACE'
+                if is_gamepad_connected():
+                    gp_label = str(get_action_prompt_display('menu_confirm', 'ENTER').get('text') or 'ENTER')
+                    sub_text = render_inline_action_text_surface(f'{gp_label} / BACKSPACE', gp_label, 'menu_confirm', sub_hint_font, (160, 175, 200))
+                else:
+                    sub_text = 'BACKSPACE'
             elif opt == 'music':
                 color_code = retro_style.primary
                 sub_text = t('on', default='ON') if self.sound.music_enabled else t('off', default='OFF')
@@ -3542,19 +3553,41 @@ class CoopGame:
             self.screen.blit(surf, (surf_x, current_y))
             current_y += line_h
 
+        try:
+            gp_cfg = self.settings_manager.get_controls().get('gamepad', {}) if self.settings_manager else {}
+            restart_button_index = int(gp_cfg.get('restart', 3))
+        except Exception:
+            restart_button_index = 3
+
+        restart_sub = render_button_index_prompt_surface(
+            restart_button_index,
+            'R',
+            retro_style.get_font(self._sx(16, ui, minimum=10), bold=False),
+            (160, 175, 200),
+            max_width=self._sx(40, ui, minimum=24),
+            max_height=self._sx(18, ui, minimum=12),
+        )
         retro_style.draw_uniform_button(
             self.screen,
             restart_rect,
             t('campaign_retry', default='Yeniden Başlat'),
-            sub_text='R',
+            sub_text=(restart_sub or 'R'),
             color_code=(72, 216, 158),
             state='hover' if restart_rect.collidepoint(mouse_pos) else 'normal',
+        )
+        menu_sub = render_action_prompt_surface(
+            'menu_back',
+            'ESC',
+            retro_style.get_font(self._sx(16, ui, minimum=10), bold=False),
+            (160, 175, 200),
+            max_width=self._sx(46, ui, minimum=24),
+            max_height=self._sx(18, ui, minimum=12),
         )
         retro_style.draw_uniform_button(
             self.screen,
             button_rect,
             t('back_to_menu', default='Back to Menu'),
-            sub_text='ESC',
+            sub_text=(menu_sub or 'ESC'),
             color_code=(220, 86, 112),
             state='hover' if button_rect.collidepoint(mouse_pos) else 'normal',
         )

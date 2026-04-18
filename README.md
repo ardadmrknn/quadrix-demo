@@ -117,6 +117,11 @@ py -m pytest tests/test_steam_achievements_sync.py -v
 - Yeni test eklerken `tests/` klasörünü kullanın.
 - Geçici analiz/script çıktıları için kök dizin yerine `tools/` ve `reports/` kullanın.
 
+## Third-Party Assets
+
+- PromptFont by Yukari "Shinmera" Hafner, https://shinmera.com/promptfont
+- Lisans: SIL Open Font License 1.1
+
 ## Lisans
 
 Proprietary

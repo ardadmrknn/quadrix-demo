@@ -675,6 +675,7 @@ class ZenMode(Game):
         self.auto_clear_triggered = False
         self.auto_clear_penalty = 0  # Otomatik temizlik cezası (kalıcı)
         self._last_penalty_print = 0  # Debug için
+        self._pending_top_out_auto_clear = False
         
         # Otomatik temizlik satır sayısı (kullanıcı seçimi)
         # None = tüm tahta, sayı = o kadar satır temizle
@@ -710,8 +711,25 @@ class ZenMode(Game):
 
         # Normal kilitleme işlemi
         lines_cleared = self.board.lock_piece(self.current_piece)
+
+        lock_out_triggered = False
+        consume_last_lock_out = getattr(self.board, 'consume_last_lock_out', None)
+        if callable(consume_last_lock_out):
+            try:
+                lock_out_triggered = bool(consume_last_lock_out())
+            except Exception:
+                lock_out_triggered = False
+        if not lock_out_triggered:
+            lock_out_triggered = bool(
+                getattr(self.board, '_last_lock_out', False)
+                or getattr(self.board, '_locked_out', False)
+            )
+        self._pending_top_out_auto_clear = lock_out_triggered
+
         # Zen Mode: lock-out flag'ini temizle, oyun asla bitmez
-        self.board.clear_lock_out()
+        clear_lock_out = getattr(self.board, 'clear_lock_out', None)
+        if callable(clear_lock_out):
+            clear_lock_out()
 
         # Satır temizlenmiyorsa blok kilitlenme sesi çal
         if lines_cleared == 0:
@@ -887,12 +905,8 @@ class ZenMode(Game):
         
         # Tema renklerini uygula
         self.apply_theme_to_pieces()
+        # ZEN MODE: Yalnızca üst sınır aşıldığında veya spawn alanı bloke olduğunda temizle
         self._ensure_relaxed_space()
-        
-        # ZEN MODE: Yeni parça geçerli pozisyonda değilse kullanıcının seçtiği kadar temizle
-        if not self.board.is_valid_position(self.current_piece):
-            self.auto_clear_board(clear_entire_board=False)
-            self.auto_clear_triggered = True
     
     def auto_clear_board(self, clear_entire_board=False):
         """Otomatik temizlik - Tahtayı temizle
@@ -1022,15 +1036,23 @@ class ZenMode(Game):
             self.auto_clear_triggered = False
 
     def _ensure_relaxed_space(self):
-        """Tahtanın üst kısmı tıkandığında kullanıcının seçtiği kadar satır temizle."""
-        top_rows = min(4, self.board.height)
-        for y in range(top_rows):
-            filled = sum(1 for x in range(self.board.width) if self.board.occupancy[y][x])
-            if filled >= self.board.width - 1:
-                # Kullanıcının seçimine göre temizle (clear_entire_board=False)
-                self.auto_clear_board(clear_entire_board=False)
-                self.auto_clear_triggered = True
-                break
+        """Yığın üst sınırı aştığında veya spawn alanı bloke olduğunda alan aç."""
+        pending_top_out = bool(getattr(self, '_pending_top_out_auto_clear', False))
+        self._pending_top_out_auto_clear = False
+
+        spawn_blocked = False
+        current_piece = getattr(self, 'current_piece', None)
+        if current_piece is not None:
+            try:
+                spawn_blocked = not self.board.is_valid_position(current_piece)
+            except Exception:
+                spawn_blocked = False
+
+        if not (pending_top_out or spawn_blocked):
+            return
+
+        self.auto_clear_board(clear_entire_board=False)
+        self.auto_clear_triggered = True
     
     def draw_mode_info(self, info_x, info_y):
         """Zen moduna özel bilgiler skor panelinin altında görünür."""

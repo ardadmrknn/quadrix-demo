@@ -1053,19 +1053,14 @@ class OnlineCoopGame:
         s = lambda v, minimum=1: self._sx(v, sc, minimum)
 
         # Başlık
-        _rs.draw_title(self.screen, t('online_coop_title', 'ONLINE CO-OP'), (cx, s(58)))
-        sub_font = _rs.get_font(s(16, minimum=11), bold=False)
-        sub = sub_font.render(
-            t('online_coop_subtitle', 'Steam üzerinden 2 oyunculu online co-op'),
-            True, _rs.text_secondary)
-        self.screen.blit(sub, sub.get_rect(center=(cx, s(94))))
+        title_rect = _rs.draw_title(self.screen, t('online_coop_title', 'ONLINE CO-OP'), (cx, s(58)))
 
         # Sol panel: butonlar
         btn_w = s(340)
         btn_h = s(52)
         panel_left = max(s(30), cx - s(400))
         btn_x = panel_left
-        btn_y = s(130)
+        btn_y = title_rect.bottom + s(28)
         gap = s(12)
 
         # Özel Lobi bölümü
@@ -1117,7 +1112,7 @@ class OnlineCoopGame:
 
         # Sağ panel: lobi listesi
         list_left = cx + s(20)
-        list_top = s(130)
+        list_top = title_rect.bottom + s(28)
         list_w = min(s(400), w - list_left - s(30))
         list_h = h - list_top - s(100)
         list_rect = pygame.Rect(list_left, list_top, list_w, list_h)

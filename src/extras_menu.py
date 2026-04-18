@@ -237,14 +237,6 @@ class ExtrasScreen:
                 'hover_color': (40, 230, 255),
                 'image_data': MODE_IMAGE_PROMPTS.get('Online PvP')
             },
-            {
-                'id': 'coop_campaign',
-                'name_key': 'coop_campaign_title',
-                'desc_key': 'coop_campaign_desc',
-                'color': (80, 230, 160),
-                'hover_color': (110, 255, 190),
-                'image_data': MODE_IMAGE_PROMPTS.get('coop_campaign')
-            },
         ]
         
         self.selected = 0
@@ -523,15 +515,9 @@ class ExtrasScreen:
             
         # Başlık - diğer pencerelerle aynı stil (örn. Başarılar)
         title_rect = retro_style.draw_title(self.screen, t('extras_title'), (width // 2, s(60)), emoji=None)
-        
-        # Alt başlık
-        sub_text = t('extras_subtitle')
-        sub_surf = self.font_desc.render(sub_text, True, UIColors.TEXT_SECONDARY)
-        sub_rect = sub_surf.get_rect(center=(width // 2, title_rect.bottom + s(25)))
-        self.screen.blit(sub_surf, sub_rect)
-        
+
         # Grid başlangıç
-        start_y = sub_rect.bottom + s(40)
+        start_y = title_rect.bottom + s(34)
         visible_h = max(1, height - start_y - s(20))
         total_grid_h = math.ceil(len(self.items) / self.cols) * (self.card_size[1] + self.spacing)
         self._cached_max_scroll = max(0, total_grid_h - visible_h)

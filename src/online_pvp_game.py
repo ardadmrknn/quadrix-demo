@@ -5100,19 +5100,14 @@ class OnlinePvPGame:
         s = lambda v, minimum=1: self._sx(v, sc, minimum)
 
         # Başlık (retro_style.draw_title ile — glow + alt çizgi)
-        _rs.draw_title(self.screen, t('online_pvp_title', 'ONLINE PvP'), (cx, s(58)))
-        sub_font = _rs.get_font(s(16, minimum=11), bold=False)
-        sub = sub_font.render(
-            t('extras_online_pvp_desc', 'Steam üzerinden 1v1 online Tetris maçı'),
-            True, _rs.text_secondary)
-        self.screen.blit(sub, sub.get_rect(center=(cx, s(94))))
+        title_rect = _rs.draw_title(self.screen, t('online_pvp_title', 'ONLINE PvP'), (cx, s(58)))
 
         # Sol panel: butonlar — modernize edilmiş yerleşim
         btn_w = s(340)
         btn_h = s(52)
         panel_left = max(s(30), cx - s(400))
         btn_x = panel_left
-        btn_y_start = s(130)
+        btn_y_start = title_rect.bottom + s(28)
         gap = s(12)
 
         # Özel Lobi bölümü başlığı

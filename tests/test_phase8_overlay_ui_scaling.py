@@ -740,6 +740,52 @@ def test_zen_auto_clear_particles_use_active_canvas_center():
     assert recorded['particles'] == [(1280, 360, 50)]
 
 
+def test_zen_auto_clear_triggers_on_top_boundary_lock_out():
+    recorded = []
+
+    mode = modes_module.ZenMode.__new__(modes_module.ZenMode)
+    mode.effects_enabled = False
+    mode.sound = SimpleNamespace(play=lambda name: recorded.append(name))
+    mode.auto_clear_triggered = False
+    mode.auto_clear_board = lambda clear_entire_board=False: recorded.append(('clear', clear_entire_board))
+    mode.apply_theme_to_pieces = lambda: None
+    mode.next_piece_queue = [SimpleNamespace(x=0, y=0)]
+    mode.spawn_new_piece = lambda: SimpleNamespace(x=0, y=0)
+    mode.current_piece = SimpleNamespace(get_cells=lambda: [], color=(255, 255, 255), x=0, y=0)
+    mode.board = SimpleNamespace(
+        lock_piece=lambda piece: 0,
+        consume_last_lock_out=lambda: True,
+        clear_lock_out=lambda: None,
+        is_valid_position=lambda piece: True,
+    )
+
+    modes_module.ZenMode.lock_and_new_piece(mode)
+
+    assert ('clear', False) in recorded
+    assert mode.auto_clear_triggered is True
+
+
+def test_zen_auto_clear_ignores_dense_top_without_boundary_overflow():
+    recorded = []
+
+    mode = modes_module.ZenMode.__new__(modes_module.ZenMode)
+    mode._pending_top_out_auto_clear = False
+    mode.auto_clear_triggered = False
+    mode.auto_clear_board = lambda clear_entire_board=False: recorded.append(clear_entire_board)
+    mode.current_piece = SimpleNamespace(x=0, y=0)
+    mode.board = SimpleNamespace(
+        width=10,
+        height=20,
+        occupancy=[[True] * 9 + [False] for _ in range(4)] + [[False] * 10 for _ in range(16)],
+        is_valid_position=lambda piece: True,
+    )
+
+    modes_module.ZenMode._ensure_relaxed_space(mode)
+
+    assert recorded == []
+    assert mode.auto_clear_triggered is False
+
+
 def test_base_game_geometry_uses_active_canvas_when_window_size_is_stale():
     game = _build_game((2560, 1440), window_size=(1366, 768))
     game.board_width = 20

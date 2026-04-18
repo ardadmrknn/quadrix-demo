@@ -1273,16 +1273,22 @@ class GuideScreen:
         content_gap = self._s(30, minimum=20, scale=scale)
         content_x = tab_panel_width + content_gap
         content_width = width - content_x - content_gap
-        content_height = height - self._s(180, minimum=140, scale=scale)
         
         # Başlık
-        retro_style.draw_title(self.screen, t('guide_title'), (width // 2, self._s(50, minimum=40, scale=scale)))
+        title_rect = retro_style.draw_title(self.screen, t('guide_title'), (width // 2, self._s(50, minimum=40, scale=scale)))
+        tab_start_y = title_rect.bottom + self._s(18, minimum=14, scale=scale)
+        content_top = title_rect.bottom + self._s(10, minimum=8, scale=scale)
+        bottom_actions_top = min(self._get_tutorial_button_rect().top, self._get_back_button_rect().top)
+        content_height = max(
+            self._s(320, minimum=240, scale=scale),
+            bottom_actions_top - content_top - self._s(18, minimum=14, scale=scale),
+        )
         
         # Sol tab paneli
-        self._draw_tab_panel(tab_panel_width, height)
+        self._draw_tab_panel(tab_panel_width, height, tab_start_y)
         
         # Sağ içerik paneli
-        self._draw_content_panel(content_x, content_width, content_height)
+        self._draw_content_panel(content_x, content_width, content_height, content_top)
         
         # Kart navigasyonu (sadece Cards sekmesinde)
         if self.selected_tab == 2:
@@ -1291,15 +1297,11 @@ class GuideScreen:
         # Alt aksiyonlar
         self._draw_tutorial_button()
         self._draw_back_button()
-        
-        # Hint text
-        self._draw_hints(width, height)
-    
-    def _draw_tab_panel(self, panel_width: int, height: int):
+
+    def _draw_tab_panel(self, panel_width: int, height: int, tab_start_y: int):
         scale = self._ui_scale()
         tabs = self._get_tabs()
         tab_height = self._s(64, minimum=48, scale=scale)
-        tab_start_y = self._s(110, minimum=88, scale=scale)
         gap = self._s(8, minimum=6, scale=scale)
         left_margin = self._s(16, minimum=12, scale=scale)
         
@@ -1379,9 +1381,9 @@ class GuideScreen:
             self.screen.blit(mascot, (mascot_x, mascot_y))
 
 
-    def _draw_content_panel(self, x: int, width: int, height: int):
+    def _draw_content_panel(self, x: int, width: int, height: int, top: int):
         scale = self._ui_scale()
-        panel_rect = pygame.Rect(x, self._s(100, minimum=80, scale=scale), width, height)
+        panel_rect = pygame.Rect(x, top, width, height)
         
         retro_style.draw_glass_panel(self.screen, panel_rect, alpha=170, border_color=retro_style.primary, glow=True)
         

@@ -6,6 +6,7 @@ import pygame
 
 from asset_manager import load_image
 from gamepad_manager import get_gamepad_manager
+from promptfont_support import render_inline_action_text_surface
 from retro_style import retro_style
 from localization import t
 from background_effects import get_shared_falling_blocks_layer
@@ -453,6 +454,7 @@ class SplashScreen:
         """Animasyonlu 'Enter basın' prompt'u"""
         prompt_font = retro_style.get_font(22, bold=False)
         prompt_text = self._get_prompt_text()
+        button_label = self._get_continue_button_label()
         
         # Yanıp sönen efekt
         blink = 0.6 + 0.4 * math.sin(now / 300.0)
@@ -462,7 +464,13 @@ class SplashScreen:
         hue = (now / 15) % 360
         border_color = self._hsv_to_rgb(hue, 0.7, 1.0)
         
-        text_surf = prompt_font.render(prompt_text, True, (255, 255, 255))
+        text_surf = render_inline_action_text_surface(
+            prompt_text,
+            button_label,
+            'menu_confirm',
+            prompt_font,
+            (255, 255, 255),
+        )
         text_rect = text_surf.get_rect(center=(w // 2, int(h * 0.88)))
         
         # Panel
@@ -495,7 +503,13 @@ class SplashScreen:
         self.screen.blit(panel_surf, panel_rect.topleft)
         
         # Text with glow
-        text_glow = prompt_font.render(prompt_text, True, border_color)
+        text_glow = render_inline_action_text_surface(
+            prompt_text,
+            button_label,
+            'menu_confirm',
+            prompt_font,
+            border_color,
+        )
         text_glow.set_alpha(text_alpha // 2)
         for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
             self.screen.blit(text_glow, (text_rect.x + dx, text_rect.y + dy))

@@ -6911,9 +6911,6 @@ class AchievementScreen:
         copy = self._copy_for_language()
 
         title_rect = retro_style.draw_title(self.screen, t('achievements_title'), (width // 2, _s(70)), emoji='☆')
-        hint_surf = self.font_hint.render(copy['hint_text'], True, UIColors.TEXT_SECONDARY)
-        hint_rect = hint_surf.get_rect(center=(width // 2, title_rect.bottom + _s(18)))
-        self.screen.blit(hint_surf, hint_rect)
 
         def _ellipsize(text: str, font: pygame.font.Font, max_width: int) -> str:
             if max_width <= 0:
@@ -7050,7 +7047,7 @@ class AchievementScreen:
 
         outer_width = min(_s(1180), max(0, width - _s(72)))
         outer_x = (width - outer_width) // 2
-        body_top = hint_rect.bottom + _s(18)
+        body_top = title_rect.bottom + _s(26)
         body_bottom_margin = _s(36)
         body_height = max(_s(360), height - body_top - body_bottom_margin)
         side_width = max(_s(220), min(_s(260), int(outer_width * 0.24)))
@@ -12166,7 +12163,7 @@ class CreditsScreen:
         self._credits_title_surf = self.font_title.render(self._credits_title_text, True, (80, 255, 200))
         self._credits_title_glow_surf = self.font_title.render(self._credits_title_text, True, (40, 200, 150))
         self._credits_title_glow_surf.set_alpha(90)
-        self._credits_subtitle_surf = self.font_subtitle.render(t('credits_screen_subtitle'), True, (180, 200, 220))
+        self._credits_subtitle_surf = None
 
     def handle_input(self, event):
         """Credits ekranı input handling"""
@@ -12203,7 +12200,7 @@ class CreditsScreen:
         width, height = self.screen.get_size()
         self._ensure_credits_metrics()
 
-        if self._credits_title_surf is None or self._credits_subtitle_surf is None or self._credits_title_glow_surf is None:
+        if self._credits_title_surf is None or self._credits_title_glow_surf is None:
             return
         s = self._credits_sx
         self._load_credits_mascots()
@@ -12217,12 +12214,9 @@ class CreditsScreen:
         # Glow efekti (hafif, cache'li)
         self.screen.blit(self._credits_title_glow_surf, (title_rect.x + s(1), title_rect.y + s(1)))
         self.screen.blit(self._credits_title_surf, title_rect)
-        
-        # Alt başlık
-        self.screen.blit(self._credits_subtitle_surf, self._credits_subtitle_surf.get_rect(center=(width // 2, s(90))))
 
         # Sağ/Sol büyük maskot panelleri + merkez içerik alanı
-        content_top = s(120)
+        content_top = title_rect.bottom + s(24)
         footer_y = height - s(50)
         content_bottom = max(content_top + s(260), footer_y - s(36))
 

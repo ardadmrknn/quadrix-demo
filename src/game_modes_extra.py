@@ -21,6 +21,7 @@ from platform_utils import normalize_mouse_pos, get_mouse_pos, get_display_scale
 from asset_manager import load_image
 from localization import t, get_language
 from gamepad_manager import get_gamepad_manager, is_gamepad_connected
+from promptfont_support import get_action_prompt_display, render_action_prompt_surface, render_inline_action_text_surface
 try:
     from .retro_style import retro_style  # type: ignore
 except Exception:
@@ -78,6 +79,11 @@ def _get_card_effects_dir() -> str:
 
 
 CARD_EFFECTS_DIR = _get_card_effects_dir()
+
+
+def _prompt_action_text(action: str, keyboard_label: str) -> str:
+    display = get_action_prompt_display(action, keyboard_label)
+    return str(display.get('text') or keyboard_label)
 
 
 def _get_animate_effects_dir() -> str:
@@ -195,16 +201,7 @@ def _build_card_format_context(card_or_id: Dict[str, Any] | str, value: Any = No
         context['value'] = value
 
     if localization_id == 'perk_second_pocket':
-        button_label = 'V'
-        try:
-            gpm = get_gamepad_manager()
-            if getattr(gpm, 'enabled', False) and gpm.is_connected():
-                resolved = gpm.get_button_label('hold2')
-                if resolved and resolved != '?':
-                    button_label = resolved
-        except Exception:
-            pass
-        context['button'] = button_label
+        context['button'] = _prompt_action_text('hold2', 'V')
 
     return context
 
@@ -2026,7 +2023,20 @@ class MysteryCardUI:
 
             badge_font = tag_font if tag_font else font_small
             max_badge_w = max(52, col_width - title_local_x - 6)
-            badge_text_surf = badge_font.render(badge_text, True, (232, 238, 248))
+            prompt_badge_text = _prompt_action_text('hold2', 'V') if _resolve_card_localization_id(card) == 'perk_second_pocket' else ''
+            if prompt_badge_text and badge_text == prompt_badge_text:
+                badge_text_surf = render_action_prompt_surface(
+                    'hold2',
+                    prompt_badge_text,
+                    badge_font,
+                    (232, 238, 248),
+                    max_width=max_badge_w - 12,
+                    max_height=24,
+                )
+                if badge_text_surf is None:
+                    badge_text_surf = badge_font.render(badge_text, True, (232, 238, 248))
+            else:
+                badge_text_surf = badge_font.render(badge_text, True, (232, 238, 248))
             badge_w = badge_text_surf.get_width() + 12
             if badge_w > max_badge_w:
                 compact = badge_text
@@ -2239,6 +2249,7 @@ class MysteryCardUI:
         # Wrap description with available width and reduce max cols in debug
         desc_wrap_width = 30 if not debug else 28
         card_desc_text = get_card_description(card, card.get("value"), card.get("description", ""))
+        prompt_button_label = _prompt_action_text('hold2', 'V') if _resolve_card_localization_id(card) == 'perk_second_pocket' else ''
         desc_lines = self._wrap_text(card_desc_text, desc_wrap_width)
         # Cap description lines in overlay to avoid oversizing the card
         max_desc_lines_overlay = 4
@@ -2257,7 +2268,13 @@ class MysteryCardUI:
         desc_bg_alpha = 220 if debug else 140
         pygame.draw.rect(desc_surface, (3, 3, 10, desc_bg_alpha), desc_surface.get_rect(), border_radius=14)
         for i, line in enumerate(desc_lines):
-            desc_text = fonts["desc"].render(line, True, (230, 230, 240))
+            desc_text = render_inline_action_text_surface(
+                line,
+                prompt_button_label,
+                'hold2',
+                fonts["desc"],
+                (230, 230, 240),
+            ) if prompt_button_label and prompt_button_label in line else fonts["desc"].render(line, True, (230, 230, 240))
             desc_surface.blit(desc_text, (12, 8 + i * line_height_overlay))
         card_surface.blit(desc_surface, (24, value_rect.bottom + 20))
 
@@ -2721,6 +2738,8 @@ class UICard:
 
     @staticmethod
     def _compute_card_signature(card: Dict) -> tuple:
+        localization_id = _resolve_card_localization_id(card)
+        prompt_signature = _prompt_action_text('hold2', 'V') if localization_id == 'perk_second_pocket' else ''
         return (
             str(card.get('id', '')),
             str(card.get('title', '')),
@@ -2730,6 +2749,7 @@ class UICard:
             str(card.get('icon_image', '')),
             str(card.get('tag', '')),
             str(card.get('rarity', '')),
+            prompt_signature,
         )
 
     def _invalidate_face_cache(self) -> None:
@@ -3962,6 +3982,7 @@ class UICard:
             value=self.card.get('value'),
             fallback=self.card.get('description', '')
         )
+        prompt_button_label = _prompt_action_text('hold2', 'V') if _resolve_card_localization_id(self.card) == 'perk_second_pocket' else ''
         words = str(raw_desc).split()
         cur = ''
         for w in words:
@@ -3999,7 +4020,13 @@ class UICard:
             text_x = desc_bg_x + desc_pad_x
             text_y = desc_y
             for i, l in enumerate(desc_lines):
-                d = desc_font.render(l, True, UIColors.TEXT_PRIMARY)
+                d = render_inline_action_text_surface(
+                    l,
+                    prompt_button_label,
+                    'hold2',
+                    desc_font,
+                    UIColors.TEXT_PRIMARY,
+                ) if prompt_button_label and prompt_button_label in l else desc_font.render(l, True, UIColors.TEXT_PRIMARY)
                 self._blit_shadowed(fg_layer, d, (text_x, text_y + i * desc_line_h), shadow_alpha=180)
 
         # Hotkey bottom-right small label
@@ -8254,12 +8281,7 @@ class MysteryMode(Game):
         def _card_key(keyboard_label: str, gp_action: str) -> str:
             """Gamepad bağlıysa gamepad buton adı, değilse klavye tuşu döndür."""
             if _gp_on and _gpm:
-                try:
-                    lbl = _gpm.get_button_label(gp_action)
-                    if lbl and lbl != '?':
-                        return lbl
-                except Exception:
-                    pass
+                return _prompt_action_text(gp_action, keyboard_label)
             return keyboard_label
 
         cards: List[Dict] = []
@@ -8566,7 +8588,7 @@ class MysteryMode(Game):
             'second_pocket': {
                 'title': 'Ekstra Cep',
                 'description': f'{_card_key("V", "hold2")} tuşu ile 2. hold',
-                'status': f'{_card_key("V", "hold2")} Tuşu',
+                'status': f'{_card_key("V", "hold2")}',
                 'color': (200, 200, 255),
                 'icon': '🎒',
                 'tag': 'Perk'

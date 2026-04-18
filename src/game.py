@@ -35,6 +35,7 @@ from platform_utils import get_display_flags, create_display, set_app_icon, norm
 from ui_theme import UIFonts, UIColors
 from asset_manager import load_image
 from gamepad_manager import get_gamepad_manager, is_gamepad_connected
+from promptfont_support import get_action_prompt_display, render_action_prompt_surface, render_button_index_prompt_surface, render_inline_action_text_surface
 
 try:
     from gamepad_manager import normalize_gamepad_event_button
@@ -2428,6 +2429,7 @@ class Game:
         self._pause_volume_rects = {}
         # Her frame gerçek fare pozisyonunu al (hover state mouse motion olmadan da çalışır)
         _pause_mouse_pos = get_mouse_pos()
+        sub_hint_font = retro_style.get_font(self._sx(16, ui_scale, minimum=10), bold=False)
 
         start_y = panel_rect.y + top_pad
         for i, option in enumerate(self.pause_menu_options):
@@ -2442,10 +2444,18 @@ class Game:
 
             if option == 'Devam Et':
                 color_code = retro_style.success
-                sub_text = 'ESC / P'
+                if is_gamepad_connected():
+                    gp_label = str(get_action_prompt_display('menu_back', 'ESC').get('text') or 'ESC')
+                    sub_text = render_inline_action_text_surface(f'{gp_label} / ESC / P', gp_label, 'menu_back', sub_hint_font, (160, 175, 200))
+                else:
+                    sub_text = 'ESC / P'
             elif option == 'Ana Menü':
                 color_code = retro_style.secondary
-                sub_text = 'BACKSPACE'
+                if is_gamepad_connected():
+                    gp_label = str(get_action_prompt_display('menu_confirm', 'ENTER').get('text') or 'ENTER')
+                    sub_text = render_inline_action_text_surface(f'{gp_label} / BACKSPACE', gp_label, 'menu_confirm', sub_hint_font, (160, 175, 200))
+                else:
+                    sub_text = 'BACKSPACE'
             elif option == 'Müzik':
                 color_code = retro_style.primary
                 sub_text = t('on') if self.sound.music_enabled else t('off')
@@ -4596,7 +4606,17 @@ class Game:
                 key_label = 'V'
             hold2_text = f"{key_label}"
 
-            hold2_label = retro_style.get_font(max(12, int(18 * hud_scale))).render(hold2_text, True, label_color)
+            hold2_font = retro_style.get_font(max(12, int(18 * hud_scale)))
+            hold2_label = render_action_prompt_surface(
+                'hold2',
+                hold2_text,
+                hold2_font,
+                label_color,
+                max_width=second_box_rect.width - max(4, int(8 * hud_scale)),
+                max_height=max(16, int(20 * hud_scale)),
+            )
+            if hold2_label is None:
+                hold2_label = hold2_font.render(hold2_text, True, label_color)
             label_y = curr_y - max(14, int(25 * hud_scale))
             if second_box_rect.y > hold_box_rect.y:
                 label_y = second_box_rect.y - max(14, int(25 * hud_scale))
@@ -4985,9 +5005,9 @@ class Game:
 
         # Hover-aware buton çizimi — ana menü exit confirm ile aynı stil
         mouse_pos = get_mouse_pos()
-        for _rect, _label, _sub_label, _btn_color in (
-            (yes_rect, t('quit_confirm_yes_label'), 'ENTER', retro_style.success),
-            (no_rect, t('quit_confirm_no_label'), 'ESC', retro_style.secondary),
+        for _rect, _label, _sub_label, _btn_color, _action in (
+            (yes_rect, t('quit_confirm_yes_label'), 'ENTER', retro_style.success, 'menu_confirm'),
+            (no_rect, t('quit_confirm_no_label'), 'ESC', retro_style.secondary, 'menu_back'),
         ):
             _hover = _rect.collidepoint(mouse_pos)
             _draw_rect = _rect.inflate(6, 4) if _hover else _rect
@@ -5017,7 +5037,16 @@ class Game:
             _btn_surf = _btn_font.render(_label, True, _txt_color)
             _sub_font = retro_style.get_font(self._sx(13, ui_scale, minimum=10), bold=False)
             _sub_color = (*_btn_color,) if _hover else (140, 155, 180)
-            _sub_surf = _sub_font.render(_sub_label, True, _sub_color)
+            _sub_surf = render_action_prompt_surface(
+                _action,
+                _sub_label,
+                _sub_font,
+                _sub_color,
+                max_width=_draw_rect.width - 28,
+                max_height=self._sx(18, ui_scale, minimum=12),
+            )
+            if _sub_surf is None:
+                _sub_surf = _sub_font.render(_sub_label, True, _sub_color)
             _gap_t = 3
             _total_h = _btn_surf.get_height() + _gap_t + _sub_surf.get_height()
             _ty = _draw_rect.centery - _total_h // 2
@@ -5540,6 +5569,11 @@ class Game:
             ('R', t('campaign_retry'), retro_style.primary, 'restart'),
             ('ESC', t('back_to_menu'), (200, 80, 80), 'menu'),
         ]
+        try:
+            gp_cfg = self.settings_manager.get_controls().get('gamepad', {}) if self.settings_manager else {}
+            restart_button_index = int(gp_cfg.get('restart', 3))
+        except Exception:
+            restart_button_index = 3
         button_width = (panel_rect.width - s(84)) // len(buttons)
         button_height = s(48)
         button_y = panel_rect.bottom - s(66)
@@ -5628,7 +5662,26 @@ class Game:
             key_color = color if not disabled else (120, 125, 145)
             if hovered and not disabled:
                 key_color = (min(255, key_color[0] + 28), min(255, key_color[1] + 28), min(255, key_color[2] + 28))
-            key_surf = btn_font_key.render(key, True, key_color)
+            if action == 'restart':
+                key_surf = render_button_index_prompt_surface(
+                    restart_button_index,
+                    key,
+                    btn_font_key,
+                    key_color,
+                    max_width=max(s(26), btn_font_key.size(key)[0] + s(10)),
+                    max_height=s(18, minimum=12),
+                )
+            else:
+                key_surf = render_action_prompt_surface(
+                    'menu_back',
+                    key,
+                    btn_font_key,
+                    key_color,
+                    max_width=max(s(26), btn_font_key.size(key)[0] + s(10)),
+                    max_height=s(18, minimum=12),
+                )
+            if key_surf is None:
+                key_surf = btn_font_key.render(key, True, key_color)
             self.screen.blit(key_surf, (draw_rect.x + s(16), draw_rect.y + s(8)))
             
             # Label

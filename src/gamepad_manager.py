@@ -885,6 +885,29 @@ class GamepadManager:
 
         return False
 
+    def get_action_button_indices(self, action: str) -> List[int]:
+        """Bir aksiyonun primary/secondary buton indekslerini döndür.
+
+        Trigger binding'leri pseudo index olarak döner:
+        - 100: left trigger
+        - 101: right trigger
+        """
+        binding = self._bindings.get(action, {})
+        if not binding:
+            return []
+
+        indices: List[int] = []
+        for trigger_dir in self._iter_trigger_dirs(binding):
+            pseudo_idx = 100 if trigger_dir == 'left' else 101
+            if pseudo_idx not in indices:
+                indices.append(pseudo_idx)
+
+        for btn in self._iter_button_indices(binding):
+            if btn not in indices:
+                indices.append(btn)
+
+        return indices
+
     def get_button_label(self, action: str, gp_type: str = None) -> str:
         """Bir aksiyon için kontrolcüye özgü buton etiketini döndür.
 

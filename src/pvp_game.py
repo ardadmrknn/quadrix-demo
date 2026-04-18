@@ -18,6 +18,8 @@ from themes import ThemeManager
 from block_styles import BlockStyleManager, TextureSlice, TextureRenderCache
 from platform_utils import create_display, get_display_flags, normalize_mouse_pos, get_mouse_pos, set_app_icon, resolve_frame_rate_cap
 from localization import t
+from gamepad_manager import is_gamepad_connected
+from promptfont_support import get_action_prompt_display, render_action_prompt_surface, render_button_index_prompt_surface, render_inline_action_text_surface
 from ui_scaling import get_projected_effective_scale
 from ui_theme import UIColors, UIFonts
 from effect_surface_cache import EffectSurfaceCache
@@ -1812,6 +1814,7 @@ class PvPGame:
         self._pause_option_rects = []
         self._pause_volume_rects = {}
         _pause_mouse_pos = get_mouse_pos()
+        sub_hint_font = retro_style.get_font(self._sx(16, ui_scale, minimum=10), bold=False)
 
         start_y = panel_rect.y + top_pad
         for i, option in enumerate(self.pause_menu_options):
@@ -1826,10 +1829,18 @@ class PvPGame:
 
             if option == 'resume':
                 color_code = retro_style.success
-                sub_text = 'ESC / P'
+                if is_gamepad_connected():
+                    gp_label = str(get_action_prompt_display('menu_back', 'ESC').get('text') or 'ESC')
+                    sub_text = render_inline_action_text_surface(f'{gp_label} / ESC / P', gp_label, 'menu_back', sub_hint_font, (160, 175, 200))
+                else:
+                    sub_text = 'ESC / P'
             elif option == 'main_menu':
                 color_code = retro_style.secondary
-                sub_text = 'BACKSPACE'
+                if is_gamepad_connected():
+                    gp_label = str(get_action_prompt_display('menu_confirm', 'ENTER').get('text') or 'ENTER')
+                    sub_text = render_inline_action_text_surface(f'{gp_label} / BACKSPACE', gp_label, 'menu_confirm', sub_hint_font, (160, 175, 200))
+                else:
+                    sub_text = 'BACKSPACE'
             elif option == 'music':
                 color_code = retro_style.primary
                 sub_text = t('on') if self.sound.music_enabled else t('off')
@@ -2094,12 +2105,25 @@ class PvPGame:
         
         # Mouse pozisyonu al (hover efekti için)
         mouse_pos = get_mouse_pos()
+        try:
+            gp_cfg = self.settings_manager.get_controls().get('gamepad', {}) if self.settings_manager else {}
+            restart_button_index = int(gp_cfg.get('restart', 3))
+        except Exception:
+            restart_button_index = 3
         
         # Yeniden oyna butonu
         restart_rect = pygame.Rect(panel_rect.centerx - button_width - button_gap // 2, button_y, button_width, button_height)
         restart_hover = restart_rect.collidepoint(mouse_pos)
+        restart_sub = render_button_index_prompt_surface(
+            restart_button_index,
+            'R',
+            retro_style.get_font(self._sx(16, ui_scale, minimum=10), bold=False),
+            (160, 175, 200),
+            max_width=self._sx(40, ui_scale, minimum=24),
+            max_height=self._sx(18, ui_scale, minimum=12),
+        )
         retro_style.draw_uniform_button(
-            self.screen, restart_rect, t('pvp_restart'), sub_text='R',
+            self.screen, restart_rect, t('pvp_restart'), sub_text=(restart_sub or 'R'),
             color_code=retro_style.success, selected=restart_hover
         )
         self._game_over_restart_rect = restart_rect
@@ -2107,8 +2131,16 @@ class PvPGame:
         # Menüye dön butonu
         menu_rect = pygame.Rect(panel_rect.centerx + button_gap // 2, button_y, button_width, button_height)
         menu_hover = menu_rect.collidepoint(mouse_pos)
+        menu_sub = render_action_prompt_surface(
+            'menu_back',
+            'ESC',
+            retro_style.get_font(self._sx(16, ui_scale, minimum=10), bold=False),
+            (160, 175, 200),
+            max_width=self._sx(46, ui_scale, minimum=24),
+            max_height=self._sx(18, ui_scale, minimum=12),
+        )
         retro_style.draw_uniform_button(
-            self.screen, menu_rect, t('main_menu'), sub_text='ESC',
+            self.screen, menu_rect, t('main_menu'), sub_text=(menu_sub or 'ESC'),
             color_code=retro_style.secondary, selected=menu_hover
         )
         self._game_over_menu_rect = menu_rect
@@ -3935,30 +3967,20 @@ class PvPGame:
         else:
             title_text = t('pvp_title_names')
         title_rect = retro_style.draw_title(self.screen, title_text, (width // 2, s(110)))
-
-        sub_font = retro_style.get_font(s(24, minimum=12), bold=False)
-        sub_color = UIColors.TEXT_SECONDARY
         
-        # Adıma göre focus color ve subtitle
+        # Adıma göre focus color
         if self.current_input == 1:
             focus_color = UIColors.NEON_CYAN
-            subtitle_text = t('pvp_subtitle_names')
         elif self.current_input == 2:
             focus_color = UIColors.NEON_MAGENTA
-            subtitle_text = t('pvp_subtitle_names')
         elif self.current_input == 3:
             focus_color = UIColors.NEON_ORANGE
-            subtitle_text = t('pvp_subtitle_mode')
         else:
             focus_color = UIColors.NEON_GOLD
-            subtitle_text = t('pvp_subtitle_duration')
-        
-        subtitle = sub_font.render(subtitle_text, True, sub_color)
-        self.screen.blit(subtitle, subtitle.get_rect(center=(width // 2, title_rect.bottom + s(28))))
 
         panel_w = min(s(900), width - s(160))
         panel_h = s(420) if self.current_input >= 3 else s(340)  # Mod seçimi için daha büyük panel
-        panel_rect = pygame.Rect(width // 2 - panel_w // 2, title_rect.bottom + s(60), panel_w, panel_h)
+        panel_rect = pygame.Rect(width // 2 - panel_w // 2, title_rect.bottom + s(32), panel_w, panel_h)
 
         # Ana UI temasına uygun glass panel
         retro_style.draw_glass_panel(self.screen, panel_rect, alpha=195, border_color=focus_color)

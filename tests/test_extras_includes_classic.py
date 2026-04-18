@@ -218,6 +218,17 @@ def test_classic_mode_in_items_base():
     assert 'Classic Mode' in ids, f"'Classic Mode' not in _items_base. Found: {ids}"
 
 
+def test_coop_campaign_not_in_items_base():
+    """Co-op Campaign kartı oyun modları UI listesinde görünmemeli."""
+    screen = _FakeSurface()
+    user_manager_mock = types.SimpleNamespace(get_mode_highscore=lambda *a, **kw: 0)
+
+    extras = ExtrasScreen(screen, user_manager=user_manager_mock)
+
+    ids = [item['id'] for item in extras._items_base]
+    assert 'coop_campaign' not in ids, f"'coop_campaign' unexpectedly in _items_base. Found: {ids}"
+
+
 def test_mode_id_to_stats_key_classic():
     """MODE_ID_TO_STATS_KEY['Classic Mode'] == 'classic'"""
     assert mod.ExtrasScreen.MODE_ID_TO_STATS_KEY.get('Classic Mode') == 'classic', (
