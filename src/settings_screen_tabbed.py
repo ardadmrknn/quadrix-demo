@@ -522,6 +522,7 @@ class TabbedSettingsScreen:
         self._single_player_bind_slot = 'primary'
         self._gamepad_bind_slot = 'primary'
         self._swallow_next_keydown = False
+        self._swallow_next_gamepad_click = False
         self._keybind_slot_rects: list[dict | None] = []
         self._help_icon_rects: list[tuple[pygame.Rect, str]] = []
 
@@ -1271,6 +1272,34 @@ class TabbedSettingsScreen:
         self._pending_keybind_item = item
         self._pending_keybind_slot = slot
 
+    def _should_swallow_post_capture_gamepad_click(self, button_index: int) -> bool:
+        try:
+            gpm = get_gamepad_manager()
+        except Exception:
+            return False
+
+        if getattr(gpm, 'get_context', lambda: None)() != getattr(gpm, 'CONTEXT_MENU', 'menu'):
+            return False
+        if not bool(getattr(gpm, '_menu_pointer_active', False)):
+            return False
+
+        try:
+            btn_index = int(button_index)
+        except Exception:
+            return False
+
+        if btn_index == 8:
+            return True
+
+        get_indices = getattr(gpm, 'get_action_button_indices', None)
+        if not callable(get_indices):
+            return False
+
+        try:
+            return btn_index in set(get_indices('menu_confirm'))
+        except Exception:
+            return False
+
     def _persist_controls(self) -> None:
         self.settings_manager.set('controls', self._control_config)
         self._control_config = self.settings_manager.get_controls()
@@ -1345,6 +1374,17 @@ class TabbedSettingsScreen:
                 return
 
         text = str(display.get('text', '—') or '—')
+        txt_font = self._fit_font(text, 20, slot_rect.width - s(12, minimum=8), bold=active, minimum=11)
+        txt_surf = txt_font.render(text, True, txt_color)
+        self.screen.blit(txt_surf, txt_surf.get_rect(center=slot_rect.center))
+
+    def _draw_text_binding_slot(self, slot_rect: pygame.Rect, text: str, active: bool) -> None:
+        s = self._s
+        bg = (32, 48, 80, 230) if active else (20, 30, 54, 200)
+        border = (90, 180, 255) if active else (55, 78, 112)
+        pygame.draw.rect(self.screen, bg, slot_rect, border_radius=s(8, minimum=6))
+        pygame.draw.rect(self.screen, border, slot_rect, 1, border_radius=s(8, minimum=6))
+        txt_color = (235, 245, 255) if active else (180, 205, 235)
         txt_font = self._fit_font(text, 20, slot_rect.width - s(12, minimum=8), bold=active, minimum=11)
         txt_surf = txt_font.render(text, True, txt_color)
         self.screen.blit(txt_surf, txt_surf.get_rect(center=slot_rect.center))
@@ -2014,6 +2054,14 @@ class TabbedSettingsScreen:
         if self._swallow_next_keydown and event.type == pygame.KEYDOWN:
             self._swallow_next_keydown = False
             return None
+        if (
+            self._swallow_next_gamepad_click
+            and event.type == pygame.MOUSEBUTTONDOWN
+            and getattr(event, 'from_gamepad', False)
+            and getattr(event, 'button', None) == 1
+        ):
+            self._swallow_next_gamepad_click = False
+            return None
 
         if self._campaign_phase_select_active:
             return self._handle_campaign_phase_select_input(event)
@@ -2036,6 +2084,7 @@ class TabbedSettingsScreen:
                     return None
                 button_index = normalize_gamepad_event_button(event)
                 if button_index is not None:
+                    self._swallow_next_gamepad_click = self._should_swallow_post_capture_gamepad_click(button_index)
                     self._apply_captured_gamepad_button(button_index)
                     self._waiting_for_key = False
                     self._pending_keybind_item = None
@@ -2044,6 +2093,7 @@ class TabbedSettingsScreen:
                     return None
                 trigger_index = normalize_gamepad_trigger_event(event)
                 if trigger_index is not None:
+                    self._swallow_next_gamepad_click = False
                     self._apply_captured_gamepad_button(trigger_index)
                     self._waiting_for_key = False
                     self._pending_keybind_item = None
@@ -2125,6 +2175,12 @@ class TabbedSettingsScreen:
 
             # Sol / Sağ / Enter / Space - ayar değiştir
             if event.key in (pygame.K_LEFT, pygame.K_RIGHT, pygame.K_RETURN, pygame.K_SPACE):
+                if getattr(event, 'from_gamepad', False) and event.key in (pygame.K_LEFT, pygame.K_RIGHT):
+                    item_idx = self._selectable_indices[self.selected] if self.selected < len(self._selectable_indices) else -1
+                    if item_idx >= 0:
+                        item = self._tab_items[item_idx]
+                        if self._should_ignore_gamepad_direction_for_item(item, event.key):
+                            return None
                 return self._handle_setting_action(event.key)
 
             if event.key in (pygame.K_DELETE, pygame.K_BACKSPACE):
@@ -2265,6 +2321,13 @@ class TabbedSettingsScreen:
                                         return None
                                 self._start_keybind_capture(item, slot=self._gamepad_bind_slot)
                                 return None
+                            slot_rects = self._keybind_slot_rects[i] if i < len(self._keybind_slot_rects) else None
+                            if isinstance(slot_rects, dict):
+                                primary_rect = slot_rects.get('primary')
+                                if primary_rect is None or not primary_rect.collidepoint(pos):
+                                    return None
+                            self._start_keybind_capture(item, slot='primary')
+                            return None
                     itype_local = item.get('type', '') if i < len(self._selectable_indices) else ''
                     if itype_local in ('selector', 'music_selector'):
                         srects = self._keybind_slot_rects[i] if i < len(self._keybind_slot_rects) else None
@@ -2363,11 +2426,18 @@ class TabbedSettingsScreen:
                     self._start_keybind_capture(item, slot=self._gamepad_bind_slot)
                 return None
 
-            if key_code in (pygame.K_RETURN, pygame.K_SPACE, pygame.K_LEFT, pygame.K_RIGHT):
+            if key_code in (pygame.K_RETURN, pygame.K_SPACE):
                 self._start_keybind_capture(item, slot='primary')
             return None
 
         return None
+
+    def _should_ignore_gamepad_direction_for_item(self, item: dict, key_code: int) -> bool:
+        if key_code not in (pygame.K_LEFT, pygame.K_RIGHT):
+            return False
+        if item.get('type') != 'keybind':
+            return False
+        return item.get('section') not in ('single_player', 'gamepad')
 
     def _ensure_visible(self) -> None:
         """Seçili öğenin görünür olmasını sağla."""
@@ -3113,20 +3183,30 @@ class TabbedSettingsScreen:
                 is_primary_active = self._pending_keybind_slot != 'secondary'
                 is_secondary_active = self._pending_keybind_slot == 'secondary'
 
-            def _draw_slot(slot_rect: pygame.Rect, text: str, active: bool) -> None:
-                bg = (32, 48, 80, 230) if active else (20, 30, 54, 200)
-                border = (90, 180, 255) if active else (55, 78, 112)
-                pygame.draw.rect(self.screen, bg, slot_rect, border_radius=s(8, minimum=6))
-                pygame.draw.rect(self.screen, border, slot_rect, 1, border_radius=s(8, minimum=6))
-                txt_color = (235, 245, 255) if active else (180, 205, 235)
-                txt_font = self._fit_font(text, 20, slot_rect.width - s(12, minimum=8), bold=active, minimum=11)
-                txt_surf = txt_font.render(text, True, txt_color)
-                self.screen.blit(txt_surf, txt_surf.get_rect(center=slot_rect.center))
-
-            _draw_slot(primary_rect, primary_text, is_primary_active)
-            _draw_slot(secondary_rect, secondary_text, is_secondary_active)
+            self._draw_text_binding_slot(primary_rect, primary_text, is_primary_active)
+            self._draw_text_binding_slot(secondary_rect, secondary_text, is_secondary_active)
 
             return {'primary': primary_rect, 'secondary': secondary_rect}
+
+        if item.get('type') == 'keybind' and item.get('section') in ('pvp.player1', 'pvp.player2'):
+            action_key = item.get('action_key')
+            if item.get('section') == 'pvp.player1':
+                value = self._control_config.get('pvp', {}).get('player1', {}).get(action_key, '')
+            else:
+                value = self._control_config.get('pvp', {}).get('player2', {}).get(action_key, '')
+
+            key_text = str(value or '').upper() or '—'
+            if self._waiting_for_key and self._pending_keybind_item == item:
+                key_text = t('press_key')
+
+            panel_h = max(s(30, minimum=24), rect.height - s(18, minimum=12))
+            slot_w = max(s(90, minimum=72), min(s(165, minimum=118), int(rect.width * 0.23)))
+            right_margin = s(24, minimum=16)
+            primary_rect = pygame.Rect(rect.right - right_margin - slot_w, rect.centery - panel_h // 2, slot_w, panel_h)
+
+            is_active = selected or (self._waiting_for_key and self._pending_keybind_item == item)
+            self._draw_text_binding_slot(primary_rect, key_text, is_active)
+            return {'primary': primary_rect}
 
         if item.get('type') == 'keybind' and item.get('section') == 'gamepad':
             action_key = item.get('action_key')

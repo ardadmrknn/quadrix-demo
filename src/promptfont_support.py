@@ -265,6 +265,9 @@ def get_button_index_prompt_display(
     except Exception:
         return {'mode': 'text', 'glyph': None, 'text': text}
 
+    if button_index < 0:
+        return {'mode': 'text', 'glyph': None, 'text': text}
+
     if manager is not None:
         try:
             label = manager.get_button_index_label(button_index, resolved_type)
@@ -313,7 +316,7 @@ def get_action_prompt_display(
         except Exception:
             button_indices = []
 
-    if button_indices:
+    if len(button_indices) == 1:
         glyph = get_gamepad_prompt_glyph(button_indices[0], resolved_type)
         if glyph:
             return {'mode': 'glyph', 'glyph': glyph, 'text': text}

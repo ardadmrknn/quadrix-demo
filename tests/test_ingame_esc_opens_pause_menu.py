@@ -215,6 +215,57 @@ def test_pvp_focus_loss_pauses_gameplay(monkeypatch):
     assert pvp.pause_menu_selected == 0
 
 
+def _make_pvp_layout_instance(size=(1920, 1080), stale_size=(640, 360)):
+    pvp = pvp_module.PvPGame.__new__(pvp_module.PvPGame)
+    pvp.screen = pvp_module.pygame.Surface(size, pvp_module.pygame.SRCALPHA)
+    pvp.window_width, pvp.window_height = stale_size
+    pvp._layout_key = None
+    pvp._board_grid_cache = {'key': 'stale', 'surface': object()}
+    pvp._locked_board_cache = {
+        1: {'dirty': False},
+        2: {'dirty': False},
+    }
+    pvp._base_header_height = 64
+    pvp._base_header_top = 28
+    pvp._base_board_gap = 24
+    pvp._base_preview_panel_width = 126
+    pvp._base_preview_panel_gap = 12
+    pvp._base_center_panel_width = 120
+    pvp._base_center_panel_gap = 18
+    pvp._ui_scale = lambda min_scale=0.72, max_scale=1.20: 1.0
+    return pvp
+
+
+def test_pvp_layout_uses_active_surface_size_and_invalidates_caches():
+    pvp = _make_pvp_layout_instance()
+
+    pvp.calculate_board_positions()
+
+    board_width = pvp_module.BOARD_WIDTH * pvp.cell_size
+    assert (pvp.window_width, pvp.window_height) == (1920, 1080)
+    assert pvp.p1_offset_x == pvp.p1_preview_x + pvp.preview_panel_width + pvp.preview_panel_gap
+    assert pvp.center_panel_x == pvp.p1_offset_x + board_width + pvp.center_panel_gap
+    assert pvp.p2_offset_x == pvp.center_panel_x + pvp.center_panel_width + pvp.center_panel_gap
+    assert pvp.p2_preview_x == pvp.p2_offset_x + board_width + pvp.preview_panel_gap
+    assert pvp._board_grid_cache['key'] is None
+    assert pvp._board_grid_cache['surface'] is None
+    assert pvp._locked_board_cache[1]['dirty'] is True
+    assert pvp._locked_board_cache[2]['dirty'] is True
+
+
+def test_pvp_layout_keeps_preview_and_boards_inside_small_surface():
+    pvp = _make_pvp_layout_instance(size=(800, 600), stale_size=(1600, 900))
+
+    pvp.calculate_board_positions()
+
+    right_edge = pvp.p2_preview_x + pvp.preview_panel_width
+    assert right_edge <= 800
+    assert pvp.p1_preview_x >= 0
+    assert pvp.header_top >= 0
+    assert pvp.board_top >= pvp.header_top + pvp.header_height
+    assert pvp.cell_size >= 14
+
+
 # ---------------------------------------------------------------------------
 # HardcoreGame K_p → pause_menu_selected sıfırlama
 # ---------------------------------------------------------------------------

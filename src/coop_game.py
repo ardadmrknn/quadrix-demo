@@ -3225,15 +3225,17 @@ class CoopGame:
 
             if opt == 'resume':
                 color_code = retro_style.success if hasattr(retro_style, 'success') else (60, 200, 120)
-                if is_gamepad_connected():
-                    gp_label = str(get_action_prompt_display('menu_back', 'ESC').get('text') or 'ESC')
+                menu_back_display = get_action_prompt_display('menu_back', 'ESC')
+                if menu_back_display.get('mode') == 'glyph':
+                    gp_label = str(menu_back_display.get('text') or 'ESC')
                     sub_text = render_inline_action_text_surface(f'{gp_label} / ESC / P', gp_label, 'menu_back', sub_hint_font, (160, 175, 200))
                 else:
                     sub_text = 'ESC / P'
             elif opt == 'main_menu':
                 color_code = retro_style.secondary
-                if is_gamepad_connected():
-                    gp_label = str(get_action_prompt_display('menu_confirm', 'ENTER').get('text') or 'ENTER')
+                menu_confirm_display = get_action_prompt_display('menu_confirm', 'ENTER')
+                if menu_confirm_display.get('mode') == 'glyph':
+                    gp_label = str(menu_confirm_display.get('text') or 'ENTER')
                     sub_text = render_inline_action_text_surface(f'{gp_label} / BACKSPACE', gp_label, 'menu_confirm', sub_hint_font, (160, 175, 200))
                 else:
                     sub_text = 'BACKSPACE'
@@ -3553,14 +3555,8 @@ class CoopGame:
             self.screen.blit(surf, (surf_x, current_y))
             current_y += line_h
 
-        try:
-            gp_cfg = self.settings_manager.get_controls().get('gamepad', {}) if self.settings_manager else {}
-            restart_button_index = int(gp_cfg.get('restart', 3))
-        except Exception:
-            restart_button_index = 3
-
-        restart_sub = render_button_index_prompt_surface(
-            restart_button_index,
+        restart_sub = render_action_prompt_surface(
+            'restart',
             'R',
             retro_style.get_font(self._sx(16, ui, minimum=10), bold=False),
             (160, 175, 200),

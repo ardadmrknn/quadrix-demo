@@ -2444,15 +2444,17 @@ class Game:
 
             if option == 'Devam Et':
                 color_code = retro_style.success
-                if is_gamepad_connected():
-                    gp_label = str(get_action_prompt_display('menu_back', 'ESC').get('text') or 'ESC')
+                menu_back_display = get_action_prompt_display('menu_back', 'ESC')
+                if menu_back_display.get('mode') == 'glyph':
+                    gp_label = str(menu_back_display.get('text') or 'ESC')
                     sub_text = render_inline_action_text_surface(f'{gp_label} / ESC / P', gp_label, 'menu_back', sub_hint_font, (160, 175, 200))
                 else:
                     sub_text = 'ESC / P'
             elif option == 'Ana Menü':
                 color_code = retro_style.secondary
-                if is_gamepad_connected():
-                    gp_label = str(get_action_prompt_display('menu_confirm', 'ENTER').get('text') or 'ENTER')
+                menu_confirm_display = get_action_prompt_display('menu_confirm', 'ENTER')
+                if menu_confirm_display.get('mode') == 'glyph':
+                    gp_label = str(menu_confirm_display.get('text') or 'ENTER')
                     sub_text = render_inline_action_text_surface(f'{gp_label} / BACKSPACE', gp_label, 'menu_confirm', sub_hint_font, (160, 175, 200))
                 else:
                     sub_text = 'BACKSPACE'
@@ -5569,11 +5571,6 @@ class Game:
             ('R', t('campaign_retry'), retro_style.primary, 'restart'),
             ('ESC', t('back_to_menu'), (200, 80, 80), 'menu'),
         ]
-        try:
-            gp_cfg = self.settings_manager.get_controls().get('gamepad', {}) if self.settings_manager else {}
-            restart_button_index = int(gp_cfg.get('restart', 3))
-        except Exception:
-            restart_button_index = 3
         button_width = (panel_rect.width - s(84)) // len(buttons)
         button_height = s(48)
         button_y = panel_rect.bottom - s(66)
@@ -5663,8 +5660,8 @@ class Game:
             if hovered and not disabled:
                 key_color = (min(255, key_color[0] + 28), min(255, key_color[1] + 28), min(255, key_color[2] + 28))
             if action == 'restart':
-                key_surf = render_button_index_prompt_surface(
-                    restart_button_index,
+                key_surf = render_action_prompt_surface(
+                    'restart',
                     key,
                     btn_font_key,
                     key_color,

@@ -444,7 +444,8 @@ class PvPGame:
         
         # Oyun alanı pozisyonları (parçacıklar için)
         self.cell_size = 50
-        self.center_panel_width = 320
+        self._base_center_panel_width = 120
+        self.center_panel_width = 120
         self._base_header_height = 64
         self.header_height = 64
         self._base_header_top = 28
@@ -452,6 +453,15 @@ class PvPGame:
         self.board_top = 120
         self._base_board_gap = 24
         self.board_gap = 24
+        self._base_preview_panel_width = 126
+        self.preview_panel_width = 126
+        self._base_preview_panel_gap = 12
+        self.preview_panel_gap = 12
+        self._base_center_panel_gap = 18
+        self.center_panel_gap = 18
+        self.p1_preview_x = 0
+        self.p2_preview_x = 0
+        self.center_panel_x = 0
         self._layout_key = None
         self._board_grid_cache = {'key': None, 'surface': None}
 
@@ -863,10 +873,10 @@ class PvPGame:
             self.sound.set_music_playlist([track_key], loop=True, autoplay=True, force=True)
             self.current_music_track = track_key
 
-    def _get_vs_panel_surface(self, panel_width=None):
+    def _get_vs_panel_surface(self, panel_width=None, panel_height=None):
         """Return (and rebuild if needed) the cached VS panel surface."""
-        target_width = panel_width if panel_width else min(400, max(280, self.window_width // 3))
-        target_height = 180  # Daha kompakt panel
+        target_width = int(panel_width if panel_width else min(self._sx(160), max(self._sx(96), self.window_width // 6)))
+        target_height = int(panel_height if panel_height else self._sx(220))
         needs_rebuild = (
             self._vs_panel_surface is None
             or self._vs_panel_surface.get_width() != target_width
@@ -881,54 +891,27 @@ class PvPGame:
         return self._vs_panel_surface
 
     def _render_vs_panel(self, surface: pygame.Surface) -> None:
-        """Draw the neon VS centerpiece once onto the provided surface."""
-        skin = self.mode_skin
+        """Draw the shared center HUD panel in online PvP visual style."""
         rect = surface.get_rect()
         surface.fill((0, 0, 0, 0))
 
-        pygame.draw.rect(surface, skin.panel_bg, rect, border_radius=15)
-        pygame.draw.rect(surface, skin.panel_border, rect, 3, border_radius=15)
+        retro_style.draw_glass_panel(
+            surface,
+            rect,
+            alpha=150,
+            border_color=UIColors.NEON_MAGENTA,
+            glow=True,
+        )
+        pygame.draw.rect(surface, (*UIColors.NEON_MAGENTA[:3], 96), rect, 2, border_radius=14)
 
-        glow = pygame.Surface(rect.size, pygame.SRCALPHA)
-        pygame.draw.rect(glow, (*skin.accent, 24), rect.inflate(-12, -12), border_radius=12)
-        surface.blit(glow, (0, 0))
-
-        # Oyuncu isimleri ve VS - yan yana: OYUNCU1 VS OYUNCU2
-        name_font = self.font_medium
-        p1_label = (self.player1_name or t('pvp_player1')).upper()
-        p2_label = (self.player2_name or t('pvp_player2')).upper()
-        
-        # VS yazısı
-        vs_font = UIFonts.get(60)
-        vs_text = vs_font.render('VS', True, skin.accent)
-        vs_shadow = vs_font.render('VS', True, (10, 10, 10))
-        
-        # İsimleri render et
-        p1_text = name_font.render(p1_label, True, CYAN)
-        p2_text = name_font.render(p2_label, True, MAGENTA)
-        
-        # Pozisyonları hesapla - ortada VS, solda P1, sağda P2
-        center_y = rect.centery - 15
-        vs_rect = vs_text.get_rect(center=(rect.centerx, center_y))
-        
-        # Oyuncu 1 - VS'nin solunda
-        p1_rect = p1_text.get_rect(midright=(vs_rect.left - 15, center_y))
-        # Oyuncu 2 - VS'nin sağında  
-        p2_rect = p2_text.get_rect(midleft=(vs_rect.right + 15, center_y))
-        
-        # Çiz
-        surface.blit(vs_shadow, vs_rect.move(2, 2))
-        surface.blit(vs_text, vs_rect)
-        surface.blit(p1_text, p1_rect)
-        surface.blit(p2_text, p2_rect)
-
-        # Kontrol bilgileri
-        info_font = self.font_small
+        sc = self._ui_scale()
+        s = lambda v, minimum=1: self._sx(v, sc, minimum)
+        info_font = retro_style.get_font(s(14, minimum=10), bold=False)
         pause_label = self._key_label(self.pvp_controls['pause'])
-        hint = info_font.render(f'{pause_label}: {t("pvp_pause_hint")}  •  ESC: {t("pvp_pause_hint")}', True, skin.text_color)
-        surface.blit(hint, hint.get_rect(center=(rect.centerx, rect.centery + 40)))
+        hint_text = f'{pause_label} / ESC  •  {t("pvp_pause_hint")}'
+        hint = info_font.render(hint_text, True, retro_style.text_secondary)
+        surface.blit(hint, hint.get_rect(centerx=rect.centerx, bottom=rect.bottom - s(18)))
 
-        # Match timer - süreli modda geri sayım, süresiz modda geçen süre
         if self.match_mode == 'timed':
             remaining_ms = max(0, int(self.match_duration_ms) - int(getattr(self, 'match_elapsed_ms', 0) or 0))
             total_seconds = remaining_ms // 1000
@@ -936,87 +919,104 @@ class PvPGame:
             ss = total_seconds % 60
             timer_label = f"{t('time_left')}: {mm}:{ss:02d}"
         else:
-            # Süresiz mod - geçen süreyi göster
             elapsed_ms = int(getattr(self, 'match_elapsed_ms', 0) or 0)
             total_seconds = elapsed_ms // 1000
             mm = total_seconds // 60
             ss = total_seconds % 60
             timer_label = f"{t('time')}: {mm}:{ss:02d} ∞"
-        timer = info_font.render(timer_label, True, skin.text_color)
-        surface.blit(timer, timer.get_rect(center=(rect.centerx, rect.centery + 70)))
+        timer = info_font.render(timer_label, True, retro_style.text_primary)
+        timer_rect = timer.get_rect(centerx=rect.centerx, top=s(20))
+        surface.blit(timer, timer_rect)
+
+        badge_font = retro_style.get_font(s(12, minimum=9), bold=True)
+        footer_text = t('pvp_match_mode') if self.match_mode == 'timed' else t('time')
+        footer = badge_font.render(footer_text, True, retro_style.text_muted)
+        surface.blit(footer, footer.get_rect(centerx=rect.centerx, top=timer_rect.bottom + s(10)))
+
+        vs_font = retro_style.get_font(s(44, minimum=24), bold=True)
+        vs_text = vs_font.render('VS', True, UIColors.NEON_MAGENTA)
+        for glow_offset in (3, 2, 1):
+            glow_surf = pygame.Surface(vs_text.get_size(), pygame.SRCALPHA)
+            glow_surf.fill((*UIColors.NEON_MAGENTA[:3], 20))
+            glow_surf.blit(vs_text, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+            surface.blit(glow_surf, glow_surf.get_rect(center=(rect.centerx + glow_offset, rect.centery + glow_offset)))
+        surface.blit(vs_text, vs_text.get_rect(center=rect.center))
     
     def calculate_board_positions(self):
         """Oyun tahtalarının ekran pozisyonlarını hesapla"""
-        key = (int(self.window_width), int(self.window_height))
+        active_surface = getattr(self, 'screen', None)
+        if active_surface is not None:
+            width = int(active_surface.get_width())
+            height = int(active_surface.get_height())
+        else:
+            width = int(getattr(self, 'window_width', 0) or 0)
+            height = int(getattr(self, 'window_height', 0) or 0)
+
+        key = (width, height)
         if self._layout_key == key:
             return
 
         self._layout_key = key
-        width, height = key
+        self.window_width = width
+        self.window_height = height
 
-        # HiDPI/Retina: fiziksel piksel → mantıksal piksel oranını hesapla
-        _pr = 1.0
-        try:
-            from platform_utils import get_effective_ui_size
-            eff_w, eff_h = get_effective_ui_size(self.screen)
-            if eff_w > 0 and eff_h > 0:
-                _pr = max(1.0, min(width / float(eff_w), height / float(eff_h)))
-        except Exception:
-            pass
+        sc = self._ui_scale()
+        s = lambda v, minimum=1: self._sx(v, sc, minimum)
 
-        def _p(val):
-            """Hardcoded piksel değerlerini pixel_ratio ile ölçekle."""
-            return int(round(val * _pr))
+        outer_margin = s(12)
+        header_height = s(int(getattr(self, '_base_header_height', 64) or 64))
+        preview_panel_width = s(int(getattr(self, '_base_preview_panel_width', 126) or 126))
+        preview_panel_gap = s(int(getattr(self, '_base_preview_panel_gap', 12) or 12))
+        center_panel_width = s(int(getattr(self, '_base_center_panel_width', 120) or 120))
+        center_panel_gap = s(int(getattr(self, '_base_center_panel_gap', 18) or 18))
 
-        # Minimal ve simetrik: iki board + ortada VS panel, her şey pencereye sığacak şekilde ölçeklenir.
-        outer_margin = _p(24)
-        header_height = _p(int(getattr(self, '_base_header_height', 64) or 64))
-        header_top = _p(int(getattr(self, '_base_header_top', 28) or 28))
-        board_gap = _p(int(getattr(self, '_base_board_gap', 24) or 24))
-
-        # Board alanları, üst oyuncu kartlarının hemen altına hizalansın.
-        board_top = header_top + header_height + _p(24) - _p(25)
-
-        # Yüksekliğe göre cell_size
-        bottom_margin = _p(60)
-        available_h = max(200, height - board_top - bottom_margin)
+        available_h = max(s(240), height - s(16) - s(28) - header_height - s(12))
         cell_by_h = available_h // BOARD_HEIGHT
 
-        # Genişliğe göre cell_size (VS paneli dahil)
-        target_center = min(_p(420), max(_p(260), width // 5))
-        available_w = max(200, width - 2 * outer_margin - target_center - 2 * board_gap)
+        fixed_width = (
+            outer_margin * 2
+            + preview_panel_width * 2
+            + preview_panel_gap * 2
+            + center_panel_width
+            + center_panel_gap * 2
+        )
+        available_w = max(s(280), width - fixed_width)
         cell_by_w = available_w // (2 * BOARD_WIDTH)
 
-        max_cell = _p(50)
-        cell_size = int(min(max_cell, cell_by_h, cell_by_w))
-        cell_size = int(max(_p(20), cell_size))
+        cell_size = int(min(s(36), cell_by_h, cell_by_w))
+        cell_size = int(max(s(14), cell_size))
 
         board_width = BOARD_WIDTH * cell_size
         board_height = BOARD_HEIGHT * cell_size
 
-        # Ortadaki panel genişliği: kalan boşluğa göre ayarla
-        remaining = width - (2 * board_width) - 2 * board_gap
-        center_panel_width = int(min(_p(420), max(_p(240), remaining)))
-        # Çok sıkışık durumlarda paneli küçült
-        if remaining < _p(240):
-            center_panel_width = int(max(_p(200), remaining))
-        # Yine de minimum boşluk bırak
-        if width - (2 * board_width + center_panel_width + 2 * board_gap) < 2 * outer_margin:
-            center_panel_width = int(max(_p(200), width - 2 * outer_margin - 2 * board_width - 2 * board_gap))
-
-        total_w = 2 * board_width + center_panel_width + 2 * board_gap
+        total_w = (
+            preview_panel_width * 2
+            + preview_panel_gap * 2
+            + center_panel_width
+            + center_panel_gap * 2
+            + board_width * 2
+        )
         start_x = (width - total_w) // 2
         start_x = int(max(outer_margin, start_x))
 
+        header_top = max(s(16), (height - board_height - header_height - s(44)) // 2)
+        board_top = header_top + header_height + s(10)
+
         self.cell_size = cell_size
+        self.preview_panel_width = preview_panel_width
+        self.preview_panel_gap = preview_panel_gap
         self.center_panel_width = center_panel_width
+        self.center_panel_gap = center_panel_gap
         self.header_height = header_height
         self.header_top = header_top
         self.board_top = board_top
-        self.board_gap = board_gap
+        self.board_gap = center_panel_gap
 
-        self.p1_offset_x = start_x
-        self.p2_offset_x = start_x + board_width + board_gap + center_panel_width + board_gap
+        self.p1_preview_x = start_x
+        self.p1_offset_x = start_x + preview_panel_width + preview_panel_gap
+        self.center_panel_x = self.p1_offset_x + board_width + center_panel_gap
+        self.p2_offset_x = self.center_panel_x + center_panel_width + center_panel_gap
+        self.p2_preview_x = self.p2_offset_x + board_width + preview_panel_gap
         self.p1_offset_y = board_top
         self.p2_offset_y = board_top
 
@@ -1082,29 +1082,124 @@ class PvPGame:
 
     def _draw_player_header(self, rect: pygame.Rect, name: str, accent_color, score: int, lines: int, controls_label: str):
         skin = self.mode_skin
-        # Glass panel (ana UI ile uyumlu)
-        retro_style.draw_glass_panel(self.screen, rect, alpha=190, border_color=accent_color)
-        pygame.draw.rect(self.screen, (*accent_color[:3], 120), rect, 2, border_radius=16)
+        sc = self._ui_scale()
+        s = lambda v, minimum=1: self._sx(v, sc, minimum)
 
-        # Accent underline
-        underline = pygame.Rect(rect.x + 14, rect.bottom - 6, rect.width - 28, 3)
+        retro_style.draw_glass_panel(self.screen, rect, alpha=190, border_color=accent_color)
+        pygame.draw.rect(self.screen, (*accent_color[:3], 120), rect, 2, border_radius=12)
+
+        underline = pygame.Rect(rect.x + s(14), rect.bottom - s(5), rect.width - s(28), s(3))
         pygame.draw.rect(self.screen, accent_color, underline, border_radius=2)
 
-        title = self.font_medium.render(name, True, accent_color)
-        title_rect = title.get_rect(midleft=(rect.x + 16, rect.centery - 10))
+        title_font = retro_style.get_fitting_font(name, s(22, minimum=14), rect.width - s(120))
+        title = title_font.render(name, True, accent_color)
+        title_rect = title.get_rect(midleft=(rect.x + s(16), rect.centery - s(8, minimum=0)))
         self.screen.blit(title, title_rect)
 
-        # Sağ tarafta kompakt skor/satır
         info_color = skin.text_color
-        score_s = self.font_small.render(f'{t("pvp_score")} {score:,}'.replace(',', '.'), True, info_color)
-        lines_s = self.font_small.render(f'{t("pvp_lines")} {lines}', True, info_color)
-        self.screen.blit(score_s, score_s.get_rect(midright=(rect.right - 16, rect.centery - 12)))
-        self.screen.blit(lines_s, lines_s.get_rect(midright=(rect.right - 16, rect.centery + 12)))
+        info_font = retro_style.get_font(s(14, minimum=10), bold=False)
+        score_s = info_font.render(f'{t("pvp_score")} {score:,}'.replace(',', '.'), True, info_color)
+        lines_s = info_font.render(f'{t("pvp_lines")} {lines}', True, info_color)
+        self.screen.blit(score_s, score_s.get_rect(midright=(rect.right - s(16), rect.centery - s(10, minimum=0))))
+        self.screen.blit(lines_s, lines_s.get_rect(midright=(rect.right - s(16), rect.centery + s(10, minimum=0))))
 
-        # Kontrol etiketi (minimal)
         ctrl_color = tuple(int(c * 0.75) for c in skin.text_color[:3])
-        ctrl = self.font_small.render(controls_label, True, ctrl_color)
-        self.screen.blit(ctrl, ctrl.get_rect(bottomleft=(rect.x + 16, rect.bottom - 10)))
+        ctrl_font = retro_style.get_font(s(12, minimum=9), bold=False)
+        ctrl = ctrl_font.render(controls_label, True, ctrl_color)
+        self.screen.blit(ctrl, ctrl.get_rect(bottomleft=(rect.x + s(16), rect.bottom - s(8))))
+
+    def _draw_preview_piece(self, piece, preview_rect: pygame.Rect):
+        if piece is None:
+            return
+
+        shape = piece.get_shape() if hasattr(piece, 'get_shape') else getattr(piece, 'shape', None)
+        if not shape:
+            return
+
+        rows = len(shape)
+        cols = max((len(row) for row in shape), default=0)
+        if rows <= 0 or cols <= 0:
+            return
+
+        padding = max(4, min(preview_rect.width, preview_rect.height) // 10)
+        available_w = max(1, preview_rect.width - padding * 2)
+        available_h = max(1, preview_rect.height - padding * 2)
+        max_cell = max(6, getattr(self, 'cell_size', 20) - 4)
+        cell = max(6, min(available_w // cols, available_h // rows, max_cell))
+        origin_x = preview_rect.x + (preview_rect.width - cols * cell) // 2
+        origin_y = preview_rect.y + (preview_rect.height - rows * cell) // 2
+
+        texture_surface = getattr(piece, 'texture_surface', None)
+        rotation = getattr(piece, 'rotation_state', 0)
+        color_matrix = getattr(piece, 'color_matrix', None)
+
+        for row_i, row in enumerate(shape):
+            for col_i, value in enumerate(row):
+                if not value:
+                    continue
+                draw_color = piece.color[:3] if isinstance(piece.color, (list, tuple)) else piece.color
+                if color_matrix is not None:
+                    try:
+                        matrix_color = color_matrix[row_i][col_i]
+                        if matrix_color is not None:
+                            draw_color = matrix_color[:3]
+                    except Exception:
+                        pass
+                slice_info = None
+                if texture_surface is not None:
+                    slice_info = TextureSlice(
+                        piece.name,
+                        rel_x=col_i,
+                        rel_y=row_i,
+                        width=cols,
+                        height=rows,
+                        rotation=rotation,
+                    )
+                self.draw_textured_block(
+                    origin_x + col_i * cell + 1,
+                    origin_y + row_i * cell + 1,
+                    max(4, cell - 2),
+                    draw_color,
+                    texture_surface,
+                    slice_info,
+                )
+
+    def _draw_preview_panel(self, rect: pygame.Rect, accent_color, next_piece, footer_label: str):
+        sc = self._ui_scale()
+        s = lambda v, minimum=1: self._sx(v, sc, minimum)
+
+        retro_style.draw_glass_panel(self.screen, rect, alpha=150, border_color=accent_color)
+        pygame.draw.rect(self.screen, (*accent_color[:3], 110), rect, 2, border_radius=12)
+
+        title_font = retro_style.get_font(s(15, minimum=10), bold=True)
+        title = title_font.render(t('next', 'Sonraki').upper(), True, accent_color)
+        self.screen.blit(title, title.get_rect(centerx=rect.centerx, top=rect.y + s(12)))
+
+        preview_height = min(rect.height - s(94), s(172))
+        preview_height = max(s(96), preview_height)
+        preview_rect = pygame.Rect(
+            rect.x + s(12),
+            rect.y + max(s(38), (rect.height - preview_height) // 2 - s(8)),
+            rect.width - s(24),
+            preview_height,
+        )
+        inner_surface = self._effect_surface_cache.get_filled_surface(
+            (preview_rect.width, preview_rect.height),
+            (12, 16, 28, 196),
+        )
+        self.screen.blit(inner_surface, preview_rect.topleft)
+        pygame.draw.rect(self.screen, (*accent_color[:3], 72), preview_rect, 1, border_radius=s(10))
+
+        if next_piece is not None:
+            self._draw_preview_piece(next_piece, preview_rect)
+        else:
+            empty_font = retro_style.get_font(s(22, minimum=14), bold=True)
+            empty = empty_font.render('—', True, retro_style.text_muted)
+            self.screen.blit(empty, empty.get_rect(center=preview_rect.center))
+
+        footer_font = retro_style.get_font(s(12, minimum=9), bold=False)
+        footer = footer_font.render(footer_label, True, tuple(int(c * 0.7) for c in accent_color[:3]))
+        self.screen.blit(footer, footer.get_rect(centerx=rect.centerx, bottom=rect.bottom - s(12)))
     
     def load_background_image(self):
         """Arka plan resmini yükle"""
@@ -1829,15 +1924,17 @@ class PvPGame:
 
             if option == 'resume':
                 color_code = retro_style.success
-                if is_gamepad_connected():
-                    gp_label = str(get_action_prompt_display('menu_back', 'ESC').get('text') or 'ESC')
+                menu_back_display = get_action_prompt_display('menu_back', 'ESC')
+                if menu_back_display.get('mode') == 'glyph':
+                    gp_label = str(menu_back_display.get('text') or 'ESC')
                     sub_text = render_inline_action_text_surface(f'{gp_label} / ESC / P', gp_label, 'menu_back', sub_hint_font, (160, 175, 200))
                 else:
                     sub_text = 'ESC / P'
             elif option == 'main_menu':
                 color_code = retro_style.secondary
-                if is_gamepad_connected():
-                    gp_label = str(get_action_prompt_display('menu_confirm', 'ENTER').get('text') or 'ENTER')
+                menu_confirm_display = get_action_prompt_display('menu_confirm', 'ENTER')
+                if menu_confirm_display.get('mode') == 'glyph':
+                    gp_label = str(menu_confirm_display.get('text') or 'ENTER')
                     sub_text = render_inline_action_text_surface(f'{gp_label} / BACKSPACE', gp_label, 'menu_confirm', sub_hint_font, (160, 175, 200))
                 else:
                     sub_text = 'BACKSPACE'
@@ -1897,28 +1994,22 @@ class PvPGame:
         self.screen.blit(hint_surf, hint_surf.get_rect(centerx=panel_rect.centerx, bottom=panel_rect.bottom - self._sx(16, ui_scale)))
 
     def _draw_game_over_screen(self):
-        """Oyun sonu ekranı - Duraklama menüsüyle aynı estetik tema"""
+        """Oyun sonu ekranı - online PvP sonuç kartı estetiğine yakın yerel varyant."""
         width, height = self.window_width, self.window_height
         ui_scale = self._ui_scale(min_scale=0.68, max_scale=1.16)
         s = lambda v, minimum=1: self._sx(v, ui_scale, minimum)
-        
-        # ============================================
-        # PEEK MODU - Oyun alanını görmek için
-        # ============================================
+
         if getattr(self, '_game_over_peek_active', False):
-            # Peek modunda sadece sağ alt köşede göz butonu göster
             peek_btn_size = s(48)
             peek_btn_x = width - peek_btn_size - s(20)
             peek_btn_y = height - peek_btn_size - s(20)
             self._game_over_peek_rect = pygame.Rect(peek_btn_x, peek_btn_y, peek_btn_size, peek_btn_size)
-            
-            # Yuvarlak beyaz arka plan
+
             center = self._game_over_peek_rect.center
             radius = peek_btn_size // 2
             pygame.draw.circle(self.screen, (255, 255, 255), center, radius)
             pygame.draw.circle(self.screen, (100, 200, 255), center, radius, 2)
-            
-            # Göz ikonu - PNG ikon kullan
+
             peek_icon_path = os.path.join(os.path.dirname(__file__), '..', 'assets', 'kart_secim_sagust.png')
             if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
                 peek_icon_path = os.path.join(sys._MEIPASS, 'assets', 'kart_secim_sagust.png')
@@ -1930,55 +2021,100 @@ class PvPGame:
                 icon_rect = peek_icon.get_rect(center=self._game_over_peek_rect.center)
                 self.screen.blit(peek_icon, icon_rect)
             except Exception:
-                # Fallback: metin göster
                 fallback_font = retro_style.get_font(s(20, minimum=12), bold=True)
-                eye_surf = fallback_font.render("X", True, (100, 200, 255))
+                eye_surf = fallback_font.render('X', True, (100, 200, 255))
                 self.screen.blit(eye_surf, eye_surf.get_rect(center=self._game_over_peek_rect.center))
             return
-        
-        # Yarı saydam karartma overlay
+
         overlay = pygame.Surface((width, height), pygame.SRCALPHA)
         overlay.fill((0, 0, 0, 185))
         self.screen.blit(overlay, (0, 0))
-        
-        # İsimler
+
         p1_name = (self.player1_name if self.player1_name else t('pvp_player1')).upper()
         p2_name = (self.player2_name if self.player2_name else t('pvp_player2')).upper()
-        
-        # Skorlar
         score1 = int(getattr(self.board1, 'score', 0) or 0)
         score2 = int(getattr(self.board2, 'score', 0) or 0)
         lines1 = int(getattr(self.board1, 'lines_cleared', 0) or 0)
         lines2 = int(getattr(self.board2, 'lines_cleared', 0) or 0)
-        
-        # Kazanan bilgisi
+
         if self.winner == 1:
             winner_name = p1_name
             winner_color = UIColors.NEON_CYAN
-            loser_name = p2_name
+            icon_text = '★'
+            sub_text = t('pvp_wins')
         elif self.winner == 2:
             winner_name = p2_name
             winner_color = UIColors.NEON_MAGENTA
-            loser_name = p1_name
+            icon_text = '★'
+            sub_text = t('pvp_wins')
         else:
             winner_name = None
             winner_color = UIColors.NEON_YELLOW
-        
-        # Panel boyutları
-        panel_width = min(s(480), width - s(80))
-        panel_height = s(380)
+            icon_text = '='
+            sub_text = t('pvp_draw')
+
+        def _build_reason_text() -> str:
+            if getattr(self, 'match_end_reason', None) == 'time':
+                if self.winner == 'draw':
+                    return f"{t('pvp_time_up')} {t('pvp_draw')}".strip()
+                leader_name = p1_name if self.winner == 1 else p2_name
+                diff = abs(score1 - score2)
+                return f"{t('pvp_time_up')} {leader_name} {diff:,} puan farkla önde kapattı.".replace(',', '.')
+            if getattr(self, 'match_end_reason', None) == 'elimination':
+                if self.p1_eliminated and not self.p2_eliminated:
+                    return f"{p1_name} {t('pvp_top_out')}. {p2_name} maçı aldı.".strip()
+                if self.p2_eliminated and not self.p1_eliminated:
+                    return f"{p2_name} {t('pvp_top_out')}. {p1_name} maçı aldı.".strip()
+                if self.winner == 'draw':
+                    return f"{t('pvp_top_out')} sonrası skorlar eşit kaldı.".strip()
+                leader_name = p1_name if self.winner == 1 else p2_name
+                diff = abs(score1 - score2)
+                return f"İki tahta da kapandı. {leader_name} {diff:,} puan farkla önde kaldı.".replace(',', '.')
+            if self.winner == 'draw':
+                return f"Skorlar eşit kaldı. Temizlenen satırlar: {lines1} - {lines2}."
+            leader_name = p1_name if self.winner == 1 else p2_name
+            diff = abs(score1 - score2)
+            return f"{leader_name} {diff:,} puan farkla kazandı. Temizlenen satırlar: {lines1} - {lines2}.".replace(',', '.')
+
+        reason_text = _build_reason_text()
+        panel_width = min(s(560), width - s(72))
+        score_panel_h = s(88)
+        button_width = s(160)
+        button_height = s(48)
+        reason_font_px = max(9, s(12, minimum=9))
+        reason_wrap_w = max(s(280), panel_width - s(96))
+        reason_font = retro_style.get_font(reason_font_px, bold=False)
+        reason_lines = retro_style.wrap_text(reason_text, reason_font, reason_wrap_w)
+        while len(reason_lines) > 4 and reason_font_px > 9:
+            reason_font_px -= 1
+            reason_font = retro_style.get_font(reason_font_px, bold=False)
+            reason_lines = retro_style.wrap_text(reason_text, reason_font, reason_wrap_w)
+        reason_line_gap = max(2, s(2, minimum=2))
+        reason_panel_h = max(
+            s(62),
+            len(reason_lines) * reason_font.get_linesize()
+            + max(0, len(reason_lines) - 1) * reason_line_gap
+            + s(20),
+        )
+        content_bottom = (
+            s(156)
+            + score_panel_h
+            + s(16)
+            + reason_panel_h
+            + s(18)
+            + button_height
+            + s(24)
+        )
+        panel_height = max(s(430), content_bottom + s(18))
         panel_rect = pygame.Rect((width - panel_width) // 2, (height - panel_height) // 2, panel_width, panel_height)
-        
-        # Cam panel çiz (duraklama menüsüyle aynı)
+
         retro_style.draw_glass_panel(self.screen, panel_rect, alpha=200, border_color=(*winner_color[:3], 160), glow=True)
-        
-        # Göz butonu - panelin sağ üst köşesinde
+
         peek_btn_size = s(40)
         peek_btn_x = panel_rect.right - peek_btn_size - s(16)
         peek_btn_y = panel_rect.y + s(16)
         self._game_over_peek_rect = pygame.Rect(peek_btn_x, peek_btn_y, peek_btn_size, peek_btn_size)
-        
-        # Göz butonu arka planı - Yuvarlak beyaz
+
         mouse_pos = get_mouse_pos() if pygame.mouse.get_focused() else None
         peek_hovered = mouse_pos is not None and self._game_over_peek_rect.collidepoint(mouse_pos)
         center = self._game_over_peek_rect.center
@@ -1986,8 +2122,7 @@ class PvPGame:
         pygame.draw.circle(self.screen, (255, 255, 255), center, radius)
         border_color_peek = (100, 200, 255) if peek_hovered else (180, 180, 200)
         pygame.draw.circle(self.screen, border_color_peek, center, radius, 2)
-        
-        # Göz ikonu - PNG ikon kullan
+
         peek_icon_path = os.path.join(os.path.dirname(__file__), '..', 'assets', 'kart_secim_sagust.png')
         if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
             peek_icon_path = os.path.join(sys._MEIPASS, 'assets', 'kart_secim_sagust.png')
@@ -1999,123 +2134,99 @@ class PvPGame:
             icon_rect = peek_icon.get_rect(center=self._game_over_peek_rect.center)
             self.screen.blit(peek_icon, icon_rect)
         except Exception:
-            # Fallback: metin göster
             fallback_font = retro_style.get_font(s(16, minimum=10), bold=True)
-            eye_surf = fallback_font.render("O", True, (100, 200, 255) if peek_hovered else (180, 180, 200))
+            eye_surf = fallback_font.render('O', True, (100, 200, 255) if peek_hovered else (180, 180, 200))
             self.screen.blit(eye_surf, eye_surf.get_rect(center=self._game_over_peek_rect.center))
-        
-        # Bitiş nedeni (üstte küçük badge)
-        reason_text = ''
+
+        reason_badge = ''
         if getattr(self, 'match_end_reason', None) == 'time':
-            reason_text = t('pvp_time_up')
+            reason_badge = t('pvp_time_up')
         elif getattr(self, 'match_end_reason', None) == 'elimination':
-            reason_text = t('pvp_top_out')
-        
-        if reason_text:
-            reason_font = retro_style.get_font(s(18, minimum=11), bold=True)
-            reason_surf = reason_font.render(reason_text, True, (180, 190, 210))
-            self.screen.blit(reason_surf, reason_surf.get_rect(centerx=panel_rect.centerx, top=panel_rect.y + s(20)))
-        
-        # Kazanan başlığı
-        title_y = panel_rect.y + s(55)
-        if winner_name:
-            title_font = retro_style.get_font(s(42, minimum=20), bold=True)
-            title_surf = title_font.render(winner_name, True, winner_color)
-            self.screen.blit(title_surf, title_surf.get_rect(centerx=panel_rect.centerx, top=title_y))
-            
-            subtitle_font = retro_style.get_font(s(22, minimum=12), bold=False)
-            subtitle_surf = subtitle_font.render(t('pvp_wins'), True, (200, 210, 230))
-            self.screen.blit(subtitle_surf, subtitle_surf.get_rect(centerx=panel_rect.centerx, top=title_y + s(50)))
-        else:
-            title_font = retro_style.get_font(s(42, minimum=20), bold=True)
-            title_surf = title_font.render(t('pvp_draw'), True, winner_color)
-            self.screen.blit(title_surf, title_surf.get_rect(centerx=panel_rect.centerx, top=title_y))
-        
-        # Ayırıcı çizgi
-        line_y = title_y + s(90)
-        pygame.draw.line(self.screen, (*winner_color[:3], 100), 
-                (panel_rect.x + s(40), line_y), 
-                (panel_rect.right - s(40), line_y), 2)
-        
-        # Skor kartları
-        card_y = line_y + s(20)
-        card_width = (panel_width - s(80)) // 2
-        card_height = s(100)
-        
-        # Oyuncu 1 kartı
-        p1_card = pygame.Rect(panel_rect.x + s(25), card_y, card_width, card_height)
-        p1_border_color = UIColors.NEON_CYAN if self.winner == 1 else (80, 90, 110)
-        pygame.draw.rect(self.screen, (30, 35, 50), p1_card, border_radius=10)
-        pygame.draw.rect(self.screen, p1_border_color, p1_card, 2, border_radius=10)
-        
-        # Oyuncu 1 ismi
-        p1_name_font = retro_style.get_font(s(18, minimum=11), bold=True)
-        p1_name_surf = p1_name_font.render(p1_name, True, UIColors.NEON_CYAN)
-        self.screen.blit(p1_name_surf, p1_name_surf.get_rect(centerx=p1_card.centerx, top=p1_card.y + s(10)))
-        
-        # Oyuncu 1 skor
-        p1_score_font = retro_style.get_font(s(28, minimum=14), bold=True)
-        p1_score_surf = p1_score_font.render(f'{score1:,}'.replace(',', '.'), True, (255, 255, 255))
-        self.screen.blit(p1_score_surf, p1_score_surf.get_rect(centerx=p1_card.centerx, top=p1_card.y + s(35)))
-        
-        # Oyuncu 1 satır
-        p1_lines_font = retro_style.get_font(s(16, minimum=10), bold=False)
-        p1_lines_surf = p1_lines_font.render(f'{lines1} {t("pvp_lines_suffix")}', True, (150, 160, 180))
-        self.screen.blit(p1_lines_surf, p1_lines_surf.get_rect(centerx=p1_card.centerx, top=p1_card.y + s(70)))
-        
-        # VS
-        vs_font = retro_style.get_font(s(24, minimum=12), bold=True)
-        vs_surf = vs_font.render('VS', True, (100, 110, 130))
-        self.screen.blit(vs_surf, vs_surf.get_rect(center=(panel_rect.centerx, card_y + card_height // 2)))
-        
-        # Oyuncu 2 kartı
-        p2_card = pygame.Rect(panel_rect.right - s(25) - card_width, card_y, card_width, card_height)
-        p2_border_color = UIColors.NEON_MAGENTA if self.winner == 2 else (80, 90, 110)
-        pygame.draw.rect(self.screen, (30, 35, 50), p2_card, border_radius=10)
-        pygame.draw.rect(self.screen, p2_border_color, p2_card, 2, border_radius=10)
-        
-        # Oyuncu 2 ismi
-        p2_name_surf = p1_name_font.render(p2_name, True, UIColors.NEON_MAGENTA)
-        self.screen.blit(p2_name_surf, p2_name_surf.get_rect(centerx=p2_card.centerx, top=p2_card.y + s(10)))
-        
-        # Oyuncu 2 skor
-        p2_score_surf = p1_score_font.render(f'{score2:,}'.replace(',', '.'), True, (255, 255, 255))
-        self.screen.blit(p2_score_surf, p2_score_surf.get_rect(centerx=p2_card.centerx, top=p2_card.y + s(35)))
-        
-        # Oyuncu 2 satır
-        p2_lines_surf = p1_lines_font.render(f'{lines2} {t("pvp_lines_suffix")}', True, (150, 160, 180))
-        self.screen.blit(p2_lines_surf, p2_lines_surf.get_rect(centerx=p2_card.centerx, top=p2_card.y + s(70)))
-        
-        # Fark bilgisi (kazanan varsa)
-        if self.winner and self.winner != 'draw':
-            diff_y = card_y + card_height + s(15)
-            diff_lines = abs(lines1 - lines2)
-            diff_score = abs(score1 - score2)
-            
-            diff_font = retro_style.get_font(s(16, minimum=10), bold=True)
-            diff_text = f'+{diff_score:,} {t("pvp_points_diff")}  •  +{diff_lines} {t("pvp_lines_diff")}'.replace(',', '.')
-            diff_surf = diff_font.render(diff_text, True, winner_color)
-            self.screen.blit(diff_surf, diff_surf.get_rect(centerx=panel_rect.centerx, top=diff_y))
-        
-        # Alt butonlar
-        button_y = panel_rect.bottom - s(70)
-        button_width = s(180)
-        button_height = s(44)
+            reason_badge = t('pvp_top_out')
+
+        if reason_badge:
+            reason_badge_font = retro_style.get_font(s(18, minimum=11), bold=True)
+            reason_badge_surf = reason_badge_font.render(reason_badge, True, (180, 190, 210))
+            self.screen.blit(reason_badge_surf, reason_badge_surf.get_rect(centerx=panel_rect.centerx, top=panel_rect.y + s(20)))
+
+        icon_font = retro_style.get_font(s(48, minimum=30), bold=False)
+        icon_surf = icon_font.render(icon_text, True, winner_color)
+        self.screen.blit(icon_surf, icon_surf.get_rect(center=(panel_rect.centerx, panel_rect.y + s(46))))
+
+        title_text = winner_name if winner_name else t('pvp_draw')
+        title_font = retro_style.get_fitting_font(title_text, s(40, minimum=22), panel_width - s(64))
+        title_surf = title_font.render(title_text, True, winner_color)
+        self.screen.blit(title_surf, title_surf.get_rect(center=(panel_rect.centerx, panel_rect.y + s(102))))
+
+        subtitle_font = retro_style.get_font(s(15, minimum=11), bold=False)
+        subtitle_surf = subtitle_font.render(sub_text, True, retro_style.text_secondary)
+        self.screen.blit(subtitle_surf, subtitle_surf.get_rect(center=(panel_rect.centerx, panel_rect.y + s(136))))
+
+        score_panel_y = panel_rect.y + s(156)
+        score_panel_rect = pygame.Rect(panel_rect.x + s(28), score_panel_y, panel_rect.width - s(56), score_panel_h)
+        retro_style.draw_glass_panel(self.screen, score_panel_rect, alpha=140, border_color=(*winner_color[:3], 90))
+
+        ranked_rows = [
+            {'name': p1_name, 'score': score1, 'lines': lines1, 'color': UIColors.NEON_CYAN, 'winner': self.winner == 1},
+            {'name': p2_name, 'score': score2, 'lines': lines2, 'color': UIColors.NEON_MAGENTA, 'winner': self.winner == 2},
+        ]
+        if self.winner == 2:
+            ranked_rows = [ranked_rows[1], ranked_rows[0]]
+
+        row_gap = s(8)
+        row_pad_x = s(10)
+        row_pad_y = s(10)
+        row_h = max(s(28), (score_panel_rect.height - row_pad_y * 2 - row_gap) // 2)
+        row_w = score_panel_rect.width - row_pad_x * 2
+        stat_font = retro_style.get_font(s(11, minimum=9), bold=False)
+
+        for idx, row in enumerate(ranked_rows):
+            row_rect = pygame.Rect(
+                score_panel_rect.x + row_pad_x,
+                score_panel_rect.y + row_pad_y + idx * (row_h + row_gap),
+                row_w,
+                row_h,
+            )
+            pygame.draw.rect(self.screen, (18, 24, 38), row_rect, border_radius=s(10))
+            pygame.draw.rect(
+                self.screen,
+                row['color'] if row['winner'] else (90, 100, 122),
+                row_rect,
+                2 if row['winner'] else 1,
+                border_radius=s(10),
+            )
+
+            accent_rect = pygame.Rect(row_rect.x + s(7), row_rect.y + s(6), s(4), max(s(12), row_rect.height - s(12)))
+            pygame.draw.rect(self.screen, row['color'], accent_rect, border_radius=s(3))
+
+            main_text = f"{idx + 1}. {row['name']}  ·  {row['score']:,} puan".replace(',', '.')
+            main_font = retro_style.get_fitting_font(main_text, s(15, minimum=11), row_rect.width - s(28))
+            main_surf = main_font.render(main_text, True, row['color'])
+            self.screen.blit(main_surf, main_surf.get_rect(center=(row_rect.centerx, row_rect.centery - s(7, minimum=0))))
+
+            stat_text = f"{row['lines']} {t('pvp_lines_suffix')}"
+            stat_surf = stat_font.render(stat_text, True, retro_style.text_secondary)
+            self.screen.blit(stat_surf, stat_surf.get_rect(center=(row_rect.centerx, row_rect.centery + s(10, minimum=0))))
+
+        reason_panel_y = score_panel_rect.bottom + s(16)
+        reason_panel_rect = pygame.Rect(panel_rect.x + s(34), reason_panel_y, panel_rect.width - s(68), reason_panel_h)
+        retro_style.draw_glass_panel(self.screen, reason_panel_rect, alpha=118, border_color=(*winner_color[:3], 120))
+        reason_inner = reason_panel_rect.inflate(-s(16), -s(10))
+        reason_total_h = len(reason_lines) * reason_font.get_linesize() + max(0, len(reason_lines) - 1) * reason_line_gap
+        reason_y = reason_inner.centery - reason_total_h // 2
+        for line in reason_lines:
+            line_surf = reason_font.render(line, True, retro_style.text_secondary)
+            self.screen.blit(line_surf, line_surf.get_rect(midtop=(reason_inner.centerx, reason_y)))
+            reason_y += reason_font.get_linesize() + reason_line_gap
+
+        button_y = reason_panel_rect.bottom + s(18)
         button_gap = s(20)
-        
-        # Mouse pozisyonu al (hover efekti için)
         mouse_pos = get_mouse_pos()
-        try:
-            gp_cfg = self.settings_manager.get_controls().get('gamepad', {}) if self.settings_manager else {}
-            restart_button_index = int(gp_cfg.get('restart', 3))
-        except Exception:
-            restart_button_index = 3
-        
-        # Yeniden oyna butonu
+
         restart_rect = pygame.Rect(panel_rect.centerx - button_width - button_gap // 2, button_y, button_width, button_height)
         restart_hover = restart_rect.collidepoint(mouse_pos)
-        restart_sub = render_button_index_prompt_surface(
-            restart_button_index,
+        restart_sub = render_action_prompt_surface(
+            'restart',
             'R',
             retro_style.get_font(self._sx(16, ui_scale, minimum=10), bold=False),
             (160, 175, 200),
@@ -2127,8 +2238,7 @@ class PvPGame:
             color_code=retro_style.success, selected=restart_hover
         )
         self._game_over_restart_rect = restart_rect
-        
-        # Menüye dön butonu
+
         menu_rect = pygame.Rect(panel_rect.centerx + button_gap // 2, button_y, button_width, button_height)
         menu_hover = menu_rect.collidepoint(mouse_pos)
         menu_sub = render_action_prompt_surface(
@@ -2144,6 +2254,10 @@ class PvPGame:
             color_code=retro_style.secondary, selected=menu_hover
         )
         self._game_over_menu_rect = menu_rect
+
+        hint_font = retro_style.get_font(s(12, minimum=9), bold=False)
+        hint_surf = hint_font.render(t('campaign_failed_hint', '[R] Retry | [ESC] Menu'), True, retro_style.text_muted)
+        self.screen.blit(hint_surf, hint_surf.get_rect(center=(panel_rect.centerx, panel_rect.bottom - s(18))))
     
     def _try_move_left_p1(self):
         """Oyuncu 1 sola hareket"""
@@ -3353,6 +3467,8 @@ class PvPGame:
         
         # Arka plan - Quadrix alanı için özel arka plan varsa onu kullan
         board_rect = pygame.Rect(offset_x, offset_y, board_width, board_height)
+        bg_rect = pygame.Rect(offset_x - 2, offset_y - 2, board_width + 4, board_height + 4)
+        retro_style.draw_glass_panel(self.screen, bg_rect, alpha=170, border_color=player_accent)
         
         if self.board_background.is_loaded():
             # Özel tetris alan arka planı çiz
@@ -3588,10 +3704,14 @@ class PvPGame:
         cell_size = self.cell_size
         board_width = BOARD_WIDTH * cell_size
         board_height = BOARD_HEIGHT * cell_size
+        preview_panel_width = int(self.preview_panel_width)
         vs_panel_width = int(self.center_panel_width)
 
+        preview_x1 = int(self.p1_preview_x + shake_x)
         offset_x1 = int(self.p1_offset_x + shake_x)
+        center_panel_x = int(self.center_panel_x + shake_x)
         offset_x2 = int(self.p2_offset_x + shake_x)
+        preview_x2 = int(self.p2_preview_x + shake_x)
         start_y = int(self.p1_offset_y + shake_y)
         
         # Arka planları çiz - Ana arka plan (tüm ekran)
@@ -3637,6 +3757,11 @@ class PvPGame:
         self._draw_player_header(p1_header, p1_name, UIColors.NEON_CYAN, int(self.board1.score), int(self.board1.lines_cleared), 'WASD')
         self._draw_player_header(p2_header, p2_name, UIColors.NEON_MAGENTA, int(self.board2.score), int(self.board2.lines_cleared), t('arrows').upper())
 
+        p1_preview_rect = pygame.Rect(preview_x1, start_y, preview_panel_width, board_height)
+        p2_preview_rect = pygame.Rect(preview_x2, start_y, preview_panel_width, board_height)
+        self._draw_preview_panel(p1_preview_rect, UIColors.NEON_CYAN, self.next_piece1, 'WASD')
+        self._draw_preview_panel(p2_preview_rect, UIColors.NEON_MAGENTA, self.next_piece2, t('arrows').upper())
+
         # OYUNCU 1 (Sol)
         self.draw_board(self.board1, self.current_piece1, offset_x1, start_y, cell_size)
         
@@ -3647,10 +3772,8 @@ class PvPGame:
         self._draw_combo_messages(offset_x1, offset_x2, start_y, board_width, board_height)
         
         # ORTADAKİ VS PANELİ
-        center_x = self.window_width // 2
-        vs_surface = self._get_vs_panel_surface(vs_panel_width)
-        center_y = start_y + board_height // 2
-        vs_rect = vs_surface.get_rect(center=(center_x, center_y))
+        vs_surface = self._get_vs_panel_surface(vs_panel_width, board_height)
+        vs_rect = pygame.Rect(center_panel_x, start_y, vs_panel_width, board_height)
         self.screen.blit(vs_surface, vs_rect)
         
         # Pause
