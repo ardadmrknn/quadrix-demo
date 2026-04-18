@@ -1899,7 +1899,7 @@ def main():
             
             elif action in ('single_player', 'Tek Oyunculu', 'Single Player'):
                 # Tutorial Check
-                if not user_manager.is_tutorial_completed():
+                if not user_manager.is_tutorial_completed() and not user_manager.is_tutorial_prompt_dismissed():
                     if _run_popup_and_sync_screen(_show_tutorial_prompt):
                         # Start Tutorial
                         menu_sound.stop_music()
@@ -1921,8 +1921,8 @@ def main():
                         state = 'game'
                         continue
                     else:
-                        # Skip Tutorial
-                        user_manager.set_tutorial_completed(True)
+                        # Skip Tutorial — progress üretmeden sadece popup'ı kapat
+                        user_manager.dismiss_tutorial_prompt()
 
                 if not _run_popup_and_sync_screen(_show_mode_intro_popup, 'classic', settings_manager=settings_manager):
                     continue
@@ -3234,7 +3234,8 @@ def main():
                         )
                         state = 'game'
                     else:
-                        user_manager.set_tutorial_completed(True)
+                        # Skip — sahte progress üretme, sadece popup'ı kapat
+                        user_manager.dismiss_tutorial_prompt()
             elif action == 'edit_user':
                 target_user = user_selection_screen.get_selected_username()
                 if target_user:

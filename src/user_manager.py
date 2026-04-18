@@ -50,6 +50,18 @@ except Exception:
 DAILY_MAX_FAILURES = 3
 DAILY_HISTORY_LIMIT = 40
 
+
+def _derive_tutorial_completed(progress) -> bool:
+    """Progress verisinden tutorial_completed bayrağını türet.
+
+    quick_start (eski adıyla basics) chapter'ı tamamlanmışsa True.
+    """
+    for chapter_id in ('quick_start', 'basics'):
+        state = get_chapter_completion(progress, chapter_id)
+        if state.get('completed', False):
+            return True
+    return False
+
 class UserManager:
     """Kullanıcı profilleri yöneticisi"""
     
@@ -209,16 +221,12 @@ class UserManager:
                             normalized_progress = build_default_tutorial_progress()
                             updated = True
                         normalized_progress = ensure_progress_shape(normalized_progress)
-                        basics_state = get_chapter_completion(normalized_progress, 'basics')
-                        if bool(profile.get('tutorial_completed', False)) and not basics_state.get('completed', False):
-                            normalized_progress = mark_chapter_completed(normalized_progress, 'basics', stars_per_lesson=1)
-                            basics_state = get_chapter_completion(normalized_progress, 'basics')
-                            updated = True
+                        derived_completed = _derive_tutorial_completed(normalized_progress)
                         if normalized_progress != profile.get('tutorial_progress'):
                             profile['tutorial_progress'] = normalized_progress
                             updated = True
-                        if bool(profile.get('tutorial_completed', False)) != bool(basics_state.get('completed', False)):
-                            profile['tutorial_completed'] = bool(basics_state.get('completed', False))
+                        if bool(profile.get('tutorial_completed', False)) != derived_completed:
+                            profile['tutorial_completed'] = derived_completed
                             updated = True
                     # Steam ID alanı (yeni alan — eski profiller için None)
                     if isinstance(profile, dict) and 'steam_id' not in profile:
@@ -813,17 +821,41 @@ class UserManager:
         return False
 
     def set_tutorial_completed(self, completed=True, username=None):
-        """Kullanıcının tutorial durumunu güncelle"""
+        """Kullanıcının tutorial durumunu güncelle.
+
+        NOT: Bu metot artık sahte progress üretmez. tutorial_completed bayrağı
+        yalnızca gerçek ders ilerlemesinden türetilir.  set_tutorial_completed(True)
+        çağrısı sadece bayrağı ayarlar; progress fabricate etmez.
+        """
         user = username or self.current_user
         if user and user in self.users:
             self.users[user]['tutorial_completed'] = completed
-            if completed:
-                progress = self.users[user].get('tutorial_progress')
-                self.users[user]['tutorial_progress'] = mark_chapter_completed(progress, 'basics', stars_per_lesson=1)
-            else:
+            if not completed:
                 self.users[user]['tutorial_progress'] = build_default_tutorial_progress()
             self._touch_profile(user)
             self.save_users()
+
+    def dismiss_tutorial_prompt(self, username=None):
+        """Tutorial davet popup'ını kapat ama tamamlandı sayma.
+
+        Oyuncu tutorial'ı atladığında progress üretmeden sadece
+        popup'ın tekrar gelmesini engeller.  Daha sonra nazik hatırlatma
+        veya guide üzerinden erişim hâlâ mümkündür.
+        """
+        user = username or self.current_user
+        if user and user in self.users:
+            self.users[user]['tutorial_prompt_dismissed'] = True
+            dismiss_count = int(self.users[user].get('tutorial_prompt_dismiss_count', 0) or 0)
+            self.users[user]['tutorial_prompt_dismiss_count'] = dismiss_count + 1
+            self._touch_profile(user)
+            self.save_users()
+
+    def is_tutorial_prompt_dismissed(self, username=None):
+        """Tutorial davet popup'ı daha önce kapatılmış mı?"""
+        user = username or self.current_user
+        if user and user in self.users:
+            return bool(self.users[user].get('tutorial_prompt_dismissed', False))
+        return False
 
     def get_tutorial_progress(self, username=None):
         """Kullanıcının tutorial progress verisini döndür."""
@@ -844,8 +876,7 @@ class UserManager:
         if user and user in self.users:
             normalized = ensure_progress_shape(progress)
             self.users[user]['tutorial_progress'] = normalized
-            basics_state = get_chapter_completion(normalized, 'basics')
-            self.users[user]['tutorial_completed'] = bool(basics_state.get('completed', False))
+            self.users[user]['tutorial_completed'] = _derive_tutorial_completed(normalized)
             self._touch_profile(user)
             self.save_users()
 
@@ -857,8 +888,7 @@ class UserManager:
         current_progress = self.users[user].get('tutorial_progress')
         updated_progress = mark_lesson_completed(current_progress, lesson_id, stars, stats=stats)
         self.users[user]['tutorial_progress'] = updated_progress
-        basics_state = get_chapter_completion(updated_progress, 'basics')
-        self.users[user]['tutorial_completed'] = bool(basics_state.get('completed', False))
+        self.users[user]['tutorial_completed'] = _derive_tutorial_completed(updated_progress)
         self._touch_profile(user)
         self.save_users()
 
@@ -868,6 +898,8 @@ class UserManager:
         if user and user in self.users:
             self.users[user]['tutorial_progress'] = build_default_tutorial_progress()
             self.users[user]['tutorial_completed'] = False
+            self.users[user]['tutorial_prompt_dismissed'] = False
+            self.users[user]['tutorial_prompt_dismiss_count'] = 0
             self._touch_profile(user)
             self.save_users()
 

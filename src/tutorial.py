@@ -17,12 +17,12 @@ try:
         list_lessons_for_chapter,
         get_next_lesson_id,
     )
-    from .tutorial_progress import build_default_tutorial_progress  # type: ignore
+    from .tutorial_progress import build_default_tutorial_progress, migrate_legacy_progress  # type: ignore
     from .tutorial_scenarios import (  # type: ignore
         build_occupancy_from_rows,
         capture_board_metrics,
         evaluate_scenario,
-            enrich_scenario_outcome,
+        enrich_scenario_outcome,
         get_scenario,
     )
     from .tutorial_cards import (  # type: ignore
@@ -51,7 +51,7 @@ except Exception:
         list_lessons_for_chapter,
         get_next_lesson_id,
     )
-    from tutorial_progress import build_default_tutorial_progress
+    from tutorial_progress import build_default_tutorial_progress, migrate_legacy_progress
     from tutorial_scenarios import (
         build_occupancy_from_rows,
         capture_board_metrics,
@@ -105,7 +105,8 @@ class TutorialMode(Game):
                  achievement_manager=None, theme_manager=None, screen=None, 
                  fullscreen=False, settings_manager=None, user_manager=None, 
                  game_mode='tutorial', sound_manager=None, score_manager=None, 
-                 block_style_manager=None, launch_lesson_id=None, lesson_flow_scope='full'):
+                 block_style_manager=None, launch_lesson_id=None, lesson_flow_scope='full',
+                 entry_source=None, return_target=None):
         
         super().__init__(difficulty, sound_enabled, effects_enabled, achievement_manager, 
                          theme_manager, screen, fullscreen, settings_manager, user_manager, 
@@ -113,6 +114,8 @@ class TutorialMode(Game):
                          block_style_manager=block_style_manager,
                          score_manager=score_manager)
         
+        self.entry_source = entry_source or 'menu'
+        self.return_target = return_target or 'menu'
         self.step = 1
         self.step_target = 0
         self.waiting_for_enter = False
@@ -126,6 +129,7 @@ class TutorialMode(Game):
         self.soft_drop_counter = 0 
         self.soft_drop_active = False
         self.base_fall_speed = 2000
+        self._scenario_allow_hold = False
         
         # Transition state
         self.in_transition = False
@@ -291,7 +295,7 @@ class TutorialMode(Game):
             try:
                 progress = self.user_manager.get_tutorial_progress()
                 if isinstance(progress, dict):
-                    return progress
+                    return migrate_legacy_progress(progress)
             except Exception:
                 pass
         return build_default_tutorial_progress()
@@ -643,6 +647,7 @@ class TutorialMode(Game):
         self.next_piece_queue = self._build_piece_queue(scenario.get('next_queue'))
         self.held_piece = None
         self.can_hold = bool(scenario.get('allow_hold', False))
+        self._scenario_allow_hold = self.can_hold
         self.apply_theme_to_pieces()
 
         lesson_id = str(lesson.get('id') or '')
@@ -1417,7 +1422,6 @@ class TutorialMode(Game):
                     if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
                         if self.user_manager:
                             self._mark_active_lesson_completed(stars=1)
-                            self.user_manager.set_tutorial_completed(True)
                         if self.next_lesson_id:
                             self._start_lesson(self.next_lesson_id)
                             return True
@@ -1505,6 +1509,20 @@ class TutorialMode(Game):
                         self._register_step_activity()
                         self._sync_lesson_runtime_state()
                         self._perform_hard_drop()
+                    elif event.key == bindings.get('hold') and getattr(self, '_scenario_allow_hold', False):
+                        if self.current_piece and not self.in_transition:
+                            held = self.held_piece
+                            self.held_piece = self.current_piece
+                            if held:
+                                self.current_piece = held
+                                self.current_piece.x = self.board.width // 2 - 1
+                                self.current_piece.y = 0
+                                self.current_piece.rotation = 0
+                            else:
+                                self._ensure_normal_piece(force_new=True)
+                            self._register_step_activity()
+                            self.sound.play('hold')
+                            self._sync_lesson_runtime_state()
                     continue
                 
                 # --- Step Logic with Filtering ---
@@ -1762,7 +1780,16 @@ class TutorialMode(Game):
             lines_after = self.board.lines_cleared
             if lines_after > lines_before:
                 self._create_mini_success_effect(t('tutorial_success_line_clear'))
-                self._complete_step(6)
+                self._mark_active_lesson_completed(stars=1)
+                self.hub_progress_snapshot = self._get_tutorial_progress_snapshot()
+                self.in_transition = True
+                self.transition_timer = 1.5
+                self.transition_text = t('tutorial_step_done_line_clear', default='Satır temizleme tamam!')
+                self.next_step_num = 0
+                self.next_lesson_id = None
+                self.waiting_for_enter = True
+                self.overlay_message = t('tutorial_quick_start_done', default='Hızlı Başlangıç tamamlandı!')
+                self.sub_message = t('tutorial_quick_start_done_sub', default='Hub\'a dönmek için Enter\'a bas.')
             else:
                 # Failed, reset
                 self._setup_line_clear_scenario()
@@ -1856,7 +1883,7 @@ class TutorialMode(Game):
                  soft_key = self._action_key_label('soft_drop', pygame.K_DOWN, include_down_for_soft=True)
                  self.sub_message = t('tutorial_sub_soft_drop', soft_key=soft_key, progress=progress, target=self.step_target)
                  
-                 if self.soft_drop_counter > self.step_target:
+                 if self.soft_drop_counter >= self.step_target:
                      self._complete_step(4)
 
     def draw_mode_overlay(self):
@@ -2132,11 +2159,38 @@ class TutorialMode(Game):
             
     def _draw_mini_success_effects(self):
         """Mini başarı efektlerini çiz"""
-        return
+        if not self.step_completion_effects:
+            return
+        ui_scale = self._tutorial_modal_scale(min_scale=0.70, max_scale=1.18)
+        s = lambda v, minimum=1: self._sx(v, ui_scale, minimum)
+        active_width, active_height = self._active_ui_size()
+        font = retro_style.get_font(s(18, minimum=12), bold=True)
+        for effect in self.step_completion_effects:
+            alpha = max(0, min(255, int(effect.get('alpha', 255))))
+            if alpha <= 0:
+                continue
+            message = str(effect.get('message', ''))
+            y_offset = float(effect.get('y_offset', 0))
+            scale = max(0.8, float(effect.get('scale', 1.0)))
+            text_surf = font.render(message, True, (120, 255, 160))
+            text_surf.set_alpha(alpha)
+            pos_x = active_width // 2 - text_surf.get_width() // 2
+            pos_y = int(active_height * 0.35 + y_offset)
+            self.screen.blit(text_surf, (pos_x, pos_y))
 
     def _draw_progress_celebration(self):
         """İlerleme kutlamasını çiz"""
-        return
+        if self.progress_celebration_timer <= 0 or not self.progress_celebration_text:
+            return
+        ui_scale = self._tutorial_modal_scale(min_scale=0.70, max_scale=1.18)
+        s = lambda v, minimum=1: self._sx(v, ui_scale, minimum)
+        active_width, active_height = self._active_ui_size()
+        alpha = max(0, min(255, int(255 * min(1.0, self.progress_celebration_timer))))
+        font = retro_style.get_font(s(22, minimum=14), bold=True)
+        text_surf = font.render(self.progress_celebration_text, True, (180, 230, 255))
+        text_surf.set_alpha(alpha)
+        pos = text_surf.get_rect(center=(active_width // 2, int(active_height * 0.25)))
+        self.screen.blit(text_surf, pos)
 
     def _draw_tutorial_hub(self):
         active_width, active_height = self._active_ui_size()

@@ -140,6 +140,57 @@ CARD_LIBRARY: Dict[str, Dict[str, Any]] = {
         "single_use": True,
         "payload": {"multiplier": 2.0},
     },
+    "slow_fall": {
+        "id": "slow_fall",
+        "localization_id": "slow_fall",
+        "title": "Yavaş Düşüş",
+        "description": "{value} saniye boyunca düşüş hızı %40 yavaşlar.",
+        "value": 30,
+        "rarity": "uncommon",
+        "tag": "Uncommon",
+        "timed_buff": True,
+        "payload": {"speed_multiplier": 0.6},
+    },
+    "perk_wider_preview": {
+        "id": "perk_wider_preview",
+        "localization_id": "perk_wider_preview",
+        "title": "Geniş Önizleme",
+        "description": "PERK: Queue'da 1 parça fazla gör.",
+        "value": 1,
+        "rarity": "rare",
+        "tag": "Rare",
+        "persistent": True,
+    },
+    "bomb_blast": {
+        "id": "bomb_blast",
+        "localization_id": "bomb_blast",
+        "title": "Bomba Patlaması",
+        "description": "İmleç etrafındaki {value}x{value} alanı temizler.",
+        "value": 3,
+        "rarity": "rare",
+        "tag": "Rare",
+        "single_use": True,
+    },
+    "perk_combo_master": {
+        "id": "perk_combo_master",
+        "localization_id": "perk_combo_master",
+        "title": "Kombo Ustası",
+        "description": "PERK: Art arda temizlemeler +%15 bonus puan.",
+        "value": 1,
+        "rarity": "legendary",
+        "tag": "Legendary",
+        "persistent": True,
+    },
+    "gravity_shift": {
+        "id": "gravity_shift",
+        "localization_id": "gravity_shift",
+        "title": "Yerçekimi Değişimi",
+        "description": "Tüm bloklar aşağı çöker, boşluklar kapanır.",
+        "value": 1,
+        "rarity": "rare",
+        "tag": "Rare",
+        "single_use": True,
+    },
 }
 
 
@@ -248,6 +299,185 @@ CARD_CHOICE_SCENARIOS: Dict[str, Dict[str, Any]] = {
             "perk_synergy": "Doğru seçim. Zaten aktif perklerin olduğu için Sinerji Bonusu hemen büyüyen bir çarpana dönüşür.",
             "line_bonus": "Zayıf seçim. Puan Çarpanı faydalı olsa da bu dersin odağı mevcut perk zincirini büyütmek; tek başına build sinerjisi kurmaz.",
             "row_shuffle": "Zayıf seçim. Rastgelelik eklemek yerine aktif perklerden daha fazla değer çıkarmalısın.",
+        },
+    },
+
+    # ── Yeni kart senaryoları ──────────────────────────────────
+
+    "tempo_trap": {
+        "goal_key": "tutorial_cards_tempo_trap_goal",
+        "tip_key": "tutorial_cards_tempo_trap_tip",
+        "goal_text": "Hedef: Board kötüyken skor kartı tuzağına düşme.",
+        "tip_text": "Parlak kart ≠ doğru kart. Board durumu her zaman öncedir.",
+        "context_keys": [
+            "tutorial_cards_tempo_trap_context_1",
+            "tutorial_cards_tempo_trap_context_2",
+        ],
+        "context_lines": [
+            "Durum: Yüksek ve delikli tahta.",
+            "Öncelik: Hayatta kalmak, skor değil.",
+        ],
+        "board_rows": [
+            "XXXXXX.XXX",
+            "XXXXX..XXX",
+            "XXXX.XXXXX",
+            "XXX.XXXXXX",
+            "XXXX.XXXXX",
+        ],
+        "current_piece": {"name": "T", "x": 4, "y": 0, "rotation": 0},
+        "next_queue": ["I", "L", "O"],
+        "card_choices": ["speed_burst_legendary", "clear_rows", "line_bonus"],
+        "recommended_card_id": "clear_rows",
+        "acceptable_card_ids": [],
+        "feedback_keys_by_card": {
+            "speed_burst_legendary": "tutorial_cards_tempo_trap_feedback_speed",
+            "clear_rows": "tutorial_cards_tempo_trap_feedback_clear",
+            "line_bonus": "tutorial_cards_tempo_trap_feedback_line",
+        },
+        "feedback_by_card": {
+            "speed_burst_legendary": "Yanlış seçim. Kötü board'da hız artışı hataları büyütür. Önce hayatta kal.",
+            "clear_rows": "Doğru seçim. Alt Süpür nefes alanı açar — önce hayatta kal, sonra skor düşün.",
+            "line_bonus": "Zayıf seçim. Skor çarpanı kötü board'da değersiz — önce temizle.",
+        },
+    },
+
+    "perk_vs_instant": {
+        "goal_key": "tutorial_cards_perk_vs_instant_goal",
+        "tip_key": "tutorial_cards_perk_vs_instant_tip",
+        "goal_text": "Hedef: Kalıcı perk ile anlık spell arasında doğru seçimi yap.",
+        "tip_text": "Anlık efekt bir satır çözer; perk tüm run boyunca değer üretir.",
+        "context_keys": [
+            "tutorial_cards_perk_vs_instant_context_1",
+            "tutorial_cards_perk_vs_instant_context_2",
+        ],
+        "context_lines": [
+            "Durum: Orta yükseklikte, temiz tahta.",
+            "Öncelik: Run boyunca en çok değer üreten kartı seç.",
+        ],
+        "board_rows": [
+            "...XXX....",
+            "..XXXXX...",
+            ".XXXXXXX..",
+        ],
+        "current_piece": {"name": "O", "x": 4, "y": 0, "rotation": 0},
+        "next_queue": ["T", "I", "L"],
+        "card_choices": ["perk_wider_preview", "clear_rows", "bomb_blast"],
+        "recommended_card_id": "perk_wider_preview",
+        "acceptable_card_ids": [],
+        "feedback_keys_by_card": {
+            "perk_wider_preview": "tutorial_cards_perk_vs_instant_feedback_preview",
+            "clear_rows": "tutorial_cards_perk_vs_instant_feedback_clear",
+            "bomb_blast": "tutorial_cards_perk_vs_instant_feedback_bomb",
+        },
+        "feedback_by_card": {
+            "perk_wider_preview": "Doğru seçim. Geniş Önizleme tüm run boyunca daha iyi planlama sağlar.",
+            "clear_rows": "Zayıf seçim. Tahta zaten temiz — anlık temizlik gereksiz.",
+            "bomb_blast": "Zayıf seçim. Bomba anlık çözüm sunar ama tahta buna ihtiyaç duymuyor.",
+        },
+    },
+
+    "rare_not_auto": {
+        "goal_key": "tutorial_cards_rare_not_auto_goal",
+        "tip_key": "tutorial_cards_rare_not_auto_tip",
+        "goal_text": "Hedef: Nadir kartın her zaman en iyi olmadığını gör.",
+        "tip_text": "Rarity, board ihtiyacını değil; kartın genel gücünü gösterir.",
+        "context_keys": [
+            "tutorial_cards_rare_not_auto_context_1",
+            "tutorial_cards_rare_not_auto_context_2",
+        ],
+        "context_lines": [
+            "Durum: Alçak, temiz tahta.",
+            "Öncelik: İhtiyaca göre seç, rariteye göre değil.",
+        ],
+        "board_rows": [
+            "..XXXXXX..",
+            ".XXXXXXXX.",
+        ],
+        "current_piece": {"name": "T", "x": 4, "y": 0, "rotation": 0},
+        "next_queue": ["L", "I", "S"],
+        "card_choices": ["perk_combo_master", "slow_fall", "perk_wider_preview"],
+        "recommended_card_id": "perk_wider_preview",
+        "acceptable_card_ids": ["slow_fall"],
+        "feedback_keys_by_card": {
+            "perk_combo_master": "tutorial_cards_rare_not_auto_feedback_combo",
+            "slow_fall": "tutorial_cards_rare_not_auto_feedback_slow",
+            "perk_wider_preview": "tutorial_cards_rare_not_auto_feedback_preview",
+        },
+        "feedback_by_card": {
+            "perk_combo_master": "Zayıf seçim. Legendary kart güçlü ama alçak board'da combo fırsatı az — rarity'ye kapılma.",
+            "slow_fall": "Kabul edilebilir. Yavaş düşüş düşünme zamanı verir ama kalıcı önizleme daha değerli.",
+            "perk_wider_preview": "Doğru seçim. Queue'da ekstra parça görmek her durumda daha iyi planlama sağlar.",
+        },
+    },
+
+    "build_direction": {
+        "goal_key": "tutorial_cards_build_direction_goal",
+        "tip_key": "tutorial_cards_build_direction_tip",
+        "goal_text": "Hedef: Mevcut run'ın yönüne göre kart seç.",
+        "tip_text": "Rastgele kart toplamak yerine bir yönde derinleşmek güçlüdür.",
+        "context_keys": [
+            "tutorial_cards_build_direction_context_1",
+            "tutorial_cards_build_direction_context_2",
+        ],
+        "context_lines": [
+            "Aktif perkler: Geniş Önizleme, Ekstra Cep.",
+            "Öncelik: Planlama build'ini güçlendir.",
+        ],
+        "board_rows": [
+            "....XX....",
+            "...XXXX...",
+            "..XXXXXX..",
+            ".XXXXXXXX.",
+        ],
+        "current_piece": {"name": "I", "x": 4, "y": 0, "rotation": 0},
+        "next_queue": ["T", "O", "L"],
+        "card_choices": ["perk_synergy", "bomb_blast", "row_shuffle"],
+        "recommended_card_id": "perk_synergy",
+        "acceptable_card_ids": [],
+        "feedback_keys_by_card": {
+            "perk_synergy": "tutorial_cards_build_direction_feedback_synergy",
+            "bomb_blast": "tutorial_cards_build_direction_feedback_bomb",
+            "row_shuffle": "tutorial_cards_build_direction_feedback_shuffle",
+        },
+        "feedback_by_card": {
+            "perk_synergy": "Doğru seçim. Planlama build'ine sinerji eklemek mevcut perkleri güçlendirir.",
+            "bomb_blast": "Zayıf seçim. Bomba build yönüne katkı sağlamaz — tek seferlik.",
+            "row_shuffle": "Zayıf seçim. Rastgelelik build'i desteklemez, bozabilir.",
+        },
+    },
+
+    "risk_reward_timing": {
+        "goal_key": "tutorial_cards_risk_reward_goal",
+        "tip_key": "tutorial_cards_risk_reward_tip",
+        "goal_text": "Hedef: Risk alıp alamayacağını board'a göre belirle.",
+        "tip_text": "Güvenli board'da risk almak büyütür; tehlikeli board'da öldürür.",
+        "context_keys": [
+            "tutorial_cards_risk_reward_context_1",
+            "tutorial_cards_risk_reward_context_2",
+        ],
+        "context_lines": [
+            "Durum: Alçak, temiz ve güvenli tahta.",
+            "Öncelik: Büyüme fırsatını değerlendir.",
+        ],
+        "board_rows": [
+            "..........",
+            "....XX....",
+            "...XXXX...",
+        ],
+        "current_piece": {"name": "T", "x": 4, "y": 0, "rotation": 0},
+        "next_queue": ["I", "L", "O"],
+        "card_choices": ["speed_burst_legendary", "slow_fall", "gravity_shift"],
+        "recommended_card_id": "speed_burst_legendary",
+        "acceptable_card_ids": [],
+        "feedback_keys_by_card": {
+            "speed_burst_legendary": "tutorial_cards_risk_reward_feedback_speed",
+            "slow_fall": "tutorial_cards_risk_reward_feedback_slow",
+            "gravity_shift": "tutorial_cards_risk_reward_feedback_gravity",
+        },
+        "feedback_by_card": {
+            "speed_burst_legendary": "Doğru seçim. Güvenli board'da Hız Patlaması riski büyüme fırsatına çevirir.",
+            "slow_fall": "Zayıf seçim. Güvenli board'da yavaşlamak gereksiz — büyüme zamanı.",
+            "gravity_shift": "Zayıf seçim. Tahta zaten temiz — yer çekimi değişimi işe yaramaz.",
         },
     },
 }
