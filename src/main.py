@@ -1386,9 +1386,14 @@ def main():
     print("🎵 ANA MENÜ MÜZİĞİ BAŞLATILIYOR")
     print("=" * 60)
     music_enabled = settings_manager.get('music_enabled', True)
+    initial_mute_all = bool(settings_manager.get('mute_all', False))
+    try:
+        menu_sound.set_muted(initial_mute_all)
+    except Exception:
+        pass
     print(f"   music_enabled ayarı: {music_enabled}")
     
-    if music_enabled:
+    if music_enabled and not initial_mute_all:
         menu_music = settings_manager.get('menu_music', 'main_1')
         print(f"   menu_music ayarı: {menu_music}")
         print(f"   Çalınacak track: {menu_music.lower()}")
@@ -1416,7 +1421,10 @@ def main():
         except Exception:
             menu_sound.play_music(menu_music.lower(), loop=True)
     else:
-        print("   Müzik KAPALI (music_enabled=False)")
+        if not music_enabled:
+            print("   Müzik KAPALI (music_enabled=False)")
+        elif initial_mute_all:
+            print("   Müzik KAPALI (mute_all=True)")
     print("=" * 60)
 
     menu = Menu(screen, user_manager, settings_manager=settings_manager)
@@ -1426,7 +1434,7 @@ def main():
         pass
     # Köşe butonundaki ses durumunu başlangıçta senkronize et
     try:
-        menu.set_muted(settings_manager.get('mute_all', False))
+        menu.set_muted(initial_mute_all)
     except Exception:
         pass
     highscore_screen = HighScoreScreen(

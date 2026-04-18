@@ -8950,12 +8950,14 @@ class BlockStyleSettingsScreen:
         return self.block_style_manager.get_color(piece_name, self._base_color(piece_name))
 
     _CARD_SPACING = 92  # draw() ve mantık hesaplamaları aynı sabit değeri kullanır
+    _TOP_CULL_OFFSET = 35  # Satırlar yukarı kayarken kaybolma eşiğini biraz aşağı taşır
 
     def _clamp_scroll(self):
         height = self.screen.get_height()
         _s = self._s
         start_y = getattr(self, '_layout_start_y', _s(160))
-        visible = max(0, height - start_y - _s(140))
+        top_cut = _s(self._TOP_CULL_OFFSET)
+        visible = max(0, height - start_y - _s(140) - top_cut)
         card_spacing = _s(self._CARD_SPACING)
         max_scroll = max(0, len(self.piece_names) * card_spacing - visible)
         self.scroll_offset = max(0, min(self.scroll_offset, max_scroll))
@@ -8968,12 +8970,15 @@ class BlockStyleSettingsScreen:
         _s = self._s
         start_y = getattr(self, '_layout_start_y', _s(160))
         card_spacing = _s(self._CARD_SPACING)
+        card_height = _s(78)
         item_y = start_y + self.selected * card_spacing - self.scroll_offset
         height = self.screen.get_height()
-        if item_y < _s(140):
-            self.scroll_offset -= _s(140) - item_y
-        elif item_y > height - _s(160):
-            self.scroll_offset += item_y - (height - _s(160))
+        list_top = start_y + _s(self._TOP_CULL_OFFSET)
+        list_bottom = height - _s(140)
+        if item_y < list_top:
+            self.scroll_offset -= list_top - item_y
+        elif item_y + card_height > list_bottom:
+            self.scroll_offset += (item_y + card_height) - list_bottom
         self._clamp_scroll()
 
     def _choose_color(self):
@@ -9045,10 +9050,12 @@ class BlockStyleSettingsScreen:
         card_width = min(_s(780), width - _s(120))
         card_height = _s(78)
         card_spacing = _s(self._CARD_SPACING)
+        list_top = start_y + _s(self._TOP_CULL_OFFSET)
+        list_bottom = height - _s(140)
 
         for i, piece_name in enumerate(self.piece_names):
             y_pos = start_y + i * card_spacing - self.scroll_offset
-            if y_pos < _s(140) or y_pos > height - _s(140):
+            if y_pos + card_height < list_top or y_pos > list_bottom:
                 self.option_rects.append(pygame.Rect(0, 0, 0, 0))
                 continue
             card_x = (width - card_width) // 2
@@ -9107,12 +9114,12 @@ class BlockStyleSettingsScreen:
             self.option_rects.append(card_rect)
 
         # Scrollbar çiz
-        visible_height = height - start_y - _s(140)
+        visible_height = height - list_top - _s(140)
         total_content = len(self.piece_names) * card_spacing
         if total_content > visible_height:
             scrollbar_rect = pygame.Rect(
                 (width + card_width) // 2 + 12,
-                start_y,
+                list_top,
                 22,
                 visible_height
             )
@@ -9189,8 +9196,10 @@ class BlockStyleSettingsScreen:
                 ratio = max(0.0, min(1.0, ratio))
                 height = self.screen.get_height()
                 start_y = self._layout_start_y
-                visible = max(1, height - start_y - 140)
-                total_content = len(self.piece_names) * self._CARD_SPACING
+                _s = self._s
+                list_top = start_y + _s(self._TOP_CULL_OFFSET)
+                visible = max(1, height - list_top - _s(140))
+                total_content = len(self.piece_names) * _s(self._CARD_SPACING)
                 max_scroll = max(0, total_content - visible)
                 self.scroll_offset = int(ratio * max_scroll)
                 self._clamp_scroll()
@@ -9224,8 +9233,10 @@ class BlockStyleSettingsScreen:
                         ratio = max(0.0, min(1.0, ratio))
                         height = self.screen.get_height()
                         start_y = self._layout_start_y
-                        visible = max(1, height - start_y - 140)
-                        total_content = len(self.piece_names) * self._CARD_SPACING
+                        _s = self._s
+                        list_top = start_y + _s(self._TOP_CULL_OFFSET)
+                        visible = max(1, height - list_top - _s(140))
+                        total_content = len(self.piece_names) * _s(self._CARD_SPACING)
                         max_scroll = max(0, total_content - visible)
                         self.scroll_offset = int(ratio * max_scroll)
                         self._clamp_scroll()

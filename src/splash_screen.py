@@ -291,7 +291,7 @@ class SplashScreen:
                 if event.type == pygame.QUIT:
                     return False
                 if event.type == pygame.KEYDOWN:
-                    if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+                    if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER) and not fade_out:
                         fade_out = True
                         exit_start = now
             if confirm_pressed and not fade_out:
