@@ -176,6 +176,11 @@ class TutorialMode(Game):
         self.hub_lesson_rects = []
         self.hub_start_rect = None
         self.hub_back_rect = None
+        self.hub_arrow_left_rect = None
+        self.hub_arrow_right_rect = None
+        self._hub_carousel_anim_offset = 0.0
+        self._hub_carousel_anim_target = 0.0
+        self._hub_carousel_prev_chapter_id = None
         self.hub_progress_snapshot = build_default_tutorial_progress()
         self._load_lesson_catalog()
         self._sync_tutorial_card_overlay_reference()
@@ -385,6 +390,9 @@ class TutorialMode(Game):
                 current_index = index
                 break
         new_index = (current_index + int(delta)) % len(chapters)
+        self._hub_carousel_prev_chapter_id = self.hub_selected_chapter_id
+        self._hub_carousel_anim_offset = float(-delta)
+        self._hub_carousel_anim_target = 0.0
         chapter_id = chapters[new_index]['chapter'].get('id')
         self._select_hub_chapter(chapter_id)
         self.sound.play('move')
@@ -1323,6 +1331,12 @@ class TutorialMode(Game):
             if self.hub_start_rect and self.hub_start_rect.collidepoint(pos):
                 self._start_selected_hub_lesson()
                 return True
+            if getattr(self, 'hub_arrow_left_rect', None) and self.hub_arrow_left_rect.collidepoint(pos):
+                self._move_hub_chapter_selection(-1)
+                return True
+            if getattr(self, 'hub_arrow_right_rect', None) and self.hub_arrow_right_rect.collidepoint(pos):
+                self._move_hub_chapter_selection(1)
+                return True
             for rect, chapter_id in self.hub_chapter_rects:
                 if rect.collidepoint(pos):
                     self._select_hub_chapter(chapter_id)
@@ -1836,6 +1850,16 @@ class TutorialMode(Game):
         self._update_success_effects(dt_seconds)
 
         if self.hub_active:
+            # Carousel animasyonunu güncelle
+            if abs(self._hub_carousel_anim_offset) > 0.005:
+                speed = 8.0
+                self._hub_carousel_anim_offset += (self._hub_carousel_anim_target - self._hub_carousel_anim_offset) * min(1.0, speed * dt_seconds)
+                if abs(self._hub_carousel_anim_offset) < 0.005:
+                    self._hub_carousel_anim_offset = 0.0
+                    self._hub_carousel_prev_chapter_id = None
+            else:
+                self._hub_carousel_anim_offset = 0.0
+                self._hub_carousel_prev_chapter_id = None
             self._update_overlay_safe_visual_effects(delta_time)
             return
 
@@ -2197,155 +2221,460 @@ class TutorialMode(Game):
         ui_scale = self._tutorial_modal_scale(min_scale=0.72, max_scale=1.12)
         s = lambda v, minimum=1: self._sx(v, ui_scale, minimum)
 
+        # ── Tam ekran koyu overlay ──
         overlay = pygame.Surface((active_width, active_height), pygame.SRCALPHA)
-        overlay.fill((4, 8, 18, 228))
+        overlay.fill((5, 5, 15, 200))
         self.screen.blit(overlay, (0, 0))
 
         panel_rect = self._tutorial_hub_panel_rect()
-        retro_style.draw_glass_panel(self.screen, panel_rect, alpha=230, border_color=(70, 190, 255))
+        retro_style.draw_glass_panel(self.screen, panel_rect, alpha=210, border_color=retro_style.primary, glow=True)
 
-        title_font = retro_style.get_font(s(28, minimum=18), bold=True)
-        body_font = retro_style.get_font(s(16, minimum=11))
-        small_font = retro_style.get_font(s(14, minimum=10))
-        tiny_font = retro_style.get_font(s(12, minimum=9))
+        # ── Fontlar ──
+        h1_font = retro_style.get_font(s(30, minimum=20), bold=True)
+        h2_font = retro_style.get_font(s(22, minimum=15), bold=True)
+        h3_font = retro_style.get_font(s(18, minimum=13), bold=True)
+        body_font = retro_style.get_font(s(15, minimum=11))
+        small_font = retro_style.get_font(s(13, minimum=10))
+        tiny_font = retro_style.get_font(s(11, minimum=9))
+
+        mouse_pos = get_mouse_pos()
+
+        # ── Başlık bandı ──
+        header_h = s(72)
+        header_rect = pygame.Rect(panel_rect.x, panel_rect.y, panel_rect.width, header_h)
+        header_bg = pygame.Surface(header_rect.size, pygame.SRCALPHA)
+        header_bg.fill((8, 12, 30, 210))
+        self.screen.blit(header_bg, header_rect.topleft)
+        pygame.draw.line(self.screen, (*retro_style.primary[:3], 110),
+                         (header_rect.x + s(20), header_rect.bottom - 1),
+                         (header_rect.right - s(20), header_rect.bottom - 1))
 
         title_text = t('tutorial_hub_title', default='Eğitim Merkezi')
+        title_surf = h1_font.render(title_text, True, retro_style.primary)
+        self.screen.blit(title_surf, (header_rect.x + s(28), header_rect.y + s(12)))
+
+        total_stars = self._get_total_tutorial_stars()
+        star_badge_text = f'\u2605 {total_stars}'
+        star_badge_font = retro_style.get_font(s(16, minimum=12), bold=True)
+        star_surf = star_badge_font.render(star_badge_text, True, (255, 215, 0))
+        star_badge_w = star_surf.get_width() + s(20)
+        star_badge_h = star_surf.get_height() + s(8)
+        star_badge_rect = pygame.Rect(header_rect.right - star_badge_w - s(28),
+                                      header_rect.y + s(14), star_badge_w, star_badge_h)
+        star_bg = pygame.Surface(star_badge_rect.size, pygame.SRCALPHA)
+        star_bg.fill((12, 20, 45, 210))
+        self.screen.blit(star_bg, star_badge_rect.topleft)
+        pygame.draw.rect(self.screen, (255, 215, 0, 130), star_badge_rect, 1, border_radius=8)
+        self.screen.blit(star_surf, (star_badge_rect.x + s(10), star_badge_rect.y + s(4)))
+
         subtitle_text = t(
             'tutorial_hub_subtitle',
-            total_stars=self._get_total_tutorial_stars(),
-            default=f"Dersleri tekrar oyna, eksik yıldızları topla ve yeni bölümlerin kilidini aç. Toplam yıldız: {self._get_total_tutorial_stars()}",
+            total_stars=total_stars,
+            default='Dersleri tekrar oyna, eksik yıldızları topla ve yeni bölümlerin kilidini aç.',
         )
-        title_surf = title_font.render(title_text, True, (255, 255, 255))
-        self.screen.blit(title_surf, (panel_rect.x + s(26), panel_rect.y + s(22)))
-        subtitle_lines = self._wrap_text(subtitle_text, body_font, panel_rect.width - s(52), max_lines=2)
-        subtitle_y = panel_rect.y + s(58)
-        for line in subtitle_lines:
-            line_surf = body_font.render(line, True, (170, 210, 230))
-            self.screen.blit(line_surf, (panel_rect.x + s(26), subtitle_y))
-            subtitle_y += s(20)
+        sub_lines = self._wrap_text(subtitle_text, small_font, panel_rect.width - s(60), max_lines=1)
+        for line in sub_lines:
+            sub_surf = small_font.render(line, True, retro_style.text_secondary)
+            self.screen.blit(sub_surf, (header_rect.x + s(28), header_rect.y + s(48)))
 
-        content_top = subtitle_y + s(16)
-        content_height = panel_rect.height - (content_top - panel_rect.y) - s(98)
-        chapter_rect = pygame.Rect(panel_rect.x + s(22), content_top, s(320), content_height)
-        lesson_rect = pygame.Rect(chapter_rect.right + s(18), content_top, panel_rect.right - chapter_rect.right - s(40), content_height)
+        content_top = header_rect.bottom + s(14)
+        content_bottom = panel_rect.bottom - s(90)
+        content_height = content_bottom - content_top
 
-        retro_style.draw_glass_panel(self.screen, chapter_rect, alpha=170, border_color=(70, 150, 210))
-        retro_style.draw_glass_panel(self.screen, lesson_rect, alpha=170, border_color=(80, 170, 120))
-
-        chapter_header = title_font.render(t('tutorial_hub_chapters', default='Bölümler'), True, (150, 220, 255))
-        lesson_header = title_font.render(t('tutorial_hub_lessons', default='Dersler'), True, (150, 255, 190))
-        self.screen.blit(chapter_header, (chapter_rect.x + s(16), chapter_rect.y + s(14)))
-        self.screen.blit(lesson_header, (lesson_rect.x + s(16), lesson_rect.y + s(14)))
+        # ══════════════════════════════════════════════════════
+        # SOL PANEL — Bölüm carousel
+        # ══════════════════════════════════════════════════════
+        chapter_area_w = s(350)
+        chapter_area_rect = pygame.Rect(panel_rect.x + s(20), content_top,
+                                        chapter_area_w, content_height)
 
         chapter_entries = self._get_hub_chapter_entries()
+        chapter_count = len(chapter_entries)
+        current_chapter_index = 0
+        for ci, entry in enumerate(chapter_entries):
+            if entry['chapter'].get('id') == self.hub_selected_chapter_id:
+                current_chapter_index = ci
+                break
+
+        # ── Ok butonları (glass button stili) ──
+        arrow_w = s(32, minimum=26)
+        arrow_h = s(48, minimum=36)
+        arrow_y = chapter_area_rect.y + (chapter_area_rect.height - arrow_h) // 2
+        arrow_left_rect = pygame.Rect(chapter_area_rect.x, arrow_y, arrow_w, arrow_h)
+        arrow_right_rect = pygame.Rect(chapter_area_rect.right - arrow_w, arrow_y, arrow_w, arrow_h)
+        self.hub_arrow_left_rect = arrow_left_rect
+        self.hub_arrow_right_rect = arrow_right_rect
+
+        for arrow_rect, arrow_char in [(arrow_left_rect, '\u25C0'), (arrow_right_rect, '\u25B6')]:
+            hover = arrow_rect.collidepoint(mouse_pos)
+            # Glow
+            if hover:
+                glow_r = arrow_rect.inflate(8, 8)
+                glow_s = pygame.Surface(glow_r.size, pygame.SRCALPHA)
+                pygame.draw.rect(glow_s, (*retro_style.primary[:3], 40), glow_s.get_rect(), border_radius=10)
+                self.screen.blit(glow_s, glow_r.topleft)
+            # Button fill
+            btn_alpha = 200 if hover else 140
+            fill_c = (28, 35, 55) if hover else (18, 24, 40)
+            btn_s = pygame.Surface(arrow_rect.size, pygame.SRCALPHA)
+            btn_s.fill((*fill_c, btn_alpha))
+            # Üst highlight
+            hl_h = min(12, arrow_rect.height // 3)
+            for y in range(hl_h):
+                h_a = int((25 if hover else 12) * (1 - y / hl_h))
+                pygame.draw.line(btn_s, (255, 255, 255, h_a), (0, y), (arrow_rect.width, y))
+            self.screen.blit(btn_s, arrow_rect.topleft)
+            # Border
+            b_color = retro_style.primary if hover else (60, 75, 100)
+            pygame.draw.rect(self.screen, b_color, arrow_rect, 2, border_radius=10)
+            # Sol strip
+            strip_c = retro_style.primary if hover else (100, 110, 130)
+            if arrow_char == '\u25C0':
+                strip_r = pygame.Rect(arrow_rect.x + 2, arrow_rect.y + 4, 3 if hover else 2, arrow_rect.height - 8)
+            else:
+                strip_r = pygame.Rect(arrow_rect.right - 5, arrow_rect.y + 4, 3 if hover else 2, arrow_rect.height - 8)
+            pygame.draw.rect(self.screen, strip_c, strip_r, border_radius=2)
+            # Arrow glyph
+            a_font = retro_style.get_font(s(16, minimum=12), bold=True)
+            a_color = (255, 255, 255) if hover else (200, 210, 225)
+            a_surf = a_font.render(arrow_char, True, a_color)
+            self.screen.blit(a_surf, (
+                arrow_rect.x + (arrow_rect.width - a_surf.get_width()) // 2,
+                arrow_rect.y + (arrow_rect.height - a_surf.get_height()) // 2,
+            ))
+
+        # ── Kart alanı ──
+        card_pad_x = arrow_w + s(10)
+        card_area_x = chapter_area_rect.x + card_pad_x
+        card_area_w = chapter_area_rect.width - card_pad_x * 2
+        card_area_y = chapter_area_rect.y
+        card_area_h = chapter_area_rect.height - s(28)
+
+        clip_rect = pygame.Rect(card_area_x, card_area_y, card_area_w, card_area_h)
+        old_clip = self.screen.get_clip()
+        self.screen.set_clip(clip_rect)
+
+        anim_offset = self._hub_carousel_anim_offset
         self.hub_chapter_rects = []
-        chapter_card_y = chapter_rect.y + s(60)
-        chapter_gap = s(12)
-        chapter_available_height = max(s(120), chapter_rect.height - s(76))
-        chapter_count = max(1, len(chapter_entries))
-        chapter_card_h = min(s(116), max(s(84), (chapter_available_height - chapter_gap * (chapter_count - 1)) // chapter_count))
-        for entry in chapter_entries:
+
+        def _draw_chapter_card(entry, offset_x):
             chapter = entry['chapter']
             chapter_id = str(chapter.get('id') or '')
-            is_selected = chapter_id == self.hub_selected_chapter_id
             is_locked = not entry.get('unlocked', False)
-            compact_chapter_card = chapter_card_h <= s(92)
-            card_rect = pygame.Rect(chapter_rect.x + s(12), chapter_card_y, chapter_rect.width - s(24), chapter_card_h)
-            border_color = (255, 205, 90) if is_selected else ((100, 105, 120) if is_locked else (90, 180, 240))
-            retro_style.draw_glass_panel(self.screen, card_rect, alpha=205, border_color=border_color)
+            is_completed = entry.get('completed', False)
+
+            cx = card_area_x + int(offset_x * (card_area_w + s(16)))
+            card_rect = pygame.Rect(cx, card_area_y, card_area_w, card_area_h)
+
+            # Animasyon alpha
+            alpha_factor = max(0.0, 1.0 - abs(offset_x) * 1.8)
+            if alpha_factor < 0.02:
+                return
+
+            # Accent renk: kilitli=muted, tamamlandı=yeşil, aktif=cyan
+            if is_locked:
+                card_accent = (80, 85, 100)
+            elif is_completed:
+                card_accent = (0, 255, 150)
+            else:
+                card_accent = retro_style.primary
+
+            card_alpha = int(190 * alpha_factor)
+
+            # Glow (sadece aktif kart — offset~0)
+            if abs(offset_x) < 0.15 and not is_locked:
+                glow_r = card_rect.inflate(14, 14)
+                glow_s = pygame.Surface(glow_r.size, pygame.SRCALPHA)
+                pygame.draw.rect(glow_s, (*card_accent[:3], 30), glow_s.get_rect(), border_radius=14)
+                self.screen.blit(glow_s, glow_r.topleft)
+
+            # Panel
+            retro_style.draw_glass_panel(self.screen, card_rect, alpha=card_alpha,
+                                         border_color=card_accent, top_highlight=not is_locked)
             self.hub_chapter_rects.append((card_rect, chapter_id))
 
-            chapter_title = self._lesson_title(chapter)
-            title_color = (255, 255, 255) if not is_locked else (150, 155, 168)
-            title_line = title_font.render(chapter_title, True, title_color)
-            self.screen.blit(title_line, (card_rect.x + s(14), card_rect.y + s(10)))
+            # ── Başlık bandı ──
+            band_h = s(50)
+            band_rect = pygame.Rect(card_rect.x + 2, card_rect.y + 2, card_rect.width - 4, band_h)
+            band_bg = pygame.Surface(band_rect.size, pygame.SRCALPHA)
+            band_bg.fill((8, 12, 30, 180))
+            self.screen.blit(band_bg, band_rect.topleft)
+            pygame.draw.line(self.screen, (*card_accent[:3], 80),
+                             (band_rect.x + s(8), band_rect.bottom),
+                             (band_rect.right - s(8), band_rect.bottom))
 
+            # Bölüm numarası badge
+            ch_index = next((i for i, e in enumerate(chapter_entries)
+                             if e['chapter'].get('id') == chapter_id), 0)
+            num_text = f"{ch_index + 1}"
+            num_font = retro_style.get_font(s(14, minimum=10), bold=True)
+            num_surf = num_font.render(num_text, True, card_accent)
+            num_bg_size = max(num_surf.get_width(), num_surf.get_height()) + s(10)
+            num_bg_rect = pygame.Rect(band_rect.x + s(10), band_rect.y + (band_h - num_bg_size) // 2,
+                                      num_bg_size, num_bg_size)
+            num_bg_s = pygame.Surface(num_bg_rect.size, pygame.SRCALPHA)
+            num_bg_s.fill((15, 20, 45, 200))
+            self.screen.blit(num_bg_s, num_bg_rect.topleft)
+            pygame.draw.rect(self.screen, (*card_accent[:3], 160), num_bg_rect, 1, border_radius=6)
+            self.screen.blit(num_surf, (
+                num_bg_rect.x + (num_bg_rect.width - num_surf.get_width()) // 2,
+                num_bg_rect.y + (num_bg_rect.height - num_surf.get_height()) // 2,
+            ))
+
+            # Bölüm başlığı
+            title_x = num_bg_rect.right + s(10)
+            chapter_title = self._lesson_title(chapter)
+            title_max_w = band_rect.right - title_x - s(10)
+            title_surf = retro_style.render_fit_text(chapter_title, (255, 255, 255) if not is_locked else (150, 155, 168),
+                                                     title_max_w, s(18, minimum=14), bold=True)
+            self.screen.blit(title_surf, (title_x, band_rect.y + (band_h - title_surf.get_height()) // 2))
+
+            # ── Kart gövdesi ──
+            body_y = band_rect.bottom + s(14)
+            pad_x = card_rect.x + s(16)
+            text_w = card_rect.width - s(32)
+
+            # İlerleme çubuğu
+            completed_n = entry.get('completed_lessons', 0)
+            total_n = entry.get('total_lessons', 0)
+            bar_w = text_w
+            bar_h = s(6, minimum=4)
+            bar_rect = pygame.Rect(pad_x, body_y, bar_w, bar_h)
+            pygame.draw.rect(self.screen, (30, 35, 55), bar_rect, border_radius=3)
+            if total_n > 0:
+                fill_w = max(0, int(bar_w * completed_n / total_n))
+                if fill_w > 0:
+                    fill_rect = pygame.Rect(pad_x, body_y, fill_w, bar_h)
+                    pygame.draw.rect(self.screen, card_accent[:3], fill_rect, border_radius=3)
+            pygame.draw.rect(self.screen, (*card_accent[:3], 60), bar_rect, 1, border_radius=3)
+
+            # İlerleme metni
+            status_y = body_y + bar_h + s(8)
             status_text = t(
                 'tutorial_hub_chapter_status',
-                completed=entry.get('completed_lessons', 0),
-                total=entry.get('total_lessons', 0),
-                stars=entry.get('stars', 0),
-                default=f"{entry.get('completed_lessons', 0)}/{entry.get('total_lessons', 0)} ders  |  {entry.get('stars', 0)} yıldız",
+                completed=completed_n, total=total_n, stars=entry.get('stars', 0),
+                default=f"{completed_n}/{total_n} ders  |  {entry.get('stars', 0)} \u2605",
             )
-            status_surf = small_font.render(status_text, True, (170, 205, 225) if not is_locked else (130, 135, 145))
-            status_y = card_rect.y + (s(38) if compact_chapter_card else s(42))
-            self.screen.blit(status_surf, (card_rect.x + s(14), status_y))
+            status_color = retro_style.text_secondary if not is_locked else retro_style.text_muted
+            status_surf = small_font.render(status_text, True, status_color)
+            self.screen.blit(status_surf, (pad_x, status_y))
 
-            if not compact_chapter_card:
-                chapter_desc = t(chapter.get('description_key'), default=chapter.get('description_fallback', '')) if chapter.get('description_key') else str(chapter.get('description_fallback', ''))
-                desc_lines = self._wrap_text(chapter_desc, small_font, card_rect.width - s(28), max_lines=2)
-                desc_y = card_rect.y + s(64)
-                for line in desc_lines:
-                    line_surf = small_font.render(line, True, (208, 216, 225) if not is_locked else (120, 124, 132))
-                    self.screen.blit(line_surf, (card_rect.x + s(14), desc_y))
-                    desc_y += s(16)
+            # Zorluk yıldızları
+            diff_y = status_y + s(20)
+            difficulty = int(chapter.get('difficulty', 1) or 1)
+            diff_label = small_font.render(t('tutorial_difficulty', default='Zorluk:'), True,
+                                           retro_style.text_muted if is_locked else retro_style.text_secondary)
+            self.screen.blit(diff_label, (pad_x, diff_y))
+            star_x = pad_x + diff_label.get_width() + s(6)
+            for si in range(5):
+                star_char = '\u2605' if si < difficulty else '\u2606'
+                star_c = (255, 215, 0) if (si < difficulty and not is_locked) else retro_style.text_muted
+                star_s = small_font.render(star_char, True, star_c)
+                self.screen.blit(star_s, (star_x, diff_y))
+                star_x += star_s.get_width() + 1
 
-            footer_text = t('tutorial_hub_locked', default='Kilitli') if is_locked else (t('tutorial_hub_completed', default='Tamamlandı') if entry.get('completed') else t('tutorial_hub_in_progress', default='Devam ediyor'))
-            footer_surf = tiny_font.render(footer_text, True, (255, 210, 120) if is_locked else (150, 255, 180))
-            self.screen.blit(footer_surf, (card_rect.right - footer_surf.get_width() - s(12), card_rect.bottom - s(20)))
+            # Açıklama
+            desc_y = diff_y + s(24)
+            chapter_desc = (t(chapter.get('description_key'), default=chapter.get('description_fallback', ''))
+                            if chapter.get('description_key')
+                            else str(chapter.get('description_fallback', '')))
+            desc_lines = self._wrap_text(chapter_desc, small_font, text_w, max_lines=4)
+            for line in desc_lines:
+                desc_c = retro_style.text_secondary if not is_locked else retro_style.text_muted
+                line_surf = small_font.render(line, True, desc_c)
+                self.screen.blit(line_surf, (pad_x, desc_y))
+                desc_y += s(17)
 
-            chapter_card_y += chapter_card_h + chapter_gap
+            # ── Alt durum badge'i ──
+            badge_y = card_rect.bottom - s(36)
+            if is_locked:
+                badge_text = t('tutorial_hub_locked', default='Kilitli')
+                badge_color = retro_style.accent  # turuncu
+                badge_icon = '\U0001F512 '
+            elif is_completed:
+                badge_text = t('tutorial_hub_completed', default='Tamamlandı')
+                badge_color = (0, 255, 150)
+                badge_icon = '\u2714 '
+            else:
+                badge_text = t('tutorial_hub_in_progress', default='Devam ediyor')
+                badge_color = retro_style.primary
+                badge_icon = '\u25B6 '
+
+            badge_font = retro_style.get_font(s(12, minimum=9), bold=True)
+            badge_surf = badge_font.render(badge_text, True, badge_color)
+            badge_w = badge_surf.get_width() + s(18)
+            badge_h_px = badge_surf.get_height() + s(8)
+            badge_rect = pygame.Rect(pad_x, badge_y, badge_w, badge_h_px)
+            badge_bg = pygame.Surface(badge_rect.size, pygame.SRCALPHA)
+            badge_bg.fill((12, 20, 45, 190))
+            self.screen.blit(badge_bg, badge_rect.topleft)
+            pygame.draw.rect(self.screen, (*badge_color[:3], 120), badge_rect, 1, border_radius=8)
+            self.screen.blit(badge_surf, (badge_rect.x + s(9), badge_rect.y + s(4)))
+
+        # Aktif kartı çiz
+        current_entry = chapter_entries[current_chapter_index] if current_chapter_index < len(chapter_entries) else None
+        if current_entry:
+            _draw_chapter_card(current_entry, anim_offset)
+
+        # Animasyon: kayarak gelen/giden kartlar
+        if abs(anim_offset) > 0.005:
+            if anim_offset > 0:
+                prev_idx = (current_chapter_index - 1) % len(chapter_entries)
+                _draw_chapter_card(chapter_entries[prev_idx], anim_offset - 1.0)
+            if anim_offset < 0:
+                next_idx = (current_chapter_index + 1) % len(chapter_entries)
+                _draw_chapter_card(chapter_entries[next_idx], anim_offset + 1.0)
+
+        self.screen.set_clip(old_clip)
+
+        # ── Sayfa göstergeleri ──
+        dot_r = s(5, minimum=3)
+        dot_gap = s(16, minimum=12)
+        dots_total_w = chapter_count * dot_gap
+        dots_cx = chapter_area_rect.x + chapter_area_rect.width // 2
+        dots_y = chapter_area_rect.bottom - s(12)
+        for di in range(chapter_count):
+            cx = dots_cx - dots_total_w // 2 + di * dot_gap + dot_gap // 2
+            if di == current_chapter_index:
+                pygame.draw.circle(self.screen, retro_style.primary, (cx, dots_y), dot_r)
+                # Aktif dot glow
+                glow_s = pygame.Surface((dot_r * 6, dot_r * 6), pygame.SRCALPHA)
+                pygame.draw.circle(glow_s, (*retro_style.primary[:3], 40),
+                                   (dot_r * 3, dot_r * 3), dot_r * 3)
+                self.screen.blit(glow_s, (cx - dot_r * 3, dots_y - dot_r * 3))
+            else:
+                pygame.draw.circle(self.screen, retro_style.text_muted, (cx, dots_y), dot_r - 1)
+
+        # ══════════════════════════════════════════════════════
+        # SAĞ PANEL — Ders listesi
+        # ══════════════════════════════════════════════════════
+        lesson_rect = pygame.Rect(chapter_area_rect.right + s(16), content_top,
+                                  panel_rect.right - chapter_area_rect.right - s(36), content_height)
+        retro_style.draw_glass_panel(self.screen, lesson_rect, alpha=160,
+                                     border_color=(60, 120, 80), top_highlight=True)
+
+        # Ders paneli başlık bandı
+        lesson_header_h = s(42)
+        lh_rect = pygame.Rect(lesson_rect.x + 2, lesson_rect.y + 2, lesson_rect.width - 4, lesson_header_h)
+        lh_bg = pygame.Surface(lh_rect.size, pygame.SRCALPHA)
+        lh_bg.fill((8, 12, 30, 180))
+        self.screen.blit(lh_bg, lh_rect.topleft)
+        pygame.draw.line(self.screen, (60, 180, 120, 80),
+                         (lh_rect.x + s(12), lh_rect.bottom),
+                         (lh_rect.right - s(12), lh_rect.bottom))
+        # Sol strip
+        strip_rect = pygame.Rect(lh_rect.x + 2, lh_rect.y + 4, 4, lh_rect.height - 8)
+        pygame.draw.rect(self.screen, (0, 255, 150), strip_rect, border_radius=2)
+
+        lesson_header_surf = h3_font.render(t('tutorial_hub_lessons', default='Dersler'), True, (0, 255, 150))
+        self.screen.blit(lesson_header_surf, (lh_rect.x + s(14), lh_rect.y + (lesson_header_h - lesson_header_surf.get_height()) // 2))
 
         lesson_entries = self._get_hub_lesson_entries(self.hub_selected_chapter_id) if self.hub_selected_chapter_id else []
-        selected_chapter_entry = next((entry for entry in chapter_entries if entry['chapter'].get('id') == self.hub_selected_chapter_id), None)
+        selected_chapter_entry = current_entry
         chapter_locked = bool(selected_chapter_entry) and not selected_chapter_entry.get('unlocked', False)
 
         self.hub_lesson_rects = []
-        lesson_card_y = lesson_rect.y + s(60)
-        lesson_gap = s(8)
+        lesson_list_top = lesson_rect.y + lesson_header_h + s(14)
+        lesson_gap = s(6)
         if chapter_locked:
-            locked_lines = self._wrap_text(t('tutorial_hub_locked_hint', default='Bu bölüm, önceki eğitimler tamamlanınca açılır.'), body_font, lesson_rect.width - s(32), max_lines=3)
-            hint_y = lesson_card_y + s(24)
+            locked_lines = self._wrap_text(
+                t('tutorial_hub_locked_hint', default='Bu bölüm, önceki eğitimler tamamlanınca açılır.'),
+                body_font, lesson_rect.width - s(40), max_lines=3)
+            hint_y = lesson_list_top + s(30)
+            lock_icon = h2_font.render('\U0001F512', True, retro_style.accent)
+            self.screen.blit(lock_icon, (lesson_rect.centerx - lock_icon.get_width() // 2, hint_y))
+            hint_y += lock_icon.get_height() + s(12)
             for line in locked_lines:
-                line_surf = body_font.render(line, True, (210, 190, 150))
-                self.screen.blit(line_surf, (lesson_rect.x + s(16), hint_y))
-                hint_y += s(22)
+                line_surf = body_font.render(line, True, retro_style.text_muted)
+                self.screen.blit(line_surf, (lesson_rect.x + s(20), hint_y))
+                hint_y += s(20)
         else:
-            lesson_available_height = max(s(180), lesson_rect.height - s(76))
-            lesson_count = max(1, len(lesson_entries))
-            lesson_card_h = min(s(78), max(s(56), (lesson_available_height - lesson_gap * (lesson_count - 1)) // lesson_count))
-            description_line_limit = 2 if lesson_card_h >= s(72) else 1
-            for lesson_number, entry in enumerate(lesson_entries, start=1):
+            lesson_avail_h = max(s(160), lesson_rect.bottom - lesson_list_top - s(10))
+            n_lessons = max(1, len(lesson_entries))
+            lesson_card_h = min(s(72), max(s(50), (lesson_avail_h - lesson_gap * (n_lessons - 1)) // n_lessons))
+            compact = lesson_card_h <= s(58)
+            for li, entry in enumerate(lesson_entries, start=1):
                 lesson = entry['lesson']
                 lesson_id = str(lesson.get('id') or '')
                 is_selected = lesson_id == self.hub_selected_lesson_id
-                compact_lesson_card = lesson_card_h <= s(62)
-                row_rect = pygame.Rect(lesson_rect.x + s(12), lesson_card_y, lesson_rect.width - s(24), lesson_card_h)
-                border_color = (255, 205, 90) if is_selected else (100, 190, 130)
-                retro_style.draw_glass_panel(self.screen, row_rect, alpha=205, border_color=border_color)
+                lesson_completed = entry.get('completed', False)
+
+                row_rect = pygame.Rect(lesson_rect.x + s(10), lesson_list_top,
+                                       lesson_rect.width - s(20), lesson_card_h)
+
+                # Seçili ders glow
+                if is_selected:
+                    sel_glow = row_rect.inflate(8, 8)
+                    sel_gs = pygame.Surface(sel_glow.size, pygame.SRCALPHA)
+                    pygame.draw.rect(sel_gs, (*retro_style.primary[:3], 35), sel_gs.get_rect(), border_radius=12)
+                    self.screen.blit(sel_gs, sel_glow.topleft)
+
+                # Ders kartı
+                row_alpha = 200 if is_selected else 150
+                row_fill = (28, 35, 55) if is_selected else (18, 24, 40)
+                row_s = pygame.Surface(row_rect.size, pygame.SRCALPHA)
+                row_s.fill((*row_fill, row_alpha))
+                # Üst highlight
+                hl = min(10, row_rect.height // 4)
+                for y in range(hl):
+                    h_a = int((20 if is_selected else 10) * (1 - y / hl))
+                    pygame.draw.line(row_s, (255, 255, 255, h_a), (0, y), (row_rect.width, y))
+                self.screen.blit(row_s, row_rect.topleft)
+
+                # Border
+                r_border = retro_style.primary if is_selected else (60, 75, 100)
+                pygame.draw.rect(self.screen, r_border, row_rect, 2 if is_selected else 1, border_radius=10)
+
+                # Sol strip
+                ls_color = retro_style.primary if is_selected else ((0, 255, 150) if lesson_completed else (100, 110, 130))
+                ls_w = 4 if is_selected else 3
+                ls_rect = pygame.Rect(row_rect.x + 3, row_rect.y + 4, ls_w, row_rect.height - 8)
+                pygame.draw.rect(self.screen, ls_color, ls_rect, border_radius=2)
+
                 self.hub_lesson_rects.append((row_rect, lesson_id))
 
-                title_line = body_font.render(f"{lesson_number}. {self._lesson_title(lesson)}", True, (255, 255, 255))
-                self.screen.blit(title_line, (row_rect.x + s(14), row_rect.y + s(10)))
+                # Numara + başlık
+                text_x = row_rect.x + s(16)
+                title_color = (255, 255, 255) if is_selected else (200, 210, 225)
+                title_text_l = f"{li}. {self._lesson_title(lesson)}"
+                title_max_w = row_rect.width - s(100)
+                title_surf = retro_style.render_fit_text(title_text_l, title_color, title_max_w,
+                                                         s(14, minimum=11), bold=is_selected)
+                self.screen.blit(title_surf, (text_x, row_rect.y + s(8)))
 
-                if not compact_lesson_card:
+                # Açıklama (kompakt değilse)
+                if not compact:
                     lesson_desc = self._lesson_description(lesson)
-                    desc_lines = self._wrap_text(lesson_desc, small_font, row_rect.width - s(28), max_lines=description_line_limit)
-                    desc_y = row_rect.y + s(34)
-                    for line in desc_lines:
-                        line_surf = small_font.render(line, True, (205, 215, 223))
-                        self.screen.blit(line_surf, (row_rect.x + s(14), desc_y))
-                        desc_y += s(16)
+                    desc_lines = self._wrap_text(lesson_desc, tiny_font, row_rect.width - s(32), max_lines=1)
+                    if desc_lines:
+                        desc_surf = tiny_font.render(desc_lines[0], True, retro_style.text_muted)
+                        self.screen.blit(desc_surf, (text_x, row_rect.y + s(28)))
 
-                status_text = t(
-                    'tutorial_hub_lesson_status',
-                    stars=entry.get('stars', 0),
-                    default=f"Yıldız: {entry.get('stars', 0)}/3",
-                )
-                if entry.get('completed'):
-                    status_text = f"{status_text}  |  {t('tutorial_hub_completed', default='Tamamlandı')}"
-                status_surf = tiny_font.render(status_text, True, (150, 230, 180))
-                status_y = row_rect.y + (s(32) if compact_lesson_card else lesson_card_h - s(20))
-                self.screen.blit(status_surf, (row_rect.right - status_surf.get_width() - s(12), status_y))
+                # Yıldız + durum
+                stars_n = entry.get('stars', 0)
+                star_text = '\u2605' * stars_n + '\u2606' * (3 - stars_n)
+                star_color = (255, 215, 0) if stars_n > 0 else retro_style.text_muted
+                star_surf = tiny_font.render(star_text, True, star_color)
+                star_y = row_rect.y + (s(8) if compact else row_rect.height - s(18))
+                self.screen.blit(star_surf, (row_rect.right - star_surf.get_width() - s(12), star_y))
 
-                lesson_card_y += lesson_card_h + lesson_gap
+                if lesson_completed and not compact:
+                    done_surf = tiny_font.render(t('tutorial_hub_completed', default='Tamamlandı'),
+                                                 True, (0, 255, 150))
+                    self.screen.blit(done_surf, (row_rect.right - done_surf.get_width() - star_surf.get_width() - s(20), star_y))
 
+                lesson_list_top += lesson_card_h + lesson_gap
+
+        # ══════════════════════════════════════════════════════
+        # ALT PANEL — Kontroller ve butonlar
+        # ══════════════════════════════════════════════════════
         controls_text = t(
             'tutorial_hub_controls',
-            default='Sol/Sağ: bölüm  Yukarı/Aşağı: ders  Enter: başlat  Esc: menü',
+            default='Sol/Sağ: bölüm  |  Yukarı/Aşağı: ders  |  Enter: başlat  |  Esc: menü',
         )
-        controls_surf = small_font.render(controls_text, True, (170, 200, 220))
-        self.screen.blit(controls_surf, (panel_rect.x + s(24), panel_rect.bottom - s(72)))
+        controls_surf = tiny_font.render(controls_text, True, retro_style.text_muted)
+        self.screen.blit(controls_surf, (panel_rect.centerx - controls_surf.get_width() // 2,
+                                         panel_rect.bottom - s(84)))
 
         button_y = panel_rect.bottom - s(58)
         button_h = s(42)
@@ -2354,22 +2683,24 @@ class TutorialMode(Game):
         self.hub_back_rect = back_rect
         self.hub_start_rect = start_rect
 
-        back_hover = back_rect.collidepoint(get_mouse_pos())
-        start_hover = start_rect.collidepoint(get_mouse_pos())
+        back_hover = back_rect.collidepoint(mouse_pos)
+        start_hover = start_rect.collidepoint(mouse_pos)
         retro_style.draw_uniform_button(
-            self.screen,
-            back_rect,
+            self.screen, back_rect,
             t('tutorial_hub_back', default='Menüye Dön'),
             sub_text='ESC',
             color_code=retro_style.secondary,
             selected=back_hover,
             state='hover' if back_hover else 'normal',
         )
-        can_start = bool(selected_chapter_entry) and selected_chapter_entry.get('unlocked') and bool(self.hub_selected_lesson_id)
-        start_label = t('tutorial_hub_start', default='Dersi Başlat') if can_start else t('tutorial_hub_locked', default='Kilitli')
+        can_start = (bool(selected_chapter_entry) and
+                     selected_chapter_entry.get('unlocked') and
+                     bool(self.hub_selected_lesson_id))
+        start_label = (t('tutorial_hub_start', default='Dersi Başlat')
+                       if can_start
+                       else t('tutorial_hub_locked', default='Kilitli'))
         retro_style.draw_uniform_button(
-            self.screen,
-            start_rect,
+            self.screen, start_rect,
             start_label,
             sub_text='ENTER',
             color_code=retro_style.success if can_start else retro_style.primary,
