@@ -794,7 +794,7 @@ class TabbedSettingsScreen:
             panel_rect.x + self._s(20, minimum=14),
             panel_rect.y + self._s(86, minimum=64),
             panel_rect.width - self._s(40, minimum=28),
-            panel_rect.height - self._s(156, minimum=116),
+            panel_rect.height - self._s(206, minimum=154),
         )
 
         picker_w = min(self._s(760, minimum=560), width - self._s(180, minimum=120))
@@ -824,6 +824,9 @@ class TabbedSettingsScreen:
             ),
             'hint_x': panel_rect.x + self._s(20, minimum=14),
             'hint_y': panel_bottom - self._s(28, minimum=20),
+            'action_h': self._s(38, minimum=30),
+            'action_gap': self._s(10, minimum=8),
+            'action_y': list_rect.bottom + self._s(10, minimum=8),
             'picker': picker_rect,
             'picker_list_rect': picker_list_rect,
             'picker_item_h': self._s(48, minimum=38),
@@ -1210,7 +1213,7 @@ class TabbedSettingsScreen:
                     pass
                 if total > 0:
                     return f"{configured}/5 faz, {total} {_t('track_count_unit', 'parça')}", (150, 220, 255)
-                return '▶ ' + _t('track_default_label', 'Varsayılan'), (150, 220, 255)
+                return '▶ ' + _t('track_default_label', 'Varsayılan (Oyun İçi)'), (150, 220, 255)
             try:
                 playlist = self.settings_manager.get_mode_music_playlist(mode_key)
                 count = len(playlist) if playlist else 0
@@ -1218,7 +1221,7 @@ class TabbedSettingsScreen:
                 count = 0
             if count > 0:
                 return f"{count} {_t('track_count_unit', 'parça')}", (150, 220, 255)
-            return t('track_default_label'), (150, 220, 255)
+            return _t('track_default_label', 'Varsayılan (Oyun İçi)'), (150, 220, 255)
 
         elif itype == 'keybind':
             section = item.get('section')
@@ -1640,6 +1643,64 @@ class TabbedSettingsScreen:
         self.settings_manager.set_mode_music_playlist(self._playlist_edit_mode_key, list(self._playlist_edit_items))
         return 'mode_playlist_changed'
 
+    def _playlist_selectable_track_values(self) -> list[str]:
+        values: list[str] = []
+        seen: set[str] = set()
+        for option in self._track_options:
+            value = option.get('value') if isinstance(option, dict) else None
+            if not isinstance(value, str) or not value:
+                continue
+            if value in seen:
+                continue
+            values.append(value)
+            seen.add(value)
+        return values
+
+    def _playlist_bulk_action_rects(self, metrics: dict[str, int | pygame.Rect]) -> dict[str, pygame.Rect]:
+        list_rect = metrics.get('list_rect')
+        if not isinstance(list_rect, pygame.Rect):
+            return {}
+
+        try:
+            action_h = int(metrics.get('action_h', 0))
+            action_gap = int(metrics.get('action_gap', 0))
+            action_y = int(metrics.get('action_y', 0))
+        except Exception:
+            return {}
+
+        if action_h <= 0 or list_rect.width <= 0:
+            return {}
+
+        width = max(1, (list_rect.width - (action_gap * 2)) // 3)
+        return {
+            'clear': pygame.Rect(list_rect.x, action_y, width, action_h),
+            'reset_default': pygame.Rect(list_rect.x + width + action_gap, action_y, width, action_h),
+            'select_all': pygame.Rect(list_rect.x + (width + action_gap) * 2, action_y, width, action_h),
+        }
+
+    def _apply_playlist_bulk_action(self, action_key: str) -> str | None:
+        if action_key in ('clear', 'reset_default'):
+            if not self._playlist_edit_items:
+                return None
+            self._playlist_edit_items = []
+            self._playlist_edit_selected = 0
+            self._playlist_edit_scroll = 0
+            return self._save_mode_playlist()
+
+        if action_key == 'select_all':
+            all_values = self._playlist_selectable_track_values()
+            if not all_values:
+                return None
+            if self._playlist_edit_items == all_values:
+                return None
+            self._playlist_edit_items = list(all_values)
+            self._playlist_edit_selected = len(self._playlist_edit_items)
+            self._playlist_edit_scroll = 0
+            self._playlist_ensure_visible()
+            return self._save_mode_playlist()
+
+        return None
+
     def _track_label_for_value(self, value) -> str:
         for option in self._track_options:
             if option.get('value') == value:
@@ -1773,6 +1834,12 @@ class TabbedSettingsScreen:
                 if self._playlist_edit_selected == 0:
                     self._open_mode_playlist_picker()
                 return None
+            if event.key == pygame.K_a:
+                return self._apply_playlist_bulk_action('select_all')
+            if event.key == pygame.K_c:
+                return self._apply_playlist_bulk_action('clear')
+            if event.key == pygame.K_r:
+                return self._apply_playlist_bulk_action('reset_default')
             if event.key in (pygame.K_DELETE, pygame.K_BACKSPACE):
                 if self._playlist_edit_selected > 0:
                     idx = self._playlist_edit_selected - 1
@@ -1812,6 +1879,9 @@ class TabbedSettingsScreen:
 
         elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             pos = normalize_mouse_pos(getattr(event, 'pos', None)) or event.pos
+            for action_key, action_rect in self._playlist_bulk_action_rects(metrics).items():
+                if action_rect.collidepoint(pos):
+                    return self._apply_playlist_bulk_action(action_key)
             for rect, idx in self._playlist_edit_item_rects:
                 if rect.collidepoint(pos):
                     self._playlist_edit_selected = idx
@@ -3462,7 +3532,7 @@ class TabbedSettingsScreen:
             color = world_colors.get(world_num, (150, 170, 200))
 
             bg_surf = pygame.Surface(item_rect.size, pygame.SRCALPHA)
-            bg_alpha = 70 if is_selected else 35
+            bg_alpha = 90 if is_selected else 35
             bg_color = (*color, bg_alpha)
             pygame.draw.rect(bg_surf, bg_color, bg_surf.get_rect(), border_radius=self._s(12, minimum=8))
             self.screen.blit(bg_surf, item_rect.topleft)
@@ -3470,7 +3540,12 @@ class TabbedSettingsScreen:
             border_alpha = 255 if is_selected else 60
             border_color = (*color[:3],)
             if is_selected:
-                pygame.draw.rect(self.screen, border_color, item_rect, width=self._s(2, minimum=1), border_radius=self._s(12, minimum=8))
+                selected_border = (
+                    min(255, border_color[0] + 28),
+                    min(255, border_color[1] + 28),
+                    min(255, border_color[2] + 28),
+                )
+                pygame.draw.rect(self.screen, selected_border, item_rect, width=self._s(3, minimum=2), border_radius=self._s(12, minimum=8))
             else:
                 border_surf = pygame.Surface(item_rect.size, pygame.SRCALPHA)
                 pygame.draw.rect(border_surf, (*border_color, border_alpha), border_surf.get_rect(), width=1, border_radius=self._s(12, minimum=8))
@@ -3495,7 +3570,7 @@ class TabbedSettingsScreen:
                 count_text = f"{count} {_t('track_count_unit', 'parça')}"
                 count_color = (150, 220, 255)
             else:
-                count_text = _t('track_default_label', 'Varsayılan')
+                count_text = _t('track_default_label', 'Varsayılan (Oyun İçi)')
                 count_color = (120, 140, 170)
             count_surf = track_count_font.render(count_text, True, count_color)
             self.screen.blit(count_surf, (item_rect.right - count_surf.get_width() - self._s(16, minimum=12), item_rect.y + (item_h - count_surf.get_height()) // 2))
@@ -3553,6 +3628,14 @@ class TabbedSettingsScreen:
             rect = pygame.Rect(list_rect.x, y, list_rect.width, item_h)
             self._playlist_edit_item_rects.append((rect, idx))
 
+            if idx == self._playlist_edit_selected:
+                glow_pad_x = self._s(6, minimum=4)
+                glow_pad_y = self._s(4, minimum=2)
+                glow_rect = rect.inflate(glow_pad_x, glow_pad_y)
+                glow = pygame.Surface(glow_rect.size, pygame.SRCALPHA)
+                pygame.draw.rect(glow, (120, 220, 255, 52), glow.get_rect(), border_radius=self._s(12, minimum=8))
+                self.screen.blit(glow, glow_rect.topleft)
+
             text = '+ Ekle' if idx == 0 else self._track_label_for_value(self._playlist_edit_items[idx - 1])
             retro_style.draw_uniform_button(
                 self.screen,
@@ -3561,15 +3644,43 @@ class TabbedSettingsScreen:
                 color_code=retro_style.primary,
                 selected=(idx == self._playlist_edit_selected),
             )
+
+            if idx == self._playlist_edit_selected:
+                pygame.draw.rect(
+                    self.screen,
+                    (160, 240, 255),
+                    rect,
+                    width=self._s(2, minimum=1),
+                    border_radius=self._s(12, minimum=8),
+                )
         self.screen.set_clip(None)
 
         total_h = total_items * (item_h + gap)
         if total_h > list_rect.height:
             retro_style.draw_scrollbar(self.screen, metrics['scrollbar_rect'], self._playlist_edit_scroll, total_h, list_rect.height)
 
-        hint_text = 'ESC: Kapat   ENTER: Seç/Ekle   DELETE: Sil   ←/→: Taşı'
-        hint_surf = self.font_hint.render(hint_text, True, (180, 200, 220))
-        self.screen.blit(hint_surf, (int(metrics['hint_x']), int(metrics['hint_y'])))
+        action_rects = self._playlist_bulk_action_rects(metrics)
+        selectable_tracks = self._playlist_selectable_track_values()
+        action_defs = [
+            ('clear', _t('playlist_clear', 'Temizle'), bool(self._playlist_edit_items)),
+            ('reset_default', _t('playlist_reset_default', 'Varsayılana Dön'), bool(self._playlist_edit_items)),
+            ('select_all', _t('playlist_select_all', 'Tümünü Seç'), bool(selectable_tracks)),
+        ]
+        for action_key, action_label, enabled in action_defs:
+            action_rect = action_rects.get(action_key)
+            if action_rect is None:
+                continue
+            retro_style.draw_uniform_button(
+                self.screen,
+                action_rect,
+                action_label,
+                color_code=retro_style.primary,
+                selected=False,
+            )
+            if not enabled:
+                disabled_surf = pygame.Surface(action_rect.size, pygame.SRCALPHA)
+                pygame.draw.rect(disabled_surf, (10, 18, 34, 155), disabled_surf.get_rect(), border_radius=self._s(12, minimum=8))
+                self.screen.blit(disabled_surf, action_rect.topleft)
 
         if not self._playlist_edit_picker_open:
             return

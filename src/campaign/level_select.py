@@ -309,9 +309,7 @@ class CampaignLevelSelect:
                         if self.selected_level == level_num:
                             return f'play_{level_num}'
                         self.selected_level = level_num
-                    else:
-                        # Kilitli level - sadece seç
-                        self.selected_level = level_num
+                    return None
         
         elif event.type == pygame.MOUSEMOTION:
             pos = normalize_mouse_pos(event.pos) or event.pos
@@ -339,8 +337,10 @@ class CampaignLevelSelect:
             new_level = world_start
         elif new_level > world_end:
             new_level = world_end
-        
-        self.selected_level = new_level
+
+        # Kilitli level'a klavye ile geçişe izin verme
+        if self._is_level_unlocked(new_level):
+            self.selected_level = new_level
         # Klavye navigasyonunda hover state'i temizle; panel hemen seçili level'ı göstersin
         self.hovered_level = None
     

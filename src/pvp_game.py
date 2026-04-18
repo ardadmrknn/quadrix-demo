@@ -11,7 +11,7 @@ from constants import *
 from sound import SoundManager
 from background import BackgroundManager
 from background_effects import get_shared_falling_blocks_layer
-from mode_skins import apply_board_tint, apply_outer_tint, draw_board_overlay, get_mode_skin
+from mode_skins import apply_board_tint, apply_outer_tint, get_mode_skin
 from retro_style import retro_style
 from renderers.jelly_renderer import draw_jelly_block, draw_jelly_border
 from themes import ThemeManager
@@ -312,6 +312,12 @@ class PvPGame:
         self.current_piece2 = self.get_next_piece()
         skip_hidden_rows(self.current_piece2, self.board2)
         self.next_piece2 = self.get_next_piece()
+
+        # Hold parçaları
+        self.hold_piece1 = None
+        self.hold_piece2 = None
+        self.can_hold1 = True
+        self.can_hold2 = True
         
         # Tema renklerini parçalara uygula
         self.apply_theme_to_pieces()
@@ -485,7 +491,14 @@ class PvPGame:
     
     def apply_theme_to_pieces(self):
         """Tema + blok stili görünümünü mevcut parçalara uygula (ana oyun temeli)."""
-        for piece in (self.current_piece1, self.next_piece1, self.current_piece2, self.next_piece2):
+        for piece in (
+            self.current_piece1,
+            self.next_piece1,
+            self.hold_piece1,
+            self.current_piece2,
+            self.next_piece2,
+            self.hold_piece2,
+        ):
             self._apply_block_style(piece)
 
     def _apply_block_style(self, piece):
@@ -597,6 +610,7 @@ class PvPGame:
                 'soft_drop': pygame.K_s,
                 'hard_drop': pygame.K_LSHIFT,
                 'rotate': pygame.K_w,
+                'hold': pygame.K_LCTRL,
             },
             'player2': {
                 'move_left': pygame.K_LEFT,
@@ -604,6 +618,7 @@ class PvPGame:
                 'soft_drop': pygame.K_DOWN,
                 'hard_drop': pygame.K_SPACE,
                 'rotate': pygame.K_UP,
+                'hold': pygame.K_RCTRL,
             },
             'pause': pygame.K_p,
         }
@@ -833,6 +848,125 @@ class PvPGame:
             return pygame.key.name(key_code).upper()
         except ValueError:
             return str(key_code)
+
+    @staticmethod
+    def _normalize_preview_label(key: str, fallback: str) -> str:
+        try:
+            raw = t(key, fallback)
+        except Exception:
+            raw = fallback
+        normalized = str(raw).strip().replace('\n', ' ')
+        return normalized.upper() if normalized else fallback.upper()
+
+    def _hold_preview_label(self, player: int) -> str:
+        controls_key = 'player1' if player == 1 else 'player2'
+        hold_key = self.pvp_controls.get(controls_key, {}).get('hold')
+        key_label = self._key_label(hold_key) if hold_key is not None else '?'
+        compact_label = (
+            str(key_label)
+            .replace('LEFT ', 'L')
+            .replace('RIGHT ', 'R')
+            .replace('CONTROL', 'CTRL')
+            .replace('RETURN', 'ENTER')
+            .replace('KP_ENTER', 'ENTER')
+        )
+        return t('pvp_hold_preview_label', default='Saklanan:{binding}', binding=compact_label)
+
+    def _reset_piece_to_spawn(self, piece, board):
+        if piece is None:
+            return None
+
+        spawned = piece.copy() if hasattr(piece, 'copy') else piece
+        try:
+            rotation_state = int(getattr(spawned, 'rotation_state', 0) or 0) % 4
+        except Exception:
+            rotation_state = 0
+        if rotation_state:
+            for _ in range((4 - rotation_state) % 4):
+                spawned.rotate()
+        spawned.x = BOARD_WIDTH // 2 - len(spawned.shape[0]) // 2
+        spawned.y = get_piece_spawn_y(spawned)
+        skip_hidden_rows(spawned, board)
+        self._apply_block_style(spawned)
+        return spawned
+
+    def _eliminate_player(self, player: int) -> None:
+        if player == 1:
+            self.p1_eliminated = True
+            opponent_eliminated = self.p2_eliminated
+            winner = 2
+        else:
+            self.p2_eliminated = True
+            opponent_eliminated = self.p1_eliminated
+            winner = 1
+
+        if not opponent_eliminated:
+            self.winner = winner
+            self.game_over = True
+            self.match_end_reason = 'elimination'
+            try:
+                from gamepad_manager import get_gamepad_manager
+                get_gamepad_manager().rumble(1.0, 1.0, 600)
+            except Exception:
+                pass
+            self.sound.play('gameover')
+            return
+
+        self.determine_winner()
+
+    def _try_hold_piece(self, player: int) -> bool:
+        if self.game_over or self.paused:
+            return False
+
+        if player == 1:
+            board = self.board1
+            current_piece = self.current_piece1
+            next_piece = self.next_piece1
+            hold_piece = self.hold_piece1
+            can_hold = self.can_hold1
+        else:
+            board = self.board2
+            current_piece = self.current_piece2
+            next_piece = self.next_piece2
+            hold_piece = self.hold_piece2
+            can_hold = self.can_hold2
+
+        if current_piece is None or not can_hold:
+            return False
+
+        stored_hold = self._reset_piece_to_spawn(current_piece, board)
+        if hold_piece is None:
+            new_current = next_piece
+            new_next = self.get_next_piece()
+        else:
+            new_current = hold_piece
+            new_next = next_piece
+
+        new_current = self._reset_piece_to_spawn(new_current, board)
+        if new_next is not None:
+            self._apply_block_style(new_next)
+
+        if new_current is None or not board.is_valid_position(new_current):
+            self._eliminate_player(player)
+            return False
+
+        if player == 1:
+            self.hold_piece1 = stored_hold
+            self.current_piece1 = new_current
+            self.next_piece1 = new_next
+            self.can_hold1 = False
+        else:
+            self.hold_piece2 = stored_hold
+            self.current_piece2 = new_current
+            self.next_piece2 = new_next
+            self.can_hold2 = False
+
+        self._vs_panel_dirty = True
+        try:
+            self.sound.play('swap')
+        except Exception:
+            self.sound.play('move')
+        return True
 
     def _start_pvp_music(self):
         """Start the arena music respecting user preferences."""
@@ -1192,7 +1326,7 @@ class PvPGame:
                     slice_info,
                 )
 
-    def _draw_preview_panel(self, rect: pygame.Rect, accent_color, next_piece, footer_label: str):
+    def _draw_preview_panel(self, rect: pygame.Rect, accent_color, preview_piece, panel_title: str):
         sc = self._ui_scale()
         s = lambda v, minimum=1: self._sx(v, sc, minimum)
 
@@ -1201,7 +1335,9 @@ class PvPGame:
         retro_style.draw_glass_panel(self.screen, rect, alpha=122, border_color=soft_border, glow=False)
         pygame.draw.rect(self.screen, (*soft_border, 146), rect, 1, border_radius=12)
 
-        title_text = t('next', 'Sonraki').upper()
+        title_text = str(panel_title).strip().upper()
+        if not title_text:
+            title_text = t('next', 'Sonraki').upper()
         title_max_width = max(s(24), rect.width - s(16))
         title_font = retro_style.get_fitting_font(
             title_text,
@@ -1238,8 +1374,8 @@ class PvPGame:
         self.screen.blit(inner_surface, preview_rect.topleft)
         pygame.draw.rect(self.screen, (*soft_border, 84), preview_rect, 1, border_radius=s(10))
 
-        if next_piece is not None:
-            self._draw_preview_piece(next_piece, preview_rect)
+        if preview_piece is not None:
+            self._draw_preview_piece(preview_piece, preview_rect)
         else:
             empty_font = retro_style.get_font(s(22, minimum=14), bold=True)
             empty = empty_font.render('—', True, retro_style.text_muted)
@@ -1638,6 +1774,10 @@ class PvPGame:
                             self.trigger_hard_drop_screen_shake()
 
                         self.lock_and_new_piece(1)
+
+                    # Hold
+                    elif event.key == controls1['hold']:
+                        self._try_hold_piece(1)
                 
                 # OYUNCU 2 KONTROLLER (Ok tuşları + Space)
                 if not self.board2.is_game_over():
@@ -1711,6 +1851,10 @@ class PvPGame:
                             self.trigger_hard_drop_screen_shake()
 
                         self.lock_and_new_piece(2)
+
+                    # Hold
+                    elif event.key == controls2['hold']:
+                        self._try_hold_piece(2)
             
             # Game over ekranında mouse tıklama kontrolü
             if self.game_over and event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
@@ -2457,19 +2601,7 @@ class PvPGame:
 
             # Lock-out kontrolü (Tetris Guideline)
             if self.board1.is_game_over():
-                self.p1_eliminated = True
-                if not self.p2_eliminated:
-                    self.winner = 2
-                    self.game_over = True
-                    self.match_end_reason = 'elimination'
-                    try:
-                        from gamepad_manager import get_gamepad_manager
-                        get_gamepad_manager().rumble(1.0, 1.0, 600)
-                    except Exception:
-                        pass
-                    self.sound.play('gameover')
-                    return
-                self.determine_winner()
+                self._eliminate_player(1)
                 return
 
             # Satır temizlenmiyorsa blok kilitlenme sesi çal
@@ -2576,6 +2708,7 @@ class PvPGame:
             self.current_piece1 = self.next_piece1
             skip_hidden_rows(self.current_piece1, self.board1)
             self.next_piece1 = self.get_next_piece()
+            self.can_hold1 = True
         
         else:  # player == 2
             if self.effects_enabled:
@@ -2605,19 +2738,7 @@ class PvPGame:
 
             # Lock-out kontrolü (Tetris Guideline)
             if self.board2.is_game_over():
-                self.p2_eliminated = True
-                if not self.p1_eliminated:
-                    self.winner = 1
-                    self.game_over = True
-                    self.match_end_reason = 'elimination'
-                    try:
-                        from gamepad_manager import get_gamepad_manager
-                        get_gamepad_manager().rumble(1.0, 1.0, 600)
-                    except Exception:
-                        pass
-                    self.sound.play('gameover')
-                    return
-                self.determine_winner()
+                self._eliminate_player(2)
                 return
 
             # Satır temizlenmiyorsa blok kilitlenme sesi çal
@@ -2724,6 +2845,7 @@ class PvPGame:
             self.current_piece2 = self.next_piece2
             skip_hidden_rows(self.current_piece2, self.board2)
             self.next_piece2 = self.get_next_piece()
+            self.can_hold2 = True
     
     def determine_winner(self):
         """Kazananı belirle.
@@ -3504,7 +3626,6 @@ class PvPGame:
             # Varsayılan siyah arka plan
             pygame.draw.rect(self.screen, (6, 6, 16), board_rect)
         apply_board_tint(self.screen, board_rect, skin)
-        draw_board_overlay(self.screen, board_rect, skin)
 
         # Oyuncuya göre çok hafif tint + border (alanları daha net ayırır) - cache'li
         accent_key = (int(board_width), int(board_height), player_accent)
@@ -3740,8 +3861,11 @@ class PvPGame:
         offset_x2 = int(self.p2_offset_x + shake_x)
         preview_x2 = int(self.p2_preview_x + shake_x)
         start_y = int(self.p1_offset_y + shake_y)
-        preview_panel_height = min(board_height, max(self._sx(158), cell_size * 5 + self._sx(22)))
-        preview_panel_y = start_y + max(0, (board_height - preview_panel_height) // 2)
+        preview_gap = max(self._sx(12), cell_size // 2)
+        preview_panel_height = max(self._sx(118), (board_height - preview_gap) // 2)
+        preview_panel_height = min(preview_panel_height, max(self._sx(136), cell_size * 4 + self._sx(26)))
+        top_preview_y = start_y
+        bottom_preview_y = start_y + board_height - preview_panel_height
         vs_panel_height = min(board_height, max(self._sx(176), cell_size * 6 + self._sx(24)))
         vs_panel_y = start_y + max(0, (board_height - vs_panel_height) // 2)
         
@@ -3788,10 +3912,19 @@ class PvPGame:
         self._draw_player_header(p1_header, p1_name, UIColors.NEON_CYAN, int(self.board1.score), int(self.board1.lines_cleared), 'WASD')
         self._draw_player_header(p2_header, p2_name, UIColors.NEON_MAGENTA, int(self.board2.score), int(self.board2.lines_cleared), t('arrows').upper())
 
-        p1_preview_rect = pygame.Rect(preview_x1, preview_panel_y, preview_panel_width, preview_panel_height)
-        p2_preview_rect = pygame.Rect(preview_x2, preview_panel_y, preview_panel_width, preview_panel_height)
-        self._draw_preview_panel(p1_preview_rect, UIColors.NEON_CYAN, self.next_piece1, 'WASD')
-        self._draw_preview_panel(p2_preview_rect, UIColors.NEON_MAGENTA, self.next_piece2, t('arrows').upper())
+        next_label = self._normalize_preview_label('next', 'Sonraki')
+        p1_hold_label = self._hold_preview_label(1)
+        p2_hold_label = self._hold_preview_label(2)
+
+        p1_next_rect = pygame.Rect(preview_x1, top_preview_y, preview_panel_width, preview_panel_height)
+        p1_hold_rect = pygame.Rect(preview_x1, bottom_preview_y, preview_panel_width, preview_panel_height)
+        p2_next_rect = pygame.Rect(preview_x2, top_preview_y, preview_panel_width, preview_panel_height)
+        p2_hold_rect = pygame.Rect(preview_x2, bottom_preview_y, preview_panel_width, preview_panel_height)
+
+        self._draw_preview_panel(p1_next_rect, UIColors.NEON_CYAN, self.next_piece1, next_label)
+        self._draw_preview_panel(p1_hold_rect, UIColors.NEON_CYAN, self.hold_piece1, p1_hold_label)
+        self._draw_preview_panel(p2_next_rect, UIColors.NEON_MAGENTA, self.next_piece2, next_label)
+        self._draw_preview_panel(p2_hold_rect, UIColors.NEON_MAGENTA, self.hold_piece2, p2_hold_label)
 
         # OYUNCU 1 (Sol)
         self.draw_board(self.board1, self.current_piece1, offset_x1, start_y, cell_size)
@@ -3998,6 +4131,12 @@ class PvPGame:
         self.current_piece2 = self.get_next_piece()
         skip_hidden_rows(self.current_piece2, self.board2)
         self.next_piece2 = self.get_next_piece()
+
+        # Hold durumunu sıfırla
+        self.hold_piece1 = None
+        self.hold_piece2 = None
+        self.can_hold1 = True
+        self.can_hold2 = True
         
         # Tema renklerini parçalara uygula
         self.apply_theme_to_pieces()
@@ -4133,8 +4272,8 @@ class PvPGame:
             focus_color = UIColors.NEON_GOLD
 
         panel_w = min(s(900), width - s(160))
-        panel_h = s(420) if self.current_input >= 3 else s(340)  # Mod seçimi için daha büyük panel
-        panel_rect = pygame.Rect(width // 2 - panel_w // 2, title_rect.bottom + s(32), panel_w, panel_h)
+        panel_h = s(420) if self.current_input >= 3 else s(372)
+        panel_rect = pygame.Rect(width // 2 - panel_w // 2, title_rect.bottom + s(28), panel_w, panel_h)
 
         # Ana UI temasına uygun glass panel
         retro_style.draw_glass_panel(self.screen, panel_rect, alpha=195, border_color=focus_color)
@@ -4142,12 +4281,20 @@ class PvPGame:
 
         if self.current_input <= 2:
             # İsim giriş alanları
-            inner_pad_x = s(36)
-            inner_pad_top = s(28)
-            gap_y = s(28)
-            field_height = s(116)
-            field1 = pygame.Rect(panel_rect.x + inner_pad_x, panel_rect.y + inner_pad_top, panel_rect.width - inner_pad_x * 2, field_height)
-            field2 = pygame.Rect(panel_rect.x + inner_pad_x, field1.bottom + gap_y, panel_rect.width - inner_pad_x * 2, field_height)
+            inner_pad_x = s(40)
+            inner_pad_top = s(18)
+            label_h = s(26)
+            label_to_field_gap = s(8)
+            block_gap = s(18)
+            field_height = s(120)
+
+            label1_y = panel_rect.y + inner_pad_top
+            field1_y = label1_y + label_h + label_to_field_gap
+            label2_y = field1_y + field_height + block_gap
+            field2_y = label2_y + label_h + label_to_field_gap
+
+            field1 = pygame.Rect(panel_rect.x + inner_pad_x, field1_y, panel_rect.width - inner_pad_x * 2, field_height)
+            field2 = pygame.Rect(panel_rect.x + inner_pad_x, field2_y, panel_rect.width - inner_pad_x * 2, field_height)
             # Tıklama tespiti için sakla
             self._name_field1_rect = field1.copy()
             self._name_field2_rect = field2.copy()
@@ -4159,6 +4306,7 @@ class PvPGame:
                 UIColors.NEON_CYAN,
                 self.current_input == 1,
                 ['W', 'A', 'S', 'D'],
+                label1_y,
             )
             self._draw_name_field(
                 field2,
@@ -4167,14 +4315,15 @@ class PvPGame:
                 UIColors.NEON_MAGENTA,
                 self.current_input == 2,
                 ['UP', 'DN', 'LT', 'RT'],
+                label2_y,
             )
 
             progress_font = retro_style.get_font(s(20, minimum=12), bold=False)
             progress_text = progress_font.render(f'{t("pvp_step")} {self.current_input}/4', True, focus_color)
-            self.screen.blit(progress_text, progress_text.get_rect(center=(width // 2, panel_rect.bottom + s(34))))
+            self.screen.blit(progress_text, progress_text.get_rect(center=(width // 2, panel_rect.bottom + s(28))))
             
             # Progress bar (adım noktaları)
-            dot_y = panel_rect.bottom + s(58)
+            dot_y = panel_rect.bottom + s(48)
             dot_radius = s(6)
             dot_spacing = s(24)
             total_dots = 4
@@ -4193,13 +4342,14 @@ class PvPGame:
             # Mod seçimi ve süre ayarı
             self._draw_mode_selection(panel_rect)
     
-    def _draw_name_field(self, rect, label, value, accent_color, is_active, keys):
+    def _draw_name_field(self, rect, label, value, accent_color, is_active, keys, label_top: int | None = None):
         ui_scale = self._ui_scale(min_scale=0.72, max_scale=1.14)
         s = lambda v, minimum=1: self._sx(v, ui_scale, minimum)
         # Oyuncu numarası etiketi (alan üstünde)
         label_font = retro_style.get_font(s(22, minimum=12), bold=True)
         label_color = accent_color if is_active else (140, 150, 170)
-        self.screen.blit(label_font.render(label, True, label_color), (rect.x + s(2), rect.y - s(32)))
+        label_y = (rect.y - s(30)) if label_top is None else int(label_top)
+        self.screen.blit(label_font.render(label, True, label_color), (rect.x + s(6), label_y))
 
         field_surface = pygame.Surface(rect.size, pygame.SRCALPHA)
 
@@ -4250,7 +4400,7 @@ class PvPGame:
         name_font = retro_style.get_font(s(36, minimum=16), bold=True)
         clipped = display[:18]
         name_surface = name_font.render(clipped, True, text_color)
-        name_rect = name_surface.get_rect(midleft=(s(24), int(field_surface.get_height() * 0.45)))
+        name_rect = name_surface.get_rect(midleft=(s(22), int(field_surface.get_height() * 0.42)))
         field_surface.blit(name_surface, name_rect)
 
         # Alt bilgi metni
@@ -4262,7 +4412,7 @@ class PvPGame:
             hint_text = t('pvp_enter_confirm')
             hint_color = (100, 110, 130)
         hint_surface = hint_font.render(hint_text, True, hint_color)
-        field_surface.blit(hint_surface, (s(24), field_surface.get_height() - s(30)))
+        field_surface.blit(hint_surface, (s(22), field_surface.get_height() - s(26)))
 
         # Tuş göstergeleri
         key_color = accent_color if is_active else (80, 90, 110)

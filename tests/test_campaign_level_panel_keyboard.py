@@ -65,7 +65,8 @@ class _MinimalLevelSelect:
             new_level = world_start
         elif new_level > world_end:
             new_level = world_end
-        self.selected_level = new_level
+        if self._is_level_unlocked(new_level):
+            self.selected_level = new_level
         self.hovered_level = None  # FIX: klavye navigasyonunda hover sıfırla
 
     def _start_world_transition(self, target_world: int) -> None:
@@ -92,7 +93,7 @@ def test_move_selection_clears_hovered_level():
     sel._move_selection(1)
 
     assert sel.hovered_level is None, "Klavye navigasyonu hovered_level'i None yapmalı"
-    assert sel.selected_level == 4
+    assert sel.selected_level == 3
 
 
 def test_move_selection_negative_clears_hovered_level():

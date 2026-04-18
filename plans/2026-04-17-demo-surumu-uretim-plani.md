@@ -46,21 +46,24 @@ Bu plan mevcut kod yapisina gore guncellendi: `ExtrasScreen.handle_input`, `Menu
 
 ### Extras Modlari
 
-Acik:
+Acik (6):
 
 - Classic Mode
 - Sprint Mode
 - Ultra Mode
 - Zen Mode
+- Card Mastery (Kart Ustaligi)
+- Wide Mode
 
-Kilitli:
+Kilitli (7):
 
 - Quadrix Extra
-- Kart Ustaligi
-- Wide Mode
-- Survival Mode
-- Cascade Mode
+- Challenge Mode (Görev Modu) — *Özel kilit*: D1 ilk 20 aşama acik, 21+ kilitli
+- Daily Challenge (Günlük Görev) — Tam kilitleme
+- Survival Mode (Hayatta Kalma)
+- Cascade Mode (Çağlayan)
 - Hardcore Mode
+- [future expansions]
 
 ### Ana Menu
 
@@ -77,8 +80,81 @@ Kilitli:
 
 ### Kampanya
 
-- Solo: Dunya 1 acik, Dunya 2-5 kilitli.
-- Co-op: Dunya 1 acik, Dunya 2 kilitli.
+- Solo: Dunya 1 (level 1-20) acik, Dunya 2-5 kilitli.
+- Co-op: Dunya 1 (level 1-10) acik, Dunya 2 kilitli.
+
+---
+
+## Kilit Tipleri (Lock Type Definitions)
+
+### Tip 1: Tam Kilitleme (Full Lock)
+
+Mod seciminde `handle_input` return noktasinda kilit kontrolu. Secilemez.
+
+**Uygulanacaklar:**
+- Quadrix Extra
+- Daily Challenge
+- Hardcore Mode
+- Online PvP
+- Online Co-op
+
+**Davranis:**
+- Kilitli mod icona hover → "Tam sürümde mevcut" badge
+- Seçilirse → upgrade modal/toast + Store URL link
+
+---
+
+### Tip 2: Kismi Kilitleme (Partial Lock - Intro Stages)
+
+Mod aciklaniyor ama icerik kismı kilitli (level siniri).
+
+**Uygulanacaklar:**
+- Challenge Mode: D1 ilk 20 aşama acik, 21+ D2-Dx seviyesi kilitli
+- (Gelecek: Daily Challenge ile benzer intro pattern istenirse aynı yontemle)
+
+**Davranis:**
+- Moda giris acik
+- Level secim ekraninda level > 20 görsel kilit + tooltip "ilk 20 aşama için demo"
+- Level 21+ tiklanirsa kilit modal
+
+---
+
+### Tip 3: Gecis Kilitleme (Transition Lock - Menu Navigation)
+
+Ana menu icinde online secenekleri donusuklestir ve redirect.
+
+**Uygulanacaklar:**
+- Online PvP (menu'de pvp_online_polygon)
+- Online Co-op (menu'de coop_online_polygon)
+
+**Davranis:**
+- Keyboard/mouse seciminde "full" build'e donuslendirme modal
+- Local PvP/Co-op normal calisir
+
+---
+
+### Kilit Mesaji Bicimi
+
+Uc ortak mesaj:
+
+1. **Full Lock (Tam Kilitleme):**
+   ```
+   "Bu mod tam sürümde mevcut."
+   [Tap to upgrade] [Close]
+   → webbrowser.open(DEMO_STEAM_STORE_URL)
+   ```
+
+2. **Partial Lock (Kısmi Kilitleme):**
+   ```
+   "İlk 20 aşama tanıtım amaçlıdır. Diğer seviyeleri tam sürümde oyna."
+   [Tap to upgrade] [Close]
+   ```
+
+3. **Transition Lock (Geçiş Kilitleme):**
+   ```
+   "Çevrimiçi oyunlar tam sürümde mevcut."
+   [Go to store] [Back to Menu]
+   ```
 
 ---
 
@@ -95,14 +171,18 @@ Kilitli:
 # Default: full build
 IS_DEMO = False
 
+# Tip 1: Tam kilitleme — mode id'leri
 DEMO_LOCKED_EXTRAS_MODE_IDS = {
     'Quadrix Extra',
-    'Kart Ustaligi',
-    'Wide Mode',
+    'Challenge Mode',          # ← Özel: kısmi kilit alt tip
+    'Daily Challenge',
     'Survival Mode',
     'Cascade Mode',
     'Hardcore Mode',
 }
+
+# Tip 2: Challenge Mode — özel kısmi kilit (sadece Challenge'a has)
+DEMO_CHALLENGE_UNLOCKED_STAGES = 20  # D1 level 1-20
 
 DEMO_LOCKED_MAIN_ACTIONS = {'online_pvp', 'online_coop'}
 
@@ -114,6 +194,13 @@ DEMO_COOP_WORLD_LIMIT = 1
 
 DEMO_STEAM_STORE_URL = 'https://store.steampowered.com/app/XXXXXXX'
 DEMO_APP_NAME = 'quadrix_demo'
+
+# Lokalizasyon turleri — demo_upgrade_prompt.py'de kullanilir
+DEMO_LOCK_MESSAGES = {
+    'full_lock': 'demo_mode_full_lock_title',      # "Bu mod tam sürümde mevcut"
+    'partial_lock': 'demo_mode_partial_lock_title',  # "İlk 20 aşama tanıtım..."
+    'transition_lock': 'demo_mode_transition_lock_title',  # "Çevrimiçi oyunlar..."
+}
 ```
 
 `write_demo_config.py` gereksinimi:
@@ -132,14 +219,23 @@ Not: import stili proje ile uyumlu olmali (`try: from .demo_config ... except: f
 
 Uygulama noktasi:
 
-- Cizim: `_draw_modern_mode_card` icinde locked overlay + `DEMO` badge.
+- Cizim: `_draw_modern_mode_card` icinde locked overlay + "DEMO KILIT" badge.
 - Input: `handle_input` icinde `RETURN/SPACE` ve mouse click donuslerinden once locked check.
 
 Davranis:
 
-- Kilitli mod secilirse oyun moda gecmez.
-- Ortak helper ile "tam surumde mevcut" modal/toast gosterilir.
-- Istek halinde `webbrowser.open(DEMO_STEAM_STORE_URL)` cagrilir.
+1. **Tam Kilitleme** (Quadrix Extra, Daily Challenge, Survival, Cascade, Hardcore):
+   - Mod secilirse oyun moda gecmez.
+   - Full-lock upgrade modal gosterilir: "Bu mod tam sürümde mevcut"
+
+2. **Kismi Kilitleme** (Challenge Mode):
+   - Mod acilir ve level secim ekranina gider.
+   - Level secimde level > 20 icin partial-lock modal gosterilir.
+   - DEMO_CHALLENGE_UNLOCKED_STAGES = 20 degeri ile sinir tutulur.
+
+Ortak davranis:
+- Kilit gorselinde store URL link saglayan buton.
+- `webbrowser.open(DEMO_STEAM_STORE_URL)` cagrilir.
 
 ---
 
@@ -149,20 +245,21 @@ Davranis:
 
 Uygulama noktasi:
 
-- Keyboard akisi: `handle_input` icindeki `current_option == 'pvp_2_players'` ve `current_option == 'coop_mode'` `RETURN/SPACE` branch'leri.
-- Mouse akisi: `MOUSEBUTTONDOWN` icindeki `pvp_online_polygon` / `coop_online_polygon` branch'leri.
+- Keyboard akisi: `handle_input` icindeki online donusu imi control etmeli, transition-lock modal gostermelidir.
+- Mouse akisi: `MOUSEBUTTONDOWN` icindeki `online_pvp_polygon` / `online_coop_polygon` branch'leri.
 
 Davranis:
 
-- `online_pvp` veya `online_coop` donmeden once demo kilit kontrolu.
-- Kilitliyse aksiyon iptal + demo upgrade modal/toast.
-- Local PvP / local Co-op davranisi degismez.
+- **Online PvP** seçilirse: transition-lock modal "Çevrimiçi oyunlar tam sürümde mevcut"
+- **Online Co-op** seçilirse: aynı transition-lock modal
+- **Local PvP / Local Co-op** normal calisir (davranis degismez)
+- Modal butonlari: [Go to Store] → webbrowser.open(), [Back to Menu] → iptal
 
 ---
 
 ### Faz 4 - Kampanya Kilitleme
 
-#### 4a. Solo Kampanya
+#### 4a. Solo Kampanya (Campaign Mode)
 
 **Dosya:** `src/campaign/level_select.py`
 
@@ -174,9 +271,9 @@ Uygulama noktasi:
 
 Kural:
 
-- `DEMO_SOLO_WORLD_LIMIT = 1` iken `level_num > 20` kilitli.
+- `DEMO_SOLO_WORLD_LIMIT = 1` iken world > 1 veya level_num > 20 kilitli.
 
-#### 4b. Co-op Kampanya
+#### 4b. Co-op Kampanya (Co-op Campaign)
 
 **Dosya:** `src/campaign/coop_level_select.py`
 
@@ -188,7 +285,18 @@ Uygulama noktasi:
 
 Kural:
 
-- `DEMO_COOP_WORLD_LIMIT = 1` iken `level_num > 10` kilitli.
+- `DEMO_COOP_WORLD_LIMIT = 1` iken world > 1 veya level_num > 10 kilitli.
+
+#### 4c. Challenge Modu Kismi Kilitleme (Campaign → Challenge Mode)
+
+**Dosya:** `src/campaign/level_select.py` (Challenge Mode'a uyarlanan versiyon)
+
+Challenge Mode'un kendi seviye sistemi varsa, o sisteme:
+
+Uygulama noktasi:
+
+- Level secim ekraninda level_num > DEMO_CHALLENGE_UNLOCKED_STAGES (20) icin kilitli gorseli.
+- Level 21+ tiklanirsa partial-lock modal: "İlk 20 aşama tanıtım amaçlıdır..."
 
 ---
 
@@ -259,11 +367,16 @@ Tekrarsiz kilit mesaji icin ortak helper modulu:
 
 Icerik:
 
-- `show_demo_upgrade_prompt(screen, settings_manager, ...)`
-- Web acma: `webbrowser.open`
-- Lokalizasyon anahtarlari: `demo_mode_locked_title`, `demo_mode_locked_body`, `demo_upgrade_cta`
+- `show_demo_full_lock_prompt(screen, settings_manager, ...)` — Tip 1
+- `show_demo_partial_lock_prompt(screen, settings_manager, ...)` — Tip 2 (Challenge-specific)
+- `show_demo_transition_lock_prompt(screen, settings_manager, ...)` — Tip 3
+- `webbrowser.open()` uygulama
+- Lokalizasyon anahtarlari: `demo_mode_full_lock_title`, `demo_mode_partial_lock_title`, `demo_mode_transition_lock_title`
 
-Bu helper `extras_menu.py`, `menu.py`, `campaign/level_select.py`, `campaign/coop_level_select.py` tarafinda tekrar kullanilir.
+Kullanacaklar:
+- `extras_menu.py`: `show_demo_full_lock_prompt()` (tüm tam kilitler) ve `show_demo_partial_lock_prompt()` (Challenge partial kilit)
+- `menu.py`: `show_demo_transition_lock_prompt()` (Online PvP/Co-op)
+- `campaign/level_select.py`: `show_demo_partial_lock_prompt()` (Challenge level 21+)
 
 ---
 
@@ -278,11 +391,14 @@ Bu helper `extras_menu.py`, `menu.py`, `campaign/level_select.py`, `campaign/coo
 Kapsam:
 
 1. Demo config: mode writer full/demo gecisleri dogru dosya uretiyor.
-2. Extras: kilitli mod id seciminde mod donus engelleniyor.
-3. Menu: online pvp/coop donusleri demo modda bloklaniyor.
-4. Solo campaign: level 21 kilitli, level 20 acik.
-5. Co-op campaign: level 11 kilitli, level 10 acik.
-6. `QUADRIX_APP_NAME` demo iken path ayrimi dogru.
+2. Extras (Tam Kilit): kilitli mod id seciminde mod donus engelleniyor.
+3. Extras (Kismi Kilit): Challenge Mode moda girer, level 21+ tiklanirsa modal gosteriliyor.
+4. Menu: online pvp/coop donusleri demo modda bloklaniyor; local calisir.
+5. Solo campaign: world 2+ kilitli, level 21+ kilitli.
+6. Co-op campaign: world 2 kilitli, level 11+ kilitli.
+7. Challenge level selection: level 1-20 acik, 21+ kilitli.
+8. `QUADRIX_APP_NAME` demo iken path ayrimi dogru.
+9. Kilit prompt modal'lari doğru kilit türü mesaji gösteriyor (full/partial/transition).
 
 ---
 
@@ -309,7 +425,8 @@ Kapsam:
 ## Acik Sorular
 
 1. Demo AppID ve store URL net mi?
-2. Kilitli/acik mod listesi aynen kabul mu?
-3. Demo buildde version bump isteniyor mu, isteniyorsa ayri `windows_demo` version dosyasi acilsin mi?
-4. macOS tarafinda tek script parametreli mi olsun, yoksa demo icin ayri wrapper mi tercih?
-5. UI'da tam modal mi, hafif toast + buton mu isteniyor?
+2. ~~Kilitli/acik mod listesi aynen kabul mu?~~ → **Kapatıldı**: Challenge, Daily Challenge, Cascade, Survival, Quadrix Extra (tam kilit) + Online PvP/Co-op. Diğerleri açık.
+3. ~~Kilit mekanigi tipleri?~~ → **Kapatıldı**: 3 tip — Tam kilit (full lock), Kısmi kilit (partial lock, Challenge D1 ilk 20), Geçiş kilidi (transition lock, Online).
+4. Demo buildde version bump isteniyor mu, isteniyorsa ayri `windows_demo` version dosyasi acilsin mi?
+5. macOS tarafinda tek script parametreli mi olsun, yoksa demo icin ayri wrapper mi tercih?
+6. UI'da tam modal mi, hafif toast + buton mu isteniyor? (Modal tercih edilmiş durumda.)

@@ -37,6 +37,9 @@ def _restore_stubbed_modules():
 pygame_mod = types.ModuleType('pygame')
 pygame_mod.QUIT = 0
 pygame_mod.KEYDOWN = 1
+pygame_mod.MOUSEBUTTONDOWN = 2
+pygame_mod.MOUSEMOTION = 3
+pygame_mod.MOUSEWHEEL = 4
 class FakeFont:
     def render(self, *a, **kw): return None
     def size(self, *a): return (0, 0)
@@ -247,6 +250,50 @@ def test_toggle_on_off_idempotent():
 
     apply_campaign_unlock_toggle(inst)
     assert inst.debug_unlock_all is False
+
+
+def test_handle_input_left_click_locked_level_does_not_change_selection():
+    class _Rect:
+        def __init__(self, hit=True):
+            self._hit = hit
+
+        def collidepoint(self, _pos):
+            return self._hit
+
+    inst = object.__new__(CampaignLevelSelect)
+    inst.play_button = None
+    inst.world_transition_active = False
+    inst.world_tabs = []
+    inst.level_buttons = [(_Rect(hit=True), 2)]
+    inst.selected_level = 1
+    inst.hovered_level = None
+    inst.scroll_offset = 0
+    inst.max_scroll = 0
+    inst._is_level_unlocked = lambda level_num: level_num == 1
+
+    event = types.SimpleNamespace(
+        type=pygame_mod.MOUSEBUTTONDOWN,
+        button=1,
+        pos=(10, 10),
+    )
+
+    result = inst.handle_input(event)
+
+    assert result is None
+    assert inst.selected_level == 1
+
+
+def test_move_selection_does_not_select_locked_level():
+    inst = object.__new__(CampaignLevelSelect)
+    inst.current_world = 1
+    inst.selected_level = 3
+    inst.hovered_level = 7
+    inst._is_level_unlocked = lambda level_num: level_num <= 3
+
+    inst._move_selection(1)
+
+    assert inst.selected_level == 3
+    assert inst.hovered_level is None
 
 
 def test_level_select_ui_scale_uses_projected_effective_scale():
