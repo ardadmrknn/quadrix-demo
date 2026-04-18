@@ -2433,7 +2433,7 @@
     "fr": "Inconditionnel",
     "it": "Duro",
     "pt": "Incondicional",
-    "tr": "hardcore"
+    "tr": "Hardcore"
   },
   "guide_mode_name_online_pvp": {
     "de": "Online-PvP",
@@ -2466,7 +2466,7 @@
     "zh": "额外四轴"
   },
   "guide_mode_name_ultra": {
-    "tr": "ultra"
+    "tr": "Ultra"
   },
   "guide_mode_name_wide": {
     "de": "Breit",
@@ -2976,7 +2976,7 @@
     "fr": "Inconditionnel",
     "it": "Duro",
     "pt": "Incondicional",
-    "tr": "hardcore"
+    "tr": "Hardcore"
   },
   "mode_label_online_pvp": {
     "de": "Online-PvP",
@@ -2991,7 +2991,7 @@
     "tr": "Hayatta kalma"
   },
   "mode_label_ultra": {
-    "tr": "ultra"
+    "tr": "Ultra"
   },
   "mode_label_wide": {
     "de": "Breit",
@@ -3701,7 +3701,7 @@
     "pt": "Único jogador"
   },
   "skin_cascade_title": {
-    "tr": "KADEMELİ DALGA"
+    "tr": "ÇAĞLAYAN"
   },
   "skin_daily_title": {
     "ja": "デイリーミッション",
@@ -3716,10 +3716,10 @@
     "fr": "COUP DE SPRINT",
     "it": "CORSA DI SPRINT",
     "pt": "CORRIDA DE SPRINT",
-    "tr": "SPRINT HÜKÜMETİ"
+    "tr": "SPRINT"
   },
   "skin_survival_title": {
-    "tr": "HAYATTA KALMA UYARISI"
+    "tr": "HAYATTA KALMA"
   },
   "skin_tetris2_title": {
     "fr": "QUADRIX SUPPLÉMENTAIRE",
@@ -3729,10 +3729,11 @@
   },
   "skin_ultra_title": {
     "es": "ULTRA RÁPIDO",
-    "fr": "ULTRA-BLITZ"
+    "fr": "ULTRA-BLITZ",
+    "tr": "ULTRA"
   },
   "skin_wide_title": {
-    "tr": "GENİŞ ARENA"
+    "tr": "GENİŞ"
   },
   "skin_zen_title": {
     "tr": "ZEN BAHÇESİ"
