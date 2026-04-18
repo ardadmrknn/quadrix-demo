@@ -115,12 +115,13 @@ def mark_lesson_completed(progress: Any, lesson_id: str, stars: int, stats: Dict
     if not lesson:
         return normalized
 
+    canonical_lesson_id = str(lesson.get("id") or "")
     chapter_id = str(lesson.get("chapter") or "")
     chapter_entry = normalized.get("chapters", {}).get(chapter_id)
     if not isinstance(chapter_entry, dict):
         return normalized
 
-    lesson_entry = chapter_entry.get("lessons", {}).get(lesson_id)
+    lesson_entry = chapter_entry.get("lessons", {}).get(canonical_lesson_id)
     if not isinstance(lesson_entry, dict):
         return normalized
 
@@ -153,7 +154,8 @@ def mark_chapter_completed(progress: Any, chapter_id: str, stars_per_lesson: int
 
 def get_chapter_completion(progress: Any, chapter_id: str) -> Dict[str, Any]:
     normalized = ensure_progress_shape(progress)
-    chapter_entry = normalized.get("chapters", {}).get(chapter_id, {})
+    resolved_chapter_id = LEGACY_CHAPTER_MAP.get(chapter_id, chapter_id)
+    chapter_entry = normalized.get("chapters", {}).get(resolved_chapter_id, {})
     lessons = chapter_entry.get("lessons", {}) if isinstance(chapter_entry, dict) else {}
     lesson_values = list(lessons.values()) if isinstance(lessons, dict) else []
     completed_count = sum(1 for lesson in lesson_values if isinstance(lesson, dict) and lesson.get("completed"))
@@ -187,6 +189,7 @@ def unlock_next_chapter_if_needed(progress: Dict[str, Any]) -> Dict[str, Any]:
         next_entry = chapters.get(next_chapter_id)
         if isinstance(current_entry, dict) and isinstance(next_entry, dict) and bool(current_entry.get("completed", False)):
             next_entry["unlocked"] = True
+    return progress
 
 
 def migrate_legacy_progress(progress: Any) -> Dict[str, Any]:

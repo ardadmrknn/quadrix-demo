@@ -90,22 +90,22 @@ class TestTutorialProgressHelpers(unittest.TestCase):
             if original_top_level_module is not None:
                 sys.modules['user_manager'] = original_top_level_module
 
-    def test_default_progress_contains_basics_lessons(self):
+    def test_default_progress_contains_quick_start_lessons(self):
         progress = build_default_tutorial_progress()
-        basics = progress['chapters']['basics']
-        self.assertTrue(basics['unlocked'])
-        self.assertEqual(len(basics['lessons']), len(list_lessons_for_chapter('basics')))
+        quick_start = progress['chapters']['quick_start']
+        self.assertTrue(quick_start['unlocked'])
+        self.assertEqual(len(quick_start['lessons']), len(list_lessons_for_chapter('quick_start')))
 
-    def test_mark_lesson_completed_keeps_highest_star_value(self):
+    def test_mark_lesson_completed_accepts_legacy_lesson_id_and_keeps_highest_star_value(self):
         progress = build_default_tutorial_progress()
         progress = mark_lesson_completed(progress, 'move_intro', 1)
         progress = mark_lesson_completed(progress, 'move_intro', 3)
         progress = mark_lesson_completed(progress, 'move_intro', 2)
-        lesson = progress['chapters']['basics']['lessons']['move_intro']
+        lesson = progress['chapters']['quick_start']['lessons']['qs_move_lane']
         self.assertTrue(lesson['completed'])
         self.assertEqual(lesson['stars'], 3)
 
-    def test_marking_all_basics_lessons_completes_chapter(self):
+    def test_marking_all_quick_start_lessons_completes_legacy_basics_alias(self):
         progress = build_default_tutorial_progress()
         for lesson in list_lessons_for_chapter('basics'):
             progress = mark_lesson_completed(progress, lesson['id'], 1)
@@ -116,7 +116,7 @@ class TestTutorialProgressHelpers(unittest.TestCase):
     def test_mark_chapter_completed_unlocks_next_chapter(self):
         progress = build_default_tutorial_progress()
         progress = mark_chapter_completed(progress, 'basics', stars_per_lesson=1)
-        basics_state = get_chapter_completion(progress, 'basics')
+        basics_state = get_chapter_completion(progress, 'quick_start')
         board_state = get_chapter_completion(progress, 'board_basics')
         self.assertTrue(basics_state['completed'])
         self.assertTrue(board_state['unlocked'])
@@ -130,13 +130,13 @@ class TestUserManagerTutorialProgress(unittest.TestCase):
 
     def test_new_user_has_default_tutorial_progress(self):
         progress = self.user_manager.get_tutorial_progress('TutorialTester')
-        self.assertIn('basics', progress['chapters'])
-        self.assertFalse(progress['chapters']['basics']['completed'])
+        self.assertIn('quick_start', progress['chapters'])
+        self.assertFalse(progress['chapters']['quick_start']['completed'])
 
-    def test_mark_tutorial_lesson_completed_persists_progress(self):
+    def test_mark_tutorial_lesson_completed_accepts_legacy_lesson_id(self):
         self.user_manager.mark_tutorial_lesson_completed('move_intro', 2, username='TutorialTester')
         progress = self.user_manager.get_tutorial_progress('TutorialTester')
-        lesson = progress['chapters']['basics']['lessons']['move_intro']
+        lesson = progress['chapters']['quick_start']['lessons']['qs_move_lane']
         self.assertTrue(lesson['completed'])
         self.assertEqual(lesson['stars'], 2)
 
@@ -145,20 +145,21 @@ class TestUserManagerTutorialProgress(unittest.TestCase):
             self.user_manager.mark_tutorial_lesson_completed(lesson['id'], 1, username='TutorialTester')
         self.assertTrue(self.user_manager.is_tutorial_completed('TutorialTester'))
 
-    def test_set_tutorial_completed_syncs_basics_progress(self):
+    def test_set_tutorial_completed_true_does_not_fabricate_progress(self):
         self.user_manager.set_tutorial_completed(True, username='TutorialTester')
         progress = self.user_manager.get_tutorial_progress('TutorialTester')
-        basics_state = get_chapter_completion(progress, 'basics')
-        board_state = get_chapter_completion(progress, 'board_basics')
-        self.assertTrue(basics_state['completed'])
-        self.assertTrue(board_state['unlocked'])
+        basics_state = get_chapter_completion(progress, 'quick_start')
+        board_state = get_chapter_completion(progress, 'surface_control')
+        self.assertTrue(self.user_manager.is_tutorial_completed('TutorialTester'))
+        self.assertFalse(basics_state['completed'])
+        self.assertFalse(board_state['unlocked'])
 
     def test_set_tutorial_completed_false_resets_progress(self):
-        self.user_manager.set_tutorial_completed(True, username='TutorialTester')
+        self.user_manager.mark_tutorial_lesson_completed('move_intro', 2, username='TutorialTester')
         self.user_manager.set_tutorial_completed(False, username='TutorialTester')
         progress = self.user_manager.get_tutorial_progress('TutorialTester')
-        basics_state = get_chapter_completion(progress, 'basics')
-        board_state = get_chapter_completion(progress, 'board_basics')
+        basics_state = get_chapter_completion(progress, 'quick_start')
+        board_state = get_chapter_completion(progress, 'surface_control')
         self.assertFalse(self.user_manager.is_tutorial_completed('TutorialTester'))
         self.assertFalse(basics_state['completed'])
         self.assertFalse(board_state['unlocked'])
@@ -183,7 +184,7 @@ class TestUserManagerTutorialProgress(unittest.TestCase):
                 )
             manager = UserManager(users_file=path)
             progress = manager.get_tutorial_progress('LegacyTester')
-            basics_state = get_chapter_completion(progress, 'basics')
+            basics_state = get_chapter_completion(progress, 'quick_start')
             self.assertTrue(manager.is_tutorial_completed('LegacyTester'))
             self.assertTrue(basics_state['completed'])
         finally:

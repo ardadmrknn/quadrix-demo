@@ -219,6 +219,8 @@ class UserManager:
                         normalized_progress = profile.get('tutorial_progress')
                         if 'tutorial_progress' not in profile:
                             normalized_progress = build_default_tutorial_progress()
+                            if bool(profile.get('tutorial_completed', False)):
+                                normalized_progress = mark_chapter_completed(normalized_progress, 'quick_start', stars_per_lesson=1)
                             updated = True
                         normalized_progress = ensure_progress_shape(normalized_progress)
                         derived_completed = _derive_tutorial_completed(normalized_progress)

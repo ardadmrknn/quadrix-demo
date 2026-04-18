@@ -30,12 +30,12 @@ get_next_lesson_id = tutorial_lessons.get_next_lesson_id
 
 class TestTutorialLessonFlow(unittest.TestCase):
     def test_global_flow_crosses_chapter_boundary(self):
-        self.assertEqual(get_next_lesson_id('tutorial_complete'), 'board_gap_fill')
+        self.assertEqual(get_next_lesson_id('tutorial_complete'), 'surface_gap_fill')
 
     def test_chapter_scoped_flow_stops_at_chapter_boundary(self):
         self.assertIsNone(get_next_lesson_id('tutorial_complete', chapter_only=True))
         self.assertIsNone(get_next_lesson_id('board_vertical_well', chapter_only=True))
-        self.assertEqual(get_next_lesson_id('board_gap_fill', chapter_only=True), 'board_keep_low')
+        self.assertEqual(get_next_lesson_id('board_gap_fill', chapter_only=True), 'surface_keep_low')
 
 
 if __name__ == '__main__':

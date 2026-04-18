@@ -529,14 +529,12 @@ LESSONS: List[Dict[str, Any]] = [
         "kind": "card_choice",
         "scenario_id": "build_direction",
         "lesson_type": "card_lab",
-        "title_key": "tutorial_cards_build_direction_title",
-        "title_fallback": "Build yönü",
-        "description_key": "tutorial_cards_build_direction_desc",
-        "description_fallback": "Mevcut run'ın nereye gittiğine göre kart seç.",
-        "why_it_matters": "Rastgele kart toplamak yerine bir yönde derinleşmek güçlüdür.",
+        "title_fallback": "Hedefli çözüm",
+        "description_fallback": "Tek bir kule veya lokal problem varsa, geniş etki yerine nokta atışı kartı seç.",
+        "why_it_matters": "Doğru kart bazen en büyük efekt değil, en az israfla çözen karttır.",
         "difficulty": 3,
         "duration_seconds": 30,
-        "skill_tags": ["cards", "build"],
+        "skill_tags": ["cards", "precision", "efficiency"],
         "allowed_actions": ["move_left", "move_right", "confirm"],
     },
     {
@@ -633,6 +631,19 @@ for _old_id, _new_id in LEGACY_LESSON_MAP.items():
         LESSON_BY_ID[_old_id] = LESSON_BY_ID[_new_id]
 
 
+def _resolve_chapter_id(chapter_id: str | None) -> str:
+    if not chapter_id:
+        return ""
+    return str(LEGACY_CHAPTER_MAP.get(str(chapter_id), chapter_id))
+
+
+def _resolve_lesson_id(lesson_id: str | None) -> str:
+    lesson = get_lesson(lesson_id)
+    if not lesson:
+        return ""
+    return str(lesson.get("id") or "")
+
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -645,7 +656,7 @@ def get_lessons() -> List[Dict[str, Any]]:
 
 
 def list_lessons_for_chapter(chapter_id: str) -> List[Dict[str, Any]]:
-    resolved = LEGACY_CHAPTER_MAP.get(chapter_id, chapter_id)
+    resolved = _resolve_chapter_id(chapter_id)
     return [dict(lesson) for lesson in LESSONS if lesson.get("chapter") == resolved]
 
 
@@ -681,10 +692,13 @@ def get_first_lesson_id(chapter_id: str | None = None) -> Optional[str]:
 def get_next_lesson_id(lesson_id: str | None, chapter_only: bool = False) -> Optional[str]:
     if not lesson_id:
         return get_first_lesson_id()
-    lesson = get_lesson(lesson_id)
+    resolved_lesson_id = _resolve_lesson_id(lesson_id)
+    if not resolved_lesson_id:
+        return None
+    lesson = get_lesson(resolved_lesson_id)
     chapter_id = str(lesson.get("chapter") or "") if lesson else ""
     for index, l in enumerate(LESSONS):
-        if l.get("id") == lesson_id:
+        if l.get("id") == resolved_lesson_id:
             if index + 1 < len(LESSONS):
                 next_lesson = LESSONS[index + 1]
                 if chapter_only and str(next_lesson.get("chapter") or "") != chapter_id:

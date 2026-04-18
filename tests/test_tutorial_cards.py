@@ -45,7 +45,7 @@ class TestTutorialCardHelpers(unittest.TestCase):
     def test_synergy_scenario_uses_current_cards_only(self):
         scenario = get_card_choice_scenario('synergy_pick')
         self.assertIsNotNone(scenario)
-        self.assertEqual([card['id'] for card in scenario['choices']], ['perk_synergy', 'line_bonus', 'row_shuffle'])
+        self.assertEqual([card['id'] for card in scenario['choices']], ['perk_synergy', 'speed_burst_rare', 'row_shuffle'])
         self.assertNotIn('score', [card['id'] for card in scenario['choices']])
 
     def test_recommended_choice_gets_three_stars(self):
@@ -66,22 +66,64 @@ class TestTutorialCardHelpers(unittest.TestCase):
         self.assertFalse(outcome['success'])
         self.assertEqual(outcome['stars'], 0)
 
+    def test_tempo_trap_rewards_gravity_well_over_peak_sculpt(self):
+        scenario = get_card_choice_scenario('tempo_trap')
+        self.assertIsNotNone(scenario)
+        self.assertEqual([card['id'] for card in scenario['choices']], ['speed_burst_rare', 'peak_sculpt', 'gravity_well'])
+
+        best_outcome = evaluate_card_choice(scenario, 'gravity_well')
+        weaker_outcome = evaluate_card_choice(scenario, 'peak_sculpt')
+
+        self.assertTrue(best_outcome['success'])
+        self.assertEqual(best_outcome['stars'], 3)
+        self.assertTrue(weaker_outcome['success'])
+        self.assertEqual(weaker_outcome['stars'], 1)
+
+    def test_rare_not_auto_prefers_prevention_over_revive(self):
+        scenario = get_card_choice_scenario('rare_not_auto')
+        self.assertIsNotNone(scenario)
+        self.assertEqual([card['id'] for card in scenario['choices']], ['ghost_echo', 'freeze_drop_rare', 'clear_rows'])
+
+        best_outcome = evaluate_card_choice(scenario, 'freeze_drop_rare')
+        acceptable_outcome = evaluate_card_choice(scenario, 'clear_rows')
+        weak_outcome = evaluate_card_choice(scenario, 'ghost_echo')
+
+        self.assertTrue(best_outcome['success'])
+        self.assertEqual(best_outcome['stars'], 3)
+        self.assertTrue(acceptable_outcome['success'])
+        self.assertEqual(acceptable_outcome['stars'], 2)
+        self.assertFalse(weak_outcome['success'])
+        self.assertEqual(weak_outcome['stars'], 0)
+
+    def test_build_direction_now_teaches_targeted_cleanup(self):
+        scenario = get_card_choice_scenario('build_direction')
+        self.assertIsNotNone(scenario)
+        self.assertEqual([card['id'] for card in scenario['choices']], ['peak_sculpt', 'nova_burst', 'row_shuffle'])
+        self.assertEqual(scenario['recommended_card_id'], 'peak_sculpt')
+
+        best_outcome = evaluate_card_choice(scenario, 'peak_sculpt')
+        overkill_outcome = evaluate_card_choice(scenario, 'nova_burst')
+
+        self.assertTrue(best_outcome['success'])
+        self.assertEqual(best_outcome['stars'], 3)
+        self.assertFalse(overkill_outcome['success'])
+        self.assertEqual(overkill_outcome['stars'], 0)
+
 
 class TestTutorialCardProgression(unittest.TestCase):
-    def test_card_academy_unlocks_after_board_basics_complete(self):
+    def test_card_foundations_unlock_after_prior_chapters_complete(self):
         progress = build_default_tutorial_progress()
-        for lesson in list_lessons_for_chapter('basics'):
-            progress = mark_lesson_completed(progress, lesson['id'], 1)
-        for lesson in list_lessons_for_chapter('board_basics'):
-            progress = mark_lesson_completed(progress, lesson['id'], 1)
+        for chapter_id in ('basics', 'board_basics', 'queue_hold', 'recovery'):
+            for lesson in list_lessons_for_chapter(chapter_id):
+                progress = mark_lesson_completed(progress, lesson['id'], 1)
         card_state = get_chapter_completion(progress, 'card_academy')
         self.assertTrue(card_state['unlocked'])
 
-    def test_card_academy_lessons_exist(self):
+    def test_card_foundations_lessons_exist_via_legacy_alias(self):
         lesson_ids = [lesson['id'] for lesson in list_lessons_for_chapter('card_academy')]
         self.assertEqual(
             lesson_ids,
-            ['card_rescue_pick', 'card_long_term_pick', 'card_synergy_pick'],
+            ['cards_rescue_now', 'cards_tempo_trap', 'cards_perk_vs_instant', 'cards_long_term_value'],
         )
 
 

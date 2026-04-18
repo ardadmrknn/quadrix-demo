@@ -62,7 +62,7 @@ def _build_tutorial(size: tuple[int, int], *, window_size: tuple[int, int] | Non
 def _install_tutorial_draw_stubs(monkeypatch):
     captured_rects = []
 
-    def draw_glass_panel(surface, rect, alpha=0, border_color=(255, 255, 255), glow=False):
+    def draw_glass_panel(surface, rect, alpha=0, border_color=(255, 255, 255), glow=False, **kwargs):
         captured_rects.append(rect.copy())
         pygame.draw.rect(surface, border_color[:3], rect, 1)
 
@@ -73,6 +73,10 @@ def _install_tutorial_draw_stubs(monkeypatch):
         secondary=(220, 120, 120),
         success=(90, 220, 140),
         primary=(110, 160, 255),
+        accent=(255, 180, 90),
+        text_secondary=(200, 208, 220),
+        text_muted=(130, 138, 150),
+        render_fit_text=lambda text, color, max_width, size, bold=False: _make_fake_font(size, bold=bold).render(text, True, color),
     )
 
     monkeypatch.setattr(tutorial_module, 'retro_style', retro_style_stub)
@@ -218,6 +222,26 @@ def test_tutorial_overlay_and_tip_panel_live_draw_use_active_canvas(monkeypatch)
     _assert_rects_within_surface(captured_rects[:2])
 
 
+def test_tutorial_tip_panel_shifted_above_does_not_overlap_main_rect(monkeypatch):
+    captured_rects = _install_tutorial_draw_stubs(monkeypatch)
+
+    tutorial = _build_tutorial((800, 320), window_size=(1366, 768))
+    tutorial.tip_message = 'Parcayi sola tasi ve boslugu T ile kapat.'
+    tutorial._get_board_lesson_objectives = lambda: [
+        {'text': 'En az 1 satir temizle'},
+        {'text': 'Yeni delik olusturma'},
+    ]
+
+    main_rect = pygame.Rect(180, 170, 250, 105)
+    tutorial._draw_tutorial_tip_panel(main_rect)
+
+    rects = captured_rects[-2:]
+    assert len(rects) == 2
+    _assert_rects_within_surface(rects, size=(800, 320))
+    assert all(not rect.colliderect(main_rect) for rect in rects)
+    assert not rects[0].colliderect(rects[1])
+
+
 def test_tutorial_hub_live_draw_rects_stay_within_active_canvas(monkeypatch):
     captured_rects = _install_tutorial_draw_stubs(monkeypatch)
 
@@ -281,6 +305,32 @@ def test_tutorial_card_choice_overlay_fallback_live_draw_uses_active_canvas(monk
 
     assert len(captured_rects) >= 3
     _assert_rects_within_surface(captured_rects)
+
+
+def test_tutorial_card_choice_keyboard_is_blocked_while_peek_active(monkeypatch):
+    tutorial = _build_tutorial((800, 600), window_size=(1366, 768))
+    tutorial.game_over = False
+    tutorial.show_exit_prompt = False
+    tutorial.hub_active = False
+    tutorial.lesson_result_active = False
+    tutorial.waiting_for_enter = False
+    tutorial.in_transition = False
+    tutorial.user_manager = None
+    tutorial.control_bindings = {}
+    tutorial.card_choice_state = {'selected_index': 1}
+    tutorial._is_card_choice_lesson_active = lambda: True
+    tutorial._is_scenario_lesson_active = lambda: False
+    tutorial._action_keys = lambda _bindings, _action: ()
+    tutorial._queue_card_choice_selection = lambda _index: (_ for _ in ()).throw(AssertionError('Peek acikken secim kuyuga alinmamali'))
+    tutorial._move_card_choice_selection = lambda _delta: (_ for _ in ()).throw(AssertionError('Peek acikken gezinme olmamali'))
+    tutorial.card_ui = MysteryCardUI()
+    tutorial.card_ui.peek_mode_active = True
+
+    monkeypatch.setattr(tutorial_module.pygame.event, 'get', lambda: [pygame.event.Event(pygame.KEYDOWN, key=pygame.K_RETURN)])
+
+    result = tutorial.handle_input()
+
+    assert result is None
 
 
 def test_tutorial_lesson_result_panel_live_draw_uses_active_canvas(monkeypatch):

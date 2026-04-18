@@ -264,8 +264,8 @@ class TutorialMode(Game):
         ui_scale = self._tutorial_modal_scale(min_scale=0.72, max_scale=1.18)
         s = lambda v, minimum=1: self._sx(v, ui_scale, minimum)
 
-        panel_width = s(430 if is_board_result else 380)
-        panel_height = s(340 if is_board_result else 210)
+        panel_width = s(380 if is_board_result else 340)
+        panel_height = s(260 if is_board_result else 180)
         return pygame.Rect(
             (active_width - panel_width) // 2,
             (active_height - panel_height) // 2,
@@ -589,11 +589,8 @@ class TutorialMode(Game):
             self._start_lesson(self.next_lesson_id)
             return True
         next_chapter_id, next_lesson_id = self._get_next_chapter_target(self.active_lesson_id)
-        if next_chapter_id and self.hub_return_enabled:
-            self._open_tutorial_hub(
-                preferred_chapter_id=next_chapter_id,
-                preferred_lesson_id=next_lesson_id or None,
-            )
+        if next_chapter_id and next_lesson_id and self.lesson_flow_scope != 'chapter':
+            self._start_lesson(next_lesson_id)
             return True
         if self.hub_return_enabled:
             preferred_chapter_id = self.active_lesson.get('chapter') if isinstance(self.active_lesson, dict) else None
@@ -911,11 +908,11 @@ class TutorialMode(Game):
             'stack_too_high': t('tutorial_result_feedback_stack_too_high', default='Bu hamle kuleyi gereksiz büyüttü. Önce güvenli tarafı kullan.'),
         }
         followup_lesson_id = self._get_followup_lesson_id(self.active_lesson_id)
-        next_chapter_id, _ = self._get_next_chapter_target(self.active_lesson_id)
+        next_chapter_id, next_chapter_lesson_id = self._get_next_chapter_target(self.active_lesson_id)
         action_text = t('tutorial_result_action_to_menu', default='ENTER: Menüye dön')
         if success and followup_lesson_id:
             action_text = t('tutorial_result_action_next_lesson', default='ENTER: Sonraki ders')
-        elif success and next_chapter_id and self.hub_return_enabled:
+        elif success and next_chapter_id and next_chapter_lesson_id and self.lesson_flow_scope != 'chapter':
             action_text = t('tutorial_result_action_next_chapter', default='ENTER: Sonraki bölüme geç')
         elif success and self.hub_return_enabled:
             action_text = t('tutorial_result_action_to_hub', default='ENTER: Ders merkezine dön')
@@ -1226,12 +1223,12 @@ class TutorialMode(Game):
             self.step_target = 1
             self.waiting_for_enter = True
             self.next_lesson_id = self._get_followup_lesson_id(self.active_lesson_id)
-            next_chapter_id, _ = self._get_next_chapter_target(self.active_lesson_id)
+            next_chapter_id, next_chapter_lesson_id = self._get_next_chapter_target(self.active_lesson_id)
             self.overlay_message = self._lesson_title() or t('tutorial_complete')
             self.tip_message = t('tutorial_tip_step_7')
             if self.next_lesson_id:
                 self.sub_message = t('tutorial_next_board_lessons_prompt', default='Enter ile tahta okuma derslerine geç.')
-            elif next_chapter_id and self.hub_return_enabled:
+            elif next_chapter_id and next_chapter_lesson_id and self.lesson_flow_scope != 'chapter':
                 self.sub_message = t('tutorial_next_chapter_prompt', default='Enter ile sonraki bölüme geç.')
             else:
                 self.sub_message = t('tutorial_sub_finish')
@@ -1353,15 +1350,7 @@ class TutorialMode(Game):
                     pygame.draw.circle(self.screen, particle['color'][:3], pos, particle['size'])
 
     def _create_mini_success_effect(self, message):
-        """Küçük başarı efekti oluştur"""
-        self.step_completion_effects.append({
-            'message': message,
-            'timer': 1.0,
-            'y_offset': 0,
-            'alpha': 255,
-            'scale': 1.2
-        })
-        # Mini başarı sesi
+        """Küçük başarı efekti — yeşil metin kaldırıldı, sadece ses."""
         self.sound.play('tutorial_progress')
 
     def _ensure_normal_piece(self, force_new=False):
@@ -1390,9 +1379,9 @@ class TutorialMode(Game):
                 self.board.grid[above][x] = color
                 self.board.occupancy[above][x] = True
 
-        if not self.current_piece:
-            self.current_piece = self.spawn_new_piece()
-        self.current_piece.x = 3
+        # Tabanı 2 küplük O parçası — 2 hücrelik boşluğa tam oturur
+        self.current_piece = self._create_named_piece('O')
+        self.current_piece.x = 4
         self.current_piece.y = self._compute_spawn_y(self.current_piece)
         self._skip_hidden_rows(self.current_piece)
         self.apply_theme_to_pieces()
@@ -1520,6 +1509,8 @@ class TutorialMode(Game):
                 if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1 and self.card_ui:
                     pos = normalize_mouse_pos(getattr(event, 'pos', None)) or get_mouse_pos()
                     choice = self.card_ui.handle_mouse_click(pos)
+                    if choice == 'PEEK':
+                        continue
                     if isinstance(choice, int):
                         self._queue_card_choice_selection(choice)
                         continue
@@ -1551,6 +1542,8 @@ class TutorialMode(Game):
                 bindings = self.control_bindings
 
                 if self._is_card_choice_lesson_active():
+                    if self.card_ui and getattr(self.card_ui, 'peek_mode_active', False):
+                        continue
                     digit_map = {
                         pygame.K_1: 0,
                         pygame.K_2: 1,
@@ -1919,8 +1912,11 @@ class TutorialMode(Game):
         if self.in_transition:
             self.transition_timer -= dt_seconds
             if self.transition_timer <= 0:
+                self.in_transition = False
                 if self.next_lesson_id:
                     self._start_lesson(self.next_lesson_id)
+                elif self.waiting_for_enter:
+                    pass  # Bölüm sonu — Enter bekleniyor
                 else:
                     self._setup_step(self.next_step_num)
             # Transition sırasında da efektleri güncelle
@@ -1933,9 +1929,12 @@ class TutorialMode(Game):
 
         if self.hub_active:
             # Carousel animasyonunu güncelle
-            if abs(self._hub_carousel_anim_offset) > 0.005:
+            hub_anim_offset = float(getattr(self, '_hub_carousel_anim_offset', 0.0) or 0.0)
+            hub_anim_target = float(getattr(self, '_hub_carousel_anim_target', 0.0) or 0.0)
+            if abs(hub_anim_offset) > 0.005:
                 speed = 8.0
-                self._hub_carousel_anim_offset += (self._hub_carousel_anim_target - self._hub_carousel_anim_offset) * min(1.0, speed * dt_seconds)
+                hub_anim_offset += (hub_anim_target - hub_anim_offset) * min(1.0, speed * dt_seconds)
+                self._hub_carousel_anim_offset = hub_anim_offset
                 if abs(self._hub_carousel_anim_offset) < 0.005:
                     self._hub_carousel_anim_offset = 0.0
                     self._hub_carousel_prev_chapter_id = None
@@ -2201,64 +2200,64 @@ class TutorialMode(Game):
 
         objectives = self._get_board_lesson_objectives()
         has_objectives = bool(objectives)
-
         tip_width = main_rect.width
-        tip_height = s(194) if has_objectives else s(132)
-        tip_gap = s(14)
+        tip_gap = s(10)
 
-        tip_rect = pygame.Rect(main_rect.x, main_rect.bottom + tip_gap, tip_width, tip_height)
-        if tip_rect.bottom > active_height - s(10):
-            tip_rect.y = max(s(10), main_rect.y - tip_height - tip_gap)
+        text_font = retro_style.get_font(s(15, minimum=11))
+        max_text_width = tip_width - s(24)
+        lines = self._wrap_text(self.tip_message, text_font, max_text_width, max_lines=3)
+        line_height = text_font.get_height() + s(5)
+        tip_content_h = len(lines) * line_height
+        tip_height = s(28) + tip_content_h + s(10)
 
-        retro_style.draw_glass_panel(self.screen, tip_rect, alpha=210, border_color=(0, 200, 255))
-
-        title_font = retro_style.get_font(s(15, minimum=11), bold=True)
-        title_text = t('tutorial_targets_title', default='HEDEFLER') if has_objectives else t('tutorial_tip_title')
-        title_surf = title_font.render(title_text, True, (140, 210, 255))
-        title_rect = title_surf.get_rect(midtop=(tip_rect.centerx, tip_rect.y + s(10)))
-        self.screen.blit(title_surf, title_rect)
-
-        text_font = retro_style.get_font(s(16, minimum=11))
-        info_font = retro_style.get_font(s(14, minimum=10), bold=True)
-        objective_font = retro_style.get_font(s(14, minimum=10))
-        text_color = (215, 225, 238)
-        max_text_width = tip_rect.width - s(24)
-        lines = self._wrap_text(self.tip_message, text_font, max_text_width)
-
-        content_top = title_rect.bottom + s(8)
+        obj_height = 0
         if has_objectives:
-            objective_y = content_top
-            bullet_x = tip_rect.x + s(18)
-            text_x = tip_rect.x + s(30)
+            obj_height = s(30) + len(objectives[:3]) * (s(18) + s(7)) + s(10)
+
+        stack_height = tip_height + (obj_height + tip_gap if has_objectives else 0)
+        place_below = main_rect.bottom + tip_gap + stack_height <= active_height - s(10)
+
+        # ── Hedef paneli (varsa) ──
+        if has_objectives:
+            if place_below:
+                obj_y = main_rect.bottom + tip_gap
+                tip_y = obj_y + obj_height + tip_gap
+            else:
+                group_top = max(s(10), main_rect.y - tip_gap - stack_height)
+                tip_y = group_top
+                obj_y = tip_y + tip_height + tip_gap
+
+            obj_rect = pygame.Rect(main_rect.x, obj_y, tip_width, obj_height)
+            retro_style.draw_glass_panel(self.screen, obj_rect, alpha=220, border_color=(80, 220, 140))
+
+            obj_title_font = retro_style.get_font(s(15, minimum=11), bold=True)
+            obj_title_surf = obj_title_font.render(t('tutorial_targets_title', default='HEDEFLER'), True, (110, 240, 170))
+            self.screen.blit(obj_title_surf, obj_title_surf.get_rect(midtop=(obj_rect.centerx, obj_rect.y + s(8))))
+
+            objective_font = retro_style.get_font(s(15, minimum=11))
+            objective_y = obj_rect.y + s(30)
+            bullet_x = obj_rect.x + s(16)
+            text_x = obj_rect.x + s(28)
             for objective in objectives[:3]:
                 center_y = objective_y + objective_font.get_height() // 2
-                pygame.draw.circle(self.screen, (110, 240, 170), (bullet_x, center_y), max(2, s(3)))
+                pygame.draw.circle(self.screen, (110, 240, 170), (bullet_x, center_y), max(2, s(4)))
                 objective_surf = objective_font.render(str(objective.get('text') or ''), True, (225, 232, 240))
                 self.screen.blit(objective_surf, (text_x, objective_y))
-                objective_y += objective_font.get_height() + s(6)
+                objective_y += objective_font.get_height() + s(7)
+        else:
+            tip_y = main_rect.bottom + tip_gap if place_below else max(s(10), main_rect.y - tip_gap - tip_height)
 
-            divider_y = objective_y + s(2)
-            pygame.draw.line(
-                self.screen,
-                (70, 120, 170),
-                (tip_rect.x + s(12), divider_y),
-                (tip_rect.right - s(12), divider_y),
-                1,
-            )
-            tip_label_surf = info_font.render(t('tutorial_tip_title', default='İPUCU'), True, (140, 210, 255))
-            tip_label_rect = tip_label_surf.get_rect(topleft=(tip_rect.x + s(12), divider_y + s(8)))
-            self.screen.blit(tip_label_surf, tip_label_rect)
-            content_top = tip_label_rect.bottom + s(6)
+        # ── İpucu paneli (her zaman) ──
+        tip_rect = pygame.Rect(main_rect.x, tip_y, tip_width, tip_height)
+        retro_style.draw_glass_panel(self.screen, tip_rect, alpha=200, border_color=(100, 160, 220))
 
-        content_bottom = tip_rect.bottom - s(10)
-        content_height = max(0, content_bottom - content_top)
-        line_height = text_font.get_height() + s(5)
-        max_lines = max(1, content_height // line_height)
-        visible_lines = lines[:max_lines]
-        total_h = len(visible_lines) * line_height
-        content_start_y = content_top + max(0, (content_height - total_h) // 2)
+        info_font = retro_style.get_font(s(15, minimum=11), bold=True)
+        tip_label_surf = info_font.render(t('tutorial_tip_title', default='İPUCU'), True, (140, 190, 240))
+        self.screen.blit(tip_label_surf, tip_label_surf.get_rect(midtop=(tip_rect.centerx, tip_rect.y + s(7))))
 
-        for i, line in enumerate(visible_lines):
+        text_color = (215, 225, 238)
+        content_start_y = tip_rect.y + s(28)
+        for i, line in enumerate(lines):
             line_surf = text_font.render(line, True, text_color)
             line_rect = line_surf.get_rect(center=(tip_rect.centerx, content_start_y + i * line_height))
             self.screen.blit(line_surf, line_rect)
@@ -2436,7 +2435,7 @@ class TutorialMode(Game):
         old_clip = self.screen.get_clip()
         self.screen.set_clip(clip_rect)
 
-        anim_offset = self._hub_carousel_anim_offset
+        anim_offset = float(getattr(self, '_hub_carousel_anim_offset', 0.0) or 0.0)
         self.hub_chapter_rects = []
 
         def _draw_chapter_card(entry, offset_x):
@@ -2830,7 +2829,7 @@ class TutorialMode(Game):
                 False,
                 forced_hover_index=forced_hover_index,
                 show_secondary_actions=False,
-                show_peek_button=False,
+                show_peek_button=True,
                 header_title=self._lesson_title() or t('tutorial_card_context_title', default='Ders bağlamı'),
                 header_lines=header_lines,
             )
@@ -2923,12 +2922,12 @@ class TutorialMode(Game):
         rect = self._tutorial_lesson_result_panel_rect(is_board_result)
         retro_style.draw_glass_panel(self.screen, rect, alpha=235, border_color=(40, 220, 140) if self.lesson_result.get('success') else (220, 120, 80))
 
-        title_font = retro_style.get_font(s(24, minimum=16), bold=True)
-        body_font = retro_style.get_font(s(16, minimum=11))
-        small_font = retro_style.get_font(s(14, minimum=10))
+        title_font = retro_style.get_font(s(22, minimum=15), bold=True)
+        body_font = retro_style.get_font(s(14, minimum=10))
+        small_font = retro_style.get_font(s(13, minimum=10))
 
         title_surf = title_font.render(str(self.lesson_result.get('title', t('tutorial_result_title', default='Sonuç'))), True, (255, 255, 255))
-        self.screen.blit(title_surf, title_surf.get_rect(center=(rect.centerx, rect.y + s(28))))
+        self.screen.blit(title_surf, title_surf.get_rect(center=(rect.centerx, rect.y + s(24))))
 
         stars_text = t(
             'tutorial_result_stars',
@@ -2936,76 +2935,27 @@ class TutorialMode(Game):
             default=f"Yıldız: {int(self.lesson_result.get('stars', 0) or 0)}/3",
         )
         stars_surf = body_font.render(stars_text, True, (255, 220, 120))
-        self.screen.blit(stars_surf, stars_surf.get_rect(center=(rect.centerx, rect.y + s(64))))
+        self.screen.blit(stars_surf, stars_surf.get_rect(center=(rect.centerx, rect.y + s(52))))
 
-        max_text_width = rect.width - s(32)
-        feedback = str(self.lesson_result.get('feedback', ''))
-        lines = self._wrap_text(feedback, body_font, max_text_width, max_lines=2 if is_board_result else 3)
-
-        start_y = rect.y + s(92)
-        for index, line in enumerate(lines[:3]):
-            line_surf = body_font.render(line, True, (220, 230, 240))
-            self.screen.blit(line_surf, line_surf.get_rect(center=(rect.centerx, start_y + index * s(22))))
-
-        content_cursor_y = start_y + len(lines[:3]) * s(22)
-        section_font = retro_style.get_font(s(13, minimum=9), bold=True)
-        detail_font = retro_style.get_font(s(13, minimum=9))
+        content_cursor_y = rect.y + s(72)
+        detail_font = retro_style.get_font(s(12, minimum=9))
 
         if is_board_result:
-            content_cursor_y += s(8)
-            objectives_title = section_font.render(
-                t('tutorial_result_objectives_title', default='Hedef kontrolü'),
-                True,
-                (255, 220, 150),
-            )
-            self.screen.blit(objectives_title, (rect.x + s(16), content_cursor_y))
-            content_cursor_y += s(18)
-
             for objective in objective_results[:3]:
                 dot_color = (80, 220, 140) if objective.get('passed') else (255, 150, 90)
-                dot_center = (rect.x + s(20), content_cursor_y + detail_font.get_height() // 2)
+                dot_center = (rect.x + s(18), content_cursor_y + detail_font.get_height() // 2)
                 pygame.draw.circle(self.screen, dot_color, dot_center, max(2, s(3)))
                 objective_surf = detail_font.render(str(objective.get('text') or ''), True, (225, 232, 240))
-                self.screen.blit(objective_surf, (rect.x + s(30), content_cursor_y))
+                self.screen.blit(objective_surf, (rect.x + s(28), content_cursor_y))
                 content_cursor_y += detail_font.get_height() + s(4)
-
-            if coach_text:
-                content_cursor_y += s(6)
-                coach_title = section_font.render(
-                    t('tutorial_result_next_focus_title', default='Sonraki odak'),
-                    True,
-                    (150, 205, 230),
-                )
-                self.screen.blit(coach_title, (rect.x + s(16), content_cursor_y))
-                content_cursor_y += s(18)
-
-                coach_lines = self._wrap_text(coach_text, detail_font, rect.width - s(32), max_lines=2)
-                for line in coach_lines:
-                    coach_surf = detail_font.render(line, True, (205, 215, 223))
-                    self.screen.blit(coach_surf, (rect.x + s(16), content_cursor_y))
-                    content_cursor_y += s(16)
-
-        stats_text = t(
-            'tutorial_result_metrics',
-            lines=int(self.lesson_result.get('line_delta', 0) or 0),
-            holes=f"{int(self.lesson_result.get('hole_delta', 0) or 0):+d}",
-            height=f"{int(self.lesson_result.get('height_delta', 0) or 0):+d}",
-            default=(
-                f"Satır {int(self.lesson_result.get('line_delta', 0) or 0)}  "
-                f"Delik {int(self.lesson_result.get('hole_delta', 0) or 0):+d}  "
-                f"Yükseklik {int(self.lesson_result.get('height_delta', 0) or 0):+d}"
-            ),
-        )
-        if self.lesson_result.get('selected_card_title'):
-            stats_text = (
-                f"{t('tutorial_result_selected_label', default='Seçilen')}: {self.lesson_result.get('selected_card_title', '')}  "
-                f"{t('tutorial_result_ideal_label', default='Ideal')}: {self.lesson_result.get('recommended_card_title', '')}"
-            )
-        stats_lines = self._wrap_text(stats_text, small_font, rect.width - s(28), max_lines=2)
-        stats_start_y = rect.bottom - (s(58) if len(stats_lines) > 1 else s(44))
-        for index, line in enumerate(stats_lines):
-            stats_surf = small_font.render(line, True, (150, 205, 230))
-            self.screen.blit(stats_surf, stats_surf.get_rect(center=(rect.centerx, stats_start_y + index * s(16))))
+        else:
+            max_text_width = rect.width - s(28)
+            feedback = str(self.lesson_result.get('feedback', ''))
+            lines = self._wrap_text(feedback, body_font, max_text_width, max_lines=2)
+            for line in lines:
+                line_surf = body_font.render(line, True, (220, 230, 240))
+                self.screen.blit(line_surf, line_surf.get_rect(center=(rect.centerx, content_cursor_y)))
+                content_cursor_y += s(20)
 
         action_surf = small_font.render(str(self.lesson_result.get('action_text', 'ENTER')), True, (255, 255, 255))
-        self.screen.blit(action_surf, action_surf.get_rect(center=(rect.centerx, rect.bottom - s(18))))
+        self.screen.blit(action_surf, action_surf.get_rect(center=(rect.centerx, rect.bottom - s(16))))

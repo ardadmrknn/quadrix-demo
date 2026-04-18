@@ -29,6 +29,47 @@ TutorialMode = tutorial_module.TutorialMode
 
 
 class TestTutorialRuntime(unittest.TestCase):
+    def test_continue_after_completion_starts_next_chapter_lesson_in_full_flow(self):
+        tutorial = TutorialMode.__new__(TutorialMode)
+        tutorial.next_lesson_id = None
+        tutorial.active_lesson_id = 'tutorial_complete'
+        tutorial.active_lesson = {'chapter': 'quick_start'}
+        tutorial.lesson_lookup = {}
+        tutorial.lesson_flow_scope = 'full'
+        tutorial.hub_return_enabled = True
+        started = {}
+
+        tutorial._start_lesson = lambda lesson_id: started.setdefault('lesson_id', lesson_id)
+        tutorial._open_tutorial_hub = lambda **kwargs: started.setdefault('hub', kwargs)
+
+        result = TutorialMode._continue_after_completion(tutorial)
+
+        self.assertTrue(result)
+        self.assertEqual(started.get('lesson_id'), 'surface_gap_fill')
+        self.assertNotIn('hub', started)
+
+    def test_continue_after_completion_keeps_chapter_scope_at_boundary(self):
+        tutorial = TutorialMode.__new__(TutorialMode)
+        tutorial.next_lesson_id = None
+        tutorial.active_lesson_id = 'tutorial_complete'
+        tutorial.active_lesson = {'chapter': 'quick_start'}
+        tutorial.lesson_lookup = {}
+        tutorial.lesson_flow_scope = 'chapter'
+        tutorial.hub_return_enabled = True
+        started = {}
+
+        tutorial._start_lesson = lambda lesson_id: started.setdefault('lesson_id', lesson_id)
+        tutorial._open_tutorial_hub = lambda preferred_chapter_id=None, preferred_lesson_id=None: started.setdefault(
+            'hub',
+            (preferred_chapter_id, preferred_lesson_id),
+        )
+
+        result = TutorialMode._continue_after_completion(tutorial)
+
+        self.assertTrue(result)
+        self.assertEqual(started.get('hub'), ('quick_start', 'tutorial_complete'))
+        self.assertNotIn('lesson_id', started)
+
     def test_lesson_result_keeps_screen_shake_progressing(self):
         tutorial = TutorialMode.__new__(TutorialMode)
         tutorial.in_transition = False
