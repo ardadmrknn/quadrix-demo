@@ -1501,6 +1501,7 @@ class GamepadManager:
                                 button=1,
                                 pos=_gmp(),
                                 from_gamepad=True,
+                                gamepad_context=self._context,
                             )
                         )
                     elif not a_now and a_prev:
@@ -1510,6 +1511,7 @@ class GamepadManager:
                                 button=1,
                                 pos=_gmp(),
                                 from_gamepad=True,
+                                gamepad_context=self._context,
                             )
                         )
             except Exception:
@@ -1532,6 +1534,7 @@ class GamepadManager:
                                 button=1,
                                 pos=_gmp(),
                                 from_gamepad=True,
+                                gamepad_context=self._context,
                             )
                         )
                     elif not a_now and a_prev:
@@ -1541,6 +1544,7 @@ class GamepadManager:
                                 button=1,
                                 pos=_gmp(),
                                 from_gamepad=True,
+                                gamepad_context=self._context,
                             )
                         )
             except Exception:
@@ -1558,6 +1562,7 @@ class GamepadManager:
                         button=1,
                         pos=_gmp(),
                         from_gamepad=True,
+                        gamepad_context=self._context,
                     )
                 )
             elif not pressed_now and pressed_prev:
@@ -1567,6 +1572,7 @@ class GamepadManager:
                         button=1,
                         pos=_gmp(),
                         from_gamepad=True,
+                        gamepad_context=self._context,
                     )
                 )
         except Exception:

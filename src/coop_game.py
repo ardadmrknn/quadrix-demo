@@ -1975,7 +1975,7 @@ class CoopGame:
             if event.type != pygame.KEYDOWN and event.type != pygame.KEYUP:
                 # Game over butonları
                 if self.game_over and event.type == pygame.MOUSEBUTTONDOWN and getattr(event, 'button', None) == 1:
-                    if getattr(event, 'from_gamepad', False):
+                    if getattr(event, 'from_gamepad', False) and getattr(event, 'gamepad_context', 'game') == 'game':
                         continue
                     pos = normalize_mouse_pos(getattr(event, 'pos', None)) or get_mouse_pos()
                     peek_rect = getattr(self, '_game_over_peek_rect', None)

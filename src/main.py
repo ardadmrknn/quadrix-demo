@@ -3567,7 +3567,19 @@ def main():
             if state == 'online_pvp':
                 pass  # online_pvp kendi set_context + update çağrısını yapar
             elif state in ('game', 'pvp', 'coop'):
-                gamepad_mgr.set_context('game')
+                active_runtime = None
+                if state == 'game':
+                    active_runtime = game
+                elif state == 'pvp':
+                    active_runtime = pvp_game
+                elif state == 'coop':
+                    active_runtime = coop_game
+
+                wants_pointer_ui = False
+                if active_runtime is not None:
+                    wants_pointer_ui = bool(getattr(active_runtime, 'wants_mouse_visible', lambda: False)())
+
+                gamepad_mgr.set_context('menu' if wants_pointer_ui else 'game')
             else:
                 gamepad_mgr.set_context('menu')
         except Exception:

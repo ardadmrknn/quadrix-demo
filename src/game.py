@@ -1827,7 +1827,7 @@ class Game:
             # Mouse clicks (game over overlay)
             if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 if self.game_over:
-                    if getattr(event, 'from_gamepad', False):
+                    if getattr(event, 'from_gamepad', False) and getattr(event, 'gamepad_context', 'game') == 'game':
                         continue
                     pos = normalize_mouse_pos(getattr(event, 'pos', None)) or get_mouse_pos()
                     # Peek butonu kontrolü

@@ -1573,7 +1573,7 @@ class PvPGame:
             
             # Game over ekranında mouse tıklama kontrolü
             if self.game_over and event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                if getattr(event, 'from_gamepad', False):
+                if getattr(event, 'from_gamepad', False) and getattr(event, 'gamepad_context', 'game') == 'game':
                     continue
                 pos = normalize_mouse_pos(getattr(event, 'pos', None)) or event.pos
                 # Peek butonu kontrolü
