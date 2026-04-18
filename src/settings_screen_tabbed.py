@@ -314,25 +314,24 @@ def _build_tab_content(tab_key: str, sm, show_debug: bool = False) -> list[dict]
             ('menu_tab_prev', _t('gp_menu_tab_prev', 'Sekme Önceki')),
             ('main_menu_prompt', _t('gp_main_menu_prompt', 'Ana Menü Onayı')),
         ]
-        items.append({'type': 'section', 'loc_key': 'tab_gamepad', 'label_tr': 'GAMEPAD', 'label_en': 'GAMEPAD'})
+        items.append({'type': 'section', 'loc_key': 'settings_gp_section_ingame', 'label_tr': 'GAMEPAD - OYUN İÇİ', 'label_en': 'GAMEPAD - IN-GAME'})
         items.append({
             'type': 'slider', 'key': 'ctrl_gp_rumble',
             'loc_key': 'gp_rumble',
             'label_tr': _t('gp_rumble', 'Titreşim'), 'label_en': _t('gp_rumble', 'Vibration'),
             'min': 0, 'max': 3, 'step': 1,
         })
-        items.append({'type': 'section', 'loc_key': 'settings_gp_section_ingame', 'label_tr': 'GAMEPAD - OYUN İÇİ', 'label_en': 'GAMEPAD - IN-GAME'})
         for action_key, label in ingame_gamepad_actions:
             items.append({
                 'type': 'keybind', 'key': f'ctrl_gp_{action_key}',
-                'action_key': action_key, 'section': 'gamepad',
+                'action_key': action_key, 'section': 'gamepad.ingame',
                 'label_tr': label, 'label_en': label,
             })
         items.append({'type': 'section', 'loc_key': 'settings_gp_section_outgame', 'label_tr': 'GAMEPAD - OYUN DIŞI', 'label_en': 'GAMEPAD - OUT OF GAME'})
         for action_key, label in outgame_gamepad_actions:
             items.append({
                 'type': 'keybind', 'key': f'ctrl_gp_{action_key}',
-                'action_key': action_key, 'section': 'gamepad',
+                'action_key': action_key, 'section': 'gamepad.outgame',
                 'label_tr': label, 'label_en': label,
             })
 
@@ -523,6 +522,8 @@ class TabbedSettingsScreen:
         self._gamepad_bind_slot = 'primary'
         self._swallow_next_keydown = False
         self._swallow_next_gamepad_click = False
+        self._swallow_next_gamepad_click_deadline_ms = 0
+        self._capture_started_by_gamepad_click = False
         self._keybind_slot_rects: list[dict | None] = []
         self._help_icon_rects: list[tuple[pygame.Rect, str]] = []
 
@@ -1219,7 +1220,7 @@ class TabbedSettingsScreen:
             action_key = item.get('action_key')
 
             if self._waiting_for_key and self._pending_keybind_item == item:
-                if section == 'gamepad':
+                if self._is_gamepad_keybind_section(section):
                     return _t('gp_press_button', 'Butona basın'), (255, 210, 120)
                 if section == 'single_player':
                     slot = self._pending_keybind_slot if self._pending_keybind_slot in ('primary', 'secondary') else 'primary'
@@ -1243,7 +1244,7 @@ class TabbedSettingsScreen:
                 value = self._control_config.get('pvp', {}).get('player2', {}).get(action_key, '')
                 return (str(value).upper() or '—'), (180, 220, 255)
 
-            if section == 'gamepad':
+            if self._is_gamepad_keybind_section(section):
                 primary, secondary = self._get_gamepad_binding_slots(action_key)
                 ptxt = self._format_gamepad_button_label(primary)
                 stxt = self._format_gamepad_button_label(secondary)
@@ -1267,10 +1268,14 @@ class TabbedSettingsScreen:
         self.settings_manager.set_mode_music_override(mode_key, chosen)
         self._mode_music_overrides = self.settings_manager.get_mode_music_overrides()
 
-    def _start_keybind_capture(self, item: dict, slot: str = 'primary') -> None:
+    def _start_keybind_capture(self, item: dict, slot: str = 'primary', opened_by_gamepad_click: bool = False) -> None:
         self._waiting_for_key = True
         self._pending_keybind_item = item
         self._pending_keybind_slot = slot
+        self._capture_started_by_gamepad_click = bool(opened_by_gamepad_click)
+
+    def _is_gamepad_keybind_section(self, section: str | None) -> bool:
+        return section in ('gamepad', 'gamepad.ingame', 'gamepad.outgame')
 
     def _should_swallow_post_capture_gamepad_click(self, button_index: int) -> bool:
         try:
@@ -1434,7 +1439,7 @@ class TabbedSettingsScreen:
     def _apply_captured_gamepad_button(self, button_index: int) -> None:
         if not self._pending_keybind_item:
             return
-        if self._pending_keybind_item.get('section') != 'gamepad':
+        if not self._is_gamepad_keybind_section(self._pending_keybind_item.get('section')):
             return
 
         action_key = self._pending_keybind_item.get('action_key')
@@ -1483,7 +1488,7 @@ class TabbedSettingsScreen:
         elif section == 'pvp.player2':
             value = defaults.get('pvp', {}).get('player2', {}).get(action_key)
             self._control_config.setdefault('pvp', {}).setdefault('player2', {})[action_key] = value
-        elif section == 'gamepad':
+        elif self._is_gamepad_keybind_section(section):
             value = defaults.get('gamepad', {}).get(action_key, -1)
             if isinstance(value, dict):
                 current = self._control_config.setdefault('gamepad', {}).get(action_key)
@@ -2056,11 +2061,19 @@ class TabbedSettingsScreen:
             return None
         if (
             self._swallow_next_gamepad_click
+            and self._swallow_next_gamepad_click_deadline_ms > 0
+            and pygame.time.get_ticks() > self._swallow_next_gamepad_click_deadline_ms
+        ):
+            self._swallow_next_gamepad_click = False
+            self._swallow_next_gamepad_click_deadline_ms = 0
+        if (
+            self._swallow_next_gamepad_click
             and event.type == pygame.MOUSEBUTTONDOWN
             and getattr(event, 'from_gamepad', False)
             and getattr(event, 'button', None) == 1
         ):
             self._swallow_next_gamepad_click = False
+            self._swallow_next_gamepad_click_deadline_ms = 0
             return None
 
         if self._campaign_phase_select_active:
@@ -2076,28 +2089,39 @@ class TabbedSettingsScreen:
         if self._waiting_for_key:
             pending_section = self._pending_keybind_item.get('section') if self._pending_keybind_item else None
 
-            if pending_section == 'gamepad':
+            if self._is_gamepad_keybind_section(pending_section):
                 if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
                     self._waiting_for_key = False
                     self._pending_keybind_item = None
                     self._pending_keybind_slot = 'primary'
+                    self._capture_started_by_gamepad_click = False
                     return None
+                button_down_types = (getattr(pygame, 'CONTROLLERBUTTONDOWN', None), getattr(pygame, 'JOYBUTTONDOWN', None))
                 button_index = normalize_gamepad_event_button(event)
-                if button_index is not None:
-                    self._swallow_next_gamepad_click = self._should_swallow_post_capture_gamepad_click(button_index)
+                if button_index is not None and event.type in button_down_types:
+                    should_swallow_click = self._should_swallow_post_capture_gamepad_click(button_index)
+                    if self._capture_started_by_gamepad_click and should_swallow_click:
+                        should_swallow_click = False
+                    self._swallow_next_gamepad_click = bool(should_swallow_click)
+                    self._swallow_next_gamepad_click_deadline_ms = (
+                        pygame.time.get_ticks() + 180 if should_swallow_click else 0
+                    )
                     self._apply_captured_gamepad_button(button_index)
                     self._waiting_for_key = False
                     self._pending_keybind_item = None
                     self._pending_keybind_slot = 'primary'
+                    self._capture_started_by_gamepad_click = False
                     self._swallow_next_keydown = True
                     return None
                 trigger_index = normalize_gamepad_trigger_event(event)
                 if trigger_index is not None:
                     self._swallow_next_gamepad_click = False
+                    self._swallow_next_gamepad_click_deadline_ms = 0
                     self._apply_captured_gamepad_button(trigger_index)
                     self._waiting_for_key = False
                     self._pending_keybind_item = None
                     self._pending_keybind_slot = 'primary'
+                    self._capture_started_by_gamepad_click = False
                     self._swallow_next_keydown = True
                     return None
                 return None
@@ -2107,11 +2131,13 @@ class TabbedSettingsScreen:
                     self._waiting_for_key = False
                     self._pending_keybind_item = None
                     self._pending_keybind_slot = 'primary'
+                    self._capture_started_by_gamepad_click = False
                     return None
                 self._apply_captured_key(event.key)
                 self._waiting_for_key = False
                 self._pending_keybind_item = None
                 self._pending_keybind_slot = 'primary'
+                self._capture_started_by_gamepad_click = False
             return None
 
         if self._display_mode_confirm_active:
@@ -2223,6 +2249,7 @@ class TabbedSettingsScreen:
         # Mouse tıklama
         elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             pos = normalize_mouse_pos(getattr(event, 'pos', None)) or event.pos
+            opened_by_gamepad_click = bool(getattr(event, 'from_gamepad', False) and getattr(event, 'button', None) == 1)
 
             # Settings scrollbar thumb drag başlatma
             if self._settings_sb_thumb_rect and self._settings_sb_thumb_rect.collidepoint(pos):
@@ -2306,9 +2333,9 @@ class TabbedSettingsScreen:
                                 else:
                                     slot = 'secondary' if pos[0] >= rect.centerx else 'primary'
                                 self._single_player_bind_slot = slot
-                                self._start_keybind_capture(item, slot=slot)
+                                self._start_keybind_capture(item, slot=slot, opened_by_gamepad_click=opened_by_gamepad_click)
                                 return None
-                            if section == 'gamepad':
+                            if self._is_gamepad_keybind_section(section):
                                 slot_rects = self._keybind_slot_rects[i] if i < len(self._keybind_slot_rects) else None
                                 if isinstance(slot_rects, dict):
                                     primary_rect = slot_rects.get('primary')
@@ -2318,15 +2345,17 @@ class TabbedSettingsScreen:
                                     elif primary_rect is not None and primary_rect.collidepoint(pos):
                                         self._gamepad_bind_slot = 'primary'
                                     else:
-                                        return None
-                                self._start_keybind_capture(item, slot=self._gamepad_bind_slot)
+                                        self._gamepad_bind_slot = 'secondary' if pos[0] >= rect.centerx else 'primary'
+                                else:
+                                    self._gamepad_bind_slot = 'secondary' if pos[0] >= rect.centerx else 'primary'
+                                self._start_keybind_capture(item, slot=self._gamepad_bind_slot, opened_by_gamepad_click=opened_by_gamepad_click)
                                 return None
                             slot_rects = self._keybind_slot_rects[i] if i < len(self._keybind_slot_rects) else None
                             if isinstance(slot_rects, dict):
                                 primary_rect = slot_rects.get('primary')
                                 if primary_rect is None or not primary_rect.collidepoint(pos):
                                     return None
-                            self._start_keybind_capture(item, slot='primary')
+                            self._start_keybind_capture(item, slot='primary', opened_by_gamepad_click=opened_by_gamepad_click)
                             return None
                     itype_local = item.get('type', '') if i < len(self._selectable_indices) else ''
                     if itype_local in ('selector', 'music_selector'):
@@ -2415,7 +2444,7 @@ class TabbedSettingsScreen:
                     self._start_keybind_capture(item, slot=self._single_player_bind_slot)
                 return None
 
-            if section == 'gamepad':
+            if self._is_gamepad_keybind_section(section):
                 if key_code == pygame.K_LEFT:
                     self._gamepad_bind_slot = 'primary'
                     return None
@@ -2437,7 +2466,8 @@ class TabbedSettingsScreen:
             return False
         if item.get('type') != 'keybind':
             return False
-        return item.get('section') not in ('single_player', 'gamepad')
+        section = item.get('section')
+        return section != 'single_player' and not self._is_gamepad_keybind_section(section)
 
     def _ensure_visible(self) -> None:
         """Seçili öğenin görünür olmasını sağla."""
@@ -3208,7 +3238,7 @@ class TabbedSettingsScreen:
             self._draw_text_binding_slot(primary_rect, key_text, is_active)
             return {'primary': primary_rect}
 
-        if item.get('type') == 'keybind' and item.get('section') == 'gamepad':
+        if item.get('type') == 'keybind' and self._is_gamepad_keybind_section(item.get('section')):
             action_key = item.get('action_key')
             primary_val, secondary_val = self._get_gamepad_binding_slots(action_key)
             gp_type = self._current_gamepad_prompt_type()

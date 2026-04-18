@@ -32,7 +32,7 @@ from platform_utils import (
 )
 from localization import t
 from gamepad_manager import is_gamepad_connected
-from promptfont_support import get_action_prompt_display, render_action_prompt_surface, render_button_index_prompt_surface, render_inline_action_text_surface
+from promptfont_support import render_action_prompt_surface, render_button_index_prompt_surface
 from ui_theme import UIColors, UIFonts
 from sweep_effects import SweepCatState, draw_rainbow_cat_sweep
 from asset_manager import load_image
@@ -3210,7 +3210,6 @@ class CoopGame:
         self._pause_option_rects = []
         self._pause_volume_rects = {}
         _pause_mouse_pos = get_mouse_pos()
-        sub_hint_font = retro_style.get_font(self._sx(16, ui, minimum=10), bold=False)
 
         start_y = pr.y + top_pad
         for i, opt in enumerate(self.pause_menu_options):
@@ -3225,20 +3224,8 @@ class CoopGame:
 
             if opt == 'resume':
                 color_code = retro_style.success if hasattr(retro_style, 'success') else (60, 200, 120)
-                menu_back_display = get_action_prompt_display('menu_back', 'ESC')
-                if menu_back_display.get('mode') == 'glyph':
-                    gp_label = str(menu_back_display.get('text') or 'ESC')
-                    sub_text = render_inline_action_text_surface(f'{gp_label} / ESC / P', gp_label, 'menu_back', sub_hint_font, (160, 175, 200))
-                else:
-                    sub_text = 'ESC / P'
             elif opt == 'main_menu':
                 color_code = retro_style.secondary
-                menu_confirm_display = get_action_prompt_display('menu_confirm', 'ENTER')
-                if menu_confirm_display.get('mode') == 'glyph':
-                    gp_label = str(menu_confirm_display.get('text') or 'ENTER')
-                    sub_text = render_inline_action_text_surface(f'{gp_label} / BACKSPACE', gp_label, 'menu_confirm', sub_hint_font, (160, 175, 200))
-                else:
-                    sub_text = 'BACKSPACE'
             elif opt == 'music':
                 color_code = retro_style.primary
                 sub_text = t('on', default='ON') if self.sound.music_enabled else t('off', default='OFF')

@@ -35,7 +35,7 @@ from platform_utils import get_display_flags, create_display, set_app_icon, norm
 from ui_theme import UIFonts, UIColors
 from asset_manager import load_image
 from gamepad_manager import get_gamepad_manager, is_gamepad_connected
-from promptfont_support import get_action_prompt_display, render_action_prompt_surface, render_button_index_prompt_surface, render_inline_action_text_surface
+from promptfont_support import render_action_prompt_surface, render_button_index_prompt_surface
 
 try:
     from gamepad_manager import normalize_gamepad_event_button
@@ -450,6 +450,103 @@ class Game:
     def _draw_hud_glass_panel(self, rect: pygame.Rect) -> None:
         """Sağ panelin temel cam panel stilini tek yerden uygula."""
         retro_style.draw_glass_panel(self.screen, rect, alpha=90, border_color=(60, 70, 90))
+
+    @staticmethod
+    def _ellipsis_text(text: str, font: pygame.font.Font, max_width: int, suffix: str = "...") -> str:
+        """Trim text with ellipsis so it never overflows max_width."""
+        if not text or max_width <= 0:
+            return ""
+        if font.size(text)[0] <= max_width:
+            return text
+        if font.size(suffix)[0] > max_width:
+            return ""
+
+        available = max(0, max_width - font.size(suffix)[0])
+        trimmed = text
+        while trimmed and font.size(trimmed)[0] > available:
+            trimmed = trimmed[:-1]
+        return (trimmed.rstrip() + suffix) if trimmed else suffix
+
+    def _compact_mode_badge_text(self, mode_key: str, fallback_text: str) -> str:
+        """Return shorter mode label for narrow right HUD panels."""
+        key = str(mode_key or "").strip().lower()
+        localization_map = {
+            "classic": ("mode_label_classic", "full"),
+            "sprint": ("mode_label_sprint", "full"),
+            "ultra": ("mode_label_ultra", "full"),
+            "zen": ("mode_label_zen", "full"),
+            "tetris2": ("mode_tetris_extra", "last"),
+            "mystery": ("mode_card_mastery", "first"),
+            "wide": ("mode_wide", "first"),
+            "survival": ("mode_survival", "first"),
+            "cascade": ("mode_label_cascade", "full"),
+            "daily": ("mode_daily", "first"),
+            "hardcore": ("mode_label_hardcore", "full"),
+        }
+
+        loc_key, token_mode = localization_map.get(key, ("", "full"))
+        candidate = ""
+        if loc_key:
+            translated = t(loc_key)
+            if translated != loc_key:
+                candidate = translated
+        if not candidate:
+            candidate = fallback_text or ""
+
+        candidate = " ".join(str(candidate).split())
+        parts = candidate.split()
+        if token_mode == "first" and parts:
+            candidate = parts[0]
+        elif token_mode == "last" and parts:
+            candidate = parts[-1]
+        return candidate
+
+    def _render_hud_fitted_text(
+        self,
+        text: str,
+        color: tuple[int, int, int],
+        max_width: int,
+        base_size: int,
+        min_size: int,
+        *,
+        bold: bool = True,
+        compact_mode_key: str | None = None,
+    ) -> pygame.Surface:
+        """Render HUD text safely inside max_width with scaling-aware fallback."""
+        draw_text = " ".join(str(text or "").split())
+        max_width = max(16, int(max_width))
+        base_size = max(8, int(base_size))
+        min_size = max(7, min(base_size, int(min_size)))
+
+        if not draw_text:
+            font = retro_style.get_font(min_size, bold=bold)
+            return font.render("", True, color)
+
+        font = retro_style.get_fitting_font(
+            draw_text,
+            base_size,
+            max_width,
+            bold=bold,
+            min_size=min_size,
+        )
+
+        if compact_mode_key and font.size(draw_text)[0] > max_width:
+            compact_text = self._compact_mode_badge_text(compact_mode_key, draw_text)
+            if compact_text:
+                compact_font = retro_style.get_fitting_font(
+                    compact_text,
+                    base_size,
+                    max_width,
+                    bold=bold,
+                    min_size=min_size,
+                )
+                draw_text = compact_text
+                font = compact_font
+
+        if font.size(draw_text)[0] > max_width:
+            draw_text = self._ellipsis_text(draw_text, font, max_width)
+
+        return font.render(draw_text, True, color)
 
     def _draw_custom_frame(self, rect: pygame.Rect, asset_name: str, padding: int = 0, hole_punch: bool = False) -> bool:
         """Belirtilen asset varsa rect üzerine (padding ekleyerek) ortalayıp çizer.
@@ -2429,7 +2526,6 @@ class Game:
         self._pause_volume_rects = {}
         # Her frame gerçek fare pozisyonunu al (hover state mouse motion olmadan da çalışır)
         _pause_mouse_pos = get_mouse_pos()
-        sub_hint_font = retro_style.get_font(self._sx(16, ui_scale, minimum=10), bold=False)
 
         start_y = panel_rect.y + top_pad
         for i, option in enumerate(self.pause_menu_options):
@@ -2444,20 +2540,8 @@ class Game:
 
             if option == 'Devam Et':
                 color_code = retro_style.success
-                menu_back_display = get_action_prompt_display('menu_back', 'ESC')
-                if menu_back_display.get('mode') == 'glyph':
-                    gp_label = str(menu_back_display.get('text') or 'ESC')
-                    sub_text = render_inline_action_text_surface(f'{gp_label} / ESC / P', gp_label, 'menu_back', sub_hint_font, (160, 175, 200))
-                else:
-                    sub_text = 'ESC / P'
             elif option == 'Ana Menü':
                 color_code = retro_style.secondary
-                menu_confirm_display = get_action_prompt_display('menu_confirm', 'ENTER')
-                if menu_confirm_display.get('mode') == 'glyph':
-                    gp_label = str(menu_confirm_display.get('text') or 'ENTER')
-                    sub_text = render_inline_action_text_surface(f'{gp_label} / BACKSPACE', gp_label, 'menu_confirm', sub_hint_font, (160, 175, 200))
-                else:
-                    sub_text = 'BACKSPACE'
             elif option == 'Müzik':
                 color_code = retro_style.primary
                 sub_text = t('on') if self.sound.music_enabled else t('off')
@@ -4483,26 +4567,41 @@ class Game:
         self._draw_hud_glass_panel(panel_rect)
         
         # İçerik Y pozisyonu
+        side_padding = max(6, min(max(8, int(15 * hud_scale)), max(6, panel_width // 8)))
         curr_y = header_y + max(10, int(20 * hud_scale))
-        content_x = info_x + max(8, int(15 * hud_scale))
-        content_w = panel_width - (max(8, int(15 * hud_scale)) * 2)
+        content_x = info_x + side_padding
+        content_w = max(40, panel_width - (side_padding * 2))
         
         # Başlık
         badge_text = get_localized_skin_title(skin) or t('tetris_label')
-        title_center = (info_x + panel_width // 2, curr_y)
-        title_font = retro_style.get_font(max(18, int(28 * hud_scale)), bold=True)
-        title_surf = title_font.render(badge_text, True, accent_color)
-        title_rect = title_surf.get_rect(center=title_center)
+        title_center_x = info_x + panel_width // 2
+        title_max_width = max(30, content_w - max(2, int(4 * hud_scale)))
+        title_surf = self._render_hud_fitted_text(
+            badge_text,
+            accent_color,
+            title_max_width,
+            max(18, int(28 * hud_scale)),
+            max(8, int(11 * hud_scale)),
+            bold=True,
+            compact_mode_key=getattr(skin, 'key', ''),
+        )
+        title_rect = title_surf.get_rect(midtop=(title_center_x, curr_y))
         self.screen.blit(title_surf, title_rect)
         
-        curr_y += max(20, int(35 * hud_scale))
+        curr_y = title_rect.bottom + max(6, int(8 * hud_scale))
         subtitle_text = get_localized_skin_subtitle(skin)
         if subtitle_text:
-            sub_font = retro_style.get_font(max(12, int(16 * hud_scale)))
-            sub_surf = sub_font.render(subtitle_text, True, text_color)
-            sub_rect = sub_surf.get_rect(center=(title_center[0], curr_y))
+            sub_surf = self._render_hud_fitted_text(
+                subtitle_text,
+                text_color,
+                title_max_width,
+                max(12, int(16 * hud_scale)),
+                max(7, int(9 * hud_scale)),
+                bold=False,
+            )
+            sub_rect = sub_surf.get_rect(midtop=(title_center_x, curr_y))
             self.screen.blit(sub_surf, sub_rect)
-            curr_y += max(14, int(25 * hud_scale))
+            curr_y = sub_rect.bottom + max(6, int(10 * hud_scale))
             
         curr_y += max(6, int(10 * hud_scale))
         

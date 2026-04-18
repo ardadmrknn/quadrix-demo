@@ -164,6 +164,8 @@ DEFAULT_GAMEPAD_BINDINGS = {
     'menu_back':    {'button': 1},   # B / Circle / A(Nintendo)
     'menu_tab_next': {'button': 10}, # RB / R1
     'menu_tab_prev': {'button': 9},  # LB / L1
+    # Giriş/splash devam promptu (atanmamışsa menu_confirm fallback'i kullanılır)
+    'main_menu_prompt': {'button': None},
 }
 
 # D-pad → Klavye eşlemesi (menüler ve oyun için)
@@ -403,7 +405,7 @@ class GamepadManager:
             # Buton eşlemelerini güncelle
             button_actions = [
                 'hard_drop', 'hold', 'hold2', 'pause',
-                'menu_back', 'menu_confirm', 'menu_tab_next', 'menu_tab_prev',
+                'menu_back', 'menu_confirm', 'menu_tab_next', 'menu_tab_prev', 'main_menu_prompt',
                 'discard_held', 'lt', 'rt',
                 'card_rewind', 'card_sniper', 'card_time_capsule_save',
                 'card_time_capsule_restore', 'card_phase_shift',

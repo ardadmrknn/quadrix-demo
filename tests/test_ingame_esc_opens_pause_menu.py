@@ -228,10 +228,10 @@ def _make_pvp_layout_instance(size=(1920, 1080), stale_size=(640, 360)):
     pvp._base_header_height = 64
     pvp._base_header_top = 28
     pvp._base_board_gap = 24
-    pvp._base_preview_panel_width = 126
-    pvp._base_preview_panel_gap = 12
-    pvp._base_center_panel_width = 120
-    pvp._base_center_panel_gap = 18
+    pvp._base_preview_panel_width = 108
+    pvp._base_preview_panel_gap = 8
+    pvp._base_center_panel_width = 92
+    pvp._base_center_panel_gap = 12
     pvp._ui_scale = lambda min_scale=0.72, max_scale=1.20: 1.0
     return pvp
 
@@ -264,6 +264,21 @@ def test_pvp_layout_keeps_preview_and_boards_inside_small_surface():
     assert pvp.header_top >= 0
     assert pvp.board_top >= pvp.header_top + pvp.header_height
     assert pvp.cell_size >= 14
+
+
+def test_pvp_layout_uses_compact_preview_and_center_panel_defaults():
+    pvp = _make_pvp_layout_instance(size=(1366, 768), stale_size=(640, 360))
+
+    pvp.calculate_board_positions()
+
+    board_height = pvp_module.BOARD_HEIGHT * pvp.cell_size
+    preview_panel_height = min(board_height, max(pvp._sx(158), pvp.cell_size * 5 + pvp._sx(22)))
+    vs_panel_height = min(board_height, max(pvp._sx(176), pvp.cell_size * 6 + pvp._sx(24)))
+
+    assert pvp.preview_panel_width == 108
+    assert pvp.center_panel_width == 92
+    assert preview_panel_height < board_height
+    assert vs_panel_height < board_height
 
 
 # ---------------------------------------------------------------------------

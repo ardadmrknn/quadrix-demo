@@ -1421,16 +1421,28 @@ class HardcoreMode(Game):
         content_w = panel_width - s(30)
         
         # Başlık - HARDCORE
-        title_font = retro_style.get_font(s(28, minimum=16), bold=True)
+        title_text = t('mode_label_hardcore').upper()
+        title_max_width = max(s(90, minimum=60), content_w - s(6, minimum=2))
+        title_base_size = s(28, minimum=16)
+        title_min_size = max(s(12, minimum=8), 8)
         title_color = (255, 50, 50)
+        title_surf = self._render_hud_fitted_text(
+            title_text,
+            title_color,
+            title_max_width,
+            title_base_size,
+            title_min_size,
+            bold=True,
+            compact_mode_key='hardcore',
+        )
+        glow_surf = title_surf.copy()
+        glow_surf.set_alpha(70)
         for off in range(2, 0, -1):
-            glow_surf = title_font.render(t('mode_label_hardcore').upper(), True, (*title_color, 50))
-            self.screen.blit(glow_surf, glow_surf.get_rect(center=(info_x + panel_width // 2, curr_y + off)))
-        title_surf = title_font.render(t('mode_label_hardcore').upper(), True, title_color)
-        title_rect = title_surf.get_rect(center=(info_x + panel_width // 2, curr_y))
+            self.screen.blit(glow_surf, glow_surf.get_rect(midtop=(info_x + panel_width // 2, curr_y + off)))
+        title_rect = title_surf.get_rect(midtop=(info_x + panel_width // 2, curr_y))
         self.screen.blit(title_surf, title_rect)
         
-        curr_y += s(45)
+        curr_y = title_rect.bottom + s(13)
         
         # Gizli sıradaki parçalar kutusu
         box_size = s(70)

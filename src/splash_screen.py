@@ -137,26 +137,54 @@ class SplashScreen:
             except Exception:
                 self.image = None
 
+    def _get_continue_gamepad_action(self, gamepad_mgr=None):
+        mgr = gamepad_mgr
+        if mgr is None:
+            try:
+                mgr = get_gamepad_manager()
+            except Exception:
+                return 'menu_confirm'
+
+        try:
+            if not getattr(mgr, 'enabled', False) or not mgr.is_connected():
+                return 'menu_confirm'
+        except Exception:
+            return 'menu_confirm'
+
+        get_indices = getattr(mgr, 'get_action_button_indices', None)
+        if callable(get_indices):
+            try:
+                if get_indices('main_menu_prompt'):
+                    return 'main_menu_prompt'
+            except Exception:
+                pass
+
+        return 'menu_confirm'
+
     def _get_continue_button_label(self):
         try:
             gamepad_mgr = get_gamepad_manager()
         except Exception:
-            return 'Enter'
+            return None
 
         try:
             if getattr(gamepad_mgr, 'enabled', False) and gamepad_mgr.is_connected():
-                button_label = gamepad_mgr.get_button_label('menu_confirm')
+                action = self._get_continue_gamepad_action(gamepad_mgr)
+                button_label = gamepad_mgr.get_button_label(action)
                 if button_label and button_label != '?':
                     return button_label
         except Exception:
             pass
 
-        return 'Enter'
+        return None
 
     def _get_prompt_text(self):
         if self._custom_prompt:
             return self._custom_prompt
-        return t('splash_press_enter', button=self._get_continue_button_label())
+        button_label = self._get_continue_button_label()
+        if button_label:
+            return t('splash_press_enter', button=f'Enter/{button_label}')
+        return t('splash_press_enter', button='Enter')
 
     def _recover_display_after_focus_loss(self, reason: str = '') -> bool:
         """Windows'ta focus/screenshot sonrası splash display'ini yeniden kur."""
@@ -280,7 +308,8 @@ class SplashScreen:
                 for gp_event in gamepad_mgr.update(dt):
                     pygame.event.post(gp_event)
                 if getattr(gamepad_mgr, 'enabled', False):
-                    confirm_pressed = gamepad_mgr.was_action_just_pressed('menu_confirm')
+                    continue_action = self._get_continue_gamepad_action(gamepad_mgr)
+                    confirm_pressed = gamepad_mgr.was_action_just_pressed(continue_action)
             except Exception:
                 confirm_pressed = False
             
@@ -454,7 +483,8 @@ class SplashScreen:
         """Animasyonlu 'Enter basın' prompt'u"""
         prompt_font = retro_style.get_font(22, bold=False)
         prompt_text = self._get_prompt_text()
-        button_label = self._get_continue_button_label()
+        button_label = self._get_continue_button_label() or 'Enter'
+        inline_action = 'menu_confirm' if button_label == 'Enter' else self._get_continue_gamepad_action()
         
         # Yanıp sönen efekt
         blink = 0.6 + 0.4 * math.sin(now / 300.0)
@@ -467,7 +497,7 @@ class SplashScreen:
         text_surf = render_inline_action_text_surface(
             prompt_text,
             button_label,
-            'menu_confirm',
+            inline_action,
             prompt_font,
             (255, 255, 255),
         )
@@ -506,7 +536,7 @@ class SplashScreen:
         text_glow = render_inline_action_text_surface(
             prompt_text,
             button_label,
-            'menu_confirm',
+            inline_action,
             prompt_font,
             border_color,
         )
