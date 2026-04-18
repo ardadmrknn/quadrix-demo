@@ -5,6 +5,7 @@ import random
 import pygame
 
 from asset_manager import load_image
+from gamepad_manager import get_gamepad_manager
 from retro_style import retro_style
 from localization import t
 from background_effects import get_shared_falling_blocks_layer
@@ -135,6 +136,27 @@ class SplashScreen:
             except Exception:
                 self.image = None
 
+    def _get_continue_button_label(self):
+        try:
+            gamepad_mgr = get_gamepad_manager()
+        except Exception:
+            return 'Enter'
+
+        try:
+            if getattr(gamepad_mgr, 'enabled', False) and gamepad_mgr.is_connected():
+                button_label = gamepad_mgr.get_button_label('menu_confirm')
+                if button_label and button_label != '?':
+                    return button_label
+        except Exception:
+            pass
+
+        return 'Enter'
+
+    def _get_prompt_text(self):
+        if self._custom_prompt:
+            return self._custom_prompt
+        return t('splash_press_enter', button=self._get_continue_button_label())
+
     def _recover_display_after_focus_loss(self, reason: str = '') -> bool:
         """Windows'ta focus/screenshot sonrası splash display'ini yeniden kur."""
         if sys.platform != 'win32':
@@ -249,6 +271,17 @@ class SplashScreen:
         while running:
             dt = self.clock.tick(60)  # 60 FPS for smooth animations
             now = pygame.time.get_ticks()
+
+            confirm_pressed = False
+            try:
+                gamepad_mgr = get_gamepad_manager()
+                gamepad_mgr.set_context('menu')
+                for gp_event in gamepad_mgr.update(dt):
+                    pygame.event.post(gp_event)
+                if getattr(gamepad_mgr, 'enabled', False):
+                    confirm_pressed = gamepad_mgr.was_action_just_pressed('menu_confirm')
+            except Exception:
+                confirm_pressed = False
             
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
@@ -257,6 +290,9 @@ class SplashScreen:
                     if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
                         fade_out = True
                         exit_start = now
+            if confirm_pressed and not fade_out:
+                fade_out = True
+                exit_start = now
 
             self._update_windows_display_recovery(now)
                         
@@ -416,7 +452,7 @@ class SplashScreen:
     def _draw_animated_prompt(self, w, h, now, fade_out):
         """Animasyonlu 'Enter basın' prompt'u"""
         prompt_font = retro_style.get_font(22, bold=False)
-        prompt_text = self._custom_prompt if self._custom_prompt else t('splash_press_enter')
+        prompt_text = self._get_prompt_text()
         
         # Yanıp sönen efekt
         blink = 0.6 + 0.4 * math.sin(now / 300.0)
