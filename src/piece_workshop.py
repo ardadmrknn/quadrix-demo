@@ -1007,13 +1007,14 @@ class PieceWorkshopScreen:
         )
         
         # Glow
-        glow_rect = rect.inflate(6, 6)
+        _s = self._s
+        glow_rect = rect.inflate(_s(6), _s(6))
         glow_surf = pygame.Surface(glow_rect.size, pygame.SRCALPHA)
-        pygame.draw.rect(glow_surf, (*self.current_color, 60), glow_surf.get_rect(), border_radius=4)
+        pygame.draw.rect(glow_surf, (*self.current_color, 60), glow_surf.get_rect(), border_radius=_s(4))
         self.screen.blit(glow_surf, glow_rect.topleft)
         
         # Border
-        pygame.draw.rect(self.screen, self.current_color, rect, 3, border_radius=3)
+        pygame.draw.rect(self.screen, self.current_color, rect, max(1, _s(3)), border_radius=_s(3))
     
     def _draw_color_palette(self, x: int, y: int, max_height: int):
         """Renk paleti çiz"""

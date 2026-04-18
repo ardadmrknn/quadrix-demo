@@ -67,7 +67,7 @@ def test_graphics_menu_ui_scale_uses_effective_helper_when_available(monkeypatch
     monkeypatch.setattr(graphics_menu.retro_style, 'get_font', lambda *args, **kwargs: types.SimpleNamespace())
     captured = {}
 
-    def fake_get_effective_scale(screen, *, min_scale, max_scale, reference_size, display_surface=None):
+    def fake_get_projected_effective_scale(screen, *, min_scale, max_scale, reference_size, display_surface=None):
         captured['screen'] = screen
         captured['min_scale'] = min_scale
         captured['max_scale'] = max_scale
@@ -75,7 +75,7 @@ def test_graphics_menu_ui_scale_uses_effective_helper_when_available(monkeypatch
         captured['display_surface'] = display_surface
         return 0.93
 
-    monkeypatch.setattr(graphics_menu, 'get_effective_scale', fake_get_effective_scale)
+    monkeypatch.setattr(graphics_menu, 'get_projected_effective_scale', fake_get_projected_effective_scale)
 
     menu = graphics_menu.GraphicsMenu(_FakeScreen(2560, 1660), _DummySettings())
 
@@ -219,7 +219,7 @@ def test_guide_screen_ui_scale_uses_effective_helper_when_available(monkeypatch)
     monkeypatch.setattr(guide_screen, 'get_shared_falling_blocks_layer', lambda *args, **kwargs: _DummyFx())
     captured = {}
 
-    def fake_get_effective_scale(screen, *, min_scale, max_scale, reference_size, display_surface=None):
+    def fake_get_projected_effective_scale(screen, *, min_scale, max_scale, reference_size, display_surface=None):
         captured['screen'] = screen
         captured['min_scale'] = min_scale
         captured['max_scale'] = max_scale
@@ -227,7 +227,7 @@ def test_guide_screen_ui_scale_uses_effective_helper_when_available(monkeypatch)
         captured['display_surface'] = display_surface
         return 0.94
 
-    monkeypatch.setattr(guide_screen, 'get_effective_scale', fake_get_effective_scale)
+    monkeypatch.setattr(guide_screen, 'get_projected_effective_scale', fake_get_projected_effective_scale)
 
     guide = guide_screen.GuideScreen(_FakeScreen(2560, 1660))
 

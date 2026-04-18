@@ -240,7 +240,7 @@ def test_extras_ui_scale_uses_effective_helper_when_available(monkeypatch):
     user_manager_mock = types.SimpleNamespace(get_mode_highscore=lambda *a, **kw: 0)
     captured = {}
 
-    def fake_get_effective_scale(surface, *, min_scale, max_scale, reference_size, display_surface=None):
+    def fake_get_projected_effective_scale(surface, *, min_scale, max_scale, reference_size, display_surface=None):
         captured['surface'] = surface
         captured['min_scale'] = min_scale
         captured['max_scale'] = max_scale
@@ -248,7 +248,7 @@ def test_extras_ui_scale_uses_effective_helper_when_available(monkeypatch):
         captured['display_surface'] = display_surface
         return 0.95
 
-    monkeypatch.setattr(mod, 'get_effective_scale', fake_get_effective_scale)
+    monkeypatch.setattr(mod, 'get_projected_effective_scale', fake_get_projected_effective_scale)
 
     extras = ExtrasScreen(screen, user_manager=user_manager_mock)
 

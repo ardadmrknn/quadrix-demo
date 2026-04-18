@@ -443,9 +443,12 @@ class PvPGame:
         # Oyun alanı pozisyonları (parçacıklar için)
         self.cell_size = 50
         self.center_panel_width = 320
+        self._base_header_height = 64
         self.header_height = 64
+        self._base_header_top = 28
         self.header_top = 28
         self.board_top = 120
+        self._base_board_gap = 24
         self.board_gap = 24
         self._layout_key = None
         self._board_grid_cache = {'key': None, 'surface': None}

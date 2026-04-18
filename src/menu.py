@@ -9157,7 +9157,7 @@ class BlockStyleSettingsScreen:
             draw_jelly_block(preview_surface, x, y, size, color)
 
         border_color = retro_style.accent if selected else (90, 110, 150)
-        pygame.draw.rect(preview_surface, border_color, preview_surface.get_rect(), 2, border_radius=12)
+        pygame.draw.rect(preview_surface, border_color, preview_surface.get_rect(), 2, border_radius=self._s(12))
         self.screen.blit(preview_surface, rect)
 
     def handle_input(self, event):

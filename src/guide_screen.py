@@ -9,7 +9,7 @@ from retro_style import retro_style
 from background_effects import get_shared_falling_blocks_layer
 from platform_utils import normalize_mouse_pos, is_fullscreen_toggle
 from localization import t, get_language
-from ui_scaling import get_effective_scale, scale_px
+from ui_scaling import get_projected_effective_scale, scale_px
 
 
 # ==============================================================================
@@ -414,7 +414,7 @@ class GuideScreen:
         self._set_selected_tab(self.selected_tab + int(delta))
 
     def _ui_scale(self, min_scale: float = 0.72, max_scale: float = 1.24) -> float:
-        return get_effective_scale(
+        return get_projected_effective_scale(
             self.screen,
             min_scale=min_scale,
             max_scale=max_scale,
