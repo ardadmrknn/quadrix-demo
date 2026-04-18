@@ -396,6 +396,10 @@ class SplashScreen:
     
     def _draw_gradient_background(self, w, h):
         """Animasyonlu gradient arka plan"""
+        # Her karede tüm ekranı temizle; aksi halde hareketli overlay'lerden
+        # kalan pikseller scanline boşluklarında ghosting oluşturur.
+        self.screen.fill((0, 0, 0))
+
         # Koyu mor-mavi gradient
         for y in range(0, h, 4):
             ratio = y / h

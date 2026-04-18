@@ -32,6 +32,7 @@ from retro_style import retro_style as _rs
 from ui_theme import UIColors
 from localization import t, get_language
 from sound import SoundManager
+from ui_scaling import get_projected_effective_scale
 from steam_networking import (
     SteamNetworking, MsgType, NetEvent, NetMessage,
     CHANNEL_GAME,
@@ -74,8 +75,12 @@ class OnlineCoopGame:
 
     def _ui_scale(self, min_scale: float = 0.72, max_scale: float = 1.20) -> float:
         try:
-            scale = min(float(self.window_width) / 1366.0,
-                        float(self.window_height) / 768.0)
+            scale = get_projected_effective_scale(
+                self.screen,
+                min_scale=min_scale,
+                max_scale=max_scale,
+                reference_size=(1366.0, 768.0),
+            )
         except Exception:
             scale = 1.0
         return max(min_scale, min(max_scale, scale))

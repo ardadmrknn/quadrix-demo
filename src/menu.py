@@ -8009,6 +8009,17 @@ class MusicSettingsScreen:
         self.picker_scroll = 0
         self.picker_item_rects: list[tuple[pygame.Rect, int]] = []
 
+    def _ui_scale(self) -> float:
+        return get_projected_effective_scale(
+            self.screen,
+            min_scale=0.68,
+            max_scale=1.24,
+            reference_size=(1366.0, 768.0),
+        )
+
+    def _s(self, value: int | float, minimum: int = 1) -> int:
+        return max(minimum, int(round(float(value) * self._ui_scale())))
+
     def _main_items(self):
         menu_list = self.settings_manager.get_menu_music_playlist() if self.settings_manager else []
         game_list = self.settings_manager.get_game_music_playlist() if self.settings_manager else []
@@ -8220,18 +8231,19 @@ class MusicSettingsScreen:
         return None
 
     def _handle_mode_input(self, event):
+        _s = self._s
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_ESCAPE:
                 self.view = 'main'
                 return None
             if event.key == pygame.K_UP:
                 self.mode_selected = (self.mode_selected - 1) % len(self.modes)
-                visible_h = max(1, self.screen.get_height() - ((getattr(self, '_title_rect', None).bottom + 40) if getattr(self, '_title_rect', None) else 150) - 120)
-                self.mode_scroll = self._ensure_visible(self.mode_selected, 74, 12, visible_h, self.mode_scroll)
+                visible_h = max(1, self.screen.get_height() - ((getattr(self, '_title_rect', None).bottom + _s(40)) if getattr(self, '_title_rect', None) else _s(150)) - _s(120, minimum=0))
+                self.mode_scroll = self._ensure_visible(self.mode_selected, _s(74), _s(12), visible_h, self.mode_scroll)
             elif event.key == pygame.K_DOWN:
                 self.mode_selected = (self.mode_selected + 1) % len(self.modes)
-                visible_h = max(1, self.screen.get_height() - ((getattr(self, '_title_rect', None).bottom + 40) if getattr(self, '_title_rect', None) else 150) - 120)
-                self.mode_scroll = self._ensure_visible(self.mode_selected, 74, 12, visible_h, self.mode_scroll)
+                visible_h = max(1, self.screen.get_height() - ((getattr(self, '_title_rect', None).bottom + _s(40)) if getattr(self, '_title_rect', None) else _s(150)) - _s(120, minimum=0))
+                self.mode_scroll = self._ensure_visible(self.mode_selected, _s(74), _s(12), visible_h, self.mode_scroll)
             elif event.key in (pygame.K_RETURN, pygame.K_SPACE):
                 mode_key = self.modes[self.mode_selected][0]
                 self._load_playlist('mode', mode_key)
@@ -8263,6 +8275,7 @@ class MusicSettingsScreen:
         return None
 
     def _handle_playlist_input(self, event):
+        _s = self._s
         total_items = len(self.playlist) + 1  # +1: Ekle
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_ESCAPE:
@@ -8270,12 +8283,12 @@ class MusicSettingsScreen:
                 return None
             if event.key == pygame.K_UP:
                 self.playlist_selected = (self.playlist_selected - 1) % total_items
-                visible_h = max(1, self.screen.get_height() - ((getattr(self, '_title_rect', None).bottom + 40) if getattr(self, '_title_rect', None) else 150) - 120)
-                self.playlist_scroll = self._ensure_visible(self.playlist_selected, 74, 12, visible_h, self.playlist_scroll)
+                visible_h = max(1, self.screen.get_height() - ((getattr(self, '_title_rect', None).bottom + _s(40)) if getattr(self, '_title_rect', None) else _s(150)) - _s(120, minimum=0))
+                self.playlist_scroll = self._ensure_visible(self.playlist_selected, _s(74), _s(12), visible_h, self.playlist_scroll)
             elif event.key == pygame.K_DOWN:
                 self.playlist_selected = (self.playlist_selected + 1) % total_items
-                visible_h = max(1, self.screen.get_height() - ((getattr(self, '_title_rect', None).bottom + 40) if getattr(self, '_title_rect', None) else 150) - 120)
-                self.playlist_scroll = self._ensure_visible(self.playlist_selected, 74, 12, visible_h, self.playlist_scroll)
+                visible_h = max(1, self.screen.get_height() - ((getattr(self, '_title_rect', None).bottom + _s(40)) if getattr(self, '_title_rect', None) else _s(150)) - _s(120, minimum=0))
+                self.playlist_scroll = self._ensure_visible(self.playlist_selected, _s(74), _s(12), visible_h, self.playlist_scroll)
             elif event.key in (pygame.K_RETURN, pygame.K_SPACE):
                 if self.playlist_selected == 0:
                     self._open_picker()
@@ -8373,12 +8386,13 @@ class MusicSettingsScreen:
 
     def draw(self):
         width, height = self.screen.get_size()
+        _s = self._s
 
         retro_style.draw_background(self.screen)
         self.background_fx.update(self.screen)
         self.background_fx.draw(self.screen)
 
-        self._title_rect = retro_style.draw_title(self.screen, t('tracks'), (width // 2, 70), emoji='🎵')
+        self._title_rect = retro_style.draw_title(self.screen, t('tracks'), (width // 2, _s(70)), emoji='🎵')
 
         if self.view == 'main':
             self._draw_main()
@@ -8392,12 +8406,13 @@ class MusicSettingsScreen:
 
     def _draw_main(self):
         width, height = self.screen.get_size()
+        _s = self._s
         title_rect = getattr(self, '_title_rect', None)
-        start_y = (title_rect.bottom + 40) if title_rect else 150
+        start_y = (title_rect.bottom + _s(40)) if title_rect else _s(150)
 
-        card_width = min(620, width - 120)
-        card_height = 74
-        spacing = 92
+        card_width = min(_s(620), width - _s(120))
+        card_height = _s(74)
+        spacing = _s(92)
 
         items = self._main_items()
         self.main_item_rects = []
@@ -8427,13 +8442,14 @@ class MusicSettingsScreen:
 
     def _draw_mode_select(self):
         width, height = self.screen.get_size()
+        _s = self._s
         title_rect = getattr(self, '_title_rect', None)
-        start_y = (title_rect.bottom + 40) if title_rect else 150
+        start_y = (title_rect.bottom + _s(40)) if title_rect else _s(150)
 
-        card_width = min(620, width - 120)
-        item_h = 74
-        gap = 12
-        list_rect = pygame.Rect((width - card_width) // 2, start_y, card_width, height - start_y - 120)
+        card_width = min(_s(620), width - _s(120))
+        item_h = _s(74)
+        gap = _s(12)
+        list_rect = pygame.Rect((width - card_width) // 2, start_y, card_width, height - start_y - _s(120, minimum=0))
         self.mode_item_rects = []
 
         self.mode_scroll = max(0, min(self.mode_scroll, self._list_max_scroll(len(self.modes), item_h, gap, list_rect.height)))
@@ -8464,13 +8480,14 @@ class MusicSettingsScreen:
 
     def _draw_playlist(self):
         width, height = self.screen.get_size()
+        _s = self._s
         title_rect = getattr(self, '_title_rect', None)
-        start_y = (title_rect.bottom + 40) if title_rect else 150
+        start_y = (title_rect.bottom + _s(40)) if title_rect else _s(150)
 
-        card_width = min(620, width - 120)
-        item_h = 74
-        gap = 12
-        list_rect = pygame.Rect((width - card_width) // 2, start_y, card_width, height - start_y - 120)
+        card_width = min(_s(620), width - _s(120))
+        item_h = _s(74)
+        gap = _s(12)
+        list_rect = pygame.Rect((width - card_width) // 2, start_y, card_width, height - start_y - _s(120, minimum=0))
         total_items = len(self.playlist) + 1
         self.playlist_item_rects = []
 
@@ -8514,34 +8531,35 @@ class MusicSettingsScreen:
 
     def _draw_picker(self):
         width, height = self.screen.get_size()
+        _s = self._s
 
         # Dim background
         dim = pygame.Surface((width, height), pygame.SRCALPHA)
         dim.fill((0, 0, 0, 160))
         self.screen.blit(dim, (0, 0))
 
-        panel_w = min(720, width - 140)
-        panel_h = min(520, height - 180)
+        panel_w = min(_s(720), width - _s(140))
+        panel_h = min(_s(520), height - _s(180))
         panel_x = (width - panel_w) // 2
         panel_y = (height - panel_h) // 2
         panel_rect = pygame.Rect(panel_x, panel_y, panel_w, panel_h)
 
         retro_style.draw_glass_panel(self.screen, panel_rect, alpha=210, border_color=retro_style.primary, glow=True)
 
-        title_font = retro_style.get_font(28, bold=True)
-        subtitle_font = retro_style.get_font(18)
+        title_font = retro_style.get_font(_s(28), bold=True)
+        subtitle_font = retro_style.get_font(_s(18))
         title = title_font.render(t('menu_music_select'), True, (235, 245, 255))
-        self.screen.blit(title, (panel_rect.x + 20, panel_rect.y + 18))
+        self.screen.blit(title, (panel_rect.x + _s(20), panel_rect.y + _s(18)))
 
         # List area inside modal
-        list_top = panel_rect.y + 70
-        list_left = panel_rect.x + 18
-        list_right = panel_rect.right - 18
-        list_bottom = panel_rect.bottom - 24
+        list_top = panel_rect.y + _s(70)
+        list_left = panel_rect.x + _s(18)
+        list_right = panel_rect.right - _s(18)
+        list_bottom = panel_rect.bottom - _s(24)
         list_rect = pygame.Rect(list_left, list_top, list_right - list_left, list_bottom - list_top)
 
-        item_h = 64
-        gap = 10
+        item_h = _s(64)
+        gap = _s(10)
         self.picker_item_rects = []
 
         self.picker_scroll = max(0, min(self.picker_scroll, self._list_max_scroll(len(self.track_options), item_h, gap, list_rect.height)))
@@ -9305,6 +9323,17 @@ class BlockWorkshopScreen:
         self.saved_block_items = []
         self._refresh_manager_items(reset_selection=True)
 
+    def _ui_scale(self) -> float:
+        return get_projected_effective_scale(
+            self.screen,
+            min_scale=0.68,
+            max_scale=1.24,
+            reference_size=(1366.0, 768.0),
+        )
+
+    def _s(self, value: int | float, minimum: int = 1) -> int:
+        return max(minimum, int(round(float(value) * self._ui_scale())))
+
     def save_on_exit(self):
         """Persist current workshop edits when the screen is being closed."""
         try:
@@ -9424,16 +9453,17 @@ class BlockWorkshopScreen:
     def draw(self):
         """Modern Blok Atölyesi UI'ı çiz"""
         width, height = self.screen.get_size()
+        _s = self._s
         retro_style.draw_background(self.screen)
         
         # Başlık
-        title_rect = retro_style.draw_title(self.screen, t('block_workshop_title'), (width // 2, 60), emoji='🧱')
+        title_rect = retro_style.draw_title(self.screen, t('block_workshop_title'), (width // 2, _s(60)), emoji='🧱')
         
         # Tip text - glass panel içinde
         tip_text = t('block_workshop_tip')
-        tip_font = retro_style.get_font(16, bold=False)
+        tip_font = retro_style.get_font(_s(16), bold=False)
         tip = tip_font.render(tip_text, True, (170, 190, 220))
-        tip_rect = tip.get_rect(center=(width // 2, title_rect.bottom + 18))
+        tip_rect = tip.get_rect(center=(width // 2, title_rect.bottom + _s(18)))
         self.screen.blit(tip, tip_rect)
 
         # Aktif paket bilgisi
@@ -9441,39 +9471,40 @@ class BlockWorkshopScreen:
         meta_bottom = tip_rect.bottom
         if active:
             # Paket chip
-            chip_font = retro_style.get_font(15, bold=True)
+            chip_font = retro_style.get_font(_s(15), bold=True)
             from emoji_renderer import emoji_surface as _es
-            _pkg_icon = _es('📦', 18)
+            _pkg_icon = _es('📦', _s(18))
             _chip_label = chip_font.render(f" {active['name']}", True, retro_style.primary)
             if _pkg_icon:
-                chip_surf = pygame.Surface((18 + _chip_label.get_width(), max(18, _chip_label.get_height())), pygame.SRCALPHA)
-                chip_surf.blit(_pkg_icon, (0, (chip_surf.get_height() - 18) // 2))
-                chip_surf.blit(_chip_label, (18, (chip_surf.get_height() - _chip_label.get_height()) // 2))
+                icon_size = _s(18)
+                chip_surf = pygame.Surface((icon_size + _chip_label.get_width(), max(icon_size, _chip_label.get_height())), pygame.SRCALPHA)
+                chip_surf.blit(_pkg_icon, (0, (chip_surf.get_height() - icon_size) // 2))
+                chip_surf.blit(_chip_label, (icon_size, (chip_surf.get_height() - _chip_label.get_height()) // 2))
             else:
                 chip_surf = chip_font.render(f"📦 {active['name']}", True, retro_style.primary)
-            chip_rect = chip_surf.get_rect(center=(width // 2, tip_rect.bottom + 20))
+            chip_rect = chip_surf.get_rect(center=(width // 2, tip_rect.bottom + _s(20)))
             
             # Chip background
-            chip_bg_rect = chip_rect.inflate(24, 10)
+            chip_bg_rect = chip_rect.inflate(_s(24), _s(10))
             chip_bg = pygame.Surface(chip_bg_rect.size, pygame.SRCALPHA)
             chip_bg.fill((20, 30, 55, 180))
             self.screen.blit(chip_bg, chip_bg_rect.topleft)
             pygame.draw.rect(self.screen, (*retro_style.primary, 150), chip_bg_rect, 1, border_radius=chip_bg_rect.height // 2)
             self.screen.blit(chip_surf, chip_rect)
-            meta_bottom = chip_bg_rect.bottom + 8
+            meta_bottom = chip_bg_rect.bottom + _s(8)
 
         # Board alanı hesaplama
-        board_area_width = max(220, width - 380)
-        board_area_height = max(220, height - meta_bottom - 180)
-        cell_size = max(16, min(board_area_width // self.board_width, board_area_height // self.board_height))
+        board_area_width = max(_s(220), width - _s(380))
+        board_area_height = max(_s(220), height - meta_bottom - _s(180))
+        cell_size = max(_s(16), min(board_area_width // self.board_width, board_area_height // self.board_height))
         board_pixel_width = cell_size * self.board_width
         board_pixel_height = cell_size * self.board_height
-        board_rect = pygame.Rect(50, meta_bottom + 20, board_pixel_width, board_pixel_height)
+        board_rect = pygame.Rect(_s(50), meta_bottom + _s(20), board_pixel_width, board_pixel_height)
         self.last_board_rect = board_rect
         self.last_cell_size = cell_size
 
         # Board container - glass panel
-        container_rect = board_rect.inflate(20, 20)
+        container_rect = board_rect.inflate(_s(20), _s(20))
         retro_style.draw_glass_panel(self.screen, container_rect, alpha=150, border_color=(60, 80, 120))
         
         # Board çiz
@@ -9482,29 +9513,29 @@ class BlockWorkshopScreen:
         self._draw_cursor(board_rect, cell_size)
 
         # Side panel - palet ve kontroller
-        side_rect = pygame.Rect(board_rect.right + 30, board_rect.top - 10, width - board_rect.right - 80, board_rect.height + 20)
-        if side_rect.width > 140:
+        side_rect = pygame.Rect(board_rect.right + _s(30), board_rect.top - _s(10, minimum=0), width - board_rect.right - _s(80), board_rect.height + _s(20))
+        if side_rect.width > _s(140):
             retro_style.draw_glass_panel(self.screen, side_rect, alpha=160, border_color=retro_style.primary)
             self._draw_side_panel(side_rect)
 
         # Alt kontrol paneli
-        footer_rect = pygame.Rect(40, height - 100, width - 80, 75)
+        footer_rect = pygame.Rect(_s(40), height - _s(100), width - _s(80), _s(75))
         retro_style.draw_glass_panel(self.screen, footer_rect, alpha=140, border_color=(50, 70, 100))
         
         instructions = [
             t('block_workshop_instructions_line1'),
             t('block_workshop_instructions_line2', modifier=get_modifier_key_name()),
         ]
-        inst_font = retro_style.get_font(14, bold=False)
+        inst_font = retro_style.get_font(_s(14), bold=False)
         for idx, text in enumerate(instructions):
             info = inst_font.render(text, True, (160, 180, 210))
-            self.screen.blit(info, info.get_rect(center=(width // 2, footer_rect.y + 20 + idx * 22)))
+            self.screen.blit(info, info.get_rect(center=(width // 2, footer_rect.y + _s(20) + idx * _s(22))))
 
         # Mesaj gösterimi
         if self.message_timer > 0:
-            msg_font = retro_style.get_font(18, bold=True)
+            msg_font = retro_style.get_font(_s(18), bold=True)
             note = msg_font.render(self.message, True, retro_style.accent)
-            note_rect = note.get_rect(center=(width // 2, footer_rect.bottom - 12))
+            note_rect = note.get_rect(center=(width // 2, footer_rect.bottom - _s(12)))
             self.screen.blit(note, note_rect)
             self.message_timer -= 1
 
