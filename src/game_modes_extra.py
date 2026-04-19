@@ -1568,6 +1568,7 @@ class MysteryCardUI:
         show_peek_button: bool = True,
         header_title: str | None = None,
         header_lines: List[str] | None = None,
+        center_header: bool = False,
     ) -> None:
         alpha = int(max(0, min(255, self.fade_alpha)))
         if alpha <= 0 or not cards:
@@ -1682,11 +1683,17 @@ class MysteryCardUI:
         header_y = panel_rect.y + s(28)
         if header_title:
             header_surf = header_font.render(str(header_title), True, (235, 242, 250))
-            screen.blit(header_surf, (header_x, header_y))
+            if center_header:
+                screen.blit(header_surf, header_surf.get_rect(centerx=panel_rect.centerx, top=header_y))
+            else:
+                screen.blit(header_surf, (header_x, header_y))
             header_y += header_surf.get_height() + s(8)
         for raw_line in visible_header_lines:
             line_surf = line_font.render(str(raw_line), True, (185, 198, 222))
-            screen.blit(line_surf, (header_x, header_y))
+            if center_header:
+                screen.blit(line_surf, line_surf.get_rect(centerx=panel_rect.centerx, top=header_y))
+            else:
+                screen.blit(line_surf, (header_x, header_y))
             header_y += line_surf.get_height() + s(4)
         # (Removed) Selection hint text like "1 / 2 / 3 ... seç"
         # (Kaldırıldı) Sağ üst "Tamamen rastgele" butonu

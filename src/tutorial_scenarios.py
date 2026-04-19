@@ -19,15 +19,15 @@ SCENARIOS: Dict[str, Dict[str, Any]] = {
     "gap_fill_double": {
         "goal_key": "tutorial_board_gap_fill_goal",
         "board_rows": [
-            "XXXX..XXXX",
-            "XXXX..XXXX",
+            "XXX...XXXX",
+            "XXXX.XXXXX",
         ],
-        "current_piece": {"name": "O", "x": 4, "y": 0, "rotation": 0},
-        "next_queue": ["T", "L", "I"],
+        "current_piece": {"name": "T", "x": 1, "y": 0, "rotation": 0},
+        "next_queue": ["L", "I", "O"],
         "allow_hold": False,
-        "goal_text": "Hedef: İki satırı aynı anda temizle.",
+        "goal_text": "Hedef: T parçasını döndürüp doğru yere koyarak iki satır temizle.",
         "tip_key": "tutorial_board_gap_fill_tip",
-        "tip_text": "Geniş boşlukları okuyup doğru parçayı seçmek, kart modundaki kararların temelidir.",
+        "tip_text": "T parçasının şeklini boşluğun şekliyle eşleştir; döndür ve kaydır.",
         "objectives": [
             {
                 "id": "clear_lines",
@@ -67,16 +67,16 @@ SCENARIOS: Dict[str, Dict[str, Any]] = {
     "keep_stack_low": {
         "goal_key": "tutorial_board_keep_low_goal",
         "board_rows": [
-            "XXX.....XX",
-            "XXXX...XXX",
-            "XXXXX.XXXX",
+            "XXXXXXX...",
+            "XXXXXXX..X",
+            "XXXXXXX.XX",
         ],
-        "current_piece": {"name": "T", "x": 4, "y": 0, "rotation": 0},
+        "current_piece": {"name": "T", "x": 3, "y": 0, "rotation": 0},
         "next_queue": ["L", "S", "O"],
         "allow_hold": False,
-        "goal_text": "Hedef: Yeni delik açmadan yüksekliği artırma.",
+        "goal_text": "Hedef: Parçayı döndürüp doğru yere koyarak yüksekliği azalt.",
         "tip_key": "tutorial_board_keep_low_tip",
-        "tip_text": "Her hamlede satır temizlemek gerekmez; bazen en iyi hamle kuleyi büyütmemektir.",
+        "tip_text": "T parçasını sağa taşı ve döndür — kuleyi büyütmeden iki satırı temizleyebilirsin.",
         "objectives": [
             {
                 "id": "height_limit",
@@ -116,17 +116,17 @@ SCENARIOS: Dict[str, Dict[str, Any]] = {
     "vertical_well_quadrix": {
         "goal_key": "tutorial_board_vertical_well_goal",
         "board_rows": [
-            "XXXX.XXXXX",
-            "XXXX.XXXXX",
-            "XXXX.XXXXX",
-            "XXXX.XXXXX",
+            "XXXXXXXXX.",
+            "XXXXXXXXX.",
+            "XXXXXXXXX.",
+            "XXXXXXXXX.",
         ],
         "current_piece": {"name": "I", "x": 3, "y": 0, "rotation": 0},
         "next_queue": ["O", "T", "L"],
         "allow_hold": False,
-        "goal_text": "Hedef: Kuyuyu okuyup I parçasıyla Quadrix yap.",
+        "goal_text": "Hedef: I parçasını en sağa taşı, dikleştir ve Quadrix yap.",
         "tip_key": "tutorial_board_vertical_well_tip",
-        "tip_text": "Kart modunda da en güçlü kararlar, önce kuyuyu hazırlayıp sonra doğru parçayı beklemektir.",
+        "tip_text": "I parçasını sağa taşı, döndürerek dikleştir ve kuyuya bırak.",
         "objectives": [
             {
                 "id": "quadrix",
@@ -169,16 +169,16 @@ SCENARIOS: Dict[str, Dict[str, Any]] = {
     "avoid_holes_trap": {
         "goal_key": "tutorial_avoid_holes_goal",
         "board_rows": [
-            "XXX...XXXX",
-            "XXXX.XXXXX",
-            "XXXXXXXXXX",
+            "XXXX....XX",
+            "XXXXX...XX",
+            "XXXXX..XXX",
         ],
-        "current_piece": {"name": "S", "x": 3, "y": 0, "rotation": 0},
+        "current_piece": {"name": "S", "x": 2, "y": 0, "rotation": 0},
         "next_queue": ["T", "O", "L"],
         "allow_hold": False,
-        "goal_text": "Hedef: Delik açmadan parçayı yerleştir.",
+        "goal_text": "Hedef: S parçasını delik açmadan doğru basamağa yerleştir.",
         "tip_key": "tutorial_avoid_holes_tip",
-        "tip_text": "Bir delik açmamak, iki satır temizlemekten daha değerli olabilir.",
+        "tip_text": "S'in basamak şeklini tahtadaki boşlukla eşleştir; bir sütun kaydırmak bile delik açar.",
         "objectives": [
             {"id": "avoid_holes", "text": "Yeni delik oluşturma", "metric": "hole_delta", "comparison": "max", "value": 0},
             {"id": "keep_height", "text": "Yüksekliği +2'den fazla artırma", "metric": "height_delta", "comparison": "max", "value": 2},
@@ -233,31 +233,31 @@ SCENARIOS: Dict[str, Dict[str, Any]] = {
     "queue_read_setup": {
         "goal_key": "tutorial_queue_read_goal",
         "board_rows": [
-            "XX.....XXX",
-            "XXX...XXXX",
-            "XXXX.XXXXX",
+            "XXX....XXX",
+            "XXXX...XXX",
+            "XXXX..XXXX",
         ],
-        "current_piece": {"name": "S", "x": 3, "y": 0, "rotation": 0},
+        "current_piece": {"name": "S", "x": 7, "y": 0, "rotation": 0},
         "next_queue": ["I", "T", "L"],
         "allow_hold": False,
-        "goal_text": "Hedef: Sıradaki parçayı düşünerek yerleştir.",
+        "goal_text": "Hedef: Sıradaki parçayı düşünerek satır temizle.",
         "tip_key": "tutorial_queue_read_tip",
-        "tip_text": "L parçasını nereye koyarsan T parçası için alan bırakırsın?",
+        "tip_text": "S parçasını doğru boşluğa oturt; sonraki parça için yer bırak.",
         "objectives": [
             {"id": "clear_lines", "text": "En az 1 satır temizle", "metric": "line_delta", "comparison": "min", "value": 1},
             {"id": "avoid_holes", "text": "Yeni delik oluşturma", "metric": "hole_delta", "comparison": "max", "value": 0},
         ],
         "coach_feedback": {
-            "clean": "Sıradaki parçayı hesaba katarak bugünkü hamleyi iyi planladın.",
-            "need_more_lines": "L parçasını T için zemin hazırlayacak şekilde yerleştir.",
-            "created_holes": "Sırayı okumak sadece şimdiki değil, sonraki hamleni de düşünmek demek.",
-            "stack_too_high": "Sırayı düşünerek daha alçak bir çözüm bul.",
+            "clean": "Sıradaki parçayı hesaba katarak doğru boşluğu buldun.",
+            "need_more_lines": "S'in basamak şeklini tahtadaki basamak boşluğuyla eşleştirmeye çalış.",
+            "created_holes": "Yanlış sütuna koymak delik açar — S'in alt kısmının nereye oturduğunu kontrol et.",
+            "stack_too_high": "Daha alçak bir çözüm bul — sıradaki parçayı düşün.",
         },
         "evaluation": {
             "required_line_clears": 1,
             "max_new_holes": 0,
-            "max_height_increase": 2,
-            "preferred_max_height_increase": 0,
+            "max_height_increase": 0,
+            "preferred_max_height_increase": -1,
         },
     },
 
@@ -345,7 +345,7 @@ SCENARIOS: Dict[str, Dict[str, Any]] = {
         "tip_text": "Önce L ile yüzeyi düzelt, sonra I bloğunu dikey kullan.",
         "objectives": [
             {"id": "clear_lines", "text": "En az 3 satır temizle", "metric": "line_delta", "comparison": "min", "value": 3},
-            {"id": "avoid_holes", "text": "Yeni delik oluşturma", "metric": "hole_delta", "comparison": "max", "value": 0},
+            {"id": "avoid_holes", "text": "En fazla 1 yeni delik", "metric": "hole_delta", "comparison": "max", "value": 1},
             {"id": "reduce_height", "text": "Yüksekliği en az 1 azalt", "metric": "height_delta", "comparison": "max", "value": -1},
         ],
         "coach_feedback": {
@@ -356,7 +356,7 @@ SCENARIOS: Dict[str, Dict[str, Any]] = {
         },
         "evaluation": {
             "required_line_clears": 3,
-            "max_new_holes": 0,
+            "max_new_holes": 1,
             "max_height_increase": -1,
             "preferred_max_height_increase": -2,
         },
@@ -474,11 +474,12 @@ SCENARIOS: Dict[str, Dict[str, Any]] = {
     "exam_board_combined": {
         "goal_key": "tutorial_exam_board_goal",
         "board_rows": [
-            "X.........",
-            "XX....XXXX",
+            "X.....XXXX",
+            "XX...XXXXX",
             "XXX..XXXXX",
             "XXXX.XXXXX",
             "XXXX.XXXXX",
+            "XXXXX.XXXX",
         ],
         "current_piece": {"name": "T", "x": 4, "y": 0, "rotation": 0},
         "next_queue": ["I", "L", "O"],
@@ -488,9 +489,9 @@ SCENARIOS: Dict[str, Dict[str, Any]] = {
         "tip_key": "tutorial_exam_board_tip",
         "tip_text": "İpuçları az — öğrendiklerini birleştir.",
         "objectives": [
-            {"id": "clear_lines", "text": "En az 2 satır temizle", "metric": "line_delta", "comparison": "min", "value": 2},
+            {"id": "clear_lines", "text": "En az 3 satır temizle", "metric": "line_delta", "comparison": "min", "value": 3},
             {"id": "avoid_holes", "text": "Yeni delik oluşturma", "metric": "hole_delta", "comparison": "max", "value": 0},
-            {"id": "height_control", "text": "Yüksekliği +1'den fazla artırma", "metric": "height_delta", "comparison": "max", "value": 1},
+            {"id": "height_control", "text": "Yüksekliği artırma", "metric": "height_delta", "comparison": "max", "value": 0},
         ],
         "coach_feedback": {
             "clean": "Yüzey, delik ve kuyu kararlarını birlikte uyguladın — harika!",
@@ -499,10 +500,10 @@ SCENARIOS: Dict[str, Dict[str, Any]] = {
             "stack_too_high": "Yükseklik kontrolü de sınavın parçası — alçak tut.",
         },
         "evaluation": {
-            "required_line_clears": 2,
+            "required_line_clears": 3,
             "max_new_holes": 0,
-            "max_height_increase": 1,
-            "preferred_max_height_increase": 0,
+            "max_height_increase": 0,
+            "preferred_max_height_increase": -1,
         },
     },
 
@@ -554,18 +555,19 @@ SCENARIOS: Dict[str, Dict[str, Any]] = {
             "XXXXXXX.XX",
             "XX.XXXXXXX",
             "XXXXXX.XXX",
+            "XXXXX.XXXX",
         ],
         "current_piece": {"name": "T", "x": 4, "y": 0, "rotation": 0},
         "next_queue": ["I", "L", "J", "O"],
         "allow_hold": True,
-        "max_piece_locks": 3,
+        "max_piece_locks": 4,
         "goal_text": "Hedef: Tüm becerileri tek bir senaryoda göster.",
         "tip_key": "tutorial_exam_hybrid_tip",
         "tip_text": "Artık ipucu yok — sen biliyorsun.",
         "objectives": [
-            {"id": "clear_lines", "text": "En az 3 satır temizle", "metric": "line_delta", "comparison": "min", "value": 3},
+            {"id": "clear_lines", "text": "En az 4 satır temizle", "metric": "line_delta", "comparison": "min", "value": 4},
             {"id": "avoid_holes", "text": "Yeni delik oluşturma", "metric": "hole_delta", "comparison": "max", "value": 0},
-            {"id": "reduce_height", "text": "Yüksekliği azalt", "metric": "height_delta", "comparison": "max", "value": -1},
+            {"id": "reduce_height", "text": "Yüksekliği en az 2 azalt", "metric": "height_delta", "comparison": "max", "value": -2},
         ],
         "coach_feedback": {
             "clean": "Tüm ilkeleri birleştirdin — tebrikler, eğitimi tamamladın!",
@@ -574,10 +576,10 @@ SCENARIOS: Dict[str, Dict[str, Any]] = {
             "stack_too_high": "Final'de yükseklik kontrolü kritik — alçak ve temiz bitir.",
         },
         "evaluation": {
-            "required_line_clears": 3,
+            "required_line_clears": 4,
             "max_new_holes": 0,
-            "max_height_increase": 0,
-            "preferred_max_height_increase": -2,
+            "max_height_increase": -1,
+            "preferred_max_height_increase": -3,
         },
     },
 }

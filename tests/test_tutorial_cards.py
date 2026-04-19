@@ -82,11 +82,11 @@ class TestTutorialCardHelpers(unittest.TestCase):
     def test_rare_not_auto_prefers_prevention_over_revive(self):
         scenario = get_card_choice_scenario('rare_not_auto')
         self.assertIsNotNone(scenario)
-        self.assertEqual([card['id'] for card in scenario['choices']], ['ghost_echo', 'freeze_drop_rare', 'clear_rows'])
+        self.assertEqual([card['id'] for card in scenario['choices']], ['speed_burst_legendary', 'freeze_drop_rare', 'clear_rows'])
 
         best_outcome = evaluate_card_choice(scenario, 'freeze_drop_rare')
         acceptable_outcome = evaluate_card_choice(scenario, 'clear_rows')
-        weak_outcome = evaluate_card_choice(scenario, 'ghost_echo')
+        weak_outcome = evaluate_card_choice(scenario, 'speed_burst_legendary')
 
         self.assertTrue(best_outcome['success'])
         self.assertEqual(best_outcome['stars'], 3)

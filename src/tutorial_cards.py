@@ -207,8 +207,8 @@ CARD_CHOICE_SCENARIOS: Dict[str, Dict[str, Any]] = {
     "rescue_pick": {
         "goal_key": "tutorial_card_rescue_goal",
         "tip_key": "tutorial_card_rescue_tip",
-        "goal_text": "Hedef: Tehlikeli tahtada en doğru kurtarma kartını seç.",
-        "tip_text": "Parlak kart her zaman doğru kart değildir. Önce tahtanın neye ihtiyacı olduğunu oku.",
+        "goal_text": "Tahta tehlikede — seni yaşatacak kartı bul.",
+        "tip_text": "Parlak olan değil, şu an tahtanı kurtaracak kartı seç.",
         "context_keys": [
             "tutorial_card_rescue_context_1",
             "tutorial_card_rescue_context_2",
@@ -244,8 +244,8 @@ CARD_CHOICE_SCENARIOS: Dict[str, Dict[str, Any]] = {
     "long_term_pick": {
         "goal_key": "tutorial_card_long_term_goal",
         "tip_key": "tutorial_card_long_term_tip",
-        "goal_text": "Hedef: Güvenli tahtada en iyi uzun vadeli kartı seç.",
-        "tip_text": "Tahta sakinse anlık kart yerine, run boyunca değer üreten perk daha güçlü olabilir.",
+        "goal_text": "Tahta sakin — uzun vadede en çok işe yarayacak kartı seç.",
+        "tip_text": "Acil sorun yoksa run boyunca değer üretecek kartı düşün.",
         "context_keys": [
             "tutorial_card_long_term_context_1",
             "tutorial_card_long_term_context_2",
@@ -278,8 +278,8 @@ CARD_CHOICE_SCENARIOS: Dict[str, Dict[str, Any]] = {
     "synergy_pick": {
         "goal_key": "tutorial_card_synergy_goal",
         "tip_key": "tutorial_card_synergy_tip",
-        "goal_text": "Hedef: Mevcut build ile en iyi sinerji kartını seç.",
-        "tip_text": "Kart seçimi, tek kart gücünden çok mevcut build ile nasıl çalıştığı üzerinden okunur.",
+        "goal_text": "Aktif perklerin var — bunları güçlendirecek kartı bul.",
+        "tip_text": "Kartı tek başına değil, mevcut build'inle birlikte değerlendir.",
         "context_keys": [
             "tutorial_card_synergy_context_1",
             "tutorial_card_synergy_context_2",
@@ -316,8 +316,8 @@ CARD_CHOICE_SCENARIOS: Dict[str, Dict[str, Any]] = {
     "tempo_trap": {
         "goal_key": "tutorial_cards_tempo_trap_goal",
         "tip_key": "tutorial_cards_tempo_trap_tip",
-        "goal_text": "Hedef: Hız tuzağına düşme — dağınık tahtada strateji öncelik.",
-        "tip_text": "Hızlı oynamak ≠ iyi oynamak. Dağınık tahtada doğru araç stratejidir.",
+        "goal_text": "Hız tuzağını gör — dağınık tahtada doğru araç hangisi?",
+        "tip_text": "Hızlı oynamak çözüm değil — tahtayı düzeltecek kartı bul.",
         "context_keys": [
             "tutorial_cards_tempo_trap_context_1",
             "tutorial_cards_tempo_trap_context_2",
@@ -354,8 +354,8 @@ CARD_CHOICE_SCENARIOS: Dict[str, Dict[str, Any]] = {
     "perk_vs_instant": {
         "goal_key": "tutorial_cards_perk_vs_instant_goal",
         "tip_key": "tutorial_cards_perk_vs_instant_tip",
-        "goal_text": "Hedef: Kalıcı perk ile anlık spell arasında doğru seçimi yap.",
-        "tip_text": "Anlık efekt bir satır çözer; perk tüm run boyunca değer üretir.",
+        "goal_text": "Kalıcı perk mi, anlık etki mi? Tahtana göre karar ver.",
+        "tip_text": "Tahta temizken kalıcı güç uzun vadede daha çok işe yarar.",
         "context_keys": [
             "tutorial_cards_perk_vs_instant_context_1",
             "tutorial_cards_perk_vs_instant_context_2",
@@ -389,8 +389,8 @@ CARD_CHOICE_SCENARIOS: Dict[str, Dict[str, Any]] = {
     "rare_not_auto": {
         "goal_key": "tutorial_cards_rare_not_auto_goal",
         "tip_key": "tutorial_cards_rare_not_auto_tip",
-        "goal_text": "Hedef: Parlak kart yerine şu anki tahtayı gerçekten yöneten kartı seç.",
-        "tip_text": "Bu board ölüm sınırında değil; önündeki hassas yerleşimleri güvene almak daha değerli.",
+        "goal_text": "Efsanevi kart her zaman doğru değil. Tahtanın gerçek ihtiyacını oku.",
+        "tip_text": "Tahtanın acili ne? Parlak etikete değil, gerçek soruna bak.",
         "context_keys": [
             "tutorial_cards_rare_not_auto_context_1",
             "tutorial_cards_rare_not_auto_context_2",
@@ -403,29 +403,30 @@ CARD_CHOICE_SCENARIOS: Dict[str, Dict[str, Any]] = {
             "...XX.....",
             "..XXXX....",
             ".XXXXXX...",
-            "XXXX.XXXXX",
+            "XXX..XXXXX",
+            "XXXX..XXXX",
             "XXXXX.XXXX",
         ],
         "current_piece": {"name": "L", "x": 4, "y": 0, "rotation": 0},
         "next_queue": ["L", "I", "S"],
-        "card_choices": ["ghost_echo", "freeze_drop_rare", "clear_rows"],
+        "card_choices": ["speed_burst_legendary", "freeze_drop_rare", "clear_rows"],
         "recommended_card_id": "freeze_drop_rare",
         "acceptable_card_ids": ["clear_rows"],
         "feedback_keys_by_card": {
-            "ghost_echo": "tutorial_cards_rare_not_auto_feedback_ghost",
+            "speed_burst_legendary": "tutorial_cards_rare_not_auto_feedback_speed",
             "freeze_drop_rare": "tutorial_cards_rare_not_auto_feedback_freeze",
             "clear_rows": "tutorial_cards_rare_not_auto_feedback_clear",
         },
         "feedback_by_card": {
-            "ghost_echo": "Zayıf seçim. Bu tahta hemen öldürmüyor; ölüm sonrası sigorta yerine hatayı önleyen kart daha değerli.",
+            "speed_burst_legendary": "Zayıf seçim. Bu tahta hız değil hassasiyet istiyor; hızlanmak delik riskini artırır.",
             "freeze_drop_rare": "Doğru seçim. Son Düşüş önündeki kritik yerleşimlerde düşünme süresi vererek gerçek problemi çözer.",
             "clear_rows": "Kabul edilebilir. Alan açar ama sorunun özü hassas yerleşimler; ek düşünme süresi daha fazla değer üretir.",
         },
     },
 
     "build_direction": {
-        "goal_text": "Hedef: Lokal bir problemi, gereksiz kaynak harcamadan çözen kartı seç.",
-        "tip_text": "En büyük efekt her zaman en iyi seçim değildir. Güvenli tahtada nokta atışı çözüm, overkill'den daha değerlidir.",
+        "goal_text": "Sadece bir sorun var — onu çözen, fazlasını yapmayan kartı seç.",
+        "tip_text": "Büyük silah her zaman en iyi cevap değil. Soruna göre ölç.",
         "context_lines": [
             "Durum: Tahta genel olarak güvenli ama sağ tarafta tek bir sivri kule var.",
             "Öncelik: Sadece o problemi temizleyip yüzeyi yeniden sakinleştirmek.",
@@ -452,8 +453,8 @@ CARD_CHOICE_SCENARIOS: Dict[str, Dict[str, Any]] = {
     "risk_reward_timing": {
         "goal_key": "tutorial_cards_risk_reward_goal",
         "tip_key": "tutorial_cards_risk_reward_tip",
-        "goal_text": "Hedef: Risk alıp alamayacağını board'a göre belirle.",
-        "tip_text": "Güvenli board'da risk almak büyütür; tehlikeli board'da öldürür.",
+        "goal_text": "Tahta güvende — risk alıp puan kazanma zamanı mı?",
+        "tip_text": "Güvenli tahtada cesur kart seni büyütür, tehlikeli tahtada öldürür.",
         "context_keys": [
             "tutorial_cards_risk_reward_context_1",
             "tutorial_cards_risk_reward_context_2",

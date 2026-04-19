@@ -1512,10 +1512,9 @@ class TutorialMode(Game):
         bottom = self.board.height - 1
         above = self.board.height - 2
 
-        # Kolay satır temizleme pratiği: kesin bir parça dayatmadan
-        # oyuncuya bag'den gelen parça ile çözüm fırsatı verir.
+        # Boşluk sağ tarafta (sütun 7-8): oyuncu O parçasını sağa taşımalı.
         for x in range(self.board.width):
-            if x not in (4, 5):
+            if x not in (7, 8):
                 self.board.grid[bottom][x] = color
                 self.board.occupancy[bottom][x] = True
 
@@ -1524,11 +1523,13 @@ class TutorialMode(Game):
                 self.board.grid[above][x] = color
                 self.board.occupancy[above][x] = True
 
-        # Tabanı 2 küplük O parçası — 2 hücrelik boşluğa tam oturur
+        # O parçası merkezde doğar → sağa taşınması gerekir
         self.current_piece = self._create_named_piece('O')
         self.current_piece.x = 4
         self.current_piece.y = self._compute_spawn_y(self.current_piece)
         self._skip_hidden_rows(self.current_piece)
+        # Bu derste sağ panel tek sonraki parçayı göstermeli.
+        self.next_piece_queue = [self.spawn_new_piece()]
         self.apply_theme_to_pieces()
     
     # --------------------------------------------------------------------------
@@ -2997,6 +2998,8 @@ class TutorialMode(Game):
             forced_hover_index = None
             if not mouse_over_card:
                 forced_hover_index = int(self.card_choice_state.get('selected_index', 0) or 0)
+            raw_title = self._lesson_title() or t('tutorial_card_context_title', default='Ders bağlamı')
+            centered_title = f"❗  {raw_title}  ❗"
             self.card_ui.draw_selection_overlay(
                 self.screen,
                 active_width,
@@ -3008,8 +3011,9 @@ class TutorialMode(Game):
                 forced_hover_index=forced_hover_index,
                 show_secondary_actions=False,
                 show_peek_button=True,
-                header_title=self._lesson_title() or t('tutorial_card_context_title', default='Ders bağlamı'),
+                header_title=centered_title,
                 header_lines=header_lines,
+                center_header=True,
             )
             return
 
@@ -3028,14 +3032,16 @@ class TutorialMode(Game):
 
         title_font = retro_style.get_font(s(16, minimum=11), bold=True)
         body_font = retro_style.get_font(s(14, minimum=10))
-        title_surface = title_font.render(t('tutorial_card_context_title', default='Ders bağlamı'), True, (255, 220, 150))
-        self.screen.blit(title_surface, (context_rect.x + s(18), context_rect.y + s(12)))
+        raw_title = t('tutorial_card_context_title', default='Ders bağlamı')
+        title_text = f"❗  {raw_title}  ❗"
+        title_surface = title_font.render(title_text, True, (255, 220, 150))
+        self.screen.blit(title_surface, title_surface.get_rect(centerx=context_rect.centerx, top=context_rect.y + s(12)))
 
         context_lines = list(scenario.get('context_lines', []) or [])[:2]
         line_y = context_rect.y + s(40)
         for line in context_lines:
             line_surface = body_font.render(str(line), True, (230, 235, 242))
-            self.screen.blit(line_surface, (context_rect.x + s(18), line_y))
+            self.screen.blit(line_surface, line_surface.get_rect(centerx=context_rect.centerx, top=line_y))
             line_y += s(20)
 
         card_gap = s(18)
