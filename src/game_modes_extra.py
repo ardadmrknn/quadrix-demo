@@ -9490,9 +9490,9 @@ class MysteryMode(Game):
         controls_total_height = sum(surf.get_height() for surf in control_surfs)
         if control_surfs:
             controls_total_height += control_line_gap * (len(control_surfs) - 1)
-        info_height = count_surf.get_height()
-        if msg_surf is not None:
-            info_height += message_gap + msg_surf.get_height()
+        # Reserve message line height always; transient status text must not resize grid area.
+        msg_line_height = info_font.get_height()
+        info_height = count_surf.get_height() + message_gap + msg_line_height
 
         # Grid
         grid_top = separator_y + s(14)
@@ -9541,11 +9541,10 @@ class MysteryMode(Game):
         count_rect = count_surf.get_rect(topleft=(popup_x + s(20), info_y))
         self.screen.blit(count_surf, count_rect)
 
-        info_bottom = count_rect.bottom
+        info_bottom = count_rect.bottom + message_gap + msg_line_height
         if msg_surf is not None:
             msg_rect = msg_surf.get_rect(midtop=(popup_rect.centerx, count_rect.bottom + message_gap))
             self.screen.blit(msg_surf, msg_rect)
-            info_bottom = max(info_bottom, msg_rect.bottom)
         self._card_workshop_info_rect = pygame.Rect(
             popup_x + s(20),
             info_y,
