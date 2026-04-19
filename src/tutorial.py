@@ -1,5 +1,6 @@
 import pygame
 import random
+import os
 
 try:
     from .game import Game  # type: ignore
@@ -182,6 +183,9 @@ class TutorialMode(Game):
         self._hub_carousel_anim_target = 0.0
         self._hub_carousel_prev_chapter_id = None
         self.hub_progress_snapshot = build_default_tutorial_progress()
+        self._tutorial_star_icon_base = None
+        self._tutorial_star_icon_cache = {}
+        self._load_tutorial_star_icon()
         self._load_lesson_catalog()
         self._sync_tutorial_card_overlay_reference()
         
@@ -206,6 +210,81 @@ class TutorialMode(Game):
                 int(TUTORIAL_MODAL_REFERENCE_SIZE[0]),
                 int(TUTORIAL_MODAL_REFERENCE_SIZE[1]),
             )
+
+    def _load_tutorial_star_icon(self):
+        self._tutorial_star_icon_base = None
+        self._tutorial_star_icon_cache = {}
+
+        possible_paths = [
+            os.path.join(os.path.dirname(os.path.dirname(__file__)), 'assets', 'ui', 'egitim_star.png'),
+            os.path.join(os.path.dirname(__file__), 'assets', 'ui', 'egitim_star.png'),
+            'assets/ui/egitim_star.png',
+            '../assets/ui/egitim_star.png',
+        ]
+
+        for path in possible_paths:
+            try:
+                if os.path.exists(path):
+                    self._tutorial_star_icon_base = pygame.image.load(path).convert_alpha()
+                    break
+            except Exception:
+                continue
+
+    def _get_tutorial_star_icon(self, size, filled=True, locked=False):
+        base_icon = self._tutorial_star_icon_base
+        if base_icon is None:
+            return None
+
+        size = max(6, int(size))
+        cache_key = (size, bool(filled), bool(locked))
+        cached = self._tutorial_star_icon_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        if base_icon.get_width() == size and base_icon.get_height() == size:
+            icon = base_icon.copy()
+        else:
+            icon = pygame.transform.smoothscale(base_icon, (size, size))
+
+        if not filled:
+            icon.fill((95, 105, 130, 255), special_flags=pygame.BLEND_RGBA_MULT)
+            icon.fill((255, 255, 255, 170), special_flags=pygame.BLEND_RGBA_MULT)
+        if locked:
+            icon.fill((155, 165, 180, 225), special_flags=pygame.BLEND_RGBA_MULT)
+
+        self._tutorial_star_icon_cache[cache_key] = icon
+        return icon
+
+    def _blit_tutorial_star_icon(self, x, y, size, filled=True, locked=False):
+        icon = self._get_tutorial_star_icon(size, filled=filled, locked=locked)
+        if icon is not None:
+            self.screen.blit(icon, (int(x), int(y)))
+            return
+
+        center = (int(x) + int(size) // 2, int(y) + int(size) // 2)
+        color = (255, 215, 0) if filled else (100, 110, 130)
+        pygame.draw.circle(self.screen, color, center, max(2, int(size) // 3))
+
+    def _draw_tutorial_star_row(self, x, y, filled_count, total_count, size, gap=2, locked=False):
+        total_count = max(0, int(total_count))
+        filled_count = max(0, min(total_count, int(filled_count)))
+        size = max(6, int(size))
+        gap = max(0, int(gap))
+
+        cursor_x = int(x)
+        for index in range(total_count):
+            self._blit_tutorial_star_icon(
+                cursor_x,
+                int(y),
+                size,
+                filled=index < filled_count,
+                locked=locked,
+            )
+            cursor_x += size + gap
+
+        if total_count <= 0:
+            return 0
+        return (total_count * size) + ((total_count - 1) * gap)
 
     def _get_left_gameplay_reserve_width(self) -> int:
         ui_scale = self._tutorial_modal_scale(min_scale=0.70, max_scale=1.18)
@@ -2335,18 +2414,28 @@ class TutorialMode(Game):
         self.screen.blit(title_surf, (header_rect.x + s(28), header_rect.y + s(12)))
 
         total_stars = self._get_total_tutorial_stars()
-        star_badge_text = f'\u2605 {total_stars}'
         star_badge_font = retro_style.get_font(s(16, minimum=12), bold=True)
-        star_surf = star_badge_font.render(star_badge_text, True, (255, 215, 0))
-        star_badge_w = star_surf.get_width() + s(20)
-        star_badge_h = star_surf.get_height() + s(8)
+        star_value_surf = star_badge_font.render(str(total_stars), True, (255, 215, 0))
+        badge_star_size = max(s(14, minimum=10), min(s(20), star_value_surf.get_height()))
+        badge_star_gap = s(6, minimum=3)
+        star_badge_w = star_value_surf.get_width() + badge_star_size + badge_star_gap + s(20)
+        star_badge_h = max(star_value_surf.get_height(), badge_star_size) + s(8)
         star_badge_rect = pygame.Rect(header_rect.right - star_badge_w - s(28),
                                       header_rect.y + s(14), star_badge_w, star_badge_h)
         star_bg = pygame.Surface(star_badge_rect.size, pygame.SRCALPHA)
         star_bg.fill((12, 20, 45, 210))
         self.screen.blit(star_bg, star_badge_rect.topleft)
         pygame.draw.rect(self.screen, (255, 215, 0, 130), star_badge_rect, 1, border_radius=8)
-        self.screen.blit(star_surf, (star_badge_rect.x + s(10), star_badge_rect.y + s(4)))
+        badge_star_x = star_badge_rect.x + s(10)
+        badge_star_y = star_badge_rect.centery - badge_star_size // 2
+        self._blit_tutorial_star_icon(badge_star_x, badge_star_y, badge_star_size, filled=True)
+        self.screen.blit(
+            star_value_surf,
+            (
+                badge_star_x + badge_star_size + badge_star_gap,
+                star_badge_rect.centery - star_value_surf.get_height() // 2,
+            ),
+        )
 
         subtitle_text = t(
             'tutorial_hub_subtitle',
@@ -2534,7 +2623,7 @@ class TutorialMode(Game):
             status_text = t(
                 'tutorial_hub_chapter_status',
                 completed=completed_n, total=total_n, stars=entry.get('stars', 0),
-                default=f"{completed_n}/{total_n} ders  |  {entry.get('stars', 0)} \u2605",
+                default=f"{completed_n}/{total_n} ders  |  {entry.get('stars', 0)} yıldız",
             )
             status_color = retro_style.text_secondary if not is_locked else retro_style.text_muted
             status_surf = small_font.render(status_text, True, status_color)
@@ -2542,17 +2631,22 @@ class TutorialMode(Game):
 
             # Zorluk yıldızları
             diff_y = status_y + s(20)
-            difficulty = int(chapter.get('difficulty', 1) or 1)
+            difficulty = max(0, min(5, int(chapter.get('difficulty', 1) or 1)))
             diff_label = small_font.render(t('tutorial_difficulty', default='Zorluk:'), True,
                                            retro_style.text_muted if is_locked else retro_style.text_secondary)
             self.screen.blit(diff_label, (pad_x, diff_y))
             star_x = pad_x + diff_label.get_width() + s(6)
-            for si in range(5):
-                star_char = '\u2605' if si < difficulty else '\u2606'
-                star_c = (255, 215, 0) if (si < difficulty and not is_locked) else retro_style.text_muted
-                star_s = small_font.render(star_char, True, star_c)
-                self.screen.blit(star_s, (star_x, diff_y))
-                star_x += star_s.get_width() + 1
+            star_size = max(s(12, minimum=8), min(s(16, minimum=10), small_font.get_height()))
+            star_y = diff_y + max(0, (diff_label.get_height() - star_size) // 2)
+            self._draw_tutorial_star_row(
+                star_x,
+                star_y,
+                difficulty,
+                5,
+                star_size,
+                gap=max(1, s(2, minimum=1)),
+                locked=is_locked,
+            )
 
             # Açıklama
             desc_y = diff_y + s(24)
@@ -2732,17 +2826,20 @@ class TutorialMode(Game):
                         self.screen.blit(desc_surf, (text_x, row_rect.y + s(28)))
 
                 # Yıldız + durum
-                stars_n = entry.get('stars', 0)
-                star_text = '\u2605' * stars_n + '\u2606' * (3 - stars_n)
-                star_color = (255, 215, 0) if stars_n > 0 else retro_style.text_muted
-                star_surf = tiny_font.render(star_text, True, star_color)
+                stars_n = max(0, min(3, int(entry.get('stars', 0) or 0)))
+                star_size = max(s(11, minimum=8), min(s(14, minimum=10), tiny_font.get_height()))
+                star_gap = max(1, s(2, minimum=1))
+                star_row_w = (star_size * 3) + (star_gap * 2)
                 star_y = row_rect.y + (s(8) if compact else row_rect.height - s(18))
-                self.screen.blit(star_surf, (row_rect.right - star_surf.get_width() - s(12), star_y))
+                star_y = max(row_rect.y + s(6), min(star_y, row_rect.bottom - star_size - s(4)))
+                star_x = row_rect.right - star_row_w - s(12)
+                self._draw_tutorial_star_row(star_x, star_y, stars_n, 3, star_size, gap=star_gap)
 
                 if lesson_completed and not compact:
                     done_surf = tiny_font.render(t('tutorial_hub_completed', default='Tamamlandı'),
                                                  True, (0, 255, 150))
-                    self.screen.blit(done_surf, (row_rect.right - done_surf.get_width() - star_surf.get_width() - s(20), star_y))
+                    done_x = max(text_x, row_rect.right - done_surf.get_width() - star_row_w - s(20))
+                    self.screen.blit(done_surf, (done_x, star_y))
 
                 lesson_list_top += lesson_card_h + lesson_gap
 
