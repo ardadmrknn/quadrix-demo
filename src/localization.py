@@ -17339,7 +17339,7 @@ TRANSLATIONS = {
     },
     # --- Nasıl Oynanır Bölümü ---
     'guide_how_to_play_intro': {
-        'tr': 'Quadrix, yukarıdan düşen parçaları (Tetromino) yatay satırlar oluşturacak şekilde dizme oyunudur.\n\nTam bir satır tamamlandığında o satır silinir ve puan kazanırsınız.\n\nTahtanın üstüne ulaşan parçalar oyunu bitirir.',
+        'tr': 'Quadrix\'te amaç, yukarıdan gelen parçaları düzenli yerleştirerek eksiksiz yatay satırlar tamamlamaktır.\n\nTamamlanan her satır temizlenir, size yeni alan açar ve puan kazandırır.\n\nYığın üst sınıra dayanırsa tur sona erer.',
         'en': 'Quadrix is a game where you arrange falling pieces (Tetrominoes) to form complete horizontal lines.\n\nWhen a complete line is formed, it clears and you score points.\n\nPieces reaching the top of the board end the game.',
         'de': 'Quadrix is a game where you arrange falling pieces (Tetrominoes) to form complete horizontal lines.\n\nWhen a complete line is formed, it clears and you score points.\n\nPieces reaching the top of the board end the game.',
         'fr': 'Quadrix is a game where you arrange falling pieces (Tetrominoes) to form complete horizontal lines.\n\nWhen a complete line is formed, it clears and you score points.\n\nPieces reaching the top of the board end the game.',
@@ -17352,7 +17352,7 @@ TRANSLATIONS = {
         'ko': '테트리스는 위에서 떨어지는 피스(테트로미노)를 가로 한 줄로 맞추는 게임입니다.\n\n한 줄이 완성되면 사라지고 점수를 얻습니다.\n\n블록이 보드 상단에 닿으면 게임이 끝납니다.',
     },
     'guide_how_to_play_controls': {
-        'tr': '━━━ KONTROLLER ━━━\n\n• Sol/Sağ Ok: Parçayı sola/sağa hareket ettir\n\n• Yukarı Ok / X: Saat yönünde döndür\n\n• Z: Saat yönünün tersine döndür\n\n• Aşağı Ok: Yavaş düşür (Soft Drop)\n\n• Boşluk: Anında düşür (Hard Drop)\n\n• C: Parçayı sakla (Hold)\n\n• P / ESC: Duraklat\n\n• R: Yeniden başlat',
+        'tr': '━━━ KONTROLLER ━━━\n\n• Sol/Sağ Ok: Aktif parçayı yana kaydır\n\n• Yukarı Ok / X: Saat yönünde çevir\n\n• Z: Saat yönünün tersine çevir\n\n• Aşağı Ok: Kontrollü indir\n\n• Boşluk: Anında zemine indir ve kilitle\n\n• C: Yedek yuvaya al\n\n• P / ESC: Duraklat\n\n• R: Turu yeniden başlat',
         'en': '━━━ CONTROLS ━━━\n\n• Left/Right Arrow: Move piece left/right\n\n• Up Arrow / X: Rotate clockwise\n\n• Z: Rotate counter-clockwise\n\n• Down Arrow: Soft drop\n\n• Space: Hard drop (instant)\n\n• C: Hold piece\n\n• P / ESC: Pause\n\n• R: Restart',
         'de': '━━━ CONTROLS ━━━\n\n• Left/Right Arrow: Move piece left/right\n\n• Up Arrow / X: Rotate clockwise\n\n• Z: Rotate counter-clockwise\n\n• Down Arrow: Soft drop\n\n• Space: Hard drop (instant)\n\n• C: Hold piece\n\n• P / ESC: Pause\n\n• R: Restart',
         'fr': '━━━ CONTROLS ━━━\n\n• Left/Right Arrow: Move piece left/right\n\n• Up Arrow / X: Rotate clockwise\n\n• Z: Rotate counter-clockwise\n\n• Down Arrow: Soft drop\n\n• Space: Hard drop (instant)\n\n• C: Hold piece\n\n• P / ESC: Pause\n\n• R: Restart',
@@ -17365,7 +17365,7 @@ TRANSLATIONS = {
         'ko': '━━━ 조작 ━━━\n\n• 왼쪽/오른쪽 화살표: 피스를 좌/우로 이동\n\n• 위쪽 화살표 / X: 시계 방향 회전\n\n• Z: 반시계 방향 회전\n\n• 아래쪽 화살표: 소프트 드롭\n\n• 스페이스: 하드 드롭(즉시)\n\n• C: 홀드\n\n• P / ESC: 일시정지\n\n• R: 재시작',
     },
     'guide_how_to_play_scoring': {
-        'tr': '━━━ PUANLAMA SİSTEMİ ━━━\n\n• 1 Satır: 100 × Seviye puan\n\n• 2 Satır (Double): 300 × Seviye puan\n\n• 3 Satır (Triple): 500 × Seviye puan\n\n• 4 Satır (Quadrix): 800 × Seviye puan\n\n• Combo Bonusu: Art arda satır silmede ek puan\n\n• Hard Drop: Parçanın düştüğü her satır için 2 puan\n\n━━━━━━━━━━━━━━━━━━━━━━\n\nÖrnek: Parça 5 satır düşerse = 10 puan\n\nİpucu: Hızlı oynamak için Space tuşunu kullan!',
+        'tr': '━━━ PUAN AKIŞI ━━━\n\n• 1 satır: 100 × seviye\n\n• 2 satır: 300 × seviye\n\n• 3 satır: 500 × seviye\n\n• 4 satır (Quadrix): 800 × seviye\n\n• Seri bonusu: Arka arkaya temizlikte ek puan\n\n• Anında indirme: İnilen her hücre için 2 puan\n\n━━━━━━━━━━━━━━━━━━━━━━\n\nÖrnek: 5 hücrelik anında indirme = 10 puan\n\nDüzenli temizlik kurmak, tek büyük hamle kovalamaktan daha güvenlidir.',
         'en': '━━━ SCORING SYSTEM ━━━\n\n• 1 Line: 100 × Level points\n\n• 2 Lines (Double): 300 × Level points\n\n• 3 Lines (Triple): 500 × Level points\n\n• 4 Lines (Quadrix): 800 × Level points\n\n• Combo Bonus: Extra points for consecutive clears\n\n• Hard Drop: 2 points per row the piece falls\n\n━━━━━━━━━━━━━━━━━━━━━━\n\nExample: Piece falls 5 rows = 10 points\n\nTip: Use Space for fast play!',
         'de': '━━━ SCORING SYSTEM ━━━\n\n• 1 Line: 100 × Level points\n\n• 2 Lines (Double): 300 × Level points\n\n• 3 Lines (Triple): 500 × Level points\n\n• 4 Lines (Quadrix): 800 × Level points\n\n• Combo Bonus: Extra points for consecutive clears\n\n• Hard Drop: 2 points per row the piece falls\n\n━━━━━━━━━━━━━━━━━━━━━━\n\nExample: Piece falls 5 rows = 10 points\n\nTip: Use Space for fast play!',
         'fr': '━━━ SCORING SYSTEM ━━━\n\n• 1 Line: 100 × Level points\n\n• 2 Lines (Double): 300 × Level points\n\n• 3 Lines (Triple): 500 × Level points\n\n• 4 Lines (Quadrix): 800 × Level points\n\n• Combo Bonus: Extra points for consecutive clears\n\n• Hard Drop: 2 points per row the piece falls\n\n━━━━━━━━━━━━━━━━━━━━━━\n\nExample: Piece falls 5 rows = 10 points\n\nTip: Use Space for fast play!',
@@ -17378,7 +17378,7 @@ TRANSLATIONS = {
         'ko': '━━━ 점수 시스템 ━━━\n\n• 1줄: 100 × 레벨 점수\n\n• 2줄(더블): 300 × 레벨 점수\n\n• 3줄(트리플): 500 × 레벨 점수\n\n• 4줄(테트리스): 800 × 레벨 점수\n\n• 콤보 보너스: 연속 삭제 추가 점수\n\n• 하드 드롭: 피스가 떨어진 각 줄마다 2점\n\n━━━━━━━━━━━━━━━━━━━━━━\n\n예: 5줄 낙하 = 10점\n\n팁: 빠르게 플레이하려면 Space 키!',
     },
     'guide_how_to_play_levels': {
-        'tr': '━━━ SEVİYE SİSTEMİ ━━━\n\nHer 10 satır temizlediğinizde seviye artar.\n\nSeviye arttıkça:\n\n• Parçalar daha hızlı düşer\n\n• Kazanılan puanlar artar\n\n• Zorluk yükselir',
+        'tr': '━━━ TEMPO VE SEVİYE ━━━\n\nHer 10 temizlenen satır sizi bir seviye yukarı taşır.\n\nSeviye yükseldikçe:\n\n• Parçalar daha hızlı iner\n\n• Aynı temizlik daha fazla puan üretir\n\n• Karar süresi kısalır',
         'en': '━━━ LEVEL SYSTEM ━━━\n\nLevel increases every 10 lines cleared.\n\nAs level increases:\n\n• Pieces fall faster\n\n• Points earned multiply\n\n• Difficulty rises',
         'de': '━━━ LEVEL SYSTEM ━━━\n\nLevel increases every 10 lines cleared.\n\nAs level increases:\n\n• Pieces fall faster\n\n• Points earned multiply\n\n• Difficulty rises',
         'fr': '━━━ LEVEL SYSTEM ━━━\n\nLevel increases every 10 lines cleared.\n\nAs level increases:\n\n• Pieces fall faster\n\n• Points earned multiply\n\n• Difficulty rises',
@@ -17391,7 +17391,7 @@ TRANSLATIONS = {
         'ko': '━━━ 레벨 시스템 ━━━\n\n10줄을 지울 때마다 레벨이 올라갑니다.\n\n레벨이 올라가면:\n\n• 피스가 더 빨리 떨어짐\n\n• 획득 점수 증가\n\n• 난이도 상승',
     },
     'guide_how_to_play_tips': {
-        'tr': '━━━ ÖNEMLİ İPUÇLARI ━━━\n\n• Gölge parça (Ghost Piece), parçanın nereye düşeceğini gösterir\n\n• Hold sistemini stratejik olarak kullanın\n\n• Sıradaki parçaları sürekli kontrol edin\n\n• Quadrix (4 satır) yapmak için bir kenarı açık bırakın',
+        'tr': '━━━ SAHA KONTROLÜ ━━━\n\n• Gölge iz, aktif parçanın nereye oturacağını önceden gösterir; hızlı karar verirken ona bakın\n\n• Yedek yuvayı yalnızca panik anında değil, sonraki hamleyi hazırlamak için kullanın\n\n• Sıradaki parçaları takip etmek, gereksiz boşlukları ve dengesiz yükselmeyi azaltır\n\n• Yüksek temizliğe oynamak istiyorsanız bir kenarda dik bir kanal bırakın ve uzun parçayı oraya saklayın',
         'en': '━━━ IMPORTANT TIPS ━━━\n\n• Ghost piece shows where the piece will land\n\n• Use Hold system strategically\n\n• Keep checking the next pieces\n\n• Leave one edge open for Quadrix (4-line clear)',
         'de': '━━━ IMPORTANT TIPS ━━━\n\n• Ghost piece shows where the piece will land\n\n• Use Hold system strategically\n\n• Keep checking the next pieces\n\n• Leave one edge open for Quadrix (4-line clear)',
         'fr': '━━━ IMPORTANT TIPS ━━━\n\n• Ghost piece shows where the piece will land\n\n• Use Hold system strategically\n\n• Keep checking the next pieces\n\n• Leave one edge open for Quadrix (4-line clear)',
@@ -18135,7 +18135,7 @@ TRANSLATIONS = {
     },
     # --- İpuçları ve SSS ---
     'guide_tips_intro': {
-        'tr': '[UZMAN İPUÇLARI]',
+        'tr': '[İLERİ SEVİYE İPUÇLARI]',
         'en': '[EXPERT TIPS]',
         'de': '[PROFI-TIPPS]',
         'fr': '[CONSEILS EXPERTS]',
@@ -18148,7 +18148,7 @@ TRANSLATIONS = {
         'ko': '[전문가 팁]',
     },
     'guide_tip_1': {
-        'tr': '• T-Spin tekniğini öğrenin: T parçasını döndürerek dar boşluklara yerleştirmek ekstra puan kazandırır.',
+        'tr': '• Gölge Parça\'yı aktif okuyun: İniş noktasını önceden görmek, özellikle tempo yükseldiğinde kör yerleştirme yapmanızı engeller.',
         'en': '• Learn T-Spin: Rotating T piece into tight spaces earns extra points.',
         'de': '• Learn T-Spin: Rotating T piece into tight spaces earns extra points.',
         'fr': '• Learn T-Spin: Rotating T piece into tight spaces earns extra points.',
@@ -18161,7 +18161,7 @@ TRANSLATIONS = {
         'ko': '• T-스핀을 익히세요: T 피스를 회전해 좁은 공간에 넣으면 추가 점수.',
     },
     'guide_tip_2': {
-        'tr': '• Düz parçayı (I) hep kenarda Quadrix için saklayın.',
+        'tr': '• Hold / Değiştir\'i refleksle değil planla kullanın; en iyi kullanım, uzun parçayı açık kanal için saklamak ya da elinizdeki parçayı sıradaki akışla uyumlu hale getirmektir.',
         'en': '• Always save I-piece for Quadrix on the side.',
         'de': '• Always save I-piece for Quadrix on the side.',
         'fr': '• Always save I-piece for Quadrix on the side.',
@@ -18174,7 +18174,7 @@ TRANSLATIONS = {
         'ko': '• I 피스를 테트리스를 위해 항상 아껴두세요.',
     },
     'guide_tip_3': {
-        'tr': '• Orta alanı mümkün olduğunca düz tutun, boşluklar oluşmasını engelleyin.',
+        'tr': '• Yüzeyi sakin tutun: Ortada ani tepecikler ve altta kalan boşluklar, hız arttığında toparlanması en zor saha hatasına dönüşür.',
         'en': '• Keep the center flat, avoid creating holes.',
         'de': '• Keep the center flat, avoid creating holes.',
         'fr': '• Keep the center flat, avoid creating holes.',
@@ -18187,7 +18187,7 @@ TRANSLATIONS = {
         'ko': '• 중앙을 최대한 평평하게 유지해 구멍을 만들지 마세요.',
     },
     'guide_tip_4': {
-        'tr': '• Kombo zincirleri kurmak için satırları art arda temizlemeye çalışın.',
+        'tr': '• Yığın üst yarıya yaklaştığında büyük hamle zorlamayı bırakın; önce tekli veya ikili temizliklerle nefes alanı açın, sonra yeniden büyük temizliğe dönün.',
         'en': '• Build combo chains by clearing lines consecutively.',
         'de': '• Build combo chains by clearing lines consecutively.',
         'fr': '• Build combo chains by clearing lines consecutively.',
@@ -18200,7 +18200,7 @@ TRANSLATIONS = {
         'ko': '• 연속으로 줄을 지워 콤보 체인을 만드세요.',
     },
     'guide_tip_5': {
-        'tr': '• Kart modunda kartları doğru zamanda kullanmak kritik önem taşır.',
+        'tr': '• Kart Ustalığı\'nda kartları rolüne göre ayırın: kurtarma kartlarını sıkışınca, skor kartlarını ise hazırladığınız seri, kombo veya büyük temizlikten hemen önce kullanın.',
         'en': '• In card mode, using cards at the right time is crucial.',
         'de': '• In card mode, using cards at the right time is crucial.',
         'fr': '• In card mode, using cards at the right time is crucial.',
@@ -18213,7 +18213,7 @@ TRANSLATIONS = {
         'ko': '• 카드 모드에서는 적절한 타이밍에 카드를 사용하는 것이 중요합니다.',
     },
     'guide_faq_intro': {
-        'tr': '\n[SIK SORULAN SORULAR]',
+        'tr': '\n[SIK SORULANLAR]',
         'en': '\n[FREQUENTLY ASKED QUESTIONS]',
         'de': '\n[FREQUENTLY ASKED QUESTIONS]',
         'fr': '\n[FREQUENTLY ASKED QUESTIONS]',
@@ -18226,7 +18226,7 @@ TRANSLATIONS = {
         'ko': '\n[자주 묻는 질문]',
     },
     'guide_faq_1': {
-        'tr': 'Q: Oyun neden çok hızlı?\nA: Seviye arttıkça hız artar. Ayarlardan başlangıç seviyesini düşürebilirsiniz.',
+        'tr': 'Q: Neden bazen Hold / Değiştir çalışmıyor?\nA: Hold, aktif parça başına bir kez kullanılabilir. Parça yerleşip yeni aktif parça geldiğinde tekrar açılır; bu yüzden aynı parçayı art arda sürekli takas edemezsiniz.',
         'en': 'Q: Why is the game so fast?\nA: Speed increases with level. You can lower starting level in settings.',
         'de': 'Q: Why is the game so fast?\nA: Speed increases with level. You can lower starting level in settings.',
         'fr': 'Q: Why is the game so fast?\nA: Speed increases with level. You can lower starting level in settings.',
@@ -18239,7 +18239,7 @@ TRANSLATIONS = {
         'ko': 'Q: 게임이 왜 이렇게 빠르나요?\nA: 레벨이 올라갈수록 속도가 증가합니다. 설정에서 시작 레벨을 낮출 수 있습니다.',
     },
     'guide_faq_2': {
-        'tr': 'Q: Kartlar nasıl kazanılır?\nA: Kart Ustalığı modunda satır temizleyerek ve belirli hedeflere ulaşarak kart kazanırsınız.',
+        'tr': 'Q: Kartları nasıl ve ne zaman kullanmalıyım?\nA: Kart Ustalığı modunda kartları 1-9 tuşlarıyla veya fareyle etkinleştirebilirsiniz. Çoğu kart tek kullanımlıdır; sakin sahada harcamak yerine sizi kurtaracak ya da hazırladığınız temizliği büyütecek anı bekleyin.',
         'en': 'Q: How to earn cards?\nA: In Card Mastery mode, clear lines and reach certain goals to earn cards.',
         'de': 'Q: How to earn cards?\nA: In Card Mastery mode, clear lines and reach certain goals to earn cards.',
         'fr': 'Q: How to earn cards?\nA: In Card Mastery mode, clear lines and reach certain goals to earn cards.',
@@ -18252,7 +18252,7 @@ TRANSLATIONS = {
         'ko': 'Q: 카드는 어떻게 얻나요?\nA: 카드 마스터리 모드에서 줄을 지우고 특정 목표를 달성하면 얻습니다.',
     },
     'guide_faq_3': {
-        'tr': 'Q: Ayarlar kaydediliyor mu?\nA: Evet, tüm ayarlar otomatik olarak kaydedilir.',
+        'tr': 'Q: Oyun neden bir anda hızlanıyor?\nA: Her 10 temizlenen satır yeni seviyeyi açar ve düşüş hızını artırır. Daha kontrollü bir başlangıç için ayarlardan başlangıç seviyesini düşürebilir, sıkıştığınızda ise önce güvenli temizliklere dönebilirsiniz.',
         'en': 'Q: Are settings saved?\nA: Yes, all settings are automatically saved.',
         'de': 'Q: Are settings saved?\nA: Yes, all settings are automatically saved.',
         'fr': 'Q: Are settings saved?\nA: Yes, all settings are automatically saved.',
