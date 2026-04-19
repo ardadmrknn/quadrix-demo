@@ -4008,8 +4008,11 @@ class Game:
 
             bindings = getattr(self, 'control_bindings', None) or {}
             bound_soft = int(bindings.get('soft_drop', pygame.K_DOWN))
-            # Ok tuşu + WASD desteği: S her zaman soft drop alternatifi.
-            soft_now = _is_pressed(bound_soft) or _is_pressed(pygame.K_s)
+            # Varsayılan davranışta S, soft drop alternatifi. Modlar bunu kapatabilir.
+            allow_soft_drop_s_alias = bool(getattr(self, '_allow_soft_drop_s_alias', True))
+            soft_now = _is_pressed(bound_soft)
+            if allow_soft_drop_s_alias:
+                soft_now = soft_now or _is_pressed(pygame.K_s)
             # Gamepad D-pad / sol stick aşağı yön kontrolü
             if not soft_now:
                 try:

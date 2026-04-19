@@ -183,6 +183,10 @@ class TutorialMode(Game):
         self._hub_carousel_anim_target = 0.0
         self._hub_carousel_prev_chapter_id = None
         self.hub_progress_snapshot = build_default_tutorial_progress()
+        self._tutorial_arrow_icon_left_base = None
+        self._tutorial_arrow_icon_right_base = None
+        self._tutorial_arrow_icon_cache = {}
+        self._load_tutorial_arrow_icons()
         self._tutorial_star_icon_base = None
         self._tutorial_star_icon_cache = {}
         self._load_tutorial_star_icon()
@@ -229,6 +233,68 @@ class TutorialMode(Game):
                     break
             except Exception:
                 continue
+
+    def _load_tutorial_arrow_icons(self):
+        self._tutorial_arrow_icon_left_base = None
+        self._tutorial_arrow_icon_right_base = None
+        self._tutorial_arrow_icon_cache = {}
+
+        left_paths = [
+            os.path.join(os.path.dirname(os.path.dirname(__file__)), 'assets', 'ui', 'egitim_arrow_left.png'),
+            os.path.join(os.path.dirname(__file__), 'assets', 'ui', 'egitim_arrow_left.png'),
+            'assets/ui/egitim_arrow_left.png',
+            '../assets/ui/egitim_arrow_left.png',
+        ]
+        right_paths = [
+            os.path.join(os.path.dirname(os.path.dirname(__file__)), 'assets', 'ui', 'egitim_arrow_right.png'),
+            os.path.join(os.path.dirname(__file__), 'assets', 'ui', 'egitim_arrow_right.png'),
+            'assets/ui/egitim_arrow_right.png',
+            '../assets/ui/egitim_arrow_right.png',
+        ]
+
+        for path in left_paths:
+            try:
+                if os.path.exists(path):
+                    self._tutorial_arrow_icon_left_base = pygame.image.load(path).convert_alpha()
+                    break
+            except Exception:
+                continue
+
+        for path in right_paths:
+            try:
+                if os.path.exists(path):
+                    self._tutorial_arrow_icon_right_base = pygame.image.load(path).convert_alpha()
+                    break
+            except Exception:
+                continue
+
+    def _get_tutorial_arrow_icon(self, direction, width, height, hover=False):
+        if direction == 'left':
+            base_icon = self._tutorial_arrow_icon_left_base
+        else:
+            base_icon = self._tutorial_arrow_icon_right_base
+
+        if base_icon is None:
+            return None
+
+        width = max(8, int(width))
+        height = max(8, int(height))
+        cache_key = (direction, width, height, bool(hover))
+        cached = self._tutorial_arrow_icon_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        icon = pygame.transform.smoothscale(base_icon, (width, height))
+        # İkonun dış köşelerini yumuşat; kutu/sert köşe hissini azalt.
+        mask = pygame.Surface((width, height), pygame.SRCALPHA)
+        mask_radius = max(3, int(min(width, height) * 0.22))
+        pygame.draw.rect(mask, (255, 255, 255, 255), mask.get_rect(), border_radius=mask_radius)
+        icon.blit(mask, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+        if not hover:
+            icon.fill((205, 215, 232, 215), special_flags=pygame.BLEND_RGBA_MULT)
+
+        self._tutorial_arrow_icon_cache[cache_key] = icon
+        return icon
 
     def _get_tutorial_star_icon(self, size, filled=True, locked=False):
         base_icon = self._tutorial_star_icon_base
@@ -2416,7 +2482,10 @@ class TutorialMode(Game):
         total_stars = self._get_total_tutorial_stars()
         star_badge_font = retro_style.get_font(s(16, minimum=12), bold=True)
         star_value_surf = star_badge_font.render(str(total_stars), True, (255, 215, 0))
-        badge_star_size = max(s(14, minimum=10), min(s(20), star_value_surf.get_height()))
+        badge_star_size = max(
+            s(16, minimum=11),
+            min(s(24), star_value_surf.get_height() + s(2, minimum=1)),
+        )
         badge_star_gap = s(6, minimum=3)
         star_badge_w = star_value_surf.get_width() + badge_star_size + badge_star_gap + s(20)
         star_badge_h = max(star_value_surf.get_height(), badge_star_size) + s(8)
@@ -2467,51 +2536,63 @@ class TutorialMode(Game):
                 break
 
         # ── Ok butonları (glass button stili) ──
-        arrow_w = s(32, minimum=26)
-        arrow_h = s(48, minimum=36)
+        arrow_w = s(40, minimum=30)
+        arrow_h = s(56, minimum=42)
         arrow_y = chapter_area_rect.y + (chapter_area_rect.height - arrow_h) // 2
         arrow_left_rect = pygame.Rect(chapter_area_rect.x, arrow_y, arrow_w, arrow_h)
         arrow_right_rect = pygame.Rect(chapter_area_rect.right - arrow_w, arrow_y, arrow_w, arrow_h)
         self.hub_arrow_left_rect = arrow_left_rect
         self.hub_arrow_right_rect = arrow_right_rect
 
-        for arrow_rect, arrow_char in [(arrow_left_rect, '\u25C0'), (arrow_right_rect, '\u25B6')]:
+        for arrow_rect, direction in [(arrow_left_rect, 'left'), (arrow_right_rect, 'right')]:
             hover = arrow_rect.collidepoint(mouse_pos)
+            outer_radius = max(10, min(arrow_rect.width, arrow_rect.height) // 2)
             # Glow
             if hover:
-                glow_r = arrow_rect.inflate(8, 8)
+                glow_r = arrow_rect.inflate(s(10, minimum=6), s(10, minimum=6))
                 glow_s = pygame.Surface(glow_r.size, pygame.SRCALPHA)
-                pygame.draw.rect(glow_s, (*retro_style.primary[:3], 40), glow_s.get_rect(), border_radius=10)
+                pygame.draw.rect(glow_s, (*retro_style.primary[:3], 44), glow_s.get_rect(), border_radius=outer_radius + 4)
                 self.screen.blit(glow_s, glow_r.topleft)
-            # Button fill
-            btn_alpha = 200 if hover else 140
-            fill_c = (28, 35, 55) if hover else (18, 24, 40)
+
+            # Outer capsule
+            btn_alpha = 208 if hover else 170
+            fill_c = (24, 32, 52) if hover else (14, 22, 38)
             btn_s = pygame.Surface(arrow_rect.size, pygame.SRCALPHA)
-            btn_s.fill((*fill_c, btn_alpha))
+            pygame.draw.rect(btn_s, (*fill_c, btn_alpha), btn_s.get_rect(), border_radius=outer_radius)
+
+            # Inner inset panel (daha pürüzsüz görünüm)
+            inner_rect = btn_s.get_rect().inflate(-s(6, minimum=4), -s(6, minimum=4))
+            inner_radius = max(8, outer_radius - s(4, minimum=2))
+            inner_c = (28, 38, 62, 226 if hover else 188)
+            pygame.draw.rect(btn_s, inner_c, inner_rect, border_radius=inner_radius)
+
             # Üst highlight
-            hl_h = min(12, arrow_rect.height // 3)
+            hl_h = min(s(12, minimum=8), arrow_rect.height // 3)
             for y in range(hl_h):
-                h_a = int((25 if hover else 12) * (1 - y / hl_h))
+                h_a = int((30 if hover else 16) * (1 - y / hl_h))
                 pygame.draw.line(btn_s, (255, 255, 255, h_a), (0, y), (arrow_rect.width, y))
             self.screen.blit(btn_s, arrow_rect.topleft)
+
             # Border
             b_color = retro_style.primary if hover else (60, 75, 100)
-            pygame.draw.rect(self.screen, b_color, arrow_rect, 2, border_radius=10)
-            # Sol strip
-            strip_c = retro_style.primary if hover else (100, 110, 130)
-            if arrow_char == '\u25C0':
-                strip_r = pygame.Rect(arrow_rect.x + 2, arrow_rect.y + 4, 3 if hover else 2, arrow_rect.height - 8)
+            pygame.draw.rect(self.screen, b_color, arrow_rect, 2, border_radius=outer_radius)
+
+            # Arrow icon (fallback: glyph)
+            icon_w = max(10, arrow_rect.width - s(14, minimum=8))
+            icon_h = max(10, arrow_rect.height - s(18, minimum=10))
+            icon = self._get_tutorial_arrow_icon(direction, icon_w, icon_h, hover=hover)
+            if icon is not None:
+                icon_rect = icon.get_rect(center=arrow_rect.center)
+                self.screen.blit(icon, icon_rect)
             else:
-                strip_r = pygame.Rect(arrow_rect.right - 5, arrow_rect.y + 4, 3 if hover else 2, arrow_rect.height - 8)
-            pygame.draw.rect(self.screen, strip_c, strip_r, border_radius=2)
-            # Arrow glyph
-            a_font = retro_style.get_font(s(16, minimum=12), bold=True)
-            a_color = (255, 255, 255) if hover else (200, 210, 225)
-            a_surf = a_font.render(arrow_char, True, a_color)
-            self.screen.blit(a_surf, (
-                arrow_rect.x + (arrow_rect.width - a_surf.get_width()) // 2,
-                arrow_rect.y + (arrow_rect.height - a_surf.get_height()) // 2,
-            ))
+                arrow_char = '\u25C0' if direction == 'left' else '\u25B6'
+                a_font = retro_style.get_font(s(16, minimum=12), bold=True)
+                a_color = (255, 255, 255) if hover else (200, 210, 225)
+                a_surf = a_font.render(arrow_char, True, a_color)
+                self.screen.blit(a_surf, (
+                    arrow_rect.x + (arrow_rect.width - a_surf.get_width()) // 2,
+                    arrow_rect.y + (arrow_rect.height - a_surf.get_height()) // 2,
+                ))
 
         # ── Kart alanı ──
         card_pad_x = arrow_w + s(10)
@@ -2636,7 +2717,7 @@ class TutorialMode(Game):
                                            retro_style.text_muted if is_locked else retro_style.text_secondary)
             self.screen.blit(diff_label, (pad_x, diff_y))
             star_x = pad_x + diff_label.get_width() + s(6)
-            star_size = max(s(12, minimum=8), min(s(16, minimum=10), small_font.get_height()))
+            star_size = max(s(13, minimum=9), min(s(18, minimum=12), small_font.get_height() + s(2, minimum=1)))
             star_y = diff_y + max(0, (diff_label.get_height() - star_size) // 2)
             self._draw_tutorial_star_row(
                 star_x,
@@ -2827,7 +2908,7 @@ class TutorialMode(Game):
 
                 # Yıldız + durum
                 stars_n = max(0, min(3, int(entry.get('stars', 0) or 0)))
-                star_size = max(s(11, minimum=8), min(s(14, minimum=10), tiny_font.get_height()))
+                star_size = max(s(12, minimum=9), min(s(16, minimum=11), tiny_font.get_height() + s(2, minimum=1)))
                 star_gap = max(1, s(2, minimum=1))
                 star_row_w = (star_size * 3) + (star_gap * 2)
                 star_y = row_rect.y + (s(8) if compact else row_rect.height - s(18))

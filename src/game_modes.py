@@ -1115,6 +1115,10 @@ class HardcoreMode(Game):
         self.hide_next_pieces = True  # Sıradaki parçaları gizle
         self.disable_hold = True  # Saklama devre dışı
         self.inverted_controls = True  # Ters kontroller
+        # Hardcore'da DOWN/S = rotate. Soft drop bu tuşlara bağlanmamalı.
+        self._allow_soft_drop_s_alias = False
+        self.control_bindings = dict(getattr(self, 'control_bindings', {}) or {})
+        self.control_bindings['soft_drop'] = pygame.K_UP
         
         # Font cache
         self.hardcore_font_large = retro_style.get_font(48, bold=False)
