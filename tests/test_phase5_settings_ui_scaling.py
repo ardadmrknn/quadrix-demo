@@ -179,9 +179,15 @@ def _install_stubs(monkeypatch):
     monkeypatch.setitem(sys.modules, 'menu', menu_stub)
 
     gamepad_stub = types.ModuleType('gamepad_manager')
+    gamepad_stub.GamepadType = types.SimpleNamespace(XBOX='xbox', PLAYSTATION='playstation', NINTENDO='nintendo', UNKNOWN='unknown')
     gamepad_stub.get_gamepad_manager = lambda: types.SimpleNamespace(get_button_index_label=lambda idx: f'Btn{idx}')
     gamepad_stub.reload_gamepad_settings = lambda: None
     monkeypatch.setitem(sys.modules, 'gamepad_manager', gamepad_stub)
+
+    promptfont_stub = types.ModuleType('promptfont_support')
+    promptfont_stub.get_gamepad_prompt_glyph = lambda *args, **kwargs: None
+    promptfont_stub.fit_promptfont_glyph_surface = lambda *args, **kwargs: None
+    monkeypatch.setitem(sys.modules, 'promptfont_support', promptfont_stub)
 
 
 def _import_module(monkeypatch):
@@ -252,6 +258,8 @@ def _make_screen(mod, width: int, height: int, item_count: int = 4):
     screen._display_mode_confirm_active = False
     screen._vsync_prompt_active = False
     screen._swallow_next_keydown = False
+    screen._swallow_next_gamepad_click = False
+    screen._swallow_next_gamepad_click_deadline_ms = 0
     screen.current_language = 'tr'
     return screen
 
@@ -293,15 +301,15 @@ def test_settings_ui_scale_hits_phase5_relaxed_cap_on_large_displays(monkeypatch
     assert abs(screen._ui_scale() - 1.22) < 0.001
 
 
-def test_display_tab_includes_ui_scale_preset_selector(monkeypatch):
+def test_display_tab_hides_ui_scale_preset_selector(monkeypatch):
     mod = _import_module(monkeypatch)
 
     items = mod._build_tab_content('display', object(), False)
 
-    assert any(item.get('key') == 'ui_scale_preset' and item.get('type') == 'selector' for item in items)
+    assert all(item.get('key') != 'ui_scale_preset' for item in items)
 
 
-def test_ui_scale_preset_selector_cycles_and_persists(monkeypatch):
+def test_ui_scale_preset_selector_is_no_longer_mutable(monkeypatch):
     mod = _import_module(monkeypatch)
     screen = _make_screen(mod, 1366, 768)
     calls = []
@@ -310,13 +318,13 @@ def test_ui_scale_preset_selector_cycles_and_persists(monkeypatch):
         set=lambda key, value: calls.append((key, value)),
         get=lambda key, default=None: default,
     )
-    screen.ui_scale_preset = 'normal'
+    screen.ui_scale_preset = 'compact'
 
     result = screen._cycle_selector('ui_scale_preset', 1)
 
     assert result is None
-    assert screen.ui_scale_preset == 'large'
-    assert calls == [('ui_scale_preset', 'large')]
+    assert screen.ui_scale_preset == 'compact'
+    assert calls == []
 
 
 def test_settings_panel_and_content_rects_grow_on_large_displays(monkeypatch):

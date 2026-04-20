@@ -68,9 +68,15 @@ def _install_settings_module_stubs(monkeypatch):
     monkeypatch.setitem(sys.modules, "menu", menu_stub)
 
     gamepad_stub = types.ModuleType("gamepad_manager")
+    gamepad_stub.GamepadType = types.SimpleNamespace(XBOX="xbox", PLAYSTATION="playstation", NINTENDO="nintendo", UNKNOWN="unknown")
     gamepad_stub.get_gamepad_manager = lambda: types.SimpleNamespace(get_button_index_label=lambda idx: f"Btn{idx}")
     gamepad_stub.reload_gamepad_settings = lambda: None
     monkeypatch.setitem(sys.modules, "gamepad_manager", gamepad_stub)
+
+    promptfont_stub = types.ModuleType("promptfont_support")
+    promptfont_stub.get_gamepad_prompt_glyph = lambda *args, **kwargs: None
+    promptfont_stub.fit_promptfont_glyph_surface = lambda *args, **kwargs: None
+    monkeypatch.setitem(sys.modules, "promptfont_support", promptfont_stub)
 
 
 def _import_module(monkeypatch):

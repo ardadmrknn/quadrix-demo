@@ -62,9 +62,9 @@ def test_save_current_as_defaults_writes_override_snapshot(tmp_path, monkeypatch
     assert override_path.exists()
 
     payload = json.loads(override_path.read_text(encoding='utf-8'))
-    assert payload['ui_scale_preset'] == 'large'
+    assert payload['ui_scale_preset'] == 'compact'
     assert payload['das_repeat'] == 88
 
     sm_reloaded = SettingsManager()
-    assert sm_reloaded.default_settings['ui_scale_preset'] == 'large'
+    assert sm_reloaded.default_settings['ui_scale_preset'] == 'compact'
     assert sm_reloaded.default_settings['das_repeat'] == 88

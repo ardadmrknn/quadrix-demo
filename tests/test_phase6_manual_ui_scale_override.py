@@ -10,7 +10,7 @@ def _import_real_module(module_name: str):
     return importlib.import_module(module_name)
 
 
-def test_settings_manager_defaults_ui_scale_preset_to_normal_and_syncs_runtime(tmp_path):
+def test_settings_manager_forces_ui_scale_preset_to_compact_and_syncs_runtime(tmp_path):
     ui_scaling_module = _import_real_module('ui_scaling')
     settings_module = _import_real_module('settings_manager')
     settings_file = tmp_path / 'settings.json'
@@ -20,10 +20,10 @@ def test_settings_manager_defaults_ui_scale_preset_to_normal_and_syncs_runtime(t
         ui_scaling_module.set_ui_scale_preset('large')
         sm = settings_module.SettingsManager(filename=str(settings_file))
 
-        assert sm.get('ui_scale_preset') == 'normal'
-        assert ui_scaling_module.get_ui_scale_preset() == 'normal'
+        assert sm.get('ui_scale_preset') == 'compact'
+        assert ui_scaling_module.get_ui_scale_preset() == 'compact'
 
-        sm.set('ui_scale_preset', 'compact')
+        sm.set('ui_scale_preset', 'large')
 
         assert sm.get('ui_scale_preset') == 'compact'
         assert ui_scaling_module.get_ui_scale_preset() == 'compact'
@@ -46,4 +46,4 @@ def test_ui_scale_preset_is_persisted_in_local_settings_payload(tmp_path, monkey
     local_payload = json.loads(local_path.read_text(encoding='utf-8'))
 
     assert 'ui_scale_preset' not in cloud_payload
-    assert local_payload['ui_scale_preset'] == 'large'
+    assert local_payload['ui_scale_preset'] == 'compact'
