@@ -1305,28 +1305,55 @@ class Menu:
             context_key,
         )
 
+    def _resolve_dashboard_tile_flavor_path(self, flavor: dict[str, Any]) -> str:
+        path_by_language = flavor.get('path_by_language')
+        if isinstance(path_by_language, dict):
+            language_code = str(get_language() or 'tr').lower()
+            resolved_path = (
+                path_by_language.get(language_code)
+                or path_by_language.get('tr')
+                or flavor.get('path')
+            )
+            if resolved_path:
+                return str(resolved_path)
+        return str(flavor['path'])
+
     def _get_dashboard_tile_flavor_map(self) -> dict[str, dict[str, Any]]:
+        main_theme_dir = ROOT_DIR / 'assets' / 'main_theme'
         return {
             'new_gen_tetris': {
-                'path': str(ROOT_DIR / 'assets' / 'main_theme' / 'kart_panel_effect.png'),
+                'path': str(main_theme_dir / 'kart_panel_effect.png'),
+                'path_by_language': {
+                    'tr': str(main_theme_dir / 'kart_panel_effect.png'),
+                    'en': str(main_theme_dir / 'kart_panel_effect_english.png'),
+                    'de': str(main_theme_dir / 'kart_effect_panel_almanca.png'),
+                    'fr': str(main_theme_dir / 'kart_panel_effect_fransızca.png'),
+                    'es': str(main_theme_dir / 'kart_panel_effect_ispanyolca.png'),
+                    'it': str(main_theme_dir / 'kart_panel_effect_italyanca.png'),
+                    'pt': str(main_theme_dir / 'kart_panel_effect_portekizce.png'),
+                    'ru': str(main_theme_dir / 'kart_panel_effect_rusça.png'),
+                    'ja': str(main_theme_dir / 'kart_panel_effect_japonca.png'),
+                    'zh': str(main_theme_dir / 'kart_panel_effect_çince.png'),
+                    'ko': str(main_theme_dir / 'kart_panel_effect_korece.png'),
+                },
                 'cache_attr': '_kart_panel_effect_image',
                 'fail_attr': '_kart_panel_effect_load_failed',
                 'override_key': 'new_gen_tetris_sticker',
             },
             'tutorial_mode': {
-                'path': str(ROOT_DIR / 'assets' / 'main_theme' / 'egitim_panel_effect.png'),
+                'path': str(main_theme_dir / 'egitim_panel_effect.png'),
                 'cache_attr': '_tutorial_panel_effect_image',
                 'fail_attr': '_tutorial_panel_effect_load_failed',
                 'override_key': 'tutorial_mode_sticker',
             },
             'piece_workshop': {
-                'path': str(ROOT_DIR / 'assets' / 'main_theme' / 'atolye_panel_back_effect.png'),
+                'path': str(main_theme_dir / 'atolye_panel_back_effect.png'),
                 'cache_attr': '_piece_workshop_panel_effect_image',
                 'fail_attr': '_piece_workshop_panel_effect_load_failed',
                 'fit_full': True,
             },
             'campaign_mode': {
-                'path': str(ROOT_DIR / 'assets' / 'main_theme' / 'campaign_panel.png'),
+                'path': str(main_theme_dir / 'campaign_panel.png'),
                 'cache_attr': '_campaign_panel_effect_image',
                 'fail_attr': '_campaign_panel_effect_load_failed',
                 'base_zoom': 0.94,
@@ -1334,31 +1361,31 @@ class Menu:
                 'fit_full': True,
             },
             'store': {
-                'path': str(ROOT_DIR / 'assets' / 'main_theme' / 'market_panel.png'),
+                'path': str(main_theme_dir / 'market_panel.png'),
                 'cache_attr': '_store_panel_effect_image',
                 'fail_attr': '_store_panel_effect_load_failed',
                 'fit_full': True,
             },
             'extras': {
-                'path': str(ROOT_DIR / 'assets' / 'main_theme' / 'modes.png'),
+                'path': str(main_theme_dir / 'modes.png'),
                 'cache_attr': '_extras_panel_effect_image',
                 'fail_attr': '_extras_panel_effect_load_failed',
                 'fit_full': True,
             },
             'block_styles': {
-                'path': str(ROOT_DIR / 'assets' / 'main_theme' / 'blok_gorunum.png'),
+                'path': str(main_theme_dir / 'blok_gorunum.png'),
                 'cache_attr': '_block_styles_panel_effect_image',
                 'fail_attr': '_block_styles_panel_effect_load_failed',
                 'fit_full': True,
             },
             'coop_mode': {
-                'path': str(ROOT_DIR / 'assets' / 'main_theme' / 'coop_panel.png'),
+                'path': str(main_theme_dir / 'coop_panel.png'),
                 'cache_attr': '_coop_panel_effect_image',
                 'fail_attr': '_coop_panel_effect_load_failed',
                 'fit_full': True,
             },
             'pvp_2_players': {
-                'path': str(ROOT_DIR / 'assets' / 'main_theme' / 'pvp_panel.png'),
+                'path': str(main_theme_dir / 'pvp_panel.png'),
                 'cache_attr': '_pvp_panel_effect_image',
                 'fail_attr': '_pvp_panel_effect_load_failed',
                 'fit_full': True,
@@ -1368,12 +1395,22 @@ class Menu:
     def _load_dashboard_tile_flavor_source(self, flavor: dict[str, Any]) -> pygame.Surface | None:
         cache_attr = str(flavor['cache_attr'])
         fail_attr = str(flavor['fail_attr'])
+        cache_path_attr = f'{cache_attr}_resolved_path'
+        resolved_path = self._resolve_dashboard_tile_flavor_path(flavor)
         cached_image = getattr(self, cache_attr, None)
+        cached_path = getattr(self, cache_path_attr, None)
         load_failed = getattr(self, fail_attr, False)
+
+        if cached_path != resolved_path:
+            setattr(self, cache_attr, None)
+            setattr(self, fail_attr, False)
+            setattr(self, cache_path_attr, resolved_path)
+            cached_image = None
+            load_failed = False
 
         if cached_image is None and not load_failed:
             try:
-                loaded = load_image(str(flavor['path']), convert_alpha=True)
+                loaded = load_image(resolved_path, convert_alpha=True)
                 if loaded is not None:
                     setattr(self, cache_attr, loaded)
                 else:
@@ -1425,10 +1462,12 @@ class Menu:
             return None
 
         back_zone, cover_w, cover_h = geometry
+        source_token = self._resolve_dashboard_tile_flavor_path(flavor)
         src_w, src_h = source.get_size()
         scaled_back_key = (
             'fit_full',
             panel_key,
+            source_token,
             src_w,
             src_h,
             cover_w,
@@ -1444,20 +1483,27 @@ class Menu:
 
     def _prewarm_dashboard_entry_assets(self, action_rect_map: dict[str, pygame.Rect]) -> None:
         fit_full_keys = ('piece_workshop', 'campaign_mode', 'store', 'extras')
+        flavor_map = self._get_dashboard_tile_flavor_map()
         signature = (
             self.screen.get_size(),
             round(float(self._menu_panel_content_scale()), 4),
             tuple(
-                (panel_key, rect.x, rect.y, rect.width, rect.height)
+                (
+                    panel_key,
+                    self._resolve_dashboard_tile_flavor_path(flavor_map[panel_key]),
+                    rect.x,
+                    rect.y,
+                    rect.width,
+                    rect.height,
+                )
                 for panel_key in fit_full_keys
                 for rect in [action_rect_map.get(panel_key)]
-                if rect is not None
+                if rect is not None and panel_key in flavor_map
             ),
         )
         if self._dashboard_flavor_prewarm_signature == signature:
             return
 
-        flavor_map = self._get_dashboard_tile_flavor_map()
         for panel_key in fit_full_keys:
             rect = action_rect_map.get(panel_key)
             flavor = flavor_map.get(panel_key)
@@ -1949,10 +1995,12 @@ class Menu:
         fit_scale = max(0.01, fit_scale * 0.96 * zoom)
         target_w = max(1, int(src_w * fit_scale))
         target_h = max(1, int(src_h * fit_scale))
+        source_token = self._resolve_dashboard_tile_flavor_path(flavor)
 
         scaled_key = (
             'sticker',
             panel_key,
+            source_token,
             src_w,
             src_h,
             target_w,

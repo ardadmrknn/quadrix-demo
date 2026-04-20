@@ -153,6 +153,62 @@ def test_dashboard_tile_cache_key_changes_with_language(monkeypatch):
     assert key_tr != key_en
 
 
+def test_new_gen_tetris_flavor_resolves_localized_asset_path(monkeypatch):
+    menu = _make_menu_stub()
+    flavor = menu._get_dashboard_tile_flavor_map()['new_gen_tetris']
+
+    monkeypatch.setattr(menu_module, 'get_language', lambda: 'tr')
+    assert menu._resolve_dashboard_tile_flavor_path(flavor).endswith('kart_panel_effect.png')
+
+    monkeypatch.setattr(menu_module, 'get_language', lambda: 'en')
+    assert menu._resolve_dashboard_tile_flavor_path(flavor).endswith('kart_panel_effect_english.png')
+
+    monkeypatch.setattr(menu_module, 'get_language', lambda: 'de')
+    assert menu._resolve_dashboard_tile_flavor_path(flavor).endswith('kart_effect_panel_almanca.png')
+
+
+def test_draw_dashboard_tile_flavor_uses_language_specific_scaled_image(monkeypatch):
+    menu = _make_menu_stub()
+    menu.screen = pygame.Surface((420, 280), pygame.SRCALPHA)
+    menu._tile_flavor_scaled_cache = {}
+    menu._apply_layout_override_rect = lambda override_key, rect, *args, **kwargs: rect
+
+    tr_surface = pygame.Surface((120, 120), pygame.SRCALPHA)
+    tr_surface.fill((255, 0, 0, 255))
+    en_surface = pygame.Surface((120, 120), pygame.SRCALPHA)
+    en_surface.fill((0, 0, 255, 255))
+
+    loaded_paths = []
+
+    def _fake_load_image(path, convert_alpha=True):
+        loaded_paths.append(path)
+        if path.endswith('kart_panel_effect.png'):
+            return tr_surface
+        if path.endswith('kart_panel_effect_english.png'):
+            return en_surface
+        return tr_surface
+
+    monkeypatch.setattr(menu_module, 'load_image', _fake_load_image)
+
+    rect = pygame.Rect(40, 30, 280, 180)
+
+    monkeypatch.setattr(menu_module, 'get_language', lambda: 'tr')
+    tr_target = pygame.Surface(menu.screen.get_size(), pygame.SRCALPHA)
+    menu._draw_dashboard_tile_flavor(rect, 'new_gen_tetris', (255, 0, 255), False, target_surface=tr_target)
+
+    monkeypatch.setattr(menu_module, 'get_language', lambda: 'en')
+    en_target = pygame.Surface(menu.screen.get_size(), pygame.SRCALPHA)
+    menu._draw_dashboard_tile_flavor(rect, 'new_gen_tetris', (255, 0, 255), False, target_surface=en_target)
+
+    tr_color = tr_target.get_at(rect.center)[:3]
+    en_color = en_target.get_at(rect.center)[:3]
+
+    assert tr_color[0] > 200 and tr_color[1] < 10 and tr_color[2] < 10
+    assert en_color[2] > 200 and en_color[0] < 10 and en_color[1] < 10
+    assert any(path.endswith('kart_panel_effect.png') for path in loaded_paths)
+    assert any(path.endswith('kart_panel_effect_english.png') for path in loaded_paths)
+
+
 def test_dashboard_tile_cache_key_changes_with_menu_transparency(monkeypatch):
     menu = _make_menu_stub()
     rect = pygame.Rect(0, 0, 220, 160)
