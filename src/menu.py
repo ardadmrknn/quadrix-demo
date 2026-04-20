@@ -1318,6 +1318,59 @@ class Menu:
                 return str(resolved_path)
         return str(flavor['path'])
 
+    def _get_sos_mascot_candidate_paths(self) -> list[Path]:
+        maskot_dir = ROOT_DIR / 'assets' / 'maskot'
+        path_by_language = {
+            'tr': maskot_dir / 'sos_maskot.png',
+            'en': maskot_dir / 'sos_maskot_ingilizce.png',
+            'de': maskot_dir / 'sos_maskot_almanca.png',
+            'fr': maskot_dir / 'sos_maskot_fransızca.png',
+            'es': maskot_dir / 'sos_maskot_ispanyolca.png',
+            'it': maskot_dir / 'sos_maskot_italyanca.png',
+            'pt': maskot_dir / 'sos_maskot_portekizce.png',
+            'ru': maskot_dir / 'sos_maskot_rusça.png',
+            'ja': maskot_dir / 'sos_maskot_japonca.png',
+            'zh': maskot_dir / 'sos_maskot_çince.png',
+            'ko': maskot_dir / 'sos_maskot_korece.png',
+        }
+        language_code = str(get_language() or 'tr').lower()
+        localized_path = path_by_language.get(language_code) or path_by_language['tr']
+        candidates = [localized_path]
+        if path_by_language['tr'] not in candidates:
+            candidates.append(path_by_language['tr'])
+        candidates.append(ROOT_DIR / 'assets' / 'mascot.png')
+        return candidates
+
+    def _load_sos_mascot_image(self) -> tuple[pygame.Surface | None, str]:
+        mascot_candidates = self._get_sos_mascot_candidate_paths()
+        mascot_signature = tuple(str(path) for path in mascot_candidates)
+        if getattr(self, '_sos_mascot_candidate_signature', None) != mascot_signature:
+            self._sos_mascot_candidate_signature = mascot_signature
+            self._sos_mascot_img = None
+            self._sos_mascot_img_path = ''
+            self._sos_mascot_tried = False
+            self._sos_mascot_scaled = None
+            self._sos_mascot_scaled_key = None
+
+        mascot_img = getattr(self, '_sos_mascot_img', None)
+        if mascot_img is None and not getattr(self, '_sos_mascot_tried', False):
+            self._sos_mascot_tried = True
+            for mascot_path in mascot_candidates:
+                try:
+                    if not mascot_path.exists():
+                        continue
+                    loaded = load_image(str(mascot_path), convert_alpha=True)
+                    if loaded is None:
+                        continue
+                    self._sos_mascot_img = loaded
+                    self._sos_mascot_img_path = str(mascot_path)
+                    mascot_img = loaded
+                    break
+                except Exception:
+                    continue
+
+        return getattr(self, '_sos_mascot_img', None), str(getattr(self, '_sos_mascot_img_path', '') or '')
+
     def _get_dashboard_tile_flavor_map(self) -> dict[str, dict[str, Any]]:
         main_theme_dir = ROOT_DIR / 'assets' / 'main_theme'
         return {
@@ -3489,21 +3542,7 @@ class Menu:
             self._sos_mascot_rect = mascot_area_rect
 
             # Maskot görseli varsa çiz, yoksa placeholder göster
-            mascot_img = getattr(self, '_sos_mascot_img', None)
-            if mascot_img is None and not getattr(self, '_sos_mascot_tried', False):
-                self._sos_mascot_tried = True
-                try:
-                    mascot_candidates = [
-                        ROOT_DIR / 'assets' / 'maskot' / 'sos_maskot.png',
-                        ROOT_DIR / 'assets' / 'mascot.png',
-                    ]
-                    for mascot_path in mascot_candidates:
-                        if mascot_path.exists():
-                            self._sos_mascot_img = pygame.image.load(str(mascot_path)).convert_alpha()
-                            mascot_img = self._sos_mascot_img
-                            break
-                except Exception:
-                    self._sos_mascot_img = None
+            mascot_img, mascot_img_path = self._load_sos_mascot_image()
 
             if mascot_img is not None:
                 # Maskotu alan içine sığdır (aspect ratio koru)
@@ -3517,7 +3556,7 @@ class Menu:
                 fit_scale = base_scale * manual_zoom
                 draw_w = max(1, int(img_w * fit_scale))
                 draw_h = max(1, int(img_h * fit_scale))
-                cache_key = (draw_w, draw_h)
+                cache_key = (mascot_img_path, draw_w, draw_h)
                 if not hasattr(self, '_sos_mascot_scaled') or getattr(self, '_sos_mascot_scaled_key', None) != cache_key:
                     self._sos_mascot_scaled = pygame.transform.smoothscale(mascot_img, (draw_w, draw_h))
                     self._sos_mascot_scaled_key = cache_key
