@@ -3,11 +3,13 @@
 Bu belge, yatırım turu, yayıncı görüşmesi veya geliştirici sunumu için slayt üretimine kaynak olması amacıyla hazırlanmıştır.
 
 Ana amaç:
+
 - Oyunu bir "Tetris klonu" gibi değil, tanıdık bir çekirdeği çok katmanlı bir ürün yüzeyine dönüştüren modern bir puzzle-action platformu gibi anlatmak.
 - Ürünün yeniliklerini, içerik derinliğini, tekrar oynanabilirliğini ve genişleme potansiyelini öne çıkarmak.
 - Teknik detayları açılış mesajı olarak değil, ürün iddialarını destekleyen güven unsurları olarak kullanmak.
 
 NotebookLM veya başka bir slayt aracı bu belgeden sunum üretirken şu öncelik sırasını izlemeli:
+
 1. Ürünün ne kadar kolay anlaşılır olduğu
 2. Neden benzerlerinden daha geniş ve daha yeniden oynanabilir olduğu
 3. Hangi mekaniklerin gerçekten farklılaştığı
@@ -39,6 +41,7 @@ QUADRIX ayrıca kart tabanlı Mystery modu, virüs temelli Survival modu, günl�
 Klasik blok düşürme oyunları çoğu zaman tek bir sonsuz akış sunar. QUADRIX bunu görev odaklı bir yapıya dönüştürür.
 
 Öne çıkan noktalar:
+
 - 100 seviye ve 5 dünya yapısı
 - Her seviyede farklı objective kombinasyonları
 - 1 ila 3 yıldızlı başarı sistemi
@@ -55,6 +58,7 @@ QUADRIX, klasik arcade yapıyı görev tasarımıyla paketleyerek oyuncuya içer
 Oyunun en ayırt edici özelliklerinden biri, iki oyuncunun aynı anda 20x20 ortak tahta üzerinde oynamasıdır.
 
 Bu yapı neden önemlidir:
+
 - P1 ve P2 tahtayı paylaşır ama kendi bölgelerinde oynar
 - Orta çizgi sert duvar gibi davranır; bu, düzeni ve rol paylaşımını anlamlı hale getirir
 - Oyuncuların hold, sıra ve parça akışı bağımsızdır
@@ -70,6 +74,7 @@ QUADRIX co-op, iki oyuncuyu aynı sahaya yerleştirerek "yan yana oynamayı" ger
 Kooperatif mod yalnızca serbest oynanış sunmaz; ayrı bir kampanya katmanına da sahiptir.
 
 Doğrulanmış içerik:
+
 - 20 kooperatif seviye
 - 2 dünya yapısı
 - Shared hold, dengeli katkı, freeze recovery ve zincir üretimi gibi co-op'a özel objective türleri
@@ -84,6 +89,7 @@ Bu oyun, co-op'u yalnızca ek mod olarak değil, ayrı tasarım ilkeleri olan bi
 QUADRIX, tanıdık çekirdeği yalnızca hız veya zorlukla değil, sistemik varyasyonla da genişletiyor.
 
 Mystery modunun değeri:
+
 - Kart tabanlı etki sistemi
 - Reroll limiti ile karar baskısı
 - Her koşuda farklı kombinasyon üretme potansiyeli
@@ -98,6 +104,7 @@ QUADRIX sadece daha hızlı bir blok oyunu değil; her koşuda farklı kararlar 
 Survival modu, klasik baskıyı yalnızca hız üzerinden değil, bozulma ve kayıp tehdidi üzerinden kurar.
 
 Doğrulanmış yapı:
+
 - Enfekte blok mantığı
 - Zamanla tüketilen hücreler
 - Yayılma ve seviye artışı
@@ -113,6 +120,7 @@ Bu mod, temel mekaniği yeni bir gerilim modeline taşıyarak oyuna farklı bir 
 QUADRIX tek oyunculu bir paket değildir.
 
 Doğrulanmış sosyal yüzey:
+
 - Yerel PvP
 - Yerel co-op
 - Steam P2P tabanlı çevrim içi PvP mimarisi
@@ -128,6 +136,7 @@ Oyun, koltuk başı rekabetten Steam üzerinden çevrim içi eşleşmeye kadar f
 QUADRIX'te oyuncu yalnızca skorunu değil, ürünle kurduğu kişisel ilişkiyi de geliştirir.
 
 Doğrulanmış alanlar:
+
 - Avatar sistemi ve avatar editörü
 - Blok stil yönetimi ve tema yüzeyi
 - Yerel parça atölyesi ile özel parça oluşturma
@@ -142,6 +151,7 @@ Bu yapı, oyuncunun yalnızca performans değil kimlik ve stil üzerinden de ür
 Oyun yalnızca çekirdek oynanışta değil, erişimde de geniş düşünülmüş.
 
 Doğrulanmış alanlar:
+
 - 11 dil desteği için altyapı
 - CJK dillerine yönelik dil ve font profili sistemi
 - Gamepad desteği
@@ -187,6 +197,7 @@ Kampanya, challenge modları, co-op, PvP ve daily yapı sayesinde oyun basit bir
 ### Uzun Vadeli Geri Dönüş
 
 Oyuncu şu nedenlerle geri gelir:
+
 - yıldız toplamak
 - mod ustalığı kazanmak
 - günlük challenge yapmak
@@ -213,6 +224,7 @@ Yıldız sistemi, leaderboard yapısı, daily challenge, kart varyasyonu ve fark
 ### 7.4 Genişleme Potansiyeli Yüksek
 
 Kod tabanının işaret ettiği doğal büyüme alanları:
+
 - yeni campaign dünyaları
 - yeni co-op görev tipleri
 - yeni kart setleri
@@ -233,6 +245,7 @@ Python ve Pygame burada "yüksek teknoloji gösterisi" olarak değil, hızlı it
 ### 8.1 İçerik Odaklı Modüler Mimari
 
 Sistemler net alt alanlara ayrılmış durumda:
+
 - ana oyun döngüsü
 - kampanya sistemi
 - co-op sistemi
@@ -251,6 +264,7 @@ Bu ürün, her mod için sıfırdan başka oyun yazmak yerine, aynı çekirdeği
 ### 8.3 Steam Katmanı Sadece Rozet Değil, Ürünün Parçası
 
 Doğrulanmış teknik artılar:
+
 - Steam achievements eşlemesi
 - mod bazlı leaderboard servisi
 - güvenli proxy modeli
@@ -342,18 +356,18 @@ Sunumda aşağıdaki çerçeveyi koru:
 
 ## 12. Hızlı Doğrulanmış Gerçekler
 
-| Başlık | Doğrulanmış durum |
-|---|---|
-| Teknoloji | Python 3.12 + pygame-ce |
-| Platform hedefi | Windows, macOS, Linux masaüstü |
-| Tek oyunculu kampanya | 100 seviye, 5 dünya |
-| Kooperatif kampanya | 20 seviye, 2 dünya |
-| Çok oyunculu | Yerel PvP, yerel co-op, Steam P2P online PvP |
-| Günlük geri dönüş | Daily Challenge sistemi |
-| Sosyal katman | Steam achievements + mod bazlı leaderboard altyapısı |
-| Özelleştirme | Avatar sistemi, blok stilleri, tema yüzeyi, parça atölyesi |
-| Erişim | 11 dil altyapısı, gamepad desteği, UI ölçekleme |
-| Güvenlik yaklaşımı | Leaderboard için backend proxy, Steam katmanında graceful fallback |
+| Başlık                | Doğrulanmış durum                                                  |
+| --------------------- | ------------------------------------------------------------------ |
+| Teknoloji             | Python 3.12 + pygame-ce                                            |
+| Platform hedefi       | Windows, macOS, Linux masaüstü                                     |
+| Tek oyunculu kampanya | 100 seviye, 5 dünya                                                |
+| Kooperatif kampanya   | 20 seviye, 2 dünya                                                 |
+| Çok oyunculu          | Yerel PvP, yerel co-op, Steam P2P online PvP                       |
+| Günlük geri dönüş     | Daily Challenge sistemi                                            |
+| Sosyal katman         | Steam achievements + mod bazlı leaderboard altyapısı               |
+| Özelleştirme          | Avatar sistemi, blok stilleri, tema yüzeyi, parça atölyesi         |
+| Erişim                | 11 dil altyapısı, gamepad desteği, UI ölçekleme                    |
+| Güvenlik yaklaşımı    | Leaderboard için backend proxy, Steam katmanında graceful fallback |
 
 ## 13. Sunum İçin Ana Mesaj Önceliği
 
@@ -379,6 +393,7 @@ Eğer daha kısa bir deck üretilecekse bu sırayı koru:
 - parça atölyesi, avatar ve profil yüzeyi
 
 Referans olarak incelenen başlıca dosyalar:
+
 - README.md
 - docs/guides/README_FULL.md
 - src/game_modes.py
