@@ -1425,6 +1425,7 @@ class MysteryCardUI:
         self.card_widgets: List['UICard'] = []
         self.skip_button_rect: pygame.Rect | None = None
         self.reroll_button_rect: pygame.Rect | None = None
+        self.selection_panel_rect: pygame.Rect | None = None
         # Göz atma (peek) butonu - oyun alanını görmek için
         self.peek_button_rect: pygame.Rect | None = None
         self.peek_mode_active = False  # True olunca kart seçimi gizlenip oyun alanı gösterilir
@@ -1447,6 +1448,7 @@ class MysteryCardUI:
         self.card_widgets = []
         self.skip_button_rect = None
         self.reroll_button_rect = None
+        self.selection_panel_rect = None
         self.peek_button_rect = None
         self.peek_mode_active = False
         self._reroll_enabled = False
@@ -1572,6 +1574,7 @@ class MysteryCardUI:
     ) -> None:
         alpha = int(max(0, min(255, self.fade_alpha)))
         if alpha <= 0 or not cards:
+            self.selection_panel_rect = None
             return
 
         ui_scale = self._get_overlay_scale(screen)
@@ -1579,6 +1582,7 @@ class MysteryCardUI:
 
         # Peek modu aktifse sadece göz butonunu göster (sağ alt köşe)
         if show_peek_button and self.peek_mode_active:
+            self.selection_panel_rect = None
             # Göz butonu - sağ alt köşede sabit
             peek_btn_size = s(48)
             peek_btn_x = window_width - peek_btn_size - s(20)
@@ -1639,6 +1643,7 @@ class MysteryCardUI:
         panel_width = min(total_width + s(120), window_width - s(40))
         panel_x = max(s(20), window_width // 2 - panel_width // 2)
         panel_rect = pygame.Rect(panel_x, s(60), panel_width, panel_height)
+        self.selection_panel_rect = panel_rect.copy()
         retro_style.draw_glass_panel(
             screen,
             panel_rect,
@@ -1716,6 +1721,7 @@ class MysteryCardUI:
             # Resize panel rect height to fit rows
             desired_height = top_content_padding + rows * (card_height + spacing) + s(80)
             panel_rect.height = min(desired_height, window_height - s(120))
+            self.selection_panel_rect = panel_rect.copy()
             retro_style.draw_glass_panel(
                 screen,
                 panel_rect,
@@ -2736,6 +2742,7 @@ class UICard:
         self._font_signature: tuple | None = None
         self._resource_signature: tuple | None = None
         self._face_cache_token = 0
+        self._face_layout_snapshot: Dict[str, object] = {}
         self.sync_resources(card, fonts)
 
     @staticmethod
@@ -2759,10 +2766,46 @@ class UICard:
             prompt_signature,
         )
 
+    @staticmethod
+    def _fit_text_to_width(font: pygame.font.Font, text: str, max_width: int) -> str:
+        value = str(text or '')
+        if max_width <= 0 or font.size(value)[0] <= max_width:
+            return value
+
+        suffix = '...'
+        while value and font.size(value.rstrip() + suffix)[0] > max_width:
+            value = value[:-1]
+        return value.rstrip() + suffix if value else suffix
+
+    @classmethod
+    def _wrap_text_to_width(cls, font: pygame.font.Font, text: str, max_width: int) -> List[str]:
+        words = str(text or '').split()
+        if not words:
+            return []
+
+        lines: List[str] = []
+        current = ''
+        for word in words:
+            candidate = (current + ' ' + word).strip()
+            if font.size(candidate)[0] <= max_width:
+                current = candidate
+                continue
+            if current:
+                lines.append(current)
+            if font.size(word)[0] <= max_width:
+                current = word
+            else:
+                lines.append(cls._fit_text_to_width(font, word, max_width))
+                current = ''
+        if current:
+            lines.append(current)
+        return lines
+
     def _invalidate_face_cache(self) -> None:
         self._baked_face_bg = None
         self._baked_face_fg = None
         self._baked_face_key = None
+        self._face_layout_snapshot = {}
         self._face_cache_token += 1
 
     def sync_resources(self, card: Dict, fonts: Dict[str, pygame.font.Font]) -> None:
@@ -3922,14 +3965,18 @@ class UICard:
             grad_surface.blit(mask, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
             bg_layer.blit(grad_surface, (0, 0))
 
-        # Frosted iç katman
         inner = pygame.Surface((rect.width - 6, rect.height - 6), pygame.SRCALPHA)
         pygame.draw.rect(inner, (255, 255, 255, 8), inner.get_rect(), border_radius=max(8, corner - 6))
         bg_layer.blit(inner, (3, 3))
 
-        # Icon placeholder (top center)
-        ic_w = min(88, rect.width - 40)
-        icon_rect = pygame.Rect((rect.width - ic_w) // 2, 14, ic_w, ic_w)
+        content_pad_x = max(14, int(round(rect.width * 0.06)))
+        content_pad_top = max(12, int(round(rect.height * 0.04)))
+        content_pad_bottom = max(12, int(round(rect.height * 0.035)))
+        inner_width = max(1, rect.width - content_pad_x * 2)
+
+        preferred_icon_size = max(40, min(int(round(rect.width * 0.32)), int(round(rect.height * 0.24))))
+        icon_size = max(1, min(inner_width, preferred_icon_size))
+        icon_rect = pygame.Rect((rect.width - icon_size) // 2, content_pad_top, icon_size, icon_size)
         base_border_color = self.rarity_color()
         icon_bg = UIColors.BG_LIGHT
         icon_holder = pygame.Surface((icon_rect.width, icon_rect.height), pygame.SRCALPHA)
@@ -3938,111 +3985,110 @@ class UICard:
         end_bg = (min(255, icon_bg[0] + 20), min(255, icon_bg[1] + 20), min(255, icon_bg[2] + 20), 230)
         self._fill_gradient(grad_bg, start_bg, end_bg)
         mask_holder = pygame.Surface(icon_holder.get_size(), pygame.SRCALPHA)
-        pygame.draw.rect(mask_holder, (255, 255, 255, 255), mask_holder.get_rect(), border_radius=12)
+        icon_corner = max(10, icon_rect.width // 8)
+        pygame.draw.rect(mask_holder, (255, 255, 255, 255), mask_holder.get_rect(), border_radius=icon_corner)
         grad_bg.blit(mask_holder, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
         icon_holder.blit(grad_bg, (0, 0))
-        pygame.draw.rect(icon_holder, (255, 255, 255, 18), icon_holder.get_rect(), width=1, border_radius=12)
-        pygame.draw.rect(icon_holder, (*base_border_color[:3], 70), icon_holder.get_rect(), width=1, border_radius=12)
-        # border inside icon
-        icon_image = self.icon_getter(self.card.get('icon_image'), (ic_w - 8, ic_w - 8))
+        pygame.draw.rect(icon_holder, (255, 255, 255, 18), icon_holder.get_rect(), width=1, border_radius=icon_corner)
+        pygame.draw.rect(icon_holder, (*base_border_color[:3], 70), icon_holder.get_rect(), width=1, border_radius=icon_corner)
+        icon_image = self.icon_getter(self.card.get('icon_image'), (max(8, icon_size - 8), max(8, icon_size - 8)))
         if icon_image:
-            icon_holder.blit(icon_image, ((icon_rect.width - (ic_w - 8)) // 2, (icon_rect.height - (ic_w - 8)) // 2))
+            icon_holder.blit(icon_image, ((icon_rect.width - icon_image.get_width()) // 2, (icon_rect.height - icon_image.get_height()) // 2))
         else:
             from emoji_renderer import emoji_surface
-            _emoji_ic = emoji_surface(self.card.get('icon', ''), ic_w - 8)
-            if _emoji_ic:
-                icon_holder.blit(_emoji_ic, ((icon_rect.width - _emoji_ic.get_width()) // 2, (icon_rect.height - _emoji_ic.get_height()) // 2))
+            emoji_surface_value = emoji_surface(self.card.get('icon', ''), max(8, icon_size - 8))
+            if emoji_surface_value:
+                icon_holder.blit(emoji_surface_value, ((icon_rect.width - emoji_surface_value.get_width()) // 2, (icon_rect.height - emoji_surface_value.get_height()) // 2))
             else:
                 glyph = self.fonts['icon'].render(_ui_safe_icon_text(self.card.get('icon', ''), fallback='*'), True, UIColors.TEXT_SECONDARY)
                 icon_holder.blit(glyph, glyph.get_rect(center=(icon_rect.width // 2, icon_rect.height // 2)))
         fg_layer.blit(icon_holder, icon_rect.topleft)
 
-        # Title
-        title_font = self.fonts.get('card_title')
+        title_font = self.fonts.get('card_title') or self.fonts.get('medium') or self.fonts.get('small')
         card_title_text = get_card_title(self.card, self.card.get('title', ''))
-        title_surface = title_font.render(card_title_text, True, UIColors.TEXT_PRIMARY)
-        title_pos = (16, icon_rect.bottom + 12)
-        self._blit_shadowed(fg_layer, title_surface, title_pos, shadow_alpha=170)
+        title_gap = max(10, int(round(rect.height * 0.028)))
+        fitted_title = self._fit_text_to_width(title_font, card_title_text, inner_width)
+        title_surface = title_font.render(fitted_title, True, UIColors.TEXT_PRIMARY)
+        title_rect = title_surface.get_rect(centerx=rect.width // 2, top=icon_rect.bottom + title_gap)
+        self._blit_shadowed(fg_layer, title_surface, title_rect.topleft, shadow_alpha=170)
 
-        # Type badge
         type_label = t(_card_type_label_key(self.card))
         type_font = self.fonts.get('tag') or self.fonts.get('desc') or self.fonts.get('small') or self.fonts['value']
-        type_surf = type_font.render(type_label, True, UIColors.TEXT_PRIMARY)
-        type_bg = pygame.Surface((type_surf.get_width() + 28, type_surf.get_height() + 16), pygame.SRCALPHA)
-        pygame.draw.rect(type_bg, (*base_border_color, 120), type_bg.get_rect(), border_radius=18)
-        pygame.draw.rect(type_bg, (255, 255, 255, 18), type_bg.get_rect(), width=1, border_radius=18)
-        type_x = (rect.width - type_bg.get_width()) // 2
-        fg_layer.blit(type_bg, (type_x, icon_rect.bottom + 42))
+        badge_pad_x = max(10, int(round(rect.width * 0.04)))
+        badge_pad_y = max(6, int(round(rect.height * 0.018)))
+        fitted_type = self._fit_text_to_width(type_font, type_label, max(1, inner_width - badge_pad_x * 2))
+        type_surf = type_font.render(fitted_type, True, UIColors.TEXT_PRIMARY)
+        type_bg = pygame.Surface((type_surf.get_width() + badge_pad_x * 2, type_surf.get_height() + badge_pad_y * 2), pygame.SRCALPHA)
+        badge_radius = max(12, type_bg.get_height() // 2)
+        pygame.draw.rect(type_bg, (*base_border_color, 120), type_bg.get_rect(), border_radius=badge_radius)
+        pygame.draw.rect(type_bg, (255, 255, 255, 18), type_bg.get_rect(), width=1, border_radius=badge_radius)
+        type_rect = type_bg.get_rect(centerx=rect.width // 2, top=title_rect.bottom + max(8, int(round(rect.height * 0.022))))
+        fg_layer.blit(type_bg, type_rect.topleft)
         self._blit_shadowed(
             fg_layer,
             type_surf,
-            (type_x + (type_bg.get_width() - type_surf.get_width()) // 2, icon_rect.bottom + 50),
+            (type_rect.x + (type_bg.get_width() - type_surf.get_width()) // 2, type_rect.y + (type_bg.get_height() - type_surf.get_height()) // 2),
             shadow_alpha=140,
         )
 
-        # Description text wrap
-        desc_font = self.fonts.get('desc')
-        wrap_limit_pixels = rect.width - 36
-        lines = []
+        desc_font = self.fonts.get('desc') or self.fonts.get('small') or self.fonts.get('tag')
+        desc_pad_x = max(10, int(round(rect.width * 0.035)))
+        desc_gap = max(10, int(round(rect.height * 0.03)))
+        desc_bg_x = content_pad_x
+        desc_bg_w = inner_width
+        wrap_limit_pixels = max(1, desc_bg_w - desc_pad_x * 2)
         raw_desc = get_card_description(
             self.card,
             value=self.card.get('value'),
-            fallback=self.card.get('description', '')
+            fallback=self.card.get('description', ''),
         )
         prompt_button_label = _prompt_action_text('hold2', 'V') if _resolve_card_localization_id(self.card) == 'perk_second_pocket' else ''
-        words = str(raw_desc).split()
-        cur = ''
-        for w in words:
-            cand = (cur + ' ' + w).strip()
-            if desc_font.size(cand)[0] <= wrap_limit_pixels:
-                cur = cand
-            else:
-                if cur:
-                    lines.append(cur)
-                cur = w
-        if cur:
-            lines.append(cur)
-        max_desc_lines = 4
+        lines = self._wrap_text_to_width(desc_font, raw_desc, wrap_limit_pixels)
+
+        hk = f"[{self.index + 1}]"
+        hk_surf = self.fonts['small'].render(hk, True, UIColors.TEXT_MUTED)
+        hk_margin_x = max(12, int(round(rect.width * 0.05)))
+        hk_margin_y = max(10, int(round(rect.height * 0.03)))
+        hk_rect = hk_surf.get_rect(right=rect.width - hk_margin_x, bottom=rect.height - hk_margin_y)
+
+        desc_y = type_rect.bottom + desc_gap
+        available_desc_h = max(desc_font.get_linesize() + 8, hk_rect.top - desc_y - max(8, content_pad_bottom))
+        desc_pad_y = max(6, int(round(rect.height * 0.02)))
+        desc_pad_y = min(desc_pad_y, max(4, (available_desc_h - desc_font.get_linesize()) // 2))
+        max_desc_lines = max(1, min(5, (available_desc_h - desc_pad_y * 2) // max(1, desc_font.get_linesize())))
         if len(lines) > max_desc_lines:
             desc_lines = lines[:max_desc_lines]
             last = desc_lines[-1]
             ellipsis_str = '...'
             while desc_font.size(last + ellipsis_str)[0] > wrap_limit_pixels and len(last) > 0:
                 last = last[:-1]
-            desc_lines[-1] = last.rstrip() + ellipsis_str
+            desc_lines[-1] = last.rstrip() + ellipsis_str if last else ellipsis_str
         else:
             desc_lines = lines
-        desc_y = icon_rect.bottom + 90
+
+        desc_bg_rect = None
         if desc_lines:
             desc_line_h = desc_font.get_linesize()
-            desc_pad_x = 12
-            desc_pad_y = 8
-            desc_bg_x = 16
-            desc_bg_w = rect.width - 32
             desc_bg_h = desc_pad_y * 2 + len(desc_lines) * desc_line_h
-            desc_bg = pygame.Surface((desc_bg_w, desc_bg_h), pygame.SRCALPHA)
-            pygame.draw.rect(desc_bg, (0, 0, 0, 72), desc_bg.get_rect(), border_radius=12)
-            fg_layer.blit(desc_bg, (desc_bg_x, max(0, desc_y - desc_pad_y)))
+            desc_bg_rect = pygame.Rect(desc_bg_x, max(0, desc_y - desc_pad_y), desc_bg_w, desc_bg_h)
+            desc_bg = pygame.Surface(desc_bg_rect.size, pygame.SRCALPHA)
+            pygame.draw.rect(desc_bg, (0, 0, 0, 72), desc_bg.get_rect(), border_radius=max(10, desc_bg_rect.height // 6))
+            fg_layer.blit(desc_bg, desc_bg_rect.topleft)
 
             text_x = desc_bg_x + desc_pad_x
             text_y = desc_y
-            for i, l in enumerate(desc_lines):
-                d = render_inline_action_text_surface(
-                    l,
+            for i, line in enumerate(desc_lines):
+                line_surface = render_inline_action_text_surface(
+                    line,
                     prompt_button_label,
                     'hold2',
                     desc_font,
                     UIColors.TEXT_PRIMARY,
-                ) if prompt_button_label and prompt_button_label in l else desc_font.render(l, True, UIColors.TEXT_PRIMARY)
-                self._blit_shadowed(fg_layer, d, (text_x, text_y + i * desc_line_h), shadow_alpha=180)
+                ) if prompt_button_label and prompt_button_label in line else desc_font.render(line, True, UIColors.TEXT_PRIMARY)
+                self._blit_shadowed(fg_layer, line_surface, (text_x, text_y + i * desc_line_h), shadow_alpha=180)
 
-        # Hotkey bottom-right small label
-        hk = f"[{self.index + 1}]"
-        hk_surf = self.fonts['small'].render(hk, True, UIColors.TEXT_MUTED)
-        hk_pos = (rect.width - hk_surf.get_width() - 12, rect.height - hk_surf.get_height() - 10)
-        self._blit_shadowed(fg_layer, hk_surf, hk_pos, shadow_alpha=160)
+        self._blit_shadowed(fg_layer, hk_surf, hk_rect.topleft, shadow_alpha=160)
 
-        # Debug overlay
         if debug:
             idx_font = self.fonts.get('card_title')
             idx_text = str(self.index + 1)
@@ -4053,6 +4099,19 @@ class UICard:
             pygame.draw.ellipse(idx_bg, (255, 255, 255, 220), idx_bg.get_rect())
             idx_bg.blit(idx_surface, ((idx_bg_w - idx_surface.get_width()) // 2, (idx_bg_h - idx_surface.get_height()) // 2))
             fg_layer.blit(idx_bg, (12, 12))
+
+        self._face_layout_snapshot = {
+            'card_size': (rect.width, rect.height),
+            'icon_rect': icon_rect.copy(),
+            'title_rect': title_rect.copy(),
+            'title_text': fitted_title,
+            'type_rect': type_rect.copy(),
+            'type_text': fitted_type,
+            'desc_bg_rect': desc_bg_rect.copy() if desc_bg_rect is not None else None,
+            'desc_line_count': len(desc_lines),
+            'desc_wrap_width': wrap_limit_pixels,
+            'hotkey_rect': hk_rect.copy(),
+        }
 
         self._baked_face_bg = bg_layer
         self._baked_face_fg = fg_layer
@@ -4342,43 +4401,159 @@ class MysteryMode(Game):
         self.card_ui.reset()
         return True
 
-    def _get_side_panel_widths(self, board_pixel_width: int | None = None) -> tuple[int, int]:
-        """Mystery mode için sol/sağ panel genişliklerini pencereye göre hesapla."""
+    def _get_mystery_layout_metrics(self) -> Dict[str, float | int]:
         active_width, active_height = self._active_ui_size()
-        window_width = int(active_width)
+        effective_width, effective_height = self._effective_ui_size()
+        board_cols = max(1, int(getattr(self, 'board_width', BOARD_WIDTH)))
+        board_rows = max(1, int(getattr(self, 'board_height', BOARD_HEIGHT)))
+        left_panel_max_width = max(320, int(getattr(self, 'left_panel_max_width', 420) or 420))
 
-        if board_pixel_width is None:
-            board_area_h = max(240, int(active_height) - INFO_PANEL_HEIGHT)
-            est_cell_h = max(12, min(40, board_area_h // max(1, int(self.board_height))))
-            board_pixel_width = int(self.board_width) * est_cell_h
+        cache_key = (
+            int(active_width),
+            int(active_height),
+            int(effective_width),
+            int(effective_height),
+            board_cols,
+            board_rows,
+            left_panel_max_width,
+        )
+        if getattr(self, '_mystery_layout_cache_key', None) == cache_key:
+            return self._mystery_layout_cache
 
-        scale = max(0.80, min(1.20, self._card_ui_scale()))
+        scale_x = int(active_width) / float(max(1, int(effective_width)))
+        scale_y = int(active_height) / float(max(1, int(effective_height)))
+        pixel_ratio = max(1.0, float(self._display_pixel_ratio()))
+        occupancy_scale = max(
+            1.0,
+            min(
+                2.15,
+                min(
+                    int(effective_width) / float(max(1.0, float(MYSTERY_OVERLAY_REFERENCE_SIZE[0]))),
+                    int(effective_height) / float(max(1.0, float(MYSTERY_OVERLAY_REFERENCE_SIZE[1]))),
+                ),
+            ),
+        )
 
-        left_max = int(getattr(self, 'left_panel_max_width', 420) or 420)
-        left_pref = min(left_max, max(220, int(320 * scale)))
-        right_pref = max(150, min(220, int(190 * scale)))
+        max_cell_logical = max(40, min(56, int(round(40 + ((occupancy_scale - 1.0) * 14.0)))))
+        outer_margin_logical = max(12, min(28, int(round(12 + ((occupancy_scale - 1.0) * 8.0)))))
+        panel_gap_logical = max(14, min(24, int(round(14 + ((occupancy_scale - 1.0) * 5.0)))))
+        panel_top_padding_logical = max(10, min(16, int(round(10 + ((occupancy_scale - 1.0) * 3.0)))))
+        panel_bottom_margin_logical = max(40, min(56, int(round(40 + ((occupancy_scale - 1.0) * 8.0)))))
 
-        max_total = max(300, window_width - int(board_pixel_width) - 60)
-        total_pref = left_pref + right_pref
+        left_pref_logical = min(
+            left_panel_max_width,
+            max(220, int(round(320 + ((occupancy_scale - 1.0) * 110.0)))),
+        )
+        right_pref_logical = max(160, min(280, int(round(190 + ((occupancy_scale - 1.0) * 70.0)))))
+        left_min_logical = min(
+            left_pref_logical,
+            max(170, int(round(220 + ((occupancy_scale - 1.0) * 35.0)))),
+        )
+        right_min_logical = min(
+            right_pref_logical,
+            max(120, int(round(150 + ((occupancy_scale - 1.0) * 24.0)))),
+        )
 
-        if total_pref > max_total:
-            ratio = max_total / float(max(1, total_pref))
-            left_w = max(170, int(left_pref * ratio))
-            right_w = max(120, int(right_pref * ratio))
-        else:
-            left_w = left_pref
-            right_w = right_pref
+        board_area_width_logical = max(
+            160,
+            int(effective_width)
+            - (outer_margin_logical * 2)
+            - (panel_gap_logical * 2)
+            - left_pref_logical
+            - right_pref_logical,
+        )
+        board_area_height_logical = max(160, int(effective_height) - int(INFO_PANEL_HEIGHT))
 
-        # Son güvenlik: toplam halen fazla ise önce soldan, sonra sağdan kıs.
-        overflow = (left_w + right_w) - max_total
-        if overflow > 0:
-            cut_left = min(max(0, left_w - 160), overflow)
-            left_w -= cut_left
-            overflow -= cut_left
+        cell_by_width = max(14, board_area_width_logical // board_cols)
+        cell_by_height = max(14, board_area_height_logical // board_rows)
+        logical_cell_size = max(14, min(cell_by_width, cell_by_height, max_cell_logical))
+
+        logical_board_width = board_cols * logical_cell_size
+        logical_board_height = board_rows * logical_cell_size
+
+        max_total_panels_logical = max(
+            300,
+            int(effective_width)
+            - (outer_margin_logical * 2)
+            - logical_board_width
+            - (panel_gap_logical * 2),
+        )
+        total_pref_logical = left_pref_logical + right_pref_logical
+        if total_pref_logical > max_total_panels_logical:
+            ratio = max_total_panels_logical / float(max(1, total_pref_logical))
+            left_panel_width_logical = max(left_min_logical, int(left_pref_logical * ratio))
+            right_panel_width_logical = max(right_min_logical, int(right_pref_logical * ratio))
+            overflow = (left_panel_width_logical + right_panel_width_logical) - max_total_panels_logical
             if overflow > 0:
-                right_w = max(110, right_w - overflow)
+                cut_left = min(max(0, left_panel_width_logical - left_min_logical), overflow)
+                left_panel_width_logical -= cut_left
+                overflow -= cut_left
+                if overflow > 0:
+                    right_panel_width_logical = max(right_min_logical, right_panel_width_logical - overflow)
+        else:
+            left_panel_width_logical = left_pref_logical
+            right_panel_width_logical = right_pref_logical
 
-        return left_w, right_w
+        total_group_width_logical = (
+            left_panel_width_logical
+            + panel_gap_logical
+            + logical_board_width
+            + panel_gap_logical
+            + right_panel_width_logical
+        )
+        logical_group_x = max(
+            outer_margin_logical,
+            (int(effective_width) - total_group_width_logical) // 2,
+        )
+        max_group_x = max(
+            outer_margin_logical,
+            int(effective_width) - outer_margin_logical - total_group_width_logical,
+        )
+        logical_group_x = max(outer_margin_logical, min(logical_group_x, max_group_x))
+
+        logical_board_x = logical_group_x + left_panel_width_logical + panel_gap_logical
+        logical_board_y = max(8, (int(effective_height) - logical_board_height) // 2)
+        logical_panel_x = logical_board_x + logical_board_width + panel_gap_logical
+        logical_panel_y = logical_board_y + panel_top_padding_logical
+        logical_panel_height = min(
+            logical_board_height,
+            max(80, int(effective_height) - logical_panel_y - panel_bottom_margin_logical),
+        )
+
+        metrics = {
+            'cell_size': max(1, int(round(float(logical_cell_size) * pixel_ratio))),
+            'logical_cell_size': logical_cell_size,
+            'board_x': max(0, int(round(float(logical_board_x) * scale_x))),
+            'board_y': max(0, int(round(float(logical_board_y) * scale_y))),
+            'board_width': max(1, int(round(float(logical_board_width) * scale_x))),
+            'board_height': max(1, int(round(float(logical_board_height) * scale_y))),
+            'left_panel_width': max(1, int(round(float(left_panel_width_logical) * scale_x))),
+            'right_panel_width': max(1, int(round(float(right_panel_width_logical) * scale_x))),
+            'panel_x': max(0, int(round(float(logical_panel_x) * scale_x))),
+            'panel_y': max(0, int(round(float(logical_panel_y) * scale_y))),
+            'panel_width': max(1, int(round(float(right_panel_width_logical) * scale_x))),
+            'panel_height': max(1, int(round(float(logical_panel_height) * scale_y))),
+            'panel_gap': max(1, int(round(float(panel_gap_logical) * scale_x))),
+            'panel_bottom_margin': max(1, int(round(float(panel_bottom_margin_logical) * scale_y))),
+            'pixel_ratio': pixel_ratio,
+            'occupancy_scale': occupancy_scale,
+        }
+        metrics['hud_scale'] = max(
+            0.82,
+            min(1.24, float(right_panel_width_logical) / 190.0),
+        )
+        metrics['hud_px_scale'] = float(metrics['hud_scale']) * pixel_ratio
+
+        self._mystery_left_panel_width = int(metrics['left_panel_width'])
+        self._mystery_right_panel_width = int(metrics['right_panel_width'])
+        self._mystery_layout_cache = metrics
+        self._mystery_layout_cache_key = cache_key
+        return metrics
+
+    def _get_side_panel_widths(self, board_pixel_width: int | None = None) -> tuple[int, int]:
+        """Mystery mode için sol/sağ panel genişliklerini ortak gameplay metriğinden döndür."""
+        metrics = self._get_mystery_layout_metrics()
+        return int(metrics['left_panel_width']), int(metrics['right_panel_width'])
 
     def _make_card_ui_font(
         self,
@@ -4690,59 +4865,29 @@ class MysteryMode(Game):
         self._sync_active_cards()
 
     def get_board_offset(self):
-        """Tahtanın ekrandaki pozisyonunu hesapla - sol ve sağ panelleri dikkate alarak ortala.
-        
-        Kart modunda:
-        - Sol panel: 320px (left_panel_max_width)
-        - Sağ panel: SIDE_PANEL_WIDTH (220px default)
-        - Oyun alanı bu iki panel arasında ortalanmalı
-        """
-        current_size = self._active_ui_size()
-        if not hasattr(self, '_cached_offset_key') or self._cached_offset_key != current_size:
-            active_width, active_height = current_size
-            cell_size = self.get_cell_size()
-            board_width = self.board_width * cell_size
-            board_height = self.board_height * cell_size
-
-            left_panel_width, right_panel_width = self._get_side_panel_widths(board_width)
-            self._mystery_left_panel_width = left_panel_width
-            self._mystery_right_panel_width = right_panel_width
-
-            usable_left = left_panel_width + 14
-            usable_right = int(active_width) - right_panel_width - 14
-            usable_width = max(0, usable_right - usable_left)
-
-            # Tahtayı iki panel arasındaki bantta ortala.
-            offset_x = usable_left + max(0, (usable_width - board_width) // 2)
-            offset_x = max(8, min(offset_x, int(active_width) - board_width - 8))
-
-            # Dikeyde ortala.
-            offset_y = (int(active_height) - board_height) // 2
-            
-            self._cached_offset = (offset_x, offset_y)
-            self._cached_offset_key = current_size
-        
-        return self._cached_offset
+        """Tahtanın ekrandaki pozisyonunu effective-size tabanlı Mystery layout'tan döndür."""
+        metrics = self._get_mystery_layout_metrics()
+        return int(metrics['board_x']), int(metrics['board_y'])
 
     def get_cell_size(self):
-        """Mystery mode için hücre boyutunu iki yan paneli de dikkate alarak hesapla."""
-        active_width, active_height = self._active_ui_size()
-        current_size = (active_width, active_height, int(self.board_width), int(self.board_height))
-        if not hasattr(self, '_cached_cell_size_key') or self._cached_cell_size_key != current_size:
-            left_panel_width, right_panel_width = self._get_side_panel_widths()
-            self._mystery_left_panel_width = left_panel_width
-            self._mystery_right_panel_width = right_panel_width
+        """Mystery mode için hücre boyutunu effective-size tabanlı layout'tan döndür."""
+        metrics = self._get_mystery_layout_metrics()
+        return int(metrics['cell_size'])
 
-            board_area_width = int(active_width) - left_panel_width - right_panel_width - 40
-            board_area_height = int(active_height) - INFO_PANEL_HEIGHT
-
-            cell_width = max(8, board_area_width // max(1, int(self.board_width)))
-            cell_height = max(8, board_area_height // max(1, int(self.board_height)))
-
-            self._cached_cell_size = max(14, min(cell_width, cell_height, 40))
-            self._cached_cell_size_key = current_size
-
-        return self._cached_cell_size
+    def _get_right_hud_panel_metrics(self, offset_x, offset_y, board_width, board_height):
+        metrics = self._get_mystery_layout_metrics()
+        panel_rect = pygame.Rect(
+            int(metrics['panel_x']),
+            int(metrics['panel_y']),
+            int(metrics['panel_width']),
+            int(metrics['panel_height']),
+        )
+        return {
+            'rect': panel_rect,
+            'hud_scale': float(metrics['hud_scale']),
+            'hud_px_scale': float(metrics['hud_px_scale']),
+            'pixel_ratio': float(metrics['pixel_ratio']),
+        }
 
     def _trace_ghost_bug_clear(
         self,
@@ -6323,7 +6468,8 @@ class MysteryMode(Game):
                         print(f"[MysteryMode] draw_mode_info failed (overlay): {exc!r}")
                 except Exception:
                     pass
-            fonts = self._build_card_ui_font_pack()
+            overlay_scale = self.card_ui._get_overlay_scale(self.screen)
+            fonts = self._build_card_ui_font_pack(overlay_scale)
             try:
                 if hasattr(self.card_ui, 'set_reroll_status'):
                     self.card_ui.set_reroll_status(
@@ -6954,11 +7100,12 @@ class MysteryMode(Game):
             self.screen.blit(title_surf, title_rect)
 
     def _get_left_panel_frame(self) -> tuple[int, int, int]:
+        metrics = self._get_mystery_layout_metrics()
         ui_scale = self._card_ui_scale()
         board_x, board_y = self.get_board_offset()
-        available_space = max(int(170 * ui_scale), board_x - int(16 * ui_scale))
-        width = min(self.left_panel_max_width, available_space)
-        x = max(int(8 * ui_scale), board_x - width - int(12 * ui_scale))
+        width = int(metrics['left_panel_width'])
+        panel_gap = int(metrics['panel_gap'])
+        x = max(int(8 * ui_scale), board_x - width - panel_gap)
         # Align vertical inset with the right HUD panel when available.
         hud_panel = getattr(self, '_hud_panel_rect', None)
         if hud_panel is not None:

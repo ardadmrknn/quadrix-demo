@@ -70,7 +70,7 @@ def _install_game_ui_test_stubs(monkeypatch):
     retro_style_stub = SimpleNamespace(
         draw_glass_panel=lambda surface, rect, alpha=90, border_color=(255, 255, 255), glow=False: pygame.draw.rect(surface, border_color, rect, 1),
         get_font=lambda size, bold=False: _make_fake_font(size, bold=bold),
-        get_fitting_font=lambda text, size, max_width, bold=False: _make_fake_font(size, bold=bold),
+        get_fitting_font=lambda text, size, max_width, bold=False, min_size=None, **kwargs: _make_fake_font(size, bold=bold),
         render_fit_text=lambda text, color, max_width, size, bold=False: _make_fake_font(size, bold=bold).render(text, True, color),
         accent=(100, 200, 255),
         success=(90, 220, 140),
@@ -105,10 +105,12 @@ def _install_extra_mode_ui_test_stubs(monkeypatch):
         text_primary=(255, 255, 255),
         text_secondary=(190, 190, 210),
         text_muted=(130, 130, 150),
+        glass_border=(255, 255, 255, 255),
         grid_color=(80, 80, 100),
         bg_color=(12, 16, 24),
     )
     monkeypatch.setattr(extra_modes_module, 'retro_style', retro_style_stub)
+    monkeypatch.setattr(extra_modes_module, 't', lambda key, *args, **kwargs: kwargs.get('default', str(key).replace('_', ' ')))
     monkeypatch.setattr(extra_modes_module.pygame.mouse, 'get_focused', lambda: False)
     monkeypatch.setattr(extra_modes_module.pygame.mouse, 'set_visible', lambda *args, **kwargs: None)
     monkeypatch.setattr(extra_modes_module, 'get_mouse_pos', lambda: (0, 0))
@@ -421,17 +423,67 @@ def test_mystery_mode_card_ui_scale_uses_projected_effective_scale(monkeypatch):
     assert captured['display_surface'] is None
 
 
+def test_mystery_gameplay_layout_can_grow_beyond_legacy_40px_cap():
+    mode = _build_mystery_mode((2560, 1440), window_size=(1366, 768))
+    mode.board_width = 10
+    mode.board_height = 20
+    mode.left_panel_max_width = 420
+
+    left_panel_width, right_panel_width = mode._get_side_panel_widths()
+
+    assert mode.get_cell_size() > 40
+    assert left_panel_width > 320
+    assert right_panel_width > 220
+
+
+def test_mystery_gameplay_layout_centers_board_between_side_panels():
+    mode = _build_mystery_mode((2560, 1440), window_size=(1366, 768))
+    mode.board_width = 10
+    mode.board_height = 20
+    mode.left_panel_max_width = 420
+
+    metrics = mode._get_mystery_layout_metrics()
+
+    left_margin = int(metrics['board_x']) - int(metrics['left_panel_width']) - int(metrics['panel_gap'])
+    right_margin = 2560 - (int(metrics['panel_x']) + int(metrics['panel_width']))
+
+    assert abs(left_margin - right_margin) <= 2
+
+
+def test_mystery_gameplay_layout_projects_effective_metrics_back_to_raw_pixels(monkeypatch):
+    mode = _build_mystery_mode((2940, 1912), window_size=(1470, 956))
+    mode.board_width = 10
+    mode.board_height = 20
+    mode.left_panel_max_width = 420
+
+    monkeypatch.setattr(
+        game_module,
+        'resolve_ui_scale_size',
+        lambda screen_or_size, *, use_effective_display_size=False, display_surface=None: (1470, 956),
+    )
+
+    metrics = mode._get_mystery_layout_metrics()
+
+    assert mode.get_cell_size() >= 80
+    assert int(metrics['panel_width']) >= 380
+    assert int(metrics['left_panel_width']) >= 640
+
+
 def test_mystery_mode_live_overlay_uses_active_canvas(monkeypatch):
     recorded = {}
 
     class CardUIStub:
+        def _get_overlay_scale(self, screen):
+            recorded['screen_size'] = screen.get_size()
+            return 1.0
+
         def draw_selection_overlay(self, screen, width, height, fonts, choices, hint, debug_enabled, **kwargs):
             recorded['width'] = width
             recorded['height'] = height
 
     mode = _build_mystery_mode((2560, 1440), window_size=(1366, 768))
     mode._ensure_card_ui_fonts = lambda: None
-    mode._build_card_ui_font_pack = lambda: {}
+    mode._build_card_ui_font_pack = lambda *args, **kwargs: {}
     mode.card_ui = CardUIStub()
     mode.card_selection_active = True
     mode.card_message = ''
@@ -448,7 +500,70 @@ def test_mystery_mode_live_overlay_uses_active_canvas(monkeypatch):
 
     extra_modes_module.MysteryMode.draw_mode_overlay(mode)
 
-    assert recorded == {'width': 2560, 'height': 1440}
+    assert recorded == {'screen_size': (2560, 1440), 'width': 2560, 'height': 1440}
+
+
+@pytest.mark.parametrize('size', [(2560, 1600), (1600, 900)])
+def test_mystery_card_selection_overlay_keeps_text_blocks_inside_cards(monkeypatch, size):
+    _install_extra_mode_ui_test_stubs(monkeypatch)
+
+    ui = MysteryCardUI()
+    ui.fade_alpha = 220
+    ui._last_dt = 1500.0
+
+    mode = _build_mystery_mode(size, window_size=(1366, 768))
+    screen = pygame.Surface(size, pygame.SRCALPHA)
+    fonts = mode._build_card_ui_font_pack(ui._get_overlay_scale(screen))
+
+    cards = [
+        {
+            'id': f'demo-{index}',
+            'title': 'Sonsuz Blok Karistirici Protokolu',
+            'description': 'Uzun aciklama satirlari kart icinde kalmali ve farkli ekran oranlarinda buton alanina tasmamali.',
+            'value': 3,
+            'icon': '*',
+            'icon_image': None,
+            'tag': 'Tek Kullanim',
+            'style': {},
+            'rarity': 'common',
+        }
+        for index in range(3)
+    ]
+
+    ui.draw_selection_overlay(screen, size[0], size[1], fonts, cards, '', False)
+
+    assert ui.selection_panel_rect is not None
+    assert ui.selection_panel_rect.right <= size[0]
+    assert ui.selection_panel_rect.bottom <= size[1]
+    assert ui.skip_button_rect is not None
+    assert ui.reroll_button_rect is not None
+    assert max(rect.bottom for rect in ui.card_rects) < ui.skip_button_rect.top
+
+    for rect, widget in zip(ui.card_rects, ui.card_widgets):
+        snapshot = widget._face_layout_snapshot
+
+        assert snapshot
+        assert snapshot['card_size'] == (rect.width, rect.height)
+
+        icon_rect = snapshot['icon_rect']
+        title_rect = snapshot['title_rect']
+        type_rect = snapshot['type_rect']
+        hotkey_rect = snapshot['hotkey_rect']
+        desc_bg_rect = snapshot['desc_bg_rect']
+
+        assert 0 <= icon_rect.left < icon_rect.right <= rect.width
+        assert 0 <= title_rect.left < title_rect.right <= rect.width
+        assert 0 <= type_rect.left < type_rect.right <= rect.width
+        assert 0 <= hotkey_rect.left < hotkey_rect.right <= rect.width
+        assert title_rect.top >= icon_rect.bottom
+        assert type_rect.top >= title_rect.bottom
+        assert desc_bg_rect is not None
+        assert 0 <= desc_bg_rect.left < desc_bg_rect.right <= rect.width
+        assert 0 <= desc_bg_rect.top < desc_bg_rect.bottom <= rect.height
+        assert desc_bg_rect.top >= type_rect.bottom
+        assert desc_bg_rect.bottom <= hotkey_rect.top
+        assert snapshot['desc_line_count'] >= 1
+        assert fonts['card_title'].size(snapshot['title_text'])[0] <= rect.width - max(20, int(rect.width * 0.12))
 
 
 def test_mystery_card_workshop_popup_uses_active_canvas_when_window_size_is_stale(monkeypatch):
@@ -939,22 +1054,16 @@ def test_mystery_geometry_and_panels_use_active_canvas_when_window_size_is_stale
     }
     mode._hud_panel_rect = pygame.Rect(2140, 110, 300, 520)
 
+    metrics = mode._get_mystery_layout_metrics()
     cell_size = mode.get_cell_size()
     board_x, board_y = mode.get_board_offset()
     left_w, right_w = mode._get_side_panel_widths(mode.board_width * cell_size)
-    usable_left = left_w + 14
-    usable_right = 2560 - right_w - 14
-    usable_width = max(0, usable_right - usable_left)
 
-    assert cell_size == min(
-        max(8, (2560 - left_w - right_w - 40) // mode.board_width),
-        max(8, (1440 - extra_modes_module.INFO_PANEL_HEIGHT) // mode.board_height),
-        40,
-    )
-    assert (board_x, board_y) == (
-        max(8, min(usable_left + max(0, (usable_width - mode.board_width * cell_size) // 2), 2560 - mode.board_width * cell_size - 8)),
-        (1440 - mode.board_height * cell_size) // 2,
-    )
+    assert cell_size == int(metrics['cell_size'])
+    assert (board_x, board_y) == (int(metrics['board_x']), int(metrics['board_y']))
+    assert left_w == int(metrics['left_panel_width'])
+    assert right_w == int(metrics['right_panel_width'])
+    assert cell_size > 40
 
     extra_modes_module.MysteryMode.draw_mode_info(mode, 0, 0)
     extra_modes_module.MysteryMode._draw_persistent_cards_icon_panel(mode)
