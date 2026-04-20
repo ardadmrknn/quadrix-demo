@@ -2307,6 +2307,131 @@ def main():
                         achievement_screen._refresh_fonts_for_language(force=True)
                 except Exception:
                     pass
+            elif action and action.startswith('reset_tab_defaults:'):
+                reset_tab = action.split(':', 1)[1].strip().lower()
+                try:
+                    settings_screen.sync_from_settings_manager()
+                except Exception:
+                    pass
+
+                if reset_tab in ('audio', 'display'):
+                    if settings_screen.music_enabled and not settings_screen.mute_all:
+                        menu_music = settings_manager.get('menu_music', 'main_1')
+                        try:
+                            playlist = settings_manager.get_menu_music_playlist()
+                            playlist_keys = [menu_sound.ensure_track_available(p) for p in playlist]
+                            playlist_keys = [p for p in playlist_keys if p]
+                            if playlist_keys:
+                                do_shuffle = bool(settings_manager.get('music_shuffle', False))
+                                menu_sound.set_music_playlist(playlist_keys, loop=True, autoplay=True, force=True, shuffle=do_shuffle)
+                            else:
+                                menu_sound.play_music(menu_music.lower(), loop=True)
+                        except Exception:
+                            menu_sound.play_music(menu_music.lower(), loop=True)
+                    else:
+                        menu_sound.stop_music()
+
+                    if settings_screen.mute_all:
+                        menu_sound.sfx_enabled = False
+                    else:
+                        menu_sound.sfx_enabled = settings_screen.sound_enabled
+
+                    try:
+                        menu_sound.set_muted(settings_screen.mute_all)
+                    except Exception:
+                        pass
+                    try:
+                        menu_sound.set_music_volume(settings_screen.menu_music_volume)
+                    except Exception:
+                        pass
+                    try:
+                        menu_sound.set_volume(settings_screen.sfx_volume)
+                    except Exception:
+                        pass
+
+                if reset_tab == 'display':
+                    enabled = True
+                    try:
+                        enabled = bool(settings_manager.get('background_enabled', True))
+                    except Exception:
+                        enabled = True
+                    try:
+                        retro_style.set_background_enabled(enabled)
+                    except Exception:
+                        pass
+                    if game:
+                        try:
+                            game.background_manager.enabled = enabled
+                            game.single_background.enabled = enabled
+                            game.outer_background.enabled = enabled
+                        except Exception:
+                            pass
+                    if pvp_game:
+                        try:
+                            pvp_game.board_background.enabled = enabled
+                            pvp_game.outer_background.enabled = enabled
+                        except Exception:
+                            pass
+
+                    try:
+                        trans_value = float(settings_manager.get('bg_transparency', 0.3))
+                    except Exception:
+                        trans_value = 0.3
+                    try:
+                        retro_style.set_background_transparency(trans_value)
+                    except Exception:
+                        pass
+                    if game:
+                        try:
+                            game.background_manager.set_transparency(trans_value)
+                            game.single_background.set_transparency(trans_value)
+                            game.outer_background.set_transparency(trans_value)
+                        except Exception:
+                            pass
+                    if pvp_game:
+                        try:
+                            pvp_game.update_transparency(trans_value)
+                        except Exception:
+                            pass
+                    if coop_game:
+                        for _bg_attr in ('background', 'board_background', 'outer_background'):
+                            _bg_obj = getattr(coop_game, _bg_attr, None)
+                            if _bg_obj is not None and hasattr(_bg_obj, 'set_transparency'):
+                                try:
+                                    _bg_obj.set_transparency(trans_value)
+                                except Exception:
+                                    pass
+                        try:
+                            coop_game._outer_bg_composite_cache = {'key': None, 'surface': None}
+                        except Exception:
+                            pass
+
+                    try:
+                        eff_value = float(settings_manager.get('effects_opacity', 1.0))
+                    except Exception:
+                        eff_value = 1.0
+                    try:
+                        from background_effects import get_shared_falling_blocks_layer as _get_fb
+                        for _layer_name, _layer_kwargs in (
+                            ('default', {}),
+                        ):
+                            _fb = _get_fb(_layer_name, **_layer_kwargs)
+                            if _fb is not None:
+                                _fb.set_opacity_multiplier(eff_value)
+                    except Exception:
+                        pass
+                    for _gobj in (game, coop_game, pvp_game):
+                        if _gobj is not None:
+                            _gobj.effects_opacity = eff_value
+
+                    try:
+                        menu_value = float(settings_manager.get('menu_transparency', 1.0))
+                    except Exception:
+                        menu_value = 1.0
+                    try:
+                        retro_style.set_menu_transparency(menu_value)
+                    except Exception:
+                        pass
             elif action == 'toggle_music':
                 # Müzik ayarı değişti
                 if settings_screen.music_enabled and not settings_screen.mute_all:

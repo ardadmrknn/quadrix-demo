@@ -53,6 +53,60 @@ FAST_FALL_SPEED = 50
 DEFAULT_LOCK_DELAY = 500  # Ms cinsinden yere değdikten sonra kilitlenme süresi
 SPEED_INCREASE_PER_LEVEL = 50
 
+# Seviye bazli hiz egri capalari (ms)
+# L20 -> 150ms, L30 -> 125ms
+LEVEL_SPEED_TARGET_L20_MS = 150
+LEVEL_SPEED_TARGET_L30_MS = 125
+LEVEL_SPEED_MIN_MS = 100
+LEVEL_SPEED_POST_L30_STEP_MS = 1
+
+
+def get_level_fall_speed_ms(
+    level,
+    *,
+    initial_speed=INITIAL_FALL_SPEED,
+    level20_speed=LEVEL_SPEED_TARGET_L20_MS,
+    level30_speed=LEVEL_SPEED_TARGET_L30_MS,
+    min_speed=LEVEL_SPEED_MIN_MS,
+    post_l30_step=LEVEL_SPEED_POST_L30_STEP_MS,
+):
+    """Hesaplanan dusus araligini (ms) seviyeye gore dondur.
+
+    Ortak egri:
+    - Level 1  -> initial_speed
+    - Level 20 -> level20_speed
+    - Level 30 -> level30_speed
+    - 30+      -> her seviyede post_l30_step kadar azalir (min_speed'e kadar)
+    """
+    try:
+        lvl = int(level)
+    except Exception:
+        lvl = 1
+    lvl = max(1, lvl)
+
+    initial = max(1, int(initial_speed))
+    l20 = max(1, int(level20_speed))
+    l30 = max(1, int(level30_speed))
+    floor = max(1, int(min_speed))
+    step = max(0, int(post_l30_step))
+
+    # Monotonik hizlanma (ms degeri dusmeli) garantisi.
+    l20 = min(l20, initial)
+    l30 = min(l30, l20)
+
+    if lvl <= 1:
+        speed = float(initial)
+    elif lvl <= 20:
+        ratio = float(lvl - 1) / 19.0
+        speed = float(initial) + (float(l20) - float(initial)) * ratio
+    elif lvl <= 30:
+        ratio = float(lvl - 20) / 10.0
+        speed = float(l20) + (float(l30) - float(l20)) * ratio
+    else:
+        speed = float(l30 - (lvl - 30) * step)
+
+    return max(floor, int(round(speed)))
+
 # DAS (Delayed Auto Shift) - Yatay hareket için basılı tutma sistemi
 DAS_DELAY = 200  # İlk hareket sonrası bekleme süresi (ms)
 DAS_REPEAT = 200  # Tekrar hızı (ms) - ne kadar düşükse o kadar hızlı

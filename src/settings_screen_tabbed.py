@@ -8,6 +8,7 @@ Her sekme kendi içinde bölüm başlıkları (section header) ve ayar satırlar
 """
 
 import os
+import copy
 import unicodedata
 from pathlib import Path
 
@@ -569,6 +570,7 @@ class TabbedSettingsScreen:
 
         # Close button rect
         self._close_btn_rect: pygame.Rect | None = None
+        self._tab_reset_btn_rect: pygame.Rect | None = None
 
         # Settings scrollbar drag state
         self._settings_sb_thumb_rect: pygame.Rect | None = None
@@ -1031,6 +1033,184 @@ class TabbedSettingsScreen:
         if show_debug != self._show_debug_settings:
             self._show_debug_settings = show_debug
             self._rebuild_tab_content()
+
+    def _current_tab_key(self) -> str:
+        try:
+            tab_index = int(getattr(self, 'current_tab', 0))
+        except Exception:
+            tab_index = 0
+        if tab_index < 0 or tab_index >= len(TAB_DEFS):
+            return ''
+        return str(TAB_DEFS[tab_index].get('key', ''))
+
+    def _can_reset_tab_defaults(self, tab_key: str | None = None) -> bool:
+        resolved_key = str(tab_key or self._current_tab_key())
+        return resolved_key in {'game', 'display', 'audio', 'controls'}
+
+    def _tab_reset_button_rect(self, panel: pygame.Rect | None = None) -> pygame.Rect | None:
+        if not self._can_reset_tab_defaults():
+            return None
+        metrics = self._layout_metrics()
+        panel_rect = panel or metrics['panel']
+        button_h = self._s(34, minimum=26)
+        button_w = max(
+            self._s(172, minimum=130),
+            min(self._s(250, minimum=176), int(panel_rect.width * 0.28)),
+        )
+        button_x = panel_rect.right - int(metrics['title_pad_x']) - button_w
+        button_y = panel_rect.y + self._s(10, minimum=8)
+        return pygame.Rect(button_x, button_y, button_w, button_h)
+
+    def _default_values_for_tab(self, tab_key: str) -> dict[str, object]:
+        defaults = getattr(self.settings_manager, 'default_settings', None)
+        if not isinstance(defaults, dict):
+            return {}
+
+        keys_by_tab: dict[str, tuple[str, ...]] = {
+            'game': (
+                'das_delay',
+                'das_repeat',
+                'soft_drop_speed',
+            ),
+            'display': (
+                'vsync',
+                'fps_limit',
+                'ui_scale_preset',
+                'show_ghost',
+                'background_enabled',
+                'bg_transparency',
+                'effects_opacity',
+                'menu_transparency',
+                'particle_effects',
+            ),
+            'audio': (
+                'music_enabled',
+                'music_volume',
+                'menu_music_volume',
+                'sound_enabled',
+                'sfx_volume',
+                'mute_all',
+                'music_shuffle',
+                'menu_music',
+                'game_music',
+                'menu_music_playlist',
+                'game_music_playlist',
+                'campaign_music_playlist',
+                'mode_music_overrides',
+                'mode_music_playlists',
+            ),
+        }
+
+        values: dict[str, object] = {}
+        for key in keys_by_tab.get(tab_key, ()):
+            if key in defaults:
+                values[key] = copy.deepcopy(defaults[key])
+        return values
+
+    def _reset_current_tab_to_defaults(self) -> str | None:
+        tab_key = self._current_tab_key()
+        if not self._can_reset_tab_defaults(tab_key):
+            return None
+
+        previous_vsync = bool(getattr(self, 'vsync', True))
+
+        if tab_key == 'controls':
+            default_controls = None
+            get_default_controls = getattr(self.settings_manager, 'get_default_controls', None)
+            if callable(get_default_controls):
+                try:
+                    default_controls = get_default_controls()
+                except Exception:
+                    default_controls = None
+            if default_controls is None:
+                defaults = getattr(self.settings_manager, 'default_settings', None)
+                if isinstance(defaults, dict):
+                    default_controls = copy.deepcopy(defaults.get('controls', {}))
+            if default_controls is None:
+                return None
+
+            try:
+                self.settings_manager.set('controls', default_controls)
+            except Exception:
+                return None
+
+            get_controls = getattr(self.settings_manager, 'get_controls', None)
+            if callable(get_controls):
+                try:
+                    self._control_config = get_controls()
+                except Exception:
+                    pass
+            try:
+                reload_gamepad_settings()
+            except Exception:
+                pass
+        else:
+            updates = self._default_values_for_tab(tab_key)
+            if not updates:
+                return None
+
+            update_many = getattr(self.settings_manager, 'update', None)
+            if callable(update_many):
+                try:
+                    update_many(**updates)
+                except Exception:
+                    for key, value in updates.items():
+                        try:
+                            self.settings_manager.set(key, value)
+                        except Exception:
+                            pass
+            else:
+                for key, value in updates.items():
+                    try:
+                        self.settings_manager.set(key, value)
+                    except Exception:
+                        pass
+
+            try:
+                self.settings_manager.save_settings()
+            except Exception:
+                pass
+
+        try:
+            self._load_all_settings()
+        except Exception:
+            pass
+
+        get_controls = getattr(self.settings_manager, 'get_controls', None)
+        if callable(get_controls):
+            try:
+                self._control_config = get_controls()
+            except Exception:
+                pass
+
+        get_overrides = getattr(self.settings_manager, 'get_mode_music_overrides', None)
+        if callable(get_overrides):
+            try:
+                self._mode_music_overrides = get_overrides()
+            except Exception:
+                pass
+
+        if tab_key == 'display':
+            if previous_vsync != bool(getattr(self, 'vsync', previous_vsync)):
+                self._vsync_prompt_active = True
+                self._vsync_prompt_choice = 0
+
+        return f'reset_tab_defaults:{tab_key}'
+
+    def _draw_tab_reset_button(self, panel: pygame.Rect) -> None:
+        self._tab_reset_btn_rect = None
+        button_rect = self._tab_reset_button_rect(panel)
+        if button_rect is None:
+            return
+
+        self._tab_reset_btn_rect = button_rect
+        retro_style.draw_uniform_button(
+            self.screen,
+            button_rect,
+            _t('playlist_reset_default', 'Varsayılana Dön'),
+            color_code=retro_style.primary,
+            selected=False,
+        )
 
     # ------------------------------------------------------------------
     # Değer okuma / yazma
@@ -2312,6 +2492,9 @@ class TabbedSettingsScreen:
                 self._switch_tab(1)
                 return None
 
+            if event.key == pygame.K_r:
+                return self._reset_current_tab_to_defaults()
+
             # Gamepad sol/sağ ok tuşları (d-pad / sol stick) sekme değiştirmesin;
             # sekme geçişi yalnızca LB/RB (K_LEFTBRACKET / K_RIGHTBRACKET) ile yapılır.
             if getattr(event, 'from_gamepad', False) and event.key in (pygame.K_LEFT, pygame.K_RIGHT):
@@ -2380,6 +2563,10 @@ class TabbedSettingsScreen:
         elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             pos = normalize_mouse_pos(getattr(event, 'pos', None)) or event.pos
             opened_by_gamepad_click = bool(getattr(event, 'from_gamepad', False) and getattr(event, 'button', None) == 1)
+
+            reset_button_rect = self._tab_reset_button_rect(self._panel_rect())
+            if reset_button_rect and reset_button_rect.collidepoint(pos):
+                return self._reset_current_tab_to_defaults()
 
             # Settings scrollbar thumb drag başlatma
             if self._settings_sb_thumb_rect and self._settings_sb_thumb_rect.collidepoint(pos):
@@ -2792,6 +2979,8 @@ class TabbedSettingsScreen:
         title_surf = self.font_title.render(title_text, True, (220, 235, 255))
         self.screen.blit(title_surf, (panel.x + int(metrics['title_pad_x']), panel.y + int(metrics['title_pad_y'])))
         self._close_btn_rect = None
+
+        self._draw_tab_reset_button(panel)
 
         # Başlık altı çizgi
         line_y = panel.y + int(metrics['title_rule_y'])

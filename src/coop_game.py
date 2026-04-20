@@ -18,6 +18,8 @@ from pieces import Piece, SHAPES, skip_hidden_rows
 from constants import (
     BOARD_WIDTH, BOARD_HEIGHT, BLACK, WHITE, CYAN, YELLOW, MAGENTA, GREEN, RED,
     DAS_DELAY, DAS_REPEAT, DEFAULT_LOCK_DELAY,
+    LEVEL_SPEED_MIN_MS,
+    get_level_fall_speed_ms,
 )
 from sound import SoundManager
 from background import BackgroundManager
@@ -1824,7 +1826,13 @@ class CoopGame:
 
             # Seviye & hız
             self.level = (self.total_lines_cleared // 5) + 1
-            self.fall_speed = max(100.0, 900.0 - (self.level - 1) * 40.0)
+            self.fall_speed = float(
+                get_level_fall_speed_ms(
+                    self.level,
+                    initial_speed=900,
+                    min_speed=LEVEL_SPEED_MIN_MS,
+                )
+            )
 
             # Katkı güncelle
             p1c = self.board.last_clear_p1_cells

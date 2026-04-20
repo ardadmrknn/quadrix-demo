@@ -26,8 +26,10 @@ import pygame
 # Proje import'ları
 from constants import (
     BOARD_WIDTH, BOARD_HEIGHT, BLACK, COLORS,
-    INITIAL_FALL_SPEED, SPEED_INCREASE_PER_LEVEL,
+    INITIAL_FALL_SPEED,
     DEFAULT_LOCK_DELAY,
+    LEVEL_SPEED_MIN_MS,
+    get_level_fall_speed_ms,
 )
 from board import Board
 from pieces import Piece, SHAPES, get_piece_spawn_y, skip_hidden_rows
@@ -4230,7 +4232,11 @@ class OnlinePvPGame:
 
         # Düşüş hızı
         level = self.my_board.level if self.my_board else 1
-        fall_speed = max(100, INITIAL_FALL_SPEED - (level - 1) * SPEED_INCREASE_PER_LEVEL)
+        fall_speed = get_level_fall_speed_ms(
+            level,
+            initial_speed=INITIAL_FALL_SPEED,
+            min_speed=LEVEL_SPEED_MIN_MS,
+        )
 
         # Soft drop hızlandırma
         if self.soft_dropping:

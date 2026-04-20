@@ -37,7 +37,16 @@ try:
 except Exception:
     from ui_scaling import get_projected_effective_scale
 
-from constants import BLACK, BOARD_WIDTH, BOARD_HEIGHT, FAST_FALL_SPEED, SPEED_INCREASE_PER_LEVEL, SIDE_PANEL_WIDTH, INFO_PANEL_HEIGHT
+from constants import (
+    BLACK,
+    BOARD_WIDTH,
+    BOARD_HEIGHT,
+    FAST_FALL_SPEED,
+    SIDE_PANEL_WIDTH,
+    INFO_PANEL_HEIGHT,
+    LEVEL_SPEED_MIN_MS,
+    get_level_fall_speed_ms,
+)
 from block_styles import TextureSlice
 
 # Optional rare-bug tracer (writes JSON dumps when enabled)
@@ -7120,12 +7129,15 @@ class MysteryMode(Game):
     def get_current_speed(self) -> int:
         # Kart Modu (Mystery): düşüş hızı SADECE seviye (board.level) ile artar.
         # Skora bağlı hızlanma devre dışıdır.
-        base_interval = 900
-        min_interval = 200
+        min_interval = LEVEL_SPEED_MIN_MS
 
         level = int(getattr(getattr(self, 'board', None), 'level', 1) or 1)
         level = max(1, level)
-        base_interval = int(base_interval - (level - 1) * SPEED_INCREASE_PER_LEVEL)
+        base_interval = get_level_fall_speed_ms(
+            level,
+            initial_speed=900,
+            min_speed=min_interval,
+        )
 
         # Zaman yavaşlatma kartı aktifse: speed_effect_multiplier < 1 => interval artar (daha yavaş düşüş)
         if self.speed_effect_timer > 0 and self.speed_effect_multiplier > 0:

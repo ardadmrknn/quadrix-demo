@@ -121,6 +121,7 @@ GAMEPAD_RUMBLE_MULTIPLIERS = {
 DEFAULT_MENU_MUSIC_PLAYLIST = ['main_1']
 DEFAULT_GAME_MUSIC_PLAYLIST = ['klasik_1']
 DEFAULT_CAMPAIGN_MUSIC_PLAYLIST = ['klasik_1']
+DEFAULT_SETTINGS_OVERRIDE_FILENAME = 'settings_defaults.json'
 
 DEFAULT_MODE_MUSIC_PLAYLISTS = {
     'survival': ['file:survival_2.mp3', 'file:survival_1.mp3'],
@@ -256,6 +257,8 @@ class SettingsManager:
         # Build ile beraber gelen "fabrika" müzik ayarları (seçili özel müzikler)
         # Sadece müzik seçimlerini uygular; diğer ayarlara dokunmaz.
         self._apply_bundled_music_defaults()
+        # Kullanıcının elle belirlediği varsayılan override dosyası (opsiyonel)
+        self._apply_user_default_settings_override()
         self.settings = self.load_settings()
         normalized_display_settings = self._normalize_display_settings_inplace(self.settings)
         removed_obsolete_settings = self._remove_obsolete_settings_inplace(self.settings)
@@ -300,6 +303,72 @@ class SettingsManager:
         # Disk yazımını azaltmak için: bazı ayarlar (slider/tekrarlı input) debounced kaydedilir.
         self._dirty = False
         self._last_change_monotonic = now
+
+    def _get_default_settings_override_path(self) -> str | None:
+        """Varsayılan ayar override dosya yolunu döndür."""
+        try:
+            if self._single_file_mode:
+                if isinstance(self.filename, str) and self.filename:
+                    base_dir = os.path.dirname(self.filename)
+                    if not base_dir:
+                        base_dir = os.getcwd()
+                    return os.path.join(base_dir, DEFAULT_SETTINGS_OVERRIDE_FILENAME)
+                return None
+            return resolve_data_path(DEFAULT_SETTINGS_OVERRIDE_FILENAME)
+        except Exception:
+            return None
+
+    def _apply_user_default_settings_override(self) -> None:
+        """Kullanıcıya özel varsayılan ayar override dosyasını uygula.
+
+        Dosya varsa yalnızca bilinen ayar anahtarları override edilir.
+        """
+        path = self._get_default_settings_override_path()
+        if not path or not os.path.exists(path):
+            return
+
+        payload = read_json_file(path, default={})
+        if not isinstance(payload, dict):
+            return
+
+        for key, value in payload.items():
+            if key in OBSOLETE_SETTINGS_KEYS or key == 'campaign_progress':
+                continue
+            if key == 'controls':
+                self.default_settings['controls'] = self._merge_controls(value)
+                continue
+            if key == 'mode_music_playlists' and isinstance(value, dict):
+                self.default_settings['mode_music_playlists'] = self._merge_mode_music_playlists_with_defaults(value)
+                continue
+            if key in self.default_settings:
+                self.default_settings[key] = copy.deepcopy(value)
+
+        # Override sonrası normalize et
+        self._normalize_display_settings_inplace(self.default_settings)
+        self.default_settings['controls'] = self._merge_controls(self.default_settings.get('controls', {}))
+        try:
+            self._migrate_music_preferences_inplace(self.default_settings)
+        except Exception:
+            pass
+
+    def save_current_as_defaults(self) -> str | None:
+        """Mevcut aktif ayarları varsayılan override dosyasına kaydet."""
+        path = self._get_default_settings_override_path()
+        if not path:
+            return None
+
+        payload = copy.deepcopy(self.settings if isinstance(self.settings, dict) else {})
+        payload.pop('campaign_progress', None)
+        payload.pop('show_debug_settings', None)
+
+        try:
+            write_json_file(path, payload, indent=2)
+        except Exception:
+            return None
+
+        # Aynı instance içinde de hemen etkili olsun.
+        self._apply_user_default_settings_override()
+        return path
 
     def _load_single_file_settings(self):
         if os.path.exists(self.filename):

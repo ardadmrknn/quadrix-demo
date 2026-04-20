@@ -3627,13 +3627,17 @@ class Game:
         return test_piece.y - 1
     
     def get_current_speed(self):
-        """Seviyeye göre düşüş hızını hesapla - Kart modu standardı"""
+        """Seviyeye göre düşüş hızını ortak eğriyle hesapla."""
         initial = self.get_initial_speed()
-        speed = initial - (self.board.level - 1) * SPEED_INCREASE_PER_LEVEL
+        speed = get_level_fall_speed_ms(
+            getattr(self.board, 'level', 1),
+            initial_speed=initial,
+            min_speed=LEVEL_SPEED_MIN_MS,
+        )
         # Allow mode-specific score multiplier to reduce the interval (increase speed)
         multiplier = getattr(self, 'score_speed_multiplier', 1.0)
         speed = int(speed * multiplier)
-        return max(speed, 200)  # Minimum 200ms
+        return max(speed, LEVEL_SPEED_MIN_MS)
     
     def _has_adjacent_block(self, piece):
         """Parçanın en az bir hücresinin yanında (8 yön) bir blok var mı kontrol et.
