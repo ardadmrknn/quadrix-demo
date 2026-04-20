@@ -371,6 +371,127 @@ class TutorialMode(Game):
             )
             return max(min_scale, min(max_scale, scale))
 
+    def _build_tutorial_support_layout(self, main_rect: pygame.Rect, ui_scale: float):
+        s = lambda v, minimum=1: self._sx(v, ui_scale, minimum)
+
+        objectives = self._get_board_lesson_objectives()
+        has_objectives = bool(objectives)
+        tip_width = main_rect.width
+        tip_gap = s(10)
+
+        compact_measure_h = min(max(main_rect.height, s(96)), s(140))
+        measure_rect = pygame.Rect(0, 0, tip_width, compact_measure_h)
+        panel_pad_x, panel_pad_y = self._panel_content_padding(
+            measure_rect,
+            s,
+            pad_x=14,
+            pad_y=10,
+            x_ratio=0.08,
+            y_ratio=0.10,
+        )
+        title_gap = max(s(6), int(measure_rect.height * 0.05))
+        body_max_width = max(s(60), tip_width - panel_pad_x * 2)
+
+        tip_title_text = t('tutorial_tip_title', default='İPUCU')
+        tip_title_font = self._get_fitting_font(
+            tip_title_text,
+            s(15, minimum=11),
+            body_max_width,
+            bold=True,
+            min_size=max(10, s(11, minimum=10)),
+        )
+        text_font, lines, text_line_gap, tip_content_h = self._fit_wrapped_text_block(
+            self.tip_message,
+            base_size=s(15, minimum=11),
+            max_width=body_max_width,
+            max_height=max(s(46), int(main_rect.height * 0.42)),
+            bold=False,
+            min_size=max(10, s(11, minimum=10)),
+            max_lines=4,
+        )
+        tip_height = panel_pad_y + tip_title_font.get_height() + title_gap + tip_content_h + panel_pad_y
+
+        layout = {
+            'objectives': objectives,
+            'has_objectives': has_objectives,
+            'tip_width': tip_width,
+            'tip_gap': tip_gap,
+            'panel_pad_x': panel_pad_x,
+            'panel_pad_y': panel_pad_y,
+            'title_gap': title_gap,
+            'body_max_width': body_max_width,
+            'tip_title_font': tip_title_font,
+            'text_font': text_font,
+            'lines': lines,
+            'text_line_gap': text_line_gap,
+            'tip_height': tip_height,
+            'obj_height': 0,
+            'objective_blocks': [],
+            'obj_title_font': None,
+            'objective_title_gap': 0,
+            'objective_item_gap': 0,
+            'objective_text_x': 0,
+            'bullet_radius': 0,
+        }
+
+        if has_objectives:
+            obj_title_text = t('tutorial_targets_title', default='HEDEFLER')
+            obj_title_font = self._get_fitting_font(
+                obj_title_text,
+                s(15, minimum=11),
+                body_max_width,
+                bold=True,
+                min_size=max(10, s(11, minimum=10)),
+            )
+            bullet_radius = max(2, min(s(4), obj_title_font.get_height() // 3))
+            bullet_gap = max(s(8), int(tip_width * 0.03))
+            objective_text_x = panel_pad_x + bullet_radius * 2 + bullet_gap
+            objective_text_width = max(s(50), tip_width - objective_text_x - panel_pad_x)
+            objective_item_gap = max(s(7), int(measure_rect.height * 0.06))
+            objective_title_gap = max(s(6), int(measure_rect.height * 0.05))
+            objective_blocks = []
+
+            for objective in objectives[:3]:
+                objective_font, objective_lines, objective_line_gap, objective_height = self._fit_wrapped_text_block(
+                    str(objective.get('text') or ''),
+                    base_size=s(15, minimum=11),
+                    max_width=objective_text_width,
+                    max_height=max(s(42), int(main_rect.height * 0.34)),
+                    bold=False,
+                    min_size=max(10, s(11, minimum=10)),
+                    max_lines=3,
+                )
+                objective_blocks.append(
+                    {
+                        'font': objective_font,
+                        'lines': objective_lines,
+                        'line_gap': objective_line_gap,
+                        'height': objective_height,
+                    }
+                )
+
+            objectives_content_h = sum(block['height'] for block in objective_blocks)
+            if objective_blocks:
+                objectives_content_h += objective_item_gap * (len(objective_blocks) - 1)
+            obj_height = panel_pad_y + obj_title_font.get_height() + objective_title_gap + objectives_content_h + panel_pad_y
+
+            layout.update(
+                {
+                    'obj_height': obj_height,
+                    'objective_blocks': objective_blocks,
+                    'obj_title_font': obj_title_font,
+                    'objective_title_gap': objective_title_gap,
+                    'objective_item_gap': objective_item_gap,
+                    'objective_text_x': objective_text_x,
+                    'bullet_radius': bullet_radius,
+                }
+            )
+
+        stack_height = tip_height + (layout['obj_height'] + tip_gap if has_objectives else 0)
+        layout['stack_height'] = stack_height
+        layout['bottom_reserve'] = tip_gap + stack_height
+        return layout
+
     def _tutorial_overlay_rect(self) -> pygame.Rect:
         board_offset_x, board_offset_y = self.get_board_offset()
         cell_size = self.get_cell_size()
@@ -388,7 +509,20 @@ class TutorialMode(Game):
         if panel_x < s(10):
             panel_x = s(10)
 
-        return pygame.Rect(panel_x, panel_y, panel_width, panel_height)
+        panel_rect = pygame.Rect(panel_x, panel_y, panel_width, panel_height)
+        tip_message = getattr(self, 'tip_message', '')
+        try:
+            support_objectives = self._get_board_lesson_objectives()
+        except Exception:
+            support_objectives = []
+        if tip_message or support_objectives:
+            _, active_height = self._active_ui_size()
+            support_layout = self._build_tutorial_support_layout(panel_rect, ui_scale)
+            allowed_bottom = active_height - s(10) - support_layout['bottom_reserve']
+            if panel_rect.bottom > allowed_bottom:
+                panel_rect.y = max(s(10), allowed_bottom - panel_rect.height)
+
+        return panel_rect
 
     def _tutorial_hub_panel_rect(self) -> pygame.Rect:
         active_width, active_height = self._active_ui_size()
@@ -744,22 +878,115 @@ class TutorialMode(Game):
         return 'menu'
 
     def _wrap_text(self, text, font, max_width, max_lines=None):
-        words = str(text or '').split(' ')
+        text = str(text or '')
+        if not text:
+            return []
+        if max_width <= 0:
+            return [text]
+
         lines = []
-        current_line = ''
-        for word in words:
-            test_line = current_line + (' ' if current_line else '') + word
-            if font.render(test_line, True, (255, 255, 255)).get_width() <= max_width:
-                current_line = test_line
-            else:
-                if current_line:
-                    lines.append(current_line)
-                current_line = word
+        for paragraph in text.split('\n'):
+            words = paragraph.split()
+            if not words:
+                if not max_lines or len(lines) < max_lines:
+                    lines.append('')
                 if max_lines and len(lines) >= max_lines:
-                    break
-        if current_line and (not max_lines or len(lines) < max_lines):
+                    return lines[:max_lines]
+                continue
+
+            current_line = words[0]
+            for word in words[1:]:
+                test_line = f'{current_line} {word}'
+                if font.size(test_line)[0] <= max_width:
+                    current_line = test_line
+                else:
+                    lines.append(current_line)
+                    if max_lines and len(lines) >= max_lines:
+                        return lines[:max_lines]
+                    current_line = word
+
             lines.append(current_line)
-        return lines
+            if max_lines and len(lines) >= max_lines:
+                return lines[:max_lines]
+
+        return lines[:max_lines] if max_lines else lines
+
+    def _measure_text_block_height(self, font, lines, line_gap):
+        if not lines:
+            return 0
+        return (len(lines) * font.get_height()) + (max(0, len(lines) - 1) * line_gap)
+
+    def _get_fitting_font(self, text, base_size, max_width, bold=False, min_size=10):
+        fitting_font = getattr(retro_style, 'get_fitting_font', None)
+        if callable(fitting_font):
+            return fitting_font(text, base_size, max_width, bold=bold, min_size=min_size)
+
+        size = max(int(base_size), int(min_size))
+        min_size = max(8, int(min_size))
+        font = retro_style.get_font(size, bold=bold)
+        while max_width and font.size(str(text or ''))[0] > max_width and size > min_size:
+            size -= 1 if size <= 16 else 2
+            font = retro_style.get_font(size, bold=bold)
+        return font
+
+    def _fit_wrapped_text_block(
+        self,
+        text,
+        *,
+        base_size,
+        max_width,
+        max_height=None,
+        bold=False,
+        min_size=10,
+        max_lines=None,
+    ):
+        text = str(text or '').strip()
+        max_width = max(1, int(max_width or 1))
+        base_size = max(8, int(base_size))
+        min_size = max(8, int(min_size))
+        if max_height is not None:
+            max_height = max(1, int(max_height))
+
+        if not text:
+            font = retro_style.get_font(base_size, bold=bold)
+            line_gap = max(2, int(font.get_height() * 0.28))
+            return font, [], line_gap, 0
+
+        size = max(base_size, min_size)
+        fallback = None
+        while size >= min_size:
+            font = retro_style.get_font(size, bold=bold)
+            lines = self._wrap_text(text, font, max_width)
+            line_gap = max(2, int(font.get_height() * 0.28))
+
+            if max_lines is not None and len(lines) > max_lines:
+                fallback = (font, lines[:max_lines], line_gap)
+                size -= 1 if size <= 16 else 2
+                continue
+
+            total_height = self._measure_text_block_height(font, lines, line_gap)
+            fallback = (font, lines, line_gap)
+            if max_height is None or total_height <= max_height:
+                return font, lines, line_gap, total_height
+
+            size -= 1 if size <= 16 else 2
+
+        if fallback is None:
+            font = retro_style.get_font(min_size, bold=bold)
+            lines = self._wrap_text(text, font, max_width, max_lines=max_lines)
+            line_gap = max(2, int(font.get_height() * 0.28))
+        else:
+            font, lines, line_gap = fallback
+
+        if max_lines is not None:
+            lines = lines[:max_lines]
+        total_height = self._measure_text_block_height(font, lines, line_gap)
+        return font, lines, line_gap, total_height
+
+    def _panel_content_padding(self, rect, s, pad_x=16, pad_y=12, x_ratio=0.07, y_ratio=0.06):
+        inner_x = min(rect.width // 4, max(s(pad_x), int(rect.width * x_ratio)))
+        inner_y = min(rect.height // 4, max(s(pad_y), int(rect.height * y_ratio)))
+        return inner_x, inner_y
 
     def _clear_tutorial_board(self):
         self.board.reset()
@@ -2254,6 +2481,9 @@ class TutorialMode(Game):
 
         rect = self._tutorial_overlay_rect()
         retro_style.draw_glass_panel(self.screen, rect, alpha=220, border_color=(0, 200, 255))
+        content_pad_x, content_pad_y = self._panel_content_padding(rect, s, pad_x=16, pad_y=12, x_ratio=0.08, y_ratio=0.05)
+        content_width = max(s(60), rect.width - content_pad_x * 2)
+        section_gap = max(s(8), int(rect.height * 0.03))
         
         # Step Counter (üst kısım) - daha büyük font
         lesson_total = max(1, len(self.lesson_catalog))
@@ -2261,51 +2491,100 @@ class TutorialMode(Game):
         step_text = t('tutorial_lesson_counter', current=lesson_index, total=lesson_total, default=f'DERS {lesson_index}/{lesson_total}')
         if self.lesson_result_active and not self.next_lesson_id:
             step_text = t('tutorial_last_lesson', default='SON DERS')
-        step_font = retro_style.get_font(s(18, minimum=12), bold=True)
+        badge_pad_x = max(s(8), int(rect.width * 0.03))
+        badge_pad_y = max(s(4), int(rect.height * 0.02))
+        badge_radius = max(4, s(6))
+        step_font = self._get_fitting_font(
+            step_text,
+            s(18, minimum=12),
+            content_width - badge_pad_x * 2,
+            bold=True,
+            min_size=max(10, s(11, minimum=10)),
+        )
         step_surf = step_font.render(step_text, True, (150, 220, 255))
         
-        step_bg_rect = pygame.Rect(rect.right - step_surf.get_width() - s(18), rect.top + s(10), 
-                      step_surf.get_width() + s(14), step_surf.get_height() + s(6))
-        pygame.draw.rect(self.screen, (20, 30, 50, 180), step_bg_rect, border_radius=6)
-        pygame.draw.rect(self.screen, (100, 150, 200), step_bg_rect, 1, border_radius=6)
+        step_bg_rect = pygame.Rect(
+            rect.right - content_pad_x - (step_surf.get_width() + badge_pad_x * 2),
+            rect.top + content_pad_y,
+            step_surf.get_width() + badge_pad_x * 2,
+            step_surf.get_height() + badge_pad_y * 2,
+        )
+        pygame.draw.rect(self.screen, (20, 30, 50, 180), step_bg_rect, border_radius=badge_radius)
+        pygame.draw.rect(self.screen, (100, 150, 200), step_bg_rect, 1, border_radius=badge_radius)
         step_rect_pos = step_surf.get_rect(center=step_bg_rect.center)
         self.screen.blit(step_surf, step_rect_pos)
+
+        footer_bottom = rect.bottom - content_pad_y
+        show_progress_bar = not self.in_transition and self.sub_message and self.step in [1, 2, 3]
+        bar_h = max(s(6), int(rect.height * 0.025))
+        progress_gap = section_gap if show_progress_bar else 0
+        progress_rect = None
+
+        if show_progress_bar:
+            progress_rect = pygame.Rect(
+                rect.centerx - content_width // 2,
+                footer_bottom - bar_h,
+                content_width,
+                bar_h,
+            )
+            footer_bottom = progress_rect.top - progress_gap
+
+        sub_font = None
+        sub_lines = []
+        sub_line_gap = 0
+        sub_total_height = 0
+        sub_top = footer_bottom
+
+        if not self.in_transition and self.sub_message:
+            sub_font, sub_lines, sub_line_gap, sub_total_height = self._fit_wrapped_text_block(
+                self.sub_message,
+                base_size=s(16, minimum=11),
+                max_width=content_width,
+                max_height=max(s(28), int(rect.height * 0.28)),
+                bold=False,
+                min_size=max(10, s(11, minimum=10)),
+                max_lines=3,
+            )
+            sub_top = footer_bottom - sub_total_height
+
+        body_top = step_bg_rect.bottom + section_gap
+        body_bottom = sub_top - section_gap if sub_lines else footer_bottom - (section_gap if progress_rect else 0)
+        body_height = max(step_font.get_height(), body_bottom - body_top)
         
         # Mesaj (orta kısım) - daha büyük fontlar
         if self.in_transition:
             self._draw_transition_callout(rect, step_bg_rect, ui_scale)
         else:
-            font = retro_style.get_font(s(20, minimum=12), bold=True)
             text = self.overlay_message
             color = (255, 255, 255)
 
-            # Mesajı panele sığdır (kelime kaydırma)
-            max_text_width = rect.width - s(30)
-            lines = self._wrap_text(text, font, max_text_width)
-
-            # Mesaj satırlarını çiz (üstteki ADIM etiketi ve alttaki sub/progress alanıyla çakışma olmasın)
-            line_height = font.get_height() + s(6)
-            content_top = step_bg_rect.bottom + s(12)
-            content_bottom = rect.bottom - (s(74) if self.sub_message else s(20))
-            content_height = max(0, content_bottom - content_top)
-            max_lines = max(1, content_height // line_height)
-            visible_lines = lines[:max_lines]
-            total_h = len(visible_lines) * line_height
-            start_y = content_top + max(0, (content_height - total_h) // 2)
+            font, visible_lines, line_gap, total_h = self._fit_wrapped_text_block(
+                text,
+                base_size=s(20, minimum=12),
+                max_width=content_width,
+                max_height=body_height,
+                bold=True,
+                min_size=max(10, s(12, minimum=10)),
+                max_lines=4,
+            )
+            line_height = font.get_height() + line_gap
+            start_y = body_top + max(0, (body_height - total_h) // 2)
             for i, line in enumerate(visible_lines):
                 line_surf = font.render(line, True, color)
-                line_rect = line_surf.get_rect(center=(rect.centerx, start_y + i * line_height))
+                line_rect = line_surf.get_rect(center=(rect.centerx, start_y + i * line_height + font.get_height() // 2))
                 self.screen.blit(line_surf, line_rect)
         
         # Sub-message ve ilerleme çubuğu (alt kısım) - daha büyük font
-        if not self.in_transition and self.sub_message:
-            sub_font = retro_style.get_font(s(16, minimum=11))
-            sub_surf = sub_font.render(self.sub_message, True, (180, 180, 180))
-            sub_rect = sub_surf.get_rect(center=(rect.centerx, rect.bottom - s(55)))
-            self.screen.blit(sub_surf, sub_rect)
+        if not self.in_transition and sub_lines:
+            draw_y = sub_top
+            for i, line in enumerate(sub_lines):
+                sub_surf = sub_font.render(line, True, (180, 180, 180))
+                sub_rect = sub_surf.get_rect(center=(rect.centerx, draw_y + sub_font.get_height() // 2))
+                self.screen.blit(sub_surf, sub_rect)
+                draw_y += sub_font.get_height() + sub_line_gap
             
             # İlerleme çubuğu (adım 1, 2, 3 için)
-            if self.step in [1, 2, 3]:
+            if progress_rect is not None:
                 progress = 0
                 if self.step == 1:
                     progress = (self.step_move_left_count + self.step_move_right_count) / 6.0
@@ -2313,21 +2592,20 @@ class TutorialMode(Game):
                     progress = self.step_rotate_count / 3.0
                 elif self.step == 3:
                     progress = min(self.soft_drop_counter / self.step_target, 1.0)
-                
-                # Progress bar - daha geniş
-                bar_w = rect.width - s(40)
-                bar_h = s(8)
-                bar_x = rect.centerx - bar_w // 2
-                bar_y = rect.bottom - s(25)
-                
+
                 # Arka plan
-                pygame.draw.rect(self.screen, (50, 50, 50), (bar_x, bar_y, bar_w, bar_h), border_radius=3)
+                pygame.draw.rect(self.screen, (50, 50, 50), progress_rect, border_radius=max(3, bar_h // 2))
                 
                 # İlerleme
                 if progress > 0:
-                    progress_w = int(bar_w * progress)
+                    progress_w = int(progress_rect.width * progress)
                     progress_color = (50, 255, 50) if progress >= 1.0 else (100, 200, 255)
-                    pygame.draw.rect(self.screen, progress_color, (bar_x, bar_y, progress_w, bar_h), border_radius=3)
+                    pygame.draw.rect(
+                        self.screen,
+                        progress_color,
+                        (progress_rect.x, progress_rect.y, progress_w, progress_rect.height),
+                        border_radius=max(3, bar_h // 2),
+                    )
 
         if not self.in_transition and self.tip_message:
             self._draw_tutorial_tip_panel(rect)
@@ -2343,24 +2621,27 @@ class TutorialMode(Game):
         _, active_height = self._active_ui_size()
         ui_scale = self._tutorial_modal_scale(min_scale=0.70, max_scale=1.18)
         s = lambda v, minimum=1: self._sx(v, ui_scale, minimum)
-
-        objectives = self._get_board_lesson_objectives()
-        has_objectives = bool(objectives)
-        tip_width = main_rect.width
-        tip_gap = s(10)
-
-        text_font = retro_style.get_font(s(15, minimum=11))
-        max_text_width = tip_width - s(24)
-        lines = self._wrap_text(self.tip_message, text_font, max_text_width, max_lines=3)
-        line_height = text_font.get_height() + s(5)
-        tip_content_h = len(lines) * line_height
-        tip_height = s(28) + tip_content_h + s(10)
-
-        obj_height = 0
-        if has_objectives:
-            obj_height = s(30) + len(objectives[:3]) * (s(18) + s(7)) + s(10)
-
-        stack_height = tip_height + (obj_height + tip_gap if has_objectives else 0)
+        support_layout = self._build_tutorial_support_layout(main_rect, ui_scale)
+        objectives = support_layout['objectives']
+        has_objectives = support_layout['has_objectives']
+        tip_width = support_layout['tip_width']
+        tip_gap = support_layout['tip_gap']
+        panel_pad_x = support_layout['panel_pad_x']
+        panel_pad_y = support_layout['panel_pad_y']
+        title_gap = support_layout['title_gap']
+        tip_title_font = support_layout['tip_title_font']
+        text_font = support_layout['text_font']
+        lines = support_layout['lines']
+        text_line_gap = support_layout['text_line_gap']
+        tip_height = support_layout['tip_height']
+        obj_height = support_layout['obj_height']
+        objective_blocks = support_layout['objective_blocks']
+        obj_title_font = support_layout['obj_title_font']
+        objective_title_gap = support_layout['objective_title_gap']
+        objective_item_gap = support_layout['objective_item_gap']
+        objective_text_x = support_layout['objective_text_x']
+        bullet_radius = support_layout['bullet_radius']
+        stack_height = support_layout['stack_height']
         place_below = main_rect.bottom + tip_gap + stack_height <= active_height - s(10)
 
         # ── Hedef paneli (varsa) ──
@@ -2376,20 +2657,23 @@ class TutorialMode(Game):
             obj_rect = pygame.Rect(main_rect.x, obj_y, tip_width, obj_height)
             retro_style.draw_glass_panel(self.screen, obj_rect, alpha=220, border_color=(80, 220, 140))
 
-            obj_title_font = retro_style.get_font(s(15, minimum=11), bold=True)
             obj_title_surf = obj_title_font.render(t('tutorial_targets_title', default='HEDEFLER'), True, (110, 240, 170))
-            self.screen.blit(obj_title_surf, obj_title_surf.get_rect(midtop=(obj_rect.centerx, obj_rect.y + s(8))))
+            self.screen.blit(obj_title_surf, obj_title_surf.get_rect(midtop=(obj_rect.centerx, obj_rect.y + panel_pad_y)))
 
-            objective_font = retro_style.get_font(s(15, minimum=11))
-            objective_y = obj_rect.y + s(30)
-            bullet_x = obj_rect.x + s(16)
-            text_x = obj_rect.x + s(28)
-            for objective in objectives[:3]:
-                center_y = objective_y + objective_font.get_height() // 2
-                pygame.draw.circle(self.screen, (110, 240, 170), (bullet_x, center_y), max(2, s(4)))
-                objective_surf = objective_font.render(str(objective.get('text') or ''), True, (225, 232, 240))
-                self.screen.blit(objective_surf, (text_x, objective_y))
-                objective_y += objective_font.get_height() + s(7)
+            objective_y = obj_rect.y + panel_pad_y + obj_title_font.get_height() + objective_title_gap
+            bullet_x = obj_rect.x + panel_pad_x + bullet_radius
+            text_x = obj_rect.x + objective_text_x
+            for block in objective_blocks:
+                if not block['lines']:
+                    continue
+                center_y = objective_y + block['font'].get_height() // 2
+                pygame.draw.circle(self.screen, (110, 240, 170), (bullet_x, center_y), bullet_radius)
+                line_y = objective_y
+                for line in block['lines']:
+                    objective_surf = block['font'].render(line, True, (225, 232, 240))
+                    self.screen.blit(objective_surf, (text_x, line_y))
+                    line_y += block['font'].get_height() + block['line_gap']
+                objective_y += block['height'] + objective_item_gap
         else:
             tip_y = main_rect.bottom + tip_gap if place_below else max(s(10), main_rect.y - tip_gap - tip_height)
 
@@ -2397,15 +2681,14 @@ class TutorialMode(Game):
         tip_rect = pygame.Rect(main_rect.x, tip_y, tip_width, tip_height)
         retro_style.draw_glass_panel(self.screen, tip_rect, alpha=200, border_color=(100, 160, 220))
 
-        info_font = retro_style.get_font(s(15, minimum=11), bold=True)
-        tip_label_surf = info_font.render(t('tutorial_tip_title', default='İPUCU'), True, (140, 190, 240))
-        self.screen.blit(tip_label_surf, tip_label_surf.get_rect(midtop=(tip_rect.centerx, tip_rect.y + s(7))))
+        tip_label_surf = tip_title_font.render(t('tutorial_tip_title', default='İPUCU'), True, (140, 190, 240))
+        self.screen.blit(tip_label_surf, tip_label_surf.get_rect(midtop=(tip_rect.centerx, tip_rect.y + panel_pad_y)))
 
         text_color = (215, 225, 238)
-        content_start_y = tip_rect.y + s(28)
+        content_start_y = tip_rect.y + panel_pad_y + tip_title_font.get_height() + title_gap
         for i, line in enumerate(lines):
             line_surf = text_font.render(line, True, text_color)
-            line_rect = line_surf.get_rect(center=(tip_rect.centerx, content_start_y + i * line_height))
+            line_rect = line_surf.get_rect(center=(tip_rect.centerx, content_start_y + i * (text_font.get_height() + text_line_gap) + text_font.get_height() // 2))
             self.screen.blit(line_surf, line_rect)
             
     def _draw_mini_success_effects(self):
@@ -2968,6 +3251,10 @@ class TutorialMode(Game):
             state='hover' if start_hover else 'normal',
         )
 
+    def _tutorial_card_overlay_header_title(self) -> str:
+        raw_title = self._lesson_title() or t('tutorial_card_context_title', default='Ders bağlamı')
+        return str(raw_title or t('tutorial_card_context_title', default='Ders bağlamı')).strip()
+
     def _draw_card_choice_overlay(self):
         if not isinstance(self.card_choice_state, dict):
             return
@@ -2998,8 +3285,6 @@ class TutorialMode(Game):
             forced_hover_index = None
             if not mouse_over_card:
                 forced_hover_index = int(self.card_choice_state.get('selected_index', 0) or 0)
-            raw_title = self._lesson_title() or t('tutorial_card_context_title', default='Ders bağlamı')
-            centered_title = f"❗  {raw_title}  ❗"
             self.card_ui.draw_selection_overlay(
                 self.screen,
                 active_width,
@@ -3011,7 +3296,7 @@ class TutorialMode(Game):
                 forced_hover_index=forced_hover_index,
                 show_secondary_actions=False,
                 show_peek_button=True,
-                header_title=centered_title,
+                header_title=self._tutorial_card_overlay_header_title(),
                 header_lines=header_lines,
                 center_header=True,
             )
@@ -3032,8 +3317,7 @@ class TutorialMode(Game):
 
         title_font = retro_style.get_font(s(16, minimum=11), bold=True)
         body_font = retro_style.get_font(s(14, minimum=10))
-        raw_title = t('tutorial_card_context_title', default='Ders bağlamı')
-        title_text = f"❗  {raw_title}  ❗"
+        title_text = self._tutorial_card_overlay_header_title()
         title_surface = title_font.render(title_text, True, (255, 220, 150))
         self.screen.blit(title_surface, title_surface.get_rect(centerx=context_rect.centerx, top=context_rect.y + s(12)))
 

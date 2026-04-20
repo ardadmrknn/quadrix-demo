@@ -242,6 +242,40 @@ def test_tutorial_tip_panel_shifted_above_does_not_overlap_main_rect(monkeypatch
     assert not rects[0].colliderect(rects[1])
 
 
+def test_tutorial_overlay_shifts_up_to_preserve_support_block_positions(monkeypatch):
+    captured_rects = _install_tutorial_draw_stubs(monkeypatch)
+
+    tutorial = _build_tutorial((800, 768), window_size=(1366, 768))
+    tutorial.lesson_catalog = [{'id': 'lesson-1'}]
+    tutorial._lesson_index = lambda: 1
+    tutorial.lesson_result_active = False
+    tutorial.next_lesson_id = 'lesson-2'
+    tutorial.in_transition = False
+    tutorial.overlay_message = 'Genis boslugu kapat'
+    tutorial.sub_message = 'Hedef: Iki satiri ayni anda temizle.'
+    tutorial.tip_message = 'Genis bosluklari okuyup dogru parcayi secmek kart modundaki kararlarin temelidir.'
+    tutorial._get_board_lesson_objectives = lambda: [
+        {'text': '2 satiri temizle'},
+        {'text': 'Yeni delik olusturma'},
+        {'text': 'Ideal yuksekligi artirma'},
+    ]
+    tutorial.step = 4
+    tutorial.step_move_left_count = 0
+    tutorial.step_move_right_count = 0
+    tutorial.step_rotate_count = 0
+    tutorial.soft_drop_counter = 0
+    tutorial.step_target = 1
+    tutorial.get_board_offset = lambda: (420, 315)
+
+    tutorial._draw_tutorial_overlay()
+
+    assert len(captured_rects) >= 3
+    overlay_rect, obj_rect, tip_rect = captured_rects[-3:]
+    _assert_rects_within_surface([overlay_rect, obj_rect, tip_rect], size=(800, 768))
+    assert obj_rect.top >= overlay_rect.bottom
+    assert tip_rect.top >= obj_rect.bottom
+
+
 def test_tutorial_hub_live_draw_rects_stay_within_active_canvas(monkeypatch):
     captured_rects = _install_tutorial_draw_stubs(monkeypatch)
 
@@ -305,6 +339,43 @@ def test_tutorial_card_choice_overlay_fallback_live_draw_uses_active_canvas(monk
 
     assert len(captured_rects) >= 3
     _assert_rects_within_surface(captured_rects)
+
+
+def test_tutorial_card_choice_overlay_uses_plain_header_title(monkeypatch):
+    recorded = {}
+
+    class CardUIStub:
+        card_rects = []
+
+        def draw_selection_overlay(self, screen, width, height, fonts, choices, hint, debug_enabled, **kwargs):
+            recorded['header_title'] = kwargs.get('header_title')
+            recorded['center_header'] = kwargs.get('center_header')
+            recorded['width'] = width
+            recorded['height'] = height
+
+    tutorial = _build_tutorial((800, 600), window_size=(1366, 768))
+    tutorial.card_ui = CardUIStub()
+    tutorial.card_choice_state = {
+        'scenario': {
+            'context_lines': ['Durumu incele', 'En iyi uzun vadeli karti sec'],
+            'choices': [
+                {'title': 'Kart A', 'description': 'Tetikleme aciklamasi'},
+                {'title': 'Kart B', 'description': 'Dengeleyici etki'},
+            ],
+        },
+        'selected_index': 0,
+    }
+    tutorial._lesson_title = lambda lesson=None: 'Uzun vadeli deger'
+
+    monkeypatch.setattr(tutorial_module.pygame.mouse, 'get_focused', lambda: False)
+
+    tutorial._draw_card_choice_overlay()
+
+    assert recorded['header_title'] == 'Uzun vadeli deger'
+    assert '❗' not in recorded['header_title']
+    assert recorded['center_header'] is True
+    assert recorded['width'] == 800
+    assert recorded['height'] == 600
 
 
 def test_tutorial_card_choice_keyboard_is_blocked_while_peek_active(monkeypatch):
