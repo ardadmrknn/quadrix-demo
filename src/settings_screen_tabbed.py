@@ -178,11 +178,6 @@ def _build_tab_content(tab_key: str, sm, show_debug: bool = False) -> list[dict]
             'label_tr': 'Gölge Bloğu', 'label_en': 'Ghost Piece',
         })
         items.append({
-            'type': 'toggle', 'key': 'background_enabled',
-            'loc_key': 'show_background',
-            'label_tr': 'Arka Plan', 'label_en': 'Background',
-        })
-        items.append({
             'type': 'slider', 'key': 'bg_transparency',
             'loc_key': 'bg_transparency',
             'label_tr': 'Arka Plan Şeffaflığı', 'label_en': 'BG Transparency',
@@ -488,7 +483,6 @@ class TabbedSettingsScreen:
         self.music_enabled = self.settings_manager.get('music_enabled', True)
         self.sound_enabled = self.settings_manager.get('sound_enabled', True)
         self.effects_enabled = self.settings_manager.get('effects_enabled', True)
-        self.background_enabled = self.settings_manager.get('background_enabled', True)
         self.menu_music = self.settings_manager.get('menu_music', 'main_1')
         self.game_music = self.settings_manager.get('game_music', 'klasik_1')
         self.mute_all = self.settings_manager.get('mute_all', False)
@@ -865,7 +859,6 @@ class TabbedSettingsScreen:
         self.fps_limit = sm.get('fps_limit', 0)
         self.ui_scale_preset = normalize_ui_scale_preset(sm.get('ui_scale_preset', 'compact'))
         self.show_ghost = sm.get('show_ghost', True)
-        self.background_enabled = sm.get('background_enabled', True)
         self.bg_transparency = sm.get('bg_transparency', 0.3)
         self.effects_opacity = sm.get('effects_opacity', 1.0)
         self.menu_transparency = sm.get('menu_transparency', 1.0)
@@ -1059,7 +1052,6 @@ class TabbedSettingsScreen:
                 'vsync',
                 'fps_limit',
                 'show_ghost',
-                'background_enabled',
                 'bg_transparency',
                 'effects_opacity',
                 'menu_transparency',
@@ -2168,7 +2160,6 @@ class TabbedSettingsScreen:
             'sound_enabled': 'toggle_sound',
             'mute_all': 'toggle_mute',
             'show_ghost': None,
-            'background_enabled': 'toggle_background_enabled',
             'particle_effects': None,
             'debug_mode': 'toggle_debug',
             'card_mode_debug': 'toggle_card_mode_debug',
@@ -2182,8 +2173,6 @@ class TabbedSettingsScreen:
             self.sound_enabled = new_val
         elif key == 'mute_all':
             self.mute_all = new_val
-        elif key == 'background_enabled':
-            self.background_enabled = new_val
         elif key == 'debug_mode':
             self.debug_mode = new_val
         elif key == 'card_mode_debug':

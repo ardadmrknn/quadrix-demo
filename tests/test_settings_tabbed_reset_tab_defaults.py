@@ -118,7 +118,6 @@ class _FakeSettingsManager:
             "fps_limit": 0,
             "ui_scale_preset": "normal",
             "show_ghost": True,
-            "background_enabled": True,
             "bg_transparency": 0.3,
             "effects_opacity": 1.0,
             "menu_transparency": 1.0,

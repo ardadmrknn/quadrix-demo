@@ -16,7 +16,7 @@ for k in tabs:
 
 print("\n=== SETTINGS ITEMS ===")
 items = ['language', 'fullscreen', 'windowed', 'resolution', 'automatic',
-         'show_fps', 'show_ghost', 'show_background', 'bg_transparency',
+         'show_fps', 'show_ghost', 'bg_transparency',
          'music', 'music_volume', 'menu_music_volume', 'music_shuffle',
          'sound_effects', 'sfx_volume', 'mute_all', 'on', 'off',
          'panel_settings', 'window_mode', 'track_count_unit',

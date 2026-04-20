@@ -4,8 +4,12 @@ import sys, os, types
 # pygame stub
 _pg = types.ModuleType('pygame')
 _pg.K_a = 97; _pg.K_d = 100; _pg.K_w = 119; _pg.K_s = 115
+_pg.K_b = 98; _pg.K_c = 99; _pg.K_e = 101; _pg.K_g = 103; _pg.K_h = 104
+_pg.K_m = 109; _pg.K_n = 110; _pg.K_p = 112; _pg.K_q = 113; _pg.K_r = 114
+_pg.K_t = 116; _pg.K_u = 117; _pg.K_v = 118
 _pg.K_LEFT = 276; _pg.K_RIGHT = 275; _pg.K_UP = 273; _pg.K_DOWN = 274
-_pg.K_SPACE = 32; _pg.K_LSHIFT = 304; _pg.K_RSHIFT = 303; _pg.K_ESCAPE = 27; _pg.K_RETURN = 13; _pg.K_KP_ENTER = 271; _pg.K_BACKSPACE = 8; _pg.K_p = 112; _pg.K_e = 101
+_pg.K_LEFTBRACKET = 91; _pg.K_RIGHTBRACKET = 93
+_pg.K_SPACE = 32; _pg.K_LSHIFT = 304; _pg.K_RSHIFT = 303; _pg.K_ESCAPE = 27; _pg.K_RETURN = 13; _pg.K_KP_ENTER = 271; _pg.K_BACKSPACE = 8
 _pg.QUIT = 256; _pg.KEYDOWN = 768; _pg.KEYUP = 769; _pg.VIDEORESIZE = 65281; _pg.MOUSEMOTION = 1024; _pg.MOUSEBUTTONDOWN = 1025; _pg.MOUSEBUTTONUP = 1026; _pg.MOUSEWHEEL = 1027; _pg.SRCALPHA = 65536
 _pg.init = lambda: None; _pg.get_init = lambda: True
 class _Key:
@@ -116,6 +120,8 @@ _STUB_MODULES = (
     'renderers.jelly_renderer',
     'themes',
     'block_styles',
+    'gamepad_manager',
+    'promptfont_support',
     'platform_utils',
     'localization',
     'ui_theme',
@@ -168,6 +174,18 @@ _pu.create_display = lambda *a, **kw: _Surf()
 _pu.normalize_mouse_pos = lambda pos: pos
 _pu.get_mouse_pos = lambda: (0,0)
 _pu.set_app_icon = lambda: None
+_pu.IS_WINDOWS = False
+
+# gamepad_manager
+import gamepad_manager as _gm
+_gm.is_gamepad_connected = lambda: False
+_gm.normalize_gamepad_event_button = lambda event: None
+_gm.get_gamepad_manager = lambda: types.SimpleNamespace(rumble=lambda *a, **kw: None)
+
+# promptfont_support
+import promptfont_support as _pfs
+_pfs.render_action_prompt_surface = lambda *a, **kw: None
+_pfs.render_button_index_prompt_surface = lambda *a, **kw: None
 
 # sound
 import sound as _snd
@@ -230,7 +248,6 @@ class _RS:
     bg_color = (8, 12, 28); bg_secondary = (12, 18, 38)
     _menu_transparency = 1.0
     _bg_transparency = 0.3
-    _background_enabled = True
     def get_font(self, *a, **kw): return _FakeFont()
     def get_fitting_font(self, *a, **kw): return _FakeFont()
     def get_mono_font(self, *a, **kw): return _FakeFont()
@@ -241,7 +258,6 @@ class _RS:
     def _scale_menu_alpha(self, a): return a
     def set_menu_transparency(self, value): self._menu_transparency = float(value)
     def set_background_transparency(self, value): self._bg_transparency = float(value)
-    def set_background_enabled(self, enabled): self._background_enabled = bool(enabled)
 _rs.retro_style = _RS()
 
 # themes
@@ -566,7 +582,6 @@ def test_coop_ambient_particles_use_neutral_star_palette_like_other_modes():
 
 def test_coop_sync_runtime_settings_updates_retro_style_transparency_state():
     settings = _FakeSettings(values={
-        'background_enabled': False,
         'bg_transparency': 0.4,
         'menu_transparency': 0.6,
     })
@@ -579,7 +594,6 @@ def test_coop_sync_runtime_settings_updates_retro_style_transparency_state():
         sound_manager=_SM(),
     )
 
-    assert _rs.retro_style._background_enabled is False
     assert _rs.retro_style._bg_transparency == 0.4
     assert _rs.retro_style._menu_transparency == 0.6
 

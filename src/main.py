@@ -1349,11 +1349,6 @@ def main():
     except Exception:
         pass
 
-    try:
-        retro_style.set_background_enabled(settings_manager.get('background_enabled', True))
-    except Exception:
-        pass
-    
     # Müzik için SoundManager
     from sound import SoundManager
     menu_sound = SoundManager()
@@ -2350,26 +2345,17 @@ def main():
                         pass
 
                 if reset_tab == 'display':
-                    enabled = True
-                    try:
-                        enabled = bool(settings_manager.get('background_enabled', True))
-                    except Exception:
-                        enabled = True
-                    try:
-                        retro_style.set_background_enabled(enabled)
-                    except Exception:
-                        pass
                     if game:
                         try:
-                            game.background_manager.enabled = enabled
-                            game.single_background.enabled = enabled
-                            game.outer_background.enabled = enabled
+                            game.background_manager.enabled = True
+                            game.single_background.enabled = True
+                            game.outer_background.enabled = True
                         except Exception:
                             pass
                     if pvp_game:
                         try:
-                            pvp_game.board_background.enabled = enabled
-                            pvp_game.outer_background.enabled = enabled
+                            pvp_game.board_background.enabled = True
+                            pvp_game.outer_background.enabled = True
                         except Exception:
                             pass
 
@@ -2475,30 +2461,6 @@ def main():
                 except Exception:
                     pass
                 print("🔇 Sessiz mod: AÇIK" if settings_screen.mute_all else "🔊 Sessiz mod: KAPALI")
-            elif action == 'toggle_background' or action == 'toggle_background_enabled':
-                # Arka plan ayarı değişti
-                enabled = True
-                try:
-                    enabled = bool(settings_manager.get('background_enabled', True))
-                except Exception:
-                    enabled = True
-                try:
-                    retro_style.set_background_enabled(enabled)
-                except Exception:
-                    pass
-                if game:
-                    try:
-                        game.background_manager.enabled = enabled
-                        game.single_background.enabled = enabled
-                        game.outer_background.enabled = enabled
-                    except Exception:
-                        pass
-                if pvp_game:
-                    try:
-                        pvp_game.board_background.enabled = enabled
-                        pvp_game.outer_background.enabled = enabled
-                    except Exception:
-                        pass
             elif action == 'change_menu_music':
                 # Ana Sayfa Müziği değişti
                 if settings_screen.music_enabled and not settings_screen.mute_all and state == 'settings':

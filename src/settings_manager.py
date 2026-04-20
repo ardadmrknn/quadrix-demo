@@ -159,6 +159,7 @@ OBSOLETE_SETTINGS_KEYS = {
     'borderless_fullscreen',
     'resolution',
     'show_fps',
+    'background_enabled',
 }
 
 FORCED_UI_SCALE_PRESET = 'compact'
@@ -206,7 +207,6 @@ class SettingsManager:
             'menu_music_volume': 0.3,  # Ana menü müzik ses seviyesi (0.0 - 1.0)
             'sfx_volume': 0.5,    # Efekt ses seviyesi (0.0 - 1.0)
             'effects_enabled': True,
-            'background_enabled': True,
             # Yerleşik (8-bit/sentez) müzikler kaldırıldı: varsayılanlar music/ klasöründeki dosyalardır.
             'menu_music': DEFAULT_MENU_MUSIC_PLAYLIST[0],
             'game_music': DEFAULT_GAME_MUSIC_PLAYLIST[0],

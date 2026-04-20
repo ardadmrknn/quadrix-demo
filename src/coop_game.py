@@ -588,10 +588,6 @@ class CoopGame:
                 pass
 
         try:
-            background_enabled = bool(settings_manager.get('background_enabled', True))
-        except Exception:
-            background_enabled = True
-        try:
             bg_transparency = float(settings_manager.get('bg_transparency', 0.3))
         except Exception:
             bg_transparency = None
@@ -600,10 +596,6 @@ class CoopGame:
         except Exception:
             menu_transparency = None
 
-        try:
-            retro_style.set_background_enabled(background_enabled)
-        except Exception:
-            pass
         if bg_transparency is not None:
             try:
                 retro_style.set_background_transparency(bg_transparency)
@@ -621,7 +613,7 @@ class CoopGame:
                 continue
             if hasattr(background, 'enabled'):
                 try:
-                    background.enabled = background_enabled
+                    background.enabled = True
                 except Exception:
                     pass
         if bg_transparency is not None:

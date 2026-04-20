@@ -8690,7 +8690,6 @@ class BackgroundSelectorScreen:
         self.background_fx = get_shared_falling_blocks_layer('default')
         
         self.options = [
-            'bg_show',
             'bg_transparency',
             'bg_main',
             'bg_single',
@@ -8704,7 +8703,6 @@ class BackgroundSelectorScreen:
         self.option_rects = []
         
         # Arka plan ayarlarını yükle
-        self.background_enabled = settings_manager.get('background_enabled', True)
         self.transparency = settings_manager.get('bg_transparency', 0.3)  # 0.25, 0.5, 0.75, 1.0
         self.backgrounds = {
             'main': settings_manager.get('bg_main', None),
@@ -8726,7 +8724,7 @@ class BackgroundSelectorScreen:
         self._value_cache = {}
 
         # For item mapping
-        self._bg_keys = [None, None, 'main', 'single', 'outer', 'pvp_main', 'pvp_board', 'wide', None]
+        self._bg_keys = [None, 'main', 'single', 'outer', 'pvp_main', 'pvp_board', 'wide', None]
     
     def invalidate_cache(self):
         """Cache'i temizle (ekran boyutu değiştiğinde kullan)"""
@@ -8741,13 +8739,6 @@ class BackgroundSelectorScreen:
         if not self.settings_manager:
             return
         changed = False
-        try:
-            enabled = bool(self.settings_manager.get('background_enabled', True))
-            if enabled != self.background_enabled:
-                self.background_enabled = enabled
-                changed = True
-        except Exception:
-            pass
 
         try:
             trans = float(self.settings_manager.get('bg_transparency', 0.3))
@@ -8806,7 +8797,7 @@ class BackgroundSelectorScreen:
 
     def _compute_value_cache_key(self):
         bgs = tuple((k, self.backgrounds.get(k)) for k in ('main', 'single', 'outer', 'pvp_main', 'pvp_board', 'wide'))
-        return (bool(self.background_enabled), float(self.transparency), bgs)
+        return (float(self.transparency), bgs)
 
     def _get_option_display(self, i: int):
         key = self._compute_value_cache_key()
@@ -8822,14 +8813,10 @@ class BackgroundSelectorScreen:
         color_code = 'graphics'
 
         if i == 0:
-            sub_text = t('on') if self.background_enabled else t('off')
-            checked = bool(self.background_enabled)
-            color_code = 'toggle'
-        elif i == 1:
             trans_percent = int(round(float(self.transparency) * 100))
             sub_text = f'< %{trans_percent} >'
             color_code = 'selector'
-        elif i < 8 and self._bg_keys[i]:
+        elif i < 7 and self._bg_keys[i]:
             bg_key = self._bg_keys[i]
             bg_path = self.backgrounds.get(bg_key)
             if bg_path and os.path.exists(bg_path):
@@ -8875,7 +8862,7 @@ class BackgroundSelectorScreen:
                 self.selected = (self.selected + 1) % len(self.options)
             elif event.key == pygame.K_LEFT or event.key == pygame.K_RIGHT:
                 # Transparanlık ayarı için ok tuşları
-                if self.selected == 1:
+                if self.selected == 0:
                     transparency_values = [0.25, 0.5, 0.75, 1.0]
                     current_idx = transparency_values.index(self.transparency) if self.transparency in transparency_values else 1
                     if event.key == pygame.K_RIGHT:
@@ -8886,52 +8873,47 @@ class BackgroundSelectorScreen:
                     self.settings_manager.set('bg_transparency', self.transparency)
                     return 'change_transparency'
             elif event.key == pygame.K_RETURN:
-                if self.selected == 0:
-                    # Arka Plan Göster toggle
-                    self.background_enabled = not self.background_enabled
-                    self.settings_manager.set('background_enabled', self.background_enabled)
-                    return 'toggle_background'
-                elif self.selected == 2:
+                if self.selected == 1:
                     return 'select_bg_main'
-                elif self.selected == 3:
+                elif self.selected == 2:
                     return 'select_bg_single'
-                elif self.selected == 4:
+                elif self.selected == 3:
                     return 'select_bg_outer'
-                elif self.selected == 5:
+                elif self.selected == 4:
                     return 'select_bg_pvp_main'
-                elif self.selected == 6:
+                elif self.selected == 5:
                     return 'select_bg_pvp_board'
-                elif self.selected == 7:
+                elif self.selected == 6:
                     return 'select_bg_wide'
-                elif self.selected == 8:
+                elif self.selected == 7:
                     return 'back'
             elif event.key == pygame.K_ESCAPE:
                 return 'back'
             elif is_fullscreen_toggle(event.key, getattr(event, 'mod', 0)):
                 return 'toggle_fullscreen'
             elif event.key == pygame.K_DELETE:
-                # Seçili arka planı sil (ilk 2 seçenek hariç)
-                if self.selected == 2:
+                # Seçili arka planı sil (ilk seçenek hariç)
+                if self.selected == 1:
                     self.backgrounds['main'] = None
                     self.settings_manager.set('bg_main', None)
                     print("🗑️ Ana arka plan silindi")
-                elif self.selected == 3:
+                elif self.selected == 2:
                     self.backgrounds['single'] = None
                     self.settings_manager.set('bg_single', None)
                     print("🗑️ Tek oyuncu arka planı silindi")
-                elif self.selected == 4:
+                elif self.selected == 3:
                     self.backgrounds['outer'] = None
                     self.settings_manager.set('bg_outer', None)
                     print("🗑️ Dış alan arka planı silindi")
-                elif self.selected == 5:
+                elif self.selected == 4:
                     self.backgrounds['pvp_main'] = None
                     self.settings_manager.set('bg_pvp_main', None)
                     print("🗑️ PvP ana arka plan silindi")
-                elif self.selected == 6:
+                elif self.selected == 5:
                     self.backgrounds['pvp_board'] = None
                     self.settings_manager.set('bg_pvp_board', None)
                     print("🗑️ PvP oyun alanı arka planı silindi")
-                elif self.selected == 7:
+                elif self.selected == 6:
                     self.backgrounds['wide'] = None
                     self.settings_manager.set('bg_wide', None)
                     print("🗑️ Geniş mod arka planı silindi")
@@ -8948,24 +8930,19 @@ class BackgroundSelectorScreen:
                 mouse_pos = normalize_mouse_pos(getattr(event, 'pos', None)) or event.pos
                 for i, rect in enumerate(self.option_rects):
                     if rect.collidepoint(mouse_pos):
-                        if i == 0:
-                            # Toggle background enabled
-                            self.background_enabled = not self.background_enabled
-                            self.settings_manager.set('background_enabled', self.background_enabled)
-                            return 'toggle_background'
-                        elif i == 2:
+                        if i == 1:
                             return 'select_bg_main'
-                        elif i == 3:
+                        elif i == 2:
                             return 'select_bg_single'
-                        elif i == 4:
+                        elif i == 3:
                             return 'select_bg_outer'
-                        elif i == 5:
+                        elif i == 4:
                             return 'select_bg_pvp_main'
-                        elif i == 6:
+                        elif i == 5:
                             return 'select_bg_pvp_board'
-                        elif i == 7:
+                        elif i == 6:
                             return 'select_bg_wide'
-                        elif i == 8:
+                        elif i == 7:
                             return 'back'
         
         return None
@@ -10797,7 +10774,6 @@ class SettingsScreen:
         self.sfx_volume = settings_manager.get('sfx_volume', 0.5)
         self.mute_all = settings_manager.get('mute_all', False)
         self.effects_enabled = settings_manager.get('effects_enabled', True)
-        self.background_enabled = settings_manager.get('background_enabled', True)
         self.custom_background = settings_manager.get('custom_background', None)
         self.menu_music = settings_manager.get('menu_music', 'main_1')
         self.game_music = settings_manager.get('game_music', 'klasik_1')
@@ -11048,7 +11024,6 @@ class SettingsScreen:
 
         # Diğer sık kullanılan ayarlar
         self.effects_enabled = self.settings_manager.get('effects_enabled', self.effects_enabled)
-        self.background_enabled = self.settings_manager.get('background_enabled', self.background_enabled)
         self.menu_music = self.settings_manager.get('menu_music', self.menu_music)
         self.game_music = self.settings_manager.get('game_music', self.game_music)
         self.debug_mode = self.settings_manager.get('debug_mode', self.debug_mode)

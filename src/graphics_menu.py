@@ -27,7 +27,6 @@ class GraphicsMenu:
             'vsync',
             'fps_limit',
             'show_ghost',
-            'show_background',
             'bg_transparency',
             'effects_opacity',
             'menu_transparency',
@@ -41,7 +40,6 @@ class GraphicsMenu:
         self.vsync = settings_manager.get('vsync', True)
         self.fps_limit = settings_manager.get('fps_limit', 0)  # 0 = otomatik ekran yenileme hızı
         self.show_ghost = settings_manager.get('show_ghost', True)
-        self.background_enabled = settings_manager.get('background_enabled', True)
         self.bg_transparency = settings_manager.get('bg_transparency', 0.3)
         self.effects_opacity = settings_manager.get('effects_opacity', 1.0)
         self.menu_transparency = settings_manager.get('menu_transparency', 1.0)
@@ -317,11 +315,7 @@ class GraphicsMenu:
         elif self.selected == 2:  # Gölge Göster
             self.show_ghost = not self.show_ghost
             self.settings_manager.set('show_ghost', self.show_ghost)
-        elif self.selected == 3:  # Arka Plan Göster
-            self.background_enabled = not self.background_enabled
-            self.settings_manager.set('background_enabled', self.background_enabled)
-            return 'toggle_background_enabled'
-        elif self.selected == 7:  # Parçacık Efektleri
+        elif self.selected == 6:  # Parçacık Efektleri
             self._cycle_particle_effects(True)
 
         return None
@@ -341,7 +335,7 @@ class GraphicsMenu:
             self.fps_limit = int(self.fps_limits[idx])
             self.settings_manager.set('fps_limit', self.fps_limit)
         
-        elif self.selected == 4:  # Arka Plan Şeffaflığı
+        elif self.selected == 3:  # Arka Plan Şeffaflığı
             if increase:
                 self.bg_transparency = min(1.0, float(self.bg_transparency) + 0.1)
             else:
@@ -349,7 +343,7 @@ class GraphicsMenu:
             self.settings_manager.set('bg_transparency', round(self.bg_transparency, 1))
             return 'change_bg_transparency'
 
-        elif self.selected == 5:  # Efekt Şeffaflığı
+        elif self.selected == 4:  # Efekt Şeffaflığı
             if increase:
                 self.effects_opacity = min(1.0, float(self.effects_opacity) + 0.1)
             else:
@@ -357,7 +351,7 @@ class GraphicsMenu:
             self.settings_manager.set('effects_opacity', round(self.effects_opacity, 1))
             return 'change_effects_opacity'
 
-        elif self.selected == 6:  # Menü Şeffaflığı
+        elif self.selected == 5:  # Menü Şeffaflığı
             if increase:
                 self.menu_transparency = min(1.0, float(self.menu_transparency) + 0.1)
             else:
@@ -365,7 +359,7 @@ class GraphicsMenu:
             self.settings_manager.set('menu_transparency', round(self.menu_transparency, 1))
             return 'change_menu_transparency'
 
-        elif self.selected == 7:  # Parçacık Efektleri
+        elif self.selected == 6:  # Parçacık Efektleri
             self._cycle_particle_effects(increase)
 
         return None
@@ -418,10 +412,10 @@ class GraphicsMenu:
                     strip_color=strip_color,
                 )
                 continue
-            elif i in (0, 2, 3):  # Toggle seçenekler
+            elif i in (0, 2):  # Toggle seçenekler
                 kind = 'toggle'
                 strip_color = (112, 160, 255)  # mavi
-            elif i in (1, 4, 5, 6):  # Selector seçenekler (fps limit, şeffaflık, particle)
+            elif i in (1, 3, 4, 5, 6):  # Selector seçenekler (fps limit, şeffaflık, particle)
                 kind = 'selector'
                 strip_color = (100, 220, 150)  # yeşil
             else:
@@ -527,17 +521,15 @@ class GraphicsMenu:
             return t('automatic') if limit <= 0 else f'{limit}'
         elif index == 2:  # Gölge Göster
             return t('on') if self.show_ghost else t('off')
-        elif index == 3:  # Arka Plan Göster
-            return t('on') if self.background_enabled else t('off')
-        elif index == 4:  # Arka Plan Şeffaflığı
+        elif index == 3:  # Arka Plan Şeffaflığı
             return f'{int(self.bg_transparency * 100)}%'
-        elif index == 5:  # Efekt Şeffaflığı
+        elif index == 4:  # Efekt Şeffaflığı
             return f'{int(self.effects_opacity * 100)}%'
-        elif index == 6:  # Menü Şeffaflığı
+        elif index == 5:  # Menü Şeffaflığı
             return f'{int(self.menu_transparency * 100)}%'
-        elif index == 7:  # Parçacık Efektleri
+        elif index == 6:  # Parçacık Efektleri
             return self._particle_effects_label()
-        elif index == 8:  # Geri
+        elif index == 7:  # Geri
             return ''
         return ''
 

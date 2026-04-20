@@ -344,13 +344,6 @@ class RetroStyle:
         # Animasyon zamanı
         self._time = 0
 
-    def set_background_enabled(self, enabled: bool) -> None:
-        """Menü/ekran arka plan görselini aç/kapat."""
-        try:
-            self._image_background.enabled = bool(enabled)
-        except Exception:
-            pass
-
     def update_time(self, dt_ms: float) -> None:
         """Animasyon zamanını güncelle"""
         self._time += dt_ms / 1000.0

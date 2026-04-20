@@ -109,10 +109,8 @@ class CampaignLevelSelect:
         # Arka plan efekti (akan tetromino blokları)
         self.background_fx = get_shared_falling_blocks_layer('default')
         self.effects_enabled = True
-        self.background_enabled = True
         if self.settings_manager:
             self.effects_enabled = self.settings_manager.get('effects_enabled', True)
-            self.background_enabled = self.settings_manager.get('background_enabled', True)
         
         # UI Elemanları
         self.level_buttons: List[Tuple[pygame.Rect, int]] = []
@@ -446,7 +444,7 @@ class CampaignLevelSelect:
                     pygame.draw.line(self.screen, (r, g, b), (0, y), (width, y))
 
         # Akan tetromino arka plan efekti (menü ile aynı)
-        if self.background_fx and self.effects_enabled and self.background_enabled:
+        if self.background_fx and self.effects_enabled:
             self.background_fx.update(self.screen)
             self.background_fx.draw(self.screen)
     
