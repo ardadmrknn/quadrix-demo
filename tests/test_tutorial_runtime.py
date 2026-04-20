@@ -48,6 +48,28 @@ class TestTutorialRuntime(unittest.TestCase):
         self.assertEqual(started.get('lesson_id'), 'surface_gap_fill')
         self.assertNotIn('hub', started)
 
+    def test_line_clear_setup_removes_extra_right_support_block(self):
+        tutorial = TutorialMode.__new__(TutorialMode)
+        tutorial.board = types.SimpleNamespace(
+            width=10,
+            height=20,
+            grid=[[None for _ in range(10)] for _ in range(20)],
+            occupancy=[[False for _ in range(10)] for _ in range(20)],
+        )
+        tutorial._clear_tutorial_board = lambda: None
+        tutorial._create_named_piece = lambda name: types.SimpleNamespace(name=name, x=0, y=0)
+        tutorial._compute_spawn_y = lambda piece: 0
+        tutorial._skip_hidden_rows = lambda piece: None
+        tutorial.spawn_new_piece = lambda: types.SimpleNamespace(name='I')
+        tutorial.apply_theme_to_pieces = lambda: None
+
+        TutorialMode._setup_line_clear_scenario(tutorial)
+
+        above = tutorial.board.height - 2
+        self.assertFalse(tutorial.board.occupancy[above][8])
+        self.assertTrue(tutorial.board.occupancy[above][9])
+        self.assertEqual(len(tutorial.next_piece_queue), 1)
+
     def test_continue_after_completion_keeps_chapter_scope_at_boundary(self):
         tutorial = TutorialMode.__new__(TutorialMode)
         tutorial.next_lesson_id = None

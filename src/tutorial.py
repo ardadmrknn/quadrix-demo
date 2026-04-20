@@ -1519,7 +1519,7 @@ class TutorialMode(Game):
                 self.board.occupancy[bottom][x] = True
 
         for x in range(self.board.width):
-            if x in (0, 1, 8, 9):
+            if x in (0, 1, 9):
                 self.board.grid[above][x] = color
                 self.board.occupancy[above][x] = True
 

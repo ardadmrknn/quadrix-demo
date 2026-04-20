@@ -1775,11 +1775,11 @@ class PvPGame:
 
                         self.lock_and_new_piece(1)
 
-                            try:
-                                from gamepad_manager import get_gamepad_manager
-                                get_gamepad_manager().rumble(0.3, 0.6, 120)
-                            except Exception:
-                                pass
+                        try:
+                            from gamepad_manager import get_gamepad_manager
+                            get_gamepad_manager().rumble(0.3, 0.6, 120)
+                        except Exception:
+                            pass
 
                     # Hold
                     elif event.key == controls1['hold']:
@@ -1858,11 +1858,11 @@ class PvPGame:
 
                         self.lock_and_new_piece(2)
 
-                            try:
-                                from gamepad_manager import get_gamepad_manager
-                                get_gamepad_manager().rumble(0.3, 0.6, 120)
-                            except Exception:
-                                pass
+                        try:
+                            from gamepad_manager import get_gamepad_manager
+                            get_gamepad_manager().rumble(0.3, 0.6, 120)
+                        except Exception:
+                            pass
 
                     # Hold
                     elif event.key == controls2['hold']:
