@@ -204,6 +204,7 @@ except Exception:
     from pvp_game import PvPGame
     from coop_game import CoopGame
     from online_pvp_game import OnlinePvPGame
+    from online_coop_game import OnlineCoopGame
     from game_modes import SprintMode, UltraMode, ZenMode, HardcoreMode
     from game_modes_extra import Tetris2Mode, MysteryMode, WideMode
     from game_modes_advanced import SurvivalMode, CascadeMode, DailyChallengeMode
@@ -2159,19 +2160,8 @@ def main():
                 )
                 state = 'coop'
             elif action == 'online_coop':
-                if not _run_popup_and_sync_screen(_show_mode_intro_popup, 'online_coop', settings_manager=settings_manager):
-                    continue
                 confirm_exit = False
-                menu_sound.stop_music()
-                _online_coop_game = OnlineCoopGame(
-                    screen=screen,
-                    fullscreen=fullscreen,
-                    user_manager=user_manager,
-                    settings_manager=settings_manager,
-                    sound_manager=menu_sound,
-                )
-                _handle_online_coop._game = _online_coop_game
-                state = 'online_coop'
+                menu.show_info(t('menu_dashboard_sub_store'))
             elif action == 'coop_campaign':
                 confirm_exit = False
                 if coop_level_select is None:
