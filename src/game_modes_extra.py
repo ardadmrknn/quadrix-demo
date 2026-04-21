@@ -4638,13 +4638,19 @@ class MysteryMode(Game):
 
         return retro_style.get_font(size, bold=bold)
 
-    def _build_card_ui_font_pack(self, ui_scale: float | None = None) -> Dict[str, pygame.font.Font]:
+    def _build_card_ui_font_pack(
+        self,
+        ui_scale: float | None = None,
+        *,
+        size_adjust: int = 0,
+    ) -> Dict[str, pygame.font.Font]:
         """Kart Ustalığı UI'si için ortak font paketini üret."""
         if ui_scale is None:
             ui_scale = self._card_ui_scale()
 
         def s(base: int, min_size: int, *, bold: bool = False) -> pygame.font.Font:
-            size = max(min_size, int(round(base * ui_scale)))
+            adjusted_min = max(1, int(min_size) + int(size_adjust))
+            size = max(adjusted_min, int(round(base * ui_scale)) + int(size_adjust))
             return self._make_card_ui_font(size, bold=bold)
 
         return {
@@ -4659,6 +4665,25 @@ class MysteryMode(Game):
             "tag": s(20, 11),
             "desc": s(22, 11),
         }
+
+    def _build_left_panel_font_pack(self, ui_scale: float | None = None) -> Dict[str, pygame.font.Font]:
+        """Sol gameplay panelleri için 3px daha küçük, ölçekli font paketi."""
+        try:
+            return self._build_card_ui_font_pack(ui_scale, size_adjust=-3)
+        except TypeError:
+            base_fonts = self._build_card_ui_font_pack(ui_scale)
+            reduced_fonts: Dict[str, pygame.font.Font] = {}
+            for key, font in base_fonts.items():
+                try:
+                    target_size = max(1, int(font.get_height()) - 3)
+                except Exception:
+                    reduced_fonts[key] = font
+                    continue
+                try:
+                    reduced_fonts[key] = self._make_card_ui_font(target_size)
+                except Exception:
+                    reduced_fonts[key] = font
+            return reduced_fonts
 
     def _refresh_card_ui_fonts(self) -> None:
         """Kart UI fontlarını mevcut dile göre yeniden üret."""
@@ -6977,7 +7002,7 @@ class MysteryMode(Game):
         effects = [c for c in active_cards if not bool(c.get('persistent', False))]
 
         ui_scale = self._card_ui_scale()
-        fonts = self._build_card_ui_font_pack(ui_scale)
+        fonts = self._build_left_panel_font_pack(ui_scale)
 
         # Draw a container panel for the "selected/active cards" area.
         # This shares the same glass-panel base as the level box and right HUD.
@@ -7157,9 +7182,14 @@ class MysteryMode(Game):
         metrics = self._get_mystery_layout_metrics()
         ui_scale = self._card_ui_scale()
         board_x, board_y = self.get_board_offset()
-        width = int(metrics['left_panel_width'])
+        base_width = int(metrics['left_panel_width'])
         panel_gap = int(metrics['panel_gap'])
-        x = max(int(8 * ui_scale), board_x - width - panel_gap)
+        desired_width = int(round(float(base_width) * 1.5))
+        min_x = max(int(8 * ui_scale), 0)
+        right_edge = int(board_x - panel_gap)
+        max_width = max(base_width, right_edge - min_x)
+        width = max(base_width, min(desired_width, max_width))
+        x = max(min_x, right_edge - width)
         # Align vertical inset with the right HUD panel when available.
         hud_panel = getattr(self, '_hud_panel_rect', None)
         if hud_panel is not None:
@@ -7198,7 +7228,7 @@ class MysteryMode(Game):
     def _draw_status_panel(self) -> None:
         status = self.card_manager.get_status()
         ui_scale = self._card_ui_scale()
-        fonts = self._build_card_ui_font_pack(ui_scale)
+        fonts = self._build_left_panel_font_pack(ui_scale)
 
         panel_x, panel_y, panel_width = self._get_left_panel_frame()
         self._left_panel_frame = (panel_x, panel_y, panel_width)

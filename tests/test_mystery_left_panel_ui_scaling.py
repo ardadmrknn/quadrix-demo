@@ -150,3 +150,33 @@ def test_mystery_active_card_rows_scale_with_canvas_and_stay_inside_panel(monkey
     assert snapshots_by_size[(2560, 1600)][0]['row_rect'].height > snapshots_by_size[(800, 600)][0]['row_rect'].height
     assert snapshots_by_size[(2560, 1600)][0]['icon_rect'].height > snapshots_by_size[(800, 600)][0]['icon_rect'].height
     assert snapshots_by_size[(2560, 1600)][0]['badge_rect'].height > snapshots_by_size[(800, 600)][0]['badge_rect'].height
+
+
+def test_mystery_left_panels_extend_left_and_use_smaller_fonts(monkeypatch):
+    _install_extra_mode_ui_test_stubs(monkeypatch)
+
+    mode = _build_mystery_mode((2560, 1600), window_size=(1366, 768))
+    mode._make_card_ui_font = lambda size, bold=False: _make_fake_font(size, bold=bold)
+    mode.board_width = 10
+    mode.board_height = 20
+    mode.left_panel_max_width = 420
+    mode.board = SimpleNamespace(level=1, lines_cleared=0)
+    mode.card_manager = SimpleNamespace(threshold=5, get_status=lambda: {'hint': 'Kartlar eslesir'})
+
+    metrics = mode._get_mystery_layout_metrics()
+    board_x, _ = mode.get_board_offset()
+    panel_gap = int(metrics['panel_gap'])
+    panel_x, panel_y, panel_width = mode._get_left_panel_frame()
+
+    assert panel_width > int(metrics['left_panel_width'])
+    assert abs((panel_x + panel_width) - (board_x - panel_gap)) <= 1
+
+    ui_scale = mode._card_ui_scale()
+    base_fonts = mode._build_card_ui_font_pack(ui_scale)
+    left_fonts = mode._build_left_panel_font_pack(ui_scale)
+
+    assert left_fonts['heading'].get_height() == base_fonts['heading'].get_height() - 3
+    assert left_fonts['panel_header'].get_height() == base_fonts['panel_header'].get_height() - 3
+    assert left_fonts['small'].get_height() == base_fonts['small'].get_height() - 3
+    assert left_fonts['card_title'].get_height() == base_fonts['card_title'].get_height() - 3
+    assert left_fonts['tag'].get_height() == base_fonts['tag'].get_height() - 3
