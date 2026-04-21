@@ -696,6 +696,72 @@ class Menu:
             apply_preset=False,
         )
 
+    def _hero_header_layout_metrics(self, width: int, height: int) -> dict[str, Any]:
+        """Ana menü üst header (avatar + QUADRIX) yerleşimini ve içerik ölçeklerini hesapla."""
+        layout_scale = max(0.88, min(1.10, float(self._ui_scale()) * 0.94))
+        content_scale = max(0.88, min(1.10, float(self._menu_panel_content_scale()) * 1.25))
+        ls = lambda value, minimum=1: max(minimum, int(round(float(value) * layout_scale)))
+        cs = lambda value, minimum=1: max(minimum, int(round(float(value) * content_scale)))
+
+        hero_margin_x = ls(120)
+        hero_top = ls(40)
+        hero_h = max(108, ls(140))
+        hero_width = min(ls(560), max(320, int(width) - hero_margin_x))
+        hero_rect = pygame.Rect((int(width) - hero_width) // 2, hero_top, hero_width, hero_h)
+        hero_rect = self._apply_layout_override_rect('hero_panel', hero_rect, int(width), int(height), min_w=220, min_h=90)
+
+        icon_size = max(68, cs(92))
+        icon_rect = pygame.Rect(
+            hero_rect.x + cs(24),
+            hero_rect.y + cs(16),
+            icon_size,
+            icon_size,
+        )
+        username_rect = pygame.Rect(
+            icon_rect.x - cs(6),
+            icon_rect.bottom + cs(6),
+            icon_rect.width + cs(12),
+            max(cs(22), cs(18)),
+        )
+
+        text_left = icon_rect.right + cs(36)
+        text_right = hero_rect.right - cs(16)
+        text_width = max(80, text_right - text_left)
+        title_top = hero_rect.y + cs(12)
+        title_bottom = hero_rect.bottom - cs(34)
+        title_height = max(28, title_bottom - title_top)
+        title_logo_width = max(72, int(round(text_width * 0.93)))
+        title_logo_height = max(26, int(round(title_height * 0.90)))
+
+        return {
+            'hero_rect': hero_rect,
+            'layout_scale': layout_scale,
+            'content_scale': content_scale,
+            'header_radius': max(20, ls(26)),
+            'header_inner_radius': max(16, ls(22)),
+            'header_inner_inset': cs(10),
+            'icon_rect': icon_rect,
+            'username_rect': username_rect,
+            'username_font_size': max(14, cs(18)),
+            'username_shadow_offset': max(1, cs(1)),
+            'text_left': text_left,
+            'text_width': text_width,
+            'title_height': title_height,
+            'title_logo_width': title_logo_width,
+            'title_logo_height': title_logo_height,
+            'title_center': (text_left + text_width // 2, title_top + title_height // 2),
+            'fallback_title_center_y': hero_rect.centery - cs(10),
+            'fallback_title_size': max(72, cs(96)),
+            'fallback_title_min_size': max(54, cs(64)),
+            'title_shadow_offset': max(2, cs(4)),
+            'title_glow_offset': max(1, cs(2)),
+            'title_outline_offset': max(1, cs(1)),
+            'subtitle_font_size': max(12, cs(16)),
+            'subtitle_anchor_overlap': cs(6),
+            'subtitle_right_inset': cs(16),
+            'subtitle_bottom_inset': cs(10),
+        }
+
     def _is_modal_open(self) -> bool:
         """Herhangi bir modal pencere açık mı kontrol et."""
         return self.sos_open or getattr(self, 'show_exit_prompt', False) or getattr(self, 'show_daily_prompt', False)
@@ -3066,34 +3132,44 @@ class Menu:
 
         # Grid efekti kaldırıldı - daha temiz görünüm
 
-        hero_margin_x = int(120 * scale)
-        hero_top = int(40 * scale)
-        hero_h = max(110, int(140 * scale))
-        hero_width = min(int(560 * scale), max(320, width - hero_margin_x))
-        hero_rect = pygame.Rect((width - hero_width) // 2, hero_top, hero_width, hero_h)
-        hero_rect = self._apply_layout_override_rect('hero_panel', hero_rect, width, height, min_w=220, min_h=90)
+        hero_metrics = self._hero_header_layout_metrics(width, height)
+        hero_rect = hero_metrics['hero_rect']
         # Header frame: Avatar + QUADRIX aynı panel içinde (menü kartlarından ayrı, daha belirgin çerçeve)
         fill = UIColors.GLASS_BG if len(UIColors.GLASS_BG) == 4 else (*UIColors.BG_MEDIUM, 210)
-        hero_header_signature = (hero_rect.size, fill, UIColors.NEON_CYAN)
+        hero_header_signature = (
+            hero_rect.size,
+            fill,
+            UIColors.NEON_CYAN,
+            hero_metrics['header_radius'],
+            hero_metrics['header_inner_radius'],
+            hero_metrics['header_inner_inset'],
+        )
         header = self._hero_header_cache
         if header is None or self._hero_header_cache_signature != hero_header_signature:
             header = pygame.Surface(hero_rect.size, pygame.SRCALPHA)
-            pygame.draw.rect(header, fill, header.get_rect(), border_radius=26)
+            pygame.draw.rect(header, fill, header.get_rect(), border_radius=hero_metrics['header_radius'])
             # üst highlight
-            pygame.draw.rect(header, (255, 255, 255, 18), header.get_rect().inflate(-10, -10), width=1, border_radius=22)
+            inner_inset = hero_metrics['header_inner_inset']
+            pygame.draw.rect(
+                header,
+                (255, 255, 255, 18),
+                header.get_rect().inflate(-inner_inset, -inner_inset),
+                width=1,
+                border_radius=hero_metrics['header_inner_radius'],
+            )
             # neon frame
-            pygame.draw.rect(header, (*UIColors.NEON_CYAN, 140), header.get_rect(), width=2, border_radius=26)
+            pygame.draw.rect(
+                header,
+                (*UIColors.NEON_CYAN, 140),
+                header.get_rect(),
+                width=2,
+                border_radius=hero_metrics['header_radius'],
+            )
             self._hero_header_cache = header
             self._hero_header_cache_signature = hero_header_signature
         self.screen.blit(header, hero_rect.topleft)
 
-        icon_size = max(72, int(92 * scale))
-        icon_rect = pygame.Rect(
-            hero_rect.x + int(24 * scale),
-            hero_rect.y + int(16 * scale),
-            icon_size,
-            icon_size,
-        )
+        icon_rect = hero_metrics['icon_rect']
         badge_surface = self._build_active_user_badge(icon_rect.width)
         if badge_surface is None:
             badge_surface = self._get_logo_surface(icon_rect.width)
@@ -3106,30 +3182,32 @@ class Menu:
         except Exception:
             active_username = None
         if active_username:
-            name_rect = pygame.Rect(icon_rect.x - 6, icon_rect.bottom + 6, icon_rect.width + 12, 22)
-            name_surf = retro_style.render_fit_text(active_username, UIColors.TEXT_SECONDARY, name_rect.width, 18, bold=True)
-            shadow = retro_style.render_fit_text(active_username, (0, 0, 0), name_rect.width, 18, bold=True)
+            name_rect = hero_metrics['username_rect']
+            username_font_size = hero_metrics['username_font_size']
+            shadow_offset = hero_metrics['username_shadow_offset']
+            name_surf = retro_style.render_fit_text(active_username, UIColors.TEXT_SECONDARY, name_rect.width, username_font_size, bold=True)
+            shadow = retro_style.render_fit_text(active_username, (0, 0, 0), name_rect.width, username_font_size, bold=True)
             shadow.set_alpha(120)
-            self.screen.blit(shadow, shadow.get_rect(center=(name_rect.centerx + 1, name_rect.centery + 1)))
+            self.screen.blit(shadow, shadow.get_rect(center=(name_rect.centerx + shadow_offset, name_rect.centery + shadow_offset)))
             self.screen.blit(name_surf, name_surf.get_rect(center=name_rect.center))
 
-        start_x = icon_rect.right + int(36 * scale)
-        text_right = hero_rect.right - int(16 * scale)
-        text_width = max(80, text_right - start_x)
-        title_top = hero_rect.y + int(12 * scale)
-        title_bottom = hero_rect.bottom - int(34 * scale)
-        title_height = max(28, title_bottom - title_top)
-        title_center = (start_x + text_width // 2, title_top + title_height // 2)
-        title_surf = self._get_main_menu_title_logo_surface(text_width, title_height)
+        start_x = hero_metrics['text_left']
+        text_width = hero_metrics['text_width']
+        title_height = hero_metrics['title_height']
+        title_center = hero_metrics['title_center']
+        title_surf = self._get_main_menu_title_logo_surface(
+            hero_metrics['title_logo_width'],
+            hero_metrics['title_logo_height'],
+        )
         title_rect = None
         if title_surf is not None:
             title_rect = title_surf.get_rect(center=title_center)
             self.screen.blit(title_surf, title_rect)
         else:
             title_text = 'QUADRIX'
-            center_y = hero_rect.centery - int(10 * scale)
-            title_size = 96
-            min_title_size = 64
+            center_y = hero_metrics['fallback_title_center_y']
+            title_size = hero_metrics['fallback_title_size']
+            min_title_size = hero_metrics['fallback_title_min_size']
             title_font = retro_style.get_font(title_size, bold=True)
             title_surf = render_text(title_font, title_text, True, UIColors.NEON_CYAN)
             while title_surf.get_width() > text_width and title_size > min_title_size:
@@ -3146,32 +3224,34 @@ class Menu:
 
             title_x = start_x + (text_width - title_surf.get_width()) // 2
             title_pos = (title_x, center_y - title_surf.get_height() // 2)
-            self.screen.blit(shadow, (title_pos[0] + 4, title_pos[1] + 4))
-            for dx, dy in ((-2, 0), (2, 0), (0, -2), (0, 2)):
+            shadow_offset = hero_metrics['title_shadow_offset']
+            glow_offset = hero_metrics['title_glow_offset']
+            outline_offset = hero_metrics['title_outline_offset']
+            self.screen.blit(shadow, (title_pos[0] + shadow_offset, title_pos[1] + shadow_offset))
+            for dx, dy in ((-glow_offset, 0), (glow_offset, 0), (0, -glow_offset), (0, glow_offset)):
                 self.screen.blit(glow, (title_pos[0] + dx, title_pos[1] + dy))
-            for dx, dy in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+            for dx, dy in ((-outline_offset, 0), (outline_offset, 0), (0, -outline_offset), (0, outline_offset)):
                 self.screen.blit(outline, (title_pos[0] + dx, title_pos[1] + dy))
             self.screen.blit(title_surf, title_pos)
             title_rect = title_surf.get_rect(topleft=title_pos)
 
         # Başlık altı bilgilendirme metni
         subtitle_text = t('menu_header_subtitle')
-        subtitle_font = retro_style.get_font(18, bold=False)
         subtitle_surf = retro_style.render_fit_text(
             subtitle_text,
             UIColors.TEXT_SECONDARY,
             max(10, text_width),
-            16,
+            hero_metrics['subtitle_font_size'],
             bold=False,
         )
         subtitle_rect = subtitle_surf.get_rect()
-        subtitle_anchor_y = title_rect.bottom - 6 if title_rect else hero_rect.centery
+        subtitle_anchor_y = title_rect.bottom - hero_metrics['subtitle_anchor_overlap'] if title_rect else hero_rect.centery
         subtitle_rect.midtop = (start_x + text_width // 2, subtitle_anchor_y)
         # Panel dışına taşmasın
-        if subtitle_rect.right > hero_rect.right - 16:
-            subtitle_rect.right = hero_rect.right - 16
-        if subtitle_rect.bottom > hero_rect.bottom - 10:
-            subtitle_rect.bottom = hero_rect.bottom - 10
+        if subtitle_rect.right > hero_rect.right - hero_metrics['subtitle_right_inset']:
+            subtitle_rect.right = hero_rect.right - hero_metrics['subtitle_right_inset']
+        if subtitle_rect.bottom > hero_rect.bottom - hero_metrics['subtitle_bottom_inset']:
+            subtitle_rect.bottom = hero_rect.bottom - hero_metrics['subtitle_bottom_inset']
         self.screen.blit(subtitle_surf, subtitle_rect)
 
         # --- SOS button (top-right) ---

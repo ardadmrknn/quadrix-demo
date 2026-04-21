@@ -157,6 +157,41 @@ def test_main_menu_scales_use_effective_ui_size_when_available(monkeypatch):
     ]
 
 
+def test_main_menu_hero_header_layout_is_slightly_smaller_than_old_baseline(monkeypatch):
+    menu = _build_menu((1366, 768))
+    monkeypatch.setattr(menu, '_apply_layout_override_rect', lambda key, rect, *_args, **_kwargs: rect)
+    monkeypatch.setattr(menu, '_ui_scale', lambda: 1.0)
+    monkeypatch.setattr(menu, '_menu_panel_content_scale', lambda: 0.72)
+
+    metrics = menu._hero_header_layout_metrics(1366, 768)
+
+    assert metrics['hero_rect'].width < 560
+    assert metrics['hero_rect'].height < 140
+    assert metrics['icon_rect'].width < 92
+    assert metrics['username_font_size'] < 18
+    assert metrics['subtitle_font_size'] < 16
+    assert metrics['title_logo_width'] < metrics['text_width']
+    assert metrics['title_logo_height'] < metrics['title_height']
+
+
+def test_main_menu_hero_header_content_follows_menu_panel_scale(monkeypatch):
+    menu = _build_menu((1366, 768))
+    monkeypatch.setattr(menu, '_apply_layout_override_rect', lambda key, rect, *_args, **_kwargs: rect)
+    monkeypatch.setattr(menu, '_ui_scale', lambda: 1.0)
+
+    monkeypatch.setattr(menu, '_menu_panel_content_scale', lambda: 0.72)
+    compact = menu._hero_header_layout_metrics(1366, 768)
+
+    monkeypatch.setattr(menu, '_menu_panel_content_scale', lambda: 1.16)
+    expanded = menu._hero_header_layout_metrics(1366, 768)
+
+    assert expanded['icon_rect'].width > compact['icon_rect'].width
+    assert expanded['username_font_size'] > compact['username_font_size']
+    assert expanded['subtitle_font_size'] > compact['subtitle_font_size']
+    assert expanded['title_logo_width'] < expanded['text_width']
+    assert expanded['title_logo_height'] < expanded['title_height']
+
+
 def test_credits_reference_size_prefers_effective_ui_size(monkeypatch):
     credits = menu_module.CreditsScreen.__new__(menu_module.CreditsScreen)
     credits.screen = _FakeScreen(2560, 1660)
