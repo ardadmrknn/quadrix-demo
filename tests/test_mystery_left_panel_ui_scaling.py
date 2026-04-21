@@ -175,8 +175,8 @@ def test_mystery_left_panels_extend_left_and_use_smaller_fonts(monkeypatch):
     base_fonts = mode._build_card_ui_font_pack(ui_scale)
     left_fonts = mode._build_left_panel_font_pack(ui_scale)
 
-    assert left_fonts['heading'].get_height() == base_fonts['heading'].get_height() - 3
-    assert left_fonts['panel_header'].get_height() == base_fonts['panel_header'].get_height() - 3
-    assert left_fonts['small'].get_height() == base_fonts['small'].get_height() - 3
-    assert left_fonts['card_title'].get_height() == base_fonts['card_title'].get_height() - 3
-    assert left_fonts['tag'].get_height() == base_fonts['tag'].get_height() - 3
+    assert left_fonts['heading'].get_height() == base_fonts['heading'].get_height() - 1
+    assert left_fonts['panel_header'].get_height() == base_fonts['panel_header'].get_height() - 1
+    assert left_fonts['small'].get_height() == base_fonts['small'].get_height() - 1
+    assert left_fonts['card_title'].get_height() == base_fonts['card_title'].get_height() - 1
+    assert left_fonts['tag'].get_height() == base_fonts['tag'].get_height() - 1

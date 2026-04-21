@@ -4667,15 +4667,15 @@ class MysteryMode(Game):
         }
 
     def _build_left_panel_font_pack(self, ui_scale: float | None = None) -> Dict[str, pygame.font.Font]:
-        """Sol gameplay panelleri için 3px daha küçük, ölçekli font paketi."""
+        """Sol gameplay panelleri için 1px daha küçük, ölçekli font paketi."""
         try:
-            return self._build_card_ui_font_pack(ui_scale, size_adjust=-3)
+            return self._build_card_ui_font_pack(ui_scale, size_adjust=-1)
         except TypeError:
             base_fonts = self._build_card_ui_font_pack(ui_scale)
             reduced_fonts: Dict[str, pygame.font.Font] = {}
             for key, font in base_fonts.items():
                 try:
-                    target_size = max(1, int(font.get_height()) - 3)
+                    target_size = max(1, int(font.get_height()) - 1)
                 except Exception:
                     reduced_fonts[key] = font
                     continue
