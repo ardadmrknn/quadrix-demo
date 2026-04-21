@@ -1432,6 +1432,7 @@ class MysteryCardUI:
         self._mouse_is_pressed = False
         # Widget list of UICard instances used to render the cards
         self.card_widgets: List['UICard'] = []
+        self.active_card_row_snapshots: List[Dict[str, Any]] = []
         self.skip_button_rect: pygame.Rect | None = None
         self.reroll_button_rect: pygame.Rect | None = None
         self.selection_panel_rect: pygame.Rect | None = None
@@ -1455,6 +1456,7 @@ class MysteryCardUI:
         self.clear_selection_feedback()
         self.randomize_pill_rect = None
         self.card_widgets = []
+        self.active_card_row_snapshots = []
         self.skip_button_rect = None
         self.reroll_button_rect = None
         self.selection_panel_rect = None
@@ -1893,13 +1895,23 @@ class MysteryCardUI:
         placeholder_text: str | None = None,
         columns: int = 1,
         max_height: int | None = None,
+        ui_scale: float | None = None,
     ) -> int:
         font_small = fonts.get("small")
         font_desc = fonts.get("desc")
         tag_font = fonts.get("tag")
         card_title_font = fonts.get("card_title", font_small)
         icon_font = fonts.get("icon", font_small)
-        width = max(180, width)
+        width = max(120, int(width))
+
+        if ui_scale is None:
+            try:
+                ui_scale = float(card_title_font.get_height()) / 26.0
+            except Exception:
+                ui_scale = 1.0
+        ui_scale = max(0.62, min(1.12, float(ui_scale)))
+        s = lambda value, minimum=1: max(minimum, int(round(float(value) * ui_scale)))
+        self.active_card_row_snapshots = []
 
         if max_height is not None and int(max_height) <= 0:
             return 0
@@ -1931,6 +1943,19 @@ class MysteryCardUI:
             if 'aktif' in low:
                 return 'aktif', 'Aktif'
             return 'durum', _compact_text(status, 12)
+
+        def _truncate_render_text(font: pygame.font.Font, text: str, max_width: int) -> str:
+            value = str(text or '').strip()
+            if value == '' or max_width <= 0 or font.size(value)[0] <= max_width:
+                return value
+            ellipsis = '...'
+            if font.size(ellipsis)[0] > max_width:
+                return ''
+            trimmed = value
+            while len(trimmed) > 1 and font.size(trimmed.rstrip() + ellipsis)[0] > max_width:
+                trimmed = trimmed[:-1]
+            trimmed = trimmed.rstrip()
+            return (trimmed + ellipsis) if trimmed else value
 
         def _badge_palette(state_label: str) -> tuple[tuple[int, int, int, int], tuple[int, int, int, int]]:
             label = str(state_label or '').lower()
@@ -1967,12 +1992,24 @@ class MysteryCardUI:
                 return (138, 154, 188, 100)
             return (int(base[0]), int(base[1]), int(base[2]), 165)
 
-        # Compact Mode: Fixed height bars
-        row_height = 46
-        row_gap = 6
-        col_gap = 8
-        icon_size = 30
-        content_padding = 8
+        # Compact Mode: scale the entire row geometry with the shared card UI scale.
+        row_gap = s(6, minimum=4)
+        col_gap = s(8, minimum=6)
+        content_padding = s(8, minimum=6)
+        title_gap = s(10, minimum=8)
+        title_badge_gap = s(8, minimum=6)
+        badge_pad_x = s(12, minimum=8)
+        badge_pad_y = s(6, minimum=4)
+        corner_radius = s(6, minimum=4)
+        badge_corner_radius = s(9, minimum=6)
+        row_height = max(
+            s(46, minimum=32),
+            max(font_small.get_height(), card_title_font.get_height()) + s(16, minimum=12),
+        )
+        icon_size = min(
+            row_height - s(12, minimum=8),
+            max(s(30, minimum=22), font_small.get_height() + s(8, minimum=6)),
+        )
         
         md = max(1, int(max_display))
         cols = max(1, int(columns))
@@ -1987,7 +2024,7 @@ class MysteryCardUI:
 
         # İki sütun hesaplaması
         if cols > 1:
-            col_width = max(120, (width - col_gap * (cols - 1)) // cols)
+            col_width = max(s(120, minimum=96), (width - col_gap * (cols - 1)) // cols)
         else:
             col_width = width
         
@@ -2007,13 +2044,15 @@ class MysteryCardUI:
             row_surface = pygame.Surface((col_width, row_height), pygame.SRCALPHA)
             row_rect_local = row_surface.get_rect()
             row_border_color = _row_border_rgba(card)
+            row_rect = pygame.Rect(card_x, card_y, col_width, row_height)
             
             # Glass effect background
-            pygame.draw.rect(row_surface, panel_color, row_rect_local, border_radius=6)
-            pygame.draw.rect(row_surface, row_border_color, row_rect_local, 1, border_radius=6)
+            pygame.draw.rect(row_surface, panel_color, row_rect_local, border_radius=corner_radius)
+            pygame.draw.rect(row_surface, row_border_color, row_rect_local, 1, border_radius=corner_radius)
             
             # Icon (Left) - Local coordinates
             icon_rect_local = pygame.Rect(content_padding, (row_height - icon_size) // 2, icon_size, icon_size)
+            icon_rect = pygame.Rect(card_x + icon_rect_local.x, card_y + icon_rect_local.y, icon_rect_local.w, icon_rect_local.h)
             
             # Icon placeholder/image
             try:
@@ -2033,18 +2072,21 @@ class MysteryCardUI:
                 pass
             try:
                 icon_border = pygame.Rect(icon_rect_local.x - 1, icon_rect_local.y - 1, icon_rect_local.w + 2, icon_rect_local.h + 2)
-                pygame.draw.rect(row_surface, (170, 185, 215, 110), icon_border, 1, border_radius=6)
+                pygame.draw.rect(row_surface, (170, 185, 215, 110), icon_border, 1, border_radius=corner_radius)
             except Exception:
                 pass
 
             # Title (Left center)
-            title_local_x = icon_rect_local.right + 10
+            title_local_x = icon_rect_local.right + title_gap
             title_text = get_card_title(card, card.get("title", "???"))
             status_label, status_value = _parse_status(card.get("status", ""))
             badge_text = status_value
+            title_rect = None
+            badge_rect = None
+            rendered_title_text = title_text
 
             badge_font = tag_font if tag_font else font_small
-            max_badge_w = max(52, col_width - title_local_x - 6)
+            max_badge_w = max(s(52, minimum=40), col_width - title_local_x - s(6, minimum=4))
             prompt_badge_text = _prompt_action_text('hold2', 'V') if _resolve_card_localization_id(card) == 'perk_second_pocket' else ''
             if prompt_badge_text and badge_text == prompt_badge_text:
                 badge_text_surf = render_action_prompt_surface(
@@ -2052,38 +2094,29 @@ class MysteryCardUI:
                     prompt_badge_text,
                     badge_font,
                     (232, 238, 248),
-                    max_width=max_badge_w - 12,
-                    max_height=24,
+                    max_width=max_badge_w - badge_pad_x,
+                    max_height=max(s(24, minimum=18), badge_font.get_height() + badge_pad_y),
                 )
                 if badge_text_surf is None:
                     badge_text_surf = badge_font.render(badge_text, True, (232, 238, 248))
             else:
                 badge_text_surf = badge_font.render(badge_text, True, (232, 238, 248))
-            badge_w = badge_text_surf.get_width() + 12
+            badge_w = badge_text_surf.get_width() + badge_pad_x
             if badge_w > max_badge_w:
-                compact = badge_text
-                guard = 0
-                while badge_w > max_badge_w and len(compact) > 2 and guard < 40:
-                    compact = compact[:-2].rstrip() + "..."
-                    badge_text_surf = badge_font.render(compact, True, (232, 238, 248))
-                    badge_w = badge_text_surf.get_width() + 12
-                    guard += 1
-            badge_h = max(24, badge_text_surf.get_height() + 6)
+                compact = _truncate_render_text(badge_font, badge_text, max_badge_w - badge_pad_x)
+                badge_text_surf = badge_font.render(compact, True, (232, 238, 248))
+                badge_w = badge_text_surf.get_width() + badge_pad_x
+            badge_h = max(s(24, minimum=18), badge_text_surf.get_height() + badge_pad_y)
             badge_right = col_width - content_padding
-            badge_left = max(title_local_x + 36, badge_right - badge_w)
-            max_title_w = max(18, badge_left - title_local_x - 8)
+            badge_left = max(title_local_x + s(36, minimum=24), badge_right - badge_w)
+            max_title_w = max(s(18, minimum=14), badge_left - title_local_x - title_badge_gap)
             
             try:
-                title_surf = card_title_font.render(title_text, True, (238, 242, 250))
-                if title_surf.get_width() > max_title_w and max_title_w > 20:
-                    truncated = title_text
-                    truncate_count = 0
-                    while title_surf.get_width() > max_title_w and len(truncated) > 2 and truncate_count < 50:
-                        truncated = truncated[:-2].rstrip() + "..."
-                        title_surf = card_title_font.render(truncated, True, (238, 242, 250))
-                        truncate_count += 1
+                rendered_title_text = _truncate_render_text(card_title_font, title_text, max_title_w)
+                title_surf = card_title_font.render(rendered_title_text, True, (238, 242, 250))
                 
                 title_local_y = (row_height - title_surf.get_height()) // 2
+                title_rect = pygame.Rect(card_x + title_local_x, card_y + title_local_y, title_surf.get_width(), title_surf.get_height())
                 row_surface.blit(title_surf, (title_local_x, title_local_y))
             except Exception:
                 pass
@@ -2094,14 +2127,25 @@ class MysteryCardUI:
                 status_local_x = badge_left
                 status_local_y = (row_height - badge_h) // 2
                 st_bg_rect = pygame.Rect(status_local_x, status_local_y, badge_w, badge_h)
-                pygame.draw.rect(row_surface, badge_bg, st_bg_rect, border_radius=9)
-                pygame.draw.rect(row_surface, badge_border, st_bg_rect, 1, border_radius=9)
+                badge_rect = pygame.Rect(card_x + st_bg_rect.x, card_y + st_bg_rect.y, st_bg_rect.w, st_bg_rect.h)
+                pygame.draw.rect(row_surface, badge_bg, st_bg_rect, border_radius=badge_corner_radius)
+                pygame.draw.rect(row_surface, badge_border, st_bg_rect, 1, border_radius=badge_corner_radius)
                 row_surface.blit(badge_text_surf, badge_text_surf.get_rect(center=st_bg_rect.center))
             except Exception:
                 pass
 
             # Blit the composed row onto the main screen
             screen.blit(row_surface, (card_x, card_y))
+            self.active_card_row_snapshots.append({
+                'ui_scale': ui_scale,
+                'row_rect': row_rect.copy(),
+                'icon_rect': icon_rect.copy(),
+                'title_rect': title_rect.copy() if title_rect is not None else None,
+                'badge_rect': badge_rect.copy() if badge_rect is not None else None,
+                'content_padding': int(content_padding),
+                'title_text': rendered_title_text,
+                'badge_text': badge_text,
+            })
 
         return total_height
 
@@ -6991,6 +7035,7 @@ class MysteryMode(Game):
             placeholder_text=t('card_placeholder_no_limited'),
             columns=1,
             max_height=available_cards_h,
+            ui_scale=ui_scale,
         )
         used_height = (y_cursor - cards_panel_rect.y) + effects_h + pad_bottom
         return min(cards_panel_rect.height, max(0, used_height))
