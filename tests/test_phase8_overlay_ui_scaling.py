@@ -778,6 +778,64 @@ def test_hardcore_right_hud_uses_active_canvas_when_window_size_is_stale(monkeyp
     assert mode._hud_mode_info_area[3] > 500
 
 
+@pytest.mark.parametrize('size', [(1366, 768), (1600, 900), (2560, 1600)])
+def test_mystery_second_pocket_hud_stays_on_primary_hold_row(monkeypatch, size):
+    _install_game_ui_test_stubs(monkeypatch)
+
+    mode = _build_mystery_mode(size, window_size=(1366, 768))
+    mode.next_piece_queue = [
+        SimpleNamespace(shape=[[1, 1], [1, 1]], color=(120, 220, 255), texture_surface=None, color_matrix=None),
+        SimpleNamespace(shape=[[1, 1, 1, 1]], color=(255, 200, 120), texture_surface=None, color_matrix=None),
+    ]
+    mode.held_piece = SimpleNamespace(shape=[[1, 1], [1, 1]], color=(120, 255, 180), texture_surface=None, color_matrix=None)
+    mode.second_held_piece = SimpleNamespace(shape=[[1, 1, 1], [0, 1, 0]], color=(255, 140, 180), texture_surface=None, color_matrix=None)
+    mode.can_hold = True
+    mode.can_hold2 = True
+    mode.board = SimpleNamespace(score=12000, lines_cleared=8, level=5, combo=1, tetrises=0)
+    mode._draw_hud_glass_panel = lambda rect: None
+    mode._draw_custom_frame = lambda rect, asset_name, padding=0, hole_punch=False: False
+    mode.draw_textured_block = lambda *args, **kwargs: None
+    mode._make_texture_slice = lambda *args, **kwargs: None
+    mode.control_bindings = {'hold2': pygame.K_v}
+    mode.perk_manager = SimpleNamespace(is_active=lambda perk: perk == 'second_pocket')
+
+    metrics = mode._get_mystery_layout_metrics()
+    game_module.Game._draw_right_hud_panel(
+        mode,
+        metrics['board_x'],
+        metrics['board_y'],
+        metrics['board_width'],
+        metrics['board_height'],
+        None,
+        None,
+        (255, 255, 255),
+        (0, 255, 255),
+        (180, 180, 180),
+    )
+
+    assert len(mode._hud_next_piece_rects) == 2
+    assert mode._hud_next_piece_rects[0].top == mode._hud_next_piece_rects[1].top
+    assert mode._hud_next_piece_rects[1].left > mode._hud_next_piece_rects[0].right
+
+    assert mode._hud_hold_box_rect is not None
+    assert mode._hud_second_hold_box_rect is not None
+    assert mode._hud_second_hold_box_rect.top == mode._hud_hold_box_rect.top
+    assert mode._hud_second_hold_box_rect.left > mode._hud_hold_box_rect.right
+    assert mode._hud_hold_label_rect is not None
+    assert mode._hud_second_hold_label_rect is not None
+    assert mode._hud_hold_label_rect.left > mode._hud_content_x
+    assert mode._hud_second_hold_label_rect.left > mode._hud_second_hold_box_rect.left
+    assert mode._hud_hold_label_rect.top < mode._hud_hold_box_rect.top
+    assert mode._hud_second_hold_label_rect.top < mode._hud_second_hold_box_rect.top
+
+    assert mode._hud_panel_rect.contains(mode._hud_next_piece_rects[0])
+    assert mode._hud_panel_rect.contains(mode._hud_next_piece_rects[1])
+    assert mode._hud_panel_rect.contains(mode._hud_hold_label_rect)
+    assert mode._hud_panel_rect.contains(mode._hud_hold_box_rect)
+    assert mode._hud_panel_rect.contains(mode._hud_second_hold_label_rect)
+    assert mode._hud_panel_rect.contains(mode._hud_second_hold_box_rect)
+
+
 @pytest.mark.parametrize('lines_cleared', [2, 4])
 def test_zen_line_clear_particles_use_active_canvas_center(lines_cleared):
     recorded = {}

@@ -4548,8 +4548,8 @@ class MysteryMode(Game):
             'occupancy_scale': occupancy_scale,
         }
         metrics['hud_scale'] = max(
-            0.82,
-            min(1.24, float(right_panel_width_logical) / 190.0),
+            0.72,
+            min(1.18, float(right_panel_width_logical) / 220.0),
         )
         metrics['hud_px_scale'] = float(metrics['hud_scale']) * pixel_ratio
 

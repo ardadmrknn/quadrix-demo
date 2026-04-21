@@ -35,7 +35,7 @@ from platform_utils import get_display_flags, create_display, set_app_icon, norm
 from ui_theme import UIFonts, UIColors
 from asset_manager import load_image
 from gamepad_manager import get_gamepad_manager, is_gamepad_connected
-from promptfont_support import render_action_prompt_surface, render_button_index_prompt_surface
+from promptfont_support import render_action_prompt_surface, render_button_index_prompt_surface, render_inline_action_text_surface
 
 try:
     from gamepad_manager import normalize_gamepad_event_button
@@ -4612,11 +4612,13 @@ class Game:
         # 2 Sonraki parça yanyana
         box_size = max(42, min(int(round(90 * pixel_ratio)), int(60 * hud_scale)))
         gap = max(8, int(15 * hud_scale))
+        next_box_rects = []
         
         for i in range(2):
             bx = content_x + i * (box_size + gap)
             by = curr_y
             box_rect = pygame.Rect(bx, by, box_size, box_size)
+            next_box_rects.append(box_rect.copy())
             
             # Kutu arkaplanı
             # Kutu arkaplanı
@@ -4658,8 +4660,57 @@ class Game:
         curr_y += box_size + max(10, int(20 * hud_scale))
         
         # --- HOLD PIECE ---
-        hold_label = retro_style.get_font(max(12, int(18 * hud_scale))).render(t('hold'), True, label_color)
-        self.screen.blit(hold_label, (content_x, curr_y))
+        label_inset = max(2, int(4 * hud_scale))
+
+        def _compact_action_label(action: str, fallback_key) -> str:
+            try:
+                binding = self.control_bindings.get(action, fallback_key)
+            except Exception:
+                binding = fallback_key
+
+            keycode = self._binding_to_keycode_or_none(binding)
+            if keycode is not None:
+                try:
+                    label = pygame.key.name(keycode) or ''
+                except Exception:
+                    label = ''
+            else:
+                label = str(binding or '')
+
+            compact_label = (
+                str(label)
+                .upper()
+                .replace('LEFT ', 'L')
+                .replace('RIGHT ', 'R')
+                .replace('CONTROL', 'CTRL')
+                .replace('RETURN', 'ENTER')
+                .replace('KP_ENTER', 'ENTER')
+                .strip()
+            )
+            if compact_label:
+                return compact_label
+
+            if isinstance(fallback_key, int):
+                try:
+                    return (pygame.key.name(fallback_key) or '').upper() or '?'
+                except Exception:
+                    return '?'
+            return str(fallback_key or '?').upper()
+
+        hold_label_font = retro_style.get_font(max(12, int(18 * hud_scale)))
+        hold_binding_label = _compact_action_label('hold', pygame.K_c)
+        hold_label_text = str(t('hold', default='Saklanan (C):'))
+        if '(C)' in hold_label_text:
+            hold_label_text = hold_label_text.replace('(C)', f'({hold_binding_label})', 1)
+        hold_label = render_inline_action_text_surface(
+            hold_label_text,
+            hold_binding_label,
+            'hold',
+            hold_label_font,
+            label_color,
+        )
+        hold_label_rect = hold_label.get_rect(topleft=(content_x + label_inset, curr_y))
+        self.screen.blit(hold_label, hold_label_rect)
         
         # B tuşu hakkı
         discard_uses = getattr(self, 'discard_held_uses', 5)
@@ -4683,6 +4734,7 @@ class Game:
             show_second_pocket = False
 
         second_box_rect = None
+        second_label_rect = None
         if show_second_pocket:
             gap2 = max(8, int(15 * hud_scale))
             w2 = hold_box_rect.width
@@ -4698,12 +4750,7 @@ class Game:
             pygame.draw.rect(self.screen, (60, 70, 100), second_box_rect, 1, border_radius=8)
 
             # Label: show which key opens the second pocket (bind-aware).
-            try:
-                keycode = int(self.control_bindings.get('hold2', pygame.K_v))
-                key_name = pygame.key.name(keycode) or 'v'
-                key_label = key_name.upper() if len(key_name) <= 2 else key_name
-            except Exception:
-                key_label = 'V'
+            key_label = _compact_action_label('hold2', pygame.K_v)
             hold2_text = f"{key_label}"
 
             hold2_font = retro_style.get_font(max(12, int(18 * hud_scale)))
@@ -4717,10 +4764,11 @@ class Game:
             )
             if hold2_label is None:
                 hold2_label = hold2_font.render(hold2_text, True, label_color)
-            label_y = curr_y - max(14, int(25 * hud_scale))
+            label_y = hold_label_rect.y + max(0, (hold_label_rect.height - hold2_label.get_height()) // 2)
             if second_box_rect.y > hold_box_rect.y:
-                label_y = second_box_rect.y - max(14, int(25 * hud_scale))
-            self.screen.blit(hold2_label, (second_box_rect.x, label_y))
+                label_y = (second_box_rect.y - max(14, int(25 * hud_scale))) + max(0, (hold_label_rect.height - hold2_label.get_height()) // 2)
+            second_label_rect = hold2_label.get_rect(topleft=(second_box_rect.x + label_inset, label_y))
+            self.screen.blit(hold2_label, second_label_rect)
         
         if self.held_piece:
             hp = self.held_piece
@@ -4803,6 +4851,12 @@ class Game:
                 pygame.draw.line(self.screen, (200, 50, 50), (lx-10, ly-10), (lx+10, ly+10), 3)
                 pygame.draw.line(self.screen, (200, 50, 50), (lx-10, ly+10), (lx+10, ly-10), 3)
 
+        self._hud_next_piece_rects = next_box_rects
+        self._hud_hold_label_rect = hold_label_rect.copy()
+        self._hud_hold_box_rect = hold_box_rect.copy()
+        self._hud_second_hold_label_rect = second_label_rect.copy() if second_label_rect is not None else None
+        self._hud_second_hold_box_rect = second_box_rect.copy() if second_box_rect is not None else None
+
         extra_hold_h = 0
         if second_box_rect is not None and second_box_rect.y > hold_box_rect.y:
             extra_hold_h = (second_box_rect.y - hold_box_rect.y)
@@ -4818,14 +4872,13 @@ class Game:
         self._hud_panel_rect = panel_rect
         self._hud_content_x = content_x
         self._hud_content_w = content_w
-        
+
         # Stats background (Daha koyu ve gradient)
         stats_surf = pygame.Surface(stats_rect.size, pygame.SRCALPHA)
         # Dikey gradient
         for i in range(stats_h):
              a = 180 + int(40 * (i / stats_h))
              pygame.draw.line(stats_surf, (20, 24, 35, a), (0, i), (content_w, i))
-        self.screen.blit(stats_surf, stats_rect.topleft)
         pygame.draw.rect(self.screen, (50, 60, 80), stats_rect, 1, border_radius=12)
         
         # Stat satırları
