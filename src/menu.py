@@ -757,7 +757,7 @@ class Menu:
             'title_glow_offset': max(1, cs(2)),
             'title_outline_offset': max(1, cs(1)),
             'subtitle_font_size': max(12, cs(16)),
-            'subtitle_anchor_overlap': cs(6),
+            'subtitle_gap': max(4, cs(8)),
             'subtitle_right_inset': cs(16),
             'subtitle_bottom_inset': cs(10),
         }
@@ -3245,7 +3245,7 @@ class Menu:
             bold=False,
         )
         subtitle_rect = subtitle_surf.get_rect()
-        subtitle_anchor_y = title_rect.bottom - hero_metrics['subtitle_anchor_overlap'] if title_rect else hero_rect.centery
+        subtitle_anchor_y = title_rect.bottom + hero_metrics['subtitle_gap'] if title_rect else hero_rect.centery + hero_metrics['subtitle_gap']
         subtitle_rect.midtop = (start_x + text_width // 2, subtitle_anchor_y)
         # Panel dışına taşmasın
         if subtitle_rect.right > hero_rect.right - hero_metrics['subtitle_right_inset']:

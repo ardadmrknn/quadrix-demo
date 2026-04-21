@@ -172,6 +172,7 @@ def test_main_menu_hero_header_layout_is_slightly_smaller_than_old_baseline(monk
     assert metrics['subtitle_font_size'] < 16
     assert metrics['title_logo_width'] < metrics['text_width']
     assert metrics['title_logo_height'] < metrics['title_height']
+    assert metrics['subtitle_gap'] >= 4
 
 
 def test_main_menu_hero_header_content_follows_menu_panel_scale(monkeypatch):
@@ -188,6 +189,7 @@ def test_main_menu_hero_header_content_follows_menu_panel_scale(monkeypatch):
     assert expanded['icon_rect'].width > compact['icon_rect'].width
     assert expanded['username_font_size'] > compact['username_font_size']
     assert expanded['subtitle_font_size'] > compact['subtitle_font_size']
+    assert expanded['subtitle_gap'] > compact['subtitle_gap']
     assert expanded['title_logo_width'] < expanded['text_width']
     assert expanded['title_logo_height'] < expanded['title_height']
 
