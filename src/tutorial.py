@@ -2,6 +2,8 @@ import pygame
 import random
 import os
 
+_compute_line_sweep_progress_speed = None
+
 try:
     from .game import Game  # type: ignore
     from .localization import t  # type: ignore
@@ -36,6 +38,7 @@ try:
     )
     from .game_modes_extra import MysteryCardUI  # type: ignore
     from .ui_scaling import get_modal_scale, get_projected_effective_scale  # type: ignore
+    from .sweep_effects import compute_line_sweep_progress_speed as _compute_line_sweep_progress_speed  # type: ignore
 except Exception:
     from game import Game
     from localization import t
@@ -73,6 +76,24 @@ except Exception:
     except Exception:
         MysteryCardUI = None
     from ui_scaling import get_modal_scale, get_projected_effective_scale
+    try:
+        from sweep_effects import compute_line_sweep_progress_speed as _compute_line_sweep_progress_speed
+    except Exception:
+        _compute_line_sweep_progress_speed = None
+
+
+if _compute_line_sweep_progress_speed is None:
+    def _compute_line_sweep_progress_speed(base_block_speed: float, sweep_travel_px: float, level: int | float = 1) -> float:
+        travel_px = max(1.0, float(sweep_travel_px))
+        block_speed = max(0.001, float(base_block_speed))
+        try:
+            level_i = max(1, int(level))
+        except Exception:
+            level_i = 1
+        base_duration = travel_px / (block_speed * 3600.0)
+        duration_ratio = max(0.42, 0.965 ** max(0, level_i - 1))
+        sweep_duration = max(0.0001, base_duration * duration_ratio)
+        return 1.0 / sweep_duration
 
 
 def _tutorial_make_card_ui_font(size, bold=False):
@@ -2156,6 +2177,7 @@ class TutorialMode(Game):
 
     def _update_overlay_safe_visual_effects(self, delta_time):
         dt = max(0.0, float(delta_time or 0.0))
+        dt_seconds = dt / 1000.0
         dt_frames = dt / 16.666 if dt > 0 else 0.0
 
         if self.line_clear_animation > 0:
@@ -2171,9 +2193,9 @@ class TutorialMode(Game):
             board_pixel_width = self.board_width * cell_size
             sweep_width = max(1, int(cell_size * 1.5))
             sweep_travel_px = max(1.0, float(board_pixel_width + sweep_width))
-            block_px_per_frame = self.block_fall_speed * 60.0
-            sweep_speed = block_px_per_frame / sweep_travel_px
-            self.line_clear_sweep_progress += dt_frames * sweep_speed
+            level = max(1, int(getattr(self.board, 'level', 1)))
+            sweep_speed = _compute_line_sweep_progress_speed(self.block_fall_speed, sweep_travel_px, level)
+            self.line_clear_sweep_progress += dt_seconds * sweep_speed
             if self.line_clear_sweep_progress >= 1.0:
                 self.line_clear_sweep_progress = 1.0
                 self.line_clear_sweep_active = False

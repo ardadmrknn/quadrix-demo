@@ -24,6 +24,20 @@ from ui_scaling import get_projected_effective_scale
 from ui_theme import UIColors, UIFonts
 from effect_surface_cache import EffectSurfaceCache
 from sweep_effects import SweepCatState, draw_rainbow_cat_sweep
+try:
+    from sweep_effects import compute_line_sweep_progress_speed as _compute_line_sweep_progress_speed
+except Exception:
+    def _compute_line_sweep_progress_speed(base_block_speed: float, sweep_travel_px: float, level: int | float = 1) -> float:
+        travel_px = max(1.0, float(sweep_travel_px))
+        block_speed = max(0.001, float(base_block_speed))
+        try:
+            level_i = max(1, int(level))
+        except Exception:
+            level_i = 1
+        base_duration = travel_px / (block_speed * 3600.0)
+        duration_ratio = max(0.42, 0.965 ** max(0, level_i - 1))
+        sweep_duration = max(0.0001, base_duration * duration_ratio)
+        return 1.0 / sweep_duration
 from combo_popup_style import (
     COMBO_POPUP_SHADOW_COLOR,
     get_combo_popup_alpha,
@@ -3454,6 +3468,7 @@ class PvPGame:
 
         # Frame bazlı delta hesapla (60 FPS varsayım)
         dt_frames = delta_time / 16.67 if delta_time > 0 else 1.0
+        dt_seconds = max(0.0, float(delta_time or 0.0)) / 1000.0
 
         if self.p1_drop_trails or self.p2_drop_trails:
             self._update_drop_trails(dt_frames)
@@ -3489,9 +3504,9 @@ class PvPGame:
             board_pixel_width = self.board1.width * self.cell_size
             sweep_width = max(1, int(self.cell_size * 1.5))
             sweep_travel_px = max(1.0, float(board_pixel_width + sweep_width))
-            block_px_per_frame = self.block_fall_speed * 60.0
-            sweep_speed = block_px_per_frame / sweep_travel_px
-            self.p1_line_sweep_progress += dt_frames * sweep_speed
+            p1_level = max(1, int(getattr(self.board1, 'level', 1)))
+            sweep_speed = _compute_line_sweep_progress_speed(self.block_fall_speed, sweep_travel_px, p1_level)
+            self.p1_line_sweep_progress += dt_seconds * sweep_speed
             if self.p1_line_sweep_progress >= 1.0:
                 self.p1_line_sweep_progress = 1.0
                 self.p1_line_sweep_active = False
@@ -3501,9 +3516,9 @@ class PvPGame:
             board_pixel_width = self.board2.width * self.cell_size
             sweep_width = max(1, int(self.cell_size * 1.5))
             sweep_travel_px = max(1.0, float(board_pixel_width + sweep_width))
-            block_px_per_frame = self.block_fall_speed * 60.0
-            sweep_speed = block_px_per_frame / sweep_travel_px
-            self.p2_line_sweep_progress += dt_frames * sweep_speed
+            p2_level = max(1, int(getattr(self.board2, 'level', 1)))
+            sweep_speed = _compute_line_sweep_progress_speed(self.block_fall_speed, sweep_travel_px, p2_level)
+            self.p2_line_sweep_progress += dt_seconds * sweep_speed
             if self.p2_line_sweep_progress >= 1.0:
                 self.p2_line_sweep_progress = 1.0
                 self.p2_line_sweep_active = False

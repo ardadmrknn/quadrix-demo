@@ -298,6 +298,34 @@ _RAINBOW = [
     (130, 80, 255),
 ]
 
+_CAT_HEAD_ANCHOR_X = 0.86
+_SWEEP_LEVEL_DURATION_DECAY = 0.965
+_SWEEP_LEVEL_MIN_DURATION_RATIO = 0.42
+
+
+def compute_line_sweep_progress_speed(
+    base_block_speed: float,
+    sweep_travel_px: float,
+    level: int | float = 1,
+) -> float:
+    """Satır sweep progress hızını (progress/s) seviye ölçekli hesapla.
+
+    Seviye 1'de mevcut hız korunur, seviye arttıkça sweep süresi kısalır.
+    """
+    travel_px = max(1.0, float(sweep_travel_px))
+    block_speed = max(0.001, float(base_block_speed))
+
+    try:
+        level_i = max(1, int(level))
+    except Exception:
+        level_i = 1
+
+    base_duration = travel_px / (block_speed * 3600.0)
+    duration_ratio = _SWEEP_LEVEL_DURATION_DECAY ** max(0, level_i - 1)
+    duration_ratio = max(_SWEEP_LEVEL_MIN_DURATION_RATIO, duration_ratio)
+    sweep_duration = max(0.0001, base_duration * duration_ratio)
+    return 1.0 / sweep_duration
+
 
 def draw_rainbow_cat_sweep(
     screen: pygame.Surface,
@@ -322,13 +350,14 @@ def draw_rainbow_cat_sweep(
         cat_h = custom_cat.get_height()
         cat_x = sweep_x
         cat_y = sweep_y + max(0, (sweep_height - cat_h) // 2)
-        tail_attach_x = cat_x + max(1, int(cat_w * 0.14))
+        # Rainbow, LunaCat'in baş noktasına kadar uzatılır.
+        head_attach_x = cat_x + max(1, int(cat_w * _CAT_HEAD_ANCHOR_X))
         trail_x = board_rect.x
-        trail_right = max(trail_x + one_col_w, tail_attach_x)
-        tail_width = max(1, trail_right - trail_x)
+        trail_right = max(trail_x + one_col_w, head_attach_x)
+        trail_width = max(1, trail_right - trail_x)
     else:
         trail_x = sweep_x
-        tail_width = sweep_width
+        trail_width = sweep_width
 
     stripe_h = max(1, sweep_height // 6)
     for i in range(6):
@@ -336,7 +365,7 @@ def draw_rainbow_cat_sweep(
         stripe_y = sweep_y + i * stripe_h
         stripe_h_i = max(1, (sweep_y + sweep_height) - stripe_y) if i == 5 else stripe_h
 
-        stripe_rect = pygame.Rect(trail_x, stripe_y, tail_width, stripe_h_i)
+        stripe_rect = pygame.Rect(trail_x, stripe_y, trail_width, stripe_h_i)
         clip = stripe_rect.clip(board_rect)
         if clip.width <= 0 or clip.height <= 0:
             continue

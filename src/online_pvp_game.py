@@ -43,6 +43,20 @@ from retro_style import retro_style as _rs
 from renderers.jelly_renderer import draw_jelly_block, draw_jelly_border
 from effect_surface_cache import EffectSurfaceCache
 from sweep_effects import SweepCatState, draw_rainbow_cat_sweep
+try:
+    from sweep_effects import compute_line_sweep_progress_speed as _compute_line_sweep_progress_speed
+except Exception:
+    def _compute_line_sweep_progress_speed(base_block_speed: float, sweep_travel_px: float, level: int | float = 1) -> float:
+        travel_px = max(1.0, float(sweep_travel_px))
+        block_speed = max(0.001, float(base_block_speed))
+        try:
+            level_i = max(1, int(level))
+        except Exception:
+            level_i = 1
+        base_duration = travel_px / (block_speed * 3600.0)
+        duration_ratio = max(0.42, 0.965 ** max(0, level_i - 1))
+        sweep_duration = max(0.0001, base_duration * duration_ratio)
+        return 1.0 / sweep_duration
 from screen_shake import (
     DEFAULT_SCREEN_SHAKE_DURATION_SECONDS,
     HARD_DROP_SCREEN_SHAKE_DURATION_SECONDS,
@@ -4120,6 +4134,7 @@ class OnlinePvPGame:
         self.update_screen_shake(dt_ms=delta_time)
 
         dt_frames = delta_time / 16.67 if delta_time > 0 else 1.0
+        dt_seconds = max(0.0, float(delta_time or 0.0)) / 1000.0
         if self.my_line_flash_timer > 0:
             self.my_line_flash_timer = max(0, self.my_line_flash_timer - dt_frames)
             ratio = max(0.0, min(1.0, self.my_line_flash_timer / 20.0))
@@ -4146,9 +4161,9 @@ class OnlinePvPGame:
             board_pixel_width = BOARD_WIDTH * self.cell_size
             sweep_width = max(1, int(self.cell_size * 1.5))
             sweep_travel_px = max(1.0, float(board_pixel_width + sweep_width))
-            block_px_per_frame = self.block_fall_speed * 60.0
-            sweep_speed = block_px_per_frame / sweep_travel_px
-            self.my_line_sweep_progress += dt_frames * sweep_speed
+            my_level = max(1, int(getattr(self.my_board, 'level', 1)))
+            sweep_speed = _compute_line_sweep_progress_speed(self.block_fall_speed, sweep_travel_px, my_level)
+            self.my_line_sweep_progress += dt_seconds * sweep_speed
             if self.my_line_sweep_progress >= 1.0:
                 self.my_line_sweep_progress = 1.0
                 self.my_line_sweep_active = False
@@ -4158,9 +4173,9 @@ class OnlinePvPGame:
             board_pixel_width = BOARD_WIDTH * self.cell_size
             sweep_width = max(1, int(self.cell_size * 1.5))
             sweep_travel_px = max(1.0, float(board_pixel_width + sweep_width))
-            block_px_per_frame = self.block_fall_speed * 60.0
-            sweep_speed = block_px_per_frame / sweep_travel_px
-            self.opp_line_sweep_progress += dt_frames * sweep_speed
+            opp_level = max(1, int(getattr(self.opp_board, 'level', 1)))
+            sweep_speed = _compute_line_sweep_progress_speed(self.block_fall_speed, sweep_travel_px, opp_level)
+            self.opp_line_sweep_progress += dt_seconds * sweep_speed
             if self.opp_line_sweep_progress >= 1.0:
                 self.opp_line_sweep_progress = 1.0
                 self.opp_line_sweep_active = False

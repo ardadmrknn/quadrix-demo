@@ -48,6 +48,20 @@ except ImportError:
 from effect_surface_cache import EffectSurfaceCache
 from gameplay_layout import compute_single_player_layout, get_display_pixel_ratio
 from sweep_effects import SweepCatState, draw_rainbow_cat_sweep
+try:
+    from sweep_effects import compute_line_sweep_progress_speed as _compute_line_sweep_progress_speed
+except Exception:
+    def _compute_line_sweep_progress_speed(base_block_speed: float, sweep_travel_px: float, level: int | float = 1) -> float:
+        travel_px = max(1.0, float(sweep_travel_px))
+        block_speed = max(0.001, float(base_block_speed))
+        try:
+            level_i = max(1, int(level))
+        except Exception:
+            level_i = 1
+        base_duration = travel_px / (block_speed * 3600.0)
+        duration_ratio = max(0.42, 0.965 ** max(0, level_i - 1))
+        sweep_duration = max(0.0001, base_duration * duration_ratio)
+        return 1.0 / sweep_duration
 from ui_scaling import apply_ui_scale_preset, get_projected_effective_scale, get_scale, resolve_ui_scale_size
 from combo_popup_style import (
     COMBO_POPUP_SHADOW_COLOR,
@@ -3121,13 +3135,13 @@ class Game:
             cat_h = custom_cat.get_height()
             cat_x = sweep_x
             cat_y = sweep_y + max(0, (sweep_height - cat_h) // 2)
-            tail_attach_x = cat_x + max(1, int(cat_w * 0.14))
+            head_attach_x = cat_x + max(1, int(cat_w * 0.86))
             trail_x = board_rect.x
-            trail_right = max(trail_x + one_col_w, tail_attach_x)
-            tail_width = max(1, trail_right - trail_x)
+            trail_right = max(trail_x + one_col_w, head_attach_x)
+            trail_width = max(1, trail_right - trail_x)
         else:
             trail_x = sweep_x
-            tail_width = sweep_width
+            trail_width = sweep_width
 
         rainbow = [
             (255, 0, 0),
@@ -3147,7 +3161,7 @@ class Game:
             else:
                 stripe_h_i = stripe_h
 
-            stripe_rect = pygame.Rect(trail_x, stripe_y, tail_width, stripe_h_i)
+            stripe_rect = pygame.Rect(trail_x, stripe_y, trail_width, stripe_h_i)
             clip = stripe_rect.clip(board_rect)
             if clip.width <= 0 or clip.height <= 0:
                 continue
@@ -3981,6 +3995,7 @@ class Game:
         # Keep a stable dt reference for effects that update outside this method too.
         self._last_dt_ms = dt
         dt_clamped = max(0.0, min(100.0, dt))
+        dt_seconds = dt_clamped / 1000.0
         dt_frames = dt_clamped / 16.666  # ~60 FPS frame scale
 
         if self.game_over_warning_timer > 0:
@@ -4088,15 +4103,15 @@ class Game:
         
         # Sweep efekti güncelle (soldan sağa ışık süpürmesi)
         if self.line_clear_sweep_active:
-            # Sweep hızı, blok düşüşü ile aynı piksel/frame hızında ilerler
+            # Sweep hızı, blok düşüşü ile aynı piksel/saniye hızında ilerler
             cell_size = self.get_cell_size()
             board_pixel_width = self.board_width * cell_size
             cleared_count = max(1, len(self.line_clear_sweep_rows))
             sweep_width = self._get_line_sweep_length_px(cell_size, cleared_count)
             sweep_travel_px = max(1.0, float(board_pixel_width + sweep_width))
-            block_px_per_frame = self.block_fall_speed * 60.0
-            sweep_speed = block_px_per_frame / sweep_travel_px
-            self.line_clear_sweep_progress += dt_frames * sweep_speed
+            level = max(1, int(getattr(self.board, 'level', 1)))
+            sweep_speed = _compute_line_sweep_progress_speed(self.block_fall_speed, sweep_travel_px, level)
+            self.line_clear_sweep_progress += dt_seconds * sweep_speed
             if self.line_clear_sweep_progress >= 1.0:
                 self.line_clear_sweep_progress = 1.0
                 self.line_clear_sweep_active = False
@@ -4610,8 +4625,10 @@ class Game:
         
         curr_y += max(14, int(25 * hud_scale))
         # 2 Sonraki parça yanyana
-        box_size = max(42, min(int(round(90 * pixel_ratio)), int(60 * hud_scale)))
         gap = max(8, int(15 * hud_scale))
+        next_box_size_max_by_width = max(30, (content_w - gap) // 2)
+        target_box_size = max(44, min(int(round(96 * pixel_ratio)), int(66 * hud_scale)))
+        box_size = min(next_box_size_max_by_width, target_box_size)
         next_box_rects = []
         
         for i in range(2):
@@ -4634,7 +4651,7 @@ class Game:
                 pcm = getattr(p, 'color_matrix', None)
                 
                 # Mini blok çizimi
-                mini_cell = max(8, int(12 * hud_scale))
+                mini_cell = max(8, int(13 * hud_scale))
                 # Ortalamak için
                 px_w = pw * mini_cell
                 px_h = ph * mini_cell
@@ -4699,9 +4716,12 @@ class Game:
 
         hold_label_font = retro_style.get_font(max(12, int(18 * hud_scale)))
         hold_binding_label = _compact_action_label('hold', pygame.K_c)
-        hold_label_text = str(t('hold', default='Saklanan (C):'))
-        if '(C)' in hold_label_text:
-            hold_label_text = hold_label_text.replace('(C)', f'({hold_binding_label})', 1)
+        hold_label_text = str(t('hold', default='Saklanan (C):')).strip()
+        if '(' in hold_label_text:
+            hold_label_text = hold_label_text.split('(', 1)[0].strip()
+        hold_label_text = hold_label_text.rstrip(':').strip()
+        if not hold_label_text:
+            hold_label_text = str(t('hold', default='Saklanan')).rstrip(':').strip() or 'Saklanan'
         hold_label = render_inline_action_text_surface(
             hold_label_text,
             hold_binding_label,
@@ -4709,7 +4729,12 @@ class Game:
             hold_label_font,
             label_color,
         )
-        hold_label_rect = hold_label.get_rect(topleft=(content_x + label_inset, curr_y))
+        hold_label_center_x = content_x + (content_w // 2)
+        hold_label_line_gap = max(2, int(4 * hud_scale))
+        hold_label_vertical_nudge = max(6, int(9 * hud_scale))
+        hold_label_rect = hold_label.get_rect(
+            midbottom=(hold_label_center_x, curr_y - hold_label_line_gap + hold_label_vertical_nudge)
+        )
         self.screen.blit(hold_label, hold_label_rect)
         
         # B tuşu hakkı
@@ -4725,6 +4750,28 @@ class Game:
         if not self._draw_custom_frame(hold_box_rect, "box_frame.png", padding=4):
             pygame.draw.rect(self.screen, (20, 25, 40, 180), hold_box_rect, border_radius=8)
             pygame.draw.rect(self.screen, (60, 70, 100), hold_box_rect, 1, border_radius=8)
+
+        def _render_hold_key_badge(action_name: str, key_text: str, max_width: int):
+            badge_font = retro_style.get_font(max(12, int(18 * hud_scale)))
+            badge = render_action_prompt_surface(
+                action_name,
+                key_text,
+                badge_font,
+                label_color,
+                max_width=max_width,
+                max_height=max(16, int(20 * hud_scale)),
+            )
+            if badge is None:
+                badge = badge_font.render(key_text, True, label_color)
+            return badge
+
+        hold_key_badge = _render_hold_key_badge(
+            'hold',
+            hold_binding_label,
+            hold_box_rect.width - max(4, int(8 * hud_scale)),
+        )
+        hold_key_rect = hold_key_badge.get_rect(center=(hold_box_rect.centerx, curr_y))
+        self.screen.blit(hold_key_badge, hold_key_rect)
 
         # Second pocket (V): draw a second hold box when the perk is active.
         show_second_pocket = False
@@ -4749,25 +4796,17 @@ class Game:
             pygame.draw.rect(self.screen, (20, 25, 40, 180), second_box_rect, border_radius=8)
             pygame.draw.rect(self.screen, (60, 70, 100), second_box_rect, 1, border_radius=8)
 
-            # Label: show which key opens the second pocket (bind-aware).
             key_label = _compact_action_label('hold2', pygame.K_v)
-            hold2_text = f"{key_label}"
-
-            hold2_font = retro_style.get_font(max(12, int(18 * hud_scale)))
-            hold2_label = render_action_prompt_surface(
+            hold2_label = _render_hold_key_badge(
                 'hold2',
-                hold2_text,
-                hold2_font,
-                label_color,
-                max_width=second_box_rect.width - max(4, int(8 * hud_scale)),
-                max_height=max(16, int(20 * hud_scale)),
+                key_label,
+                second_box_rect.width - max(4, int(8 * hud_scale)),
             )
-            if hold2_label is None:
-                hold2_label = hold2_font.render(hold2_text, True, label_color)
-            label_y = hold_label_rect.y + max(0, (hold_label_rect.height - hold2_label.get_height()) // 2)
+            label_center_y = hold_key_rect.centery
             if second_box_rect.y > hold_box_rect.y:
-                label_y = (second_box_rect.y - max(14, int(25 * hud_scale))) + max(0, (hold_label_rect.height - hold2_label.get_height()) // 2)
-            second_label_rect = hold2_label.get_rect(topleft=(second_box_rect.x + label_inset, label_y))
+                label_top = second_box_rect.y - max(14, int(25 * hud_scale))
+                label_center_y = label_top + (hold_label_rect.height // 2)
+            second_label_rect = hold2_label.get_rect(center=(second_box_rect.centerx, label_center_y))
             self.screen.blit(hold2_label, second_label_rect)
         
         if self.held_piece:
