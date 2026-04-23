@@ -1447,6 +1447,11 @@ class MysteryCardUI:
         self._reroll_enabled = False
         self._reroll_remaining = 0
         self._reroll_limit = 0
+        self.focus_target_kind = 'card'
+        self.focus_card_index = 0
+        self.last_focus_card_index = 0
+        self.focus_action: str | None = None
+        self.keyboard_nav_active = False
 
     def reset(self) -> None:
         self.card_rects = []
@@ -1465,6 +1470,11 @@ class MysteryCardUI:
         self._reroll_enabled = False
         self._reroll_remaining = 0
         self._reroll_limit = 0
+        self.focus_target_kind = 'card'
+        self.focus_card_index = 0
+        self.last_focus_card_index = 0
+        self.focus_action = None
+        self.keyboard_nav_active = False
 
     def set_reveal_sfx_callback(self, callback) -> None:
         self._reveal_sfx_callback = callback
@@ -1518,6 +1528,10 @@ class MysteryCardUI:
         self.selection_index = index
         self.selection_flash = self.selection_flash_duration
         self.interaction_locked = True
+        self.focus_target_kind = 'card'
+        self.focus_card_index = max(0, int(index))
+        self.last_focus_card_index = self.focus_card_index
+        self.focus_action = None
 
     def is_selection_animating(self) -> bool:
         return self.selection_flash > 0
@@ -1526,6 +1540,7 @@ class MysteryCardUI:
         self.selection_index = -1
         self.selection_flash = 0.0
         self.interaction_locked = False
+        self.keyboard_nav_active = False
 
     # Moved to MysteryCardUI class; UICard does not need vignette helper
 
@@ -1543,6 +1558,138 @@ class MysteryCardUI:
             if not w.is_revealed:
                 return True
         return False
+
+    def _available_action_targets(self, show_secondary_actions: bool = True) -> list[str]:
+        if not show_secondary_actions:
+            return []
+        actions = ['SKIP']
+        if self._reroll_enabled:
+            actions.append('REROLL')
+        return actions
+
+    def _clamp_focus_card_index(self, card_count: int) -> int:
+        max_index = max(0, int(card_count) - 1)
+        self.focus_card_index = max(0, min(max_index, int(self.focus_card_index)))
+        self.last_focus_card_index = max(0, min(max_index, int(self.last_focus_card_index)))
+        return self.focus_card_index
+
+    def _set_focus_target(self, target: int | str | None, card_count: int | None = None) -> None:
+        if isinstance(target, int):
+            self.focus_target_kind = 'card'
+            self.focus_card_index = max(0, int(target))
+            self.last_focus_card_index = self.focus_card_index
+            self.focus_action = None
+            if card_count is not None:
+                self._clamp_focus_card_index(card_count)
+            return
+
+        if target in ('SKIP', 'REROLL'):
+            self.focus_target_kind = 'action'
+            self.focus_action = str(target)
+
+    def sync_focus_target(self, card_count: int, *, show_secondary_actions: bool = True) -> None:
+        total_cards = max(0, int(card_count))
+        actions = self._available_action_targets(show_secondary_actions)
+
+        if self.focus_target_kind == 'action':
+            if self.focus_action not in actions:
+                if actions:
+                    self.focus_action = actions[0]
+                elif total_cards > 0:
+                    self.focus_target_kind = 'card'
+                    self.focus_action = None
+                    self._clamp_focus_card_index(total_cards)
+                else:
+                    self.focus_target_kind = 'card'
+                    self.focus_action = None
+                    self.focus_card_index = 0
+                    self.last_focus_card_index = 0
+        else:
+            if total_cards > 0:
+                self._clamp_focus_card_index(total_cards)
+            elif actions:
+                self.focus_target_kind = 'action'
+                self.focus_action = actions[0]
+            else:
+                self.focus_target_kind = 'card'
+                self.focus_action = None
+                self.focus_card_index = 0
+                self.last_focus_card_index = 0
+
+        if self.focus_target_kind == 'card' and total_cards > 0:
+            self.last_focus_card_index = self.focus_card_index
+
+    def get_focus_target(self, card_count: int, *, show_secondary_actions: bool = True) -> int | str | None:
+        self.sync_focus_target(card_count, show_secondary_actions=show_secondary_actions)
+        if self.focus_target_kind == 'action':
+            return self.focus_action
+        if int(card_count) <= 0:
+            return None
+        return self.focus_card_index
+
+    def get_forced_hover_index(self, card_count: int, *, show_secondary_actions: bool = True) -> int | None:
+        if not self.keyboard_nav_active:
+            return None
+        focused = self.get_focus_target(card_count, show_secondary_actions=show_secondary_actions)
+        return focused if isinstance(focused, int) else None
+
+    def move_focus(self, direction: str, card_count: int, *, show_secondary_actions: bool = True) -> bool:
+        if direction not in ('left', 'right', 'up', 'down'):
+            return False
+        if self.is_interaction_locked():
+            return False
+
+        self.keyboard_nav_active = True
+        before = self.get_focus_target(card_count, show_secondary_actions=show_secondary_actions)
+        total_cards = max(0, int(card_count))
+        actions = self._available_action_targets(show_secondary_actions)
+
+        if self.focus_target_kind == 'card':
+            current_index = self._clamp_focus_card_index(total_cards) if total_cards > 0 else 0
+            if direction == 'left' and total_cards > 0:
+                self.focus_card_index = max(0, current_index - 1)
+            elif direction == 'right' and total_cards > 0:
+                self.focus_card_index = min(total_cards - 1, current_index + 1)
+            elif direction == 'down' and actions:
+                self.last_focus_card_index = current_index
+                self.focus_target_kind = 'action'
+                self.focus_action = actions[0]
+        else:
+            current_action = self.focus_action if self.focus_action in actions else (actions[0] if actions else None)
+            if current_action is not None:
+                self.focus_action = current_action
+            if direction == 'left' and current_action == 'REROLL' and 'SKIP' in actions:
+                self.focus_action = 'SKIP'
+            elif direction == 'right' and current_action == 'SKIP' and 'REROLL' in actions:
+                self.focus_action = 'REROLL'
+            elif direction == 'up' and total_cards > 0:
+                self.focus_target_kind = 'card'
+                self.focus_action = None
+                self.focus_card_index = self.last_focus_card_index
+                self._clamp_focus_card_index(total_cards)
+
+        after = self.get_focus_target(card_count, show_secondary_actions=show_secondary_actions)
+        return after != before
+
+    def activate_focused(self, card_count: int, *, show_secondary_actions: bool = True) -> int | str | None:
+        if self.is_interaction_locked():
+            return None
+        focused = self.get_focus_target(card_count, show_secondary_actions=show_secondary_actions)
+        if focused == 'REROLL' and not self._reroll_enabled:
+            return None
+        return focused
+
+    def _target_at_pos(self, pos: tuple[int, int], *, include_disabled_reroll: bool = False) -> int | str | None:
+        for idx, rect in enumerate(self.card_rects):
+            if rect.collidepoint(pos):
+                return idx
+        if getattr(self, 'reroll_button_rect', None) and self.reroll_button_rect.collidepoint(pos):
+            if include_disabled_reroll or self._reroll_enabled:
+                return 'REROLL'
+            return None
+        if getattr(self, 'skip_button_rect', None) and self.skip_button_rect.collidepoint(pos):
+            return 'SKIP'
+        return None
 
     def _get_overlay_scale(self, screen_or_width, window_height: int | None = None, *, min_scale: float = 0.62, max_scale: float = 1.12) -> float:
         """Kart seçim overlay'i için aktif canvas bazlı ortak scale wrapper'ı."""
@@ -1631,6 +1778,7 @@ class MysteryCardUI:
         screen.blit(overlay, (0, 0))
 
         card_count = len(cards)
+        self.sync_focus_target(card_count, show_secondary_actions=show_secondary_actions)
         # Use denser grid when debugging with the 'card_mode_debug' flag
         if card_mode_debug:
             card_width = s(220)
@@ -1663,7 +1811,8 @@ class MysteryCardUI:
             glow=False,
         )
 
-        mouse_pos = get_mouse_pos() if pygame.mouse.get_focused() else None
+        raw_mouse_pos = get_mouse_pos() if pygame.mouse.get_focused() else None
+        mouse_pos = None if self.keyboard_nav_active else raw_mouse_pos
         if show_peek_button:
             # Göz butonu - panelin sağ üst köşesinde
             peek_btn_size = s(40)
@@ -1765,7 +1914,8 @@ class MysteryCardUI:
         else:
             start_x = panel_rect.x + (panel_rect.width - total_width) // 2
 
-        mouse_pos = get_mouse_pos() if pygame.mouse.get_focused() else None
+        if forced_hover_index is None:
+            forced_hover_index = self.get_forced_hover_index(card_count, show_secondary_actions=show_secondary_actions)
         self.card_rects = []
         self.hover_index = -1
         # Ensure card widget count matches cards
@@ -1805,7 +1955,7 @@ class MysteryCardUI:
         if show_secondary_actions:
             btn_font = fonts.get('small')
             badge_font = fonts.get('tag') or btn_font
-            btn_h = s(44)
+            btn_h = s(50)
             btn_y = panel_rect.bottom - btn_h - s(26)
             total_btn_area_w = min(s(660), panel_rect.width - s(80))
             gap = s(12)
@@ -1814,35 +1964,42 @@ class MysteryCardUI:
             reroll_enabled = bool(getattr(self, '_reroll_enabled', False))
             reroll_remaining = max(0, int(getattr(self, '_reroll_remaining', 0)))
             reroll_limit = max(0, int(getattr(self, '_reroll_limit', 0)))
+            focused_target = self.get_focus_target(card_count, show_secondary_actions=show_secondary_actions)
             self.skip_button_rect = pygame.Rect(start_x, btn_y, each_w, btn_h)
-            retro_style.draw_glass_panel(
+            skip_hovered = bool(mouse_pos and self.skip_button_rect.collidepoint(mouse_pos))
+            skip_focused = focused_target == 'SKIP'
+            self._draw_secondary_action_button(
                 screen,
                 self.skip_button_rect,
-                alpha=155,
-                border_color=retro_style.glass_border[:3],
-                glow=False,
+                t('card_skip_selection'),
+                btn_font=btn_font,
+                ui_scale=ui_scale,
+                accent=(112, 178, 228),
+                border_color=(132, 190, 232),
+                enabled=True,
+                hovered=skip_hovered,
+                focused=skip_focused,
             )
-            skip_label = btn_font.render(t('card_skip_selection'), True, retro_style.text_primary)
-            screen.blit(skip_label, skip_label.get_rect(center=self.skip_button_rect.center))
             reroll_x = start_x + each_w + gap
             self.reroll_button_rect = pygame.Rect(reroll_x, btn_y, each_w, btn_h)
-            retro_style.draw_glass_panel(
+            reroll_hovered = bool(mouse_pos and self.reroll_button_rect.collidepoint(mouse_pos))
+            reroll_focused = focused_target == 'REROLL'
+            self._draw_secondary_action_button(
                 screen,
                 self.reroll_button_rect,
-                alpha=175 if reroll_enabled else 120,
-                border_color=(220, 170, 40) if reroll_enabled else (120, 126, 138),
-                glow=False,
+                t('card_reroll_selection'),
+                btn_font=btn_font,
+                ui_scale=ui_scale,
+                accent=(242, 186, 82),
+                border_color=(236, 188, 74) if reroll_enabled else (136, 142, 152),
+                enabled=reroll_enabled,
+                hovered=reroll_hovered,
+                focused=reroll_focused,
             )
             if not reroll_enabled:
                 disabled_overlay = pygame.Surface(self.reroll_button_rect.size, pygame.SRCALPHA)
                 disabled_overlay.fill((92, 98, 108, 90))
                 screen.blit(disabled_overlay, self.reroll_button_rect.topleft)
-            reroll_label = btn_font.render(
-                t('card_reroll_selection'),
-                True,
-                (255, 215, 80) if reroll_enabled else (154, 158, 168),
-            )
-            screen.blit(reroll_label, reroll_label.get_rect(center=self.reroll_button_rect.center))
             if reroll_limit > 0:
                 badge_text = f"{reroll_remaining}/{reroll_limit}"
                 badge_label = badge_font.render(
@@ -1881,6 +2038,85 @@ class MysteryCardUI:
         # Reset randomize pill rect if overlay is closed
         if not cards:
             self.randomize_pill_rect = None
+
+    def _draw_secondary_action_button(
+        self,
+        screen: pygame.Surface,
+        rect: pygame.Rect,
+        label_text: str,
+        *,
+        btn_font: pygame.font.Font,
+        ui_scale: float,
+        accent: tuple[int, int, int],
+        border_color: tuple[int, int, int],
+        enabled: bool,
+        hovered: bool,
+        focused: bool,
+    ) -> None:
+        s = lambda value, minimum=1: max(minimum, int(round(float(value) * ui_scale)))
+        corner_radius = max(s(14), rect.height // 3)
+        panel_alpha = 188 if enabled else 118
+        if focused:
+            panel_alpha = min(235, panel_alpha + 22)
+        elif hovered:
+            panel_alpha = min(214, panel_alpha + 10)
+
+        retro_style.draw_glass_panel(
+            screen,
+            rect,
+            alpha=panel_alpha,
+            border_color=border_color,
+            glow=False,
+        )
+
+        accent_surface = pygame.Surface(rect.size, pygame.SRCALPHA)
+        accent_rect = accent_surface.get_rect()
+        pygame.draw.rect(
+            accent_surface,
+            (*accent, 34 if enabled else 14),
+            accent_rect,
+            border_radius=corner_radius,
+        )
+        top_band_height = max(s(10), rect.height // 4)
+        pygame.draw.rect(
+            accent_surface,
+            (*accent, 68 if focused else 48 if hovered else 38),
+            pygame.Rect(s(1), s(1), max(1, rect.width - s(2)), top_band_height),
+            border_radius=corner_radius,
+        )
+        underline_rect = pygame.Rect(
+            s(18),
+            rect.height - s(7),
+            max(s(24), rect.width - s(36)),
+            max(2, s(3)),
+        )
+        pygame.draw.rect(
+            accent_surface,
+            (*accent, 156 if focused else 108 if hovered else 76 if enabled else 34),
+            underline_rect,
+            border_radius=underline_rect.height // 2,
+        )
+        screen.blit(accent_surface, rect.topleft)
+
+        if focused or hovered:
+            ring_padding = s(8) if focused else s(4)
+            ring_rect = rect.inflate(ring_padding * 2, ring_padding * 2)
+            ring_surface = pygame.Surface(ring_rect.size, pygame.SRCALPHA)
+            pygame.draw.rect(
+                ring_surface,
+                (*accent, 108 if focused else 56),
+                ring_surface.get_rect(),
+                width=max(2, s(2)),
+                border_radius=max(corner_radius + ring_padding, ring_rect.height // 3),
+            )
+            screen.blit(ring_surface, ring_rect.topleft)
+
+        label_color = (246, 249, 255) if enabled else (158, 163, 174)
+        if focused and enabled:
+            label_color = (255, 255, 255)
+        label_surf = btn_font.render(str(label_text), True, label_color)
+        label_rect = label_surf.get_rect(center=(rect.centerx, rect.centery - s(1)))
+        screen.blit(label_surf, label_rect)
 
     def draw_active_cards_panel(
         self,
@@ -2152,6 +2388,7 @@ class MysteryCardUI:
     def handle_mouse_click(self, pos: tuple[int, int]) -> int | str | None:
         # Peek butonu kontrolü
         if getattr(self, 'peek_button_rect', None) and self.peek_button_rect.collidepoint(pos):
+            self.keyboard_nav_active = False
             self.peek_mode_active = not self.peek_mode_active
             return 'PEEK'
         
@@ -2161,19 +2398,12 @@ class MysteryCardUI:
 
         if self.is_interaction_locked():
             return None
-            
-        for idx, rect in enumerate(self.card_rects):
-            if rect.collidepoint(pos):
-                return idx
-        # Yeniden Çek
-        if getattr(self, 'reroll_button_rect', None) and self.reroll_button_rect.collidepoint(pos):
-            if getattr(self, '_reroll_enabled', False):
-                return 'REROLL'
-            return None
-        # Kart almadan devam et
-        if getattr(self, 'skip_button_rect', None) and self.skip_button_rect.collidepoint(pos):
-            return 'SKIP'
-        return None
+
+        self.keyboard_nav_active = False
+        target = self._target_at_pos(pos)
+        if target is not None:
+            self._set_focus_target(target, len(self.card_rects))
+        return target
 
     def handle_mouse_wheel(self, delta: int) -> None:
         """Scroll the grid up/down in debug grid mode (delta is positive up, negative down)"""
@@ -2182,13 +2412,26 @@ class MysteryCardUI:
 
     def handle_mouse_move(self, pos: tuple[int, int]) -> None:
         """Update hover_index based on mouse position (works with scrolled grid)."""
-        if not self.card_rects:
+        self.keyboard_nav_active = False
+        if not self.card_rects and not getattr(self, 'skip_button_rect', None) and not getattr(self, 'reroll_button_rect', None):
             self.hover_index = -1
             return
+
         for idx, rect in enumerate(self.card_rects):
             if rect.collidepoint(pos):
                 self.hover_index = idx
+                self._set_focus_target(idx, len(self.card_rects))
                 return
+
+        if getattr(self, 'skip_button_rect', None) and self.skip_button_rect.collidepoint(pos):
+            self.hover_index = -1
+            self._set_focus_target('SKIP', len(self.card_rects))
+            return
+
+        if getattr(self, 'reroll_button_rect', None) and self.reroll_button_rect.collidepoint(pos) and self._reroll_enabled:
+            self.hover_index = -1
+            self._set_focus_target('REROLL', len(self.card_rects))
+            return
         self.hover_index = -1
 
     def _draw_card(
@@ -6194,71 +6437,13 @@ class MysteryMode(Game):
                     except Exception:
                         pass
                 if event.type == pygame.KEYDOWN:
-                    # ESC: continue without taking a card (same as clicking SKIP)
-                    if event.key == pygame.K_ESCAPE:
-                        try:
-                            self.card_manager.pending_choices = []
-                        except Exception:
-                            pass
-                        self._close_card_selection()
-                    # Navigation in debug mode: more selections via numbers 1..9 and scrolling
-                    elif self.settings_manager and self.settings_manager.get('card_mode_debug', False):
-                        # Page up/down or arrow keys can scroll the grid
-                        if event.key in (pygame.K_PAGEUP, pygame.K_UP):
-                            try:
-                                self.card_ui.handle_mouse_wheel(1)
-                            except Exception:
-                                pass
-                            continue
-                        elif event.key in (pygame.K_PAGEDOWN, pygame.K_DOWN):
-                            try:
-                                self.card_ui.handle_mouse_wheel(-1)
-                            except Exception:
-                                pass
-                            continue
-                        for n in range(1, 10):
-                            key = getattr(pygame, f'K_{n}')
-                            kp = getattr(pygame, f'K_KP{n}') if hasattr(pygame, f'K_KP{n}') else None
-                            if event.key in (key, kp):
-                                self._select_card(n - 1)
-                                break
-                    else:
-                        # Press 'R' to pick a random pending card
-                        if event.key == pygame.K_r:
-                            if self.card_manager.pending_choices:
-                                idx = random.randint(0, len(self.card_manager.pending_choices) - 1)
-                                self._select_card(idx)
-                            continue
-                        if event.key in (pygame.K_1, pygame.K_KP1):
-                            self._select_card(0)
-                        elif event.key in (pygame.K_2, pygame.K_KP2):
-                            self._select_card(1)
-                        elif event.key in (pygame.K_3, pygame.K_KP3):
-                            self._select_card(2)
+                    if self._handle_card_selection_keydown(event):
+                        continue
                 elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                     pos = normalize_mouse_pos(getattr(event, 'pos', None)) or event.pos
                     choice = self.card_ui.handle_mouse_click(pos)
                     if choice is not None:
-                        if choice == 'SKIP':
-                            # Kart seçmeden devam: seçim UI'yi kapat ve seçenekleri temizle.
-                            try:
-                                self.card_manager.pending_choices = []
-                            except Exception:
-                                pass
-                            self._close_card_selection()
-                        elif choice == 'REROLL':
-                            # Kart havuzunu yeniden çek; overlay açık kalır.
-                            self._try_reroll_card_selection()
-                        elif choice == 'PEEK':
-                            # Peek moduna geçiş/çıkış - sadece UI durumu değişir, burada ek işlem yok
-                            pass
-                        elif choice == 'RANDOM':
-                            # Random selection among pending choices
-                            if self.card_manager.pending_choices:
-                                idx = random.randint(0, len(self.card_manager.pending_choices) - 1)
-                                self._select_card(idx)
-                        else:
-                            self._select_card(choice)
+                        self._handle_card_selection_choice(choice)
                 elif event.type == pygame.MOUSEMOTION:
                     # update hover states even when grid scrolled
                     # this ballot uses the card_rects set by draw_selection_overlay
@@ -7344,6 +7529,113 @@ class MysteryMode(Game):
                 print(f"[MysteryMode] Opening card selection overlay: {len(self.card_manager.pending_choices)} choices, pending_level_ups={getattr(self, 'pending_level_ups', 0)}")
         except Exception:
             pass
+
+    def _get_card_selection_nav_keys(self) -> dict[str, tuple[int, ...]]:
+        nav_keys = {
+            'left': {pygame.K_LEFT, pygame.K_a},
+            'right': {pygame.K_RIGHT, pygame.K_d},
+            'up': {pygame.K_UP, pygame.K_w},
+            'down': {pygame.K_DOWN, pygame.K_s},
+        }
+        action_map = {
+            'left': 'move_left',
+            'right': 'move_right',
+            'up': 'rotate',
+            'down': 'soft_drop',
+        }
+        bindings = getattr(self, 'control_bindings', {}) or {}
+        for direction, action in action_map.items():
+            try:
+                for key in self._action_keys(bindings, action):
+                    nav_keys[direction].add(int(key))
+            except Exception:
+                pass
+        return {direction: tuple(keys) for direction, keys in nav_keys.items()}
+
+    def _handle_card_selection_choice(self, choice: int | str | None) -> bool:
+        if choice is None:
+            return False
+
+        if choice == 'SKIP':
+            try:
+                self.card_manager.pending_choices = []
+            except Exception:
+                pass
+            self._close_card_selection()
+            return True
+
+        if choice == 'REROLL':
+            self._try_reroll_card_selection()
+            return True
+
+        if choice == 'PEEK':
+            return True
+
+        if choice == 'RANDOM':
+            if self.card_manager.pending_choices:
+                idx = random.randint(0, len(self.card_manager.pending_choices) - 1)
+                self._select_card(idx)
+            return True
+
+        self._select_card(int(choice))
+        return True
+
+    def _handle_card_selection_keydown(self, event) -> bool:
+        key = getattr(event, 'key', None)
+        if key is None:
+            return False
+
+        if key == pygame.K_ESCAPE:
+            return self._handle_card_selection_choice('SKIP')
+
+        if self.settings_manager and self.settings_manager.get('card_mode_debug', False):
+            if key in (pygame.K_PAGEUP, pygame.K_UP):
+                try:
+                    self.card_ui.handle_mouse_wheel(1)
+                except Exception:
+                    pass
+                return True
+            if key in (pygame.K_PAGEDOWN, pygame.K_DOWN):
+                try:
+                    self.card_ui.handle_mouse_wheel(-1)
+                except Exception:
+                    pass
+                return True
+            for n in range(1, 10):
+                digit_key = getattr(pygame, f'K_{n}')
+                keypad_key = getattr(pygame, f'K_KP{n}') if hasattr(pygame, f'K_KP{n}') else None
+                if key in (digit_key, keypad_key):
+                    self._select_card(n - 1)
+                    return True
+            return False
+
+        pending_count = len(getattr(self.card_manager, 'pending_choices', []) or [])
+        if key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE):
+            choice = self.card_ui.activate_focused(pending_count)
+            return self._handle_card_selection_choice(choice)
+
+        for direction, keys in self._get_card_selection_nav_keys().items():
+            if key in keys:
+                self.card_ui.move_focus(direction, pending_count)
+                return True
+
+        if key == pygame.K_r:
+            if self.card_manager.pending_choices:
+                idx = random.randint(0, len(self.card_manager.pending_choices) - 1)
+                self._select_card(idx)
+            return True
+
+        if key in (pygame.K_1, pygame.K_KP1):
+            self._select_card(0)
+            return True
+        if key in (pygame.K_2, pygame.K_KP2):
+            self._select_card(1)
+            return True
+        if key in (pygame.K_3, pygame.K_KP3):
+            self._select_card(2)
+            return True
+
+        return False
 
     def _close_card_selection(self) -> None:
         self.card_selection_active = False

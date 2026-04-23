@@ -90,6 +90,98 @@ def test_card_ui_ignores_clicks_when_interaction_locked():
     assert ui.handle_mouse_click((10, 10)) is None
 
 
+def test_card_ui_arrow_navigation_moves_between_cards_and_actions():
+    MysteryCardUI, _ = _import_game_modes_extra()
+    ui = MysteryCardUI()
+    ui.set_reroll_enabled(True)
+
+    assert ui.get_focus_target(3) == 0
+
+    assert ui.move_focus('right', 3) is True
+    assert ui.get_focus_target(3) == 1
+
+    assert ui.move_focus('down', 3) is True
+    assert ui.get_focus_target(3) == 'SKIP'
+
+    assert ui.move_focus('right', 3) is True
+    assert ui.get_focus_target(3) == 'REROLL'
+
+    assert ui.move_focus('up', 3) is True
+    assert ui.get_focus_target(3) == 1
+
+
+def test_card_ui_navigation_skips_disabled_reroll_action():
+    MysteryCardUI, _ = _import_game_modes_extra()
+    ui = MysteryCardUI()
+    ui.set_reroll_enabled(False)
+
+    ui.move_focus('down', 3)
+    assert ui.get_focus_target(3) == 'SKIP'
+
+    assert ui.move_focus('right', 3) is False
+    assert ui.get_focus_target(3) == 'SKIP'
+
+
+def test_card_selection_keydown_routes_arrows_and_enter_to_reroll():
+    MysteryCardUI, MysteryMode = _import_game_modes_extra()
+    mode = MysteryMode.__new__(MysteryMode)
+    mode.settings_manager = types.SimpleNamespace(get=lambda *_args, **_kwargs: False)
+    mode.control_bindings = {
+        'move_left': pygame.K_LEFT,
+        'move_right': pygame.K_RIGHT,
+        'soft_drop': pygame.K_DOWN,
+        'rotate': pygame.K_UP,
+    }
+    mode.alt_control_bindings = {}
+    mode.card_manager = types.SimpleNamespace(pending_choices=[{'id': 'a'}, {'id': 'b'}, {'id': 'c'}])
+    mode.card_ui = MysteryCardUI()
+    mode.card_ui.set_reroll_enabled(True)
+
+    reroll_calls = []
+    mode._try_reroll_card_selection = lambda: reroll_calls.append(True)
+    mode._close_card_selection = lambda: None
+    mode._select_card = lambda _index: pytest.fail('Arrow/enter reroll akisinda kart secilmemeliydi')
+
+    assert mode._handle_card_selection_keydown(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_RIGHT)) is True
+    assert mode.card_ui.get_focus_target(3) == 1
+
+    assert mode._handle_card_selection_keydown(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_DOWN)) is True
+    assert mode.card_ui.get_focus_target(3) == 'SKIP'
+
+    assert mode._handle_card_selection_keydown(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_RIGHT)) is True
+    assert mode.card_ui.get_focus_target(3) == 'REROLL'
+
+    assert mode._handle_card_selection_keydown(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_RETURN)) is True
+    assert reroll_calls == [True]
+
+
+def test_card_selection_keydown_keeps_space_for_activation_even_if_rotate_is_rebound():
+    MysteryCardUI, MysteryMode = _import_game_modes_extra()
+    mode = MysteryMode.__new__(MysteryMode)
+    mode.settings_manager = types.SimpleNamespace(get=lambda *_args, **_kwargs: False)
+    mode.control_bindings = {
+        'move_left': pygame.K_LEFT,
+        'move_right': pygame.K_RIGHT,
+        'soft_drop': pygame.K_DOWN,
+        'rotate': pygame.K_SPACE,
+    }
+    mode.alt_control_bindings = {}
+    mode.card_manager = types.SimpleNamespace(pending_choices=[{'id': 'a'}, {'id': 'b'}, {'id': 'c'}])
+    mode.card_ui = MysteryCardUI()
+    mode.card_ui.set_reroll_enabled(True)
+    mode.card_ui.move_focus('right', 3)
+    mode.card_ui.move_focus('down', 3)
+    mode.card_ui.move_focus('right', 3)
+
+    reroll_calls = []
+    mode._try_reroll_card_selection = lambda: reroll_calls.append(True)
+    mode._close_card_selection = lambda: None
+    mode._select_card = lambda _index: pytest.fail('Space aktivasyonu navigasyona dusmemeliydi')
+
+    assert mode._handle_card_selection_keydown(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_SPACE)) is True
+    assert reroll_calls == [True]
+
+
 def test_can_reroll_returns_false_while_selection_is_locked():
     _, MysteryMode = _import_game_modes_extra()
     mode = MysteryMode.__new__(MysteryMode)

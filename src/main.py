@@ -1587,6 +1587,55 @@ def main():
         print("  ✅ Tam Ekran Oynanış")
         print("  ✅ Sessiz Mod (M tuşu)")
         print("\n🎯 Oyun başlatılıyor...\n")
+
+    def _ensure_menu_music_playing(force: bool = False):
+        """Menü sesi açıldığında parçanın gerçekten aktif olmasını garanti et."""
+        if not settings_screen.music_enabled or settings_screen.mute_all:
+            return
+
+        try:
+            music_busy = bool(pygame.mixer.music.get_busy())
+        except Exception:
+            music_busy = False
+
+        channel_busy = False
+        current_channel = getattr(menu_sound, 'current_music_channel', None)
+        if current_channel is not None:
+            try:
+                channel_busy = bool(current_channel.get_busy())
+            except Exception:
+                pass
+
+        if not force and (music_busy or channel_busy):
+            return
+
+        try:
+            menu_sound.unduck_music()
+        except Exception:
+            pass
+        try:
+            menu_sound.set_music_volume(settings_manager.get('menu_music_volume', 0.3))
+        except Exception:
+            pass
+
+        menu_music = settings_manager.get('menu_music', 'main_1')
+        try:
+            playlist = settings_manager.get_menu_music_playlist()
+            playlist_keys = [menu_sound.ensure_track_available(p) for p in playlist]
+            playlist_keys = [p for p in playlist_keys if p]
+            if playlist_keys:
+                do_shuffle = bool(settings_manager.get('music_shuffle', False))
+                menu_sound.set_music_playlist(
+                    playlist_keys,
+                    loop=True,
+                    autoplay=True,
+                    force=force,
+                    shuffle=do_shuffle,
+                )
+            else:
+                menu_sound.play_music(menu_music.lower(), loop=True, force=force)
+        except Exception:
+            menu_sound.play_music(menu_music.lower(), loop=True, force=force)
     
     # Global M tuşu ile sessiz mod toggle fonksiyonu
     def toggle_global_mute():
@@ -1602,6 +1651,8 @@ def main():
             menu.set_muted(settings_screen.mute_all)
         except Exception:
             pass
+        if not settings_screen.mute_all:
+            _ensure_menu_music_playing()
         if constants.DEBUG_MODE:
             print("🔇 Sessiz mod: AÇIK (M tuşu)" if settings_screen.mute_all else "🔊 Sessiz mod: KAPALI (M tuşu)")
 
@@ -2450,6 +2501,8 @@ def main():
                     menu_sound.set_muted(settings_screen.mute_all)
                 except Exception:
                     pass
+                if not settings_screen.mute_all:
+                    _ensure_menu_music_playing()
                 print("🔇 Sessiz mod: AÇIK" if settings_screen.mute_all else "🔊 Sessiz mod: KAPALI")
             elif action == 'change_menu_music':
                 # Ana Sayfa Müziği değişti
