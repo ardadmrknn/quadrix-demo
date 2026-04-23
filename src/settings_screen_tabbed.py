@@ -1178,13 +1178,30 @@ class TabbedSettingsScreen:
             return
 
         self._tab_reset_btn_rect = button_rect
-        retro_style.draw_uniform_button(
-            self.screen,
-            button_rect,
-            _t('playlist_reset_default', 'Varsayılana Dön'),
-            color_code=retro_style.primary,
-            selected=False,
-        )
+        is_hover = button_rect.collidepoint(pygame.mouse.get_pos())
+        color_code = retro_style.primary
+        
+        # Arka plan
+        alpha = retro_style._scale_menu_alpha(200 if is_hover else 160)
+        fill = (30, 38, 58) if is_hover else (20, 26, 42)
+        
+        btn_surf = pygame.Surface(button_rect.size, pygame.SRCALPHA)
+        btn_surf.fill((*fill, alpha))
+        self.screen.blit(btn_surf, button_rect.topleft)
+        
+        # Kenarlik
+        if is_hover:
+            pygame.draw.rect(self.screen, (*color_code, retro_style._scale_menu_alpha(180)), button_rect, 2, border_radius=10)
+        else:
+            pygame.draw.rect(self.screen, (50, 60, 85), button_rect, 1, border_radius=10)
+            
+        # Ortalanmis metin
+        text_str = _t('settings_reset_defaults', 'Varsayılana Dön')
+        font = retro_style.get_fitting_font(text_str, self._s(20, minimum=14), button_rect.width - self._s(20), bold=True)
+        text_color = (255, 255, 255) if is_hover else (200, 210, 225)
+        text_surf = font.render(text_str, True, text_color)
+        text_rect = text_surf.get_rect(center=button_rect.center)
+        self.screen.blit(text_surf, text_rect)
 
     # ------------------------------------------------------------------
     # Değer okuma / yazma
@@ -3875,7 +3892,7 @@ class TabbedSettingsScreen:
         selectable_tracks = self._playlist_selectable_track_values()
         action_defs = [
             ('clear', _t('playlist_clear', 'Temizle'), bool(self._playlist_edit_items)),
-            ('reset_default', _t('playlist_reset_default', 'Varsayılana Dön'), bool(self._playlist_edit_items)),
+            ('reset_default', _t('settings_reset_defaults', 'Varsayılana Dön'), bool(self._playlist_edit_items)),
             ('select_all', _t('playlist_select_all', 'Tümünü Seç'), bool(selectable_tracks)),
         ]
         for action_key, action_label, enabled in action_defs:

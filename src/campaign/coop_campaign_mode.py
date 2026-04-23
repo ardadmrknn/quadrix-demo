@@ -251,7 +251,7 @@ class CoopCampaignMode(CoopGame):
         if not self.settings_manager:
             return
 
-        progress = self.settings_manager.get('coop_campaign_progress', {})
+        progress = self.user_manager.get_coop_campaign_progress()
         if not isinstance(progress, dict):
             progress = {}
 
@@ -279,15 +279,15 @@ class CoopCampaignMode(CoopGame):
         progress['highest_level'] = highest
         progress['total_stars'] = total_stars
 
-        self.settings_manager.set('coop_campaign_progress', progress)
+        self.user_manager.save_coop_campaign_progress(progress)
         self.settings_manager.save()
 
     @staticmethod
-    def load_progress(settings_manager) -> dict:
+    def load_progress(user_manager) -> dict:
         """İlerleme verisini yükle (level select için)."""
-        if not settings_manager:
+        if not user_manager:
             return {}
-        progress = settings_manager.get('coop_campaign_progress', {})
+        progress = user_manager.get_coop_campaign_progress()
         return progress if isinstance(progress, dict) else {}
 
     def get_next_level_num(self) -> Optional[int]:

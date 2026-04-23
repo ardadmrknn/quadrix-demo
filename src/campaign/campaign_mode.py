@@ -748,7 +748,7 @@ class CampaignMode(Game):
             return
         
         # Mevcut ilerlemeyi al
-        progress = self.settings_manager.get('campaign_progress', {})
+        progress = self.user_manager.get_campaign_progress()
         if not isinstance(progress, dict):
             progress = {}
         
@@ -782,7 +782,7 @@ class CampaignMode(Game):
         progress['total_stars'] = total_stars
         progress['current_world'] = (highest - 1) // 20 + 1
         
-        self.settings_manager.set('campaign_progress', progress)
+        self.user_manager.save_campaign_progress(progress)
         self.settings_manager.save()
 
         # Kampanya yıldız başarımlarını kontrol et
@@ -1561,7 +1561,7 @@ class CampaignMode(Game):
 
             # Kampanya ilerlemesi (toplam yıldız)
             if self.settings_manager:
-                progress = self.settings_manager.get('campaign_progress', {})
+                progress = self.user_manager.get_campaign_progress()
                 total_stars = progress.get('total_stars')
                 if total_stars is not None:
                     rewards_payload.append((t('total_stars'), str(total_stars)))

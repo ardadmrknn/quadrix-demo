@@ -2170,9 +2170,9 @@ class Menu:
         """Campaign için son/sonraki level bilgisini döndür (1-100)."""
         progress = {}
         try:
-            settings = getattr(self, 'settings_manager', None)
-            if settings is not None:
-                progress = settings.get('campaign_progress', {}) or {}
+            user_mgr = getattr(self, 'user_manager', None)
+            if user_mgr is not None:
+                progress = user_mgr.get_campaign_progress() or {}
         except Exception:
             progress = {}
 

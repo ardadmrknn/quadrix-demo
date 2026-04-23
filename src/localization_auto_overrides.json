@@ -5625,4 +5625,16 @@
     "it": "Tempo",
     "pt": "Hora"
   }
-}
+}    'settings_reset_defaults': {
+        'tr': 'Varsayılanlara Dön',
+        'en': 'Reset Defaults',
+        'de': 'Auf Standard zurückstellen',
+        'fr': 'Réinitialiser param.',
+        'es': 'Restablecer',
+        'it': 'Ripristina',
+        'pt': 'Restaurar',
+        'ru': 'Сбросить',
+        'ja': 'デフォルトに戻す',
+        'zh': '恢复默认设置',
+        'ko': '기본값으로 재설정',
+    },

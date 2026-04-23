@@ -115,6 +115,10 @@ class UserManager:
             return f'achievements_{username}.json'
         if key == 'highscores_file':
             return f'highscores_{username}.json'
+        if key == 'campaign_progress_file':
+            return f'campaign_progress_{username}.json'
+        if key == 'coop_campaign_progress_file':
+            return f'coop_campaign_progress_{username}.json'
         return key
 
     def _load_current_user_state(self, fallback: str | None = None) -> str | None:
@@ -167,6 +171,10 @@ class UserManager:
             return self._profile_file_path(profile_id, 'achievements.json')
         if key == 'highscores_file':
             return self._profile_file_path(profile_id, 'highscores.json')
+        if key == 'campaign_progress_file':
+            return self._profile_file_path(profile_id, 'campaign_progress.json')
+        if key == 'coop_campaign_progress_file':
+            return self._profile_file_path(profile_id, 'coop_campaign_progress.json')
         raise ValueError(f'Unsupported profile file key: {key}')
 
     def _migrate_profile_file(self, username: str, profile: dict, key: str) -> str:
@@ -476,6 +484,8 @@ class UserManager:
             'profile_id': profile_id,
             'achievements_file': self._profile_file_path(profile_id, 'achievements.json'),
             'highscores_file': self._profile_file_path(profile_id, 'highscores.json'),
+            'campaign_progress_file': self._profile_file_path(profile_id, 'campaign_progress.json'),
+            'coop_campaign_progress_file': self._profile_file_path(profile_id, 'coop_campaign_progress.json'),
             'game_stats': {
                 'classic': {'games': 0, 'score': 0, 'lines': 0},
                 'sprint': {'games': 0, 'score': 0, 'lines': 0},
@@ -551,6 +561,14 @@ class UserManager:
             highscores_file = self._resolve_profile_file(username, 'highscores_file', f'highscores_{username}.json')
             if os.path.exists(highscores_file):
                 os.remove(highscores_file)
+
+            campaign_progress_file = self._resolve_profile_file(username, 'campaign_progress_file', f'campaign_progress_{username}.json')
+            if os.path.exists(campaign_progress_file):
+                os.remove(campaign_progress_file)
+
+            coop_campaign_progress_file = self._resolve_profile_file(username, 'coop_campaign_progress_file', f'coop_campaign_progress_{username}.json')
+            if os.path.exists(coop_campaign_progress_file):
+                os.remove(coop_campaign_progress_file)
 
             avatar_path = str(self.users.get(username, {}).get('avatar') or '').strip()
             if avatar_path and os.path.exists(avatar_path):
@@ -814,6 +832,46 @@ class UserManager:
         fallback = resolve_cloud_path('highscores.json')
         migrate_legacy_file(fallback, iter_legacy_paths('highscores.json'))
         return fallback
+
+    def get_campaign_progress_file(self, username=None):
+        user = username or self.current_user
+        if user and user in self.users:
+            return self._resolve_profile_file(user, 'campaign_progress_file', f'campaign_progress_{user}.json')
+
+        fallback = resolve_cloud_path('campaign_progress.json')
+        migrate_legacy_file(fallback, iter_legacy_paths('campaign_progress.json'))
+        return fallback
+
+    def get_coop_campaign_progress_file(self, username=None):
+        user = username or self.current_user
+        if user and user in self.users:
+            return self._resolve_profile_file(user, 'coop_campaign_progress_file', f'coop_campaign_progress_{user}.json')
+
+        fallback = resolve_cloud_path('coop_campaign_progress.json')
+        migrate_legacy_file(fallback, iter_legacy_paths('coop_campaign_progress.json'))
+        return fallback
+
+    def get_campaign_progress(self, username=None):
+        path = self.get_campaign_progress_file(username)
+        return read_json_file(path, default={})
+
+    def save_campaign_progress(self, progress, username=None):
+        path = self.get_campaign_progress_file(username)
+        try:
+            write_json_file(path, progress, indent=2)
+        except Exception as e:
+            print(f"Hata save_campaign_progress: {e}")
+
+    def get_coop_campaign_progress(self, username=None):
+        path = self.get_coop_campaign_progress_file(username)
+        return read_json_file(path, default={})
+
+    def save_coop_campaign_progress(self, progress, username=None):
+        path = self.get_coop_campaign_progress_file(username)
+        try:
+            write_json_file(path, progress, indent=2)
+        except Exception as e:
+            print(f"Hata save_coop_campaign_progress: {e}")
     
     def is_tutorial_completed(self, username=None):
         """Kullanıcının tutorial'ı tamamlayıp tamamlamadığını kontrol et"""

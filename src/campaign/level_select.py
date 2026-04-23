@@ -204,10 +204,10 @@ class CampaignLevelSelect:
     
     def _load_progress(self) -> Dict[str, Any]:
         """Campaign ilerlemesini yükle"""
-        if not self.settings_manager:
+        if not self.user_manager:
             return {'completed_levels': {}, 'highest_level': 0, 'total_stars': 0}
         
-        progress = self.settings_manager.get('campaign_progress', {})
+        progress = self.user_manager.get_campaign_progress()
         if not isinstance(progress, dict):
             progress = {}
         

@@ -65,9 +65,9 @@ class CoopLevelSelect:
     # ------------------------------------------------------------------
 
     def _load_progress(self) -> Dict[str, Any]:
-        if not self.settings_manager:
+        if not self.user_manager:
             return {'completed_levels': {}, 'highest_level': 0, 'total_stars': 0}
-        progress = self.settings_manager.get('coop_campaign_progress', {})
+        progress = self.user_manager.get_coop_campaign_progress()
         if not isinstance(progress, dict):
             progress = {}
         return {

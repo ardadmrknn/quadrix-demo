@@ -1070,6 +1070,7 @@ class RetroStyle:
         selected: bool = False,
         checked: bool = False,
         preview_color: tuple[int, int, int] | None = None,
+        align: str = 'left',
     ) -> None:
         """Unified list button"""
         # Strip color
@@ -1144,12 +1145,24 @@ class RetroStyle:
             total_h = title_surf.get_height() + gap + sub_surf.get_height()
             # If the button is extremely short, drop the sub label rather than overlapping
             if total_h + 6 > rect.height:
-                title_pos = (title_x, rect.y + (rect.height - title_surf.get_height()) // 2)
+                if align == 'center':
+                    title_pos = (rect.x + (rect.width - title_surf.get_width()) // 2, rect.y + (rect.height - title_surf.get_height()) // 2)
+                else:
+                    title_pos = (title_x, rect.y + (rect.height - title_surf.get_height()) // 2)
                 sub_surf = None
             else:
                 start_y = rect.y + (rect.height - total_h) // 2
-                title_pos = (title_x, start_y)
-                sub_pos = (title_x, start_y + title_surf.get_height() + gap)
+                if align == 'center':
+                    title_pos = (rect.x + (rect.width - title_surf.get_width()) // 2, start_y)
+                    sub_pos = (rect.x + (rect.width - sub_surf.get_width()) // 2, start_y + title_surf.get_height() + gap)
+                else:
+                    title_pos = (title_x, start_y)
+                    sub_pos = (title_x, start_y + title_surf.get_height() + gap)
+        else:
+            if align == 'center':
+                title_pos = (rect.x + (rect.width - title_surf.get_width()) // 2, rect.y + (rect.height - title_surf.get_height()) // 2)
+            else:
+                title_pos = (title_x, rect.y + (rect.height - title_surf.get_height()) // 2)
 
         screen.blit(title_surf, title_pos)
         if sub_surf is not None and sub_pos is not None:
