@@ -1452,6 +1452,45 @@ TRANSLATIONS = {
         'zh': '卡牌调试',
         'ko': '카드 디버그',
     },
+    'coop_debug_halt_blocks': {
+        'tr': 'Co-op Spawner Durdur',
+        'en': 'Co-op Halt Spawner',
+        'de': 'Co-op Spawner Stoppen',
+        'fr': 'Arrêter le Générateur Co-op',
+        'es': 'Detener Generador Co-op',
+        'it': 'Ferma Generatore Co-op',
+        'pt': 'Parar Gerador Co-op',
+        'ru': 'Остановка Генератора Кооп',
+        'ja': 'Co-op スポナー停止',
+        'zh': '合作生成器停止',
+        'ko': 'Co-op 스포너 중지',
+    },
+    'coop_debug_halt_left': {
+        'tr': 'Sol Spawner Durdur',
+        'en': 'Halt Left Spawner',
+        'de': 'Linken Spawner stoppen',
+        'fr': 'Arrêter le spawner gauche',
+        'es': 'Detener generador izquierdo',
+        'it': 'Ferma generatore sinistro',
+        'pt': 'Parar gerador esquerdo',
+        'ru': 'Остановить левый спавнер',
+        'ja': '左スポナー停止',
+        'zh': '停止左侧生成器',
+        'ko': '왼쪽 스포너 중지',
+    },
+    'coop_debug_halt_right': {
+        'tr': 'Sağ Spawner Durdur',
+        'en': 'Halt Right Spawner',
+        'de': 'Rechten Spawner stoppen',
+        'fr': 'Arrêter le spawner droit',
+        'es': 'Detener generador derecho',
+        'it': 'Ferma generatore destro',
+        'pt': 'Parar gerador direito',
+        'ru': 'Остановить правый спавнер',
+        'ja': '右スポナー停止',
+        'zh': '停止右侧生成器',
+        'ko': '오른쪽 스포너 중지',
+    },
     'gameplay': {
         'tr': 'Oynanış',
         'en': 'Gameplay',
@@ -10031,6 +10070,314 @@ TRANSLATIONS = {
         'ja': '{title} を選択！',
         'zh': '{title} 已选择！',
         'ko': '{title} 선택됨!',
+    },
+    'mystery_msg_bomb_master_next_piece_bomb': {
+        'tr': 'Bomba Ustası: Sonraki parça BOMBA (+)',
+        'en': 'Bomb Master: The next piece is a BOMB (+)',
+    },
+    'mystery_msg_revive': {
+        'tr': 'Ölümden döndün!',
+        'en': 'Back from the brink!',
+    },
+    'mystery_msg_rewind_no_piece': {
+        'tr': 'Geri alınacak parça yok!',
+        'en': 'No piece to rewind!',
+    },
+    'mystery_msg_rewind_no_uses': {
+        'tr': 'Geri sarma hakkın kalmadı!',
+        'en': 'You are out of rewind charges!',
+    },
+    'mystery_msg_rewind_last_use': {
+        'tr': 'Geri Sarma kullanıldı! (Son hak)',
+        'en': 'Rewind used! (Last charge)',
+    },
+    'mystery_msg_rewind_remaining': {
+        'tr': 'Geri Sarma! ({remaining} hak kaldı)',
+        'en': 'Rewind! ({remaining} charges left)',
+    },
+    'mystery_msg_bomb_countdown': {
+        'tr': 'BOMBA: {count}',
+        'en': 'BOMB: {count}',
+    },
+    'mystery_msg_tunnel_active': {
+        'tr': 'Hayalet aktif! SPACE ile kilitle. Kalan: {charges}',
+        'en': 'Ghost active! Lock with SPACE. Remaining: {charges}',
+    },
+    'mystery_msg_hammer_used': {
+        'tr': 'Çekiç! Mevcut parça 1x1. Kalan: {left}',
+        'en': 'Hammer! Current piece is 1x1. Remaining: {left}',
+    },
+    'mystery_msg_mini_bomb_armed': {
+        'tr': 'Mini Bomba! Parça kilitlenince patlayacak. Kalan: {left}',
+        'en': 'Mini Bomb! The piece will explode when it locks. Remaining: {left}',
+    },
+    'mystery_msg_piece_already_bomb': {
+        'tr': 'Bu parça zaten bomba!',
+        'en': 'This piece is already a bomb!',
+    },
+    'mystery_msg_bomb_master_no_piece': {
+        'tr': 'Bomba Ustası: Parça yok!',
+        'en': 'Bomb Master: No active piece!',
+    },
+    'mystery_msg_hold_destroyer_used': {
+        'tr': 'Saklanan parca silindi! Kalan: {left}',
+        'en': 'Held piece deleted! Remaining: {left}',
+    },
+    'mystery_msg_hold_destroyer_no_piece': {
+        'tr': 'Saklanan parca yok!',
+        'en': 'No held piece to destroy!',
+    },
+    'mystery_msg_freeze_drop_used': {
+        'tr': '❄️ Blok dondu! {duration}sn. Kalan: {left}',
+        'en': '❄️ Piece frozen for {duration}s. Remaining: {left}',
+    },
+    'mystery_msg_freeze_drop_expired': {
+        'tr': '❄️ Dondurma süresi doldu!',
+        'en': '❄️ Freeze expired!',
+    },
+    'mystery_msg_future_cancelled': {
+        'tr': 'Parça seçimi iptal edildi.',
+        'en': 'Piece selection cancelled.',
+    },
+    'mystery_msg_sniper_empty_cell': {
+        'tr': 'Bos hucre! Dolu bir bloga tikla.',
+        'en': 'Empty cell! Click a filled block.',
+    },
+    'mystery_msg_sniper_outside_board': {
+        'tr': 'Oyun alani disinda! Tahta icindeki bloklari hedefleyin.',
+        'en': 'Outside the playfield! Aim at blocks on the board.',
+    },
+    'mystery_msg_score_bonus': {
+        'tr': '+{total} puan!',
+        'en': '+{total} points!',
+    },
+    'mystery_msg_clear_rows': {
+        'tr': 'Alt Süpür: -{rows} satır',
+        'en': 'Ground Sweep: -{rows} rows',
+    },
+    'mystery_msg_column_cleanse': {
+        'tr': '{count} sütun temizlendi!',
+        'en': '{count} columns cleared!',
+    },
+    'mystery_msg_bomb_master_ready': {
+        'tr': 'Bomba Ustası! M ile mini bomba ({charges} hak)',
+        'en': 'Bomb Master! Press M for mini bombs ({charges} charges)',
+    },
+    'mystery_msg_line_bonus_ready': {
+        'tr': 'Sonraki {lines} satır: {multiplier:.0f}x puan!',
+        'en': 'Next {lines} lines: {multiplier:.0f}x points!',
+    },
+    'mystery_msg_quantum_tunneling_ready': {
+        'tr': 'Hayalet Parça: {charges} hak (G ile etkinleştir)',
+        'en': 'Ghost Piece: {charges} charges (press G)',
+    },
+    'mystery_msg_mini_bomb_ready': {
+        'tr': 'Mini Bomba: Bu parça kilitlenince patlayacak!',
+        'en': 'Mini Bomb: This piece will explode when it locks!',
+    },
+    'mystery_msg_mini_bomb_no_piece': {
+        'tr': 'Mini Bomba: Parça yok!',
+        'en': 'Mini Bomb: No active piece!',
+    },
+    'mystery_msg_hammer_ready': {
+        'tr': 'Çekiç: {charges} hak (H ile kullan)',
+        'en': 'Hammer: {charges} charges (press H)',
+    },
+    'mystery_msg_gravity_well': {
+        'tr': 'Gravity Well: {lines} satır',
+        'en': 'Gravity Well: {lines} lines',
+    },
+    'mystery_msg_flexible_border': {
+        'tr': 'Esnek Sınır aktif! Parçalar kenarlara taşabilir.',
+        'en': 'Flexible Border active! Pieces can spill past the edges.',
+    },
+    'mystery_msg_speed_burst': {
+        'tr': 'Hız Patlaması! {duration}s boyunca hızlı düşüş + {line_mult}x puan!',
+        'en': 'Speed Burst! Fast drop for {duration}s + {line_mult}x points!',
+    },
+    'mystery_msg_peak_sculpt_removed': {
+        'tr': 'Tepe Dilimleyici: -{removed} blok',
+        'en': 'Peak Sculptor: -{removed} blocks',
+    },
+    'mystery_msg_peak_sculpt_balanced': {
+        'tr': 'Tepe Dilimleyici: zaten dengeli',
+        'en': 'Peak Sculptor: already balanced',
+    },
+    'mystery_msg_block_magnet': {
+        'tr': 'Blok Manyetigi: bosluklar kapandi!',
+        'en': 'Block Magnet: the gaps are gone!',
+    },
+    'mystery_msg_row_shuffle': {
+        'tr': 'Satır Karıştırıcı: alt {rows} satır',
+        'en': 'Row Shuffle: bottom {rows} rows',
+    },
+    'mystery_msg_sniper_ready': {
+        'tr': 'Keskin Nisanci hazir! N tusuna bas. ({charges} hak)',
+        'en': 'Sharpshooter ready! Press N. ({charges} charges)',
+    },
+    'mystery_msg_time_capsule_ready': {
+        'tr': 'Zaman Kapsulu aktif! T ile kaydet, R ile geri don.',
+        'en': 'Time Capsule active! Press T to save, R to rewind.',
+    },
+    'mystery_msg_freeze_drop_ready': {
+        'tr': 'Son Düşüş! F ile dondur ({charges} hak, {duration}sn)',
+        'en': 'Final Drop! Press F to freeze ({charges} charges, {duration}s)',
+    },
+    'mystery_msg_gambler_jackpot': {
+        'tr': '🎲 JACKPOT! Tum tahta temizlendi! +{bonus} puan',
+        'en': '🎲 JACKPOT! The whole board was cleared! +{bonus} points',
+    },
+    'mystery_msg_gambler_scramble': {
+        'tr': '🎲 Sansina kusura bakma! {placed} blok karistirildi!',
+        'en': '🎲 Bad luck! {placed} blocks were scrambled!',
+    },
+    'mystery_msg_gambler_empty': {
+        'tr': '🎲 Tahta bos, sansin kotu ama zararsiz!',
+        'en': '🎲 The board is empty. Bad luck, but harmless!',
+    },
+    'mystery_msg_hold_destroyer_ready': {
+        'tr': 'Tuttugunu Koparan! B ile hold sil ({total} hak)',
+        'en': 'Hold Breaker! Press B to erase hold ({total} charges)',
+    },
+    'mystery_msg_sniper_no_charges': {
+        'tr': 'Keskin Nişancı hakkın yok!',
+        'en': 'You have no sharpshooter charges left!',
+    },
+    'mystery_msg_sniper_open': {
+        'tr': 'Patlatmak istedigin bloga tikla! (ESC: Iptal) - Kalan: {charges}',
+        'en': 'Click the block you want to destroy! (ESC: Cancel) - Remaining: {charges}',
+    },
+    'mystery_msg_sniper_cancel': {
+        'tr': 'Keskin Nisanci iptal edildi (Kalan hak: {charges})',
+        'en': 'Sharpshooter cancelled (Remaining: {charges})',
+    },
+    'mystery_msg_sniper_destroyed_remaining': {
+        'tr': 'Blok yok edildi! Kalan hak: {remaining}',
+        'en': 'Block destroyed! Remaining: {remaining}',
+    },
+    'mystery_msg_sniper_destroyed_last': {
+        'tr': 'Blok yok edildi! Keskin Nisanci tukendi.',
+        'en': 'Block destroyed! Sharpshooter is depleted.',
+    },
+    'mystery_msg_time_capsule_unavailable': {
+        'tr': 'Zaman Kapsulu yok!',
+        'en': 'No Time Capsule available!',
+    },
+    'mystery_msg_time_capsule_saved': {
+        'tr': 'Zaman Kapsulu kaydedildi! R ile geri don.',
+        'en': 'Time Capsule saved! Press R to restore.',
+    },
+    'mystery_msg_time_capsule_save_error': {
+        'tr': 'Zaman Kapsulu kaydetme hatasi!',
+        'en': 'Time Capsule save failed!',
+    },
+    'mystery_msg_time_capsule_no_snapshot': {
+        'tr': 'Kaydedilmis durum yok! Once R ile kaydet.',
+        'en': 'No saved state yet! Press R once to save first.',
+    },
+    'mystery_msg_time_capsule_restored': {
+        'tr': 'Zaman Kapsulu kullanildi! Gecmise donuldu.',
+        'en': 'Time Capsule used! State restored.',
+    },
+    'mystery_msg_time_capsule_restore_error': {
+        'tr': 'Zaman Kapsulu geri yukleme hatasi!',
+        'en': 'Time Capsule restore failed!',
+    },
+    'mystery_msg_nova_burst_charges': {
+        'tr': 'Nova Patlaması: +{count} şarj (toplam {total})',
+        'en': 'Nova Burst: +{count} charges (total {total})',
+    },
+    'mystery_msg_color_cleanse_empty': {
+        'tr': 'Renk Temizleme: Tahta bos!',
+        'en': 'Color Cleanse: The board is empty!',
+    },
+    'mystery_msg_color_cleanse_removed': {
+        'tr': 'Renk Temizleme: {removed} blok temizlendi! (RGB:{r},{g},{b})',
+        'en': 'Color Cleanse: {removed} blocks cleared! (RGB:{r},{g},{b})',
+    },
+    'mystery_sniper_instruction_main_valid': {
+        'tr': 'SOL TIKLAYARAK BLOGU PATLAT',
+        'en': 'LEFT CLICK TO DESTROY THE BLOCK',
+    },
+    'mystery_sniper_instruction_sub_valid': {
+        'tr': 'Hedef kilitlendi! Tikla ve yok et.',
+        'en': 'Target locked! Click to destroy it.',
+    },
+    'mystery_sniper_instruction_main_invalid': {
+        'tr': 'DOLU BIR BLOGA NISAN AL',
+        'en': 'AIM AT A FILLED BLOCK',
+    },
+    'mystery_sniper_instruction_sub_invalid': {
+        'tr': "Mouse'u dolu bloklarin uzerine getir",
+        'en': 'Move the cursor over a filled block',
+    },
+    'mystery_remaining_label': {
+        'tr': 'Kalan: {count}',
+        'en': 'Remaining: {count}',
+    },
+    'mystery_sniper_cancel_label': {
+        'tr': 'ESC: Iptal Et',
+        'en': 'ESC: Cancel',
+    },
+    'mystery_workshop_open_instruction': {
+        'tr': 'Blok atolyesi! Maks 7 blok. ENTER ile tamamla.',
+        'en': 'Block workshop! Max 7 blocks. Press ENTER to finish.',
+    },
+    'mystery_workshop_opened_top': {
+        'tr': 'Blok Atolyesi acildi! Parca olustur ve ENTER ile tamamla.',
+        'en': 'Block Workshop opened! Build a piece and press ENTER to finish.',
+    },
+    'mystery_workshop_min_blocks': {
+        'tr': 'En az 2 blok gerekli!',
+        'en': 'You need at least 2 blocks!',
+    },
+    'mystery_workshop_connected': {
+        'tr': 'Bloklar birbirine bagli olmali!',
+        'en': 'Blocks must stay connected!',
+    },
+    'mystery_workshop_piece_ready': {
+        'tr': 'Atolye parcasi hazirlandi! Hemen kullanabilirsin.',
+        'en': 'Workshop piece is ready! You can use it now.',
+    },
+    'mystery_workshop_remove_disconnect': {
+        'tr': 'Silme baglantıyı koparir!',
+        'en': 'Deleting that block would break connectivity!',
+    },
+    'mystery_workshop_block_removed': {
+        'tr': 'Blok silindi.',
+        'en': 'Block removed.',
+    },
+    'mystery_workshop_max_blocks': {
+        'tr': 'Maks 7 blok!',
+        'en': 'Maximum 7 blocks!',
+    },
+    'mystery_workshop_block_added': {
+        'tr': 'Blok eklendi. Kalan: {remaining}',
+        'en': 'Block added. Remaining: {remaining}',
+    },
+    'mystery_workshop_block_count': {
+        'tr': 'Blok: {count}/7',
+        'en': 'Blocks: {count}/7',
+    },
+    'mystery_future_popup_first_message': {
+        'tr': '1. sıradaki parçayı seç!',
+        'en': 'Choose the 1st next piece!',
+    },
+    'mystery_future_popup_selected_next': {
+        'tr': '{piece_name} seçildi! 2. sıradaki parçayı seç!',
+        'en': '{piece_name} selected! Choose the 2nd next piece!',
+    },
+    'mystery_future_popup_selected_done': {
+        'tr': '{piece_name} seçildi! Sıradaki parçalar değiştirildi.',
+        'en': '{piece_name} selected! The upcoming pieces were changed.',
+    },
+    'mystery_future_popup_title': {
+        'tr': '{order}. Sıradaki Parçayı Seç',
+        'en': 'Choose Upcoming Piece #{order}',
+    },
+    'mystery_future_popup_cancel_label': {
+        'tr': 'ESC: Iptal',
+        'en': 'ESC: Cancel',
     },
     # ==================== KONTROL ETİKETLERİ ====================
     # ==================== MENÜ VE PANEL BAŞLIKLARI ====================

@@ -82,6 +82,10 @@ DEFAULT_CONTROLS = {
         'menu_tab_next': {'primary': 10, 'secondary': -1}, # RB / R1 - sonraki sekme
         'menu_tab_prev': {'primary': 9, 'secondary': -1},  # LB / L1 - önceki sekme
     },
+    'debug': {
+        'coop_spawner_left': '',
+        'coop_spawner_right': '',
+    },
 }
 
 PARTICLE_EFFECT_LEVELS = ('off', 'low', 'medium', 'high')
@@ -212,6 +216,7 @@ class SettingsManager:
             'game_music': DEFAULT_GAME_MUSIC_PLAYLIST[0],
             'debug_mode': False,
             'card_mode_debug': False,
+            'coop_debug_halt_blocks': False,
             # Gizli ayarlar: ana menüde "arda" yazınca görünür olur.
             'show_debug_settings': False,
             # Grafik ayarları - Maksimum kalite varsayılan
@@ -1214,5 +1219,11 @@ class SettingsManager:
         merged['gamepad']['rumble'] = self.normalize_gamepad_rumble_value(
             merged['gamepad'].get('rumble', 'high')
         )
+
+        debug_existing = existing.get('debug')
+        if isinstance(debug_existing, dict):
+            for action, value in debug_existing.items():
+                if action in merged.get('debug', {}) and isinstance(value, (str, int)):
+                    merged['debug'][action] = value
 
         return merged

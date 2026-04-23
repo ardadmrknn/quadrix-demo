@@ -155,7 +155,7 @@ def split_controls(controls: Any) -> tuple[dict[str, Any], dict[str, Any]]:
     cloud_controls: dict[str, Any] = {}
     local_controls: dict[str, Any] = {}
 
-    for section in ("single_player", "pvp"):
+    for section in ("single_player", "pvp", "debug"):
         value = controls.get(section)
         if isinstance(value, dict):
             cloud_controls[section] = copy.deepcopy(value)

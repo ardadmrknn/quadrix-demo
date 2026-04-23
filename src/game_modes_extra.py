@@ -4260,8 +4260,11 @@ class PerkManager:
             self.next_piece_bomb = True
             # Player feedback: make it clear this is the PLUS-shaped bomb perk.
             try:
-                self.mode.card_message = "Bomba Ustası: Sonraki parça BOMBA (+)"
-                self.mode.card_message_timer = 1.1
+                self.mode._set_localized_card_message(
+                    'mystery_msg_bomb_master_next_piece_bomb',
+                    1.1,
+                    'Bomba Ustası: Sonraki parça BOMBA (+)',
+                )
             except Exception:
                 pass
         # Chrono Lock counter
@@ -5135,6 +5138,27 @@ class MysteryMode(Game):
         except Exception:
             return str(keycode)
 
+    def _localized_card_text(self, key: str, default: str | None = None, **kwargs) -> str:
+        fallback = default
+        if default is not None:
+            try:
+                fallback = str(default).format(**kwargs) if kwargs else str(default)
+            except Exception:
+                fallback = str(default)
+        return t(key, fallback, **kwargs)
+
+    def _set_localized_card_message(self, key: str, display_time: float, default: str | None = None, **kwargs) -> str:
+        text = self._localized_card_text(key, default, **kwargs)
+        self.card_message = text
+        self.card_message_timer = float(display_time)
+        return text
+
+    def _set_localized_workshop_message(self, key: str, display_time: float, default: str | None = None, **kwargs) -> str:
+        text = self._localized_card_text(key, default, **kwargs)
+        self._card_workshop_message = text
+        self._card_workshop_message_timer = float(display_time)
+        return text
+
     def spawn_new_piece(self) -> Piece:
         forced = self.card_manager.pop_forced_piece()
         if forced:
@@ -5211,8 +5235,7 @@ class MysteryMode(Game):
                             pass
                         # Sync UI visuals and break
                         try:
-                            self.card_message = "Ölümden döndün!"
-                            self.card_message_timer = 2.0
+                            self._set_localized_card_message('mystery_msg_revive', 2.0, 'Ölümden döndün!')
                         except Exception:
                             pass
                         self._sync_active_cards()
@@ -5241,13 +5264,11 @@ class MysteryMode(Game):
     def _do_rewind(self) -> bool:
         """Geri Sarma kullan - son parçayı board'dan kaldır ve tekrar düşür."""
         if not getattr(self, '_last_placed_piece', None):
-            self.card_message = "Geri alınacak parça yok!"
-            self.card_message_timer = 1.0
+            self._set_localized_card_message('mystery_msg_rewind_no_piece', 1.0, 'Geri alınacak parça yok!')
             return False
         
         if not self.perk_manager.is_active('rewind_power') or self.perk_manager.rewind_uses <= 0:
-            self.card_message = "Geri sarma hakkın kalmadı!"
-            self.card_message_timer = 1.0
+            self._set_localized_card_message('mystery_msg_rewind_no_uses', 1.0, 'Geri sarma hakkın kalmadı!')
             return False
         
         try:
@@ -5293,10 +5314,14 @@ class MysteryMode(Game):
             if remaining <= 0:
                 self.perk_manager.deactivate('rewind_power')
                 self._rewind_available = False
-                self.card_message = "Geri Sarma kullanıldı! (Son hak)"
+                self._set_localized_card_message('mystery_msg_rewind_last_use', 1.5, 'Geri Sarma kullanıldı! (Son hak)')
             else:
-                self.card_message = f"Geri Sarma! ({remaining} hak kaldı)"
-            self.card_message_timer = 1.5
+                self._set_localized_card_message(
+                    'mystery_msg_rewind_remaining',
+                    1.5,
+                    'Geri Sarma! ({remaining} hak kaldı)',
+                    remaining=remaining,
+                )
             
             # Son parça bilgisini temizle (aynı parçayı tekrar geri alamaz)
             self._last_placed_piece = None
@@ -5666,8 +5691,7 @@ class MysteryMode(Game):
                 last = int(getattr(self, '_bomb_countdown_last_int', 0) or 0)
                 if cur != last and cur > 0:
                     self._bomb_countdown_last_int = cur
-                    self.card_message = f"BOMBA: {cur}"
-                    self.card_message_timer = 0.6
+                    self._set_localized_card_message('mystery_msg_bomb_countdown', 0.6, 'BOMBA: {count}', count=cur)
         except Exception:
             pass
         # Detect level up and open card selection when the player levels up
@@ -5779,8 +5803,12 @@ class MysteryMode(Game):
                         except Exception:
                             pass
                         try:
-                            self.card_message = f"Hayalet aktif! SPACE ile kilitle. Kalan: {int(charges)}"
-                            self.card_message_timer = 1.2
+                            self._set_localized_card_message(
+                                'mystery_msg_tunnel_active',
+                                1.2,
+                                'Hayalet aktif! SPACE ile kilitle. Kalan: {charges}',
+                                charges=int(charges),
+                            )
                         except Exception:
                             pass
                         self._sync_active_cards()
@@ -5809,8 +5837,12 @@ class MysteryMode(Game):
                         self.hammer_charges_remaining = max(0, charges - 1)
                         try:
                             left = int(getattr(self, 'hammer_charges_remaining', 0) or 0)
-                            self.card_message = f"Çekiç! Mevcut parça 1x1. Kalan: {left}"
-                            self.card_message_timer = 1.1
+                            self._set_localized_card_message(
+                                'mystery_msg_hammer_used',
+                                1.1,
+                                'Çekiç! Mevcut parça 1x1. Kalan: {left}',
+                                left=left,
+                            )
                         except Exception:
                             pass
                         try:
@@ -5849,19 +5881,21 @@ class MysteryMode(Game):
                             # Hakkı düşür
                             self.bomb_master_charges = max(0, charges - 1)
                             left = int(self.bomb_master_charges)
-                            self.card_message = f"Mini Bomba! Parça kilitlenince patlayacak. Kalan: {left}"
-                            self.card_message_timer = 1.2
+                            self._set_localized_card_message(
+                                'mystery_msg_mini_bomb_armed',
+                                1.2,
+                                'Mini Bomba! Parça kilitlenince patlayacak. Kalan: {left}',
+                                left=left,
+                            )
                             self._sync_active_cards()
                             if self.sound_enabled:
                                 self.sound.play_sound('rotate')
                         except Exception:
                             pass
                     elif piece is not None and getattr(piece, 'is_bomb', False):
-                        self.card_message = "Bu parça zaten bomba!"
-                        self.card_message_timer = 0.9
+                        self._set_localized_card_message('mystery_msg_piece_already_bomb', 0.9, 'Bu parça zaten bomba!')
                     else:
-                        self.card_message = "Bomba Ustası: Parça yok!"
-                        self.card_message_timer = 0.9
+                        self._set_localized_card_message('mystery_msg_bomb_master_no_piece', 0.9, 'Bomba Ustası: Parça yok!')
             self._last_ability_keys['m'] = bool(_m_pressed)
 
             # Tuttuğunu Koparan (B): hold'daki parçayı sil (hak varsa)
@@ -5879,8 +5913,12 @@ class MysteryMode(Game):
                     self.discard_held_uses = self._hold_destroyer_charges
                     try:
                         left = int(self._hold_destroyer_charges)
-                        self.card_message = f"Saklanan parca silindi! Kalan: {left}"
-                        self.card_message_timer = 1.2
+                        self._set_localized_card_message(
+                            'mystery_msg_hold_destroyer_used',
+                            1.2,
+                            'Saklanan parca silindi! Kalan: {left}',
+                            left=left,
+                        )
                     except Exception:
                         pass
                     try:
@@ -5893,8 +5931,7 @@ class MysteryMode(Game):
                         except Exception:
                             pass
                 elif hd_charges > 0:
-                    self.card_message = "Saklanan parca yok!"
-                    self.card_message_timer = 0.9
+                    self._set_localized_card_message('mystery_msg_hold_destroyer_no_piece', 0.9, 'Saklanan parca yok!')
                 # hd_charges == 0 ise sessiz kal (B tuşu aktif kart yok)
             self._last_ability_keys['b'] = bool(_b_pressed)
 
@@ -5921,8 +5958,13 @@ class MysteryMode(Game):
                             setattr(piece, '_force_color', ICE_COLOR)
                             setattr(piece, '_frozen', True)
                             left = int(self._freeze_drop_charges)
-                            self.card_message = f"❄️ Blok dondu! {dur}sn. Kalan: {left}"
-                            self.card_message_timer = 1.4
+                            self._set_localized_card_message(
+                                'mystery_msg_freeze_drop_used',
+                                1.4,
+                                '❄️ Blok dondu! {duration}sn. Kalan: {left}',
+                                duration=dur,
+                                left=left,
+                            )
                             self._sync_active_cards()
                             if self.sound_enabled:
                                 self.sound.play_sound('rotate')
@@ -6128,8 +6170,7 @@ class MysteryMode(Game):
                             pass
                 self.fall_speed = self.get_current_speed()
                 try:
-                    self.card_message = "❄️ Dondurma süresi doldu!"
-                    self.card_message_timer = 1.0
+                    self._set_localized_card_message('mystery_msg_freeze_drop_expired', 1.0, '❄️ Dondurma süresi doldu!')
                 except Exception:
                     pass
             self._sync_active_cards()
@@ -6235,8 +6276,7 @@ class MysteryMode(Game):
                     self._close_piece_selection_popup()
                     self._future_changer_remaining = 0
                     try:
-                        self.card_message = "Parça seçimi iptal edildi."
-                        self.card_message_timer = 1.0
+                        self._set_localized_card_message('mystery_msg_future_cancelled', 1.0, 'Parça seçimi iptal edildi.')
                     except Exception:
                         pass
                     continue
@@ -6279,8 +6319,7 @@ class MysteryMode(Game):
                             self._execute_sniper_shot(cx, cy)
                         else:
                             try:
-                                self.card_message = "Bos hucre! Dolu bir bloga tikla."
-                                self.card_message_timer = 1.5
+                                self._set_localized_card_message('mystery_msg_sniper_empty_cell', 1.5, 'Bos hucre! Dolu bir bloga tikla.')
                                 # Hata sesi
                                 if self.sound_enabled:
                                     self.sound.play_sound("deny")
@@ -6288,8 +6327,7 @@ class MysteryMode(Game):
                                 pass
                     else:
                         try:
-                            self.card_message = "Oyun alani disinda! Tahta icindeki bloklari hedefleyin."
-                            self.card_message_timer = 1.5
+                            self._set_localized_card_message('mystery_msg_sniper_outside_board', 1.5, 'Oyun alani disinda! Tahta icindeki bloklari hedefleyin.')
                             # Hata sesi
                             if self.sound_enabled:
                                 self.sound.play_sound("deny")
@@ -6823,14 +6861,14 @@ class MysteryMode(Game):
             small_font = retro_style.get_font(22)
             
             if target_valid:
-                main_text = "SOL TIKLAYARAK BLOGU PATLAT"
+                main_text = self._localized_card_text('mystery_sniper_instruction_main_valid', 'SOL TIKLAYARAK BLOGU PATLAT')
                 main_color = retro_style.success
-                sub_text = "Hedef kilitlendi! Tikla ve yok et."
+                sub_text = self._localized_card_text('mystery_sniper_instruction_sub_valid', 'Hedef kilitlendi! Tikla ve yok et.')
                 sub_color = retro_style.text_primary
             else:
-                main_text = "DOLU BIR BLOGA NISAN AL"
+                main_text = self._localized_card_text('mystery_sniper_instruction_main_invalid', 'DOLU BIR BLOGA NISAN AL')
                 main_color = retro_style.accent
-                sub_text = "Mouse'u dolu bloklarin uzerine getir"
+                sub_text = self._localized_card_text('mystery_sniper_instruction_sub_invalid', "Mouse'u dolu bloklarin uzerine getir")
                 sub_color = retro_style.text_secondary
             
             # Charges remaining (sağ üst köşe)
@@ -6838,7 +6876,7 @@ class MysteryMode(Game):
             charge_bg_rect = None
             charge_rect = None
             if charges > 0:
-                charge_text = f"Kalan: {charges}"
+                charge_text = self._localized_card_text('mystery_remaining_label', 'Kalan: {count}', count=charges)
                 charge_surf = small_font.render(charge_text, True, retro_style.primary)
                 charge_rect = charge_surf.get_rect(right=panel_rect.right - 15, y=panel_rect.y + 12)
                 
@@ -6870,7 +6908,7 @@ class MysteryMode(Game):
             self.screen.blit(sub_surf, sub_rect)
 
             # Cancel instruction
-            cancel_text = "ESC: Iptal Et"
+            cancel_text = self._localized_card_text('mystery_sniper_cancel_label', 'ESC: Iptal Et')
             cancel_surf = retro_style.render_fit_text(cancel_text, retro_style.text_muted, text_max_width, 19, bold=False)
             cancel_rect = cancel_surf.get_rect(centerx=text_center_x, y=sub_rect.bottom + 8)
             self.screen.blit(cancel_surf, cancel_rect)
@@ -7582,8 +7620,7 @@ class MysteryMode(Game):
                 pass
             total = int(base * mult)
             self.board.score += total
-            self.card_message = f"+{total} puan!"
-            self.card_message_timer = 1.2
+            self._set_localized_card_message('mystery_msg_score_bonus', 1.2, '+{total} puan!', total=total)
             effect_triggered = True
         elif cid == "clear_rows":
             self._clear_rows(value)
@@ -7605,8 +7642,7 @@ class MysteryMode(Game):
                 self._post_external_line_clear(cleared, award_energy=True, score_delta=delta, source='card')
             try:
                 n = max(1, int(value))
-                self.card_message = f"Alt Süpür: -{n} satır"
-                self.card_message_timer = 0.9
+                self._set_localized_card_message('mystery_msg_clear_rows', 0.9, 'Alt Süpür: -{rows} satır', rows=n)
             except Exception:
                 pass
             effect_triggered = True
@@ -7623,8 +7659,7 @@ class MysteryMode(Game):
             # Rastgele sütun temizle
             n_cols = max(1, int(value))
             self._clear_columns(n_cols)
-            self.card_message = f"{n_cols} sütun temizlendi!"
-            self.card_message_timer = 1.0
+            self._set_localized_card_message('mystery_msg_column_cleanse', 1.0, '{count} sütun temizlendi!', count=n_cols)
             effect_triggered = True
         elif cid == "combo_boost":
             self._apply_combo_aura(value, card)
@@ -7643,8 +7678,12 @@ class MysteryMode(Game):
             if cur in (0, 1, 2):
                 self.bomb_master_charges = 3
             try:
-                self.card_message = f"Bomba Ustası! M ile mini bomba ({int(self.bomb_master_charges)} hak)"
-                self.card_message_timer = 1.4
+                self._set_localized_card_message(
+                    'mystery_msg_bomb_master_ready',
+                    1.4,
+                    'Bomba Ustası! M ile mini bomba ({charges} hak)',
+                    charges=int(self.bomb_master_charges),
+                )
             except Exception:
                 pass
             try:
@@ -7713,8 +7752,13 @@ class MysteryMode(Game):
             # Sonraki N satır temizlemede 2x puan
             multiplier = card.get("payload", {}).get("multiplier", 2.0)
             self._enable_line_multiplier(value, multiplier, card)
-            self.card_message = f"Sonraki {value} satır: {multiplier:.0f}x puan!"
-            self.card_message_timer = 1.2
+            self._set_localized_card_message(
+                'mystery_msg_line_bonus_ready',
+                1.2,
+                'Sonraki {lines} satır: {multiplier:.0f}x puan!',
+                lines=value,
+                multiplier=multiplier,
+            )
             effect_triggered = True
         elif cid == "quantum_tunneling":
             # Grant charges so the player can choose which upcoming pieces become tunneled.
@@ -7727,8 +7771,12 @@ class MysteryMode(Game):
             if cur in (0, 1, 2):
                 self.tunnel_charges_remaining = 3
             try:
-                self.card_message = f"Hayalet Parça: {int(self.tunnel_charges_remaining)} hak (G ile etkinleştir)"
-                self.card_message_timer = 1.4
+                self._set_localized_card_message(
+                    'mystery_msg_quantum_tunneling_ready',
+                    1.4,
+                    'Hayalet Parça: {charges} hak (G ile etkinleştir)',
+                    charges=int(self.tunnel_charges_remaining),
+                )
             except Exception:
                 pass
             # Show a visual in active effects while charges remain
@@ -7766,16 +7814,14 @@ class MysteryMode(Game):
                 except Exception:
                     pass
                 try:
-                    self.card_message = "Mini Bomba: Bu parça kilitlenince patlayacak!"
-                    self.card_message_timer = 1.2
+                    self._set_localized_card_message('mystery_msg_mini_bomb_ready', 1.2, 'Mini Bomba: Bu parça kilitlenince patlayacak!')
                 except Exception:
                     pass
                 effect_triggered = True
             else:
                 # Parça yokken kartı harcama
                 try:
-                    self.card_message = "Mini Bomba: Parça yok!"
-                    self.card_message_timer = 0.9
+                    self._set_localized_card_message('mystery_msg_mini_bomb_no_piece', 0.9, 'Mini Bomba: Parça yok!')
                 except Exception:
                     pass
                 effect_triggered = False
@@ -7790,8 +7836,12 @@ class MysteryMode(Game):
             if cur in (0, 1, 2):
                 self.hammer_charges_remaining = 3
             try:
-                self.card_message = f"Çekiç: {int(self.hammer_charges_remaining)} hak (H ile kullan)"
-                self.card_message_timer = 1.4
+                self._set_localized_card_message(
+                    'mystery_msg_hammer_ready',
+                    1.4,
+                    'Çekiç: {charges} hak (H ile kullan)',
+                    charges=int(self.hammer_charges_remaining),
+                )
             except Exception:
                 pass
             try:
@@ -7820,8 +7870,7 @@ class MysteryMode(Game):
                 pass
             if total_lines > 0:
                 try:
-                    self.card_message = f"Gravity Well: {total_lines} satır"
-                    self.card_message_timer = 0.9
+                    self._set_localized_card_message('mystery_msg_gravity_well', 0.9, 'Gravity Well: {lines} satır', lines=total_lines)
                 except Exception:
                     pass
             # Gravity Well is a one-shot card; do not persist in active cards
@@ -7860,8 +7909,7 @@ class MysteryMode(Game):
             except Exception:
                 pass
             try:
-                self.card_message = "Esnek Sınır aktif! Parçalar kenarlara taşabilir."
-                self.card_message_timer = 1.5
+                self._set_localized_card_message('mystery_msg_flexible_border', 1.5, 'Esnek Sınır aktif! Parçalar kenarlara taşabilir.')
             except Exception:
                 pass
             try:
@@ -7884,8 +7932,13 @@ class MysteryMode(Game):
             self.fall_speed = self.get_current_speed()
             
             try:
-                self.card_message = f"Hız Patlaması! {duration}s boyunca hızlı düşüş + {line_mult}x puan!"
-                self.card_message_timer = 1.5
+                self._set_localized_card_message(
+                    'mystery_msg_speed_burst',
+                    1.5,
+                    'Hız Patlaması! {duration}s boyunca hızlı düşüş + {line_mult}x puan!',
+                    duration=duration,
+                    line_mult=line_mult,
+                )
             except Exception:
                 pass
             
@@ -7916,14 +7969,12 @@ class MysteryMode(Game):
                 except Exception:
                     pass
                 try:
-                    self.card_message = f"Tepe Dilimleyici: -{removed} blok"
-                    self.card_message_timer = 0.9
+                    self._set_localized_card_message('mystery_msg_peak_sculpt_removed', 0.9, 'Tepe Dilimleyici: -{removed} blok', removed=removed)
                 except Exception:
                     pass
             else:
                 try:
-                    self.card_message = "Tepe Dilimleyici: zaten dengeli"
-                    self.card_message_timer = 0.9
+                    self._set_localized_card_message('mystery_msg_peak_sculpt_balanced', 0.9, 'Tepe Dilimleyici: zaten dengeli')
                 except Exception:
                     pass
             effect_triggered = True
@@ -7936,8 +7987,7 @@ class MysteryMode(Game):
             # Blok Manyetigi: Tum bosluklar kapanir, bloklar sola kayar
             self._apply_block_magnet()
             try:
-                self.card_message = "Blok Manyetigi: bosluklar kapandi!"
-                self.card_message_timer = 1.2
+                self._set_localized_card_message('mystery_msg_block_magnet', 1.2, 'Blok Manyetigi: bosluklar kapandi!')
             except Exception:
                 pass
             effect_triggered = True
@@ -7946,8 +7996,7 @@ class MysteryMode(Game):
             self._shuffle_bottom_rows(value)
             try:
                 n = max(1, int(value))
-                self.card_message = f"Satır Karıştırıcı: alt {n} satır"
-                self.card_message_timer = 0.9
+                self._set_localized_card_message('mystery_msg_row_shuffle', 0.9, 'Satır Karıştırıcı: alt {rows} satır', rows=n)
             except Exception:
                 pass
             effect_triggered = True
@@ -7967,8 +8016,7 @@ class MysteryMode(Game):
             self._sniper_charges = charges
             self._sniper_card = card
             try:
-                self.card_message = f"Keskin Nisanci hazir! N tusuna bas. ({charges} hak)"
-                self.card_message_timer = 3.0
+                self._set_localized_card_message('mystery_msg_sniper_ready', 3.0, 'Keskin Nisanci hazir! N tusuna bas. ({charges} hak)', charges=charges)
             except Exception:
                 pass
             # Görsel efekt için kaydet
@@ -7984,8 +8032,7 @@ class MysteryMode(Game):
             self.time_capsule_saved = False
             self.time_capsule_data = None
             try:
-                self.card_message = "Zaman Kapsulu aktif! T ile kaydet, R ile geri don."
-                self.card_message_timer = 3.0
+                self._set_localized_card_message('mystery_msg_time_capsule_ready', 3.0, 'Zaman Kapsulu aktif! T ile kaydet, R ile geri don.')
             except Exception:
                 pass
             # Görsel efekt için kaydet
@@ -8013,8 +8060,13 @@ class MysteryMode(Game):
                 self._freeze_drop_charges = 3
             self._freeze_drop_duration = freeze_dur
             try:
-                self.card_message = f"Son Düşüş! F ile dondur ({int(self._freeze_drop_charges)} hak, {freeze_dur}sn)"
-                self.card_message_timer = 1.5
+                self._set_localized_card_message(
+                    'mystery_msg_freeze_drop_ready',
+                    1.5,
+                    'Son Düşüş! F ile dondur ({charges} hak, {duration}sn)',
+                    charges=int(self._freeze_drop_charges),
+                    duration=freeze_dur,
+                )
             except Exception:
                 pass
             try:
@@ -8052,8 +8104,7 @@ class MysteryMode(Game):
                 try:
                     bonus = total_cleared * 50
                     self.board.score += bonus
-                    self.card_message = f"🎲 JACKPOT! Tum tahta temizlendi! +{bonus} puan"
-                    self.card_message_timer = 2.0
+                    self._set_localized_card_message('mystery_msg_gambler_jackpot', 2.0, '🎲 JACKPOT! Tum tahta temizlendi! +{bonus} puan', bonus=bonus)
                 except Exception:
                     pass
             else:
@@ -8101,10 +8152,9 @@ class MysteryMode(Game):
                                 placed += 1
                         # Yerçekimi uygula - bloklar havada kalmasın
                         self.board.apply_gravity()
-                        self.card_message = f"🎲 Sansina kusura bakma! {placed} blok karistirildi!"
+                        self._set_localized_card_message('mystery_msg_gambler_scramble', 2.0, '🎲 Sansina kusura bakma! {placed} blok karistirildi!', placed=placed)
                     else:
-                        self.card_message = "🎲 Tahta bos, sansin kotu ama zararsiz!"
-                    self.card_message_timer = 2.0
+                        self._set_localized_card_message('mystery_msg_gambler_empty', 2.0, '🎲 Tahta bos, sansin kotu ama zararsiz!')
                 except Exception:
                     pass
             effect_triggered = True
@@ -8127,8 +8177,7 @@ class MysteryMode(Game):
             self.discard_held_uses = int(getattr(self, '_hold_destroyer_charges', charges))
             try:
                 total = int(getattr(self, '_hold_destroyer_charges', charges))
-                self.card_message = f"Tuttugunu Koparan! B ile hold sil ({total} hak)"
-                self.card_message_timer = 1.5
+                self._set_localized_card_message('mystery_msg_hold_destroyer_ready', 1.5, 'Tuttugunu Koparan! B ile hold sil ({total} hak)', total=total)
             except Exception:
                 pass
             try:
@@ -8150,8 +8199,7 @@ class MysteryMode(Game):
         charges = int(getattr(self, '_sniper_charges', 0) or 0)
         if charges <= 0:
             try:
-                self.card_message = "Keskin Nişancı hakkın yok!"
-                self.card_message_timer = 0.8
+                self._set_localized_card_message('mystery_msg_sniper_no_charges', 0.8, 'Keskin Nişancı hakkın yok!')
             except Exception:
                 pass
             return False
@@ -8161,8 +8209,7 @@ class MysteryMode(Game):
         self._sniper_hover_pos = None
         try:
             charges = int(getattr(self, '_sniper_charges', 0) or 0)
-            self.card_message = f"Patlatmak istedigin bloga tikla! (ESC: Iptal) - Kalan: {charges}"
-            self.card_message_timer = 10.0
+            self._set_localized_card_message('mystery_msg_sniper_open', 10.0, 'Patlatmak istedigin bloga tikla! (ESC: Iptal) - Kalan: {charges}', charges=charges)
         except Exception:
             pass
         return True
@@ -8177,8 +8224,7 @@ class MysteryMode(Game):
         
         try:
             charges = int(getattr(self, '_sniper_charges', 0) or 0)
-            self.card_message = f"Keskin Nisanci iptal edildi (Kalan hak: {charges})"
-            self.card_message_timer = 1.2
+            self._set_localized_card_message('mystery_msg_sniper_cancel', 1.2, 'Keskin Nisanci iptal edildi (Kalan hak: {charges})', charges=charges)
         except Exception:
             pass
 
@@ -8232,10 +8278,9 @@ class MysteryMode(Game):
             # Mesaj göster
             try:
                 if remaining > 0:
-                    self.card_message = f"Blok yok edildi! Kalan hak: {remaining}"
+                    self._set_localized_card_message('mystery_msg_sniper_destroyed_remaining', 1.5, 'Blok yok edildi! Kalan hak: {remaining}', remaining=remaining)
                 else:
-                    self.card_message = "Blok yok edildi! Keskin Nisanci tukendi."
-                self.card_message_timer = 1.5
+                    self._set_localized_card_message('mystery_msg_sniper_destroyed_last', 1.5, 'Blok yok edildi! Keskin Nisanci tukendi.')
             except Exception:
                 pass
             
@@ -8273,8 +8318,7 @@ class MysteryMode(Game):
         """R tuşunun ilk basışında mevcut oyun durumunu kaydet."""
         if not getattr(self, 'time_capsule_available', False):
             try:
-                self.card_message = "Zaman Kapsulu yok!"
-                self.card_message_timer = 0.8
+                self._set_localized_card_message('mystery_msg_time_capsule_unavailable', 0.8, 'Zaman Kapsulu yok!')
             except Exception:
                 pass
             return False
@@ -8292,8 +8336,7 @@ class MysteryMode(Game):
             self.time_capsule_saved = True
             
             try:
-                self.card_message = "Zaman Kapsulu kaydedildi! R ile geri don."
-                self.card_message_timer = 2.0
+                self._set_localized_card_message('mystery_msg_time_capsule_saved', 2.0, 'Zaman Kapsulu kaydedildi! R ile geri don.')
             except Exception:
                 pass
             
@@ -8309,8 +8352,7 @@ class MysteryMode(Game):
             
         except Exception as e:
             try:
-                self.card_message = "Zaman Kapsulu kaydetme hatasi!"
-                self.card_message_timer = 1.0
+                self._set_localized_card_message('mystery_msg_time_capsule_save_error', 1.0, 'Zaman Kapsulu kaydetme hatasi!')
             except Exception:
                 pass
             return False
@@ -8319,16 +8361,14 @@ class MysteryMode(Game):
         """R tuşunun ikinci basışında kaydedilen duruma geri don."""
         if not getattr(self, 'time_capsule_available', False):
             try:
-                self.card_message = "Zaman Kapsulu yok!"
-                self.card_message_timer = 0.8
+                self._set_localized_card_message('mystery_msg_time_capsule_unavailable', 0.8, 'Zaman Kapsulu yok!')
             except Exception:
                 pass
             return False
         
         if not getattr(self, 'time_capsule_saved', False) or not self.time_capsule_data:
             try:
-                self.card_message = "Kaydedilmis durum yok! Once R ile kaydet."
-                self.card_message_timer = 1.5
+                self._set_localized_card_message('mystery_msg_time_capsule_no_snapshot', 1.5, 'Kaydedilmis durum yok! Once R ile kaydet.')
             except Exception:
                 pass
             return False
@@ -8353,8 +8393,7 @@ class MysteryMode(Game):
             self._rebuild_active_effect_visuals()
             
             try:
-                self.card_message = "Zaman Kapsulu kullanildi! Gecmise donuldu."
-                self.card_message_timer = 2.0
+                self._set_localized_card_message('mystery_msg_time_capsule_restored', 2.0, 'Zaman Kapsulu kullanildi! Gecmise donuldu.')
             except Exception:
                 pass
             
@@ -8370,8 +8409,7 @@ class MysteryMode(Game):
             
         except Exception as e:
             try:
-                self.card_message = "Zaman Kapsulu geri yukleme hatasi!"
-                self.card_message_timer = 1.0
+                self._set_localized_card_message('mystery_msg_time_capsule_restore_error', 1.0, 'Zaman Kapsulu geri yukleme hatasi!')
             except Exception:
                 pass
             return False
@@ -9221,8 +9259,7 @@ class MysteryMode(Game):
         self._armed_nova_clusters = total
         self._remember_effect_visual('nova_burst', card)
         try:
-            self.card_message = f"Nova Patlaması: +{n} şarj (toplam {total})"
-            self.card_message_timer = 0.9
+            self._set_localized_card_message('mystery_msg_nova_burst_charges', 0.9, 'Nova Patlaması: +{count} şarj (toplam {total})', count=n, total=total)
         except Exception:
             pass
         self._sync_active_cards()
@@ -9353,12 +9390,10 @@ class MysteryMode(Game):
         self._card_workshop_peek_active = False
         self._card_workshop_peek_rect = None
         self._card_workshop_color = (0, 255, 255)
-        self._card_workshop_message = "Blok atolyesi! Maks 7 blok. ENTER ile tamamla."
-        self._card_workshop_message_timer = 5.0
+        self._set_localized_workshop_message('mystery_workshop_open_instruction', 5.0, 'Blok atolyesi! Maks 7 blok. ENTER ile tamamla.')
         pygame.mouse.set_visible(True)
         try:
-            self.card_message = "Blok Atolyesi acildi! Parca olustur ve ENTER ile tamamla."
-            self.card_message_timer = 3.0
+            self._set_localized_card_message('mystery_workshop_opened_top', 3.0, 'Blok Atolyesi acildi! Parca olustur ve ENTER ile tamamla.')
         except Exception:
             pass
 
@@ -9418,12 +9453,10 @@ class MysteryMode(Game):
         """Atölye parçasını tamamla ve oyuna ekle."""
         positions = self._card_workshop_get_positions()
         if len(positions) < 2:
-            self._card_workshop_message = "En az 2 blok gerekli!"
-            self._card_workshop_message_timer = 2.0
+            self._set_localized_workshop_message('mystery_workshop_min_blocks', 2.0, 'En az 2 blok gerekli!')
             return
         if not self._card_workshop_is_connected():
-            self._card_workshop_message = "Bloklar birbirine bagli olmali!"
-            self._card_workshop_message_timer = 2.0
+            self._set_localized_workshop_message('mystery_workshop_connected', 2.0, 'Bloklar birbirine bagli olmali!')
             return
 
         # Normalize shape 
@@ -9468,8 +9501,7 @@ class MysteryMode(Game):
 
         self._close_card_workshop_popup()
         try:
-            self.card_message = "Atolye parcasi hazirlandi! Hemen kullanabilirsin."
-            self.card_message_timer = 2.0
+            self._set_localized_card_message('mystery_workshop_piece_ready', 2.0, 'Atolye parcasi hazirlandi! Hemen kullanabilirsin.')
         except Exception:
             pass
         if self.sound_enabled:
@@ -9516,26 +9548,21 @@ class MysteryMode(Game):
                     self._card_workshop_grid[cy][cx] = None
                     if self._card_workshop_count_blocks() > 0 and not self._card_workshop_is_connected():
                         self._card_workshop_grid[cy][cx] = temp
-                        self._card_workshop_message = "Silme baglantıyı koparir!"
-                        self._card_workshop_message_timer = 1.5
+                        self._set_localized_workshop_message('mystery_workshop_remove_disconnect', 1.5, 'Silme baglantıyı koparir!')
                     else:
-                        self._card_workshop_message = "Blok silindi."
-                        self._card_workshop_message_timer = 1.0
+                        self._set_localized_workshop_message('mystery_workshop_block_removed', 1.0, 'Blok silindi.')
                 else:
                     # Yerleştir
                     if self._card_workshop_count_blocks() >= 7:
-                        self._card_workshop_message = "Maks 7 blok!"
-                        self._card_workshop_message_timer = 1.5
+                        self._set_localized_workshop_message('mystery_workshop_max_blocks', 1.5, 'Maks 7 blok!')
                     else:
                         self._card_workshop_grid[cy][cx] = {'color': self._card_workshop_color}
                         if self._card_workshop_count_blocks() > 1 and not self._card_workshop_is_connected():
                             self._card_workshop_grid[cy][cx] = None
-                            self._card_workshop_message = "Bloklar birbirine bagli olmali!"
-                            self._card_workshop_message_timer = 1.5
+                            self._set_localized_workshop_message('mystery_workshop_connected', 1.5, 'Bloklar birbirine bagli olmali!')
                         else:
                             remaining = 7 - self._card_workshop_count_blocks()
-                            self._card_workshop_message = f"Blok eklendi. Kalan: {remaining}"
-                            self._card_workshop_message_timer = 1.0
+                            self._set_localized_workshop_message('mystery_workshop_block_added', 1.0, 'Blok eklendi. Kalan: {remaining}', remaining=remaining)
                 return True
         elif event.type == pygame.MOUSEBUTTONDOWN:
             pos = normalize_mouse_pos(getattr(event, 'pos', None)) or getattr(event, 'pos', None)
@@ -9562,37 +9589,30 @@ class MysteryMode(Game):
                                     self._card_workshop_grid[my][mx] = {'color': self._card_workshop_color}
                                     if self._card_workshop_count_blocks() > 1 and not self._card_workshop_is_connected():
                                         self._card_workshop_grid[my][mx] = None
-                                        self._card_workshop_message = "Bloklar birbirine bagli olmali!"
-                                        self._card_workshop_message_timer = 1.5
+                                        self._set_localized_workshop_message('mystery_workshop_connected', 1.5, 'Bloklar birbirine bagli olmali!')
                                     else:
                                         remaining = 7 - self._card_workshop_count_blocks()
-                                        self._card_workshop_message = f"Blok eklendi. Kalan: {remaining}"
-                                        self._card_workshop_message_timer = 1.0
+                                        self._set_localized_workshop_message('mystery_workshop_block_added', 1.0, 'Blok eklendi. Kalan: {remaining}', remaining=remaining)
                                 else:
-                                    self._card_workshop_message = "Maks 7 blok!"
-                                    self._card_workshop_message_timer = 1.5
+                                    self._set_localized_workshop_message('mystery_workshop_max_blocks', 1.5, 'Maks 7 blok!')
                             else:
                                 # Zaten blok var, sil
                                 temp = self._card_workshop_grid[my][mx]
                                 self._card_workshop_grid[my][mx] = None
                                 if self._card_workshop_count_blocks() > 0 and not self._card_workshop_is_connected():
                                     self._card_workshop_grid[my][mx] = temp
-                                    self._card_workshop_message = "Silme baglantıyı koparir!"
-                                    self._card_workshop_message_timer = 1.5
+                                    self._set_localized_workshop_message('mystery_workshop_remove_disconnect', 1.5, 'Silme baglantıyı koparir!')
                                 else:
-                                    self._card_workshop_message = "Blok silindi."
-                                    self._card_workshop_message_timer = 1.0
+                                    self._set_localized_workshop_message('mystery_workshop_block_removed', 1.0, 'Blok silindi.')
                         elif event.button == 3:
                             if self._card_workshop_grid[my][mx] is not None:
                                 temp = self._card_workshop_grid[my][mx]
                                 self._card_workshop_grid[my][mx] = None
                                 if self._card_workshop_count_blocks() > 0 and not self._card_workshop_is_connected():
                                     self._card_workshop_grid[my][mx] = temp
-                                    self._card_workshop_message = "Silme baglantıyı koparir!"
-                                    self._card_workshop_message_timer = 1.5
+                                    self._set_localized_workshop_message('mystery_workshop_remove_disconnect', 1.5, 'Silme baglantıyı koparir!')
                                 else:
-                                    self._card_workshop_message = "Blok silindi."
-                                    self._card_workshop_message_timer = 1.0
+                                    self._set_localized_workshop_message('mystery_workshop_block_removed', 1.0, 'Blok silindi.')
                     return True
         return False
 
@@ -9673,7 +9693,7 @@ class MysteryMode(Game):
             eye_surf = fallback_font.render("O", True, (116, 190, 255) if peek_hovered else (180, 180, 200))
             self.screen.blit(eye_surf, eye_surf.get_rect(center=self._card_workshop_peek_rect.center))
 
-        count_text = f"Blok: {self._card_workshop_count_blocks()}/7"
+        count_text = self._localized_card_text('mystery_workshop_block_count', 'Blok: {count}/7', count=self._card_workshop_count_blocks())
         info_font = self.mystery_font_small
         count_surf = info_font.render(count_text, True, (200, 200, 210))
 
@@ -9824,8 +9844,7 @@ class MysteryMode(Game):
                         color_map[key].append((x, y))
 
         if not color_map:
-            self.card_message = "Renk Temizleme: Tahta bos!"
-            self.card_message_timer = 1.0
+            self._set_localized_card_message('mystery_msg_color_cleanse_empty', 1.0, 'Renk Temizleme: Tahta bos!')
             return
 
         # Rastgele bir renk seç
@@ -9867,8 +9886,15 @@ class MysteryMode(Game):
             pass
 
         r, g, b = target_color
-        self.card_message = f"Renk Temizleme: {removed} blok temizlendi! (RGB:{r},{g},{b})"
-        self.card_message_timer = 1.5
+        self._set_localized_card_message(
+            'mystery_msg_color_cleanse_removed',
+            1.5,
+            'Renk Temizleme: {removed} blok temizlendi! (RGB:{r},{g},{b})',
+            removed=removed,
+            r=r,
+            g=g,
+            b=b,
+        )
 
         if self.sound_enabled:
             try:
@@ -9887,8 +9913,7 @@ class MysteryMode(Game):
         # Mouse'u görünür yap
         pygame.mouse.set_visible(True)
         try:
-            self.card_message = "1. sıradaki parçayı seç!"
-            self.card_message_timer = 10.0
+            self._set_localized_card_message('mystery_future_popup_first_message', 10.0, '1. sıradaki parçayı seç!')
         except Exception:
             pass
 
@@ -9937,16 +9962,24 @@ class MysteryMode(Game):
         # Hala seçim hakkı varsa popup'ı açık tut
         if self._future_changer_remaining > 0:
             try:
-                self.card_message = f"{piece_name} seçildi! 2. sıradaki parçayı seç!"
-                self.card_message_timer = 10.0
+                self._set_localized_card_message(
+                    'mystery_future_popup_selected_next',
+                    10.0,
+                    '{piece_name} seçildi! 2. sıradaki parçayı seç!',
+                    piece_name=piece_name,
+                )
             except Exception:
                 pass
         else:
             # Tüm seçimler yapıldı
             self._close_piece_selection_popup()
             try:
-                self.card_message = f"{piece_name} seçildi! Sıradaki parçalar değiştirildi."
-                self.card_message_timer = 2.0
+                self._set_localized_card_message(
+                    'mystery_future_popup_selected_done',
+                    2.0,
+                    '{piece_name} seçildi! Sıradaki parçalar değiştirildi.',
+                    piece_name=piece_name,
+                )
             except Exception:
                 pass
 
@@ -10003,7 +10036,7 @@ class MysteryMode(Game):
         # Başlık - hangi sıradaki parçayı seçtiğini göster
         target_idx = getattr(self, '_future_changer_target_index', 0)
         title_font = self.mystery_font_large
-        title_text = f"{target_idx + 1}. Sıradaki Parçayı Seç"
+        title_text = self._localized_card_text('mystery_future_popup_title', '{order}. Sıradaki Parçayı Seç', order=target_idx + 1)
         title_surf = title_font.render(title_text, True, (255, 255, 255))
         title_x = popup_x + (popup_width - title_surf.get_width()) // 2
         self.screen.blit(title_surf, (title_x, popup_y + s(12)))
@@ -10057,7 +10090,7 @@ class MysteryMode(Game):
         
         # İptal butonu - daha şık
         cancel_font = self.mystery_font_small
-        cancel_text = "ESC: Iptal"
+        cancel_text = self._localized_card_text('mystery_future_popup_cancel_label', 'ESC: Iptal')
         cancel_surf = cancel_font.render(cancel_text, True, (150, 130, 170))
         cancel_x = popup_x + (popup_width - cancel_surf.get_width()) // 2
         self.screen.blit(cancel_surf, (cancel_x, popup_y + popup_height - s(30)))

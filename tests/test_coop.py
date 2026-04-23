@@ -841,3 +841,29 @@ def test_game_over_ignores_gamepad_mouse_click():
         _pg.event.get = original_get
 
     assert restart_calls == []
+
+
+def test_coop_spawn_halt_blocks_respawn_until_toggled_off():
+    settings = _FakeSettings(
+        controls={'debug': {'coop_spawner_left': _pg.K_h}},
+        values={'coop_debug_halt_blocks': True},
+    )
+    cg = CoopGame(
+        sound_enabled=False,
+        effects_enabled=False,
+        screen=_Surf(),
+        settings_manager=settings,
+        sound_manager=_SM(),
+    )
+
+    cg._p1_spawn_halted = True
+    expected_piece = cg.p1_next_piece
+
+    cg._hard_drop('P1')
+
+    assert cg.p1_current_piece is None
+
+    cg._toggle_player_spawner_halt('P1')
+
+    assert cg.p1_current_piece is expected_piece
+    assert cg._p1_spawn_halted is False

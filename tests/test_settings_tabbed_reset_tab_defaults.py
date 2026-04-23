@@ -145,6 +145,10 @@ class _FakeSettingsManager:
                     "player1": {"move_left": "a"},
                     "player2": {"move_left": "left"},
                 },
+                "debug": {
+                    "coop_spawner_left": "",
+                    "coop_spawner_right": "",
+                },
                 "gamepad": {
                     "enabled": True,
                     "rumble": "high",
@@ -251,3 +255,17 @@ def test_tab_reset_button_rect_visible_on_display_tab(monkeypatch):
     assert rect is not None
     assert rect.width > 0
     assert rect.height > 0
+
+
+def test_debug_keybind_capture_updates_controls(monkeypatch):
+    mod = _import_module(monkeypatch)
+    sm = _FakeSettingsManager()
+    screen = _make_screen(mod, sm, tab_index=5)
+    mod.pygame.key = types.SimpleNamespace(name=lambda key_code: "h")
+    screen._pending_keybind_item = {"section": "debug", "action_key": "coop_spawner_left"}
+    screen._pending_keybind_slot = "primary"
+
+    screen._apply_captured_key(104)
+
+    assert screen._control_config["debug"]["coop_spawner_left"] == "h"
+    assert sm.settings["controls"]["debug"]["coop_spawner_left"] == "h"

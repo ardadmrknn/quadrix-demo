@@ -69,6 +69,22 @@ def test_settings_manager_splits_legacy_settings_into_cloud_and_local(tmp_path, 
     assert campaign_payload == {'level_1': {'stars': 3}}
 
 
+def test_settings_manager_preserves_debug_controls(tmp_path, monkeypatch):
+    SettingsManager = _import_real_module('settings_manager').SettingsManager
+    data_dir = tmp_path / 'userdata'
+    monkeypatch.setenv('QUADRIX_DATA_DIR', str(data_dir))
+
+    sm = SettingsManager()
+    controls = sm.get_controls()
+    controls['debug']['coop_spawner_left'] = 'h'
+    sm.set('controls', controls)
+
+    sm_reloaded = SettingsManager()
+
+    assert sm_reloaded.get_controls()['debug']['coop_spawner_left'] == 'h'
+    assert sm_reloaded.get_default_controls()['debug']['coop_spawner_right'] == ''
+
+
 def test_user_manager_migrates_profiles_into_cloud_layout(tmp_path, monkeypatch):
     UserManager = _import_real_module('user_manager').UserManager
     data_dir = tmp_path / 'userdata'

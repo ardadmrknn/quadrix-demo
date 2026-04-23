@@ -348,6 +348,23 @@ def _build_tab_content(tab_key: str, sm, show_debug: bool = False) -> list[dict]
                 'loc_key': 'card_debug',
                 'label_tr': 'Kart Debug', 'label_en': 'Card Debug',
             })
+            items.append({
+                'type': 'toggle', 'key': 'coop_debug_halt_blocks',
+                'loc_key': 'coop_debug_halt_blocks',
+                'label_tr': 'Co-op Spawner Durdurma', 'label_en': 'Co-op Halt Spawner',
+            })
+            items.append({
+                'type': 'keybind', 'key': 'ctrl_debug_coop_spawner_left',
+                'loc_key': 'coop_debug_halt_left',
+                'action_key': 'coop_spawner_left', 'section': 'debug',
+                'label_tr': 'Sol Spawner Durdur', 'label_en': 'Halt Left Spawner',
+            })
+            items.append({
+                'type': 'keybind', 'key': 'ctrl_debug_coop_spawner_right',
+                'loc_key': 'coop_debug_halt_right',
+                'action_key': 'coop_spawner_right', 'section': 'debug',
+                'label_tr': 'Sağ Spawner Durdur', 'label_en': 'Halt Right Spawner',
+            })
 
     return items
 
@@ -1442,6 +1459,10 @@ class TabbedSettingsScreen:
                 value = self._control_config.get('pvp', {}).get('player2', {}).get(action_key, '')
                 return (str(value).upper() or '—'), (180, 220, 255)
 
+            if section == 'debug':
+                value = self._control_config.get('debug', {}).get(action_key, '')
+                return (str(value).upper() or '—'), (180, 220, 255)
+
             if self._is_gamepad_keybind_section(section):
                 primary, secondary = self._get_gamepad_binding_slots(action_key)
                 gp_type = self._current_gamepad_prompt_type()
@@ -1654,6 +1675,9 @@ class TabbedSettingsScreen:
             pvp = self._control_config.setdefault('pvp', {})
             player = pvp.setdefault('player2', {})
             player[action_key] = key_name
+        elif section == 'debug':
+            debug_cfg = self._control_config.setdefault('debug', {})
+            debug_cfg[action_key] = key_name
 
         self._persist_controls()
 
@@ -1709,6 +1733,9 @@ class TabbedSettingsScreen:
         elif section == 'pvp.player2':
             value = defaults.get('pvp', {}).get('player2', {}).get(action_key)
             self._control_config.setdefault('pvp', {}).setdefault('player2', {})[action_key] = value
+        elif section == 'debug':
+            value = defaults.get('debug', {}).get(action_key, '')
+            self._control_config.setdefault('debug', {})[action_key] = value
         elif self._is_gamepad_keybind_section(section):
             value = defaults.get('gamepad', {}).get(action_key, -1)
             if isinstance(value, dict):

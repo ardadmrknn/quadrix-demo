@@ -283,6 +283,9 @@ class CoopGame:
 
         # --- Kontroller ---
         self.pvp_controls = self._resolve_controls()
+        self._coop_spawner_debug_enabled = False
+        self._p1_spawn_halted = False
+        self._p2_spawn_halted = False
 
         # ==================================================================
         # Board + parça sistemi
@@ -487,18 +490,26 @@ class CoopGame:
                 'rotate': pygame.K_UP,
                 'hold': self._P2_HOLD_KEY,
             },
+            'debug': {
+                'coop_spawner_left': None,
+                'coop_spawner_right': None,
+            },
             'pause': pygame.K_p,
         }
         if not self.settings_manager:
             return defaults
         controls = self.settings_manager.get_controls()
         pvp_cfg = controls.get('pvp', {}) if isinstance(controls, dict) else {}
-        resolved: dict = {'player1': {}, 'player2': {}}
+        debug_cfg = controls.get('debug', {}) if isinstance(controls, dict) else {}
+        resolved: dict = {'player1': {}, 'player2': {}, 'debug': {}}
         for player in ('player1', 'player2'):
             pcfg = pvp_cfg.get(player, {}) if isinstance(pvp_cfg, dict) else {}
             for action in defaults[player]:
                 binding = pcfg.get(action)
                 resolved[player][action] = self._binding_to_keycode(binding, defaults[player][action])
+        for action in defaults['debug']:
+            binding = debug_cfg.get(action) if isinstance(debug_cfg, dict) else None
+            resolved['debug'][action] = self._binding_to_keycode(binding, defaults['debug'][action])
         single_cfg = controls.get('single_player', {}) if isinstance(controls, dict) else {}
         resolved['pause'] = self._binding_to_keycode(single_cfg.get('pause'), defaults['pause'])
         return resolved
@@ -513,6 +524,59 @@ class CoopGame:
             except ValueError:
                 return fallback
         return fallback
+
+    def _sync_coop_spawner_debug_settings(self) -> None:
+        enabled = False
+        settings_manager = getattr(self, 'settings_manager', None)
+        if settings_manager is not None:
+            try:
+                enabled = bool(settings_manager.get('coop_debug_halt_blocks', False))
+            except Exception:
+                enabled = False
+
+        self._coop_spawner_debug_enabled = enabled
+        if enabled:
+            return
+
+        resume_p1 = self._p1_spawn_halted
+        resume_p2 = self._p2_spawn_halted
+        self._p1_spawn_halted = False
+        self._p2_spawn_halted = False
+
+        if resume_p1:
+            self._resume_player_spawner_if_waiting('P1')
+        if resume_p2:
+            self._resume_player_spawner_if_waiting('P2')
+
+    def _player_spawner_halted(self, player: str) -> bool:
+        if not getattr(self, '_coop_spawner_debug_enabled', False):
+            return False
+        return self._p1_spawn_halted if player == 'P1' else self._p2_spawn_halted
+
+    def _resume_player_spawner_if_waiting(self, player: str) -> None:
+        if getattr(self, 'game_over', False):
+            return
+        if player == 'P1':
+            if self.p1_frozen or self._p1_pending_unfreeze or self.p1_current_piece is not None:
+                return
+        else:
+            if self.p2_frozen or self._p2_pending_unfreeze or self.p2_current_piece is not None:
+                return
+        self._try_spawn_for_player(player, force=True)
+
+    def _toggle_player_spawner_halt(self, player: str) -> None:
+        if not getattr(self, '_coop_spawner_debug_enabled', False):
+            return
+
+        if player == 'P1':
+            self._p1_spawn_halted = not self._p1_spawn_halted
+            halted = self._p1_spawn_halted
+        else:
+            self._p2_spawn_halted = not self._p2_spawn_halted
+            halted = self._p2_spawn_halted
+
+        if not halted:
+            self._resume_player_spawner_if_waiting(player)
 
     def _ensure_pause_settings_screen(self):
         pause_settings = getattr(self, '_pause_settings_screen', None)
@@ -584,6 +648,7 @@ class CoopGame:
             self.pvp_controls = self._resolve_controls()
         except Exception:
             pass
+        self._sync_coop_spawner_debug_settings()
 
         theme_manager = getattr(self, 'theme_manager', None)
         if theme_manager is not None:
@@ -1893,8 +1958,10 @@ class CoopGame:
         # Hold hakkını sıfırla
         if player == 'P1':
             self.p1_hold_used = False
+            self.p1_current_piece = None
         else:
             self.p2_hold_used = False
+            self.p2_current_piece = None
 
         self._reset_player_lock_state(player)
 
@@ -1905,7 +1972,10 @@ class CoopGame:
         # Yeni parça spawn
         self._try_spawn_for_player(player)
 
-    def _try_spawn_for_player(self, player: str) -> None:
+    def _try_spawn_for_player(self, player: str, force: bool = False) -> None:
+        if not force and self._player_spawner_halted(player):
+            return
+
         next_piece = self.p1_next_piece if player == 'P1' else self.p2_next_piece
         self._place_at_spawn(next_piece, player)
         if self.board.is_valid_position_for_player(next_piece, player):
@@ -1953,6 +2023,10 @@ class CoopGame:
             self.p1_frozen = False
             self._p1_pending_unfreeze = False
             self.p1_hold_used = False
+            if self._player_spawner_halted('P1'):
+                self.p1_current_piece = None
+                self._reset_player_lock_state('P1')
+                return
             next_p = self.p1_next_piece
             self._place_at_spawn(next_p, 'P1')
             if self.board.is_valid_position_for_player(next_p, 'P1'):
@@ -1965,6 +2039,10 @@ class CoopGame:
             self.p2_frozen = False
             self._p2_pending_unfreeze = False
             self.p2_hold_used = False
+            if self._player_spawner_halted('P2'):
+                self.p2_current_piece = None
+                self._reset_player_lock_state('P2')
+                return
             next_p = self.p2_next_piece
             self._place_at_spawn(next_p, 'P2')
             if self.board.is_valid_position_for_player(next_p, 'P2'):
@@ -2072,6 +2150,14 @@ class CoopGame:
                     continue
 
                 if self.paused:
+                    continue
+
+                debug_controls = self.pvp_controls.get('debug', {})
+                if event.key == debug_controls.get('coop_spawner_left'):
+                    self._toggle_player_spawner_halt('P1')
+                    continue
+                if event.key == debug_controls.get('coop_spawner_right'):
+                    self._toggle_player_spawner_halt('P2')
                     continue
 
                 c1 = self.pvp_controls['player1']
