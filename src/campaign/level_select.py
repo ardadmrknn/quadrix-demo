@@ -201,6 +201,68 @@ class CampaignLevelSelect:
             max_scale=max_scale,
             reference_size=(1400.0, 900.0),
         )
+
+    def _truncate_level_info_text(self, font, text: str, max_width: int) -> str:
+        """Bilgi kartı metnini verilen genişliğe sığacak şekilde kısalt."""
+        raw = str(text or '').strip()
+        if not raw:
+            return ''
+        if max_width <= 0:
+            return ''
+        if font.size(raw)[0] <= max_width:
+            return raw
+        ellipsis = '...'
+        candidate = raw
+        while candidate and font.size(candidate + ellipsis)[0] > max_width:
+            candidate = candidate[:-1].rstrip()
+        return (candidate + ellipsis) if candidate else ellipsis
+
+    def _wrap_level_info_text(self, font, text: str, max_width: int, max_lines: int = 2) -> List[str]:
+        """Level info kartı içeriğini kart genişliğine göre sar."""
+        raw = str(text or '').strip()
+        if not raw or max_width <= 0:
+            return []
+
+        words = raw.split()
+        if not words:
+            return []
+
+        lines: List[str] = []
+        current = words[0]
+        remaining_words: List[str] = []
+
+        for idx, word in enumerate(words[1:], start=1):
+            candidate = f"{current} {word}"
+            if font.size(candidate)[0] <= max_width:
+                current = candidate
+                continue
+
+            lines.append(self._truncate_level_info_text(font, current, max_width))
+            current = word
+            if len(lines) >= max_lines - 1:
+                remaining_words = words[idx + 1:]
+                break
+
+        if len(lines) < max_lines:
+            if remaining_words:
+                current = ' '.join([current, *remaining_words]).strip()
+            lines.append(self._truncate_level_info_text(font, current, max_width))
+
+        return lines[:max_lines]
+
+    def _get_level_info_text_metrics(self, info_scale: float, font) -> Dict[str, int]:
+        """Level info kartı metin padding/indent/line-height metrikleri."""
+        s = lambda v, minimum=1: max(minimum, int(round(v * info_scale)))
+        line_height = max(s(18), int(getattr(font, 'get_linesize', lambda: 0)() or 0))
+        return {
+            'content_pad': s(12),
+            'title_top_pad': s(10),
+            'title_gap': max(s(8), line_height // 2),
+            'row_gap': max(s(6), line_height // 3),
+            'line_height': line_height,
+            'objective_bullet_offset': s(8),
+            'objective_text_indent': s(20),
+        }
     
     def _load_progress(self) -> Dict[str, Any]:
         """Campaign ilerlemesini yükle"""
@@ -1108,13 +1170,18 @@ class CampaignLevelSelect:
         draw_info_card(left_card, world_color)
         draw_info_card(right_card, world_color)
 
+        text_metrics = self._get_level_info_text_metrics(info_scale, self.font_small)
+
         # === SOL KART: GÖREVLER ===
-        left_x = left_card.x + s(12)
+        left_x = left_card.x + text_metrics['content_pad']
         obj_title = self.font_small.render(t('campaign_objectives_title'), True, self.COLORS['gray'])
-        self.screen.blit(obj_title, (left_x, left_card.y + s(10)))
+        obj_title_y = left_card.y + text_metrics['title_top_pad']
+        self.screen.blit(obj_title, (left_x, obj_title_y))
 
         if level_config.objectives:
-            obj_y = left_card.y + s(34)
+            obj_y = obj_title_y + obj_title.get_height() + text_metrics['title_gap']
+            objective_text_x = left_x + text_metrics['objective_text_indent']
+            objective_max_width = max(s(50), left_card.right - text_metrics['content_pad'] - objective_text_x)
             for obj in level_config.objectives[:3]:
                 obj_type = obj.get('type', 'clear_lines')
                 target = obj.get('target', 0)
@@ -1138,18 +1205,23 @@ class CampaignLevelSelect:
                 }
                 obj_text = obj_names.get(obj_type, f"{obj_type}: {formatted_target}")
 
-                pygame.draw.circle(self.screen, world_color, (left_x + s(8), obj_y + s(8)), max(2, s(4)))
-                surf = self.font_small.render(obj_text, True, self.COLORS['text'])
-                self.screen.blit(surf, (left_x + s(20), obj_y))
-                obj_y += s(22)
+                obj_lines = self._wrap_level_info_text(self.font_small, obj_text, objective_max_width, max_lines=2)
+                bullet_cx = left_x + text_metrics['objective_bullet_offset']
+                bullet_cy = obj_y + text_metrics['line_height'] // 2
+                pygame.draw.circle(self.screen, world_color, (bullet_cx, bullet_cy), max(2, s(4)))
+                for line_idx, line in enumerate(obj_lines):
+                    surf = self.font_small.render(line, True, self.COLORS['text'])
+                    self.screen.blit(surf, (objective_text_x, obj_y + line_idx * text_metrics['line_height']))
+                obj_y += max(text_metrics['line_height'], len(obj_lines) * text_metrics['line_height']) + text_metrics['row_gap']
 
         # === SAĞ KART: YILDIZ KOŞULLARI ===
-        right_x = right_card.x + s(12)
+        right_x = right_card.x + text_metrics['content_pad']
         star_title = self.font_small.render(t('campaign_star_conditions_title'), True, self.COLORS['gray'])
-        self.screen.blit(star_title, (right_x, right_card.y + s(10)))
+        star_title_y = right_card.y + text_metrics['title_top_pad']
+        self.screen.blit(star_title, (right_x, star_title_y))
 
         star_conditions = level_config.stars
-        star_y = right_card.y + s(34)
+        star_y = star_title_y + star_title.get_height() + text_metrics['title_gap']
         
         star_colors = {
             1: UIColors.TEXT_SECONDARY,  # Gümüş
@@ -1223,16 +1295,25 @@ class CampaignLevelSelect:
                 desc = condition.get('description', {})
                 cond_text = desc.get(lang, desc.get('en', str(cond_type)))
             
-            # Koşul metni
-            cond_surf = self.font_small.render(f": {cond_text}", True, display_color)
-            self.screen.blit(cond_surf, (x_pos, star_y))
+            cond_lines = self._wrap_level_info_text(
+                self.font_small,
+                f": {cond_text}",
+                max(s(50), right_card.right - text_metrics['content_pad'] - x_pos),
+                max_lines=2,
+            )
+            line_block_width = 0
+            for line_idx, line in enumerate(cond_lines):
+                cond_surf = self.font_small.render(line, True, display_color)
+                self.screen.blit(cond_surf, (x_pos, star_y + line_idx * text_metrics['line_height']))
+                line_block_width = max(line_block_width, cond_surf.get_width())
             
             # Tik işareti (kazanılmışsa)
             if earned:
                 tick_surf = self.font_small.render(" OK", True, self.COLORS['green'])
-                self.screen.blit(tick_surf, (x_pos + cond_surf.get_width() + s(5), star_y))
+                tick_y = star_y + max(0, (max(text_metrics['line_height'], len(cond_lines) * text_metrics['line_height']) - tick_surf.get_height()) // 2)
+                self.screen.blit(tick_surf, (x_pos + line_block_width + s(5), tick_y))
             
-            star_y += s(22)
+            star_y += max(text_metrics['line_height'], len(cond_lines) * text_metrics['line_height']) + text_metrics['row_gap']
 
         # === ALT BÖLÜM: DURUM BADGE ===
         status_y = panel_y + panel_height - badge_height - s(10)

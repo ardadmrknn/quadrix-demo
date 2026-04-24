@@ -328,3 +328,45 @@ def test_level_select_ui_scale_uses_projected_effective_scale():
     assert captured['max_scale'] == 1.18
     assert captured['reference_size'] == (1400.0, 900.0)
     assert captured['display_surface'] is None
+
+
+class _WrapFont:
+    def __init__(self, char_width=8, line_height=18):
+        self.char_width = char_width
+        self.line_height = line_height
+
+    def size(self, text):
+        return (len(str(text)) * self.char_width, self.line_height)
+
+    def get_linesize(self):
+        return self.line_height
+
+
+def test_level_select_info_card_text_wraps_to_card_width():
+    inst = object.__new__(CampaignLevelSelect)
+    font = _WrapFont(char_width=7, line_height=18)
+
+    lines = inst._wrap_level_info_text(
+        font,
+        'Build a 6-step chain clear lines consecutively without breaking rhythm',
+        max_width=140,
+        max_lines=2,
+    )
+
+    assert len(lines) == 2
+    assert all(font.size(line)[0] <= 140 for line in lines)
+    assert lines[-1].endswith('...')
+
+
+def test_level_select_info_card_spacing_grows_with_scale():
+    inst = object.__new__(CampaignLevelSelect)
+    font = _WrapFont(char_width=7, line_height=16)
+
+    compact = inst._get_level_info_text_metrics(0.72, font)
+    expanded = inst._get_level_info_text_metrics(1.18, font)
+
+    assert compact['title_gap'] >= 4
+    assert compact['row_gap'] >= 4
+    assert expanded['line_height'] > compact['line_height']
+    assert expanded['title_gap'] > compact['title_gap']
+    assert expanded['objective_text_indent'] > compact['objective_text_indent']
