@@ -130,8 +130,6 @@ def _apply_leaderboard_cli_overrides(argv: list[str]) -> None:
                 os.environ['LEADERBOARD_CLIENT_TOKEN'] = value
             i += consumed - 1
         i += 1
-
-
 def _persist_active_game_run(game) -> None:
     """Aktif oyunun skor/istatistik kaydını tek noktadan tamamla."""
     if game is None:
@@ -196,6 +194,7 @@ try:
     )
     from .gamepad_manager import get_gamepad_manager, is_gamepad_connected  # type: ignore
     from .ui_scaling import get_projected_effective_scale  # type: ignore
+    from .leaderboard_trailer_screen import LeaderboardTrailerScreen  # type: ignore
 except Exception:
     from game import Game, prewarm_common_mode_entry_backgrounds
     from block_styles import BlockStyleManager
@@ -235,6 +234,7 @@ except Exception:
     )
     from gamepad_manager import get_gamepad_manager, is_gamepad_connected
     from ui_scaling import get_projected_effective_scale
+    from leaderboard_trailer_screen import LeaderboardTrailerScreen
 import pygame
 from pathlib import Path
 
@@ -1391,6 +1391,7 @@ def main():
     graphics_menu = None  # Grafikler menüsü
     gameplay_settings_menu = None  # Oynanış ayarları menüsü
     guide_screen = None  # Kılavuz ekranı
+    leaderboard_trailer_screen = LeaderboardTrailerScreen(screen, settings_manager=settings_manager, user_manager=user_manager)
 
     # Campaign level seçim ekranı - önceden oluştur (lag önleme)
     campaign_level_select = CampaignLevelSelect(
@@ -1702,6 +1703,7 @@ def main():
             user_management_screen,
             campaign_level_select,
             guide_screen,
+            leaderboard_trailer_screen,
             graphics_menu,
             gameplay_settings_menu,
             getattr(_handle_online_pvp, '_game', None),
@@ -1817,7 +1819,7 @@ def main():
     def _handle_menu(delta_ms):
         nonlocal running, state, confirm_exit, confirm_daily, daily_prompt_selected, daily_prompt_challenge, game, pvp_game, coop_game, guide_screen
         nonlocal cheat_buffer, cheat_last_key_ms
-        nonlocal coop_level_select, _coop_campaign_needs_refresh
+        nonlocal coop_level_select, _coop_campaign_needs_refresh, leaderboard_trailer_screen
 
         for event in pygame.event.get():
             # Global M tuşu - Sessiz mod
@@ -2189,6 +2191,12 @@ def main():
                 confirm_exit = False
                 state = 'guide'
                 guide_screen = GuideScreen(screen, settings_manager)
+            elif action == 'leaderboard_trailer':
+                confirm_exit = False
+                if leaderboard_trailer_screen is None:
+                    leaderboard_trailer_screen = LeaderboardTrailerScreen(screen, settings_manager=settings_manager, user_manager=user_manager)
+                leaderboard_trailer_screen.restart_animation()
+                state = 'leaderboard_trailer'
             elif action in ('credits', 'Emeği Geçenler', 'Credits'):
                 confirm_exit = False
                 state = 'credits'
@@ -2728,6 +2736,24 @@ def main():
                 )
                 state = 'game'
         guide_screen.draw()
+        return True
+
+    def _handle_leaderboard_trailer(delta_ms):
+        nonlocal running, state, leaderboard_trailer_screen
+
+        if leaderboard_trailer_screen is None:
+            leaderboard_trailer_screen = LeaderboardTrailerScreen(screen, settings_manager=settings_manager, user_manager=user_manager)
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                running = False
+            action = leaderboard_trailer_screen.handle_input(event)
+            if action == 'back':
+                state = 'menu'
+            elif action == 'toggle_fullscreen':
+                _toggle_fullscreen(500, 700)
+
+        leaderboard_trailer_screen.draw()
         return True
 
     def _handle_graphics(delta_ms):
@@ -3675,6 +3701,7 @@ def main():
         'mode_music': _handle_mode_music,
         'controls': _handle_controls,
         'guide': _handle_guide,
+        'leaderboard_trailer': _handle_leaderboard_trailer,
         'graphics': _handle_graphics,
         'gameplay_settings': _handle_gameplay_settings,
         'block_styles': _handle_block_styles,
@@ -3727,7 +3754,7 @@ def main():
             return 'slide_right'
         # Menü geçişleri için sayfa kaydırma efekti
         # İleri gidiş (derinleşme) - sola kayma
-        forward_states = ['extras', 'highscores', 'achievements', 'credits', 'guide', 'campaign_select']
+        forward_states = ['extras', 'highscores', 'achievements', 'credits', 'guide', 'leaderboard_trailer', 'campaign_select']
         if to_state in forward_states:
             return 'slide_left'
         # Geri dönüş - sağa kayma

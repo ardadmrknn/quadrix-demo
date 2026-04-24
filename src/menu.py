@@ -540,6 +540,8 @@ class Menu:
         self._mystery_lb_last_fetch_ms = -120_000
         self._mystery_lb_refresh_ms = 12_000
         self._mystery_lb_loading = False
+        self._suppress_embedded_leaderboard_panel = False
+        self._mystery_lb_trailer_preview_enabled = False
         self._mystery_lb_trailer_start_ms: int | None = None
         self._mystery_lb_trailer_running = False
         self._mystery_lb_trailer_row_y: dict[str, float] = {}
@@ -1045,8 +1047,9 @@ class Menu:
         # --- Normal (modal kapalı) girdi işleme ---
         max_nav = getattr(self, '_nav_panel_max_idx', len(self.options) - 1)
         if event.type == pygame.KEYDOWN:
+            if self.settings_manager and self.settings_manager.get('leaderboard_trailer_debug', False) and event.key == pygame.K_l:
+                return 'leaderboard_trailer'
             if self._is_mystery_lb_trailer_debug_enabled() and event.key == pygame.K_l:
-                self._start_mystery_lb_trailer_debug()
                 return None
             nav = self._get_nav_keys()
             navigated = False
@@ -3455,7 +3458,8 @@ class Menu:
             if is_selected and action_key not in ('pvp_2_players', 'coop_mode'):
                 pygame.draw.rect(self.screen, (*accent[:3], 220), draw_rect, 2, border_radius=16)
 
-        self._draw_mystery_leaderboard_panel(mystery_lb_rect)
+        if not getattr(self, '_suppress_embedded_leaderboard_panel', False):
+            self._draw_mystery_leaderboard_panel(mystery_lb_rect)
 
         # Sağ alt çıkış butonu (taslaktaki ayrı kutu)
         exit_w = max(124, int(132 * scale))
@@ -3685,10 +3689,14 @@ class Menu:
         self._refresh_mystery_leaderboard_cache(force=True)
 
     def _is_mystery_lb_trailer_debug_enabled(self) -> bool:
-        try:
-            return bool(self.settings_manager.get('leaderboard_trailer_debug', False))
-        except Exception:
-            return False
+        return bool(getattr(self, '_mystery_lb_trailer_preview_enabled', False))
+
+    def enable_mystery_lb_trailer_preview(self) -> None:
+        self._mystery_lb_trailer_preview_enabled = True
+        self._suppress_embedded_leaderboard_panel = True
+        self._mystery_lb_tab = 'global'
+        self._nav_source = 'keyboard'
+        self._start_mystery_lb_trailer_debug()
 
     def _reset_mystery_lb_trailer_debug(self) -> None:
         self._mystery_lb_trailer_start_ms = None
@@ -3992,14 +4000,15 @@ class Menu:
     def _draw_mystery_leaderboard_panel(self, panel_rect: pygame.Rect | None = None):
         """Ana menü sağ-alt: Kart Ustalığı Steam skor paneli."""
         self._refresh_mystery_leaderboard_cache(force=False)
-        panel_scale = self._menu_panel_content_scale()
-        s = lambda v, minimum=1: max(minimum, int(round(v * panel_scale)))
+        base_panel_scale = self._menu_panel_content_scale()
+        width, height = self.screen.get_size()
+        scale = self._ui_scale()
+        default_panel_w = max(300, min(int(380 * scale), width // 3))
+        default_panel_h = max(360, int(500 * scale))
 
         if panel_rect is None:
-            width, height = self.screen.get_size()
-            scale = self._ui_scale()
-            panel_w = max(300, min(int(380 * scale), width // 3))
-            panel_h = max(360, int(500 * scale))
+            panel_w = default_panel_w
+            panel_h = default_panel_h
             panel_x = width - panel_w - max(14, int(24 * scale))
             panel_y = max(int(150 * scale), height - panel_h - max(30, int(52 * scale)))
 
@@ -4019,6 +4028,13 @@ class Menu:
         if panel_rect.width < 220 or panel_rect.height < 180:
             self._mystery_lb_tab_rects = {}
             return
+
+        panel_scale_boost = min(
+            panel_rect.width / max(1, default_panel_w),
+            panel_rect.height / max(1, default_panel_h),
+        )
+        panel_scale = base_panel_scale * max(1.0, min(1.98, panel_scale_boost * 1.24))
+        s = lambda v, minimum=1: max(minimum, int(round(v * panel_scale)))
 
         # Panel rengi: Lavanta/mor tonu
         score_accent = (140, 120, 255)
