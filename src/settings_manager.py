@@ -216,6 +216,7 @@ class SettingsManager:
             'game_music': DEFAULT_GAME_MUSIC_PLAYLIST[0],
             'debug_mode': False,
             'card_mode_debug': False,
+            'leaderboard_trailer_debug': False,
             'coop_debug_halt_blocks': False,
             # Gizli ayarlar: ana menüde "arda" yazınca görünür olur.
             'show_debug_settings': False,

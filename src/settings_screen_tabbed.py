@@ -349,6 +349,11 @@ def _build_tab_content(tab_key: str, sm, show_debug: bool = False) -> list[dict]
                 'label_tr': 'Kart Debug', 'label_en': 'Card Debug',
             })
             items.append({
+                'type': 'toggle', 'key': 'leaderboard_trailer_debug',
+                'loc_key': 'leaderboard_trailer_debug',
+                'label_tr': 'Leaderboard Trailer Script', 'label_en': 'Leaderboard Trailer Script',
+            })
+            items.append({
                 'type': 'toggle', 'key': 'coop_debug_halt_blocks',
                 'loc_key': 'coop_debug_halt_blocks',
                 'label_tr': 'Co-op Spawner Durdurma', 'label_en': 'Co-op Halt Spawner',

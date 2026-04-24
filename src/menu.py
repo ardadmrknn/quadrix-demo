@@ -40,6 +40,11 @@ from asset_manager import load_image
 from text_cache import render_text
 from ui_scaling import apply_ui_scale_preset, get_projected_effective_scale, get_scale, resolve_ui_scale_size
 from gamepad_manager import get_gamepad_manager, is_gamepad_connected
+from leaderboard_trailer_debug import (
+    TRAILER_DEBUG_DURATION_MS,
+    TRAILER_DEBUG_TRIGGER_KEY,
+    build_trailer_debug_entries,
+)
 
 try:
     from gamepad_manager import normalize_gamepad_event_button, normalize_gamepad_trigger_event
@@ -535,6 +540,10 @@ class Menu:
         self._mystery_lb_last_fetch_ms = -120_000
         self._mystery_lb_refresh_ms = 12_000
         self._mystery_lb_loading = False
+        self._mystery_lb_trailer_start_ms: int | None = None
+        self._mystery_lb_trailer_running = False
+        self._mystery_lb_trailer_row_y: dict[str, float] = {}
+        self._mystery_lb_trailer_last_tick_ms = pygame.time.get_ticks()
 
         # Steam oyuncu profil cache: steam_id -> {personaname, avatarmedium, ...}
         self._steam_player_cache: dict[str, dict] = {}
@@ -1036,6 +1045,9 @@ class Menu:
         # --- Normal (modal kapalı) girdi işleme ---
         max_nav = getattr(self, '_nav_panel_max_idx', len(self.options) - 1)
         if event.type == pygame.KEYDOWN:
+            if self._is_mystery_lb_trailer_debug_enabled() and event.key == pygame.K_l:
+                self._start_mystery_lb_trailer_debug()
+                return None
             nav = self._get_nav_keys()
             navigated = False
             current_option = self.options[self.selected] if (0 <= self.selected < len(self.options)) else ''
@@ -3665,11 +3677,96 @@ class Menu:
         # Yükleme devam ediyorsa iptal et, yeni istek başlat
         self._mystery_lb_loading = False
         self._mystery_lb_last_fetch_ms = -120_000
+        self._reset_mystery_lb_trailer_debug()
         # Avatar surface cache'ini temizle: yeni yuvarlama/çözünürlük için
         # (bytes cache'i koru - yeniden indirmemek için)
         self._steam_avatar_surf.clear()
         self._ensure_steam_header_avatar_async()
         self._refresh_mystery_leaderboard_cache(force=True)
+
+    def _is_mystery_lb_trailer_debug_enabled(self) -> bool:
+        try:
+            return bool(self.settings_manager.get('leaderboard_trailer_debug', False))
+        except Exception:
+            return False
+
+    def _reset_mystery_lb_trailer_debug(self) -> None:
+        self._mystery_lb_trailer_start_ms = None
+        self._mystery_lb_trailer_running = False
+        self._mystery_lb_trailer_row_y.clear()
+        self._mystery_lb_trailer_last_tick_ms = pygame.time.get_ticks()
+
+    def _start_mystery_lb_trailer_debug(self) -> None:
+        now = pygame.time.get_ticks()
+        self._mystery_lb_trailer_start_ms = now
+        self._mystery_lb_trailer_running = True
+        self._mystery_lb_trailer_row_y.clear()
+        self._mystery_lb_trailer_last_tick_ms = now
+
+    @staticmethod
+    def _mystery_lb_entry_key(entry: dict) -> str:
+        return str(
+            entry.get('debug_id')
+            or entry.get('steam_id')
+            or entry.get('debug_persona')
+            or entry.get('rank')
+            or 'unknown'
+        )
+
+    def _get_mystery_lb_display_entries(self) -> tuple[list[dict], bool, int]:
+        now = pygame.time.get_ticks()
+        if not self._is_mystery_lb_trailer_debug_enabled():
+            if self._mystery_lb_trailer_start_ms is not None or self._mystery_lb_trailer_row_y:
+                self._reset_mystery_lb_trailer_debug()
+            return self._mystery_lb_entries.get(self._mystery_lb_tab, []), False, now
+
+        entries, _progress, is_running = build_trailer_debug_entries(
+            now_ms=now,
+            start_ms=self._mystery_lb_trailer_start_ms,
+            duration_ms=TRAILER_DEBUG_DURATION_MS,
+        )
+        self._mystery_lb_trailer_running = is_running
+        return entries, True, now
+
+    def _resolve_mystery_lb_row_positions(
+        self,
+        active_entries: list[dict],
+        row_h: int,
+        base_y: int,
+        now_ms: int,
+        *,
+        animated: bool,
+    ) -> dict[str, float]:
+        if not animated:
+            self._mystery_lb_trailer_row_y.clear()
+            self._mystery_lb_trailer_last_tick_ms = now_ms
+            return {
+                self._mystery_lb_entry_key(entry): float(base_y + idx * row_h)
+                for idx, entry in enumerate(active_entries)
+            }
+
+        dt = (now_ms - getattr(self, '_mystery_lb_trailer_last_tick_ms', now_ms)) / 1000.0
+        self._mystery_lb_trailer_last_tick_ms = now_ms
+        dt = max(0.0, min(0.05, dt))
+        lerp_rate = 12.0
+        positions: dict[str, float] = {}
+        live_keys: set[str] = set()
+
+        for idx, entry in enumerate(active_entries):
+            entry_key = self._mystery_lb_entry_key(entry)
+            target_y = float(base_y + idx * row_h)
+            current_y = self._mystery_lb_trailer_row_y.get(entry_key, target_y)
+            current_y += (target_y - current_y) * min(1.0, dt * lerp_rate)
+            if abs(target_y - current_y) < 0.25:
+                current_y = target_y
+            self._mystery_lb_trailer_row_y[entry_key] = current_y
+            positions[entry_key] = current_y
+            live_keys.add(entry_key)
+
+        stale_keys = [key for key in self._mystery_lb_trailer_row_y if key not in live_keys]
+        for key in stale_keys:
+            self._mystery_lb_trailer_row_y.pop(key, None)
+        return positions
 
     def _refresh_mystery_leaderboard_cache(self, force: bool = False):
         """Kart Ustalığı için Steam leaderboard cache'ini yenile.
@@ -3679,6 +3776,11 @@ class Menu:
         2. Direct Steam Web API (STEAM_WEB_API_KEY + STEAM_APP_ID set ise)
         3. Steam SDK client (Steam çalışıyorsa — VPS/key gerekmez)
         """
+        if self._is_mystery_lb_trailer_debug_enabled():
+            self._mystery_lb_loading = False
+            self._mystery_lb_error = ''
+            return
+
         if self._mystery_lb_loading:
             return
 
@@ -3929,6 +4031,13 @@ class Menu:
         subtitle_surf = subtitle_font.render(t('menu_lb_subtitle'), True, UIColors.TEXT_SECONDARY)
         self.screen.blit(title_surf, (panel_rect.x + s(16), panel_rect.y + s(12)))
         self.screen.blit(subtitle_surf, (panel_rect.x + s(16), panel_rect.y + s(38)))
+        if self._is_mystery_lb_trailer_debug_enabled():
+            debug_hint = f'{TRAILER_DEBUG_TRIGGER_KEY}: Trailer Script'
+            hint_font = retro_style.get_fitting_font(debug_hint, base_size=s(12), max_width=panel_rect.width // 2, bold=True, min_size=max(8, s(9)))
+            hint_surf = hint_font.render(debug_hint, True, (180, 220, 255))
+            hint_rect = hint_surf.get_rect()
+            hint_rect.topright = (panel_rect.right - s(14), panel_rect.y + s(16))
+            self.screen.blit(hint_surf, hint_rect)
 
         tab_y = panel_rect.y + s(62)
         tab_h = s(32)
@@ -3976,7 +4085,7 @@ class Menu:
         pygame.draw.rect(list_bg, (*score_accent, 50), list_bg.get_rect(), 1, border_radius=10)
         self.screen.blit(list_bg, list_rect.topleft)
 
-        active_entries = self._mystery_lb_entries.get(self._mystery_lb_tab, [])
+        active_entries, uses_debug_entries, now_ms = self._get_mystery_lb_display_entries()
         if not active_entries:
             message = self._mystery_lb_error or t('menu_lb_no_scores')
             msg_font = retro_style.get_fitting_font(message, base_size=s(16), max_width=list_rect.width - s(24), bold=False, min_size=max(9, s(11)))
@@ -3991,9 +4100,18 @@ class Menu:
         medal_colors = [UIColors.NEON_GOLD, (200, 200, 210), (200, 140, 80)]  # Altın, Gümüş, Bronz
         # Aktif Steam kullanıcısını vurgula
         _current_sid = str(self._leaderboard_service.current_steam_id or '').strip()
+        row_positions = self._resolve_mystery_lb_row_positions(
+            active_entries[:max_rows],
+            row_h,
+            base_y,
+            now_ms,
+            animated=uses_debug_entries,
+        )
+        self.screen.set_clip(list_rect)
         for idx in range(max_rows):
             entry = active_entries[idx]
-            row_rect = pygame.Rect(list_rect.x + s(6), base_y + idx * row_h, list_rect.width - s(12), row_h - s(5))
+            row_y = int(round(row_positions.get(self._mystery_lb_entry_key(entry), float(base_y + idx * row_h))))
+            row_rect = pygame.Rect(list_rect.x + s(6), row_y, list_rect.width - s(12), row_h - s(5))
             steam_id = str(entry.get('steam_id', '') or '')
             is_self = bool(_current_sid and steam_id == _current_sid)
             row_surf = pygame.Surface((row_rect.width, row_rect.height), pygame.SRCALPHA)
@@ -4012,7 +4130,10 @@ class Menu:
             # Oyuncu adı: cache varsa personaname, yoksa kısa steam_id
             player_info = self._steam_player_cache.get(steam_id, {})
             persona = str(player_info.get('personaname', '') or '').strip()
-            if persona:
+            debug_persona = str(entry.get('debug_persona', '') or '').strip()
+            if debug_persona:
+                user_label = debug_persona
+            elif persona:
                 user_label = persona
             elif steam_id:
                 user_label = steam_id[-10:] if len(steam_id) > 10 else steam_id
@@ -4022,6 +4143,7 @@ class Menu:
             # Avatar surface: bytes varsa main thread'de yükle
             avatar_surf: pygame.Surface | None = None
             avatar_url = str(player_info.get('avatarmedium') or player_info.get('avatar') or '').strip()
+            avatar_asset = str(entry.get('debug_avatar_asset') or '').strip()
             if avatar_url:
                 av_size_pre = max(20, min(s(32), row_rect.height - s(8)))
                 avatar_cache_key = (avatar_url, av_size_pre)
@@ -4035,6 +4157,18 @@ class Menu:
                             self._steam_avatar_surf[avatar_cache_key] = _circle_crop_bitmap(src, av_size_pre)
                         except Exception:
                             self._steam_avatar_surf[avatar_cache_key] = None
+                avatar_surf = self._steam_avatar_surf.get(avatar_cache_key)
+            elif avatar_asset:
+                av_size_pre = max(20, min(s(32), row_rect.height - s(8)))
+                avatar_cache_key = (f'asset:{avatar_asset}', av_size_pre)
+                if avatar_cache_key not in self._steam_avatar_surf:
+                    try:
+                        asset_path = Path(__file__).resolve().parent.parent / avatar_asset.replace('\\', '/')
+                        loaded = pygame.image.load(str(asset_path))
+                        src = loaded.convert() if _IS_MACOS else loaded.convert_alpha()
+                        self._steam_avatar_surf[avatar_cache_key] = _circle_crop_bitmap(src, av_size_pre)
+                    except Exception:
+                        self._steam_avatar_surf[avatar_cache_key] = None
                 avatar_surf = self._steam_avatar_surf.get(avatar_cache_key)
 
             rank_color = medal_c if idx < 3 else UIColors.TEXT_SECONDARY
@@ -4108,6 +4242,7 @@ class Menu:
 
             # Skor
             self.screen.blit(score_surf, (score_right, row_rect.centery - score_surf.get_height() // 2))
+        self.screen.set_clip(None)
 
     def _draw_gamepad_indicator(self):
         """Ekranın sağ alt köşesinde gamepad bağlantı göstergesi çiz"""
