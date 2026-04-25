@@ -218,6 +218,7 @@ class SettingsManager:
             'debug_mode': False,
             'card_mode_debug': False,
             'leaderboard_trailer_debug': False,
+            'online_pvp_trailer_debug': False,
             'coop_debug_halt_blocks': False,
             'mystery_debug_block_workshop': False,
             # Gizli ayarlar: ana menüde "arda" yazınca görünür olur.

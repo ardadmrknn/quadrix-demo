@@ -173,6 +173,60 @@ def _resolve_private_lobby_code(lobby_id: int, requires_code: bool, lobby_code: 
     except Exception:
         return normalized_code
 
+
+def _build_online_pvp_trailer_debug_lobbies() -> list[dict]:
+    now = time.time()
+    return [
+        {
+            'id': -1,
+            'name': 'Trailer Private Lobby',
+            'members': 1,
+            'max_members': 2,
+            'visibility': 'private',
+            'requires_code': True,
+            'code': 'STEAM1',
+            'metadata_ready': True,
+            'found_time': now - 8,
+            'debug_lobby': True,
+        },
+        {
+            'id': -2,
+            'name': 'Trailer Public Lobby 1',
+            'members': 2,
+            'max_members': 2,
+            'visibility': 'public',
+            'requires_code': False,
+            'code': '',
+            'metadata_ready': True,
+            'found_time': now - 15,
+            'debug_lobby': True,
+        },
+        {
+            'id': -3,
+            'name': 'Trailer Public Lobby 2',
+            'members': 1,
+            'max_members': 2,
+            'visibility': 'public',
+            'requires_code': False,
+            'code': '',
+            'metadata_ready': True,
+            'found_time': now - 22,
+            'debug_lobby': True,
+        },
+        {
+            'id': -4,
+            'name': 'Trailer Public Lobby 3',
+            'members': 1,
+            'max_members': 2,
+            'visibility': 'public',
+            'requires_code': False,
+            'code': '',
+            'metadata_ready': True,
+            'found_time': now - 36,
+            'debug_lobby': True,
+        },
+    ]
+
 # Steam pump thread kontrolü — bridge aktifken pump duraklatılır (race condition önleme)
 try:
     from steam_integration import pause_pump as _pause_steam_pump
@@ -323,6 +377,29 @@ class OnlinePvPGame:
             )
         except Exception:
             return 1.0
+
+    def _is_online_pvp_trailer_debug_enabled(self) -> bool:
+        sm = getattr(self, 'settings_manager', None)
+        if sm is None:
+            return False
+        try:
+            return bool(sm.get('online_pvp_trailer_debug', False))
+        except Exception:
+            return False
+
+    def _get_lobby_entries_for_display(self) -> list[dict]:
+        if self._is_online_pvp_trailer_debug_enabled():
+            entries = _build_online_pvp_trailer_debug_lobbies()
+        else:
+            entries = list(getattr(self, '_lobby_list', []))
+
+        if getattr(self, '_lobby_list_filter', 'all') == 'public':
+            entries = [
+                lobby for lobby in entries
+                if str(lobby.get('visibility', 'unknown') or 'unknown').lower()
+                in ('public', 'unknown', 'stale_unknown')
+            ]
+        return entries
 
     def _sx(self, value, scale=None, minimum=1) -> int:
         """Sabit piksel değerini UI ölçeğine göre dönüştür."""
@@ -2228,6 +2305,13 @@ class OnlinePvPGame:
         kadar filtre tarafından yanlış elenebilir. Bu nedenle 'public'
         filtre mod yalnızca UI'daki ek client-side filtreyle desteklenir.
         """
+        if self._is_online_pvp_trailer_debug_enabled():
+            self._lobby_list_fetching = False
+            self._lobby_list_fetch_start_time = 0
+            self._pending_lobby_list.clear()
+            self._deferred_lobby_entries.clear()
+            self._clear_lobby_metadata_refresh_request()
+            return True
         if not self._init_networking():
             return False
         if self._lobby_list_fetching:
@@ -4644,7 +4728,7 @@ class OnlinePvPGame:
 
     def _handle_scroll(self, event):
         """Fare tekerleği — lobi listesi scroll."""
-        if self.online_state == OnlineState.LOBBY_MENU and self._lobby_list:
+        if self.online_state == OnlineState.LOBBY_MENU and self._get_lobby_entries_for_display():
             self._lobby_list_scroll = max(0, self._lobby_list_scroll - event.y)
 
     def _handle_mouse_click(self, event):
@@ -4700,6 +4784,12 @@ class OnlinePvPGame:
                             self._open_private_lobby_code_prompt(int(lobby_id_str))
                         except (ValueError, TypeError):
                             self._join_target_lobby_id = 0
+                    elif action == 'debug_lobby':
+                        self._status_msg = t(
+                            'online_pvp_trailer_debug_info',
+                            'Bu demo lobi Steam fragmani icin gosterim amaclidir.',
+                        )
+                        self._status_timer = 2.5
                     elif action.startswith('resolve_lobby_join:'):
                         lobby_id_str = action.split(':', 1)[1]
                         try:
@@ -5274,8 +5364,11 @@ class OnlinePvPGame:
         self._lobby_buttons.append({'rect': all_rect, 'action': 'filter_all_lobbies'})
         self._lobby_buttons.append({'rect': public_rect, 'action': 'filter_public_lobbies'})
 
+        debug_lobby_mode = self._is_online_pvp_trailer_debug_enabled()
+        effective_lobby_list = self._get_lobby_entries_for_display()
+
         count_font = _rs.get_font(s(12, minimum=9), bold=False)
-        count_text = count_font.render(str(len(self._lobby_list)), True, _rs.text_primary)
+        count_text = count_font.render(str(len(effective_lobby_list)), True, _rs.text_primary)
         count_pad_x = s(10)
         count_pad_y = s(5)
         count_rect = pygame.Rect(
@@ -5298,13 +5391,13 @@ class OnlinePvPGame:
 
         content_top = line_y + s(14)
 
-        if self._lobby_list_fetching:
+        if self._lobby_list_fetching and not debug_lobby_mode:
             dots = '.' * (int(time.time() * 2) % 4)
             f_txt = _rs.get_font(s(16, minimum=11), bold=False).render(
                 t('searching', 'Aranıyor') + dots, True, _rs.text_secondary)
             self.screen.blit(f_txt, f_txt.get_rect(
                 center=(list_x + list_w // 2, list_y + list_h // 2)))
-        elif not self._lobby_list:
+        elif not effective_lobby_list:
             e_font = _rs.get_font(s(16, minimum=11), bold=False)
             e1 = e_font.render(t('no_lobbies_found', 'Lobi bulunamadı'), True, _rs.text_muted)
             if self._auto_lobby_refresh_requested:
@@ -5319,14 +5412,14 @@ class OnlinePvPGame:
             item_h = item_step - s(12)
             content_h = max(item_step, list_panel.bottom - content_top - s(22))
             visible = max(1, content_h // item_step)
-            max_start = max(0, len(self._lobby_list) - visible)
+            max_start = max(0, len(effective_lobby_list) - visible)
             start_idx = min(self._lobby_list_scroll, max_start)
             if start_idx != self._lobby_list_scroll:
                 self._lobby_list_scroll = start_idx
             clip = pygame.Rect(list_x + 4, content_top, list_w - 8, content_h)
             self.screen.set_clip(clip)
 
-            for i, lobby in enumerate(self._lobby_list[start_idx:start_idx + visible]):
+            for i, lobby in enumerate(effective_lobby_list[start_idx:start_idx + visible]):
                 iy = content_top + i * item_step
                 ir = pygame.Rect(list_x + s(8), iy, list_w - s(16), item_h)
                 hover = ir.collidepoint(mouse_pos)
@@ -5421,6 +5514,10 @@ class OnlinePvPGame:
                     action = f'resolve_lobby_join:{lid}'
                     button_label = t('join', 'Katıl')
                     button_color = UIColors.NEON_CYAN
+                elif lobby.get('debug_lobby'):
+                    action = 'debug_lobby'
+                    button_label = t('demo_lobby', 'Demo')
+                    button_color = UIColors.NEON_ORANGE if requires_code else UIColors.NEON_GREEN
                 else:
                     action = f'join_private_lobby:{lid}' if requires_code else f'join_lobby:{lid}'
                     button_label = t('enter_code', 'Kod Gir') if requires_code else t('join', 'Katıl')
@@ -5443,11 +5540,11 @@ class OnlinePvPGame:
 
             self.screen.set_clip(None)
 
-            if len(self._lobby_list) > visible:
+            if len(effective_lobby_list) > visible:
                 sc_font = _rs.get_font(s(12, minimum=9), bold=False)
                 sc_txt = sc_font.render(
-                    f'{start_idx + 1}–{min(start_idx + visible, len(self._lobby_list))}'
-                    f' / {len(self._lobby_list)}', True, _rs.text_muted)
+                    f'{start_idx + 1}–{min(start_idx + visible, len(effective_lobby_list))}'
+                    f' / {len(effective_lobby_list)}', True, _rs.text_muted)
                 self.screen.blit(sc_txt, sc_txt.get_rect(
                     center=(list_x + list_w // 2, list_y + list_h - s(16))))
 
