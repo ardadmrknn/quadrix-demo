@@ -4047,13 +4047,13 @@ class Menu:
         subtitle_surf = subtitle_font.render(t('menu_lb_subtitle'), True, UIColors.TEXT_SECONDARY)
         self.screen.blit(title_surf, (panel_rect.x + s(16), panel_rect.y + s(12)))
         self.screen.blit(subtitle_surf, (panel_rect.x + s(16), panel_rect.y + s(38)))
-        if self._is_mystery_lb_trailer_debug_enabled():
+        """if self._is_mystery_lb_trailer_debug_enabled():
             debug_hint = f'{TRAILER_DEBUG_TRIGGER_KEY}: Trailer Script'
             hint_font = retro_style.get_fitting_font(debug_hint, base_size=s(12), max_width=panel_rect.width // 2, bold=True, min_size=max(8, s(9)))
             hint_surf = hint_font.render(debug_hint, True, (180, 220, 255))
             hint_rect = hint_surf.get_rect()
             hint_rect.topright = (panel_rect.right - s(14), panel_rect.y + s(16))
-            self.screen.blit(hint_surf, hint_rect)
+            self.screen.blit(hint_surf, hint_rect)"""
 
         tab_y = panel_rect.y + s(62)
         tab_h = s(32)
