@@ -85,6 +85,7 @@ DEFAULT_CONTROLS = {
     'debug': {
         'coop_spawner_left': '',
         'coop_spawner_right': '',
+        'mystery_block_workshop': '',
     },
 }
 
@@ -218,6 +219,7 @@ class SettingsManager:
             'card_mode_debug': False,
             'leaderboard_trailer_debug': False,
             'coop_debug_halt_blocks': False,
+            'mystery_debug_block_workshop': False,
             # Gizli ayarlar: ana menüde "arda" yazınca görünür olur.
             'show_debug_settings': False,
             # Grafik ayarları - Maksimum kalite varsayılan

@@ -48,6 +48,10 @@ from constants import (
     get_level_fall_speed_ms,
 )
 from block_styles import TextureSlice
+from screen_shake import (
+    HARD_DROP_SCREEN_SHAKE_DURATION_SECONDS,
+    HARD_DROP_SCREEN_SHAKE_INTENSITY,
+)
 
 # Optional rare-bug tracer (writes JSON dumps when enabled)
 try:
@@ -6418,6 +6422,79 @@ class MysteryMode(Game):
                     pass
             self._sync_active_cards()
 
+    def _resolve_mystery_workshop_debug_key(self) -> int | None:
+        settings_manager = getattr(self, 'settings_manager', None)
+        if settings_manager is None:
+            return None
+
+        try:
+            if not bool(settings_manager.get('mystery_debug_block_workshop', False)):
+                return None
+        except Exception:
+            return None
+
+        try:
+            controls = settings_manager.get_controls()
+        except Exception:
+            return None
+
+        if not isinstance(controls, dict):
+            return None
+        debug_cfg = controls.get('debug', {})
+        if not isinstance(debug_cfg, dict):
+            return None
+
+        return self._binding_to_keycode_or_none(debug_cfg.get('mystery_block_workshop'))
+
+    def _try_open_debug_workshop_from_key(self, event) -> bool:
+        if getattr(event, 'type', None) != pygame.KEYDOWN:
+            return False
+        if self.game_over or self.paused:
+            return False
+        if getattr(self, '_card_workshop_active', False):
+            return False
+
+        trigger_key = self._resolve_mystery_workshop_debug_key()
+        if trigger_key is None or getattr(event, 'key', None) != trigger_key:
+            return False
+
+        self._open_card_workshop_popup()
+        try:
+            if self.settings_manager and self.settings_manager.get('debug_mode', False):
+                print(f"[MysteryMode][Debug] Workshop popup trigger consumed: key={pygame.key.name(trigger_key)}")
+        except Exception:
+            pass
+        return True
+
+    def trigger_hard_drop_screen_shake(self):
+        """Workshop debug parçası için hard drop sarsıntısını biraz güçlendir."""
+        piece = getattr(self, 'current_piece', None)
+        is_workshop_piece = bool(getattr(piece, 'is_workshop_piece', False))
+
+        debug_on = False
+        settings_manager = getattr(self, 'settings_manager', None)
+        if settings_manager is not None:
+            try:
+                debug_on = bool(settings_manager.get('mystery_debug_block_workshop', False))
+            except Exception:
+                debug_on = False
+
+        if not (is_workshop_piece and debug_on):
+            return super().trigger_hard_drop_screen_shake()
+
+        boosted_intensity = max(
+            HARD_DROP_SCREEN_SHAKE_INTENSITY + 2,
+            int(round(HARD_DROP_SCREEN_SHAKE_INTENSITY * 1.6)),
+        )
+        boosted_duration = max(
+            HARD_DROP_SCREEN_SHAKE_DURATION_SECONDS * 1.35,
+            HARD_DROP_SCREEN_SHAKE_DURATION_SECONDS + 0.04,
+        )
+        self.trigger_screen_shake(
+            intensity=boosted_intensity,
+            duration=boosted_duration,
+        )
+
     def handle_input(self) -> bool:
         if self.card_selection_active:
             for event in pygame.event.get():
@@ -6556,6 +6633,9 @@ class MysteryMode(Game):
                     if event.key == rotate_key:
                         # Döndürme engellendi, event'i yutuyoruz
                         continue
+
+            if self._try_open_debug_workshop_from_key(event):
+                continue
 
             # R tuşu: Zaman Kapsulu toggle (ilk basış kaydet, ikinci basış geri yükle)
             if event.type == pg.KEYDOWN and event.key == pg.K_r:

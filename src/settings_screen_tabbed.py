@@ -370,6 +370,15 @@ def _build_tab_content(tab_key: str, sm, show_debug: bool = False) -> list[dict]
                 'action_key': 'coop_spawner_right', 'section': 'debug',
                 'label_tr': 'Sağ Spawner Durdur', 'label_en': 'Halt Right Spawner',
             })
+            items.append({
+                'type': 'toggle', 'key': 'mystery_debug_block_workshop',
+                'label_tr': 'Kart Modu Atölye Debug', 'label_en': 'Mystery Workshop Debug',
+            })
+            items.append({
+                'type': 'keybind', 'key': 'ctrl_debug_mystery_block_workshop',
+                'action_key': 'mystery_block_workshop', 'section': 'debug',
+                'label_tr': 'Atölye Tetik Tuşu', 'label_en': 'Workshop Trigger Key',
+            })
 
     return items
 
@@ -896,6 +905,7 @@ class TabbedSettingsScreen:
         self.current_language = sm.get('language', 'tr')
         self.debug_mode = sm.get('debug_mode', False)
         self.card_mode_debug = sm.get('card_mode_debug', False)
+        self.mystery_debug_block_workshop = sm.get('mystery_debug_block_workshop', False)
         self._show_debug_settings = bool(sm.get('show_debug_settings', False))
 
     def _refresh_fonts(self) -> None:
@@ -2212,6 +2222,7 @@ class TabbedSettingsScreen:
             'particle_effects': None,
             'debug_mode': 'toggle_debug',
             'card_mode_debug': 'toggle_card_mode_debug',
+            'mystery_debug_block_workshop': None,
             'vsync': 'vsync_changed',
         }
 
@@ -2226,6 +2237,8 @@ class TabbedSettingsScreen:
             self.debug_mode = new_val
         elif key == 'card_mode_debug':
             self.card_mode_debug = new_val
+        elif key == 'mystery_debug_block_workshop':
+            self.mystery_debug_block_workshop = new_val
         elif key == 'vsync':
             self.vsync = new_val
             self._vsync_prompt_active = True
