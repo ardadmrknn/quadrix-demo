@@ -566,6 +566,58 @@ def test_mystery_card_selection_overlay_keeps_text_blocks_inside_cards(monkeypat
         assert fonts['card_title'].size(snapshot['title_text'])[0] <= rect.width - max(20, int(rect.width * 0.12))
 
 
+def test_mystery_card_selection_description_shrinks_instead_of_ellipsis(monkeypatch):
+    _install_extra_mode_ui_test_stubs(monkeypatch)
+    monkeypatch.setattr(
+        extra_modes_module,
+        't',
+        lambda key, *args, **kwargs: key
+        if str(key).startswith('card_') and str(key).endswith(('_title', '_desc'))
+        else kwargs.get('default', str(key).replace('_', ' ')),
+    )
+
+    ui = MysteryCardUI()
+    ui.fade_alpha = 220
+    ui._last_dt = 1500.0
+
+    size = (1366, 768)
+    mode = _build_mystery_mode(size)
+    screen = pygame.Surface(size, pygame.SRCALPHA)
+    fonts = mode._build_card_ui_font_pack(ui._get_overlay_scale(screen))
+
+    long_description = (
+        'Ölümden Dönüş: Oyun bitecekken üst yarıyı temizler ve sana güvenli '
+        'bir devam alanı açar; kalan bloklar dengelenir, kombo fırsatı korunur, '
+        'hamle ritmi bozulmadan devam edersin.'
+    )
+    cards = [
+        {
+            'id': 'long_desc_demo',
+            'title': 'İkinci Şans',
+            'description': long_description,
+            'value': 3,
+            'icon': '*',
+            'icon_image': None,
+            'tag': 'Tek Kullanim',
+            'style': {},
+            'rarity': 'common',
+        }
+    ]
+
+    ui.draw_selection_overlay(screen, size[0], size[1], fonts, cards, '', False)
+
+    snapshot = ui.card_widgets[0]._face_layout_snapshot
+    desc_lines = snapshot['desc_lines']
+    desc_bg_rect = snapshot['desc_bg_rect']
+    hotkey_rect = snapshot['hotkey_rect']
+
+    assert desc_lines
+    assert all('...' not in line for line in desc_lines)
+    assert 'devam edersin' in ' '.join(desc_lines)
+    assert snapshot['desc_font_height'] < fonts['desc'].get_height()
+    assert desc_bg_rect.bottom <= hotkey_rect.top
+
+
 def test_mystery_card_workshop_popup_uses_active_canvas_when_window_size_is_stale(monkeypatch):
     _install_extra_mode_ui_test_stubs(monkeypatch)
 

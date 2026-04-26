@@ -2884,6 +2884,28 @@ def _get_cached_gradient(size: tuple[int, int], start_color: tuple, end_color: t
     return surf
 
 
+def _make_card_text_font(size: int, *, bold: bool = False) -> pygame.font.Font:
+    """Kart metinleri için mevcut dil profilini koruyarak font üret."""
+    font_size = max(1, int(size))
+    try:
+        lang = get_language()
+    except Exception:
+        lang = None
+
+    effective_lang = "ja" if lang == "jp" else lang
+
+    try:
+        from ui_language_profile import get_font_for_language
+
+        font = get_font_for_language(effective_lang, font_size, bold=bold)
+        if font is not None:
+            return font
+    except Exception:
+        pass
+
+    return retro_style.get_font(font_size, bold=bold)
+
+
 class UICard:
     """UI widget for a single card in the Mystery/Cards overlay.
 
@@ -3077,6 +3099,26 @@ class UICard:
             value = value[:-1]
         return value.rstrip() + suffix if value else suffix
 
+    @staticmethod
+    def _split_word_to_width(font: pygame.font.Font, word: str, max_width: int) -> List[str]:
+        if not word:
+            return []
+        if max_width <= 0:
+            return [word]
+
+        chunks: List[str] = []
+        current = ''
+        for char in str(word):
+            candidate = current + char
+            if not current or font.size(candidate)[0] <= max_width:
+                current = candidate
+            else:
+                chunks.append(current)
+                current = char
+        if current:
+            chunks.append(current)
+        return chunks
+
     @classmethod
     def _wrap_text_to_width(cls, font: pygame.font.Font, text: str, max_width: int) -> List[str]:
         words = str(text or '').split()
@@ -3100,6 +3142,76 @@ class UICard:
         if current:
             lines.append(current)
         return lines
+
+    @classmethod
+    def _wrap_text_to_width_no_ellipsis(cls, font: pygame.font.Font, text: str, max_width: int) -> List[str]:
+        """Metni piksel genişliğine göre sar; hiçbir satırı üç noktayla kesme."""
+        raw_text = str(text or '')
+        if not raw_text.strip():
+            return []
+
+        lines: List[str] = []
+        paragraphs = raw_text.splitlines() or [raw_text]
+        for paragraph in paragraphs:
+            words = paragraph.split()
+            if not words:
+                continue
+
+            current = ''
+            for word in words:
+                candidate = (current + ' ' + word).strip()
+                if current and font.size(candidate)[0] <= max_width:
+                    current = candidate
+                    continue
+                if not current and font.size(word)[0] <= max_width:
+                    current = word
+                    continue
+
+                if current:
+                    lines.append(current)
+                    current = ''
+
+                if font.size(word)[0] <= max_width:
+                    current = word
+                    continue
+
+                split_chunks = cls._split_word_to_width(font, word, max_width)
+                if split_chunks:
+                    lines.extend(split_chunks[:-1])
+                    current = split_chunks[-1]
+
+            if current:
+                lines.append(current)
+
+        return lines
+
+    @classmethod
+    def _fit_wrapped_text_to_box(
+        cls,
+        base_font: pygame.font.Font,
+        text: str,
+        max_width: int,
+        max_height: int,
+        *,
+        min_font_height: int = 8,
+    ) -> tuple[pygame.font.Font, List[str]]:
+        """Açıklamayı kutuya sığdırmak için fontu küçült ve metni eksiksiz sar."""
+        base_height = max(1, int(base_font.get_height()))
+        min_height = max(1, min(base_height, int(min_font_height)))
+        best_font = base_font
+        best_lines = cls._wrap_text_to_width_no_ellipsis(base_font, text, max_width)
+
+        for font_height in range(base_height, min_height - 1, -1):
+            font = base_font if font_height == base_height else _make_card_text_font(font_height)
+            lines = cls._wrap_text_to_width_no_ellipsis(font, text, max_width)
+            line_height = max(1, int(font.get_linesize()))
+            total_height = len(lines) * line_height
+            if total_height <= max(1, int(max_height)) and all(font.size(line)[0] <= max_width for line in lines):
+                return font, lines
+            best_font = font
+            best_lines = lines
+
+        return best_font, best_lines
 
     def _invalidate_face_cache(self) -> None:
         self._baked_face_bg = None
@@ -4343,7 +4455,6 @@ class UICard:
             fallback=self.card.get('description', ''),
         )
         prompt_button_label = _prompt_action_text('hold2', 'V') if _resolve_card_localization_id(self.card) == 'perk_second_pocket' else ''
-        lines = self._wrap_text_to_width(desc_font, raw_desc, wrap_limit_pixels)
 
         hk = f"[{self.index + 1}]"
         hk_surf = self.fonts['small'].render(hk, True, UIColors.TEXT_MUTED)
@@ -4352,19 +4463,19 @@ class UICard:
         hk_rect = hk_surf.get_rect(right=rect.width - hk_margin_x, bottom=rect.height - hk_margin_y)
 
         desc_y = type_rect.bottom + desc_gap
-        available_desc_h = max(desc_font.get_linesize() + 8, hk_rect.top - desc_y - max(8, content_pad_bottom))
-        desc_pad_y = max(6, int(round(rect.height * 0.02)))
-        desc_pad_y = min(desc_pad_y, max(4, (available_desc_h - desc_font.get_linesize()) // 2))
-        max_desc_lines = max(1, min(5, (available_desc_h - desc_pad_y * 2) // max(1, desc_font.get_linesize())))
-        if len(lines) > max_desc_lines:
-            desc_lines = lines[:max_desc_lines]
-            last = desc_lines[-1]
-            ellipsis_str = '...'
-            while desc_font.size(last + ellipsis_str)[0] > wrap_limit_pixels and len(last) > 0:
-                last = last[:-1]
-            desc_lines[-1] = last.rstrip() + ellipsis_str if last else ellipsis_str
-        else:
-            desc_lines = lines
+        base_desc_pad_y = max(6, int(round(rect.height * 0.02)))
+        base_available_desc_h = max(1, hk_rect.top - desc_y - max(8, content_pad_bottom))
+        max_text_h = max(1, base_available_desc_h - base_desc_pad_y * 2)
+        min_desc_font_h = max(6, int(round(desc_font.get_height() * 0.38)))
+        desc_font, desc_lines = self._fit_wrapped_text_to_box(
+            desc_font,
+            raw_desc,
+            wrap_limit_pixels,
+            max_text_h,
+            min_font_height=min_desc_font_h,
+        )
+        available_desc_h = max(desc_font.get_linesize() + 8, base_available_desc_h)
+        desc_pad_y = min(base_desc_pad_y, max(4, (available_desc_h - desc_font.get_linesize()) // 2))
 
         desc_bg_rect = None
         if desc_lines:
@@ -4409,6 +4520,8 @@ class UICard:
             'type_text': fitted_type,
             'desc_bg_rect': desc_bg_rect.copy() if desc_bg_rect is not None else None,
             'desc_line_count': len(desc_lines),
+            'desc_lines': tuple(desc_lines),
+            'desc_font_height': desc_font.get_height(),
             'desc_wrap_width': wrap_limit_pixels,
             'hotkey_rect': hk_rect.copy(),
         }
@@ -10712,6 +10825,4 @@ class WideMode(Game):
         super().lock_piece()
         name = self.current_piece.name if hasattr(self.current_piece, "name") else "Klasik"
         print(f"🔒 Wide Mode parçası kilitlendi: {name}")
-
-
 
