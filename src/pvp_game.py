@@ -52,6 +52,9 @@ from screen_shake import (
     step_screen_shake,
 )
 
+# Demobot'u yavaşlatmak için bu değeri artır, hızlandırmak için azalt.
+DEMOBOT_ACTION_DELAY_MULTIPLIER = 1.90
+
 try:
     from gamepad_manager import normalize_gamepad_event_button
 except ImportError:
@@ -1046,8 +1049,11 @@ class PvPGame:
             'hard_drop': 52.0,
         }
         low, high = ranges.get(action, (60.0, 100.0))
+        delay_multiplier = max(0.25, float(DEMOBOT_ACTION_DELAY_MULTIPLIER))
+        low *= delay_multiplier
+        high *= delay_multiplier
         reduction = min(85.0, self._demobot_stack_pressure(self.board1) * 9.0)
-        return max(minimums.get(action, 30.0), random.uniform(low, high) - reduction)
+        return max(minimums.get(action, 30.0) * delay_multiplier, random.uniform(low, high) - reduction)
 
     @staticmethod
     def _clone_board_for_demobot(board: Board) -> Board:
