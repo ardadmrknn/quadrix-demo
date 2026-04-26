@@ -53,7 +53,7 @@ from screen_shake import (
 )
 
 # Demobot'u yavaşlatmak için bu değeri artır, hızlandırmak için azalt.
-DEMOBOT_ACTION_DELAY_MULTIPLIER = 1.90
+DEMOBOT_ACTION_DELAY_MULTIPLIER = 2.5
 
 try:
     from gamepad_manager import normalize_gamepad_event_button
