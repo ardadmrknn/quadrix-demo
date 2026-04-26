@@ -2169,10 +2169,18 @@ class MysteryCardUI:
                 return text
             return f"{text[:max(3, max_len - 3)]}..."
 
-        def _parse_status(raw_status: str) -> tuple[str, str]:
-            status = str(raw_status or '').strip()
+        def _parse_status(raw_status: Dict[str, Any] | str) -> tuple[str, str]:
+            state_override = ''
+            if isinstance(raw_status, dict):
+                status = str(raw_status.get('status', '') or '').strip()
+                state_override = str(raw_status.get('status_state', '') or '').strip().lower()
+            else:
+                status = str(raw_status or '').strip()
             if not status:
                 return 'aktif', 'Aktif'
+            if state_override:
+                max_len = 10 if state_override in ('beklemede', 'sureli') else 12
+                return state_override, _compact_text(status, max_len)
             low = status.lower()
             if 'bekle' in low or 'cooldown' in low:
                 return 'beklemede', _compact_text(status, 12)
@@ -2319,7 +2327,7 @@ class MysteryCardUI:
             # Title (Left center)
             title_local_x = icon_rect_local.right + title_gap
             title_text = get_card_title(card, card.get("title", "???"))
-            status_label, status_value = _parse_status(card.get("status", ""))
+            status_label, status_value = _parse_status(card)
             badge_text = status_value
             title_rect = None
             badge_rect = None
@@ -5506,6 +5514,26 @@ class MysteryMode(Game):
             except Exception:
                 fallback = str(default)
         return t(key, fallback, **kwargs)
+
+    def _localized_active_card_uses_status(self, label: str, count: int) -> str:
+        return self._localized_card_text(
+            'mystery_active_card_uses_status',
+            '{label}: {count} Hak',
+            label=label,
+            count=int(count),
+        )
+
+    def _localized_active_card_timed_uses_status(self, seconds: float, count: int) -> str:
+        try:
+            time_text = f'{float(seconds):.1f}s'
+        except Exception:
+            time_text = f'{seconds}s'
+        return self._localized_card_text(
+            'mystery_active_card_timed_uses_status',
+            '{time_text} | {count} Hak',
+            time_text=time_text,
+            count=int(count),
+        )
 
     def _set_localized_card_message(self, key: str, display_time: float, default: str | None = None, **kwargs) -> str:
         text = self._localized_card_text(key, default, **kwargs)
@@ -9050,7 +9078,7 @@ class MysteryMode(Game):
 
         cards: List[Dict] = []
 
-        def add(effect_id: str, description: str, status: str = "") -> None:
+        def add(effect_id: str, description: str, status: str = "", *, status_state: str = "") -> None:
             viz = self._active_effect_visuals.get(effect_id)
             if not viz:
                 return
@@ -9059,6 +9087,7 @@ class MysteryMode(Game):
                 "title": viz["title"],
                 "description": description,
                 "status": status,  # New compact status field
+                "status_state": status_state,
                 "color": viz["color"],
                 "icon": viz.get("icon", "*"),
                 "tag": viz.get("tag", "Etki"),
@@ -9160,9 +9189,19 @@ class MysteryMode(Game):
         if (charges > 0 or is_tunneled) and "quantum_tunneling" in self._active_effect_visuals:
             _g_lbl = _card_key('G', 'card_ghost')
             if is_tunneled:
-                add("quantum_tunneling", f"Aktif hayalet parça. ({_g_lbl}) Kalan hak: {charges}", status=f"{_g_lbl}: {charges} Hak")
+                add(
+                    "quantum_tunneling",
+                    f"Aktif hayalet parça. ({_g_lbl}) Kalan hak: {charges}",
+                    status=self._localized_active_card_uses_status(_g_lbl, charges),
+                    status_state='hazir',
+                )
             else:
-                add("quantum_tunneling", f"{_g_lbl} ile istediğin parçayı hayalet yap. Kalan hak: {charges}", status=f"{_g_lbl}: {charges} Hak")
+                add(
+                    "quantum_tunneling",
+                    f"{_g_lbl} ile istediğin parçayı hayalet yap. Kalan hak: {charges}",
+                    status=self._localized_active_card_uses_status(_g_lbl, charges),
+                    status_state='hazir',
+                )
         else:
             self._active_effect_visuals.pop("quantum_tunneling", None)
 
@@ -9184,7 +9223,12 @@ class MysteryMode(Game):
                         pass
         if h_charges > 0 and "hammer" in self._active_effect_visuals:
             _h_lbl = _card_key('H', 'card_hammer')
-            add("hammer", f"{_h_lbl} ile mevcut parçayı 1x1 yap. Kalan hak: {h_charges}", status=f"{_h_lbl}: {h_charges} Hak")
+            add(
+                "hammer",
+                f"{_h_lbl} ile mevcut parçayı 1x1 yap. Kalan hak: {h_charges}",
+                status=self._localized_active_card_uses_status(_h_lbl, h_charges),
+                status_state='hazir',
+            )
         else:
             self._active_effect_visuals.pop("hammer", None)
 
@@ -9206,7 +9250,12 @@ class MysteryMode(Game):
                         pass
         if b_charges > 0 and "bomb_master" in self._active_effect_visuals:
             _b_lbl = _card_key('M', 'card_bomb')
-            add("bomb_master", f"{_b_lbl} ile mevcut parçayı mini bomba yap. Kalan hak: {b_charges}", status=f"{_b_lbl}: {b_charges} Hak")
+            add(
+                "bomb_master",
+                f"{_b_lbl} ile mevcut parçayı mini bomba yap. Kalan hak: {b_charges}",
+                status=self._localized_active_card_uses_status(_b_lbl, b_charges),
+                status_state='hazir',
+            )
         else:
             self._active_effect_visuals.pop("bomb_master", None)
 
@@ -9228,7 +9277,12 @@ class MysteryMode(Game):
                         pass
         if hd_charges > 0 and "hold_destroyer" in self._active_effect_visuals:
             _b_lbl = _card_key('B', 'discard_held')
-            add("hold_destroyer", f"{_b_lbl} ile saklanan parçayı sil. Kalan hak: {hd_charges}", status=f"{_b_lbl}: {hd_charges} Hak")
+            add(
+                "hold_destroyer",
+                f"{_b_lbl} ile saklanan parçayı sil. Kalan hak: {hd_charges}",
+                status=self._localized_active_card_uses_status(_b_lbl, hd_charges),
+                status_state='hazir',
+            )
         else:
             self._active_effect_visuals.pop("hold_destroyer", None)
 
@@ -9253,9 +9307,19 @@ class MysteryMode(Game):
             _f_lbl = _card_key('F', 'card_freeze')
             if fd_active:
                 fd_timer = getattr(self, '_freeze_drop_timer', 0.0)
-                add("freeze_drop", f"❄️ Blok dondu! {fd_timer:.1f}s kaldı. Kalan hak: {fd_charges}", status=f"{fd_timer:.1f}s | {fd_charges} Hak")
+                add(
+                    "freeze_drop",
+                    f"❄️ Blok dondu! {fd_timer:.1f}s kaldı. Kalan hak: {fd_charges}",
+                    status=self._localized_active_card_timed_uses_status(fd_timer, fd_charges),
+                    status_state='hazir',
+                )
             else:
-                add("freeze_drop", f"{_f_lbl} ile bloğu dondur. Kalan hak: {fd_charges}", status=f"{_f_lbl}: {fd_charges} Hak")
+                add(
+                    "freeze_drop",
+                    f"{_f_lbl} ile bloğu dondur. Kalan hak: {fd_charges}",
+                    status=self._localized_active_card_uses_status(_f_lbl, fd_charges),
+                    status_state='hazir',
+                )
         else:
             self._active_effect_visuals.pop("freeze_drop", None)
 
@@ -9287,7 +9351,12 @@ class MysteryMode(Game):
                         pass
         if sniper_charges > 0 and "sniper_shot" in self._active_effect_visuals:
             _n_lbl = _card_key('N', 'card_sniper')
-            add("sniper_shot", f"{_n_lbl} ile blok sec ve patlat. Kalan hak: {sniper_charges}", status=f"{_n_lbl}: {sniper_charges} Hak")
+            add(
+                "sniper_shot",
+                f"{_n_lbl} ile blok sec ve patlat. Kalan hak: {sniper_charges}",
+                status=self._localized_active_card_uses_status(_n_lbl, sniper_charges),
+                status_state='hazir',
+            )
         else:
             self._active_effect_visuals.pop("sniper_shot", None)
         
@@ -9428,9 +9497,10 @@ class MysteryMode(Game):
                 icon_image = None
             cards.append({
                 'id': 'rewind_power',
-                'title': 'Geri Sarma',
+                'title': get_card_title('rewind_power', 'Geri Sarma'),
                 'description': f'{_card_key("U", "card_rewind")} tuşu ({uses} kalan)',
-                'status': f'{_card_key("U", "card_rewind")}: {uses} Hak',
+                'status': self._localized_active_card_uses_status(_card_key("U", "card_rewind"), uses),
+                'status_state': 'hazir',
                 'color': (255, 200, 255),
                 'icon': 'RW',
                 'icon_image': icon_image,
@@ -9456,9 +9526,10 @@ class MysteryMode(Game):
                 icon_image = None
             cards.append({
                 'id': 'perk_phase',
-                'title': 'Şekil Değiştirici',
+                'title': get_card_title('perk_phase', 'Şekil Değiştirici'),
                 'description': f'{_card_key("LSHIFT", "card_phase_shift")} ({phase_uses} kalan)',
-                'status': f'{_card_key("LSHIFT", "card_phase_shift")}: {phase_uses} Hak',
+                'status': self._localized_active_card_uses_status(_card_key("LSHIFT", "card_phase_shift"), phase_uses),
+                'status_state': 'hazir',
                 'color': (255, 200, 255),
                 'icon': '🔄',
                 'icon_image': icon_image,
