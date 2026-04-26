@@ -358,6 +358,10 @@ def _build_tab_content(tab_key: str, sm, show_debug: bool = False) -> list[dict]
                 'label_tr': 'Online PvP Trailer Lobileri', 'label_en': 'Online PvP Trailer Lobbies',
             })
             items.append({
+                'type': 'toggle', 'key': 'local_pvp_demobot_debug',
+                'label_tr': 'Local PvP Demobot', 'label_en': 'Local PvP Demobot',
+            })
+            items.append({
                 'type': 'toggle', 'key': 'coop_debug_halt_blocks',
                 'loc_key': 'coop_debug_halt_blocks',
                 'label_tr': 'Co-op Spawner Durdurma', 'label_en': 'Co-op Halt Spawner',
@@ -524,6 +528,7 @@ class TabbedSettingsScreen:
         self.debug_mode = self.settings_manager.get('debug_mode', False)
         self.card_mode_debug = self.settings_manager.get('card_mode_debug', False)
         self.online_pvp_trailer_debug = self.settings_manager.get('online_pvp_trailer_debug', False)
+        self.local_pvp_demobot_debug = self.settings_manager.get('local_pvp_demobot_debug', False)
         self.difficulty = 'Normal'
         self.custom_background = self.settings_manager.get('custom_background', None)
         self._show_debug_settings = bool(self.settings_manager.get('show_debug_settings', False))
@@ -911,6 +916,7 @@ class TabbedSettingsScreen:
         self.debug_mode = sm.get('debug_mode', False)
         self.card_mode_debug = sm.get('card_mode_debug', False)
         self.online_pvp_trailer_debug = sm.get('online_pvp_trailer_debug', False)
+        self.local_pvp_demobot_debug = sm.get('local_pvp_demobot_debug', False)
         self.mystery_debug_block_workshop = sm.get('mystery_debug_block_workshop', False)
         self._show_debug_settings = bool(sm.get('show_debug_settings', False))
 
@@ -2229,6 +2235,7 @@ class TabbedSettingsScreen:
             'debug_mode': 'toggle_debug',
             'card_mode_debug': 'toggle_card_mode_debug',
             'online_pvp_trailer_debug': None,
+            'local_pvp_demobot_debug': None,
             'mystery_debug_block_workshop': None,
             'vsync': 'vsync_changed',
         }
@@ -2246,6 +2253,8 @@ class TabbedSettingsScreen:
             self.card_mode_debug = new_val
         elif key == 'online_pvp_trailer_debug':
             self.online_pvp_trailer_debug = new_val
+        elif key == 'local_pvp_demobot_debug':
+            self.local_pvp_demobot_debug = new_val
         elif key == 'mystery_debug_block_workshop':
             self.mystery_debug_block_workshop = new_val
         elif key == 'vsync':

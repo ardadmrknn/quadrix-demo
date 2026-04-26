@@ -461,6 +461,12 @@ class PvPGame:
         self.p2_soft_drop_active = False
         self.p2_soft_drop_timer = 0
         self.soft_drop_speed = 50  # Soft drop hızı (ms)
+
+        # Debug-only local PvP demobot state
+        self._demobot_plan = None
+        self._demobot_piece_ref = None
+        self._demobot_action_timer = 0.0
+        self._demobot_active_last_frame = False
         
         # Oyun alanı pozisyonları (parçacıklar için)
         self.cell_size = 50
@@ -973,6 +979,360 @@ class PvPGame:
         except Exception:
             self.sound.play('move')
         return True
+
+    def _is_local_pvp_demobot_debug_enabled(self) -> bool:
+        try:
+            return bool(self.settings_manager and self.settings_manager.get('local_pvp_demobot_debug', False))
+        except Exception:
+            return False
+
+    @staticmethod
+    def _is_demobot_name(name) -> bool:
+        return str(name or '').strip().lower() == 'demobot'
+
+    def _is_player1_demobot_active(self) -> bool:
+        return (
+            self._is_local_pvp_demobot_debug_enabled()
+            and self._is_demobot_name(getattr(self, 'player1_name', ''))
+            and not getattr(self, 'name_input_active', False)
+            and not getattr(self, 'paused', False)
+            and not getattr(self, 'game_over', False)
+        )
+
+    def _clear_demobot_state(self) -> None:
+        self._demobot_plan = None
+        self._demobot_piece_ref = None
+        self._demobot_action_timer = 0.0
+
+    def _cancel_p1_manual_input_state(self) -> None:
+        self.p1_das_direction = 0
+        self.p1_das_timer = 0
+        self.p1_das_repeat_timer = 0
+        self.p1_das_charged = False
+        self.p1_soft_drop_active = False
+        self.p1_soft_drop_timer = 0
+
+    @staticmethod
+    def _column_heights_for_board(board: Board) -> list[int]:
+        heights: list[int] = []
+        for x in range(board.width):
+            height = 0
+            for y in range(board.height):
+                if board.occupancy[y][x]:
+                    height = board.height - y
+                    break
+            heights.append(height)
+        return heights
+
+    def _demobot_stack_pressure(self, board: Board) -> int:
+        heights = self._column_heights_for_board(board)
+        return max(0, (max(heights) if heights else 0) - 10)
+
+    def _demobot_next_action_delay(self, action: str) -> float:
+        ranges = {
+            'think': (170.0, 250.0),
+            'move': (58.0, 98.0),
+            'rotate': (72.0, 118.0),
+            'hold': (110.0, 170.0),
+            'soft_drop': (34.0, 58.0),
+            'hard_drop': (90.0, 145.0),
+        }
+        minimums = {
+            'think': 90.0,
+            'move': 32.0,
+            'rotate': 42.0,
+            'hold': 74.0,
+            'soft_drop': 22.0,
+            'hard_drop': 52.0,
+        }
+        low, high = ranges.get(action, (60.0, 100.0))
+        reduction = min(85.0, self._demobot_stack_pressure(self.board1) * 9.0)
+        return max(minimums.get(action, 30.0), random.uniform(low, high) - reduction)
+
+    @staticmethod
+    def _clone_board_for_demobot(board: Board) -> Board:
+        sim_board = Board(width=board.width, height=board.height)
+        sim_board.grid = [row[:] for row in board.grid]
+        sim_board.texture_grid = [row[:] for row in board.texture_grid]
+        sim_board.owners = [row[:] for row in board.owners]
+        sim_board.occupancy = [row[:] for row in board.occupancy]
+        sim_board.gold = [row[:] for row in board.gold]
+        sim_board.score = int(getattr(board, 'score', 0) or 0)
+        sim_board.lines_cleared = int(getattr(board, 'lines_cleared', 0) or 0)
+        sim_board.level_lines_cleared = int(getattr(board, 'level_lines_cleared', 0) or 0)
+        sim_board.level = int(getattr(board, 'level', 1) or 1)
+        sim_board.combo = int(getattr(board, 'combo', 0) or 0)
+        sim_board.tetrises = int(getattr(board, 'tetrises', 0) or 0)
+        sim_board.last_cleared_lines = list(getattr(board, 'last_cleared_lines', []))
+        sim_board.last_cleared_colors = dict(getattr(board, 'last_cleared_colors', {}))
+        sim_board.flexible_border_active = bool(getattr(board, 'flexible_border_active', False))
+        sim_board.back_to_back = bool(getattr(board, 'back_to_back', False))
+        return sim_board
+
+    @staticmethod
+    def _measure_drop_distance(board: Board, piece) -> int:
+        test_piece = piece.copy() if hasattr(piece, 'copy') else piece
+        distance = 0
+        while board.is_valid_position(test_piece, dy=1):
+            test_piece.y += 1
+            distance += 1
+        return distance
+
+    def _score_demobot_board(self, board: Board, lines_cleared: int) -> float:
+        heights = self._column_heights_for_board(board)
+        aggregate_height = float(sum(heights))
+        max_height = float(max(heights) if heights else 0)
+        bumpiness = float(sum(abs(a - b) for a, b in zip(heights, heights[1:])))
+
+        holes = 0
+        for x in range(board.width):
+            filled_seen = False
+            for y in range(board.height):
+                if board.occupancy[y][x]:
+                    filled_seen = True
+                elif filled_seen:
+                    holes += 1
+
+        row_fill_score = 0.0
+        height_scale = max(1, board.height - 1)
+        for y, row in enumerate(board.occupancy):
+            filled = sum(1 for cell in row if cell)
+            if filled:
+                depth_weight = 1.0 + (float(y) / float(height_scale)) * 0.35
+                row_fill_score += float(filled * filled) * depth_weight
+
+        danger = max(0.0, max_height - (board.height * 0.55))
+        return (
+            float(lines_cleared) * 1500.0
+            + row_fill_score * 2.6
+            - aggregate_height * 18.0
+            - float(holes) * 230.0
+            - bumpiness * 14.0
+            - max_height * 32.0
+            - (danger * danger) * 18.0
+        )
+
+    def _evaluate_demobot_piece_option(self, piece) -> dict | None:
+        if piece is None:
+            return None
+
+        board = self.board1
+        best_plan = None
+        working_piece = piece.copy() if hasattr(piece, 'copy') else piece
+        seen_shapes: set[tuple[tuple[int, ...], ...]] = set()
+
+        for _ in range(4):
+            shape_signature = tuple(tuple(int(cell) for cell in row) for row in working_piece.shape)
+            if shape_signature not in seen_shapes:
+                seen_shapes.add(shape_signature)
+                for target_x in range(-2, board.width + 2):
+                    candidate = working_piece.copy() if hasattr(working_piece, 'copy') else working_piece
+                    candidate.x = target_x
+                    if not board.is_valid_position(candidate):
+                        continue
+
+                    drop_distance = self._measure_drop_distance(board, candidate)
+                    landing_piece = candidate.copy() if hasattr(candidate, 'copy') else candidate
+                    landing_piece.y += drop_distance
+
+                    sim_board = self._clone_board_for_demobot(board)
+                    lines_cleared = sim_board.lock_piece(landing_piece)
+                    score = self._score_demobot_board(sim_board, lines_cleared)
+                    if sim_board.is_game_over():
+                        score -= 100000.0
+
+                    plan = {
+                        'target_x': int(candidate.x),
+                        'target_rotation': int(getattr(candidate, 'rotation_state', 0) or 0) % 4,
+                        'score': float(score),
+                        'lines_cleared': int(lines_cleared),
+                        'soft_drop_steps_remaining': min(3, max(0, (int(drop_distance) - 8) // 4)),
+                        'use_hold': False,
+                    }
+                    if best_plan is None or float(plan['score']) > float(best_plan['score']):
+                        best_plan = plan
+
+            working_piece.rotate()
+
+        return best_plan
+
+    def _build_demobot_plan(self) -> dict | None:
+        best_plan = self._evaluate_demobot_piece_option(self.current_piece1)
+
+        if self.can_hold1:
+            hold_candidate = self.hold_piece1 if self.hold_piece1 is not None else self.next_piece1
+            if hold_candidate is not None:
+                spawned_hold = self._reset_piece_to_spawn(hold_candidate, self.board1)
+                hold_plan = self._evaluate_demobot_piece_option(spawned_hold)
+                if hold_plan is not None:
+                    hold_plan = dict(hold_plan)
+                    hold_plan['use_hold'] = True
+                    hold_margin = 80.0 if self.hold_piece1 is not None else 160.0
+                    if (
+                        best_plan is None
+                        or int(hold_plan['lines_cleared']) > int(best_plan.get('lines_cleared', 0))
+                        or float(hold_plan['score']) > float(best_plan.get('score', 0.0)) + hold_margin
+                    ):
+                        best_plan = hold_plan
+
+        return best_plan
+
+    def _try_rotate_p1(self) -> bool:
+        if self.current_piece1 is None or self.board1.is_game_over():
+            return False
+
+        original_x = self.current_piece1.x
+        self.current_piece1.rotate()
+        if not self.board1.is_valid_position(self.current_piece1):
+            for dx in [1, -1, 2, -2]:
+                self.current_piece1.x = original_x + dx
+                if self.board1.is_valid_position(self.current_piece1):
+                    break
+            else:
+                self.current_piece1.x = original_x
+                for _ in range(3):
+                    self.current_piece1.rotate()
+                return False
+
+        self.sound.play('rotate')
+        return True
+
+    def _try_soft_drop_step_p1(self) -> bool:
+        if self.current_piece1 is None or self.board1.is_game_over():
+            return False
+
+        self.current_piece1.y += 1
+        if not self.board1.is_valid_position(self.current_piece1):
+            self.current_piece1.y -= 1
+            self.lock_and_new_piece(1)
+            return True
+        return True
+
+    def _hard_drop_p1(self) -> bool:
+        if self.current_piece1 is None or self.board1.is_game_over():
+            return False
+
+        start_y = self.current_piece1.y
+        drop_distance = 0
+        while self.board1.is_valid_position(self.current_piece1, dy=1):
+            self.current_piece1.y += 1
+            drop_distance += 1
+
+        if self.effects_enabled and drop_distance > 0:
+            self._create_drop_trail(
+                1,
+                self.current_piece1,
+                self.p1_offset_x,
+                self.p1_offset_y,
+                self.cell_size,
+                start_y,
+                drop_distance,
+                trail_type='hard',
+            )
+
+        if self.effects_enabled and drop_distance > 0:
+            self.trigger_hard_drop_screen_shake()
+
+        self.lock_and_new_piece(1)
+
+        try:
+            from gamepad_manager import get_gamepad_manager
+            get_gamepad_manager().rumble(0.3, 0.6, 120)
+        except Exception:
+            pass
+        return True
+
+    def _update_demobot(self, delta_time) -> None:
+        if not self._is_player1_demobot_active():
+            if self._demobot_active_last_frame:
+                self._clear_demobot_state()
+            self._demobot_active_last_frame = False
+            return
+
+        self._demobot_active_last_frame = True
+        self._cancel_p1_manual_input_state()
+
+        if self.current_piece1 is None or self.board1.is_game_over():
+            return
+
+        if self._demobot_piece_ref is not self.current_piece1:
+            self._demobot_piece_ref = self.current_piece1
+            self._demobot_plan = None
+            self._demobot_action_timer = self._demobot_next_action_delay('think')
+        else:
+            self._demobot_action_timer = max(0.0, float(self._demobot_action_timer or 0.0) - float(delta_time or 0.0))
+
+        if self._demobot_action_timer > 0:
+            return
+
+        if self._demobot_plan is None:
+            self._demobot_plan = self._build_demobot_plan()
+            if self._demobot_plan is None:
+                self._demobot_action_timer = self._demobot_next_action_delay('move')
+                return
+
+        if self._demobot_plan.get('use_hold'):
+            if self.can_hold1 and self._try_hold_piece(1):
+                self._demobot_piece_ref = self.current_piece1
+                self._demobot_plan = None
+                self._demobot_action_timer = self._demobot_next_action_delay('hold')
+                return
+            self._demobot_plan = None
+            self._demobot_action_timer = self._demobot_next_action_delay('move')
+            return
+
+        current_piece = self.current_piece1
+        if current_piece is None:
+            self._demobot_plan = None
+            return
+
+        current_rotation = int(getattr(current_piece, 'rotation_state', 0) or 0) % 4
+        target_rotation = int(self._demobot_plan.get('target_rotation', current_rotation) or 0) % 4
+        if current_rotation != target_rotation:
+            if self._try_rotate_p1():
+                self._demobot_action_timer = self._demobot_next_action_delay('rotate')
+            else:
+                self._demobot_plan = None
+                self._demobot_action_timer = self._demobot_next_action_delay('move')
+            return
+
+        target_x = int(self._demobot_plan.get('target_x', current_piece.x))
+        if current_piece.x < target_x:
+            moved = self._try_move_right_p1()
+            if moved:
+                self.sound.play('move')
+            else:
+                self._demobot_plan = None
+            self._demobot_action_timer = self._demobot_next_action_delay('move')
+            return
+
+        if current_piece.x > target_x:
+            moved = self._try_move_left_p1()
+            if moved:
+                self.sound.play('move')
+            else:
+                self._demobot_plan = None
+            self._demobot_action_timer = self._demobot_next_action_delay('move')
+            return
+
+        drop_distance = self._measure_drop_distance(self.board1, current_piece)
+        soft_drop_steps_remaining = int(self._demobot_plan.get('soft_drop_steps_remaining', 0) or 0)
+        if drop_distance > 0 and soft_drop_steps_remaining > 0:
+            current_ref = self.current_piece1
+            self._demobot_plan['soft_drop_steps_remaining'] = soft_drop_steps_remaining - 1
+            self._try_soft_drop_step_p1()
+            if self.current_piece1 is not current_ref:
+                self._demobot_piece_ref = self.current_piece1
+                self._demobot_plan = None
+                self._demobot_action_timer = self._demobot_next_action_delay('think')
+            else:
+                self._demobot_action_timer = self._demobot_next_action_delay('soft_drop')
+            return
+
+        self._hard_drop_p1()
+        self._demobot_piece_ref = self.current_piece1
+        self._demobot_plan = None
+        self._demobot_action_timer = self._demobot_next_action_delay('hard_drop')
 
     def _start_pvp_music(self):
         """Start the arena music respecting user preferences."""
@@ -1595,6 +1955,7 @@ class PvPGame:
             if event.type == pygame.KEYDOWN:
                 controls1 = self.pvp_controls['player1']
                 controls2 = self.pvp_controls['player2']
+                demobot_active = self._is_player1_demobot_active()
                 # İsim girişi ekranındayken
                 if self.name_input_active:
                     if event.key == pygame.K_ESCAPE:
@@ -1709,7 +2070,7 @@ class PvPGame:
                     continue
                 
                 # OYUNCU 1 KONTROLLER (WASD + Shift/Ctrl)
-                if not self.board1.is_game_over():
+                if not self.board1.is_game_over() and not demobot_active:
                     # A - Sol (DAS ile)
                     if event.key == controls1['move_left']:
                         moved = self._try_move_left_p1()
@@ -1735,57 +2096,15 @@ class PvPGame:
                         self.p1_soft_drop_active = True
                         self.p1_soft_drop_timer = 0
                         # İlk hareketi hemen yap
-                        self.current_piece1.y += 1
-                        if not self.board1.is_valid_position(self.current_piece1):
-                            self.current_piece1.y -= 1
+                        self._try_soft_drop_step_p1()
                     
                     # W - Döndür
                     elif event.key == controls1['rotate']:
-                        original_x = self.current_piece1.x
-                        self.current_piece1.rotate()
-                        if not self.board1.is_valid_position(self.current_piece1):
-                            for dx in [1, -1, 2, -2]:
-                                self.current_piece1.x = original_x + dx
-                                if self.board1.is_valid_position(self.current_piece1):
-                                    break
-                            else:
-                                self.current_piece1.x = original_x
-                                for _ in range(3):
-                                    self.current_piece1.rotate()
-                        self.sound.play('rotate')
+                        self._try_rotate_p1()
                     
                     # Shift - Hard drop
                     elif event.key == controls1['hard_drop']:
-                        start_y = self.current_piece1.y
-                        drop_distance = 0
-                        
-                        while self.board1.is_valid_position(self.current_piece1, dy=1):
-                            self.current_piece1.y += 1
-                            drop_distance += 1
-
-                        if self.effects_enabled and drop_distance > 0:
-                            self._create_drop_trail(
-                                1,
-                                self.current_piece1,
-                                self.p1_offset_x,
-                                self.p1_offset_y,
-                                self.cell_size,
-                                start_y,
-                                drop_distance,
-                                trail_type='hard',
-                            )
-                        
-                        # Hard drop ekran sarsıntısı
-                        if self.effects_enabled and drop_distance > 0:
-                            self.trigger_hard_drop_screen_shake()
-
-                        self.lock_and_new_piece(1)
-
-                        try:
-                            from gamepad_manager import get_gamepad_manager
-                            get_gamepad_manager().rumble(0.3, 0.6, 120)
-                        except Exception:
-                            pass
+                        self._hard_drop_p1()
 
                     # Hold
                     elif event.key == controls1['hold']:
@@ -1895,8 +2214,9 @@ class PvPGame:
             if event.type == pygame.KEYUP:
                 controls1 = self.pvp_controls['player1']
                 controls2 = self.pvp_controls['player2']
+                demobot_active = self._is_player1_demobot_active()
                 # Oyuncu 1
-                if event.key == controls1['move_left']:
+                if not demobot_active and event.key == controls1['move_left']:
                     if self.p1_das_direction == -1:
                         pressed = pygame.key.get_pressed()
                         other_key = controls1['move_right']
@@ -1911,7 +2231,7 @@ class PvPGame:
                         else:
                             self.p1_das_direction = 0
                             self.p1_das_charged = False
-                elif event.key == controls1['move_right']:
+                elif not demobot_active and event.key == controls1['move_right']:
                     if self.p1_das_direction == 1:
                         pressed = pygame.key.get_pressed()
                         other_key = controls1['move_left']
@@ -1926,7 +2246,7 @@ class PvPGame:
                         else:
                             self.p1_das_direction = 0
                             self.p1_das_charged = False
-                elif event.key == controls1['soft_drop']:
+                elif not demobot_active and event.key == controls1['soft_drop']:
                     self.p1_soft_drop_active = False
                 # Oyuncu 2
                 elif event.key == controls2['move_left']:
@@ -3451,6 +3771,8 @@ class PvPGame:
             if self._last_timer_seconds != elapsed_seconds:
                 self._last_timer_seconds = elapsed_seconds
                 self._vs_panel_dirty = True
+
+        self._update_demobot(delta_time)
         
         # DAS (Delayed Auto Shift) güncelle - basılı tutarak yatay hareket
         self._update_das(delta_time)
@@ -4208,6 +4530,9 @@ class PvPGame:
         self.p1_soft_drop_timer = 0
         self.p2_soft_drop_active = False
         self.p2_soft_drop_timer = 0
+
+        self._clear_demobot_state()
+        self._demobot_active_last_frame = False
         
         # Satır temizleme efektlerini sıfırla
         self.p1_line_flash_rows = []
