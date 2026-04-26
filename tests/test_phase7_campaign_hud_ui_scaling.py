@@ -7,6 +7,7 @@ import types
 from types import SimpleNamespace
 
 import pygame
+from ui_scaling import get_ui_scale_preset, set_ui_scale_preset
 
 
 ROOT_DIR = pathlib.Path(__file__).resolve().parent.parent
@@ -51,10 +52,22 @@ def _build_mode(size: tuple[int, int]) -> campaign_mode_module.CampaignMode:
 
 
 def _install_right_hud_test_stubs(monkeypatch) -> None:
+    def _get_fitting_font(text, size, max_width, bold=False, min_size=None):
+        base_size = max(1, int(size))
+        minimum = max(1, int(min_size or 1))
+        candidate = base_size
+        while candidate > minimum:
+            font = _make_fake_font(candidate, bold=bold)
+            if font.size(text)[0] <= max_width:
+                return font
+            candidate -= 1
+        return _make_fake_font(minimum, bold=bold)
+
     retro_style_stub = types.ModuleType('retro_style')
     retro_style_stub.retro_style = SimpleNamespace(
         draw_glass_panel=lambda surface, rect, alpha=90, border_color=(255, 255, 255), glow=False: pygame.draw.rect(surface, border_color, rect, 1),
         get_font=lambda size, bold=False: _make_fake_font(size, bold=bold),
+        get_fitting_font=_get_fitting_font,
     )
     localization_stub = types.ModuleType('localization')
     localization_stub.t = lambda key, *args, **kwargs: key
@@ -93,16 +106,37 @@ def test_campaign_hud_scale_preserves_1366_baseline_and_caps_large_display():
     assert math.isclose(mode._get_campaign_hud_scale(), 1.12)
 
 
+def test_campaign_hud_scale_ignores_global_compact_preset_for_gameplay_panels():
+    previous = get_ui_scale_preset()
+
+    try:
+        set_ui_scale_preset('compact')
+
+        mode_1366 = _build_mode((1366, 768))
+        mode_2560 = _build_mode((2560, 1440))
+
+        rect_1366 = mode_1366._get_campaign_right_hud_panel_rect(430, 70, 300, 620)
+        rect_2560 = mode_2560._get_campaign_right_hud_panel_rect(430, 70, 300, 620)
+
+        assert math.isclose(mode_1366._get_campaign_hud_scale(), 1.0)
+        assert math.isclose(mode_2560._get_campaign_hud_scale(), 1.12)
+        assert rect_1366.width == 220
+        assert rect_2560.width > rect_1366.width
+    finally:
+        set_ui_scale_preset(previous)
+
+
 def test_campaign_hud_scale_uses_projected_effective_scale(monkeypatch):
     mode = _build_mode((2560, 1660))
     captured = {}
 
-    def fake_get_projected_scale(target, *, min_scale, max_scale, reference_size, display_surface=None):
+    def fake_get_projected_scale(target, *, min_scale, max_scale, reference_size, display_surface=None, apply_preset=True):
         captured['target'] = target
         captured['min_scale'] = min_scale
         captured['max_scale'] = max_scale
         captured['reference_size'] = reference_size
         captured['display_surface'] = display_surface
+        captured['apply_preset'] = apply_preset
         return 1.44
 
     monkeypatch.setattr(campaign_mode_module, 'get_projected_effective_scale', fake_get_projected_scale)
@@ -113,6 +147,7 @@ def test_campaign_hud_scale_uses_projected_effective_scale(monkeypatch):
     assert captured['max_scale'] == 1.12
     assert captured['reference_size'] == campaign_mode_module.CAMPAIGN_HUD_REFERENCE_SIZE
     assert captured['display_surface'] is None
+    assert captured['apply_preset'] is False
 
 
 def test_campaign_hud_icon_helpers_follow_scaled_target_size():
@@ -194,3 +229,36 @@ def test_right_hud_uses_active_canvas_when_window_size_is_stale(monkeypatch):
 
     assert mode._hud_panel_rect.width > 220
     assert mode._hud_mode_info_area[3] > 500
+
+
+def test_right_hud_texts_fit_panel_width_with_long_localized_strings(monkeypatch):
+    _install_right_hud_test_stubs(monkeypatch)
+
+    localization_stub = sys.modules['localization']
+    translations = {
+        'campaign_title': 'CAMPAIGN MODE EXTENDED',
+        'level': 'Level',
+        'campaign_mini_boss': 'Mini Boss Encounter',
+        'next': 'Next Pieces Preview:',
+        'hold': 'Hold Queue Storage (C):',
+        'score': 'Score',
+        'lines': 'Lines',
+    }
+    localization_stub.t = lambda key, *args, **kwargs: translations.get(key, key)
+
+    mode = _prepare_right_hud_mode((1366, 768))
+    mode.current_level_num = 18
+    mode.is_mini_boss = True
+
+    mode._draw_right_hud_panel(430, 70, 300, 620, None, None, (255, 255, 255), (0, 255, 255), (180, 180, 180))
+
+    assert mode._campaign_hud_title_rect is not None
+    assert mode._campaign_hud_subtitle_rect is not None
+    assert mode._hud_next_label_rect is not None
+    assert mode._hud_hold_label_rect is not None
+    assert mode._campaign_hud_title_rect.width <= mode._hud_content_w
+    assert mode._campaign_hud_subtitle_rect.width <= mode._hud_content_w
+    assert mode._hud_next_label_rect.width <= mode._hud_content_w
+    assert mode._hud_hold_label_rect.width <= mode._hud_content_w
+    assert mode._campaign_hud_title_rect.top >= mode._hud_panel_rect.top
+    assert mode._campaign_hud_subtitle_rect.top >= mode._campaign_hud_title_rect.bottom

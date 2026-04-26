@@ -912,7 +912,11 @@ class CampaignMode(Game):
         self._reset_level_state()
 
     def _get_campaign_hud_scale(self, surface_or_size=None) -> float:
-        """Campaign HUD ailesi icin ortak ekran bazli scale."""
+        """Campaign gameplay panelleri icin preset'ten bagimsiz ekran bazli scale.
+
+        Campaign icindeki HUD/panel geometriği base gameplay layout gibi davranmali;
+        global compact preset bu panel ailesini ekstra kucultmemeli.
+        """
         target = surface_or_size or getattr(self, 'screen', None)
         if target is None:
             target = (
@@ -924,6 +928,7 @@ class CampaignMode(Game):
             min_scale=0.74,
             max_scale=1.12,
             reference_size=CAMPAIGN_HUD_REFERENCE_SIZE,
+            apply_preset=False,
         )
 
     def _scale_campaign_hud_px(self, value: int | float, ui_scale: float, minimum: int = 1) -> int:
@@ -1638,19 +1643,24 @@ class CampaignMode(Game):
         info_x = panel_rect.x
         header_y = panel_rect.y
         panel_width = panel_rect.width
+        self._campaign_hud_title_rect = None
+        self._campaign_hud_subtitle_rect = None
+        self._hud_next_label_rect = None
+        self._hud_hold_label_rect = None
         
         # Ana panel arka planı (Glassmorphism)
         self._draw_hud_glass_panel(panel_rect)
         
         # İçerik Y pozisyonu
-        curr_y = header_y + s(20, minimum=12)
-        content_x = info_x + s(15, minimum=10)
-        content_w = panel_width - s(30, minimum=20)
+        side_padding = max(s(8, minimum=6), min(s(15, minimum=10), max(s(8, minimum=6), panel_width // 8)))
+        curr_y = header_y + s(16, minimum=10)
+        content_x = info_x + side_padding
+        content_w = max(40, panel_width - (side_padding * 2))
         
-        # Başlık - Neon Glow
+        # Başlık - fitted text ile panel genisligine sigdir
         badge_text = t('campaign_title')
-        title_center = (info_x + panel_width // 2, curr_y)
-        title_font = retro_style.get_font(s(28, minimum=18), bold=True)
+        title_center_x = info_x + panel_width // 2
+        title_max_width = max(30, content_w - s(4, minimum=2))
         
         # Boss level ise özel renk
         if self.is_boss:
@@ -1659,15 +1669,24 @@ class CampaignMode(Game):
             title_accent = (255, 165, 0)  # Turuncu
         else:
             title_accent = accent_color
-        
+
+        title_surf = self._render_hud_fitted_text(
+            badge_text,
+            title_accent,
+            title_max_width,
+            s(28, minimum=18),
+            s(11, minimum=8),
+            bold=True,
+        )
+        title_rect = title_surf.get_rect(midtop=(title_center_x, curr_y))
         for off in range(2, 0, -1):
-            glow_surf = title_font.render(badge_text, True, (*title_accent, 50))
-            self.screen.blit(glow_surf, glow_surf.get_rect(center=(title_center[0], title_center[1] + off)))
-        title_surf = title_font.render(badge_text, True, title_accent)
-        title_rect = title_surf.get_rect(center=title_center)
+            glow_surf = title_surf.copy()
+            glow_surf.set_alpha(70)
+            self.screen.blit(glow_surf, glow_surf.get_rect(midtop=(title_center_x, curr_y + off)))
         self.screen.blit(title_surf, title_rect)
+        self._campaign_hud_title_rect = title_rect.copy()
         
-        curr_y += s(35, minimum=22)
+        curr_y = title_rect.bottom + s(8, minimum=6)
         
         # Level bilgisi
         level_text = f"{t('level')} {self.current_level_num}"
@@ -1675,20 +1694,36 @@ class CampaignMode(Game):
             level_text += f" ({t('campaign_boss')})"
         elif self.is_mini_boss:
             level_text += f" ({t('campaign_mini_boss')})"
-        
-        sub_font = retro_style.get_font(s(16, minimum=11))
-        sub_surf = sub_font.render(level_text, True, text_color)
-        sub_rect = sub_surf.get_rect(center=(title_center[0], curr_y))
+
+        sub_surf = self._render_hud_fitted_text(
+            level_text,
+            text_color,
+            title_max_width,
+            s(16, minimum=11),
+            s(9, minimum=7),
+            bold=False,
+        )
+        sub_rect = sub_surf.get_rect(midtop=(title_center_x, curr_y))
         self.screen.blit(sub_surf, sub_rect)
-        curr_y += s(25, minimum=16)
+        self._campaign_hud_subtitle_rect = sub_rect.copy()
+        curr_y = sub_rect.bottom + s(10, minimum=6)
         
         curr_y += s(10, minimum=6)
         
         # --- NEXT PIECES ---
-        next_label = retro_style.get_font(s(18, minimum=12)).render(t('next'), True, label_color)
-        self.screen.blit(next_label, (content_x, curr_y))
+        next_label = self._render_hud_fitted_text(
+            t('next'),
+            label_color,
+            content_w,
+            s(18, minimum=12),
+            s(10, minimum=8),
+            bold=False,
+        )
+        next_label_rect = next_label.get_rect(topleft=(content_x, curr_y))
+        self.screen.blit(next_label, next_label_rect)
+        self._hud_next_label_rect = next_label_rect.copy()
         
-        curr_y += s(25, minimum=16)
+        curr_y = next_label_rect.bottom + s(14, minimum=8)
         box_size = min(s(60, minimum=44), max(s(42, minimum=32), int(content_w * 0.34)))
         gap = max(s(10, minimum=6), int(content_w * 0.08))
         
@@ -1742,10 +1777,19 @@ class CampaignMode(Game):
         curr_y += box_size + s(20, minimum=10)
         
         # --- HOLD PIECE ---
-        hold_label = retro_style.get_font(s(18, minimum=12)).render(t('hold'), True, label_color)
-        self.screen.blit(hold_label, (content_x, curr_y))
+        hold_label = self._render_hud_fitted_text(
+            t('hold'),
+            label_color,
+            content_w,
+            s(18, minimum=12),
+            s(10, minimum=8),
+            bold=False,
+        )
+        hold_label_rect = hold_label.get_rect(topleft=(content_x, curr_y))
+        self.screen.blit(hold_label, hold_label_rect)
+        self._hud_hold_label_rect = hold_label_rect.copy()
         
-        curr_y += s(25, minimum=16)
+        curr_y = hold_label_rect.bottom + s(14, minimum=8)
         hold_box_rect = pygame.Rect(content_x, curr_y, box_size + s(20, minimum=12), box_size)
         
         if not self._draw_custom_frame(hold_box_rect, "box_frame.png", padding=s(4, minimum=2)):
