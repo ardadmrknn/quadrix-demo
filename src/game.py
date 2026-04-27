@@ -3705,18 +3705,32 @@ class Game:
         
         lines_cleared = self.board.lock_piece(self.current_piece)
 
-        # Lock-out kontrolü (Tetris Guideline): parça üst satırda kilitlendi
+        # Lock-out kontrolü (Tetris Guideline): parça üst satırda kilitlendi.
+        # Some modes can spend a one-shot save here before the run is finalized.
         if self.board.is_game_over():
-            self.game_over = True
+            prevented = False
             try:
-                from gamepad_manager import get_gamepad_manager
-                get_gamepad_manager().rumble(1.0, 1.0, 600)
+                prevent_game_over = getattr(self, "_try_prevent_game_over_after_lock", None)
+                if callable(prevent_game_over):
+                    prevented = bool(prevent_game_over())
             except Exception:
-                pass
-            if self.sound:
-                self.sound.play_game_over_sequence()
-            self.finalize_run()
-            return
+                prevented = False
+            if prevented:
+                try:
+                    prevented = not self.board.is_game_over()
+                except Exception:
+                    pass
+            if not prevented:
+                self.game_over = True
+                try:
+                    from gamepad_manager import get_gamepad_manager
+                    get_gamepad_manager().rumble(1.0, 1.0, 600)
+                except Exception:
+                    pass
+                if self.sound:
+                    self.sound.play_game_over_sequence()
+                self.finalize_run()
+                return
 
         # Satır temizlenmiyorsa blok kilitlenme sesi çal
         if lines_cleared == 0:

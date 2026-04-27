@@ -5547,6 +5547,97 @@ class MysteryMode(Game):
         self._card_workshop_message_timer = float(display_time)
         return text
 
+    def _get_armed_ghost_echo_card(self) -> Dict[str, Any] | None:
+        try:
+            visuals = getattr(self, '_active_effect_visuals', {}) or {}
+            visual = visuals.get('ghost_echo') if isinstance(visuals, dict) else None
+            if isinstance(visual, dict):
+                return visual
+        except Exception:
+            pass
+
+        try:
+            active_cards = list(getattr(self.card_manager, 'active_cards', []) or [])
+        except Exception:
+            active_cards = []
+        for card in active_cards:
+            try:
+                if card.get('id') == 'ghost_echo':
+                    return card
+            except Exception:
+                continue
+        return None
+
+    def _consume_ghost_echo_revive(self) -> bool:
+        card = self._get_armed_ghost_echo_card()
+        if not card:
+            return False
+
+        try:
+            rows = int(card.get('value', card.get('base', 6)) or 6)
+        except Exception:
+            rows = 6
+        try:
+            board_height = int(getattr(self.board, 'height', BOARD_HEIGHT) or BOARD_HEIGHT)
+        except Exception:
+            board_height = BOARD_HEIGHT
+        rows = max(1, min(rows, board_height))
+
+        try:
+            if hasattr(self.board, 'clear_top_rows'):
+                self.board.clear_top_rows(rows)
+            else:
+                for y in range(rows):
+                    for x in range(self.board.width):
+                        self.board.grid[y][x] = BLACK
+                        self.board.texture_grid[y][x] = None
+                        self.board.occupancy[y][x] = False
+                        try:
+                            self.board.gold[y][x] = False
+                        except Exception:
+                            pass
+                        try:
+                            self.board.owners[y][x] = None
+                        except Exception:
+                            pass
+        except Exception:
+            pass
+
+        try:
+            if hasattr(self.board, 'clear_lock_out'):
+                self.board.clear_lock_out()
+            else:
+                if hasattr(self.board, '_locked_out'):
+                    self.board._locked_out = False
+                if hasattr(self.board, '_last_lock_out'):
+                    self.board._last_lock_out = False
+        except Exception:
+            pass
+
+        try:
+            self.card_manager.active_cards = [
+                active for active in (getattr(self.card_manager, 'active_cards', []) or [])
+                if not (isinstance(active, dict) and active.get('id') == 'ghost_echo')
+            ]
+        except Exception:
+            pass
+        try:
+            self._active_effect_visuals.pop('ghost_echo', None)
+        except Exception:
+            pass
+        try:
+            self._set_localized_card_message('mystery_msg_revive', 2.0, 'Ölümden döndün!')
+        except Exception:
+            pass
+        try:
+            self._sync_active_cards()
+        except Exception:
+            pass
+        return True
+
+    def _try_prevent_game_over_after_lock(self) -> bool:
+        return self._consume_ghost_echo_revive()
+
     def spawn_new_piece(self) -> Piece:
         forced = self.card_manager.pop_forced_piece()
         if forced:
@@ -5572,6 +5663,11 @@ class MysteryMode(Game):
                     self.perk_manager.on_piece_spawn(piece)
                 except Exception:
                     pass
+                try:
+                    if not self.board.is_valid_position(piece):
+                        self._consume_ghost_echo_revive()
+                except Exception:
+                    pass
                 return piece
         piece = super().spawn_new_piece()
         # Let perk manager adjust the newly spawned piece (bombs, phase)
@@ -5583,51 +5679,7 @@ class MysteryMode(Game):
         # Auto-activate Ghost Echo if we would immediately game-over with this spawn
         try:
             if not self.board.is_valid_position(piece):
-                # Find active ghost_echo card
-                for ac in list(self.card_manager.active_cards):
-                    if ac.get('id') == 'ghost_echo':
-                        # "Second chance shield": clear the top N rows (matches card text)
-                        try:
-                            rows = int(ac.get('value', ac.get('base', 6)) or 6)
-                        except Exception:
-                            rows = 6
-                        rows = max(1, min(rows, int(getattr(self.board, 'height', BOARD_HEIGHT) or BOARD_HEIGHT)))
-                        try:
-                            if hasattr(self.board, 'clear_top_rows'):
-                                self.board.clear_top_rows(rows)
-                            else:
-                                for y in range(rows):
-                                    for x in range(self.board.width):
-                                        self.board.grid[y][x] = BLACK
-                                        self.board.texture_grid[y][x] = None
-                                        self.board.occupancy[y][x] = False
-                                        try:
-                                            self.board.gold[y][x] = False
-                                        except Exception:
-                                            pass
-                                        try:
-                                            self.board.owners[y][x] = None
-                                        except Exception:
-                                            pass
-                        except Exception:
-                            pass
-                        # Remove used card from active cards
-                        try:
-                            self.card_manager.active_cards.remove(ac)
-                        except Exception:
-                            pass
-                        # Also clear the visual entry so it no longer appears
-                        try:
-                            self._active_effect_visuals.pop('ghost_echo', None)
-                        except Exception:
-                            pass
-                        # Sync UI visuals and break
-                        try:
-                            self._set_localized_card_message('mystery_msg_revive', 2.0, 'Ölümden döndün!')
-                        except Exception:
-                            pass
-                        self._sync_active_cards()
-                        break
+                self._consume_ghost_echo_revive()
         except Exception:
             pass
         return piece
@@ -10896,4 +10948,3 @@ class WideMode(Game):
         super().lock_piece()
         name = self.current_piece.name if hasattr(self.current_piece, "name") else "Klasik"
         print(f"🔒 Wide Mode parçası kilitlendi: {name}")
-
