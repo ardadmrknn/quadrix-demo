@@ -30,11 +30,15 @@ class _DummyBoard:
         self.combo = 0
 
 
-def test_restore_time_capsule_only_restores_board_blocks():
+def test_restore_time_capsule_restores_board_and_gameplay_state():
     _, MysteryMode = _import_game_modes_extra()
     mode = MysteryMode.__new__(MysteryMode)
     mode.board = _DummyBoard()
     mode.board.score = 7777
+    mode.board.lines_cleared = 88
+    mode.board.level_lines_cleared = 7
+    mode.board.level = 5
+    mode.board.combo = 3
     mode.time_capsule_available = True
     mode.time_capsule_saved = True
     mode.time_capsule_data = {
@@ -43,11 +47,22 @@ def test_restore_time_capsule_only_restores_board_blocks():
         'board_texture_grid': [[None]],
         'board_gold': [[False]],
         'board_owners': [[None]],
+        'board_score': 1234,
+        'board_lines_cleared': 12,
+        'board_level_lines_cleared': 2,
+        'board_level': 3,
+        'board_combo': 1,
+        'current_piece': 'CURRENT_SAVED',
+        'next_piece_queue': ['NEXT_A', 'NEXT_B'],
+        'held_piece': 'HOLD_SAVED',
+        'can_hold': True,
+        'energy': 42,
     }
     mode.current_piece = None
     mode.next_piece_queue = []
     mode.held_piece = "HOLD_A"
     mode.can_hold = False
+    mode.energy = 5
     mode._active_effect_visuals = {'time_capsule': {'id': 'time_capsule'}}
     mode.sound_enabled = False
 
@@ -58,9 +73,16 @@ def test_restore_time_capsule_only_restores_board_blocks():
     ok = mode._restore_time_capsule()
 
     assert ok is True
-    assert mode.board.score == 7777
-    assert mode.held_piece == "HOLD_A"
-    assert mode.can_hold is False
+    assert mode.board.score == 1234
+    assert mode.board.lines_cleared == 12
+    assert mode.board.level_lines_cleared == 2
+    assert mode.board.level == 3
+    assert mode.board.combo == 1
+    assert mode.current_piece == 'CURRENT_SAVED'
+    assert mode.next_piece_queue == ['NEXT_A', 'NEXT_B']
+    assert mode.held_piece == "HOLD_SAVED"
+    assert mode.can_hold is True
+    assert mode.energy == 42
     assert mode.time_capsule_available is False
     assert mode.time_capsule_saved is False
 
@@ -128,7 +150,7 @@ def test_speed_burst_expiry_resets_state_and_clears_visual():
     assert mode.card_manager.active_cards == []
 
 
-def test_handle_input_r_consumes_event_without_reposting(monkeypatch):
+def test_handle_input_t_saves_time_capsule_and_consumes_event_without_reposting(monkeypatch):
     Game, MysteryMode = _import_game_modes_extra()
     mode = MysteryMode.__new__(MysteryMode)
     mode.card_selection_active = False
@@ -141,8 +163,45 @@ def test_handle_input_r_consumes_event_without_reposting(monkeypatch):
     mode.paused = False
     mode.control_bindings = {'rotate': pygame.K_UP}
 
-    toggle_calls = []
-    mode._toggle_time_capsule = lambda: (toggle_calls.append(1) or True)
+    save_calls = []
+    restore_calls = []
+    mode._save_time_capsule = lambda: (save_calls.append(1) or True)
+    mode._restore_time_capsule = lambda: (restore_calls.append(1) or True)
+    mode._do_rewind = lambda: False
+    mode._open_sniper_overlay = lambda: False
+
+    event = types.SimpleNamespace(type=pygame.KEYDOWN, key=pygame.K_t)
+    posted_events = []
+
+    monkeypatch.setattr(Game, 'handle_input', lambda self: True)
+    monkeypatch.setattr(pygame.event, 'get', lambda: [event])
+    monkeypatch.setattr(pygame.event, 'post', lambda e: posted_events.append(e))
+
+    result = mode.handle_input()
+
+    assert result is True
+    assert save_calls == [1]
+    assert restore_calls == []
+    assert posted_events == []
+
+
+def test_handle_input_r_restores_time_capsule_and_consumes_event_without_reposting(monkeypatch):
+    Game, MysteryMode = _import_game_modes_extra()
+    mode = MysteryMode.__new__(MysteryMode)
+    mode.card_selection_active = False
+    mode._piece_selection_active = False
+    mode._card_workshop_active = False
+    mode._sniper_overlay_active = False
+    mode._drill_movement_locked = False
+    mode.current_piece = None
+    mode.game_over = False
+    mode.paused = False
+    mode.control_bindings = {'rotate': pygame.K_UP}
+
+    save_calls = []
+    restore_calls = []
+    mode._save_time_capsule = lambda: (save_calls.append(1) or True)
+    mode._restore_time_capsule = lambda: (restore_calls.append(1) or True)
     mode._do_rewind = lambda: False
     mode._open_sniper_overlay = lambda: False
 
@@ -156,5 +215,6 @@ def test_handle_input_r_consumes_event_without_reposting(monkeypatch):
     result = mode.handle_input()
 
     assert result is True
-    assert toggle_calls == [1]
+    assert save_calls == []
+    assert restore_calls == [1]
     assert posted_events == []

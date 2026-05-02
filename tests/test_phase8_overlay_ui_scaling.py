@@ -110,6 +110,7 @@ def _install_extra_mode_ui_test_stubs(monkeypatch):
         bg_color=(12, 16, 24),
     )
     monkeypatch.setattr(extra_modes_module, 'retro_style', retro_style_stub)
+    monkeypatch.setattr(extra_modes_module, 'get_language', lambda: 'xx')
     monkeypatch.setattr(extra_modes_module, 't', lambda key, *args, **kwargs: kwargs.get('default', str(key).replace('_', ' ')))
     monkeypatch.setattr(extra_modes_module.pygame.mouse, 'get_focused', lambda: False)
     monkeypatch.setattr(extra_modes_module.pygame.mouse, 'set_visible', lambda *args, **kwargs: None)

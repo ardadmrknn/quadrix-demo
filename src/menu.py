@@ -5910,6 +5910,7 @@ class ControlSettingsScreen:
             ('card_sniper', t('gp_card_sniper'), 'button'),
             ('card_time_capsule_save', t('gp_card_time_capsule_save'), 'button'),
             ('card_time_capsule_restore', t('gp_card_time_capsule_restore'), 'button'),
+            ('card_freeze', t('gp_card_freeze'), 'button'),
             ('card_phase_shift', t('gp_card_phase_shift'), 'button'),
             ('card_ghost', t('gp_card_ghost'), 'button'),
             ('card_hammer', t('gp_card_hammer'), 'button'),

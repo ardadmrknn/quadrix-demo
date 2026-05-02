@@ -196,6 +196,8 @@ def _make_screen(mod, initial_fullscreen=True):
     screen._display_mode_confirm_target_fullscreen = not initial_fullscreen
     screen._display_mode_confirm_yes_rect = None
     screen._display_mode_confirm_no_rect = None
+    screen._swallow_next_gamepad_click = False
+    screen._swallow_next_gamepad_click_deadline_ms = 0
 
     # fullscreen selector değeri
     screen.fullscreen = initial_fullscreen

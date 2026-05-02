@@ -16,6 +16,23 @@ def _install_settings_module_stubs(monkeypatch):
             self.y = y
             self.width = width
             self.height = height
+            self.left = x
+            self.top = y
+            self.right = x + width
+            self.bottom = y + height
+            self.w = width
+            self.h = height
+            self.size = (width, height)
+
+        def collidepoint(self, pos):
+            px, py = pos
+            return self.left <= px < self.right and self.top <= py < self.bottom
+
+        def copy(self):
+            return Rect(self.x, self.y, self.width, self.height)
+
+        def inflate(self, dx, dy):
+            return Rect(self.x - dx // 2, self.y - dy // 2, self.width + dx, self.height + dy)
 
     pygame_stub.Rect = Rect
     pygame_stub.Surface = type('Surface', (), {})
@@ -41,6 +58,9 @@ def _install_settings_module_stubs(monkeypatch):
     pygame_stub.K_RIGHTBRACKET = 93
     pygame_stub.K_DELETE = 127
     pygame_stub.K_BACKSPACE = 8
+    pygame_stub.K_a = 97
+    pygame_stub.K_c = 99
+    pygame_stub.K_r = 114
     pygame_stub.KMOD_SHIFT = 1
     pygame_stub.SRCALPHA = 65536
     pygame_stub.time = types.SimpleNamespace(get_ticks=lambda: 0)
@@ -132,6 +152,13 @@ def _make_screen_for_playlist_editor(mod, initial_playlist=None):
     screen._playlist_edit_picker_scroll = 0
     screen._playlist_edit_item_rects = []
     screen._playlist_edit_picker_rects = []
+    screen._swallow_next_keydown = False
+    screen._swallow_next_gamepad_click = False
+    screen._swallow_next_gamepad_click_deadline_ms = 0
+    screen._campaign_phase_select_active = False
+    screen._display_mode_confirm_active = False
+    screen._vsync_prompt_active = False
+    screen._waiting_for_key = False
 
     screen._track_options = [
         {'label': 'Track 1', 'value': 'track1'},
@@ -212,6 +239,8 @@ def test_handle_input_playlist_edit_guard_calls_only_playlist_handler(monkeypatc
     screen = mod.TabbedSettingsScreen.__new__(mod.TabbedSettingsScreen)
 
     screen._swallow_next_keydown = False
+    screen._swallow_next_gamepad_click = False
+    screen._swallow_next_gamepad_click_deadline_ms = 0
     screen._campaign_phase_select_active = False
     screen._playlist_edit_active = True
     screen._music_picker_open = True

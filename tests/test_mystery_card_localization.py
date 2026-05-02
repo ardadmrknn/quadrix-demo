@@ -192,6 +192,7 @@ def test_mystery_sync_active_cards_localizes_freeze_drop_status_and_marks_ready(
         mode._freeze_drop_charges = 3
         mode._freeze_drop_active = False
         mode._freeze_drop_timer = 0.0
+        mode._freeze_drop_duration = 15
         mode._sniper_charges = 0
         mode.time_capsule_available = False
         mode.time_capsule_saved = False
@@ -201,7 +202,76 @@ def test_mystery_sync_active_cards_localizes_freeze_drop_status_and_marks_ready(
         mode._sync_active_cards()
 
         freeze_card = next(card for card in mode.card_manager.active_cards if card['id'] == 'freeze_drop')
+        assert freeze_card['title'] == 'Final Drop'
+        assert freeze_card['description'] == '3 uses: Press F to freeze the piece for 15s. Only left-right movement and hard drop remain active.'
         assert freeze_card['status'] == 'F: 3 Uses'
         assert freeze_card['status_state'] == 'hazir'
+    finally:
+        set_language(previous_language)
+
+
+def test_mystery_sync_active_cards_localizes_time_capsule_and_perk_panel_copy(monkeypatch):
+    previous_language = get_language()
+    try:
+        assert set_language('en') is True
+        monkeypatch.setattr('game_modes_extra.get_gamepad_manager', lambda: SimpleNamespace(is_connected=lambda: False))
+
+        mode = MysteryMode.__new__(MysteryMode)
+        mode._active_effect_visuals = {
+            'time_capsule': {
+                'title': 'Zaman Kapsülü',
+                'color': (180, 220, 255),
+                'icon': '*',
+                'tag': 'Legendary',
+                'rarity': 'legendary',
+                'style': {},
+                'icon_image': None,
+            }
+        }
+        mode.card_manager = SimpleNamespace(catalog=[], force_piece_queue=[], active_cards=[])
+        mode.perk_manager = SimpleNamespace(
+            is_active=lambda key: key == 'second_pocket',
+            get_multiplier=lambda: 1.0,
+            rewind_uses=0,
+        )
+        mode._remember_effect_visual = lambda *args, **kwargs: None
+        mode.current_piece = SimpleNamespace(tunnel=False, drill=False)
+        mode.speed_effect_timer = 0
+        mode._speed_burst_timer = 0
+        mode._speed_burst_line_mult = 1.5
+        mode._line_clear_multiplier_remaining = 0
+        mode._line_clear_multiplier_value = 1.0
+        mode.line_bonus_remaining = 0
+        mode.line_bonus_amount = 0
+        mode.combo_aura_timer = 0
+        mode.combo_aura_bonus = 0
+        mode._score_multiplier_timer = 0.0
+        mode._score_multiplier_value = 1.0
+        mode._armed_nova_clusters = 0
+        mode.tunnel_charges_remaining = 0
+        mode.hammer_charges_remaining = 0
+        mode.bomb_master_charges = 0
+        mode._hold_destroyer_charges = 0
+        mode._freeze_drop_charges = 0
+        mode._freeze_drop_active = False
+        mode._freeze_drop_timer = 0.0
+        mode._freeze_drop_duration = 6
+        mode._sniper_charges = 0
+        mode.time_capsule_available = True
+        mode.time_capsule_saved = False
+        mode.gravity_freeze_timer = 0
+        mode.phase_shift_uses_remaining = 0
+
+        mode._sync_active_cards()
+
+        time_capsule = next(card for card in mode.card_manager.active_cards if card['id'] == 'time_capsule')
+        second_pocket = next(card for card in mode.card_manager.active_cards if card['id'] == 'perk_second_pocket')
+
+        assert time_capsule['title'] == 'Time Capsule'
+        assert time_capsule['description'] == 'T: Save the current board state.'
+        assert time_capsule['status'] == 'T'
+        assert second_pocket['title'] == 'Extra Pocket'
+        assert second_pocket['description'] == 'PERK: Press V to store a second piece.'
+        assert second_pocket['tag'] == 'Perk'
     finally:
         set_language(previous_language)

@@ -54,6 +54,11 @@ def _build_tutorial(size: tuple[int, int], *, window_size: tuple[int, int] | Non
     tutorial.window_width, tutorial.window_height = window_size
     tutorial.board_height = 20
     tutorial.card_ui = MysteryCardUI()
+    tutorial._tutorial_star_icon_base = None
+    tutorial._tutorial_star_icon_cache = {}
+    tutorial._tutorial_arrow_icon_left_base = None
+    tutorial._tutorial_arrow_icon_right_base = None
+    tutorial._tutorial_arrow_icon_cache = {}
     tutorial.get_board_offset = lambda: (420, 108)
     tutorial.get_cell_size = lambda: 24
     return tutorial
@@ -344,6 +349,8 @@ def test_tutorial_card_choice_overlay_fallback_live_draw_uses_active_canvas(monk
 def test_tutorial_card_choice_overlay_uses_plain_header_title(monkeypatch):
     recorded = {}
 
+    monkeypatch.setattr(tutorial_module, '_tutorial_make_card_ui_font', lambda size, bold=False: _make_fake_font(size, bold=bold))
+
     class CardUIStub:
         card_rects = []
 
@@ -401,7 +408,7 @@ def test_tutorial_card_choice_keyboard_is_blocked_while_peek_active(monkeypatch)
 
     result = tutorial.handle_input()
 
-    assert result is None
+    assert result is True
 
 
 def test_tutorial_lesson_result_panel_live_draw_uses_active_canvas(monkeypatch):

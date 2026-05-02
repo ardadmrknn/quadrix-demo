@@ -484,6 +484,19 @@ class _FakeSettingsManager:
         pass
 
 
+class _FakeUserManager:
+    """Test için minimal co-op progress taşıyıcısı."""
+
+    def __init__(self):
+        self._coop_campaign_progress = {}
+
+    def get_coop_campaign_progress(self, username=None):
+        return self._coop_campaign_progress
+
+    def save_coop_campaign_progress(self, progress, username=None):
+        self._coop_campaign_progress = dict(progress or {})
+
+
 def test_campaign_mode_import():
     """CoopCampaignMode import edilebilmeli."""
     from campaign.coop_campaign_mode import CoopCampaignMode
@@ -554,16 +567,18 @@ def test_save_and_load_progress():
     """Progress kaydetme ve yükleme."""
     from campaign.coop_campaign_mode import CoopCampaignMode
     sm = _FakeSettingsManager()
+    um = _FakeUserManager()
 
     mode = object.__new__(CoopCampaignMode)
     mode.settings_manager = sm
+    mode.user_manager = um
     mode.current_level_num = 1
     mode.earned_stars = 2
     mode.team_score = 1500
 
     mode._save_progress()
 
-    progress = CoopCampaignMode.load_progress(sm)
+    progress = CoopCampaignMode.load_progress(um)
     assert '1' in progress.get('completed_levels', {})
     assert progress['completed_levels']['1']['stars'] == 2
     assert progress['completed_levels']['1']['best_score'] == 1500
@@ -575,10 +590,12 @@ def test_save_progress_best_score_preserved():
     """Daha düşük skorlu yeni tamamlama eski best_score'u korumalı."""
     from campaign.coop_campaign_mode import CoopCampaignMode
     sm = _FakeSettingsManager()
+    um = _FakeUserManager()
 
     # İlk tamamlama — yüksek skor
     mode1 = object.__new__(CoopCampaignMode)
     mode1.settings_manager = sm
+    mode1.user_manager = um
     mode1.current_level_num = 1
     mode1.earned_stars = 3
     mode1.team_score = 3000
@@ -587,12 +604,13 @@ def test_save_progress_best_score_preserved():
     # İkinci tamamlama — düşük skor
     mode2 = object.__new__(CoopCampaignMode)
     mode2.settings_manager = sm
+    mode2.user_manager = um
     mode2.current_level_num = 1
     mode2.earned_stars = 1
     mode2.team_score = 500
     mode2._save_progress()
 
-    progress = CoopCampaignMode.load_progress(sm)
+    progress = CoopCampaignMode.load_progress(um)
     lvl = progress['completed_levels']['1']
     assert lvl['best_score'] == 3000  # Eski yüksek skor korunmalı
     assert lvl['stars'] == 3  # Eski yüksek yıldız korunmalı
@@ -653,11 +671,12 @@ def test_level_select_unlocking():
 def test_level_select_unlocking_with_progress():
     from campaign.coop_level_select import CoopLevelSelect
     sm = _FakeSettingsManager()
-    sm.set('coop_campaign_progress', {
+    um = _FakeUserManager()
+    um.save_coop_campaign_progress({
         'completed_levels': {'1': {'completed': True, 'stars': 1}},
         'highest_level': 1,
     })
-    sel = CoopLevelSelect(screen=_Surf(), settings_manager=sm)
+    sel = CoopLevelSelect(screen=_Surf(), settings_manager=sm, user_manager=um)
     assert sel._is_level_unlocked(1)
     assert sel._is_level_unlocked(2)
     assert not sel._is_level_unlocked(3)
@@ -665,10 +684,11 @@ def test_level_select_unlocking_with_progress():
 def test_level_select_stars():
     from campaign.coop_level_select import CoopLevelSelect
     sm = _FakeSettingsManager()
-    sm.set('coop_campaign_progress', {
+    um = _FakeUserManager()
+    um.save_coop_campaign_progress({
         'completed_levels': {'2': {'completed': True, 'stars': 3}},
     })
-    sel = CoopLevelSelect(screen=_Surf(), settings_manager=sm)
+    sel = CoopLevelSelect(screen=_Surf(), settings_manager=sm, user_manager=um)
     assert sel._get_level_stars(2) == 3
     assert sel._get_level_stars(1) == 0  # tamamlanmamış
 

@@ -3672,6 +3672,34 @@ class OnlinePvPGame:
             self.create_particles(150, center_x, center_y, extra_colors, speed=10)
             self.trigger_screen_shake(intensity=15, duration=20 / 60.0)
 
+    def _reset_line_clear_feedback_state(self, is_opponent: bool = False) -> None:
+        if is_opponent:
+            self.opp_line_flash_rows = []
+            self.opp_line_flash_timer = 0
+            self.opp_line_glow_alpha = 0
+            self.opp_wave_effects = []
+            self.opp_line_sweep_rows = []
+            self.opp_line_sweep_progress = 0.0
+            self.opp_line_sweep_active = False
+            self.opp_falling_block_animations = []
+        else:
+            self.my_line_flash_rows = []
+            self.my_line_flash_timer = 0
+            self.my_line_glow_alpha = 0
+            self.my_wave_effects = []
+            self.my_line_sweep_rows = []
+            self.my_line_sweep_progress = 0.0
+            self.my_line_sweep_active = False
+            self.my_falling_block_animations = []
+
+    def _safe_trigger_line_clear_feedback(self, rows, board_x, board_y, cell_size, board, is_opponent=False):
+        try:
+            self._trigger_line_clear_feedback(rows, board_x, board_y, cell_size, board, is_opponent=is_opponent)
+        except Exception as exc:
+            side = 'opponent' if is_opponent else 'local'
+            print(f"[OnlinePvP] line clear feedback hatasi ({side}) atlandi: {exc}")
+            self._reset_line_clear_feedback_state(is_opponent=is_opponent)
+
     # ============================================================
     #  ÇÖP SATIR MEKANİĞİ
     # ============================================================
@@ -4452,7 +4480,7 @@ class OnlinePvPGame:
                     self.my_combo_message_time = 90
             if self.my_board.last_cleared_lines and self.effects_enabled and my_board_rect:
                 cell_size = my_board_rect.width // BOARD_WIDTH
-                self._trigger_line_clear_feedback(
+                self._safe_trigger_line_clear_feedback(
                     list(self.my_board.last_cleared_lines),
                     my_board_rect.x,
                     my_board_rect.y,
@@ -6390,7 +6418,7 @@ class OnlinePvPGame:
         skin = self.mode_skin
 
         if self._pending_opp_particle_rows:
-            self._trigger_line_clear_feedback(
+            self._safe_trigger_line_clear_feedback(
                 list(self._pending_opp_particle_rows),
                 x,
                 y,

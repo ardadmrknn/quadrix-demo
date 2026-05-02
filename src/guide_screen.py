@@ -274,7 +274,7 @@ CARD_DATA = [
         'name_key': 'card_hold_destroyer_title',
         'desc_key': 'card_hold_destroyer_desc',
         'name_fallback': 'Tuttuğunu Koparan',
-        'desc_fallback': 'B tuşu ile hold parçasını silme hakkı verir (kart seviyesine göre 1-5 hak).',
+        'desc_fallback': 'Kart seviyesine göre 1-5 kez saklanan parçayı silme hakkı verir.',
         'icon': 'icon_hold_destroyer.png',
         'rarity': 'legendary',
         'color': (210, 210, 220),
@@ -1006,7 +1006,13 @@ class GuideScreen:
             # Açıklama - BÜYÜK (Oyun Modları gibi)
             desc_font = self._font(16, bold=False, minimum=11, scale=scale)
             desc_key = card.get('desc_key', '')
-            desc_text = t(desc_key, button=_guide_action_label('hold2', 'V')) if desc_key else ''
+            desc_kwargs = {'button': _guide_action_label('hold2', 'V')}
+            if card.get('id') == 'hold_destroyer':
+                desc_kwargs = {
+                    'button': _guide_action_label('discard_held', 'B'),
+                    'value': '1-5',
+                }
+            desc_text = t(desc_key, **desc_kwargs) if desc_key else ''
             if not desc_text or desc_text == desc_key:
                 desc_text = card.get('desc_fallback') or f"{card['id']} kartı."
             if card.get('id') == 'perk_second_pocket' and '{button}' not in desc_text:

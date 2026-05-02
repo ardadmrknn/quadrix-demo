@@ -8,6 +8,27 @@ import os
 import sys
 import types
 
+
+_PATCHED_MODULE_NAMES = [
+    "pygame",
+    "pygame.font",
+    "retro_style",
+    "ui_theme",
+    "localization",
+    "background",
+    "constants",
+    "ui_language_profile",
+]
+_ORIGINAL_MODULES = {name: sys.modules.get(name) for name in _PATCHED_MODULE_NAMES}
+
+
+def _restore_patched_modules():
+    for name, module in _ORIGINAL_MODULES.items():
+        if module is None:
+            sys.modules.pop(name, None)
+        else:
+            sys.modules[name] = module
+
 # Env izolasyonu
 os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
 os.environ.setdefault("SDL_AUDIODRIVER", "dummy")
@@ -26,13 +47,12 @@ pygame_stub.font.Font = lambda path, size: types.SimpleNamespace(
     get_linesize=lambda: size,
 )
 pygame_stub.font.SysFont = lambda *a, **k: pygame_stub.font.Font(None, 24)
-sys.modules.setdefault("pygame", pygame_stub)
-sys.modules.setdefault("pygame.font", pygame_stub.font)
+sys.modules["pygame"] = pygame_stub
+sys.modules["pygame.font"] = pygame_stub.font
 
 # Diğer bağımlılık stub'ları
 for mod_name in ["retro_style", "ui_theme", "localization", "background", "constants"]:
-    if mod_name not in sys.modules:
-        sys.modules[mod_name] = types.ModuleType(mod_name)
+    sys.modules[mod_name] = types.ModuleType(mod_name)
 
 rs_stub = sys.modules["retro_style"]
 rs_stub.retro_style = types.SimpleNamespace(
@@ -48,6 +68,8 @@ if sys.modules.get("ui_language_profile"):
     del sys.modules["ui_language_profile"]
 
 import ui_language_profile
+
+_restore_patched_modules()
 
 
 def test_ru_not_in_profile():

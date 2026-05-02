@@ -72,6 +72,7 @@ DEFAULT_CONTROLS = {
         'card_sniper': {'primary': -1, 'secondary': -1},
         'card_time_capsule_save': {'primary': -1, 'secondary': -1},
         'card_time_capsule_restore': {'primary': -1, 'secondary': -1},
+        'card_freeze': {'primary': 1, 'secondary': -1},
         'card_phase_shift': {'primary': -1, 'secondary': -1},
         'card_ghost': {'primary': -1, 'secondary': -1},
         'card_hammer': {'primary': -1, 'secondary': -1},

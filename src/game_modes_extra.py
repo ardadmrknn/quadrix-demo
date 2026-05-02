@@ -215,6 +215,8 @@ def _build_card_format_context(card_or_id: Dict[str, Any] | str, value: Any = No
 
     if localization_id == 'perk_second_pocket':
         context['button'] = _prompt_action_text('hold2', 'V')
+    elif localization_id == 'hold_destroyer':
+        context['button'] = _prompt_action_text('discard_held', 'B')
 
     return context
 
@@ -1221,7 +1223,7 @@ class MysteryCardManager:
                 "title": "Tuttuğunu Koparan",
                 "base": 1,
                 "value_range": (1, 1),
-                "description": "{value} hak: Saklanan parçayı silme gücü! B tuşuyla kullan.",
+                "description": "{value} hak: Saklanan parçayı silme gücü! {button} ile kullan.",
                 "color": (200, 200, 210),
                 "bg": (30, 30, 35),
                 "icon": "X",
@@ -1245,7 +1247,7 @@ class MysteryCardManager:
                 "title": "Tuttuğunu Koparan",
                 "base": 2,
                 "value_range": (2, 2),
-                "description": "{value} hak: Saklanan parçayı silme gücü! B tuşuyla kullan.",
+                "description": "{value} hak: Saklanan parçayı silme gücü! {button} ile kullan.",
                 "color": (100, 230, 150),
                 "bg": (12, 36, 22),
                 "icon": "X",
@@ -1269,7 +1271,7 @@ class MysteryCardManager:
                 "title": "Tuttuğunu Koparan",
                 "base": 3,
                 "value_range": (3, 3),
-                "description": "{value} hak: Saklanan parçayı silme gücü! B tuşuyla kullan.",
+                "description": "{value} hak: Saklanan parçayı silme gücü! {button} ile kullan.",
                 "color": (80, 170, 255),
                 "bg": (10, 20, 40),
                 "icon": "X",
@@ -1293,7 +1295,7 @@ class MysteryCardManager:
                 "title": "Tuttuğunu Koparan",
                 "base": 4,
                 "value_range": (4, 4),
-                "description": "{value} hak: Saklanan parçayı silme gücü! B tuşuyla kullan.",
+                "description": "{value} hak: Saklanan parçayı silme gücü! {button} ile kullan.",
                 "color": (200, 100, 255),
                 "bg": (30, 12, 50),
                 "icon": "X",
@@ -1317,7 +1319,7 @@ class MysteryCardManager:
                 "title": "Tuttuğunu Koparan",
                 "base": 5,
                 "value_range": (5, 5),
-                "description": "{value} hak: Saklanan parçayı silme gücü! B tuşuyla kullan.",
+                "description": "{value} hak: Saklanan parçayı silme gücü! {button} ile kullan.",
                 "color": (255, 200, 60),
                 "bg": (50, 35, 8),
                 "icon": "X",
@@ -6830,12 +6832,15 @@ class MysteryMode(Game):
             if self._try_open_debug_workshop_from_key(event):
                 continue
 
-            # R tuşu: Zaman Kapsulu toggle (ilk basış kaydet, ikinci basış geri yükle)
-            if event.type == pg.KEYDOWN and event.key == pg.K_r:
+            # T: kaydet, R: geri yükle. Event tüketilir; base game restart yoluna düşmez.
+            if event.type == pg.KEYDOWN and event.key in (pg.K_t, pg.K_r):
                 if not self.game_over and not self.paused and not self.card_selection_active:
-                    if self._toggle_time_capsule():
-                        time_capsule_keyboard_handled = True
-                        continue
+                    if event.key == pg.K_t:
+                        self._save_time_capsule()
+                    else:
+                        self._restore_time_capsule()
+                    time_capsule_keyboard_handled = True
+                    continue
             
             # B tuşunu yut - MysteryMode B'yi kendi update() metodunda yönetiyor
             if event.type == pg.KEYDOWN and event.key == pg.K_b:
@@ -6861,14 +6866,13 @@ class MysteryMode(Game):
                 from gamepad_manager import get_gamepad_manager
                 _gpm = get_gamepad_manager()
                 if _gpm and _gpm.enabled:
-                    # Zaman Kapsulu Toggle: save/restore actionlarından biri tetiklenirse tek akış çalışır
+                    # Zaman Kapsulu: save ve restore action'lari ayri ayri ele alinir.
                     if not self.card_selection_active and not time_capsule_keyboard_handled:
-                        tc_pressed = (
-                            _gpm.was_action_just_pressed('card_time_capsule_save')
-                            or _gpm.was_action_just_pressed('card_time_capsule_restore')
-                        )
-                        if tc_pressed:
-                            self._toggle_time_capsule()
+                        if _gpm.was_action_just_pressed('card_time_capsule_save'):
+                            self._save_time_capsule()
+                            return True
+                        if _gpm.was_action_just_pressed('card_time_capsule_restore'):
+                            self._restore_time_capsule()
                             return True
             except Exception:
                 pass
@@ -8742,7 +8746,13 @@ class MysteryMode(Game):
             self.discard_held_uses = int(getattr(self, '_hold_destroyer_charges', charges))
             try:
                 total = int(getattr(self, '_hold_destroyer_charges', charges))
-                self._set_localized_card_message('mystery_msg_hold_destroyer_ready', 1.5, 'Tuttugunu Koparan! B ile hold sil ({total} hak)', total=total)
+                self._set_localized_card_message(
+                    'mystery_msg_hold_destroyer_ready',
+                    1.5,
+                    'Tuttugunu Koparan! {button} ile hold sil ({total} hak)',
+                    total=total,
+                    button=_prompt_action_text('discard_held', 'B'),
+                )
             except Exception:
                 pass
             try:
@@ -8874,13 +8884,144 @@ class MysteryMode(Game):
 
     # === ZAMAN KAPSULU YARDIMCI METODLARI ===
     def _toggle_time_capsule(self) -> bool:
-        """R tuşu ile zaman kapsülünü toggle et: önce kaydet, sonra geri yükle."""
+        """Legacy toggle helper: önce kaydet, sonra geri yükle."""
         if not getattr(self, 'time_capsule_saved', False):
             return self._save_time_capsule()
         return self._restore_time_capsule()
 
+    def _capture_time_capsule_state(self) -> dict[str, Any]:
+        import copy
+
+        def snapshot(value: Any) -> Any:
+            try:
+                return copy.deepcopy(value)
+            except Exception:
+                return value
+
+        board_attrs = (
+            'grid',
+            'occupancy',
+            'texture_grid',
+            'gold',
+            'owners',
+            'score',
+            'lines_cleared',
+            'level_lines_cleared',
+            'level',
+            'combo',
+        )
+        state_attrs = (
+            'current_piece',
+            'next_piece_queue',
+            'held_piece',
+            'can_hold',
+            'energy',
+            'fall_speed',
+            'time_warp_timer',
+            '_timewarp_old_speed',
+            'gravity_freeze_timer',
+            'speed_effect_timer',
+            'speed_effect_multiplier',
+            'combo_aura_timer',
+            'combo_aura_bonus',
+            '_score_multiplier_timer',
+            '_score_multiplier_value',
+            'line_bonus_remaining',
+            'line_bonus_amount',
+            '_line_clear_multiplier_remaining',
+            '_line_clear_multiplier_value',
+            'tunnel_charges_remaining',
+            'hammer_charges_remaining',
+            'bomb_master_charges',
+            '_hold_destroyer_charges',
+            'discard_held_uses',
+            '_freeze_drop_charges',
+            '_freeze_drop_active',
+            '_freeze_drop_timer',
+            '_sniper_charges',
+            'phase_shift_uses_remaining',
+            '_armed_nova_clusters',
+            'last_enqueued_level',
+        )
+
+        data: dict[str, Any] = {}
+        for attr in board_attrs:
+            if hasattr(self.board, attr):
+                data[f'board_{attr}'] = snapshot(getattr(self.board, attr))
+        for attr in state_attrs:
+            if hasattr(self, attr):
+                data[attr] = snapshot(getattr(self, attr))
+
+        card_manager = getattr(self, 'card_manager', None)
+        if card_manager is not None and hasattr(card_manager, 'force_piece_queue'):
+            data['card_manager_force_piece_queue'] = snapshot(card_manager.force_piece_queue)
+
+        return data
+
+    def _restore_time_capsule_state(self, data: dict[str, Any]) -> None:
+        board_attrs = (
+            'grid',
+            'occupancy',
+            'texture_grid',
+            'gold',
+            'owners',
+            'score',
+            'lines_cleared',
+            'level_lines_cleared',
+            'level',
+            'combo',
+        )
+        for attr in board_attrs:
+            key = f'board_{attr}'
+            if key in data and hasattr(self.board, attr):
+                setattr(self.board, attr, data[key])
+
+        state_attrs = (
+            'current_piece',
+            'next_piece_queue',
+            'held_piece',
+            'can_hold',
+            'energy',
+            'fall_speed',
+            'time_warp_timer',
+            '_timewarp_old_speed',
+            'gravity_freeze_timer',
+            'speed_effect_timer',
+            'speed_effect_multiplier',
+            'combo_aura_timer',
+            'combo_aura_bonus',
+            '_score_multiplier_timer',
+            '_score_multiplier_value',
+            'line_bonus_remaining',
+            'line_bonus_amount',
+            '_line_clear_multiplier_remaining',
+            '_line_clear_multiplier_value',
+            'tunnel_charges_remaining',
+            'hammer_charges_remaining',
+            'bomb_master_charges',
+            '_hold_destroyer_charges',
+            'discard_held_uses',
+            '_freeze_drop_charges',
+            '_freeze_drop_active',
+            '_freeze_drop_timer',
+            '_sniper_charges',
+            'phase_shift_uses_remaining',
+            '_armed_nova_clusters',
+            'last_enqueued_level',
+        )
+        for attr in state_attrs:
+            if attr in data:
+                setattr(self, attr, data[attr])
+
+        card_manager = getattr(self, 'card_manager', None)
+        if card_manager is not None and 'card_manager_force_piece_queue' in data:
+            try:
+                card_manager.force_piece_queue = data['card_manager_force_piece_queue']
+            except Exception:
+                pass
+
     def _save_time_capsule(self) -> bool:
-        """R tuşunun ilk basışında mevcut oyun durumunu kaydet."""
+        """Mevcut oyun durumunu zaman kapsülüne kaydet."""
         if not getattr(self, 'time_capsule_available', False):
             try:
                 self._set_localized_card_message('mystery_msg_time_capsule_unavailable', 0.8, 'Zaman Kapsulu yok!')
@@ -8889,19 +9030,11 @@ class MysteryMode(Game):
             return False
         
         try:
-            # Mevcut oyun durumunu kaydet
-            import copy
-            self.time_capsule_data = {
-                'board_grid': copy.deepcopy(self.board.grid),
-                'board_occupancy': copy.deepcopy(self.board.occupancy),
-                'board_texture_grid': copy.deepcopy(self.board.texture_grid),
-                'board_gold': copy.deepcopy(self.board.gold),
-                'board_owners': copy.deepcopy(self.board.owners),
-            }
+            self.time_capsule_data = self._capture_time_capsule_state()
             self.time_capsule_saved = True
             
             try:
-                self._set_localized_card_message('mystery_msg_time_capsule_saved', 2.0, 'Zaman Kapsulu kaydedildi! R ile geri don.')
+                self._set_localized_card_message('mystery_msg_time_capsule_saved', 2.0, 'Zaman Kapsulu kaydedildi! R ile geri yukle.')
             except Exception:
                 pass
             
@@ -8923,7 +9056,7 @@ class MysteryMode(Game):
             return False
     
     def _restore_time_capsule(self) -> bool:
-        """R tuşunun ikinci basışında kaydedilen duruma geri don."""
+        """Kaydedilen zaman kapsülü durumunu geri yükle."""
         if not getattr(self, 'time_capsule_available', False):
             try:
                 self._set_localized_card_message('mystery_msg_time_capsule_unavailable', 0.8, 'Zaman Kapsulu yok!')
@@ -8933,20 +9066,14 @@ class MysteryMode(Game):
         
         if not getattr(self, 'time_capsule_saved', False) or not self.time_capsule_data:
             try:
-                self._set_localized_card_message('mystery_msg_time_capsule_no_snapshot', 1.5, 'Kaydedilmis durum yok! Once R ile kaydet.')
+                self._set_localized_card_message('mystery_msg_time_capsule_no_snapshot', 1.5, 'Kaydedilmis durum yok! Once T ile kaydet.')
             except Exception:
                 pass
             return False
         
         try:
-            # Kaydedilen durumu geri yukle
             data = self.time_capsule_data
-            
-            self.board.grid = data['board_grid']
-            self.board.occupancy = data['board_occupancy']
-            self.board.texture_grid = data['board_texture_grid']
-            self.board.gold = data['board_gold']
-            self.board.owners = data['board_owners']
+            self._restore_time_capsule_state(data)
             
             # Zaman kapsulunu tüket (tek kullanım)
             self.time_capsule_available = False
@@ -9128,6 +9255,29 @@ class MysteryMode(Game):
                 return _prompt_action_text(gp_action, keyboard_label)
             return keyboard_label
 
+        active_label = self._localized_card_text('mystery_status_active', 'Active')
+        gold_label = self._localized_card_text('mystery_status_gold', 'Gold')
+        effect_tag = self._localized_card_text('mystery_active_tag_effect', 'Effect')
+        perk_tag = self._localized_card_text('mystery_active_tag_perk', 'Perk')
+
+        def _card_localized_description(
+            card_id: str,
+            *,
+            value: Any = None,
+            fallback: str = '',
+            payload: Dict[str, Any] | None = None,
+            **extra: Any,
+        ) -> str:
+            card_data: Dict[str, Any] = {'id': card_id}
+            if value is not None:
+                card_data['value'] = value
+            if payload:
+                card_data['payload'] = payload
+            for key, raw_value in extra.items():
+                if raw_value is not None:
+                    card_data[key] = raw_value
+            return get_card_description(card_data, value, fallback)
+
         cards: List[Dict] = []
 
         def add(effect_id: str, description: str, status: str = "", *, status_state: str = "") -> None:
@@ -9136,13 +9286,13 @@ class MysteryMode(Game):
                 return
             entry = {
                 "id": effect_id,
-                "title": viz["title"],
+                "title": get_card_title(effect_id, viz["title"]),
                 "description": description,
                 "status": status,  # New compact status field
                 "status_state": status_state,
                 "color": viz["color"],
                 "icon": viz.get("icon", "*"),
-                "tag": viz.get("tag", "Etki"),
+                "tag": viz.get("tag", effect_tag),
                 "rarity": viz.get("rarity", "common"),
                 "style": viz.get("style", {}),
                 "icon_image": viz.get("icon_image"),
@@ -9152,7 +9302,11 @@ class MysteryMode(Game):
             cards.append(entry)
 
         if self.speed_effect_timer > 0:
-            add("time_slow", f"{self.speed_effect_timer:.1f} sn boyunca düşüş yavaş.", status=f"{self.speed_effect_timer:.1f}s")
+            add(
+                "time_slow",
+                _card_localized_description('time_slow', value=round(float(self.speed_effect_timer), 1)),
+                status=f"{self.speed_effect_timer:.1f}s",
+            )
         else:
             self._active_effect_visuals.pop("time_slow", None)
 
@@ -9168,7 +9322,18 @@ class MysteryMode(Game):
                         self._remember_effect_visual('speed_burst', c)
                 except Exception:
                     pass
-            add("speed_burst", f"{burst_timer:.1f}s: Hızlı Düşüş + {mult}x Puan!", status=f"{burst_timer:.1f}s")
+            add(
+                "speed_burst",
+                _card_localized_description(
+                    'speed_burst',
+                    value=round(float(burst_timer), 1),
+                    payload={
+                        'speed_multiplier': getattr(self, '_speed_burst_speed_mult', 1.0),
+                        'line_multiplier': mult,
+                    },
+                ),
+                status=f"{burst_timer:.1f}s",
+            )
         else:
             self._active_effect_visuals.pop("speed_burst", None)
 
@@ -9176,24 +9341,64 @@ class MysteryMode(Game):
         if int(getattr(self, '_line_clear_multiplier_remaining', 0) or 0) > 0 and float(getattr(self, '_line_clear_multiplier_value', 1.0)) > 1.0:
             rem = int(getattr(self, '_line_clear_multiplier_remaining', 0) or 0)
             mult = float(getattr(self, '_line_clear_multiplier_value', 1.0))
-            add("line_bonus", f"Sonraki {rem} satır: {mult:.0f}x PUAN.", status=f"{rem} Satır")
+            add(
+                "line_bonus",
+                self._localized_card_text(
+                    'mystery_active_line_multiplier_desc',
+                    '{multiplier}x points for the next {count} line clears.',
+                    multiplier=f'{mult:g}',
+                    count=rem,
+                ),
+                status=str(rem),
+            )
         elif self.line_bonus_remaining > 0:
-            add("line_bonus", f"Sonraki {self.line_bonus_remaining} satır +{self.line_bonus_amount} puan.", status=f"{self.line_bonus_remaining} Satır")
+            add(
+                "line_bonus",
+                self._localized_card_text(
+                    'mystery_active_line_bonus_flat_desc',
+                    '+{bonus} points for the next {count} line clears.',
+                    bonus=int(self.line_bonus_amount),
+                    count=int(self.line_bonus_remaining),
+                ),
+                status=str(int(self.line_bonus_remaining)),
+            )
         else:
             self._active_effect_visuals.pop("line_bonus", None)
 
         if self.combo_aura_timer > 0:
             bonus = max(0, int(getattr(self, 'combo_aura_bonus', 0) or 0))
             if bonus > 0:
-                add("combo_boost", f"{self.combo_aura_timer:.1f} sn combon korunuyor (+{bonus}).", status=f"{self.combo_aura_timer:.1f}s")
+                add(
+                    "combo_boost",
+                    self._localized_card_text(
+                        'mystery_active_combo_boost_bonus_desc',
+                        'Combo will not reset for {seconds}s (+{bonus}).',
+                        seconds=f'{float(self.combo_aura_timer):.1f}',
+                        bonus=bonus,
+                    ),
+                    status=f"{self.combo_aura_timer:.1f}s",
+                )
             else:
-                add("combo_boost", f"{self.combo_aura_timer:.1f} sn combon korunuyor.", status=f"{self.combo_aura_timer:.1f}s")
+                add(
+                    "combo_boost",
+                    _card_localized_description('combo_boost', value=round(float(self.combo_aura_timer), 1)),
+                    status=f"{self.combo_aura_timer:.1f}s",
+                )
         else:
             self._active_effect_visuals.pop("combo_boost", None)
 
         # Dynamic score window
         if getattr(self, '_score_multiplier_timer', 0.0) > 0 and float(getattr(self, '_score_multiplier_value', 1.0)) > 1.0:
-            add("score", f"{float(self._score_multiplier_timer):.1f} sn: {float(self._score_multiplier_value):.0f}x skor penceresi.", status=f"{float(self._score_multiplier_timer):.1f}s")
+            add(
+                "score",
+                self._localized_card_text(
+                    'mystery_active_score_window_desc',
+                    '{seconds}s of {multiplier}x score multiplier.',
+                    seconds=f'{float(self._score_multiplier_timer):.1f}',
+                    multiplier=f'{float(self._score_multiplier_value):g}',
+                ),
+                status=f"{float(self._score_multiplier_timer):.1f}s",
+            )
         else:
             self._active_effect_visuals.pop("score", None)
 
@@ -9203,15 +9408,21 @@ class MysteryMode(Game):
         except Exception:
             q = []
         if q:
-            preview = ", ".join(str(x) for x in q[:3])
-            suffix = "" if len(q) <= 3 else "..."
-            add("force_piece", f"Sonraki {len(q)} parça: {preview}{suffix}", status=f"{len(q)} Prc")
+            add(
+                "force_piece",
+                _card_localized_description('force_piece', value=len(q)),
+                status=str(len(q)),
+            )
         else:
             self._active_effect_visuals.pop("force_piece", None)
 
         # Armed nova burst
         if int(getattr(self, '_armed_nova_clusters', 0) or 0) > 0:
-            add("nova_burst", f"Armalı Nova: {int(self._armed_nova_clusters)} kilitte 3x3 patlama.", status=f"{int(self._armed_nova_clusters)} Kilit")
+            add(
+                "nova_burst",
+                _card_localized_description('nova_burst', value=int(self._armed_nova_clusters)),
+                status=str(int(self._armed_nova_clusters)),
+            )
         else:
             self._active_effect_visuals.pop("nova_burst", None)
 
@@ -9243,14 +9454,17 @@ class MysteryMode(Game):
             if is_tunneled:
                 add(
                     "quantum_tunneling",
-                    f"Aktif hayalet parça. ({_g_lbl}) Kalan hak: {charges}",
+                    self._localized_card_text(
+                        'mystery_active_quantum_tunneling_active_desc',
+                        'Ghost piece is active. The current piece passes through blocks.',
+                    ),
                     status=self._localized_active_card_uses_status(_g_lbl, charges),
                     status_state='hazir',
                 )
             else:
                 add(
                     "quantum_tunneling",
-                    f"{_g_lbl} ile istediğin parçayı hayalet yap. Kalan hak: {charges}",
+                    _card_localized_description('quantum_tunneling', value=charges),
                     status=self._localized_active_card_uses_status(_g_lbl, charges),
                     status_state='hazir',
                 )
@@ -9277,7 +9491,7 @@ class MysteryMode(Game):
             _h_lbl = _card_key('H', 'card_hammer')
             add(
                 "hammer",
-                f"{_h_lbl} ile mevcut parçayı 1x1 yap. Kalan hak: {h_charges}",
+                _card_localized_description('hammer', value=h_charges),
                 status=self._localized_active_card_uses_status(_h_lbl, h_charges),
                 status_state='hazir',
             )
@@ -9304,7 +9518,7 @@ class MysteryMode(Game):
             _b_lbl = _card_key('M', 'card_bomb')
             add(
                 "bomb_master",
-                f"{_b_lbl} ile mevcut parçayı mini bomba yap. Kalan hak: {b_charges}",
+                _card_localized_description('bomb_master', value=b_charges),
                 status=self._localized_active_card_uses_status(_b_lbl, b_charges),
                 status_state='hazir',
             )
@@ -9331,7 +9545,7 @@ class MysteryMode(Game):
             _b_lbl = _card_key('B', 'discard_held')
             add(
                 "hold_destroyer",
-                f"{_b_lbl} ile saklanan parçayı sil. Kalan hak: {hd_charges}",
+                _card_localized_description('hold_destroyer', value=hd_charges),
                 status=self._localized_active_card_uses_status(_b_lbl, hd_charges),
                 status_state='hazir',
             )
@@ -9361,14 +9575,22 @@ class MysteryMode(Game):
                 fd_timer = getattr(self, '_freeze_drop_timer', 0.0)
                 add(
                     "freeze_drop",
-                    f"❄️ Blok dondu! {fd_timer:.1f}s kaldı. Kalan hak: {fd_charges}",
+                    self._localized_card_text(
+                        'mystery_active_freeze_drop_active_desc',
+                        'The piece is frozen for {seconds}s. Only left-right movement and hard drop remain active.',
+                        seconds=f'{float(fd_timer):.1f}',
+                    ),
                     status=self._localized_active_card_timed_uses_status(fd_timer, fd_charges),
                     status_state='hazir',
                 )
             else:
                 add(
                     "freeze_drop",
-                    f"{_f_lbl} ile bloğu dondur. Kalan hak: {fd_charges}",
+                    _card_localized_description(
+                        'freeze_drop',
+                        value=fd_charges,
+                        freeze_duration=int(getattr(self, '_freeze_drop_duration', 6) or 6),
+                    ),
                     status=self._localized_active_card_uses_status(_f_lbl, fd_charges),
                     status_state='hazir',
                 )
@@ -9381,7 +9603,7 @@ class MysteryMode(Game):
         except Exception:
             is_drill = False
         if is_drill and "laser_drill" in self._active_effect_visuals:
-            add("laser_drill", "Parça delici: temas ettiği blokları siler.", status="Aktif")
+            add("laser_drill", _card_localized_description('laser_drill'), status=active_label)
         else:
             self._active_effect_visuals.pop("laser_drill", None)
         
@@ -9405,14 +9627,14 @@ class MysteryMode(Game):
             _n_lbl = _card_key('N', 'card_sniper')
             add(
                 "sniper_shot",
-                f"{_n_lbl} ile blok sec ve patlat. Kalan hak: {sniper_charges}",
+                _card_localized_description('sniper_shot', value=sniper_charges),
                 status=self._localized_active_card_uses_status(_n_lbl, sniper_charges),
                 status_state='hazir',
             )
         else:
             self._active_effect_visuals.pop("sniper_shot", None)
         
-        # Zaman Kapsulu: R ile toggle (ilk basis kaydet, ikinci basis geri don)
+        # Zaman Kapsulu: T ile kaydet, R ile geri yukle.
         if getattr(self, 'time_capsule_available', False):
             if "time_capsule" not in self._active_effect_visuals:
                 try:
@@ -9426,11 +9648,28 @@ class MysteryMode(Game):
                         pass
             
             if "time_capsule" in self._active_effect_visuals:
+                _t_lbl = _card_key('T', 'card_time_capsule_save')
                 _r_lbl = _card_key('R', 'card_time_capsule_restore')
                 if getattr(self, 'time_capsule_saved', False):
-                    add("time_capsule", f"{_r_lbl}: Geri Don (Kayit Hazir)", status=f"{_r_lbl}: Geri Don")
+                    add(
+                        "time_capsule",
+                        self._localized_card_text(
+                            'mystery_active_time_capsule_restore_desc',
+                            '{label}: Restore the saved board state.',
+                            label=_r_lbl,
+                        ),
+                        status=_r_lbl,
+                    )
                 else:
-                    add("time_capsule", f"{_r_lbl}: Kaydet", status=f"{_r_lbl}: Kaydet")
+                    add(
+                        "time_capsule",
+                        self._localized_card_text(
+                            'mystery_active_time_capsule_save_desc',
+                            '{label}: Save the current board state.',
+                            label=_t_lbl,
+                        ),
+                        status=_t_lbl,
+                    )
         else:
             self._active_effect_visuals.pop("time_capsule", None)
         
@@ -9438,11 +9677,16 @@ class MysteryMode(Game):
         if self.gravity_freeze_timer > 0:
             cards.append({
                 'id': 'gravity_freeze_active',
-                'title': 'Graviteden Muaf',
-                'description': f'{self.gravity_freeze_timer:.1f} sn yerçekimi durdu',
+                'title': self._localized_card_text('mystery_active_gravity_freeze_title', 'Gravity Halt'),
+                'description': self._localized_card_text(
+                    'mystery_active_gravity_freeze_desc',
+                    'Gravity is stopped for {seconds}s.',
+                    seconds=f'{float(self.gravity_freeze_timer):.1f}',
+                ),
                 'color': (120, 220, 255),
                 'icon': 'GF',
-                'tag': 'Aktif',
+                'tag': active_label,
+                'status': f'{float(self.gravity_freeze_timer):.1f}s',
                 'style': {},
             })
 
@@ -9450,7 +9694,15 @@ class MysteryMode(Game):
         if "ghost_echo" in self._active_effect_visuals:
             viz = self._active_effect_visuals.get("ghost_echo")
             rows = int(viz.get("value", viz.get("base", 6)))
-            add("ghost_echo", f"Oyun-sonu olursa üst {rows} satırı temizler.", status=f"{rows} Satır")
+            add(
+                "ghost_echo",
+                self._localized_card_text(
+                    'mystery_active_ghost_echo_desc',
+                    'If the game would end, the top {rows} rows are cleared.',
+                    rows=rows,
+                ),
+                status=str(rows),
+            )
         else:
             self._active_effect_visuals.pop("ghost_echo", None)
         
@@ -9471,36 +9723,36 @@ class MysteryMode(Game):
         # Only truly persistent perks (no usage limits) go here
         perk_defs = {
             'second_pocket': {
-                'title': 'Ekstra Cep',
-                'description': f'{_card_key("V", "hold2")} tuşu ile 2. hold',
+                'title': get_card_title('perk_second_pocket', 'Ekstra Cep'),
+                'description': get_card_description('perk_second_pocket', fallback=f'{_card_key("V", "hold2")} ile ikinci parca sakla.'),
                 'status': f'{_card_key("V", "hold2")}',
                 'color': (200, 200, 255),
                 'icon': '🎒',
-                'tag': 'Perk'
+                'tag': perk_tag
             },
             'chrono_lock': {
-                'title': 'Zaman Durdurucu',
-                'description': 'Her 10 satır = 3 sn yerçekimi durur',
-                'status': 'Aktif',
+                'title': get_card_title('perk_chrono', 'Zaman Durdurucu'),
+                'description': get_card_description('perk_chrono', fallback='PERK: Every 10 lines, gravity stops for 3 seconds.'),
+                'status': active_label,
                 'color': (120, 220, 255),
                 'icon': '⏸️',
-                'tag': 'Perk'
+                'tag': perk_tag
             },
             'synergy_core': {
-                'title': 'Sinerji Bonus',
-                'description': f'Perk başına +10% skor ({self.perk_manager.get_multiplier():.2f}x)',
+                'title': get_card_title('perk_synergy', 'Sinerji Bonus'),
+                'description': get_card_description('perk_synergy', fallback='PERK: +10% score bonus for each active perk.'),
                 'status': f'{getattr(self.perk_manager, "get_multiplier", lambda: 1.0)():.2f}x',
                 'color': (255, 220, 140),
                 'icon': '🔗',
-                'tag': 'Perk'
+                'tag': perk_tag
             },
             'perk_alchemist': {
-                'title': 'Altın Dokunuş',
-                'description': 'Quadrix = rastgele bloklar altına döner',
-                'status': 'Altın',
+                'title': get_card_title('perk_alchemist', 'Altın Dokunuş'),
+                'description': get_card_description('perk_alchemist', fallback='PERK: Clearing 4 lines turns random blocks to gold.'),
+                'status': gold_label,
                 'color': (255, 210, 75),
                 'icon': '✨',
-                'tag': 'Perk'
+                'tag': perk_tag
             },
         }
         
@@ -9550,7 +9802,7 @@ class MysteryMode(Game):
             cards.append({
                 'id': 'rewind_power',
                 'title': get_card_title('rewind_power', 'Geri Sarma'),
-                'description': f'{_card_key("U", "card_rewind")} tuşu ({uses} kalan)',
+                'description': get_card_description('rewind_power', fallback=f'{_card_key("U", "card_rewind")} ile son parcayi geri al.'),
                 'status': self._localized_active_card_uses_status(_card_key("U", "card_rewind"), uses),
                 'status_state': 'hazir',
                 'color': (255, 200, 255),
@@ -9579,7 +9831,7 @@ class MysteryMode(Game):
             cards.append({
                 'id': 'perk_phase',
                 'title': get_card_title('perk_phase', 'Şekil Değiştirici'),
-                'description': f'{_card_key("LSHIFT", "card_phase_shift")} ({phase_uses} kalan)',
+                'description': get_card_description('perk_phase', fallback=f'{_card_key("LSHIFT", "card_phase_shift")} ile sekli aynala.'),
                 'status': self._localized_active_card_uses_status(_card_key("LSHIFT", "card_phase_shift"), phase_uses),
                 'status_state': 'hazir',
                 'color': (255, 200, 255),

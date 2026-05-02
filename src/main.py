@@ -239,6 +239,45 @@ import pygame
 from pathlib import Path
 
 
+def _has_active_profile_session(user_manager, steam_user_set):
+    if steam_user_set:
+        return True
+
+    try:
+        current_user = user_manager.get_current_user()
+    except Exception:
+        current_user = getattr(user_manager, 'current_user', None)
+
+    if not current_user:
+        return False
+
+    try:
+        users = user_manager.get_all_users() or {}
+    except Exception:
+        users = getattr(user_manager, 'users', {}) or {}
+    return current_user in users
+
+
+def _build_user_bound_views(
+    screen,
+    user_manager,
+    steam_mode_scores_loader,
+):
+    achievements_file = user_manager.get_achievements_file()
+    highscores_file = user_manager.get_highscores_file()
+
+    score_manager = ScoreManager(highscores_file)
+    achievement_manager = AchievementManager(achievements_file)
+    highscore_screen = HighScoreScreen(
+        screen,
+        score_manager,
+        user_manager,
+        steam_mode_scores=steam_mode_scores_loader(limit=3),
+    )
+    achievement_screen = AchievementScreen(screen, achievement_manager)
+    return score_manager, achievement_manager, highscore_screen, achievement_screen
+
+
 def resource_path(relative_path: str) -> str:
     """PyInstaller ile derlenen exe için doğru path'i al"""
     try:
@@ -256,6 +295,14 @@ def setup_custom_cursor() -> bool:
         True: Başarıyla ayarlandı
         False: Varsayılan cursor kullanılıyor
     """
+    if sys.platform == 'win32':
+        try:
+            pygame.mouse.set_cursor(pygame.SYSTEM_CURSOR_ARROW)
+        except Exception:
+            pass
+        print("[Cursor] Windows'ta sistem fare imleci kullaniliyor")
+        return False
+
     try:
         cursor_path = resource_path('assets/ui/cursor.png')
         cursor_surface = pygame.image.load(cursor_path).convert_alpha()
@@ -268,6 +315,10 @@ def setup_custom_cursor() -> bool:
         print("[Cursor] Ozel fare imleci yuklendi")
         return True
     except Exception as e:
+        try:
+            pygame.mouse.set_cursor(pygame.SYSTEM_CURSOR_ARROW)
+        except Exception:
+            pass
         print(f"[Cursor] Ozel cursor yuklenemedi, varsayilan kullaniliyor: {e}")
         return False
 
@@ -1292,19 +1343,24 @@ def main():
     # Steam profili seçildiyse menüye direkt git, yoksa kullanıcı yoksa seçim ekranı
     if _steam_user_set:
         state = 'menu'  # Steam otomatik profil — kullanıcı seçimini atla
-    elif not user_manager.has_users():
+    elif not _has_active_profile_session(user_manager, _steam_user_set):
         state = 'user_selection'
     
-    # Kullanıcıya özel dosyalar
-    achievements_file = user_manager.get_achievements_file()
-    highscores_file = user_manager.get_highscores_file()
-    
-    score_manager = ScoreManager(highscores_file)
-    achievement_manager = AchievementManager(achievements_file)
     theme_manager = ThemeManager(settings_manager)
+    score_manager = None
+    achievement_manager = None
+    highscore_screen = None
+    achievement_screen = None
+
+    if _has_active_profile_session(user_manager, _steam_user_set):
+        score_manager, achievement_manager, highscore_screen, achievement_screen = _build_user_bound_views(
+            screen,
+            user_manager,
+            _load_steam_mode_scores,
+        )
 
     # Steam'e daha önce açılmış başarımları geriye dönük senkronla
-    if _steam_init_ok:
+    if _steam_init_ok and achievement_manager is not None:
         try:
             achievement_manager.sync_to_steam()
         except Exception:
@@ -1371,19 +1427,12 @@ def main():
         menu.set_muted(initial_mute_all)
     except Exception:
         pass
-    highscore_screen = HighScoreScreen(
-        screen,
-        score_manager,
-        user_manager,
-        steam_mode_scores=_load_steam_mode_scores(limit=3),
-    )
     settings_screen = TabbedSettingsScreen(screen, theme_manager, settings_manager, menu_sound)
     mode_music_screen = MusicSettingsScreen(screen, settings_manager, menu_sound)
     control_settings_screen = ControlSettingsScreen(screen, settings_manager)
     block_style_screen = BlockStyleSettingsScreen(screen, theme_manager, settings_manager)
     block_workshop_screen = BlockWorkshopScreen(screen, settings_manager, theme_manager)
     piece_workshop_screen = PieceWorkshopScreen(screen, settings_manager, theme_manager)  # Yeni parça atölyesi
-    achievement_screen = AchievementScreen(screen, achievement_manager)
     credits_screen = CreditsScreen(screen)
     extras_screen = ExtrasScreen(screen, user_manager)  # Ekstralar menüsü
     user_selection_screen = UserSelectionScreen(screen, user_manager)
@@ -1540,8 +1589,8 @@ def main():
             print("   Müzik KAPALI (mute_all=True)")
     print("=" * 60)
 
-    # Durum — Steam profili varsa menüye, değilse kullanıcı durumuna göre
-    state = 'menu' if (_steam_user_set or user_manager.has_users()) else 'user_selection'
+    # Durum — Steam profili veya aktif kullanıcı varsa menüye, yoksa kullanıcı seçimine.
+    state = 'menu' if _has_active_profile_session(user_manager, _steam_user_set) else 'user_selection'
     confirm_exit = False
     game = None
     pvp_game = None
@@ -1552,6 +1601,26 @@ def main():
     game_return_state = 'menu'
     block_styles_return_state = 'menu'
     _campaign_needs_refresh = False  # Campaign progress yenileme flag'i
+
+    def _sync_user_bound_state() -> bool:
+        nonlocal score_manager, achievement_manager, highscore_screen, achievement_screen
+        nonlocal _campaign_needs_refresh, _coop_campaign_needs_refresh
+
+        if not _has_active_profile_session(user_manager, _steam_user_set):
+            score_manager = None
+            achievement_manager = None
+            highscore_screen = None
+            achievement_screen = None
+            return False
+
+        score_manager, achievement_manager, highscore_screen, achievement_screen = _build_user_bound_views(
+            screen,
+            user_manager,
+            _load_steam_mode_scores,
+        )
+        _campaign_needs_refresh = True
+        _coop_campaign_needs_refresh = True
+        return True
 
     # Ana menü gizli kısayolları (GTA hileleri gibi).
     cheat_buffer = ''
@@ -3428,24 +3497,16 @@ def main():
     _handle_online_coop._game = None
 
     def _handle_user_selection(delta_ms):
-        nonlocal running, state, score_manager, achievement_manager, highscore_screen, achievement_screen, game
+        nonlocal running, state, game
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
             action = user_selection_screen.handle_input(event)
             if action in ('user_selected', 'new_user_created'):
-                achievements_file = user_manager.get_achievements_file()
-                highscores_file = user_manager.get_highscores_file()
-                score_manager = ScoreManager(highscores_file)
-                achievement_manager = AchievementManager(achievements_file)
-                highscore_screen = HighScoreScreen(
-                    screen,
-                    score_manager,
-                    user_manager,
-                    steam_mode_scores=_load_steam_mode_scores(limit=3),
-                )
-                achievement_screen = AchievementScreen(screen, achievement_manager)
+                if not _sync_user_bound_state():
+                    state = 'user_selection'
+                    continue
                 user_selection_screen.users_list = list(user_manager.get_all_users().keys())
                 state = 'menu'
                 # Yeni kullanıcı oluşturulduğunda tutorial pop-up göster
@@ -3478,31 +3539,22 @@ def main():
                     user_management_screen.open_edit_for(target_user)
                     state = 'user_management'
             elif action == 'back_to_menu':
-                state = 'menu'
+                user_selection_screen.users_list = list(user_manager.get_all_users().keys())
+                state = 'menu' if _sync_user_bound_state() else 'user_selection'
 
         user_selection_screen.update()
         user_selection_screen.draw()
         return True
 
     def _handle_user_management(delta_ms):
-        nonlocal running, state, score_manager, achievement_manager, highscore_screen, achievement_screen
+        nonlocal running, state
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
             action = user_management_screen.handle_input(event)
             if action == 'back':
-                achievements_file = user_manager.get_achievements_file()
-                highscores_file = user_manager.get_highscores_file()
-                score_manager = ScoreManager(highscores_file)
-                achievement_manager = AchievementManager(achievements_file)
-                highscore_screen = HighScoreScreen(
-                    screen,
-                    score_manager,
-                    user_manager,
-                    steam_mode_scores=_load_steam_mode_scores(limit=3),
-                )
-                achievement_screen = AchievementScreen(screen, achievement_manager)
+                _sync_user_bound_state()
                 user_management_screen.users_list = list(user_manager.get_all_users().keys())
                 user_selection_screen.users_list = list(user_manager.get_all_users().keys())
                 state = 'user_selection'
@@ -4047,4 +4099,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

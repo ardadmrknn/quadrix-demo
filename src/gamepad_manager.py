@@ -150,6 +150,7 @@ DEFAULT_GAMEPAD_BINDINGS = {
     'card_sniper': {'button': None},
     'card_time_capsule_save': {'button': None},
     'card_time_capsule_restore': {'button': None},
+    'card_freeze': {'button': 1},
     'card_phase_shift': {'button': None},
     'card_ghost': {'button': None},
     'card_hammer': {'button': None},
@@ -190,6 +191,7 @@ ACTION_TO_KEY = {
     'card_sniper': pygame.K_n,
     'card_time_capsule_save': pygame.K_t,
     'card_time_capsule_restore': pygame.K_r,
+    'card_freeze': pygame.K_f,
     'card_phase_shift': pygame.K_LSHIFT,
     'card_ghost': pygame.K_g,
     'card_hammer': pygame.K_h,
@@ -406,7 +408,7 @@ class GamepadManager:
                 'menu_back', 'menu_confirm', 'menu_tab_next', 'menu_tab_prev',
                 'discard_held', 'lt', 'rt',
                 'card_rewind', 'card_sniper', 'card_time_capsule_save',
-                'card_time_capsule_restore', 'card_phase_shift',
+                'card_time_capsule_restore', 'card_freeze', 'card_phase_shift',
                 'card_ghost', 'card_hammer', 'card_bomb',
             ]
             for action in button_actions:
@@ -1315,7 +1317,7 @@ class GamepadManager:
                 'pause', 'discard_held',
                 'lt', 'rt',
                 'card_rewind', 'card_sniper', 'card_time_capsule_save',
-                'card_time_capsule_restore', 'card_phase_shift',
+                'card_time_capsule_restore', 'card_freeze', 'card_phase_shift',
                 'card_ghost', 'card_hammer', 'card_bomb',
             ]
             button_actions = {}
