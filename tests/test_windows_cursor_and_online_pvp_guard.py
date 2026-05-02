@@ -17,7 +17,45 @@ main_module = importlib.import_module('src.main')
 online_pvp_module = importlib.import_module('online_pvp_game')
 
 
-def test_windows_uses_system_cursor_instead_of_custom_png(monkeypatch):
+def test_windows_loads_custom_cursor_png(monkeypatch):
+    calls = []
+    loaded_paths = []
+    scaled_sizes = []
+    cursor_objects = []
+
+    class _Surface:
+        def convert_alpha(self):
+            return self
+
+    def _load(path):
+        loaded_paths.append(path)
+        return _Surface()
+
+    def _smoothscale(surface, size):
+        scaled_sizes.append(size)
+        return surface
+
+    def _cursor(hotspot, surface):
+        cursor = {'hotspot': hotspot, 'surface': surface}
+        cursor_objects.append(cursor)
+        return cursor
+
+    monkeypatch.setattr(main_module.sys, 'platform', 'win32')
+    monkeypatch.setattr(main_module.pygame.mouse, 'set_cursor', lambda cursor: calls.append(cursor))
+    monkeypatch.setattr(main_module.pygame.image, 'load', _load)
+    monkeypatch.setattr(main_module.pygame.transform, 'smoothscale', _smoothscale)
+    monkeypatch.setattr(main_module.pygame.cursors, 'Cursor', _cursor)
+
+    assert main_module.setup_custom_cursor() is True
+    assert loaded_paths
+    assert pathlib.PurePath(loaded_paths[0]).as_posix().endswith('assets/ui/cursor.png')
+    assert scaled_sizes == [(32, 32)]
+    assert cursor_objects
+    assert cursor_objects[0]['hotspot'] == (4, 4)
+    assert calls == [cursor_objects[0]]
+
+
+def test_windows_cursor_load_failure_falls_back_to_system_cursor(monkeypatch):
     calls = []
 
     monkeypatch.setattr(main_module.sys, 'platform', 'win32')
@@ -25,7 +63,7 @@ def test_windows_uses_system_cursor_instead_of_custom_png(monkeypatch):
     monkeypatch.setattr(
         main_module.pygame.image,
         'load',
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError('custom cursor image should not load on Windows')),
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError('cursor asset unavailable')),
     )
 
     assert main_module.setup_custom_cursor() is False

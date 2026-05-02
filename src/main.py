@@ -295,14 +295,6 @@ def setup_custom_cursor() -> bool:
         True: Başarıyla ayarlandı
         False: Varsayılan cursor kullanılıyor
     """
-    if sys.platform == 'win32':
-        try:
-            pygame.mouse.set_cursor(pygame.SYSTEM_CURSOR_ARROW)
-        except Exception:
-            pass
-        print("[Cursor] Windows'ta sistem fare imleci kullaniliyor")
-        return False
-
     try:
         cursor_path = resource_path('assets/ui/cursor.png')
         cursor_surface = pygame.image.load(cursor_path).convert_alpha()
