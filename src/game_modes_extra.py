@@ -6802,7 +6802,7 @@ class MysteryMode(Game):
         piece = getattr(self, 'current_piece', None)
         is_drill_piece = piece and getattr(piece, 'drill', False)
         time_capsule_keyboard_handled = False
-        pg = sys.modules.get('pygame', pygame)
+        pg = pygame
         
         # Geri Sarma tuşu kontrolü (U tuşu) - normal gameplay sırasında
         try:
@@ -8151,11 +8151,22 @@ class MysteryMode(Game):
         except Exception:
             pass
 
-        # Keep card progress in sync (selection opening is still driven by level-up)
+        # Keep card progress in sync. External clears can reach the reward threshold
+        # without a board level delta, so open the selection immediately when a
+        # populated pending choice set exists but no queued level-up was enqueued.
+        threshold_triggered = False
         try:
-            self.card_manager.notify_lines_cleared(cleared)
+            threshold_triggered = bool(self.card_manager.notify_lines_cleared(cleared))
         except Exception:
             pass
+        if threshold_triggered and not getattr(self, 'card_selection_active', False):
+            try:
+                pending_choices = bool(getattr(self.card_manager, 'pending_choices', []) or [])
+                queued_rewards = int(getattr(self, 'pending_level_ups', 0) or 0)
+                if pending_choices and queued_rewards <= 0 and not getattr(self, 'game_over', False) and not getattr(self, 'paused', False):
+                    self._open_card_selection()
+            except Exception:
+                pass
 
         # Perk manager per-line triggers
         try:

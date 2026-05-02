@@ -143,6 +143,14 @@ class CoopLevelSelect:
     # ------------------------------------------------------------------
 
     def draw(self) -> None:
+        try:
+            width, height = self.screen.get_size()
+        except Exception:
+            width, height = self.window_width, self.window_height
+        if width != self.window_width or height != self.window_height:
+            self.window_width = width
+            self.window_height = height
+
         w, h = self.window_width, self.window_height
         self.screen.fill(UIColors.BG_DARK)
         scale = self._ui_scale()

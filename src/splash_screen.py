@@ -205,6 +205,8 @@ class SplashScreen:
                 borderless=(borderless if fullscreen else False),
             )
             self.screen_w, self.screen_h = self.screen.get_size()
+            sparkle_count = len(getattr(self, 'sparkles', []) or []) or 40
+            self.sparkles = [Sparkle(self.screen_w, self.screen_h) for _ in range(sparkle_count)]
             request_window_focus()
             return True
         except Exception:

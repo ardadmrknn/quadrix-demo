@@ -1,4 +1,5 @@
 import ast
+import json
 import os
 import pathlib
 import re
@@ -6,6 +7,7 @@ import re
 
 ROOT_DIR = pathlib.Path(__file__).resolve().parent.parent
 LOCALIZATION_PATH = ROOT_DIR / 'src' / 'localization.py'
+LOCALIZATION_OVERRIDES_PATH = ROOT_DIR / 'src' / 'localization_auto_overrides.json'
 
 
 def _load_localization_source_tables():
@@ -53,3 +55,10 @@ def test_literal_translation_keys_used_in_code_exist_in_source_table():
 
     missing_keys = {key: sorted(paths) for key, paths in used_keys.items() if key not in translations}
     assert not missing_keys, f'Kodda kullanılıp localization kaynağında olmayan anahtarlar var: {missing_keys}'
+
+
+def test_localization_auto_overrides_file_is_valid_json_and_loadable():
+    payload = json.loads(LOCALIZATION_OVERRIDES_PATH.read_text(encoding='utf-8'))
+
+    assert isinstance(payload, dict)
+    assert payload['ach_achievements']['ru'] == 'Достижения'

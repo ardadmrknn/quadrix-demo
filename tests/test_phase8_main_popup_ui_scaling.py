@@ -198,6 +198,8 @@ def test_apply_screen_to_targets_rebinds_long_lived_screen_owners():
     settings_screen = SimpleNamespace(screen=old_screen)
     extras_screen = SimpleNamespace(screen=old_screen)
     guide_screen = SimpleNamespace(screen=old_screen)
+    coop_level_select = SimpleNamespace(screen=old_screen, window_width=1366, window_height=768)
+    leaderboard_trailer_screen = SimpleNamespace(screen=old_screen)
     user_selection_editor = SimpleNamespace(screen=old_screen)
     user_management_editor = SimpleNamespace(screen=old_screen)
     user_selection_screen = SimpleNamespace(screen=old_screen, avatar_editor=user_selection_editor)
@@ -209,6 +211,8 @@ def test_apply_screen_to_targets_rebinds_long_lived_screen_owners():
         settings_screen,
         extras_screen,
         guide_screen,
+        coop_level_select,
+        leaderboard_trailer_screen,
         user_selection_screen,
         user_management_screen,
         None,
@@ -218,6 +222,9 @@ def test_apply_screen_to_targets_rebinds_long_lived_screen_owners():
     assert settings_screen.screen is new_screen
     assert extras_screen.screen is new_screen
     assert guide_screen.screen is new_screen
+    assert coop_level_select.screen is new_screen
+    assert (coop_level_select.window_width, coop_level_select.window_height) == (800, 600)
+    assert leaderboard_trailer_screen.screen is new_screen
     assert user_selection_screen.screen is new_screen
     assert user_management_screen.screen is new_screen
     assert user_selection_editor.screen is new_screen

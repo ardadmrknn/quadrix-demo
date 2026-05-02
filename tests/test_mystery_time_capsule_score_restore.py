@@ -152,6 +152,8 @@ def test_speed_burst_expiry_resets_state_and_clears_visual():
 
 def test_handle_input_t_saves_time_capsule_and_consumes_event_without_reposting(monkeypatch):
     Game, MysteryMode = _import_game_modes_extra()
+    import game_modes_extra as game_modes_module
+
     mode = MysteryMode.__new__(MysteryMode)
     mode.card_selection_active = False
     mode._piece_selection_active = False
@@ -170,12 +172,13 @@ def test_handle_input_t_saves_time_capsule_and_consumes_event_without_reposting(
     mode._do_rewind = lambda: False
     mode._open_sniper_overlay = lambda: False
 
-    event = types.SimpleNamespace(type=pygame.KEYDOWN, key=pygame.K_t)
+    event = types.SimpleNamespace(type=game_modes_module.pygame.KEYDOWN, key=game_modes_module.pygame.K_t)
     posted_events = []
 
     monkeypatch.setattr(Game, 'handle_input', lambda self: True)
-    monkeypatch.setattr(pygame.event, 'get', lambda: [event])
-    monkeypatch.setattr(pygame.event, 'post', lambda e: posted_events.append(e))
+    monkeypatch.setattr('game_modes_extra.get_gamepad_manager', lambda: types.SimpleNamespace(enabled=False))
+    monkeypatch.setattr(game_modes_module.pygame.event, 'get', lambda: [event])
+    monkeypatch.setattr(game_modes_module.pygame.event, 'post', lambda e: posted_events.append(e))
 
     result = mode.handle_input()
 
@@ -187,6 +190,8 @@ def test_handle_input_t_saves_time_capsule_and_consumes_event_without_reposting(
 
 def test_handle_input_r_restores_time_capsule_and_consumes_event_without_reposting(monkeypatch):
     Game, MysteryMode = _import_game_modes_extra()
+    import game_modes_extra as game_modes_module
+
     mode = MysteryMode.__new__(MysteryMode)
     mode.card_selection_active = False
     mode._piece_selection_active = False
@@ -205,12 +210,13 @@ def test_handle_input_r_restores_time_capsule_and_consumes_event_without_reposti
     mode._do_rewind = lambda: False
     mode._open_sniper_overlay = lambda: False
 
-    event = types.SimpleNamespace(type=pygame.KEYDOWN, key=pygame.K_r)
+    event = types.SimpleNamespace(type=game_modes_module.pygame.KEYDOWN, key=game_modes_module.pygame.K_r)
     posted_events = []
 
     monkeypatch.setattr(Game, 'handle_input', lambda self: True)
-    monkeypatch.setattr(pygame.event, 'get', lambda: [event])
-    monkeypatch.setattr(pygame.event, 'post', lambda e: posted_events.append(e))
+    monkeypatch.setattr('game_modes_extra.get_gamepad_manager', lambda: types.SimpleNamespace(enabled=False))
+    monkeypatch.setattr(game_modes_module.pygame.event, 'get', lambda: [event])
+    monkeypatch.setattr(game_modes_module.pygame.event, 'post', lambda e: posted_events.append(e))
 
     result = mode.handle_input()
 

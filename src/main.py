@@ -519,18 +519,35 @@ def _refresh_screen_from_display(current_screen):
 
 def _apply_screen_to_targets(new_screen, *targets):
     """Yeni display surface'ini screen sahibi uzun omurlu nesnelere yay."""
-    for target in targets:
-        if target is not None and hasattr(target, 'screen'):
+    def _sync_target_screen(target):
+        if target is None:
+            return
+        if hasattr(target, 'screen'):
             try:
                 target.screen = new_screen
             except Exception:
                 pass
+        try:
+            width = int(new_screen.get_width())
+            height = int(new_screen.get_height())
+        except Exception:
+            width = height = 0
+        for attr_name, attr_value in (
+            ('window_width', width),
+            ('window_height', height),
+            ('screen_w', width),
+            ('screen_h', height),
+        ):
+            if hasattr(target, attr_name):
+                try:
+                    setattr(target, attr_name, attr_value)
+                except Exception:
+                    pass
+
+    for target in targets:
+        _sync_target_screen(target)
         nested_avatar_editor = getattr(target, 'avatar_editor', None) if target is not None else None
-        if nested_avatar_editor is not None and hasattr(nested_avatar_editor, 'screen'):
-            try:
-                nested_avatar_editor.screen = new_screen
-            except Exception:
-                pass
+        _sync_target_screen(nested_avatar_editor)
 
 
 def _get_steam_overlay_gl_mode(settings_manager=None) -> str:
@@ -1481,6 +1498,7 @@ def main():
         user_selection_screen,
         user_management_screen,
         campaign_level_select,
+        leaderboard_trailer_screen,
     )
 
     # Splash -> menü geçişini yumuşat: son splash karesini kısa bir süre

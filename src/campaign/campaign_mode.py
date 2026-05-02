@@ -712,6 +712,9 @@ class CampaignMode(Game):
         if condition_type == 'time':
             return self.elapsed_time <= target_value
 
+        if condition_type == 'move_limit':
+            return bool(self.level_complete and self.moves_count <= target_value)
+
         if condition_type == 'efficiency':
             main_progress = self.objectives[0].progress if self.objectives else 0
             return main_progress >= target_value

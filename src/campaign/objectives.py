@@ -188,6 +188,52 @@ class TetrisObjective(Objective):
                 self.check_completion()
 
 
+class MultiClearObjective(Objective):
+    """Tek hamlede hedef sayida satir temizleme gorevi."""
+
+    def __init__(self, target: int = 2):
+        self.lines_required = max(2, int(target))
+
+        if self.lines_required == 2:
+            desc_tr = "2'li satır temizle"
+            desc_en = 'Get a Double'
+            desc_key = 'campaign_obj_clear_doubles'
+            desc_params = {}
+        elif self.lines_required == 3:
+            desc_tr = "3'lü satır temizle"
+            desc_en = 'Get a Triple'
+            desc_key = 'campaign_obj_clear_triples'
+            desc_params = {}
+        elif self.lines_required >= 4:
+            desc_tr = 'Quadrix Yap'
+            desc_en = 'Make a Quadrix'
+            desc_key = 'campaign_obj_tetris'
+            desc_params = {
+                'target': lambda lang, v=1: Objective._format_number(v, lang)
+            }
+        else:
+            desc_tr = f"{self.lines_required}'li satır temizle"
+            desc_en = f'Get a {self.lines_required}-clear'
+            desc_key = None
+            desc_params = {}
+
+        super().__init__(
+            1,
+            desc_tr,
+            desc_en,
+            description_key=desc_key,
+            description_params=desc_params,
+        )
+
+    def update(self, game: 'CampaignMode', event_type: str, event_data: Dict[str, Any]) -> None:
+        if event_type != 'lines_cleared':
+            return
+
+        if int(event_data.get('lines', 0) or 0) >= self.lines_required:
+            self.progress = self.target
+            self.check_completion()
+
+
 class ComboObjective(Objective):
     """X Combo Zinciri Yap Görevi"""
     
@@ -254,6 +300,18 @@ class TimeObjective(Objective):
             
             if self.objective_type == 'survive':
                 self.progress = int(self.elapsed_time)
+                self.check_completion()
+                return
+
+            try:
+                other_objectives_done = all(
+                    obj.completed for obj in getattr(game, 'objectives', []) if obj is not self
+                )
+            except Exception:
+                other_objectives_done = False
+
+            if other_objectives_done and float(self.elapsed_time) <= float(self.target):
+                self.progress = self.target
                 self.check_completion()
 
 
@@ -437,9 +495,14 @@ def create_objective(obj_type: str, **kwargs) -> Objective:
         'score': lambda: ScoreObjective(target=kwargs.get('target', 1000)),
         'tetris': lambda: TetrisObjective(target=kwargs.get('target', 1)),
         'combo': lambda: ComboObjective(target=kwargs.get('target', 3)),
+        'multi_clear': lambda: MultiClearObjective(target=kwargs.get('target', 2)),
         'time': lambda: TimeObjective(
             target_seconds=kwargs.get('target', 60),
             objective_type=kwargs.get('time_type', 'survive')
+        ),
+        'time_challenge': lambda: TimeObjective(
+            target_seconds=kwargs.get('target', 60),
+            objective_type='complete'
         ),
         'special_block': lambda: SpecialBlockObjective(
             target=kwargs.get('target', 5),
