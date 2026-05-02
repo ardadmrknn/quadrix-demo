@@ -4307,7 +4307,8 @@ class OnlinePvPGame:
             board_pixel_width = BOARD_WIDTH * self.cell_size
             sweep_width = max(1, int(self.cell_size * 1.5))
             sweep_travel_px = max(1.0, float(board_pixel_width + sweep_width))
-            opp_level = max(1, int(getattr(self.opp_board, 'level', 1)))
+            opponent_board = getattr(self, 'opponent_board', None)
+            opp_level = max(1, int(getattr(opponent_board, 'level', 1)))
             sweep_speed = _compute_line_sweep_progress_speed(self.block_fall_speed, sweep_travel_px, opp_level)
             self.opp_line_sweep_progress += dt_seconds * sweep_speed
             if self.opp_line_sweep_progress >= 1.0:

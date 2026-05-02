@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib
 import pathlib
 import sys
+import types
 
 
 ROOT_DIR = pathlib.Path(__file__).resolve().parent.parent
@@ -169,3 +170,51 @@ def test_online_pvp_line_sweep_draw_failure_is_non_fatal(monkeypatch):
     assert game.opp_line_sweep_progress == 0.0
     assert game.opp_line_sweep_active is False
     assert game.opp_falling_block_animations == []
+
+
+def test_online_pvp_update_uses_opponent_board_for_remote_line_sweep():
+    game = online_pvp_module.OnlinePvPGame.__new__(online_pvp_module.OnlinePvPGame)
+    game._last_dt_ms = 0
+    game._net_initialized = False
+    game._auto_connect_retry_timer = 1000.0
+    game._auto_connect_attempted = True
+    game._lobby_list_fetching = False
+    game._lobby_list_fetch_start_time = 0.0
+    game._lobby_list = []
+    game._pending_lobby_list = []
+    game._code_search_retry_timer = 0.0
+    game._code_search_retry_code = ''
+    game._deferred_lobby_entries = {}
+    game._pending_access_revalidation_lobby_id = 0
+    game.online_state = online_pvp_module.OnlineState.GAME_OVER
+    game.update_particles = lambda dt_ms: None
+    game.update_ambient_particles = lambda dt_ms: None
+    game.update_screen_shake = lambda dt_ms: None
+    game.my_line_flash_timer = 0
+    game.my_line_flash_rows = []
+    game.my_line_glow_alpha = 0
+    game.opp_line_flash_timer = 0
+    game.opp_line_flash_rows = []
+    game.opp_line_glow_alpha = 0
+    game.my_combo_message_time = 0
+    game.my_combo_message = ''
+    game.my_line_sweep_active = False
+    game.my_line_sweep_progress = 0.0
+    game.my_line_sweep_rows = []
+    game.opp_line_sweep_active = True
+    game.opp_line_sweep_progress = 0.25
+    game.opp_line_sweep_rows = [18]
+    game.opponent_board = types.SimpleNamespace(level=7)
+    game.cell_size = 24
+    game.block_fall_speed = 0.12
+    game.my_wave_effects = []
+    game.opp_wave_effects = []
+    game.my_falling_block_animations = []
+    game.opp_falling_block_animations = []
+    game.drop_trails = []
+    game._status_timer = 0.0
+    game._status_msg = ''
+
+    game.update(16)
+
+    assert game.opp_line_sweep_progress > 0.25
