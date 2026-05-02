@@ -120,14 +120,14 @@ def _get_bridge_search_roots() -> list[str]:
 
 
 def _get_bridge_candidate_dirs() -> list[str]:
-    candidates: list[str] = []
+    grouped_candidates: list[str] = []
     for root_str in _get_bridge_search_roots():
         root = Path(root_str)
-        candidates.extend([
+        candidates: list[str] = [
             str(root / 'local_artifacts' / 'bridge'),
             str(root),
             str(root / 'dist'),
-        ])
+        ]
 
         bridge_build_root = root / 'steamworks' / 'steam_net_bridge'
         try:
@@ -138,10 +138,15 @@ def _get_bridge_candidate_dirs() -> list[str]:
         except Exception:
             pass
 
-    deduped = _dedupe_paths(candidates)
-    indexed = list(enumerate(deduped))
-    indexed.sort(key=lambda item: _bridge_dir_sort_key(item[1], item[0]))
-    return [path for _, path in indexed]
+        # Sort only inside the same root. In packaged apps, root order matters:
+        # _MEIPASS/executable dirs must beat cwd/repo dirs even if an external
+        # bridge artifact has a newer timestamp.
+        deduped = _dedupe_paths(candidates)
+        indexed = list(enumerate(deduped))
+        indexed.sort(key=lambda item: _bridge_dir_sort_key(item[1], item[0]))
+        grouped_candidates.extend(path for _, path in indexed)
+
+    return _dedupe_paths(grouped_candidates)
 
 
 def _get_bridge_dll_search_dirs() -> list[str]:

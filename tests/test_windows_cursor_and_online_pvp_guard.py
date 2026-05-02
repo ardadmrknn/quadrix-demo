@@ -76,6 +76,40 @@ def test_windows_specs_package_cursor_module_and_online_pvp_bridge():
         assert "'pygame.cursors'" in content
         assert 'get_bridge_binaries' in content
         assert "'steam_net_bridge'" in content
+        assert 'libgcc_s_seh-1.dll' in content
+        assert 'libstdc++-6.dll' in content
+        assert 'libwinpthread-1.dll' in content
+
+
+def test_software_cursor_draws_custom_cursor_when_forced(monkeypatch):
+    blits = []
+    cursor_surface = object()
+
+    class _Screen:
+        def blit(self, surface, pos):
+            blits.append((surface, pos))
+
+    monkeypatch.setattr(main_module, '_CUSTOM_CURSOR_SURFACE', cursor_surface)
+    monkeypatch.setattr(main_module, '_CUSTOM_CURSOR_HOTSPOT', (4, 4))
+    monkeypatch.setattr(main_module.pygame.mouse, 'get_visible', lambda: True)
+    monkeypatch.setattr(main_module.pygame.mouse, 'get_pos', lambda: (40, 50))
+
+    assert main_module.draw_software_cursor_if_needed(_Screen(), force=True) is True
+    assert blits == [(cursor_surface, (36, 46))]
+
+
+def test_software_cursor_does_not_draw_when_mouse_hidden(monkeypatch):
+    blits = []
+
+    class _Screen:
+        def blit(self, surface, pos):
+            blits.append((surface, pos))
+
+    monkeypatch.setattr(main_module, '_CUSTOM_CURSOR_SURFACE', object())
+    monkeypatch.setattr(main_module.pygame.mouse, 'get_visible', lambda: False)
+
+    assert main_module.draw_software_cursor_if_needed(_Screen(), force=True) is False
+    assert blits == []
 
 
 def test_online_pvp_line_clear_feedback_failure_is_non_fatal():

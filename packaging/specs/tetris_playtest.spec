@@ -164,6 +164,17 @@ if _bridge_matches:
 else:
     print('[spec] UYARI: steam_net_bridge bulunamadı')
 
+# MinGW runtime DLL'leri — steam_net_bridge.pyd bunlara bağımlı (GCC ile derlendi)
+_mingw_dlls = ['libgcc_s_seh-1.dll', 'libstdc++-6.dll', 'libwinpthread-1.dll']
+_mingw_dir = REPO_ROOT / 'dll' / 'win64'
+for _dll_name in _mingw_dlls:
+    _dll_path = _mingw_dir / _dll_name
+    if _dll_path.exists():
+        binaries.append((str(_dll_path), '.'))
+        print(f'[spec] MinGW DLL eklendi: {_dll_path.name}')
+    else:
+        print(f'[spec] UYARI: MinGW DLL bulunamadı: {_dll_path}')
+
 a = Analysis(
     [str(SRC_DIR / 'main.py')],  # Ana giriş noktası
     pathex=[str(SRC_DIR), str(REPO_ROOT)],

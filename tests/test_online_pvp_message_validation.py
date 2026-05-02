@@ -19,10 +19,11 @@ for p in (ROOT, SRC):
     if p not in sys.path:
         sys.path.insert(0, p)
 
-# pygame stub (headless)
+# pygame import'u headless testte init edilmemeli. macOS'ta SDL display/audio
+# init'i collection aşamasında native abort üretebiliyor; testler zaten
+# online_pvp_game import'u için pygame'i stub'lıyor.
 try:
     import pygame
-    pygame.init()
 except Exception:
     pygame = MagicMock()
     sys.modules['pygame'] = pygame

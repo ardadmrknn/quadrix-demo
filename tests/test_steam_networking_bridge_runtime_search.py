@@ -65,3 +65,31 @@ def test_bridge_candidate_dirs_prefer_fresh_current_build_over_stale_cache(monke
     candidates = sn._get_bridge_candidate_dirs()
 
     assert candidates.index(str(fresh_build)) < candidates.index(str(stale_cache))
+
+
+def test_packaged_bridge_root_stays_before_external_fresh_cache(monkeypatch, tmp_path: Path):
+    bundled_root = tmp_path / 'bundle_meipass'
+    external_root = tmp_path / 'external_cwd'
+    bundled_root.mkdir()
+    external_cache = external_root / 'local_artifacts' / 'bridge'
+    external_cache.mkdir(parents=True)
+
+    bridge_name = f'steam_net_bridge.cpython-{sys.version_info.major}{sys.version_info.minor}-darwin.so'
+    bundled_bridge = bundled_root / bridge_name
+    external_bridge = external_cache / bridge_name
+    bundled_bridge.write_bytes(b'bundled')
+    external_bridge.write_bytes(b'external')
+
+    old_time = 1_700_000_000
+    fresh_time = old_time + 3600
+    os.utime(bundled_bridge, (old_time, old_time))
+    os.utime(external_bridge, (fresh_time, fresh_time))
+
+    _unload_steam_modules()
+    import src.steam_networking as sn
+
+    monkeypatch.setattr(sn, '_get_bridge_search_roots', lambda: [str(bundled_root), str(external_root)])
+
+    candidates = sn._get_bridge_candidate_dirs()
+
+    assert candidates.index(str(bundled_root)) < candidates.index(str(external_cache))

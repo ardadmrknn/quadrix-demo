@@ -288,6 +288,10 @@ def resource_path(relative_path: str) -> str:
     return str(base_path / relative_path)
 
 
+_CUSTOM_CURSOR_SURFACE: pygame.Surface | None = None
+_CUSTOM_CURSOR_HOTSPOT = (4, 4)
+
+
 def setup_custom_cursor() -> bool:
     """Özel fare imlecini yükle ve ayarla
     
@@ -301,7 +305,9 @@ def setup_custom_cursor() -> bool:
         # Cursor boyutunu 32x32'ye ölçekle (standart cursor boyutu)
         cursor_surface = pygame.transform.smoothscale(cursor_surface, (32, 32))
         # Hotspot: tıklama noktası (sol üst köşeye yakın)
-        hotspot = (4, 4)
+        global _CUSTOM_CURSOR_SURFACE
+        _CUSTOM_CURSOR_SURFACE = cursor_surface
+        hotspot = _CUSTOM_CURSOR_HOTSPOT
         cursor = pygame.cursors.Cursor(hotspot, cursor_surface)
         pygame.mouse.set_cursor(cursor)
         print("[Cursor] Ozel fare imleci yuklendi")
@@ -312,6 +318,36 @@ def setup_custom_cursor() -> bool:
         except Exception:
             pass
         print(f"[Cursor] Ozel cursor yuklenemedi, varsayilan kullaniliyor: {e}")
+        return False
+
+
+def _steam_gl_software_cursor_active() -> bool:
+    """Windows Steam/OpenGL path can lose SDL's hardware cursor; draw our own."""
+    if sys.platform != 'win32':
+        return False
+    try:
+        from gl_compat import is_gl_active
+        return bool(is_gl_active())
+    except Exception:
+        return False
+
+
+def draw_software_cursor_if_needed(target_surface, *, force: bool = False) -> bool:
+    if not force and not _steam_gl_software_cursor_active():
+        return False
+    if _CUSTOM_CURSOR_SURFACE is None or target_surface is None:
+        return False
+    try:
+        if not pygame.mouse.get_visible():
+            return False
+    except Exception:
+        return False
+    try:
+        mx, my = pygame.mouse.get_pos()
+        hx, hy = _CUSTOM_CURSOR_HOTSPOT
+        target_surface.blit(_CUSTOM_CURSOR_SURFACE, (int(mx) - hx, int(my) - hy))
+        return True
+    except Exception:
         return False
 
 
@@ -3996,6 +4032,7 @@ def main():
             handler_flips_display = state in ('coop', 'coop_campaign', 'online_coop')
             if transition_overlay_active or not handler_flips_display:
                 draw_screen_transition(screen)
+                draw_software_cursor_if_needed(screen)
                 pygame.display.flip()
 
         # Sık değişen ayarları (slider vb.) toplu kaydet.
