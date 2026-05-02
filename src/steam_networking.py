@@ -49,6 +49,43 @@ def _dedupe_paths(paths: list[str]) -> list[str]:
     return out
 
 
+def _get_current_python_bridge_tags() -> tuple[str, ...]:
+    return (
+        f'cp{sys.version_info.major}{sys.version_info.minor}',
+        f'cpython-{sys.version_info.major}{sys.version_info.minor}',
+    )
+
+
+def _bridge_dir_sort_key(path: str, original_index: int) -> tuple[int, float, int, str]:
+    """Prefer the freshest bridge built for this Python over stale cache dirs."""
+    bridge_dir = Path(path)
+    best_tag_priority = 2
+    best_mtime = 0.0
+    current_tags = _get_current_python_bridge_tags()
+    try:
+        candidates = list(bridge_dir.glob('steam_net_bridge*.pyd'))
+        candidates.extend(bridge_dir.glob('steam_net_bridge*.so'))
+        candidates.extend(bridge_dir.glob('steam_net_bridge.py'))
+    except Exception:
+        candidates = []
+
+    for candidate in candidates:
+        name = candidate.name.lower()
+        if name == 'steam_net_bridge.py':
+            tag_priority = 0
+        else:
+            tag_priority = 0 if any(tag in name for tag in current_tags) else 1
+        try:
+            mtime = candidate.stat().st_mtime
+        except OSError:
+            mtime = 0.0
+        if tag_priority < best_tag_priority or (tag_priority == best_tag_priority and mtime > best_mtime):
+            best_tag_priority = tag_priority
+            best_mtime = mtime
+
+    return (best_tag_priority, -best_mtime, original_index, os.path.normpath(path))
+
+
 def _prepend_sys_path(paths: list[str]):
     for path in reversed(_dedupe_paths(paths)):
         if os.path.isdir(path) and path not in sys.path:
@@ -101,7 +138,10 @@ def _get_bridge_candidate_dirs() -> list[str]:
         except Exception:
             pass
 
-    return _dedupe_paths(candidates)
+    deduped = _dedupe_paths(candidates)
+    indexed = list(enumerate(deduped))
+    indexed.sort(key=lambda item: _bridge_dir_sort_key(item[1], item[0]))
+    return [path for _, path in indexed]
 
 
 def _get_bridge_dll_search_dirs() -> list[str]:

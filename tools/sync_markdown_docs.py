@@ -7,6 +7,7 @@ from textwrap import dedent, indent
 
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
+WINDOWS_EXE_BUILD_COMMAND = r'pwsh -File .\scripts\build\build_windows_exe.ps1 -Clean'
 
 
 def _read_text(relative_path: str) -> str:
@@ -154,6 +155,14 @@ def render_build_and_upload_doc(context: dict[str, object]) -> str:
     mac_depot_id = context['mac_depots'][0][0] if context['mac_depots'] else 'UNKNOWN'
     bridge_specs = _render_bullets(context['bridge_specs'])
     version_specs = _render_bullets(context['windows_version_bump_specs'])
+    windows_upload_command = dedent(r'''
+        pwsh -File .\tools\steam_upload_playtest.ps1 `
+            -SteamCmdPath "C:\steamcmd\steamcmd.exe" `
+            -SteamUser "BUILD_ACCOUNT" `
+            -BuildDescription "Playtest build YYYY-MM-DD" `
+            -SetLive ""
+    ''').strip()
+    windows_pyinstaller_command = f'py -m PyInstaller {_to_windows_path(str(context["windows_spec"]))} --noconfirm'
 
     return _normalize(dedent(
         f"""
@@ -210,21 +219,15 @@ def render_build_and_upload_doc(context: dict[str, object]) -> str:
 
         ### Windows build
 
-        {_indent_block(_render_fenced_block('powershell', 'pwsh -File .\\scripts\\build\\build_windows_exe.ps1 -Clean'))}
+        {_indent_block(_render_fenced_block('powershell', WINDOWS_EXE_BUILD_COMMAND))}
 
         ### Windows upload
 
-        {_indent_block(_render_fenced_block('powershell', dedent('''
-        pwsh -File .\\tools\\steam_upload_playtest.ps1 `
-            -SteamCmdPath "C:\\steamcmd\\steamcmd.exe" `
-            -SteamUser "BUILD_ACCOUNT" `
-            -BuildDescription "Playtest build YYYY-MM-DD" `
-            -SetLive ""
-        ''').strip()))}
+        {_indent_block(_render_fenced_block('powershell', windows_upload_command))}
 
         Dusuk seviye fallback:
 
-        {_indent_block(_render_fenced_block('powershell', f'py -m PyInstaller {_to_windows_path(str(context["windows_spec"]))} --noconfirm'))}
+        {_indent_block(_render_fenced_block('powershell', windows_pyinstaller_command))}
 
         ### macOS build
 
@@ -273,6 +276,16 @@ def render_playtest_guide_doc(context: dict[str, object]) -> str:
     windows_depot_vdf = context['windows_depots'][0][1] if context['windows_depots'] else 'UNKNOWN'
     mac_depot_id = context['mac_depots'][0][0] if context['mac_depots'] else 'UNKNOWN'
     mac_depot_vdf = context['mac_depots'][0][1] if context['mac_depots'] else 'UNKNOWN'
+    windows_upload_command = dedent(r'''
+        pwsh -File .\tools\steam_upload_playtest.ps1 `
+            -SteamCmdPath "C:\SteamworksSDK\tools\ContentBuilder\builder\steamcmd.exe" `
+            -SteamUser "BUILD_ACCOUNT" `
+            -BuildDescription "Playtest build YYYY-MM-DD"
+    ''').strip()
+    windows_low_level_command = dedent(f'''
+        py -m PyInstaller {_to_windows_path(str(context['windows_spec']))} --noconfirm
+        "C:\\SteamworksSDK\\tools\\ContentBuilder\\builder\\steamcmd.exe" +login BUILD_ACCOUNT +run_app_build ".\\{_to_windows_path(str(context['windows_app_build_script']))}" +quit
+    ''').strip()
 
     return _normalize(dedent(
         f"""
@@ -310,23 +323,15 @@ def render_playtest_guide_doc(context: dict[str, object]) -> str:
 
         ### Build
 
-        {_indent_block(_render_fenced_block('powershell', 'pwsh -File .\\scripts\\build\\build_windows_exe.ps1 -Clean'))}
+        {_indent_block(_render_fenced_block('powershell', WINDOWS_EXE_BUILD_COMMAND))}
 
         ### Upload
 
-        {_indent_block(_render_fenced_block('powershell', dedent('''
-        pwsh -File .\\tools\\steam_upload_playtest.ps1 `
-            -SteamCmdPath "C:\\SteamworksSDK\\tools\\ContentBuilder\\builder\\steamcmd.exe" `
-            -SteamUser "BUILD_ACCOUNT" `
-            -BuildDescription "Playtest build YYYY-MM-DD"
-        ''').strip()))}
+        {_indent_block(_render_fenced_block('powershell', windows_upload_command))}
 
         Dusuk seviye fallback:
 
-        {_indent_block(_render_fenced_block('powershell', dedent(f'''
-        py -m PyInstaller {_to_windows_path(str(context['windows_spec']))} --noconfirm
-        "C:\\SteamworksSDK\\tools\\ContentBuilder\\builder\\steamcmd.exe" +login BUILD_ACCOUNT +run_app_build ".\\{_to_windows_path(str(context['windows_app_build_script']))}" +quit
-        ''').strip()))}
+        {_indent_block(_render_fenced_block('powershell', windows_low_level_command))}
 
         ## 4) macOS Playtest Akisi
 
@@ -367,6 +372,12 @@ def render_playtest_guide_doc(context: dict[str, object]) -> str:
 
 def render_bridge_doc(context: dict[str, object]) -> str:
     bridge_specs = _render_bullets(context['bridge_specs'])
+    windows_low_level_command = dedent(f'''
+        cd steamworks\\steam_net_bridge
+        build.bat
+        cd ..\\..
+        py -m PyInstaller {_to_windows_path(str(context['windows_spec']))} --noconfirm
+    ''').strip()
 
     return _normalize(dedent(
         f"""
@@ -390,7 +401,7 @@ def render_bridge_doc(context: dict[str, object]) -> str:
 
         ### Windows
 
-        {_indent_block(_render_fenced_block('powershell', 'pwsh -File .\\scripts\\build\\build_windows_exe.ps1 -Clean'))}
+        {_indent_block(_render_fenced_block('powershell', WINDOWS_EXE_BUILD_COMMAND))}
 
         Beklenen davranis:
 
@@ -412,12 +423,7 @@ def render_bridge_doc(context: dict[str, object]) -> str:
 
         ### Windows
 
-        {_indent_block(_render_fenced_block('powershell', dedent(f'''
-        cd steamworks\\steam_net_bridge
-        build.bat
-        cd ..\\..
-        py -m PyInstaller {_to_windows_path(str(context['windows_spec']))} --noconfirm
-        ''').strip()))}
+        {_indent_block(_render_fenced_block('powershell', windows_low_level_command))}
 
         ### macOS
 

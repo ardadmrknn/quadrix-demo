@@ -12,6 +12,7 @@ from pathlib import Path
 REPO_ROOT = Path(SPECPATH).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 from tools.embed_menu_layout import write_embedded_layout_module
+from tools.bridge_artifacts import get_bridge_binaries
 from tools.versioning import bump_platform_version
 
 SRC_DIR = REPO_ROOT / 'src'
@@ -83,6 +84,7 @@ hiddenimports = [
     'pygame.color',
     'pygame.key',
     'pygame.mouse',
+    'pygame.cursors',
     'json',
     'csv',
     'pathlib',
@@ -101,6 +103,7 @@ hiddenimports = [
     'version',
     'version_base',
     'version_local_windows',
+    'steam_net_bridge',    # Steam Networking bridge (Pybind11, Online PvP)
 ]
 
 # src klasöründeki tüm Python modüllerini ekle
@@ -133,6 +136,15 @@ if os.path.exists(steam_dll_src):
 else:
     binaries = []
     print(f"WARNING: steam_api64.dll not found at {steam_dll_src}")
+
+# Steam Networking bridge (Pybind11 C++ modülü) — Online PvP için
+_bridge_matches = get_bridge_binaries(REPO_ROOT)
+if _bridge_matches:
+    _bridge_path = _bridge_matches[0]
+    binaries.append((_bridge_path, '.'))
+    print(f'[spec] steam_net_bridge eklendi: {_bridge_path}')
+else:
+    print('[spec] UYARI: steam_net_bridge bulunamadı')
 
 a = Analysis(
     [str(SRC_DIR / 'main.py')],  # Ana giriş noktası

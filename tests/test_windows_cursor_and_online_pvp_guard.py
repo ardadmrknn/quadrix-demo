@@ -70,6 +70,14 @@ def test_windows_cursor_load_failure_falls_back_to_system_cursor(monkeypatch):
     assert calls == [main_module.pygame.SYSTEM_CURSOR_ARROW]
 
 
+def test_windows_specs_package_cursor_module_and_online_pvp_bridge():
+    for spec_name in ('tetris.spec', 'tetris_playtest.spec', 'tetris_en.spec'):
+        content = (ROOT_DIR / 'packaging' / 'specs' / spec_name).read_text(encoding='utf-8')
+        assert "'pygame.cursors'" in content
+        assert 'get_bridge_binaries' in content
+        assert "'steam_net_bridge'" in content
+
+
 def test_online_pvp_line_clear_feedback_failure_is_non_fatal():
     game = online_pvp_module.OnlinePvPGame.__new__(online_pvp_module.OnlinePvPGame)
     game.my_line_flash_rows = [18]
@@ -96,3 +104,34 @@ def test_online_pvp_line_clear_feedback_failure_is_non_fatal():
     assert game.my_line_sweep_progress == 0.0
     assert game.my_line_sweep_active is False
     assert game.my_falling_block_animations == []
+
+
+def test_online_pvp_line_sweep_draw_failure_is_non_fatal(monkeypatch):
+    game = online_pvp_module.OnlinePvPGame.__new__(online_pvp_module.OnlinePvPGame)
+    game.screen = object()
+    game._sweep_cat_state = object()
+    game._line_sweep_draw_error_reported = False
+    game.opp_line_flash_rows = [18]
+    game.opp_line_flash_timer = 20
+    game.opp_line_glow_alpha = 255
+    game.opp_wave_effects = [{'radius': 1}]
+    game.opp_line_sweep_rows = [18]
+    game.opp_line_sweep_progress = 0.5
+    game.opp_line_sweep_active = True
+    game.opp_falling_block_animations = [{'row': 18, 'col': 0}]
+
+    def boom(*_args, **_kwargs):
+        raise RuntimeError('windows packaged sweep failure')
+
+    monkeypatch.setattr(online_pvp_module, 'draw_rainbow_cat_sweep', boom)
+
+    assert game._safe_draw_rainbow_cat_sweep(object(), 10, 24, 0, is_opponent=True) is False
+
+    assert game.opp_line_flash_rows == []
+    assert game.opp_line_flash_timer == 0
+    assert game.opp_line_glow_alpha == 0
+    assert game.opp_wave_effects == []
+    assert game.opp_line_sweep_rows == []
+    assert game.opp_line_sweep_progress == 0.0
+    assert game.opp_line_sweep_active is False
+    assert game.opp_falling_block_animations == []

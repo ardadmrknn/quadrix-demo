@@ -637,6 +637,7 @@ class OnlinePvPGame:
         self.my_line_sweep_progress: float = 0.0
         self.my_line_sweep_active: bool = False
         self.my_falling_block_animations: list[dict] = []
+        self._line_sweep_draw_error_reported: bool = False
         # Rakip satır temizleme efektleri (ağdan gelince tetiklenir)
         self.opp_line_flash_rows: list[int] = []
         self.opp_line_flash_timer: float = 0
@@ -3249,6 +3250,7 @@ class OnlinePvPGame:
         self.my_line_sweep_progress = 0.0
         self.my_line_sweep_active = False
         self.my_falling_block_animations = []
+        self._line_sweep_draw_error_reported = False
         self.opp_line_flash_rows = []
         self.opp_line_flash_timer = 0
         self.opp_line_glow_alpha = 0
@@ -3699,6 +3701,26 @@ class OnlinePvPGame:
             side = 'opponent' if is_opponent else 'local'
             print(f"[OnlinePvP] line clear feedback hatasi ({side}) atlandi: {exc}")
             self._reset_line_clear_feedback_state(is_opponent=is_opponent)
+
+    def _safe_draw_rainbow_cat_sweep(self, board_group_rect, sweep_x, sweep_width, phase, is_opponent=False):
+        try:
+            draw_rainbow_cat_sweep(
+                self.screen,
+                self._sweep_cat_state,
+                board_group_rect,
+                sweep_x,
+                sweep_width,
+                phase,
+                BOARD_WIDTH,
+            )
+            return True
+        except Exception as exc:
+            side = 'opponent' if is_opponent else 'local'
+            if not getattr(self, '_line_sweep_draw_error_reported', False):
+                print(f"[OnlinePvP] line sweep draw hatasi ({side}) atlandi: {exc}")
+                self._line_sweep_draw_error_reported = True
+            self._reset_line_clear_feedback_state(is_opponent=is_opponent)
+            return False
 
     # ============================================================
     #  ÇÖP SATIR MEKANİĞİ
@@ -6380,16 +6402,16 @@ class OnlinePvPGame:
                 phase = (pygame.time.get_ticks() // 80) % 8
                 sweep_x = x + int(progress * (board_w + sweep_width)) - sweep_width
                 board_group_rect = pygame.Rect(x, group_y, board_w, group_h)
-                draw_rainbow_cat_sweep(self.screen, self._sweep_cat_state, board_group_rect, sweep_x, sweep_width, phase, BOARD_WIDTH)
-                glow_a = int(70 * (1.0 - progress * 0.4))
-                if glow_a > 0:
-                    glow_w = min(sweep_width, int(board_w))
-                    glow_x = max(x, sweep_x)
-                    if glow_w > 0:
-                        for row in valid_rows:
-                            row_y = y + row * cell_size
-                            glow_surface = self._effect_surface_cache.get_filled_surface((glow_w, cell_size), (255, 255, 255, glow_a))
-                            self.screen.blit(glow_surface, (glow_x, row_y))
+                if self._safe_draw_rainbow_cat_sweep(board_group_rect, sweep_x, sweep_width, phase, is_opponent=False):
+                    glow_a = int(70 * (1.0 - progress * 0.4))
+                    if glow_a > 0:
+                        glow_w = min(sweep_width, int(board_w))
+                        glow_x = max(x, sweep_x)
+                        if glow_w > 0:
+                            for row in valid_rows:
+                                row_y = y + row * cell_size
+                                glow_surface = self._effect_surface_cache.get_filled_surface((glow_w, cell_size), (255, 255, 255, glow_a))
+                                self.screen.blit(glow_surface, (glow_x, row_y))
 
         if self.my_line_flash_rows and self.my_line_glow_alpha > 0:
             self._draw_line_clear_flash_overlay(x, y, board_w, cell_size, self.my_line_flash_rows, self.my_line_glow_alpha)
@@ -6515,16 +6537,16 @@ class OnlinePvPGame:
                 phase = (pygame.time.get_ticks() // 80) % 8
                 sweep_x = x + int(progress * (board_w + sweep_width)) - sweep_width
                 board_group_rect = pygame.Rect(x, group_y, board_w, group_h)
-                draw_rainbow_cat_sweep(self.screen, self._sweep_cat_state, board_group_rect, sweep_x, sweep_width, phase, BOARD_WIDTH)
-                glow_a = int(70 * (1.0 - progress * 0.4))
-                if glow_a > 0:
-                    glow_w = min(sweep_width, int(board_w))
-                    glow_x = max(x, sweep_x)
-                    if glow_w > 0:
-                        for row in valid_rows:
-                            row_y = y + row * cell_size
-                            glow_surface = self._effect_surface_cache.get_filled_surface((glow_w, cell_size), (255, 255, 255, glow_a))
-                            self.screen.blit(glow_surface, (glow_x, row_y))
+                if self._safe_draw_rainbow_cat_sweep(board_group_rect, sweep_x, sweep_width, phase, is_opponent=True):
+                    glow_a = int(70 * (1.0 - progress * 0.4))
+                    if glow_a > 0:
+                        glow_w = min(sweep_width, int(board_w))
+                        glow_x = max(x, sweep_x)
+                        if glow_w > 0:
+                            for row in valid_rows:
+                                row_y = y + row * cell_size
+                                glow_surface = self._effect_surface_cache.get_filled_surface((glow_w, cell_size), (255, 255, 255, glow_a))
+                                self.screen.blit(glow_surface, (glow_x, row_y))
 
         if self.opp_line_flash_rows and self.opp_line_glow_alpha > 0:
             self._draw_line_clear_flash_overlay(x, y, board_w, cell_size, self.opp_line_flash_rows, self.opp_line_glow_alpha)

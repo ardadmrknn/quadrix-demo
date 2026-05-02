@@ -92,6 +92,7 @@ hiddenimports = [
     'pygame.color',
     'pygame.key',
     'pygame.mouse',
+    'pygame.cursors',
     'json',
     'csv',
     'pathlib',

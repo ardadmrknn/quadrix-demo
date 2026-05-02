@@ -13,6 +13,7 @@
 ## Bridge Toplayan Spec Dosyalari
 
 - `packaging/specs/tetris.spec`
+- `packaging/specs/tetris_en.spec`
 - `packaging/specs/tetris_macos.spec`
 - `packaging/specs/tetris_macos_allinone.spec`
 - `packaging/specs/tetris_playtest.spec`

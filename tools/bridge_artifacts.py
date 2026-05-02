@@ -64,7 +64,14 @@ def _get_current_python_bridge_tags() -> tuple[str, ...]:
     )
 
 
-def _bridge_binary_sort_key(path: str, candidate_dirs: list[str]) -> tuple[int, int, str]:
+def _bridge_binary_mtime(path: str) -> float:
+    try:
+        return Path(path).stat().st_mtime
+    except OSError:
+        return 0.0
+
+
+def _bridge_binary_sort_key(path: str, candidate_dirs: list[str]) -> tuple[int, float, int, str]:
     normalized_path = os.path.normpath(path)
     parent_dir = os.path.normpath(str(Path(normalized_path).parent))
     try:
@@ -75,7 +82,9 @@ def _bridge_binary_sort_key(path: str, candidate_dirs: list[str]) -> tuple[int, 
     file_name = Path(normalized_path).name.lower()
     current_python_tags = _get_current_python_bridge_tags()
     python_tag_priority = 0 if any(tag in file_name for tag in current_python_tags) else 1
-    return (candidate_index, python_tag_priority, file_name)
+    # Prefer a fresh current-Python bridge over a stale cached local artifact.
+    # local_artifacts/bridge is still the tie-breaker when timestamps match.
+    return (python_tag_priority, -_bridge_binary_mtime(path), candidate_index, file_name)
 
 
 def get_bridge_binaries(repo_root: str | Path) -> list[str]:
