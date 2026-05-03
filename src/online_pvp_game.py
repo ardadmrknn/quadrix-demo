@@ -5513,24 +5513,42 @@ class OnlinePvPGame:
                                  (ir.x + s(20), ir.y + s(10)))
 
                 badge_font = _rs.get_font(s(11, minimum=9), bold=False)
+                badge_icon = None
                 if visibility in ('unknown', 'stale_unknown'):
                     badge_text = t('lobby_label', 'Lobi')
                 elif requires_code:
-                    badge_text = '🔒 ' + t('private_lobby', 'Ozel Lobi')
+                    from emoji_renderer import emoji_surface
+
+                    badge_text = t('private_lobby', 'Ozel Lobi')
+                    badge_icon = emoji_surface('🔒', max(10, s(13, minimum=10)))
                 else:
-                    badge_text = '🔓 ' + t('open_lobby', 'Acik lobi')
+                    from emoji_renderer import emoji_surface
+
+                    badge_text = t('open_lobby', 'Acik lobi')
+                    badge_icon = emoji_surface('🔓', max(10, s(13, minimum=10)))
                 badge_text_surf = badge_font.render(badge_text, True, accent_color)
+                badge_gap = s(6) if badge_icon else 0
+                badge_content_w = badge_text_surf.get_width() + (badge_icon.get_width() if badge_icon else 0) + badge_gap
                 badge_rect = pygame.Rect(
-                    ir.right - badge_text_surf.get_width() - s(22),
+                    ir.right - badge_content_w - s(30),
                     ir.y + s(8),
-                    badge_text_surf.get_width() + s(16),
+                    badge_content_w + s(16),
                     badge_text_surf.get_height() + s(8),
                 )
                 badge_surface = pygame.Surface((badge_rect.width, badge_rect.height), pygame.SRCALPHA)
                 pygame.draw.rect(badge_surface, (*accent_color[:3], 40), badge_surface.get_rect(), border_radius=999)
                 pygame.draw.rect(badge_surface, (*accent_color[:3], 130), badge_surface.get_rect(), 1, border_radius=999)
                 self.screen.blit(badge_surface, badge_rect.topleft)
-                self.screen.blit(badge_text_surf, badge_text_surf.get_rect(center=badge_rect.center))
+                if badge_icon:
+                    content_left = badge_rect.x + s(8)
+                    icon_rect = badge_icon.get_rect()
+                    icon_rect.x = content_left
+                    icon_rect.centery = badge_rect.centery
+                    self.screen.blit(badge_icon, icon_rect)
+                    text_rect = badge_text_surf.get_rect(midleft=(icon_rect.right + badge_gap, badge_rect.centery))
+                else:
+                    text_rect = badge_text_surf.get_rect(center=badge_rect.center)
+                self.screen.blit(badge_text_surf, text_rect)
 
                 # Detay satırı: üye sayısı + lobi kodu
                 cf = _rs.get_font(s(12, minimum=9), bold=False)

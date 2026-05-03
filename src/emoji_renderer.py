@@ -57,6 +57,7 @@ EMOJI_MAP: dict[str, str] = {
     '👻': 'ghost',
     '💣': 'bomb',
     '🔄': 'arrows_cycle',
+    '⬌': 'arrows_cycle',
     '🔗': 'link',
     '🎒': 'backpack',
     '🌀': 'cyclone',
@@ -93,6 +94,8 @@ EMOJI_MAP: dict[str, str] = {
     '❄': 'snowflake',
     '⏸️': 'timer',          # pause → timer
     '⏸': 'timer',
+    '🔒': 'lock',
+    '🔓': 'unlock',
 
     # --- Parti / kutlama ---
     '🎉': 'party',
@@ -118,13 +121,17 @@ EMOJI_MAP: dict[str, str] = {
     '⚠️': 'warning',
     '⚠': 'warning',
     '🎁': 'gift',
+    '📅': 'calendar',
     '💙': 'blue_heart',
+    '💪': 'flexed_biceps',
     '🪄': 'magic_wand',
     '⚙️': 'gear',
     '⚙': 'gear',
     '📖': 'book',
     '📕': 'book',
     '👤': 'person',
+    '🌍': 'world-map',
+    '🌐': 'world-map',
     '↘': 'resize_arrow',
     '↘️': 'resize_arrow',
 }

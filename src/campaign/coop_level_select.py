@@ -308,7 +308,11 @@ class CoopLevelSelect:
                     self._draw_mini_star(self.screen, sx + si * (star_size + star_gap),
                                          star_y, star_size, color)
             else:
-                lock_surf = f_star.render('🔒', True, retro_style.text_muted)
+                from emoji_renderer import emoji_surface
+
+                lock_surf = emoji_surface('🔒', s(16, minimum=10))
+                if lock_surf is None:
+                    lock_surf = f_star.render('L', True, retro_style.text_muted)
                 self.screen.blit(lock_surf, (x + btn_w // 2 - lock_surf.get_width() // 2,
                                               y + btn_h - s(22)))
 

@@ -90,10 +90,16 @@
     "ru": "Первая линия"
   },
   "ach_first_tetris_desc": {
-    "ru": "Создайте свою первую 4-строчную Quadrix"
+    "ja": "初めて4ラインQuadrixを達成",
+    "ko": "첫 4줄 Quadrix를 달성하세요",
+    "ru": "Выполните первый 4-линейный Quadrix",
+    "zh": "完成第一次 4 行 Quadrix"
   },
   "ach_first_tetris_name": {
-    "ru": "Первая Квадрикса"
+    "ja": "初Quadrix",
+    "ko": "첫 Quadrix",
+    "ru": "Первая Квадрикса",
+    "zh": "第一次 Quadrix"
   },
   "ach_games_100_desc": {
     "ru": "Сыграть 100 игр"
@@ -314,16 +320,36 @@
     "zh": "幸存者"
   },
   "ach_tetris_10_desc": {
-    "ru": "Составьте 10 тетрисов"
+    "de": "Schaffe 10 Quadrix-Räumungen",
+    "en": "Make 10 Quadrix clears",
+    "es": "Haz 10 Quadrix",
+    "ja": "Quadrixを10回達成",
+    "ko": "Quadrix 10회 달성",
+    "pt": "Faça 10 Quadrix",
+    "ru": "Выполните 10 очисток Quadrix",
+    "zh": "完成 10 次 Quadrix"
   },
   "ach_tetris_10_name": {
-    "ru": "Квадрикс Бог"
+    "ja": "Quadrixゴッド",
+    "ko": "Quadrix 신",
+    "ru": "Бог Quadrix",
+    "zh": "Quadrix 之神"
   },
   "ach_tetris_5_desc": {
-    "ru": "Составьте 5 тетрисов"
+    "de": "Schaffe 5 Quadrix-Räumungen",
+    "en": "Make 5 Quadrix clears",
+    "es": "Haz 5 Quadrix",
+    "ja": "Quadrixを5回達成",
+    "ko": "Quadrix 5회 달성",
+    "pt": "Faça 5 Quadrix",
+    "ru": "Выполните 5 очисток Quadrix",
+    "zh": "完成 5 次 Quadrix"
   },
   "ach_tetris_5_name": {
-    "ru": "Квадрикс Мастер"
+    "ja": "Quadrixマスター",
+    "ko": "Quadrix 마스터",
+    "ru": "Мастер Quadrix",
+    "zh": "Quadrix 大师"
   },
   "ach_ultra_100k_desc": {
     "de": "Erziele mehr als 15.000 Punkte im Ultra-Modus",
@@ -515,8 +541,13 @@
     "zh": "重复"
   },
   "block_workshop_action_modes": {
+    "de": "Modi",
+    "es": "Modos",
+    "fr": "Modes",
+    "it": "Modalità",
     "ja": "モード",
     "ko": "모드",
+    "pt": "Modos",
     "zh": "模式"
   },
   "block_workshop_action_new": {
@@ -592,22 +623,22 @@
   "block_workshop_clear_board": {
     "de": "Board geräumt",
     "es": "Tablero despejado",
-    "fr": "Tableau vidé",
-    "it": "Scheda cancellata",
+    "fr": "Plateau vidé",
+    "it": "Board svuotata",
     "ja": "ボードがクリアされました",
     "ko": "보드가 삭제되었습니다.",
-    "pt": "Quadro limpo",
-    "zh": "董事会已清除"
+    "pt": "Tabuleiro limpo",
+    "zh": "棋盘已清空"
   },
   "block_workshop_default_set": {
     "de": "Standardpaket",
     "es": "Paquete predeterminado",
-    "fr": "Forfait par défaut",
+    "fr": "Set par défaut",
     "it": "Pacchetto predefinito",
     "ja": "デフォルトのパッケージ",
     "ko": "기본 패키지",
     "pt": "Pacote padrão",
-    "zh": "默认套餐"
+    "zh": "默认套装"
   },
   "block_workshop_instructions_line1": {
     "de": "🖱️ Linksklick: Malen |  Rechtsklick: Löschen |  K: Farbe ändern",
@@ -650,14 +681,14 @@
     "zh": "↑/↓：选择区块| ←/→：模式焦点 | SPACE 或 1-0：切换模式"
   },
   "block_workshop_manager_instructions_line2": {
-    "de": "DEL: Block löschen | K: Blockfarbe | SHIFT+K: Farbe zurücksetzen | ENTER: Gehe zum Forum | M/Esc: Schließen",
+    "de": "DEL: Block löschen | K: Blockfarbe | SHIFT+K: Farbe zurücksetzen | ENTER: Zum Board | M/Esc: Schließen",
     "es": "DEL: Eliminar bloque | K: Color del bloque | SHIFT+K: Restablecer color | ENTER: Ir al tablero | M/Esc: Cerrar",
-    "fr": "DEL : Supprimer le bloc | K : Couleur du bloc | SHIFT+K : Réinitialiser la couleur | ENTER : Aller au tableau | M/Échap : Fermer",
-    "it": "DEL: Elimina blocco | K: Colore blocco | SHIFT+K: ripristina il colore | ENTER: Vai alla scheda | M/Esc: Chiudi",
+    "fr": "DEL : Supprimer le bloc | K : Couleur du bloc | SHIFT+K : Réinitialiser la couleur | ENTER : Aller au plateau | M/Échap : Fermer",
+    "it": "DEL: Elimina blocco | K: Colore blocco | SHIFT+K: ripristina il colore | ENTER: Vai al board | M/Esc: Chiudi",
     "ja": "DEL: ブロックを削除 | K: ブロックの色 | SHIFT+K: カラーをリセット | ENTER: ボードに移動 | M/Esc: 閉じる",
     "ko": "DEL: 블록 삭제 | K: 블록 색상 | SHIFT+K: 색상 재설정 | ENTER: 보드로 이동 | M/Esc: 닫기",
     "pt": "DEL: Excluir bloco | K: Cor do bloco | SHIFT+K: Redefinir cor | ENTER: Vá para o tabuleiro | M/Esc: Fechar",
-    "zh": "DEL：删除块| K：块颜色| SHIFT+K：重置颜色| ENTER：前往董事会 | M/Esc：关闭"
+    "zh": "DEL：删除方块 | K：方块颜色 | SHIFT+K：重置颜色 | ENTER：前往棋盘 | M/Esc：关闭"
   },
   "block_workshop_manager_instructions_line3": {
     "de": "{modifier}+N: Neues Paket | {modifier}+D: Duplikat | {modifier}+Entf: Löschen | F2: Umbenennen | {modifier}+M: Modi",
@@ -762,22 +793,22 @@
   "block_workshop_packages_title": {
     "de": "Pakete",
     "es": "Paquetes",
-    "fr": "Forfaits",
+    "fr": "Sets",
     "it": "Pacchetti",
     "ja": "パッケージ",
     "ko": "패키지",
     "pt": "Pacotes",
-    "zh": "套餐"
+    "zh": "套装"
   },
   "block_workshop_saved": {
-    "de": "Werkstatt gespeichert",
-    "es": "Taller guardado",
+    "de": "Block-Workshop gespeichert",
+    "es": "Editor de bloques guardado",
     "fr": "Atelier enregistré",
-    "it": "Officina salvata",
+    "it": "Workshop blocchi salvato",
     "ja": "ワークショップが保存されました",
-    "ko": "창작마당이 저장되었습니다",
-    "pt": "Oficina salva",
-    "zh": "研讨会已保存"
+    "ko": "워크숍이 저장되었습니다",
+    "pt": "Workshop de blocos salvo",
+    "zh": "工作坊已保存"
   },
   "block_workshop_saved_block_label": {
     "de": "{index}. {cells} Zellen {width}x{height}",
@@ -812,12 +843,12 @@
   "block_workshop_set_base": {
     "de": "Paket",
     "es": "Paquete",
-    "fr": "Forfait",
+    "fr": "Set",
     "it": "Pacchetto",
     "ja": "パッケージ",
     "ko": "패키지",
     "pt": "Pacote",
-    "zh": "套餐"
+    "zh": "套装"
   },
   "block_workshop_set_copy_suffix": {
     "de": "Kopieren",
@@ -922,12 +953,12 @@
   "block_workshop_set_number": {
     "de": "Paket {index}",
     "es": "Paquete {index}",
-    "fr": "Forfait {index}",
+    "fr": "Set {index}",
     "it": "Pacchetto {index}",
     "ja": "パッケージ{index}",
     "ko": "패키지 {index}",
     "pt": "Pacote {index}",
-    "zh": "封装{index}"
+    "zh": "套装 {index}"
   },
   "block_workshop_side_info_angle": {
     "de": "🔄 Winkel: {angle}°",
@@ -994,6 +1025,14 @@
     "pt": "CHEFE",
     "tr": "patron"
   },
+  "campaign_cond_score": {
+    "fr": "{value} points"
+  },
+  "campaign_cond_tetris": {
+    "ja": "{value}回のQuadrix",
+    "ko": "Quadrix {value}회 달성",
+    "zh": "完成 {value} 次 Quadrix"
+  },
   "campaign_desc": {
     "ru": "100-уровневое приключение! Каждый уровень становится сложнее."
   },
@@ -1026,6 +1065,11 @@
   },
   "campaign_obj_special_block_typed": {
     "ru": "Очистить блоки {target} {block}"
+  },
+  "campaign_obj_tetris": {
+    "ja": "{target}回のQuadrix達成",
+    "ko": "Quadrix {target}회 달성",
+    "zh": "完成 {target} 次 Quadrix"
   },
   "campaign_progress_reset": {
     "ja": "進行状況をリセットしますか?",
@@ -1068,6 +1112,9 @@
     "de": "Ebene {start}-{end}",
     "tr": "Seviye {start}-{end}"
   },
+  "campaign_world_tab_format": {
+    "de": "Welt {index} {name}"
+  },
   "campaign_world_short_1": {
     "ru": "Долина"
   },
@@ -1100,10 +1147,16 @@
   },
   "card_block_workshop_card_title": {
     "de": "Blockwerkstatt",
-    "es": "Taller de bloques",
+    "es": "Editor de bloques",
     "fr": "Atelier de blocs",
-    "it": "Laboratorio del blocco",
-    "pt": "Oficina de Blocos"
+    "it": "Workshop blocchi",
+    "pt": "Workshop de Blocos"
+  },
+  "card_freeze_drop_desc": {
+    "de": "3 Nutzungen: Drücke F, um das Teil {freeze_duration}s lang einzufrieren. Nur Links/Rechts und Hard Drop bleiben aktiv.",
+    "es": "3 usos: pulsa F para congelar la pieza durante {freeze_duration}s. Solo quedan activos izquierda/derecha y caída dura.",
+    "fr": "3 utilisations : appuie sur F pour geler la pièce pendant {freeze_duration}s. Seuls gauche/droite et hard drop restent actifs.",
+    "pt": "3 usos: pressione F para congelar a peça por {freeze_duration}s. Apenas esquerda/direita e hard drop permanecem ativos."
   },
   "card_color_cleanse_desc": {
     "de": "Löscht alle Blöcke einer zufälligen Farbe. Obere Blöcke fallen herunter.",
@@ -1134,11 +1187,15 @@
     "pt": "Dados do jogador"
   },
   "card_hold_destroyer_2_desc": {
-    "de": "{value} Verwendung(en): Macht, eine gehaltene Figur abzuwerfen! Drücken Sie B, um es zu verwenden.",
-    "es": "{value} uso(s): ¡Poder para descartar la pieza retenida! Presione B para usar.",
-    "fr": "{value} utilisation(s) : Pouvoir de défausser la pièce tenue ! Appuyez sur B pour l'utiliser.",
-    "it": "{value} utilizzo/i: Potere di scartare il pezzo tenuto! Premi B per usarlo.",
-    "pt": "{value} uso(s): Poder para descartar peça retida! Pressione B para usar."
+    "de": "{value} Einsatz(e): Macht, das gehaltene Teil zu verwerfen! Drücke {button} zum Benutzen.",
+    "es": "{value} uso(s): poder para descartar la pieza en Hold. Pulsa {button} para usarlo.",
+    "fr": "{value} utilisation(s) : permet de défausser la pièce en réserve ! Appuie sur {button} pour l’utiliser.",
+    "it": "{value} utilizzo/i: potere di scartare il pezzo in Hold! Premi {button} per usarlo.",
+    "ja": "{value}回: ホールド中のピースを破棄できます！{button}で使用。",
+    "ko": "{value}회 사용: 홀드된 피스를 버릴 수 있습니다! {button}를 눌러 사용.",
+    "pt": "{value} uso(s): poder de descartar a peça em Hold! Pressione {button} para usar.",
+    "ru": "{value} использований: можно сбросить фигуру из Hold! Нажмите {button}.",
+    "zh": "{value} 次使用：可以丢弃 Hold 中的方块！按 {button} 使用。"
   },
   "card_hold_destroyer_2_title": {
     "de": "Halten Sie den Schalter gedrückt",
@@ -1148,11 +1205,15 @@
     "pt": "Segure o disjuntor"
   },
   "card_hold_destroyer_3_desc": {
-    "de": "{value} Verwendung(en): Macht, eine gehaltene Figur abzuwerfen! Drücken Sie B, um es zu verwenden.",
-    "es": "{value} uso(s): ¡Poder para descartar la pieza retenida! Presione B para usar.",
-    "fr": "{value} utilisation(s) : Pouvoir de défausser la pièce tenue ! Appuyez sur B pour l'utiliser.",
-    "it": "{value} utilizzo/i: Potere di scartare il pezzo tenuto! Premi B per usarlo.",
-    "pt": "{value} uso(s): Poder para descartar peça retida! Pressione B para usar."
+    "de": "{value} Einsatz(e): Macht, das gehaltene Teil zu verwerfen! Drücke {button} zum Benutzen.",
+    "es": "{value} uso(s): poder para descartar la pieza en Hold. Pulsa {button} para usarlo.",
+    "fr": "{value} utilisation(s) : permet de défausser la pièce en réserve ! Appuie sur {button} pour l’utiliser.",
+    "it": "{value} utilizzo/i: potere di scartare il pezzo in Hold! Premi {button} per usarlo.",
+    "ja": "{value}回: ホールド中のピースを破棄できます！{button}で使用。",
+    "ko": "{value}회 사용: 홀드된 피스를 버릴 수 있습니다! {button}를 눌러 사용.",
+    "pt": "{value} uso(s): poder de descartar a peça em Hold! Pressione {button} para usar.",
+    "ru": "{value} использований: можно сбросить фигуру из Hold! Нажмите {button}.",
+    "zh": "{value} 次使用：可以丢弃 Hold 中的方块！按 {button} 使用。"
   },
   "card_hold_destroyer_3_title": {
     "de": "Halten Sie den Schalter gedrückt",
@@ -1162,11 +1223,15 @@
     "pt": "Segure o disjuntor"
   },
   "card_hold_destroyer_4_desc": {
-    "de": "{value} Verwendung(en): Macht, eine gehaltene Figur abzuwerfen! Drücken Sie B, um es zu verwenden.",
-    "es": "{value} uso(s): ¡Poder para descartar la pieza retenida! Presione B para usar.",
-    "fr": "{value} utilisation(s) : Pouvoir de défausser la pièce tenue ! Appuyez sur B pour l'utiliser.",
-    "it": "{value} utilizzo/i: Potere di scartare il pezzo tenuto! Premi B per usarlo.",
-    "pt": "{value} uso(s): Poder para descartar peça retida! Pressione B para usar."
+    "de": "{value} Einsatz(e): Macht, das gehaltene Teil zu verwerfen! Drücke {button} zum Benutzen.",
+    "es": "{value} uso(s): poder para descartar la pieza en Hold. Pulsa {button} para usarlo.",
+    "fr": "{value} utilisation(s) : permet de défausser la pièce en réserve ! Appuie sur {button} pour l’utiliser.",
+    "it": "{value} utilizzo/i: potere di scartare il pezzo in Hold! Premi {button} per usarlo.",
+    "ja": "{value}回: ホールド中のピースを破棄できます！{button}で使用。",
+    "ko": "{value}회 사용: 홀드된 피스를 버릴 수 있습니다! {button}를 눌러 사용.",
+    "pt": "{value} uso(s): poder de descartar a peça em Hold! Pressione {button} para usar.",
+    "ru": "{value} использований: можно сбросить фигуру из Hold! Нажмите {button}.",
+    "zh": "{value} 次使用：可以丢弃 Hold 中的方块！按 {button} 使用。"
   },
   "card_hold_destroyer_4_title": {
     "de": "Halten Sie den Schalter gedrückt",
@@ -1176,11 +1241,15 @@
     "pt": "Segure o disjuntor"
   },
   "card_hold_destroyer_5_desc": {
-    "de": "{value} Verwendung(en): Macht, eine gehaltene Figur abzuwerfen! Drücken Sie B, um es zu verwenden.",
-    "es": "{value} uso(s): ¡Poder para descartar la pieza retenida! Presione B para usar.",
-    "fr": "{value} utilisation(s) : Pouvoir de défausser la pièce tenue ! Appuyez sur B pour l'utiliser.",
-    "it": "{value} utilizzo/i: Potere di scartare il pezzo tenuto! Premi B per usarlo.",
-    "pt": "{value} uso(s): Poder para descartar peça retida! Pressione B para usar."
+    "de": "{value} Einsatz(e): Macht, das gehaltene Teil zu verwerfen! Drücke {button} zum Benutzen.",
+    "es": "{value} uso(s): poder para descartar la pieza en Hold. Pulsa {button} para usarlo.",
+    "fr": "{value} utilisation(s) : permet de défausser la pièce en réserve ! Appuie sur {button} pour l’utiliser.",
+    "it": "{value} utilizzo/i: potere di scartare il pezzo in Hold! Premi {button} per usarlo.",
+    "ja": "{value}回: ホールド中のピースを破棄できます！{button}で使用。",
+    "ko": "{value}회 사용: 홀드된 피스를 버릴 수 있습니다! {button}를 눌러 사용.",
+    "pt": "{value} uso(s): poder de descartar a peça em Hold! Pressione {button} para usar.",
+    "ru": "{value} использований: можно сбросить фигуру из Hold! Нажмите {button}.",
+    "zh": "{value} 次使用：可以丢弃 Hold 中的方块！按 {button} 使用。"
   },
   "card_hold_destroyer_5_title": {
     "de": "Halten Sie den Schalter gedrückt",
@@ -1190,11 +1259,15 @@
     "pt": "Segure o disjuntor"
   },
   "card_hold_destroyer_desc": {
-    "de": "{value} Verwendung(en): Macht, eine gehaltene Figur abzuwerfen! Drücken Sie B, um es zu verwenden.",
-    "es": "{value} uso(s): ¡Poder para descartar la pieza retenida! Presione B para usar.",
-    "fr": "{value} utilisation(s) : Pouvoir de défausser la pièce tenue ! Appuyez sur B pour l'utiliser.",
-    "it": "{value} utilizzo/i: Potere di scartare il pezzo tenuto! Premi B per usarlo.",
-    "pt": "{value} uso(s): Poder para descartar peça retida! Pressione B para usar."
+    "de": "{value} Einsatz(e): Macht, das gehaltene Teil zu verwerfen! Drücke {button} zum Benutzen.",
+    "es": "{value} uso(s): poder para descartar la pieza en Hold. Pulsa {button} para usarlo.",
+    "fr": "{value} utilisation(s) : permet de défausser la pièce en réserve ! Appuie sur {button} pour l’utiliser.",
+    "it": "{value} utilizzo/i: potere di scartare il pezzo in Hold! Premi {button} per usarlo.",
+    "ja": "{value}回: ホールド中のピースを破棄できます！{button}で使用。",
+    "ko": "{value}회 사용: 홀드된 피스를 버릴 수 있습니다! {button}를 눌러 사용.",
+    "pt": "{value} uso(s): poder de descartar a peça em Hold! Pressione {button} para usar.",
+    "ru": "{value} использований: можно сбросить фигуру из Hold! Нажмите {button}.",
+    "zh": "{value} 次使用：可以丢弃 Hold 中的方块！按 {button} 使用。"
   },
   "card_hold_destroyer_title": {
     "de": "Halten Sie den Schalter gedrückt",
@@ -1202,6 +1275,9 @@
     "fr": "Maintenir le disjoncteur",
     "it": "Tieni premuto Breaker",
     "pt": "Segure o disjuntor"
+  },
+  "card_perk_alchemist_desc": {
+    "ko": "PERK: 4줄(Quadrix)을 지우면 무작위 블록이 금으로 변합니다."
   },
   "card_rarity_common": {
     "tr": "Ortak"
@@ -1213,7 +1289,19 @@
     "tr": "Efsanevi"
   },
   "card_rarity_rare": {
+    "fr": "Rare",
     "tr": "Nadir"
+  },
+  "card_time_capsule_desc": {
+    "de": "Drücke T, um den Feldzustand zu speichern, und R, um ihn wiederherzustellen.",
+    "es": "Pulsa T para guardar el estado del tablero y luego R para restaurarlo.",
+    "fr": "Appuie sur T pour sauvegarder l’état du plateau, puis sur R pour le restaurer.",
+    "it": "Premi T per salvare lo stato del campo, poi R per ripristinarlo.",
+    "ja": "Tで盤面状態を保存し、Rで復元します。",
+    "ko": "T로 보드 상태를 저장한 뒤 R로 복원합니다.",
+    "pt": "Pressione T para salvar o estado do tabuleiro e R para restaurá-lo.",
+    "ru": "Нажмите T, чтобы сохранить состояние поля, затем R, чтобы восстановить его.",
+    "zh": "按 T 保存棋盘状态，然后按 R 恢复。"
   },
   "card_workshop_controls_line1": {
     "de": "Pfeile: Bewegen | SPACE: Platzieren/Löschen",
@@ -1249,10 +1337,16 @@
     "zh": "鼠标：左键单击放置/擦除"
   },
   "cascade_level_message": {
+    "de": "KASKADE x{level}!",
     "es": "CASCADA x{level}!",
     "fr": "CASCADEx{level} !",
     "it": "CASCATA x{level}!",
-    "pt": "CASCATA x{level}!"
+    "ja": "カスケード x{level}!",
+    "ko": "연쇄 x{level}!",
+    "pt": "CASCATA x{level}!",
+    "ru": "КАСКАД x{level}!",
+    "tr": "ÇAĞLAYAN x{level}!",
+    "zh": "连锁 x{level}!"
   },
   "cascade_mega_bonus": {
     "de": "Mega-Bonus!",
@@ -1286,6 +1380,8 @@
     "ja": "ブルー"
   },
   "color_cyan": {
+    "de": "Cyan",
+    "fr": "Cyan",
     "ja": "シアン",
     "tr": "Camgöbeği"
   },
@@ -1293,6 +1389,8 @@
     "ja": "緑"
   },
   "color_orange": {
+    "de": "Orange",
+    "fr": "Orange",
     "ja": "オレンジ"
   },
   "color_picker_new_badge": {
@@ -1375,12 +1473,50 @@
     "it": "Scheda ripristinata alle impostazioni predefinite",
     "pt": "Guia redefinida para o padrão"
   },
+  "coop_press_esc_menu": {
+    "de": "ESC: Menü",
+    "es": "ESC: Menú",
+    "fr": "ESC : Menu",
+    "it": "ESC: Menu",
+    "ja": "ESC: メニュー",
+    "ko": "ESC: 메뉴",
+    "pt": "ESC: Menu",
+    "ru": "ESC: меню",
+    "zh": "ESC：菜单"
+  },
+  "coop_score_contribution": {
+    "de": "{player} {score} ({percent}%)",
+    "es": "{player} {score} ({percent}%)",
+    "fr": "{player} {score} ({percent} %)",
+    "it": "{player} {score} ({percent}%)",
+    "ja": "{player} {score}（{percent}%）",
+    "ko": "{player} {score} ({percent}%)",
+    "pt": "{player} {score} ({percent}%)",
+    "ru": "{player} {score} ({percent}%)",
+    "tr": "{player} {score} (%{percent})",
+    "zh": "{player} {score}（{percent}%）"
+  },
+  "coop_title": {
+    "de": "QUADRIX KOOP",
+    "es": "QUADRIX COOPERATIVO",
+    "fr": "QUADRIX COOP",
+    "it": "QUADRIX COOPERATIVA",
+    "ja": "QUADRIX 協力",
+    "ko": "QUADRIX 협동",
+    "pt": "QUADRIX COOPERATIVO",
+    "ru": "QUADRIX КООП",
+    "tr": "QUADRIX İŞ BİRLİĞİ",
+    "zh": "QUADRIX 合作"
+  },
   "copyright": {
     "ja": "© 2025 アルダ＆ブラック",
     "ko": "© 2025 아르다 & 부락",
     "ru": "© 2025 Арда и Бурак",
     "tr": "© 2025 Arda ve Burak",
     "zh": "© 2025 阿尔达和布拉克"
+  },
+  "credits": {
+    "de": "Mitwirkende"
   },
   "credits_desc_arda": {
     "ru": "Все, что вы видите в игре"
@@ -1429,6 +1565,17 @@
   "credits_supporters_title": {
     "ru": "Сторонники"
   },
+  "ctrl_pause": {
+    "de": "Pause",
+    "es": "Pausa",
+    "fr": "Pause",
+    "it": "Pausa",
+    "ja": "一時停止",
+    "ko": "일시정지",
+    "pt": "Pausa",
+    "ru": "Пауза",
+    "zh": "暂停"
+  },
   "daily_completed_hint": {
     "ja": "完了 ✓"
   },
@@ -1461,11 +1608,26 @@
   "das_repeat_desc": {
     "ru": "Скорость бокового движения при удержании. (Ниже = быстрее)"
   },
+  "date": {
+    "fr": "Date"
+  },
   "default_ingame": {
     "ru": "По умолчанию (в игре)"
   },
   "delete": {
     "ja": "削除"
+  },
+  "demo_lobby": {
+    "de": "Demo-Lobby",
+    "es": "Sala demo",
+    "fr": "Lobby démo",
+    "it": "Lobby demo",
+    "ja": "デモロビー",
+    "ko": "데모 로비",
+    "pt": "Lobby demo",
+    "ru": "Демо-лобби",
+    "tr": "Demo lobisi",
+    "zh": "演示大厅"
   },
   "diff_custom": {
     "ru": "Пользовательский"
@@ -1504,12 +1666,12 @@
     "ru": "английский"
   },
   "enter": {
-    "de": "Treten Sie ein",
-    "es": "Entrar",
-    "ja": "入力してください",
-    "pt": "Entrar",
-    "ru": "Войти",
-    "tr": "Girin"
+    "de": "Enter",
+    "es": "Enter",
+    "ja": "Enter",
+    "pt": "Enter",
+    "ru": "Enter",
+    "tr": "Enter"
   },
   "error": {
     "es": "error",
@@ -1522,6 +1684,8 @@
     "ru": "ENTER / Y: Выйти |   ESC / N: Отмена"
   },
   "exit_no": {
+    "es": "No (ESC)",
+    "it": "No (ESC)",
     "ru": "Нет (ESC)"
   },
   "exit_title": {
@@ -1542,6 +1706,19 @@
     "fr": "Modes de jeu",
     "it": "Modalità di gioco",
     "pt": "Modos de jogo"
+  },
+  "extras_online_pvp_desc": {
+    "de": "1v1 Online-Quadrix-Match über Steam",
+    "en": "1v1 online Quadrix match via Steam",
+    "es": "Partida de Quadrix 1v1 en línea a través de Steam",
+    "fr": "Match Quadrix 1v1 en ligne via Steam",
+    "it": "Partita Quadrix 1v1 online tramite Steam",
+    "ja": "Steam経由の1v1オンラインQuadrix対戦",
+    "ko": "Steam을 통한 1v1 온라인 Quadrix 대전",
+    "pt": "Partida de Quadrix 1v1 online via Steam",
+    "ru": "Онлайн-матч Quadrix 1 на 1 через Steam",
+    "tr": "Steam üzerinden 1v1 online Quadrix maçı",
+    "zh": "通过 Steam 进行 1v1 在线 Quadrix 对战"
   },
   "favorite_mode": {
     "ja": "お気に入りモード"
@@ -1573,20 +1750,35 @@
     "ja": "ボムマスター",
     "pt": "Mestre da Bomba"
   },
+  "gp_card_freeze": {
+    "de": "Freeze Drop",
+    "es": "Caída congelada",
+    "fr": "Chute gelée",
+    "it": "Caduta gelata",
+    "ja": "フリーズドロップ",
+    "ko": "프리즈 드롭",
+    "pt": "Queda congelante",
+    "ru": "Заморозка падения",
+    "zh": "冻结下落"
+  },
   "gp_card_ghost": {
     "de": "Geisterstück",
     "es": "Pieza fantasma",
-    "fr": "Morceau fantôme",
+    "fr": "Pièce fantôme",
     "it": "Pezzo fantasma",
     "ja": "ゴーストピース",
-    "pt": "Pedaço Fantasma"
+    "pt": "Peça Fantasma"
   },
   "gp_card_hammer": {
+    "de": "Hammer",
     "es": "Martillo",
     "fr": "Marteau",
     "it": "Martello",
     "ja": "ハンマー",
-    "pt": "Martelo"
+    "ko": "망치",
+    "pt": "Martelo",
+    "ru": "Молот",
+    "zh": "锤子"
   },
   "gp_card_phase_shift": {
     "de": "Phasenverschiebung",
@@ -1621,19 +1813,23 @@
     "pt": "Restaurar Cápsula do Tempo"
   },
   "gp_card_time_capsule_save": {
-    "de": "Sparen Sie Zeitkapsel",
+    "de": "Zeitkapsel speichern",
     "es": "Guardar cápsula del tiempo",
     "fr": "Enregistrer la capsule temporelle",
-    "it": "Risparmia tempo sulla capsula",
+    "it": "Salva capsula temporale",
     "ja": "タイムカプセルを保存する",
-    "pt": "Economize cápsula do tempo"
+    "pt": "Salvar cápsula do tempo"
   },
   "gp_deadzone": {
+    "de": "Totzone",
     "es": "Zona muerta",
     "fr": "Zone morte",
     "it": "Zona morta",
     "ja": "デッドゾーン",
-    "pt": "Zona morta"
+    "ko": "데드존",
+    "pt": "Zona morta",
+    "ru": "Мёртвая зона",
+    "zh": "死区"
   },
   "gp_discard_held": {
     "de": "Zurückgehalten verwerfen",
@@ -1652,12 +1848,12 @@
     "pt": "Gamepad ativado"
   },
   "gp_hard_drop": {
-    "de": "Harter Tropfen",
+    "de": "Hard Drop",
     "es": "Caída dura",
     "fr": "Chute dure",
     "it": "Caduta dura",
     "ja": "ハードドロップ",
-    "pt": "Queda forte"
+    "pt": "Hard Drop"
   },
   "gp_hold": {
     "de": "Halten / Tauschen",
@@ -1741,7 +1937,15 @@
     "ja": "オン"
   },
   "gp_pause": {
-    "ja": "一時停止"
+    "de": "Pause",
+    "es": "Pausa",
+    "fr": "Pause",
+    "it": "Pausa",
+    "ja": "一時停止",
+    "ko": "일시정지",
+    "pt": "Pausa",
+    "ru": "Пауза",
+    "zh": "暂停"
   },
   "gp_press_button": {
     "de": "Drücken Sie eine Gamepad-Taste...",
@@ -1782,11 +1986,15 @@
     "pt": "RT (gatilho direito)"
   },
   "gp_rumble": {
+    "de": "Vibration",
     "es": "Vibración",
-    "fr": "Vibrations",
+    "fr": "Vibration",
     "it": "Vibrazione",
     "ja": "振動",
-    "pt": "Vibração"
+    "ko": "진동",
+    "pt": "Vibração",
+    "ru": "Вибрация",
+    "zh": "振动"
   },
   "gp_section_card": {
     "de": "Kartenmodus",
@@ -1819,6 +2027,17 @@
     "it": "Menù principale",
     "ja": "メインメニュー",
     "pt": "Menu Principal"
+  },
+  "gp_section_outgame": {
+    "de": "Außerhalb des Spiels",
+    "es": "Fuera de partida",
+    "fr": "Hors jeu",
+    "it": "Fuori gioco",
+    "ja": "ゲーム外",
+    "ko": "게임 외",
+    "pt": "Fora do jogo",
+    "ru": "Вне игры",
+    "zh": "游戏外"
   },
   "gp_soft_drop_btn": {
     "de": "Soft Drop (Schaltfläche)",
@@ -1902,7 +2121,7 @@
     "ru": "• Усиление комбо: увеличивает множитель комбо для следующего прохождения."
   },
   "guide_card_flexible_border_desc": {
-    "de": "VORTEIL: Spielsteine können sich 1 Block über die Spielbrettgrenzen hinaus bewegen.",
+    "de": "VORTEIL: Teile können sich 1 Block über die Board-Grenzen hinaus bewegen.",
     "es": "VENTAJA: Las piezas pueden moverse 1 bloque fuera de los límites del tablero.",
     "fr": "AVANTAGE : Les pièces peuvent se déplacer d’un bloc en dehors des limites du plateau.",
     "it": "VANTAGGIO: i pezzi possono spostarsi di 1 blocco fuori dai bordi del tabellone.",
@@ -1924,18 +2143,18 @@
     "ru": "• Force Piece: заменяет следующий фрагмент на желаемый тип."
   },
   "guide_card_freeze_drop_desc": {
-    "de": "3 Ladungen: Friere das fallende Teil mit F ein! Nur Links-Rechts-Bewegung und hartes Fallenlassen.",
-    "es": "3 cargas: ¡Congela la pieza que cae con F! Solo trabajo de movimiento de izquierda a derecha y caída dura.",
-    "fr": "3 charges : Gelez la pièce qui tombe avec F ! Uniquement un mouvement gauche-droite et un dur travail de chute.",
-    "it": "3 cariche: Congela il pezzo che cade con F! Solo il movimento sinistra-destra e l'hard drop funzionano.",
-    "pt": "3 cargas: Congele a peça que cai com F! Apenas movimento esquerda-direita e trabalho de queda forte."
+    "de": "3 Ladungen: Friere das fallende Teil mit F ein! Nur Links/Rechts und Hard Drop bleiben aktiv.",
+    "es": "3 cargas: congela la pieza que cae con F. Solo quedan activos izquierda/derecha y caída dura.",
+    "fr": "3 charges : gèle la pièce qui tombe avec F. Seuls gauche/droite et le hard drop restent actifs.",
+    "it": "3 cariche: congela il pezzo che cade con F. Restano attivi solo sinistra/destra e hard drop.",
+    "pt": "3 cargas: congele a peça que cai com F. Apenas esquerda/direita e hard drop continuam ativos."
   },
   "guide_card_freeze_drop_name": {
-    "de": "Letzter Tropfen",
-    "es": "Última gota",
-    "fr": "Dernière goutte",
-    "it": "Ultima goccia",
-    "pt": "Última gota"
+    "de": "Finaler Drop",
+    "es": "Caída final",
+    "fr": "Chute finale",
+    "it": "Caduta finale",
+    "pt": "Queda final"
   },
   "guide_card_future_desc": {
     "de": "Selten! Hier können Sie die nächsten 2 Teile auswählen. Perfekt für die strategische Planung!",
@@ -2132,18 +2351,18 @@
     "pt": "Bolso Extra"
   },
   "guide_card_quantum_desc": {
-    "de": "3 Verwendungsmöglichkeiten: Drücken Sie G, um ein Teil zu einem Geisterbild zu machen – es kann durch Blöcke hindurchgehen!",
+    "de": "3 Nutzungen: Drücke G, um das Teil in ein Ghost Piece zu verwandeln - es kann durch Blöcke gehen!",
     "es": "3 usos: Presiona G para hacer que la pieza sea fantasma: ¡puede atravesar bloques!",
-    "fr": "3 utilisations : Appuyez sur G pour créer un morceau fantôme - il peut traverser les blocs !",
+    "fr": "3 utilisations : appuie sur G pour transformer la pièce en pièce fantôme - elle peut traverser les blocs !",
     "it": "3 utilizzi: premi G per creare un pezzo fantasma: può passare attraverso i blocchi!",
     "pt": "3 usos: Pressione G para fazer a peça fantasma - ela pode passar por blocos!"
   },
   "guide_card_quantum_name": {
     "de": "Geisterstück",
     "es": "Pieza fantasma",
-    "fr": "Morceau fantôme",
+    "fr": "Pièce fantôme",
     "it": "Pezzo fantasma",
-    "pt": "Pedaço Fantasma"
+    "pt": "Peça Fantasma"
   },
   "guide_card_quantum_tunneling": {
     "de": "• Quantentunneln: Ermöglicht den Durchgang von Teilen durch Blöcke.",
@@ -2293,24 +2512,33 @@
     "es": "P: ¿Por qué el juego es tan rápido?\nR: La velocidad aumenta con el nivel. Puede bajar el nivel inicial en la configuración.",
     "fr": "Q : Pourquoi le jeu est-il si rapide ?\nR : La vitesse augmente avec le niveau. Vous pouvez réduire le niveau de départ dans les paramètres.",
     "it": "D: Perché il gioco è così veloce?\nR: La velocità aumenta con il livello. Puoi abbassare il livello iniziale nelle impostazioni.",
+    "ja": "Q: Hold / Swap が時々使えなくなるのはなぜ？\nA: Hold はアクティブなピース1つにつき1回だけ使えます。そのピースが固定されて新しいピースが来ると再び使えるため、同じピースを永遠に入れ替えることはできません。",
+    "ko": "Q: Hold / Swap이 가끔 작동하지 않는 이유는?\nA: Hold는 활성 피스 하나당 한 번만 사용할 수 있습니다. 그 피스가 고정되고 새 피스가 오면 다시 사용할 수 있으므로 같은 피스를 계속 바꿀 수는 없습니다.",
     "pt": "P: Por que o jogo é tão rápido?\nR: A velocidade aumenta com o nível. Você pode diminuir o nível inicial nas configurações.",
-    "ru": "В: Почему игра такая быстрая?\nA: Скорость увеличивается с уровнем. Вы можете снизить стартовый уровень в настройках."
+    "ru": "В: Почему игра такая быстрая?\nA: Скорость увеличивается с уровнем. Вы можете снизить стартовый уровень в настройках.",
+    "zh": "Q：为什么 Hold / Swap 有时会不能用？\nA：每个当前方块只能使用一次 Hold。该方块锁定并出现新方块后，Hold 才会再次可用，所以不能无限交换同一个方块。"
   },
   "guide_faq_2": {
     "de": "F: Wie verdiene ich Karten?\nA: Im Card Mastery-Modus musst du Linien klären und bestimmte Ziele erreichen, um Karten zu verdienen.",
     "es": "P: ¿Cómo ganar tarjetas?\nR: En el modo Card Mastery, limpia líneas y alcanza ciertos objetivos para ganar tarjetas.",
     "fr": "Q : Comment gagner des cartes ?\nR : En mode Maîtrise des cartes, éliminez les lignes et atteignez certains objectifs pour gagner des cartes.",
     "it": "D: Come guadagnare carte?\nR: Nella modalità Padronanza delle carte, cancella le linee e raggiungi determinati obiettivi per guadagnare carte.",
+    "ja": "Q: カードはいつ、どう使えばいい？\nA: Card Mastery では 1-9 キーまたはマウスでカードを発動できます。多くのカードは1回限りなので、安定した盤面で使い切らず、救済や準備した形を強化する瞬間まで待ちましょう。",
+    "ko": "Q: 카드는 언제 어떻게 사용해야 하나요?\nA: Card Mastery에서는 1-9 키나 마우스로 카드를 활성화합니다. 대부분의 카드는 1회용이므로 안정적인 보드에서 낭비하지 말고, 위기를 구하거나 준비한 판을 키울 순간까지 기다리세요.",
     "pt": "P: Como ganhar cartões?\nR: No modo Card Mastery, limpe linhas e alcance determinados objetivos para ganhar cartas.",
-    "ru": "В: Как заработать карты?\nО: В режиме «Мастерство карт» очищайте линии и достигайте определенных целей, чтобы заработать карты."
+    "ru": "В: Как заработать карты?\nО: В режиме «Мастерство карт» очищайте линии и достигайте определенных целей, чтобы заработать карты.",
+    "zh": "Q：卡牌应该如何以及何时使用？\nA：在 Card Mastery 中，可用 1-9 或鼠标激活卡牌。大多数卡牌只能使用一次，不要在平稳局面浪费；等到能救场或放大已准备布局的时机再用。"
   },
   "guide_faq_3": {
     "de": "F: Werden die Einstellungen gespeichert?\nA: Ja, alle Einstellungen werden automatisch gespeichert.",
     "es": "P: ¿Se guardan las configuraciones?\nR: Sí, todas las configuraciones se guardan automáticamente.",
     "fr": "Q : Les paramètres sont-ils enregistrés ?\nR : Oui, tous les paramètres sont automatiquement enregistrés.",
     "it": "D: Le impostazioni vengono salvate?\nR: Sì, tutte le impostazioni vengono salvate automaticamente.",
+    "ja": "Q: なぜゲームが急に速くなるの？\nA: 10ライン消すたびにレベルが上がり、落下速度も上がります。落ち着いた開始にしたい場合は設定で開始レベルを下げ、盤面が不安定な時は安全な消去に戻りましょう。",
+    "ko": "Q: 게임이 갑자기 빨라지는 이유는?\nA: 10줄을 지울 때마다 레벨이 오르고 낙하 속도도 빨라집니다. 더 차분하게 시작하려면 설정에서 시작 레벨을 낮추고, 보드가 불안정할 때는 안전한 클리어로 돌아가세요.",
     "pt": "P: As configurações são salvas?\nR: Sim, todas as configurações são salvas automaticamente.",
-    "ru": "Вопрос: Настройки сохраняются?\nО: Да, все настройки сохраняются автоматически."
+    "ru": "Вопрос: Настройки сохраняются?\nО: Да, все настройки сохраняются автоматически.",
+    "zh": "Q：为什么游戏会突然加速？\nA：每清除 10 行会提升等级并加快下落速度。想要更平稳的开局，可在设置中降低起始等级；当棋盘不稳定时，先回到更安全的清行。"
   },
   "guide_faq_intro": {
     "de": "[HÄUFIG GESTELLTE FRAGEN]",
@@ -2338,12 +2566,15 @@
     "ru": "━━━ УПРАВЛЕНИЕ ━━━\n\n• Стрелка влево/вправо: перемещение фигуры влево/вправо.\n\n• Стрелка вверх/X: поворот по часовой стрелке.\n\n• Z: поворот против часовой стрелки.\n\n• Стрелка вниз: плавное падение.\n\n• Пробел: жесткое падение (мгновенное).\n\n• C: удерживающая деталь\n\n• P / ESC: Пауза.\n\n• R: перезагрузка"
   },
   "guide_how_to_play_intro": {
-    "de": "Quadrix ist ein Spiel, bei dem Sie fallende Teile (Tetrominoes) so anordnen, dass vollständige horizontale Linien entstehen.\n\nWenn eine vollständige Linie gebildet wird, wird sie gelöscht und Sie erhalten Punkte.\n\nSteine, die den oberen Rand des Spielbretts erreichen, beenden das Spiel.",
-    "es": "Quadrix es un juego en el que organizas piezas que caen (Tetrominós) para formar líneas horizontales completas.\n\nCuando se forma una línea completa, se borra y ganas puntos.\n\nLas piezas que llegan a la parte superior del tablero finalizan el juego.",
-    "fr": "Quadrix est un jeu dans lequel vous disposez des pièces qui tombent (tétrominos) pour former des lignes horizontales complètes.\n\nLorsqu'une ligne complète est formée, elle se dégage et vous marquez des points.\n\nLes pièces atteignant le haut du plateau mettent fin à la partie.",
-    "it": "Quadrix è un gioco in cui disponi i pezzi che cadono (tetromini) per formare linee orizzontali complete.\n\nQuando si forma una linea completa, si cancella e ottieni punti.\n\nI pezzi che raggiungono la cima del tabellone terminano il gioco.",
-    "pt": "Quadrix é um jogo onde você organiza peças que caem (Tetrominós) para formar linhas horizontais completas.\n\nQuando uma linha completa é formada, ela desaparece e você ganha pontos.\n\nAs peças que chegam ao topo do tabuleiro encerram o jogo.",
-    "ru": "Quadrix — это игра, в которой вам предстоит расставлять падающие фигуры (тетромино) в полные горизонтальные линии.\n\nКогда образуется полная линия, она очищается, и вы зарабатываете очки.\n\nФигуры, достигшие вершины доски, завершают игру."
+    "de": "In Quadrix ordnest du fallende Teile (Tetrominos) so an, dass vollständige horizontale Linien entstehen.\n\nEine vollständige Linie verschwindet und bringt Punkte.\n\nWenn die Teile den oberen Rand des Feldes erreichen, endet die Runde.",
+    "es": "En Quadrix, colocas piezas que caen (tetrominós) para formar líneas horizontales completas.\n\nCuando una línea se completa, se elimina y ganas puntos.\n\nSi las piezas llegan a la parte superior del tablero, la partida termina.",
+    "fr": "Dans Quadrix, tu disposes des pièces qui tombent (tétrominos) pour former des lignes horizontales complètes.\n\nLorsqu’une ligne est complète, elle disparaît et rapporte des points.\n\nSi les pièces atteignent le haut du plateau, la partie se termine.",
+    "it": "In Quadrix disponi i pezzi cadenti (tetromini) per formare linee orizzontali complete.\n\nQuando una linea è completa, viene eliminata e ottieni punti.\n\nSe i pezzi raggiungono la parte alta del campo, la partita termina.",
+    "ja": "Quadrixは、上から落ちてくるピース（テトリミノ）を並べて横一列を完成させるゲームです。\n\n完成したラインは消え、得点になります。\n\nピースが盤面の上まで達するとゲーム終了です。",
+    "ko": "Quadrix는 위에서 떨어지는 피스(테트로미노)를 배치해 가로줄을 완성하는 게임입니다.\n\n완성된 줄은 사라지고 점수를 얻습니다.\n\n피스가 보드 상단에 닿으면 게임이 끝납니다.",
+    "pt": "Em Quadrix, você organiza peças que caem (tetrominós) para formar linhas horizontais completas.\n\nQuando uma linha é completada, ela desaparece e rende pontos.\n\nSe as peças chegarem ao topo do tabuleiro, a rodada termina.",
+    "ru": "В Quadrix нужно размещать падающие фигуры (тетромино), чтобы собирать полные горизонтальные линии.\n\nПолная линия исчезает и приносит очки.\n\nЕсли фигуры достигают верхнего края поля, игра заканчивается.",
+    "zh": "Quadrix 是一款将下落方块（四格骨牌）排列成完整横行的游戏。\n\n当一行完成时，它会被清除并获得分数。\n\n方块堆到棋盘顶部时，游戏结束。"
   },
   "guide_how_to_play_levels": {
     "de": "━━━ LEVEL-SYSTEM ━━━\n\nDas Level erhöht sich alle 10 gelöschten Zeilen.\n\nMit steigendem Level:\n\n• Teile fallen schneller\n\n• Die gesammelten Punkte werden multipliziert\n\n• Die Schwierigkeit steigt",
@@ -2358,6 +2589,8 @@
     "es": "━━━ SISTEMA DE PUNTUACIÓN ━━━\n\n• 1 Línea: 100 × Puntos de Nivel\n\n• 2 Líneas (Doble): 300 × Puntos de nivel\n\n• 3 Líneas (Triple): 500 × Puntos de Nivel\n\n• 4 líneas (Quadrix): 800 × puntos de nivel\n\n• Bono combinado: puntos extra por borrados consecutivos\n\n• Hard Drop: 2 puntos por fila que cae la pieza\n\n━━━━━━━━━━━━━━━━━━━━━━\n\nEjemplo: Pieza cae 5 filas = 10 puntos\n\nConsejo: ¡Usa el espacio para jugar rápido!",
     "fr": "━━━ SYSTÈME DE NOTATION ━━━\n\n• 1 ligne : 100 × points de niveau\n\n• 2 lignes (doubles) : 300 × points de niveau\n\n• 3 lignes (triple) : 500 × points de niveau\n\n• 4 lignes (Quadrix) : 800 × points de niveau\n\n• Bonus combo : points supplémentaires pour les effacements consécutifs\n\n• Hard Drop : 2 points par rangée où la pièce tombe\n\n━━━━━━━━━━━━━━━━━━━━━━\n\nExemple : La pièce tombe 5 rangs = 10 points\n\nAstuce : utilisez Espace pour jouer rapidement !",
     "it": "━━━ SISTEMA DI PUNTEGGIO ━━━\n\n• 1 linea: 100 × punti di livello\n\n• 2 linee (doppie): 300 × punti di livello\n\n• 3 linee (triple): 500 × punti di livello\n\n• 4 Linee (Quadrix): 800 × Punti di livello\n\n• Bonus combo: punti extra per completazioni consecutive\n\n• Hard Drop: 2 punti per riga in cui il pezzo cade\n\n━━━━━━━━━━━━━━━━━━━━━━\n\nEsempio: il pezzo cade per 5 file = 10 punti\n\nSuggerimento: usa lo spazio per giocare velocemente!",
+    "ja": "━━━ スコアシステム ━━━\n\n• 1ライン: 100 × レベル\n\n• 2ライン(ダブル): 300 × レベル\n\n• 3ライン(トリプル): 500 × レベル\n\n• 4ライン(Quadrix): 800 × レベル\n\n• コンボボーナス: 連続消去で加点\n\n• ハードドロップ: 落下1行ごとに2点\n\n━━━━━━━━━━━━━━━━━━━━━━\n\n例: 5行落下 = 10点\n\n安定した消去を作る方が、一発の大技だけを狙うより安全です。",
+    "ko": "━━━ 점수 시스템 ━━━\n\n• 1줄: 100 × 레벨\n\n• 2줄(더블): 300 × 레벨\n\n• 3줄(트리플): 500 × 레벨\n\n• 4줄(Quadrix): 800 × 레벨\n\n• 콤보 보너스: 연속 삭제 추가 점수\n\n• 하드 드롭: 피스가 내려간 각 줄마다 2점\n\n━━━━━━━━━━━━━━━━━━━━━━\n\n예: 5줄 낙하 = 10점\n\n안정적인 클리어를 만드는 것이 한 번의 큰 수만 노리는 것보다 안전합니다.",
     "pt": "━━━ SISTEMA DE PONTUAÇÃO ━━━\n\n• 1 linha: 100 × pontos de nível\n\n• 2 linhas (duplas): 300 × pontos de nível\n\n• 3 linhas (triplas): 500 × pontos de nível\n\n• 4 linhas (Quadrix): 800 × pontos de nível\n\n• Bônus Combo: Pontos extras para eliminações consecutivas\n\n• Hard Drop: 2 pontos por linha em que a peça cai\n\n━━━━━━━━━━━━━━━━━━━━━━\n\nExemplo: A peça cai 5 linhas = 10 pontos\n\nDica: Use o Espaço para um jogo rápido!",
     "ru": "━━━ СИСТЕМА ОЦЕНКИ ━━━\n\n• 1 линия: 100 × очков уровня\n\n• 2 линии (двойные): 300 × очков уровня\n\n• 3 линии (тройные): 500 × очков уровня\n\n• 4 линии (Quadrix): 800 × очков уровня\n\n• Комбо-бонус: дополнительные очки за последовательные зачистки.\n\n• Hard Drop: 2 очка за ряд, в котором выпадает кусок.\n\n━━━━━━━━━━━━━━━━━━━━━━\n\nПример: фигура выпадает на 5 рядов = 10 очков.\n\nСовет: используйте пробел для быстрой игры!"
   },
@@ -2366,6 +2599,8 @@
     "es": "━━━ CONSEJOS IMPORTANTES ━━━\n\n• La pieza fantasma muestra dónde aterrizará la pieza.\n\n• Utilice el sistema Hold estratégicamente\n\n• Sigue revisando las siguientes piezas\n\n• Deje un borde abierto para Quadrix (4 líneas claras)",
     "fr": "━━━ CONSEILS IMPORTANTS ━━━\n\n• La pièce fantôme montre où la pièce atterrira\n\n• Utiliser le système Hold de manière stratégique\n\n• Continuez à vérifier les pièces suivantes\n\n• Laissez un bord ouvert pour Quadrix (4 lignes claires)",
     "it": "━━━ CONSIGLI IMPORTANTI ━━━\n\n• Il pezzo fantasma mostra dove atterrerà il pezzo\n\n• Utilizzare il sistema Hold in modo strategico\n\n• Continua a controllare i pezzi successivi\n\n• Lasciare un bordo aperto per Quadrix (4 righe chiare)",
+    "ja": "━━━ 重要ヒント ━━━\n\n• ゴーストピースは着地点を示す\n\n• ホールドを戦略的に使う\n\n• 次のピースを常に確認\n\n• Quadrix(4ライン消去)のために片側を空ける",
+    "ko": "━━━ 중요 팁 ━━━\n\n• 고스트 피스는 떨어질 위치를 보여줍니다\n\n• 홀드 시스템을 전략적으로 사용하세요\n\n• 다음 피스를 계속 확인하세요\n\n• Quadrix(4줄 클리어)를 위해 한쪽을 비워두세요",
     "pt": "━━━ DICAS IMPORTANTES ━━━\n\n• A peça fantasma mostra onde a peça irá pousar\n\n• Use o sistema Hold estrategicamente\n\n• Continue verificando as próximas peças\n\n• Deixe uma borda aberta para Quadrix (limpeza de 4 linhas)",
     "ru": "━━━ ВАЖНЫЕ СОВЕТЫ ━━━\n\n• Фигура-призрак показывает, куда приземлится фигура.\n\n• Используйте систему удержания стратегически\n\n• Продолжайте проверять следующие фрагменты.\n\n• Оставьте один край открытым для Quadrix (четыре строки свободны)."
   },
@@ -2462,6 +2697,10 @@
   "guide_mode_name_tetris2": {
     "es": "Cuadrix Extra",
     "fr": "Quadrix supplémentaire",
+    "it": "Quadrix Extra",
+    "ja": "Quadrix Extra",
+    "ko": "Quadrix 엑스트라",
+    "pt": "Quadrix Extra",
     "tr": "Quadrix Ekstra",
     "zh": "额外四轴"
   },
@@ -2512,7 +2751,10 @@
     "es": "• Quadrix Extra: 4 nuevos tipos de piezas (P, Q, U, Plus) además de 7 piezas clásicas.",
     "fr": "• Quadrix Extra : 4 nouveaux types de pièces (P, Q, U, Plus) en plus des 7 pièces classiques.",
     "it": "• Quadrix Extra: 4 nuovi tipi di pezzi (P, Q, U, Plus) oltre a 7 pezzi classici.",
-    "pt": "• Quadrix Extra: 4 novos tipos de peças (P, Q, U, Plus) além de 7 peças clássicas."
+    "ja": "• Quadrix Extra: 7種のクラシックピースに加えて4種(P、Q、U、Plus)を追加。",
+    "ko": "• Quadrix Extra: 7가지 클래식 피스에 4종(P, Q, U, Plus)을 추가.",
+    "pt": "• Quadrix Extra: 4 novos tipos de peças (P, Q, U, Plus) além de 7 peças clássicas.",
+    "zh": "• Quadrix Extra：在 7 种经典方块外新增 4 种方块（P、Q、U、Plus）。"
   },
   "guide_mode_ultra": {
     "de": "• Ultra: Erzielen Sie innerhalb von 3 Minuten so viele Punkte wie möglich.",
@@ -2638,7 +2880,7 @@
     "pt": "Retroceder"
   },
   "guide_perk_second_pocket": {
-    "de": "• Zweite Tasche: Zwei separate Aufbewahrungsfächer für Spielsteine.",
+    "de": "• Zweite Tasche: Zwei separate Hold-Slots für Teile.",
     "es": "• Segundo Bolsillo: Dos ranuras separadas para sujetar piezas.",
     "fr": "• Deuxième poche : deux emplacements de maintien séparés pour les pièces.",
     "it": "• Seconda tasca: due slot separati per i pezzi.",
@@ -2680,50 +2922,71 @@
     "ru": "Постоянный перк"
   },
   "guide_rarity_rare": {
+    "fr": "Rare",
     "ru": "Редкий"
   },
   "guide_rarity_uncommon": {
     "ru": "Необычный"
   },
   "guide_tip_1": {
-    "de": "• T-Spin lernen: Das Drehen des T-Stücks in enge Räume bringt zusätzliche Punkte.",
-    "es": "• Aprenda T-Spin: rotar la pieza en T en espacios reducidos gana puntos extra.",
-    "fr": "• Apprenez le T-Spin : faire tourner une pièce en T dans des espaces restreints rapporte des points supplémentaires.",
-    "it": "• Impara il T-Spin: ruotare il pezzo a T in spazi ristretti fa guadagnare punti extra.",
-    "pt": "• Aprenda T-Spin: Girar a peça T em espaços apertados ganha pontos extras.",
-    "ru": "• Изучите Т-образное вращение: вращение Т-образной детали в ограниченном пространстве приносит дополнительные очки."
+    "de": "• Lies das Geisterteil aktiv: Wer den Landepunkt vorab sieht, vermeidet blindes Platzieren, besonders bei höherem Tempo.",
+    "en": "• Read the ghost piece actively: seeing the landing point ahead prevents blind placement, especially when the tempo rises.",
+    "es": "• Lee activamente la pieza fantasma: ver el punto de caída evita colocaciones a ciegas, sobre todo cuando sube el ritmo.",
+    "fr": "• Lis activement la pièce fantôme : voir le point d’atterrissage à l’avance évite les placements à l’aveugle, surtout quand le rythme monte.",
+    "it": "• Leggi attivamente il pezzo fantasma: vedere prima il punto di atterraggio evita piazzamenti alla cieca, soprattutto quando il ritmo aumenta.",
+    "ja": "• ゴーストピースを常に読む: 着地点を先に見ることで、テンポが上がっても勘だけの配置を防げます。",
+    "ko": "• 고스트 피스를 적극적으로 읽으세요. 착지 지점을 미리 보면 템포가 올라가도 눈먼 배치를 막을 수 있습니다.",
+    "pt": "• Leia a peça fantasma ativamente: ver o ponto de queda antes evita colocações às cegas, especialmente quando o ritmo aumenta.",
+    "ru": "• Активно следите за призрачной фигурой: заранее видимая точка падения помогает не ставить вслепую, особенно когда темп растёт.",
+    "zh": "• 主动观察幽灵方块：提前看到落点，尤其在节奏加快时可避免盲目摆放。"
   },
   "guide_tip_2": {
-    "de": "• Bewahren Sie das I-Stück für Quadrix immer an der Seite auf.",
-    "es": "• Guarde siempre la pieza I para Quadrix a un lado.",
-    "fr": "• Conservez toujours la pièce en I pour Quadrix sur le côté.",
-    "it": "• Conservare sempre il pezzo a I per Quadrix sul lato.",
-    "pt": "• Sempre guarde a peça I para Quadrix na lateral.",
-    "ru": "• Всегда сохраняйте тройник для Quadrix сбоку."
+    "de": "• Nutze Hold / Tausch geplant statt reflexhaft; am besten sparst du das lange Teil für den offenen Schacht oder passt das aktuelle Teil an die Vorschau an.",
+    "en": "• Use Hold / Swap with a plan, not as a reflex; the best use is saving the long piece for an open well or aligning the current piece with the next queue.",
+    "es": "• Usa Hold / Intercambiar con plan, no por reflejo; lo ideal es guardar la pieza larga para un pozo abierto o ajustar la pieza actual a la cola siguiente.",
+    "fr": "• Utilise Hold / Swap avec un plan, pas par réflexe ; le mieux est de garder la longue pièce pour un puits ouvert ou d’aligner la pièce actuelle avec la file suivante.",
+    "it": "• Usa Hold / Scambio con un piano, non di riflesso; il meglio è conservare il pezzo lungo per un pozzo aperto o allineare il pezzo attuale alla coda successiva.",
+    "ja": "• Hold / Swapは反射ではなく計画的に使いましょう。長いピースを開いた井戸用に残す、または現在のピースを次の流れに合わせるのが効果的です。",
+    "ko": "• Hold / Swap은 반사적으로 쓰지 말고 계획적으로 사용하세요. 긴 피스를 열린 우물에 남기거나 현재 피스를 다음 큐와 맞추는 것이 좋습니다.",
+    "pt": "• Use Hold / Troca com planejamento, não por reflexo; o melhor uso é guardar a peça longa para um poço aberto ou alinhar a peça atual à fila seguinte.",
+    "ru": "• Используйте Hold / Swap по плану, а не рефлекторно: лучше всего сохранять длинную фигуру для открытого колодца или подстраивать текущую фигуру под очередь.",
+    "zh": "• 不要凭反射使用 Hold / Swap，要有计划；最佳用法是把长条留给开放竖井，或让当前方块配合后续队列。"
   },
   "guide_tip_3": {
-    "de": "• Halten Sie die Mitte flach und vermeiden Sie die Bildung von Löchern.",
-    "es": "• Mantenga el centro plano, evite crear agujeros.",
-    "fr": "• Gardez le centre plat, évitez de créer des trous.",
-    "it": "• Mantenere il centro piatto, evitare di creare buchi.",
-    "pt": "• Mantenha o centro plano, evitando criar furos.",
-    "ru": "• Держите центр плоским, избегайте образования отверстий."
+    "de": "• Halte die Oberfläche ruhig: plötzliche Hügel in der Mitte und verdeckte Löcher werden bei höherer Geschwindigkeit am schwersten zu retten.",
+    "en": "• Keep the surface calm: sudden center peaks and buried holes become the hardest field mistakes to recover from as speed increases.",
+    "es": "• Mantén la superficie tranquila: picos repentinos en el centro y huecos enterrados se vuelven los errores más difíciles cuando aumenta la velocidad.",
+    "fr": "• Garde une surface stable : les pics soudains au centre et les trous enterrés deviennent les erreurs les plus difficiles à rattraper quand la vitesse augmente.",
+    "it": "• Mantieni la superficie stabile: picchi improvvisi al centro e buchi sepolti diventano gli errori più difficili da recuperare quando la velocità aumenta.",
+    "ja": "• 地形を落ち着かせましょう。中央の急な山や下に埋まった穴は、速度が上がるほど立て直しにくくなります。",
+    "ko": "• 지형을 안정적으로 유지하세요. 중앙의 갑작스러운 봉우리와 묻힌 구멍은 속도가 오를수록 가장 복구하기 어려운 실수가 됩니다.",
+    "pt": "• Mantenha a superfície calma: picos repentinos no centro e buracos soterrados viram os erros mais difíceis quando a velocidade aumenta.",
+    "ru": "• Держите поверхность спокойной: резкие пики в центре и скрытые дыры при росте скорости становятся самыми трудными ошибками.",
+    "zh": "• 保持场面平稳：中间突然隆起和底部埋洞，会在速度提升后变成最难修复的错误。"
   },
   "guide_tip_4": {
-    "de": "• Bauen Sie Combo-Ketten auf, indem Sie Linien nacheinander löschen.",
-    "es": "• Construye cadenas combinadas limpiando líneas consecutivamente.",
-    "fr": "• Construisez des chaînes de combos en effaçant les lignes consécutivement.",
-    "it": "• Costruisci catene di combo cancellando le linee consecutivamente.",
-    "pt": "• Construa cadeias de combinação eliminando linhas consecutivamente.",
-    "ru": "• Создавайте комбо-цепочки, последовательно очищая линии."
+    "de": "• Wenn der Stapel die obere Hälfte erreicht, erzwinge keine großen Züge; schaffe erst mit Singles oder Doubles Luft und kehre dann zu großen Räumungen zurück.",
+    "en": "• When the stack nears the upper half, stop forcing big plays; first open breathing room with singles or doubles, then return to larger clears.",
+    "es": "• Cuando la pila se acerque a la mitad superior, deja de forzar grandes jugadas; abre espacio con simples o dobles y luego vuelve a limpiezas grandes.",
+    "fr": "• Quand la pile approche la moitié supérieure, arrête de forcer les gros coups ; crée d’abord de l’espace avec des simples ou doubles, puis reviens aux grosses lignes.",
+    "it": "• Quando la pila si avvicina alla metà superiore, smetti di forzare grandi giocate; crea spazio con singole o doppie, poi torna alle pulizie grandi.",
+    "ja": "• 山が上半分に近づいたら大技を無理に狙わず、まず1列や2列消しで余裕を作ってから大きな消去に戻りましょう。",
+    "ko": "• 스택이 위쪽 절반에 가까워지면 큰 수를 억지로 노리지 마세요. 먼저 싱글이나 더블 클리어로 숨 쉴 공간을 만들고 다시 큰 클리어로 돌아가세요.",
+    "pt": "• Quando a pilha chega perto da metade superior, pare de forçar jogadas grandes; abra espaço com simples ou duplas e depois volte às limpezas maiores.",
+    "ru": "• Когда стопка приближается к верхней половине, перестаньте форсировать крупные ходы; сначала освободите место одиночными или двойными очистками.",
+    "zh": "• 当堆叠接近上半区时，不要强行追求大招；先用单行或双行清除腾出空间，再回到大清除。"
   },
   "guide_tip_5": {
-    "de": "• Im Kartenmodus ist es entscheidend, die Karten zum richtigen Zeitpunkt einzusetzen.",
-    "es": "• En el modo de cartas, usar las cartas en el momento adecuado es crucial.",
-    "fr": "• En mode carte, utiliser les cartes au bon moment est crucial.",
-    "it": "• Nella modalità carta, usare le carte al momento giusto è fondamentale.",
-    "pt": "• No modo cartão, usar os cartões na hora certa é crucial.",
-    "ru": "• В карточном режиме крайне важно использовать карты в нужное время."
+    "de": "• Trenne Karten in Card Mastery nach Rolle: Rettungskarten bei Gefahr, Punktekarten direkt vor vorbereiteten Serien, Combos oder großen Räumungen.",
+    "en": "• In Card Mastery, separate cards by role: use rescue cards when trapped, and scoring cards just before a prepared chain, combo, or large clear.",
+    "es": "• En Card Mastery, separa las cartas por rol: rescate cuando estés atrapado y puntuación justo antes de una cadena, combo o gran limpieza preparada.",
+    "fr": "• Dans Card Mastery, sépare les cartes par rôle : cartes de sauvetage quand tu es coincé, cartes de score juste avant une chaîne, un combo ou une grosse ligne préparée.",
+    "it": "• In Card Mastery, separa le carte per ruolo: salvataggio quando sei bloccato, punteggio subito prima di una catena, combo o grande pulizia preparata.",
+    "ja": "• Card Masteryではカードを役割で分けましょう。救済カードは詰まった時に、スコアカードは準備した連鎖・コンボ・大消去の直前に使います。",
+    "ko": "• Card Mastery에서는 카드를 역할별로 나누세요. 구조 카드는 막혔을 때, 점수 카드는 준비한 연쇄, 콤보, 큰 클리어 직전에 사용하세요.",
+    "pt": "• Em Card Mastery, separe cartas por função: resgate quando estiver preso e pontuação antes de uma série, combo ou grande limpeza preparada.",
+    "ru": "• В Card Mastery разделяйте карты по роли: спасательные — когда зажаты, очковые — прямо перед подготовленной цепью, комбо или большой очисткой.",
+    "zh": "• 在 Card Mastery 中按角色区分卡牌：被困时用救援卡，计分卡则留到准备好的连锁、连击或大清除前使用。"
   },
   "guide_tips_title": {
     "ru": "Советы и часто задаваемые вопросы"
@@ -2838,16 +3101,28 @@
     "ru": "итальянский"
   },
   "key_caps_lock": {
+    "ja": "Caps Lock",
+    "ko": "Caps Lock",
+    "pt": "Caps Lock",
     "ru": "Капс Лок"
   },
   "key_enter": {
-    "ja": "入力してください",
-    "pt": "Entrar",
-    "tr": "Girin"
+    "de": "Enter",
+    "es": "Enter",
+    "fr": "Entrée",
+    "it": "Invio",
+    "ja": "Enter",
+    "ko": "엔터",
+    "pt": "Enter",
+    "ru": "Enter",
+    "tr": "Enter",
+    "zh": "回车"
   },
   "key_tab": {
+    "de": "Tab",
     "es": "Pestaña",
     "fr": "Onglet",
+    "it": "Tab",
     "ja": "タブ",
     "ko": "탭",
     "pt": "Guia",
@@ -2868,6 +3143,9 @@
     "ko": "리더보드",
     "zh": "排行榜"
   },
+  "leaderboard_trailer_debug": {
+    "tr": "Liderlik Tablosu Fragman Betiği"
+  },
   "level": {
     "de": "Ebene"
   },
@@ -2887,6 +3165,17 @@
   "loading": {
     "ja": "読み込み中..."
   },
+  "lobby_label": {
+    "de": "Lobby",
+    "es": "Sala",
+    "fr": "Lobby",
+    "it": "Lobby",
+    "ja": "ロビー",
+    "ko": "로비",
+    "pt": "Lobby",
+    "ru": "Лобби",
+    "zh": "大厅"
+  },
   "locked": {
     "ja": "ロックされています",
     "ru": "Заблокировано"
@@ -2899,12 +3188,53 @@
     "ja": "ログアウト",
     "ru": "Выход из системы"
   },
+  "main_menu_title": {
+    "ja": "QUADRIX",
+    "ko": "QUADRIX",
+    "zh": "QUADRIX"
+  },
   "menu_dashboard_campaign_level_single": {
     "it": "Liv {level}",
     "ja": "Lv{level}",
     "ko": "레벨 {level}",
     "tr": "Sv {level}",
     "zh": "等级{level}"
+  },
+  "menu_dashboard_coop_local_label": {
+    "de": "Lokaler Koop",
+    "es": "Co-op local",
+    "fr": "Coop locale",
+    "it": "Co-op locale",
+    "ja": "ローカル協力",
+    "ko": "로컬 협동",
+    "pt": "Co-op local",
+    "ru": "Локальный кооп",
+    "tr": "Yerel Co-op",
+    "zh": "本地合作"
+  },
+  "menu_dashboard_coop_online_label": {
+    "de": "Online-Koop",
+    "es": "Co-op en línea",
+    "fr": "Coop en ligne",
+    "it": "Co-op online",
+    "ja": "オンライン協力",
+    "ko": "온라인 협동",
+    "pt": "Co-op online",
+    "ru": "Онлайн-кооп",
+    "tr": "Online İş Birliği",
+    "zh": "在线合作"
+  },
+  "menu_dashboard_coop_online_sub": {
+    "de": "Steam 2 Spieler",
+    "es": "Steam 2 jugadores",
+    "fr": "Steam 2 joueurs",
+    "it": "Steam 2 giocatori",
+    "ja": "Steam 2人",
+    "ko": "Steam 2인",
+    "pt": "Steam 2 jogadores",
+    "ru": "Steam 2 игрока",
+    "tr": "Steam 2 Oyuncu",
+    "zh": "Steam 双人"
   },
   "menu_dashboard_pvp_local_label": {
     "tr": "Yerel PvP"
@@ -2914,14 +3244,16 @@
     "tr": "Çevrimiçi PvP"
   },
   "menu_dashboard_pvp_online_sub": {
-    "es": "Vapor 1v1",
-    "fr": "Vapeur 1v1",
-    "it": "Vapore 1v1",
-    "ja": "スチーム 1v1",
-    "ko": "스팀 1대1",
-    "pt": "Vapor 1v1",
+    "de": "Steam 1 gegen 1",
+    "es": "Steam 1 contra 1",
+    "fr": "Steam 1 contre 1",
+    "it": "Steam 1 contro 1",
+    "ja": "Steam 1対1",
+    "ko": "Steam 1대1",
+    "pt": "Steam 1 contra 1",
     "ru": "Steam 1 на 1",
-    "zh": "蒸汽1v1"
+    "tr": "Steam 1'e 1",
+    "zh": "Steam 1 对 1"
   },
   "menu_dashboard_sub_campaign_mode": {
     "ru": "Продвигайтесь через миссии"
@@ -2936,10 +3268,16 @@
     "ru": "Увеличьте счет с помощью комбинаций карт"
   },
   "menu_gamepad_label": {
-    "es": "Mando de juegos",
-    "it": "Pannello di gioco",
-    "pt": "Controle de jogo",
-    "tr": "Oyun kumandası"
+    "de": "Gamepad",
+    "es": "Mando",
+    "fr": "Manette",
+    "it": "Gamepad",
+    "ja": "ゲームパッド",
+    "ko": "게임패드",
+    "pt": "Controle",
+    "ru": "Геймпад",
+    "tr": "Oyun kumandası",
+    "zh": "手柄"
   },
   "menu_hint_enter_y": {
     "ko": "ENTER / 예",
@@ -2963,6 +3301,16 @@
   },
   "menu_lb_title": {
     "fr": "Partitions"
+  },
+  "mode_intro_classic_desc": {
+    "ja": "誰もが知るクラシックなQuadrix。\nブロックを置き続けてラインを消そう。",
+    "ko": "모두가 아는 클래식 Quadrix.\n블록을 끝없이 놓고 줄을 지우세요.",
+    "zh": "人人熟悉的经典 Quadrix。\n不断放置方块并清除行。"
+  },
+  "mode_intro_mystery_desc": {
+    "ja": "Quadrixに新しい次元を。\n特殊カードでゲームを操ろう。",
+    "ko": "Quadrix에 새로운 차원을 더합니다.\n특수 카드로 게임을 조작하세요.",
+    "zh": "为 Quadrix 带来全新维度。\n用特殊卡牌操控游戏。"
   },
   "mode_label_cascade": {
     "de": "Kaskade",
@@ -3007,12 +3355,30 @@
   "mode_mystery": {
     "ru": "ТАЙНЫЙ РЕЖИМ"
   },
+  "mode_online_coop": {
+    "de": "Online-Koop",
+    "es": "Co-op en línea",
+    "fr": "Coop en ligne",
+    "it": "Co-op online",
+    "ja": "オンライン協力",
+    "ko": "온라인 협동",
+    "pt": "Co-op online",
+    "ru": "Онлайн-кооп",
+    "tr": "Online İş Birliği",
+    "zh": "在线合作"
+  },
   "mode_online_pvp": {
     "de": "Online-PvP",
     "tr": "Çevrimiçi PvP"
   },
   "mode_tetris_extra": {
+    "de": "QUADRIX EXTRA",
+    "es": "QUADRIX EXTRA",
     "fr": "QUADRIX SUPPLÉMENTAIRE",
+    "it": "QUADRIX EXTRA",
+    "ja": "QUADRIX EXTRA",
+    "ko": "QUADRIX 엑스트라",
+    "pt": "QUADRIX EXTRA",
     "ru": "QUADRIX ДОПОЛНИТЕЛЬНО",
     "tr": "QUADRIX EKSTRA",
     "zh": "QUADRIX 额外"
@@ -3042,10 +3408,16 @@
     "tr": "Hayatta Kalma Modu"
   },
   "music_tetris2": {
+    "de": "Quadrix Extra",
     "es": "Cuadrix Extra",
     "fr": "Quadrix supplémentaire",
+    "it": "Quadrix Extra",
+    "ja": "Quadrix Extra",
+    "ko": "Quadrix 엑스트라",
+    "pt": "Quadrix Extra",
     "ru": "Квадрикс Экстра",
-    "tr": "Quadrix Ekstra"
+    "tr": "Quadrix Ekstra",
+    "zh": "Quadrix 额外模式"
   },
   "music_ultra": {
     "tr": "Ultra Mod"
@@ -3055,6 +3427,1008 @@
   },
   "music_zen": {
     "tr": "Zen Modu"
+  },
+  "mystery_active_combo_boost_bonus_desc": {
+    "de": "Combo wird {seconds}s lang nicht zurückgesetzt (+{bonus}).",
+    "es": "El combo no se reiniciará durante {seconds}s (+{bonus}).",
+    "fr": "Le combo ne se réinitialise pas pendant {seconds}s (+{bonus}).",
+    "it": "La combo non si azzera per {seconds}s (+{bonus}).",
+    "ja": "{seconds}秒間コンボがリセットされません（+{bonus}）。",
+    "ko": "{seconds}초 동안 콤보가 초기화되지 않습니다 (+{bonus}).",
+    "pt": "O combo não reinicia por {seconds}s (+{bonus}).",
+    "ru": "Комбо не сбрасывается {seconds}с (+{bonus}).",
+    "zh": "连击在 {seconds} 秒内不会重置（+{bonus}）。"
+  },
+  "mystery_active_freeze_drop_active_desc": {
+    "de": "Das Teil ist {seconds}s eingefroren. Nur Links/Rechts und Hard Drop bleiben aktiv.",
+    "es": "La pieza está congelada por {seconds}s. Solo quedan activos izquierda/derecha y caída dura.",
+    "fr": "La pièce est gelée pendant {seconds}s. Seuls gauche-droite et hard drop restent actifs.",
+    "it": "Il pezzo è congelato per {seconds}s. Restano attivi solo sinistra/destra e hard drop.",
+    "ja": "ピースは{seconds}秒凍結。左右移動とハードドロップだけ有効です。",
+    "ko": "피스가 {seconds}초 동안 얼어 있습니다. 좌우 이동과 하드 드롭만 활성입니다.",
+    "pt": "A peça fica congelada por {seconds}s. Só esquerda/direita e hard drop continuam ativos.",
+    "ru": "Фигура заморожена на {seconds}с. Активны только движение влево/вправо и hard drop.",
+    "zh": "方块冻结 {seconds} 秒。仅左右移动和硬降可用。"
+  },
+  "mystery_active_ghost_echo_desc": {
+    "de": "Wenn das Spiel enden würde, werden die obersten {rows} Reihen gelöscht.",
+    "es": "Si la partida fuera a terminar, se limpian las {rows} filas superiores.",
+    "fr": "Si la partie devait se terminer, les {rows} lignes du haut sont effacées.",
+    "it": "Se la partita stesse per finire, le prime {rows} righe vengono cancellate.",
+    "ja": "ゲーム終了になりそうな時、上から{rows}行を消します。",
+    "ko": "게임이 끝날 상황이면 맨 위 {rows}줄을 지웁니다.",
+    "pt": "Se o jogo fosse acabar, as {rows} linhas superiores são limpas.",
+    "ru": "Если игра должна закончиться, верхние {rows} рядов очищаются.",
+    "zh": "若游戏即将结束，将清除顶部 {rows} 行。"
+  },
+  "mystery_active_gravity_freeze_desc": {
+    "de": "Die Schwerkraft stoppt für {seconds}s.",
+    "es": "La gravedad se detiene durante {seconds}s.",
+    "fr": "La gravité s’arrête pendant {seconds}s.",
+    "it": "La gravità si ferma per {seconds}s.",
+    "ja": "重力が{seconds}秒停止します。",
+    "ko": "중력이 {seconds}초 동안 멈춥니다.",
+    "pt": "A gravidade para por {seconds}s.",
+    "ru": "Гравитация остановлена на {seconds}с.",
+    "zh": "重力暂停 {seconds} 秒。"
+  },
+  "mystery_active_gravity_freeze_title": {
+    "de": "Schwerkraftstopp",
+    "es": "Parada de gravedad",
+    "fr": "Arrêt de gravité",
+    "it": "Arresto gravità",
+    "ja": "重力停止",
+    "ko": "중력 정지",
+    "pt": "Parada da gravidade",
+    "ru": "Остановка гравитации",
+    "zh": "重力暂停"
+  },
+  "mystery_active_line_bonus_flat_desc": {
+    "de": "Für die nächsten {count} Linienräumungen +{bonus} Punkte.",
+    "es": "+{bonus} puntos para las próximas {count} líneas despejadas.",
+    "fr": "+{bonus} points pour les {count} prochaines lignes effacées.",
+    "it": "+{bonus} punti per le prossime {count} righe cancellate.",
+    "ja": "次の{count}回のライン消去で+{bonus}点。",
+    "ko": "다음 {count}번 줄 삭제에 +{bonus}점.",
+    "pt": "+{bonus} pontos nas próximas {count} linhas limpas.",
+    "ru": "+{bonus} очков за следующие {count} очисток линий.",
+    "zh": "接下来 {count} 次清行 +{bonus} 分。"
+  },
+  "mystery_active_line_multiplier_desc": {
+    "de": "{multiplier}x Punkte für die nächsten {count} Linienräumungen.",
+    "es": "Puntos x{multiplier} para las próximas {count} líneas despejadas.",
+    "fr": "Points x{multiplier} pour les {count} prochaines lignes effacées.",
+    "it": "Punti x{multiplier} per le prossime {count} righe cancellate.",
+    "ja": "次の{count}回のライン消去で{multiplier}倍スコア。",
+    "ko": "다음 {count}번 줄 삭제에 {multiplier}배 점수.",
+    "pt": "Pontos x{multiplier} nas próximas {count} linhas limpas.",
+    "ru": "Очки x{multiplier} за следующие {count} очисток линий.",
+    "zh": "接下来 {count} 次清行获得 {multiplier} 倍分数。"
+  },
+  "mystery_active_quantum_tunneling_active_desc": {
+    "de": "Geisterteil aktiv. Das aktuelle Teil bewegt sich durch Blöcke.",
+    "es": "Pieza fantasma activa. La pieza actual atraviesa bloques.",
+    "fr": "Pièce fantôme active. La pièce actuelle traverse les blocs.",
+    "it": "Pezzo fantasma attivo. Il pezzo corrente attraversa i blocchi.",
+    "ja": "ゴーストピース有効。現在のピースはブロックを通過します。",
+    "ko": "고스트 피스 활성. 현재 피스가 블록을 통과합니다.",
+    "pt": "Peça fantasma ativa. A peça atual atravessa blocos.",
+    "ru": "Призрачная фигура активна. Текущая фигура проходит сквозь блоки.",
+    "zh": "幽灵方块已激活。当前方块会穿过方块。"
+  },
+  "mystery_active_score_window_desc": {
+    "de": "{seconds}s lang {multiplier}x Punktemultiplikator.",
+    "es": "Multiplicador de puntuación x{multiplier} durante {seconds}s.",
+    "fr": "Multiplicateur de score x{multiplier} pendant {seconds}s.",
+    "it": "Moltiplicatore punteggio x{multiplier} per {seconds}s.",
+    "ja": "{seconds}秒間スコア{multiplier}倍。",
+    "ko": "{seconds}초 동안 {multiplier}배 점수 배율.",
+    "pt": "Multiplicador de pontuação x{multiplier} por {seconds}s.",
+    "ru": "Множитель очков x{multiplier} на {seconds}с.",
+    "zh": "{seconds} 秒内分数 {multiplier} 倍。"
+  },
+  "mystery_active_tag_effect": {
+    "de": "Effekt",
+    "es": "Efecto",
+    "fr": "Effet",
+    "it": "Effetto",
+    "ja": "効果",
+    "ko": "효과",
+    "pt": "Efeito",
+    "ru": "Эффект",
+    "zh": "效果"
+  },
+  "mystery_active_tag_perk": {
+    "de": "Perk",
+    "es": "Ventaja",
+    "fr": "Atout",
+    "it": "Perk",
+    "ja": "パーク",
+    "ko": "특전",
+    "pt": "Benefício",
+    "ru": "Перк",
+    "tr": "Perk",
+    "zh": "特性"
+  },
+  "mystery_active_time_capsule_restore_desc": {
+    "de": "{label}: Gespeicherten Feldzustand wiederherstellen.",
+    "es": "{label}: restaura el estado guardado del tablero.",
+    "fr": "{label} : restaurer l’état sauvegardé du plateau.",
+    "it": "{label}: ripristina lo stato salvato del campo.",
+    "ja": "{label}: 保存した盤面状態を復元。",
+    "ko": "{label}: 저장된 보드 상태 복원.",
+    "pt": "{label}: restaure o estado salvo do tabuleiro.",
+    "ru": "{label}: восстановить сохранённое состояние поля.",
+    "zh": "{label}：恢复已保存的棋盘状态。"
+  },
+  "mystery_active_time_capsule_save_desc": {
+    "de": "{label}: Aktuellen Feldzustand speichern.",
+    "es": "{label}: guarda el estado actual del tablero.",
+    "fr": "{label} : sauvegarder l’état actuel du plateau.",
+    "it": "{label}: salva lo stato attuale del campo.",
+    "ja": "{label}: 現在の盤面状態を保存。",
+    "ko": "{label}: 현재 보드 상태 저장.",
+    "pt": "{label}: salve o estado atual do tabuleiro.",
+    "ru": "{label}: сохранить текущее состояние поля.",
+    "zh": "{label}：保存当前棋盘状态。"
+  },
+  "mystery_future_popup_cancel_label": {
+    "de": "ESC: Abbrechen",
+    "es": "ESC: Cancelar",
+    "fr": "ESC : Annuler",
+    "it": "ESC: Annulla",
+    "ja": "ESC: キャンセル",
+    "ko": "ESC: 취소",
+    "pt": "ESC: Cancelar",
+    "ru": "ESC: Отмена",
+    "zh": "ESC：取消"
+  },
+  "mystery_future_popup_first_message": {
+    "de": "Wähle das 1. nächste Teil!",
+    "es": "¡Elige la 1.ª pieza siguiente!",
+    "fr": "Choisis la 1re prochaine pièce !",
+    "it": "Scegli il 1° prossimo pezzo!",
+    "ja": "1つ目の次ピースを選んでください！",
+    "ko": "첫 번째 다음 피스를 선택하세요!",
+    "pt": "Escolha a 1ª próxima peça!",
+    "ru": "Выберите 1-ю следующую фигуру!",
+    "zh": "选择第 1 个后续方块！"
+  },
+  "mystery_future_popup_selected_done": {
+    "de": "{piece_name} gewählt! Die kommenden Teile wurden geändert.",
+    "es": "¡{piece_name} seleccionada! Las próximas piezas se cambiaron.",
+    "fr": "{piece_name} sélectionnée ! Les prochaines pièces ont été changées.",
+    "it": "{piece_name} selezionato! I prossimi pezzi sono stati cambiati.",
+    "ja": "{piece_name}を選択！今後のピースを変更しました。",
+    "ko": "{piece_name} 선택! 예정 피스가 변경되었습니다.",
+    "pt": "{piece_name} selecionada! As próximas peças foram alteradas.",
+    "ru": "Выбрано: {piece_name}! Следующие фигуры изменены.",
+    "zh": "已选择 {piece_name}！后续方块已更改。"
+  },
+  "mystery_future_popup_selected_next": {
+    "de": "{piece_name} gewählt! Wähle das 2. nächste Teil!",
+    "es": "¡{piece_name} seleccionada! Elige la 2.ª pieza siguiente.",
+    "fr": "{piece_name} sélectionnée ! Choisis la 2e prochaine pièce !",
+    "it": "{piece_name} selezionato! Scegli il 2° prossimo pezzo!",
+    "ja": "{piece_name}を選択！2つ目の次ピースを選んでください！",
+    "ko": "{piece_name} 선택! 두 번째 다음 피스를 선택하세요!",
+    "pt": "{piece_name} selecionada! Escolha a 2ª próxima peça!",
+    "ru": "Выбрано: {piece_name}! Выберите 2-ю следующую фигуру!",
+    "zh": "已选择 {piece_name}！请选择第 2 个后续方块！"
+  },
+  "mystery_future_popup_title": {
+    "de": "Kommendes Teil #{order} wählen",
+    "es": "Elegir próxima pieza #{order}",
+    "fr": "Choisir la prochaine pièce #{order}",
+    "it": "Scegli prossimo pezzo #{order}",
+    "ja": "次ピース#{order}を選択",
+    "ko": "예정 피스 #{order} 선택",
+    "pt": "Escolher próxima peça #{order}",
+    "ru": "Выберите следующую фигуру #{order}",
+    "zh": "选择后续方块 #{order}"
+  },
+  "mystery_msg_block_magnet": {
+    "de": "Blockmagnet: Die Lücken sind weg!",
+    "es": "Imán de bloques: ¡los huecos desaparecieron!",
+    "fr": "Aimant à blocs : les trous ont disparu !",
+    "it": "Magnete blocchi: i buchi sono spariti!",
+    "ja": "ブロック磁石: 隙間が消えました！",
+    "ko": "블록 자석: 빈틈이 사라졌습니다!",
+    "pt": "Ímã de blocos: os buracos sumiram!",
+    "ru": "Магнит блоков: пробелы исчезли!",
+    "zh": "方块磁铁：空洞消失了！"
+  },
+  "mystery_msg_bomb_countdown": {
+    "de": "BOMBE: {count}",
+    "es": "BOMBA: {count}",
+    "fr": "BOMBE : {count}",
+    "it": "BOMBA: {count}",
+    "ja": "爆弾: {count}",
+    "ko": "폭탄: {count}",
+    "pt": "BOMBA: {count}",
+    "ru": "БОМБА: {count}",
+    "zh": "炸弹：{count}"
+  },
+  "mystery_msg_bomb_master_next_piece_bomb": {
+    "de": "Bombenmeister: Das nächste Teil ist eine BOMBE (+)",
+    "es": "Maestro de bombas: la siguiente pieza es una BOMBA (+)",
+    "fr": "Maître des bombes : la prochaine pièce est une BOMBE (+)",
+    "it": "Maestro delle bombe: il prossimo pezzo è una BOMBA (+)",
+    "ja": "ボムマスター: 次のピースは爆弾（+）です",
+    "ko": "폭탄 마스터: 다음 피스는 폭탄(+)입니다",
+    "pt": "Mestre das bombas: a próxima peça é uma BOMBA (+)",
+    "ru": "Мастер бомб: следующая фигура — БОМБА (+)",
+    "zh": "炸弹大师：下一个方块是炸弹（+）"
+  },
+  "mystery_msg_bomb_master_no_piece": {
+    "de": "Bombenmeister: Kein aktives Teil!",
+    "es": "Maestro de bombas: ¡no hay pieza activa!",
+    "fr": "Maître des bombes : aucune pièce active !",
+    "it": "Maestro delle bombe: nessun pezzo attivo!",
+    "ja": "ボムマスター: アクティブなピースがありません！",
+    "ko": "폭탄 마스터: 활성 피스가 없습니다!",
+    "pt": "Mestre das bombas: nenhuma peça ativa!",
+    "ru": "Мастер бомб: нет активной фигуры!",
+    "zh": "炸弹大师：没有活动方块！"
+  },
+  "mystery_msg_bomb_master_ready": {
+    "de": "Bombenmeister! Drücke M für Mini-Bomben ({charges} Ladungen)",
+    "es": "¡Maestro de bombas! Pulsa M para mini bombas ({charges} cargas)",
+    "fr": "Maître des bombes ! Appuie sur M pour des mini-bombes ({charges} charges)",
+    "it": "Maestro delle bombe! Premi M per mini bombe ({charges} cariche)",
+    "ja": "ボムマスター！Mでミニ爆弾（{charges}回）",
+    "ko": "폭탄 마스터! M으로 미니 폭탄 사용 ({charges}회)",
+    "pt": "Mestre das bombas! Pressione M para mini bombas ({charges} cargas)",
+    "ru": "Мастер бомб! Нажмите M для мини-бомб ({charges} зарядов)",
+    "zh": "炸弹大师！按 M 使用迷你炸弹（{charges} 次）"
+  },
+  "mystery_msg_clear_rows": {
+    "de": "Bodensweep: -{rows} Reihen",
+    "es": "Barrido inferior: -{rows} filas",
+    "fr": "Balayage du bas : -{rows} lignes",
+    "it": "Spazzata del fondo: -{rows} righe",
+    "ja": "ボトムスイープ: -{rows}行",
+    "ko": "바닥 청소: -{rows}줄",
+    "pt": "Varredura inferior: -{rows} linhas",
+    "ru": "Нижняя зачистка: -{rows} рядов",
+    "zh": "底部清扫：-{rows} 行"
+  },
+  "mystery_msg_color_cleanse_empty": {
+    "de": "Farb-Reinigung: Das Feld ist leer!",
+    "es": "Limpieza de color: ¡el tablero está vacío!",
+    "fr": "Purification couleur : le plateau est vide !",
+    "it": "Purifica colore: il campo è vuoto!",
+    "ja": "カラークレンズ: 盤面は空です！",
+    "ko": "색상 정화: 보드가 비어 있습니다!",
+    "pt": "Limpeza de cor: o tabuleiro está vazio!",
+    "ru": "Цветовая очистка: поле пустое!",
+    "zh": "颜色清除：棋盘为空！"
+  },
+  "mystery_msg_color_cleanse_removed": {
+    "de": "Farb-Reinigung: {removed} Blöcke gelöscht! (RGB:{r},{g},{b})",
+    "es": "Limpieza de color: ¡{removed} bloques eliminados! (RGB:{r},{g},{b})",
+    "fr": "Purification couleur : {removed} blocs effacés ! (RGB:{r},{g},{b})",
+    "it": "Purifica colore: {removed} blocchi rimossi! (RGB:{r},{g},{b})",
+    "ja": "カラークレンズ: {removed}ブロック消去！(RGB:{r},{g},{b})",
+    "ko": "색상 정화: {removed}개 블록 제거! (RGB:{r},{g},{b})",
+    "pt": "Limpeza de cor: {removed} blocos limpos! (RGB:{r},{g},{b})",
+    "ru": "Цветовая очистка: блоков удалено: {removed}! (RGB:{r},{g},{b})",
+    "zh": "颜色清除：已清除 {removed} 个方块！(RGB:{r},{g},{b})"
+  },
+  "mystery_msg_column_cleanse": {
+    "de": "{count} Spalten gelöscht!",
+    "es": "¡{count} columnas despejadas!",
+    "fr": "{count} colonnes effacées !",
+    "it": "{count} colonne cancellate!",
+    "ja": "{count}列消去！",
+    "ko": "{count}열 클리어!",
+    "pt": "{count} colunas limpas!",
+    "ru": "Столбцов очищено: {count}!",
+    "zh": "已清除 {count} 列！"
+  },
+  "mystery_msg_flexible_border": {
+    "de": "Flexible Grenze aktiv! Teile dürfen über die Ränder hinausragen.",
+    "es": "¡Borde flexible activo! Las piezas pueden sobresalir de los bordes.",
+    "fr": "Bordure flexible active ! Les pièces peuvent dépasser les bords.",
+    "it": "Bordo flessibile attivo! I pezzi possono uscire dai bordi.",
+    "ja": "フレキシブル境界有効！ピースが端からはみ出せます。",
+    "ko": "유연한 경계 활성! 피스가 가장자리를 넘어갈 수 있습니다.",
+    "pt": "Borda flexível ativa! As peças podem passar das bordas.",
+    "ru": "Гибкая граница активна! Фигуры могут выходить за края.",
+    "zh": "弹性边界已激活！方块可以越过边缘。"
+  },
+  "mystery_msg_freeze_drop_expired": {
+    "de": "❄️ Frost abgelaufen!",
+    "es": "❄️ ¡Congelación terminada!",
+    "fr": "❄️ Gel terminé !",
+    "it": "❄️ Congelamento terminato!",
+    "ja": "❄️ 凍結終了！",
+    "ko": "❄️ 동결 종료!",
+    "pt": "❄️ Congelamento acabou!",
+    "ru": "❄️ Заморозка закончилась!",
+    "zh": "❄️ 冻结结束！"
+  },
+  "mystery_msg_freeze_drop_ready": {
+    "de": "Final Drop! F zum Einfrieren ({charges} Ladungen, {duration}s)",
+    "es": "¡Caída final! Pulsa F para congelar ({charges} cargas, {duration}s)",
+    "fr": "Chute finale ! Appuie sur F pour geler ({charges} charges, {duration}s)",
+    "it": "Caduta finale! Premi F per congelare ({charges} cariche, {duration}s)",
+    "ja": "ファイナルドロップ！Fで凍結（{charges}回、{duration}秒）",
+    "ko": "파이널 드롭! F로 동결 ({charges}회, {duration}초)",
+    "pt": "Queda final! Pressione F para congelar ({charges} cargas, {duration}s)",
+    "ru": "Финальное падение! Нажмите F для заморозки ({charges} зарядов, {duration}с)",
+    "zh": "最终下落！按 F 冻结（{charges} 次，{duration} 秒）"
+  },
+  "mystery_msg_freeze_drop_used": {
+    "de": "❄️ Teil für {duration}s eingefroren. Übrig: {left}",
+    "es": "❄️ Pieza congelada por {duration}s. Restantes: {left}",
+    "fr": "❄️ Pièce gelée pendant {duration}s. Restant : {left}",
+    "it": "❄️ Pezzo congelato per {duration}s. Rimaste: {left}",
+    "ja": "❄️ ピースを{duration}秒凍結。残り: {left}",
+    "ko": "❄️ 피스가 {duration}초 동안 얼었습니다. 남음: {left}",
+    "pt": "❄️ Peça congelada por {duration}s. Restantes: {left}",
+    "ru": "❄️ Фигура заморожена на {duration}с. Осталось: {left}",
+    "zh": "❄️ 方块冻结 {duration} 秒。剩余：{left}"
+  },
+  "mystery_msg_future_cancelled": {
+    "de": "Teileauswahl abgebrochen.",
+    "es": "Selección de pieza cancelada.",
+    "fr": "Sélection de pièce annulée.",
+    "it": "Selezione pezzo annullata.",
+    "ja": "ピース選択をキャンセルしました。",
+    "ko": "피스 선택이 취소되었습니다.",
+    "pt": "Seleção de peça cancelada.",
+    "ru": "Выбор фигуры отменён.",
+    "zh": "已取消方块选择。"
+  },
+  "mystery_msg_gambler_empty": {
+    "de": "🎲 Das Feld ist leer. Pech, aber harmlos!",
+    "es": "🎲 El tablero está vacío. Mala suerte, pero no pasa nada.",
+    "fr": "🎲 Le plateau est vide. Pas de chance, mais sans danger !",
+    "it": "🎲 Il campo è vuoto. Sfortuna, ma nessun danno!",
+    "ja": "🎲 盤面は空です。残念ですが被害なし！",
+    "ko": "🎲 보드가 비어 있습니다. 운은 나빴지만 피해는 없습니다!",
+    "pt": "🎲 O tabuleiro está vazio. Azar, mas sem dano!",
+    "ru": "🎲 Поле пустое. Не повезло, но без вреда!",
+    "zh": "🎲 棋盘是空的。运气不佳，但没有影响！"
+  },
+  "mystery_msg_gambler_jackpot": {
+    "de": "🎲 JACKPOT! Das ganze Feld wurde geleert! +{bonus} Punkte",
+    "es": "🎲 ¡JACKPOT! ¡Se limpió todo el tablero! +{bonus} puntos",
+    "fr": "🎲 JACKPOT ! Tout le plateau a été nettoyé ! +{bonus} points",
+    "it": "🎲 JACKPOT! Tutto il campo è stato ripulito! +{bonus} punti",
+    "ja": "🎲 ジャックポット！盤面を全消し！+{bonus}点",
+    "ko": "🎲 잭팟! 보드 전체가 지워졌습니다! +{bonus}점",
+    "pt": "🎲 JACKPOT! O tabuleiro inteiro foi limpo! +{bonus} pontos",
+    "ru": "🎲 ДЖЕКПОТ! Всё поле очищено! +{bonus} очков",
+    "zh": "🎲 大奖！整个棋盘已清空！+{bonus} 分"
+  },
+  "mystery_msg_gambler_scramble": {
+    "de": "🎲 Pech! {placed} Blöcke wurden durcheinandergewirbelt!",
+    "es": "🎲 ¡Mala suerte! ¡{placed} bloques fueron mezclados!",
+    "fr": "🎲 Pas de chance ! {placed} blocs ont été mélangés !",
+    "it": "🎲 Sfortuna! {placed} blocchi sono stati mescolati!",
+    "ja": "🎲 残念！{placed}個のブロックがシャッフルされました！",
+    "ko": "🎲 운이 나쁩니다! {placed}개 블록이 뒤섞였습니다!",
+    "pt": "🎲 Azar! {placed} blocos foram embaralhados!",
+    "ru": "🎲 Не повезло! Блоков перемешано: {placed}!",
+    "zh": "🎲 运气不佳！{placed} 个方块被打乱！"
+  },
+  "mystery_msg_gravity_well": {
+    "de": "Gravitationsfeld: {lines} Linien",
+    "es": "Pozo gravitatorio: {lines} líneas",
+    "fr": "Puits gravitationnel : {lines} lignes",
+    "it": "Pozzo gravitazionale: {lines} righe",
+    "ja": "重力井戸: {lines}ライン",
+    "ko": "중력 우물: {lines}줄",
+    "pt": "Poço gravitacional: {lines} linhas",
+    "ru": "Гравитационный колодец: {lines} линий",
+    "zh": "重力井：{lines} 行"
+  },
+  "mystery_msg_hammer_ready": {
+    "de": "Hammer: {charges} Ladungen (H drücken)",
+    "es": "Martillo: {charges} cargas (pulsa H)",
+    "fr": "Marteau : {charges} charges (appuie sur H)",
+    "it": "Martello: {charges} cariche (premi H)",
+    "ja": "ハンマー: {charges}回（H）",
+    "ko": "망치: {charges}회 (H 누르기)",
+    "pt": "Martelo: {charges} cargas (pressione H)",
+    "ru": "Молот: {charges} зарядов (нажмите H)",
+    "zh": "锤子：{charges} 次（按 H）"
+  },
+  "mystery_msg_hammer_used": {
+    "de": "Hammer! Aktuelles Teil ist 1x1. Übrig: {left}",
+    "es": "¡Martillo! La pieza actual es 1x1. Restantes: {left}",
+    "fr": "Marteau ! La pièce actuelle est 1x1. Restant : {left}",
+    "it": "Martello! Il pezzo attuale è 1x1. Rimaste: {left}",
+    "ja": "ハンマー！現在のピースは1x1。残り: {left}",
+    "ko": "망치! 현재 피스는 1x1입니다. 남음: {left}",
+    "pt": "Martelo! A peça atual é 1x1. Restantes: {left}",
+    "ru": "Молот! Текущая фигура 1x1. Осталось: {left}",
+    "zh": "锤子！当前方块变为 1x1。剩余：{left}"
+  },
+  "mystery_msg_hold_destroyer_no_piece": {
+    "de": "Kein gehaltenes Teil zum Löschen!",
+    "es": "¡No hay pieza en Hold para destruir!",
+    "fr": "Aucune pièce en réserve à détruire !",
+    "it": "Nessun pezzo in Hold da distruggere!",
+    "ja": "破壊するホールドピースがありません！",
+    "ko": "파괴할 홀드 피스가 없습니다!",
+    "pt": "Nenhuma peça em Hold para destruir!",
+    "ru": "Нет фигуры в Hold для уничтожения!",
+    "zh": "没有可破坏的 Hold 方块！"
+  },
+  "mystery_msg_hold_destroyer_ready": {
+    "de": "Hold-Brecher! Drücke {button}, um Hold zu löschen ({total} Ladungen)",
+    "es": "¡Rompe Hold! Pulsa {button} para borrar Hold ({total} cargas)",
+    "fr": "Briseur de Hold ! Appuie sur {button} pour effacer Hold ({total} charges)",
+    "it": "Spacca Hold! Premi {button} per cancellare Hold ({total} cariche)",
+    "ja": "ホールドブレイカー！{button}でHoldを消去（{total}回）",
+    "ko": "홀드 브레이커! {button}로 홀드 제거 ({total}회)",
+    "pt": "Quebra-Hold! Pressione {button} para apagar Hold ({total} cargas)",
+    "ru": "Разрушитель Hold! Нажмите {button}, чтобы стереть Hold ({total} зарядов)",
+    "zh": "Hold 破坏者！按 {button} 清除 Hold（{total} 次）"
+  },
+  "mystery_msg_hold_destroyer_used": {
+    "de": "Gehaltenes Teil gelöscht! Übrig: {left}",
+    "es": "¡Pieza en Hold eliminada! Restantes: {left}",
+    "fr": "Pièce en réserve supprimée ! Restant : {left}",
+    "it": "Pezzo in Hold eliminato! Rimaste: {left}",
+    "ja": "ホールド中のピースを削除！残り: {left}",
+    "ko": "홀드 피스를 삭제했습니다! 남음: {left}",
+    "pt": "Peça em Hold apagada! Restantes: {left}",
+    "ru": "Фигура из Hold удалена! Осталось: {left}",
+    "zh": "已删除 Hold 中的方块！剩余：{left}"
+  },
+  "mystery_msg_line_bonus_ready": {
+    "de": "Nächste {lines} Linien: {multiplier:.0f}x Punkte!",
+    "es": "Siguientes {lines} líneas: ¡puntos x{multiplier:.0f}!",
+    "fr": "Prochaines {lines} lignes : points x{multiplier:.0f} !",
+    "it": "Prossime {lines} righe: punti x{multiplier:.0f}!",
+    "ja": "次の{lines}ライン: {multiplier:.0f}倍スコア！",
+    "ko": "다음 {lines}줄: {multiplier:.0f}배 점수!",
+    "pt": "Próximas {lines} linhas: pontos x{multiplier:.0f}!",
+    "ru": "Следующие {lines} линий: очки x{multiplier:.0f}!",
+    "zh": "接下来 {lines} 行：{multiplier:.0f} 倍分数！"
+  },
+  "mystery_msg_mini_bomb_armed": {
+    "de": "Mini-Bombe! Das Teil explodiert beim Einrasten. Übrig: {left}",
+    "es": "¡Mini bomba! La pieza explotará al fijarse. Restantes: {left}",
+    "fr": "Mini-bombe ! La pièce explosera au verrouillage. Restant : {left}",
+    "it": "Mini bomba! Il pezzo esploderà quando si blocca. Rimaste: {left}",
+    "ja": "ミニ爆弾！固定時に爆発します。残り: {left}",
+    "ko": "미니 폭탄! 피스가 고정될 때 폭발합니다. 남음: {left}",
+    "pt": "Mini bomba! A peça explodirá ao travar. Restantes: {left}",
+    "ru": "Мини-бомба! Фигура взорвётся при фиксации. Осталось: {left}",
+    "zh": "迷你炸弹！方块锁定时会爆炸。剩余：{left}"
+  },
+  "mystery_msg_mini_bomb_no_piece": {
+    "de": "Mini-Bombe: Kein aktives Teil!",
+    "es": "Mini bomba: ¡no hay pieza activa!",
+    "fr": "Mini-bombe : aucune pièce active !",
+    "it": "Mini bomba: nessun pezzo attivo!",
+    "ja": "ミニ爆弾: アクティブなピースがありません！",
+    "ko": "미니 폭탄: 활성 피스가 없습니다!",
+    "pt": "Mini bomba: nenhuma peça ativa!",
+    "ru": "Мини-бомба: нет активной фигуры!",
+    "zh": "迷你炸弹：没有活动方块！"
+  },
+  "mystery_msg_mini_bomb_ready": {
+    "de": "Mini-Bombe: Dieses Teil explodiert beim Einrasten!",
+    "es": "Mini bomba: ¡esta pieza explotará al fijarse!",
+    "fr": "Mini-bombe : cette pièce explosera au verrouillage !",
+    "it": "Mini bomba: questo pezzo esploderà quando si blocca!",
+    "ja": "ミニ爆弾: このピースは固定時に爆発します！",
+    "ko": "미니 폭탄: 이 피스는 고정될 때 폭발합니다!",
+    "pt": "Mini bomba: esta peça explodirá ao travar!",
+    "ru": "Мини-бомба: эта фигура взорвётся при фиксации!",
+    "zh": "迷你炸弹：此方块锁定时会爆炸！"
+  },
+  "mystery_msg_nova_burst_charges": {
+    "de": "Nova-Burst: +{count} Ladungen (gesamt {total})",
+    "es": "Estallido Nova: +{count} cargas (total {total})",
+    "fr": "Explosion Nova : +{count} charges (total {total})",
+    "it": "Esplosione Nova: +{count} cariche (totale {total})",
+    "ja": "ノヴァバースト: +{count}回（合計{total}）",
+    "ko": "노바 버스트: +{count}회 (총 {total})",
+    "pt": "Explosão Nova: +{count} cargas (total {total})",
+    "ru": "Всплеск Нова: +{count} зарядов (всего {total})",
+    "zh": "新星爆发：+{count} 次（总计 {total}）"
+  },
+  "mystery_msg_peak_sculpt_balanced": {
+    "de": "Gipfelbildhauer: bereits ausgeglichen",
+    "es": "Escultor de picos: ya está equilibrado",
+    "fr": "Sculpteur de pics : déjà équilibré",
+    "it": "Scultore dei picchi: già bilanciato",
+    "ja": "ピーク彫刻家: すでに安定しています",
+    "ko": "봉우리 조각가: 이미 균형 잡힘",
+    "pt": "Escultor de picos: já está equilibrado",
+    "ru": "Скульптор пиков: уже сбалансировано",
+    "zh": "峰形雕刻：已经平衡"
+  },
+  "mystery_msg_peak_sculpt_removed": {
+    "de": "Gipfelbildhauer: -{removed} Blöcke",
+    "es": "Escultor de picos: -{removed} bloques",
+    "fr": "Sculpteur de pics : -{removed} blocs",
+    "it": "Scultore dei picchi: -{removed} blocchi",
+    "ja": "ピーク彫刻家: -{removed}ブロック",
+    "ko": "봉우리 조각가: -{removed}블록",
+    "pt": "Escultor de picos: -{removed} blocos",
+    "ru": "Скульптор пиков: -{removed} блоков",
+    "zh": "峰形雕刻：-{removed} 个方块"
+  },
+  "mystery_msg_piece_already_bomb": {
+    "de": "Dieses Teil ist bereits eine Bombe!",
+    "es": "¡Esta pieza ya es una bomba!",
+    "fr": "Cette pièce est déjà une bombe !",
+    "it": "Questo pezzo è già una bomba!",
+    "ja": "このピースはすでに爆弾です！",
+    "ko": "이 피스는 이미 폭탄입니다!",
+    "pt": "Esta peça já é uma bomba!",
+    "ru": "Эта фигура уже бомба!",
+    "zh": "这个方块已经是炸弹！"
+  },
+  "mystery_msg_quantum_tunneling_ready": {
+    "de": "Geisterteil: {charges} Ladungen (G drücken)",
+    "es": "Pieza fantasma: {charges} cargas (pulsa G)",
+    "fr": "Pièce fantôme : {charges} charges (appuie sur G)",
+    "it": "Pezzo fantasma: {charges} cariche (premi G)",
+    "ja": "ゴーストピース: {charges}回（G）",
+    "ko": "고스트 피스: {charges}회 (G 누르기)",
+    "pt": "Peça fantasma: {charges} cargas (pressione G)",
+    "ru": "Призрачная фигура: {charges} зарядов (нажмите G)",
+    "zh": "幽灵方块：{charges} 次（按 G）"
+  },
+  "mystery_msg_revive": {
+    "de": "Zurück vom Abgrund!",
+    "es": "¡De vuelta del borde!",
+    "fr": "De retour du bord du gouffre !",
+    "it": "Di ritorno dal baratro!",
+    "ja": "崖っぷちから復帰！",
+    "ko": "위기에서 돌아왔습니다!",
+    "pt": "De volta do limite!",
+    "ru": "Возвращение с края!",
+    "zh": "从崩溃边缘回来了！"
+  },
+  "mystery_msg_rewind_last_use": {
+    "de": "Rückspulen benutzt! (letzte Ladung)",
+    "es": "¡Rebobinado usado! (última carga)",
+    "fr": "Rembobinage utilisé ! (dernière charge)",
+    "it": "Riavvolgimento usato! (ultima carica)",
+    "ja": "巻き戻し使用！（最後のチャージ）",
+    "ko": "되감기 사용! (마지막 충전)",
+    "pt": "Retrocesso usado! (última carga)",
+    "ru": "Откат использован! (последний заряд)",
+    "zh": "已使用回退！（最后一次）"
+  },
+  "mystery_msg_rewind_no_piece": {
+    "de": "Kein Teil zum Zurückspulen!",
+    "es": "¡No hay pieza para rebobinar!",
+    "fr": "Aucune pièce à rembobiner !",
+    "it": "Nessun pezzo da riavvolgere!",
+    "ja": "巻き戻すピースがありません！",
+    "ko": "되감을 피스가 없습니다!",
+    "pt": "Nenhuma peça para retroceder!",
+    "ru": "Нет фигуры для отката!",
+    "zh": "没有可回退的方块！"
+  },
+  "mystery_msg_rewind_no_uses": {
+    "de": "Keine Rückspul-Ladungen mehr!",
+    "es": "¡No te quedan cargas de rebobinado!",
+    "fr": "Tu n’as plus de charges de rembobinage !",
+    "it": "Hai esaurito le cariche di riavvolgimento!",
+    "ja": "巻き戻しチャージがありません！",
+    "ko": "되감기 충전이 없습니다!",
+    "pt": "Você ficou sem cargas de retrocesso!",
+    "ru": "Заряды отката закончились!",
+    "zh": "回退次数已用完！"
+  },
+  "mystery_msg_rewind_remaining": {
+    "de": "Rückspulen! ({remaining} Ladungen übrig)",
+    "es": "¡Rebobinado! (quedan {remaining} cargas)",
+    "fr": "Rembobinage ! ({remaining} charges restantes)",
+    "it": "Riavvolgimento! ({remaining} cariche rimaste)",
+    "ja": "巻き戻し！残り{remaining}回",
+    "ko": "되감기! 남은 충전: {remaining}",
+    "pt": "Retrocesso! ({remaining} cargas restantes)",
+    "ru": "Откат! Осталось зарядов: {remaining}",
+    "zh": "回退！剩余 {remaining} 次"
+  },
+  "mystery_msg_row_shuffle": {
+    "de": "Reihenmischer: untere {rows} Reihen",
+    "es": "Mezcla de filas: {rows} filas inferiores",
+    "fr": "Mélange des lignes : {rows} lignes du bas",
+    "it": "Mescola righe: ultime {rows} righe",
+    "ja": "列シャッフル: 下{rows}行",
+    "ko": "줄 섞기: 아래 {rows}줄",
+    "pt": "Embaralhar linhas: {rows} linhas inferiores",
+    "ru": "Перемешивание рядов: нижние {rows} рядов",
+    "zh": "行洗牌：底部 {rows} 行"
+  },
+  "mystery_msg_score_bonus": {
+    "de": "+{total} Punkte!",
+    "es": "¡+{total} puntos!",
+    "fr": "+{total} points !",
+    "it": "+{total} punti!",
+    "ja": "+{total}点！",
+    "ko": "+{total}점!",
+    "pt": "+{total} pontos!",
+    "ru": "+{total} очков!",
+    "zh": "+{total} 分！"
+  },
+  "mystery_msg_sniper_cancel": {
+    "de": "Scharfschütze abgebrochen (übrig: {charges})",
+    "es": "Tirador cancelado (restantes: {charges})",
+    "fr": "Tireur d’élite annulé (restant : {charges})",
+    "it": "Cecchino annullato (rimaste: {charges})",
+    "ja": "狙撃手キャンセル（残り: {charges}）",
+    "ko": "저격수 취소 (남음: {charges})",
+    "pt": "Atirador cancelado (restantes: {charges})",
+    "ru": "Снайпер отменён (осталось: {charges})",
+    "zh": "已取消神射手（剩余：{charges}）"
+  },
+  "mystery_msg_sniper_destroyed_last": {
+    "de": "Block zerstört! Scharfschütze ist verbraucht.",
+    "es": "¡Bloque destruido! El tirador se agotó.",
+    "fr": "Bloc détruit ! Le tireur d’élite est épuisé.",
+    "it": "Blocco distrutto! Cecchino esaurito.",
+    "ja": "ブロック破壊！狙撃手は使い切りました。",
+    "ko": "블록 파괴! 저격수를 모두 사용했습니다.",
+    "pt": "Bloco destruído! Sniper sem cargas.",
+    "ru": "Блок уничтожен! Снайпер израсходован.",
+    "zh": "方块已破坏！神射手已耗尽。"
+  },
+  "mystery_msg_sniper_destroyed_remaining": {
+    "de": "Block zerstört! Übrig: {remaining}",
+    "es": "¡Bloque destruido! Restantes: {remaining}",
+    "fr": "Bloc détruit ! Restant : {remaining}",
+    "it": "Blocco distrutto! Rimaste: {remaining}",
+    "ja": "ブロック破壊！残り: {remaining}",
+    "ko": "블록 파괴! 남음: {remaining}",
+    "pt": "Bloco destruído! Restantes: {remaining}",
+    "ru": "Блок уничтожен! Осталось: {remaining}",
+    "zh": "方块已破坏！剩余：{remaining}"
+  },
+  "mystery_msg_sniper_empty_cell": {
+    "de": "Leere Zelle! Klicke auf einen gefüllten Block.",
+    "es": "¡Celda vacía! Haz clic en un bloque lleno.",
+    "fr": "Case vide ! Clique sur un bloc rempli.",
+    "it": "Cella vuota! Clicca su un blocco pieno.",
+    "ja": "空のマスです！埋まったブロックをクリック。",
+    "ko": "빈 칸입니다! 채워진 블록을 클릭하세요.",
+    "pt": "Célula vazia! Clique em um bloco preenchido.",
+    "ru": "Пустая клетка! Нажмите на заполненный блок.",
+    "zh": "空格！点击已有方块。"
+  },
+  "mystery_msg_sniper_no_charges": {
+    "de": "Keine Scharfschützen-Ladungen mehr!",
+    "es": "¡No te quedan cargas de tirador!",
+    "fr": "Tu n’as plus de charges de tireur d’élite !",
+    "it": "Non hai più cariche da cecchino!",
+    "ja": "狙撃手チャージがありません！",
+    "ko": "저격수 충전이 없습니다!",
+    "pt": "Você não tem mais cargas de atirador!",
+    "ru": "Заряды снайпера закончились!",
+    "zh": "神射手次数已用完！"
+  },
+  "mystery_msg_sniper_open": {
+    "de": "Klicke den Block an, den du zerstören willst! (ESC: Abbrechen) - Übrig: {charges}",
+    "es": "¡Haz clic en el bloque que quieres destruir! (ESC: cancelar) - Restantes: {charges}",
+    "fr": "Clique sur le bloc à détruire ! (ESC : Annuler) - Restant : {charges}",
+    "it": "Clicca il blocco da distruggere! (ESC: annulla) - Rimaste: {charges}",
+    "ja": "破壊したいブロックをクリック！（ESC: キャンセル）- 残り: {charges}",
+    "ko": "파괴할 블록을 클릭하세요! (ESC: 취소) - 남음: {charges}",
+    "pt": "Clique no bloco que deseja destruir! (ESC: Cancelar) - Restantes: {charges}",
+    "ru": "Нажмите блок для уничтожения! (ESC: отмена) — осталось: {charges}",
+    "zh": "点击要破坏的方块！（ESC：取消）- 剩余：{charges}"
+  },
+  "mystery_msg_sniper_outside_board": {
+    "de": "Außerhalb des Spielfelds! Ziele auf Blöcke auf dem Brett.",
+    "es": "¡Fuera del campo! Apunta a bloques del tablero.",
+    "fr": "Hors du terrain ! Vise les blocs du plateau.",
+    "it": "Fuori dal campo! Mira i blocchi sulla griglia.",
+    "ja": "プレイエリア外です！盤面のブロックを狙ってください。",
+    "ko": "플레이 영역 밖입니다! 보드 위 블록을 겨냥하세요.",
+    "pt": "Fora do campo! Mire nos blocos do tabuleiro.",
+    "ru": "Вне поля! Цельтесь в блоки на доске.",
+    "zh": "在场地外！请瞄准棋盘上的方块。"
+  },
+  "mystery_msg_sniper_ready": {
+    "de": "Scharfschütze bereit! Drücke N. ({charges} Ladungen)",
+    "es": "¡Tirador listo! Pulsa N. ({charges} cargas)",
+    "fr": "Tireur d’élite prêt ! Appuie sur N. ({charges} charges)",
+    "it": "Cecchino pronto! Premi N. ({charges} cariche)",
+    "ja": "狙撃手準備完了！Nを押す（{charges}回）",
+    "ko": "저격수 준비! N을 누르세요. ({charges}회)",
+    "pt": "Atirador pronto! Pressione N. ({charges} cargas)",
+    "ru": "Снайпер готов! Нажмите N. ({charges} зарядов)",
+    "zh": "神射手就绪！按 N。（{charges} 次）"
+  },
+  "mystery_msg_speed_burst": {
+    "de": "Geschwindigkeitsschub! {duration}s schneller Fall + {line_mult}x Punkte!",
+    "es": "¡Ráfaga de velocidad! Caída rápida por {duration}s + puntos x{line_mult}!",
+    "fr": "Rafale de vitesse ! Chute rapide pendant {duration}s + points x{line_mult} !",
+    "it": "Scatto di velocità! Caduta rapida per {duration}s + punti x{line_mult}!",
+    "ja": "スピードバースト！{duration}秒高速落下 + {line_mult}倍スコア！",
+    "ko": "스피드 버스트! {duration}초 빠른 낙하 + {line_mult}배 점수!",
+    "pt": "Explosão de velocidade! Queda rápida por {duration}s + pontos x{line_mult}!",
+    "ru": "Рывок скорости! Быстрое падение на {duration}с + очки x{line_mult}!",
+    "zh": "速度爆发！快速下落 {duration} 秒 + {line_mult} 倍分数！"
+  },
+  "mystery_msg_time_capsule_no_snapshot": {
+    "de": "Noch kein gespeicherter Zustand! Drücke zuerst T zum Speichern.",
+    "es": "¡Aún no hay estado guardado! Pulsa T primero para guardar.",
+    "fr": "Aucun état sauvegardé ! Appuie d’abord sur T pour sauvegarder.",
+    "it": "Nessuno stato salvato! Premi prima T per salvare.",
+    "ja": "保存状態がありません！先にTで保存してください。",
+    "ko": "저장된 상태가 없습니다! 먼저 T로 저장하세요.",
+    "pt": "Nenhum estado salvo ainda! Pressione T primeiro para salvar.",
+    "ru": "Сохранённого состояния ещё нет! Сначала нажмите T.",
+    "zh": "还没有保存状态！请先按 T 保存。"
+  },
+  "mystery_msg_time_capsule_ready": {
+    "de": "Zeitkapsel aktiv! T zum Speichern, R zum Zurückspulen.",
+    "es": "¡Cápsula del tiempo activa! T para guardar, R para rebobinar.",
+    "fr": "Capsule temporelle active ! T pour sauvegarder, R pour rembobiner.",
+    "it": "Capsula temporale attiva! T per salvare, R per riavvolgere.",
+    "ja": "タイムカプセル有効！Tで保存、Rで巻き戻し。",
+    "ko": "타임 캡슐 활성! T로 저장, R로 되감기.",
+    "pt": "Cápsula do tempo ativa! T para salvar, R para retroceder.",
+    "ru": "Капсула времени активна! T — сохранить, R — откатить.",
+    "zh": "时间胶囊已激活！按 T 保存，按 R 回退。"
+  },
+  "mystery_msg_time_capsule_restore_error": {
+    "de": "Wiederherstellen der Zeitkapsel fehlgeschlagen!",
+    "es": "¡No se pudo restaurar la cápsula del tiempo!",
+    "fr": "Échec de restauration de la capsule temporelle !",
+    "it": "Ripristino capsula temporale fallito!",
+    "ja": "タイムカプセルの復元に失敗！",
+    "ko": "타임 캡슐 복원 실패!",
+    "pt": "Falha ao restaurar a cápsula do tempo!",
+    "ru": "Не удалось восстановить капсулу времени!",
+    "zh": "时间胶囊恢复失败！"
+  },
+  "mystery_msg_time_capsule_restored": {
+    "de": "Zeitkapsel benutzt! Zustand wiederhergestellt.",
+    "es": "¡Cápsula del tiempo usada! Estado restaurado.",
+    "fr": "Capsule temporelle utilisée ! État restauré.",
+    "it": "Capsula temporale usata! Stato ripristinato.",
+    "ja": "タイムカプセル使用！状態を復元しました。",
+    "ko": "타임 캡슐 사용! 상태가 복원되었습니다.",
+    "pt": "Cápsula do tempo usada! Estado restaurado.",
+    "ru": "Капсула времени использована! Состояние восстановлено.",
+    "zh": "时间胶囊已使用！状态已恢复。"
+  },
+  "mystery_msg_time_capsule_save_error": {
+    "de": "Speichern der Zeitkapsel fehlgeschlagen!",
+    "es": "¡No se pudo guardar la cápsula del tiempo!",
+    "fr": "Échec de sauvegarde de la capsule temporelle !",
+    "it": "Salvataggio capsula temporale fallito!",
+    "ja": "タイムカプセルの保存に失敗！",
+    "ko": "타임 캡슐 저장 실패!",
+    "pt": "Falha ao salvar a cápsula do tempo!",
+    "ru": "Не удалось сохранить капсулу времени!",
+    "zh": "时间胶囊保存失败！"
+  },
+  "mystery_msg_time_capsule_saved": {
+    "de": "Zeitkapsel gespeichert! R zum Wiederherstellen.",
+    "es": "¡Cápsula del tiempo guardada! Pulsa R para restaurar.",
+    "fr": "Capsule temporelle sauvegardée ! Appuie sur R pour restaurer.",
+    "it": "Capsula temporale salvata! Premi R per ripristinare.",
+    "ja": "タイムカプセル保存！Rで復元。",
+    "ko": "타임 캡슐 저장! R로 복원하세요.",
+    "pt": "Cápsula do tempo salva! Pressione R para restaurar.",
+    "ru": "Капсула времени сохранена! Нажмите R для восстановления.",
+    "zh": "时间胶囊已保存！按 R 恢复。"
+  },
+  "mystery_msg_time_capsule_unavailable": {
+    "de": "Keine Zeitkapsel verfügbar!",
+    "es": "¡No hay cápsula del tiempo disponible!",
+    "fr": "Aucune capsule temporelle disponible !",
+    "it": "Nessuna capsula temporale disponibile!",
+    "ja": "使用可能なタイムカプセルがありません！",
+    "ko": "사용 가능한 타임 캡슐이 없습니다!",
+    "pt": "Nenhuma cápsula do tempo disponível!",
+    "ru": "Нет доступной капсулы времени!",
+    "zh": "没有可用的时间胶囊！"
+  },
+  "mystery_msg_tunnel_active": {
+    "de": "Geist aktiv! Mit SPACE fixieren. Übrig: {charges}",
+    "es": "¡Fantasma activo! Fija con ESPACIO. Restantes: {charges}",
+    "fr": "Fantôme actif ! Verrouille avec ESPACE. Restant : {charges}",
+    "it": "Fantasma attivo! Blocca con SPAZIO. Rimaste: {charges}",
+    "ja": "ゴースト有効！SPACEで固定。残り: {charges}",
+    "ko": "고스트 활성! SPACE로 고정. 남음: {charges}",
+    "pt": "Fantasma ativo! Trave com ESPAÇO. Restantes: {charges}",
+    "ru": "Призрак активен! Зафиксируйте SPACE. Осталось: {charges}",
+    "zh": "幽灵已激活！用空格锁定。剩余：{charges}"
+  },
+  "mystery_sniper_cancel_label": {
+    "de": "ESC: Abbrechen",
+    "es": "ESC: Cancelar",
+    "fr": "ESC : Annuler",
+    "it": "ESC: Annulla",
+    "ja": "ESC: キャンセル",
+    "ko": "ESC: 취소",
+    "pt": "ESC: Cancelar",
+    "ru": "ESC: Отмена",
+    "zh": "ESC：取消"
+  },
+  "mystery_sniper_instruction_main_invalid": {
+    "de": "AUF GEFÜLLTEN BLOCK ZIELEN",
+    "es": "APUNTA A UN BLOQUE LLENO",
+    "fr": "VISE UN BLOC REMPLI",
+    "it": "MIRA UN BLOCCO PIENO",
+    "ja": "埋まったブロックを狙う",
+    "ko": "채워진 블록을 겨냥하세요",
+    "pt": "MIRE EM UM BLOCO PREENCHIDO",
+    "ru": "ЦЕЛЬТЕСЬ В ЗАПОЛНЕННЫЙ БЛОК",
+    "zh": "瞄准已有方块"
+  },
+  "mystery_sniper_instruction_main_valid": {
+    "de": "LINKSKLICK ZUM ZERSTÖREN",
+    "es": "CLIC IZQUIERDO PARA DESTRUIR",
+    "fr": "CLIC GAUCHE POUR DÉTRUIRE",
+    "it": "CLIC SINISTRO PER DISTRUGGERE",
+    "ja": "左クリックでブロック破壊",
+    "ko": "왼쪽 클릭으로 블록 파괴",
+    "pt": "CLIQUE ESQUERDO PARA DESTRUIR",
+    "ru": "ЛКМ, ЧТОБЫ УНИЧТОЖИТЬ",
+    "zh": "左键点击破坏方块"
+  },
+  "mystery_sniper_instruction_sub_invalid": {
+    "de": "Bewege den Cursor über einen gefüllten Block",
+    "es": "Mueve el cursor sobre un bloque lleno",
+    "fr": "Déplace le curseur sur un bloc rempli",
+    "it": "Sposta il cursore su un blocco pieno",
+    "ja": "埋まったブロックにカーソルを合わせてください",
+    "ko": "커서를 채워진 블록 위로 이동하세요",
+    "pt": "Mova o cursor sobre um bloco preenchido",
+    "ru": "Наведите курсор на заполненный блок",
+    "zh": "将光标移到已有方块上"
+  },
+  "mystery_sniper_instruction_sub_valid": {
+    "de": "Ziel erfasst! Klicken zum Zerstören.",
+    "es": "¡Objetivo fijado! Haz clic para destruirlo.",
+    "fr": "Cible verrouillée ! Clique pour la détruire.",
+    "it": "Bersaglio agganciato! Clicca per distruggerlo.",
+    "ja": "ターゲットロック！クリックで破壊。",
+    "ko": "대상 고정! 클릭해 파괴하세요.",
+    "pt": "Alvo travado! Clique para destruir.",
+    "ru": "Цель захвачена! Нажмите для уничтожения.",
+    "zh": "目标已锁定！点击破坏。"
+  },
+  "mystery_status_active": {
+    "de": "Aktiv",
+    "es": "Activo",
+    "fr": "Actif",
+    "it": "Attivo",
+    "ja": "有効",
+    "ko": "활성",
+    "pt": "Ativo",
+    "ru": "Активно",
+    "zh": "激活"
+  },
+  "mystery_status_gold": {
+    "de": "Gold",
+    "es": "Oro",
+    "fr": "Or",
+    "it": "Oro",
+    "ja": "ゴールド",
+    "ko": "골드",
+    "pt": "Ouro",
+    "ru": "Золото",
+    "zh": "金色"
+  },
+  "mystery_workshop_block_added": {
+    "de": "Block hinzugefügt. Übrig: {remaining}",
+    "es": "Bloque añadido. Restantes: {remaining}",
+    "fr": "Bloc ajouté. Restant : {remaining}",
+    "it": "Blocco aggiunto. Rimasti: {remaining}",
+    "ja": "ブロック追加。残り: {remaining}",
+    "ko": "블록 추가됨. 남음: {remaining}",
+    "pt": "Bloco adicionado. Restantes: {remaining}",
+    "ru": "Блок добавлен. Осталось: {remaining}",
+    "zh": "已添加方块。剩余：{remaining}"
+  },
+  "mystery_workshop_block_count": {
+    "de": "Blöcke: {count}/7",
+    "es": "Bloques: {count}/7",
+    "fr": "Blocs : {count}/7",
+    "it": "Blocchi: {count}/7",
+    "ja": "ブロック: {count}/7",
+    "ko": "블록: {count}/7",
+    "pt": "Blocos: {count}/7",
+    "ru": "Блоки: {count}/7",
+    "zh": "方块：{count}/7"
+  },
+  "mystery_workshop_block_removed": {
+    "de": "Block entfernt.",
+    "es": "Bloque eliminado.",
+    "fr": "Bloc supprimé.",
+    "it": "Blocco rimosso.",
+    "ja": "ブロックを削除しました。",
+    "ko": "블록 제거됨.",
+    "pt": "Bloco removido.",
+    "ru": "Блок удалён.",
+    "zh": "方块已移除。"
+  },
+  "mystery_workshop_connected": {
+    "de": "Blöcke müssen verbunden bleiben!",
+    "es": "¡Los bloques deben permanecer conectados!",
+    "fr": "Les blocs doivent rester connectés !",
+    "it": "I blocchi devono restare collegati!",
+    "ja": "ブロックはつながっている必要があります！",
+    "ko": "블록은 연결되어 있어야 합니다!",
+    "pt": "Os blocos devem ficar conectados!",
+    "ru": "Блоки должны оставаться соединёнными!",
+    "zh": "方块必须保持相连！"
+  },
+  "mystery_workshop_max_blocks": {
+    "de": "Maximal 7 Blöcke!",
+    "es": "¡Máximo 7 bloques!",
+    "fr": "7 blocs maximum !",
+    "it": "Massimo 7 blocchi!",
+    "ja": "最大7ブロック！",
+    "ko": "최대 7블록!",
+    "pt": "Máximo de 7 blocos!",
+    "ru": "Максимум 7 блоков!",
+    "zh": "最多 7 个方块！"
+  },
+  "mystery_workshop_min_blocks": {
+    "de": "Du brauchst mindestens 2 Blöcke!",
+    "es": "¡Necesitas al menos 2 bloques!",
+    "fr": "Il faut au moins 2 blocs !",
+    "it": "Servono almeno 2 blocchi!",
+    "ja": "最低2ブロック必要です！",
+    "ko": "최소 2블록이 필요합니다!",
+    "pt": "Você precisa de pelo menos 2 blocos!",
+    "ru": "Нужно минимум 2 блока!",
+    "zh": "至少需要 2 个方块！"
+  },
+  "mystery_workshop_open_instruction": {
+    "de": "Block-Workshop! Max. 7 Blöcke. Drücke ENTER zum Abschließen.",
+    "es": "¡Editor de bloques! Máx. 7 bloques. Pulsa ENTER para terminar.",
+    "fr": "Atelier de blocs ! 7 blocs max. Appuie sur ENTER pour terminer.",
+    "it": "Workshop blocchi! Max 7 blocchi. Premi INVIO per finire.",
+    "ja": "ブロック工房！最大7ブロック。ENTERで完了。",
+    "ko": "블록 워크숍! 최대 7블록. ENTER로 완료.",
+    "pt": "Workshop de blocos! Máx. 7 blocos. Pressione ENTER para terminar.",
+    "ru": "Мастерская блоков! До 7 блоков. Нажмите ENTER для завершения.",
+    "zh": "方块工坊！最多 7 个方块。按 ENTER 完成。"
+  },
+  "mystery_workshop_opened_top": {
+    "de": "Block-Workshop geöffnet! Baue ein Teil und drücke ENTER zum Abschließen.",
+    "es": "¡Editor de bloques abierto! Crea una pieza y pulsa ENTER para terminar.",
+    "fr": "Atelier de blocs ouvert ! Construis une pièce et appuie sur ENTER pour terminer.",
+    "it": "Workshop blocchi aperto! Crea un pezzo e premi INVIO per finire.",
+    "ja": "ブロック工房を開きました！ピースを作ってENTERで完了。",
+    "ko": "블록 워크숍 열림! 피스를 만들고 ENTER로 완료하세요.",
+    "pt": "Workshop de blocos aberto! Monte uma peça e pressione ENTER para terminar.",
+    "ru": "Мастерская блоков открыта! Соберите фигуру и нажмите ENTER.",
+    "zh": "方块工坊已打开！构建一个方块组并按 ENTER 完成。"
+  },
+  "mystery_workshop_piece_ready": {
+    "de": "Workshop-Teil bereit! Du kannst es jetzt benutzen.",
+    "es": "¡Pieza de taller lista! Ya puedes usarla.",
+    "fr": "Pièce d’atelier prête ! Tu peux l’utiliser maintenant.",
+    "it": "Pezzo dell’officina pronto! Ora puoi usarlo.",
+    "ja": "工房ピース完成！今すぐ使えます。",
+    "ko": "워크숍 피스 준비 완료! 이제 사용할 수 있습니다.",
+    "pt": "Peça da oficina pronta! Você já pode usar.",
+    "ru": "Фигура из мастерской готова! Теперь её можно использовать.",
+    "zh": "工坊方块组已就绪！现在可以使用。"
+  },
+  "mystery_workshop_remove_disconnect": {
+    "de": "Das Löschen dieses Blocks würde die Verbindung trennen!",
+    "es": "¡Eliminar ese bloque rompería la conexión!",
+    "fr": "Supprimer ce bloc casserait la connexion !",
+    "it": "Eliminare quel blocco spezzerebbe la connessione!",
+    "ja": "そのブロックを消すと接続が切れます！",
+    "ko": "그 블록을 삭제하면 연결이 끊깁니다!",
+    "pt": "Apagar esse bloco quebraria a conexão!",
+    "ru": "Удаление этого блока нарушит связность!",
+    "zh": "删除该方块会破坏连通性！"
   },
   "new_campaign": {
     "it": "Nuovo gioco",
@@ -3073,6 +4447,10 @@
   "next_page": {
     "ru": "Далее"
   },
+  "no": {
+    "es": "No (ESC)",
+    "it": "No (ESC)"
+  },
   "not_available_short": {
     "ja": "該当なし",
     "ko": "해당 없음",
@@ -3082,8 +4460,31 @@
   "objective": {
     "ru": "Цель"
   },
+  "online_coop_title": {
+    "de": "ONLINE-KOOP",
+    "es": "CO-OP EN LÍNEA",
+    "fr": "COOP EN LIGNE",
+    "it": "CO-OP ONLINE",
+    "ja": "オンライン協力",
+    "ko": "온라인 협동",
+    "pt": "CO-OP ONLINE",
+    "ru": "ОНЛАЙН-КООП",
+    "tr": "ONLINE İŞ BİRLİĞİ",
+    "zh": "在线合作"
+  },
   "online_pvp_title": {
     "de": "ONLINE-PvP"
+  },
+  "online_pvp_trailer_debug_info": {
+    "de": "Diese Demo-Lobby wird für den Steam-Trailer gezeigt.",
+    "es": "Esta sala demo se muestra para el tráiler de Steam.",
+    "fr": "Ce lobby de démo est affiché pour la bande-annonce Steam.",
+    "it": "Questa lobby demo viene mostrata per il trailer di Steam.",
+    "ja": "このデモロビーはSteamトレーラー用に表示されます。",
+    "ko": "이 데모 로비는 Steam 트레일러용으로 표시됩니다.",
+    "pt": "Este lobby demo aparece no trailer da Steam.",
+    "ru": "Это демо-лобби показано для трейлера Steam.",
+    "zh": "此演示大厅用于 Steam 预告片展示。"
   },
   "opening_gmail": {
     "ja": "Gmail を開いています..."
@@ -3120,6 +4521,17 @@
   },
   "panel_scores": {
     "ru": "ТАБЛО"
+  },
+  "pause": {
+    "de": "Pause",
+    "es": "Pausa",
+    "fr": "Pause",
+    "it": "Pausa",
+    "ja": "一時停止",
+    "ko": "일시정지",
+    "pt": "Pausa",
+    "ru": "Пауза",
+    "zh": "暂停"
   },
   "perfect_clear": {
     "ja": "パーフェクトクリア！",
@@ -3324,6 +4736,7 @@
   "piece_workshop_modes_title": {
     "de": "MODI",
     "es": "MODOS",
+    "fr": "MODES",
     "it": "MODALITÀ",
     "pt": "MODOS"
   },
@@ -3462,8 +4875,41 @@
   "previous": {
     "ru": "Предыдущий"
   },
+  "private_lobby": {
+    "de": "Private Lobby",
+    "es": "Sala privada",
+    "fr": "Lobby privé",
+    "it": "Lobby privata",
+    "ja": "プライベートロビー",
+    "ko": "비공개 로비",
+    "pt": "Lobby privado",
+    "ru": "Приватное лобби",
+    "zh": "私人大厅"
+  },
+  "private_lobby_section": {
+    "de": "── Private Lobby ──",
+    "es": "── Sala privada ──",
+    "fr": "── Lobby privé ──",
+    "it": "── Lobby privata ──",
+    "ja": "── プライベートロビー ──",
+    "ko": "── 비공개 로비 ──",
+    "pt": "── Lobby privado ──",
+    "ru": "── Приватное лобби ──",
+    "zh": "── 私人大厅 ──"
+  },
   "profile": {
     "ja": "プロフィール"
+  },
+  "public_coop_section": {
+    "de": "── Öffentlich ──",
+    "es": "── Público ──",
+    "fr": "── Public ──",
+    "it": "── Pubblico ──",
+    "ja": "── 公開 ──",
+    "ko": "── 공개 ──",
+    "pt": "── Público ──",
+    "ru": "── Публично ──",
+    "zh": "── 公开 ──"
   },
   "pvp_2_players": {
     "de": "PvP (2 Spieler)",
@@ -3473,15 +4919,63 @@
     "pt": "PvP (2 jogadores)"
   },
   "pvp_minutes": {
-    "es": "mín."
+    "de": "Min.",
+    "es": "min",
+    "fr": "min",
+    "it": "min",
+    "ja": "分",
+    "ko": "분",
+    "pt": "min",
+    "ru": "мин",
+    "zh": "分钟"
+  },
+  "pvp_pause_hint": {
+    "de": "Pause",
+    "es": "Pausa",
+    "fr": "Pause",
+    "it": "Pausa",
+    "ja": "一時停止",
+    "ko": "일시정지",
+    "pt": "Pausa",
+    "ru": "Пауза",
+    "zh": "暂停"
+  },
+  "pvp_points_diff": {
+    "de": "Punkte",
+    "es": "puntos",
+    "fr": "points",
+    "it": "punti",
+    "ja": "点",
+    "ko": "점",
+    "pt": "pontos",
+    "ru": "очков",
+    "zh": "分"
+  },
+  "pvp_score": {
+    "de": "Punkte",
+    "es": "Puntuación",
+    "fr": "Score",
+    "it": "Punteggio",
+    "ja": "スコア",
+    "ko": "점수",
+    "pt": "Pontuação",
+    "ru": "Счёт",
+    "zh": "分数"
   },
   "pvp_start": {
     "de": "STARTEN"
   },
   "pvp_top_out": {
-    "es": "SUPERIOR",
-    "pt": "TOPO",
-    "tr": "ÜSTTEN ÇIKIŞ"
+    "de": "TOP-OUT",
+    "es": "TOPE SUPERADO",
+    "fr": "TOP-OUT",
+    "it": "TOP-OUT",
+    "ja": "トップアウト",
+    "ko": "탑아웃",
+    "pt": "TOPO ESTOURADO",
+    "ru": "ПЕРЕПОЛНЕНИЕ",
+    "tr": "ÜSTTEN ÇIKIŞ",
+    "zh": "顶出"
   },
   "quit_hint": {
     "ru": "ENTER / Y: Выйти |   ESC / N: Отмена"
@@ -3523,7 +5017,15 @@
     "ru": "Звук"
   },
   "setting_volume": {
-    "ru": "Объем"
+    "de": "Lautstärke",
+    "es": "Volumen",
+    "fr": "Volume",
+    "it": "Volume",
+    "ja": "音量",
+    "ko": "볼륨",
+    "pt": "Volume",
+    "ru": "Громкость",
+    "zh": "音量"
   },
   "settings_block_styles_hint": {
     "de": "ENTER: Farben und PNG bearbeiten",
@@ -3555,15 +5057,37 @@
     "pt": "ENTER: DAS e configurações de velocidade",
     "zh": "ENTER ：DAS 和速度设置"
   },
+  "settings_gp_section_ingame": {
+    "de": "Gamepad - im Spiel",
+    "es": "Mando - en partida",
+    "fr": "Manette - en jeu",
+    "it": "Gamepad - in gioco",
+    "ja": "ゲームパッド - ゲーム内",
+    "ko": "게임패드 - 게임 중",
+    "pt": "Controle - em jogo",
+    "ru": "Геймпад — в игре",
+    "zh": "手柄 - 游戏内"
+  },
+  "settings_gp_section_outgame": {
+    "de": "Gamepad - außerhalb des Spiels",
+    "es": "Mando - fuera de partida",
+    "fr": "Manette - hors jeu",
+    "it": "Gamepad - fuori gioco",
+    "ja": "ゲームパッド - ゲーム外",
+    "ko": "게임패드 - 게임 외",
+    "pt": "Controle - fora do jogo",
+    "ru": "Геймпад — вне игры",
+    "zh": "手柄 - 游戏外"
+  },
   "settings_piece_workshop_hint": {
-    "de": "ENTER : Offene Werkstatt",
-    "es": "ENTER : Taller abierto",
-    "fr": "ENTER : Atelier ouvert",
-    "it": "ENTER: Laboratorio aperto",
+    "de": "ENTER: Workshop öffnen",
+    "es": "ENTER: abrir editor",
+    "fr": "ENTER : ouvrir l’atelier",
+    "it": "ENTER: apri workshop",
     "ja": "ENTER : オープンワークショップ",
     "ko": "ENTER : 워크숍 열기",
-    "pt": "ENTER : Workshop aberto",
-    "zh": "ENTER : 开放研讨会"
+    "pt": "ENTER: abrir workshop",
+    "zh": "ENTER：打开工作坊"
   },
   "settings_section_blocks": {
     "de": "BLÖCKE",
@@ -3622,10 +5146,15 @@
     "pt": "EFEITOS SONOROS"
   },
   "settings_section_system": {
+    "de": "SYSTEM",
     "es": "SISTEMA",
     "fr": "SYSTÈME",
     "it": "SISTEMA",
-    "pt": "SISTEMA"
+    "ja": "システム",
+    "ko": "시스템",
+    "pt": "SISTEMA",
+    "ru": "СИСТЕМА",
+    "zh": "系统"
   },
   "settings_section_visual": {
     "de": "VISUELL",
@@ -3708,7 +5237,16 @@
     "tr": "GÜNLÜK GÖREV"
   },
   "skin_pvp_title": {
-    "ja": "PVP アリーナ"
+    "de": "PVP-ARENA",
+    "es": "ARENA PVP",
+    "fr": "ARÈNE PVP",
+    "it": "ARENA PVP",
+    "ja": "PVP アリーナ",
+    "ko": "PVP 아레나",
+    "pt": "ARENA PVP",
+    "ru": "PVP-АРЕНА",
+    "tr": "PVP ARENASI",
+    "zh": "PVP 竞技场"
   },
   "skin_sprint_title": {
     "de": "Sprintrausch",
@@ -3722,15 +5260,39 @@
     "tr": "HAYATTA KALMA"
   },
   "skin_tetris2_title": {
+    "de": "QUADRIX EXTRA",
+    "es": "QUADRIX EXTRA",
     "fr": "QUADRIX SUPPLÉMENTAIRE",
+    "it": "QUADRIX EXTRA",
+    "ja": "QUADRIX EXTRA",
+    "ko": "QUADRIX 엑스트라",
+    "pt": "QUADRIX EXTRA",
     "ru": "QUADRIX ДОПОЛНИТЕЛЬНО",
     "tr": "QUADRIX EKSTRA",
     "zh": "QUADRIX 额外"
   },
+  "skin_tutorial_title": {
+    "de": "TUTORIAL",
+    "es": "TUTORIAL",
+    "fr": "TUTORIEL",
+    "it": "TUTORIAL",
+    "ja": "チュートリアル",
+    "ko": "튜토리얼",
+    "pt": "TUTORIAL",
+    "ru": "ОБУЧЕНИЕ",
+    "zh": "教程"
+  },
   "skin_ultra_title": {
-    "es": "ULTRA RÁPIDO",
-    "fr": "ULTRA-BLITZ",
-    "tr": "ULTRA"
+    "de": "ULTRA-BLITZ",
+    "es": "RÁFAGA ULTRA",
+    "fr": "BLITZ ULTRA",
+    "it": "ULTRA BLITZ",
+    "ja": "ウルトラブリッツ",
+    "ko": "울트라 블리츠",
+    "pt": "ULTRA BLITZ",
+    "ru": "УЛЬТРА-БЛИЦ",
+    "tr": "ULTRA",
+    "zh": "超强闪击"
   },
   "skin_wide_title": {
     "tr": "GENİŞ"
@@ -3746,8 +5308,13 @@
     "ru": "Если вы хотите связаться с нами, вы можете использовать методы ниже."
   },
   "sos_email_subject": {
+    "de": "Quadrix - SOS / Rückmeldung",
+    "es": "Quadrix - SOS / comentarios",
+    "fr": "Quadrix - SOS / retour",
     "it": "Quadrix - SOS/Feedback",
-    "ja": "Quadrix - SOS / フィードバック"
+    "ja": "Quadrix - SOS / フィードバック",
+    "pt": "Quadrix - SOS / feedback",
+    "tr": "Quadrix - SOS / Geri Bildirim"
   },
   "sos_instagram": {
     "ja": "インスタグラム",
@@ -3814,6 +5381,9 @@
     "pt": "INFECÇÃO ATIVA"
   },
   "survival_panel_antivirus": {
+    "es": "ANTIVIRUS",
+    "fr": "ANTIVIRUS",
+    "it": "ANTIVIRUS",
     "pt": "ANTIVÍRUS"
   },
   "survival_panel_consumed": {
@@ -3878,12 +5448,16 @@
     "ru": "Т-СПИН!"
   },
   "tab_gamepad": {
-    "es": "Mando de juegos",
-    "fr": "Manette de jeu",
-    "it": "Pannello di gioco",
+    "de": "Gamepad",
+    "es": "Mando",
+    "fr": "Manette",
+    "it": "Gamepad",
     "ja": "ゲームパッド",
-    "pt": "Controle de jogo",
-    "tr": "Oyun kumandası"
+    "ko": "게임패드",
+    "pt": "Controle",
+    "ru": "Геймпад",
+    "tr": "Oyun kumandası",
+    "zh": "手柄"
   },
   "tetris": {
     "fr": "QUADRIX !",
@@ -3891,17 +5465,25 @@
   },
   "tetris_count": {
     "es": "Cuadrix",
+    "ja": "Quadrix",
+    "ko": "Quadrix",
     "pt": "Quadrixa",
-    "ru": "Квадрикс"
+    "ru": "Квадрикс",
+    "zh": "Quadrix"
   },
   "tetris_label": {
     "es": "Cuadrix",
     "ja": "クアドリックス",
+    "ko": "Quadrix",
     "pt": "Quadrixa",
-    "ru": "Квадрикс"
+    "ru": "Квадрикс",
+    "zh": "Quadrix"
   },
   "tetris_obj": {
-    "ru": "Сделать Квадрикс"
+    "ja": "Quadrix達成",
+    "ko": "Quadrix 달성",
+    "ru": "Сделать Квадрикс",
+    "zh": "完成 Quadrix"
   },
   "time_limit": {
     "ru": "Лимит времени"
@@ -3941,7 +5523,8 @@
     "it": "Stelle totali"
   },
   "total_tetrises": {
-    "ja": "クアドリックスの数"
+    "ja": "Quadrix回数",
+    "ko": "Quadrix 횟수"
   },
   "track_custom_fallback": {
     "de": "Benutzerdefinierte Spur",
@@ -3961,12 +5544,14 @@
     "de": "Datei: {path}",
     "es": "Archivo: {path}",
     "fr": "Fichier : {path}",
+    "it": "File: {path}",
     "pt": "Arquivo: {path}"
   },
   "track_file_suffix": {
     "de": "(Datei)",
     "es": "(archivo)",
     "fr": "(fichier)",
+    "it": "(file)",
     "pt": "(arquivo)"
   },
   "track_summary": {
@@ -4024,26 +5609,26 @@
     "zh": "核心控制"
   },
   "tutorial_board_basics_desc": {
-    "de": "Lernen Sie, das Spielbrett zu lesen und Spielsteine sauber und sicher zu platzieren.",
+    "de": "Lerne, das Board zu lesen und Teile sauber und sicher zu platzieren.",
     "es": "Aprende a leer el tablero y colocar piezas de forma limpia y segura.",
-    "fr": "Apprenez à lire le tableau et à placer les pièces proprement et en toute sécurité.",
-    "it": "Impara come leggere la scacchiera e posizionare i pezzi in modo pulito e sicuro.",
+    "fr": "Apprends à lire le plateau et à placer les pièces proprement et en sécurité.",
+    "it": "Impara a leggere il board e a posizionare i pezzi in modo pulito e sicuro.",
     "ja": "ボードを読み、駒をきれいかつ安全に配置する方法を学びましょう。",
-    "ko": "보드를 읽고 조각을 깨끗하고 안전하게 배치하는 방법을 배우십시오.",
+    "ko": "보드를 읽고 피스를 깔끔하고 안전하게 배치하는 법을 배웁니다.",
     "pt": "Aprenda a ler o tabuleiro e a posicionar as peças de forma limpa e segura.",
-    "ru": "Научитесь читать на доске и аккуратно и безопасно расставлять фигуры.",
+    "ru": "Учитесь читать поле и аккуратно, безопасно размещать фигуры.",
     "zh": "了解如何阅读棋盘并干净、安全地放置棋子。"
   },
   "tutorial_board_basics_title": {
-    "de": "Tafellesung",
+    "de": "Board lesen",
     "es": "Lectura del tablero",
-    "fr": "Lecture du tableau",
-    "it": "Lettura a bordo",
+    "fr": "Lecture du plateau",
+    "it": "Lettura del board",
     "ja": "ボードの読み方",
     "ko": "보드리딩",
-    "pt": "Leitura do quadro",
+    "pt": "Leitura do tabuleiro",
     "ru": "Чтение доски",
-    "zh": "董事会阅读"
+    "zh": "棋盘阅读"
   },
   "tutorial_board_gap_fill_desc": {
     "de": "Füllen Sie die Lücke zwischen zwei Zellen mit dem richtigen Stück und löschen Sie zwei Linien gleichzeitig.",
@@ -4200,15 +5785,15 @@
     "zh": "卡学院"
   },
   "tutorial_card_choice_feedback_generic": {
-    "de": "Diese Wahl passt nicht gut zum Vorstandsstatus.",
-    "es": "Esa elección no encaja bien con el estado de la junta.",
-    "fr": "Ce choix ne correspond pas bien à l’État du conseil d’administration.",
-    "it": "Questa scelta non si adatta bene allo stato del consiglio.",
+    "de": "Diese Wahl passt nicht gut zur Board-Lage.",
+    "es": "Esa elección no encaja bien con el estado del tablero.",
+    "fr": "Ce choix ne correspond pas bien à l’état du plateau.",
+    "it": "Questa scelta non si adatta bene allo stato del board.",
     "ja": "その選択はボードの状態にあまり適合しません。",
     "ko": "그 선택은 보드 상태에 잘 맞지 않습니다.",
-    "pt": "Essa escolha não se ajusta bem ao estado do conselho.",
-    "ru": "Этот выбор не совсем соответствует государству правления.",
-    "zh": "这一选择不太符合董事会的要求。"
+    "pt": "Essa escolha não combina bem com o estado do tabuleiro.",
+    "ru": "Этот выбор не очень подходит к состоянию поля.",
+    "zh": "这个选择不太符合当前棋盘局势。"
   },
   "tutorial_card_choice_title_acceptable": {
     "de": "Akzeptable Wahl",
@@ -4253,6 +5838,28 @@
     "pt": "Contexto da lição",
     "ru": "Контекст урока",
     "zh": "课程背景"
+  },
+  "tutorial_card_foundations_desc": {
+    "de": "Lerne Kartenfamilien, Risikomarker und den Feldkontext.",
+    "es": "Aprende familias de cartas, etiquetas de riesgo y contexto del tablero.",
+    "fr": "Apprends les familles de cartes, les tags de risque et le contexte du plateau.",
+    "it": "Impara famiglie di carte, tag di rischio e contesto del campo.",
+    "ja": "カードの系統、リスクタグ、盤面状況を学びます。",
+    "ko": "카드 계열, 위험 태그, 보드 상황을 배웁니다.",
+    "pt": "Aprenda famílias de cartas, marcadores de risco e contexto do tabuleiro.",
+    "ru": "Изучите семейства карт, метки риска и контекст поля.",
+    "zh": "学习卡牌类别、风险标签和局面语境。"
+  },
+  "tutorial_card_foundations_title": {
+    "de": "Kartengrundlagen",
+    "es": "Fundamentos de cartas",
+    "fr": "Bases des cartes",
+    "it": "Fondamenti delle carte",
+    "ja": "カードの基礎",
+    "ko": "카드 기초",
+    "pt": "Fundamentos das cartas",
+    "ru": "Основы карт",
+    "zh": "卡牌基础"
   },
   "tutorial_card_hint_controls": {
     "de": "Verwenden Sie zum Auswählen die Zifferntasten oder die Pfeiltasten",
@@ -4334,24 +5941,24 @@
   "tutorial_card_long_term_feedback_second_pocket": {
     "de": "Richtig. Auf einem stabilen Board schafft ein dauerhafter Vorteil wie „Extra Pocket“ einen Mehrwert für den gesamten Lauf.",
     "es": "Correcto. En un tablero estable, un beneficio persistente como Extra Pocket crea valor para toda la carrera.",
-    "fr": "C'est exact. Sur un tableau stable, un avantage persistant comme Extra Pocket crée de la valeur pour l'ensemble du parcours.",
-    "it": "Corretto. Su una tavola stabile, un vantaggio persistente come Extra Pocket crea valore per l'intera corsa.",
+    "fr": "Exact. Sur un plateau stable, un avantage persistant comme Extra Pocket crée de la valeur pour toute la partie.",
+    "it": "Corretto. Su un board stabile, un vantaggio persistente come Extra Pocket crea valore per tutta la run.",
     "ja": "正解です。安定したボードでは、エクストラ ポケットのような永続的な特典がラン全体の価値を生み出します。",
     "ko": "맞습니다. 안정적인 보드에서는 Extra Pocket과 같은 지속적인 특혜가 전체 실행에 대한 가치를 창출합니다.",
-    "pt": "Correto. Em um quadro estável, uma vantagem persistente como o Extra Pocket cria valor para toda a corrida.",
+    "pt": "Correto. Em um tabuleiro estável, uma vantagem persistente como Extra Pocket cria valor para toda a partida.",
     "ru": "Правильно. На стабильной доске постоянный перк, такой как Extra Pocket, создает ценность на протяжении всего забега.",
-    "zh": "正确。在稳定的板上，像 Extra Pocket 这样的持久福利可以为整个运行创造价值。"
+    "zh": "正确。在稳定棋盘上，像 Extra Pocket 这样的持续优势能为整局带来价值。"
   },
   "tutorial_card_long_term_goal": {
-    "de": "Ziel: Die beste langfristige Investition auf einem stabilen Brett auswählen.",
+    "de": "Ziel: Die beste langfristige Investition auf einem stabilen Board auswählen.",
     "es": "Objetivo: elegir la mejor inversión a largo plazo en un tablero estable.",
-    "fr": "Objectif : Choisir le meilleur investissement à long terme sur un conseil stable.",
-    "it": "Obiettivo: scegliere il miglior investimento a lungo termine su una tavola stabile.",
+    "fr": "Objectif : choisir le meilleur investissement à long terme sur un plateau stable.",
+    "it": "Obiettivo: scegliere il miglior investimento a lungo termine su un board stabile.",
     "ja": "目標: 安定したボードで最適な長期投資を選択します。",
     "ko": "목표: 안정적인 보드에 대한 최고의 장기 투자를 선택하십시오.",
-    "pt": "Objetivo: Escolher o melhor investimento de longo prazo em um conselho estável.",
+    "pt": "Objetivo: escolher o melhor investimento de longo prazo em um tabuleiro estável.",
     "ru": "Цель: выбрать лучшую долгосрочную инвестицию на стабильной доске.",
-    "zh": "目标：在稳定的主板上选择最佳的长期投资。"
+    "zh": "目标：在稳定棋盘上选择最佳长期投资。"
   },
   "tutorial_card_long_term_tip": {
     "de": "Wenn das Spielbrett stabil ist, kann ein Vorteil mit langfristigem Wert stärker sein als eine Sofortkarte.",
@@ -4453,15 +6060,15 @@
     "zh": "目标：在危险的棋盘上选择最好的救援卡。"
   },
   "tutorial_card_rescue_tip": {
-    "de": "Die auffällige Karte ist nicht immer die richtige. Lesen Sie zunächst, was der Vorstand tatsächlich braucht.",
-    "es": "La tarjeta llamativa no siempre es la correcta. Lea primero lo que la junta realmente necesita.",
-    "fr": "La carte flashy n’est pas toujours la bonne. Lisez d’abord ce dont le conseil d’administration a réellement besoin.",
-    "it": "La carta appariscente non è sempre quella giusta. Prima leggi di cosa ha effettivamente bisogno il consiglio.",
+    "de": "Die auffällige Karte ist nicht immer die richtige. Lies zuerst, was das Board wirklich braucht.",
+    "es": "La carta llamativa no siempre es la correcta. Lee primero qué necesita realmente el tablero.",
+    "fr": "La carte tape-à-l’oeil n’est pas toujours la bonne. Lis d’abord ce dont le plateau a vraiment besoin.",
+    "it": "La carta appariscente non è sempre quella giusta. Prima leggi di cosa ha davvero bisogno il board.",
     "ja": "派手なカードが常に正しいとは限りません。最初にボードが実際に必要とするものを読んでください。",
     "ko": "화려한 카드가 항상 옳은 것은 아닙니다. 먼저 보드에 실제로 필요한 것이 무엇인지 읽어보세요.",
-    "pt": "O cartão chamativo nem sempre é o certo. Leia primeiro o que o conselho realmente precisa.",
-    "ru": "Яркая карта не всегда подходит. Сначала прочитайте, что на самом деле нужно совету директоров.",
-    "zh": "华而不实的卡片并不总是正确的。首先阅读董事会实际需要的内容。"
+    "pt": "A carta chamativa nem sempre é a certa. Leia primeiro do que o tabuleiro realmente precisa.",
+    "ru": "Яркая карта не всегда подходит. Сначала оцените, что на самом деле нужно полю.",
+    "zh": "亮眼的卡牌不一定总是正确选择。先判断棋盘真正需要什么。"
   },
   "tutorial_card_rescue_title": {
     "de": "Wählen Sie die Rettungskarte",
@@ -4473,6 +6080,28 @@
     "pt": "Escolha o cartão de resgate",
     "ru": "Выберите карту спасения",
     "zh": "选择救援卡"
+  },
+  "tutorial_card_strategy_desc": {
+    "de": "Lerne langfristige Aufbau-Logik und Risiko-Belohnungs-Abwägung.",
+    "es": "Aprende lógica de construcción a largo plazo y equilibrio riesgo-recompensa.",
+    "fr": "Apprends la logique de construction à long terme et l’équilibre risque-récompense.",
+    "it": "Impara la logica di costruzione a lungo termine e il bilanciamento rischio-ricompensa.",
+    "ja": "長期的な組み立て方とリスク対報酬のバランスを学びます。",
+    "ko": "장기 빌드 로직과 위험-보상 균형을 배웁니다.",
+    "pt": "Aprenda lógica de construção de longo prazo e equilíbrio risco-recompensa.",
+    "ru": "Учитесь долгосрочной логике построения и балансу риска и награды.",
+    "zh": "学习长期构筑逻辑和风险收益平衡。"
+  },
+  "tutorial_card_strategy_title": {
+    "de": "Kartenstrategie & Synergie",
+    "es": "Estrategia y sinergia de cartas",
+    "fr": "Stratégie & synergie de cartes",
+    "it": "Strategia e sinergia delle carte",
+    "ja": "カード戦略とシナジー",
+    "ko": "카드 전략과 시너지",
+    "pt": "Estratégia e sinergia de cartas",
+    "ru": "Стратегия и синергия карт",
+    "zh": "卡牌策略与联动"
   },
   "tutorial_card_synergy_context_1": {
     "de": "Aktive Vorteile: Zusätzliche Tasche, flexible Grenze.",
@@ -4579,6 +6208,17 @@
     "fr": "Génial ! Vous êtes prêt à jouer. Amusez-vous!",
     "it": "Ottimo! Sei pronto per giocare. Divertiti!",
     "pt": "Ótimo! Você está pronto para jogar. Divirta-se!"
+  },
+  "tutorial_difficulty": {
+    "de": "Schwierigkeit:",
+    "es": "Dificultad:",
+    "fr": "Difficulté :",
+    "it": "Difficoltà:",
+    "ja": "難易度:",
+    "ko": "난이도:",
+    "pt": "Dificuldade:",
+    "ru": "Сложность:",
+    "zh": "难度："
   },
   "tutorial_hub_back": {
     "de": "Zurück zum Menü",
@@ -4899,6 +6539,28 @@
     "ru": "Мягкое управление падением",
     "zh": "软下降控制"
   },
+  "tutorial_mastery_exams_desc": {
+    "de": "Kombiniere die gelernten Prinzipien mit weniger Hinweisen.",
+    "es": "Combina lo aprendido con menos pistas.",
+    "fr": "Combine les principes appris avec moins d’indices.",
+    "it": "Combina i principi appresi con meno suggerimenti.",
+    "ja": "少ないヒントで学んだ原則を組み合わせます。",
+    "ko": "힌트를 줄이고 배운 원칙을 조합합니다.",
+    "pt": "Combine os princípios aprendidos com menos dicas.",
+    "ru": "Соединяйте изученные принципы с меньшим числом подсказок.",
+    "zh": "用更少提示综合运用已学原则。"
+  },
+  "tutorial_mastery_exams_title": {
+    "de": "Meisterprüfungen",
+    "es": "Exámenes de maestría",
+    "fr": "Examens de maîtrise",
+    "it": "Esami di maestria",
+    "ja": "マスタリー試験",
+    "ko": "숙련 시험",
+    "pt": "Exames de maestria",
+    "ru": "Экзамены мастерства",
+    "zh": "精通考试"
+  },
   "tutorial_mode": {
     "de": "Anleitung",
     "es": "Tutoría",
@@ -4916,6 +6578,17 @@
     "ru": "Нажмите ENTER, чтобы продолжить занятия.",
     "zh": "按 ENTER 继续寄宿课程。"
   },
+  "tutorial_next_chapter_prompt": {
+    "de": "Drücke Enter, um mit dem nächsten Kapitel fortzufahren.",
+    "es": "Pulsa Enter para continuar con el siguiente capítulo.",
+    "fr": "Appuie sur Entrée pour continuer vers le chapitre suivant.",
+    "it": "Premi Invio per continuare al capitolo successivo.",
+    "ja": "Enterで次の章へ進みます。",
+    "ko": "Enter를 눌러 다음 챕터로 계속합니다.",
+    "pt": "Pressione Enter para continuar para o próximo capítulo.",
+    "ru": "Нажмите Enter, чтобы продолжить к следующей главе.",
+    "zh": "按 Enter 继续下一章。"
+  },
   "tutorial_progress": {
     "de": "Ziel: {}/{}",
     "es": "Objetivo: {}/{}",
@@ -4923,6 +6596,116 @@
     "it": "Obiettivo: {}/{}",
     "pt": "Meta: {}/{}",
     "ru": "Цель: {}/{}"
+  },
+  "tutorial_queue_hold_desc": {
+    "de": "Lerne Vorausplanung und die richtige Hold-Entscheidung.",
+    "es": "Aprende planificación futura y cuándo usar Hold.",
+    "fr": "Apprends la planification à l’avance et la logique de Hold.",
+    "it": "Impara pianificazione futura e logica delle decisioni Hold.",
+    "ja": "先読みとホールド判断の考え方を学びます。",
+    "ko": "앞선 계획과 홀드 판단 로직을 배웁니다.",
+    "pt": "Aprenda planejamento futuro e a lógica de decisão do Hold.",
+    "ru": "Учитесь планировать наперёд и правильно выбирать Hold.",
+    "zh": "学习预判和 Hold 决策逻辑。"
+  },
+  "tutorial_queue_hold_title": {
+    "de": "Vorschau & Hold",
+    "es": "Cola y Hold",
+    "fr": "File & Hold",
+    "it": "Coda e Hold",
+    "ja": "キューとホールド",
+    "ko": "큐와 홀드",
+    "pt": "Fila e Hold",
+    "ru": "Очередь и Hold",
+    "zh": "队列与 Hold"
+  },
+  "tutorial_quick_start_desc": {
+    "de": "Lerne in 90 Sekunden die wichtigsten Grundlagen.",
+    "es": "Aprende lo mínimo para jugar en 90 segundos.",
+    "fr": "Acquiers les bases jouables en 90 secondes.",
+    "it": "Impara le basi minime per giocare in 90 secondi.",
+    "ja": "90秒でプレイに必要な基礎を身につけます。",
+    "ko": "90초 안에 플레이에 필요한 기본기를 익힙니다.",
+    "pt": "Aprenda o mínimo para jogar em 90 segundos.",
+    "ru": "Освойте базовые навыки игры за 90 секунд.",
+    "zh": "在 90 秒内掌握游玩的基本能力。"
+  },
+  "tutorial_quick_start_done": {
+    "de": "Schnellstart abgeschlossen!",
+    "es": "¡Inicio rápido completado!",
+    "fr": "Démarrage rapide terminé !",
+    "it": "Avvio rapido completato!",
+    "ja": "クイックスタート完了！",
+    "ko": "빠른 시작 완료!",
+    "pt": "Início rápido concluído!",
+    "ru": "Быстрый старт завершён!",
+    "zh": "快速入门已完成！"
+  },
+  "tutorial_quick_start_done_sub": {
+    "de": "Drücke Enter, um zur Zentrale zurückzukehren.",
+    "es": "Pulsa Enter para volver al centro.",
+    "fr": "Appuie sur Entrée pour revenir au hub.",
+    "it": "Premi Invio per tornare all’hub.",
+    "ja": "Enterでハブに戻ります。",
+    "ko": "Enter를 눌러 허브로 돌아갑니다.",
+    "pt": "Pressione Enter para voltar ao hub.",
+    "ru": "Нажмите Enter, чтобы вернуться в центр.",
+    "zh": "按 Enter 返回中心。"
+  },
+  "tutorial_quick_start_next_chapter_sub": {
+    "de": "Drücke Enter für das nächste Kapitel.",
+    "es": "Pulsa Enter para pasar al siguiente capítulo.",
+    "fr": "Appuie sur Entrée pour passer au chapitre suivant.",
+    "it": "Premi Invio per passare al capitolo successivo.",
+    "ja": "Enterで次の章へ進みます。",
+    "ko": "Enter를 눌러 다음 챕터로 이동합니다.",
+    "pt": "Pressione Enter para ir ao próximo capítulo.",
+    "ru": "Нажмите Enter, чтобы перейти к следующей главе.",
+    "zh": "按 Enter 进入下一章。"
+  },
+  "tutorial_quick_start_title": {
+    "de": "Schnellstart",
+    "es": "Inicio rápido",
+    "fr": "Démarrage rapide",
+    "it": "Avvio rapido",
+    "ja": "クイックスタート",
+    "ko": "빠른 시작",
+    "pt": "Início rápido",
+    "ru": "Быстрый старт",
+    "zh": "快速入门"
+  },
+  "tutorial_recovery_desc": {
+    "de": "Bleibe ruhig und setze auf einem schlechten Feld die richtigen Prioritäten.",
+    "es": "Mantén la calma y prioriza bien cuando el tablero está mal.",
+    "fr": "Reste calme et priorise correctement sur un mauvais plateau.",
+    "it": "Resta calmo e scegli le priorità giuste con un campo difficile.",
+    "ja": "悪い盤面でも落ち着いて優先順位を正しく決めます。",
+    "ko": "나쁜 보드에서도 침착하게 우선순위를 정합니다.",
+    "pt": "Mantenha a calma e priorize corretamente em um tabuleiro ruim.",
+    "ru": "Сохраняйте спокойствие и правильно расставляйте приоритеты на плохом поле.",
+    "zh": "在糟糕局面下保持冷静并正确排序优先级。"
+  },
+  "tutorial_recovery_title": {
+    "de": "Rettung & Überleben",
+    "es": "Recuperación y supervivencia",
+    "fr": "Récupération & Survie",
+    "it": "Recupero e sopravvivenza",
+    "ja": "立て直しとサバイバル",
+    "ko": "복구와 생존",
+    "pt": "Recuperação e sobrevivência",
+    "ru": "Восстановление и выживание",
+    "zh": "恢复与生存"
+  },
+  "tutorial_result_action_next_chapter": {
+    "de": "ENTER: Weiter zum nächsten Kapitel",
+    "es": "ENTER: Continuar al siguiente capítulo",
+    "fr": "ENTER : Continuer vers le chapitre suivant",
+    "it": "INVIO: Continua al capitolo successivo",
+    "ja": "ENTER: 次の章へ",
+    "ko": "ENTER: 다음 챕터로 계속",
+    "pt": "ENTER: Continuar para o próximo capítulo",
+    "ru": "ENTER: Перейти к следующей главе",
+    "zh": "ENTER：继续下一章"
   },
   "tutorial_result_action_next_lesson": {
     "de": "ENTER: Nächste Lektion",
@@ -4980,15 +6763,15 @@
     "zh": "课程完成"
   },
   "tutorial_result_feedback_clean": {
-    "de": "Sauberer Umzug. Du hast das Board unter Kontrolle gehalten.",
+    "de": "Sauberer Zug. Du hast das Board unter Kontrolle gehalten.",
     "es": "Movimiento limpio. Mantuviste el tablero bajo control.",
-    "fr": "Un geste propre. Vous avez gardé le conseil sous contrôle.",
-    "it": "Mossa pulita. Hai tenuto il consiglio sotto controllo.",
+    "fr": "Coup propre. Tu as gardé le plateau sous contrôle.",
+    "it": "Mossa pulita. Hai tenuto il board sotto controllo.",
     "ja": "クリーンな動き。あなたはボードをコントロール下に置きました。",
-    "ko": "깨끗한 움직임. 당신은 이사회를 통제하에 두었습니다.",
-    "pt": "Movimento limpo. Você manteve o conselho sob controle.",
+    "ko": "깔끔한 수입니다. 보드를 잘 통제했습니다.",
+    "pt": "Movimento limpo. Você manteve o tabuleiro sob controle.",
     "ru": "Чистый ход. Вы держали доску под контролем.",
-    "zh": "干净的举动。你控制了董事会。"
+    "zh": "干净利落的一步。你控制住了棋盘。"
   },
   "tutorial_result_feedback_created_holes": {
     "de": "Dieser Schritt schafft neue Löcher. Im Kartenmodus schwächen solche Fehler Ihre nächsten Entscheidungen.",
@@ -5001,34 +6784,47 @@
     "ru": "Этот ход создает новые дыры. В карточном режиме подобные ошибки ослабляют ваши следующие решения.",
     "zh": "这一举动创造了新的漏洞。在卡牌模式中，这样的错误会削弱你接下来的决定。"
   },
+  "tutorial_result_feedback_need_hold": {
+    "de": "Die richtige Lösung in dieser Lektion erfordert Hold. Lege das Teil zuerst ab und nutze dann die folgende Öffnung.",
+    "es": "La solución correcta de esta lección requiere usar Hold. Guarda primero la pieza y luego usa la apertura que aparece.",
+    "fr": "La bonne solution de cette leçon nécessite Hold. Mets d’abord la pièce en réserve, puis utilise l’ouverture suivante.",
+    "it": "La soluzione corretta di questa lezione richiede Hold. Conserva prima il pezzo, poi usa l’apertura successiva.",
+    "ja": "このレッスンの正解にはホールドが必要です。まずピースを保留し、その後にできる隙間を使いましょう。",
+    "ko": "이 레슨의 정답은 홀드를 사용해야 합니다. 먼저 피스를 보관한 뒤 이어지는 빈틈을 사용하세요.",
+    "pt": "A solução correta desta lição exige usar Hold. Guarde a peça primeiro e depois use a abertura seguinte.",
+    "ru": "Правильное решение этого урока требует Hold. Сначала сохраните фигуру, затем используйте появившийся проём.",
+    "zh": "本课的正确解法需要使用 Hold。先暂存方块，再利用随后出现的空位。"
+  },
   "tutorial_result_feedback_need_more_lines": {
-    "de": "Sie haben das Line-Clear-Ziel nicht erreicht. Lesen Sie die Schlüssellücke an der Tafel noch einmal.",
-    "es": "No alcanzaste el objetivo de despejar la línea. Vuelva a leer el espacio clave en el tablero.",
-    "fr": "Vous n'avez pas atteint l'objectif de dégagement de la ligne. Relisez l’espace clé au tableau.",
-    "it": "Non hai raggiunto l'obiettivo di linea libera. Rileggi la lacuna chiave alla lavagna.",
-    "ja": "ラインクリア目標には到達しませんでした。基板上のキーの隙間を再度読み取ります。",
-    "ko": "라인 클리어 목표에 도달하지 못했습니다. 보드의 키 간격을 다시 읽으십시오.",
-    "pt": "Você não atingiu a meta de limpeza de linha. Releia a lacuna principal no quadro.",
-    "ru": "Вы не достигли цели по очистке линии. Перечитайте ключевой пробел на доске.",
-    "zh": "您没有达到清线目标。重新阅读黑板上的关键间隙。"
+    "de": "Du hast das Line-Clear-Ziel nicht erreicht. Lies die wichtigste Lücke im Board noch einmal.",
+    "es": "No alcanzaste el objetivo de limpiar líneas. Vuelve a leer el hueco clave del tablero.",
+    "fr": "Tu n’as pas atteint l’objectif de ligne effacée. Relis le trou clé sur le plateau.",
+    "it": "Non hai raggiunto l'obiettivo di pulizia linee. Rileggi il vuoto chiave sul board.",
+    "ja": "ライン消去目標に届いていません。ボード上の重要な隙間をもう一度確認しましょう。",
+    "ko": "라인 클리어 목표에 도달하지 못했습니다. 보드의 핵심 빈칸을 다시 읽어보세요.",
+    "pt": "Você não atingiu a meta de limpar linhas. Releia a lacuna principal no tabuleiro.",
+    "ru": "Вы не достигли цели по очистке линий. Снова оцените ключевой зазор на поле.",
+    "zh": "你没有达到清线目标。重新判断棋盘上的关键空位。"
   },
   "tutorial_result_feedback_stack_too_high": {
-    "de": "Dieser Schachzug ließ den Stapel zu sehr wachsen. Benutzen Sie zuerst die sicherere Seite.",
-    "es": "Ese movimiento hizo crecer demasiado la pila. Utilice primero el lado más seguro.",
-    "fr": "Ce mouvement a trop fait grossir la pile. Utilisez d’abord le côté le plus sûr.",
-    "it": "Quella mossa ha fatto crescere troppo lo stack. Usa prima il lato più sicuro.",
-    "ja": "この動きによりスタックが大きくなりすぎました。最初に安全な側を使用してください。",
-    "ko": "그 움직임으로 인해 스택이 너무 많이 늘어났습니다. 안전한 쪽을 먼저 사용하세요.",
+    "de": "Dieser Zug hat den Stapel zu hoch gemacht. Nutze zuerst die sicherere Seite.",
+    "es": "Ese movimiento dejó la pila demasiado alta. Usa primero el lado más seguro.",
+    "fr": "Ce coup a trop fait monter la pile. Utilise d’abord le côté le plus sûr.",
+    "it": "Quella mossa ha alzato troppo la pila. Usa prima il lato più sicuro.",
+    "ja": "その手で積み上がりすぎました。まず安全な側を使いましょう。",
+    "ko": "그 수로 더미가 너무 높아졌습니다. 더 안전한 쪽을 먼저 사용하세요.",
     "pt": "Essa jogada aumentou muito a pilha. Use o lado mais seguro primeiro.",
-    "ru": "Этот ход слишком сильно увеличил стек. Сначала используйте более безопасную сторону.",
-    "zh": "这一举动使筹码增长太多了。首先使用更安全的一侧。"
+    "ru": "Этот ход слишком поднял стопку блоков. Сначала используйте более безопасную сторону.",
+    "zh": "这一步让堆叠升得太高。先使用更安全的一侧。"
   },
   "tutorial_result_ideal_label": {
+    "de": "Ideal",
     "es": "ideales",
     "fr": "Idéal",
     "it": "Ideale",
     "ja": "理想的な",
     "ko": "이상적",
+    "pt": "Ideal",
     "ru": "Идеально",
     "tr": "İdeal",
     "zh": "理想"
@@ -5103,32 +6899,52 @@
     "zh": "结果"
   },
   "tutorial_step_1": {
-    "de": "Verwenden Sie zum Bewegen die Pfeiltasten [LEFT] und [RIGHT].",
-    "es": "Utilice las teclas de flecha [LEFT] y [RIGHT] para moverse.",
-    "fr": "Utilisez les touches fléchées [LEFT] et [RIGHT] pour vous déplacer.",
-    "it": "Utilizza i tasti freccia [LEFT] e [RIGHT] per spostarti.",
-    "pt": "Use as teclas de seta [LEFT] e [RIGHT] para mover."
+    "de": "Bewege das Teil mit [{left_key}] und [{right_key}] horizontal.",
+    "en": "Use [{left_key}] and [{right_key}] to move the piece horizontally.",
+    "es": "Usa [{left_key}] y [{right_key}] para mover la pieza en horizontal.",
+    "fr": "Utilise [{left_key}] et [{right_key}] pour déplacer la pièce horizontalement.",
+    "it": "Usa [{left_key}] e [{right_key}] per muovere il pezzo in orizzontale.",
+    "ja": "[{left_key}] と [{right_key}] でピースを横に動かします。",
+    "ko": "[{left_key}]와 [{right_key}]로 피스를 가로로 이동하세요.",
+    "pt": "Use [{left_key}] e [{right_key}] para mover a peça na horizontal.",
+    "ru": "Используйте [{left_key}] и [{right_key}], чтобы двигать фигуру по горизонтали.",
+    "zh": "使用 [{left_key}] 和 [{right_key}] 横向移动方块。"
   },
   "tutorial_step_2": {
-    "de": "Drücken Sie zum Drehen die Pfeiltaste [UP].",
-    "es": "Presione la tecla de flecha [UP] para rotar.",
-    "fr": "Appuyez sur la touche fléchée [UP] pour faire pivoter.",
-    "it": "Premere il tasto freccia [UP] per ruotare.",
-    "pt": "Pressione a tecla de seta [UP] para girar."
+    "de": "Drücke [{rotate_key}], um das Teil zu drehen.",
+    "en": "Press [{rotate_key}] to rotate the piece.",
+    "es": "Pulsa [{rotate_key}] para rotar la pieza.",
+    "fr": "Appuie sur [{rotate_key}] pour faire pivoter la pièce.",
+    "it": "Premi [{rotate_key}] per ruotare il pezzo.",
+    "ja": "[{rotate_key}] でピースを回転します。",
+    "ko": "[{rotate_key}]를 눌러 피스를 회전하세요.",
+    "pt": "Pressione [{rotate_key}] para girar a peça.",
+    "ru": "Нажмите [{rotate_key}], чтобы повернуть фигуру.",
+    "zh": "按 [{rotate_key}] 旋转方块。"
   },
   "tutorial_step_3": {
-    "de": "Halten Sie [DOWN] gedrückt, um schneller zu fallen (Soft Drop).",
-    "es": "Mantenga presionado [DOWN] para caer más rápido (Soft Drop).",
-    "fr": "Maintenez [DOWN] pour tomber plus rapidement (Soft Drop).",
-    "it": "Tieni premuto [DOWN] per scendere più velocemente (Soft Drop).",
-    "pt": "Segure [DOWN] para cair mais rápido (Soft Drop)."
+    "de": "Halte [{soft_key}], um das Teil kontrolliert zu senken.",
+    "en": "Hold [{soft_key}] to lower the piece with control.",
+    "es": "Mantén [{soft_key}] para bajar la pieza con control.",
+    "fr": "Maintiens [{soft_key}] pour descendre la pièce avec contrôle.",
+    "it": "Tieni premuto [{soft_key}] per abbassare il pezzo con controllo.",
+    "ja": "[{soft_key}] を押し続けてピースを細かく下げます。",
+    "ko": "[{soft_key}]를 길게 눌러 피스를 조절하며 내리세요.",
+    "pt": "Segure [{soft_key}] para descer a peça com controle.",
+    "ru": "Удерживайте [{soft_key}], чтобы контролируемо опустить фигуру.",
+    "zh": "按住 [{soft_key}] 可控制方块下落。"
   },
   "tutorial_step_4": {
-    "de": "Drücken Sie [SPACE], um sofort zu sperren (Hard Drop).",
-    "es": "Presione [SPACE] para bloquear instantáneamente (Hard Drop).",
-    "fr": "Appuyez sur [SPACE] pour verrouiller instantanément (Hard Drop).",
-    "it": "Premi [SPACE] per bloccare immediatamente (Hard Drop).",
-    "pt": "Pressione [SPACE] para bloquear instantaneamente (Hard Drop)."
+    "de": "Drücke [{hard_drop_key}], um das Teil sofort zu platzieren.",
+    "en": "Press [{hard_drop_key}] to place the piece instantly.",
+    "es": "Pulsa [{hard_drop_key}] para colocar la pieza al instante.",
+    "fr": "Appuie sur [{hard_drop_key}] pour placer la pièce instantanément.",
+    "it": "Premi [{hard_drop_key}] per piazzare subito il pezzo.",
+    "ja": "[{hard_drop_key}] でピースを即座に固定します。",
+    "ko": "[{hard_drop_key}]를 눌러 피스를 즉시 배치하세요.",
+    "pt": "Pressione [{hard_drop_key}] para posicionar a peça imediatamente.",
+    "ru": "Нажмите [{hard_drop_key}], чтобы мгновенно поставить фигуру.",
+    "zh": "按 [{hard_drop_key}] 可立即放置方块。"
   },
   "tutorial_step_5": {
     "de": "Klare Linien, indem Sie sie ausfüllen! Platzieren Sie das I-Stück in der Lücke.",
@@ -5138,11 +6954,11 @@
     "pt": "Limpe as linhas preenchendo-as! Coloque a peça I na abertura."
   },
   "tutorial_step_6": {
-    "de": "Drücken Sie [__QXPH0__], um dieses Stück zu halten.",
-    "es": "Presione [__QXPH0__] para sostener esta pieza.",
-    "fr": "Appuyez sur [__QXPH0__] pour maintenir cette pièce.",
-    "it": "Premi [__QXPH0__] per tenere questo pezzo.",
-    "pt": "Pressione [__QXPH0__] para segurar esta peça."
+    "de": "Drücke [{hold_key}], um dieses Teil zu halten.",
+    "es": "Pulsa [{hold_key}] para guardar esta pieza.",
+    "fr": "Appuie sur [{hold_key}] pour mettre cette pièce en réserve.",
+    "it": "Premi [{hold_key}] per mettere questo pezzo in Hold.",
+    "pt": "Pressione [{hold_key}] para guardar esta peça."
   },
   "tutorial_step_done_generic": {
     "de": "Schritt abgeschlossen!",
@@ -5201,18 +7017,28 @@
     "pt": "Pressione ENTER"
   },
   "tutorial_sub_hard_drop": {
-    "de": "Drücken Sie SPACE",
-    "es": "Presione SPACE",
-    "fr": "Appuyez sur SPACE",
-    "it": "Premi SPACE",
-    "pt": "Pressione SPACE"
+    "de": "[{hard_drop_key}] drücken",
+    "en": "Press [{hard_drop_key}]",
+    "es": "Pulsa [{hard_drop_key}]",
+    "fr": "Appuie sur [{hard_drop_key}]",
+    "it": "Premi [{hard_drop_key}]",
+    "ja": "[{hard_drop_key}] を押す",
+    "ko": "[{hard_drop_key}]를 누르세요",
+    "pt": "Pressione [{hard_drop_key}]",
+    "ru": "Нажмите [{hard_drop_key}]",
+    "zh": "按下 [{hard_drop_key}]"
   },
   "tutorial_sub_hold": {
-    "de": "Drücken Sie C",
-    "es": "Presione C",
-    "fr": "Appuyez sur C",
-    "it": "Premere C",
-    "pt": "Pressione C"
+    "de": "[{hold_key}] drücken",
+    "en": "Press [{hold_key}]",
+    "es": "Pulsa [{hold_key}]",
+    "fr": "Appuie sur [{hold_key}]",
+    "it": "Premi [{hold_key}]",
+    "ja": "[{hold_key}] を押す",
+    "ko": "[{hold_key}]를 누르세요",
+    "pt": "Pressione [{hold_key}]",
+    "ru": "Нажмите [{hold_key}]",
+    "zh": "按下 [{hold_key}]"
   },
   "tutorial_sub_line_clear": {
     "de": "Löschen Sie eine Zeile",
@@ -5236,11 +7062,16 @@
     "pt": "Girar: {count}/{target}"
   },
   "tutorial_sub_soft_drop": {
-    "de": "Halten Sie die Taste gedrückt ({progress}/{target})",
-    "es": "Mantenga presionado ({progress}/{target})",
-    "fr": "Maintenez enfoncé ({progress}/{target})",
-    "it": "TIENI PREMUTO ({progress}/{target})",
-    "pt": "Mantenha pressionado ({progress}/{target})"
+    "de": "[{soft_key}] gedrückt halten ({progress}/{target})",
+    "en": "Hold [{soft_key}] ({progress}/{target})",
+    "es": "Mantén [{soft_key}] ({progress}/{target})",
+    "fr": "Maintiens [{soft_key}] ({progress}/{target})",
+    "it": "Tieni premuto [{soft_key}] ({progress}/{target})",
+    "ja": "[{soft_key}] を押し続ける ({progress}/{target})",
+    "ko": "[{soft_key}]를 누른 채 유지 ({progress}/{target})",
+    "pt": "Segure [{soft_key}] ({progress}/{target})",
+    "ru": "Удерживайте [{soft_key}] ({progress}/{target})",
+    "zh": "按住 [{soft_key}]（{progress}/{target}）"
   },
   "tutorial_success_1": {
     "de": "Perfekt!",
@@ -5264,8 +7095,11 @@
     "pt": "Incrível!"
   },
   "tutorial_success_4": {
+    "de": "Bravo!",
     "es": "¡Bravo!",
-    "fr": "Bravo !"
+    "fr": "Bravo !",
+    "it": "Bravo!",
+    "pt": "Bravo!"
   },
   "tutorial_success_5": {
     "de": "Herzlichen Glückwunsch!",
@@ -5282,28 +7116,28 @@
     "pt": "Sucesso!"
   },
   "tutorial_success_hard_drop": {
-    "de": "Harter Drop-Erfolg!",
-    "es": "¡Éxito de caída difícil!",
-    "fr": "Succès difficile !",
-    "it": "Successo difficile!",
+    "de": "Hard Drop geschafft!",
+    "es": "¡Caída dura lograda!",
+    "fr": "Hard drop réussi !",
+    "it": "Hard drop riuscito!",
     "ja": "ハードドロップ成功！",
-    "pt": "Sucesso na queda!"
+    "pt": "Hard drop concluído!"
   },
   "tutorial_success_hold": {
-    "de": "Halten Sie Erfolg!",
-    "es": "¡Mantén el éxito!",
-    "fr": "Maintenez le succès !",
-    "it": "Tieni il successo!",
+    "de": "Hold geschafft!",
+    "es": "¡Hold logrado!",
+    "fr": "Hold réussi !",
+    "it": "Hold riuscito!",
     "ja": "ホールド成功！",
-    "pt": "Segure o sucesso!"
+    "pt": "Hold concluído!"
   },
   "tutorial_success_line_clear": {
-    "de": "Leitung gelöscht!",
+    "de": "Linie gelöscht!",
     "es": "¡Línea despejada!",
-    "fr": "Ligne libérée !",
-    "it": "Linea liberata!",
+    "fr": "Ligne effacée !",
+    "it": "Linea cancellata!",
     "ja": "ラインがクリアされました！",
-    "pt": "Linha liberada!"
+    "pt": "Linha limpa!"
   },
   "tutorial_success_move_left": {
     "de": "Bewegen Sie sich nach links!",
@@ -5329,6 +7163,28 @@
     "ja": "素敵な回転！",
     "pt": "Bela rotação!"
   },
+  "tutorial_surface_control_desc": {
+    "de": "Lerne saubere Felder, Lochvermeidung und Schachtschutz.",
+    "es": "Aprende a mantener la superficie limpia, evitar huecos y proteger el pozo.",
+    "fr": "Apprends à garder une surface propre, éviter les trous et protéger le puits.",
+    "it": "Impara superficie pulita, prevenzione dei buchi e protezione del pozzo.",
+    "ja": "きれいな地形、穴の予防、井戸の守り方を学びます。",
+    "ko": "깔끔한 지형, 구멍 방지, 우물 보호를 배웁니다.",
+    "pt": "Aprenda superfície limpa, prevenção de buracos e proteção do poço.",
+    "ru": "Учитесь держать поле ровным, избегать дыр и защищать колодец.",
+    "zh": "学习保持场面整洁、避免空洞并保护竖井。"
+  },
+  "tutorial_surface_control_title": {
+    "de": "Oberflächenkontrolle",
+    "es": "Control de superficie",
+    "fr": "Contrôle de surface",
+    "it": "Controllo della superficie",
+    "ja": "地形コントロール",
+    "ko": "지형 관리",
+    "pt": "Controle da superfície",
+    "ru": "Контроль поля",
+    "zh": "场面控制"
+  },
   "tutorial_targets_title": {
     "de": "ZIELE",
     "es": "OBJETIVOS",
@@ -5351,18 +7207,18 @@
     "pt": "Leia a lacuna antes de girar. A rotação antecipada reduz erros."
   },
   "tutorial_tip_step_3": {
-    "de": "Verwenden Sie Soft Drop mit kurzen, kontrollierten Drücken, um die Platzierung zu optimieren.",
-    "es": "Utilice una caída suave con presiones breves y controladas para ajustar la ubicación.",
-    "fr": "Utilisez une chute douce avec des pressions courtes et contrôlées pour affiner le placement.",
-    "it": "Utilizzare il soft drop con brevi pressioni controllate per ottimizzare il posizionamento.",
-    "pt": "Use a queda suave com toques curtos e controlados para ajustar o posicionamento."
+    "de": "Nutze Soft Drop mit kurzen, kontrollierten Eingaben, um die Platzierung fein abzustimmen.",
+    "es": "Usa la caída suave con pulsaciones cortas y controladas para ajustar la colocación.",
+    "fr": "Utilise le soft drop par petites pressions contrôlées pour affiner le placement.",
+    "it": "Usa il soft drop con tocchi brevi e controllati per rifinire il piazzamento.",
+    "pt": "Use o soft drop com toques curtos e controlados para ajustar o posicionamento."
   },
   "tutorial_tip_step_4": {
-    "de": "Der Hard Drop kann nicht rückgängig gemacht werden. Verwenden Sie es, wenn die Landung frei ist.",
-    "es": "La caída brusca no se puede deshacer. Úselo cuando el aterrizaje esté despejado.",
-    "fr": "Une chute dure ne peut pas être annulée. Utilisez-le lorsque l'atterrissage est dégagé.",
+    "de": "Hard Drop kann nicht rückgängig gemacht werden. Nutze ihn, wenn die Landung sicher ist.",
+    "es": "La caída dura no se puede deshacer. Úsala cuando el aterrizaje esté despejado.",
+    "fr": "Le hard drop ne peut pas être annulé. Utilise-le quand l’atterrissage est dégagé.",
     "it": "L'hard drop non può essere annullato. Usalo quando l'atterraggio è libero.",
-    "pt": "A queda brusca não pode ser desfeita. Use-o quando o pouso estiver livre."
+    "pt": "O hard drop não pode ser desfeito. Use-o quando a aterrissagem estiver livre."
   },
   "tutorial_tip_step_5": {
     "de": "Schließen Sie die Lücke mit einem Zug und konzentrieren Sie sich darauf, die Linie freizumachen.",
@@ -5400,25 +7256,28 @@
     "pt": "Parabéns! Você concluiu o tutorial!"
   },
   "tutorial_welcome_desc": {
-    "de": "Willkommen bei Quadrix! Möchten Sie die Grundsteuerung erlernen?",
-    "es": "¡Bienvenidos a Cuadrix! ¿Te gustaría aprender los controles básicos?",
-    "fr": "Bienvenue chez Quadrix ! Souhaitez-vous apprendre les commandes de base ?",
-    "it": "Benvenuti a Quadrix! Ti piacerebbe imparare i controlli di base?",
-    "pt": "Bem-vindo à Quadrix! Gostaria de aprender os controles básicos?"
+    "de": "Willkommen bei Quadrix! Möchtest du die Grundsteuerung lernen?",
+    "es": "¡Bienvenido a Quadrix! ¿Quieres aprender los controles básicos?",
+    "fr": "Bienvenue dans Quadrix ! Veux-tu apprendre les commandes de base ?",
+    "it": "Benvenuto in Quadrix! Vuoi imparare i controlli di base?",
+    "ja": "Quadrixへようこそ！基本操作を学びますか？",
+    "ko": "Quadrix에 오신 것을 환영합니다! 기본 조작을 배워볼까요?",
+    "pt": "Bem-vindo ao Quadrix! Quer aprender os controles básicos?",
+    "zh": "欢迎来到 Quadrix！想学习基础操作吗？"
   },
   "tutorial_welcome_hard_drop": {
-    "de": "Benutzen wir Hard Drop!",
-    "es": "¡Utilicemos una caída fuerte!",
+    "de": "Lass uns Hard Drop nutzen!",
+    "es": "¡Usemos la caída dura!",
     "fr": "Utilisons le hard drop !",
     "it": "Usiamo l'hard drop!",
-    "pt": "Vamos usar queda forte!"
+    "pt": "Vamos usar o hard drop!"
   },
   "tutorial_welcome_hold": {
-    "de": "Lassen Sie uns Hold erkunden!",
-    "es": "¡Exploremos espera!",
-    "fr": "Explorons la attente !",
-    "it": "Esploriamo la presa!",
-    "pt": "Vamos explorar espera!"
+    "de": "Lass uns Hold ausprobieren!",
+    "es": "¡Exploremos Hold!",
+    "fr": "Découvrons Hold !",
+    "it": "Proviamo Hold!",
+    "pt": "Vamos explorar Hold!"
   },
   "tutorial_welcome_line_clear": {
     "de": "Zeit, eine Zeile freizumachen!",
@@ -5449,7 +7308,11 @@
     "pt": "Vamos tentar a queda suave!"
   },
   "tutorial_welcome_title": {
-    "fr": "QUADRIX TUTORIEL"
+    "fr": "QUADRIX TUTORIEL",
+    "ja": "QUADRIX チュートリアル",
+    "ko": "QUADRIX 튜토리얼",
+    "ru": "QUADRIX ОБУЧЕНИЕ",
+    "zh": "QUADRIX 教程"
   },
   "ultra_final_score": {
     "de": "Ihr Endergebnis: {score}",
@@ -5480,21 +7343,29 @@
     "pt": "Limite de 2 minutos!"
   },
   "user_bio": {
+    "de": "Biografie",
     "es": "Biografía",
     "fr": "Biographie",
+    "it": "Biografia",
     "pt": "Biografia",
     "tr": "Biyografi"
   },
   "user_field_avatar": {
+    "de": "Avatar",
     "es": "avatar",
     "fr": "avatar",
+    "it": "Avatar",
     "pt": "avatar",
     "tr": "avatar"
+  },
+  "user_field_color": {
+    "es": "Color"
   },
   "user_help_mode_count": {
     "fr": "Modes {count}"
   },
   "user_no": {
+    "es": "N - No",
     "it": "N-No"
   },
   "user_profile_updated": {
@@ -5598,6 +7469,8 @@
     "es": "¡INCREÍBLE QUADRIX!",
     "fr": "INCROYABLE QUADRIX !",
     "it": "FANTASTICO QUADRIX!",
+    "ja": "最高のQUADRIX！",
+    "ko": "최고의 QUADRIX!",
     "pt": "INCRÍVEL QUADRIX!"
   },
   "zen_panel_auto_clear": {
