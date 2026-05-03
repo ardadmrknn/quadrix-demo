@@ -20,6 +20,7 @@ from __future__ import annotations
 import time
 import random
 import json
+import sys
 
 import pygame
 
@@ -50,6 +51,20 @@ try:
 except ImportError:
     def _pause_steam_pump(): pass
     def _resume_steam_pump(): pass
+
+try:
+    from steam_integration import activate_game_overlay_invite_dialog as _activate_invite_dialog
+except ImportError:
+    def _activate_invite_dialog(lobby_id=0): return False
+
+try:
+    from platform_utils import normalize_mouse_pos, get_mouse_pos
+except ImportError:
+    def normalize_mouse_pos(pos):
+        return pos
+
+    def get_mouse_pos():
+        return pygame.mouse.get_pos()
 
 # Convenience aliases
 get_font = _rs.get_font
@@ -190,6 +205,17 @@ class OnlineCoopGame:
         if scale is None:
             scale = self._ui_scale()
         return max(minimum, int(round(float(value) * float(scale))))
+
+    def _get_lobby_entries_for_display(self) -> list[dict]:
+        """Aktif filtreye göre gösterilecek lobi kartlarını döndür."""
+        entries = list(getattr(self, '_lobby_list', []) or [])
+        if getattr(self, '_lobby_list_filter', 'all') == 'public':
+            entries = [
+                lobby for lobby in entries
+                if str(lobby.get('visibility', 'unknown') or 'unknown').lower()
+                in ('public', 'unknown', 'stale_unknown')
+            ]
+        return entries
 
     def __init__(
         self,
@@ -740,20 +766,12 @@ class OnlineCoopGame:
             self._search_code = ''
             return
 
-        if self._lobby_list_filter == 'public':
-            self._lobby_list = [
-                lobby for lobby in self._lobby_list
-                if str(lobby.get('visibility', 'unknown') or 'unknown').lower()
-                in ('public', 'unknown', 'stale_unknown')
-            ]
-
         self._refresh_unknown_lobby_entries()
-        if self._lobby_list_filter == 'public':
-            self._lobby_list = [
-                lobby for lobby in self._lobby_list
-                if str(lobby.get('visibility', 'unknown') or 'unknown').lower()
-                in ('public', 'unknown', 'stale_unknown')
-            ]
+        display_entries = self._get_lobby_entries_for_display()
+        self._lobby_list_scroll = min(
+            max(0, getattr(self, '_lobby_list_scroll', 0)),
+            max(0, len(display_entries) - 1),
+        )
 
     def _on_join_requested(self, ev: NetEvent):
         lobby_id = getattr(ev, 'steam_id', 0) or 0
@@ -1480,6 +1498,65 @@ class OnlineCoopGame:
             return False
         return True
 
+    def _set_lobby_list_filter(self, lobby_filter: str, refresh: bool = True) -> bool:
+        """Lobi listesi filtresini güncelle; ham listeyi silmeden ekranda filtrele."""
+        normalized = 'public' if str(lobby_filter).lower() == 'public' else 'all'
+        changed = normalized != getattr(self, '_lobby_list_filter', 'all')
+        self._lobby_list_filter = normalized
+        if changed:
+            self._lobby_list_scroll = 0
+        if refresh:
+            return self._request_lobby_list()
+        return changed
+
+    def _do_invite_friend(self):
+        """Steam overlay davetini aç; lobi yoksa önce özel lobi oluştur."""
+        if not self._net_initialized and not self._init_networking():
+            self._status_msg = t('steam_not_available', 'Steam bağlantısı kurulamadı!')
+            self._status_timer = 3.0
+            return
+
+        if (
+            getattr(self.net, 'available', True) is False
+            or getattr(self.net, 'initialized', True) is False
+        ):
+            self._status_msg = t('steam_not_available', 'Steam bağlantısı kurulamadı!')
+            self._status_timer = 3.0
+            return
+
+        if not getattr(self.net, 'lobby_id', 0):
+            self._invite_after_lobby = True
+            self._create_lobby(public=False)
+            self._status_msg = t('creating_lobby_invite', 'Lobi oluşturuluyor...')
+            self._status_timer = 2.0
+            return
+
+        invite_ok = False
+        try:
+            invite_fn = getattr(self.net, 'invite_friend', None)
+            if callable(invite_fn):
+                invite_fn()
+                invite_ok = True
+        except Exception:
+            invite_ok = False
+
+        if not invite_ok:
+            try:
+                invite_ok = bool(_activate_invite_dialog(getattr(self.net, 'lobby_id', 0)))
+            except Exception:
+                invite_ok = False
+
+        self._status_msg = (
+            t('invite_sent', 'Steam davet penceresi açıldı')
+            if invite_ok
+            else t('invite_open_failed', 'Steam davet penceresi açılamadı')
+        )
+        self._status_timer = 2.5
+        try:
+            self.sound.play('click')
+        except Exception:
+            pass
+
     def _begin_code_search(self, code: str, fallback_scan: bool = False):
         normalized_code = (code or '').strip()
         if not normalized_code:
@@ -1515,6 +1592,146 @@ class OnlineCoopGame:
             self._status_msg = t('lobby_not_found_by_code', 'Bu kodla lobi bulunamadı')
             self._status_timer = 3.0
 
+    def _copy_lobby_code(self):
+        code = str(getattr(self, '_lobby_code', '') or '').strip()
+        if not code:
+            self._status_msg = t('no_lobby_code_to_copy', 'Bu lobide paylaşım kodu yok')
+            self._status_timer = 2.0
+            return
+        ok = self._copy_to_clipboard(code)
+        self._status_msg = (
+            t('code_copied', 'Lobi kodu kopyalandı!')
+            if ok
+            else f'{t("lobby_code_label", "Lobi Kodu")}: {code}'
+        )
+        self._status_timer = 2.5
+        try:
+            self.sound.play('click')
+        except Exception:
+            pass
+
+    def _copy_lobby_id(self):
+        lobby_id = str(
+            getattr(self, '_lobby_id_str', '')
+            or getattr(self.net, 'lobby_id', '')
+            or ''
+        ).strip()
+        if not lobby_id:
+            return
+        ok = self._copy_to_clipboard(lobby_id)
+        self._status_msg = (
+            t('lobby_id_copied', 'Lobi ID kopyalandı!')
+            if ok
+            else f'ID: {lobby_id}'
+        )
+        self._status_timer = 2.5
+        try:
+            self.sound.play('click')
+        except Exception:
+            pass
+
+    def _copy_to_clipboard(self, text: str) -> bool:
+        """Metni sistem panosuna güvenli şekilde kopyala."""
+        import subprocess
+        try:
+            if sys.platform == 'win32':
+                create_no_window = int(getattr(subprocess, 'CREATE_NO_WINDOW', 0) or 0)
+                process = subprocess.Popen(
+                    ['clip'],
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    creationflags=create_no_window,
+                )
+                try:
+                    process.communicate(str(text).encode('utf-16'), timeout=2)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    return False
+                return process.returncode == 0
+            if sys.platform == 'darwin':
+                process = subprocess.Popen(
+                    ['pbcopy'],
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+                try:
+                    process.communicate(str(text).encode('utf-8'), timeout=2)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    return False
+                return process.returncode == 0
+
+            for command in (
+                ['xclip', '-selection', 'clipboard'],
+                ['wl-copy'],
+                ['xsel', '--clipboard', '--input'],
+            ):
+                try:
+                    process = subprocess.Popen(
+                        command,
+                        stdin=subprocess.PIPE,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                    )
+                except (FileNotFoundError, OSError):
+                    continue
+                try:
+                    process.communicate(str(text).encode('utf-8'), timeout=2)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    continue
+                except Exception:
+                    continue
+                if process.returncode == 0:
+                    return True
+        except Exception:
+            return False
+        return False
+
+    def _paste_from_clipboard(self) -> str:
+        """Sistem panosundan kısa metin oku."""
+        import subprocess
+        try:
+            if sys.platform == 'win32':
+                create_no_window = int(getattr(subprocess, 'CREATE_NO_WINDOW', 0) or 0)
+                result = subprocess.run(
+                    ['powershell', '-command', 'Get-Clipboard'],
+                    capture_output=True,
+                    text=True,
+                    timeout=2,
+                    creationflags=create_no_window,
+                )
+                return result.stdout.strip()
+            if sys.platform == 'darwin':
+                result = subprocess.run(
+                    ['pbpaste'],
+                    capture_output=True,
+                    text=True,
+                    timeout=2,
+                )
+                return result.stdout.strip()
+            for command in (
+                ['xclip', '-selection', 'clipboard', '-o'],
+                ['wl-paste', '--no-newline'],
+                ['xsel', '--clipboard', '--output'],
+            ):
+                try:
+                    result = subprocess.run(
+                        command,
+                        capture_output=True,
+                        text=True,
+                        timeout=2,
+                    )
+                except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+                    continue
+                if result.returncode == 0:
+                    return result.stdout.strip()
+        except Exception:
+            return ''
+        return ''
+
     # ============================================================
     #  ANA DÖNGÜ: handle_input / update / draw
     # ============================================================
@@ -1533,15 +1750,27 @@ class OnlineCoopGame:
                 if self._join_code_active and self.online_state == OnlineCoopState.LOBBY_MENU:
                     if event.key == pygame.K_BACKSPACE:
                         self._join_code_input = self._join_code_input[:-1]
+                        self._join_code_error = ''
                         continue
-                    elif event.key == pygame.K_RETURN:
+                    elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
                         self._try_join_by_code()
                         continue
                     elif event.key == pygame.K_ESCAPE:
                         self._join_code_active = False
+                        self._join_code_input = ''
+                        self._join_code_error = ''
+                        continue
+                    elif event.key == pygame.K_v and (getattr(event, 'mod', 0) & pygame.KMOD_CTRL):
+                        pasted = self._paste_from_clipboard()
+                        if pasted:
+                            digits = ''.join(ch for ch in pasted if ch.isdigit())
+                            if digits:
+                                self._join_code_input = digits[:6]
+                                self._join_code_error = ''
                         continue
                     elif event.unicode and event.unicode.isdigit() and len(self._join_code_input) < 6:
                         self._join_code_input += event.unicode
+                        self._join_code_error = ''
                         continue
 
                 # Gameplay input during PLAYING state
@@ -1562,9 +1791,47 @@ class OnlineCoopGame:
                     elif self.online_state == OnlineCoopState.GAME_OVER:
                         self._return_to_coop_lobby_menu()
 
+                if self.online_state == OnlineCoopState.LOBBY_MENU:
+                    if event.key in (pygame.K_1, pygame.K_RETURN, pygame.K_KP_ENTER):
+                        if self._init_networking():
+                            self._create_lobby(public=False)
+                            self._status_msg = t('creating_lobby', 'Özel lobi oluşturuluyor...')
+                            self._status_timer = 2.0
+                    elif event.key == pygame.K_2:
+                        if self._init_networking():
+                            self._create_lobby(public=True)
+                            self._status_msg = t('creating_lobby', 'Herkese açık lobi oluşturuluyor...')
+                            self._status_timer = 2.0
+                    elif event.key == pygame.K_3:
+                        self._request_lobby_list()
+                    elif event.key == pygame.K_j:
+                        self._join_target_lobby_id = 0
+                        self._join_code_active = True
+                        self._join_code_input = ''
+                        self._join_code_error = ''
+                    elif event.key == pygame.K_i:
+                        self._do_invite_friend()
+                elif self.online_state == OnlineCoopState.WAITING:
+                    if event.key == pygame.K_i:
+                        self._do_invite_friend()
+                    elif event.key == pygame.K_c and self._lobby_code:
+                        self._copy_lobby_code()
+                elif self.online_state == OnlineCoopState.READY_CHECK:
+                    if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+                        self.my_ready = not self.my_ready
+                        if self.my_ready:
+                            self._send_ready_signal(reason='keypress_enter')
+                            self._check_both_ready()
+
             elif event.type == pygame.KEYUP:
                 if self.online_state == OnlineCoopState.PLAYING:
                     self._handle_gameplay_keyup(event)
+
+            if event.type == pygame.TEXTINPUT and self._join_code_active:
+                for ch in event.text:
+                    if ch.isdigit() and len(self._join_code_input) < 6:
+                        self._join_code_input += ch
+                        self._join_code_error = ''
 
             if event.type == pygame.VIDEORESIZE:
                 self.window_width = event.w
@@ -1576,7 +1843,12 @@ class OnlineCoopGame:
 
             # Mouse click
             if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                self._handle_mouse_click(event.pos)
+                result = self._handle_mouse_click(event.pos)
+                if result is not None:
+                    return result
+
+            if event.type == pygame.MOUSEWHEEL:
+                self._handle_scroll(event)
 
         return True
 
@@ -1671,30 +1943,58 @@ class OnlineCoopGame:
                     except Exception:
                         pass
 
+    def _handle_scroll(self, event):
+        """Fare tekerleği — lobi listesi scroll."""
+        if self.online_state != OnlineCoopState.LOBBY_MENU:
+            return
+        entries = self._get_lobby_entries_for_display()
+        if entries:
+            self._lobby_list_scroll = max(0, self._lobby_list_scroll - int(getattr(event, 'y', 0) or 0))
+
     def _handle_mouse_click(self, pos):
         """Lobi ekranlarında mouse tıklama."""
+        pos = normalize_mouse_pos(pos) or pos
         for btn in self._lobby_buttons:
             r = btn.get('rect')
             action = btn.get('action')
             if r and action and r.collidepoint(pos):
-                self._execute_button_action(action)
-                break
+                return self._execute_button_action(action)
+        return None
 
     def _execute_button_action(self, action: str):
         if action == 'create_private':
-            self._create_lobby(public=False)
+            if self._init_networking():
+                self._create_lobby(public=False)
+                self._status_msg = t('creating_lobby', 'Özel lobi oluşturuluyor...')
+                self._status_timer = 2.0
         elif action == 'create_public':
-            self._create_lobby(public=True)
+            if self._init_networking():
+                self._create_lobby(public=True)
+                self._status_msg = t('creating_lobby', 'Herkese açık lobi oluşturuluyor...')
+                self._status_timer = 2.0
         elif action == 'invite_friend':
-            self._invite_after_lobby = True
-            self._create_lobby(public=False)
+            self._do_invite_friend()
         elif action == 'toggle_join_code':
+            self._join_target_lobby_id = 0
             self._join_code_active = not self._join_code_active
+            self._join_code_input = ''
             self._join_code_error = ''
+        elif action == 'join_code_field':
+            self._join_code_active = True
         elif action == 'submit_join_code':
             self._try_join_by_code()
         elif action == 'refresh_list':
             self._request_lobby_list()
+        elif action == 'filter_all_lobbies':
+            self._set_lobby_list_filter('all')
+        elif action == 'filter_public_lobbies':
+            self._set_lobby_list_filter('public')
+        elif action == 'copy_lobby_code':
+            self._copy_lobby_code()
+        elif action == 'copy_lobby_id':
+            self._copy_lobby_id()
+        elif action == 'back':
+            return 'menu'
         elif action.startswith('join_lobby:'):
             lobby_id_str = action.split(':', 1)[1]
             try:
@@ -1702,6 +2002,18 @@ class OnlineCoopGame:
             except Exception:
                 self._status_msg = t('lobby_error', 'Lobi işlemi başarısız oldu!')
                 self._status_timer = 3.0
+        elif action.startswith('join_private_lobby:'):
+            lobby_id_str = action.split(':', 1)[1]
+            try:
+                self._open_private_lobby_code_prompt(int(lobby_id_str))
+            except (ValueError, TypeError):
+                self._join_target_lobby_id = 0
+        elif action.startswith('resolve_lobby_join:'):
+            lobby_id_str = action.split(':', 1)[1]
+            try:
+                self._start_lobby_browser_join(int(lobby_id_str))
+            except (ValueError, TypeError):
+                pass
         elif action == 'ready':
             self.my_ready = not self.my_ready
             if self.my_ready:
@@ -1715,6 +2027,7 @@ class OnlineCoopGame:
             self._my_rematch = True
             self.net.send({'type': MsgType.REMATCH}, reliable=True, channel=CHANNEL_GAME)
             self._check_both_rematch()
+        return None
 
     def _try_join_by_code(self):
         """Lobi kodunu kullanarak lobiye katılmayı dene."""
@@ -2516,148 +2829,274 @@ class OnlineCoopGame:
     # ============================================================
 
     def _draw_lobby_menu(self):
-        """Co-op lobi menüsü."""
+        """PvP lobby akışından uyarlanmış Online Co-op ana menüsü."""
         w, h = self.window_width, self.window_height
         cx = w // 2
         sc = self._ui_scale()
         s = lambda v, minimum=1: self._sx(v, sc, minimum)
+        mouse_pos = get_mouse_pos()
 
-        # Başlık
         title_rect = _rs.draw_title(self.screen, t('online_coop_title', 'ONLINE CO-OP'), (cx, s(58)))
+        subtitle_font = _rs.get_font(s(14, minimum=10), bold=False)
+        subtitle_text = t(
+            'online_coop_subtitle',
+            'Ortak 20x20 board, senkron hazır sistemi ve Steam P2P takım oyunu',
+        )
+        subtitle = subtitle_font.render(subtitle_text, True, _rs.text_muted)
+        self.screen.blit(subtitle, subtitle.get_rect(center=(cx, title_rect.bottom + s(12))))
 
-        # Sol panel: butonlar
-        btn_w = s(340)
+        margin = s(32)
+        panel_top = title_rect.bottom + s(36)
+        panel_bottom = h - s(72)
+        panel_h = max(s(390), panel_bottom - panel_top)
+        stacked = w < s(980)
+        if stacked:
+            left_rect = pygame.Rect(margin, panel_top, w - margin * 2, min(s(430), panel_h))
+            right_top = left_rect.bottom + s(16)
+            right_rect = pygame.Rect(margin, right_top, w - margin * 2, max(s(250), h - right_top - s(72)))
+        else:
+            left_w = min(s(430), max(s(350), (w - margin * 3) // 3))
+            left_rect = pygame.Rect(margin, panel_top, left_w, panel_h)
+            right_rect = pygame.Rect(left_rect.right + s(18), panel_top, w - left_rect.right - margin - s(18), panel_h)
+
+        draw_glass_panel(self.screen, left_rect, alpha=168, border_color=(80, 230, 160), glow=False)
+        draw_glass_panel(self.screen, right_rect, alpha=150, border_color=(90, 150, 230), glow=False)
+
+        panel_title_font = _rs.get_font(s(18, minimum=13), bold=True)
+        small_font = _rs.get_font(s(12, minimum=9), bold=False)
+        body_font = _rs.get_font(s(13, minimum=10), bold=False)
+
+        left_title = panel_title_font.render(t('coop_lobby_actions', 'Takım Lobisi'), True, UIColors.TEXT_PRIMARY)
+        self.screen.blit(left_title, left_title.get_rect(midleft=(left_rect.x + s(18), left_rect.y + s(24))))
+
+        mode_label = f"{t('mode', 'Mod')}: {self.selected_submode.capitalize()}"
+        mode_rect = pygame.Rect(left_rect.right - s(148), left_rect.y + s(12), s(130), s(28))
+        pygame.draw.rect(self.screen, (20, 40, 54, 190), mode_rect, border_radius=s(8))
+        pygame.draw.rect(self.screen, (80, 230, 160), mode_rect, 1, border_radius=s(8))
+        mode_surf = small_font.render(mode_label, True, (80, 230, 160))
+        self.screen.blit(mode_surf, mode_surf.get_rect(center=mode_rect.center))
+
+        btn_w = left_rect.width - s(36)
         btn_h = s(52)
-        panel_left = max(s(30), cx - s(400))
-        btn_x = panel_left
-        btn_y = title_rect.bottom + s(28)
+        btn_x = left_rect.x + s(18)
+        btn_y = left_rect.y + s(58)
         gap = s(12)
 
-        # Özel Lobi bölümü
-        section_font = _rs.get_font(s(13, minimum=10), bold=False)
-        sec1 = section_font.render(t('private_coop_section', '── Özel Co-op ──'),
-                                   True, _rs.text_muted)
-        self.screen.blit(sec1, sec1.get_rect(center=(btn_x + btn_w // 2, btn_y)))
-        btn_y += s(24)
-
-        buttons = [
-            (t('create_private_coop', 'Özel Endless Lobi'), 'create_private'),
-            (t('join_by_code', 'Kod ile Katıl'), 'toggle_join_code'),
-            (t('invite_friend_coop', 'Arkadaş Davet Et'), 'invite_friend'),
+        action_buttons = [
+            ('1 / ENTER', t('create_private_coop', 'Özel Co-op Lobisi'), 'create_private', _rs.accent),
+            ('J', t('join_by_code', 'Kod ile Katıl'), 'toggle_join_code', UIColors.NEON_CYAN),
+            ('I', t('invite_friend_coop', 'Arkadaş Davet Et'), 'invite_friend', (80, 230, 160)),
+            ('2', t('create_public_coop', 'Herkese Açık Lobi'), 'create_public', (90, 150, 230)),
+            ('3', t('find_coop_lobby', 'Co-op Lobileri Yenile'), 'refresh_list', _rs.secondary),
         ]
-
-        mouse_pos = pygame.mouse.get_pos()
-        for label, action in buttons:
+        for shortcut, label, action, color in action_buttons:
             btn_rect = pygame.Rect(btn_x, btn_y, btn_w, btn_h)
             hover = btn_rect.collidepoint(mouse_pos)
             _rs.draw_uniform_button(
-                self.screen, btn_rect, label,
-                color_code=_rs.accent if hover else _rs.secondary,
+                self.screen,
+                btn_rect,
+                label,
+                sub_text=shortcut,
+                color_code=color if hover else _rs.secondary,
                 state='hover' if hover else 'normal',
             )
             self._lobby_buttons.append({'rect': btn_rect, 'action': action})
             btn_y += btn_h + gap
 
         if self._join_code_active:
-            input_rect = pygame.Rect(btn_x, btn_y + s(2), btn_w, s(54))
-            draw_glass_panel(self.screen, input_rect, alpha=140, border_color=(80, 230, 160))
-            code_font = _rs.get_font(s(22, minimum=15), bold=True)
-            display_code = self._join_code_input or '------'
-            if len(display_code) == 6 and display_code.isdigit():
-                display_code = f'{display_code[:3]} {display_code[3:]}'
-            code_surf = code_font.render(display_code, True, UIColors.TEXT_PRIMARY)
-            self.screen.blit(code_surf, code_surf.get_rect(center=input_rect.center))
-            self._lobby_buttons.append({'rect': input_rect, 'action': 'submit_join_code'})
-            btn_y += input_rect.height + s(6)
+            panel_h_used = self._draw_join_code_input(btn_x, min(btn_y, left_rect.bottom - s(230)), btn_w, s, mouse_pos)
+            btn_y += panel_h_used + s(8)
 
-            hint_font = _rs.get_font(s(12, minimum=10), bold=False)
-            hint_text = self._join_code_error or t('enter_six_digit_code', '6 haneli lobi kodu girin')
-            hint_color = UIColors.NEON_RED if self._join_code_error else _rs.text_muted
-            hint = hint_font.render(hint_text, True, hint_color)
-            self.screen.blit(hint, hint.get_rect(center=(btn_x + btn_w // 2, btn_y + s(8))))
-            btn_y += s(22)
+        back_rect = pygame.Rect(btn_x, left_rect.bottom - s(54), btn_w, s(42))
+        _rs.draw_uniform_button(
+            self.screen,
+            back_rect,
+            t('back_to_main_menu', 'Ana Menüye Dön'),
+            sub_text='ESC',
+            color_code=_rs.secondary,
+            state='hover' if back_rect.collidepoint(mouse_pos) else 'normal',
+        )
+        self._lobby_buttons.append({'rect': back_rect, 'action': 'back'})
 
-        # Herkese Açık bölümü
-        btn_y += s(12)
-        sec2 = section_font.render(t('public_coop_section', '── Herkese Açık ──'),
-                                   True, _rs.text_muted)
-        self.screen.blit(sec2, sec2.get_rect(center=(btn_x + btn_w // 2, btn_y)))
-        btn_y += s(24)
-
-        public_buttons = [
-            (t('create_public_coop', 'Açık Endless Lobi'), 'create_public'),
-            (t('find_coop_lobby', 'Co-op Lobi Bul'), 'refresh_list'),
-        ]
-        for label, action in public_buttons:
-            btn_rect = pygame.Rect(btn_x, btn_y, btn_w, btn_h)
-            hover = btn_rect.collidepoint(mouse_pos)
-            _rs.draw_uniform_button(
-                self.screen, btn_rect, label,
-                color_code=_rs.accent if hover else _rs.secondary,
-                state='hover' if hover else 'normal',
-            )
-            self._lobby_buttons.append({'rect': btn_rect, 'action': action})
-            btn_y += btn_h + gap
-
-        # Sağ panel: lobi listesi
-        list_left = cx + s(20)
-        list_top = title_rect.bottom + s(28)
-        list_w = min(s(400), w - list_left - s(30))
-        list_h = h - list_top - s(100)
-        list_rect = pygame.Rect(list_left, list_top, list_w, list_h)
-        draw_glass_panel(self.screen, list_rect, alpha=160,
-                        border_color=(80, 230, 160), glow=False)
-
-        list_title_font = _rs.get_font(s(16, minimum=12), bold=True)
-        list_title = list_title_font.render(
+        right_title = panel_title_font.render(
             t('coop_lobby_list_title', 'Mevcut Co-op Lobileri'),
-            True, UIColors.TEXT_PRIMARY)
-        self.screen.blit(list_title, list_title.get_rect(
-            midtop=(list_left + list_w // 2, list_top + s(12))))
+            True,
+            UIColors.TEXT_PRIMARY,
+        )
+        self.screen.blit(right_title, right_title.get_rect(midleft=(right_rect.x + s(18), right_rect.y + s(24))))
 
-        if self._lobby_list_fetching:
-            loading_font = _rs.get_font(s(14, minimum=11), bold=False)
-            loading = loading_font.render(
-                t('lobby_list_loading', 'Yükleniyor...'),
-                True, _rs.text_muted)
-            self.screen.blit(loading, loading.get_rect(
-                center=(list_left + list_w // 2, list_top + list_h // 2)))
-        elif not self._lobby_list:
-            empty_font = _rs.get_font(s(14, minimum=11), bold=False)
-            empty = empty_font.render(
+        entries = self._get_lobby_entries_for_display()
+        count_text = f"{len(entries)} {t('lobby_count_suffix', 'lobi')}"
+        count_surf = small_font.render(count_text, True, _rs.text_muted)
+        self.screen.blit(count_surf, count_surf.get_rect(midright=(right_rect.right - s(18), right_rect.y + s(24))))
+
+        filter_y = right_rect.y + s(50)
+        filter_w = min(s(132), (right_rect.width - s(48)) // 2)
+        for idx, (label, action, active) in enumerate((
+            (t('all_lobbies', 'Tümü'), 'filter_all_lobbies', self._lobby_list_filter == 'all'),
+            (t('public_lobbies', 'Açık'), 'filter_public_lobbies', self._lobby_list_filter == 'public'),
+        )):
+            rect = pygame.Rect(right_rect.x + s(18) + idx * (filter_w + s(8)), filter_y, filter_w, s(34))
+            color = (80, 230, 160) if active else _rs.secondary
+            _rs.draw_uniform_button(
+                self.screen,
+                rect,
+                label,
+                color_code=color,
+                state='hover' if rect.collidepoint(mouse_pos) else 'normal',
+            )
+            self._lobby_buttons.append({'rect': rect, 'action': action})
+
+        list_rect = pygame.Rect(
+            right_rect.x + s(14),
+            filter_y + s(48),
+            right_rect.width - s(28),
+            right_rect.bottom - filter_y - s(66),
+        )
+        item_h = s(72)
+        visible_count = max(1, list_rect.height // item_h)
+        max_scroll = max(0, len(entries) - visible_count)
+        self._lobby_list_scroll = min(max(0, self._lobby_list_scroll), max_scroll)
+        visible_entries = entries[self._lobby_list_scroll:self._lobby_list_scroll + visible_count]
+
+        if self._lobby_list_fetching and not entries:
+            loading = body_font.render(t('lobby_list_loading', 'Yükleniyor...'), True, _rs.text_muted)
+            self.screen.blit(loading, loading.get_rect(center=list_rect.center))
+        elif not entries:
+            empty_title = body_font.render(
                 t('no_coop_lobbies', 'Henüz aktif co-op lobisi yok'),
-                True, _rs.text_muted)
-            self.screen.blit(empty, empty.get_rect(
-                center=(list_left + list_w // 2, list_top + list_h // 2)))
+                True,
+                _rs.text_muted,
+            )
+            self.screen.blit(empty_title, empty_title.get_rect(center=(list_rect.centerx, list_rect.centery - s(12))))
+            empty_hint = small_font.render(
+                t('create_or_refresh_hint', 'Lobi oluşturabilir veya listeyi yenileyebilirsin'),
+                True,
+                _rs.text_secondary,
+            )
+            self.screen.blit(empty_hint, empty_hint.get_rect(center=(list_rect.centerx, list_rect.centery + s(14))))
         else:
-            item_h = s(60)
-            item_y = list_top + s(40)
-            item_font = _rs.get_font(s(14, minimum=11))
-            sub_font_sm = _rs.get_font(s(12, minimum=10), bold=False)
-            for lobby in self._lobby_list[:max(1, (list_h - s(50)) // item_h)]:
+            item_font = _rs.get_font(s(14, minimum=10), bold=True)
+            badge_font = _rs.get_font(s(11, minimum=9), bold=True)
+            for idx, lobby in enumerate(visible_entries):
+                item_y = list_rect.y + idx * item_h
                 host_name = str(lobby.get('host_name') or lobby.get('name') or '?')
                 sub_mode = str(lobby.get('sub_mode', 'endless'))
                 visibility = str(lobby.get('visibility', 'unknown') or 'unknown')
-                item_rect = pygame.Rect(list_left + s(8), item_y, list_w - s(16), item_h - s(4))
-                border = (80, 230, 160) if visibility == 'public' else (130, 170, 240)
+                members = lobby.get('members', '?')
+                max_members = lobby.get('max_members', 2)
+                item_rect = pygame.Rect(list_rect.x, item_y, list_rect.width, item_h - s(6))
+                border = (80, 230, 160) if visibility == 'public' else ((230, 190, 90) if visibility == 'private' else (130, 170, 240))
                 draw_glass_panel(self.screen, item_rect, alpha=120, border_color=border)
-                name_surf = item_font.render(f"{host_name}", True, UIColors.TEXT_PRIMARY)
-                self.screen.blit(name_surf, (item_rect.x + s(10), item_rect.y + s(8)))
-                info = sub_font_sm.render(f"{sub_mode.capitalize()} | {visibility}", True, _rs.text_muted)
-                self.screen.blit(info, (item_rect.x + s(10), item_rect.y + s(30)))
+
+                name_font = get_fitting_font(host_name, s(15, minimum=11), max(80, item_rect.width - s(180)))
+                name_surf = name_font.render(host_name, True, UIColors.TEXT_PRIMARY)
+                self.screen.blit(name_surf, (item_rect.x + s(12), item_rect.y + s(10)))
+                info_text = f"{sub_mode.capitalize()}  |  {members}/{max_members} oyuncu"
+                info = small_font.render(info_text, True, _rs.text_muted)
+                self.screen.blit(info, (item_rect.x + s(12), item_rect.y + s(36)))
+
+                badge_label = {
+                    'public': t('public_lobby_badge', 'AÇIK'),
+                    'private': t('private_lobby_badge', 'KOD'),
+                    'unknown': t('checking_lobby_badge', 'KONTROL'),
+                    'stale_unknown': t('checking_lobby_badge', 'KONTROL'),
+                }.get(visibility, visibility.upper())
+                badge_rect = pygame.Rect(item_rect.right - s(154), item_rect.y + s(11), s(64), s(24))
+                pygame.draw.rect(self.screen, (18, 26, 42, 220), badge_rect, border_radius=s(7))
+                pygame.draw.rect(self.screen, border, badge_rect, 1, border_radius=s(7))
+                badge_surf = badge_font.render(badge_label, True, border)
+                self.screen.blit(badge_surf, badge_surf.get_rect(center=badge_rect.center))
+
                 lobby_id = lobby.get('lobby_id') or lobby.get('id')
                 if lobby_id:
-                    self._lobby_buttons.append({
-                        'rect': item_rect,
-                        'action': f'join_lobby:{lobby_id}'
-                    })
-                item_y += item_h
+                    join_rect = pygame.Rect(item_rect.right - s(82), item_rect.y + s(11), s(70), s(42))
+                    join_label = t('join_lobby_short', 'Katıl') if visibility == 'public' else t('open_lobby_short', 'Aç')
+                    _rs.draw_uniform_button(
+                        self.screen,
+                        join_rect,
+                        join_label,
+                        color_code=border,
+                        state='hover' if join_rect.collidepoint(mouse_pos) else 'normal',
+                    )
+                    self._lobby_buttons.append({'rect': join_rect, 'action': f'join_lobby:{lobby_id}'})
 
-        # Durum mesajı
+            if len(entries) > visible_count:
+                scroll_text = f"{self._lobby_list_scroll + 1}-{self._lobby_list_scroll + len(visible_entries)} / {len(entries)}"
+                scroll_surf = small_font.render(scroll_text, True, _rs.text_muted)
+                self.screen.blit(scroll_surf, scroll_surf.get_rect(midright=(right_rect.right - s(18), right_rect.bottom - s(22))))
+
         if self._status_msg:
             status_font = _rs.get_font(s(14, minimum=11), bold=False)
             status = status_font.render(self._status_msg, True, UIColors.TEXT_SECONDARY)
             self.screen.blit(status, status.get_rect(center=(cx, h - s(40))))
+
+    def _draw_join_code_input(self, x, y, btn_w, s, mouse_pos):
+        """Kod ile katıl panelini slotlu, hataya dayanıklı şekilde çiz."""
+        panel_h = s(214)
+        panel_rect = pygame.Rect(x, y, btn_w, panel_h)
+        border = UIColors.NEON_RED if self._join_code_error else UIColors.NEON_CYAN
+        draw_glass_panel(self.screen, panel_rect, alpha=190, border_color=border, glow=True)
+
+        title_font = _rs.get_font(s(17, minimum=12), bold=True)
+        title = title_font.render(t('join_by_code', 'Kod ile Katıl'), True, UIColors.NEON_CYAN)
+        self.screen.blit(title, title.get_rect(midleft=(x + s(16), y + s(22))))
+
+        hint_font = _rs.get_font(s(11, minimum=9), bold=False)
+        hint = hint_font.render(t('paste_code_hint', 'Ctrl+V yapıştırır, ESC kapatır'), True, _rs.text_muted)
+        self.screen.blit(hint, hint.get_rect(midright=(x + btn_w - s(16), y + s(22))))
+
+        display_text = self._join_code_input[:6]
+        slot_count = 6
+        slot_gap = s(7)
+        slot_w = min(s(42), max(s(28), (btn_w - s(34) - slot_gap * (slot_count - 1)) // slot_count))
+        slot_h = s(48)
+        total_w = slot_count * slot_w + (slot_count - 1) * slot_gap
+        slots_x = x + (btn_w - total_w) // 2
+        slots_y = y + s(58)
+        slots_rect = pygame.Rect(slots_x, slots_y, total_w, slot_h)
+
+        for idx in range(slot_count):
+            slot_rect = pygame.Rect(slots_x + idx * (slot_w + slot_gap), slots_y, slot_w, slot_h)
+            filled = idx < len(display_text)
+            active = self._join_code_active and idx == min(len(display_text), slot_count - 1)
+            slot_border = UIColors.NEON_CYAN if active else ((80, 230, 160) if filled else (80, 90, 115))
+            if self._join_code_error:
+                slot_border = UIColors.NEON_RED
+            pygame.draw.rect(self.screen, (18, 22, 40, 220), slot_rect, border_radius=s(8))
+            pygame.draw.rect(self.screen, slot_border, slot_rect, 2, border_radius=s(8))
+            char = display_text[idx] if filled else '-'
+            char_font = _rs.get_font(s(23, minimum=16), bold=True)
+            char_surf = char_font.render(char, True, UIColors.TEXT_PRIMARY if filled else _rs.text_muted)
+            self.screen.blit(char_surf, char_surf.get_rect(center=slot_rect.center))
+
+        if self._join_code_active and int(time.time() * 2.5) % 2 == 0 and len(display_text) < slot_count:
+            cursor_x = slots_x + len(display_text) * (slot_w + slot_gap) + slot_w // 2
+            pygame.draw.line(
+                self.screen,
+                UIColors.NEON_CYAN,
+                (cursor_x, slots_y + s(10)),
+                (cursor_x, slots_y + slot_h - s(10)),
+                2,
+            )
+        self._lobby_buttons.append({'rect': slots_rect, 'action': 'join_code_field'})
+
+        msg = self._join_code_error or t('enter_six_digit_code', '6 haneli lobi kodu girin')
+        msg_color = UIColors.NEON_RED if self._join_code_error else _rs.text_muted
+        msg_surf = hint_font.render(msg, True, msg_color)
+        self.screen.blit(msg_surf, msg_surf.get_rect(center=(x + btn_w // 2, slots_y + slot_h + s(18))))
+
+        submit_rect = pygame.Rect(x + s(16), y + panel_h - s(50), btn_w - s(32), s(38))
+        _rs.draw_uniform_button(
+            self.screen,
+            submit_rect,
+            t('join_lobby_by_code', 'Kodla Lobiye Katıl'),
+            sub_text='ENTER',
+            color_code=UIColors.NEON_GREEN,
+            state='hover' if submit_rect.collidepoint(mouse_pos) else 'normal',
+        )
+        self._lobby_buttons.append({'rect': submit_rect, 'action': 'submit_join_code'})
+        return panel_h
 
     def _draw_waiting_screen(self):
         """Takım arkadaşı bekleme ekranı."""
@@ -2665,14 +3104,14 @@ class OnlineCoopGame:
         cx, cy = w // 2, h // 2
         sc = self._ui_scale()
         s = lambda v, minimum=1: self._sx(v, sc, minimum)
+        mouse_pos = get_mouse_pos()
 
-        pw = min(s(520), w - s(80))
-        ph = s(440)
+        pw = min(s(640), w - s(80))
+        ph = min(s(510), h - s(100))
         panel = pygame.Rect(cx - pw // 2, cy - ph // 2, pw, ph)
         draw_glass_panel(self.screen, panel, alpha=185,
                         border_color=(80, 230, 160), glow=True)
 
-        # Başlık
         tf = get_fitting_font(
             t('waiting_for_teammate', 'Takım Arkadaşı Bekleniyor...'),
             s(30), pw - s(60))
@@ -2687,33 +3126,65 @@ class OnlineCoopGame:
         dots_surf = df.render(dots, True, (80, 230, 160))
         self.screen.blit(dots_surf, dots_surf.get_rect(center=(cx, panel.y + s(72))))
 
-        # Mod badge
         mode_font = _rs.get_font(s(14, minimum=11), bold=True)
-        mode_text = f"Mod: {self.selected_submode.capitalize()}"
+        lobby_type = t('public_lobby_badge', 'AÇIK') if not self._lobby_code else t('private_lobby_badge', 'KOD')
+        mode_text = f"{t('mode', 'Mod')}: {self.selected_submode.capitalize()}  |  {lobby_type}"
         mode_surf = mode_font.render(mode_text, True, UIColors.TEXT_PRIMARY)
         self.screen.blit(mode_surf, mode_surf.get_rect(center=(cx, panel.y + s(105))))
 
-        # Lobi kodu
+        card = pygame.Rect(panel.x + s(34), panel.y + s(130), panel.width - s(68), s(170))
+        draw_glass_panel(self.screen, card, alpha=130, border_color=(80, 230, 160), glow=False)
+
         if self._lobby_code:
             code_label_font = _rs.get_font(s(14, minimum=11), bold=False)
             code_label = code_label_font.render(
                 t('lobby_code_label', 'Lobi Kodu'), True, _rs.text_muted)
-            self.screen.blit(code_label, code_label.get_rect(center=(cx, panel.y + s(150))))
+            self.screen.blit(code_label, code_label.get_rect(center=(cx, card.y + s(28))))
 
             code_font = _rs.get_font(s(42, minimum=24), bold=True)
             formatted = self._lobby_code[:3] + ' ' + self._lobby_code[3:] if len(self._lobby_code) >= 6 else self._lobby_code
             code_surf = code_font.render(formatted, True, UIColors.TEXT_PRIMARY)
-            self.screen.blit(code_surf, code_surf.get_rect(center=(cx, panel.y + s(190))))
+            self.screen.blit(code_surf, code_surf.get_rect(center=(cx, card.y + s(72))))
 
             hint_font = _rs.get_font(s(12, minimum=10), bold=False)
             hint = hint_font.render(
                 t('share_code_hint', 'Bu kodu arkadaşınla paylaş'),
                 True, _rs.text_muted)
-            self.screen.blit(hint, hint.get_rect(center=(cx, panel.y + s(225))))
+            self.screen.blit(hint, hint.get_rect(center=(cx, card.y + s(112))))
+        else:
+            public_font = _rs.get_font(s(18, minimum=13), bold=True)
+            public = public_font.render(t('public_lobby_waiting', 'Herkese açık lobi aktif'), True, (90, 150, 230))
+            self.screen.blit(public, public.get_rect(center=(cx, card.y + s(58))))
+            hint = _rs.get_font(s(12, minimum=10), bold=False).render(
+                t('public_lobby_waiting_hint', 'Arkadaşın liste üzerinden doğrudan katılabilir'),
+                True,
+                _rs.text_muted,
+            )
+            self.screen.blit(hint, hint.get_rect(center=(cx, card.y + s(96))))
 
-        # Geri butonu
+        button_y = card.bottom + s(20)
+        btn_w = min(s(170), (panel.width - s(88)) // 3)
+        btn_h = s(44)
+        buttons = []
+        if self._lobby_code:
+            buttons.append((t('copy_lobby_code', 'Kodu Kopyala'), 'copy_lobby_code', 'C', (80, 230, 160)))
+        buttons.append((t('invite_friend_coop', 'Davet Et'), 'invite_friend', 'I', UIColors.NEON_CYAN))
+        buttons.append((t('copy_lobby_id', 'ID Kopyala'), 'copy_lobby_id', '', _rs.secondary))
+        total_w = len(buttons) * btn_w + max(0, len(buttons) - 1) * s(10)
+        start_x = cx - total_w // 2
+        for idx, (label, action, shortcut, color) in enumerate(buttons):
+            rect = pygame.Rect(start_x + idx * (btn_w + s(10)), button_y, btn_w, btn_h)
+            _rs.draw_uniform_button(
+                self.screen,
+                rect,
+                label,
+                sub_text=shortcut,
+                color_code=color,
+                state='hover' if rect.collidepoint(mouse_pos) else 'normal',
+            )
+            self._lobby_buttons.append({'rect': rect, 'action': action})
+
         back_rect = pygame.Rect(cx - s(110), panel.bottom - s(70), s(220), s(44))
-        mouse_pos = pygame.mouse.get_pos()
         _rs.draw_uniform_button(
             self.screen, back_rect,
             t('back_to_coop_lobby', 'Co-op Lobiye Dön'),
@@ -2723,30 +3194,44 @@ class OnlineCoopGame:
         )
         self._lobby_buttons.append({'rect': back_rect, 'action': 'back_to_lobby'})
 
+        if self._status_msg:
+            status_font = _rs.get_font(s(13, minimum=10), bold=False)
+            status = status_font.render(self._status_msg, True, UIColors.TEXT_SECONDARY)
+            self.screen.blit(status, status.get_rect(center=(cx, panel.bottom - s(18))))
+
     def _draw_ready_check(self):
         """Ready-check ekranı: iki oyuncu kartı + CO-OP başlık."""
         w, h = self.window_width, self.window_height
         cx, cy = w // 2, h // 2
         sc = self._ui_scale()
         s = lambda v, minimum=1: self._sx(v, sc, minimum)
+        mouse_pos = get_mouse_pos()
 
-        pw = min(s(650), w - s(80))
-        ph = s(420)
+        pw = min(s(760), w - s(80))
+        ph = min(s(470), h - s(90))
         panel = pygame.Rect(cx - pw // 2, cy - ph // 2, pw, ph)
         draw_glass_panel(self.screen, panel, alpha=185,
                         border_color=(80, 230, 160), glow=True)
 
-        # CO-OP başlık
-        vs_font = _rs.get_font(s(48, minimum=28))
-        vs = vs_font.render('CO-OP', True, (80, 230, 160))
-        self.screen.blit(vs, vs.get_rect(center=(cx, panel.y + s(50))))
+        title_font = _rs.get_font(s(42, minimum=26), bold=True)
+        title = title_font.render('ONLINE CO-OP', True, (80, 230, 160))
+        self.screen.blit(title, title.get_rect(center=(cx, panel.y + s(46))))
 
-        # Oyuncu kartları
-        card_w = s(180)
-        card_h = s(160)
-        card_gap = s(60)
-        my_card = pygame.Rect(cx - card_gap // 2 - card_w, cy - card_h // 2 + s(20), card_w, card_h)
-        opp_card = pygame.Rect(cx + card_gap // 2, cy - card_h // 2 + s(20), card_w, card_h)
+        status_font = _rs.get_font(s(13, minimum=10), bold=False)
+        session_text = (
+            t('p2p_session_ready', 'P2P oturumu hazır')
+            if self._session_established
+            else t('p2p_session_checking', 'P2P oturumu doğrulanıyor')
+        )
+        session = status_font.render(session_text, True, _rs.text_muted)
+        self.screen.blit(session, session.get_rect(center=(cx, panel.y + s(78))))
+
+        card_gap = s(22)
+        card_w = min(s(260), (panel.width - s(92) - card_gap) // 2)
+        card_h = s(175)
+        cards_y = panel.y + s(112)
+        my_card = pygame.Rect(cx - card_gap // 2 - card_w, cards_y, card_w, card_h)
+        opp_card = pygame.Rect(cx + card_gap // 2, cards_y, card_w, card_h)
 
         for card_rect, is_me in [(my_card, True), (opp_card, False)]:
             ready = self.my_ready if is_me else self.opponent_ready
@@ -2754,9 +3239,13 @@ class OnlineCoopGame:
             draw_glass_panel(self.screen, card_rect, alpha=150, border_color=border_color)
 
             name = t('you', 'Sen') if is_me else (getattr(self.net, 'opponent_name', '') or t('teammate', 'Takım Arkadaşı'))
-            name_font = _rs.get_font(s(16, minimum=12), bold=True)
+            name_font = get_fitting_font(name, s(17, minimum=12), card_rect.width - s(24))
             name_surf = name_font.render(name, True, UIColors.TEXT_PRIMARY)
-            self.screen.blit(name_surf, name_surf.get_rect(center=(card_rect.centerx, card_rect.y + s(40))))
+            self.screen.blit(name_surf, name_surf.get_rect(center=(card_rect.centerx, card_rect.y + s(38))))
+
+            role_text = t('host_role', 'Host') if (is_me and self.role == 'host') or (not is_me and self.role == 'guest') else t('guest_role', 'Guest')
+            role_surf = status_font.render(role_text, True, _rs.text_muted)
+            self.screen.blit(role_surf, role_surf.get_rect(center=(card_rect.centerx, card_rect.y + s(66))))
 
             status_font = _rs.get_font(s(14, minimum=11), bold=True)
             if ready:
@@ -2765,16 +3254,34 @@ class OnlineCoopGame:
                 status = status_font.render(t('not_ready_status', 'Bekleniyor'), True, _rs.text_muted)
             self.screen.blit(status, status.get_rect(center=(card_rect.centerx, card_rect.bottom - s(40))))
 
-        # Hazır butonu
-        ready_rect = pygame.Rect(cx - s(100), panel.bottom - s(80), s(200), s(48))
-        mouse_pos = pygame.mouse.get_pos()
+        hint_text = (
+            t('both_ready_start_hint', 'İki oyuncu da hazır olduğunda host oyunu başlatır')
+            if not (self.my_ready and self.opponent_ready)
+            else t('starting_game_hint', 'Oyun başlatılıyor...')
+        )
+        hint = _rs.get_font(s(12, minimum=10), bold=False).render(hint_text, True, _rs.text_muted)
+        self.screen.blit(hint, hint.get_rect(center=(cx, panel.bottom - s(112))))
+
+        ready_rect = pygame.Rect(cx - s(160), panel.bottom - s(82), s(210), s(48))
         ready_label = t('ready_button', 'Hazırım!') if not self.my_ready else t('cancel_ready', 'İptal')
         _rs.draw_uniform_button(
             self.screen, ready_rect, ready_label,
+            sub_text='ENTER',
             color_code=_rs.accent if not self.my_ready else _rs.secondary,
             state='hover' if ready_rect.collidepoint(mouse_pos) else 'normal',
         )
         self._lobby_buttons.append({'rect': ready_rect, 'action': 'ready'})
+
+        back_rect = pygame.Rect(ready_rect.right + s(12), ready_rect.y, s(110), s(48))
+        _rs.draw_uniform_button(
+            self.screen,
+            back_rect,
+            t('back', 'Geri'),
+            sub_text='ESC',
+            color_code=_rs.secondary,
+            state='hover' if back_rect.collidepoint(mouse_pos) else 'normal',
+        )
+        self._lobby_buttons.append({'rect': back_rect, 'action': 'back_to_lobby'})
 
     def _draw_countdown(self):
         """3-2-1 geri sayım."""

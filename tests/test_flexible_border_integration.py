@@ -2,10 +2,14 @@
 import sys
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
+os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
 
 import pygame
 
 from game_modes_extra import MysteryMode
+import game as _game
+
+_game.set_app_icon = lambda *_args, **_kwargs: None
 
 # Minimal settings manager mock
 class MockSettingsManager:

@@ -22,9 +22,13 @@ class FakeNet:
         self._opponent_name = ''
         self.is_host = False
         self.lobby_id = 123
+        self.available = True
+        self.initialized = True
         self.sent = []
         self.joined = []
         self.left = False
+        self.created = []
+        self.invited = False
 
     @property
     def opponent_steam_id(self):
@@ -55,6 +59,12 @@ class FakeNet:
 
     def join_lobby(self, lobby_id):
         self.joined.append(int(lobby_id))
+
+    def create_lobby(self, public=False):
+        self.created.append(bool(public))
+
+    def invite_friend(self):
+        self.invited = True
 
     def leave_lobby(self):
         self.left = True
@@ -100,6 +110,13 @@ def _make_game(net: FakeNet):
     game.game_over = False
     game.paused = False
     game.coop_game = None
+    game.sound = SimpleNamespace(play=lambda _name: None)
+    game._status_msg = ''
+    game._status_timer = 0.0
+    game._lobby_list = []
+    game._lobby_list_filter = 'all'
+    game._lobby_list_scroll = 0
+    game._invite_after_lobby = False
     return game
 
 
@@ -200,3 +217,44 @@ def test_steam_networking_send_coop_start_uses_coop_message_type():
     assert sent[0][0]['seed'] == 123
     assert sent[0][0]['sub_mode'] == 'endless'
     assert sent[0][1] is True
+
+
+def test_online_coop_invite_existing_lobby_does_not_recreate_lobby():
+    net = FakeNet()
+    game = _make_game(net)
+    game._net_initialized = True
+
+    game._execute_button_action('invite_friend')
+
+    assert net.invited is True
+    assert net.created == []
+    assert game._invite_after_lobby is False
+
+
+def test_online_coop_invite_without_lobby_creates_private_lobby_and_defers_invite():
+    net = FakeNet()
+    net.lobby_id = 0
+    game = _make_game(net)
+    game._net_initialized = True
+
+    game._execute_button_action('invite_friend')
+
+    assert net.created == [False]
+    assert net.invited is False
+    assert game._invite_after_lobby is True
+
+
+def test_online_coop_lobby_filter_is_display_only_and_preserves_private_entries():
+    game = _make_game(FakeNet())
+    game._lobby_list = [
+        {'id': 1, 'visibility': 'public'},
+        {'id': 2, 'visibility': 'private'},
+        {'id': 3, 'visibility': 'unknown'},
+    ]
+
+    assert [entry['id'] for entry in game._get_lobby_entries_for_display()] == [1, 2, 3]
+
+    game._set_lobby_list_filter('public', refresh=False)
+
+    assert [entry['id'] for entry in game._get_lobby_entries_for_display()] == [1, 3]
+    assert [entry['id'] for entry in game._lobby_list] == [1, 2, 3]
