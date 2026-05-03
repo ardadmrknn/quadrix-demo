@@ -2334,8 +2334,19 @@ def main():
                 )
                 state = 'coop'
             elif action == 'online_coop':
+                if not _run_popup_and_sync_screen(_show_mode_intro_popup, 'online_coop', settings_manager=settings_manager):
+                    continue
                 confirm_exit = False
-                menu.show_info(t('menu_dashboard_sub_store'))
+                menu_sound.stop_music()
+                online_coop_game = OnlineCoopGame(
+                    screen=screen,
+                    fullscreen=fullscreen,
+                    user_manager=user_manager,
+                    settings_manager=settings_manager,
+                    sound_manager=menu_sound,
+                )
+                _handle_online_coop._game = online_coop_game
+                state = 'online_coop'
             elif action == 'coop_campaign':
                 confirm_exit = False
                 if coop_level_select is None:

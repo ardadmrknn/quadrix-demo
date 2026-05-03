@@ -768,6 +768,18 @@ class SteamNetworking:
             msg['pieces'] = piece_sequence[:200]  # İlk 200 parça
         return self.send(msg, reliable=True, channel=CHANNEL_GAME)
 
+    def send_coop_start(self, seed: int, sub_mode: str = 'endless', config: dict | None = None):
+        """Online co-op başlat sinyali gönder (host gönderir)."""
+        msg = {
+            'type': MsgType.COOP_GAME_START,
+            'seed': int(seed or 0),
+            'sub_mode': str(sub_mode or 'endless'),
+            'timestamp': time.time(),
+        }
+        if isinstance(config, dict) and config:
+            msg['config'] = config
+        return self.send(msg, reliable=True, channel=CHANNEL_GAME)
+
     def send_ready(self):
         """Hazır sinyali gönder."""
         return self.send({'type': MsgType.READY}, reliable=True, channel=CHANNEL_GAME)

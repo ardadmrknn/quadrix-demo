@@ -32,7 +32,7 @@ def _find_action_branch(tree: ast.AST, action_name: str) -> ast.If | None:
     return None
 
 
-def test_online_coop_menu_action_shows_coming_soon_notice():
+def test_online_coop_menu_action_starts_online_coop_state():
     tree = _parse_main()
     branch = _find_action_branch(tree, 'online_coop')
 
@@ -41,8 +41,13 @@ def test_online_coop_menu_action_shows_coming_soon_notice():
     coming_soon_calls = []
     constructor_lines = []
     state_lines = []
+    handler_assign_lines = []
 
-    for node in ast.walk(branch):
+    branch_nodes = []
+    for statement in branch.body:
+        branch_nodes.extend(ast.walk(statement))
+
+    for node in branch_nodes:
         if isinstance(node, ast.Call):
             if isinstance(node.func, ast.Attribute):
                 if (
@@ -65,19 +70,22 @@ def test_online_coop_menu_action_shows_coming_soon_notice():
             if any(isinstance(target, ast.Name) and target.id == 'state' for target in node.targets):
                 if isinstance(node.value, ast.Constant) and node.value.value == 'online_coop':
                     state_lines.append(node.lineno)
+            for target in node.targets:
+                if (
+                    isinstance(target, ast.Attribute)
+                    and target.attr == '_game'
+                    and isinstance(target.value, ast.Name)
+                    and target.value.id == '_handle_online_coop'
+                ):
+                    handler_assign_lines.append(node.lineno)
 
-    assert coming_soon_calls, (
-        'online_coop action should show the existing coming-soon toast via '
-        "menu.show_info(t('menu_dashboard_sub_store'))"
+    assert not coming_soon_calls, (
+        'online_coop action should no longer show the coming-soon store toast: '
+        + ', '.join(f'L{line}' for line in coming_soon_calls)
     )
-    assert not constructor_lines, (
-        'online_coop action should not instantiate OnlineCoopGame from the main menu: '
-        + ', '.join(f'L{line}' for line in constructor_lines)
-    )
-    assert not state_lines, (
-        'online_coop action should not transition into the online_coop state: '
-        + ', '.join(f'L{line}' for line in state_lines)
-    )
+    assert constructor_lines, 'online_coop action should instantiate OnlineCoopGame'
+    assert handler_assign_lines, 'online_coop action should assign _handle_online_coop._game'
+    assert state_lines, 'online_coop action should transition into the online_coop state'
 
 
 def test_main_fallback_imports_online_coop_game():
