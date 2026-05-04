@@ -95,6 +95,22 @@ def _find_super_init_sound_keyword(init_node: ast.FunctionDef):
     return None
 
 
+def _find_super_init_keyword(init_node: ast.FunctionDef, keyword_name: str):
+    for node in ast.walk(init_node):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        if not isinstance(func, ast.Attribute) or func.attr != "__init__":
+            continue
+        if not isinstance(func.value, ast.Call):
+            continue
+        super_call = func.value
+        if not isinstance(super_call.func, ast.Name) or super_call.func.id != "super":
+            continue
+        return _keyword_value(node, keyword_name)
+    return None
+
+
 def _find_self_method_call_lines(function_node: ast.FunctionDef, owner_attr: str, method_name: str) -> list[int]:
     matches: list[int] = []
     for node in ast.walk(function_node):
@@ -168,6 +184,18 @@ def test_changed_mode_constructors_forward_sound_manager():
         "sound_manager is not forwarded to Game.__init__: "
         + ", ".join(missing_forward)
     )
+
+
+def test_daily_challenge_constructor_forwards_piece_rng_seed():
+    path = ROOT / "src/game_modes_advanced.py"
+    init_node = _find_class_init(path, "DailyChallengeMode")
+    assert init_node is not None, "DailyChallengeMode.__init__ not found in src/game_modes_advanced.py"
+
+    forwarded_value = _find_super_init_keyword(init_node, "piece_rng_seed")
+    assert isinstance(forwarded_value, ast.Attribute)
+    assert isinstance(forwarded_value.value, ast.Name)
+    assert forwarded_value.value.id == "self"
+    assert forwarded_value.attr == "_daily_piece_seed"
 
 
 def test_gameplay_mode_constructors_reset_pause_duck_before_starting_music():

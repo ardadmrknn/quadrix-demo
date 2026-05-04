@@ -1946,6 +1946,13 @@ class DailyChallengeMode(Game):
     
     def __init__(self, difficulty='Normal', sound_enabled=True, effects_enabled=True, achievement_manager=None, theme_manager=None, screen=None, fullscreen=False, settings_manager=None, user_manager=None, game_mode='daily', score_manager=None, sound_manager=None):
         """Daily Challenge'ı başlat"""
+        # Günün challenge'ını önce seç; parça torbasını da aynı günlük seed'e bağlayacağız.
+        self.challenge = self.get_today_challenge(user_manager=user_manager)
+        self._daily_seed = int(self.challenge.get('_seed', 0) or 0)
+        cid = str(self.challenge.get('id') or '')
+        cid_mix = sum((i + 1) * ord(ch) for i, ch in enumerate(cid))
+        self._daily_piece_seed = (self._daily_seed + cid_mix) & 0xFFFFFFFF
+
         super().__init__(
             difficulty,
             sound_enabled,
@@ -1959,19 +1966,15 @@ class DailyChallengeMode(Game):
             game_mode,
             sound_manager=sound_manager,
             score_manager=score_manager,
+            piece_rng_seed=self._daily_piece_seed,
         )
-        
-        # Günün challenge'ını seç (deterministik, global random state'i bozmaz)
-        self.challenge = self.get_today_challenge(user_manager=self.user_manager)
+
+        # Günün challenge'ı zaten seçildi; runtime state'i bunun üzerinden kur.
         self.challenge_completed = False
         self.modifiers = dict(self.challenge.get('modifiers', {}))
         self.side_effects = list(self.challenge.get('effects', []))
-        # Daily'ye özel RNG: global random state'e dokunmadan deterministik davranış
-        self._daily_seed = int(self.challenge.get('_seed', 0) or 0)
-        # Challenge id ile seed'i çeşitlendir (stabil)
-        cid = str(self.challenge.get('id') or '')
-        cid_mix = sum((i + 1) * ord(ch) for i, ch in enumerate(cid))
-        self._daily_rng = random.Random(self._daily_seed + cid_mix)
+        # Daily'ye özel RNG: global random state'e dokunmadan deterministik davranış.
+        self._daily_rng = random.Random(self._daily_piece_seed)
         self.disable_hold = False
         self.fog_overlay = False
         self._daily_outcome_recorded = False

@@ -6249,6 +6249,11 @@ class Game:
         """Oyunu yeniden başlat"""
         self.game_over_warning = ""
         self.game_over_warning_timer = 0.0
+        if getattr(self, '_piece_rng_seed', None) is not None and hasattr(self, '_piece_rng'):
+            try:
+                self._piece_rng.seed(self._piece_rng_seed)
+            except Exception:
+                pass
         # Torba (bag) sistemini sıfırla — yeni oyun yeni torba
         self._piece_bag = []
         # Üst üste aynı parça takibini sıfırla

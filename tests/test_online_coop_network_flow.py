@@ -215,6 +215,30 @@ def test_online_coop_uses_dedicated_coop_start_message():
     assert game.online_state == coop_module.OnlineCoopState.COUNTDOWN
 
 
+def test_online_coop_host_start_forwards_match_seed_to_coop_game(monkeypatch):
+    captured = {}
+
+    class FakeHostCoop:
+        def __init__(self, **kwargs):
+            captured['piece_rng_seed'] = kwargs.get('piece_rng_seed')
+            self._event_listeners = []
+            self.p1_frozen = False
+            self.p2_frozen = False
+
+    monkeypatch.setattr(coop_module, 'CoopGame', FakeHostCoop)
+    monkeypatch.setattr(coop_module.OnlineCoopGame, '_send_board_state', lambda self: None)
+    monkeypatch.setattr(coop_module.OnlineCoopGame, '_send_piece_state', lambda self: None)
+
+    game = _make_game(FakeNet())
+    game.role = 'host'
+    game._game_seed = 13579
+
+    game._start_game()
+
+    assert captured['piece_rng_seed'] == 13579
+    assert game.online_state == coop_module.OnlineCoopState.PLAYING
+
+
 def test_online_coop_guest_ignores_out_of_order_board_snapshots():
     net = FakeNet([
         _message(42, _valid_board_state(seq=5, team_score=100)),
@@ -256,12 +280,15 @@ def test_online_coop_ignores_non_game_channel_messages():
 
 
 def test_online_coop_guest_hydrates_local_coop_renderer(monkeypatch):
+    captured = {}
+
     class FakeBoard:
         width = 20
         height = 20
 
     class FakeRenderCoop:
         def __init__(self, **kwargs):
+            captured['piece_rng_seed'] = kwargs.get('piece_rng_seed')
             self.screen = kwargs.get('screen')
             self.window_width = self.screen.get_width()
             self.window_height = self.screen.get_height()
@@ -289,11 +316,13 @@ def test_online_coop_guest_hydrates_local_coop_renderer(monkeypatch):
     game = _make_game(FakeNet())
     game.role = 'guest'
     game.online_state = coop_module.OnlineCoopState.PLAYING
+    game._game_seed = 4242
     game._guest_board_cache = game._normalize_board_snapshot(_valid_board_state(seq=8, team_score=250))
     game._guest_piece_cache = game._normalize_piece_snapshot(_valid_piece_state(seq=9))
 
     render_game = game._apply_guest_render_cache()
 
+    assert captured['piece_rng_seed'] == 4242
     assert isinstance(render_game, FakeRenderCoop)
     assert render_game.team_score == 250
     assert render_game.p1_current_piece.shape_index == 0

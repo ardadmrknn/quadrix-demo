@@ -235,12 +235,25 @@ class CoopGame:
         user_manager=None,
         settings_manager=None,
         sound_manager=None,
+        piece_rng_seed: int | None = None,
     ):
         if not pygame.get_init():
             pygame.init()
 
         self.user_manager = user_manager
         self.settings_manager = settings_manager
+        try:
+            self._piece_rng_seed = int(piece_rng_seed) if piece_rng_seed is not None else None
+        except Exception:
+            self._piece_rng_seed = None
+        if self._piece_rng_seed is None:
+            self._p1_piece_rng = random.Random()
+            self._p2_piece_rng = random.Random()
+        else:
+            base_seed = int(self._piece_rng_seed)
+            # Oyuncu bag'lerini birbirinden ayır ama aynı match seed'ine bağla.
+            self._p1_piece_rng = random.Random(base_seed ^ 0xA5A5A5A5)
+            self._p2_piece_rng = random.Random((base_seed + 0x9E3779B9) & 0xFFFFFFFF)
 
         # --- Ekran ---
         if screen is not None:
@@ -903,7 +916,8 @@ class CoopGame:
 
     def _refill_bag(self, player: str) -> None:
         bag: list[int] = list(range(len(SHAPES))) * 2  # 7 tip × 2 kopya
-        random.shuffle(bag)
+        bag_rng = self._p1_piece_rng if player == 'P1' else self._p2_piece_rng
+        bag_rng.shuffle(bag)
         if player == 'P1':
             self._p1_bag.extend(bag)
         else:
@@ -1190,6 +1204,7 @@ class CoopGame:
             user_manager=self.user_manager,
             settings_manager=self.settings_manager,
             sound_manager=sound_manager,
+            piece_rng_seed=self._piece_rng_seed,
         )
 
     def _load_backgrounds(self):

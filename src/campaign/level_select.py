@@ -891,7 +891,8 @@ class CampaignLevelSelect:
         """Küçük yıldız gösterimi"""
         star_size = max(8, int(rect.width * 0.14))
         star_gap = max(3, int(star_size * 0.4))
-        star_y = rect.bottom - max(8, int(rect.height * 0.16))
+        star_bottom_padding = max(14, int(rect.height * 0.14))
+        star_y = rect.bottom - star_size - star_bottom_padding
         total_width = 3 * star_size + 2 * star_gap
         start_x = rect.centerx - total_width // 2
         
@@ -904,7 +905,7 @@ class CampaignLevelSelect:
                 self._draw_star(star_x + star_size // 2, star_y + star_size // 2, star_size, color)
             else:
                 # Boş yıldız
-                color = self.COLORS['dark_gray']
+                color = (150, 165, 205)
                 self._draw_star(star_x + star_size // 2, star_y + star_size // 2, star_size, color, filled=False)
     
     def _draw_star(self, cx: int, cy: int, size: int, color: Tuple, filled: bool = True) -> None:
@@ -920,7 +921,10 @@ class CampaignLevelSelect:
         if filled:
             pygame.draw.polygon(self.screen, color, points)
         else:
-            pygame.draw.polygon(self.screen, color, points, 1)
+            empty_fill = (22, 28, 54)
+            outline_width = max(2, size // 7)
+            pygame.draw.polygon(self.screen, empty_fill, points)
+            pygame.draw.polygon(self.screen, color, points, outline_width)
     
     def _load_level_frames(self) -> None:
         """Level buton çerçevelerini yükle"""

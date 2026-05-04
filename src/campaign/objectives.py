@@ -351,7 +351,7 @@ class SpecialBlockObjective(Objective):
     
     def update(self, game: 'CampaignMode', event_type: str, event_data: Dict[str, Any]) -> None:
         if event_type == 'special_block_cleared':
-            cleared_type = event_data.get('block_type', '')
+            cleared_type = event_data.get('block_type', event_data.get('type', ''))
             if cleared_type == self.block_type:
                 self.progress += event_data.get('count', 1)
                 self.check_completion()

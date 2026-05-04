@@ -2489,6 +2489,7 @@ class OnlineCoopGame:
                 user_manager=self.user_manager,
                 settings_manager=self.settings_manager,
                 sound_manager=self.sound,
+                piece_rng_seed=(int(self._game_seed) if int(self._game_seed or 0) > 0 else None),
             )
             self.coop_game._event_listeners = []
         except Exception as exc:
@@ -2933,6 +2934,7 @@ class OnlineCoopGame:
                 user_manager=self.user_manager,
                 settings_manager=self.settings_manager,
                 sound_manager=self.sound,
+                piece_rng_seed=(int(self._game_seed) if int(self._game_seed or 0) > 0 else None),
             )
             # Event listener: lock/clear/game_over gibi olayları guest'e yayınla
             self.coop_game._event_listeners.append(self._on_coop_event)
@@ -2940,8 +2942,7 @@ class OnlineCoopGame:
                 bool(self.coop_game.p1_frozen),
                 bool(self.coop_game.p2_frozen),
             )
-            # NOT: Otoriter host modelinde deterministik RNG gerekmez.
-            # Guest simülasyon yapmıyor, tüm state host'tan gelir.
+            # Host otoriter kalır; seed sadece bag sırasını maç bazında sabitler.
         else:
             # Guest: state cache'leri temizle
             self._guest_board_cache = None

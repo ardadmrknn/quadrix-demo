@@ -1054,3 +1054,47 @@ def test_coop_spawn_halt_blocks_respawn_until_toggled_off():
 
     assert cg.p1_current_piece is expected_piece
     assert cg._p1_spawn_halted is False
+
+
+def test_coop_seeded_piece_bags_are_deterministic_across_restart():
+    def _signature(game):
+        return (
+            game.p1_current_piece.shape_index,
+            game.p1_next_piece.shape_index,
+            tuple(game._p1_bag[:6]),
+            game.p2_current_piece.shape_index,
+            game.p2_next_piece.shape_index,
+            tuple(game._p2_bag[:6]),
+        )
+
+    seed = 24680
+    first = CoopGame(
+        sound_enabled=False,
+        effects_enabled=False,
+        screen=_Surf(),
+        sound_manager=_SM(),
+        piece_rng_seed=seed,
+    )
+    second = CoopGame(
+        sound_enabled=False,
+        effects_enabled=False,
+        screen=_Surf(),
+        sound_manager=_SM(),
+        piece_rng_seed=seed,
+    )
+    different = CoopGame(
+        sound_enabled=False,
+        effects_enabled=False,
+        screen=_Surf(),
+        sound_manager=_SM(),
+        piece_rng_seed=seed + 1,
+    )
+
+    first_signature = _signature(first)
+
+    assert first_signature == _signature(second)
+    assert first_signature != _signature(different)
+
+    first.restart()
+
+    assert _signature(first) == first_signature

@@ -107,3 +107,23 @@ def test_restart_restarts_music_when_sfx_disabled(monkeypatch):
     assert game.sound.unduck_calls == 1
     assert game.sound.stop_music_calls == 1
     assert game._start_music_playlist_calls == [True]
+
+
+def test_restart_reseeds_piece_rng_when_seeded(monkeypatch):
+    game = _build_game_for_restart()
+
+    class _PieceRngStub:
+        def __init__(self):
+            self.seed_calls = []
+
+        def seed(self, value):
+            self.seed_calls.append(value)
+
+    game._piece_rng_seed = 424242
+    game._piece_rng = _PieceRngStub()
+
+    monkeypatch.setattr(board_module, 'Board', _BoardStub)
+
+    game.restart()
+
+    assert game._piece_rng.seed_calls == [424242]

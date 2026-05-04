@@ -53,6 +53,7 @@ CAMPAIGN_HUD_REFERENCE_SIZE = (1366.0, 768.0)
 
 class CampaignMode(Game):
     """Campaign Modu - 100 Level Quadrix Macerası"""
+    _TRACKED_SPECIAL_BLOCK_TYPES = ('ice', 'locked', 'bomb', 'star', 'timer')
     
     def __init__(
         self,
@@ -81,6 +82,10 @@ class CampaignMode(Game):
         
         if not self.level_config:
             raise ValueError(f"Geçersiz level numarası: {current_level}")
+        
+        # Level'a izinli blok havuzunu base Game init'ten önce ver.
+        # Aksi halde ilk current/next queue varsayılan 7 bloktan dolabilir.
+        self._allowed_pieces = list(self.level_config.allowed_pieces)
         
         # Parça seed'i (hızlı tekrar için deterministik sıra)
         self._piece_seed = random.randint(0, 2**31 - 1)
@@ -168,6 +173,7 @@ class CampaignMode(Game):
         # Özel blok yöneticisi
         self.special_block_manager = SpecialBlockManager()
         self._init_special_blocks()
+        self._reset_special_block_clear_tracking()
         
         # Çöp blokları yerleştir (level 6+)
         self._place_garbage_blocks()
@@ -509,6 +515,8 @@ class CampaignMode(Game):
         
         if special_events.get('points_earned', 0) > 0:
             self.board.score += special_events['points_earned']
+
+        self._emit_special_block_clear_deltas()
         
         # Zaman limiti kontrolü
         if self.level_config and self.level_config.time_limit:
@@ -573,20 +581,14 @@ class CampaignMode(Game):
                 special_result = self.special_block_manager.on_line_cleared(
                     actually_cleared, self.board
                 )
-                
-                # Eriyen buz bloklarını event olarak gönder
-                if special_result.get('ice_melted'):
-                    self._emit_event('special_block_cleared', {
-                        'type': 'ice',
-                        'count': len(special_result['ice_melted'])
-                    })
-                
+
                 # Toplanan puan
                 if special_result.get('points_earned', 0) > 0:
                     self.board.score += special_result['points_earned']
-                
+
                 # Özel blokları aşağı kaydır
                 self.special_block_manager.shift_blocks_down(actually_cleared)
+                self._emit_special_block_clear_deltas()
             
             self._emit_event('lines_cleared', {
                 'lines': new_lines,
@@ -633,6 +635,35 @@ class CampaignMode(Game):
         """Tüm görevlere event gönder"""
         for objective in self.objectives:
             objective.update(self, event_type, event_data)
+
+    def _reset_special_block_clear_tracking(self) -> None:
+        self._special_block_clear_counts = {
+            block_type: 0 for block_type in self._TRACKED_SPECIAL_BLOCK_TYPES
+        }
+
+    def _emit_special_block_clear_deltas(self) -> None:
+        manager = getattr(self, 'special_block_manager', None)
+        if manager is None:
+            return
+
+        counts = getattr(self, '_special_block_clear_counts', None)
+        if not isinstance(counts, dict):
+            self._reset_special_block_clear_tracking()
+            counts = self._special_block_clear_counts
+
+        for block_type in self._TRACKED_SPECIAL_BLOCK_TYPES:
+            try:
+                current_count = int(manager.get_cleared_count(block_type) or 0)
+            except Exception:
+                current_count = 0
+
+            previous_count = int(counts.get(block_type, 0) or 0)
+            if current_count > previous_count:
+                self._emit_event('special_block_cleared', {
+                    'block_type': block_type,
+                    'count': current_count - previous_count,
+                })
+            counts[block_type] = current_count
     
     def _check_objectives_completion(self) -> None:
         """Tüm görevler tamamlandı mı kontrol et"""
@@ -891,6 +922,7 @@ class CampaignMode(Game):
         # Özel blok yöneticisini sıfırla ve yeniden oluştur
         self.special_block_manager = SpecialBlockManager()
         self._init_special_blocks()
+        self._reset_special_block_clear_tracking()
 
         # Çöp bloklarını yeniden yerleştir
         self._place_garbage_blocks()
@@ -982,6 +1014,33 @@ class CampaignMode(Game):
         panel_height = min(int(board_height), available_panel_h)
         panel_height = min(panel_height, max(s(180), int(screen_h) - header_y - s(12, minimum=0)))
         return pygame.Rect(info_x, header_y, panel_width, panel_height)
+
+    @staticmethod
+    def _get_block_limit_hud_state(move_limit: Optional[int], moves_count: int) -> tuple[str, tuple[int, int, int], float]:
+        """Return display text, color and fill ratio for the campaign block limit bar."""
+        from ui_theme import UIColors
+
+        if not move_limit or move_limit <= 0:
+            return "∞", UIColors.NEON_GREEN, 1.0
+
+        remaining_blocks = max(0, move_limit - moves_count)
+        usage_ratio = moves_count / move_limit
+
+        if remaining_blocks <= 3:
+            block_color = UIColors.NEON_RED
+        elif remaining_blocks <= 5:
+            pulse = abs(math.sin(pygame.time.get_ticks() / 200.0))
+            r = int(255 * 0.7 + 255 * 0.3 * pulse)
+            g = int(80 * pulse)
+            block_color = (r, g, 0)
+        elif remaining_blocks <= 10:
+            block_color = UIColors.NEON_ORANGE if hasattr(UIColors, 'NEON_ORANGE') else (255, 165, 0)
+        elif usage_ratio > 0.5:
+            block_color = (255, 200, 50)
+        else:
+            block_color = UIColors.NEON_GREEN
+
+        return f"{remaining_blocks}/{move_limit}", block_color, remaining_blocks / move_limit
     
     # === UI/HUD ===
     
@@ -1278,34 +1337,17 @@ class CampaignMode(Game):
         
         block_y = block_section_y + s(10, minimum=6)
         
-        # Blok limiti her zaman var
-        block_limit = self.level_config.move_limit or 0
-        remaining_blocks = max(0, block_limit - self.moves_count)
-        usage_ratio = self.moves_count / block_limit if block_limit > 0 else 0.0
-        
-        # Renk geçişi: Yeşil -> Sarı -> Turuncu -> Kırmızı
-        if remaining_blocks <= 3:
-            block_color = UIColors.NEON_RED
-        elif remaining_blocks <= 5:
-            # Titreşim efekti - son 5 blokta
-            pulse = abs(math.sin(pygame.time.get_ticks() / 200.0))
-            r = int(255 * 0.7 + 255 * 0.3 * pulse)
-            g = int(80 * pulse)
-            block_color = (r, g, 0)
-        elif remaining_blocks <= 10:
-            block_color = UIColors.NEON_ORANGE if hasattr(UIColors, 'NEON_ORANGE') else (255, 165, 0)
-        elif usage_ratio > 0.5:
-            block_color = (255, 200, 50)  # Sarı
-        else:
-            block_color = NEON_GREEN
+        count_text, block_color, fill_ratio = self._get_block_limit_hud_state(
+            self.level_config.move_limit,
+            self.moves_count,
+        )
         
         # Başlık: "Kalan Blok" ikonu ile
         block_title = t('campaign_block_limit_title')
         title_surf = limit_title_font.render(block_title, True, UIColors.TEXT_PRIMARY)
         self.screen.blit(title_surf, (panel_rect.x + s(20), block_y))
         
-        # Sayı gösterimi (sağ hizalı) 
-        count_text = f"{remaining_blocks}/{block_limit}"
+        # Sayı gösterimi (sağ hizalı)
         count_surf = limit_title_font.render(count_text, True, block_color)
         count_x = panel_rect.right - s(20) - count_surf.get_width()
         self.screen.blit(count_surf, (count_x, block_y))
@@ -1323,7 +1365,6 @@ class CampaignMode(Game):
         pygame.draw.rect(self.screen, UIColors.SLIDER_BG, bar_bg_rect, border_radius=bar_radius)
         
         # Doluluk barı (kalan blok oranı)
-        fill_ratio = remaining_blocks / block_limit if block_limit > 0 else 1.0
         fill_width = int(bar_width * fill_ratio)
         if fill_width > 0:
             fill_rect = pygame.Rect(bar_x, block_y, fill_width, bar_height)
