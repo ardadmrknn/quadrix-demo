@@ -41,7 +41,7 @@ from steam_networking import (
     generate_lobby_code,
 )
 from coop_game import CoopGame
-from pieces import SHAPES as _SHAPES
+from pieces import Piece, SHAPES as _SHAPES
 from constants import COLORS as _PIECE_COLORS
 
 # Steam pump thread kontrolü
@@ -383,6 +383,8 @@ class OnlineCoopGame:
         self._guest_board_cache = None   # dict from host
         self._guest_piece_cache = None   # dict from host
         self._guest_score_cache = {}     # score/lines/level
+        self._guest_render_board_seq = -1
+        self._guest_render_piece_seq = -1
 
         # Placeholder font'lar
         self.font_large = _rs.get_font(36)
@@ -1441,6 +1443,8 @@ class OnlineCoopGame:
         self._guest_board_cache = None
         self._guest_piece_cache = None
         self._guest_score_cache = {}
+        self._guest_render_board_seq = -1
+        self._guest_render_piece_seq = -1
         self._lobby_code = ''
         self._lobby_id_str = ''
         self._join_code_active = False
@@ -2362,10 +2366,286 @@ class OnlineCoopGame:
                 else:
                     self._game_start_retry_timer = self._GAME_START_RETRY_INTERVAL_MS
 
+        if (
+            self.online_state == OnlineCoopState.PLAYING
+            and self.role == 'guest'
+            and self.coop_game
+        ):
+            self._update_guest_render_effects(float(delta_time))
+
+    @staticmethod
+    def _clamp_int(value, minimum: int, maximum: int, default: int = 0) -> int:
+        try:
+            parsed = int(value)
+        except (TypeError, ValueError):
+            parsed = int(default)
+        return max(int(minimum), min(int(maximum), parsed))
+
+    @staticmethod
+    def _coerce_rgb_cell(cell) -> tuple[tuple[int, int, int], bool] | None:
+        if cell in (0, None, False, ''):
+            return (0, 0, 0), False
+        if not isinstance(cell, (list, tuple)) or len(cell) < 3:
+            return None
+        rgb = []
+        for channel in cell[:3]:
+            try:
+                value = int(channel)
+            except (TypeError, ValueError):
+                return None
+            rgb.append(max(0, min(255, value)))
+        color = (rgb[0], rgb[1], rgb[2])
+        return color, color != (0, 0, 0)
+
+    def _normalize_board_snapshot(self, data: dict) -> dict | None:
+        grid = data.get('grid')
+        if not isinstance(grid, list) or len(grid) != 20:
+            return None
+
+        normalized_grid: list[list[tuple[int, int, int]]] = []
+        occupancy: list[list[bool]] = []
+        for row in grid:
+            if not isinstance(row, list) or len(row) != 20:
+                return None
+            normalized_row: list[tuple[int, int, int]] = []
+            occupancy_row: list[bool] = []
+            for cell in row:
+                coerced = self._coerce_rgb_cell(cell)
+                if coerced is None:
+                    return None
+                color, filled = coerced
+                normalized_row.append(color)
+                occupancy_row.append(filled)
+            normalized_grid.append(normalized_row)
+            occupancy.append(occupancy_row)
+
+        raw_owners = data.get('owners')
+        owners: list[list[str | None]] = []
+        if isinstance(raw_owners, list) and len(raw_owners) == 20:
+            for owner_row in raw_owners:
+                if not isinstance(owner_row, list) or len(owner_row) != 20:
+                    return None
+                normalized_owner_row = []
+                for owner in owner_row:
+                    normalized_owner_row.append(owner if owner in ('P1', 'P2') else None)
+                owners.append(normalized_owner_row)
+        else:
+            owners = [[None for _ in range(20)] for _ in range(20)]
+
+        normalized = dict(data)
+        normalized['grid'] = normalized_grid
+        normalized['owners'] = owners
+        normalized['_occupancy'] = occupancy
+        normalized['team_score'] = self._clamp_int(data.get('team_score', 0), 0, 999999999)
+        normalized['total_lines'] = self._clamp_int(data.get('total_lines', 0), 0, 999999)
+        normalized['level'] = self._clamp_int(data.get('level', 1), 1, 999)
+        try:
+            normalized['fall_speed'] = max(1.0, min(5000.0, float(data.get('fall_speed', 900.0))))
+        except (TypeError, ValueError):
+            normalized['fall_speed'] = 900.0
+        normalized['p1_frozen'] = bool(data.get('p1_frozen', False))
+        normalized['p2_frozen'] = bool(data.get('p2_frozen', False))
+        return normalized
+
+    def _normalize_piece_snapshot(self, data: dict) -> dict:
+        def _piece_dict(raw_piece):
+            if not isinstance(raw_piece, dict):
+                return None
+            si = self._clamp_int(raw_piece.get('si', -1), -1, len(_SHAPES) - 1, -1)
+            if si < 0:
+                return None
+            return {
+                'si': si,
+                'x': self._clamp_int(raw_piece.get('x', 0), -6, 25),
+                'y': self._clamp_int(raw_piece.get('y', 0), -8, 25),
+                'r': self._clamp_int(raw_piece.get('r', 0), 0, 3),
+            }
+
+        normalized = dict(data)
+        normalized['p1_current'] = _piece_dict(data.get('p1_current'))
+        normalized['p2_current'] = _piece_dict(data.get('p2_current'))
+        for key in ('p1_next_si', 'p2_next_si', 'p1_hold_si', 'p2_hold_si'):
+            normalized[key] = self._clamp_int(data.get(key, -1), -1, len(_SHAPES) - 1, -1)
+        normalized['p1_ghost_y'] = self._clamp_int(data.get('p1_ghost_y', -1), -8, 25, -1)
+        normalized['p2_ghost_y'] = self._clamp_int(data.get('p2_ghost_y', -1), -8, 25, -1)
+        normalized['input_ack'] = self._clamp_int(data.get('input_ack', 0), 0, 999999999)
+        return normalized
+
+    def _ensure_guest_render_game(self):
+        if self.role != 'guest':
+            return None
+        if self.coop_game is not None:
+            self.coop_game.screen = self.screen
+            self.coop_game.window_width = self.window_width
+            self.coop_game.window_height = self.window_height
+            self.coop_game.fullscreen = self.fullscreen
+            return self.coop_game
+        try:
+            self.coop_game = CoopGame(
+                sound_enabled=False,
+                effects_enabled=True,
+                screen=self.screen,
+                fullscreen=self.fullscreen,
+                user_manager=self.user_manager,
+                settings_manager=self.settings_manager,
+                sound_manager=self.sound,
+            )
+            self.coop_game._event_listeners = []
+        except Exception as exc:
+            print(f"[OnlineCoop] Guest render init hatası: {exc}")
+            self.coop_game = None
+        return self.coop_game
+
+    def _piece_from_snapshot(self, piece_data: dict | None):
+        if not isinstance(piece_data, dict):
+            return None
+        si = self._clamp_int(piece_data.get('si', -1), -1, len(_SHAPES) - 1, -1)
+        if si < 0:
+            return None
+        piece = Piece(
+            x=self._clamp_int(piece_data.get('x', 0), -6, 25),
+            y=self._clamp_int(piece_data.get('y', 0), -8, 25),
+            shape_index=si,
+        )
+        rotation = self._clamp_int(piece_data.get('r', 0), 0, 3)
+        if rotation:
+            piece.rotate(rotation)
+        return piece
+
+    def _piece_from_shape_index(self, shape_index: int):
+        si = self._clamp_int(shape_index, -1, len(_SHAPES) - 1, -1)
+        if si < 0:
+            return None
+        return Piece(x=0, y=0, shape_index=si)
+
+    def _apply_block_style_to_guest_piece(self, piece):
+        if piece is None or self.coop_game is None:
+            return piece
+        try:
+            self.coop_game._apply_block_style(piece)
+        except Exception:
+            pass
+        return piece
+
+    def _apply_guest_render_cache(self):
+        render_game = self._ensure_guest_render_game()
+        board_data = self._guest_board_cache
+        if render_game is None or not isinstance(board_data, dict):
+            return None
+
+        board_seq = int(board_data.get('seq', -1) or -1)
+        if board_seq != getattr(self, '_guest_render_board_seq', -1):
+            board = render_game.board
+            grid = board_data.get('grid')
+            occupancy = board_data.get('_occupancy')
+            owners = board_data.get('owners')
+            if not (
+                isinstance(grid, list)
+                and isinstance(occupancy, list)
+                and isinstance(owners, list)
+            ):
+                return None
+            board.grid = [[tuple(cell) for cell in row] for row in grid]
+            board.occupancy = [[bool(cell) for cell in row] for row in occupancy]
+            board.owners = [[owner if owner in ('P1', 'P2') else None for owner in row] for row in owners]
+            board.texture_grid = [[None for _ in range(board.width)] for _ in range(board.height)]
+            board.gold = [[False for _ in range(board.width)] for _ in range(board.height)]
+            board.score = int(board_data.get('team_score', 0) or 0)
+            board.lines_cleared = int(board_data.get('total_lines', 0) or 0)
+            board.level = int(board_data.get('level', 1) or 1)
+            render_game.team_score = int(board_data.get('team_score', 0) or 0)
+            render_game.total_lines_cleared = int(board_data.get('total_lines', 0) or 0)
+            render_game.level = int(board_data.get('level', 1) or 1)
+            render_game.fall_speed = float(board_data.get('fall_speed', 900.0) or 900.0)
+            render_game.p1_frozen = bool(board_data.get('p1_frozen', False))
+            render_game.p2_frozen = bool(board_data.get('p2_frozen', False))
+            render_game.game_over = False
+            render_game.paused = False
+            self._guest_render_board_seq = board_seq
+
+        piece_data = self._guest_piece_cache
+        if isinstance(piece_data, dict):
+            piece_seq = int(piece_data.get('seq', -1) or -1)
+            if piece_seq != getattr(self, '_guest_render_piece_seq', -1):
+                render_game.p1_current_piece = self._apply_block_style_to_guest_piece(
+                    self._piece_from_snapshot(piece_data.get('p1_current')))
+                render_game.p2_current_piece = self._apply_block_style_to_guest_piece(
+                    self._piece_from_snapshot(piece_data.get('p2_current')))
+                render_game.p1_next_piece = self._apply_block_style_to_guest_piece(
+                    self._piece_from_shape_index(piece_data.get('p1_next_si', -1)))
+                render_game.p2_next_piece = self._apply_block_style_to_guest_piece(
+                    self._piece_from_shape_index(piece_data.get('p2_next_si', -1)))
+                render_game.p1_hold_piece = self._apply_block_style_to_guest_piece(
+                    self._piece_from_shape_index(piece_data.get('p1_hold_si', -1)))
+                render_game.p2_hold_piece = self._apply_block_style_to_guest_piece(
+                    self._piece_from_shape_index(piece_data.get('p2_hold_si', -1)))
+                self._last_input_ack_seq = int(piece_data.get('input_ack', self._last_input_ack_seq) or 0)
+                self._guest_render_piece_seq = piece_seq
+        return render_game
+
+    def _update_guest_render_effects(self, delta_time: float):
+        render_game = self.coop_game
+        if not render_game:
+            return
+        try:
+            if getattr(render_game, 'effects_enabled', False):
+                render_game.update_particles(delta_time)
+                render_game.update_ambient_particles(delta_time)
+                render_game.update_drop_trails(delta_time)
+                render_game._update_line_clear_effects(delta_time)
+        except Exception:
+            pass
+
+    def _apply_guest_lock_event(self, data: dict):
+        self._guest_score_cache['team_score'] = self._clamp_int(
+            data.get('new_score', 0), 0, 999999999)
+        self._guest_score_cache['level'] = self._clamp_int(
+            data.get('new_level', 1), 1, 999)
+        if data.get('total_lines', 0):
+            self._guest_score_cache['total_lines'] = self._clamp_int(
+                data.get('total_lines', 0), 0, 999999)
+
+        rows = data.get('cleared_rows', [])
+        colors = data.get('row_colors', {})
+        if not isinstance(rows, list) or not isinstance(colors, dict):
+            return
+        normalized_rows = []
+        normalized_colors: dict[int, list[tuple[int, int, int]]] = {}
+        for row in rows[:20]:
+            row_index = self._clamp_int(row, 0, 19)
+            raw_colors = colors.get(str(row_index), colors.get(row_index, []))
+            if not isinstance(raw_colors, list) or len(raw_colors) != 20:
+                continue
+            color_row = []
+            valid = True
+            for cell in raw_colors:
+                coerced = self._coerce_rgb_cell(cell)
+                if coerced is None:
+                    valid = False
+                    break
+                color_row.append(coerced[0])
+            if valid:
+                normalized_rows.append(row_index)
+                normalized_colors[row_index] = color_row
+        if not normalized_rows:
+            return
+        render_game = self._ensure_guest_render_game()
+        if not render_game:
+            return
+        render_game.line_clear_pending_rows = normalized_rows
+        render_game.line_clear_pending_colors = normalized_colors
+        try:
+            render_game._start_line_clear_sweep(normalized_rows)
+        except Exception:
+            pass
+
     def _process_messages(self):
         """Ağdan gelen mesajları işle."""
         for msg in self.net.get_messages():
             try:
+                channel = getattr(msg, 'channel', CHANNEL_GAME)
+                if channel != CHANNEL_GAME:
+                    continue
                 data = msg.data
                 if not isinstance(data, dict):
                     continue
@@ -2442,6 +2722,18 @@ class OnlineCoopGame:
                 elif msg_type == MsgType.GUEST_INPUT:
                     if self.role == 'host' and self.coop_game:
                         action = data.get('action', '')
+                        if action not in (
+                            'move_left',
+                            'move_right',
+                            'soft_drop_start',
+                            'soft_drop_stop',
+                            'rotate',
+                            'hard_drop',
+                            'hold',
+                            'das_stop',
+                            'pause_request',
+                        ):
+                            continue
                         try:
                             seq = int(data.get('seq', 0) or 0)
                         except (TypeError, ValueError):
@@ -2466,12 +2758,16 @@ class OnlineCoopGame:
                             seq = 0
                         if seq < self._guest_board_seq:
                             continue
+                        normalized = self._normalize_board_snapshot(data)
+                        if normalized is None:
+                            print("[OnlineCoop] Geçersiz coop board snapshot — ignore.")
+                            continue
                         self._guest_board_seq = seq
-                        self._guest_board_cache = data
+                        self._guest_board_cache = normalized
                         self._guest_score_cache.update({
-                            'team_score': data.get('team_score', 0),
-                            'total_lines': data.get('total_lines', 0),
-                            'level': data.get('level', 1),
+                            'team_score': normalized.get('team_score', 0),
+                            'total_lines': normalized.get('total_lines', 0),
+                            'level': normalized.get('level', 1),
                         })
 
                 elif msg_type == MsgType.COOP_PIECE_STATE:
@@ -2483,15 +2779,11 @@ class OnlineCoopGame:
                         if seq < self._guest_piece_seq:
                             continue
                         self._guest_piece_seq = seq
-                        self._guest_piece_cache = data
+                        self._guest_piece_cache = self._normalize_piece_snapshot(data)
 
                 elif msg_type == MsgType.COOP_LOCK_EVENT:
                     if self.role == 'guest':
-                        # Update score/lines from lock
-                        self._guest_score_cache['team_score'] = data.get('new_score', 0)
-                        self._guest_score_cache['level'] = data.get('new_level', 1)
-                        if data.get('total_lines', 0):
-                            self._guest_score_cache['total_lines'] = data['total_lines']
+                        self._apply_guest_lock_event(data)
 
                 elif msg_type == MsgType.COOP_GAME_EVENT:
                     event_name = data.get('event', '')
@@ -2554,6 +2846,8 @@ class OnlineCoopGame:
             self._guest_board_cache = None
             self._guest_piece_cache = None
             self._guest_score_cache = {}
+            self._guest_render_board_seq = -1
+            self._guest_render_piece_seq = -1
             if self.net.is_host:
                 self._game_seed = random.randint(1, 999999)
                 self._game_start_pending_payload = {
@@ -2643,6 +2937,9 @@ class OnlineCoopGame:
             self._guest_score_cache = {}
             self._guest_board_seq = -1
             self._guest_piece_seq = -1
+            self._guest_render_board_seq = -1
+            self._guest_render_piece_seq = -1
+            self._ensure_guest_render_game()
 
         # Broadcast timer'larını sıfırla
         self._board_state_timer = 0.0
@@ -2759,6 +3056,21 @@ class OnlineCoopGame:
 
     def _send_lock_event(self, event_data: dict):
         """Host → Guest: parça kilit / satır temizleme olayı (reliable)."""
+        cleared_row_colors = {}
+        cleared_rows = []
+        if self.coop_game:
+            try:
+                raw_colors = getattr(self.coop_game.board, 'last_clear_row_colors', {}) or {}
+                for row_index, row_colors in raw_colors.items():
+                    normalized_row = int(row_index)
+                    cleared_rows.append(normalized_row)
+                    cleared_row_colors[str(normalized_row)] = [
+                        list(color[:3]) if isinstance(color, (list, tuple)) else [0, 0, 0]
+                        for color in row_colors[:20]
+                    ]
+            except Exception:
+                cleared_row_colors = {}
+                cleared_rows = []
         data = {
             'type': MsgType.COOP_LOCK_EVENT,
             'player': event_data.get('player', ''),
@@ -2768,6 +3080,8 @@ class OnlineCoopGame:
             'total_lines': event_data.get('total_lines', 0),
             'p1_frozen': self.coop_game.p1_frozen if self.coop_game else False,
             'p2_frozen': self.coop_game.p2_frozen if self.coop_game else False,
+            'cleared_rows': sorted(cleared_rows),
+            'row_colors': cleared_row_colors,
         }
         self.net.send(data, reliable=True, channel=CHANNEL_GAME)
 
@@ -3357,6 +3671,12 @@ class OnlineCoopGame:
             font = _rs.get_font(s(18, minimum=12))
             text = font.render(t('waiting_for_host', 'Host verisi bekleniyor...'), True, _rs.text_muted)
             self.screen.blit(text, text.get_rect(center=(cx, cy)))
+            return
+
+        render_game = self._apply_guest_render_cache()
+        if render_game is not None:
+            render_game._render_game()
+            render_game._draw_opening_curtain()
             return
 
         # Board boyutları

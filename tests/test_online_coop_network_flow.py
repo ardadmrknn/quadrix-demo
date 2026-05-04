@@ -79,8 +79,41 @@ class FakeNet:
         return True
 
 
-def _message(sender: int, data: dict):
-    return SimpleNamespace(sender=sender, data=data)
+def _message(sender: int, data: dict, channel: int = 0):
+    return SimpleNamespace(sender=sender, data=data, channel=channel)
+
+
+def _valid_board_state(seq: int = 1, team_score: int = 0):
+    grid = [[0 for _ in range(20)] for _ in range(20)]
+    owners = [['' for _ in range(20)] for _ in range(20)]
+    return {
+        'type': MsgType.COOP_BOARD_STATE,
+        'seq': seq,
+        'grid': grid,
+        'owners': owners,
+        'team_score': team_score,
+        'total_lines': 0,
+        'level': 1,
+        'fall_speed': 900.0,
+        'p1_frozen': False,
+        'p2_frozen': False,
+    }
+
+
+def _valid_piece_state(seq: int = 1):
+    return {
+        'type': MsgType.COOP_PIECE_STATE,
+        'seq': seq,
+        'p1_current': {'si': 0, 'x': 3, 'y': 0, 'r': 0},
+        'p2_current': {'si': 1, 'x': 13, 'y': 0, 'r': 0},
+        'p1_next_si': 2,
+        'p2_next_si': 3,
+        'p1_hold_si': -1,
+        'p2_hold_si': -1,
+        'p1_ghost_y': 10,
+        'p2_ghost_y': 12,
+        'input_ack': 7,
+    }
 
 
 def _make_game(net: FakeNet):
@@ -101,6 +134,8 @@ def _make_game(net: FakeNet):
     game._guest_board_cache = None
     game._guest_piece_cache = None
     game._guest_score_cache = {}
+    game._guest_render_board_seq = -1
+    game._guest_render_piece_seq = -1
     game._game_start_pending_payload = None
     game._game_start_retry_timer = 0.0
     game._game_seed = 0
@@ -117,6 +152,12 @@ def _make_game(net: FakeNet):
     game._lobby_list_filter = 'all'
     game._lobby_list_scroll = 0
     game._invite_after_lobby = False
+    game.user_manager = None
+    game.settings_manager = None
+    game.screen = SimpleNamespace(get_width=lambda: 1280, get_height=lambda: 720)
+    game.window_width = 1280
+    game.window_height = 720
+    game.fullscreen = False
     return game
 
 
@@ -176,8 +217,8 @@ def test_online_coop_uses_dedicated_coop_start_message():
 
 def test_online_coop_guest_ignores_out_of_order_board_snapshots():
     net = FakeNet([
-        _message(42, {'type': MsgType.COOP_BOARD_STATE, 'seq': 5, 'team_score': 100}),
-        _message(42, {'type': MsgType.COOP_BOARD_STATE, 'seq': 4, 'team_score': 10}),
+        _message(42, _valid_board_state(seq=5, team_score=100)),
+        _message(42, _valid_board_state(seq=4, team_score=10)),
     ])
     net.opponent_steam_id = 42
     game = _make_game(net)
@@ -187,6 +228,120 @@ def test_online_coop_guest_ignores_out_of_order_board_snapshots():
 
     assert game._guest_board_seq == 5
     assert game._guest_board_cache['team_score'] == 100
+
+
+def test_online_coop_guest_rejects_malformed_board_snapshot():
+    net = FakeNet([
+        _message(42, {'type': MsgType.COOP_BOARD_STATE, 'seq': 1, 'grid': [[0]], 'team_score': 100}),
+    ])
+    net.opponent_steam_id = 42
+    game = _make_game(net)
+    game.role = 'guest'
+
+    game._process_messages()
+
+    assert game._guest_board_seq == -1
+    assert game._guest_board_cache is None
+
+
+def test_online_coop_ignores_non_game_channel_messages():
+    net = FakeNet([
+        _message(42, {'type': MsgType.READY}, channel=2),
+    ])
+    game = _make_game(net)
+
+    game._process_messages()
+
+    assert game.opponent_ready is False
+
+
+def test_online_coop_guest_hydrates_local_coop_renderer(monkeypatch):
+    class FakeBoard:
+        width = 20
+        height = 20
+
+    class FakeRenderCoop:
+        def __init__(self, **kwargs):
+            self.screen = kwargs.get('screen')
+            self.window_width = self.screen.get_width()
+            self.window_height = self.screen.get_height()
+            self.fullscreen = kwargs.get('fullscreen')
+            self.board = FakeBoard()
+            self.applied_styles = []
+            self.rendered = False
+            self.curtain = False
+            self.p1_frozen = False
+            self.p2_frozen = False
+            self.game_over = False
+            self.paused = False
+
+        def _apply_block_style(self, piece):
+            self.applied_styles.append(piece.shape_index)
+
+        def _render_game(self):
+            self.rendered = True
+
+        def _draw_opening_curtain(self):
+            self.curtain = True
+
+    monkeypatch.setattr(coop_module, 'CoopGame', FakeRenderCoop)
+
+    game = _make_game(FakeNet())
+    game.role = 'guest'
+    game.online_state = coop_module.OnlineCoopState.PLAYING
+    game._guest_board_cache = game._normalize_board_snapshot(_valid_board_state(seq=8, team_score=250))
+    game._guest_piece_cache = game._normalize_piece_snapshot(_valid_piece_state(seq=9))
+
+    render_game = game._apply_guest_render_cache()
+
+    assert isinstance(render_game, FakeRenderCoop)
+    assert render_game.team_score == 250
+    assert render_game.p1_current_piece.shape_index == 0
+    assert render_game.p2_current_piece.shape_index == 1
+    assert render_game.p1_next_piece.shape_index == 2
+    assert render_game.p2_next_piece.shape_index == 3
+
+
+def test_online_coop_line_clear_event_triggers_guest_render_sweep(monkeypatch):
+    class FakeBoard:
+        width = 20
+        height = 20
+
+    class FakeRenderCoop:
+        def __init__(self, **kwargs):
+            self.screen = kwargs.get('screen')
+            self.window_width = self.screen.get_width()
+            self.window_height = self.screen.get_height()
+            self.fullscreen = kwargs.get('fullscreen')
+            self.board = FakeBoard()
+            self.started_sweep = []
+
+        def _start_line_clear_sweep(self, rows):
+            self.started_sweep = list(rows)
+
+    monkeypatch.setattr(coop_module, 'CoopGame', FakeRenderCoop)
+    row = [[20, 30, 40] for _ in range(20)]
+    net = FakeNet([
+        _message(42, {
+            'type': MsgType.COOP_LOCK_EVENT,
+            'new_score': 500,
+            'new_level': 2,
+            'total_lines': 1,
+            'cleared_rows': [19],
+            'row_colors': {'19': row},
+        }),
+    ])
+    net.opponent_steam_id = 42
+    game = _make_game(net)
+    game.role = 'guest'
+    game.online_state = coop_module.OnlineCoopState.PLAYING
+
+    game._process_messages()
+
+    assert game.online_state == coop_module.OnlineCoopState.PLAYING
+    assert game.coop_game.started_sweep == [19]
+    assert game.coop_game.line_clear_pending_rows == [19]
+    assert game._guest_score_cache['team_score'] == 500
 
 
 def test_online_coop_ignores_legacy_pvp_game_start_message():
