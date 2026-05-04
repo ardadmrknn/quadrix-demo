@@ -344,6 +344,41 @@ def test_online_coop_line_clear_event_triggers_guest_render_sweep(monkeypatch):
     assert game._guest_score_cache['team_score'] == 500
 
 
+def test_online_coop_guest_starts_block_fall_animation_after_final_board_state():
+    class FakeBoard:
+        width = 20
+        height = 20
+
+    class FakeRenderCoop:
+        def __init__(self):
+            self.screen = None
+            self.window_width = 0
+            self.window_height = 0
+            self.fullscreen = False
+            self.board = FakeBoard()
+            self.line_clear_pending_rows = [19]
+            self.line_clear_sweep_active = True
+            self._fall_animation_rows_key = None
+            self.started_fall = []
+
+        def _start_block_fall_animation(self, rows):
+            self.started_fall = list(rows)
+            self._fall_animation_rows_key = tuple(sorted(rows))
+
+    game = _make_game(FakeNet())
+    game.role = 'guest'
+    game.online_state = coop_module.OnlineCoopState.PLAYING
+    game.coop_game = FakeRenderCoop()
+    board_state = _valid_board_state(seq=2, team_score=500)
+    board_state['grid'][18][0] = [10, 20, 30]
+    board_state['owners'][18][0] = 'P1'
+    game._guest_board_cache = game._normalize_board_snapshot(board_state)
+
+    game._apply_guest_render_cache()
+
+    assert game.coop_game.started_fall == [19]
+
+
 def test_online_coop_ignores_legacy_pvp_game_start_message():
     net = FakeNet([
         _message(42, {'type': MsgType.GAME_START, 'seed': 123}),

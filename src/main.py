@@ -4040,7 +4040,7 @@ def main():
         # Geçiş efektini çiz (her şeyin üstüne)
         if did_draw:
             transition_overlay_active = is_screen_transition_active()
-            handler_flips_display = state in ('coop', 'coop_campaign', 'online_coop')
+            handler_flips_display = state in ('coop', 'coop_campaign')
             if transition_overlay_active or not handler_flips_display:
                 draw_screen_transition(screen)
                 draw_software_cursor_if_needed(screen)

@@ -387,6 +387,12 @@ class PvPGame:
         self.fall_time2 = 0
         self.fall_speed1 = 900  # Oyuncu 1 sabit hız
         self.fall_speed2 = 900  # Oyuncu 2 sabit hız
+        self.lock_delay = DEFAULT_LOCK_DELAY
+        self.enable_lock_delay = True
+        self.p1_grounded = False
+        self.p2_grounded = False
+        self.p1_lock_timer = 0.0
+        self.p2_lock_timer = 0.0
         self.speed_increase_per_milestone = 0  # Hızlanma yok
         self.min_fall_speed = 900  # Sabit hız
         
@@ -906,6 +912,7 @@ class PvPGame:
         return spawned
 
     def _eliminate_player(self, player: int) -> None:
+        self._reset_lock_delay_state(player)
         if player == 1:
             self.p1_eliminated = True
             opponent_eliminated = self.p2_eliminated
@@ -976,6 +983,7 @@ class PvPGame:
             self.next_piece2 = new_next
             self.can_hold2 = False
 
+        self._reset_lock_delay_state(player)
         self._vs_panel_dirty = True
         try:
             self.sound.play('swap')
@@ -1210,8 +1218,9 @@ class PvPGame:
         self.current_piece1.y += 1
         if not self.board1.is_valid_position(self.current_piece1):
             self.current_piece1.y -= 1
-            self.lock_and_new_piece(1)
+            self._mark_player_grounded(1)
             return True
+        self._reset_lock_delay_state(1)
         return True
 
     def _hard_drop_p1(self) -> bool:
@@ -2146,10 +2155,14 @@ class PvPGame:
                         self.current_piece2.y += 1
                         if not self.board2.is_valid_position(self.current_piece2):
                             self.current_piece2.y -= 1
+                            self._mark_player_grounded(2)
+                        else:
+                            self._reset_lock_delay_state(2)
                     
                     # Yukarı ok - Döndür
                     elif event.key == controls2['rotate']:
                         original_x = self.current_piece2.x
+                        rotated = True
                         self.current_piece2.rotate()
                         if not self.board2.is_valid_position(self.current_piece2):
                             for dx in [1, -1, 2, -2]:
@@ -2160,7 +2173,9 @@ class PvPGame:
                                 self.current_piece2.x = original_x
                                 for _ in range(3):
                                     self.current_piece2.rotate()
-                        self.sound.play('rotate')
+                                rotated = False
+                        if rotated:
+                            self.sound.play('rotate')
                     
                     # Space - Hard drop
                     elif event.key == controls2['hard_drop']:
@@ -2773,7 +2788,73 @@ class PvPGame:
         hint_font = retro_style.get_font(s(12, minimum=9), bold=False)
         hint_surf = hint_font.render(t('campaign_failed_hint', '[R] Retry | [ESC] Menu'), True, retro_style.text_muted)
         self.screen.blit(hint_surf, hint_surf.get_rect(center=(panel_rect.centerx, panel_rect.bottom - s(18))))
-    
+
+    def _reset_lock_delay_state(self, player: int) -> None:
+        if player == 1:
+            self.p1_grounded = False
+            self.p1_lock_timer = 0.0
+        else:
+            self.p2_grounded = False
+            self.p2_lock_timer = 0.0
+
+    def _mark_player_grounded(self, player: int) -> None:
+        if player == 1:
+            if not getattr(self, 'p1_grounded', False):
+                self.p1_grounded = True
+                self.p1_lock_timer = 0.0
+        else:
+            if not getattr(self, 'p2_grounded', False):
+                self.p2_grounded = True
+                self.p2_lock_timer = 0.0
+
+    def _player_piece_touching_ground(self, player: int) -> bool:
+        if player == 1:
+            board = self.board1
+            piece = self.current_piece1
+        else:
+            board = self.board2
+            piece = self.current_piece2
+        if piece is None or board.is_game_over():
+            return False
+        return not board.is_valid_position(piece, dy=1)
+
+    def _update_lock_delay_for_player(self, player: int, delta_time: float) -> bool:
+        if player == 1:
+            board = self.board1
+            piece = self.current_piece1
+        else:
+            board = self.board2
+            piece = self.current_piece2
+        if piece is None or board.is_game_over():
+            self._reset_lock_delay_state(player)
+            return False
+
+        if not self._player_piece_touching_ground(player):
+            self._reset_lock_delay_state(player)
+            return False
+
+        if not getattr(self, 'enable_lock_delay', True):
+            self.lock_and_new_piece(player)
+            return True
+
+        self._mark_player_grounded(player)
+        lock_delay = max(0.0, float(getattr(self, 'lock_delay', DEFAULT_LOCK_DELAY)))
+        if player == 1:
+            self.p1_lock_timer += max(0.0, float(delta_time or 0.0))
+            if self.p1_lock_timer >= lock_delay:
+                self.lock_and_new_piece(1)
+                return True
+        else:
+            self.p2_lock_timer += max(0.0, float(delta_time or 0.0))
+            if self.p2_lock_timer >= lock_delay:
+                self.lock_and_new_piece(2)
+                return True
+        return False
+
+    def _update_lock_delay(self, delta_time: float) -> None:
+        self._update_lock_delay_for_player(1, delta_time)
+        self._update_lock_delay_for_player(2, delta_time)
+
     def _try_move_left_p1(self):
         """Oyuncu 1 sola hareket"""
         if self.current_piece1 is None:
@@ -2899,9 +2980,9 @@ class PvPGame:
                 self.current_piece1.y += 1
                 if not self.board1.is_valid_position(self.current_piece1):
                     self.current_piece1.y -= 1
-                    # Alt sınıra ulaştı, parçayı kilitle
-                    self.lock_and_new_piece(1)
-                    self.p1_soft_drop_active = False
+                    self._mark_player_grounded(1)
+                else:
+                    self._reset_lock_delay_state(1)
         
         # Oyuncu 2 soft drop
         if self.p2_soft_drop_active and self.current_piece2 and not self.board2.is_game_over():
@@ -2911,9 +2992,9 @@ class PvPGame:
                 self.current_piece2.y += 1
                 if not self.board2.is_valid_position(self.current_piece2):
                     self.current_piece2.y -= 1
-                    # Alt sınıra ulaştı, parçayı kilitle
-                    self.lock_and_new_piece(2)
-                    self.p2_soft_drop_active = False
+                    self._mark_player_grounded(2)
+                else:
+                    self._reset_lock_delay_state(2)
 
     def lock_and_new_piece(self, player):
         """Parçayı kilitle ve yeni parça oluştur"""
@@ -3053,6 +3134,7 @@ class PvPGame:
             skip_hidden_rows(self.current_piece1, self.board1)
             self.next_piece1 = self.get_next_piece()
             self.can_hold1 = True
+            self._reset_lock_delay_state(1)
         
         else:  # player == 2
             if self.effects_enabled:
@@ -3190,6 +3272,7 @@ class PvPGame:
             skip_hidden_rows(self.current_piece2, self.board2)
             self.next_piece2 = self.get_next_piece()
             self.can_hold2 = True
+            self._reset_lock_delay_state(2)
     
     def determine_winner(self):
         """Kazananı belirle.
@@ -3933,27 +4016,37 @@ class PvPGame:
                 self.p2_firework_active = False
         
         # Oyuncu 1 otomatik düşüş (kendi hızıyla)
-        if not self.board1.is_game_over():
+        if self.current_piece1 is not None and not self.board1.is_game_over():
             self.fall_time1 += delta_time
             if self.fall_time1 >= self.fall_speed1:
                 self.fall_time1 = 0
                 self.current_piece1.y += 1
-                
+
                 if not self.board1.is_valid_position(self.current_piece1):
                     self.current_piece1.y -= 1
-                    self.lock_and_new_piece(1)
-        
+                    self._mark_player_grounded(1)
+                else:
+                    self._reset_lock_delay_state(1)
+        else:
+            self._reset_lock_delay_state(1)
+
         # Oyuncu 2 otomatik düşüş (kendi hızıyla)
-        if not self.board2.is_game_over():
+        if self.current_piece2 is not None and not self.board2.is_game_over():
             self.fall_time2 += delta_time
             if self.fall_time2 >= self.fall_speed2:
                 self.fall_time2 = 0
                 self.current_piece2.y += 1
-                
+
                 if not self.board2.is_valid_position(self.current_piece2):
                     self.current_piece2.y -= 1
-                    self.lock_and_new_piece(2)
-    
+                    self._mark_player_grounded(2)
+                else:
+                    self._reset_lock_delay_state(2)
+        else:
+            self._reset_lock_delay_state(2)
+
+        self._update_lock_delay(delta_time)
+
     def draw_board(self, board, current_piece, offset_x, offset_y, cell_size):
         """Bir oyun tahtasını çiz"""
         board_width = BOARD_WIDTH * cell_size
@@ -4512,6 +4605,12 @@ class PvPGame:
         self.fall_time2 = 0
         self.fall_speed1 = 900
         self.fall_speed2 = 900
+        self.lock_delay = DEFAULT_LOCK_DELAY
+        self.enable_lock_delay = True
+        self.p1_grounded = False
+        self.p2_grounded = False
+        self.p1_lock_timer = 0.0
+        self.p2_lock_timer = 0.0
         
         # Milestone ve havai fişek sıfırla
         self.p1_last_milestone = 0

@@ -4553,7 +4553,6 @@ class OnlinePvPGame:
         if self.my_board and self.my_piece:
             if self.my_board.is_valid_position(self.my_piece, dx=dx):
                 self.my_piece.x += dx
-                self.lock_timer = 0
                 self._send_piece_position()
 
     # ============================================================
@@ -4884,7 +4883,6 @@ class OnlinePvPGame:
             for dx in [1, -1, 2, -2]:
                 if self.my_board.is_valid_position(self.my_piece, dx=dx):
                     self.my_piece.x += dx
-                    self.lock_timer = 0
                     self._send_piece_position()
                     try:
                         self.sound.play('rotate')
@@ -4894,7 +4892,6 @@ class OnlinePvPGame:
             # Hiçbiri çalışmadıysa geri al
             self.my_piece.rotate(-direction)
         else:
-            self.lock_timer = 0
             self._send_piece_position()
             try:
                 self.sound.play('rotate')

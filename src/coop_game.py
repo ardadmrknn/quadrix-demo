@@ -108,10 +108,13 @@ class CoopGame:
     _AMBIENT_PARTICLE_COLOR = (200, 200, 255)
     _SOFT_DROP_SPEED = 50  # ms
     _LINE_CLEAR_SWEEP_BLOCK_FALL_SPEED = 0.144
+    _LINE_CLEAR_SWEEP_REFERENCE_BOARD_WIDTH = BOARD_WIDTH + BOARD_WIDTH // 2
     _OPENING_CURTAIN_DURATION_MS = 350
     _FRAME_MS = 1000.0 / 60.0
     _BACKGROUND_LAYER_NAME = 'coop'
     _BACKGROUND_LAYER_BLOCK_COUNT = 19
+    _UNFREEZE_DANGER_ROW_COUNT = 4
+    _UNFREEZE_DANGER_LOCK_DELAY_MS = 2500.0
 
     # ------------------------------------------------------------------
     # Statik yardımcılar (PvP ile ortak)
@@ -352,6 +355,8 @@ class CoopGame:
         self.p2_frozen = False
         self._p1_pending_unfreeze = False
         self._p2_pending_unfreeze = False
+        self._p1_unfreeze_lock_delay_active = False
+        self._p2_unfreeze_lock_delay_active = False
 
         # Oyuncu bazlı hold
         self.p1_hold_piece: Piece | None = None
@@ -431,6 +436,8 @@ class CoopGame:
         self.line_clear_sweep_rows: list[int] = []
         self.line_clear_pending_rows: list[int] = []
         self.line_clear_pending_colors: dict = {}
+        self.falling_block_animations: list[dict] = []
+        self._fall_animation_rows_key: tuple[int, ...] | None = None
         self.line_clear_wave_effects: list = []
         self._sweep_cat_state = SweepCatState()
         self._effect_surface_cache = None
@@ -1576,6 +1583,7 @@ class CoopGame:
         self.line_clear_sweep_active = True
         self.line_clear_sweep_progress = 0.0
         self.line_clear_sweep_rows = list(cleared_rows)
+        self._fall_animation_rows_key = None
         # Flash
         self.line_clear_flash = True
         self._flash_timer = 80.0  # ms
@@ -1587,10 +1595,9 @@ class CoopGame:
                 self.line_clear_flash = False
         if self.line_clear_sweep_active:
             cell_size = max(1, int(self.cell_size))
-            board_pixel_width = self.board.width * cell_size
             cleared_count = max(1, len(self.line_clear_sweep_rows))
             sweep_width = self._get_line_sweep_length_px(cell_size, cleared_count)
-            sweep_travel_px = max(1.0, float(board_pixel_width + sweep_width))
+            sweep_travel_px = self._get_line_sweep_timing_travel_px(cell_size, sweep_width)
             dt_seconds = max(0.0, min(100.0, float(dt_ms))) / 1000.0
             level = max(1, int(getattr(self, 'level', 1)))
             sweep_speed = _compute_line_sweep_progress_speed(self._LINE_CLEAR_SWEEP_BLOCK_FALL_SPEED, sweep_travel_px, level)
@@ -1601,9 +1608,145 @@ class CoopGame:
                 self.line_clear_sweep_rows = []
                 self.line_clear_pending_rows = []
                 self.line_clear_pending_colors = {}
+        self._update_falling_block_animations(dt_ms)
 
     def _get_line_sweep_length_px(self, cell_size: int, cleared_count: int) -> int:
         return max(cell_size * 3, cell_size * cleared_count * 2)
+
+    def _get_line_sweep_timing_travel_px(self, cell_size: int, sweep_width: int) -> float:
+        board_width = max(1, int(getattr(self.board, 'width', self._LINE_CLEAR_SWEEP_REFERENCE_BOARD_WIDTH)))
+        timing_cells = min(board_width, max(1, int(self._LINE_CLEAR_SWEEP_REFERENCE_BOARD_WIDTH)))
+        return max(1.0, float(timing_cells * max(1, int(cell_size)) + max(1, int(sweep_width))))
+
+    def _get_line_sweep_draw_travel_px(self, cell_size: int, sweep_width: int) -> float:
+        board_width = max(1, int(getattr(self.board, 'width', 20)))
+        return max(1.0, float(board_width * max(1, int(cell_size)) + max(1, int(sweep_width))))
+
+    def _row_drop_distances_after_clear(self, cleared_rows: list[int]) -> dict[int, int]:
+        valid_rows = sorted({
+            int(row)
+            for row in cleared_rows
+            if 0 <= int(row) < self.board.height
+        })
+        if not valid_rows:
+            return {}
+        cleared_set = set(valid_rows)
+        distances: dict[int, int] = {}
+        for old_y in range(self.board.height):
+            if old_y in cleared_set:
+                continue
+            drop_rows = sum(1 for cleared_y in valid_rows if cleared_y > old_y)
+            if drop_rows <= 0:
+                continue
+            new_y = old_y + drop_rows
+            if 0 <= new_y < self.board.height:
+                distances[new_y] = drop_rows
+        return distances
+
+    def _start_block_fall_animation(self, cleared_rows: list[int]) -> None:
+        rows_key = tuple(sorted({
+            int(row)
+            for row in cleared_rows
+            if 0 <= int(row) < self.board.height
+        }))
+        self._fall_animation_rows_key = rows_key
+        self.falling_block_animations = []
+        if not rows_key or not self.effects_enabled:
+            return
+
+        cell_size = max(1, int(self.cell_size))
+        cleared_count = max(1, len(rows_key))
+        sweep_width = self._get_line_sweep_length_px(cell_size, cleared_count)
+        sweep_travel_px = self._get_line_sweep_draw_travel_px(cell_size, sweep_width)
+        row_drop_distances = self._row_drop_distances_after_clear(list(rows_key))
+
+        for y in range(self.board.height):
+            drop_rows = row_drop_distances.get(y, 0)
+            if drop_rows <= 0:
+                continue
+            for x in range(self.board.width):
+                if not self.board.occupancy[y][x]:
+                    continue
+                column_center_px = (x + 0.5) * cell_size
+                sweep_trigger = max(0.0, min(1.0, column_center_px / sweep_travel_px))
+                self.falling_block_animations.append({
+                    'row': y,
+                    'col': x,
+                    'current_offset': float(-drop_rows * cell_size),
+                    'target_offset': 0.0,
+                    'sweep_trigger': sweep_trigger,
+                    'started': False,
+                })
+
+    def _update_falling_block_animations(self, dt_ms: float) -> None:
+        if not self.falling_block_animations:
+            return
+        dt_frames = max(0.0, min(100.0, float(dt_ms))) / self._FRAME_MS
+        fall_speed = self._LINE_CLEAR_SWEEP_BLOCK_FALL_SPEED * dt_frames * 60.0
+        sweep_progress = self.line_clear_sweep_progress if self.line_clear_sweep_active else 1.0
+
+        for anim in self.falling_block_animations:
+            if not anim.get('started', False) and sweep_progress >= anim.get('sweep_trigger', 0.0):
+                anim['started'] = True
+            if anim.get('started', False):
+                anim['current_offset'] = min(0.0, float(anim.get('current_offset', 0.0)) + fall_speed)
+
+        self.falling_block_animations = [
+            anim for anim in self.falling_block_animations
+            if not (anim.get('started', False) and float(anim.get('current_offset', 0.0)) >= 0.0)
+        ]
+
+    def _get_block_fall_offset(self, row: int, col: int) -> float:
+        for anim in self.falling_block_animations:
+            if anim.get('row') == row and anim.get('col') == col:
+                return float(anim.get('current_offset', 0.0))
+        return 0.0
+
+    def _capture_board_state_for_failed_lock(self) -> dict:
+        board = self.board
+        return {
+            'grid': [row[:] for row in board.grid],
+            'texture_grid': [row[:] for row in board.texture_grid],
+            'occupancy': [row[:] for row in board.occupancy],
+            'gold': [row[:] for row in board.gold],
+            'owners': [row[:] for row in board.owners],
+            'score': board.score,
+            'lines_cleared': board.lines_cleared,
+            'level_lines_cleared': getattr(board, 'level_lines_cleared', 0),
+            'level': board.level,
+            'combo': board.combo,
+            'tetrises': board.tetrises,
+            'back_to_back': board.back_to_back,
+            'last_cleared_lines': list(board.last_cleared_lines),
+            'last_cleared_colors': dict(board.last_cleared_colors),
+            'last_clear_p1_cells': getattr(board, 'last_clear_p1_cells', 0),
+            'last_clear_p2_cells': getattr(board, 'last_clear_p2_cells', 0),
+            'last_clear_row_colors': dict(getattr(board, 'last_clear_row_colors', {})),
+            '_locked_out': getattr(board, '_locked_out', False),
+            '_last_lock_out': getattr(board, '_last_lock_out', False),
+        }
+
+    def _restore_board_state_after_failed_lock(self, snapshot: dict) -> None:
+        board = self.board
+        board.grid = [row[:] for row in snapshot['grid']]
+        board.texture_grid = [row[:] for row in snapshot['texture_grid']]
+        board.occupancy = [row[:] for row in snapshot['occupancy']]
+        board.gold = [row[:] for row in snapshot['gold']]
+        board.owners = [row[:] for row in snapshot['owners']]
+        board.score = snapshot['score']
+        board.lines_cleared = snapshot['lines_cleared']
+        board.level_lines_cleared = snapshot['level_lines_cleared']
+        board.level = snapshot['level']
+        board.combo = snapshot['combo']
+        board.tetrises = snapshot['tetrises']
+        board.back_to_back = snapshot['back_to_back']
+        board.last_cleared_lines = list(snapshot['last_cleared_lines'])
+        board.last_cleared_colors = dict(snapshot['last_cleared_colors'])
+        board.last_clear_p1_cells = snapshot['last_clear_p1_cells']
+        board.last_clear_p2_cells = snapshot['last_clear_p2_cells']
+        board.last_clear_row_colors = dict(snapshot['last_clear_row_colors'])
+        board._locked_out = snapshot['_locked_out']
+        board._last_lock_out = snapshot['_last_lock_out']
 
     def _draw_pending_line_clear_rows(self, ox: int, oy: int, cs: int, bw: int) -> None:
         """Sweep öncesi temizlenen satırların snapshot'unu çiz.
@@ -1723,6 +1866,52 @@ class CoopGame:
             self.p2_grounded = False
             self.p2_lock_timer = 0.0
 
+    def _set_unfreeze_lock_delay_active(self, player: str, active: bool) -> None:
+        if player == 'P1':
+            self._p1_unfreeze_lock_delay_active = bool(active)
+        else:
+            self._p2_unfreeze_lock_delay_active = bool(active)
+
+    def _unfreeze_lock_delay_active(self, player: str) -> bool:
+        return (
+            bool(getattr(self, '_p1_unfreeze_lock_delay_active', False))
+            if player == 'P1'
+            else bool(getattr(self, '_p2_unfreeze_lock_delay_active', False))
+        )
+
+    def _piece_in_unfreeze_danger_rows(self, piece: Piece | None) -> bool:
+        if piece is None:
+            return False
+        danger_limit = max(0, int(self._UNFREEZE_DANGER_ROW_COUNT)) - 1
+        return any(py <= danger_limit for _px, py in piece.get_cells())
+
+    def _player_has_unfreeze_danger_stack(self, player: str) -> bool:
+        cols = self.board._player_columns(player)
+        danger_row_count = min(self.board.height, max(0, int(self._UNFREEZE_DANGER_ROW_COUNT)))
+        for y in range(danger_row_count):
+            for x in cols:
+                if self.board.occupancy[y][x]:
+                    return True
+        return False
+
+    def _refresh_unfreeze_lock_delay_state(self, player: str, piece: Piece | None) -> None:
+        if not self._unfreeze_lock_delay_active(player):
+            return
+        if self._piece_in_unfreeze_danger_rows(piece):
+            return
+        if self._player_has_unfreeze_danger_stack(player):
+            return
+        self._set_unfreeze_lock_delay_active(player, False)
+
+    def _effective_lock_delay_for_player(self, player: str, piece: Piece | None) -> float:
+        lock_delay = max(0.0, float(getattr(self, 'lock_delay', DEFAULT_LOCK_DELAY)))
+        if (
+            self._unfreeze_lock_delay_active(player)
+            and self._piece_in_unfreeze_danger_rows(piece)
+        ):
+            return max(lock_delay, float(self._UNFREEZE_DANGER_LOCK_DELAY_MS))
+        return lock_delay
+
     def _mark_player_grounded(self, player: str) -> None:
         if player == 'P1':
             if not self.p1_grounded:
@@ -1761,7 +1950,6 @@ class CoopGame:
         if not getattr(self, 'enable_lock_delay', True):
             return locked_players
 
-        lock_delay = max(0.0, float(getattr(self, 'lock_delay', DEFAULT_LOCK_DELAY)))
         for player in ('P1', 'P2'):
             frozen = self.p1_frozen if player == 'P1' else self.p2_frozen
             piece = self.p1_current_piece if player == 'P1' else self.p2_current_piece
@@ -1769,6 +1957,8 @@ class CoopGame:
                 self._reset_player_lock_state(player)
                 continue
 
+            self._refresh_unfreeze_lock_delay_state(player, piece)
+            lock_delay = self._effective_lock_delay_for_player(player, piece)
             if self._player_touching_ground(player):
                 self._mark_player_grounded(player)
                 if player == 'P1':
@@ -1860,6 +2050,23 @@ class CoopGame:
             return
 
         prev_score = self.board.score
+        board_snapshot = self._capture_board_state_for_failed_lock()
+
+        # Kilitle (lock_piece_for_player → Board.lock_piece → clear_lines zinciri)
+        cleared = self.board.lock_piece_for_player(piece, player)
+        player_locked_out = self.board.consume_last_lock_out()
+
+        if player_locked_out:
+            self._restore_board_state_after_failed_lock(board_snapshot)
+            if player == 'P1':
+                self.p1_hold_used = False
+                self.p1_current_piece = None
+            else:
+                self.p2_hold_used = False
+                self.p2_current_piece = None
+            self._reset_player_lock_state(player)
+            self._freeze_player(player)
+            return
 
         # Lock explosion parçacıkları
         if self._particle_effects_enabled():
@@ -1870,10 +2077,6 @@ class CoopGame:
                     cx = ox + px * cs + cs // 2
                     cy = oy + py * cs + cs // 2
                     self.create_lock_explosion(cx, cy, piece.color, cs)
-
-        # Kilitle (lock_piece_for_player → Board.lock_piece → clear_lines zinciri)
-        cleared = self.board.lock_piece_for_player(piece, player)
-        player_locked_out = self.board.consume_last_lock_out()
 
         # Parça yerleştirildi event'i
         self._emit_event('piece_placed', {'player': player, 'piece': piece})
@@ -1924,6 +2127,7 @@ class CoopGame:
                 self.line_clear_pending_colors = dict(self.board.last_clear_row_colors)
                 self.line_clear_pending_rows = list(cleared_rows)
                 self._start_line_clear_sweep(cleared_rows)
+                self._start_block_fall_animation(cleared_rows)
             # Tetris shake
             if cleared >= 4:
                 self.trigger_screen_shake(intensity=7, duration=20 / 60.0)
@@ -1965,10 +2169,6 @@ class CoopGame:
 
         self._reset_player_lock_state(player)
 
-        if player_locked_out:
-            self._freeze_player(player)
-            return
-
         # Yeni parça spawn
         self._try_spawn_for_player(player)
 
@@ -1996,6 +2196,7 @@ class CoopGame:
         else:
             self.p2_frozen = True
             self.p2_current_piece = None
+        self._set_unfreeze_lock_delay_active(player, False)
         self._reset_player_lock_state(player)
         self._emit_event('player_frozen', {'player': player})
         self._check_double_freeze()
@@ -2033,6 +2234,7 @@ class CoopGame:
                 self.p1_current_piece = next_p
                 self.p1_next_piece = self._next_piece('P1')
                 self._reset_player_lock_state('P1')
+                self._set_unfreeze_lock_delay_active('P1', True)
             else:
                 self._freeze_player('P1')
         else:
@@ -2049,6 +2251,7 @@ class CoopGame:
                 self.p2_current_piece = next_p
                 self.p2_next_piece = self._next_piece('P2')
                 self._reset_player_lock_state('P2')
+                self._set_unfreeze_lock_delay_active('P2', True)
             else:
                 self._freeze_player('P2')
 
@@ -2995,8 +3198,9 @@ class CoopGame:
                 if not flash and locked_slice and self.block_style_manager:
                     texture_surface = self.block_style_manager.get_texture_surface(locked_slice.piece_name)
                     texture_slice = locked_slice if texture_surface else None
+                fall_offset = self._get_block_fall_offset(y, x)
                 block_x = ox + x * cs + 1
-                block_y = oy + y * cs + 1
+                block_y = oy + y * cs + int(round(fall_offset)) + 1
                 self.draw_textured_block(block_x, block_y, block_size, cell_color, texture_surface, texture_slice)
 
     def _draw_midline(self, ox, oy, cs, bh) -> None:

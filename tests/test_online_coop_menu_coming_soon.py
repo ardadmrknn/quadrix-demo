@@ -1,15 +1,24 @@
 from __future__ import annotations
 
 import ast
+import importlib
+import os
 from pathlib import Path
+import sys
 
 
 ROOT = Path(__file__).resolve().parent.parent
+SRC = ROOT / 'src'
 MAIN_PY = ROOT / 'src' / 'main.py'
+ONLINE_COOP_PY = ROOT / 'src' / 'online_coop_game.py'
 
 
 def _parse_main() -> ast.Module:
     return ast.parse(MAIN_PY.read_text(encoding='utf-8'), filename=str(MAIN_PY))
+
+
+def _parse_online_coop() -> ast.Module:
+    return ast.parse(ONLINE_COOP_PY.read_text(encoding='utf-8'), filename=str(ONLINE_COOP_PY))
 
 
 def _is_action_compare(node: ast.AST, action_name: str) -> bool:
@@ -30,6 +39,27 @@ def _find_action_branch(tree: ast.AST, action_name: str) -> ast.If | None:
         if isinstance(node, ast.If) and _is_action_compare(node.test, action_name):
             return node
     return None
+
+
+def _is_pygame_display_flip_call(node: ast.AST) -> bool:
+    return (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == 'flip'
+        and isinstance(node.func.value, ast.Attribute)
+        and node.func.value.attr == 'display'
+        and isinstance(node.func.value.value, ast.Name)
+        and node.func.value.value.id == 'pygame'
+    )
+
+
+def _load_localization_module():
+    os.environ.setdefault('TETRIS_LOCALIZATION_HOT_RELOAD', '0')
+    if str(SRC) not in sys.path:
+        sys.path.insert(0, str(SRC))
+    if 'localization' in sys.modules and not hasattr(sys.modules['localization'], 'TRANSLATIONS'):
+        del sys.modules['localization']
+    return importlib.import_module('localization')
 
 
 def test_online_coop_menu_action_starts_online_coop_state():
@@ -101,3 +131,74 @@ def test_main_fallback_imports_online_coop_game():
             import_lines.append(node.lineno)
 
     assert import_lines, 'Fallback import block should import OnlineCoopGame to avoid NameError outside package mode'
+
+
+def test_online_coop_uses_main_loop_flip_for_transitions_like_online_pvp():
+    coop_tree = _parse_online_coop()
+    flip_calls = [
+        node.lineno
+        for node in ast.walk(coop_tree)
+        if _is_pygame_display_flip_call(node)
+    ]
+
+    assert not flip_calls, (
+        'OnlineCoopGame should not flip inside its draw path; main.py must draw '
+        'the transition overlay and flip once, like OnlinePvPGame. Calls at: '
+        + ', '.join(f'L{line}' for line in flip_calls)
+    )
+
+    main_tree = _parse_main()
+    handler_flip_states = []
+    for node in ast.walk(main_tree):
+        if not isinstance(node, ast.Assign):
+            continue
+        if not any(isinstance(target, ast.Name) and target.id == 'handler_flips_display' for target in node.targets):
+            continue
+        value = node.value
+        if not (
+            isinstance(value, ast.Compare)
+            and len(value.comparators) == 1
+            and isinstance(value.comparators[0], ast.Tuple)
+        ):
+            continue
+        handler_flip_states.extend(
+            element.value
+            for element in value.comparators[0].elts
+            if isinstance(element, ast.Constant)
+        )
+
+    assert 'online_coop' not in handler_flip_states
+    assert 'online_pvp' not in handler_flip_states
+
+
+def test_online_coop_lobby_menu_does_not_show_fixed_endless_mode():
+    source = ONLINE_COOP_PY.read_text(encoding='utf-8')
+
+    assert 'selected_submode.capitalize()' not in source
+    assert 'sub_mode.capitalize()' not in source
+
+
+def test_online_coop_high_visibility_labels_keep_coop_term_and_translate_online_tr():
+    localization = _load_localization_module()
+    translations = localization.TRANSLATIONS
+    languages = localization.SUPPORTED_LANGUAGES
+
+    keys = [
+        'mode_online_coop',
+        'online_coop_title',
+        'online_coop_subtitle',
+        'menu_dashboard_coop_online_label',
+        'menu_dashboard_sub_online_coop',
+        'mode_intro_online_coop_desc',
+    ]
+    for key in keys:
+        for lang in languages:
+            assert 'co-op' in translations[key][lang].lower(), f'{key}[{lang}] should keep Co-op literal'
+
+    for key in keys:
+        assert 'online' not in translations[key]['tr'].lower(), f'{key}[tr] should translate Online'
+        assert 'çevr' in translations[key]['tr'].lower(), f'{key}[tr] should say Çevrim İçi'
+
+    for key in ('create_private_coop', 'create_public_coop'):
+        for lang in languages:
+            assert 'endless' not in translations[key][lang].lower(), f'{key}[{lang}] should not show fixed Endless mode'

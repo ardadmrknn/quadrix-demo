@@ -493,6 +493,128 @@ def test_double_freeze_game_over():
     assert cg.game_over
     assert sound.game_over_sequence_calls == 1
 
+def test_lock_out_freeze_does_not_commit_top_out_piece_to_board():
+    cg = CoopGame(sound_enabled=False, effects_enabled=True, screen=_Surf(), sound_manager=_SM())
+    events = []
+    explosions = []
+    cg._event_listeners.append(lambda event_type, event_data: events.append((event_type, event_data)))
+    cg._particle_effects_enabled = lambda: True
+    cg.create_lock_explosion = lambda *args, **kwargs: explosions.append((args, kwargs))
+    piece = Piece(x=17, y=-1, shape_index=5)
+    cg.p2_current_piece = piece
+
+    cg._lock_and_new_piece('P2')
+
+    assert cg.p2_frozen
+    assert cg.p2_current_piece is None
+    assert cg.board.score == 0
+    assert all(not cg.board.occupancy[0][x] for x in range(17, 20))
+    assert explosions == []
+    assert not any(event_type == 'piece_placed' for event_type, _event_data in events)
+    assert any(
+        event_type == 'player_frozen' and event_data.get('player') == 'P2'
+        for event_type, event_data in events
+    )
+
+def test_unfrozen_player_has_extended_lock_delay_in_top_four_rows():
+    cg = CoopGame(sound_enabled=False, effects_enabled=False, screen=_Surf(), sound_manager=_SM())
+    cg.lock_delay = 500
+    cg.p1_current_piece = None
+    cg.p1_next_piece = Piece(x=0, y=0, shape_index=1)
+    cg.p1_frozen = True
+    cg._p1_pending_unfreeze = True
+
+    for x in (3, 4):
+        cg.board.occupancy[1][x] = True
+        cg.board.grid[1][x] = (255, 0, 0)
+        cg.board.owners[1][x] = 'P2'
+
+    cg._do_unfreeze('P1')
+
+    assert not cg.p1_frozen
+    assert cg.p1_current_piece is not None
+    assert cg.p1_current_piece.y == -1
+    assert cg._effective_lock_delay_for_player('P1', cg.p1_current_piece) == 2500.0
+
+    cg._update_lock_delay(2499.0)
+
+    assert not cg.p1_frozen
+    assert cg.p1_current_piece is not None
+
+    cg._update_lock_delay(1.0)
+
+    assert cg.p1_frozen
+
+def test_unfreeze_lock_delay_persists_while_top_four_rows_stay_dangerous():
+    cg = CoopGame(sound_enabled=False, effects_enabled=False, screen=_Surf(), sound_manager=_SM())
+    cg.lock_delay = 500
+    first_piece = Piece(x=3, y=2, shape_index=1)
+    cg.p1_current_piece = first_piece
+    cg.p1_next_piece = Piece(x=0, y=0, shape_index=1)
+    cg._set_unfreeze_lock_delay_active('P1', True)
+
+    for x in (3, 4):
+        cg.board.occupancy[4][x] = True
+        cg.board.grid[4][x] = (255, 0, 0)
+        cg.board.owners[4][x] = 'P2'
+
+    cg._update_lock_delay(2499.0)
+
+    assert cg.p1_current_piece is first_piece
+
+    cg._update_lock_delay(1.0)
+
+    assert not cg.p1_frozen
+    assert cg.p1_current_piece is not first_piece
+    assert cg._unfreeze_lock_delay_active('P1')
+    assert cg._effective_lock_delay_for_player('P1', cg.p1_current_piece) == 2500.0
+
+    for y in range(4):
+        for x in range(10):
+            cg.board.occupancy[y][x] = False
+            cg.board.grid[y][x] = (0, 0, 0)
+            cg.board.owners[y][x] = None
+    cg.p1_current_piece.y = 5
+    cg._update_lock_delay(0.0)
+
+    assert not cg._unfreeze_lock_delay_active('P1')
+
+def test_unfreeze_lock_delay_rearms_after_each_freeze_cycle():
+    cg = CoopGame(sound_enabled=False, effects_enabled=False, screen=_Surf(), sound_manager=_SM())
+    cg.lock_delay = 500
+    cg.p1_current_piece = None
+
+    for _cycle in range(2):
+        for y in range(4):
+            for x in range(10, 20):
+                cg.board.occupancy[y][x] = False
+                cg.board.grid[y][x] = (0, 0, 0)
+                cg.board.owners[y][x] = None
+        for x in (13, 14):
+            cg.board.occupancy[1][x] = True
+            cg.board.grid[1][x] = (255, 0, 0)
+            cg.board.owners[1][x] = 'P1'
+
+        cg.p2_current_piece = None
+        cg.p2_next_piece = Piece(x=0, y=0, shape_index=1)
+        cg.p2_frozen = False
+        cg._freeze_player('P2')
+        cg._p2_pending_unfreeze = True
+
+        cg._do_unfreeze('P2')
+
+        assert not cg.p2_frozen
+        assert cg.p2_current_piece is not None
+        assert cg._effective_lock_delay_for_player('P2', cg.p2_current_piece) == 2500.0
+
+        cg._update_lock_delay(2499.0)
+
+        assert not cg.p2_frozen
+
+        cg._update_lock_delay(1.0)
+
+        assert cg.p2_frozen
+
 def test_level_progression():
     cg = CoopGame(sound_enabled=False, effects_enabled=False, screen=_Surf(), sound_manager=_SM())
     cg.total_lines_cleared = 10
@@ -646,6 +768,71 @@ def test_draw_pending_line_clear_rows_uses_snapshot_colors():
 
     assert len(draw_calls) == cg.board.width
     assert all(color == snapshot_color for color in draw_calls)
+
+def test_coop_line_sweep_timing_uses_balanced_board_width_reference():
+    cg = CoopGame(sound_enabled=False, effects_enabled=True, screen=_Surf(), sound_manager=_SM())
+    cg.cell_size = 40
+    cg.line_clear_sweep_active = True
+    cg.line_clear_sweep_progress = 0.0
+    cg.line_clear_sweep_rows = [19]
+    sweep_width = cg._get_line_sweep_length_px(cg.cell_size, len(cg.line_clear_sweep_rows))
+
+    cg._update_line_clear_effects(100.0)
+
+    reference_travel = cg._LINE_CLEAR_SWEEP_REFERENCE_BOARD_WIDTH * cg.cell_size + sweep_width
+    full_coop_travel = cg.board.width * cg.cell_size + sweep_width
+    too_fast_single_board_travel = 10 * cg.cell_size + sweep_width
+    expected_progress = 0.1 * (
+        cg._LINE_CLEAR_SWEEP_BLOCK_FALL_SPEED * 3600.0 / reference_travel
+    )
+    old_full_width_progress = 0.1 * (
+        cg._LINE_CLEAR_SWEEP_BLOCK_FALL_SPEED * 3600.0 / full_coop_travel
+    )
+    too_fast_single_board_progress = 0.1 * (
+        cg._LINE_CLEAR_SWEEP_BLOCK_FALL_SPEED * 3600.0 / too_fast_single_board_travel
+    )
+
+    assert abs(cg.line_clear_sweep_progress - expected_progress) < 0.0001
+    assert old_full_width_progress < cg.line_clear_sweep_progress < too_fast_single_board_progress
+
+def test_coop_block_fall_animation_uses_per_row_clear_distance():
+    cg = CoopGame(sound_enabled=False, effects_enabled=True, screen=_Surf(), sound_manager=_SM())
+    cg.cell_size = 20
+
+    for y, x in ((6, 0), (7, 1), (11, 2)):
+        cg.board.occupancy[y][x] = True
+        cg.board.grid[y][x] = (10 + y, 20 + x, 30)
+        cg.board.owners[y][x] = 'P1'
+
+    cg._start_block_fall_animation([5, 10])
+
+    assert cg._get_block_fall_offset(6, 0) == -40.0
+    assert cg._get_block_fall_offset(7, 1) == -20.0
+    assert cg._get_block_fall_offset(11, 2) == 0.0
+
+    cg.line_clear_sweep_active = False
+    cg._update_falling_block_animations(1000.0)
+
+    assert cg.falling_block_animations == []
+
+def test_draw_locked_blocks_applies_falling_block_animation_offset():
+    cg = CoopGame(sound_enabled=False, effects_enabled=True, screen=_Surf(), sound_manager=_SM())
+    cg.board.occupancy[6][0] = True
+    cg.board.grid[6][0] = (12, 34, 56)
+    cg.falling_block_animations = [{
+        'row': 6,
+        'col': 0,
+        'current_offset': -20.0,
+        'target_offset': 0.0,
+        'sweep_trigger': 0.0,
+        'started': True,
+    }]
+    draw_calls = []
+    cg.draw_textured_block = lambda x, y, size, color, texture_surface=None, texture_slice=None: draw_calls.append((x, y, color))
+
+    cg._draw_locked_blocks(0, 0, 10)
+
+    assert draw_calls == [(1, 41, (12, 34, 56))]
 
 def test_side_panels_draw_player_specific_hold_on_both_sides_below_next_panels():
     cg = CoopGame(sound_enabled=False, effects_enabled=False, screen=_Surf(), sound_manager=_SM())

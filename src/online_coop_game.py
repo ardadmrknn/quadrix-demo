@@ -2562,6 +2562,18 @@ class OnlineCoopGame:
             render_game.game_over = False
             render_game.paused = False
             self._guest_render_board_seq = board_seq
+            try:
+                pending_rows = list(getattr(render_game, 'line_clear_pending_rows', []) or [])
+                if (
+                    pending_rows
+                    and getattr(render_game, 'line_clear_sweep_active', False)
+                    and hasattr(render_game, '_start_block_fall_animation')
+                ):
+                    rows_key = tuple(sorted(int(row) for row in pending_rows))
+                    if getattr(render_game, '_fall_animation_rows_key', None) != rows_key:
+                        render_game._start_block_fall_animation(pending_rows)
+            except Exception:
+                pass
 
         piece_data = self._guest_piece_cache
         if isinstance(piece_data, dict):
@@ -3112,7 +3124,6 @@ class OnlineCoopGame:
     def draw(self):
         """Ekranı çiz."""
         self._lobby_buttons.clear()
-        self._skip_flip = False
 
         # Arka plan (PLAYING host'ta CoopGame kendi arka planını çizer)
         if not (self.online_state == OnlineCoopState.PLAYING and self.role == 'host' and self.coop_game):
@@ -3135,8 +3146,8 @@ class OnlineCoopGame:
         elif self.online_state == OnlineCoopState.DISCONNECTED:
             self._draw_disconnected()
 
-        if not self._skip_flip:
-            pygame.display.flip()
+        # NOT: pygame.display.flip() burada çağrılmıyor.
+        # Ana döngü, Online PvP ile aynı sırada geçiş perdesini çizip flip yapıyor.
 
     # ============================================================
     #  DRAW: Online Shell Ekranları (PvP'den adapte)
@@ -3182,13 +3193,6 @@ class OnlineCoopGame:
 
         left_title = panel_title_font.render(t('coop_lobby_actions', 'Takım Lobisi'), True, UIColors.TEXT_PRIMARY)
         self.screen.blit(left_title, left_title.get_rect(midleft=(left_rect.x + s(18), left_rect.y + s(24))))
-
-        mode_label = f"{t('mode', 'Mod')}: {self.selected_submode.capitalize()}"
-        mode_rect = pygame.Rect(left_rect.right - s(148), left_rect.y + s(12), s(130), s(28))
-        pygame.draw.rect(self.screen, (20, 40, 54, 190), mode_rect, border_radius=s(8))
-        pygame.draw.rect(self.screen, (80, 230, 160), mode_rect, 1, border_radius=s(8))
-        mode_surf = small_font.render(mode_label, True, (80, 230, 160))
-        self.screen.blit(mode_surf, mode_surf.get_rect(center=mode_rect.center))
 
         btn_w = left_rect.width - s(36)
         btn_h = s(52)
@@ -3295,7 +3299,6 @@ class OnlineCoopGame:
             for idx, lobby in enumerate(visible_entries):
                 item_y = list_rect.y + idx * item_h
                 host_name = str(lobby.get('host_name') or lobby.get('name') or '?')
-                sub_mode = str(lobby.get('sub_mode', 'endless'))
                 visibility = str(lobby.get('visibility', 'unknown') or 'unknown')
                 members = lobby.get('members', '?')
                 max_members = lobby.get('max_members', 2)
@@ -3306,7 +3309,7 @@ class OnlineCoopGame:
                 name_font = get_fitting_font(host_name, s(15, minimum=11), max(80, item_rect.width - s(180)))
                 name_surf = name_font.render(host_name, True, UIColors.TEXT_PRIMARY)
                 self.screen.blit(name_surf, (item_rect.x + s(12), item_rect.y + s(10)))
-                info_text = f"{sub_mode.capitalize()}  |  {members}/{max_members} oyuncu"
+                info_text = f"{members}/{max_members} {t('players_count_suffix', 'oyuncu')}"
                 info = small_font.render(info_text, True, _rs.text_muted)
                 self.screen.blit(info, (item_rect.x + s(12), item_rect.y + s(36)))
 
@@ -3442,7 +3445,7 @@ class OnlineCoopGame:
 
         mode_font = _rs.get_font(s(14, minimum=11), bold=True)
         lobby_type = t('public_lobby_badge', 'AÇIK') if not self._lobby_code else t('private_lobby_badge', 'KOD')
-        mode_text = f"{t('mode', 'Mod')}: {self.selected_submode.capitalize()}  |  {lobby_type}"
+        mode_text = lobby_type
         mode_surf = mode_font.render(mode_text, True, UIColors.TEXT_PRIMARY)
         self.screen.blit(mode_surf, mode_surf.get_rect(center=(cx, panel.y + s(105))))
 
@@ -3631,8 +3634,6 @@ class OnlineCoopGame:
             # Online pause overlay (CoopGame'in pause menüsü yerine basit overlay)
             if self.paused:
                 self._draw_online_pause_overlay()
-            pygame.display.flip()
-            self._skip_flip = True
             return
         elif self.role == 'guest':
             self._draw_guest_view()

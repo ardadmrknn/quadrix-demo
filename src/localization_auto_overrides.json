@@ -3213,16 +3213,16 @@
     "zh": "本地合作"
   },
   "menu_dashboard_coop_online_label": {
-    "de": "Online-Koop",
+    "de": "Online-Co-op",
     "es": "Co-op en línea",
-    "fr": "Coop en ligne",
+    "fr": "Co-op en ligne",
     "it": "Co-op online",
-    "ja": "オンライン協力",
-    "ko": "온라인 협동",
+    "ja": "オンラインCo-op",
+    "ko": "온라인 Co-op",
     "pt": "Co-op online",
-    "ru": "Онлайн-кооп",
-    "tr": "Online İş Birliği",
-    "zh": "在线合作"
+    "ru": "Онлайн Co-op",
+    "tr": "Çevrim İçi Co-op",
+    "zh": "在线Co-op"
   },
   "menu_dashboard_coop_online_sub": {
     "de": "Steam 2 Spieler",
@@ -3356,16 +3356,16 @@
     "ru": "ТАЙНЫЙ РЕЖИМ"
   },
   "mode_online_coop": {
-    "de": "Online-Koop",
+    "de": "Online-Co-op",
     "es": "Co-op en línea",
-    "fr": "Coop en ligne",
+    "fr": "Co-op en ligne",
     "it": "Co-op online",
-    "ja": "オンライン協力",
-    "ko": "온라인 협동",
+    "ja": "オンラインCo-op",
+    "ko": "온라인 Co-op",
     "pt": "Co-op online",
-    "ru": "Онлайн-кооп",
-    "tr": "Online İş Birliği",
-    "zh": "在线合作"
+    "ru": "Онлайн Co-op",
+    "tr": "Çevrim İçi Co-op",
+    "zh": "在线Co-op"
   },
   "mode_online_pvp": {
     "de": "Online-PvP",
@@ -4461,16 +4461,16 @@
     "ru": "Цель"
   },
   "online_coop_title": {
-    "de": "ONLINE-KOOP",
+    "de": "ONLINE-CO-OP",
     "es": "CO-OP EN LÍNEA",
-    "fr": "COOP EN LIGNE",
+    "fr": "CO-OP EN LIGNE",
     "it": "CO-OP ONLINE",
-    "ja": "オンライン協力",
-    "ko": "온라인 협동",
+    "ja": "オンラインCO-OP",
+    "ko": "온라인 CO-OP",
     "pt": "CO-OP ONLINE",
-    "ru": "ОНЛАЙН-КООП",
-    "tr": "ONLINE İŞ BİRLİĞİ",
-    "zh": "在线合作"
+    "ru": "ОНЛАЙН CO-OP",
+    "tr": "ÇEVRİM İÇİ CO-OP",
+    "zh": "在线CO-OP"
   },
   "online_pvp_title": {
     "de": "ONLINE-PvP"
