@@ -377,21 +377,26 @@ class OnlineCoopGame:
         self._last_input_ack_seq = 0  # Host: en son işlenen guest input seq, Guest: son otoriter ack
         self._guest_input_seq = 0
         self._last_guest_input_seq = 0
+        self._last_guest_piece_state_seq = 0
         self._guest_pending_inputs: list[tuple[int, str]] = []
         self._board_state_seq = 0
         self._piece_state_seq = 0
+        self._guest_piece_state_out_seq = 0
         self._guest_board_seq = -1
         self._guest_piece_seq = -1
         self._last_sent_board_cells = None
         self._last_piece_state_signature = None
+        self._last_guest_sent_piece_signature = None
         self._last_frozen_flags: tuple[bool, bool] | None = None
         self._authoritative_gameplay_config: dict = {}
 
         # Host state broadcast timers (ms)
         self._board_state_timer = 0.0
         self._piece_state_timer = 0.0
+        self._guest_piece_state_timer = 0.0
         self._BOARD_STATE_INTERVAL = 250.0   # full-board heartbeat; asil sync event-driven
         self._PIECE_STATE_INTERVAL = 100.0   # heartbeat; asil parça sync'i degisim-anlik push
+        self._GUEST_PIECE_STATE_INTERVAL = 33.0
 
         # Guest: received state cache
         self._guest_board_cache = None   # dict from host
@@ -1960,7 +1965,10 @@ class OnlineCoopGame:
                     return
                 held_keys.add(event.key)
                 self._predict_guest_input(action)
-                self._send_guest_input(action)
+                if self._guest_action_requires_host_control(action):
+                    self._send_guest_input(action)
+                else:
+                    self._send_guest_piece_state(force=True)
 
     def _handle_gameplay_keyup(self, event):
         """PLAYING state'te tuş bırakma."""
@@ -1981,7 +1989,10 @@ class OnlineCoopGame:
             action = self._GUEST_KEYUP.get(event.key)
             if action:
                 self._predict_guest_input(action)
-                self._send_guest_input(action)
+                if self._guest_action_requires_host_control(action):
+                    self._send_guest_input(action)
+                else:
+                    self._send_guest_piece_state(force=True)
 
     def _toggle_pause_safe(self):
         """Host'ta güvenli pause toggle — cooldown ile race condition önlenir."""
@@ -2447,6 +2458,9 @@ class OnlineCoopGame:
             and self.coop_game
         ):
             self._update_guest_local_prediction(float(delta_time))
+            self._guest_piece_state_timer += float(delta_time)
+            if self._guest_piece_state_timer >= self._GUEST_PIECE_STATE_INTERVAL:
+                self._send_guest_piece_state(force=True)
 
     @staticmethod
     def _clamp_int(value, minimum: int, maximum: int, default: int = 0) -> int:
@@ -2714,6 +2728,104 @@ class OnlineCoopGame:
             bool(getattr(render_game, 'p2_frozen', False)),
         )
 
+    @staticmethod
+    def _guest_action_requires_host_control(action: str) -> bool:
+        return str(action or '') in {'pause_request', 'hold', 'hard_drop'}
+
+    def _guest_control_sync_pending(self) -> bool:
+        pending_inputs = getattr(self, '_guest_pending_inputs', None)
+        if not isinstance(pending_inputs, list):
+            return False
+        for _seq, action in pending_inputs:
+            if self._guest_action_requires_host_control(str(action or '')):
+                return True
+        return False
+
+    def _guest_piece_dict(self, piece) -> dict | None:
+        if piece is None:
+            return None
+        return {
+            'x': int(getattr(piece, 'x', 0) or 0),
+            'y': int(getattr(piece, 'y', 0) or 0),
+            'si': int(getattr(piece, 'shape_index', -1) or -1),
+            'r': int(getattr(piece, 'rotation_state', 0) or 0),
+        }
+
+    def _send_guest_piece_state(self, force: bool = False) -> bool:
+        if self.role != 'guest' or self.online_state != OnlineCoopState.PLAYING:
+            return False
+        render_game = self.coop_game
+        if render_game is None or self._guest_control_sync_pending():
+            return False
+
+        signature = self._guest_p2_state_signature(render_game)
+        if not force and signature == getattr(self, '_last_guest_sent_piece_signature', None):
+            return False
+
+        self._guest_piece_state_out_seq = int(getattr(self, '_guest_piece_state_out_seq', 0) or 0) + 1
+        self._last_guest_sent_piece_signature = signature
+        self._guest_piece_state_timer = 0.0
+        return bool(self.net.send({
+            'type': MsgType.GUEST_PIECE_STATE,
+            'seq': self._guest_piece_state_out_seq,
+            'p2_current': self._guest_piece_dict(getattr(render_game, 'p2_current_piece', None)),
+            'p2_frozen': bool(getattr(render_game, 'p2_frozen', False)),
+        }, reliable=False, channel=CHANNEL_STATE))
+
+    def _apply_guest_authoritative_piece_state(self, data: dict) -> None:
+        if self.role != 'host' or self.coop_game is None or not isinstance(data, dict):
+            return
+
+        try:
+            seq = int(data.get('seq', 0) or 0)
+        except (TypeError, ValueError):
+            seq = 0
+        if seq <= int(getattr(self, '_last_guest_piece_state_seq', 0) or 0):
+            return
+
+        incoming_piece = self._piece_from_snapshot(data.get('p2_current'))
+        if incoming_piece is None:
+            return
+
+        current_piece = getattr(self.coop_game, 'p2_current_piece', None)
+        if current_piece is not None and self._piece_shape_index(current_piece) != self._piece_shape_index(incoming_piece):
+            return
+
+        board = getattr(self.coop_game, 'board', None)
+        if board is not None and hasattr(board, 'is_valid_position_for_player'):
+            try:
+                if not board.is_valid_position_for_player(incoming_piece, 'P2'):
+                    return
+            except Exception:
+                return
+
+        remote_players = getattr(self.coop_game, 'remote_authority_players', None)
+        if not isinstance(remote_players, set):
+            remote_players = set(remote_players or []) if remote_players is not None else set()
+            self.coop_game.remote_authority_players = remote_players
+        remote_players.add('P2')
+
+        moved = self._piece_signature(current_piece) != self._piece_signature(incoming_piece)
+        try:
+            self.coop_game._apply_block_style(incoming_piece)
+        except Exception:
+            pass
+        self.coop_game.p2_current_piece = incoming_piece
+        self.coop_game.p2_frozen = bool(data.get('p2_frozen', False))
+        self.coop_game.p2_das_direction = 0
+        self.coop_game.p2_das_charged = False
+        self.coop_game.p2_das_timer = 0.0
+        self.coop_game.p2_das_repeat_timer = 0.0
+        self.coop_game.p2_soft_drop_active = False
+        self.coop_game.p2_soft_drop_timer = 0.0
+        self.coop_game.p2_fall_time = 0.0
+        if moved:
+            try:
+                self.coop_game._reset_player_lock_state('P2')
+            except Exception:
+                pass
+        self._last_guest_piece_state_seq = seq
+
     def _should_keep_locally_simulated_p2(self, render_game, piece_data: dict) -> bool:
         if render_game is None or not isinstance(piece_data, dict):
             return False
@@ -2804,6 +2916,7 @@ class OnlineCoopGame:
                 prediction_cap,
                 max(0.0, float(getattr(self, '_guest_local_prediction_ms', 0.0) or 0.0)) + float(delta_time),
             )
+            self._send_guest_piece_state(force=True)
 
     def _apply_guest_render_cache(self):
         render_game = self._ensure_guest_render_game()
@@ -3075,6 +3188,9 @@ class OnlineCoopGame:
                         if self.coop_game is not None:
                             self._apply_authoritative_guest_timing(self.coop_game, normalized_config)
 
+                elif msg_type == MsgType.GUEST_PIECE_STATE:
+                    self._apply_guest_authoritative_piece_state(data)
+
                 # Co-op host: guest input processing
                 elif msg_type == MsgType.GUEST_INPUT:
                     if self.role == 'host' and self.coop_game:
@@ -3102,9 +3218,10 @@ class OnlineCoopGame:
                             # Guest pause isteği → cooldown ile güvenli toggle
                             self._toggle_pause_safe()
                         elif action:
-                            self.coop_game.inject_remote_input('P2', action)
                             self._last_input_ack_seq = max(self._last_input_ack_seq, seq)
-                            self._send_piece_state()
+                            if self._guest_action_requires_host_control(action):
+                                self.coop_game.inject_remote_input('P2', action)
+                                self._send_piece_state()
 
                 # Co-op guest: receive host state
                 elif msg_type == MsgType.COOP_BOARD_STATE:
@@ -3290,6 +3407,11 @@ class OnlineCoopGame:
             )
             # Event listener: lock/clear/game_over gibi olayları guest'e yayınla
             self.coop_game._event_listeners.append(self._on_coop_event)
+            remote_players = getattr(self.coop_game, 'remote_authority_players', None)
+            if not isinstance(remote_players, set):
+                remote_players = set(remote_players or []) if remote_players is not None else set()
+                self.coop_game.remote_authority_players = remote_players
+            remote_players.add('P2')
             self._last_frozen_flags = (
                 bool(self.coop_game.p1_frozen),
                 bool(self.coop_game.p2_frozen),
@@ -3303,14 +3425,18 @@ class OnlineCoopGame:
             self._guest_score_cache = {}
             self._guest_pending_inputs = []
             self._guest_input_seq = 0
+            self._guest_piece_state_out_seq = 0
             self._guest_board_seq = -1
             self._guest_piece_seq = -1
+            self._last_guest_piece_state_seq = 0
             self._last_sent_board_cells = None
+            self._last_guest_sent_piece_signature = None
             self._last_piece_state_signature = None
             self._guest_render_board_seq = -1
             self._guest_render_piece_seq = -1
             self._guest_last_authoritative_piece_elapsed_ms = 0.0
             self._guest_local_prediction_ms = 0.0
+            self._guest_piece_state_timer = 0.0
             self._ensure_guest_render_game()
 
         # Broadcast timer'larını sıfırla
@@ -3319,9 +3445,13 @@ class OnlineCoopGame:
         self._last_input_ack_seq = 0
         self._guest_pending_inputs = []
         self._last_guest_input_seq = 0
+        self._last_guest_piece_state_seq = 0
         self._board_state_seq = 0
         self._piece_state_seq = 0
+        self._guest_piece_state_out_seq = 0
+        self._guest_piece_state_timer = 0.0
         self._last_sent_board_cells = None
+        self._last_guest_sent_piece_signature = None
         self._last_piece_state_signature = None
         self._guest_last_authoritative_piece_elapsed_ms = 0.0
         self._guest_local_prediction_ms = 0.0
@@ -3602,6 +3732,7 @@ class OnlineCoopGame:
     @staticmethod
     def _expected_channel_for_message(msg_type: str) -> int:
         if msg_type in {
+            MsgType.GUEST_PIECE_STATE,
             MsgType.COOP_BOARD_STATE,
             MsgType.COOP_PIECE_STATE,
             MsgType.BOARD_STATE,
@@ -3797,7 +3928,7 @@ class OnlineCoopGame:
     def _send_guest_input(self, action: str):
         """Guest → Host: input aksiyonu gönder (reliable)."""
         self._guest_input_seq = getattr(self, '_guest_input_seq', 0) + 1
-        if action != 'pause_request':
+        if action != 'pause_request' and self._guest_action_requires_host_control(action):
             pending_inputs = getattr(self, '_guest_pending_inputs', None)
             if not isinstance(pending_inputs, list):
                 pending_inputs = []

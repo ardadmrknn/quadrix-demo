@@ -129,15 +129,20 @@ def _make_game(net: FakeNet):
     game._pending_disconnect_steam_id = 0
     game._disconnect_grace_timer = 0.0
     game._last_guest_input_seq = 0
+    game._last_guest_piece_state_seq = 0
     game._last_input_ack_seq = 0
     game._guest_input_seq = 0
+    game._guest_piece_state_out_seq = 0
     game._guest_pending_inputs = []
     game._held_gameplay_keys = set()
     game._board_state_seq = 0
     game._piece_state_seq = 0
     game._guest_board_seq = -1
     game._guest_piece_seq = -1
+    game._guest_piece_state_timer = 0.0
+    game._GUEST_PIECE_STATE_INTERVAL = 33.0
     game._last_sent_board_cells = None
+    game._last_guest_sent_piece_signature = None
     game._last_piece_state_signature = None
     game._authoritative_gameplay_config = {}
     game._guest_board_cache = None
@@ -360,7 +365,7 @@ def test_online_coop_join_code_keydown_digit_works_without_textinput(monkeypatch
     assert game._join_code_input == '5'
 
 
-def test_online_coop_filters_held_key_repeat_before_sending_guest_input(monkeypatch):
+def test_online_coop_filters_held_key_repeat_before_relaying_guest_movement(monkeypatch):
     net = FakeNet()
     game = _make_game(net)
     game.online_state = coop_module.OnlineCoopState.PLAYING
@@ -372,7 +377,7 @@ def test_online_coop_filters_held_key_repeat_before_sending_guest_input(monkeypa
     game._handle_gameplay_keydown(event)
     game._handle_gameplay_keydown(event)
 
-    assert [sent[0]['action'] for sent in net.sent] == ['move_left']
+    assert net.sent == []
     assert predicted == ['move_left']
 
 
@@ -592,6 +597,107 @@ def test_online_coop_host_update_pushes_piece_state_on_live_change():
     sent_types = [payload['type'] for payload, _reliable, _channel in net.sent]
     assert sent_types == [MsgType.COOP_PIECE_STATE]
     assert net.sent[0][0]['p2_current']['y'] == 1
+
+
+def test_online_coop_guest_update_sends_guest_piece_state_after_local_prediction():
+    class FakeRenderCoop:
+        def __init__(self):
+            self.effects_enabled = False
+            self.game_over = False
+            self.paused = False
+            self.p1_frozen = False
+            self._p1_pending_unfreeze = False
+            self.p1_das_direction = 1
+            self.p1_soft_drop_active = True
+            self.p2_frozen = False
+            self.p2_current_piece = SimpleNamespace(shape_index=1, x=13, y=0, rotation_state=0)
+            self.p2_next_piece = SimpleNamespace(shape_index=3)
+            self.p2_hold_piece = None
+
+        def update(self, _dt):
+            self.p2_current_piece.y += 1
+
+        def _lock_and_new_piece(self, _player):
+            raise AssertionError('guest preview should patch lock path')
+
+        def _do_unfreeze(self, _player):
+            raise AssertionError('guest preview should patch unfreeze path')
+
+    net = FakeNet()
+    net.tick = lambda: None
+    game = _make_game(net)
+    game.role = 'guest'
+    game.online_state = coop_module.OnlineCoopState.PLAYING
+    game._net_initialized = True
+    game._auto_connect_attempted = True
+    game._auto_connect_retry_timer = 0.0
+    game.coop_game = FakeRenderCoop()
+    game._process_messages = lambda: None
+    game._apply_guest_render_cache = lambda: game.coop_game
+
+    game.update(16)
+
+    guest_piece_payloads = [payload for payload, _reliable, channel in net.sent if payload['type'] == MsgType.GUEST_PIECE_STATE and channel == CHANNEL_STATE]
+    assert guest_piece_payloads
+    assert guest_piece_payloads[-1]['p2_current']['y'] == 1
+
+
+def test_online_coop_host_applies_guest_piece_state_as_remote_authority():
+    class FakeBoard:
+        def is_valid_position_for_player(self, piece, player, dy=0):
+            return player == 'P2' and dy == 0 and piece.x == 12 and piece.y == 4 and piece.rotation_state == 1
+
+    class FakePiece:
+        def __init__(self, shape_index, x, y, rotation_state=0):
+            self.shape_index = shape_index
+            self.x = x
+            self.y = y
+            self.rotation_state = rotation_state
+
+    class FakeHostCoop:
+        def __init__(self):
+            self.board = FakeBoard()
+            self.remote_authority_players = set()
+            self.p2_current_piece = FakePiece(1, 13, 0, 0)
+            self.p2_frozen = False
+            self.p2_das_direction = 1
+            self.p2_das_charged = True
+            self.p2_das_timer = 12.0
+            self.p2_das_repeat_timer = 9.0
+            self.p2_soft_drop_active = True
+            self.p2_soft_drop_timer = 7.0
+            self.p2_fall_time = 30.0
+            self.reset_calls = []
+
+        def _apply_block_style(self, piece):
+            piece.styled = True
+
+        def _reset_player_lock_state(self, player):
+            self.reset_calls.append(player)
+
+    net = FakeNet([
+        _message(42, {
+            'type': MsgType.GUEST_PIECE_STATE,
+            'seq': 3,
+            'p2_current': {'si': 1, 'x': 12, 'y': 4, 'r': 1},
+            'p2_frozen': False,
+        }, channel=CHANNEL_STATE),
+    ])
+    net.opponent_steam_id = 42
+    game = _make_game(net)
+    game.role = 'host'
+    game.coop_game = FakeHostCoop()
+
+    game._process_messages()
+
+    assert 'P2' in game.coop_game.remote_authority_players
+    assert game.coop_game.p2_current_piece.x == 12
+    assert game.coop_game.p2_current_piece.y == 4
+    assert game.coop_game.p2_current_piece.rotation_state == 1
+    assert game.coop_game.p2_das_direction == 0
+    assert game.coop_game.p2_soft_drop_active is False
+    assert game.coop_game.p2_fall_time == 0.0
+    assert game.coop_game.reset_calls == ['P2']
 
 
 def test_online_coop_guest_update_advances_local_p2_prediction():

@@ -331,6 +331,7 @@ class MsgType:
 
     # Co-op: Guest → Host
     GUEST_INPUT     = 'guest_input'   # Reliable: action, seq, ts
+    GUEST_PIECE_STATE = 'guest_piece' # Unreliable: guest-authoritative active P2 piece mirror
     GUEST_READY     = 'guest_ready'   # Reliable
     GUEST_PAUSE     = 'guest_pause'   # Reliable
 

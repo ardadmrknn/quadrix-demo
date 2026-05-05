@@ -857,22 +857,30 @@ private:
     {
         if (!m_messages || m_isShutdown)
             return;
-        SteamNetworkingMessage_t *pMessages[64];
-        int count = m_messages->ReceiveMessagesOnChannel(channel, pMessages, 64);
-        if (count > 0)
+        while (true)
         {
-            std::lock_guard<std::mutex> lock(m_msgMutex);
-            for (int i = 0; i < count; i++)
+            SteamNetworkingMessage_t *pMessages[64];
+            int count = m_messages->ReceiveMessagesOnChannel(channel, pMessages, 64);
+            if (count <= 0)
+                break;
+
             {
-                NetMessage msg;
-                msg.sender = pMessages[i]->m_identityPeer.GetSteamID64();
-                msg.payload = std::string(
-                    (const char *)pMessages[i]->m_pData,
-                    pMessages[i]->m_cbSize);
-                msg.channel = channel;
-                m_messages_queue.push_back(std::move(msg));
-                pMessages[i]->Release();
+                std::lock_guard<std::mutex> lock(m_msgMutex);
+                for (int i = 0; i < count; i++)
+                {
+                    NetMessage msg;
+                    msg.sender = pMessages[i]->m_identityPeer.GetSteamID64();
+                    msg.payload = std::string(
+                        (const char *)pMessages[i]->m_pData,
+                        pMessages[i]->m_cbSize);
+                    msg.channel = channel;
+                    m_messages_queue.push_back(std::move(msg));
+                    pMessages[i]->Release();
+                }
             }
+
+            if (count < 64)
+                break;
         }
     }
 

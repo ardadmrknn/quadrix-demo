@@ -307,6 +307,7 @@ class CoopGame:
         # Board + parça sistemi
         # ==================================================================
         self.board = CoopBoard()
+        self.remote_authority_players: set[str] = set()
 
         # Bağımsız parça bag'leri
         self._p1_bag: list[int] = []
@@ -1943,6 +1944,12 @@ class CoopGame:
             return False
         return not self.board.is_valid_position_for_player(piece, player, dy=1)
 
+    def _player_uses_remote_active_authority(self, player: str) -> bool:
+        try:
+            return str(player) in set(getattr(self, 'remote_authority_players', set()) or set())
+        except Exception:
+            return False
+
     def _step_piece_down(self, player: str) -> bool:
         piece = self.p1_current_piece if player == 'P1' else self.p2_current_piece
         if piece is None:
@@ -2594,11 +2601,18 @@ class CoopGame:
                 self._do_unfreeze('P1')
 
         # --- P2 gravity ---
-        if 'P2' not in locked_players and not self.p2_frozen and self.p2_current_piece is not None:
+        if (
+            'P2' not in locked_players
+            and not self.p2_frozen
+            and self.p2_current_piece is not None
+            and not self._player_uses_remote_active_authority('P2')
+        ):
             self.p2_fall_time += delta_time
             if self.p2_fall_time >= self.fall_speed:
                 self.p2_fall_time = 0
                 self._step_piece_down('P2')
+        elif self._player_uses_remote_active_authority('P2'):
+            self.p2_fall_time = 0
         elif self._p2_pending_unfreeze:
             self.p2_fall_time += delta_time
             if self.p2_fall_time >= self.fall_speed:
@@ -2628,6 +2642,18 @@ class CoopGame:
         for player in ('P1', 'P2'):
             frozen = self.p1_frozen if player == 'P1' else self.p2_frozen
             if frozen:
+                continue
+            if self._player_uses_remote_active_authority(player):
+                if player == 'P1':
+                    self.p1_das_direction = 0
+                    self.p1_das_timer = 0
+                    self.p1_das_repeat_timer = 0
+                    self.p1_das_charged = False
+                else:
+                    self.p2_das_direction = 0
+                    self.p2_das_timer = 0
+                    self.p2_das_repeat_timer = 0
+                    self.p2_das_charged = False
                 continue
             das_dir = self.p1_das_direction if player == 'P1' else self.p2_das_direction
             piece = self.p1_current_piece if player == 'P1' else self.p2_current_piece
@@ -2673,6 +2699,14 @@ class CoopGame:
             frozen = self.p1_frozen if player == 'P1' else self.p2_frozen
             active = self.p1_soft_drop_active if player == 'P1' else self.p2_soft_drop_active
             piece = self.p1_current_piece if player == 'P1' else self.p2_current_piece
+            if self._player_uses_remote_active_authority(player):
+                if player == 'P1':
+                    self.p1_soft_drop_active = False
+                    self.p1_soft_drop_timer = 0
+                else:
+                    self.p2_soft_drop_active = False
+                    self.p2_soft_drop_timer = 0
+                continue
             if not active or frozen or piece is None:
                 continue
             if player == 'P1':

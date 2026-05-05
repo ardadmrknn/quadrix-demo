@@ -515,12 +515,20 @@ class OnlinePvPGame:
 
         # Rakip aktif parça (gerçek zamanlı ağ verisi)
         self.opponent_piece_data: dict | None = None
+        self._opponent_piece_visual: dict | None = None
         self._opponent_piece_seq: int = 0   # Sıra numarası (out-of-order koruması)
         self._my_piece_seq: int = 0         # Gönderilen sıra numarası
         self._opponent_board_seq: int = -1  # Snapshot sıra numarası
         self._my_board_seq: int = 0
         self._opponent_clear_event_seq: int = -1
         self._my_clear_event_seq: int = 0
+        self._opponent_piece_render_cache_key: tuple | None = None
+        self._opponent_piece_render_cache: dict | None = None
+        self._OPPONENT_PIECE_SMOOTH_MS = 45.0
+        self._last_sent_piece_signature: tuple | None = None
+        self._pending_piece_position_dirty = False
+        self._piece_position_send_timer = 0.0
+        self._PIECE_POSITION_INTERVAL_MS = 33.0
 
         # Zamanlama
         self.fall_timer = 0
@@ -1270,7 +1278,7 @@ class OnlinePvPGame:
             return
 
         # Rakip ayrılınca parça verisini temizle
-        self.opponent_piece_data = None
+        self._clear_opponent_piece_state()
         self._opponent_piece_seq = 0
         if self.online_state == OnlineState.PLAYING:
             self._pending_disconnect_steam_id = target_id
@@ -2406,7 +2414,7 @@ class OnlinePvPGame:
         self._reset_match_result_state()
         self.paused = False
         self.opponent_paused = False
-        self.opponent_piece_data = None
+        self._clear_opponent_piece_state()
         self._opponent_piece_seq = 0
         self._lobby_code = ''
         self._lobby_id_str = ''
@@ -2952,7 +2960,7 @@ class OnlinePvPGame:
         board_filled: bool = True,
     ):
         """Rakibin elendiğini işle."""
-        self.opponent_piece_data = None
+        self._clear_opponent_piece_state()
         self.opponent_eliminated = True
         self._opponent_final_board_filled = bool(board_filled)
         if score is not None:
@@ -3092,12 +3100,12 @@ class OnlinePvPGame:
                     seq = 0
                 if seq >= self._opponent_piece_seq:
                     self._opponent_piece_seq = seq
-                    self.opponent_piece_data = {
+                    self._set_opponent_piece_state({
                         'si': data.get('si', 0),
                         'x': data.get('x', 0),
                         'y': data.get('y', 0),
                         'r': data.get('r', 0),
-                    }
+                    })
 
             elif msg_type == MsgType.SCORE_UPDATE:
                 self.opponent_score = self._clamp_int(data.get('score', 0), 0, 999999, 'score')
@@ -3236,12 +3244,18 @@ class OnlinePvPGame:
         self.opponent_level = 1
         self._opponent_lines_prev = 0
         self.opponent_piece_data = None
+        self._opponent_piece_visual = None
         self._opponent_piece_seq = 0
         self._my_piece_seq = 0
         self._opponent_board_seq = -1
         self._my_board_seq = 0
         self._opponent_clear_event_seq = -1
         self._my_clear_event_seq = 0
+        self._opponent_piece_render_cache_key = None
+        self._opponent_piece_render_cache = None
+        self._last_sent_piece_signature = None
+        self._pending_piece_position_dirty = False
+        self._piece_position_send_timer = float(self._PIECE_POSITION_INTERVAL_MS)
         self.my_line_flash_rows = []
         self.my_line_flash_timer = 0
         self.my_line_glow_alpha = 0
@@ -3265,6 +3279,8 @@ class OnlinePvPGame:
         self.screen_shake = 0.0
         self.shake_intensity = 0
         self._screen_shake_initial = 0.0
+        self._send_piece_position(force=True)
+        self._send_board_snapshot()
 
     def _get_next_piece(self) -> Piece:
         """Sıradaki parçayı al."""
@@ -3853,7 +3869,127 @@ class OnlinePvPGame:
         # Board snapshot'tan gelen aktif parça bilgisi (fallback sync)
         piece = data.get('piece')
         if piece:
-            self.opponent_piece_data = piece
+            self._set_opponent_piece_state(piece, from_snapshot=True)
+
+    def _normalize_opponent_piece_payload(self, piece_data: dict | None) -> dict | None:
+        if not isinstance(piece_data, dict):
+            return None
+        try:
+            si = int(piece_data.get('si', -1))
+            x = float(piece_data.get('x', 0) or 0)
+            y = float(piece_data.get('y', 0) or 0)
+            rotation = int(piece_data.get('r', 0)) % 4
+        except (TypeError, ValueError):
+            return None
+        if not (0 <= si < len(SHAPES)):
+            return None
+        return {
+            'si': si,
+            'x': x,
+            'y': y,
+            'r': rotation,
+        }
+
+    def _clear_opponent_piece_state(self) -> None:
+        self.opponent_piece_data = None
+        self._opponent_piece_visual = None
+        self._opponent_piece_render_cache_key = None
+        self._opponent_piece_render_cache = None
+
+    def _set_opponent_piece_state(self, piece_data: dict | None, from_snapshot: bool = False) -> bool:
+        normalized = self._normalize_opponent_piece_payload(piece_data)
+        if normalized is None:
+            self._clear_opponent_piece_state()
+            return False
+
+        int_state = {
+            'si': int(normalized['si']),
+            'x': int(round(normalized['x'])),
+            'y': int(round(normalized['y'])),
+            'r': int(normalized['r']),
+        }
+        self.opponent_piece_data = int_state
+
+        visual = getattr(self, '_opponent_piece_visual', None)
+        should_snap = not isinstance(visual, dict)
+        if not should_snap:
+            should_snap = (
+                int(visual.get('si', -1)) != int_state['si']
+                or int(visual.get('r', -1)) != int_state['r']
+                or abs(float(visual.get('target_x', normalized['x'])) - normalized['x']) > 3.0
+                or abs(float(visual.get('target_y', normalized['y'])) - normalized['y']) > 4.0
+                or (from_snapshot and abs(float(visual.get('draw_y', normalized['y'])) - normalized['y']) > 1.5)
+            )
+        if should_snap:
+            self._opponent_piece_visual = {
+                'si': int_state['si'],
+                'r': int_state['r'],
+                'draw_x': float(normalized['x']),
+                'draw_y': float(normalized['y']),
+                'target_x': float(normalized['x']),
+                'target_y': float(normalized['y']),
+            }
+        else:
+            visual['si'] = int_state['si']
+            visual['r'] = int_state['r']
+            visual['target_x'] = float(normalized['x'])
+            visual['target_y'] = float(normalized['y'])
+            self._opponent_piece_visual = visual
+        return True
+
+    def _advance_opponent_piece_visual(self, delta_time: float) -> None:
+        visual = getattr(self, '_opponent_piece_visual', None)
+        if not isinstance(visual, dict):
+            return
+        smooth_ms = max(1.0, float(getattr(self, '_OPPONENT_PIECE_SMOOTH_MS', 45.0) or 45.0))
+        blend = min(1.0, max(0.0, float(delta_time or 0.0)) / smooth_ms)
+        draw_x = float(visual.get('draw_x', visual.get('target_x', 0.0)) or 0.0)
+        draw_y = float(visual.get('draw_y', visual.get('target_y', 0.0)) or 0.0)
+        target_x = float(visual.get('target_x', draw_x) or draw_x)
+        target_y = float(visual.get('target_y', draw_y) or draw_y)
+        draw_x += (target_x - draw_x) * blend
+        draw_y += (target_y - draw_y) * blend
+        if abs(target_x - draw_x) < 0.01:
+            draw_x = target_x
+        if abs(target_y - draw_y) < 0.01:
+            draw_y = target_y
+        visual['draw_x'] = draw_x
+        visual['draw_y'] = draw_y
+
+    def _get_opponent_piece_draw_state(self) -> dict | None:
+        visual = getattr(self, '_opponent_piece_visual', None)
+        if isinstance(visual, dict):
+            return {
+                'si': int(visual.get('si', -1) or -1),
+                'x': float(visual.get('draw_x', visual.get('target_x', 0.0)) or 0.0),
+                'y': float(visual.get('draw_y', visual.get('target_y', 0.0)) or 0.0),
+                'r': int(visual.get('r', 0) or 0) % 4,
+            }
+        normalized = self._normalize_opponent_piece_payload(getattr(self, 'opponent_piece_data', None))
+        if normalized is None:
+            return None
+        return normalized
+
+    def _get_cached_opponent_piece_render(self, shape_index: int, rotation: int) -> dict | None:
+        cache_key = (int(shape_index), int(rotation) % 4)
+        if getattr(self, '_opponent_piece_render_cache_key', None) != cache_key:
+            if not (0 <= cache_key[0] < len(SHAPES)):
+                return None
+            temp = Piece(x=0, y=0, shape_index=cache_key[0])
+            self._apply_block_style(temp)
+            for _ in range(cache_key[1]):
+                temp.rotate(1)
+            shape = temp.get_shape()
+            self._opponent_piece_render_cache_key = cache_key
+            self._opponent_piece_render_cache = {
+                'piece': temp,
+                'shape': shape,
+                'texture': getattr(temp, 'texture_surface', None),
+                'color_matrix': getattr(temp, 'color_matrix', None),
+                'height': len(shape),
+                'width': len(shape[0]) if shape else 1,
+            }
+        return getattr(self, '_opponent_piece_render_cache', None)
 
     # ============================================================
     #  HOLD (SAKLAMA) MEKANİĞİ
@@ -3904,7 +4040,7 @@ class OnlinePvPGame:
                     break
 
         # Pozisyon düzeltmesinden SONRA gönder
-        self._send_piece_position()
+        self._send_piece_position(force=True)
 
     # ============================================================
     #  GHOST PIECE (HAYALET PARÇA)
@@ -3968,18 +4104,46 @@ class OnlinePvPGame:
 
         self.net.send_board_state(data)
 
-    def _send_piece_position(self):
-        """Aktif parçanın pozisyonunu rakibe gönder (gerçek zamanlı)."""
-        if not self.my_piece or not self._net_initialized:
-            return
+    def _send_piece_position(self, force: bool = False):
+        """Aktif parçanın pozisyonunu coalescing ile rakibe gönder."""
+        return self._flush_piece_position(force=force)
+
+    def _current_piece_network_signature(self) -> tuple | None:
+        piece = getattr(self, 'my_piece', None)
+        if not piece:
+            return None
+        return (
+            int(getattr(piece, 'shape_index', -1) or -1),
+            int(getattr(piece, 'x', 0) or 0),
+            int(getattr(piece, 'y', 0) or 0),
+            int(getattr(piece, 'rotation_state', 0) or 0),
+        )
+
+    def _flush_piece_position(self, force: bool = False) -> bool:
+        signature = self._current_piece_network_signature()
+        if signature is None or not self._net_initialized:
+            return False
+        if not force:
+            if signature == getattr(self, '_last_sent_piece_signature', None):
+                self._pending_piece_position_dirty = False
+                return False
+            interval_ms = max(1.0, float(getattr(self, '_PIECE_POSITION_INTERVAL_MS', 33.0) or 33.0))
+            if getattr(self, '_last_sent_piece_signature', None) is not None:
+                if float(getattr(self, '_piece_position_send_timer', 0.0) or 0.0) < interval_ms:
+                    self._pending_piece_position_dirty = True
+                    return False
         self._my_piece_seq += 1
         self.net.send_piece_position(
-            self.my_piece.shape_index,
-            self.my_piece.x,
-            self.my_piece.y,
-            self.my_piece.rotation_state,
+            signature[0],
+            signature[1],
+            signature[2],
+            signature[3],
             self._my_piece_seq,
         )
+        self._last_sent_piece_signature = signature
+        self._pending_piece_position_dirty = False
+        self._piece_position_send_timer = 0.0
+        return True
 
     # ============================================================
     #  OYUN GÜNCELLEMESİ
@@ -4057,6 +4221,7 @@ class OnlinePvPGame:
         if self._net_initialized:
             self.net.tick()
             self._process_messages()
+            self._advance_opponent_piece_visual(float(delta_time))
 
         _has_unknown_lobbies = (
             bool(self._deferred_lobby_entries)
@@ -4419,6 +4584,9 @@ class OnlinePvPGame:
 
         # Periyodik tahta snapshot'ı gönder
         self.state_snapshot_timer += delta_time
+        self._piece_position_send_timer += float(delta_time)
+        if self._pending_piece_position_dirty:
+            self._flush_piece_position(force=False)
         if self.state_snapshot_timer >= self.STATE_SNAPSHOT_INTERVAL:
             self.state_snapshot_timer = 0
             self._send_board_snapshot()
@@ -4527,7 +4695,7 @@ class OnlinePvPGame:
         self.hold_used = False  # Yeni parçada hold tekrar kullanılabilir
 
         # Yeni parça pozisyonunu hemen gönder
-        self._send_piece_position()
+        self._send_piece_position(force=True)
         self._send_board_snapshot(clear_rows=cleared_rows)
 
     def _update_das(self, delta_time: int):
@@ -4922,7 +5090,7 @@ class OnlinePvPGame:
             )
         if self.effects_enabled and drop_distance > 0:
             self.trigger_hard_drop_screen_shake()
-        self._send_piece_position()
+        self._send_piece_position(force=True)
         try:
             self.sound.play('drop')
         except Exception:
@@ -6488,33 +6656,29 @@ class OnlinePvPGame:
                             color[:3],
                         )
 
-        if self.opponent_piece_data:
-            try:
-                si = int(self.opponent_piece_data.get('si', -1))
-                px = int(self.opponent_piece_data.get('x', 0))
-                py = int(self.opponent_piece_data.get('y', 0))
-                rot = int(self.opponent_piece_data.get('r', 0)) % 4
-            except (TypeError, ValueError):
-                si = -1
-            if 0 <= si < len(SHAPES):
-                temp = Piece(x=0, y=0, shape_index=si)
-                self._apply_block_style(temp)
-                for _ in range(rot):
-                    temp.rotate(1)
-                shape = temp.get_shape()
-                piece_texture = getattr(temp, 'texture_surface', None)
-                piece_height = len(shape)
-                piece_width = len(shape[0]) if piece_height else 1
+        opponent_piece_state = self._get_opponent_piece_draw_state()
+        if opponent_piece_state:
+            si = int(opponent_piece_state.get('si', -1) or -1)
+            px = float(opponent_piece_state.get('x', 0.0) or 0.0)
+            py = float(opponent_piece_state.get('y', 0.0) or 0.0)
+            rot = int(opponent_piece_state.get('r', 0) or 0) % 4
+            cache = self._get_cached_opponent_piece_render(si, rot)
+            if isinstance(cache, dict):
+                temp = cache.get('piece')
+                shape = cache.get('shape') or []
+                piece_texture = cache.get('texture')
+                piece_height = int(cache.get('height', len(shape)) or len(shape))
+                piece_width = int(cache.get('width', len(shape[0]) if shape else 1) or 1)
+                color_matrix = cache.get('color_matrix')
                 for ri, row_data in enumerate(shape):
                     for ci, cell in enumerate(row_data):
                         if cell:
                             draw_row = py + ri
                             draw_col = px + ci
                             if 0 <= draw_row < BOARD_HEIGHT and 0 <= draw_col < BOARD_WIDTH:
-                                bx = x + draw_col * cell_size
-                                by = y + draw_row * cell_size
-                                draw_color = temp.color[:3]
-                                color_matrix = getattr(temp, 'color_matrix', None)
+                                bx = int(round(x + draw_col * cell_size))
+                                by = int(round(y + draw_row * cell_size))
+                                draw_color = temp.color[:3] if temp is not None else (255, 255, 255)
                                 if color_matrix is not None:
                                     try:
                                         matrix_color = color_matrix[ri][ci]
@@ -6522,7 +6686,7 @@ class OnlinePvPGame:
                                             draw_color = matrix_color[:3]
                                     except Exception:
                                         pass
-                                slice_info = self._make_texture_slice(temp, ci, ri, piece_width, piece_height)
+                                slice_info = self._make_texture_slice(temp, ci, ri, piece_width, piece_height) if temp is not None else None
                                 self.draw_textured_block(
                                     bx + 1,
                                     by + 1,
