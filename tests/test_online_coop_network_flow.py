@@ -130,16 +130,22 @@ def _make_game(net: FakeNet):
     game._disconnect_grace_timer = 0.0
     game._last_guest_input_seq = 0
     game._last_input_ack_seq = 0
+    game._guest_input_seq = 0
+    game._guest_pending_inputs = []
     game._held_gameplay_keys = set()
     game._board_state_seq = 0
     game._piece_state_seq = 0
     game._guest_board_seq = -1
     game._guest_piece_seq = -1
+    game._last_piece_state_signature = None
     game._guest_board_cache = None
     game._guest_piece_cache = None
     game._guest_score_cache = {}
     game._guest_render_board_seq = -1
     game._guest_render_piece_seq = -1
+    game._guest_last_authoritative_piece_elapsed_ms = 0.0
+    game._guest_local_prediction_ms = 0.0
+    game._GUEST_LOCAL_PREDICTION_MAX_MS = 150.0
     game._game_start_pending_payload = None
     game._game_start_retry_timer = 0.0
     game._game_seed = 0
@@ -155,6 +161,27 @@ def _make_game(net: FakeNet):
     game._lobby_list = []
     game._lobby_list_filter = 'all'
     game._lobby_list_scroll = 0
+    game._lobby_list_fetching = False
+    game._lobby_list_fetch_start_time = 0.0
+    game._auto_lobby_refresh_requested = False
+    game._auto_lobby_refresh_timer = 0.0
+    game._auto_lobby_refresh_interval = 0.0
+    game._code_search_retry_timer = 0.0
+    game._code_search_retry_code = ''
+    game._code_search_retry_use_full_scan = False
+    game._deferred_lobby_entries = {}
+    game._deferred_lobby_refresh_timer = 0.0
+    game._pending_access_revalidation_lobby_id = 0
+    game._pending_revalidation_start_time = 0.0
+    game._pending_reval_last_check_time = 0.0
+    game._lobby_presence_probe_timer = 0.0
+    game._LOBBY_PRESENCE_PROBE_INTERVAL_MS = 1000.0
+    game._pause_cooldown_timer = 0.0
+    game._session_ping_timer = 0.0
+    game._SESSION_PING_INTERVAL_MS = 1000.0
+    game._session_ping_backoff_ms = 0.0
+    game._ready_resend_timer = 0.0
+    game._READY_RESEND_INTERVAL_MS = 1000.0
     game._invite_after_lobby = False
     game._join_code_suppress_textinput = ''
     game.user_manager = None
@@ -358,6 +385,137 @@ def test_online_coop_host_board_snapshot_uses_occupancy_not_black_grid_color():
     assert all(cell == 0 for row in sent_grid for cell in row)
 
 
+def test_online_coop_host_board_snapshot_carries_latest_guest_ack():
+    class FakeBoard:
+        width = 20
+        height = 20
+        grid = [[(0, 0, 0) for _ in range(20)] for _ in range(20)]
+        occupancy = [[False for _ in range(20)] for _ in range(20)]
+        owners = [[None for _ in range(20)] for _ in range(20)]
+
+    net = FakeNet()
+    game = _make_game(net)
+    game.role = 'host'
+    game._last_input_ack_seq = 12
+    game.coop_game = SimpleNamespace(
+        board=FakeBoard(),
+        team_score=0,
+        total_lines_cleared=0,
+        level=1,
+        fall_speed=900.0,
+        p1_frozen=False,
+        p2_frozen=False,
+    )
+
+    game._send_board_state()
+
+    assert net.sent[0][0]['input_ack'] == 12
+
+
+def test_online_coop_host_update_pushes_piece_state_on_live_change():
+    class FakeBoard:
+        def is_valid_position_for_player(self, piece, player, dy=0):
+            return False
+
+    class FakePiece:
+        def __init__(self, shape_index, x, y, rotation_state=0):
+            self.shape_index = shape_index
+            self.x = x
+            self.y = y
+            self.rotation_state = rotation_state
+
+    class FakeHostCoop:
+        def __init__(self):
+            self.board = FakeBoard()
+            self.p1_current_piece = FakePiece(0, 3, 0)
+            self.p2_current_piece = FakePiece(1, 13, 0)
+            self.p1_next_piece = FakePiece(2, 0, 0)
+            self.p2_next_piece = FakePiece(3, 0, 0)
+            self.p1_hold_piece = None
+            self.p2_hold_piece = None
+            self.p1_frozen = False
+            self.p2_frozen = False
+            self.team_score = 0
+            self.total_lines_cleared = 0
+            self.level = 1
+            self.fall_speed = 900.0
+            self.game_over = False
+
+        def update(self, _dt):
+            self.p2_current_piece.y += 1
+
+    net = FakeNet()
+    net.tick = lambda: None
+    game = _make_game(net)
+    game.role = 'host'
+    game.online_state = coop_module.OnlineCoopState.PLAYING
+    game._net_initialized = True
+    game._auto_connect_attempted = True
+    game._auto_connect_retry_timer = 0.0
+    game._last_frozen_flags = (False, False)
+    game._BOARD_STATE_INTERVAL = 250.0
+    game._PIECE_STATE_INTERVAL = 100.0
+    game._board_state_timer = 0.0
+    game._piece_state_timer = 0.0
+    game._pause_cooldown_timer = 0.0
+    game.coop_game = FakeHostCoop()
+    game._last_piece_state_signature = game._current_piece_state_signature()
+
+    game.update(16)
+
+    sent_types = [payload['type'] for payload, _reliable, _channel in net.sent]
+    assert sent_types == [MsgType.COOP_PIECE_STATE]
+    assert net.sent[0][0]['p2_current']['y'] == 1
+
+
+def test_online_coop_guest_update_advances_local_p2_prediction():
+    class FakeRenderCoop:
+        def __init__(self):
+            self.effects_enabled = False
+            self.game_over = False
+            self.paused = False
+            self.p1_frozen = False
+            self._p1_pending_unfreeze = False
+            self.p1_das_direction = 1
+            self.p1_soft_drop_active = True
+            self.p2_frozen = False
+            self.p2_current_piece = SimpleNamespace(shape_index=1, x=13, y=0, rotation_state=0)
+            self.p2_next_piece = SimpleNamespace(shape_index=3)
+            self.p2_hold_piece = None
+            self.update_calls = 0
+
+        def update(self, _dt):
+            self.update_calls += 1
+            assert self.p1_frozen is True
+            self.p2_current_piece.y += 1
+
+        def _lock_and_new_piece(self, _player):
+            raise AssertionError('guest preview should patch lock path')
+
+        def _do_unfreeze(self, _player):
+            raise AssertionError('guest preview should patch unfreeze path')
+
+    net = FakeNet()
+    net.tick = lambda: None
+    game = _make_game(net)
+    game.role = 'guest'
+    game.online_state = coop_module.OnlineCoopState.PLAYING
+    game._net_initialized = True
+    game._auto_connect_attempted = True
+    game._auto_connect_retry_timer = 0.0
+    render_game = FakeRenderCoop()
+    game.coop_game = render_game
+    game._process_messages = lambda: None
+    game._apply_guest_render_cache = lambda: render_game
+
+    game.update(16)
+
+    assert render_game.update_calls == 1
+    assert render_game.p2_current_piece.y == 1
+    assert game._guest_local_prediction_ms == 16.0
+    assert render_game.p1_frozen is False
+
+
 def test_online_coop_guest_hydrates_local_coop_renderer(monkeypatch):
     captured = {}
 
@@ -408,6 +566,131 @@ def test_online_coop_guest_hydrates_local_coop_renderer(monkeypatch):
     assert render_game.p2_current_piece.shape_index == 1
     assert render_game.p1_next_piece.shape_index == 2
     assert render_game.p2_next_piece.shape_index == 3
+
+
+def test_online_coop_guest_render_effects_advance_screen_shake():
+    game = _make_game(FakeNet())
+    game.role = 'guest'
+    game.coop_game = SimpleNamespace(
+        effects_enabled=True,
+        update_particles=lambda _dt: None,
+        update_ambient_particles=lambda _dt: None,
+        update_drop_trails=lambda _dt: None,
+        _update_line_clear_effects=lambda _dt: None,
+        screen_shake=120.0,
+        _screen_shake_initial=120.0,
+        shake_intensity=3,
+    )
+
+    game._update_guest_render_effects(16.0)
+
+    assert game.coop_game.screen_shake == 104.0
+
+
+def test_online_coop_guest_keeps_predicted_p2_piece_until_ack_catches_up():
+    class FakeBoard:
+        width = 20
+        height = 20
+
+    class FakeRenderCoop:
+        def __init__(self):
+            self.screen = None
+            self.window_width = 0
+            self.window_height = 0
+            self.fullscreen = False
+            self.board = FakeBoard()
+            self.p1_current_piece = None
+            self.p2_current_piece = SimpleNamespace(shape_index=1, x=12, y=0, rotation_state=0)
+            self.p1_next_piece = None
+            self.p2_next_piece = SimpleNamespace(shape_index=3)
+            self.p1_hold_piece = None
+            self.p2_hold_piece = None
+
+        def _apply_block_style(self, piece):
+            return None
+
+    game = _make_game(FakeNet())
+    game.role = 'guest'
+    game.online_state = coop_module.OnlineCoopState.PLAYING
+    game.coop_game = FakeRenderCoop()
+    game._guest_board_cache = game._normalize_board_snapshot(_valid_board_state(seq=8, team_score=250))
+    game._guest_render_board_seq = 8
+    game._guest_pending_inputs = [(8, 'move_left')]
+    game._guest_input_seq = 8
+    stale_piece_state = _valid_piece_state(seq=9)
+    stale_piece_state['input_ack'] = 7
+    stale_piece_state['p2_current']['x'] = 13
+    game._guest_piece_cache = game._normalize_piece_snapshot(stale_piece_state)
+
+    game._apply_guest_render_cache()
+
+    assert game.coop_game.p1_current_piece.x == 3
+    assert game.coop_game.p2_current_piece.x == 12
+    assert game._guest_pending_inputs == [(8, 'move_left')]
+
+    fresh_piece_state = _valid_piece_state(seq=10)
+    fresh_piece_state['input_ack'] = 8
+    fresh_piece_state['p2_current']['x'] = 11
+    game._guest_piece_cache = game._normalize_piece_snapshot(fresh_piece_state)
+
+    game._apply_guest_render_cache()
+
+    assert game.coop_game.p2_current_piece.x == 11
+    assert game._guest_pending_inputs == []
+
+
+def test_online_coop_guest_keeps_locally_simulated_p2_until_host_piece_time_catches_up():
+    class FakeBoard:
+        width = 20
+        height = 20
+
+    class FakeRenderCoop:
+        def __init__(self):
+            self.screen = None
+            self.window_width = 0
+            self.window_height = 0
+            self.fullscreen = False
+            self.board = FakeBoard()
+            self.p1_current_piece = None
+            self.p2_current_piece = SimpleNamespace(shape_index=1, x=13, y=1, rotation_state=0)
+            self.p1_next_piece = None
+            self.p2_next_piece = SimpleNamespace(shape_index=3)
+            self.p1_hold_piece = None
+            self.p2_hold_piece = None
+            self.p2_frozen = False
+
+        def _apply_block_style(self, piece):
+            return None
+
+    game = _make_game(FakeNet())
+    game.role = 'guest'
+    game.online_state = coop_module.OnlineCoopState.PLAYING
+    game.coop_game = FakeRenderCoop()
+    game._guest_board_cache = game._normalize_board_snapshot(_valid_board_state(seq=8, team_score=250))
+    game._guest_render_board_seq = 8
+    game._guest_last_authoritative_piece_elapsed_ms = 1000.0
+    game._guest_local_prediction_ms = 60.0
+
+    stale_piece_state = _valid_piece_state(seq=9)
+    stale_piece_state['host_elapsed_ms'] = 1040.0
+    stale_piece_state['p2_current']['y'] = 0
+    game._guest_piece_cache = game._normalize_piece_snapshot(stale_piece_state)
+
+    game._apply_guest_render_cache()
+
+    assert game.coop_game.p2_current_piece.y == 1
+    assert game._guest_local_prediction_ms == 60.0
+
+    fresh_piece_state = _valid_piece_state(seq=10)
+    fresh_piece_state['host_elapsed_ms'] = 1065.0
+    fresh_piece_state['p2_current']['y'] = 2
+    game._guest_piece_cache = game._normalize_piece_snapshot(fresh_piece_state)
+
+    game._apply_guest_render_cache()
+
+    assert game.coop_game.p2_current_piece.y == 2
+    assert game._guest_local_prediction_ms == 0.0
+    assert game._guest_last_authoritative_piece_elapsed_ms == 1065.0
 
 
 def test_online_coop_line_clear_event_triggers_guest_render_sweep(monkeypatch):

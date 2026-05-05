@@ -41,6 +41,7 @@ from steam_networking import (
     generate_lobby_code,
 )
 from coop_game import CoopGame
+from screen_shake import step_screen_shake
 from pieces import Piece, SHAPES as _SHAPES
 from constants import COLORS as _PIECE_COLORS
 
@@ -365,20 +366,22 @@ class OnlineCoopGame:
         self.game_over = False
         self.paused = False
         self._game_seed = 0
-        self._last_input_ack_seq = 0  # Host: en son işlenen guest input seq
+        self._last_input_ack_seq = 0  # Host: en son işlenen guest input seq, Guest: son otoriter ack
         self._guest_input_seq = 0
         self._last_guest_input_seq = 0
+        self._guest_pending_inputs: list[tuple[int, str]] = []
         self._board_state_seq = 0
         self._piece_state_seq = 0
         self._guest_board_seq = -1
         self._guest_piece_seq = -1
+        self._last_piece_state_signature = None
         self._last_frozen_flags: tuple[bool, bool] | None = None
 
         # Host state broadcast timers (ms)
         self._board_state_timer = 0.0
         self._piece_state_timer = 0.0
-        self._BOARD_STATE_INTERVAL = 100.0   # ~10 Hz
-        self._PIECE_STATE_INTERVAL = 33.0    # ~30 Hz, PVP'e yakın parça akıcılığı
+        self._BOARD_STATE_INTERVAL = 250.0   # full-board heartbeat; asil sync event-driven
+        self._PIECE_STATE_INTERVAL = 100.0   # heartbeat; asil parça sync'i degisim-anlik push
 
         # Guest: received state cache
         self._guest_board_cache = None   # dict from host
@@ -386,6 +389,9 @@ class OnlineCoopGame:
         self._guest_score_cache = {}     # score/lines/level
         self._guest_render_board_seq = -1
         self._guest_render_piece_seq = -1
+        self._guest_last_authoritative_piece_elapsed_ms = 0.0
+        self._guest_local_prediction_ms = 0.0
+        self._GUEST_LOCAL_PREDICTION_MAX_MS = 150.0
         self._held_gameplay_keys: set[int] = set()
 
         # Placeholder font'lar
@@ -1446,8 +1452,16 @@ class OnlineCoopGame:
         self._guest_board_cache = None
         self._guest_piece_cache = None
         self._guest_score_cache = {}
+        self._guest_pending_inputs = []
+        self._guest_input_seq = 0
+        self._last_input_ack_seq = 0
+        self._last_guest_input_seq = 0
+        self._guest_board_seq = -1
+        self._guest_piece_seq = -1
         self._guest_render_board_seq = -1
         self._guest_render_piece_seq = -1
+        self._guest_last_authoritative_piece_elapsed_ms = 0.0
+        self._guest_local_prediction_ms = 0.0
         self._lobby_code = ''
         self._lobby_id_str = ''
         self._join_code_active = False
@@ -1924,6 +1938,7 @@ class OnlineCoopGame:
                     return
                 held_keys.add(event.key)
                 self.coop_game.inject_remote_input('P1', action)
+                self._push_piece_state_if_changed()
         elif self.role == 'guest':
             action = self._GUEST_KEYS.get(event.key)
             if action:
@@ -1947,6 +1962,7 @@ class OnlineCoopGame:
             action = self._HOST_KEYUP.get(event.key)
             if action and self.coop_game:
                 self.coop_game.inject_remote_input('P1', action)
+                self._push_piece_state_if_changed()
         elif self.role == 'guest':
             try:
                 self._held_gameplay_keys.discard(event.key)
@@ -2316,6 +2332,9 @@ class OnlineCoopGame:
                 self._send_piece_state()
                 self._last_frozen_flags = after_frozen
 
+            if not self.paused and self._push_piece_state_if_changed():
+                self._piece_state_timer = 0.0
+
             # Broadcast state to guest (paused'da da gönder — guest board'u görsün)
             self._board_state_timer += float(delta_time)
             self._piece_state_timer += float(delta_time)
@@ -2326,7 +2345,7 @@ class OnlineCoopGame:
 
             if self._piece_state_timer >= self._PIECE_STATE_INTERVAL:
                 self._piece_state_timer = 0.0
-                self._send_piece_state()
+                self._push_piece_state_if_changed(force=True)
 
             # Check game over
             if self.coop_game.game_over and not self.game_over:
@@ -2415,7 +2434,7 @@ class OnlineCoopGame:
             and self.role == 'guest'
             and self.coop_game
         ):
-            self._update_guest_render_effects(float(delta_time))
+            self._update_guest_local_prediction(float(delta_time))
 
     @staticmethod
     def _clamp_int(value, minimum: int, maximum: int, default: int = 0) -> int:
@@ -2513,7 +2532,38 @@ class OnlineCoopGame:
         normalized['p1_ghost_y'] = self._clamp_int(data.get('p1_ghost_y', -1), -8, 25, -1)
         normalized['p2_ghost_y'] = self._clamp_int(data.get('p2_ghost_y', -1), -8, 25, -1)
         normalized['input_ack'] = self._clamp_int(data.get('input_ack', 0), 0, 999999999)
+        try:
+            normalized['host_elapsed_ms'] = max(0.0, min(999999999.0, float(data.get('host_elapsed_ms', 0.0))))
+        except (TypeError, ValueError):
+            normalized['host_elapsed_ms'] = 0.0
         return normalized
+
+    def _consume_guest_input_ack(self, ack_seq: int) -> tuple[bool, bool]:
+        normalized_ack = self._clamp_int(
+            ack_seq,
+            0,
+            999999999,
+            getattr(self, '_last_input_ack_seq', 0),
+        )
+        if normalized_ack > self._last_input_ack_seq:
+            self._last_input_ack_seq = normalized_ack
+
+        pending_inputs = getattr(self, '_guest_pending_inputs', None)
+        if not isinstance(pending_inputs, list) or not pending_inputs:
+            return False, False
+
+        remaining_inputs: list[tuple[int, str]] = []
+        pending_board_mutation = False
+        for seq, action in pending_inputs:
+            if int(seq or 0) <= normalized_ack:
+                continue
+            normalized_action = str(action or '')
+            remaining_inputs.append((int(seq or 0), normalized_action))
+            if normalized_action == 'hard_drop':
+                pending_board_mutation = True
+
+        self._guest_pending_inputs = remaining_inputs[-64:]
+        return bool(self._guest_pending_inputs), pending_board_mutation
 
     def _ensure_guest_render_game(self):
         if self.role != 'guest':
@@ -2572,6 +2622,111 @@ class OnlineCoopGame:
             pass
         return piece
 
+    @staticmethod
+    def _piece_shape_index(piece) -> int:
+        return int(getattr(piece, 'shape_index', -1) or -1) if piece is not None else -1
+
+    def _guest_p2_state_signature(self, render_game) -> tuple | None:
+        if render_game is None:
+            return None
+        return (
+            self._piece_signature(getattr(render_game, 'p2_current_piece', None)),
+            self._piece_shape_index(getattr(render_game, 'p2_next_piece', None)),
+            self._piece_shape_index(getattr(render_game, 'p2_hold_piece', None)),
+            bool(getattr(render_game, 'p2_frozen', False)),
+        )
+
+    def _should_keep_locally_simulated_p2(self, render_game, piece_data: dict) -> bool:
+        if render_game is None or not isinstance(piece_data, dict):
+            return False
+
+        prediction_ms = max(0.0, float(getattr(self, '_guest_local_prediction_ms', 0.0) or 0.0))
+        if prediction_ms <= 0.0:
+            return False
+
+        incoming_piece = piece_data.get('p2_current')
+        if not isinstance(incoming_piece, dict):
+            return False
+
+        local_signature = self._guest_p2_state_signature(render_game)
+        local_piece_signature = local_signature[0] if local_signature else None
+        if local_piece_signature is None:
+            return False
+
+        if int(incoming_piece.get('si', -1)) != int(local_piece_signature[0]):
+            return False
+        if self._piece_shape_index(getattr(render_game, 'p2_next_piece', None)) != int(piece_data.get('p2_next_si', -1)):
+            return False
+        if self._piece_shape_index(getattr(render_game, 'p2_hold_piece', None)) != int(piece_data.get('p2_hold_si', -1)):
+            return False
+
+        host_elapsed_ms = max(0.0, float(piece_data.get('host_elapsed_ms', 0.0) or 0.0))
+        local_prediction_target_ms = (
+            max(0.0, float(getattr(self, '_guest_last_authoritative_piece_elapsed_ms', 0.0) or 0.0))
+            + prediction_ms
+        )
+        return host_elapsed_ms < local_prediction_target_ms
+
+    def _update_guest_local_prediction(self, delta_time: float):
+        render_game = self._apply_guest_render_cache()
+        if render_game is None:
+            self._update_guest_render_effects(delta_time)
+            return
+        if self.game_over or self.paused or getattr(render_game, 'game_over', False) or getattr(render_game, 'paused', False):
+            self._update_guest_render_effects(delta_time)
+            return
+
+        before_signature = self._guest_p2_state_signature(render_game)
+        original_lock_and_new_piece = getattr(render_game, '_lock_and_new_piece', None)
+        original_do_unfreeze = getattr(render_game, '_do_unfreeze', None)
+        original_p1_frozen = bool(getattr(render_game, 'p1_frozen', False))
+        original_p1_pending_unfreeze = bool(getattr(render_game, '_p1_pending_unfreeze', False))
+        original_p1_das_direction = int(getattr(render_game, 'p1_das_direction', 0) or 0)
+        original_p1_soft_drop_active = bool(getattr(render_game, 'p1_soft_drop_active', False))
+
+        def _preview_lock_and_new_piece(player: str):
+            if player == 'P2':
+                return None
+            if callable(original_lock_and_new_piece):
+                return original_lock_and_new_piece(player)
+            return None
+
+        def _preview_do_unfreeze(player: str):
+            if player == 'P2':
+                return None
+            if callable(original_do_unfreeze):
+                return original_do_unfreeze(player)
+            return None
+
+        try:
+            render_game.p1_frozen = True
+            render_game._p1_pending_unfreeze = False
+            render_game.p1_das_direction = 0
+            render_game.p1_soft_drop_active = False
+            render_game._lock_and_new_piece = _preview_lock_and_new_piece
+            render_game._do_unfreeze = _preview_do_unfreeze
+            render_game.update(delta_time)
+        except Exception:
+            self._update_guest_render_effects(delta_time)
+            return
+        finally:
+            render_game.p1_frozen = original_p1_frozen
+            render_game._p1_pending_unfreeze = original_p1_pending_unfreeze
+            render_game.p1_das_direction = original_p1_das_direction
+            render_game.p1_soft_drop_active = original_p1_soft_drop_active
+            if callable(original_lock_and_new_piece):
+                render_game._lock_and_new_piece = original_lock_and_new_piece
+            if callable(original_do_unfreeze):
+                render_game._do_unfreeze = original_do_unfreeze
+
+        after_signature = self._guest_p2_state_signature(render_game)
+        if after_signature != before_signature:
+            prediction_cap = max(1.0, float(getattr(self, '_GUEST_LOCAL_PREDICTION_MAX_MS', 150.0) or 150.0))
+            self._guest_local_prediction_ms = min(
+                prediction_cap,
+                max(0.0, float(getattr(self, '_guest_local_prediction_ms', 0.0) or 0.0)) + float(delta_time),
+            )
+
     def _apply_guest_render_cache(self):
         render_game = self._ensure_guest_render_game()
         board_data = self._guest_board_cache
@@ -2579,7 +2734,14 @@ class OnlineCoopGame:
             return None
 
         board_seq = int(board_data.get('seq', -1) or -1)
-        if board_seq != getattr(self, '_guest_render_board_seq', -1):
+        board_ack = self._clamp_int(
+            board_data.get('input_ack', self._last_input_ack_seq),
+            0,
+            999999999,
+            self._last_input_ack_seq,
+        )
+        _pending_inputs, pending_board_mutation = self._consume_guest_input_ack(board_ack)
+        if board_seq != getattr(self, '_guest_render_board_seq', -1) and not pending_board_mutation:
             board = render_game.board
             grid = board_data.get('grid')
             occupancy = board_data.get('_occupancy')
@@ -2624,19 +2786,32 @@ class OnlineCoopGame:
         if isinstance(piece_data, dict):
             piece_seq = int(piece_data.get('seq', -1) or -1)
             if piece_seq != getattr(self, '_guest_render_piece_seq', -1):
+                piece_ack = self._clamp_int(
+                    piece_data.get('input_ack', self._last_input_ack_seq),
+                    0,
+                    999999999,
+                    self._last_input_ack_seq,
+                )
+                pending_guest_inputs, _ = self._consume_guest_input_ack(piece_ack)
+                keep_local_p2 = False
+                if not pending_guest_inputs:
+                    keep_local_p2 = self._should_keep_locally_simulated_p2(render_game, piece_data)
+                piece_elapsed_ms = max(0.0, float(piece_data.get('host_elapsed_ms', 0.0) or 0.0))
                 render_game.p1_current_piece = self._apply_block_style_to_guest_piece(
                     self._piece_from_snapshot(piece_data.get('p1_current')))
-                render_game.p2_current_piece = self._apply_block_style_to_guest_piece(
-                    self._piece_from_snapshot(piece_data.get('p2_current')))
                 render_game.p1_next_piece = self._apply_block_style_to_guest_piece(
                     self._piece_from_shape_index(piece_data.get('p1_next_si', -1)))
-                render_game.p2_next_piece = self._apply_block_style_to_guest_piece(
-                    self._piece_from_shape_index(piece_data.get('p2_next_si', -1)))
                 render_game.p1_hold_piece = self._apply_block_style_to_guest_piece(
                     self._piece_from_shape_index(piece_data.get('p1_hold_si', -1)))
-                render_game.p2_hold_piece = self._apply_block_style_to_guest_piece(
-                    self._piece_from_shape_index(piece_data.get('p2_hold_si', -1)))
-                self._last_input_ack_seq = int(piece_data.get('input_ack', self._last_input_ack_seq) or 0)
+                if not pending_guest_inputs and not keep_local_p2:
+                    render_game.p2_current_piece = self._apply_block_style_to_guest_piece(
+                        self._piece_from_snapshot(piece_data.get('p2_current')))
+                    render_game.p2_next_piece = self._apply_block_style_to_guest_piece(
+                        self._piece_from_shape_index(piece_data.get('p2_next_si', -1)))
+                    render_game.p2_hold_piece = self._apply_block_style_to_guest_piece(
+                        self._piece_from_shape_index(piece_data.get('p2_hold_si', -1)))
+                    self._guest_last_authoritative_piece_elapsed_ms = piece_elapsed_ms
+                    self._guest_local_prediction_ms = 0.0
                 self._guest_render_piece_seq = piece_seq
         return render_game
 
@@ -2650,6 +2825,7 @@ class OnlineCoopGame:
                 render_game.update_ambient_particles(delta_time)
                 render_game.update_drop_trails(delta_time)
                 render_game._update_line_clear_effects(delta_time)
+                step_screen_shake(render_game, dt_ms=delta_time)
         except Exception:
             pass
 
@@ -2996,19 +3172,28 @@ class OnlineCoopGame:
             self._guest_board_cache = None
             self._guest_piece_cache = None
             self._guest_score_cache = {}
+            self._guest_pending_inputs = []
+            self._guest_input_seq = 0
             self._guest_board_seq = -1
             self._guest_piece_seq = -1
+            self._last_piece_state_signature = None
             self._guest_render_board_seq = -1
             self._guest_render_piece_seq = -1
+            self._guest_last_authoritative_piece_elapsed_ms = 0.0
+            self._guest_local_prediction_ms = 0.0
             self._ensure_guest_render_game()
 
         # Broadcast timer'larını sıfırla
         self._board_state_timer = 0.0
         self._piece_state_timer = 0.0
         self._last_input_ack_seq = 0
+        self._guest_pending_inputs = []
         self._last_guest_input_seq = 0
         self._board_state_seq = 0
         self._piece_state_seq = 0
+        self._last_piece_state_signature = None
+        self._guest_last_authoritative_piece_elapsed_ms = 0.0
+        self._guest_local_prediction_ms = 0.0
         if self.role == 'host':
             self._send_board_state()
             self._send_piece_state()
@@ -3020,6 +3205,11 @@ class OnlineCoopGame:
         if event_type == 'lines_cleared':
             self._send_lock_event(event_data)
             self._send_board_state()
+            self._send_piece_state()
+        elif event_type == 'piece_placed':
+            self._send_board_state()
+            self._send_piece_state()
+        elif event_type == 'hold_used':
             self._send_piece_state()
         elif event_type == 'player_frozen':
             self._send_game_event('player_frozen', event_data)
@@ -3044,6 +3234,45 @@ class OnlineCoopGame:
         ghost = piece.y
         piece.y = orig_y
         return ghost
+
+    @staticmethod
+    def _piece_signature(piece) -> tuple[int, int, int, int] | None:
+        if not piece:
+            return None
+        return (
+            int(getattr(piece, 'shape_index', -1) or -1),
+            int(getattr(piece, 'x', 0) or 0),
+            int(getattr(piece, 'y', 0) or 0),
+            int(getattr(piece, 'rotation_state', 0) or 0),
+        )
+
+    def _current_piece_state_signature(self):
+        if not self.coop_game:
+            return None
+
+        def _shape_index(piece) -> int:
+            return int(getattr(piece, 'shape_index', -1) or -1) if piece else -1
+
+        return (
+            self._piece_signature(getattr(self.coop_game, 'p1_current_piece', None)),
+            self._piece_signature(getattr(self.coop_game, 'p2_current_piece', None)),
+            _shape_index(getattr(self.coop_game, 'p1_next_piece', None)),
+            _shape_index(getattr(self.coop_game, 'p2_next_piece', None)),
+            _shape_index(getattr(self.coop_game, 'p1_hold_piece', None)),
+            _shape_index(getattr(self.coop_game, 'p2_hold_piece', None)),
+            int(self._get_ghost_y('P1')),
+            int(self._get_ghost_y('P2')),
+            int(getattr(self, '_last_input_ack_seq', 0) or 0),
+            bool(getattr(self.coop_game, 'p1_frozen', False)),
+            bool(getattr(self.coop_game, 'p2_frozen', False)),
+        )
+
+    def _push_piece_state_if_changed(self, force: bool = False) -> bool:
+        signature = self._current_piece_state_signature()
+        if not force and signature == getattr(self, '_last_piece_state_signature', None):
+            return False
+        self._send_piece_state()
+        return True
 
     def _send_board_state(self):
         """Host → Guest: board grid + game state (unreliable)."""
@@ -3086,6 +3315,7 @@ class OnlineCoopGame:
             'fall_speed': self.coop_game.fall_speed,
             'p1_frozen': self.coop_game.p1_frozen,
             'p2_frozen': self.coop_game.p2_frozen,
+            'input_ack': self._last_input_ack_seq,
         }
         self.net.send(data, reliable=False, channel=CHANNEL_GAME)
 
@@ -3119,7 +3349,9 @@ class OnlineCoopGame:
             'p1_ghost_y': self._get_ghost_y('P1'),
             'p2_ghost_y': self._get_ghost_y('P2'),
             'input_ack': self._last_input_ack_seq,
+            'host_elapsed_ms': max(0.0, float(getattr(self.coop_game, 'elapsed_time', 0.0) or 0.0)),
         }
+        self._last_piece_state_signature = self._current_piece_state_signature()
         self.net.send(data, reliable=False, channel=CHANNEL_GAME)
 
     def _send_lock_event(self, event_data: dict):
@@ -3178,13 +3410,43 @@ class OnlineCoopGame:
         if not render_game:
             return
         try:
-            render_game.inject_remote_input('P2', action)
+            if action == 'hard_drop':
+                piece = getattr(render_game, 'p2_current_piece', None)
+                board = getattr(render_game, 'board', None)
+                if piece is not None and board is not None and hasattr(board, 'is_valid_position_for_player'):
+                    while board.is_valid_position_for_player(piece, 'P2', dy=1):
+                        piece.y += 1
+                    try:
+                        render_game._reset_player_lock_state('P2')
+                    except Exception:
+                        pass
+                    try:
+                        render_game.p2_soft_drop_active = False
+                        render_game.p2_das_direction = 0
+                        render_game.p2_fall_time = 0.0
+                        render_game.p2_grounded = True
+                        render_game.p2_lock_timer = max(
+                            float(getattr(render_game, 'p2_lock_timer', 0.0) or 0.0),
+                            float(render_game._effective_lock_delay_for_player('P2', piece)),
+                        )
+                    except Exception:
+                        pass
+                else:
+                    render_game.inject_remote_input('P2', action)
+            else:
+                render_game.inject_remote_input('P2', action)
         except Exception:
             pass
 
     def _send_guest_input(self, action: str):
         """Guest → Host: input aksiyonu gönder (reliable)."""
         self._guest_input_seq = getattr(self, '_guest_input_seq', 0) + 1
+        if action != 'pause_request':
+            pending_inputs = getattr(self, '_guest_pending_inputs', None)
+            if not isinstance(pending_inputs, list):
+                pending_inputs = []
+            pending_inputs.append((self._guest_input_seq, str(action or '')))
+            self._guest_pending_inputs = pending_inputs[-64:]
         data = {
             'type': MsgType.GUEST_INPUT,
             'action': action,
