@@ -6785,15 +6785,14 @@ class OnlinePvPGame:
         sc = self._ui_scale()
         s = lambda v, minimum=1: self._sx(v, sc, minimum)
 
-        # Karartma
         overlay = pygame.Surface((w, h), pygame.SRCALPHA)
-        overlay.fill((0, 0, 0, 185))
+        overlay.fill((1, 4, 14, 212))
         self.screen.blit(overlay, (0, 0))
 
         if self.winner == 'me':
             result_text = t('you_win', 'KAZANDIN!')
             result_color = UIColors.NEON_GREEN
-            icon_text = '★'
+            icon_text = 'V'
             sub_text = t('victory_sub', 'Tebrikler, rakibini yendin!')
         elif self.winner == 'opponent':
             result_text = t('you_lose', 'KAYBETTIN')
@@ -6809,10 +6808,24 @@ class OnlinePvPGame:
         my_name, opp_name = self._get_result_player_names()
         result_breakdown = self._build_majority_result_breakdown()
         reason_text = self._build_majority_result_reason_text(result_breakdown)
+        lang = get_language()
+        is_tr = lang == 'tr'
 
-        pw = min(s(560), w - s(72))
-        score_panel_h = s(88)
-        btn_w = s(140)
+        my_score = int(getattr(self.my_board, 'score', 0) or 0)
+        my_lines = int(getattr(self.my_board, 'lines_cleared', 0) or 0)
+        opp_score, opp_lines, _ = self._get_opponent_result_metrics()
+
+        def _safe_steam_id(attr_name: str) -> int:
+            try:
+                return int(getattr(self.net, attr_name, 0) or 0)
+            except Exception:
+                return 0
+
+        my_steam_id = _safe_steam_id('my_steam_id')
+        opp_steam_id = _safe_steam_id('opponent_steam_id')
+
+        pw = min(s(760), w - s(64))
+        btn_w = s(160)
         btn_h = s(48)
         hint_f = _rs.get_font(s(12, minimum=9), bold=False)
         reason_font_px = max(9, s(12, minimum=9))
@@ -6830,117 +6843,268 @@ class OnlinePvPGame:
             + max(0, len(reason_lines) - 1) * reason_line_gap
             + s(20),
         )
+
+        card_gap = s(14)
+        side_pad = s(28)
+        stack_cards = pw < s(630)
+        card_h = s(122) if stack_cards else s(158)
+        cards_h = card_h * 2 + card_gap if stack_cards else card_h
+        criteria_h = s(36)
+        header_h = s(142)
         content_bottom = (
-            s(156)
-            + score_panel_h
-            + s(16)
+            header_h
+            + cards_h
+            + s(14)
+            + criteria_h
+            + s(14)
             + reason_panel_h
             + s(18)
             + btn_h
-            + s(14)
+            + s(12)
             + hint_f.get_height()
         )
-        ph = max(s(430), content_bottom + s(18))
+        ph = max(s(560), content_bottom + s(24))
         panel = pygame.Rect(cx - pw // 2, cy - ph // 2, pw, ph)
 
-        # Ana panel — glow border
-        draw_glass_panel(self.screen, panel, alpha=210,
-                         border_color=(*result_color[:3], 180), glow=True)
+        def _draw_alpha_rect(
+            rect: pygame.Rect,
+            color: tuple[int, int, int],
+            alpha: int,
+            radius: int = 0,
+            width: int = 0,
+        ) -> None:
+            surf = pygame.Surface(rect.size, pygame.SRCALPHA)
+            pygame.draw.rect(surf, (*color[:3], alpha), surf.get_rect(), width, border_radius=radius)
+            self.screen.blit(surf, rect.topleft)
 
-        # İkon
-        icon_font = _rs.get_font(s(48, minimum=30))
+        def _draw_alpha_circle(
+            center: tuple[int, int],
+            radius: int,
+            color: tuple[int, int, int],
+            alpha: int,
+            width: int = 0,
+        ) -> None:
+            size = radius * 2 + max(2, width * 2)
+            surf = pygame.Surface((size, size), pygame.SRCALPHA)
+            draw_center = (size // 2, size // 2)
+            pygame.draw.circle(surf, (*color[:3], alpha), draw_center, radius, width)
+            self.screen.blit(surf, (center[0] - size // 2, center[1] - size // 2))
+
+        halo_rect = panel.inflate(s(28), s(28))
+        halo = pygame.Surface(halo_rect.size, pygame.SRCALPHA)
+        pygame.draw.rect(halo, (*result_color[:3], 26), halo.get_rect(), border_radius=s(18))
+        self.screen.blit(halo, halo_rect.topleft)
+
+        draw_glass_panel(self.screen, panel, alpha=218,
+                         border_color=(*result_color[:3], 190), glow=True)
+        pygame.draw.rect(self.screen, (*UIColors.NEON_CYAN[:3], 55),
+                         panel.inflate(-s(10), -s(10)), 1, border_radius=s(12))
+
+        eyebrow_font = _rs.get_font(s(12, minimum=9), bold=True)
+        eyebrow_text = t('online_pvp_title', 'ONLINE PvP')
+        eyebrow_s = eyebrow_font.render(eyebrow_text, True, UIColors.NEON_CYAN)
+        eyebrow_w = min(panel.width - s(48), eyebrow_s.get_width() + s(34))
+        eyebrow_r = pygame.Rect(0, 0, eyebrow_w, s(26))
+        eyebrow_r.center = (cx, panel.y + s(28))
+        _draw_alpha_rect(eyebrow_r, UIColors.NEON_CYAN, 32, radius=s(13))
+        pygame.draw.rect(self.screen, (*UIColors.NEON_CYAN[:3], 150), eyebrow_r, 1, border_radius=s(13))
+        self.screen.blit(eyebrow_s, eyebrow_s.get_rect(center=eyebrow_r.center))
+
+        icon_font = _rs.get_font(s(42, minimum=28), bold=True)
         icon_s = icon_font.render(icon_text, True, result_color)
-        self.screen.blit(icon_s, icon_s.get_rect(center=(cx, panel.y + s(45))))
+        icon_rect = icon_s.get_rect(center=(cx, panel.y + s(70)))
+        for offset, alpha in ((4, 24), (2, 38)):
+            glow_icon = icon_font.render(icon_text, True, result_color)
+            glow_icon.set_alpha(alpha)
+            self.screen.blit(glow_icon, glow_icon.get_rect(center=(icon_rect.centerx + offset, icon_rect.centery + offset)))
+        self.screen.blit(icon_s, icon_rect)
 
-        # Sonuç başlığı — glow efektli
-        tf = _rs.get_fitting_font(result_text, s(40), pw - s(60))
+        tf = _rs.get_fitting_font(result_text, s(38), pw - s(70), bold=True, min_size=s(20, minimum=16))
         ts = tf.render(result_text, True, result_color)
-        # Glow katmanları
-        for glow_offset in (3, 2, 1):
-            glow_surf = pygame.Surface(ts.get_size(), pygame.SRCALPHA)
-            glow_surf.fill((*result_color[:3], 18))
-            glow_surf.blit(ts, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
-            self.screen.blit(glow_surf, glow_surf.get_rect(center=(cx + glow_offset, panel.y + s(100) + glow_offset)))
-        self.screen.blit(ts, ts.get_rect(center=(cx, panel.y + s(100))))
+        for offset, alpha in ((3, 26), (1, 44)):
+            glow_title = tf.render(result_text, True, result_color)
+            glow_title.set_alpha(alpha)
+            self.screen.blit(glow_title, glow_title.get_rect(center=(cx + offset, panel.y + s(105) + offset)))
+        self.screen.blit(ts, ts.get_rect(center=(cx, panel.y + s(105))))
 
-        # Alt açıklama
-        sub_f = _rs.get_font(s(15, minimum=11), bold=False)
+        sub_f = _rs.get_fitting_font(sub_text, s(15, minimum=11), pw - s(90), bold=False, min_size=s(10, minimum=8))
         sub_s = sub_f.render(sub_text, True, _rs.text_secondary)
-        self.screen.blit(sub_s, sub_s.get_rect(center=(cx, panel.y + s(135))))
+        self.screen.blit(sub_s, sub_s.get_rect(center=(cx, panel.y + s(130))))
 
-        # Sonuç sıralaması paneli: kazanan üstte, kaybeden altta
-        score_panel_y = panel.y + s(156)
-        score_panel_r = pygame.Rect(panel.x + s(28), score_panel_y, panel.width - s(56), score_panel_h)
-        draw_glass_panel(self.screen, score_panel_r, alpha=140,
-                         border_color=_rs.glass_border)
+        def _format_number(value: int) -> str:
+            return f"{int(value):,}".replace(',', '.')
 
-        my_score = int(getattr(self.my_board, 'score', 0) or 0)
-        my_lines = int(getattr(self.my_board, 'lines_cleared', 0) or 0)
-        opp_score, opp_lines, _ = self._get_opponent_result_metrics()
+        def _result_status_for(side: str) -> tuple[str, tuple[int, int, int], bool, bool]:
+            if self.winner == 'draw':
+                return (t('draw', 'Berabere'), UIColors.NEON_ORANGE, False, False)
+            is_winner = self.winner == side
+            if is_winner:
+                return (('Kazanan' if is_tr else 'Winner'), UIColors.NEON_GREEN, True, False)
+            return (('Kaybeden' if is_tr else 'Loser'), UIColors.NEON_RED, False, True)
 
-        ranked_rows = [
-            {'name': my_name, 'score': my_score, 'lines': my_lines, 'color': UIColors.NEON_CYAN},
-            {'name': opp_name, 'score': opp_score, 'lines': opp_lines, 'color': UIColors.NEON_MAGENTA},
+        def _draw_avatar(center: tuple[int, int], steam_id: int, name: str, accent: tuple[int, int, int], size: int, active_color: tuple[int, int, int]) -> None:
+            radius = size // 2
+            for grow, alpha in ((s(10), 18), (s(5), 32)):
+                _draw_alpha_circle(center, radius + grow, active_color, alpha)
+            pygame.draw.circle(self.screen, (10, 16, 31), center, radius + s(5))
+            pygame.draw.circle(self.screen, active_color, center, radius + s(5), s(2))
+            pygame.draw.circle(self.screen, accent, center, radius + s(1), s(1))
+            avatar = self._get_steam_avatar_surface(steam_id, size) if steam_id else None
+            if avatar:
+                self.screen.blit(avatar, avatar.get_rect(center=center))
+                return
+            _draw_alpha_circle(center, radius, accent, 70)
+            initial = (str(name).strip()[:1] or '?').upper()
+            initial_font = _rs.get_font(max(14, size // 2), bold=True)
+            initial_s = initial_font.render(initial, True, UIColors.TEXT_PRIMARY)
+            self.screen.blit(initial_s, initial_s.get_rect(center=center))
+
+        def _draw_player_card(card_rect: pygame.Rect, player: dict[str, object]) -> None:
+            side = str(player['side'])
+            accent = player['accent']
+            status_text, status_color, is_winner, is_loser = _result_status_for(side)
+            border_color = status_color if is_winner or is_loser else accent
+
+            draw_glass_panel(self.screen, card_rect, alpha=168,
+                             border_color=(*border_color[:3], 175 if is_winner else 105),
+                             glow=is_winner)
+            tint = pygame.Surface(card_rect.size, pygame.SRCALPHA)
+            for y in range(card_rect.height):
+                ratio = y / max(1, card_rect.height - 1)
+                alpha = int((22 if is_winner else 12) * (1.0 - ratio * 0.55))
+                pygame.draw.line(tint, (*accent[:3], alpha), (0, y), (card_rect.width, y))
+            pygame.draw.rect(tint, (*status_color[:3], 18 if is_winner else 8), tint.get_rect(), border_radius=s(12))
+            self.screen.blit(tint, card_rect.topleft)
+            pygame.draw.rect(self.screen, (*border_color[:3], 220 if is_winner else 120),
+                             card_rect, s(2) if is_winner else 1, border_radius=s(12))
+
+            badge_font = _rs.get_fitting_font(status_text.upper(), s(12, minimum=9),
+                                              card_rect.width - s(34), bold=True, min_size=8)
+            badge_s = badge_font.render(status_text.upper(), True, status_color)
+            badge_r = pygame.Rect(card_rect.x + s(14), card_rect.y + s(12),
+                                  min(card_rect.width - s(28), badge_s.get_width() + s(24)), s(24))
+            _draw_alpha_rect(badge_r, status_color, 34, radius=s(12))
+            pygame.draw.rect(self.screen, (*status_color[:3], 140), badge_r, 1, border_radius=s(12))
+            self.screen.blit(badge_s, badge_s.get_rect(center=badge_r.center))
+
+            avatar_size = min(s(72), max(s(46), card_rect.height - s(52)))
+            avatar_center = (
+                card_rect.x + s(54),
+                card_rect.y + card_rect.height // 2 + s(12 if card_rect.height >= s(145) else 8),
+            )
+            _draw_avatar(
+                avatar_center,
+                int(player.get('steam_id', 0) or 0),
+                str(player['name']),
+                accent,
+                avatar_size,
+                status_color if is_winner or is_loser else accent,
+            )
+
+            text_x = avatar_center[0] + avatar_size // 2 + s(18)
+            text_w = max(s(80), card_rect.right - text_x - s(16))
+            name_font = _rs.get_fitting_font(str(player['name']), s(20, minimum=13),
+                                             text_w, bold=True, min_size=s(10, minimum=8))
+            name_s = name_font.render(str(player['name']), True, UIColors.TEXT_PRIMARY if not is_loser else _rs.text_secondary)
+            name_y = card_rect.y + s(48 if card_rect.height >= s(145) else 38)
+            self.screen.blit(name_s, name_s.get_rect(midleft=(text_x, name_y)))
+
+            line_y = name_y + s(18)
+            pygame.draw.line(self.screen, (*accent[:3], 95), (text_x, line_y), (card_rect.right - s(16), line_y), 1)
+
+            score_text = f'{t("score", "Skor")} {_format_number(int(player["score"]))}'
+            lines_text = f'{t("lines", "Satır")} {int(player["lines"])}'
+            metric_font = _rs.get_fitting_font(score_text, s(13, minimum=10), text_w, bold=False, min_size=8)
+            score_s = metric_font.render(score_text, True, _rs.text_primary)
+            lines_font = _rs.get_fitting_font(lines_text, s(13, minimum=10), text_w, bold=False, min_size=8)
+            lines_s = lines_font.render(lines_text, True, _rs.text_secondary)
+            self.screen.blit(score_s, score_s.get_rect(midleft=(text_x, line_y + s(18))))
+            self.screen.blit(lines_s, lines_s.get_rect(midleft=(text_x, line_y + s(40))))
+
+        cards_y = panel.y + header_h
+        player_cards = [
+            {
+                'side': 'me',
+                'name': my_name,
+                'steam_id': my_steam_id,
+                'score': my_score,
+                'lines': my_lines,
+                'accent': UIColors.NEON_CYAN,
+            },
+            {
+                'side': 'opponent',
+                'name': opp_name,
+                'steam_id': opp_steam_id,
+                'score': opp_score,
+                'lines': opp_lines,
+                'accent': UIColors.NEON_MAGENTA,
+            },
         ]
-        if self.winner == 'me':
-            ranked_rows = [ranked_rows[0], ranked_rows[1]]
-        elif self.winner == 'opponent':
-            ranked_rows = [ranked_rows[1], ranked_rows[0]]
+        if stack_cards:
+            card_w = panel.width - side_pad * 2
+            card_rects = [
+                pygame.Rect(panel.x + side_pad, cards_y, card_w, card_h),
+                pygame.Rect(panel.x + side_pad, cards_y + card_h + card_gap, card_w, card_h),
+            ]
+        else:
+            card_w = (panel.width - side_pad * 2 - card_gap) // 2
+            card_rects = [
+                pygame.Rect(panel.x + side_pad, cards_y, card_w, card_h),
+                pygame.Rect(panel.x + side_pad + card_w + card_gap, cards_y, card_w, card_h),
+            ]
+        for card_rect, player in zip(card_rects, player_cards):
+            _draw_player_card(card_rect, player)
 
-        row_gap = s(8)
-        row_pad_x = s(10)
-        row_pad_y = s(10)
-        row_h = max(s(28), (score_panel_r.height - row_pad_y * 2 - row_gap) // 2)
-        row_w = score_panel_r.width - row_pad_x * 2
-        stat_font = _rs.get_font(s(11, minimum=9), bold=False)
+        def _side_label(side: str) -> str:
+            if side == 'me':
+                return 'Sen' if is_tr else 'You'
+            if side == 'opponent':
+                return 'Rakip' if is_tr else 'Opponent'
+            if side == 'both':
+                return 'İkisi' if is_tr else 'Both'
+            if side == 'none':
+                return 'Yok' if is_tr else 'None'
+            return 'Eşit' if is_tr else 'Tie'
 
-        for idx, row in enumerate(ranked_rows):
-            row_rect = pygame.Rect(
-                score_panel_r.x + row_pad_x,
-                score_panel_r.y + row_pad_y + idx * (row_h + row_gap),
-                row_w,
-                row_h,
-            )
-            pygame.draw.rect(self.screen, (18, 24, 38), row_rect, border_radius=s(10))
-            pygame.draw.rect(
-                self.screen,
-                row['color'] if idx == 0 else (90, 100, 122),
-                row_rect,
-                2 if idx == 0 else 1,
-                border_radius=s(10),
-            )
+        def _side_color(side: str) -> tuple[int, int, int]:
+            if side == 'me':
+                return UIColors.NEON_CYAN
+            if side == 'opponent':
+                return UIColors.NEON_MAGENTA
+            if side == 'both':
+                return UIColors.NEON_GREEN
+            if side == 'none':
+                return UIColors.NEON_RED
+            return UIColors.NEON_ORANGE
 
-            accent_r = pygame.Rect(
-                row_rect.x + s(7),
-                row_rect.y + s(6),
-                s(4),
-                max(s(12), row_rect.height - s(12)),
-            )
-            pygame.draw.rect(self.screen, row['color'], accent_r, border_radius=s(3))
+        criteria_y = cards_y + cards_h + s(14)
+        criteria = [
+            (t('score', 'Skor'), str(result_breakdown.get('score_state', 'draw'))),
+            (t('lines', 'Satır'), str(result_breakdown.get('lines_state', 'draw'))),
+            (('Alan' if is_tr else 'Board'), str(result_breakdown.get('board_state', 'draw'))),
+        ]
+        chip_gap = s(8)
+        chip_w = (panel.width - side_pad * 2 - chip_gap * 2) // 3
+        chip_font_base = s(12, minimum=9)
+        for idx, (label, owner) in enumerate(criteria):
+            chip_r = pygame.Rect(panel.x + side_pad + idx * (chip_w + chip_gap), criteria_y, chip_w, criteria_h)
+            owner_color = _side_color(owner)
+            pygame.draw.rect(self.screen, (12, 18, 32), chip_r, border_radius=s(9))
+            pygame.draw.rect(self.screen, (*owner_color[:3], 95), chip_r, 1, border_radius=s(9))
+            chip_text = f'{label}: {_side_label(owner)}'
+            chip_font = _rs.get_fitting_font(chip_text, chip_font_base, chip_r.width - s(16), bold=True, min_size=8)
+            chip_s = chip_font.render(chip_text, True, owner_color)
+            self.screen.blit(chip_s, chip_s.get_rect(center=chip_r.center))
 
-            main_text = f"{idx + 1}. {row['name']}  ·  {row['score']:,} puan".replace(',', '.')
-            main_font = _rs.get_fitting_font(main_text, s(15, minimum=11), row_rect.width - s(28))
-            main_s = main_font.render(main_text, True, row['color'])
-            self.screen.blit(
-                main_s,
-                main_s.get_rect(center=(row_rect.centerx, row_rect.centery - s(7, minimum=0))),
-            )
-
-            stat_text = f"{row['lines']} satır temizliği"
-            stat_s = stat_font.render(stat_text, True, _rs.text_secondary)
-            self.screen.blit(
-                stat_s,
-                stat_s.get_rect(center=(row_rect.centerx, row_rect.centery + s(10, minimum=0))),
-            )
-
-        reason_panel_y = score_panel_r.bottom + s(16)
+        reason_panel_y = criteria_y + criteria_h + s(14)
         reason_panel_r = pygame.Rect(panel.x + s(34), reason_panel_y, panel.width - s(68), reason_panel_h)
         draw_glass_panel(
             self.screen,
             reason_panel_r,
-            alpha=118,
+            alpha=132,
             border_color=(*result_color[:3], 120),
         )
+        _draw_alpha_rect(reason_panel_r.inflate(-s(8), -s(8)), result_color, 50, radius=s(10), width=1)
         reason_inner_r = reason_panel_r.inflate(-s(16), -s(10))
         reason_total_h = (
             len(reason_lines) * reason_font.get_linesize()
@@ -6952,7 +7116,6 @@ class OnlinePvPGame:
             self.screen.blit(line_s, line_s.get_rect(midtop=(reason_inner_r.centerx, reason_y)))
             reason_y += reason_font.get_linesize() + reason_line_gap
 
-        # Butonlar — daha belirgin stiller
         btn_gap = s(20)
         btn_y = reason_panel_r.bottom + s(18)
 
