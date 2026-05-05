@@ -524,7 +524,6 @@ class OnlinePvPGame:
         self._my_clear_event_seq: int = 0
         self._opponent_piece_render_cache_key: tuple | None = None
         self._opponent_piece_render_cache: dict | None = None
-        self._OPPONENT_PIECE_SMOOTH_MS = 45.0
         self._last_sent_piece_signature: tuple | None = None
         self._pending_piece_position_dirty = False
         self._piece_position_send_timer = 0.0
@@ -3963,57 +3962,27 @@ class OnlinePvPGame:
         }
         self.opponent_piece_data = int_state
 
-        visual = getattr(self, '_opponent_piece_visual', None)
-        should_snap = not isinstance(visual, dict)
-        if not should_snap:
-            should_snap = (
-                int(visual.get('si', -1)) != int_state['si']
-                or int(visual.get('r', -1)) != int_state['r']
-                or abs(float(visual.get('target_x', normalized['x'])) - normalized['x']) > 3.0
-                or abs(float(visual.get('target_y', normalized['y'])) - normalized['y']) > 4.0
-                or (from_snapshot and abs(float(visual.get('draw_y', normalized['y'])) - normalized['y']) > 1.5)
-            )
-        if should_snap:
-            self._opponent_piece_visual = {
-                'si': int_state['si'],
-                'r': int_state['r'],
-                'draw_x': float(normalized['x']),
-                'draw_y': float(normalized['y']),
-                'target_x': float(normalized['x']),
-                'target_y': float(normalized['y']),
-            }
-        else:
-            visual['si'] = int_state['si']
-            visual['r'] = int_state['r']
-            visual['target_x'] = float(normalized['x'])
-            visual['target_y'] = float(normalized['y'])
-            self._opponent_piece_visual = visual
+        snap_x = float(int_state['x'])
+        snap_y = float(int_state['y'])
+        self._opponent_piece_visual = {
+            'si': int_state['si'],
+            'r': int_state['r'],
+            'draw_x': snap_x,
+            'draw_y': snap_y,
+            'target_x': snap_x,
+            'target_y': snap_y,
+        }
         return True
-
-    def _advance_opponent_piece_visual(self, delta_time: float) -> None:
-        visual = getattr(self, '_opponent_piece_visual', None)
-        if not isinstance(visual, dict):
-            return
-        smooth_ms = max(1.0, float(getattr(self, '_OPPONENT_PIECE_SMOOTH_MS', 45.0) or 45.0))
-        blend = min(1.0, max(0.0, float(delta_time or 0.0)) / smooth_ms)
-        draw_x = float(visual.get('draw_x', visual.get('target_x', 0.0)) or 0.0)
-        draw_y = float(visual.get('draw_y', visual.get('target_y', 0.0)) or 0.0)
-        target_x = float(visual.get('target_x', draw_x) or draw_x)
-        target_y = float(visual.get('target_y', draw_y) or draw_y)
-        draw_x += (target_x - draw_x) * blend
-        draw_y += (target_y - draw_y) * blend
-        if abs(target_x - draw_x) < 0.01:
-            draw_x = target_x
-        if abs(target_y - draw_y) < 0.01:
-            draw_y = target_y
-        visual['draw_x'] = draw_x
-        visual['draw_y'] = draw_y
 
     def _get_opponent_piece_draw_state(self) -> dict | None:
         visual = getattr(self, '_opponent_piece_visual', None)
         if isinstance(visual, dict):
+            try:
+                si = int(visual.get('si', -1))
+            except (TypeError, ValueError):
+                si = -1
             return {
-                'si': int(visual.get('si', -1) or -1),
+                'si': si,
                 'x': float(visual.get('draw_x', visual.get('target_x', 0.0)) or 0.0),
                 'y': float(visual.get('draw_y', visual.get('target_y', 0.0)) or 0.0),
                 'r': int(visual.get('r', 0) or 0) % 4,
@@ -4166,8 +4135,12 @@ class OnlinePvPGame:
         piece = getattr(self, 'my_piece', None)
         if not piece:
             return None
+        try:
+            shape_index = int(getattr(piece, 'shape_index', -1))
+        except (TypeError, ValueError):
+            shape_index = -1
         return (
-            int(getattr(piece, 'shape_index', -1) or -1),
+            shape_index,
             int(getattr(piece, 'x', 0) or 0),
             int(getattr(piece, 'y', 0) or 0),
             int(getattr(piece, 'rotation_state', 0) or 0),
@@ -4275,7 +4248,6 @@ class OnlinePvPGame:
         if self._net_initialized:
             self.net.tick()
             self._process_messages()
-            self._advance_opponent_piece_visual(float(delta_time))
 
         _has_unknown_lobbies = (
             bool(self._deferred_lobby_entries)
@@ -6712,7 +6684,10 @@ class OnlinePvPGame:
 
         opponent_piece_state = self._get_opponent_piece_draw_state()
         if opponent_piece_state:
-            si = int(opponent_piece_state.get('si', -1) or -1)
+            try:
+                si = int(opponent_piece_state.get('si', -1))
+            except (TypeError, ValueError):
+                si = -1
             px = float(opponent_piece_state.get('x', 0.0) or 0.0)
             py = float(opponent_piece_state.get('y', 0.0) or 0.0)
             rot = int(opponent_piece_state.get('r', 0) or 0) % 4
