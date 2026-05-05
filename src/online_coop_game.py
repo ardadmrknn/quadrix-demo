@@ -378,10 +378,12 @@ class OnlineCoopGame:
         self._guest_input_seq = 0
         self._last_guest_input_seq = 0
         self._last_guest_piece_state_seq = 0
+        self._last_host_guest_piece_ack_seq = 0
         self._guest_pending_inputs: list[tuple[int, str]] = []
         self._board_state_seq = 0
         self._piece_state_seq = 0
         self._guest_piece_state_out_seq = 0
+        self._guest_piece_unacked_since = 0.0
         self._guest_board_seq = -1
         self._guest_piece_seq = -1
         self._last_sent_board_cells = None
@@ -406,7 +408,8 @@ class OnlineCoopGame:
         self._guest_render_piece_seq = -1
         self._guest_last_authoritative_piece_elapsed_ms = 0.0
         self._guest_local_prediction_ms = 0.0
-        self._GUEST_LOCAL_PREDICTION_MAX_MS = 150.0
+        self._GUEST_LOCAL_PREDICTION_MAX_MS = 350.0
+        self._GUEST_PIECE_ACK_GRACE_S = 0.75
         self._held_gameplay_keys: set[int] = set()
 
         # Placeholder font'lar
@@ -1473,6 +1476,8 @@ class OnlineCoopGame:
         self._last_guest_input_seq = 0
         self._guest_board_seq = -1
         self._guest_piece_seq = -1
+        self._last_host_guest_piece_ack_seq = 0
+        self._guest_piece_unacked_since = 0.0
         self._guest_render_board_seq = -1
         self._guest_render_piece_seq = -1
         self._guest_last_authoritative_piece_elapsed_ms = 0.0
@@ -1902,33 +1907,50 @@ class OnlineCoopGame:
 
     # ── Gameplay input (PLAYING state) ──
 
-    # Host plays as P1 (WASD defaults from CoopGame controls)
-    # Guest plays as P2 but from their own keyboard → sends to host
+    # Online players each have their own keyboard, so both roles accept the
+    # usual WASD scheme and the arrow-key scheme.
     _HOST_KEYS = {
         pygame.K_a: 'move_left',
+        pygame.K_LEFT: 'move_left',
         pygame.K_d: 'move_right',
+        pygame.K_RIGHT: 'move_right',
         pygame.K_s: 'soft_drop_start',
+        pygame.K_DOWN: 'soft_drop_start',
         pygame.K_w: 'rotate',
+        pygame.K_UP: 'rotate',
         pygame.K_LSHIFT: 'hard_drop',
+        pygame.K_SPACE: 'hard_drop',
         pygame.K_e: 'hold',
+        pygame.K_RSHIFT: 'hold',
     }
     _HOST_KEYUP = {
         pygame.K_a: 'das_stop',
+        pygame.K_LEFT: 'das_stop',
         pygame.K_d: 'das_stop',
+        pygame.K_RIGHT: 'das_stop',
         pygame.K_s: 'soft_drop_stop',
+        pygame.K_DOWN: 'soft_drop_stop',
     }
-    # Guest uses the same keys as P2 local (arrow keys)
     _GUEST_KEYS = {
+        pygame.K_a: 'move_left',
         pygame.K_LEFT: 'move_left',
+        pygame.K_d: 'move_right',
         pygame.K_RIGHT: 'move_right',
+        pygame.K_s: 'soft_drop_start',
         pygame.K_DOWN: 'soft_drop_start',
+        pygame.K_w: 'rotate',
         pygame.K_UP: 'rotate',
+        pygame.K_LSHIFT: 'hard_drop',
         pygame.K_SPACE: 'hard_drop',
+        pygame.K_e: 'hold',
         pygame.K_RSHIFT: 'hold',
     }
     _GUEST_KEYUP = {
+        pygame.K_a: 'das_stop',
         pygame.K_LEFT: 'das_stop',
+        pygame.K_d: 'das_stop',
         pygame.K_RIGHT: 'das_stop',
+        pygame.K_s: 'soft_drop_stop',
         pygame.K_DOWN: 'soft_drop_stop',
     }
 
@@ -2544,6 +2566,12 @@ class OnlineCoopGame:
                 normalized['fall_speed'] = 900.0
             normalized['p1_frozen'] = bool(data.get('p1_frozen', False))
             normalized['p2_frozen'] = bool(data.get('p2_frozen', False))
+            normalized['guest_piece_ack'] = self._clamp_int(
+                data.get('guest_piece_ack', self._last_host_guest_piece_ack_seq),
+                0,
+                999999999,
+                self._last_host_guest_piece_ack_seq,
+            )
             normalized.update(self._normalize_authoritative_gameplay_config(data))
             return normalized
 
@@ -2594,6 +2622,12 @@ class OnlineCoopGame:
             normalized['fall_speed'] = 900.0
         normalized['p1_frozen'] = bool(data.get('p1_frozen', False))
         normalized['p2_frozen'] = bool(data.get('p2_frozen', False))
+        normalized['guest_piece_ack'] = self._clamp_int(
+            data.get('guest_piece_ack', self._last_host_guest_piece_ack_seq),
+            0,
+            999999999,
+            self._last_host_guest_piece_ack_seq,
+        )
         normalized.update(self._normalize_authoritative_gameplay_config(data))
         return normalized
 
@@ -2619,6 +2653,12 @@ class OnlineCoopGame:
         normalized['p1_ghost_y'] = self._clamp_int(data.get('p1_ghost_y', -1), -8, 25, -1)
         normalized['p2_ghost_y'] = self._clamp_int(data.get('p2_ghost_y', -1), -8, 25, -1)
         normalized['input_ack'] = self._clamp_int(data.get('input_ack', 0), 0, 999999999)
+        normalized['guest_piece_ack'] = self._clamp_int(
+            data.get('guest_piece_ack', self._last_host_guest_piece_ack_seq),
+            0,
+            999999999,
+            self._last_host_guest_piece_ack_seq,
+        )
         try:
             normalized['host_elapsed_ms'] = max(0.0, min(999999999.0, float(data.get('host_elapsed_ms', 0.0))))
         except (TypeError, ValueError):
@@ -2652,6 +2692,24 @@ class OnlineCoopGame:
 
         self._guest_pending_inputs = remaining_inputs[-64:]
         return bool(self._guest_pending_inputs), pending_board_mutation
+
+    def _consume_guest_piece_ack(self, ack_seq: int) -> int:
+        normalized_ack = self._clamp_int(
+            ack_seq,
+            0,
+            999999999,
+            getattr(self, '_last_host_guest_piece_ack_seq', 0),
+        )
+        previous_ack = int(getattr(self, '_last_host_guest_piece_ack_seq', 0) or 0)
+        if normalized_ack > previous_ack:
+            self._last_host_guest_piece_ack_seq = normalized_ack
+            if normalized_ack >= int(getattr(self, '_guest_piece_state_out_seq', 0) or 0):
+                self._guest_piece_unacked_since = 0.0
+            else:
+                self._guest_piece_unacked_since = time.time()
+        elif normalized_ack >= int(getattr(self, '_guest_piece_state_out_seq', 0) or 0):
+            self._guest_piece_unacked_since = 0.0
+        return int(getattr(self, '_last_host_guest_piece_ack_seq', 0) or 0)
 
     def _ensure_guest_render_game(self):
         if self.role != 'guest':
@@ -2765,6 +2823,8 @@ class OnlineCoopGame:
         self._guest_piece_state_out_seq = int(getattr(self, '_guest_piece_state_out_seq', 0) or 0) + 1
         self._last_guest_sent_piece_signature = signature
         self._guest_piece_state_timer = 0.0
+        if float(getattr(self, '_guest_piece_unacked_since', 0.0) or 0.0) <= 0.0:
+            self._guest_piece_unacked_since = time.time()
         return bool(self.net.send({
             'type': MsgType.GUEST_PIECE_STATE,
             'seq': self._guest_piece_state_out_seq,
@@ -2811,7 +2871,6 @@ class OnlineCoopGame:
         except Exception:
             pass
         self.coop_game.p2_current_piece = incoming_piece
-        self.coop_game.p2_frozen = bool(data.get('p2_frozen', False))
         self.coop_game.p2_das_direction = 0
         self.coop_game.p2_das_charged = False
         self.coop_game.p2_das_timer = 0.0
@@ -2856,6 +2915,38 @@ class OnlineCoopGame:
             + prediction_ms
         )
         return host_elapsed_ms < local_prediction_target_ms
+
+    def _should_keep_unacked_guest_p2(self, render_game, piece_data: dict) -> bool:
+        if render_game is None or not isinstance(piece_data, dict):
+            return False
+        self._consume_guest_piece_ack(piece_data.get('guest_piece_ack', 0))
+        last_sent_seq = int(getattr(self, '_guest_piece_state_out_seq', 0) or 0)
+        last_ack_seq = int(getattr(self, '_last_host_guest_piece_ack_seq', 0) or 0)
+        if last_sent_seq <= 0 or last_ack_seq >= last_sent_seq:
+            return False
+
+        unacked_since = float(getattr(self, '_guest_piece_unacked_since', 0.0) or 0.0)
+        if unacked_since <= 0.0:
+            self._guest_piece_unacked_since = time.time()
+            unacked_since = self._guest_piece_unacked_since
+        grace_s = max(0.05, float(getattr(self, '_GUEST_PIECE_ACK_GRACE_S', 0.75) or 0.75))
+        if time.time() - unacked_since > grace_s:
+            return False
+
+        incoming_piece = piece_data.get('p2_current')
+        if not isinstance(incoming_piece, dict):
+            return False
+        local_signature = self._guest_p2_state_signature(render_game)
+        local_piece_signature = local_signature[0] if local_signature else None
+        if local_piece_signature is None:
+            return False
+        if int(incoming_piece.get('si', -1)) != int(local_piece_signature[0]):
+            return False
+        if self._piece_shape_index(getattr(render_game, 'p2_next_piece', None)) != int(piece_data.get('p2_next_si', -1)):
+            return False
+        if self._piece_shape_index(getattr(render_game, 'p2_hold_piece', None)) != int(piece_data.get('p2_hold_si', -1)):
+            return False
+        return True
 
     def _update_guest_local_prediction(self, delta_time: float):
         render_game = self._apply_guest_render_cache()
@@ -2932,6 +3023,9 @@ class OnlineCoopGame:
             self._last_input_ack_seq,
         )
         _pending_inputs, pending_board_mutation = self._consume_guest_input_ack(board_ack)
+        self._consume_guest_piece_ack(
+            board_data.get('guest_piece_ack', self._last_host_guest_piece_ack_seq)
+        )
         if board_seq != getattr(self, '_guest_render_board_seq', -1) and not pending_board_mutation:
             board = render_game.board
             if board_data.get('_semantic_board'):
@@ -3025,7 +3119,10 @@ class OnlineCoopGame:
                 pending_guest_inputs, _ = self._consume_guest_input_ack(piece_ack)
                 keep_local_p2 = False
                 if not pending_guest_inputs:
-                    keep_local_p2 = self._should_keep_locally_simulated_p2(render_game, piece_data)
+                    keep_local_p2 = (
+                        self._should_keep_unacked_guest_p2(render_game, piece_data)
+                        or self._should_keep_locally_simulated_p2(render_game, piece_data)
+                    )
                 piece_elapsed_ms = max(0.0, float(piece_data.get('host_elapsed_ms', 0.0) or 0.0))
                 render_game.p1_current_piece = self._apply_block_style_to_guest_piece(
                     self._piece_from_snapshot(piece_data.get('p1_current')))
@@ -3090,15 +3187,41 @@ class OnlineCoopGame:
             if valid:
                 normalized_rows.append(row_index)
                 normalized_colors[row_index] = color_row
-        if not normalized_rows:
-            return
         render_game = self._ensure_guest_render_game()
         if not render_game:
+            return
+        self._apply_guest_lock_feedback(data, render_game)
+        if not normalized_rows:
             return
         render_game.line_clear_pending_rows = normalized_rows
         render_game.line_clear_pending_colors = normalized_colors
         try:
             render_game._start_line_clear_sweep(normalized_rows)
+        except Exception:
+            pass
+        try:
+            lines = self._clamp_int(data.get('lines', len(normalized_rows)), 0, 20)
+            if lines >= 4:
+                render_game.trigger_screen_shake(intensity=7, duration=20 / 60.0)
+            elif lines >= 2:
+                render_game.trigger_screen_shake(intensity=3, duration=10 / 60.0)
+        except Exception:
+            pass
+        try:
+            if hasattr(render_game, 'create_particles') and normalized_rows:
+                cs = int(getattr(render_game, 'cell_size', 0) or 0)
+                ox = int(getattr(render_game, 'board_offset_x', 0) or 0)
+                oy = int(getattr(render_game, 'board_offset_y', 0) or 0)
+                board_width = int(getattr(getattr(render_game, 'board', None), 'width', 20) or 20)
+                center_x = ox + (board_width * cs) // 2
+                center_y = oy + int(sum(normalized_rows) / max(1, len(normalized_rows))) * cs + cs // 2
+                render_game.create_particles(
+                    max(30, 40 * max(1, len(normalized_rows))),
+                    center_x,
+                    center_y,
+                    [(255, 255, 255), (255, 215, 0), (0, 255, 255), (255, 100, 255)],
+                    speed=8,
+                )
         except Exception:
             pass
 
@@ -3429,6 +3552,8 @@ class OnlineCoopGame:
             self._guest_board_seq = -1
             self._guest_piece_seq = -1
             self._last_guest_piece_state_seq = 0
+            self._last_host_guest_piece_ack_seq = 0
+            self._guest_piece_unacked_since = 0.0
             self._last_sent_board_cells = None
             self._last_guest_sent_piece_signature = None
             self._last_piece_state_signature = None
@@ -3446,6 +3571,8 @@ class OnlineCoopGame:
         self._guest_pending_inputs = []
         self._last_guest_input_seq = 0
         self._last_guest_piece_state_seq = 0
+        self._last_host_guest_piece_ack_seq = 0
+        self._guest_piece_unacked_since = 0.0
         self._board_state_seq = 0
         self._piece_state_seq = 0
         self._guest_piece_state_out_seq = 0
@@ -3465,10 +3592,11 @@ class OnlineCoopGame:
         if self.role != 'host':
             return
         if event_type == 'lines_cleared':
-            self._send_lock_event(event_data)
+            self._send_lock_event(event_data, event_name='lines_cleared')
             self._send_board_state()
             self._send_piece_state()
         elif event_type == 'piece_placed':
+            self._send_lock_event(event_data, event_name='piece_placed')
             self._send_board_state()
             self._send_piece_state()
         elif event_type == 'hold_used':
@@ -3795,6 +3923,7 @@ class OnlineCoopGame:
             'p1_frozen': self.coop_game.p1_frozen,
             'p2_frozen': self.coop_game.p2_frozen,
             'input_ack': self._last_input_ack_seq,
+            'guest_piece_ack': self._last_guest_piece_state_seq,
             **gameplay_config,
         }
         if removed_positions:
@@ -3835,14 +3964,16 @@ class OnlineCoopGame:
             'p1_ghost_y': self._get_ghost_y('P1'),
             'p2_ghost_y': self._get_ghost_y('P2'),
             'input_ack': self._last_input_ack_seq,
+            'guest_piece_ack': self._last_guest_piece_state_seq,
             'host_elapsed_ms': max(0.0, float(getattr(self.coop_game, 'elapsed_time', 0.0) or 0.0)),
             **gameplay_config,
         }
         self._last_piece_state_signature = self._current_piece_state_signature()
         self.net.send(data, reliable=False, channel=CHANNEL_STATE)
 
-    def _send_lock_event(self, event_data: dict):
+    def _send_lock_event(self, event_data: dict, event_name: str = 'lines_cleared'):
         """Host → Guest: parça kilit / satır temizleme olayı (reliable)."""
+        event_data = event_data or {}
         cleared_row_colors = {}
         cleared_rows = []
         if self.coop_game:
@@ -3860,7 +3991,9 @@ class OnlineCoopGame:
                 cleared_rows = []
         data = {
             'type': MsgType.COOP_LOCK_EVENT,
+            'event': event_name,
             'player': event_data.get('player', ''),
+            'lock_cells': self._serialize_piece_lock_cells(event_data.get('piece')),
             'new_score': self.coop_game.team_score if self.coop_game else 0,
             'new_level': self.coop_game.level if self.coop_game else 1,
             'lines': event_data.get('lines', 0),
@@ -3885,6 +4018,100 @@ class OnlineCoopGame:
     #  GUEST INPUT SENDING
     # ============================================================
 
+    def _trigger_guest_hard_drop_preview_effect(self, render_game, piece, start_y: int) -> None:
+        if render_game is None or piece is None:
+            return
+        if not bool(getattr(render_game, 'effects_enabled', False)):
+            return
+        distance = int(getattr(piece, 'y', start_y) or start_y) - int(start_y or 0)
+        if distance <= 0:
+            return
+        try:
+            cs = int(getattr(render_game, 'cell_size', 0) or 0)
+            if cs <= 0:
+                return
+            ox = int(getattr(render_game, 'board_offset_x', 0) or 0)
+            oy = int(getattr(render_game, 'board_offset_y', 0) or 0)
+            for px, py_abs in piece.get_cells():
+                row_offset = int(py_abs) - int(getattr(piece, 'y', 0) or 0)
+                trail_x = ox + int(px) * cs
+                trail_y_start = oy + (int(start_y) + row_offset) * cs
+                trail_y_end = oy + int(py_abs) * cs
+                if trail_y_end > trail_y_start:
+                    render_game.create_drop_trail(
+                        trail_x,
+                        trail_y_start,
+                        trail_y_end,
+                        getattr(piece, 'color', (128, 128, 128)),
+                        cs,
+                    )
+            render_game.trigger_hard_drop_screen_shake()
+        except Exception:
+            pass
+
+    @staticmethod
+    def _serialize_piece_lock_cells(piece) -> list[list[int]]:
+        if piece is None or not hasattr(piece, 'get_cells'):
+            return []
+        color_matrix = getattr(piece, 'color_matrix', None)
+        fallback_color = tuple(getattr(piece, 'color', (128, 128, 128))[:3])
+        cells: list[list[int]] = []
+        try:
+            for px, py in piece.get_cells():
+                if not (0 <= int(px) < 20 and 0 <= int(py) < 20):
+                    continue
+                color = fallback_color
+                if isinstance(color_matrix, list):
+                    rel_y = int(py) - int(getattr(piece, 'y', 0) or 0)
+                    rel_x = int(px) - int(getattr(piece, 'x', 0) or 0)
+                    try:
+                        matrix_color = color_matrix[rel_y][rel_x]
+                        if matrix_color is not None:
+                            color = tuple(matrix_color[:3])
+                    except Exception:
+                        color = fallback_color
+                cells.append([
+                    int(px),
+                    int(py),
+                    max(0, min(255, int(color[0]))),
+                    max(0, min(255, int(color[1]))),
+                    max(0, min(255, int(color[2]))),
+                ])
+        except Exception:
+            return []
+        return cells
+
+    def _apply_guest_lock_feedback(self, data: dict, render_game) -> None:
+        if render_game is None or not isinstance(data, dict):
+            return
+        raw_cells = data.get('lock_cells', [])
+        if not isinstance(raw_cells, list) or not raw_cells:
+            return
+        try:
+            cs = int(getattr(render_game, 'cell_size', 0) or 0)
+            if cs <= 0:
+                return
+            ox = int(getattr(render_game, 'board_offset_x', 0) or 0)
+            oy = int(getattr(render_game, 'board_offset_y', 0) or 0)
+            for entry in raw_cells[:16]:
+                if not isinstance(entry, (list, tuple)) or len(entry) < 5:
+                    continue
+                x = self._clamp_int(entry[0], 0, 19)
+                y = self._clamp_int(entry[1], 0, 19)
+                color = (
+                    self._clamp_int(entry[2], 0, 255),
+                    self._clamp_int(entry[3], 0, 255),
+                    self._clamp_int(entry[4], 0, 255),
+                )
+                render_game.create_lock_explosion(
+                    ox + x * cs + cs // 2,
+                    oy + y * cs + cs // 2,
+                    color,
+                    cs,
+                )
+        except Exception:
+            pass
+
     def _predict_guest_input(self, action: str):
         """Guest'te kendi parçasını anında oynat; host snapshot'ı otoriter kalır."""
         if self.role != 'guest' or self.online_state != OnlineCoopState.PLAYING:
@@ -3901,8 +4128,10 @@ class OnlineCoopGame:
                 piece = getattr(render_game, 'p2_current_piece', None)
                 board = getattr(render_game, 'board', None)
                 if piece is not None and board is not None and hasattr(board, 'is_valid_position_for_player'):
+                    start_y = int(getattr(piece, 'y', 0) or 0)
                     while board.is_valid_position_for_player(piece, 'P2', dy=1):
                         piece.y += 1
+                    self._trigger_guest_hard_drop_preview_effect(render_game, piece, start_y)
                     try:
                         render_game._reset_player_lock_state('P2')
                     except Exception:
