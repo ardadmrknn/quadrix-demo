@@ -2218,6 +2218,12 @@ class CoopGame:
             self._freeze_player(player)
 
     def _freeze_player(self, player: str) -> None:
+        try:
+            remote_players = getattr(self, 'remote_authority_players', None)
+            if isinstance(remote_players, set):
+                remote_players.discard(player)
+        except Exception:
+            pass
         if player == 'P1':
             self.p1_frozen = True
             self.p1_current_piece = None
@@ -2247,7 +2253,13 @@ class CoopGame:
                 self._p2_pending_unfreeze = True
 
     def _do_unfreeze(self, player: str) -> None:
-        """Düşüş tickinde gerçek unfreeze."""
+        """Resume a frozen player once their spawn area is open again."""
+        try:
+            remote_players = getattr(self, 'remote_authority_players', None)
+            if isinstance(remote_players, set):
+                remote_players.discard(player)
+        except Exception:
+            pass
         if player == 'P1':
             self.p1_frozen = False
             self._p1_pending_unfreeze = False
@@ -2617,13 +2629,13 @@ class CoopGame:
             if self.p2_fall_time >= self.fall_speed:
                 self.p2_fall_time = 0
                 self._step_piece_down('P2')
-        elif self._player_uses_remote_active_authority('P2'):
-            self.p2_fall_time = 0
         elif self._p2_pending_unfreeze:
             self.p2_fall_time += delta_time
             if self.p2_fall_time >= self.fall_speed:
                 self.p2_fall_time = 0
                 self._do_unfreeze('P2')
+        elif self._player_uses_remote_active_authority('P2'):
+            self.p2_fall_time = 0
 
     # ------------------------------------------------------------------
     # DAS

@@ -366,6 +366,33 @@ def test_coop_game_init():
     assert not cg.game_over
     assert cg.team_score == 0
 
+
+def test_remote_authority_does_not_block_pending_unfreeze():
+    cg = CoopGame(sound_enabled=False, effects_enabled=False, screen=_Surf(), sound_manager=_SM())
+    cg.remote_authority_players = {'P2'}
+    cg.p2_frozen = True
+    cg.p2_current_piece = None
+    cg._p2_pending_unfreeze = True
+    cg.p2_fall_time = 0
+    cg.fall_speed = 1
+
+    cg.update(1)
+
+    assert cg.p2_frozen is False
+    assert cg._p2_pending_unfreeze is False
+    assert cg.p2_current_piece is not None
+    assert 'P2' not in cg.remote_authority_players
+
+
+def test_freeze_clears_remote_authority_for_player():
+    cg = CoopGame(sound_enabled=False, effects_enabled=False, screen=_Surf(), sound_manager=_SM())
+    cg.remote_authority_players = {'P2'}
+
+    cg._freeze_player('P2')
+
+    assert cg.p2_frozen is True
+    assert 'P2' not in cg.remote_authority_players
+
 def test_player_hold_empty_stores_only_that_players_piece():
     cg = CoopGame(sound_enabled=False, effects_enabled=False, screen=_Surf(), sound_manager=_SM())
     old_p1 = cg.p1_current_piece
