@@ -3985,7 +3985,7 @@ def main():
                 start_screen_transition(screen, None, duration_ms=duration, transition_type=transition_type)
             _previous_state = state
             # Menü ekranlarında basılı tutma tekrarı aktif, oyunda devre dışı
-            if state in ('game', 'pvp', 'coop', 'online_pvp'):
+            if state in ('game', 'pvp', 'coop', 'coop_campaign', 'online_pvp', 'online_coop'):
                 pygame.key.set_repeat(0)
             else:
                 pygame.key.set_repeat(350, 80)

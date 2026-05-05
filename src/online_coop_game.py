@@ -301,6 +301,7 @@ class OnlineCoopGame:
         self._join_code_input: str = ''
         self._join_code_active: bool = False
         self._join_code_error: str = ''
+        self._join_code_suppress_textinput: str = ''
         self._join_target_lobby_id: int = 0
         self._pending_browser_join_lobby_id: int = 0
         self._searching_by_code: bool = False
@@ -377,7 +378,7 @@ class OnlineCoopGame:
         self._board_state_timer = 0.0
         self._piece_state_timer = 0.0
         self._BOARD_STATE_INTERVAL = 100.0   # ~10 Hz
-        self._PIECE_STATE_INTERVAL = 50.0    # ~20 Hz
+        self._PIECE_STATE_INTERVAL = 33.0    # ~30 Hz, PVP'e yakın parça akıcılığı
 
         # Guest: received state cache
         self._guest_board_cache = None   # dict from host
@@ -385,6 +386,7 @@ class OnlineCoopGame:
         self._guest_score_cache = {}     # score/lines/level
         self._guest_render_board_seq = -1
         self._guest_render_piece_seq = -1
+        self._held_gameplay_keys: set[int] = set()
 
         # Placeholder font'lar
         self.font_large = _rs.get_font(36)
@@ -1042,6 +1044,7 @@ class OnlineCoopGame:
         self._join_code_active = True
         self._join_code_input = ''
         self._join_code_error = ''
+        self._join_code_suppress_textinput = ''
         self._status_msg = t('enter_lobby_code', 'Lobi kodu girin')
         self._status_timer = 2.5
 
@@ -1450,6 +1453,7 @@ class OnlineCoopGame:
         self._join_code_active = False
         self._join_code_input = ''
         self._join_code_error = ''
+        self._join_code_suppress_textinput = ''
         self._join_target_lobby_id = 0
         self._pending_browser_join_lobby_id = 0
         self._searching_by_code = False
@@ -1763,6 +1767,7 @@ class OnlineCoopGame:
                         self._join_code_active = False
                         self._join_code_input = ''
                         self._join_code_error = ''
+                        self._join_code_suppress_textinput = ''
                         continue
                     elif event.key == pygame.K_v and (getattr(event, 'mod', 0) & pygame.KMOD_CTRL):
                         pasted = self._paste_from_clipboard()
@@ -1772,9 +1777,15 @@ class OnlineCoopGame:
                                 self._join_code_input = digits[:6]
                                 self._join_code_error = ''
                         continue
-                    elif event.unicode and event.unicode.isdigit() and len(self._join_code_input) < 6:
-                        self._join_code_input += event.unicode
-                        self._join_code_error = ''
+                    elif event.unicode and event.unicode.isdigit():
+                        digit = event.unicode
+                        if len(self._join_code_input) < 6:
+                            self._join_code_input += digit
+                            self._join_code_error = ''
+                            # SDL/Steam builds often emit KEYDOWN unicode and
+                            # TEXTINPUT for one physical key. Keep KEYDOWN as a
+                            # fallback, then suppress the matching text event.
+                            self._join_code_suppress_textinput = digit
                         continue
 
                 # Gameplay input during PLAYING state
@@ -1813,6 +1824,7 @@ class OnlineCoopGame:
                         self._join_code_active = True
                         self._join_code_input = ''
                         self._join_code_error = ''
+                        self._join_code_suppress_textinput = ''
                     elif event.key == pygame.K_i:
                         self._do_invite_friend()
                 elif self.online_state == OnlineCoopState.WAITING:
@@ -1834,6 +1846,9 @@ class OnlineCoopGame:
             if event.type == pygame.TEXTINPUT and self._join_code_active:
                 for ch in event.text:
                     if ch.isdigit() and len(self._join_code_input) < 6:
+                        if ch == getattr(self, '_join_code_suppress_textinput', ''):
+                            self._join_code_suppress_textinput = ''
+                            continue
                         self._join_code_input += ch
                         self._join_code_error = ''
 
@@ -1901,21 +1916,45 @@ class OnlineCoopGame:
         if self.role == 'host':
             action = self._HOST_KEYS.get(event.key)
             if action and self.coop_game:
+                held_keys = getattr(self, '_held_gameplay_keys', None)
+                if not isinstance(held_keys, set):
+                    held_keys = set()
+                    self._held_gameplay_keys = held_keys
+                if event.key in held_keys:
+                    return
+                held_keys.add(event.key)
                 self.coop_game.inject_remote_input('P1', action)
         elif self.role == 'guest':
             action = self._GUEST_KEYS.get(event.key)
             if action:
+                held_keys = getattr(self, '_held_gameplay_keys', None)
+                if not isinstance(held_keys, set):
+                    held_keys = set()
+                    self._held_gameplay_keys = held_keys
+                if event.key in held_keys:
+                    return
+                held_keys.add(event.key)
+                self._predict_guest_input(action)
                 self._send_guest_input(action)
 
     def _handle_gameplay_keyup(self, event):
         """PLAYING state'te tuş bırakma."""
         if self.role == 'host':
+            try:
+                self._held_gameplay_keys.discard(event.key)
+            except Exception:
+                pass
             action = self._HOST_KEYUP.get(event.key)
             if action and self.coop_game:
                 self.coop_game.inject_remote_input('P1', action)
         elif self.role == 'guest':
+            try:
+                self._held_gameplay_keys.discard(event.key)
+            except Exception:
+                pass
             action = self._GUEST_KEYUP.get(event.key)
             if action:
+                self._predict_guest_input(action)
                 self._send_guest_input(action)
 
     def _toggle_pause_safe(self):
@@ -1930,6 +1969,10 @@ class OnlineCoopGame:
 
     def _freeze_active_gameplay_input(self):
         """Pause/disconnect geçişlerinde held movement state'lerini temizle."""
+        try:
+            self._held_gameplay_keys.clear()
+        except Exception:
+            pass
         coop_game = getattr(self, 'coop_game', None)
         if not coop_game:
             return
@@ -1983,6 +2026,7 @@ class OnlineCoopGame:
             self._join_code_active = not self._join_code_active
             self._join_code_input = ''
             self._join_code_error = ''
+            self._join_code_suppress_textinput = ''
         elif action == 'join_code_field':
             self._join_code_active = True
         elif action == 'submit_join_code':
@@ -2923,6 +2967,10 @@ class OnlineCoopGame:
         self.online_state = OnlineCoopState.PLAYING
         self.game_over = False
         self.paused = False
+        try:
+            self._held_gameplay_keys.clear()
+        except Exception:
+            self._held_gameplay_keys = set()
 
         if self.role == 'host':
             # Host: tam CoopGame simülasyonu oluştur
@@ -3006,12 +3054,19 @@ class OnlineCoopGame:
         # Compact grid: list of lists of [r,g,b] for non-empty, 0 for empty
         grid = []
         owners = []
+        occupancy_grid = getattr(b, 'occupancy', None)
         for row_idx in range(b.height):
             grow = []
             orow = []
             for col_idx in range(b.width):
+                filled = bool(
+                    occupancy_grid
+                    and row_idx < len(occupancy_grid)
+                    and col_idx < len(occupancy_grid[row_idx])
+                    and occupancy_grid[row_idx][col_idx]
+                )
                 cell = b.grid[row_idx][col_idx]
-                if cell and cell != (0, 0, 0):
+                if filled and cell and cell != (0, 0, 0):
                     grow.append(list(cell))
                 else:
                     grow.append(0)
@@ -3110,6 +3165,22 @@ class OnlineCoopGame:
     # ============================================================
     #  GUEST INPUT SENDING
     # ============================================================
+
+    def _predict_guest_input(self, action: str):
+        """Guest'te kendi parçasını anında oynat; host snapshot'ı otoriter kalır."""
+        if self.role != 'guest' or self.online_state != OnlineCoopState.PLAYING:
+            return
+        if self.game_over or self.paused or action == 'pause_request':
+            return
+        if not self._guest_board_cache or not self._guest_piece_cache:
+            return
+        render_game = self._apply_guest_render_cache()
+        if not render_game:
+            return
+        try:
+            render_game.inject_remote_input('P2', action)
+        except Exception:
+            pass
 
     def _send_guest_input(self, action: str):
         """Guest → Host: input aksiyonu gönder (reliable)."""
@@ -3696,14 +3767,22 @@ class OnlineCoopGame:
 
         # Grid çizimi
         grid = board_data.get('grid', [])
+        occupancy = board_data.get('_occupancy', [])
         for row_idx in range(min(board_h, len(grid))):
             row = grid[row_idx]
             for col_idx in range(min(board_w, len(row))):
                 cell = row[col_idx]
                 px = board_x + col_idx * cell_size
                 py = board_y + row_idx * cell_size
-                if cell and cell != 0:
-                    color = tuple(cell) if isinstance(cell, list) else (128, 128, 128)
+                filled = (
+                    isinstance(occupancy, list)
+                    and row_idx < len(occupancy)
+                    and isinstance(occupancy[row_idx], list)
+                    and col_idx < len(occupancy[row_idx])
+                    and bool(occupancy[row_idx][col_idx])
+                )
+                if filled:
+                    color = tuple(cell) if isinstance(cell, (list, tuple)) else (128, 128, 128)
                     pygame.draw.rect(self.screen, color,
                                    (px + 1, py + 1, cell_size - 2, cell_size - 2))
                 else:

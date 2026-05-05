@@ -4,6 +4,7 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 
+import pygame
 
 ROOT = Path(__file__).resolve().parent.parent
 SRC = ROOT / 'src'
@@ -129,6 +130,9 @@ def _make_game(net: FakeNet):
     game._disconnect_grace_timer = 0.0
     game._last_guest_input_seq = 0
     game._last_input_ack_seq = 0
+    game._held_gameplay_keys = set()
+    game._board_state_seq = 0
+    game._piece_state_seq = 0
     game._guest_board_seq = -1
     game._guest_piece_seq = -1
     game._guest_board_cache = None
@@ -152,6 +156,7 @@ def _make_game(net: FakeNet):
     game._lobby_list_filter = 'all'
     game._lobby_list_scroll = 0
     game._invite_after_lobby = False
+    game._join_code_suppress_textinput = ''
     game.user_manager = None
     game.settings_manager = None
     game.screen = SimpleNamespace(get_width=lambda: 1280, get_height=lambda: 720)
@@ -277,6 +282,80 @@ def test_online_coop_ignores_non_game_channel_messages():
     game._process_messages()
 
     assert game.opponent_ready is False
+
+
+def test_online_coop_join_code_digit_is_not_duplicated_by_keydown_and_textinput(monkeypatch):
+    game = _make_game(FakeNet())
+    game.online_state = coop_module.OnlineCoopState.LOBBY_MENU
+    game._join_code_active = True
+    game._join_code_input = ''
+
+    events = [
+        SimpleNamespace(type=pygame.KEYDOWN, key=pygame.K_5, unicode='5'),
+        SimpleNamespace(type=pygame.TEXTINPUT, text='5'),
+    ]
+    monkeypatch.setattr(coop_module.pygame.event, 'get', lambda: events)
+
+    assert game.handle_input() is True
+    assert game._join_code_input == '5'
+
+
+def test_online_coop_join_code_keydown_digit_works_without_textinput(monkeypatch):
+    game = _make_game(FakeNet())
+    game.online_state = coop_module.OnlineCoopState.LOBBY_MENU
+    game._join_code_active = True
+    game._join_code_input = ''
+
+    events = [
+        SimpleNamespace(type=pygame.KEYDOWN, key=pygame.K_5, unicode='5'),
+    ]
+    monkeypatch.setattr(coop_module.pygame.event, 'get', lambda: events)
+
+    assert game.handle_input() is True
+    assert game._join_code_input == '5'
+
+
+def test_online_coop_filters_held_key_repeat_before_sending_guest_input(monkeypatch):
+    net = FakeNet()
+    game = _make_game(net)
+    game.online_state = coop_module.OnlineCoopState.PLAYING
+    game.role = 'guest'
+    predicted = []
+    monkeypatch.setattr(game, '_predict_guest_input', lambda action: predicted.append(action))
+
+    event = SimpleNamespace(key=pygame.K_LEFT)
+    game._handle_gameplay_keydown(event)
+    game._handle_gameplay_keydown(event)
+
+    assert [sent[0]['action'] for sent in net.sent] == ['move_left']
+    assert predicted == ['move_left']
+
+
+def test_online_coop_host_board_snapshot_uses_occupancy_not_black_grid_color():
+    class FakeBoard:
+        width = 20
+        height = 20
+        grid = [[(0, 0, 0) for _ in range(20)] for _ in range(20)]
+        occupancy = [[False for _ in range(20)] for _ in range(20)]
+        owners = [[None for _ in range(20)] for _ in range(20)]
+
+    net = FakeNet()
+    game = _make_game(net)
+    game.role = 'host'
+    game.coop_game = SimpleNamespace(
+        board=FakeBoard(),
+        team_score=0,
+        total_lines_cleared=0,
+        level=1,
+        fall_speed=900.0,
+        p1_frozen=False,
+        p2_frozen=False,
+    )
+
+    game._send_board_state()
+
+    sent_grid = net.sent[0][0]['grid']
+    assert all(cell == 0 for row in sent_grid for cell in row)
 
 
 def test_online_coop_guest_hydrates_local_coop_renderer(monkeypatch):

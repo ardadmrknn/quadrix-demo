@@ -178,6 +178,50 @@ def test_online_coop_lobby_menu_does_not_show_fixed_endless_mode():
     assert 'sub_mode.capitalize()' not in source
 
 
+def test_main_disables_key_repeat_in_online_coop_state():
+    tree = _parse_main()
+    repeat_zero_state_tuples = []
+
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.If):
+            continue
+        has_repeat_zero = False
+        for child in ast.walk(node):
+            if not isinstance(child, ast.Call):
+                continue
+            if not (
+                isinstance(child.func, ast.Attribute)
+                and child.func.attr == 'set_repeat'
+                and isinstance(child.func.value, ast.Attribute)
+                and child.func.value.attr == 'key'
+                and isinstance(child.func.value.value, ast.Name)
+                and child.func.value.value.id == 'pygame'
+                and child.args
+                and isinstance(child.args[0], ast.Constant)
+                and child.args[0].value == 0
+            ):
+                continue
+            has_repeat_zero = True
+        if not has_repeat_zero:
+            continue
+        if (
+            isinstance(node.test, ast.Compare)
+            and isinstance(node.test.left, ast.Name)
+            and node.test.left.id == 'state'
+            and len(node.test.ops) == 1
+            and isinstance(node.test.ops[0], ast.In)
+            and len(node.test.comparators) == 1
+            and isinstance(node.test.comparators[0], ast.Tuple)
+        ):
+            repeat_zero_state_tuples.append({
+                element.value
+                for element in node.test.comparators[0].elts
+                if isinstance(element, ast.Constant)
+            })
+
+    assert any('online_coop' in states for states in repeat_zero_state_tuples)
+
+
 def test_online_coop_high_visibility_labels_keep_coop_term_and_translate_online_tr():
     localization = _load_localization_module()
     translations = localization.TRANSLATIONS
