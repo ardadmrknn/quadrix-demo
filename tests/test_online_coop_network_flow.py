@@ -11,7 +11,7 @@ SRC = ROOT / 'src'
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from steam_networking import MsgType, SteamNetworking  # noqa: E402
+from steam_networking import CHANNEL_CONTROL, CHANNEL_STATE, MsgType, SteamNetworking  # noqa: E402
 import online_coop_game as coop_module  # noqa: E402
 
 
@@ -137,7 +137,9 @@ def _make_game(net: FakeNet):
     game._piece_state_seq = 0
     game._guest_board_seq = -1
     game._guest_piece_seq = -1
+    game._last_sent_board_cells = None
     game._last_piece_state_signature = None
+    game._authoritative_gameplay_config = {}
     game._guest_board_cache = None
     game._guest_piece_cache = None
     game._guest_score_cache = {}
@@ -244,6 +246,8 @@ def test_online_coop_uses_dedicated_coop_start_message():
 
     assert net.sent
     assert net.sent[0][0]['type'] == MsgType.COOP_GAME_START
+    assert net.sent[0][0]['config']['das_delay'] >= 0.0
+    assert net.sent[0][2] == CHANNEL_CONTROL
     assert game.online_state == coop_module.OnlineCoopState.COUNTDOWN
 
 
@@ -258,7 +262,7 @@ def test_online_coop_host_start_forwards_match_seed_to_coop_game(monkeypatch):
             self.p2_frozen = False
 
     monkeypatch.setattr(coop_module, 'CoopGame', FakeHostCoop)
-    monkeypatch.setattr(coop_module.OnlineCoopGame, '_send_board_state', lambda self: None)
+    monkeypatch.setattr(coop_module.OnlineCoopGame, '_send_board_state', lambda self, force_full=False: None)
     monkeypatch.setattr(coop_module.OnlineCoopGame, '_send_piece_state', lambda self: None)
 
     game = _make_game(FakeNet())
@@ -300,15 +304,29 @@ def test_online_coop_guest_rejects_malformed_board_snapshot():
     assert game._guest_board_cache is None
 
 
-def test_online_coop_ignores_non_game_channel_messages():
+def test_online_coop_ignores_messages_on_unexpected_channel():
     net = FakeNet([
-        _message(42, {'type': MsgType.READY}, channel=2),
+        _message(42, {'type': MsgType.READY}, channel=CHANNEL_STATE),
     ])
     game = _make_game(net)
 
     game._process_messages()
 
     assert game.opponent_ready is False
+
+
+def test_online_coop_accepts_state_channel_board_snapshots():
+    net = FakeNet([
+        _message(42, _valid_board_state(seq=5, team_score=100), channel=CHANNEL_STATE),
+    ])
+    net.opponent_steam_id = 42
+    game = _make_game(net)
+    game.role = 'guest'
+
+    game._process_messages()
+
+    assert game._guest_board_seq == 5
+    assert game._guest_board_cache['team_score'] == 100
 
 
 def test_online_coop_join_code_digit_is_not_duplicated_by_keydown_and_textinput(monkeypatch):
@@ -358,7 +376,7 @@ def test_online_coop_filters_held_key_repeat_before_sending_guest_input(monkeypa
     assert predicted == ['move_left']
 
 
-def test_online_coop_host_board_snapshot_uses_occupancy_not_black_grid_color():
+def test_online_coop_host_board_snapshot_emits_empty_semantic_full_snapshot_for_empty_board():
     class FakeBoard:
         width = 20
         height = 20
@@ -381,8 +399,49 @@ def test_online_coop_host_board_snapshot_uses_occupancy_not_black_grid_color():
 
     game._send_board_state()
 
-    sent_grid = net.sent[0][0]['grid']
-    assert all(cell == 0 for row in sent_grid for cell in row)
+    payload, reliable, channel = net.sent[0]
+    assert payload['format'] == 'semantic_delta_v1'
+    assert payload['full'] is True
+    assert payload['cells'] == []
+    assert reliable is False
+    assert channel == CHANNEL_STATE
+
+
+def test_online_coop_host_board_snapshot_serializes_semantic_locked_cells():
+    texture_slice = coop_module.TextureSlice('T', rel_x=1, rel_y=2, width=4, height=4, rotation=3)
+
+    class FakeBoard:
+        width = 20
+        height = 20
+        grid = [[(0, 0, 0) for _ in range(20)] for _ in range(20)]
+        occupancy = [[False for _ in range(20)] for _ in range(20)]
+        owners = [[None for _ in range(20)] for _ in range(20)]
+        texture_grid = [[None for _ in range(20)] for _ in range(20)]
+        gold = [[False for _ in range(20)] for _ in range(20)]
+
+    board = FakeBoard()
+    board.occupancy[19][3] = True
+    board.grid[19][3] = (10, 20, 30)
+    board.owners[19][3] = 'P2'
+    board.texture_grid[19][3] = texture_slice
+    board.gold[19][3] = True
+
+    net = FakeNet()
+    game = _make_game(net)
+    game.role = 'host'
+    game.coop_game = SimpleNamespace(
+        board=board,
+        team_score=0,
+        total_lines_cleared=0,
+        level=1,
+        fall_speed=900.0,
+        p1_frozen=False,
+        p2_frozen=False,
+    )
+
+    game._send_board_state()
+
+    assert net.sent[0][0]['cells'] == [[3, 19, 'T', 'P2', 1, 2, 4, 4, 3, 1, 10, 20, 30]]
 
 
 def test_online_coop_host_board_snapshot_carries_latest_guest_ack():
@@ -410,6 +469,73 @@ def test_online_coop_host_board_snapshot_carries_latest_guest_ack():
     game._send_board_state()
 
     assert net.sent[0][0]['input_ack'] == 12
+    assert net.sent[0][2] == CHANNEL_STATE
+
+
+def test_online_coop_host_board_heartbeat_forces_full_snapshot_after_delta_send():
+    class FakeBoard:
+        width = 20
+        height = 20
+        grid = [[(0, 0, 0) for _ in range(20)] for _ in range(20)]
+        occupancy = [[False for _ in range(20)] for _ in range(20)]
+        owners = [[None for _ in range(20)] for _ in range(20)]
+        texture_grid = [[None for _ in range(20)] for _ in range(20)]
+        gold = [[False for _ in range(20)] for _ in range(20)]
+
+        def is_valid_position_for_player(self, piece, player, dy=0):
+            return False
+
+    class FakePiece:
+        def __init__(self, shape_index, x, y, rotation_state=0):
+            self.shape_index = shape_index
+            self.x = x
+            self.y = y
+            self.rotation_state = rotation_state
+
+    class FakeHostCoop:
+        def __init__(self):
+            self.board = FakeBoard()
+            self.p1_current_piece = FakePiece(0, 3, 0)
+            self.p2_current_piece = FakePiece(1, 13, 0)
+            self.p1_next_piece = FakePiece(2, 0, 0)
+            self.p2_next_piece = FakePiece(3, 0, 0)
+            self.p1_hold_piece = None
+            self.p2_hold_piece = None
+            self.p1_frozen = False
+            self.p2_frozen = False
+            self.team_score = 0
+            self.total_lines_cleared = 0
+            self.level = 1
+            self.fall_speed = 900.0
+            self.game_over = False
+            self.elapsed_time = 0.0
+
+        def update(self, _dt):
+            self.elapsed_time += float(_dt)
+
+    net = FakeNet()
+    net.tick = lambda: None
+    game = _make_game(net)
+    game.role = 'host'
+    game.online_state = coop_module.OnlineCoopState.PLAYING
+    game._net_initialized = True
+    game._auto_connect_attempted = True
+    game._auto_connect_retry_timer = 0.0
+    game._last_frozen_flags = (False, False)
+    game._BOARD_STATE_INTERVAL = 250.0
+    game._PIECE_STATE_INTERVAL = 1000.0
+    game._board_state_timer = 240.0
+    game._piece_state_timer = 0.0
+    game._pause_cooldown_timer = 0.0
+    game.coop_game = FakeHostCoop()
+    game._last_sent_board_cells = {(0, 0): ('I', 'P1', 0, 0, 4, 4, 0, False, 10, 20, 30)}
+    game._last_piece_state_signature = game._current_piece_state_signature()
+
+    game.update(16)
+
+    board_payloads = [payload for payload, _reliable, channel in net.sent if channel == CHANNEL_STATE and payload['type'] == MsgType.COOP_BOARD_STATE]
+    assert board_payloads
+    assert board_payloads[-1]['full'] is True
 
 
 def test_online_coop_host_update_pushes_piece_state_on_live_change():
@@ -693,6 +819,53 @@ def test_online_coop_guest_keeps_locally_simulated_p2_until_host_piece_time_catc
     assert game._guest_last_authoritative_piece_elapsed_ms == 1065.0
 
 
+def test_online_coop_guest_applies_host_authoritative_das_timing():
+    class FakeBoard:
+        width = 20
+        height = 20
+
+    class FakeRenderCoop:
+        def __init__(self):
+            self.screen = None
+            self.window_width = 0
+            self.window_height = 0
+            self.fullscreen = False
+            self.board = FakeBoard()
+            self.p1_current_piece = None
+            self.p2_current_piece = None
+            self.p1_next_piece = None
+            self.p2_next_piece = None
+            self.p1_hold_piece = None
+            self.p2_hold_piece = None
+            self.p1_frozen = False
+            self.p2_frozen = False
+            self._cached_das_delay = 999.0
+            self._cached_das_repeat = 999.0
+            self._das_settings_dirty = True
+
+        def _apply_block_style(self, piece):
+            return None
+
+    game = _make_game(FakeNet())
+    game.role = 'guest'
+    game.online_state = coop_module.OnlineCoopState.PLAYING
+    game.coop_game = FakeRenderCoop()
+    board_state = _valid_board_state(seq=3)
+    board_state['das_delay'] = 145.0
+    board_state['das_repeat'] = 32.0
+    piece_state = _valid_piece_state(seq=4)
+    piece_state['das_delay'] = 145.0
+    piece_state['das_repeat'] = 32.0
+    game._guest_board_cache = game._normalize_board_snapshot(board_state)
+    game._guest_piece_cache = game._normalize_piece_snapshot(piece_state)
+
+    game._apply_guest_render_cache()
+
+    assert game.coop_game._cached_das_delay == 145.0
+    assert game.coop_game._cached_das_repeat == 32.0
+    assert game.coop_game._das_settings_dirty is False
+
+
 def test_online_coop_line_clear_event_triggers_guest_render_sweep(monkeypatch):
     class FakeBoard:
         width = 20
@@ -798,6 +971,7 @@ def test_steam_networking_send_coop_start_uses_coop_message_type():
     assert sent[0][0]['seed'] == 123
     assert sent[0][0]['sub_mode'] == 'endless'
     assert sent[0][1] is True
+    assert sent[0][2] == CHANNEL_CONTROL
 
 
 def test_online_coop_invite_existing_lobby_does_not_recreate_lobby():

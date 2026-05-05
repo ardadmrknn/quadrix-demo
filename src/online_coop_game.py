@@ -29,7 +29,7 @@ from background import BackgroundManager
 from background_effects import get_shared_falling_blocks_layer
 from themes import ThemeManager
 from mode_skins import get_mode_skin
-from block_styles import BlockStyleManager
+from block_styles import BlockStyleManager, TextureSlice
 from retro_style import retro_style as _rs
 from ui_theme import UIColors
 from localization import t, get_language
@@ -38,12 +38,20 @@ from ui_scaling import get_projected_effective_scale
 from steam_networking import (
     SteamNetworking, MsgType, NetEvent, NetMessage,
     CHANNEL_GAME,
+    CHANNEL_STATE,
+    CHANNEL_CONTROL,
     generate_lobby_code,
 )
 from coop_game import CoopGame
 from screen_shake import step_screen_shake
 from pieces import Piece, SHAPES as _SHAPES
-from constants import COLORS as _PIECE_COLORS
+from constants import (
+    COLORS as _PIECE_COLORS,
+    BLACK as _BOARD_EMPTY_COLOR,
+    DEFAULT_LOCK_DELAY,
+    DAS_DELAY,
+    DAS_REPEAT,
+)
 
 # Steam pump thread kontrolü
 try:
@@ -374,8 +382,10 @@ class OnlineCoopGame:
         self._piece_state_seq = 0
         self._guest_board_seq = -1
         self._guest_piece_seq = -1
+        self._last_sent_board_cells = None
         self._last_piece_state_signature = None
         self._last_frozen_flags: tuple[bool, bool] | None = None
+        self._authoritative_gameplay_config: dict = {}
 
         # Host state broadcast timers (ms)
         self._board_state_timer = 0.0
@@ -1401,7 +1411,7 @@ class OnlineCoopGame:
     def _send_session_ping(self) -> bool:
         if not self._net_initialized:
             return False
-        ok = self.net.send({'type': 'session_ping'}, reliable=True, channel=CHANNEL_GAME)
+        ok = self.net.send({'type': 'session_ping'}, reliable=True, channel=CHANNEL_CONTROL)
         if ok:
             self._session_ping_backoff_ms = 0.0
         return bool(ok)
@@ -2089,7 +2099,7 @@ class OnlineCoopGame:
             self._opponent_rematch = False
         elif action == 'rematch':
             self._my_rematch = True
-            self.net.send({'type': MsgType.REMATCH}, reliable=True, channel=CHANNEL_GAME)
+            self.net.send({'type': MsgType.REMATCH}, reliable=True, channel=CHANNEL_CONTROL)
             self._check_both_rematch()
         return None
 
@@ -2341,7 +2351,9 @@ class OnlineCoopGame:
 
             if self._board_state_timer >= self._BOARD_STATE_INTERVAL:
                 self._board_state_timer = 0.0
-                self._send_board_state()
+                # Unreliable delta paketleri kaybolursa guest board kalici desync olmamali.
+                # Timer heartbeat'i her zaman full snapshot gondererek taban durumu yeniler.
+                self._send_board_state(force_full=True)
 
             if self._piece_state_timer >= self._PIECE_STATE_INTERVAL:
                 self._piece_state_timer = 0.0
@@ -2461,6 +2473,66 @@ class OnlineCoopGame:
         return color, color != (0, 0, 0)
 
     def _normalize_board_snapshot(self, data: dict) -> dict | None:
+        if data.get('format') == 'semantic_delta_v1':
+            raw_cells = data.get('cells')
+            if not isinstance(raw_cells, list):
+                return None
+
+            normalized_cells = []
+            for entry in raw_cells:
+                if not isinstance(entry, (list, tuple)) or len(entry) != 13:
+                    return None
+                x = self._clamp_int(entry[0], 0, 19)
+                y = self._clamp_int(entry[1], 0, 19)
+                piece_name = str(entry[2] or '')
+                owner = entry[3] if entry[3] in ('P1', 'P2') else None
+                rel_x = self._clamp_int(entry[4], 0, 3)
+                rel_y = self._clamp_int(entry[5], 0, 3)
+                width = self._clamp_int(entry[6], 1, 4, 1)
+                height = self._clamp_int(entry[7], 1, 4, 1)
+                rotation = self._clamp_int(entry[8], 0, 3, 0)
+                gold = bool(entry[9])
+                fallback_color = (
+                    self._clamp_int(entry[10], 0, 255, 0),
+                    self._clamp_int(entry[11], 0, 255, 0),
+                    self._clamp_int(entry[12], 0, 255, 0),
+                )
+                normalized_cells.append((
+                    x, y, piece_name, owner,
+                    rel_x, rel_y, width, height, rotation,
+                    gold, fallback_color,
+                ))
+
+            removed_positions = []
+            raw_removed = data.get('removed', [])
+            if raw_removed is not None:
+                if not isinstance(raw_removed, list):
+                    return None
+                for entry in raw_removed:
+                    if not isinstance(entry, (list, tuple)) or len(entry) != 2:
+                        return None
+                    removed_positions.append((
+                        self._clamp_int(entry[0], 0, 19),
+                        self._clamp_int(entry[1], 0, 19),
+                    ))
+
+            normalized = dict(data)
+            normalized['_semantic_board'] = True
+            normalized['_semantic_cells'] = normalized_cells
+            normalized['_removed_cells'] = removed_positions
+            normalized['_board_full'] = bool(data.get('full', False))
+            normalized['team_score'] = self._clamp_int(data.get('team_score', 0), 0, 999999999)
+            normalized['total_lines'] = self._clamp_int(data.get('total_lines', 0), 0, 999999)
+            normalized['level'] = self._clamp_int(data.get('level', 1), 1, 999)
+            try:
+                normalized['fall_speed'] = max(1.0, min(5000.0, float(data.get('fall_speed', 900.0))))
+            except (TypeError, ValueError):
+                normalized['fall_speed'] = 900.0
+            normalized['p1_frozen'] = bool(data.get('p1_frozen', False))
+            normalized['p2_frozen'] = bool(data.get('p2_frozen', False))
+            normalized.update(self._normalize_authoritative_gameplay_config(data))
+            return normalized
+
         grid = data.get('grid')
         if not isinstance(grid, list) or len(grid) != 20:
             return None
@@ -2508,6 +2580,7 @@ class OnlineCoopGame:
             normalized['fall_speed'] = 900.0
         normalized['p1_frozen'] = bool(data.get('p1_frozen', False))
         normalized['p2_frozen'] = bool(data.get('p2_frozen', False))
+        normalized.update(self._normalize_authoritative_gameplay_config(data))
         return normalized
 
     def _normalize_piece_snapshot(self, data: dict) -> dict:
@@ -2536,6 +2609,7 @@ class OnlineCoopGame:
             normalized['host_elapsed_ms'] = max(0.0, min(999999999.0, float(data.get('host_elapsed_ms', 0.0))))
         except (TypeError, ValueError):
             normalized['host_elapsed_ms'] = 0.0
+        normalized.update(self._normalize_authoritative_gameplay_config(data))
         return normalized
 
     def _consume_guest_input_ack(self, ack_seq: int) -> tuple[bool, bool]:
@@ -2573,6 +2647,8 @@ class OnlineCoopGame:
             self.coop_game.window_width = self.window_width
             self.coop_game.window_height = self.window_height
             self.coop_game.fullscreen = self.fullscreen
+            if self._authoritative_gameplay_config:
+                self._apply_authoritative_guest_timing(self.coop_game, self._authoritative_gameplay_config)
             return self.coop_game
         try:
             self.coop_game = CoopGame(
@@ -2586,6 +2662,8 @@ class OnlineCoopGame:
                 piece_rng_seed=(int(self._game_seed) if int(self._game_seed or 0) > 0 else None),
             )
             self.coop_game._event_listeners = []
+            if self._authoritative_gameplay_config:
+                self._apply_authoritative_guest_timing(self.coop_game, self._authoritative_gameplay_config)
         except Exception as exc:
             print(f"[OnlineCoop] Guest render init hatası: {exc}")
             self.coop_game = None
@@ -2743,20 +2821,57 @@ class OnlineCoopGame:
         _pending_inputs, pending_board_mutation = self._consume_guest_input_ack(board_ack)
         if board_seq != getattr(self, '_guest_render_board_seq', -1) and not pending_board_mutation:
             board = render_game.board
-            grid = board_data.get('grid')
-            occupancy = board_data.get('_occupancy')
-            owners = board_data.get('owners')
-            if not (
-                isinstance(grid, list)
-                and isinstance(occupancy, list)
-                and isinstance(owners, list)
-            ):
-                return None
-            board.grid = [[tuple(cell) for cell in row] for row in grid]
-            board.occupancy = [[bool(cell) for cell in row] for row in occupancy]
-            board.owners = [[owner if owner in ('P1', 'P2') else None for owner in row] for row in owners]
-            board.texture_grid = [[None for _ in range(board.width)] for _ in range(board.height)]
-            board.gold = [[False for _ in range(board.width)] for _ in range(board.height)]
+            if board_data.get('_semantic_board'):
+                if bool(board_data.get('_board_full', False)):
+                    board.grid = [[_BOARD_EMPTY_COLOR for _ in range(board.width)] for _ in range(board.height)]
+                    board.occupancy = [[False for _ in range(board.width)] for _ in range(board.height)]
+                    board.owners = [[None for _ in range(board.width)] for _ in range(board.height)]
+                    board.texture_grid = [[None for _ in range(board.width)] for _ in range(board.height)]
+                    board.gold = [[False for _ in range(board.width)] for _ in range(board.height)]
+
+                for x, y in board_data.get('_removed_cells', []):
+                    board.grid[y][x] = _BOARD_EMPTY_COLOR
+                    board.occupancy[y][x] = False
+                    board.owners[y][x] = None
+                    board.texture_grid[y][x] = None
+                    board.gold[y][x] = False
+
+                for (
+                    x,
+                    y,
+                    piece_name,
+                    owner,
+                    rel_x,
+                    rel_y,
+                    width,
+                    height,
+                    rotation,
+                    is_gold,
+                    fallback_color,
+                ) in board_data.get('_semantic_cells', []):
+                    board.grid[y][x] = self._local_locked_block_color(render_game, piece_name, fallback_color)
+                    board.occupancy[y][x] = True
+                    board.owners[y][x] = owner if owner in ('P1', 'P2') else None
+                    board.gold[y][x] = bool(is_gold)
+                    board.texture_grid[y][x] = (
+                        TextureSlice(piece_name, rel_x=rel_x, rel_y=rel_y, width=width, height=height, rotation=rotation)
+                        if piece_name else None
+                    )
+            else:
+                grid = board_data.get('grid')
+                occupancy = board_data.get('_occupancy')
+                owners = board_data.get('owners')
+                if not (
+                    isinstance(grid, list)
+                    and isinstance(occupancy, list)
+                    and isinstance(owners, list)
+                ):
+                    return None
+                board.grid = [[tuple(cell) for cell in row] for row in grid]
+                board.occupancy = [[bool(cell) for cell in row] for row in occupancy]
+                board.owners = [[owner if owner in ('P1', 'P2') else None for owner in row] for row in owners]
+                board.texture_grid = [[None for _ in range(board.width)] for _ in range(board.height)]
+                board.gold = [[False for _ in range(board.width)] for _ in range(board.height)]
             board.score = int(board_data.get('team_score', 0) or 0)
             board.lines_cleared = int(board_data.get('total_lines', 0) or 0)
             board.level = int(board_data.get('level', 1) or 1)
@@ -2768,6 +2883,7 @@ class OnlineCoopGame:
             render_game.p2_frozen = bool(board_data.get('p2_frozen', False))
             render_game.game_over = False
             render_game.paused = False
+            self._apply_authoritative_guest_timing(render_game, board_data)
             self._guest_render_board_seq = board_seq
             try:
                 pending_rows = list(getattr(render_game, 'line_clear_pending_rows', []) or [])
@@ -2786,6 +2902,7 @@ class OnlineCoopGame:
         if isinstance(piece_data, dict):
             piece_seq = int(piece_data.get('seq', -1) or -1)
             if piece_seq != getattr(self, '_guest_render_piece_seq', -1):
+                self._apply_authoritative_guest_timing(render_game, piece_data)
                 piece_ack = self._clamp_int(
                     piece_data.get('input_ack', self._last_input_ack_seq),
                     0,
@@ -2877,12 +2994,12 @@ class OnlineCoopGame:
         for msg in self.net.get_messages():
             try:
                 channel = getattr(msg, 'channel', CHANNEL_GAME)
-                if channel != CHANNEL_GAME:
-                    continue
                 data = msg.data
                 if not isinstance(data, dict):
                     continue
                 msg_type = data.get('type', '')
+                if not self._is_supported_message_channel(msg_type, channel):
+                    continue
 
                 opponent_id = int(getattr(self.net, 'opponent_steam_id', 0) or 0)
                 my_id = int(getattr(self.net, 'my_steam_id', 0) or 0)
@@ -2950,6 +3067,13 @@ class OnlineCoopGame:
 
                 elif msg_type == MsgType.COOP_GAME_START:
                     self._on_game_start(data)
+
+                elif msg_type == MsgType.COOP_GAME_CONFIG:
+                    if self.role == 'guest':
+                        normalized_config = self._normalize_authoritative_gameplay_config(data.get('config'))
+                        self._authoritative_gameplay_config = dict(normalized_config)
+                        if self.coop_game is not None:
+                            self._apply_authoritative_guest_timing(self.coop_game, normalized_config)
 
                 # Co-op host: guest input processing
                 elif msg_type == MsgType.GUEST_INPUT:
@@ -3098,15 +3222,18 @@ class OnlineCoopGame:
             return False
         seed = int(payload.get('seed', 0) or 0)
         sub_mode = str(payload.get('sub_mode', self.selected_submode) or self.selected_submode)
+        config = self._build_authoritative_gameplay_config()
+        self._authoritative_gameplay_config = dict(config)
         send_coop_start = getattr(self.net, 'send_coop_start', None)
         if callable(send_coop_start):
-            return bool(send_coop_start(seed, sub_mode=sub_mode))
+            return bool(send_coop_start(seed, sub_mode=sub_mode, config=config))
         return bool(self.net.send({
             'type': MsgType.COOP_GAME_START,
             'seed': seed,
             'sub_mode': sub_mode,
             'timestamp': time.time(),
-        }, reliable=True, channel=CHANNEL_GAME))
+            'config': config,
+        }, reliable=True, channel=CHANNEL_CONTROL))
 
     def _start_countdown(self):
         """3-2-1 geri sayım başlat."""
@@ -3128,6 +3255,7 @@ class OnlineCoopGame:
             return
         self._game_seed = data.get('seed', 0)
         self.selected_submode = str(data.get('sub_mode', self.selected_submode) or self.selected_submode)
+        self._authoritative_gameplay_config = self._normalize_authoritative_gameplay_config(data.get('config'))
         self._game_start_pending_payload = None
         self._game_start_retry_timer = 0.0
         self.online_state = OnlineCoopState.COUNTDOWN
@@ -3166,6 +3294,7 @@ class OnlineCoopGame:
                 bool(self.coop_game.p1_frozen),
                 bool(self.coop_game.p2_frozen),
             )
+            self._authoritative_gameplay_config = self._build_authoritative_gameplay_config()
             # Host otoriter kalır; seed sadece bag sırasını maç bazında sabitler.
         else:
             # Guest: state cache'leri temizle
@@ -3176,6 +3305,7 @@ class OnlineCoopGame:
             self._guest_input_seq = 0
             self._guest_board_seq = -1
             self._guest_piece_seq = -1
+            self._last_sent_board_cells = None
             self._last_piece_state_signature = None
             self._guest_render_board_seq = -1
             self._guest_render_piece_seq = -1
@@ -3191,11 +3321,13 @@ class OnlineCoopGame:
         self._last_guest_input_seq = 0
         self._board_state_seq = 0
         self._piece_state_seq = 0
+        self._last_sent_board_cells = None
         self._last_piece_state_signature = None
         self._guest_last_authoritative_piece_elapsed_ms = 0.0
         self._guest_local_prediction_ms = 0.0
         if self.role == 'host':
-            self._send_board_state()
+            self._send_gameplay_config()
+            self._send_board_state(force_full=True)
             self._send_piece_state()
 
     def _on_coop_event(self, event_type: str, event_data: dict):
@@ -3274,41 +3406,257 @@ class OnlineCoopGame:
         self._send_piece_state()
         return True
 
-    def _send_board_state(self):
-        """Host → Guest: board grid + game state (unreliable)."""
+    def _build_authoritative_gameplay_config(self) -> dict:
+        settings_manager = getattr(self, 'settings_manager', None)
+        try:
+            das_delay = float(settings_manager.get('das_delay', DAS_DELAY)) if settings_manager else float(DAS_DELAY)
+        except Exception:
+            das_delay = float(DAS_DELAY)
+        try:
+            das_repeat = float(settings_manager.get('das_repeat', DAS_REPEAT)) if settings_manager else float(DAS_REPEAT)
+        except Exception:
+            das_repeat = float(DAS_REPEAT)
+
+        config = {
+            'das_delay': max(0.0, das_delay),
+            'das_repeat': max(1.0, das_repeat),
+            'enable_lock_delay': True,
+            'lock_delay': float(DEFAULT_LOCK_DELAY),
+            'soft_drop_speed': float(getattr(CoopGame, '_SOFT_DROP_SPEED', 50.0) or 50.0),
+        }
+
+        if self.coop_game is not None:
+            das_delay = float(getattr(self.coop_game, '_cached_das_delay', das_delay) or das_delay)
+            das_repeat = float(getattr(self.coop_game, '_cached_das_repeat', das_repeat) or das_repeat)
+            if bool(getattr(self.coop_game, '_das_settings_dirty', False)):
+                coop_settings = getattr(self.coop_game, 'settings_manager', None) or settings_manager
+                if coop_settings is not None:
+                    try:
+                        das_delay = float(coop_settings.get('das_delay', das_delay))
+                    except Exception:
+                        pass
+                    try:
+                        das_repeat = float(coop_settings.get('das_repeat', das_repeat))
+                    except Exception:
+                        pass
+            config['enable_lock_delay'] = bool(getattr(self.coop_game, 'enable_lock_delay', True))
+            config['lock_delay'] = max(
+                0.0,
+                float(getattr(self.coop_game, 'lock_delay', DEFAULT_LOCK_DELAY) or DEFAULT_LOCK_DELAY),
+            )
+            config['soft_drop_speed'] = max(
+                1.0,
+                float(getattr(self.coop_game, '_SOFT_DROP_SPEED', config['soft_drop_speed']) or config['soft_drop_speed']),
+            )
+
+        config['das_delay'] = max(0.0, das_delay)
+        config['das_repeat'] = max(1.0, das_repeat)
+
+        return config
+
+    def _get_authoritative_das_config(self) -> tuple[float, float]:
+        config = self._build_authoritative_gameplay_config()
+        return float(config.get('das_delay', 0.0) or 0.0), float(config.get('das_repeat', 1.0) or 1.0)
+
+    @staticmethod
+    def _normalize_authoritative_gameplay_config(config: dict | None) -> dict:
+        raw = config if isinstance(config, dict) else {}
+
+        def _clamp_float(key: str, default: float, minimum: float, maximum: float) -> float:
+            try:
+                value = float(raw.get(key, default))
+            except (TypeError, ValueError):
+                value = float(default)
+            return max(minimum, min(maximum, value))
+
+        return {
+            'das_delay': _clamp_float('das_delay', float(DAS_DELAY), 0.0, 5000.0),
+            'das_repeat': _clamp_float('das_repeat', float(DAS_REPEAT), 1.0, 5000.0),
+            'lock_delay': _clamp_float('lock_delay', float(DEFAULT_LOCK_DELAY), 0.0, 10000.0),
+            'soft_drop_speed': _clamp_float('soft_drop_speed', float(getattr(CoopGame, '_SOFT_DROP_SPEED', 50.0) or 50.0), 1.0, 5000.0),
+            'enable_lock_delay': bool(raw.get('enable_lock_delay', True)),
+        }
+
+    @staticmethod
+    def _apply_authoritative_guest_timing(render_game, timing_data: dict) -> None:
+        if render_game is None or not isinstance(timing_data, dict):
+            return
+
+        normalized = OnlineCoopGame._normalize_authoritative_gameplay_config(timing_data)
+        try:
+            render_game._cached_das_delay = float(normalized['das_delay'])
+            render_game._cached_das_repeat = float(normalized['das_repeat'])
+            render_game._das_settings_dirty = False
+            render_game.enable_lock_delay = bool(normalized['enable_lock_delay'])
+            render_game.lock_delay = float(normalized['lock_delay'])
+            render_game._SOFT_DROP_SPEED = float(normalized['soft_drop_speed'])
+        except Exception:
+            pass
+
+    def _capture_semantic_board_cells(self) -> dict[tuple[int, int], tuple]:
+        if not self.coop_game:
+            return {}
+        board = self.coop_game.board
+        texture_grid = getattr(board, 'texture_grid', None)
+        gold_grid = getattr(board, 'gold', None)
+        captured: dict[tuple[int, int], tuple] = {}
+        for y in range(getattr(board, 'height', 0)):
+            for x in range(getattr(board, 'width', 0)):
+                if not board.occupancy[y][x]:
+                    continue
+                locked_slice = None
+                if isinstance(texture_grid, list) and y < len(texture_grid) and x < len(texture_grid[y]):
+                    locked_slice = texture_grid[y][x]
+                piece_name = ''
+                rel_x = 0
+                rel_y = 0
+                width = 1
+                height = 1
+                rotation = 0
+                if isinstance(locked_slice, TextureSlice):
+                    piece_name = str(getattr(locked_slice, 'piece_name', '') or '')
+                    rel_x = int(getattr(locked_slice, 'rel_x', 0) or 0)
+                    rel_y = int(getattr(locked_slice, 'rel_y', 0) or 0)
+                    width = max(1, int(getattr(locked_slice, 'width', 1) or 1))
+                    height = max(1, int(getattr(locked_slice, 'height', 1) or 1))
+                    rotation = int(getattr(locked_slice, 'rotation', 0) or 0) % 4
+                color = board.grid[y][x]
+                if isinstance(color, (list, tuple)) and len(color) >= 3:
+                    r = max(0, min(255, int(color[0])))
+                    g = max(0, min(255, int(color[1])))
+                    b = max(0, min(255, int(color[2])))
+                else:
+                    r, g, b = _BOARD_EMPTY_COLOR
+                owner = board.owners[y][x] if hasattr(board, 'owners') else None
+                captured[(x, y)] = (
+                    piece_name,
+                    owner or '',
+                    rel_x,
+                    rel_y,
+                    width,
+                    height,
+                    rotation,
+                    bool(
+                        isinstance(gold_grid, list)
+                        and y < len(gold_grid)
+                        and x < len(gold_grid[y])
+                        and gold_grid[y][x]
+                    ),
+                    r,
+                    g,
+                    b,
+                )
+        return captured
+
+    @staticmethod
+    def _serialize_semantic_board_cells(items) -> list[list]:
+        serialized = []
+        for (x, y), payload in sorted(items, key=lambda item: (item[0][1], item[0][0])):
+            piece_name, owner, rel_x, rel_y, width, height, rotation, is_gold, r, g, b = payload
+            serialized.append([
+                int(x),
+                int(y),
+                str(piece_name or ''),
+                str(owner or ''),
+                int(rel_x),
+                int(rel_y),
+                int(width),
+                int(height),
+                int(rotation),
+                1 if is_gold else 0,
+                int(r),
+                int(g),
+                int(b),
+            ])
+        return serialized
+
+    @staticmethod
+    def _serialize_removed_cells(positions) -> list[list[int]]:
+        return [[int(x), int(y)] for x, y in sorted(positions, key=lambda item: (item[1], item[0]))]
+
+    @staticmethod
+    def _local_locked_block_color(render_game, piece_name: str, fallback_color: tuple[int, int, int]) -> tuple[int, int, int]:
+        color = fallback_color
+        try:
+            if piece_name and getattr(render_game, 'theme_manager', None) is not None:
+                color = tuple(render_game.theme_manager.get_piece_color(piece_name)[:3])
+        except Exception:
+            color = fallback_color
+        try:
+            block_style_manager = getattr(render_game, 'block_style_manager', None)
+            if piece_name and block_style_manager is not None:
+                styled = block_style_manager.get_color(piece_name, color)
+                color = (int(styled[0]), int(styled[1]), int(styled[2]))
+        except Exception:
+            color = fallback_color
+        return color
+
+    def _send_gameplay_config(self):
+        config = self._build_authoritative_gameplay_config()
+        self._authoritative_gameplay_config = dict(config)
+        self.net.send({
+            'type': MsgType.COOP_GAME_CONFIG,
+            'config': config,
+        }, reliable=True, channel=CHANNEL_CONTROL)
+
+    @staticmethod
+    def _expected_channel_for_message(msg_type: str) -> int:
+        if msg_type in {
+            MsgType.COOP_BOARD_STATE,
+            MsgType.COOP_PIECE_STATE,
+            MsgType.BOARD_STATE,
+            MsgType.PIECE_POSITION,
+            MsgType.SCORE_UPDATE,
+        }:
+            return CHANNEL_STATE
+        if msg_type in {
+            MsgType.READY,
+            MsgType.GAME_START,
+            MsgType.GAME_OVER,
+            MsgType.REMATCH,
+            MsgType.GARBAGE_ATTACK,
+            MsgType.GUEST_INPUT,
+            MsgType.COOP_GAME_START,
+            MsgType.COOP_GAME_CONFIG,
+            MsgType.COOP_LOCK_EVENT,
+            MsgType.COOP_GAME_EVENT,
+            'session_ping',
+        }:
+            return CHANNEL_CONTROL
+        return CHANNEL_GAME
+
+    @classmethod
+    def _is_supported_message_channel(cls, msg_type: str, channel: int) -> bool:
+        expected = cls._expected_channel_for_message(msg_type)
+        return channel in (CHANNEL_GAME, expected)
+
+    def _send_board_state(self, force_full: bool = False):
+        """Host → Guest: semantic board delta/full snapshot (unreliable)."""
         if not self.coop_game:
             return
-        b = self.coop_game.board
+        current_cells = self._capture_semantic_board_cells()
+        previous_cells = self._last_sent_board_cells if isinstance(self._last_sent_board_cells, dict) else None
+        full_snapshot = bool(force_full or previous_cells is None)
+        if full_snapshot:
+            changed_items = list(current_cells.items())
+            removed_positions = []
+        else:
+            changed_items = [
+                (position, payload)
+                for position, payload in current_cells.items()
+                if previous_cells.get(position) != payload
+            ]
+            removed_positions = [position for position in previous_cells if position not in current_cells]
+
+        gameplay_config = self._build_authoritative_gameplay_config()
         self._board_state_seq += 1
-        # Compact grid: list of lists of [r,g,b] for non-empty, 0 for empty
-        grid = []
-        owners = []
-        occupancy_grid = getattr(b, 'occupancy', None)
-        for row_idx in range(b.height):
-            grow = []
-            orow = []
-            for col_idx in range(b.width):
-                filled = bool(
-                    occupancy_grid
-                    and row_idx < len(occupancy_grid)
-                    and col_idx < len(occupancy_grid[row_idx])
-                    and occupancy_grid[row_idx][col_idx]
-                )
-                cell = b.grid[row_idx][col_idx]
-                if filled and cell and cell != (0, 0, 0):
-                    grow.append(list(cell))
-                else:
-                    grow.append(0)
-                owner = b.owners[row_idx][col_idx] if hasattr(b, 'owners') else None
-                orow.append(owner or '')
-            grid.append(grow)
-            owners.append(orow)
 
         data = {
             'type': MsgType.COOP_BOARD_STATE,
             'seq': self._board_state_seq,
-            'grid': grid,
-            'owners': owners,
+            'format': 'semantic_delta_v1',
+            'full': full_snapshot,
+            'cells': self._serialize_semantic_board_cells(changed_items),
             'team_score': self.coop_game.team_score,
             'total_lines': self.coop_game.total_lines_cleared,
             'level': self.coop_game.level,
@@ -3316,8 +3664,13 @@ class OnlineCoopGame:
             'p1_frozen': self.coop_game.p1_frozen,
             'p2_frozen': self.coop_game.p2_frozen,
             'input_ack': self._last_input_ack_seq,
+            **gameplay_config,
         }
-        self.net.send(data, reliable=False, channel=CHANNEL_GAME)
+        if removed_positions:
+            data['removed'] = self._serialize_removed_cells(removed_positions)
+
+        self._last_sent_board_cells = current_cells
+        self.net.send(data, reliable=False, channel=CHANNEL_STATE)
 
     def _send_piece_state(self):
         """Host → Guest: aktif parça pozisyonları (unreliable)."""
@@ -3337,6 +3690,8 @@ class OnlineCoopGame:
         def _shape_index(piece):
             return piece.shape_index if piece else -1
 
+        gameplay_config = self._build_authoritative_gameplay_config()
+
         data = {
             'type': MsgType.COOP_PIECE_STATE,
             'seq': self._piece_state_seq,
@@ -3350,9 +3705,10 @@ class OnlineCoopGame:
             'p2_ghost_y': self._get_ghost_y('P2'),
             'input_ack': self._last_input_ack_seq,
             'host_elapsed_ms': max(0.0, float(getattr(self.coop_game, 'elapsed_time', 0.0) or 0.0)),
+            **gameplay_config,
         }
         self._last_piece_state_signature = self._current_piece_state_signature()
-        self.net.send(data, reliable=False, channel=CHANNEL_GAME)
+        self.net.send(data, reliable=False, channel=CHANNEL_STATE)
 
     def _send_lock_event(self, event_data: dict):
         """Host → Guest: parça kilit / satır temizleme olayı (reliable)."""
@@ -3383,7 +3739,7 @@ class OnlineCoopGame:
             'cleared_rows': sorted(cleared_rows),
             'row_colors': cleared_row_colors,
         }
-        self.net.send(data, reliable=True, channel=CHANNEL_GAME)
+        self.net.send(data, reliable=True, channel=CHANNEL_CONTROL)
 
     def _send_game_event(self, event_name: str, event_data: dict = None):
         """Host → Guest: genel oyun olayı (reliable)."""
@@ -3392,7 +3748,7 @@ class OnlineCoopGame:
             'event': event_name,
             'data': event_data or {},
         }
-        self.net.send(data, reliable=True, channel=CHANNEL_GAME)
+        self.net.send(data, reliable=True, channel=CHANNEL_CONTROL)
 
     # ============================================================
     #  GUEST INPUT SENDING
@@ -3453,7 +3809,7 @@ class OnlineCoopGame:
             'seq': self._guest_input_seq,
             'ts': time.time(),
         }
-        self.net.send(data, reliable=True, channel=CHANNEL_GAME)
+        self.net.send(data, reliable=True, channel=CHANNEL_CONTROL)
 
     def draw(self):
         """Ekranı çiz."""

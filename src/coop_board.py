@@ -83,11 +83,20 @@ class CoopBoard(Board):
         # Kilitleme öncesi owners'ı geçici olarak patch'le:
         # Board.lock_piece piece.name yazar; biz player string'i istiyoruz.
         original_name = piece.name
+        original_board_style_name = getattr(piece, '_board_style_name', None)
+        piece._board_style_name = getattr(piece, 'style_key', None) or original_name
         piece.name = player  # "P1" veya "P2"
         try:
             cleared = super().lock_piece(piece, track_game_over=False)
         finally:
             piece.name = original_name  # Orijinal parça ismini geri yükle
+            if original_board_style_name is None:
+                try:
+                    delattr(piece, '_board_style_name')
+                except Exception:
+                    pass
+            else:
+                piece._board_style_name = original_board_style_name
         return cleared
 
     # ------------------------------------------------------------------

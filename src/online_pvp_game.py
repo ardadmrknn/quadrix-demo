@@ -1201,7 +1201,7 @@ class OnlinePvPGame:
         """P2P session'ı erken kurmak için küçük bir ping gönder."""
         if not self._net_initialized:
             return False
-        ok = self.net.send({'type': 'session_ping'}, reliable=True, channel=CHANNEL_GAME)
+        ok = self.net.send({'type': 'session_ping'}, reliable=True, channel=CHANNEL_CONTROL)
         if not ok:
             print("[OnlinePvP] session_ping gonderilemedi!")
         else:
@@ -1216,7 +1216,7 @@ class OnlinePvPGame:
         net = getattr(self, 'net', None)
         if net is None:
             return False
-        ok = bool(net.send({'type': msg_type}, reliable=True, channel=CHANNEL_GAME))
+        ok = bool(net.send({'type': msg_type}, reliable=True, channel=CHANNEL_CONTROL))
         if not ok:
             print(f"[OnlinePvP] control send basarisiz: {msg_type} ({reason or 'no_reason'})")
         return ok

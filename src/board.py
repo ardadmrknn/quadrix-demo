@@ -88,6 +88,11 @@ class Board:
         piece_w = len(piece.shape[0]) if piece.shape else 0
         piece_h = len(piece.shape) if piece.shape else 0
         color_matrix = getattr(piece, 'color_matrix', None)
+        style_name = (
+            getattr(piece, 'style_key', None)
+            or getattr(piece, '_board_style_name', None)
+            or getattr(piece, 'name', None)
+        )
         for ly, row in enumerate(piece.shape):
             for lx, c in enumerate(row):
                 if not c:
@@ -108,9 +113,9 @@ class Board:
                     self.gold[y][x] = getattr(piece, 'is_gold', False)
                     # record piece owner for per-block scoring
                     self.owners[y][x] = getattr(piece, 'name', None)
-                    if getattr(piece, 'texture_surface', None):
+                    if style_name:
                         self.texture_grid[y][x] = TextureSlice(
-                            piece.name,
+                            str(style_name),
                             rel_x=lx,
                             rel_y=ly,
                             width=piece_w or 1,

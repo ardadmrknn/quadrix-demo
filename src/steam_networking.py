@@ -268,15 +268,12 @@ class NetMessage:
 
 
 # ---------- Kanal sabitleri ----------
-# ÖNEMLİ: Platformlar arası uyumluluk için TÜM mesajlar CHANNEL_GAME (0)
-# üzerinden gönderilir. C++ bridge üç kanalı da pollar ancak macOS (.so)
-# ve Windows (.pyd) derlemeleri senkronizasyon dışında kalabilir; eski ikili
-# dosyalar yalnızca kanal 0 yoklar. Bu yüzden kanal sabitleri tanımlıdır
-# ama gönderimde hep CHANNEL_GAME kullanılır.
+# Bridge 0/1/2 kanallarini pollar; state ve control akisini ayirmak
+# gecikme/jitter etkisini azaltir.
 
-CHANNEL_GAME = 0       # TÜM mesajlar bu kanal üzerinden gönderilir
-CHANNEL_STATE = 0      # (eski: 1) — artık CHANNEL_GAME ile aynı
-CHANNEL_CONTROL = 0    # (eski: 2) — artık CHANNEL_GAME ile aynı
+CHANNEL_GAME = 0
+CHANNEL_STATE = 1
+CHANNEL_CONTROL = 2
 
 
 # ---------- Lobi tipleri (Steam ELobbyType) ----------
@@ -338,11 +335,12 @@ class MsgType:
     GUEST_PAUSE     = 'guest_pause'   # Reliable
 
     # Co-op: Host → Guest
-    COOP_BOARD_STATE  = 'coop_board'  # Unreliable ~100ms: grid, owners, score, ...
-    COOP_PIECE_STATE  = 'coop_piece'  # Unreliable ~50ms: p1/p2 current/next/hold/ghost
-    COOP_LOCK_EVENT   = 'coop_lock'   # Reliable: player, piece, cleared_lines, ...
-    COOP_GAME_EVENT   = 'coop_event'  # Reliable: game_over, pause, resume, ...
-    COOP_GAME_START   = 'coop_start'  # Reliable one-time: seed, bags, config
+    COOP_BOARD_STATE  = 'coop_board'   # Unreliable: semantic board delta/full snapshot
+    COOP_PIECE_STATE  = 'coop_piece'   # Unreliable: p1/p2 current/next/hold/ghost
+    COOP_LOCK_EVENT   = 'coop_lock'    # Reliable: player, piece, cleared_lines, ...
+    COOP_GAME_EVENT   = 'coop_event'   # Reliable: game_over, pause, resume, ...
+    COOP_GAME_START   = 'coop_start'   # Reliable one-time: seed, sub_mode, config
+    COOP_GAME_CONFIG  = 'coop_config'  # Reliable: canonical gameplay timing/config
 
 
 # ---------- Aktif instance takibi (shutdown sırasında temizlik için) ----------
@@ -729,12 +727,12 @@ class SteamNetworking:
             'type': MsgType.GARBAGE_ATTACK,
             'lines': lines,
             'gap': gap_col,
-        }, reliable=True, channel=CHANNEL_GAME)
+        }, reliable=True, channel=CHANNEL_CONTROL)
 
     def send_board_state(self, board_data: dict):
         """Tahta durumunu gönder (unreliable — kayıp packet önemsiz)."""
         board_data['type'] = MsgType.BOARD_STATE
-        self.send(board_data, reliable=False, channel=CHANNEL_GAME)
+        self.send(board_data, reliable=False, channel=CHANNEL_STATE)
 
     def send_piece_position(self, shape_index: int, x: int, y: int,
                             rotation: int, seq: int):
@@ -746,7 +744,7 @@ class SteamNetworking:
             'y': y,
             'r': rotation,
             'seq': seq,
-        }, reliable=False, channel=CHANNEL_GAME)
+        }, reliable=False, channel=CHANNEL_STATE)
 
     def send_score_update(self, score: int, lines: int, level: int):
         """Skor güncellemesi gönder."""
@@ -755,7 +753,7 @@ class SteamNetworking:
             'score': score,
             'lines': lines,
             'level': level,
-        }, reliable=False, channel=CHANNEL_GAME)
+        }, reliable=False, channel=CHANNEL_STATE)
 
     def send_game_start(self, seed: int, piece_sequence: list[int] | None = None):
         """Oyun başlat sinyali gönder (host gönderir)."""
@@ -766,7 +764,7 @@ class SteamNetworking:
         }
         if piece_sequence:
             msg['pieces'] = piece_sequence[:200]  # İlk 200 parça
-        return self.send(msg, reliable=True, channel=CHANNEL_GAME)
+        return self.send(msg, reliable=True, channel=CHANNEL_CONTROL)
 
     def send_coop_start(self, seed: int, sub_mode: str = 'endless', config: dict | None = None):
         """Online co-op başlat sinyali gönder (host gönderir)."""
@@ -778,11 +776,11 @@ class SteamNetworking:
         }
         if isinstance(config, dict) and config:
             msg['config'] = config
-        return self.send(msg, reliable=True, channel=CHANNEL_GAME)
+        return self.send(msg, reliable=True, channel=CHANNEL_CONTROL)
 
     def send_ready(self):
         """Hazır sinyali gönder."""
-        return self.send({'type': MsgType.READY}, reliable=True, channel=CHANNEL_GAME)
+        return self.send({'type': MsgType.READY}, reliable=True, channel=CHANNEL_CONTROL)
 
     def send_game_over(self, score: int = 0, lines: int = 0, board_filled: bool | int = True):
         """Oyun bitti sinyali gönder."""
@@ -791,7 +789,7 @@ class SteamNetworking:
             'score': score,
             'lines': lines,
             'board_filled': 1 if board_filled else 0,
-        }, reliable=True, channel=CHANNEL_GAME)
+        }, reliable=True, channel=CHANNEL_CONTROL)
 
     # ============ Event Handler ============
 
