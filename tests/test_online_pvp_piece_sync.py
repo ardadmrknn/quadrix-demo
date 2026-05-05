@@ -35,7 +35,6 @@ def _make_game() -> online_pvp_module.OnlinePvPGame:
     game._opponent_piece_visual = None
     game._opponent_piece_render_cache_key = None
     game._opponent_piece_render_cache = None
-    game._OPPONENT_PIECE_SMOOTH_MS = 45.0
     game._opponent_piece_seq = 0
     game._opponent_board_seq = -1
     game.opponent_score = 0
@@ -45,6 +44,8 @@ def _make_game() -> online_pvp_module.OnlinePvPGame:
     game._opponent_clear_event_seq = -1
     game._pending_opp_particle_rows = []
     game.online_state = online_pvp_module.OnlineState.PLAYING
+    game.theme_manager = None
+    game.block_style_manager = None
     game.my_ready = False
     game.opponent_ready = False
     game._session_established = True
@@ -83,7 +84,15 @@ def test_online_pvp_piece_position_force_bypasses_coalescing_window():
     assert game.net.send_piece_position.call_args.args[:4] == (2, 3, 4, 1)
 
 
-def test_online_pvp_opponent_piece_visual_smooths_toward_target():
+def test_online_pvp_piece_position_preserves_i_piece_shape_index_zero():
+    game = _make_game()
+    game.my_piece.shape_index = 0
+
+    assert game._send_piece_position(force=True) is True
+    assert game.net.send_piece_position.call_args.args[:4] == (0, 3, 4, 0)
+
+
+def test_online_pvp_opponent_piece_visual_snaps_to_latest_cell():
     game = _make_game()
 
     assert game._set_opponent_piece_state({'si': 1, 'x': 3, 'y': 4, 'r': 0}) is True
@@ -92,12 +101,8 @@ def test_online_pvp_opponent_piece_visual_smooths_toward_target():
     assert game._opponent_piece_visual['draw_y'] == 4.0
 
     assert game._set_opponent_piece_state({'si': 1, 'x': 5, 'y': 4, 'r': 0}) is True
-    assert game._opponent_piece_visual['draw_x'] == 3.0
+    assert game._opponent_piece_visual['draw_x'] == 5.0
     assert game._opponent_piece_visual['target_x'] == 5.0
-
-    game._advance_opponent_piece_visual(22.5)
-
-    assert 3.0 < game._opponent_piece_visual['draw_x'] < 5.0
     assert game._get_opponent_piece_draw_state()['si'] == 1
 
 
@@ -105,11 +110,23 @@ def test_online_pvp_snapshot_piece_far_correction_snaps_visual_state():
     game = _make_game()
 
     assert game._set_opponent_piece_state({'si': 4, 'x': 1, 'y': 2, 'r': 0}) is True
-    game._advance_opponent_piece_visual(10.0)
 
     assert game._set_opponent_piece_state({'si': 4, 'x': 7, 'y': 9, 'r': 0}, from_snapshot=True) is True
     assert game._opponent_piece_visual['draw_x'] == 7.0
     assert game._opponent_piece_visual['draw_y'] == 9.0
+
+
+def test_online_pvp_opponent_i_and_l_piece_shape_indices_stay_drawable():
+    for shape_index in (0, 6):
+        game = _make_game()
+
+        assert game._set_opponent_piece_state({'si': shape_index, 'x': 3, 'y': 4, 'r': 0}) is True
+
+        draw_state = game._get_opponent_piece_draw_state()
+        assert draw_state == {'si': shape_index, 'x': 3.0, 'y': 4.0, 'r': 0}
+        cache = game._get_cached_opponent_piece_render(draw_state['si'], draw_state['r'])
+        assert cache is not None
+        assert cache['piece'].shape_index == shape_index
 
 
 def test_online_pvp_stale_snapshot_piece_does_not_override_newer_piece_position():
