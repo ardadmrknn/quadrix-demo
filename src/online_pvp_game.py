@@ -3137,13 +3137,17 @@ class OnlinePvPGame:
                 except (TypeError, ValueError):
                     seq = 0
                 if seq >= self._opponent_piece_seq:
-                    self._opponent_piece_seq = seq
-                    self._set_opponent_piece_state({
+                    piece_payload = {
                         'si': data.get('si', 0),
                         'x': data.get('x', 0),
                         'y': data.get('y', 0),
                         'r': data.get('r', 0),
-                    })
+                    }
+                    if self._normalize_opponent_piece_payload(piece_payload) is None:
+                        print(f"[OnlinePvP] PIECE_POSITION: gecersiz parca payload'u (seq={seq}) - ignore.")
+                        continue
+                    if self._set_opponent_piece_state(piece_payload):
+                        self._opponent_piece_seq = seq
 
             elif msg_type == MsgType.SCORE_UPDATE:
                 self.opponent_score = self._clamp_int(data.get('score', 0), 0, 999999, 'score')
@@ -3907,7 +3911,18 @@ class OnlinePvPGame:
         # Board snapshot'tan gelen aktif parça bilgisi (fallback sync)
         piece = data.get('piece')
         if piece:
-            self._set_opponent_piece_state(piece, from_snapshot=True)
+            try:
+                piece_seq = int(data.get('piece_seq', -1))
+            except (TypeError, ValueError):
+                piece_seq = -1
+            if self._normalize_opponent_piece_payload(piece) is None:
+                print("[OnlinePvP] BOARD_STATE: gecersiz snapshot parca payload'u - ignore.")
+            elif piece_seq >= 0:
+                if piece_seq >= self._opponent_piece_seq:
+                    if self._set_opponent_piece_state(piece, from_snapshot=True):
+                        self._opponent_piece_seq = piece_seq
+            elif getattr(self, 'opponent_piece_data', None) is None:
+                self._set_opponent_piece_state(piece, from_snapshot=True)
 
     def _normalize_opponent_piece_payload(self, piece_data: dict | None) -> dict | None:
         if not isinstance(piece_data, dict):
@@ -4139,6 +4154,7 @@ class OnlinePvPGame:
                 'y': self.my_piece.y,
                 'r': self.my_piece.rotation_state,
             }
+            data['piece_seq'] = int(getattr(self, '_my_piece_seq', 0) or 0)
 
         self.net.send_board_state(data)
 

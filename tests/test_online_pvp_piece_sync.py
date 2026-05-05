@@ -36,6 +36,18 @@ def _make_game() -> online_pvp_module.OnlinePvPGame:
     game._opponent_piece_render_cache_key = None
     game._opponent_piece_render_cache = None
     game._OPPONENT_PIECE_SMOOTH_MS = 45.0
+    game._opponent_piece_seq = 0
+    game._opponent_board_seq = -1
+    game.opponent_score = 0
+    game.opponent_lines = 0
+    game.opponent_level = 1
+    game._opponent_lines_prev = 0
+    game._opponent_clear_event_seq = -1
+    game._pending_opp_particle_rows = []
+    game.online_state = online_pvp_module.OnlineState.PLAYING
+    game.my_ready = False
+    game.opponent_ready = False
+    game._session_established = True
     return game
 
 
@@ -98,3 +110,58 @@ def test_online_pvp_snapshot_piece_far_correction_snaps_visual_state():
     assert game._set_opponent_piece_state({'si': 4, 'x': 7, 'y': 9, 'r': 0}, from_snapshot=True) is True
     assert game._opponent_piece_visual['draw_x'] == 7.0
     assert game._opponent_piece_visual['draw_y'] == 9.0
+
+
+def test_online_pvp_stale_snapshot_piece_does_not_override_newer_piece_position():
+    game = _make_game()
+    game._opponent_piece_seq = 5
+    assert game._set_opponent_piece_state({'si': 1, 'x': 6, 'y': 4, 'r': 0}) is True
+
+    game._update_opponent_display({
+        'seq': 1,
+        'piece_seq': 4,
+        'piece': {'si': 1, 'x': 2, 'y': 4, 'r': 0},
+    })
+
+    assert game._opponent_piece_seq == 5
+    assert game.opponent_piece_data['x'] == 6
+
+
+def test_online_pvp_newer_snapshot_piece_updates_fallback_state():
+    game = _make_game()
+    game._opponent_piece_seq = 5
+    assert game._set_opponent_piece_state({'si': 1, 'x': 6, 'y': 4, 'r': 0}) is True
+
+    game._update_opponent_display({
+        'seq': 1,
+        'piece_seq': 6,
+        'piece': {'si': 1, 'x': 2, 'y': 4, 'r': 0},
+    })
+
+    assert game._opponent_piece_seq == 6
+    assert game.opponent_piece_data['x'] == 2
+
+
+def test_online_pvp_invalid_high_seq_piece_position_does_not_poison_state():
+    game = _make_game()
+    assert game._set_opponent_piece_state({'si': 1, 'x': 3, 'y': 4, 'r': 0}) is True
+    game._opponent_piece_seq = 5
+    game.net.my_steam_id = 1
+    game.net.get_messages = lambda: [
+        types.SimpleNamespace(
+            sender=7,
+            data={
+                'type': online_pvp_module.MsgType.PIECE_POSITION,
+                'si': 999,
+                'x': 8,
+                'y': 4,
+                'r': 0,
+                'seq': 99,
+            },
+        )
+    ]
+
+    game._process_messages()
+
+    assert game._opponent_piece_seq == 5
+    assert game.opponent_piece_data == {'si': 1, 'x': 3, 'y': 4, 'r': 0}
