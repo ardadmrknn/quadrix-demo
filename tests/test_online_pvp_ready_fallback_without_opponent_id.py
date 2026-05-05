@@ -41,6 +41,17 @@ def _make_game_with_opponent(send_ready_ok: bool, ping_ok: bool) -> online_pvp_m
     return game
 
 
+def _make_game_with_opponent_and_lobby_fallback(
+    send_ready_ok: bool,
+    ping_ok: bool,
+    lobby_ok: bool,
+) -> online_pvp_module.OnlinePvPGame:
+    game = _make_game_with_opponent(send_ready_ok=send_ready_ok, ping_ok=ping_ok)
+    game.net.my_steam_id = 1
+    game.net.send_to_lobby = Mock(return_value=lobby_ok)
+    return game
+
+
 def test_ready_signal_uses_lobby_fallback_when_opponent_id_unknown():
     game = _make_game(send_ready_ok=True)
 
@@ -81,3 +92,23 @@ def test_ready_signal_with_opponent_and_no_session_pending_on_double_failure():
     game.net.send.assert_called_once()
     game.net.send_ready.assert_called_once()
     assert game._ready_send_pending is True
+
+
+def test_ready_signal_with_opponent_and_no_session_uses_lobby_fallback():
+    game = _make_game_with_opponent_and_lobby_fallback(
+        send_ready_ok=False,
+        ping_ok=False,
+        lobby_ok=True,
+    )
+
+    ok = game._send_ready_signal(reason='unit_test')
+
+    assert ok is True
+    game.net.send.assert_called_once()
+    game.net.send_ready.assert_called_once()
+    game.net.send_to_lobby.assert_called_once_with(
+        {'type': online_pvp_module.MsgType.READY, 'sender_id': 1},
+        reliable=True,
+        channel=online_pvp_module.CHANNEL_CONTROL,
+    )
+    assert game._ready_send_pending is False

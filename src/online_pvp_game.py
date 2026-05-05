@@ -1249,9 +1249,13 @@ class OnlinePvPGame:
             self._ready_send_pending = True
             ping_ok = self._send_session_ping()
             ready_ok = bool(self.net.send_ready())
-            if ready_ok:
+            lobby_ok = self._send_ready_lobby_fallback(reason=reason)
+            if ready_ok or lobby_ok:
                 self._ready_send_pending = False
-                print(f"[OnlinePvP] READY session-oncesi gonderildi ({reason or 'no_reason'}), ping={ping_ok}.")
+                print(
+                    f"[OnlinePvP] READY session-oncesi gonderildi "
+                    f"({reason or 'no_reason'}), ping={ping_ok}, lobby_fallback={lobby_ok}."
+                )
                 return True
             if not ping_ok:
                 print(f"[OnlinePvP] READY başarısız ({reason or 'no_reason'}): session yok, ping de başarısız.")
@@ -1260,11 +1264,33 @@ class OnlinePvPGame:
             return False
 
         ok = bool(self.net.send_ready())
+        if not ok:
+            ok = self._send_ready_lobby_fallback(reason=reason)
         if ok:
             self._ready_send_pending = False
         else:
             print(f"[OnlinePvP] send_ready başarısız ({reason or 'no_reason'}).")
         return ok
+
+    def _send_ready_lobby_fallback(self, reason: str = '') -> bool:
+        """P2P hazır değilken READY bilgisini lobby broadcast ile de ulaştır."""
+        net = getattr(self, 'net', None)
+        if net is None:
+            return False
+        payload = {'type': MsgType.READY}
+        try:
+            my_id = int(getattr(net, 'my_steam_id', 0) or 0)
+        except Exception:
+            my_id = 0
+        if my_id:
+            payload['sender_id'] = my_id
+        send_to_lobby = getattr(net, 'send_to_lobby', None)
+        if callable(send_to_lobby):
+            ok = bool(send_to_lobby(payload, reliable=True, channel=CHANNEL_CONTROL))
+            if not ok:
+                print(f"[OnlinePvP] READY lobby fallback basarisiz ({reason or 'no_reason'}).")
+            return ok
+        return False
 
     def _on_member_left(self, ev: NetEvent):
         my_id = int(getattr(self.net, 'my_steam_id', 0) or 0)
@@ -2998,51 +3024,63 @@ class OnlinePvPGame:
             # ── Gönderici doğrulaması ──────────────────────────────────
             # Rakip ID biliniyorsa yalnızca ondan gelen mesajları işle.
             opponent_id = self.net.opponent_steam_id
-            if (not opponent_id) and msg.sender and msg.sender != getattr(self.net, 'my_steam_id', 0):
+            my_id = int(getattr(self.net, 'my_steam_id', 0) or 0)
+            try:
+                sender = int(getattr(msg, 'sender', 0) or 0)
+            except (TypeError, ValueError):
+                sender = 0
+            if not sender and isinstance(data, dict):
+                try:
+                    payload_sender = int(data.get('sender_id', 0) or 0)
+                except (TypeError, ValueError):
+                    payload_sender = 0
+                if payload_sender and payload_sender != my_id:
+                    sender = payload_sender
+
+            if (not opponent_id) and sender and sender != my_id:
                 can_bind_from_sender = True
                 try:
                     members = set(self.net.get_lobby_members() or [])
                     if members:
-                        can_bind_from_sender = msg.sender in members
+                        can_bind_from_sender = sender in members
                 except Exception:
                     can_bind_from_sender = True
 
                 if can_bind_from_sender:
                     try:
-                        self.net._opponent_steam_id = msg.sender
-                        opponent_id = msg.sender
-                        print(f"[OnlinePvP] opponent_steam_id mesajdan set edildi: {msg.sender}")
+                        self.net._opponent_steam_id = sender
+                        opponent_id = sender
+                        print(f"[OnlinePvP] opponent_steam_id mesajdan set edildi: {sender}")
                     except Exception:
                         pass
 
-            if opponent_id and msg.sender != opponent_id:
+            if opponent_id and sender != opponent_id:
                 rebound = False
                 if self.online_state in (OnlineState.WAITING, OnlineState.READY_CHECK, OnlineState.COUNTDOWN):
                     try:
                         members = set(self.net.get_lobby_members() or [])
                     except Exception:
                         members = set()
-                    my_id = getattr(self.net, 'my_steam_id', 0)
-                    if msg.sender in members and msg.sender != my_id:
+                    if sender in members and sender != my_id:
                         try:
-                            self.net._opponent_steam_id = msg.sender
-                            opponent_id = msg.sender
+                            self.net._opponent_steam_id = sender
+                            opponent_id = sender
                             rebound = True
-                            print(f"[OnlinePvP] opponent sender rebind: {msg.sender}")
+                            print(f"[OnlinePvP] opponent sender rebind: {sender}")
                         except Exception:
                             rebound = False
                 if not rebound:
-                    print(f"[OnlinePvP] Bilinmeyen gönderici {msg.sender} — mesaj ignore edildi.")
+                    print(f"[OnlinePvP] Bilinmeyen gönderici {sender} — mesaj ignore edildi.")
                     continue
 
             pending_disconnect_id = int(getattr(self, '_pending_disconnect_steam_id', 0) or 0)
-            if msg.sender and (msg.sender == opponent_id or (pending_disconnect_id and msg.sender == pending_disconnect_id)):
+            if sender and (sender == opponent_id or (pending_disconnect_id and sender == pending_disconnect_id)):
                 self._pending_disconnect_steam_id = 0
                 self._disconnect_grace_timer = 0.0
 
-            if (not bool(getattr(self, '_session_established', False))) and opponent_id and msg.sender == opponent_id:
+            if (not bool(getattr(self, '_session_established', False))) and opponent_id and sender == opponent_id:
                 self._session_established = True
-                print(f"[OnlinePvP] P2P session mesajla doğrulandı: {msg.sender}")
+                print(f"[OnlinePvP] P2P session mesajla doğrulandı: {sender}")
                 if self.online_state == OnlineState.READY_CHECK and self.my_ready and not self.opponent_ready:
                     self._send_ready_signal(reason='message_session_established')
 

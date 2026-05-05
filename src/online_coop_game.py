@@ -189,7 +189,7 @@ class OnlineCoopGame:
         if self.game_over or self.paused:
             return False
         if self.role == 'host':
-            self.paused = True
+            self._set_pause_state(True)
             self._freeze_active_gameplay_input()
             self._send_game_event('pause')
         elif self.role == 'guest':
@@ -396,9 +396,9 @@ class OnlineCoopGame:
         self._board_state_timer = 0.0
         self._piece_state_timer = 0.0
         self._guest_piece_state_timer = 0.0
-        self._BOARD_STATE_INTERVAL = 250.0   # full-board heartbeat; asil sync event-driven
-        self._PIECE_STATE_INTERVAL = 100.0   # heartbeat; asil parça sync'i degisim-anlik push
-        self._GUEST_PIECE_STATE_INTERVAL = 33.0
+        self._BOARD_STATE_INTERVAL = 200.0   # full-board heartbeat; asil sync event-driven
+        self._PIECE_STATE_INTERVAL = 50.0    # heartbeat; asil parça sync'i degisim-anlik push
+        self._GUEST_PIECE_STATE_INTERVAL = 20.0
 
         # Guest: received state cache
         self._guest_board_cache = None   # dict from host
@@ -580,7 +580,7 @@ class OnlineCoopGame:
                     pass
             self._pending_disconnect_steam_id = 0
             self._disconnect_grace_timer = 0.0
-            self.paused = False
+            self._set_pause_state(False)
             if self.role == 'host':
                 self._send_game_event('resume')
         print(f"[OnlineCoop] Üye katıldı: {ev.steam_id}")
@@ -605,7 +605,7 @@ class OnlineCoopGame:
             self._session_established = False
             self._session_ping_timer = 0.0
             self._send_session_ping()
-            self.paused = True
+            self._set_pause_state(True)
         elif self.online_state in (OnlineCoopState.READY_CHECK, OnlineCoopState.COUNTDOWN):
             self.online_state = OnlineCoopState.WAITING
             self.my_ready = False
@@ -1964,6 +1964,9 @@ class OnlineCoopGame:
                 self._send_guest_input('pause_request')
             return
 
+        if self._gameplay_input_blocked():
+            return
+
         if self.role == 'host':
             action = self._HOST_KEYS.get(event.key)
             if action and self.coop_game:
@@ -1990,7 +1993,7 @@ class OnlineCoopGame:
                 if self._guest_action_requires_host_control(action):
                     self._send_guest_input(action)
                 else:
-                    self._send_guest_piece_state(force=True)
+                    self._send_guest_piece_state(force=True, reliable=True)
 
     def _handle_gameplay_keyup(self, event):
         """PLAYING state'te tuş bırakma."""
@@ -1999,6 +2002,8 @@ class OnlineCoopGame:
                 self._held_gameplay_keys.discard(event.key)
             except Exception:
                 pass
+            if self._gameplay_input_blocked():
+                return
             action = self._HOST_KEYUP.get(event.key)
             if action and self.coop_game:
                 self.coop_game.inject_remote_input('P1', action)
@@ -2008,19 +2013,40 @@ class OnlineCoopGame:
                 self._held_gameplay_keys.discard(event.key)
             except Exception:
                 pass
+            if self._gameplay_input_blocked():
+                return
             action = self._GUEST_KEYUP.get(event.key)
             if action:
                 self._predict_guest_input(action)
                 if self._guest_action_requires_host_control(action):
                     self._send_guest_input(action)
                 else:
-                    self._send_guest_piece_state(force=True)
+                    self._send_guest_piece_state(force=True, reliable=True)
+
+    def _set_pause_state(self, paused: bool) -> None:
+        self.paused = bool(paused)
+        coop_game = getattr(self, 'coop_game', None)
+        if coop_game is not None and hasattr(coop_game, 'paused'):
+            try:
+                coop_game.paused = bool(paused)
+            except Exception:
+                pass
+
+    def _gameplay_input_blocked(self) -> bool:
+        if self.online_state != OnlineCoopState.PLAYING:
+            return False
+        if bool(getattr(self, 'game_over', False)) or bool(getattr(self, 'paused', False)):
+            return True
+        coop_game = getattr(self, 'coop_game', None)
+        if coop_game is None:
+            return False
+        return bool(getattr(coop_game, 'game_over', False) or getattr(coop_game, 'paused', False))
 
     def _toggle_pause_safe(self):
         """Host'ta güvenli pause toggle — cooldown ile race condition önlenir."""
         if self._pause_cooldown_timer > 0:
             return
-        self.paused = not self.paused
+        self._set_pause_state(not self.paused)
         self._freeze_active_gameplay_input()
         ev_name = 'pause' if self.paused else 'resume'
         self._send_game_event(ev_name)
@@ -2809,11 +2835,15 @@ class OnlineCoopGame:
             'r': int(getattr(piece, 'rotation_state', 0) or 0),
         }
 
-    def _send_guest_piece_state(self, force: bool = False) -> bool:
+    def _send_guest_piece_state(self, force: bool = False, reliable: bool = False) -> bool:
         if self.role != 'guest' or self.online_state != OnlineCoopState.PLAYING:
+            return False
+        if bool(getattr(self, 'game_over', False)) or bool(getattr(self, 'paused', False)):
             return False
         render_game = self.coop_game
         if render_game is None or self._guest_control_sync_pending():
+            return False
+        if bool(getattr(render_game, 'game_over', False)) or bool(getattr(render_game, 'paused', False)):
             return False
 
         signature = self._guest_p2_state_signature(render_game)
@@ -2830,7 +2860,7 @@ class OnlineCoopGame:
             'seq': self._guest_piece_state_out_seq,
             'p2_current': self._guest_piece_dict(getattr(render_game, 'p2_current_piece', None)),
             'p2_frozen': bool(getattr(render_game, 'p2_frozen', False)),
-        }, reliable=False, channel=CHANNEL_STATE))
+        }, reliable=bool(reliable), channel=CHANNEL_STATE))
 
     def _apply_guest_authoritative_piece_state(self, data: dict) -> None:
         if self.role != 'host' or self.coop_game is None or not isinstance(data, dict):
@@ -2843,20 +2873,28 @@ class OnlineCoopGame:
         if seq <= int(getattr(self, '_last_guest_piece_state_seq', 0) or 0):
             return
 
+        if self._gameplay_input_blocked():
+            self._reject_guest_authoritative_piece_state(seq)
+            return
+
         incoming_piece = self._piece_from_snapshot(data.get('p2_current'))
         if incoming_piece is None:
+            self._reject_guest_authoritative_piece_state(seq)
             return
 
         current_piece = getattr(self.coop_game, 'p2_current_piece', None)
         if current_piece is not None and self._piece_shape_index(current_piece) != self._piece_shape_index(incoming_piece):
+            self._reject_guest_authoritative_piece_state(seq)
             return
 
         board = getattr(self.coop_game, 'board', None)
         if board is not None and hasattr(board, 'is_valid_position_for_player'):
             try:
                 if not board.is_valid_position_for_player(incoming_piece, 'P2'):
+                    self._reject_guest_authoritative_piece_state(seq)
                     return
             except Exception:
+                self._reject_guest_authoritative_piece_state(seq)
                 return
 
         remote_players = getattr(self.coop_game, 'remote_authority_players', None)
@@ -2884,6 +2922,15 @@ class OnlineCoopGame:
             except Exception:
                 pass
         self._last_guest_piece_state_seq = seq
+
+    def _reject_guest_authoritative_piece_state(self, seq: int) -> None:
+        """Mark a guest snapshot as processed and immediately resend host truth."""
+        if seq > int(getattr(self, '_last_guest_piece_state_seq', 0) or 0):
+            self._last_guest_piece_state_seq = int(seq)
+        try:
+            self._send_piece_state()
+        except Exception:
+            pass
 
     def _should_keep_locally_simulated_p2(self, render_game, piece_data: dict) -> bool:
         if render_game is None or not isinstance(piece_data, dict):
@@ -3088,8 +3135,8 @@ class OnlineCoopGame:
             render_game.fall_speed = float(board_data.get('fall_speed', 900.0) or 900.0)
             render_game.p1_frozen = bool(board_data.get('p1_frozen', False))
             render_game.p2_frozen = bool(board_data.get('p2_frozen', False))
-            render_game.game_over = False
-            render_game.paused = False
+            render_game.game_over = bool(getattr(self, 'game_over', False))
+            render_game.paused = bool(getattr(self, 'paused', False))
             self._apply_authoritative_guest_timing(render_game, board_data)
             self._guest_render_board_seq = board_seq
             try:
@@ -3225,6 +3272,42 @@ class OnlineCoopGame:
         except Exception:
             pass
 
+    def _apply_guest_hard_drop_event(self, data: dict) -> None:
+        if self.role != 'guest' or not isinstance(data, dict):
+            return
+        player = data.get('player', '')
+        if player not in ('P1', 'P2'):
+            return
+
+        pending_inputs = getattr(self, '_guest_pending_inputs', None)
+        if player == 'P2' and isinstance(pending_inputs, list):
+            if any(str(action or '') == 'hard_drop' for _seq, action in pending_inputs):
+                return
+
+        render_game = self._ensure_guest_render_game()
+        if render_game is None:
+            return
+        piece = self._piece_from_snapshot(data.get('piece'))
+        if piece is None:
+            return
+        try:
+            piece.y = self._clamp_int(
+                data.get('end_y', getattr(piece, 'y', 0)),
+                -8,
+                25,
+                getattr(piece, 'y', 0),
+            )
+        except Exception:
+            pass
+        piece = self._apply_block_style_to_guest_piece(piece)
+        start_y = self._clamp_int(
+            data.get('start_y', getattr(piece, 'y', 0)),
+            -8,
+            25,
+            getattr(piece, 'y', 0),
+        )
+        self._trigger_guest_hard_drop_preview_effect(render_game, piece, start_y)
+
     def _process_messages(self):
         """Ağdan gelen mesajları işle."""
         for msg in self.net.get_messages():
@@ -3284,7 +3367,7 @@ class OnlineCoopGame:
                     self._pending_disconnect_steam_id = 0
                     self._disconnect_grace_timer = 0.0
                     if was_waiting_disconnect and self.paused:
-                        self.paused = False
+                        self._set_pause_state(False)
                         if self.role == 'host':
                             self._send_game_event('resume')
 
@@ -3342,6 +3425,9 @@ class OnlineCoopGame:
                             self._toggle_pause_safe()
                         elif action:
                             self._last_input_ack_seq = max(self._last_input_ack_seq, seq)
+                            if self._gameplay_input_blocked():
+                                self._send_piece_state()
+                                continue
                             if self._guest_action_requires_host_control(action):
                                 self.coop_game.inject_remote_input('P2', action)
                                 self._send_piece_state()
@@ -3389,11 +3475,18 @@ class OnlineCoopGame:
                         self.online_state = OnlineCoopState.GAME_OVER
                         self._guest_score_cache.update(data.get('data', {}))
                     elif event_name == 'pause':
-                        self.paused = True
+                        self._set_pause_state(True)
                         self._freeze_active_gameplay_input()
                     elif event_name == 'resume':
-                        self.paused = False
+                        self._set_pause_state(False)
                         self._freeze_active_gameplay_input()
+                    elif event_name == 'hard_drop':
+                        self._apply_guest_hard_drop_event(data.get('data', {}) or {})
+                    elif event_name == 'hold_used':
+                        try:
+                            self.sound.play('hold')
+                        except Exception:
+                            pass
                     elif event_name in ('player_frozen', 'player_unfrozen'):
                         event_data = data.get('data', {}) or {}
                         if isinstance(event_data, dict):
@@ -3599,7 +3692,11 @@ class OnlineCoopGame:
             self._send_lock_event(event_data, event_name='piece_placed')
             self._send_board_state()
             self._send_piece_state()
+        elif event_type == 'hard_drop':
+            self._send_hard_drop_event(event_data)
+            self._send_piece_state()
         elif event_type == 'hold_used':
+            self._send_game_event('hold_used', event_data)
             self._send_piece_state()
         elif event_type == 'player_frozen':
             self._send_game_event('player_frozen', event_data)
@@ -4005,6 +4102,25 @@ class OnlineCoopGame:
         }
         self.net.send(data, reliable=True, channel=CHANNEL_CONTROL)
 
+    def _send_hard_drop_event(self, event_data: dict) -> None:
+        """Host → Guest: hard drop trail/shake effect payload."""
+        event_data = event_data or {}
+        piece = event_data.get('piece')
+        try:
+            start_y = int(event_data.get('start_y', getattr(piece, 'y', 0) or 0) or 0)
+        except (TypeError, ValueError):
+            start_y = int(getattr(piece, 'y', 0) or 0)
+        try:
+            end_y = int(event_data.get('end_y', getattr(piece, 'y', start_y) or start_y) or start_y)
+        except (TypeError, ValueError):
+            end_y = int(getattr(piece, 'y', start_y) or start_y)
+        self._send_game_event('hard_drop', {
+            'player': event_data.get('player', ''),
+            'piece': self._guest_piece_dict(piece),
+            'start_y': start_y,
+            'end_y': end_y,
+        })
+
     def _send_game_event(self, event_name: str, event_data: dict = None):
         """Host → Guest: genel oyun olayı (reliable)."""
         data = {
@@ -4156,6 +4272,12 @@ class OnlineCoopGame:
 
     def _send_guest_input(self, action: str):
         """Guest → Host: input aksiyonu gönder (reliable)."""
+        if action != 'pause_request' and (
+            self.online_state != OnlineCoopState.PLAYING
+            or bool(getattr(self, 'game_over', False))
+            or bool(getattr(self, 'paused', False))
+        ):
+            return False
         self._guest_input_seq = getattr(self, '_guest_input_seq', 0) + 1
         if action != 'pause_request' and self._guest_action_requires_host_control(action):
             pending_inputs = getattr(self, '_guest_pending_inputs', None)
@@ -4169,7 +4291,7 @@ class OnlineCoopGame:
             'seq': self._guest_input_seq,
             'ts': time.time(),
         }
-        self.net.send(data, reliable=True, channel=CHANNEL_CONTROL)
+        return self.net.send(data, reliable=True, channel=CHANNEL_CONTROL)
 
     def draw(self):
         """Ekranı çiz."""

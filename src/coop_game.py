@@ -1867,6 +1867,12 @@ class CoopGame:
                 if trail_y_end > trail_y_start:
                     self.create_drop_trail(trail_x, trail_y_start, trail_y_end, piece.color, cs)
             self.trigger_hard_drop_screen_shake()
+        self._emit_event('hard_drop', {
+            'player': player,
+            'piece': piece,
+            'start_y': start_y,
+            'end_y': piece.y,
+        })
         self._lock_and_new_piece(player)
         try:
             from gamepad_manager import get_gamepad_manager

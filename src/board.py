@@ -113,7 +113,7 @@ class Board:
                     self.gold[y][x] = getattr(piece, 'is_gold', False)
                     # record piece owner for per-block scoring
                     self.owners[y][x] = getattr(piece, 'name', None)
-                    if style_name:
+                    if style_name and callable(TextureSlice):
                         self.texture_grid[y][x] = TextureSlice(
                             str(style_name),
                             rel_x=lx,
@@ -401,4 +401,3 @@ class Board:
         self.last_cleared_colors = {}
         self.back_to_back = False
         self.clear_lock_out()
-

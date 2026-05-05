@@ -44,3 +44,22 @@ def test_ready_message_rebinds_opponent_sender_when_lobby_member_matches():
     assert game.net._opponent_steam_id == 42
     assert game.opponent_ready is True
     game._check_both_ready.assert_called_once()
+
+
+def test_ready_message_accepts_lobby_fallback_sender_id_when_sender_is_zero():
+    game = _make_game_with_mismatch_sender()
+    game.net.get_messages = lambda: [
+        types.SimpleNamespace(
+            sender=0,
+            data={
+                'type': online_pvp_module.MsgType.READY,
+                'sender_id': 42,
+            },
+        )
+    ]
+
+    game._process_messages()
+
+    assert game.net._opponent_steam_id == 42
+    assert game.opponent_ready is True
+    game._check_both_ready.assert_called_once()

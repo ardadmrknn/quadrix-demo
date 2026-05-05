@@ -722,6 +722,17 @@ class SteamNetworking:
             print(f"[SteamNet] send hatası: {e}")
             return False
 
+    def send_to_lobby(self, data: dict, reliable: bool = True, channel: int = CHANNEL_GAME):
+        """Rakip P2P session'ı oturmadan lobby üzerinden JSON mesaj gönder."""
+        if not self._bridge_instance:
+            return False
+        try:
+            payload = json.dumps(data, separators=(',', ':'))
+            return self._bridge_instance.send_message_to_lobby(payload, reliable, channel)
+        except Exception as e:
+            print(f"[SteamNet] send_to_lobby hatası: {e}")
+            return False
+
     def send_garbage(self, lines: int, gap_col: int = -1):
         """Rakibe çöp satır saldırısı gönder."""
         self.send({
@@ -781,7 +792,10 @@ class SteamNetworking:
 
     def send_ready(self):
         """Hazır sinyali gönder."""
-        return self.send({'type': MsgType.READY}, reliable=True, channel=CHANNEL_CONTROL)
+        msg = {'type': MsgType.READY}
+        if self._my_steam_id:
+            msg['sender_id'] = self._my_steam_id
+        return self.send(msg, reliable=True, channel=CHANNEL_CONTROL)
 
     def send_game_over(self, score: int = 0, lines: int = 0, board_filled: bool | int = True):
         """Oyun bitti sinyali gönder."""
