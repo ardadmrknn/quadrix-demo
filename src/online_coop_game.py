@@ -408,8 +408,9 @@ class OnlineCoopGame:
         self._guest_render_piece_seq = -1
         self._guest_last_authoritative_piece_elapsed_ms = 0.0
         self._guest_local_prediction_ms = 0.0
-        self._GUEST_LOCAL_PREDICTION_MAX_MS = 350.0
+        self._GUEST_LOCAL_PREDICTION_MAX_MS = 140.0
         self._GUEST_PIECE_ACK_GRACE_S = 0.75
+        self._guest_authoritative_piece_sync_enabled = False
         self._held_gameplay_keys: set[int] = set()
 
         # Placeholder font'lar
@@ -1992,8 +1993,6 @@ class OnlineCoopGame:
                 self._predict_guest_input(action)
                 if self._guest_action_requires_host_control(action):
                     self._send_guest_input(action)
-                else:
-                    self._send_guest_piece_state(force=True, reliable=True)
 
     def _handle_gameplay_keyup(self, event):
         """PLAYING state'te tuş bırakma."""
@@ -2020,8 +2019,6 @@ class OnlineCoopGame:
                 self._predict_guest_input(action)
                 if self._guest_action_requires_host_control(action):
                     self._send_guest_input(action)
-                else:
-                    self._send_guest_piece_state(force=True, reliable=True)
 
     def _set_pause_state(self, paused: bool) -> None:
         self.paused = bool(paused)
@@ -2506,9 +2503,10 @@ class OnlineCoopGame:
             and self.coop_game
         ):
             self._update_guest_local_prediction(float(delta_time))
-            self._guest_piece_state_timer += float(delta_time)
-            if self._guest_piece_state_timer >= self._GUEST_PIECE_STATE_INTERVAL:
-                self._send_guest_piece_state(force=True)
+            if bool(getattr(self, '_guest_authoritative_piece_sync_enabled', False)):
+                self._guest_piece_state_timer += float(delta_time)
+                if self._guest_piece_state_timer >= self._GUEST_PIECE_STATE_INTERVAL:
+                    self._send_guest_piece_state(force=True)
 
     @staticmethod
     def _clamp_int(value, minimum: int, maximum: int, default: int = 0) -> int:
@@ -2814,7 +2812,17 @@ class OnlineCoopGame:
 
     @staticmethod
     def _guest_action_requires_host_control(action: str) -> bool:
-        return str(action or '') in {'pause_request', 'hold', 'hard_drop'}
+        return str(action or '') in {
+            'move_left',
+            'move_right',
+            'soft_drop_start',
+            'soft_drop_stop',
+            'rotate',
+            'hard_drop',
+            'hold',
+            'das_stop',
+            'pause_request',
+        }
 
     def _guest_control_sync_pending(self) -> bool:
         pending_inputs = getattr(self, '_guest_pending_inputs', None)
@@ -2836,6 +2844,8 @@ class OnlineCoopGame:
         }
 
     def _send_guest_piece_state(self, force: bool = False, reliable: bool = False) -> bool:
+        if not bool(getattr(self, '_guest_authoritative_piece_sync_enabled', False)):
+            return False
         if self.role != 'guest' or self.online_state != OnlineCoopState.PLAYING:
             return False
         if bool(getattr(self, 'game_over', False)) or bool(getattr(self, 'paused', False)):
@@ -2863,6 +2873,8 @@ class OnlineCoopGame:
         }, reliable=bool(reliable), channel=CHANNEL_STATE))
 
     def _apply_guest_authoritative_piece_state(self, data: dict) -> None:
+        if not bool(getattr(self, '_guest_authoritative_piece_sync_enabled', False)):
+            return
         if self.role != 'host' or self.coop_game is None or not isinstance(data, dict):
             return
 
@@ -2936,10 +2948,6 @@ class OnlineCoopGame:
         if render_game is None or not isinstance(piece_data, dict):
             return False
 
-        prediction_ms = max(0.0, float(getattr(self, '_guest_local_prediction_ms', 0.0) or 0.0))
-        if prediction_ms <= 0.0:
-            return False
-
         incoming_piece = piece_data.get('p2_current')
         if not isinstance(incoming_piece, dict):
             return False
@@ -2956,14 +2964,17 @@ class OnlineCoopGame:
         if self._piece_shape_index(getattr(render_game, 'p2_hold_piece', None)) != int(piece_data.get('p2_hold_si', -1)):
             return False
 
-        host_elapsed_ms = max(0.0, float(piece_data.get('host_elapsed_ms', 0.0) or 0.0))
-        local_prediction_target_ms = (
-            max(0.0, float(getattr(self, '_guest_last_authoritative_piece_elapsed_ms', 0.0) or 0.0))
-            + prediction_ms
-        )
-        return host_elapsed_ms < local_prediction_target_ms
+        # PVP-style local active-piece ownership: once the guest has the same
+        # active/next/hold identity as the host, do not let heartbeat snapshots
+        # pull P2 back and forth. Board locks/spawns still come from the host and
+        # change the piece identity, which naturally re-syncs this branch.
+        dx = abs(int(incoming_piece.get('x', 0)) - int(local_piece_signature[1]))
+        dy = abs(int(incoming_piece.get('y', 0)) - int(local_piece_signature[2]))
+        return dx <= 3 and dy <= 6
 
     def _should_keep_unacked_guest_p2(self, render_game, piece_data: dict) -> bool:
+        if not bool(getattr(self, '_guest_authoritative_piece_sync_enabled', False)):
+            return False
         if render_game is None or not isinstance(piece_data, dict):
             return False
         self._consume_guest_piece_ack(piece_data.get('guest_piece_ack', 0))
