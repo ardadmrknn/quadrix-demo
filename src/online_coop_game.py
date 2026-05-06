@@ -2970,6 +2970,25 @@ class OnlineCoopGame:
         # change the piece identity, which naturally re-syncs this branch.
         dx = abs(int(incoming_piece.get('x', 0)) - int(local_piece_signature[1]))
         dy = abs(int(incoming_piece.get('y', 0)) - int(local_piece_signature[2]))
+        prediction_ms = max(0.0, float(getattr(self, '_guest_local_prediction_ms', 0.0) or 0.0))
+        prediction_cap = max(1.0, float(getattr(self, '_GUEST_LOCAL_PREDICTION_MAX_MS', 150.0) or 150.0))
+        try:
+            host_elapsed_ms = max(0.0, float(piece_data.get('host_elapsed_ms', 0.0) or 0.0))
+        except (TypeError, ValueError):
+            host_elapsed_ms = 0.0
+        last_authoritative_ms = max(
+            0.0,
+            float(getattr(self, '_guest_last_authoritative_piece_elapsed_ms', 0.0) or 0.0),
+        )
+        if prediction_ms >= prediction_cap and (dx > 0 or dy > 0):
+            return False
+        if (
+            last_authoritative_ms > 0.0
+            and host_elapsed_ms > last_authoritative_ms
+            and (host_elapsed_ms - last_authoritative_ms) >= prediction_cap
+            and (dx > 0 or dy > 0)
+        ):
+            return False
         return dx <= 3 and dy <= 6
 
     def _should_keep_unacked_guest_p2(self, render_game, piece_data: dict) -> bool:
@@ -3638,7 +3657,12 @@ class OnlineCoopGame:
             if not isinstance(remote_players, set):
                 remote_players = set(remote_players or []) if remote_players is not None else set()
                 self.coop_game.remote_authority_players = remote_players
-            remote_players.add('P2')
+            # Default online co-op is host-authoritative. Only the experimental
+            # guest-authoritative mirror may disable host-side P2 active updates.
+            if bool(getattr(self, '_guest_authoritative_piece_sync_enabled', False)):
+                remote_players.add('P2')
+            else:
+                remote_players.discard('P2')
             self._last_frozen_flags = (
                 bool(self.coop_game.p1_frozen),
                 bool(self.coop_game.p2_frozen),

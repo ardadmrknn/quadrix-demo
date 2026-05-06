@@ -11,7 +11,6 @@ if str(SRC_DIR) not in sys.path:
 from campaign.campaign_mode import CampaignMode
 from campaign.objectives import MultiClearObjective, SpecialBlockObjective, TimeObjective, create_objective
 import campaign.campaign_mode as campaign_mode_module
-import game as game_module
 from ui_theme import UIColors
 
 
@@ -141,7 +140,7 @@ def test_campaign_restart_refreshes_piece_seed_before_base_restart(monkeypatch):
     calls = []
 
     monkeypatch.setattr(campaign_mode_module.random, 'randint', lambda a, b: 222)
-    monkeypatch.setattr(game_module.Game, 'restart', lambda self: calls.append(self._piece_rng_seed))
+    monkeypatch.setattr(campaign_mode_module.Game, 'restart', lambda self: calls.append(self._piece_rng_seed))
     mode._reset_level_state = lambda: calls.append('reset')
 
     CampaignMode.restart(mode)
@@ -159,7 +158,7 @@ def test_campaign_quick_restart_reuses_quick_retry_seed_before_base_restart(monk
 
     calls = []
 
-    monkeypatch.setattr(game_module.Game, 'restart', lambda self: calls.append(self._piece_rng_seed))
+    monkeypatch.setattr(campaign_mode_module.Game, 'restart', lambda self: calls.append(self._piece_rng_seed))
     mode._reset_level_state = lambda: calls.append('reset')
 
     CampaignMode.quick_restart(mode)
@@ -187,7 +186,7 @@ def test_campaign_constructor_exposes_allowed_pieces_before_base_game_init(monke
         self.user_manager = None
         self._game_over_click_targets = {}
 
-    monkeypatch.setattr(game_module.Game, '__init__', _fake_game_init)
+    monkeypatch.setattr(campaign_mode_module.Game, '__init__', _fake_game_init)
     monkeypatch.setattr(campaign_mode_module.random, 'randint', lambda a, b: 0)
     monkeypatch.setattr(CampaignMode, '_init_special_blocks', lambda self: None)
     monkeypatch.setattr(CampaignMode, '_place_garbage_blocks', lambda self: None)
