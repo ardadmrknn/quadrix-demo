@@ -42,6 +42,16 @@ def test_card_variants_resolve_localization_group_and_placeholders():
         set_language(previous_language)
 
 
+def test_hammer_card_title_matches_runtime_effect():
+    previous_language = get_language()
+    try:
+        assert set_language('en') is True
+
+        assert get_card_title({'id': 'hammer', 'title': 'Çekiç'}) == 'Hammer'
+    finally:
+        set_language(previous_language)
+
+
 def test_pending_choices_keep_freeze_duration_for_localized_overlay_text():
     previous_language = get_language()
     try:

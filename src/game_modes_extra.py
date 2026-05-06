@@ -717,7 +717,7 @@ class MysteryCardManager:
                 "title": "Blok Manyetiği",
                 "base": 1,
                 "value_range": (1, 1),
-                "description": "Tüm boşluklar kapanır! Bloklar birbirine yapışır ve boşluklar yok olur.",
+                "description": "Tüm bloklar sol kenara doğru yapışır! Aralardaki boşluklar yok olur.",
                 "color": (255, 140, 100),
                 "bg": (48, 20, 12),
                 "icon": "M",
@@ -886,7 +886,7 @@ class MysteryCardManager:
             },
             {
                 "id": "hammer",
-                "title": "Zip Dosyası",
+                "title": "Çekiç",
                 "base": 3,
                 "value_range": (3, 3),
                 "description": "3 hak: H ile mevcut düşen parçayı anlık 1x1 bloğa dönüştür.",
@@ -956,7 +956,7 @@ class MysteryCardManager:
                 "title": "Sinerji Bonus",
                 "base": 1,
                 "value_range": (1, 1),
-                "description": "PERK: Her aktif kart için +%10 skor bonusu.",
+                "description": "PERK: Her aktif perk için +%10 skor bonusu.",
                 "color": (255, 220, 140),
                 "bg": (32, 18, 12),
                 "icon": "🔗",
@@ -1024,8 +1024,8 @@ class MysteryCardManager:
             {
                 "id": "ghost_echo",
                 "title": "İkinci Şans",
-                "base": 6,
-                "value_range": (6, 6),
+                "base": 10,
+                "value_range": (10, 10),
                 "description": "Ölümden Dönüş: Oyun bitecekken üst yarıyı temizler, devam edersin.",
                 "color": (200, 200, 255),
                 "bg": (10, 8, 30),
@@ -1110,7 +1110,7 @@ class MysteryCardManager:
                 "title": "Zaman Kapsülü",
                 "base": 1,
                 "value_range": (1, 1),
-                "description": "R ile zaman kapsülünü kullan: ilk basışta kaydet, ikinci basışta geri dön.",
+                "description": "T ile tahtayı kaydet, R ile kaydedilen duruma geri dön.",
                 "color": (120, 255, 200),
                 "bg": (10, 40, 30),
                 "icon": "T",
@@ -5224,6 +5224,9 @@ class MysteryMode(Game):
         self._score_multiplier_value = 1.0
         self._line_clear_multiplier_remaining = 0
         self._line_clear_multiplier_value = 1.0
+        self._speed_burst_timer = 0.0
+        self._speed_burst_speed_mult = 1.0
+        self._speed_burst_line_mult = 1.0
         self._armed_nova_clusters = 0
         self._bomb_countdown_timer = 0.0
         self._bomb_countdown_last_int = 0
@@ -5415,6 +5418,15 @@ class MysteryMode(Game):
         piece = getattr(self, 'current_piece', None)
         if piece is None:
             return False
+        if getattr(piece, 'hammered', False):
+            return False
+        try:
+            shape = getattr(piece, 'shape', None)
+            if shape == [[1]]:
+                setattr(piece, 'hammered', True)
+                return False
+        except Exception:
+            pass
 
         try:
             old_cells = list(piece.get_cells())
@@ -5508,6 +5520,14 @@ class MysteryMode(Game):
         except Exception:
             return str(keycode)
 
+    @staticmethod
+    def _card_int_value(card: Dict[str, Any], default: int = 1) -> int:
+        try:
+            raw_value = card.get('value', card.get('base', default))
+            return max(1, int(raw_value))
+        except Exception:
+            return max(1, int(default))
+
     def _localized_card_text(self, key: str, default: str | None = None, **kwargs) -> str:
         fallback = default
         if default is not None:
@@ -5583,6 +5603,8 @@ class MysteryMode(Game):
             board_height = int(getattr(self.board, 'height', BOARD_HEIGHT) or BOARD_HEIGHT)
         except Exception:
             board_height = BOARD_HEIGHT
+        top_half_rows = max(1, int(math.ceil(board_height / 2.0)))
+        rows = max(top_half_rows, min(rows, board_height))
         rows = max(1, min(rows, board_height))
 
         try:
@@ -5720,10 +5742,18 @@ class MysteryMode(Game):
             # Son parçanın hücrelerini board'dan sil (grid, occupancy ve texture_grid)
             for x, y in last['cells']:
                 if 0 <= y < self.board.height and 0 <= x < self.board.width:
-                    self.board.grid[y][x] = None
+                    self.board.grid[y][x] = BLACK
                     self.board.occupancy[y][x] = False
                     if hasattr(self.board, 'texture_grid'):
                         self.board.texture_grid[y][x] = None
+                    try:
+                        self.board.gold[y][x] = False
+                    except Exception:
+                        pass
+                    try:
+                        self.board.owners[y][x] = None
+                    except Exception:
+                        pass
             
             # Mevcut parçayı kuyruğun başına ekle.
             # NOT: Parçayı olduğu gibi geri koyarsak, daha sonra tekrar geldiğinde
@@ -5798,6 +5828,11 @@ class MysteryMode(Game):
         if getattr(self, '_freeze_drop_active', False):
             self._freeze_drop_active = False
             self._freeze_drop_timer = 0.0
+        if getattr(locked_piece, 'drill', False):
+            try:
+                self._cleanup_drill_path_to_lock(locked_piece)
+            except Exception:
+                pass
         super().lock_and_new_piece()
 
         # If the underlying Game ignored the lock (e.g., tunneled hard-drop pressed
@@ -5816,15 +5851,16 @@ class MysteryMode(Game):
         except Exception:
             pass
 
-        # Lines cleared by this lock (before any card/explosion secondary clears).
-        gained = self.board.lines_cleared - before
+        # Lines cleared by the player's lock only. Secondary card clears can run
+        # below; keep them out of player-source perk/progress bookkeeping.
+        player_lines = self.board.lines_cleared - before
 
         # Save rewind snapshot only after a successful lock so the saved cell
         # positions reflect any last-moment adjustments (including tunneling snap).
         if getattr(self, '_rewind_available', False):
             try:
                 # If this placed piece cleared any line(s) (incl. Quadrix), rewind must be disabled.
-                if gained > 0:
+                if player_lines > 0:
                     self._last_placed_piece = None
                 else:
                     self._save_last_placed_piece(locked_piece)
@@ -5854,15 +5890,15 @@ class MysteryMode(Game):
             pass
         try:
             delta_after_timed = int(self.board.score - prev_score)
-            self.board.score += self._apply_line_clear_multiplier_to_delta(gained, delta_after_timed)
+            self.board.score += self._apply_line_clear_multiplier_to_delta(player_lines, delta_after_timed)
         except Exception:
             pass
         # Energy gain for Mystery Mode: +10 energy per cleared line
-        if getattr(self, 'energy', None) is not None and gained > 0:
+        if getattr(self, 'energy', None) is not None and player_lines > 0:
             try:
-                self.energy = min(self.energy_max, int(self.energy + gained * 10))
+                self.energy = min(self.energy_max, int(self.energy + player_lines * 10))
             except Exception:
-                self.energy = min(getattr(self, 'energy_max', 100), getattr(self, 'energy', 0) + (gained * 10))
+                self.energy = min(getattr(self, 'energy_max', 100), getattr(self, 'energy', 0) + (player_lines * 10))
         # Explosive Protocol: if the locked piece is a bomb, explode.
         if getattr(locked_piece, 'is_bomb', False):
             width = len(self.board.grid[0])
@@ -5938,11 +5974,11 @@ class MysteryMode(Game):
                     except Exception:
                         delta_ex = None
                     self._post_external_line_clear(extra_cleared, award_energy=True, score_delta=delta_ex, source='card')
-                    gained += extra_cleared
 
         # Alchemist perk trigger with piece context (T-like spins or Quadrix)
         try:
-            self.perk_manager.maybe_trigger_alchemist(locked_piece, gained)
+            if str(getattr(locked_piece, 'name', '')) == 'T' and int(player_lines) in (2, 3):
+                self.perk_manager.maybe_trigger_alchemist(locked_piece, player_lines)
         except Exception:
             pass
 
@@ -6009,8 +6045,8 @@ class MysteryMode(Game):
                     self._post_external_line_clear(cleared_lines, award_energy=True, score_delta=delta, source='card')
             self._armed_nova_clusters = max(0, charges - 1)
             self._sync_active_cards()
-        if gained > 0:
-            self._apply_line_bonus_reward(gained)
+        if player_lines > 0:
+            self._apply_line_bonus_reward(player_lines)
             # Spawn XP homing particles for Cascade Protocol (Mystery Mode)
             if self.effects_enabled:
                 active_width, _ = self._active_ui_size()
@@ -6036,16 +6072,16 @@ class MysteryMode(Game):
                                 'speed_override': 8
                             }
                             self.particles.append(particle)
-        self._apply_combo_aura_on_lock(gained, previous_combo)
+        self._apply_combo_aura_on_lock(player_lines, previous_combo)
         # Line-based notification retained to update internal progress, but we no longer
         # open the card selection overlay from gained lines; selection now happens on level-up.
         try:
             try:
                 if getattr(self, 'settings_manager', None) and self.settings_manager.get('debug_mode', False):
-                    print(f"[MysteryMode] lock_and_new_piece: gained={gained}, board.level={self.board.level}, progress={self.card_manager.progress}")
+                    print(f"[MysteryMode] lock_and_new_piece: player_lines={player_lines}, board.level={self.board.level}, progress={self.card_manager.progress}")
             except Exception:
                 pass
-            triggered = self.card_manager.notify_lines_cleared(gained)
+            triggered = self.card_manager.notify_lines_cleared(player_lines)
             # Note: `notify_lines_cleared` will enqueue pending_level_ups via
             # the mode.last_enqueued_level dedup logic; don't enqueue here to
             # avoid double-counting.
@@ -6053,7 +6089,7 @@ class MysteryMode(Game):
             pass
         # Perk manager: trigger per-line events
         try:
-            self.perk_manager.notify_lines_cleared(gained, source='player')
+            self.perk_manager.notify_lines_cleared(player_lines, source='player')
         except Exception:
             pass
         # Notify perk manager that a piece was locked
@@ -6183,8 +6219,10 @@ class MysteryMode(Game):
                 except Exception:
                     pass
                 return False
+            freeze_input_locked = bool(getattr(self, '_freeze_drop_active', False))
+
             # Ground Sweep (Z) - cost 40
-            if keys[pygame.K_z] and not self._last_ability_keys['z']:
+            if not freeze_input_locked and keys[pygame.K_z] and not self._last_ability_keys['z']:
                 if self.energy >= 40:
                     self.energy = max(0, self.energy - 40)
                     prev_score = int(getattr(self.board, 'score', 0))
@@ -6203,7 +6241,7 @@ class MysteryMode(Game):
             # SPACE ile istenen yerde kilitlenir (komşu blok varsa).
             # Hak, parça kilitlenince harcanır.
             _g_pressed = keys[pygame.K_g] or (_gp_connected and _gpm.is_action_pressed('card_ghost'))
-            if _g_pressed and not self._last_ability_keys.get('g', False):
+            if not freeze_input_locked and _g_pressed and not self._last_ability_keys.get('g', False):
                 now_ms = None
                 try:
                     now_ms = int(pygame.time.get_ticks())
@@ -6269,7 +6307,7 @@ class MysteryMode(Game):
 
             # Çekiç (H): mevcut düşen parçayı 1x1 bloğa dönüştür (3 hak)
             _h_pressed = keys[pygame.K_h] or (_gp_connected and _gpm.is_action_pressed('card_hammer'))
-            if _h_pressed and not self._last_ability_keys.get('h', False):
+            if not freeze_input_locked and _h_pressed and not self._last_ability_keys.get('h', False):
                 try:
                     charges = int(getattr(self, 'hammer_charges_remaining', 0) or 0)
                 except Exception:
@@ -6300,7 +6338,7 @@ class MysteryMode(Game):
 
             # Bomba Ustası (M): mevcut parçayı mini bomba yap (3 hak)
             _m_pressed = keys[pygame.K_m] or (_gp_connected and _gpm.is_action_pressed('card_bomb'))
-            if _m_pressed and not self._last_ability_keys.get('m', False):
+            if not freeze_input_locked and _m_pressed and not self._last_ability_keys.get('m', False):
                 try:
                     charges = int(getattr(self, 'bomb_master_charges', 0) or 0)
                 except Exception:
@@ -6342,7 +6380,7 @@ class MysteryMode(Game):
 
             # Tuttuğunu Koparan (B): hold'daki parçayı sil (hak varsa)
             _b_pressed = keys[pygame.K_b] or (_gp_connected and _gpm.is_action_pressed('discard_held'))
-            if _b_pressed and not self._last_ability_keys.get('b', False):
+            if not freeze_input_locked and _b_pressed and not self._last_ability_keys.get('b', False):
                 try:
                     hd_charges = int(getattr(self, '_hold_destroyer_charges', 0) or 0)
                 except Exception:
@@ -6379,7 +6417,7 @@ class MysteryMode(Game):
 
             # Son Düşüş (F): mevcut düşen bloğu dondur (3 hak)
             _f_pressed = keys[pygame.K_f]
-            if _f_pressed and not self._last_ability_keys.get('f', False):
+            if not freeze_input_locked and _f_pressed and not self._last_ability_keys.get('f', False):
                 try:
                     charges = int(getattr(self, '_freeze_drop_charges', 0) or 0)
                 except Exception:
@@ -6415,7 +6453,7 @@ class MysteryMode(Game):
             self._last_ability_keys['f'] = bool(_f_pressed)
 
             # Time Warp (X) - cost 60
-            if keys[pygame.K_x] and not self._last_ability_keys['x']:
+            if not freeze_input_locked and keys[pygame.K_x] and not self._last_ability_keys['x']:
                 if self.energy >= 60 and self.time_warp_timer <= 0:
                     self.energy = max(0, self.energy - 60)
                     self.time_warp_timer = 3.5
@@ -6539,8 +6577,7 @@ class MysteryMode(Game):
 
     def _update_effect_timers(self, dt: float) -> None:
         timers_changed = False
-        # dt is milliseconds; convert to seconds for timer math
-        seconds = dt / 1000.0
+        seconds = _dt_to_seconds(dt)
         if getattr(self, '_score_multiplier_timer', 0.0) > 0:
             self._score_multiplier_timer = max(0.0, float(self._score_multiplier_timer) - seconds)
             timers_changed = True
@@ -6832,6 +6869,19 @@ class MysteryMode(Game):
             if self._try_open_debug_workshop_from_key(event):
                 continue
 
+            # Son Düşüş aktifken açıklamadaki kuralı uygula:
+            # sadece sağ-sol hareket ve sert düşüş temel input olarak kalır.
+            if getattr(self, '_freeze_drop_active', False) and event.type in (pg.KEYDOWN, pg.KEYUP):
+                allowed_keys = set()
+                try:
+                    allowed_keys.update(self._action_keys(self.control_bindings, 'move_left'))
+                    allowed_keys.update(self._action_keys(self.control_bindings, 'move_right'))
+                    allowed_keys.update(self._action_keys(self.control_bindings, 'hard_drop'))
+                except Exception:
+                    allowed_keys.update({pg.K_LEFT, pg.K_RIGHT, pg.K_SPACE})
+                if event.key not in allowed_keys:
+                    continue
+
             # T: kaydet, R: geri yükle. Event tüketilir; base game restart yoluna düşmez.
             if event.type == pg.KEYDOWN and event.key in (pg.K_t, pg.K_r):
                 if not self.game_over and not self.paused and not self.card_selection_active:
@@ -6846,9 +6896,7 @@ class MysteryMode(Game):
             if event.type == pg.KEYDOWN and event.key == pg.K_b:
                 # Base game'in B handler'ına geçirme
                 continue
-            
-            # Event'i tekrar kuyruğa koy ki super().handle_input() işlesin
-            pg.event.post(event)
+
             if event.type == pg.KEYDOWN and event.key == pg.K_u:
                 if not self.game_over and not self.paused:
                     if self._do_rewind():
@@ -6859,6 +6907,9 @@ class MysteryMode(Game):
                 if not self.game_over and not self.paused:
                     if self._open_sniper_overlay():
                         continue
+
+            # Event'i tekrar kuyruğa koy ki super().handle_input() işlesin
+            pg.event.post(event)
         
         # Gamepad action kontrolü (event loop dışında)
         if not self.game_over and not self.paused:
@@ -6911,6 +6962,18 @@ class MysteryMode(Game):
         self.combo_aura_timer = 0.0
         self.combo_aura_bonus = 0
         self._active_effect_visuals = {}
+        self._score_multiplier_timer = 0.0
+        self._score_multiplier_value = 1.0
+        self._line_clear_multiplier_remaining = 0
+        self._line_clear_multiplier_value = 1.0
+        self._score_color_override = None
+        self._speed_burst_timer = 0.0
+        self._speed_burst_speed_mult = 1.0
+        self._speed_burst_line_mult = 1.0
+        self._armed_nova_clusters = 0
+        self._bomb_countdown_timer = 0.0
+        self._bomb_countdown_last_int = 0
+        self._drill_last_cleanup_y = None
         self.tunnel_charges_remaining = 0
         self.hammer_charges_remaining = 0
         # Son Düşüş sıfırla
@@ -6927,6 +6990,13 @@ class MysteryMode(Game):
         self._hold_destroyer_charges = 0  # Tuttuğunu Koparan B tuşu hakları
         # Mystery modunda B tuşu kartlara bağlı, base game'in 5 hakkını devre dışı bırak
         self.discard_held_uses = 0
+        self.energy = 0
+        self.energy_max = 100
+        self.time_warp_timer = 0.0
+        try:
+            delattr(self, '_timewarp_old_speed')
+        except Exception:
+            pass
         # Blok Atölyesi popup sıfırla
         self._card_workshop_active = False
         self._card_workshop_grid = None
@@ -7964,9 +8034,15 @@ class MysteryMode(Game):
         except Exception:
             pass
         self._apply_card_effect(card)
-        card_title_text = get_card_title(card, card.get('title', ''))
-        self.card_message = t('card_selected').format(title=card_title_text)
-        self.card_message_timer = 3
+        interactive_effect_active = bool(
+            getattr(self, '_piece_selection_active', False)
+            or getattr(self, '_card_workshop_active', False)
+            or getattr(self, '_sniper_overlay_active', False)
+        )
+        if not interactive_effect_active:
+            card_title_text = get_card_title(card, card.get('title', ''))
+            self.card_message = t('card_selected').format(title=card_title_text)
+            self.card_message_timer = 3
         self._close_card_selection()
         # Note: pending_level_ups is now decremented by _close_card_selection(),
         # which is always called when the UI closes (finalize or cancel).
@@ -8011,8 +8087,11 @@ class MysteryMode(Game):
         Must stay compatible with the canonical shape-mutation mapping used by
         Game.swap_current_piece_shape().
         """
-        mapping = {'L': 'J', 'J': 'L', 'Z': 'S', 'S': 'Z', 'I': 'O', 'O': 'I', 'T': 'T'}
-        return mapping.get(str(current_name or ''), None)
+        name = str(current_name or '')
+        mapping = {'L': 'J', 'J': 'L', 'Z': 'S', 'S': 'Z'}
+        # Returning the same name blocks Game's broader fallback mapping. The
+        # card text promises mirror swaps only, not I/O conversion.
+        return mapping.get(name, name)
 
     def _evaluate_occupancy(self, occ: list[list[bool]]) -> tuple[int, int, int, int]:
         """Return (holes, bumpiness, agg_height, full_lines)."""
@@ -8062,7 +8141,7 @@ class MysteryMode(Game):
                 
                 # Satiri temizle
                 for x in range(self.board.width):
-                    self.board.grid[y][x] = None
+                    self.board.grid[y][x] = BLACK
                     self.board.occupancy[y][x] = False
                     self.board.texture_grid[y][x] = None
                     self.board.gold[y][x] = False
@@ -8255,8 +8334,9 @@ class MysteryMode(Game):
                 cur = int(getattr(self, 'bomb_master_charges', 0) or 0)
             except Exception:
                 cur = 0
-            if cur in (0, 1, 2):
-                self.bomb_master_charges = 3
+            target_charges = self._card_int_value(card, 3)
+            if cur < target_charges:
+                self.bomb_master_charges = target_charges
             try:
                 self._set_localized_card_message(
                     'mystery_msg_bomb_master_ready',
@@ -8280,8 +8360,9 @@ class MysteryMode(Game):
                 cur = int(getattr(self.perk_manager, 'rewind_uses', 0) or 0)
             except Exception:
                 cur = 0
-            if cur in (0, 1, 2):
-                self.perk_manager.rewind_uses = 3
+            target_charges = self._card_int_value(card, 3)
+            if cur < target_charges:
+                self.perk_manager.rewind_uses = target_charges
             self._rewind_available = True
             self._last_placed_piece = None
             try:
@@ -8305,8 +8386,9 @@ class MysteryMode(Game):
                 cur = int(getattr(self, 'phase_shift_uses_remaining', 0) or 0)
             except Exception:
                 cur = 0
-            if cur in (0, 1, 2):
-                self.phase_shift_uses_remaining = 3
+            target_charges = self._card_int_value(card, 3)
+            if cur < target_charges:
+                self.phase_shift_uses_remaining = target_charges
             try:
                 self._remember_effect_visual('perk_phase', card)
                 self._sync_active_cards()
@@ -8348,8 +8430,9 @@ class MysteryMode(Game):
                 cur = int(getattr(self, 'tunnel_charges_remaining', 0) or 0)
             except Exception:
                 cur = 0
-            if cur in (0, 1, 2):
-                self.tunnel_charges_remaining = 3
+            target_charges = self._card_int_value(card, 3)
+            if cur < target_charges:
+                self.tunnel_charges_remaining = target_charges
             try:
                 self._set_localized_card_message(
                     'mystery_msg_quantum_tunneling_ready',
@@ -8413,8 +8496,9 @@ class MysteryMode(Game):
                 cur = int(getattr(self, 'hammer_charges_remaining', 0) or 0)
             except Exception:
                 cur = 0
-            if cur in (0, 1, 2):
-                self.hammer_charges_remaining = 3
+            target_charges = self._card_int_value(card, 3)
+            if cur < target_charges:
+                self.hammer_charges_remaining = target_charges
             try:
                 self._set_localized_card_message(
                     'mystery_msg_hammer_ready',
@@ -8486,6 +8570,14 @@ class MysteryMode(Game):
             # Board'a kalıcı flag ekle - tüm parçalar bu özellikten yararlanır
             try:
                 self.board.flexible_border_active = True
+            except Exception:
+                pass
+            try:
+                if getattr(self, 'current_piece', None) is not None:
+                    setattr(self.current_piece, 'flexible_border', True)
+                for queued_piece in getattr(self, 'next_piece_queue', []) or []:
+                    if queued_piece is not None:
+                        setattr(queued_piece, 'flexible_border', True)
             except Exception:
                 pass
             try:
@@ -8590,21 +8682,27 @@ class MysteryMode(Game):
                 pass
             effect_triggered = True
         elif cid == "sniper_shot":
-            # Keskin Nişancı: N tuşuyla aktifleştir, overlay'de blok seç
-            # Artık sınırlı kullanım - kart değeri kadar hak ver
+            # Keskin Nişancı: kart seçilince hedefleme overlay'i açılır; kalan
+            # haklar daha sonra N ile yeniden açılabilir.
             charges = int(card.get('value', 3))  # Varsayılan 3 hak
             self._sniper_charges = charges
             self._sniper_card = card
-            try:
-                self._set_localized_card_message('mystery_msg_sniper_ready', 3.0, 'Keskin Nisanci hazir! N tusuna bas. ({charges} hak)', charges=charges)
-            except Exception:
-                pass
             # Görsel efekt için kaydet
             try:
                 self._remember_effect_visual('sniper_shot', card)
                 self._sync_active_cards()
             except Exception:
                 pass
+            opened = False
+            try:
+                opened = bool(self._open_sniper_overlay())
+            except Exception:
+                pass
+            if not opened:
+                try:
+                    self._set_localized_card_message('mystery_msg_sniper_ready', 3.0, 'Keskin Nisanci hazir! N tusuna bas. ({charges} hak)', charges=charges)
+                except Exception:
+                    pass
             effect_triggered = True
         elif cid == "time_capsule":
             # Zaman Kapsulu: T ile kaydet, R ile geri don
@@ -8624,7 +8722,7 @@ class MysteryMode(Game):
             effect_triggered = True
         elif cid == "future_changer":
             # Geleceği Değiştiren: Sonraki 2 parçayı oyuncu seçer
-            self._future_changer_remaining = 2
+            self._future_changer_remaining = self._card_int_value(card, 2)
             self._future_changer_card = card
             self._open_piece_selection_popup()
             effect_triggered = True
@@ -8636,8 +8734,9 @@ class MysteryMode(Game):
                 cur = int(getattr(self, '_freeze_drop_charges', 0) or 0)
             except Exception:
                 cur = 0
-            if cur in (0, 1, 2):
-                self._freeze_drop_charges = 3
+            target_charges = self._card_int_value(card, 3)
+            if cur < target_charges:
+                self._freeze_drop_charges = target_charges
             self._freeze_drop_duration = freeze_dur
             try:
                 self._set_localized_card_message(
@@ -8673,12 +8772,12 @@ class MysteryMode(Game):
                     for y in range(self.board.height):
                         for x in range(self.board.width):
                             if self.board.occupancy[y][x]:
-                                self.board.grid[y][x] = (0, 0, 0)
-                                self.board.occupancy[y][x] = False
-                                self.board.texture_grid[y][x] = None
-                                self.board.gold[y][x] = False
-                                self.board.owners[y][x] = None
                                 total_cleared += 1
+                            self.board.grid[y][x] = BLACK
+                            self.board.occupancy[y][x] = False
+                            self.board.texture_grid[y][x] = None
+                            self.board.gold[y][x] = False
+                            self.board.owners[y][x] = None
                 except Exception:
                     pass
                 try:
@@ -8688,53 +8787,82 @@ class MysteryMode(Game):
                 except Exception:
                     pass
             else:
-                # Kötü şans: Mevcut blokları yerlerinden koparıp rastgele yerlere dağıt (üst 5 satır hariç)
+                # Kötü şans: açıklamadaki gibi tahtanın yaklaşık yarısını
+                # rastgele bloklarla doldur (üst 5 satırı ani top-out için koru).
                 try:
-                    # Tahtadaki tüm blokları topla
-                    existing_blocks = []
-                    for y in range(self.board.height):
-                        for x in range(self.board.width):
-                            if self.board.occupancy[y][x]:
-                                existing_blocks.append({
-                                    'color': self.board.grid[y][x],
-                                    'texture': self.board.texture_grid[y][x],
-                                    'gold': self.board.gold[y][x],
-                                    'owner': self.board.owners[y][x],
-                                })
-                    
-                    if existing_blocks:
-                        # Tahtayı komple temizle
-                        for y in range(self.board.height):
-                            for x in range(self.board.width):
-                                self.board.grid[y][x] = (0, 0, 0)
+                    playable_top = min(5, self.board.height)
+                    playable_cells = [
+                        (x, y)
+                        for y in range(playable_top, self.board.height)
+                        for x in range(self.board.width)
+                    ]
+                    empty_cells = [
+                        (x, y)
+                        for x, y in playable_cells
+                        if not bool(self.board.occupancy[y][x])
+                    ]
+                    current_filled = len(playable_cells) - len(empty_cells)
+                    row_counts = {
+                        y: sum(1 for x in range(self.board.width) if bool(self.board.occupancy[y][x]))
+                        for y in range(playable_top, self.board.height)
+                    }
+                    max_safe_capacity = sum(max(0, self.board.width - 1 - count) for count in row_counts.values())
+                    target_filled = min(
+                        len(playable_cells),
+                        max(1, (self.board.width * self.board.height) // 2),
+                    )
+                    to_place = max(0, min(len(empty_cells), target_filled - current_filled, max_safe_capacity))
+
+                    if to_place > 0:
+                        existing_colors = [
+                            self.board.grid[y][x]
+                            for y in range(self.board.height)
+                            for x in range(self.board.width)
+                            if bool(self.board.occupancy[y][x]) and self.board.grid[y][x] != BLACK
+                        ]
+                        fallback_colors = [
+                            (0, 255, 255),
+                            (255, 255, 0),
+                            (160, 80, 255),
+                            (0, 255, 120),
+                            (255, 80, 80),
+                            (80, 160, 255),
+                            (255, 160, 40),
+                        ]
+                        color_pool = existing_colors or fallback_colors
+                        _rng.shuffle(empty_cells)
+                        placed = 0
+                        for x, y in empty_cells:
+                            if placed >= to_place:
+                                break
+                            if row_counts.get(y, 0) >= self.board.width - 1:
+                                continue
+                            self.board.grid[y][x] = _rng.choice(color_pool)
+                            self.board.occupancy[y][x] = True
+                            self.board.texture_grid[y][x] = None
+                            self.board.gold[y][x] = False
+                            try:
+                                self.board.owners[y][x] = None
+                            except Exception:
+                                pass
+                            placed += 1
+                            row_counts[y] = row_counts.get(y, 0) + 1
+                        # Avoid leaving ready-made full rows that the next normal
+                        # lock would incorrectly collect as player-created clears.
+                        for y in range(playable_top, self.board.height):
+                            if all(bool(self.board.occupancy[y][x]) for x in range(self.board.width)):
+                                x = _rng.randrange(self.board.width)
+                                self.board.grid[y][x] = BLACK
                                 self.board.occupancy[y][x] = False
                                 self.board.texture_grid[y][x] = None
                                 self.board.gold[y][x] = False
-                                self.board.owners[y][x] = None
-                        
-                        # Üst 5 satır hariç boş hücreleri bul
-                        available_cells = []
-                        for y in range(5, self.board.height):
-                            for x in range(self.board.width):
-                                available_cells.append((x, y))
-                        
-                        # Blokları rastgele yerlere dağıt
-                        _rng.shuffle(available_cells)
-                        placed = 0
-                        for i, block in enumerate(existing_blocks):
-                            if i < len(available_cells):
-                                x, y = available_cells[i]
-                                self.board.grid[y][x] = block['color']
-                                self.board.occupancy[y][x] = True
-                                self.board.texture_grid[y][x] = block['texture']
-                                self.board.gold[y][x] = block['gold']
-                                self.board.owners[y][x] = block['owner']
-                                placed += 1
-                        # Yerçekimi uygula - bloklar havada kalmasın
-                        self.board.apply_gravity()
-                        self._set_localized_card_message('mystery_msg_gambler_scramble', 2.0, '🎲 Sansina kusura bakma! {placed} blok karistirildi!', placed=placed)
+                                try:
+                                    self.board.owners[y][x] = None
+                                except Exception:
+                                    pass
+                        self._set_localized_card_message('mystery_msg_gambler_scramble', 2.0, '🎲 Sansina kusura bakma! {placed} blok eklendi!', placed=placed)
                     else:
-                        self._set_localized_card_message('mystery_msg_gambler_empty', 2.0, '🎲 Tahta bos, sansin kotu ama zararsiz!')
+                        self._set_localized_card_message('mystery_msg_gambler_empty', 2.0, '🎲 Tahta zaten yari dolu, zar daha fazla blok ekleyemedi!')
                 except Exception:
                     pass
             effect_triggered = True
@@ -8925,7 +9053,9 @@ class MysteryMode(Game):
             'current_piece',
             'next_piece_queue',
             'held_piece',
+            'second_held_piece',
             'can_hold',
+            'can_hold2',
             'energy',
             'fall_speed',
             'time_warp_timer',
@@ -8933,10 +9063,14 @@ class MysteryMode(Game):
             'gravity_freeze_timer',
             'speed_effect_timer',
             'speed_effect_multiplier',
+            '_speed_burst_timer',
+            '_speed_burst_speed_mult',
+            '_speed_burst_line_mult',
             'combo_aura_timer',
             'combo_aura_bonus',
             '_score_multiplier_timer',
             '_score_multiplier_value',
+            '_score_color_override',
             'line_bonus_remaining',
             'line_bonus_amount',
             '_line_clear_multiplier_remaining',
@@ -8947,11 +9081,18 @@ class MysteryMode(Game):
             '_hold_destroyer_charges',
             'discard_held_uses',
             '_freeze_drop_charges',
+            '_freeze_drop_duration',
             '_freeze_drop_active',
             '_freeze_drop_timer',
             '_sniper_charges',
             'phase_shift_uses_remaining',
             '_armed_nova_clusters',
+            '_bomb_countdown_timer',
+            '_bomb_countdown_last_int',
+            '_drill_last_cleanup_y',
+            '_drill_movement_locked',
+            '_rewind_available',
+            '_last_placed_piece',
             'last_enqueued_level',
         )
 
@@ -8966,6 +9107,18 @@ class MysteryMode(Game):
         card_manager = getattr(self, 'card_manager', None)
         if card_manager is not None and hasattr(card_manager, 'force_piece_queue'):
             data['card_manager_force_piece_queue'] = snapshot(card_manager.force_piece_queue)
+        if card_manager is not None:
+            for attr in ('progress', 'threshold', 'pending_choices', 'active_cards', 'used_card_ids'):
+                if hasattr(card_manager, attr):
+                    data[f'card_manager_{attr}'] = snapshot(getattr(card_manager, attr))
+
+        perk_manager = getattr(self, 'perk_manager', None)
+        if perk_manager is not None:
+            if hasattr(perk_manager, 'active'):
+                data['perk_manager_active'] = snapshot(getattr(perk_manager, 'active'))
+            for attr in ('next_piece_bomb', 'lines_since_chrono', 'chrono_freeze_timer', 'rewind_uses'):
+                if hasattr(perk_manager, attr):
+                    data[f'perk_manager_{attr}'] = snapshot(getattr(perk_manager, attr))
 
         return data
 
@@ -8991,7 +9144,9 @@ class MysteryMode(Game):
             'current_piece',
             'next_piece_queue',
             'held_piece',
+            'second_held_piece',
             'can_hold',
+            'can_hold2',
             'energy',
             'fall_speed',
             'time_warp_timer',
@@ -8999,10 +9154,14 @@ class MysteryMode(Game):
             'gravity_freeze_timer',
             'speed_effect_timer',
             'speed_effect_multiplier',
+            '_speed_burst_timer',
+            '_speed_burst_speed_mult',
+            '_speed_burst_line_mult',
             'combo_aura_timer',
             'combo_aura_bonus',
             '_score_multiplier_timer',
             '_score_multiplier_value',
+            '_score_color_override',
             'line_bonus_remaining',
             'line_bonus_amount',
             '_line_clear_multiplier_remaining',
@@ -9013,11 +9172,18 @@ class MysteryMode(Game):
             '_hold_destroyer_charges',
             'discard_held_uses',
             '_freeze_drop_charges',
+            '_freeze_drop_duration',
             '_freeze_drop_active',
             '_freeze_drop_timer',
             '_sniper_charges',
             'phase_shift_uses_remaining',
             '_armed_nova_clusters',
+            '_bomb_countdown_timer',
+            '_bomb_countdown_last_int',
+            '_drill_last_cleanup_y',
+            '_drill_movement_locked',
+            '_rewind_available',
+            '_last_placed_piece',
             'last_enqueued_level',
         )
         for attr in state_attrs:
@@ -9030,6 +9196,34 @@ class MysteryMode(Game):
                 card_manager.force_piece_queue = data['card_manager_force_piece_queue']
             except Exception:
                 pass
+        if card_manager is not None:
+            for attr in ('progress', 'threshold', 'pending_choices', 'active_cards', 'used_card_ids'):
+                key = f'card_manager_{attr}'
+                if key not in data:
+                    continue
+                try:
+                    value = data[key]
+                    if attr == 'used_card_ids' and not isinstance(value, set):
+                        value = set(value or [])
+                    setattr(card_manager, attr, value)
+                except Exception:
+                    pass
+
+        perk_manager = getattr(self, 'perk_manager', None)
+        if perk_manager is not None:
+            if 'perk_manager_active' in data:
+                try:
+                    active = data['perk_manager_active']
+                    perk_manager.active = dict(active or {}) if isinstance(active, dict) else {}
+                except Exception:
+                    pass
+            for attr in ('next_piece_bomb', 'lines_since_chrono', 'chrono_freeze_timer', 'rewind_uses'):
+                key = f'perk_manager_{attr}'
+                if key in data:
+                    try:
+                        setattr(perk_manager, attr, data[key])
+                    except Exception:
+                        pass
 
     def _save_time_capsule(self) -> bool:
         """Mevcut oyun durumunu zaman kapsülüne kaydet."""
@@ -9164,9 +9358,15 @@ class MysteryMode(Game):
             
             # Speed Burst timer varsa speed_burst efektini ekle
             if getattr(self, '_speed_burst_timer', 0) > 0:
-                card = next((c for c in catalog if c.get('id') == 'speed_burst'), None)
+                card = next((c for c in catalog if str(c.get('id', '')).startswith('speed_burst')), None)
                 if card:
                     self._remember_effect_visual('speed_burst', card)
+
+            # Freeze Drop charges/timer varsa freeze_drop efektini ekle
+            if getattr(self, '_freeze_drop_charges', 0) > 0 or getattr(self, '_freeze_drop_active', False):
+                card = next((c for c in catalog if str(c.get('id', '')).startswith('freeze_drop')), None)
+                if card:
+                    self._remember_effect_visual('freeze_drop', card)
             
         except Exception:
             pass
@@ -10156,6 +10356,39 @@ class MysteryMode(Game):
         piece = getattr(self, 'current_piece', None)
         if not piece or not getattr(piece, 'drill', False):
             return
+        try:
+            self._clear_drill_cells(piece.get_cells(), piece, clear_kind='drill')
+        except Exception:
+            pass
+        self._drill_last_cleanup_y = getattr(piece, 'y', None)
+
+    def _cleanup_drill_path_to_lock(self, piece) -> None:
+        if not piece or not getattr(piece, 'drill', False):
+            return
+        try:
+            start_y = int(getattr(self, '_drill_last_cleanup_y', getattr(piece, 'y', 0)) or 0)
+            end_y = int(getattr(piece, 'y', start_y) or start_y)
+        except Exception:
+            return
+
+        if end_y < start_y:
+            start_y, end_y = end_y, start_y
+
+        coords: list[tuple[int, int]] = []
+        original_y = getattr(piece, 'y', end_y)
+        try:
+            for top_y in range(start_y, end_y + 1):
+                piece.y = top_y
+                coords.extend(piece.get_cells())
+        finally:
+            try:
+                piece.y = original_y
+            except Exception:
+                pass
+        self._clear_drill_cells(coords, piece, clear_kind='drill_path')
+        self._drill_last_cleanup_y = getattr(piece, 'y', None)
+
+    def _clear_drill_cells(self, coords, piece, *, clear_kind: str) -> int:
         width = int(getattr(self.board, 'width', BOARD_WIDTH))
         height = int(getattr(self.board, 'height', BOARD_HEIGHT))
         cleared_cells = 0
@@ -10165,26 +10398,32 @@ class MysteryMode(Game):
             now_ms = int(pygame.time.get_ticks())
         except Exception:
             now_ms = None
-        for x, y in piece.get_cells():
-            if 0 <= x < width and 0 <= y < height and self.board.occupancy[y][x]:
-                self.board.occupancy[y][x] = False
-                self.board.grid[y][x] = BLACK
-                self.board.texture_grid[y][x] = None
+        seen: set[tuple[int, int]] = set()
+        for x, y in coords:
+            key = (int(x), int(y))
+            if key in seen:
+                continue
+            seen.add(key)
+            ix, iy = key
+            if 0 <= ix < width and 0 <= iy < height and self.board.occupancy[iy][ix]:
+                self.board.occupancy[iy][ix] = False
+                self.board.grid[iy][ix] = BLACK
+                self.board.texture_grid[iy][ix] = None
                 try:
-                    self.board.gold[y][x] = False
+                    self.board.gold[iy][ix] = False
                 except Exception:
                     pass
                 try:
-                    self.board.owners[y][x] = None
+                    self.board.owners[iy][ix] = None
                 except Exception:
                     pass
                 cleared_cells += 1
-                cleared_coords.append((int(x), int(y)))
+                cleared_coords.append((ix, iy))
         if cleared_cells:
             try:
                 self._trace_ghost_bug_clear(
                     now_ms=now_ms,
-                    clear_kind='drill',
+                    clear_kind=clear_kind,
                     cleared_cells=cleared_cells,
                     coords=cleared_coords,
                     piece=piece,
@@ -10196,6 +10435,7 @@ class MysteryMode(Game):
                 self.sound.play_sound('clear')
             # NERF: İlk bloğa değdikten sonra hareket kilitlenir
             self._drill_movement_locked = True
+        return int(cleared_cells)
 
     def _level_peaks(self, steps: int) -> int:
         """Tepe Dilimleyici (Leveler): sivri tepeleri keserek max-min farkını azalt."""
@@ -10708,7 +10948,7 @@ class MysteryMode(Game):
             for x in range(self.board.width):
                 if self.board.occupancy[y][x]:
                     color = self.board.grid[y][x]
-                    if color and color != (0, 0, 0):
+                    if color and color != BLACK:
                         key = color[:3]
                         if key not in color_map:
                             color_map[key] = []
@@ -10726,7 +10966,7 @@ class MysteryMode(Game):
         # O renkteki tüm blokları temizle
         removed = 0
         for x, y in cells:
-            self.board.grid[y][x] = (0, 0, 0)
+            self.board.grid[y][x] = BLACK
             self.board.occupancy[y][x] = False
             self.board.texture_grid[y][x] = None
             self.board.gold[y][x] = False

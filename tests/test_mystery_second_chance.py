@@ -58,7 +58,7 @@ def test_second_chance_consumes_card_and_clears_lock_out() -> None:
 
     assert mode._try_prevent_game_over_after_lock() is True
 
-    assert mode.board.cleared_rows == 6
+    assert mode.board.cleared_rows == 10
     assert mode.board.is_game_over() is False
     assert mode.board.occupancy[0] == [False] * mode.board.width
     assert mode._active_effect_visuals == {}

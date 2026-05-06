@@ -2083,12 +2083,12 @@
     "fr": "Guider"
   },
   "guide_card_clear_rows": {
-    "de": "• Zeilenlöscher: Löscht sofort die unten gefüllten Zeilen.",
-    "es": "• Borrador de filas: borra instantáneamente las filas llenas de la parte inferior.",
-    "fr": "• Effaceur de lignes : efface instantanément les lignes remplies du bas.",
-    "it": "• Cancella riga: cancella istantaneamente le righe riempite in basso.",
-    "pt": "• Row Clearer: Limpa instantaneamente as linhas preenchidas na parte inferior.",
-    "ru": "• Очистка строк: мгновенно очищает нижние заполненные строки."
+    "de": "• Reihenreiniger: Löscht sofort die untersten Reihen, auch wenn sie nicht voll sind.",
+    "es": "• Limpiador de filas: borra al instante las filas inferiores, estén completas o no.",
+    "fr": "• Effaceur de lignes : efface instantanément les lignes du bas, même incomplètes.",
+    "it": "• Cancella-righe: cancella subito le righe inferiori, anche se non sono piene.",
+    "pt": "• Limpador de linhas: limpa instantaneamente as linhas inferiores, mesmo incompletas.",
+    "ru": "• Очистка строк: мгновенно очищает нижние ряды, даже если они не заполнены."
   },
   "guide_card_clear_rows_desc": {
     "de": "Löscht sofort die unteren 1–3 Reihen. Blöcke lösen sich und Sie verdienen Punkte.",
@@ -2178,12 +2178,12 @@
     "pt": "Lendário! Death save: Quando o jogo termina, limpa a metade superior e você continua."
   },
   "guide_card_ghost_echo": {
-    "de": "• Geisterecho: Platziert das Geisterstück dauerhaft.",
-    "es": "• Eco fantasma: Coloca permanentemente la pieza fantasma.",
-    "fr": "• Ghost Echo : Place de manière permanente la pièce fantôme.",
-    "it": "• Ghost Echo: posiziona permanentemente il pezzo fantasma.",
-    "pt": "• Eco Fantasma: Coloca permanentemente a peça fantasma.",
-    "ru": "• Призрачное эхо: навсегда размещает призрачную фигуру."
+    "de": "• Zweite Chance: Wenn das Spiel enden würde, wird die obere Hälfte gelöscht und es geht weiter.",
+    "es": "• Segunda oportunidad: cuando la partida iba a terminar, limpia la mitad superior y continúa.",
+    "fr": "• Seconde chance : quand la partie devrait finir, efface la moitié supérieure et continue.",
+    "it": "• Seconda possibilità: quando la partita finirebbe, cancella la metà superiore e continua.",
+    "pt": "• Segunda chance: quando o jogo iria terminar, limpa a metade superior e continua.",
+    "ru": "• Второй шанс: когда игра должна закончиться, очищает верхнюю половину и продолжает."
   },
   "guide_card_ghost_name": {
     "de": "Zweite Chance",
@@ -2207,12 +2207,12 @@
     "pt": "Onda Gravitacional"
   },
   "guide_card_gravity_well": {
-    "de": "• Schwerkraftbrunnen: Zieht alle Blöcke nach unten und schließt Lücken.",
-    "es": "• Pozo de gravedad: derriba todos los bloques y cierra los huecos.",
-    "fr": "• Puits de gravité : tire tous les blocs vers le bas, comblant les espaces.",
-    "it": "• Gravity Well: tira giù tutti i blocchi, chiudendo gli spazi vuoti.",
-    "pt": "• Poço Gravitacional: Puxa todos os blocos para baixo, fechando lacunas.",
-    "ru": "• Гравитационный колодец: тянет все блоки вниз, закрывая щели."
+    "de": "• Schwerkraftwelle: Zieht Blöcke nach unten und löscht jede vollständige Reihe.",
+    "es": "• Pozo de gravedad: baja los bloques y limpia cada fila completa que se forme.",
+    "fr": "• Puits de gravité : fait tomber les blocs et efface chaque ligne complète formée.",
+    "it": "• Pozzo gravitazionale: fa scendere i blocchi e cancella ogni riga completa.",
+    "pt": "• Poço gravitacional: puxa blocos para baixo e limpa cada linha completa formada.",
+    "ru": "• Гравитационная волна: опускает блоки и очищает все образовавшиеся полные ряды."
   },
   "guide_card_hammer_desc": {
     "de": "3 Verwendungsmöglichkeiten: Drücken Sie H, um das aktuelle Stück sofort in einen 1x1-Block zu verwandeln.",
@@ -2222,11 +2222,11 @@
     "pt": "3 usos: Pressione H para transformar instantaneamente a peça atual em um bloco 1x1."
   },
   "guide_card_hammer_name": {
-    "de": "Zip-Datei",
-    "es": "Archivo zip",
-    "fr": "Fichier compressé",
-    "it": "File zip",
-    "pt": "Arquivo zip"
+    "de": "Hammer",
+    "es": "Martillo",
+    "fr": "Marteau",
+    "it": "Martello",
+    "pt": "Martelo"
   },
   "guide_card_laser_desc": {
     "de": "Das aktuelle Stück schmilzt beim Fallen Blöcke auf seinem Weg. Perfekt zum Öffnen verstopfter Stellen!",
@@ -2236,12 +2236,12 @@
     "pt": "A peça atual derrete blocos em seu caminho enquanto cai. Perfeito para abrir áreas obstruídas!"
   },
   "guide_card_laser_drill": {
-    "de": "• Laserbohrer: Führt einen Drilldown durch eine ausgewählte Spalte durch.",
-    "es": "• Exploración láser: profundiza a través de una columna seleccionada.",
-    "fr": "• Laser Drill : explore une colonne sélectionnée.",
-    "it": "• Trapano laser: esegue il drill-down attraverso una colonna selezionata.",
-    "pt": "• Perfuração a laser: faz uma busca detalhada em uma coluna selecionada.",
-    "ru": "• Лазерная детализация: детализация выбранного столбца."
+    "de": "• Bohrstück: Das aktuelle Teil schmilzt Blöcke auf seinem Fallweg.",
+    "es": "• Pieza perforadora: la pieza actual derrite bloques en su camino al caer.",
+    "fr": "• Pièce foreuse : la pièce actuelle fait fondre les blocs sur son trajet.",
+    "it": "• Pezzo trapano: il pezzo corrente scioglie i blocchi lungo la caduta.",
+    "pt": "• Peça perfuradora: a peça atual derrete blocos no caminho ao cair.",
+    "ru": "• Бурильная фигура: текущая фигура плавит блоки на пути падения."
   },
   "guide_card_laser_name": {
     "de": "Bohrstück",
@@ -2280,12 +2280,12 @@
     "pt": "Minibomba"
   },
   "guide_card_nova_burst": {
-    "de": "• Nova Burst: Löscht einen 5x5 großen Bereich in der Mitte.",
-    "es": "• Nova Burst: despeja un área de 5x5 en el centro.",
-    "fr": "• Nova Burst : efface une zone 5x5 au centre.",
-    "it": "• Nova Burst: cancella un'area 5x5 al centro.",
-    "pt": "• Nova Burst: Limpa uma área 5x5 no centro.",
-    "ru": "• Nova Burst: очищает область 5x5 в центре."
+    "de": "• Nova-Explosion: Sprengt bei kommenden Fixierungen einen 3x3-Bereich am Figurenzentrum.",
+    "es": "• Explosión Nova: en próximos bloqueos, explota un área 3x3 en el centro de la pieza.",
+    "fr": "• Explosion Nova : aux prochains verrouillages, explose une zone 3x3 au centre de la pièce.",
+    "it": "• Esplosione Nova: ai prossimi blocchi, esplode un area 3x3 al centro del pezzo.",
+    "pt": "• Explosão Nova: nos próximos travamentos, explode uma área 3x3 no centro da peça.",
+    "ru": "• Взрыв новы: при следующих фиксациях взрывает область 3x3 в центре фигуры."
   },
   "guide_card_nova_desc": {
     "de": "Die nächsten 2-4 Schlösser sprengen einen 3x3 großen Bereich in der Mitte des Teils. Kraftvolle Reinigung!",
@@ -2373,12 +2373,12 @@
     "ru": "• Квантовое туннелирование: позволяет предмету проходить сквозь блоки."
   },
   "guide_card_row_shuffle": {
-    "de": "• Reihen-Mischung: Ordnet die Reihen auf dem Spielbrett zufällig neu an.",
-    "es": "• Row Shuffle: reordena aleatoriamente las filas del tablero.",
-    "fr": "• Row Shuffle : réorganise les lignes du tableau de manière aléatoire.",
-    "it": "• Row Shuffle: riordina casualmente le righe sul tabellone.",
-    "pt": "• Row Shuffle: Reordena aleatoriamente as linhas no tabuleiro.",
-    "ru": "• Перетасовка строк: случайное изменение порядка строк на доске."
+    "de": "• Reihenmischer: Mischt Blöcke und Lücken in den unteren Reihen.",
+    "es": "• Mezcla de filas: mezcla bloques y huecos dentro de las filas inferiores.",
+    "fr": "• Mélange de lignes : mélange blocs et vides dans les lignes du bas.",
+    "it": "• Mescola righe: mescola blocchi e vuoti nelle righe inferiori.",
+    "pt": "• Embaralhar linhas: mistura blocos e espaços nas linhas inferiores.",
+    "ru": "• Перемешивание рядов: смешивает блоки и пустоты в нижних рядах."
   },
   "guide_card_row_shuffle_desc": {
     "de": "Mischt die Blöcke in den unteren 2–4 Reihen zufällig. Versuchen Sie Ihr Glück – manchmal schließen sich Lücken!",
