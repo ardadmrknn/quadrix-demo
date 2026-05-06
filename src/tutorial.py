@@ -1111,6 +1111,7 @@ class TutorialMode(Game):
         self.fall_speed = self.base_fall_speed
         self.soft_drop_counter = 0
         self.soft_drop_active = False
+        self._clear_tutorial_das()
         self.sub_message = str(scenario.get('goal_text') or lesson.get('goal_fallback') or '')
         self.tip_message = str(scenario.get('tip_text') or lesson.get('tip_fallback') or self._lesson_description(lesson))
         self.overlay_message = self._lesson_title(lesson)
@@ -1175,6 +1176,7 @@ class TutorialMode(Game):
         self.fall_speed = 0
         self.soft_drop_counter = 0
         self.soft_drop_active = False
+        self._clear_tutorial_das()
         self.sub_message = t('tutorial_card_choose_hint', default='Sol/Sağ ile seç, Enter ile onayla; istersen 1-3 kısayollarını kullan.')
         self.tip_message = str(scenario.get('tip_text') or self._lesson_description(lesson))
         self.overlay_message = self._lesson_title(lesson)
@@ -1505,6 +1507,7 @@ class TutorialMode(Game):
         self.fall_speed = self.base_fall_speed # Reset fall speed
         self.soft_drop_counter = 0 
         self.soft_drop_active = False
+        self._clear_tutorial_das()
         self.sub_message = ""
         self.tip_message = ""
         self._reset_stuck_hint_state()
@@ -1856,6 +1859,133 @@ class TutorialMode(Game):
             return False
         return False
 
+    def _tutorial_horizontal_movement_enabled(self):
+        if getattr(self, 'game_over', False):
+            return False
+        if getattr(self, 'show_exit_prompt', False):
+            return False
+        if getattr(self, 'in_transition', False):
+            return False
+        if getattr(self, 'waiting_for_enter', False):
+            return False
+        if getattr(self, 'lesson_result_active', False):
+            return False
+        if getattr(self, 'hub_active', False):
+            return False
+
+        active_lesson = getattr(self, 'active_lesson', None)
+        if isinstance(active_lesson, dict) and active_lesson.get('kind') == 'card_choice':
+            return False
+        if isinstance(active_lesson, dict) and active_lesson.get('kind') == 'scenario':
+            return True
+        return getattr(self, 'step', 0) in (1, 5, 6)
+
+    def _clear_tutorial_das(self):
+        self.das_direction = 0
+        self.das_timer = 0
+        self.das_repeat_timer = 0
+        self.das_charged = False
+
+    def _begin_tutorial_das(self, direction):
+        self.das_direction = direction
+        self.das_timer = 0
+        self.das_repeat_timer = 0
+        self.das_charged = False
+
+    def _tutorial_action_pressed(self, action):
+        try:
+            pressed = pygame.key.get_pressed()
+        except Exception:
+            pressed = None
+        for key in self._action_keys(self.control_bindings, action):
+            if self._is_key_pressed(key, pressed):
+                return True
+        return False
+
+    def _handle_tutorial_das_keyup(self, key):
+        if key in self._action_keys(self.control_bindings, 'move_left'):
+            if self.das_direction == -1:
+                if self._tutorial_action_pressed('move_right'):
+                    self._perform_tutorial_horizontal_move(1)
+                    self._begin_tutorial_das(1)
+                else:
+                    self._clear_tutorial_das()
+            return True
+
+        if key in self._action_keys(self.control_bindings, 'move_right'):
+            if self.das_direction == 1:
+                if self._tutorial_action_pressed('move_left'):
+                    self._perform_tutorial_horizontal_move(-1)
+                    self._begin_tutorial_das(-1)
+                else:
+                    self._clear_tutorial_das()
+            return True
+
+        return False
+
+    def _perform_tutorial_horizontal_move(self, direction):
+        if not self._tutorial_horizontal_movement_enabled():
+            self._clear_tutorial_das()
+            return False
+
+        if direction == -1:
+            moved = self._try_move_left()
+        elif direction == 1:
+            moved = self._try_move_right()
+        else:
+            return False
+
+        if not moved:
+            return False
+
+        self._register_step_activity()
+        if getattr(self, 'sound', None):
+            self.sound.play('move')
+
+        active_lesson = getattr(self, 'active_lesson', None)
+        if isinstance(active_lesson, dict) and active_lesson.get('kind') == 'scenario':
+            if direction == -1:
+                self.step_move_left_count += 1
+            else:
+                self.step_move_right_count += 1
+            self._sync_lesson_runtime_state()
+            return True
+
+        if getattr(self, 'step', 0) == 1:
+            if direction == -1:
+                self.step_move_left_count = min(3, self.step_move_left_count + 1)
+                self.sub_message = t('tutorial_sub_move', left=self.step_move_left_count, right=self.step_move_right_count)
+                if self.step_move_left_count <= 3:
+                    self._create_mini_success_effect(t('tutorial_success_move_left', default='Sola hareket tamam!'))
+            else:
+                self.step_move_right_count = min(3, self.step_move_right_count + 1)
+                self.sub_message = t('tutorial_sub_move', left=self.step_move_left_count, right=self.step_move_right_count)
+                if self.step_move_right_count <= 3:
+                    self._create_mini_success_effect(t('tutorial_success_move_right'))
+            self._sync_lesson_runtime_state()
+            if self.step_move_left_count >= 3 and self.step_move_right_count >= 3:
+                self._complete_step(2)
+        elif getattr(self, 'step', 0) in (5, 6):
+            self._sync_lesson_runtime_state()
+
+        return True
+
+    def _perform_das_move(self, direction):
+        return self._perform_tutorial_horizontal_move(direction)
+
+    def _handle_tutorial_horizontal_keydown(self, key, bindings):
+        if key in self._action_keys(bindings, 'move_left'):
+            if self._tutorial_horizontal_movement_enabled():
+                self._perform_tutorial_horizontal_move(-1)
+                self._begin_tutorial_das(-1)
+            return True
+        if key in self._action_keys(bindings, 'move_right'):
+            if self._tutorial_horizontal_movement_enabled():
+                self._perform_tutorial_horizontal_move(1)
+                self._begin_tutorial_das(1)
+            return True
+        return False
+
     def handle_input(self):
         if self.game_over:
              return super().handle_input()
@@ -1866,6 +1996,7 @@ class TutorialMode(Game):
 
             # --- EXIT PROMPT HANDLING (Mouse + Key) ---
             if self.show_exit_prompt:
+                self._clear_tutorial_das()
                 if event.type == pygame.KEYDOWN:
                     if event.key in (pygame.K_ESCAPE, pygame.K_n):
                         self.show_exit_prompt = False
@@ -1957,18 +2088,8 @@ class TutorialMode(Game):
                     continue
 
                 if self._is_scenario_lesson_active():
-                    if event.key in self._action_keys(bindings, 'move_left'):
-                        if self._try_move_left():
-                            self._register_step_activity()
-                            self.sound.play('move')
-                            self.step_move_left_count += 1
-                            self._sync_lesson_runtime_state()
-                    elif event.key in self._action_keys(bindings, 'move_right'):
-                        if self._try_move_right():
-                            self._register_step_activity()
-                            self.sound.play('move')
-                            self.step_move_right_count += 1
-                            self._sync_lesson_runtime_state()
+                    if self._handle_tutorial_horizontal_keydown(event.key, bindings):
+                        continue
                     elif event.key in self._action_keys(bindings, 'rotate'):
                         original_x = self.current_piece.x
                         self.current_piece.rotate()
@@ -2005,34 +2126,7 @@ class TutorialMode(Game):
                 
                 # Step 1: Move Left/Right
                 if self.step == 1:
-                    if event.key in self._action_keys(bindings, 'move_left'):
-                        if self._try_move_left():
-                            self._register_step_activity()
-                            self.sound.play('move')
-                            self.step_move_left_count = min(3, self.step_move_left_count + 1)
-                            self._sync_lesson_runtime_state()
-                            self.sub_message = t('tutorial_sub_move', left=self.step_move_left_count, right=self.step_move_right_count)
-                            
-                            # Mini başarı efekti
-                            if self.step_move_left_count <= 3:
-                                self._create_mini_success_effect(t('tutorial_success_move_left', default='Sola hareket tamam!'))
-                            
-                            if self.step_move_left_count >= 3 and self.step_move_right_count >= 3:
-                                self._complete_step(2)
-                    elif event.key in self._action_keys(bindings, 'move_right'):
-                        if self._try_move_right():
-                            self._register_step_activity()
-                            self.sound.play('move')
-                            self.step_move_right_count = min(3, self.step_move_right_count + 1)
-                            self._sync_lesson_runtime_state()
-                            self.sub_message = t('tutorial_sub_move', left=self.step_move_left_count, right=self.step_move_right_count)
-                            
-                            # Mini başarı efekti
-                            if self.step_move_right_count <= 3:
-                                self._create_mini_success_effect(t('tutorial_success_move_right'))
-                            
-                            if self.step_move_left_count >= 3 and self.step_move_right_count >= 3:
-                                self._complete_step(2)
+                    self._handle_tutorial_horizontal_keydown(event.key, bindings)
                                 
                 # Step 2: Rotate
                 elif self.step == 2:
@@ -2084,14 +2178,8 @@ class TutorialMode(Game):
 
                 # Step 5: Line Clear (Allow ALL moves to play naturally)
                 elif self.step == 5:
-                    if event.key in self._action_keys(bindings, 'move_left'):
-                        if self._try_move_left():
-                            self._register_step_activity()
-                            self.sound.play('move')
-                    elif event.key in self._action_keys(bindings, 'move_right'):
-                        if self._try_move_right():
-                            self._register_step_activity()
-                            self.sound.play('move')
+                    if self._handle_tutorial_horizontal_keydown(event.key, bindings):
+                        continue
                     elif event.key in self._action_keys(bindings, 'rotate'):
                          self.current_piece.rotate()
                          if not self.board.is_valid_position(self.current_piece):
@@ -2117,14 +2205,8 @@ class TutorialMode(Game):
                 # Step 6: Hold
                 elif self.step == 6:
                     # Allow basic survival moves too
-                    if event.key in self._action_keys(bindings, 'move_left'):
-                        if self._try_move_left():
-                            self._register_step_activity()
-                            self.sound.play('move')
-                    elif event.key in self._action_keys(bindings, 'move_right'):
-                        if self._try_move_right():
-                            self._register_step_activity()
-                            self.sound.play('move')
+                    if self._handle_tutorial_horizontal_keydown(event.key, bindings):
+                        continue
                     elif event.key in self._action_keys(bindings, 'rotate'):
                         self.current_piece.rotate()
                         if not self.board.is_valid_position(self.current_piece):
@@ -2157,6 +2239,7 @@ class TutorialMode(Game):
                 if event.key in self._soft_drop_keycodes():
                     self.fall_speed = self.base_fall_speed
                     self.soft_drop_active = False
+                self._handle_tutorial_das_keyup(event.key)
 
         return True
 
@@ -2302,6 +2385,8 @@ class TutorialMode(Game):
 
     def update(self, delta_time):
         dt_seconds = max(0.0, float(delta_time or 0.0)) / 1000.0
+        if not self._tutorial_horizontal_movement_enabled():
+            self._clear_tutorial_das()
 
         # Handle transition delay
         if self.in_transition:

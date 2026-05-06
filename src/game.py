@@ -2296,6 +2296,19 @@ class Game:
             
         return True
     
+    def _perform_das_move(self, direction):
+        if direction == -1:
+            if self._try_move_left():
+                self.sound.play('move')
+                return True
+            return False
+        if direction == 1:
+            if self._try_move_right():
+                self.sound.play('move')
+                return True
+            return False
+        return False
+
     def _update_das(self, delta_time):
         """DAS (Delayed Auto Shift) sistemini güncelle
         
@@ -2320,19 +2333,6 @@ class Game:
         delay_ms = max(0.0, delay_ms)
         repeat_ms = max(1.0, repeat_ms)
 
-        def _move_once(direction: int) -> bool:
-            if direction == -1:
-                if self._try_move_left():
-                    self.sound.play('move')
-                    return True
-                return False
-            if direction == 1:
-                if self._try_move_right():
-                    self.sound.play('move')
-                    return True
-                return False
-            return False
-        
         # Süreyi milisaniye cinsinden artır
         self.das_timer += delta_time
 
@@ -2343,7 +2343,7 @@ class Game:
                 self.das_charged = True
                 # Gecikme aşımını repeat timer'a aktar (frame bağımsız akıcılık)
                 self.das_repeat_timer = overshoot
-                _move_once(self.das_direction)
+                self._perform_das_move(self.das_direction)
 
         # Gecikme doldu, tekrar modunda
         if self.das_charged:
@@ -2351,7 +2351,7 @@ class Game:
             # Frame düşüşlerinde kaçan tekrarları telafi et (catch-up)
             while self.das_repeat_timer >= repeat_ms:
                 self.das_repeat_timer -= repeat_ms
-                if not _move_once(self.das_direction):
+                if not self._perform_das_move(self.das_direction):
                     # Duvara/engelle takıldıysa daha fazla tekrar harcamaya gerek yok
                     self.das_repeat_timer = 0
                     break
