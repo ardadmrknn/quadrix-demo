@@ -76,3 +76,10 @@ def test_bridge_exports_request_lobby_data_for_unknown_refresh():
     assert 'bool request_lobby_data(uint64_t lobby_id)' in content
     assert 'return m_matchmaking->RequestLobbyData(lid);' in content
     assert '.def("request_lobby_data", &SteamNetBridge::request_lobby_data,' in content
+
+
+def test_bridge_uses_low_latency_flags_for_realtime_game_messages():
+    content = CPP_PATH.read_text(encoding='utf-8')
+
+    assert 'k_nSteamNetworkingSend_ReliableNoNagle' in content
+    assert 'k_nSteamNetworkingSend_UnreliableNoDelay' in content

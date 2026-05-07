@@ -432,7 +432,7 @@ class OnlineCoopGame:
         self._guest_local_prediction_ms = 0.0
         self._GUEST_LOCAL_PREDICTION_MAX_MS = 140.0
         self._GUEST_PIECE_ACK_GRACE_S = 0.75
-        self._guest_authoritative_piece_sync_enabled = False
+        self._guest_authoritative_piece_sync_enabled = True
         self._held_gameplay_keys: set[int] = set()
 
         # Placeholder font'lar
@@ -2015,6 +2015,7 @@ class OnlineCoopGame:
                 self._predict_guest_input(action)
                 if self._guest_action_requires_host_control(action):
                     self._send_guest_input(action)
+                    self._flush_guest_piece_mirror_for_action(action)
 
     def _handle_gameplay_keyup(self, event):
         """PLAYING state'te tuş bırakma."""
@@ -2041,6 +2042,7 @@ class OnlineCoopGame:
                 self._predict_guest_input(action)
                 if self._guest_action_requires_host_control(action):
                     self._send_guest_input(action)
+                    self._flush_guest_piece_mirror_for_action(action)
 
     def _set_pause_state(self, paused: bool) -> None:
         self.paused = bool(paused)
@@ -2820,7 +2822,12 @@ class OnlineCoopGame:
 
     @staticmethod
     def _piece_shape_index(piece) -> int:
-        return int(getattr(piece, 'shape_index', -1) or -1) if piece is not None else -1
+        if piece is None:
+            return -1
+        try:
+            return int(getattr(piece, 'shape_index', -1))
+        except (TypeError, ValueError):
+            return -1
 
     def _guest_p2_state_signature(self, render_game) -> tuple | None:
         if render_game is None:
@@ -2846,22 +2853,55 @@ class OnlineCoopGame:
             'pause_request',
         }
 
+    @staticmethod
+    def _guest_action_requires_host_simulation(action: str) -> bool:
+        return str(action or '') in {
+            'hard_drop',
+            'hold',
+            'pause_request',
+        }
+
+    @staticmethod
+    def _guest_action_blocks_piece_mirror(action: str) -> bool:
+        return str(action or '') in {
+            'hard_drop',
+            'hold',
+            'pause_request',
+        }
+
+    @staticmethod
+    def _guest_action_flushes_piece_mirror(action: str) -> bool:
+        return str(action or '') in {
+            'move_left',
+            'move_right',
+            'rotate',
+            'soft_drop_start',
+        }
+
+    def _flush_guest_piece_mirror_for_action(self, action: str) -> bool:
+        if not bool(getattr(self, '_guest_authoritative_piece_sync_enabled', False)):
+            return False
+        if not self._guest_action_flushes_piece_mirror(action):
+            return False
+        return self._send_guest_piece_state(force=True)
+
     def _guest_control_sync_pending(self) -> bool:
         pending_inputs = getattr(self, '_guest_pending_inputs', None)
         if not isinstance(pending_inputs, list):
             return False
         for _seq, action in pending_inputs:
-            if self._guest_action_requires_host_control(str(action or '')):
+            if self._guest_action_blocks_piece_mirror(str(action or '')):
                 return True
         return False
 
     def _guest_piece_dict(self, piece) -> dict | None:
         if piece is None:
             return None
+        shape_index = self._piece_shape_index(piece)
         return {
             'x': int(getattr(piece, 'x', 0) or 0),
             'y': int(getattr(piece, 'y', 0) or 0),
-            'si': int(getattr(piece, 'shape_index', -1) or -1),
+            'si': shape_index,
             'r': int(getattr(piece, 'rotation_state', 0) or 0),
         }
 
@@ -3480,7 +3520,14 @@ class OnlineCoopGame:
                             if self._gameplay_input_blocked():
                                 self._send_piece_state()
                                 continue
-                            if self._guest_action_requires_host_control(action):
+                            guest_piece_authority = bool(
+                                getattr(self, '_guest_authoritative_piece_sync_enabled', False)
+                            )
+                            should_simulate_action = (
+                                (not guest_piece_authority)
+                                or self._guest_action_requires_host_simulation(action)
+                            )
+                            if should_simulate_action and self._guest_action_requires_host_control(action):
                                 self.coop_game.inject_remote_input('P2', action)
                                 self._send_piece_state()
 

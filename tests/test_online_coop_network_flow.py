@@ -144,7 +144,7 @@ def _make_game(net: FakeNet):
     game._guest_piece_seq = -1
     game._guest_piece_state_timer = 0.0
     game._GUEST_PIECE_STATE_INTERVAL = 20.0
-    game._guest_authoritative_piece_sync_enabled = False
+    game._guest_authoritative_piece_sync_enabled = True
     game._last_sent_board_cells = None
     game._last_guest_sent_piece_signature = None
     game._last_piece_state_signature = None
@@ -285,7 +285,7 @@ def test_online_coop_host_start_forwards_match_seed_to_coop_game(monkeypatch):
     assert game.online_state == coop_module.OnlineCoopState.PLAYING
 
 
-def test_online_coop_host_start_keeps_p2_host_authoritative_by_default(monkeypatch):
+def test_online_coop_host_start_uses_guest_piece_authority_by_default(monkeypatch):
     class FakeHostCoop:
         _SOFT_DROP_SPEED = 50.0
 
@@ -311,7 +311,7 @@ def test_online_coop_host_start_keeps_p2_host_authoritative_by_default(monkeypat
     game._start_game()
 
     assert game.online_state == coop_module.OnlineCoopState.PLAYING
-    assert 'P2' not in game.coop_game.remote_authority_players
+    assert 'P2' in game.coop_game.remote_authority_players
 
 
 def test_online_coop_host_start_allows_explicit_guest_piece_authority(monkeypatch):
@@ -507,12 +507,60 @@ def test_online_coop_guest_movement_key_sends_reliable_input(monkeypatch):
 
     game._handle_gameplay_keydown(SimpleNamespace(key=pygame.K_LEFT))
 
-    assert len(net.sent) == 1
+    assert len(net.sent) == 2
     payload, reliable, channel = net.sent[0]
     assert payload['type'] == MsgType.GUEST_INPUT
     assert payload['action'] == 'move_left'
     assert reliable is True
     assert channel == CHANNEL_CONTROL
+    mirror_payload, mirror_reliable, mirror_channel = net.sent[1]
+    assert mirror_payload['type'] == MsgType.GUEST_PIECE_STATE
+    assert mirror_payload['p2_current']['x'] == 12
+    assert mirror_reliable is False
+    assert mirror_channel == CHANNEL_STATE
+
+
+def test_online_coop_guest_piece_mirror_is_not_blocked_by_pending_movement():
+    net = FakeNet()
+    game = _make_game(net)
+    game.online_state = coop_module.OnlineCoopState.PLAYING
+    game.role = 'guest'
+    game.coop_game = SimpleNamespace(
+        game_over=False,
+        paused=False,
+        p2_current_piece=SimpleNamespace(shape_index=0, x=12, y=0, rotation_state=0),
+        p2_next_piece=SimpleNamespace(shape_index=3),
+        p2_hold_piece=None,
+        p2_frozen=False,
+    )
+    game._guest_pending_inputs = [(1, 'move_left')]
+
+    assert game._send_guest_piece_state(force=True) is True
+
+    payload, reliable, channel = net.sent[-1]
+    assert payload['type'] == MsgType.GUEST_PIECE_STATE
+    assert payload['p2_current']['si'] == 0
+    assert reliable is False
+    assert channel == CHANNEL_STATE
+
+
+def test_online_coop_guest_piece_mirror_waits_for_hold_ack():
+    net = FakeNet()
+    game = _make_game(net)
+    game.online_state = coop_module.OnlineCoopState.PLAYING
+    game.role = 'guest'
+    game.coop_game = SimpleNamespace(
+        game_over=False,
+        paused=False,
+        p2_current_piece=SimpleNamespace(shape_index=1, x=12, y=0, rotation_state=0),
+        p2_next_piece=SimpleNamespace(shape_index=3),
+        p2_hold_piece=None,
+        p2_frozen=False,
+    )
+    game._guest_pending_inputs = [(1, 'hold')]
+
+    assert game._send_guest_piece_state(force=True) is False
+    assert net.sent == []
 
 
 def test_online_coop_pause_blocks_host_gameplay_input(monkeypatch):
@@ -586,6 +634,74 @@ def test_online_coop_host_acks_but_ignores_guest_input_while_paused():
 
     assert game.coop_game.injected == []
     assert game._last_input_ack_seq == 4
+
+
+def test_online_coop_host_guest_authority_acks_movement_without_double_injecting():
+    class CoopSpy:
+        game_over = False
+        paused = False
+
+        def __init__(self):
+            self.injected = []
+
+        def inject_remote_input(self, player, action):
+            self.injected.append((player, action))
+
+    net = FakeNet([
+        _message(42, {
+            'type': MsgType.GUEST_INPUT,
+            'seq': 5,
+            'action': 'move_left',
+        }),
+    ])
+    net.opponent_steam_id = 42
+    net.is_host = True
+    game = _make_game(net)
+    game.role = 'host'
+    game.online_state = coop_module.OnlineCoopState.PLAYING
+    game.coop_game = CoopSpy()
+    sent_piece_states = []
+    game._send_piece_state = lambda: sent_piece_states.append(True)
+
+    game._process_messages()
+
+    assert game._last_input_ack_seq == 5
+    assert game.coop_game.injected == []
+    assert sent_piece_states == []
+
+
+def test_online_coop_host_guest_authority_still_simulates_hard_drop():
+    class CoopSpy:
+        game_over = False
+        paused = False
+
+        def __init__(self):
+            self.injected = []
+
+        def inject_remote_input(self, player, action):
+            self.injected.append((player, action))
+
+    net = FakeNet([
+        _message(42, {
+            'type': MsgType.GUEST_INPUT,
+            'seq': 6,
+            'action': 'hard_drop',
+        }),
+    ])
+    net.opponent_steam_id = 42
+    net.is_host = True
+    game = _make_game(net)
+    game.role = 'host'
+    game.online_state = coop_module.OnlineCoopState.PLAYING
+    game.coop_game = CoopSpy()
+    sent_piece_states = []
+    game._send_piece_state = lambda: sent_piece_states.append(True)
+
+    game._process_messages()
+
+    assert game._last_input_ack_seq == 6
+    assert game.coop_game.injected == [('P2', 'hard_drop')]
+    assert sent_piece_states == [True]
 
 
 def test_online_coop_host_board_snapshot_emits_empty_semantic_full_snapshot_for_empty_board():
@@ -838,6 +954,7 @@ def test_online_coop_guest_update_advances_prediction_without_guest_piece_author
     game._net_initialized = True
     game._auto_connect_attempted = True
     game._auto_connect_retry_timer = 0.0
+    game._guest_authoritative_piece_sync_enabled = False
     game.coop_game = FakeRenderCoop()
     game._process_messages = lambda: None
     game._apply_guest_render_cache = lambda: game.coop_game
@@ -893,6 +1010,7 @@ def test_online_coop_host_ignores_guest_piece_state_when_remote_authority_disabl
     net.opponent_steam_id = 42
     game = _make_game(net)
     game.role = 'host'
+    game._guest_authoritative_piece_sync_enabled = False
     game.coop_game = FakeHostCoop()
 
     game._process_messages()
@@ -953,6 +1071,7 @@ def test_online_coop_host_piece_snapshot_does_not_ack_disabled_guest_piece_state
     net.opponent_steam_id = 42
     game = _make_game(net)
     game.role = 'host'
+    game._guest_authoritative_piece_sync_enabled = False
     game.coop_game = FakeHostCoop()
 
     game._process_messages()
@@ -1002,6 +1121,7 @@ def test_online_coop_host_ignores_invalid_guest_piece_state_when_remote_authorit
     net.opponent_steam_id = 42
     game = _make_game(net)
     game.role = 'host'
+    game._guest_authoritative_piece_sync_enabled = False
     game.coop_game = FakeHostCoop()
 
     game._process_messages()

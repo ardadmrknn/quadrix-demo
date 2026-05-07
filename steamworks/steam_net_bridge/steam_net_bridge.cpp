@@ -494,8 +494,8 @@ public:
         identity.SetSteamID64(target_steam_id);
 
         int flags = reliable
-                        ? k_nSteamNetworkingSend_Reliable
-                        : k_nSteamNetworkingSend_Unreliable;
+                        ? k_nSteamNetworkingSend_ReliableNoNagle
+                        : k_nSteamNetworkingSend_UnreliableNoDelay;
 
         EResult res = m_messages->SendMessageToUser(
             identity,
