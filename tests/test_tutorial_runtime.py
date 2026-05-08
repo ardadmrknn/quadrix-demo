@@ -209,6 +209,90 @@ class TestTutorialRuntime(unittest.TestCase):
         self.assertEqual(started.get('hub'), ('quick_start', 'tutorial_complete'))
         self.assertNotIn('lesson_id', started)
 
+    def test_line_clear_completion_auto_advances_to_next_lesson_in_full_flow(self):
+        tutorial = TutorialMode.__new__(TutorialMode)
+        tutorial.step = 5
+        tutorial.in_transition = False
+        tutorial.lesson_result_active = False
+        tutorial.active_lesson_id = 'qs_first_clear'
+        tutorial.lesson_flow_scope = 'full'
+        tutorial.hub_return_enabled = True
+        tutorial.board = types.SimpleNamespace(lines_cleared=0)
+        tutorial.next_step_num = None
+        tutorial.next_lesson_id = None
+        tutorial.waiting_for_enter = False
+        tutorial.sub_message = ''
+        tutorial.overlay_message = ''
+        tutorial.transition_text = ''
+        tutorial.hub_progress_snapshot = None
+        tutorial._is_scenario_lesson_active = lambda: False
+        tutorial._create_mini_success_effect = lambda *_args, **_kwargs: None
+        tutorial._mark_active_lesson_completed = lambda stars=1: None
+        tutorial._get_tutorial_progress_snapshot = lambda: {'chapters': {}}
+        tutorial._setup_line_clear_scenario = lambda: None
+
+        with mock.patch.object(
+            tutorial_module.Game,
+            'lock_and_new_piece',
+            autospec=True,
+            side_effect=lambda instance: setattr(instance.board, 'lines_cleared', 1),
+        ):
+            TutorialMode.lock_and_new_piece(tutorial)
+
+        self.assertTrue(tutorial.in_transition)
+        self.assertEqual(tutorial.next_lesson_id, 'surface_gap_fill')
+        self.assertFalse(tutorial.waiting_for_enter)
+        self.assertEqual(tutorial.sub_message, '')
+
+    def test_success_lesson_result_accepts_space_for_continue(self):
+        pygame = tutorial_module.pygame
+        tutorial = TutorialMode.__new__(TutorialMode)
+        tutorial.game_over = False
+        tutorial.show_exit_prompt = False
+        tutorial.hub_active = False
+        tutorial.in_transition = False
+        tutorial.waiting_for_enter = False
+        tutorial.lesson_result_active = True
+        tutorial.lesson_result = {'success': True}
+        tutorial.active_lesson_id = 'surface_gap_fill'
+        tutorial._is_card_choice_lesson_active = lambda: False
+        tutorial._continue_after_completion = lambda: 'continued'
+        tutorial._start_lesson = lambda _lesson_id: (_ for _ in ()).throw(AssertionError('should not restart lesson'))
+
+        with mock.patch.object(
+            tutorial_module.pygame.event,
+            'get',
+            return_value=[pygame.event.Event(pygame.KEYDOWN, key=pygame.K_SPACE)],
+        ):
+            self.assertEqual(TutorialMode.handle_input(tutorial), 'continued')
+
+    def test_failed_lesson_result_does_not_use_space_for_retry(self):
+        pygame = tutorial_module.pygame
+        tutorial = TutorialMode.__new__(TutorialMode)
+        tutorial.game_over = False
+        tutorial.show_exit_prompt = False
+        tutorial.hub_active = False
+        tutorial.in_transition = False
+        tutorial.waiting_for_enter = False
+        tutorial.lesson_result_active = True
+        tutorial.lesson_result = {'success': False}
+        tutorial.active_lesson_id = 'surface_gap_fill'
+        tutorial.step = 0
+        tutorial.control_bindings = {}
+        tutorial._is_card_choice_lesson_active = lambda: False
+        tutorial._is_scenario_lesson_active = lambda: False
+        restarted = {}
+        tutorial._start_lesson = lambda lesson_id: restarted.setdefault('lesson_id', lesson_id)
+
+        with mock.patch.object(
+            tutorial_module.pygame.event,
+            'get',
+            return_value=[pygame.event.Event(pygame.KEYDOWN, key=pygame.K_SPACE)],
+        ):
+            self.assertTrue(TutorialMode.handle_input(tutorial))
+
+        self.assertEqual(restarted, {})
+
     def test_lesson_result_keeps_screen_shake_progressing(self):
         tutorial = TutorialMode.__new__(TutorialMode)
         tutorial.in_transition = False

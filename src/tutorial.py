@@ -1304,13 +1304,13 @@ class TutorialMode(Game):
         }
         followup_lesson_id = self._get_followup_lesson_id(self.active_lesson_id)
         next_chapter_id, next_chapter_lesson_id = self._get_next_chapter_target(self.active_lesson_id)
-        action_text = t('tutorial_result_action_to_menu', default='ENTER: Menüye dön')
+        action_text = t('tutorial_result_action_to_menu', default='ENTER / SPACE: Menüye dön')
         if success and followup_lesson_id:
-            action_text = t('tutorial_result_action_next_lesson', default='ENTER: Sonraki ders')
+            action_text = t('tutorial_result_action_next_lesson', default='ENTER / SPACE: Sonraki ders')
         elif success and next_chapter_id and next_chapter_lesson_id and self.lesson_flow_scope != 'chapter':
-            action_text = t('tutorial_result_action_next_chapter', default='ENTER: Sonraki bölüme geç')
+            action_text = t('tutorial_result_action_next_chapter', default='ENTER / SPACE: Sonraki bölüme geç')
         elif success and self.hub_return_enabled:
-            action_text = t('tutorial_result_action_to_hub', default='ENTER: Ders merkezine dön')
+            action_text = t('tutorial_result_action_to_hub', default='ENTER / SPACE: Ders merkezine dön')
         if not success:
             action_text = t('tutorial_result_action_retry', default='ENTER / R: Tekrar dene')
 
@@ -2057,8 +2057,12 @@ class TutorialMode(Game):
                     continue
 
                 if self.lesson_result_active:
-                    if event.key in (pygame.K_r, pygame.K_RETURN, pygame.K_KP_ENTER):
-                        if self.lesson_result and self.lesson_result.get('success') and event.key != pygame.K_r:
+                    lesson_success = bool(self.lesson_result and self.lesson_result.get('success'))
+                    continue_keys = (pygame.K_RETURN, pygame.K_KP_ENTER)
+                    if lesson_success:
+                        continue_keys = continue_keys + (pygame.K_SPACE,)
+                    if event.key in ((pygame.K_r,) + continue_keys):
+                        if lesson_success and event.key != pygame.K_r:
                             return self._continue_after_completion()
                         self._start_lesson(self.active_lesson_id)
                         return True
@@ -2349,14 +2353,17 @@ class TutorialMode(Game):
                 self.transition_timer = 1.5
                 self.transition_text = t('tutorial_step_done_line_clear', default='Satır temizleme tamam!')
                 self.next_step_num = 0
-                self.next_lesson_id = None
-                self.waiting_for_enter = True
+                self.next_lesson_id = self._get_followup_lesson_id(self.active_lesson_id)
+                self.waiting_for_enter = not bool(self.next_lesson_id)
                 self.overlay_message = t('tutorial_quick_start_done', default='Hızlı Başlangıç tamamlandı!')
-                next_chapter_id, _ = self._get_next_chapter_target(self.active_lesson_id)
-                if next_chapter_id and self.hub_return_enabled:
-                    self.sub_message = t('tutorial_quick_start_next_chapter_sub', default='Sonraki bölüme geçmek için Enter\'a bas.')
+                if self.next_lesson_id:
+                    self.sub_message = ''
                 else:
-                    self.sub_message = t('tutorial_quick_start_done_sub', default='Hub\'a dönmek için Enter\'a bas.')
+                    next_chapter_id, _ = self._get_next_chapter_target(self.active_lesson_id)
+                    if next_chapter_id and self.hub_return_enabled:
+                        self.sub_message = t('tutorial_quick_start_next_chapter_sub', default='Sonraki bölüme geçmek için Enter\'a bas.')
+                    else:
+                        self.sub_message = t('tutorial_quick_start_done_sub', default='Hub\'a dönmek için Enter\'a bas.')
             else:
                 # Failed, reset
                 self._setup_line_clear_scenario()

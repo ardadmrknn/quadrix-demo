@@ -6697,26 +6697,26 @@
     "zh": "恢复与生存"
   },
   "tutorial_result_action_next_chapter": {
-    "de": "ENTER: Weiter zum nächsten Kapitel",
-    "es": "ENTER: Continuar al siguiente capítulo",
-    "fr": "ENTER : Continuer vers le chapitre suivant",
-    "it": "INVIO: Continua al capitolo successivo",
-    "ja": "ENTER: 次の章へ",
-    "ko": "ENTER: 다음 챕터로 계속",
-    "pt": "ENTER: Continuar para o próximo capítulo",
-    "ru": "ENTER: Перейти к следующей главе",
-    "zh": "ENTER：继续下一章"
+    "de": "ENTER / SPACE: Weiter zum nächsten Kapitel",
+    "es": "ENTER / SPACE: Continuar al siguiente capítulo",
+    "fr": "ENTER / SPACE : Continuer vers le chapitre suivant",
+    "it": "INVIO / SPACE: Continua al capitolo successivo",
+    "ja": "ENTER / SPACE: 次の章へ",
+    "ko": "ENTER / SPACE: 다음 챕터로 계속",
+    "pt": "ENTER / SPACE: Continuar para o próximo capítulo",
+    "ru": "ENTER / SPACE: Перейти к следующей главе",
+    "zh": "ENTER / SPACE：继续下一章"
   },
   "tutorial_result_action_next_lesson": {
-    "de": "ENTER: Nächste Lektion",
-    "es": "ENTER: Próxima lección",
-    "fr": "ENTER : leçon suivante",
-    "it": "ENTER: Prossima lezione",
-    "ja": "ENTER: 次のレッスン",
-    "ko": "ENTER: 다음 강의",
-    "pt": "ENTER: Próxima lição",
-    "ru": "ENTER: Следующий урок",
-    "zh": "ENTER：下一课"
+    "de": "ENTER / SPACE: Nächste Lektion",
+    "es": "ENTER / SPACE: Próxima lección",
+    "fr": "ENTER / SPACE : leçon suivante",
+    "it": "ENTER / SPACE: Prossima lezione",
+    "ja": "ENTER / SPACE: 次のレッスン",
+    "ko": "ENTER / SPACE: 다음 강의",
+    "pt": "ENTER / SPACE: Próxima lição",
+    "ru": "ENTER / SPACE: Следующий урок",
+    "zh": "ENTER / SPACE：下一课"
   },
   "tutorial_result_action_retry": {
     "de": "ENTER / R: Wiederholen",
@@ -6730,26 +6730,26 @@
     "zh": "ENTER / R：重试"
   },
   "tutorial_result_action_to_hub": {
-    "de": "ENTER: Zurück zum Lektions-Hub",
-    "es": "ENTER: Regresar al centro de lecciones",
-    "fr": "ENTER : Retour au centre de cours",
-    "it": "ENTER: torna all'hub della lezione",
-    "ja": "ENTER: レッスンハブに戻る",
-    "ko": "ENTER: 수업 허브로 돌아가기",
-    "pt": "ENTER: Retornar ao centro de aula",
-    "ru": "ENTER: вернуться в центр уроков",
-    "zh": "ENTER：返回课程中心"
+    "de": "ENTER / SPACE: Zurück zum Lektions-Hub",
+    "es": "ENTER / SPACE: Regresar al centro de lecciones",
+    "fr": "ENTER / SPACE : Retour au centre de cours",
+    "it": "ENTER / SPACE: torna all'hub della lezione",
+    "ja": "ENTER / SPACE: レッスンハブに戻る",
+    "ko": "ENTER / SPACE: 수업 허브로 돌아가기",
+    "pt": "ENTER / SPACE: Retornar ao centro de aula",
+    "ru": "ENTER / SPACE: вернуться в центр уроков",
+    "zh": "ENTER / SPACE：返回课程中心"
   },
   "tutorial_result_action_to_menu": {
-    "de": "ENTER: Zurück zum Menü",
-    "es": "ENTER: Volver al menú",
-    "fr": "ENTER : Retour au menu",
-    "it": "ENTER: torna al menu",
-    "ja": "ENTER: メニューに戻る",
-    "ko": "ENTER: 메뉴로 돌아가기",
-    "pt": "ENTER: Voltar ao menu",
-    "ru": "ENTER: Возврат в меню",
-    "zh": "ENTER：返回菜单"
+    "de": "ENTER / SPACE: Zurück zum Menü",
+    "es": "ENTER / SPACE: Volver al menú",
+    "fr": "ENTER / SPACE : Retour au menu",
+    "it": "ENTER / SPACE: torna al menu",
+    "ja": "ENTER / SPACE: メニューに戻る",
+    "ko": "ENTER / SPACE: 메뉴로 돌아가기",
+    "pt": "ENTER / SPACE: Voltar ao menu",
+    "ru": "ENTER / SPACE: Возврат в меню",
+    "zh": "ENTER / SPACE：返回菜单"
   },
   "tutorial_result_completed": {
     "de": "Lektion abgeschlossen",
