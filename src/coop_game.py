@@ -2502,7 +2502,8 @@ class CoopGame:
             player: 'P1' veya 'P2'
             action: 'move_left', 'move_right', 'soft_drop', 'hard_drop',
                     'rotate', 'hold', 'soft_drop_start', 'soft_drop_stop',
-                    'das_start_left', 'das_start_right', 'das_stop'
+                    'das_start_left', 'das_start_right', 'das_stop',
+                    'das_stop_left', 'das_stop_right'
         """
         if self.game_over or self.paused:
             return
@@ -2566,13 +2567,23 @@ class CoopGame:
         elif action == 'hold':
             self._use_shared_hold(player)
 
-        elif action == 'das_stop':
+        elif action in ('das_stop', 'das_stop_left', 'das_stop_right'):
             if player == 'P1':
-                self.p1_das_direction = 0
-                self.p1_das_charged = False
+                if (
+                    action == 'das_stop'
+                    or (action == 'das_stop_left' and self.p1_das_direction == -1)
+                    or (action == 'das_stop_right' and self.p1_das_direction == 1)
+                ):
+                    self.p1_das_direction = 0
+                    self.p1_das_charged = False
             else:
-                self.p2_das_direction = 0
-                self.p2_das_charged = False
+                if (
+                    action == 'das_stop'
+                    or (action == 'das_stop_left' and self.p2_das_direction == -1)
+                    or (action == 'das_stop_right' and self.p2_das_direction == 1)
+                ):
+                    self.p2_das_direction = 0
+                    self.p2_das_charged = False
 
     # ==================================================================
     # update

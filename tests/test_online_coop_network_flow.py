@@ -468,7 +468,7 @@ def test_online_coop_host_accepts_arrow_keys_as_p1_alternate_controls(monkeypatc
         ('P1', 'move_left'),
         ('P1', 'hard_drop'),
         ('P1', 'hold'),
-        ('P1', 'das_stop'),
+        ('P1', 'das_stop_left'),
     ]
 
 
@@ -485,9 +485,37 @@ def test_online_coop_guest_accepts_wasd_keys_as_p2_alternate_controls(monkeypatc
     game._handle_gameplay_keydown(SimpleNamespace(key=pygame.K_e))
     game._handle_gameplay_keyup(SimpleNamespace(key=pygame.K_a))
 
-    assert predicted == ['move_left', 'hard_drop', 'hold', 'das_stop']
+    assert predicted == ['move_left', 'hard_drop', 'hold', 'das_stop_left']
     sent_actions = [payload['action'] for payload, _reliable, _channel in net.sent]
-    assert sent_actions == ['move_left', 'hard_drop', 'hold', 'das_stop']
+    assert sent_actions == ['move_left', 'hard_drop', 'hold', 'das_stop_left']
+
+
+def test_online_coop_directional_das_stop_preserves_opposite_direction():
+    coop = coop_module.CoopGame.__new__(coop_module.CoopGame)
+    coop.game_over = False
+    coop.paused = False
+    coop.p1_frozen = False
+    coop.p2_frozen = False
+    coop.p1_current_piece = SimpleNamespace()
+    coop.p2_current_piece = SimpleNamespace()
+    coop.p2_das_direction = 0
+    coop.p2_das_timer = 0.0
+    coop.p2_das_repeat_timer = 0.0
+    coop.p2_das_charged = False
+    coop.sound = SimpleNamespace(play=lambda _name: None)
+    coop._try_move = lambda _player, _direction: True
+
+    coop.inject_remote_input('P2', 'move_left')
+    assert coop.p2_das_direction == -1
+
+    coop.inject_remote_input('P2', 'move_right')
+    assert coop.p2_das_direction == 1
+
+    coop.inject_remote_input('P2', 'das_stop_left')
+    assert coop.p2_das_direction == 1
+
+    coop.inject_remote_input('P2', 'das_stop_right')
+    assert coop.p2_das_direction == 0
 
 
 def test_online_coop_guest_movement_key_sends_reliable_input(monkeypatch):
@@ -561,6 +589,70 @@ def test_online_coop_guest_piece_mirror_waits_for_hold_ack():
 
     assert game._send_guest_piece_state(force=True) is False
     assert net.sent == []
+
+
+def test_online_coop_guest_predicts_before_first_host_snapshot():
+    class FakeRenderCoop:
+        game_over = False
+        paused = False
+        p2_frozen = False
+
+        def __init__(self):
+            self.injected = []
+            self.p2_current_piece = SimpleNamespace(shape_index=1, x=13, y=0, rotation_state=0)
+            self.p2_next_piece = SimpleNamespace(shape_index=3)
+            self.p2_hold_piece = None
+
+        def inject_remote_input(self, player, action):
+            self.injected.append((player, action))
+            if player == 'P2' and action == 'move_left':
+                self.p2_current_piece.x -= 1
+
+    net = FakeNet()
+    game = _make_game(net)
+    game.online_state = coop_module.OnlineCoopState.PLAYING
+    game.role = 'guest'
+    game.coop_game = FakeRenderCoop()
+    game._guest_board_cache = None
+    game._guest_piece_cache = None
+
+    game._handle_gameplay_keydown(SimpleNamespace(key=pygame.K_LEFT))
+
+    assert game.coop_game.injected == [('P2', 'move_left')]
+    assert game.coop_game.p2_current_piece.x == 12
+    mirror_payloads = [payload for payload, _reliable, channel in net.sent if channel == CHANNEL_STATE]
+    assert mirror_payloads[-1]['type'] == MsgType.GUEST_PIECE_STATE
+    assert mirror_payloads[-1]['p2_current']['x'] == 12
+
+
+def test_online_coop_guest_flushes_piece_mirror_on_directional_das_stop():
+    net = FakeNet()
+    game = _make_game(net)
+    game.online_state = coop_module.OnlineCoopState.PLAYING
+    game.role = 'guest'
+    game._held_gameplay_keys = {pygame.K_LEFT}
+    game.coop_game = SimpleNamespace(
+        game_over=False,
+        paused=False,
+        p2_current_piece=SimpleNamespace(shape_index=1, x=12, y=0, rotation_state=0),
+        p2_next_piece=SimpleNamespace(shape_index=3),
+        p2_hold_piece=None,
+        p2_frozen=False,
+        inject_remote_input=lambda _player, _action: None,
+    )
+
+    game._handle_gameplay_keyup(SimpleNamespace(key=pygame.K_LEFT))
+
+    assert net.sent[0][0]['type'] == MsgType.GUEST_INPUT
+    assert net.sent[0][0]['action'] == 'das_stop_left'
+    assert net.sent[1][0]['type'] == MsgType.GUEST_PIECE_STATE
+    assert net.sent[1][2] == CHANNEL_STATE
+
+
+def test_online_coop_piece_signature_preserves_shape_index_zero():
+    piece = SimpleNamespace(shape_index=0, x=4, y=5, rotation_state=2)
+
+    assert coop_module.OnlineCoopGame._piece_signature(piece) == (0, 4, 5, 2)
 
 
 def test_online_coop_pause_blocks_host_gameplay_input(monkeypatch):

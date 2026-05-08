@@ -1947,10 +1947,10 @@ class OnlineCoopGame:
         pygame.K_RSHIFT: 'hold',
     }
     _HOST_KEYUP = {
-        pygame.K_a: 'das_stop',
-        pygame.K_LEFT: 'das_stop',
-        pygame.K_d: 'das_stop',
-        pygame.K_RIGHT: 'das_stop',
+        pygame.K_a: 'das_stop_left',
+        pygame.K_LEFT: 'das_stop_left',
+        pygame.K_d: 'das_stop_right',
+        pygame.K_RIGHT: 'das_stop_right',
         pygame.K_s: 'soft_drop_stop',
         pygame.K_DOWN: 'soft_drop_stop',
     }
@@ -1969,10 +1969,10 @@ class OnlineCoopGame:
         pygame.K_RSHIFT: 'hold',
     }
     _GUEST_KEYUP = {
-        pygame.K_a: 'das_stop',
-        pygame.K_LEFT: 'das_stop',
-        pygame.K_d: 'das_stop',
-        pygame.K_RIGHT: 'das_stop',
+        pygame.K_a: 'das_stop_left',
+        pygame.K_LEFT: 'das_stop_left',
+        pygame.K_d: 'das_stop_right',
+        pygame.K_RIGHT: 'das_stop_right',
         pygame.K_s: 'soft_drop_stop',
         pygame.K_DOWN: 'soft_drop_stop',
     }
@@ -2850,6 +2850,8 @@ class OnlineCoopGame:
             'hard_drop',
             'hold',
             'das_stop',
+            'das_stop_left',
+            'das_stop_right',
             'pause_request',
         }
 
@@ -2876,6 +2878,10 @@ class OnlineCoopGame:
             'move_right',
             'rotate',
             'soft_drop_start',
+            'soft_drop_stop',
+            'das_stop',
+            'das_stop_left',
+            'das_stop_right',
         }
 
     def _flush_guest_piece_mirror_for_action(self, action: str) -> bool:
@@ -3502,6 +3508,8 @@ class OnlineCoopGame:
                             'hard_drop',
                             'hold',
                             'das_stop',
+                            'das_stop_left',
+                            'das_stop_right',
                             'pause_request',
                         ):
                             continue
@@ -3830,8 +3838,12 @@ class OnlineCoopGame:
     def _piece_signature(piece) -> tuple[int, int, int, int] | None:
         if not piece:
             return None
+        try:
+            shape_index = int(getattr(piece, 'shape_index', -1))
+        except (TypeError, ValueError):
+            shape_index = -1
         return (
-            int(getattr(piece, 'shape_index', -1) or -1),
+            shape_index,
             int(getattr(piece, 'x', 0) or 0),
             int(getattr(piece, 'y', 0) or 0),
             int(getattr(piece, 'rotation_state', 0) or 0),
@@ -3842,7 +3854,12 @@ class OnlineCoopGame:
             return None
 
         def _shape_index(piece) -> int:
-            return int(getattr(piece, 'shape_index', -1) or -1) if piece else -1
+            if not piece:
+                return -1
+            try:
+                return int(getattr(piece, 'shape_index', -1))
+            except (TypeError, ValueError):
+                return -1
 
         return (
             self._piece_signature(getattr(self.coop_game, 'p1_current_piece', None)),
@@ -4338,9 +4355,10 @@ class OnlineCoopGame:
             return
         if self.game_over or self.paused or action == 'pause_request':
             return
-        if not self._guest_board_cache or not self._guest_piece_cache:
-            return
-        render_game = self._apply_guest_render_cache()
+        if self._guest_board_cache and self._guest_piece_cache:
+            render_game = self._apply_guest_render_cache()
+        else:
+            render_game = self.coop_game if self.coop_game is not None else self._ensure_guest_render_game()
         if not render_game:
             return
         try:
