@@ -64,6 +64,7 @@ datas = [
     (str(SRC_DIR / 'avatars'), 'src/avatars'),
     (str(SRC_DIR / 'assets'), 'src/assets'),
     (str(SRC_DIR / 'settings.json'), 'src'),
+    (str(SRC_DIR / 'localization_auto_overrides.json'), 'src'),
 ]
 
 # Sadece var olan dizinleri ekle
