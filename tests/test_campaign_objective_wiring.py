@@ -9,6 +9,7 @@ if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
 from campaign.campaign_mode import CampaignMode
+from campaign.level_data import get_level
 from campaign.objectives import MultiClearObjective, SpecialBlockObjective, TimeObjective, create_objective
 import campaign.campaign_mode as campaign_mode_module
 from ui_theme import UIColors
@@ -169,6 +170,7 @@ def test_campaign_quick_restart_reuses_quick_retry_seed_before_base_restart(monk
 
 def test_campaign_constructor_exposes_allowed_pieces_before_base_game_init(monkeypatch):
     captured = {}
+    expected_pieces = ['I', 'O', 'T', 'S', 'Z', 'J', 'L']
 
     def _fake_game_init(self, *args, **kwargs):
         factories = self._get_base_piece_factories()
@@ -194,6 +196,16 @@ def test_campaign_constructor_exposes_allowed_pieces_before_base_game_init(monke
 
     mode = CampaignMode(current_level=1, settings_manager=None, user_manager=None)
 
-    assert mode._allowed_pieces == ['I', 'O', 'T']
-    assert captured['factory_names'] == ['I', 'O', 'T']
+    assert mode._allowed_pieces == expected_pieces
+    assert captured['factory_names'] == expected_pieces
     assert captured['piece_rng_seed'] == 0
+
+
+def test_campaign_allowed_pieces_match_standard_bag_on_all_levels():
+    expected_pieces = ['I', 'O', 'T', 'S', 'Z', 'J', 'L']
+
+    assert get_level(1).allowed_pieces == expected_pieces
+    assert get_level(10).allowed_pieces == expected_pieces
+    assert get_level(11).allowed_pieces == expected_pieces
+    assert get_level(15).allowed_pieces == expected_pieces
+    assert get_level(16).allowed_pieces == expected_pieces

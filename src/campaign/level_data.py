@@ -4,7 +4,7 @@ Her level progresif olarak zorlaşır:
 - Düşme hızı artar
 - Görev hedefleri artar
 - Yeni mekanikler eklenir
-- Blok çeşitliliği artar
+- Temel tetromino havuzu sabit kalır
 
 Zorluk Formülü:
 - speed = 900 - (level * 5)  # 900ms'den 400ms'e düşer
@@ -155,19 +155,8 @@ def _calculate_lines_target(level: int, base: int = 5) -> int:
 
 
 def _get_allowed_pieces(level: int) -> List[str]:
-    """Level'a göre izin verilen blokları döndür"""
-    all_pieces = ['I', 'O', 'T', 'S', 'Z', 'J', 'L']
-    
-    if level <= 3:
-        return ['I', 'O', 'T']  # Sadece basit bloklar
-    elif level <= 6:
-        return ['I', 'O', 'T', 'L']
-    elif level <= 10:
-        return ['I', 'O', 'T', 'L', 'J']
-    elif level <= 15:
-        return ['I', 'O', 'T', 'L', 'J', 'S']
-    else:
-        return all_pieces  # Tüm bloklar
+    """Campaign için standart 7 parça havuzunu döndür."""
+    return ['I', 'O', 'T', 'S', 'Z', 'J', 'L']
 
 
 def _get_world(level: int) -> int:
