@@ -129,6 +129,16 @@ def _apply_leaderboard_cli_overrides(argv: list[str]) -> None:
             if value and not value.startswith('--'):
                 os.environ['LEADERBOARD_CLIENT_TOKEN'] = value
             i += consumed - 1
+        elif raw.startswith('--leaderboard-app-id='):
+            value = _clean_value(raw.split('=', 1)[1])
+            if value and not value.startswith('--'):
+                os.environ['LEADERBOARD_APP_ID'] = value
+        elif raw == '--leaderboard-app-id':
+            value, consumed = _next_value(i)
+            value = _clean_value(value)
+            if value and not value.startswith('--'):
+                os.environ['LEADERBOARD_APP_ID'] = value
+            i += consumed - 1
         i += 1
 def _persist_active_game_run(game) -> None:
     """Aktif oyunun skor/istatistik kaydını tek noktadan tamamla."""

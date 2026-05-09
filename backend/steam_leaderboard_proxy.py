@@ -24,6 +24,11 @@ from werkzeug.exceptions import HTTPException
 
 
 STEAM_WEB_API_BASE = "https://partner.steam-api.com"
+SUPPORTED_STEAM_APP_IDS = {
+    4428040: "playtest",
+    4414520: "full",
+    4635310: "demo",
+}
 
 DEFAULT_MODE_TO_LEADERBOARD = {
     "classic": "quadrix_classic",
@@ -64,6 +69,29 @@ def _resolve_app_id() -> int:
         except Exception:
             return 0
     return _read_app_id_from_file()
+
+
+def _resolve_allowed_app_ids(default_app_id: int) -> list[int]:
+    """Return the Steam AppIDs this proxy is allowed to serve."""
+    raw = (os.getenv("LEADERBOARD_ALLOWED_APP_IDS", "") or "").strip()
+    app_ids: list[int] = []
+    for item in raw.split(","):
+        value = item.strip()
+        if not value:
+            continue
+        try:
+            app_id = int(value)
+        except Exception:
+            continue
+        if app_id > 0 and app_id not in app_ids:
+            app_ids.append(app_id)
+
+    if not app_ids:
+        for app_id in (default_app_id, *SUPPORTED_STEAM_APP_IDS.keys()):
+            if app_id > 0 and app_id not in app_ids:
+                app_ids.append(app_id)
+
+    return app_ids
 
 
 def _normalize_env_secret(value: str | None) -> str:
@@ -474,13 +502,15 @@ class SessionTokenManager:
     def is_ready(self) -> bool:
         return bool(self.secret)
 
-    def issue(self, steam_id: str) -> str:
+    def issue(self, steam_id: str, app_id: int | None = None) -> str:
         now = int(time.time())
         payload = {
             "steam_id": str(steam_id),
             "iat": now,
             "exp": now + self.ttl_seconds,
         }
+        if app_id:
+            payload["app_id"] = int(app_id)
         body = _b64url_encode(json.dumps(payload, separators=(",", ":")).encode("utf-8"))
         sig = hmac.new(self.secret, body.encode("utf-8"), hashlib.sha256).hexdigest()
         return f"{body}.{sig}"
@@ -518,7 +548,8 @@ def create_app() -> Flask:
     app = Flask(__name__)
     app.config["MAX_CONTENT_LENGTH"] = 4 * 1024
 
-    app_id = _resolve_app_id()
+    default_app_id = _resolve_app_id()
+    allowed_app_ids = _resolve_allowed_app_ids(default_app_id)
     publisher_key = _normalize_env_secret(os.getenv("STEAM_WEB_API_KEY", ""))
     client_token = _normalize_env_secret(os.getenv("LEADERBOARD_CLIENT_TOKEN", ""))
     token_secret = _normalize_env_secret(os.getenv("LEADERBOARD_TOKEN_SECRET", ""))
@@ -526,12 +557,33 @@ def create_app() -> Flask:
     allowed_origins_raw = (os.getenv("LEADERBOARD_ALLOWED_ORIGINS", "") or "").strip()
     allowed_origins = {x.strip() for x in allowed_origins_raw.split(",") if x.strip()}
 
-    gateway = SteamDirectGateway(app_id=app_id, publisher_key=publisher_key)
+    gateways = {
+        app_id: SteamDirectGateway(app_id=app_id, publisher_key=publisher_key)
+        for app_id in allowed_app_ids
+    }
+    default_gateway_app_id = default_app_id if default_app_id in gateways else allowed_app_ids[0]
     token_manager = SessionTokenManager(secret=token_secret, ttl_seconds=900)
     limiter = InMemoryRateLimiter(rate_per_sec=0.8, burst=20)
+    app.config["LEADERBOARD_ALLOWED_APP_IDS"] = tuple(allowed_app_ids)
+    app.config["LEADERBOARD_DEFAULT_APP_ID"] = default_gateway_app_id
 
     def json_error(message: str, status: int = 400):
         return jsonify({"ok": False, "error": message}), status
+
+    def _request_app_id() -> int:
+        raw = (
+            request.headers.get("X-Quadrix-App-Id")
+            or request.args.get("app_id")
+            or ""
+        )
+        try:
+            app_id = int(str(raw or "").strip() or 0)
+        except Exception:
+            app_id = 0
+        return app_id if app_id in gateways else default_gateway_app_id
+
+    def _gateway_for_request() -> SteamDirectGateway:
+        return gateways[_request_app_id()]
 
     def _client_ip() -> str:
         forwarded = request.headers.get("X-Forwarded-For", "").split(",")[0].strip()
@@ -582,7 +634,7 @@ def create_app() -> Flask:
         if origin and origin in allowed_origins:
             resp.headers["Access-Control-Allow-Origin"] = origin
             resp.headers["Vary"] = "Origin"
-            resp.headers["Access-Control-Allow-Headers"] = "Authorization, Content-Type, X-Client-Token"
+            resp.headers["Access-Control-Allow-Headers"] = "Authorization, Content-Type, X-Client-Token, X-Quadrix-App-Id"
             resp.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
         return resp
 
@@ -591,13 +643,16 @@ def create_app() -> Flask:
         return jsonify(
             {
                 "ok": True,
-                "steam_ready": gateway.is_ready(),
+                "steam_ready": any(gateway.is_ready() for gateway in gateways.values()),
+                "default_app_id": default_gateway_app_id,
+                "allowed_app_ids": allowed_app_ids,
                 "token_ready": token_manager.is_ready(),
             }
         )
 
     @app.post("/api/v1/auth/steam-ticket")
     def auth_steam_ticket():
+        gateway = _gateway_for_request()
         if not gateway.is_ready():
             return json_error("steam gateway hazır değil", 503)
         if not token_manager.is_ready():
@@ -615,18 +670,20 @@ def create_app() -> Flask:
         if not ok:
             return json_error(err or "ticket doğrulanamadı", 401)
 
-        token = token_manager.issue(steam_id)
+        token = token_manager.issue(steam_id, app_id=gateway.app_id)
         return jsonify(
             {
                 "ok": True,
                 "session_token": token,
                 "expires_in": token_manager.ttl_seconds,
                 "steam_id": steam_id,
+                "app_id": gateway.app_id,
             }
         )
 
     @app.get("/api/v1/leaderboards/<mode>/global")
     def leaderboard_global(mode: str):
+        gateway = _gateway_for_request()
         if not gateway.is_ready():
             return json_error("steam gateway hazır değil", 503)
 
@@ -643,10 +700,11 @@ def create_app() -> Flask:
         if not entries and gateway.last_error:
             return json_error(gateway.last_error, 502)
 
-        return jsonify({"ok": True, "mode": mode_key, "scope": "global", "entries": entries})
+        return jsonify({"ok": True, "app_id": gateway.app_id, "mode": mode_key, "scope": "global", "entries": entries})
 
     @app.get("/api/v1/leaderboards/<mode>/friends")
     def leaderboard_friends(mode: str):
+        gateway = _gateway_for_request()
         if not gateway.is_ready():
             return json_error("steam gateway hazır değil", 503)
         if not token_manager.is_ready():
@@ -667,6 +725,9 @@ def create_app() -> Flask:
             return json_error(err or "oturum doğrulanamadı", 401)
 
         steam_id = str(payload.get("steam_id", "")).strip()
+        token_app_id = int(payload.get("app_id", gateway.app_id) or gateway.app_id)
+        if token_app_id != gateway.app_id:
+            return json_error("oturum appid ile istek appid uyumsuz", 401)
         entries = gateway.fetch_entries(
             mode_key,
             data_request="RequestFriends",
@@ -676,10 +737,11 @@ def create_app() -> Flask:
         if not entries and gateway.last_error:
             return json_error(gateway.last_error, 502)
 
-        return jsonify({"ok": True, "mode": mode_key, "scope": "friends", "entries": entries})
+        return jsonify({"ok": True, "app_id": gateway.app_id, "mode": mode_key, "scope": "friends", "entries": entries})
 
     @app.get("/api/v1/players/summaries")
     def players_summaries():
+        gateway = _gateway_for_request()
         """Verilen Steam ID listesi için oyuncu adı ve avatar URL döndür."""
         if not gateway.is_ready():
             return json_error("steam gateway hazır değil", 503)
@@ -700,6 +762,7 @@ def create_app() -> Flask:
 
     @app.post("/api/v1/leaderboards/<mode>/submit")
     def submit_score(mode: str):
+        gateway = _gateway_for_request()
         if not gateway.is_ready():
             return json_error("steam gateway hazır değil", 503)
 
@@ -725,7 +788,7 @@ def create_app() -> Flask:
 
         success = gateway.set_score(mode, steam_id, score, scoremethod=scoremethod)
         if success:
-            return jsonify({"ok": True, "steam_id": steam_id, "score": score})
+            return jsonify({"ok": True, "app_id": gateway.app_id, "steam_id": steam_id, "score": score})
         return json_error("score write failed", 502)
 
     @app.errorhandler(Exception)

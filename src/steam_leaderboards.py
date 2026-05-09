@@ -117,10 +117,24 @@ class SteamLeaderboardService:
             except Exception:
                 return 0
 
+        leaderboard_app_id = os.getenv("LEADERBOARD_APP_ID", "").strip()
+        if leaderboard_app_id:
+            try:
+                return int(leaderboard_app_id)
+            except Exception:
+                return 0
+
         env_app_id = os.getenv("STEAM_APP_ID", "").strip()
         if env_app_id:
             try:
                 return int(env_app_id)
+            except Exception:
+                return 0
+
+        steam_app_id = os.getenv("SteamAppId", "").strip()
+        if steam_app_id:
+            try:
+                return int(steam_app_id)
             except Exception:
                 return 0
 
@@ -160,6 +174,9 @@ class SteamLeaderboardService:
             "Accept": "application/json",
             "User-Agent": "QuadrixClient/1.0",
         }
+        app_id = self._get_direct_app_id()
+        if app_id > 0:
+            headers["X-Quadrix-App-Id"] = str(app_id)
         if self.client_token:
             headers["X-Client-Token"] = self.client_token
         if needs_auth and self.session_token:

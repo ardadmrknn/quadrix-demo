@@ -162,3 +162,48 @@ py test_lb_write.py
 Tam runbook: [`docs/STEAM_PLAYTEST_LICENSE_RUNBOOK_TR.md`](STEAM_PLAYTEST_LICENSE_RUNBOOK_TR.md)
 
 - Client, `LEADERBOARD_STEAM_TICKET` verilmişse `POST /api/v1/auth/steam-ticket` ile session token almayı dener.
+
+## 8) Playtest / Ana Oyun / Demo Ayrı Leaderboard Temeli
+
+Bu repo artık aynı leaderboard backend proxy üzerinden üç ayrı Steam AppID'ye route edebilir:
+
+- Playtest: `4428040`
+- Ana oyun Quadrix: `4414520`
+- Demo: `4635310`
+
+Backend ortam değişkeni:
+
+```powershell
+$env:STEAM_APP_ID="4428040"
+$env:LEADERBOARD_ALLOWED_APP_IDS="4428040,4414520,4635310"
+$env:STEAM_WEB_API_KEY="YOUR_PUBLISHER_KEY"
+$env:LEADERBOARD_TOKEN_SECRET="LONG_RANDOM_SECRET"
+$env:LEADERBOARD_CLIENT_TOKEN="CLIENT_TOKEN"
+py backend/steam_leaderboard_proxy.py
+```
+
+Client kendi AppID'sini `X-Quadrix-App-Id` header'ı ile gönderir. AppID paket içindeki `steam_appid.txt`,
+`STEAM_APP_ID`, `SteamAppId` veya opsiyonel `LEADERBOARD_APP_ID` üzerinden çözülür. Steam Launch Options ile manuel
+override gerekirse:
+
+```text
+--leaderboard-backend-url=https://leaderboard.example.com --leaderboard-client-token=CLIENT_TOKEN --leaderboard-app-id=4428040
+```
+
+Normal Steam build'lerinde `--leaderboard-app-id` kullanmak zorunlu değildir; doğru `steam_appid.txt` paketlendiyse
+client otomatik doğru AppID header'ını yollar.
+
+Steamworks'te her AppID altında aynı leaderboard adlarını oluşturun. AppID'ler farklı olduğu için aynı adlar birbirine
+karışmaz:
+
+- `quadrix_classic`
+- `quadrix_sprint`
+- `quadrix_ultra`
+- `quadrix_zen`
+- `quadrix_mystery`
+- `quadrix_survival`
+- `quadrix_cascade`
+- `quadrix_wide`
+- `quadrix_hardcore`
+- `quadrix_daily`
+- `quadrix_tetris2`
