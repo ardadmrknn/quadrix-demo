@@ -6,6 +6,7 @@ import pygame
 
 from asset_manager import load_image
 from gamepad_manager import get_gamepad_manager
+from platform_utils import pump_startup_focus_warmup
 from promptfont_support import render_inline_action_text_surface
 from retro_style import retro_style
 from localization import t
@@ -282,6 +283,11 @@ class SplashScreen:
         while running:
             dt = self.clock.tick(60)  # 60 FPS for smooth animations
             now = pygame.time.get_ticks()
+
+            try:
+                pump_startup_focus_warmup()
+            except Exception:
+                pass
 
             confirm_pressed = False
             try:

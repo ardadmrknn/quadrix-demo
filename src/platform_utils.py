@@ -20,6 +20,7 @@ IS_LINUX = sys.platform.startswith('linux')
 _REFRESH_RATE_CACHE_HZ = 0
 _REFRESH_RATE_CACHE_AT = 0.0
 _REFRESH_RATE_CACHE_TTL_S = 1.0
+_STARTUP_FOCUS_WARMUP_STATE: dict | None = None
 
 # macOS: SDL Fullscreen Spaces ayarı.
 # Çerçevesiz tam ekran (NOFRAME borderless) kullanıldığı için bu değer
@@ -274,19 +275,90 @@ def request_window_focus():
         try:
             # Attempt to raise the pygame window to the front
             # This uses the pygame display module's internal methods
+            try:
+                pygame.event.pump()
+            except Exception:
+                pass
             pygame.display.get_active()
-            
+
             # Additional macOS-specific focus request using PyObjC if available
             try:
-                from AppKit import NSApplication, NSApp
-                app = NSApplication.sharedApplication()
+                import AppKit
+
+                app = AppKit.NSApplication.sharedApplication()
+                try:
+                    app.finishLaunching()
+                except Exception:
+                    pass
+                try:
+                    app.unhide_(None)
+                except Exception:
+                    pass
                 app.activateIgnoringOtherApps_(True)
+
+                running_app = getattr(AppKit, 'NSRunningApplication', None)
+                if running_app is not None:
+                    try:
+                        current_app = running_app.currentApplication()
+                        activate_opts = getattr(AppKit, 'NSApplicationActivateIgnoringOtherApps', 1 << 1)
+                        if current_app is not None:
+                            current_app.activateWithOptions_(activate_opts)
+                    except Exception:
+                        pass
             except ImportError:
                 # PyObjC not installed, this is optional
                 pass
         except Exception:
             # Silently ignore any focus-related errors
             pass
+
+
+def arm_startup_focus_warmup(duration_ms: int = 2500, retry_interval_ms: int = 120) -> bool:
+    """Retry focus requests for a short window during macOS packaged startup."""
+    global _STARTUP_FOCUS_WARMUP_STATE
+
+    if not IS_MACOS or not getattr(sys, 'frozen', False):
+        _STARTUP_FOCUS_WARMUP_STATE = None
+        return False
+
+    duration_ms = max(250, int(duration_ms or 0))
+    retry_interval_ms = max(40, int(retry_interval_ms or 0))
+    now_ms = pygame.time.get_ticks()
+    request_window_focus()
+    _STARTUP_FOCUS_WARMUP_STATE = {
+        'expires_at_ms': now_ms + duration_ms,
+        'retry_interval_ms': retry_interval_ms,
+        'next_attempt_ms': now_ms + retry_interval_ms,
+        'attempts': 1,
+    }
+    return True
+
+
+def pump_startup_focus_warmup() -> bool:
+    """Issue a best-effort delayed focus request during packaged macOS startup."""
+    global _STARTUP_FOCUS_WARMUP_STATE
+
+    state = _STARTUP_FOCUS_WARMUP_STATE
+    if not IS_MACOS or state is None:
+        return False
+
+    now_ms = pygame.time.get_ticks()
+    try:
+        is_active = bool(pygame.display.get_active())
+    except Exception:
+        is_active = False
+
+    if is_active or now_ms >= int(state.get('expires_at_ms', 0)):
+        _STARTUP_FOCUS_WARMUP_STATE = None
+        return False
+
+    if now_ms < int(state.get('next_attempt_ms', 0)):
+        return False
+
+    request_window_focus()
+    state['attempts'] = int(state.get('attempts', 0)) + 1
+    state['next_attempt_ms'] = now_ms + int(state.get('retry_interval_ms', 120))
+    return True
 
 
 def set_app_icon(assets_dir: str) -> None:

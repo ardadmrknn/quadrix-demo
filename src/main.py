@@ -195,7 +195,7 @@ try:
     from .steam_leaderboards import SteamLeaderboardService  # type: ignore
     from .user_screens import UserSelectionScreen, UserManagementScreen  # type: ignore
     from .localization import set_language, t  # type: ignore
-    from .platform_utils import request_window_focus, init_platform_display, get_display_flags, create_display, get_native_resolution, normalize_mouse_pos, get_mouse_pos, set_app_icon, resolve_frame_rate_cap  # type: ignore
+    from .platform_utils import request_window_focus, arm_startup_focus_warmup, pump_startup_focus_warmup, init_platform_display, get_display_flags, create_display, get_native_resolution, normalize_mouse_pos, get_mouse_pos, set_app_icon, resolve_frame_rate_cap  # type: ignore
     from .retro_style import retro_style  # type: ignore
     from .background_effects import (  # type: ignore
         start_screen_transition, update_screen_transition,
@@ -235,7 +235,7 @@ except Exception:
     from steam_leaderboards import SteamLeaderboardService
     from user_screens import UserSelectionScreen, UserManagementScreen
     from localization import set_language, t
-    from platform_utils import request_window_focus, init_platform_display, get_display_flags, create_display, get_native_resolution, normalize_mouse_pos, get_mouse_pos, set_app_icon, resolve_frame_rate_cap
+    from platform_utils import request_window_focus, arm_startup_focus_warmup, pump_startup_focus_warmup, init_platform_display, get_display_flags, create_display, get_native_resolution, normalize_mouse_pos, get_mouse_pos, set_app_icon, resolve_frame_rate_cap
     from retro_style import retro_style
     from background_effects import (
         start_screen_transition, update_screen_transition,
@@ -1256,7 +1256,8 @@ def main():
             NSProcessInfo.processInfo().setProcessName_('Quadrix')
         except Exception:
             pass
-    request_window_focus()
+    if not arm_startup_focus_warmup():
+        request_window_focus()
     
     # Özel fare imlecini yükle (display oluşturulduktan sonra)
     setup_custom_cursor()
@@ -3915,6 +3916,11 @@ def main():
             delta_ms = clock.tick_busy_loop(frame_cap)
         else:
             delta_ms = clock.tick(frame_cap)
+
+        try:
+            pump_startup_focus_warmup()
+        except Exception:
+            pass
 
         # ── Gamepad Bağlam Güncelleme ──────────────────────────────────
         # Oyun/PvP sırasında gamepad bağlamını 'game' olarak ayarla.
