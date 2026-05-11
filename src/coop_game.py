@@ -284,11 +284,11 @@ class CoopGame:
         # --- Arka plan ---
         self.background = BackgroundManager()
         self.board_background = BackgroundManager()
-        self.background.set_transparency(0.3)
+        self.background.set_transparency(0.7)
         if self.settings_manager:
-            self.board_background.set_transparency(self.settings_manager.get('bg_transparency', 0.3))
+            self.board_background.set_transparency(self.settings_manager.get('bg_transparency', 0.7))
         else:
-            self.board_background.set_transparency(0.3)
+            self.board_background.set_transparency(0.7)
         self._load_backgrounds()
 
         # --- Tema / blok stili ---
@@ -479,9 +479,9 @@ class CoopGame:
         # Outer background (tam ekran arka plan)
         self.outer_background = BackgroundManager()
         if self.settings_manager:
-            self.outer_background.set_transparency(self.settings_manager.get('bg_transparency', 0.3))
+            self.outer_background.set_transparency(self.settings_manager.get('bg_transparency', 0.7))
         else:
-            self.outer_background.set_transparency(0.3)
+            self.outer_background.set_transparency(0.7)
         self._load_outer_background()
 
         # Ambient particles init
@@ -688,7 +688,7 @@ class CoopGame:
                 pass
 
         try:
-            bg_transparency = float(settings_manager.get('bg_transparency', 0.3))
+            bg_transparency = float(settings_manager.get('bg_transparency', 0.7))
         except Exception:
             bg_transparency = None
         try:

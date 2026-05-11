@@ -14,6 +14,20 @@ src_dir_for_imports = os.path.dirname(os.path.abspath(__file__))
 if src_dir_for_imports not in sys.path:
     sys.path.insert(0, src_dir_for_imports)
 
+try:
+    from .demo_config import apply_runtime_environment
+except Exception:
+    try:
+        from demo_config import apply_runtime_environment
+    except Exception:
+        def apply_runtime_environment():
+            return None
+
+try:
+    apply_runtime_environment()
+except Exception:
+    pass
+
 # ==================== DUAL-MODULE LOCALIZATION FIX ====================
 # src/main.py "from src.main import main" ile paket olarak yüklendiğinde,
 # relative import (from .localization) → sys.modules['src.localization'] oluşturur;
@@ -1439,7 +1453,7 @@ def main():
     
     # Menü arka plan görselini ayarlardan uygula.
     try:
-        retro_style.set_background_transparency(settings_manager.get('bg_transparency', 0.3))
+        retro_style.set_background_transparency(settings_manager.get('bg_transparency', 0.7))
     except Exception:
         pass
 
@@ -2546,9 +2560,9 @@ def main():
                             pass
 
                     try:
-                        trans_value = float(settings_manager.get('bg_transparency', 0.3))
+                        trans_value = float(settings_manager.get('bg_transparency', 0.7))
                     except Exception:
-                        trans_value = 0.3
+                        trans_value = 0.7
                     try:
                         retro_style.set_background_transparency(trans_value)
                     except Exception:
@@ -2674,9 +2688,9 @@ def main():
             elif action == 'change_bg_transparency':
                 # Arka plan şeffaflığı değişti (sekmeli ekrandan)
                 try:
-                    trans_value = float(settings_manager.get('bg_transparency', 0.3))
+                    trans_value = float(settings_manager.get('bg_transparency', 0.7))
                 except Exception:
-                    trans_value = 0.3
+                    trans_value = 0.7
                 try:
                     retro_style.set_background_transparency(trans_value)
                 except Exception:

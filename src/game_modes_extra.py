@@ -37,6 +37,16 @@ try:
 except Exception:
     from ui_scaling import get_projected_effective_scale
 
+try:
+    from . import demo_config  # type: ignore
+except Exception:
+    import demo_config
+
+try:
+    from .demo_upgrade_prompt import DemoUpgradePrompt, show_demo_score_cap_prompt  # type: ignore
+except Exception:
+    from demo_upgrade_prompt import DemoUpgradePrompt, show_demo_score_cap_prompt
+
 from constants import (
     BLACK,
     BOARD_WIDTH,
@@ -436,9 +446,9 @@ class MysteryCardManager:
         self.used_card_ids: set[str] = set()
         # Debug cadence: extra selection trigger every 2 cleared lines
         self._debug_lines_progress = 0
-        # Align manager threshold with board level-up (5 lines per level)
+        # Align manager threshold with the current board level-up cadence.
         self.progress = 0
-        self.threshold = 5
+        self.threshold = self._resolve_threshold()
 
     def reset(self) -> None:
         self.force_piece_queue.clear()
@@ -447,7 +457,26 @@ class MysteryCardManager:
         self.used_card_ids.clear()
         self._debug_lines_progress = 0
         self.progress = 0
-        self.threshold = 5
+        self.threshold = self._resolve_threshold()
+        self.sync_level_progress()
+
+    def _resolve_threshold(self) -> int:
+        try:
+            board = getattr(self.mode, 'board', None)
+            if board is not None:
+                return max(1, int(getattr(board, 'level_lines_per_level', 5) or 5))
+        except Exception:
+            pass
+        return max(1, int(demo_config.get_card_selection_level_interval() or 5))
+
+    def sync_level_progress(self) -> None:
+        self.threshold = self._resolve_threshold()
+        try:
+            board = getattr(self.mode, 'board', None)
+            progress = _level_progress_in_current_level(board, self.threshold)
+        except Exception:
+            progress = 0
+        self.progress = max(0, int(progress or 0))
 
     def notify_lines_cleared(self, cleared: int) -> bool:
         """Satır ilerlemesini günceller, gerekirse yeni kart seçimini hazırlar."""
@@ -478,7 +507,8 @@ class MysteryCardManager:
                 except Exception:
                     pass
 
-        self.progress += cleared
+        self.threshold = self._resolve_threshold()
+        self.progress += int(cleared)
         triggered = False
         while self.progress >= self.threshold:
             self.progress -= self.threshold
@@ -503,7 +533,6 @@ class MysteryCardManager:
                     pass
                 if getattr(self, 'mode', None) is not None:
                     mode = self.mode
-                    # Deduplicate using last_enqueued_level: enqueue for every level above it
                     current_level = getattr(mode.board, 'level', 0)
                     last = getattr(mode, 'last_enqueued_level', 0)
                     if current_level > last:
@@ -4827,6 +4856,58 @@ class MysteryMode(Game):
         self.card_ui.reset()
         return True
 
+    def _get_demo_score_cap(self) -> int:
+        try:
+            return max(1, int(getattr(self, '_demo_score_cap_value', 75000) or 75000))
+        except Exception:
+            return 75000
+
+    def _should_trigger_demo_score_cap(self) -> bool:
+        if not getattr(demo_config, 'IS_DEMO', False):
+            return False
+        if getattr(self, '_demo_score_cap_active', False) or getattr(self, '_demo_score_cap_reached', False):
+            return False
+        if getattr(self, 'game_over', False):
+            return False
+
+        board = getattr(self, 'board', None)
+        try:
+            score = int(getattr(board, 'score', 0) or 0)
+        except Exception:
+            return False
+        return score >= self._get_demo_score_cap()
+
+    def _activate_demo_score_cap_prompt(self) -> None:
+        self._demo_score_cap_reached = True
+        self._demo_score_cap_active = True
+        self.card_selection_active = False
+        self.card_selection_rects = []
+        self._pending_card_choice_index = None
+        self.pending_level_ups = 0
+        self.card_message = ''
+        self.card_message_timer = 0.0
+        self._piece_selection_active = False
+        self._sniper_overlay_active = False
+        self._card_workshop_active = False
+
+        try:
+            self.card_manager.pending_choices = []
+        except Exception:
+            pass
+
+        prompt = getattr(self, '_demo_score_cap_prompt', None)
+        if prompt is None:
+            prompt = DemoUpgradePrompt(self.screen)
+            self._demo_score_cap_prompt = prompt
+        prompt.screen = self.screen
+        show_demo_score_cap_prompt(prompt)
+
+    def _maybe_activate_demo_score_cap_prompt(self) -> bool:
+        if not self._should_trigger_demo_score_cap():
+            return False
+        self._activate_demo_score_cap_prompt()
+        return True
+
     def _get_mystery_layout_metrics(self) -> Dict[str, float | int]:
         active_width, active_height = self._active_ui_size()
         effective_width, effective_height = self._effective_ui_size()
@@ -5131,6 +5212,26 @@ class MysteryMode(Game):
         except Exception:
             pass
 
+    def _mystery_level_lines_per_level(self) -> int:
+        try:
+            return max(1, int(demo_config.get_card_selection_level_interval() or 5))
+        except Exception:
+            return 5
+
+    def _apply_mystery_level_progression(self) -> None:
+        threshold = self._mystery_level_lines_per_level()
+        try:
+            if getattr(self, 'board', None) is not None:
+                self.board.level_lines_per_level = threshold
+                current_progress = _level_progress_in_current_level(self.board, threshold)
+                self.board.level = (int(getattr(self.board, 'level_lines_cleared', 0) or 0) // threshold) + 1
+            else:
+                current_progress = 0
+        except Exception:
+            current_progress = 0
+        self.card_manager.threshold = threshold
+        self.card_manager.progress = max(0, int(current_progress or 0))
+
     def wants_mouse_visible(self) -> bool:
         # Kart seçimi, parça seçimi veya atölye popup gibi overlay'lerde mouse görünür olmalı.
         if getattr(self, '_piece_selection_active', False):
@@ -5183,6 +5284,10 @@ class MysteryMode(Game):
             score_manager=score_manager,
         )
         self.mode_name = t('mode_label_card_mastery')
+        self._demo_score_cap_value = 75000
+        self._demo_score_cap_reached = False
+        self._demo_score_cap_active = False
+        self._demo_score_cap_prompt = DemoUpgradePrompt(self.screen)
         self._card_ui_reference_size = self._get_card_ui_reference_size()
         self._card_ui_readable_min_size = (1180, 760)
         try:
@@ -5196,8 +5301,10 @@ class MysteryMode(Game):
         self.left_panel_max_width = 420
         self._left_panel_frame = (10, 20, 400)
         self._left_panel_cards_y = 120
+        self._apply_mystery_level_progression()
         # Ensure last_enqueued_level initialized after board is created
         self.last_enqueued_level = getattr(self.board, 'level', 0)
+        self.card_manager.sync_level_progress()
 
         # Kart efekt durumları
         self.speed_effect_timer = 0.0
@@ -6099,6 +6206,10 @@ class MysteryMode(Game):
             pass
 
     def update(self, dt: float) -> None:
+        if getattr(self, '_demo_score_cap_active', False):
+            self.update_screen_shake()
+            return
+
         # dt gelebilir: ms (oyun döngüsünden) veya saniye. Tutarlı dönüşüm.
         seconds = _dt_to_seconds(dt)
         self.card_message_timer = max(0, self.card_message_timer - seconds)
@@ -6148,6 +6259,9 @@ class MysteryMode(Game):
         # Save previous level before running engine update so we can detect level-up
         prev_level = self.board.level
         super().update(dt)
+
+        if self._maybe_activate_demo_score_cap_prompt():
+            return
 
         # Drill piece: continuously delete overlapped blocks while falling
         try:
@@ -6728,6 +6842,21 @@ class MysteryMode(Game):
         )
 
     def handle_input(self) -> bool:
+        if getattr(self, '_demo_score_cap_active', False):
+            prompt = getattr(self, '_demo_score_cap_prompt', None)
+            if prompt is None:
+                return 'menu'
+            prompt.screen = self.screen
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    return False
+                if prompt.handle_input(event):
+                    action = prompt.consume_last_action()
+                    if action in {'confirm', 'cancel'}:
+                        self._demo_score_cap_active = False
+                        return 'menu'
+            return True
+
         if self.card_selection_active:
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
@@ -6952,7 +7081,14 @@ class MysteryMode(Game):
         self.card_selection_rects = []
         self._pending_card_choice_index = None
         self.pending_level_ups = 0
+        self._demo_score_cap_reached = False
+        self._demo_score_cap_active = False
+        if getattr(self, '_demo_score_cap_prompt', None) is not None:
+            self._demo_score_cap_prompt.hide()
+            self._demo_score_cap_prompt.screen = self.screen
+        self._apply_mystery_level_progression()
         self.last_enqueued_level = getattr(self.board, 'level', 0)
+        self.card_manager.sync_level_progress()
         self._reset_card_selection_rerolls()
         # Reset effect timers and visuals
         self.speed_effect_timer = 0.0
@@ -7173,6 +7309,12 @@ class MysteryMode(Game):
         # === BLOK ATÖLYESİ POPUP: Blok Atölyesi kartı için ===
         if getattr(self, '_card_workshop_active', False):
             self._draw_card_workshop_popup()
+
+        if getattr(self, '_demo_score_cap_active', False):
+            prompt = getattr(self, '_demo_score_cap_prompt', None)
+            if prompt is not None:
+                prompt.screen = self.screen
+                prompt.draw()
     
     def _draw_sniper_board_overlay(self) -> None:
         """Sniper modu için gelişmiş blok seçim overlay'i."""
@@ -11403,7 +11545,7 @@ class WideMode(Game):
 
         self.wide_background = BackgroundManager()
         if settings_manager:
-            transparency = settings_manager.get("bg_transparency", 0.3)
+            transparency = settings_manager.get("bg_transparency", 0.7)
             self.wide_background.set_transparency(transparency)
         self._load_wide_background()
 

@@ -297,10 +297,10 @@ class PvPGame:
         
         # Board background'a ayarlardaki transparanlığı uygula
         if self.settings_manager:
-            bg_transparency = self.settings_manager.get('bg_transparency', 0.3)
+            bg_transparency = self.settings_manager.get('bg_transparency', 0.7)
             self.board_background.set_transparency(bg_transparency)
         else:
-            self.board_background.set_transparency(0.3)
+            self.board_background.set_transparency(0.7)
         
         self.load_background_image()
         self.load_board_background()
@@ -767,9 +767,9 @@ class PvPGame:
             pass
 
         try:
-            bg_transparency = float(settings_manager.get('bg_transparency', 0.3))
+            bg_transparency = float(settings_manager.get('bg_transparency', 0.7))
         except Exception:
-            bg_transparency = 0.3
+            bg_transparency = 0.7
         try:
             menu_transparency = float(settings_manager.get('menu_transparency', 1.0))
         except Exception:

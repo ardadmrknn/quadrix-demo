@@ -17,6 +17,15 @@ from ui_theme import UIColors, UIFonts, UIStyle
 from retro_style import retro_style as _retro_style
 from localization import t, get_language
 from ui_scaling import get_projected_effective_scale
+try:
+    from .. import demo_config  # type: ignore
+    from ..demo_upgrade_prompt import (  # type: ignore
+        DemoUpgradePrompt,
+        show_demo_partial_lock_prompt,
+    )
+except Exception:
+    import demo_config
+    from demo_upgrade_prompt import DemoUpgradePrompt, show_demo_partial_lock_prompt
 
 # Neon renk paleti (merkezi tema)
 NEON_CYAN = UIColors.NEON_CYAN
@@ -39,6 +48,7 @@ class CampaignLevelSelect:
         self.screen = screen
         self.settings_manager = settings_manager
         self.user_manager = user_manager
+        self._demo_upgrade_prompt = DemoUpgradePrompt(screen)
         
         # Ekran boyutları
         self.window_width = screen.get_width()
@@ -284,6 +294,8 @@ class CampaignLevelSelect:
         """Level açık mı kontrol et"""
         if getattr(self, 'debug_unlock_all', False):
             return True
+        if not demo_config.is_solo_campaign_level_available(level_num):
+            return False
         if level_num == 1:
             return True
         prev_level = str(level_num - 1)
@@ -310,6 +322,10 @@ class CampaignLevelSelect:
     
     def handle_input(self, event: pygame.event) -> Optional[str]:
         """Kullanıcı girdilerini işle"""
+        if self._demo_upgrade_prompt.is_active():
+            self._demo_upgrade_prompt.handle_input(event)
+            return None
+
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_ESCAPE:
                 return 'back'
@@ -343,6 +359,8 @@ class CampaignLevelSelect:
             
             # Enter ile level başlat
             elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+                if self._maybe_handle_demo_level_lock(self.selected_level):
+                    return None
                 if self._is_level_unlocked(self.selected_level):
                     return f'play_{self.selected_level}'
         
@@ -351,6 +369,8 @@ class CampaignLevelSelect:
             
             # Oyna butonu
             if self.play_button and self.play_button.collidepoint(pos):
+                if self._maybe_handle_demo_level_lock(self.selected_level):
+                    return None
                 if self._is_level_unlocked(self.selected_level):
                     return f'play_{self.selected_level}'
             
@@ -365,6 +385,8 @@ class CampaignLevelSelect:
             # Level butonları
             for rect, level_num in self.level_buttons:
                 if rect.collidepoint(pos):
+                    if self._maybe_handle_demo_level_lock(level_num):
+                        return None
                     if self._is_level_unlocked(level_num):
                         if self.selected_level == level_num:
                             return f'play_{level_num}'
@@ -424,6 +446,8 @@ class CampaignLevelSelect:
         """Dünya geçiş animasyonunu başlat"""
         if target_world == self.current_world:
             return
+        if self._maybe_handle_demo_world_lock(target_world):
+            return
         
         self.previous_world = self.current_world
         self.target_world = target_world
@@ -481,6 +505,21 @@ class CampaignLevelSelect:
         # Dünya geçiş animasyonu overlay (fade efekti)
         if self.world_transition_active:
             self._draw_world_transition_overlay()
+
+        if self._demo_upgrade_prompt.is_active():
+            self._demo_upgrade_prompt.draw()
+
+    def _maybe_handle_demo_level_lock(self, level_num: int) -> bool:
+        if demo_config.is_solo_campaign_level_available(level_num):
+            return False
+        show_demo_partial_lock_prompt(self._demo_upgrade_prompt)
+        return True
+
+    def _maybe_handle_demo_world_lock(self, world_num: int) -> bool:
+        if demo_config.is_solo_campaign_world_available(world_num):
+            return False
+        show_demo_partial_lock_prompt(self._demo_upgrade_prompt)
+        return True
     
     def _draw_background(self) -> None:
         """Ana menü ile uyumlu arka plan"""
@@ -637,12 +676,13 @@ class CampaignLevelSelect:
             self.world_tabs.append((rect, i))
 
             is_selected = (i == self.current_world)
+            is_locked = not demo_config.is_solo_campaign_world_available(i)
             world_color = self.WORLD_COLORS[i]
             world_name = t(f'campaign_world_short_{i}')
 
             # Arka plan (modern glass) - tam dolgu
-            fill_color = world_color if is_selected else UIColors.TAB_INACTIVE
-            fill_alpha = 255 if is_selected else 220
+            fill_color = UIColors.BUTTON_DISABLED if is_locked else (world_color if is_selected else UIColors.TAB_INACTIVE)
+            fill_alpha = 210 if is_locked else (255 if is_selected else 220)
             pygame.draw.rect(
                 self.screen,
                 (*fill_color, fill_alpha),
@@ -657,20 +697,24 @@ class CampaignLevelSelect:
             self.screen.blit(base_surf, rect.topleft)
 
             # Kenar
-            border_color = world_color if is_selected else UIColors.BUTTON_BORDER
+            border_color = UIColors.BUTTON_BORDER if is_locked else (world_color if is_selected else UIColors.BUTTON_BORDER)
             pygame.draw.rect(self.screen, border_color, rect, 2, border_radius=UIStyle.BORDER_RADIUS_MEDIUM)
 
             # Alt şerit (dünya rengi)
             strip_rect = pygame.Rect(rect.x + 10, rect.bottom - 6, rect.width - 20, 3)
             strip_rect = pygame.Rect(rect.x + s(10), rect.bottom - s(6), rect.width - s(20), s(3))
-            pygame.draw.rect(self.screen, world_color, strip_rect, border_radius=2)
+            pygame.draw.rect(self.screen, UIColors.TEXT_MUTED if is_locked else world_color, strip_rect, border_radius=2)
 
             # Dünya numarası ve ismi
-            text_color = UIColors.BG_DARK if is_selected else UIColors.TEXT_SECONDARY
+            text_color = UIColors.TEXT_MUTED if is_locked else (UIColors.BG_DARK if is_selected else UIColors.TEXT_SECONDARY)
             tab_text = t('campaign_world_tab_format', index=i, name=world_name)
             text = self.font_small.render(tab_text, True, text_color)
             text_rect = text.get_rect(center=rect.center)
             self.screen.blit(text, text_rect)
+            if is_locked:
+                lock_text = self.font_tiny.render(t('locked_badge', default='Kilitli'), True, UIColors.TEXT_MUTED)
+                lock_rect = lock_text.get_rect(midbottom=(rect.centerx, rect.bottom - s(8)))
+                self.screen.blit(lock_text, lock_rect)
 
         self.tabs_bottom = tab_y + tab_height
     

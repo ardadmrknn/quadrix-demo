@@ -14,6 +14,23 @@ from asset_manager import load_image
 from localization import t, get_language
 from ui_scaling import get_projected_effective_scale
 
+try:
+    from . import demo_config
+    from .demo_upgrade_prompt import (
+        DemoUpgradePrompt,
+        show_demo_full_lock_prompt,
+        show_demo_partial_lock_prompt,
+        show_demo_transition_lock_prompt,
+    )
+except Exception:
+    import demo_config
+    from demo_upgrade_prompt import (
+        DemoUpgradePrompt,
+        show_demo_full_lock_prompt,
+        show_demo_partial_lock_prompt,
+        show_demo_transition_lock_prompt,
+    )
+
 
 def _get_base_path() -> Path:
     """PyInstaller uyumlu temel dizin."""
@@ -249,6 +266,7 @@ class ExtrasScreen:
         self._sb_drag_offset_y: int = 0
         self._cached_max_scroll: int = 0
         self.background_fx = get_shared_falling_blocks_layer('default')
+        self._demo_upgrade_prompt = DemoUpgradePrompt(screen)
 
         # Grid ayarları (UI temasına göre)
         self.base_cols, self.base_card_size = self._resolve_grid_preset(self.screen.get_width())
@@ -328,6 +346,22 @@ class ExtrasScreen:
                 localized['desc'] = t(item['desc_key'])
             result.append(localized)
         return result
+
+    def _get_demo_lock_kind(self, mode_id: str) -> str | None:
+        return demo_config.get_extras_lock_kind(mode_id)
+
+    def _show_demo_lock_prompt_for_mode(self, mode_id: str) -> bool:
+        lock_kind = self._get_demo_lock_kind(mode_id)
+        if lock_kind == 'full':
+            show_demo_full_lock_prompt(self._demo_upgrade_prompt)
+            return True
+        if lock_kind == 'partial':
+            show_demo_partial_lock_prompt(self._demo_upgrade_prompt)
+            return True
+        if lock_kind == 'transition':
+            show_demo_transition_lock_prompt(self._demo_upgrade_prompt)
+            return True
+        return False
     
     def _load_mode_icons(self):
         """Mod simgelerini yükle veya emoji fallback kullan"""
@@ -369,6 +403,10 @@ class ExtrasScreen:
     
     def handle_input(self, event):
         """Ekstralar input işle"""
+        if self._demo_upgrade_prompt.is_active():
+            self._demo_upgrade_prompt.handle_input(event)
+            return None
+
         if event.type == pygame.KEYDOWN:
             rows = math.ceil(len(self.items) / self.cols)
             
@@ -389,7 +427,10 @@ class ExtrasScreen:
                     self.selected += 1
                 self._ensure_visible()
             elif event.key in (pygame.K_RETURN, pygame.K_SPACE):
-                return self.items[self.selected]['id']
+                mode_id = self.items[self.selected]['id']
+                if self._show_demo_lock_prompt_for_mode(mode_id):
+                    return None
+                return mode_id
             elif event.key == pygame.K_ESCAPE:
                 return 'Geri'
             elif is_fullscreen_toggle(event.key, getattr(event, 'mod', 0)):
@@ -443,7 +484,10 @@ class ExtrasScreen:
                     return None
                 for i, rect in enumerate(self.option_rects):
                     if rect.collidepoint(mouse_pos):
-                        return self.items[i]['id']
+                        mode_id = self.items[i]['id']
+                        if self._show_demo_lock_prompt_for_mode(mode_id):
+                            return None
+                        return mode_id
 
         elif event.type == pygame.MOUSEBUTTONUP:
             if event.button == 1:
@@ -574,6 +618,9 @@ class ExtrasScreen:
         else:
             self._sb_thumb_rect = None
             self._sb_container_rect = None
+
+        if self._demo_upgrade_prompt.is_active():
+            self._demo_upgrade_prompt.draw()
 
         # Footer intentionally omitted
 
@@ -721,6 +768,29 @@ class ExtrasScreen:
                 for dx, dy in ((-1, 0), (1, 0), (0, -1), (0, 1)):
                     self.screen.blit(hs_shadow, hs_shadow.get_rect(center=(text_rect.centerx + dx, text_rect.centery + dy)))
                 self.screen.blit(hs_surf, text_rect)
+
+        lock_kind = self._get_demo_lock_kind(item.get('id', ''))
+        if lock_kind:
+            overlay = pygame.Surface((rect.width, rect.height), pygame.SRCALPHA)
+            pygame.draw.rect(
+                overlay,
+                (6, 10, 24, 108),
+                overlay.get_rect(),
+                border_radius=UIStyle.BORDER_RADIUS_MEDIUM,
+            )
+            self.screen.blit(overlay, rect.topleft)
+
+            badge_font = UIFonts.get(s(11, 8), bold=True)
+            badge_label = t(
+                'demo_online_badge' if lock_kind == 'transition' else 'demo_badge',
+                default='ONLINE' if lock_kind == 'transition' else 'DEMO',
+            )
+            badge_surf = badge_font.render(badge_label, True, UIColors.TEXT_PRIMARY)
+            badge_rect = pygame.Rect(0, 0, badge_surf.get_width() + s(16), badge_surf.get_height() + s(10))
+            badge_rect.topright = (rect.right - s(10), rect.y + s(10))
+            pygame.draw.rect(self.screen, (*UIColors.BG_DARK, 220), badge_rect, border_radius=10)
+            pygame.draw.rect(self.screen, item.get('color', UIColors.NEON_CYAN), badge_rect, 2, border_radius=10)
+            self.screen.blit(badge_surf, badge_surf.get_rect(center=badge_rect.center))
         
 
 

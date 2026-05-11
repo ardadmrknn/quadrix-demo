@@ -32,6 +32,7 @@ class Board:
         # intentionally increment `lines_cleared` for stats/achievements without
         # allowing farming level-ups.
         self.level_lines_cleared = 0
+        self.level_lines_per_level = 5
         self.level = 1
         self.combo = 0
         self.tetrises = 0
@@ -266,7 +267,11 @@ class Board:
                     self.level_lines_cleared += total_lines
                 except Exception:
                     self.level_lines_cleared = int(getattr(self, 'level_lines_cleared', 0) or 0) + int(total_lines)
-                self.level = (int(getattr(self, 'level_lines_cleared', self.lines_cleared)) // 5) + 1
+                try:
+                    lines_per_level = max(1, int(getattr(self, 'level_lines_per_level', 5) or 5))
+                except Exception:
+                    lines_per_level = 5
+                self.level = (int(getattr(self, 'level_lines_cleared', self.lines_cleared)) // lines_per_level) + 1
         else:
             # Dış kaynaklı temizlikler combo'yu bozmasın.
             if str(source).lower() in {"player", "normal"}:
