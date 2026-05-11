@@ -18,6 +18,12 @@ from ui_theme import UIColors, UIFonts, UIStyle
 from localization import t, get_language
 from retro_style import retro_style
 from ui_scaling import get_projected_effective_scale
+try:
+    from .. import demo_config  # type: ignore
+    from ..demo_upgrade_prompt import DemoUpgradePrompt, show_demo_partial_lock_prompt  # type: ignore
+except Exception:
+    import demo_config
+    from demo_upgrade_prompt import DemoUpgradePrompt, show_demo_partial_lock_prompt
 
 
 # Dünya renk paleti (neon temaya uyumlu)
@@ -44,6 +50,7 @@ class CoopLevelSelect:
         self.screen = screen
         self.settings_manager = settings_manager
         self.user_manager = user_manager
+        self._demo_upgrade_prompt = DemoUpgradePrompt(screen)
 
         self.window_width = screen.get_width()
         self.window_height = screen.get_height()
@@ -77,6 +84,8 @@ class CoopLevelSelect:
         }
 
     def _is_level_unlocked(self, level_num: int) -> bool:
+        if not demo_config.is_coop_campaign_level_available(level_num):
+            return False
         if level_num == 1:
             return True
         prev = str(level_num - 1)
@@ -93,6 +102,10 @@ class CoopLevelSelect:
 
     def handle_input(self, event: pygame.event.Event) -> Optional[str]:
         """Event işle. Dönüş: 'back', 'play_N', None."""
+        if self._demo_upgrade_prompt.is_active():
+            self._demo_upgrade_prompt.handle_input(event)
+            return None
+
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_ESCAPE:
                 return 'back'
@@ -121,13 +134,18 @@ class CoopLevelSelect:
             # Dünya tabları
             for w, rect in self._world_tab_rects.items():
                 if rect.collidepoint(mx, my):
+                    if self._maybe_handle_demo_world_lock(w):
+                        return None
                     self.current_world = w
                     return None
 
             # Level butonları
             for lv, rect in self._level_rects.items():
-                if rect.collidepoint(mx, my) and self._is_level_unlocked(lv):
-                    return f'play_{lv}'
+                if rect.collidepoint(mx, my):
+                    if self._maybe_handle_demo_level_lock(lv):
+                        return None
+                    if self._is_level_unlocked(lv):
+                        return f'play_{lv}'
 
         return None
 
@@ -193,20 +211,26 @@ class CoopLevelSelect:
             self._world_tab_rects[wi] = rect
             color = _WORLD_COLORS.get(wi, retro_style.primary)
             active = wi == self.current_world
+            locked = not demo_config.is_coop_campaign_world_available(wi)
 
-            if active:
+            if active and not locked:
                 # Aktif tab — dolgu + neon border
                 retro_style.draw_glass_panel(self.screen, rect, alpha=200,
                                               border_color=color, glow=True)
             else:
-                retro_style.draw_glass_panel(self.screen, rect, alpha=100,
-                                              border_color=(60, 70, 90))
+                border = (60, 70, 90) if not locked else UIColors.TEXT_MUTED
+                alpha = 100 if not locked else 80
+                retro_style.draw_glass_panel(self.screen, rect, alpha=alpha,
+                                              border_color=border)
 
             wname = _WORLD_NAMES.get(wi, {}).get(lang, _WORLD_NAMES.get(wi, {}).get('en', f'World {wi}'))
-            text_color = (10, 12, 28) if active else retro_style.text_secondary
+            text_color = retro_style.text_muted if locked else ((10, 12, 28) if active else retro_style.text_secondary)
             lbl = f_tab.render(wname, True, text_color)
             self.screen.blit(lbl, (x + tab_w // 2 - lbl.get_width() // 2,
                                    tab_y + tab_h // 2 - lbl.get_height() // 2))
+            if locked:
+                lock_lbl = f_tab.render(t('locked_badge', default='Kilitli'), True, retro_style.text_muted)
+                self.screen.blit(lock_lbl, (x + tab_w // 2 - lock_lbl.get_width() // 2, tab_y + tab_h - s(18)))
 
         # --- Level grid ---
         grid_top = tab_y + tab_h + s(16)
@@ -222,7 +246,22 @@ class CoopLevelSelect:
                                       border_color=(60, 70, 90), top_highlight=False)
         self.screen.blit(bs, (bx + s(10), by + s(5)))
 
+        if self._demo_upgrade_prompt.is_active():
+            self._demo_upgrade_prompt.draw()
+
         pygame.display.flip()
+
+    def _maybe_handle_demo_level_lock(self, level_num: int) -> bool:
+        if demo_config.is_coop_campaign_level_available(level_num):
+            return False
+        show_demo_partial_lock_prompt(self._demo_upgrade_prompt)
+        return True
+
+    def _maybe_handle_demo_world_lock(self, world_num: int) -> bool:
+        if demo_config.is_coop_campaign_world_available(world_num):
+            return False
+        show_demo_partial_lock_prompt(self._demo_upgrade_prompt)
+        return True
 
     def _draw_level_grid(self, top: int, scale: float, s) -> None:
         """Level butonlarını glass card grid olarak çiz."""
@@ -277,7 +316,7 @@ class CoopLevelSelect:
                 badge_w, badge_h = s(24), s(16)
                 badge_r = pygame.Rect(x + btn_w - badge_w - s(4), y + s(4), badge_w, badge_h)
                 pygame.draw.rect(self.screen, UIColors.NEON_RED, badge_r, border_radius=4)
-                bs = f_star.render('BOSS', True, (255, 255, 255))
+                bs = f_star.render(t('boss_badge', default='BOSS'), True, (255, 255, 255))
                 self.screen.blit(bs, (badge_r.centerx - bs.get_width() // 2,
                                       badge_r.centery - bs.get_height() // 2))
 

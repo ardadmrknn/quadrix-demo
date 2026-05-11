@@ -18,10 +18,30 @@ BUILD_DIR="build"
 
 CLEAN_BUILD=false
 REBUILD_BRIDGE=false
-for arg in "$@"; do
-    case "$arg" in
-        --clean) CLEAN_BUILD=true ;;
-        --rebuild-bridge) REBUILD_BRIDGE=true ;;
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --clean)
+            CLEAN_BUILD=true
+            shift
+            ;;
+        --rebuild-bridge)
+            REBUILD_BRIDGE=true
+            shift
+            ;;
+        --spec)
+            [[ $# -ge 2 ]] || { echo -e "${RED}HATA: --spec icin deger gerekli.${NC}"; exit 1; }
+            SPEC_FILE="$2"
+            shift 2
+            ;;
+        --app-name)
+            [[ $# -ge 2 ]] || { echo -e "${RED}HATA: --app-name icin deger gerekli.${NC}"; exit 1; }
+            APP_NAME="$2"
+            shift 2
+            ;;
+        *)
+            echo -e "${RED}HATA: Bilinmeyen arguman: $1${NC}"
+            exit 1
+            ;;
     esac
 done
 
@@ -51,6 +71,7 @@ if ! $PYTHON_CMD -c "import pygame" 2>/dev/null; then
     echo -e "${RED}HATA: pygame bulunamadı!${NC}"; exit 1
 fi
 echo -e "${GREEN}✓${NC} PyInstaller: $($PYTHON_CMD -c 'import PyInstaller; print(PyInstaller.__version__)')"
+echo -e "${GREEN}✓${NC} App: $APP_NAME"
 echo -e "${GREEN}✓${NC} Spec: $SPEC_FILE"
 echo ""
 

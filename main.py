@@ -8,6 +8,13 @@ import os
 import sys
 
 
+try:
+    from src.demo_config import apply_runtime_environment
+except Exception:
+    def apply_runtime_environment():
+        return None
+
+
 os.environ.setdefault("PYGAME_HIDE_SUPPORT_PROMPT", "1")
 
 
@@ -74,6 +81,11 @@ def _apply_leaderboard_cli_overrides(argv: list[str]) -> None:
 
 
 if __name__ == "__main__":
+    try:
+        apply_runtime_environment()
+    except Exception:
+        pass
+
     # Windows terminallerinde Türkçe karakter ve emoji bozulmalarını önle.
     # cp1254/cp437 codepage uyumsuzluğu yerine UTF-8 kullan.
     # macOS/Linux zaten UTF-8 olduğundan etkilenmez.

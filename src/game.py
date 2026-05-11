@@ -793,7 +793,7 @@ class Game:
         self.outer_background = BackgroundManager()  # Oyun alanı dışındaki alan için arka plan
         
         # Transparanlık ayarını yükle ve uygula
-        bg_transparency = self.settings_manager.get('bg_transparency', 0.3)
+        bg_transparency = self.settings_manager.get('bg_transparency', 0.7)
         self.background_manager.set_transparency(bg_transparency)
         self.single_background.set_transparency(bg_transparency)
         self.outer_background.set_transparency(bg_transparency)
@@ -1182,7 +1182,7 @@ class Game:
             pass
 
         try:
-            bg_transparency = float(settings_manager.get('bg_transparency', 0.3))
+            bg_transparency = float(settings_manager.get('bg_transparency', 0.7))
         except Exception:
             bg_transparency = None
         try:

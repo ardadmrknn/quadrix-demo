@@ -900,7 +900,7 @@ class TabbedSettingsScreen:
         self.fps_limit = sm.get('fps_limit', 0)
         self.ui_scale_preset = normalize_ui_scale_preset(sm.get('ui_scale_preset', 'compact'))
         self.show_ghost = sm.get('show_ghost', True)
-        self.bg_transparency = sm.get('bg_transparency', 0.3)
+        self.bg_transparency = sm.get('bg_transparency', 0.7)
         self.effects_opacity = sm.get('effects_opacity', 1.0)
         self.menu_transparency = sm.get('menu_transparency', 1.0)
         self.particle_effects = self._particle_effects_level_to_slider_value(sm.get('particle_effects', 'medium'))

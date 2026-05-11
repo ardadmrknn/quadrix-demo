@@ -1,0 +1,84 @@
+import sys
+import types
+
+import pygame
+import pytest
+
+_platform_utils = sys.modules.get('platform_utils')
+if _platform_utils is not None and not hasattr(_platform_utils, 'get_display_scale_factor'):
+    _platform_utils.get_display_scale_factor = lambda: 1.0
+
+
+def _import_modules():
+    if not hasattr(pygame, 'K_c'):
+        pytest.skip('pygame stub environment: MysteryMode import skipped')
+    import game_modes_extra as extra_modes_module
+    import demo_upgrade_prompt as prompt_module
+    return extra_modes_module, prompt_module
+
+
+def test_demo_mystery_score_cap_only_triggers_in_demo(monkeypatch):
+    extra_modes_module, _ = _import_modules()
+    mode = extra_modes_module.MysteryMode.__new__(extra_modes_module.MysteryMode)
+    mode.board = types.SimpleNamespace(score=75000)
+    mode.game_over = False
+    mode._demo_score_cap_active = False
+    mode._demo_score_cap_reached = False
+    mode._demo_score_cap_value = 75000
+
+    monkeypatch.setattr(extra_modes_module.demo_config, 'IS_DEMO', True)
+    assert mode._should_trigger_demo_score_cap() is True
+
+    monkeypatch.setattr(extra_modes_module.demo_config, 'IS_DEMO', False)
+    assert mode._should_trigger_demo_score_cap() is False
+
+
+def test_demo_mystery_score_cap_activation_opens_prompt_and_freezes_overlays():
+    extra_modes_module, prompt_module = _import_modules()
+    mode = extra_modes_module.MysteryMode.__new__(extra_modes_module.MysteryMode)
+    mode.screen = pygame.Surface((640, 480))
+    mode.board = types.SimpleNamespace(score=75000)
+    mode.card_manager = types.SimpleNamespace(pending_choices=[{'id': 'old'}])
+    mode.card_selection_active = True
+    mode.card_selection_rects = [pygame.Rect(0, 0, 10, 10)]
+    mode._pending_card_choice_index = 2
+    mode.pending_level_ups = 3
+    mode.card_message = 'test'
+    mode.card_message_timer = 1.0
+    mode._piece_selection_active = True
+    mode._sniper_overlay_active = True
+    mode._card_workshop_active = True
+    mode._demo_score_cap_active = False
+    mode._demo_score_cap_reached = False
+    mode._demo_score_cap_prompt = prompt_module.DemoUpgradePrompt(mode.screen)
+
+    mode._activate_demo_score_cap_prompt()
+
+    assert mode._demo_score_cap_reached is True
+    assert mode._demo_score_cap_active is True
+    assert mode.card_selection_active is False
+    assert mode.card_selection_rects == []
+    assert mode._pending_card_choice_index is None
+    assert mode.pending_level_ups == 0
+    assert mode.card_manager.pending_choices == []
+    assert mode._piece_selection_active is False
+    assert mode._sniper_overlay_active is False
+    assert mode._card_workshop_active is False
+    assert mode._demo_score_cap_prompt.is_active() is True
+
+
+def test_demo_score_cap_prompt_tracks_confirm_and_cancel(monkeypatch):
+    _, prompt_module = _import_modules()
+    prompt = prompt_module.DemoUpgradePrompt(pygame.Surface((640, 480)))
+
+    prompt_module.show_demo_score_cap_prompt(prompt)
+    assert prompt.handle_input(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_ESCAPE)) is True
+    assert prompt.consume_last_action() == 'cancel'
+
+    opened_urls: list[str] = []
+    monkeypatch.setattr(prompt_module.webbrowser, 'open', lambda url, new=0: opened_urls.append(url))
+
+    prompt_module.show_demo_score_cap_prompt(prompt)
+    assert prompt.handle_input(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_RETURN)) is True
+    assert opened_urls == [prompt_module.demo_config.DEMO_STEAM_STORE_URL]
+    assert prompt.consume_last_action() == 'confirm'

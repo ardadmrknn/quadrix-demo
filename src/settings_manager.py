@@ -234,7 +234,7 @@ class SettingsManager:
             # Effective UI zinciri kompakt preset'e sabitli.
             'ui_scale_preset': FORCED_UI_SCALE_PRESET,
             'show_ghost': True,
-            'bg_transparency': 0.3,
+            'bg_transparency': 0.7,
             # Düşen bloklar ve yıldız efektlerinin opaklığı.
             # 0.0 (görünmez) - 1.0 (tam opak)
             'effects_opacity': 1.0,

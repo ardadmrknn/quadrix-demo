@@ -45,6 +45,12 @@ from leaderboard_trailer_debug import (
     TRAILER_DEBUG_TRIGGER_KEY,
     build_trailer_debug_entries,
 )
+try:
+    from . import demo_config  # type: ignore
+    from .demo_upgrade_prompt import DemoUpgradePrompt, show_demo_transition_lock_prompt  # type: ignore
+except Exception:
+    import demo_config
+    from demo_upgrade_prompt import DemoUpgradePrompt, show_demo_transition_lock_prompt
 
 try:
     from gamepad_manager import normalize_gamepad_event_button, normalize_gamepad_trigger_event
@@ -470,6 +476,7 @@ class Menu:
         self._coop_split_selection = 'local'  # 'local' | 'online' (klavye alt seçim)
         self._hero_avatar_surface = None
         self._hero_avatar_signature = None
+        self._demo_upgrade_prompt = DemoUpgradePrompt(screen)
 
         self._emoji_font_cache = {}
 
@@ -994,6 +1001,10 @@ class Menu:
 
     def handle_input(self, event):
         """Menü girdilerini işle (klavye + mouse)"""
+        if self._demo_upgrade_prompt.is_active():
+            self._demo_upgrade_prompt.handle_input(event)
+            return None
+
         if self.menu_language_panel_open:
             was_open = True
             action = self._handle_menu_language_panel_input(event)
@@ -1076,8 +1087,14 @@ class Menu:
                     except Exception:
                         mouse_pos_now = None
                     if mouse_pos_now and self.pvp_online_polygon and _point_in_polygon(mouse_pos_now, self.pvp_online_polygon):
+                        if self._maybe_handle_demo_main_action('online_pvp'):
+                            return None
                         return 'online_pvp'
-                    return 'online_pvp' if self._pvp_split_selection == 'online' else 'pvp_2_players'
+                    if self._pvp_split_selection == 'online':
+                        if self._maybe_handle_demo_main_action('online_pvp'):
+                            return None
+                        return 'online_pvp'
+                    return 'pvp_2_players'
 
             if current_option == 'coop_mode':
                 if event.key in nav['left']:
@@ -1098,8 +1115,14 @@ class Menu:
                     except Exception:
                         mouse_pos_now = None
                     if mouse_pos_now and self.coop_online_polygon and _point_in_polygon(mouse_pos_now, self.coop_online_polygon):
+                        if self._maybe_handle_demo_main_action('online_coop'):
+                            return None
                         return 'online_coop'
-                    return 'online_coop' if self._coop_split_selection == 'online' else 'coop_mode'
+                    if self._coop_split_selection == 'online':
+                        if self._maybe_handle_demo_main_action('online_coop'):
+                            return None
+                        return 'online_coop'
+                    return 'coop_mode'
 
             if event.key in nav['up']:
                 new_idx = self._find_spatial_neighbor('up')
@@ -1191,6 +1214,8 @@ class Menu:
 
             if self.pvp_online_polygon and _point_in_polygon(mouse_pos, self.pvp_online_polygon):
                 self._pvp_split_selection = 'online'
+                if self._maybe_handle_demo_main_action('online_pvp'):
+                    return None
                 return 'online_pvp'
 
             if self.coop_local_polygon and _point_in_polygon(mouse_pos, self.coop_local_polygon):
@@ -1199,6 +1224,8 @@ class Menu:
 
             if self.coop_online_polygon and _point_in_polygon(mouse_pos, self.coop_online_polygon):
                 self._coop_split_selection = 'online'
+                if self._maybe_handle_demo_main_action('online_coop'):
+                    return None
                 return 'online_coop'
 
             # SOS panel/button click handling (main menu only)
@@ -2163,6 +2190,12 @@ class Menu:
         self.info_message = message
         self.info_timer = duration
 
+    def _maybe_handle_demo_main_action(self, action_id: str) -> bool:
+        if demo_config.is_locked_main_action(action_id):
+            show_demo_transition_lock_prompt(self._demo_upgrade_prompt)
+            return True
+        return False
+
     def set_daily_hint(self, text, color=None, challenge_title=None):
         """Daily Challenge satırı için bilgi etiketi ayarla"""
         self.daily_hint = text or ''
@@ -2333,6 +2366,83 @@ class Menu:
         self._panel_context_cache_sig = signature
         return context
 
+    def _is_demo_locked_main_action(self, action: str) -> bool:
+        if not getattr(demo_config, 'IS_DEMO', False):
+            return False
+        try:
+            return bool(demo_config.is_locked_main_action(action))
+        except Exception:
+            return False
+
+    def _draw_locked_split_overlay(
+        self,
+        target: pygame.Surface,
+        split_rect: pygame.Rect,
+        polygon: list[tuple[int, int]],
+        badge_rect: pygame.Rect | None,
+        *,
+        panel_scale: float,
+    ) -> None:
+        s = lambda v, minimum=1: max(minimum, int(round(v * panel_scale)))
+        rel_points = [(x - split_rect.x, y - split_rect.y) for x, y in polygon]
+
+        overlay = pygame.Surface((split_rect.width, split_rect.height), pygame.SRCALPHA)
+        pygame.draw.polygon(overlay, (18, 22, 30, 188), rel_points)
+
+        stripes = pygame.Surface((split_rect.width, split_rect.height), pygame.SRCALPHA)
+        stripe_step = max(s(18), 12)
+        stripe_width = max(s(2), 2)
+        for offset in range(-split_rect.height, split_rect.width + split_rect.height, stripe_step):
+            pygame.draw.line(
+                stripes,
+                (214, 220, 230, 30),
+                (offset, 0),
+                (offset + split_rect.height, split_rect.height),
+                stripe_width,
+            )
+
+        mask = pygame.Surface((split_rect.width, split_rect.height), pygame.SRCALPHA)
+        pygame.draw.polygon(mask, (255, 255, 255, 255), rel_points)
+        stripes.blit(mask, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+        overlay.blit(stripes, (0, 0))
+        pygame.draw.polygon(overlay, (150, 158, 172, 214), rel_points, max(s(2), 2))
+        target.blit(overlay, split_rect.topleft)
+
+        badge_label = t('locked_badge', default='Kilitli')
+        badge_font = retro_style.get_fitting_font(
+            badge_label,
+            base_size=s(16),
+            max_width=max(s(110), split_rect.width // 2),
+            bold=True,
+            min_size=max(9, s(10)),
+        )
+        badge_text = badge_font.render(badge_label, True, UIColors.TEXT_PRIMARY)
+        badge_pad_x = s(12)
+        badge_pad_y = s(7)
+        badge_w = badge_text.get_width() + badge_pad_x * 2
+        badge_h = badge_text.get_height() + badge_pad_y * 2
+
+        if badge_rect is not None:
+            badge_x = badge_rect.centerx - badge_w // 2
+            badge_y = badge_rect.bottom + s(10)
+        else:
+            badge_x = split_rect.centerx - badge_w // 2
+            badge_y = split_rect.centery - badge_h // 2
+
+        badge_x = max(split_rect.left + s(8), min(split_rect.right - badge_w - s(8), badge_x))
+        badge_y = max(split_rect.top + s(8), min(split_rect.bottom - badge_h - s(8), badge_y))
+        badge = pygame.Rect(badge_x, badge_y, badge_w, badge_h)
+
+        badge_shadow = pygame.Surface((badge.width + s(8), badge.height + s(8)), pygame.SRCALPHA)
+        pygame.draw.rect(badge_shadow, (0, 0, 0, 68), badge_shadow.get_rect(), border_radius=max(8, s(10)))
+        target.blit(badge_shadow, (badge.x - s(4), badge.y - s(4)))
+
+        badge_surf = pygame.Surface((badge.width, badge.height), pygame.SRCALPHA)
+        pygame.draw.rect(badge_surf, (36, 42, 54, 232), badge_surf.get_rect(), border_radius=max(8, s(10)))
+        pygame.draw.rect(badge_surf, (176, 184, 196, 232), badge_surf.get_rect(), 2, border_radius=max(8, s(10)))
+        target.blit(badge_surf, badge.topleft)
+        target.blit(badge_text, badge_text.get_rect(center=badge.center))
+
     def _draw_panel_micro_content(
         self,
         rect: pygame.Rect,
@@ -2355,6 +2465,7 @@ class Menu:
             # PvP paneli diagonal olarak iki alana ayrılır: Local ve Online.
             # Layout editör uyumu için tüm geometri pvp_2_players rect'inden türetilir.
             mouse_pos = get_mouse_pos()
+            online_locked = self._is_demo_locked_main_action('online_pvp')
 
             split_rect = pygame.Rect(
                 rect.x + s(4),
@@ -2506,6 +2617,7 @@ class Menu:
                 ('local', UIColors.NEON_ORANGE, t('menu_dashboard_pvp_local_label', 'Local PvP'), local_hover),
                 ('online', UIColors.NEON_CYAN, t('menu_dashboard_pvp_online_label', 'Online PvP'), online_hover),
             ]
+            chip_rects: dict[str, pygame.Rect] = {}
 
             for side, chip_color, label, is_hover in chip_specs:
                 provisional_font_w = max(s(90), int(split_rect.width * 0.42))
@@ -2549,12 +2661,23 @@ class Menu:
                 pygame.draw.rect(chip_surf, (*chip_color[:3], 214 if is_hover else 144), chip_surf.get_rect(), 2 if is_hover else 1, border_radius=chip_radius)
                 target.blit(chip_surf, (chip_x, chip_y))
                 target.blit(label_surf, label_rect)
+                chip_rects[side] = pygame.Rect(chip_x, chip_y, chip_w, chip_h)
+
+            if online_locked:
+                self._draw_locked_split_overlay(
+                    target,
+                    split_rect,
+                    online_poly,
+                    chip_rects.get('online'),
+                    panel_scale=panel_scale,
+                )
 
             return
 
         if panel_key == 'coop_mode':
             # Co-op paneli dikey olarak iki alana ayrılır: Local solda, Online sağda.
             mouse_pos = get_mouse_pos()
+            online_locked = self._is_demo_locked_main_action('online_coop')
 
             split_rect = pygame.Rect(
                 rect.x + s(4),
@@ -2742,6 +2865,7 @@ class Menu:
                 ('local', COOP_LOCAL_COLOR, t('menu_dashboard_coop_local_label', 'Local Co-op'), local_hover),
                 ('online', COOP_ONLINE_COLOR, t('menu_dashboard_coop_online_label', 'Online Co-op'), online_hover),
             ]
+            chip_rects: dict[str, pygame.Rect] = {}
 
             for side, chip_color, label, is_hover in chip_specs:
                 provisional_font_w = max(s(54), int(split_rect.width * 0.32))
@@ -2780,6 +2904,16 @@ class Menu:
                 pygame.draw.rect(chip_surf, (*chip_color[:3], 210 if is_hover else 136), chip_surf.get_rect(), 2 if is_hover else 1, border_radius=12)
                 target.blit(chip_surf, (chip_x, chip_y))
                 target.blit(label_surf, label_rect)
+                chip_rects[side] = pygame.Rect(chip_x, chip_y, chip_w, chip_h)
+
+            if online_locked:
+                self._draw_locked_split_overlay(
+                    target,
+                    split_rect,
+                    online_poly,
+                    chip_rects.get('online'),
+                    panel_scale=panel_scale,
+                )
 
             return
 
@@ -5822,6 +5956,9 @@ class Menu:
         else:
             self.menu_language_panel_sb_thumb_rect = None
             self.menu_language_panel_sb_container_rect = None
+
+        if self._demo_upgrade_prompt.is_active():
+            self._demo_upgrade_prompt.draw()
 
     def set_muted(self, muted: bool):
         """Dışarıdan ses durumunu güncelle (main.py'den çağrılır)."""
@@ -8935,7 +9072,7 @@ class BackgroundSelectorScreen:
         self.option_rects = []
         
         # Arka plan ayarlarını yükle
-        self.transparency = settings_manager.get('bg_transparency', 0.3)  # 0.25, 0.5, 0.75, 1.0
+        self.transparency = settings_manager.get('bg_transparency', 0.7)  # 0.25, 0.5, 0.75, 1.0
         self.backgrounds = {
             'main': settings_manager.get('bg_main', None),
             'single': settings_manager.get('bg_single', None),
@@ -8973,7 +9110,7 @@ class BackgroundSelectorScreen:
         changed = False
 
         try:
-            trans = float(self.settings_manager.get('bg_transparency', 0.3))
+            trans = float(self.settings_manager.get('bg_transparency', 0.7))
             if abs(trans - float(self.transparency)) > 1e-6:
                 self.transparency = trans
                 changed = True

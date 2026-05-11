@@ -259,7 +259,7 @@ class RetroStyle:
 
         # Global image background (menus/screens): prefer outer_background.* like gameplay.
         self._image_background = BackgroundManager()
-        self._bg_transparency = 0.3
+        self._bg_transparency = 0.7
         try:
             self._image_background.set_transparency(self._bg_transparency)
         except Exception:

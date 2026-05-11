@@ -40,7 +40,7 @@ class GraphicsMenu:
         self.vsync = settings_manager.get('vsync', True)
         self.fps_limit = settings_manager.get('fps_limit', 0)  # 0 = otomatik ekran yenileme hızı
         self.show_ghost = settings_manager.get('show_ghost', True)
-        self.bg_transparency = settings_manager.get('bg_transparency', 0.3)
+        self.bg_transparency = settings_manager.get('bg_transparency', 0.7)
         self.effects_opacity = settings_manager.get('effects_opacity', 1.0)
         self.menu_transparency = settings_manager.get('menu_transparency', 1.0)
         self.particle_effects = self._normalize_particle_effects_value(
