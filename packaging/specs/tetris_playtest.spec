@@ -26,10 +26,16 @@ print(f'[spec] Windows surumu guncellendi: {_new_version} (build {_build}) -> {_
 
 block_cipher = None
 
-# Playtest AppID'yi ortam değişkeni olarak göm
-# Not: steam_appid.txt runtime paketine config/runtime altından dahil edilir; bu env tanımı
-# PyInstaller boot kancasının STEAM_APP_ID'yi ayarlaması için eklenir.
-os.environ.setdefault('STEAM_APP_ID', '4428040')
+
+def _write_runtime_appid(app_id: str, variant: str) -> str:
+    runtime_dir = REPO_ROOT / 'build' / 'pyinstaller_runtime' / variant
+    runtime_dir.mkdir(parents=True, exist_ok=True)
+    runtime_file = runtime_dir / 'steam_appid.txt'
+    runtime_file.write_text(f'{app_id}\n', encoding='utf-8')
+    return str(runtime_file)
+
+
+RUNTIME_STEAM_APPID = _write_runtime_appid('4428040', 'playtest')
 
 # Oyun runtime'ında kullanılan tüm kaynakları topla
 datas = [
@@ -52,7 +58,7 @@ datas = [
     (str(REPO_ROOT / 'campaign_levels.csv'), '.'),
 
     # Runtime yapılandırmaları
-    (str(REPO_ROOT / 'config' / 'runtime' / 'steam_appid.txt'), '.'),
+    (RUNTIME_STEAM_APPID, '.'),
     (str(REPO_ROOT / 'config' / 'runtime' / 'settings.txt'), '.'),
     (str(REPO_ROOT / 'config' / 'runtime' / 'menu_layout_runtime.json'), '.'),
     (str(REPO_ROOT / 'config' / 'runtime' / 'credits_layout.json'), '.'),
