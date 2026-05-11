@@ -53,6 +53,10 @@ from screen_shake import (
 
 # Demobot'u yavaşlatmak için bu değeri artır, hızlandırmak için azalt.
 DEMOBOT_ACTION_DELAY_MULTIPLIER = 2.5
+LOCAL_PVP_RESULT_SCORE_POINTS = 1
+LOCAL_PVP_RESULT_LINES_POINTS = 1
+LOCAL_PVP_RESULT_BOARD_OPEN_POINTS = 2
+LOCAL_PVP_RESULT_WIN_THRESHOLD = 3
 
 try:
     from gamepad_manager import normalize_gamepad_event_button
@@ -914,25 +918,9 @@ class PvPGame:
         self._reset_lock_delay_state(player)
         if player == 1:
             self.p1_eliminated = True
-            opponent_eliminated = self.p2_eliminated
-            winner = 2
         else:
             self.p2_eliminated = True
-            opponent_eliminated = self.p1_eliminated
-            winner = 1
-
-        if not opponent_eliminated:
-            self.winner = winner
-            self.game_over = True
-            self.match_end_reason = 'elimination'
-            try:
-                from gamepad_manager import get_gamepad_manager
-                get_gamepad_manager().rumble(1.0, 1.0, 600)
-            except Exception:
-                pass
-            self.sound.play('gameover')
-            return
-
+        self.match_end_reason = 'elimination'
         self.determine_winner()
 
     def _try_hold_piece(self, player: int) -> bool:
@@ -2545,37 +2533,60 @@ class PvPGame:
         lines1 = int(getattr(self.board1, 'lines_cleared', 0) or 0)
         lines2 = int(getattr(self.board2, 'lines_cleared', 0) or 0)
 
-        if self.winner == 1:
-            winner_side = 'p1'
-        elif self.winner == 2:
-            winner_side = 'p2'
-        else:
-            winner_side = 'draw'
-
         if score1 > score2:
             score_state = 'p1'
+            p1_score_point = LOCAL_PVP_RESULT_SCORE_POINTS
+            p2_score_point = 0
         elif score2 > score1:
             score_state = 'p2'
+            p1_score_point = 0
+            p2_score_point = LOCAL_PVP_RESULT_SCORE_POINTS
         else:
             score_state = 'draw'
+            p1_score_point = 0
+            p2_score_point = 0
 
         if lines1 > lines2:
             lines_state = 'p1'
+            p1_lines_point = LOCAL_PVP_RESULT_LINES_POINTS
+            p2_lines_point = 0
         elif lines2 > lines1:
             lines_state = 'p2'
+            p1_lines_point = 0
+            p2_lines_point = LOCAL_PVP_RESULT_LINES_POINTS
         else:
             lines_state = 'draw'
+            p1_lines_point = 0
+            p2_lines_point = 0
 
         p1_eliminated = bool(getattr(self, 'p1_eliminated', False))
         p2_eliminated = bool(getattr(self, 'p2_eliminated', False))
         if p1_eliminated and p2_eliminated:
             board_state = 'none'
+            p1_board_point = 0
+            p2_board_point = 0
         elif p1_eliminated:
             board_state = 'p2'
+            p1_board_point = 0
+            p2_board_point = LOCAL_PVP_RESULT_BOARD_OPEN_POINTS
         elif p2_eliminated:
             board_state = 'p1'
+            p1_board_point = LOCAL_PVP_RESULT_BOARD_OPEN_POINTS
+            p2_board_point = 0
         else:
             board_state = 'both'
+            p1_board_point = LOCAL_PVP_RESULT_BOARD_OPEN_POINTS
+            p2_board_point = LOCAL_PVP_RESULT_BOARD_OPEN_POINTS
+
+        p1_points = p1_score_point + p1_lines_point + p1_board_point
+        p2_points = p2_score_point + p2_lines_point + p2_board_point
+
+        if p1_points >= LOCAL_PVP_RESULT_WIN_THRESHOLD and p2_points < LOCAL_PVP_RESULT_WIN_THRESHOLD:
+            winner_side = 'p1'
+        elif p2_points >= LOCAL_PVP_RESULT_WIN_THRESHOLD and p1_points < LOCAL_PVP_RESULT_WIN_THRESHOLD:
+            winner_side = 'p2'
+        else:
+            winner_side = 'draw'
 
         return {
             'winner': winner_side,
@@ -2590,6 +2601,14 @@ class PvPGame:
             'board_state': board_state,
             'p1_eliminated': p1_eliminated,
             'p2_eliminated': p2_eliminated,
+            'p1_score_point': p1_score_point,
+            'p2_score_point': p2_score_point,
+            'p1_lines_point': p1_lines_point,
+            'p2_lines_point': p2_lines_point,
+            'p1_board_point': p1_board_point,
+            'p2_board_point': p2_board_point,
+            'p1_points': p1_points,
+            'p2_points': p2_points,
         }
 
     def _build_local_result_reason_text(self, result: dict[str, object] | None = None) -> str:
@@ -2601,46 +2620,112 @@ class PvPGame:
         p1_name = str(result.get('p1_name', t('pvp_player1', 'Oyuncu 1')))
         p2_name = str(result.get('p2_name', t('pvp_player2', 'Oyuncu 2')))
         winner_side = str(result.get('winner', 'draw'))
-        score1 = int(result.get('p1_score', 0) or 0)
-        score2 = int(result.get('p2_score', 0) or 0)
-        lines1 = int(result.get('p1_lines', 0) or 0)
-        lines2 = int(result.get('p2_lines', 0) or 0)
-        diff = self._format_pvp_result_number(abs(score1 - score2))
-        winner_name = p1_name if winner_side == 'p1' else p2_name
-        match_reason = getattr(self, 'match_end_reason', None)
+        score_state = str(result.get('score_state', 'draw'))
+        lines_state = str(result.get('lines_state', 'draw'))
+        board_state = str(result.get('board_state', 'none'))
+        p1_points = int(result.get('p1_points', 0) or 0)
+        p2_points = int(result.get('p2_points', 0) or 0)
+        rule_text = (
+            'Skor ve satır 1, alan ise 2 puan sayıldı.'
+            if is_tr else
+            'Score and lines counted as 1 point each, while board control counted as 2.'
+        )
+
+        def join_parts(parts: list[str]) -> str:
+            clean_parts = [str(part).strip() for part in parts if str(part).strip()]
+            if not clean_parts:
+                return ''
+            if len(clean_parts) == 1:
+                return clean_parts[0]
+            if len(clean_parts) == 2:
+                return f"{clean_parts[0]} ve {clean_parts[1]}" if is_tr else f"{clean_parts[0]} and {clean_parts[1]}"
+            head = ', '.join(clean_parts[:-1])
+            tail = clean_parts[-1]
+            return f"{head} ve {tail}" if is_tr else f"{head}, and {tail}"
+
+        def side_name(side: str) -> str:
+            return p1_name if side == 'p1' else p2_name
+
+        def unique_advantage(side: str) -> str:
+            parts: list[str] = []
+            if score_state == side:
+                parts.append('skorda öne geçti' if is_tr else 'finished with the higher score')
+            if lines_state == side:
+                parts.append('daha çok satır temizledi' if is_tr else 'cleared more lines')
+            if board_state == side:
+                parts.append('oyun alanını açık tuttu' if is_tr else 'kept the board open')
+            joined = join_parts(parts)
+            if not joined:
+                return ''
+            return f"{side_name(side)} {joined}"
+
+        shared_parts: list[str] = []
+        if score_state == 'draw':
+            shared_parts.append('skor başlığı eşit kaldı' if is_tr else 'the score stayed tied')
+        if lines_state == 'draw':
+            shared_parts.append('satır temizliği dengede kaldı' if is_tr else 'line clears stayed even')
+        if board_state == 'both':
+            shared_parts.append('iki oyuncu da oyun alanını açık tuttu' if is_tr else 'both boards stayed open')
+        elif board_state == 'none':
+            shared_parts.append('iki oyuncu da oyun alanını doldurdu' if is_tr else 'both boards topped out')
+
+        detail_segments = [
+            unique_advantage('p1'),
+            unique_advantage('p2'),
+        ]
+        shared_text = join_parts(shared_parts)
+        if shared_text:
+            detail_segments.append(shared_text.capitalize())
+        detail_text = '. '.join(segment for segment in detail_segments if segment)
+        if detail_text:
+            detail_text = f" {detail_text}."
 
         if not is_tr:
-            if match_reason == 'time':
-                if winner_side == 'draw':
-                    return f"Time ended with the score tied. Lines: {lines1} - {lines2}."
-                return f"Time ended. {winner_name} closed the match with a {diff} point lead. Lines: {lines1} - {lines2}."
-            if match_reason == 'elimination':
-                if result.get('p1_eliminated') and not result.get('p2_eliminated'):
-                    return f"{p1_name} topped out; {p2_name} kept the board open and won."
-                if result.get('p2_eliminated') and not result.get('p1_eliminated'):
-                    return f"{p2_name} topped out; {p1_name} kept the board open and won."
-                if winner_side == 'draw':
-                    return f"Both boards topped out and the scores stayed tied. Lines: {lines1} - {lines2}."
-                return f"Both boards topped out. {winner_name} stayed ahead by {diff} points. Lines: {lines1} - {lines2}."
             if winner_side == 'draw':
-                return f"The scores stayed tied. Lines: {lines1} - {lines2}."
-            return f"{winner_name} won by {diff} points. Lines: {lines1} - {lines2}."
+                return (
+                    f"The weighted result points finished {p1_points}-{p2_points}, so the match ended in a draw."
+                    f" {rule_text}{detail_text}"
+                ).strip()
 
-        if match_reason == 'time':
-            if winner_side == 'draw':
-                return f"Süre bitti; skorlar eşit kaldı. Temizlenen satırlar: {lines1} - {lines2}."
-            return f"Süre bitti. {winner_name} skorda {diff} puan önde kapattı. Temizlenen satırlar: {lines1} - {lines2}."
-        if match_reason == 'elimination':
-            if result.get('p1_eliminated') and not result.get('p2_eliminated'):
-                return f"{p1_name} top-out oldu; {p2_name} oyun alanını açık tutup maçı aldı."
-            if result.get('p2_eliminated') and not result.get('p1_eliminated'):
-                return f"{p2_name} top-out oldu; {p1_name} oyun alanını açık tutup maçı aldı."
-            if winner_side == 'draw':
-                return f"İki tahta da kapandı ve skorlar eşit kaldı. Temizlenen satırlar: {lines1} - {lines2}."
-            return f"İki tahta da kapandı. {winner_name} {diff} puan farkla önde kaldı. Temizlenen satırlar: {lines1} - {lines2}."
+            winner_name = side_name(winner_side)
+            winner_points = p1_points if winner_side == 'p1' else p2_points
+            loser_points = p2_points if winner_side == 'p1' else p1_points
+            return (
+                f"{winner_name} won the weighted result check {winner_points}-{loser_points}."
+                f" {rule_text}{detail_text}"
+            ).strip()
+
         if winner_side == 'draw':
-            return f"Skorlar eşit kaldı. Temizlenen satırlar: {lines1} - {lines2}."
-        return f"{winner_name} {diff} puan farkla kazandı. Temizlenen satırlar: {lines1} - {lines2}."
+            return (
+                f"Ağırlıklı sonuç puanı {p1_points}-{p2_points} bitti ve maç berabere kaldı."
+                f" {rule_text}{detail_text}"
+            ).strip()
+
+        winner_name = side_name(winner_side)
+        winner_points = p1_points if winner_side == 'p1' else p2_points
+        loser_points = p2_points if winner_side == 'p1' else p1_points
+        return (
+            f"{winner_name}, ağırlıklı sonuç puanlamasını {winner_points}-{loser_points} kazandı."
+            f" {rule_text}{detail_text}"
+        ).strip()
+
+    def _draw_game_over_underlay_effects(self, clip_rect: pygame.Rect) -> None:
+        if clip_rect.width <= 0 or clip_rect.height <= 0:
+            return
+
+        shake_x, shake_y = self.get_shake_offset()
+        board_y = int(self.p1_offset_y + shake_y)
+        p1_x = int(self.p1_offset_x + shake_x)
+        p2_x = int(self.p2_offset_x + shake_x)
+        previous_clip = self.screen.get_clip()
+        try:
+            self.screen.set_clip(clip_rect)
+            self.draw_board(self.board1, self.current_piece1, p1_x, board_y, self.cell_size)
+            self.draw_board(self.board2, self.current_piece2, p2_x, board_y, self.cell_size)
+            if self.effects_enabled:
+                self.draw_particles()
+        finally:
+            self.screen.set_clip(previous_clip)
 
     def _draw_game_over_screen(self):
         """Oyun sonu ekranı - online PvP sonuç panelinin local PvP varyantı."""
@@ -2722,6 +2807,7 @@ class PvPGame:
         )
         panel_height = max(s(560), content_bottom + s(24))
         panel_rect = pygame.Rect(cx - panel_width // 2, cy - panel_height // 2, panel_width, panel_height)
+        self._draw_game_over_underlay_effects(panel_rect.inflate(-s(12), -s(12)))
 
         def _draw_alpha_rect(
             rect: pygame.Rect,
@@ -2939,7 +3025,7 @@ class PvPGame:
         criteria = [
             (t('score', 'Skor'), str(result_breakdown.get('score_state', 'draw'))),
             (t('lines', 'Satır'), str(result_breakdown.get('lines_state', 'draw'))),
-            (('Alan' if is_tr else 'Board'), str(result_breakdown.get('board_state', 'draw'))),
+            (("Alan x2" if is_tr else 'Board x2'), str(result_breakdown.get('board_state', 'draw'))),
         ]
         chip_gap = s(8)
         chip_width = (panel_rect.width - side_pad * 2 - chip_gap * 2) // 3
@@ -3489,68 +3575,22 @@ class PvPGame:
             self._reset_lock_delay_state(2)
     
     def determine_winner(self):
-        """Kazananı belirle.
-
-        Mantık:
-        - Tek oyuncu elendiyse diğer oyuncu kazanır.
-        - Süre bittiyse (kimse yanmadıysa) skor karşılaştırması yapılır.
-        - İki oyuncu da elendiyse skor karşılaştırması yapılır.
-        """
-        score1 = int(getattr(self.board1, 'score', 0) or 0)
-        score2 = int(getattr(self.board2, 'score', 0) or 0)
-        lines1 = int(getattr(self.board1, 'lines_cleared', 0) or 0)
-        lines2 = int(getattr(self.board2, 'lines_cleared', 0) or 0)
-
-        # Süreli modda süre bittiğinde: satır sayısını önemseme, sadece skor.
-        if getattr(self, 'match_end_reason', None) == 'time':
-            if score1 > score2:
-                self.winner = 1
-                print(f"🏆 Oyuncu 1 KAZANDI! (Süre bitti, Skor: {score1} vs {score2})")
-            elif score2 > score1:
-                self.winner = 2
-                print(f"🏆 Oyuncu 2 KAZANDI! (Süre bitti, Skor: {score2} vs {score1})")
-            else:
-                self.winner = 'draw'
-                print(f"🤝 BERABERE! (Süre bitti, Skor: {score1}-{score2})")
-
-            self.game_over = True
-            # Gamepad titreşimi - game over
-            try:
-                from gamepad_manager import get_gamepad_manager
-                get_gamepad_manager().rumble(1.0, 1.0, 600)
-            except Exception:
-                pass
-            self.sound.play('gameover')
-
-            # Kullanıcı istatistiklerini güncelle
-            if self.user_manager:
-                if self.winner == 1:
-                    self.user_manager.update_pvp_stats(win=True)
-                    print(f"💾 PvP istatistikleri güncellendi: KAZANDI")
-                elif self.winner == 2:
-                    self.user_manager.update_pvp_stats(win=False)
-                    print(f"💾 PvP istatistikleri güncellendi: KAYBETTİ")
-                else:
-                    self.user_manager.update_pvp_stats(win=False)
-                    print(f"💾 PvP istatistikleri güncellendi: BERABERE")
-            return
-
-        # Süresiz/süreli fark etmeksizin: elenme varsa elenmeyen kazanır.
-        if self.p1_eliminated and not self.p2_eliminated:
-            self.winner = 2
-        elif self.p2_eliminated and not self.p1_eliminated:
+        """Kazananı ağırlıklı sonuç puanlamasıyla belirle."""
+        result = self._build_local_result_breakdown()
+        winner_side = str(result.get('winner', 'draw'))
+        if winner_side == 'p1':
             self.winner = 1
+        elif winner_side == 'p2':
+            self.winner = 2
         else:
-            # İki oyuncu da elendiyse skor ile belirle (eşitse berabere).
-            if score1 > score2:
-                self.winner = 1
-                print(f"🏆 Oyuncu 1 KAZANDI! (Skor: {score1} vs {score2})")
-            elif score2 > score1:
-                self.winner = 2
-                print(f"🏆 Oyuncu 2 KAZANDI! (Skor: {score2} vs {score1})")
-            else:
-                self.winner = 'draw'
-                print(f"🤝 BERABERE! (Satır: {lines1}-{lines2}, Skor: {score1}-{score2})")
+            self.winner = 'draw'
+
+        print(
+            "[LocalPvP] Agirlikli sonuc puanlama "
+            f"p1(score={result['p1_score']}, lines={result['p1_lines']}, board={result['p1_board_point']}) "
+            f"p2(score={result['p2_score']}, lines={result['p2_lines']}, board={result['p2_board_point']}) "
+            f"=> totals {result['p1_points']}-{result['p2_points']} winner={winner_side}"
+        )
         
         self.game_over = True
         # Gamepad titreşimi - game over
@@ -4036,6 +4076,109 @@ class PvPGame:
             x = base_x + random.randint(-100, 100)
             y = random.randint(self.window_height // 4, 2 * self.window_height // 3)
             self.create_firework(x, y, player)
+
+    def _update_visual_effect_layers(self, delta_time: float) -> None:
+        """Gameplay durduğunda da akan transient efektleri ilerlet."""
+        self._last_dt_ms = delta_time
+
+        self.update_particles(dt_ms=delta_time)
+        self.update_ambient_particles(dt_ms=delta_time)
+        self.update_screen_shake(dt_ms=delta_time)
+
+        dt_frames = delta_time / 16.67 if delta_time > 0 else 1.0
+        dt_seconds = max(0.0, float(delta_time or 0.0)) / 1000.0
+
+        if self.p1_drop_trails or self.p2_drop_trails:
+            self._update_drop_trails(dt_frames)
+
+        if self.p1_line_flash_timer > 0:
+            self.p1_line_flash_timer = max(0, self.p1_line_flash_timer - dt_frames)
+            ratio = max(0.0, min(1.0, self.p1_line_flash_timer / 20.0))
+            self.p1_line_glow_alpha = int(255 * ratio)
+            if self.p1_line_flash_timer <= 0:
+                self.p1_line_flash_rows = []
+                self.p1_line_glow_alpha = 0
+
+        if self.p2_line_flash_timer > 0:
+            self.p2_line_flash_timer = max(0, self.p2_line_flash_timer - dt_frames)
+            ratio = max(0.0, min(1.0, self.p2_line_flash_timer / 20.0))
+            self.p2_line_glow_alpha = int(255 * ratio)
+            if self.p2_line_flash_timer <= 0:
+                self.p2_line_flash_rows = []
+                self.p2_line_glow_alpha = 0
+
+        if self.p1_combo_message_time > 0:
+            self.p1_combo_message_time = max(0, self.p1_combo_message_time - dt_frames)
+            if self.p1_combo_message_time <= 0:
+                self.p1_combo_message = ""
+        if self.p2_combo_message_time > 0:
+            self.p2_combo_message_time = max(0, self.p2_combo_message_time - dt_frames)
+            if self.p2_combo_message_time <= 0:
+                self.p2_combo_message = ""
+
+        if self.p1_line_sweep_active:
+            board_pixel_width = self.board1.width * self.cell_size
+            sweep_width = max(1, int(self.cell_size * 1.5))
+            sweep_travel_px = max(1.0, float(board_pixel_width + sweep_width))
+            p1_level = max(1, int(getattr(self.board1, 'level', 1)))
+            sweep_speed = _compute_line_sweep_progress_speed(self.block_fall_speed, sweep_travel_px, p1_level)
+            self.p1_line_sweep_progress += dt_seconds * sweep_speed
+            if self.p1_line_sweep_progress >= 1.0:
+                self.p1_line_sweep_progress = 1.0
+                self.p1_line_sweep_active = False
+                self.p1_line_sweep_rows = []
+
+        if self.p2_line_sweep_active:
+            board_pixel_width = self.board2.width * self.cell_size
+            sweep_width = max(1, int(self.cell_size * 1.5))
+            sweep_travel_px = max(1.0, float(board_pixel_width + sweep_width))
+            p2_level = max(1, int(getattr(self.board2, 'level', 1)))
+            sweep_speed = _compute_line_sweep_progress_speed(self.block_fall_speed, sweep_travel_px, p2_level)
+            self.p2_line_sweep_progress += dt_seconds * sweep_speed
+            if self.p2_line_sweep_progress >= 1.0:
+                self.p2_line_sweep_progress = 1.0
+                self.p2_line_sweep_active = False
+                self.p2_line_sweep_rows = []
+
+        for wave in self.p1_wave_effects[:]:
+            wave['radius'] += wave['speed'] * dt_frames
+            wave['alpha'] = int(200 * (1 - wave['radius'] / wave['max_radius']))
+            if wave['radius'] >= wave['max_radius'] or wave['alpha'] <= 0:
+                self.p1_wave_effects.remove(wave)
+
+        for wave in self.p2_wave_effects[:]:
+            wave['radius'] += wave['speed'] * dt_frames
+            wave['alpha'] = int(200 * (1 - wave['radius'] / wave['max_radius']))
+            if wave['radius'] >= wave['max_radius'] or wave['alpha'] <= 0:
+                self.p2_wave_effects.remove(wave)
+
+        if self.p1_falling_block_animations:
+            fall_speed = self.block_fall_speed * dt_frames * 60
+            for anim in self.p1_falling_block_animations:
+                if not anim.get('started', False) and self.p1_line_sweep_progress >= anim.get('sweep_trigger', 0):
+                    anim['started'] = True
+                if anim.get('started', False):
+                    anim['current_offset'] += fall_speed
+                    if anim['current_offset'] >= 0:
+                        anim['current_offset'] = 0
+            self.p1_falling_block_animations = [
+                anim for anim in self.p1_falling_block_animations
+                if not (anim['current_offset'] >= 0 and anim.get('started', False))
+            ]
+
+        if self.p2_falling_block_animations:
+            fall_speed = self.block_fall_speed * dt_frames * 60
+            for anim in self.p2_falling_block_animations:
+                if not anim.get('started', False) and self.p2_line_sweep_progress >= anim.get('sweep_trigger', 0):
+                    anim['started'] = True
+                if anim.get('started', False):
+                    anim['current_offset'] += fall_speed
+                    if anim['current_offset'] >= 0:
+                        anim['current_offset'] = 0
+            self.p2_falling_block_animations = [
+                anim for anim in self.p2_falling_block_animations
+                if not (anim['current_offset'] >= 0 and anim.get('started', False))
+            ]
     
     def update(self, delta_time):
         """Oyun durumunu güncelle"""
@@ -4044,7 +4187,11 @@ class PvPGame:
                 self.sound.update_music_playlist()
         except Exception:
             pass
-        if self.name_input_active or self.game_over or self.paused or getattr(self, 'show_exit_prompt', False):
+        if self.name_input_active or self.paused or getattr(self, 'show_exit_prompt', False):
+            return
+
+        if self.game_over:
+            self._update_visual_effect_layers(delta_time)
             return
 
         # Start the match timer the first frame after name entry.
@@ -4083,112 +4230,7 @@ class PvPGame:
         # Soft drop güncelle - basılı tutarak hızlı düşüş
         self._update_soft_drop(delta_time)
         
-        # dt değerini sakla (dt-tabanlı parçacık güncellemesi için)
-        self._last_dt_ms = delta_time
-        
-        # Partikülleri güncelle (dt tabanlı)
-        self.update_particles(dt_ms=delta_time)
-        self.update_ambient_particles(dt_ms=delta_time)
-        self.update_screen_shake(dt_ms=delta_time)
-
-        # Frame bazlı delta hesapla (60 FPS varsayım)
-        dt_frames = delta_time / 16.67 if delta_time > 0 else 1.0
-        dt_seconds = max(0.0, float(delta_time or 0.0)) / 1000.0
-
-        if self.p1_drop_trails or self.p2_drop_trails:
-            self._update_drop_trails(dt_frames)
-        
-        # Satır flash timer güncelle (ana oyundaki gibi - 20 frame)
-        if self.p1_line_flash_timer > 0:
-            self.p1_line_flash_timer = max(0, self.p1_line_flash_timer - dt_frames)
-            ratio = max(0.0, min(1.0, self.p1_line_flash_timer / 20.0))
-            self.p1_line_glow_alpha = int(255 * ratio)
-            if self.p1_line_flash_timer <= 0:
-                self.p1_line_flash_rows = []
-                self.p1_line_glow_alpha = 0
-        
-        if self.p2_line_flash_timer > 0:
-            self.p2_line_flash_timer = max(0, self.p2_line_flash_timer - dt_frames)
-            ratio = max(0.0, min(1.0, self.p2_line_flash_timer / 20.0))
-            self.p2_line_glow_alpha = int(255 * ratio)
-            if self.p2_line_flash_timer <= 0:
-                self.p2_line_flash_rows = []
-                self.p2_line_glow_alpha = 0
-
-        # Combo mesaj timerlerini güncelle
-        if self.p1_combo_message_time > 0:
-            self.p1_combo_message_time = max(0, self.p1_combo_message_time - dt_frames)
-            if self.p1_combo_message_time <= 0:
-                self.p1_combo_message = ""
-        if self.p2_combo_message_time > 0:
-            self.p2_combo_message_time = max(0, self.p2_combo_message_time - dt_frames)
-            if self.p2_combo_message_time <= 0:
-                self.p2_combo_message = ""
-
-        if self.p1_line_sweep_active:
-            board_pixel_width = self.board1.width * self.cell_size
-            sweep_width = max(1, int(self.cell_size * 1.5))
-            sweep_travel_px = max(1.0, float(board_pixel_width + sweep_width))
-            p1_level = max(1, int(getattr(self.board1, 'level', 1)))
-            sweep_speed = _compute_line_sweep_progress_speed(self.block_fall_speed, sweep_travel_px, p1_level)
-            self.p1_line_sweep_progress += dt_seconds * sweep_speed
-            if self.p1_line_sweep_progress >= 1.0:
-                self.p1_line_sweep_progress = 1.0
-                self.p1_line_sweep_active = False
-                self.p1_line_sweep_rows = []
-
-        if self.p2_line_sweep_active:
-            board_pixel_width = self.board2.width * self.cell_size
-            sweep_width = max(1, int(self.cell_size * 1.5))
-            sweep_travel_px = max(1.0, float(board_pixel_width + sweep_width))
-            p2_level = max(1, int(getattr(self.board2, 'level', 1)))
-            sweep_speed = _compute_line_sweep_progress_speed(self.block_fall_speed, sweep_travel_px, p2_level)
-            self.p2_line_sweep_progress += dt_seconds * sweep_speed
-            if self.p2_line_sweep_progress >= 1.0:
-                self.p2_line_sweep_progress = 1.0
-                self.p2_line_sweep_active = False
-                self.p2_line_sweep_rows = []
-        
-        # Dalga efektlerini güncelle (ana oyundaki gibi)
-        for wave in self.p1_wave_effects[:]:
-            wave['radius'] += wave['speed'] * dt_frames
-            wave['alpha'] = int(200 * (1 - wave['radius'] / wave['max_radius']))
-            if wave['radius'] >= wave['max_radius'] or wave['alpha'] <= 0:
-                self.p1_wave_effects.remove(wave)
-        
-        for wave in self.p2_wave_effects[:]:
-            wave['radius'] += wave['speed'] * dt_frames
-            wave['alpha'] = int(200 * (1 - wave['radius'] / wave['max_radius']))
-            if wave['radius'] >= wave['max_radius'] or wave['alpha'] <= 0:
-                self.p2_wave_effects.remove(wave)
-
-        if self.p1_falling_block_animations:
-            fall_speed = self.block_fall_speed * dt_frames * 60
-            for anim in self.p1_falling_block_animations:
-                if not anim.get('started', False) and self.p1_line_sweep_progress >= anim.get('sweep_trigger', 0):
-                    anim['started'] = True
-                if anim.get('started', False):
-                    anim['current_offset'] += fall_speed
-                    if anim['current_offset'] >= 0:
-                        anim['current_offset'] = 0
-            self.p1_falling_block_animations = [
-                anim for anim in self.p1_falling_block_animations
-                if not (anim['current_offset'] >= 0 and anim.get('started', False))
-            ]
-
-        if self.p2_falling_block_animations:
-            fall_speed = self.block_fall_speed * dt_frames * 60
-            for anim in self.p2_falling_block_animations:
-                if not anim.get('started', False) and self.p2_line_sweep_progress >= anim.get('sweep_trigger', 0):
-                    anim['started'] = True
-                if anim.get('started', False):
-                    anim['current_offset'] += fall_speed
-                    if anim['current_offset'] >= 0:
-                        anim['current_offset'] = 0
-            self.p2_falling_block_animations = [
-                anim for anim in self.p2_falling_block_animations
-                if not (anim['current_offset'] >= 0 and anim.get('started', False))
-            ]
+        self._update_visual_effect_layers(delta_time)
         
         # Oyuncu 1 milestone kontrolü
         p1_milestone = (self.board1.score // 1000) * 1000
@@ -4646,8 +4688,8 @@ class PvPGame:
             self.screen.blit(shadow, shadow_rect)
             self.screen.blit(msg_surf, msg_rect)
         
-        # Partikülleri çiz (en üstte)
-        if self.effects_enabled:
+        # Partikülleri çiz (oyun sonu panelindeyken panel alt katmanında yeniden çiziliyor)
+        if self.effects_enabled and not self.game_over:
             self.draw_particles()
         
         if getattr(self, 'show_exit_prompt', False):

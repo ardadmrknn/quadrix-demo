@@ -89,6 +89,10 @@ ONLINE_PVP_DAS_DELAY_MS = 160
 ONLINE_PVP_DAS_REPEAT_MS = 105
 ONLINE_PVP_SOFT_DROP_SPEED_MS = 55
 ONLINE_PVP_GARBAGE_ENABLED = False
+ONLINE_PVP_RESULT_SCORE_POINTS = 1
+ONLINE_PVP_RESULT_LINES_POINTS = 1
+ONLINE_PVP_RESULT_BOARD_OPEN_POINTS = 2
+ONLINE_PVP_RESULT_WIN_THRESHOLD = 3
 
 
 def _parse_lobby_bool(value: object) -> bool | None:
@@ -2565,7 +2569,7 @@ class OnlinePvPGame:
         return str(my_name), str(opp_name)
 
     def _build_majority_result_breakdown(self) -> dict[str, object]:
-        """3 kriterli sonuç hesabı için tüm karşılaştırma verisini çıkar."""
+        """Ağırlıklı sonuç hesabı için tüm karşılaştırma verisini çıkar."""
         my_score = int(getattr(self.my_board, 'score', 0) or 0)
         my_lines = int(getattr(self.my_board, 'lines_cleared', 0) or 0)
         my_board_filled = bool(
@@ -2577,12 +2581,12 @@ class OnlinePvPGame:
 
         if my_score > opp_score:
             score_state = 'me'
-            my_score_point = 1
+            my_score_point = ONLINE_PVP_RESULT_SCORE_POINTS
             opp_score_point = 0
         elif opp_score > my_score:
             score_state = 'opponent'
             my_score_point = 0
-            opp_score_point = 1
+            opp_score_point = ONLINE_PVP_RESULT_SCORE_POINTS
         else:
             score_state = 'draw'
             my_score_point = 0
@@ -2590,12 +2594,12 @@ class OnlinePvPGame:
 
         if my_lines > opp_lines:
             lines_state = 'me'
-            my_lines_point = 1
+            my_lines_point = ONLINE_PVP_RESULT_LINES_POINTS
             opp_lines_point = 0
         elif opp_lines > my_lines:
             lines_state = 'opponent'
             my_lines_point = 0
-            opp_lines_point = 1
+            opp_lines_point = ONLINE_PVP_RESULT_LINES_POINTS
         else:
             lines_state = 'draw'
             my_lines_point = 0
@@ -2603,16 +2607,16 @@ class OnlinePvPGame:
 
         if not my_board_filled and not opp_board_filled:
             board_state = 'both'
-            my_board_point = 1
-            opp_board_point = 1
+            my_board_point = ONLINE_PVP_RESULT_BOARD_OPEN_POINTS
+            opp_board_point = ONLINE_PVP_RESULT_BOARD_OPEN_POINTS
         elif not my_board_filled and opp_board_filled:
             board_state = 'me'
-            my_board_point = 1
+            my_board_point = ONLINE_PVP_RESULT_BOARD_OPEN_POINTS
             opp_board_point = 0
         elif my_board_filled and not opp_board_filled:
             board_state = 'opponent'
             my_board_point = 0
-            opp_board_point = 1
+            opp_board_point = ONLINE_PVP_RESULT_BOARD_OPEN_POINTS
         else:
             board_state = 'none'
             my_board_point = 0
@@ -2621,9 +2625,9 @@ class OnlinePvPGame:
         my_points = my_score_point + my_lines_point + my_board_point
         opp_points = opp_score_point + opp_lines_point + opp_board_point
 
-        if my_points >= 2 and opp_points < 2:
+        if my_points >= ONLINE_PVP_RESULT_WIN_THRESHOLD and opp_points < ONLINE_PVP_RESULT_WIN_THRESHOLD:
             winner = 'me'
-        elif opp_points >= 2 and my_points < 2:
+        elif opp_points >= ONLINE_PVP_RESULT_WIN_THRESHOLD and my_points < ONLINE_PVP_RESULT_WIN_THRESHOLD:
             winner = 'opponent'
         else:
             winner = 'draw'
@@ -2641,8 +2645,8 @@ class OnlinePvPGame:
             'board_state': board_state,
             'my_board_filled': my_board_filled,
             'opp_board_filled': opp_board_filled,
-            'my_board_point': 0 if my_board_filled else 1,
-            'opp_board_point': 0 if opp_board_filled else 1,
+            'my_board_point': my_board_point,
+            'opp_board_point': opp_board_point,
             'my_points': my_points,
             'opp_points': opp_points,
         }
@@ -2680,6 +2684,8 @@ class OnlinePvPGame:
         board_state = str(result.get('board_state', 'none'))
         my_points = int(result.get('my_points', 0) or 0)
         opp_points = int(result.get('opp_points', 0) or 0)
+        rule_text_tr = 'Skor ve satır 1, alan ise 2 puan sayıldı.'
+        rule_text_en = 'Score and lines counted as 1 point each, while board control counted as 2.'
         seed = (
             int(result.get('my_score', 0) or 0) * 3
             + int(result.get('opp_score', 0) or 0) * 5
@@ -2732,9 +2738,9 @@ class OnlinePvPGame:
 
             if winner == 'draw':
                 summary_options = [
-                    'The match ended with no side taking enough criteria to win.',
-                    'The majority scoring ended in a draw.',
-                    'Neither side claimed enough result criteria to secure the round.',
+                    'The weighted result check ended without a winner.',
+                    'The result points finished level, so the round ended in a draw.',
+                    'Neither side built enough of an edge in the weighted scoring.',
                 ]
                 summary = self._pick_result_text_variant(summary_options, seed)
                 detail_parts = []
@@ -2745,8 +2751,8 @@ class OnlinePvPGame:
                 if shared_en:
                     detail_parts.append(join_en(shared_en).capitalize())
                 if detail_parts:
-                    return f"{summary} {'. '.join(detail_parts)}.".strip()
-                return summary
+                    return f"{summary} {rule_text_en} {'. '.join(detail_parts)}.".strip()
+                return f"{summary} {rule_text_en}".strip()
 
             winner_side = winner
             loser_side = 'opponent' if winner_side == 'me' else 'me'
@@ -2758,9 +2764,9 @@ class OnlinePvPGame:
             loser_unique_en = opp_unique_en if winner_side == 'me' else my_unique_en
 
             summary_options = [
-                f"{winner_name} won the match by taking {winner_points} of the 3 result criteria.",
-                f"The decision score finished {winner_points}-{loser_points} in favor of {winner_name}.",
-                f"{winner_name} secured the round by claiming {winner_points} result criteria.",
+                f"{winner_name} won the match by reaching {winner_points} weighted result points.",
+                f"The weighted decision score finished {winner_points}-{loser_points} in favor of {winner_name}.",
+                f"{winner_name} secured the round with {winner_points} result points in the weighted check.",
             ]
             summary = self._pick_result_text_variant(summary_options, seed)
             winner_clause = f"{winner_name} {join_en(winner_unique_en)}"
@@ -2777,10 +2783,10 @@ class OnlinePvPGame:
             else:
                 detail_options = [
                     f"{winner_clause}. {loser_name} fell behind on all three criteria.",
-                    f"{winner_clause} and left {loser_name} without a single criterion point.",
+                    f"{winner_clause} and left {loser_name} without a single decision point.",
                 ]
             detail = self._pick_result_text_variant(detail_options, seed + 23)
-            return f"{summary} {detail}".strip()
+            return f"{summary} {rule_text_en} {detail}".strip()
 
         def side_name(side: str) -> str:
             return my_name if side == 'me' else opp_name
@@ -2854,9 +2860,9 @@ class OnlinePvPGame:
 
         if winner == 'draw':
             summary_options = [
-                'Üç ölçütün sonunda taraflar birbirine üstünlük kuramadı.',
-                'Sonuç puanlaması kazanan çıkarmadı.',
-                'Maç, karar ölçütleri dengelendiği için berabere bitti.',
+                'Ağırlıklı sonuç puanlaması kazanan çıkarmadı.',
+                'Sonuç puanları dengede kaldığı için maç berabere bitti.',
+                'Taraflar ağırlıklı karar hesabında üstünlük kuramadı.',
             ]
             summary = self._pick_result_text_variant(summary_options, seed)
             details: list[str] = []
@@ -2866,12 +2872,12 @@ class OnlinePvPGame:
                 details.append(subject_clause('opponent', opp_unique, concessive=False, seed_offset=53))
             shared_text = shared_clause(shared, seed_offset=67) if shared else ''
             if details and shared_text:
-                detail = f"{'. '.join(details)}. {shared_text.capitalize()} ve iki puana ulaşan çıkmadı."
+                detail = f"{'. '.join(details)}. {shared_text.capitalize()} ve üç puanlık eşik aşılmadı."
             elif details:
                 detail = f"{'. '.join(details)}. Bu yüzden denge bozulmadı."
             else:
                 detail = f"{shared_text.capitalize()}. Bu yüzden denge bozulmadı." if shared_text else 'Başlıklar dengede kaldı.'
-            return f"{summary} {detail}".strip()
+            return f"{summary} {rule_text_tr} {detail}".strip()
 
         winner_side = winner
         loser_side = 'opponent' if winner_side == 'me' else 'me'
@@ -2882,9 +2888,9 @@ class OnlinePvPGame:
         loser_unique = opp_unique if winner_side == 'me' else my_unique
 
         summary_options = [
-            f"{winner_name}, üç ölçütün {winner_points} tanesini alarak maçı kazandı.",
-            f"Karar puanlaması {winner_points}-{loser_points} bitti; üstünlük {winner_name} tarafına yazıldı.",
-            f"{winner_name}, sonuç ölçütlerinde {winner_points} başlık toplayıp raundu kapattı.",
+            f"{winner_name}, ağırlıklı sonuç puanlamasında {winner_points} puana ulaşarak maçı kazandı.",
+            f"Ağırlıklı karar puanı {winner_points}-{loser_points} bitti; üstünlük {winner_name} tarafına yazıldı.",
+            f"{winner_name}, ağırlıklı sonuç hesabında {winner_points} puan toplayıp raundu kapattı.",
         ]
         summary = self._pick_result_text_variant(summary_options, seed)
         winner_text = subject_clause(winner_side, winner_unique, concessive=False, seed_offset=79)
@@ -2899,8 +2905,8 @@ class OnlinePvPGame:
                 ]
             else:
                 detail_options = [
-                    f"{loser_text} {winner_text}.",
-                    f"{loser_text} maçın yönünü {winner_text} ile çevirdi.",
+                    f"{winner_text}. Buna rağmen {'senin taraf' if loser_side == 'me' else 'rakip taraf'} galibiyet eşiğini geçemedi.",
+                    f"{winner_text}. {'Senin tarafın' if loser_side == 'me' else 'Rakip taraf'} bu yüzden sonuç puanında geride kaldı.",
                 ]
         elif shared_text:
             detail_options = [
@@ -2914,15 +2920,15 @@ class OnlinePvPGame:
             ]
 
         detail = self._pick_result_text_variant(detail_options, seed + 23)
-        return f"{summary} {detail}".strip()
+        return f"{summary} {rule_text_tr} {detail}".strip()
 
     def _resolve_majority_match_winner(self) -> tuple[str, dict[str, object]]:
-        """3 kriterli 0/1 puanlamayla kazananı belirle."""
+        """Ağırlıklı sonuç puanlamasıyla kazananı belirle."""
         result = self._build_majority_result_breakdown()
         return str(result['winner']), result
 
     def _finalize_elimination_result(self):
-        """3 metrikli çoğunluk kuralıyla kazananı hesapla."""
+        """Ağırlıklı sonuç puanlamasıyla kazananı hesapla."""
         if not self.my_eliminated and not self.opponent_eliminated:
             return
 
@@ -2930,7 +2936,7 @@ class OnlinePvPGame:
         was_game_over = self.online_state == OnlineState.GAME_OVER
 
         print(
-            "[OnlinePvP] Sonuc puanlama "
+            "[OnlinePvP] Agirlikli sonuc puanlama "
             f"my(score={result['my_score']}, lines={result['my_lines']}, board={result['my_board_point']}) "
             f"opp(score={result['opp_score']}, lines={result['opp_lines']}, board={result['opp_board_point']}) "
             f"=> totals {result['my_points']}-{result['opp_points']} winner={self.winner}"
@@ -5437,7 +5443,8 @@ class OnlinePvPGame:
         elif self.online_state == OnlineState.DISCONNECTED:
             self._draw_disconnected()
 
-        self.draw_particles()
+        if self.online_state != OnlineState.GAME_OVER:
+            self.draw_particles()
 
         # NOT: pygame.display.flip() burada çağrılmıyor.
         # Ana döngü (main.py) geçiş efektini src üstüne çizdikten sonra
@@ -6777,6 +6784,31 @@ class OnlinePvPGame:
 
         pygame.draw.rect(self.screen, player_accent, board_rect, 2, border_radius=14)
 
+    def _draw_game_over_underlay_effects(self, clip_rect: pygame.Rect) -> None:
+        if clip_rect.width <= 0 or clip_rect.height <= 0:
+            return
+
+        previous_clip = self.screen.get_clip()
+        try:
+            self.screen.set_clip(clip_rect)
+            if getattr(self, '_my_board_rect', None):
+                self._draw_board(
+                    self._my_board_rect.x,
+                    self._my_board_rect.y,
+                    self.cell_size,
+                    self.my_board,
+                    self.my_piece,
+                )
+            if getattr(self, '_opp_board_rect', None):
+                self._draw_opponent_board(
+                    self._opp_board_rect.x,
+                    self._opp_board_rect.y,
+                    self.cell_size,
+                )
+            self.draw_particles()
+        finally:
+            self.screen.set_clip(previous_clip)
+
     # ─── Game Over Overlay ───
 
     def _draw_game_over_overlay(self):
@@ -6865,6 +6897,7 @@ class OnlinePvPGame:
         )
         ph = max(s(560), content_bottom + s(24))
         panel = pygame.Rect(cx - pw // 2, cy - ph // 2, pw, ph)
+        self._draw_game_over_underlay_effects(panel.inflate(-s(12), -s(12)))
 
         def _draw_alpha_rect(
             rect: pygame.Rect,
@@ -7081,7 +7114,7 @@ class OnlinePvPGame:
         criteria = [
             (t('score', 'Skor'), str(result_breakdown.get('score_state', 'draw'))),
             (t('lines', 'Satır'), str(result_breakdown.get('lines_state', 'draw'))),
-            (('Alan' if is_tr else 'Board'), str(result_breakdown.get('board_state', 'draw'))),
+            (("Alan x2" if is_tr else 'Board x2'), str(result_breakdown.get('board_state', 'draw'))),
         ]
         chip_gap = s(8)
         chip_w = (panel.width - side_pad * 2 - chip_gap * 2) // 3

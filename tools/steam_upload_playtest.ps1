@@ -67,7 +67,7 @@ function New-DepotBuildVdf {
     $lines = @(
         '"DepotBuild"',
         '{',
-        "    \"DepotID\" \"$DepotId\"",
+        "    `"DepotID`" `"$DepotId`"",
         '',
         '    "FileMapping"',
         '    {',
@@ -80,7 +80,7 @@ function New-DepotBuildVdf {
 
     foreach ($exclusion in $FileExclusions) {
         $safeExclusion = $exclusion.Replace('"', '')
-        $lines += "    \"FileExclusion\" \"$safeExclusion\""
+        $lines += "    `"FileExclusion`" `"$safeExclusion`""
     }
 
     $lines += '}'
@@ -189,14 +189,14 @@ if ([string]::IsNullOrWhiteSpace($AppBuildScript)) {
     $tempDepotName = Split-Path -Leaf $tempDepotScript
 
     $depotContent = New-DepotBuildVdf -DepotId $targetConfig.DepotId -FileExclusions $targetConfig.FileExclusions
-    $appBuildContent = New-AppBuildVdf \
-    -AppId $targetConfig.AppId \
-    -DepotId $targetConfig.DepotId \
-    -DepotFileName $tempDepotName \
-    -Description $effectiveDesc \
-    -SetLiveValue $SetLive \
-    -ContentRootValue $resolvedContentRoot \
-    -BuildOutputValue $resolvedBuildOutput
+    $appBuildContent = New-AppBuildVdf `
+        -AppId $targetConfig.AppId `
+        -DepotId $targetConfig.DepotId `
+        -DepotFileName $tempDepotName `
+        -Description $effectiveDesc `
+        -SetLiveValue $SetLive `
+        -ContentRootValue $resolvedContentRoot `
+        -BuildOutputValue $resolvedBuildOutput
 
     $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
     [System.IO.File]::WriteAllText($tempDepotScript, $depotContent, $utf8NoBom)
