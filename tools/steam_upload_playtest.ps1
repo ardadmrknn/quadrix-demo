@@ -50,7 +50,7 @@ function Set-VdfField {
     return [regex]::Replace(
         $VdfText,
         $pattern,
-        [System.Text.RegularExpressions.MatchEvaluator]{
+        [System.Text.RegularExpressions.MatchEvaluator] {
             param($match)
             return $match.Groups[1].Value + $safeValue + $match.Groups[3].Value
         },
@@ -128,7 +128,8 @@ if (-not (Test-Path $SteamCmdPath)) {
 
 $resolvedContentRootInput = if ([string]::IsNullOrWhiteSpace($ContentRoot)) {
     Join-Path $repoRoot "dist"
-} else {
+}
+else {
     $ContentRoot
 }
 
@@ -139,7 +140,8 @@ $resolvedContentRoot = Add-TrailingSlash((Resolve-Path $resolvedContentRootInput
 
 $resolvedBuildOutputInput = if ([string]::IsNullOrWhiteSpace($BuildOutput)) {
     Join-Path $repoRoot "steamworks\\output"
-} else {
+}
+else {
     $BuildOutput
 }
 if (-not (Test-Path $resolvedBuildOutputInput)) {
@@ -154,22 +156,23 @@ $effectiveDesc = if ([string]::IsNullOrWhiteSpace($BuildDescription)) {
     else {
         "Playtest build $(Get-Date -Format 'yyyy-MM-dd HH:mm')"
     }
-} else {
+}
+else {
     $BuildDescription
 }
 
 $targetConfig = switch ($Target) {
     'main' {
         @{
-            AppId = '4414520'
-            DepotId = '4414521'
+            AppId          = '4414520'
+            DepotId        = '4414521'
             FileExclusions = @('*.pdb', '*.log', 'steam_appid.txt', '*.spec')
         }
     }
     default {
         @{
-            AppId = '4428040'
-            DepotId = '4428041'
+            AppId          = '4428040'
+            DepotId        = '4428041'
             FileExclusions = @('*.pdb', '*.log')
         }
     }
@@ -187,13 +190,13 @@ if ([string]::IsNullOrWhiteSpace($AppBuildScript)) {
 
     $depotContent = New-DepotBuildVdf -DepotId $targetConfig.DepotId -FileExclusions $targetConfig.FileExclusions
     $appBuildContent = New-AppBuildVdf \
-        -AppId $targetConfig.AppId \
-        -DepotId $targetConfig.DepotId \
-        -DepotFileName $tempDepotName \
-        -Description $effectiveDesc \
-        -SetLiveValue $SetLive \
-        -ContentRootValue $resolvedContentRoot \
-        -BuildOutputValue $resolvedBuildOutput
+    -AppId $targetConfig.AppId \
+    -DepotId $targetConfig.DepotId \
+    -DepotFileName $tempDepotName \
+    -Description $effectiveDesc \
+    -SetLiveValue $SetLive \
+    -ContentRootValue $resolvedContentRoot \
+    -BuildOutputValue $resolvedBuildOutput
 
     $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
     [System.IO.File]::WriteAllText($tempDepotScript, $depotContent, $utf8NoBom)
@@ -234,7 +237,8 @@ if (-not [string]::IsNullOrWhiteSpace($AppBuildScript)) {
 try {
     if ([string]::IsNullOrWhiteSpace($SteamPassword)) {
         & $SteamCmdPath +login $SteamUser +run_app_build "$resolvedScript" +quit
-    } else {
+    }
+    else {
         & $SteamCmdPath +login $SteamUser $SteamPassword +run_app_build "$resolvedScript" +quit
     }
 
