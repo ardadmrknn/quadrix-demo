@@ -437,6 +437,48 @@ def test_clear_rows_card_does_not_count_sweep_only_rows_as_cleared_lines():
     assert mode.board.combo == 0
 
 
+def test_clear_rows_card_starts_gravity_fall_animation_for_sweep_only_collapse():
+    _, _, MysteryMode, Board = _import_mystery_mode()
+    mode = _minimal_card_effect_mode(MysteryMode, Board, effects_enabled=True)
+
+    for x, y in ((0, 1), (1, 2), (2, 3)):
+        mode.board.occupancy[y][x] = True
+        mode.board.grid[y][x] = (255, 255, 255)
+
+    mode._apply_card_effect({'id': 'clear_rows', 'value': 1, 'color': (1, 2, 3)})
+
+    assert mode.line_clear_sweep_active is False
+    assert mode.line_clear_animation == 0
+    assert [
+        (anim['row'], anim['col'], anim['current_offset'], anim['started'])
+        for anim in mode.falling_block_animations
+    ] == [
+        (5, 0, -40.0, True),
+        (5, 1, -30.0, True),
+        (5, 2, -20.0, True),
+    ]
+
+
+def test_clear_rows_card_animates_direct_downward_shift_without_extra_gravity():
+    _, _, MysteryMode, Board = _import_mystery_mode()
+    mode = _minimal_card_effect_mode(MysteryMode, Board, effects_enabled=True)
+
+    for y in (2, 3, 4):
+        mode.board.occupancy[y][0] = True
+        mode.board.grid[y][0] = (255, 255, 255)
+
+    mode._apply_card_effect({'id': 'clear_rows', 'value': 1, 'color': (1, 2, 3)})
+
+    assert [
+        (anim['row'], anim['col'], anim['current_offset'], anim['started'])
+        for anim in mode.falling_block_animations
+    ] == [
+        (3, 0, -10.0, True),
+        (4, 0, -10.0, True),
+        (5, 0, -10.0, True),
+    ]
+
+
 def test_clear_rows_card_queues_line_clear_effects_for_resulting_full_rows():
     _, _, MysteryMode, Board = _import_mystery_mode()
     mode = _minimal_card_effect_mode(MysteryMode, Board, effects_enabled=True)

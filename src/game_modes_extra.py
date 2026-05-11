@@ -10222,6 +10222,18 @@ class MysteryMode(Game):
         count = max(1, min(count, len(self.board.grid)))
         prev_combo = int(getattr(self.board, 'combo', 0) or 0)
         prev_level = int(getattr(self.board, 'level', 1) or 1)
+        original_rows_by_col: dict[int, list[int]] = {}
+        if getattr(self, 'effects_enabled', False):
+            try:
+                board_height = int(getattr(self.board, 'height', len(self.board.grid)) or len(self.board.grid))
+                board_width = int(getattr(self.board, 'width', width) or width)
+                for x in range(board_width):
+                    original_rows_by_col[x] = [
+                        y for y in range(board_height)
+                        if self.board.occupancy[y][x]
+                    ]
+            except Exception:
+                original_rows_by_col = {}
         for _ in range(count):
             self.board.grid.pop()
             self.board.grid.insert(0, [BLACK] * width)
@@ -10246,6 +10258,40 @@ class MysteryMode(Game):
             self.board.apply_gravity()
         except Exception:
             pass
+        if original_rows_by_col:
+            try:
+                board_height = int(getattr(self.board, 'height', len(self.board.grid)) or len(self.board.grid))
+                board_width = int(getattr(self.board, 'width', width) or width)
+                cell_size = max(1, int(self.get_cell_size()))
+                gravity_fall_animations: list[dict[str, float | int | bool]] = []
+                removed_start = max(0, board_height - count)
+                for x in range(board_width):
+                    old_rows = [
+                        y for y in original_rows_by_col.get(x, [])
+                        if y < removed_start
+                    ]
+                    new_rows = [
+                        y for y in range(board_height)
+                        if self.board.occupancy[y][x]
+                    ]
+                    if len(old_rows) != len(new_rows):
+                        continue
+                    for old_y, new_y in zip(old_rows, new_rows):
+                        drop_rows = int(new_y - old_y)
+                        if drop_rows <= 0:
+                            continue
+                        gravity_fall_animations.append({
+                            'row': int(new_y),
+                            'col': int(x),
+                            'current_offset': float(-drop_rows * cell_size),
+                            'target_offset': 0.0,
+                            'sweep_trigger': 0.0,
+                            'started': True,
+                        })
+                if gravity_fall_animations:
+                    self.falling_block_animations = gravity_fall_animations
+            except Exception:
+                pass
         # Floor sweep can be a synthetic board mutation; only count it as a
         # cleared line when the caller explicitly opts into that bookkeeping.
         if count_as_lines:
