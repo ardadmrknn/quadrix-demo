@@ -2796,6 +2796,67 @@ class Game:
                 }
                 self.particles.append(particle)
 
+    def _queue_line_clear_effects(self, lines_cleared: int) -> list[int]:
+        """Board snapshot'ından ortak satır temizleme efektlerini hazırla."""
+        if lines_cleared <= 0:
+            return []
+
+        cleared_rows = list(self.board.last_cleared_lines) if self.board.last_cleared_lines else []
+        self.line_clear_pending_rows = []
+        self.line_clear_pending_colors = {}
+        if not cleared_rows:
+            return []
+
+        if cleared_rows and self.effects_enabled:
+            self.line_clear_pending_rows = list(cleared_rows)
+            try:
+                pending_colors = {}
+                if hasattr(self.board, 'last_cleared_colors'):
+                    for row in cleared_rows:
+                        row_colors = self.board.last_cleared_colors.get(row)
+                        if row_colors:
+                            pending_colors[row] = list(row_colors)
+                self.line_clear_pending_colors = pending_colors
+            except Exception:
+                self.line_clear_pending_colors = {}
+
+        if self.effects_enabled and cleared_rows:
+            cell_size = self.get_cell_size()
+            offset_x, offset_y = self.get_board_offset()
+
+            self.line_clear_sweep_rows = cleared_rows
+            self.line_clear_sweep_progress = 0.0
+            self.line_clear_sweep_active = True
+
+            self.create_line_clear_particles(cleared_rows, offset_x, offset_y, cell_size)
+
+            for row in cleared_rows:
+                wave_y = offset_y + row * cell_size + cell_size // 2
+                wave_x = offset_x + (self.board_width * cell_size) // 2
+                self.line_clear_wave_effects.append({
+                    'x': wave_x,
+                    'y': wave_y,
+                    'radius': 0,
+                    'max_radius': self.board_width * cell_size,
+                    'alpha': 200,
+                    'color': (255, 255, 255),
+                    'speed': 15,
+                })
+
+            self._start_block_fall_animation(cleared_rows)
+
+            if lines_cleared < 4:
+                self.trigger_screen_shake(intensity=3 + lines_cleared * 2, duration=8 / 60.0)
+
+        self.line_clear_animation = 30 if self.effects_enabled else 0
+        self.line_clear_flash = True
+
+        self.board.last_cleared_lines = []
+        if hasattr(self.board, 'last_cleared_colors'):
+            self.board.last_cleared_colors = {}
+
+        return cleared_rows
+
     def _start_block_fall_animation(self, cleared_rows: list):
         """Silinen satırların üstündeki bloklar için düşme animasyonu başlat.
         
@@ -3738,66 +3799,7 @@ class Game:
 
         # Satır temizleme efektleri
         if lines_cleared > 0:
-            # Temizlenen satırları efekt için kaydet (board.lock_piece içinde zaten set edildi)
-            cleared_rows = list(self.board.last_cleared_lines) if self.board.last_cleared_lines else []
-            self.line_clear_pending_rows = []
-            self.line_clear_pending_colors = {}
-            if cleared_rows and self.effects_enabled:
-                self.line_clear_pending_rows = list(cleared_rows)
-                try:
-                    pending_colors = {}
-                    if hasattr(self.board, 'last_cleared_colors'):
-                        for row in cleared_rows:
-                            row_colors = self.board.last_cleared_colors.get(row)
-                            if row_colors:
-                                pending_colors[row] = list(row_colors)
-                    self.line_clear_pending_colors = pending_colors
-                except Exception:
-                    self.line_clear_pending_colors = {}
-            
-            # Sweep ve animasyon başlat
-            if self.effects_enabled and cleared_rows:
-                cell_size = self.get_cell_size()
-                offset_x, offset_y = self.get_board_offset()
-                
-                # Soldan sağa ışık süpürmesi başlat
-                self.line_clear_sweep_rows = cleared_rows
-                self.line_clear_sweep_progress = 0.0
-                self.line_clear_sweep_active = True
-                
-                # Parçacık efektleri - HER HÜCRE İÇİN
-                self.create_line_clear_particles(cleared_rows, offset_x, offset_y, cell_size)
-                
-                # Dalga efekti - her satır için
-                for row in cleared_rows:
-                    wave_y = offset_y + row * cell_size + cell_size // 2
-                    wave_x = offset_x + (self.board_width * cell_size) // 2
-                    self.line_clear_wave_effects.append({
-                        'x': wave_x,
-                        'y': wave_y,
-                        'radius': 0,
-                        'max_radius': self.board_width * cell_size,
-                        'alpha': 200,
-                        'color': (255, 255, 255),
-                        'speed': 15
-                    })
-                
-                # Blok düşme animasyonu başlat
-                # Silinen satırların üstündeki tüm bloklara düşme efekti ver
-                self._start_block_fall_animation(cleared_rows)
-                
-                # Küçük ekran titremesi (1-3 satır için hafif, 4 satır için güçlü)
-                if lines_cleared < 4:
-                    self.trigger_screen_shake(intensity=3 + lines_cleared * 2, duration=8 / 60.0)
-            
-            # Animasyon frame sayacı
-            self.line_clear_animation = 30 if self.effects_enabled else 0
-            self.line_clear_flash = True
-            
-            # Satırları temizle (efekt bilgisi alındıktan sonra)
-            self.board.last_cleared_lines = []
-            if hasattr(self.board, 'last_cleared_colors'):
-                self.board.last_cleared_colors = {}
+            self._queue_line_clear_effects(lines_cleared)
             
             # Mesaj ve ses
             if lines_cleared == 4:

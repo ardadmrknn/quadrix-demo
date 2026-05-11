@@ -6226,7 +6226,7 @@ class MysteryMode(Game):
                 if self.energy >= 40:
                     self.energy = max(0, self.energy - 40)
                     prev_score = int(getattr(self.board, 'score', 0))
-                    self._clear_rows(1)
+                    self._clear_rows(1, count_as_lines=True)
                     try:
                         delta = int(getattr(self.board, 'score', 0)) - prev_score
                     except Exception:
@@ -8185,6 +8185,11 @@ class MysteryMode(Game):
         """
         if cleared <= 0:
             return
+
+        try:
+            self._queue_line_clear_effects(cleared)
+        except Exception:
+            pass
 
         # Apply post-scoring multipliers for non-lock clears (board.clear_lines() already adds score)
         if score_delta is not None:
@@ -10212,7 +10217,7 @@ class MysteryMode(Game):
         center_y = active_height // 2
         self.create_particles(count=30, x=center_x, y=center_y, colors=[color], speed=6)
 
-    def _clear_rows(self, count: int) -> None:
+    def _clear_rows(self, count: int, *, count_as_lines: bool = False) -> None:
         width = len(self.board.grid[0])
         count = max(1, min(count, len(self.board.grid)))
         prev_combo = int(getattr(self.board, 'combo', 0) or 0)
@@ -10241,8 +10246,10 @@ class MysteryMode(Game):
             self.board.apply_gravity()
         except Exception:
             pass
-        # Update stats lines but do NOT contribute to level progression (anti-farm)
-        self.board.lines_cleared += count
+        # Floor sweep can be a synthetic board mutation; only count it as a
+        # cleared line when the caller explicitly opts into that bookkeeping.
+        if count_as_lines:
+            self.board.lines_cleared += count
         try:
             self.board.level = prev_level
         except Exception:

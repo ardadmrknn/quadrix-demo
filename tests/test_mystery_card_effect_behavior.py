@@ -54,6 +54,51 @@ def _minimal_mode(MysteryMode):
     return mode
 
 
+def _minimal_card_effect_mode(MysteryMode, Board, *, effects_enabled: bool):
+    mode = MysteryMode.__new__(MysteryMode)
+    mode.board = Board(width=4, height=6)
+    mode.sound_enabled = False
+    mode.effects_enabled = effects_enabled
+    mode.card_selection_active = False
+    mode.game_over = False
+    mode.paused = False
+    mode.energy = 0
+    mode.energy_max = 100
+    mode.pending_level_ups = 0
+    mode.board_width = mode.board.width
+    mode.line_clear_sweep_active = False
+    mode.line_clear_sweep_rows = []
+    mode.line_clear_sweep_progress = 0.0
+    mode.line_clear_pending_rows = []
+    mode.line_clear_pending_colors = {}
+    mode.line_clear_wave_effects = []
+    mode.line_clear_animation = 0
+    mode.line_clear_flash = False
+    mode.falling_block_animations = []
+    mode._open_card_selection = lambda: None
+    mode._apply_line_bonus_reward = lambda _lines: None
+    mode._apply_score_multiplier_to_delta = lambda _delta: 0
+    mode._apply_line_clear_multiplier_to_delta = lambda _cleared, _delta: 0
+    mode._set_localized_card_message = lambda *_args, **_kwargs: ''
+    mode.perk_manager = SimpleNamespace(
+        get_multiplier=lambda: 1.0,
+        notify_lines_cleared=lambda _lines, source='player': None,
+    )
+    mode.card_manager = SimpleNamespace(
+        progress=0,
+        threshold=5,
+        pending_choices=[],
+        notify_lines_cleared=lambda _lines: False,
+        used_card_ids=set(),
+    )
+    mode.get_cell_size = lambda: 10
+    mode.get_board_offset = lambda: (0, 0)
+    mode.create_line_clear_particles = lambda *_args, **_kwargs: None
+    mode._start_block_fall_animation = lambda _rows: None
+    mode.trigger_screen_shake = lambda **_kwargs: None
+    return mode
+
+
 def test_freeze_drop_event_filter_allows_only_lateral_and_hard_drop(monkeypatch):
     extra, Game, MysteryMode, _ = _import_mystery_mode()
     mode = _minimal_mode(MysteryMode)
@@ -374,6 +419,58 @@ def test_color_cleanse_clears_target_color_to_canonical_black(monkeypatch):
         for y in range(mode.board.height)
         for x in range(mode.board.width)
     )
+
+
+def test_clear_rows_card_does_not_count_sweep_only_rows_as_cleared_lines():
+    _, _, MysteryMode, Board = _import_mystery_mode()
+    mode = _minimal_card_effect_mode(MysteryMode, Board, effects_enabled=False)
+
+    for x, y in ((0, 1), (1, 2), (2, 3)):
+        mode.board.occupancy[y][x] = True
+        mode.board.grid[y][x] = (255, 255, 255)
+
+    mode._apply_card_effect({'id': 'clear_rows', 'value': 1, 'color': (1, 2, 3)})
+
+    assert mode.board.lines_cleared == 0
+    assert mode.board.level_lines_cleared == 0
+    assert mode.board.score == 150
+    assert mode.board.combo == 0
+
+
+def test_clear_rows_card_queues_line_clear_effects_for_resulting_full_rows():
+    _, _, MysteryMode, Board = _import_mystery_mode()
+    mode = _minimal_card_effect_mode(MysteryMode, Board, effects_enabled=True)
+
+    for x, y in ((0, 1), (1, 1), (2, 2), (3, 2), (0, 3), (2, 3), (1, 4)):
+        mode.board.occupancy[y][x] = True
+        mode.board.grid[y][x] = (255, 255, 255)
+
+    mode._apply_card_effect({'id': 'clear_rows', 'value': 1, 'color': (1, 2, 3)})
+
+    assert mode.board.lines_cleared == 1
+    assert mode.line_clear_sweep_active is True
+    assert mode.line_clear_pending_rows == [5]
+    assert mode.line_clear_animation == 30
+    assert mode.line_clear_flash is True
+    assert mode.board.last_cleared_lines == []
+
+
+def test_snapshotless_external_clear_does_not_arm_blank_line_clear_animation():
+    _, _, MysteryMode, Board = _import_mystery_mode()
+    mode = _minimal_card_effect_mode(MysteryMode, Board, effects_enabled=True)
+
+    mode.board.grid[1][0] = (255, 255, 255)
+    mode.board.occupancy[1][0] = True
+
+    prev_score = mode.board.score
+    mode._clear_rows(1, count_as_lines=True)
+    delta = mode.board.score - prev_score
+    mode._post_external_line_clear(1, award_energy=False, score_delta=delta, source='ability')
+
+    assert mode.line_clear_animation == 0
+    assert mode.line_clear_flash is False
+    assert mode.line_clear_sweep_active is False
+    assert mode.line_clear_pending_rows == []
 
 
 def test_card_secondary_lines_are_not_recounted_as_player_lines(monkeypatch):
