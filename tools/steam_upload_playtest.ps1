@@ -7,7 +7,7 @@ param(
 
     [string]$SteamPassword = "",
 
-    [ValidateSet("playtest", "main")]
+    [ValidateSet("playtest", "main", "demo")]
     [string]$Target = "playtest",
 
     [string]$AppBuildScript = "",
@@ -153,6 +153,9 @@ $effectiveDesc = if ([string]::IsNullOrWhiteSpace($BuildDescription)) {
     if ($Target -eq 'main') {
         "Main app build $(Get-Date -Format 'yyyy-MM-dd HH:mm')"
     }
+    elseif ($Target -eq 'demo') {
+        "Demo build $(Get-Date -Format 'yyyy-MM-dd HH:mm')"
+    }
     else {
         "Playtest build $(Get-Date -Format 'yyyy-MM-dd HH:mm')"
     }
@@ -167,6 +170,13 @@ $targetConfig = switch ($Target) {
             AppId          = '4414520'
             DepotId        = '4414521'
             FileExclusions = @('*.pdb', '*.log', 'steam_appid.txt', '*.spec')
+        }
+    }
+    'demo' {
+        @{
+            AppId          = '4635310'
+            DepotId        = '4635311'
+            FileExclusions = @('*.pdb', '*.log', 'Quadrix.exe', 'Quadrix.app', 'Quadrix Demo.app', 'steam_appid.txt', '*.spec')
         }
     }
     default {
@@ -214,6 +224,8 @@ else {
 Write-Host "Steam upload başlatılıyor..." -ForegroundColor Cyan
 Write-Host "SteamCmd: $SteamCmdPath"
 Write-Host "Target  : $Target"
+Write-Host "AppID   : $($targetConfig.AppId)"
+Write-Host "DepotID : $($targetConfig.DepotId)"
 Write-Host "Script  : $resolvedScript"
 Write-Host "User    : $SteamUser"
 Write-Host "Desc    : $effectiveDesc"

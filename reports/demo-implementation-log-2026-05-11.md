@@ -224,7 +224,7 @@
 
 - src/menu.py icinde pvp_2_players ve coop_mode split panellerinin online yarilari demo lock state'ine gore ayrica gorsellestirildi.
 - online_pvp ve online_coop taraflari artik yariya ozel gri overlay, diyagonal tarama ve Kilitli badge'i ile ciziliyor.
-- Bu degisiklik input kilidini tasiyan mevcut _maybe_handle_demo_main_action akisiyla ayni runtime lock kaynagini kullanir.
+- Bu degisiklik input kilidini tasiyan mevcut \_maybe_handle_demo_main_action akisiyla ayni runtime lock kaynagini kullanir.
 
 ### 10. Kart Ustaligi demo 75K skor siniri
 
