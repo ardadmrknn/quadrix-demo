@@ -2861,7 +2861,7 @@ class Game:
         """Silinen satırların üstündeki bloklar için düşme animasyonu başlat.
         
         Board zaten güncellendi - satırlar silindi ve üsttekiler kaydı.
-        Her blok, sweep o sütuna ulaştığında düşmeye başlayacak.
+        Bloklar satır temizleme sweep'i bittikten sonra düşmeye başlayacak.
         """
         if not cleared_rows:
             return
@@ -2870,31 +2870,50 @@ class Game:
         self.falling_block_animations = []
         
         # Kaç satır silindi?
-        lines_count = len(cleared_rows)
+        row_drop_distances = self._row_drop_distances_after_clear(cleared_rows)
+        if not row_drop_distances:
+            return
+
         cell_size = self.get_cell_size()
-        board_pixel_width = self.board.width * cell_size
-        sweep_width = self._get_line_sweep_length_px(cell_size, lines_count)
-        sweep_travel_px = max(1.0, float(board_pixel_width + sweep_width))
+        sweep_trigger = 1.0 if self.line_clear_sweep_active else 0.0
         
-        # Board zaten güncellendi, tüm dolu hücrelere düşme animasyonu ver
-        # Her blok, sweep o sütuna geldiğinde düşmeye başlayacak
+        # Board zaten güncellendi; sadece gerçekten yer değiştiren blokları animasyonla.
         for y in range(self.board.height):
+            drop_rows = row_drop_distances.get(y, 0)
+            if drop_rows <= 0:
+                continue
             for x in range(self.board.width):
                 if self.board.occupancy[y][x]:
-                    # Bu blok lines_count satır yukarıdan düşüyor
-                    offset = -lines_count * cell_size
-                    # Sweep trigger: ışık çubuğu bu sütunun merkezine geldiğinde başlat
-                    column_center_px = (x + 0.5) * cell_size
-                    sweep_trigger = column_center_px / sweep_travel_px
-                    sweep_trigger = max(0.0, min(1.0, sweep_trigger))
                     self.falling_block_animations.append({
                         'row': y,
                         'col': x,
-                        'current_offset': offset,  # Negatif = yukarıda
-                        'target_offset': 0,
-                        'sweep_trigger': sweep_trigger,  # Sweep bu değere gelince başla
+                        'current_offset': float(-drop_rows * cell_size),  # Negatif = eski pozisyon
+                        'target_offset': 0.0,
+                        'sweep_trigger': sweep_trigger,
                         'started': False  # Henüz başlamadı
                     })
+
+    def _row_drop_distances_after_clear(self, cleared_rows: list[int]) -> dict[int, int]:
+        valid_rows = sorted({
+            int(row)
+            for row in cleared_rows
+            if 0 <= int(row) < self.board.height
+        })
+        if not valid_rows:
+            return {}
+
+        cleared_set = set(valid_rows)
+        distances: dict[int, int] = {}
+        for old_y in range(self.board.height):
+            if old_y in cleared_set:
+                continue
+            drop_rows = sum(1 for cleared_y in valid_rows if cleared_y > old_y)
+            if drop_rows <= 0:
+                continue
+            new_y = old_y + drop_rows
+            if 0 <= new_y < self.board.height:
+                distances[new_y] = drop_rows
+        return distances
 
     def _get_line_sweep_length_px(self, cell_size: int, cleared_count: int) -> int:
         """Satır temizleme sweep genişliği (piksel)."""

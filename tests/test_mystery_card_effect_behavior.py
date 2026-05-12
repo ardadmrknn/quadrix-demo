@@ -75,6 +75,7 @@ def _minimal_card_effect_mode(MysteryMode, Board, *, effects_enabled: bool):
     mode.line_clear_animation = 0
     mode.line_clear_flash = False
     mode.falling_block_animations = []
+    mode._card_board_effects = []
     mode._open_card_selection = lambda: None
     mode._apply_line_bonus_reward = lambda _lines: None
     mode._apply_score_multiplier_to_delta = lambda _delta: 0
@@ -387,6 +388,26 @@ def test_block_magnet_keeps_empty_cells_canonical_black_after_shift():
         assert mode.board.owners[19][x] is None
 
 
+def test_block_magnet_queues_board_delta_effect_for_shifted_cells():
+    _, _, MysteryMode, Board = _import_mystery_mode()
+    mode = _minimal_card_effect_mode(MysteryMode, Board, effects_enabled=True)
+
+    mode.board.grid[5][2] = (255, 80, 80)
+    mode.board.occupancy[5][2] = True
+    mode.board.grid[5][3] = (80, 160, 255)
+    mode.board.occupancy[5][3] = True
+
+    mode._apply_card_effect({'id': 'block_magnet', 'value': 1, 'color': (255, 140, 100)})
+
+    effect = mode._card_board_effects[-1]
+    assert {(move['from_x'], move['from_y'], move['to_x'], move['to_y']) for move in effect['moves']} == {
+        (2, 5, 0, 5),
+        (3, 5, 1, 5),
+    }
+    assert effect['removed'] == []
+    assert effect['added'] == []
+
+
 def test_color_cleanse_clears_target_color_to_canonical_black(monkeypatch):
     extra, _, MysteryMode, Board = _import_mystery_mode()
     mode = MysteryMode.__new__(MysteryMode)
@@ -419,6 +440,47 @@ def test_color_cleanse_clears_target_color_to_canonical_black(monkeypatch):
         for y in range(mode.board.height)
         for x in range(mode.board.width)
     )
+
+
+def test_color_cleanse_queues_board_delta_effect_for_removed_color(monkeypatch):
+    extra, _, MysteryMode, Board = _import_mystery_mode()
+    mode = _minimal_card_effect_mode(MysteryMode, Board, effects_enabled=True)
+    mode._set_localized_card_message = lambda *_args, **_kwargs: ''
+    red = (255, 0, 0)
+    blue = (0, 0, 255)
+
+    mode.board.grid[2][1] = red
+    mode.board.occupancy[2][1] = True
+    mode.board.grid[5][3] = blue
+    mode.board.occupancy[5][3] = True
+
+    monkeypatch.setattr(extra.random, 'choice', lambda _values: red)
+
+    mode._apply_card_effect({'id': 'color_cleanse', 'value': 1, 'color': (100, 255, 200)})
+
+    effect = mode._card_board_effects[-1]
+    assert (1, 2, red) in {(cell['x'], cell['y'], tuple(cell['color'])) for cell in effect['removed']}
+
+
+def test_clear_drill_cells_queues_board_delta_effect_for_removed_cells():
+    _, _, MysteryMode, Board = _import_mystery_mode()
+    mode = MysteryMode.__new__(MysteryMode)
+    mode.board = Board(width=4, height=6)
+    mode.sound_enabled = False
+    mode.effects_enabled = True
+    mode._card_board_effects = []
+    mode._drill_movement_locked = False
+    mode._trace_ghost_bug_clear = lambda **_kwargs: None
+
+    mode.board.grid[4][2] = (255, 90, 90)
+    mode.board.occupancy[4][2] = True
+
+    cleared = mode._clear_drill_cells([(2, 4)], SimpleNamespace(name='I'), clear_kind='drill')
+
+    assert cleared == 1
+    effect = mode._card_board_effects[-1]
+    assert effect['id'] == 'laser_drill'
+    assert effect['removed'] == [{'x': 2, 'y': 4, 'color': (255, 70, 70)}]
 
 
 def test_clear_rows_card_does_not_count_sweep_only_rows_as_cleared_lines():
