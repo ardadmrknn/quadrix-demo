@@ -1,40 +1,53 @@
-# Mod Simgeleri Klasörü
+# Quadrix Mod İkonları
 
-Bu klasör, oyun modu seçim ekranında görüntülenecek PNG simgeleri içindir.
+Bu klasör, mod seçim ekranı ve rehber ekranında kullanılan PNG ikonlarını barındırır. Dosya adları kod tarafından sabit olarak beklendiği için isimler birebir korunmalıdır.
 
-## Beklenen Dosyalar:
+## Beklenen Dosyalar
 
-1. `sprint_mode_icon.png` - Sprint Mode simgesi
-2. `ultra_mode_icon.png` - Ultra Mode simgesi
-3. `zen_mode_icon.png` - Zen Mode simgesi
-4. `tetris2_mode_icon.png` - Quadrix 2 simgesi
-5. `wide_mode_icon.png` - Wide Mode simgesi
-6. `survival_mode_icon.png` - Survival Mode simgesi
-7. `cascade_mode_icon.png` - Cascade Mode simgesi
+| Dosya adı | Kullanım |
+| --- | --- |
+| `campaign_mode_icon.png` | Campaign |
+| `classic_mode_icon.png` | Classic |
+| `sprint_mode_icon.png` | Sprint |
+| `ultra_mode_icon.png` | Ultra |
+| `zen_mode_icon.png` | Zen |
+| `tetris2_mode_icon.png` | Quadrix 2 |
+| `mystery_mode_icon.png` | Mystery |
+| `wide_mode_icon.png` | Wide |
+| `survival_mode_icon.png` | Survival |
+| `cascade_mode_icon.png` | Cascade |
+| `hardcore_mode_icon.png` | Hardcore |
+| `daily_mode_icon.png` | Daily |
+| `pvp_mode_icon.png` | Local PvP |
+| `online_pvp_mode_icon.png` | Online PvP |
 
-## Dosya ↔ Mod Bağlamı (hızlı kontrol)
+## Teknik Kurallar
 
-| Dosya | Mod | Mod fikri | Önerilen neon vurgu |
-|------|-----|----------|----------------------|
-| `sprint_mode_icon.png` | Sprint Mode | 40 satır yarışı / hız | NEON_GOLD (255, 215, 0) |
-| `ultra_mode_icon.png` | Ultra Mode | 2 dk skor baskısı | NEON_RED (255, 50, 80) + NEON_ORANGE (255, 150, 0) |
-| `zen_mode_icon.png` | Zen Mode | Süresiz sakin oyun | NEON_GREEN (0, 255, 150) + NEON_CYAN (0, 240, 255) |
-| `tetris2_mode_icon.png` | Quadrix 2 | Ekstra parçalar | NEON_MAGENTA (255, 0, 200) + NEON_CYAN (0, 240, 255) |
-| `wide_mode_icon.png` | Wide Mode | 15x20 geniş alan | NEON_CYAN (0, 240, 255) |
-| `survival_mode_icon.png` | Survival Mode | Hayatta kal / baskı | NEON_RED (255, 50, 80) + NEON_ORANGE (255, 150, 0) |
-| `cascade_mode_icon.png` | Cascade Mode | Kademeli düşüş / akış | NEON_CYAN (0, 240, 255) |
+- Format: şeffaf arka planlı PNG
+- Önerilen boyut: 256x256 veya 512x512
+- Kare oran kullanın
+- Önemli görsel öğeleri merkeze yakın tutun
+- Kart içinde rahat görünmesi için kenarlarda güvenli boşluk bırakın
 
-## Özellikler:
+## Stil Önerileri
 
-- **Format**: PNG (şeffaf arka plan)
-- **Boyut**: 256x256 piksel (önerilen)
-- **Stil**: Neon cyberpunk, parlak renkler
-- **Optimizasyon**: 50KB altında olması önerilir
+- Her ikon tek bakışta mod fikrini anlatmalı
+- Aynı aileden gelen ikonlarda ortak bir ışık, gölge ve çerçeve dili kullanın
+- Aşırı detaylı veya küçük yazılı ikonlar menü ölçeklerinde kaybolur
+- Koyu arka planlar üzerinde test ederek kontrastı doğrulayın
 
-## AI Prompt Rehberi:
+## Fallback Davranışı
 
-Detaylı, “mod adıyla bağ kuran” prompt şablonları için ana dizindeki `MODE_ICONS_AI_PROMPTS.md` dosyasına bakın.
+- Bir dosya eksikse oyun çökmez
+- İlgili ekranda emoji veya yazı tabanlı fallback kullanılabilir
+- Yine de tutarlı bir görünüm için tüm dosyaların mevcut olması önerilir
 
-## Not:
+## Prompt ve Tasarım Kaynağı
 
-Eğer bir simge dosyası yoksa, oyun otomatik olarak emoji fallback kullanacaktır (⚡, ⏱️, 🧘, vb.)
+Mod temalarına göre hazırlanmış görsel prompt notları için şu belgeyi kullanın:
+
+- [../../../docs/MODE_ICONS_AI_PROMPTS.md](../../../docs/MODE_ICONS_AI_PROMPTS.md)
+
+## Güncelleme Notu
+
+İkon dosyalarını değiştirdikten sonra en güvenli yol oyunu yeniden başlatmaktır. Menü veya rehber ekranı tekrar açıldığında yeni görseller yüklenir.
