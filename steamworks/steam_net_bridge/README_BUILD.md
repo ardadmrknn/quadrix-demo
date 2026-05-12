@@ -1,100 +1,169 @@
-# Quadrix Online PvP — Steam Net Bridge Kurulum Rehberi
+# Quadrix Steam Net Bridge Build Rehberi
+
+Bu klasördeki native modül, Quadrix'in Steam tabanlı ağ katmanını Python tarafına açan köprüdür. Online PvP lobi, mesajlaşma ve Steam networking işlemleri bu build çıktısına dayanır.
+
+## Ne Derleniyor?
+
+- Pybind11 ile oluşturulan `steam_net_bridge` modülü
+- Steamworks SDK başlıkları ve platform kütüphaneleri ile linklenen native artifact
+- Çıktı olarak runtime tarafından okunacak dosyalar `local_artifacts/bridge` altına kopyalanır
 
 ## Gereksinimler
 
-1. **Steamworks SDK** (ücretsiz)
-   - İndir: https://partner.steamgames.com → SDK indirme bağlantısı
-   - Çıkar: `steamworks/sdk/` dizinine
+### Ortak
 
-2. **Visual Studio 2019 veya 2022** (C++ desktop development workload)
-   - Veya: Visual Studio Build Tools (daha hafif)
+1. Steamworks SDK
+   - İndirme: https://partner.steamgames.com
+   - Konum: `steamworks/sdk/`
+   - Beklenen örnek dosya: `steamworks/sdk/public/steam/steam_api.h`
 
-3. **CMake 3.18+**
-   ```
-   winget install cmake
-   ```
+2. Python
+   - Önerilen sürüm: 3.12
+   - İsterseniz build scriptlerine `QUADRIX_PYTHON` ortam değişkeni ile özel yorumlayıcı verebilirsiniz
 
-4. **Pybind11**
-   ```
-   pip install pybind11
-   ```
+3. CMake 3.18+
 
-## Dosya Yapısı (SDK çıkarıldıktan sonra)
+4. pybind11
+   - Scriptler eksikse yüklemeyi dener
+   - Elle kurmak isterseniz: `python3.12 -m pip install pybind11`
 
+### Windows
+
+- Visual Studio 2022 veya 2019
+- C++ desktop development workload
+- Alternatif olarak Visual Studio Build Tools
+
+### macOS
+
+- Xcode Command Line Tools
+
+```bash
+xcode-select --install
 ```
+
+### Linux
+
+- GCC veya Clang araç zinciri
+- Tipik paket: `build-essential`
+
+## Beklenen Dizin Yapısı
+
+```text
 steamworks/
 ├── sdk/
-│   ├── public/
-│   │   └── steam/
-│   │       ├── steam_api.h
-│   │       ├── isteammatchmaking.h
-│   │       ├── isteamnetworkingmessages.h
-│   │       └── ...
-│   └── redistributable_bin/
-│       └── win64/
-│           ├── steam_api64.dll
-│           └── steam_api64.lib
-├── steam_net_bridge/
-│   ├── steam_net_bridge.cpp    ← C++ kaynak
-│   ├── CMakeLists.txt          ← Build yapılandırması
-│   └── build.bat               ← Windows derleme scripti
-└── ...
+│   ├── public/steam/steam_api.h
+│   ├── redistributable_bin/win64/steam_api64.lib
+│   ├── redistributable_bin/osx/libsteam_api.dylib
+│   └── redistributable_bin/linux64/libsteam_api.so
+└── steam_net_bridge/
+    ├── CMakeLists.txt
+    ├── steam_net_bridge.cpp
+    ├── build.bat
+    └── build.sh
 ```
 
 ## Derleme
+
+### Windows
 
 ```bat
 cd steamworks\steam_net_bridge
 build.bat
 ```
 
-Başarılı olursa proje kökünde `steam_net_bridge.pyd` dosyası oluşur.
+Build scripti:
 
-## Test
+- önce `py -3.12`, sonra sistem Python'unu dener
+- Visual Studio 2022 jeneratörünü, gerekirse 2019'u kullanır
+- çıktıyı `local_artifacts\bridge` altına kopyalar
+
+### macOS / Linux
+
+```bash
+cd steamworks/steam_net_bridge
+chmod +x build.sh
+./build.sh
+```
+
+Notlar:
+
+- macOS tarafında script varsayılan olarak universal build hedefleyebilir
+- Gerekirse `QUADRIX_MACOS_ARCHS` ile mimari listesini değiştirebilirsiniz
+- Çıktı yine `local_artifacts/bridge` altına kopyalanır
+
+## Build Sonucu
+
+Başarılı bir build sonrası beklenen hedefler:
+
+- `local_artifacts/bridge/steam_net_bridge*.pyd` veya `*.so`
+- macOS için ayrıca `local_artifacts/bridge/libsteam_api.dylib`
+
+Repodaki runtime ve paketleme akışı bu klasörü öncelikli kullanır.
+
+## Hızlı Doğrulama
+
+Build sonrası Python tarafında test etmek için:
 
 ```python
-# Python konsolunda:
+import sys
+sys.path.insert(0, "local_artifacts/bridge")
+
 import steam_net_bridge
+
 bridge = steam_net_bridge.SteamNetBridge()
-print(bridge.init())  # True dönmeli (Steam client açık olmalı)
+print(bridge.init())
 print(bridge.get_my_steam_id())
 ```
 
-## Oyunda Kullanım
+`bridge.init()` çağrısının başarılı olması için Steam istemcisinin açık ve oturumun giriş yapılmış olması gerekir.
 
-Ana menüde "Online PvP" seçeneği görünür. Akış:
-1. **Özel Lobi Oluştur** → Arkadaş davet et (Steam overlay)
-2. **Herkese Açık Lobi** → Açık eşleşme
-3. **Maç Bul** → Mevcut lobileri listele
-4. İki oyuncu hazır olunca 3-2-1 geri sayım → Maç başlar!
+## Runtime Notları
 
-## Mimari Özet
+- Online PvP akışı Steam client'a bağlıdır
+- Overlay tabanlı davet akışları için Steam overlay açık olmalıdır
+- Python sürümü ile build artifact sürümü eşleşmelidir; yanlış yorumlayıcıyla derlerseniz modül import edilmeyebilir
 
-```
-┌────────────────────────────┐
-│   Python: online_pvp_game  │  ← Pygame oyun döngüsü
-│   Python: steam_networking │  ← Yüksek seviye wrapper
-└──────────┬─────────────────┘
-           │ Her frame: tick() poll_events() poll_messages()
-           ▼
-┌──────────────────────────────┐
-│   C++: steam_net_bridge.pyd  │  ← Pybind11 modül
-│   • ISteamMatchmaking        │  ← Lobi oluştur/katıl
-│   • ISteamNetworkingMessages │  ← P2P mesaj gönder/al
-│   • Valve SDR relay          │  ← IP gizleme, düşük ping
-└──────────┬───────────────────┘
-           │
-           ▼
-┌──────────────────────────────┐
-│   steam_api64.dll            │  ← Valve Steam Client
-│   Valve Global Network       │  ← Ücretsiz relay sunucuları
-└──────────────────────────────┘
+## Sık Görülen Sorunlar
+
+### Steamworks SDK bulunamadı
+
+- SDK'yı `steamworks/sdk/` altına yanlış seviyede çıkarmış olabilirsiniz
+- `public/steam/steam_api.h` dosyasının gerçekten mevcut olduğunu kontrol edin
+
+### cmake bulunamadı
+
+Windows:
+
+```powershell
+winget install cmake
 ```
 
-## Sorun Giderme
+macOS:
 
-- **"steam_net_bridge.pyd bulunamadı"**: `build.bat` çalıştırın
-- **"Steamworks SDK bulunamadı"**: `steamworks/sdk/` altına SDK çıkarın
-- **"cmake bulunamadı"**: `winget install cmake` veya cmake.org'dan indirin
-- **Lobi oluşturulamıyor**: Steam client açık ve giriş yapılmış olmalı
-- **Overlay çalışmıyor**: Steam → Settings → In-Game → Enable overlay
+```bash
+brew install cmake
+```
+
+### pybind11 bulunamadı
+
+```bash
+python3.12 -m pip install pybind11
+```
+
+### Modül import edilemiyor
+
+- Build'i kullandığınız Python sürümü ile oyunu çalıştırdığınız Python sürümü eşleşmiyor olabilir
+- `local_artifacts/bridge` altında gerçekten yeni artifact oluştuğunu kontrol edin
+
+### Steam tarafı bağlanmıyor
+
+- Steam istemcisini açın
+- Hesabın giriş yapmış olduğundan emin olun
+- Overlay kapalıysa lobi davetleri beklendiği gibi çalışmayabilir
+
+## İlgili Dokümanlar
+
+- Ana proje özeti: [../../README.md](../../README.md)
+- Online PvP mimarisi: [../../docs/ONLINE_PVP_ARCHITECTURE.md](../../docs/ONLINE_PVP_ARCHITECTURE.md)
+- Online PvP akış notları: [../../docs/ONLINE_PVP_FLOW_TR.md](../../docs/ONLINE_PVP_FLOW_TR.md)
+- Build ve yayın rehberi: [../../docs/BUILD_AND_UPLOAD.md](../../docs/BUILD_AND_UPLOAD.md)

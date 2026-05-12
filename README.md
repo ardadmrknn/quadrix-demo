@@ -1,126 +1,136 @@
-# 🎮 QUADRIX (Python/Pygame)
+# QUADRIX
 
-Quadrix; Pygame tabanlı, çok modlu bir Tetris türevi oyundur.
-Projede kampanya, PvP, geniş ayar menüleri, başarım sistemi ve Steam entegrasyonu bulunur.
+Quadrix, Python ve Pygame ile geliştirilen çok modlu bir Tetris türevidir. Proje; klasik tek oyunculu deneyimin yanında kampanya, co-op, PvP, profil sistemi, başarım takibi, özelleştirilebilir arka planlar ve Steam entegrasyonu gibi katmanlar içerir.
 
-## Dil Desteği
+## Öne Çıkanlar
 
-Desteklenen diller:
-- Türkçe (TR)
-- English (EN)
-- Deutsch (DE)
-- Français (FR)
-- Español (ES)
-- Italiano (IT)
-- Português (PT)
-- Русский (RU)
-- 日本語 (JA)
-- 中文 (ZH)
-- 한국어 (KO)
+- Çoklu oyun yapısı: Classic, Sprint, Ultra, Zen, Quadrix 2, Mystery, Wide, Survival, Cascade ve ek mod ekranları
+- İlerleme katmanı: tek oyunculu kampanya ve yerel co-op kampanya
+- Çok oyunculu içerik: yerel PvP, yerel co-op, Steam tabanlı online PvP altyapısı
+- Oyuncu profilleri: avatar, skor, istatistik, başarım ve kullanıcı kayıtları
+- Özelleştirme: tema, arka plan, ses, grafik ve kontrol ayarları
+- Yerelleştirme: TR, EN, DE, FR, ES, IT, PT, RU, JA, ZH, KO
 
 ## Hızlı Başlangıç
 
 ### Windows
 
+Oyunu doğrudan başlatmak için:
+
 ```powershell
 py main.py
 ```
 
-Alternatif:
+Alternatif başlatıcılar:
+
 - `scripts/run/start_game.bat`
 - `scripts/run/run_game.ps1`
 
 ### macOS / Linux
 
+Önerilen başlatma yöntemi:
+
+```bash
+./scripts/run/start_game.sh
+```
+
+İlk kullanımda çalıştırma izni gerekirse:
+
+```bash
+chmod +x scripts/run/start_game.sh scripts/run/run.sh scripts/run/Tetris.command
+```
+
+Doğrudan Python ile başlatmak isterseniz:
+
 ```bash
 python3 main.py
 ```
 
-## Gereksinimler
+Notlar:
 
-- Python 3.12 önerilir
-- Pygame (ve diğer bağımlılıklar)
+- Ana giriş noktası `main.py` dosyasıdır.
+- İngilizce yedek giriş noktası `src/main_en.py` dosyasında bulunur.
+- macOS başlatıcısı sanal ortam kullanmaz; sistem Python'u ile çalışır ve gerekirse hafif bağımlılıkları kullanıcı düzeyinde yükler.
 
-Kurulum:
+## Geliştirme Kurulumu
 
-```powershell
-pip install -r packaging/requirements/requirements.txt
-```
-
-macOS için:
+Geliştirme ve test için Python 3.12 kullanılması önerilir. Proje metadatası da 3.12 hedefiyle tanımlıdır.
 
 ```bash
-pip3 install -r packaging/requirements/requirements-macos.txt
+python3.12 -m pip install --user -e ".[dev]"
 ```
 
-## Proje Yapısı
+Build araçları da gerekiyorsa:
 
-Kısa özet:
+```bash
+python3.12 -m pip install --user -e ".[dev,build]"
+```
 
-- `src/` → ana oyun kaynak kodu
-- `tests/` → pytest testleri
-- `backend/` → Steam leaderboard proxy
-- `docs/` → teknik dokümantasyon
-- `scripts/` → çalıştırma, build ve yayın scriptleri
-- `packaging/` → PyInstaller hook ve paketleme yardımcıları
-- `assets/`, `music/`, `backgrounds/`, `font/` → içerik varlıkları
-- `diary/` → değişiklik günlükleri
-- `reports/` → raporlar ve loglar
-- `tools/` → yardımcı araçlar
+Windows tarafında eşdeğer komut:
 
-Detaylı yapı dokümanı: [docs/PROJECT_STRUCTURE_TR.md](docs/PROJECT_STRUCTURE_TR.md)
-
-## Öne Çıkan Özellikler
-
-- Tek oyunculu ve PvP modları
-- Kampanya/görev sistemi
-- Geniş ayar ekranları (ses, grafik, kontrol vb.)
-- Başarım sistemi + Steam başarımları/stat senkronizasyonu
-- Steam leaderboard entegrasyonu (SDK + proxy altyapısı)
+```powershell
+py -3.12 -m pip install -e ".[dev,build]"
+```
 
 ## Test
 
-Tüm testler:
+Repodaki önerilen test komutu:
 
-```powershell
+```bash
 ./scripts/test/run_tests.sh -q
 ```
 
-Alternatif:
+Bu script Python 3.12 ile pytest çalıştırır ve eksik test bağımlılıklarını kullanıcı hesabına kurar.
 
-```powershell
-py -m pytest -q
+Elle çalıştırmak isterseniz:
+
+```bash
+python3.12 -m pytest -q
 ```
 
-Belirli test dosyaları:
+Belirli bir test dosyası örneği:
 
-```powershell
-py -m pytest tests/test_steam_achievements_sync.py -v
+```bash
+python3.12 -m pytest tests/test_steam_achievements_sync.py -v
 ```
 
-## Build / Dağıtım
+## Build ve Paketleme
 
-- Windows/macOS spec dosyaları kök dizindedir (`tetris*.spec`)
-- Build rehberi: [docs/BUILD_AND_UPLOAD.md](docs/BUILD_AND_UPLOAD.md)
-- Steam operasyon dokümanları: `docs/STEAM_*`
+- Paketleme ve yayın akışı için ana rehber: [docs/BUILD_AND_UPLOAD.md](docs/BUILD_AND_UPLOAD.md)
+- PyInstaller spec dosyaları kök dizinde ve [packaging/specs](packaging/specs) altında bulunur
+- Steam ağ köprüsü derleme notları: [steamworks/steam_net_bridge/README_BUILD.md](steamworks/steam_net_bridge/README_BUILD.md)
 
-## Dokümanlar
+## Doküman Haritası
 
-- Tam oyun/özellik notları: [docs/guides/README_FULL.md](docs/guides/README_FULL.md)
-- Türkçe rehber (eski/sade): [docs/guides/README_TR.md](docs/guides/README_TR.md)
-- macOS rehberi: [docs/guides/README_MACOS.md](docs/guides/README_MACOS.md)
-- Arşiv platform notları: [docs/archive/PLATFORM_SUPPORT.md](docs/archive/PLATFORM_SUPPORT.md)
+- Genel Türkçe hızlı rehber: [docs/guides/README_TR.md](docs/guides/README_TR.md)
+- Geniş özellik ve sistem özeti: [docs/guides/README_FULL.md](docs/guides/README_FULL.md)
+- macOS kurulum ve çalışma notları: [docs/guides/README_MACOS.md](docs/guides/README_MACOS.md)
+- Proje yapısı özeti: [docs/PROJECT_STRUCTURE_TR.md](docs/PROJECT_STRUCTURE_TR.md)
+- Online PvP mimarisi: [docs/ONLINE_PVP_ARCHITECTURE.md](docs/ONLINE_PVP_ARCHITECTURE.md)
+- Steam leaderboard operasyonları: [docs/STEAM_LEADERBOARD_OPERATIONS_TR.md](docs/STEAM_LEADERBOARD_OPERATIONS_TR.md)
 
-## Katkı
+## Proje Yapısı
 
-- Kod stilini mevcut yapıyla uyumlu tutun.
-- Yeni test eklerken `tests/` klasörünü kullanın.
-- Geçici analiz/script çıktıları için kök dizin yerine `tools/` ve `reports/` kullanın.
+- `src/`: ana oyun kodu, modlar, UI, kampanya ve entegrasyonlar
+- `tests/`: pytest tabanlı otomasyon testleri
+- `backend/`: Steam leaderboard proxy servisi
+- `docs/`: teknik notlar, runbook'lar ve kılavuzlar
+- `scripts/`: çalıştırma, test ve build scriptleri
+- `packaging/`: spec dosyaları ve paketleme yardımcıları
+- `assets/`, `music/`, `backgrounds/`, `avatars/`, `font/`: oyun varlıkları
+- `local_artifacts/`: yerel build çıktıları ve runtime artifact'ları
 
-## Third-Party Assets
+## Katkı ve Çalışma Notları
 
-- PromptFont by Yukari "Shinmera" Hafner, https://shinmera.com/promptfont
-- Lisans: SIL Open Font License 1.1
+- Mevcut dosya düzenini ve isimlendirme stilini koruyun.
+- Kod değişikliklerinde mümkünse ilgili testleri aynı turda çalıştırın.
+- Geçici analiz çıktıları için kök dizini kirletmek yerine `reports/`, `tools/` veya `local_artifacts/` kullanın.
+- Oyuna ait README dosyaları bu repoda tutulur; üçüncü parti klasörlerdeki upstream README ve lisans dosyaları ayrı değerlendirilmelidir.
+
+## Üçüncü Parti Notu
+
+- PromptFont by Yukari "Shinmera" Hafner: SIL Open Font License 1.1
+- Steamworks SDK ve benzeri vendor içerikleri kendi lisans ve README dosyalarıyla gelir
 
 ## Lisans
 

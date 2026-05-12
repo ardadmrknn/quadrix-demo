@@ -1,287 +1,106 @@
-# Python Quadrix Oyunu - FULL EDITION 🎮
+# Quadrix Özellik ve Sistem Özeti
 
-**Pygame** kullanılarak geliştirilmiş, tam özellikli profesyonel Quadrix oyunu.
+Bu belge, projenin ürün kapsamını ve ana teknik yüzeylerini tek yerde özetler. Hızlı kurulum için [../../README.md](../../README.md), platform ayrıntıları için [README_MACOS.md](README_MACOS.md) kullanılmalıdır.
 
-## 🌍 Dil Desteği
+## Oyun Paketi
 
-Desteklenen diller: TR, EN, DE, FR, ES, IT, PT, RU, JA, ZH, KO
+### Ana oynanış katmanı
 
-## 🌟 Özellikler
+- Klasik tetromino döngüsü, skor ve seviye ilerleyişi
+- Ghost piece, next preview, hold, combo ve hard drop gibi temel rahatlatıcılar
+- Farklı hız, genişlik veya kural kümeleriyle çalışan ekstra modlar
 
-### Oynanış
-- ✅ **Ghost Piece (Gölge Parça)**: Parçanın nereye düşeceğini gösterir
-- ✅ **Next Piece Preview**: Sonraki gelecek parçayı önizle
-- ✅ **Hold System**: Parçayı sakla ve daha sonra kullan (C tuşu)
-- ✅ **Hard Drop Bonusu**: Anında düşürme için ekstra puan
-- ✅ **Combo Sistemi**: Arka arkaya satır temizleyerek bonus kazan
-- ✅ **Quadrix Bonusu**: 4 satır birden temizle, büyük puan kazan
+### Mod ailesi
 
-### Görsel
-- ✅ **Animasyonlu Satır Temizleme**: Yanıp sönen efektler
-- ✅ **Partiküller**: Quadrix yaptığınızda havai fişek efekti
-- ✅ **Modern UI**: Temiz ve şık arayüz
-- ✅ **Yeniden Boyutlandırılabilir Pencere**: Mouse ile boyutlandır
-- ✅ **Renkli Parçalar**: 7 farklı tetromino, her biri farklı renk
-- ✅ **FPS Göstergesi**: Performans takibi (F tuşu)
+- Classic, Sprint, Ultra, Zen
+- Quadrix 2, Mystery, Wide, Survival, Cascade, Hardcore, Daily
+- Campaign ve yıldız/görev odaklı ilerleme akışı
+- Local PvP, local co-op ve co-op campaign
+- Steam tabanlı online PvP için yerel/native köprü altyapısı
 
-### Ses
-- ✅ **Ses Efektleri**: Hareket, döndürme, satır temizleme, Quadrix sesleri
-- ✅ **Açma/Kapama**: Ayarlardan sesi kontrol et
+### Oyuncu sistemleri
 
-### Skor ve İstatistik
-- ✅ **High Score Sistemi**: En yüksek 10 skor JSON'a kaydedilir
-- ✅ **Liderlik Tablosu**: Geçmiş skorlarını gör
-- ✅ **İstatistikler**: Toplam oyun, skor, satır, Quadrix sayıları
-- ✅ **Otomatik Kaydetme**: Oyun bitince skor otomatik kaydedilir
+- Kullanıcı profilleri ve avatar yönetimi
+- Mod bazlı skor, istatistik ve kullanıcı kayıtları
+- Başarım sistemi ve Steam başarımları/stat eşlemesi
+- Leaderboard ve backend proxy desteği
 
-### Menü ve Ayarlar
-- ✅ **Ana Menü**: Profesyonel başlangıç ekranı
-- ✅ **Ayarlar**: Ses, görsel efektler, zorluk ayarları
-- ✅ **Zorluk Seviyeleri**: Kolay, Normal, Zor, Uzman
-- ✅ **High Scores Ekranı**: Skorları ve istatistikleri görüntüle
+### Sunum ve özelleştirme
 
-### Diğer
-- ✅ **Tam Klavye Desteği**: Tüm kontroller ayarlanabilir
-- ✅ **Duraklat Sistemi**: İstediğin zaman duraklat
-- ✅ **Yeniden Başlat**: Oyun bitince R ile hızlıca başlat
+- Tema, blok stili ve arka plan özelleştirmeleri
+- Dashboard tabanlı ana menü ve rehber ekranları
+- Ses ve müzik sistemi, oynatma listesi ve shuffle desteği
+- Dil profilleri ve CJK dahil çoklu font desteği
 
----
+## Ana Teknik Yüzeyler
 
-## 📦 Kurulum
+- [../../main.py](../../main.py): Türkçe ana giriş noktası
+- [../../src/main_en.py](../../src/main_en.py): İngilizce yedek giriş noktası
+- [../../src/game.py](../../src/game.py): tek oyunculu oyun döngüsü
+- [../../src/pvp_game.py](../../src/pvp_game.py): yerel PvP akışı
+- [../../src/coop_game.py](../../src/coop_game.py): ortak tahtalı co-op akışı
+- [../../src/campaign](../../src/campaign): kampanya, objective ve seviye sistemleri
+- [../../src/menu.py](../../src/menu.py): ana menü ve dashboard
+- [../../src/extras_menu.py](../../src/extras_menu.py): mod kartları ve ikon akışı
+- [../../src/guide_screen.py](../../src/guide_screen.py): mod rehberi ve ikon galerisi
+- [../../src/user_manager.py](../../src/user_manager.py) ve [../../src/avatar_editor.py](../../src/avatar_editor.py): profil ve avatar yönetimi
+- [../../src/steam_integration.py](../../src/steam_integration.py), [../../src/steam_leaderboards.py](../../src/steam_leaderboards.py) ve [../../backend/steam_leaderboard_proxy.py](../../backend/steam_leaderboard_proxy.py): Steam ve leaderboard katmanı
 
-### 1. Gereksinimler
-- **Python 3.12** önerilir
-- İndirmek için: [Python İndir](https://www.python.org/downloads/)
+## Varlık ve İçerik Klasörleri
 
-### 2. Kütüphaneleri Yükle
+- [../../assets](../../assets): UI, kart, efekt, ikon ve diğer sanat varlıkları
+- [../../backgrounds](../../backgrounds): kullanıcı tarafından değiştirilebilir arka plan resimleri
+- [../../music](../../music): müzik içerikleri
+- [../../avatars](../../avatars): avatar görselleri
+- [../../assets/ui/mode_icons/README.md](../../assets/ui/mode_icons/README.md): mod ikonlarının beklenen dosya adları
+- [../../backgrounds/README.md](../../backgrounds/README.md): arka plan dosya adları ve yükleme öncelikleri
 
-```powershell
-cd "<repo-klasor-yolu>"
-pip install -r packaging/requirements/requirements.txt
-```
+## Geliştirici İş Akışı
 
-veya tek tek:
-```powershell
-pip install pygame-ce numpy Pillow requests
-```
+Oyunu çalıştırma:
 
-### 3. Oyunu Başlat
-
-```powershell
-py main.py
-```
-
-macOS/Linux:
 ```bash
 python3 main.py
 ```
 
----
+macOS/Linux önerilen başlatıcı:
 
-## 🎮 Nasıl Oynanır
-
-### Temel Kontroller
-| Tuş | İşlev |
-|-----|-------|
-| **← →** | Parçayı sola/sağa hareket ettir |
-| **↑** | Parçayı döndür (saat yönünde 90°) |
-| **↓** | Soft drop (hızlı düşüş) |
-| **Space** | Hard drop (anında düşür) + Bonus puan |
-| **C** | Hold (parçayı sakla/değiştir) |
-| **P** | Oyunu duraklat/devam ettir |
-| **F** | FPS göstergeyi aç/kapat |
-| **F12** | Tam ekran / Pencere modu |
-| **ESC** | Menüye dön / Çıkış |
-| **R** | Yeniden başlat (oyun bitince) |
-
-### İleri Teknikler
-
-#### Ghost Piece (Gölge)
-- Mevcut parçanın yarı saydam gölgesi, parçanın nereye düşeceğini gösterir
-- Daha hassas yerleştirme yapmanızı sağlar
-
-#### Hold System
-- **C** tuşuna basarak mevcut parçayı saklayabilirsin
-- Saklanan parça ile mevcut parçayı değiştirebilirsin
-- Her parça düştükten sonra tekrar kullanılabilir
-- Strateji için çok önemli!
-
-#### Combo Sistemi
-- Arka arkaya satır temizlediğinde combo artar
-- Her combo seviyesi ekstra puan kazandırır
-- Satır temizlemeden parça düşerse combo sıfırlanır
-
-#### Puanlama
-| Eylem | Puan |
-|-------|------|
-| 1 Satır | 100 × Seviye |
-| 2 Satır | 300 × Seviye |
-| 3 Satır | 500 × Seviye |
-| **4 Satır (Quadrix)** | **800 × Seviye + 200 Bonus** |
-| Combo Bonusu | +(Combo-1) × 50 |
-| Hard Drop | +2 puan per hücre |
-
----
-
-## 🎯 Oyun Modları
-
-### Zorluk Seviyeleri
-- **Kolay**: Yavaş başlangıç (1000ms), yeni başlayanlar için
-- **Normal**: Dengeli hız (800ms), standart oyun
-- **Zor**: Hızlı başlangıç (500ms), deneyimli oyuncular için
-- **Uzman**: Çok hızlı (300ms), profesyoneller için
-
-Seviye arttıkça oyun hızlanır!
-
----
-
-## 📊 İstatistikler
-
-Oyun otomatik olarak şunları kaydeder:
-- **Toplam Oyun Sayısı**
-- **Toplam Skor**
-- **Toplam Temizlenen Satır**
-- **En Yüksek Seviye**
-- **Toplam Quadrix Sayısı**
-- **Toplam Oyun Süresi**
-
-Tüm veriler `highscores.json` dosyasında saklanır.
-
----
-
-## 💡 İpuçları ve Stratejiler
-
-1. **Quadrix Well (Kuyu) Stratejisi**
-   - En sağdaki veya soldaki sütunu boş bırak
-   - I parçası ile 4 satır birden temizle
-   - Maksimum puan için!
-
-2. **Hold Sistemini Kullan**
-   - I parçasını sakla, Quadrix için beklet
-   - O parçası daralı boşluklar için saklanabilir
-
-3. **Combo'yu Koru**
-   - Sürekli satır temizlemeye çalış
-   - Combo bonusu çok değerli
-
-4. **Ghost Piece'i Takip Et**
-   - Gölgeye bakarak tam yerleştir
-   - Hard drop ile hızlıca yerleştir
-
-5. **Düz İstifle**
-   - Gereksiz boşluklar bırakma
-   - Düz yüzey daha kolay yönetilir
-
-6. **Hızlı Karar Ver**
-   - Next piece'e bakarak planla
-   - Seviye arttıkça hız önemli
-
----
-
-## 🐛 Sorun Giderme
-
-### "pip komutu tanınmıyor"
-```powershell
-python -m pip install -r packaging/requirements/requirements.txt
+```bash
+./scripts/run/start_game.sh
 ```
 
-### "ModuleNotFoundError: No module named 'pygame'"
-```powershell
-pip install --upgrade pygame-ce
+Geliştirme bağımlılıkları:
+
+```bash
+python3.12 -m pip install --user -e ".[dev,build]"
 ```
 
-### "ModuleNotFoundError: No module named 'numpy'"
-```powershell
-pip install numpy
+Test:
+
+```bash
+./scripts/test/run_tests.sh -q
 ```
 
-### Ses çalışmıyor
-- Ayarlardan "Ses Efektleri" açık olduğundan emin olun
-- Bilgisayar ses seviyesini kontrol edin
+Steam ağ köprüsü:
 
-### Oyun yavaş çalışıyor
-- F tuşu ile FPS'i kontrol edin
-- Ayarlardan "Görsel Efektler"i kapatın
-- Pencere boyutunu küçültün
+- Build notları: [../../steamworks/steam_net_bridge/README_BUILD.md](../../steamworks/steam_net_bridge/README_BUILD.md)
+- Mimari arka plan: [../ONLINE_PVP_ARCHITECTURE.md](../ONLINE_PVP_ARCHITECTURE.md)
 
-### Highscores görünmüyor
-- İlk oyununuzu tamamlayın
-- `highscores.json` dosyası otomatik oluşturulacak
+## Doküman Haritası
 
----
+- Hızlı başlangıç: [../../README.md](../../README.md)
+- Türkçe kısa rehber: [README_TR.md](README_TR.md)
+- macOS platform notları: [README_MACOS.md](README_MACOS.md)
+- Proje yapısı: [../PROJECT_STRUCTURE_TR.md](../PROJECT_STRUCTURE_TR.md)
+- Build ve yayın: [../BUILD_AND_UPLOAD.md](../BUILD_AND_UPLOAD.md)
+- Steam operasyonları: [../STEAM_LEADERBOARD_OPERATIONS_TR.md](../STEAM_LEADERBOARD_OPERATIONS_TR.md)
 
-## 🎨 Ekran Görüntüleri
+## Bu Belgeyi Ne İçin Kullanmalı?
 
-### Ana Menü
-- Modern animasyonlu arka plan
-- 4 ana seçenek: Oyna, High Scores, Ayarlar, Çıkış
+- Oyunun hangi sistemlerden oluştuğunu hızlı görmek için
+- Yeni bir klasöre veya mod dosyasına dalmadan önce yön bulmak için
+- Teknik bir işe başlamadan önce ilgili modül ve dokümana atlamak için
 
-### Oyun Ekranı
-- Sol: Oyun tahtası (10×20)
-- Sağ Panel:
-  - Sonraki parça önizlemesi
-  - Saklanan parça
-  - Skor, Satır, Seviye
-  - Combo ve Quadrix sayacı
-  - Kontrol bilgileri
+## Lisans
 
-### High Score Ekranı
-- Top 10 skor listesi
-- Altın, gümüş, bronz renk kodları
-- Genel istatistikler
-
-### Ayarlar
-- Ses efektleri (Açık/Kapalı)
-- Görsel efektler (Açık/Kapalı)
-- Zorluk seviyesi (4 seçenek)
-
----
-
-## 📝 Dosya Yapısı
-
-```
-quadrix-main/
-├── src/
-│   ├── main.py              # Ana giriş noktası + menü sistemi
-│   ├── game.py              # Oyun mantığı (700+ satır)
-│   ├── board.py             # Oyun tahtası ve puanlama
-│   ├── pieces.py            # Tetromino tanımları
-│   ├── constants.py         # Sabitler ve renkler
-│   ├── sound.py             # Ses yönetimi
-│   ├── score_manager.py     # High score sistemi
-│   └── menu.py              # Menü UI bileşenleri
-├── packaging/requirements/  # Python bağımlılıkları
-├── highscores.json          # Skorlar (otomatik oluşur)
-└── docs/guides/README_TR.md # Bu dosya
-```
-
----
-
-## 🏆 Başarılar (Achievement Ideas)
-
-Gelecek güncellemelerde eklenebilir:
-- 🥇 İlk Quadrix: İlk 4 satırlık temizleme
-- 🔥 Combo Master: 5x combo yap
-- ⚡ Hız Şampiyonu: Seviye 20'ye ulaş
-- 🎯 Mükemmel: 100 satır temizle
-- 💎 Zengin: 100,000 puan kazan
-
----
-
-## 📄 Lisans
-
-Proprietary - Ayrıntı için proje sahibi lisans politikasına bakın.
-
----
-
-## 🙏 Teşekkürler
-
-Bu oyunu oynadığınız için teşekkürler! 
-
-Eğlenceli oyunlar! 🎮✨
-
----
-
-**Versiyon**: 1.0.26  
-**Tarih**: 2026  
-**Geliştirici**: Python & Pygame ile yapıldı ❤️
+Proprietary

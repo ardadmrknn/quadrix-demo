@@ -1,106 +1,136 @@
-# Python Quadrix Oyunu
+# Quadrix Türkçe Hızlı Rehber
 
-Pygame kullanılarak geliştirilmiş klasik Quadrix oyunu.
+Bu belge, Quadrix'i ilk kez çalıştıracak veya repoda hızlıca yön bulmak isteyen kullanıcılar için kısa başlangıç kılavuzudur.
 
-## Dil Desteği
+## Quadrix Nedir?
 
-Desteklenen diller: TR, EN, DE, FR, ES, IT, PT, RU, JA, ZH, KO
+Quadrix; Python ve Pygame ile geliştirilen, klasik Tetris oynanışını daha geniş bir sistem paketiyle sunan çok modlu bir oyundur.
 
-## Kurulum Adımları
+İçerdiği başlıca alanlar:
 
-### 1. Python Kurulumu
-- Python 3.12 önerilir
-- İndirmek için: [Python İndir](https://www.python.org/downloads/)
-- Kurulum sırasında "Add Python to PATH" seçeneğini işaretleyin
+- Tek oyunculu klasik ve skor odaklı modlar
+- Tek oyunculu kampanya ve yerel co-op kampanya
+- Yerel PvP ve yerel co-op oyun akışları
+- Profil, avatar, istatistik, başarı ve skor takibi
+- Steam entegrasyonu, leaderboard ve online PvP altyapısı
+- Tema, arka plan, ses, grafik ve kontrol özelleştirmeleri
 
-### 2. Gerekli Kütüphaneyi Yükleyin
+## Kurulum ve Çalıştırma
 
-PowerShell veya komut satırında proje klasörüne gidin:
-```powershell
-cd "<repo-klasor-yolu>"
-```
+### Windows
 
-Pygame kütüphanesini yükleyin:
-```powershell
-pip install -r packaging/requirements/requirements.txt
-```
-
-veya doğrudan temel bağımlılıklar:
-```powershell
-pip install pygame-ce numpy Pillow requests
-```
-
-## Oyunu Başlatma
+En kısa başlatma komutu:
 
 ```powershell
 py main.py
 ```
 
-macOS/Linux:
+Alternatif başlatıcılar:
+
+- `scripts/run/start_game.bat`
+- `scripts/run/run_game.ps1`
+
+### macOS / Linux
+
+Önerilen komut:
+
+```bash
+./scripts/run/start_game.sh
+```
+
+İlk kullanımda çalıştırma izni vermek gerekebilir:
+
+```bash
+chmod +x scripts/run/start_game.sh scripts/run/run.sh scripts/run/Tetris.command
+```
+
+Doğrudan Python ile de açabilirsiniz:
+
 ```bash
 python3 main.py
 ```
 
-## Nasıl Oynanır
+### Geliştirme Ortamı
 
-### Kontroller
-- **Sol Ok (←)**: Parçayı sola hareket ettir
-- **Sağ Ok (→)**: Parçayı sağa hareket ettir
-- **Aşağı Ok (↓)**: Parçayı hızlı düşür (soft drop)
-- **Yukarı Ok (↑)**: Parçayı döndür
-- **Boşluk (Space)**: Anında düşür (hard drop)
-- **P**: Oyunu duraklat/devam ettir
-- **ESC**: Oyundan çık
-- **R**: Yeniden Başlat (oyun bitince)
-- **F**: FPS göstergesi (aç/kapat)
-- **F12**: Tam ekran / Pencere modu
+Geliştirme ve test için Python 3.12 önerilir:
 
-### Oyun Kuralları
-1. Üstten düşen Quadrix parçalarını kontrol edin
-2. Parçaları döndürüp yerleştirerek yatay satırlar oluşturun
-3. Tam dolu satırlar otomatik olarak temizlenir ve puan kazanırsınız
-4. Parçalar ekranın üstüne kadar birikirse oyun biter
-
-### Puanlama Sistemi
-- **1 satır temizleme**: 100 puan
-- **2 satır temizleme**: 300 puan
-- **3 satır temizleme**: 500 puan
-- **4 satır temizleme (Quadrix)**: 800 puan
-
-## Quadrix Parçaları
-
-Oyunda 7 farklı Tetromino parçası vardır:
-- **I**: Düz çubuk (Mavi)
-- **O**: Kare (Sarı)
-- **T**: T şekli (Mor)
-- **S**: S şekli (Yeşil)
-- **Z**: Z şekli (Kırmızı)
-- **J**: J şekli (Mavi)
-- **L**: L şekli (Turuncu)
-
-## Sorun Giderme
-
-### "pip" komutu tanınmıyor hatası
-```powershell
-python -m pip install -r packaging/requirements/requirements.txt
+```bash
+python3.12 -m pip install --user -e ".[dev]"
 ```
 
-### ModuleNotFoundError: No module named 'pygame'
-```powershell
-pip install --upgrade pygame-ce
+Test çalıştırma:
+
+```bash
+./scripts/test/run_tests.sh -q
 ```
 
-### Oyun açılmıyor
-- Python'un doğru kurulu olduğundan emin olun: `python --version`
-- Pygame'in yüklü olduğunu kontrol edin: `pip list | Select-String pygame`
+## Temel Kontroller
 
-## İpuçları
+| Tuş | İşlev |
+| --- | --- |
+| Sol / Sağ | Parçayı yatay hareket ettir |
+| Yukarı | Döndür |
+| Aşağı | Soft drop |
+| Space | Hard drop |
+| C | Hold sistemi olan modlarda parçayı sakla |
+| P | Duraklat / devam et |
+| ESC | Menüye dön veya çık |
+| F12 | Tam ekran / pencere modu |
 
-1. **Quadrix Well Stratejisi**: Bir sütunu boş bırakıp I parçasıyla 4 satır birden temizleyin
-2. **Düzenli İstifleyin**: Gereksiz boşluklar bırakmayın
-3. **Hızlı Düşüş**: Aşağı ok ile hızlıca yerleştirin
-4. **Döndürme**: Dar alanlara sığdırmak için parçaları döndürün
+Notlar:
+
+- Kontrollerin bir kısmı modlara göre değişebilir.
+- Oyun gamepad desteği ve ayar ekranından kontrol özelleştirmesi içerir.
+
+## Mod Aileleri
+
+- Classic: standart Quadrix döngüsü
+- Sprint ve Ultra: süre veya satır hedefli skor koşuları
+- Zen: baskısız serbest oynanış
+- Quadrix 2 ve Mystery: yeni parça veya yetenek katmanları olan deneysel modlar
+- Wide, Survival, Cascade, Hardcore ve Daily: farklı kural setleriyle ekstra modlar
+- Campaign: görev ve yıldız sistemiyle tek oyunculu ilerleme
+- Co-op ve Co-op Campaign: ortak tahtada iki oyunculu deneyim
+- PvP ve Online PvP: rekabet odaklı çok oyunculu akışlar
+
+## Sık Görülen Sorunlar
+
+### pygame veya diğer bağımlılıklar bulunamıyor
+
+```bash
+python3.12 -m pip install --user -e ".[dev]"
+```
+
+Windows için:
+
+```powershell
+py -3.12 -m pip install -e ".[dev]"
+```
+
+### macOS'ta script çalışmıyor
+
+```bash
+chmod +x scripts/run/start_game.sh scripts/run/run.sh scripts/run/Tetris.command
+```
+
+### Test scripti Python 3.12 bulamıyor
+
+- `python3.12` komutunun PATH içinde olduğundan emin olun
+- Homebrew kullanıyorsanız gerekirse `brew install python@3.12` çalıştırın
+
+### macOS'ta venv kullanmak istiyorum
+
+- Bu repo macOS başlatıcısında venv kullanmaz
+- `scripts/run/start_game.sh` yanlışlıkla oluşan `.venv` klasörünü otomatik siler
+
+## Daha Fazla Doküman
+
+- Ana proje özeti: [../../README.md](../../README.md)
+- Geniş özellik ve sistem özeti: [README_FULL.md](README_FULL.md)
+- macOS özel rehberi: [README_MACOS.md](README_MACOS.md)
+- Proje yapısı: [../PROJECT_STRUCTURE_TR.md](../PROJECT_STRUCTURE_TR.md)
+- Build ve dağıtım: [../BUILD_AND_UPLOAD.md](../BUILD_AND_UPLOAD.md)
 
 ## Lisans
 
-Proprietary - Ayrıntı için proje sahibi lisans politikasına bakın.
+Proprietary

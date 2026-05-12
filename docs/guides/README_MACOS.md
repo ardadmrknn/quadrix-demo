@@ -1,278 +1,149 @@
-# 🎮 Quadrix Full Edition - macOS Kurulum Rehberi
+# Quadrix macOS Kurulum ve Çalıştırma Rehberi
 
-## 🚀 Hızlı Başlangıç
+Bu belge, Quadrix'i macOS üzerinde çalıştırmak ve gerekirse geliştirme/test ortamını hazırlamak için güncel başvuru rehberidir.
 
-## ⛔️ Venv Politikası (ÖNEMLİ)
+## Hızlı Başlangıç
 
-Bu projede **venv kesinlikle kullanılmaz**.
+Homebrew kullanıyorsanız önerilen temel kurulum:
 
-- `scripts/run/start_game.sh` ve `scripts/run/run.sh` çalışırken yanlışlıkla oluşmuş bir `.venv/` klasörü görürse **otomatik siler**.
-- VS Code workspace ayarları sistem Python'u kullanacak şekilde ayarlanmıştır.
-
-### 1. Python Kurulumu
-macOS'ta Python genellikle önceden yüklüdür. Kontrol etmek için:
 ```bash
-python3 --version
+brew install python@3.12
 ```
 
-Eğer Python yüklü değilse:
-- [Python.org](https://www.python.org/downloads/) üzerinden indirin
-- Veya Homebrew ile: `brew install python3`
+Repoda ilk çalıştırma:
 
-### 2. Gerekli Kütüphaneler
-`scripts/run/start_game.sh` ilk çalıştırıldığında gerekli paketler eksikse `pygame` ve `numpy` paketlerini otomatik yüklemeyi dener (venv kullanmaz). Elle kurmak isterseniz:
 ```bash
-pip3 install pygame numpy
-```
-> **Not:** Eski macOS sürümlerinde SDL kütüphanelerine ihtiyaç duyabilirsiniz:
-> ```bash
-> brew install sdl2 sdl2_image sdl2_mixer sdl2_ttf
-> ```
-
-### 3. Oyunu Başlatma
-
-**Yöntem 1: Shell Script ile (Önerilen)**
-```bash
-# Terminal'de oyun klasörüne gidin
-cd ~/Desktop/tetris_macos  # veya oyunun bulunduğu konum
-
-# Script'leri çalıştırılabilir yapın (sadece ilk seferde)
 chmod +x scripts/run/start_game.sh scripts/run/run.sh scripts/run/Tetris.command
-
-# Oyunu başlatın (ilk seferinde paketleri yükler)
 ./scripts/run/start_game.sh
+```
 
-# Sonraki başlatmalar için hızlı versiyon:
+Sonraki açılışlarda daha hızlı başlangıç için:
+
+```bash
 ./scripts/run/run.sh
 ```
 
-**Yöntem 2: Çift Tıklama ile (Finder) ⭐ En Kolay**
-1. Finder'da `scripts/run/Tetris.command` dosyasını bulun
-2. Çift tıklayın - Terminal otomatik açılır ve oyun başlar
-3. (İlk seferde: Sağ tık → "Aç" → "Aç" onayı gerekebilir)
+Finder ile açmak isterseniz `scripts/run/Tetris.command` dosyasını çift tıklayabilirsiniz. İlk açılışta macOS güvenlik onayı isteyebilir.
 
-**Yöntem 3: Direkt Python ile**
+## Venv Politikası
+
+Bu repo macOS başlatma akışında sanal ortam kullanmaz.
+
+- `scripts/run/start_game.sh` ve `scripts/run/run.sh` yanlışlıkla oluşmuş `.venv` klasörünü otomatik siler
+- Paketler kullanıcı hesabına `--user` ile yüklenir
+- VS Code ve script akışı sistem Python'u hedefler
+
+## Başlatıcı Ne Yapar?
+
+`scripts/run/start_game.sh` şu sırayla çalışır:
+
+1. `python3.12`, ardından `python3`, ardından `python` arar
+2. Python 3.10 altı sürümleri reddeder
+3. Eksikse `packaging/requirements/requirements-macos.txt` içindeki hafif bağımlılıkları kurar
+4. macOS için SDL odak, pencere ve ses değişkenlerini ayarlar
+5. Oyunu `main.py` üzerinden başlatır
+
+Not:
+
+- Repodaki geliştirme ve test hedefi Python 3.12'dir
+- Başlatıcı ise çalışma kolaylığı için 3.10+ sürümlere geri düşebilir
+
+## Geliştirme ve Test
+
+Geliştirme bağımlılıkları:
+
 ```bash
-cd ~/Desktop/tetris_macos
-python3 src/main.py
+python3.12 -m pip install --user -e ".[dev,build]"
 ```
 
-> `scripts/run/start_game.sh` venv oluşturmaz. Seçilen Python (tercihen `python3.12`) ile çalışır ve sadece macOS'ta gereken paketleri (`pygame`, `numpy`) `packaging/requirements/requirements-macos.txt` içinden yüklemeyi dener.
+Test:
 
-**Script tam olarak ne yapar?**
-1. macOS/Linux ortamında çalıştığınızı doğrular.
-2. Python 3.10+ sürümünü algılar (mümkünse `python3.12`).
-3. Gerekliyse `packaging/requirements/requirements-macos.txt` içindeki hafif bağımlılıkları yükler (yalnızca `pygame` + `numpy`).
-4. Oyunu `python3.12 src/main.py` (veya bulduğu en uygun Python) ile başlatır.
-
-## 🎨 Özellikler
-
-### Kullanıcı Profil Sistemi
-- **Özel Avatar Yükleme**: PNG, JPG, JPEG destekli
-- **Avatar Editör**: Kare kırpma, boyutlandırma
-- **İstatistikler**: Mod bazlı performans takibi
-
-### 8 Oyun Modu
-1. **Classic** - Klasik Quadrix deneyimi
-2. **Sprint** - 40 satırı en hızlı temizle
-3. **Ultra** - 3 dakikada en yüksek skoru yap
-4. **Zen** - Süresiz rahatlatıcı mod
-5. **Quadrix 2** - 11 farklı parça (Plus, Y, Domino, BigSquare ekstra)
-6. **Mystery** - Özel güçler (Lazer, Bomba, Sil, Yavaşlat, Hızlandır)
-7. **Wide** - 15 blok genişliğinde tahta
-8. **PvP** - 2 oyunculu rekabet modu
-
-### 5 Görsel Tema
-- **Classic** - Geleneksel renkler
-- **Cyberpunk** - Neon mor/mavi tonları
-- **Ocean** - Deniz temalı mavi/yeşil
-- **Sunset** - Turuncu/pembe gradient
-- **Forest** - Doğa yeşilleri
-
-### Müzik Sistemi
-11 farklı müzik (Crazy Frog dahil!)
-
-## 🔧 macOS Özel Notlar
-
-### "windows not available" Hatası
-Bu hata pygame'in pencere açamaması demektir. Çözümler:
-
-**1. Terminal Yetkisi (En yaygın sebep):**
-```
-System Preferences → Security & Privacy → Privacy → Screen Recording
-Terminal.app'e izin verin ve Terminal'i yeniden başlatın
-```
-
-**2. XQuartz Kurulumu (Eski macOS versiyonları):**
 ```bash
-brew install --cask xquartz
-# Kurulumdan sonra sistemi yeniden başlatın
+./scripts/test/run_tests.sh -q
 ```
 
-**3. Pygame Yeniden Kurulumu:**
+Elle pytest çalıştırmak isterseniz:
+
 ```bash
-pip3 uninstall pygame
-pip3 install pygame --upgrade
+python3.12 -m pytest -q
 ```
 
-### Tkinter Sorunları
-Eğer avatar editörde dosya seçme penceresi açılmazsa:
+## Sık Görülen Sorunlar
+
+### Permission denied
+
 ```bash
-# Tkinter'i yeniden yükleyin
-brew install python-tk@3.11  # Python versiyonunuza göre
+chmod +x scripts/run/start_game.sh scripts/run/run.sh scripts/run/Tetris.command
 ```
 
-### Ses Sorunları
-macOS'ta Pygame ses hatası alırsanız:
+### env: bash\r: No such file or directory
+
+Script CRLF satır sonlarıyla kaydedildiyse düzeltin:
+
 ```bash
-# Pygame'i yeniden yükleyin
-pip3 uninstall pygame
-pip3 install pygame --no-cache-dir
+python3 -c "from pathlib import Path; p=Path('scripts/run/start_game.sh'); p.write_text(p.read_text().replace('\r\n', '\n'))"
 ```
 
-### Performans İyileştirme
-macOS'ta daha iyi performans için:
-1. Sistem Tercihleri → Enerji → "Grafik Geçişini Otomatik Yap" kapatın
-2. Oyunu tam ekranda çalıştırın (F12)
+Alternatif olarak `dos2unix scripts/run/start_game.sh` kullanılabilir.
 
-## 🎮 Kontroller
+### Python 3.12 bulunamıyor
 
-### Temel Kontroller
-- **Yön Tuşları**: Parça hareketi
-- **Yukarı Ok**: Döndür
-- **Aşağı Ok**: Hızlı düşür
-- **Boşluk**: Hard drop (anında düşür)
-- **ESC**: Menüye dön
-- **P**: Duraklat
-
-### Mouse Desteği
-- Ana menüde tüm seçenekler tıklanabilir
-- Avatar editöründe sürükle-bırak
-
-### PvP Modu (2 Oyuncu)
-**Oyuncu 1:**
-- WASD: Hareket
-- Q: Döndür
-- S: Hızlı düşür
-
-**Oyuncu 2:**
-- Yön Tuşları: Hareket
-- Yukarı: Döndür
-- Aşağı: Hızlı düşür
-
-## 📁 Dosya Yapısı
-
-```
-Tetris_Python_Final/
-├── src/                    # Kaynak kodlar
-├── music/                  # Müzik dosyaları
-├── backgrounds/            # Arka plan görselleri
-├── avatars/                # Varsayılan avatarlar
-├── users.json              # Kullanıcı veritabanı (boş gönderiliyor)
-├── achievements_*.json     # Kullanıcı başarı kayıtları (kullanıcı oluştukça)
-├── highscores_*.json       # Kullanıcı skor kayıtları
-├── settings.json           # Varsayılan ayarlar
-├── scripts/
-│   └── run/
-│       ├── start_game.sh   # macOS / Linux başlatıcısı
-│       └── start_game.bat  # Windows başlatıcısı
-├── packaging/
-│   └── requirements/
-│       ├── requirements-macos.txt  # Hafif macOS bağımlılık listesi
-│       └── requirements.txt        # Tam Windows geliştirme bağımlılıkları
-```
-
-## 🐛 Sorun Giderme
-
-### "Permission Denied" Hatası
 ```bash
-chmod +x scripts/run/start_game.sh
+brew install python@3.12
 ```
 
-### "env: bash\r: No such file or directory" Hatası
-Dosya Windows ortamında düzenlendiğinde satır sonları CRLF olabilir. macOS'ta düzeltmek için:
+Test scripti özellikle Python 3.12 arar. Geliştirme yapacaksanız PATH içinde göründüğünü doğrulayın:
+
 ```bash
-cd ~/Desktop/Tetris_Python_Final
-python3 -c "from pathlib import Path; p=Path('scripts/run/start_game.sh'); p.write_text(p.read_text().replace('\r\n','\n'))"
-```
-veya Homebrew ile `dos2unix scripts/run/start_game.sh` komutunu kullanın.
-
-### "Module not found: pygame"
-```bash
-pip3 install pygame
-# veya
-python3 -m pip install pygame
+python3.12 --version
 ```
 
-### Avatar Editör Açılmıyor
-1. Tkinter kurulu mu kontrol edin:
+### tkinter yok, dosya seçici açılmıyor
+
+Önce doğrulayın:
+
 ```bash
 python3 -c "import tkinter"
 ```
 
-2. Hata alırsanız:
+Hata alıyorsanız python.org kurulumunu veya Tk desteği içeren bir Python dağıtımını tercih edin.
+
+### Pencere görünür ama ilk tıklama sadece aktive ediyor
+
+- Bu durum özellikle eski macOS paketlerinde Steam veya uygulama aktivasyon yarışıyla görülebilir
+- Güncel build'lerde başlangıç focus warmup uygulanır
+- Sorun sürüyorsa en güncel pakete geçin ve oyunu yeniden başlatın
+
+### pygame veya numpy yüklenemiyor
+
+Elle kurulum:
+
 ```bash
-brew install python-tk
+python3.12 -m pip install --user -r packaging/requirements/requirements-macos.txt
 ```
 
-### Müzik Çalmıyor
-1. Pygame mixer kontrolü:
+## Doğrudan Çalıştırma Seçenekleri
+
+Script kullanmak istemezseniz:
+
 ```bash
-python3 -c "import pygame; pygame.mixer.init()"
+python3 main.py
 ```
 
-2. `music/` klasörünün varlığını kontrol edin
+İngilizce yedek giriş noktası gerekiyorsa:
 
-## 🎯 İpuçları
-
-1. **İlk Kez Kullanım**: Kullanıcı profili oluşturun ve avatar seçin
-2. **Avatar Editör**: Sağ alt köşedeki sarı tutamakla kareyi boyutlandırın
-3. **Çift Tıklama**: Kullanıcı listesinde profilinize çift tıklayarak düzenleyin
-4. **Başarılar**: Her modda farklı başarılar kazanabilirsiniz
-5. **Temalar**: Ayarlar menüsünden tema değiştirin
-
-## 💻 Sistem Gereksinimleri
-
-- **İşletim Sistemi**: macOS 10.15 (Catalina) veya üzeri
-- **Python**: **3.10 veya üzeri** (⚠️ Önemli!)
-  - Modern Python sözdizimi kullanılıyor (`X | None`, `@dataclass(slots=True)`)
-  - Python 3.9 veya altı çalışmaz
-- **RAM**: Minimum 2GB
-- **Disk**: ~50MB boş alan
-- **Ekran**: Minimum 1024x768 çözünürlük
-- **İşlemci**: Intel veya Apple Silicon (M1/M2/M3) desteklenir
-
-### Python Sürümü Kontrolü
 ```bash
-python3 --version
-# Python 3.10.0 veya üzeri olmalı
+python3 src/main_en.py
 ```
 
-### Python Güncelleme (Gerekirse)
-```bash
-# Homebrew ile
-brew install python@3.12
+## İlgili Dokümanlar
 
-# Veya python.org'dan indirin
-# https://www.python.org/downloads/
-```
+- Ana proje özeti: [../../README.md](../../README.md)
+- Türkçe hızlı rehber: [README_TR.md](README_TR.md)
+- Geniş sistem özeti: [README_FULL.md](README_FULL.md)
+- Build ve yayın: [../BUILD_AND_UPLOAD.md](../BUILD_AND_UPLOAD.md)
+- Steam köprüsü derleme rehberi: [../../steamworks/steam_net_bridge/README_BUILD.md](../../steamworks/steam_net_bridge/README_BUILD.md)
 
-## 🔄 Güncelleme
+## Lisans
 
-Yeni sürümler için:
-1. Eski `users.json`, `achievements_*.json`, `highscores_*.json` dosyalarını yedekleyin
-2. Yeni dosyaları klasöre kopyalayın
-3. Yedeklenen dosyaları geri koyun
-
-## 👥 İletişim
-
-**Geliştiriciler:**
-- Arda Demirkan
-- Burak Yaşayan
-
-**Versiyon**: 3.0
-**Tarih**: 2025
-
----
-
-🎮 **İyi Oyunlar!** 🎮
+Proprietary
