@@ -130,6 +130,19 @@ class _UIColors:
     NEON_CYAN = (0, 240, 255)
     NEON_GOLD = (255, 210, 0)
     NEON_RED = (255, 50, 80)
+    NEON_MAGENTA = (255, 50, 200)
+    NEON_ORANGE = (255, 140, 0)
+    NEON_GREEN = (60, 220, 90)
+    TEXT_SECONDARY = (180, 180, 200)
+    TEXT_PRIMARY = (255, 255, 255)
+    TEXT_MUTED = (120, 120, 140)
+    TEXT_ERROR = (200, 30, 50)
+    GLASS_BG = (15, 15, 30, 180)
+    GLASS_HIGHLIGHT = (255, 255, 255, 60)
+    BUTTON_BG = (40, 50, 80)
+    BUTTON_BORDER = (90, 110, 160)
+    BUTTON_DISABLED = (40, 40, 50)
+    SLIDER_BG = (20, 20, 30)
 class _UIStyle:
     pass
 _ut.UIFonts = _UIFonts

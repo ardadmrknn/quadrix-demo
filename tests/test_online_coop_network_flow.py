@@ -1568,6 +1568,8 @@ def test_online_coop_guest_accepts_small_host_correction_after_prediction_cap():
     game.role = 'guest'
     game.online_state = coop_module.OnlineCoopState.PLAYING
     game.coop_game = FakeRenderCoop()
+    # Legacy fallback path — authority kapalıyken cap aşımı host'a re-sync.
+    game._guest_authoritative_piece_sync_enabled = False
     game._guest_board_cache = game._normalize_board_snapshot(_valid_board_state(seq=8, team_score=250))
     game._guest_render_board_seq = 8
     game._guest_local_prediction_ms = 150.0
@@ -1612,6 +1614,8 @@ def test_online_coop_guest_accepts_small_host_correction_after_host_elapsed_cap(
     game.role = 'guest'
     game.online_state = coop_module.OnlineCoopState.PLAYING
     game.coop_game = FakeRenderCoop()
+    # Legacy fallback path — authority kapalıyken cap aşımı host'a re-sync.
+    game._guest_authoritative_piece_sync_enabled = False
     game._guest_board_cache = game._normalize_board_snapshot(_valid_board_state(seq=8, team_score=250))
     game._guest_render_board_seq = 8
     game._guest_last_authoritative_piece_elapsed_ms = 1000.0
@@ -1658,6 +1662,8 @@ def test_online_coop_guest_accepts_large_host_p2_correction():
     game.role = 'guest'
     game.online_state = coop_module.OnlineCoopState.PLAYING
     game.coop_game = FakeRenderCoop()
+    # Legacy fallback path: authority kapalıyken büyük host düzeltmesi kabul edilir.
+    game._guest_authoritative_piece_sync_enabled = False
     game._guest_board_cache = game._normalize_board_snapshot(_valid_board_state(seq=8, team_score=250))
     game._guest_render_board_seq = 8
 
@@ -2053,3 +2059,447 @@ def test_online_coop_lobby_filter_is_display_only_and_preserves_private_entries(
 
     assert [entry['id'] for entry in game._get_lobby_entries_for_display()] == [1, 3]
     assert [entry['id'] for entry in game._lobby_list] == [1, 2, 3]
+
+
+# ============================================================================
+# Online Co-op guest input lag/jitter regression tests
+# ----------------------------------------------------------------------------
+# Aşağıdaki testler, host COOP_PIECE_STATE heartbeat'lerinin guest'in lokal
+# olarak tahmin ettiği P2 active piece'ini geri çekmemesini güvence altına
+# alır. Online PvP'deki "kendi parçanı sahipleniyorsun" örüntüsü co-op guest'e
+# uyarlanmış durumda; identity (active si + next_si + hold_si) host snapshot'ı
+# ile aynıyken pozisyon farkı ne kadar büyük olursa olsun host snapshot'ı
+# uygulanmaz. Lock/spawn/hold doğal olarak identity'i değiştirip re-sync
+# tetikler.
+# ============================================================================
+
+
+def _make_guest_render_coop(p2_x: int = 12, p2_y: int = 1) -> SimpleNamespace:
+    class _FakeBoard:
+        width = 20
+        height = 20
+
+    return SimpleNamespace(
+        screen=None,
+        window_width=0,
+        window_height=0,
+        fullscreen=False,
+        board=_FakeBoard(),
+        p1_current_piece=None,
+        p2_current_piece=SimpleNamespace(shape_index=1, x=p2_x, y=p2_y, rotation_state=0),
+        p1_next_piece=None,
+        p2_next_piece=SimpleNamespace(shape_index=3),
+        p1_hold_piece=None,
+        p2_hold_piece=None,
+        p2_frozen=False,
+        _apply_block_style=lambda piece: None,
+    )
+
+
+def test_online_coop_guest_authority_holds_p2_across_prediction_cap_with_identity_match():
+    """Authority açıkken cap aşılsa bile aynı identity'li host heartbeat P2'yi geri çekmez."""
+    game = _make_game(FakeNet())
+    game.role = 'guest'
+    game.online_state = coop_module.OnlineCoopState.PLAYING
+    game._guest_authoritative_piece_sync_enabled = True
+    game.coop_game = _make_guest_render_coop(p2_x=12, p2_y=1)
+    game._guest_board_cache = game._normalize_board_snapshot(_valid_board_state(seq=8, team_score=250))
+    game._guest_render_board_seq = 8
+    game._guest_local_prediction_ms = 200.0  # cap (140) çok aşılmış
+    game._GUEST_LOCAL_PREDICTION_MAX_MS = 140.0
+
+    correction_state = _valid_piece_state(seq=9)
+    correction_state['p2_current']['x'] = 13  # host P2 farklı kolonda
+    correction_state['p2_current']['y'] = 0
+    game._guest_piece_cache = game._normalize_piece_snapshot(correction_state)
+
+    game._apply_guest_render_cache()
+
+    # Eski davranış: snap-back (x=13, y=0). Yeni davranış: identity match,
+    # P2 lokal kalır (x=12, y=1).
+    assert game.coop_game.p2_current_piece.x == 12
+    assert game.coop_game.p2_current_piece.y == 1
+    # Lokal prediction sayacı sıfırlanmamalı çünkü host snapshot uygulanmadı.
+    assert game._guest_local_prediction_ms == 200.0
+
+
+def test_online_coop_guest_authority_holds_p2_across_host_elapsed_cap_with_identity_match():
+    """Authority açıkken host_elapsed cap aşılsa bile identity match → snap-back yok."""
+    game = _make_game(FakeNet())
+    game.role = 'guest'
+    game.online_state = coop_module.OnlineCoopState.PLAYING
+    game._guest_authoritative_piece_sync_enabled = True
+    game.coop_game = _make_guest_render_coop(p2_x=12, p2_y=1)
+    game._guest_board_cache = game._normalize_board_snapshot(_valid_board_state(seq=8, team_score=250))
+    game._guest_render_board_seq = 8
+    game._guest_last_authoritative_piece_elapsed_ms = 1000.0
+    game._guest_local_prediction_ms = 0.0
+    game._GUEST_LOCAL_PREDICTION_MAX_MS = 140.0
+
+    correction_state = _valid_piece_state(seq=9)
+    correction_state['host_elapsed_ms'] = 1300.0  # 300ms gap >> cap
+    correction_state['p2_current']['x'] = 13
+    correction_state['p2_current']['y'] = 0
+    game._guest_piece_cache = game._normalize_piece_snapshot(correction_state)
+
+    game._apply_guest_render_cache()
+
+    assert game.coop_game.p2_current_piece.x == 12
+    assert game.coop_game.p2_current_piece.y == 1
+
+
+def test_online_coop_guest_authority_resyncs_when_host_signals_new_piece_identity():
+    """Lock/spawn olunca host'un yeni shape_index'i guest'e re-sync sağlar."""
+    game = _make_game(FakeNet())
+    game.role = 'guest'
+    game.online_state = coop_module.OnlineCoopState.PLAYING
+    game._guest_authoritative_piece_sync_enabled = True
+    game.coop_game = _make_guest_render_coop(p2_x=12, p2_y=18)
+    game._guest_board_cache = game._normalize_board_snapshot(_valid_board_state(seq=8, team_score=250))
+    game._guest_render_board_seq = 8
+
+    new_piece_state = _valid_piece_state(seq=9)
+    # Yeni parça spawn: shape_index farklı → identity check fail → host kabul.
+    new_piece_state['p2_current'] = {'si': 4, 'x': 13, 'y': 0, 'r': 0}
+    new_piece_state['p2_next_si'] = 5
+    game._guest_piece_cache = game._normalize_piece_snapshot(new_piece_state)
+
+    game._apply_guest_render_cache()
+
+    assert game.coop_game.p2_current_piece.shape_index == 4
+    assert game.coop_game.p2_current_piece.x == 13
+    assert game.coop_game.p2_current_piece.y == 0
+    assert game._guest_local_prediction_ms == 0.0
+
+
+def test_online_coop_guest_drops_stale_coop_piece_state_with_equal_seq():
+    """Aynı seq'li ikinci COOP_PIECE_STATE paketi yeniden uygulanmaz (replay protection)."""
+    net = FakeNet([
+        _message(42, _valid_piece_state(seq=5), channel=CHANNEL_STATE),
+        _message(42, _valid_piece_state(seq=5), channel=CHANNEL_STATE),
+        _message(42, _valid_piece_state(seq=4), channel=CHANNEL_STATE),
+    ])
+    net.opponent_steam_id = 42
+    game = _make_game(net)
+    game.role = 'guest'
+    game.online_state = coop_module.OnlineCoopState.PLAYING
+
+    game._process_messages()
+
+    # Sadece ilk seq=5 paket cache'lenir; aynı/eski olanlar drop edilir.
+    assert game._guest_piece_seq == 5
+    assert game._guest_piece_cache is not None
+
+
+def test_online_coop_guest_input_ack_only_removes_acknowledged_pending_inputs():
+    """input_ack pending input listesinden sadece <= ack olanları kaldırır."""
+    game = _make_game(FakeNet())
+    game.role = 'guest'
+    game._guest_pending_inputs = [
+        (1, 'move_left'),
+        (2, 'move_left'),
+        (3, 'rotate'),
+        (4, 'hard_drop'),
+        (5, 'move_right'),
+    ]
+    game._last_input_ack_seq = 0
+
+    pending, board_mut = game._consume_guest_input_ack(3)
+
+    assert pending is True
+    assert board_mut is True  # seq=4 hard_drop hâlâ pending
+    assert game._guest_pending_inputs == [(4, 'hard_drop'), (5, 'move_right')]
+    assert game._last_input_ack_seq == 3
+
+    pending, board_mut = game._consume_guest_input_ack(5)
+
+    assert pending is False
+    assert board_mut is False
+    assert game._guest_pending_inputs == []
+    assert game._last_input_ack_seq == 5
+
+
+def test_online_coop_guest_input_ack_ignores_decreasing_ack_seq():
+    """Düşük ack tekrar geldiğinde son ack düşmez ve pending temizlenmez."""
+    game = _make_game(FakeNet())
+    game.role = 'guest'
+    game._guest_pending_inputs = [(7, 'move_left'), (8, 'rotate')]
+    game._last_input_ack_seq = 6
+
+    pending, _ = game._consume_guest_input_ack(2)
+
+    assert pending is True
+    assert game._last_input_ack_seq == 6
+    assert game._guest_pending_inputs == [(7, 'move_left'), (8, 'rotate')]
+
+
+def test_online_coop_guest_held_key_repeat_sends_exactly_one_input(monkeypatch):
+    """Auto-repeat / yeniden basılan tuş tek bir GUEST_INPUT üretir; serbest bırak/yeniden bas akışı çalışır."""
+    net = FakeNet()
+    game = _make_game(net)
+    game.online_state = coop_module.OnlineCoopState.PLAYING
+    game.role = 'guest'
+    game.coop_game = SimpleNamespace(
+        game_over=False,
+        paused=False,
+        p2_current_piece=SimpleNamespace(shape_index=1, x=12, y=0, rotation_state=0),
+        p2_next_piece=SimpleNamespace(shape_index=3),
+        p2_hold_piece=None,
+        p2_frozen=False,
+        inject_remote_input=lambda _player, _action: None,
+    )
+    monkeypatch.setattr(game, '_predict_guest_input', lambda action: None)
+
+    event = SimpleNamespace(key=pygame.K_LEFT)
+    game._handle_gameplay_keydown(event)
+    # Auto-repeat veya kullanıcı çoklu basışı:
+    game._handle_gameplay_keydown(event)
+    game._handle_gameplay_keydown(event)
+
+    move_inputs = [p for p, _r, c in net.sent if c == CHANNEL_CONTROL and p.get('type') == MsgType.GUEST_INPUT]
+    assert len(move_inputs) == 1
+    assert move_inputs[0]['action'] == 'move_left'
+
+    # Serbest bırak + yeniden bas → ikinci bir input gönderilmeli.
+    game._handle_gameplay_keyup(event)
+    game._handle_gameplay_keydown(event)
+
+    move_inputs = [p for p, _r, c in net.sent if c == CHANNEL_CONTROL and p.get('type') == MsgType.GUEST_INPUT]
+    assert [p['action'] for p in move_inputs] == ['move_left', 'das_stop_left', 'move_left']
+
+
+def test_online_coop_guest_authority_keeps_p2_against_repeated_heartbeats_no_jitter():
+    """Birden çok host heartbeat'i ardı ardına geldiğinde lokal P2 her seferinde aynı yerde kalır (jitter yok)."""
+    game = _make_game(FakeNet())
+    game.role = 'guest'
+    game.online_state = coop_module.OnlineCoopState.PLAYING
+    game._guest_authoritative_piece_sync_enabled = True
+    game.coop_game = _make_guest_render_coop(p2_x=11, p2_y=4)
+    game._guest_board_cache = game._normalize_board_snapshot(_valid_board_state(seq=8, team_score=250))
+    game._guest_render_board_seq = 8
+
+    for index, host_x in enumerate((13, 13, 13, 13), start=9):
+        heartbeat = _valid_piece_state(seq=index)
+        heartbeat['p2_current']['x'] = host_x
+        heartbeat['p2_current']['y'] = 0
+        heartbeat['host_elapsed_ms'] = 1000.0 + (index - 9) * 50.0
+        game._guest_piece_cache = game._normalize_piece_snapshot(heartbeat)
+
+        game._apply_guest_render_cache()
+
+        # Her heartbeat sonrası P2 aynı lokal pozisyonda — jitter yok.
+        assert game.coop_game.p2_current_piece.x == 11
+        assert game.coop_game.p2_current_piece.y == 4
+
+
+def test_online_coop_guest_board_snapshot_does_not_wipe_p2_with_pending_inputs():
+    """Board snapshot uygulanmasında pending guest input varsa P2 piece dokunulmaz."""
+    game = _make_game(FakeNet())
+    game.role = 'guest'
+    game.online_state = coop_module.OnlineCoopState.PLAYING
+    game.coop_game = _make_guest_render_coop(p2_x=10, p2_y=2)
+    game._guest_board_cache = game._normalize_board_snapshot(_valid_board_state(seq=12, team_score=250))
+    game._guest_render_board_seq = 11
+    game._guest_pending_inputs = [(15, 'hard_drop')]
+    game._guest_input_seq = 15
+    game._last_input_ack_seq = 14
+
+    piece_snapshot = _valid_piece_state(seq=20)
+    piece_snapshot['input_ack'] = 14  # hard_drop henüz ack'lenmedi
+    piece_snapshot['p2_current']['x'] = 5
+    piece_snapshot['p2_current']['y'] = 0
+    game._guest_piece_cache = game._normalize_piece_snapshot(piece_snapshot)
+
+    game._apply_guest_render_cache()
+
+    assert game.coop_game.p2_current_piece.x == 10
+    assert game.coop_game.p2_current_piece.y == 2
+    # Pending hard_drop bozulmaz.
+    assert game._guest_pending_inputs == [(15, 'hard_drop')]
+
+
+def test_online_coop_guest_authority_disabled_falls_back_to_legacy_tolerance():
+    """Authority kapalıyken eski dx<=3/dy<=6 toleransı (cap altında) hâlâ identity match'te lokal kalır."""
+    game = _make_game(FakeNet())
+    game.role = 'guest'
+    game.online_state = coop_module.OnlineCoopState.PLAYING
+    game._guest_authoritative_piece_sync_enabled = False
+    game.coop_game = _make_guest_render_coop(p2_x=12, p2_y=1)
+    game._guest_board_cache = game._normalize_board_snapshot(_valid_board_state(seq=8, team_score=250))
+    game._guest_render_board_seq = 8
+    game._guest_local_prediction_ms = 30.0
+    game._GUEST_LOCAL_PREDICTION_MAX_MS = 150.0
+
+    snapshot = _valid_piece_state(seq=9)
+    snapshot['p2_current']['x'] = 13  # dx=1
+    snapshot['p2_current']['y'] = 2   # dy=1
+    game._guest_piece_cache = game._normalize_piece_snapshot(snapshot)
+
+    game._apply_guest_render_cache()
+
+    # Cap aşılmadığı ve dx/dy küçük olduğu için lokal P2 korunur.
+    assert game.coop_game.p2_current_piece.x == 12
+    assert game.coop_game.p2_current_piece.y == 1
+
+
+# ============================================================================
+# Risk azaltıcı düzeltme testleri
+# ----------------------------------------------------------------------------
+# - Risk 1: Lock event guest'in pending hard_drop/hold input'larını temizler.
+# - Risk 2: SDR yüksek RTT senaryosu için _GUEST_PIECE_ACK_GRACE_S yükseltilmiş.
+# ============================================================================
+
+
+def test_online_coop_lock_event_clears_pending_p2_board_mutating_inputs(monkeypatch):
+    """COOP_LOCK_EVENT (player=P2) gelirse pending hard_drop/hold temizlenir."""
+
+    class FakeBoard:
+        width = 20
+        height = 20
+
+    class FakeRenderCoop:
+        def __init__(self, **kwargs):
+            self.screen = kwargs.get('screen')
+            self.window_width = self.screen.get_width()
+            self.window_height = self.screen.get_height()
+            self.fullscreen = kwargs.get('fullscreen')
+            self.board = FakeBoard()
+            self.cell_size = 24
+            self.board_offset_x = 0
+            self.board_offset_y = 0
+            self.line_clear_pending_rows = []
+            self.line_clear_pending_colors = {}
+
+        def _start_line_clear_sweep(self, _rows):
+            return None
+
+        def trigger_screen_shake(self, *_a, **_kw):
+            return None
+
+        def create_particles(self, *_a, **_kw):
+            return None
+
+        def create_lock_explosion(self, *_a, **_kw):
+            return None
+
+    monkeypatch.setattr(coop_module, 'CoopGame', FakeRenderCoop)
+
+    net = FakeNet([
+        _message(42, {
+            'type': MsgType.COOP_LOCK_EVENT,
+            'event': 'piece_placed',
+            'player': 'P2',
+            'new_score': 100,
+            'new_level': 1,
+            'lock_cells': [],
+            'cleared_rows': [],
+            'row_colors': {},
+        }),
+    ])
+    net.opponent_steam_id = 42
+    game = _make_game(net)
+    game.role = 'guest'
+    game.online_state = coop_module.OnlineCoopState.PLAYING
+    game._guest_pending_inputs = [
+        (10, 'move_left'),
+        (11, 'rotate'),
+        (12, 'hard_drop'),
+        (13, 'hold'),
+        (14, 'move_right'),
+    ]
+
+    game._process_messages()
+
+    # hard_drop ve hold temizlendi; diğer input'lar kaldı.
+    assert game._guest_pending_inputs == [
+        (10, 'move_left'),
+        (11, 'rotate'),
+        (14, 'move_right'),
+    ]
+
+
+def test_online_coop_lock_event_for_p1_does_not_clear_p2_pending(monkeypatch):
+    """P1 lock'u guest'in P2 pending input'larını etkilemez."""
+
+    class FakeBoard:
+        width = 20
+        height = 20
+
+    class FakeRenderCoop:
+        def __init__(self, **kwargs):
+            self.screen = kwargs.get('screen')
+            self.window_width = self.screen.get_width()
+            self.window_height = self.screen.get_height()
+            self.fullscreen = kwargs.get('fullscreen')
+            self.board = FakeBoard()
+            self.cell_size = 24
+            self.board_offset_x = 0
+            self.board_offset_y = 0
+            self.line_clear_pending_rows = []
+            self.line_clear_pending_colors = {}
+
+        def _start_line_clear_sweep(self, _rows):
+            return None
+
+        def trigger_screen_shake(self, *_a, **_kw):
+            return None
+
+        def create_particles(self, *_a, **_kw):
+            return None
+
+        def create_lock_explosion(self, *_a, **_kw):
+            return None
+
+    monkeypatch.setattr(coop_module, 'CoopGame', FakeRenderCoop)
+
+    net = FakeNet([
+        _message(42, {
+            'type': MsgType.COOP_LOCK_EVENT,
+            'event': 'piece_placed',
+            'player': 'P1',
+            'new_score': 100,
+            'new_level': 1,
+            'lock_cells': [],
+            'cleared_rows': [],
+            'row_colors': {},
+        }),
+    ])
+    net.opponent_steam_id = 42
+    game = _make_game(net)
+    game.role = 'guest'
+    game.online_state = coop_module.OnlineCoopState.PLAYING
+    game._guest_pending_inputs = [
+        (10, 'hard_drop'),
+        (11, 'hold'),
+    ]
+
+    game._process_messages()
+
+    assert game._guest_pending_inputs == [
+        (10, 'hard_drop'),
+        (11, 'hold'),
+    ]
+
+
+def test_online_coop_default_guest_piece_ack_grace_supports_high_rtt():
+    """SDR gibi yüksek RTT senaryolarında ack grace en az 1.0s olmalı."""
+    game = coop_module.OnlineCoopGame.__new__(coop_module.OnlineCoopGame)
+    coop_module.OnlineCoopGame.__init__.__wrapped__ if False else None
+    # Default değer constructor'da set ediliyor. Basit kontrol için class attr'ı
+    # constructor öncesinde manuel set edip baz değeri doğrula:
+    game._GUEST_PIECE_ACK_GRACE_S = 0.75  # eski default
+    # Yeni değer constructor'da set edileceği için fixture _make_game zaten
+    # 0.75'i atıyor (test senaryolarını korumak için). Burada kaynak kodun
+    # default'unun yükseltilmiş olduğunu doğrulamak için fresh init yapalım.
+    actual_default = None
+    try:
+        # __init__ pygame ihtiyacı duyduğu için sınıfın class-level/init-time
+        # default'ını dolaylı doğrula:
+        from inspect import getsource
+        source = getsource(coop_module.OnlineCoopGame.__init__)
+    except Exception:
+        source = ''
+
+    assert '_GUEST_PIECE_ACK_GRACE_S = 2.5' in source, (
+        'Default _GUEST_PIECE_ACK_GRACE_S yüksek RTT için yükseltilmiş olmalı'
+    )

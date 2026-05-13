@@ -431,7 +431,12 @@ class OnlineCoopGame:
         self._guest_last_authoritative_piece_elapsed_ms = 0.0
         self._guest_local_prediction_ms = 0.0
         self._GUEST_LOCAL_PREDICTION_MAX_MS = 140.0
-        self._GUEST_PIECE_ACK_GRACE_S = 0.75
+        # SDR relay üzerinden 200-400ms RTT'de mirror ack 0.75s'lik grace'i
+        # aşabiliyor; identity-based koruma (`_should_keep_locally_simulated_p2`)
+        # zaten yedekleniyor olsa da ack-bazlı yol da yüksek latency'de açık
+        # kalsın diye 2.5s'e yükseltildi. Worst-case identity match yolu hâlâ
+        # geçersiz state'i bloklayabilir, bu yüzden zararsız.
+        self._GUEST_PIECE_ACK_GRACE_S = 2.5
         self._guest_authoritative_piece_sync_enabled = True
         self._held_gameplay_keys: set[int] = set()
 
@@ -3025,6 +3030,10 @@ class OnlineCoopGame:
         if local_piece_signature is None:
             return False
 
+        # Identity check: aynı active shape + same next + same hold demek,
+        # host'un hâlâ aynı parçayı bekliyor olduğu anlamına gelir. Lock veya
+        # hold-swap olduğunda shape index değişir ve fallback (False) host'u
+        # otoriter kılarak doğal re-sync sağlar.
         if int(incoming_piece.get('si', -1)) != int(local_piece_signature[0]):
             return False
         if self._piece_shape_index(getattr(render_game, 'p2_next_piece', None)) != int(piece_data.get('p2_next_si', -1)):
@@ -3032,10 +3041,18 @@ class OnlineCoopGame:
         if self._piece_shape_index(getattr(render_game, 'p2_hold_piece', None)) != int(piece_data.get('p2_hold_si', -1)):
             return False
 
-        # PVP-style local active-piece ownership: once the guest has the same
-        # active/next/hold identity as the host, do not let heartbeat snapshots
-        # pull P2 back and forth. Board locks/spawns still come from the host and
-        # change the piece identity, which naturally re-syncs this branch.
+        # PvP-style local active-piece ownership: guest authoritative piece sync
+        # açıkken P2'yi guest sahipleniyor — host CoopGame'i P2 için gravity/DAS
+        # uygulamaz, sadece guest'in GUEST_PIECE_STATE mirror'ını yansıtır. Bu
+        # nedenle aynı kimliğe sahip COOP_PIECE_STATE heartbeat'leri lokal P2
+        # tahminini geri çekmemeli (jitter kaynağı). Lock/spawn/hold ile gerçek
+        # kimlik değişimi yukarıdaki erken return'lerle host'a re-sync sağlar.
+        if bool(getattr(self, '_guest_authoritative_piece_sync_enabled', False)):
+            return True
+
+        # Legacy non-authoritative fallback (authority kapalıyken eski davranış).
+        # Prediction cap aşıldığında veya host elapsed cap'i aştığında host
+        # snapshot'ını kabul eder; aksi halde dx<=3/dy<=6 toleransı uygulanır.
         dx = abs(int(incoming_piece.get('x', 0)) - int(local_piece_signature[1]))
         dy = abs(int(incoming_piece.get('y', 0)) - int(local_piece_signature[2]))
         prediction_ms = max(0.0, float(getattr(self, '_guest_local_prediction_ms', 0.0) or 0.0))
@@ -3302,6 +3319,21 @@ class OnlineCoopGame:
             pass
 
     def _apply_guest_lock_event(self, data: dict):
+        # Risk-1 azaltıcı: Host bu lock event'i guest'in P2'si için yayınlıyorsa
+        # guest'in pending input listesindeki ilgili hard_drop/hold artık host
+        # tarafında uygulanmış demektir. Listede tutmak hem `pending_board_mutation`
+        # üzerinden bir sonraki board snapshot'ın uygulanmasını gereksiz yere
+        # bloke eder, hem de re-sync gecikmesi yaratır. Bu nedenle host onayı
+        # geldiği anda pending P2 board-mutating input'ları proaktif temizliyoruz.
+        if str(data.get('player', '')) == 'P2':
+            pending_inputs = getattr(self, '_guest_pending_inputs', None)
+            if isinstance(pending_inputs, list) and pending_inputs:
+                self._guest_pending_inputs = [
+                    (seq, action)
+                    for seq, action in pending_inputs
+                    if str(action or '') not in ('hard_drop', 'hold')
+                ]
+
         self._guest_score_cache['team_score'] = self._clamp_int(
             data.get('new_score', 0), 0, 999999999)
         self._guest_score_cache['level'] = self._clamp_int(
@@ -3566,7 +3598,7 @@ class OnlineCoopGame:
                             seq = int(data.get('seq', 0) or 0)
                         except (TypeError, ValueError):
                             seq = 0
-                        if seq < self._guest_piece_seq:
+                        if seq <= self._guest_piece_seq:
                             continue
                         self._guest_piece_seq = seq
                         self._guest_piece_cache = self._normalize_piece_snapshot(data)
