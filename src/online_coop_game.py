@@ -45,6 +45,10 @@ from steam_networking import (
 from coop_game import CoopGame
 from screen_shake import step_screen_shake
 from pieces import Piece, SHAPES as _SHAPES
+from line_clear_feedback import (
+    queue_wave_effects as _queue_wave_effects,
+    trigger_combo_burst as _trigger_combo_burst,
+)
 from constants import (
     COLORS as _PIECE_COLORS,
     BLACK as _BOARD_EMPTY_COLOR,
@@ -419,8 +423,16 @@ class OnlineCoopGame:
         self._piece_state_timer = 0.0
         self._guest_piece_state_timer = 0.0
         self._BOARD_STATE_INTERVAL = 200.0   # full-board heartbeat; asil sync event-driven
-        self._PIECE_STATE_INTERVAL = 50.0    # heartbeat; asil parça sync'i degisim-anlik push
-        self._GUEST_PIECE_STATE_INTERVAL = 20.0
+        # Online PvP'nin `PIECE_POSITION` 33ms cadansıyla parity için heartbeat'i
+        # 50ms'den 33ms'e indirdik. Push asıl olarak event-driven (signature
+        # equality early-return) çalışıyor; bu sadece tavanı düşürerek guest'in
+        # lokal mirror'ı host otoritesiyle daha sık çakışmasını sağlar.
+        self._PIECE_STATE_INTERVAL = 33.0
+        # Guest mirror heartbeat 20ms idi; signature-equality erken-çıkışla
+        # gerçek değişim yoksa paket yine üretilmiyor. Tavanı 16ms (~60fps) seviyesine
+        # indirerek hızlı DAS / rotation akışlarında host'un guest aktif
+        # parçasından haberdar olma latency'sini bir frame daha kısaltıyoruz.
+        self._GUEST_PIECE_STATE_INTERVAL = 16.0
 
         # Guest: received state cache
         self._guest_board_cache = None   # dict from host
@@ -2262,6 +2274,21 @@ class OnlineCoopGame:
             except Exception:
                 pass
 
+        # Playlist tick — wrapper SAHİP. Host CoopGame.update() de aynı
+        # `self.sound` üzerinde tick edebileceğinden çift tick riskini
+        # ortadan kaldırmak için wrapper tek otoriter tick yolu olur ve host
+        # CoopGame'in iç tick'i `_suppress_internal_music_tick` ile
+        # bastırılır (bkz. CoopGame.update). Guest tarafında zaten
+        # `sound_enabled=False` olduğu için CoopGame'in iç tick'i çalışmıyor;
+        # wrapper tick'i playlist ilerlemesinin tek garantisi.
+        try:
+            if self.online_state == OnlineCoopState.PLAYING and getattr(self, 'sound', None):
+                update_playlist = getattr(self.sound, 'update_music_playlist', None)
+                if callable(update_playlist):
+                    update_playlist()
+        except Exception:
+            pass
+
         # Auto-refresh lobby list
         if (
             self.online_state == OnlineCoopState.LOBBY_MENU
@@ -3376,29 +3403,79 @@ class OnlineCoopGame:
             render_game._start_line_clear_sweep(normalized_rows)
         except Exception:
             pass
+        # Game / PvP / OnlinePvP / Coop ile parity: dalga + Quadrix burst
         try:
-            lines = self._clamp_int(data.get('lines', len(normalized_rows)), 0, 20)
-            if lines >= 4:
-                render_game.trigger_screen_shake(intensity=7, duration=20 / 60.0)
-            elif lines >= 2:
-                render_game.trigger_screen_shake(intensity=3, duration=10 / 60.0)
+            cs = int(getattr(render_game, 'cell_size', 0) or 0)
+            ox = int(getattr(render_game, 'board_offset_x', 0) or 0)
+            oy = int(getattr(render_game, 'board_offset_y', 0) or 0)
+            board_width_cells = int(getattr(getattr(render_game, 'board', None), 'width', 20) or 20)
+            board_height_cells = int(getattr(getattr(render_game, 'board', None), 'height', 20) or 20)
+            wave_list = getattr(render_game, 'line_clear_wave_effects', None)
+            if isinstance(wave_list, list) and cs > 0:
+                _queue_wave_effects(
+                    wave_list,
+                    normalized_rows,
+                    ox,
+                    oy,
+                    cs,
+                    board_width_cells,
+                )
         except Exception:
             pass
         try:
-            if hasattr(render_game, 'create_particles') and normalized_rows:
-                cs = int(getattr(render_game, 'cell_size', 0) or 0)
-                ox = int(getattr(render_game, 'board_offset_x', 0) or 0)
-                oy = int(getattr(render_game, 'board_offset_y', 0) or 0)
-                board_width = int(getattr(getattr(render_game, 'board', None), 'width', 20) or 20)
-                center_x = ox + (board_width * cs) // 2
-                center_y = oy + int(sum(normalized_rows) / max(1, len(normalized_rows))) * cs + cs // 2
-                render_game.create_particles(
-                    max(30, 40 * max(1, len(normalized_rows))),
-                    center_x,
-                    center_y,
-                    [(255, 255, 255), (255, 215, 0), (0, 255, 255), (255, 100, 255)],
-                    speed=8,
+            lines_count = self._clamp_int(data.get('lines', len(normalized_rows)), 0, 20)
+            if lines_count >= 4:
+                render_game.trigger_screen_shake(intensity=7, duration=20 / 60.0)
+            elif lines_count >= 2:
+                render_game.trigger_screen_shake(intensity=3, duration=10 / 60.0)
+        except Exception:
+            pass
+        # Hücre-bazlı line-clear parçacık zinciri (Game / PvP parity)
+        try:
+            if hasattr(render_game, 'create_line_clear_particles'):
+                render_game.create_line_clear_particles(
+                    normalized_rows,
+                    int(getattr(render_game, 'board_offset_x', 0) or 0),
+                    int(getattr(render_game, 'board_offset_y', 0) or 0),
+                    int(getattr(render_game, 'cell_size', 0) or 0),
+                    board=getattr(render_game, 'board', None),
                 )
+        except Exception:
+            pass
+        # Combo / Quadrix merkezli patlama
+        try:
+            cs = int(getattr(render_game, 'cell_size', 0) or 0)
+            ox = int(getattr(render_game, 'board_offset_x', 0) or 0)
+            oy = int(getattr(render_game, 'board_offset_y', 0) or 0)
+            board_width_cells = int(getattr(getattr(render_game, 'board', None), 'width', 20) or 20)
+            board_height_cells = int(getattr(getattr(render_game, 'board', None), 'height', 20) or 20)
+            _trigger_combo_burst(
+                render_game,
+                normalized_rows,
+                int(self._clamp_int(data.get('lines', len(normalized_rows)), 0, 20)),
+                ox,
+                oy,
+                cs,
+                board_width_cells,
+                board_height_cells,
+            )
+        except Exception:
+            pass
+
+        # Combo / Quadrix mesaj overlay'ı (Game / PvP / OnlinePvP / Coop ile parity)
+        try:
+            lines_count = self._clamp_int(data.get('lines', len(normalized_rows)), 0, 20)
+            if lines_count == 4:
+                render_game.combo_message = "QUADRIX!"
+                render_game.combo_message_time = 120.0
+            elif lines_count >= 2:
+                if lines_count == 2:
+                    render_game.combo_message = "DOUBLE!"
+                elif lines_count == 3:
+                    render_game.combo_message = "TRIPLE!"
+                else:
+                    render_game.combo_message = f"{lines_count}x CLEAR!"
+                render_game.combo_message_time = 120.0
         except Exception:
             pass
 
@@ -3717,6 +3794,93 @@ class OnlineCoopGame:
         except Exception:
             pass
 
+    def _start_gameplay_music(self):
+        """Gameplay co-op müziğini başlat (host ve guest için).
+
+        Countdown sırasında `stop_music()` çağrıldı. Gameplay'e geçişte
+        coop playlist'ini açıkça yeniden kuruyoruz; CoopGame.__init__'in
+        `_start_music()` çağrısı yardımcı olsa da guest tarafında
+        `_ensure_guest_render_game()` her zaman __init__'i çağırmadığı için
+        wrapper düzeyinde explicit restart playlist ownership'i netleştirir.
+        """
+        sound = getattr(self, 'sound', None)
+        if sound is None or not getattr(sound, 'music_enabled', True):
+            return
+        try:
+            if hasattr(sound, 'unduck_music'):
+                sound.unduck_music()
+        except Exception:
+            pass
+
+        ensure_track_available = getattr(sound, 'ensure_track_available', None)
+        playlist_values: list = []
+        if self.settings_manager:
+            try:
+                playlist_values = list(
+                    self.settings_manager.get_music_playlist_for_mode('coop') or []
+                )
+            except Exception:
+                playlist_values = []
+
+        track_keys: list[str] = []
+        if playlist_values and callable(ensure_track_available):
+            for value in playlist_values:
+                try:
+                    track_key = ensure_track_available(value)
+                except Exception:
+                    track_key = None
+                if track_key:
+                    track_keys.append(track_key)
+
+        if track_keys:
+            try:
+                do_shuffle = bool(self.settings_manager.get('music_shuffle', False)) if self.settings_manager else False
+            except Exception:
+                do_shuffle = False
+            try:
+                start_index = 0 if do_shuffle else random.randrange(len(track_keys))
+            except Exception:
+                start_index = 0
+            try:
+                sound.set_music_playlist(
+                    track_keys,
+                    loop=True,
+                    start_index=start_index,
+                    autoplay=True,
+                    force=True,
+                    shuffle=do_shuffle,
+                )
+                return
+            except Exception:
+                pass
+
+        # Fallback: tek parça
+        preferred = None
+        if self.settings_manager:
+            try:
+                overrides = self.settings_manager.get_mode_music_overrides() if hasattr(
+                    self.settings_manager, 'get_mode_music_overrides'
+                ) else {}
+                preferred = overrides.get('coop') if isinstance(overrides, dict) else None
+            except Exception:
+                preferred = None
+            if not preferred:
+                try:
+                    preferred = self.settings_manager.get('coop_music')
+                except Exception:
+                    preferred = None
+            if not preferred:
+                try:
+                    preferred = self.settings_manager.get('game_music')
+                except Exception:
+                    preferred = None
+        track_key = ensure_track_available(preferred or 'pvp_1') if callable(ensure_track_available) else (preferred or 'pvp_1')
+        if track_key:
+            try:
+                sound.set_music_playlist([track_key], loop=True, autoplay=True, force=True)
+            except Exception:
+                pass
+
     def _on_game_start(self, data: dict):
         """Guest tarafında game_start mesajını işle."""
         if self.online_state not in (
@@ -3760,6 +3924,13 @@ class OnlineCoopGame:
                 sound_manager=self.sound,
                 piece_rng_seed=(int(self._game_seed) if int(self._game_seed or 0) > 0 else None),
             )
+            # Çift playlist tick riskini önlemek için CoopGame'in iç
+            # `update_music_playlist()` çağrısını bastır. Online wrapper
+            # her frame zaten kendi tick'ini atıyor.
+            try:
+                self.coop_game._suppress_internal_music_tick = True
+            except Exception:
+                pass
             # Event listener: lock/clear/game_over gibi olayları guest'e yayınla
             self.coop_game._event_listeners.append(self._on_coop_event)
             remote_players = getattr(self.coop_game, 'remote_authority_players', None)
@@ -3823,6 +3994,13 @@ class OnlineCoopGame:
             self._send_gameplay_config()
             self._send_board_state(force_full=True)
             self._send_piece_state()
+
+        # Countdown sırasında müzik durdurulmuştu — gameplay'e geçişte coop
+        # playlist'ini explicit restart et. Host CoopGame.__init__'i içinde
+        # `_start_music()` çağırsa da güvenli tarafta wrapper düzeyinde de
+        # yeniden başlatıyoruz; guest tarafında CoopGame'in `sound_enabled`'ı
+        # kapalı olduğu için bu çağrı gameplay müziğinin tek garantisidir.
+        self._start_gameplay_music()
 
     def _on_coop_event(self, event_type: str, event_data: dict):
         """CoopGame event listener — host lock/clear/freeze olaylarını guest'e iletir."""
@@ -4382,15 +4560,28 @@ class OnlineCoopGame:
             pass
 
     def _predict_guest_input(self, action: str):
-        """Guest'te kendi parçasını anında oynat; host snapshot'ı otoriter kalır."""
+        """Guest'te kendi parçasını anında oynat; host snapshot'ı otoriter kalır.
+
+        Reaktivite kök iyileştirmesi: input sırasında render cache'i (host
+        board snapshot uygulaması) tetiklemiyoruz. Render cache her frame
+        `_update_guest_local_prediction` üzerinden zaten ilerletiliyor; input
+        anında ek bir cache uygulaması yapmak art arda gelen input'larda
+        gereksiz iş yaratıyor ve özellikle yeni board snapshot bekleyen
+        durumlarda input ile snapshot uygulaması yarışıp algılanan lag'a
+        sebep olabiliyor. Inject doğrudan mevcut CoopGame state'i üzerinden
+        çalışsın — kimlik eşleşmesi `_apply_guest_render_cache` tarafında
+        zaten korunuyor.
+        """
         if self.role != 'guest' or self.online_state != OnlineCoopState.PLAYING:
             return
         if self.game_over or self.paused or action == 'pause_request':
             return
-        if self._guest_board_cache and self._guest_piece_cache:
+        # CoopGame'i mevcut hâliyle al — cache uygulamasını atla.
+        render_game = self.coop_game if self.coop_game is not None else self._ensure_guest_render_game()
+        # Eğer hiç render game yoksa ve cache verisi varsa, ilk uygulama
+        # için cache'i bir kez tetikleyebiliriz (cold-start korumacı).
+        if render_game is None and self._guest_board_cache and self._guest_piece_cache:
             render_game = self._apply_guest_render_cache()
-        else:
-            render_game = self.coop_game if self.coop_game is not None else self._ensure_guest_render_game()
         if not render_game:
             return
         try:

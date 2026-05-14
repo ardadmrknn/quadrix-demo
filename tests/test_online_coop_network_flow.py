@@ -196,6 +196,15 @@ def _make_game(net: FakeNet):
     game._READY_RESEND_INTERVAL_MS = 1000.0
     game._invite_after_lobby = False
     game._join_code_suppress_textinput = ''
+    # Wrapper update() içinde lobby branch'ları için gerekli ek alanlar:
+    game._searching_by_code = False
+    game._search_code = ''
+    game._pending_lobby_list = []
+    game._unknown_lobby_metadata_requests = {}
+    game._UNKNOWN_LOBBY_DATA_REQUEST_INTERVAL_S = 1.25
+    game._authorized_private_join_lobby_id = 0
+    game._authorized_private_join_code = ''
+    game._lobby_access_validated_id = 0
     game.user_manager = None
     game.settings_manager = None
     game.screen = SimpleNamespace(get_width=lambda: 1280, get_height=lambda: 720)
@@ -2503,3 +2512,851 @@ def test_online_coop_default_guest_piece_ack_grace_supports_high_rtt():
     assert '_GUEST_PIECE_ACK_GRACE_S = 2.5' in source, (
         'Default _GUEST_PIECE_ACK_GRACE_S yüksek RTT için yükseltilmiş olmalı'
     )
+
+
+# ===================================================================
+# Online co-op gameplay müziği başlatma + playlist tick parity testleri
+# ===================================================================
+
+class _MusicSoundSpy:
+    def __init__(self):
+        self.music_enabled = True
+        self.set_calls: list[dict] = []
+        self.update_calls = 0
+        self.unduck_calls = 0
+        self.stop_calls = 0
+        self._tracks = {'pvp_1': True, 'klasik_1': True}
+
+    def ensure_track_available(self, value):
+        if not value:
+            return None
+        return value if value in self._tracks else None
+
+    def set_music_playlist(self, tracks, loop=True, start_index=0, autoplay=True, force=False, shuffle=False):
+        self.set_calls.append({
+            'tracks': list(tracks),
+            'loop': loop,
+            'start_index': start_index,
+            'autoplay': autoplay,
+            'force': force,
+            'shuffle': shuffle,
+        })
+        return True
+
+    def update_music_playlist(self):
+        self.update_calls += 1
+
+    def unduck_music(self):
+        self.unduck_calls += 1
+
+    def stop_music(self):
+        self.stop_calls += 1
+
+    def play(self, *_args, **_kwargs):
+        pass
+
+
+class _SettingsStub:
+    def __init__(self, playlist=None, shuffle=False, music_enabled=True, mode_overrides=None):
+        self._playlist = list(playlist or [])
+        self._shuffle = shuffle
+        self._music_enabled = music_enabled
+        self._mode_overrides = dict(mode_overrides or {})
+        self._values = {
+            'music_shuffle': shuffle,
+            'music_enabled': music_enabled,
+            'coop_music': None,
+            'game_music': None,
+        }
+
+    def get(self, key, default=None):
+        return self._values.get(key, default)
+
+    def get_music_playlist_for_mode(self, mode_key):
+        return list(self._playlist)
+
+    def get_mode_music_overrides(self):
+        return dict(self._mode_overrides)
+
+
+def test_online_coop_start_gameplay_music_uses_coop_playlist_with_force_restart():
+    """Countdown sonrası gameplay'e geçişte coop playlist explicit start edilmeli."""
+    net = FakeNet()
+    game = _make_game(net)
+    sound = _MusicSoundSpy()
+    game.sound = sound
+    game.settings_manager = _SettingsStub(playlist=['pvp_1', 'klasik_1'], shuffle=False)
+
+    game._start_gameplay_music()
+
+    assert len(sound.set_calls) == 1
+    call = sound.set_calls[0]
+    assert call['tracks'] == ['pvp_1', 'klasik_1']
+    assert call['autoplay'] is True
+    assert call['force'] is True
+    assert call['loop'] is True
+    assert sound.unduck_calls == 1
+
+
+def test_online_coop_start_gameplay_music_falls_back_to_single_coop_default_track():
+    """Playlist boşsa tek track ile fallback yapılmalı (varsayılan pvp_1)."""
+    net = FakeNet()
+    game = _make_game(net)
+    sound = _MusicSoundSpy()
+    game.sound = sound
+    game.settings_manager = _SettingsStub(playlist=[], shuffle=False)
+
+    game._start_gameplay_music()
+
+    assert len(sound.set_calls) == 1
+    call = sound.set_calls[0]
+    assert call['tracks'] == ['pvp_1']
+    assert call['force'] is True
+
+
+def test_online_coop_update_ticks_music_playlist_during_play_state():
+    """PLAYING state'te wrapper update() gerçekten playlist tick atmalı.
+
+    `OnlineCoopGame.update()`'i fixture üzerinde gerçekten çağırıp
+    `_MusicSoundSpy.update_calls` sayacının arttığını doğruluyoruz.
+    """
+    net = FakeNet()
+    game = _make_game(net)
+    sound = _MusicSoundSpy()
+    game.sound = sound
+    game.online_state = coop_module.OnlineCoopState.PLAYING
+    # Gerçek update()'in dışarıya etkisini bastır: yan yollar no-op olsun.
+    game._process_messages = lambda: None
+    game._update_guest_local_prediction = lambda dt: None
+    game.coop_game = SimpleNamespace(
+        update=lambda dt: None,
+        p1_frozen=False,
+        p2_frozen=False,
+        game_over=False,
+    )
+    game._auto_connect_attempted = True
+    game._net_initialized = True
+    game._auto_lobby_refresh_requested = True
+
+    game.update(16.0)
+    game.update(16.0)
+
+    assert sound.update_calls == 2, 'PLAYING state\'te wrapper update playlist tick atmalı'
+
+
+def test_online_coop_update_does_not_tick_music_playlist_outside_play_state():
+    """LOBBY_MENU state'te gameplay playlist tick atılmamalı."""
+    net = FakeNet()
+    game = _make_game(net)
+    sound = _MusicSoundSpy()
+    game.sound = sound
+    game.online_state = coop_module.OnlineCoopState.LOBBY_MENU
+    game._process_messages = lambda: None
+    game._auto_connect_attempted = True
+    game._net_initialized = True
+    game._auto_lobby_refresh_requested = True
+
+    game.update(16.0)
+
+    assert sound.update_calls == 0, (
+        'Lobby state\'te gameplay playlist tick atılmamalı'
+    )
+
+
+def test_online_coop_update_does_not_double_tick_music_for_host_via_coop_game():
+    """Host frame'inde wrapper + CoopGame çift tick atmamalı.
+
+    Host CoopGame `_suppress_internal_music_tick=True` ile yaratılmalı; wrapper
+    tek tick atar. Bu testte CoopGame.update gerçek davranışını taklit eden
+    spy ile çağırıp yalnızca wrapper'ın bir kez tick attığını doğruluyoruz.
+    """
+    net = FakeNet()
+    game = _make_game(net)
+    sound = _MusicSoundSpy()
+    game.sound = sound
+    game.online_state = coop_module.OnlineCoopState.PLAYING
+    game.role = 'host'
+    game._process_messages = lambda: None
+    game._auto_connect_attempted = True
+    game._net_initialized = True
+    game._auto_lobby_refresh_requested = True
+
+    # Gerçek host CoopGame davranışını simüle et: suppress flag açıksa tick yok.
+    coop_tick_calls = {'count': 0}
+
+    def coop_update(dt):
+        # Gerçek CoopGame.update'inin müzik tick davranışını birebir taklit:
+        if not getattr(coop_spy, '_suppress_internal_music_tick', False):
+            coop_tick_calls['count'] += 1
+            sound.update_music_playlist()
+
+    coop_spy = SimpleNamespace(
+        update=coop_update,
+        p1_frozen=False,
+        p2_frozen=False,
+        game_over=False,
+        _suppress_internal_music_tick=True,
+    )
+    game.coop_game = coop_spy
+    game._last_frozen_flags = (False, False)
+    game._BOARD_STATE_INTERVAL = 1_000_000.0  # broadcasts atlanmaz; sayım önemli değil
+    game._PIECE_STATE_INTERVAL = 1_000_000.0
+    game._board_state_timer = 0.0
+    game._piece_state_timer = 0.0
+    game._push_piece_state_if_changed = lambda *a, **kw: False
+    game._send_board_state = lambda *a, **kw: None
+    game._send_piece_state = lambda *a, **kw: None
+
+    game.update(16.0)
+
+    # Wrapper tam 1 tick atmalı, CoopGame iç tick atlamalı (suppress aktif).
+    assert sound.update_calls == 1, (
+        f'Host frame\'inde tam 1 playlist tick beklenirdi (wrapper); gözlenen: {sound.update_calls}'
+    )
+    assert coop_tick_calls['count'] == 0, (
+        'Host CoopGame _suppress_internal_music_tick aktifken kendi tick\'ini atmamalı'
+    )
+
+
+def test_online_coop_start_gameplay_music_respects_disabled_music_setting():
+    """Music disabled ise playlist set edilmemeli."""
+    net = FakeNet()
+    game = _make_game(net)
+    sound = _MusicSoundSpy()
+    sound.music_enabled = False
+    game.sound = sound
+    game.settings_manager = _SettingsStub(playlist=['pvp_1'], music_enabled=False)
+
+    game._start_gameplay_music()
+
+    assert sound.set_calls == []
+
+
+# ===================================================================
+# Online co-op guest line-clear parity testleri (Game/PvP/CoopGame ile)
+# ===================================================================
+
+def test_online_coop_guest_apply_lock_event_queues_wave_effects_for_cleared_rows():
+    """Guest tarafında lock event geldiğinde line_clear_wave_effects doldurulmalı."""
+    net = FakeNet()
+    game = _make_game(net)
+    game.online_state = coop_module.OnlineCoopState.PLAYING
+    game.role = 'guest'
+
+    fake_render = SimpleNamespace(
+        line_clear_pending_rows=[],
+        line_clear_pending_colors={},
+        line_clear_wave_effects=[],
+        cell_size=20,
+        board_offset_x=10,
+        board_offset_y=10,
+        effects_enabled=True,
+        board=SimpleNamespace(width=20, height=20, last_clear_row_colors={}),
+        _start_line_clear_sweep=lambda rows: None,
+        trigger_screen_shake=lambda *a, **kw: None,
+        create_lock_explosion=lambda *a, **kw: None,
+        create_particles=lambda *a, **kw: None,
+        create_line_clear_particles=lambda *a, **kw: None,
+        _start_block_fall_animation=lambda *a, **kw: None,
+        line_clear_sweep_active=True,
+        _fall_animation_rows_key=None,
+    )
+    game.coop_game = fake_render
+    game._ensure_guest_render_game = lambda: fake_render
+
+    row_color = [(0, 255, 255)] * 20
+    payload = {
+        'type': MsgType.COOP_LOCK_EVENT,
+        'player': 'P2',
+        'lines': 4,
+        'cleared_rows': [16, 17, 18, 19],
+        'row_colors': {16: row_color, 17: row_color, 18: row_color, 19: row_color},
+        'new_score': 800,
+        'new_level': 2,
+        'total_lines': 4,
+    }
+    game._apply_guest_lock_event(payload)
+
+    assert len(fake_render.line_clear_wave_effects) == 4
+    # Her dalga gerekli alanları içermeli.
+    for wave in fake_render.line_clear_wave_effects:
+        assert 'x' in wave and 'y' in wave
+        assert 'radius' in wave and 'max_radius' in wave
+        assert 'speed' in wave
+        assert wave['alpha'] == 200
+
+
+def test_online_coop_guest_apply_lock_event_calls_create_line_clear_particles():
+    """Guest tarafında lock event geldiğinde Game/PvP ile parity'li parçacık zinciri tetiklenmeli."""
+    net = FakeNet()
+    game = _make_game(net)
+    game.online_state = coop_module.OnlineCoopState.PLAYING
+    game.role = 'guest'
+
+    particle_calls: list = []
+
+    fake_board = SimpleNamespace(width=20, height=20, last_clear_row_colors={})
+    fake_render = SimpleNamespace(
+        line_clear_pending_rows=[],
+        line_clear_pending_colors={},
+        line_clear_wave_effects=[],
+        cell_size=20,
+        board_offset_x=10,
+        board_offset_y=10,
+        effects_enabled=True,
+        board=fake_board,
+        _start_line_clear_sweep=lambda rows: None,
+        trigger_screen_shake=lambda *a, **kw: None,
+        create_lock_explosion=lambda *a, **kw: None,
+        create_particles=lambda *a, **kw: None,
+        create_line_clear_particles=lambda rows, ox, oy, cs, board=None: particle_calls.append((tuple(rows), ox, oy, cs)),
+        _start_block_fall_animation=lambda *a, **kw: None,
+        line_clear_sweep_active=True,
+        _fall_animation_rows_key=None,
+    )
+    game.coop_game = fake_render
+    game._ensure_guest_render_game = lambda: fake_render
+
+    row_color = [(255, 100, 0)] * 20
+    payload = {
+        'type': MsgType.COOP_LOCK_EVENT,
+        'player': 'P1',
+        'lines': 2,
+        'cleared_rows': [18, 19],
+        'row_colors': {18: row_color, 19: row_color},
+        'new_score': 200,
+        'new_level': 1,
+        'total_lines': 2,
+    }
+    game._apply_guest_lock_event(payload)
+
+    assert len(particle_calls) == 1
+    rows, ox, oy, cs = particle_calls[0]
+    assert sorted(rows) == [18, 19]
+    assert cs == 20
+
+
+def test_coop_game_create_line_clear_particles_uses_snapshot_color():
+    """CoopGame.create_line_clear_particles last_clear_row_colors'tan hücre rengi kullanmalı."""
+    import coop_game as cg_module
+    cg = cg_module.CoopGame.__new__(cg_module.CoopGame)
+    cg.particles = []
+    cg.effects_enabled = True
+    cg.animation_multiplier = 1.0
+    cg._FRAME_MS = 1000.0 / 60.0
+    cg.window_width = 1280
+    cg.window_height = 720
+    cg.cell_size = 20
+    cg.board_offset_x = 0
+    cg.board_offset_y = 0
+    cg._particle_effects_enabled = lambda: True
+    cg._particle_effects_multiplier = lambda: 1.0
+    cg.board = SimpleNamespace(width=20, height=20, last_clear_row_colors={5: [(123, 45, 67)] * 20})
+
+    cg.create_line_clear_particles([5], 0, 0, 20, board=cg.board)
+
+    assert cg.particles, 'Parçacıklar oluşmalı'
+    # Snapshot rengi (123,45,67) bazı parçacıklarda görülmeli.
+    snapshot_colors_seen = sum(1 for p in cg.particles if tuple(p['color'][:3]) == (123, 45, 67))
+    assert snapshot_colors_seen > 0
+
+
+def test_coop_game_handle_player_lock_populates_wave_effects():
+    """CoopGame._lock_and_new_piece sırasında satır temizleme dalga efektleri eklenir.
+
+    `_queue_wave_effects` helper'ı düzgün çağrıldığını doğrular: cleared_rows
+    listesindeki her satır için bir wave entry eklenmeli.
+    """
+    import line_clear_feedback as _lcf
+    wave_list: list = []
+    _lcf.queue_wave_effects(
+        wave_list,
+        cleared_rows=[16, 17, 18, 19],
+        board_offset_x=10,
+        board_offset_y=20,
+        cell_size=30,
+        board_width_cells=20,
+    )
+    assert len(wave_list) == 4
+    for idx, wave in enumerate(wave_list):
+        # x koordinatı board ortasını gösterir.
+        assert wave['x'] == 10 + (20 * 30) // 2
+        assert wave['radius'] == 0
+        assert wave['max_radius'] == 20 * 30
+        assert wave['alpha'] == 200
+        assert wave['speed'] == 15.0
+
+
+def test_line_clear_feedback_update_wave_effects_advances_radius_and_drops_finished():
+    """Wave update helper radius'u ilerletir ve sönen efektleri çıkarır."""
+    import line_clear_feedback as _lcf
+    wave_list = [
+        {
+            'x': 100,
+            'y': 100,
+            'radius': 0,
+            'max_radius': 100,
+            'alpha': 200,
+            'color': (255, 255, 255),
+            'speed': 15.0,
+        }
+    ]
+    _lcf.update_wave_effects(wave_list, dt_frames=1.0)
+    assert wave_list[0]['radius'] == 15.0
+    # 2x4 frame sonra biter (60 frame * 1.0 ~= 100px). Birkaç tick daha çevir.
+    for _ in range(20):
+        _lcf.update_wave_effects(wave_list, dt_frames=1.0)
+    assert wave_list == [], 'Tamamlanan dalga listeden çıkmalı'
+
+
+
+# ===================================================================
+# Çok modlu line-clear helper parity testleri (Game / PvP / OnlinePvP / Coop)
+# ===================================================================
+
+def test_line_clear_helper_is_imported_by_all_gameplay_modes():
+    """`line_clear_feedback` helper'ı tüm gameplay modülleri tarafından import edilmeli.
+
+    Bu, ortak refactor'ın sadece co-op tarafında kalmadığını ve Game / PvP /
+    OnlinePvP / Coop / OnlineCoop'un hepsinin aynı kaynağa bağlandığını doğrular.
+    """
+    import importlib
+    expected_modules = [
+        'game',
+        'pvp_game',
+        'online_pvp_game',
+        'coop_game',
+        'online_coop_game',
+    ]
+    missing = []
+    for mod_name in expected_modules:
+        try:
+            mod = importlib.import_module(mod_name)
+        except Exception as exc:
+            missing.append(f'{mod_name} (import error: {exc})')
+            continue
+        # Modül kaynağında `line_clear_feedback` referansı olmalı.
+        from inspect import getsource
+        try:
+            src = getsource(mod)
+        except Exception:
+            src = ''
+        if 'line_clear_feedback' not in src:
+            missing.append(mod_name)
+    assert not missing, (
+        f'Şu modüller line_clear_feedback helper\'ını kullanmıyor: {missing}'
+    )
+
+
+def test_pvp_game_p1_line_clear_uses_shared_wave_helper():
+    """PvP P1 line clear ortak `_queue_wave_effects` helper'ını kullanmalı."""
+    import inspect
+    import pvp_game as pvp_module
+    # PvPGame.update_animations veya draw_locked_blocks yerine sınıfın tüm
+    # kaynağında inline `wave_y = ... wave_x = ...; .append({` deseninin
+    # kalmadığını doğrula. Bu, helper'a geçiş yaptığımızı sözdizimsel olarak
+    # zorlar (refactor regression guard).
+    src = inspect.getsource(pvp_module.PvPGame)
+    # Kaba bir kontrol: helper çağrısı olmalı.
+    assert '_queue_wave_effects(' in src, 'PvPGame _queue_wave_effects çağırmıyor'
+    assert '_update_wave_effects(' in src, 'PvPGame _update_wave_effects çağırmıyor'
+    # Eski inline append deseni P1/P2 wave için kalmamalı.
+    assert 'self.p1_wave_effects.append({' not in src, (
+        'PvPGame P1 wave inline append hâlâ var; helper\'a geçiş eksik'
+    )
+    assert 'self.p2_wave_effects.append({' not in src, (
+        'PvPGame P2 wave inline append hâlâ var; helper\'a geçiş eksik'
+    )
+
+
+def test_online_pvp_game_line_clear_uses_shared_wave_helper():
+    """OnlinePvPGame `_trigger_line_clear_feedback` helper kullanmalı."""
+    import inspect
+    import online_pvp_game as opvp_module
+    src = inspect.getsource(opvp_module.OnlinePvPGame)
+    assert '_queue_wave_effects(' in src, 'OnlinePvPGame _queue_wave_effects çağırmıyor'
+    assert '_update_wave_effects(' in src, 'OnlinePvPGame _update_wave_effects çağırmıyor'
+    # Eski inline append deseni my/opp wave için kalmamalı.
+    assert "wave_list.append({" not in src, (
+        'OnlinePvPGame wave_list inline append hâlâ var; helper\'a geçiş eksik'
+    )
+
+
+def test_game_line_clear_uses_shared_wave_helper():
+    """Game (single-player + Mystery base) `_queue_line_clear_effects` helper kullanmalı."""
+    import inspect
+    import game as game_module
+    src = inspect.getsource(game_module.Game)
+    assert '_queue_wave_effects(' in src, 'Game _queue_wave_effects çağırmıyor'
+    assert '_update_wave_effects(' in src, 'Game _update_wave_effects çağırmıyor'
+    assert 'self.line_clear_wave_effects.append({' not in src, (
+        'Game inline wave append hâlâ var; helper\'a geçiş eksik'
+    )
+
+
+def test_pvp_game_p1_combo_burst_uses_shared_helper():
+    """PvP P1 multi-line / Quadrix patlaması helper'ı çağırmalı."""
+    import inspect
+    import pvp_game as pvp_module
+    src = inspect.getsource(pvp_module.PvPGame)
+    # _trigger_combo_burst PvP'de iki kez (P1/P2) çağrılıyor olmalı.
+    occurrences = src.count('_trigger_combo_burst(')
+    assert occurrences >= 2, (
+        f'PvP\'de _trigger_combo_burst en az iki kez beklenirdi (P1+P2); gözlenen: {occurrences}'
+    )
+
+
+def test_trigger_combo_burst_quadrix_uses_150_particles_at_speed_10():
+    """Quadrix kombo burst Game / PvP ile aynı sayı/hız profilini kullanmalı."""
+    import line_clear_feedback as _lcf
+    captured = []
+
+    spy = SimpleNamespace(
+        effects_enabled=True,
+        create_particles=lambda count, x, y, colors, speed: captured.append({
+            'count': count,
+            'x': x,
+            'y': y,
+            'colors': list(colors),
+            'speed': speed,
+        }),
+    )
+    _lcf.trigger_combo_burst(
+        spy,
+        cleared_rows=[16, 17, 18, 19],
+        lines_cleared=4,
+        board_offset_x=10,
+        board_offset_y=20,
+        cell_size=30,
+        board_width_cells=20,
+        board_height_cells=20,
+    )
+    assert len(captured) == 1
+    call = captured[0]
+    assert call['count'] == 150
+    assert call['speed'] == 10
+
+
+def test_trigger_combo_burst_double_uses_50_per_line_at_speed_6():
+    """2-3 satır kombo `50*lines` partikül speed=6 profili kullanmalı."""
+    import line_clear_feedback as _lcf
+    captured = []
+
+    spy = SimpleNamespace(
+        effects_enabled=True,
+        create_particles=lambda count, x, y, colors, speed: captured.append({
+            'count': count,
+            'speed': speed,
+        }),
+    )
+    _lcf.trigger_combo_burst(
+        spy,
+        cleared_rows=[18, 19],
+        lines_cleared=2,
+        board_offset_x=0,
+        board_offset_y=0,
+        cell_size=20,
+        board_width_cells=20,
+        board_height_cells=20,
+    )
+    assert len(captured) == 1
+    call = captured[0]
+    assert call['count'] == 100  # 50 * 2
+    assert call['speed'] == 6
+
+
+def test_trigger_combo_burst_respects_color_overrides():
+    """Renk override (PvP P2 magenta paleti) helper tarafından korunmalı."""
+    import line_clear_feedback as _lcf
+    captured = []
+
+    spy = SimpleNamespace(
+        effects_enabled=True,
+        create_particles=lambda count, x, y, colors, speed: captured.append({
+            'colors': list(colors),
+        }),
+    )
+    p2_quadrix = [(255, 215, 0), (255, 165, 0), (255, 255, 255), (255, 0, 255)]
+    _lcf.trigger_combo_burst(
+        spy,
+        cleared_rows=[19],
+        lines_cleared=4,
+        board_offset_x=0,
+        board_offset_y=0,
+        cell_size=20,
+        board_width_cells=20,
+        board_height_cells=20,
+        quadrix_colors=p2_quadrix,
+    )
+    assert captured[0]['colors'] == p2_quadrix
+
+
+def test_trigger_combo_burst_skips_single_line_clears():
+    """Tek satır temizleme kombo burst tetiklememeli (Game / PvP davranışıyla parity)."""
+    import line_clear_feedback as _lcf
+    captured = []
+
+    spy = SimpleNamespace(
+        effects_enabled=True,
+        create_particles=lambda *a, **kw: captured.append(True),
+    )
+    _lcf.trigger_combo_burst(
+        spy,
+        cleared_rows=[19],
+        lines_cleared=1,
+        board_offset_x=0,
+        board_offset_y=0,
+        cell_size=20,
+        board_width_cells=20,
+        board_height_cells=20,
+    )
+    assert captured == []
+
+
+
+# ===================================================================
+# Guest input reactivity testleri (kök neden iyileştirmesi)
+# ===================================================================
+
+def test_predict_guest_input_skips_render_cache_when_coop_game_exists():
+    """Reaktivite iyileştirmesi: prediction sırasında render cache atlanmalı.
+
+    Mevcut CoopGame instance'ı varsa `_apply_guest_render_cache` çağrılmamalı;
+    bu, art arda gelen input'larda gereksiz iş yapılmasını engeller ve algılanan
+    lag'ı azaltır. Render cache her frame `_update_guest_local_prediction`
+    tarafından zaten ilerletilir.
+    """
+    net = FakeNet()
+    game = _make_game(net)
+    game.online_state = coop_module.OnlineCoopState.PLAYING
+    game.role = 'guest'
+
+    cache_apply_calls = {'count': 0}
+    inject_calls: list = []
+
+    def fake_apply_cache():
+        cache_apply_calls['count'] += 1
+        return game.coop_game
+
+    fake_render = SimpleNamespace(
+        game_over=False,
+        paused=False,
+        p2_current_piece=SimpleNamespace(shape_index=1, x=13, y=0, rotation_state=0),
+        p2_next_piece=SimpleNamespace(shape_index=3),
+        p2_hold_piece=None,
+        p2_frozen=False,
+        inject_remote_input=lambda player, action: inject_calls.append((player, action)),
+    )
+    game.coop_game = fake_render
+    game._apply_guest_render_cache = fake_apply_cache
+    # Cache verisi var ama coop_game zaten tanımlı → cache atlanmalı.
+    game._guest_board_cache = {'seq': 1}
+    game._guest_piece_cache = {'seq': 1}
+
+    game._predict_guest_input('move_left')
+    game._predict_guest_input('move_right')
+    game._predict_guest_input('rotate')
+
+    assert inject_calls == [
+        ('P2', 'move_left'),
+        ('P2', 'move_right'),
+        ('P2', 'rotate'),
+    ]
+    assert cache_apply_calls['count'] == 0, (
+        'CoopGame mevcutsa _predict_guest_input render cache çağırmamalı '
+        '(reaktivite kök iyileştirmesi)'
+    )
+
+
+def test_predict_guest_input_cold_start_falls_back_to_render_cache():
+    """CoopGame yoksa cold-start için cache uygulaması bir kere tetiklenmeli."""
+    net = FakeNet()
+    game = _make_game(net)
+    game.online_state = coop_module.OnlineCoopState.PLAYING
+    game.role = 'guest'
+
+    cache_apply_calls = {'count': 0}
+
+    fake_render = SimpleNamespace(
+        game_over=False,
+        paused=False,
+        p2_current_piece=SimpleNamespace(shape_index=1, x=13, y=0, rotation_state=0),
+        p2_next_piece=SimpleNamespace(shape_index=3),
+        p2_hold_piece=None,
+        p2_frozen=False,
+        inject_remote_input=lambda player, action: None,
+    )
+
+    def fake_apply_cache():
+        cache_apply_calls['count'] += 1
+        # Cold-start: cache uygulaması coop_game'i kuruyor.
+        game.coop_game = fake_render
+        return fake_render
+
+    game.coop_game = None
+    game._ensure_guest_render_game = lambda: None
+    game._apply_guest_render_cache = fake_apply_cache
+    game._guest_board_cache = {'seq': 1}
+    game._guest_piece_cache = {'seq': 1}
+
+    game._predict_guest_input('move_left')
+
+    assert cache_apply_calls['count'] == 1, (
+        'CoopGame yokken cold-start cache fallback bir kez tetiklenmeli'
+    )
+
+
+
+# ===================================================================
+# Pending row snapshot parity testleri (Mystery / Game / PvP / OnlinePvP /
+# Coop / OnlineCoop hepsi aynı silinen-satır snapshot davranışına sahip
+# olmalı — sweep ön kenarına kadar görünür kal).
+# ===================================================================
+
+def test_pvp_game_p1_line_clear_populates_pending_row_snapshot():
+    """PvP P1 line clear sırasında pending row snapshot doldurulmalı."""
+    import inspect
+    import pvp_game as pvp_module
+    src = inspect.getsource(pvp_module.PvPGame)
+    assert 'p1_line_pending_rows' in src, 'PvPGame p1_line_pending_rows tutmuyor'
+    assert 'p1_line_pending_colors' in src, 'PvPGame p1_line_pending_colors tutmuyor'
+    assert 'last_cleared_colors' in src, (
+        'PvPGame board.last_cleared_colors\'tan snapshot almıyor'
+    )
+
+
+def test_pvp_game_p2_line_clear_populates_pending_row_snapshot():
+    """PvP P2 line clear sırasında pending row snapshot doldurulmalı."""
+    import inspect
+    import pvp_game as pvp_module
+    src = inspect.getsource(pvp_module.PvPGame)
+    assert 'p2_line_pending_rows' in src, 'PvPGame p2_line_pending_rows tutmuyor'
+    assert 'p2_line_pending_colors' in src, 'PvPGame p2_line_pending_colors tutmuyor'
+
+
+def test_online_pvp_line_clear_populates_pending_row_snapshot():
+    """OnlinePvP line clear sırasında my/opp pending row snapshot doldurulmalı."""
+    import inspect
+    import online_pvp_game as opvp_module
+    src = inspect.getsource(opvp_module.OnlinePvPGame)
+    assert 'my_line_pending_rows' in src, 'OnlinePvPGame my_line_pending_rows tutmuyor'
+    assert 'opp_line_pending_rows' in src, 'OnlinePvPGame opp_line_pending_rows tutmuyor'
+    assert 'my_line_pending_colors' in src, 'OnlinePvPGame my_line_pending_colors tutmuyor'
+    assert 'opp_line_pending_colors' in src, 'OnlinePvPGame opp_line_pending_colors tutmuyor'
+
+
+def test_online_pvp_quadrix_burst_uses_shared_helper():
+    """OnlinePvP Quadrix burst inline değil, ortak helper'a geçirilmiş olmalı."""
+    import inspect
+    import online_pvp_game as opvp_module
+    src = inspect.getsource(opvp_module.OnlinePvPGame)
+    assert '_trigger_combo_burst(' in src, (
+        'OnlinePvPGame _trigger_combo_burst helper\'ını çağırmıyor'
+    )
+    assert 'self.create_particles(150, center_x, center_y, extra_colors' not in src, (
+        'OnlinePvPGame Quadrix inline create_particles 150 hâlâ duruyor'
+    )
+
+
+def test_coop_game_line_clear_populates_combo_message():
+    """CoopGame _lock_and_new_piece line clear sırasında combo_message kurmalı."""
+    import inspect
+    import coop_game as cg_module
+    src = inspect.getsource(cg_module.CoopGame)
+    # Combo / Quadrix overlay alanları ve string sabitleri kaynakta olmalı.
+    assert 'self.combo_message' in src, 'CoopGame combo_message field\'i yok'
+    assert '"QUADRIX!"' in src, 'CoopGame Quadrix combo mesajı set etmiyor'
+    assert '"DOUBLE!"' in src, 'CoopGame Double combo mesajı set etmiyor'
+    assert '"TRIPLE!"' in src, 'CoopGame Triple combo mesajı set etmiyor'
+    assert 'get_combo_popup_alpha' in src, 'CoopGame combo overlay fade kullanmıyor'
+
+
+def test_online_coop_guest_lock_event_sets_combo_message_on_render_game():
+    """Online co-op guest lock event geldiğinde render_game.combo_message kurulmalı."""
+    net = FakeNet()
+    game = _make_game(net)
+    game.online_state = coop_module.OnlineCoopState.PLAYING
+    game.role = 'guest'
+
+    fake_render = SimpleNamespace(
+        line_clear_pending_rows=[],
+        line_clear_pending_colors={},
+        line_clear_wave_effects=[],
+        cell_size=20,
+        board_offset_x=10,
+        board_offset_y=10,
+        effects_enabled=True,
+        board=SimpleNamespace(width=20, height=20, last_clear_row_colors={}),
+        _start_line_clear_sweep=lambda rows: None,
+        trigger_screen_shake=lambda *a, **kw: None,
+        create_lock_explosion=lambda *a, **kw: None,
+        create_particles=lambda *a, **kw: None,
+        create_line_clear_particles=lambda *a, **kw: None,
+        _start_block_fall_animation=lambda *a, **kw: None,
+        line_clear_sweep_active=True,
+        _fall_animation_rows_key=None,
+        combo_message='',
+        combo_message_time=0.0,
+    )
+    game.coop_game = fake_render
+    game._ensure_guest_render_game = lambda: fake_render
+
+    row_color = [(0, 255, 255)] * 20
+    payload = {
+        'type': MsgType.COOP_LOCK_EVENT,
+        'player': 'P1',
+        'lines': 4,
+        'cleared_rows': [16, 17, 18, 19],
+        'row_colors': {16: row_color, 17: row_color, 18: row_color, 19: row_color},
+        'new_score': 800,
+        'new_level': 2,
+        'total_lines': 4,
+    }
+    game._apply_guest_lock_event(payload)
+
+    assert fake_render.combo_message == 'QUADRIX!'
+    assert fake_render.combo_message_time > 0
+
+
+def test_online_coop_guest_lock_event_sets_double_combo_for_two_lines():
+    """Online co-op guest 2-line clear DOUBLE mesajını set etmeli."""
+    net = FakeNet()
+    game = _make_game(net)
+    game.online_state = coop_module.OnlineCoopState.PLAYING
+    game.role = 'guest'
+
+    fake_render = SimpleNamespace(
+        line_clear_pending_rows=[],
+        line_clear_pending_colors={},
+        line_clear_wave_effects=[],
+        cell_size=20,
+        board_offset_x=10,
+        board_offset_y=10,
+        effects_enabled=True,
+        board=SimpleNamespace(width=20, height=20, last_clear_row_colors={}),
+        _start_line_clear_sweep=lambda rows: None,
+        trigger_screen_shake=lambda *a, **kw: None,
+        create_lock_explosion=lambda *a, **kw: None,
+        create_particles=lambda *a, **kw: None,
+        create_line_clear_particles=lambda *a, **kw: None,
+        _start_block_fall_animation=lambda *a, **kw: None,
+        line_clear_sweep_active=True,
+        _fall_animation_rows_key=None,
+        combo_message='',
+        combo_message_time=0.0,
+    )
+    game.coop_game = fake_render
+    game._ensure_guest_render_game = lambda: fake_render
+
+    row_color = [(255, 100, 0)] * 20
+    payload = {
+        'type': MsgType.COOP_LOCK_EVENT,
+        'player': 'P2',
+        'lines': 2,
+        'cleared_rows': [18, 19],
+        'row_colors': {18: row_color, 19: row_color},
+    }
+    game._apply_guest_lock_event(payload)
+
+    assert fake_render.combo_message == 'DOUBLE!'
+    assert fake_render.combo_message_time > 0

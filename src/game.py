@@ -50,6 +50,10 @@ except ImportError:
 from effect_surface_cache import EffectSurfaceCache
 from gameplay_layout import compute_single_player_layout, get_display_pixel_ratio
 from sweep_effects import SweepCatState, draw_rainbow_cat_sweep
+from line_clear_feedback import (
+    queue_wave_effects as _queue_wave_effects,
+    update_wave_effects as _update_wave_effects,
+)
 try:
     from sweep_effects import compute_line_sweep_progress_speed as _compute_line_sweep_progress_speed
 except Exception:
@@ -2832,18 +2836,15 @@ class Game:
 
             self.create_line_clear_particles(cleared_rows, offset_x, offset_y, cell_size)
 
-            for row in cleared_rows:
-                wave_y = offset_y + row * cell_size + cell_size // 2
-                wave_x = offset_x + (self.board_width * cell_size) // 2
-                self.line_clear_wave_effects.append({
-                    'x': wave_x,
-                    'y': wave_y,
-                    'radius': 0,
-                    'max_radius': self.board_width * cell_size,
-                    'alpha': 200,
-                    'color': (255, 255, 255),
-                    'speed': 15,
-                })
+            # Dalga efektleri — ortak helper ile (PvP / OnlinePvP / Coop ile parity)
+            _queue_wave_effects(
+                self.line_clear_wave_effects,
+                cleared_rows,
+                offset_x,
+                offset_y,
+                cell_size,
+                self.board_width,
+            )
 
             self._start_block_fall_animation(cleared_rows)
 
@@ -4156,12 +4157,11 @@ class Game:
                 self.line_clear_pending_rows = []
                 self.line_clear_pending_colors = {}
         
-        # Dalga efektlerini güncelle
-        for wave in self.line_clear_wave_effects[:]:
-            wave['radius'] += wave['speed'] * dt_frames
-            wave['alpha'] = int(200 * (1 - wave['radius'] / wave['max_radius']))
-            if wave['radius'] >= wave['max_radius'] or wave['alpha'] <= 0:
-                self.line_clear_wave_effects.remove(wave)
+        # Dalga efektlerini güncelle — ortak helper ile parity
+        try:
+            _update_wave_effects(self.line_clear_wave_effects, dt_frames)
+        except Exception:
+            pass
         
         # Blok düşme animasyonlarını güncelle
         if self.falling_block_animations:

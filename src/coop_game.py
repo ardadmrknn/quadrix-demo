@@ -37,6 +37,16 @@ from gamepad_manager import is_gamepad_connected
 from promptfont_support import render_action_prompt_surface, render_button_index_prompt_surface
 from ui_theme import UIColors, UIFonts
 from sweep_effects import SweepCatState, draw_rainbow_cat_sweep
+from line_clear_feedback import (
+    queue_wave_effects as _queue_wave_effects,
+    update_wave_effects as _update_wave_effects,
+    trigger_combo_burst as _trigger_combo_burst,
+)
+from combo_popup_style import (
+    COMBO_POPUP_SHADOW_COLOR,
+    get_combo_popup_alpha,
+    get_combo_popup_color,
+)
 try:
     from sweep_effects import compute_line_sweep_progress_speed as _compute_line_sweep_progress_speed
 except Exception:
@@ -278,6 +288,10 @@ class CoopGame:
             self.sound.unduck_music()
         self._music_mode_key = getattr(self, '_music_mode_key', 'coop')
         self.current_music_track = None
+        # Online co-op host'unda wrapper kendi `update_music_playlist()` tick'ini
+        # atar; aynı frame'de CoopGame'in iç tick'i çift tick yaratmasın diye
+        # bu flag default False; OnlineCoopGame bunu host yaratırken True yapar.
+        self._suppress_internal_music_tick = False
         self.effects_enabled = effects_enabled
         self._start_music()
 
@@ -445,6 +459,9 @@ class CoopGame:
         self.drop_trails: list = []
         self.line_clear_flash = False
         self._flash_timer = 0.0
+        # Combo / Quadrix mesaj overlay'i (Game / PvP ile parity için)
+        self.combo_message: str = ""
+        self.combo_message_time: float = 0.0
         self.line_clear_sweep_active = False
         self.line_clear_sweep_progress = 0.0
         self.line_clear_sweep_rows: list[int] = []
@@ -1456,6 +1473,80 @@ class CoopGame:
                 'size': random.randint(2, 5),
             })
 
+    def create_line_clear_particles(self, cleared_rows, board_offset_x, board_offset_y, cell_size, board=None):
+        """Satır temizlendiğinde Game / PvP ile parity'li parçacık zinciri.
+
+        Hücre rengi `last_cleared_colors` (CoopBoard `last_clear_row_colors`)
+        snapshot'ından alınır; sweep henüz oynamadan önceki parça renklerini
+        kullanır. Mod-spesifik bookkeeping (skor / katkı) bu fonksiyona girmez.
+        """
+        if not self._particle_effects_enabled():
+            return
+        target_board = board if board is not None else self.board
+        sparkle_colors = [
+            (255, 255, 255),
+            (255, 255, 200),
+            (255, 215, 0),
+            (0, 255, 255),
+            (255, 100, 255),
+        ]
+        cs = max(1, int(cell_size))
+        board_width_cells = max(1, int(getattr(target_board, 'width', BOARD_WIDTH)))
+        cleared_colors_map = getattr(target_board, 'last_clear_row_colors', None) or getattr(target_board, 'last_cleared_colors', None) or {}
+
+        # Per-cell saçılım
+        for row in cleared_rows:
+            try:
+                row_index = int(row)
+            except (TypeError, ValueError):
+                continue
+            row_colors = cleared_colors_map.get(row_index) if isinstance(cleared_colors_map, dict) else None
+            for col in range(board_width_cells):
+                cell_x = int(board_offset_x) + col * cs + cs // 2
+                cell_y = int(board_offset_y) + row_index * cs + cs // 2
+                cell_color = None
+                try:
+                    if row_colors and col < len(row_colors):
+                        candidate = row_colors[col]
+                        if candidate and tuple(candidate[:3]) != (0, 0, 0):
+                            cell_color = tuple(candidate[:3])
+                except Exception:
+                    cell_color = None
+                if cell_color is None:
+                    cell_color = random.choice(sparkle_colors)
+
+                main_count = max(1, int(random.randint(6, 10) * self._particle_effects_multiplier()))
+                for _ in range(main_count):
+                    speed = random.uniform(4, 12)
+                    vx = speed * random.uniform(-1.5, 1.5)
+                    vy = speed * random.uniform(-1, 0.5) - 2
+                    life_ms = random.randint(40, 80) * self._FRAME_MS
+                    self.particles.append({
+                        'x': float(cell_x + random.randint(-3, 3)),
+                        'y': float(cell_y + random.randint(-3, 3)),
+                        'vx': vx,
+                        'vy': vy,
+                        'life': life_ms,
+                        'max_life': life_ms,
+                        'color': cell_color,
+                        'size': random.randint(3, 6),
+                    })
+
+                # Kıvılcım (küçük, parlak)
+                spark_count = max(1, int(random.randint(2, 4) * self._particle_effects_multiplier()))
+                for _ in range(spark_count):
+                    life_ms = random.randint(20, 40) * self._FRAME_MS
+                    self.particles.append({
+                        'x': float(cell_x + random.randint(-5, 5)),
+                        'y': float(cell_y + random.randint(-5, 5)),
+                        'vx': random.uniform(-3, 3),
+                        'vy': random.uniform(-4, -1),
+                        'life': life_ms,
+                        'max_life': life_ms,
+                        'color': random.choice(sparkle_colors),
+                        'size': random.randint(2, 3),
+                    })
+
     def update_particles(self, dt_ms: float = 16.666):
         dt = max(0.0, min(100.0, float(dt_ms)))
         dt_frames = dt / 16.666
@@ -1609,6 +1700,12 @@ class CoopGame:
             self._flash_timer -= dt_ms
             if self._flash_timer <= 0:
                 self.line_clear_flash = False
+        # Combo / Quadrix mesaj timer'ı (frame-bazlı, Game / PvP ile aynı eğri)
+        if self.combo_message_time > 0:
+            dt_frames = max(0.0, min(100.0, float(dt_ms))) / self._FRAME_MS
+            self.combo_message_time = max(0.0, self.combo_message_time - dt_frames)
+            if self.combo_message_time <= 0:
+                self.combo_message = ""
         if self.line_clear_sweep_active:
             cell_size = max(1, int(self.cell_size))
             cleared_count = max(1, len(self.line_clear_sweep_rows))
@@ -1624,6 +1721,12 @@ class CoopGame:
                 self.line_clear_sweep_rows = []
                 self.line_clear_pending_rows = []
                 self.line_clear_pending_colors = {}
+        # Dalga efekti (Game / PvP ile parity için ortak helper)
+        dt_frames = max(0.0, min(100.0, float(dt_ms))) / self._FRAME_MS
+        try:
+            _update_wave_effects(self.line_clear_wave_effects, dt_frames)
+        except Exception:
+            pass
         self._update_falling_block_animations(dt_ms)
 
     def _get_line_sweep_length_px(self, cell_size: int, cleared_count: int) -> int:
@@ -1802,6 +1905,64 @@ class CoopGame:
                 block_x = ox + x * cs + 1
                 block_y = oy + row * cs + 1
                 self.draw_textured_block(block_x, block_y, block_size, color, None, None)
+
+    def _draw_line_clear_waves(self) -> None:
+        """Line clear sırasında temizlenen satırlar boyunca yatay dalga çiz.
+
+        Game / PvP / OnlinePvP ile parity için aynı yatay-elips formu kullanır.
+        """
+        if not self.effects_enabled or not self.line_clear_wave_effects:
+            return
+        cache = getattr(self, '_effect_surface_cache', None)
+        for wave in self.line_clear_wave_effects:
+            try:
+                alpha = int(wave.get('alpha', 0) or 0)
+                if alpha <= 0:
+                    continue
+                radius = float(wave.get('radius', 0) or 0)
+                if radius <= 0:
+                    continue
+                color = tuple(int(c) for c in wave.get('color', (255, 255, 255))[:3])
+                wave_color = (*color, alpha)
+                width_px = max(1, int(radius * 2))
+                if cache is not None and hasattr(cache, 'get_ellipse_surface'):
+                    surface = cache.get_ellipse_surface((width_px, 6), wave_color)
+                else:
+                    surface = pygame.Surface((width_px, 6), pygame.SRCALPHA)
+                    pygame.draw.ellipse(surface, wave_color, surface.get_rect())
+                wave_x = int(wave.get('x', 0) or 0) - width_px // 2
+                wave_y = int(wave.get('y', 0) or 0) - 3
+                self.screen.blit(surface, (wave_x, wave_y))
+            except Exception:
+                continue
+
+    def _draw_combo_message_overlay(self, board_offset_x: int, board_offset_y: int,
+                                    cell_size: int, board_width_px: int,
+                                    board_height_px: int) -> None:
+        """Combo / Quadrix mesaj overlay'ı (Game / PvP / OnlinePvP ile parity).
+
+        Co-op paylaşılan board'un üst üçte birinde gösterilir; renk ve fade
+        eğrisi `combo_popup_style` ortak helper'ları üzerinden alınır.
+        """
+        if not self.combo_message or self.combo_message_time <= 0:
+            return
+        try:
+            alpha = get_combo_popup_alpha(self.combo_message_time)
+            font = getattr(self, 'font_large', None) or _rs.get_font(max(28, int(cell_size * 1.4)), bold=True)
+            msg = str(self.combo_message)
+            shadow = font.render(msg, True, COMBO_POPUP_SHADOW_COLOR)
+            if alpha < 255:
+                shadow.set_alpha(alpha)
+            cx = int(board_offset_x) + int(board_width_px) // 2
+            cy = int(board_offset_y) + int(board_height_px) // 3
+            self.screen.blit(shadow, shadow.get_rect(center=(cx + 2, cy + 2)))
+            color = get_combo_popup_color(msg)
+            text_surf = font.render(msg, True, color)
+            if alpha < 255:
+                text_surf.set_alpha(alpha)
+            self.screen.blit(text_surf, text_surf.get_rect(center=(cx, cy)))
+        except Exception:
+            pass
 
     # ==================================================================
     # Event sistemi (kampanya entegrasyonu)
@@ -2149,6 +2310,28 @@ class CoopGame:
             # Ses
             self.sound.play('line' if cleared < 4 else 'tetris')
 
+            # Combo / Quadrix mesajı (Game / PvP / OnlinePvP ile parity için
+            # `DOUBLE!` / `TRIPLE!` / `QUADRIX!` overlay'ı co-op'ta da gösterilir).
+            if cleared == 4:
+                self.combo_message = "QUADRIX!"
+                self.combo_message_time = 120
+            elif cleared >= 2:
+                if cleared == 2:
+                    self.combo_message = "DOUBLE!"
+                elif cleared == 3:
+                    self.combo_message = "TRIPLE!"
+                else:
+                    self.combo_message = f"{cleared}x CLEAR!"
+                combo_count = int(getattr(self.board, 'combo', 0) or 0)
+                if combo_count > 1:
+                    self.combo_message = f"{self.combo_message}  x{combo_count} Combo"
+                self.combo_message_time = 120
+            else:
+                combo_count = int(getattr(self.board, 'combo', 0) or 0)
+                if combo_count > 1:
+                    self.combo_message = f"x{combo_count} Combo!"
+                    self.combo_message_time = 90
+
             # Line clear visual effects — CoopBoard.clear_lines() satır renklerini kaydetmiştir
             cleared_rows = list(getattr(self.board, 'last_clear_row_colors', {}).keys())
             if cleared_rows:
@@ -2156,6 +2339,47 @@ class CoopGame:
                 self.line_clear_pending_rows = list(cleared_rows)
                 self._start_line_clear_sweep(cleared_rows)
                 self._start_block_fall_animation(cleared_rows)
+                # Game / PvP ile parity için: dalga + parçacık + Quadrix burst
+                if self.effects_enabled:
+                    cs = max(1, int(self.cell_size))
+                    ox = int(self.board_offset_x)
+                    oy = int(self.board_offset_y)
+                    board_width_cells = max(1, int(self.board.width))
+                    board_height_cells = max(1, int(self.board.height))
+                    try:
+                        _queue_wave_effects(
+                            self.line_clear_wave_effects,
+                            cleared_rows,
+                            ox,
+                            oy,
+                            cs,
+                            board_width_cells,
+                        )
+                    except Exception:
+                        pass
+                    try:
+                        self.create_line_clear_particles(
+                            cleared_rows,
+                            ox,
+                            oy,
+                            cs,
+                            board=self.board,
+                        )
+                    except Exception:
+                        pass
+                    try:
+                        _trigger_combo_burst(
+                            self,
+                            cleared_rows,
+                            int(cleared),
+                            ox,
+                            oy,
+                            cs,
+                            board_width_cells,
+                            board_height_cells,
+                        )
+                    except Exception:
+                        pass
             # Tetris shake
             if cleared >= 4:
                 self.trigger_screen_shake(intensity=7, duration=20 / 60.0)
@@ -2592,7 +2816,7 @@ class CoopGame:
     def update(self, delta_time: float) -> None:
         # Müzik güncelle
         try:
-            if self.sound_enabled:
+            if self.sound_enabled and not getattr(self, '_suppress_internal_music_tick', False):
                 self.sound.update_music_playlist()
         except Exception:
             pass
@@ -3035,6 +3259,14 @@ class CoopGame:
         # Particles
         if self.effects_enabled and self.particles:
             self.draw_particles()
+
+        # Line clear dalga efekti (Game / PvP ile parity)
+        if self.effects_enabled and self.line_clear_wave_effects:
+            self._draw_line_clear_waves()
+
+        # Combo / Quadrix mesaj overlay'ı (Game / PvP / OnlinePvP ile parity)
+        if self.combo_message and self.combo_message_time > 0:
+            self._draw_combo_message_overlay(ox, oy, cs, bw, bh)
 
         # Freeze overlay
         if self.p1_frozen:
