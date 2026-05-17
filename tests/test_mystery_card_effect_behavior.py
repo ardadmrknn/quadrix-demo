@@ -722,7 +722,29 @@ def test_rewind_clears_last_piece_cells_to_canonical_empty_state():
     assert mode.board.owners[18][4] is None
 
 
-def test_sniper_card_opens_target_overlay_immediately():
+def test_sniper_card_grants_charge_without_opening_overlay():
+    _, _, MysteryMode, _ = _import_mystery_mode()
+    mode = MysteryMode.__new__(MysteryMode)
+    mode.card_manager = SimpleNamespace(used_card_ids=set(), active_cards=[], catalog=[])
+    mode._active_effect_visuals = {}
+    mode.sound_enabled = False
+    mode.effects_enabled = False
+    mode._set_localized_card_message = lambda *_args, **_kwargs: ''
+    mode._sync_active_cards = lambda: None
+    overlay_calls = []
+    mode._open_sniper_overlay = lambda: overlay_calls.append('open') or True
+
+    mode._apply_card_effect({'id': 'sniper_shot', 'title': 'Keskin Nişancı', 'value': 3, 'color': (255, 80, 80)})
+
+    # Charge verilmiş olmalı...
+    assert mode._sniper_charges == 3
+    # ...ama overlay otomatik açılmamalı (sadece N / card_sniper ile açılır).
+    assert mode._sniper_overlay_active is False
+    assert mode._sniper_hover_pos is None
+    assert overlay_calls == []
+
+
+def test_sniper_overlay_opens_only_via_explicit_hotkey():
     _, _, MysteryMode, _ = _import_mystery_mode()
     mode = MysteryMode.__new__(MysteryMode)
     mode.card_manager = SimpleNamespace(used_card_ids=set(), active_cards=[], catalog=[])
@@ -732,11 +754,12 @@ def test_sniper_card_opens_target_overlay_immediately():
     mode._set_localized_card_message = lambda *_args, **_kwargs: ''
     mode._sync_active_cards = lambda: None
 
-    mode._apply_card_effect({'id': 'sniper_shot', 'title': 'Keskin Nişancı', 'value': 3, 'color': (255, 80, 80)})
+    mode._apply_card_effect({'id': 'sniper_shot', 'title': 'Keskin Nişancı', 'value': 2, 'color': (255, 80, 80)})
+    assert mode._sniper_overlay_active is False
 
-    assert mode._sniper_charges == 3
+    opened = MysteryMode._open_sniper_overlay(mode)
+    assert opened is True
     assert mode._sniper_overlay_active is True
-    assert mode._sniper_hover_pos is None
 
 
 def test_laser_drill_cleans_hard_drop_path_before_lock():
@@ -830,3 +853,68 @@ def test_effect_timers_accept_seconds_dt_without_slowing_real_time():
     mode._update_effect_timers(0.25)
 
     assert mode._speed_burst_timer == 0.75
+
+
+
+def test_card_reveal_sfx_fires_once_at_flip_midpoint_not_at_flip_start():
+    """Reveal SFX kart yüzü açılırken (flip_progress >= 0.5) çalmalı; flip
+    delay sona erer ermez (progress 0) çalmamalı. Aynı kart için yalnızca bir
+    kez tetiklenmeli."""
+    if not hasattr(pygame, 'K_h'):
+        pytest.skip('pygame stub environment: UICard import skipped')
+    import game_modes_extra as extra
+
+    calls = []
+
+    rect = pygame.Rect(0, 0, 100, 140)
+    card = {'id': 'sniper_shot', 'rarity': 'common', 'tag': 'Common', 'description': '...'}
+    fonts = {
+        'card_title': SimpleNamespace(),
+        'card_body': SimpleNamespace(),
+        'card_tag': SimpleNamespace(),
+        'card_value': SimpleNamespace(),
+    }
+    widget = extra.UICard.__new__(extra.UICard)
+    widget.card = card
+    widget.base_rect = rect
+    widget.index = 0
+    widget.fonts = fonts
+    widget.icon_getter = lambda *_args, **_kwargs: None
+    widget._reveal_sfx_callback = lambda: calls.append('sfx')
+    widget.rect = rect.copy()
+    widget.hover = False
+    widget.scale = 1.0
+    widget.target_scale = 1.0
+    widget.pulse = 0.0
+    widget.flip_duration = 0.40
+    widget.flip_delay = 0.0  # delay test'in dışında
+    widget.flip_timer = 0.0
+    widget.flip_progress = 0.0
+    widget.is_revealed = False
+    widget.reveal_burst_done = False
+    widget._flip_sfx_played = False
+    widget.entry_progress = 1.0
+    widget.entry_duration = 0.35
+    widget.entry_done = True
+    widget.entry_offset_y = 0
+    widget.rarity_particles = []
+    widget._continuous_particle_timer = 0.0
+    widget._continuous_particle_interval = 0.5
+    widget._flame_seeds = []
+    widget._shake_intensity = 0.0
+    widget._shake_timer = 0.0
+    widget._shake_offset = (0.0, 0.0)
+
+    # 1. tick: çok küçük dt -> flip henüz yarıya gelmedi.
+    widget.update(0.05, None)  # 0.05 / 0.40 = 0.125 raw; eased ~0.234
+    assert calls == [], 'SFX flip ortasından önce çalmamalı'
+    assert widget._flip_sfx_played is False
+
+    # 2. tick: yarıya geç -> SFX bir kez çalmalı.
+    widget.update(0.15, None)  # toplam 0.20s -> raw 0.5 -> eased ~0.823
+    assert calls == ['sfx']
+    assert widget._flip_sfx_played is True
+
+    # 3. tick: kart tamamen açılmış olsa bile ikinci kez çalmamalı.
+    widget.update(0.40, None)
+    assert calls == ['sfx'], 'Aynı kart için reveal SFX sadece bir kez tetiklenmeli'

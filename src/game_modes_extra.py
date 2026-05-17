@@ -445,6 +445,26 @@ class MysteryCardManager:
     BASE_XP_TO_NEXT = 4
     XP_GROWTH_PER_LEVEL = 2
 
+    # ── RARITY OLASILIK SİSTEMİ ──
+    # Kart seviyesi (card_level) ilerledikçe nadir kartların çıkma olasılığı
+    # artar. Anchor seviyeleri arasında lineer interpolasyon uygulanır;
+    # böylece sert breakpoint olmaz (level 4 ile 5 arasında ani sıçrama yok).
+    # Anchor dışındaki seviyeler için en yakın anchor kullanılır.
+    #
+    # Önemli: Bu ağırlıklar **rarity bucket** ağırlıklarıdır, kart başına
+    # değil. Önce rarity seçilir, sonra o rarity içinden uniform bir kart
+    # alınır. Bu sayede "common kart adedi az, legendary kart adedi çok"
+    # gibi katalog dengesizlikleri olasılığı bozmaz.
+    RARITY_WEIGHT_ANCHORS: Dict[int, Dict[str, float]] = {
+        1:  {'common': 70.0, 'uncommon': 22.0, 'rare':  7.0, 'epic':  0.9, 'legendary': 0.1},
+        5:  {'common': 58.0, 'uncommon': 25.0, 'rare': 13.0, 'epic':  3.0, 'legendary': 1.0},
+        10: {'common': 45.0, 'uncommon': 27.0, 'rare': 18.0, 'epic':  7.0, 'legendary': 3.0},
+        20: {'common': 30.0, 'uncommon': 25.0, 'rare': 22.0, 'epic': 13.0, 'legendary': 10.0},
+    }
+
+    # Bucket key normalizasyonu için kabul edilen rarity etiketleri.
+    _RARITY_ORDER: tuple[str, ...] = ('common', 'uncommon', 'rare', 'epic', 'legendary')
+
     def __init__(self, mode: "MysteryMode") -> None:
         self.mode = mode
         self.catalog = self._build_catalog()
@@ -516,6 +536,47 @@ class MysteryCardManager:
         if perfect_clear:
             bonus += 3
         return int(base + bonus)
+
+    # === RARITY WEIGHT HELPERS ===
+    @classmethod
+    def _normalize_rarity(cls, value: Any) -> str:
+        """Kart üzerindeki rarity alanını bilinen bir bucket adına eşler."""
+        text = str(value or 'common').strip().lower()
+        if text in cls._RARITY_ORDER:
+            return text
+        # Bilinmeyen tag'ler -> common'a fallback'le ki olasılık tablosu
+        # asla boş kalmasın.
+        return 'common'
+
+    @classmethod
+    def _rarity_weights_for_level(cls, card_level: int) -> Dict[str, float]:
+        """Verilen card_level için rarity bucket ağırlıklarını döndür.
+
+        Anchor'lar arasında lineer interpolasyon kullanır. Anchor altı/üstü
+        seviyelerde sınır değeri korunur. Sonuçtaki ağırlıklar **renormalize
+        edilmemiştir**; çağıran taraf bucket boş kalmışsa kalanları yeniden
+        normalize etmelidir.
+        """
+        anchors = cls.RARITY_WEIGHT_ANCHORS
+        keys = sorted(anchors.keys())
+        lvl = max(1, int(card_level or 1))
+        if lvl <= keys[0]:
+            return dict(anchors[keys[0]])
+        if lvl >= keys[-1]:
+            return dict(anchors[keys[-1]])
+        lo = max(k for k in keys if k <= lvl)
+        hi = min(k for k in keys if k >= lvl)
+        if lo == hi:
+            return dict(anchors[lo])
+        span = hi - lo
+        t = (lvl - lo) / span if span > 0 else 0.0
+        a = anchors[lo]
+        b = anchors[hi]
+        return {
+            rarity: float(a.get(rarity, 0.0)) * (1.0 - t)
+                  + float(b.get(rarity, 0.0)) * t
+            for rarity in cls._RARITY_ORDER
+        }
 
     def notify_lines_cleared(
         self,
@@ -689,58 +750,92 @@ class MysteryCardManager:
         return self.pending_choices
     
     def _weighted_sample(self, cards: List[Dict], count: int) -> List[Dict]:
-        """Ağırlıklı rastgele kart seçimi - nadir kartlar daha az çıkar"""
+        """Seviyeye göre rarity-bucket bazlı kart örneklemesi.
+
+        İki aşamalı seçim:
+          1. `_rarity_weights_for_level(card_level)` ile bucket ağırlıkları
+             alınır. Filtre sonrası boş kalan bucket'lar otomatik düşürülür
+             ve kalan ağırlıklar orantısal renormalize edilir.
+          2. Seçilen rarity bucket'ı içinden `random.choice` ile bir kart
+             alınır. Böylece bir bucket'taki kart sayısı (örn. 3 common vs
+             10 legendary) bucket'ın çıkma olasılığını bozmaz.
+
+        `_group_id` paylaşan varyantlar tek bir seçimde tekrar etmez (mevcut
+        invariant); ayrıca aynı reward setinde aynı bucket'tan zorunlu olarak
+        ikinci bir kart çekmek gerekirse bucket renormalizasyonu doğal şekilde
+        bunu mümkün kılar.
+        """
         if not cards:
             return []
-        
-        # Her kart için ağırlık hesapla
-        weights = []
+        if count <= 0:
+            return []
+
+        # Rarity'ye göre kartları gruplandır
+        by_rarity: Dict[str, List[Dict]] = {r: [] for r in self._RARITY_ORDER}
         for card in cards:
-            weight = card.get("weight", 50)  # Varsayılan ağırlık: 50
-            weights.append(weight)
-        
-        # Normalize weights
-        total_weight = sum(weights)
-        if total_weight == 0:
-            return random.sample(cards, min(count, len(cards)))
-        
-        # Ağırlıklı seçim
-        selected = []
-        available_cards = list(cards)
-        available_weights = list(weights)
-        
-        for _ in range(min(count, len(cards))):
-            if not available_cards:
-                break
-            
-            # Ağırlıklı rastgele seçim
-            total = sum(available_weights)
-            if total <= 0:
-                break
-            
-            r = random.uniform(0, total)
-            cumulative = 0
-            selected_idx = 0
-            
-            for i, w in enumerate(available_weights):
-                cumulative += w
-                if r <= cumulative:
-                    selected_idx = i
+            bucket = self._normalize_rarity(card.get('rarity'))
+            by_rarity[bucket].append(card)
+
+        # Seviye-bazlı bucket ağırlıkları
+        card_level = 1
+        try:
+            card_level = int(getattr(self, 'card_level', 1) or 1)
+        except Exception:
+            card_level = 1
+        base_weights = self._rarity_weights_for_level(card_level)
+
+        selected: List[Dict] = []
+        target = min(int(count), len(cards))
+
+        for _ in range(target):
+            # Boş bucket'ları düşür ve kalanları renormalize et (orantısal).
+            active = {
+                rarity: float(base_weights.get(rarity, 0.0))
+                for rarity in self._RARITY_ORDER
+                if by_rarity.get(rarity)
+            }
+            total = sum(active.values())
+            if total <= 0.0:
+                # Tüm aktif bucket'ların ağırlığı 0 ise (örn. anchor 0 verdiği
+                # ve diğer bucket'lar boşaldığı durum) uniform fallback.
+                non_empty = [r for r in self._RARITY_ORDER if by_rarity.get(r)]
+                if not non_empty:
                     break
-            
-            selected.append(available_cards[selected_idx])
-            # Remove selected card and any cards in the same group
-            removed_group = available_cards[selected_idx].get('_group_id')
-            if removed_group:
-                # Remove all cards with the same _group_id
-                indices_to_remove = [i for i, c in enumerate(available_cards) if c.get('_group_id') == removed_group]
-                for i in reversed(indices_to_remove):
-                    available_cards.pop(i)
-                    available_weights.pop(i)
+                rarity = random.choice(non_empty)
             else:
-                available_cards.pop(selected_idx)
-                available_weights.pop(selected_idx)
-        
+                roll = random.uniform(0.0, total)
+                cumulative = 0.0
+                rarity = next(iter(active))
+                for r, w in active.items():
+                    cumulative += w
+                    if roll <= cumulative:
+                        rarity = r
+                        break
+
+            bucket = by_rarity[rarity]
+            if not bucket:
+                # Güvenlik ağı: bucket boş çıkarsa diğerlerinden seç
+                non_empty = [r for r in self._RARITY_ORDER if by_rarity.get(r)]
+                if not non_empty:
+                    break
+                rarity = random.choice(non_empty)
+                bucket = by_rarity[rarity]
+
+            chosen = random.choice(bucket)
+            selected.append(chosen)
+
+            # Aynı seçimde tekrar gelmesin: kartı ve aynı _group_id'li
+            # varyantlarını tüm bucket'lardan çıkar.
+            removed_group = chosen.get('_group_id')
+            if removed_group:
+                for r_key in self._RARITY_ORDER:
+                    by_rarity[r_key] = [
+                        c for c in by_rarity[r_key]
+                        if c.get('_group_id') != removed_group
+                    ]
+            else:
+                bucket.remove(chosen)
+
         return selected
 
     def _roll_value(self, card: Dict[str, Any]) -> int:
@@ -3372,17 +3467,23 @@ class UICard:
         # --- Kart Dönme Animasyonu ---
         self.flip_timer += seconds
         if self.flip_timer >= self.flip_delay and self.entry_done:
-            if not self._flip_sfx_played:
+            elapsed_in_flip = self.flip_timer - self.flip_delay
+            raw_progress = min(1.0, elapsed_in_flip / self.flip_duration)
+            # Ease-out expo: hızlı başla yavaşça bitir
+            self.flip_progress = 1.0 - (1.0 - raw_progress) ** 2.5
+
+            # Reveal SFX, kart yüzünün görünmeye başladığı ana hizalanır
+            # (flip_progress ~0.5). Eskiden flip başında çalıyordu; ses kısa
+            # olduğu için görsel reveal anına ulaşmadan bitiyordu. Bu, hızlı
+            # nadirlikler (common 0.40s) için bile sesin kart yüzü açılırken
+            # duyulmasını sağlar.
+            if not self._flip_sfx_played and self.flip_progress >= 0.5:
                 self._flip_sfx_played = True
                 if self._reveal_sfx_callback:
                     try:
                         self._reveal_sfx_callback()
                     except Exception:
                         pass
-            elapsed_in_flip = self.flip_timer - self.flip_delay
-            raw_progress = min(1.0, elapsed_in_flip / self.flip_duration)
-            # Ease-out expo: hızlı başla yavaşça bitir
-            self.flip_progress = 1.0 - (1.0 - raw_progress) ** 2.5
 
             if self.flip_progress >= 0.99:
                 self.flip_progress = 1.0
@@ -9228,27 +9329,31 @@ class MysteryMode(Game):
                 pass
             effect_triggered = True
         elif cid == "sniper_shot":
-            # Keskin Nişancı: kart seçilince hedefleme overlay'i açılır; kalan
-            # haklar daha sonra N ile yeniden açılabilir.
+            # Keskin Nişancı: kart seçimi yalnızca charge verir; hedefleme
+            # overlay'i otomatik açılmaz. Oyuncu N tuşuna (veya gamepad
+            # `card_sniper` aksiyonuna) basınca overlay açılır.
             charges = int(card.get('value', 3))  # Varsayılan 3 hak
             self._sniper_charges = charges
             self._sniper_card = card
+            # Overlay durumunu temiz tut; başka bir kart yanlışlıkla açık
+            # bırakmış olsa bile sniper kartı seçimiyle overlay açılmamalı.
+            self._sniper_overlay_active = False
+            self._sniper_hover_pos = None
             # Görsel efekt için kaydet
             try:
                 self._remember_effect_visual('sniper_shot', card)
                 self._sync_active_cards()
             except Exception:
                 pass
-            opened = False
             try:
-                opened = bool(self._open_sniper_overlay())
+                self._set_localized_card_message(
+                    'mystery_msg_sniper_ready',
+                    3.0,
+                    'Keskin Nisanci hazir! N tusuna bas. ({charges} hak)',
+                    charges=charges,
+                )
             except Exception:
                 pass
-            if not opened:
-                try:
-                    self._set_localized_card_message('mystery_msg_sniper_ready', 3.0, 'Keskin Nisanci hazir! N tusuna bas. ({charges} hak)', charges=charges)
-                except Exception:
-                    pass
             effect_triggered = True
         elif cid == "time_capsule":
             # Zaman Kapsulu: T ile kaydet, R ile geri don
