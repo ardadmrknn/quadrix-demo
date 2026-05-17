@@ -1,9 +1,13 @@
 # Steam Başarımlar ve İstatistikler — Kurulum Rehberi
 
-Bu belge, Quadrix oyununun Steam başarımlarını ve istatistiklerini
-Steamworks Partner sitesinde yapılandırmak için gerekli bilgileri içerir.
+Bu belge, Quadrix oyununun Steam başarımlarını ve istatistiklerini Steamworks Partner sitesinde yapılandırmak için gereken bilgileri içerir.
+
+> **Bu dosya nedir?** 40 başarımın ve 17 stat'ın tanımı, kod tarafı entegrasyon özeti, başarım görsellerinin AI prompt rehberi.
+> **Bu dosya ne değil?** Leaderboard kurulum/operasyon belgesi (orası [STEAMWORKS_LEADERBOARD_SETUP_TR.md](STEAMWORKS_LEADERBOARD_SETUP_TR.md) ve [STEAM_LEADERBOARD_OPERATIONS_TR.md](STEAM_LEADERBOARD_OPERATIONS_TR.md) içinde).
 
 **Steamworks Partner Console:** https://partner.steamgames.com/apps/achievements/4428040
+**Kanonik kod referansı:** `src/achievements.py` (`STEAM_ACHIEVEMENT_MAP`, `AchievementManager`) ve `src/steam_integration.py`
+**Yardımcı tool'lar:** `tools/steam_achievements_copypaste.txt` (manuel giriş için kopya-yapıştır), `tools/steam_achievements.vdf` (referans VDF)
 
 ---
 

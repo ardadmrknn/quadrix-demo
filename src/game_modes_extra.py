@@ -424,7 +424,26 @@ class Tetris2Mode(Game):
 
 
 class MysteryCardManager:
-    """Kartların veri ve tetik yönetimini üstlenen bağımsız katman."""
+    """Kartların veri ve tetik yönetimini üstlenen bağımsız katman.
+
+    Kart ödülleri için board.level'den AYRI bir card_level/card_xp progression
+    hattı tutar. Bu sayede:
+    - board.level: oyun temposu / düşüş hızı için kalır
+    - card_level: kart ödül ekonomisi için kullanılır
+
+    XP yalnızca gerçek player kaynaklı satır temizlemelerinden gelir; kart/
+    ability/external clear'lar XP üretmez (anti-farm). XP taşması durumunda
+    aynı çağrıda birden fazla level alınabilir ve queue oluşur.
+    """
+
+    # XP per simultaneous lines cleared by the player.
+    # 1 -> 1, 2 -> 3, 3 -> 5, 4 -> 8.  Reflects roguelite-style reward weight
+    # without making single clears feel pointless.
+    XP_PER_LINE_COUNT: Dict[int, int] = {1: 1, 2: 3, 3: 5, 4: 8}
+
+    # Initial XP needed for the first card level + per-level growth.
+    BASE_XP_TO_NEXT = 4
+    XP_GROWTH_PER_LEVEL = 2
 
     def __init__(self, mode: "MysteryMode") -> None:
         self.mode = mode
@@ -436,9 +455,17 @@ class MysteryCardManager:
         self.used_card_ids: set[str] = set()
         # Debug cadence: extra selection trigger every 2 cleared lines
         self._debug_lines_progress = 0
-        # Align manager threshold with board level-up (5 lines per level)
+        # === KART XP / KART LEVEL HATTI ===
+        # Bu alanlar board.level'den bağımsız ilerler. UI ve trigger mantığı
+        # buradan beslenir.
+        self.card_xp: int = 0
+        self.card_level: int = 1
+        self.card_xp_to_next: int = self._compute_xp_to_next(self.card_level)
+        # Geriye dönük uyumluluk için tutulan eski alanlar (mevcut testler/araçlar
+        # ve restore akışı bu isimleri okuyor). `progress` artık card_xp ile,
+        # `threshold` card_xp_to_next ile eşitlenir.
         self.progress = 0
-        self.threshold = 5
+        self.threshold = self.card_xp_to_next
 
     def reset(self) -> None:
         self.force_piece_queue.clear()
@@ -446,23 +473,88 @@ class MysteryCardManager:
         self.active_cards.clear()
         self.used_card_ids.clear()
         self._debug_lines_progress = 0
+        self.card_xp = 0
+        self.card_level = 1
+        self.card_xp_to_next = self._compute_xp_to_next(self.card_level)
+        # Mirrors for backward compat
         self.progress = 0
-        self.threshold = 5
+        self.threshold = self.card_xp_to_next
 
-    def notify_lines_cleared(self, cleared: int) -> bool:
-        """Satır ilerlemesini günceller, gerekirse yeni kart seçimini hazırlar."""
+    # === XP ECONOMY HELPERS ===
+    @classmethod
+    def _compute_xp_to_next(cls, card_level: int) -> int:
+        """Bir sonraki kart seviyesine geçmek için gereken XP.
+
+        Erken oyunda hızlı, sonra yavaşlayan basit doğrusal eğri.
+        Level 1 -> 4 XP, Level 2 -> 6, Level 3 -> 8, ...
+        """
+        lvl = max(1, int(card_level or 1))
+        return max(1, cls.BASE_XP_TO_NEXT + (lvl - 1) * cls.XP_GROWTH_PER_LEVEL)
+
+    @classmethod
+    def compute_xp_award(
+        cls,
+        cleared: int,
+        *,
+        combo: int = 0,
+        back_to_back: bool = False,
+        perfect_clear: bool = False,
+    ) -> int:
+        """Verilen temizleme bağlamı için kazanılacak XP."""
+        cleared = max(0, int(cleared or 0))
+        if cleared <= 0:
+            return 0
+        base = cls.XP_PER_LINE_COUNT.get(cleared, cls.XP_PER_LINE_COUNT[4] + (cleared - 4) * 2)
+        bonus = 0
+        # Combo bonus: 3+ chained clears => +1 XP. Capped to avoid scaling out of control.
+        if combo >= 3:
+            bonus += 1
+        # Back-to-back Quadrix => small extra XP
+        if back_to_back and cleared >= 4:
+            bonus += 2
+        # Perfect clear is rare and special
+        if perfect_clear:
+            bonus += 3
+        return int(base + bonus)
+
+    def notify_lines_cleared(
+        self,
+        cleared: int,
+        *,
+        source: str = 'player',
+        combo: int = 0,
+        back_to_back: bool = False,
+        perfect_clear: bool = False,
+    ) -> bool:
+        """Card-XP ilerlemesini günceller.
+
+        Yalnızca `source='player'` çağrılarında XP verilir. Kart/ability/external
+        clear'lar XP üretmez (anti-farm). Bir veya birden fazla level-up oluşursa
+        `pending_level_ups` queue'su kadar artar ve dış akış (MysteryMode.update)
+        sıradaki overlay'i açar.
+
+        Geri dönüş: bu çağrıda en az bir card_level artışı oluştuysa True.
+        """
         if cleared <= 0:
             return False
-        # NOTE: Keep the main system intact (threshold=5 aligned to level-up).
-        # When card_mode_debug is enabled, we ADD an extra trigger every 2 cleared lines
-        # without modifying progress/threshold behavior.
+
+        # === ANTI-FARM: yalnızca player kaynaklı clear ödül queue'sunu besler ===
+        # Hem normal XP hem de debug-modu hızlandırması bu kuralı dinler. External,
+        # ability, card, gravity vb. kaynaklı clear'lar -- debug açık olsa bile --
+        # `pending_level_ups` üretmemelidir.
+        normalized_source = str(source or 'player').lower()
+        is_player_source = normalized_source in {'player', 'normal'}
+
+        # Debug cadence: extra selection trigger every 2 cleared lines. Yalnızca
+        # gerçek player clear'larında devreye girer; aksi halde reward queue
+        # delinir.
         card_mode_debug = False
         try:
             card_mode_debug = bool(self.mode.settings_manager.get('card_mode_debug', False))
         except Exception:
             card_mode_debug = False
 
-        if card_mode_debug:
+        if card_mode_debug and is_player_source:
             try:
                 self._debug_lines_progress = int(getattr(self, '_debug_lines_progress', 0) or 0) + int(cleared)
             except Exception:
@@ -478,41 +570,57 @@ class MysteryCardManager:
                 except Exception:
                     pass
 
-        self.progress += cleared
-        triggered = False
-        while self.progress >= self.threshold:
-            self.progress -= self.threshold
-            triggered = True
-        # DO NOT prepare the selection here; preparation and overlay opening
-        # must be driven by the higher-level MysteryMode on level-up so the
-        # UI and internal logic stay synchronized. Return whether the threshold
-        # was exceeded so the caller may take additional actions if needed.
-        if triggered:
-            # Debug notice and enqueue a pending level-up on the mode so the overlay
-            # will be opened either immediately or on the next update check.
+        if not is_player_source:
+            # Dış kaynaklı temizlikler XP vermesin ve queue oluşturmasın.
+            return False
+
+        xp_gain = self.compute_xp_award(
+            cleared,
+            combo=combo,
+            back_to_back=back_to_back,
+            perfect_clear=perfect_clear,
+        )
+        if xp_gain <= 0:
+            return False
+
+        self.card_xp += int(xp_gain)
+        levels_gained = 0
+        # Overflow: aynı çağrıda birden fazla level alınabilir.
+        while self.card_xp >= self.card_xp_to_next:
+            self.card_xp -= self.card_xp_to_next
+            self.card_level += 1
+            self.card_xp_to_next = self._compute_xp_to_next(self.card_level)
+            levels_gained += 1
+
+        # Eski (geriye dönük) alanları senkron tut.
+        self.progress = int(self.card_xp)
+        self.threshold = int(self.card_xp_to_next)
+
+        if levels_gained > 0:
             try:
-                print(f"[MysteryCardManager] Threshold reached: progress={self.progress}, threshold={self.threshold}")
+                print(
+                    f"[MysteryCardManager] Card level up! card_level={self.card_level} "
+                    f"(+{levels_gained}); card_xp={self.card_xp}/{self.card_xp_to_next}"
+                )
             except Exception:
                 pass
             try:
-                # Always prepare a selection now so tests and callers using the manager
-                # directly get a populated pending_choices when threshold triggers.
+                # prepare_selection bir kez çağrılır; queue >0 ise update() döngüsü
+                # her overlay kapandığında yeniden hazırlar.
                 try:
                     self.prepare_selection()
                 except Exception:
                     pass
                 if getattr(self, 'mode', None) is not None:
                     mode = self.mode
-                    # Deduplicate using last_enqueued_level: enqueue for every level above it
-                    current_level = getattr(mode.board, 'level', 0)
-                    last = getattr(mode, 'last_enqueued_level', 0)
-                    if current_level > last:
-                        delta = int(current_level - last)
-                        mode.pending_level_ups = getattr(mode, 'pending_level_ups', 0) + delta
-                        mode.last_enqueued_level = current_level
+                    mode.pending_level_ups = getattr(mode, 'pending_level_ups', 0) + int(levels_gained)
+                    # last_enqueued_level artık card_level'i izler; eski board.level
+                    # tabanlı dedup mantığını bypass eder.
+                    mode.last_enqueued_level = self.card_level
             except Exception:
                 pass
-        return triggered
+            return True
+        return False
 
     def prepare_selection(self) -> List[Dict[str, Any]]:
         # Build a filtered pool excluding persistent perks that are already active
@@ -664,9 +772,15 @@ class MysteryCardManager:
         self.force_piece_queue.append(name)
 
     def get_status(self) -> Dict[str, Any]:
+        # `progress` ve `threshold` geriye dönük uyumluluk için kart XP'yi
+        # yansıtır. UI artık card_level / card_xp / card_xp_to_next alanlarını
+        # tercih etmelidir.
         return {
-            "progress": self.progress,
-            "threshold": self.threshold,
+            "progress": self.card_xp,
+            "threshold": self.card_xp_to_next,
+            "card_level": self.card_level,
+            "card_xp": self.card_xp,
+            "card_xp_to_next": self.card_xp_to_next,
             "hint": t('card_hint_equal'),
         }
 
@@ -6464,13 +6578,33 @@ class MysteryMode(Game):
         try:
             try:
                 if getattr(self, 'settings_manager', None) and self.settings_manager.get('debug_mode', False):
-                    print(f"[MysteryMode] lock_and_new_piece: player_lines={player_lines}, board.level={self.board.level}, progress={self.card_manager.progress}")
+                    print(f"[MysteryMode] lock_and_new_piece: player_lines={player_lines}, board.level={self.board.level}, card_xp={self.card_manager.card_xp}/{self.card_manager.card_xp_to_next}")
             except Exception:
                 pass
-            triggered = self.card_manager.notify_lines_cleared(player_lines)
-            # Note: `notify_lines_cleared` will enqueue pending_level_ups via
-            # the mode.last_enqueued_level dedup logic; don't enqueue here to
-            # avoid double-counting.
+            # Player kaynaklı clear: gerçek combo / B2B / perfect-clear bağlamıyla XP ver.
+            try:
+                combo_now = int(getattr(self.board, 'combo', 0) or 0)
+            except Exception:
+                combo_now = 0
+            try:
+                b2b_now = bool(getattr(self.board, 'back_to_back', False))
+            except Exception:
+                b2b_now = False
+            perfect_now = False
+            if player_lines > 0:
+                try:
+                    perfect_now = all(not any(row) for row in self.board.occupancy)
+                except Exception:
+                    perfect_now = False
+            triggered = self.card_manager.notify_lines_cleared(
+                player_lines,
+                source='player',
+                combo=combo_now,
+                back_to_back=b2b_now,
+                perfect_clear=perfect_now,
+            )
+            # Note: `notify_lines_cleared` artık card_level deltası kadar
+            # `pending_level_ups` enqueue eder; double-counting yok.
         except Exception:
             pass
         # Perk manager: trigger per-line events
@@ -6531,8 +6665,9 @@ class MysteryMode(Game):
             self.update_screen_shake()
             return
         
-        # Save previous level before running engine update so we can detect level-up
-        prev_level = self.board.level
+        # Save previous level before running engine update (kept only for
+        # potential debug/log usage; reward queueing artık card_xp tabanlı).
+        prev_level = self.board.level  # noqa: F841 - retained for debug paths
         super().update(dt)
 
         # Drill piece: continuously delete overlapped blocks while falling
@@ -6907,42 +7042,35 @@ class MysteryMode(Game):
                     self._smooth_fall_speed_towards_target(target_speed, seconds)
                 except Exception:
                     pass
-            # Check for level-up after the main update has run. If we increased the board level,
-            # prepare a selection and open the overlay.
+            # Open the card selection overlay when at least one card-level reward
+            # is queued. The queue is owned by the card manager (driven by card_xp);
+            # board.level deltas no longer affect this path.
             try:
-                # Enqueue level ups that occurred during this update based on last_enqueued_level
-                # so we do not double-count when notify_lines_cleared already enqueued.
-                current_level = getattr(self.board, 'level', 0)
-                last = getattr(self, 'last_enqueued_level', 0)
-                # debug: show level detection values when debug mode enabled
                 try:
                     if getattr(self, 'settings_manager', None) and self.settings_manager.get('debug_mode', False):
-                        print(f"[MysteryMode] prev_level={prev_level}, current_level={current_level}, last_enqueued={last}, pending_level_ups={self.pending_level_ups}")
+                        print(
+                            f"[MysteryMode] reward queue check: pending_level_ups={self.pending_level_ups}, "
+                            f"card_level={getattr(self.card_manager, 'card_level', '?')}, "
+                            f"card_xp={getattr(self.card_manager, 'card_xp', '?')}/"
+                            f"{getattr(self.card_manager, 'card_xp_to_next', '?')}, "
+                            f"board.level={self.board.level}"
+                        )
                 except Exception:
                     pass
-                lvl_delta = max(0, current_level - last)
-                # Also account for level increases during this update (fallback)
-                # FIX: Fallback removed because it causes double-counting when notify_lines_cleared
-                # already handled the level up via last_enqueued_level updates.
-                # if current_level > prev_level:
-                #     fallback_delta = current_level - prev_level
-                #     lvl_delta = max(lvl_delta, fallback_delta)
-                if lvl_delta > 0:
-                    self.pending_level_ups += lvl_delta
-                    self.last_enqueued_level = current_level
-                    try:
-                        if self.settings_manager and self.settings_manager.get('debug_mode', False):
-                            print(f"[MysteryMode] Detected level delta via update={lvl_delta}; pending_level_ups={self.pending_level_ups} (board.level={self.board.level}, last_enqueued_level={last})")
-                    except Exception:
-                        pass
-                # If we have queued level-ups (or we detected an immediate level-up), and no selection active, prepare and open one overlay
-                if not self.card_selection_active and (self.pending_level_ups > 0 or current_level > prev_level):
+                if not self.card_selection_active and self.pending_level_ups > 0:
                     try:
                         if getattr(self, 'settings_manager', None) and self.settings_manager.get('debug_mode', False):
                             print(f"[MysteryMode] Attempting selection: pending_level_ups={self.pending_level_ups}, card_selection_active={self.card_selection_active}, game_over={self.game_over}")
                     except Exception:
                         pass
-                    self.card_manager.prepare_selection()
+                    # Notify-yolu zaten bir hazırlık yapmış olabilir. Aynı reward
+                    # için ikinci kez prepare_selection çağırmak gereksiz RNG
+                    # tüketir ve aynı olay için iki ayrı seçim seti üretir.
+                    # Yalnızca pending_choices boşsa hazırla; sonraki queued
+                    # reward'lar overlay kapandığında zaten boş olacağından
+                    # yeni hazırlık kendiliğinden yapılır.
+                    if not getattr(self.card_manager, 'pending_choices', None):
+                        self.card_manager.prepare_selection()
                     try:
                         if getattr(self, 'settings_manager', None) and self.settings_manager.get('debug_mode', False):
                             print(f"[MysteryMode] prepare_selection produced {len(self.card_manager.pending_choices)} choices")
@@ -8192,11 +8320,13 @@ class MysteryMode(Game):
         panel_x, panel_y, panel_width = self._get_left_panel_frame()
         self._left_panel_frame = (panel_x, panel_y, panel_width)
 
-        # Üstte: Mevcut seviye ve seviye içi ilerleme
-        level = getattr(self.board, 'level', 1)
-        # Seviye içindeki satır sayısı: use card manager threshold to stay consistent
-        lines_needed = int(getattr(self.card_manager, 'threshold', 5))
-        lines_in_level = _level_progress_in_current_level(self.board, lines_needed)
+        # === İKİ AYRI HAT ===
+        # Üstte: oyunun temposunu yöneten board.level (düşüş hızı için)
+        # Altta: kart ödül ekonomisi için card_level (kart XP ile ilerler)
+        board_level = getattr(self.board, 'level', 1)
+        card_level = int(status.get('card_level', 1))
+        card_xp = int(status.get('card_xp', 0))
+        card_xp_to_next = max(1, int(status.get('card_xp_to_next', 1)))
         # Sağdaki standart HUD paneli ile aynı stil: glass panel (alpha=90)
         pad_x = max(10, int(15 * ui_scale))
         pad_top = max(10, int(14 * ui_scale))
@@ -8210,12 +8340,26 @@ class MysteryMode(Game):
         heading_font = fonts['heading']
         info_font = fonts['small']
 
-        header_surface = heading_font.render(f"{t('level')}: {level}", True, (230, 235, 245))
-        info_line_1 = t('card_level_progress', current=lines_in_level, needed=lines_needed)
-        info_line_2 = t('card_pool_label', hint=status['hint'])
-        header_text = self._fit_text_to_width(heading_font, f"{t('level')}: {level}", inner_w)
+        header_text = self._fit_text_to_width(
+            heading_font,
+            f"{t('level')}: {board_level}",
+            inner_w,
+        )
         header_surface = heading_font.render(header_text, True, (230, 235, 245))
-        info_line_1 = self._fit_text_to_width(info_font, info_line_1, content_w)
+
+        # Kart seviyesi: kart ödül ekonomisinin gerçek ilerleyişini gösterir.
+        # board.level ile karışmaması için ayrı bir etiketle çiz.
+        card_label = t(
+            'card_level_label',
+            level=card_level,
+            current=card_xp,
+            needed=card_xp_to_next,
+        )
+        if card_label.startswith('[?'):
+            # Localization key yoksa düz metne düş.
+            card_label = f"Kart Sv: {card_level} ({card_xp}/{card_xp_to_next})"
+        info_line_2 = t('card_pool_label', hint=status['hint'])
+        info_line_1 = self._fit_text_to_width(info_font, card_label, content_w)
         info_line_2 = self._fit_text_to_width(info_font, info_line_2, content_w)
         info_texts = [
             info_font.render(info_line_1, True, (180, 200, 220)),
@@ -8624,22 +8768,14 @@ class MysteryMode(Game):
         except Exception:
             pass
 
-        # Keep card progress in sync. External clears can reach the reward threshold
-        # without a board level delta, so open the selection immediately when a
-        # populated pending choice set exists but no queued level-up was enqueued.
-        threshold_triggered = False
+        # Keep card progress in sync. External clears must NOT award card XP
+        # (anti-farm); `notify_lines_cleared` checks `source` and returns False
+        # for non-player sources. The overlay-opening fast path is removed:
+        # rewards now come exclusively from player-source XP gains.
         try:
-            threshold_triggered = bool(self.card_manager.notify_lines_cleared(cleared))
+            self.card_manager.notify_lines_cleared(cleared, source=source)
         except Exception:
             pass
-        if threshold_triggered and not getattr(self, 'card_selection_active', False):
-            try:
-                pending_choices = bool(getattr(self.card_manager, 'pending_choices', []) or [])
-                queued_rewards = int(getattr(self, 'pending_level_ups', 0) or 0)
-                if pending_choices and queued_rewards <= 0 and not getattr(self, 'game_over', False) and not getattr(self, 'paused', False):
-                    self._open_card_selection()
-            except Exception:
-                pass
 
         # Perk manager per-line triggers
         try:
@@ -9523,6 +9659,7 @@ class MysteryMode(Game):
             '_rewind_available',
             '_last_placed_piece',
             'last_enqueued_level',
+            'pending_level_ups',
         )
 
         data: dict[str, Any] = {}
@@ -9537,7 +9674,16 @@ class MysteryMode(Game):
         if card_manager is not None and hasattr(card_manager, 'force_piece_queue'):
             data['card_manager_force_piece_queue'] = snapshot(card_manager.force_piece_queue)
         if card_manager is not None:
-            for attr in ('progress', 'threshold', 'pending_choices', 'active_cards', 'used_card_ids'):
+            for attr in (
+                'progress',
+                'threshold',
+                'pending_choices',
+                'active_cards',
+                'used_card_ids',
+                'card_xp',
+                'card_level',
+                'card_xp_to_next',
+            ):
                 if hasattr(card_manager, attr):
                     data[f'card_manager_{attr}'] = snapshot(getattr(card_manager, attr))
 
@@ -9614,6 +9760,7 @@ class MysteryMode(Game):
             '_rewind_available',
             '_last_placed_piece',
             'last_enqueued_level',
+            'pending_level_ups',
         )
         for attr in state_attrs:
             if attr in data:
@@ -9626,7 +9773,16 @@ class MysteryMode(Game):
             except Exception:
                 pass
         if card_manager is not None:
-            for attr in ('progress', 'threshold', 'pending_choices', 'active_cards', 'used_card_ids'):
+            for attr in (
+                'progress',
+                'threshold',
+                'pending_choices',
+                'active_cards',
+                'used_card_ids',
+                'card_xp',
+                'card_level',
+                'card_xp_to_next',
+            ):
                 key = f'card_manager_{attr}'
                 if key not in data:
                     continue

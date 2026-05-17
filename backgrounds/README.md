@@ -1,6 +1,9 @@
 # Quadrix Arka Plan Dosyaları
 
-Bu klasör, oyunda kullanılan görsel arka planların varsayılan konumudur. Ayarlar menüsünden seçilen özel dosyalar varsa onlar öncelikli kullanılır; bu klasördeki isimler ise otomatik fallback akışını belirler.
+Bu klasör, oyunda kullanılan görsel arka planların **varsayılan** konumudur. Ayarlar menüsünden seçilen özel dosyalar varsa onlar öncelikli kullanılır; bu klasördeki isimler ise otomatik fallback akışını belirler.
+
+> **Bu klasör nedir?** Arka plan PNG/JPG dosyaları için kanonik konum + fallback isim sırası.
+> **Yükleme öncelik kuralı:** Ayarlar menüsünden seçilen özel yol > bu klasördeki sabit isimler > eski/legacy alternatifleri.
 
 ## Desteklenen Arka Plan Yüzeyleri
 
@@ -84,3 +87,8 @@ Co-op akışında tam ekran ana arka plan için önce şu adlar aranır:
 2. İsterseniz ayrıca `game_background.png` ve `board_background.png` ekleyin
 3. Oyunu yeniden başlatın
 4. Ayarlar menüsünden arka plan seçeneklerini kontrol edin
+
+## İlgili Dokümanlar
+
+- Genel proje rehberi: [../README.md](../README.md)
+- macOS arka plan opaklığı tarihsel notu: [../docs/MACOS_COOP_ARKA_PLAN_OPAKLIK_KOK_NEDENI_TR.md](../docs/MACOS_COOP_ARKA_PLAN_OPAKLIK_KOK_NEDENI_TR.md)

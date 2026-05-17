@@ -615,7 +615,7 @@ def test_card_secondary_lines_are_not_recounted_as_player_lines(monkeypatch):
     perk_calls = []
     alchemist_calls = []
     mode.card_manager = SimpleNamespace(
-        notify_lines_cleared=lambda lines: card_progress_calls.append(lines) or False,
+        notify_lines_cleared=lambda lines, **kwargs: card_progress_calls.append((lines, kwargs.get('source', 'player'))) or False,
         pending_choices=[],
     )
     mode.perk_manager = SimpleNamespace(
@@ -633,7 +633,7 @@ def test_card_secondary_lines_are_not_recounted_as_player_lines(monkeypatch):
 
     mode.lock_and_new_piece()
 
-    assert card_progress_calls == [1, 1]
+    assert card_progress_calls == [(1, 'card'), (1, 'player')]
     assert perk_calls == [(1, 'card'), (1, 'player')]
     assert alchemist_calls == []
     assert mode.board.lines_cleared == 2

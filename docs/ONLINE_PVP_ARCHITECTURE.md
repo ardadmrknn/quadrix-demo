@@ -2,6 +2,10 @@
 
 > **Hedef kitle:** Bu projeyi düzenleyecek AI agentlar ve geliştiriciler.
 > **Son güncelleme:** 5 Mart 2026 — Windows bridge derlemesi ve stability hardening sonrası.
+>
+> **Bu dosya nedir?** Online PvP'nin **kod katmanları, derleme, thread güvenliği ve dağıtım** rehberi. Mimari karar arşivi.
+>
+> **Bu dosya ne değil?** Oyuncu davranışı / akış / mesaj türleri / kazanma kuralları. Bunlar için: [ONLINE_PVP_FLOW_TR.md](ONLINE_PVP_FLOW_TR.md).
 
 ---
 
@@ -291,18 +295,20 @@ Bu, bozuk bir state'te sonsuz hata döngüsünü önler.
 ### Bridge Derleme (Windows)
 
 ```powershell
-# Gereksinimler: VS2022, Python 3.11/3.12, pybind11
+# Gereksinimler: VS2022, Python 3.12 (proje hedefi), pybind11
 cd steamworks/steam_net_bridge
 
 # CMakeLists.txt veya doğrudan cl.exe ile:
 cmake -B build -G "Visual Studio 17 2022" -A x64 ^
-  -DPython3_EXECUTABLE="C:\Python311\python.exe" ^
+  -DPython3_EXECUTABLE="C:\Python312\python.exe" ^
   -Dpybind11_DIR="<pybind11_cmake_dir>"
 cmake --build build --config Release
 
 # Çıktıyı local_artifacts/bridge altına kopyala:
-copy build\Release\steam_net_bridge.cp311-win_amd64.pyd ..\..\local_artifacts\bridge\
+copy build\Release\steam_net_bridge.cp312-win_amd64.pyd ..\..\local_artifacts\bridge\
 ```
+
+> Not: Köprü 3.11 için de derlenmişti (`cp311-win_amd64.pyd`). Repo runtime hedefi 3.12 olduğu için yeni paketler için 3.12 köprüsü kullanılmalıdır. Detaylı talimatlar: [../steamworks/steam_net_bridge/README_BUILD.md](../steamworks/steam_net_bridge/README_BUILD.md).
 
 ### EXE Build
 
@@ -319,6 +325,8 @@ steamworks\sdk\tools\ContentBuilder\builder\steamcmd.exe ^
   +run_app_build "..\scripts\app_build_4428040.vdf" ^
   +quit
 ```
+
+> Yukarıdaki düşük seviye komuttur. Kanonik Steam upload akışı için: [BUILD_AND_UPLOAD.md](BUILD_AND_UPLOAD.md) ve [STEAM_PLAYTEST_YAYIN_REHBERI_TR.md](STEAM_PLAYTEST_YAYIN_REHBERI_TR.md) (her ikisi de generated).
 
 ---
 
@@ -377,10 +385,20 @@ main.py
 
 ### Derleme Kontrol Listesi (Yeni Makine)
 
-1. `pip install pygame-ce pybind11` (pygame değil, **pygame-ce**)
+1. `pip install pygame-ce pybind11` (kanonik bağımlılık `pygame-ce`'dir; `pyproject.toml` `[dev]` ile birlikte gelir)
 2. Steamworks SDK: `steamworks/sdk/` altında header ve lib dosyaları
 3. Visual Studio 2022 (MSVC) veya uygun C++ derleyici
 4. Bridge derle → `.pyd` dosyalarını `local_artifacts/bridge/` altına koy
 5. `steam_api64.dll` → `dll/win64/`
-6. `config/runtime/steam_appid.txt` içeriğini doğrula (`4428040`)
+6. `config/runtime/steam_appid.txt` içeriğini doğrula (`4428040` playtest, `4414520` ana, `4635310` demo)
 7. `pyinstaller packaging/specs/tetris.spec` → `dist/Quadrix.exe`
+
+---
+
+## 13. İlgili Dokümanlar
+
+- Davranışsal akış / mesaj türleri / kazanma kuralı: [ONLINE_PVP_FLOW_TR.md](ONLINE_PVP_FLOW_TR.md)
+- Steam köprüsü derleme rehberi: [../steamworks/steam_net_bridge/README_BUILD.md](../steamworks/steam_net_bridge/README_BUILD.md)
+- Steam köprüsü EXE/.app entegrasyonu (generated): [EXE_APP_BRIDGE_ENTEGRASYON_ZORUNLULUKLARI_TR.md](EXE_APP_BRIDGE_ENTEGRASYON_ZORUNLULUKLARI_TR.md)
+- Build ve upload (generated): [BUILD_AND_UPLOAD.md](BUILD_AND_UPLOAD.md)
+- macOS Online PvP çıkış crash tarihçesi: [MACOS_EXIT_CRASH_AFTER_PVP_TR.md](MACOS_EXIT_CRASH_AFTER_PVP_TR.md)

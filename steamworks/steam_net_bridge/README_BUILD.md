@@ -2,6 +2,9 @@
 
 Bu klasördeki native modül, Quadrix'in Steam tabanlı ağ katmanını Python tarafına açan köprüdür. Online PvP lobi, mesajlaşma ve Steam networking işlemleri bu build çıktısına dayanır.
 
+> **Bu dosya nedir?** Köprünün kanonik derleme rehberi (Windows / macOS / Linux).
+> **Bu dosya ne değil?** Online PvP mimari/akış rehberi (orası [../../docs/ONLINE_PVP_ARCHITECTURE.md](../../docs/ONLINE_PVP_ARCHITECTURE.md) içinde) veya EXE/.app paketleme rehberi (orası generated [../../docs/EXE_APP_BRIDGE_ENTEGRASYON_ZORUNLULUKLARI_TR.md](../../docs/EXE_APP_BRIDGE_ENTEGRASYON_ZORUNLULUKLARI_TR.md) içinde).
+
 ## Ne Derleniyor?
 
 - Pybind11 ile oluşturulan `steam_net_bridge` modülü
@@ -18,7 +21,8 @@ Bu klasördeki native modül, Quadrix'in Steam tabanlı ağ katmanını Python t
    - Beklenen örnek dosya: `steamworks/sdk/public/steam/steam_api.h`
 
 2. Python
-   - Önerilen sürüm: 3.12
+   - **Önerilen ve birincil hedef:** 3.12 (proje `pyproject.toml` `requires-python = ">=3.12"`)
+   - 3.11 köprüsü tarihsel olarak desteklenmiştir; yeni paketler için 3.12 kullanın.
    - İsterseniz build scriptlerine `QUADRIX_PYTHON` ortam değişkeni ile özel yorumlayıcı verebilirsiniz
 
 3. CMake 3.18+

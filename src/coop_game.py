@@ -1821,6 +1821,43 @@ class CoopGame:
                 return float(anim.get('current_offset', 0.0))
         return 0.0
 
+    def _get_ghost_visual_offset(self, piece, drop_y: int) -> float:
+        """Satır temizleme animasyonu sırasında ghost piece'ın altındaki düşen
+        blokların offset'ine göre ghost'u yukarı kaydır.
+        Sıfır veya negatif (yukarı kayma) bir piksel değeri döner.
+        """
+        anims = getattr(self, 'falling_block_animations', None)
+        if not anims or piece is None:
+            return 0.0
+        anim_lookup = {}
+        for anim in anims:
+            try:
+                anim_lookup[(int(anim['row']), int(anim['col']))] = float(
+                    anim.get('current_offset', 0.0)
+                )
+            except Exception:
+                continue
+        if not anim_lookup:
+            return 0.0
+        min_offset = 0.0
+        board_h = self.board.height
+        board_w = self.board.width
+        for local_y, row in enumerate(piece.shape):
+            for local_x, cell in enumerate(row):
+                if not cell:
+                    continue
+                x = piece.x + local_x
+                y = drop_y + local_y
+                if x < 0 or x >= board_w:
+                    continue
+                for ay in range(y + 1, board_h):
+                    if self.board.occupancy[ay][x]:
+                        offset = anim_lookup.get((ay, x), 0.0)
+                        if offset < min_offset:
+                            min_offset = offset
+                        break
+        return min_offset
+
     def _capture_board_state_for_failed_lock(self) -> dict:
         board = self.board
         return {
@@ -3575,6 +3612,7 @@ class CoopGame:
         if offset == 0:
             return
         drop_y = ghost_y + offset
+        ghost_visual_offset = self._get_ghost_visual_offset(piece, drop_y)
         current_texture = getattr(piece, 'texture_surface', None)
         piece_shape = piece.shape
         piece_width = len(piece_shape[0]) if piece_shape else 1
@@ -3597,7 +3635,7 @@ class CoopGame:
                 if y < 0:
                     continue
                 block_x = ox + x * cs + 1
-                block_y = oy + y * cs + 1
+                block_y = oy + y * cs + 1 + int(ghost_visual_offset)
                 ghost_color = piece.color
                 cm = getattr(piece, 'color_matrix', None)
                 if cm is not None:

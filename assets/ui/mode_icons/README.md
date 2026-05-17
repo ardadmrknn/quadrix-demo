@@ -1,6 +1,9 @@
 # Quadrix Mod İkonları
 
-Bu klasör, mod seçim ekranı ve rehber ekranında kullanılan PNG ikonlarını barındırır. Dosya adları kod tarafından sabit olarak beklendiği için isimler birebir korunmalıdır.
+Bu klasör, mod seçim ekranı (`src/extras_menu.py`) ve rehber ekranında (`src/guide_screen.py`) kullanılan PNG ikonlarını barındırır. Dosya adları kod tarafından sabit olarak beklendiği için isimler birebir korunmalıdır.
+
+> **Bu klasör nedir?** Mod kartlarında gösterilen PNG ikonların kanonik konumu.
+> **Beklenen sayı:** 14 ikon (her bir mod için bir tane). Eksik ikonlar için fallback metin/emoji çizilir; oyun çökmez.
 
 ## Beklenen Dosyalar
 
@@ -51,3 +54,9 @@ Mod temalarına göre hazırlanmış görsel prompt notları için şu belgeyi k
 ## Güncelleme Notu
 
 İkon dosyalarını değiştirdikten sonra en güvenli yol oyunu yeniden başlatmaktır. Menü veya rehber ekranı tekrar açıldığında yeni görseller yüklenir.
+
+## İlgili Dokümanlar
+
+- Genel proje rehberi: [../../../README.md](../../../README.md)
+- Mod ikonu prompt rehberi (üretim notları, tarihsel): [../../../docs/MODE_ICONS_AI_PROMPTS.md](../../../docs/MODE_ICONS_AI_PROMPTS.md)
+- Geniş mod listesi ve sistem haritası: [../../../docs/guides/README_FULL.md](../../../docs/guides/README_FULL.md)
