@@ -11,6 +11,17 @@ from typing import MutableMapping
 
 IS_DEMO = False
 
+_DEMO_MODE_ENV = "QUADRIX_DEMO_MODE"
+_TRUTHY_ENV_VALUES = {"1", "true", "yes", "on", "demo"}
+
+
+def _env_requests_demo_mode() -> bool:
+    raw_value = str(os.environ.get(_DEMO_MODE_ENV, "") or "").strip().lower()
+    return raw_value in _TRUTHY_ENV_VALUES
+
+
+IS_DEMO = bool(IS_DEMO or _env_requests_demo_mode())
+
 DEMO_STEAM_APP_ID = "4635310"
 DEMO_STEAM_STORE_URL = "https://store.steampowered.com/app/4414520/Quadrix/"
 DEMO_APP_NAME = "quadrix_demo"
@@ -97,5 +108,7 @@ def is_coop_campaign_level_available(level_num: int) -> bool:
 
 def apply_runtime_environment(env: MutableMapping[str, str] | None = None) -> str | None:
     target_env = os.environ if env is None else env
+    if IS_DEMO:
+        target_env.setdefault(_DEMO_MODE_ENV, "1")
     target_env.setdefault("QUADRIX_APP_NAME", get_runtime_app_name())
     return target_env.get("QUADRIX_APP_NAME")

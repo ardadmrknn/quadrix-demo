@@ -1232,6 +1232,10 @@ class Menu:
             if self.tutorial_enter_rect and self.tutorial_enter_rect.collidepoint(mouse_pos):
                 return 'tutorial_mode'
 
+            split_click_handled, split_action = self._resolve_main_split_mouse_action(mouse_pos)
+            if split_click_handled:
+                return split_action
+
             if self.pvp_local_polygon and _point_in_polygon(mouse_pos, self.pvp_local_polygon):
                 self._pvp_split_selection = 'local'
                 return 'pvp_2_players'
@@ -2213,6 +2217,150 @@ class Menu:
         """Kısa bilgi mesajı göster"""
         self.info_message = message
         self.info_timer = duration
+
+    def _infer_pvp_option_side_from_rect(
+        self,
+        rect: pygame.Rect | None,
+        mouse_pos: tuple[int, int] | None,
+    ) -> str | None:
+        if mouse_pos is None or rect is None or not rect.collidepoint(mouse_pos):
+            return None
+
+        rel_x = max(0, min(rect.width, mouse_pos[0] - rect.left))
+        rel_y = max(0, min(rect.height, mouse_pos[1] - rect.top))
+        if mouse_pos[0] >= rect.left + int(round(rect.width * 0.56)):
+            return 'online'
+
+        boundary_y = (rect.height * rel_x) / max(1, rect.width)
+        boundary_slop = rect.height * 0.06
+        return 'online' if rel_y <= boundary_y + boundary_slop else 'local'
+
+    def _infer_coop_option_side_from_rect(
+        self,
+        rect: pygame.Rect | None,
+        mouse_pos: tuple[int, int] | None,
+    ) -> str | None:
+        if mouse_pos is None or rect is None or not rect.collidepoint(mouse_pos):
+            return None
+
+        divider_x = rect.left + int(round(rect.width * 0.48))
+        return 'online' if mouse_pos[0] >= divider_x else 'local'
+
+    def _build_main_dashboard_layout(self) -> dict[str, Any]:
+        try:
+            width, height = self.screen.get_size()
+        except Exception:
+            return {'action_rect_map': {}, 'mystery_lb_rect': None}
+
+        scale = self._ui_scale()
+        try:
+            hero_metrics = self._hero_header_layout_metrics(width, height)
+            hero_rect = hero_metrics['hero_rect']
+        except Exception:
+            hero_rect = pygame.Rect(0, 0, width, 0)
+
+        content_top = hero_rect.bottom + max(8, int(10 * scale))
+        frame_margin_x = max(170, int(188 * scale))
+        frame_w = max(620, width - frame_margin_x * 2)
+        frame_h = min(int(height * 0.74), height - content_top - max(26, int(32 * scale)))
+        frame_h = max(360, frame_h)
+        frame_rect = pygame.Rect((width - frame_w) // 2, content_top, frame_w, frame_h)
+
+        grid_x = frame_rect.x
+        grid_w = frame_rect.width
+        content_h = frame_rect.height
+
+        gap = max(8, int(10 * scale))
+        col1 = int(grid_w * 0.28)
+        col2 = int(grid_w * 0.17)
+        col3 = int(grid_w * 0.17)
+        col4 = int(grid_w * 0.12)
+        col5 = grid_w - (col1 + col2 + col3 + col4 + gap * 4)
+        if col5 < 130:
+            col5 = 130
+            col3 = max(120, col3 - 20)
+            col2 = max(120, col2 - 10)
+
+        x1 = grid_x
+        x2 = x1 + col1 + gap
+        x3 = x2 + col2 + gap
+        x4 = x3 + col3 + gap
+        x5 = x4 + col4 + gap
+
+        row1 = int(content_h * 0.43)
+        row2 = int(content_h * 0.14)
+        y1 = frame_rect.y
+        y2 = y1 + row1 + gap
+        y3 = y2 + row2 + gap
+        content_bottom = y1 + content_h
+        lower_start = y3
+        lower_side_inset = max(8, int(10 * scale))
+        lower_bottom_lift = max(30, int(38 * scale))
+        lower_h = max(84, content_bottom - lower_start - lower_bottom_lift)
+        leaderboard_h = max(180, content_bottom - lower_start)
+        right_gap = max(8, int(10 * scale))
+        tutorial_w = max(96, int(col5 * 0.34))
+        achievements_w = max(110, col5 - tutorial_w - right_gap)
+        if tutorial_w + right_gap + achievements_w > col5:
+            achievements_w = max(96, col5 - tutorial_w - right_gap)
+
+        action_rect_map: dict[str, pygame.Rect] = {
+            'new_gen_tetris': pygame.Rect(x1, y1, col1, row1 + row2 + gap),
+            'pvp_2_players': pygame.Rect(x1 + lower_side_inset, lower_start, max(96, col1 - (lower_side_inset * 2)), lower_h),
+            'piece_workshop': pygame.Rect(x2, y1, col2, row1),
+            'campaign_mode': pygame.Rect(x2 + lower_side_inset, lower_start, max(96, col2 - (lower_side_inset * 2)), lower_h),
+            'extras': pygame.Rect(x3, y1, col3, row1),
+            'store': pygame.Rect(x3 + lower_side_inset, lower_start, max(96, col3 - (lower_side_inset * 2)), lower_h),
+            'coop_mode': pygame.Rect(x4, y1, col4, row1 + row2 + gap),
+            'tutorial_mode': pygame.Rect(x5, y1, tutorial_w, row1),
+            'achievements': pygame.Rect(x5 + tutorial_w + right_gap, y1, achievements_w, row1),
+        }
+        for action_key, action_rect in list(action_rect_map.items()):
+            action_rect_map[action_key] = self._apply_layout_override_rect(
+                action_key,
+                action_rect,
+                width,
+                height,
+                min_w=90,
+                min_h=70,
+            )
+
+        mystery_lb_rect = pygame.Rect(x5, lower_start, col5, leaderboard_h)
+        mystery_lb_rect = self._apply_layout_override_rect(
+            'steam_scores',
+            mystery_lb_rect,
+            width,
+            height,
+            min_w=180,
+            min_h=140,
+        )
+        return {'action_rect_map': action_rect_map, 'mystery_lb_rect': mystery_lb_rect}
+
+    def _resolve_main_split_mouse_action(self, mouse_pos: tuple[int, int] | None) -> tuple[bool, str | None]:
+        try:
+            dashboard_rects = self._build_main_dashboard_layout().get('action_rect_map', {}) or {}
+        except Exception:
+            dashboard_rects = {}
+
+        pvp_side = self._infer_pvp_option_side_from_rect(dashboard_rects.get('pvp_2_players'), mouse_pos)
+        if pvp_side is not None:
+            self._pvp_split_selection = pvp_side
+            if pvp_side == 'online':
+                if self._maybe_handle_demo_main_action('online_pvp'):
+                    return True, None
+                return True, 'online_pvp'
+            return True, 'pvp_2_players'
+
+        coop_side = self._infer_coop_option_side_from_rect(dashboard_rects.get('coop_mode'), mouse_pos)
+        if coop_side is not None:
+            self._coop_split_selection = coop_side
+            if coop_side == 'online':
+                if self._maybe_handle_demo_main_action('online_coop'):
+                    return True, None
+                return True, 'online_coop'
+            return True, 'coop_mode'
+
+        return False, None
 
     def _maybe_handle_demo_main_action(self, action_id: str) -> bool:
         if demo_config.is_locked_main_action(action_id):
@@ -3836,6 +3984,9 @@ class Menu:
 
         if self.show_daily_prompt:
             self._draw_daily_prompt_panel()
+
+        if self._demo_upgrade_prompt.is_active():
+            self._demo_upgrade_prompt.draw()
 
         # Gamepad bağlıysa küçük gösterge
         self._draw_gamepad_indicator()
@@ -6009,9 +6160,6 @@ class Menu:
         else:
             self.menu_language_panel_sb_thumb_rect = None
             self.menu_language_panel_sb_container_rect = None
-
-        if self._demo_upgrade_prompt.is_active():
-            self._demo_upgrade_prompt.draw()
 
     def set_muted(self, muted: bool):
         """Dışarıdan ses durumunu güncelle (main.py'den çağrılır)."""
