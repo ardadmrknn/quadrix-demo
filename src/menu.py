@@ -615,7 +615,7 @@ class Menu:
         # Görünen etiketler draw() sırasında t(key) ile üretilir.
         # Yeni dashboard yerleşiminde görünen kutular + köşe aksiyonları.
         self.options = [
-            # Merkez paneller (indeks 0-8) — tuş navigasyonu bu aralıkta kalır
+            # Merkez paneller (indeks 0-8)
             'new_gen_tetris',
             'piece_workshop',
             'extras',
@@ -626,18 +626,24 @@ class Menu:
             'campaign_mode',
             'store',
 
-            # Köşe/kısayol aksiyonları (sadece fare ile erişilir)
+            # Köşe/kısayol aksiyonları (gamepad ile de erişilebilir)
             'high_scores',
             'switch_user',
             'settings',
             'guide',
             'credits',
 
+            # Ek köşe butonları
+            'language_quick',
+            'mute_quick',
+            'sos_quick',
+
             # Çıkış
             'exit',
         ]
-        # Tuş navigasyonu sadece merkez paneller arasında gezinir
-        self._nav_panel_max_idx = 8  # Son merkez panel indeksi (store)
+        # Tuş navigasyonu tüm option_rects arasında spatial olarak gezinir.
+        # Eski sınır kaldırıldı; spatial nav yön filtresi doğal sınır sağlar.
+        self._nav_panel_max_idx = len(self.options) - 1
 
     def _ui_scale(self) -> float:
         """Ana menü için pencereye bağlı UI ölçeği üret.
@@ -862,7 +868,6 @@ class Menu:
         for i, r in enumerate(rects):
             if i == cur_idx:
                 continue
-            # Sadece merkez paneller arasında gezin
             if i > max_nav:
                 continue
             if r.width <= 0 or r.height <= 0:
@@ -885,16 +890,21 @@ class Menu:
                 cross_dist = abs(ry - cy)
                 score = main_dist + cross_dist * 0.5
             else:
-                # Yukarı/aşağı: yalnızca yatay örtüşmesi olan paneller aday
+                # Yukarı/aşağı: yatay örtüşmesi olan paneller öncelikli
                 overlap_left = max(cur.left, r.left)
                 overlap_right = min(cur.right, r.right)
                 has_overlap = overlap_left < overlap_right
-                if not has_overlap:
-                    continue
 
                 main_dist = abs(ry - cy)
                 cross_dist = abs(rx - cx)
-                score = main_dist + cross_dist * 0.1
+                if has_overlap:
+                    score = main_dist + cross_dist * 0.1
+                else:
+                    # Örtüşme yok — merkez paneller arası (i <= 8) skip et;
+                    # corner butonlar (i > 8) için çapraz sapma ağır cezalı ama aday
+                    if i <= 8:
+                        continue
+                    score = main_dist + cross_dist * 3.0
 
             if score < best_score:
                 best_score = score
@@ -1138,10 +1148,24 @@ class Menu:
                     navigated = True
                     self._ensure_visible()
             elif event.key in (pygame.K_RETURN, pygame.K_SPACE):
-                # Mouse modunda panel dışındayken Enter/Space tetiklemez
+                # Keyboard/gamepad navigasyonunda her zaman tetikle;
+                # mouse modunda panel dışındayken tetikleme
                 if getattr(self, '_nav_source', 'mouse') == 'mouse' and not getattr(self, '_mouse_in_panel', True):
                     return None
-                return self.options[self.selected]
+                selected_option = self.options[self.selected]
+                # Köşe quick action'ları özel handling gerektirir
+                if selected_option == 'language_quick':
+                    if self.menu_language_panel_open:
+                        self._close_menu_language_panel()
+                    else:
+                        self._open_menu_language_panel()
+                    return None
+                if selected_option == 'mute_quick':
+                    return 'toggle_mute_quick'
+                if selected_option == 'sos_quick':
+                    self.sos_open = not self.sos_open
+                    return None
+                return selected_option
             elif is_fullscreen_toggle(event.key, getattr(event, 'mod', 0)):
                 return 'toggle_fullscreen'
             if navigated:
@@ -3507,6 +3531,12 @@ class Menu:
                 self.option_rects.append(self.corner_credits_rect)
             elif option == 'high_scores' and self.corner_achievements_rect:
                 self.option_rects.append(self.corner_achievements_rect)
+            elif option == 'language_quick' and getattr(self, 'corner_language_rect', None):
+                self.option_rects.append(self.corner_language_rect)
+            elif option == 'mute_quick' and getattr(self, 'corner_mute_rect', None):
+                self.option_rects.append(self.corner_mute_rect)
+            elif option == 'sos_quick' and getattr(self, 'sos_button_rect', None):
+                self.option_rects.append(self.sos_button_rect)
             else:
                 self.option_rects.append(pygame.Rect(0, 0, 0, 0))
 
@@ -5247,18 +5277,20 @@ class Menu:
         icon_surface: pygame.Surface | None = None,
         accent_color: tuple[int, int, int] | None = None,
         is_active: bool = False,
+        gamepad_selected: bool = False,
     ) -> None:
         """Tüm köşe butonları için ortak çizim metodu.
 
         Glassmorphism + neon border temalı, SOS butonu ile aynı aileden.
         ``accent_color`` butonun neon çerçeve rengidir.
         ``is_active`` True ise buton "basılı/aktif" görünür (örn. mute açıkken).
+        ``gamepad_selected`` True ise d-pad ile seçili — hover efekti gösterilir.
         """
         if accent_color is None:
             accent_color = UIColors.NEON_CYAN
 
         mouse_pos = get_mouse_pos()
-        hover = rect.collidepoint(mouse_pos)
+        hover = rect.collidepoint(mouse_pos) or gamepad_selected
 
         # Glass arka plan
         alpha = 210 if (hover or is_active) else 160
@@ -5267,12 +5299,20 @@ class Menu:
         # İnce renkli dolgu overlay (hover/aktif durumda)
         if hover or is_active:
             fill = pygame.Surface(rect.size, pygame.SRCALPHA)
-            fill.fill((*accent_color[:3], 30 if hover else 20))
+            fill.fill((*accent_color[:3], 35 if gamepad_selected else (30 if hover else 20)))
             self.screen.blit(fill, rect.topleft)
 
-        # Neon çerçeve
-        border_alpha = 180 if (hover or is_active) else 120
-        pygame.draw.rect(self.screen, (*accent_color[:3], border_alpha), rect, 2, border_radius=12)
+        # Neon çerçeve (gamepad seçiliyken daha parlak)
+        if gamepad_selected:
+            border_alpha = 240
+            border_width = 3
+        elif hover or is_active:
+            border_alpha = 180
+            border_width = 2
+        else:
+            border_alpha = 120
+            border_width = 2
+        pygame.draw.rect(self.screen, (*accent_color[:3], border_alpha), rect, border_width, border_radius=12)
 
         # İkon çiz
         if icon_surface is not None:
@@ -5474,6 +5514,14 @@ class Menu:
         margin = max(14, int(18 * scale))
         gap = max(6, int(8 * scale))  # Butonlar arası boşluk
 
+        # Gamepad/keyboard ile seçili olan option (d-pad hover efekti için)
+        _sel_opt = self.options[self.selected] if 0 <= self.selected < len(self.options) else ''
+        _is_kb = getattr(self, '_nav_source', 'mouse') == 'keyboard'
+
+        def _gp_sel(option_key: str) -> bool:
+            """D-pad ile bu corner button seçili mi?"""
+            return _is_kb and _sel_opt == option_key
+
         # --- SOL ÜST: Ayarlar (dişli) ---
         self.corner_settings_rect = pygame.Rect(margin, margin, btn_size, btn_size)
         self.corner_settings_rect = self._apply_layout_override_rect('settings_button', self.corner_settings_rect, width, height, min_w=30, min_h=30)
@@ -5483,6 +5531,7 @@ class Menu:
             self.corner_settings_rect,
             icon_surface=gear_icon,
             accent_color=UIColors.NEON_CYAN,
+            gamepad_selected=_gp_sel('settings'),
         )
 
         # --- SOL ÜST ALT: Dil (dünya) ---
@@ -5497,6 +5546,7 @@ class Menu:
             self.corner_language_rect,
             icon_surface=world_icon,
             accent_color=(255, 90, 90),
+            gamepad_selected=_gp_sel('language_quick'),
         )
 
         # --- SOL ÜST + 1: Sessize Al ---
@@ -5517,10 +5567,10 @@ class Menu:
             icon_surface=emoji_icon,
             accent_color=UIColors.NEON_RED if self._is_muted else UIColors.NEON_GREEN,
             is_active=self._is_muted,
+            gamepad_selected=_gp_sel('mute_quick'),
         )
 
         # --- SAĞ ÜST (SOS altı): Kullanıcı Değiştir ---
-        # SOS butonunun hemen altına yerleştir
         sos_bottom = self.sos_button_rect.bottom if self.sos_button_rect else margin + btn_size
         switch_x = width - margin - btn_size
         switch_y = sos_bottom + gap
@@ -5532,6 +5582,7 @@ class Menu:
             self.corner_switch_user_rect,
             icon_surface=user_icon,
             accent_color=UIColors.NEON_MAGENTA,
+            gamepad_selected=_gp_sel('switch_user'),
         )
 
         # --- SOL ALT: Emeği Geçenler ---
@@ -5544,6 +5595,7 @@ class Menu:
             self.corner_credits_rect,
             icon_surface=credits_icon,
             accent_color=UIColors.NEON_GOLD,
+            gamepad_selected=_gp_sel('credits'),
         )
 
         # --- SOL ALT + 1: Yüksek skorlar (credits'in yanı) ---
@@ -5556,6 +5608,7 @@ class Menu:
             self.corner_achievements_rect,
             icon_surface=trophy_icon,
             accent_color=UIColors.NEON_GOLD,
+            gamepad_selected=_gp_sel('high_scores'),
         )
 
         # --- SOL ALT ÜST: Kılavuz (credits'in üstü) ---
@@ -5829,7 +5882,20 @@ class Menu:
 
 
 class ControlSettingsScreen:
-    """Tuş atamalarını düzenleyen ekran."""
+    """[DEPRECATED] Eski tuş atama ekranı.
+
+    Bu sınıf artık aktif olarak kullanılmıyor. Tüm kontrol ayarları
+    settings_screen_tabbed.py → TabbedSettingsScreen → 'controls' sekmesi
+    üzerinden yönetiliyor. main.py'de hâlâ import ediliyor ama hiçbir
+    state'ten bu ekrana yönlendirme yapılmıyor.
+
+    Gamepad rebind UI de artık TabbedSettingsScreen içinde inline olarak
+    çalışıyor (gamepad.ingame / gamepad.outgame section'ları).
+
+    TODO: Bu sınıf ve ilişkili _get_gamepad_*_rows, _handle_gamepad_tab_key,
+    _handle_gamepad_row_click, _draw_gamepad_tab metodları güvenle silinebilir.
+    Silmeden önce main.py'deki import ve instance oluşturma da kaldırılmalı.
+    """
 
     def __init__(self, screen, settings_manager):
         self.screen = screen
@@ -10749,13 +10815,37 @@ class BlockWorkshopScreen:
             if event.key == pygame.K_s and (is_primary_modifier(mods) or (mods & pygame.KMOD_SHIFT)):
                 self._save_board()
                 return None
+
+            # Gamepad package action shortcuts (Ctrl gerektirmeyen):
+            # X (editor_secondary) → rename aktif set
+            if event.key == pygame.K_x and not is_primary_modifier(mods):
+                self._rename_active_set()
+                return None
+            # Y/Delete (editor_delete) → delete aktif set
+            if event.key == pygame.K_DELETE and not is_primary_modifier(mods):
+                self._delete_active_set()
+                return None
+            # LB/RB (bracket) → önceki/sonraki set chip'i
+            if event.key == pygame.K_LEFTBRACKET:
+                self._cycle_sets(-1)
+                self._refresh_manager_items(reset_selection=True)
+                return None
+            if event.key == pygame.K_RIGHTBRACKET:
+                self._cycle_sets(1)
+                self._refresh_manager_items(reset_selection=True)
+                return None
+            # N → new set (Ctrl olmadan da çalışsın)
+            if event.key == pygame.K_n and not is_primary_modifier(mods):
+                self._create_new_set(copy_current=False)
+                return None
+
             if not self.manager_items:
                 return None
             if event.key == pygame.K_UP:
                 self.manager_selected = max(0, self.manager_selected - 1)
             elif event.key == pygame.K_DOWN:
                 self.manager_selected = min(len(self.manager_items) - 1, self.manager_selected + 1)
-            elif event.key in (pygame.K_DELETE, pygame.K_BACKSPACE):
+            elif event.key in (pygame.K_BACKSPACE,):
                 self._delete_manager_item(self.manager_selected)
             elif event.key == pygame.K_SPACE:
                 self._toggle_manager_mode(self.manager_mode_focus)

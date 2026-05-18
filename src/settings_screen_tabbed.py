@@ -294,6 +294,8 @@ def _build_tab_content(tab_key: str, sm, show_debug: bool = False) -> list[dict]
             ('menu_back', _t('gp_menu_back', 'Menü Geri')),
             ('menu_tab_next', _t('gp_menu_tab_next', 'Sekme Sonraki')),
             ('menu_tab_prev', _t('gp_menu_tab_prev', 'Sekme Önceki')),
+            ('editor_secondary', _t('gp_editor_secondary', 'Alternatif / Sil')),
+            ('editor_delete', _t('gp_editor_delete', 'Temizle / Kaldır')),
         ]
         items.append({'type': 'section', 'loc_key': 'settings_gp_section_ingame', 'label_tr': 'GAMEPAD - OYUN İÇİ', 'label_en': 'GAMEPAD - IN-GAME'})
         items.append({

@@ -7381,15 +7381,28 @@ class MysteryMode(Game):
                 if event.type == pygame.QUIT:
                     return False
                 
-                if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
-                    # ESC ile popup'ı kapat (kalan haklar kaybolur)
-                    self._close_piece_selection_popup()
-                    self._future_changer_remaining = 0
-                    try:
-                        self._set_localized_card_message('mystery_msg_future_cancelled', 1.0, 'Parça seçimi iptal edildi.')
-                    except Exception:
-                        pass
-                    continue
+                if event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_ESCAPE:
+                        # ESC ile popup'ı kapat (kalan haklar kaybolur)
+                        self._close_piece_selection_popup()
+                        self._future_changer_remaining = 0
+                        try:
+                            self._set_localized_card_message('mystery_msg_future_cancelled', 1.0, 'Parça seçimi iptal edildi.')
+                        except Exception:
+                            pass
+                        continue
+
+                    # Gamepad/keyboard navigasyon: sol/sağ ile parça seç
+                    if event.key in (pygame.K_LEFT, pygame.K_a):
+                        self._piece_selection_move(-1)
+                        continue
+                    if event.key in (pygame.K_RIGHT, pygame.K_d):
+                        self._piece_selection_move(1)
+                        continue
+                    # Enter/Space/A → seçili parçayı onayla
+                    if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE):
+                        self._piece_selection_confirm()
+                        continue
                 
                 if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                     pos = normalize_mouse_pos(getattr(event, 'pos', None)) or event.pos
@@ -7412,13 +7425,33 @@ class MysteryMode(Game):
                 if event.type == pygame.QUIT:
                     return False
                     
-                if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
-                    # ESC ile overlay'i kapat (hak harcanmaz)
-                    self._close_sniper_overlay()
-                    continue
-                    
+                if event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_ESCAPE:
+                        # ESC ile overlay'i kapat (hak harcanmaz)
+                        self._close_sniper_overlay()
+                        continue
+
+                    # Gamepad D-pad / ok tuşları ile cursor navigasyonu
+                    if event.key in (pygame.K_LEFT, pygame.K_a):
+                        self._sniper_move_cursor(-1, 0)
+                        continue
+                    if event.key in (pygame.K_RIGHT, pygame.K_d):
+                        self._sniper_move_cursor(1, 0)
+                        continue
+                    if event.key in (pygame.K_UP, pygame.K_w):
+                        self._sniper_move_cursor(0, -1)
+                        continue
+                    if event.key in (pygame.K_DOWN, pygame.K_s):
+                        self._sniper_move_cursor(0, 1)
+                        continue
+
+                    # Enter/Space/A → cursor pozisyonunda ateş
+                    if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE):
+                        self._sniper_fire_at_cursor()
+                        continue
+
                 if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                    # Sol tık - blok patlatma
+                    # Sol tık - blok patlatma (mevcut mouse path korunuyor)
                     pos = normalize_mouse_pos(getattr(event, 'pos', None)) or event.pos
                     cell = self._sniper_screen_to_cell(pos)
                     
@@ -7861,6 +7894,13 @@ class MysteryMode(Game):
             # === TARGET CELL HIGHLIGHTING ===
             cell = self._sniper_screen_to_cell(mouse_pos)
             target_valid = False
+
+            # Gamepad cursor aktifse, mouse yerine gamepad cursor pozisyonunu kullan
+            if getattr(self, '_sniper_cursor_active', False):
+                gcx = int(getattr(self, '_sniper_cursor_x', 0) or 0)
+                gcy = int(getattr(self, '_sniper_cursor_y', 0) or 0)
+                if 0 <= gcx < self.board.width and 0 <= gcy < self.board.height:
+                    cell = (gcx, gcy)
             
             if cell:
                 cx, cy = cell
@@ -9583,6 +9623,10 @@ class MysteryMode(Game):
         # Overlay'i aç
         self._sniper_overlay_active = True
         self._sniper_hover_pos = None
+        # Gamepad cursor: tahtanın ortasından başla
+        self._sniper_cursor_x = self.board.width // 2
+        self._sniper_cursor_y = self.board.height // 2
+        self._sniper_cursor_active = True
         try:
             charges = int(getattr(self, '_sniper_charges', 0) or 0)
             self._set_localized_card_message('mystery_msg_sniper_open', 10.0, 'Patlatmak istedigin bloga tikla! (ESC: Iptal) - Kalan: {charges}', charges=charges)
@@ -9594,6 +9638,7 @@ class MysteryMode(Game):
         """Sniper overlay'ini kapatır (hak harcanmaz)."""
         self._sniper_overlay_active = False
         self._sniper_hover_pos = None
+        self._sniper_cursor_active = False
         
         # Mouse cursor'ı tekrar görünür yap
         pygame.mouse.set_visible(True)
@@ -9603,6 +9648,30 @@ class MysteryMode(Game):
             self._set_localized_card_message('mystery_msg_sniper_cancel', 1.2, 'Keskin Nisanci iptal edildi (Kalan hak: {charges})', charges=charges)
         except Exception:
             pass
+
+    def _sniper_move_cursor(self, dx: int, dy: int) -> None:
+        """Sniper cursor'ını D-pad/ok tuşlarıyla hareket ettirir (board sınırları içinde)."""
+        cx = int(getattr(self, '_sniper_cursor_x', 0) or 0) + dx
+        cy = int(getattr(self, '_sniper_cursor_y', 0) or 0) + dy
+        self._sniper_cursor_x = max(0, min(self.board.width - 1, cx))
+        self._sniper_cursor_y = max(0, min(self.board.height - 1, cy))
+        self._sniper_cursor_active = True
+
+    def _sniper_fire_at_cursor(self) -> None:
+        """Gamepad cursor pozisyonundaki hücreye ateş eder."""
+        cx = int(getattr(self, '_sniper_cursor_x', 0) or 0)
+        cy = int(getattr(self, '_sniper_cursor_y', 0) or 0)
+        if not (0 <= cx < self.board.width and 0 <= cy < self.board.height):
+            return
+        if self.board.occupancy[cy][cx]:
+            self._execute_sniper_shot(cx, cy)
+        else:
+            try:
+                self._set_localized_card_message('mystery_msg_sniper_empty_cell', 1.5, 'Bos hucre! Dolu bir bloga tikla.')
+                if self.sound_enabled:
+                    self.sound.play_sound("deny")
+            except Exception:
+                pass
 
     def _sniper_screen_to_cell(self, pos: tuple[int, int]) -> tuple[int, int] | None:
         """Mouse pozisyonunu mevcut tahta hücresine çevirir."""
@@ -12060,6 +12129,26 @@ class MysteryMode(Game):
                 return True
         
         return False
+
+    def _piece_selection_move(self, delta: int) -> None:
+        """Parça seçim popup'ında keyboard/gamepad ile focus'u kaydır."""
+        rects = getattr(self, '_piece_selection_rects', []) or []
+        if not rects:
+            return
+        count = len(rects)
+        current = int(getattr(self, '_piece_selection_index', 0) or 0)
+        new_idx = (current + delta) % count
+        self._piece_selection_index = new_idx
+
+    def _piece_selection_confirm(self) -> None:
+        """Parça seçim popup'ında keyboard/gamepad ile seçili parçayı onayla."""
+        rects = getattr(self, '_piece_selection_rects', []) or []
+        if not rects:
+            return
+        idx = int(getattr(self, '_piece_selection_index', 0) or 0)
+        idx = max(0, min(len(rects) - 1, idx))
+        _, name = rects[idx]
+        self._select_future_piece(name)
 
 
 class WideMode(Game):

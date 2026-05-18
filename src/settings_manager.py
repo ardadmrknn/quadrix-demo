@@ -82,6 +82,9 @@ DEFAULT_CONTROLS = {
         'menu_back': {'primary': 1, 'secondary': -1},     # B / Circle - menüde geri
         'menu_tab_next': {'primary': 10, 'secondary': -1}, # RB / R1 - sonraki sekme
         'menu_tab_prev': {'primary': 9, 'secondary': -1},  # LB / L1 - önceki sekme
+        # Outgame editor aksiyonları (workshop, user screens, popup'lar)
+        'editor_secondary': {'primary': 2, 'secondary': -1},  # X (Xbox) / Square (PS)
+        'editor_delete': {'primary': 3, 'secondary': -1},     # Y (Xbox) / Triangle (PS)
     },
     'debug': {
         'coop_spawner_left': '',

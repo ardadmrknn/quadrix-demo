@@ -165,6 +165,9 @@ DEFAULT_GAMEPAD_BINDINGS = {
     'menu_back':    {'button': 1},   # B / Circle / A(Nintendo)
     'menu_tab_next': {'button': 10}, # RB / R1
     'menu_tab_prev': {'button': 9},  # LB / L1
+    # Outgame editor aksiyonları (workshop, user screens, popup'lar)
+    'editor_secondary': {'button': 2},  # X (Xbox) / Square (PS) — silme, alternatif aksiyon
+    'editor_delete': {'button': 3},     # Y (Xbox) / Triangle (PS) — delete/clear
 }
 
 # D-pad → Klavye eşlemesi (menüler ve oyun için)
@@ -200,6 +203,8 @@ ACTION_TO_KEY = {
     'menu_back': pygame.K_ESCAPE,
     'menu_tab_next': pygame.K_RIGHTBRACKET,  # RB → sonraki sekme
     'menu_tab_prev': pygame.K_LEFTBRACKET,  # LB → önceki sekme
+    'editor_secondary': pygame.K_x,   # X butonu → silme/alternatif
+    'editor_delete': pygame.K_DELETE,  # Y butonu → delete/clear
 }
 
 
@@ -322,6 +327,11 @@ class GamepadManager:
         # True iken A butonu K_RETURN yerine MOUSEBUTTONDOWN üretir.
         self._menu_pointer_active = False
 
+        # Focus-nav olan ekranlar bu flag'i True yaparak pointer mode'un
+        # otomatik aktifleşmesini engeller. Sağ stick hareketi yine fare
+        # imlecini taşır ama A butonu K_RETURN üretmeye devam eder.
+        self._suppress_pointer_mode = False
+
         # Instance-level binding kopyası (global DEFAULT_GAMEPAD_BINDINGS mutasyona uğramaz)
         self._bindings = copy.deepcopy(DEFAULT_GAMEPAD_BINDINGS)
 
@@ -410,6 +420,7 @@ class GamepadManager:
                 'card_rewind', 'card_sniper', 'card_time_capsule_save',
                 'card_time_capsule_restore', 'card_freeze', 'card_phase_shift',
                 'card_ghost', 'card_hammer', 'card_bomb',
+                'editor_secondary', 'editor_delete',
             ]
             for action in button_actions:
                 raw = gp_cfg.get(action)
@@ -788,6 +799,17 @@ class GamepadManager:
     def get_context(self) -> str:
         """Aktif bağlamı döndür."""
         return self._context
+
+    def set_suppress_pointer_mode(self, suppress: bool) -> None:
+        """Focus-nav olan ekranlar pointer mode'u bastırmak için kullanır.
+
+        True iken sağ stick fare imlecini taşımaya devam eder ama
+        `_menu_pointer_active` otomatik aktifleşmez; A butonu K_RETURN
+        üretmeye devam eder (mouse click yerine).
+        """
+        self._suppress_pointer_mode = bool(suppress)
+        if suppress:
+            self._menu_pointer_active = False
 
     def is_connected(self) -> bool:
         """Herhangi bir gamepad bağlı mı?"""
@@ -1330,6 +1352,7 @@ class GamepadManager:
             menu_actions_list = [
                 'menu_confirm', 'menu_back', 'pause',
                 'menu_tab_next', 'menu_tab_prev',
+                'editor_secondary', 'editor_delete',
             ]
             button_actions = {}
             for action in menu_actions_list:
@@ -1496,7 +1519,8 @@ class GamepadManager:
             # hareket D-pad/sol stick navigasyonunu geçersiz kılmasın.
             if self._context == self.CONTEXT_MENU:
                 if magnitude >= activation_threshold:
-                    self._menu_pointer_active = True
+                    if not getattr(self, '_suppress_pointer_mode', False):
+                        self._menu_pointer_active = True
         except Exception:
             self._reset_mouse_emulation(gp)
         return events
@@ -1976,3 +2000,12 @@ def normalize_gamepad_trigger_event(event) -> Optional[int]:
         joy_id=getattr(event, 'joy', None),
         instance_id=getattr(event, 'instance_id', None),
     )
+
+
+
+# ─── Re-export: GamepadAction enum (focus_manager'dan) ───────────────────────
+# Ekranlar `from gamepad_manager import GamepadAction` ile erişebilsin.
+try:
+    from focus_manager import GamepadAction, key_to_action  # noqa: F401
+except ImportError:
+    pass

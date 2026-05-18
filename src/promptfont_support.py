@@ -508,3 +508,21 @@ def render_inline_action_text_surface(
     if suffix_surf is not None:
         composed.blit(suffix_surf, (cursor_x, (total_h - suffix_surf.get_height()) // 2))
     return composed
+
+
+
+# ─── Kısa Yol: resolve_prompt (Faz 2 standardizasyon) ───────────────────────
+
+def resolve_prompt(action: str, keyboard_label: str) -> str:
+    """Gamepad bağlıysa buton label'ı, değilse klavye label'ı döndür.
+
+    Tüm "X tuşuna bas" mesajlarında kullanılmalı. Böylece gamepad bağlıyken
+    otomatik olarak "A butonuna bas" gibi doğru prompt gösterilir.
+
+    Örnek:
+        msg = f"{resolve_prompt('card_sniper', 'N')} ile ateş et"
+        # Gamepad bağlı değilse: "N ile ateş et"
+        # Xbox gamepad bağlıysa: "Y ile ateş et" (veya atanmış buton)
+    """
+    display = get_action_prompt_display(action, keyboard_label)
+    return str(display.get('text') or keyboard_label)

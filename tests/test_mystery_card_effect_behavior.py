@@ -753,6 +753,7 @@ def test_sniper_overlay_opens_only_via_explicit_hotkey():
     mode.effects_enabled = False
     mode._set_localized_card_message = lambda *_args, **_kwargs: ''
     mode._sync_active_cards = lambda: None
+    mode.board = SimpleNamespace(width=10, height=20)
 
     mode._apply_card_effect({'id': 'sniper_shot', 'title': 'Keskin Nişancı', 'value': 2, 'color': (255, 80, 80)})
     assert mode._sniper_overlay_active is False
@@ -760,6 +761,10 @@ def test_sniper_overlay_opens_only_via_explicit_hotkey():
     opened = MysteryMode._open_sniper_overlay(mode)
     assert opened is True
     assert mode._sniper_overlay_active is True
+    # Gamepad cursor tahtanın ortasından başlamalı
+    assert mode._sniper_cursor_x == 5
+    assert mode._sniper_cursor_y == 10
+    assert mode._sniper_cursor_active is True
 
 
 def test_laser_drill_cleans_hard_drop_path_before_lock():

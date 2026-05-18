@@ -96,6 +96,26 @@ class CoopLevelSelect:
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_ESCAPE:
                 return 'back'
+            # Keyboard/gamepad navigasyon (campaign level_select ile aynı pattern)
+            if event.key == pygame.K_LEFT:
+                self._move_selection(-1)
+            elif event.key == pygame.K_RIGHT:
+                self._move_selection(1)
+            elif event.key == pygame.K_UP:
+                self._move_selection(-5)
+            elif event.key == pygame.K_DOWN:
+                self._move_selection(5)
+            elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE):
+                sel = getattr(self, 'selected_level', 1)
+                if self._is_level_unlocked(sel):
+                    return f'play_{sel}'
+            # Dünya değiştirme (1-5 tuşları)
+            elif event.key == pygame.K_1:
+                self.current_world = 1
+            elif event.key == pygame.K_2:
+                self.current_world = 2
+            elif event.key == pygame.K_3:
+                self.current_world = 3
 
         if event.type == pygame.VIDEORESIZE:
             self.window_width = self.screen.get_width()
@@ -130,6 +150,19 @@ class CoopLevelSelect:
                     return f'play_{lv}'
 
         return None
+
+    def _move_selection(self, delta: int) -> None:
+        """Keyboard/gamepad ile level seçimini kaydır."""
+        current = int(getattr(self, 'selected_level', 1) or 1)
+        levels = sorted(self._level_rects.keys()) if self._level_rects else list(range(1, 16))
+        if not levels:
+            return
+        try:
+            idx = levels.index(current)
+        except ValueError:
+            idx = 0
+        new_idx = max(0, min(len(levels) - 1, idx + delta))
+        self.selected_level = levels[new_idx]
 
     # ------------------------------------------------------------------
     # Update

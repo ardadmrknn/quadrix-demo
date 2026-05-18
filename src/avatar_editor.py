@@ -151,6 +151,13 @@ class AvatarEditor:
             elif event.key == pygame.K_MINUS:
                 self.crop_size = max(self.min_crop_size, self.crop_size - 10)
                 self._clamp_crop()
+            # Gamepad LB/RB (bracket) ile crop size değiştir
+            elif event.key == pygame.K_RIGHTBRACKET:
+                self.crop_size = min(self.max_crop_size, self.crop_size + 10)
+                self._clamp_crop()
+            elif event.key == pygame.K_LEFTBRACKET:
+                self.crop_size = max(self.min_crop_size, self.crop_size - 10)
+                self._clamp_crop()
         
         elif event.type == pygame.MOUSEBUTTONDOWN:
             if event.button == 1:  # Sol tık

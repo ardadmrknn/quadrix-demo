@@ -2007,11 +2007,11 @@ class Game:
             if event.type == pygame.KEYDOWN:
                 bindings = self.control_bindings
                 alt_keys = getattr(self, 'alt_control_bindings', {})
-                # Game-over overlay input: R=restart, ESC=direct main menu (no confirmation)
+                # Game-over overlay input: R/Enter=restart, ESC=direct main menu (no confirmation)
                 if self.game_over:
                     if event.key == pygame.K_ESCAPE:
                         return 'menu'
-                    if event.key == pygame.K_r and self.can_restart():
+                    if event.key in (pygame.K_r, pygame.K_RETURN, pygame.K_KP_ENTER) and self.can_restart():
                         self.restart()
                         continue
                     continue
