@@ -55,7 +55,6 @@ from constants import (
     SIDE_PANEL_WIDTH,
     INFO_PANEL_HEIGHT,
     LEVEL_SPEED_MIN_MS,
-    get_level_fall_speed_ms,
 )
 from block_styles import TextureSlice
 from screen_shake import (
@@ -626,12 +625,6 @@ class MysteryCardManager:
                   + float(b.get(rarity, 0.0)) * t
             for rarity in cls._RARITY_ORDER
         }
-
-    def sync_level_progress(self) -> None:
-        """Backward compat: eski API; yeni model card_xp tabanlı, no-op davranır
-        ama `progress`/`threshold` alanlarını güncel tutar."""
-        self.progress = int(self.card_xp)
-        self.threshold = int(self.card_xp_to_next)
 
     def notify_lines_cleared(
         self,
@@ -3522,17 +3515,23 @@ class UICard:
         # --- Kart Dönme Animasyonu ---
         self.flip_timer += seconds
         if self.flip_timer >= self.flip_delay and self.entry_done:
-            if not self._flip_sfx_played:
+            elapsed_in_flip = self.flip_timer - self.flip_delay
+            raw_progress = min(1.0, elapsed_in_flip / self.flip_duration)
+            # Ease-out expo: hızlı başla yavaşça bitir
+            self.flip_progress = 1.0 - (1.0 - raw_progress) ** 2.5
+
+            # Reveal SFX, kart yüzünün görünmeye başladığı ana hizalanır
+            # (flip_progress ~0.5). Eskiden flip başında çalıyordu; ses kısa
+            # olduğu için görsel reveal anına ulaşmadan bitiyordu. Bu, hızlı
+            # nadirlikler (common 0.40s) için bile sesin kart yüzü açılırken
+            # duyulmasını sağlar.
+            if not self._flip_sfx_played and self.flip_progress >= 0.5:
                 self._flip_sfx_played = True
                 if self._reveal_sfx_callback:
                     try:
                         self._reveal_sfx_callback()
                     except Exception:
                         pass
-            elapsed_in_flip = self.flip_timer - self.flip_delay
-            raw_progress = min(1.0, elapsed_in_flip / self.flip_duration)
-            # Ease-out expo: hızlı başla yavaşça bitir
-            self.flip_progress = 1.0 - (1.0 - raw_progress) ** 2.5
 
             if self.flip_progress >= 0.99:
                 self.flip_progress = 1.0
@@ -5027,6 +5026,20 @@ class MysteryMode(Game):
         """Kart UI için Faz 8 baseline referans çözünürlüğünü döndür."""
         return int(MYSTERY_OVERLAY_REFERENCE_SIZE[0]), int(MYSTERY_OVERLAY_REFERENCE_SIZE[1])
 
+    def _get_mystery_speed_level(self) -> int:
+        try:
+            level = int(getattr(getattr(self, 'board', None), 'level', 1) or 1)
+        except Exception:
+            level = 1
+        return max(1, level)
+
+    def _get_mystery_base_fall_speed(self, level: int | None = None) -> int:
+        target_level = self._get_mystery_speed_level() if level is None else level
+        return get_mystery_level_fall_speed_ms(target_level)
+
+    def get_initial_speed(self) -> int:
+        return self._get_mystery_base_fall_speed()
+
     def _reset_card_selection_rerolls(self) -> None:
         self.card_selection_rerolls_remaining = max(
             0,
@@ -5554,6 +5567,7 @@ class MysteryMode(Game):
         self._score_color_override = None
         self._drill_last_cleanup_y = None
         self._active_effect_visuals: Dict[str, Dict] = {}
+        self._card_board_effects: List[Dict[str, Any]] = []
 
         # Quantum tunneling (Hayalet Parça) charges: player chooses per-piece via G.
         self.tunnel_charges_remaining = 0
@@ -5883,6 +5897,375 @@ class MysteryMode(Game):
         self.card_message = text
         self.card_message_timer = float(display_time)
         return text
+
+    def _normalize_card_board_color(
+        self,
+        color: Any,
+        fallback: tuple[int, int, int] | None = None,
+    ) -> tuple[int, int, int]:
+        if fallback is None:
+            try:
+                accent = getattr(retro_style, 'accent', (255, 255, 255))
+                fallback = tuple(int(v) for v in accent[:3])
+            except Exception:
+                fallback = (255, 255, 255)
+        try:
+            if isinstance(color, (list, tuple)) and len(color) >= 3:
+                return tuple(max(0, min(255, int(v))) for v in color[:3])
+        except Exception:
+            pass
+        return fallback
+
+    def _card_board_texture_signature(self, texture: Any) -> tuple[Any, ...] | None:
+        if texture is None:
+            return None
+        try:
+            return (
+                getattr(texture, 'piece_name', None),
+                getattr(texture, 'rel_x', None),
+                getattr(texture, 'rel_y', None),
+                getattr(texture, 'width', None),
+                getattr(texture, 'height', None),
+                getattr(texture, 'rotation', None),
+            )
+        except Exception:
+            return None
+
+    def _capture_card_board_snapshot(self) -> dict[str, Any]:
+        cells: dict[tuple[int, int], dict[str, Any]] = {}
+        try:
+            height = int(getattr(self.board, 'height', BOARD_HEIGHT) or BOARD_HEIGHT)
+            width = int(getattr(self.board, 'width', BOARD_WIDTH) or BOARD_WIDTH)
+        except Exception:
+            height = BOARD_HEIGHT
+            width = BOARD_WIDTH
+
+        for y in range(height):
+            for x in range(width):
+                try:
+                    occupied = bool(self.board.occupancy[y][x])
+                except Exception:
+                    occupied = False
+                if not occupied:
+                    continue
+                try:
+                    raw_color = self.board.grid[y][x]
+                except Exception:
+                    raw_color = None
+                try:
+                    texture = self.board.texture_grid[y][x]
+                except Exception:
+                    texture = None
+                try:
+                    gold = bool(self.board.gold[y][x])
+                except Exception:
+                    gold = False
+                cells[(int(x), int(y))] = {
+                    'color': self._normalize_card_board_color(raw_color),
+                    'texture': self._card_board_texture_signature(texture),
+                    'gold': gold,
+                }
+        return {
+            'width': width,
+            'height': height,
+            'cells': cells,
+        }
+
+    def _card_board_cell_signature(self, cell: dict[str, Any]) -> tuple[Any, ...]:
+        return (
+            tuple(cell.get('color', (255, 255, 255))),
+            cell.get('texture'),
+            bool(cell.get('gold', False)),
+        )
+
+    def _pair_card_board_delta_moves(
+        self,
+        removed_items: list[tuple[tuple[int, int], dict[str, Any]]],
+        added_items: list[tuple[tuple[int, int], dict[str, Any]]],
+    ) -> tuple[
+        list[dict[str, Any]],
+        list[tuple[tuple[int, int], dict[str, Any]]],
+        list[tuple[tuple[int, int], dict[str, Any]]],
+    ]:
+        removed_by_signature: dict[tuple[Any, ...], list[tuple[tuple[int, int], dict[str, Any]]]] = {}
+        added_by_signature: dict[tuple[Any, ...], list[tuple[tuple[int, int], dict[str, Any]]]] = {}
+        for item in removed_items:
+            removed_by_signature.setdefault(self._card_board_cell_signature(item[1]), []).append(item)
+        for item in added_items:
+            added_by_signature.setdefault(self._card_board_cell_signature(item[1]), []).append(item)
+
+        moves: list[dict[str, Any]] = []
+        leftover_removed: list[tuple[tuple[int, int], dict[str, Any]]] = []
+        leftover_added: list[tuple[tuple[int, int], dict[str, Any]]] = []
+
+        all_signatures = set(removed_by_signature) | set(added_by_signature)
+        for signature in all_signatures:
+            removed_group = list(removed_by_signature.get(signature, []))
+            added_group = list(added_by_signature.get(signature, []))
+            while removed_group and added_group:
+                source = removed_group.pop(0)
+                sx, sy = source[0]
+                best_index = min(
+                    range(len(added_group)),
+                    key=lambda idx: abs(sx - added_group[idx][0][0]) + abs(sy - added_group[idx][0][1]),
+                )
+                target = added_group.pop(best_index)
+                tx, ty = target[0]
+                if (sx, sy) == (tx, ty):
+                    leftover_removed.append(source)
+                    leftover_added.append(target)
+                    continue
+                moves.append({
+                    'from_x': int(sx),
+                    'from_y': int(sy),
+                    'to_x': int(tx),
+                    'to_y': int(ty),
+                    'color': tuple(target[1].get('color', source[1].get('color', (255, 255, 255)))),
+                })
+            leftover_removed.extend(removed_group)
+            leftover_added.extend(added_group)
+
+        return moves, leftover_removed, leftover_added
+
+    def _card_board_effect_duration(self, effect_id: str) -> float:
+        durations = {
+            'block_magnet': 0.75,
+            'row_shuffle': 0.8,
+            'gambler_dice': 0.85,
+            'time_capsule': 0.85,
+            'laser_drill': 0.35,
+            'mini_bomb': 0.5,
+            'nova_burst': 0.55,
+            'sniper_shot': 0.4,
+        }
+        return float(durations.get(str(effect_id), 0.6))
+
+    def _append_card_board_effect(self, effect: dict[str, Any]) -> None:
+        if not getattr(self, 'effects_enabled', False):
+            return
+        if not any(effect.get(key) for key in ('removed', 'added', 'moves', 'changed')):
+            return
+        effects = getattr(self, '_card_board_effects', None)
+        if not isinstance(effects, list):
+            self._card_board_effects = []
+            effects = self._card_board_effects
+        effect['age'] = 0.0
+        effects.append(effect)
+        if len(effects) > 8:
+            del effects[:-8]
+
+    def _queue_card_board_effect_from_snapshots(
+        self,
+        effect_id: str,
+        before_snapshot: dict[str, Any] | None,
+        after_snapshot: dict[str, Any] | None,
+        *,
+        accent: Any = None,
+        duration: float | None = None,
+    ) -> None:
+        if not getattr(self, 'effects_enabled', False):
+            return
+        if not before_snapshot or not after_snapshot:
+            return
+
+        before_cells = dict(before_snapshot.get('cells', {}))
+        after_cells = dict(after_snapshot.get('cells', {}))
+        removed_items: list[tuple[tuple[int, int], dict[str, Any]]] = []
+        added_items: list[tuple[tuple[int, int], dict[str, Any]]] = []
+        changed: list[dict[str, Any]] = []
+
+        all_positions = set(before_cells) | set(after_cells)
+        for position in all_positions:
+            before_cell = before_cells.get(position)
+            after_cell = after_cells.get(position)
+            if before_cell is None and after_cell is not None:
+                added_items.append((position, after_cell))
+                continue
+            if after_cell is None and before_cell is not None:
+                removed_items.append((position, before_cell))
+                continue
+            if before_cell is None or after_cell is None:
+                continue
+            if self._card_board_cell_signature(before_cell) != self._card_board_cell_signature(after_cell):
+                changed.append({
+                    'x': int(position[0]),
+                    'y': int(position[1]),
+                    'before_color': tuple(before_cell.get('color', (255, 255, 255))),
+                    'after_color': tuple(after_cell.get('color', (255, 255, 255))),
+                })
+
+        moves, leftover_removed, leftover_added = self._pair_card_board_delta_moves(removed_items, added_items)
+        effect = {
+            'id': str(effect_id),
+            'accent': self._normalize_card_board_color(accent),
+            'duration': float(duration if duration is not None else self._card_board_effect_duration(effect_id)),
+            'board_flash_alpha': min(90, 26 + (len(moves) * 4) + (len(changed) * 6) + (len(leftover_removed) + len(leftover_added)) * 2),
+            'moves': moves,
+            'removed': [
+                {
+                    'x': int(pos[0]),
+                    'y': int(pos[1]),
+                    'color': tuple(cell.get('color', (255, 255, 255))),
+                }
+                for pos, cell in leftover_removed
+            ],
+            'added': [
+                {
+                    'x': int(pos[0]),
+                    'y': int(pos[1]),
+                    'color': tuple(cell.get('color', (255, 255, 255))),
+                }
+                for pos, cell in leftover_added
+            ],
+            'changed': changed,
+        }
+        self._append_card_board_effect(effect)
+
+    def _queue_card_board_removed_cells_effect(
+        self,
+        effect_id: str,
+        coords: list[tuple[int, int]] | list[dict[str, Any]],
+        *,
+        accent: Any = None,
+        duration: float | None = None,
+    ) -> None:
+        if not getattr(self, 'effects_enabled', False):
+            return
+        removed: list[dict[str, Any]] = []
+        for item in coords:
+            if isinstance(item, dict):
+                x = item.get('x')
+                y = item.get('y')
+                color = item.get('color', accent)
+            else:
+                try:
+                    x, y = item[:2]
+                except Exception:
+                    continue
+                color = accent
+            if x is None or y is None:
+                continue
+            removed.append({
+                'x': int(x),
+                'y': int(y),
+                'color': self._normalize_card_board_color(color),
+            })
+        self._append_card_board_effect({
+            'id': str(effect_id),
+            'accent': self._normalize_card_board_color(accent),
+            'duration': float(duration if duration is not None else self._card_board_effect_duration(effect_id)),
+            'board_flash_alpha': min(90, 24 + len(removed) * 4),
+            'moves': [],
+            'removed': removed,
+            'added': [],
+            'changed': [],
+        })
+
+    def _update_card_board_effects(self, dt: float) -> None:
+        effects = getattr(self, '_card_board_effects', None)
+        if not effects:
+            return
+        seconds = _dt_to_seconds(dt)
+        alive: list[dict[str, Any]] = []
+        for effect in effects:
+            try:
+                effect['age'] = float(effect.get('age', 0.0)) + seconds
+                if float(effect.get('age', 0.0)) < float(effect.get('duration', 0.6)):
+                    alive.append(effect)
+            except Exception:
+                continue
+        self._card_board_effects = alive
+
+    def _draw_card_board_effects(self) -> None:
+        effects = getattr(self, '_card_board_effects', None)
+        if not getattr(self, 'effects_enabled', False) or not effects:
+            return
+
+        try:
+            board_x, board_y = self.get_board_offset()
+            cell_size = max(1, int(self.get_cell_size()))
+            board_width = int(getattr(self.board, 'width', self.board_width)) * cell_size
+            board_height = int(getattr(self.board, 'height', self.board_height)) * cell_size
+        except Exception:
+            return
+
+        overlay = pygame.Surface((board_width, board_height), pygame.SRCALPHA)
+        border_width = max(2, cell_size // 7)
+
+        for effect in effects:
+            try:
+                duration = max(0.001, float(effect.get('duration', 0.6)))
+                progress = max(0.0, min(1.0, float(effect.get('age', 0.0)) / duration))
+            except Exception:
+                progress = 1.0
+            inv = max(0.0, 1.0 - progress)
+            eased = 1.0 - ((1.0 - progress) ** 3)
+            pulse = max(0.0, 1.0 - abs((progress * 2.0) - 1.0))
+            accent = self._normalize_card_board_color(effect.get('accent'))
+
+            flash_alpha = int(max(0.0, float(effect.get('board_flash_alpha', 0))) * inv)
+            if flash_alpha > 0:
+                pygame.draw.rect(
+                    overlay,
+                    (*accent, flash_alpha),
+                    overlay.get_rect(),
+                    width=max(2, cell_size // 4),
+                    border_radius=max(6, cell_size // 2),
+                )
+
+            for move in effect.get('moves', []) or []:
+                start = (
+                    int(move['from_x'] * cell_size + (cell_size / 2)),
+                    int(move['from_y'] * cell_size + (cell_size / 2)),
+                )
+                end = (
+                    int(move['to_x'] * cell_size + (cell_size / 2)),
+                    int(move['to_y'] * cell_size + (cell_size / 2)),
+                )
+                line_alpha = int(160 * inv)
+                if line_alpha > 0:
+                    pygame.draw.line(
+                        overlay,
+                        (*accent, line_alpha),
+                        start,
+                        end,
+                        max(2, cell_size // 6),
+                    )
+                ghost_center = (
+                    int(start[0] + ((end[0] - start[0]) * eased)),
+                    int(start[1] + ((end[1] - start[1]) * eased)),
+                )
+                ghost_size = max(4, cell_size - 6)
+                ghost_rect = pygame.Rect(0, 0, ghost_size, ghost_size)
+                ghost_rect.center = ghost_center
+                ghost_surface = pygame.Surface(ghost_rect.size, pygame.SRCALPHA)
+                ghost_surface.fill((*self._normalize_card_board_color(move.get('color')), int(110 + (80 * inv))))
+                overlay.blit(ghost_surface, ghost_rect.topleft)
+                dest_rect = pygame.Rect(move['to_x'] * cell_size + 1, move['to_y'] * cell_size + 1, max(2, cell_size - 2), max(2, cell_size - 2))
+                pygame.draw.rect(overlay, (*accent, int(120 * inv)), dest_rect, width=border_width, border_radius=max(4, cell_size // 4))
+
+            for cell in effect.get('removed', []) or []:
+                rect = pygame.Rect(cell['x'] * cell_size + 1, cell['y'] * cell_size + 1, max(2, cell_size - 2), max(2, cell_size - 2))
+                fill = pygame.Surface(rect.size, pygame.SRCALPHA)
+                fill.fill((*self._normalize_card_board_color(cell.get('color')), int(190 * inv)))
+                overlay.blit(fill, rect.topleft)
+                pygame.draw.rect(overlay, (*accent, int(210 * inv)), rect, width=border_width, border_radius=max(4, cell_size // 4))
+
+            for cell in effect.get('added', []) or []:
+                rect = pygame.Rect(cell['x'] * cell_size + 1, cell['y'] * cell_size + 1, max(2, cell_size - 2), max(2, cell_size - 2))
+                fill = pygame.Surface(rect.size, pygame.SRCALPHA)
+                fill.fill((*self._normalize_card_board_color(cell.get('color')), int(70 + (120 * pulse))))
+                overlay.blit(fill, rect.topleft)
+                pygame.draw.rect(overlay, (*accent, int(140 * inv + 40)), rect, width=border_width, border_radius=max(4, cell_size // 4))
+
+            for cell in effect.get('changed', []) or []:
+                rect = pygame.Rect(cell['x'] * cell_size + 1, cell['y'] * cell_size + 1, max(2, cell_size - 2), max(2, cell_size - 2))
+                fill = pygame.Surface(rect.size, pygame.SRCALPHA)
+                fill.fill((*self._normalize_card_board_color(cell.get('after_color')), int(80 + (110 * pulse))))
+                overlay.blit(fill, rect.topleft)
+                pygame.draw.rect(overlay, (*accent, int(180 * inv)), rect, width=border_width, border_radius=max(4, cell_size // 4))
+
+        self.screen.blit(overlay, (board_x, board_y))
 
     def _set_localized_workshop_message(self, key: str, display_time: float, default: str | None = None, **kwargs) -> str:
         text = self._localized_card_text(key, default, **kwargs)
@@ -6280,6 +6663,14 @@ class MysteryMode(Game):
                 if self.sound_enabled:
                     self.sound.play_sound('clear')
                 self.board.score += cleared_cells * 40
+                try:
+                    self._queue_card_board_removed_cells_effect(
+                        'mini_bomb',
+                        list(cleared_coords),
+                        accent=(255, 120, 80),
+                    )
+                except Exception:
+                    pass
                 if self.effects_enabled and locked_cells:
                     cell_size = self.get_cell_size()
                     offset_x, offset_y = self.get_board_offset()
@@ -6349,6 +6740,14 @@ class MysteryMode(Game):
                 except Exception:
                     pass
                 self.board.score += cleared_cells * 40
+                try:
+                    self._queue_card_board_removed_cells_effect(
+                        'nova_burst',
+                        list(cleared_coords),
+                        accent=getattr(self.mode_skin, 'accent', (255, 180, 120)),
+                    )
+                except Exception:
+                    pass
                 if self.sound_enabled:
                     self.sound.play_sound('clear')
                 if self.effects_enabled:
@@ -6399,13 +6798,33 @@ class MysteryMode(Game):
         try:
             try:
                 if getattr(self, 'settings_manager', None) and self.settings_manager.get('debug_mode', False):
-                    print(f"[MysteryMode] lock_and_new_piece: player_lines={player_lines}, board.level={self.board.level}, progress={self.card_manager.progress}")
+                    print(f"[MysteryMode] lock_and_new_piece: player_lines={player_lines}, board.level={self.board.level}, card_xp={self.card_manager.card_xp}/{self.card_manager.card_xp_to_next}")
             except Exception:
                 pass
-            triggered = self.card_manager.notify_lines_cleared(player_lines, source='player')
-            # Note: `notify_lines_cleared` will enqueue pending_level_ups via
-            # the mode.last_enqueued_level dedup logic; don't enqueue here to
-            # avoid double-counting.
+            # Player kaynaklı clear: gerçek combo / B2B / perfect-clear bağlamıyla XP ver.
+            try:
+                combo_now = int(getattr(self.board, 'combo', 0) or 0)
+            except Exception:
+                combo_now = 0
+            try:
+                b2b_now = bool(getattr(self.board, 'back_to_back', False))
+            except Exception:
+                b2b_now = False
+            perfect_now = False
+            if player_lines > 0:
+                try:
+                    perfect_now = all(not any(row) for row in self.board.occupancy)
+                except Exception:
+                    perfect_now = False
+            triggered = self.card_manager.notify_lines_cleared(
+                player_lines,
+                source='player',
+                combo=combo_now,
+                back_to_back=b2b_now,
+                perfect_clear=perfect_now,
+            )
+            # Note: `notify_lines_cleared` artık card_level deltası kadar
+            # `pending_level_ups` enqueue eder; double-counting yok.
         except Exception:
             pass
         # Perk manager: trigger per-line events
@@ -6871,6 +7290,12 @@ class MysteryMode(Game):
                             print(f"[MysteryMode] Attempting selection: pending_level_ups={self.pending_level_ups}, card_selection_active={self.card_selection_active}, game_over={self.game_over}")
                     except Exception:
                         pass
+                    # Notify-yolu zaten bir hazırlık yapmış olabilir. Aynı reward
+                    # için ikinci kez prepare_selection çağırmak gereksiz RNG
+                    # tüketir ve aynı olay için iki ayrı seçim seti üretir.
+                    # Yalnızca pending_choices boşsa hazırla; sonraki queued
+                    # reward'lar overlay kapandığında zaten boş olacağından
+                    # yeni hazırlık kendiliğinden yapılır.
                     if not getattr(self.card_manager, 'pending_choices', None):
                         self.card_manager.prepare_selection()
                     try:
@@ -6894,6 +7319,7 @@ class MysteryMode(Game):
     def _update_effect_timers(self, dt: float) -> None:
         timers_changed = False
         seconds = _dt_to_seconds(dt)
+        self._update_card_board_effects(dt)
         if getattr(self, '_score_multiplier_timer', 0.0) > 0:
             self._score_multiplier_timer = max(0.0, float(self._score_multiplier_timer) - seconds)
             timers_changed = True
@@ -7096,15 +7522,28 @@ class MysteryMode(Game):
                 if event.type == pygame.QUIT:
                     return False
                 
-                if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
-                    # ESC ile popup'ı kapat (kalan haklar kaybolur)
-                    self._close_piece_selection_popup()
-                    self._future_changer_remaining = 0
-                    try:
-                        self._set_localized_card_message('mystery_msg_future_cancelled', 1.0, 'Parça seçimi iptal edildi.')
-                    except Exception:
-                        pass
-                    continue
+                if event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_ESCAPE:
+                        # ESC ile popup'ı kapat (kalan haklar kaybolur)
+                        self._close_piece_selection_popup()
+                        self._future_changer_remaining = 0
+                        try:
+                            self._set_localized_card_message('mystery_msg_future_cancelled', 1.0, 'Parça seçimi iptal edildi.')
+                        except Exception:
+                            pass
+                        continue
+
+                    # Gamepad/keyboard navigasyon: sol/sağ ile parça seç
+                    if event.key in (pygame.K_LEFT, pygame.K_a):
+                        self._piece_selection_move(-1)
+                        continue
+                    if event.key in (pygame.K_RIGHT, pygame.K_d):
+                        self._piece_selection_move(1)
+                        continue
+                    # Enter/Space/A → seçili parçayı onayla
+                    if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE):
+                        self._piece_selection_confirm()
+                        continue
                 
                 if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                     pos = normalize_mouse_pos(getattr(event, 'pos', None)) or event.pos
@@ -7127,13 +7566,33 @@ class MysteryMode(Game):
                 if event.type == pygame.QUIT:
                     return False
                     
-                if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
-                    # ESC ile overlay'i kapat (hak harcanmaz)
-                    self._close_sniper_overlay()
-                    continue
-                    
+                if event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_ESCAPE:
+                        # ESC ile overlay'i kapat (hak harcanmaz)
+                        self._close_sniper_overlay()
+                        continue
+
+                    # Gamepad D-pad / ok tuşları ile cursor navigasyonu
+                    if event.key in (pygame.K_LEFT, pygame.K_a):
+                        self._sniper_move_cursor(-1, 0)
+                        continue
+                    if event.key in (pygame.K_RIGHT, pygame.K_d):
+                        self._sniper_move_cursor(1, 0)
+                        continue
+                    if event.key in (pygame.K_UP, pygame.K_w):
+                        self._sniper_move_cursor(0, -1)
+                        continue
+                    if event.key in (pygame.K_DOWN, pygame.K_s):
+                        self._sniper_move_cursor(0, 1)
+                        continue
+
+                    # Enter/Space/A → cursor pozisyonunda ateş
+                    if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE):
+                        self._sniper_fire_at_cursor()
+                        continue
+
                 if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                    # Sol tık - blok patlatma
+                    # Sol tık - blok patlatma (mevcut mouse path korunuyor)
                     pos = normalize_mouse_pos(getattr(event, 'pos', None)) or event.pos
                     cell = self._sniper_screen_to_cell(pos)
                     
@@ -7500,6 +7959,8 @@ class MysteryMode(Game):
         if getattr(self, '_sniper_overlay_active', False):
             self._draw_sniper_board_overlay()
 
+        self._draw_card_board_effects()
+
         # Sniper ile patlatılan blokların bulunduğu hücrede GIF patlama efekti
         self._draw_sniper_explosion_effects()
         
@@ -7586,6 +8047,13 @@ class MysteryMode(Game):
             # === TARGET CELL HIGHLIGHTING ===
             cell = self._sniper_screen_to_cell(mouse_pos)
             target_valid = False
+
+            # Gamepad cursor aktifse, mouse yerine gamepad cursor pozisyonunu kullan
+            if getattr(self, '_sniper_cursor_active', False):
+                gcx = int(getattr(self, '_sniper_cursor_x', 0) or 0)
+                gcy = int(getattr(self, '_sniper_cursor_y', 0) or 0)
+                if 0 <= gcx < self.board.width and 0 <= gcy < self.board.height:
+                    cell = (gcx, gcy)
             
             if cell:
                 cx, cy = cell
@@ -8114,21 +8582,6 @@ class MysteryMode(Game):
             y = max(int(12 * ui_scale), board_y - int(20 * ui_scale))
         return x, y, width
 
-    def _get_mystery_speed_level(self) -> int:
-        try:
-            level = int(getattr(getattr(self, 'board', None), 'level', 1) or 1)
-        except Exception:
-            level = 1
-        return max(1, level)
-
-    def _get_mystery_base_fall_speed(self, level: int | None = None) -> int:
-        target_level = self._get_mystery_speed_level() if level is None else level
-        return get_mystery_level_fall_speed_ms(target_level)
-
-    def get_initial_speed(self) -> int:
-        """Mystery modunun ilk düşüş hızı."""
-        return self._get_mystery_base_fall_speed()
-
     def get_current_speed(self) -> int:
         # Kart Modu (Mystery): board.level tek hız sürücüsüdür.
         # Kart XP / card_level ekonomisi yalnızca ödül akışı içindir.
@@ -8180,6 +8633,8 @@ class MysteryMode(Game):
         )
         header_surface = heading_font.render(header_text, True, (230, 235, 245))
 
+        # Kart seviyesi: kart ödül ekonomisinin gerçek ilerleyişini gösterir.
+        # board.level ile karışmaması için ayrı bir etiketle çiz.
         card_label = t(
             'card_level_label',
             level=card_level,
@@ -8188,8 +8643,10 @@ class MysteryMode(Game):
         )
         if card_label.startswith('[?'):
             card_label = f"Kart Sv: {card_level} ({card_xp}/{card_xp_to_next})"
-        info_line_1 = self._fit_text_to_width(info_font, card_label, content_w)
+            # Localization key yoksa düz metne düş.
+            card_label = f"Kart Sv: {card_level} ({card_xp}/{card_xp_to_next})"
         info_line_2 = t('card_pool_label', hint=status['hint'])
+        info_line_1 = self._fit_text_to_width(info_font, card_label, content_w)
         info_line_2 = self._fit_text_to_width(info_font, info_line_2, content_w)
         info_texts = [
             info_font.render(info_line_1, True, (180, 200, 220)),
@@ -8598,22 +9055,14 @@ class MysteryMode(Game):
         except Exception:
             pass
 
-        # Keep card progress in sync. External clears can reach the reward threshold
-        # without a board level delta, so open the selection immediately when a
-        # populated pending choice set exists but no queued level-up was enqueued.
-        threshold_triggered = False
+        # Keep card progress in sync. External clears must NOT award card XP
+        # (anti-farm); `notify_lines_cleared` checks `source` and returns False
+        # for non-player sources. The overlay-opening fast path is removed:
+        # rewards now come exclusively from player-source XP gains.
         try:
-            threshold_triggered = bool(self.card_manager.notify_lines_cleared(cleared, source=source))
+            self.card_manager.notify_lines_cleared(cleared, source=source)
         except Exception:
             pass
-        if threshold_triggered and not getattr(self, 'card_selection_active', False):
-            try:
-                pending_choices = bool(getattr(self.card_manager, 'pending_choices', []) or [])
-                queued_rewards = int(getattr(self, 'pending_level_ups', 0) or 0)
-                if pending_choices and queued_rewards <= 0 and not getattr(self, 'game_over', False) and not getattr(self, 'paused', False):
-                    self._open_card_selection()
-            except Exception:
-                pass
 
         # Perk manager per-line triggers
         try:
@@ -8626,6 +9075,22 @@ class MysteryMode(Game):
         value = card["value"]
         color = card["color"]
         effect_triggered = False
+        board_snapshot_before = None
+
+        if getattr(self, 'effects_enabled', False) and cid in {
+            'clear_rows',
+            'column_cleanse',
+            'gravity_well',
+            'peak_sculpt',
+            'block_magnet',
+            'row_shuffle',
+            'gambler_dice',
+            'color_cleanse',
+        }:
+            try:
+                board_snapshot_before = self._capture_card_board_snapshot()
+            except Exception:
+                board_snapshot_before = None
 
         # Some tests (and potential future callers) apply effects directly without
         # going through MysteryCardManager.select_card(). Ensure one-time
@@ -9050,27 +9515,31 @@ class MysteryMode(Game):
                 pass
             effect_triggered = True
         elif cid == "sniper_shot":
-            # Keskin Nişancı: kart seçilince hedefleme overlay'i açılır; kalan
-            # haklar daha sonra N ile yeniden açılabilir.
+            # Keskin Nişancı: kart seçimi yalnızca charge verir; hedefleme
+            # overlay'i otomatik açılmaz. Oyuncu N tuşuna (veya gamepad
+            # `card_sniper` aksiyonuna) basınca overlay açılır.
             charges = int(card.get('value', 3))  # Varsayılan 3 hak
             self._sniper_charges = charges
             self._sniper_card = card
+            # Overlay durumunu temiz tut; başka bir kart yanlışlıkla açık
+            # bırakmış olsa bile sniper kartı seçimiyle overlay açılmamalı.
+            self._sniper_overlay_active = False
+            self._sniper_hover_pos = None
             # Görsel efekt için kaydet
             try:
                 self._remember_effect_visual('sniper_shot', card)
                 self._sync_active_cards()
             except Exception:
                 pass
-            opened = False
             try:
-                opened = bool(self._open_sniper_overlay())
+                self._set_localized_card_message(
+                    'mystery_msg_sniper_ready',
+                    3.0,
+                    'Keskin Nisanci hazir! N tusuna bas. ({charges} hak)',
+                    charges=charges,
+                )
             except Exception:
                 pass
-            if not opened:
-                try:
-                    self._set_localized_card_message('mystery_msg_sniper_ready', 3.0, 'Keskin Nisanci hazir! N tusuna bas. ({charges} hak)', charges=charges)
-                except Exception:
-                    pass
             effect_triggered = True
         elif cid == "time_capsule":
             # Zaman Kapsulu: T ile kaydet, R ile geri don
@@ -9269,6 +9738,17 @@ class MysteryMode(Game):
                 pass
             effect_triggered = True
 
+        if effect_triggered and board_snapshot_before is not None:
+            try:
+                self._queue_card_board_effect_from_snapshots(
+                    cid,
+                    board_snapshot_before,
+                    self._capture_card_board_snapshot(),
+                    accent=color,
+                )
+            except Exception:
+                pass
+
         if effect_triggered:
             self._spawn_card_particles(color)
 
@@ -9289,6 +9769,10 @@ class MysteryMode(Game):
         # Overlay'i aç
         self._sniper_overlay_active = True
         self._sniper_hover_pos = None
+        # Gamepad cursor: tahtanın ortasından başla
+        self._sniper_cursor_x = self.board.width // 2
+        self._sniper_cursor_y = self.board.height // 2
+        self._sniper_cursor_active = True
         try:
             charges = int(getattr(self, '_sniper_charges', 0) or 0)
             self._set_localized_card_message('mystery_msg_sniper_open', 10.0, 'Patlatmak istedigin bloga tikla! (ESC: Iptal) - Kalan: {charges}', charges=charges)
@@ -9300,6 +9784,7 @@ class MysteryMode(Game):
         """Sniper overlay'ini kapatır (hak harcanmaz)."""
         self._sniper_overlay_active = False
         self._sniper_hover_pos = None
+        self._sniper_cursor_active = False
         
         # Mouse cursor'ı tekrar görünür yap
         pygame.mouse.set_visible(True)
@@ -9309,6 +9794,30 @@ class MysteryMode(Game):
             self._set_localized_card_message('mystery_msg_sniper_cancel', 1.2, 'Keskin Nisanci iptal edildi (Kalan hak: {charges})', charges=charges)
         except Exception:
             pass
+
+    def _sniper_move_cursor(self, dx: int, dy: int) -> None:
+        """Sniper cursor'ını D-pad/ok tuşlarıyla hareket ettirir (board sınırları içinde)."""
+        cx = int(getattr(self, '_sniper_cursor_x', 0) or 0) + dx
+        cy = int(getattr(self, '_sniper_cursor_y', 0) or 0) + dy
+        self._sniper_cursor_x = max(0, min(self.board.width - 1, cx))
+        self._sniper_cursor_y = max(0, min(self.board.height - 1, cy))
+        self._sniper_cursor_active = True
+
+    def _sniper_fire_at_cursor(self) -> None:
+        """Gamepad cursor pozisyonundaki hücreye ateş eder."""
+        cx = int(getattr(self, '_sniper_cursor_x', 0) or 0)
+        cy = int(getattr(self, '_sniper_cursor_y', 0) or 0)
+        if not (0 <= cx < self.board.width and 0 <= cy < self.board.height):
+            return
+        if self.board.occupancy[cy][cx]:
+            self._execute_sniper_shot(cx, cy)
+        else:
+            try:
+                self._set_localized_card_message('mystery_msg_sniper_empty_cell', 1.5, 'Bos hucre! Dolu bir bloga tikla.')
+                if self.sound_enabled:
+                    self.sound.play_sound("deny")
+            except Exception:
+                pass
 
     def _sniper_screen_to_cell(self, pos: tuple[int, int]) -> tuple[int, int] | None:
         """Mouse pozisyonunu mevcut tahta hücresine çevirir."""
@@ -9352,6 +9861,14 @@ class MysteryMode(Game):
             self.board.texture_grid[cy][cx] = None
             self.board.gold[cy][cx] = False
             self.board.owners[cy][cx] = None
+            try:
+                self._queue_card_board_removed_cells_effect(
+                    'sniper_shot',
+                    [(int(cx), int(cy))],
+                    accent=(255, 90, 90),
+                )
+            except Exception:
+                pass
             
             # Hakkı düş
             self._sniper_charges = max(0, int(getattr(self, '_sniper_charges', 0) or 0) - 1)
@@ -9665,8 +10182,18 @@ class MysteryMode(Game):
             return False
         
         try:
+            board_snapshot_before = self._capture_card_board_snapshot() if getattr(self, 'effects_enabled', False) else None
             data = self.time_capsule_data
             self._restore_time_capsule_state(data)
+            try:
+                self._queue_card_board_effect_from_snapshots(
+                    'time_capsule',
+                    board_snapshot_before,
+                    self._capture_card_board_snapshot(),
+                    accent=(120, 255, 200),
+                )
+            except Exception:
+                pass
             
             # Zaman kapsulunu tüket (tek kullanım)
             self.time_capsule_available = False
@@ -10869,6 +11396,14 @@ class MysteryMode(Game):
             self.board.score += cleared_cells * 20
             if self.sound_enabled:
                 self.sound.play_sound('clear')
+            try:
+                self._queue_card_board_removed_cells_effect(
+                    'laser_drill',
+                    list(cleared_coords),
+                    accent=(255, 70, 70),
+                )
+            except Exception:
+                pass
             # NERF: İlk bloğa değdikten sonra hareket kilitlenir
             self._drill_movement_locked = True
         return int(cleared_cells)
@@ -11740,6 +12275,26 @@ class MysteryMode(Game):
                 return True
         
         return False
+
+    def _piece_selection_move(self, delta: int) -> None:
+        """Parça seçim popup'ında keyboard/gamepad ile focus'u kaydır."""
+        rects = getattr(self, '_piece_selection_rects', []) or []
+        if not rects:
+            return
+        count = len(rects)
+        current = int(getattr(self, '_piece_selection_index', 0) or 0)
+        new_idx = (current + delta) % count
+        self._piece_selection_index = new_idx
+
+    def _piece_selection_confirm(self) -> None:
+        """Parça seçim popup'ında keyboard/gamepad ile seçili parçayı onayla."""
+        rects = getattr(self, '_piece_selection_rects', []) or []
+        if not rects:
+            return
+        idx = int(getattr(self, '_piece_selection_index', 0) or 0)
+        idx = max(0, min(len(rects) - 1, idx))
+        _, name = rects[idx]
+        self._select_future_piece(name)
 
 
 class WideMode(Game):

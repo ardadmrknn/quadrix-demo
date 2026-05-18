@@ -1,4 +1,6 @@
 """Quadrix oyun mantığını yönetir"""
+from __future__ import annotations
+
 import os
 import random
 import math
@@ -2017,11 +2019,11 @@ class Game:
             if event.type == pygame.KEYDOWN:
                 bindings = self.control_bindings
                 alt_keys = getattr(self, 'alt_control_bindings', {})
-                # Game-over overlay input: R=restart, ESC=direct main menu (no confirmation)
+                # Game-over overlay input: R/Enter=restart, ESC=direct main menu (no confirmation)
                 if self.game_over:
                     if event.key == pygame.K_ESCAPE:
                         return 'menu'
-                    if event.key == pygame.K_r and self.can_restart():
+                    if event.key in (pygame.K_r, pygame.K_RETURN, pygame.K_KP_ENTER) and self.can_restart():
                         self.restart()
                         continue
                     continue
@@ -2846,6 +2848,7 @@ class Game:
 
             self.create_line_clear_particles(cleared_rows, offset_x, offset_y, cell_size)
 
+            # Dalga efektleri — ortak helper ile (PvP / OnlinePvP / Coop ile parity)
             _queue_wave_effects(
                 self.line_clear_wave_effects,
                 cleared_rows,
@@ -3740,6 +3743,7 @@ class Game:
         except Exception:
             return 0.0
         delta = ghost_y - self.current_piece.y
+        # Hızlı erişim için (row, col) -> offset
         anim_lookup = {}
         for anim in anims:
             try:
@@ -3757,6 +3761,8 @@ class Game:
             if x < 0 or x >= board_w:
                 continue
             gy = y + delta
+            # Ghost hücresinin altındaki ilk dolu hücreyi bul ve animasyon
+            # offset'i varsa al.
             for ay in range(gy + 1, board_h):
                 if self.board.occupancy[ay][x]:
                     offset = anim_lookup.get((ay, x), 0.0)
@@ -4207,8 +4213,11 @@ class Game:
                 self.line_clear_pending_rows = []
                 self.line_clear_pending_colors = {}
         
-        # Dalga efektlerini güncelle
-        _update_wave_effects(self.line_clear_wave_effects, dt_frames)
+        # Dalga efektlerini güncelle — ortak helper ile parity
+        try:
+            _update_wave_effects(self.line_clear_wave_effects, dt_frames)
+        except Exception:
+            pass
         
         # Blok düşme animasyonlarını güncelle
         if self.falling_block_animations:

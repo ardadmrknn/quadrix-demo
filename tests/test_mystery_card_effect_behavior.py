@@ -75,6 +75,7 @@ def _minimal_card_effect_mode(MysteryMode, Board, *, effects_enabled: bool):
     mode.line_clear_animation = 0
     mode.line_clear_flash = False
     mode.falling_block_animations = []
+    mode._card_board_effects = []
     mode._open_card_selection = lambda: None
     mode._apply_line_bonus_reward = lambda _lines: None
     mode._apply_score_multiplier_to_delta = lambda _delta: 0
@@ -387,6 +388,26 @@ def test_block_magnet_keeps_empty_cells_canonical_black_after_shift():
         assert mode.board.owners[19][x] is None
 
 
+def test_block_magnet_queues_board_delta_effect_for_shifted_cells():
+    _, _, MysteryMode, Board = _import_mystery_mode()
+    mode = _minimal_card_effect_mode(MysteryMode, Board, effects_enabled=True)
+
+    mode.board.grid[5][2] = (255, 80, 80)
+    mode.board.occupancy[5][2] = True
+    mode.board.grid[5][3] = (80, 160, 255)
+    mode.board.occupancy[5][3] = True
+
+    mode._apply_card_effect({'id': 'block_magnet', 'value': 1, 'color': (255, 140, 100)})
+
+    effect = mode._card_board_effects[-1]
+    assert {(move['from_x'], move['from_y'], move['to_x'], move['to_y']) for move in effect['moves']} == {
+        (2, 5, 0, 5),
+        (3, 5, 1, 5),
+    }
+    assert effect['removed'] == []
+    assert effect['added'] == []
+
+
 def test_color_cleanse_clears_target_color_to_canonical_black(monkeypatch):
     extra, _, MysteryMode, Board = _import_mystery_mode()
     mode = MysteryMode.__new__(MysteryMode)
@@ -419,6 +440,47 @@ def test_color_cleanse_clears_target_color_to_canonical_black(monkeypatch):
         for y in range(mode.board.height)
         for x in range(mode.board.width)
     )
+
+
+def test_color_cleanse_queues_board_delta_effect_for_removed_color(monkeypatch):
+    extra, _, MysteryMode, Board = _import_mystery_mode()
+    mode = _minimal_card_effect_mode(MysteryMode, Board, effects_enabled=True)
+    mode._set_localized_card_message = lambda *_args, **_kwargs: ''
+    red = (255, 0, 0)
+    blue = (0, 0, 255)
+
+    mode.board.grid[2][1] = red
+    mode.board.occupancy[2][1] = True
+    mode.board.grid[5][3] = blue
+    mode.board.occupancy[5][3] = True
+
+    monkeypatch.setattr(extra.random, 'choice', lambda _values: red)
+
+    mode._apply_card_effect({'id': 'color_cleanse', 'value': 1, 'color': (100, 255, 200)})
+
+    effect = mode._card_board_effects[-1]
+    assert (1, 2, red) in {(cell['x'], cell['y'], tuple(cell['color'])) for cell in effect['removed']}
+
+
+def test_clear_drill_cells_queues_board_delta_effect_for_removed_cells():
+    _, _, MysteryMode, Board = _import_mystery_mode()
+    mode = MysteryMode.__new__(MysteryMode)
+    mode.board = Board(width=4, height=6)
+    mode.sound_enabled = False
+    mode.effects_enabled = True
+    mode._card_board_effects = []
+    mode._drill_movement_locked = False
+    mode._trace_ghost_bug_clear = lambda **_kwargs: None
+
+    mode.board.grid[4][2] = (255, 90, 90)
+    mode.board.occupancy[4][2] = True
+
+    cleared = mode._clear_drill_cells([(2, 4)], SimpleNamespace(name='I'), clear_kind='drill')
+
+    assert cleared == 1
+    effect = mode._card_board_effects[-1]
+    assert effect['id'] == 'laser_drill'
+    assert effect['removed'] == [{'x': 2, 'y': 4, 'color': (255, 70, 70)}]
 
 
 def test_clear_rows_card_does_not_count_sweep_only_rows_as_cleared_lines():
@@ -571,9 +633,6 @@ def test_card_secondary_lines_are_not_recounted_as_player_lines(monkeypatch):
 
     mode.lock_and_new_piece()
 
-    # New architecture: card_manager.notify_lines_cleared receives source kwarg.
-    # External (card) clear via _post_external_line_clear arrives first with
-    # source='card', then player clear arrives with source='player'.
     assert card_progress_calls == [(1, 'card'), (1, 'player')]
     assert perk_calls == [(1, 'card'), (1, 'player')]
     assert alchemist_calls == []
@@ -663,7 +722,7 @@ def test_rewind_clears_last_piece_cells_to_canonical_empty_state():
     assert mode.board.owners[18][4] is None
 
 
-def test_sniper_card_opens_target_overlay_immediately():
+def test_sniper_card_grants_charge_without_opening_overlay():
     _, _, MysteryMode, _ = _import_mystery_mode()
     mode = MysteryMode.__new__(MysteryMode)
     mode.card_manager = SimpleNamespace(used_card_ids=set(), active_cards=[], catalog=[])
@@ -672,12 +731,40 @@ def test_sniper_card_opens_target_overlay_immediately():
     mode.effects_enabled = False
     mode._set_localized_card_message = lambda *_args, **_kwargs: ''
     mode._sync_active_cards = lambda: None
+    overlay_calls = []
+    mode._open_sniper_overlay = lambda: overlay_calls.append('open') or True
 
     mode._apply_card_effect({'id': 'sniper_shot', 'title': 'Keskin Nişancı', 'value': 3, 'color': (255, 80, 80)})
 
+    # Charge verilmiş olmalı...
     assert mode._sniper_charges == 3
-    assert mode._sniper_overlay_active is True
+    # ...ama overlay otomatik açılmamalı (sadece N / card_sniper ile açılır).
+    assert mode._sniper_overlay_active is False
     assert mode._sniper_hover_pos is None
+    assert overlay_calls == []
+
+
+def test_sniper_overlay_opens_only_via_explicit_hotkey():
+    _, _, MysteryMode, _ = _import_mystery_mode()
+    mode = MysteryMode.__new__(MysteryMode)
+    mode.card_manager = SimpleNamespace(used_card_ids=set(), active_cards=[], catalog=[])
+    mode._active_effect_visuals = {}
+    mode.sound_enabled = False
+    mode.effects_enabled = False
+    mode._set_localized_card_message = lambda *_args, **_kwargs: ''
+    mode._sync_active_cards = lambda: None
+    mode.board = SimpleNamespace(width=10, height=20)
+
+    mode._apply_card_effect({'id': 'sniper_shot', 'title': 'Keskin Nişancı', 'value': 2, 'color': (255, 80, 80)})
+    assert mode._sniper_overlay_active is False
+
+    opened = MysteryMode._open_sniper_overlay(mode)
+    assert opened is True
+    assert mode._sniper_overlay_active is True
+    # Gamepad cursor tahtanın ortasından başlamalı
+    assert mode._sniper_cursor_x == 5
+    assert mode._sniper_cursor_y == 10
+    assert mode._sniper_cursor_active is True
 
 
 def test_laser_drill_cleans_hard_drop_path_before_lock():
@@ -771,3 +858,68 @@ def test_effect_timers_accept_seconds_dt_without_slowing_real_time():
     mode._update_effect_timers(0.25)
 
     assert mode._speed_burst_timer == 0.75
+
+
+
+def test_card_reveal_sfx_fires_once_at_flip_midpoint_not_at_flip_start():
+    """Reveal SFX kart yüzü açılırken (flip_progress >= 0.5) çalmalı; flip
+    delay sona erer ermez (progress 0) çalmamalı. Aynı kart için yalnızca bir
+    kez tetiklenmeli."""
+    if not hasattr(pygame, 'K_h'):
+        pytest.skip('pygame stub environment: UICard import skipped')
+    import game_modes_extra as extra
+
+    calls = []
+
+    rect = pygame.Rect(0, 0, 100, 140)
+    card = {'id': 'sniper_shot', 'rarity': 'common', 'tag': 'Common', 'description': '...'}
+    fonts = {
+        'card_title': SimpleNamespace(),
+        'card_body': SimpleNamespace(),
+        'card_tag': SimpleNamespace(),
+        'card_value': SimpleNamespace(),
+    }
+    widget = extra.UICard.__new__(extra.UICard)
+    widget.card = card
+    widget.base_rect = rect
+    widget.index = 0
+    widget.fonts = fonts
+    widget.icon_getter = lambda *_args, **_kwargs: None
+    widget._reveal_sfx_callback = lambda: calls.append('sfx')
+    widget.rect = rect.copy()
+    widget.hover = False
+    widget.scale = 1.0
+    widget.target_scale = 1.0
+    widget.pulse = 0.0
+    widget.flip_duration = 0.40
+    widget.flip_delay = 0.0  # delay test'in dışında
+    widget.flip_timer = 0.0
+    widget.flip_progress = 0.0
+    widget.is_revealed = False
+    widget.reveal_burst_done = False
+    widget._flip_sfx_played = False
+    widget.entry_progress = 1.0
+    widget.entry_duration = 0.35
+    widget.entry_done = True
+    widget.entry_offset_y = 0
+    widget.rarity_particles = []
+    widget._continuous_particle_timer = 0.0
+    widget._continuous_particle_interval = 0.5
+    widget._flame_seeds = []
+    widget._shake_intensity = 0.0
+    widget._shake_timer = 0.0
+    widget._shake_offset = (0.0, 0.0)
+
+    # 1. tick: çok küçük dt -> flip henüz yarıya gelmedi.
+    widget.update(0.05, None)  # 0.05 / 0.40 = 0.125 raw; eased ~0.234
+    assert calls == [], 'SFX flip ortasından önce çalmamalı'
+    assert widget._flip_sfx_played is False
+
+    # 2. tick: yarıya geç -> SFX bir kez çalmalı.
+    widget.update(0.15, None)  # toplam 0.20s -> raw 0.5 -> eased ~0.823
+    assert calls == ['sfx']
+    assert widget._flip_sfx_played is True
+
+    # 3. tick: kart tamamen açılmış olsa bile ikinci kez çalmamalı.
+    widget.update(0.40, None)
+    assert calls == ['sfx'], 'Aynı kart için reveal SFX sadece bir kez tetiklenmeli'

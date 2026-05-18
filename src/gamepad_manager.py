@@ -2109,7 +2109,6 @@ def normalize_gamepad_trigger_event(event) -> Optional[int]:
 
 
 # ─── Re-export: GamepadAction enum (focus_manager'dan) ───────────────────────
-#
 # Ekranlar `from gamepad_manager import GamepadAction` ile erişebilsin.
 try:
     from focus_manager import GamepadAction, key_to_action  # noqa: F401

@@ -574,13 +574,34 @@ class PieceWorkshopScreen:
             # Boya/Sil
             elif event.key in (pygame.K_SPACE, pygame.K_RETURN):
                 self._paint_cell(self.cursor_x, self.cursor_y)
-            elif event.key == pygame.K_BACKSPACE:
+            elif event.key in (pygame.K_BACKSPACE, pygame.K_x):
+                # Backspace veya X (gamepad editor_secondary) → seçili hücreyi sil
                 self._erase_cell(self.cursor_x, self.cursor_y)
             elif event.key in (pygame.K_DELETE, pygame.K_c):
                 self._clear_grid()
             
             # Renk değiştir
             # TAB ile renk değiştirme kaldırıldı (mouse ile seçim).
+            
+            # Gamepad-friendly aksiyonlar (Ctrl gerektirmeyen yollar):
+            # LB (bracket left) → saved pieces listesinde yukarı
+            # RB (bracket right) → saved pieces listesinde aşağı
+            # Bunlar aynı zamanda tab_prev/tab_next olarak da çalışır;
+            # piece workshop'ta tab yok, bu yüzden güvenle kullanılabilir.
+            elif event.key == pygame.K_LEFTBRACKET:
+                # Saved pieces listesinde yukarı (veya save current piece)
+                if self.custom_pieces:
+                    next_idx = (self.selected_piece_idx if self.selected_piece_idx >= 0 else 0) - 1
+                    self._set_selected_piece_index(next_idx)
+                else:
+                    self._save_current_piece()
+            elif event.key == pygame.K_RIGHTBRACKET:
+                # Saved pieces listesinde aşağı (veya save current piece)
+                if self.custom_pieces:
+                    next_idx = (self.selected_piece_idx if self.selected_piece_idx >= 0 else -1) + 1
+                    self._set_selected_piece_index(next_idx)
+                else:
+                    self._save_current_piece()
             
 
         

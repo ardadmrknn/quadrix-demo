@@ -294,6 +294,8 @@ def _build_tab_content(tab_key: str, sm, show_debug: bool = False) -> list[dict]
             ('menu_back', _t('gp_menu_back', 'Menü Geri')),
             ('menu_tab_next', _t('gp_menu_tab_next', 'Sekme Sonraki')),
             ('menu_tab_prev', _t('gp_menu_tab_prev', 'Sekme Önceki')),
+            ('editor_secondary', _t('gp_editor_secondary', 'Alternatif / Sil')),
+            ('editor_delete', _t('gp_editor_delete', 'Temizle / Kaldır')),
         ]
         items.append({'type': 'section', 'loc_key': 'settings_gp_section_ingame', 'label_tr': 'GAMEPAD - OYUN İÇİ', 'label_en': 'GAMEPAD - IN-GAME'})
         items.append({
@@ -1476,13 +1478,14 @@ class TabbedSettingsScreen:
             action_key = item.get('action_key')
 
             if self._waiting_for_key and self._pending_keybind_item == item:
+                hold_hint = _t('settings_keybind_hold_to_clear', 'Hold to clear')
                 if self._is_gamepad_keybind_section(section):
-                    return _t('gp_press_button', 'Butona basın'), (255, 210, 120)
+                    return f"{_t('gp_press_button', 'Butona basın')} • {hold_hint}", (255, 210, 120)
                 if section == 'single_player':
                     slot = self._pending_keybind_slot if self._pending_keybind_slot in ('primary', 'secondary') else 'primary'
                     slot_text = _t('primary', 'Birincil') if slot == 'primary' else _t('secondary', 'İkincil')
-                    return f"{t('press_key')} ({slot_text})", (255, 210, 120)
-                return t('press_key'), (255, 210, 120)
+                    return f"{t('press_key')} ({slot_text}) • {hold_hint}", (255, 210, 120)
+                return f"{t('press_key')} • {hold_hint}", (255, 210, 120)
 
             if section == 'single_player':
                 row = self._control_config.get('single_player', {}).get(action_key, {})
@@ -1884,72 +1887,6 @@ class TabbedSettingsScreen:
             raw[slot] = -1
 
         self._persist_controls()
-
-    def _reset_hold_to_clear_state(self) -> None:
-        self._hold_to_clear_pressed_at_ms = None
-        self._hold_to_clear_pressed_signature = None
-        self._hold_to_clear_consumed = False
-
-    def _check_hold_to_clear_progress(self) -> None:
-        """Capture aktifken aynı tuş/buton eşik süresinden uzun tutulursa
-        ilgili slot'u temizle ve capture'dan çık."""
-        if not self._waiting_for_key:
-            self._reset_hold_to_clear_state()
-            return
-        if self._hold_to_clear_pressed_at_ms is None:
-            return
-        if self._hold_to_clear_consumed:
-            return
-        elapsed = pygame.time.get_ticks() - self._hold_to_clear_pressed_at_ms
-        if elapsed < self._hold_to_clear_threshold_ms:
-            return
-        # Hala basılı mı kontrol et
-        sig = self._hold_to_clear_pressed_signature or ()
-        if not sig:
-            return
-        sig_kind = sig[0] if len(sig) > 0 else None
-        sig_value = sig[1] if len(sig) > 1 else None
-        still_held = False
-        try:
-            if sig_kind == 'key' and isinstance(sig_value, int):
-                pressed = pygame.key.get_pressed()
-                still_held = bool(pressed[sig_value])
-            elif sig_kind == 'btn' and isinstance(sig_value, int):
-                # Bağlı joystick'lerden herhangi biri butonu basılı tutuyor mu?
-                num = pygame.joystick.get_count() if hasattr(pygame, 'joystick') else 0
-                for i in range(num):
-                    try:
-                        js = pygame.joystick.Joystick(i)
-                        if not js.get_init():
-                            continue
-                        if 0 <= sig_value < js.get_numbuttons() and js.get_button(sig_value):
-                            still_held = True
-                            break
-                    except Exception:
-                        continue
-        except Exception:
-            still_held = False
-        if not still_held:
-            self._reset_hold_to_clear_state()
-            return
-        # Eşiği aştı ve hala basılı: slot'u temizle.
-        item = self._pending_keybind_item
-        slot = self._pending_keybind_slot if self._pending_keybind_slot in ('primary', 'secondary') else 'primary'
-        self._hold_to_clear_consumed = True
-        if item:
-            try:
-                self._clear_keybind_slot(item, slot)
-            except Exception:
-                pass
-        # Capture modundan çık
-        self._waiting_for_key = False
-        self._pending_keybind_item = None
-        self._pending_keybind_slot = 'primary'
-        self._capture_started_by_gamepad_click = False
-        # `_swallow_next_keydown` bayrağını ayarla ki KEYUP gelmeden önce
-        # yapılan herhangi bir KEYDOWN repeatlemesi menüde başka eylem
-        # tetiklemesin.
-        self._swallow_next_keydown = True
 
     def _apply_captured_key(self, key_code: int) -> None:
         if not self._pending_keybind_item:
@@ -2720,23 +2657,37 @@ class TabbedSettingsScreen:
                     self._pending_keybind_item = None
                     self._pending_keybind_slot = 'primary'
                     self._capture_started_by_gamepad_click = False
+                    self._reset_hold_to_clear_state()
                     return None
                 button_down_types = (getattr(pygame, 'CONTROLLERBUTTONDOWN', None), getattr(pygame, 'JOYBUTTONDOWN', None))
+                button_up_types = (getattr(pygame, 'CONTROLLERBUTTONUP', None), getattr(pygame, 'JOYBUTTONUP', None))
                 button_index = normalize_gamepad_event_button(event)
                 if button_index is not None and event.type in button_down_types:
-                    should_swallow_click = self._should_swallow_post_capture_gamepad_click(button_index)
-                    if self._capture_started_by_gamepad_click and should_swallow_click:
-                        should_swallow_click = False
-                    self._swallow_next_gamepad_click = bool(should_swallow_click)
-                    self._swallow_next_gamepad_click_deadline_ms = (
-                        pygame.time.get_ticks() + 180 if should_swallow_click else 0
-                    )
-                    self._apply_captured_gamepad_button(button_index)
-                    self._waiting_for_key = False
-                    self._pending_keybind_item = None
-                    self._pending_keybind_slot = 'primary'
-                    self._capture_started_by_gamepad_click = False
-                    self._swallow_next_keydown = True
+                    # Hold-to-clear: KEYDOWN gibi davran; uygulamayı KEYUP'a ertele.
+                    if self._hold_to_clear_pressed_signature is None:
+                        self._hold_to_clear_pressed_at_ms = pygame.time.get_ticks()
+                        self._hold_to_clear_pressed_signature = ('btn', int(button_index))
+                        self._hold_to_clear_consumed = False
+                    return None
+                if button_index is not None and event.type in button_up_types:
+                    if self._hold_to_clear_consumed:
+                        self._reset_hold_to_clear_state()
+                        return None
+                    if self._hold_to_clear_pressed_signature == ('btn', int(button_index)):
+                        should_swallow_click = self._should_swallow_post_capture_gamepad_click(button_index)
+                        if self._capture_started_by_gamepad_click and should_swallow_click:
+                            should_swallow_click = False
+                        self._swallow_next_gamepad_click = bool(should_swallow_click)
+                        self._swallow_next_gamepad_click_deadline_ms = (
+                            pygame.time.get_ticks() + 180 if should_swallow_click else 0
+                        )
+                        self._apply_captured_gamepad_button(button_index)
+                        self._waiting_for_key = False
+                        self._pending_keybind_item = None
+                        self._pending_keybind_slot = 'primary'
+                        self._capture_started_by_gamepad_click = False
+                        self._swallow_next_keydown = True
+                        self._reset_hold_to_clear_state()
                     return None
                 trigger_index = normalize_gamepad_trigger_event(event)
                 if trigger_index is not None:
@@ -2748,6 +2699,7 @@ class TabbedSettingsScreen:
                     self._pending_keybind_slot = 'primary'
                     self._capture_started_by_gamepad_click = False
                     self._swallow_next_keydown = True
+                    self._reset_hold_to_clear_state()
                     return None
                 return None
 
@@ -2757,12 +2709,31 @@ class TabbedSettingsScreen:
                     self._pending_keybind_item = None
                     self._pending_keybind_slot = 'primary'
                     self._capture_started_by_gamepad_click = False
+                    self._reset_hold_to_clear_state()
                     return None
-                self._apply_captured_key(event.key)
-                self._waiting_for_key = False
-                self._pending_keybind_item = None
-                self._pending_keybind_slot = 'primary'
-                self._capture_started_by_gamepad_click = False
+                # Hold-to-clear: ilk KEYDOWN'da uygulama erteleniyor; KEYUP
+                # geldiğinde "press" olarak uygulanır, ya da basılı tutma
+                # eşik süresini aşarsa clear ile sonuçlanır.
+                signature = ('key', int(event.key))
+                if self._hold_to_clear_pressed_signature is None:
+                    self._hold_to_clear_pressed_at_ms = pygame.time.get_ticks()
+                    self._hold_to_clear_pressed_signature = signature
+                    self._hold_to_clear_consumed = False
+                return None
+            if event.type == pygame.KEYUP:
+                if self._hold_to_clear_consumed:
+                    # Hold-to-clear update() içinde zaten işledi.
+                    self._reset_hold_to_clear_state()
+                    return None
+                signature = ('key', int(event.key))
+                if self._hold_to_clear_pressed_signature == signature:
+                    self._apply_captured_key(event.key)
+                    self._waiting_for_key = False
+                    self._pending_keybind_item = None
+                    self._pending_keybind_slot = 'primary'
+                    self._capture_started_by_gamepad_click = False
+                    self._reset_hold_to_clear_state()
+                return None
             return None
 
         if self._display_mode_confirm_active:
@@ -3022,6 +2993,7 @@ class TabbedSettingsScreen:
                                     self._gamepad_bind_slot = 'secondary' if pos[0] >= rect.centerx else 'primary'
                                 self._start_keybind_capture(item, slot=self._gamepad_bind_slot, opened_by_gamepad_click=opened_by_gamepad_click)
                                 return None
+                            slot_rects = self._keybind_slot_rects[i] if i < len(self._keybind_slot_rects) else None
                             # PvP ve diğer (debug) keybind'ler: satırın
                             # herhangi bir yerine tıklayınca primary slot
                             # capture açılır. Daha önce sadece slot rect
@@ -3237,7 +3209,81 @@ class TabbedSettingsScreen:
     # ------------------------------------------------------------------
 
     def update(self, dt: float) -> None:
-        pass  # draw() içinde dt hesaplanıyor
+        # Capture sırasında hold-to-clear ilerlemesini izle.
+        try:
+            self._check_hold_to_clear_progress()
+        except Exception:
+            pass
+
+    # ------------------------------------------------------------------
+    # Hold-to-clear capture yardımcıları
+    # ------------------------------------------------------------------
+
+    def _reset_hold_to_clear_state(self) -> None:
+        self._hold_to_clear_pressed_at_ms = None
+        self._hold_to_clear_pressed_signature = None
+        self._hold_to_clear_consumed = False
+
+    def _check_hold_to_clear_progress(self) -> None:
+        """Capture aktifken aynı tuş/buton eşik süresinden uzun tutulursa
+        ilgili slot'u temizle ve capture'dan çık."""
+        if not self._waiting_for_key:
+            self._reset_hold_to_clear_state()
+            return
+        if self._hold_to_clear_pressed_at_ms is None:
+            return
+        if self._hold_to_clear_consumed:
+            return
+        elapsed = pygame.time.get_ticks() - self._hold_to_clear_pressed_at_ms
+        if elapsed < self._hold_to_clear_threshold_ms:
+            return
+        # Hala basılı mı kontrol et
+        sig = self._hold_to_clear_pressed_signature or ()
+        if not sig:
+            return
+        sig_kind = sig[0] if len(sig) > 0 else None
+        sig_value = sig[1] if len(sig) > 1 else None
+        still_held = False
+        try:
+            if sig_kind == 'key' and isinstance(sig_value, int):
+                pressed = pygame.key.get_pressed()
+                still_held = bool(pressed[sig_value])
+            elif sig_kind == 'btn' and isinstance(sig_value, int):
+                # Bağlı joystick'lerden herhangi biri butonu basılı tutuyor mu?
+                num = pygame.joystick.get_count() if hasattr(pygame, 'joystick') else 0
+                for i in range(num):
+                    try:
+                        js = pygame.joystick.Joystick(i)
+                        if not js.get_init():
+                            continue
+                        if 0 <= sig_value < js.get_numbuttons() and js.get_button(sig_value):
+                            still_held = True
+                            break
+                    except Exception:
+                        continue
+        except Exception:
+            still_held = False
+        if not still_held:
+            self._reset_hold_to_clear_state()
+            return
+        # Eşiği aştı ve hala basılı: slot'u temizle.
+        item = self._pending_keybind_item
+        slot = self._pending_keybind_slot if self._pending_keybind_slot in ('primary', 'secondary') else 'primary'
+        self._hold_to_clear_consumed = True
+        if item:
+            try:
+                self._clear_keybind_slot(item, slot)
+            except Exception:
+                pass
+        # Capture modundan çık
+        self._waiting_for_key = False
+        self._pending_keybind_item = None
+        self._pending_keybind_slot = 'primary'
+        self._capture_started_by_gamepad_click = False
+        # `_swallow_next_keydown` bayrağını ayarla ki KEYUP gelmeden önce
+        # yapılan herhangi bir KEYDOWN repeatlemesi menüde başka eylem
+        # tetiklemesin.
+        self._swallow_next_keydown = True
 
     # ------------------------------------------------------------------
     # Çizim
@@ -3393,7 +3439,8 @@ class TabbedSettingsScreen:
         self._slider_bar_rects = {}
         self._slider_action_rects = {}
         # Frame başına bir kez çakışma haritasını yenile (sadece controls
-        # sekmesinde anlamlı; diğer sekmelerde boş döner).
+        # sekmesinde anlamlı; diğer sekmelerde boş döner). Capture sırasında
+        # da sürekli güncel kalır.
         try:
             self._keybind_conflicts = self._detect_keybind_conflicts()
         except Exception:
@@ -3442,20 +3489,16 @@ class TabbedSettingsScreen:
                 self.option_rects.append(row_rect)
                 slot_rects = self._draw_setting_item(row_rect, item, is_selected)
                 self._keybind_slot_rects.append(slot_rects)
-                # Keybind row için per-row reset (↺) rect'i populate et.
-                # Tam decoration helper henüz port edilmedi (badge çizimi /
-                # tooltip / hover registry main'de daha derin draw-layer'da
-                # yaşıyor); ancak click flow ve isolation testleri için
-                # rect geometrisinin doğru kurulması yeterli. Slot rect'leri
-                # satırın sağ kenarına yaslı; reset rect'i satırın sol
-                # kenarına, slot bölgesinden açıkça uzakta yerleştir.
-                if itype == 'keybind' and i < len(self._keybind_row_reset_rects):
-                    reset_size = max(self._s(18, minimum=14), 14)
-                    reset_x = row_rect.x + self._s(8, minimum=6)
-                    reset_y = row_rect.centery - reset_size // 2
-                    self._keybind_row_reset_rects[i] = pygame.Rect(
-                        reset_x, reset_y, reset_size, reset_size,
-                    )
+                # Keybind row için ↺ ikonu + uyarı/conflict rozeti
+                if itype == 'keybind':
+                    try:
+                        reset_rect = self._draw_keybind_row_decorations(
+                            row_rect, item, slot_rects, is_selected,
+                        )
+                        if i < len(self._keybind_row_reset_rects):
+                            self._keybind_row_reset_rects[i] = reset_rect
+                    except Exception:
+                        pass
             else:
                 self.option_rects.append(pygame.Rect(0, 0, 0, 0))
                 self._keybind_slot_rects.append(None)
@@ -3497,6 +3540,180 @@ class TabbedSettingsScreen:
         # Alt çizgi
         line_y = y + h - 1
         pygame.draw.line(self.screen, (40, 55, 75), (x + s(20, minimum=14), line_y), (x + w - s(20, minimum=14), line_y), 1)
+
+    # ── Keybind row dekorasyonları (uyarı rozeti + per-row reset) ──
+    def _draw_keybind_row_decorations(
+        self,
+        row_rect: pygame.Rect,
+        item: dict,
+        slot_rects: dict | None,
+        selected: bool,
+    ) -> pygame.Rect | None:
+        """Keybind satırı için çakışma rozeti, unbound uyarısı ve reset ikonu çiz.
+
+        Geri dönüş: ↺ (reset) ikonunun tıklama hit-rect'i (yoksa None).
+        """
+        s = self._s
+        _sma = _scale_menu_alpha
+        section = item.get('section')
+        action_key = item.get('action_key')
+        if not action_key:
+            return None
+
+        # 1) Çakışma var mı? Bu satırın herhangi bir slot'u çakışıyorsa rozet çiz.
+        conflicts = self._keybind_conflicts or {}
+        row_has_conflict = any(
+            (key[0] == section and key[1] == action_key)
+            for key in conflicts.keys()
+        )
+        is_unbound = self._is_keybind_unbound(item)
+
+        # Slot rect'lerinin sol kenarını referans alarak ikonları yerleştir.
+        leftmost_slot_x = None
+        if isinstance(slot_rects, dict):
+            for key in ('primary', 'secondary'):
+                r = slot_rects.get(key)
+                if isinstance(r, pygame.Rect):
+                    leftmost_slot_x = r.x if leftmost_slot_x is None else min(leftmost_slot_x, r.x)
+        if leftmost_slot_x is None:
+            leftmost_slot_x = row_rect.right - s(120, minimum=80)
+
+        badge_y = row_rect.centery
+        badge_x_cursor = leftmost_slot_x - s(10, minimum=6)
+
+        # 2) Unbound uyarısı (turuncu rozet)
+        if is_unbound:
+            badge_text = _t('settings_keybind_unbound_warning', 'Atanmadı')
+            badge_font = self._fit_font(badge_text, 13, s(110, minimum=80), bold=True, minimum=10)
+            badge_surf = badge_font.render(badge_text, True, (30, 20, 0))
+            pad_x = s(8, minimum=6)
+            pad_y = s(3, minimum=2)
+            badge_w = badge_surf.get_width() + pad_x * 2
+            badge_h = badge_surf.get_height() + pad_y * 2
+            badge_rect = pygame.Rect(0, 0, badge_w, badge_h)
+            badge_rect.right = badge_x_cursor
+            badge_rect.centery = badge_y
+            bg = pygame.Surface(badge_rect.size, pygame.SRCALPHA)
+            bg.fill((255, 180, 80, _sma(220)))
+            pygame.draw.rect(bg, (255, 220, 140, _sma(255)), bg.get_rect(), 1, border_radius=s(4, minimum=3))
+            self.screen.blit(bg, badge_rect.topleft)
+            self.screen.blit(badge_surf, (badge_rect.x + pad_x, badge_rect.y + pad_y))
+            badge_x_cursor = badge_rect.x - s(6, minimum=4)
+
+        # 3) Çakışma uyarısı (kırmızı ⚠ rozet)
+        if row_has_conflict:
+            warn_text = '⚠ ' + _t('settings_keybind_conflict', 'Çakışma')
+            warn_font = self._fit_font(warn_text, 13, s(120, minimum=80), bold=True, minimum=10)
+            warn_surf = warn_font.render(warn_text, True, (255, 240, 240))
+            pad_x = s(8, minimum=6)
+            pad_y = s(3, minimum=2)
+            warn_w = warn_surf.get_width() + pad_x * 2
+            warn_h = warn_surf.get_height() + pad_y * 2
+            warn_rect = pygame.Rect(0, 0, warn_w, warn_h)
+            warn_rect.right = badge_x_cursor
+            warn_rect.centery = badge_y
+            bg = pygame.Surface(warn_rect.size, pygame.SRCALPHA)
+            bg.fill((220, 70, 70, _sma(220)))
+            pygame.draw.rect(bg, (255, 130, 130, _sma(255)), bg.get_rect(), 1, border_radius=s(4, minimum=3))
+            self.screen.blit(bg, warn_rect.topleft)
+            self.screen.blit(warn_surf, (warn_rect.x + pad_x, warn_rect.y + pad_y))
+            badge_x_cursor = warn_rect.x - s(6, minimum=4)
+
+        # 4) ↺ reset ikonu (her zaman çiz; tıklayınca tüm satırı default'a döndürür)
+        icon_size = s(22, minimum=18)
+        icon_rect = pygame.Rect(0, 0, icon_size, icon_size)
+        icon_rect.right = badge_x_cursor
+        icon_rect.centery = badge_y
+        # Row clip'i içinde kalmasını garanti et (sola taşma riski)
+        if icon_rect.x < row_rect.x + s(4, minimum=2):
+            return None
+
+        # Hover algılama — sadece hover'da görsel feedback (ASLA otomatik
+        # tetikleme; tetik yalnızca click handler'da gerçekleşir).
+        try:
+            mouse_pos = normalize_mouse_pos(get_mouse_pos()) or get_mouse_pos()
+        except Exception:
+            mouse_pos = (-1, -1)
+        hovered = bool(icon_rect.collidepoint(mouse_pos))
+
+        # Buton arka planı
+        icon_bg = pygame.Surface(icon_rect.size, pygame.SRCALPHA)
+        if hovered:
+            bg_color = (90, 150, 220, _sma(230))
+            border_color = (180, 220, 255, _sma(255))
+        elif selected:
+            bg_color = (60, 100, 150, _sma(200))
+            border_color = (140, 190, 240, _sma(220))
+        else:
+            bg_color = (35, 50, 75, _sma(160))
+            border_color = (90, 130, 180, _sma(200))
+        icon_bg.fill(bg_color)
+        pygame.draw.rect(icon_bg, border_color, icon_bg.get_rect(), 1, border_radius=s(4, minimum=3))
+        self.screen.blit(icon_bg, icon_rect.topleft)
+
+        # ↺ glyph'ini font'tan bağımsız vektör çizimi olarak çiz (pygame default
+        # font'unda Unicode dönüş oku eksik; font'a güvenmek boş kutucuk
+        # üretiyordu).
+        glyph_color = (235, 245, 255) if hovered else (200, 220, 245)
+        self._draw_reset_glyph(icon_rect, glyph_color)
+
+        # Help icon registry'ye eklemek tooltip mekanizmasını tetikler.
+        try:
+            tip = _t('settings_keybind_reset_row', 'Bu satırı sıfırla')
+            self._help_icon_rects.append((icon_rect, tip))
+        except Exception:
+            pass
+        return icon_rect
+
+    def _draw_reset_glyph(self, rect: pygame.Rect, color: tuple[int, int, int]) -> None:
+        """Reset (↺) ikonunu vektör çizimle render et — font'tan bağımsız.
+
+        Glyph: 3/4 dairenin üstüne bir ok başı. Tüm fontlarda görünür.
+        """
+        import math
+        cx = rect.centerx
+        cy = rect.centery
+        radius = max(4, min(rect.width, rect.height) // 2 - 4)
+        line_w = max(2, radius // 4)
+
+        # 3/4 daire (saat 9'dan saat 6'ya kadar değil; 270° yay açıyoruz: 60°→330°)
+        try:
+            steps = max(16, int(radius * 4))
+            start_deg = -210  # 11 yönü (sol-üst)
+            end_deg = 60      # 4 yönü (sağ-alt)
+            prev = None
+            for i in range(steps + 1):
+                t = i / steps
+                deg = start_deg + (end_deg - start_deg) * t
+                rad = math.radians(deg)
+                px = cx + int(radius * math.cos(rad))
+                py = cy + int(radius * math.sin(rad))
+                if prev is not None:
+                    pygame.draw.line(self.screen, color, prev, (px, py), line_w)
+                prev = (px, py)
+        except Exception:
+            # Geri dönüş: basit daire çerçevesi
+            try:
+                pygame.draw.circle(self.screen, color, (cx, cy), radius, line_w)
+            except Exception:
+                return
+
+        # Ok başı (yay sonunda küçük üçgen, dönüş yönünü gösterir).
+        try:
+            tip_rad = math.radians(-210)
+            tip_x = cx + int(radius * math.cos(tip_rad))
+            tip_y = cy + int(radius * math.sin(tip_rad))
+            arrow_size = max(3, radius // 2)
+            pygame.draw.polygon(
+                self.screen, color,
+                [
+                    (tip_x, tip_y - arrow_size),
+                    (tip_x - arrow_size, tip_y),
+                    (tip_x + arrow_size // 2, tip_y + arrow_size // 3),
+                ],
+            )
+        except Exception:
+            pass
 
     def _draw_setting_item(
         self, rect: pygame.Rect, item: dict, selected: bool,

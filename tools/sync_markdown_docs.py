@@ -98,7 +98,17 @@ def build_context() -> dict[str, object]:
     ci_text = _read_text('.github/workflows/ci.yml')
 
     windows_spec = _clean_repo_relative_path(_extract_ps1_string_default(windows_build_text, 'SpecFile'))
-    windows_app_build_script = _clean_repo_relative_path(_extract_ps1_string_default(windows_upload_text, 'AppBuildScript'))
+    # `AppBuildScript` PS1 default'u boş bir string'tir; helper bu durumda runtime'da
+    # geçici bir VDF üretir. Dolayısıyla raw default değeri canonical "varsayılan dosya"
+    # gibi tanıtılmamalıdır. Boş gelirse repo içindeki kanonik playtest VDF'yi kullan
+    # ve override yolu olarak göster.
+    windows_app_build_script_raw = _extract_ps1_string_default(windows_upload_text, 'AppBuildScript')
+    windows_app_build_script_override = (
+        _clean_repo_relative_path(windows_app_build_script_raw)
+        if windows_app_build_script_raw.strip()
+        else 'steamworks/scripts/app_build_playtest.vdf'
+    )
+    windows_app_build_script_default_is_synthesized = not windows_app_build_script_raw.strip()
     mac_spec = _clean_repo_relative_path(_extract_shell_assignment(mac_build_text, 'SPEC_FILE'))
     mac_app_name = _extract_shell_assignment(mac_build_text, 'APP_NAME')
 
@@ -122,7 +132,8 @@ def build_context() -> dict[str, object]:
         'windows_spec': windows_spec,
         'windows_upload_script': 'tools/steam_upload_playtest.ps1',
         'windows_build_script': 'scripts/build/build_windows_exe.ps1',
-        'windows_app_build_script': windows_app_build_script,
+        'windows_app_build_script': windows_app_build_script_override,
+        'windows_app_build_script_default_is_synthesized': windows_app_build_script_default_is_synthesized,
         'windows_app_id': windows_app_id,
         'windows_desc': windows_desc,
         'windows_depots': windows_depots,
@@ -155,6 +166,16 @@ def render_build_and_upload_doc(context: dict[str, object]) -> str:
     mac_depot_id = context['mac_depots'][0][0] if context['mac_depots'] else 'UNKNOWN'
     bridge_specs = _render_bullets(context['bridge_specs'])
     version_specs = _render_bullets(context['windows_version_bump_specs'])
+    windows_app_build_synth = bool(context.get('windows_app_build_script_default_is_synthesized'))
+    if windows_app_build_synth:
+        windows_vdf_default_line = (
+            f'- Windows helper varsayilan olarak gecici bir AppBuild VDF uretir; '
+            f'override etmek icin `-AppBuildScript {context["windows_app_build_script"]}` kullanilabilir.'
+        )
+    else:
+        windows_vdf_default_line = (
+            f'- Windows helper varsayilan olarak `{context["windows_app_build_script"]}` dosyasini kullanir.'
+        )
     windows_upload_command = dedent(r'''
         pwsh -File .\tools\steam_upload_playtest.ps1 `
             -SteamCmdPath "C:\steamcmd\steamcmd.exe" `
@@ -243,7 +264,7 @@ def render_build_and_upload_doc(context: dict[str, object]) -> str:
 
         ## VDF Politicasi
 
-        - Windows helper varsayilan olarak `{context['windows_app_build_script']}` dosyasini kullanir.
+        {windows_vdf_default_line}
         - macOS helper varsayilan olarak `{context['mac_playtest_vdf']}` dosyasini kullanir; `--full` ile `{context['mac_full_vdf']}` secilir.
         - Track edilen VDF sablonlarinda makineye ozel `ContentRoot` ve `BuildOutput` degeri tutulmaz.
         - `Desc` alani helper script tarafindan runtime'da override edilebilir; VDF icindeki default deger yalnizca sablon gorevi gorur.

@@ -776,29 +776,21 @@ class UserSelectionScreen:
             elif event.key == pygame.K_DOWN:
                 self.selected_user = (self.selected_user + 1) % total_items
                 self._ensure_visible()
-            elif event.key == pygame.K_RETURN:
-                if self._is_add_index(self.selected_user):
-                    self._begin_create_flow()
-                elif self._can_edit_selected():
-                    username = self.get_selected_username()
-                    self._begin_edit_existing(username)
-            elif event.key == pygame.K_SPACE:
+            elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE):
+                # Confirm (A butonu / Enter / Space) → kullanıcı seç veya yeni oluştur
                 if self._is_add_index(self.selected_user):
                     self._begin_create_flow()
                 elif self._can_edit_selected():
                     username = self.get_selected_username()
                     self.user_manager.select_user(username)
                     return 'user_selected'
+            elif event.key in (pygame.K_e, pygame.K_F2, pygame.K_x):
+                # Edit (E / F2 / X butonu=editor_secondary) → düzenleme
+                if self._can_edit_selected():
+                    username = self.get_selected_username()
+                    self._begin_edit_existing(username)
             elif event.key == pygame.K_n:
                 self._begin_create_flow()
-            elif event.key in (pygame.K_e, pygame.K_F2):
-                if self._can_edit_selected():
-                    username = self.get_selected_username()
-                    self._begin_edit_existing(username)
-            elif getattr(event, 'unicode', '') and event.unicode.lower() == 'e':
-                if self._can_edit_selected():
-                    username = self.get_selected_username()
-                    self._begin_edit_existing(username)
             elif event.key == pygame.K_ESCAPE:
                 self._clear_delete_arm()
                 return 'back_to_menu'
@@ -1915,13 +1907,13 @@ class UserManagementScreen:
                 if self.users_list:
                     self.selected_user = (self.selected_user + 1) % len(self.users_list)
                     self._ensure_list_visible()
-            elif event.key == pygame.K_RETURN or event.key == pygame.K_SPACE:
-                # Kullanıcı profilini görüntüle
+            elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE):
+                # Confirm (A butonu) → profil görüntüle
                 if self.users_list:
                     self.edit_username = self.users_list[self.selected_user]
                     self.state = 'view_profile'
-            elif event.key == pygame.K_e:
-                # Düzenleme moduna geç
+            elif event.key in (pygame.K_e, pygame.K_x):
+                # Edit (E / X butonu=editor_secondary) → düzenleme
                 if self.users_list:
                     self.edit_username = self.users_list[self.selected_user]
                     self._init_edit_fields()
@@ -1933,8 +1925,8 @@ class UserManagementScreen:
                     self.user_manager.select_user(username)
                     self.message = t('user_set_active_message', username=username)
                     self.message_timer = 120
-            elif event.key == pygame.K_DELETE or event.key == pygame.K_d:
-                # Sil
+            elif event.key in (pygame.K_DELETE, pygame.K_d):
+                # Sil (Delete / D / Y butonu=editor_delete)
                 if self.users_list:
                     self.confirm_username = self.users_list[self.selected_user]
                     self.state = 'confirm_delete'

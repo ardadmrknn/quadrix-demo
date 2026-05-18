@@ -97,7 +97,7 @@ pyinstaller packaging/specs/tetris_macos_allinone.spec --noconfirm
 
 ## VDF Politicasi
 
-- Windows helper varsayilan olarak `steamworks/scripts/app_build_playtest.vdf` dosyasini kullanir.
+- Windows helper varsayilan olarak gecici bir AppBuild VDF uretir; override etmek icin `-AppBuildScript steamworks/scripts/app_build_playtest.vdf` kullanilabilir.
 - macOS helper varsayilan olarak `steamworks/scripts/app_build_playtest_macos.vdf` dosyasini kullanir; `--full` ile `steamworks/scripts/app_build_full.vdf` secilir.
 - Track edilen VDF sablonlarinda makineye ozel `ContentRoot` ve `BuildOutput` degeri tutulmaz.
 - `Desc` alani helper script tarafindan runtime'da override edilebilir; VDF icindeki default deger yalnizca sablon gorevi gorur.

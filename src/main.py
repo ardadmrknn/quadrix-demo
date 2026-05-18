@@ -2080,7 +2080,15 @@ def main():
                 continue
 
             if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE and not menu._is_modal_open():
-                confirm_exit = True
+                # Corner buton seçiliyken (keyboard/gamepad nav) ESC → merkez
+                # panellere geri dön; exit prompt açma. İkinci ESC'de exit prompt.
+                _sel = menu.selected
+                _max_center = 8  # Merkez panel son index'i
+                if getattr(menu, '_nav_source', 'mouse') == 'keyboard' and _sel > _max_center:
+                    menu.selected = 0
+                    menu._nav_source = 'keyboard'
+                else:
+                    confirm_exit = True
                 continue
 
             # Gizli debug ayarlarını aç: ana menüde "arda" yaz.

@@ -26,6 +26,7 @@ from sweep_effects import SweepCatState, draw_rainbow_cat_sweep
 from line_clear_feedback import (
     queue_wave_effects as _queue_wave_effects,
     update_wave_effects as _update_wave_effects,
+    trigger_combo_burst as _trigger_combo_burst,
 )
 try:
     from sweep_effects import compute_line_sweep_progress_speed as _compute_line_sweep_progress_speed
@@ -427,6 +428,13 @@ class PvPGame:
         self.p2_line_sweep_rows = []
         self.p2_line_sweep_progress = 0.0
         self.p2_line_sweep_active = False
+        # Pending row snapshot: clear_lines() satırları anında siler; sweep
+        # ön kenarına kadar görünür kalmaları için renk snapshot'ı tutuluyor
+        # (Mystery / Game / Coop ile parity).
+        self.p1_line_pending_rows: list[int] = []
+        self.p1_line_pending_colors: dict[int, list[tuple[int, int, int]]] = {}
+        self.p2_line_pending_rows: list[int] = []
+        self.p2_line_pending_colors: dict[int, list[tuple[int, int, int]]] = {}
         self.p1_falling_block_animations = []
         self.p2_falling_block_animations = []
         self.p1_drop_trails = []
@@ -3358,6 +3366,16 @@ class PvPGame:
                     self.p1_line_sweep_rows = cleared_rows
                     self.p1_line_sweep_progress = 0.0
                     self.p1_line_sweep_active = True
+                    # Pending row snapshot — sweep ön kenarına kadar silinen
+                    # blokları görünür tut (Mystery / Game / Coop ile parity).
+                    self.p1_line_pending_rows = list(cleared_rows)
+                    try:
+                        snap = getattr(self.board1, 'last_cleared_colors', {}) or {}
+                        self.p1_line_pending_colors = {
+                            int(r): list(snap[r]) for r in cleared_rows if r in snap
+                        }
+                    except Exception:
+                        self.p1_line_pending_colors = {}
                     
                     # Parçacık efektleri (ana oyundaki gelişmiş versiyon)
                     self.create_line_clear_particles(
@@ -3377,7 +3395,6 @@ class PvPGame:
                         self.cell_size,
                         BOARD_WIDTH,
                     )
-                    
                     # Ekran titremesi (ana oyunla aynı)
                     if lines < 4:
                         self.trigger_screen_shake(intensity=3 + lines * 2, duration=8 / 60.0)
@@ -3416,29 +3433,21 @@ class PvPGame:
                 except Exception:
                     pass
 
-                # Multi-line parçacık efekti (2-3 satır)
-                if lines < 4 and lines >= 2 and self.effects_enabled:
-                    center_x = self.p1_offset_x + (BOARD_WIDTH * self.cell_size) // 2
-                    center_y = self.p1_offset_y + (BOARD_HEIGHT * self.cell_size) // 2
-                    self.create_particles(
-                        count=50 * lines,
-                        x=center_x,
-                        y=center_y,
-                        colors=[CYAN, (100, 200, 255), (150, 220, 255)],
-                        speed=6
-                    )
-
-                # Quadrix için özel efekt (ana oyunla aynı)
+                # Multi-line / Quadrix parçacık merkez patlaması — ortak helper
+                # ile (Game / OnlinePvP / Coop ile parity)
+                _trigger_combo_burst(
+                    self,
+                    cleared_rows or [],
+                    int(lines),
+                    self.p1_offset_x,
+                    self.p1_offset_y,
+                    self.cell_size,
+                    BOARD_WIDTH,
+                    BOARD_HEIGHT,
+                    multi_line_colors=[CYAN, (100, 200, 255), (150, 220, 255)],
+                    quadrix_colors=[YELLOW, ORANGE, (255, 215, 0), CYAN],
+                )
                 if lines == 4 and self.effects_enabled:
-                    center_x = self.p1_offset_x + (BOARD_WIDTH * self.cell_size) // 2
-                    center_y = self.p1_offset_y + (BOARD_HEIGHT * self.cell_size) // 2
-                    self.create_particles(
-                        count=150,
-                        x=center_x,
-                        y=center_y,
-                        colors=[YELLOW, ORANGE, (255, 215, 0), CYAN],
-                        speed=10
-                    )
                     self.trigger_screen_shake(intensity=15, duration=20 / 60.0)
             
             self.current_piece1 = self.next_piece1
@@ -3492,6 +3501,15 @@ class PvPGame:
                     self.p2_line_sweep_rows = cleared_rows
                     self.p2_line_sweep_progress = 0.0
                     self.p2_line_sweep_active = True
+                    # Pending row snapshot (Mystery / Game / Coop ile parity)
+                    self.p2_line_pending_rows = list(cleared_rows)
+                    try:
+                        snap = getattr(self.board2, 'last_cleared_colors', {}) or {}
+                        self.p2_line_pending_colors = {
+                            int(r): list(snap[r]) for r in cleared_rows if r in snap
+                        }
+                    except Exception:
+                        self.p2_line_pending_colors = {}
                     
                     # Parçacık efektleri (ana oyundaki gelişmiş versiyon)
                     self.create_line_clear_particles(
@@ -3511,7 +3529,6 @@ class PvPGame:
                         self.cell_size,
                         BOARD_WIDTH,
                     )
-                    
                     # Ekran titremesi (ana oyunla aynı)
                     if lines < 4:
                         self.trigger_screen_shake(intensity=3 + lines * 2, duration=8 / 60.0)
@@ -3550,29 +3567,22 @@ class PvPGame:
                 except Exception:
                     pass
 
-                # Multi-line parçacık efekti (2-3 satır)
-                if lines < 4 and lines >= 2 and self.effects_enabled:
-                    center_x = self.p2_offset_x + (BOARD_WIDTH * self.cell_size) // 2
-                    center_y = self.p2_offset_y + (BOARD_HEIGHT * self.cell_size) // 2
-                    self.create_particles(
-                        count=50 * lines,
-                        x=center_x,
-                        y=center_y,
-                        colors=[MAGENTA, (200, 100, 255), (220, 150, 255)],
-                        speed=6
-                    )
-
-                # Quadrix için özel efekt (ana oyunla aynı)
+                # Multi-line / Quadrix parçacık merkez patlaması — ortak helper
+                # ile (Game / OnlinePvP / Coop ile parity, P2 magenta paletini
+                # koruyarak)
+                _trigger_combo_burst(
+                    self,
+                    cleared_rows or [],
+                    int(lines),
+                    self.p2_offset_x,
+                    self.p2_offset_y,
+                    self.cell_size,
+                    BOARD_WIDTH,
+                    BOARD_HEIGHT,
+                    multi_line_colors=[MAGENTA, (200, 100, 255), (220, 150, 255)],
+                    quadrix_colors=[YELLOW, ORANGE, (255, 215, 0), MAGENTA],
+                )
                 if lines == 4 and self.effects_enabled:
-                    center_x = self.p2_offset_x + (BOARD_WIDTH * self.cell_size) // 2
-                    center_y = self.p2_offset_y + (BOARD_HEIGHT * self.cell_size) // 2
-                    self.create_particles(
-                        count=150,
-                        x=center_x,
-                        y=center_y,
-                        colors=[YELLOW, ORANGE, (255, 215, 0), MAGENTA],
-                        speed=10
-                    )
                     self.trigger_screen_shake(intensity=15, duration=20 / 60.0)
             
             self.current_piece2 = self.next_piece2
@@ -4134,6 +4144,8 @@ class PvPGame:
                 self.p1_line_sweep_progress = 1.0
                 self.p1_line_sweep_active = False
                 self.p1_line_sweep_rows = []
+                self.p1_line_pending_rows = []
+                self.p1_line_pending_colors = {}
 
         if self.p2_line_sweep_active:
             board_pixel_width = self.board2.width * self.cell_size
@@ -4146,9 +4158,15 @@ class PvPGame:
                 self.p2_line_sweep_progress = 1.0
                 self.p2_line_sweep_active = False
                 self.p2_line_sweep_rows = []
+                self.p2_line_pending_rows = []
+                self.p2_line_pending_colors = {}
 
-        _update_wave_effects(self.p1_wave_effects, dt_frames)
-        _update_wave_effects(self.p2_wave_effects, dt_frames)
+        # Wave efektleri ortak helper ile (Game / OnlinePvP / Coop ile parity)
+        try:
+            _update_wave_effects(self.p1_wave_effects, dt_frames)
+            _update_wave_effects(self.p2_wave_effects, dt_frames)
+        except Exception:
+            pass
         if self.p1_falling_block_animations:
             fall_speed = self.block_fall_speed * dt_frames * 60
             for anim in self.p1_falling_block_animations:
@@ -4413,6 +4431,48 @@ class PvPGame:
         sweep_rows = self.p1_line_sweep_rows if board is self.board1 else self.p2_line_sweep_rows
         sweep_progress = self.p1_line_sweep_progress if board is self.board1 else self.p2_line_sweep_progress
         sweep_active = self.p1_line_sweep_active if board is self.board1 else self.p2_line_sweep_active
+        pending_rows = self.p1_line_pending_rows if board is self.board1 else self.p2_line_pending_rows
+        pending_colors = self.p1_line_pending_colors if board is self.board1 else self.p2_line_pending_colors
+
+        # Pending row snapshot — sweep ön kenarına kadar silinen blokları çiz
+        # (Mystery / Game / Coop ile parity).
+        if (
+            self.effects_enabled
+            and sweep_active
+            and pending_rows
+            and pending_colors
+        ):
+            cleared_count_p = max(1, len(pending_rows))
+            if cleared_count_p >= 4:
+                sw_blocks_p = 2
+            elif cleared_count_p >= 3:
+                sw_blocks_p = 3
+            elif cleared_count_p == 2:
+                sw_blocks_p = 2
+            else:
+                sw_blocks_p = 1
+            sweep_width_p = max(1, int(sw_blocks_p * cell_size))
+            sweep_x_p = offset_x + int(sweep_progress * (board_width + sweep_width_p)) - sweep_width_p
+            sweep_front_x_p = sweep_x_p + sweep_width_p
+            block_size_p = cell_size - 2
+            for row in pending_rows:
+                if not (0 <= row < BOARD_HEIGHT):
+                    continue
+                row_colors = pending_colors.get(int(row))
+                if not row_colors:
+                    continue
+                max_cols = min(BOARD_WIDTH, len(row_colors))
+                for x in range(max_cols):
+                    color = row_colors[x]
+                    if color is None or tuple(color[:3]) == (0, 0, 0):
+                        continue
+                    cell_center_x = offset_x + x * cell_size + cell_size // 2
+                    # Sweep ön kenarı bu hücreye ulaştıysa snapshot çizilmez.
+                    if cell_center_x <= sweep_front_x_p:
+                        continue
+                    block_x = offset_x + x * cell_size + 1
+                    block_y = offset_y + row * cell_size + 1
+                    self.draw_textured_block(block_x, block_y, block_size_p, color, None, None)
 
         if self.effects_enabled and sweep_rows and sweep_active:
             valid_rows = sorted({r for r in sweep_rows if 0 <= r < BOARD_HEIGHT})
@@ -4907,6 +4967,10 @@ class PvPGame:
         self.p2_line_sweep_progress = 0.0
         self.p1_line_sweep_active = False
         self.p2_line_sweep_active = False
+        self.p1_line_pending_rows = []
+        self.p2_line_pending_rows = []
+        self.p1_line_pending_colors = {}
+        self.p2_line_pending_colors = {}
         self.p1_falling_block_animations = []
         self.p2_falling_block_animations = []
         self.p1_drop_trails = []

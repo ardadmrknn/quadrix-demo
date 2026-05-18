@@ -401,6 +401,9 @@ def pygame_color_picker(
     hex_edit = False
     hex_cur = len(hex_text)
 
+    # Gamepad state: RGB kanal seçimi ve preset index
+    _gp_state: dict = {'ch': 0, 'preset': 0}
+
     running = True
     result: Optional[Tuple[int, int, int]] = None
 
@@ -525,6 +528,33 @@ def pygame_color_picker(
                     elif ev.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
                         running = False
                         result = _to_rgb_tuple(cur)
+                    # Gamepad RGB stepper: LB/RB (bracket) ile kanal seç,
+                    # UP/DOWN ile değer değiştir
+                    elif ev.key == pygame.K_UP:
+                        # Aktif RGB kanalını +5 artır
+                        ch_idx = getattr(self_state, '_gp_rgb_channel', 0) if 'self_state' in dir() else _gp_state.get('ch', 0)
+                        cur[_gp_state.get('ch', 0)] = min(255, cur[_gp_state.get('ch', 0)] + 5)
+                        _sync_rgb()
+                    elif ev.key == pygame.K_DOWN:
+                        cur[_gp_state.get('ch', 0)] = max(0, cur[_gp_state.get('ch', 0)] - 5)
+                        _sync_rgb()
+                    elif ev.key == pygame.K_LEFTBRACKET:
+                        # Önceki RGB kanalı
+                        _gp_state['ch'] = (_gp_state.get('ch', 0) - 1) % 3
+                    elif ev.key == pygame.K_RIGHTBRACKET:
+                        # Sonraki RGB kanalı
+                        _gp_state['ch'] = (_gp_state.get('ch', 0) + 1) % 3
+                    elif ev.key == pygame.K_LEFT:
+                        # Preset swatchlar arası gezinme
+                        _gp_state['preset'] = max(0, _gp_state.get('preset', 0) - 1)
+                    elif ev.key == pygame.K_RIGHT:
+                        _gp_state['preset'] = min(n_presets - 1, _gp_state.get('preset', 0) + 1)
+                    elif ev.key == pygame.K_SPACE:
+                        # Space ile aktif preset'i seç
+                        pidx = _gp_state.get('preset', 0)
+                        if 0 <= pidx < n_presets:
+                            cur[:] = list(_PRESET_COLORS[pidx])
+                            _sync_rgb()
 
             elif ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
                 mx, my = ev.pos
@@ -826,7 +856,12 @@ def pygame_text_input(
     initial_text: str = "",
     max_length: int = 40,
 ) -> Optional[str]:
-    """Quadrix premium metin girişi."""
+    """Quadrix premium metin girişi — gamepad uyumlu.
+
+    Gamepad ile: D-pad L/R ile input/OK/Cancel arası focus geçişi.
+    Confirm (A/Enter) aktif focus'u uygular. Back (B/ESC) iptal eder.
+    Input focus'tayken D-pad L/R cursor hareket ettirir.
+    """
     clock = pygame.time.Clock()
     sw, sh = screen.get_size()
     t0 = time.time()
@@ -853,6 +888,9 @@ def pygame_text_input(
     running = True
     result: Optional[str] = None
 
+    # Gamepad focus: 0=input, 1=OK, 2=Cancel
+    gp_focus = 0
+
     bg_snap = screen.copy()
     overlay = _build_overlay(sw, sh)
     panel = _build_glass_panel(dw, dh,
@@ -871,8 +909,8 @@ def pygame_text_input(
 
     while running:
         mp = get_mouse_pos()
-        ho = ok_rect.collidepoint(mp)
-        hc = cancel_rect.collidepoint(mp)
+        ho = ok_rect.collidepoint(mp) or gp_focus == 1
+        hc = cancel_rect.collidepoint(mp) or gp_focus == 2
         now = time.time() - t0
 
         for ev in pygame.event.get():
@@ -881,27 +919,48 @@ def pygame_text_input(
                 result = None
             elif ev.type == pygame.KEYDOWN:
                 if ev.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
-                    running = False
-                    result = text.strip() if text.strip() else None
+                    if gp_focus == 2:
+                        running = False
+                        result = None
+                    else:
+                        running = False
+                        result = text.strip() if text.strip() else None
                 elif ev.key == pygame.K_ESCAPE:
                     running = False
                     result = None
+                elif ev.key == pygame.K_TAB:
+                    # Tab ile focus geçişi
+                    gp_focus = (gp_focus + 1) % 3
+                elif ev.key == pygame.K_DOWN:
+                    # Input'tan butonlara geç
+                    if gp_focus == 0:
+                        gp_focus = 1
+                elif ev.key == pygame.K_UP:
+                    # Butonlardan input'a geç
+                    if gp_focus in (1, 2):
+                        gp_focus = 0
+                elif ev.key == pygame.K_LEFT:
+                    if gp_focus == 0:
+                        cursor = max(0, cursor - 1)
+                    elif gp_focus == 2:
+                        gp_focus = 1
+                elif ev.key == pygame.K_RIGHT:
+                    if gp_focus == 0:
+                        cursor = min(len(text), cursor + 1)
+                    elif gp_focus == 1:
+                        gp_focus = 2
                 elif ev.key == pygame.K_BACKSPACE:
-                    if cursor > 0:
+                    if gp_focus == 0 and cursor > 0:
                         text = text[:cursor - 1] + text[cursor:]
                         cursor -= 1
                 elif ev.key == pygame.K_DELETE:
-                    if cursor < len(text):
+                    if gp_focus == 0 and cursor < len(text):
                         text = text[:cursor] + text[cursor + 1:]
-                elif ev.key == pygame.K_LEFT:
-                    cursor = max(0, cursor - 1)
-                elif ev.key == pygame.K_RIGHT:
-                    cursor = min(len(text), cursor + 1)
                 elif ev.key == pygame.K_HOME:
                     cursor = 0
                 elif ev.key == pygame.K_END:
                     cursor = len(text)
-                elif ev.unicode and len(text) < max_length:
+                elif ev.unicode and len(text) < max_length and gp_focus == 0:
                     ch = ev.unicode
                     if ch.isprintable():
                         text = text[:cursor] + ch + text[cursor:]
@@ -913,6 +972,8 @@ def pygame_text_input(
                 elif cancel_rect.collidepoint(ev.pos):
                     running = False
                     result = None
+                elif inp_rect.collidepoint(ev.pos):
+                    gp_focus = 0
 
         screen.blit(bg_snap, (0, 0))
         screen.blit(overlay, (0, 0))
