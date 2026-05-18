@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 import webbrowser
 
 import pygame
@@ -16,6 +17,17 @@ except Exception:
     from retro_style import retro_style
     from ui_theme import UIColors, UIFonts
     from ui_scaling import get_projected_effective_scale
+
+
+@dataclass(slots=True)
+class _PromptLayout:
+    panel_rect: pygame.Rect
+    title_rect: pygame.Rect
+    body_rect: pygame.Rect
+    confirm_rect: pygame.Rect
+    cancel_rect: pygame.Rect
+    lines: list[str]
+    line_height: int
 
 
 class DemoUpgradePrompt:
@@ -107,47 +119,116 @@ class DemoUpgradePrompt:
         self.screen.blit(overlay, (0, 0))
 
         panel_width = min(width - s(80), s(620))
-        panel_height = min(height - s(100), s(280))
-        panel_rect = pygame.Rect(
-            (width - panel_width) // 2,
-            (height - panel_height) // 2,
-            panel_width,
-            panel_height,
+        title_font = retro_style.get_fitting_font(
+            self.title,
+            s(28, 16),
+            panel_width - s(84),
+            bold=True,
+            min_size=s(18, 10),
         )
+        body_font = UIFonts.get(s(18, 11), bold=False)
+        layout = self._build_layout((width, height), scale, title_font, body_font, panel_width=panel_width)
 
         retro_style.draw_glass_panel(
             self.screen,
-            panel_rect,
+            layout.panel_rect,
             alpha=210,
             border_color=UIColors.NEON_CYAN,
             glow=True,
         )
 
-        title_font = retro_style.get_font(s(28, 16), bold=True)
-        body_font = UIFonts.get(s(18, 11), bold=False)
-        button_font = UIFonts.get(s(16, 10), bold=True)
-
         title_surf = title_font.render(self.title, True, UIColors.TEXT_PRIMARY)
-        title_rect = title_surf.get_rect(midtop=(panel_rect.centerx, panel_rect.y + s(18)))
-        self.screen.blit(title_surf, title_rect)
+        self.screen.blit(title_surf, layout.title_rect)
 
-        lines = self._wrap_text(body_font, self.message, panel_rect.width - s(50))
-        text_y = title_rect.bottom + s(20)
-        line_height = max(s(24), body_font.get_height() + s(6))
-        for line in lines:
+        text_y = layout.body_rect.y
+        for line in layout.lines:
             line_surf = body_font.render(line, True, UIColors.TEXT_SECONDARY)
-            line_rect = line_surf.get_rect(midtop=(panel_rect.centerx, text_y))
+            line_rect = line_surf.get_rect(midtop=(layout.body_rect.centerx, text_y))
             self.screen.blit(line_surf, line_rect)
-            text_y += line_height
+            text_y += layout.line_height
 
-        button_width = max(s(170), (panel_rect.width - s(68)) // 2)
+        self.confirm_rect = layout.confirm_rect
+        self.cancel_rect = layout.cancel_rect
+
+        confirm_font = retro_style.get_fitting_font(
+            self.confirm_label,
+            s(16, 10),
+            self.confirm_rect.width - s(24),
+            bold=True,
+            min_size=s(10, 8),
+        )
+        cancel_font = retro_style.get_fitting_font(
+            self.cancel_label,
+            s(16, 10),
+            self.cancel_rect.width - s(24),
+            bold=True,
+            min_size=s(10, 8),
+        )
+
+        self._draw_button(self.confirm_rect, self.confirm_label, UIColors.NEON_GOLD, confirm_font, dark_text=True)
+        self._draw_button(self.cancel_rect, self.cancel_label, UIColors.BUTTON_BORDER, cancel_font, dark_text=False)
+
+    def _build_layout(
+        self,
+        screen_size: tuple[int, int],
+        scale: float,
+        title_font,
+        body_font,
+        *,
+        panel_width: int | None = None,
+    ) -> _PromptLayout:
+        width, height = screen_size
+        s = lambda value, minimum=1: max(minimum, int(round(value * scale)))
+
+        resolved_panel_width = int(panel_width or min(width - s(80), s(620)))
+        resolved_panel_width = max(s(360), min(resolved_panel_width, width - s(40)))
+        wrap_width = max(s(180), resolved_panel_width - s(50))
+        lines = self._wrap_text(body_font, self.message, wrap_width)
+        line_height = max(s(24), body_font.get_height() + s(6))
+        body_height = max(line_height, len(lines) * line_height)
+
+        button_width = max(s(170), (resolved_panel_width - s(68)) // 2)
         button_height = s(46)
-        button_y = panel_rect.bottom - button_height - s(24)
-        self.confirm_rect = pygame.Rect(panel_rect.x + s(22), button_y, button_width, button_height)
-        self.cancel_rect = pygame.Rect(panel_rect.right - button_width - s(22), button_y, button_width, button_height)
+        desired_panel_height = (
+            s(18)
+            + title_font.get_height()
+            + s(20)
+            + body_height
+            + s(22)
+            + button_height
+            + s(24)
+        )
+        resolved_panel_height = min(height - s(100), max(s(248), desired_panel_height))
+        panel_rect = pygame.Rect(
+            (width - resolved_panel_width) // 2,
+            (height - resolved_panel_height) // 2,
+            resolved_panel_width,
+            resolved_panel_height,
+        )
 
-        self._draw_button(self.confirm_rect, self.confirm_label, UIColors.NEON_GOLD, button_font, dark_text=True)
-        self._draw_button(self.cancel_rect, self.cancel_label, UIColors.BUTTON_BORDER, button_font, dark_text=False)
+        title_width = min(title_font.size(self.title)[0], wrap_width)
+        title_rect = pygame.Rect(0, 0, max(1, title_width), title_font.get_height())
+        title_rect.midtop = (panel_rect.centerx, panel_rect.y + s(18))
+
+        body_rect = pygame.Rect(
+            panel_rect.x + s(25),
+            title_rect.bottom + s(20),
+            panel_rect.width - s(50),
+            body_height,
+        )
+        button_y = body_rect.bottom + s(22)
+        confirm_rect = pygame.Rect(panel_rect.x + s(22), button_y, button_width, button_height)
+        cancel_rect = pygame.Rect(panel_rect.right - button_width - s(22), button_y, button_width, button_height)
+
+        return _PromptLayout(
+            panel_rect=panel_rect,
+            title_rect=title_rect,
+            body_rect=body_rect,
+            confirm_rect=confirm_rect,
+            cancel_rect=cancel_rect,
+            lines=lines,
+            line_height=line_height,
+        )
 
     def _draw_button(
         self,
@@ -174,20 +255,21 @@ class DemoUpgradePrompt:
 
     @staticmethod
     def _wrap_text(font, text: str, max_width: int) -> list[str]:
-        words = str(text or '').split()
-        if not words:
-            return ['']
-
         lines: list[str] = []
-        current = words[0]
-        for word in words[1:]:
-            candidate = f'{current} {word}'
-            if font.size(candidate)[0] <= max_width:
-                current = candidate
+        for paragraph in str(text or '').split('\n'):
+            words = paragraph.split()
+            if not words:
+                lines.append('')
                 continue
+            current = words[0]
+            for word in words[1:]:
+                candidate = f'{current} {word}'
+                if font.size(candidate)[0] <= max_width:
+                    current = candidate
+                    continue
+                lines.append(current)
+                current = word
             lines.append(current)
-            current = word
-        lines.append(current)
         return lines
 
 
