@@ -9,7 +9,7 @@ import os
 from typing import MutableMapping
 
 
-IS_DEMO = False
+IS_DEMO = True
 
 DEMO_STEAM_APP_ID = "4635310"
 DEMO_STEAM_STORE_URL = "https://store.steampowered.com/app/4414520/Quadrix/"
