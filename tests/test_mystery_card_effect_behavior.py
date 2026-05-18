@@ -88,7 +88,7 @@ def _minimal_card_effect_mode(MysteryMode, Board, *, effects_enabled: bool):
         progress=0,
         threshold=5,
         pending_choices=[],
-        notify_lines_cleared=lambda _lines: False,
+        notify_lines_cleared=lambda _lines, **_kwargs: False,
         used_card_ids=set(),
     )
     mode.get_cell_size = lambda: 10
@@ -553,7 +553,7 @@ def test_card_secondary_lines_are_not_recounted_as_player_lines(monkeypatch):
     perk_calls = []
     alchemist_calls = []
     mode.card_manager = SimpleNamespace(
-        notify_lines_cleared=lambda lines: card_progress_calls.append(lines) or False,
+        notify_lines_cleared=lambda lines, **kwargs: card_progress_calls.append((lines, kwargs.get('source', 'player'))) or False,
         pending_choices=[],
     )
     mode.perk_manager = SimpleNamespace(
@@ -571,7 +571,10 @@ def test_card_secondary_lines_are_not_recounted_as_player_lines(monkeypatch):
 
     mode.lock_and_new_piece()
 
-    assert card_progress_calls == [1, 1]
+    # New architecture: card_manager.notify_lines_cleared receives source kwarg.
+    # External (card) clear via _post_external_line_clear arrives first with
+    # source='card', then player clear arrives with source='player'.
+    assert card_progress_calls == [(1, 'card'), (1, 'player')]
     assert perk_calls == [(1, 'card'), (1, 'player')]
     assert alchemist_calls == []
     assert mode.board.lines_cleared == 2
@@ -609,7 +612,7 @@ def test_alchemist_quadrix_triggers_once_on_player_lock(monkeypatch):
     mode._active_effect_visuals = {}
     mode._sync_active_cards = lambda: None
     mode._apply_combo_aura_on_lock = lambda gained, _previous_combo: None
-    mode.card_manager = SimpleNamespace(notify_lines_cleared=lambda _lines: False)
+    mode.card_manager = SimpleNamespace(notify_lines_cleared=lambda _lines, **_kwargs: False)
     mode.perk_manager = extra.PerkManager(mode)
     mode.perk_manager.activate('perk_alchemist')
 
@@ -710,7 +713,7 @@ def test_restart_resets_mystery_runtime_effect_state(monkeypatch):
     _, Game, MysteryMode, _ = _import_mystery_mode()
     mode = MysteryMode.__new__(MysteryMode)
     mode.board = SimpleNamespace(level=4, flexible_border_active=True)
-    mode.card_manager = SimpleNamespace(reset=lambda: None)
+    mode.card_manager = SimpleNamespace(reset=lambda: None, sync_level_progress=lambda: None)
     mode.card_selection_reroll_limit = 5
     mode._sync_active_cards = lambda: None
     mode._score_multiplier_timer = 9.0

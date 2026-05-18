@@ -82,6 +82,45 @@ def _get_ui_icon_dir() -> str:
 UI_ICON_DIR = _get_ui_icon_dir()
 MYSTERY_OVERLAY_REFERENCE_SIZE = (1366.0, 768.0)
 CARD_SELECTION_REROLL_LIMIT = 5
+MYSTERY_LEVEL_SPEED_ANCHORS = (
+    (1, 850),
+    (5, 700),
+    (10, 500),
+    (15, 300),
+    (20, 150),
+    (30, 125),
+)
+MYSTERY_LEVEL_SPEED_MIN_MS = LEVEL_SPEED_MIN_MS
+MYSTERY_LEVEL_SPEED_POST_L30_STEP_MS = 1
+
+
+def get_mystery_level_fall_speed_ms(level: int) -> int:
+    """Mystery modu için board.level tabanlı düşüş aralığını döndür."""
+    try:
+        current_level = int(level)
+    except Exception:
+        current_level = 1
+    current_level = max(1, current_level)
+
+    first_level, first_speed = MYSTERY_LEVEL_SPEED_ANCHORS[0]
+    if current_level <= first_level:
+        return int(first_speed)
+
+    for (start_level, start_speed), (end_level, end_speed) in zip(
+        MYSTERY_LEVEL_SPEED_ANCHORS,
+        MYSTERY_LEVEL_SPEED_ANCHORS[1:],
+    ):
+        if current_level <= end_level:
+            progress = (current_level - start_level) / float(end_level - start_level)
+            interpolated = start_speed + ((end_speed - start_speed) * progress)
+            return max(
+                MYSTERY_LEVEL_SPEED_MIN_MS,
+                int(math.floor(interpolated + 0.5)),
+            )
+
+    last_level, last_speed = MYSTERY_LEVEL_SPEED_ANCHORS[-1]
+    accelerated = int(last_speed) - ((current_level - last_level) * MYSTERY_LEVEL_SPEED_POST_L30_STEP_MS)
+    return max(MYSTERY_LEVEL_SPEED_MIN_MS, accelerated)
 
 
 def _get_card_assets_dir() -> str:
@@ -434,7 +473,46 @@ class Tetris2Mode(Game):
 
 
 class MysteryCardManager:
-    """Kartların veri ve tetik yönetimini üstlenen bağımsız katman."""
+    """Kartların veri ve tetik yönetimini üstlenen bağımsız katman.
+
+    Kart ödülleri için board.level'den AYRI bir card_level/card_xp progression
+    hattı tutar. Bu sayede:
+    - board.level: oyun temposu / düşüş hızı için kalır
+    - card_level: kart ödül ekonomisi için kullanılır
+
+    XP yalnızca gerçek player kaynaklı satır temizlemelerinden gelir; kart/
+    ability/external clear'lar XP üretmez (anti-farm). XP taşması durumunda
+    aynı çağrıda birden fazla level alınabilir ve queue oluşur.
+    """
+
+    # XP per simultaneous lines cleared by the player.
+    # 1 -> 1, 2 -> 3, 3 -> 5, 4 -> 8.  Reflects roguelite-style reward weight
+    # without making single clears feel pointless.
+    XP_PER_LINE_COUNT: Dict[int, int] = {1: 1, 2: 3, 3: 5, 4: 8}
+
+    # Initial XP needed for the first card level + per-level growth.
+    BASE_XP_TO_NEXT = 4
+    XP_GROWTH_PER_LEVEL = 2
+
+    # ── RARITY OLASILIK SİSTEMİ ──
+    # Kart seviyesi (card_level) ilerledikçe nadir kartların çıkma olasılığı
+    # artar. Anchor seviyeleri arasında lineer interpolasyon uygulanır;
+    # böylece sert breakpoint olmaz (level 4 ile 5 arasında ani sıçrama yok).
+    # Anchor dışındaki seviyeler için en yakın anchor kullanılır.
+    #
+    # Önemli: Bu ağırlıklar **rarity bucket** ağırlıklarıdır, kart başına
+    # değil. Önce rarity seçilir, sonra o rarity içinden uniform bir kart
+    # alınır. Bu sayede "common kart adedi az, legendary kart adedi çok"
+    # gibi katalog dengesizlikleri olasılığı bozmaz.
+    RARITY_WEIGHT_ANCHORS: Dict[int, Dict[str, float]] = {
+        1:  {'common': 70.0, 'uncommon': 22.0, 'rare':  7.0, 'epic':  0.9, 'legendary': 0.1},
+        5:  {'common': 58.0, 'uncommon': 25.0, 'rare': 13.0, 'epic':  3.0, 'legendary': 1.0},
+        10: {'common': 45.0, 'uncommon': 27.0, 'rare': 18.0, 'epic':  7.0, 'legendary': 3.0},
+        20: {'common': 30.0, 'uncommon': 25.0, 'rare': 22.0, 'epic': 13.0, 'legendary': 10.0},
+    }
+
+    # Bucket key normalizasyonu için kabul edilen rarity etiketleri.
+    _RARITY_ORDER: tuple[str, ...] = ('common', 'uncommon', 'rare', 'epic', 'legendary')
 
     def __init__(self, mode: "MysteryMode") -> None:
         self.mode = mode
@@ -446,9 +524,17 @@ class MysteryCardManager:
         self.used_card_ids: set[str] = set()
         # Debug cadence: extra selection trigger every 2 cleared lines
         self._debug_lines_progress = 0
-        # Align manager threshold with the current board level-up cadence.
+        # === KART XP / KART LEVEL HATTI ===
+        # Bu alanlar board.level'den bağımsız ilerler. UI ve trigger mantığı
+        # buradan beslenir.
+        self.card_xp: int = 0
+        self.card_level: int = 1
+        self.card_xp_to_next: int = self._compute_xp_to_next(self.card_level)
+        # Geriye dönük uyumluluk için tutulan eski alanlar (mevcut testler/araçlar
+        # ve restore akışı bu isimleri okuyor). `progress` artık card_xp ile,
+        # `threshold` card_xp_to_next ile eşitlenir.
         self.progress = 0
-        self.threshold = self._resolve_threshold()
+        self.threshold = self.card_xp_to_next
 
     def reset(self) -> None:
         self.force_piece_queue.clear()
@@ -456,42 +542,135 @@ class MysteryCardManager:
         self.active_cards.clear()
         self.used_card_ids.clear()
         self._debug_lines_progress = 0
+        self.card_xp = 0
+        self.card_level = 1
+        self.card_xp_to_next = self._compute_xp_to_next(self.card_level)
+        # Mirrors for backward compat
         self.progress = 0
-        self.threshold = self._resolve_threshold()
-        self.sync_level_progress()
+        self.threshold = self.card_xp_to_next
 
-    def _resolve_threshold(self) -> int:
-        try:
-            board = getattr(self.mode, 'board', None)
-            if board is not None:
-                return max(1, int(getattr(board, 'level_lines_per_level', 5) or 5))
-        except Exception:
-            pass
-        return max(1, int(demo_config.get_card_selection_level_interval() or 5))
+    # === XP ECONOMY HELPERS ===
+    @classmethod
+    def _compute_xp_to_next(cls, card_level: int) -> int:
+        """Bir sonraki kart seviyesine geçmek için gereken XP.
+
+        Erken oyunda hızlı, sonra yavaşlayan basit doğrusal eğri.
+        Level 1 -> 4 XP, Level 2 -> 6, Level 3 -> 8, ...
+        """
+        lvl = max(1, int(card_level or 1))
+        return max(1, cls.BASE_XP_TO_NEXT + (lvl - 1) * cls.XP_GROWTH_PER_LEVEL)
+
+    @classmethod
+    def compute_xp_award(
+        cls,
+        cleared: int,
+        *,
+        combo: int = 0,
+        back_to_back: bool = False,
+        perfect_clear: bool = False,
+    ) -> int:
+        """Verilen temizleme bağlamı için kazanılacak XP."""
+        cleared = max(0, int(cleared or 0))
+        if cleared <= 0:
+            return 0
+        base = cls.XP_PER_LINE_COUNT.get(cleared, cls.XP_PER_LINE_COUNT[4] + (cleared - 4) * 2)
+        bonus = 0
+        # Combo bonus: 3+ chained clears => +1 XP. Capped to avoid scaling out of control.
+        if combo >= 3:
+            bonus += 1
+        # Back-to-back Quadrix => small extra XP
+        if back_to_back and cleared >= 4:
+            bonus += 2
+        # Perfect clear is rare and special
+        if perfect_clear:
+            bonus += 3
+        return int(base + bonus)
+
+    # === RARITY WEIGHT HELPERS ===
+    @classmethod
+    def _normalize_rarity(cls, value: Any) -> str:
+        """Kart üzerindeki rarity alanını bilinen bir bucket adına eşler."""
+        text = str(value or 'common').strip().lower()
+        if text in cls._RARITY_ORDER:
+            return text
+        # Bilinmeyen tag'ler -> common'a fallback'le ki olasılık tablosu
+        # asla boş kalmasın.
+        return 'common'
+
+    @classmethod
+    def _rarity_weights_for_level(cls, card_level: int) -> Dict[str, float]:
+        """Verilen card_level için rarity bucket ağırlıklarını döndür.
+
+        Anchor'lar arasında lineer interpolasyon kullanır. Anchor altı/üstü
+        seviyelerde sınır değeri korunur. Sonuçtaki ağırlıklar **renormalize
+        edilmemiştir**; çağıran taraf bucket boş kalmışsa kalanları yeniden
+        normalize etmelidir.
+        """
+        anchors = cls.RARITY_WEIGHT_ANCHORS
+        keys = sorted(anchors.keys())
+        lvl = max(1, int(card_level or 1))
+        if lvl <= keys[0]:
+            return dict(anchors[keys[0]])
+        if lvl >= keys[-1]:
+            return dict(anchors[keys[-1]])
+        lo = max(k for k in keys if k <= lvl)
+        hi = min(k for k in keys if k >= lvl)
+        if lo == hi:
+            return dict(anchors[lo])
+        span = hi - lo
+        t = (lvl - lo) / span if span > 0 else 0.0
+        a = anchors[lo]
+        b = anchors[hi]
+        return {
+            rarity: float(a.get(rarity, 0.0)) * (1.0 - t)
+                  + float(b.get(rarity, 0.0)) * t
+            for rarity in cls._RARITY_ORDER
+        }
 
     def sync_level_progress(self) -> None:
-        self.threshold = self._resolve_threshold()
-        try:
-            board = getattr(self.mode, 'board', None)
-            progress = _level_progress_in_current_level(board, self.threshold)
-        except Exception:
-            progress = 0
-        self.progress = max(0, int(progress or 0))
+        """Backward compat: eski API; yeni model card_xp tabanlı, no-op davranır
+        ama `progress`/`threshold` alanlarını güncel tutar."""
+        self.progress = int(self.card_xp)
+        self.threshold = int(self.card_xp_to_next)
 
-    def notify_lines_cleared(self, cleared: int) -> bool:
-        """Satır ilerlemesini günceller, gerekirse yeni kart seçimini hazırlar."""
+    def notify_lines_cleared(
+        self,
+        cleared: int,
+        *,
+        source: str = 'player',
+        combo: int = 0,
+        back_to_back: bool = False,
+        perfect_clear: bool = False,
+    ) -> bool:
+        """Card-XP ilerlemesini günceller.
+
+        Yalnızca `source='player'` çağrılarında XP verilir. Kart/ability/external
+        clear'lar XP üretmez (anti-farm). Bir veya birden fazla level-up oluşursa
+        `pending_level_ups` queue'su kadar artar ve dış akış (MysteryMode.update)
+        sıradaki overlay'i açar.
+
+        Geri dönüş: bu çağrıda en az bir card_level artışı oluştuysa True.
+        """
         if cleared <= 0:
             return False
-        # NOTE: Keep the main system intact (threshold=5 aligned to level-up).
-        # When card_mode_debug is enabled, we ADD an extra trigger every 2 cleared lines
-        # without modifying progress/threshold behavior.
+
+        # === ANTI-FARM: yalnızca player kaynaklı clear ödül queue'sunu besler ===
+        # Hem normal XP hem de debug-modu hızlandırması bu kuralı dinler. External,
+        # ability, card, gravity vb. kaynaklı clear'lar -- debug açık olsa bile --
+        # `pending_level_ups` üretmemelidir.
+        normalized_source = str(source or 'player').lower()
+        is_player_source = normalized_source in {'player', 'normal'}
+
+        # Debug cadence: extra selection trigger every 2 cleared lines. Yalnızca
+        # gerçek player clear'larında devreye girer; aksi halde reward queue
+        # delinir.
         card_mode_debug = False
         try:
             card_mode_debug = bool(self.mode.settings_manager.get('card_mode_debug', False))
         except Exception:
             card_mode_debug = False
 
-        if card_mode_debug:
+        if card_mode_debug and is_player_source:
             try:
                 self._debug_lines_progress = int(getattr(self, '_debug_lines_progress', 0) or 0) + int(cleared)
             except Exception:
@@ -507,41 +686,57 @@ class MysteryCardManager:
                 except Exception:
                     pass
 
-        self.threshold = self._resolve_threshold()
-        self.progress += int(cleared)
-        triggered = False
-        while self.progress >= self.threshold:
-            self.progress -= self.threshold
-            triggered = True
-        # DO NOT prepare the selection here; preparation and overlay opening
-        # must be driven by the higher-level MysteryMode on level-up so the
-        # UI and internal logic stay synchronized. Return whether the threshold
-        # was exceeded so the caller may take additional actions if needed.
-        if triggered:
-            # Debug notice and enqueue a pending level-up on the mode so the overlay
-            # will be opened either immediately or on the next update check.
+        if not is_player_source:
+            # Dış kaynaklı temizlikler XP vermesin ve queue oluşturmasın.
+            return False
+
+        xp_gain = self.compute_xp_award(
+            cleared,
+            combo=combo,
+            back_to_back=back_to_back,
+            perfect_clear=perfect_clear,
+        )
+        if xp_gain <= 0:
+            return False
+
+        self.card_xp += int(xp_gain)
+        levels_gained = 0
+        # Overflow: aynı çağrıda birden fazla level alınabilir.
+        while self.card_xp >= self.card_xp_to_next:
+            self.card_xp -= self.card_xp_to_next
+            self.card_level += 1
+            self.card_xp_to_next = self._compute_xp_to_next(self.card_level)
+            levels_gained += 1
+
+        # Eski (geriye dönük) alanları senkron tut.
+        self.progress = int(self.card_xp)
+        self.threshold = int(self.card_xp_to_next)
+
+        if levels_gained > 0:
             try:
-                print(f"[MysteryCardManager] Threshold reached: progress={self.progress}, threshold={self.threshold}")
+                print(
+                    f"[MysteryCardManager] Card level up! card_level={self.card_level} "
+                    f"(+{levels_gained}); card_xp={self.card_xp}/{self.card_xp_to_next}"
+                )
             except Exception:
                 pass
             try:
-                # Always prepare a selection now so tests and callers using the manager
-                # directly get a populated pending_choices when threshold triggers.
+                # prepare_selection bir kez çağrılır; queue >0 ise update() döngüsü
+                # her overlay kapandığında yeniden hazırlar.
                 try:
                     self.prepare_selection()
                 except Exception:
                     pass
                 if getattr(self, 'mode', None) is not None:
                     mode = self.mode
-                    current_level = getattr(mode.board, 'level', 0)
-                    last = getattr(mode, 'last_enqueued_level', 0)
-                    if current_level > last:
-                        delta = int(current_level - last)
-                        mode.pending_level_ups = getattr(mode, 'pending_level_ups', 0) + delta
-                        mode.last_enqueued_level = current_level
+                    mode.pending_level_ups = getattr(mode, 'pending_level_ups', 0) + int(levels_gained)
+                    # last_enqueued_level artık card_level'i izler; eski board.level
+                    # tabanlı dedup mantığını bypass eder.
+                    mode.last_enqueued_level = self.card_level
             except Exception:
                 pass
-        return triggered
+            return True
+        return False
 
     def prepare_selection(self) -> List[Dict[str, Any]]:
         # Build a filtered pool excluding persistent perks that are already active
@@ -610,58 +805,92 @@ class MysteryCardManager:
         return self.pending_choices
     
     def _weighted_sample(self, cards: List[Dict], count: int) -> List[Dict]:
-        """Ağırlıklı rastgele kart seçimi - nadir kartlar daha az çıkar"""
+        """Seviyeye göre rarity-bucket bazlı kart örneklemesi.
+
+        İki aşamalı seçim:
+          1. `_rarity_weights_for_level(card_level)` ile bucket ağırlıkları
+             alınır. Filtre sonrası boş kalan bucket'lar otomatik düşürülür
+             ve kalan ağırlıklar orantısal renormalize edilir.
+          2. Seçilen rarity bucket'ı içinden `random.choice` ile bir kart
+             alınır. Böylece bir bucket'taki kart sayısı (örn. 3 common vs
+             10 legendary) bucket'ın çıkma olasılığını bozmaz.
+
+        `_group_id` paylaşan varyantlar tek bir seçimde tekrar etmez (mevcut
+        invariant); ayrıca aynı reward setinde aynı bucket'tan zorunlu olarak
+        ikinci bir kart çekmek gerekirse bucket renormalizasyonu doğal şekilde
+        bunu mümkün kılar.
+        """
         if not cards:
             return []
-        
-        # Her kart için ağırlık hesapla
-        weights = []
+        if count <= 0:
+            return []
+
+        # Rarity'ye göre kartları gruplandır
+        by_rarity: Dict[str, List[Dict]] = {r: [] for r in self._RARITY_ORDER}
         for card in cards:
-            weight = card.get("weight", 50)  # Varsayılan ağırlık: 50
-            weights.append(weight)
-        
-        # Normalize weights
-        total_weight = sum(weights)
-        if total_weight == 0:
-            return random.sample(cards, min(count, len(cards)))
-        
-        # Ağırlıklı seçim
-        selected = []
-        available_cards = list(cards)
-        available_weights = list(weights)
-        
-        for _ in range(min(count, len(cards))):
-            if not available_cards:
-                break
-            
-            # Ağırlıklı rastgele seçim
-            total = sum(available_weights)
-            if total <= 0:
-                break
-            
-            r = random.uniform(0, total)
-            cumulative = 0
-            selected_idx = 0
-            
-            for i, w in enumerate(available_weights):
-                cumulative += w
-                if r <= cumulative:
-                    selected_idx = i
+            bucket = self._normalize_rarity(card.get('rarity'))
+            by_rarity[bucket].append(card)
+
+        # Seviye-bazlı bucket ağırlıkları
+        card_level = 1
+        try:
+            card_level = int(getattr(self, 'card_level', 1) or 1)
+        except Exception:
+            card_level = 1
+        base_weights = self._rarity_weights_for_level(card_level)
+
+        selected: List[Dict] = []
+        target = min(int(count), len(cards))
+
+        for _ in range(target):
+            # Boş bucket'ları düşür ve kalanları renormalize et (orantısal).
+            active = {
+                rarity: float(base_weights.get(rarity, 0.0))
+                for rarity in self._RARITY_ORDER
+                if by_rarity.get(rarity)
+            }
+            total = sum(active.values())
+            if total <= 0.0:
+                # Tüm aktif bucket'ların ağırlığı 0 ise (örn. anchor 0 verdiği
+                # ve diğer bucket'lar boşaldığı durum) uniform fallback.
+                non_empty = [r for r in self._RARITY_ORDER if by_rarity.get(r)]
+                if not non_empty:
                     break
-            
-            selected.append(available_cards[selected_idx])
-            # Remove selected card and any cards in the same group
-            removed_group = available_cards[selected_idx].get('_group_id')
-            if removed_group:
-                # Remove all cards with the same _group_id
-                indices_to_remove = [i for i, c in enumerate(available_cards) if c.get('_group_id') == removed_group]
-                for i in reversed(indices_to_remove):
-                    available_cards.pop(i)
-                    available_weights.pop(i)
+                rarity = random.choice(non_empty)
             else:
-                available_cards.pop(selected_idx)
-                available_weights.pop(selected_idx)
-        
+                roll = random.uniform(0.0, total)
+                cumulative = 0.0
+                rarity = next(iter(active))
+                for r, w in active.items():
+                    cumulative += w
+                    if roll <= cumulative:
+                        rarity = r
+                        break
+
+            bucket = by_rarity[rarity]
+            if not bucket:
+                # Güvenlik ağı: bucket boş çıkarsa diğerlerinden seç
+                non_empty = [r for r in self._RARITY_ORDER if by_rarity.get(r)]
+                if not non_empty:
+                    break
+                rarity = random.choice(non_empty)
+                bucket = by_rarity[rarity]
+
+            chosen = random.choice(bucket)
+            selected.append(chosen)
+
+            # Aynı seçimde tekrar gelmesin: kartı ve aynı _group_id'li
+            # varyantlarını tüm bucket'lardan çıkar.
+            removed_group = chosen.get('_group_id')
+            if removed_group:
+                for r_key in self._RARITY_ORDER:
+                    by_rarity[r_key] = [
+                        c for c in by_rarity[r_key]
+                        if c.get('_group_id') != removed_group
+                    ]
+            else:
+                bucket.remove(chosen)
+
         return selected
 
     def _roll_value(self, card: Dict[str, Any]) -> int:
@@ -693,9 +922,15 @@ class MysteryCardManager:
         self.force_piece_queue.append(name)
 
     def get_status(self) -> Dict[str, Any]:
+        # `progress` ve `threshold` geriye dönük uyumluluk için kart XP'yi
+        # yansıtır. UI artık card_level / card_xp / card_xp_to_next alanlarını
+        # tercih etmelidir.
         return {
-            "progress": self.progress,
-            "threshold": self.threshold,
+            "progress": self.card_xp,
+            "threshold": self.card_xp_to_next,
+            "card_level": self.card_level,
+            "card_xp": self.card_xp,
+            "card_xp_to_next": self.card_xp_to_next,
             "hint": t('card_hint_equal'),
         }
 
@@ -6188,7 +6423,7 @@ class MysteryMode(Game):
                     print(f"[MysteryMode] lock_and_new_piece: player_lines={player_lines}, board.level={self.board.level}, progress={self.card_manager.progress}")
             except Exception:
                 pass
-            triggered = self.card_manager.notify_lines_cleared(player_lines)
+            triggered = self.card_manager.notify_lines_cleared(player_lines, source='player')
             # Note: `notify_lines_cleared` will enqueue pending_level_ups via
             # the mode.last_enqueued_level dedup logic; don't enqueue here to
             # avoid double-counting.
@@ -7913,18 +8148,25 @@ class MysteryMode(Game):
             y = max(int(12 * ui_scale), board_y - int(20 * ui_scale))
         return x, y, width
 
-    def get_current_speed(self) -> int:
-        # Kart Modu (Mystery): düşüş hızı SADECE seviye (board.level) ile artar.
-        # Skora bağlı hızlanma devre dışıdır.
-        min_interval = LEVEL_SPEED_MIN_MS
+    def _get_mystery_speed_level(self) -> int:
+        try:
+            level = int(getattr(getattr(self, 'board', None), 'level', 1) or 1)
+        except Exception:
+            level = 1
+        return max(1, level)
 
-        level = int(getattr(getattr(self, 'board', None), 'level', 1) or 1)
-        level = max(1, level)
-        base_interval = get_level_fall_speed_ms(
-            level,
-            initial_speed=900,
-            min_speed=min_interval,
-        )
+    def _get_mystery_base_fall_speed(self, level: int | None = None) -> int:
+        target_level = self._get_mystery_speed_level() if level is None else level
+        return get_mystery_level_fall_speed_ms(target_level)
+
+    def get_initial_speed(self) -> int:
+        """Mystery modunun ilk düşüş hızı."""
+        return self._get_mystery_base_fall_speed()
+
+    def get_current_speed(self) -> int:
+        # Kart Modu (Mystery): board.level tek hız sürücüsüdür.
+        # Kart XP / card_level ekonomisi yalnızca ödül akışı içindir.
+        base_interval = self._get_mystery_base_fall_speed()
 
         # Zaman yavaşlatma kartı aktifse: speed_effect_multiplier < 1 => interval artar (daha yavaş düşüş)
         if self.speed_effect_timer > 0 and self.speed_effect_multiplier > 0:
@@ -7935,7 +8177,7 @@ class MysteryMode(Game):
         if speed_burst_mult > 1.0:
             base_interval = int(base_interval / speed_burst_mult)
 
-        return max(min_interval, int(base_interval))
+        return max(MYSTERY_LEVEL_SPEED_MIN_MS, int(base_interval))
 
     def _draw_status_panel(self) -> None:
         status = self.card_manager.get_status()
@@ -8382,7 +8624,7 @@ class MysteryMode(Game):
         # populated pending choice set exists but no queued level-up was enqueued.
         threshold_triggered = False
         try:
-            threshold_triggered = bool(self.card_manager.notify_lines_cleared(cleared))
+            threshold_triggered = bool(self.card_manager.notify_lines_cleared(cleared, source=source))
         except Exception:
             pass
         if threshold_triggered and not getattr(self, 'card_selection_active', False):
@@ -9241,6 +9483,7 @@ class MysteryMode(Game):
             '_rewind_available',
             '_last_placed_piece',
             'last_enqueued_level',
+            'pending_level_ups',
         )
 
         data: dict[str, Any] = {}
@@ -9255,7 +9498,16 @@ class MysteryMode(Game):
         if card_manager is not None and hasattr(card_manager, 'force_piece_queue'):
             data['card_manager_force_piece_queue'] = snapshot(card_manager.force_piece_queue)
         if card_manager is not None:
-            for attr in ('progress', 'threshold', 'pending_choices', 'active_cards', 'used_card_ids'):
+            for attr in (
+                'progress',
+                'threshold',
+                'pending_choices',
+                'active_cards',
+                'used_card_ids',
+                'card_xp',
+                'card_level',
+                'card_xp_to_next',
+            ):
                 if hasattr(card_manager, attr):
                     data[f'card_manager_{attr}'] = snapshot(getattr(card_manager, attr))
 
@@ -9332,6 +9584,7 @@ class MysteryMode(Game):
             '_rewind_available',
             '_last_placed_piece',
             'last_enqueued_level',
+            'pending_level_ups',
         )
         for attr in state_attrs:
             if attr in data:
@@ -9344,7 +9597,16 @@ class MysteryMode(Game):
             except Exception:
                 pass
         if card_manager is not None:
-            for attr in ('progress', 'threshold', 'pending_choices', 'active_cards', 'used_card_ids'):
+            for attr in (
+                'progress',
+                'threshold',
+                'pending_choices',
+                'active_cards',
+                'used_card_ids',
+                'card_xp',
+                'card_level',
+                'card_xp_to_next',
+            ):
                 key = f'card_manager_{attr}'
                 if key not in data:
                     continue

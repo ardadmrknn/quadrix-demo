@@ -24,7 +24,7 @@ def test_post_external_line_clear_opens_reward_overlay_when_threshold_triggers_w
     mode._open_card_selection = lambda: open_calls.append('open')
     mode.card_manager = SimpleNamespace(
         pending_choices=[{'id': 'reward'}],
-        notify_lines_cleared=lambda cleared: True,
+        notify_lines_cleared=lambda cleared, **_kwargs: True,
     )
 
     mode._post_external_line_clear(2, award_energy=False, score_delta=None, source='ability')
