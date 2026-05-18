@@ -45,7 +45,6 @@ from constants import (
     SIDE_PANEL_WIDTH,
     INFO_PANEL_HEIGHT,
     LEVEL_SPEED_MIN_MS,
-    get_level_fall_speed_ms,
 )
 from block_styles import TextureSlice
 from screen_shake import (
@@ -72,6 +71,45 @@ def _get_ui_icon_dir() -> str:
 UI_ICON_DIR = _get_ui_icon_dir()
 MYSTERY_OVERLAY_REFERENCE_SIZE = (1366.0, 768.0)
 CARD_SELECTION_REROLL_LIMIT = 5
+MYSTERY_LEVEL_SPEED_ANCHORS = (
+    (1, 850),
+    (5, 700),
+    (10, 500),
+    (15, 300),
+    (20, 150),
+    (30, 125),
+)
+MYSTERY_LEVEL_SPEED_MIN_MS = LEVEL_SPEED_MIN_MS
+MYSTERY_LEVEL_SPEED_POST_L30_STEP_MS = 1
+
+
+def get_mystery_level_fall_speed_ms(level: int) -> int:
+    """Mystery modu için board.level tabanlı düşüş aralığını döndür."""
+    try:
+        current_level = int(level)
+    except Exception:
+        current_level = 1
+    current_level = max(1, current_level)
+
+    first_level, first_speed = MYSTERY_LEVEL_SPEED_ANCHORS[0]
+    if current_level <= first_level:
+        return int(first_speed)
+
+    for (start_level, start_speed), (end_level, end_speed) in zip(
+        MYSTERY_LEVEL_SPEED_ANCHORS,
+        MYSTERY_LEVEL_SPEED_ANCHORS[1:],
+    ):
+        if current_level <= end_level:
+            progress = (current_level - start_level) / float(end_level - start_level)
+            interpolated = start_speed + ((end_speed - start_speed) * progress)
+            return max(
+                MYSTERY_LEVEL_SPEED_MIN_MS,
+                int(math.floor(interpolated + 0.5)),
+            )
+
+    last_level, last_speed = MYSTERY_LEVEL_SPEED_ANCHORS[-1]
+    accelerated = int(last_speed) - ((current_level - last_level) * MYSTERY_LEVEL_SPEED_POST_L30_STEP_MS)
+    return max(MYSTERY_LEVEL_SPEED_MIN_MS, accelerated)
 
 
 def _get_card_assets_dir() -> str:
@@ -4978,6 +5016,20 @@ class MysteryMode(Game):
         """Kart UI için Faz 8 baseline referans çözünürlüğünü döndür."""
         return int(MYSTERY_OVERLAY_REFERENCE_SIZE[0]), int(MYSTERY_OVERLAY_REFERENCE_SIZE[1])
 
+    def _get_mystery_speed_level(self) -> int:
+        try:
+            level = int(getattr(getattr(self, 'board', None), 'level', 1) or 1)
+        except Exception:
+            level = 1
+        return max(1, level)
+
+    def _get_mystery_base_fall_speed(self, level: int | None = None) -> int:
+        target_level = self._get_mystery_speed_level() if level is None else level
+        return get_mystery_level_fall_speed_ms(target_level)
+
+    def get_initial_speed(self) -> int:
+        return self._get_mystery_base_fall_speed()
+
     def _reset_card_selection_rerolls(self) -> None:
         self.card_selection_rerolls_remaining = max(
             0,
@@ -8430,17 +8482,9 @@ class MysteryMode(Game):
         return x, y, width
 
     def get_current_speed(self) -> int:
-        # Kart Modu (Mystery): düşüş hızı SADECE seviye (board.level) ile artar.
-        # Skora bağlı hızlanma devre dışıdır.
-        min_interval = LEVEL_SPEED_MIN_MS
-
-        level = int(getattr(getattr(self, 'board', None), 'level', 1) or 1)
-        level = max(1, level)
-        base_interval = get_level_fall_speed_ms(
-            level,
-            initial_speed=900,
-            min_speed=min_interval,
-        )
+        # Kart Modu (Mystery): board.level tek hız sürücüsüdür.
+        # Kart XP / card_level ekonomisi yalnızca ödül akışı içindir.
+        base_interval = self._get_mystery_base_fall_speed()
 
         # Zaman yavaşlatma kartı aktifse: speed_effect_multiplier < 1 => interval artar (daha yavaş düşüş)
         if self.speed_effect_timer > 0 and self.speed_effect_multiplier > 0:
@@ -8451,7 +8495,7 @@ class MysteryMode(Game):
         if speed_burst_mult > 1.0:
             base_interval = int(base_interval / speed_burst_mult)
 
-        return max(min_interval, int(base_interval))
+        return max(MYSTERY_LEVEL_SPEED_MIN_MS, int(base_interval))
 
     def _draw_status_panel(self) -> None:
         status = self.card_manager.get_status()
