@@ -2053,3 +2053,38 @@ def test_online_coop_lobby_filter_is_display_only_and_preserves_private_entries(
 
     assert [entry['id'] for entry in game._get_lobby_entries_for_display()] == [1, 3]
     assert [entry['id'] for entry in game._lobby_list] == [1, 2, 3]
+
+
+
+def test_line_clear_feedback_helper_imported_by_all_gameplay_modules():
+    """`line_clear_feedback` helper'ı tüm gameplay modülleri tarafından import edilmeli.
+
+    Bu, ortak refactor'ın sadece co-op tarafında kalmadığını ve Game / PvP /
+    OnlinePvP / Coop / OnlineCoop'un hepsinin aynı kaynağa bağlandığını doğrular.
+    """
+    import importlib
+    expected_modules = [
+        'game',
+        'pvp_game',
+        'online_pvp_game',
+        'coop_game',
+        'online_coop_game',
+    ]
+    missing = []
+    for mod_name in expected_modules:
+        try:
+            mod = importlib.import_module(mod_name)
+        except Exception as exc:
+            missing.append(f'{mod_name} (import error: {exc})')
+            continue
+        # Modül kaynağında `line_clear_feedback` referansı olmalı.
+        from inspect import getsource
+        try:
+            src = getsource(mod)
+        except Exception:
+            src = ''
+        if 'line_clear_feedback' not in src:
+            missing.append(mod_name)
+    assert not missing, (
+        f'Şu modüller line_clear_feedback helper\'ını kullanmıyor: {missing}'
+    )

@@ -43,6 +43,10 @@ from retro_style import retro_style as _rs
 from renderers.jelly_renderer import draw_jelly_block, draw_jelly_border
 from effect_surface_cache import EffectSurfaceCache
 from sweep_effects import SweepCatState, draw_rainbow_cat_sweep
+from line_clear_feedback import (
+    queue_wave_effects as _queue_wave_effects,
+    update_wave_effects as _update_wave_effects,
+)
 try:
     from sweep_effects import compute_line_sweep_progress_speed as _compute_line_sweep_progress_speed
 except Exception:
@@ -4513,17 +4517,8 @@ class OnlinePvPGame:
                 self.opp_line_sweep_active = False
                 self.opp_line_sweep_rows = []
 
-        for wave in self.my_wave_effects[:]:
-            wave['radius'] += wave['speed'] * dt_frames
-            wave['alpha'] = int(200 * (1 - wave['radius'] / wave['max_radius']))
-            if wave['radius'] >= wave['max_radius'] or wave['alpha'] <= 0:
-                self.my_wave_effects.remove(wave)
-
-        for wave in self.opp_wave_effects[:]:
-            wave['radius'] += wave['speed'] * dt_frames
-            wave['alpha'] = int(200 * (1 - wave['radius'] / wave['max_radius']))
-            if wave['radius'] >= wave['max_radius'] or wave['alpha'] <= 0:
-                self.opp_wave_effects.remove(wave)
+        _update_wave_effects(self.my_wave_effects, dt_frames)
+        _update_wave_effects(self.opp_wave_effects, dt_frames)
 
         if self.my_falling_block_animations:
             fall_speed = self.block_fall_speed * dt_frames * 60
@@ -4787,6 +4782,17 @@ class OnlinePvPGame:
 
             if self._is_focus_loss_event(event):
                 self._pause_for_focus_loss()
+                continue
+
+            # Gamepad hot-plug: bağlantı kopması durumunda otomatik pause.
+            try:
+                from gamepad_manager import handle_gamepad_hotplug_event as _gp_hotplug
+                hotplug_result = _gp_hotplug(event)
+            except Exception:
+                hotplug_result = None
+            if hotplug_result is not None:
+                if hotplug_result == 'disconnected':
+                    self._pause_for_focus_loss()
                 continue
 
             if event.type == pygame.VIDEORESIZE:

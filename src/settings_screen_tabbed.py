@@ -551,6 +551,20 @@ class TabbedSettingsScreen:
         self._keybind_slot_rects: list[dict | None] = []
         self._help_icon_rects: list[tuple[pygame.Rect, str]] = []
 
+        # ── Capture-time hold-to-clear durumu ──
+        # Capture moduna girildiğinde basılan tuş eşik süresinden uzun
+        # tutulursa slot temizlenir. Her capture'da sıfırlanır.
+        self._hold_to_clear_threshold_ms = 1500
+        self._hold_to_clear_pressed_at_ms: int | None = None
+        self._hold_to_clear_pressed_signature: tuple | None = None
+        self._hold_to_clear_consumed = False
+
+        # Per-frame hesaplanan keybind çakışma haritası ve unbound sayısı.
+        self._keybind_conflicts: dict[tuple[str, str, str], str] = {}
+        self._keybind_unbound_count: int = 0
+        # Per-row reset (↺) tıklama hit-rect'leri (item_index → rect)
+        self._keybind_row_reset_rects: list[pygame.Rect | None] = []
+
         # ── Müzik modu seçicileri (music_selector) ──
         self._mode_music_overrides = self.settings_manager.get_mode_music_overrides()
         self._music_root = Path(__file__).resolve().parent.parent / 'music'
@@ -1520,6 +1534,8 @@ class TabbedSettingsScreen:
         self._pending_keybind_item = item
         self._pending_keybind_slot = slot
         self._capture_started_by_gamepad_click = bool(opened_by_gamepad_click)
+        # Hold-to-clear durumu yeni capture için temiz başlamalı.
+        self._reset_hold_to_clear_state()
 
     def _normalize_gamepad_prompt_type(self, gp_type) -> str | None:
         if gp_type is None:
@@ -1678,6 +1694,262 @@ class TabbedSettingsScreen:
         elif isinstance(raw, int):
             primary = raw
         return primary, secondary
+
+    def _get_single_player_binding_slots(self, action_key: str) -> tuple[str, str]:
+        """Single-player aksiyonu için (primary, secondary) tuş adlarını döndür.
+        Eski format (string) primary kabul edilir."""
+        row = self._control_config.get('single_player', {}).get(action_key, {})
+        if isinstance(row, dict):
+            return (
+                str(row.get('primary', '') or ''),
+                str(row.get('secondary', '') or ''),
+            )
+        return (str(row or ''), '')
+
+    def _get_pvp_binding(self, player_section: str, action_key: str) -> str:
+        player = 'player1' if player_section == 'pvp.player1' else 'player2'
+        return str(self._control_config.get('pvp', {}).get(player, {}).get(action_key, '') or '')
+
+    def _detect_keybind_conflicts(self) -> dict[tuple[str, str, str], str]:
+        """Aynı section içinde aynı tuşa bağlanmış aksiyonları tespit et.
+
+        Geri dönüş: `{(section, action_key, slot): conflicting_label}` haritası.
+        Çakışan her satır UI tarafında uyarı işaretiyle çizilir. Yalnızca aynı
+        section içindeki çakışmalar raporlanır; ör. tek-oyunculu `move_left`
+        ile pvp.player1 `move_left` aynı tuş olabilir, bu kasıtlıdır.
+        """
+        conflicts: dict[tuple[str, str, str], str] = {}
+
+        def _record(buckets: dict[str, list[tuple[str, str, str]]]) -> None:
+            for binding_value, entries in buckets.items():
+                if not binding_value:
+                    continue
+                # iki veya daha fazla farklı action aynı binding'e sahipse
+                action_set = {(section, action) for section, action, _slot in entries}
+                if len(action_set) <= 1:
+                    continue
+                for section, action, slot in entries:
+                    other_actions = sorted({a for s, a in action_set if a != action})
+                    if not other_actions:
+                        continue
+                    conflicts[(section, action, slot)] = ', '.join(other_actions)
+
+        # --- single_player içi çakışmalar (primary + secondary aynı sayılır) ---
+        sp_buckets: dict[str, list[tuple[str, str, str]]] = {}
+        sp_cfg = self._control_config.get('single_player', {}) or {}
+        for action, value in sp_cfg.items():
+            primary, secondary = self._get_single_player_binding_slots(action)
+            for slot, key_name in (('primary', primary), ('secondary', secondary)):
+                key_norm = (key_name or '').strip().lower()
+                if not key_norm:
+                    continue
+                sp_buckets.setdefault(key_norm, []).append(('single_player', action, slot))
+        _record(sp_buckets)
+
+        # --- pvp.player1 ve pvp.player2 ayrı namespace'ler ---
+        for player_key, section_label in (('player1', 'pvp.player1'), ('player2', 'pvp.player2')):
+            buckets: dict[str, list[tuple[str, str, str]]] = {}
+            cfg = self._control_config.get('pvp', {}).get(player_key, {}) or {}
+            for action, key_name in cfg.items():
+                key_norm = str(key_name or '').strip().lower()
+                if not key_norm:
+                    continue
+                buckets.setdefault(key_norm, []).append((section_label, action, 'primary'))
+            _record(buckets)
+
+        # --- gamepad: ingame ve outgame ayrı ayrı çakışma kontrolü ---
+        # Hangi aksiyonun ingame/outgame olduğu items listesinden okunur.
+        gp_actions_by_section: dict[str, list[str]] = {
+            'gamepad.ingame': [],
+            'gamepad.outgame': [],
+        }
+        for it in getattr(self, '_tab_items', []) or []:
+            if it.get('type') != 'keybind':
+                continue
+            section = it.get('section')
+            if section in gp_actions_by_section:
+                action = it.get('action_key')
+                if action:
+                    gp_actions_by_section[section].append(action)
+
+        for section, actions in gp_actions_by_section.items():
+            buckets: dict[str, list[tuple[str, str, str]]] = {}
+            for action in actions:
+                primary, secondary = self._get_gamepad_binding_slots(action)
+                for slot, value in (('primary', primary), ('secondary', secondary)):
+                    if value is None or int(value) < 0:
+                        continue
+                    key_norm = f'btn:{int(value)}'
+                    buckets.setdefault(key_norm, []).append((section, action, slot))
+            _record(buckets)
+
+        return conflicts
+
+    def _is_keybind_unbound(self, item: dict) -> bool:
+        """Verilen keybind row'unun primary slot'u boş mu?
+
+        Debug aksiyonları opsiyoneldir; unbound olması uyarı üretmez.
+        """
+        section = item.get('section')
+        action_key = item.get('action_key')
+        if not action_key or section == 'debug':
+            return False
+        if section == 'single_player':
+            primary, _ = self._get_single_player_binding_slots(action_key)
+            return not primary.strip()
+        if section in ('pvp.player1', 'pvp.player2'):
+            return not self._get_pvp_binding(section, action_key).strip()
+        if self._is_gamepad_keybind_section(section):
+            primary, _ = self._get_gamepad_binding_slots(action_key)
+            return primary is None or int(primary) < 0
+        return False
+
+    def _reset_keybind_row_full(self, item: dict) -> None:
+        """Keybind row'unu (her iki slot dahil) varsayılana döndürür.
+
+        Per-row ↺ ikonuna tıklayınca kullanılır; mevcut
+        `_reset_selected_keybind_to_default` yalnızca aktif slot'u temizliyor,
+        bu metot ise satırın tamamını sıfırlar.
+        """
+        if not item or item.get('type') != 'keybind':
+            return
+        defaults = self.settings_manager.get_default_controls()
+        section = item.get('section')
+        action_key = item.get('action_key')
+        if not action_key:
+            return
+
+        if section == 'single_player':
+            value = defaults.get('single_player', {}).get(action_key)
+            sp = self._control_config.setdefault('single_player', {})
+            if isinstance(value, dict):
+                sp[action_key] = {
+                    'primary': str(value.get('primary', '') or ''),
+                    'secondary': str(value.get('secondary', '') or ''),
+                }
+            else:
+                sp[action_key] = {'primary': str(value or ''), 'secondary': ''}
+        elif section == 'pvp.player1':
+            value = defaults.get('pvp', {}).get('player1', {}).get(action_key)
+            self._control_config.setdefault('pvp', {}).setdefault('player1', {})[action_key] = value
+        elif section == 'pvp.player2':
+            value = defaults.get('pvp', {}).get('player2', {}).get(action_key)
+            self._control_config.setdefault('pvp', {}).setdefault('player2', {})[action_key] = value
+        elif section == 'debug':
+            value = defaults.get('debug', {}).get(action_key, '')
+            self._control_config.setdefault('debug', {})[action_key] = value
+        elif self._is_gamepad_keybind_section(section):
+            value = defaults.get('gamepad', {}).get(action_key, -1)
+            gp = self._control_config.setdefault('gamepad', {})
+            if isinstance(value, dict):
+                gp[action_key] = {
+                    'primary': int(value.get('primary', -1)),
+                    'secondary': int(value.get('secondary', -1)),
+                }
+            elif isinstance(value, int):
+                gp[action_key] = {'primary': int(value), 'secondary': -1}
+            else:
+                gp[action_key] = {'primary': -1, 'secondary': -1}
+
+        self._persist_controls()
+
+    def _clear_keybind_slot(self, item: dict, slot: str) -> None:
+        """Hold-to-clear: belirtilen slot'u unbound durumuna döndürür."""
+        if not item or item.get('type') != 'keybind':
+            return
+        section = item.get('section')
+        action_key = item.get('action_key')
+        slot = slot if slot in ('primary', 'secondary') else 'primary'
+        if not action_key:
+            return
+
+        if section == 'single_player':
+            sp = self._control_config.setdefault('single_player', {})
+            row = sp.get(action_key)
+            if not isinstance(row, dict):
+                row = {'primary': str(row or ''), 'secondary': ''}
+                sp[action_key] = row
+            row[slot] = ''
+        elif section in ('pvp.player1', 'pvp.player2'):
+            player = 'player1' if section == 'pvp.player1' else 'player2'
+            self._control_config.setdefault('pvp', {}).setdefault(player, {})[action_key] = ''
+        elif section == 'debug':
+            self._control_config.setdefault('debug', {})[action_key] = ''
+        elif self._is_gamepad_keybind_section(section):
+            gp = self._control_config.setdefault('gamepad', {})
+            raw = gp.get(action_key)
+            if not isinstance(raw, dict):
+                raw = {'primary': -1, 'secondary': -1}
+                gp[action_key] = raw
+            raw[slot] = -1
+
+        self._persist_controls()
+
+    def _reset_hold_to_clear_state(self) -> None:
+        self._hold_to_clear_pressed_at_ms = None
+        self._hold_to_clear_pressed_signature = None
+        self._hold_to_clear_consumed = False
+
+    def _check_hold_to_clear_progress(self) -> None:
+        """Capture aktifken aynı tuş/buton eşik süresinden uzun tutulursa
+        ilgili slot'u temizle ve capture'dan çık."""
+        if not self._waiting_for_key:
+            self._reset_hold_to_clear_state()
+            return
+        if self._hold_to_clear_pressed_at_ms is None:
+            return
+        if self._hold_to_clear_consumed:
+            return
+        elapsed = pygame.time.get_ticks() - self._hold_to_clear_pressed_at_ms
+        if elapsed < self._hold_to_clear_threshold_ms:
+            return
+        # Hala basılı mı kontrol et
+        sig = self._hold_to_clear_pressed_signature or ()
+        if not sig:
+            return
+        sig_kind = sig[0] if len(sig) > 0 else None
+        sig_value = sig[1] if len(sig) > 1 else None
+        still_held = False
+        try:
+            if sig_kind == 'key' and isinstance(sig_value, int):
+                pressed = pygame.key.get_pressed()
+                still_held = bool(pressed[sig_value])
+            elif sig_kind == 'btn' and isinstance(sig_value, int):
+                # Bağlı joystick'lerden herhangi biri butonu basılı tutuyor mu?
+                num = pygame.joystick.get_count() if hasattr(pygame, 'joystick') else 0
+                for i in range(num):
+                    try:
+                        js = pygame.joystick.Joystick(i)
+                        if not js.get_init():
+                            continue
+                        if 0 <= sig_value < js.get_numbuttons() and js.get_button(sig_value):
+                            still_held = True
+                            break
+                    except Exception:
+                        continue
+        except Exception:
+            still_held = False
+        if not still_held:
+            self._reset_hold_to_clear_state()
+            return
+        # Eşiği aştı ve hala basılı: slot'u temizle.
+        item = self._pending_keybind_item
+        slot = self._pending_keybind_slot if self._pending_keybind_slot in ('primary', 'secondary') else 'primary'
+        self._hold_to_clear_consumed = True
+        if item:
+            try:
+                self._clear_keybind_slot(item, slot)
+            except Exception:
+                pass
+        # Capture modundan çık
+        self._waiting_for_key = False
+        self._pending_keybind_item = None
+        self._pending_keybind_slot = 'primary'
+        self._capture_started_by_gamepad_click = False
+        # `_swallow_next_keydown` bayrağını ayarla ki KEYUP gelmeden önce
+        # yapılan herhangi bir KEYDOWN repeatlemesi menüde başka eylem
+        # tetiklemesin.
+        self._swallow_next_keydown = True
 
     def _apply_captured_key(self, key_code: int) -> None:
         if not self._pending_keybind_item:
@@ -2601,6 +2873,34 @@ class TabbedSettingsScreen:
             for i, rect in enumerate(self.option_rects):
                 if rect.collidepoint(pos):
                     self.selected = i
+                    # Keybind satırı için slot hover takibi: mouse hangi
+                    # slot'un üstündeyse o slot'u "aktif" yap. Böylece tıklama
+                    # öncesinde hangi slot'u seçtiğin görsel olarak belirgin
+                    # olur (mavi border + parlak arka plan).
+                    if i < len(self._selectable_indices):
+                        item_idx = self._selectable_indices[i]
+                        item = self._tab_items[item_idx]
+                        if item.get('type') == 'keybind':
+                            section = item.get('section')
+                            slot_rects = (
+                                self._keybind_slot_rects[i]
+                                if i < len(self._keybind_slot_rects)
+                                else None
+                            )
+                            hovered_slot = None
+                            if isinstance(slot_rects, dict):
+                                primary_r = slot_rects.get('primary')
+                                secondary_r = slot_rects.get('secondary')
+                                if isinstance(secondary_r, pygame.Rect) and secondary_r.collidepoint(pos):
+                                    hovered_slot = 'secondary'
+                                elif isinstance(primary_r, pygame.Rect) and primary_r.collidepoint(pos):
+                                    hovered_slot = 'primary'
+                            if hovered_slot is not None:
+                                if section == 'single_player':
+                                    self._single_player_bind_slot = hovered_slot
+                                elif self._is_gamepad_keybind_section(section):
+                                    self._gamepad_bind_slot = hovered_slot
+                    break
 
         # Mouse tıklama
         elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
@@ -2681,6 +2981,18 @@ class TabbedSettingsScreen:
                             return None
                         if item.get('type') == 'keybind':
                             section = item.get('section')
+                            # ↺ per-row reset ikonuna tıklandı mı?
+                            try:
+                                reset_rect = (
+                                    self._keybind_row_reset_rects[item_idx]
+                                    if item_idx < len(self._keybind_row_reset_rects)
+                                    else None
+                                )
+                            except Exception:
+                                reset_rect = None
+                            if isinstance(reset_rect, pygame.Rect) and reset_rect.collidepoint(pos):
+                                self._reset_keybind_row_full(item)
+                                return None
                             if section == 'single_player':
                                 slot_rects = self._keybind_slot_rects[i] if i < len(self._keybind_slot_rects) else None
                                 if isinstance(slot_rects, dict):
@@ -2710,11 +3022,12 @@ class TabbedSettingsScreen:
                                     self._gamepad_bind_slot = 'secondary' if pos[0] >= rect.centerx else 'primary'
                                 self._start_keybind_capture(item, slot=self._gamepad_bind_slot, opened_by_gamepad_click=opened_by_gamepad_click)
                                 return None
-                            slot_rects = self._keybind_slot_rects[i] if i < len(self._keybind_slot_rects) else None
-                            if isinstance(slot_rects, dict):
-                                primary_rect = slot_rects.get('primary')
-                                if primary_rect is None or not primary_rect.collidepoint(pos):
-                                    return None
+                            # PvP ve diğer (debug) keybind'ler: satırın
+                            # herhangi bir yerine tıklayınca primary slot
+                            # capture açılır. Daha önce sadece slot rect
+                            # collidepoint ise capture açılıyordu, bu da
+                            # kullanıcının slot dışına tıkladığında "tıklama
+                            # iş görmüyor" hissi yaratıyordu.
                             self._start_keybind_capture(item, slot='primary', opened_by_gamepad_click=opened_by_gamepad_click)
                             return None
                     itype_local = item.get('type', '') if i < len(self._selectable_indices) else ''
@@ -3079,6 +3392,22 @@ class TabbedSettingsScreen:
         self._help_icon_rects = []
         self._slider_bar_rects = {}
         self._slider_action_rects = {}
+        # Frame başına bir kez çakışma haritasını yenile (sadece controls
+        # sekmesinde anlamlı; diğer sekmelerde boş döner).
+        try:
+            self._keybind_conflicts = self._detect_keybind_conflicts()
+        except Exception:
+            self._keybind_conflicts = {}
+        # Per-row reset (↺) rect listesini sıfırla; item index başına 1 entry.
+        self._keybind_row_reset_rects = [None] * len(self._tab_items)
+        # Unbound aksiyon sayacını yeniden hesapla.
+        try:
+            self._keybind_unbound_count = sum(
+                1 for it in self._tab_items
+                if it.get('type') == 'keybind' and self._is_keybind_unbound(it)
+            )
+        except Exception:
+            self._keybind_unbound_count = 0
         row_h = int(metrics['row_height'])
         section_h = int(metrics['section_height'])
         sel_item_index = 0  # seçilebilir öğe sayacı
@@ -3113,6 +3442,20 @@ class TabbedSettingsScreen:
                 self.option_rects.append(row_rect)
                 slot_rects = self._draw_setting_item(row_rect, item, is_selected)
                 self._keybind_slot_rects.append(slot_rects)
+                # Keybind row için per-row reset (↺) rect'i populate et.
+                # Tam decoration helper henüz port edilmedi (badge çizimi /
+                # tooltip / hover registry main'de daha derin draw-layer'da
+                # yaşıyor); ancak click flow ve isolation testleri için
+                # rect geometrisinin doğru kurulması yeterli. Slot rect'leri
+                # satırın sağ kenarına yaslı; reset rect'i satırın sol
+                # kenarına, slot bölgesinden açıkça uzakta yerleştir.
+                if itype == 'keybind' and i < len(self._keybind_row_reset_rects):
+                    reset_size = max(self._s(18, minimum=14), 14)
+                    reset_x = row_rect.x + self._s(8, minimum=6)
+                    reset_y = row_rect.centery - reset_size // 2
+                    self._keybind_row_reset_rects[i] = pygame.Rect(
+                        reset_x, reset_y, reset_size, reset_size,
+                    )
             else:
                 self.option_rects.append(pygame.Rect(0, 0, 0, 0))
                 self._keybind_slot_rects.append(None)

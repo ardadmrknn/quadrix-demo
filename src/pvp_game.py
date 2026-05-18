@@ -23,6 +23,10 @@ from ui_scaling import get_projected_effective_scale
 from ui_theme import UIColors, UIFonts
 from effect_surface_cache import EffectSurfaceCache
 from sweep_effects import SweepCatState, draw_rainbow_cat_sweep
+from line_clear_feedback import (
+    queue_wave_effects as _queue_wave_effects,
+    update_wave_effects as _update_wave_effects,
+)
 try:
     from sweep_effects import compute_line_sweep_progress_speed as _compute_line_sweep_progress_speed
 except Exception:
@@ -1889,6 +1893,17 @@ class PvPGame:
             if self._is_focus_loss_event(event):
                 self._pause_for_focus_loss()
                 continue
+
+            # Gamepad hot-plug: bağlantı kopması durumunda otomatik pause.
+            try:
+                from gamepad_manager import handle_gamepad_hotplug_event as _gp_hotplug
+                hotplug_result = _gp_hotplug(event)
+            except Exception:
+                hotplug_result = None
+            if hotplug_result is not None:
+                if hotplug_result == 'disconnected':
+                    self._pause_for_focus_loss()
+                continue
             
             if event.type == pygame.VIDEORESIZE:
                 req_w = max(event.w, 800)
@@ -3354,18 +3369,14 @@ class PvPGame:
                     )
                     
                     # Dalga efektleri - her satır için (ana oyunla aynı parametreler)
-                    for row in cleared_rows:
-                        wave_y = self.p1_offset_y + row * self.cell_size + self.cell_size // 2
-                        wave_x = self.p1_offset_x + (BOARD_WIDTH * self.cell_size) // 2
-                        self.p1_wave_effects.append({
-                            'x': wave_x,
-                            'y': wave_y,
-                            'radius': 0,
-                            'max_radius': BOARD_WIDTH * self.cell_size,
-                            'alpha': 200,
-                            'color': (255, 255, 255),  # Beyaz - ana oyunla aynı
-                            'speed': 15  # Ana oyunla aynı hız
-                        })
+                    _queue_wave_effects(
+                        self.p1_wave_effects,
+                        cleared_rows,
+                        self.p1_offset_x,
+                        self.p1_offset_y,
+                        self.cell_size,
+                        BOARD_WIDTH,
+                    )
                     
                     # Ekran titremesi (ana oyunla aynı)
                     if lines < 4:
@@ -3492,18 +3503,14 @@ class PvPGame:
                     )
                     
                     # Dalga efektleri - her satır için (ana oyunla aynı parametreler)
-                    for row in cleared_rows:
-                        wave_y = self.p2_offset_y + row * self.cell_size + self.cell_size // 2
-                        wave_x = self.p2_offset_x + (BOARD_WIDTH * self.cell_size) // 2
-                        self.p2_wave_effects.append({
-                            'x': wave_x,
-                            'y': wave_y,
-                            'radius': 0,
-                            'max_radius': BOARD_WIDTH * self.cell_size,
-                            'alpha': 200,
-                            'color': (255, 255, 255),  # Beyaz - ana oyunla aynı
-                            'speed': 15  # Ana oyunla aynı hız
-                        })
+                    _queue_wave_effects(
+                        self.p2_wave_effects,
+                        cleared_rows,
+                        self.p2_offset_x,
+                        self.p2_offset_y,
+                        self.cell_size,
+                        BOARD_WIDTH,
+                    )
                     
                     # Ekran titremesi (ana oyunla aynı)
                     if lines < 4:
@@ -4140,18 +4147,8 @@ class PvPGame:
                 self.p2_line_sweep_active = False
                 self.p2_line_sweep_rows = []
 
-        for wave in self.p1_wave_effects[:]:
-            wave['radius'] += wave['speed'] * dt_frames
-            wave['alpha'] = int(200 * (1 - wave['radius'] / wave['max_radius']))
-            if wave['radius'] >= wave['max_radius'] or wave['alpha'] <= 0:
-                self.p1_wave_effects.remove(wave)
-
-        for wave in self.p2_wave_effects[:]:
-            wave['radius'] += wave['speed'] * dt_frames
-            wave['alpha'] = int(200 * (1 - wave['radius'] / wave['max_radius']))
-            if wave['radius'] >= wave['max_radius'] or wave['alpha'] <= 0:
-                self.p2_wave_effects.remove(wave)
-
+        _update_wave_effects(self.p1_wave_effects, dt_frames)
+        _update_wave_effects(self.p2_wave_effects, dt_frames)
         if self.p1_falling_block_animations:
             fall_speed = self.block_fall_speed * dt_frames * 60
             for anim in self.p1_falling_block_animations:

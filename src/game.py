@@ -48,6 +48,10 @@ except ImportError:
 from effect_surface_cache import EffectSurfaceCache
 from gameplay_layout import compute_single_player_layout, get_display_pixel_ratio
 from sweep_effects import SweepCatState, draw_rainbow_cat_sweep
+from line_clear_feedback import (
+    queue_wave_effects as _queue_wave_effects,
+    update_wave_effects as _update_wave_effects,
+)
 try:
     from sweep_effects import compute_line_sweep_progress_speed as _compute_line_sweep_progress_speed
 except Exception:
@@ -1879,6 +1883,18 @@ class Game:
                 self._pause_for_focus_loss()
                 continue
 
+            # Gamepad hot-plug: bağlantı kopması durumunda otomatik pause.
+            # Bağlantı eklenmesinde state güncellenir ama pause açılmaz.
+            try:
+                from gamepad_manager import handle_gamepad_hotplug_event as _gp_hotplug
+                hotplug_result = _gp_hotplug(event)
+            except Exception:
+                hotplug_result = None
+            if hotplug_result is not None:
+                if hotplug_result == 'disconnected':
+                    self._pause_for_focus_loss()
+                continue
+
             # Exit confirmation overlay input (returns to main menu instead of closing the app)
             if self.show_exit_prompt:
                 if event.type == pygame.KEYDOWN:
@@ -2830,18 +2846,14 @@ class Game:
 
             self.create_line_clear_particles(cleared_rows, offset_x, offset_y, cell_size)
 
-            for row in cleared_rows:
-                wave_y = offset_y + row * cell_size + cell_size // 2
-                wave_x = offset_x + (self.board_width * cell_size) // 2
-                self.line_clear_wave_effects.append({
-                    'x': wave_x,
-                    'y': wave_y,
-                    'radius': 0,
-                    'max_radius': self.board_width * cell_size,
-                    'alpha': 200,
-                    'color': (255, 255, 255),
-                    'speed': 15,
-                })
+            _queue_wave_effects(
+                self.line_clear_wave_effects,
+                cleared_rows,
+                offset_x,
+                offset_y,
+                cell_size,
+                self.board_width,
+            )
 
             self._start_block_fall_animation(cleared_rows)
 
@@ -2861,7 +2873,7 @@ class Game:
         """Silinen satırların üstündeki bloklar için düşme animasyonu başlat.
         
         Board zaten güncellendi - satırlar silindi ve üsttekiler kaydı.
-        Her blok, sweep o sütuna ulaştığında düşmeye başlayacak.
+        Bloklar satır temizleme sweep'i bittikten sonra düşmeye başlayacak.
         """
         if not cleared_rows:
             return
@@ -2870,31 +2882,50 @@ class Game:
         self.falling_block_animations = []
         
         # Kaç satır silindi?
-        lines_count = len(cleared_rows)
+        row_drop_distances = self._row_drop_distances_after_clear(cleared_rows)
+        if not row_drop_distances:
+            return
+
         cell_size = self.get_cell_size()
-        board_pixel_width = self.board.width * cell_size
-        sweep_width = self._get_line_sweep_length_px(cell_size, lines_count)
-        sweep_travel_px = max(1.0, float(board_pixel_width + sweep_width))
+        sweep_trigger = 1.0 if self.line_clear_sweep_active else 0.0
         
-        # Board zaten güncellendi, tüm dolu hücrelere düşme animasyonu ver
-        # Her blok, sweep o sütuna geldiğinde düşmeye başlayacak
+        # Board zaten güncellendi; sadece gerçekten yer değiştiren blokları animasyonla.
         for y in range(self.board.height):
+            drop_rows = row_drop_distances.get(y, 0)
+            if drop_rows <= 0:
+                continue
             for x in range(self.board.width):
                 if self.board.occupancy[y][x]:
-                    # Bu blok lines_count satır yukarıdan düşüyor
-                    offset = -lines_count * cell_size
-                    # Sweep trigger: ışık çubuğu bu sütunun merkezine geldiğinde başlat
-                    column_center_px = (x + 0.5) * cell_size
-                    sweep_trigger = column_center_px / sweep_travel_px
-                    sweep_trigger = max(0.0, min(1.0, sweep_trigger))
                     self.falling_block_animations.append({
                         'row': y,
                         'col': x,
-                        'current_offset': offset,  # Negatif = yukarıda
-                        'target_offset': 0,
-                        'sweep_trigger': sweep_trigger,  # Sweep bu değere gelince başla
+                        'current_offset': float(-drop_rows * cell_size),  # Negatif = eski pozisyon
+                        'target_offset': 0.0,
+                        'sweep_trigger': sweep_trigger,
                         'started': False  # Henüz başlamadı
                     })
+
+    def _row_drop_distances_after_clear(self, cleared_rows: list[int]) -> dict[int, int]:
+        valid_rows = sorted({
+            int(row)
+            for row in cleared_rows
+            if 0 <= int(row) < self.board.height
+        })
+        if not valid_rows:
+            return {}
+
+        cleared_set = set(valid_rows)
+        distances: dict[int, int] = {}
+        for old_y in range(self.board.height):
+            if old_y in cleared_set:
+                continue
+            drop_rows = sum(1 for cleared_y in valid_rows if cleared_y > old_y)
+            if drop_rows <= 0:
+                continue
+            new_y = old_y + drop_rows
+            if 0 <= new_y < self.board.height:
+                distances[new_y] = drop_rows
+        return distances
 
     def _get_line_sweep_length_px(self, cell_size: int, cleared_count: int) -> int:
         """Satır temizleme sweep genişliği (piksel)."""
@@ -4136,11 +4167,7 @@ class Game:
                 self.line_clear_pending_colors = {}
         
         # Dalga efektlerini güncelle
-        for wave in self.line_clear_wave_effects[:]:
-            wave['radius'] += wave['speed'] * dt_frames
-            wave['alpha'] = int(200 * (1 - wave['radius'] / wave['max_radius']))
-            if wave['radius'] >= wave['max_radius'] or wave['alpha'] <= 0:
-                self.line_clear_wave_effects.remove(wave)
+        _update_wave_effects(self.line_clear_wave_effects, dt_frames)
         
         # Blok düşme animasyonlarını güncelle
         if self.falling_block_animations:

@@ -37,6 +37,10 @@ from gamepad_manager import is_gamepad_connected
 from promptfont_support import render_action_prompt_surface, render_button_index_prompt_surface
 from ui_theme import UIColors, UIFonts
 from sweep_effects import SweepCatState, draw_rainbow_cat_sweep
+from line_clear_feedback import (
+    queue_wave_effects as _queue_wave_effects,
+    update_wave_effects as _update_wave_effects,
+)
 try:
     from sweep_effects import compute_line_sweep_progress_speed as _compute_line_sweep_progress_speed
 except Exception:
@@ -2307,6 +2311,22 @@ class CoopGame:
 
             if self._is_focus_loss_event(event):
                 if not self.paused and not self.game_over:
+                    self.paused = True
+                    self.pause_menu_selected = 0
+                    try:
+                        self.sound.duck_music()
+                    except Exception:
+                        pass
+                continue
+
+            # Gamepad hot-plug: bağlantı kopması durumunda otomatik pause.
+            try:
+                from gamepad_manager import handle_gamepad_hotplug_event as _gp_hotplug
+                hotplug_result = _gp_hotplug(event)
+            except Exception:
+                hotplug_result = None
+            if hotplug_result is not None:
+                if hotplug_result == 'disconnected' and not self.paused and not self.game_over:
                     self.paused = True
                     self.pause_menu_selected = 0
                     try:
