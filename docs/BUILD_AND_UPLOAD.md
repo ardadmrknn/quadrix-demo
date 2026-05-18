@@ -13,6 +13,8 @@
 
 ## Kaynak Gercekler
 
+.ç.........
+
 ### Windows
 
 - Canonical build helper: `scripts/build/build_windows_exe.ps1`
