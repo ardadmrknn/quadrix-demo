@@ -2576,6 +2576,22 @@ class CoopGame:
                         pass
                 continue
 
+            # Gamepad hot-plug: bağlantı kopması durumunda otomatik pause.
+            try:
+                from gamepad_manager import handle_gamepad_hotplug_event as _gp_hotplug
+                hotplug_result = _gp_hotplug(event)
+            except Exception:
+                hotplug_result = None
+            if hotplug_result is not None:
+                if hotplug_result == 'disconnected' and not self.paused and not self.game_over:
+                    self.paused = True
+                    self.pause_menu_selected = 0
+                    try:
+                        self.sound.duck_music()
+                    except Exception:
+                        pass
+                continue
+
             if event.type == pygame.VIDEORESIZE:
                 req_w = max(event.w, 800)
                 req_h = max(event.h, 600)

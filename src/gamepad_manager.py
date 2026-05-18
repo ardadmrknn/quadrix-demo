@@ -1180,6 +1180,88 @@ class GamepadManager:
         except Exception:
             pass
 
+    def handle_hotplug_event(self, event) -> str | None:
+        """Pygame `JOYDEVICEADDED` / `JOYDEVICEREMOVED` event'ini işle.
+
+        Bu yöntem oyun döngüsünden çağrılmalıdır; `update()` içindeki
+        polling döngüsü her tick koşmayabilir veya pygame bazı platformlarda
+        `joystick.get_count()`'u reconnect sonrası geç günceller. Event
+        tabanlı yol, hem prompt connected-state'ini hem de auto-pause
+        akışlarını gerçek-zamanda doğru tutar.
+
+        Geri dönüş:
+        - 'connected'    : Yeni bir gamepad eklendi (veya yeniden algılandı).
+        - 'disconnected' : Bilinen bir gamepad kopuldu.
+        - None           : Event tipi konu dışı veya state değişmedi.
+        """
+        event_type = getattr(event, 'type', None)
+        if event_type is None:
+            return None
+
+        added_type = getattr(pygame, 'JOYDEVICEADDED', None)
+        removed_type = getattr(pygame, 'JOYDEVICEREMOVED', None)
+
+        if added_type is not None and event_type == added_type:
+            # `event.device_index` SDL2 device index; `_register_gamepad` o index'i bekler.
+            device_index = getattr(event, 'device_index', None)
+            if device_index is None:
+                # Fallback: tam tarama yap.
+                self._check_connections()
+                return 'connected' if self.is_connected() else None
+            try:
+                # Eski instance varsa önce temizle (aynı slot reconnect).
+                if device_index in self.gamepads:
+                    try:
+                        old_js = self.gamepads[device_index].joystick
+                        if old_js is not None:
+                            try:
+                                old_js.quit()
+                            except Exception:
+                                pass
+                    except Exception:
+                        pass
+                    del self.gamepads[device_index]
+                ok = self._register_gamepad(device_index)
+                return 'connected' if ok else None
+            except Exception:
+                return None
+
+        if removed_type is not None and event_type == removed_type:
+            # `event.instance_id` reconnect sonrası farklı olabilir; bu yüzden
+            # instance_id ile eşleşen kayıtlı gamepad'i kaldır.
+            instance_id = getattr(event, 'instance_id', None)
+            removed_any = False
+            if instance_id is not None:
+                for gp_id in list(self.gamepads.keys()):
+                    gp = self.gamepads[gp_id]
+                    gp_instance = getattr(gp, 'instance_id', None)
+                    if gp_instance is not None and int(gp_instance) == int(instance_id):
+                        try:
+                            if gp.joystick is not None:
+                                try:
+                                    gp.joystick.quit()
+                                except Exception:
+                                    pass
+                        except Exception:
+                            pass
+                        try:
+                            print(f"🎮 Gamepad koptu (event): {gp.name} (instance_id: {instance_id})")
+                        except Exception:
+                            # Windows konsolu cp1252 ise emoji UnicodeEncodeError verir.
+                            pass
+                        del self.gamepads[gp_id]
+                        removed_any = True
+            else:
+                # Fallback: tam tarama yap.
+                self._check_connections()
+                removed_any = True
+            # Stale state temizliği: pointer mode reset, suppress mode kalkmasın.
+            if removed_any:
+                self._menu_pointer_active = False
+            return 'disconnected' if removed_any else None
+
+        return None
+
     def _apply_deadzone(self, value: float) -> float:
         """Dead-zone uygula"""
         if abs(value) < self.DEADZONE:
@@ -1934,6 +2016,30 @@ def is_gamepad_connected() -> bool:
     if _instance is None:
         return False
     return _instance.is_connected()
+
+
+def handle_gamepad_hotplug_event(event) -> str | None:
+    """Modül-level adapter. Oyun döngüleri global GamepadManager singleton'ına
+    `JOYDEVICEADDED` / `JOYDEVICEREMOVED` event'lerini bu yardımcı üzerinden
+    iletir. Geri dönüş GamepadManager.handle_hotplug_event ile aynıdır:
+    'connected', 'disconnected' veya None.
+    """
+    global _instance
+    if _instance is None:
+        return None
+    try:
+        return _instance.handle_hotplug_event(event)
+    except Exception:
+        return None
+
+
+def is_gamepad_disconnect_event(event) -> bool:
+    """`JOYDEVICEREMOVED` event'i mi? (auto-pause kararları için)."""
+    event_type = getattr(event, 'type', None)
+    if event_type is None:
+        return False
+    removed_type = getattr(pygame, 'JOYDEVICEREMOVED', None)
+    return removed_type is not None and event_type == removed_type
 
 
 def reload_gamepad_settings():

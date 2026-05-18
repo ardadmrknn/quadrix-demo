@@ -1901,6 +1901,17 @@ class PvPGame:
             if self._is_focus_loss_event(event):
                 self._pause_for_focus_loss()
                 continue
+
+            # Gamepad hot-plug: bağlantı kopması durumunda otomatik pause.
+            try:
+                from gamepad_manager import handle_gamepad_hotplug_event as _gp_hotplug
+                hotplug_result = _gp_hotplug(event)
+            except Exception:
+                hotplug_result = None
+            if hotplug_result is not None:
+                if hotplug_result == 'disconnected':
+                    self._pause_for_focus_loss()
+                continue
             
             if event.type == pygame.VIDEORESIZE:
                 req_w = max(event.w, 800)

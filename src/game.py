@@ -1885,6 +1885,18 @@ class Game:
                 self._pause_for_focus_loss()
                 continue
 
+            # Gamepad hot-plug: bağlantı kopması durumunda otomatik pause.
+            # Bağlantı eklenmesinde state güncellenir ama pause açılmaz.
+            try:
+                from gamepad_manager import handle_gamepad_hotplug_event as _gp_hotplug
+                hotplug_result = _gp_hotplug(event)
+            except Exception:
+                hotplug_result = None
+            if hotplug_result is not None:
+                if hotplug_result == 'disconnected':
+                    self._pause_for_focus_loss()
+                continue
+
             # Exit confirmation overlay input (returns to main menu instead of closing the app)
             if self.show_exit_prompt:
                 if event.type == pygame.KEYDOWN:
