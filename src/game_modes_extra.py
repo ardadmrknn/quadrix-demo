@@ -5531,7 +5531,6 @@ class MysteryMode(Game):
         self._left_panel_cards_y = 120
         # Ensure last_enqueued_level initialized after board is created
         self.last_enqueued_level = getattr(self.board, 'level', 0)
-        self.card_manager.sync_level_progress()
 
         # Kart efekt durumları
         self.speed_effect_timer = 0.0
@@ -7748,7 +7747,6 @@ class MysteryMode(Game):
             self._demo_score_cap_prompt.hide()
             self._demo_score_cap_prompt.screen = self.screen
         self.last_enqueued_level = getattr(self.board, 'level', 0)
-        self.card_manager.sync_level_progress()
         self._reset_card_selection_rerolls()
         # Reset effect timers and visuals
         self.speed_effect_timer = 0.0
