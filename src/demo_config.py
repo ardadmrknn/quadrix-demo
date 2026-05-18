@@ -9,7 +9,7 @@ import os
 from typing import MutableMapping
 
 
-IS_DEMO = True
+IS_DEMO = False
 
 DEMO_STEAM_APP_ID = "4635310"
 DEMO_STEAM_STORE_URL = "https://store.steampowered.com/app/4414520/Quadrix/"
@@ -34,9 +34,6 @@ DEMO_SOLO_LEVEL_LIMIT = 20
 DEMO_COOP_WORLD_LIMIT = 1
 DEMO_COOP_LEVEL_LIMIT = 10
 
-DEMO_CARD_SELECTION_LEVEL_INTERVAL = 10
-FULL_CARD_SELECTION_LEVEL_INTERVAL = 5
-
 
 
 def _normalize_id(value: str | None) -> str:
@@ -44,22 +41,6 @@ def _normalize_id(value: str | None) -> str:
 
 def get_runtime_app_name() -> str:
     return DEMO_APP_NAME if IS_DEMO else FULL_APP_NAME
-
-
-def get_card_selection_level_interval() -> int:
-    if IS_DEMO:
-        return DEMO_CARD_SELECTION_LEVEL_INTERVAL
-    return FULL_CARD_SELECTION_LEVEL_INTERVAL
-
-
-
-def get_card_selection_bucket(level_num: int) -> int:
-    interval = max(1, get_card_selection_level_interval())
-    try:
-        normalized_level = max(0, int(level_num or 0))
-    except Exception:
-        normalized_level = 0
-    return normalized_level // interval
 
 
 def get_extras_lock_kind(mode_id: str | None) -> str | None:

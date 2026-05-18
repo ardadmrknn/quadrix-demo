@@ -5447,26 +5447,6 @@ class MysteryMode(Game):
         except Exception:
             pass
 
-    def _mystery_level_lines_per_level(self) -> int:
-        try:
-            return max(1, int(demo_config.get_card_selection_level_interval() or 5))
-        except Exception:
-            return 5
-
-    def _apply_mystery_level_progression(self) -> None:
-        threshold = self._mystery_level_lines_per_level()
-        try:
-            if getattr(self, 'board', None) is not None:
-                self.board.level_lines_per_level = threshold
-                current_progress = _level_progress_in_current_level(self.board, threshold)
-                self.board.level = (int(getattr(self.board, 'level_lines_cleared', 0) or 0) // threshold) + 1
-            else:
-                current_progress = 0
-        except Exception:
-            current_progress = 0
-        self.card_manager.threshold = threshold
-        self.card_manager.progress = max(0, int(current_progress or 0))
-
     def wants_mouse_visible(self) -> bool:
         # Kart seçimi, parça seçimi veya atölye popup gibi overlay'lerde mouse görünür olmalı.
         if getattr(self, '_piece_selection_active', False):
@@ -5536,7 +5516,6 @@ class MysteryMode(Game):
         self.left_panel_max_width = 420
         self._left_panel_frame = (10, 20, 400)
         self._left_panel_cards_y = 120
-        self._apply_mystery_level_progression()
         # Ensure last_enqueued_level initialized after board is created
         self.last_enqueued_level = getattr(self.board, 'level', 0)
         self.card_manager.sync_level_progress()
@@ -6491,8 +6470,9 @@ class MysteryMode(Game):
             self.update_screen_shake()
             return
         
-        # Save previous level before running engine update so we can detect level-up
-        prev_level = self.board.level
+        # Save previous level before running engine update (kept only for
+        # potential debug/log usage; reward queueing artık card_xp tabanlı).
+        prev_level = self.board.level  # noqa: F841 - retained for debug paths
         super().update(dt)
 
         if self._maybe_activate_demo_score_cap_prompt():
@@ -6870,42 +6850,29 @@ class MysteryMode(Game):
                     self._smooth_fall_speed_towards_target(target_speed, seconds)
                 except Exception:
                     pass
-            # Check for level-up after the main update has run. If we increased the board level,
-            # prepare a selection and open the overlay.
+            # Open the card selection overlay when at least one card-level reward
+            # is queued. The queue is owned by the card manager (driven by card_xp);
+            # board.level deltas no longer affect this path.
             try:
-                # Enqueue level ups that occurred during this update based on last_enqueued_level
-                # so we do not double-count when notify_lines_cleared already enqueued.
-                current_level = getattr(self.board, 'level', 0)
-                last = getattr(self, 'last_enqueued_level', 0)
-                # debug: show level detection values when debug mode enabled
                 try:
                     if getattr(self, 'settings_manager', None) and self.settings_manager.get('debug_mode', False):
-                        print(f"[MysteryMode] prev_level={prev_level}, current_level={current_level}, last_enqueued={last}, pending_level_ups={self.pending_level_ups}")
+                        print(
+                            f"[MysteryMode] reward queue check: pending_level_ups={self.pending_level_ups}, "
+                            f"card_level={getattr(self.card_manager, 'card_level', '?')}, "
+                            f"card_xp={getattr(self.card_manager, 'card_xp', '?')}/"
+                            f"{getattr(self.card_manager, 'card_xp_to_next', '?')}, "
+                            f"board.level={self.board.level}"
+                        )
                 except Exception:
                     pass
-                lvl_delta = max(0, current_level - last)
-                # Also account for level increases during this update (fallback)
-                # FIX: Fallback removed because it causes double-counting when notify_lines_cleared
-                # already handled the level up via last_enqueued_level updates.
-                # if current_level > prev_level:
-                #     fallback_delta = current_level - prev_level
-                #     lvl_delta = max(lvl_delta, fallback_delta)
-                if lvl_delta > 0:
-                    self.pending_level_ups += lvl_delta
-                    self.last_enqueued_level = current_level
-                    try:
-                        if self.settings_manager and self.settings_manager.get('debug_mode', False):
-                            print(f"[MysteryMode] Detected level delta via update={lvl_delta}; pending_level_ups={self.pending_level_ups} (board.level={self.board.level}, last_enqueued_level={last})")
-                    except Exception:
-                        pass
-                # If we have queued level-ups (or we detected an immediate level-up), and no selection active, prepare and open one overlay
-                if not self.card_selection_active and (self.pending_level_ups > 0 or current_level > prev_level):
+                if not self.card_selection_active and self.pending_level_ups > 0:
                     try:
                         if getattr(self, 'settings_manager', None) and self.settings_manager.get('debug_mode', False):
                             print(f"[MysteryMode] Attempting selection: pending_level_ups={self.pending_level_ups}, card_selection_active={self.card_selection_active}, game_over={self.game_over}")
                     except Exception:
                         pass
-                    self.card_manager.prepare_selection()
+                    if not getattr(self.card_manager, 'pending_choices', None):
+                        self.card_manager.prepare_selection()
                     try:
                         if getattr(self, 'settings_manager', None) and self.settings_manager.get('debug_mode', False):
                             print(f"[MysteryMode] prepare_selection produced {len(self.card_manager.pending_choices)} choices")
@@ -7321,7 +7288,6 @@ class MysteryMode(Game):
         if getattr(self, '_demo_score_cap_prompt', None) is not None:
             self._demo_score_cap_prompt.hide()
             self._demo_score_cap_prompt.screen = self.screen
-        self._apply_mystery_level_progression()
         self.last_enqueued_level = getattr(self.board, 'level', 0)
         self.card_manager.sync_level_progress()
         self._reset_card_selection_rerolls()
@@ -8187,11 +8153,13 @@ class MysteryMode(Game):
         panel_x, panel_y, panel_width = self._get_left_panel_frame()
         self._left_panel_frame = (panel_x, panel_y, panel_width)
 
-        # Üstte: Mevcut seviye ve seviye içi ilerleme
-        level = getattr(self.board, 'level', 1)
-        # Seviye içindeki satır sayısı: use card manager threshold to stay consistent
-        lines_needed = int(getattr(self.card_manager, 'threshold', 5))
-        lines_in_level = _level_progress_in_current_level(self.board, lines_needed)
+        # === İKİ AYRI HAT ===
+        # Üstte: oyunun temposunu yöneten board.level (düşüş hızı için)
+        # Altta: kart ödül ekonomisi için card_level (kart XP ile ilerler)
+        board_level = getattr(self.board, 'level', 1)
+        card_level = int(status.get('card_level', 1))
+        card_xp = int(status.get('card_xp', 0))
+        card_xp_to_next = max(1, int(status.get('card_xp_to_next', 1)))
         # Sağdaki standart HUD paneli ile aynı stil: glass panel (alpha=90)
         pad_x = max(10, int(15 * ui_scale))
         pad_top = max(10, int(14 * ui_scale))
@@ -8205,12 +8173,23 @@ class MysteryMode(Game):
         heading_font = fonts['heading']
         info_font = fonts['small']
 
-        header_surface = heading_font.render(f"{t('level')}: {level}", True, (230, 235, 245))
-        info_line_1 = t('card_level_progress', current=lines_in_level, needed=lines_needed)
-        info_line_2 = t('card_pool_label', hint=status['hint'])
-        header_text = self._fit_text_to_width(heading_font, f"{t('level')}: {level}", inner_w)
+        header_text = self._fit_text_to_width(
+            heading_font,
+            f"{t('level')}: {board_level}",
+            inner_w,
+        )
         header_surface = heading_font.render(header_text, True, (230, 235, 245))
-        info_line_1 = self._fit_text_to_width(info_font, info_line_1, content_w)
+
+        card_label = t(
+            'card_level_label',
+            level=card_level,
+            current=card_xp,
+            needed=card_xp_to_next,
+        )
+        if card_label.startswith('[?'):
+            card_label = f"Kart Sv: {card_level} ({card_xp}/{card_xp_to_next})"
+        info_line_1 = self._fit_text_to_width(info_font, card_label, content_w)
+        info_line_2 = t('card_pool_label', hint=status['hint'])
         info_line_2 = self._fit_text_to_width(info_font, info_line_2, content_w)
         info_texts = [
             info_font.render(info_line_1, True, (180, 200, 220)),

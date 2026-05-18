@@ -3723,6 +3723,47 @@ class Game:
             test_piece.y += 1
         
         return test_piece.y - 1
+
+    def _get_ghost_visual_offset(self, ghost_y: int) -> float:
+        """Satır temizleme animasyonu sırasında ghost'un altındaki düşen blokların
+        görsel offset'ine göre ghost piece'ı yukarı kaydır.
+
+        Bu sayede satır temizlendikten sonra üstteki bloklar düşerken ghost da
+        onlarla birlikte hareket eder; bloklar yere oturduğunda ghost da yerine
+        oturur. Sıfır veya negatif (yukarı kayma) bir piksel değeri döner.
+        """
+        anims = getattr(self, 'falling_block_animations', None)
+        if not anims:
+            return 0.0
+        try:
+            piece_cells = self.current_piece.get_cells()
+        except Exception:
+            return 0.0
+        delta = ghost_y - self.current_piece.y
+        anim_lookup = {}
+        for anim in anims:
+            try:
+                anim_lookup[(int(anim['row']), int(anim['col']))] = float(
+                    anim.get('current_offset', 0.0)
+                )
+            except Exception:
+                continue
+        if not anim_lookup:
+            return 0.0
+        min_offset = 0.0
+        board_h = self.board.height
+        board_w = self.board.width
+        for x, y in piece_cells:
+            if x < 0 or x >= board_w:
+                continue
+            gy = y + delta
+            for ay in range(gy + 1, board_h):
+                if self.board.occupancy[ay][x]:
+                    offset = anim_lookup.get((ay, x), 0.0)
+                    if offset < min_offset:
+                        min_offset = offset
+                    break
+        return min_offset
     
     def get_current_speed(self):
         """Seviyeye göre düşüş hızını ortak eğriyle hesapla."""
@@ -4524,6 +4565,7 @@ class Game:
         if not self.game_over and self.effects_enabled:
             ghost_y = self.get_ghost_y()
             if ghost_y != self.current_piece.y:
+                ghost_visual_offset = self._get_ghost_visual_offset(ghost_y)
                 for x, y in self.current_piece.get_cells():
                     # Esnek sınır: dışarıdaki blokları çizme (görünmez alan)
                     if x < 0 or x >= self.board_width:
@@ -4531,7 +4573,7 @@ class Game:
                     ghost_cell_y = y + (ghost_y - self.current_piece.y)
                     if ghost_cell_y >= 0:
                         block_x = offset_x + x * cell_size + 1
-                        block_y = offset_y + ghost_cell_y * cell_size + 1
+                        block_y = offset_y + ghost_cell_y * cell_size + 1 + int(ghost_visual_offset)
                         block_size = cell_size - 2
                         local_x = x - self.current_piece.x
                         local_y = y - self.current_piece.y
