@@ -47,9 +47,9 @@ DEMO_COOP_LEVEL_LIMIT = 10
 DEMO_MYSTERY_SCORE_CAP = 100000
 
 
+
 def _normalize_id(value: str | None) -> str:
     return str(value or "").strip()
-
 
 def get_runtime_app_name() -> str:
     return DEMO_APP_NAME if IS_DEMO else FULL_APP_NAME
@@ -106,7 +106,6 @@ def is_coop_campaign_level_available(level_num: int) -> bool:
         return int(level_num or 0) <= DEMO_COOP_LEVEL_LIMIT
     except Exception:
         return False
-
 
 def apply_runtime_environment(env: MutableMapping[str, str] | None = None) -> str | None:
     target_env = os.environ if env is None else env
