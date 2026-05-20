@@ -3892,8 +3892,6 @@ class Menu:
                 btn_bg = pygame.Surface(draw_rect.size, pygame.SRCALPHA)
                 if hover:
                     pygame.draw.rect(btn_bg, (*color, 35), btn_bg.get_rect(), border_radius=sp(14))
-                    highlight_rect = pygame.Rect(4, 2, draw_rect.width - 8, 1)
-                    pygame.draw.rect(btn_bg, (*color, 60), highlight_rect)
                 else:
                     pygame.draw.rect(btn_bg, (25, 32, 52, 200), btn_bg.get_rect(), border_radius=sp(14))
                 self.screen.blit(btn_bg, draw_rect.topleft)
@@ -4684,9 +4682,6 @@ class Menu:
             btn_bg = pygame.Surface(draw_rect.size, pygame.SRCALPHA)
             if hover:
                 pygame.draw.rect(btn_bg, (*btn_color, 35), btn_bg.get_rect(), border_radius=12)
-                # Üst parlama çizgisi
-                highlight_rect = pygame.Rect(4, 2, draw_rect.width - 8, 1)
-                pygame.draw.rect(btn_bg, (*btn_color, 60), highlight_rect)
             else:
                 pygame.draw.rect(btn_bg, (20, 26, 42, 200), btn_bg.get_rect(), border_radius=12)
             self.screen.blit(btn_bg, draw_rect.topleft)

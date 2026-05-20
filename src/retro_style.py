@@ -730,9 +730,8 @@ class RetroStyle:
     ) -> None:
         """Glassmorphism panel çiz.
 
-        `top_highlight=False` kullanıldığında panelin üst kenarındaki cam parlaması
-        çizilmez. Bu, başlık arkasında istenmeyen açık/gri bant görünümünü önlemek
-        gereken menü kartlarında kullanılır.
+        `top_highlight` parametresi API uyumluluğu için korunur.
+        Demo popup panellerinde üst parlama bandı artık çizilmez.
         """
         alpha = self._scale_menu_alpha(alpha)
 
@@ -750,18 +749,11 @@ class RetroStyle:
         
         # Ana panel (yarı saydam)
         base_rgb = (self.glass_bg[0], self.glass_bg[1], self.glass_bg[2])
-        panel_key = (rect.size, base_rgb, alpha, bool(top_highlight))
+        panel_key = (rect.size, base_rgb, alpha)
         panel = self._lru_get(self._glass_panel_cache, self._glass_panel_cache_order, panel_key)
         if panel is None:
             panel = pygame.Surface(rect.size, pygame.SRCALPHA)
             panel.fill((*base_rgb, alpha))
-
-            # Üst kenar highlight (cam efekti)
-            highlight_height = min(rect.height // 3, 40)
-            if top_highlight and highlight_height > 0:
-                for y in range(highlight_height):
-                    h_alpha = int(25 * (1 - y / highlight_height))
-                    pygame.draw.line(panel, (255, 255, 255, h_alpha), (0, y), (rect.width, y))
 
             self._lru_put(self._glass_panel_cache, self._glass_panel_cache_order, panel_key, panel, self._glass_panel_cache_max)
 

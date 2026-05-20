@@ -178,19 +178,6 @@ def draw_glass_panel(
             border_radius=border_radius,
         )
 
-        # Üst kenar parlaması
-        highlight_rect = pygame.Rect(2, 2, rect.width - 4, rect.height // 3)
-        highlight_surf = pygame.Surface((highlight_rect.width, highlight_rect.height), pygame.SRCALPHA)
-        for i in range(highlight_rect.height):
-            alpha_val = int(30 * (1 - i / highlight_rect.height))
-            pygame.draw.line(
-                highlight_surf,
-                (255, 255, 255, alpha_val),
-                (0, i),
-                (highlight_rect.width, i),
-            )
-        panel_surf.blit(highlight_surf, highlight_rect.topleft)
-
         # Kenar çizgisi
         if border_width > 0:
             pygame.draw.rect(

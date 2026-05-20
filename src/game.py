@@ -5301,8 +5301,6 @@ class Game:
             _btn_bg = pygame.Surface(_draw_rect.size, pygame.SRCALPHA)
             if _hover:
                 pygame.draw.rect(_btn_bg, (*_btn_color, 35), _btn_bg.get_rect(), border_radius=12)
-                _hl_rect = pygame.Rect(4, 2, _draw_rect.width - 8, 1)
-                pygame.draw.rect(_btn_bg, (*_btn_color, 60), _hl_rect)
             else:
                 pygame.draw.rect(_btn_bg, (20, 26, 42, 200), _btn_bg.get_rect(), border_radius=12)
             self.screen.blit(_btn_bg, _draw_rect.topleft)
@@ -5584,11 +5582,6 @@ class Game:
             # Alt tema varsa panel arka planını özel renkle çiz (tint ile)
             _tint_surf = pygame.Surface(panel_rect.size, pygame.SRCALPHA)
             _tint_surf.fill((*panel_fill_tint, 216))
-            # Üst kenar cam highlight
-            _hl_h = min(panel_rect.height // 3, 40)
-            for _yl in range(_hl_h):
-                _ha = int(25 * (1 - _yl / _hl_h))
-                pygame.draw.line(_tint_surf, (255, 255, 255, _ha), (0, _yl), (panel_rect.width, _yl))
             self.screen.blit(_tint_surf, panel_rect.topleft)
             pygame.draw.rect(self.screen, panel_border_color, panel_rect, 2, border_radius=12)
         else:
@@ -5910,12 +5903,6 @@ class Game:
             
             btn_surf = pygame.Surface(draw_rect.size, pygame.SRCALPHA)
             btn_surf.fill((*fill_color, fill_alpha))
-            
-            # Üst highlight
-            top_hi_alpha = 34 if hovered else (20 if not disabled else 8)
-            for hi in range(min(12, draw_rect.height // 3)):
-                h_alpha = int(top_hi_alpha * (1 - hi / 12))
-                pygame.draw.line(btn_surf, (255, 255, 255, h_alpha), (0, hi), (draw_rect.width, hi))
 
             # Hover glow (ince dış parlama)
             if hovered:

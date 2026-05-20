@@ -2963,12 +2963,6 @@ class TutorialMode(Game):
             inner_radius = max(8, outer_radius - s(4, minimum=2))
             inner_c = (28, 38, 62, 226 if hover else 188)
             pygame.draw.rect(btn_s, inner_c, inner_rect, border_radius=inner_radius)
-
-            # Üst highlight
-            hl_h = min(s(12, minimum=8), arrow_rect.height // 3)
-            for y in range(hl_h):
-                h_a = int((30 if hover else 16) * (1 - y / hl_h))
-                pygame.draw.line(btn_s, (255, 255, 255, h_a), (0, y), (arrow_rect.width, y))
             self.screen.blit(btn_s, arrow_rect.topleft)
 
             # Border
@@ -3039,7 +3033,7 @@ class TutorialMode(Game):
 
             # Panel
             retro_style.draw_glass_panel(self.screen, card_rect, alpha=card_alpha,
-                                         border_color=card_accent, top_highlight=not is_locked)
+                                         border_color=card_accent, top_highlight=False)
             self.hub_chapter_rects.append((card_rect, chapter_id))
 
             # ── Başlık bandı ──
@@ -3205,7 +3199,7 @@ class TutorialMode(Game):
         lesson_rect = pygame.Rect(chapter_area_rect.right + s(16), content_top,
                                   panel_rect.right - chapter_area_rect.right - s(36), content_height)
         retro_style.draw_glass_panel(self.screen, lesson_rect, alpha=160,
-                                     border_color=(60, 120, 80), top_highlight=True)
+                                     border_color=(60, 120, 80), top_highlight=False)
 
         # Ders paneli başlık bandı
         lesson_header_h = s(42)
@@ -3268,11 +3262,6 @@ class TutorialMode(Game):
                 row_fill = (28, 35, 55) if is_selected else (18, 24, 40)
                 row_s = pygame.Surface(row_rect.size, pygame.SRCALPHA)
                 row_s.fill((*row_fill, row_alpha))
-                # Üst highlight
-                hl = min(10, row_rect.height // 4)
-                for y in range(hl):
-                    h_a = int((20 if is_selected else 10) * (1 - y / hl))
-                    pygame.draw.line(row_s, (255, 255, 255, h_a), (0, y), (row_rect.width, y))
                 self.screen.blit(row_s, row_rect.topleft)
 
                 # Border

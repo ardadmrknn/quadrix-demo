@@ -665,12 +665,6 @@ class CampaignUIEffects:
             panel_surf = pygame.Surface((panel_width, panel_height), pygame.SRCALPHA)
             panel_surf.fill((10, 15, 35, 220))
             
-            # Üst highlight (cam efekti)
-            highlight_h = s(20)
-            for i in range(highlight_h):
-                alpha = int(35 * (1 - i / max(1, highlight_h)))
-                pygame.draw.line(panel_surf, (255, 255, 255, alpha), (0, i), (panel_width, i))
-            
             surface.blit(panel_surf, panel_rect.topleft)
             
             # Neon border
@@ -681,10 +675,6 @@ class CampaignUIEffects:
         header_rect = pygame.Rect(panel_rect.x + s(8), panel_rect.y + s(8), panel_width - s(16), header_h)
         header_surf = pygame.Surface(header_rect.size, pygame.SRCALPHA)
         header_surf.fill((12, 18, 40, 230))
-        header_highlight_h = s(12)
-        for i in range(header_highlight_h):
-            alpha = int(30 * (1 - i / max(1, header_highlight_h)))
-            pygame.draw.line(header_surf, (255, 255, 255, alpha), (0, i), (header_rect.width, i))
         surface.blit(header_surf, header_rect.topleft)
         pygame.draw.line(surface, (*NEON_CYAN, 140), (header_rect.x + s(10), header_rect.bottom - s(2, minimum=0)), (header_rect.right - s(10), header_rect.bottom - s(2, minimum=0)), max(1, s(2)))
 
@@ -918,9 +908,6 @@ class CampaignUIEffects:
             else:
                 panel_bg = pygame.Surface(rect.size, pygame.SRCALPHA)
                 panel_bg.fill(UIColors.GLASS_BG)
-                for i in range(10):
-                    alpha = int(22 * (1 - i / 10))
-                    pygame.draw.line(panel_bg, (255, 255, 255, alpha), (0, i), (rect.width, i))
                 surface.blit(panel_bg, rect.topleft)
                 pygame.draw.rect(surface, (*accent, 140), rect, 1, border_radius=s(10))
 
@@ -1220,12 +1207,6 @@ class CampaignUIEffects:
             
             panel_surf = pygame.Surface((panel_width, panel_height), pygame.SRCALPHA)
             panel_surf.fill((25, 12, 15, 225))
-            
-            # Üst highlight
-            highlight_h = s(15)
-            for i in range(highlight_h):
-                alpha = int(25 * (1 - i / max(1, highlight_h)))
-                pygame.draw.line(panel_surf, (255, 200, 200, alpha), (0, i), (panel_width, i))
             
             surface.blit(panel_surf, panel_rect.topleft)
             pygame.draw.rect(surface, FAIL_RED, panel_rect, 2, border_radius=s(14))

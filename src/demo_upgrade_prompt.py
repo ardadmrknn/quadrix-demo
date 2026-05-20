@@ -405,15 +405,6 @@ class DemoUpgradePrompt:
     def _draw_panel_overlays(self, layout: _PromptLayout, scale: float) -> None:
         s = lambda value, minimum=1: max(minimum, int(round(value * scale)))
 
-        header_tint = pygame.Surface((layout.panel_rect.width - s(28), s(88)), pygame.SRCALPHA)
-        pygame.draw.rect(
-            header_tint,
-            (*self.accent_color, 16),
-            header_tint.get_rect(),
-            border_radius=s(14),
-        )
-        self.screen.blit(header_tint, (layout.panel_rect.x + s(14), layout.panel_rect.y + s(12)))
-
         accent_line = pygame.Surface((layout.panel_rect.width - s(64), s(4)), pygame.SRCALPHA)
         pygame.draw.rect(
             accent_line,
@@ -518,21 +509,6 @@ class DemoUpgradePrompt:
             pygame.draw.rect(overlay, inner_fill, inner_rect, border_radius=max(s(8), radius - s(3)))
         else:
             pygame.draw.rect(overlay, (36, 44, 60, 84 if hovered else 62), inner_rect, border_radius=max(s(8), radius - s(3)))
-
-        highlight_height = max(s(8), button_rect.height // 4)
-        for y in range(highlight_height):
-            fade = 1.0 - (y / max(1, highlight_height))
-            alpha = int((36 if primary else 14) * fade)
-            if hovered:
-                alpha += 10 if primary else 6
-            if pressed:
-                alpha = max(0, alpha - 8)
-            pygame.draw.line(
-                overlay,
-                (255, 255, 255, alpha),
-                (s(10), s(5) + y),
-                (button_rect.width - s(10), s(5) + y),
-            )
 
         self.screen.blit(overlay, button_rect.topleft)
 
