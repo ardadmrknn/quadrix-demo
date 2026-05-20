@@ -27,6 +27,10 @@ def _format_fields(text: str) -> set[str]:
     return fields
 
 
+def _normalize_text(value: object) -> str:
+    return " ".join(str(value or "").split()).strip()
+
+
 def test_all_language_placeholders_match_english():
     errors = []
     for key, translations in TRANSLATIONS.items():
@@ -103,3 +107,89 @@ def test_high_visibility_keys_do_not_fall_back_to_english():
                 errors.append(f"{key}[{lang}] still equals EN")
 
     assert not errors, "High-visibility localization fallback remains:\n" + "\n".join(errors)
+
+
+def test_high_visibility_menu_and_shell_labels_avoid_obvious_english_copies():
+    curated = {
+        'single_player': ('de', 'fr', 'es', 'it', 'pt'),
+        'new_gen_tetris': ('de', 'fr', 'es', 'it', 'pt'),
+        'pvp_2_players': ('de', 'fr', 'es', 'it', 'pt'),
+        'extras': ('de', 'fr', 'es', 'it', 'pt'),
+        'switch_user': ('de', 'fr', 'es', 'it', 'pt'),
+        'loading': ('ja',),
+        'please_wait': ('ja',),
+        'error': ('ja',),
+        'success': ('ja',),
+        'warning': ('ru', 'ja'),
+        'confirm': ('ja',),
+        'cancel': ('ja',),
+        'save': ('ja',),
+        'delete': ('ja',),
+        'select': ('ja',),
+        'arrows': ('ja',),
+        'space': ('ru', 'ja'),
+        'username': ('ru', 'ja'),
+        'guest': ('ru', 'ja'),
+        'login': ('ru', 'ja'),
+        'logout': ('ru', 'ja'),
+        'profile': ('ja',),
+        'total_games': ('ja',),
+        'total_score': ('ja',),
+        'best_score': ('ja',),
+        'total_lines': ('ja',),
+        'highest_level': ('ja',),
+        'favorite_mode': ('ja',),
+        'daily_no_user': ('ja',),
+        'daily_no_attempts': ('ja',),
+    }
+
+    errors = []
+    for key, languages in curated.items():
+        entry = TRANSLATIONS.get(key)
+        if not isinstance(entry, dict):
+            errors.append(f"Missing translation entry: {key}")
+            continue
+        english = _normalize_text(entry.get('en', ''))
+        for lang in languages:
+            localized = _normalize_text(entry.get(lang, ''))
+            if not localized:
+                errors.append(f"{key}[{lang}] missing")
+                continue
+            if localized == english:
+                errors.append(f"{key}[{lang}] still reuses EN text: {localized}")
+
+    assert not errors, "High-visibility EN copy regressions:\n" + "\n".join(errors)
+
+
+def test_support_and_daily_shell_labels_avoid_obvious_english_copies():
+    curated = {
+        'credits_supporters_role': ('ru',),
+        'credits_supporters_desc': ('ru',),
+        'sos_contact_header': ('ru', 'ja'),
+        'sos_mail': ('ja',),
+        'opening_gmail': ('ja',),
+        'opening_instagram': ('ja',),
+        'browser_open_failed': ('ja',),
+        'daily_completed_hint': ('ja',),
+        'daily_lives_remaining_hint': ('ja',),
+        'select_user_hint': ('ja',),
+        'how_to_play': ('ru', 'ja'),
+    }
+
+    errors = []
+    for key, languages in curated.items():
+        entry = TRANSLATIONS.get(key)
+        if not isinstance(entry, dict):
+            errors.append(f"Missing translation entry: {key}")
+            continue
+        english = _normalize_text(entry.get('en', ''))
+        for lang in languages:
+            localized = _normalize_text(entry.get(lang, ''))
+            if not localized:
+                errors.append(f"{key}[{lang}] missing")
+                continue
+            if localized == english:
+                errors.append(f"{key}[{lang}] still reuses EN text: {localized}")
+
+    assert not errors, "Support/daily EN copy regressions:\n" + "\n".join(errors)
+
