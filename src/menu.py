@@ -3430,6 +3430,10 @@ class Menu:
     def draw(self):
         """Menüyü retro Atari estetiğiyle çiz."""
         width, height = self.screen.get_size()
+        if self._demo_upgrade_prompt.is_active():
+            self._demo_upgrade_prompt.screen = self.screen
+            self._demo_upgrade_prompt.draw()
+            return
         scale = self._ui_scale()
         self.exit_yes_rect = None
         self.exit_no_rect = None

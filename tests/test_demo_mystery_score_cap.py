@@ -82,3 +82,36 @@ def test_demo_score_cap_prompt_tracks_confirm_and_cancel(monkeypatch):
     assert prompt.handle_input(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_RETURN)) is True
     assert opened_urls == [prompt_module.demo_config.DEMO_STEAM_STORE_URL]
     assert prompt.consume_last_action() == 'confirm'
+
+
+def test_demo_score_cap_prompt_outside_click_is_swallowed_without_dismiss() -> None:
+    _, prompt_module = _import_modules()
+    prompt = prompt_module.DemoUpgradePrompt(pygame.Surface((640, 480)))
+    prompt_module.show_demo_score_cap_prompt(prompt)
+    prompt.confirm_rect = pygame.Rect(220, 320, 200, 44)
+    prompt.cancel_rect = pygame.Rect(220, 372, 200, 44)
+
+    handled = prompt.handle_input(pygame.event.Event(pygame.MOUSEBUTTONDOWN, button=1, pos=(32, 32)))
+
+    assert handled is True
+    assert prompt.is_active() is True
+    assert prompt.consume_last_action() is None
+
+
+def test_demo_score_cap_prompt_mouse_confirm_waits_for_release(monkeypatch) -> None:
+    _, prompt_module = _import_modules()
+    prompt = prompt_module.DemoUpgradePrompt(pygame.Surface((640, 480)))
+    prompt_module.show_demo_score_cap_prompt(prompt)
+    prompt.confirm_rect = pygame.Rect(220, 320, 200, 44)
+    prompt.cancel_rect = pygame.Rect(220, 372, 200, 44)
+
+    opened_urls: list[str] = []
+    monkeypatch.setattr(prompt_module.webbrowser, 'open', lambda url, new=0: opened_urls.append(url))
+
+    assert prompt.handle_input(pygame.event.Event(pygame.MOUSEBUTTONDOWN, button=1, pos=prompt.confirm_rect.center)) is True
+    assert opened_urls == []
+    assert prompt.is_active() is True
+
+    assert prompt.handle_input(pygame.event.Event(pygame.MOUSEBUTTONUP, button=1, pos=prompt.confirm_rect.center)) is True
+    assert opened_urls == [prompt_module.demo_config.DEMO_STEAM_STORE_URL]
+    assert prompt.consume_last_action() == 'confirm'

@@ -198,6 +198,10 @@ class CoopLevelSelect:
             width, height = self.screen.get_size()
         except Exception:
             width, height = self.window_width, self.window_height
+        if self._demo_upgrade_prompt.is_active():
+            self._demo_upgrade_prompt.screen = self.screen
+            self._demo_upgrade_prompt.draw()
+            return
         if width != self.window_width or height != self.window_height:
             self.window_width = width
             self.window_height = height

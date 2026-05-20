@@ -107,3 +107,75 @@ def test_demo_prompt_layout_keeps_scale_growth() -> None:
     assert large_layout.panel_rect.width > base_layout.panel_rect.width
     assert large_layout.panel_rect.height > base_layout.panel_rect.height
     assert large_layout.confirm_rect.width > base_layout.confirm_rect.width
+
+
+def test_demo_prompt_layout_stacks_buttons_on_narrow_screens() -> None:
+    prompt = DemoUpgradePrompt(_FakeScreen(480, 720))
+    show_demo_partial_lock_prompt(prompt)
+
+    title_font = _MetricFont(char_width=13, height=28)
+    body_font = _MetricFont(char_width=8, height=22)
+
+    layout = prompt._build_layout((480, 720), 0.82, title_font, body_font)
+
+    assert layout.stack_buttons is True
+    assert layout.confirm_rect.width == layout.cancel_rect.width
+    assert layout.confirm_rect.left == layout.cancel_rect.left
+    assert layout.confirm_rect.top < layout.cancel_rect.top
+
+
+def test_demo_prompt_layout_clamps_long_body_without_pushing_footer_outside_panel() -> None:
+    message = ' '.join(['Demo siniri metni'] * 120)
+    prompt = DemoUpgradePrompt(_FakeScreen(480, 720))
+    prompt.show(
+        title='Demo Sınırı',
+        message=message,
+        confirm_label="Steam'de Aç",
+        cancel_label='Menüye Dön',
+    )
+
+    title_font = _MetricFont(char_width=13, height=28)
+    body_font = _MetricFont(char_width=8, height=22)
+    full_lines = DemoUpgradePrompt._wrap_text(body_font, message, 393)
+    layout = prompt._build_layout((480, 720), 0.82, title_font, body_font)
+
+    assert len(layout.lines) < len(full_lines)
+    assert layout.body_rect.bottom <= layout.footer_rect.top
+    assert layout.footer_rect.bottom <= layout.panel_rect.bottom
+    assert layout.confirm_rect.bottom <= layout.panel_rect.bottom
+    assert layout.cancel_rect.bottom <= layout.panel_rect.bottom
+
+
+def test_demo_prompt_wrap_text_splits_whitespace_free_text_to_fit_width() -> None:
+    font = _MetricFont(char_width=9, height=20)
+    text = '体験版制限' * 24
+
+    lines = DemoUpgradePrompt._wrap_text(font, text, 120)
+
+    assert len(lines) > 1
+    assert all(font.size(line)[0] <= 120 for line in lines)
+
+
+def test_demo_prompt_layout_keeps_cjk_body_inside_panel_on_narrow_screen() -> None:
+    message = (
+        'このコンテンツはデモ版では冒頭部分のみ遊べます。続きは製品版でお楽しみください。'
+        'このコンテンツはデモ版では冒頭部分のみ遊べます。続きは製品版でお楽しみください。'
+        'このコンテンツはデモ版では冒頭部分のみ遊べます。続きは製品版でお楽しみください。'
+    )
+    prompt = DemoUpgradePrompt(_FakeScreen(480, 720))
+    prompt.show(
+        title='体験版の制限',
+        message=message,
+        confirm_label='Steam で開く',
+        cancel_label='閉じる',
+    )
+
+    title_font = _MetricFont(char_width=13, height=28)
+    body_font = _MetricFont(char_width=9, height=22)
+    layout = prompt._build_layout((480, 720), 0.82, title_font, body_font)
+
+    assert layout.lines
+    assert all(body_font.size(line)[0] <= layout.body_rect.width for line in layout.lines)
+    assert layout.body_rect.bottom <= layout.footer_rect.top
+    assert layout.confirm_rect.bottom <= layout.panel_rect.bottom
+    assert layout.cancel_rect.bottom <= layout.panel_rect.bottom

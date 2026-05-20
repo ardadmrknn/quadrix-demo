@@ -526,6 +526,10 @@ class ExtrasScreen:
     def draw(self):
         """Ekstralar ekranını çiz - Modern Glassmorphism Grid Layout"""
         width, height = self.screen.get_size()
+        if self._demo_upgrade_prompt.is_active():
+            self._demo_upgrade_prompt.screen = self.screen
+            self._demo_upgrade_prompt.draw()
+            return
         current_lang = get_language()
         layout_signature = (width, height, current_lang)
         if self._layout_signature != layout_signature:

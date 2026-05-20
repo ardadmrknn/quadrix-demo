@@ -463,6 +463,11 @@ class CampaignLevelSelect:
         width = self.screen.get_width()
         height = self.screen.get_height()
 
+        if self._demo_upgrade_prompt.is_active():
+            self._demo_upgrade_prompt.screen = self.screen
+            self._demo_upgrade_prompt.draw()
+            return
+
         # Fare hover durumunu her frame güncelle: MOUSEMOTION kaçırılan durumlarda
         # (ekrana ilk giriş, dünya geçişi, pencere odaklanması) tooltip takılmaz.
         if self.level_buttons:

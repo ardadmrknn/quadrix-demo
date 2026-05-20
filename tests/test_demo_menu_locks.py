@@ -1,7 +1,47 @@
 from __future__ import annotations
 
+import pygame
+
 import menu
 import extras_menu
+from campaign import level_select as solo_level_select
+
+
+class _FakeScreen:
+    def __init__(self, width: int, height: int):
+        self._size = (width, height)
+
+    def get_size(self) -> tuple[int, int]:
+        return self._size
+
+    def get_width(self) -> int:
+        return self._size[0]
+
+    def get_height(self) -> int:
+        return self._size[1]
+
+
+class _ActivePrompt:
+    def __init__(self):
+        self.screen = None
+        self.draw_calls = 0
+
+    def is_active(self) -> bool:
+        return True
+
+    def draw(self) -> None:
+        self.draw_calls += 1
+
+
+class _BackgroundFxSpy:
+    def __init__(self):
+        self.called = False
+
+    def update(self, _screen) -> None:
+        self.called = True
+
+    def draw(self, _screen) -> None:
+        self.called = True
 
 
 def test_menu_demo_online_actions_open_transition_prompt(monkeypatch) -> None:
@@ -57,3 +97,44 @@ def test_extras_demo_locked_modes_route_to_expected_prompt(monkeypatch) -> None:
     calls.clear()
     assert screen._show_demo_lock_prompt_for_mode('Classic Mode') is False
     assert calls == []
+
+
+def test_menu_draw_freezes_background_when_demo_prompt_active() -> None:
+    menu_screen = menu.Menu.__new__(menu.Menu)
+    menu_screen.screen = _FakeScreen(1366, 768)
+    menu_screen._demo_upgrade_prompt = _ActivePrompt()
+    menu_screen.background_fx = _BackgroundFxSpy()
+    menu_screen.selected = 3
+
+    menu_screen.draw()
+
+    assert menu_screen._demo_upgrade_prompt.draw_calls == 1
+    assert menu_screen.background_fx.called is False
+    assert menu_screen.selected == 3
+
+
+def test_extras_draw_freezes_background_when_demo_prompt_active() -> None:
+    extras_screen = extras_menu.ExtrasScreen.__new__(extras_menu.ExtrasScreen)
+    extras_screen.screen = _FakeScreen(1366, 768)
+    extras_screen._demo_upgrade_prompt = _ActivePrompt()
+    extras_screen.background_fx = _BackgroundFxSpy()
+    extras_screen.selected = 2
+
+    extras_screen.draw()
+
+    assert extras_screen._demo_upgrade_prompt.draw_calls == 1
+    assert extras_screen.background_fx.called is False
+    assert extras_screen.selected == 2
+
+
+def test_campaign_draw_keeps_hover_state_frozen_when_demo_prompt_active() -> None:
+    level_select = solo_level_select.CampaignLevelSelect.__new__(solo_level_select.CampaignLevelSelect)
+    level_select.screen = _FakeScreen(1366, 768)
+    level_select._demo_upgrade_prompt = _ActivePrompt()
+    level_select.hovered_level = 9
+    level_select.level_buttons = [(pygame.Rect(0, 0, 80, 80), 1)]
+
+    level_select.draw()
+
+    assert level_select._demo_upgrade_prompt.draw_calls == 1
+    assert level_select.hovered_level == 9
