@@ -405,6 +405,9 @@ class ExtrasScreen:
         """Ekstralar input işle"""
         if self._demo_upgrade_prompt.is_active():
             self._demo_upgrade_prompt.handle_input(event)
+            action = self._demo_upgrade_prompt.consume_last_action()
+            if action == 'menu_back':
+                return 'Geri'
             return None
 
         if event.type == pygame.KEYDOWN:

@@ -441,10 +441,6 @@ class CoopCampaignMode(CoopGame):
         header_rect = pygame.Rect(pr.x + 2, pr.y + 2, pr.width - 4, header_h)
         header_surf = pygame.Surface(header_rect.size, pygame.SRCALPHA)
         header_surf.fill((12, 18, 40, 230))
-        # Üst highlight
-        for row in range(min(s(12), header_h)):
-            alpha = int(35 * (1 - row / s(12)))
-            pygame.draw.line(header_surf, (255, 255, 255, alpha), (0, row), (header_rect.width, row))
         self.screen.blit(header_surf, header_rect.topleft)
         # Alt çizgi
         pygame.draw.line(self.screen, (*retro_style.primary[:3], 140),

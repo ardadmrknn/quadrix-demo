@@ -33,6 +33,24 @@ class _ActivePrompt:
         self.draw_calls += 1
 
 
+class _ActionPrompt:
+    def __init__(self, action: str | None):
+        self._action = action
+        self.handled_events: list[object] = []
+
+    def is_active(self) -> bool:
+        return True
+
+    def handle_input(self, event) -> bool:
+        self.handled_events.append(event)
+        return True
+
+    def consume_last_action(self) -> str | None:
+        action = self._action
+        self._action = None
+        return action
+
+
 class _BackgroundFxSpy:
     def __init__(self):
         self.called = False
@@ -125,6 +143,15 @@ def test_extras_draw_freezes_background_when_demo_prompt_active() -> None:
     assert extras_screen._demo_upgrade_prompt.draw_calls == 1
     assert extras_screen.background_fx.called is False
     assert extras_screen.selected == 2
+
+
+def test_extras_transition_prompt_menu_back_bubbles_to_parent() -> None:
+    extras_screen = extras_menu.ExtrasScreen.__new__(extras_menu.ExtrasScreen)
+    extras_screen._demo_upgrade_prompt = _ActionPrompt('menu_back')
+
+    result = extras_screen.handle_input(pygame.event.Event(pygame.KEYDOWN, {'key': pygame.K_ESCAPE}))
+
+    assert result == 'Geri'
 
 
 def test_campaign_draw_keeps_hover_state_frozen_when_demo_prompt_active() -> None:

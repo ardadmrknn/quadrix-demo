@@ -78,6 +78,16 @@ V2 port notu:
 - V2 campaign popup'lari demo ile genelde en yakin eslesmeye sahip kisimdir.
 - Ozellikle level complete / level failed / reward summary panellerini bu dosyada arayin.
 
+#### src/campaign/coop_campaign_mode.py
+
+Degisiklik:
+
+- Co-op campaign level complete popup'inin baslik bandina cizilen ust beyaz highlight kaldirildi.
+
+V2 port notu:
+
+- Co-op campaign veya benzer ikinci campaign popup'lari ayri sinifta tutuluyorsa ayni header bandi mantigini burada da temizleyin.
+
 #### src/tutorial.py
 
 Degisiklik:
@@ -96,6 +106,7 @@ V2 port notu:
 Degisiklik:
 
 - Popup tarzi hover butonlarinda kullanilan ust parlama cizgileri kaldirildi.
+- Kontrol ayarlari ve muzik/track secici gibi tam ekran modal panellerde panel ust bandi ve secili satir highlight katmani kaldirildi.
 - Demo'da dogrudan gorulen en yakin ornekler SOS/geri don/exit turu modal aksiyon butonlari.
 
 V2 port notu:
@@ -109,6 +120,7 @@ V2 port notu:
 3. Sonra popup ozel dosyalari su sirayla kontrol edin:
    - `v2/src/game.py`
    - `v2/src/campaign/campaign_ui.py`
+   - `v2/src/campaign/coop_campaign_mode.py`
    - `v2/src/tutorial.py`
    - `v2/src/menu.py`
    - varsa upgrade/store/locked-mode popup dosyalari

@@ -6666,9 +6666,6 @@ class ControlSettingsScreen:
         # Arka plan
         panel_surf = pygame.Surface(panel.size, pygame.SRCALPHA)
         panel_surf.fill((12, 16, 32, 235))
-        for yy in range(min(30, ph // 4)):
-            alpha = int(15 * (1 - yy / 30))
-            pygame.draw.line(panel_surf, (255, 255, 255, alpha), (0, yy), (pw, yy))
         self.screen.blit(panel_surf, panel.topleft)
         pygame.draw.rect(self.screen, (60, 70, 100), panel, 2, border_radius=14)
         pygame.draw.line(self.screen, (80, 140, 220), (px + 2, py + 1), (px + pw - 2, py + 1), 1)
@@ -6753,10 +6750,6 @@ class ControlSettingsScreen:
             bg_color = (28, 38, 60) if selected else (18, 24, 42)
             row_surf = pygame.Surface(rect.size, pygame.SRCALPHA)
             row_surf.fill((*bg_color, bg_alpha))
-            if selected:
-                for ry in range(min(8, rect.height // 4)):
-                    a = int(15 * (1 - ry / 8))
-                    pygame.draw.line(row_surf, (255, 255, 255, a), (0, ry), (rect.width, ry))
             self.screen.blit(row_surf, rect.topleft)
 
             if selected:
@@ -8499,9 +8492,6 @@ class ModeMusicScreen:
         # Arka plan
         panel_surf = pygame.Surface(panel.size, pygame.SRCALPHA)
         panel_surf.fill((12, 16, 32, 235))
-        for yy in range(min(30, ph // 4)):
-            alpha = int(15 * (1 - yy / 30))
-            pygame.draw.line(panel_surf, (255, 255, 255, alpha), (0, yy), (pw, yy))
         self.screen.blit(panel_surf, panel.topleft)
         pygame.draw.rect(self.screen, (60, 70, 100), panel, 2, border_radius=14)
         pygame.draw.line(self.screen, (80, 140, 220), (px + 2, py + 1), (px + pw - 2, py + 1), 1)
@@ -8559,10 +8549,6 @@ class ModeMusicScreen:
             bg_color = (28, 38, 60) if is_selected else (18, 24, 42)
             row_surf = pygame.Surface(item_rect.size, pygame.SRCALPHA)
             row_surf.fill((*bg_color, bg_alpha))
-            if is_selected:
-                for ry in range(min(8, item_rect.height // 4)):
-                    a = int(15 * (1 - ry / 8))
-                    pygame.draw.line(row_surf, (255, 255, 255, a), (0, ry), (item_rect.width, ry))
             self.screen.blit(row_surf, item_rect.topleft)
 
             if is_selected:

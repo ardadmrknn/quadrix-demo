@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import pygame
 import pytest
 
+import demo_upgrade_prompt as demo_upgrade_prompt_module
 from demo_upgrade_prompt import (
     DemoUpgradePrompt,
     show_demo_full_lock_prompt,
@@ -179,3 +181,37 @@ def test_demo_prompt_layout_keeps_cjk_body_inside_panel_on_narrow_screen() -> No
     assert layout.body_rect.bottom <= layout.footer_rect.top
     assert layout.confirm_rect.bottom <= layout.panel_rect.bottom
     assert layout.cancel_rect.bottom <= layout.panel_rect.bottom
+
+
+def test_demo_prompt_uses_normalized_mouse_positions_for_button_clicks(monkeypatch) -> None:
+    prompt = DemoUpgradePrompt(_FakeScreen(1366, 768))
+    prompt.show(
+        title='Demo Sınırı',
+        message='Bu mod tam sürümde mevcut.',
+        confirm_label="Steam'de Aç",
+        cancel_label='Kapat',
+    )
+    prompt.confirm_rect = pygame.Rect(320, 240, 180, 48)
+    prompt.cancel_rect = pygame.Rect(320, 300, 180, 48)
+
+    normalized_pos = prompt.confirm_rect.center
+    monkeypatch.setattr(demo_upgrade_prompt_module, 'normalize_mouse_pos', lambda _pos: normalized_pos)
+    monkeypatch.setattr(demo_upgrade_prompt_module, 'get_mouse_pos', lambda: normalized_pos)
+    monkeypatch.setattr(prompt, '_open_store', lambda: prompt._close_with_action(prompt._confirm_action))
+
+    down_event = pygame.event.Event(pygame.MOUSEBUTTONDOWN, {'button': 1, 'pos': (5, 5)})
+    up_event = pygame.event.Event(pygame.MOUSEBUTTONUP, {'button': 1, 'pos': (5, 5)})
+
+    assert prompt.handle_input(down_event) is True
+    assert prompt.handle_input(up_event) is True
+    assert prompt.consume_last_action() == 'confirm'
+
+
+def test_demo_transition_prompt_escape_uses_menu_back_action() -> None:
+    prompt = DemoUpgradePrompt(_FakeScreen(1366, 768))
+    show_demo_transition_lock_prompt(prompt)
+
+    escape_event = pygame.event.Event(pygame.KEYDOWN, {'key': pygame.K_ESCAPE})
+
+    assert prompt.handle_input(escape_event) is True
+    assert prompt.consume_last_action() == 'menu_back'

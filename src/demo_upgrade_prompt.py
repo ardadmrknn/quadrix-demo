@@ -8,12 +8,14 @@ import pygame
 try:
     from . import demo_config
     from .localization import t
+    from .platform_utils import get_mouse_pos, normalize_mouse_pos
     from .retro_style import retro_style
     from .ui_theme import UIColors, UIFonts
     from .ui_scaling import get_projected_effective_scale
 except Exception:
     import demo_config
     from localization import t
+    from platform_utils import get_mouse_pos, normalize_mouse_pos
     from retro_style import retro_style
     from ui_theme import UIColors, UIFonts
     from ui_scaling import get_projected_effective_scale
@@ -49,6 +51,8 @@ class DemoUpgradePrompt:
         self._outside_click_closes = False
         self._pressed_action: str | None = None
         self._background_snapshot: pygame.Surface | None = None
+        self._confirm_action = 'confirm'
+        self._cancel_action = 'cancel'
 
     def is_active(self) -> bool:
         return bool(self.active)
@@ -63,6 +67,8 @@ class DemoUpgradePrompt:
         eyebrow: str | None = None,
         accent_color: tuple[int, int, int] | None = None,
         outside_click_closes: bool = False,
+        confirm_action: str = 'confirm',
+        cancel_action: str = 'cancel',
     ) -> None:
         self.active = True
         self.eyebrow = str(eyebrow or '')
@@ -76,6 +82,8 @@ class DemoUpgradePrompt:
         self._last_action = None
         self._outside_click_closes = bool(outside_click_closes)
         self._pressed_action = None
+        self._confirm_action = str(confirm_action or 'confirm')
+        self._cancel_action = str(cancel_action or 'cancel')
         self._capture_background_snapshot()
 
     def hide(self) -> None:
@@ -100,14 +108,14 @@ class DemoUpgradePrompt:
 
         if event.type == pygame.KEYDOWN:
             if event.key in (pygame.K_ESCAPE,):
-                self._close_with_action('cancel')
+                self._close_with_action(self._cancel_action)
                 return True
             if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE):
                 self._open_store()
                 return True
 
         if event.type == pygame.MOUSEBUTTONDOWN and getattr(event, 'button', None) == 1:
-            pos = getattr(event, 'pos', None)
+            pos = normalize_mouse_pos(getattr(event, 'pos', None)) or get_mouse_pos()
             if self.confirm_rect and self.confirm_rect.collidepoint(pos):
                 self._pressed_action = 'confirm'
                 return True
@@ -116,18 +124,18 @@ class DemoUpgradePrompt:
                 return True
             self._pressed_action = None
             if self._outside_click_closes:
-                self._close_with_action('cancel')
+                self._close_with_action(self._cancel_action)
             return True
 
         if event.type == pygame.MOUSEBUTTONUP and getattr(event, 'button', None) == 1:
-            pos = getattr(event, 'pos', None)
+            pos = normalize_mouse_pos(getattr(event, 'pos', None)) or get_mouse_pos()
             pressed_action = self._pressed_action
             self._pressed_action = None
             if pressed_action == 'confirm' and self.confirm_rect and self.confirm_rect.collidepoint(pos):
                 self._open_store()
                 return True
             if pressed_action == 'cancel' and self.cancel_rect and self.cancel_rect.collidepoint(pos):
-                self._close_with_action('cancel')
+                self._close_with_action(self._cancel_action)
                 return True
             return True
 
@@ -427,7 +435,7 @@ class DemoUpgradePrompt:
 
     def _get_pointer_state(self, rect: pygame.Rect, action: str) -> tuple[bool, bool]:
         try:
-            mouse_pos = pygame.mouse.get_pos()
+            mouse_pos = get_mouse_pos()
             hovered = bool(rect.collidepoint(mouse_pos))
             pressed = bool(hovered and self._pressed_action == action)
             return hovered, pressed
@@ -592,7 +600,7 @@ class DemoUpgradePrompt:
         try:
             webbrowser.open(demo_config.DEMO_STEAM_STORE_URL, new=2)
         finally:
-            self._close_with_action('confirm')
+            self._close_with_action(self._confirm_action)
 
     @staticmethod
     def _wrap_text(font, text: str, max_width: int) -> list[str]:
@@ -720,6 +728,7 @@ def show_demo_transition_lock_prompt(prompt: DemoUpgradePrompt) -> None:
         confirm_label=t('demo_open_steam', default="Steam'de Aç"),
         cancel_label=t('demo_back_to_menu', default='Menüye Dön'),
         accent_color=UIColors.NEON_CYAN,
+        cancel_action='menu_back',
     )
 
 
