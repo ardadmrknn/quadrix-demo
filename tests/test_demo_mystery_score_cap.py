@@ -19,12 +19,13 @@ def _import_modules():
 
 def test_demo_mystery_score_cap_only_triggers_in_demo(monkeypatch):
     extra_modes_module, _ = _import_modules()
+    score_cap = getattr(extra_modes_module.demo_config, 'DEMO_MYSTERY_SCORE_CAP', 100000)
     mode = extra_modes_module.MysteryMode.__new__(extra_modes_module.MysteryMode)
-    mode.board = types.SimpleNamespace(score=75000)
+    mode.board = types.SimpleNamespace(score=score_cap)
     mode.game_over = False
     mode._demo_score_cap_active = False
     mode._demo_score_cap_reached = False
-    mode._demo_score_cap_value = 75000
+    mode._demo_score_cap_value = score_cap
 
     monkeypatch.setattr(extra_modes_module.demo_config, 'IS_DEMO', True)
     assert mode._should_trigger_demo_score_cap() is True
@@ -35,9 +36,10 @@ def test_demo_mystery_score_cap_only_triggers_in_demo(monkeypatch):
 
 def test_demo_mystery_score_cap_activation_opens_prompt_and_freezes_overlays():
     extra_modes_module, prompt_module = _import_modules()
+    score_cap = getattr(extra_modes_module.demo_config, 'DEMO_MYSTERY_SCORE_CAP', 100000)
     mode = extra_modes_module.MysteryMode.__new__(extra_modes_module.MysteryMode)
     mode.screen = pygame.Surface((640, 480))
-    mode.board = types.SimpleNamespace(score=75000)
+    mode.board = types.SimpleNamespace(score=score_cap)
     mode.card_manager = types.SimpleNamespace(pending_choices=[{'id': 'old'}])
     mode.card_selection_active = True
     mode.card_selection_rects = [pygame.Rect(0, 0, 10, 10)]
@@ -50,6 +52,7 @@ def test_demo_mystery_score_cap_activation_opens_prompt_and_freezes_overlays():
     mode._card_workshop_active = True
     mode._demo_score_cap_active = False
     mode._demo_score_cap_reached = False
+    mode._demo_score_cap_value = score_cap
     mode._demo_score_cap_prompt = prompt_module.DemoUpgradePrompt(mode.screen)
 
     mode._activate_demo_score_cap_prompt()

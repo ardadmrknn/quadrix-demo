@@ -5105,10 +5105,12 @@ class MysteryMode(Game):
         return True
 
     def _get_demo_score_cap(self) -> int:
+        fallback_cap = getattr(demo_config, 'DEMO_MYSTERY_SCORE_CAP', 100000)
         try:
-            return max(1, int(getattr(self, '_demo_score_cap_value', 75000) or 75000))
+            default_cap = max(1, int(fallback_cap or 100000))
+            return max(1, int(getattr(self, '_demo_score_cap_value', default_cap) or default_cap))
         except Exception:
-            return 75000
+            return 100000
 
     def _should_trigger_demo_score_cap(self) -> bool:
         if not getattr(demo_config, 'IS_DEMO', False):
@@ -5512,7 +5514,7 @@ class MysteryMode(Game):
             score_manager=score_manager,
         )
         self.mode_name = t('mode_label_card_mastery')
-        self._demo_score_cap_value = 75000
+        self._demo_score_cap_value = max(1, int(getattr(demo_config, 'DEMO_MYSTERY_SCORE_CAP', 100000) or 100000))
         self._demo_score_cap_reached = False
         self._demo_score_cap_active = False
         self._demo_score_cap_prompt = DemoUpgradePrompt(self.screen)
