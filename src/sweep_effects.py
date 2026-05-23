@@ -302,6 +302,62 @@ _CAT_HEAD_ANCHOR_X = 0.86
 _SWEEP_LEVEL_DURATION_DECAY = 0.965
 _SWEEP_LEVEL_MIN_DURATION_RATIO = 0.42
 
+_LINE_SWEEP_SLOT = 'line_sweep_skin'
+_LINE_SWEEP_THEME_ALIASES = {
+    'rainbow': 'rainbow',
+    'luna_rainbow': 'rainbow',
+    'luna_sweep_rainbow': 'rainbow',
+    'usa': 'usa',
+    'abd': 'usa',
+    'luna_usa': 'usa',
+    'luna_sweep_usa': 'usa',
+    'turkiye': 'turkiye',
+    'turkey': 'turkiye',
+    'tr': 'turkiye',
+    'luna_turkiye': 'turkiye',
+    'luna_sweep_turkiye': 'turkiye',
+    'russia': 'russia',
+    'rusya': 'russia',
+    'luna_russia': 'russia',
+    'luna_sweep_russia': 'russia',
+    'japan': 'japan',
+    'japonya': 'japan',
+    'luna_japan': 'japan',
+    'luna_sweep_japan': 'japan',
+}
+
+
+def normalize_line_sweep_theme(value: str | None) -> str:
+    key = str(value or '').strip().lower()
+    return _LINE_SWEEP_THEME_ALIASES.get(key, 'rainbow')
+
+
+def get_equipped_line_sweep_theme(user_manager=None, profile: dict | None = None) -> str:
+    # Basit, tests sırasında eksik olan çağrıyı karşılamak için mevcut profil/veri yapılarını destekler.
+    if profile is None and user_manager is not None:
+        getter = getattr(user_manager, 'get_equipped_cosmetic', None)
+        if callable(getter):
+            try:
+                equipped = getter(_LINE_SWEEP_SLOT)
+            except Exception:
+                equipped = None
+            else:
+                return normalize_line_sweep_theme(equipped)
+
+        profile_getter = getattr(user_manager, 'get_user_data', None)
+        if callable(profile_getter):
+            try:
+                profile = profile_getter()
+            except Exception:
+                profile = None
+
+    if isinstance(profile, dict):
+        equipped_map = profile.get('equipped_cosmetics', {})
+        if isinstance(equipped_map, dict):
+            return normalize_line_sweep_theme(equipped_map.get(_LINE_SWEEP_SLOT))
+    return 'rainbow'
+
+
 
 def compute_line_sweep_progress_speed(
     base_block_speed: float,

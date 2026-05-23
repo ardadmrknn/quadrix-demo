@@ -706,6 +706,21 @@ def show_demo_full_lock_prompt(prompt: DemoUpgradePrompt) -> None:
     )
 
 
+def show_demo_store_lock_prompt(prompt: DemoUpgradePrompt) -> None:
+    prompt.show(
+        eyebrow=t('locked_badge', default='Kilitli'),
+        title=t('demo_prompt_title', default='Demo Sınırı'),
+        message=t(
+            'demo_store_lock_message',
+            default='Magaza vitrini ve satin alma akisi tam surumde acilir.',
+        ),
+        confirm_label=t('demo_open_steam', default="Steam'de Aç"),
+        cancel_label=t('demo_back_to_menu', default='Menuye Don'),
+        accent_color=UIColors.NEON_GOLD,
+        cancel_action='menu_back',
+    )
+
+
 def show_demo_partial_lock_prompt(prompt: DemoUpgradePrompt) -> None:
     prompt.show(
         eyebrow=t('locked_badge', default='Kilitli'),

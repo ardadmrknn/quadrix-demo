@@ -202,6 +202,7 @@ try:
     from .piece_workshop import PieceWorkshopScreen  # type: ignore
     from .guide_screen import GuideScreen  # type: ignore
     from .store_screen import StoreScreen  # type: ignore
+    from .demo_upgrade_prompt import show_demo_store_lock_prompt  # type: ignore
     from .score_manager import ScoreManager  # type: ignore
     from .achievements import AchievementManager  # type: ignore
     from .themes import ThemeManager  # type: ignore
@@ -243,6 +244,7 @@ except Exception:
     from piece_workshop import PieceWorkshopScreen
     from guide_screen import GuideScreen
     from store_screen import StoreScreen
+    from demo_upgrade_prompt import show_demo_store_lock_prompt
     from score_manager import ScoreManager
     from achievements import AchievementManager
     from themes import ThemeManager
@@ -2397,7 +2399,7 @@ def main():
                 state = 'coop_campaign_select'
             elif action == 'store':
                 confirm_exit = False
-                state = 'store'
+                show_demo_store_lock_prompt(menu._demo_upgrade_prompt)
             elif action == 'piece_workshop':
                 confirm_exit = False
                 state = 'piece_workshop'

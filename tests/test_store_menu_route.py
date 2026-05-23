@@ -32,30 +32,28 @@ def _find_action_branch(tree: ast.AST, action_name: str) -> ast.If | None:
     return None
 
 
-def test_store_menu_action_transitions_into_store_state():
+def test_store_menu_action_shows_demo_limit_prompt():
     tree = _parse_main()
     branch = _find_action_branch(tree, 'store')
 
     assert branch is not None, 'store action branch was not found in src/main.py'
 
-    show_info_calls = []
+    demo_prompt_calls = []
     state_assignments = []
 
     for statement in branch.body:
         for node in ast.walk(statement):
-            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
-                if isinstance(node.func.value, ast.Name) and node.func.value.id == 'menu' and node.func.attr == 'show_info':
-                    show_info_calls.append(node.lineno)
+            if isinstance(node, ast.Call):
+                func = node.func
+                if isinstance(func, ast.Name) and func.id == 'show_demo_store_lock_prompt':
+                    demo_prompt_calls.append(node.lineno)
             if isinstance(node, ast.Assign):
                 if any(isinstance(target, ast.Name) and target.id == 'state' for target in node.targets):
                     if isinstance(node.value, ast.Constant) and node.value.value == 'store':
                         state_assignments.append(node.lineno)
 
-    assert not show_info_calls, (
-        'store action should no longer show the old placeholder info popup: '
-        + ', '.join(f'L{line}' for line in show_info_calls)
-    )
-    assert state_assignments, 'store action should transition into the store state'
+    assert demo_prompt_calls, 'store action should show the demo store lock prompt'
+    assert not state_assignments, 'store action should stay in the menu instead of transitioning into the store state'
 
 
 def test_state_handlers_include_store_handler():
