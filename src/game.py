@@ -4158,16 +4158,7 @@ class Game:
         dt_seconds = dt_clamped / 1000.0
         dt_frames = dt_clamped / 16.666  # ~60 FPS frame scale
 
-        # Steam Overlay kontrolü: eğer overlay aktifse oyunu otomatik duraklat
-        try:
-            import steam_integration
-            if steam_integration.is_overlay_enabled():
-                self.paused = True
-                self.pause_menu_selected = 0
-                if hasattr(self, 'sound') and self.sound:
-                    self.sound.duck_music()
-        except Exception:
-            pass
+
 
         if self.game_over_warning_timer > 0:
             self.game_over_warning_timer = max(0.0, self.game_over_warning_timer - delta_time / 1000.0)

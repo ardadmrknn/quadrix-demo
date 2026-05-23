@@ -140,7 +140,7 @@ DEFAULT_GAMEPAD_BINDINGS = {
     'rotate_alt':   {'button': None}, # Devre dışı
     'hold':         {'button': 9},   # LB / L1
     'hold2':        {'button': 2},   # X (Xbox) / Square (PS)
-    'pause':        {'button': 6},   # Start / Options / +
+    'pause':        {'button': 6, 'button_secondary': 5},   # Start / Options / + or Guide (Home)
     'lt':           {'trigger': 'left'},  # LT / L2 (analog trigger)
     'rt':           {'trigger': 'right'}, # RT / R2 (analog trigger)
     'restart':      {'button': None}, # Devre dışı
