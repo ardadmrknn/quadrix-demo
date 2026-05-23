@@ -201,6 +201,7 @@ try:
     from .gameplay_settings import GameplaySettingsMenu  # type: ignore
     from .piece_workshop import PieceWorkshopScreen  # type: ignore
     from .guide_screen import GuideScreen  # type: ignore
+    from .store_screen import StoreScreen  # type: ignore
     from .score_manager import ScoreManager  # type: ignore
     from .achievements import AchievementManager  # type: ignore
     from .themes import ThemeManager  # type: ignore
@@ -241,6 +242,7 @@ except Exception:
     from gameplay_settings import GameplaySettingsMenu
     from piece_workshop import PieceWorkshopScreen
     from guide_screen import GuideScreen
+    from store_screen import StoreScreen
     from score_manager import ScoreManager
     from achievements import AchievementManager
     from themes import ThemeManager
@@ -1505,6 +1507,7 @@ def main():
     piece_workshop_screen = PieceWorkshopScreen(screen, settings_manager, theme_manager)  # Yeni parça atölyesi
     credits_screen = CreditsScreen(screen)
     extras_screen = ExtrasScreen(screen, user_manager)  # Ekstralar menüsü
+    store_screen = StoreScreen(screen, user_manager=user_manager, settings_manager=settings_manager)
     user_selection_screen = UserSelectionScreen(screen, user_manager)
     user_management_screen = UserManagementScreen(screen, user_manager)
     graphics_menu = None  # Grafikler menüsü
@@ -1556,6 +1559,7 @@ def main():
         achievement_screen,
         credits_screen,
         extras_screen,
+        store_screen,
         user_selection_screen,
         user_management_screen,
         campaign_level_select,
@@ -1839,6 +1843,7 @@ def main():
             achievement_screen,
             credits_screen,
             extras_screen,
+            store_screen,
             user_selection_screen,
             user_management_screen,
             campaign_level_select,
@@ -2392,7 +2397,7 @@ def main():
                 state = 'coop_campaign_select'
             elif action == 'store':
                 confirm_exit = False
-                menu.show_info(t('menu_dashboard_sub_store'))
+                state = 'store'
             elif action == 'piece_workshop':
                 confirm_exit = False
                 state = 'piece_workshop'
@@ -2467,6 +2472,20 @@ def main():
             if action == 'back':
                 state = 'menu'
         credits_screen.draw()
+        return True
+
+    def _handle_store(delta_ms):
+        nonlocal running, state
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                running = False
+            if _check_fullscreen_toggle(event):
+                _toggle_fullscreen(500, 700)
+            action = store_screen.handle_input(event)
+            if action == 'back':
+                state = 'menu'
+        store_screen.draw()
         return True
 
     def _handle_highscores(delta_ms):
@@ -3838,6 +3857,7 @@ def main():
     STATE_HANDLERS = {
         'menu': _handle_menu,
         'credits': _handle_credits,
+        'store': _handle_store,
         'highscores': _handle_highscores,
         'settings': _handle_settings,
         'mode_music': _handle_mode_music,
@@ -3889,14 +3909,14 @@ def main():
         if from_state == 'campaign_select' and to_state == 'menu':
             return 'slide_right'
         # Showcase ekranları (ana menüden açılan): ileri sola, geri sağa
-        showcase_states = ['piece_workshop', 'block_styles', 'block_workshop']
+        showcase_states = ['piece_workshop', 'block_styles', 'block_workshop', 'store']
         if from_state == 'menu' and to_state in showcase_states:
             return 'slide_left'
         if from_state in showcase_states and to_state == 'menu':
             return 'slide_right'
         # Menü geçişleri için sayfa kaydırma efekti
         # İleri gidiş (derinleşme) - sola kayma
-        forward_states = ['extras', 'highscores', 'achievements', 'credits', 'guide', 'leaderboard_trailer', 'campaign_select']
+        forward_states = ['extras', 'highscores', 'achievements', 'credits', 'guide', 'leaderboard_trailer', 'campaign_select', 'store']
         if to_state in forward_states:
             return 'slide_left'
         # Geri dönüş - sağa kayma
