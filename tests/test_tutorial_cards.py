@@ -109,6 +109,23 @@ class TestTutorialCardHelpers(unittest.TestCase):
         self.assertFalse(overkill_outcome['success'])
         self.assertEqual(overkill_outcome['stars'], 0)
 
+    def test_card_preview_prefers_real_catalog_fields_over_tutorial_fallbacks(self):
+        freeze_drop = tutorial_cards.get_card_preview('freeze_drop_rare')
+        self.assertEqual(freeze_drop['value'], 3)
+        self.assertEqual(freeze_drop['freeze_duration'], 6)
+        self.assertTrue(freeze_drop['single_use'])
+        self.assertFalse(freeze_drop.get('persistent', False))
+        self.assertIn('3 hak', tutorial_cards.get_tutorial_card_description(freeze_drop))
+
+        nova_burst = tutorial_cards.get_card_preview('nova_burst')
+        self.assertEqual(nova_burst['value'], 3)
+        self.assertIn('Sonraki 3 kilitte', tutorial_cards.get_tutorial_card_description(nova_burst))
+
+        ghost_echo = tutorial_cards.get_card_preview('ghost_echo')
+        self.assertEqual(ghost_echo['value'], 10)
+        self.assertTrue(ghost_echo['single_use'])
+        self.assertFalse(ghost_echo.get('persistent', False))
+
 
 class TestTutorialCardProgression(unittest.TestCase):
     def test_card_foundations_unlock_after_prior_chapters_complete(self):

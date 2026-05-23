@@ -529,8 +529,14 @@ def get_card_preview(card_id: str) -> Dict[str, Any] | None:
     if not real_card and not tutorial_card:
         return None
 
-    card = real_card
-    card.update(tutorial_card)
+    card = deepcopy(real_card) if real_card else tutorial_card
+    if tutorial_card.get("localization_id"):
+        card["localization_id"] = tutorial_card["localization_id"]
+    if real_card:
+        if real_card.get("value") is not None:
+            card["value"] = real_card.get("value")
+        elif real_card.get("base") is not None:
+            card["value"] = real_card.get("base")
     card.setdefault("id", card_key)
     if "value" not in card and "base" in card:
         card["value"] = card.get("base")

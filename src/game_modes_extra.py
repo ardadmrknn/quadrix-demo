@@ -740,24 +740,27 @@ class MysteryCardManager:
             card_mode_debug = bool(self.mode.settings_manager.get('card_mode_debug', False))
         except Exception:
             card_mode_debug = False
+        # Debug modunda rarity sampling'i bypass etsek de anti-farm filtresi
+        # korunmalı; aksi halde tek kullanımlık/persistent kartlar tekrar sunulur.
+        def _is_used(c):
+            cid = c.get("id", "")
+            group = c.get("_group_id", cid)
+            if (c.get("single_use") or c.get("persistent")) and (cid in self.used_card_ids or group in self.used_card_ids):
+                return True
+            return False
+
+        filtered_available = [
+            c for c in self.catalog
+            if not (c.get("persistent") and any(ac.get("id") == c.get("id") for ac in self.active_cards))
+            and not _is_used(c)
+        ]
         if card_mode_debug:
-            available = list(self.catalog)
+            available = list(filtered_available)
             pool_size = len(available)
         else:
             # Exclude persistent perks already active and single-use cards already used
             # Also exclude cards in the same group (e.g., hold_destroyer variants)
-            def _is_used(c):
-                cid = c.get("id", "")
-                group = c.get("_group_id", cid)
-                if (c.get("single_use") or c.get("persistent")) and (cid in self.used_card_ids or group in self.used_card_ids):
-                    return True
-                return False
-
-            available = [
-                c for c in self.catalog
-                if not (c.get("persistent") and any(ac.get("id") == c.get("id") for ac in self.active_cards))
-                and not _is_used(c)
-            ]
+            available = list(filtered_available)
             # If for whatever reason the filter removes all cards (e.g., all single-use are used),
             # fall back to the full catalog so the player still receives card choices on level-up.
             if not available:

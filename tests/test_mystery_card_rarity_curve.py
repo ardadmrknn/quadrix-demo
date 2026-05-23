@@ -227,6 +227,21 @@ def test_card_mode_debug_returns_full_catalog():
     assert chosen_ids == {'c1', 'u1', 'r1', 'e1', 'l1'}
 
 
+def test_card_mode_debug_still_filters_used_and_active_cards():
+    random.seed(0)
+    mgr = _make_manager(card_level=5, debug=True)
+    persistent = _stub_card('perk_keep', 'rare', persistent=True)
+    used_variant = _stub_card('hold_destroyer_rare', 'epic', group='hold_destroyer', single_use=True)
+    fresh = _stub_card('fresh', 'common')
+    mgr.catalog = [persistent, used_variant, fresh]
+    mgr.active_cards = [{'id': 'perk_keep'}]
+    mgr.used_card_ids.add('hold_destroyer')
+
+    choices = mgr.prepare_selection()
+
+    assert [c['id'] for c in choices] == ['fresh']
+
+
 def test_persistent_already_active_card_filtered_out():
     random.seed(0)
     mgr = _make_manager(card_level=10)

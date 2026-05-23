@@ -28,21 +28,39 @@ def _extract_apply_ids(text: str) -> list[str]:
         s = line.strip()
         if not (s.startswith("if ") or s.startswith("elif ")):
             continue
-        if "cid ==" not in s:
+        if "cid ==" in s:
+            after = s.split("cid ==", 1)[1].strip()
+            if not after:
+                continue
+            quote = after[0]
+            if quote not in ("\"", "'"):
+                continue
+            try:
+                val = after[1:].split(quote, 1)[0]
+            except Exception:
+                continue
+            if val:
+                ids.append(val)
             continue
-        after = s.split("cid ==", 1)[1].strip()
-        if not after:
-            continue
-        quote = after[0]
-        if quote not in ("\"", "'"):
-            continue
-        try:
-            val = after[1:].split(quote, 1)[0]
-        except Exception:
-            continue
-        if val:
-            ids.append(val)
+
+        if "cid in" in s:
+            match = re.search(r"cid\s+in\s*\(([^)]*)\)", s)
+            if not match:
+                continue
+            ids.extend(re.findall(r"['\"]([a-zA-Z0-9_]+)['\"]", match.group(1)))
     return _unique_preserve_order(ids)
+
+
+def _extract_apply_prefixes(text: str) -> list[str]:
+    prefixes: list[str] = []
+    for line in text.splitlines():
+        s = line.strip()
+        if not (s.startswith("if ") or s.startswith("elif ")):
+            continue
+        match = re.search(r"cid\.startswith\((['\"])([a-zA-Z0-9_]+)\1\)", s)
+        if match:
+            prefixes.append(match.group(2))
+    return _unique_preserve_order(prefixes)
 
 
 def main() -> None:
@@ -51,16 +69,27 @@ def main() -> None:
 
     catalog = _extract_catalog_ids(text)
     apply_ids = _extract_apply_ids(text)
+    apply_prefixes = _extract_apply_prefixes(text)
 
     # score is handled by `if cid == "score"` (not an elif match sometimes), but we keep it in both for reporting.
     if "score" not in apply_ids and 'if cid == "score"' in text:
         apply_ids = ["score", *apply_ids]
 
-    missing = [cid for cid in catalog if cid not in apply_ids]
+    covered_catalog_ids = _unique_preserve_order([
+        *apply_ids,
+        *[
+            cid for cid in catalog
+            if any(cid.startswith(prefix) for prefix in apply_prefixes)
+        ],
+    ])
+
+    missing = [cid for cid in catalog if cid not in covered_catalog_ids]
     extra = [cid for cid in apply_ids if cid not in catalog]
 
     print(f"catalog_count {len(catalog)}")
     print(f"apply_count {len(apply_ids)}")
+    print(f"covered_catalog_count {len([cid for cid in catalog if cid in covered_catalog_ids])}")
+    print(f"prefix_branches {apply_prefixes}")
     print(f"missing {missing}")
     print(f"extra {extra}")
 
