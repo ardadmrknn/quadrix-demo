@@ -203,6 +203,9 @@ def test_time_capsule_captures_active_card_counters_and_manager_state():
     mode._speed_burst_timer = 12.5
     mode._speed_burst_speed_mult = 1.6
     mode._speed_burst_line_mult = 1.75
+    mode._mirror_hold_charges = 1
+    mode._echo_drop_charges = 2
+    mode._echo_drop_fill_count = 3
     mode._freeze_drop_charges = 2
     mode._freeze_drop_duration = 15
     mode._freeze_drop_active = True
@@ -223,6 +226,9 @@ def test_time_capsule_captures_active_card_counters_and_manager_state():
     mode._speed_burst_timer = 0.0
     mode._speed_burst_speed_mult = 1.0
     mode._speed_burst_line_mult = 1.0
+    mode._mirror_hold_charges = 0
+    mode._echo_drop_charges = 0
+    mode._echo_drop_fill_count = 0
     mode._freeze_drop_charges = 0
     mode._freeze_drop_duration = 0
     mode._freeze_drop_active = False
@@ -240,6 +246,9 @@ def test_time_capsule_captures_active_card_counters_and_manager_state():
     assert mode._speed_burst_timer == 12.5
     assert mode._speed_burst_speed_mult == 1.6
     assert mode._speed_burst_line_mult == 1.75
+    assert mode._mirror_hold_charges == 1
+    assert mode._echo_drop_charges == 2
+    assert mode._echo_drop_fill_count == 3
     assert mode._freeze_drop_charges == 2
     assert mode._freeze_drop_duration == 15
     assert mode._freeze_drop_active is True
@@ -333,6 +342,73 @@ def test_hammer_does_not_consume_again_after_piece_is_already_1x1():
 
     assert mode._hammer_current_piece_to_unit() is False
     assert getattr(piece, 'hammered', False) is True
+
+
+def test_mirror_hold_prepares_mirrored_piece_and_consumes_charge():
+    _, _, MysteryMode, _ = _import_mystery_mode()
+    from pieces import create_piece_by_name
+
+    mode = MysteryMode.__new__(MysteryMode)
+    mode._mirror_hold_charges = 1
+    mode._set_localized_card_message = lambda *_args, **_kwargs: ''
+
+    original = create_piece_by_name('L', x=0, y=0)
+    mirrored = mode._prepare_piece_for_hold(original, slot='primary')
+
+    assert mirrored is not original
+    assert mirrored.shape == create_piece_by_name('J', x=0, y=0).shape
+    assert mode._mirror_hold_charges == 0
+
+
+def test_echo_drop_fills_gap_below_locked_piece_and_consumes_charge():
+    _, _, MysteryMode, Board = _import_mystery_mode()
+    mode = _minimal_card_effect_mode(MysteryMode, Board, effects_enabled=False)
+    mode._echo_drop_charges = 1
+    mode._echo_drop_fill_count = 2
+    mode._active_effect_visuals = {'echo_drop': {'color': (120, 220, 255)}}
+    mode._sync_active_cards = lambda: None
+    mode._post_external_line_clear = lambda *_args, **_kwargs: None
+
+    piece = SimpleNamespace(
+        x=0,
+        y=0,
+        color=(90, 180, 255),
+        shape=[[1, 1]],
+    )
+
+    placed = mode._apply_echo_drop_on_lock(piece, [(1, 1), (2, 1)], [])
+
+    assert placed == 2
+    assert mode._echo_drop_charges == 0
+    assert mode.board.occupancy[2][1] is True
+    assert mode.board.occupancy[2][2] is True
+
+
+def test_echo_drop_keeps_charge_until_it_can_fill_a_gap():
+    _, _, MysteryMode, Board = _import_mystery_mode()
+    mode = _minimal_card_effect_mode(MysteryMode, Board, effects_enabled=False)
+    mode._echo_drop_charges = 1
+    mode._echo_drop_fill_count = 2
+    mode._active_effect_visuals = {'echo_drop': {'color': (120, 220, 255)}}
+    mode._sync_active_cards = lambda: None
+    mode._post_external_line_clear = lambda *_args, **_kwargs: None
+
+    mode.board.occupancy[2][1] = True
+    mode.board.grid[2][1] = (255, 255, 255)
+    mode.board.occupancy[2][2] = True
+    mode.board.grid[2][2] = (255, 255, 255)
+
+    piece = SimpleNamespace(
+        x=0,
+        y=0,
+        color=(90, 180, 255),
+        shape=[[1, 1]],
+    )
+
+    placed = mode._apply_echo_drop_on_lock(piece, [(1, 1), (2, 1)], [])
+
+    assert placed == 0
+    assert mode._echo_drop_charges == 1
 
 
 def test_gambler_bad_roll_fills_empty_board_to_half_without_touching_top_rows(monkeypatch):

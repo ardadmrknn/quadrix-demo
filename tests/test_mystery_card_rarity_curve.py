@@ -190,6 +190,45 @@ def test_sampling_rarity_share_independent_of_per_bucket_card_count():
     assert 0.20 < common_share < 0.40, f"common skew detected: {common_share}"
 
 
+def test_featured_common_offer_weight_biases_demo_showcase_cards_early():
+    random.seed(2026)
+    mgr = _make_manager(card_level=1)
+    featured = _stub_card('mirror_hold', 'common')
+    featured['offer_weight'] = 2.0
+    featured['offer_weight_until_level'] = 8
+    catalog = [
+        featured,
+        _stub_card('mini_bomb', 'common'),
+        _stub_card('row_shuffle', 'common'),
+    ]
+    counts = Counter()
+    iterations = 4000
+    for _ in range(iterations):
+        picked = mgr._weighted_sample(catalog, 1)
+        counts[picked[0]['id']] += 1
+    assert counts['mirror_hold'] / iterations > 0.45
+
+
+def test_featured_common_offer_weight_expires_after_showcase_window():
+    random.seed(2026)
+    mgr = _make_manager(card_level=20)
+    featured = _stub_card('mirror_hold', 'common')
+    featured['offer_weight'] = 2.0
+    featured['offer_weight_until_level'] = 8
+    catalog = [
+        featured,
+        _stub_card('mini_bomb', 'common'),
+        _stub_card('row_shuffle', 'common'),
+    ]
+    counts = Counter()
+    iterations = 4000
+    for _ in range(iterations):
+        picked = mgr._weighted_sample(catalog, 1)
+        counts[picked[0]['id']] += 1
+    share = counts['mirror_hold'] / iterations
+    assert 0.25 < share < 0.42
+
+
 # ---------------------------------------------------------------------------
 # Constraints
 # ---------------------------------------------------------------------------

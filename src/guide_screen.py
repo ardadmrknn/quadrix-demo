@@ -83,6 +83,22 @@ CARD_DATA = [
         'color': (255, 110, 100),
     },
     {
+        'id': 'mirror_hold',
+        'name_key': 'card_mirror_hold_title',
+        'desc_key': 'card_mirror_hold_desc',
+        'icon': 'icon_mirror_block.png',
+        'rarity': 'common',
+        'color': (185, 210, 255),
+    },
+    {
+        'id': 'echo_drop',
+        'name_key': 'card_echo_drop_title',
+        'desc_key': 'card_echo_drop_desc',
+        'icon': 'icon_echo_drop.png',
+        'rarity': 'common',
+        'color': (120, 220, 255),
+    },
+    {
         'id': 'speed_burst',
         'name_key': 'guide_card_speed_burst_name',
         'desc_key': 'guide_card_speed_burst_desc',

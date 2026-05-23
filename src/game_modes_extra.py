@@ -626,6 +626,36 @@ class MysteryCardManager:
             for rarity in cls._RARITY_ORDER
         }
 
+    @classmethod
+    def _offer_weight_for_card(cls, card: Dict[str, Any], card_level: int) -> float:
+        try:
+            weight = float(card.get('offer_weight', 1.0) or 1.0)
+        except Exception:
+            weight = 1.0
+        try:
+            until_level = int(card.get('offer_weight_until_level', 0) or 0)
+        except Exception:
+            until_level = 0
+        if until_level > 0 and int(card_level or 1) > until_level:
+            return 1.0
+        return max(0.0, weight)
+
+    @classmethod
+    def _choose_from_bucket(cls, bucket: List[Dict[str, Any]], card_level: int) -> Dict[str, Any]:
+        if len(bucket) <= 1:
+            return bucket[0]
+        weights = [cls._offer_weight_for_card(card, card_level) for card in bucket]
+        total = sum(weights)
+        if total <= 0.0:
+            return random.choice(bucket)
+        roll = random.uniform(0.0, total)
+        cumulative = 0.0
+        for card, weight in zip(bucket, weights):
+            cumulative += weight
+            if roll <= cumulative:
+                return card
+        return bucket[-1]
+
     def notify_lines_cleared(
         self,
         cleared: int,
@@ -807,9 +837,11 @@ class MysteryCardManager:
           1. `_rarity_weights_for_level(card_level)` ile bucket ağırlıkları
              alınır. Filtre sonrası boş kalan bucket'lar otomatik düşürülür
              ve kalan ağırlıklar orantısal renormalize edilir.
-          2. Seçilen rarity bucket'ı içinden `random.choice` ile bir kart
-             alınır. Böylece bir bucket'taki kart sayısı (örn. 3 common vs
-             10 legendary) bucket'ın çıkma olasılığını bozmaz.
+             2. Seçilen rarity bucket'ı içinden kart seçilir. Varsayılan davranış
+                 uniformdur; ancak kartta `offer_weight` varsa bu yalnızca aynı
+                 rarity içindeki vitrin önceliğini etkiler. Böylece bir bucket'taki
+                 kart sayısı (örn. 3 common vs 10 legendary) bucket'ın çıkma
+                 olasılığını bozmaz.
 
         `_group_id` paylaşan varyantlar tek bir seçimde tekrar etmez (mevcut
         invariant); ayrıca aynı reward setinde aynı bucket'tan zorunlu olarak
@@ -872,7 +904,7 @@ class MysteryCardManager:
                 rarity = random.choice(non_empty)
                 bucket = by_rarity[rarity]
 
-            chosen = random.choice(bucket)
+            chosen = self._choose_from_bucket(bucket, card_level)
             selected.append(chosen)
 
             # Aynı seçimde tekrar gelmesin: kartı ve aynı _group_id'li
@@ -1052,6 +1084,55 @@ class MysteryCardManager:
                 "weight": 40,
                 "icon_image": os.path.join(UI_ICON_DIR, "icon_mini_bomb.png"),
                 "style": {"border": (255, 170, 120)},
+                "single_use": True,
+            },
+            {
+                "id": "mirror_hold",
+                "title": "Ayna Cep",
+                "base": 1,
+                "value_range": (1, 1),
+                "description": "Sıradaki saklanan parça aynalanır. Simetrik parçalar aynı kalır.",
+                "color": (185, 210, 255),
+                "bg": (16, 20, 52),
+                "icon": "MH",
+                "tag": "Common",
+                "rarity": "common",
+                "weight": 42,
+                "icon_image": os.path.join(UI_ICON_DIR, "icon_mirror_block.png"),
+                "style": {
+                    "gradient": [(160, 190, 255), (38, 50, 120)],
+                    "border": (210, 225, 255),
+                    "corner": 22,
+                    "pattern": "wave",
+                    "icon_bg": (54, 78, 154),
+                },
+                "limited": True,
+                "single_use": True,
+            },
+            {
+                "id": "echo_drop",
+                "title": "Yankı Düşüşü",
+                "base": 1,
+                "value_range": (1, 1),
+                "description": "Parça kilitlenince altındaki uygun {echo_cells} boş kareye gölge blok bırakır. Dolu yerlere yerleşmez.",
+                "color": (120, 220, 255),
+                "bg": (8, 18, 42),
+                "icon": "ED",
+                "tag": "Common",
+                "rarity": "common",
+                "weight": 44,
+                "offer_weight": 1.65,
+                "offer_weight_until_level": 8,
+                "payload": {"echo_cells": 2},
+                "icon_image": os.path.join(UI_ICON_DIR, "icon_echo_drop.png"),
+                "style": {
+                    "gradient": [(90, 190, 240), (16, 44, 108)],
+                    "border": (170, 230, 255),
+                    "corner": 22,
+                    "pattern": "wave",
+                    "icon_bg": (24, 74, 138),
+                },
+                "limited": True,
                 "single_use": True,
             },
             # ==================== HIZ PATLAMASI (Enderlik Sistemi) ====================
@@ -5579,6 +5660,13 @@ class MysteryMode(Game):
         # Hammer charges: player can turn the CURRENT falling piece into a 1x1 block via H.
         self.hammer_charges_remaining = 0
 
+        # Mirror Hold: sonraki hold'a giren parçayı aynalar.
+        self._mirror_hold_charges = 0
+
+        # Echo Drop: uygun bir kilitte parçanın altına küçük bir gölge izi bırakır.
+        self._echo_drop_charges = 0
+        self._echo_drop_fill_count = 2
+
         # Son Düşüş (Freeze Drop): F tuşuyla bloğu dondur, sadece sağ-sol ve sert düşüş çalışır.
         self._freeze_drop_charges = 0
         self._freeze_drop_duration = 0  # Aktif dondurma süresi (saniye, nadirlğe bağlı)
@@ -6298,6 +6386,259 @@ class MysteryMode(Game):
                 continue
         return None
 
+    def _create_mirrored_hold_piece(self, piece):
+        if piece is None:
+            return None
+        try:
+            import copy as _copy
+            mirrored = piece.copy() if hasattr(piece, 'copy') else _copy.deepcopy(piece)
+        except Exception:
+            return piece
+        try:
+            shape = getattr(piece, 'shape', None)
+            if not shape:
+                return piece
+            mirrored.shape = [list(reversed(list(row))) for row in shape]
+        except Exception:
+            return piece
+        try:
+            color_matrix = getattr(piece, 'color_matrix', None)
+        except Exception:
+            color_matrix = None
+        if color_matrix is not None:
+            try:
+                mirrored.color_matrix = [list(reversed(list(row))) for row in color_matrix]
+            except Exception:
+                mirrored.color_matrix = None
+        try:
+            for attr, raw_value in vars(piece).items():
+                if attr in {'shape', 'color_matrix'}:
+                    continue
+                setattr(mirrored, attr, raw_value)
+        except Exception:
+            pass
+        return mirrored
+
+    def _prepare_piece_for_hold(self, piece, *, slot: str = 'primary'):
+        _ = slot
+        if piece is None:
+            return None
+        try:
+            charges = int(getattr(self, '_mirror_hold_charges', 0) or 0)
+        except Exception:
+            charges = 0
+        if charges <= 0:
+            return piece
+        mirrored = self._create_mirrored_hold_piece(piece)
+        if mirrored is None:
+            return piece
+        self._mirror_hold_charges = max(0, charges - 1)
+        try:
+            self._set_localized_card_message(
+                'mystery_msg_mirror_hold_applied',
+                1.0,
+                'Ayna Cep: saklanan parça aynalandi.',
+            )
+        except Exception:
+            pass
+        try:
+            if self._mirror_hold_charges <= 0:
+                self._active_effect_visuals.pop('mirror_hold', None)
+            self._sync_active_cards()
+        except Exception:
+            pass
+        return mirrored
+
+    def _post_lock_cells_after_player_clear(
+        self,
+        locked_cells: list[tuple[int, int]],
+        cleared_rows: list[int] | tuple[int, ...] | None,
+    ) -> list[tuple[int, int]]:
+        try:
+            width = int(getattr(self.board, 'width', BOARD_WIDTH) or BOARD_WIDTH)
+            height = int(getattr(self.board, 'height', BOARD_HEIGHT) or BOARD_HEIGHT)
+        except Exception:
+            width, height = BOARD_WIDTH, BOARD_HEIGHT
+        try:
+            normalized_rows = sorted({int(row) for row in (cleared_rows or [])})
+        except Exception:
+            normalized_rows = []
+        adjusted: list[tuple[int, int]] = []
+        for raw_x, raw_y in locked_cells or []:
+            try:
+                x = int(raw_x)
+                y = int(raw_y)
+            except Exception:
+                continue
+            if y < 0 or y in normalized_rows:
+                continue
+            shift = sum(1 for row in normalized_rows if row > y)
+            new_y = y + shift
+            if 0 <= x < width and 0 <= new_y < height:
+                adjusted.append((x, new_y))
+        return adjusted
+
+    def _piece_lock_color(self, piece, board_x: int, board_y: int):
+        try:
+            color_matrix = getattr(piece, 'color_matrix', None)
+        except Exception:
+            color_matrix = None
+        if color_matrix is not None:
+            try:
+                local_x = int(board_x) - int(getattr(piece, 'x', 0) or 0)
+                local_y = int(board_y) - int(getattr(piece, 'y', 0) or 0)
+                if 0 <= local_y < len(color_matrix) and 0 <= local_x < len(color_matrix[local_y]):
+                    cell_color = color_matrix[local_y][local_x]
+                    if cell_color is not None:
+                        return cell_color
+            except Exception:
+                pass
+        try:
+            original_color = getattr(piece, '_original_color', None)
+            if original_color is not None:
+                return original_color
+        except Exception:
+            pass
+        try:
+            return getattr(piece, 'color', (120, 220, 255))
+        except Exception:
+            return (120, 220, 255)
+
+    def _apply_echo_drop_on_lock(
+        self,
+        locked_piece,
+        locked_cells: list[tuple[int, int]],
+        cleared_rows: list[int] | tuple[int, ...] | None,
+    ) -> int:
+        try:
+            charges = int(getattr(self, '_echo_drop_charges', 0) or 0)
+        except Exception:
+            charges = 0
+        if charges <= 0:
+            return 0
+        try:
+            fill_count = max(1, int(getattr(self, '_echo_drop_fill_count', 2) or 2))
+        except Exception:
+            fill_count = 2
+
+        post_lock_cells = self._post_lock_cells_after_player_clear(locked_cells, cleared_rows)
+        if not post_lock_cells:
+            return 0
+
+        board = getattr(self, 'board', None)
+        if board is None:
+            return 0
+
+        try:
+            accent = tuple((getattr(self, '_active_effect_visuals', {}) or {}).get('echo_drop', {}).get('color', (120, 220, 255)))
+        except Exception:
+            accent = (120, 220, 255)
+
+        candidates: list[tuple[int, int, Any]] = []
+        seen: set[tuple[int, int]] = set()
+        board_width = int(getattr(board, 'width', BOARD_WIDTH) or BOARD_WIDTH)
+        board_height = int(getattr(board, 'height', BOARD_HEIGHT) or BOARD_HEIGHT)
+        for x, y in sorted(post_lock_cells, key=lambda pos: (-pos[1], pos[0])):
+            tx = int(x)
+            ty = int(y) + 1
+            target = (tx, ty)
+            if target in seen:
+                continue
+            if tx < 0 or ty < 0 or tx >= board_width or ty >= board_height:
+                continue
+            try:
+                occupied = bool(board.occupancy[ty][tx])
+            except Exception:
+                occupied = False
+            if occupied:
+                continue
+            seen.add(target)
+            candidates.append((tx, ty, self._piece_lock_color(locked_piece, x, y)))
+            if len(candidates) >= fill_count:
+                break
+
+        if not candidates:
+            return 0
+
+        before_snapshot = None
+        try:
+            before_snapshot = self._capture_card_board_snapshot()
+        except Exception:
+            before_snapshot = None
+
+        for tx, ty, color in candidates:
+            board.grid[ty][tx] = color
+            board.occupancy[ty][tx] = True
+            try:
+                board.texture_grid[ty][tx] = None
+            except Exception:
+                pass
+            try:
+                board.gold[ty][tx] = False
+            except Exception:
+                pass
+            try:
+                board.owners[ty][tx] = None
+            except Exception:
+                pass
+
+        self._echo_drop_charges = max(0, charges - 1)
+        try:
+            self._set_localized_card_message(
+                'mystery_msg_echo_drop_filled',
+                1.0,
+                'Yankı Düşüşü: {placed} gölge blok yerleşti.',
+                placed=len(candidates),
+            )
+        except Exception:
+            pass
+
+        try:
+            if before_snapshot is not None:
+                self._queue_card_board_effect_from_snapshots(
+                    'echo_drop',
+                    before_snapshot,
+                    self._capture_card_board_snapshot(),
+                    accent=accent,
+                )
+        except Exception:
+            pass
+
+        try:
+            if getattr(self, 'effects_enabled', False):
+                cell_size = self.get_cell_size()
+                offset_x, offset_y = self.get_board_offset()
+                avg_x = sum(tx for tx, _, _ in candidates) / len(candidates)
+                avg_y = sum(ty for _, ty, _ in candidates) / len(candidates)
+                self.create_power_particles(
+                    offset_x + int(avg_x * cell_size) + cell_size // 2,
+                    offset_y + int(avg_y * cell_size) + cell_size // 2,
+                    accent,
+                    count=24,
+                )
+        except Exception:
+            pass
+
+        try:
+            prev_score = int(getattr(board, 'score', 0) or 0)
+        except Exception:
+            prev_score = 0
+        cleared_lines = int(board.clear_lines(source='card'))
+        if cleared_lines > 0:
+            try:
+                delta = int(getattr(board, 'score', 0)) - prev_score
+            except Exception:
+                delta = None
+            self._post_external_line_clear(cleared_lines, award_energy=True, score_delta=delta, source='card')
+
+        try:
+            if self._echo_drop_charges <= 0:
+                self._active_effect_visuals.pop('echo_drop', None)
+            self._sync_active_cards()
+        except Exception:
+            pass
+        return len(candidates)
+
     def _consume_ghost_echo_revive(self) -> bool:
         card = self._get_armed_ghost_echo_card()
         if not card:
@@ -6562,6 +6903,10 @@ class MysteryMode(Game):
         # Lines cleared by the player's lock only. Secondary card clears can run
         # below; keep them out of player-source perk/progress bookkeeping.
         player_lines = self.board.lines_cleared - before
+        try:
+            player_cleared_rows = list(getattr(self.board, 'last_cleared_lines', []) or [])
+        except Exception:
+            player_cleared_rows = []
 
         # Save rewind snapshot only after a successful lock so the saved cell
         # positions reflect any last-moment adjustments (including tunneling snap).
@@ -6607,6 +6952,10 @@ class MysteryMode(Game):
                 self.energy = min(self.energy_max, int(self.energy + player_lines * 10))
             except Exception:
                 self.energy = min(getattr(self, 'energy_max', 100), getattr(self, 'energy', 0) + (player_lines * 10))
+        try:
+            self._apply_echo_drop_on_lock(locked_piece, locked_cells, player_cleared_rows)
+        except Exception:
+            pass
         # Explosive Protocol: if the locked piece is a bomb, explode.
         if getattr(locked_piece, 'is_bomb', False):
             width = len(self.board.grid[0])
@@ -6681,6 +7030,11 @@ class MysteryMode(Game):
                     px = offset_x + int(cx * cell_size) + cell_size // 2
                     py = offset_y + int(cy * cell_size) + cell_size // 2
                     self.create_power_particles(px, py, (255, 100, 50), count=60)
+                # Patlama sonrasi asili kalan bloklari asagi dusur
+                try:
+                    self.board.apply_gravity()
+                except Exception:
+                    pass
                 # clear any new full rows created by explosion
                 prev_score_ex = int(getattr(self.board, 'score', 0))
                 extra_cleared = int(self.board.clear_lines(source='card'))
@@ -7775,6 +8129,9 @@ class MysteryMode(Game):
         self._drill_last_cleanup_y = None
         self.tunnel_charges_remaining = 0
         self.hammer_charges_remaining = 0
+        self._mirror_hold_charges = 0
+        self._echo_drop_charges = 0
+        self._echo_drop_fill_count = 2
         # Son Düşüş sıfırla
         self._freeze_drop_charges = 0
         self._freeze_drop_duration = 0
@@ -8989,6 +9346,25 @@ class MysteryMode(Game):
                 except Exception:
                     pass
                     
+            # Bloklar kaydiktan sonra yercekimi uygulayip tam satirlari temizle
+            try:
+                self.board.apply_gravity()
+            except Exception:
+                pass
+            
+            try:
+                prev_score = int(getattr(self.board, 'score', 0))
+                cleared = self.board.clear_lines(source='card')
+                if cleared > 0:
+                    delta = None
+                    try:
+                        delta = int(getattr(self.board, 'score', 0)) - prev_score
+                    except Exception:
+                        pass
+                    self._post_external_line_clear(cleared, award_energy=True, score_delta=delta, source='card')
+            except Exception:
+                pass
+                    
         except Exception:
             pass
 
@@ -9741,6 +10117,57 @@ class MysteryMode(Game):
                 pass
             effect_triggered = True
 
+        elif cid == "mirror_hold":
+            charges = max(1, self._card_int_value(card, 1))
+            try:
+                existing = int(getattr(self, '_mirror_hold_charges', 0) or 0)
+                self._mirror_hold_charges = existing + charges
+            except Exception:
+                self._mirror_hold_charges = charges
+            try:
+                self._set_localized_card_message(
+                    'mystery_msg_mirror_hold_ready',
+                    1.2,
+                    'Ayna Cep hazir! Sonraki hold aynalanacak.',
+                )
+            except Exception:
+                pass
+            try:
+                self._remember_effect_visual('mirror_hold', card)
+                self._sync_active_cards()
+            except Exception:
+                pass
+            effect_triggered = True
+
+        elif cid == "echo_drop":
+            charges = max(1, self._card_int_value(card, 1))
+            payload = card.get('payload', {}) if isinstance(card.get('payload'), dict) else {}
+            try:
+                echo_cells = max(1, int(payload.get('echo_cells', 2) or 2))
+            except Exception:
+                echo_cells = 2
+            try:
+                existing = int(getattr(self, '_echo_drop_charges', 0) or 0)
+                self._echo_drop_charges = existing + charges
+            except Exception:
+                self._echo_drop_charges = charges
+            self._echo_drop_fill_count = max(int(getattr(self, '_echo_drop_fill_count', echo_cells) or echo_cells), echo_cells)
+            try:
+                self._set_localized_card_message(
+                    'mystery_msg_echo_drop_ready',
+                    1.2,
+                    'Yankı Düşüşü hazir! Uygun kilitte {cells} gölge blok bırakacak.',
+                    cells=echo_cells,
+                )
+            except Exception:
+                pass
+            try:
+                self._remember_effect_visual('echo_drop', card)
+                self._sync_active_cards()
+            except Exception:
+                pass
+            effect_triggered = True
+
         if effect_triggered and board_snapshot_before is not None:
             try:
                 self._queue_card_board_effect_from_snapshots(
@@ -9965,6 +10392,9 @@ class MysteryMode(Game):
             '_line_clear_multiplier_value',
             'tunnel_charges_remaining',
             'hammer_charges_remaining',
+            '_mirror_hold_charges',
+            '_echo_drop_charges',
+            '_echo_drop_fill_count',
             'bomb_master_charges',
             '_hold_destroyer_charges',
             'discard_held_uses',
@@ -10066,6 +10496,9 @@ class MysteryMode(Game):
             '_line_clear_multiplier_value',
             'tunnel_charges_remaining',
             'hammer_charges_remaining',
+            '_mirror_hold_charges',
+            '_echo_drop_charges',
+            '_echo_drop_fill_count',
             'bomb_master_charges',
             '_hold_destroyer_charges',
             'discard_held_uses',
@@ -10261,6 +10694,16 @@ class MysteryMode(Game):
                 card = next((c for c in catalog if str(c.get('id', '')).startswith('hold_destroyer')), None)
                 if card:
                     self._remember_effect_visual('hold_destroyer', card)
+
+            if getattr(self, '_mirror_hold_charges', 0) > 0:
+                card = next((c for c in catalog if c.get('id') == 'mirror_hold'), None)
+                if card:
+                    self._remember_effect_visual('mirror_hold', card)
+
+            if getattr(self, '_echo_drop_charges', 0) > 0:
+                card = next((c for c in catalog if c.get('id') == 'echo_drop'), None)
+                if card:
+                    self._remember_effect_visual('echo_drop', card)
             
             # Sniper charges varsa sniper_shot efektini ekle
             if getattr(self, '_sniper_charges', 0) > 0:
@@ -10680,6 +11123,61 @@ class MysteryMode(Game):
             )
         else:
             self._active_effect_visuals.pop("hold_destroyer", None)
+
+        try:
+            mh_charges = int(getattr(self, '_mirror_hold_charges', 0) or 0)
+        except Exception:
+            mh_charges = 0
+        if mh_charges > 0:
+            if "mirror_hold" not in self._active_effect_visuals:
+                try:
+                    card = next((c for c in (getattr(self.card_manager, 'catalog', []) or []) if c.get('id') == 'mirror_hold'), None)
+                except Exception:
+                    card = None
+                if card:
+                    try:
+                        self._remember_effect_visual('mirror_hold', card)
+                    except Exception:
+                        pass
+        if mh_charges > 0 and "mirror_hold" in self._active_effect_visuals:
+            _c_lbl = _card_key('C', 'hold')
+            add(
+                "mirror_hold",
+                _card_localized_description('mirror_hold'),
+                status=self._localized_active_card_uses_status(_c_lbl, mh_charges),
+                status_state='hazir',
+            )
+        else:
+            self._active_effect_visuals.pop("mirror_hold", None)
+
+        try:
+            ed_charges = int(getattr(self, '_echo_drop_charges', 0) or 0)
+        except Exception:
+            ed_charges = 0
+        try:
+            ed_fill = max(1, int(getattr(self, '_echo_drop_fill_count', 2) or 2))
+        except Exception:
+            ed_fill = 2
+        if ed_charges > 0:
+            if "echo_drop" not in self._active_effect_visuals:
+                try:
+                    card = next((c for c in (getattr(self.card_manager, 'catalog', []) or []) if c.get('id') == 'echo_drop'), None)
+                except Exception:
+                    card = None
+                if card:
+                    try:
+                        self._remember_effect_visual('echo_drop', card)
+                    except Exception:
+                        pass
+        if ed_charges > 0 and "echo_drop" in self._active_effect_visuals:
+            add(
+                "echo_drop",
+                _card_localized_description('echo_drop', payload={'echo_cells': ed_fill}, echo_cells=ed_fill),
+                status=str(ed_charges),
+                status_state='hazir',
+            )
+        else:
+            self._active_effect_visuals.pop("echo_drop", None)
 
         # Son Düşüş (F tuşu): visible while charges remain or freeze is active.
         try:
@@ -11109,6 +11607,12 @@ class MysteryMode(Game):
                     except Exception:
                         pass
         
+        # Karistirma sonrasi bloklarin havada asili kalmamasi icin yercekimi uygula
+        try:
+            self.board.apply_gravity()
+        except Exception:
+            pass
+
         # Satır temizleme kontrolü
         prev_score = int(getattr(self.board, 'score', 0))
         cleared = self.board.clear_lines(source='card')

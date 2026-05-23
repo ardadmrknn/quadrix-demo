@@ -87,6 +87,41 @@ def test_pending_choices_keep_freeze_duration_for_localized_overlay_text():
         set_language(previous_language)
 
 
+def test_mirror_hold_localizes_in_english():
+    previous_language = get_language()
+    try:
+        assert set_language('en') is True
+
+        mirror_hold = {
+            'id': 'mirror_hold',
+            'title': 'Ayna Cep',
+            'description': 'Sıradaki saklanan parça aynalanır. Simetrik parçalar aynı kalır.',
+        }
+
+        assert get_card_title(mirror_hold) == 'Mirror Hold'
+        assert get_card_description(mirror_hold) == 'The next stored piece is mirrored. Symmetric pieces stay the same.'
+    finally:
+        set_language(previous_language)
+
+
+def test_echo_drop_localizes_in_english():
+    previous_language = get_language()
+    try:
+        assert set_language('en') is True
+
+        echo_drop = {
+            'id': 'echo_drop',
+            'title': 'Yankı Düşüşü',
+            'description': 'Parça kilitlenince altındaki uygun {echo_cells} boş kareye gölge blok bırakır. Dolu yerlere yerleşmez.',
+            'payload': {'echo_cells': 2},
+        }
+
+        assert get_card_title(echo_drop) == 'Echo Drop'
+        assert get_card_description(echo_drop) == 'On a fitting lock, it leaves 2 shadow blocks under the piece. They only land in empty cells.'
+    finally:
+        set_language(previous_language)
+
+
 def test_mystery_popup_text_helpers_return_localized_english_strings():
     previous_language = get_language()
     try:

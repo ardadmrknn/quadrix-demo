@@ -329,6 +329,12 @@ def _setup_dll_functions(dll: ctypes.CDLL) -> None:
     except AttributeError:
         pass
 
+    try:
+        dll.SteamAPI_ISteamUtils_IsOverlayEnabled.restype = ctypes.c_bool
+        dll.SteamAPI_ISteamUtils_IsOverlayEnabled.argtypes = [ctypes.c_void_p]
+    except AttributeError:
+        pass
+
     # ISteamUser_GetSteamID returns uint64 in low/high regs; use c_uint64
     try:
         dll.SteamAPI_ISteamUser_GetSteamID.restype = ctypes.c_uint64
@@ -2233,4 +2239,14 @@ def activate_game_overlay_to_user(action: str, steam_id: int) -> bool:
         return True
     except Exception as e:
         print(f"[Steam] ActivateGameOverlayToUser hatası: {e}")
+        return False
+
+
+def is_overlay_enabled() -> bool:
+    """Steam overlay'inin (arayüzünün) aktif olup olmadığını döndürür."""
+    if not is_available() or not _dll or not _isteam_utils:
+        return False
+    try:
+        return bool(_dll.SteamAPI_ISteamUtils_IsOverlayEnabled(_isteam_utils))
+    except Exception:
         return False

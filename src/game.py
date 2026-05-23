@@ -2129,12 +2129,45 @@ class Game:
                     if getattr(self, 'perk_manager', None) and self.perk_manager.is_active('second_pocket'):
                         if self.can_hold2:
                             if getattr(self, 'second_held_piece', None) is None:
-                                self.second_held_piece = self.current_piece
+                                stored_piece = self.current_piece
+                                prepare_hold_piece = getattr(self, '_prepare_piece_for_hold', None)
+                                if callable(prepare_hold_piece):
+                                    try:
+                                        candidate = prepare_hold_piece(stored_piece, slot='secondary')
+                                        if candidate is not None:
+                                            stored_piece = candidate
+                                    except TypeError:
+                                        try:
+                                            candidate = prepare_hold_piece(stored_piece)
+                                            if candidate is not None:
+                                                stored_piece = candidate
+                                        except Exception:
+                                            pass
+                                    except Exception:
+                                        pass
+                                self.second_held_piece = stored_piece
                                 self.current_piece = self.next_piece_queue.pop(0)
                                 self._skip_hidden_rows(self.current_piece)
                                 self.next_piece_queue.append(self.spawn_new_piece())
                             else:
-                                self.current_piece, self.second_held_piece = self.second_held_piece, self.current_piece
+                                stored_piece = self.current_piece
+                                prepare_hold_piece = getattr(self, '_prepare_piece_for_hold', None)
+                                if callable(prepare_hold_piece):
+                                    try:
+                                        candidate = prepare_hold_piece(stored_piece, slot='secondary')
+                                        if candidate is not None:
+                                            stored_piece = candidate
+                                    except TypeError:
+                                        try:
+                                            candidate = prepare_hold_piece(stored_piece)
+                                            if candidate is not None:
+                                                stored_piece = candidate
+                                        except Exception:
+                                            pass
+                                    except Exception:
+                                        pass
+                                self.current_piece = self.second_held_piece
+                                self.second_held_piece = stored_piece
                                 self._position_piece_at_spawn(self.current_piece)
                                 self._skip_hidden_rows(self.current_piece)
                             self.can_hold2 = False
@@ -2197,7 +2230,23 @@ class Game:
                         else:
                             if self.held_piece is None:
                                 held_name = getattr(self.current_piece, 'name', None)
-                                self.held_piece = self.current_piece
+                                stored_piece = self.current_piece
+                                prepare_hold_piece = getattr(self, '_prepare_piece_for_hold', None)
+                                if callable(prepare_hold_piece):
+                                    try:
+                                        candidate = prepare_hold_piece(stored_piece, slot='primary')
+                                        if candidate is not None:
+                                            stored_piece = candidate
+                                    except TypeError:
+                                        try:
+                                            candidate = prepare_hold_piece(stored_piece)
+                                            if candidate is not None:
+                                                stored_piece = candidate
+                                        except Exception:
+                                            pass
+                                    except Exception:
+                                        pass
+                                self.held_piece = stored_piece
                                 # Kuyruktan ilk parçayı al
                                 self.current_piece = self.next_piece_queue.pop(0)
                                 self._skip_hidden_rows(self.current_piece)
@@ -2210,7 +2259,24 @@ class Game:
                                     pass
                             else:
                                 held_name = getattr(self.current_piece, 'name', None)
-                                self.current_piece, self.held_piece = self.held_piece, self.current_piece
+                                stored_piece = self.current_piece
+                                prepare_hold_piece = getattr(self, '_prepare_piece_for_hold', None)
+                                if callable(prepare_hold_piece):
+                                    try:
+                                        candidate = prepare_hold_piece(stored_piece, slot='primary')
+                                        if candidate is not None:
+                                            stored_piece = candidate
+                                    except TypeError:
+                                        try:
+                                            candidate = prepare_hold_piece(stored_piece)
+                                            if candidate is not None:
+                                                stored_piece = candidate
+                                        except Exception:
+                                            pass
+                                    except Exception:
+                                        pass
+                                self.current_piece = self.held_piece
+                                self.held_piece = stored_piece
                                 self._position_piece_at_spawn(self.current_piece)
                                 self._skip_hidden_rows(self.current_piece)
                                 try:
@@ -4092,6 +4158,17 @@ class Game:
         dt_seconds = dt_clamped / 1000.0
         dt_frames = dt_clamped / 16.666  # ~60 FPS frame scale
 
+        # Steam Overlay kontrolü: eğer overlay aktifse oyunu otomatik duraklat
+        try:
+            import steam_integration
+            if steam_integration.is_overlay_enabled():
+                self.paused = True
+                self.pause_menu_selected = 0
+                if hasattr(self, 'sound') and self.sound:
+                    self.sound.duck_music()
+        except Exception:
+            pass
+
         if self.game_over_warning_timer > 0:
             self.game_over_warning_timer = max(0.0, self.game_over_warning_timer - delta_time / 1000.0)
             if self.game_over_warning_timer == 0:
@@ -4774,6 +4851,16 @@ class Game:
         label_inset = max(2, int(4 * hud_scale))
 
         def _compact_action_label(action: str, fallback_key) -> str:
+            # Gamepad bağlıysa onun etiketini döndür
+            try:
+                gpm = get_gamepad_manager()
+                if gpm and gpm.enabled and gpm.is_connected():
+                    label = gpm.get_button_label(action)
+                    if label and label != '?':
+                        return label.upper()
+            except Exception:
+                pass
+
             try:
                 binding = self.control_bindings.get(action, fallback_key)
             except Exception:
@@ -5844,9 +5931,25 @@ class Game:
                     daily_status_text = (t('remaining_tries').format(remaining, DAILY_MAX_FAILURES), color)
 
         # Modern butonlar
+        restart_key = 'R'
+        menu_key = 'ESC'
+        try:
+            gpm = get_gamepad_manager()
+            if gpm and gpm.enabled and gpm.is_connected():
+                # restart için gamepad_config'den oku (varsayılan 3. buton, yani Y)
+                gp_cfg = self.settings_manager.get_controls().get('gamepad', {})
+                restart_btn = int(gp_cfg.get('restart', 3))
+                restart_key = gpm.get_button_index_label(restart_btn).upper()
+                
+                # back/menu için menu_back oku (varsayılan 1. buton, yani B)
+                back_btn = int(gp_cfg.get('menu_back', 1))
+                menu_key = gpm.get_button_index_label(back_btn).upper()
+        except Exception:
+            pass
+
         buttons = [
-            ('R', t('campaign_retry'), retro_style.primary, 'restart'),
-            ('ESC', t('back_to_menu'), (200, 80, 80), 'menu'),
+            (restart_key, t('campaign_retry'), retro_style.primary, 'restart'),
+            (menu_key, t('back_to_menu'), (200, 80, 80), 'menu'),
         ]
         button_width = (panel_rect.width - s(84)) // len(buttons)
         button_height = s(48)

@@ -1201,64 +1201,44 @@ class GamepadManager:
         added_type = getattr(pygame, 'JOYDEVICEADDED', None)
         removed_type = getattr(pygame, 'JOYDEVICEREMOVED', None)
 
-        if added_type is not None and event_type == added_type:
-            # `event.device_index` SDL2 device index; `_register_gamepad` o index'i bekler.
-            device_index = getattr(event, 'device_index', None)
-            if device_index is None:
-                # Fallback: tam tarama yap.
-                self._check_connections()
-                return 'connected' if self.is_connected() else None
+        if (added_type is not None and event_type == added_type) or (removed_type is not None and event_type == removed_type):
+            old_count = len(self.gamepads)
+            
+            # Tüm eski joystick nesnelerini güvenli bir şekilde kapat
+            for gp in list(self.gamepads.values()):
+                try:
+                    if gp.joystick is not None:
+                        gp.joystick.quit()
+                except Exception:
+                    pass
+            self.gamepads.clear()
+            
+            # Pygame joystick alt sistemini tamamen sıfırla ve yeniden başlat
             try:
-                # Eski instance varsa önce temizle (aynı slot reconnect).
-                if device_index in self.gamepads:
-                    try:
-                        old_js = self.gamepads[device_index].joystick
-                        if old_js is not None:
-                            try:
-                                old_js.quit()
-                            except Exception:
-                                pass
-                    except Exception:
-                        pass
-                    del self.gamepads[device_index]
-                ok = self._register_gamepad(device_index)
-                return 'connected' if ok else None
+                pygame.joystick.quit()
+                pygame.joystick.init()
             except Exception:
-                return None
-
-        if removed_type is not None and event_type == removed_type:
-            # `event.instance_id` reconnect sonrası farklı olabilir; bu yüzden
-            # instance_id ile eşleşen kayıtlı gamepad'i kaldır.
-            instance_id = getattr(event, 'instance_id', None)
-            removed_any = False
-            if instance_id is not None:
-                for gp_id in list(self.gamepads.keys()):
-                    gp = self.gamepads[gp_id]
-                    gp_instance = getattr(gp, 'instance_id', None)
-                    if gp_instance is not None and int(gp_instance) == int(instance_id):
-                        try:
-                            if gp.joystick is not None:
-                                try:
-                                    gp.joystick.quit()
-                                except Exception:
-                                    pass
-                        except Exception:
-                            pass
-                        try:
-                            print(f"🎮 Gamepad koptu (event): {gp.name} (instance_id: {instance_id})")
-                        except Exception:
-                            # Windows konsolu cp1252 ise emoji UnicodeEncodeError verir.
-                            pass
-                        del self.gamepads[gp_id]
-                        removed_any = True
-            else:
-                # Fallback: tam tarama yap.
-                self._check_connections()
-                removed_any = True
-            # Stale state temizliği: pointer mode reset, suppress mode kalkmasın.
-            if removed_any:
-                self._menu_pointer_active = False
-            return 'disconnected' if removed_any else None
+                pass
+            
+            # Güncel bağlı kontrolcüleri tara
+            self._scan_gamepads()
+            new_count = len(self.gamepads)
+            
+            # Pointer modunu sıfırla
+            self._menu_pointer_active = False
+            
+            if new_count < old_count:
+                try:
+                    print(f"[Gamepad] Kontrolcü bağlantısı kesildi (Eski: {old_count}, Yeni: {new_count})")
+                except Exception:
+                    pass
+                return 'disconnected'
+            elif new_count > old_count:
+                try:
+                    print(f"[Gamepad] Yeni kontrolcü bağlandı (Eski: {old_count}, Yeni: {new_count})")
+                except Exception:
+                    pass
+                return 'connected'
 
         return None
 
