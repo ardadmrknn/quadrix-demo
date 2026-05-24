@@ -1885,6 +1885,19 @@ class Game:
                 self._pause_for_focus_loss()
                 continue
 
+            # Keyboard Shift+Tab check for Steam Overlay
+            if event.type == pygame.KEYDOWN and event.key == pygame.K_TAB:
+                if pygame.key.get_mods() & pygame.KMOD_SHIFT:
+                    self._pause_for_focus_loss()
+                    continue
+
+            # Gamepad Guide/Home button check for Steam Overlay
+            event_button = normalize_gamepad_event_button(event)
+            if event_button == 5:
+                if event.type in (getattr(pygame, 'JOYBUTTONDOWN', None), getattr(pygame, 'CONTROLLERBUTTONDOWN', None)):
+                    self._pause_for_focus_loss()
+                    continue
+
             # Gamepad hot-plug: bağlantı kopması durumunda otomatik pause.
             # Bağlantı eklenmesinde state güncellenir ama pause açılmaz.
             try:
@@ -4157,8 +4170,6 @@ class Game:
         dt_clamped = max(0.0, min(100.0, dt))
         dt_seconds = dt_clamped / 1000.0
         dt_frames = dt_clamped / 16.666  # ~60 FPS frame scale
-
-
 
         if self.game_over_warning_timer > 0:
             self.game_over_warning_timer = max(0.0, self.game_over_warning_timer - delta_time / 1000.0)
