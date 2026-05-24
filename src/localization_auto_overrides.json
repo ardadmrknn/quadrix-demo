@@ -1138,32 +1138,12 @@
   "card_block_magnet_title": {
     "de": "Blockmagnet"
   },
-  "card_block_workshop_card_desc": {
-    "de": "Öffnet ein Workshop-Popup, in dem Sie ein individuelles Stück mit bis zu 7 Blöcken erstellen!",
-    "es": "¡Abre una ventana emergente de taller donde creas una pieza personalizada con hasta 7 bloques!",
-    "fr": "Ouvre une fenêtre contextuelle d'atelier dans laquelle vous créez une pièce personnalisée avec jusqu'à 7 blocs !",
-    "it": "Apre un popup del workshop in cui crei un pezzo personalizzato con un massimo di 7 blocchi!",
-    "pt": "Abre um pop-up de workshop onde você cria uma peça personalizada com até 7 blocos!"
-  },
   "card_block_workshop_card_title": {
     "de": "Blockwerkstatt",
     "es": "Editor de bloques",
     "fr": "Atelier de blocs",
     "it": "Workshop blocchi",
     "pt": "Workshop de Blocos"
-  },
-  "card_freeze_drop_desc": {
-    "de": "3 Nutzungen: Drücke F, um das Teil {freeze_duration}s lang einzufrieren. Nur Links/Rechts und Hard Drop bleiben aktiv.",
-    "es": "3 usos: pulsa F para congelar la pieza durante {freeze_duration}s. Solo quedan activos izquierda/derecha y caída dura.",
-    "fr": "3 utilisations : appuie sur F pour geler la pièce pendant {freeze_duration}s. Seuls gauche/droite et hard drop restent actifs.",
-    "pt": "3 usos: pressione F para congelar a peça por {freeze_duration}s. Apenas esquerda/direita e hard drop permanecem ativos."
-  },
-  "card_color_cleanse_desc": {
-    "de": "Löscht alle Blöcke einer zufälligen Farbe. Obere Blöcke fallen herunter.",
-    "es": "Borra todos los bloques de un color aleatorio. Los bloques superiores se caen.",
-    "fr": "Efface tous les blocs d'une couleur aléatoire. Les blocs supérieurs tombent.",
-    "it": "Cancella tutti i blocchi di un colore casuale. I blocchi superiori cadono.",
-    "pt": "Limpa todos os blocos de uma cor aleatória. Os blocos superiores caem."
   },
   "card_color_cleanse_title": {
     "de": "Farbreinigung",
@@ -1172,30 +1152,12 @@
     "it": "Pulizia del colore",
     "pt": "Limpeza de cores"
   },
-  "card_gambler_dice_desc": {
-    "de": "Lass die Würfel rollen! 50 % Chance, das gesamte Spielbrett zu räumen oder die Hälfte mit zufälligen Blöcken zu füllen.",
-    "es": "¡Tira los dados! 50% de posibilidades de limpiar todo el tablero o llenar la mitad con bloques aleatorios.",
-    "fr": "Lancez les dés ! 50 % de chances de vider tout le plateau ou d'en remplir la moitié avec des blocs aléatoires.",
-    "it": "Lancia i dadi! Probabilità del 50% di cancellare l'intero tabellone o riempirne metà con blocchi casuali.",
-    "pt": "Jogue os dados! 50% de chance de limpar todo o tabuleiro ou preencher metade com blocos aleatórios."
-  },
   "card_gambler_dice_title": {
     "de": "Spielerwürfel",
     "es": "Dados del jugador",
     "fr": "Dés du joueur",
     "it": "Dadi del giocatore d'azzardo",
     "pt": "Dados do jogador"
-  },
-  "card_hold_destroyer_2_desc": {
-    "de": "{value} Einsatz(e): Macht, das gehaltene Teil zu verwerfen! Drücke {button} zum Benutzen.",
-    "es": "{value} uso(s): poder para descartar la pieza en Hold. Pulsa {button} para usarlo.",
-    "fr": "{value} utilisation(s) : permet de défausser la pièce en réserve ! Appuie sur {button} pour l’utiliser.",
-    "it": "{value} utilizzo/i: potere di scartare il pezzo in Hold! Premi {button} per usarlo.",
-    "ja": "{value}回: ホールド中のピースを破棄できます！{button}で使用。",
-    "ko": "{value}회 사용: 홀드된 피스를 버릴 수 있습니다! {button}를 눌러 사용.",
-    "pt": "{value} uso(s): poder de descartar a peça em Hold! Pressione {button} para usar.",
-    "ru": "{value} использований: можно сбросить фигуру из Hold! Нажмите {button}.",
-    "zh": "{value} 次使用：可以丢弃 Hold 中的方块！按 {button} 使用。"
   },
   "card_hold_destroyer_2_title": {
     "de": "Halten Sie den Schalter gedrückt",
@@ -1204,34 +1166,12 @@
     "it": "Tieni premuto Breaker",
     "pt": "Segure o disjuntor"
   },
-  "card_hold_destroyer_3_desc": {
-    "de": "{value} Einsatz(e): Macht, das gehaltene Teil zu verwerfen! Drücke {button} zum Benutzen.",
-    "es": "{value} uso(s): poder para descartar la pieza en Hold. Pulsa {button} para usarlo.",
-    "fr": "{value} utilisation(s) : permet de défausser la pièce en réserve ! Appuie sur {button} pour l’utiliser.",
-    "it": "{value} utilizzo/i: potere di scartare il pezzo in Hold! Premi {button} per usarlo.",
-    "ja": "{value}回: ホールド中のピースを破棄できます！{button}で使用。",
-    "ko": "{value}회 사용: 홀드된 피스를 버릴 수 있습니다! {button}를 눌러 사용.",
-    "pt": "{value} uso(s): poder de descartar a peça em Hold! Pressione {button} para usar.",
-    "ru": "{value} использований: можно сбросить фигуру из Hold! Нажмите {button}.",
-    "zh": "{value} 次使用：可以丢弃 Hold 中的方块！按 {button} 使用。"
-  },
   "card_hold_destroyer_3_title": {
     "de": "Halten Sie den Schalter gedrückt",
     "es": "Mantenga el interruptor",
     "fr": "Maintenir le disjoncteur",
     "it": "Tieni premuto Breaker",
     "pt": "Segure o disjuntor"
-  },
-  "card_hold_destroyer_4_desc": {
-    "de": "{value} Einsatz(e): Macht, das gehaltene Teil zu verwerfen! Drücke {button} zum Benutzen.",
-    "es": "{value} uso(s): poder para descartar la pieza en Hold. Pulsa {button} para usarlo.",
-    "fr": "{value} utilisation(s) : permet de défausser la pièce en réserve ! Appuie sur {button} pour l’utiliser.",
-    "it": "{value} utilizzo/i: potere di scartare il pezzo in Hold! Premi {button} per usarlo.",
-    "ja": "{value}回: ホールド中のピースを破棄できます！{button}で使用。",
-    "ko": "{value}회 사용: 홀드된 피스를 버릴 수 있습니다! {button}를 눌러 사용.",
-    "pt": "{value} uso(s): poder de descartar a peça em Hold! Pressione {button} para usar.",
-    "ru": "{value} использований: можно сбросить фигуру из Hold! Нажмите {button}.",
-    "zh": "{value} 次使用：可以丢弃 Hold 中的方块！按 {button} 使用。"
   },
   "card_hold_destroyer_4_title": {
     "de": "Halten Sie den Schalter gedrückt",
@@ -1240,34 +1180,12 @@
     "it": "Tieni premuto Breaker",
     "pt": "Segure o disjuntor"
   },
-  "card_hold_destroyer_5_desc": {
-    "de": "{value} Einsatz(e): Macht, das gehaltene Teil zu verwerfen! Drücke {button} zum Benutzen.",
-    "es": "{value} uso(s): poder para descartar la pieza en Hold. Pulsa {button} para usarlo.",
-    "fr": "{value} utilisation(s) : permet de défausser la pièce en réserve ! Appuie sur {button} pour l’utiliser.",
-    "it": "{value} utilizzo/i: potere di scartare il pezzo in Hold! Premi {button} per usarlo.",
-    "ja": "{value}回: ホールド中のピースを破棄できます！{button}で使用。",
-    "ko": "{value}회 사용: 홀드된 피스를 버릴 수 있습니다! {button}를 눌러 사용.",
-    "pt": "{value} uso(s): poder de descartar a peça em Hold! Pressione {button} para usar.",
-    "ru": "{value} использований: можно сбросить фигуру из Hold! Нажмите {button}.",
-    "zh": "{value} 次使用：可以丢弃 Hold 中的方块！按 {button} 使用。"
-  },
   "card_hold_destroyer_5_title": {
     "de": "Halten Sie den Schalter gedrückt",
     "es": "Mantenga el interruptor",
     "fr": "Maintenir le disjoncteur",
     "it": "Tieni premuto Breaker",
     "pt": "Segure o disjuntor"
-  },
-  "card_hold_destroyer_desc": {
-    "de": "{value} Einsatz(e): Macht, das gehaltene Teil zu verwerfen! Drücke {button} zum Benutzen.",
-    "es": "{value} uso(s): poder para descartar la pieza en Hold. Pulsa {button} para usarlo.",
-    "fr": "{value} utilisation(s) : permet de défausser la pièce en réserve ! Appuie sur {button} pour l’utiliser.",
-    "it": "{value} utilizzo/i: potere di scartare il pezzo in Hold! Premi {button} per usarlo.",
-    "ja": "{value}回: ホールド中のピースを破棄できます！{button}で使用。",
-    "ko": "{value}회 사용: 홀드된 피스를 버릴 수 있습니다! {button}를 눌러 사용.",
-    "pt": "{value} uso(s): poder de descartar a peça em Hold! Pressione {button} para usar.",
-    "ru": "{value} использований: можно сбросить фигуру из Hold! Нажмите {button}.",
-    "zh": "{value} 次使用：可以丢弃 Hold 中的方块！按 {button} 使用。"
   },
   "card_hold_destroyer_title": {
     "de": "Halten Sie den Schalter gedrückt",
@@ -1291,17 +1209,6 @@
   "card_rarity_rare": {
     "fr": "Rare",
     "tr": "Nadir"
-  },
-  "card_time_capsule_desc": {
-    "de": "Drücke T, um den Feldzustand zu speichern, und R, um ihn wiederherzustellen.",
-    "es": "Pulsa T para guardar el estado del tablero y luego R para restaurarlo.",
-    "fr": "Appuie sur T pour sauvegarder l’état du plateau, puis sur R pour le restaurer.",
-    "it": "Premi T per salvare lo stato del campo, poi R per ripristinarlo.",
-    "ja": "Tで盤面状態を保存し、Rで復元します。",
-    "ko": "T로 보드 상태를 저장한 뒤 R로 복원합니다.",
-    "pt": "Pressione T para salvar o estado do tabuleiro e R para restaurá-lo.",
-    "ru": "Нажмите T, чтобы сохранить состояние поля, затем R, чтобы восстановить его.",
-    "zh": "按 T 保存棋盘状态，然后按 R 恢复。"
   },
   "card_workshop_controls_line1": {
     "de": "Pfeile: Bewegen | SPACE: Platzieren/Löschen",

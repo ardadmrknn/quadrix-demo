@@ -115,11 +115,11 @@ class TestTutorialCardHelpers(unittest.TestCase):
         self.assertEqual(freeze_drop['freeze_duration'], 6)
         self.assertTrue(freeze_drop['single_use'])
         self.assertFalse(freeze_drop.get('persistent', False))
-        self.assertIn('3 hak', tutorial_cards.get_tutorial_card_description(freeze_drop))
+        self.assertIn('havada durur', tutorial_cards.get_tutorial_card_description(freeze_drop))
 
         nova_burst = tutorial_cards.get_card_preview('nova_burst')
         self.assertEqual(nova_burst['value'], 3)
-        self.assertIn('Sonraki 3 kilitte', tutorial_cards.get_tutorial_card_description(nova_burst))
+        self.assertIn('Sonraki 3 parça', tutorial_cards.get_tutorial_card_description(nova_burst))
 
         ghost_echo = tutorial_cards.get_card_preview('ghost_echo')
         self.assertEqual(ghost_echo['value'], 10)

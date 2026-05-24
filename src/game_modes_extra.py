@@ -987,7 +987,7 @@ class MysteryCardManager:
                 "title": "Alt Süpür",
                 "base": 2,
                 "value_range": (1, 3),
-                "description": "En alttaki {value} satırı temizler. Bloklar aşağı oturur.",
+                "description": "En alttaki {value} satırı siler. Üstteki bloklar aşağıya düşer.",
                 "color": (120, 230, 255),
                 "bg": (12, 26, 58),
                 "icon": "🧹",
@@ -1009,7 +1009,7 @@ class MysteryCardManager:
                 "title": "Blok Manyetiği",
                 "base": 1,
                 "value_range": (1, 1),
-                "description": "Tüm bloklar sol kenara doğru yapışır! Aralardaki boşluklar yok olur.",
+                "description": "Tüm bloklar sol kenara yapışır ve aralardaki boşluklar kapanır.",
                 "color": (255, 140, 100),
                 "bg": (48, 20, 12),
                 "icon": "M",
@@ -1031,7 +1031,7 @@ class MysteryCardManager:
                 "title": "Tepe Kesici",
                 "base": 3,
                 "value_range": (2, 4),
-                "description": "En yüksek {value} bloğu keser, tahtayı düzleştirir.",
+                "description": "En yüksek {value} bloğu siler ve tahta düzleşir.",
                 "color": (140, 255, 210),
                 "bg": (12, 36, 28),
                 "icon": "✂️",
@@ -1053,7 +1053,7 @@ class MysteryCardManager:
                 "title": "Nova Patlaması",
                 "base": 3,
                 "value_range": (2, 4),
-                "description": "Sonraki {value} kilitte merkezde 3x3 alan patlar.",
+                "description": "Sonraki {value} parça yere düştüğünde etrafındaki bloklar patlar.",
                 "color": (255, 120, 196),
                 "bg": (46, 10, 30),
                 "icon": "💥",
@@ -1075,7 +1075,7 @@ class MysteryCardManager:
                 "title": "Mini Bomba",
                 "base": 1,
                 "value_range": (1, 1),
-                "description": "Kilitlenince komşu blokları da patlatır.",
+                "description": "Düşen parça yere değdiğinde yanındaki blokları da patlatır.",
                 "color": (255, 110, 80),
                 "bg": (50, 12, 10),
                 "icon": "B",
@@ -1091,7 +1091,7 @@ class MysteryCardManager:
                 "title": "Ayna Cep",
                 "base": 1,
                 "value_range": (1, 1),
-                "description": "Sıradaki saklanan parça aynalanır. Simetrik parçalar aynı kalır.",
+                "description": "Saklanan parçayı ayna görüntüsüne çevirir.",
                 "color": (185, 210, 255),
                 "bg": (16, 20, 52),
                 "icon": "MH",
@@ -1114,7 +1114,7 @@ class MysteryCardManager:
                 "title": "Yankı Düşüşü",
                 "base": 1,
                 "value_range": (1, 1),
-                "description": "Parça kilitlenince altındaki uygun {echo_cells} boş kareye gölge blok bırakır. Dolu yerlere yerleşmez.",
+                "description": "Parça yere düştüğünde altındaki boş karelere {echo_cells} gölge blok bırakır.",
                 "color": (120, 220, 255),
                 "bg": (8, 18, 42),
                 "icon": "ED",
@@ -1142,7 +1142,7 @@ class MysteryCardManager:
                 "title": "Hız Patlaması",
                 "base": 20,
                 "value_range": (18, 22),
-                "description": "{value} saniye boyunca %25 hızlı düşüş + temizlenen her satır için 1.3x puan!",
+                "description": "{value} saniye boyunca parçalar daha hızlı düşer. Her sildiğin satır 1.3 katı puan kazandırır.",
                 "color": (255, 200, 80),
                 "bg": (50, 38, 12),
                 "icon": "⚡",
@@ -1166,7 +1166,7 @@ class MysteryCardManager:
                 "title": "Hız Patlaması",
                 "base": 30,
                 "value_range": (25, 35),
-                "description": "{value} saniye boyunca %40 hızlı düşüş + temizlenen her satır için 1.5x puan!",
+                "description": "{value} saniye boyunca parçalar daha hızlı düşer. Her sildiğin satır 1.5 katı puan kazandırır.",
                 "color": (255, 180, 50),
                 "bg": (50, 35, 10),
                 "icon": "⚡",
@@ -1190,7 +1190,7 @@ class MysteryCardManager:
                 "title": "Hız Patlaması",
                 "base": 40,
                 "value_range": (35, 45),
-                "description": "{value} saniye boyunca %60 hızlı düşüş + temizlenen her satır için 1.75x puan!",
+                "description": "{value} saniye boyunca parçalar daha hızlı düşer. Her sildiğin satır 1.75 katı puan kazandırır.",
                 "color": (255, 160, 30),
                 "bg": (48, 30, 8),
                 "icon": "⚡",
@@ -1213,7 +1213,7 @@ class MysteryCardManager:
                 "title": "Hayalet Parça",
                 "base": 3,
                 "value_range": (3, 3),
-                "description": "3 hak: G ile istediğin parçayı hayalet yap; blokların içinden geçer.",
+                "description": "G tuşu ile kullan: Parça hayalet olur ve blokların içinden geçer.",
                 "color": (180, 200, 255),
                 "bg": (14, 14, 30),
                 "icon": "👻",
@@ -1230,7 +1230,7 @@ class MysteryCardManager:
                 "title": "Çekiç",
                 "base": 3,
                 "value_range": (3, 3),
-                "description": "3 hak: H ile mevcut düşen parçayı anlık 1x1 bloğa dönüştür.",
+                "description": "H tuşu ile kullan: Düşen parça tek bloğa dönüşür.",
                 "color": (230, 210, 140),
                 "bg": (32, 22, 12),
                 "icon": "H",
@@ -1248,7 +1248,7 @@ class MysteryCardManager:
                 "title": "Bomba Ustası",
                 "base": 3,
                 "value_range": (3, 3),
-                "description": "3 hak: M ile parçayı bomba yap; kilitlenince çevresini patlatır.",
+                "description": "M tuşu ile kullan: Parça bombaya dönüşür ve yere değdiğinde etrafı patlar.",
                 "color": (255, 90, 60),
                 "bg": (50, 12, 10),
                 "icon": "💣",
@@ -1265,7 +1265,7 @@ class MysteryCardManager:
                 "title": "Geri Sarma",
                 "base": 3,
                 "value_range": (3, 3),
-                "description": "3 hak: U tuşuyla son parçayı geri sar.",
+                "description": "U tuşu ile kullan: Son koyduğun parçayı geri al.",
                 "color": (255, 200, 255),
                 "bg": (38, 12, 38),
                 "icon": "RW",
@@ -1281,7 +1281,7 @@ class MysteryCardManager:
                 "title": "Şekil Değiştirici",
                 "base": 3,
                 "value_range": (3, 3),
-                "description": "3 hak: LSHIFT ile parçayı karşıtına dönüştür (L↔J, Z↔S).",
+                "description": "LSHIFT tuşu ile kullan: Parçayı ayna görüntüsüne çevirir (L↔J, Z↔S).",
                 "color": (255, 200, 255),
                 "bg": (24, 12, 34),
                 "icon": "🔄",
@@ -1297,7 +1297,7 @@ class MysteryCardManager:
                 "title": "Sinerji Bonus",
                 "base": 1,
                 "value_range": (1, 1),
-                "description": "PERK: Her aktif perk için +%10 skor bonusu.",
+                "description": "Sahip olduğun her özel kart için %10 ekstra puan kazanırsın.",
                 "color": (255, 220, 140),
                 "bg": (32, 18, 12),
                 "icon": "🔗",
@@ -1313,7 +1313,7 @@ class MysteryCardManager:
                 "title": "Ekstra Cep",
                 "base": 1,
                 "value_range": (1, 1),
-                "description": "PERK: V tuşuyla ikinci bir parça saklayabilirsin.",
+                "description": "V tuşu ile kullan: İkinci bir parça saklayabilirsin.",
                 "color": (200, 200, 255),
                 "bg": (18, 18, 40),
                 "icon": "🎒",
@@ -1329,7 +1329,7 @@ class MysteryCardManager:
                 "title": "Esnek Sınır",
                 "base": 1,
                 "value_range": (1, 1),
-                "description": "PERK: Parçalar tahtanın kenarlarından 1 blok dışına çıkabilir.",
+                "description": "Parçalar tahtanın kenarından 1 blok dışarı çıkabilir.",
                 "color": (255, 200, 100),
                 "bg": (50, 30, 8),
                 "icon": "⬌",
@@ -1351,7 +1351,7 @@ class MysteryCardManager:
                 "title": "Yerçekimi Dalgası",
                 "base": 1,
                 "value_range": (1, 1),
-                "description": "Bloklar aşağı çöker, oluşan tüm dolu satırlar temizlenir.",
+                "description": "Tüm bloklar aşağıya düşer ve dolan satırlar silinir.",
                 "color": (120, 160, 255),
                 "bg": (8, 12, 32),
                 "icon": "🌀",
@@ -1367,7 +1367,7 @@ class MysteryCardManager:
                 "title": "İkinci Şans",
                 "base": 10,
                 "value_range": (10, 10),
-                "description": "Ölümden Dönüş: Oyun bitecekken üst yarıyı temizler, devam edersin.",
+                "description": "Oyun bitecekken tahtanın üst yarısı silinir ve oyuna devam edersin.",
                 "color": (200, 200, 255),
                 "bg": (10, 8, 30),
                 "icon": "👻",
@@ -1384,7 +1384,7 @@ class MysteryCardManager:
                 "title": "Blok Karıştırıcı",
                 "base": 3,
                 "value_range": (2, 4),
-                "description": "Alt {value} satırdaki blokları karıştırır, şansını dene!",
+                "description": "En alttaki {value} satırdaki blokların yerlerini karıştırır.",
                 "color": (120, 200, 255),
                 "bg": (10, 24, 46),
                 "icon": "🎲",
@@ -1406,7 +1406,7 @@ class MysteryCardManager:
                 "title": "Delici Parça",
                 "base": 1,
                 "value_range": (1, 1),
-                "description": "Mevcut parça düşerken önündeki blokları eritir.",
+                "description": "Düşen parça önündeki blokları eriterek geçer.",
                 "color": (255, 50, 150),
                 "bg": (40, 5, 25),
                 "icon": "🔥",
@@ -1428,7 +1428,7 @@ class MysteryCardManager:
                 "title": "Keskin Nişancı",
                 "base": 3,  # 3 hak ver
                 "value_range": (3, 3),  # Sabit 3 hak
-                "description": "3 hak: Tahtada istediğin bir bloğu tıklayarak patlat.",
+                "description": "N tuşu ile kullan: Açılan ekranda istediğin bloğa tıkla, o blok patlar.",
                 "color": (255, 80, 80),
                 "bg": (50, 10, 10),
                 "icon": "N",
@@ -1451,7 +1451,7 @@ class MysteryCardManager:
                 "title": "Zaman Kapsülü",
                 "base": 1,
                 "value_range": (1, 1),
-                "description": "T ile tahtayı kaydet, R ile kaydedilen duruma geri dön.",
+                "description": "T tuşu ile kullan: Tahtayı kaydedersin. R tuşuna basınca o ana geri dönersin.",
                 "color": (120, 255, 200),
                 "bg": (10, 40, 30),
                 "icon": "T",
@@ -1474,7 +1474,7 @@ class MysteryCardManager:
                 "title": "Geleceği Değiştiren",
                 "base": 2,
                 "value_range": (2, 2),
-                "description": "Sonraki 2 parçayı kendin seç! Bir popup açılır ve istediğin parçaları seçersin.",
+                "description": "Bir pencere açılır ve sonraki 2 parçayı sen seçersin.",
                 "color": (180, 100, 255),
                 "bg": (30, 15, 50),
                 "icon": "F",
@@ -1497,7 +1497,7 @@ class MysteryCardManager:
                 "title": "Blok Atölyesi",
                 "base": 1,
                 "value_range": (1, 1),
-                "description": "Popup bir atölye açılır ve tek seferlik maks 7 blokluk özel parça oluşturursun!",
+                "description": "Bir atölye açılır ve en fazla 7 bloklu kendi özel parçanı yapabilirsin.",
                 "color": (255, 200, 100),
                 "bg": (50, 35, 10),
                 "icon": "W",
@@ -1519,7 +1519,7 @@ class MysteryCardManager:
                 "title": "Kumarbazın Zarı",
                 "base": 1,
                 "value_range": (1, 1),
-                "description": "Zar at! %50 şansla tüm tahta temizlenir ya da tahtanın yarısı rastgele blokla dolar.",
+                "description": "Zar atılır. Yarı yarıya bir ihtimalle tahta tamamen silinir ya da yarısı bloklarla dolar.",
                 "color": (255, 50, 50),
                 "bg": (50, 5, 5),
                 "icon": "D",
@@ -1541,7 +1541,7 @@ class MysteryCardManager:
                 "title": "Renk Temizleme",
                 "base": 1,
                 "value_range": (1, 1),
-                "description": "Rastgele bir renkteki tüm blokları temizler. Üstteki bloklar aşağıya düşer.",
+                "description": "Rastgele bir renkteki tüm bloklar silinir ve üstteki bloklar aşağıya düşer.",
                 "color": (100, 255, 200),
                 "bg": (10, 40, 30),
                 "icon": "C",
@@ -1564,7 +1564,7 @@ class MysteryCardManager:
                 "title": "Tuttuğunu Koparan",
                 "base": 1,
                 "value_range": (1, 1),
-                "description": "{value} hak: Saklanan parçayı silme gücü! {button} ile kullan.",
+                "description": "{button} tuşu ile kullan: Sakladığın parçayı silersin.",
                 "color": (200, 200, 210),
                 "bg": (30, 30, 35),
                 "icon": "X",
@@ -1588,7 +1588,7 @@ class MysteryCardManager:
                 "title": "Tuttuğunu Koparan",
                 "base": 2,
                 "value_range": (2, 2),
-                "description": "{value} hak: Saklanan parçayı silme gücü! {button} ile kullan.",
+                "description": "{button} tuşu ile kullan: Sakladığın parçayı silersin.",
                 "color": (100, 230, 150),
                 "bg": (12, 36, 22),
                 "icon": "X",
@@ -1612,7 +1612,7 @@ class MysteryCardManager:
                 "title": "Tuttuğunu Koparan",
                 "base": 3,
                 "value_range": (3, 3),
-                "description": "{value} hak: Saklanan parçayı silme gücü! {button} ile kullan.",
+                "description": "{button} tuşu ile kullan: Sakladığın parçayı silersin.",
                 "color": (80, 170, 255),
                 "bg": (10, 20, 40),
                 "icon": "X",
@@ -1636,7 +1636,7 @@ class MysteryCardManager:
                 "title": "Tuttuğunu Koparan",
                 "base": 4,
                 "value_range": (4, 4),
-                "description": "{value} hak: Saklanan parçayı silme gücü! {button} ile kullan.",
+                "description": "{button} tuşu ile kullan: Sakladığın parçayı silersin.",
                 "color": (200, 100, 255),
                 "bg": (30, 12, 50),
                 "icon": "X",
@@ -1660,7 +1660,7 @@ class MysteryCardManager:
                 "title": "Tuttuğunu Koparan",
                 "base": 5,
                 "value_range": (5, 5),
-                "description": "{value} hak: Saklanan parçayı silme gücü! {button} ile kullan.",
+                "description": "{button} tuşu ile kullan: Sakladığın parçayı silersin.",
                 "color": (255, 200, 60),
                 "bg": (50, 35, 8),
                 "icon": "X",
@@ -1685,7 +1685,7 @@ class MysteryCardManager:
                 "title": "Son Düşüş",
                 "base": 3,
                 "value_range": (3, 3),
-                "description": "3 hak: F ile bloğu {freeze_duration}sn dondur! Sadece sağ-sol ve sert düşüş çalışır.",
+                "description": "F tuşu ile kullan: Düşen parça {freeze_duration} saniye havada durur. Bu sürede sadece sağa-sola gidebilir veya sert düşüş yapabilir.",
                 "color": (140, 220, 255),
                 "bg": (10, 24, 50),
                 "icon": "❄️",
@@ -1710,7 +1710,7 @@ class MysteryCardManager:
                 "title": "Son Düşüş",
                 "base": 3,
                 "value_range": (3, 3),
-                "description": "3 hak: F ile bloğu {freeze_duration}sn dondur! Sadece sağ-sol ve sert düşüş çalışır.",
+                "description": "F tuşu ile kullan: Düşen parça {freeze_duration} saniye havada durur. Bu sürede sadece sağa-sola gidebilir veya sert düşüş yapabilir.",
                 "color": (100, 180, 255),
                 "bg": (8, 18, 44),
                 "icon": "❄️",
@@ -1735,7 +1735,7 @@ class MysteryCardManager:
                 "title": "Son Düşüş",
                 "base": 3,
                 "value_range": (3, 3),
-                "description": "3 hak: F ile bloğu {freeze_duration}sn dondur! Sadece sağ-sol ve sert düşüş çalışır.",
+                "description": "F tuşu ile kullan: Düşen parça {freeze_duration} saniye havada durur. Bu sürede sadece sağa-sola gidebilir veya sert düşüş yapabilir.",
                 "color": (60, 150, 255),
                 "bg": (5, 12, 38),
                 "icon": "❄️",
@@ -3451,6 +3451,50 @@ class UICard:
         return value.rstrip() + suffix if value else suffix
 
     @staticmethod
+    def _shrink_font_to_fit(
+        font: pygame.font.Font,
+        text: str,
+        max_width: int,
+        *,
+        min_size: int = 12,
+    ) -> tuple[pygame.font.Font, str]:
+        """Metni sığdırmak için önce font boyutunu küçültür.
+
+        Yine sığmazsa son çare olarak '...' ile kısaltarak döndürür.
+        Geri dönen font, orijinal font ile aynı stildedir.
+        """
+        value = str(text or '')
+        if max_width <= 0 or font.size(value)[0] <= max_width:
+            return font, value
+
+        try:
+            current_size = int(font.get_height())
+        except Exception:
+            current_size = 0
+
+        try:
+            is_bold = bool(font.get_bold())
+        except Exception:
+            is_bold = True
+
+        candidate_font = font
+        size = current_size if current_size > min_size else min_size
+        while size > min_size:
+            size -= 1
+            try:
+                candidate_font = retro_style.get_font(size, bold=is_bold)
+            except Exception:
+                break
+            if candidate_font.size(value)[0] <= max_width:
+                return candidate_font, value
+
+        suffix = '...'
+        trimmed = value
+        while trimmed and candidate_font.size(trimmed.rstrip() + suffix)[0] > max_width:
+            trimmed = trimmed[:-1]
+        return candidate_font, (trimmed.rstrip() + suffix if trimmed else suffix)
+
+    @staticmethod
     def _split_word_to_width(font: pygame.font.Font, word: str, max_width: int) -> List[str]:
         if not word:
             return []
@@ -4776,7 +4820,10 @@ class UICard:
         title_font = self.fonts.get('card_title') or self.fonts.get('medium') or self.fonts.get('small')
         card_title_text = get_card_title(self.card, self.card.get('title', ''))
         title_gap = max(10, int(round(rect.height * 0.028)))
-        fitted_title = self._fit_text_to_width(title_font, card_title_text, inner_width)
+        # Önce font boyutunu küçülterek metni sığdırmayı dene; gerekirse '...' ile kısalt.
+        title_font, fitted_title = self._shrink_font_to_fit(
+            title_font, card_title_text, inner_width, min_size=12,
+        )
         title_surface = title_font.render(fitted_title, True, UIColors.TEXT_PRIMARY)
         title_rect = title_surface.get_rect(centerx=rect.width // 2, top=icon_rect.bottom + title_gap)
         self._blit_shadowed(fg_layer, title_surface, title_rect.topleft, shadow_alpha=170)
@@ -8420,7 +8467,20 @@ class MysteryMode(Game):
                 screen_x = board_x + cx * cell_size
                 screen_y = board_y + cy * cell_size
                 target_rect = pygame.Rect(screen_x, screen_y, cell_size, cell_size)
-                
+
+                # === BEYAZ HOVER OVERLAY (her hücrede mouse'un olduğu yer belli olsun) ===
+                hover_pulse = abs(math.sin(time.time() * 3.5)) * 0.5 + 0.5
+                hover_alpha = int(70 + hover_pulse * 70)
+                hover_layer = pygame.Surface((cell_size, cell_size), pygame.SRCALPHA)
+                hover_layer.fill((255, 255, 255, hover_alpha))
+                self.screen.blit(hover_layer, target_rect.topleft)
+                pygame.draw.rect(
+                    self.screen,
+                    (255, 255, 255, 230),
+                    target_rect,
+                    width=max(2, int(2 + hover_pulse * 2)),
+                )
+
                 if self.board.occupancy[cy][cx]:
                     target_valid = True
                     # === VALID TARGET: ANIMATED HIGHLIGHT ===

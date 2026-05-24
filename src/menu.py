@@ -4569,8 +4569,16 @@ class Menu:
             name_x = av_x + av_size + s(7)
             score_right = row_rect.right - score_surf.get_width() - s(14)
             max_name_w = max(10, score_right - name_x - s(8))
-            name_font = retro_style.get_fitting_font(user_label, base_size=s(14), max_width=max_name_w, bold=False, min_size=max(9, s(10)))
-            name_surf = name_font.render(user_label, True, UIColors.TEXT_PRIMARY)
+            # Çoklu-script destek: aktif dil Türkçe olsa bile, Hangul/Kanji/Kana
+            # gibi karakterler için doğru fontla render et. Aksi halde "kutucuk" görünüyor.
+            name_surf = retro_style.render_multilingual_text(
+                user_label,
+                UIColors.TEXT_PRIMARY,
+                max_width=max_name_w,
+                base_size=s(14),
+                bold=False,
+                min_size=max(9, s(10)),
+            )
             self.screen.blit(name_surf, (name_x, row_rect.centery - name_surf.get_height() // 2))
 
             # Skor

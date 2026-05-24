@@ -364,6 +364,180 @@ class UserSelectionScreen:
         self._piece_preview_cache[key] = surf
         return surf
 
+    _RARITY_ACCENT = {
+        'common': UIColors.RARITY_COMMON,
+        'uncommon': UIColors.RARITY_UNCOMMON,
+        'rare': UIColors.RARITY_RARE,
+        'epic': UIColors.RARITY_EPIC,
+        'legendary': UIColors.RARITY_LEGENDARY,
+    }
+
+    def _get_favorite_card_preview(self, card_id: str) -> dict | None:
+        """tutorial_cards.get_card_preview wrapper'ı; cache'li."""
+        if not card_id:
+            return None
+        cache = getattr(self, '_favorite_card_meta_cache', None)
+        if cache is None:
+            cache = {}
+            self._favorite_card_meta_cache = cache
+        if card_id in cache:
+            return cache[card_id]
+        try:
+            from tutorial_cards import get_card_preview as _get_preview
+            preview = _get_preview(card_id) or {}
+        except Exception:
+            preview = {}
+        cache[card_id] = preview
+        return preview
+
+    def _render_favorite_card_icon(self, card_meta: dict, size: int) -> pygame.Surface | None:
+        size = max(24, int(size))
+        cache_key = (str(card_meta.get('id') or ''), str(card_meta.get('icon_image') or ''), size)
+        cache = getattr(self, '_favorite_card_icon_cache', None)
+        if cache is None:
+            cache = {}
+            self._favorite_card_icon_cache = cache
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return cached
+        surf: pygame.Surface | None = None
+        icon_path = str(card_meta.get('icon_image') or '').strip()
+        if icon_path and os.path.exists(icon_path):
+            try:
+                surf = load_image(icon_path, convert_alpha=True, size=(size, size))
+            except Exception:
+                surf = None
+        cache[cache_key] = surf
+        return surf
+
+    def _draw_favorite_card_panel(self, rect: pygame.Rect, favorite_card: dict | None) -> None:
+        """Favori kart panelini Mystery kart estetiğine yakın şekilde çizer."""
+        s = self._sx
+        lang = get_language()
+
+        card_id = str((favorite_card or {}).get('id') or '').strip()
+        fav_title = str((favorite_card or {}).get('title') or '').strip()
+        fav_count = int((favorite_card or {}).get('count', 0) or 0)
+
+        meta = self._get_favorite_card_preview(card_id) if card_id else None
+        rarity_key = str((meta or {}).get('rarity') or 'common').lower()
+        rarity_color = self._RARITY_ACCENT.get(rarity_key, retro_style.secondary)
+        if not fav_title:
+            fav_title = str((meta or {}).get('title') or '').strip()
+
+        bg = pygame.Surface(rect.size, pygame.SRCALPHA)
+        pygame.draw.rect(bg, (12, 16, 32, 200), bg.get_rect(), border_radius=s(12))
+        pygame.draw.rect(bg, (*rarity_color, 90), bg.get_rect(), 1, border_radius=s(12))
+        accent_strip = pygame.Rect(0, s(8), s(4), rect.height - s(16))
+        pygame.draw.rect(bg, (*rarity_color, 220), accent_strip, border_radius=s(2))
+        self.screen.blit(bg, rect.topleft)
+
+        pad = s(12)
+
+        fav_header = 'Favori Kart' if lang == 'tr' else 'Favorite Card'
+        hdr_color = (*rarity_color, 230)
+        hdr_surf = retro_style.render_fit_text(
+            fav_header,
+            hdr_color,
+            rect.width - pad * 2,
+            self.font_label_size,
+            bold=True,
+            min_size=11,
+        )
+        self.screen.blit(hdr_surf, (rect.x + pad, rect.y + s(8)))
+
+        content_top = rect.y + s(8) + hdr_surf.get_height() + s(6)
+        content_h = max(s(40), rect.bottom - content_top - s(8))
+
+        icon_box_size = max(s(40), min(content_h, int(rect.height * 0.66)))
+        icon_box = pygame.Rect(0, 0, icon_box_size, icon_box_size)
+        icon_box.x = rect.x + pad
+        icon_box.centery = content_top + content_h // 2
+
+        icon_bg = pygame.Surface(icon_box.size, pygame.SRCALPHA)
+        pygame.draw.rect(icon_bg, (10, 14, 30, 220), icon_bg.get_rect(), border_radius=s(8))
+        glow_layer = pygame.Surface(icon_box.size, pygame.SRCALPHA)
+        pygame.draw.rect(glow_layer, (*rarity_color, 36), glow_layer.get_rect(), border_radius=s(8))
+        icon_bg.blit(glow_layer, (0, 0))
+        pygame.draw.rect(icon_bg, (*rarity_color, 170), icon_bg.get_rect(), 2, border_radius=s(8))
+        self.screen.blit(icon_bg, icon_box.topleft)
+
+        if meta:
+            inner = max(16, int(icon_box_size - s(10)))
+            icon_surf = self._render_favorite_card_icon(meta, inner)
+            if icon_surf is not None:
+                self.screen.blit(icon_surf, icon_surf.get_rect(center=icon_box.center))
+            else:
+                placeholder_letter = (str(meta.get('icon') or fav_title or '?')[:1]).upper()
+                ph_font = retro_style.get_font(max(14, int(icon_box_size * 0.52)), bold=True)
+                ph_surf = ph_font.render(placeholder_letter, True, rarity_color)
+                self.screen.blit(ph_surf, ph_surf.get_rect(center=icon_box.center))
+        else:
+            ph_font = retro_style.get_font(max(16, int(icon_box_size * 0.5)), bold=True)
+            ph_surf = ph_font.render('?', True, rarity_color)
+            self.screen.blit(ph_surf, ph_surf.get_rect(center=icon_box.center))
+
+        text_left = icon_box.right + s(12)
+        text_right = rect.right - pad
+        text_w = max(10, text_right - text_left)
+
+        if fav_title:
+            title_surf = retro_style.render_fit_text(
+                fav_title,
+                WHITE,
+                text_w,
+                self.font_small_size,
+                bold=True,
+                min_size=12,
+            )
+            title_rect = title_surf.get_rect(topleft=(text_left, icon_box.y + s(2)))
+            self.screen.blit(title_surf, title_rect)
+
+            rarity_label_map = {
+                'common': ('Sıradan', 'Common'),
+                'uncommon': ('Sıradışı', 'Uncommon'),
+                'rare': ('Nadir', 'Rare'),
+                'epic': ('Epik', 'Epic'),
+                'legendary': ('Efsanevi', 'Legendary'),
+            }
+            r_tr, r_en = rarity_label_map.get(rarity_key, ('Sıradan', 'Common'))
+            rarity_label = r_tr if lang == 'tr' else r_en
+            rarity_surf = retro_style.render_fit_text(
+                rarity_label,
+                rarity_color,
+                text_w,
+                self.font_label_size,
+                bold=True,
+                min_size=10,
+            )
+            rarity_pos = (text_left, title_rect.bottom + s(4))
+            self.screen.blit(rarity_surf, rarity_pos)
+
+            if fav_count > 0:
+                count_label = 'Seçim' if lang == 'tr' else 'Picks'
+                count_text = f"× {fav_count:,}".replace(',', '.') + f"  {count_label}"
+                count_surf = retro_style.render_fit_text(
+                    count_text,
+                    (200, 215, 240),
+                    text_w,
+                    self.font_label_size,
+                    bold=False,
+                    min_size=10,
+                )
+                count_y = max(rarity_pos[1] + rarity_surf.get_height() + s(4), icon_box.bottom - count_surf.get_height() - s(2))
+                self.screen.blit(count_surf, (text_left, count_y))
+        else:
+            empty_text = 'Henüz kart verisi yok' if lang == 'tr' else 'No card data yet'
+            empty_surf = retro_style.render_fit_text(
+                empty_text,
+                (175, 188, 214),
+                text_w,
+                self.font_small_size,
+                bold=False,
+                min_size=11,
+            )
+            self.screen.blit(empty_surf, empty_surf.get_rect(midleft=(text_left, icon_box.centery)))
+
     def _draw_most_held_panel(self, rect: pygame.Rect, user_data: dict, username: str | None = None) -> None:
         s = self._sx
         retro_style.draw_panel(self.screen, rect, t('user_most_held_piece_title'), title_color=retro_style.text_primary)
@@ -419,67 +593,13 @@ class UserSelectionScreen:
         self.screen.blit(count_surface, (info_x, top + name_surface.get_height() + s(10)))
 
         # Favori kart mini bilgisi (Kullanıcı Değiştir ekranında favori blok bölümünün yanında)
-        fav_title = str((favorite_card or {}).get('title', '') or (favorite_card or {}).get('id', '')).strip()
-        fav_count = int((favorite_card or {}).get('count', 0) or 0)
         if info_w >= s(210):
-            card_w = min(max(s(160), int(info_w * 0.52)), info_w)
-            card_h = min(s(86), max(s(64), int(content.height * 0.48)))
+            card_w = min(max(s(180), int(info_w * 0.56)), info_w)
+            card_h = min(s(102), max(s(72), int(content.height * 0.62)))
             card_x = content.right - card_w
             card_y = content.centery - card_h // 2
             fav_rect = pygame.Rect(card_x, card_y, card_w, card_h)
-
-            fav_bg = pygame.Surface(fav_rect.size, pygame.SRCALPHA)
-            pygame.draw.rect(fav_bg, (14, 18, 34, 185), fav_bg.get_rect(), border_radius=s(11))
-            pygame.draw.rect(fav_bg, (*retro_style.secondary, 200), pygame.Rect(0, s(5), s(4), fav_rect.height - s(10)), border_radius=s(2))
-            pygame.draw.rect(fav_bg, (*retro_style.secondary, 90), fav_bg.get_rect(), 1, border_radius=s(11))
-            self.screen.blit(fav_bg, fav_rect.topleft)
-
-            lang = get_language()
-            fav_header = 'Favori Kart' if lang == 'tr' else 'Favorite Card'
-            hdr_surf = retro_style.render_fit_text(
-                fav_header,
-                (*retro_style.secondary, 220),
-                fav_rect.width - s(16),
-                self.font_label_size,
-                bold=True,
-                min_size=12,
-            )
-            self.screen.blit(hdr_surf, (fav_rect.x + s(10), fav_rect.y + s(8)))
-
-            if fav_title:
-                name_text = f"⭐ {fav_title}"
-                name_surf2 = retro_style.render_fit_text(
-                    name_text,
-                    WHITE,
-                    fav_rect.width - s(18),
-                    self.font_small_size,
-                    bold=True,
-                    min_size=12,
-                )
-                self.screen.blit(name_surf2, (fav_rect.x + s(10), fav_rect.y + s(30)))
-
-                count_text = f"× {fav_count}" if fav_count > 0 else ''
-                if count_text:
-                    count_surf2 = retro_style.render_fit_text(
-                        count_text,
-                        (190, 200, 220),
-                        fav_rect.width - s(18),
-                        self.font_small_size,
-                        bold=False,
-                        min_size=12,
-                    )
-                    self.screen.blit(count_surf2, count_surf2.get_rect(bottomright=(fav_rect.right - s(10), fav_rect.bottom - s(8))))
-            else:
-                empty_text = 'Henüz kart verisi yok' if lang == 'tr' else 'No card data yet'
-                empty_surf = retro_style.render_fit_text(
-                    empty_text,
-                    (175, 188, 214),
-                    fav_rect.width - s(18),
-                    self.font_small_size,
-                    bold=False,
-                    min_size=12,
-                )
-                self.screen.blit(empty_surf, empty_surf.get_rect(midleft=(fav_rect.x + s(10), fav_rect.centery + s(8))))
+            self._draw_favorite_card_panel(fav_rect, favorite_card)
 
     def _clear_delete_arm(self):
         self._delete_armed_username = None

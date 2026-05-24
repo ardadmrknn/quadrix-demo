@@ -34,10 +34,10 @@ def test_card_variants_resolve_localization_group_and_placeholders():
         }
 
         assert get_card_title(speed_burst_card) == 'Speed Burst'
-        assert get_card_description(speed_burst_card) == '40% faster drop for 30 seconds + 1.5x points for every cleared line!'
+        assert get_card_description(speed_burst_card) == 'For 30 seconds, pieces fall faster. Every cleared line earns 1.5x points.'
 
         assert get_card_title(freeze_drop_card) == 'Final Drop'
-        assert get_card_description(freeze_drop_card) == '3 uses: Press F to freeze the piece for 15s. Only left-right movement and hard drop remain active.'
+        assert get_card_description(freeze_drop_card) == 'Press F to use: The falling piece floats in place for 15 seconds. During that time it can only move left/right or hard drop.'
     finally:
         set_language(previous_language)
 
@@ -82,7 +82,7 @@ def test_pending_choices_keep_freeze_duration_for_localized_overlay_text():
 
         assert len(choices) == 1
         assert choices[0]['freeze_duration'] == 15
-        assert get_card_description(choices[0]) == '3 uses: Press F to freeze the piece for 15s. Only left-right movement and hard drop remain active.'
+        assert get_card_description(choices[0]) == 'Press F to use: The falling piece floats in place for 15 seconds. During that time it can only move left/right or hard drop.'
     finally:
         set_language(previous_language)
 
@@ -99,7 +99,7 @@ def test_mirror_hold_localizes_in_english():
         }
 
         assert get_card_title(mirror_hold) == 'Mirror Hold'
-        assert get_card_description(mirror_hold) == 'The next stored piece is mirrored. Symmetric pieces stay the same.'
+        assert get_card_description(mirror_hold) == 'Flips the held piece to its mirror image.'
     finally:
         set_language(previous_language)
 
@@ -117,7 +117,7 @@ def test_echo_drop_localizes_in_english():
         }
 
         assert get_card_title(echo_drop) == 'Echo Drop'
-        assert get_card_description(echo_drop) == 'On a fitting lock, it leaves 2 shadow blocks under the piece. They only land in empty cells.'
+        assert get_card_description(echo_drop) == 'When the piece lands, it leaves 2 shadow blocks in the empty cells beneath it.'
     finally:
         set_language(previous_language)
 
@@ -248,7 +248,7 @@ def test_mystery_sync_active_cards_localizes_freeze_drop_status_and_marks_ready(
 
         freeze_card = next(card for card in mode.card_manager.active_cards if card['id'] == 'freeze_drop')
         assert freeze_card['title'] == 'Final Drop'
-        assert freeze_card['description'] == '3 uses: Press F to freeze the piece for 15s. Only left-right movement and hard drop remain active.'
+        assert freeze_card['description'] == 'Press F to use: The falling piece floats in place for 15 seconds. During that time it can only move left/right or hard drop.'
         assert freeze_card['status'] == 'F: 3 Uses'
         assert freeze_card['status_state'] == 'hazir'
     finally:
@@ -316,7 +316,7 @@ def test_mystery_sync_active_cards_localizes_time_capsule_and_perk_panel_copy(mo
         assert time_capsule['description'] == 'T: Save the current board state.'
         assert time_capsule['status'] == 'T'
         assert second_pocket['title'] == 'Extra Pocket'
-        assert second_pocket['description'] == 'PERK: Press V to store a second piece.'
+        assert second_pocket['description'] == 'Press V to use: You can store a second piece.'
         assert second_pocket['tag'] == 'Perk'
     finally:
         set_language(previous_language)

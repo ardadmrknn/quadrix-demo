@@ -5,6 +5,7 @@ premium UI tasarımı.
 """
 from __future__ import annotations
 
+import os
 import unicodedata
 import pygame
 from localization import t
@@ -247,6 +248,16 @@ class RetroStyle:
         self._default_font_path: str | None = None  # Latin fallback (CJK hibrit için)
         self._font_scale: float = 1.0
         self._force_no_bold: bool = False
+
+        # Çoklu-script font cache: aktif dilden bağımsız olarak metinde geçen
+        # Latin-dışı karakterler (CJK, Hangul, Hiragana/Katakana) için lazy
+        # yüklenen font'lar. _get_script_font() her karakter için doğru fontu seçer.
+        self._script_font_paths: dict[str, str] = {
+            'cjk_kr': os.path.join('font', 'paperlogy', 'Paperlogy-4Regular.ttf'),
+            'cjk_jp': os.path.join('font', 'ki-cho-jis_0310', 'KikaiChokokuJIS-Md.otf'),
+            'cjk_zh': os.path.join('font', 'cinecaption Regular', 'ChildFunSans-CHS.ttf'),
+        }
+        self._script_font_cache: dict[tuple[str, int, bool], pygame.font.Font] = {}
 
         # Render cache (font.render pahalı; özellikle menülerde aynı metinler tekrar tekrar çiziliyor)
         self._render_cache: dict[tuple, pygame.Surface] = {}
@@ -528,6 +539,147 @@ class RetroStyle:
             old = self._render_cache_order.pop(0)
             self._render_cache.pop(old, None)
         return surf
+
+    # ========================================================================
+    # Çoklu-script font/render desteği — aktif dil ne olursa olsun, metinde
+    # geçen Hangul/Hiragana/Katakana/CJK Unified karakterleri uygun fontla
+    # render eder. Steam leaderboard isim listeleri gibi kullanıcı tarafından
+    # üretilen, dil-bağımsız yazılarda "kutucuk" sorununu çözer.
+    # ========================================================================
+
+    def _classify_char_script(self, ch: str) -> str:
+        if not ch:
+            return 'latin'
+        cp = ord(ch)
+        if (0xAC00 <= cp <= 0xD7AF) or (0x1100 <= cp <= 0x11FF) or (0x3130 <= cp <= 0x318F):
+            return 'cjk_kr'
+        if (0x3040 <= cp <= 0x309F) or (0x30A0 <= cp <= 0x30FF) or (0x31F0 <= cp <= 0x31FF) or (0xFF65 <= cp <= 0xFF9F):
+            return 'cjk_jp'
+        if (0x4E00 <= cp <= 0x9FFF) or (0x3400 <= cp <= 0x4DBF) or (0x20000 <= cp <= 0x2A6DF):
+            return 'cjk_zh'
+        if (0x3000 <= cp <= 0x303F) or (0x3300 <= cp <= 0x33FF) or (0xFF00 <= cp <= 0xFFEF):
+            return 'cjk_zh'
+        return 'latin'
+
+    def _get_script_font(self, script: str, size: int, bold: bool = False) -> pygame.font.Font | None:
+        if script == 'latin':
+            return None
+        rel_path = self._script_font_paths.get(script)
+        if not rel_path:
+            return None
+        scaled_size = self._apply_font_scale(size)
+        effective_bold = False if self._force_no_bold else bool(bold)
+        cache_key = (script, scaled_size, effective_bold)
+        cached = self._script_font_cache.get(cache_key)
+        if cached is not None:
+            try:
+                cached.size('A')
+                return cached
+            except Exception:
+                self._script_font_cache.pop(cache_key, None)
+
+        try:
+            if not pygame.font.get_init():
+                pygame.font.init()
+            project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            full_path = os.path.join(project_root, rel_path)
+            if not os.path.exists(full_path):
+                return None
+            font = pygame.font.Font(full_path, scaled_size)
+            if effective_bold:
+                try:
+                    font.set_bold(True)
+                except Exception:
+                    pass
+            self._script_font_cache[cache_key] = font
+            return font
+        except Exception:
+            return None
+
+    def _segment_text_by_script(self, text: str) -> list[tuple[str, str]]:
+        if not text:
+            return []
+        segments: list[tuple[str, str]] = []
+        current_script = self._classify_char_script(text[0])
+        current_chars: list[str] = [text[0]]
+        for ch in text[1:]:
+            ch_script = self._classify_char_script(ch)
+            if ch_script == current_script:
+                current_chars.append(ch)
+            else:
+                segments.append((current_script, ''.join(current_chars)))
+                current_script = ch_script
+                current_chars = [ch]
+        segments.append((current_script, ''.join(current_chars)))
+        return segments
+
+    def _measure_multilingual_text(
+        self,
+        text: str,
+        latin_font: pygame.font.Font,
+        base_size: int,
+        bold: bool,
+    ) -> int:
+        total = 0
+        for script, seg in self._segment_text_by_script(text):
+            if script == 'latin':
+                font = latin_font
+            else:
+                font = self._get_script_font(script, base_size, bold=bold) or latin_font
+            try:
+                total += font.size(seg)[0]
+            except Exception:
+                total += latin_font.size(seg)[0]
+        return total
+
+    def render_multilingual_text(
+        self,
+        text: str,
+        color: tuple[int, int, int],
+        max_width: int | None,
+        base_size: int,
+        bold: bool = False,
+        min_size: int = 10,
+    ) -> pygame.Surface:
+        """Aktif dilden bağımsız çoklu-script (Latin + CJK) metin render'ı."""
+        text = str(text or '')
+        if not text:
+            return self.get_font(base_size, bold=bold).render('', True, color)
+
+        size = base_size
+        latin_font = self.get_font(size, bold=bold)
+        if max_width and max_width > 0:
+            min_size = max(8, min_size)
+            while size > min_size and self._measure_multilingual_text(text, latin_font, size, bold) > max_width:
+                size -= 1
+                latin_font = self.get_font(size, bold=bold)
+
+        rendered_parts: list[pygame.Surface] = []
+        total_width = 0
+        max_height = 0
+        for script, seg in self._segment_text_by_script(text):
+            if script == 'latin':
+                font = latin_font
+            else:
+                font = self._get_script_font(script, size, bold=bold) or latin_font
+            try:
+                part = font.render(seg, True, color)
+            except Exception:
+                part = latin_font.render(seg, True, color)
+            rendered_parts.append(part)
+            total_width += part.get_width()
+            max_height = max(max_height, part.get_height())
+
+        if not rendered_parts:
+            return latin_font.render('', True, color)
+
+        combined = pygame.Surface((max(1, total_width), max(1, max_height)), pygame.SRCALPHA)
+        x = 0
+        for part in rendered_parts:
+            y = max_height - part.get_height()
+            combined.blit(part, (x, y))
+            x += part.get_width()
+        return combined
 
     def _lru_get(self, cache: dict[tuple, pygame.Surface], order: list[tuple], key: tuple) -> pygame.Surface | None:
         value = cache.get(key)
