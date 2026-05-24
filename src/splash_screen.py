@@ -7,7 +7,6 @@ import pygame
 from asset_manager import load_image
 from gamepad_manager import get_gamepad_manager
 from platform_utils import pump_startup_focus_warmup
-from promptfont_support import render_inline_action_text_surface
 from retro_style import retro_style
 from localization import t
 from background_effects import get_shared_falling_blocks_layer
@@ -158,10 +157,7 @@ class SplashScreen:
     def _get_prompt_text(self):
         if self._custom_prompt:
             return self._custom_prompt
-        button_label = self._get_continue_button_label()
-        if button_label:
-            return t('splash_press_enter', button=f'Enter/{button_label}')
-        return t('splash_press_enter', button='Enter')
+        return t('splash_press_any_key', 'Devam etmek için herhangi bir tuşa veya fareye basın')
 
     def _recover_display_after_focus_loss(self, reason: str = '') -> bool:
         """Windows'ta focus/screenshot sonrası splash display'ini yeniden kur."""
@@ -300,11 +296,23 @@ class SplashScreen:
             except Exception:
                 confirm_pressed = False
             
+            # PrintScreen tuşunu ekran görüntüsü kurtarma akışına bırak; başka her tuş/tık devam ettirir.
+            ignored_keys = set()
+            k_prtsc_evt = getattr(pygame, 'K_PRINTSCREEN', None)
+            if k_prtsc_evt is not None:
+                ignored_keys.add(int(k_prtsc_evt))
+
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     return False
-                if event.type == pygame.KEYDOWN:
-                    if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER) and not fade_out:
+                if event.type == pygame.KEYDOWN and not fade_out:
+                    if int(event.key) in ignored_keys:
+                        continue
+                    fade_out = True
+                    exit_start = now
+                elif event.type == pygame.MOUSEBUTTONDOWN and not fade_out:
+                    # Sol (1) ve sağ (3) tıklamalar; orta tık ve scroll yok sayılır.
+                    if event.button in (1, 3):
                         fade_out = True
                         exit_start = now
             if confirm_pressed and not fade_out:
@@ -475,11 +483,9 @@ class SplashScreen:
         return (255, 255, 255)
     
     def _draw_animated_prompt(self, w, h, now, fade_out):
-        """Animasyonlu 'Enter basın' prompt'u"""
+        """Animasyonlu 'devam etmek için herhangi bir tuşa bas' prompt'u"""
         prompt_font = retro_style.get_font(22, bold=False)
         prompt_text = self._get_prompt_text()
-        button_label = self._get_continue_button_label() or 'Enter'
-        inline_action = 'menu_confirm'
         
         # Yanıp sönen efekt
         blink = 0.6 + 0.4 * math.sin(now / 300.0)
@@ -489,13 +495,8 @@ class SplashScreen:
         hue = (now / 15) % 360
         border_color = self._hsv_to_rgb(hue, 0.7, 1.0)
         
-        text_surf = render_inline_action_text_surface(
-            prompt_text,
-            button_label,
-            inline_action,
-            prompt_font,
-            (255, 255, 255),
-        )
+        # Belirli bir tuşa bağlı olmayan generic prompt - düz metin render yeterli.
+        text_surf = prompt_font.render(prompt_text, True, (255, 255, 255))
         text_rect = text_surf.get_rect(center=(w // 2, int(h * 0.88)))
         
         # Panel
@@ -528,13 +529,7 @@ class SplashScreen:
         self.screen.blit(panel_surf, panel_rect.topleft)
         
         # Text with glow
-        text_glow = render_inline_action_text_surface(
-            prompt_text,
-            button_label,
-            inline_action,
-            prompt_font,
-            border_color,
-        )
+        text_glow = prompt_font.render(prompt_text, True, border_color)
         text_glow.set_alpha(text_alpha // 2)
         for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
             self.screen.blit(text_glow, (text_rect.x + dx, text_rect.y + dy))

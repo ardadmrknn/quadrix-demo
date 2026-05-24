@@ -411,7 +411,11 @@ class UserSelectionScreen:
         return surf
 
     def _draw_favorite_card_panel(self, rect: pygame.Rect, favorite_card: dict | None) -> None:
-        """Favori kart panelini Mystery kart estetiğine yakın şekilde çizer."""
+        """Favori kart panelini Mystery kart estetiğine yakın şekilde çizer.
+
+        Tüm girintiler ve metrikler `_sx` ölçek helper'ı üzerinden hesaplanır;
+        farklı çözünürlük ve UI ölçekleri için tutarlı yerleşim sağlanır.
+        """
         s = self._sx
         lang = get_language()
 
@@ -425,61 +429,81 @@ class UserSelectionScreen:
         if not fav_title:
             fav_title = str((meta or {}).get('title') or '').strip()
 
+        # ---- Arka plan: glass + sol nadirlik şeridi ----
+        radius = s(12)
+        strip_w = max(2, s(4))
         bg = pygame.Surface(rect.size, pygame.SRCALPHA)
-        pygame.draw.rect(bg, (12, 16, 32, 200), bg.get_rect(), border_radius=s(12))
-        pygame.draw.rect(bg, (*rarity_color, 90), bg.get_rect(), 1, border_radius=s(12))
-        accent_strip = pygame.Rect(0, s(8), s(4), rect.height - s(16))
-        pygame.draw.rect(bg, (*rarity_color, 220), accent_strip, border_radius=s(2))
+        pygame.draw.rect(bg, (12, 16, 32, 200), bg.get_rect(), border_radius=radius)
+        pygame.draw.rect(bg, (*rarity_color, 90), bg.get_rect(), 1, border_radius=radius)
+        accent_strip = pygame.Rect(0, s(8), strip_w, max(1, rect.height - s(16)))
+        pygame.draw.rect(bg, (*rarity_color, 220), accent_strip, border_radius=max(1, s(2)))
         self.screen.blit(bg, rect.topleft)
 
-        pad = s(12)
+        # ---- İç padding ve kullanılabilir alan ----
+        pad_x = s(14)
+        pad_y_top = s(8)
+        pad_y_bottom = s(8)
 
+        inner_left = rect.x + max(pad_x, strip_w + s(8))
+        inner_right = rect.right - pad_x
+        inner_top = rect.y + pad_y_top
+        inner_bottom = rect.bottom - pad_y_bottom
+        inner_w = max(s(40), inner_right - inner_left)
+        inner_h = max(s(40), inner_bottom - inner_top)
+
+        # ---- Header (üstte, sol hizalı) ----
         fav_header = 'Favori Kart' if lang == 'tr' else 'Favorite Card'
-        hdr_color = (*rarity_color, 230)
         hdr_surf = retro_style.render_fit_text(
             fav_header,
-            hdr_color,
-            rect.width - pad * 2,
+            (*rarity_color, 230),
+            inner_w,
             self.font_label_size,
             bold=True,
             min_size=11,
         )
-        self.screen.blit(hdr_surf, (rect.x + pad, rect.y + s(8)))
+        self.screen.blit(hdr_surf, (inner_left, inner_top))
 
-        content_top = rect.y + s(8) + hdr_surf.get_height() + s(6)
-        content_h = max(s(40), rect.bottom - content_top - s(8))
+        # ---- İçerik alanı (header altında) ----
+        header_gap = s(4)
+        content_top = inner_top + hdr_surf.get_height() + header_gap
+        content_h = max(s(36), inner_bottom - content_top)
 
-        icon_box_size = max(s(40), min(content_h, int(rect.height * 0.66)))
+        # ---- Kart ikon kutusu (sol) ----
+        icon_box_size = max(s(40), min(content_h, int(rect.height * 0.7)))
         icon_box = pygame.Rect(0, 0, icon_box_size, icon_box_size)
-        icon_box.x = rect.x + pad
+        icon_box.x = inner_left
         icon_box.centery = content_top + content_h // 2
 
+        icon_radius = s(8)
+        icon_border_w = max(1, s(2))
         icon_bg = pygame.Surface(icon_box.size, pygame.SRCALPHA)
-        pygame.draw.rect(icon_bg, (10, 14, 30, 220), icon_bg.get_rect(), border_radius=s(8))
+        pygame.draw.rect(icon_bg, (10, 14, 30, 220), icon_bg.get_rect(), border_radius=icon_radius)
         glow_layer = pygame.Surface(icon_box.size, pygame.SRCALPHA)
-        pygame.draw.rect(glow_layer, (*rarity_color, 36), glow_layer.get_rect(), border_radius=s(8))
+        pygame.draw.rect(glow_layer, (*rarity_color, 40), glow_layer.get_rect(), border_radius=icon_radius)
         icon_bg.blit(glow_layer, (0, 0))
-        pygame.draw.rect(icon_bg, (*rarity_color, 170), icon_bg.get_rect(), 2, border_radius=s(8))
+        pygame.draw.rect(icon_bg, (*rarity_color, 180), icon_bg.get_rect(), icon_border_w, border_radius=icon_radius)
         self.screen.blit(icon_bg, icon_box.topleft)
 
         if meta:
-            inner = max(16, int(icon_box_size - s(10)))
+            inner = max(s(16), icon_box_size - s(10))
             icon_surf = self._render_favorite_card_icon(meta, inner)
             if icon_surf is not None:
                 self.screen.blit(icon_surf, icon_surf.get_rect(center=icon_box.center))
             else:
                 placeholder_letter = (str(meta.get('icon') or fav_title or '?')[:1]).upper()
-                ph_font = retro_style.get_font(max(14, int(icon_box_size * 0.52)), bold=True)
+                ph_font = retro_style.get_font(max(s(14), int(icon_box_size * 0.52)), bold=True)
                 ph_surf = ph_font.render(placeholder_letter, True, rarity_color)
                 self.screen.blit(ph_surf, ph_surf.get_rect(center=icon_box.center))
         else:
-            ph_font = retro_style.get_font(max(16, int(icon_box_size * 0.5)), bold=True)
+            ph_font = retro_style.get_font(max(s(16), int(icon_box_size * 0.5)), bold=True)
             ph_surf = ph_font.render('?', True, rarity_color)
             self.screen.blit(ph_surf, ph_surf.get_rect(center=icon_box.center))
 
-        text_left = icon_box.right + s(12)
-        text_right = rect.right - pad
-        text_w = max(10, text_right - text_left)
+        # ---- Sağ taraf: 3 satır metin (başlık, nadirlik, kullanım sayısı) ----
+        text_gap = s(10)
+        text_left = icon_box.right + text_gap
+        text_right = inner_right
+        text_w = max(s(40), text_right - text_left)
 
         if fav_title:
             title_surf = retro_style.render_fit_text(
@@ -490,8 +514,6 @@ class UserSelectionScreen:
                 bold=True,
                 min_size=12,
             )
-            title_rect = title_surf.get_rect(topleft=(text_left, icon_box.y + s(2)))
-            self.screen.blit(title_surf, title_rect)
 
             rarity_label_map = {
                 'common': ('Sıradan', 'Common'),
@@ -510,9 +532,8 @@ class UserSelectionScreen:
                 bold=True,
                 min_size=10,
             )
-            rarity_pos = (text_left, title_rect.bottom + s(4))
-            self.screen.blit(rarity_surf, rarity_pos)
 
+            count_surf = None
             if fav_count > 0:
                 count_label = 'Seçim' if lang == 'tr' else 'Picks'
                 count_text = f"× {fav_count:,}".replace(',', '.') + f"  {count_label}"
@@ -524,7 +545,22 @@ class UserSelectionScreen:
                     bold=False,
                     min_size=10,
                 )
-                count_y = max(rarity_pos[1] + rarity_surf.get_height() + s(4), icon_box.bottom - count_surf.get_height() - s(2))
+
+            line_gap_a = s(3)
+            line_gap_b = s(4)
+            block_h = title_surf.get_height() + line_gap_a + rarity_surf.get_height()
+            if count_surf is not None:
+                block_h += line_gap_b + count_surf.get_height()
+
+            # Üst ve alt iç padding'e clamp et: panel kenarına dayanmasın
+            block_top = icon_box.centery - block_h // 2
+            block_top = max(content_top, min(block_top, inner_bottom - block_h))
+
+            self.screen.blit(title_surf, (text_left, block_top))
+            rarity_y = block_top + title_surf.get_height() + line_gap_a
+            self.screen.blit(rarity_surf, (text_left, rarity_y))
+            if count_surf is not None:
+                count_y = rarity_y + rarity_surf.get_height() + line_gap_b
                 self.screen.blit(count_surf, (text_left, count_y))
         else:
             empty_text = 'Henüz kart verisi yok' if lang == 'tr' else 'No card data yet'
@@ -595,7 +631,8 @@ class UserSelectionScreen:
         # Favori kart mini bilgisi (Kullanıcı Değiştir ekranında favori blok bölümünün yanında)
         if info_w >= s(210):
             card_w = min(max(s(180), int(info_w * 0.56)), info_w)
-            card_h = min(s(102), max(s(72), int(content.height * 0.62)))
+            # Header + 3 satır metin + ikon kutusu için yeterli yükseklik
+            card_h = min(s(124), max(s(96), int(content.height * 0.78)))
             card_x = content.right - card_w
             card_y = content.centery - card_h // 2
             fav_rect = pygame.Rect(card_x, card_y, card_w, card_h)
