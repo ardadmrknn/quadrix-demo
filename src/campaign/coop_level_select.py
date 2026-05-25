@@ -18,6 +18,7 @@ from ui_theme import UIColors, UIFonts, UIStyle
 from localization import t, get_language
 from retro_style import retro_style
 from ui_scaling import get_projected_effective_scale
+from back_button import draw_back_button as _draw_shared_back_button
 try:
     from .. import demo_config  # type: ignore
     from ..demo_upgrade_prompt import DemoUpgradePrompt, show_demo_partial_lock_prompt  # type: ignore
@@ -274,14 +275,22 @@ class CoopLevelSelect:
         self._draw_level_grid(grid_top, scale, s)
 
         # --- Back butonu (sol üst) ---
-        back_text = f"← {t('coop_main_menu', default='Ana Menü')}"
-        f_back = retro_style.get_font(s(18, minimum=12), bold=True)
-        bs = f_back.render(back_text, True, retro_style.text_secondary)
-        bx, by = s(16), s(16)
-        self._back_rect = pygame.Rect(bx, by, bs.get_width() + s(20), bs.get_height() + s(10))
-        retro_style.draw_glass_panel(self.screen, self._back_rect, alpha=120,
-                                      border_color=(60, 70, 90), top_highlight=False)
-        self.screen.blit(bs, (bx + s(10), by + s(5)))
+        # Görsel format ana menüdeki sağ alt 'Çık' tuşu ile aynı (ortak helper)
+        try:
+            mouse_pos_back = get_mouse_pos()
+        except Exception:
+            mouse_pos_back = (-1, -1)
+        prev_back_rect = self._back_rect
+        back_hover = bool(prev_back_rect is not None and prev_back_rect.collidepoint(mouse_pos_back))
+        self._back_rect = _draw_shared_back_button(
+            self.screen,
+            s,
+            label=f"{t('coop_main_menu', default='Ana Menü')}",
+            hover=back_hover,
+            margin_x=16,
+            margin_y=16,
+            retro_style=retro_style,
+        )
 
         if self._demo_upgrade_prompt.is_active():
             self._demo_upgrade_prompt.draw()

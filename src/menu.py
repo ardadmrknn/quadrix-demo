@@ -40,6 +40,7 @@ from asset_manager import load_image
 from text_cache import render_text
 from ui_scaling import apply_ui_scale_preset, get_projected_effective_scale, get_scale, resolve_ui_scale_size
 from gamepad_manager import get_gamepad_manager, is_gamepad_connected
+from back_button import draw_back_button as _draw_shared_back_button
 from leaderboard_trailer_debug import (
     TRAILER_DEBUG_DURATION_MS,
     TRAILER_DEBUG_TRIGGER_KEY,
@@ -7075,6 +7076,11 @@ class HighScoreScreen:
         self.selected_card = 0
         # Menüyle aynı shared katman
         self.background_fx = get_shared_falling_blocks_layer('default')
+        # Mouse Geri butonu — sol üst, ESC ile aynı semantik. draw() her
+        # frame yeniden yerleştirir; click event handler'ı kart hedeflerinden
+        # ÖNCE kontrol eder.
+        self._back_rect: 'pygame.Rect | None' = None
+        self._back_hover: bool = False
 
     def _ui_scale(self) -> float:
         return get_projected_effective_scale(
@@ -7092,6 +7098,16 @@ class HighScoreScreen:
             elif event.key == pygame.K_DOWN:
                 self.scroll_y = min(self.max_scroll, self.scroll_y + 60)
             elif event.key == pygame.K_ESCAPE:
+                return 'back'
+        elif event.type == pygame.MOUSEMOTION:
+            pos = normalize_mouse_pos(getattr(event, 'pos', None)) or event.pos
+            self._back_hover = bool(
+                self._back_rect is not None and self._back_rect.collidepoint(pos)
+            )
+        elif event.type == pygame.MOUSEBUTTONDOWN and getattr(event, 'button', None) == 1:
+            pos = normalize_mouse_pos(getattr(event, 'pos', None)) or event.pos
+            # Mouse Geri butonu — ESC ile aynı 'back' aksiyonu
+            if self._back_rect is not None and self._back_rect.collidepoint(pos):
                 return 'back'
         elif event.type == pygame.MOUSEWHEEL:
             self.scroll_y = max(0, min(self.max_scroll, self.scroll_y - int(event.y) * 40))
@@ -7118,6 +7134,20 @@ class HighScoreScreen:
         self.background_fx.update(self.screen)
         self.background_fx.draw(self.screen)
         retro_style.draw_title(self.screen, t('high_scores_title'), (width // 2, _s(50)))
+
+        # Mouse Geri butonu — sol üst, başlık ortasıyla çakışmaz. ESC ile
+        # aynı semantik. Görsel format ana menüdeki sağ alt 'Çık' tuşu ile
+        # aynıdır (ortak helper).
+        try:
+            live_pos = get_mouse_pos()
+        except Exception:
+            live_pos = (-1, -1)
+        prev_back_rect = self._back_rect
+        back_hover = bool(prev_back_rect is not None and prev_back_rect.collidepoint(live_pos))
+        self._back_rect = _draw_shared_back_button(
+            self.screen, _s, hover=back_hover, retro_style=retro_style,
+        )
+        self._back_hover = bool(self._back_rect.collidepoint(live_pos))
 
         # Grid parametreleri
         padding = _s(30)
