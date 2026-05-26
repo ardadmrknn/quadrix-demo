@@ -13,6 +13,8 @@ from ui_components import draw_glass_card
 from asset_manager import load_image
 from localization import t, get_language
 from ui_scaling import get_projected_effective_scale
+from back_button import draw_back_button as _draw_shared_back_button
+from text_cache import render_text
 
 try:
     from . import demo_config
@@ -683,7 +685,7 @@ class ExtrasScreen:
             # Fallback (tofu-safe): emoji basma, harf/şekil kullan
             short = ''.join([w[0] for w in (item.get('name', 'M').split()) if w])[:2].upper() or 'M'
             icon_font = UIFonts.get(s(54, 20), bold=True)
-            icon_surf = icon_font.render(short, True, UIColors.TEXT_PRIMARY)
+            icon_surf = render_text(icon_font, short, True, UIColors.TEXT_PRIMARY)
             icon_rect = icon_surf.get_rect(center=(rect.centerx, icon_y))
             
             # İkon arkası daire
@@ -696,7 +698,7 @@ class ExtrasScreen:
         
         # Başlık (okunaklılık: label plate + güçlü outline)
         name_color = UIColors.TEXT_PRIMARY
-        name_surf = self.font_option.render(item['name'], True, name_color)
+        name_surf = render_text(self.font_option, item['name'], True, name_color)
         name_shadow = self.font_option.render(item['name'], True, (0, 0, 0))
         name_shadow.set_alpha(180)
         name_rect = name_surf.get_rect(center=(rect.centerx, rect.y + s(148)))
@@ -728,7 +730,7 @@ class ExtrasScreen:
         lines = self._wrap_text(item['desc'], self.font_desc, max_width, max_lines=2)
         base_y = plate.bottom + s(10)
         for li, line in enumerate(lines):
-            surf = self.font_desc.render(line, True, desc_color)
+            surf = render_text(self.font_desc, line, True, desc_color)
             shadow = self.font_desc.render(line, True, (0, 0, 0))
             shadow.set_alpha(170)
             y = base_y + li * s(20)

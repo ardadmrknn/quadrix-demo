@@ -16,12 +16,14 @@ try:
     from .pieces import create_random_piece  # type: ignore
     from .user_manager import DAILY_MAX_FAILURES  # type: ignore
     from .retro_style import retro_style as ui_style  # type: ignore
+    from .text_cache import render_text  # type: ignore
 except Exception:
     from game import Game
     from constants import *
     from pieces import create_random_piece
     from user_manager import DAILY_MAX_FAILURES
     from retro_style import retro_style as ui_style
+    from text_cache import render_text
 
 class SurvivalMode(Game):
     """
@@ -808,7 +810,7 @@ class SurvivalMode(Game):
         # Glow efekti
         title_text = t('mode_survival')
         title_font = f(24, bold=True, minimum=12)
-        title_glow = title_font.render(title_text, True, border_color)
+        title_glow = render_text(title_font, title_text, True, border_color)
         for offset in [(2, 0), (-2, 0), (0, 2), (0, -2)]:
             glow_pos = (cx + offset[0], cy + offset[1])
             glow_copy = title_glow.copy()
@@ -816,7 +818,7 @@ class SurvivalMode(Game):
             self.screen.blit(glow_copy, glow_pos)
         
         # Ana başlık
-        title = title_font.render(title_text, True, (255, 255, 255))
+        title = render_text(title_font, title_text, True, (255, 255, 255))
         self.screen.blit(title, (cx, cy))
         cy += s(42)
         
@@ -834,7 +836,7 @@ class SurvivalMode(Game):
         minutes = int(time_left // 60000)
         seconds = int((time_left % 60000) // 1000)
         
-        time_label = f(13, bold=True).render(t('survival_panel_time_left'), True, (180, 190, 210))
+        time_label = render_text(f(13, bold=True), t('survival_panel_time_left'), True, (180, 190, 210))
         self.screen.blit(time_label, (cx, cy))
         cy += s(24)
         
@@ -852,7 +854,7 @@ class SurvivalMode(Game):
         cy += s(48)
         
         # === VİRÜS SEVİYESİ - İkonlu ===
-        level_label = f(13, bold=True).render(t('survival_panel_virus_level'), True, (180, 190, 210))
+        level_label = render_text(f(13, bold=True), t('survival_panel_virus_level'), True, (180, 190, 210))
         self.screen.blit(level_label, (cx, cy))
         cy += s(24)
         
@@ -886,7 +888,7 @@ class SurvivalMode(Game):
         cy += s(32)
         
         # === YENİLEN BLOKLAR - KRİTİK GÖSTERGE ===
-        consumed_label = f(13, bold=True).render(t('survival_panel_consumed'), True, (180, 190, 210))
+        consumed_label = render_text(f(13, bold=True), t('survival_panel_consumed'), True, (180, 190, 210))
         self.screen.blit(consumed_label, (cx, cy))
         cy += s(24)
         
@@ -915,7 +917,7 @@ class SurvivalMode(Game):
         cy += s(32)
         
         # === AKTİF ENFEKSİYONLAR ===
-        infect_label = f(13, bold=True).render(t('survival_panel_active_infection'), True, (180, 190, 210))
+        infect_label = render_text(f(13, bold=True), t('survival_panel_active_infection'), True, (180, 190, 210))
         self.screen.blit(infect_label, (cx, cy))
         cy += s(24)
         
@@ -945,7 +947,7 @@ class SurvivalMode(Game):
         av_progress = (current - self.last_antivirus_score) / self.ANTIVIRUS_SCORE
         av_progress = min(1.0, max(0, av_progress))
         
-        av_label = f(13, bold=True).render(t('survival_panel_antivirus'), True, (180, 190, 210))
+        av_label = render_text(f(13, bold=True), t('survival_panel_antivirus'), True, (180, 190, 210))
         self.screen.blit(av_label, (cx, cy))
         
         # Puan bilgisi (sağda)
@@ -953,7 +955,7 @@ class SurvivalMode(Game):
         if score_to_av > 0:
             av_info = f(11).render(t('survival_panel_points_remaining', points=score_to_av), True, (140, 150, 170))
         else:
-            av_info = f(11, bold=True).render(t('survival_panel_ready'), True, (100, 255, 150))
+            av_info = render_text(f(11, bold=True), t('survival_panel_ready'), True, (100, 255, 150))
         self.screen.blit(av_info, (cx + inner_w - av_info.get_width(), cy + s(2)))
         cy += s(20)
         
@@ -1408,14 +1410,14 @@ class CascadeMode(Game):
     def draw_mode_info(self, info_x, info_y):
         """Cascade mode bilgilerini çiz"""
         from localization import t
-        cascade_label = self.font_small.render(t('mode_cascade'), True, CYAN)
+        cascade_label = render_text(self.font_small, t('mode_cascade'), True, CYAN)
         self.screen.blit(cascade_label, (info_x, info_y))
         
         # Açıklama
-        tip = self.font_small.render(t('cascade_tip_line1'), True, GRAY)
+        tip = render_text(self.font_small, t('cascade_tip_line1'), True, GRAY)
         self.screen.blit(tip, (info_x, info_y + 30))
         
-        tip2 = self.font_small.render(t('cascade_tip_line2'), True, YELLOW)
+        tip2 = render_text(self.font_small, t('cascade_tip_line2'), True, YELLOW)
         tip2_rect = tip2.get_rect(topleft=(info_x, info_y + 50))
         self.screen.blit(tip2, tip2_rect.topleft)
         
@@ -1430,7 +1432,7 @@ class CascadeMode(Game):
             
             # Bonus göster
             if self.last_cascade_level > 1:
-                bonus_text = self.font_small.render(t('cascade_mega_bonus'), True, GREEN)
+                bonus_text = render_text(self.font_small, t('cascade_mega_bonus'), True, GREEN)
                 bonus_rect = bonus_text.get_rect(topleft=(info_x, msg_y + 30))
                 self.screen.blit(bonus_text, bonus_rect.topleft)
                 return bonus_rect.bottom - info_y + 10

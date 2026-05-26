@@ -77,6 +77,7 @@ get_fitting_font = _rs.get_fitting_font
 from ui_theme import UIFonts, UIColors, UIStyle
 from ui_scaling import get_projected_effective_scale
 from localization import t, get_language
+from text_cache import render_text
 from combo_popup_style import (
     COMBO_POPUP_SHADOW_COLOR,
     get_combo_popup_alpha,
@@ -5478,7 +5479,7 @@ class OnlinePvPGame:
 
         # Özel Lobi bölümü başlığı
         section_font = _rs.get_font(s(13, minimum=10), bold=False)
-        sec1 = section_font.render(t('private_lobby_section', '── Özel Lobi ──'),
+        sec1 = render_text(section_font, t('private_lobby_section', '── Özel Lobi ──'),
                                    True, _rs.text_muted)
         self.screen.blit(sec1, sec1.get_rect(center=(btn_x + btn_w // 2, btn_y_start - s(8))))
 
@@ -5513,7 +5514,7 @@ class OnlinePvPGame:
 
         # Herkese Açık Lobi bölümü başlığı
         y_pos += s(10)
-        sec2 = section_font.render(t('public_lobby_section', '── Herkese Açık ──'),
+        sec2 = render_text(section_font, t('public_lobby_section', '── Herkese Açık ──'),
                                    True, _rs.text_muted)
         self.screen.blit(sec2, sec2.get_rect(center=(btn_x + btn_w // 2, y_pos)))
         y_pos += s(18)
@@ -5654,7 +5655,7 @@ class OnlinePvPGame:
                 center=(list_x + list_w // 2, list_y + list_h // 2)))
         elif not effective_lobby_list:
             e_font = _rs.get_font(s(16, minimum=11), bold=False)
-            e1 = e_font.render(t('no_lobbies_found', 'Lobi bulunamadı'), True, _rs.text_muted)
+            e1 = render_text(e_font, t('no_lobbies_found', 'Lobi bulunamadı'), True, _rs.text_muted)
             if self._auto_lobby_refresh_requested:
                 self.screen.blit(e1, e1.get_rect(center=(list_x + list_w // 2, list_y + list_h // 2)))
             else:
@@ -5844,16 +5845,16 @@ class OnlinePvPGame:
 
         # Başlık
         tf = _rs.get_font(s(18, minimum=12))
-        title = tf.render(t('join_by_code', 'Kod ile Katıl'), True, UIColors.NEON_CYAN)
+        title = render_text(tf, t('join_by_code', 'Kod ile Katıl'), True, UIColors.NEON_CYAN)
         self.screen.blit(title, title.get_rect(
             midleft=(x + s(16), y + s(20))))
 
         subf = _rs.get_font(s(12, minimum=9), bold=False)
-        subtitle = subf.render(t('join_code_subtitle', 'Ozel lobiye girmek icin 6 haneli kodu yaz'), True, _rs.text_muted)
+        subtitle = render_text(subf, t('join_code_subtitle', 'Ozel lobiye girmek icin 6 haneli kodu yaz'), True, _rs.text_muted)
         self.screen.blit(subtitle, subtitle.get_rect(midleft=(x + s(16), y + s(41))))
 
         hint_f = _rs.get_font(s(11, minimum=9), bold=False)
-        hint = hint_f.render(t('paste_code_hint', 'Yapistir: Ctrl+V  •  Kapat: ESC'), True, _rs.text_muted)
+        hint = render_text(hint_f, t('paste_code_hint', 'Yapistir: Ctrl+V  •  Kapat: ESC'), True, _rs.text_muted)
         self.screen.blit(hint, hint.get_rect(midright=(x + btn_w - s(16), y + s(20))))
 
         # Kod kutuları
@@ -5886,7 +5887,7 @@ class OnlinePvPGame:
                 self.screen.blit(char_surf, char_surf.get_rect(center=slot_rect.center))
             else:
                 dot_font = _rs.get_font(s(16, minimum=12), bold=False)
-                dot_surf = dot_font.render('•', True, _rs.text_muted)
+                dot_surf = render_text(dot_font, '•', True, _rs.text_muted)
                 self.screen.blit(dot_surf, dot_surf.get_rect(center=slot_rect.center))
 
         if self._join_code_active and int(time.time() * 2.5) % 2 == 0 and len(display_text) < slot_count:
@@ -5900,7 +5901,7 @@ class OnlinePvPGame:
         self._lobby_buttons.append({'rect': slots_rect, 'action': 'join_code_field'})
 
         helper_font = _rs.get_font(s(11, minimum=9), bold=False)
-        helper_text = helper_font.render(t('join_code_helper', 'Her kutuya bir rakam gelecek sekilde 6 haneli kod gir'), True, _rs.text_secondary)
+        helper_text = render_text(helper_font, t('join_code_helper', 'Her kutuya bir rakam gelecek sekilde 6 haneli kod gir'), True, _rs.text_secondary)
         self.screen.blit(helper_text, helper_text.get_rect(center=(x + btn_w // 2, slots_y + slot_h + s(14))))
 
         # Hata mesajı
@@ -5940,7 +5941,7 @@ class OnlinePvPGame:
         # Başlık
         tf = _rs.get_fitting_font(
             t('waiting_for_opponent', 'Rakip Bekleniyor...'), s(30), pw - s(60))
-        title = tf.render(t('waiting_for_opponent', 'Rakip Bekleniyor...'),
+        title = render_text(tf, t('waiting_for_opponent', 'Rakip Bekleniyor...'),
                           True, UIColors.NEON_CYAN)
         self.screen.blit(title, title.get_rect(center=(cx, panel.y + s(40))))
 
@@ -5955,7 +5956,7 @@ class OnlinePvPGame:
         if self._lobby_code:
             # "Lobi Kodu" etiketi
             label_f = _rs.get_font(s(14, minimum=10), bold=False)
-            label_s = label_f.render(t('lobby_code', 'Lobi Kodu'), True, _rs.text_secondary)
+            label_s = render_text(label_f, t('lobby_code', 'Lobi Kodu'), True, _rs.text_secondary)
             self.screen.blit(label_s, label_s.get_rect(center=(cx, code_section_y)))
 
             # Büyük kod gösterimi (vurgulu)
@@ -6085,7 +6086,7 @@ class OnlinePvPGame:
 
         # VS başlık — büyük glow efektli
         vs_font = _rs.get_font(s(56, minimum=32))
-        vs = vs_font.render('VS', True, UIColors.NEON_MAGENTA)
+        vs = render_text(vs_font, 'VS', True, UIColors.NEON_MAGENTA)
         # Glow
         for offset in (3, 2, 1):
             glow_s = pygame.Surface(vs.get_size(), pygame.SRCALPHA)
@@ -6122,7 +6123,7 @@ class OnlinePvPGame:
             pygame.draw.circle(self.screen, (*my_accent[:3], 80),
                                (my_cx, avatar_y + avatar_size // 2), avatar_size // 2)
             pf = _rs.get_font(s(24, minimum=16))
-            pt = pf.render('?', True, my_accent)
+            pt = render_text(pf, '?', True, my_accent)
             self.screen.blit(pt, pt.get_rect(center=(my_cx, avatar_y + avatar_size // 2)))
 
         # Rakip avatarı
@@ -6139,7 +6140,7 @@ class OnlinePvPGame:
             pygame.draw.circle(self.screen, (*opp_accent[:3], 80),
                                (opp_cx, avatar_y + avatar_size // 2), avatar_size // 2)
             pf = _rs.get_font(s(24, minimum=16))
-            pt = pf.render('?', True, opp_accent)
+            pt = render_text(pf, '?', True, opp_accent)
             self.screen.blit(pt, pt.get_rect(center=(opp_cx, avatar_y + avatar_size // 2)))
 
         # İsimler — avatarların altında
@@ -6161,20 +6162,20 @@ class OnlinePvPGame:
             ready_badge = pygame.Rect(my_cx - s(50), status_y, s(100), s(24))
             draw_glass_panel(self.screen, ready_badge, alpha=180,
                              border_color=UIColors.NEON_GREEN)
-            rt = status_font.render(t('campaign_status_ready', 'READY'), True, UIColors.NEON_GREEN)
+            rt = render_text(status_font, t('campaign_status_ready', 'READY'), True, UIColors.NEON_GREEN)
             self.screen.blit(rt, rt.get_rect(center=ready_badge.center))
         else:
-            wt = status_font.render(t('not_ready', 'Bekleniyor...'), True, _rs.text_muted)
+            wt = render_text(status_font, t('not_ready', 'Bekleniyor...'), True, _rs.text_muted)
             self.screen.blit(wt, wt.get_rect(center=(my_cx, status_y + s(12))))
 
         if self.opponent_ready:
             ready_badge2 = pygame.Rect(opp_cx - s(50), status_y, s(100), s(24))
             draw_glass_panel(self.screen, ready_badge2, alpha=180,
                              border_color=UIColors.NEON_GREEN)
-            rt2 = status_font.render(t('campaign_status_ready', 'READY'), True, UIColors.NEON_GREEN)
+            rt2 = render_text(status_font, t('campaign_status_ready', 'READY'), True, UIColors.NEON_GREEN)
             self.screen.blit(rt2, rt2.get_rect(center=ready_badge2.center))
         else:
-            wt2 = status_font.render(t('not_ready', 'Bekleniyor...'), True, _rs.text_muted)
+            wt2 = render_text(status_font, t('not_ready', 'Bekleniyor...'), True, _rs.text_muted)
             self.screen.blit(wt2, wt2.get_rect(center=(opp_cx, status_y + s(12))))
 
         # Dikey ayırıcı çizgi
@@ -6198,7 +6199,7 @@ class OnlinePvPGame:
             wait_rect = pygame.Rect(cx - s(100), panel.y + s(295), s(200), s(36))
             draw_glass_panel(self.screen, wait_rect, alpha=150,
                              border_color=UIColors.NEON_GREEN)
-            wt = wf.render(t('waiting_opponent_ready', 'Rakip bekleniyor...'),
+            wt = render_text(wf, t('waiting_opponent_ready', 'Rakip bekleniyor...'),
                            True, UIColors.NEON_GREEN)
             self.screen.blit(wt, wt.get_rect(center=wait_rect.center))
 
@@ -6232,7 +6233,7 @@ class OnlinePvPGame:
             txt = big_font.render(str(self.countdown_value), True, UIColors.NEON_CYAN)
         else:
             big_font = _rs.get_font(s(72, minimum=36))
-            txt = big_font.render('GO!', True, UIColors.NEON_GREEN)
+            txt = render_text(big_font, 'GO!', True, UIColors.NEON_GREEN)
 
         # Glow efekti (3 geçiş)
         for offset in (4, 2):
@@ -6331,7 +6332,7 @@ class OnlinePvPGame:
                          border_color=UIColors.NEON_MAGENTA, glow=True)
 
         vs_font = _rs.get_font(s(38, minimum=20))
-        vs_text = vs_font.render('VS', True, UIColors.NEON_MAGENTA)
+        vs_text = render_text(vs_font, 'VS', True, UIColors.NEON_MAGENTA)
         self.screen.blit(vs_text, vs_text.get_rect(center=vs_rect.center))
 
         # Pending garbage göstergesi (Online garbage açıksa görünür)
@@ -6449,7 +6450,7 @@ class OnlinePvPGame:
                                   hold_label_bottom + s(6), mini)
         elif self.hold_used:
             lock_f = _rs.get_font(s(16, minimum=11))
-            lk = lock_f.render('X', True, _rs.text_muted)
+            lk = render_text(lock_f, 'X', True, _rs.text_muted)
             self.screen.blit(lk, lk.get_rect(center=(hold_rect.centerx,
                                                        hold_label_bottom + s(24))))
 
@@ -7173,7 +7174,7 @@ class OnlinePvPGame:
         self._lobby_buttons.append({'rect': rematch_r, 'action': 'rematch'})
         self._lobby_buttons.append({'rect': exit_r, 'action': 'exit_menu'})
 
-        ht = hint_f.render(t('campaign_failed_hint', '[R] Retry | [ESC] Menu'), True, _rs.text_muted)
+        ht = render_text(hint_f, t('campaign_failed_hint', '[R] Retry | [ESC] Menu'), True, _rs.text_muted)
         self.screen.blit(ht, ht.get_rect(center=(cx, panel.bottom - s(20))))
 
     # ─── Bağlantı Koptu ───
@@ -7192,7 +7193,7 @@ class OnlinePvPGame:
 
         tf = _rs.get_fitting_font(
             t('opponent_disconnected', 'Rakip Bağlantıyı Kesti'), s(24), pw - s(40))
-        ts = tf.render(t('opponent_disconnected', 'Rakip Bağlantıyı Kesti'),
+        ts = render_text(tf, t('opponent_disconnected', 'Rakip Bağlantıyı Kesti'),
                        True, UIColors.NEON_RED)
         self.screen.blit(ts, ts.get_rect(center=(cx, cy - s(18))))
 
