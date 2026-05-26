@@ -62,6 +62,53 @@ def test_campaign_star_move_limit_uses_completed_run_move_count():
     assert mode._is_star_condition_met({'type': 'move_limit', 'value': 26}) is False
 
 
+def _make_star_mode(condition_met_for):
+    """Helper: _is_star_condition_met davranışını mock eden CampaignMode."""
+    mode = object.__new__(CampaignMode)
+
+    def _stub(self, condition):
+        return condition_met_for.get(condition.get('value'), False)
+
+    mode.star_conditions = {
+        1: {'type': 'complete', 'value': 1},
+        2: {'type': 'multi_clear', 'value': 2},
+        3: {'type': 'time_limit', 'value': 3},
+    }
+    # Karma model: 1. yıldız zorunlu, 2 ve 3 bağımsız
+    mode._is_star_condition_met = lambda cond: _stub(mode, cond)
+    return mode
+
+
+def test_calculate_stars_requires_first_star():
+    """1. yıldız sağlanmadıysa 2 ve 3 sağlansa bile 0."""
+    mode = _make_star_mode({1: False, 2: True, 3: True})
+    assert CampaignMode._calculate_stars(mode) == 0
+
+
+def test_calculate_stars_independent_2_and_3():
+    """1+3 sağlandı, 2 atlandı → 2 yıldız (karma model)."""
+    mode = _make_star_mode({1: True, 2: False, 3: True})
+    assert CampaignMode._calculate_stars(mode) == 2
+
+
+def test_calculate_stars_all_three():
+    """1+2+3 → 3 yıldız."""
+    mode = _make_star_mode({1: True, 2: True, 3: True})
+    assert CampaignMode._calculate_stars(mode) == 3
+
+
+def test_calculate_stars_only_first():
+    """Sadece 1 → 1 yıldız."""
+    mode = _make_star_mode({1: True, 2: False, 3: False})
+    assert CampaignMode._calculate_stars(mode) == 1
+
+
+def test_calculate_stars_first_and_second_only():
+    """1+2 sağlandı, 3 atlandı → 2 yıldız."""
+    mode = _make_star_mode({1: True, 2: True, 3: False})
+    assert CampaignMode._calculate_stars(mode) == 2
+
+
 def test_campaign_block_limit_hud_shows_infinity_when_unlimited():
     count_text, color, fill_ratio = CampaignMode._get_block_limit_hud_state(None, 12)
 

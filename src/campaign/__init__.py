@@ -9,6 +9,9 @@ from .level_data import (
     get_world_info,
     LevelConfig,
     generate_garbage_grid,
+    _validate_level_config,
+    validate_all_levels,
+    get_boss_type_for_level,
 )
 from .objectives import (
     Objective,

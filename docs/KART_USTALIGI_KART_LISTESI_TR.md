@@ -201,13 +201,10 @@ Aynı ailenin sadece bir varyantı seçim ekranında belirir; oyuncu bir varyant
 
 ## Sayım
 
-- Toplam katalog girdisi: **34 ID**
-- Benzersiz mekanik aile: **26**
-  - Common: 5
-  - Uncommon: 4
-  - Rare: 7
-  - Epic: 9
-  - Legendary: 9
+- Toplam katalog girdisi: **39 ID**
+- Benzersiz mekanik aile: **31**
+
+> Hız Patlaması (3 varyant), Son Düşüş (3 varyant) ve Tuttuğunu Koparan (5 varyant) tek aile sayılır. Aile/varyant ayrımı için yukarıdaki "Aile Özeti" tablosuna ve [`CARD_PERK_INVENTORY_TR.md`](CARD_PERK_INVENTORY_TR.md) dosyasındaki sayım özetine bakın.
 
 ## Çoklu Dil Desteği
 

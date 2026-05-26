@@ -16,7 +16,7 @@ Bu belge, projenin ürün kapsamını ve ana teknik yüzeylerini tek yerde özet
 
 - **Classic, Sprint, Ultra, Zen** — temel skor ve süre odaklı modlar
 - **Quadrix 2, Mystery, Wide, Survival, Cascade, Hardcore, Daily** — genişletilmiş kural setleri
-- **Mystery (Kart Ustalığı)**: 34 ID'lik gerçek kart kataloğu + `card_xp` / `card_level` ödül progression hattı (board.level'den bağımsız), anti-farm kuralı, taşmalı reward queue
+- **Mystery (Kart Ustalığı)**: 39 ID'lik (31 benzersiz aile) gerçek kart kataloğu + `card_xp` / `card_level` ödül progression hattı (board.level'den bağımsız), anti-farm kuralı, taşmalı reward queue
 - **Campaign**: 100 seviyelik tek oyunculu görev/yıldız sistemi
 - **Co-op** ve **Co-op Campaign**: yerel ortak board (20×20) ve özel görev tipleri
 - **Local PvP** ve **Online PvP**: 1v1 rekabet; Online PvP Steam P2P (ISteamNetworkingMessages) üzerinde çalışır

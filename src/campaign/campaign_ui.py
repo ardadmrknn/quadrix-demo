@@ -979,6 +979,14 @@ class CampaignUIEffects:
             star_num = item.get('star', 0)
             text = item.get('text', '')
             met = item.get('met', False)
+            # Faz 2: Karşılanmamış koşullar için "Henüz: " prefix
+            if not met:
+                try:
+                    not_yet_prefix = t('campaign_star_not_yet')
+                except Exception:
+                    not_yet_prefix = ''
+                if not_yet_prefix and not text.startswith(not_yet_prefix):
+                    text = f"{not_yet_prefix}{text}"
             star_lines.append((f"{star_num}. {text}", met))
         draw_panel(right_mid_rect, t('campaign_star_conditions_title'), star_lines, accent=NEON_ORANGE, icon=None, start_delay=0.75)
 

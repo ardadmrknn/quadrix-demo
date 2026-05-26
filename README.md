@@ -9,7 +9,7 @@ Quadrix, Python ve Pygame ile geliştirilen çok modlu bir Tetris türevidir. Kl
 - Çoklu oyun yapısı: Classic, Sprint, Ultra, Zen, Quadrix 2, Mystery, Wide, Survival, Cascade, Hardcore ve Daily modları
 - Yıldız ve görev tabanlı tek oyunculu **Campaign** ile yerel **Co-op Campaign**
 - Çok oyunculu içerik: yerel PvP, yerel co-op (20×20 ortak board), Steam P2P üzerinden online PvP
-- Mystery (Kart Ustalığı) modu: gerçek katalogla 34 kart ID'si ve `card_xp`/`card_level` tabanlı ödül progression hattı
+- Mystery (Kart Ustalığı) modu: gerçek katalogla 39 kart ID'si (31 benzersiz aile) ve `card_xp`/`card_level` tabanlı ödül progression hattı
 - Oyuncu profilleri: avatar, skor, istatistik, başarım, çok kullanıcılı yerel kayıt
 - Tema, blok stili, arka plan, ses, müzik shuffle ve kontrol ayarları
 - 11 dil desteği: TR, EN, DE, FR, ES, IT, PT, RU, JA, ZH, KO

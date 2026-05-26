@@ -132,6 +132,19 @@ class CampaignMode(Game):
         self.tetris_count = 0           # Quadrix sayısı (4'lü)
         self.double_count = 0           # Double sayısı (2'li)
         self.triple_count = 0           # Triple sayısı (3'lü)
+
+        # === FAZ 2: Yeni yıldız tipleri için sayaçlar ===
+        self._hard_drop_count = 0       # Pristine yıldızı için
+        self._hold_use_count = 0        # No-hold yıldızı için
+        self._single_lines_count = 0    # tetris_only için (1'li temizleme)
+        self._prev_held_piece = None    # Hold tracking için snapshot
+        # === FAZ 2: Boss mekanik state ===
+        self._boss_rain_count = 0
+        self._boss_rain_timer = 0.0
+        self._boss_seal_timer = 0.0
+        self._boss_dark_timer = 0.0
+        self._dark_preview_visible = True
+        self._missing_piece_name: Optional[str] = None
         
         # Görevleri oluştur
         self.objectives: List[Objective] = self._create_objectives()
@@ -183,6 +196,34 @@ class CampaignMode(Game):
         
         # İlerleme yöneticisi referansı (lazy load)
         self._progress_manager = None
+
+        # === FAZ 2: Boss/Mini-Boss eşsiz mekanikleri __init__-time uygula ===
+        boss_type = self._boss_get_type()
+        if boss_type == 'fast':
+            # Mini-boss tip α: %15 hızlandırma
+            try:
+                self.fall_speed = max(150, int(self.fall_speed * 0.85))
+            except Exception:
+                pass
+        elif boss_type == 'missing':
+            # Mini-boss tip β: pool'dan 1 parça çıkar (deterministik seed)
+            # Faz 3 not:
+            # missing parça çıkarma init time'da uygulanır, base Game.__init__'tan
+            # SONRA. Game.__init__ next_piece_queue'yu zaten 5-7 parçayla
+            # doldurmuş olabilir. Bu queue içindeki parçalar ÇIKARILMAZ — eski
+            # parçalar oynanır, sonraki yeni parçalar _allowed_pieces'tan oluşur
+            # (factory üzerinden). Yani level başlangıcında oyuncu missing
+            # parçaya 1-2 kez denk gelebilir. Bu kabul edildi (mini-boss
+            # gözlenebilir bir transition'dur, sürpriz değildir).
+            try:
+                allowed = list(self._allowed_pieces) if isinstance(self._allowed_pieces, list) else []
+                if len(allowed) > 1:
+                    rng = random.Random((self._piece_seed or 0) ^ 0xC2B2AE3D)
+                    removed = rng.choice(allowed)
+                    self._missing_piece_name = removed
+                    self._allowed_pieces = [p for p in allowed if p != removed]
+            except Exception:
+                pass
     
     def _start_music_playlist(self, force=False):
         """Kampanya dünyasına özel müzik playlist'ini başlat.
@@ -322,38 +363,49 @@ class CampaignMode(Game):
                     print(f"[GARBAGE] ClearGarbageObjective hedefi: {placed_count} hücre")
         
     def _init_special_blocks(self) -> None:
-        """Level konfigürasyonuna göre özel blokları başlat"""
+        """Level konfigürasyonuna göre özel blokları başlat.
+
+        Faz 1 (deterministik yerleşim): Layout, level seed'inden türeyen
+        izole bir random.Random instance kullanır. Global random durumu
+        kirletilmez. Aynı seed → aynı (x,y) listesi → puzzle hissi.
+        quick_restart aynı seed kullandığı için layout aynı kalır;
+        restart yeni seed üretir, layout değişir.
+        """
         if not self.level_config or not self.level_config.special_blocks:
             return
-        
+
+        # Level seed'inden türeyen izole RNG. Layout seed'i level numarasıyla
+        # karıştırılarak sabitlenir; piece_seed her quick_restart'ta sabit.
+        layout_seed = (getattr(self, '_piece_seed', 0) or 0) ^ (self.current_level_num * 0x9E3779B1)
+        layout_rng = random.Random(layout_seed)
+
+        board_width = self.board.width if self.board else 10
+        board_height = self.board.height if self.board else 20
+
         # Level'da tanımlı özel blokları oluştur
         for block_config in self.level_config.special_blocks:
             block_type_str = block_config.get('type', '')
             count = block_config.get('count', 0)
-            
+
             if not block_type_str or count <= 0:
                 continue
-            
+
             try:
                 block_type = SpecialBlockType(block_type_str)
             except ValueError:
                 continue
-            
+
             # Önceden yerleştirilmiş bloklar için pozisyon hesapla
-            # Board'un alt yarısına rastgele yerleştir
-            import random
-            board_width = self.board.width if self.board else 10
-            board_height = self.board.height if self.board else 20
-            
+            # Board'un alt yarısına deterministik olarak yerleştir
             available_positions = []
             start_row = max(board_height // 2, board_height - 8)
-            
+
             for y in range(start_row, board_height - 1):
                 for x in range(board_width):
                     available_positions.append((x, y))
-            
-            random.shuffle(available_positions)
-            
+
+            layout_rng.shuffle(available_positions)
+
             for i in range(min(count, len(available_positions))):
                 x, y = available_positions[i]
                 self.special_block_manager.add_special_block(x, y, block_type, **block_config)
@@ -488,6 +540,23 @@ class CampaignMode(Game):
         
         # Süre güncelle
         self.elapsed_time = (pygame.time.get_ticks() - self.start_time) / 1000.0
+
+        # Faz 2: Boss mekanik ticker (super.update'tan ÖNCE; rain push board state'i değiştirir)
+        try:
+            self._boss_phase_update(dt_seconds)
+        except Exception as exc:
+            print(f"[CAMPAIGN] _boss_phase_update error: {exc}")
+
+        # Faz 2: Hold tracking — held_piece geçişi
+        try:
+            current_held = getattr(self, 'held_piece', None)
+            if current_held is not self._prev_held_piece:
+                # Geçiş oldu: ya boştan dolu, ya swap
+                if current_held is not None:
+                    self._hold_use_count += 1
+                self._prev_held_piece = current_held
+        except Exception:
+            pass
         
         # Zaman görevlerini güncelle
         self._emit_event('time_update', {'elapsed': self.elapsed_time})
@@ -596,8 +665,10 @@ class CampaignMode(Game):
             })
             
             # === YILDIZ İSTATİSTİKLERİ ===
-            # Double (2'li), Triple (3'lü), Quadrix (4'lü) sayımı
-            if new_lines == 2:
+            # Single (1'li), Double (2'li), Triple (3'lü), Quadrix (4'lü) sayımı
+            if new_lines == 1:
+                self._single_lines_count += 1
+            elif new_lines == 2:
                 self.double_count += 1
             elif new_lines == 3:
                 self.triple_count += 1
@@ -710,6 +781,188 @@ class CampaignMode(Game):
         if not skip_sound and self.sound:
             self.sound.play_game_over_sequence()
 
+        # Faz 1: Fail attempts sayacını artır (success attempts'tan ayrı alan)
+        try:
+            self._record_fail_attempt()
+        except Exception as exc:
+            print(f"[CAMPAIGN] _record_fail_attempt failed: {exc}")
+
+    # === FAZ 2: Hard drop tracker (pristine yıldızı için) ===
+    def trigger_hard_drop_screen_shake(self):
+        """Game.trigger_hard_drop_screen_shake override.
+
+        Hard drop sayacı bu hook'tan ilerletilir. Bilinen kısıtlama:
+        Game.handle_input içinde `if self.effects_enabled and drop_distance > 0:`
+        ile gated; effects_enabled=False ise bu çağrı atlanır ve sayaç artmaz
+        (pristine yıldızı için sahte pozitif riski). Tasarım kararı: §Karar B,
+        sadece Katman 1 (override) kullanıldı.
+        """
+        self._hard_drop_count += 1
+        super().trigger_hard_drop_screen_shake()
+
+    # === FAZ 2: Boss/Mini-Boss eşsiz mekanikler ===
+
+    def _boss_get_type(self) -> Optional[str]:
+        """Boss/mini-boss tipini döndür ya da None.
+
+        Faz 3: level_data.get_boss_type_for_level'a delege.
+        Single source of truth — divergence imkansız.
+        """
+        from .level_data import get_boss_type_for_level
+        return get_boss_type_for_level(self.current_level_num)
+
+    def _boss_phase_update(self, dt_seconds: float) -> None:
+        """Boss-specific update logic. update(dt) içinde her tick çağrılır."""
+        boss_type = self._boss_get_type()
+        if boss_type is None:
+            return
+
+        if boss_type == 'rain':
+            self._boss_rain_update(dt_seconds)
+        elif boss_type == 'seal':
+            self._boss_seal_update(dt_seconds)
+        elif boss_type == 'dark':
+            self._boss_dark_update(dt_seconds)
+        elif boss_type == 'final':
+            # Level 100: 3 fazlı runtime, ana objective progress'ine göre
+            # ratio < 0 veya > 1 ise 0 olarak ele al (defansif clamp).
+            ratio = 0.0
+            try:
+                if self.objectives:
+                    ratio = max(0.0, min(1.0, float(self.objectives[0].get_progress_ratio())))
+            except Exception:
+                ratio = 0.0
+            self._boss_rain_update(dt_seconds)
+            if ratio >= 0.33:
+                self._boss_seal_update(dt_seconds)
+            if ratio >= 0.66:
+                self._boss_dark_update(dt_seconds)
+        # 'fast' ve 'missing' mini-boss tipleri __init__ time uygulanır;
+        # update sırasında ek iş yok.
+
+    def _boss_rain_update(self, dt_seconds: float) -> None:
+        """Tip A — Yağmur. Her 30 saniyede 1 satır çöp push."""
+        self._boss_rain_timer += dt_seconds
+        if self._boss_rain_timer >= 30.0:
+            self._boss_rain_timer = 0.0
+            self._boss_push_garbage_row()
+
+    def _boss_seal_update(self, dt_seconds: float) -> None:
+        """Tip B — Mühürleme. Her 45 saniyede 1 dolu hücre LOCKED'a dönüşür."""
+        self._boss_seal_timer += dt_seconds
+        if self._boss_seal_timer >= 45.0:
+            self._boss_seal_timer = 0.0
+            self._boss_seal_apply_lock()
+
+    def _boss_dark_update(self, dt_seconds: float) -> None:
+        """Tip C — Karanlık. Önizleme 4s gizli + 2s açık döngüsü."""
+        self._boss_dark_timer += dt_seconds
+        # 6s peryot: 4s gizli, 2s açık
+        cycle = self._boss_dark_timer % 6.0
+        # 0..4 → gizli, 4..6 → açık
+        new_visible = cycle >= 4.0
+        if new_visible != self._dark_preview_visible:
+            self._dark_preview_visible = new_visible
+            self._hide_next_pieces = not new_visible
+
+    def _boss_push_garbage_row(self) -> None:
+        """Alttan çöp satırı push (Tip A).
+
+        online_pvp_game._apply_pending_garbage pattern'i sıfırdan kopyalandı
+        (board.py'a dokunulmadı, online_pvp_game'den import yapılmadı).
+        Overflow guard: üst satır doluysa push'u atla.
+        """
+        if not self.board:
+            return
+
+        # Overflow guard: üst satırda dolu hücre varsa push'u atla,
+        # oyuncu mevcut parçayı yerleştirsin.
+        try:
+            top_occ = self.board.occupancy[0]
+            if any(top_occ):
+                return
+        except (IndexError, AttributeError):
+            return
+
+        rng = random.Random((self._piece_seed or 0) + self._boss_rain_count)
+        gap_col = rng.randint(0, self.board.width - 1)
+        garbage_color = (90, 90, 100)
+
+        # board.grid manipülasyonu — board.py'a yeni metod eklenmedi
+        try:
+            self.board.grid.pop(0)
+            self.board.occupancy.pop(0)
+            if hasattr(self.board, 'texture_grid'):
+                self.board.texture_grid.pop(0)
+            if hasattr(self.board, 'owners'):
+                self.board.owners.pop(0)
+            if hasattr(self.board, 'gold'):
+                self.board.gold.pop(0)
+
+            new_row = [garbage_color if x != gap_col else None for x in range(self.board.width)]
+            new_occ = [x != gap_col for x in range(self.board.width)]
+
+            self.board.grid.append(new_row)
+            self.board.occupancy.append(new_occ)
+            if hasattr(self.board, 'texture_grid'):
+                self.board.texture_grid.append([None] * self.board.width)
+            if hasattr(self.board, 'owners'):
+                self.board.owners.append([None] * self.board.width)
+            if hasattr(self.board, 'gold'):
+                self.board.gold.append([False] * self.board.width)
+
+            self._boss_rain_count += 1
+
+            # Aktif parça yukarı kayar; geçersiz pozisyona düşerse fail
+            if hasattr(self, 'current_piece') and self.current_piece:
+                try:
+                    self.current_piece.y -= 1
+                    if hasattr(self.board, 'is_valid_position'):
+                        if not self.board.is_valid_position(self.current_piece):
+                            self._handle_level_failed(t('campaign_fail_boss_overflow'), skip_sound=False)
+                except Exception:
+                    pass
+        except Exception as exc:
+            print(f"[CAMPAIGN] _boss_push_garbage_row error: {exc}")
+
+    def _boss_seal_apply_lock(self) -> None:
+        """Rastgele 1 dolu hücreye LOCKED special block uygula (Tip B).
+
+        Boş board → bu tick atla; timer reset edildi (45s sonra tekrar dene).
+
+        Faz 3 dokümantasyon notu — Seal RNG belirsizliği:
+        Seed timer-tabanlı: piece_seed + int(timer*100) + len(candidates).
+        Bu deterministik DEĞİL — aynı level'da iki run aynı kalıbı üretmeyebilir.
+        Tasarım kararı: Seal her tetiklemede farklı hücre seçsin; board state'i
+        evrildiğine göre kararlar farklılaşmalı (deterministik puzzle istenmiyor).
+        quick_restart farklı seal kalıbı görür; bu kabul edilebilir.
+        """
+        if not self.board:
+            return
+
+        # Tüm dolu hücreleri topla
+        candidates = []
+        try:
+            for y in range(self.board.height):
+                for x in range(self.board.width):
+                    if self.board.occupancy[y][x]:
+                        # Zaten special block varsa atla
+                        if (x, y) in self.special_block_manager.special_blocks:
+                            continue
+                        candidates.append((x, y))
+        except (IndexError, AttributeError):
+            return
+
+        if not candidates:
+            return  # Boş board, atla
+
+        rng = random.Random((self._piece_seed or 0) + int(self._boss_seal_timer * 100) + len(candidates))
+        x, y = rng.choice(candidates)
+        try:
+            self.special_block_manager.add_special_block(x, y, SpecialBlockType.LOCKED)
+        except Exception as exc:
+            print(f"[CAMPAIGN] _boss_seal_apply_lock error: {exc}")
+
     def _is_star_condition_met(self, condition: Dict[str, Any]) -> bool:
         """Yıldız koşulu sağlandı mı?"""
         condition_type = condition.get('type')
@@ -757,23 +1010,77 @@ class CampaignMode(Game):
                 main_target = self.objectives[0].target
             return total_lines >= main_target + target_value
 
+        # === FAZ 2: Yeni yıldız tipleri ===
+
+        if condition_type == 'no_hold_run':
+            # Level boyunca hold tuşunu hiç kullanma
+            return bool(self.level_complete and self._hold_use_count == 0)
+
+        if condition_type == 'pristine':
+            # Hard drop kullanmadan tamamla.
+            # Bilinen kısıtlama: effects_enabled=False senaryosunda
+            # trigger_hard_drop_screen_shake() çağrılmaz; sahte pozitif riski
+            # kabul edildi (Faz 2 raporu — known limitation).
+            return bool(self.level_complete and self._hard_drop_count == 0)
+
+        if condition_type == 'garbage_speed':
+            # clear_garbage objective tamamlandı + X saniye içinde
+            try:
+                from .objectives import ClearGarbageObjective as _CGO
+            except Exception:
+                _CGO = None
+            has_clear_garbage_done = False
+            if _CGO is not None:
+                has_clear_garbage_done = any(
+                    isinstance(o, _CGO) and o.completed for o in self.objectives
+                )
+            else:
+                has_clear_garbage_done = any(
+                    getattr(o, 'completed', False) and o.__class__.__name__ == 'ClearGarbageObjective'
+                    for o in self.objectives
+                )
+            return bool(has_clear_garbage_done and self.elapsed_time <= target_value)
+
+        if condition_type == 'tetris_only':
+            # Tüm temizlenen satırlar Quadrix mı?
+            # single/double/triple count sıfır olmalı; en az 1 Quadrix var.
+            # Bomba ile temizlenen 1-3 satırlık clearler bu sayaçları artırır →
+            # oyuncuya bilinçli risk (yıldız metni "Sadece Quadrix temizle").
+            return bool(
+                self.level_complete
+                and self.tetris_count >= 1
+                and self._single_lines_count == 0
+                and self.double_count == 0
+                and self.triple_count == 0
+            )
+
+        if condition_type == 'min_score':
+            return bool(self.level_complete and self.board.score >= target_value)
+
         return False
 
     def _calculate_stars(self) -> int:
-        """Yıldız sayısını hesapla"""
-        stars = 0
+        """Yıldız sayısını hesapla.
+
+        Karma model (Faz 1, kararlı 2026-05):
+        - 1. yıldız her zaman zorunlu: condition_1 (genelde 'complete')
+          sağlanmadıysa toplam = 0. Level complete olmadan yıldız yok.
+        - 2 ve 3 birbirinden bağımsız: 1. sağlandıktan sonra 2 ve 3
+          ayrı ayrı değerlendirilir. Oyuncu 1+3 alabilir (ortayı atlar).
+        """
         condition_results = {}
 
         for star_num, condition in self.star_conditions.items():
             condition_results[int(star_num)] = self._is_star_condition_met(condition)
 
-        if condition_results.get(1, False):
-            stars = 1
-            if condition_results.get(2, False):
-                stars = 2
-                if condition_results.get(3, False):
-                    stars = 3
+        if not condition_results.get(1, False):
+            return 0
 
+        stars = 1
+        if condition_results.get(2, False):
+            stars += 1
+        if condition_results.get(3, False):
+            stars += 1
         return stars
     
     def _save_progress(self) -> None:
@@ -793,16 +1100,59 @@ class CampaignMode(Game):
         # Bu level'ın verilerini güncelle
         level_key = str(self.current_level_num)
         existing = completed.get(level_key, {})
-        
+
+        # === Faz 1: First-clear / improvement flag tespiti (save'den ÖNCE) ===
+        was_completed_before = bool(existing.get('completed', False))
+        prev_stars = int(existing.get('stars', 0) or 0)
+        prev_score = int(existing.get('best_score', 0) or 0)
+        is_first_clear = not was_completed_before
+        is_star_improvement = (self.earned_stars > prev_stars)
+        is_score_improvement = (self.board.score > prev_score)
+        # Dış katmanlardan erişilebilir olsun (overlay payload için)
+        self._last_run_flags = {
+            'first_clear': is_first_clear,
+            'star_improvement': is_star_improvement,
+            'score_improvement': is_score_improvement,
+            'previous_stars': prev_stars,
+            'previous_score': prev_score,
+        }
+
         # Sadece daha iyi sonuçları kaydet
-        best_stars = max(self.earned_stars, existing.get('stars', 0))
-        best_score = max(self.board.score, existing.get('best_score', 0))
-        
+        best_stars = max(self.earned_stars, prev_stars)
+        best_score = max(self.board.score, prev_score)
+
+        # === Faz 3: Bireysel star_flags (1+3 senaryosu için) ===
+        # Karma yıldız modelinde her slot bağımsız değerlendirilir.
+        # En iyi flag'ler: bu run'da kazandığı + önceki run'larda kazandığı (OR).
+        condition_results: Dict[int, bool] = {}
+        for star_num, condition in self.star_conditions.items():
+            try:
+                condition_results[int(star_num)] = self._is_star_condition_met(condition)
+            except Exception:
+                condition_results[int(star_num)] = False
+
+        prev_star_flags = existing.get('star_flags', {})
+        if not isinstance(prev_star_flags, dict):
+            prev_star_flags = {}
+        # Karma model: 1. yıldız zorunlu. 1 sağlanmadıysa hiçbir flag set edilmez.
+        first_met_now = condition_results.get(1, False)
+        new_star_flags: Dict[str, bool] = {}
+        for num in (1, 2, 3):
+            prev_flag = bool(prev_star_flags.get(str(num), False))
+            now_flag = bool(condition_results.get(num, False)) if first_met_now else False
+            new_star_flags[str(num)] = prev_flag or now_flag
+
         completed[level_key] = {
             'stars': best_stars,
             'best_score': best_score,
             'completed': True,
-            'attempts': existing.get('attempts', 0) + 1
+            # attempts: SUCCESS sayısı (Faz 1 öncesi davranışla geriye uyumlu).
+            # Fail denemeleri ayrı 'fail_attempts' alanında tutulur.
+            'attempts': existing.get('attempts', 0) + 1,
+            'fail_attempts': int(existing.get('fail_attempts', 0) or 0),
+            # Faz 3: Bireysel yıldız flag'leri (opsiyonel, geriye uyumlu).
+            # Eski save'de bu alan yoksa preview cumulatif fallback yapar.
+            'star_flags': new_star_flags,
         }
         
         # En yüksek level'ı güncelle
@@ -835,6 +1185,48 @@ class CampaignMode(Game):
                         'time': pygame.time.get_ticks(),
                         'alpha': 255
                     })
+
+    def _record_fail_attempt(self) -> None:
+        """Fail edilen denemeleri sayar ve kaydeder.
+
+        attempts (success) ile ayrı 'fail_attempts' alanı tutulur. Bu, oyuncunun
+        bir leveli kaç kez denediğini görmesi için altyapı sağlar.
+        Save layout migration testini kırmaz; eski kayıtlarda alan yoksa
+        default 0 olarak okunur.
+        """
+        if not self.settings_manager or not self.user_manager:
+            return
+
+        try:
+            progress = self.user_manager.get_campaign_progress()
+        except Exception:
+            progress = None
+        if not isinstance(progress, dict):
+            progress = {}
+
+        completed = progress.get('completed_levels', {})
+        if not isinstance(completed, dict):
+            completed = {}
+
+        level_key = str(self.current_level_num)
+        existing = completed.get(level_key, {})
+        if not isinstance(existing, dict):
+            existing = {}
+
+        new_entry = {
+            'stars': int(existing.get('stars', 0) or 0),
+            'best_score': int(existing.get('best_score', 0) or 0),
+            'completed': bool(existing.get('completed', False)),
+            'attempts': int(existing.get('attempts', 0) or 0),
+            'fail_attempts': int(existing.get('fail_attempts', 0) or 0) + 1,
+        }
+        completed[level_key] = new_entry
+        progress['completed_levels'] = completed
+
+        try:
+            self.user_manager.save_campaign_progress(progress)
+        except Exception as exc:
+            print(f"[CAMPAIGN] _record_fail_attempt save error: {exc}")
     
     # === INPUT HANDLING ===
     
@@ -914,6 +1306,18 @@ class CampaignMode(Game):
         self.tetris_count = 0
         self.double_count = 0
         self.triple_count = 0
+
+        # Faz 2: Yeni yıldız tipi sayaçları
+        self._hard_drop_count = 0
+        self._hold_use_count = 0
+        self._single_lines_count = 0
+        self._prev_held_piece = None
+        # Faz 2: Boss mekanik state sıfırla
+        self._boss_rain_count = 0
+        self._boss_rain_timer = 0.0
+        self._boss_seal_timer = 0.0
+        self._boss_dark_timer = 0.0
+        self._dark_preview_visible = True
 
         # Görevleri sıfırla
         for obj in self.objectives:
@@ -1468,15 +1872,36 @@ class CampaignMode(Game):
         star_start_x = info_rect.x + (info_rect.width - stars_total_w) // 2
         star_y = star_area_top + max(0, (star_area_h - star_size) // 2)
         star_font = UIFonts.get(max(s(28, minimum=18), star_size), bold=True)
-        
+
+        # Faz 2: 1+3 senaryosunda doğru yıldız işaretleme.
+        # In-game (level_complete=False): canlı koşul state'i göster.
+        # Post-complete (level_complete=True): kazanılan yıldızlara göre soldan doldur
+        # (earned_stars=2 → "★ ★ ☆"). Karma model gereği post-complete'te slot bazlı
+        # da gösterilmek istenirse condition_results üstünden çiz; şu an sadeleştirildi:
+        condition_results: Dict[int, bool] = {}
+        for star_num, condition in self.star_conditions.items():
+            try:
+                condition_results[int(star_num)] = self._is_star_condition_met(condition)
+            except Exception:
+                condition_results[int(star_num)] = False
+
         for i in range(3):
+            star_num = i + 1
             star_x = star_start_x + i * (star_size + star_gap)
-            star_color = UIColors.NEON_GOLD if i < self.earned_stars else UIColors.TEXT_MUTED
-            
+
+            # In-game: canlı koşul state. Post-complete: ilgili slot kazanıldı mı?
+            # Karma model: 1. yıldız zorunlu, 2 ve 3 bağımsız → slot bazlı işaretleme.
+            is_earned = condition_results.get(star_num, False)
+            # Karma model: 1. yıldız sağlanmadıysa diğerleri sayılmaz (görsel olarak da)
+            if not condition_results.get(1, False):
+                is_earned = False
+
+            star_color = UIColors.NEON_GOLD if is_earned else UIColors.TEXT_MUTED
+
             # Yıldız PNG kullan (varsa)
             scaled_star = self._get_campaign_star_icon(star_size)
             if scaled_star:
-                if i < self.earned_stars:
+                if is_earned:
                     self.screen.blit(scaled_star, (star_x, star_y))
                 else:
                     darkened = scaled_star.copy()
@@ -1533,6 +1958,27 @@ class CampaignMode(Game):
             ("XP", str(self.level_config.xp_reward)),
             (t('campaign_reward_card_cosmetic'), t('none')),
         ]
+
+        # Faz 1: First-clear / improvement etiketleri (varsa)
+        run_flags = getattr(self, '_last_run_flags', None)
+        if isinstance(run_flags, dict):
+            if run_flags.get('first_clear'):
+                rewards_payload.append((t('campaign_first_clear'), '★'))
+            if run_flags.get('star_improvement'):
+                prev = run_flags.get('previous_stars', 0)
+                rewards_payload.append((
+                    t('campaign_new_star_record'),
+                    f"{prev} → {self.earned_stars}",
+                ))
+            if run_flags.get('score_improvement'):
+                prev_score = int(run_flags.get('previous_score', 0) or 0)
+                prev_score_text = f"{prev_score:,}"
+                if lang == 'tr':
+                    prev_score_text = prev_score_text.replace(',', '.')
+                rewards_payload.append((
+                    t('campaign_new_score_record'),
+                    f"{prev_score_text} → {reward_score}",
+                ))
 
         # Yıldız koşulları
         star_conditions_payload = []
@@ -1751,7 +2197,33 @@ class CampaignMode(Game):
         self.screen.blit(sub_surf, sub_rect)
         self._campaign_hud_subtitle_rect = sub_rect.copy()
         curr_y = sub_rect.bottom + s(10, minimum=6)
-        
+
+        # Faz 2: Boss/Mini-Boss sözel etiket (renkli, boss tipine göre)
+        boss_type = self._boss_get_type()
+        if boss_type:
+            label_key = {
+                'rain': 'campaign_boss_rain',
+                'seal': 'campaign_boss_seal',
+                'dark': 'campaign_boss_dark',
+                'final': 'campaign_boss_final',
+                'fast': 'campaign_miniboss_fast',
+                'missing': 'campaign_miniboss_missing',
+            }.get(boss_type)
+            if label_key:
+                # Boss kırmızı, mini-boss turuncu
+                boss_color = (255, 80, 80) if self.is_boss else (255, 165, 0)
+                boss_label_surf = self._render_hud_fitted_text(
+                    t(label_key),
+                    boss_color,
+                    title_max_width,
+                    s(13, minimum=10),
+                    s(8, minimum=7),
+                    bold=True,
+                )
+                boss_label_rect = boss_label_surf.get_rect(midtop=(title_center_x, curr_y))
+                self.screen.blit(boss_label_surf, boss_label_rect)
+                curr_y = boss_label_rect.bottom + s(6, minimum=4)
+
         curr_y += s(10, minimum=6)
         
         # --- NEXT PIECES ---

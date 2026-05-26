@@ -65,7 +65,7 @@ Her iki oyuncu da hazır olduğunda host tarafı oyunu başlatır.
 Host şu kritik bilgileri yollar:
 
 - `seed` (deterministik parça sırası için)
-- önceden üretilmiş parça dizisinin ilk bölümü (max 500 parça)
+- önceden üretilmiş parça dizisinin ilk bölümü (host 200 parça yollar, alıcı 500 parça üst sınırına kadar kabul eder)
 
 Böylece iki taraf da aynı sırayla aynı parçaları alır.
 
@@ -109,7 +109,7 @@ Online PvP tam bir lockstep simülasyon değildir. Bunun yerine hibrit bir model
 | Mesaj | Yön | Güvenilirlik | Açıklama |
 | --- | --- | --- | --- |
 | `ready` | ↔ | Reliable | Oyuncu hazır sinyali |
-| `game_start` | Host → Guest | Reliable | `{seed, timestamp, pieces[0:500]}` |
+| `game_start` | Host → Guest | Reliable | `{seed, timestamp, pieces[0:200]}` (alıcı ek olarak 500 parça üst sınırı uygular) |
 | `garbage` | ↔ | Reliable | `{lines, gap}` (Online PvP'de devre dışı, aşağıda bkz.) |
 | `board_state` | ↔ | Unreliable | `{grid, score, lines, level}` — periyodik snapshot |
 | `score_update` | ↔ | Unreliable | `{score, lines, level}` |

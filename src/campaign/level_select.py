@@ -10,7 +10,7 @@ import pygame
 import math
 from typing import Dict, Any, List, Optional, Tuple, TYPE_CHECKING
 
-from .level_data import get_level, get_levels, get_total_levels, get_world_info, LevelConfig
+from .level_data import get_level, get_levels, get_total_levels, get_world_info, LevelConfig, resolve_star_condition_text, get_boss_type_for_level
 from background_effects import get_shared_falling_blocks_layer
 from platform_utils import get_mouse_pos, normalize_mouse_pos
 from ui_theme import UIColors, UIFonts, UIStyle
@@ -1189,6 +1189,29 @@ class CampaignLevelSelect:
             self.screen.blit(glow_surf, (panel_x + 18 + dx, panel_y + 14 + dy))
         self.screen.blit(name_surf, (panel_x + s(18), panel_y + s(12)))
 
+        # === Faz 3: Boss/Mini-Boss tipi etiketi (kilitsiz levellarda) ===
+        if is_unlocked:
+            boss_type = get_boss_type_for_level(display_level)
+            if boss_type:
+                label_key = {
+                    'rain': 'campaign_boss_rain',
+                    'seal': 'campaign_boss_seal',
+                    'dark': 'campaign_boss_dark',
+                    'final': 'campaign_boss_final',
+                    'fast': 'campaign_miniboss_fast',
+                    'missing': 'campaign_miniboss_missing',
+                }.get(boss_type)
+                if label_key:
+                    is_boss_lvl = level_config.is_boss
+                    label_color = (255, 80, 80) if is_boss_lvl else (255, 165, 0)
+                    label_text = t(label_key)
+                    label_surf = self.font_small.render(label_text, True, label_color)
+                    label_x = panel_x + s(18) + name_surf.get_width() + s(12)
+                    label_y = panel_y + s(12) + max(0, (name_surf.get_height() - label_surf.get_height()) // 2)
+                    # Eğer label panele sığmıyorsa atla (defansif)
+                    if label_x + label_surf.get_width() <= panel_x + panel_width - s(18):
+                        self.screen.blit(label_surf, (label_x, label_y))
+
         # === İKİLİ KART DÜZENİ ===
         inner_pad = s(18)
         header_height = s(34)
@@ -1289,7 +1312,14 @@ class CampaignLevelSelect:
             
             # Yıldız sembolü
             star_color = star_colors.get(star_num, self.COLORS['gold'])
-            earned = stars >= star_num
+            # Faz 3: Bireysel star_flags varsa kullan, yoksa cumulatif fallback (eski save).
+            level_data = self.progress.get('completed_levels', {}).get(str(display_level), {})
+            star_flags_raw = level_data.get('star_flags') if isinstance(level_data, dict) else None
+            if isinstance(star_flags_raw, dict) and str(star_num) in star_flags_raw:
+                earned = bool(star_flags_raw[str(star_num)])
+            else:
+                # Geriye uyumluluk: eski save'lerde star_flags yok → cumulatif fallback
+                earned = stars >= star_num
             display_color = star_color if earned else (80, 80, 80)
             
             # X pozisyonu
@@ -1399,6 +1429,30 @@ class CampaignLevelSelect:
         pygame.draw.rect(self.screen, (*status_color, 150), badge_rect, 1, border_radius=UIStyle.BORDER_RADIUS_SMALL)
 
         self.screen.blit(status_surf, (badge_rect.x + s(10), badge_rect.y + max(1, s(3))))
+
+        # === Faz 3: Attempts/Fail Attempts özet metni ===
+        try:
+            level_data = self.progress.get('completed_levels', {}).get(str(display_level), {})
+            if isinstance(level_data, dict):
+                success_attempts = int(level_data.get('attempts', 0) or 0)
+                fail_attempts = int(level_data.get('fail_attempts', 0) or 0)
+                if success_attempts > 0 or fail_attempts > 0:
+                    attempts_text = t(
+                        'campaign_attempts_summary',
+                        success=success_attempts,
+                        fail=fail_attempts,
+                    )
+                    attempts_surf = self.font_small.render(
+                        attempts_text, True, self.COLORS['gray']
+                    )
+                    # Badge'in solunda yer var; sol tarafa yerleştir.
+                    attempts_x = panel_x + s(18)
+                    attempts_y = badge_rect.y + max(0, (badge_rect.height - attempts_surf.get_height()) // 2)
+                    # Badge ile çakışma kontrolü
+                    if attempts_x + attempts_surf.get_width() < badge_rect.x - s(10):
+                        self.screen.blit(attempts_surf, (attempts_x, attempts_y))
+        except Exception:
+            pass
     
     def _draw_bottom_buttons(self) -> None:
         """Premium alt butonlar"""

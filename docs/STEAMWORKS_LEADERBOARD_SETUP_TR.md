@@ -38,7 +38,7 @@ Bu projede güvenli model uygulanmıştır:
 
 ## 2) Mod → Leaderboard Adı Eşleşmesi
 
-Varsayılan eşleşme (`src/steam_leaderboards.py` içindeki `MODE_TO_LEADERBOARD` ile birebir):
+Varsayılan eşleşme (`src/steam_leaderboards.py` içindeki `DEFAULT_MODE_TO_LEADERBOARD` ile birebir):
 
 | Mod | Leaderboard adı |
 | --- | --- |

@@ -95,18 +95,32 @@ def _calculate_block_limit(level: int, objectives: List[Dict[str, Any]], is_boss
         # Satır temizleme: Her satır için ~2-3 blok gerekir ortalama
         base_blocks = int(target * multiplier)
     elif obj_type == 'score':
-        # Skor hedefi: ~100 puan/blok ortalama üzerinden
-        estimated_blocks = target // 80
+        # Skor hedefi: ~60 puan/blok ortalama (Faz 2: 80'den düşüldü)
+        estimated_blocks = target // 60
         base_blocks = int(estimated_blocks * multiplier)
     elif obj_type == 'tetris':
-        # Quadrix yapmak zor - her Quadrix ~8-10 blok gerektirir
-        base_blocks = int(target * 10 * multiplier)
+        # Quadrix yapmak zor - her Quadrix ~7 blok (Faz 2: 10'dan düşüldü)
+        base_blocks = int(target * 7 * multiplier)
     elif obj_type == 'combo':
         # Combo: Ardışık temizleme gerektirir
         base_blocks = int(target * 8 * multiplier)
     elif obj_type == 'clear_garbage':
-        # Çöp temizleme: Hedef otomatik ayarlanır, bol blok ver
-        base_blocks = int(max(target, 15) * multiplier)
+        # Çöp temizleme: target=0 build-time'da bilinmediği için
+        # gerçek çöp hücre sayısı tahmin edilir.
+        # garbage_rows * board_width * 0.45 (~%45 doluluk varsayımı)
+        garbage_rows = _calculate_garbage_rows(level, is_boss)
+        # Override tablosunda explicit garbage_rows varsa onu kullan
+        ov = _LEVEL_OVERRIDES.get(level, {}) if isinstance(_LEVEL_OVERRIDES.get(level), dict) else {}
+        if 'garbage_rows' in ov:
+            garbage_rows = ov['garbage_rows']
+        # clear_garbage görevi varsa minimum 2 satır garanti (auto-gen kuralı)
+        if garbage_rows == 0:
+            garbage_rows = max(2, min(4, 2 + (level - 6) // 10))
+        BOARD_WIDTH_ASSUMED = 10
+        AVERAGE_FILL_RATIO = 0.45
+        estimated_cells = max(15, int(garbage_rows * BOARD_WIDTH_ASSUMED * AVERAGE_FILL_RATIO))
+        # Her bloğun ~3-4 hücre kaldıracağı varsayımıyla taban blok sayısı
+        base_blocks = int((estimated_cells / 3.5) * multiplier)
     elif obj_type == 'survival':
         # Hayatta kalma: Süre bazlı (~1 blok/3 saniye ortalama)
         base_blocks = int((target // 3) * multiplier)
@@ -132,15 +146,35 @@ def _calculate_block_limit(level: int, objectives: List[Dict[str, Any]], is_boss
     return max(15, min(base_blocks, 120))
 
 
-def _calculate_speed(level: int) -> int:
-    """Level'a göre düşme hızını hesapla (ms)"""
-    # Level 1: 900ms, Level 100: 400ms (progresif azalma)
-    base_speed = 900
-    min_speed = 400
-    speed_decrease_per_level = 5
-    
-    speed = base_speed - (level * speed_decrease_per_level)
-    return max(min_speed, speed)
+def _calculate_speed(level: int, objective_type: str = 'clear_lines') -> int:
+    """Level'a göre düşme hızını hesapla (ms).
+
+    Faz 2: Objective tipine duyarlı. Faz 3 dokümantasyon genişletmesi.
+
+    Args:
+        level: 1-100 arası level numarası
+        objective_type: Ana objective tipi. Aşağıdaki tiplerde balans
+            çarpanı uygulanır; diğer tipler base hızı kullanır:
+              - 'survival': 0.92x (oyuncu meşgul olsun)
+              - 'score':    1.05x (combo planlamak gerek)
+              - 'tetris':   1.08x (I parçası beklemesi gerek)
+
+    Returns:
+        Düşme hızı (ms). Clamp aralığı: [400, 1100].
+    """
+    base_speed = 900 - (level * 5)
+
+    if objective_type == 'survival':
+        # Survival: %8 daha hızlı (oyuncu meşgul olsun)
+        base_speed = int(base_speed * 0.92)
+    elif objective_type == 'score':
+        # Score: %5 daha yavaş (combo planlamak gerek)
+        base_speed = int(base_speed * 1.05)
+    elif objective_type == 'tetris':
+        # Quadrix: %8 daha yavaş (I parçası beklemesi)
+        base_speed = int(base_speed * 1.08)
+
+    return max(400, min(1100, base_speed))
 
 
 def _calculate_lines_target(level: int, base: int = 5) -> int:
@@ -184,6 +218,10 @@ def _get_world_names() -> Dict[int, Dict[str, str]]:
             "es": "Valle del Principiante",
             "it": "Valle dei Principianti",
             "pt": "Vale do Iniciante",
+            "ru": "Долина Новичков",
+            "ja": "初心者の谷",
+            "zh": "新手山谷",
+            "ko": "초보자의 계곡",
         },
         2: {
             "tr": "Buz Diyarı",
@@ -193,6 +231,10 @@ def _get_world_names() -> Dict[int, Dict[str, str]]:
             "es": "Reino de Hielo",
             "it": "Regno di Ghiaccio",
             "pt": "Reino de Gelo",
+            "ru": "Ледяное Царство",
+            "ja": "氷の領域",
+            "zh": "冰之领域",
+            "ko": "얼음 왕국",
         },
         3: {
             "tr": "Lav Mağarası",
@@ -202,6 +244,10 @@ def _get_world_names() -> Dict[int, Dict[str, str]]:
             "es": "Cuevas de Lava",
             "it": "Grotte di Lava",
             "pt": "Cavernas de Lava",
+            "ru": "Лавовые Пещеры",
+            "ja": "溶岩洞窟",
+            "zh": "熔岩洞穴",
+            "ko": "용암 동굴",
         },
         4: {
             "tr": "Fırtına Kalesi",
@@ -211,6 +257,10 @@ def _get_world_names() -> Dict[int, Dict[str, str]]:
             "es": "Fortaleza de la Tormenta",
             "it": "Fortezza della Tempesta",
             "pt": "Fortaleza da Tempestade",
+            "ru": "Крепость Бури",
+            "ja": "嵐の要塞",
+            "zh": "风暴堡垒",
+            "ko": "폭풍의 요새",
         },
         5: {
             "tr": "Yıldız Kulesi",
@@ -220,6 +270,10 @@ def _get_world_names() -> Dict[int, Dict[str, str]]:
             "es": "Torre de las Estrellas",
             "it": "Torre delle Stelle",
             "pt": "Torre das Estrelas",
+            "ru": "Звёздная Башня",
+            "ja": "星の塔",
+            "zh": "星之塔",
+            "ko": "별의 탑",
         },
     }
 
@@ -252,13 +306,171 @@ def _mc(n: int) -> Dict[str, Any]:
 def _qx(n: int = 1) -> Dict[str, Any]:
     """Quadrix yıldızı"""
     desc_tr = "Quadrix yap (4'lü)" if n == 1 else f"{n} Quadrix yap"
-    desc_en = "Get a Quadrix" if n == 1 else f"Get {n} Quadrixes"
-    return {'type': 'tetris', 'value': n, 'description': {'tr': desc_tr, 'en': desc_en}}
+    desc_en = "Make a Quadrix clear" if n == 1 else f"Make {n} Quadrix clears"
+    return {
+        'type': 'tetris',
+        'value': n,
+        'description_key': 'campaign_cond_tetris',
+        'description_kwargs': {'value': n},
+        'description': {'tr': desc_tr, 'en': desc_en},
+    }
+
+def _cc(n: int) -> Dict[str, Any]:
+    """Combo zinciri yıldızı."""
+    return {
+        'type': 'combo_chain',
+        'value': n,
+        'description_key': 'campaign_cond_combo_chain',
+        'description_kwargs': {'value': n},
+        'description': {'tr': f"Üst üste {n} combo", 'en': f"Make {n} combos in a row"},
+    }
+
+
+def _translate_condition_key(key: str, lang: str, **kwargs: Any) -> str:
+    try:
+        from ..localization import TRANSLATIONS  # type: ignore
+    except Exception:
+        from localization import TRANSLATIONS
+
+    entry = TRANSLATIONS.get(key, {})
+    text = entry.get(lang) or entry.get('en') or entry.get('tr') or key
+    if kwargs:
+        try:
+            text = text.format(**kwargs)
+        except (KeyError, ValueError, IndexError):
+            pass
+    return str(text)
+
+
+def _format_condition_value(value: Any, lang: str) -> Any:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int):
+        formatted = f"{value:,}"
+        if lang == 'tr':
+            formatted = formatted.replace(',', '.')
+        return formatted
+    if isinstance(value, float):
+        formatted = f"{value:g}"
+        if lang == 'tr':
+            formatted = formatted.replace('.', ',')
+        return formatted
+    return value
+
+
+def resolve_star_condition_text(condition: Dict[str, Any], lang: str) -> str:
+    """Yıldız koşulunu oyuncuya gösterilecek metne çevir."""
+    cond_type = condition.get('type', 'complete')
+    desc_key = condition.get('description_key')
+    desc_kwargs = dict(condition.get('description_kwargs', {}) or {})
+
+    if desc_key:
+        if desc_key == 'campaign_cond_tetris' and int(condition.get('value', 0) or 0) == 1:
+            desc_key = 'campaign_cond_tetris_single'
+        formatted_kwargs = {
+            key: _format_condition_value(value, lang)
+            for key, value in desc_kwargs.items()
+        }
+        return _translate_condition_key(desc_key, lang, **formatted_kwargs)
+
+    cond_value = int(condition.get('value', 0) or 0)
+    formatted_value = _format_condition_value(cond_value, lang)
+    if cond_type == 'complete':
+        return _translate_condition_key('campaign_cond_complete', lang)
+    if cond_type == 'score':
+        return _translate_condition_key('campaign_cond_score', lang, value=formatted_value)
+    if cond_type == 'combo':
+        return _translate_condition_key('campaign_cond_combo', lang, value=formatted_value)
+    if cond_type == 'multi_clear':
+        if cond_value == 2:
+            return _translate_condition_key('campaign_cond_multi_clear_2', lang)
+        if cond_value == 3:
+            return _translate_condition_key('campaign_cond_multi_clear_3', lang)
+        return _translate_condition_key('campaign_cond_multi_clear_n', lang, value=formatted_value)
+    if cond_type == 'tetris':
+        key = 'campaign_cond_tetris_single' if cond_value == 1 else 'campaign_cond_tetris'
+        return _translate_condition_key(key, lang, value=formatted_value)
+    if cond_type == 'combo_chain':
+        return _translate_condition_key('campaign_cond_combo_chain', lang, value=formatted_value)
+    if cond_type == 'time_limit':
+        return _translate_condition_key('campaign_cond_time_limit', lang, value=formatted_value)
+    if cond_type == 'extra_lines':
+        return _translate_condition_key('campaign_cond_extra_lines', lang, value=formatted_value)
+    if cond_type == 'efficiency':
+        return _translate_condition_key('campaign_cond_efficiency', lang, value=formatted_value)
+    if cond_type == 'time':
+        return _translate_condition_key('campaign_cond_time', lang, value=formatted_value)
+    # Faz 2: Yeni tipler
+    if cond_type == 'no_hold_run':
+        return _translate_condition_key('campaign_cond_no_hold_run', lang)
+    if cond_type == 'pristine':
+        return _translate_condition_key('campaign_cond_pristine', lang)
+    if cond_type == 'garbage_speed':
+        return _translate_condition_key('campaign_cond_garbage_speed', lang, value=formatted_value)
+    if cond_type == 'tetris_only':
+        return _translate_condition_key('campaign_cond_tetris_only', lang)
+    if cond_type == 'min_score':
+        return _translate_condition_key('campaign_cond_min_score', lang, value=formatted_value)
+
+    desc = condition.get('description', {})
+    if isinstance(desc, dict):
+        return str(desc.get(lang) or desc.get('en') or str(cond_type))
+    return str(desc or cond_type)
 
 def _mv(n: int) -> Dict[str, Any]:
     """Move (blok) limiti yıldızı"""
     return {'type': 'move_limit', 'value': n,
             'description': {'tr': f"{n} blokta tamamla", 'en': f"Complete in {n} moves"}}
+
+
+# === FAZ 2: Yeni yıldız tipleri ===
+
+def _no_hold_run() -> Dict[str, Any]:
+    """Hold kullanmadan tamamla (mini-boss/boss zaten yasaklı; normal level'da gönüllü meydan okuma)."""
+    return {
+        'type': 'no_hold_run',
+        'description_key': 'campaign_cond_no_hold_run',
+        'description_kwargs': {},
+    }
+
+
+def _pristine() -> Dict[str, Any]:
+    """Hard drop kullanmadan tamamla."""
+    return {
+        'type': 'pristine',
+        'description_key': 'campaign_cond_pristine',
+        'description_kwargs': {},
+    }
+
+
+def _garbage_speed(secs: int) -> Dict[str, Any]:
+    """clear_garbage görevini X saniyede tamamla."""
+    return {
+        'type': 'garbage_speed',
+        'value': secs,
+        'description_key': 'campaign_cond_garbage_speed',
+        'description_kwargs': {'value': secs},
+    }
+
+
+def _tetris_only() -> Dict[str, Any]:
+    """Sadece Quadrix temizleme (single/double/triple sayılmaz)."""
+    return {
+        'type': 'tetris_only',
+        'description_key': 'campaign_cond_tetris_only',
+        'description_kwargs': {},
+    }
+
+
+def _min_score(n: int) -> Dict[str, Any]:
+    """En az N puanla tamamla (ana görevden bağımsız)."""
+    return {
+        'type': 'min_score',
+        'value': n,
+        'description_key': 'campaign_cond_min_score',
+        'description_kwargs': {'value': n},
+    }
+
 
 def _obj_lines(n: int) -> Dict[str, Any]:
     return {'type': 'clear_lines', 'target': n}
@@ -276,13 +488,27 @@ def _obj_garbage() -> Dict[str, Any]:
     return {'type': 'clear_garbage', 'target': 0}
 
 def _obj_survival(n: int) -> Dict[str, Any]:
-    return {'type': 'survival', 'target': n,
-            'description': {'tr': f"{n} saniye hayatta kal", 'en': f"Survive {n} seconds"}}
+    return {
+        'type': 'survival',
+        'target': n,
+    }
 
 def _obj_multi_clear(n: int) -> Dict[str, Any]:
-    suffix = "3'lü" if n == 3 else f"{n}'li"
-    return {'type': 'multi_clear', 'target': n,
-            'description': {'tr': f"{suffix} satır temizle", 'en': f"Get a {'Triple' if n == 3 else str(n)+'-clear'}"}}
+    if n == 2:
+        desc_key = 'campaign_cond_multi_clear_2'
+        desc_kwargs: Dict[str, Any] = {}
+    elif n == 3:
+        desc_key = 'campaign_cond_multi_clear_3'
+        desc_kwargs = {}
+    else:
+        desc_key = 'campaign_cond_multi_clear_n'
+        desc_kwargs = {'value': n}
+    return {
+        'type': 'multi_clear',
+        'target': n,
+        'description_key': desc_key,
+        'description_kwargs': desc_kwargs,
+    }
 
 def _obj_special_block(n: int) -> Dict[str, Any]:
     return {'type': 'special_block', 'target': n}
@@ -302,105 +528,108 @@ _LEVEL_OVERRIDES: Dict[int, Dict[str, Any]] = {
     4:   {'move_limit': None, 'time_limit': 100, 'stars': {1: _cs(), 2: _cm(1), 3: _mv(21)}},
     5:   {'stars': {1: _cs(), 2: _mc(2), 3: _ct(100)}},
     6:   {'move_limit': 24, 'stars': {1: _cs(), 2: _cm(1), 3: _cm(2)}},
-    7:   {'objectives': [_obj_score(2100)], 'move_limit': 34, 'stars': {1: _cs(), 2: _mc(2), 3: _ct(90)}},
+    7:   {'objectives': [_obj_score(2100)], 'move_limit': 34, 'stars': {1: _cs(), 2: _mc(2), 3: _min_score(3000)}},
     8:   {'move_limit': 24, 'stars': {1: _cs(), 2: _cm(1), 3: _ct(80)}},
-    9:   {'objectives': [_obj_lines(8)], 'move_limit': None, 'time_limit': 120, 'stars': {1: _cs(), 2: _mc(2), 3: _cm(2)}},
+    9:   {'objectives': [_obj_lines(8)], 'move_limit': None, 'time_limit': 120, 'stars': {1: _cs(), 2: _mc(2), 3: _no_hold_run()}},
     10:  {'move_limit': 39, 'stars': {1: _cs(), 2: _cm(2), 3: _ct(75)}},            # BOSS
     11:  {'objectives': [_obj_score(2300)], 'move_limit': 42, 'stars': {1: _cs(), 2: _cm(2), 3: _ct(80)}},
     12:  {'objectives': [_obj_multi_clear(3)], 'move_limit': 35, 'stars': {1: _cs(), 2: _cm(1), 3: _ct(100)}},
-    13:  {'move_limit': 42, 'garbage_rows': 2, 'stars': {1: _cs(), 2: _cm(2), 3: _ct(75)}},
+    13:  {'move_limit': 42, 'garbage_rows': 2, 'stars': {1: _cs(), 2: _cm(2), 3: _pristine()}},
     14:  {'move_limit': 42, 'stars': {1: _cs(), 2: _mv(28), 3: _ct(80)}},
     15:  {'objectives': [_obj_lines(13)], 'move_limit': 39, 'stars': {1: _cs(), 2: _mc(3), 3: _cm(2)}},
-    16:  {'objectives': [_obj_score(3000)], 'move_limit': 39, 'stars': {1: _cs(), 2: _cm(2), 3: _ct(75)}},
+    16:  {'objectives': [_obj_score(3000)], 'move_limit': 39, 'stars': {1: _cs(), 2: _cm(2), 3: _min_score(4500)}},
     17:  {'objectives': [_obj_tetris(1)], 'move_limit': None, 'stars': {1: _cs(), 2: _mv(28), 3: _ct(85)}},
     18:  {'move_limit': 34, 'stars': {1: _cs(), 2: _mc(3), 3: _cm(2)}},
-    19:  {'move_limit': None, 'time_limit': 75, 'stars': {1: _cs(), 2: _mv(26), 3: _ct(55)}},
+    19:  {'move_limit': None, 'time_limit': 75, 'stars': {1: _cs(), 2: _mv(26), 3: _no_hold_run()}},
     20:  {'move_limit': 60, 'time_limit': 90, 'stars': {1: _cs(), 2: _cm(2), 3: _ct(75)}},  # BOSS
     # ─── DÜNYA 2: BUZ DİYARI ──────────────────────────
     21:  {'objectives': [_obj_lines(14)], 'move_limit': 36, 'stars': {1: _cs(), 2: _mc(3), 3: _cm(2)}},
-    22:  {'objectives': [_obj_score(3500)], 'move_limit': 60, 'time_limit': 70, 'stars': {1: _cs(), 2: _cm(2), 3: _ct(60)}},
-    23:  {'objectives': [_obj_tetris(1)], 'move_limit': 30, 'stars': {1: _cs(), 2: _ct(90), 3: _ct(75)}},
-    24:  {'move_limit': 40, 'stars': {1: _cs(), 2: _mc(3), 3: _cm(2)}},
+    22:  {'objectives': [_obj_score(3500)], 'move_limit': 60, 'time_limit': 70, 'stars': {1: _cs(), 2: _cm(2), 3: _min_score(5000)}},
+    23:  {'objectives': [_obj_tetris(1)], 'move_limit': 30, 'stars': {1: _cs(), 2: _ct(90), 3: _no_hold_run()}},
+    24:  {'move_limit': 40, 'stars': {1: _cs(), 2: _mc(3), 3: _pristine()}},
     25:  {'stars': {1: _cs(), 2: _mv(50), 3: _ct(80)}},
     26:  {'objectives': [_obj_lines(15)], 'move_limit': 60, 'stars': {1: _cs(), 2: _cm(2), 3: _ct(85)}},
-    27:  {'objectives': [_obj_score(7000)], 'stars': {1: _cs(), 2: _mc(3), 3: _cm(2)}},
+    27:  {'objectives': [_obj_score(7000)], 'stars': {1: _cs(), 2: _mc(3), 3: _min_score(9000)}},
     28:  {'objectives': [_obj_lines(6)], 'move_limit': None, 'time_limit': 30, 'garbage_rows': 0, 'stars': {1: _cs(), 2: _mc(2), 3: _ct(25)}},
-    29:  {'objectives': [_obj_score(3000)], 'move_limit': None, 'time_limit': 50, 'stars': {1: _cs(), 2: _cm(1), 3: _ct(40)}},
+    29:  {'objectives': [_obj_score(3000)], 'move_limit': None, 'time_limit': 50, 'stars': {1: _cs(), 2: _cm(1), 3: _no_hold_run()}},
     30:  {'objectives': [_obj_tetris(2)], 'move_limit': 80, 'time_limit': 150, 'stars': {1: _cs(), 2: _cm(1), 3: _ct(120)}},  # BOSS
     # ─── DÜNYA 2 (devam) ──────────────────────────────
-    31:  {'garbage_rows': 4, 'stars': {1: _cs(), 2: _cm(2), 3: _ct(60)}},
+    31:  {'garbage_rows': 4, 'stars': {1: _cs(), 2: _cm(2), 3: _pristine()}},
     32:  {'objectives': [_obj_combo(3), _obj_special_block(4)]},
-    33:  {'stars': {1: _cs(), 2: _cm(3), 3: _cm(3)}},
+    33:  {'stars': {1: _cs(), 2: _cm(3), 3: _cc(3)}},
     34:  {'stars': {1: _cs(), 2: _cm(3), 3: _ct(58)}},
-    35:  {'stars': {1: _cs(), 2: _cm(3), 3: _ct(58)}},
-    36:  {'objectives': [_obj_score(4600), _obj_special_block(5)], 'stars': {1: _cs(), 2: _qx(), 3: _cm(3)}},
+    35:  {'stars': {1: _cs(), 2: _cm(3), 3: _no_hold_run()}},
+    36:  {'objectives': [_obj_score(4600), _obj_special_block(5)], 'stars': {1: _cs(), 2: _qx(), 3: _min_score(6500)}},
     37:  {'stars': {1: _cs(), 2: _cm(3), 3: _ct(57)}},
-    38:  {'stars': {1: _cs(), 2: _cm(3), 3: _ct(56)}},
-    39:  {'stars': {1: _cs(), 2: _cm(3), 3: _cm(3)}},
+    38:  {'stars': {1: _cs(), 2: _cm(3), 3: _pristine()}},
+    39:  {'stars': {1: _cs(), 2: _cm(3), 3: _cc(3)}},
     40:  {'objectives': [_obj_lines(32), _obj_special_block(5)]},  # BOSS
     # ─── DÜNYA 3: LAV MAĞARASI ────────────────────────
+    # Faz 2: 3. yıldız çeşitlendi: _ct, _cc, _garbage_speed, _min_score rotasyonu
     41:  {'stars': {1: _cs(), 2: _cm(3), 3: _ct(55)}},
-    42:  {'stars': {1: _cs(), 2: _cm(3), 3: _cm(3)}},
-    43:  {'stars': {1: _cs(), 2: _cm(3), 3: _ct(54)}},
+    42:  {'stars': {1: _cs(), 2: _cm(3), 3: _cc(3)}},
+    43:  {'stars': {1: _cs(), 2: _cm(3), 3: _min_score(7000)}},
     # L44: auto-gen ile aynı, override yok
-    45:  {'objectives': [_obj_garbage(), _obj_special_block(2)], 'stars': {1: _cs(), 2: _cm(3), 3: _cm(3)}},
+    45:  {'objectives': [_obj_garbage(), _obj_special_block(2)], 'stars': {1: _cs(), 2: _cm(3), 3: _garbage_speed(75)}},
     46:  {'stars': {1: _cs(), 2: _cm(3), 3: _ct(52)}},
-    47:  {'stars': {1: _cs(), 2: _cm(3), 3: _ct(52)}},
-    48:  {'stars': {1: _cs(), 2: _qx(), 3: _cm(3)}},
+    47:  {'stars': {1: _cs(), 2: _cm(3), 3: _cc(3)}},
+    48:  {'stars': {1: _cs(), 2: _qx(), 3: _min_score(8000)}},
     49:  {'stars': {1: _cs(), 2: _cm(3), 3: _ct(51)}},
-    50:  {'objectives': [_obj_score(9000), _obj_special_block(3)], 'stars': {1: _cs(), 2: _cm(3), 3: _ct(50)}},  # BOSS
-    51:  {'stars': {1: _cs(), 2: _cm(3), 3: _cm(3)}},
+    50:  {'objectives': [_obj_score(9000), _obj_special_block(3)], 'stars': {1: _cs(), 2: _cm(3), 3: _min_score(12000)}},  # BOSS
+    51:  {'stars': {1: _cs(), 2: _cm(3), 3: _cc(3)}},
     # L52: auto-gen ile aynı, override yok
     53:  {'stars': {1: _cs(), 2: _cm(3), 3: _ct(49)}},
-    54:  {'stars': {1: _cs(), 2: _cm(3), 3: _cm(3)}},
-    55:  {'objectives': [_obj_survival(170), _obj_special_block(3)], 'stars': {1: _cs(), 2: _cm(3), 3: _ct(48)}},
+    54:  {'stars': {1: _cs(), 2: _cm(3), 3: _min_score(8500)}},
+    55:  {'objectives': [_obj_survival(170), _obj_special_block(3)], 'stars': {1: _cs(), 2: _cm(3), 3: _ct(180)}},
     # L56: auto-gen ile aynı, override yok
-    57:  {'stars': {1: _cs(), 2: _cm(3), 3: _cm(3)}},
+    57:  {'stars': {1: _cs(), 2: _cm(3), 3: _cc(3)}},
     58:  {'stars': {1: _cs(), 2: _cm(3), 3: _ct(46)}},
-    59:  {'stars': {1: _cs(), 2: _cm(3), 3: _ct(46)}},
-    60:  {'objectives': [_obj_tetris(6), _obj_special_block(4)], 'stars': {1: _cs(), 2: _qx(), 3: _cm(3)}},  # BOSS
+    59:  {'stars': {1: _cs(), 2: _cm(3), 3: _garbage_speed(60)}},
+    60:  {'objectives': [_obj_tetris(6), _obj_special_block(4)], 'stars': {1: _cs(), 2: _qx(), 3: _tetris_only()}},  # BOSS
     # ─── DÜNYA 4: FIRTINA KALESİ ──────────────────────
+    # Faz 2: 3. yıldız çeşitlendi: _ct, _qx(2), _tetris_only, _pristine, _cc rotasyonu
     61:  {'stars': {1: _cs(), 2: _cm(4), 3: _ct(45)}},
-    62:  {'stars': {1: _cs(), 2: _cm(4), 3: _ct(45)}},
-    63:  {'stars': {1: _cs(), 2: _cm(4), 3: _cm(3)}},
+    62:  {'stars': {1: _cs(), 2: _cm(4), 3: _pristine()}},
+    63:  {'stars': {1: _cs(), 2: _cm(4), 3: _cc(3)}},
     64:  {'stars': {1: _cs(), 2: _cm(4), 3: _ct(44)}},
-    65:  {'stars': {1: _cs(), 2: _qx(2), 3: _ct(44)}},
-    66:  {'stars': {1: _cs(), 2: _cm(4), 3: _cm(3)}},
+    65:  {'stars': {1: _cs(), 2: _qx(2), 3: _tetris_only()}},
+    66:  {'stars': {1: _cs(), 2: _cm(4), 3: _cc(3)}},
     67:  {'stars': {1: _cs(), 2: _cm(4), 3: _ct(44)}},
-    68:  {'stars': {1: _cs(), 2: _cm(4), 3: _ct(43)}},
-    69:  {'stars': {1: _cs(), 2: _cm(4), 3: _cm(3)}},
-    70:  {'stars': {1: _cs(), 2: _qx(2), 3: _ct(43)}},  # BOSS
+    68:  {'stars': {1: _cs(), 2: _cm(4), 3: _pristine()}},
+    69:  {'stars': {1: _cs(), 2: _cm(4), 3: _cc(3)}},
+    70:  {'stars': {1: _cs(), 2: _qx(2), 3: _tetris_only()}},  # BOSS
     71:  {'stars': {1: _cs(), 2: _cm(4), 3: _ct(43)}},
-    72:  {'stars': {1: _cs(), 2: _cm(4), 3: _cm(3)}},
+    72:  {'stars': {1: _cs(), 2: _cm(4), 3: _pristine()}},
     73:  {'stars': {1: _cs(), 2: _cm(4), 3: _ct(42)}},
-    74:  {'stars': {1: _cs(), 2: _cm(4), 3: _ct(42)}},
-    75:  {'stars': {1: _cs(), 2: _qx(2), 3: _cm(3)}},
+    74:  {'stars': {1: _cs(), 2: _cm(4), 3: _cc(3)}},
+    75:  {'stars': {1: _cs(), 2: _qx(2), 3: _tetris_only()}},
     76:  {'stars': {1: _cs(), 2: _cm(4), 3: _ct(41)}},
-    77:  {'stars': {1: _cs(), 2: _cm(4), 3: _ct(41)}},
-    78:  {'stars': {1: _cs(), 2: _cm(4), 3: _cm(3)}},
+    77:  {'stars': {1: _cs(), 2: _cm(4), 3: _pristine()}},
+    78:  {'stars': {1: _cs(), 2: _cm(4), 3: _cc(3)}},
     79:  {'stars': {1: _cs(), 2: _cm(4), 3: _ct(41)}},
-    80:  {'stars': {1: _cs(), 2: _qx(2), 3: _ct(40)}},  # BOSS
+    80:  {'stars': {1: _cs(), 2: _qx(2), 3: _tetris_only()}},  # BOSS
     # ─── DÜNYA 5: YILDIZ KULESİ ───────────────────────
-    81:  {'stars': {1: _cs(), 2: _cm(4), 3: _cm(3)}},
+    # Faz 2: 3. yıldız tüm tipler karışık; boss'lar en zor (tetris_only veya min_score yüksek)
+    81:  {'stars': {1: _cs(), 2: _cm(4), 3: _no_hold_run()}},
     82:  {'stars': {1: _cs(), 2: _cm(4), 3: _ct(40)}},
-    83:  {'stars': {1: _cs(), 2: _cm(4), 3: _ct(40)}},
-    84:  {'stars': {1: _cs(), 2: _cm(4), 3: _cm(3)}},
-    85:  {'stars': {1: _cs(), 2: _qx(2), 3: _ct(39)}},
-    86:  {'stars': {1: _cs(), 2: _cm(4), 3: _ct(39)}},
-    87:  {'stars': {1: _cs(), 2: _cm(4), 3: _cm(3)}},
+    83:  {'stars': {1: _cs(), 2: _cm(4), 3: _min_score(15000)}},
+    84:  {'stars': {1: _cs(), 2: _cm(4), 3: _pristine()}},
+    85:  {'stars': {1: _cs(), 2: _qx(2), 3: _tetris_only()}},
+    86:  {'stars': {1: _cs(), 2: _cm(4), 3: _cc(3)}},
+    87:  {'stars': {1: _cs(), 2: _cm(4), 3: _no_hold_run()}},
     88:  {'stars': {1: _cs(), 2: _cm(4), 3: _ct(38)}},
-    89:  {'stars': {1: _cs(), 2: _cm(4), 3: _ct(38)}},
-    90:  {'stars': {1: _cs(), 2: _qx(2), 3: _cm(3)}},  # BOSS
-    91:  {'stars': {1: _cs(), 2: _cm(4), 3: _ct(38)}},
+    89:  {'stars': {1: _cs(), 2: _cm(4), 3: _min_score(18000)}},
+    90:  {'stars': {1: _cs(), 2: _qx(2), 3: _tetris_only()}},  # BOSS
+    91:  {'stars': {1: _cs(), 2: _cm(4), 3: _pristine()}},
     92:  {'stars': {1: _cs(), 2: _cm(4), 3: _ct(37)}},
-    93:  {'stars': {1: _cs(), 2: _cm(4), 3: _cm(3)}},
-    94:  {'stars': {1: _cs(), 2: _cm(4), 3: _ct(37)}},
-    95:  {'stars': {1: _cs(), 2: _qx(2), 3: _ct(37)}},
-    96:  {'stars': {1: _cs(), 2: _cm(4), 3: _cm(3)}},
+    93:  {'stars': {1: _cs(), 2: _cm(4), 3: _cc(3)}},
+    94:  {'stars': {1: _cs(), 2: _cm(4), 3: _no_hold_run()}},
+    95:  {'stars': {1: _cs(), 2: _qx(2), 3: _tetris_only()}},
+    96:  {'stars': {1: _cs(), 2: _cm(4), 3: _min_score(20000)}},
     97:  {'stars': {1: _cs(), 2: _cm(4), 3: _ct(36)}},
-    98:  {'stars': {1: _cs(), 2: _cm(4), 3: _ct(36)}},
-    99:  {'stars': {1: _cs(), 2: _cm(4), 3: _cm(3)}},
-    100: {'stars': {1: _cs(), 2: _qx(2), 3: _ct(35)}},  # BOSS
+    98:  {'stars': {1: _cs(), 2: _cm(4), 3: _pristine()}},
+    99:  {'stars': {1: _cs(), 2: _cm(4), 3: _cc(3)}},
+    100: {'stars': {1: _cs(), 2: _qx(2), 3: _tetris_only()}},  # FINAL BOSS
 
 }
 
@@ -408,7 +637,6 @@ _LEVEL_OVERRIDES: Dict[int, Dict[str, Any]] = {
 def _generate_level(level: int) -> LevelConfig:
     """Dinamik olarak level konfigürasyonu oluştur"""
     world = _get_world(level)
-    speed = _calculate_speed(level)
     allowed_pieces = _get_allowed_pieces(level)
     
     # Boss level mi? (Her 10. level)
@@ -423,6 +651,10 @@ def _generate_level(level: int) -> LevelConfig:
     
     # Görevler - level'a göre değişir
     objectives = _generate_objectives(level, world, is_boss)
+
+    # Faz 2: Hız objective tipine duyarlı
+    main_obj_type = objectives[0].get('type', 'clear_lines') if objectives else 'clear_lines'
+    speed = _calculate_speed(level, main_obj_type)
     
     # Yıldız koşulları
     stars = _generate_star_conditions(level, objectives)
@@ -471,9 +703,25 @@ def _generate_level(level: int) -> LevelConfig:
             no_hold = ov['no_hold']
         if 'cascade_mode' in ov:
             cascade_mode = ov['cascade_mode']
+        if 'speed' in ov:
+            speed = ov['speed']
         if 'stars' in ov:
             stars = ov['stars']
-    
+
+    # === BUILD-TIME AUTO-FIX (Faz 1) ===
+    # survival objective + time_limit çakışmasını otomatik gider:
+    # time_limit, survival_target + 10s'den daha kısa olamaz.
+    survival_target = None
+    for obj in objectives:
+        if obj.get('type') == 'survival':
+            survival_target = int(obj.get('target', 0) or 0)
+            break
+
+    if survival_target is not None and time_limit is not None:
+        min_time_limit = survival_target + 10
+        if time_limit < min_time_limit:
+            time_limit = min_time_limit
+
     return LevelConfig(
         level=level,
         world=world,
@@ -493,8 +741,6 @@ def _generate_level(level: int) -> LevelConfig:
         is_boss=is_boss,
         unlock_requires=level - 1 if level > 1 else None,
     )
-
-
 def _calculate_garbage_rows(level: int, is_boss: bool) -> int:
     """Çöp satırı sayısını hesapla"""
     if level < 6:
@@ -563,16 +809,66 @@ def _generate_level_names(level: int, is_boss: bool) -> Dict[str, str]:
     
     # Boss level isimleri
     boss_names = {
-        10: {"tr": "İlk Sınav", "en": "First Trial", "de": "First Trial", "fr": "First Trial", "es": "First Trial", "it": "First Trial", "pt": "First Trial"},
-        20: {"tr": "Buz Efendisi", "en": "Ice Lord", "de": "Ice Lord", "fr": "Ice Lord", "es": "Ice Lord", "it": "Ice Lord", "pt": "Ice Lord"},
-        30: {"tr": "Kilit Ustası", "en": "Lock Master", "de": "Lock Master", "fr": "Lock Master", "es": "Lock Master", "it": "Lock Master", "pt": "Lock Master"},
-        40: {"tr": "Patlama Kralı", "en": "Blast King", "de": "Blast King", "fr": "Blast King", "es": "Blast King", "it": "Blast King", "pt": "Blast King"},
-        50: {"tr": "Zaman Bekçisi", "en": "Time Guardian", "de": "Time Guardian", "fr": "Time Guardian", "es": "Time Guardian", "it": "Time Guardian", "pt": "Time Guardian"},
-        60: {"tr": "Lav Ejderhası", "en": "Lava Dragon", "de": "Lava Dragon", "fr": "Lava Dragon", "es": "Lava Dragon", "it": "Lava Dragon", "pt": "Lava Dragon"},
-        70: {"tr": "Fırtına Lordu", "en": "Storm Lord", "de": "Storm Lord", "fr": "Storm Lord", "es": "Storm Lord", "it": "Storm Lord", "pt": "Storm Lord"},
-        80: {"tr": "Gölge Şövalyesi", "en": "Shadow Knight", "de": "Shadow Knight", "fr": "Shadow Knight", "es": "Shadow Knight", "it": "Shadow Knight", "pt": "Shadow Knight"},
-        90: {"tr": "Yıldız Prensi", "en": "Star Prince", "de": "Star Prince", "fr": "Star Prince", "es": "Star Prince", "it": "Star Prince", "pt": "Star Prince"},
-        100: {"tr": "Son Mücadele", "en": "Final Showdown", "de": "Final Showdown", "fr": "Final Showdown", "es": "Final Showdown", "it": "Final Showdown", "pt": "Final Showdown"},
+        10: {
+            "tr": "İlk Sınav", "en": "First Trial",
+            "de": "Erste Prüfung", "fr": "Première Épreuve",
+            "es": "Primera Prueba", "it": "Prima Prova", "pt": "Primeiro Teste",
+            "ru": "Первое Испытание", "ja": "最初の試練", "zh": "首次试炼", "ko": "첫 시련",
+        },
+        20: {
+            "tr": "Buz Efendisi", "en": "Ice Lord",
+            "de": "Eisherr", "fr": "Seigneur des Glaces",
+            "es": "Señor del Hielo", "it": "Signore del Ghiaccio", "pt": "Senhor do Gelo",
+            "ru": "Ледяной Лорд", "ja": "氷の主", "zh": "冰之领主", "ko": "얼음의 군주",
+        },
+        30: {
+            "tr": "Kilit Ustası", "en": "Lock Master",
+            "de": "Schlossmeister", "fr": "Maître des Verrous",
+            "es": "Maestro de Cerraduras", "it": "Maestro dei Lucchetti", "pt": "Mestre dos Cadeados",
+            "ru": "Мастер Замков", "ja": "錠前の名手", "zh": "锁之大师", "ko": "자물쇠의 명인",
+        },
+        40: {
+            "tr": "Patlama Kralı", "en": "Blast King",
+            "de": "Sprengmeister", "fr": "Roi des Explosions",
+            "es": "Rey de las Explosiones", "it": "Re delle Esplosioni", "pt": "Rei das Explosões",
+            "ru": "Король Взрывов", "ja": "爆破王", "zh": "爆破之王", "ko": "폭발의 왕",
+        },
+        50: {
+            "tr": "Zaman Bekçisi", "en": "Time Guardian",
+            "de": "Zeitwächter", "fr": "Gardien du Temps",
+            "es": "Guardián del Tiempo", "it": "Custode del Tempo", "pt": "Guardião do Tempo",
+            "ru": "Страж Времени", "ja": "時の番人", "zh": "时之守护者", "ko": "시간의 수호자",
+        },
+        60: {
+            "tr": "Lav Ejderhası", "en": "Lava Dragon",
+            "de": "Lavadrache", "fr": "Dragon de Lave",
+            "es": "Dragón de Lava", "it": "Drago di Lava", "pt": "Dragão de Lava",
+            "ru": "Лавовый Дракон", "ja": "溶岩竜", "zh": "熔岩巨龙", "ko": "용암 드래곤",
+        },
+        70: {
+            "tr": "Fırtına Lordu", "en": "Storm Lord",
+            "de": "Sturmfürst", "fr": "Seigneur des Tempêtes",
+            "es": "Señor de las Tormentas", "it": "Signore della Tempesta", "pt": "Senhor da Tempestade",
+            "ru": "Лорд Бури", "ja": "嵐の主", "zh": "风暴领主", "ko": "폭풍의 군주",
+        },
+        80: {
+            "tr": "Gölge Şövalyesi", "en": "Shadow Knight",
+            "de": "Schattenritter", "fr": "Chevalier de l'Ombre",
+            "es": "Caballero de las Sombras", "it": "Cavaliere dell'Ombra", "pt": "Cavaleiro das Sombras",
+            "ru": "Рыцарь Тени", "ja": "影の騎士", "zh": "暗影骑士", "ko": "그림자 기사",
+        },
+        90: {
+            "tr": "Yıldız Prensi", "en": "Star Prince",
+            "de": "Sternenprinz", "fr": "Prince des Étoiles",
+            "es": "Príncipe de las Estrellas", "it": "Principe delle Stelle", "pt": "Príncipe das Estrelas",
+            "ru": "Звёздный Принц", "ja": "星の王子", "zh": "星之王子", "ko": "별의 왕자",
+        },
+        100: {
+            "tr": "Son Mücadele", "en": "Final Showdown",
+            "de": "Letztes Duell", "fr": "Confrontation Finale",
+            "es": "Duelo Final", "it": "Resa dei Conti Finale", "pt": "Confronto Final",
+            "ru": "Финальное Противостояние", "ja": "最終決戦", "zh": "最终对决", "ko": "최후의 결전",
+        },
     }
     
     if is_boss and level in boss_names:
@@ -583,24 +879,44 @@ def _generate_level_names(level: int, is_boss: bool) -> Dict[str, str]:
     world_level = ((level - 1) % 20) + 1  # Her dünyada 1-20
     
     world_prefixes = {
-        1: {"tr": "Vadi", "en": "Valley", "de": "Tal", "fr": "Vallée", "es": "Valle", "it": "Valle", "pt": "Vale"},
-        2: {"tr": "Buz", "en": "Ice", "de": "Eis", "fr": "Glace", "es": "Hielo", "it": "Ghiaccio", "pt": "Gelo"},
-        3: {"tr": "Lav", "en": "Lava", "de": "Lava", "fr": "Lave", "es": "Lava", "it": "Lava", "pt": "Lava"},
-        4: {"tr": "Fırtına", "en": "Storm", "de": "Sturm", "fr": "Tempête", "es": "Tormenta", "it": "Tempesta", "pt": "Tempestade"},
-        5: {"tr": "Yıldız", "en": "Star", "de": "Stern", "fr": "Étoile", "es": "Estrella", "it": "Stella", "pt": "Estrela"},
+        1: {
+            "tr": "Vadi", "en": "Valley",
+            "de": "Tal", "fr": "Vallée", "es": "Valle", "it": "Valle", "pt": "Vale",
+            "ru": "Долина", "ja": "渓谷", "zh": "山谷", "ko": "계곡",
+        },
+        2: {
+            "tr": "Buz", "en": "Ice",
+            "de": "Eis", "fr": "Glace", "es": "Hielo", "it": "Ghiaccio", "pt": "Gelo",
+            "ru": "Лёд", "ja": "氷", "zh": "冰", "ko": "얼음",
+        },
+        3: {
+            "tr": "Lav", "en": "Lava",
+            "de": "Lava", "fr": "Lave", "es": "Lava", "it": "Lava", "pt": "Lava",
+            "ru": "Лава", "ja": "溶岩", "zh": "熔岩", "ko": "용암",
+        },
+        4: {
+            "tr": "Fırtına", "en": "Storm",
+            "de": "Sturm", "fr": "Tempête", "es": "Tormenta", "it": "Tempesta", "pt": "Tempestade",
+            "ru": "Буря", "ja": "嵐", "zh": "风暴", "ko": "폭풍",
+        },
+        5: {
+            "tr": "Yıldız", "en": "Star",
+            "de": "Stern", "fr": "Étoile", "es": "Estrella", "it": "Stella", "pt": "Estrela",
+            "ru": "Звезда", "ja": "星", "zh": "星", "ko": "별",
+        },
     }
-    
-    prefix = world_prefixes.get(world, {"tr": "Level", "en": "Level", "de": "Level", "fr": "Niveau", "es": "Nivel", "it": "Livello", "pt": "Nível"})
-    
-    return {
-        "tr": f"{prefix['tr']} {world_level}",
-        "en": f"{prefix['en']} {world_level}",
-        "de": f"{prefix['de']} {world_level}",
-        "fr": f"{prefix['fr']} {world_level}",
-        "es": f"{prefix['es']} {world_level}",
-        "it": f"{prefix['it']} {world_level}",
-        "pt": f"{prefix['pt']} {world_level}",
+
+    default_prefix = {
+        "tr": "Level", "en": "Level",
+        "de": "Level", "fr": "Niveau", "es": "Nivel", "it": "Livello", "pt": "Nível",
+        "ru": "Уровень", "ja": "レベル", "zh": "关卡", "ko": "레벨",
     }
+    prefix = world_prefixes.get(world, default_prefix)
+
+    result: Dict[str, str] = {}
+    for lang_code, prefix_text in prefix.items():
+        result[lang_code] = f"{prefix_text} {world_level}"
+    return result
 
 
 def _generate_objectives(level: int, world: int, is_boss: bool) -> List[Dict[str, Any]]:
@@ -664,7 +980,6 @@ def _generate_objectives(level: int, world: int, is_boss: bool) -> List[Dict[str
         objectives.append({
             "type": "survival",
             "target": survival_time,
-            "description": {"tr": f"{survival_time} saniye hayatta kal", "en": f"Survive {survival_time} seconds"}
         })
     
     elif objective_type == 'combo':
@@ -684,7 +999,6 @@ def _generate_objectives(level: int, world: int, is_boss: bool) -> List[Dict[str
         objectives.append({
             "type": "time_challenge",
             "target": max(30, 90 - level // 3),  # 30-90 saniye
-            "description": {"tr": "Süre içinde tamamla", "en": "Complete in time"}
         })
     
     # Ek görevler (world'e göre)
@@ -991,14 +1305,14 @@ def get_level_shape(shape_index: int) -> List[str]:
         [
             "XXX....XXX",
             "XXXX..XXXX",
-            "XXXXXXXXXX",
+            "XXXX..XXXX",
         ],
         # Level 10 (Boss): U formu
         [
             "XXX....XXX",
             "XXX....XXX",
-            "XXXXXXXXXX",
-            "XXXXXXXXXX",
+            "XX.XXXXX.X",
+            "XXXXX..XXX",
         ],
         # Level 11: Basamak sol
         [
@@ -1018,11 +1332,11 @@ def get_level_shape(shape_index: int) -> List[str]:
         [
             "..XX..XX..",
             ".XXXX.XXXX",
-            "XXXXXXXXXX",
+            "XXXXX.XXXX",
         ],
         # Level 14: Ters U
         [
-            "XXXXXXXXXX",
+            "XXXX.XXXXX",
             "XX......XX",
             "XX......XX",
         ],
@@ -1040,14 +1354,14 @@ def get_level_shape(shape_index: int) -> List[str]:
         ],
         # Level 17: Kare çerçeve
         [
-            "XXXXXXXXXX",
+            "XXXXX.XXXX",
             "XX......XX",
-            "XXXXXXXXXX",
+            "XXXX.XXXXX",
         ],
         # Level 18: Köprü
         [
             "XXX....XXX",
-            "XXXXXXXXXX",
+            "XXXXX.XXXX",
             "XXX....XXX",
         ],
         # Level 19: Kalp
@@ -1061,8 +1375,8 @@ def get_level_shape(shape_index: int) -> List[str]:
         # Level 20 (Boss): Taç - ilk karmaşık
         [
             "X..X..X..X",
-            "XXXXXXXXXX",
-            "XXXXXXXXXX",
+            "XXXX.XXXXX",
+            "XX.XXXXXXX",
             ".XXXXXXXX.",
         ],
         
@@ -1121,7 +1435,7 @@ def get_level_shape(shape_index: int) -> List[str]:
             "XX......XX",
             "XX.XXXX.XX",
             "XX......XX",
-            "XXXXXXXXXX",
+            "XX.XXXX.XX",
         ],
         # Level 29: Dama başlangıç
         [
@@ -1133,7 +1447,7 @@ def get_level_shape(shape_index: int) -> List[str]:
         [
             "XX........",
             "XXXX..XX..",
-            "XXXXXXXXXX",
+            "XXXX.XXXXX",
             "XXXX..XX..",
             "XX........",
         ],
@@ -1155,17 +1469,17 @@ def get_level_shape(shape_index: int) -> List[str]:
         # Level 33: Artı karmaşık
         [
             "...XXXX...",
-            "XXXXXXXXXX",
+            "XXXXX.XXXX",
             "...XXXX...",
-            "XXXXXXXXXX",
+            "XXXX.XXXXX",
             "...XXXX...",
         ],
         # Level 34: Kale mazgalları
         [
             "X.X.XX.X.X",
-            "XXXXXXXXXX",
+            "XXXX.XXXXX",
             "XX......XX",
-            "XXXXXXXXXX",
+            "XXXXX.XXXX",
         ],
         # Level 35: Anahtar deliği
         [
@@ -1178,7 +1492,7 @@ def get_level_shape(shape_index: int) -> List[str]:
         # Level 36: Kalkan
         [
             ".XXXXXXXX.",
-            "XXXXXXXXXX",
+            "XXXX.XXXXX",
             "XX.XXXX.XX",
             ".XXXXXXXX.",
             "..XXXXXX..",
@@ -1187,7 +1501,7 @@ def get_level_shape(shape_index: int) -> List[str]:
         [
             "....XX....",
             "..XXXXXX..",
-            "XXXXXXXXXX",
+            "XXXXX.XXXX",
             "..XXXXXX..",
             ".XX....XX.",
         ],
@@ -1210,7 +1524,7 @@ def get_level_shape(shape_index: int) -> List[str]:
         [
             "....XX....",
             "..XXXXXX..",
-            "XXXXXXXXXX",
+            "XXXXX.XXXX",
             ".XX.XX.XX.",
             "XX......XX",
         ],
@@ -1280,15 +1594,15 @@ def get_level_shape(shape_index: int) -> List[str]:
         # Level 49: Alt üst dama
         [
             "X.X.X.X.X.",
-            "XXXXXXXXXX",
+            "XXXX.XXXXX",
             ".X.X.X.X.X",
-            "XXXXXXXXXX",
+            "XXXXX.XXXX",
         ],
         # Level 50 (Boss): Kartal
         [
             "X........X",
             "XXX....XXX",
-            "XXXXXXXXXX",
+            "XXXXX.XXXX",
             "XX.XXXX.XX",
             "X.X....X.X",
         ],
@@ -1339,11 +1653,11 @@ def get_level_shape(shape_index: int) -> List[str]:
         ],
         # Level 57: Kare içinde kare
         [
-            "XXXXXXXXXX",
+            "XXXXX.XXXX",
             "X........X",
             "X.XXXXXX.X",
             "X........X",
-            "XXXXXXXXXX",
+            "XXXX.XXXXX",
         ],
         # Level 58: Dikey kesik
         [
@@ -1364,9 +1678,9 @@ def get_level_shape(shape_index: int) -> List[str]:
         # Level 60 (Boss): Ejderha karmaşık
         [
             "X.X....X.X",
-            "XXXXXXXXXX",
+            "XXXX.XXXXX",
             "X.XXXXXX.X",
-            "XXXXXXXXXX",
+            "XXXXX.XXXX",
             ".XX.XX.XX.",
         ],
         
@@ -1396,7 +1710,7 @@ def get_level_shape(shape_index: int) -> List[str]:
             "X........X",
             "X.XXXXXX.X",
             ".X......X.",
-            "XXXXXXXXXX",
+            "XXXX.XXXXX",
         ],
         # Level 64: Alternatif koridor
         [
@@ -1437,11 +1751,11 @@ def get_level_shape(shape_index: int) -> List[str]:
             "XX.....XXX",
             "XXX...XXXX",
             "XXXX.XXXXX",
-            "XXXXXXXXXX",
+            "XXXXX.XXXX",
         ],
         # Level 69: Ters üçgen tuzak
         [
-            "XXXXXXXXXX",
+            "XXXXX.XXXX",
             "XXXXX.XXXX",
             "XXXX...XXX",
             "XXX.....XX",
@@ -1450,24 +1764,24 @@ def get_level_shape(shape_index: int) -> List[str]:
         # Level 70 (Boss): Karmaşık kale
         [
             "X.X.XX.X.X",
-            "XXXXXXXXXX",
+            "XXXX.XXXXX",
             "X........X",
             "X.XXXXXX.X",
             "X........X",
-            "XXXXXXXXXX",
+            "XXXXX.XXXX",
         ],
         # Level 71: Dörtlü bölme
         [
             "XXXX..XXXX",
             "XXXX..XXXX",
-            "...........",
+            "..........",
             "XXXX..XXXX",
             "XXXX..XXXX",
         ],
         # Level 72: Spiral cehennem
         [
             "XXXXXXXXX.",
-            "X..........",
+            "X.........",
             "X.XXXXXXXX",
             "X.X.......",
             "X.X.XXXXXX",
@@ -1533,9 +1847,9 @@ def get_level_shape(shape_index: int) -> List[str]:
         # Level 80 (Boss): Ejderha son
         [
             "X..XXXX..X",
-            "XXXXXXXXXX",
+            "XXXX.XXXXX",
             "X.X....X.X",
-            "XXXXXXXXXX",
+            "XXXXX.XXXX",
             "X..X..X..X",
             ".XX.XX.XX.",
         ],
@@ -1611,11 +1925,11 @@ def get_level_shape(shape_index: int) -> List[str]:
             "...X....X.",
             "XXXX.XXXX.",
         ],
-        # Level 89: Master koridor
+        # Level 89: Master koridor (yenilenmiş — daha az tekrar, denge zikzak)
         [
             "X.X.X.X.X.",
-            "X.X.X.X.X.",
             ".X.X.X.X.X",
+            "X.X.X.X.X.",
             ".X.X.X.X.X",
             "X.X.X.X.X.",
         ],
@@ -1709,15 +2023,15 @@ def get_level_shape(shape_index: int) -> List[str]:
             "X.XXXXX.X.",
             "X.......X.",
         ],
-        # Level 100 (FINAL BOSS): Evrenin Kalbi - EN ZOR
+        # Level 100 (FINAL BOSS): Evrenin Kalbi — simetrik mandala
         [
-            "X.X.X.X.X.",
-            ".X.X.X.X.X",
-            "X.X.X.X.X.",
-            ".X.X.X.X.X",
-            "X.X.X.X.X.",
-            ".X.X.X.X.X",
-            "X.X.X.X.X.",
+            "X.X.XX.X.X",
+            ".X.X..X.X.",
+            "X..X..X..X",
+            ".XX.XX.XX.",
+            "X..X..X..X",
+            ".X.X..X.X.",
+            "X.X.XX.X.X",
         ],
     ]
     
@@ -1731,61 +2045,165 @@ def get_level_shape(shape_index: int) -> List[str]:
 
 
 def shape_to_grid(shape: List[str], cols: int = 10, level: int = 1) -> List[List[int]]:
-    """Şekil desenini grid formatına dönüştür
-    
-    ÖNEMLİ: Her satırda en az 1 boşluk olmalı yoksa satır temizlenemez!
+    """Şekil desenini grid formatına dönüştür.
+
+    Faz 2: Tam dolu satır hack'i kaldırıldı. SHAPES verisi her satırda
+    en az 1 boşluk içermeli (validator + test ile doğrulanır).
+    Renk teması dünya başına 3-4 renge çıkarıldı.
     """
     grid = []
-    
-    # Level'a göre renk (her level için tutarlı)
-    # Dünya bazlı renk teması
+
+    # Level'a göre renk teması (her dünyada 3-4 farklı renk)
     world = (level - 1) // 20 + 1
     color_themes = {
-        1: [1, 2],      # Dünya 1: Cyan, Yellow
-        2: [1, 4],      # Dünya 2: Cyan, Green 
-        3: [5, 7],      # Dünya 3: Red, Orange
-        4: [3, 6],      # Dünya 4: Purple, Blue
-        5: [2, 7],      # Dünya 5: Yellow (gold), Orange
+        1: [1, 2, 4],       # Vadi: Cyan, Yellow, Green (organik)
+        2: [1, 4, 6],       # Buz: Cyan, Green, Blue (soğuk)
+        3: [5, 7, 2],       # Lav: Red, Orange, Yellow (sıcak)
+        4: [3, 6, 1],       # Fırtına: Purple, Blue, Cyan (elektrik)
+        5: [2, 7, 3, 1],    # Yıldız: Yellow, Orange, Purple, Cyan (mistik)
     }
     colors = color_themes.get(world, [1, 2])
-    
+
     for row_idx, row_str in enumerate(shape):
         row_data = []
-        filled_count = 0
-        
+
         for col_idx in range(cols):
             if col_idx < len(row_str):
                 char = row_str[col_idx]
                 if char == 'X':
-                    # Alternatif renk (dama deseni)
-                    color = colors[(row_idx + col_idx) % 2]
+                    # Çeşitliliği artırmak için (row*3 + col) % len(colors)
+                    color = colors[(row_idx * 3 + col_idx) % len(colors)]
                     row_data.append(color)
-                    filled_count += 1
                 else:
                     row_data.append(0)
             else:
                 row_data.append(0)
-        
-        # ÖNEMLİ: Eğer satır tamamen doluysa, rastgele 1-2 hücreyi boş yap
-        # Bu olmadan satır temizlenemez!
-        if filled_count >= cols:
-            # Satırda en az 1 boşluk olmalı - ortaya yakın bir yere boşluk ekle
-            gap_pos = cols // 2 + (row_idx % 3) - 1  # Her satırda farklı pozisyon
-            if 0 <= gap_pos < cols:
-                row_data[gap_pos] = 0
-        
+
         grid.append(row_data)
-    
+
     return grid
+
+
+def get_boss_type_for_level(level_num: int) -> Optional[str]:
+    """Boss/mini-boss tipini level numarasından belirle.
+
+    Single source of truth (Faz 3): hem CampaignMode._boss_get_type, hem
+    CampaignLevelSelect._draw_level_info bu fonksiyonu kullanır. Divergence
+    riski tasarımsal olarak ortadan kalkar.
+
+    Returns:
+        'rain' | 'seal' | 'dark' (boss, level%10==0, level<100)
+        'final' (level==100)
+        'fast' | 'missing' (mini-boss, level%5==0 ama level%10!=0)
+        None (normal level)
+    """
+    if level_num == 100:
+        return 'final'
+    if level_num % 10 == 0 and level_num > 0:
+        # rain (10,40,70), seal (20,50,80), dark (30,60,90)
+        return ('rain', 'seal', 'dark')[((level_num // 10) - 1) % 3]
+    if level_num % 5 == 0 and level_num > 0:
+        # fast (5,25,45,65,85), missing (15,35,55,75,95)
+        return ('fast', 'missing')[(level_num // 10) % 2]
+    return None
+
+
+# === LEVEL VALIDATOR ===
+
+def _validate_level_config(cfg: 'LevelConfig') -> List[str]:
+    """LevelConfig için statik tutarlılık kontrolü.
+
+    Faz 1: Çakışan kuralları rapor olarak listeler. Üretim akışını kırmaz;
+    `__debug__` veya QUADRIX_DEV=1 ortamında uyarı basar.
+
+    Returns:
+        Hata mesajlarının listesi. Boş liste → konfig temiz.
+    """
+    errors: List[str] = []
+
+    # 1. allowed_pieces boş olamaz
+    if not cfg.allowed_pieces:
+        errors.append(f"L{cfg.level}: allowed_pieces boş olamaz")
+
+    # 2. stars dict 1, 2, 3 anahtarlarına sahip olmalı
+    star_keys = set(cfg.stars.keys()) if isinstance(cfg.stars, dict) else set()
+    missing_stars = {1, 2, 3} - star_keys
+    if missing_stars:
+        errors.append(f"L{cfg.level}: stars eksik anahtarlar={sorted(missing_stars)}")
+
+    # 3. survival objective varsa time_limit yeterince geniş olmalı
+    survival_target = None
+    for obj in cfg.objectives:
+        if obj.get('type') == 'survival':
+            survival_target = int(obj.get('target', 0) or 0)
+            break
+
+    if survival_target is not None and cfg.time_limit is not None:
+        # survival hedefi + 5s'den daha az time_limit fail garantisi yaratır
+        if cfg.time_limit <= survival_target + 5:
+            errors.append(
+                f"L{cfg.level}: time_limit={cfg.time_limit}s survival hedefini ({survival_target}s) "
+                f"karşılayamaz; en az survival_target+10s olmalı"
+            )
+
+    # 4. move_limit varsa minimum 10
+    if cfg.move_limit is not None and cfg.move_limit < 10:
+        errors.append(f"L{cfg.level}: move_limit={cfg.move_limit} çok küçük (minimum 10)")
+
+    # 5. clear_garbage objective varsa garbage rows ve pattern olmalı
+    has_clear_garbage = any(obj.get('type') == 'clear_garbage' for obj in cfg.objectives)
+    if has_clear_garbage:
+        if cfg.pre_placed_rows <= 0:
+            errors.append(
+                f"L{cfg.level}: clear_garbage görevi var ama pre_placed_rows={cfg.pre_placed_rows} (>0 olmalı)"
+            )
+        if cfg.garbage_pattern == 'none':
+            errors.append(
+                f"L{cfg.level}: clear_garbage görevi var ama garbage_pattern='none'"
+            )
+
+    # 6. time_limit makul (survival hariç çok kısa süreler)
+    if cfg.time_limit is not None and cfg.time_limit < 20:
+        errors.append(f"L{cfg.level}: time_limit={cfg.time_limit}s çok kısa (minimum 20s)")
+
+    # 7. speed makul aralıkta (100ms - 1500ms)
+    if not (100 <= cfg.speed <= 1500):
+        errors.append(f"L{cfg.level}: speed={cfg.speed}ms makul aralık dışı (100-1500)")
+
+    return errors
+
+
+def validate_all_levels() -> Dict[int, List[str]]:
+    """Tüm 100 level için validator çalıştır; sadece hata barındıran level'ları döndür."""
+    issues: Dict[int, List[str]] = {}
+    for i in range(1, 101):
+        cfg = _generate_level(i)
+        errs = _validate_level_config(cfg)
+        if errs:
+            issues[i] = errs
+    return issues
 
 
 # === LEVEL VERİTABANI ===
 
 def _build_levels_dict() -> Dict[int, LevelConfig]:
-    """Tüm 100 level'ı oluştur"""
+    """Tüm 100 level'ı oluştur ve dev modda doğrula."""
     levels = {}
     for i in range(1, 101):
         levels[i] = _generate_level(i)
+
+    # Dev mode validator: QUADRIX_DEV=1 veya pytest çalışıyorsa uyarı bas.
+    import os, sys
+    if os.environ.get('QUADRIX_DEV') == '1' or 'pytest' in sys.modules:
+        problems: List[str] = []
+        for i, cfg in levels.items():
+            errs = _validate_level_config(cfg)
+            problems.extend(errs)
+        if problems:
+            print('[CAMPAIGN VALIDATOR] Level config issues:')
+            for p in problems:
+                print(f'  - {p}')
+
     return levels
 
 
