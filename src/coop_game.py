@@ -62,6 +62,7 @@ except Exception:
         sweep_duration = max(0.0001, base_duration * duration_ratio)
         return 1.0 / sweep_duration
 from asset_manager import load_image
+from text_cache import render_text
 from gameplay_layout import (
     GAMEPLAY_OCCUPANCY_REFERENCE_SIZE,
     compute_coop_layout,
@@ -3769,7 +3770,7 @@ class CoopGame:
                 )
                 self.screen.blit(label_surf, label_surf.get_rect(centerx=rect.centerx, top=content_y))
                 x_font = retro_style.get_font(self._sx(32, ui, minimum=20), bold=True)
-                x_surf = x_font.render('X', True, (200, 50, 50))
+                x_surf = render_text(x_font, 'X', True, (200, 50, 50))
                 self.screen.blit(x_surf, x_surf.get_rect(center=rect.center))
                 return
 
@@ -3787,7 +3788,7 @@ class CoopGame:
             )
             self.screen.blit(label_surf, label_surf.get_rect(centerx=rect.centerx, top=content_y))
             empty_font = retro_style.get_font(self._sx(16, ui, minimum=11))
-            empty_surf = empty_font.render('[ - ]', True, (50, 55, 75))
+            empty_surf = render_text(empty_font, '[ - ]', True, (50, 55, 75))
             self.screen.blit(empty_surf, empty_surf.get_rect(centerx=rect.centerx, centery=rect.centery + self._sx(8, ui, minimum=4)))
 
         def draw_stack_connector(top_rect: pygame.Rect | None, bottom_rect: pygame.Rect, color):
@@ -3894,7 +3895,7 @@ class CoopGame:
         ui = self._ui_scale()
         msg = t('coop_frozen_waiting', default='Waiting...')
         msg_font = retro_style.get_font(self._sx(18, ui, minimum=12), bold=True)
-        msg_surf = msg_font.render(msg, True, retro_style.accent)
+        msg_surf = render_text(msg_font, msg, True, retro_style.accent)
         box_w = msg_surf.get_width() + self._sx(28, ui)
         box_h = msg_surf.get_height() + self._sx(14, ui)
         box_rect = pygame.Rect(0, 0, box_w, box_h)
@@ -4121,7 +4122,7 @@ class CoopGame:
         tag_rect = pygame.Rect(inner_left, panel_rect.y + s(22), tag_w, s(28))
         pygame.draw.rect(self.screen, (34, 56, 84), tag_rect, border_radius=tag_rect.height // 2)
         pygame.draw.rect(self.screen, (96, 188, 255), tag_rect, 1, border_radius=tag_rect.height // 2)
-        tag_surf = tag_font.render(tag_text, True, (170, 220, 255))
+        tag_surf = render_text(tag_font, tag_text, True, (170, 220, 255))
         tag_x = tag_rect.x + (tag_rect.width - tag_font.size(tag_text)[0]) // 2
         tag_y = tag_rect.y + (tag_rect.height - tag_font.get_height()) // 2
         self.screen.blit(tag_surf, (tag_x, tag_y))
@@ -4135,7 +4136,7 @@ class CoopGame:
             glow = title_font.render(title_text, True, title_color)
             glow.set_alpha(alpha)
             self.screen.blit(glow, (title_x + dx, title_y + dy))
-        title_surf = title_font.render(title_text, True, title_color)
+        title_surf = render_text(title_font, title_text, True, title_color)
         self.screen.blit(title_surf, (title_x, title_y))
 
         subtitle_text = t(
@@ -4146,7 +4147,7 @@ class CoopGame:
         subtitle_w, subtitle_h = subtitle_font.size(subtitle_text)
         subtitle_x = panel_rect.centerx - subtitle_w // 2
         subtitle_y = title_y + title_h + s(8)
-        subtitle_surf = subtitle_font.render(subtitle_text, True, subtitle_color)
+        subtitle_surf = render_text(subtitle_font, subtitle_text, True, subtitle_color)
         self.screen.blit(subtitle_surf, (subtitle_x, subtitle_y))
 
         score_rect = pygame.Rect(inner_left, subtitle_y + subtitle_h + s(18), inner_width, s(86))
@@ -4157,7 +4158,7 @@ class CoopGame:
 
         score_label_font = retro_style.get_font(s(16), bold=True)
         score_label_text = t('coop_team_score', default='Team Score')
-        score_label_surf = score_label_font.render(score_label_text, True, (204, 220, 244))
+        score_label_surf = render_text(score_label_font, score_label_text, True, (204, 220, 244))
         self.screen.blit(score_label_surf, (score_rect.x + s(18), score_rect.y + s(14)))
 
         score_value_text = self._fmt_score(displayed_score)
@@ -4257,7 +4258,7 @@ class CoopGame:
             profile_text = t('saved_profile', default='Saved profile: {}').format(current_user)
             footer_surfaces.append((footer_font.render(profile_text, True, (178, 198, 224)), footer_font.size(profile_text)[0]))
         hint_text = t('coop_game_over_hint', default='R ile yeniden başlat, ESC ile menüye dön.')
-        footer_surfaces.append((footer_font.render(hint_text, True, (164, 182, 208)), footer_font.size(hint_text)[0]))
+        footer_surfaces.append((render_text(footer_font, hint_text, True, (164, 182, 208)), footer_font.size(hint_text)[0]))
 
         button_gap = s(16)
         button_w = min((inner_width - button_gap) // 2, s(248))
