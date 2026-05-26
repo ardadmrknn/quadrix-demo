@@ -55,6 +55,7 @@ except ImportError:
             return 100 if axis_index == 4 else 101
         return None
 from ui_scaling import get_projected_effective_scale, normalize_ui_scale_preset, scale_px
+from text_cache import render_text
 
 
 # ---------------------------------------------------------------------------
@@ -3378,7 +3379,7 @@ class TabbedSettingsScreen:
         metrics = self._layout_metrics()
         lang = get_language()
         title_text = _t('panel_settings', 'AYARLAR' if lang == 'tr' else 'SETTINGS')
-        title_surf = self.font_title.render(title_text, True, (220, 235, 255))
+        title_surf = render_text(self.font_title, title_text, True, (220, 235, 255))
         self.screen.blit(title_surf, (panel.x + int(metrics['title_pad_x']), panel.y + int(metrics['title_pad_y'])))
         self._close_btn_rect = None
 
@@ -3807,7 +3808,7 @@ class TabbedSettingsScreen:
         pygame.draw.circle(self.screen, (*base_color, 220), (icon_cx, icon_cy), icon_r, 1)
 
         q_font = self._font(14, bold=True, minimum=10)
-        q_surf = q_font.render('?', True, (235, 245, 255))
+        q_surf = render_text(q_font, '?', True, (235, 245, 255))
         self.screen.blit(q_surf, q_surf.get_rect(center=(icon_cx, icon_cy + 1)))
 
         self._help_icon_rects.append((icon_rect, help_text))
@@ -3889,7 +3890,7 @@ class TabbedSettingsScreen:
 
         title_font = self._font(28, bold=True, minimum=18)
         subtitle_font = self._font(18, minimum=12)
-        title = title_font.render(t('tracks'), True, (235, 245, 255))
+        title = render_text(title_font, t('tracks'), True, (235, 245, 255))
         self.screen.blit(title, (int(metrics['title_x']), int(metrics['title_y'])))
 
         mode_name = ''
@@ -3898,7 +3899,7 @@ class TabbedSettingsScreen:
             if mk == mode_key:
                 mode_name = label
                 break
-        sub = subtitle_font.render(mode_name, True, (170, 190, 220))
+        sub = render_text(subtitle_font, mode_name, True, (170, 190, 220))
         self.screen.blit(sub, (int(metrics['title_x']), int(metrics['subtitle_y'])))
 
         list_rect = metrics['list_rect']
@@ -4415,7 +4416,7 @@ class TabbedSettingsScreen:
 
         title_font = self._font(28, bold=True, minimum=18)
         subtitle_font = self._font(18, minimum=12)
-        title = title_font.render(_t('mode_music_playlist_editor', 'Bölüm Müzikleri'), True, (235, 245, 255))
+        title = render_text(title_font, _t('mode_music_playlist_editor', 'Bölüm Müzikleri'), True, (235, 245, 255))
         self.screen.blit(title, (int(metrics['title_x']), int(metrics['title_y'])))
 
         mode_key = self._playlist_edit_mode_key or ''
@@ -4429,7 +4430,7 @@ class TabbedSettingsScreen:
                 if mk == mode_key:
                     mode_name = str(label)
                     break
-        subtitle = subtitle_font.render(mode_name, True, (170, 190, 220))
+        subtitle = render_text(subtitle_font, mode_name, True, (170, 190, 220))
         self.screen.blit(subtitle, (int(metrics['title_x']), int(metrics['subtitle_y'])))
 
         list_rect = metrics['list_rect']
@@ -4550,7 +4551,7 @@ class TabbedSettingsScreen:
             glow=True,
         )
 
-        picker_title = title_font.render(t('tracks'), True, (235, 245, 255))
+        picker_title = render_text(title_font, t('tracks'), True, (235, 245, 255))
         self.screen.blit(picker_title, (int(metrics['picker_title_x']), int(metrics['picker_title_y'])))
 
         picker_list_rect = metrics['picker_list_rect']
