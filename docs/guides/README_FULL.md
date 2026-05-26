@@ -70,7 +70,7 @@ Bu belge, projenin ürün kapsamını ve ana teknik yüzeylerini tek yerde özet
 - [../../music](../../music): müzik içerikleri
 - [../../avatars](../../avatars): avatar görselleri
 - [../../font](../../font): font dosyaları
-- [../../apple_emojis](../../apple_emojis): emoji görselleri
+- [../../apple_emojis](../../apple_emojis): emoji arşivi (build'e dahil DEĞİL; `tools/_copy_emojis.py` ile gereken emojiler `assets/ui/emoji/` altına kopyalanır)
 
 ## Geliştirici İş Akışı
 

@@ -77,7 +77,7 @@ quadrix/
 ├─ music/                           # Müzikler
 ├─ avatars/                         # Avatar varlıkları
 ├─ font/                            # Font dosyaları
-├─ apple_emojis/                    # Emoji görselleri
+├─ apple_emojis/                    # Emoji arşivi (build'e dahil DEĞİL; assets/ui/emoji/ üzerinden kopya kullanılır)
 ├─ steamworks/                      # Steamworks SDK ve native köprü kaynakları
 │  ├─ sdk/                          # Steamworks SDK (vendor)
 │  └─ steam_net_bridge/             # Pybind11 native köprü

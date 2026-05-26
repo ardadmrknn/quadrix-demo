@@ -144,7 +144,8 @@ Aşağıdaki tablo, ihtiyacınız olduğunda doğru dokümanı bulmanızı kolay
 - `scripts/`: çalıştırma, test ve build scriptleri
 - `packaging/`: spec dosyaları ve paketleme yardımcıları
 - `steamworks/`: Steamworks SDK ve native köprü kaynakları
-- `assets/`, `music/`, `backgrounds/`, `avatars/`, `font/`, `apple_emojis/`: oyun varlıkları
+- `assets/`, `music/`, `backgrounds/`, `avatars/`, `font/`: oyun varlıkları
+- `apple_emojis/`: yerel emoji arşivi (build'e dahil DEĞİL; kullanılacak emoji `assets/ui/emoji/` altına `tools/_copy_emojis.py` ile kopyalanır)
 - `local_artifacts/`: yerel build çıktıları (köprü `.pyd`/`.so` dahil)
 - `config/runtime/`: `settings.txt`, `menu_layout_runtime.json`, `steam_appid.txt`
 - `tools/`: yardımcı bakım araçları (örn. `sync_markdown_docs.py`)
