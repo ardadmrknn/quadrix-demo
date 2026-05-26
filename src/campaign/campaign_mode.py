@@ -215,6 +215,10 @@ class CampaignMode(Game):
             # (factory üzerinden). Yani level başlangıcında oyuncu missing
             # parçaya 1-2 kez denk gelebilir. Bu kabul edildi (mini-boss
             # gözlenebilir bir transition'dur, sürpriz değildir).
+            #
+            # Faz 4: queue purge eklendi — _purge_missing_piece_from_queue
+            # init time queue'yu yeni filtreden parçalarla yeniler. Eski not
+            # tarihsel kayıt; davranış artık queue'da missing parça olmamasıdır.
             try:
                 allowed = list(self._allowed_pieces) if isinstance(self._allowed_pieces, list) else []
                 if len(allowed) > 1:
@@ -222,6 +226,9 @@ class CampaignMode(Game):
                     removed = rng.choice(allowed)
                     self._missing_piece_name = removed
                     self._allowed_pieces = [p for p in allowed if p != removed]
+                    # Faz 4: Queue purge — mevcut next_piece_queue ve current_piece
+                    # missing parçayı içerebilir; yeni filtreden parçalarla değiştir.
+                    self._purge_missing_piece_from_queue()
             except Exception:
                 pass
     
@@ -799,6 +806,58 @@ class CampaignMode(Game):
         """
         self._hard_drop_count += 1
         super().trigger_hard_drop_screen_shake()
+
+    # === FAZ 4: Mini-boss missing queue purge ===
+    def _purge_missing_piece_from_queue(self) -> None:
+        """next_piece_queue ve current_piece'tan missing parçayı temizler.
+
+        Mini-boss 'missing' init time uygulanır; Game.__init__ next_piece_queue'yu
+        eski filtre ile (7 parça) doldurmuş olabilir. Bu helper missing parçayı
+        yeni filtreden parça ile değiştirerek queue başında oyuncunun missing
+        parçayı görmesini engeller.
+
+        Edge case: spawn_new_piece factory _get_base_piece_factories üzerinden
+        çalışır; CampaignMode override'ı _allowed_pieces'a göre filtre uygular.
+        Missing parça çıkarıldığı için spawn_new_piece o parçayı döndürmez;
+        ama defansif loop limiti (5 deneme) sonsuz döngüyü engeller.
+        """
+        if not self._missing_piece_name:
+            return
+        if not hasattr(self, 'next_piece_queue') or not self.next_piece_queue:
+            return
+
+        new_queue = []
+        for piece in self.next_piece_queue:
+            piece_name = getattr(piece, 'name', None)
+            if piece_name == self._missing_piece_name:
+                replacement = None
+                for _ in range(5):  # Defansif loop limiti
+                    candidate = self.spawn_new_piece()
+                    if getattr(candidate, 'name', None) != self._missing_piece_name:
+                        replacement = candidate
+                        break
+                if replacement is not None:
+                    new_queue.append(replacement)
+                else:
+                    new_queue.append(piece)
+                    print(f"[CAMPAIGN] missing piece purge: replacement not found")
+            else:
+                new_queue.append(piece)
+        self.next_piece_queue = new_queue
+
+        # current_piece de missing olabilir — yeni filtreden parça ile değiştir
+        if hasattr(self, 'current_piece') and self.current_piece:
+            if getattr(self.current_piece, 'name', None) == self._missing_piece_name:
+                for _ in range(5):
+                    candidate = self.spawn_new_piece()
+                    if getattr(candidate, 'name', None) != self._missing_piece_name:
+                        self.current_piece = candidate
+                        if hasattr(self, '_position_piece_at_spawn'):
+                            try:
+                                self._position_piece_at_spawn(self.current_piece)
+                            except Exception:
+                                pass
+                        break
 
     # === FAZ 2: Boss/Mini-Boss eşsiz mekanikler ===
 

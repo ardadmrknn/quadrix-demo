@@ -1212,6 +1212,28 @@ class CampaignLevelSelect:
                     if label_x + label_surf.get_width() <= panel_x + panel_width - s(18):
                         self.screen.blit(label_surf, (label_x, label_y))
 
+                    # === Faz 4: Mekanik açıklaması (etiketin altında) ===
+                    desc_key = {
+                        'rain': 'campaign_boss_rain_desc',
+                        'seal': 'campaign_boss_seal_desc',
+                        'dark': 'campaign_boss_dark_desc',
+                        'final': 'campaign_boss_final_desc',
+                        'fast': 'campaign_miniboss_fast_desc',
+                        'missing': 'campaign_miniboss_missing_desc',
+                    }.get(boss_type)
+                    if desc_key:
+                        desc_text = t(desc_key)
+                        desc_surf = self.font_tiny.render(desc_text, True, (200, 200, 200))
+                        desc_x = label_x
+                        desc_y = label_y + label_surf.get_height() + s(2)
+                        # Sığma kontrolü: yatayda panele sığmalı + dikeyde kart üstüne taşmamalı
+                        cards_top_estimate = panel_y + s(34) + s(12)
+                        if (
+                            desc_x + desc_surf.get_width() <= panel_x + panel_width - s(18)
+                            and desc_y + desc_surf.get_height() <= cards_top_estimate - s(2)
+                        ):
+                            self.screen.blit(desc_surf, (desc_x, desc_y))
+
         # === İKİLİ KART DÜZENİ ===
         inner_pad = s(18)
         header_height = s(34)

@@ -2054,13 +2054,18 @@ def shape_to_grid(shape: List[str], cols: int = 10, level: int = 1) -> List[List
     grid = []
 
     # Level'a göre renk teması (her dünyada 3-4 farklı renk)
+    # Faz 4: Luminance kontrastı için kombinasyon revizyonu.
+    # COLORS palette dokunulmadı; sadece dünya başına atamalar değişti.
+    # COLORS index → luminance referans:
+    #   1 cyan ~178, 2 yellow ~209, 3 purple ~52, 4 green ~188,
+    #   5 red ~76, 6 blue ~46, 7 orange ~143
     world = (level - 1) // 20 + 1
     color_themes = {
-        1: [1, 2, 4],       # Vadi: Cyan, Yellow, Green (organik)
-        2: [1, 4, 6],       # Buz: Cyan, Green, Blue (soğuk)
-        3: [5, 7, 2],       # Lav: Red, Orange, Yellow (sıcak)
-        4: [3, 6, 1],       # Fırtına: Purple, Blue, Cyan (elektrik)
-        5: [2, 7, 3, 1],    # Yıldız: Yellow, Orange, Purple, Cyan (mistik)
+        1: [1, 5, 4],       # Vadi: Cyan, Red, Green (deltas: 102/10/112)
+        2: [1, 6, 5],       # Buz: Cyan, Blue, Red (deltas: 132/30/102)
+        3: [5, 7, 3],       # Lav: Red, Orange, Purple (deltas: 67/91/24)
+        4: [3, 6, 1],       # Fırtına: Purple, Blue, Cyan (deltas: 6/132/126)
+        5: [2, 5, 3, 1],    # Yıldız: Yellow, Red, Purple, Cyan (mistik mix)
     }
     colors = color_themes.get(world, [1, 2])
 

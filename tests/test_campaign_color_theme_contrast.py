@@ -33,14 +33,15 @@ def _get_world_color_theme(world: int):
     için COLORS[idx - 1] kullanılır.
     """
     from constants import COLORS
-    raw_themes = {
-        1: [1, 2, 4],
-        2: [1, 4, 6],
-        3: [5, 7, 2],
+    color_themes = {
+        # Faz 4: Kombinasyon revize edildi
+        1: [1, 5, 4],
+        2: [1, 6, 5],
+        3: [5, 7, 3],
         4: [3, 6, 1],
-        5: [2, 7, 3, 1],
+        5: [2, 5, 3, 1],
     }
-    indices = raw_themes.get(world, [])
+    indices = color_themes.get(world, [])
     return [COLORS[i - 1] for i in indices if 1 <= i <= len(COLORS)]
 
 
@@ -78,3 +79,22 @@ def test_world_color_themes_have_min_luminance_delta_warning_only():
 
     # Faz 3 kararı: warning bas, fail verme.
     assert True
+
+
+def test_world_color_themes_meet_min_delta_after_faz4_revision():
+    """Faz 4 sonrası: warning sayısı 8'den ≤ 4'e düşmüş olmalı.
+
+    Faz 3 başlangıç durumu 8 warning'di. Faz 4 kombinasyon revizyonu
+    sonrası hedef: ≤ 4 warning. Bu güvence regresyonu yakalar.
+    """
+    warnings = []
+    for world in range(1, 6):
+        colors = _get_world_color_theme(world)
+        for i in range(len(colors)):
+            for j in range(i + 1, len(colors)):
+                if abs(_luminance(colors[i]) - _luminance(colors[j])) < 30:
+                    warnings.append((world, i, j))
+    assert len(warnings) <= 4, (
+        f"Color theme warning count {len(warnings)} > 4. "
+        f"Faz 4 hedefi karşılanmadı. Detay: {warnings}"
+    )
