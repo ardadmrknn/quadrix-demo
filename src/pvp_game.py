@@ -21,6 +21,7 @@ from localization import t, get_language
 from gamepad_manager import is_gamepad_connected
 from ui_scaling import get_projected_effective_scale
 from ui_theme import UIColors, UIFonts
+from text_cache import render_text
 from effect_surface_cache import EffectSurfaceCache
 from sweep_effects import SweepCatState, draw_rainbow_cat_sweep
 from line_clear_feedback import (
@@ -1478,8 +1479,8 @@ class PvPGame:
         surface.blit(timer, timer_rect)
 
         vs_font = retro_style.get_font(s(40, minimum=22), bold=True)
-        vs_text = vs_font.render('VS', True, vs_color)
-        vs_shadow = vs_font.render('VS', True, (34, 38, 52))
+        vs_text = render_text(vs_font, 'VS', True, vs_color)
+        vs_shadow = render_text(vs_font, 'VS', True, (34, 38, 52))
         vs_center = (rect.centerx, rect.centery + s(4, minimum=0))
         surface.blit(vs_shadow, vs_shadow.get_rect(center=(vs_center[0], vs_center[1] + 2)))
         surface.blit(vs_text, vs_text.get_rect(center=vs_center))
@@ -1758,7 +1759,7 @@ class PvPGame:
             self._draw_preview_piece(preview_piece, preview_rect)
         else:
             empty_font = retro_style.get_font(s(22, minimum=14), bold=True)
-            empty = empty_font.render('—', True, retro_style.text_muted)
+            empty = render_text(empty_font, '—', True, retro_style.text_muted)
             self.screen.blit(empty, empty.get_rect(center=preview_rect.center))
     
     def load_background_image(self):
@@ -2455,7 +2456,7 @@ class PvPGame:
         retro_style.draw_glass_panel(self.screen, panel_rect, alpha=180, border_color=(*retro_style.accent, 140), glow=True)
 
         title_font = retro_style.get_font(self._sx(30, ui_scale, minimum=16), bold=True)
-        title_surf = title_font.render(t('paused'), True, retro_style.accent)
+        title_surf = render_text(title_font, t('paused'), True, retro_style.accent)
         self.screen.blit(title_surf, title_surf.get_rect(centerx=panel_rect.centerx, top=panel_rect.y + self._sx(18, ui_scale)))
 
         self._pause_option_rects = []
@@ -3109,7 +3110,7 @@ class PvPGame:
         self._game_over_restart_rect = restart_rect
         self._game_over_menu_rect = menu_rect
 
-        hint_surf = hint_font.render(t('campaign_failed_hint', '[R] Retry | [ESC] Menu'), True, retro_style.text_muted)
+        hint_surf = render_text(hint_font, t('campaign_failed_hint', '[R] Retry | [ESC] Menu'), True, retro_style.text_muted)
         self.screen.blit(hint_surf, hint_surf.get_rect(center=(cx, panel_rect.bottom - s(20))))
 
     def _reset_lock_delay_state(self, player: int) -> None:
@@ -4790,7 +4791,7 @@ class PvPGame:
             panel_rect.width - self._sx(30, ui_scale),
             bold=True,
         )
-        title_surf = title_font.render(t('quit_confirm_title'), True, retro_style.accent)
+        title_surf = render_text(title_font, t('quit_confirm_title'), True, retro_style.accent)
         self.screen.blit(title_surf, title_surf.get_rect(centerx=panel_rect.centerx, top=panel_rect.y + self._sx(18, ui_scale)))
 
         body_font = retro_style.get_font(self._sx(18, ui_scale, minimum=12), bold=False)
@@ -4846,7 +4847,7 @@ class PvPGame:
             panel_rect.width - self._sx(24, ui_scale),
             bold=False,
         )
-        hint = hint_font.render(t('quit_confirm_select_hint'), True, (150, 165, 190))
+        hint = render_text(hint_font, t('quit_confirm_select_hint'), True, (150, 165, 190))
         self.screen.blit(hint, hint.get_rect(centerx=panel_rect.centerx, bottom=panel_rect.bottom - self._sx(14, ui_scale)))
         
 
@@ -5231,7 +5232,7 @@ class PvPGame:
         mode_label_font = retro_style.get_font(s(24, minimum=12), bold=True)
         mode_value_font = retro_style.get_font(s(32, minimum=14))
         
-        mode_label = mode_label_font.render(t('pvp_match_mode'), True, UIColors.TEXT_PRIMARY)
+        mode_label = render_text(mode_label_font, t('pvp_match_mode'), True, UIColors.TEXT_PRIMARY)
         self.screen.blit(mode_label, (panel_rect.x + inner_pad_x, mode_y))
         
         # Mod butonları - kullanıcı değiştir ekranı stili
@@ -5285,13 +5286,13 @@ class PvPGame:
             start_bg = (55, 140, 90)  # Yesil arka plan
             pygame.draw.rect(self.screen, start_bg, start_btn_rect, border_radius=s(14))
             pygame.draw.rect(self.screen, (255, 255, 255, 100), start_btn_rect, 2, border_radius=s(14))
-            start_text = mode_value_font.render(t('pvp_start'), True, (255, 255, 255))
+            start_text = render_text(mode_value_font, t('pvp_start'), True, (255, 255, 255))
             self.screen.blit(start_text, start_text.get_rect(center=start_btn_rect.center))
         
         # Süre ayarı (sadece süreli modda göster)
         if self.match_mode == 'timed':
             duration_y = btn_y + btn_height + s(60)
-            duration_label = mode_label_font.render(t('pvp_match_duration'), True, UIColors.TEXT_PRIMARY)
+            duration_label = render_text(mode_label_font, t('pvp_match_duration'), True, UIColors.TEXT_PRIMARY)
             self.screen.blit(duration_label, (panel_rect.x + inner_pad_x, duration_y))
             
             # Süre seçici
@@ -5329,7 +5330,7 @@ class PvPGame:
             pygame.draw.polygon(self.screen, arrow_color, arrow_points)
             
             # Süre aralığı bilgisi
-            range_text = desc_font.render(t('pvp_duration_range'), True, UIColors.TEXT_SECONDARY)
+            range_text = render_text(desc_font, t('pvp_duration_range'), True, UIColors.TEXT_SECONDARY)
             self.screen.blit(range_text, range_text.get_rect(center=(panel_rect.centerx, slider_y + arrow_size + s(20))))
             
             # Başla butonu - kullanici ekrani stili
@@ -5339,7 +5340,7 @@ class PvPGame:
             start_bg = (55, 140, 90)  # Yesil arka plan
             pygame.draw.rect(self.screen, start_bg, start_btn_rect, border_radius=s(14))
             pygame.draw.rect(self.screen, (255, 255, 255, 100), start_btn_rect, 2, border_radius=s(14))
-            start_text = mode_value_font.render(t('pvp_start'), True, (255, 255, 255))
+            start_text = render_text(mode_value_font, t('pvp_start'), True, (255, 255, 255))
             self.screen.blit(start_text, start_text.get_rect(center=start_btn_rect.center))
         
         # İlerleme ve footer
