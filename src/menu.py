@@ -4361,8 +4361,8 @@ class Menu:
 
         title_font = retro_style.get_font(s(22), bold=True)
         subtitle_font = retro_style.get_font(s(14), bold=False)
-        title_surf = title_font.render(t('menu_lb_title'), True, score_accent)
-        subtitle_surf = subtitle_font.render(t('menu_lb_subtitle'), True, UIColors.TEXT_SECONDARY)
+        title_surf = render_text(title_font, t('menu_lb_title'), True, score_accent)
+        subtitle_surf = render_text(subtitle_font, t('menu_lb_subtitle'), True, UIColors.TEXT_SECONDARY)
         self.screen.blit(title_surf, (panel_rect.x + s(16), panel_rect.y + s(12)))
         self.screen.blit(subtitle_surf, (panel_rect.x + s(16), panel_rect.y + s(38)))
         """if self._is_mystery_lb_trailer_debug_enabled():
@@ -4648,7 +4648,7 @@ class Menu:
         retro_style.draw_glass_panel(self.screen, panel_rect, alpha=180, border_color=(*retro_style.accent, 140), glow=True)
 
         title_font = retro_style.get_font(max(20, int(30 * panel_scale)), bold=True)
-        title_surf = title_font.render(t('exit_confirm_title'), True, retro_style.accent)
+        title_surf = render_text(title_font, t('exit_confirm_title'), True, retro_style.accent)
         self.screen.blit(title_surf, title_surf.get_rect(centerx=panel_rect.centerx, top=panel_rect.y + max(12, int(18 * panel_scale))))
 
         body_font = retro_style.get_font(max(14, int(18 * panel_scale)), bold=False)
@@ -4726,7 +4726,7 @@ class Menu:
         self.exit_no_rect = no_rect
 
         hint_font = retro_style.get_font(max(12, int(16 * panel_scale)), bold=False)
-        hint = hint_font.render(t('menu_hint_select'), True, (150, 165, 190))
+        hint = render_text(hint_font, t('menu_hint_select'), True, (150, 165, 190))
         self.screen.blit(hint, hint.get_rect(centerx=panel_rect.centerx, bottom=panel_rect.bottom - max(10, int(14 * panel_scale))))
 
     def _draw_daily_prompt_panel(self):
@@ -4748,7 +4748,7 @@ class Menu:
 
         title_text = t('daily_prompt_title')
         title_font = retro_style.get_font(max(18, int(28 * panel_scale)), bold=True)
-        title_surf = title_font.render(title_text, True, retro_style.accent)
+        title_surf = render_text(title_font, title_text, True, retro_style.accent)
         self.screen.blit(title_surf, title_surf.get_rect(centerx=panel_rect.centerx, top=panel_rect.y + max(10, int(16 * panel_scale))))
 
         challenge = self.daily_prompt_challenge or {}
@@ -4855,7 +4855,7 @@ class Menu:
         self.daily_cancel_rect = cancel_rect
 
         hint_font = retro_style.get_font(max(11, int(16 * panel_scale)), bold=False)
-        hint = hint_font.render(t('menu_hint_select'), True, (150, 165, 190))
+        hint = render_text(hint_font, t('menu_hint_select'), True, (150, 165, 190))
         self.screen.blit(hint, hint.get_rect(centerx=panel_rect.centerx, bottom=panel_rect.bottom - max(10, int(14 * panel_scale))))
 
     def _draw_prompt_button(self, rect, label, color):
@@ -7812,7 +7812,7 @@ class AchievementScreen:
             icon_rect = pygame.Rect(tab_rect.x + _s(12), tab_rect.y + _s(9), _s(32), _s(32))
             self._draw_category_emblem(icon_rect, category_id, accent, active=is_selected)
 
-            label_surf = self.font_tab.render(label, True, UIColors.TEXT_PRIMARY)
+            label_surf = render_text(self.font_tab, label, True, UIColors.TEXT_PRIMARY)
             self.screen.blit(label_surf, (icon_rect.right + _s(10), tab_rect.y + _s(10)))
             count_text = f"{stats['unlocked']}/{stats['total']}"
             count_surf = self.font_hint.render(count_text, True, accent if is_selected else UIColors.TEXT_SECONDARY)
@@ -8142,7 +8142,7 @@ class ModeMusicScreen:
 
         title_font = retro_style.get_font(28, bold=True)
         subtitle_font = retro_style.get_font(18)
-        title = title_font.render(t('mode_music'), True, (235, 245, 255))
+        title = render_text(title_font, t('mode_music'), True, (235, 245, 255))
         self.screen.blit(title, (panel_rect.x + 20, panel_rect.y + 18))
 
         summary_text = t('custom_count').format(count=len(self.overrides))
@@ -8190,7 +8190,7 @@ class ModeMusicScreen:
             sb_rect = pygame.Rect(panel_rect.right - 22, list_rect.y, 22, list_rect.height)
             retro_style.draw_scrollbar(self.screen, sb_rect, self.scroll_offset, total_h, list_rect.height)
 
-        hint = subtitle_font.render(t('menu_theme_hint'), True, (140, 160, 190))
+        hint = render_text(subtitle_font, t('menu_theme_hint'), True, (140, 160, 190))
         self.screen.blit(hint, (panel_rect.x + 20, panel_rect.bottom - 36))
 
         if self.picker_open:
@@ -8453,7 +8453,7 @@ class ModeMusicScreen:
 
         title_font = retro_style.get_font(28, bold=True)
         subtitle_font = retro_style.get_font(18)
-        title = title_font.render(t('menu_music_select'), True, (235, 245, 255))
+        title = render_text(title_font, t('menu_music_select'), True, (235, 245, 255))
         self.screen.blit(title, (panel_rect.x + 20, panel_rect.y + 18))
 
         if self.picker_mode_key:
@@ -8509,7 +8509,7 @@ class ModeMusicScreen:
             retro_style.draw_scrollbar(self.screen, sb_rect, self.picker_scroll, total_h, list_rect.height)
 
         # Footer hints
-        hint = subtitle_font.render(t('menu_music_hint'), True, (140, 160, 190))
+        hint = render_text(subtitle_font, t('menu_music_hint'), True, (140, 160, 190))
         self.screen.blit(hint, (panel_rect.x + 20, panel_rect.bottom - 36))
 
     def draw(self):
@@ -9241,7 +9241,7 @@ class MusicSettingsScreen:
 
         title_font = retro_style.get_font(_s(28), bold=True)
         subtitle_font = retro_style.get_font(_s(18))
-        title = title_font.render(t('menu_music_select'), True, (235, 245, 255))
+        title = render_text(title_font, t('menu_music_select'), True, (235, 245, 255))
         self.screen.blit(title, (panel_rect.x + _s(20), panel_rect.y + _s(18)))
 
         # List area inside modal
@@ -12068,7 +12068,7 @@ class SettingsScreen:
 
         title_font = retro_style.get_font(28, bold=True)
         subtitle_font = retro_style.get_font(18)
-        title = title_font.render(t('tracks'), True, (235, 245, 255))
+        title = render_text(title_font, t('tracks'), True, (235, 245, 255))
         self.screen.blit(title, (panel_rect.x + 20, panel_rect.y + 18))
 
         override_count = len(self.settings_manager.get_mode_music_overrides()) if self.settings_manager else 0
@@ -12104,7 +12104,7 @@ class SettingsScreen:
                 selected=selected,
             )
 
-        hint = subtitle_font.render(t('hint_select_open_close'), True, (140, 160, 190))
+        hint = render_text(subtitle_font, t('hint_select_open_close'), True, (140, 160, 190))
         self.screen.blit(hint, (panel_rect.x + 20, panel_rect.bottom - 36))
 
     def _draw_music_track_picker(self) -> None:
@@ -12169,7 +12169,7 @@ class SettingsScreen:
             sb_rect = pygame.Rect(panel_rect.right - 22, list_rect.y, 22, list_rect.height)
             retro_style.draw_scrollbar(self.screen, sb_rect, self.music_track_picker_scroll, total_h, list_rect.height)
 
-        hint = subtitle_font.render(t('hint_select_apply_close'), True, (140, 160, 190))
+        hint = render_text(subtitle_font, t('hint_select_apply_close'), True, (140, 160, 190))
         self.screen.blit(hint, (panel_rect.x + 20, panel_rect.bottom - 36))
         self.screen.blit(hint, (panel_rect.x + 20, panel_rect.bottom - 36))
     
@@ -13100,7 +13100,7 @@ class CreditsScreen:
         retro_style.draw_glass_panel(self.screen, thanks_rect, alpha=100, border_color=(80, 100, 140))
         
         # Özel Teşekkürler Başlığı
-        thanks_title = self.font_section.render(t('credits_special_thanks_title'), True, (255, 220, 100))
+        thanks_title = render_text(self.font_section, t('credits_special_thanks_title'), True, (255, 220, 100))
         self.screen.blit(thanks_title, thanks_title.get_rect(center=(thanks_rect.centerx, thanks_rect.y + s(25))))
         
         # Teşekkür listesi
@@ -13138,10 +13138,10 @@ class CreditsScreen:
             )
         
         # Copyright ve Footer
-        copyright_surf = self.font_footer.render(t('credits_copyright'), True, (140, 150, 170))
+        copyright_surf = render_text(self.font_footer, t('credits_copyright'), True, (140, 150, 170))
         self.screen.blit(copyright_surf, copyright_surf.get_rect(center=(width // 2, footer_y)))
 
-        esc_surf = self.font_footer.render(t('credits_esc_hint'), True, (120, 130, 150))
+        esc_surf = render_text(self.font_footer, t('credits_esc_hint'), True, (120, 130, 150))
         self.screen.blit(esc_surf, esc_surf.get_rect(center=(width // 2, footer_y + s(18))))
         
         # === TESTÇILER POPUP ===
@@ -13169,7 +13169,7 @@ class CreditsScreen:
         retro_style.draw_glass_panel(self.screen, popup_rect, alpha=240, border_color=(100, 200, 255), glow=True)
         
         # Başlık
-        title_surf = self.font_section.render(t('credits_testers_title'), True, (100, 200, 255))
+        title_surf = render_text(self.font_section, t('credits_testers_title'), True, (100, 200, 255))
         self.screen.blit(title_surf, title_surf.get_rect(center=(popup_x + popup_w // 2, popup_y + max(22, int(30 * popup_scale)))))
         
         # Alt çizgi
@@ -13196,14 +13196,14 @@ class CreditsScreen:
             y = list_start_y + row * max(20, int(28 * popup_scale))
             
             # Bullet point
-            bullet_surf = self.font_body.render('•', True, (100, 200, 255))
+            bullet_surf = render_text(self.font_body, '•', True, (100, 200, 255))
             self.screen.blit(bullet_surf, (x, y))
             
             # İsim
-            name_surf = self.font_body.render(name, True, name_color)
+            name_surf = render_text(self.font_body, name, True, name_color)
             self.screen.blit(name_surf, (x + 18, y))
         
         # Kapatma ipucu
-        hint_surf = self.font_small.render(t('credits_testers_close_hint'), True, (150, 160, 180))
+        hint_surf = render_text(self.font_small, t('credits_testers_close_hint'), True, (150, 160, 180))
         self.screen.blit(hint_surf, hint_surf.get_rect(center=(popup_x + popup_w // 2, popup_y + popup_h - max(16, int(25 * popup_scale)))))
 
