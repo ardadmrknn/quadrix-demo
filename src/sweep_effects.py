@@ -76,100 +76,141 @@ class SweepCatState:
 
     @staticmethod
     def _detect_paw_profile(src: pygame.Surface) -> dict | None:
+        """Detect 2–4 leg/paw x-positions from the sprite's bottom-edge silhouette.
+
+        The previous implementation looked for *dark* (RGB<=95) vertical
+        columns, which the real Luna-Cat sprite doesn't have — its paws aren't
+        notably darker than the body, so detection always failed and the
+        articulated walk cycle never engaged.
+
+        The reliable signal is the **bottom-edge silhouette**: a walking cat's
+        paws are the lowest-reaching parts of the figure, separated by valleys
+        where the silhouette pulls up between the legs. We:
+
+        1. Compute, for each x column in the lower band, the lowest visible
+           (alpha>=cutoff) pixel y → the bottom-edge profile.
+        2. Pick a "contact" threshold partway between the typical underside
+           level (20th percentile of bottom-edge) and the deepest point
+           (baseline). Columns at/below it are paw contacts.
+        3. Group contiguous contact columns (tolerating 2px gaps) into clusters,
+           filter by plausible leg width, and take their depth-weighted centres.
+
+        Returns ``None`` (so the safe fallback stays in charge) when fewer than
+        2 genuine, alpha-separated leg clusters exist — we never fabricate paw
+        positions on a sprite that doesn't actually show separated legs.
+        """
         try:
             width, height = src.get_size()
         except Exception:
             return None
-        if width <= 4 or height <= 4:
+        if width <= 8 or height <= 8:
             return None
 
-        scan_start = max(0, int(height * 0.65))
-        min_alpha = 40
-        dark_limit = 95
-        columns: list[tuple] = []
+        # Only look at the lower half — legs/paws live here. Starting at 50%
+        # keeps the hip line and the full leg travel inside the scan window.
+        band_top = max(0, int(height * 0.50))
+        cutoff = 40
+
+        bottom: list[int] = [-1] * width
 
         if _NUMPY_AVAILABLE:
             try:
-                rgb_arr = pygame.surfarray.array3d(src)
-                alpha_arr = pygame.surfarray.array_alpha(src)
-                rgb_scan = rgb_arr[:, scan_start:, :]
-                alpha_scan = alpha_arr[:, scan_start:]
-                visible = alpha_scan >= min_alpha
-                dark = _np.all(rgb_scan <= dark_limit, axis=2)
-                dark_visible = visible & dark
-                dark_counts = dark_visible.sum(axis=1)
-                valid_x = _np.where(dark_counts > 0)[0]
-                for x in valid_x:
-                    col = dark_visible[x]
-                    dark_ys = _np.where(col)[0]
-                    columns.append((int(x), int(dark_counts[x]), int(dark_ys[0]) + scan_start, int(dark_ys[-1]) + scan_start))
+                alpha = pygame.surfarray.array_alpha(src)  # (w, h)
+                band = alpha[:, band_top:]
+                visible = band >= cutoff
+                # Lowest visible row per column: reverse-search the band.
+                has = visible.any(axis=1)
+                # argmax on reversed gives distance from the bottom of the band.
+                rev = visible[:, ::-1]
+                from_bottom = rev.argmax(axis=1)
+                band_h = band.shape[1]
+                for x in range(width):
+                    if has[x]:
+                        bottom[x] = band_top + (band_h - 1 - int(from_bottom[x]))
             except Exception:
-                columns = []
+                bottom = [-1] * width
 
-        if not columns:
-            for x in range(width):
-                dark_count = 0
-                min_dark_y = None
-                max_dark_y = -1
-                for y in range(scan_start, height):
-                    r, g, b, a = src.get_at((x, y))
-                    if a < min_alpha:
-                        continue
-                    if r <= dark_limit and g <= dark_limit and b <= dark_limit:
-                        dark_count += 1
-                        if min_dark_y is None:
-                            min_dark_y = y
-                        if y > max_dark_y:
-                            max_dark_y = y
-                if dark_count > 0 and min_dark_y is not None:
-                    columns.append((x, dark_count, min_dark_y, max_dark_y))
+        if all(v < 0 for v in bottom):
+            # Pure-pygame fallback: scan each column bottom-up.
+            try:
+                for x in range(width):
+                    for y in range(height - 1, band_top - 1, -1):
+                        if src.get_at((x, y))[3] >= cutoff:
+                            bottom[x] = y
+                            break
+            except Exception:
+                return None
 
-        if not columns:
+        valid_vals = [v for v in bottom if v >= 0]
+        if len(valid_vals) < 8:
             return None
 
-        clusters: list[list] = []
-        current = [columns[0]]
-        for item in columns[1:]:
-            if item[0] - current[-1][0] <= 1:
-                current.append(item)
-            else:
-                clusters.append(current)
-                current = [item]
+        baseline_y = max(valid_vals)
+        # 20th-percentile bottom-edge ~ the underside/gap level between legs.
+        sorted_vals = sorted(valid_vals)
+        shallow_y = sorted_vals[max(0, int(len(sorted_vals) * 0.20) - 1)]
+        leg_span = max(1, baseline_y - shallow_y)
+        if leg_span < max(3, int(height * 0.04)):
+            # No meaningful depth variation → no separated legs to detect.
+            return None
+        contact_thr = baseline_y - int(leg_span * 0.45)
+
+        # Group contiguous contact columns (tolerate small 2px gaps).
+        clusters: list[list[int]] = []
+        current: list[int] = []
+        last_x: int | None = None
+        for x in range(width):
+            if bottom[x] >= contact_thr:
+                if last_x is None or x - last_x <= 2:
+                    current.append(x)
+                else:
+                    clusters.append(current)
+                    current = [x]
+                last_x = x
         if current:
             clusters.append(current)
 
-        cluster_info = []
+        min_leg_w = max(3, width // 60)
+        max_leg_w = max(min_leg_w + 1, width // 3)
+        legs: list[dict] = []
         for cluster in clusters:
-            c_start = cluster[0][0]
-            c_end = cluster[-1][0]
+            c_start, c_end = cluster[0], cluster[-1]
             c_width = c_end - c_start + 1
-            if c_width > max(3, width // 5):
+            if c_width < min_leg_w or c_width > max_leg_w:
                 continue
-            total_dark = sum(v[1] for v in cluster)
-            max_dark_y = max(v[3] for v in cluster)
-            min_dark_y = min(v[2] for v in cluster)
-            weighted_center = int(round(sum(v[0] * v[1] for v in cluster) / float(max(1, total_dark))))
-            bottom_bonus = max(0, max_dark_y - scan_start)
-            score = (total_dark * 2) + (bottom_bonus * 3) - c_width
-            if max_dark_y < height - 3:
-                score -= 8
-            cluster_info.append({'center_x': weighted_center, 'score': score, 'min_y': min_dark_y, 'max_y': max_dark_y})
+            # Depth-weighted centre so the paw tip (deepest part) anchors x.
+            weight_sum = 0.0
+            weighted_x = 0.0
+            top_y = baseline_y
+            for x in cluster:
+                depth = max(0, bottom[x] - shallow_y)
+                weight_sum += depth
+                weighted_x += x * depth
+                if bottom[x] < top_y:
+                    top_y = bottom[x]
+            if weight_sum <= 0:
+                center_x = (c_start + c_end) / 2.0
+            else:
+                center_x = weighted_x / weight_sum
+            legs.append({'center_x': center_x, 'max_y': max(bottom[x] for x in cluster)})
 
-        if len(cluster_info) < 2:
+        if len(legs) < 2:
+            # Genuine leg separation not found — keep the safe fallback.
             return None
 
-        cluster_info.sort(key=lambda c: c['score'], reverse=True)
-        selected = cluster_info[:4]
-        selected.sort(key=lambda c: c['center_x'])
+        # Keep at most 4 strongest (deepest-reaching) legs, ordered L→R.
+        legs.sort(key=lambda lg: lg['max_y'], reverse=True)
+        legs = legs[:4]
+        legs.sort(key=lambda lg: lg['center_x'])
 
-        leg_top_y = min(c['min_y'] for c in selected)
-        baseline_y = max(c['max_y'] for c in selected)
         denom_w = float(max(1, width - 1))
         denom_h = float(max(1, height - 1))
-        x_norms = [max(0.0, min(1.0, c['center_x'] / denom_w)) for c in selected]
+        x_norms = [max(0.0, min(1.0, lg['center_x'] / denom_w)) for lg in legs]
+        # Hip/leg-top line sits at the underside level where legs detach from
+        # the body; baseline is the deepest paw contact.
         return {
             'x_norms': x_norms,
-            'leg_top_norm': max(0.0, min(1.0, leg_top_y / denom_h)),
+            'leg_top_norm': max(0.0, min(1.0, shallow_y / denom_h)),
             'baseline_norm': max(0.0, min(1.0, baseline_y / denom_h)),
         }
 
@@ -255,34 +296,172 @@ class SweepCatState:
         sh = max(1, int(round(target_h)))
         scaled = pygame.transform.scale(base, (sw, sh))
 
-        surface = scaled.copy()
+        # Articulated procedural walk cycle. Decomposes the static sprite into
+        # body + per-leg sub-surfaces and re-poses the legs through an 8-phase
+        # gait (lift → forward swing → plant) with a synced body bob. Falls
+        # back to a safe static/strip pose on any failure so this stays robust
+        # on the gameplay hot path. Result is cached per (target_h, phase).
         paw_profile = self.paw_profile
-        if paw_profile and paw_profile.get('x_norms'):
-            leg_top = int(paw_profile.get('leg_top_norm', 0.72) * sh)
-            leg_top = max(0, min(sh - 1, leg_top))
-            leg_h = max(1, sh - leg_top)
-            step_pattern = (0, 1, 2, 1, 0, -1, -2, -1)
-            for idx, x_norm in enumerate(paw_profile['x_norms'][:4]):
-                center_x = int(max(0.0, min(1.0, x_norm)) * (sw - 1))
-                patch_w = max(2, sw // 11)
-                patch_x = max(0, min(sw - patch_w, center_x - patch_w // 2))
-                src_rect = pygame.Rect(patch_x, leg_top, patch_w, leg_h)
-                step = step_pattern[(phase_index + idx) % 8]
-                surface.blit(scaled, (patch_x, leg_top + step), src_rect)
-        else:
-            body_cut = max(1, int(sh * 0.70))
-            leg_h = max(1, sh - body_cut)
-            left_w = max(1, sw // 2)
-            right_w = max(1, sw - left_w)
-            step_pattern = (0, 1, 2, 1, 0, -1, -2, -1)
-            step = step_pattern[phase_index]
-            left_src = pygame.Rect(0, body_cut, left_w, leg_h)
-            right_src = pygame.Rect(left_w, body_cut, right_w, leg_h)
-            surface.blit(scaled, (0, body_cut + step), left_src)
-            surface.blit(scaled, (left_w, body_cut - step), right_src)
+        try:
+            if paw_profile and len(paw_profile.get('x_norms') or []) >= 2:
+                surface = self._compose_walk_frame(scaled, sw, sh, paw_profile, phase_index)
+            else:
+                surface = self._compose_fallback_walk(scaled, sw, sh, phase_index)
+        except Exception:
+            # Never raise from the sweep hot path — worst case is a static cat.
+            surface = scaled.copy()
 
         self.surface_cache[key] = surface
         return surface
+
+    # ------------------------------------------------------------------
+    # Procedural walk-cycle composition
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _walk_leg_pose(leg_phase: int) -> tuple[float, float, float]:
+        """Return (lift_ratio, forward_ratio, angle_deg) for an 8-step gait.
+
+        The cycle splits into a swing half (paw lifts, swings forward) and a
+        stance half (paw planted, drifts backward as the body advances). Values
+        are normalised; callers scale them to pixels by sprite height.
+        """
+        import math
+
+        t = (int(leg_phase) % 8) / 8.0
+        if t < 0.5:
+            # Swing: lift follows a sine arch; forward goes from back→front.
+            swing_t = t / 0.5
+            lift = math.sin(math.pi * swing_t)
+            forward = (swing_t * 2.0) - 1.0  # -1 (back) → +1 (front)
+            angle = math.sin(math.pi * swing_t) * 1.0  # subtle knee swing
+        else:
+            # Stance: planted, drifting backward as the body moves forward.
+            stance_t = (t - 0.5) / 0.5
+            lift = 0.0
+            forward = 1.0 - (stance_t * 2.0)  # +1 (front) → -1 (back)
+            angle = -0.3 * stance_t
+        return lift, forward, angle
+
+    def _compose_walk_frame(
+        self,
+        scaled: pygame.Surface,
+        sw: int,
+        sh: int,
+        profile: dict,
+        phase_index: int,
+    ) -> pygame.Surface:
+        """Compose one articulated walk frame from the scaled static sprite."""
+        import math
+
+        x_norms = list(profile.get('x_norms') or [])
+        hip_y = int(max(0.0, min(1.0, profile.get('leg_top_norm', 0.70))) * sh)
+        hip_y = max(1, min(sh - 2, hip_y))
+        leg_h = max(2, sh - hip_y)
+
+        # Motion amplitudes scale with sprite height so the gait reads the same
+        # at store-card and in-game sizes.
+        lift_px = max(1.0, sh * 0.07)
+        swing_px = max(1.0, sw * 0.018)
+        bob_px = max(1.0, sh * 0.018)
+        sway_px = max(0.0, sw * 0.004)
+        max_angle = 7.0
+
+        # Body vertical bob: dips twice per stride (once per diagonal contact).
+        bob = int(round(math.sin(2.0 * math.pi * (phase_index / 8.0) * 2.0) * bob_px))
+        # Gentle horizontal sway in counter-phase, for a touch of life.
+        sway = int(round(math.cos(2.0 * math.pi * (phase_index / 8.0)) * sway_px))
+
+        out = pygame.Surface((sw, sh), pygame.SRCALPHA)
+
+        # Build a body layer with the lower paw footprints cleared so re-posed
+        # legs don't smear over their old position. We clear only the lower
+        # ~65% of each leg strip; the upper attachment (and the belly) stay
+        # intact so the legs remain visually connected to the body.
+        body_layer = scaled.copy()
+        patch_w = max(3, sw // 9)
+        clear_top = hip_y + int(leg_h * 0.32)
+        clear_h = max(1, sh - clear_top)
+
+        legs: list[tuple[int, pygame.Surface, float, float]] = []
+        for idx, x_norm in enumerate(x_norms[:4]):
+            center_x = int(max(0.0, min(1.0, x_norm)) * (sw - 1))
+            patch_x = max(0, min(sw - patch_w, center_x - patch_w // 2))
+
+            # Clear the lower footprint of this leg from the body layer.
+            body_layer.fill((0, 0, 0, 0), pygame.Rect(patch_x, clear_top, patch_w, clear_h))
+
+            # Extract the full leg strip (from the hip down) to re-pose.
+            leg_rect = pygame.Rect(patch_x, hip_y, patch_w, leg_h)
+            leg_rect = leg_rect.clip(scaled.get_rect())
+            if leg_rect.width <= 0 or leg_rect.height <= 0:
+                continue
+            leg_img = scaled.subsurface(leg_rect).copy()
+
+            # Diagonal gait: alternate legs are a half-cycle out of phase.
+            leg_phase = (phase_index + (4 if idx % 2 else 0)) % 8
+            lift_r, forward_r, angle_r = self._walk_leg_pose(leg_phase)
+
+            posed = leg_img
+            angle = angle_r * max_angle
+            if abs(angle) > 0.5:
+                try:
+                    posed = pygame.transform.rotozoom(leg_img, angle, 1.0)
+                except Exception:
+                    posed = leg_img
+
+            legs.append((patch_x, posed, lift_r * lift_px, forward_r * swing_px))
+
+        # Draw the body (bob + sway) first, then the posed legs on top.
+        out.blit(body_layer, (sway, bob))
+        for patch_x, posed, lift, forward in legs:
+            # Re-centre rotated leg horizontally on its original strip, anchor
+            # its top at the hip, then apply swing (x) and lift (-y) + body bob.
+            extra_w = posed.get_width() - patch_w
+            draw_x = int(round(patch_x - extra_w / 2.0 + forward + sway))
+            draw_y = int(round(hip_y - lift + bob))
+            out.blit(posed, (draw_x, draw_y))
+
+        return out
+
+    def _compose_fallback_walk(
+        self,
+        scaled: pygame.Surface,
+        sw: int,
+        sh: int,
+        phase_index: int,
+    ) -> pygame.Surface:
+        """Leg-detection-free fallback: body bob + two-leg alternating step.
+
+        Used when paw detection fails. Cleaner than the old single-strip shift
+        because it clears the lower footprint before re-blitting, avoiding the
+        vertical-smear artefact, while still selling a basic stride.
+        """
+        import math
+
+        out = pygame.Surface((sw, sh), pygame.SRCALPHA)
+        body_cut = max(1, int(sh * 0.66))
+        leg_h = max(1, sh - body_cut)
+        bob_px = max(1.0, sh * 0.016)
+        step_px = max(1.0, sh * 0.05)
+        bob = int(round(math.sin(2.0 * math.pi * (phase_index / 8.0) * 2.0) * bob_px))
+
+        body_layer = scaled.copy()
+        clear_top = body_cut + int(leg_h * 0.30)
+        body_layer.fill((0, 0, 0, 0), pygame.Rect(0, clear_top, sw, max(1, sh - clear_top)))
+
+        left_w = max(1, sw // 2)
+        right_w = max(1, sw - left_w)
+        left_src = pygame.Rect(0, body_cut, left_w, leg_h)
+        right_src = pygame.Rect(left_w, body_cut, right_w, leg_h)
+        # Two legs in anti-phase using a sine lift so they arc rather than jitter.
+        left_lift = int(round(math.sin(math.pi * (phase_index / 4.0)) * step_px))
+        right_lift = int(round(math.sin(math.pi * ((phase_index / 4.0) + 1.0)) * step_px))
+
+        out.blit(body_layer, (0, bob))
+        out.blit(scaled, (0, body_cut - max(0, left_lift) + bob), left_src)
+        out.blit(scaled, (left_w, body_cut - max(0, right_lift) + bob), right_src)
+        return out
 
 
 # ------------------------------------------------------------------
