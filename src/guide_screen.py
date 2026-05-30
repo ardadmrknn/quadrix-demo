@@ -295,6 +295,31 @@ CARD_DATA = [
         'rarity': 'legendary',
         'color': (210, 210, 220),
     },
+    # === YENİ: Combo Sigortası / Ters Borç / Delik Avcısı ===
+    {
+        'id': 'combo_insurance',
+        'name_key': 'card_combo_insurance_title',
+        'desc_key': 'card_combo_insurance_desc',
+        'icon': 'icon_perk_synergy.png',
+        'rarity': 'rare',
+        'color': (255, 220, 140),
+    },
+    {
+        'id': 'reverse_debt',
+        'name_key': 'card_reverse_debt_title',
+        'desc_key': 'card_reverse_debt_desc',
+        'icon': 'icon_clean_sweep.png',
+        'rarity': 'common',
+        'color': (200, 120, 255),
+    },
+    {
+        'id': 'hole_hunter',
+        'name_key': 'card_hole_hunter_title',
+        'desc_key': 'card_hole_hunter_desc',
+        'icon': 'icon_magnet_pull.png',
+        'rarity': 'rare',
+        'color': (140, 230, 200),
+    },
 ]
 
 # Rarity renkleri

@@ -5,7 +5,7 @@ Bu belge, **Mystery (Kart Ustalığı) modu** kart seçim ekranında oyuncuya su
 - Kanonik kaynak (başlık/açıklama): `src/localization.py` → `card_*_title` / `card_*_desc`
 - Katalog (id, enderlik, hak sayısı, ikon): `src/game_modes_extra.py` → `MysteryCardManager._build_catalog()`
 - Genel envanter ve XP/progression dokümanı: [`CARD_PERK_INVENTORY_TR.md`](CARD_PERK_INVENTORY_TR.md)
-- Toplam: **34 kart girdisi** (26 benzersiz mekanik aile, bazı kartlar enderliğe göre çoklu varyant)
+- Toplam: **39 kart girdisi** (31 benzersiz mekanik aile, bazı kartlar enderliğe göre çoklu varyant)
 
 ## Yazım Kuralları
 
@@ -46,6 +46,10 @@ Bu belge, **Mystery (Kart Ustalığı) modu** kart seçim ekranında oyuncuya su
 ### Tuttuğunu Koparan (Common varyant)
 - **ID:** `hold_destroyer`
 - **Açıklama:** `{button}` tuşu ile kullan: Sakladığın parçayı silersin.
+
+### Ters Borç
+- **ID:** `reverse_debt`
+- **Açıklama:** En alttaki 2 satırı siler. Sonraki 5 parça yere değer değmez kilitlenir.
 
 ---
 
@@ -102,6 +106,14 @@ Bu belge, **Mystery (Kart Ustalığı) modu** kart seçim ekranında oyuncuya su
 ### Tuttuğunu Koparan (Rare varyant)
 - **ID:** `hold_destroyer_3`
 - **Açıklama:** `{button}` tuşu ile kullan: Sakladığın parçayı silersin.
+
+### Combo Sigortası
+- **ID:** `combo_insurance`
+- **Açıklama:** Bir kez, satır temizleyemediğin hamlede combo bozulmaz.
+
+### Delik Avcısı
+- **ID:** `hole_hunter`
+- **Açıklama:** J tuşu ile kullan: Bir sütun seçersin. O sütundaki rastgele kapalı boşluklardan 1 tanesi dolar.
 
 ---
 

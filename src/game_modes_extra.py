@@ -143,7 +143,14 @@ CARD_EFFECTS_DIR = _get_card_effects_dir()
 
 
 def _prompt_action_text(action: str, keyboard_label: str) -> str:
-    display = get_action_prompt_display(action, keyboard_label)
+    # Resolve prompt labels through this module's gamepad manager so tests and
+    # HUD text stay in sync when `game_modes_extra.get_gamepad_manager` is patched.
+    manager = None
+    try:
+        manager = get_gamepad_manager()
+    except Exception:
+        manager = None
+    display = get_action_prompt_display(action, keyboard_label, gpm=manager)
     return str(display.get('text') or keyboard_label)
 
 
@@ -1750,6 +1757,83 @@ class MysteryCardManager:
                     "corner": 28,
                     "pattern": "spark",
                     "icon_bg": (20, 50, 100),
+                },
+                "limited": True,
+                "single_use": True,
+            },
+            # ==================== COMBO SİGORTASI ====================
+            # Bir kez tetiklenir: aktif combo varken satır temizlenmeyen tek
+            # hamlede combo'yu lokal olarak korur. Player XP üretmez.
+            {
+                "id": "combo_insurance",
+                "title": "Combo Sigortası",
+                "base": 1,
+                "value_range": (1, 1),
+                "description": "Bir kez, satır temizleyemediğin hamlede combo bozulmaz.",
+                "color": (255, 220, 140),
+                "bg": (32, 22, 8),
+                "icon": "CI",
+                "tag": "Rare",
+                "rarity": "rare",
+                "weight": 28,
+                "icon_image": os.path.join(UI_ICON_DIR, "icon_perk_synergy.png"),
+                "style": {
+                    "gradient": [(220, 180, 80), (90, 60, 20)],
+                    "border": (255, 230, 150),
+                    "corner": 22,
+                    "pattern": "spark",
+                    "icon_bg": (110, 80, 30),
+                },
+                "limited": True,
+                "single_use": True,
+            },
+            # ==================== TERS BORÇ ====================
+            # Anında en alt 2 satırı temizler (card source). Sonraki 5 lock için
+            # parça yere değer değmez ek lock delay olmadan kilitlenir.
+            {
+                "id": "reverse_debt",
+                "title": "Ters Borç",
+                "base": 2,
+                "value_range": (2, 2),
+                "description": "En alttaki 2 satırı siler. Sonraki 5 parça yere değer değmez kilitlenir.",
+                "color": (200, 120, 255),
+                "bg": (28, 14, 44),
+                "icon": "RD",
+                "tag": "Common",
+                "rarity": "common",
+                "weight": 45,
+                "icon_image": os.path.join(UI_ICON_DIR, "icon_clean_sweep.png"),
+                "style": {
+                    "gradient": [(170, 90, 220), (40, 16, 70)],
+                    "border": (220, 150, 255),
+                    "corner": 22,
+                    "pattern": "wave",
+                    "icon_bg": (80, 40, 120),
+                },
+                "single_use": True,
+            },
+            # ==================== DELİK AVCISI ====================
+            # J ile sütun seçim overlay'i; seçilen sütundaki rastgele kapalı
+            # boşluklardan biri doldurulur. Card source — XP üretmez.
+            {
+                "id": "hole_hunter",
+                "title": "Delik Avcısı",
+                "base": 1,
+                "value_range": (1, 1),
+                "description": "J tuşu ile kullan: Bir sütun seçersin. O sütundaki rastgele kapalı boşluklardan 1 tanesi dolar.",
+                "color": (140, 230, 200),
+                "bg": (10, 36, 30),
+                "icon": "HH",
+                "tag": "Rare",
+                "rarity": "rare",
+                "weight": 26,
+                "icon_image": os.path.join(UI_ICON_DIR, "icon_magnet_pull.png"),
+                "style": {
+                    "gradient": [(80, 200, 170), (15, 60, 50)],
+                    "border": (170, 255, 220),
+                    "corner": 22,
+                    "pattern": "wave",
+                    "icon_bg": (35, 110, 90),
                 },
                 "limited": True,
                 "single_use": True,
@@ -5720,6 +5804,20 @@ class MysteryMode(Game):
         self._freeze_drop_timer = 0.0  # Kalan dondurma süresi (saniye)
         self._freeze_drop_active = False  # Şu an bir parça donuk mu?
 
+        # Combo Sigortası: True ise bir sonraki "satır temizleyemeyen" lock'da
+        # combo lokal olarak korunur. Yalnızca previous_combo > 0 iken tüketilir.
+        self._combo_insurance_armed = False
+
+        # Ters Borç: kart seçildiği anda en alt 2 satır silinir; sonraki N lock
+        # için parça yere değer değmez ek lock delay olmadan kilitlenir.
+        self._reverse_debt_remaining = 0
+        self._reverse_debt_total = 5
+
+        # Delik Avcısı: J tuşuyla sütun seçim overlay'i. value=charges sayısı.
+        self._hole_hunter_charges = 0
+        self._hole_hunter_overlay_active = False
+        self._hole_hunter_cursor_col = 0
+
         # Keep a short history of picked cards so the left panel can show
         # "seçilen bütün kartlar" (not only currently-active effects).
         self.selected_cards_log: List[Dict[str, Any]] = []
@@ -7243,6 +7341,71 @@ class MysteryMode(Game):
         except Exception:
             pass
 
+        # === COMBO SİGORTASI ===
+        # Player satır temizleyemediyse normalde board.clear_lines (player source)
+        # combo'yu sıfırlar. Kart silahlıysa ve gerçek bir combo varsa lokal
+        # olarak combo'yu geri yükle ve sigortayı tüket. Sahte XP / sahte score
+        # üretmez; yalnız board.combo'yu eski değerine geri yükler.
+        try:
+            if (
+                getattr(self, '_combo_insurance_armed', False)
+                and int(player_lines or 0) <= 0
+                and int(previous_combo or 0) > 0
+                and int(getattr(self.board, 'combo', 0) or 0) <= 0
+            ):
+                self.board.combo = int(previous_combo)
+                self._combo_insurance_armed = False
+                # Aktif görseli paneldekinden de düşür
+                try:
+                    self._active_effect_visuals.pop('combo_insurance', None)
+                except Exception:
+                    pass
+                try:
+                    self._set_localized_card_message(
+                        'mystery_msg_combo_insurance_triggered',
+                        1.4,
+                        'Combo Sigortası tetiklendi! Combo korundu.',
+                    )
+                except Exception:
+                    pass
+                try:
+                    self._sync_active_cards()
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+        # === TERS BORÇ ===
+        # Kart aktifken her başarılı lock cezası 1 azaltır. Sayaç 0 olunca
+        # `lock_delay` normal değere geri döner ve aktif kart panelinden düşer.
+        try:
+            if int(getattr(self, '_reverse_debt_remaining', 0) or 0) > 0:
+                self._reverse_debt_remaining = max(0, int(self._reverse_debt_remaining) - 1)
+                # Lock delay'i remaining'den derive et (single source of truth).
+                try:
+                    self._apply_reverse_debt_lock_delay()
+                except Exception:
+                    pass
+                if self._reverse_debt_remaining <= 0:
+                    try:
+                        self._active_effect_visuals.pop('reverse_debt', None)
+                    except Exception:
+                        pass
+                    try:
+                        self._set_localized_card_message(
+                            'mystery_msg_reverse_debt_expired',
+                            1.2,
+                            'Ters Borç süresi doldu!',
+                        )
+                    except Exception:
+                        pass
+                try:
+                    self._sync_active_cards()
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
     def update(self, dt: float) -> None:
         if getattr(self, '_demo_score_cap_active', False):
             self.update_screen_shake()
@@ -7291,6 +7454,11 @@ class MysteryMode(Game):
         # Keskin Nişancı overlay aktifken oyun alanını dondur (zaman durur)
         if getattr(self, '_sniper_overlay_active', False):
             # Sadece ekran sarsıntısı ve UI güncellemelerine izin ver
+            self.update_screen_shake()
+            return
+
+        # Delik Avcısı overlay aktifken oyun alanını dondur
+        if getattr(self, '_hole_hunter_overlay_active', False):
             self.update_screen_shake()
             return
         
@@ -8029,6 +8197,51 @@ class MysteryMode(Game):
                     
             return True
         
+        # === DELİK AVCISI OVERLAY ===
+        if getattr(self, '_hole_hunter_overlay_active', False):
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    return False
+
+                if event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_ESCAPE:
+                        self._close_hole_hunter_overlay(consumed=False)
+                        continue
+                    if event.key in (pygame.K_LEFT, pygame.K_a):
+                        self._hole_hunter_move_cursor(-1)
+                        continue
+                    if event.key in (pygame.K_RIGHT, pygame.K_d):
+                        self._hole_hunter_move_cursor(1)
+                        continue
+                    if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE):
+                        self._hole_hunter_fire_at_cursor()
+                        continue
+                    # J ile de overlay'i kapat (toggle)
+                    if event.key == pygame.K_j:
+                        self._close_hole_hunter_overlay(consumed=False)
+                        continue
+
+                if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                    pos = normalize_mouse_pos(getattr(event, 'pos', None)) or event.pos
+                    col = self._hole_hunter_screen_to_column(pos)
+                    if col is None:
+                        try:
+                            self._set_localized_card_message(
+                                'mystery_msg_hole_hunter_invalid_column',
+                                1.4,
+                                'Geçersiz sütun veya uygun delik yok.',
+                            )
+                            if self.sound_enabled:
+                                self.sound.play_sound('deny')
+                        except Exception:
+                            pass
+                        continue
+                    self._hole_hunter_cursor_col = col
+                    self._hole_hunter_fire_at_cursor()
+                    continue
+
+            return True
+        
         # NERF: Drill parça kilitliyken döndürme tuşunu engelle
         drill_locked = getattr(self, '_drill_movement_locked', False)
         piece = getattr(self, 'current_piece', None)
@@ -8101,6 +8314,12 @@ class MysteryMode(Game):
             if event.type == pg.KEYDOWN and event.key == pg.K_n:
                 if not self.game_over and not self.paused:
                     if self._open_sniper_overlay():
+                        continue
+
+            # J tuşu: Delik Avcısı overlay'ini aç
+            if event.type == pg.KEYDOWN and event.key == pg.K_j:
+                if not self.game_over and not self.paused:
+                    if self._open_hole_hunter_overlay():
                         continue
 
             # Event'i tekrar kuyruğa koy ki super().handle_input() işlesin
@@ -8184,6 +8403,19 @@ class MysteryMode(Game):
         self._freeze_drop_duration = 0
         self._freeze_drop_timer = 0.0
         self._freeze_drop_active = False
+
+        # Combo Sigortası / Ters Borç / Delik Avcısı runtime state
+        self._combo_insurance_armed = False
+        self._reverse_debt_remaining = 0
+        self._reverse_debt_total = 5
+        self._hole_hunter_charges = 0
+        self._hole_hunter_overlay_active = False
+        self._hole_hunter_cursor_col = 0
+        # Ters Borç tamamen temizlendi: lock_delay default'a dönmeli.
+        try:
+            self._apply_reverse_debt_lock_delay()
+        except Exception:
+            pass
         
         # Zaman Kapsulu sifirla
         self.time_capsule_saved = False
@@ -8366,6 +8598,10 @@ class MysteryMode(Game):
         if getattr(self, '_sniper_overlay_active', False):
             self._draw_sniper_board_overlay()
 
+        # === DELİK AVCISI OVERLAY ===
+        if getattr(self, '_hole_hunter_overlay_active', False):
+            self._draw_hole_hunter_overlay()
+
         self._draw_card_board_effects()
 
         # Sniper ile patlatılan blokların bulunduğu hücrede GIF patlama efekti
@@ -8385,6 +8621,44 @@ class MysteryMode(Game):
                 prompt.screen = self.screen
                 prompt.draw()
     
+    def _draw_hole_hunter_overlay(self) -> None:
+        """Delik Avcısı için sütun seçim overlay'i — küçük ve lokal."""
+        try:
+            active_width, active_height = self._active_ui_size()
+            board_x, board_y = self.get_board_offset()
+            cell_size = max(1, int(self.get_cell_size()))
+            board_w_px = self.board.width * cell_size
+            board_h_px = self.board.height * cell_size
+
+            # Hafif karartılmış overlay
+            dim = pygame.Surface((active_width, active_height), pygame.SRCALPHA)
+            dim.fill((0, 0, 0, 110))
+            self.screen.blit(dim, (0, 0))
+
+            # Tahta çerçevesi
+            border = pygame.Rect(board_x - 4, board_y - 4, board_w_px + 8, board_h_px + 8)
+            pygame.draw.rect(self.screen, (140, 230, 200), border, 2, border_radius=4)
+
+            # Cursor sütunu vurgula
+            try:
+                col = max(0, min(self.board.width - 1, int(getattr(self, '_hole_hunter_cursor_col', 0) or 0)))
+            except Exception:
+                col = 0
+            col_x = board_x + col * cell_size
+            col_rect = pygame.Rect(col_x, board_y, cell_size, board_h_px)
+            highlight = pygame.Surface((cell_size, board_h_px), pygame.SRCALPHA)
+            highlight.fill((140, 230, 200, 70))
+            self.screen.blit(highlight, col_rect.topleft)
+            pygame.draw.rect(self.screen, (170, 255, 220), col_rect, 2)
+
+            # Bu sütundaki uygun delikleri marker ile göster
+            holes = self._hole_hunter_find_holes(col)
+            for hy in holes:
+                marker = pygame.Rect(col_x + 2, board_y + hy * cell_size + 2, cell_size - 4, cell_size - 4)
+                pygame.draw.rect(self.screen, (255, 255, 255, 200), marker, 2, border_radius=2)
+        except Exception:
+            pass
+
     def _draw_sniper_board_overlay(self) -> None:
         """Sniper modu için gelişmiş blok seçim overlay'i."""
         try:
@@ -10228,6 +10502,101 @@ class MysteryMode(Game):
                 pass
             effect_triggered = True
 
+        # === COMBO SİGORTASI ===
+        elif cid == "combo_insurance":
+            # Tek kullanım sigorta: silahla. Aynı kart tekrar gelirse hak
+            # ekleme yapma — yalnız True kalsın (zaten silahlı).
+            self._combo_insurance_armed = True
+            try:
+                self._set_localized_card_message(
+                    'mystery_msg_combo_insurance_ready',
+                    1.4,
+                    'Combo Sigortası hazır! Bir hamlede combo bozulmayacak.',
+                )
+            except Exception:
+                pass
+            try:
+                self._remember_effect_visual('combo_insurance', card)
+                self._sync_active_cards()
+            except Exception:
+                pass
+            effect_triggered = True
+
+        # === TERS BORÇ ===
+        elif cid == "reverse_debt":
+            # 1) Anında en alt 2 satırı temizle (card source).
+            try:
+                prev_score_after_sweep = int(getattr(self.board, 'score', 0))
+            except Exception:
+                prev_score_after_sweep = 0
+            try:
+                self._clear_rows(2)
+            except Exception:
+                pass
+            try:
+                cleared = int(self.board.clear_lines(source='card'))
+            except Exception:
+                cleared = 0
+            if cleared > 0:
+                try:
+                    delta = int(getattr(self.board, 'score', 0)) - prev_score_after_sweep
+                except Exception:
+                    delta = None
+                self._post_external_line_clear(cleared, award_energy=True, score_delta=delta, source='card')
+
+            # 2) Sonraki 5 lock için anlık-kilit cezası armalandır.
+            try:
+                self._reverse_debt_total = 5
+                self._reverse_debt_remaining = 5
+            except Exception:
+                self._reverse_debt_remaining = 5
+            # İlk parça da etkilensin: lock_delay'i remaining'den derive et.
+            try:
+                self._apply_reverse_debt_lock_delay()
+            except Exception:
+                pass
+            try:
+                self._set_localized_card_message(
+                    'mystery_msg_reverse_debt_applied',
+                    1.6,
+                    'Ters Borç! Alt 2 satır silindi. Sonraki {count} parça anlık kilitlenir.',
+                    count=int(self._reverse_debt_remaining),
+                )
+            except Exception:
+                pass
+            try:
+                self._remember_effect_visual('reverse_debt', card)
+                self._sync_active_cards()
+            except Exception:
+                pass
+            effect_triggered = True
+
+        # === DELİK AVCISI ===
+        elif cid == "hole_hunter":
+            # Sınırlı kart: tekrar seçilince hak EKLEME — yalnız 1'e tamamla.
+            try:
+                cur = int(getattr(self, '_hole_hunter_charges', 0) or 0)
+            except Exception:
+                cur = 0
+            target_charges = max(1, self._card_int_value(card, 1))
+            if cur < target_charges:
+                self._hole_hunter_charges = target_charges
+            try:
+                self._set_localized_card_message(
+                    'mystery_msg_hole_hunter_ready',
+                    1.6,
+                    'Delik Avcısı hazır! J ile sütun seç ({charges} hak)',
+                    charges=int(self._hole_hunter_charges),
+                )
+            except Exception:
+                pass
+            try:
+                self._remember_effect_visual('hole_hunter', card)
+                self._sync_active_cards()
+            except Exception:
+                pass
+            effect_triggered = True
+
         if effect_triggered and board_snapshot_before is not None:
             try:
                 self._queue_card_board_effect_from_snapshots(
@@ -10396,6 +10765,228 @@ class MysteryMode(Game):
                 self._active_effect_visuals.pop('sniper_shot', None)
             self._sync_active_cards()
 
+    # === DELİK AVCISI YARDIMCI METODLARI ===
+    def _open_hole_hunter_overlay(self) -> bool:
+        """J tuşuyla Delik Avcısı sütun seçim overlay'ini açar."""
+        try:
+            charges = int(getattr(self, '_hole_hunter_charges', 0) or 0)
+        except Exception:
+            charges = 0
+        if charges <= 0:
+            return False
+        self._hole_hunter_overlay_active = True
+        try:
+            board_width = int(getattr(self.board, 'width', BOARD_WIDTH) or BOARD_WIDTH)
+        except Exception:
+            board_width = BOARD_WIDTH
+        # Cursor varsayılan: tahtanın orta sütunu
+        try:
+            cur = int(getattr(self, '_hole_hunter_cursor_col', 0) or 0)
+            self._hole_hunter_cursor_col = max(0, min(board_width - 1, cur if cur > 0 else board_width // 2))
+        except Exception:
+            self._hole_hunter_cursor_col = board_width // 2
+        try:
+            self._set_localized_card_message(
+                'mystery_msg_hole_hunter_open',
+                10.0,
+                'Sütun seç (sol/sağ + Enter veya tıkla). ESC: iptal',
+            )
+        except Exception:
+            pass
+        return True
+
+    def _close_hole_hunter_overlay(self, *, consumed: bool) -> None:
+        self._hole_hunter_overlay_active = False
+        try:
+            pygame.mouse.set_visible(True)
+        except Exception:
+            pass
+        if not consumed:
+            try:
+                self._set_localized_card_message(
+                    'mystery_msg_hole_hunter_cancel',
+                    1.0,
+                    'Delik Avcısı iptal edildi.',
+                )
+            except Exception:
+                pass
+
+    def _hole_hunter_move_cursor(self, delta: int) -> None:
+        try:
+            board_width = int(getattr(self.board, 'width', BOARD_WIDTH) or BOARD_WIDTH)
+        except Exception:
+            board_width = BOARD_WIDTH
+        try:
+            cur = int(getattr(self, '_hole_hunter_cursor_col', 0) or 0)
+        except Exception:
+            cur = 0
+        self._hole_hunter_cursor_col = max(0, min(board_width - 1, cur + int(delta)))
+
+    def _hole_hunter_screen_to_column(self, pos: tuple[int, int]) -> int | None:
+        try:
+            mx, my = pos
+            board_x, board_y = self.get_board_offset()
+            cell_size = max(1, int(self.get_cell_size()))
+            board_pixel_w = self.board.width * cell_size
+            board_pixel_h = self.board.height * cell_size
+            # Hem X hem Y board dikdörtgeni içinde olmalı; tahta dışı (üstü/altı)
+            # tıklamalar geçerli sütun olarak kabul edilmemeli.
+            if mx < board_x or mx >= board_x + board_pixel_w:
+                return None
+            if my < board_y or my >= board_y + board_pixel_h:
+                return None
+            col = int((mx - board_x) // cell_size)
+            if 0 <= col < self.board.width:
+                return col
+            return None
+        except Exception:
+            return None
+
+    def _hole_hunter_find_holes(self, col: int) -> list[int]:
+        """Verilen sütundaki kapalı boşluk satırlarını döndür.
+
+        Tanım: hücre boş olacak ve aynı sütunda üstünde en az bir dolu hücre
+        bulunacak. Yani sadece "üstü açık" yüzey boşlukları sayılmaz.
+        """
+        try:
+            height = int(getattr(self.board, 'height', BOARD_HEIGHT) or BOARD_HEIGHT)
+        except Exception:
+            height = BOARD_HEIGHT
+        try:
+            width = int(getattr(self.board, 'width', BOARD_WIDTH) or BOARD_WIDTH)
+        except Exception:
+            width = BOARD_WIDTH
+        if not (0 <= int(col) < width):
+            return []
+        holes: list[int] = []
+        # Önce en üstteki dolu hücreyi bul; ondan sonra gelen boş hücreler hole sayılır.
+        first_filled = None
+        for y in range(height):
+            try:
+                if bool(self.board.occupancy[y][col]):
+                    first_filled = y
+                    break
+            except Exception:
+                continue
+        if first_filled is None:
+            return []
+        for y in range(first_filled + 1, height):
+            try:
+                if not bool(self.board.occupancy[y][col]):
+                    holes.append(y)
+            except Exception:
+                continue
+        return holes
+
+    def _hole_hunter_fire_at_cursor(self) -> bool:
+        col = int(getattr(self, '_hole_hunter_cursor_col', 0) or 0)
+        try:
+            charges = int(getattr(self, '_hole_hunter_charges', 0) or 0)
+        except Exception:
+            charges = 0
+        if charges <= 0:
+            self._close_hole_hunter_overlay(consumed=False)
+            return False
+        holes = self._hole_hunter_find_holes(col)
+        if not holes:
+            try:
+                self._set_localized_card_message(
+                    'mystery_msg_hole_hunter_invalid_column',
+                    1.4,
+                    'Geçersiz sütun veya uygun delik yok.',
+                )
+                if self.sound_enabled:
+                    self.sound.play_sound('deny')
+            except Exception:
+                pass
+            # Hak harcanmaz, board değişmez, overlay açık kalır.
+            return False
+
+        # Doldurulacak hücre seçimi: random.choice (test monkeypatch friendly)
+        target_y = random.choice(holes)
+        # Renk: tahtadaki mevcut renklerden biri varsa kullan, aksi halde fallback.
+        try:
+            existing_colors = [
+                self.board.grid[y][x]
+                for y in range(self.board.height)
+                for x in range(self.board.width)
+                if bool(self.board.occupancy[y][x]) and self.board.grid[y][x] != BLACK
+            ]
+        except Exception:
+            existing_colors = []
+        fill_color = (140, 230, 200)
+        if existing_colors:
+            try:
+                fill_color = random.choice(existing_colors)
+            except Exception:
+                fill_color = existing_colors[0]
+
+        # Tek hücreyi doldur.
+        try:
+            self.board.grid[target_y][col] = fill_color
+            self.board.occupancy[target_y][col] = True
+            self.board.texture_grid[target_y][col] = None
+            try:
+                self.board.gold[target_y][col] = False
+            except Exception:
+                pass
+            try:
+                self.board.owners[target_y][col] = None
+            except Exception:
+                pass
+        except Exception:
+            return False
+
+        # Hak düş, kart tüketildiyse aktif efektten çıkar.
+        try:
+            self._hole_hunter_charges = max(0, charges - 1)
+        except Exception:
+            self._hole_hunter_charges = 0
+        if self._hole_hunter_charges <= 0:
+            try:
+                self._active_effect_visuals.pop('hole_hunter', None)
+            except Exception:
+                pass
+
+        # Tam satır oluşmuş olabilir → card source clear.
+        try:
+            prev_score = int(getattr(self.board, 'score', 0))
+        except Exception:
+            prev_score = 0
+        try:
+            cleared = int(self.board.clear_lines(source='card'))
+        except Exception:
+            cleared = 0
+        if cleared > 0:
+            try:
+                delta = int(getattr(self.board, 'score', 0)) - prev_score
+            except Exception:
+                delta = None
+            self._post_external_line_clear(cleared, award_energy=True, score_delta=delta, source='card')
+
+        try:
+            self._set_localized_card_message(
+                'mystery_msg_hole_hunter_filled',
+                1.4,
+                'Delik dolduruldu! Kalan hak: {remaining}',
+                remaining=int(self._hole_hunter_charges),
+            )
+        except Exception:
+            pass
+        try:
+            if self.sound_enabled:
+                self.sound.play_sound('rotate')
+        except Exception:
+            pass
+
+        # Overlay kapansın (1 hücre / 1 hak)
+        self._close_hole_hunter_overlay(consumed=True)
+        try:
+            self._sync_active_cards()
+        except Exception:
+            pass
+        return True
+
     # === ZAMAN KAPSULU YARDIMCI METODLARI ===
     def _toggle_time_capsule(self) -> bool:
         """Legacy toggle helper: önce kaydet, sonra geri yükle."""
@@ -10462,6 +11053,10 @@ class MysteryMode(Game):
             '_freeze_drop_duration',
             '_freeze_drop_active',
             '_freeze_drop_timer',
+            '_combo_insurance_armed',
+            '_reverse_debt_remaining',
+            '_reverse_debt_total',
+            '_hole_hunter_charges',
             '_sniper_charges',
             'phase_shift_uses_remaining',
             '_armed_nova_clusters',
@@ -10566,6 +11161,10 @@ class MysteryMode(Game):
             '_freeze_drop_duration',
             '_freeze_drop_active',
             '_freeze_drop_timer',
+            '_combo_insurance_armed',
+            '_reverse_debt_remaining',
+            '_reverse_debt_total',
+            '_hole_hunter_charges',
             '_sniper_charges',
             'phase_shift_uses_remaining',
             '_armed_nova_clusters',
@@ -10625,6 +11224,39 @@ class MysteryMode(Game):
                         setattr(perk_manager, attr, data[key])
                     except Exception:
                         pass
+
+        # Ters Borç davranışı türetilir: sayaç doluysa lock_delay = 0, aksi halde
+        # default. Bu sayede HUD ve gerçek runtime davranışı birbirinden
+        # ayrışmaz; capture/restore yalnızca remaining'i taşımak yeterli.
+        try:
+            self._apply_reverse_debt_lock_delay()
+        except Exception:
+            pass
+
+    def _apply_reverse_debt_lock_delay(self) -> None:
+        """Ters Borç sayacına göre lock_delay'i türetir.
+
+        - remaining > 0  → anlık kilit (lock_delay = 0)
+        - remaining == 0 → DEFAULT_LOCK_DELAY (constants modülünden)
+
+        Bu, restart ve time-capsule restore akışlarının HUD ile gerçek lock
+        davranışını birbirine bağlamasını garanti eder.
+        """
+        try:
+            from constants import DEFAULT_LOCK_DELAY as _DEFAULT_LD
+        except Exception:
+            _DEFAULT_LD = 500
+        try:
+            remaining = int(getattr(self, '_reverse_debt_remaining', 0) or 0)
+        except Exception:
+            remaining = 0
+        try:
+            if remaining > 0:
+                self.lock_delay = 0
+            else:
+                self.lock_delay = int(_DEFAULT_LD)
+        except Exception:
+            pass
 
     def _save_time_capsule(self) -> bool:
         """Mevcut oyun durumunu zaman kapsülüne kaydet."""
@@ -10788,7 +11420,25 @@ class MysteryMode(Game):
                 card = next((c for c in catalog if str(c.get('id', '')).startswith('freeze_drop')), None)
                 if card:
                     self._remember_effect_visual('freeze_drop', card)
-            
+
+            # Combo Sigortası armed ise göster
+            if getattr(self, '_combo_insurance_armed', False):
+                card = next((c for c in catalog if c.get('id') == 'combo_insurance'), None)
+                if card:
+                    self._remember_effect_visual('combo_insurance', card)
+
+            # Ters Borç sayacı aktifse göster
+            if int(getattr(self, '_reverse_debt_remaining', 0) or 0) > 0:
+                card = next((c for c in catalog if c.get('id') == 'reverse_debt'), None)
+                if card:
+                    self._remember_effect_visual('reverse_debt', card)
+
+            # Delik Avcısı hakkı varsa göster
+            if int(getattr(self, '_hole_hunter_charges', 0) or 0) > 0:
+                card = next((c for c in catalog if c.get('id') == 'hole_hunter'), None)
+                if card:
+                    self._remember_effect_visual('hole_hunter', card)
+
         except Exception:
             pass
 
@@ -11284,6 +11934,104 @@ class MysteryMode(Game):
         else:
             self._active_effect_visuals.pop("freeze_drop", None)
 
+        # Combo Sigortası: armed ise panelde görünmeli, tetiklenince düşmeli.
+        if getattr(self, '_combo_insurance_armed', False):
+            if "combo_insurance" not in self._active_effect_visuals:
+                try:
+                    card = next(
+                        (c for c in (getattr(self.card_manager, 'catalog', []) or [])
+                         if c.get('id') == 'combo_insurance'),
+                        None,
+                    )
+                except Exception:
+                    card = None
+                if card:
+                    try:
+                        self._remember_effect_visual('combo_insurance', card)
+                    except Exception:
+                        pass
+        if getattr(self, '_combo_insurance_armed', False) and "combo_insurance" in self._active_effect_visuals:
+            add(
+                "combo_insurance",
+                _card_localized_description(
+                    'combo_insurance',
+                    fallback='Bir kez, satır temizleyemediğin hamlede combo bozulmaz.',
+                ),
+                status=self._localized_card_text('mystery_status_armed', 'Hazır'),
+                status_state='hazir',
+            )
+        else:
+            self._active_effect_visuals.pop("combo_insurance", None)
+
+        # Ters Borç: kalan parça sayacı görünür, sayaç bitince panelden düşer.
+        try:
+            rd_left = int(getattr(self, '_reverse_debt_remaining', 0) or 0)
+        except Exception:
+            rd_left = 0
+        if rd_left > 0:
+            if "reverse_debt" not in self._active_effect_visuals:
+                try:
+                    card = next(
+                        (c for c in (getattr(self.card_manager, 'catalog', []) or [])
+                         if c.get('id') == 'reverse_debt'),
+                        None,
+                    )
+                except Exception:
+                    card = None
+                if card:
+                    try:
+                        self._remember_effect_visual('reverse_debt', card)
+                    except Exception:
+                        pass
+        if rd_left > 0 and "reverse_debt" in self._active_effect_visuals:
+            add(
+                "reverse_debt",
+                self._localized_card_text(
+                    'mystery_active_reverse_debt_desc',
+                    'Sonraki {count} parça yere değer değmez kilitlenir.',
+                    count=rd_left,
+                ),
+                status=str(rd_left),
+                status_state='hazir',
+            )
+        else:
+            self._active_effect_visuals.pop("reverse_debt", None)
+
+        # Delik Avcısı: kalan hak ve J tuşu etiketi.
+        try:
+            hh_left = int(getattr(self, '_hole_hunter_charges', 0) or 0)
+        except Exception:
+            hh_left = 0
+        if hh_left > 0:
+            if "hole_hunter" not in self._active_effect_visuals:
+                try:
+                    card = next(
+                        (c for c in (getattr(self.card_manager, 'catalog', []) or [])
+                         if c.get('id') == 'hole_hunter'),
+                        None,
+                    )
+                except Exception:
+                    card = None
+                if card:
+                    try:
+                        self._remember_effect_visual('hole_hunter', card)
+                    except Exception:
+                        pass
+        if hh_left > 0 and "hole_hunter" in self._active_effect_visuals:
+            _j_lbl = _card_key('J', 'card_hole_hunter')
+            add(
+                "hole_hunter",
+                _card_localized_description(
+                    'hole_hunter',
+                    value=hh_left,
+                    fallback='J tuşu ile kullan: Bir sütun seçersin. O sütundaki rastgele kapalı boşluklardan 1 tanesi dolar.',
+                ),
+                status=self._localized_active_card_uses_status(_j_lbl, hh_left),
+                status_state='hazir',
+            )
+        else:
+            self._active_effect_visuals.pop("hole_hunter", None)
+
         # Laser Drill: active only while the current piece is drill-enabled
         try:
             is_drill = bool(getattr(getattr(self, 'current_piece', None), 'drill', False))
@@ -11292,8 +12040,7 @@ class MysteryMode(Game):
         if is_drill and "laser_drill" in self._active_effect_visuals:
             add("laser_drill", _card_localized_description('laser_drill'), status=active_label)
         else:
-            self._active_effect_visuals.pop("laser_drill", None)
-        
+            self._active_effect_visuals.pop("laser_drill", None)        
         # Sniper Shot: N tuşuyla aktifleşir
         try:
             sniper_charges = int(getattr(self, '_sniper_charges', 0) or 0)

@@ -46,7 +46,7 @@ XP taşması durumunda aynı çağrıda birden fazla level kazanılabilir; rewar
 
 Yalnızca `source='player'` clear'lar XP üretir. Sweep, Alt Süpür, patlama, gravity collapse, workshop, ability ve diğer dış kaynaklı temizleme yolları XP veya reward queue üretmez. `card_mode_debug` kısayolu da bu kurala uyar.
 
-## Güncel Katalog (34 ID, 26 benzersiz aile)
+## Güncel Katalog (39 ID, 31 benzersiz aile)
 
 Aşağıdaki liste `_build_catalog()` çıktısı ile birebir hizalıdır. `_group_id` ile gruplanmış varyantlar (rare/epic/legendary veya seviye sayısı) tek bir aile olarak sayılır.
 
@@ -101,16 +101,19 @@ Aşağıdaki liste `_build_catalog()` çıktısı ile birebir hizalıdır. `_gro
 - `block_workshop_card` — Blok Atölyesi
 - `gambler_dice` — Kumarbazın Zarı
 - `color_cleanse` — Renk Temizleme
+- `combo_insurance` — Combo Sigortası
+- `reverse_debt` — Ters Borç
+- `hole_hunter` — Delik Avcısı
 
 ## Sayım Özeti
 
-- Toplam katalog girdisi: **34 ID**
+- Toplam katalog girdisi: **39 ID**
 - Aileler:
   - Hold Destroyer ailesi: 5 varyant
   - Speed Burst ailesi: 3 varyant
   - Freeze Drop ailesi: 3 varyant
-  - Geri kalan kartlar: 23
-- Benzersiz mekanik aile sayısı: **26**
+  - Geri kalan kartlar: 28
+- Benzersiz mekanik aile sayısı: **31**
 
 ## Notlar
 
