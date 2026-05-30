@@ -27,7 +27,7 @@ except Exception:
     from platform_utils import get_mouse_pos
     from ui_scaling import get_projected_effective_scale, scale_px
 
-from .level_data import get_level, get_total_levels, LevelConfig, get_world_info
+from .level_data import get_level, get_total_levels, LevelConfig, get_world_info, resolve_star_condition_text
 from .objectives import (
     Objective,
     ClearLinesObjective,
@@ -1744,8 +1744,10 @@ class CampaignMode(Game):
             elif cond_type == 'time':
                 cond_text = t('campaign_cond_time', value=formatted_value)
             else:
-                desc = condition.get('description', {})
-                cond_text = desc.get(lang, desc.get('en', str(cond_type)))
+                # Faz 2/4 koşul tipleri (no_hold_run, pristine, tetris_only,
+                # min_score, garbage_speed) yalnızca description_key taşır;
+                # resolve_star_condition_text bunları lokalize eder.
+                cond_text = resolve_star_condition_text(condition, lang)
             
             # X pozisyonu
             x_pos = panel_rect.x + s(20)
@@ -2043,7 +2045,7 @@ class CampaignMode(Game):
         star_conditions_payload = []
         for star_num in sorted(self.star_conditions.keys()):
             condition = self.star_conditions[star_num]
-            desc = condition.get('description', {}).get(lang, condition.get('description', {}).get('en', ''))
+            desc = resolve_star_condition_text(condition, lang)
             star_conditions_payload.append({
                 'star': star_num,
                 'text': desc,

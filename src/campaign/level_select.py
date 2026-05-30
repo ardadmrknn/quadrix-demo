@@ -1397,8 +1397,11 @@ class CampaignLevelSelect:
             elif cond_type == 'time':
                 cond_text = t('campaign_cond_time', value=formatted_value)
             else:
-                desc = condition.get('description', {})
-                cond_text = desc.get(lang, desc.get('en', str(cond_type)))
+                # Faz 2/4 koşul tipleri (no_hold_run, pristine, tetris_only,
+                # min_score, garbage_speed) description_key taşır, inline
+                # 'description' dict yoktur. resolve_star_condition_text
+                # description_key/description_kwargs üzerinden lokalize eder.
+                cond_text = resolve_star_condition_text(condition, lang)
             
             cond_lines = self._wrap_level_info_text(
                 self.font_small,
