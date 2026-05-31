@@ -25,6 +25,7 @@ SCENARIOS: Dict[str, Dict[str, Any]] = {
         "current_piece": {"name": "T", "x": 1, "y": 0, "rotation": 0},
         "next_queue": ["L", "I", "O"],
         "allow_hold": False,
+        "highlight_placements": [["T", 2, 3]],
         "goal_text": "Hedef: T parçasını döndürüp doğru yere koyarak iki satır temizle.",
         "tip_key": "tutorial_board_gap_fill_tip",
         "tip_text": "T parçasının şeklini boşluğun şekliyle eşleştir; döndür ve kaydır.",
@@ -74,6 +75,7 @@ SCENARIOS: Dict[str, Dict[str, Any]] = {
         "current_piece": {"name": "T", "x": 3, "y": 0, "rotation": 0},
         "next_queue": ["L", "S", "O"],
         "allow_hold": False,
+        "highlight_placements": [["T", 2, 7]],
         "goal_text": "Hedef: Parçayı döndürüp doğru yere koyarak yüksekliği azalt.",
         "tip_key": "tutorial_board_keep_low_tip",
         "tip_text": "T parçasını sağa taşı ve döndür — kuleyi büyütmeden iki satırı temizleyebilirsin.",
@@ -124,6 +126,7 @@ SCENARIOS: Dict[str, Dict[str, Any]] = {
         "current_piece": {"name": "I", "x": 3, "y": 0, "rotation": 0},
         "next_queue": ["O", "T", "L"],
         "allow_hold": False,
+        "highlight_placements": [["I", 1, 7]],
         "goal_text": "Hedef: I parçasını en sağa taşı, dikleştir ve Quadrix yap.",
         "tip_key": "tutorial_board_vertical_well_tip",
         "tip_text": "I parçasını sağa taşı, döndürerek dikleştir ve kuyuya bırak.",
@@ -176,6 +179,7 @@ SCENARIOS: Dict[str, Dict[str, Any]] = {
         "current_piece": {"name": "S", "x": 2, "y": 0, "rotation": 0},
         "next_queue": ["T", "O", "L"],
         "allow_hold": False,
+        "highlight_placements": [["S", 0, 5]],
         "goal_text": "Hedef: S parçasını delik açmadan doğru basamağa yerleştir.",
         "tip_key": "tutorial_avoid_holes_tip",
         "tip_text": "S'in basamak şeklini tahtadaki boşlukla eşleştir; bir sütun kaydırmak bile delik açar.",
@@ -207,6 +211,7 @@ SCENARIOS: Dict[str, Dict[str, Any]] = {
         "next_queue": ["I", "T", "L"],
         "allow_hold": True,
         "expected_hold_usage": True,
+        "highlight_placements": [["I", 1, 3]],
         "goal_text": "Hedef: Hold kullanarak daha iyi bir yerleştirme yap.",
         "tip_key": "tutorial_hold_save_tip",
         "tip_text": "O parçası tek sütunluk kuyuya sığmaz — hold'a al, I parçasıyla devam et.",
@@ -240,6 +245,7 @@ SCENARIOS: Dict[str, Dict[str, Any]] = {
         "current_piece": {"name": "S", "x": 7, "y": 0, "rotation": 0},
         "next_queue": ["I", "T", "L"],
         "allow_hold": False,
+        "highlight_placements": [["S", 0, 4]],
         "goal_text": "Hedef: Sıradaki parçayı düşünerek satır temizle.",
         "tip_key": "tutorial_queue_read_tip",
         "tip_text": "S parçasını doğru boşluğa oturt; sonraki parça için yer bırak.",
@@ -272,6 +278,7 @@ SCENARIOS: Dict[str, Dict[str, Any]] = {
         "next_queue": ["I", "O", "L"],
         "allow_hold": True,
         "expected_hold_usage": True,
+        "highlight_placements": [["I", 1, 3]],
         "goal_text": "Hedef: Doğru hold kararını ver.",
         "tip_key": "tutorial_hold_vs_place_tip",
         "tip_text": "T parçası şu ana uyuyor mu, yoksa I parçasını beklemek daha mı iyi?",
@@ -307,6 +314,7 @@ SCENARIOS: Dict[str, Dict[str, Any]] = {
         "next_queue": ["I", "T", "O"],
         "allow_hold": False,
         "max_piece_locks": 2,
+        "highlight_placements": [["L", 3, 3], ["I", 1, 3]],
         "goal_text": "Hedef: İki parçayı sırayla yerleştirip çoklu satır temizle.",
         "tip_key": "tutorial_two_step_tip",
         "tip_text": "İlk parçayı yerleştirirken ikincisinin nereye gideceğini düşün.",
@@ -340,6 +348,7 @@ SCENARIOS: Dict[str, Dict[str, Any]] = {
         "next_queue": ["I", "O", "T"],
         "allow_hold": False,
         "max_piece_locks": 2,
+        "highlight_placements": [["L", 3, 4], ["I", 1, 4]],
         "goal_text": "Hedef: 2 parçayla en az 3 satır temizleyip nefes alanı aç.",
         "tip_key": "tutorial_recovery_breathing_tip",
         "tip_text": "Önce L ile yüzeyi düzelt, sonra I bloğunu dikey kullan.",
@@ -378,6 +387,7 @@ SCENARIOS: Dict[str, Dict[str, Any]] = {
         "next_queue": ["T", "I", "O"],
         "allow_hold": False,
         "max_piece_locks": 2,
+        "highlight_placements": [["J", 1, 0], ["T", 1, 3]],
         "goal_text": "Hedef: Deliği azalt ve 2 satır temizle.",
         "tip_key": "tutorial_recovery_hole_height_tip",
         "tip_text": "Önce J ile soldaki deliği toparla, sonra T ile temizliği al.",
@@ -415,6 +425,8 @@ SCENARIOS: Dict[str, Dict[str, Any]] = {
         "allow_hold": True,
         "expected_hold_usage": True,
         "max_piece_locks": 2,
+        "highlight_placements": [["J", 1, 3], ["I", 1, 0]],
+        "hold_highlight_index": 1,
         "goal_text": "Hedef: Doğru sırayı kur, hold ile I al ve 4 satır temizle.",
         "tip_key": "tutorial_recovery_ceiling_tip",
         "tip_text": "Önce J'yi orta boşluğa yerleştir. Sonra O'yu C ile saklayıp I bloğunu dikey indir.",
@@ -449,6 +461,7 @@ SCENARIOS: Dict[str, Dict[str, Any]] = {
         "next_queue": ["O", "I", "T"],
         "allow_hold": False,
         "max_piece_locks": 2,
+        "highlight_placements": [["J", 1, 3], ["O", 0, 5]],
         "goal_text": "Hedef: Yanlış taraftaki parçayı sola taşı, sonra boşluğu kapat.",
         "tip_key": "tutorial_recovery_wrong_side_tip",
         "tip_text": "Önce J'yi sola taşıyıp yüzeyi düzelt. Ardından O ile kalan boşluğu kapat.",
@@ -485,6 +498,7 @@ SCENARIOS: Dict[str, Dict[str, Any]] = {
         "next_queue": ["I", "L", "O"],
         "allow_hold": False,
         "max_piece_locks": 2,
+        "highlight_placements": [["T", 2, 2], ["I", 1, 2]],
         "goal_text": "Hedef: Birden fazla hedefi aynı anda tamamla.",
         "tip_key": "tutorial_exam_board_tip",
         "tip_text": "İpuçları az — öğrendiklerini birleştir.",
@@ -520,6 +534,7 @@ SCENARIOS: Dict[str, Dict[str, Any]] = {
         "allow_hold": True,
         "expected_hold_usage": True,
         "max_piece_locks": 2,
+        "highlight_placements": [["I", 1, 1], ["T", 1, 3]],
         "goal_text": "Hedef: Hold ve queue'yu kullanarak temiz sonuç al.",
         "tip_key": "tutorial_exam_plan_tip",
         "tip_text": "Az ipucu — sırayı ve hold'u birlikte düşün.",
@@ -561,6 +576,7 @@ SCENARIOS: Dict[str, Dict[str, Any]] = {
         "next_queue": ["I", "L", "J", "O"],
         "allow_hold": True,
         "max_piece_locks": 4,
+        "highlight_placements": [["T", 2, 2], ["L", 3, 3], ["J", 1, 4], ["O", 0, 1]],
         "goal_text": "Hedef: Tüm becerileri tek bir senaryoda göster.",
         "tip_key": "tutorial_exam_hybrid_tip",
         "tip_text": "Artık ipucu yok — sen biliyorsun.",
@@ -718,6 +734,22 @@ def evaluate_scenario(
     elif height_delta > max_height_increase:
         feedback_key = "stack_too_high"
 
+    # FAZ E — Pedagojik geri bildirim: "iyi yapılan" ve "geliştirilecek" davranışlar.
+    did_well_keys: List[str] = []
+    improve_keys: List[str] = []
+    if hole_delta <= 0:
+        did_well_keys.append("no_new_holes")
+    else:
+        improve_keys.append("created_holes")
+    if height_delta <= 0:
+        did_well_keys.append("kept_height")
+    elif height_delta > max_height_increase:
+        improve_keys.append("stack_too_high")
+    if required_line_clears > 0 and line_delta >= required_line_clears:
+        did_well_keys.append("cleared_lines")
+    elif line_delta < required_line_clears:
+        improve_keys.append("need_more_lines")
+
     return {
         "success": bool(success),
         "stars": int(stars),
@@ -726,6 +758,8 @@ def evaluate_scenario(
         "hole_delta": hole_delta,
         "height_delta": height_delta,
         "required_line_clears": required_line_clears,
+        "did_well_keys": did_well_keys,
+        "improve_keys": improve_keys,
     }
 
 

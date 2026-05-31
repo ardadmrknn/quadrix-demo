@@ -4622,17 +4622,6 @@ class Game:
                 board_group_rect = pygame.Rect(offset_x, group_y, board_width, group_h)
                 draw_rainbow_cat_sweep(self.screen, self._sweep_cat_state, board_group_rect, sweep_x, sweep_width, phase, self.board_width)
 
-                # Hafif beyaz vurgu (temizlenen satırların tamamında)
-                glow_alpha = int(70 * (1.0 - progress * 0.4))
-                if glow_alpha > 0:
-                    glow_w = min(sweep_width, int(board_width))
-                    glow_x = max(offset_x, sweep_x)
-                    if glow_w > 0:
-                        for row in valid_rows:
-                            row_y = offset_y + row * cell_size
-                            glow_surface = self._effect_surface_cache.get_filled_surface((glow_w, cell_size), (255, 255, 255, glow_alpha))
-                            self.screen.blit(glow_surface, (glow_x, row_y))
-        
         # Dalga efektleri çiz
         if self.effects_enabled:
             for wave in self.line_clear_wave_effects:

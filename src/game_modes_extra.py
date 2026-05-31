@@ -939,8 +939,21 @@ class MysteryCardManager:
             return None
         card = dict(self.pending_choices[index])
         self.pending_choices = []
-        # Mark single-use and persistent cards as used so they won't be shown again
-        if card.get('single_use') or card.get('persistent'):
+        # Mark *truly* one-time cards as used so they won't be shown again.
+        #
+        # ÖNEMLİ: 'limited' kartlar (Delik Avcısı, Çekiç, Keskin Nişancı, Son
+        # Düşüş, Tuttuğunu Koparan, Hayalet Parça vb.) bir tuşla tetiklenen HAK
+        # verir ve `_apply_card_effect` içinde "tekrar seçilince hakkı tamamla"
+        # mantığına sahiptir. Bunları seçilir seçilmez kalıcı olarak `used`
+        # işaretlersek hak bittikten sonra bir daha asla seçim ekranında
+        # çıkmazlar (rewind_power / perk_phase zaten 'limited' ama 'single_use'
+        # değil ve doğru şekilde tekrar sunuluyor). Bu yüzden 'limited' kartları
+        # kalıcı dışlamıyoruz; yalnızca anlık (instant) single_use kartları ve
+        # kalıcı (persistent) perkleri tek seferlik sayıyoruz.
+        is_one_time = bool(card.get('persistent')) or (
+            bool(card.get('single_use')) and not bool(card.get('limited'))
+        )
+        if is_one_time:
             self.used_card_ids.add(card.get('id'))
             # Also mark group_id so all variants are excluded
             group = card.get('_group_id')
@@ -1776,7 +1789,7 @@ class MysteryCardManager:
                 "tag": "Rare",
                 "rarity": "rare",
                 "weight": 28,
-                "icon_image": os.path.join(UI_ICON_DIR, "icon_perk_synergy.png"),
+                "icon_image": os.path.join(UI_ICON_DIR, "icon_combo_sigorta.png"),
                 "style": {
                     "gradient": [(220, 180, 80), (90, 60, 20)],
                     "border": (255, 230, 150),
@@ -1802,7 +1815,7 @@ class MysteryCardManager:
                 "tag": "Common",
                 "rarity": "common",
                 "weight": 45,
-                "icon_image": os.path.join(UI_ICON_DIR, "icon_clean_sweep.png"),
+                "icon_image": os.path.join(UI_ICON_DIR, "icon_ters_borc.png"),
                 "style": {
                     "gradient": [(170, 90, 220), (40, 16, 70)],
                     "border": (220, 150, 255),
@@ -1827,7 +1840,7 @@ class MysteryCardManager:
                 "tag": "Rare",
                 "rarity": "rare",
                 "weight": 26,
-                "icon_image": os.path.join(UI_ICON_DIR, "icon_magnet_pull.png"),
+                "icon_image": os.path.join(UI_ICON_DIR, "icon_delik_avci.png"),
                 "style": {
                     "gradient": [(80, 200, 170), (15, 60, 50)],
                     "border": (170, 255, 220),
@@ -8221,6 +8234,17 @@ class MysteryMode(Game):
                         self._close_hole_hunter_overlay(consumed=False)
                         continue
 
+                # Mouse hareketi: imleç hangi sütunun üzerindeyse seçim imlecini
+                # oraya taşı (ok tuşlarıyla aynı görsel geri bildirim). Dikey
+                # konumdan bağımsız, yalnız yatay sütun bandına göre çalışır ki
+                # tahtanın üstünde gezerken de doğru sütun vurgulansın.
+                if event.type == pygame.MOUSEMOTION:
+                    pos = normalize_mouse_pos(getattr(event, 'pos', None)) or event.pos
+                    hover_col = self._hole_hunter_hover_column(pos)
+                    if hover_col is not None:
+                        self._hole_hunter_cursor_col = hover_col
+                    continue
+
                 if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                     pos = normalize_mouse_pos(getattr(event, 'pos', None)) or event.pos
                     col = self._hole_hunter_screen_to_column(pos)
@@ -10834,6 +10858,27 @@ class MysteryMode(Game):
             if mx < board_x or mx >= board_x + board_pixel_w:
                 return None
             if my < board_y or my >= board_y + board_pixel_h:
+                return None
+            col = int((mx - board_x) // cell_size)
+            if 0 <= col < self.board.width:
+                return col
+            return None
+        except Exception:
+            return None
+
+    def _hole_hunter_hover_column(self, pos: tuple[int, int]) -> int | None:
+        """Yalnızca yatay sütun bandına göre sütun döndür (dikey serbest).
+
+        Mouse hover ile seçim için kullanılır: imleç tahtanın üstünde/altında
+        olsa bile, doğru sütun yatayda hizalıysa o sütun döndürülür. `screen_to_
+        column` (tıklama-fire için katı X+Y kontrolü) bu yardımcıdan farklıdır.
+        """
+        try:
+            mx, _my = pos
+            board_x, _board_y = self.get_board_offset()
+            cell_size = max(1, int(self.get_cell_size()))
+            board_pixel_w = self.board.width * cell_size
+            if mx < board_x or mx >= board_x + board_pixel_w:
                 return None
             col = int((mx - board_x) // cell_size)
             if 0 <= col < self.board.width:

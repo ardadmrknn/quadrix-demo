@@ -715,3 +715,89 @@ def test_new_cards_are_in_catalog():
     mgr = extra.MysteryCardManager(SimpleNamespace(settings_manager=None))
     ids = {c['id'] for c in mgr.catalog}
     assert {'combo_insurance', 'reverse_debt', 'hole_hunter'}.issubset(ids)
+
+
+# === 'limited' charge kartları seçildikten sonra tekrar sunulabilmeli ===
+
+def _catalog_card(mgr, card_id: str) -> dict:
+    card = next((c for c in mgr.catalog if c.get('id') == card_id), None)
+    assert card is not None, f'{card_id} katalogda yok'
+    return dict(card)
+
+
+def test_select_limited_charge_card_does_not_permanently_exclude_it():
+    """'limited' (tuşla tetiklenen hak veren) kartlar seçilince kalıcı olarak
+    used_card_ids'e EKLENMEMELİ; aksi halde hak bitince bir daha seçim
+    ekranında çıkmazlar. Delik Avcısı bu sınıftadır."""
+    extra, _, _, _ = _import_mystery()
+    mgr = extra.MysteryCardManager(SimpleNamespace(settings_manager=None))
+
+    for card_id in ('hole_hunter', 'hammer', 'sniper_shot', 'quantum_tunneling'):
+        mgr.used_card_ids.clear()
+        mgr.pending_choices = [_catalog_card(mgr, card_id)]
+        picked = mgr.select_card(0)
+        assert picked is not None and picked['id'] == card_id
+        # Kalıcı dışlama OLMAMALI:
+        assert card_id not in mgr.used_card_ids
+        group = picked.get('_group_id')
+        if group:
+            assert group not in mgr.used_card_ids
+
+
+def test_select_instant_single_use_card_is_excluded():
+    """Anlık (instant) single_use kartlar (Ters Borç, Alt Süpür) seçilince
+    tek seferlik sayılmalı ve tekrar sunulmamalı."""
+    extra, _, _, _ = _import_mystery()
+    mgr = extra.MysteryCardManager(SimpleNamespace(settings_manager=None))
+
+    for card_id in ('reverse_debt', 'clear_rows', 'gravity_well'):
+        mgr.used_card_ids.clear()
+        mgr.pending_choices = [_catalog_card(mgr, card_id)]
+        picked = mgr.select_card(0)
+        assert picked is not None and picked['id'] == card_id
+        assert card_id in mgr.used_card_ids
+
+
+def test_hole_hunter_reappears_in_pool_after_being_selected():
+    """End-to-end: Delik Avcısı seçildikten sonra prepare_selection havuzunda
+    hâlâ aday olabilmeli (debug modunda tüm katalog gösterilir)."""
+    extra, _, _, _ = _import_mystery()
+    mode = SimpleNamespace(settings_manager=SimpleNamespace(get=lambda k, d=None: True if k == 'card_mode_debug' else d))
+    mgr = extra.MysteryCardManager(mode)
+    mgr.card_level = 1
+
+    mgr.pending_choices = [_catalog_card(mgr, 'hole_hunter')]
+    mgr.select_card(0)
+
+    choices = mgr.prepare_selection()
+    chosen_ids = {c['id'] for c in choices}
+    assert 'hole_hunter' in chosen_ids
+
+
+# === Delik Avcısı mouse hover sütun seçimi ===
+
+def test_hole_hunter_hover_column_tracks_x_even_above_board():
+    """Mouse tahtanın ÜSTÜNDE olsa bile yatay hizalı sütun döndürülmeli
+    (hover seçim için). Katı screen_to_column'dan farklı davranır."""
+    extra, _, MysteryMode, Board = _import_mystery()
+    mode = _make_hole_hunter_mode(MysteryMode, Board)
+    mode.get_board_offset = lambda: (100, 200)
+    mode.get_cell_size = lambda: 30
+
+    col_x = 100 + 2 * 30 + 5  # sütun 2
+    above_y = 50  # tahtanın üstü
+    # Katı helper tahta dışını reddeder:
+    assert mode._hole_hunter_screen_to_column((col_x, above_y)) is None
+    # Hover helper yalnız X'e bakar:
+    assert mode._hole_hunter_hover_column((col_x, above_y)) == 2
+
+
+def test_hole_hunter_hover_column_rejects_outside_x():
+    extra, _, MysteryMode, Board = _import_mystery()
+    mode = _make_hole_hunter_mode(MysteryMode, Board)
+    mode.get_board_offset = lambda: (100, 200)
+    mode.get_cell_size = lambda: 30
+
+    board_w_px = mode.board.width * 30
+    assert mode._hole_hunter_hover_column((100 - 5, 250)) is None
+    assert mode._hole_hunter_hover_column((100 + board_w_px + 5, 250)) is None

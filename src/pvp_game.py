@@ -4500,17 +4500,6 @@ class PvPGame:
                 board_group_rect = pygame.Rect(offset_x, group_y, board_width, group_h)
                 draw_rainbow_cat_sweep(self.screen, self._sweep_cat_state, board_group_rect, sweep_x, sweep_width, phase, BOARD_WIDTH)
 
-                # Hafif beyaz vurgu
-                glow_a = int(70 * (1.0 - sweep_progress * 0.4))
-                if glow_a > 0:
-                    glow_w = min(sweep_width, int(board_width))
-                    glow_x = max(offset_x, sweep_x)
-                    if glow_w > 0:
-                        for row in valid_rows:
-                            row_y = offset_y + row * cell_size
-                            glow_surface = self._effect_surface_cache.get_filled_surface((glow_w, cell_size), (255, 255, 255, glow_a))
-                            self.screen.blit(glow_surface, (glow_x, row_y))
-        
         # Flash overlay - temizlenen satırlar için beyaz parlama
         if self.effects_enabled and flash_rows and glow_alpha > 0:
             # Cache: her frame yeni surface yaratmak yerine yeniden kullan

@@ -277,5 +277,8 @@ def test_tutorial_prompt_live_loop_reanchors_to_recovered_surface(monkeypatch):
         pygame.Surface((1366, 768), pygame.SRCALPHA),
     )
 
-    assert result is False
+    # FAZ B: 3 seçenekli popup; ESC artık 'dismiss' döner (falsy uyumlu).
+    assert result == 'dismiss'
     _assert_popup_layout_within_recovered_surface(recorded)
+    # Üç buton: Hızlı Başlangıç / Akademiyi Aç / Şimdilik Geç
+    assert len(recorded['button_rects']) >= 3

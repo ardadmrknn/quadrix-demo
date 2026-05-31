@@ -1033,93 +1033,122 @@ def _show_zen_start_popup(screen, board_height=20, settings_manager=None):
 
 def _show_tutorial_prompt(screen):
     """
-    Yeni oyunculara tutorial oynamak isteyip istemediklerini sor.
-    Returns: True (Oyna), False (Atla)
+    Yeni oyunculara fayda-odaklı 3 seçenekli eğitim daveti göster.
+
+    Returns: 'quick_start' (90 sn hızlı başlangıç) /
+             'full_academy' (tüm akademi hub'ı) /
+             'dismiss' (şimdilik geç).
+
+    Not: Dönüş değerleri truthy/falsy uyumludur — 'dismiss' tek falsy sonuçtur,
+    böylece eski `if _show_tutorial_prompt(...)` çağrıları da güvenle çalışır.
     """
     title = t('tutorial_welcome_title')
     text = t('tutorial_welcome_desc')
 
     clock = pygame.time.Clock()
     running_popup = True
-    result = False
-    
+    result = 'dismiss'
+
     # Arka planı yakala
     bg_capture = _capture_popup_backdrop(screen, dim_alpha=220)
-    
+
     while running_popup:
         clock.tick(60)
         screen = _maybe_recover_windows_display(screen)
         bg_capture = _ensure_popup_backdrop(bg_capture, screen, dim_alpha=220)
-        
+
         width, height = screen.get_size()
         popup_scale = _fullscreen_popup_scale(screen)
         side_margin = max(30, int(40 * popup_scale))
-        panel_width = min(int(820 * popup_scale), width - side_margin * 2)
-        panel_height = min(int(420 * popup_scale), height - max(70, int(90 * popup_scale)))
-        panel_width = max(560, panel_width)
-        panel_height = max(320, panel_height)
+        panel_width = min(int(860 * popup_scale), width - side_margin * 2)
+        panel_height = min(int(440 * popup_scale), height - max(70, int(90 * popup_scale)))
+        panel_width = max(580, panel_width)
+        panel_height = max(340, panel_height)
         panel_rect = pygame.Rect((width - panel_width) // 2, (height - panel_height) // 2, panel_width, panel_height)
-        
-        btn_w = min(int(210 * popup_scale), (panel_rect.width - max(36, int(72 * popup_scale))) // 2)
-        btn_h = max(46, int(62 * popup_scale))
-        spacing = max(14, int(24 * popup_scale))
-        total_btn_w = btn_w * 2 + spacing
+
+        # Üç seçenekli buton şeridi
+        spacing = max(12, int(20 * popup_scale))
+        btn_h = max(50, int(70 * popup_scale))
+        avail_w = panel_rect.width - max(36, int(64 * popup_scale))
+        btn_w = (avail_w - spacing * 2) // 3
+        total_btn_w = btn_w * 3 + spacing * 2
         btn_start_x = panel_rect.centerx - total_btn_w // 2
-        btn_y = panel_rect.bottom - btn_h - max(22, int(36 * popup_scale))
-        
-        # Atla solda, Eğitimi Oyna sağda
-        skip_rect = pygame.Rect(btn_start_x, btn_y, btn_w, btn_h)
-        play_rect = pygame.Rect(btn_start_x + btn_w + spacing, btn_y, btn_w, btn_h)
-        
+        btn_y = panel_rect.bottom - btn_h - max(22, int(34 * popup_scale))
+
+        quick_rect = pygame.Rect(btn_start_x, btn_y, btn_w, btn_h)
+        academy_rect = pygame.Rect(btn_start_x + btn_w + spacing, btn_y, btn_w, btn_h)
+        dismiss_rect = pygame.Rect(btn_start_x + (btn_w + spacing) * 2, btn_y, btn_w, btn_h)
+
         # Olaylar
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running_popup = False
-                result = False
-            
+                result = 'dismiss'
+
             if event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_ESCAPE: # Escape = Skip
+                if event.key == pygame.K_ESCAPE:  # Escape = Şimdilik Geç
                     running_popup = False
-                    result = False
-                elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+                    result = 'dismiss'
+                elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):  # Enter = Hızlı Başlangıç
                     running_popup = False
-                    result = True
-            
+                    result = 'quick_start'
+                elif event.key in (pygame.K_a,):  # A = Akademi
+                    running_popup = False
+                    result = 'full_academy'
+
             elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 mpos = normalize_mouse_pos(event.pos) if 'normalize_mouse_pos' in globals() else event.pos
-                if play_rect.collidepoint(mpos):
+                if quick_rect.collidepoint(mpos):
                     running_popup = False
-                    result = True
-                elif skip_rect.collidepoint(mpos):
+                    result = 'quick_start'
+                elif academy_rect.collidepoint(mpos):
                     running_popup = False
-                    result = False
+                    result = 'full_academy'
+                elif dismiss_rect.collidepoint(mpos):
+                    running_popup = False
+                    result = 'dismiss'
 
         # Çizim
         screen.blit(bg_capture, (0, 0))
         retro_style.draw_glass_panel(screen, panel_rect, alpha=230, border_color=(100, 255, 100), glow=True)
-        
+
         # Başlık ve Metin
         title_font = retro_style.get_font(max(22, int(32 * popup_scale)), bold=True)
         title_surf = title_font.render(title, True, (100, 255, 100))
-        screen.blit(title_surf, title_surf.get_rect(centerx=panel_rect.centerx, top=panel_rect.y + max(22, int(36 * popup_scale))))
-        
+        screen.blit(title_surf, title_surf.get_rect(centerx=panel_rect.centerx, top=panel_rect.y + max(22, int(34 * popup_scale))))
+
         body_font = retro_style.get_font(max(16, int(22 * popup_scale)))
         body_rect = pygame.Rect(
             panel_rect.x + max(20, int(36 * popup_scale)),
-            panel_rect.y + max(60, int(96 * popup_scale)),
+            panel_rect.y + max(58, int(92 * popup_scale)),
             panel_rect.width - max(40, int(72 * popup_scale)),
-            max(80, int(130 * popup_scale)),
+            max(70, int(116 * popup_scale)),
         )
         retro_style.draw_wrapped_text(screen, text, body_font, (240, 240, 240), body_rect, align='center')
-        
+
         # Butonlar
         mpos = get_mouse_pos()
-        
-        retro_style.draw_uniform_button(screen, skip_rect, t('skip_tutorial'), sub_text='ESC', color_code=retro_style.secondary, selected=skip_rect.collidepoint(mpos))
-        retro_style.draw_uniform_button(screen, play_rect, t('play_tutorial'), sub_text='ENTER', color_code=retro_style.success, selected=play_rect.collidepoint(mpos))
-        
+        retro_style.draw_uniform_button(
+            screen, quick_rect,
+            t('tutorial_welcome_quick_start', default='Hızlı Başlangıç'),
+            sub_text=t('tutorial_welcome_quick_start_sub', default='~90 sn'),
+            color_code=retro_style.success, selected=quick_rect.collidepoint(mpos),
+        )
+        retro_style.draw_uniform_button(
+            screen, academy_rect,
+            t('tutorial_welcome_full_academy', default='Akademiyi Aç'),
+            sub_text=t('tutorial_welcome_full_academy_sub', default='Tüm dersler'),
+            color_code=retro_style.primary, selected=academy_rect.collidepoint(mpos),
+        )
+        retro_style.draw_uniform_button(
+            screen, dismiss_rect,
+            t('tutorial_welcome_dismiss', default='Şimdilik Geç'),
+            sub_text='ESC',
+            color_code=retro_style.secondary, selected=dismiss_rect.collidepoint(mpos),
+        )
+
         pygame.display.flip()
-        
+
     return result
 
 def main():
@@ -2184,9 +2213,17 @@ def main():
             elif action in ('single_player', 'Tek Oyunculu', 'Single Player'):
                 # Tutorial Check
                 if not user_manager.is_tutorial_completed() and not user_manager.is_tutorial_prompt_dismissed():
-                    if _run_popup_and_sync_screen(_show_tutorial_prompt):
+                    tutorial_choice = _run_popup_and_sync_screen(_show_tutorial_prompt)
+                    if tutorial_choice in ('quick_start', 'full_academy'):
                         # Start Tutorial
                         menu_sound.stop_music()
+                        if tutorial_choice == 'quick_start':
+                            tutorial_kwargs = dict(
+                                launch_lesson_id='qs_move_lane',
+                                lesson_flow_scope='chapter',
+                            )
+                        else:
+                            tutorial_kwargs = dict(lesson_flow_scope='full')
                         game = TutorialMode(
                             'Normal',
                             settings_screen.sound_enabled,
@@ -2197,15 +2234,15 @@ def main():
                             fullscreen,
                             settings_manager,
                             user_manager,
-                            launch_lesson_id='move_intro',
                             sound_manager=menu_sound,
                             score_manager=score_manager,
-                            block_style_manager=block_style_manager
+                            block_style_manager=block_style_manager,
+                            **tutorial_kwargs
                         )
                         state = 'game'
                         continue
                     else:
-                        # Skip Tutorial — progress üretmeden sadece popup'ı kapat
+                        # Şimdilik Geç — progress üretmeden sadece popup'ı kapat
                         user_manager.dismiss_tutorial_prompt()
 
                 if not _run_popup_and_sync_screen(_show_mode_intro_popup, 'classic', settings_manager=settings_manager):
@@ -3623,8 +3660,16 @@ def main():
                 # Yeni kullanıcı oluşturulduğunda tutorial pop-up göster
                 if action == 'new_user_created':
                     user_manager.set_tutorial_completed(False)
-                    if _run_popup_and_sync_screen(_show_tutorial_prompt):
+                    tutorial_choice = _run_popup_and_sync_screen(_show_tutorial_prompt)
+                    if tutorial_choice in ('quick_start', 'full_academy'):
                         menu_sound.stop_music()
+                        if tutorial_choice == 'quick_start':
+                            tutorial_kwargs = dict(
+                                launch_lesson_id='qs_move_lane',
+                                lesson_flow_scope='chapter',
+                            )
+                        else:
+                            tutorial_kwargs = dict(lesson_flow_scope='full')
                         game = TutorialMode(
                             'Normal',
                             settings_screen.sound_enabled,
@@ -3635,14 +3680,14 @@ def main():
                             fullscreen,
                             settings_manager,
                             user_manager,
-                            launch_lesson_id='move_intro',
                             sound_manager=menu_sound,
                             score_manager=score_manager,
-                            block_style_manager=block_style_manager
+                            block_style_manager=block_style_manager,
+                            **tutorial_kwargs
                         )
                         state = 'game'
                     else:
-                        # Skip — sahte progress üretme, sadece popup'ı kapat
+                        # Şimdilik Geç — sahte progress üretme, sadece popup'ı kapat
                         user_manager.dismiss_tutorial_prompt()
             elif action == 'edit_user':
                 target_user = user_selection_screen.get_selected_username()

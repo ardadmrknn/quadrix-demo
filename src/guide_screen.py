@@ -60,24 +60,24 @@ CARD_DATA = [
     # === COMMON / UNCOMMON ===
     {
         'id': 'clear_rows',
-        'name_key': 'guide_card_clear_rows_name',
-        'desc_key': 'guide_card_clear_rows_desc',
+        'name_key': 'card_clear_rows_title',
+        'desc_key': 'card_clear_rows_desc',
         'icon': 'icon_clean_sweep.png',
         'rarity': 'common',
         'color': (120, 230, 255),
     },
     {
         'id': 'peak_sculpt',
-        'name_key': 'guide_card_peak_sculpt_name',
-        'desc_key': 'guide_card_peak_sculpt_desc',
+        'name_key': 'card_peak_sculpt_title',
+        'desc_key': 'card_peak_sculpt_desc',
         'icon': 'icon_peak_cutter.png',
         'rarity': 'common',
         'color': (140, 255, 210),
     },
     {
         'id': 'row_shuffle',
-        'name_key': 'guide_card_row_shuffle_name',
-        'desc_key': 'guide_card_row_shuffle_desc',
+        'name_key': 'card_row_shuffle_title',
+        'desc_key': 'card_row_shuffle_desc',
         'icon': 'icon_row_shuffle.png',
         'rarity': 'common',
         'color': (255, 110, 100),
@@ -100,16 +100,16 @@ CARD_DATA = [
     },
     {
         'id': 'speed_burst',
-        'name_key': 'guide_card_speed_burst_name',
-        'desc_key': 'guide_card_speed_burst_desc',
+        'name_key': 'card_speed_burst_title',
+        'desc_key': 'card_speed_burst_desc',
         'icon': 'icon_speed_burst.png',
         'rarity': 'common',
         'color': (255, 180, 50),
     },
     {
         'id': 'mini_bomb',
-        'name_key': 'guide_card_mini_bomb_name',
-        'desc_key': 'guide_card_mini_bomb_desc',
+        'name_key': 'card_mini_bomb_title',
+        'desc_key': 'card_mini_bomb_desc',
         'icon': 'icon_mini_bomb.png',
         'rarity': 'uncommon',
         'color': (255, 110, 80),
@@ -117,50 +117,48 @@ CARD_DATA = [
     # === RARE ===
     {
         'id': 'quantum_tunneling',
-        'name_key': 'guide_card_quantum_name',
-        'desc_key': 'guide_card_quantum_desc',
+        'name_key': 'card_quantum_tunneling_title',
+        'desc_key': 'card_quantum_tunneling_desc',
         'icon': 'icon_quantum_tunnel.png',
         'rarity': 'rare',
         'color': (180, 200, 255),
     },
     {
         'id': 'hammer',
-        'name_key': 'guide_card_hammer_name',
-        'desc_key': 'guide_card_hammer_desc',
+        'name_key': 'card_hammer_title',
+        'desc_key': 'card_hammer_desc',
         'icon': 'icon_hammer.png',
         'rarity': 'rare',
         'color': (230, 210, 140),
     },
     {
         'id': 'laser_drill',
-        'name_key': 'guide_card_laser_name',
-        'desc_key': 'guide_card_laser_desc',
+        'name_key': 'card_laser_drill_title',
+        'desc_key': 'card_laser_drill_desc',
         'icon': 'icon_laser_drill.png',
         'rarity': 'rare',
         'color': (255, 50, 150),
     },
     {
         'id': 'sniper_shot',
-        'name_key': 'guide_card_sniper_name',
-        'desc_key': 'guide_card_sniper_desc',
+        'name_key': 'card_sniper_shot_title',
+        'desc_key': 'card_sniper_shot_desc',
         'icon': 'icon_sniper_shot.png',
         'rarity': 'rare',
         'color': (255, 80, 80),
     },
     {
         'id': 'future_changer',
-        'name_key': 'guide_card_future_name',
-        'desc_key': 'guide_card_future_desc',
+        'name_key': 'card_future_changer_title',
+        'desc_key': 'card_future_changer_desc',
         'icon': 'icon_future_changer.png',
         'rarity': 'rare',
         'color': (150, 255, 200),
     },
     {
         'id': 'freeze_drop',
-        'name_key': 'guide_card_freeze_drop_name',
-        'desc_key': 'guide_card_freeze_drop_desc',
-        'name_fallback': 'Son Düşüş',
-        'desc_fallback': '3 hak: F ile bloğu dondur! Sadece sağ-sol ve sert düşüş çalışır.',
+        'name_key': 'card_freeze_drop_title',
+        'desc_key': 'card_freeze_drop_desc',
         'icon': 'icon_freeze_drop.png',
         'rarity': 'rare',
         'color': (130, 220, 255),
@@ -183,8 +181,8 @@ CARD_DATA = [
     },
     {
         'id': 'perk_synergy',
-        'name_key': 'guide_perk_synergy_name',
-        'desc_key': 'guide_perk_synergy_desc',
+        'name_key': 'card_perk_synergy_title',
+        'desc_key': 'card_perk_synergy_desc',
         'icon': 'icon_perk_synergy.png',
         'rarity': 'rare',
         'color': (255, 220, 140),
@@ -192,32 +190,32 @@ CARD_DATA = [
     # === EPIC ===
     {
         'id': 'nova_burst',
-        'name_key': 'guide_card_nova_name',
-        'desc_key': 'guide_card_nova_desc',
+        'name_key': 'card_nova_burst_title',
+        'desc_key': 'card_nova_burst_desc',
         'icon': 'icon_nova_burst.png',
         'rarity': 'epic',
         'color': (255, 120, 196),
     },
     {
         'id': 'gravity_well',
-        'name_key': 'guide_card_gravity_name',
-        'desc_key': 'guide_card_gravity_desc',
+        'name_key': 'card_gravity_well_title',
+        'desc_key': 'card_gravity_well_desc',
         'icon': 'icon_gravity_well.png',
         'rarity': 'epic',
         'color': (120, 160, 255),
     },
     {
         'id': 'perk_phase',
-        'name_key': 'guide_card_phase_name',
-        'desc_key': 'guide_card_phase_desc',
+        'name_key': 'card_perk_phase_title',
+        'desc_key': 'card_perk_phase_desc',
         'icon': 'icon_perk_phase.png',
         'rarity': 'epic',
         'color': (255, 200, 255),
     },
     {
         'id': 'perk_second_pocket',
-        'name_key': 'guide_card_pocket_name',
-        'desc_key': 'guide_card_pocket_desc',
+        'name_key': 'card_perk_second_pocket_title',
+        'desc_key': 'card_perk_second_pocket_desc',
         'icon': 'icon_perk_second_pocket.png',
         'rarity': 'epic',
         'color': (200, 200, 255),
@@ -226,8 +224,6 @@ CARD_DATA = [
         'id': 'color_cleanse',
         'name_key': 'card_color_cleanse_title',
         'desc_key': 'card_color_cleanse_desc',
-        'name_fallback': 'Renk Temizleme',
-        'desc_fallback': 'Rastgele bir renkteki tüm blokları temizler.',
         'icon': 'icon_color_fix.png',
         'rarity': 'epic',
         'color': (100, 255, 200),
@@ -235,32 +231,32 @@ CARD_DATA = [
     # === LEGENDARY ===
     {
         'id': 'perk_flexible_border',
-        'name_key': 'guide_card_flexible_border_name',
-        'desc_key': 'guide_card_flexible_border_desc',
+        'name_key': 'card_perk_flexible_border_title',
+        'desc_key': 'card_perk_flexible_border_desc',
         'icon': 'icon_perk_flexible_border.png',
         'rarity': 'legendary',
         'color': (255, 200, 100),
     },
     {
         'id': 'block_magnet',
-        'name_key': 'guide_card_magnet_name',
-        'desc_key': 'guide_card_magnet_desc',
+        'name_key': 'card_block_magnet_title',
+        'desc_key': 'card_block_magnet_desc',
         'icon': 'icon_block_magnet.png',
         'rarity': 'legendary',
         'color': (255, 140, 100),
     },
     {
         'id': 'ghost_echo',
-        'name_key': 'guide_card_ghost_name',
-        'desc_key': 'guide_card_ghost_desc',
+        'name_key': 'card_ghost_echo_title',
+        'desc_key': 'card_ghost_echo_desc',
         'icon': 'icon_ghost_echo.png',
         'rarity': 'legendary',
         'color': (200, 200, 255),
     },
     {
         'id': 'time_capsule',
-        'name_key': 'guide_card_time_capsule_name',
-        'desc_key': 'guide_card_time_capsule_desc',
+        'name_key': 'card_time_capsule_title',
+        'desc_key': 'card_time_capsule_desc',
         'icon': 'icon_time_capsule.png',
         'rarity': 'legendary',
         'color': (120, 255, 200),
@@ -269,8 +265,6 @@ CARD_DATA = [
         'id': 'block_workshop_card',
         'name_key': 'card_block_workshop_card_title',
         'desc_key': 'card_block_workshop_card_desc',
-        'name_fallback': 'Blok Atölyesi',
-        'desc_fallback': 'Tek seferlik özel parça oluşturma atölyesini açar.',
         'icon': 'icon_block_workshop.png',
         'rarity': 'legendary',
         'color': (255, 200, 100),
@@ -279,8 +273,6 @@ CARD_DATA = [
         'id': 'gambler_dice',
         'name_key': 'card_gambler_dice_title',
         'desc_key': 'card_gambler_dice_desc',
-        'name_fallback': 'Kumarbazın Zarı',
-        'desc_fallback': 'Yüksek riskli zar etkisi: ya büyük kazanç ya büyük ceza.',
         'icon': 'icon_gambler_dice.png',
         'rarity': 'legendary',
         'color': (255, 80, 80),
@@ -289,8 +281,6 @@ CARD_DATA = [
         'id': 'hold_destroyer',
         'name_key': 'card_hold_destroyer_title',
         'desc_key': 'card_hold_destroyer_desc',
-        'name_fallback': 'Tuttuğunu Koparan',
-        'desc_fallback': 'Kart seviyesine göre 1-5 kez saklanan parçayı silme hakkı verir.',
         'icon': 'icon_hold_destroyer.png',
         'rarity': 'legendary',
         'color': (210, 210, 220),
@@ -300,7 +290,7 @@ CARD_DATA = [
         'id': 'combo_insurance',
         'name_key': 'card_combo_insurance_title',
         'desc_key': 'card_combo_insurance_desc',
-        'icon': 'icon_perk_synergy.png',
+        'icon': 'icon_combo_sigorta.png',
         'rarity': 'rare',
         'color': (255, 220, 140),
     },
@@ -308,7 +298,7 @@ CARD_DATA = [
         'id': 'reverse_debt',
         'name_key': 'card_reverse_debt_title',
         'desc_key': 'card_reverse_debt_desc',
-        'icon': 'icon_clean_sweep.png',
+        'icon': 'icon_ters_borc.png',
         'rarity': 'common',
         'color': (200, 120, 255),
     },
@@ -316,7 +306,7 @@ CARD_DATA = [
         'id': 'hole_hunter',
         'name_key': 'card_hole_hunter_title',
         'desc_key': 'card_hole_hunter_desc',
-        'icon': 'icon_magnet_pull.png',
+        'icon': 'icon_delik_avci.png',
         'rarity': 'rare',
         'color': (140, 230, 200),
     },
@@ -1047,17 +1037,42 @@ class GuideScreen:
             # Açıklama - BÜYÜK (Oyun Modları gibi)
             desc_font = self._font(16, bold=False, minimum=11, scale=scale)
             desc_key = card.get('desc_key', '')
-            desc_kwargs = {'button': _guide_action_label('hold2', 'V')}
-            if card.get('id') == 'hold_destroyer':
+            
+            # Dinamik değişkenleri (seviye/tuş aralıkları) kılavuz formatına göre tanımla
+            desc_kwargs = {
+                'button': _guide_action_label('hold2', 'V'),
+                'value': '1',
+            }
+            card_id = card.get('id', '')
+            if card_id == 'clear_rows':
+                desc_kwargs['value'] = '1-3'
+            elif card_id == 'peak_sculpt':
+                desc_kwargs['value'] = '2-4'
+            elif card_id == 'row_shuffle':
+                desc_kwargs['value'] = '2-4'
+            elif card_id == 'speed_burst':
+                desc_kwargs = {
+                    'value': '20-40',
+                    'speed_percent': '25-60',
+                    'line_multiplier': '1.3-1.75',
+                }
+            elif card_id == 'freeze_drop':
+                desc_kwargs = {
+                    'freeze_duration': '3-10',
+                }
+            elif card_id == 'nova_burst':
+                desc_kwargs['value'] = '2-4'
+            elif card_id == 'hold_destroyer':
                 desc_kwargs = {
                     'button': _guide_action_label('discard_held', 'B'),
                     'value': '1-5',
                 }
+            elif card_id == 'perk_second_pocket':
+                desc_kwargs['button'] = _guide_action_label('hold2', 'V')
+                
             desc_text = t(desc_key, **desc_kwargs) if desc_key else ''
             if not desc_text or desc_text == desc_key:
                 desc_text = card.get('desc_fallback') or f"{card['id']} kartı."
-            if card.get('id') == 'perk_second_pocket' and '{button}' not in desc_text:
-                desc_text = desc_text.replace('V', _guide_action_label('hold2', 'V'), 1)
             
             desc_y = card_rect.y + self._s(175, minimum=130, scale=scale)
             desc_width = card_width - self._s(16, minimum=12, scale=scale)
