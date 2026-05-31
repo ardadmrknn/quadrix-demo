@@ -150,8 +150,8 @@ class TestTutorialRuntime(unittest.TestCase):
         # Panel metadata'sı OLMAYAN bir bölüm sınırında otomatik ilerleme korunur.
         tutorial = TutorialMode.__new__(TutorialMode)
         tutorial.next_lesson_id = None
-        tutorial.active_lesson_id = 'surface_protect_well'
-        tutorial.active_lesson = {'chapter': 'surface_control'}
+        tutorial.active_lesson_id = 'cards_risk_reward_timing'
+        tutorial.active_lesson = {'chapter': 'card_strategy'}
         tutorial.lesson_lookup = {}
         tutorial.lesson_flow_scope = 'full'
         tutorial.hub_return_enabled = True
@@ -164,7 +164,7 @@ class TestTutorialRuntime(unittest.TestCase):
         result = TutorialMode._continue_after_completion(tutorial)
 
         self.assertTrue(result)
-        self.assertEqual(started.get('lesson_id'), 'plan_hold_save')
+        self.assertEqual(started.get('lesson_id'), 'exam_board_midterm')
         self.assertNotIn('hub', started)
 
     def test_line_clear_setup_removes_extra_right_support_block(self):
@@ -193,8 +193,8 @@ class TestTutorialRuntime(unittest.TestCase):
         # Panel metadata'sı OLMAYAN bölüm sınırında, chapter scope hub'a döner.
         tutorial = TutorialMode.__new__(TutorialMode)
         tutorial.next_lesson_id = None
-        tutorial.active_lesson_id = 'surface_protect_well'
-        tutorial.active_lesson = {'chapter': 'surface_control'}
+        tutorial.active_lesson_id = 'cards_risk_reward_timing'
+        tutorial.active_lesson = {'chapter': 'card_strategy'}
         tutorial.lesson_lookup = {}
         tutorial.lesson_flow_scope = 'chapter'
         tutorial.hub_return_enabled = True
@@ -210,7 +210,7 @@ class TestTutorialRuntime(unittest.TestCase):
         result = TutorialMode._continue_after_completion(tutorial)
 
         self.assertTrue(result)
-        self.assertEqual(started.get('hub'), ('surface_control', 'surface_protect_well'))
+        self.assertEqual(started.get('hub'), ('card_strategy', 'cards_risk_reward_timing'))
         self.assertNotIn('lesson_id', started)
 
     def test_quick_start_boundary_opens_progression_panel(self):
@@ -264,7 +264,28 @@ class TestTutorialRuntime(unittest.TestCase):
         self.assertEqual(result, 'menu')
         self.assertFalse(tutorial.progress_panel_active)
 
-    def test_line_clear_completion_auto_advances_to_next_lesson_in_full_flow(self):
+    def test_quick_start_enter_after_step5_opens_progression_panel(self):
+        # FAZ 7 — qs_first_clear sonu Enter → _continue_after_completion → panel açılır.
+        tutorial = TutorialMode.__new__(TutorialMode)
+        tutorial.next_lesson_id = None
+        tutorial.active_lesson_id = 'qs_first_clear'
+        tutorial.active_lesson = {'id': 'qs_first_clear', 'chapter': 'quick_start'}
+        tutorial.lesson_lookup = {}
+        tutorial.lesson_flow_scope = 'chapter'
+        tutorial.hub_return_enabled = False
+        tutorial.progress_panel_active = False
+        opened = {}
+        tutorial._open_progression_panel = lambda meta, nxt: opened.update({'meta': meta, 'next': nxt})
+        tutorial._start_lesson = lambda lid: opened.setdefault('started', lid)
+
+        result = TutorialMode._continue_after_completion(tutorial)
+
+        self.assertTrue(result)
+        self.assertIn('meta', opened)
+        self.assertEqual(opened.get('next'), 'surface_gap_fill')
+        self.assertNotIn('started', opened)
+
+    def test_line_clear_completion_auto_continues_at_chapter_boundary(self):
         tutorial = TutorialMode.__new__(TutorialMode)
         tutorial.step = 5
         tutorial.in_transition = False
@@ -280,6 +301,7 @@ class TestTutorialRuntime(unittest.TestCase):
         tutorial.overlay_message = ''
         tutorial.transition_text = ''
         tutorial.hub_progress_snapshot = None
+        tutorial.lesson_lookup = {}
         tutorial._is_scenario_lesson_active = lambda: False
         tutorial._create_mini_success_effect = lambda *_args, **_kwargs: None
         tutorial._mark_active_lesson_completed = lambda stars=1: None
@@ -295,9 +317,11 @@ class TestTutorialRuntime(unittest.TestCase):
             TutorialMode.lock_and_new_piece(tutorial)
 
         self.assertTrue(tutorial.in_transition)
-        self.assertEqual(tutorial.next_lesson_id, 'surface_gap_fill')
+        # FAZ 8 — quick_start sonu: bölüm içi sonraki ders yok; Enter beklenmez,
+        # transition bitince ilerleme paneli OTOMATİK açılır.
+        self.assertIsNone(tutorial.next_lesson_id)
         self.assertFalse(tutorial.waiting_for_enter)
-        self.assertEqual(tutorial.sub_message, '')
+        self.assertTrue(tutorial._auto_continue_after_transition)
 
     def test_success_lesson_result_accepts_space_for_continue(self):
         pygame = tutorial_module.pygame

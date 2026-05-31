@@ -270,7 +270,7 @@ class RetroStyle:
 
         # Global image background (menus/screens): prefer outer_background.* like gameplay.
         self._image_background = BackgroundManager()
-        self._bg_transparency = 0.7
+        self._bg_transparency = 0.3
         try:
             self._image_background.set_transparency(self._bg_transparency)
         except Exception:
@@ -427,7 +427,37 @@ class RetroStyle:
             if font_obj is None:
                 font_obj = self._get_latin_font(scaled_size, effective_bold)
             self.font_cache[key] = font_obj
-        return self.font_cache[key]
+        # Cached font objects may become invalid if pygame.font was quit and
+        # re-initialized during the test run. Validate cached font and
+        # recreate if necessary.
+        font_obj = self.font_cache.get(key)
+        if font_obj is not None:
+            try:
+                # size('') is a cheap check that will raise if font module is dead
+                font_obj.size('')
+                return font_obj
+            except Exception:
+                try:
+                    del self.font_cache[key]
+                except Exception:
+                    pass
+                # fallthrough: recreate below
+
+        # Recreate font object if cache was invalidated
+        font_obj = None
+        if self._font_path:
+            try:
+                cjk_font = pygame.font.Font(self._font_path, scaled_size)
+                if effective_bold:
+                    cjk_font.set_bold(True)
+                latin_font = self._get_latin_font(scaled_size, effective_bold)
+                font_obj = HybridFont(latin_font, cjk_font)
+            except Exception:
+                font_obj = None
+        if font_obj is None:
+            font_obj = self._get_latin_font(scaled_size, effective_bold)
+        self.font_cache[key] = font_obj
+        return font_obj
 
     def get_mono_font(self, size: int, bold: bool = True) -> pygame.font.Font:
         """Sayısal sayaçlar vb. için eş aralıklı (monospaced) font döndür."""
@@ -548,20 +578,35 @@ class RetroStyle:
     # ========================================================================
 
     def _classify_char_script(self, ch: str) -> str:
+        """Karakter için uygun script anahtarını döndür.
+
+        Dönüş değerleri:
+          'latin' → mevcut Latin/temel fontla render edilebilir
+          'cjk_kr' / 'cjk_jp' / 'cjk_zh' → ilgili CJK alt-script
+        """
         if not ch:
             return 'latin'
         cp = ord(ch)
+        # Hangul (Korece)
         if (0xAC00 <= cp <= 0xD7AF) or (0x1100 <= cp <= 0x11FF) or (0x3130 <= cp <= 0x318F):
             return 'cjk_kr'
+        # Hiragana / Katakana / Katakana Phonetic Ext / Half-width Katakana (Japonca)
         if (0x3040 <= cp <= 0x309F) or (0x30A0 <= cp <= 0x30FF) or (0x31F0 <= cp <= 0x31FF) or (0xFF65 <= cp <= 0xFF9F):
             return 'cjk_jp'
+        # CJK Unified Ideographs ve Extension A/B (Çince/Japonca ortak Kanji)
         if (0x4E00 <= cp <= 0x9FFF) or (0x3400 <= cp <= 0x4DBF) or (0x20000 <= cp <= 0x2A6DF):
             return 'cjk_zh'
+        # CJK Symbols/Punctuation, Compatibility, Fullwidth Forms — varsayılan olarak Çince fontuyla
         if (0x3000 <= cp <= 0x303F) or (0x3300 <= cp <= 0x33FF) or (0xFF00 <= cp <= 0xFFEF):
             return 'cjk_zh'
         return 'latin'
 
     def _get_script_font(self, script: str, size: int, bold: bool = False) -> pygame.font.Font | None:
+        """Belirli bir CJK alt-script için lazy yüklenmiş font'u döndür.
+
+        Yükleme başarısız olursa None döner ve karakter Latin fontuna düşer
+        (eski "kutucuk" davranışı; daha iyi bir alternatif yok).
+        """
         if script == 'latin':
             return None
         rel_path = self._script_font_paths.get(script)
@@ -597,6 +642,7 @@ class RetroStyle:
             return None
 
     def _segment_text_by_script(self, text: str) -> list[tuple[str, str]]:
+        """Metni script segmentlerine böl. [(script, segment_text), ...]"""
         if not text:
             return []
         segments: list[tuple[str, str]] = []
@@ -620,6 +666,7 @@ class RetroStyle:
         base_size: int,
         bold: bool,
     ) -> int:
+        """Metnin script-aware genişliğini hesapla (max_width fitting için)."""
         total = 0
         for script, seg in self._segment_text_by_script(text):
             if script == 'latin':
@@ -641,11 +688,18 @@ class RetroStyle:
         bold: bool = False,
         min_size: int = 10,
     ) -> pygame.Surface:
-        """Aktif dilden bağımsız çoklu-script (Latin + CJK) metin render'ı."""
+        """Aktif dilden bağımsız çoklu-script (Latin + CJK) metin render'ı.
+
+        Latin karakterler için mevcut tema fontu, CJK karakterler için (Hangul,
+        Hiragana, Katakana, CJK Unified Ideographs) projedeki ilgili font
+        kullanılır. Steam leaderboard isim listesi gibi kullanıcı üretimli
+        metinler dil seçimi Türkçe iken bile doğru render edilir.
+        """
         text = str(text or '')
         if not text:
             return self.get_font(base_size, bold=bold).render('', True, color)
 
+        # Önce font boyutunu sığdırmaya çalış
         size = base_size
         latin_font = self.get_font(size, bold=bold)
         if max_width and max_width > 0:
@@ -654,6 +708,7 @@ class RetroStyle:
                 size -= 1
                 latin_font = self.get_font(size, bold=bold)
 
+        # Karakter bazında segmentle ve birleştirilmiş bir surface oluştur
         rendered_parts: list[pygame.Surface] = []
         total_width = 0
         max_height = 0
@@ -676,6 +731,7 @@ class RetroStyle:
         combined = pygame.Surface((max(1, total_width), max(1, max_height)), pygame.SRCALPHA)
         x = 0
         for part in rendered_parts:
+            # Baseline alignment: parçaları alt kenara hizala
             y = max_height - part.get_height()
             combined.blit(part, (x, y))
             x += part.get_width()
@@ -883,7 +939,7 @@ class RetroStyle:
         """Glassmorphism panel çiz.
 
         `top_highlight` parametresi API uyumluluğu için korunur.
-        Demo popup panellerinde üst parlama bandı artık çizilmez.
+        Popup panellerinde üst parlama bandı artık çizilmez.
         """
         alpha = self._scale_menu_alpha(alpha)
 
@@ -1256,8 +1312,18 @@ class RetroStyle:
             pygame.draw.rect(screen, (40, 50, 70), pv_rect, 2, border_radius=6)
             title_x = pv_rect.right + padding
         
+        # Başlık ve alt metin font boyutlarını buton yüksekliğine göre sınırla.
+        # Fontlar HiDPI/ölçek faktöründen bağımsız sabit px üretir; buton
+        # yüksekliği ise UI ölçeğiyle küçülebilir (özellikle macOS Retina'da
+        # effective scale daha düşük). Sabit 24/16 px kullanılırsa alt metin
+        # "total_h > rect.height" kontrolüne takılıp tamamen düşüyordu. Yüksekliğe
+        # oranlı boyut seçerek başlık + alt metnin her platformda sığmasını
+        # garanti ediyoruz.
+        title_size = max(12, min(24, int(rect.height * 0.42)))
+        sub_size = max(9, min(16, int(rect.height * 0.26)))
+
         # Başlık
-        title_font = self.get_fitting_font(text, 24, rect.width - 100, bold=True)
+        title_font = self.get_fitting_font(text, title_size, rect.width - 100, bold=True)
         title_surf = title_font.render(text, True, (245, 248, 255))
         title_pos = (title_x, rect.y + padding)
         
@@ -1280,14 +1346,38 @@ class RetroStyle:
                     pygame.draw.rect(screen, badge_color, badge_rect, border_radius=12)
                     screen.blit(badge_surf, badge_surf.get_rect(center=badge_rect.center))
                 else:
-                    sub_font = self.get_fitting_font(sub_text, 16, rect.width - 100, bold=False)
+                    sub_font = self.get_fitting_font(sub_text, sub_size, rect.width - 100, bold=False)
                     sub_surf = sub_font.render(sub_text, True, (160, 175, 200))
 
         # Place text. When sub_text exists (non-toggle), stack + vertically center to avoid overlap
         if sub_surf is not None:
             gap = 4
             total_h = title_surf.get_height() + gap + sub_surf.get_height()
-            # If the button is extremely short, drop the sub label rather than overlapping
+            # Buton kısa kalırsa alt metni hemen düşürmek yerine önce başlık ve
+            # alt metni sığacak şekilde küçültmeyi dene. Sabit font px'i ile
+            # ölçekli buton yüksekliği uyuşmadığında (özellikle macOS Retina'da
+            # effective scale düşükken) alt metin tamamen kaybolmasın.
+            if total_h + 6 > rect.height and isinstance(sub_text, str):
+                shrink_guard = 0
+                while total_h + 6 > rect.height and shrink_guard < 12:
+                    shrink_guard += 1
+                    progressed = False
+                    # Önce alt metni küçült (asıl taşan genelde odur).
+                    if sub_size > 9:
+                        sub_size = max(9, sub_size - 1)
+                        sub_font = self.get_fitting_font(sub_text, sub_size, rect.width - 100, bold=False)
+                        sub_surf = sub_font.render(sub_text, True, (160, 175, 200))
+                        progressed = True
+                    # Hâlâ sığmıyorsa başlığı da küçült.
+                    if total_h + 6 > rect.height and title_size > 12:
+                        title_size = max(12, title_size - 1)
+                        title_font = self.get_fitting_font(text, title_size, rect.width - 100, bold=True)
+                        title_surf = title_font.render(text, True, (245, 248, 255))
+                        progressed = True
+                    total_h = title_surf.get_height() + gap + sub_surf.get_height()
+                    if not progressed:
+                        break
+            # If the button is still extremely short, drop the sub label rather than overlapping
             if total_h + 6 > rect.height:
                 if align == 'center':
                     title_pos = (rect.x + (rect.width - title_surf.get_width()) // 2, rect.y + (rect.height - title_surf.get_height()) // 2)

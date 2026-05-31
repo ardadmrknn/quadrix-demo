@@ -616,6 +616,15 @@ def get_scenario(scenario_id: str | None) -> Dict[str, Any] | None:
     tip_key = hydrated.get("tip_key")
     if tip_key:
         hydrated["tip_text"] = t(str(tip_key), default=str(hydrated.get("tip_text") or ""))
+    # Koçluk metinlerini lokalize et (TR string fallback olarak korunur).
+    # Anahtar deseni: tutorial_scn_<scenario_id>_coach_<feedback_key>
+    coach_feedback = hydrated.get("coach_feedback")
+    if isinstance(coach_feedback, dict):
+        localized = {}
+        for fb_key, fb_text in coach_feedback.items():
+            loc_key = f"tutorial_scn_{scenario_id}_coach_{fb_key}"
+            localized[fb_key] = t(loc_key, default=str(fb_text or ""))
+        hydrated["coach_feedback"] = localized
     return hydrated
 
 

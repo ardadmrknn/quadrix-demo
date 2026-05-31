@@ -2291,14 +2291,19 @@ class MysteryCardUI:
         header_x = panel_rect.x + s(40)
         header_y = panel_rect.y + s(28)
         if header_title:
-            header_surf = header_font.render(str(header_title), True, (235, 242, 250))
+            # Başlığı belirginleştir: hafif gölge + parlak renk.
+            shadow_surf = header_font.render(str(header_title), True, (8, 12, 24))
+            header_surf = header_font.render(str(header_title), True, (255, 255, 255))
             if center_header:
-                screen.blit(header_surf, header_surf.get_rect(centerx=panel_rect.centerx, top=header_y))
+                hrect = header_surf.get_rect(centerx=panel_rect.centerx, top=header_y)
             else:
-                screen.blit(header_surf, (header_x, header_y))
+                hrect = header_surf.get_rect(topleft=(header_x, header_y))
+            screen.blit(shadow_surf, (hrect.x + max(1, s(2)), hrect.y + max(1, s(2))))
+            screen.blit(header_surf, hrect)
             header_y += header_surf.get_height() + s(8)
         for raw_line in visible_header_lines:
-            line_surf = line_font.render(str(raw_line), True, (185, 198, 222))
+            # Açıklama satırlarını daha okunur renkle (parlak açık gri).
+            line_surf = line_font.render(str(raw_line), True, (220, 230, 245))
             if center_header:
                 screen.blit(line_surf, line_surf.get_rect(centerx=panel_rect.centerx, top=header_y))
             else:

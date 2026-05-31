@@ -121,6 +121,31 @@ class TestBriefingState(unittest.TestCase):
         self.assertGreaterEqual(data.get('lesson_index', 0), 1)
         self.assertEqual(data.get('lesson_total'), len(tutorial.lesson_catalog))
 
+    def test_legacy_step_briefing_includes_howto_guide(self):
+        # FAZ 6 — İlk derslerde başlat panelinde 'nasıl yapılır' tuş rehberi olmalı.
+        tutorial = TutorialMode.__new__(TutorialMode)
+        tutorial.lesson_attempt_counts = {}
+        tutorial.lesson_catalog = tutorial_lessons.get_lessons()
+        tutorial._action_key_label = lambda action, fallback=None, include_down_for_soft=False: {
+            'move_left': 'SOL', 'move_right': 'SAĞ', 'rotate': 'YUKARI',
+            'soft_drop': 'AŞAĞI', 'hard_drop': 'SPACE', 'hold': 'C',
+        }.get(action, 'TUŞ')
+        lesson = tutorial_lessons.get_lesson('qs_move_lane')
+        with mock.patch.object(tutorial_module, 't', lambda key, *a, **k: k.get('default', key) or key):
+            data = TutorialMode._prepare_lesson_briefing(tutorial, lesson)
+        self.assertTrue(data.get('how_to'))
+
+    def test_scenario_lesson_briefing_has_no_howto(self):
+        # Senaryo derslerinde tuş rehberi yoktur (yalnız legacy step'lerde).
+        tutorial = TutorialMode.__new__(TutorialMode)
+        tutorial.lesson_attempt_counts = {}
+        tutorial.lesson_catalog = tutorial_lessons.get_lessons()
+        tutorial._action_key_label = lambda *a, **k: 'TUŞ'
+        lesson = tutorial_lessons.get_lesson('surface_gap_fill')
+        with mock.patch.object(tutorial_module, 't', lambda key, *a, **k: k.get('default', key)):
+            data = TutorialMode._prepare_lesson_briefing(tutorial, lesson)
+        self.assertFalse(data.get('how_to'))
+
     def _build_lesson_flow_tutorial(self):
         tutorial = TutorialMode.__new__(TutorialMode)
         tutorial.lesson_lookup = {}
@@ -138,51 +163,65 @@ class TestBriefingState(unittest.TestCase):
         tutorial.sound = types.SimpleNamespace(play=lambda *_a, **_k: None)
         return tutorial
 
-    def test_start_lesson_opens_briefing_before_setup(self):
+    def test_start_lesson_opens_briefing_and_sets_up_board(self):
+        # Yeni akış: briefing açılırken tahta KURULUR (arka plan doğru seviye),
+        # ama briefing_active=True ile oyun durur.
         tutorial = self._build_lesson_flow_tutorial()
         committed = {}
-        tutorial._commit_lesson_setup = lambda lesson: committed.setdefault('lesson', lesson)
+        tutorial._commit_lesson_setup = lambda lesson, keep_briefing=False: committed.update(
+            {'lesson': lesson, 'keep_briefing': keep_briefing})
         with mock.patch.object(tutorial_module, 't', lambda key, *a, **k: k.get('default', key)):
             TutorialMode._start_lesson(tutorial, 'surface_gap_fill')
         self.assertTrue(tutorial.briefing_active)
         self.assertEqual(tutorial.lesson_stage, 'briefing')
         self.assertEqual(tutorial._pending_briefing_lesson_id, 'surface_gap_fill')
-        # Briefing onaylanmadan asıl kurulum yapılmamalı.
-        self.assertNotIn('lesson', committed)
+        # Tahta briefing açılırken kuruldu (keep_briefing=True).
+        self.assertEqual(committed.get('lesson', {}).get('id'), 'surface_gap_fill')
+        self.assertTrue(committed.get('keep_briefing'))
 
-    def test_confirm_briefing_commits_setup_and_marks_seen(self):
+    def test_confirm_briefing_dismisses_and_marks_seen(self):
         tutorial = self._build_lesson_flow_tutorial()
-        committed = {}
-        tutorial._commit_lesson_setup = lambda lesson: committed.setdefault('lesson', lesson)
+        committed = {'count': 0}
+        def _commit(lesson, keep_briefing=False):
+            committed['count'] += 1
+            committed['lesson'] = lesson
+        tutorial._commit_lesson_setup = _commit
         with mock.patch.object(tutorial_module, 't', lambda key, *a, **k: k.get('default', key)):
             TutorialMode._start_lesson(tutorial, 'surface_gap_fill')
             TutorialMode._confirm_lesson_briefing(tutorial)
         self.assertFalse(tutorial.briefing_active)
-        self.assertEqual(committed.get('lesson', {}).get('id'), 'surface_gap_fill')
+        self.assertEqual(tutorial.lesson_stage, 'play')
+        # Kurulum yalnız 1 kez (briefing açılışında); confirm tekrar kurmaz.
+        self.assertEqual(committed['count'], 1)
         self.assertIn('surface_gap_fill', tutorial.briefing_seen_lessons)
 
     def test_second_play_auto_skips_briefing(self):
         tutorial = self._build_lesson_flow_tutorial()
         committed = []
-        tutorial._commit_lesson_setup = lambda lesson: committed.append(lesson)
+        tutorial._commit_lesson_setup = lambda lesson, keep_briefing=False: committed.append(
+            (lesson, keep_briefing))
         with mock.patch.object(tutorial_module, 't', lambda key, *a, **k: k.get('default', key)):
-            # İlk oynanış: briefing açılır, onaylanır.
+            # İlk oynanış: briefing açılır (tahta keep_briefing ile kurulur), onaylanır.
             TutorialMode._start_lesson(tutorial, 'surface_gap_fill')
             TutorialMode._confirm_lesson_briefing(tutorial)
-            # İkinci oynanış: briefing otomatik atlanır, doğrudan kurulum.
+            # İkinci oynanış: briefing otomatik atlanır, doğrudan kurulum (keep_briefing=False).
             TutorialMode._start_lesson(tutorial, 'surface_gap_fill')
         self.assertFalse(tutorial.briefing_active)
         self.assertEqual(len(committed), 2)
+        self.assertTrue(committed[0][1])   # ilk: keep_briefing=True
+        self.assertFalse(committed[1][1])  # ikinci: keep_briefing=False (doğrudan)
 
-    def test_skip_briefing_still_starts_lesson(self):
+    def test_skip_briefing_exits_to_menu(self):
+        # FAZ 6 — Briefing 'Çıkış' dersi başlatmaz, ana menüye döner.
         tutorial = self._build_lesson_flow_tutorial()
         committed = {}
-        tutorial._commit_lesson_setup = lambda lesson: committed.setdefault('lesson', lesson)
+        tutorial._commit_lesson_setup = lambda lesson, keep_briefing=False: committed.update(
+            {'lesson': lesson, 'keep_briefing': keep_briefing})
         with mock.patch.object(tutorial_module, 't', lambda key, *a, **k: k.get('default', key)):
             TutorialMode._start_lesson(tutorial, 'surface_gap_fill')
-            TutorialMode._skip_lesson_briefing(tutorial)
+            result = TutorialMode._skip_lesson_briefing(tutorial)
         self.assertFalse(tutorial.briefing_active)
-        self.assertEqual(committed.get('lesson', {}).get('id'), 'surface_gap_fill')
+        self.assertEqual(result, 'menu')
 
 
 class TestBoardHighlightAndObjectives(unittest.TestCase):
@@ -595,7 +634,149 @@ class TestCardLessonFlow(unittest.TestCase):
             TutorialMode._confirm_card_choice_selection(tutorial)
         self.assertIn('outcome', shown)
         self.assertFalse(shown['outcome'].get('success'))
-        self.assertEqual(shown['outcome'].get('card_title'), 'Kötü')
+
+    def _make_card_tutorial_with_board(self, scenario):
+        import types as _types
+        tutorial = self._make_card_tutorial(scenario)
+        width, height = 10, 6
+        occupancy = [[False] * width for _ in range(height)]
+        for x in range(width):
+            occupancy[height - 1][x] = True
+        tutorial.board = _types.SimpleNamespace(
+            width=width, height=height, occupancy=occupancy,
+            grid=[[(0, 0, 0)] * width for _ in range(height)],
+            texture_grid=[[None] * width for _ in range(height)],
+            gold=[[False] * width for _ in range(height)],
+            owners=[[None] * width for _ in range(height)],
+        )
+        tutorial.screen_shake = 0.0
+        tutorial.card_effect_showcase_timer = 0.0
+        tutorial.card_effect_showcase_duration_s = 0.9
+        tutorial.card_effect_highlight_timer = 0.0
+        tutorial.card_effect_highlight_duration_s = 0.75
+        tutorial.card_effect_highlight_cells = set()
+        tutorial.card_effect_showcase_phase = 'highlight'
+        return tutorial
+
+    def test_animated_card_enters_showcase_before_result(self):
+        # FAZ 7 — Animasyonlu etkili kart önce showcase sahnesine geçer, sonuç hemen gelmez.
+        scenario = {
+            'choices': [{'id': 'clear_rows', 'title': 'Alt Süpür', 'description': 'X', 'value': 1}],
+            'recommended_card_id': 'clear_rows',
+            'acceptable_card_ids': [],
+        }
+        tutorial = self._make_card_tutorial_with_board(scenario)
+        tutorial.card_choice_state['stage'] = 'choosing'
+        tutorial.card_choice_state['selected_index'] = 0
+        shown = {}
+        tutorial._show_lesson_result = lambda outcome: shown.setdefault('outcome', dict(outcome))
+        with mock.patch.object(tutorial_module, 't', lambda key, *a, **k: k.get('default', key)):
+            TutorialMode._confirm_card_choice_selection(tutorial)
+        # Faz 1 (vurgu): showcase'e geçildi, hücreler hesaplandı, board HENÜZ değişmedi.
+        self.assertEqual(tutorial.card_choice_state.get('stage'), 'showcase')
+        self.assertEqual(tutorial.card_effect_showcase_phase, 'highlight')
+        self.assertTrue(tutorial.card_effect_highlight_cells)  # alt satır vurgulandı
+        self.assertNotIn('outcome', shown)
+        # Alt satır hâlâ dolu (mutasyon faz 2'de).
+        self.assertTrue(any(tutorial.board.occupancy[tutorial.board.height - 1]))
+        # Faz 2 (uygula): mutasyon + temizlik.
+        with mock.patch.object(tutorial_module, 't', lambda key, *a, **k: k.get('default', key)):
+            TutorialMode._apply_card_effect_showcase_mutation(tutorial)
+        self.assertEqual(tutorial.card_effect_showcase_phase, 'settle')
+        self.assertTrue(tutorial.card_choice_state.get('showcase_applied'))
+        # Showcase bitince sonuç açılır.
+        with mock.patch.object(tutorial_module, 't', lambda key, *a, **k: k.get('default', key)):
+            TutorialMode._finish_card_effect_showcase(tutorial)
+        self.assertIn('outcome', shown)
+        self.assertTrue(shown['outcome'].get('success'))
+
+    def test_finish_showcase_applies_mutation_if_skipped_early(self):
+        # Erken atlama: faz 2'ye varmadan _finish çağrılırsa mutasyon yine uygulanır.
+        scenario = {
+            'choices': [{'id': 'clear_rows', 'title': 'Alt Süpür', 'description': 'X', 'value': 2}],
+            'recommended_card_id': 'clear_rows',
+            'acceptable_card_ids': [],
+        }
+        tutorial = self._make_card_tutorial_with_board(scenario)
+        tutorial.card_choice_state['stage'] = 'choosing'
+        tutorial.card_choice_state['selected_index'] = 0
+        shown = {}
+        tutorial._show_lesson_result = lambda outcome: shown.setdefault('outcome', dict(outcome))
+        with mock.patch.object(tutorial_module, 't', lambda key, *a, **k: k.get('default', key)):
+            TutorialMode._confirm_card_choice_selection(tutorial)
+            # Vurgu fazındayken doğrudan finish (erken atlama).
+            TutorialMode._finish_card_effect_showcase(tutorial)
+        self.assertTrue(tutorial.card_choice_state.get('showcase_applied'))
+        self.assertIn('outcome', shown)
+
+    def test_non_animated_card_skips_showcase(self):
+        # Animasyonsuz kart (perk) showcase'e girmeden doğrudan sonuca gider.
+        scenario = {
+            'choices': [{'id': 'perk_second_pocket', 'title': 'Ekstra Cep', 'description': 'X', 'persistent': True}],
+            'recommended_card_id': 'perk_second_pocket',
+            'acceptable_card_ids': [],
+        }
+        tutorial = self._make_card_tutorial_with_board(scenario)
+        tutorial.card_choice_state['stage'] = 'choosing'
+        tutorial.card_choice_state['selected_index'] = 0
+        shown = {}
+        tutorial._show_lesson_result = lambda outcome: shown.setdefault('outcome', dict(outcome))
+        with mock.patch.object(tutorial_module, 't', lambda key, *a, **k: k.get('default', key)):
+            TutorialMode._confirm_card_choice_selection(tutorial)
+        self.assertNotEqual(tutorial.card_choice_state.get('stage'), 'showcase')
+        self.assertIn('outcome', shown)
+
+    def test_apply_tutorial_card_effect_clear_rows_mutates_board(self):
+        # FAZ 6 — Kart ustalığı hissi: clear_rows alt satırları temizler.
+        tutorial = TutorialMode.__new__(TutorialMode)
+        width, height = 10, 6
+        occupancy = [[False] * width for _ in range(height)]
+        grid = [[(0, 0, 0)] * width for _ in range(height)]
+        # En alt iki satır dolu.
+        for x in range(width):
+            occupancy[height - 1][x] = True
+            occupancy[height - 2][x] = True
+            grid[height - 1][x] = (100, 100, 100)
+            grid[height - 2][x] = (100, 100, 100)
+        tutorial.board = types.SimpleNamespace(
+            width=width, height=height, occupancy=occupancy, grid=grid,
+            texture_grid=[[None] * width for _ in range(height)],
+            gold=[[False] * width for _ in range(height)],
+            owners=[[None] * width for _ in range(height)],
+        )
+        with mock.patch.object(tutorial_module, 't', lambda key, *a, **k: k.get('default', key)):
+            summary = TutorialMode._apply_tutorial_card_effect(
+                tutorial, {'id': 'clear_rows', 'value': 2})
+        self.assertTrue(summary)
+        # Etki sonrası tahtada dolu hücre kalmamalı (2 dolu satır temizlendi).
+        filled = sum(1 for row in occupancy for cell in row if cell)
+        self.assertEqual(filled, 0)
+
+    def test_apply_tutorial_card_effect_perk_no_board_change(self):
+        # Perk kartı tahtayı değiştirmez ama özet döndürür.
+        tutorial = TutorialMode.__new__(TutorialMode)
+        width, height = 10, 4
+        occupancy = [[False] * width for _ in range(height)]
+        occupancy[height - 1][0] = True
+        tutorial.board = types.SimpleNamespace(
+            width=width, height=height, occupancy=occupancy,
+            grid=[[(0, 0, 0)] * width for _ in range(height)],
+            texture_grid=[[None] * width for _ in range(height)],
+            gold=[[False] * width for _ in range(height)],
+            owners=[[None] * width for _ in range(height)],
+        )
+        with mock.patch.object(tutorial_module, 't', lambda key, *a, **k: k.get('default', key)):
+            summary = TutorialMode._apply_tutorial_card_effect(
+                tutorial, {'id': 'perk_second_pocket', 'persistent': True})
+        self.assertTrue(summary)
+        self.assertTrue(occupancy[height - 1][0])  # değişmedi
+
+    def test_apply_tutorial_card_effect_safe_without_board(self):
+        # board None ise güvenli boş döner.
+        tutorial = TutorialMode.__new__(TutorialMode)
+        tutorial.board = None
+        self.assertEqual(
+            TutorialMode._apply_tutorial_card_effect(tutorial, {'id': 'clear_rows'}), '')
 
 
 class TestPerPlacementHighlightTiming(unittest.TestCase):

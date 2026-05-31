@@ -63,6 +63,13 @@ CHAPTERS: List[Dict[str, Any]] = [
         "description_fallback": "Temiz yüzey, delik önleme ve kuyu koruma mantığını otur.",
         "unlocked_by_default": False,
         "difficulty": 2,
+        "progression_panel": {
+            "title_key": "tutorial_progress_panel_surface_title",
+            "title_fallback": "Yüzey kontrolünü öğrendin!",
+            "body_key": "tutorial_progress_panel_surface_body",
+            "body_fallback": "Yüzeyi temiz ve alçak tutmayı çözdün. Şimdi sıradaki "
+                             "parçaları ve hold'u planlamayı öğrenmeye ne dersin?",
+        },
     },
     {
         "id": "queue_hold",
@@ -72,6 +79,13 @@ CHAPTERS: List[Dict[str, Any]] = [
         "description_fallback": "Gelecek planlama ve hold karar mantığını öğren.",
         "unlocked_by_default": False,
         "difficulty": 2,
+        "progression_panel": {
+            "title_key": "tutorial_progress_panel_queue_title",
+            "title_fallback": "Planlamayı öğrendin!",
+            "body_key": "tutorial_progress_panel_queue_body",
+            "body_fallback": "Sırayı ve hold'u kullanmayı çözdün. Şimdi kötü bir tahtadan "
+                             "sakin kalarak kurtulmayı öğrenelim mi?",
+        },
     },
     {
         "id": "recovery",
@@ -81,6 +95,13 @@ CHAPTERS: List[Dict[str, Any]] = [
         "description_fallback": "Kötü board altında sakin ve doğru önceliklerle oyna.",
         "unlocked_by_default": False,
         "difficulty": 3,
+        "progression_panel": {
+            "title_key": "tutorial_progress_panel_recovery_title",
+            "title_fallback": "Kurtarmayı öğrendin!",
+            "body_key": "tutorial_progress_panel_recovery_body",
+            "body_fallback": "Zor durumdan çıkmayı çözdün. Sırada kartlar var: doğru kartı "
+                             "doğru anda seçmeyi öğrenmeye devam et.",
+        },
     },
     {
         "id": "card_foundations",
@@ -286,7 +307,7 @@ LESSONS: List[Dict[str, Any]] = [
         "chapter": "queue_hold",
         "kind": "scenario",
         "scenario_id": "hold_save_practice",
-        "lesson_type": "drill",
+        "lesson_type": "board_puzzle",
         "title_key": "tutorial_plan_hold_save_title",
         "title_fallback": "Hold ile parça sakla",
         "description_key": "tutorial_plan_hold_save_desc",
