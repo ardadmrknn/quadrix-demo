@@ -435,3 +435,143 @@ def test_tutorial_lesson_result_panel_live_draw_uses_active_canvas(monkeypatch):
 
     assert len(captured_rects) == 1
     _assert_rects_within_surface(captured_rects)
+
+
+def test_tutorial_briefing_panel_live_draw_uses_active_canvas(monkeypatch):
+    captured_rects = _install_tutorial_draw_stubs(monkeypatch)
+
+    tutorial = _build_tutorial((800, 600), window_size=(1366, 768))
+    tutorial.briefing_data = {
+        'title': 'Genis boslugu kapat',
+        'goal': 'Iki satiri ayni anda temizle.',
+        'why': 'Genis bosluklari okumak kart kararlarinin temelidir.',
+        'watch': 'Yeni delik acmadan yerlestir.',
+        'objectives': ['2 satiri temizle', 'Yeni delik olusturma', 'Yuksekligi artirma'],
+        'duration_seconds': 30,
+        'difficulty': 2,
+        'lesson_type': 'board_puzzle',
+        'lesson_index': 6,
+        'lesson_total': 28,
+    }
+    tutorial._lesson_type_label = lambda lt: 'Tahta Bulmacasi'
+    tutorial._draw_tutorial_star_row = lambda *a, **k: 0
+
+    tutorial._draw_lesson_briefing()
+
+    # Panel cam panel olarak yakalanir; butonlar artik dogrudan cizilir.
+    assert len(captured_rects) >= 1
+    _assert_rects_within_surface(captured_rects)
+    # Basla/Atla butonlari (custom cizim) canvas icinde ve panel altinda olmali.
+    assert tutorial.briefing_start_rect is not None
+    assert tutorial.briefing_skip_rect is not None
+    assert tutorial.briefing_start_rect.bottom <= 600
+    assert tutorial.briefing_start_rect.x >= 0
+    assert tutorial.briefing_skip_rect.right <= 800
+    # Iki buton cakismamali.
+    assert not tutorial.briefing_start_rect.colliderect(tutorial.briefing_skip_rect)
+
+
+def test_tutorial_board_result_panel_shows_pedagogical_triple(monkeypatch):
+    captured_rects = _install_tutorial_draw_stubs(monkeypatch)
+
+    tutorial = _build_tutorial((800, 600), window_size=(1366, 768))
+    tutorial.lesson_result = {
+        'success': False,
+        'title': 'Tekrar Dene',
+        'stars': 0,
+        'feedback': 'Yeni delik actin.',
+        'objective_results': [
+            {'text': 'En az 2 satir temizle', 'passed': False},
+            {'text': 'Yeni delik olusturma', 'passed': False},
+        ],
+        'coach_text': '',
+        'did_well_texts': ['Yuksekligi kontrol altinda tuttun.'],
+        'improve_texts': ['Yeni delik actin.', 'Yeterli satir temizleyemedin.'],
+        'progressive_hint': 'Adim adim: once dogru lane sec, sonra yerlestir.',
+        'line_delta': 0,
+        'hole_delta': 2,
+        'height_delta': 0,
+        'action_text': 'ENTER / R',
+    }
+
+    tutorial._draw_lesson_result_panel()
+
+    assert len(captured_rects) == 1
+    _assert_rects_within_surface(captured_rects)
+
+
+def test_tutorial_card_board_preview_overlay_layout(monkeypatch):
+    captured_rects = _install_tutorial_draw_stubs(monkeypatch)
+
+    tutorial = _build_tutorial((800, 600), window_size=(1366, 768))
+    tutorial.card_choice_state = {
+        'scenario': {
+            'context_lines': ['Durum: Delikli ve yuksek bir tahta.', 'Oncelik: Nefes aldiran hamleyi secmek.'],
+        },
+        'selected_index': 0,
+        'stage': 'board_preview',
+    }
+
+    tutorial._draw_card_board_preview_overlay()
+
+    # Cam panel yakalanmali ve canvas icinde olmali.
+    assert captured_rects
+    _assert_rects_within_surface(captured_rects)
+    panel_rect = captured_rects[0]
+    # Panel ust kenara yapismamali (biraz asagida).
+    assert panel_rect.top >= 20
+    assert panel_rect.bottom <= 600
+    # Devam Et butonu panel icinde ve canvas icinde olmali.
+    btn = tutorial.card_preview_continue_rect
+    assert btn is not None
+    assert panel_rect.contains(btn)
+    assert btn.bottom <= 600
+
+
+def test_tutorial_card_board_preview_scales_with_modal_scale(monkeypatch):
+    _install_tutorial_draw_stubs(monkeypatch)
+
+    base = _build_tutorial((1366, 768), window_size=(1366, 768))
+    base.card_choice_state = {
+        'scenario': {'context_lines': ['Satir bir', 'Satir iki']},
+        'stage': 'board_preview',
+    }
+    base._draw_card_board_preview_overlay()
+    base_btn_h = base.card_preview_continue_rect.height
+
+    grown = _build_tutorial((2560, 1440), window_size=(2560, 1440))
+    grown.card_choice_state = {
+        'scenario': {'context_lines': ['Satir bir', 'Satir iki']},
+        'stage': 'board_preview',
+    }
+    grown._draw_card_board_preview_overlay()
+    grown_btn_h = grown.card_preview_continue_rect.height
+
+    # Olcekleme sistemine bagli: buyuk canvasta buton da buyur.
+    assert grown_btn_h > base_btn_h
+
+
+def test_tutorial_card_result_panel_shows_card_effect(monkeypatch):
+    captured_rects = _install_tutorial_draw_stubs(monkeypatch)
+
+    tutorial = _build_tutorial((800, 600), window_size=(1366, 768))
+    tutorial.lesson_result = {
+        'success': False,
+        'title': 'Tekrar Dene',
+        'stars': 0,
+        'feedback': 'Bu kart board\'u duzeltmez.',
+        'objective_results': [],
+        'coach_text': '',
+        'card_title': 'Hiz Patlamasi',
+        'card_description': 'Birkac saniye boyunca dusus hizini artirir.',
+        'recommended_card_title': 'Satir Temizle',
+        'did_well_texts': [],
+        'improve_texts': [],
+        'progressive_hint': '',
+        'action_text': 'ENTER / R',
+    }
+
+    tutorial._draw_lesson_result_panel()
+
+    assert len(captured_rects) == 1
+    _assert_rects_within_surface(captured_rects)

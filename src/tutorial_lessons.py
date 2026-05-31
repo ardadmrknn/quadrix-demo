@@ -44,6 +44,16 @@ CHAPTERS: List[Dict[str, Any]] = [
         "description_fallback": "90 saniyede oynanabilir minimum yetkinliği al.",
         "unlocked_by_default": True,
         "difficulty": 1,
+        # Bölüm bitince çıkan ilerleme paneli (devam et / çıkıp oyna kararı).
+        # Yalnız bu alana sahip bölümler panel gösterir; diğerlerinde sessiz akış korunur.
+        "progression_panel": {
+            "title_key": "tutorial_progress_panel_basics_title",
+            "title_fallback": "Temel hareketleri öğrendin!",
+            "body_key": "tutorial_progress_panel_basics_body",
+            "body_fallback": "Artık oynamak için yeterince biliyorsun. Daha fazlasını "
+                             "öğrenmek istersen Devam Et'e bas, ya da çıkıp oynayarak "
+                             "kendin keşfet.",
+        },
     },
     {
         "id": "surface_control",
@@ -529,7 +539,9 @@ LESSONS: List[Dict[str, Any]] = [
         "kind": "card_choice",
         "scenario_id": "build_direction",
         "lesson_type": "card_lab",
+        "title_key": "tutorial_cards_build_direction_title",
         "title_fallback": "Hedefli çözüm",
+        "description_key": "tutorial_cards_build_direction_desc",
         "description_fallback": "Tek bir kule veya lokal problem varsa, geniş etki yerine nokta atışı kartı seç.",
         "why_it_matters": "Doğru kart bazen en büyük efekt değil, en az israfla çözen karttır.",
         "difficulty": 3,
@@ -649,6 +661,15 @@ def _resolve_lesson_id(lesson_id: str | None) -> str:
 # ---------------------------------------------------------------------------
 def get_chapters() -> List[Dict[str, Any]]:
     return [dict(chapter) for chapter in CHAPTERS]
+
+
+def get_chapter(chapter_id: str | None) -> Optional[Dict[str, Any]]:
+    """Tek bir bölüm metadata'sını döndür (legacy ID'ler çözülür)."""
+    resolved = _resolve_chapter_id(chapter_id)
+    if not resolved:
+        return None
+    chapter = CHAPTER_BY_ID.get(resolved)
+    return dict(chapter) if chapter else None
 
 
 def get_lessons() -> List[Dict[str, Any]]:

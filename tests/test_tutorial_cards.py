@@ -109,6 +109,22 @@ class TestTutorialCardHelpers(unittest.TestCase):
         self.assertFalse(overkill_outcome['success'])
         self.assertEqual(overkill_outcome['stars'], 0)
 
+    def test_wrong_choice_includes_recommended_reason(self):
+        # FAZ 5 — Yanlış seçimde önerilen kartın NEDEN doğru olduğu da döner.
+        scenario = get_card_choice_scenario('rescue_pick')
+        outcome = evaluate_card_choice(scenario, 'speed_burst_legendary')
+        self.assertFalse(outcome['success'])
+        self.assertTrue(outcome.get('recommended_reason'))
+        # Önerilen kartın (clear_rows) açıklamasıyla eşleşmeli.
+        self.assertIn('Alt Süpür', outcome['recommended_reason'])
+
+    def test_correct_choice_has_empty_recommended_reason(self):
+        # Doğru seçimde kontrast gerekmez — reason boş.
+        scenario = get_card_choice_scenario('rescue_pick')
+        outcome = evaluate_card_choice(scenario, 'clear_rows')
+        self.assertTrue(outcome['success'])
+        self.assertEqual(outcome.get('recommended_reason'), '')
+
     def test_card_preview_prefers_real_catalog_fields_over_tutorial_fallbacks(self):
         freeze_drop = tutorial_cards.get_card_preview('freeze_drop_rare')
         self.assertEqual(freeze_drop['value'], 3)

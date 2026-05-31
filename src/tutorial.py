@@ -14,6 +14,7 @@ try:
     from .platform_utils import create_display, normalize_mouse_pos, get_mouse_pos  # type: ignore
     from .tutorial_lessons import (  # type: ignore
         get_chapters,
+        get_chapter,
         get_first_lesson_id,
         get_lesson,
         get_lesson_for_legacy_step,
@@ -49,6 +50,7 @@ except Exception:
     from platform_utils import create_display, normalize_mouse_pos, get_mouse_pos
     from tutorial_lessons import (
         get_chapters,
+        get_chapter,
         get_first_lesson_id,
         get_lesson,
         get_lesson_for_legacy_step,
@@ -186,6 +188,7 @@ class TutorialMode(Game):
         self.next_lesson_id = None
         self.lesson_result_active = False
         self.lesson_result = None
+        self.lesson_result_primary_rect = None
         self.lesson_attempt_counts = {}
         self.card_choice_state = {}
         # FAZ C — Ders öncesi briefing mikro-ekranı state'i
@@ -196,6 +199,13 @@ class TutorialMode(Game):
         self.briefing_start_rect = None
         self.briefing_skip_rect = None
         self.briefing_seen_lessons = set()
+        # FAZ 2 — Bölüm bitince çıkan ilerleme paneli (devam et / çıkıp oyna) state'i.
+        self.progress_panel_active = False
+        self.progress_panel_data = None
+        self.progress_panel_continue_rect = None
+        self.progress_panel_play_rect = None
+        self.progress_panel_hub_rect = None
+        self.progress_panel_selected_index = 0
         # FAZ D — Canlı hedef chip'leri + board highlight state'i
         self.board_highlight_timer = 0.0
         self.board_highlight_duration_s = 3.0
@@ -248,6 +258,12 @@ class TutorialMode(Game):
         if getattr(self, 'hub_active', False):
             return True
         if getattr(self, 'briefing_active', False):
+            return True
+        # İlerleme paneli açıkken imleç görünür kalsın (tıklanabilir butonlar var).
+        if getattr(self, 'progress_panel_active', False):
+            return True
+        # Sonuç paneli açıkken imleç görünür kalsın (tıklanabilir Devam/Tekrar butonu var).
+        if getattr(self, 'lesson_result_active', False):
             return True
         if self._is_card_choice_lesson_active() and not getattr(self, 'lesson_result_active', False):
             return True
@@ -583,13 +599,20 @@ class TutorialMode(Game):
             panel_height,
         )
 
-    def _tutorial_lesson_result_panel_rect(self, is_board_result: bool) -> pygame.Rect:
+    def _tutorial_lesson_result_panel_rect(self, is_board_result: bool, is_card_result: bool = False) -> pygame.Rect:
         active_width, active_height = self._active_ui_size()
         ui_scale = self._tutorial_modal_scale(min_scale=0.72, max_scale=1.18)
         s = lambda v, minimum=1: self._sx(v, ui_scale, minimum)
 
-        panel_width = s(420 if is_board_result else 360)
-        panel_height = s(360 if is_board_result else 200)
+        if is_board_result:
+            panel_width, panel_height = s(420), s(360)
+        elif is_card_result:
+            panel_width, panel_height = s(440), s(348)
+        else:
+            panel_width, panel_height = s(360), s(200)
+        # Aktif canvas'ı taşmasın.
+        panel_width = min(panel_width, active_width - s(24))
+        panel_height = min(panel_height, active_height - s(24))
         return pygame.Rect(
             (active_width - panel_width) // 2,
             (active_height - panel_height) // 2,
@@ -864,6 +887,16 @@ class TutorialMode(Game):
     def _is_card_choice_lesson_active(self):
         return isinstance(self.active_lesson, dict) and self.active_lesson.get('kind') == 'card_choice'
 
+    def _card_choice_stage(self):
+        """Kart dersi akış aşaması: 'board_preview' | 'choosing' | 'effect'."""
+        if not isinstance(self.card_choice_state, dict):
+            return 'choosing'
+        return str(self.card_choice_state.get('stage') or 'choosing')
+
+    def _is_card_choosing_stage(self):
+        """Kart seçim arayüzünün (kartların) gösterildiği aşama mı?"""
+        return self._is_card_choice_lesson_active() and self._card_choice_stage() == 'choosing'
+
     def _is_board_basics_lesson_active(self):
         return (
             isinstance(self.active_lesson, dict)
@@ -899,8 +932,9 @@ class TutorialMode(Game):
         """Senaryo highlight'ını ve hold vurgusunu derse göre hazırla.
 
         Kurallar:
-        - Board iniş highlight'ı (parçanın oturacağı tam ayak izi) yalnızca 2
-          başarısız denemeden SONRA gösterilir (attempt_count > 2).
+        - Board iniş highlight'ı (parçanın oturacağı tam ayak izi) normal
+          derslerde 1 başarısızlıktan SONRA (attempt >= 2), sınavlarda 2
+          başarısızlıktan SONRA (attempt >= 3) gösterilir.
         - Hold gerektiren (expected_hold_usage) sınav-olmayan derslerde hold
           kutucuğu hemen vurgulanır; hold kullanılınca kapanır.
         - Sınav (lesson_type == 'exam') derslerinde hold vurgusu gösterilmez;
@@ -950,8 +984,11 @@ class TutorialMode(Game):
         # Anlık görünürlük placement index'e göre güncellenir.
         self.hold_highlight_active = bool(self.hold_highlight_armed and self.hold_highlight_index == 0)
 
-        # Board iniş highlight'ı yalnız 2 başarısızlıktan sonra (attempt 3+).
-        self._board_highlight_allowed = bool(spec and attempt_count > 2)
+        # Board iniş highlight'ı: zorlanan oyuncuyu kaybetmemek için normal
+        # derslerde 1 başarısızlıktan sonra (attempt 2+) gösterilir. Sınavlarda
+        # daha geç — 2 başarısızlıktan sonra (attempt 3+) — gelir.
+        highlight_after = 3 if is_exam else 2
+        self._board_highlight_allowed = bool(spec and attempt_count >= highlight_after)
         self._board_highlight_last_index = self._active_highlight_placement_index()
         if self._board_highlight_allowed:
             self.board_highlight_timer = self.board_highlight_duration_s
@@ -1169,7 +1206,45 @@ class TutorialMode(Game):
             return None, None
         return next_chapter_id, str(next_lesson.get('id') or '')
 
+    def _get_chapter_progression_panel(self, chapter_id):
+        """Bölümün ilerleme paneli metadata'sını döndür; yoksa None."""
+        chapter = get_chapter(chapter_id)
+        if not isinstance(chapter, dict):
+            return None
+        panel_meta = chapter.get('progression_panel')
+        return panel_meta if isinstance(panel_meta, dict) else None
+
+    def _pending_chapter_boundary(self):
+        """Tamamlanan ders bir bölümün sonundaysa ve sıradaki ders farklı bir
+        bölüme geçiyorsa (chapter_id, panel_meta, next_lesson_id) döndür; yoksa None.
+
+        Yalnız `progression_panel` metadata'sına sahip bölümler için panel önerilir.
+        """
+        current_lesson = self.active_lesson if isinstance(self.active_lesson, dict) else None
+        current_chapter_id = str(current_lesson.get('chapter') or '') if current_lesson else ''
+        if not current_chapter_id:
+            return None
+        panel_meta = self._get_chapter_progression_panel(current_chapter_id)
+        if not panel_meta:
+            return None
+        next_lesson_id = get_next_lesson_id(self.active_lesson_id, chapter_only=False)
+        if not next_lesson_id:
+            return None
+        next_lesson = self.lesson_lookup.get(str(next_lesson_id)) or get_lesson(next_lesson_id)
+        next_chapter_id = str(next_lesson.get('chapter') or '') if isinstance(next_lesson, dict) else ''
+        if not next_chapter_id or next_chapter_id == current_chapter_id:
+            return None
+        return current_chapter_id, panel_meta, str(next_lesson_id)
+
     def _continue_after_completion(self):
+        # FAZ 2 — Bölüm sınırını geçmeden önce ilerleme paneli göster
+        # (devam et / çıkıp oyna). Yalnız panel metadata'sı olan bölümlerde.
+        if not getattr(self, 'progress_panel_active', False):
+            boundary = self._pending_chapter_boundary()
+            if boundary is not None:
+                _chapter_id, panel_meta, next_lesson_id = boundary
+                self._open_progression_panel(panel_meta, next_lesson_id)
+                return True
         if self.next_lesson_id:
             self._start_lesson(self.next_lesson_id)
             return True
@@ -1180,6 +1255,67 @@ class TutorialMode(Game):
         if self.hub_return_enabled:
             preferred_chapter_id = self.active_lesson.get('chapter') if isinstance(self.active_lesson, dict) else None
             self._open_tutorial_hub(preferred_chapter_id=preferred_chapter_id, preferred_lesson_id=self.active_lesson_id)
+            return True
+        return 'menu'
+
+    # ── FAZ 2 — İlerleme paneli (bölüm sonu karar ekranı) ──────────────
+    def _open_progression_panel(self, panel_meta, next_lesson_id):
+        """Bölüm sonu ilerleme panelini aç (oyun mantığı durur)."""
+        title = t(
+            str(panel_meta.get('title_key') or ''),
+            default=str(panel_meta.get('title_fallback') or ''),
+        ) if panel_meta.get('title_key') else str(panel_meta.get('title_fallback') or '')
+        body = t(
+            str(panel_meta.get('body_key') or ''),
+            default=str(panel_meta.get('body_fallback') or ''),
+        ) if panel_meta.get('body_key') else str(panel_meta.get('body_fallback') or '')
+        self.progress_panel_data = {
+            'title': title,
+            'body': body,
+            'next_lesson_id': str(next_lesson_id or ''),
+            'hub_enabled': bool(getattr(self, 'hub_return_enabled', False)),
+        }
+        self.progress_panel_active = True
+        self.progress_panel_selected_index = 0
+        self.lesson_result_active = False
+        self.lesson_result = None
+        self.waiting_for_enter = False
+        self.in_transition = False
+        self.card_choice_state = {}
+        try:
+            self.sound.play('tutorial_progress')
+        except Exception:
+            pass
+
+    def _progression_panel_continue(self):
+        """İlerleme panelinde 'Öğrenmeye Devam Et' — sıradaki bölüme geç."""
+        data = self.progress_panel_data if isinstance(self.progress_panel_data, dict) else {}
+        next_lesson_id = str(data.get('next_lesson_id') or '')
+        self.progress_panel_active = False
+        self.progress_panel_data = None
+        # first-run (chapter scope) ise akademinin kalanını da aç.
+        if self.lesson_flow_scope == 'chapter':
+            self.lesson_flow_scope = 'full'
+        if next_lesson_id:
+            self._start_lesson(next_lesson_id)
+            return True
+        if getattr(self, 'hub_return_enabled', False):
+            self._open_tutorial_hub()
+            return True
+        return 'menu'
+
+    def _progression_panel_play(self):
+        """İlerleme panelinde 'Çıkıp Oyna' — ana menüye dön (kullanıcı kararı)."""
+        self.progress_panel_active = False
+        self.progress_panel_data = None
+        return 'menu'
+
+    def _progression_panel_to_hub(self):
+        """İlerleme panelinde 'Ders Merkezi' — hub'a dön (yalnız hub_return_enabled)."""
+        self.progress_panel_active = False
+        self.progress_panel_data = None
+        if getattr(self, 'hub_return_enabled', False):
+            self._open_tutorial_hub()
             return True
         return 'menu'
 
@@ -1456,6 +1592,8 @@ class TutorialMode(Game):
         self.card_choice_state = {
             'scenario': scenario,
             'selected_index': 0,
+            # Akış aşaması: önce tahtayı incele, sonra kart seç.
+            'stage': 'board_preview',
         }
         if self.card_ui:
             self.card_ui.reset()
@@ -1575,10 +1713,30 @@ class TutorialMode(Game):
             self.card_ui.clear_selection_feedback()
         selected_card = choices[index]
         outcome = evaluate_card_choice(scenario, selected_card.get('id'))
+        # Kartın etkisini (ad + açıklama) sonuca göm; tek, cilalı sonuç ekranı.
+        outcome['card_title'] = get_tutorial_card_title(selected_card)
+        outcome['card_description'] = get_tutorial_card_description(selected_card)
         self.lesson_runtime_state['selected_card_id'] = selected_card.get('id')
         self.lesson_runtime_state['last_result'] = dict(outcome)
         self.sound.play('tutorial_progress')
+        # Doğrudan zengin sonuç paneline geç (ara "Sonucu gör" ekranı yok).
         self._show_lesson_result(outcome)
+
+
+    def _advance_card_preview_to_choosing(self):
+        """Tahta inceleme aşamasından kart seçim aşamasına geç."""
+        if not isinstance(self.card_choice_state, dict):
+            return
+        if self.card_choice_state.get('stage') != 'board_preview':
+            return
+        self.card_choice_state['stage'] = 'choosing'
+        if self.card_ui:
+            self.card_ui.reset()
+            self._sync_tutorial_card_overlay_reference()
+        try:
+            self.sound.play('move')
+        except Exception:
+            pass
 
     def _show_lesson_result(self, result):
         outcome = self._enrich_board_lesson_outcome(dict(result or {}))
@@ -1623,6 +1781,9 @@ class TutorialMode(Game):
             'action_text': str(outcome.get('action_text') or action_text),
             'selected_card_title': outcome.get('selected_card_title'),
             'recommended_card_title': outcome.get('recommended_card_title'),
+            'recommended_reason': outcome.get('recommended_reason'),
+            'card_title': outcome.get('card_title'),
+            'card_description': outcome.get('card_description'),
             'objective_results': list(outcome.get('objective_results') or []),
             'coach_text': str(outcome.get('coach_text') or ''),
             'did_well_texts': did_well_texts,
@@ -1635,6 +1796,19 @@ class TutorialMode(Game):
             self.next_lesson_id = followup_lesson_id
             self._create_success_effects()
             self.sound.play('tutorial_complete')
+
+    def _handle_lesson_result_advance(self):
+        """Sonuç panelinden ilerleme/tekrar kararını uygula (klavye + fare ortak yolu).
+
+        Başarılıysa bir sonraki adıma geçer (_continue_after_completion); başarısızsa
+        dersi yeniden başlatır. Dönüş: handle_input'a iletilecek değer veya None.
+        """
+        lesson_success = bool(self.lesson_result and self.lesson_result.get('success'))
+        if lesson_success:
+            return self._continue_after_completion()
+        # Başarısız: dersi tekrar dene.
+        self._start_lesson(self.active_lesson_id)
+        return True
 
     def _get_progressive_result_hint(self, outcome, success) -> str:
         """FAZ E — Tekrarlanan başarısızlıkta sertleşen ipucu üret.
@@ -2337,6 +2511,8 @@ class TutorialMode(Game):
             return False
         if getattr(self, 'briefing_active', False):
             return False
+        if getattr(self, 'progress_panel_active', False):
+            return False
         if getattr(self, 'in_transition', False):
             return False
         if getattr(self, 'waiting_for_enter', False):
@@ -2510,6 +2686,36 @@ class TutorialMode(Game):
                         self._confirm_lesson_briefing()
                 continue
 
+            # FAZ 2 — İlerleme paneli aktifken: devam et / çıkıp oyna / (hub).
+            if getattr(self, 'progress_panel_active', False):
+                if event.type == pygame.KEYDOWN:
+                    if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE):
+                        result = self._progression_panel_continue()
+                        if result is not None:
+                            return result
+                    elif event.key == pygame.K_ESCAPE:
+                        result = self._progression_panel_play()
+                        if result is not None:
+                            return result
+                elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                    pos = normalize_mouse_pos(getattr(event, 'pos', None)) or get_mouse_pos()
+                    continue_rect = getattr(self, 'progress_panel_continue_rect', None)
+                    play_rect = getattr(self, 'progress_panel_play_rect', None)
+                    hub_rect = getattr(self, 'progress_panel_hub_rect', None)
+                    if continue_rect and continue_rect.collidepoint(pos):
+                        result = self._progression_panel_continue()
+                        if result is not None:
+                            return result
+                    elif play_rect and play_rect.collidepoint(pos):
+                        result = self._progression_panel_play()
+                        if result is not None:
+                            return result
+                    elif hub_rect and hub_rect.collidepoint(pos):
+                        result = self._progression_panel_to_hub()
+                        if result is not None:
+                            return result
+                continue
+
             if self.hub_active:
                 hub_action = self._handle_hub_input_event(event)
                 if hub_action is not None:
@@ -2517,6 +2723,23 @@ class TutorialMode(Game):
                 continue
 
             if self._is_card_choice_lesson_active() and not self.lesson_result_active:
+                stage = self._card_choice_stage()
+                # Tahta inceleme aşaması: ENTER/SPACE/tık ile kart seçimine geç.
+                if stage == 'board_preview':
+                    if event.type == pygame.KEYDOWN and event.key in (
+                        pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE,
+                    ):
+                        self._advance_card_preview_to_choosing()
+                        continue
+                    if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                        pos = normalize_mouse_pos(getattr(event, 'pos', None)) or get_mouse_pos()
+                        cont_rect = getattr(self, 'card_preview_continue_rect', None)
+                        if cont_rect and cont_rect.collidepoint(pos):
+                            self._advance_card_preview_to_choosing()
+                        continue
+                    if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+                        self.show_exit_prompt = True
+                    continue
                 if event.type == pygame.MOUSEMOTION and self.card_ui:
                     pos = normalize_mouse_pos(getattr(event, 'pos', None)) or get_mouse_pos()
                     self.card_ui.handle_mouse_move(pos)
@@ -2529,6 +2752,16 @@ class TutorialMode(Game):
                     if isinstance(choice, int):
                         self._queue_card_choice_selection(choice)
                         continue
+
+            # Sonuç paneli açıkken fare ile ilerleme/tekrar (tıklanabilir buton).
+            if self.lesson_result_active and event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                pos = normalize_mouse_pos(getattr(event, 'pos', None)) or get_mouse_pos()
+                primary_rect = getattr(self, 'lesson_result_primary_rect', None)
+                if primary_rect and primary_rect.collidepoint(pos):
+                    result_action = self._handle_lesson_result_advance()
+                    if result_action is not None:
+                        return result_action
+                continue
 
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
@@ -2551,9 +2784,13 @@ class TutorialMode(Game):
                     continue_keys = (pygame.K_RETURN, pygame.K_KP_ENTER)
                     if lesson_success:
                         continue_keys = continue_keys + (pygame.K_SPACE,)
-                    if event.key in ((pygame.K_r,) + continue_keys):
-                        if lesson_success and event.key != pygame.K_r:
-                            return self._continue_after_completion()
+                    if event.key in continue_keys:
+                        result_action = self._handle_lesson_result_advance()
+                        if result_action is not None:
+                            return result_action
+                        continue
+                    if event.key == pygame.K_r:
+                        # R her zaman dersi yeniden başlatır (tekrar dene).
                         self._start_lesson(self.active_lesson_id)
                         return True
                     continue
@@ -2561,6 +2798,9 @@ class TutorialMode(Game):
                 bindings = self.control_bindings
 
                 if self._is_card_choice_lesson_active():
+                    # Yalnız kart seçim aşamasında klavye seçim girişlerini işle.
+                    if self._card_choice_stage() != 'choosing':
+                        continue
                     if self.card_ui and getattr(self.card_ui, 'peek_mode_active', False):
                         continue
                     digit_map = {
@@ -2890,6 +3130,11 @@ class TutorialMode(Game):
             self._update_overlay_safe_visual_effects(delta_time)
             return
 
+        # FAZ 2 — İlerleme paneli aktifken de oyun simülasyonu durur.
+        if getattr(self, 'progress_panel_active', False):
+            self._update_overlay_safe_visual_effects(delta_time)
+            return
+
         # Handle transition delay
         if self.in_transition:
             self.transition_timer -= dt_seconds
@@ -2931,7 +3176,8 @@ class TutorialMode(Game):
             return
 
         if self._is_card_choice_lesson_active():
-            if self.card_ui:
+            stage = self._card_choice_stage()
+            if self.card_ui and stage == 'choosing':
                 self.card_ui.update(delta_time, True)
                 if self._pending_card_choice_index is not None and not self.card_ui.is_selection_animating():
                     self._finalize_pending_card_choice_selection()
@@ -3019,6 +3265,11 @@ class TutorialMode(Game):
             self._draw_lesson_briefing()
             return
 
+        # FAZ 2 — İlerleme paneli aktifse, board üzerine paneli çiz.
+        if getattr(self, 'progress_panel_active', False):
+            self._draw_progression_panel()
+            return
+
         # Başarı efektlerini çiz
         self._draw_success_effects()
         
@@ -3026,7 +3277,12 @@ class TutorialMode(Game):
         self._draw_mini_success_effects()
 
         if self._is_card_choice_lesson_active() and not self.lesson_result_active:
-            self._draw_card_choice_overlay()
+            stage = self._card_choice_stage()
+            if stage == 'board_preview':
+                # Önce tahtayı incele: üstte "devam et" panelli açıklama.
+                self._draw_card_board_preview_overlay()
+            else:
+                self._draw_card_choice_overlay()
         else:
             # FAZ D — Board highlight (iniş ayak izi) + hold kutu vurgusu.
             if not self.lesson_result_active:
@@ -3295,6 +3551,120 @@ class TutorialMode(Game):
                 self.screen.blit(line_surf, line_rect)
                 cursor_y += subtitle_line_height
         
+    def _draw_progression_panel(self):
+        """FAZ 2 — Bölüm sonu ilerleme paneli (devam et / çıkıp oyna).
+
+        İçerik yüksekliğe göre dinamik hesaplanır; butonlar metinle çakışmaz.
+        Tüm boyutlar _tutorial_modal_scale + _sx ile oyunun ölçeğine bağlıdır.
+        """
+        data = self.progress_panel_data if isinstance(self.progress_panel_data, dict) else {}
+        active_width, active_height = self._active_ui_size()
+        ui_scale = self._tutorial_modal_scale(min_scale=0.72, max_scale=1.18)
+        s = lambda v, minimum=1: self._sx(v, ui_scale, minimum)
+
+        # Hafif karartma — board görünür kalsın ama panel öne çıksın.
+        overlay = pygame.Surface((active_width, active_height), pygame.SRCALPHA)
+        overlay.fill((5, 8, 18, 180))
+        self.screen.blit(overlay, (0, 0))
+
+        title_font = retro_style.get_font(s(24, minimum=16), bold=True)
+        body_font = retro_style.get_font(s(16, minimum=11))
+
+        panel_width = min(active_width - s(48), s(600))
+        pad_x_inset = s(28)
+        content_w = panel_width - pad_x_inset * 2
+
+        title_text = str(data.get('title') or '')
+        body_text = str(data.get('body') or '')
+        body_lines = self._wrap_text(body_text, body_font, content_w, max_lines=5)
+
+        hub_enabled = bool(data.get('hub_enabled'))
+        btn_h = s(48, minimum=34)
+        btn_gap = s(12)
+        # Devam Et + Çıkıp Oyna (+ Ders Merkezi) dikey yığın.
+        button_count = 3 if hub_enabled else 2
+
+        title_h = title_font.get_height()
+        body_line_h = body_font.get_height() + s(4)
+        pad_top = s(26)
+        pad_bottom = s(22)
+        section_gap = s(16)
+
+        content_h = (
+            pad_top
+            + title_h + section_gap
+            + len(body_lines) * body_line_h
+            + section_gap
+            + button_count * btn_h + (button_count - 1) * btn_gap
+            + pad_bottom
+        )
+        panel_h = int(content_h)
+        panel_top = max(s(40), (active_height - panel_h) // 2)
+        max_top = max(s(40), active_height - panel_h - s(20))
+        panel_top = min(panel_top, max_top)
+        panel_rect = pygame.Rect((active_width - panel_width) // 2, panel_top, panel_width, panel_h)
+        retro_style.draw_glass_panel(self.screen, panel_rect, alpha=240,
+                                     border_color=retro_style.success, glow=True)
+
+        cursor_y = panel_rect.y + pad_top
+
+        # Başlık (ortalı).
+        title_surf = title_font.render(title_text, True, (140, 240, 180))
+        self.screen.blit(title_surf, title_surf.get_rect(centerx=panel_rect.centerx, top=cursor_y))
+        cursor_y += title_h + section_gap
+
+        # Gövde metni (ortalı satırlar).
+        for line in body_lines:
+            line_surf = body_font.render(line, True, (224, 232, 242))
+            self.screen.blit(line_surf, line_surf.get_rect(centerx=panel_rect.centerx, top=cursor_y))
+            cursor_y += body_line_h
+        cursor_y += section_gap
+
+        mouse_pos = get_mouse_pos()
+        btn_w = min(s(320), content_w)
+        btn_x = panel_rect.centerx - btn_w // 2
+
+        # Devam Et.
+        continue_rect = pygame.Rect(btn_x, cursor_y, btn_w, btn_h)
+        self.progress_panel_continue_rect = continue_rect
+        self._draw_briefing_action_button(
+            continue_rect,
+            t('tutorial_progress_panel_continue', default='Öğrenmeye Devam Et'),
+            'ENTER',
+            retro_style.success,
+            continue_rect.collidepoint(mouse_pos),
+            s,
+        )
+        cursor_y += btn_h + btn_gap
+
+        # Çıkıp Oyna.
+        play_rect = pygame.Rect(btn_x, cursor_y, btn_w, btn_h)
+        self.progress_panel_play_rect = play_rect
+        self._draw_briefing_action_button(
+            play_rect,
+            t('tutorial_progress_panel_play', default='Çıkıp Oyna'),
+            'ESC',
+            retro_style.secondary,
+            play_rect.collidepoint(mouse_pos),
+            s,
+        )
+        cursor_y += btn_h + btn_gap
+
+        # Ders Merkezi (yalnız hub erişimi varsa).
+        if hub_enabled:
+            hub_rect = pygame.Rect(btn_x, cursor_y, btn_w, btn_h)
+            self.progress_panel_hub_rect = hub_rect
+            self._draw_briefing_action_button(
+                hub_rect,
+                t('tutorial_progress_panel_hub', default='Ders Merkezi'),
+                '',
+                retro_style.primary,
+                hub_rect.collidepoint(mouse_pos),
+                s,
+            )
+        else:
+            self.progress_panel_hub_rect = None
+
     def _draw_lesson_briefing(self):
         """FAZ C — Ders öncesi briefing mikro-ekranı (oyun temel paneli stilinde).
 
@@ -3455,20 +3825,56 @@ class TutorialMode(Game):
         self.briefing_skip_rect = skip_rect
 
         mouse_pos = get_mouse_pos()
-        retro_style.draw_uniform_button(
-            self.screen, start_rect,
+        # Çıkış paneliyle aynı stil: ortalanmış başlık + altında ENTER/ESC etiketi.
+        self._draw_briefing_action_button(
+            start_rect,
             t('tutorial_briefing_start', default='Başlat'),
-            sub_text='ENTER',
-            color_code=retro_style.success,
-            selected=start_rect.collidepoint(mouse_pos),
+            'ENTER',
+            retro_style.success,
+            start_rect.collidepoint(mouse_pos),
+            s,
         )
-        retro_style.draw_uniform_button(
-            self.screen, skip_rect,
+        self._draw_briefing_action_button(
+            skip_rect,
             t('tutorial_briefing_skip', default='Atla'),
-            sub_text='ESC',
-            color_code=retro_style.secondary,
-            selected=skip_rect.collidepoint(mouse_pos),
+            'ESC',
+            retro_style.secondary,
+            skip_rect.collidepoint(mouse_pos),
+            s,
         )
+
+    def _draw_briefing_action_button(self, rect, label, sub_label, color, hover, s):
+        """Briefing Başlat/Atla butonu — çıkış onay panelindeki buton stilinde.
+
+        Ortalanmış başlık + hemen altında küçük ENTER/ESC alt-etiketi.
+        """
+        draw_rect = rect.inflate(s(6), s(4)) if hover else rect
+
+        btn_bg = pygame.Surface(draw_rect.size, pygame.SRCALPHA)
+        if hover:
+            pygame.draw.rect(btn_bg, (*color[:3], 35), btn_bg.get_rect(), border_radius=12)
+            hl_rect = pygame.Rect(s(4), s(2), draw_rect.width - s(8), max(1, s(1)))
+            pygame.draw.rect(btn_bg, (*color[:3], 60), hl_rect)
+        else:
+            pygame.draw.rect(btn_bg, (20, 26, 42, 200), btn_bg.get_rect(), border_radius=12)
+        self.screen.blit(btn_bg, draw_rect.topleft)
+
+        border_w = 3 if hover else 1
+        border_a = 220 if hover else 100
+        pygame.draw.rect(self.screen, (*color[:3], border_a), draw_rect, border_w, border_radius=12)
+
+        txt_color = (255, 255, 255) if hover else (220, 230, 245)
+        label_font = self._get_fitting_font(label, s(20, minimum=14), draw_rect.width - s(28), bold=True)
+        label_surf = label_font.render(label, True, txt_color)
+        sub_font = retro_style.get_font(s(13, minimum=10), bold=False)
+        sub_color = color[:3] if hover else (140, 155, 180)
+        sub_surf = sub_font.render(sub_label, True, sub_color)
+
+        gap = s(3)
+        total_h = label_surf.get_height() + gap + sub_surf.get_height()
+        ty = draw_rect.centery - total_h // 2
+        self.screen.blit(label_surf, label_surf.get_rect(midtop=(draw_rect.centerx, ty)))
+        self.screen.blit(sub_surf, sub_surf.get_rect(midtop=(draw_rect.centerx, ty + label_surf.get_height() + gap)))
 
     def _draw_tutorial_overlay(self):
         ui_scale = self._tutorial_modal_scale(min_scale=0.70, max_scale=1.18)
@@ -4417,6 +4823,103 @@ class TutorialMode(Game):
         raw_title = self._lesson_title() or t('tutorial_card_context_title', default='Ders bağlamı')
         return str(raw_title or t('tutorial_card_context_title', default='Ders bağlamı')).strip()
 
+    def _draw_card_board_preview_overlay(self):
+        """Kart dersinde önce tahtayı göster; üstte açıklama + Devam Et paneli.
+
+        Tahta arka planda görünür kalır; çok hafif siyah overlay ile öne çekilir.
+        Panel yüksekliği içeriğe göre dinamik hesaplanır (metin butonla çakışmaz),
+        oyunun ölçekleme sistemine (_tutorial_modal_scale / _sx) bağlıdır.
+        """
+        active_width, active_height = self._active_ui_size()
+        ui_scale = self._tutorial_modal_scale(min_scale=0.72, max_scale=1.18)
+        s = lambda v, minimum=1: self._sx(v, ui_scale, minimum)
+
+        # Çok hafif siyah overlay (tahta görünür kalır ama panel öne çıkar).
+        overlay = pygame.Surface((active_width, active_height), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 70))
+        self.screen.blit(overlay, (0, 0))
+
+        scenario = self.card_choice_state.get('scenario', {}) if isinstance(self.card_choice_state, dict) else {}
+        context_lines = list(scenario.get('context_lines', []) or [])[:2]
+
+        panel_w = min(active_width - s(40), s(720))
+        pad_x_inset = s(24)
+        content_w = panel_w - pad_x_inset * 2
+
+        title_font = retro_style.get_font(s(20, minimum=14), bold=True)
+        body_font = retro_style.get_font(s(15, minimum=11))
+        body_line_h = body_font.get_height() + s(4)
+
+        # ── İçerik satırlarını önceden hazırla (yükseklik hesabı için) ──
+        context_wrapped = []
+        for line in context_lines:
+            context_wrapped.extend(self._wrap_text(str(line), body_font, content_w, max_lines=2))
+        body_wrapped = self._wrap_text(
+            t('tutorial_card_preview_body', default='Tahtanın durumu bu. İncele ve ne yapacağını belirlemek için devam et.'),
+            body_font, content_w, max_lines=3,
+        )
+
+        pad_top = s(16)
+        title_gap = s(10)
+        section_gap = s(12)
+        btn_h = s(42)
+        btn_gap = s(16)
+        pad_bottom = s(16)
+
+        content_h = (
+            pad_top
+            + title_font.get_height() + title_gap
+            + len(context_wrapped) * body_line_h
+            + (section_gap if context_wrapped else 0)
+            + len(body_wrapped) * body_line_h
+            + btn_gap + btn_h + pad_bottom
+        )
+        panel_h = int(content_h)
+
+        # Paneli biraz aşağı al (üst kenara yapışmasın).
+        panel_top = s(40)
+        # Tahta ile aşırı örtüşmemesi için canvas'ı taşmayacak şekilde sınırla.
+        max_top = max(panel_top, active_height - panel_h - s(20))
+        panel_top = min(panel_top, max_top)
+        panel_rect = pygame.Rect((active_width - panel_w) // 2, panel_top, panel_w, panel_h)
+        retro_style.draw_glass_panel(self.screen, panel_rect, alpha=238, border_color=(255, 190, 80), glow=True)
+
+        pad_x = panel_rect.x + pad_x_inset
+        cursor_y = panel_rect.y + pad_top
+
+        # Başlık
+        title_surf = title_font.render(t('tutorial_card_preview_title', default='Tahtanın durumu bu'), True, (255, 220, 150))
+        self.screen.blit(title_surf, (pad_x, cursor_y))
+        cursor_y += title_surf.get_height() + title_gap
+
+        # Bağlam satırları (senaryodan).
+        for wrapped in context_wrapped:
+            line_surf = body_font.render(wrapped, True, (228, 234, 242))
+            self.screen.blit(line_surf, (pad_x, cursor_y))
+            cursor_y += body_line_h
+        if context_wrapped:
+            cursor_y += section_gap
+
+        # Yönerge metni.
+        for wrapped in body_wrapped:
+            line_surf = body_font.render(wrapped, True, (190, 200, 215))
+            self.screen.blit(line_surf, (pad_x, cursor_y))
+            cursor_y += body_line_h
+
+        # Devam Et butonu (içeriğin altında, çakışmadan).
+        btn_w = min(s(240), content_w)
+        btn_rect = pygame.Rect(panel_rect.centerx - btn_w // 2, panel_rect.bottom - btn_h - pad_bottom, btn_w, btn_h)
+        self.card_preview_continue_rect = btn_rect
+        mouse_pos = get_mouse_pos()
+        self._draw_briefing_action_button(
+            btn_rect,
+            t('tutorial_card_preview_continue', default='Devam Et'),
+            'ENTER',
+            retro_style.success,
+            btn_rect.collidepoint(mouse_pos),
+            s,
+        )
+
     def _draw_card_choice_overlay(self):
         if not isinstance(self.card_choice_state, dict):
             return
@@ -4550,10 +5053,11 @@ class TutorialMode(Game):
         progressive_hint = str(self.lesson_result.get('progressive_hint') or '')
         success = bool(self.lesson_result.get('success'))
         is_board_result = bool(objective_results)
+        is_card_result = (not is_board_result) and bool(self.lesson_result.get('card_title'))
         overlay = pygame.Surface((active_width, active_height), pygame.SRCALPHA)
         overlay.fill((0, 0, 0, 120))
         self.screen.blit(overlay, (0, 0))
-        rect = self._tutorial_lesson_result_panel_rect(is_board_result)
+        rect = self._tutorial_lesson_result_panel_rect(is_board_result, is_card_result=is_card_result)
         retro_style.draw_glass_panel(self.screen, rect, alpha=235, border_color=(40, 220, 140) if success else (220, 120, 80))
 
         title_font = retro_style.get_font(s(22, minimum=15), bold=True)
@@ -4577,7 +5081,9 @@ class TutorialMode(Game):
         pad_x = rect.x + s(18)
         text_x = rect.x + s(28)
         max_text_width = rect.width - s(36)
-        action_reserve = s(26)
+        # Alt kısımda tıklanabilir Devam/Tekrar butonu için yer ayır.
+        action_btn_h = s(34, minimum=24)
+        action_reserve = action_btn_h + s(16)
         bottom_limit = rect.bottom - action_reserve
 
         if is_board_result:
@@ -4632,24 +5138,88 @@ class TutorialMode(Game):
                     self.screen.blit(line_surf, (text_x, content_cursor_y))
                     content_cursor_y += detail_font.get_height() + s(2)
         else:
-            feedback = str(self.lesson_result.get('feedback', ''))
-            lines = self._wrap_text(feedback, body_font, max_text_width, max_lines=3)
-            for line in lines:
+            # ── Kart dersi sonucu: seçilen kartın etkisi + öneri + ipucu ──
+            card_title = str(self.lesson_result.get('card_title') or '')
+            card_desc = str(self.lesson_result.get('card_description') or '')
+            recommended = str(self.lesson_result.get('recommended_card_title') or '')
+
+            # Seçilen kart adı (vurgulu).
+            if card_title:
+                card_label = label_font.render(
+                    t('tutorial_result_your_card', default='Seçtiğin kart'),
+                    True, (150, 200, 245))
+                self.screen.blit(card_label, card_label.get_rect(centerx=rect.centerx, top=content_cursor_y))
+                content_cursor_y += card_label.get_height() + s(2)
+                ct_font = retro_style.get_font(s(17, minimum=12), bold=True)
+                ct_surf = ct_font.render(card_title, True, (255, 255, 255))
+                self.screen.blit(ct_surf, ct_surf.get_rect(centerx=rect.centerx, top=content_cursor_y))
+                content_cursor_y += ct_surf.get_height() + s(6)
+
+            # Kartın etkisi (açıklama).
+            effect_text = card_desc or str(self.lesson_result.get('feedback', ''))
+            for line in self._wrap_text(effect_text, body_font, max_text_width, max_lines=3):
                 if content_cursor_y + body_font.get_height() > bottom_limit:
                     break
                 line_surf = body_font.render(line, True, (220, 230, 240))
-                self.screen.blit(line_surf, line_surf.get_rect(center=(rect.centerx, content_cursor_y)))
-                content_cursor_y += s(20)
-            # Kart derslerinde de kademeli ipucu göster (varsa).
-            hint_text = progressive_hint if (progressive_hint and not success) else ''
-            if hint_text and content_cursor_y + body_font.get_height() <= bottom_limit:
+                self.screen.blit(line_surf, line_surf.get_rect(center=(rect.centerx, content_cursor_y + body_font.get_height() // 2)))
+                content_cursor_y += body_font.get_height() + s(3)
+
+            # Geri bildirim (coach) cümlesi.
+            feedback = str(self.lesson_result.get('feedback', ''))
+            if feedback and feedback != effect_text and content_cursor_y + body_font.get_height() <= bottom_limit:
                 content_cursor_y += s(4)
-                for line in self._wrap_text(hint_text, small_font, max_text_width, max_lines=2):
+                for line in self._wrap_text(feedback, small_font, max_text_width, max_lines=2):
                     if content_cursor_y + small_font.get_height() > bottom_limit:
                         break
                     line_surf = small_font.render(line, True, (200, 215, 235))
-                    self.screen.blit(line_surf, line_surf.get_rect(center=(rect.centerx, content_cursor_y)))
+                    self.screen.blit(line_surf, line_surf.get_rect(center=(rect.centerx, content_cursor_y + small_font.get_height() // 2)))
                     content_cursor_y += small_font.get_height() + s(2)
 
-        action_surf = small_font.render(str(self.lesson_result.get('action_text', 'ENTER')), True, (255, 255, 255))
-        self.screen.blit(action_surf, action_surf.get_rect(center=(rect.centerx, rect.bottom - s(16))))
+            # Yanlış seçimde önerilen kartı belirt.
+            if not success and recommended and content_cursor_y + small_font.get_height() <= bottom_limit:
+                content_cursor_y += s(4)
+                rec_text = t('tutorial_result_recommended', card=recommended, default=f'Önerilen: {recommended}')
+                for line in self._wrap_text(rec_text, small_font, max_text_width, max_lines=2):
+                    if content_cursor_y + small_font.get_height() > bottom_limit:
+                        break
+                    line_surf = small_font.render(line, True, (255, 210, 130))
+                    self.screen.blit(line_surf, line_surf.get_rect(center=(rect.centerx, content_cursor_y + small_font.get_height() // 2)))
+                    content_cursor_y += small_font.get_height() + s(2)
+
+                # FAZ 5 — Önerilen kartın NEDEN doğru olduğunu da göster (kontrast).
+                rec_reason = str(self.lesson_result.get('recommended_reason') or '')
+                if rec_reason and content_cursor_y + detail_font.get_height() <= bottom_limit:
+                    for line in self._wrap_text(rec_reason, detail_font, max_text_width, max_lines=2):
+                        if content_cursor_y + detail_font.get_height() > bottom_limit:
+                            break
+                        line_surf = detail_font.render(line, True, (210, 222, 236))
+                        self.screen.blit(line_surf, line_surf.get_rect(center=(rect.centerx, content_cursor_y + detail_font.get_height() // 2)))
+                        content_cursor_y += detail_font.get_height() + s(2)
+
+        # Tıklanabilir ilerleme/tekrar butonu (klavye etiketi alt-satırda).
+        success_btn = bool(self.lesson_result.get('success'))
+        if success_btn:
+            btn_label = t('tutorial_result_btn_continue', default='Devam Et')
+            btn_sub = 'ENTER'
+            btn_color = retro_style.success
+        else:
+            btn_label = t('tutorial_result_btn_retry', default='Tekrar Dene')
+            btn_sub = 'ENTER / R'
+            btn_color = (220, 150, 90)
+        btn_w = min(s(240), rect.width - s(40))
+        btn_rect = pygame.Rect(
+            rect.centerx - btn_w // 2,
+            rect.bottom - action_btn_h - s(10),
+            btn_w,
+            action_btn_h,
+        )
+        self.lesson_result_primary_rect = btn_rect
+        mouse_pos = get_mouse_pos()
+        self._draw_briefing_action_button(
+            btn_rect,
+            btn_label,
+            btn_sub,
+            btn_color,
+            btn_rect.collidepoint(mouse_pos),
+            s,
+        )

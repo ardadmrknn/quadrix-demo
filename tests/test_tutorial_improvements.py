@@ -210,6 +210,26 @@ class TestBoardHighlightAndObjectives(unittest.TestCase):
         self.assertGreater(tutorial.board_highlight_timer, 0.0)
         self.assertTrue(tutorial._board_highlight_allowed)
 
+    def test_setup_board_highlight_shows_for_normal_lesson_on_attempt_two(self):
+        # FAZ 4 — Normal (sınav olmayan) derste 1 başarısızlıktan sonra highlight gelir.
+        tutorial = TutorialMode.__new__(TutorialMode)
+        tutorial.board_highlight_duration_s = 3.0
+        scenario = {'highlight_placements': [['T', 2, 3]]}
+        lesson = {'lesson_type': 'board_puzzle', 'id': 'surface_gap_fill'}
+        TutorialMode._setup_board_highlight(tutorial, scenario, lesson=lesson, attempt_count=2)
+        self.assertTrue(tutorial._board_highlight_allowed)
+        self.assertGreater(tutorial.board_highlight_timer, 0.0)
+
+    def test_setup_board_highlight_exam_hidden_on_attempt_two(self):
+        # FAZ 4 — Sınavda attempt 2'de hâlâ gizli; yalnız attempt 3+ gösterilir.
+        tutorial = TutorialMode.__new__(TutorialMode)
+        tutorial.board_highlight_duration_s = 3.0
+        scenario = {'highlight_placements': [['T', 2, 3]]}
+        lesson = {'lesson_type': 'exam', 'id': 'exam_board_midterm'}
+        TutorialMode._setup_board_highlight(tutorial, scenario, lesson=lesson, attempt_count=2)
+        self.assertFalse(tutorial._board_highlight_allowed)
+        self.assertEqual(tutorial.board_highlight_timer, 0.0)
+
     def test_setup_board_highlight_none_when_no_spec(self):
         tutorial = TutorialMode.__new__(TutorialMode)
         tutorial.board_highlight_duration_s = 3.0
@@ -501,6 +521,117 @@ class TestRichResultFeedback(unittest.TestCase):
         with mock.patch.object(tutorial_module, 't', lambda key, *a, **k: k.get('default', key)):
             self.assertEqual(tutorial._behavior_label('created_holes'), 'Yeni delik açtın.')
             self.assertEqual(tutorial._behavior_label(''), '')
+
+
+class TestCardLessonFlow(unittest.TestCase):
+    """Kart dersi 2 aşamalı akış: board_preview → choosing → (zengin sonuç paneli)."""
+
+    def _make_card_tutorial(self, scenario):
+        tutorial = TutorialMode.__new__(TutorialMode)
+        tutorial.active_lesson = {'kind': 'card_choice'}
+        tutorial.card_ui = None
+        tutorial.card_choice_state = {
+            'scenario': scenario,
+            'selected_index': 0,
+            'stage': 'board_preview',
+        }
+        tutorial.lesson_runtime_state = {}
+        tutorial.sound = types.SimpleNamespace(play=lambda *_a, **_k: None)
+        tutorial._pending_card_choice_index = None
+        tutorial._sync_tutorial_card_overlay_reference = lambda: None
+        return tutorial
+
+    def test_card_stage_helpers(self):
+        scenario = {'choices': [{'id': 'a'}, {'id': 'b'}], 'recommended_card_id': 'a'}
+        tutorial = self._make_card_tutorial(scenario)
+        self.assertEqual(tutorial._card_choice_stage(), 'board_preview')
+        self.assertFalse(tutorial._is_card_choosing_stage())
+
+    def test_advance_preview_moves_to_choosing(self):
+        scenario = {'choices': [{'id': 'a'}, {'id': 'b'}], 'recommended_card_id': 'a'}
+        tutorial = self._make_card_tutorial(scenario)
+        TutorialMode._advance_card_preview_to_choosing(tutorial)
+        self.assertEqual(tutorial._card_choice_stage(), 'choosing')
+        self.assertTrue(tutorial._is_card_choosing_stage())
+
+    def test_confirm_selection_goes_straight_to_result_with_card_info(self):
+        scenario = {
+            'choices': [
+                {'id': 'good', 'title': 'İyi Kart', 'description': 'Delikleri kapatır.'},
+                {'id': 'bad', 'title': 'Kötü Kart', 'description': 'Hız verir.'},
+            ],
+            'recommended_card_id': 'good',
+            'acceptable_card_ids': [],
+        }
+        tutorial = self._make_card_tutorial(scenario)
+        tutorial.card_choice_state['stage'] = 'choosing'
+        tutorial.card_choice_state['selected_index'] = 0
+        shown = {}
+        tutorial._show_lesson_result = lambda outcome: shown.setdefault('outcome', dict(outcome))
+        with mock.patch.object(tutorial_module, 't', lambda key, *a, **k: k.get('default', key)):
+            TutorialMode._confirm_card_choice_selection(tutorial)
+        # Ara "Sonucu gör" ekranı YOK — doğrudan sonuç gösterilir.
+        self.assertIn('outcome', shown)
+        self.assertTrue(shown['outcome'].get('success'))
+        # Kart etkisi (ad + açıklama) sonuca gömülmeli.
+        self.assertEqual(shown['outcome'].get('card_title'), 'İyi Kart')
+        self.assertEqual(shown['outcome'].get('card_description'), 'Delikleri kapatır.')
+
+    def test_wrong_card_result_marks_failure_with_card_info(self):
+        scenario = {
+            'choices': [
+                {'id': 'good', 'title': 'İyi', 'description': 'X'},
+                {'id': 'bad', 'title': 'Kötü', 'description': 'Y'},
+            ],
+            'recommended_card_id': 'good',
+            'acceptable_card_ids': [],
+        }
+        tutorial = self._make_card_tutorial(scenario)
+        tutorial.card_choice_state['stage'] = 'choosing'
+        tutorial.card_choice_state['selected_index'] = 1  # yanlış
+        shown = {}
+        tutorial._show_lesson_result = lambda outcome: shown.setdefault('outcome', dict(outcome))
+        with mock.patch.object(tutorial_module, 't', lambda key, *a, **k: k.get('default', key)):
+            TutorialMode._confirm_card_choice_selection(tutorial)
+        self.assertIn('outcome', shown)
+        self.assertFalse(shown['outcome'].get('success'))
+        self.assertEqual(shown['outcome'].get('card_title'), 'Kötü')
+
+
+class TestPerPlacementHighlightTiming(unittest.TestCase):
+    """Her highlight kendi süresince ekranda kalmalı; yeni parçada süre sıfırlanır."""
+
+    def test_hold_highlight_index_controls_visibility(self):
+        tutorial = TutorialMode.__new__(TutorialMode)
+        tutorial.board_highlight_duration_s = 3.0
+        scenario = {
+            'highlight_placements': [['J', 1, 3], ['I', 1, 0]],
+            'expected_hold_usage': True,
+            'hold_highlight_index': 1,
+        }
+        lesson = {'lesson_type': 'repair_challenge', 'id': 'recover_reduce_ceiling'}
+        TutorialMode._setup_board_highlight(tutorial, scenario, lesson=lesson, attempt_count=1)
+        # hold_highlight_index=1 → ilk parçada hold vurgusu kapalı.
+        self.assertTrue(tutorial.hold_highlight_armed)
+        self.assertEqual(tutorial.hold_highlight_index, 1)
+        self.assertFalse(tutorial.hold_highlight_active)
+
+    def test_hold_highlight_index_zero_shows_immediately(self):
+        tutorial = TutorialMode.__new__(TutorialMode)
+        tutorial.board_highlight_duration_s = 3.0
+        scenario = {
+            'highlight_placements': [['I', 1, 3]],
+            'expected_hold_usage': True,
+        }
+        lesson = {'lesson_type': 'drill', 'id': 'plan_hold_save'}
+        TutorialMode._setup_board_highlight(tutorial, scenario, lesson=lesson, attempt_count=1)
+        self.assertTrue(tutorial.hold_highlight_armed)
+        self.assertEqual(tutorial.hold_highlight_index, 0)
+        self.assertTrue(tutorial.hold_highlight_active)
+
+    def test_recovery_reduce_ceiling_has_hold_highlight_index(self):
+        scenario = tutorial_module.get_scenario('recovery_reduce_ceiling')
+        self.assertEqual(scenario.get('hold_highlight_index'), 1)
 
 
 if __name__ == '__main__':

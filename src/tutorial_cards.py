@@ -425,8 +425,14 @@ CARD_CHOICE_SCENARIOS: Dict[str, Dict[str, Any]] = {
     },
 
     "build_direction": {
+        "goal_key": "tutorial_cards_build_direction_goal",
+        "tip_key": "tutorial_cards_build_direction_tip",
         "goal_text": "Sadece bir sorun var — onu çözen, fazlasını yapmayan kartı seç.",
         "tip_text": "Büyük silah her zaman en iyi cevap değil. Soruna göre ölç.",
+        "context_keys": [
+            "tutorial_cards_build_direction_context_1",
+            "tutorial_cards_build_direction_context_2",
+        ],
         "context_lines": [
             "Durum: Tahta genel olarak güvenli ama sağ tarafta tek bir sivri kule var.",
             "Öncelik: Sadece o problemi temizleyip yüzeyi yeniden sakinleştirmek.",
@@ -443,6 +449,11 @@ CARD_CHOICE_SCENARIOS: Dict[str, Dict[str, Any]] = {
         "card_choices": ["peak_sculpt", "nova_burst", "row_shuffle"],
         "recommended_card_id": "peak_sculpt",
         "acceptable_card_ids": [],
+        "feedback_keys_by_card": {
+            "peak_sculpt": "tutorial_cards_build_direction_feedback_sculpt",
+            "nova_burst": "tutorial_cards_build_direction_feedback_nova",
+            "row_shuffle": "tutorial_cards_build_direction_feedback_shuffle",
+        },
         "feedback_by_card": {
             "peak_sculpt": "Doğru seçim. Sorun tek bir sivri kuleyse Tepe Kesici tam hedefe vurur ve güçlü kartları boşa harcamaz.",
             "nova_burst": "Zayıf seçim. Nova Patlaması bu kadar lokal bir problem için fazla büyük; gereksiz değer yakarsın.",
@@ -655,6 +666,17 @@ def evaluate_card_choice(scenario: Dict[str, Any] | None, selected_card_id: str 
     feedback = t(str(feedback_key), default=fallback_feedback) if feedback_key else fallback_feedback
     chosen_card = get_card_preview(selected_id) or {"id": selected_id, "title": selected_id}
 
+    # FAZ 5 — Yanlış/kabul edilebilir seçimde önerilen kartın NEDEN doğru olduğunu da
+    # göster: "senin seçimin" ile "ideal seçim" arasındaki kontrastı öğret.
+    recommended_reason = ""
+    if recommended_id and selected_id != recommended_id:
+        rec_key = feedback_keys_by_card.get(recommended_id)
+        rec_fallback = str(feedback_by_card.get(recommended_id) or "")
+        if rec_key:
+            recommended_reason = t(str(rec_key), default=rec_fallback)
+        else:
+            recommended_reason = rec_fallback
+
     return {
         "success": success,
         "stars": stars,
@@ -664,4 +686,5 @@ def evaluate_card_choice(scenario: Dict[str, Any] | None, selected_card_id: str 
         "selected_card_title": get_tutorial_card_title(chosen_card),
         "recommended_card_id": recommended_id,
         "recommended_card_title": get_tutorial_card_title(get_card_preview(recommended_id) or {"id": recommended_id, "title": recommended_id}),
+        "recommended_reason": recommended_reason,
     }

@@ -147,13 +147,15 @@ class TestTutorialRuntime(unittest.TestCase):
         self.assertEqual(tutorial.das_timer, 0)
 
     def test_continue_after_completion_starts_next_chapter_lesson_in_full_flow(self):
+        # Panel metadata'sı OLMAYAN bir bölüm sınırında otomatik ilerleme korunur.
         tutorial = TutorialMode.__new__(TutorialMode)
         tutorial.next_lesson_id = None
-        tutorial.active_lesson_id = 'tutorial_complete'
-        tutorial.active_lesson = {'chapter': 'quick_start'}
+        tutorial.active_lesson_id = 'surface_protect_well'
+        tutorial.active_lesson = {'chapter': 'surface_control'}
         tutorial.lesson_lookup = {}
         tutorial.lesson_flow_scope = 'full'
         tutorial.hub_return_enabled = True
+        tutorial.progress_panel_active = False
         started = {}
 
         tutorial._start_lesson = lambda lesson_id: started.setdefault('lesson_id', lesson_id)
@@ -162,7 +164,7 @@ class TestTutorialRuntime(unittest.TestCase):
         result = TutorialMode._continue_after_completion(tutorial)
 
         self.assertTrue(result)
-        self.assertEqual(started.get('lesson_id'), 'surface_gap_fill')
+        self.assertEqual(started.get('lesson_id'), 'plan_hold_save')
         self.assertNotIn('hub', started)
 
     def test_line_clear_setup_removes_extra_right_support_block(self):
@@ -188,13 +190,15 @@ class TestTutorialRuntime(unittest.TestCase):
         self.assertEqual(len(tutorial.next_piece_queue), 1)
 
     def test_continue_after_completion_keeps_chapter_scope_at_boundary(self):
+        # Panel metadata'sı OLMAYAN bölüm sınırında, chapter scope hub'a döner.
         tutorial = TutorialMode.__new__(TutorialMode)
         tutorial.next_lesson_id = None
-        tutorial.active_lesson_id = 'tutorial_complete'
-        tutorial.active_lesson = {'chapter': 'quick_start'}
+        tutorial.active_lesson_id = 'surface_protect_well'
+        tutorial.active_lesson = {'chapter': 'surface_control'}
         tutorial.lesson_lookup = {}
         tutorial.lesson_flow_scope = 'chapter'
         tutorial.hub_return_enabled = True
+        tutorial.progress_panel_active = False
         started = {}
 
         tutorial._start_lesson = lambda lesson_id: started.setdefault('lesson_id', lesson_id)
@@ -206,8 +210,59 @@ class TestTutorialRuntime(unittest.TestCase):
         result = TutorialMode._continue_after_completion(tutorial)
 
         self.assertTrue(result)
-        self.assertEqual(started.get('hub'), ('quick_start', 'tutorial_complete'))
+        self.assertEqual(started.get('hub'), ('surface_control', 'surface_protect_well'))
         self.assertNotIn('lesson_id', started)
+
+    def test_quick_start_boundary_opens_progression_panel(self):
+        # quick_start sonunda panel metadata'sı var → ilerleme paneli açılmalı.
+        tutorial = TutorialMode.__new__(TutorialMode)
+        tutorial.next_lesson_id = None
+        tutorial.active_lesson_id = 'qs_first_clear'
+        tutorial.active_lesson = {'chapter': 'quick_start'}
+        tutorial.lesson_lookup = {}
+        tutorial.lesson_flow_scope = 'chapter'
+        tutorial.hub_return_enabled = False
+        tutorial.progress_panel_active = False
+        opened = {}
+
+        tutorial._open_progression_panel = lambda panel_meta, next_lesson_id: opened.update(
+            {'meta': panel_meta, 'next': next_lesson_id}
+        )
+        tutorial._start_lesson = lambda lesson_id: opened.setdefault('lesson_id', lesson_id)
+        tutorial._open_tutorial_hub = lambda **kwargs: opened.setdefault('hub', kwargs)
+
+        result = TutorialMode._continue_after_completion(tutorial)
+
+        self.assertTrue(result)
+        self.assertEqual(opened.get('next'), 'surface_gap_fill')
+        self.assertIn('meta', opened)
+        self.assertNotIn('lesson_id', opened)
+
+    def test_progression_panel_continue_starts_next_chapter_and_widens_scope(self):
+        tutorial = TutorialMode.__new__(TutorialMode)
+        tutorial.progress_panel_active = True
+        tutorial.progress_panel_data = {'next_lesson_id': 'surface_gap_fill', 'hub_enabled': False}
+        tutorial.lesson_flow_scope = 'chapter'
+        tutorial.hub_return_enabled = False
+        started = {}
+        tutorial._start_lesson = lambda lesson_id: started.setdefault('lesson_id', lesson_id)
+
+        result = TutorialMode._progression_panel_continue(tutorial)
+
+        self.assertTrue(result)
+        self.assertEqual(started.get('lesson_id'), 'surface_gap_fill')
+        self.assertEqual(tutorial.lesson_flow_scope, 'full')
+        self.assertFalse(tutorial.progress_panel_active)
+
+    def test_progression_panel_play_returns_to_menu(self):
+        tutorial = TutorialMode.__new__(TutorialMode)
+        tutorial.progress_panel_active = True
+        tutorial.progress_panel_data = {'next_lesson_id': 'surface_gap_fill', 'hub_enabled': True}
+
+        result = TutorialMode._progression_panel_play(tutorial)
+
+        self.assertEqual(result, 'menu')
+        self.assertFalse(tutorial.progress_panel_active)
 
     def test_line_clear_completion_auto_advances_to_next_lesson_in_full_flow(self):
         tutorial = TutorialMode.__new__(TutorialMode)
@@ -356,6 +411,92 @@ class TestTutorialRuntime(unittest.TestCase):
         tutorial.active_lesson = {'kind': 'scenario'}
 
         self.assertFalse(TutorialMode.wants_mouse_visible(tutorial))
+
+    def test_wants_mouse_visible_when_lesson_result_active(self):
+        # Sonuç paneli açıkken imleç görünür kalmalı (tıklanabilir buton var).
+        tutorial = TutorialMode.__new__(TutorialMode)
+        tutorial.hub_active = False
+        tutorial.show_exit_prompt = False
+        tutorial.paused = False
+        tutorial.game_over = False
+        tutorial.lesson_result_active = True
+        tutorial.active_lesson = {'kind': 'card_choice'}
+
+        self.assertTrue(TutorialMode.wants_mouse_visible(tutorial))
+
+    def test_card_result_advances_on_button_click(self):
+        # Kart dersi sonucunda fare ile butona tıklayınca ilerlemeli.
+        pygame = tutorial_module.pygame
+        tutorial = TutorialMode.__new__(TutorialMode)
+        tutorial.game_over = False
+        tutorial.show_exit_prompt = False
+        tutorial.hub_active = False
+        tutorial.in_transition = False
+        tutorial.waiting_for_enter = False
+        tutorial.lesson_result_active = True
+        tutorial.lesson_result = {'success': True}
+        tutorial.active_lesson_id = 'cards_rescue_now'
+        tutorial.card_ui = None
+        tutorial.lesson_result_primary_rect = pygame.Rect(100, 400, 200, 40)
+        tutorial._is_card_choice_lesson_active = lambda: True
+        tutorial._card_choice_stage = lambda: 'choosing'
+        tutorial._continue_after_completion = lambda: 'continued'
+        tutorial._start_lesson = lambda _lesson_id: (_ for _ in ()).throw(AssertionError('should not restart on success'))
+
+        click = pygame.event.Event(pygame.MOUSEBUTTONDOWN, button=1, pos=(150, 415))
+        with mock.patch.object(tutorial_module, 'normalize_mouse_pos', lambda pos: pos), \
+             mock.patch.object(tutorial_module.pygame.event, 'get', return_value=[click]):
+            self.assertEqual(TutorialMode.handle_input(tutorial), 'continued')
+
+    def test_card_result_button_click_outside_does_not_advance(self):
+        # Butonun dışına tıklama ilerletmemeli (panelde kalır).
+        pygame = tutorial_module.pygame
+        tutorial = TutorialMode.__new__(TutorialMode)
+        tutorial.game_over = False
+        tutorial.show_exit_prompt = False
+        tutorial.hub_active = False
+        tutorial.in_transition = False
+        tutorial.waiting_for_enter = False
+        tutorial.lesson_result_active = True
+        tutorial.lesson_result = {'success': True}
+        tutorial.active_lesson_id = 'cards_rescue_now'
+        tutorial.card_ui = None
+        tutorial.lesson_result_primary_rect = pygame.Rect(100, 400, 200, 40)
+        tutorial._is_card_choice_lesson_active = lambda: True
+        tutorial._card_choice_stage = lambda: 'choosing'
+        tutorial._continue_after_completion = lambda: (_ for _ in ()).throw(AssertionError('should not advance'))
+        tutorial._start_lesson = lambda _lesson_id: (_ for _ in ()).throw(AssertionError('should not restart'))
+
+        click = pygame.event.Event(pygame.MOUSEBUTTONDOWN, button=1, pos=(10, 10))
+        with mock.patch.object(tutorial_module, 'normalize_mouse_pos', lambda pos: pos), \
+             mock.patch.object(tutorial_module.pygame.event, 'get', return_value=[click]):
+            self.assertTrue(TutorialMode.handle_input(tutorial))
+
+    def test_failed_result_button_click_restarts_lesson(self):
+        # Başarısız sonuçta butona tıklama dersi yeniden başlatmalı.
+        pygame = tutorial_module.pygame
+        tutorial = TutorialMode.__new__(TutorialMode)
+        tutorial.game_over = False
+        tutorial.show_exit_prompt = False
+        tutorial.hub_active = False
+        tutorial.in_transition = False
+        tutorial.waiting_for_enter = False
+        tutorial.lesson_result_active = True
+        tutorial.lesson_result = {'success': False}
+        tutorial.active_lesson_id = 'cards_rescue_now'
+        tutorial.card_ui = None
+        tutorial.lesson_result_primary_rect = pygame.Rect(100, 400, 200, 40)
+        tutorial._is_card_choice_lesson_active = lambda: True
+        tutorial._card_choice_stage = lambda: 'choosing'
+        restarted = {}
+        tutorial._start_lesson = lambda lesson_id: restarted.setdefault('lesson_id', lesson_id)
+
+        click = pygame.event.Event(pygame.MOUSEBUTTONDOWN, button=1, pos=(150, 415))
+        with mock.patch.object(tutorial_module, 'normalize_mouse_pos', lambda pos: pos), \
+             mock.patch.object(tutorial_module.pygame.event, 'get', return_value=[click]):
+            self.assertTrue(TutorialMode.handle_input(tutorial))
+
+        self.assertEqual(restarted.get('lesson_id'), 'cards_rescue_now')
 
 
 if __name__ == '__main__':
