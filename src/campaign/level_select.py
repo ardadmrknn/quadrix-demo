@@ -26,6 +26,7 @@ try:
 except Exception:
     import demo_config
     from demo_upgrade_prompt import DemoUpgradePrompt, show_demo_partial_lock_prompt
+from back_button import draw_back_button as _draw_shared_back_button
 
 # Neon renk paleti (merkezi tema)
 NEON_CYAN = UIColors.NEON_CYAN
@@ -126,6 +127,7 @@ class CampaignLevelSelect:
         self.level_buttons: List[Tuple[pygame.Rect, int]] = []
         self.world_tabs: List[Tuple[pygame.Rect, int]] = []
         self.back_button: Optional[pygame.Rect] = None
+        self.back_button_hover: bool = False
         self.play_button: Optional[pygame.Rect] = None
         self.header_bottom = 0
         self.tabs_bottom = 0
@@ -367,6 +369,11 @@ class CampaignLevelSelect:
         elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             pos = normalize_mouse_pos(event.pos) or event.pos
             
+            # Geri butonu (mouse) — ESC ile aynı semantik
+            back_button = getattr(self, 'back_button', None)
+            if back_button is not None and back_button.collidepoint(pos):
+                return 'back'
+            
             # Oyna butonu
             if self.play_button and self.play_button.collidepoint(pos):
                 if self._maybe_handle_demo_level_lock(self.selected_level):
@@ -400,7 +407,10 @@ class CampaignLevelSelect:
                 if rect.collidepoint(pos):
                     self.hovered_level = level_num
                     break
-        
+            back_button = getattr(self, 'back_button', None)
+            self.back_button_hover = bool(
+                back_button is not None and back_button.collidepoint(pos)
+            )
         elif event.type == pygame.MOUSEWHEEL:
             self.scroll_offset -= event.y * 30
             self.scroll_offset = max(0, min(self.scroll_offset, self.max_scroll))
@@ -506,6 +516,9 @@ class CampaignLevelSelect:
         
         # Alt butonlar
         self._draw_bottom_buttons()
+
+        # Mouse Geri butonu (sol üst, ESC ile aynı semantik)
+        self._draw_back_button()
         
         # Dünya geçiş animasyonu overlay (fade efekti)
         if self.world_transition_active:
@@ -1491,8 +1504,6 @@ class CampaignLevelSelect:
         play_width = s(176)
         play_y = height - play_height - s(14)
 
-        self.back_button = None
-        
         # Oyna butonu
         play_x = width - play_width - s(25)
         self.play_button = pygame.Rect(play_x, play_y, play_width, play_height)
@@ -1538,6 +1549,36 @@ class CampaignLevelSelect:
         play_text = self.font_large.render(t('campaign_play'), True, play_color)
         play_rect = play_text.get_rect(center=self.play_button.center)
         self.screen.blit(play_text, play_rect)
+    
+    def _draw_back_button(self) -> None:
+        """Sol üst görünür Geri butonu (mouse affordance).
+
+        ESC ile aynı semantiği taşır; co-op kardeş ekranıyla görsel
+        tutarlılık için ortak helper kullanılır (ana menüdeki Çık tuşu
+        ile aynı kart formatı)."""
+        try:
+            mouse_pos = get_mouse_pos()
+        except Exception:
+            mouse_pos = (-1, -1)
+        prev_rect = self.back_button
+        hover = bool(prev_rect is not None and prev_rect.collidepoint(mouse_pos))
+
+        rect = _draw_shared_back_button(
+            self.screen,
+            self._get_ui_scale_lambda(),
+            label=f"{t('main_menu', default='Ana Menü')}",
+            hover=hover,
+            margin_x=16,
+            margin_y=16,
+            retro_style=_retro_style,
+        )
+        self.back_button = rect
+        self.back_button_hover = bool(rect.collidepoint(mouse_pos))
+
+    def _get_ui_scale_lambda(self):
+        """``s(value, minimum=1)`` arayüzü sağlayan ölçek lambda'sı döndür."""
+        ui_scale = self._get_ui_scale()
+        return lambda v, minimum=1: max(minimum, int(round(v * ui_scale)))
     
     def _draw_world_transition_overlay(self) -> None:
         """Dünya geçişi sırasında fade overlay çiz (optimized)"""

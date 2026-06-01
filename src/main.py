@@ -1300,6 +1300,31 @@ def main():
             print("[GL Compat] Konfigürasyonla devre dışı bırakıldı")
     except Exception as _gl_e:
         print(f"[GL Compat] Atlandı: {_gl_e}")
+        # Tek-context'te create_display ham OpenGL surface döndürmüş olabilir.
+        # gl_overlay_setup beklenmedik şekilde patlarsa oyunu ham GL surface ile
+        # bırakmak kalıcı siyah ekran demektir; pencereyi software'e geri al.
+        if current_platform == 'Windows':
+            try:
+                _flags = screen.get_flags() if screen is not None else 0
+            except Exception:
+                _flags = 0
+            if _flags & pygame.OPENGL:
+                try:
+                    from platform_utils import set_gl_window_request
+                    set_gl_window_request(False)
+                except Exception:
+                    pass
+                try:
+                    screen = create_display(
+                        native_width,
+                        native_height,
+                        fullscreen=True,
+                        resizable=False,
+                        borderless=True,
+                    )
+                    print("[GL Compat] Software pencereye güvenli geri dönüş yapıldı")
+                except Exception:
+                    pass
 
     pygame.display.set_caption('Quadrix')
     if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):

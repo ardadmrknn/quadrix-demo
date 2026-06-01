@@ -91,6 +91,24 @@ def ensure_progress_shape(progress: Any) -> Dict[str, Any]:
         existing_lessons = existing_chapter.get("lessons", {})
         if not isinstance(existing_lessons, dict):
             existing_lessons = {}
+        else:
+            existing_lessons = deepcopy(existing_lessons)
+            for old_id, new_id in LEGACY_LESSON_MAP.items():
+                if old_id in existing_lessons and old_id != new_id:
+                    old_data = existing_lessons[old_id]
+                    if isinstance(old_data, dict) and old_data.get("completed"):
+                        new_data = existing_lessons.setdefault(new_id, {})
+                        if isinstance(new_data, dict):
+                            new_data["completed"] = True
+                            new_data["stars"] = max(_clamp_stars(new_data.get("stars", 0)), _clamp_stars(old_data.get("stars", 0)))
+                            if "best_stats" in old_data and isinstance(old_data["best_stats"], dict):
+                                new_stats = new_data.setdefault("best_stats", {})
+                                if isinstance(new_stats, dict):
+                                    new_stats.update(deepcopy(old_data["best_stats"]))
+                            for time_key in ("first_completed_at", "last_completed_at"):
+                                if old_data.get(time_key):
+                                    if not new_data.get(time_key) or old_data[time_key] < new_data[time_key]:
+                                        new_data[time_key] = old_data[time_key]
 
         for lesson_id, normalized_lesson in normalized_chapter["lessons"].items():
             existing_lesson = existing_lessons.get(lesson_id, {})

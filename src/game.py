@@ -812,6 +812,9 @@ class Game:
         self.achievement_manager = achievement_manager
         self.achievement_notifications = []  # Yeni başarı bildirimleri
         self._achievement_notif_surface_cache = {}
+        # Eğitim (tutorial) modunda hiçbir eylem başarım tetiklemez veya kullanıcı
+        # istatistiklerine yazılmaz. Bu bayrak tüm persist/achievement yollarını kapatır.
+        self._suppress_progression_tracking = (str(game_mode) == 'tutorial')
         self.allow_auto_lock = True
         self.grounded = False
         self.notification_time = 0
@@ -4032,8 +4035,8 @@ class Game:
                     self.combo_message_time = 0
                 self.sound.play('line')
             
-            # Başarı kontrolü (oyun sırasında)
-            if self.achievement_manager:
+            # Başarı kontrolü (oyun sırasında) — eğitim modunda tetiklenmez.
+            if self.achievement_manager and not getattr(self, '_suppress_progression_tracking', False):
                 new_achievements = self.achievement_manager.update_stats(
                     score=self.board.score,
                     lines=self.board.lines_cleared,
@@ -4075,6 +4078,10 @@ class Game:
     def finalize_run(self, playtime: int | None = None) -> None:
         """Persist score, stats, and achievements once per run."""
         if self._score_recorded:
+            return
+        # Eğitim modunda hiçbir skor/istatistik/başarım kaydı yapılmaz.
+        if getattr(self, '_suppress_progression_tracking', False):
+            self._score_recorded = True
             return
         self._score_recorded = True
         if playtime is None:

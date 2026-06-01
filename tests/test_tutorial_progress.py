@@ -192,5 +192,32 @@ class TestUserManagerTutorialProgress(unittest.TestCase):
                 os.unlink(path)
 
 
+    def test_ensure_progress_shape_merges_deleted_lessons_progress(self):
+        # Ö5a: Silinen kart derslerinin ilerlemeleri (completed, stars vb.) yeni karşılıklarına aktarılmalı.
+        progress = {
+            "chapters": {
+                "card_foundations": {
+                    "unlocked": True,
+                    "completed": False,
+                    "lessons": {
+                        "cards_tempo_trap": {
+                            "completed": True,
+                            "stars": 3,
+                            "best_stats": {"cleared_lines": 5},
+                            "first_completed_at": "2026-06-01T12:00:00Z",
+                            "last_completed_at": "2026-06-01T12:00:00Z"
+                        }
+                    }
+                }
+            }
+        }
+        normalized = tutorial_progress.ensure_progress_shape(progress)
+        # cards_tempo_trap -> cards_rescue_now
+        rescue_lesson = normalized["chapters"]["card_foundations"]["lessons"]["cards_rescue_now"]
+        self.assertTrue(rescue_lesson["completed"])
+        self.assertEqual(rescue_lesson["stars"], 3)
+        self.assertEqual(rescue_lesson["best_stats"]["cleared_lines"], 5)
+
+
 if __name__ == '__main__':
     unittest.main()

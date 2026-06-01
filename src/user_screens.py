@@ -18,6 +18,7 @@ from pieces import create_piece_by_name
 from renderers.jelly_renderer import draw_jelly_block
 from platform_utils import normalize_mouse_pos, get_mouse_pos
 from localization import t, get_language
+from back_button import draw_back_button as _draw_shared_back_button
 from steam_leaderboards import SteamLeaderboardService
 from ui_scaling import get_projected_effective_scale, get_scale, scale_px
 
@@ -176,6 +177,13 @@ class UserSelectionScreen:
         self._confirm_no_rect = None
         self._pending_delete_username = None
 
+        # Mouse Geri butonu — yalnızca 'select' state'inde aktif. Form
+        # ve avatar editor zaten kendi cancel/back butonlarını çiziyor;
+        # orada bu chip çizilmez. Click semantiği KEYDOWN(K_ESCAPE) ile
+        # aynı: 'back_to_menu'.
+        self._back_rect: 'pygame.Rect | None' = None
+        self._back_hover: bool = False
+
         # Silme güvenliği: aynı ekranda 2-adım onay (modal yok)
         self._delete_armed_username = None
 
@@ -272,21 +280,6 @@ class UserSelectionScreen:
     def _start_transition(self):
         self._transition_start_ms = pygame.time.get_ticks()
         self._transition_active = True
-
-    def _draw_h1_title(self, text: str, center: tuple[int, int]) -> None:
-        """Turkuaz metin yerine beyaz H1 + cyan glow (okunurluk)."""
-        s = self._sx
-        width, _ = self.screen.get_size()
-        max_width = max(0, width - s(120))
-        font = retro_style.get_fitting_font(text, self.font_title_size, max_width, bold=True)
-        # Glow/underline (cyan) için mevcut draw_title'ı kullan
-        retro_style.draw_title(self.screen, text, center)
-        # Üstüne sert kontrast: gölge + beyaz metin
-        shadow = render_text(font, text, True, (0, 0, 0))
-        shadow.set_alpha(180)
-        self.screen.blit(shadow, shadow.get_rect(center=(center[0] + s(2), center[1] + s(2))))
-        title_surface = render_text(font, text, True, WHITE)
-        self.screen.blit(title_surface, title_surface.get_rect(center=center))
 
     def _get_most_held_piece_name(self, user_data: dict) -> str | None:
         counts = user_data.get('hold_piece_counts')
@@ -546,13 +539,15 @@ class UserSelectionScreen:
                     min_size=10,
                 )
 
-            line_gap_a = s(3)
-            line_gap_b = s(4)
+            line_gap_a = s(3)  # başlık → nadirlik
+            line_gap_b = s(4)  # nadirlik → kullanım
+
             block_h = title_surf.get_height() + line_gap_a + rarity_surf.get_height()
             if count_surf is not None:
                 block_h += line_gap_b + count_surf.get_height()
 
-            # Üst ve alt iç padding'e clamp et: panel kenarına dayanmasın
+            # Metin bloğunu ikon yatayında ortala. Üstten ve alttan iç padding'e clamp et;
+            # böylece "× N Seçim" satırı panelin alt kenarına dayanmaz.
             block_top = icon_box.centery - block_h // 2
             block_top = max(content_top, min(block_top, inner_bottom - block_h))
 
@@ -960,6 +955,12 @@ class UserSelectionScreen:
                         self._arm_delete(username)
         elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             mouse_pos = normalize_mouse_pos(getattr(event, 'pos', None)) or event.pos
+            # Mouse Geri butonu — kart hedeflerinden ÖNCE; click ESC ile
+            # aynı 'back_to_menu' aksiyonunu döndürür ve hiçbir kullanıcı
+            # seçimi/oluşturma akışı tetiklemez.
+            if self._back_rect is not None and self._back_rect.collidepoint(mouse_pos):
+                self._clear_delete_arm()
+                return 'back_to_menu'
             for target in self.card_targets:
                 if target['rect'].collidepoint(mouse_pos):
                     index = target['index']
@@ -1752,6 +1753,25 @@ class UserSelectionScreen:
         text = retro_style.render_fit_text(label, WHITE, rect.width - 20, self.font_normal_size)
         self.screen.blit(text, text.get_rect(center=rect.center))
 
+    def _draw_back_button(self, s) -> None:
+        """Sol üst Geri affordance — ESC ile aynı semantik ('back_to_menu').
+
+        Yalnızca 'select' state'inde çağrılır; form ve avatar editor
+        kendi cancel/back butonlarını çiziyor. Görsel format ana menüdeki
+        sağ alt 'Çık' tuşu ile aynıdır (ortak helper)."""
+        # Hover'ı güncel pozisyondan canlı oku — event kaçırılırsa stale kalmasın
+        try:
+            live_pos = get_mouse_pos()
+        except Exception:
+            live_pos = (-1, -1)
+        prev_rect = self._back_rect
+        hover = bool(prev_rect is not None and prev_rect.collidepoint(live_pos))
+
+        rect = _draw_shared_back_button(self.screen, s, hover=hover, retro_style=retro_style)
+        self._back_rect = rect
+        # Hover'ı yeni rect ile yeniden doğrula (ilk kare için)
+        self._back_hover = bool(rect.collidepoint(live_pos))
+
     def _draw_action_button(self, rect, label, color):
         pygame.draw.rect(self.screen, color, rect, border_radius=14)
         pygame.draw.rect(self.screen, (255, 255, 255, 60), rect, 2, border_radius=14)
@@ -1767,6 +1787,10 @@ class UserSelectionScreen:
         self.background_fx.update(self.screen)
         self.background_fx.draw(self.screen)
         retro_style.draw_title(self.screen, t('user_select_title'), (width // 2, s(70)), emoji=None)
+        
+        # Mouse Geri butonu — sol üst, list panel _s(60), _s(150) ofsetiyle
+        # başladığı için bu chip ile çakışmaz.
+        self._draw_back_button(s)
         
         list_width = min(s(520), width - s(120))
         list_height = max(s(320), height - s(190))
@@ -1857,7 +1881,7 @@ class UserSelectionScreen:
         self.background_fx.draw(self.screen)
         is_edit_mode = self.form_mode == 'edit'
         title = t('user_edit_profile_title') if is_edit_mode else t('user_new_user_title')
-        self._draw_h1_title(title, (width // 2, s(70)))
+        retro_style.draw_title(self.screen, title, (width // 2, s(70)))
         helper_text = t('user_helper_edit') if is_edit_mode else t('user_helper_create')
         helper_rect = pygame.Rect(s(80), s(100), width - s(160), s(60))
         retro_style.draw_wrapped_text(
@@ -1963,6 +1987,13 @@ class UserManagementScreen:
         # Avatar editör
         self.avatar_editor = AvatarEditor(screen)
         self.custom_avatar_path = None
+
+        # Mouse Geri butonu — yalnızca 'list' state'inde aktif. Diğer
+        # state'ler (confirm_delete, view_profile, edit_profile) kendi
+        # cancel/back affordance'larını çiziyor.
+        self._back_rect: 'pygame.Rect | None' = None
+        self._back_hover: bool = False
+
         self._apply_responsive_metrics()
 
     def _ui_scale(self, min_scale: float = 0.72, max_scale: float = 1.18) -> float:
@@ -2092,7 +2123,12 @@ class UserManagementScreen:
         elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             current_time = pygame.time.get_ticks()
             pos = normalize_mouse_pos(getattr(event, 'pos', None)) or event.pos
-            
+
+            # Mouse Geri butonu — kart hedeflerinden ÖNCE; click ESC ile
+            # aynı 'back' aksiyonunu döndürür.
+            if self._back_rect is not None and self._back_rect.collidepoint(pos):
+                return 'back'
+
             # Hangi kullanıcıya tıklandığını bul
             metrics = self._list_layout_metrics()
             card_width = metrics['card_width']
@@ -2337,6 +2373,9 @@ class UserManagementScreen:
         title = self.font_title.render(t('user_management'), True, WHITE)
         title_rect = title.get_rect(center=(width // 2, s(45)))
         self.screen.blit(title, title_rect)
+
+        # Mouse Geri butonu — sol üst, başlık ortayla çakışmaz.
+        self._draw_back_button(s)
         
         # Aktif kullanıcı göstergesi
         current = self.user_manager.get_current_user()
@@ -2505,6 +2544,23 @@ class UserManagementScreen:
             
             button_x += s(140)
     
+    def _draw_back_button(self, s) -> None:
+        """Sol üst Geri affordance — ESC ile aynı semantik ('back').
+
+        Yalnızca 'list' state'inde çağrılır; diğer state'ler kendi
+        cancel/back butonlarını çiziyor. Görsel format ana menüdeki sağ
+        alt 'Çık' tuşu ile aynıdır (ortak helper)."""
+        try:
+            live_pos = get_mouse_pos()
+        except Exception:
+            live_pos = (-1, -1)
+        prev_rect = self._back_rect
+        hover = bool(prev_rect is not None and prev_rect.collidepoint(live_pos))
+
+        rect = _draw_shared_back_button(self.screen, s, hover=hover, retro_style=retro_style)
+        self._back_rect = rect
+        self._back_hover = bool(rect.collidepoint(live_pos))
+
     def _draw_confirm_delete(self):
         """Silme onayı çiz - Modern overlay tasarım"""
         self._apply_responsive_metrics()

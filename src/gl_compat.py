@@ -411,17 +411,6 @@ def gl_overlay_setup(display_surface: pygame.Surface) -> pygame.Surface:
     if platform.system() != 'Windows':
         return display_surface
 
-    # Steam SDK'sı yoksa GL'e gerek yok
-    try:
-        import steam_integration as _si
-        if not _si.is_available():
-            return display_surface
-    except Exception:
-        return display_surface
-
-    if not _load_gl():
-        return display_surface
-
     w, h = display_surface.get_size()
 
     # Tek-context yolu: pencere zaten OPENGL bayrağıyla açılmışsa ikinci bir
@@ -431,6 +420,58 @@ def gl_overlay_setup(display_surface: pygame.Surface) -> pygame.Surface:
     except Exception:
         existing_flags = 0
     single_context = bool(existing_flags & pygame.OPENGL)
+
+    # KRİTİK: Tek-context'te create_display ham bir OpenGL surface döndürür.
+    # Bu surface'e CPU ile (blit/draw) çizilemez. Eğer GL pipeline kurulumu
+    # herhangi bir aşamada başarısız olursa, oyuna ham GL surface vermek KALICI
+    # SİYAH EKRAN demektir. Bu yüzden tek-context'te başarısızlık halinde pencereyi
+    # mutlaka çizilebilir bir software penceresine geri almalıyız (strict return).
+    def _demote_to_software(reason: str) -> pygame.Surface:
+        """GL kurulamazsa pencereyi software moduna alıp çizilebilir surface döndür."""
+        print(f"[GL Compat] Tek-context GL kurulamadı ({reason}); "
+              f"software pencereye güvenli geri dönüş")
+        try:
+            from platform_utils import set_gl_window_request
+            set_gl_window_request(False)
+        except Exception:
+            pass
+        # Pencere zaten GL ise software (NOFRAME) moduna geri al.
+        try:
+            sw_flags = (pygame.NOFRAME | pygame.DOUBLEBUF)
+            sw_surface = pygame.display.set_mode((w, h), sw_flags)
+            try:
+                caption = pygame.display.get_caption()
+                if caption and caption[0]:
+                    pygame.display.set_caption(caption[0])
+            except Exception:
+                pass
+            return sw_surface
+        except Exception as exc:
+            print(f"[GL Compat] Software'e geri dönüş de başarısız: {exc}")
+            # En kötü durumda en azından çizilebilir bir surface bırak.
+            try:
+                return pygame.display.get_surface() or display_surface
+            except Exception:
+                return display_surface
+
+    # Steam SDK'sı yoksa GL'e gerek yok.
+    steam_ok = False
+    try:
+        import steam_integration as _si
+        steam_ok = bool(_si.is_available())
+    except Exception:
+        steam_ok = False
+
+    if not steam_ok:
+        if single_context:
+            # Pencere GL açıldı ama Steam yok: ham GL surface ile bırakma.
+            return _demote_to_software('Steam SDK erişilemiyor')
+        return display_surface
+
+    if not _load_gl():
+        if single_context:
+            return _demote_to_software('opengl32.dll yüklenemedi')
+        return display_surface
 
     if single_context:
         old_flags = existing_flags
@@ -468,13 +509,14 @@ def gl_overlay_setup(display_surface: pygame.Surface) -> pygame.Surface:
         _supports_bgra_upload = None
     except Exception as e:
         print(f"[GL Compat] GL setup hatası: {e}")
-        # Eski moda geri dön (yalnızca biz değiştirdiysek; tek-context'te pencereye
-        # dokunma çünkü onu create_display kurdu).
-        if not single_context:
-            try:
-                pygame.display.set_mode((w, h), old_flags)
-            except Exception:
-                pass
+        if single_context:
+            # Tek-context: ham GL surface ile bırakma → software'e geri dön.
+            return _demote_to_software(f'GL pipeline kurulamadı: {e}')
+        # İki-adımlı yolda eski software moduna geri dön.
+        try:
+            pygame.display.set_mode((w, h), old_flags)
+        except Exception:
+            pass
         return display_surface
 
     # Offscreen game surface oluştur
@@ -490,6 +532,16 @@ def gl_overlay_setup(display_surface: pygame.Surface) -> pygame.Surface:
     # Patch platform_utils.create_display so that dynamic imports that access
     # the module attribute can still reapply GL when they rebuild the display.
     _patch_create_display()
+
+    # Adım 2 (Pump & Flip): Pencere açılır açılmaz, ağır asset yüklemeleri
+    # başlamadan ÖNCE temiz bir kare sun ve OS event kuyruğunu işlet. Bu, Steam'in
+    # Present/SwapBuffers hook'una "pencere canlı ve render alıyor" sinyalini verir
+    # ve uzun yükleme sırasında hook'un zaman aşımına/siyah kareye düşmesini önler.
+    try:
+        _gl_flip()
+        pygame.event.pump()
+    except Exception as exc:
+        print(f"[GL Compat] İlk kare pompalama atlandı: {exc}")
 
     if single_context:
         print(f"[GL Compat] Steam overlay GL wrapper aktif — tek-context ({w}x{h})")
@@ -669,6 +721,9 @@ def _reapply_gl(display_surface: pygame.Surface) -> pygame.Surface:
             pygame.display.set_caption(caption[0])
     except pygame.error as e:
         print(f"[GL Compat] GL reapply display hatası: {e}")
+        # Pencere GL ise ham surface'i oyuna verme; çizilebilir offscreen'i koru.
+        if _game_surface is not None:
+            return _game_surface
         return display_surface
 
     try:
@@ -691,6 +746,9 @@ def _reapply_gl(display_surface: pygame.Surface) -> pygame.Surface:
         return _game_surface
     except Exception as e:
         print(f"[GL Compat] GL reapply hatası: {e}")
+        # Texture yeniden kurulamadı; pencere GL ise ham surface'i verme.
+        if _game_surface is not None:
+            return _game_surface
         return display_surface
 
 

@@ -166,3 +166,170 @@ def test_should_use_gl_false_on_non_windows(monkeypatch):
     """Windows dışı platformda GL yolu devre dışıdır (Gereksinim 6)."""
     monkeypatch.setattr(gl_compat.platform, 'system', lambda: 'Darwin')
     assert gl_compat._should_use_gl() is False
+
+
+# ---------------------------------------------------------------------------
+# Strict-return: tek-context'te GL kurulamazsa ham GL surface DÖNDÜRÜLMEMELİ
+# (kalıcı siyah ekranı önler). Pencere software moduna demote edilmeli.
+# ---------------------------------------------------------------------------
+
+class _FakeGLSurface:
+    """OPENGL bayrağına sahip, çizilemeyen ham display surface taklidi."""
+
+    def __init__(self, size=(1920, 1080)):
+        self._size = size
+
+    def get_size(self):
+        return self._size
+
+    def get_flags(self):
+        return pygame.OPENGL
+
+
+class _FakeSoftwareSurface:
+    """set_mode sonrası dönen çizilebilir software surface taklidi."""
+
+    def __init__(self, size=(1920, 1080), flags=0):
+        self._size = size
+        self._flags = flags
+
+    def get_size(self):
+        return self._size
+
+    def get_flags(self):
+        return self._flags
+
+
+def _install_gl_overlay_stubs(monkeypatch, *, steam_available, load_gl_ok):
+    """gl_overlay_setup için ortak Windows + Steam + GL stub'ları kur."""
+    import platform_utils
+
+    monkeypatch.setattr(gl_compat.platform, 'system', lambda: 'Windows')
+
+    fake_steam = types.ModuleType('steam_integration')
+    fake_steam.is_available = lambda: steam_available
+    monkeypatch.setitem(sys.modules, 'steam_integration', fake_steam)
+
+    monkeypatch.setattr(gl_compat, '_load_gl', lambda: load_gl_ok)
+
+    set_mode_calls = []
+
+    def fake_set_mode(size, flags=0):
+        set_mode_calls.append((size, flags))
+        return _FakeSoftwareSurface(size, flags)
+
+    monkeypatch.setattr(gl_compat.pygame.display, 'set_mode', fake_set_mode)
+    monkeypatch.setattr(gl_compat.pygame.display, 'get_caption', lambda: ('Quadrix', 'Quadrix'))
+    monkeypatch.setattr(gl_compat.pygame.display, 'set_caption', lambda *a, **k: None)
+
+    # set_gl_window_request çağrısının gerçek modülde patlamamasını sağla.
+    monkeypatch.setattr(platform_utils, 'set_gl_window_request', lambda enabled: None)
+
+    return set_mode_calls
+
+
+def test_single_context_demotes_to_software_when_gl_load_fails(monkeypatch):
+    """Tek-context'te _load_gl başarısızsa sonuç ham GL surface OLMAMALI."""
+    # _active state'ini sızdırmamak için sıfırla.
+    monkeypatch.setattr(gl_compat, '_active', False)
+
+    set_mode_calls = _install_gl_overlay_stubs(
+        monkeypatch, steam_available=True, load_gl_ok=False
+    )
+
+    raw_gl_surface = _FakeGLSurface()
+    result = gl_compat.gl_overlay_setup(raw_gl_surface)
+
+    # Sonuç ham GL surface olmamalı (kalıcı siyah ekranı önler).
+    assert result is not raw_gl_surface
+    assert not (result.get_flags() & pygame.OPENGL), "Sonuç software surface olmalı"
+    # Software penceresine geri dönüş için set_mode çağrılmış olmalı.
+    assert set_mode_calls, "Software'e demote için set_mode çağrılmalı"
+    assert not (set_mode_calls[-1][1] & pygame.OPENGL)
+
+
+def test_single_context_demotes_to_software_when_steam_unavailable(monkeypatch):
+    """Pencere GL açıldı ama Steam yoksa ham GL surface bırakılmamalı."""
+    monkeypatch.setattr(gl_compat, '_active', False)
+
+    set_mode_calls = _install_gl_overlay_stubs(
+        monkeypatch, steam_available=False, load_gl_ok=True
+    )
+
+    raw_gl_surface = _FakeGLSurface()
+    result = gl_compat.gl_overlay_setup(raw_gl_surface)
+
+    assert result is not raw_gl_surface
+    assert not (result.get_flags() & pygame.OPENGL)
+    assert set_mode_calls, "Steam yokken software'e demote için set_mode çağrılmalı"
+
+
+# ---------------------------------------------------------------------------
+# Başarı yolu: tek-context GL tam çalışınca oyun OFFSCREEN surface almalı
+# (ham GL DEĞİL), monkey-patch'ler kurulmalı ve ilk kare pompalanmalı.
+# ---------------------------------------------------------------------------
+
+def test_single_context_success_returns_offscreen_and_pumps_first_frame(monkeypatch):
+    """GL kurulumu başarılıysa: offscreen surface döner, flip patch'lenir, ilk kare basılır."""
+    # State sızıntısını önle.
+    monkeypatch.setattr(gl_compat, '_active', False)
+    monkeypatch.setattr(gl_compat, '_game_surface', None)
+
+    monkeypatch.setattr(gl_compat.platform, 'system', lambda: 'Windows')
+
+    fake_steam = types.ModuleType('steam_integration')
+    fake_steam.is_available = lambda: True
+    monkeypatch.setitem(sys.modules, 'steam_integration', fake_steam)
+
+    monkeypatch.setattr(gl_compat, '_load_gl', lambda: True)
+
+    # GL setup'ı gerçek opengl32 çağrısı yapmadan başarılı kıl.
+    monkeypatch.setattr(gl_compat, '_setup_ortho', lambda w, h: None)
+    monkeypatch.setattr(gl_compat, '_create_texture', lambda w, h: 42)
+
+    # set_mode çağrılırsa yakala (tek-context'te çağrılMAMALI).
+    set_mode_calls = []
+
+    def fake_set_mode(size, flags=0):
+        set_mode_calls.append((size, flags))
+        return _FakeSoftwareSurface(size, flags)
+
+    monkeypatch.setattr(gl_compat.pygame.display, 'set_mode', fake_set_mode)
+    monkeypatch.setattr(gl_compat.pygame.display, 'get_caption', lambda: ('Quadrix', 'Quadrix'))
+    monkeypatch.setattr(gl_compat.pygame.display, 'set_caption', lambda *a, **k: None)
+    monkeypatch.setattr(gl_compat, '_patch_create_display', lambda: None)
+
+    # İlk kare pompalamayı gözlemle: _upload_and_draw + _original_flip + event.pump
+    pump_events = {'upload': 0, 'flip': 0, 'pump': 0}
+    monkeypatch.setattr(gl_compat, '_upload_and_draw', lambda *a, **k: pump_events.__setitem__('upload', pump_events['upload'] + 1))
+    monkeypatch.setattr(gl_compat, '_original_flip', lambda *a, **k: pump_events.__setitem__('flip', pump_events['flip'] + 1))
+    monkeypatch.setattr(gl_compat.pygame.event, 'pump', lambda: pump_events.__setitem__('pump', pump_events['pump'] + 1))
+
+    raw_gl_surface = _FakeGLSurface((1920, 1080))
+    try:
+        result = gl_compat.gl_overlay_setup(raw_gl_surface)
+
+        # Oyun ham GL surface DEĞİL, gerçek pygame offscreen surface almalı.
+        assert isinstance(result, pygame.Surface)
+        assert result.get_size() == (1920, 1080)
+        assert not (result.get_flags() & pygame.OPENGL), "Offscreen surface OPENGL olmamalı"
+
+        # Tek-context: ikinci set_mode YAPILMAMALI.
+        assert set_mode_calls == [], "Tek-context'te ikinci set_mode çağrılmamalı"
+
+        # GL wrapper aktive edilmeli ve flip/get_surface patch'lenmeli.
+        assert gl_compat.is_gl_active() is True
+        assert pygame.display.get_surface is gl_compat._gl_get_surface
+        assert pygame.display.flip is gl_compat._gl_flip
+
+        # İlk kare pompalanmış olmalı (Adım 2): upload + flip + pump en az 1 kez.
+        assert pump_events['upload'] >= 1
+        assert pump_events['flip'] >= 1
+        assert pump_events['pump'] >= 1
+    finally:
+        # Monkey-patch'leri ve global state'i temizle ki diğer testler etkilenmesin.
+        pygame.display.flip = gl_compat._original_flip
+        pygame.display.update = gl_compat._original_update
+        pygame.display.get_surface = gl_compat._original_get_surface
+        gl_compat._active = False
+        gl_compat._game_surface = None

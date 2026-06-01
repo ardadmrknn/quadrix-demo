@@ -241,40 +241,6 @@ CARD_CHOICE_SCENARIOS: Dict[str, Dict[str, Any]] = {
             "speed_burst_legendary": "Zayıf seçim. Hız kartı bu tahtada hatayı büyütür; önce hayatta kalman gerekir.",
         },
     },
-    "long_term_pick": {
-        "goal_key": "tutorial_card_long_term_goal",
-        "tip_key": "tutorial_card_long_term_tip",
-        "goal_text": "Tahta sakin — uzun vadede en çok işe yarayacak kartı seç.",
-        "tip_text": "Acil sorun yoksa run boyunca değer üretecek kartı düşün.",
-        "context_keys": [
-            "tutorial_card_long_term_context_1",
-            "tutorial_card_long_term_context_2",
-        ],
-        "context_lines": [
-            "Durum: Düzenli ve alçak bir tahta.",
-            "Öncelik: Uzun vadeli değer kazanmak.",
-        ],
-        "board_rows": [
-            "....XX....",
-            "...XXXX...",
-            "..XXXXXX..",
-        ],
-        "current_piece": {"name": "T", "x": 3, "y": 0, "rotation": 0},
-        "next_queue": ["I", "O", "L"],
-        "card_choices": ["perk_second_pocket", "clear_rows", "row_shuffle"],
-        "recommended_card_id": "perk_second_pocket",
-        "acceptable_card_ids": [],
-        "feedback_keys_by_card": {
-            "perk_second_pocket": "tutorial_card_long_term_feedback_second_pocket",
-            "clear_rows": "tutorial_card_long_term_feedback_clear_rows",
-            "row_shuffle": "tutorial_card_long_term_feedback_row_shuffle",
-        },
-        "feedback_by_card": {
-            "perk_second_pocket": "Doğru seçim. Güvenli tahtada Ekstra Cep gibi kalıcı bir perk tüm run boyunca değer üretir.",
-            "clear_rows": "Zayıf seçim. Tahta zaten rahat; anlık temizlik burada gereksiz değer kaybı.",
-            "row_shuffle": "Zayıf seçim. Şans kartı sakin bir tahtayı sebepsiz yere bozabilir.",
-        },
-    },
     "synergy_pick": {
         "goal_key": "tutorial_card_synergy_goal",
         "tip_key": "tutorial_card_synergy_tip",
@@ -410,8 +376,8 @@ CARD_CHOICE_SCENARIOS: Dict[str, Dict[str, Any]] = {
         "current_piece": {"name": "L", "x": 4, "y": 0, "rotation": 0},
         "next_queue": ["L", "I", "S"],
         "card_choices": ["speed_burst_legendary", "freeze_drop_rare", "clear_rows"],
-        "recommended_card_id": "freeze_drop_rare",
-        "acceptable_card_ids": ["clear_rows"],
+        "recommended_card_id": "clear_rows",
+        "acceptable_card_ids": ["freeze_drop_rare"],
         "feedback_keys_by_card": {
             "speed_burst_legendary": "tutorial_cards_rare_not_auto_feedback_speed",
             "freeze_drop_rare": "tutorial_cards_rare_not_auto_feedback_freeze",
@@ -419,8 +385,8 @@ CARD_CHOICE_SCENARIOS: Dict[str, Dict[str, Any]] = {
         },
         "feedback_by_card": {
             "speed_burst_legendary": "Zayıf seçim. Bu tahta hız değil hassasiyet istiyor; hızlanmak delik riskini artırır.",
-            "freeze_drop_rare": "Doğru seçim. Son Düşüş önündeki kritik yerleşimlerde düşünme süresi vererek gerçek problemi çözer.",
-            "clear_rows": "Kabul edilebilir. Alan açar ama sorunun özü hassas yerleşimler; ek düşünme süresi daha fazla değer üretir.",
+            "freeze_drop_rare": "Kabul edilebilir. Son Düşüş düşünme süresi verir ama asıl sorun alanı daraltan blok yükünü hafifletmek.",
+            "clear_rows": "Doğru seçim. Alt Süpür ile alt satırlardaki blokları eritip alanı rahatlatmak bu durum için en güvenli çözümdür.",
         },
     },
 

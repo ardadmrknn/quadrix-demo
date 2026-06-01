@@ -61,7 +61,7 @@ class TestTutorialCardHelpers(unittest.TestCase):
         self.assertEqual(outcome['stars'], 2)
 
     def test_wrong_choice_fails(self):
-        scenario = get_card_choice_scenario('long_term_pick')
+        scenario = get_card_choice_scenario('rescue_pick')
         outcome = evaluate_card_choice(scenario, 'row_shuffle')
         self.assertFalse(outcome['success'])
         self.assertEqual(outcome['stars'], 0)
@@ -84,8 +84,8 @@ class TestTutorialCardHelpers(unittest.TestCase):
         self.assertIsNotNone(scenario)
         self.assertEqual([card['id'] for card in scenario['choices']], ['speed_burst_legendary', 'freeze_drop_rare', 'clear_rows'])
 
-        best_outcome = evaluate_card_choice(scenario, 'freeze_drop_rare')
-        acceptable_outcome = evaluate_card_choice(scenario, 'clear_rows')
+        best_outcome = evaluate_card_choice(scenario, 'clear_rows')
+        acceptable_outcome = evaluate_card_choice(scenario, 'freeze_drop_rare')
         weak_outcome = evaluate_card_choice(scenario, 'speed_burst_legendary')
 
         self.assertTrue(best_outcome['success'])
@@ -156,7 +156,7 @@ class TestTutorialCardProgression(unittest.TestCase):
         lesson_ids = [lesson['id'] for lesson in list_lessons_for_chapter('card_academy')]
         self.assertEqual(
             lesson_ids,
-            ['cards_rescue_now', 'cards_tempo_trap', 'cards_perk_vs_instant', 'cards_long_term_value'],
+            ['cards_rescue_now', 'cards_perk_vs_instant'],
         )
 
 

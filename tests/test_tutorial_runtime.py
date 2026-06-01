@@ -148,6 +148,8 @@ class TestTutorialRuntime(unittest.TestCase):
 
     def test_continue_after_completion_starts_next_chapter_lesson_in_full_flow(self):
         # Panel metadata'sı OLMAYAN bir bölüm sınırında otomatik ilerleme korunur.
+        # (Gerçek bölümlerin çoğunda artık panel var; bu testte paneli kapatıp
+        # fallback akışını izole ediyoruz.)
         tutorial = TutorialMode.__new__(TutorialMode)
         tutorial.next_lesson_id = None
         tutorial.active_lesson_id = 'cards_risk_reward_timing'
@@ -156,6 +158,7 @@ class TestTutorialRuntime(unittest.TestCase):
         tutorial.lesson_flow_scope = 'full'
         tutorial.hub_return_enabled = True
         tutorial.progress_panel_active = False
+        tutorial._get_chapter_progression_panel = lambda _chapter_id: None
         started = {}
 
         tutorial._start_lesson = lambda lesson_id: started.setdefault('lesson_id', lesson_id)
@@ -191,6 +194,7 @@ class TestTutorialRuntime(unittest.TestCase):
 
     def test_continue_after_completion_keeps_chapter_scope_at_boundary(self):
         # Panel metadata'sı OLMAYAN bölüm sınırında, chapter scope hub'a döner.
+        # (Paneli kapatıp fallback akışını izole ediyoruz.)
         tutorial = TutorialMode.__new__(TutorialMode)
         tutorial.next_lesson_id = None
         tutorial.active_lesson_id = 'cards_risk_reward_timing'
@@ -199,6 +203,7 @@ class TestTutorialRuntime(unittest.TestCase):
         tutorial.lesson_flow_scope = 'chapter'
         tutorial.hub_return_enabled = True
         tutorial.progress_panel_active = False
+        tutorial._get_chapter_progression_panel = lambda _chapter_id: None
         started = {}
 
         tutorial._start_lesson = lambda lesson_id: started.setdefault('lesson_id', lesson_id)
@@ -212,6 +217,57 @@ class TestTutorialRuntime(unittest.TestCase):
         self.assertTrue(result)
         self.assertEqual(started.get('hub'), ('card_strategy', 'cards_risk_reward_timing'))
         self.assertNotIn('lesson_id', started)
+
+    def test_card_foundations_boundary_opens_progression_panel(self):
+        # Ö1: card_foundations sonunda artık ilerleme paneli açılmalı.
+        tutorial = TutorialMode.__new__(TutorialMode)
+        tutorial.next_lesson_id = None
+        tutorial.active_lesson_id = 'cards_perk_vs_instant'
+        tutorial.active_lesson = {'chapter': 'card_foundations'}
+        tutorial.lesson_lookup = {}
+        tutorial.lesson_flow_scope = 'full'
+        tutorial.hub_return_enabled = False
+        tutorial.progress_panel_active = False
+        opened = {}
+        tutorial._open_progression_panel = lambda meta, nxt: opened.update({'meta': meta, 'next': nxt})
+        tutorial._start_lesson = lambda lid: opened.setdefault('started', lid)
+        tutorial._open_tutorial_hub = lambda **kwargs: opened.setdefault('hub', kwargs)
+
+        result = TutorialMode._continue_after_completion(tutorial)
+
+        self.assertTrue(result)
+        self.assertIn('meta', opened)
+        self.assertEqual(opened.get('next'), 'cards_synergy_scale')
+        self.assertNotIn('started', opened)
+
+    def test_card_strategy_boundary_opens_progression_panel(self):
+        # Ö1: card_strategy sonunda artık ilerleme paneli açılmalı.
+        tutorial = TutorialMode.__new__(TutorialMode)
+        tutorial.next_lesson_id = None
+        tutorial.active_lesson_id = 'cards_risk_reward_timing'
+        tutorial.active_lesson = {'chapter': 'card_strategy'}
+        tutorial.lesson_lookup = {}
+        tutorial.lesson_flow_scope = 'full'
+        tutorial.hub_return_enabled = False
+        tutorial.progress_panel_active = False
+        opened = {}
+        tutorial._open_progression_panel = lambda meta, nxt: opened.update({'meta': meta, 'next': nxt})
+        tutorial._start_lesson = lambda lid: opened.setdefault('started', lid)
+
+        result = TutorialMode._continue_after_completion(tutorial)
+
+        self.assertTrue(result)
+        self.assertIn('meta', opened)
+        self.assertEqual(opened.get('next'), 'exam_board_midterm')
+        self.assertNotIn('started', opened)
+
+    def test_mastery_exams_has_no_progression_panel(self):
+        # Kırmızı çizgi: sınav bölümünde panel YOK (tutorial biter).
+        tutorial = TutorialMode.__new__(TutorialMode)
+        tutorial.active_lesson_id = 'exam_board_midterm'
+        tutorial.active_lesson = {'chapter': 'mastery_exams'}
+        tutorial.lesson_lookup = {}
+        self.assertIsNone(tutorial_module.TutorialMode._pending_chapter_boundary(tutorial))
 
     def test_quick_start_boundary_opens_progression_panel(self):
         # quick_start sonunda panel metadata'sı var → ilerleme paneli açılmalı.
@@ -521,6 +577,181 @@ class TestTutorialRuntime(unittest.TestCase):
             self.assertTrue(TutorialMode.handle_input(tutorial))
 
         self.assertEqual(restarted.get('lesson_id'), 'cards_rescue_now')
+
+
+class TestTutorialProgressionTracking(unittest.TestCase):
+    """Eğitim modunda hiçbir eylem başarım/istatistik tetiklememeli."""
+
+    def _build_game_stub(self, *, suppress):
+        Game = tutorial_module.Game
+        game = Game.__new__(Game)
+        game._suppress_progression_tracking = suppress
+        game._score_recorded = False
+        game.game_time = 12000
+        game.game_mode = 'tutorial' if suppress else 'classic'
+        calls = {'add_score': 0, 'update_user_stats': 0, 'update_stats': 0}
+
+        game.board = types.SimpleNamespace(
+            score=1000, lines_cleared=5, level=2, tetrises=1, combo=3,
+        )
+
+        def _add_score(*_a, **_k):
+            calls['add_score'] += 1
+        game.score_manager = types.SimpleNamespace(add_score=_add_score)
+
+        def _update_user_stats(*_a, **_k):
+            calls['update_user_stats'] += 1
+        game.user_manager = types.SimpleNamespace(update_user_stats=_update_user_stats)
+
+        def _update_stats(*_a, **_k):
+            calls['update_stats'] += 1
+            return []
+        game.achievement_manager = types.SimpleNamespace(
+            stats={}, update_stats=_update_stats,
+            get_achievement=lambda _id: None,
+        )
+        game.achievement_notifications = []
+        return game, calls
+
+    def test_finalize_run_suppressed_in_tutorial(self):
+        game, calls = self._build_game_stub(suppress=True)
+        tutorial_module.Game.finalize_run(game)
+        self.assertEqual(calls['add_score'], 0)
+        self.assertEqual(calls['update_user_stats'], 0)
+        self.assertEqual(calls['update_stats'], 0)
+        self.assertTrue(game._score_recorded)
+
+    def test_finalize_run_records_in_normal_mode(self):
+        game, calls = self._build_game_stub(suppress=False)
+        with mock.patch.object(tutorial_module, 'pygame', tutorial_module.pygame):
+            tutorial_module.Game.finalize_run(game)
+        # Normal modda skor/istatistik/başarım yolları çalışır.
+        self.assertEqual(calls['add_score'], 1)
+        self.assertEqual(calls['update_user_stats'], 1)
+        self.assertEqual(calls['update_stats'], 1)
+
+
+class TestTutorialCardEffectConsistency(unittest.TestCase):
+    """Kart etkisi gösterimi ana oyunla tutarlı olmalı."""
+
+    def _make_board(self, rows):
+        # rows: en üstten en alta string listesi ('X' dolu, '.' boş)
+        height = len(rows)
+        width = len(rows[0]) if rows else 10
+        occupancy = [[c == 'X' for c in row] for row in rows]
+        grid = [[(9, 9, 9) if c == 'X' else (0, 0, 0) for c in row] for row in rows]
+        gravity_calls = {'count': 0}
+
+        board = types.SimpleNamespace()
+        board.width = width
+        board.height = height
+        board.occupancy = occupancy
+        board.grid = grid
+        board.texture_grid = [[None] * width for _ in range(height)]
+        board.gold = [[False] * width for _ in range(height)]
+        board.owners = [[None] * width for _ in range(height)]
+
+        def _apply_gravity():
+            gravity_calls['count'] += 1
+            # Basit yerçekimi: her sütunda dolu hücreleri aşağı topla.
+            for x in range(width):
+                stack = [y for y in range(height) if board.occupancy[y][x]]
+                cols = [board.grid[y][x] for y in stack]
+                for y in range(height):
+                    board.occupancy[y][x] = False
+                    board.grid[y][x] = (0, 0, 0)
+                for i, col in enumerate(reversed(cols)):
+                    y = height - 1 - i
+                    board.occupancy[y][x] = True
+                    board.grid[y][x] = col
+        board.apply_gravity = _apply_gravity
+        return board, gravity_calls
+
+    def _make_tutorial_for_effect(self, board):
+        tutorial = TutorialMode.__new__(TutorialMode)
+        tutorial.board = board
+        tutorial.card_choice_state = {}
+        tutorial.falling_block_animations = []
+        tutorial.get_board_offset = lambda: (0, 0)
+        tutorial.get_cell_size = lambda: 24
+        tutorial.create_particles = lambda **kwargs: None
+        tutorial.trigger_screen_shake = lambda **kwargs: None
+        tutorial._trigger_card_line_clear_animation = lambda: None
+        tutorial._animate_card_block_fall = lambda pre: None
+        return tutorial
+
+    def test_peak_sculpt_showcase_does_not_apply_gravity(self):
+        # Ana oyunda Tepe Kesici yalnız tepe bloklarını siler, yerçekimi UYGULAMAZ.
+        # Tutorial gösterimi de aynı davranmalı (alttaki bloklar düşmemeli).
+        board, gravity_calls = self._make_board([
+            '..........',
+            '..........',
+            'X.........',  # sol sütun en yüksek (3 blok)
+            'X.........',
+            'XX........',
+        ])
+        tutorial = self._make_tutorial_for_effect(board)
+        summary = tutorial_module.TutorialMode._apply_tutorial_card_effect(
+            tutorial, {'id': 'peak_sculpt', 'value': 1})
+
+        self.assertEqual(gravity_calls['count'], 0)
+        self.assertTrue(summary)
+
+    def test_clear_rows_showcase_applies_gravity(self):
+        # Alt Süpür ana oyunda blokları çökertir (gravity uygulanır).
+        board, gravity_calls = self._make_board([
+            '..........',
+            'X.........',
+            'XX........',
+            'XXX.......',
+            'XXXX......',
+        ])
+        tutorial = self._make_tutorial_for_effect(board)
+        summary = tutorial_module.TutorialMode._apply_tutorial_card_effect(
+            tutorial, {'id': 'clear_rows', 'value': 2})
+
+        self.assertGreaterEqual(gravity_calls['count'], 1)
+        self.assertTrue(summary)
+
+
+class TestTutorialShowcaseSkip(unittest.TestCase):
+    """Ö3a — aynı animasyonlu kart efekti ikinci kez showcase'siz gösterilmeli."""
+
+    def _make_tutorial(self):
+        tutorial = TutorialMode.__new__(TutorialMode)
+        tutorial.card_choice_state = {
+            'scenario': {'choices': [{'id': 'clear_rows', 'title': 'Alt Süpür'}]},
+            'selected_index': 0,
+        }
+        tutorial.lesson_runtime_state = {}
+        tutorial.card_ui = None
+        tutorial._pending_card_choice_index = None
+        tutorial._is_card_choice_lesson_active = lambda: True
+        tutorial.sound = types.SimpleNamespace(play=lambda *_a, **_k: None)
+        calls = {'showcase': 0, 'result': 0, 'effect': 0}
+        tutorial._begin_card_effect_showcase = lambda card, outcome: calls.__setitem__('showcase', calls['showcase'] + 1)
+        tutorial._apply_tutorial_card_effect = lambda card: calls.__setitem__('effect', calls['effect'] + 1) or 'ok'
+        tutorial._show_lesson_result = lambda outcome: calls.__setitem__('result', calls['result'] + 1)
+        return tutorial, calls
+
+    def test_first_animated_card_shows_showcase_second_skips(self):
+        import importlib
+        cards_mod = importlib.import_module('tutorial_cards')
+        # evaluate_card_choice ve title helper'ları gerçek modülden gelir; clear_rows
+        # animasyonlu bir karttır.
+        tutorial, calls = self._make_tutorial()
+        tutorial._shown_card_effect_ids = set()
+
+        # 1. gösterim: showcase açılır.
+        tutorial_module.TutorialMode._confirm_card_choice_selection(tutorial)
+        self.assertEqual(calls['showcase'], 1)
+        self.assertEqual(calls['result'], 0)
+
+        # 2. gösterim (aynı kart): showcase atlanır, doğrudan sonuç + etki uygulanır.
+        tutorial_module.TutorialMode._confirm_card_choice_selection(tutorial)
+        self.assertEqual(calls['showcase'], 1)
+        self.assertEqual(calls['result'], 1)
+        self.assertGreaterEqual(calls['effect'], 1)
 
 
 if __name__ == '__main__':

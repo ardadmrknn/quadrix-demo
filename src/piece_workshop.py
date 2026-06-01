@@ -21,6 +21,7 @@ from renderers.jelly_renderer import draw_jelly_block
 from background_effects import get_shared_falling_blocks_layer
 from localization import t
 from ui_scaling import get_projected_effective_scale
+from back_button import draw_back_button as _draw_shared_back_button
 
 
 def _resolve_root_dir() -> Path:
@@ -112,6 +113,11 @@ class PieceWorkshopScreen:
         self.last_piece_item_height = 50
         self.last_piece_item_gap = 6
         self.last_piece_item_cols = 1
+
+        # Mouse-friendly Geri butonu (sol üst). draw() her frame yeniden
+        # konumlandırır. Click semantiği ESC ile aynı: 'back'.
+        self._back_rect: Optional[pygame.Rect] = None
+        self._back_hover: bool = False
 
     # ── Responsive ölçek ──
 
@@ -608,6 +614,11 @@ class PieceWorkshopScreen:
         elif event.type == pygame.MOUSEBUTTONDOWN:
             pos = normalize_mouse_pos(getattr(event, 'pos', None)) or event.pos
             if event.button == 1:
+                # Geri butonu (sol üst) — ESC ile aynı semantik. Tüm diğer
+                # mouse path'lerinden ÖNCE kontrol edilmeli ki yanlışlıkla
+                # hücre boyama, save, delete veya palet seçimi tetiklenmesin.
+                if self._back_rect is not None and self._back_rect.collidepoint(pos):
+                    return 'back'
                 # Grid altındaki Kaydet butonu
                 if self.save_button_rect and self.save_button_rect.collidepoint(pos):
                     self._save_current_piece()
@@ -662,6 +673,9 @@ class PieceWorkshopScreen:
         
         elif event.type == pygame.MOUSEMOTION:
             pos = normalize_mouse_pos(getattr(event, 'pos', None)) or event.pos
+            self._back_hover = bool(
+                self._back_rect is not None and self._back_rect.collidepoint(pos)
+            )
             if event.buttons[0] or event.buttons[2]:
                 cell = self._pos_to_cell(pos)
                 if cell:
@@ -854,6 +868,23 @@ class PieceWorkshopScreen:
         if border_color is not None and border_width > 0:
             pygame.draw.rect(self.screen, border_color[:3], rect, border_width, border_radius=corner_radius)
     
+    def _draw_back_button(self) -> None:
+        """Sol üst Geri affordance — ESC ile aynı semantik ('back').
+
+        Hit-zone draw() her frame yeniden hesaplar; hover live cursor ile
+        yenilenir (alt-tab/focus loss sonrası bayat kalmaz). Görsel format
+        ana menüdeki sağ alt 'Çık' tuşu ile aynıdır (ortak helper)."""
+        try:
+            live_pos = get_mouse_pos()
+        except Exception:
+            live_pos = (-1, -1)
+        prev_rect = self._back_rect
+        hover = bool(prev_rect is not None and prev_rect.collidepoint(live_pos))
+
+        rect = _draw_shared_back_button(self.screen, self._s, hover=hover, retro_style=retro_style)
+        self._back_rect = rect
+        self._back_hover = bool(rect.collidepoint(live_pos))
+
     def draw(self):
         """Modern Parça Atölyesi UI çiz"""
         width, height = self.screen.get_size()
@@ -864,6 +895,10 @@ class PieceWorkshopScreen:
         
         # Başlık
         title_rect = retro_style.draw_title(self.screen, t('piece_workshop_title'), (width // 2, _s(55)), emoji='🧩')
+
+        # Mouse Geri butonu — sol üst, başlık ortası ile çakışmaz; grid
+        # alanı _s(60) ofsetiyle başladığı için bu chip onu da ezmez.
+        self._draw_back_button()
 
         # Grid alanı
         grid_top = title_rect.bottom + _s(26)

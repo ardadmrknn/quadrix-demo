@@ -4,12 +4,16 @@ import pygame
 
 try:
     from .menu import Menu
-    from .platform_utils import is_fullscreen_toggle
+    from .platform_utils import is_fullscreen_toggle, normalize_mouse_pos, get_mouse_pos
     from .retro_style import retro_style
+    from .localization import t
+    from .back_button import draw_back_button as _draw_shared_back_button
 except Exception:
     from menu import Menu
-    from platform_utils import is_fullscreen_toggle
+    from platform_utils import is_fullscreen_toggle, normalize_mouse_pos, get_mouse_pos
     from retro_style import retro_style
+    from localization import t
+    from back_button import draw_back_button as _draw_shared_back_button
 
 
 def get_leaderboard_trailer_panel_rect(surface_size: tuple[int, int]) -> pygame.Rect:
@@ -29,6 +33,10 @@ class LeaderboardTrailerScreen:
         self.user_manager = user_manager
         self.preview_menu = Menu(screen, user_manager=user_manager, settings_manager=settings_manager)
         self.preview_menu.enable_mystery_lb_trailer_preview()
+        # Mouse Geri butonu — sol üst, overlay panel ortada olduğu için
+        # çakışmaz. ESC ve replay kısayolları aynen korunur.
+        self._back_rect: pygame.Rect | None = None
+        self._back_hover: bool = False
 
     def restart_animation(self) -> None:
         self.preview_menu.enable_mystery_lb_trailer_preview()
@@ -42,6 +50,18 @@ class LeaderboardTrailerScreen:
                 return None
             if is_fullscreen_toggle(event.key, getattr(event, 'mod', 0)):
                 return 'toggle_fullscreen'
+        elif event.type == pygame.MOUSEMOTION:
+            pos = normalize_mouse_pos(getattr(event, 'pos', None)) or event.pos
+            self._back_hover = bool(
+                self._back_rect is not None and self._back_rect.collidepoint(pos)
+            )
+        elif event.type == pygame.MOUSEBUTTONDOWN and getattr(event, 'button', None) == 1:
+            pos = normalize_mouse_pos(getattr(event, 'pos', None)) or event.pos
+            # Replay kısayollarını ezme: yalnızca back rect'e tıklama 'back'
+            # döner; overlay panel veya başka alana tıklama hiçbir aksiyon
+            # tetiklemez (mevcut davranışla aynı).
+            if self._back_rect is not None and self._back_rect.collidepoint(pos):
+                return 'back'
         return None
 
     def draw(self):
@@ -62,3 +82,26 @@ class LeaderboardTrailerScreen:
 
         panel_rect = get_leaderboard_trailer_panel_rect(self.screen.get_size())
         self.preview_menu._draw_mystery_leaderboard_panel(panel_rect)
+
+        # Mouse Geri butonu (sol üst, overlay panelin tamamen dışında).
+        self._draw_back_button(width, height)
+
+    def _draw_back_button(self, width: int, height: int) -> None:
+        """Sol üst Geri affordance — ESC ile aynı semantik ('back').
+
+        Overlay panel ekran ortasında konumlandığı için sol üst köşe
+        boşta kalır; bu chip oraya yerleşir. Görsel format ana menüdeki
+        sağ alt 'Çık' tuşu ile aynıdır (ortak helper)."""
+        scale = max(0.7, min(1.4, width / 1366.0))
+        s = lambda v, minimum=1: max(minimum, int(round(v * scale)))
+
+        try:
+            live_pos = get_mouse_pos()
+        except Exception:
+            live_pos = (-1, -1)
+        prev_rect = self._back_rect
+        hover = bool(prev_rect is not None and prev_rect.collidepoint(live_pos))
+
+        rect = _draw_shared_back_button(self.screen, s, hover=hover, retro_style=retro_style)
+        self._back_rect = rect
+        self._back_hover = bool(rect.collidepoint(live_pos))

@@ -25007,6 +25007,74 @@ TRANSLATIONS = {
         'zh': '你已掌握表面控制！',
         'ko': '표면 컨트롤을 배웠어요!',
     },
+    'tutorial_progress_panel_cards_title': {
+        'tr': 'Kart temellerini öğrendin!',
+        'en': 'You learned the card basics!',
+        'de': 'Du hast die Kartengrundlagen gelernt!',
+        'fr': 'Tu as appris les bases des cartes !',
+        'es': '¡Aprendiste los fundamentos de las cartas!',
+        'it': 'Hai imparato le basi delle carte!',
+        'pt': 'Você aprendeu o básico das cartas!',
+        'ru': 'Вы изучили основы карт!',
+        'ja': 'カードの基本を学んだ！',
+        'zh': '你学会了卡牌基础！',
+        'ko': '카드 기초를 배웠어요!',
+    },
+    'tutorial_progress_panel_cards_body': {
+        'tr': 'Hangi kartın ne zaman doğru olduğunu okumaya başladın. Şimdi sinerji ve uzun '
+              'vadeli build mantığına geçelim mi?',
+        'en': 'You started reading which card is right and when. Shall we move on to synergy '
+              'and long-term build logic?',
+        'de': 'Du beginnst zu erkennen, welche Karte wann richtig ist. Weiter zu Synergie und '
+              'langfristiger Build-Logik?',
+        'fr': 'Tu commences à savoir quelle carte est la bonne et quand. On passe à la synergie '
+              'et à la logique de build à long terme ?',
+        'es': 'Empezaste a leer qué carta es correcta y cuándo. ¿Pasamos a la sinergia y la '
+              'lógica de build a largo plazo?',
+        'it': 'Hai iniziato a capire quale carta è giusta e quando. Passiamo alla sinergia e '
+              'alla logica di build a lungo termine?',
+        'pt': 'Você começou a ler qual carta é certa e quando. Vamos para a sinergia e a '
+              'lógica de build de longo prazo?',
+        'ru': 'Вы начали понимать, какая карта верна и когда. Перейдём к синергии и логике '
+              'долгосрочного билда?',
+        'ja': 'どのカードがいつ正しいかを読み始めた。シナジーと長期的なビルド理論に進もうか?',
+        'zh': '你开始读懂哪张卡在何时正确。要进入协同和长线构筑思路了吗?',
+        'ko': '어떤 카드가 언제 옳은지 읽기 시작했어요. 이제 시너지와 장기 빌드 논리로 넘어갈까요?',
+    },
+    'tutorial_progress_panel_strategy_title': {
+        'tr': 'Kart stratejisini öğrendin!',
+        'en': 'You learned card strategy!',
+        'de': 'Du hast die Kartenstrategie gelernt!',
+        'fr': 'Tu as appris la stratégie des cartes !',
+        'es': '¡Aprendiste la estrategia de cartas!',
+        'it': 'Hai imparato la strategia delle carte!',
+        'pt': 'Você aprendeu a estratégia de cartas!',
+        'ru': 'Вы освоили стратегию карт!',
+        'ja': 'カード戦略を学んだ！',
+        'zh': '你学会了卡牌策略！',
+        'ko': '카드 전략을 배웠어요!',
+    },
+    'tutorial_progress_panel_strategy_body': {
+        'tr': 'Artık sınavlara hazırsın. Az ipucuyla, öğrendiğin her şeyi birleştireceksin. '
+              'Hazır olduğunda Devam Et\'e bas.',
+        'en': 'Now you are ready for the exams. With few hints, you will combine everything '
+              'you learned. Press Continue when ready.',
+        'de': 'Jetzt bist du bereit für die Prüfungen. Mit wenigen Hinweisen kombinierst du '
+              'alles Gelernte. Drücke Weiter, wenn du bereit bist.',
+        'fr': 'Tu es prêt pour les examens. Avec peu d\'indices, tu combineras tout ce que tu '
+              'as appris. Appuie sur Continuer quand tu es prêt.',
+        'es': 'Ya estás listo para los exámenes. Con pocas pistas, combinarás todo lo aprendido. '
+              'Pulsa Continuar cuando estés listo.',
+        'it': 'Ora sei pronto per gli esami. Con pochi suggerimenti, combinerai tutto ciò che '
+              'hai imparato. Premi Continua quando sei pronto.',
+        'pt': 'Agora você está pronto para as provas. Com poucas dicas, combinará tudo o que '
+              'aprendeu. Pressione Continuar quando estiver pronto.',
+        'ru': 'Теперь вы готовы к экзаменам. С минимумом подсказок вы объедините всё изученное. '
+              'Нажмите «Продолжить», когда будете готовы.',
+        'ja': 'これで試験の準備ができた。少ないヒントで、学んだすべてを組み合わせる。準備ができたら続行を押そう。',
+        'zh': '现在你已准备好考试。在很少提示下，你将综合所学的一切。准备好后按继续。',
+        'ko': '이제 시험을 볼 준비가 됐어요. 적은 힌트로 배운 모든 것을 결합하게 돼요. 준비되면 계속을 누르세요.',
+    },
     'tutorial_quadrix_celebrate': {
         'tr': 'QUADRIX! 4 satır birden!',
         'en': 'QUADRIX! Four lines at once!',

@@ -1,7 +1,9 @@
 """Tutorial ders kataloğu — Kanonik V2.
 
-7 bölüm, 28 ders.  Plan referansı:
+7 bölüm, 26 ders.  Plan referansı:
 plans/2026-04-18-egitim-modu-yeniden-tasarim-ve-icerik-stratejisi.md §7
+plans/2026-06-01-egitim-akis-yogunlugu-ve-yeni-oyuncu-deneyimi-plani.md §Ö5a
+(kart bölümü 8→6 sıkıştırıldı: cards_tempo_trap + cards_long_term_value kaldırıldı)
 """
 
 from __future__ import annotations
@@ -30,7 +32,11 @@ LEGACY_LESSON_MAP: Dict[str, str] = {
     "board_keep_low": "surface_keep_low",
     "board_vertical_well": "surface_protect_well",
     "card_rescue_pick": "cards_rescue_now",
-    "card_long_term_pick": "cards_long_term_value",
+    # Ö5a — kaldırılan kart dersleri korunan derslere eşlenir (eski ilerleme
+    # orphan kalmasın; tamamlanmışlık benzer kavramı öğreten derse taşınır).
+    "card_long_term_pick": "cards_perk_vs_instant",
+    "cards_long_term_value": "cards_perk_vs_instant",
+    "cards_tempo_trap": "cards_rescue_now",
     "card_synergy_pick": "cards_synergy_scale",
 }
 
@@ -99,8 +105,8 @@ CHAPTERS: List[Dict[str, Any]] = [
             "title_key": "tutorial_progress_panel_recovery_title",
             "title_fallback": "Kurtarmayı öğrendin!",
             "body_key": "tutorial_progress_panel_recovery_body",
-            "body_fallback": "Zor durumdan çıkmayı çözdün. Sırada kartlar var: doğru kartı "
-                             "doğru anda seçmeyi öğrenmeye devam et.",
+            "body_fallback": "Board becerilerini tamamladın. Şimdi konu değişiyor: artık "
+                             "parça değil, doğru KARTI doğru anda seçmeyi öğreneceksin.",
         },
     },
     {
@@ -111,6 +117,13 @@ CHAPTERS: List[Dict[str, Any]] = [
         "description_fallback": "Kart ailelerini, risk etiketlerini ve board bağlamını tanı.",
         "unlocked_by_default": False,
         "difficulty": 2,
+        "progression_panel": {
+            "title_key": "tutorial_progress_panel_cards_title",
+            "title_fallback": "Kart temellerini öğrendin!",
+            "body_key": "tutorial_progress_panel_cards_body",
+            "body_fallback": "Hangi kartın ne zaman doğru olduğunu okumaya başladın. "
+                             "Şimdi sinerji ve uzun vadeli build mantığına geçelim mi?",
+        },
     },
     {
         "id": "card_strategy",
@@ -120,6 +133,13 @@ CHAPTERS: List[Dict[str, Any]] = [
         "description_fallback": "Uzun vadeli build mantığı ve risk-getiri dengesini öğren.",
         "unlocked_by_default": False,
         "difficulty": 3,
+        "progression_panel": {
+            "title_key": "tutorial_progress_panel_strategy_title",
+            "title_fallback": "Kart stratejisini öğrendin!",
+            "body_key": "tutorial_progress_panel_strategy_body",
+            "body_fallback": "Artık sınavlara hazırsın. Az ipucuyla, öğrendiğin her şeyi "
+                             "birleştireceksin. Hazır olduğunda Devam Et'e bas.",
+        },
     },
     {
         "id": "mastery_exams",
@@ -471,22 +491,6 @@ LESSONS: List[Dict[str, Any]] = [
         "allowed_actions": ["move_left", "move_right", "confirm"],
     },
     {
-        "id": "cards_tempo_trap",
-        "chapter": "card_foundations",
-        "kind": "card_choice",
-        "scenario_id": "tempo_trap",
-        "lesson_type": "card_lab",
-        "title_key": "tutorial_cards_tempo_trap_title",
-        "title_fallback": "Tempo tuzağı",
-        "description_key": "tutorial_cards_tempo_trap_desc",
-        "description_fallback": "Board kötüyken hız ve skor kartlarının neden tuzak olabileceğini gör.",
-        "why_it_matters": "Parlak kart ≠ doğru kart. Board durumu her zaman öncedir.",
-        "difficulty": 2,
-        "duration_seconds": 30,
-        "skill_tags": ["cards", "tempo", "trap"],
-        "allowed_actions": ["move_left", "move_right", "confirm"],
-    },
-    {
         "id": "cards_perk_vs_instant",
         "chapter": "card_foundations",
         "kind": "card_choice",
@@ -500,22 +504,6 @@ LESSONS: List[Dict[str, Any]] = [
         "difficulty": 2,
         "duration_seconds": 30,
         "skill_tags": ["cards", "perk", "instant"],
-        "allowed_actions": ["move_left", "move_right", "confirm"],
-    },
-    {
-        "id": "cards_long_term_value",
-        "chapter": "card_foundations",
-        "kind": "card_choice",
-        "scenario_id": "long_term_pick",
-        "lesson_type": "card_lab",
-        "title_key": "tutorial_card_long_term_title",
-        "title_fallback": "Uzun vadeli değer",
-        "description_key": "tutorial_card_long_term_desc",
-        "description_fallback": "Tahta güvenliyken anlık kazanç yerine kalıcı değer üreten kartı seç.",
-        "why_it_matters": "Güvenli board = uzun vadeli yatırım zamanı.",
-        "difficulty": 2,
-        "duration_seconds": 30,
-        "skill_tags": ["cards", "long_term"],
         "allowed_actions": ["move_left", "move_right", "confirm"],
     },
 
