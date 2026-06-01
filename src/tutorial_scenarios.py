@@ -616,6 +616,18 @@ def get_scenario(scenario_id: str | None) -> Dict[str, Any] | None:
     tip_key = hydrated.get("tip_key")
     if tip_key:
         hydrated["tip_text"] = t(str(tip_key), default=str(hydrated.get("tip_text") or ""))
+    # Hedef (objective) metinlerini lokalize et (TR string fallback olarak korunur).
+    # Anahtar deseni: tutorial_scn_<scenario_id>_obj_<objective_id>
+    objectives = hydrated.get("objectives")
+    if isinstance(objectives, list):
+        for objective in objectives:
+            if not isinstance(objective, dict):
+                continue
+            obj_id = str(objective.get("id") or "")
+            if not obj_id:
+                continue
+            loc_key = f"tutorial_scn_{scenario_id}_obj_{obj_id}"
+            objective["text"] = t(loc_key, default=str(objective.get("text") or ""))
     # Koçluk metinlerini lokalize et (TR string fallback olarak korunur).
     # Anahtar deseni: tutorial_scn_<scenario_id>_coach_<feedback_key>
     coach_feedback = hydrated.get("coach_feedback")

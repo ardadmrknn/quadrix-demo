@@ -711,7 +711,7 @@ class TutorialMode(Game):
                     'lesson': lesson,
                     'completed': bool(lesson_progress.get('completed', False)),
                     'stars': int(lesson_progress.get('stars', 0) or 0),
-                    'why_it_matters': str(lesson.get('why_it_matters') or ''),
+                    'why_it_matters': self._lesson_why(lesson),
                     'duration_seconds': int(lesson.get('duration_seconds', 0) or 0),
                     'skill_tags': list(skill_tags) if isinstance(skill_tags, (list, tuple)) else [],
                     'difficulty': int(lesson.get('difficulty', 0) or 0),
@@ -1184,6 +1184,21 @@ class TutorialMode(Game):
         description_key = lesson_data.get('description_key')
         description_fallback = lesson_data.get('description_fallback') or ''
         return t(description_key, default=description_fallback) if description_key else str(description_fallback)
+
+    def _lesson_why(self, lesson=None):
+        """Dersin 'why_it_matters' metnini lokalize ederek döndür.
+
+        Anahtar deseni: tutorial_why_<lesson_id>. Anahtar yoksa hardcoded TR
+        metni fallback olarak kullanılır (geriye dönük güvenli).
+        """
+        lesson_data = lesson or self.active_lesson or {}
+        if not isinstance(lesson_data, dict):
+            return ''
+        why_fallback = str(lesson_data.get('why_it_matters') or '').strip()
+        lesson_id = str(lesson_data.get('id') or '').strip()
+        if not lesson_id:
+            return why_fallback
+        return t(f'tutorial_why_{lesson_id}', default=why_fallback)
 
     def _compose_lesson_guidance(self, instruction='', explanation=''):
         parts = []
@@ -2440,7 +2455,7 @@ class TutorialMode(Game):
             'title': self._lesson_title(lesson_data),
             'goal': goal_text,
             'how_to': self._get_lesson_howto_text(lesson_data),
-            'why': str(lesson_data.get('why_it_matters') or '').strip(),
+            'why': self._lesson_why(lesson_data),
             'watch': watch_text,
             'objectives': objectives,
             'duration_seconds': int(lesson_data.get('duration_seconds', 0) or 0),
