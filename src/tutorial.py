@@ -1343,9 +1343,54 @@ class TutorialMode(Game):
         if max_width <= 0:
             return [text]
 
+        try:
+            from .localization import get_language
+        except Exception:
+            from localization import get_language
+        lang = str(get_language() or 'en').lower()
+        is_cjk = lang in ('ja', 'jp', 'zh', 'ko')
+
+        def is_cjk_char(char):
+            ord_c = ord(char)
+            return (
+                (0x4e00 <= ord_c <= 0x9fff) or
+                (0x3040 <= ord_c <= 0x309f) or
+                (0x30a0 <= ord_c <= 0x30ff) or
+                (0xac00 <= ord_c <= 0xd7af) or
+                (0x1100 <= ord_c <= 0x11ff) or
+                (0x3130 <= ord_c <= 0x318f)
+            )
+
+        def should_add_space(w1, w2):
+            if not w1 or not w2:
+                return False
+            if is_cjk_char(w1[-1]) or is_cjk_char(w2[0]):
+                return False
+            return True
+
         lines = []
         for paragraph in text.split('\n'):
-            words = paragraph.split()
+            if is_cjk:
+                words = []
+                current_latin = []
+                for char in paragraph:
+                    if is_cjk_char(char):
+                        if current_latin:
+                            words.append("".join(current_latin))
+                            current_latin = []
+                        words.append(char)
+                    else:
+                        if char.isspace():
+                            if current_latin:
+                                words.append("".join(current_latin))
+                                current_latin = []
+                        else:
+                            current_latin.append(char)
+                if current_latin:
+                    words.append("".join(current_latin))
+            else:
+                words = paragraph.split()
+
             if not words:
                 if not max_lines or len(lines) < max_lines:
                     lines.append('')
@@ -1355,7 +1400,8 @@ class TutorialMode(Game):
 
             current_line = words[0]
             for word in words[1:]:
-                test_line = f'{current_line} {word}'
+                space = ' ' if should_add_space(current_line, word) else ''
+                test_line = f'{current_line}{space}{word}'
                 if font.size(test_line)[0] <= max_width:
                     current_line = test_line
                 else:
@@ -4913,7 +4959,7 @@ class TutorialMode(Game):
 
         title_text = t('tutorial_hub_title', default='Eğitim Merkezi')
         title_surf = h1_font.render(title_text, True, retro_style.primary)
-        self.screen.blit(title_surf, (header_rect.x + s(28), header_rect.y + s(12)))
+        self.screen.blit(title_surf, (header_rect.x + s(28), header_rect.y + (header_rect.height - title_surf.get_height()) // 2))
 
         total_stars = self._get_total_tutorial_stars()
         star_badge_font = retro_style.get_font(s(16, minimum=12), bold=True)
@@ -4942,16 +4988,6 @@ class TutorialMode(Game):
             ),
         )
 
-        subtitle_text = t(
-            'tutorial_hub_subtitle',
-            total_stars=total_stars,
-            default='Dersleri tekrar oyna, eksik yıldızları topla ve yeni bölümlerin kilidini aç.',
-        )
-        sub_lines = self._wrap_text(subtitle_text, small_font, panel_rect.width - s(60), max_lines=1)
-        for line in sub_lines:
-            sub_surf = small_font.render(line, True, retro_style.text_secondary)
-            self.screen.blit(sub_surf, (header_rect.x + s(28), header_rect.y + s(48)))
-
         content_top = header_rect.bottom + s(14)
         content_bottom = panel_rect.bottom - s(90)
         content_height = content_bottom - content_top
@@ -4975,8 +5011,8 @@ class TutorialMode(Game):
         arrow_w = s(40, minimum=30)
         arrow_h = s(56, minimum=42)
         arrow_y = chapter_area_rect.y + (chapter_area_rect.height - arrow_h) // 2
-        arrow_left_rect = pygame.Rect(chapter_area_rect.x, arrow_y, arrow_w, arrow_h)
-        arrow_right_rect = pygame.Rect(chapter_area_rect.right - arrow_w, arrow_y, arrow_w, arrow_h)
+        arrow_left_rect = pygame.Rect(chapter_area_rect.x - s(10), arrow_y, arrow_w, arrow_h)
+        arrow_right_rect = pygame.Rect(chapter_area_rect.right - arrow_w + s(10), arrow_y, arrow_w, arrow_h)
         self.hub_arrow_left_rect = arrow_left_rect
         self.hub_arrow_right_rect = arrow_right_rect
 
@@ -5025,7 +5061,7 @@ class TutorialMode(Game):
                 ))
 
         # ── Kart alanı ──
-        card_pad_x = arrow_w + s(10)
+        card_pad_x = arrow_w + s(15)
         card_area_x = chapter_area_rect.x + card_pad_x
         card_area_w = chapter_area_rect.width - card_pad_x * 2
         card_area_y = chapter_area_rect.y
@@ -5111,9 +5147,9 @@ class TutorialMode(Game):
             self.screen.blit(title_surf, (title_x, band_rect.y + (band_h - title_surf.get_height()) // 2))
 
             # ── Kart gövdesi ──
-            body_y = band_rect.bottom + s(14)
-            pad_x = card_rect.x + s(16)
-            text_w = card_rect.width - s(32)
+            body_y = band_rect.bottom + s(16)
+            pad_x = card_rect.x + s(18)
+            text_w = card_rect.width - s(36)
 
             # İlerleme çubuğu
             completed_n = entry.get('completed_lessons', 0)
@@ -5137,17 +5173,17 @@ class TutorialMode(Game):
                 default=f"{completed_n}/{total_n} ders  |  {entry.get('stars', 0)} yıldız",
             )
             status_color = retro_style.text_secondary if not is_locked else retro_style.text_muted
-            status_surf = small_font.render(status_text, True, status_color)
+            status_surf = body_font.render(status_text, True, status_color)
             self.screen.blit(status_surf, (pad_x, status_y))
 
             # Zorluk yıldızları
-            diff_y = status_y + s(20)
+            diff_y = status_y + s(18)
             difficulty = max(0, min(5, int(chapter.get('difficulty', 1) or 1)))
-            diff_label = small_font.render(t('tutorial_difficulty', default='Zorluk:'), True,
+            diff_label = body_font.render(t('tutorial_difficulty', default='Zorluk:'), True,
                                            retro_style.text_muted if is_locked else retro_style.text_secondary)
             self.screen.blit(diff_label, (pad_x, diff_y))
-            star_x = pad_x + diff_label.get_width() + s(6)
-            star_size = max(s(13, minimum=9), min(s(18, minimum=12), small_font.get_height() + s(2, minimum=1)))
+            star_x = pad_x + diff_label.get_width() + s(8)
+            star_size = max(s(13, minimum=9), min(s(18, minimum=12), body_font.get_height() + s(2, minimum=1)))
             star_y = diff_y + max(0, (diff_label.get_height() - star_size) // 2)
             self._draw_tutorial_star_row(
                 star_x,
@@ -5160,19 +5196,19 @@ class TutorialMode(Game):
             )
 
             # Açıklama
-            desc_y = diff_y + s(24)
+            desc_y = diff_y + s(22)
             chapter_desc = (t(chapter.get('description_key'), default=chapter.get('description_fallback', ''))
                             if chapter.get('description_key')
                             else str(chapter.get('description_fallback', '')))
-            desc_lines = self._wrap_text(chapter_desc, small_font, text_w, max_lines=4)
+            desc_lines = self._wrap_text(chapter_desc, body_font, text_w, max_lines=4)
             for line in desc_lines:
-                desc_c = retro_style.text_secondary if not is_locked else retro_style.text_muted
-                line_surf = small_font.render(line, True, desc_c)
+                desc_c = (235, 240, 250) if not is_locked else retro_style.text_muted
+                line_surf = body_font.render(line, True, desc_c)
                 self.screen.blit(line_surf, (pad_x, desc_y))
                 desc_y += s(17)
 
             # ── Alt durum badge'i ──
-            badge_y = card_rect.bottom - s(36)
+            badge_y = card_rect.bottom - s(40)
             if is_locked:
                 badge_text = t('tutorial_hub_locked', default='Kilitli')
                 badge_color = retro_style.accent  # turuncu
@@ -5186,16 +5222,16 @@ class TutorialMode(Game):
                 badge_color = retro_style.primary
                 badge_icon = '\u25B6 '
 
-            badge_font = retro_style.get_font(s(12, minimum=9), bold=True)
+            badge_font = retro_style.get_font(s(13, minimum=10), bold=True)
             badge_surf = badge_font.render(badge_text, True, badge_color)
-            badge_w = badge_surf.get_width() + s(18)
-            badge_h_px = badge_surf.get_height() + s(8)
-            badge_rect = pygame.Rect(pad_x, badge_y, badge_w, badge_h_px)
+            badge_w = badge_surf.get_width() + s(22)
+            badge_h_px = badge_surf.get_height() + s(10)
+            badge_rect = pygame.Rect(card_rect.centerx - badge_w // 2, badge_y, badge_w, badge_h_px)
             badge_bg = pygame.Surface(badge_rect.size, pygame.SRCALPHA)
             badge_bg.fill((12, 20, 45, 190))
             self.screen.blit(badge_bg, badge_rect.topleft)
             pygame.draw.rect(self.screen, (*badge_color[:3], 120), badge_rect, 1, border_radius=8)
-            self.screen.blit(badge_surf, (badge_rect.x + s(9), badge_rect.y + s(4)))
+            self.screen.blit(badge_surf, (badge_rect.x + s(11), badge_rect.y + s(5)))
 
         # Aktif kartı çiz
         current_entry = chapter_entries[current_chapter_index] if current_chapter_index < len(chapter_entries) else None

@@ -1254,6 +1254,17 @@ def main():
 
     settings_manager.set('fullscreen', True)
 
+    # ── Tek-context OpenGL talebi (Steam overlay) ──────────────────────────
+    # create_display()'den ÖNCE çağrılır; böylece pencere baştan OPENGL
+    # bayrağıyla tek seferde açılır ve ikinci bir set_mode(OPENGL) gerekmez.
+    # Yalnızca Windows + Steam SDK + GL mevcutken etkindir.
+    try:
+        if steam_overlay_gl_mode != 'off':
+            from gl_compat import prepare_single_context
+            prepare_single_context()
+    except Exception as _gl_prep_e:
+        print(f"[GL Compat] Tek-context hazırlığı atlandı: {_gl_prep_e}")
+
     try:
         screen = create_display(
             native_width,

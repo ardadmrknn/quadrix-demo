@@ -120,3 +120,49 @@ def test_patch_create_display_module_refs_updates_preimported_references():
     assert fake_platform_utils.create_display is wrapped_create_display
     assert consumer_module.create_display is wrapped_create_display
     assert unrelated_module.create_display is not wrapped_create_display
+
+
+# ---------------------------------------------------------------------------
+# Tek-context (single-context) koordinasyon testleri
+# ---------------------------------------------------------------------------
+
+def test_prepare_single_context_sets_request_when_gl_available(monkeypatch):
+    """Windows + Steam + GL mevcutken platform_utils'e GL pencere talebi iletilir."""
+    import platform_utils
+
+    monkeypatch.setattr(gl_compat, '_should_use_gl', lambda: True)
+    recorded = {}
+    monkeypatch.setattr(
+        platform_utils,
+        'set_gl_window_request',
+        lambda enabled: recorded.__setitem__('value', enabled),
+    )
+
+    result = gl_compat.prepare_single_context()
+
+    assert result is True
+    assert recorded.get('value') is True
+
+
+def test_prepare_single_context_disables_request_when_unavailable(monkeypatch):
+    """GL kullanılamıyorsa talep False yapılır ve fonksiyon False döner."""
+    import platform_utils
+
+    monkeypatch.setattr(gl_compat, '_should_use_gl', lambda: False)
+    recorded = {}
+    monkeypatch.setattr(
+        platform_utils,
+        'set_gl_window_request',
+        lambda enabled: recorded.__setitem__('value', enabled),
+    )
+
+    result = gl_compat.prepare_single_context()
+
+    assert result is False
+    assert recorded.get('value') is False
+
+
+def test_should_use_gl_false_on_non_windows(monkeypatch):
+    """Windows dışı platformda GL yolu devre dışıdır (Gereksinim 6)."""
+    monkeypatch.setattr(gl_compat.platform, 'system', lambda: 'Darwin')
+    assert gl_compat._should_use_gl() is False

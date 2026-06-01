@@ -2895,12 +2895,22 @@ class CoopGame:
         self._update_soft_drop(delta_time)
         locked_players = self._update_lock_delay(delta_time)
 
+        # Satır temizleme animasyonu oynarken otomatik gravity duraklatılır
+        # (shared board → tek animasyon state). Soft/hard drop ayrı yollardan
+        # işlendiği için oyuncular yine de parça indirebilir.
+        line_clear_anim_active = bool(
+            getattr(self, 'line_clear_sweep_active', False)
+        ) or bool(getattr(self, 'falling_block_animations', None))
+
         # --- P1 gravity ---
         if 'P1' not in locked_players and not self.p1_frozen and self.p1_current_piece is not None:
-            self.p1_fall_time += delta_time
-            if self.p1_fall_time >= self.fall_speed:
+            if line_clear_anim_active:
                 self.p1_fall_time = 0
-                self._step_piece_down('P1')
+            else:
+                self.p1_fall_time += delta_time
+                if self.p1_fall_time >= self.fall_speed:
+                    self.p1_fall_time = 0
+                    self._step_piece_down('P1')
         elif self._p1_pending_unfreeze:
             self.p1_fall_time += delta_time
             if self.p1_fall_time >= self.fall_speed:
@@ -2914,10 +2924,13 @@ class CoopGame:
             and self.p2_current_piece is not None
             and not self._player_uses_remote_active_authority('P2')
         ):
-            self.p2_fall_time += delta_time
-            if self.p2_fall_time >= self.fall_speed:
+            if line_clear_anim_active:
                 self.p2_fall_time = 0
-                self._step_piece_down('P2')
+            else:
+                self.p2_fall_time += delta_time
+                if self.p2_fall_time >= self.fall_speed:
+                    self.p2_fall_time = 0
+                    self._step_piece_down('P2')
         elif self._p2_pending_unfreeze:
             self.p2_fall_time += delta_time
             if self.p2_fall_time >= self.fall_speed:

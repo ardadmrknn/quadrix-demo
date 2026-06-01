@@ -65,6 +65,7 @@ _PYGAME_RUNTIME_STUB_TESTS = {
 	"test_online_pvp_message_validation.py",
 	"test_platform_effective_ui_size.py",
 	"test_platform_utils_display_toggle.py",
+	"test_steam_overlay_single_context.py",
 	"test_settings_env_default_language_ru.py",
 }
 

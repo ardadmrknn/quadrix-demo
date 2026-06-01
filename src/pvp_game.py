@@ -4288,32 +4288,43 @@ class PvPGame:
                 self.p2_firework_active = False
         
         # Oyuncu 1 otomatik düşüş (kendi hızıyla)
+        # Satır temizleme animasyonu oynarken otomatik gravity duraklatılır;
+        # soft drop (_update_soft_drop) ve hard drop ayrı yollardan işlendiği
+        # için oyuncu yine de parçayı indirebilir.
+        p1_anim_active = bool(self.p1_line_sweep_active) or bool(self.p1_falling_block_animations)
         if self.current_piece1 is not None and not self.board1.is_game_over():
-            self.fall_time1 += delta_time
-            if self.fall_time1 >= self.fall_speed1:
+            if p1_anim_active:
                 self.fall_time1 = 0
-                self.current_piece1.y += 1
+            else:
+                self.fall_time1 += delta_time
+                if self.fall_time1 >= self.fall_speed1:
+                    self.fall_time1 = 0
+                    self.current_piece1.y += 1
 
-                if not self.board1.is_valid_position(self.current_piece1):
-                    self.current_piece1.y -= 1
-                    self._mark_player_grounded(1)
-                else:
-                    self._reset_lock_delay_state(1)
+                    if not self.board1.is_valid_position(self.current_piece1):
+                        self.current_piece1.y -= 1
+                        self._mark_player_grounded(1)
+                    else:
+                        self._reset_lock_delay_state(1)
         else:
             self._reset_lock_delay_state(1)
 
         # Oyuncu 2 otomatik düşüş (kendi hızıyla)
+        p2_anim_active = bool(self.p2_line_sweep_active) or bool(self.p2_falling_block_animations)
         if self.current_piece2 is not None and not self.board2.is_game_over():
-            self.fall_time2 += delta_time
-            if self.fall_time2 >= self.fall_speed2:
+            if p2_anim_active:
                 self.fall_time2 = 0
-                self.current_piece2.y += 1
+            else:
+                self.fall_time2 += delta_time
+                if self.fall_time2 >= self.fall_speed2:
+                    self.fall_time2 = 0
+                    self.current_piece2.y += 1
 
-                if not self.board2.is_valid_position(self.current_piece2):
-                    self.current_piece2.y -= 1
-                    self._mark_player_grounded(2)
-                else:
-                    self._reset_lock_delay_state(2)
+                    if not self.board2.is_valid_position(self.current_piece2):
+                        self.current_piece2.y -= 1
+                        self._mark_player_grounded(2)
+                    else:
+                        self._reset_lock_delay_state(2)
         else:
             self._reset_lock_delay_state(2)
 

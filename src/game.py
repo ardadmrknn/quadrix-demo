@@ -4154,6 +4154,20 @@ class Game:
                     )
                     print(f"Başarı Açıldı: {achievement['name']} - {achievement['description']}")
 
+    def _line_clear_animation_active(self) -> bool:
+        """Satır temizleme animasyonu (sweep / blok düşüşü) hâlâ oynuyor mu?
+
+        Animasyon oynarken otomatik gravity (otomatik düşüş) duraklatılır;
+        oyuncu soft drop veya hard drop ile parçayı yine de indirebilir.
+        Efektler kapalıysa animasyon olmaz, bu yüzden False döner ve düşüş
+        normal akar.
+        """
+        if getattr(self, 'line_clear_sweep_active', False):
+            return True
+        if getattr(self, 'falling_block_animations', None):
+            return True
+        return False
+
     def update(self, delta_time):
         """
         Oyun durumunu güncelle
@@ -4366,8 +4380,20 @@ class Game:
                 pass
         
         # Otomatik düşüş
-        self.fall_time += delta_time
-        if self.fall_time >= self.fall_speed:
+        # Satır temizleme animasyonu oynarken otomatik gravity duraklatılır;
+        # böylece yeni parça animasyon bitene kadar otomatik aşağı kaymaz.
+        # Ancak oyuncu soft drop tutuyorsa (veya hard drop yaptıysa, o zaten
+        # handle_input içinde anında işlenir) düşüşe izin verilir.
+        gravity_paused = self._line_clear_animation_active() and not bool(
+            getattr(self, '_soft_drop_held', False)
+        )
+        if gravity_paused:
+            # Animasyon süresince fall_time birikmesin ki animasyon bitince
+            # parça aniden bir kare aşağı zıplamasın.
+            self.fall_time = 0
+        else:
+            self.fall_time += delta_time
+        if not gravity_paused and self.fall_time >= self.fall_speed:
             self.fall_time = 0
             
             self.current_piece.y += 1

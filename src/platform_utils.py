@@ -22,6 +22,13 @@ _REFRESH_RATE_CACHE_AT = 0.0
 _REFRESH_RATE_CACHE_TTL_S = 1.0
 _STARTUP_FOCUS_WARMUP_STATE: dict | None = None
 
+# Steam overlay tek-context (single-context) koordinasyonu.
+# gl_compat, ilk create_display() çağrısından önce bu bayrağı True yaparak
+# pencerenin baştan OpenGL context'i ile açılmasını ister. Böylece ikinci bir
+# set_mode(OPENGL) çağrısına gerek kalmaz ve Steam overlay hook'u doğru
+# swapchain'e bağlanır. Yalnızca Windows borderless tam ekran yolunda etkilidir.
+_GL_WINDOW_REQUEST = False
+
 # macOS: SDL Fullscreen Spaces ayarı.
 # Çerçevesiz tam ekran (NOFRAME borderless) kullanıldığı için bu değer
 # doğrudan etkisiz ama 0 olarak bırakılıyor (exclusive fullscreen uyumluluğu).
@@ -806,6 +813,24 @@ def _get_windows_physical_resolution() -> tuple[int, int]:
     return get_native_resolution()
 
 
+def set_gl_window_request(enabled: bool) -> None:
+    """Tek-context OpenGL pencere talebini aç/kapat.
+
+    gl_compat, ilk ``create_display()`` çağrısından önce bunu ``True`` yaparak
+    pencerenin baştan ``pygame.OPENGL`` bayrağıyla açılmasını ister. Böylece
+    ikinci bir ``set_mode`` çağrısı (çift-context) elenir ve Steam overlay
+    hook'u doğru swapchain'e bağlanır. Yalnızca Windows borderless tam ekran
+    yolunda etkilidir; diğer platform/yollarda yok sayılır.
+    """
+    global _GL_WINDOW_REQUEST
+    _GL_WINDOW_REQUEST = bool(enabled)
+
+
+def is_gl_window_requested() -> bool:
+    """Tek-context OpenGL pencere talebinin aktif olup olmadığını döndür."""
+    return _GL_WINDOW_REQUEST
+
+
 def create_display(
     width: int,
     height: int,
@@ -876,13 +901,34 @@ def create_display(
         os.environ['SDL_VIDEO_WINDOW_POS'] = '0,0'
         # SDL2/Pygame2'de HWSURFACE gereksiz (SDL2 ignore eder); bu path'ten kaldırıldı.
         flags_bl = pygame.NOFRAME | pygame.DOUBLEBUF
+        # Tek-context: gl_compat OpenGL pencere istediyse, pencereyi baştan
+        # OPENGL bayrağıyla aç. Böylece ikinci bir set_mode(OPENGL) gerekmez
+        # ve Steam overlay hook'u ilk (ve tek) swapchain'e bağlanır.
+        # HWSURFACE zaten bu yolda yok; OPENGL ile uyumsuz olduğu için eklenmez.
+        gl_requested = bool(_GL_WINDOW_REQUEST and IS_WINDOWS)
+        if gl_requested:
+            flags_bl |= pygame.OPENGL
         try:
-            surface = pygame.display.set_mode((native_w, native_h), flags_bl)
+            try:
+                surface = pygame.display.set_mode((native_w, native_h), flags_bl)
+            except pygame.error:
+                # OpenGL context açılamadıysa (donanım/sürücü) software pencereye
+                # güvenli geri dönüş yap. gl_compat sonradan iki-adımlı yolu dener.
+                if gl_requested:
+                    print('[GL Compat] Tek-context OPENGL set_mode başarısız; '
+                          'software pencereye düşülüyor')
+                    flags_bl &= ~pygame.OPENGL
+                    surface = pygame.display.set_mode((native_w, native_h), flags_bl)
+                else:
+                    raise
             # Boyut doğrulama: beklenen boyuta ulaşılamadıysa exclusive fullscreen fallback
             actual_w, actual_h = surface.get_size()
             if abs(actual_w - native_w) > 4 or abs(actual_h - native_h) > 4:
                 # Borderless başarısız; exclusive fullscreen'e düş
                 excl_flags = pygame.FULLSCREEN | pygame.DOUBLEBUF
+                if gl_requested and bool(surface.get_flags() & pygame.OPENGL):
+                    # GL context kurulduysa exclusive geçişte de koru.
+                    excl_flags |= pygame.OPENGL
                 surface = pygame.display.set_mode((0, 0), excl_flags)
             invalidate_refresh_rate_cache()
             return surface

@@ -4585,9 +4585,19 @@ class OnlinePvPGame:
         if self.soft_dropping:
             fall_speed = min(fall_speed, ONLINE_PVP_SOFT_DROP_SPEED_MS)
 
-        self.fall_timer += delta_time
+        # Satır temizleme animasyonu oynarken otomatik gravity duraklatılır;
+        # oyuncu soft drop tutuyorsa (veya hard drop yaptıysa, o ayrı işlenir)
+        # parça yine de iner. Sadece kendi tahtamın animasyonu beni etkiler;
+        # rakip parçası ağ üzerinden sürülür.
+        my_anim_active = bool(self.my_line_sweep_active) or bool(self.my_falling_block_animations)
+        gravity_paused = my_anim_active and not bool(self.soft_dropping)
 
-        if self.fall_timer >= fall_speed:
+        if gravity_paused:
+            self.fall_timer = 0
+        else:
+            self.fall_timer += delta_time
+
+        if not gravity_paused and self.fall_timer >= fall_speed:
             self.fall_timer = 0
             # Parçayı aşağı düşür
             if self.my_board and self.my_piece:

@@ -290,6 +290,105 @@ def get_display_surface():
 # Public API
 # ---------------------------------------------------------------------------
 
+def _should_use_gl() -> bool:
+    """Return True if the GL overlay path should be used on this platform.
+
+    Conditions (all required):
+    - Running on Windows (Steam overlay D3D/OpenGL hook requirement).
+    - Steam SDK is available (no point hooking overlay without Steam).
+    - opengl32.dll loads successfully.
+    """
+    if platform.system() != 'Windows':
+        return False
+
+    try:
+        import steam_integration as _si
+        if not _si.is_available():
+            return False
+    except Exception:
+        return False
+
+    return _load_gl()
+
+
+def _iter_platform_utils_modules():
+    """Yield every imported module whose name ends with 'platform_utils'.
+
+    Frozen (PyInstaller) build'lerde modül hem ``platform_utils`` hem de
+    ``src.platform_utils`` olarak yüklenebilir. GL bayrağının, create_display'in
+    okuduğu örnekle aynı modülde set edilmesi için tüm örnekleri tarıyoruz.
+    """
+    seen = set()
+    for module in list(sys.modules.values()):
+        if module is None:
+            continue
+        name = str(getattr(module, '__name__', '') or '')
+        if name.endswith('platform_utils') and id(module) not in seen:
+            seen.add(id(module))
+            yield module
+
+
+def _set_gl_window_request_everywhere(enabled: bool) -> bool:
+    """Set the single-context request flag on all platform_utils instances.
+
+    Returns True if at least one module accepted the request.
+    """
+    applied = False
+    for module in _iter_platform_utils_modules():
+        setter = getattr(module, 'set_gl_window_request', None)
+        if callable(setter):
+            try:
+                setter(enabled)
+                applied = True
+            except Exception:
+                pass
+
+    if not applied:
+        # Modül henüz sys.modules'da değilse doğrudan import et.
+        try:
+            import platform_utils as _pu
+        except Exception:
+            try:
+                from . import platform_utils as _pu  # type: ignore
+            except Exception:
+                return False
+        setter = getattr(_pu, 'set_gl_window_request', None)
+        if callable(setter):
+            try:
+                setter(enabled)
+                applied = True
+            except Exception:
+                applied = False
+
+    return applied
+
+
+def prepare_single_context() -> bool:
+    """Ask platform_utils to open the window with OpenGL from the first set_mode.
+
+    Call this *before* the first ``create_display()`` so the window is created
+    in a single shot with the ``pygame.OPENGL`` flag (single-context). This
+    eliminates the second ``set_mode`` that previously re-created the swapchain
+    and could leave Steam's overlay hook on a dead context.
+
+    Returns:
+        True if the single-context request was registered (Windows + Steam +
+        GL available), False otherwise. On False the caller should proceed with
+        the standard software path; ``gl_overlay_setup`` will then fall back to
+        the legacy two-step path if it still decides GL is needed.
+    """
+    if not _should_use_gl():
+        _set_gl_window_request_everywhere(False)
+        return False
+
+    if _set_gl_window_request_everywhere(True):
+        print("[GL Compat] Tek-context istendi: pencere OPENGL ile açılacak")
+        return True
+
+    print("[GL Compat] Tek-context isteği kaydedilemedi: platform_utils bulunamadı")
+    return False
+
+
 def gl_overlay_setup(display_surface: pygame.Surface) -> pygame.Surface:
     """Activate the GL overlay wrapper if on Windows and GL available.
 
@@ -325,25 +424,40 @@ def gl_overlay_setup(display_surface: pygame.Surface) -> pygame.Surface:
 
     w, h = display_surface.get_size()
 
-    # Re-create display with OPENGL flag
+    # Tek-context yolu: pencere zaten OPENGL bayrağıyla açılmışsa ikinci bir
+    # set_mode YAPMA (Gereksinim 1.2). Yalnızca GL texture pipeline'ını kur.
     try:
-        # Mevcut display flag'lerini al
-        old_flags = display_surface.get_flags()
-        caption = pygame.display.get_caption()
+        existing_flags = display_surface.get_flags()
+    except Exception:
+        existing_flags = 0
+    single_context = bool(existing_flags & pygame.OPENGL)
 
-        # OPENGL | DOUBLEBUF ekle, HWSURFACE kaldır (GL ile uyumsuz)
-        new_flags = (old_flags | pygame.OPENGL | pygame.DOUBLEBUF) & ~pygame.HWSURFACE
-        # Borderless NOFRAME durumunda da OPENGL ekle
-        gl_display = pygame.display.set_mode((w, h), new_flags)
+    if single_context:
+        old_flags = existing_flags
+        print(f"[GL Compat] Tek-context aktif: pencere zaten OPENGL "
+              f"({w}x{h} flags=0x{existing_flags:X}); ikinci set_mode atlanıyor")
+    else:
+        # Geri dönüş (fallback): pencere software açıldı; eski iki-adımlı yol ile
+        # OPENGL'e yeniden geç. En kötü senaryo bugünkü davranıştır (Gereksinim 5.2).
+        try:
+            # Mevcut display flag'lerini al
+            old_flags = display_surface.get_flags()
+            caption = pygame.display.get_caption()
 
-        # Caption'ı geri yükle
-        if caption and caption[0]:
-            pygame.display.set_caption(caption[0])
+            # OPENGL | DOUBLEBUF ekle, HWSURFACE kaldır (GL ile uyumsuz)
+            new_flags = (old_flags | pygame.OPENGL | pygame.DOUBLEBUF) & ~pygame.HWSURFACE
+            # Borderless NOFRAME durumunda da OPENGL ekle
+            gl_display = pygame.display.set_mode((w, h), new_flags)
 
-        print(f"[GL Compat] OpenGL display created: {w}x{h} flags=0x{new_flags:X}")
-    except pygame.error as e:
-        print(f"[GL Compat] OpenGL display oluşturulamadı: {e}")
-        return display_surface
+            # Caption'ı geri yükle
+            if caption and caption[0]:
+                pygame.display.set_caption(caption[0])
+
+            print(f"[GL Compat] İki-adımlı fallback: OpenGL display created: "
+                  f"{w}x{h} flags=0x{new_flags:X}")
+        except pygame.error as e:
+            print(f"[GL Compat] OpenGL display oluşturulamadı: {e}")
+            return display_surface
 
     # GL setup
     try:
@@ -354,11 +468,13 @@ def gl_overlay_setup(display_surface: pygame.Surface) -> pygame.Surface:
         _supports_bgra_upload = None
     except Exception as e:
         print(f"[GL Compat] GL setup hatası: {e}")
-        # Eski moda geri dön
-        try:
-            pygame.display.set_mode((w, h), old_flags)
-        except Exception:
-            pass
+        # Eski moda geri dön (yalnızca biz değiştirdiysek; tek-context'te pencereye
+        # dokunma çünkü onu create_display kurdu).
+        if not single_context:
+            try:
+                pygame.display.set_mode((w, h), old_flags)
+            except Exception:
+                pass
         return display_surface
 
     # Offscreen game surface oluştur
@@ -375,7 +491,10 @@ def gl_overlay_setup(display_surface: pygame.Surface) -> pygame.Surface:
     # the module attribute can still reapply GL when they rebuild the display.
     _patch_create_display()
 
-    print(f"[GL Compat] Steam overlay GL wrapper aktif ({w}x{h})")
+    if single_context:
+        print(f"[GL Compat] Steam overlay GL wrapper aktif — tek-context ({w}x{h})")
+    else:
+        print(f"[GL Compat] Steam overlay GL wrapper aktif — iki-adımlı fallback ({w}x{h})")
     return _game_surface
 
 
@@ -416,6 +535,23 @@ def _get_gl_create_display_wrapper(original_create_display):
         return wrapper
 
     def _gl_create_display(width, height, **kwargs):
+        # Gereksinim 11.1: Tek-context aktif ve görünür pencere boyutu mevcut GL
+        # yüzeyiyle aynıysa, alttaki create_display'i (ve onun set_mode'unu) HİÇ
+        # çağırma. Steam hook'u ve GL context'i korunur; sadece offscreen yüzeyi
+        # döndür. Bu kod tabanında pencere her zaman masaüstü çözünürlüğünde
+        # sabit olduğundan rebuild'ler boyutu değiştirmez.
+        if _active and _game_surface is not None and platform.system() == 'Windows':
+            actual = get_display_surface()
+            try:
+                cur_w, cur_h = actual.get_size() if actual is not None else (0, 0)
+                is_gl = bool(actual.get_flags() & pygame.OPENGL) if actual is not None else False
+            except Exception:
+                cur_w, cur_h, is_gl = 0, 0, False
+            if is_gl and cur_w == _width and cur_h == _height:
+                print(f"[GL Compat] Rebuild atlandı (tek-context, boyut sabit "
+                      f"{_width}x{_height}); set_mode çağrılmadı")
+                return _game_surface
+
         surface = original_create_display(width, height, **kwargs)
         return _reapply_gl(surface)
 
@@ -510,10 +646,22 @@ def _reapply_gl(display_surface: pygame.Surface) -> pygame.Surface:
 
     try:
         old_flags = display_surface.get_flags()
+    except Exception:
+        old_flags = 0
+    already_gl = bool(old_flags & pygame.OPENGL)
+
+    # Gereksinim 11.1/11.3: Tek-context aktif, pencere zaten OPENGL ve boyut
+    # değişmiyorsa hiçbir şey yapma. Yeni set_mode YAPMA, texture'ı ve offscreen
+    # yüzeyi yeniden OLUŞTURMA — Steam hook'u ve mevcut GL durumu korunur.
+    if already_gl and w == _width and h == _height and _game_surface is not None:
+        print(f"[GL Compat] GL reapply atlandı (tek-context, boyut sabit {w}x{h})")
+        return _game_surface
+
+    try:
         caption = pygame.display.get_caption()
 
         new_flags = (old_flags | pygame.OPENGL | pygame.DOUBLEBUF) & ~pygame.HWSURFACE
-        already_gl = bool(old_flags & pygame.OPENGL)
+        # Yalnızca pencere henüz GL değilse ikinci set_mode'a izin ver (fallback yolu).
         if not already_gl:
             pygame.display.set_mode((w, h), new_flags)
 
