@@ -54,6 +54,54 @@ _cursor_hotspot = (0, 0)
 _cursor_enabled = True
 _cursor_dirty = False         # cursor surface değişti → texture yeniden oluşturulmalı
 
+# ---------------------------------------------------------------------------
+# Performans telemetrisi (opt-in: QUADRIX_OVERLAY_PERF=1)
+# ---------------------------------------------------------------------------
+# Varsayılan KAPALI (sıfır ek maliyet). Açıkken her present'in alt-fazları ölçülür:
+#   - texture.update (CPU→GPU tam yüzey upload)
+#   - clear+blit+present (SDL D3D sunum + vsync)
+#   - imleç GPU katmanı (blit + gerekiyorsa texture yeniden oluşturma)
+# Her _PERF_WINDOW karede bir ZENGİN özet yazılır: FPS, kare süresi yüzdelikleri
+# (p50/p95/p99), min/maks, takılma (spike) kovaları, alt-faz ort/maks, imleç metrikleri.
+# Ayrıca ANLIK takılmalar (hitch) eşik aşımında hemen ayrı satır olarak loglanır —
+# panel geçişi / imleç gecikmesi gibi tek-seferlik spike'ları yakalamak için kritik.
+_perf_enabled_cache: bool | None = None
+_perf_total = 0                  # toplam kare (oturum)
+_perf_frame_times: list = []     # pencere içi kare süreleri (ms) — yüzdelik için
+_perf_t_update = 0.0             # pencere içi toplam texture.update (ms)
+_perf_t_present = 0.0            # pencere içi toplam present (ms)
+_perf_t_cursor = 0.0             # pencere içi toplam imleç blit (ms)
+_perf_update_max = 0.0           # pencere içi maks upload (ms)
+_perf_present_max = 0.0          # pencere içi maks present (ms)
+_perf_cursor_max = 0.0           # pencere içi maks imleç blit (ms)
+_perf_cursor_rebuilds = 0        # pencere içi imleç texture yeniden oluşturma sayısı
+_perf_last_frame_ts = 0.0        # son present() zaman damgası (perf_counter)
+_perf_window_start_ts = 0.0      # pencere başlangıcı (perf_counter)
+_perf_screen = 'startup'         # şu anki ekran/state etiketi (main.py set eder)
+_perf_session_start_ts = 0.0     # oturum başlangıcı (ilk present)
+_perf_hitch_count = 0            # oturum boyu toplam hitch (anlık takılma) sayısı
+
+# Geçiş (transition) ölçümü — panel/ekran geçiş gecikmesini doğrudan ölçer.
+_perf_tr_active = False
+_perf_tr_label = ''
+_perf_tr_start_ts = 0.0
+_perf_tr_frames = 0
+_perf_tr_worst = 0.0
+_perf_tr_first_frame_ms = 0.0    # geçişin İLK karesi (başlangıç stall'ı burada görünür)
+
+# Eşikler (ms). Spike kovaları ve anlık hitch logu için.
+_PERF_WINDOW = 600               # kaç karede bir özet (≈60fps'te 10 sn)
+_PERF_HITCH_MS = 70.0            # bu süreyi aşan kare ANLIK loglanır (tek-seferlik stall)
+_PERF_SPIKE_BUCKETS = (20.0, 33.0, 50.0, 100.0)  # >20ms(<50fps) >33ms(<30fps) >50ms >100ms
+
+
+def _perf_enabled() -> bool:
+    global _perf_enabled_cache
+    if _perf_enabled_cache is None:
+        raw = os.environ.get('QUADRIX_OVERLAY_PERF')
+        _perf_enabled_cache = str(raw or '').strip().lower() in ('1', 'true', 'on', 'yes')
+    return _perf_enabled_cache
+
 # Teşhis günlüğü (gl_compat ile aynı dosyaya yazar: gl_debug.log)
 _diag_log_path: str | None = None
 _diag_log_resolved = False
@@ -206,18 +254,160 @@ def _present():
     """
     if not _active:
         return
+    # Hızlı yol: telemetri kapalıyken hiç ek maliyet yok.
+    if not _perf_enabled():
+        try:
+            if _texture is not None and _game_surface is not None:
+                _texture.update(_game_surface)
+            if _renderer is not None:
+                _renderer.clear()
+                if _texture is not None:
+                    _renderer.blit(_texture, None)  # POZİSYONEL — dst= kwarg yok
+                _blit_cursor_layer()
+                _renderer.present()
+        except Exception as exc:
+            _diag_log(f"_present hatası: {exc}")
+        return
+    _present_with_perf()
+
+
+def _present_with_perf():
+    """_present'in ölçümlü sürümü (QUADRIX_OVERLAY_PERF=1). Alt-fazları zamanlar,
+    yüzdelik/spike/hitch verisi toplar."""
+    global _perf_total, _perf_t_update, _perf_t_present, _perf_t_cursor
+    global _perf_update_max, _perf_present_max, _perf_cursor_max
+    global _perf_last_frame_ts, _perf_window_start_ts, _perf_session_start_ts
+    global _perf_hitch_count, _perf_tr_frames, _perf_tr_worst, _perf_tr_first_frame_ms
+    import time as _t
+    now = _t.perf_counter()
+    if _perf_session_start_ts == 0.0:
+        _perf_session_start_ts = now
+
+    # present()-arası kare süresi (önceki present'ten bu yana = gerçek kare süresi).
+    frame_ms = 0.0
+    if _perf_last_frame_ts > 0.0:
+        frame_ms = (now - _perf_last_frame_ts) * 1000.0
+        _perf_frame_times.append(frame_ms)
+        # Anlık takılma (hitch): eşik aşan tek kare HEMEN loglanır (spike yakalama).
+        if frame_ms >= _PERF_HITCH_MS:
+            _perf_hitch_count += 1
+            try:
+                _diag_log(
+                    f"[HITCH] {frame_ms:.1f}ms tek-kare takılma | ekran={_perf_screen} "
+                    f"(upload_max={_perf_update_max:.1f} present_max={_perf_present_max:.1f} "
+                    f"imleç_max={_perf_cursor_max:.1f})"
+                )
+            except Exception:
+                pass
+        # Geçiş ölçümü aktifse kare istatistiğini biriktir.
+        if _perf_tr_active:
+            _perf_tr_frames += 1
+            if _perf_tr_frames == 1:
+                _perf_tr_first_frame_ms = frame_ms
+            if frame_ms > _perf_tr_worst:
+                _perf_tr_worst = frame_ms
+    else:
+        _perf_window_start_ts = now
+    _perf_last_frame_ts = now
+
+    cur_ms = 0.0
     try:
+        t0 = _t.perf_counter()
         if _texture is not None and _game_surface is not None:
             _texture.update(_game_surface)
+        t1 = _t.perf_counter()
         if _renderer is not None:
             _renderer.clear()
             if _texture is not None:
-                _renderer.blit(_texture, None)  # POZİSYONEL — dst= kwarg yok
-            # İmleç GPU katmanı (oyun texture'ının ÜSTÜNE, yüzeye pişmeden).
+                _renderer.blit(_texture, None)
+            tc0 = _t.perf_counter()
             _blit_cursor_layer()
+            tc1 = _t.perf_counter()
+            cur_ms = (tc1 - tc0) * 1000.0
             _renderer.present()
+        t2 = _t.perf_counter()
+        upd_ms = (t1 - t0) * 1000.0
+        # present süresi = (t2 - t1) ama içine imleç blit de girer; onu ayır.
+        pres_ms = (t2 - t1) * 1000.0 - cur_ms
+        if pres_ms < 0.0:
+            pres_ms = 0.0
+        _perf_t_update += upd_ms
+        _perf_t_present += pres_ms
+        _perf_t_cursor += cur_ms
+        if upd_ms > _perf_update_max:
+            _perf_update_max = upd_ms
+        if pres_ms > _perf_present_max:
+            _perf_present_max = pres_ms
+        if cur_ms > _perf_cursor_max:
+            _perf_cursor_max = cur_ms
     except Exception as exc:
         _diag_log(f"_present hatası: {exc}")
+
+    _perf_total += 1
+    if len(_perf_frame_times) >= _PERF_WINDOW:
+        _perf_flush_window(now)
+
+
+def _percentile(sorted_vals, pct):
+    """Sıralı listede yüzdelik (basit en-yakın indeks)."""
+    if not sorted_vals:
+        return 0.0
+    k = int(round((pct / 100.0) * (len(sorted_vals) - 1)))
+    k = max(0, min(len(sorted_vals) - 1, k))
+    return sorted_vals[k]
+
+
+def _perf_flush_window(now: float) -> None:
+    """Telemetri penceresini ZENGİN özetle ve log'a yaz, sayaçları sıfırla."""
+    global _perf_frame_times, _perf_t_update, _perf_t_present, _perf_t_cursor
+    global _perf_update_max, _perf_present_max, _perf_cursor_max
+    global _perf_cursor_rebuilds, _perf_window_start_ts
+    times = _perf_frame_times
+    n = len(times)
+    if n == 0:
+        return
+    wall_s = max(1e-6, now - _perf_window_start_ts)
+    fps = n / wall_s
+    avg_frame = sum(times) / n
+    st = sorted(times)
+    p50 = _percentile(st, 50)
+    p95 = _percentile(st, 95)
+    p99 = _percentile(st, 99)
+    fmin = st[0]
+    fmax = st[-1]
+    # Spike kovaları: kaç kare şu eşikleri aştı.
+    b = _PERF_SPIKE_BUCKETS
+    c20 = sum(1 for x in times if x > b[0])
+    c33 = sum(1 for x in times if x > b[1])
+    c50 = sum(1 for x in times if x > b[2])
+    c100 = sum(1 for x in times if x > b[3])
+    avg_update = _perf_t_update / n
+    avg_present = _perf_t_present / n
+    avg_cursor = _perf_t_cursor / n
+    try:
+        cur = 'var' if (_cursor_texture is not None and _cursor_enabled) else 'yok'
+        _diag_log(
+            f"[PERF] ekran={_perf_screen} kare={_perf_total} pencere={n} FPS={fps:.1f} "
+            f"kare(ort/p50/p95/p99/min/maks)="
+            f"{avg_frame:.1f}/{p50:.1f}/{p95:.1f}/{p99:.1f}/{fmin:.1f}/{fmax:.1f}ms "
+            f"spike(>20/>33/>50/>100ms)={c20}/{c33}/{c50}/{c100} "
+            f"upload(ort/maks)={avg_update:.2f}/{_perf_update_max:.2f}ms "
+            f"present(ort/maks)={avg_present:.2f}/{_perf_present_max:.2f}ms "
+            f"imleç(ort/maks)={avg_cursor:.3f}/{_perf_cursor_max:.3f}ms "
+            f"imleç_yenileme={_perf_cursor_rebuilds} imleç_durum={cur} "
+            f"hitch_toplam={_perf_hitch_count} boyut={_width}x{_height}"
+        )
+    except Exception:
+        pass
+    _perf_frame_times = []
+    _perf_t_update = 0.0
+    _perf_t_present = 0.0
+    _perf_t_cursor = 0.0
+    _perf_update_max = 0.0
+    _perf_present_max = 0.0
+    _perf_cursor_max = 0.0
+    _perf_cursor_rebuilds = 0
+    _perf_window_start_ts = now
 
 
 def _patched_flip():
@@ -281,6 +471,96 @@ def is_active() -> bool:
     return _active
 
 
+def log_marker(label: str) -> None:
+    """Runtime olay işaretçisi (ekran/state geçişi vb.) gl_debug.log'a yaz.
+
+    main.py state değişimlerinde çağırır; böylece performans penceresi özetleri
+    hangi ekranda/ne yaparken üretildiği anlaşılır olur. Yalnızca overlay aktif
+    ve telemetri açıkken (QUADRIX_OVERLAY_PERF=1) yazar — aksi halde no-op (gürültü yok).
+    """
+    if not _active or not _perf_enabled():
+        return
+    try:
+        _diag_log(f"[OLAY] {label}")
+    except Exception:
+        pass
+
+
+def set_perf_screen(screen_label: str) -> None:
+    """Şu anki ekran/state etiketini ayarla (PERF satırlarında ekran-bazlı kırılım için).
+
+    Ayrıca pencere içi metrikleri o ana kadar biriktirdiğiyle FLUSH eder ki her
+    [PERF] satırı tek bir ekrana ait olsun (ekranlar karışmasın). No-op when off.
+    """
+    global _perf_screen
+    if not _active or not _perf_enabled():
+        return
+    try:
+        prev = _perf_screen
+        # Ekran değişiminde mevcut pencereyi kapat (veri ekrana net atfedilsin).
+        if _perf_frame_times:
+            import time as _t
+            _perf_flush_window(_t.perf_counter())
+        _perf_screen = str(screen_label or '?')
+        _diag_log(f"[OLAY] ekran={prev} → {_perf_screen}")
+    except Exception:
+        pass
+
+
+def perf_transition_begin(label: str) -> None:
+    """Panel/ekran geçişi BAŞLANGICINI işaretle — geçiş süresi/stall'ı ölçmek için.
+
+    Geçiş bitince perf_transition_end() çağrılır; arada geçen süre, kare sayısı,
+    ilk-kare stall'ı ve en kötü kare loglanır. Panel geçiş gecikmesini doğrudan ölçer.
+    """
+    global _perf_tr_active, _perf_tr_label, _perf_tr_start_ts
+    global _perf_tr_frames, _perf_tr_worst, _perf_tr_first_frame_ms
+    if not _active or not _perf_enabled():
+        return
+    try:
+        import time as _t
+        _perf_tr_active = True
+        _perf_tr_label = str(label or '?')
+        _perf_tr_start_ts = _t.perf_counter()
+        _perf_tr_frames = 0
+        _perf_tr_worst = 0.0
+        _perf_tr_first_frame_ms = 0.0
+    except Exception:
+        pass
+
+
+def perf_transition_end() -> None:
+    """Panel/ekran geçişi BİTİŞİNİ işaretle ve geçiş özetini logla."""
+    global _perf_tr_active
+    if not _active or not _perf_enabled() or not _perf_tr_active:
+        return
+    try:
+        import time as _t
+        dur_ms = (_t.perf_counter() - _perf_tr_start_ts) * 1000.0
+        avg = dur_ms / max(1, _perf_tr_frames)
+        _diag_log(
+            f"[GECIS] '{_perf_tr_label}' süre={dur_ms:.0f}ms kare={_perf_tr_frames} "
+            f"ort_kare={avg:.1f}ms ilk_kare={_perf_tr_first_frame_ms:.1f}ms "
+            f"en_kotu_kare={_perf_tr_worst:.1f}ms"
+        )
+    except Exception:
+        pass
+    _perf_tr_active = False
+
+
+def perf_log_event(label: str) -> None:
+    """Genel amaçlı olay işaretçisi (Alt+Tab, overlay aç/kapa, ekran görüntüsü vb.).
+
+    Mevcut bir hitch ile ilişkilendirilebilmesi için zaman damgalı satır yazar.
+    """
+    if not _active or not _perf_enabled():
+        return
+    try:
+        _diag_log(f"[OLAY] {label} (ekran={_perf_screen})")
+    except Exception:
+        pass
+
+
 def is_gl_active() -> bool:
     """gl_compat arayüz paritesi: overlay katmanı aktif mi."""
     return _active
@@ -313,10 +593,12 @@ def _ensure_cursor_texture():
 
     Yüzey değişmediği sürece texture yeniden oluşturulmaz; yalnızca konum değişir.
     """
-    global _cursor_texture, _cursor_size, _cursor_dirty
+    global _cursor_texture, _cursor_size, _cursor_dirty, _perf_cursor_rebuilds
     if not _cursor_dirty:
         return
     _cursor_dirty = False
+    if _perf_enabled():
+        _perf_cursor_rebuilds += 1
     # Eski texture'ı serbest bırak.
     try:
         if _cursor_texture is not None and hasattr(_cursor_texture, 'destroy'):

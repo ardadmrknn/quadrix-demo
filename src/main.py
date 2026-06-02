@@ -535,6 +535,15 @@ def _maybe_recover_windows_display(screen, *, settings_manager=None):
     # (rebuild + reapply) siyah ekran ve stale-frame sorunlarını büyütebilir.
     if should_recover and gl_active and recover_reason in ('focus', 'prtsc'):
         should_recover = False
+        # PERF telemetrisi: bu olayı logla (hitch ile ilişkilendirmek için).
+        try:
+            _ovl_ev = _active_overlay_module()
+            if _ovl_ev is not None and hasattr(_ovl_ev, 'perf_log_event'):
+                _ovl_ev.perf_log_event(
+                    'Alt+Tab/focus dönüşü' if recover_reason == 'focus' else 'PrintScreen yakalama'
+                )
+        except Exception:
+            pass
         # PrintScreen: artık her kare DwmFlush ile DWM kompozisyonuna senkron
         # sunuluyor (gl_compat 'dwm' modu); bu yüzden burada gecikmeli/geç bir
         # kare pompalama YAPMIYORUZ — yapısal olarak yakalama anından sonra
@@ -4093,6 +4102,7 @@ def main():
     
     # Ekran geçiş efekti için state takibi
     _previous_state = state
+    _prev_transition_active = False  # PERF telemetrisi: geçiş aktif→pasif kenarı için
     # Menü state'inden başlandığında basılı tutma tekrarı aktif
     if state not in ('game', 'pvp', 'coop', 'coop_campaign', 'online_pvp', 'online_coop'):
         pygame.key.set_repeat(350, 80)
@@ -4225,6 +4235,16 @@ def main():
         
         # Ekran geçiş efektini güncelle
         transition_active = update_screen_transition()
+
+        # Performans telemetrisi: geçiş aktif→pasif kenarında geçiş özetini kapat.
+        if (not transition_active) and _prev_transition_active:
+            try:
+                _ovl_tr = _active_overlay_module()
+                if _ovl_tr is not None and hasattr(_ovl_tr, 'perf_transition_end'):
+                    _ovl_tr.perf_transition_end()
+            except Exception:
+                pass
+        _prev_transition_active = transition_active
         
         # State değişikliği algılama ve geçiş efekti başlatma
         if state != _previous_state and not transition_active:
@@ -4244,6 +4264,17 @@ def main():
                 else:
                     duration = 350
                 start_screen_transition(screen, None, duration_ms=duration, transition_type=transition_type)
+            # Performans telemetrisi: ekran/state geçişini + geçiş ölçümünü işaretle
+            # (yalnızca QUADRIX_OVERLAY_PERF=1 iken yazar; aksi halde no-op).
+            try:
+                _ovl_mark = _active_overlay_module()
+                if _ovl_mark is not None:
+                    if hasattr(_ovl_mark, 'set_perf_screen'):
+                        _ovl_mark.set_perf_screen(state)
+                    if hasattr(_ovl_mark, 'perf_transition_begin'):
+                        _ovl_mark.perf_transition_begin(f"{_previous_state} → {state}")
+            except Exception:
+                pass
             _previous_state = state
             # Menü ekranlarında basılı tutma tekrarı aktif, oyunda devre dışı
             if state in ('game', 'pvp', 'coop', 'coop_campaign', 'online_pvp', 'online_coop'):
