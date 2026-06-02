@@ -354,11 +354,11 @@ class _FakeGL:
         self.finish_count += 1
 
 
-def test_resolve_gpu_sync_mode_default_is_finish(monkeypatch):
-    """Varsayılan (auto) GPU sync modu 'finish' olmalı (capture doğruluğu)."""
+def test_resolve_gpu_sync_mode_default_is_off(monkeypatch):
+    """Varsayılan (auto) GPU sync modu 'off' olmalı (PERFORMANS: glFinish/DwmFlush FPS düşürür)."""
     monkeypatch.setattr(gl_compat, '_gpu_sync_mode', None)
     monkeypatch.delenv('QUADRIX_STEAM_OVERLAY_GL_SYNC', raising=False)
-    assert gl_compat._resolve_gpu_sync_mode() == 'finish'
+    assert gl_compat._resolve_gpu_sync_mode() == 'off'
 
 
 def test_resolve_gpu_sync_mode_env_off(monkeypatch):
@@ -371,6 +371,18 @@ def test_resolve_gpu_sync_mode_env_flush(monkeypatch):
     monkeypatch.setattr(gl_compat, '_gpu_sync_mode', None)
     monkeypatch.setenv('QUADRIX_STEAM_OVERLAY_GL_SYNC', 'flush')
     assert gl_compat._resolve_gpu_sync_mode() == 'flush'
+
+
+def test_resolve_gpu_sync_mode_env_finish(monkeypatch):
+    monkeypatch.setattr(gl_compat, '_gpu_sync_mode', None)
+    monkeypatch.setenv('QUADRIX_STEAM_OVERLAY_GL_SYNC', 'finish')
+    assert gl_compat._resolve_gpu_sync_mode() == 'finish'
+
+
+def test_resolve_gpu_sync_mode_env_dwm(monkeypatch):
+    monkeypatch.setattr(gl_compat, '_gpu_sync_mode', None)
+    monkeypatch.setenv('QUADRIX_STEAM_OVERLAY_GL_SYNC', 'dwm')
+    assert gl_compat._resolve_gpu_sync_mode() == 'dwm'
 
 
 def test_gl_flip_finish_mode_flushes_before_and_finishes_after_swap(monkeypatch):
@@ -400,6 +412,57 @@ def test_gl_flip_finish_mode_flushes_before_and_finishes_after_swap(monkeypatch)
     assert order == ['upload', 'sync:flush', 'swap', 'sync:finish']
     assert fake_gl.flush_count == 1
     assert fake_gl.finish_count == 1
+
+
+def test_gl_flip_dwm_mode_calls_dwmflush_after_swap_and_finish(monkeypatch):
+    """dwm modunda sıra: upload -> glFlush -> SwapBuffers -> glFinish -> DwmFlush."""
+    fake_gl = _FakeGL()
+    order = []
+
+    monkeypatch.setattr(gl_compat, '_active', True)
+    monkeypatch.setattr(gl_compat, '_game_surface', pygame.Surface((4, 4)))
+    monkeypatch.setattr(gl_compat, '_gl', fake_gl)
+    monkeypatch.setattr(gl_compat, '_gpu_sync_mode', 'dwm')
+    monkeypatch.setattr(gl_compat, '_upload_and_draw', lambda *a, **k: order.append('upload'))
+    monkeypatch.setattr(gl_compat, '_gpu_sync', lambda mode: order.append(f'sync:{mode}'))
+    monkeypatch.setattr(gl_compat, '_original_flip', lambda *a, **k: order.append('swap'))
+
+    dwm_calls = []
+    monkeypatch.setattr(gl_compat, '_dwm_flush', lambda: dwm_calls.append('dwmflush') or order.append('dwmflush'))
+
+    gl_compat._gl_flip()
+
+    assert order == ['upload', 'sync:flush', 'swap', 'sync:finish', 'dwmflush']
+    assert dwm_calls == ['dwmflush'], "DwmFlush tam olarak bir kez çağrılmalı"
+    # DwmFlush, swap ve finish'ten SONRA gelmeli (capture doğruluğu).
+    assert order.index('dwmflush') > order.index('swap')
+    assert order.index('dwmflush') > order.index('sync:finish')
+
+
+def test_gl_flip_finish_mode_does_not_call_dwmflush(monkeypatch):
+    """finish modunda DwmFlush çağrılMAMALI (yalnızca dwm modunda)."""
+    monkeypatch.setattr(gl_compat, '_active', True)
+    monkeypatch.setattr(gl_compat, '_game_surface', pygame.Surface((4, 4)))
+    monkeypatch.setattr(gl_compat, '_gpu_sync_mode', 'finish')
+    monkeypatch.setattr(gl_compat, '_upload_and_draw', lambda *a, **k: None)
+    monkeypatch.setattr(gl_compat, '_gpu_sync', lambda mode: None)
+    monkeypatch.setattr(gl_compat, '_original_flip', lambda *a, **k: None)
+
+    dwm_calls = []
+    monkeypatch.setattr(gl_compat, '_dwm_flush', lambda: dwm_calls.append('dwmflush'))
+
+    gl_compat._gl_flip()
+
+    assert dwm_calls == [], "finish modunda DwmFlush çağrılmamalı"
+
+
+def test_dwm_flush_safe_when_dll_unavailable(monkeypatch):
+    """dwmapi yüklenemezse _dwm_flush sessizce geçmeli (exception fırlatmamalı)."""
+    monkeypatch.setattr(gl_compat, '_dwm', None)
+    monkeypatch.setattr(gl_compat, '_dwm_load_failed', False)
+    monkeypatch.setattr(gl_compat, '_load_dwm', lambda: False)
+    # Exception fırlatmamalı.
+    gl_compat._dwm_flush()
 
 
 def test_gl_flip_off_mode_skips_gpu_sync(monkeypatch):

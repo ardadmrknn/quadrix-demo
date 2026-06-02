@@ -831,6 +831,18 @@ def is_gl_window_requested() -> bool:
     return _GL_WINDOW_REQUEST
 
 
+def _gl_diag(message: str) -> None:
+    """create_display kararlarını gl_compat teşhis günlüğüne yönlendir (hata yutar)."""
+    try:
+        import gl_compat as _glc
+        _glc._diag_log(f"[platform_utils] {message}")
+    except Exception:
+        try:
+            print(f"[GL Compat] [platform_utils] {message}")
+        except Exception:
+            pass
+
+
 def create_display(
     width: int,
     height: int,
@@ -908,6 +920,11 @@ def create_display(
         gl_requested = bool(_GL_WINDOW_REQUEST and IS_WINDOWS)
         if gl_requested:
             flags_bl |= pygame.OPENGL
+        _pending_gl_diag = (
+            f"create_display(borderless): _GL_WINDOW_REQUEST={_GL_WINDOW_REQUEST} "
+            f"IS_WINDOWS={IS_WINDOWS} → set_mode flags=0x{flags_bl:X} "
+            f"(OPENGL={'VAR' if gl_requested else 'YOK'})"
+        )
         try:
             try:
                 surface = pygame.display.set_mode((native_w, native_h), flags_bl)
@@ -915,8 +932,7 @@ def create_display(
                 # OpenGL context açılamadıysa (donanım/sürücü) software pencereye
                 # güvenli geri dönüş yap. gl_compat sonradan iki-adımlı yolu dener.
                 if gl_requested:
-                    print('[GL Compat] Tek-context OPENGL set_mode başarısız; '
-                          'software pencereye düşülüyor')
+                    _pending_gl_diag += ' | OPENGL set_mode BAŞARISIZ → software fallback'
                     flags_bl &= ~pygame.OPENGL
                     surface = pygame.display.set_mode((native_w, native_h), flags_bl)
                 else:
@@ -930,7 +946,12 @@ def create_display(
                     # GL context kurulduysa exclusive geçişte de koru.
                     excl_flags |= pygame.OPENGL
                 surface = pygame.display.set_mode((0, 0), excl_flags)
+                _pending_gl_diag += f' | boyut uyumsuz → exclusive set_mode flags=0x{excl_flags:X}'
             invalidate_refresh_rate_cache()
+            try:
+                _gl_diag(_pending_gl_diag + f' | SONUÇ flags=0x{surface.get_flags():X}')
+            except Exception:
+                pass
             return surface
         except pygame.error:
             pass

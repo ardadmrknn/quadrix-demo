@@ -514,18 +514,18 @@ def _maybe_recover_windows_display(screen, *, settings_manager=None):
     # (rebuild + reapply) siyah ekran ve stale-frame sorunlarını büyütebilir.
     if should_recover and gl_active and recover_reason in ('focus', 'prtsc'):
         should_recover = False
-        # set_mode yerine: DWM/Steam'e "pencere canlı ve aktif" sinyali ver.
-        # Focus dönüşünde tek temiz kare pompalamak, OpenGL pencerede DWM context
-        # restoration gecikmesini (Alt+Tab siyah ekran) ve PrintScreen bayat kareyi
-        # azaltır. Burada yalnızca GL flip (ve içindeki GPU sync) tetiklenir.
-        try:
-            from gl_compat import _gl_flip as _gl_pump_frame
-            _gl_pump_frame()
-            pygame.event.pump()
-            if recover_reason == 'focus':
+        # PrintScreen: artık her kare DwmFlush ile DWM kompozisyonuna senkron
+        # sunuluyor (gl_compat 'dwm' modu); bu yüzden burada gecikmeli/geç bir
+        # kare pompalama YAPMIYORUZ — yapısal olarak yakalama anından sonra
+        # geldiği için etkisizdi. Yalnızca focus dönüşünde pencereyi öne getir.
+        if recover_reason == 'focus':
+            try:
+                from gl_compat import _gl_flip as _gl_pump_frame
+                _gl_pump_frame()
+                pygame.event.pump()
                 request_window_focus()
-        except Exception:
-            pass
+            except Exception:
+                pass
 
     if should_recover and (now_ms - state['last_display_recover_ms'] >= 900):
         state['last_display_recover_ms'] = now_ms
@@ -1337,6 +1337,23 @@ def main():
                     print("[GL Compat] Software pencereye güvenli geri dönüş yapıldı")
                 except Exception:
                     pass
+
+    # Teşhis: startup sonrası gerçek görünür display ve gl durumunu logla.
+    try:
+        from gl_compat import _diag_log as _gl_diag_log, is_gl_active as _gl_is_active
+        try:
+            _real = pygame.display.get_surface()
+            _real_flags = _real.get_flags() if _real is not None else 0
+            _real_size = _real.get_size() if _real is not None else (0, 0)
+        except Exception:
+            _real_flags, _real_size = 0, (0, 0)
+        _gl_diag_log(
+            f"[main] Startup tamamlandı: gl_active={_gl_is_active()} "
+            f"görünür_display={_real_size} flags=0x{_real_flags:X} "
+            f"(OPENGL={'VAR' if (_real_flags & pygame.OPENGL) else 'YOK'})"
+        )
+    except Exception:
+        pass
 
     pygame.display.set_caption('Quadrix')
     if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):

@@ -30,6 +30,100 @@ import sys
 import pygame
 
 # ---------------------------------------------------------------------------
+# Teşhis (diagnostic) günlüğü
+# ---------------------------------------------------------------------------
+# Build'de (PyInstaller, console=False) print() çıktısı hiçbir yere gitmez.
+# Steam overlay / çift-pencere / PrintScreen sorununu gerçek ortamda teşhis
+# edebilmek için kararları kalıcı bir dosyaya yazıyoruz:
+#   Windows: %APPDATA%\<AppName>\local\gl_debug.log  (data_paths varsa)
+#            yoksa %LOCALAPPDATA%\Quadrix\gl_debug.log
+# Kapatmak için QUADRIX_GL_DEBUG=0. Açıkça açmak için QUADRIX_GL_DEBUG=1.
+# Varsayılan: AÇIK (sorun çözülene kadar). Hata-toleranslıdır; asla exception sızdırmaz.
+_diag_log_path: str | None = None
+_diag_log_resolved = False
+_diag_set_mode_count = 0  # Tek-context teşhisi: kaç kez set_mode benzeri çağrı oldu
+
+
+def _diag_enabled() -> bool:
+    # Birim testler (pytest) gerçek build teşhis logunu kirletmesin: pytest
+    # altında dosyaya YAZMA. Açıkça QUADRIX_GL_DEBUG=1 verilirse yine de yazar.
+    raw = os.environ.get('QUADRIX_GL_DEBUG')
+    if raw is None:
+        if ('pytest' in sys.modules) or any('pytest' in str(a) for a in sys.argv):
+            return False
+        return True  # varsayılan açık (teşhis dönemi)
+    return str(raw).strip().lower() not in ('0', 'false', 'off', 'no', 'disable', 'disabled')
+
+
+def _diag_resolve_path() -> str | None:
+    global _diag_log_path, _diag_log_resolved
+    if _diag_log_resolved:
+        return _diag_log_path
+    _diag_log_resolved = True
+    try:
+        log_dir = None
+        try:
+            import data_paths as _dp
+            log_dir = _dp.get_local_data_dir()
+        except Exception:
+            try:
+                from . import data_paths as _dp  # type: ignore
+                log_dir = _dp.get_local_data_dir()
+            except Exception:
+                log_dir = None
+        if not log_dir:
+            base = os.getenv('LOCALAPPDATA') or os.getenv('APPDATA') or os.path.expanduser('~')
+            log_dir = os.path.join(base, 'Quadrix')
+        os.makedirs(log_dir, exist_ok=True)
+        _diag_log_path = os.path.join(log_dir, 'gl_debug.log')
+    except Exception:
+        _diag_log_path = None
+    return _diag_log_path
+
+
+def _diag_log(message: str) -> None:
+    """Teşhis satırını hem stdout'a (varsa) hem kalıcı log dosyasına yaz. Hata yutar."""
+    line = f"[GL Compat] {message}"
+    try:
+        print(line)
+    except Exception:
+        pass
+    if not _diag_enabled():
+        return
+    try:
+        path = _diag_resolve_path()
+        if not path:
+            return
+        import time as _time
+        ts = _time.strftime('%Y-%m-%d %H:%M:%S')
+        with open(path, 'a', encoding='utf-8', errors='ignore') as fh:
+            fh.write(f"{ts} {line}\n")
+    except Exception:
+        pass
+
+
+def _diag_log_env_snapshot() -> None:
+    """İlk kurulumda ortam/teşhis bağlamını logla (platform, Steam, GL durumu)."""
+    try:
+        import time as _time
+        sep = '=' * 60
+        _diag_log(sep)
+        _diag_log(f"GL DEBUG OTURUM BAŞLANGICI {_time.strftime('%Y-%m-%d %H:%M:%S')}")
+        _diag_log(f"platform.system={platform.system()} sys.platform={sys.platform}")
+        _diag_log(f"frozen={getattr(sys, 'frozen', False)} executable={getattr(sys, 'executable', '?')}")
+        try:
+            import steam_integration as _si
+            _diag_log(f"steam_integration.is_available()={_si.is_available()}")
+        except Exception as exc:
+            _diag_log(f"steam_integration import/durum hatası: {exc}")
+        _diag_log(f"QUADRIX_STEAM_OVERLAY_GL={os.environ.get('QUADRIX_STEAM_OVERLAY_GL')}")
+        _diag_log(f"QUADRIX_STEAM_OVERLAY_GL_SYNC={os.environ.get('QUADRIX_STEAM_OVERLAY_GL_SYNC')}")
+        _diag_log(sep)
+    except Exception:
+        pass
+
+
+# ---------------------------------------------------------------------------
 # Module state
 # ---------------------------------------------------------------------------
 _active = False
@@ -45,11 +139,15 @@ _create_display_wrappers: dict[object, object] = {}
 _supports_bgra_upload: bool | None = None
 
 # GPU senkronizasyon modu (DWM/OBS/Steam capture'ın taze kareyi görmesi için).
-# - 'finish': her karede glFlush (swap öncesi) + glFinish (swap sonrası). En güvenli;
-#             DWM/yakalama her zaman güncel kareyi alır ama CPU'yu bloklar (FPS düşebilir).
-# - 'flush' : her karede yalnızca glFlush. Ucuz; komutları GPU'ya iteler.
+# - 'dwm'   : glFlush (swap öncesi) + SwapBuffers + glFinish + DwmFlush (swap sonrası).
+#             En doğru yakalama; DWM kompozisyonu beklenir, PrintScreen/Snipping/Window
+#             capture her zaman güncel kareyi alır. Kare DWM vsync'ine kilitlenir (~ekran Hz).
+# - 'finish': glFlush (swap öncesi) + glFinish (swap sonrası). GPU eşitlenir ama DWM
+#             kompozisyonu beklenmez; bazı yakalama yollarında bayat kare kalabilir.
+# - 'flush' : yalnızca glFlush. Ucuz; komutları GPU'ya iteler.
 # - 'off'   : senkronizasyon yok (eski davranış).
-# Varsayılan 'auto' → GL aktifken 'finish' kullanılır (overlay/capture doğruluğu önceliklidir).
+# Varsayılan 'auto' → PERFORMANS için 'off' (glFinish/DwmFlush FPS düşürür). Kullanıcı
+# PrintScreen/capture tazeliği isterse 'dwm'/'finish'/'flush' ile açabilir.
 _gpu_sync_mode: str | None = None
 
 # GL constants (from OpenGL spec, avoids PyOpenGL dep)
@@ -72,6 +170,8 @@ GL_BLEND = 0x0BE2
 # Lazy-loaded GL function pointers (ctypes from opengl32.dll)
 # ---------------------------------------------------------------------------
 _gl = None  # ctypes.windll.opengl32
+_dwm = None  # ctypes.windll.dwmapi (Windows Vista+)
+_dwm_load_failed = False
 
 
 def _load_gl():
@@ -84,6 +184,38 @@ def _load_gl():
         return True
     except Exception:
         return False
+
+
+def _load_dwm():
+    """Load dwmapi.dll for DwmFlush() (DWM composition sync). Windows Vista+.
+
+    DwmFlush, DWM bir sonraki kompozisyonu tamamlayana kadar bloklar. OpenGL
+    pencerede SwapBuffers yalnızca monitör vblank'ine senkronize olur; DWM'nin
+    kompozisyon döngüsüne değil. PrintScreen/Snipping Tool/Window-capture DWM'nin
+    kompoze ettiği yüzeyden okuduğu için, SwapBuffers'tan sonra DwmFlush çağrılması
+    sunulan karenin yakalama yüzeyine yansımasını sağlar (bayat-kare düzeltmesi).
+    """
+    global _dwm, _dwm_load_failed
+    if _dwm is not None:
+        return True
+    if _dwm_load_failed:
+        return False
+    try:
+        _dwm = ctypes.windll.dwmapi
+        return True
+    except Exception:
+        _dwm_load_failed = True
+        return False
+
+
+def _dwm_flush() -> None:
+    """DWM kompozisyonunu bekle (safe fallback). DwmFlush() HRESULT döndürür."""
+    if not _load_dwm():
+        return
+    try:
+        _dwm.DwmFlush()
+    except Exception:
+        pass
 
 
 def _gl_call(name, restype=None, argtypes=None, *args):
@@ -263,10 +395,12 @@ def _upload_and_draw(surface: pygame.Surface, tex: int, w: int, h: int):
 # ---------------------------------------------------------------------------
 
 def _resolve_gpu_sync_mode() -> str:
-    """Aktif GPU senkronizasyon modunu döndür: 'finish' | 'flush' | 'off'.
+    """Aktif GPU senkronizasyon modunu döndür: 'dwm' | 'finish' | 'flush' | 'off'.
 
     Öncelik: QUADRIX_STEAM_OVERLAY_GL_SYNC ortam değişkeni > varsayılan ('auto').
-    'auto' → 'finish' (overlay/capture doğruluğu için en güvenli mod).
+    'auto' → 'off' (PERFORMANS: glFinish/DwmFlush her karede CPU'yu bloklayıp FPS'i
+    düşürdüğü için varsayılan KAPALI). PrintScreen/capture tazeliği için kullanıcı
+    açıkça 'dwm' (en doğru, en yavaş), 'finish' veya 'flush' (en ucuz) seçebilir.
     Sonuç bir kez hesaplanıp önbelleğe alınır.
     """
     global _gpu_sync_mode
@@ -280,10 +414,12 @@ def _resolve_gpu_sync_mode() -> str:
         resolved = 'off'
     elif mode in ('flush',):
         resolved = 'flush'
-    elif mode in ('finish', '1', 'true', 'on', 'enable', 'enabled'):
+    elif mode in ('finish',):
         resolved = 'finish'
-    else:  # 'auto' veya tanınmayan → güvenli varsayılan
-        resolved = 'finish'
+    elif mode in ('dwm', 'dwmflush', '1', 'true', 'on', 'enable', 'enabled'):
+        resolved = 'dwm'
+    else:  # 'auto' veya tanınmayan → performans için senkronizasyon KAPALI
+        resolved = 'off'
 
     _gpu_sync_mode = resolved
     return resolved
@@ -311,11 +447,16 @@ def _gl_flip():
     """Upload game surface to GL texture, then do real GL buffer swap.
 
     DWM/OBS/Steam ekran yakalamasının her zaman TAZE kareyi görmesi için sürücü
-    komut kuyruğu senkronize edilir (Windows'ta OpenGL pencere DWM'yi bypass eder;
-    senkronizasyon olmadan yakalama bir kare geride/bayat kalabilir).
+    komut kuyruğu VE (gerekirse) DWM kompozisyonu senkronize edilir.
 
-    Sıralama (mentor doğrulaması): glFlush komutları swap'tan ÖNCE GPU'ya iter,
-    SwapBuffers takası yapar, glFinish swap'tan SONRA CPU'yu donanımla eşitler.
+    Windows'ta OpenGL pencerede SwapBuffers yalnızca monitör vblank'ine senkronize
+    olur; DWM'nin kompozisyon döngüsüne DEĞİL. PrintScreen/Snipping Tool/Window
+    capture DWM'nin kompoze ettiği yüzeyden okur. Bu yüzden glFinish (GPU eşitleme)
+    tek başına yetmez; 'dwm' modunda SwapBuffers'tan sonra DwmFlush ile DWM
+    kompozisyonu da beklenir → yakalama hep güncel kareyi alır (bayat-kare fix).
+
+    Sıralama: glFlush (swap ÖNCESİ, komutları GPU'ya iter) → SwapBuffers (takas) →
+    glFinish (swap SONRASI, GPU'yu eşitler) → DwmFlush (DWM kompozisyonunu bekler).
     """
     sync_mode = 'off'
     if _active and _game_surface is not None:
@@ -325,17 +466,21 @@ def _gl_flip():
             pass
         sync_mode = _resolve_gpu_sync_mode()
 
-    # 1) Swap ÖNCESİ: komutları GPU'ya iter (flush veya finish ikisi de iter).
-    if sync_mode in ('flush', 'finish'):
+    # 1) Swap ÖNCESİ: komutları GPU'ya iter (flush/finish/dwm hepsi iter).
+    if sync_mode in ('flush', 'finish', 'dwm'):
         _gpu_sync('flush')
 
     # 2) Gerçek pencere buffer takası (SwapBuffers).
     _original_flip()
 
-    # 3) Swap SONRASI: yalnızca 'finish' modunda CPU'yu donanımla eşitle; böylece
-    #    yakalama anında ön bellekte taze kare bulunur.
-    if sync_mode == 'finish':
+    # 3) Swap SONRASI: GPU'yu donanımla eşitle ('finish' ve 'dwm').
+    if sync_mode in ('finish', 'dwm'):
         _gpu_sync('finish')
+
+    # 4) DWM kompozisyonunu bekle ('dwm'): sunulan kare PrintScreen/capture'ın
+    #    okuduğu DWM yüzeyine yansır. Bayat-kare sorununun asıl düzeltmesi.
+    if sync_mode == 'dwm':
+        _dwm_flush()
 
 
 def _gl_update(
@@ -373,16 +518,21 @@ def _should_use_gl() -> bool:
     - opengl32.dll loads successfully.
     """
     if platform.system() != 'Windows':
+        _diag_log(f"_should_use_gl=False (platform={platform.system()} != Windows)")
         return False
 
     try:
         import steam_integration as _si
         if not _si.is_available():
+            _diag_log("_should_use_gl=False (steam_integration.is_available()=False)")
             return False
-    except Exception:
+    except Exception as exc:
+        _diag_log(f"_should_use_gl=False (steam_integration import/durum hatası: {exc})")
         return False
 
-    return _load_gl()
+    ok = _load_gl()
+    _diag_log(f"_should_use_gl={ok} (Windows + Steam OK, opengl32 yüklendi={ok})")
+    return ok
 
 
 def _iter_platform_utils_modules():
@@ -451,15 +601,20 @@ def prepare_single_context() -> bool:
         the standard software path; ``gl_overlay_setup`` will then fall back to
         the legacy two-step path if it still decides GL is needed.
     """
+    _diag_log_env_snapshot()
+
     if not _should_use_gl():
         _set_gl_window_request_everywhere(False)
+        _diag_log("prepare_single_context: _should_use_gl()=False → GL talebi YOK "
+                  "(software pencere; gl_overlay_setup da no-op olacak)")
         return False
 
     if _set_gl_window_request_everywhere(True):
-        print("[GL Compat] Tek-context istendi: pencere OPENGL ile açılacak")
+        _diag_log("prepare_single_context: GL talebi KAYDEDİLDİ → pencere baştan OPENGL açılmalı")
         return True
 
-    print("[GL Compat] Tek-context isteği kaydedilemedi: platform_utils bulunamadı")
+    _diag_log("prepare_single_context: GL talebi KAYDEDİLEMEDİ (platform_utils bulunamadı) "
+              "→ RİSK: gl_overlay_setup iki-adımlı fallback'e düşebilir (çift pencere)")
     return False
 
 
@@ -495,6 +650,9 @@ def gl_overlay_setup(display_surface: pygame.Surface) -> pygame.Surface:
         existing_flags = 0
     single_context = bool(existing_flags & pygame.OPENGL)
 
+    _diag_log(f"gl_overlay_setup: giriş surface {w}x{h} flags=0x{existing_flags:X} "
+              f"single_context(OPENGL zaten var mı)={single_context}")
+
     # KRİTİK: Tek-context'te create_display ham bir OpenGL surface döndürür.
     # Bu surface'e CPU ile (blit/draw) çizilemez. Eğer GL pipeline kurulumu
     # herhangi bir aşamada başarısız olursa, oyuna ham GL surface vermek KALICI
@@ -502,8 +660,8 @@ def gl_overlay_setup(display_surface: pygame.Surface) -> pygame.Surface:
     # mutlaka çizilebilir bir software penceresine geri almalıyız (strict return).
     def _demote_to_software(reason: str) -> pygame.Surface:
         """GL kurulamazsa pencereyi software moduna alıp çizilebilir surface döndür."""
-        print(f"[GL Compat] Tek-context GL kurulamadı ({reason}); "
-              f"software pencereye güvenli geri dönüş")
+        _diag_log(f"DEMOTE → software: Tek-context GL kurulamadı ({reason}); "
+                  f"güvenli geri dönüş yapılıyor")
         try:
             from platform_utils import set_gl_window_request
             set_gl_window_request(False)
@@ -521,7 +679,7 @@ def gl_overlay_setup(display_surface: pygame.Surface) -> pygame.Surface:
                 pass
             return sw_surface
         except Exception as exc:
-            print(f"[GL Compat] Software'e geri dönüş de başarısız: {exc}")
+            _diag_log(f"Software'e geri dönüş de başarısız: {exc}")
             # En kötü durumda en azından çizilebilir bir surface bırak.
             try:
                 return pygame.display.get_surface() or display_surface
@@ -549,11 +707,14 @@ def gl_overlay_setup(display_surface: pygame.Surface) -> pygame.Surface:
 
     if single_context:
         old_flags = existing_flags
-        print(f"[GL Compat] Tek-context aktif: pencere zaten OPENGL "
-              f"({w}x{h} flags=0x{existing_flags:X}); ikinci set_mode atlanıyor")
+        _diag_log(f"YOL=TEK-CONTEXT: pencere zaten OPENGL ({w}x{h} flags=0x{existing_flags:X}); "
+                  f"ikinci set_mode ATLANIYOR (doğru davranış)")
     else:
         # Geri dönüş (fallback): pencere software açıldı; eski iki-adımlı yol ile
         # OPENGL'e yeniden geç. En kötü senaryo bugünkü davranıştır (Gereksinim 5.2).
+        _diag_log(f"YOL=İKİ-ADIMLI FALLBACK: pencere software açılmış (flags=0x{existing_flags:X}); "
+                  f"ŞİMDİ ikinci set_mode(OPENGL) yapılacak → ÇİFT PENCERE KAYNAĞI! "
+                  f"(prepare_single_context çalışmamış demektir)")
         try:
             # Mevcut display flag'lerini al
             old_flags = display_surface.get_flags()
@@ -568,10 +729,10 @@ def gl_overlay_setup(display_surface: pygame.Surface) -> pygame.Surface:
             if caption and caption[0]:
                 pygame.display.set_caption(caption[0])
 
-            print(f"[GL Compat] İki-adımlı fallback: OpenGL display created: "
-                  f"{w}x{h} flags=0x{new_flags:X}")
+            _diag_log(f"İki-adımlı fallback: ikinci set_mode(OPENGL) yapıldı "
+                      f"{w}x{h} flags=0x{new_flags:X}")
         except pygame.error as e:
-            print(f"[GL Compat] OpenGL display oluşturulamadı: {e}")
+            _diag_log(f"OpenGL display oluşturulamadı: {e}")
             return display_surface
 
     # GL setup
@@ -582,7 +743,7 @@ def gl_overlay_setup(display_surface: pygame.Surface) -> pygame.Surface:
         _height = h
         _supports_bgra_upload = None
     except Exception as e:
-        print(f"[GL Compat] GL setup hatası: {e}")
+        _diag_log(f"GL setup hatası: {e}")
         if single_context:
             # Tek-context: ham GL surface ile bırakma → software'e geri dön.
             return _demote_to_software(f'GL pipeline kurulamadı: {e}')
@@ -615,12 +776,13 @@ def gl_overlay_setup(display_surface: pygame.Surface) -> pygame.Surface:
         _gl_flip()
         pygame.event.pump()
     except Exception as exc:
-        print(f"[GL Compat] İlk kare pompalama atlandı: {exc}")
+        _diag_log(f"İlk kare pompalama atlandı: {exc}")
 
     if single_context:
-        print(f"[GL Compat] Steam overlay GL wrapper aktif — tek-context ({w}x{h})")
+        _diag_log(f"SONUÇ: GL wrapper AKTİF — tek-context ({w}x{h}) [İSTENEN DURUM]")
     else:
-        print(f"[GL Compat] Steam overlay GL wrapper aktif — iki-adımlı fallback ({w}x{h})")
+        _diag_log(f"SONUÇ: GL wrapper AKTİF — iki-adımlı fallback ({w}x{h}) "
+                  f"[SORUNLU: çift set_mode yapıldı]")
     return _game_surface
 
 
