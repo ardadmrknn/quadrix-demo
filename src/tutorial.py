@@ -634,12 +634,12 @@ class TutorialMode(Game):
     def _apply_tutorial_resize(self, width: int, height: int) -> None:
         requested_width = max(int(width), MIN_WINDOW_WIDTH)
         requested_height = max(int(height), MIN_WINDOW_HEIGHT)
-        # Tek-context GL aktifken ve boyut sabitse create_display ÇAĞIRMA;
+        # Overlay backend (gl_compat/sdl2) aktif ve boyut sabitse create_display ÇAĞIRMA;
         # ikinci set_mode/swapchain rebuild Steam hook'unu kırar.
         try:
-            import gl_compat as _glc
-            if _glc.should_skip_display_rebuild(requested_width, requested_height):
-                _gs = _glc.get_game_surface()
+            import platform_utils as _pu
+            if _pu.overlay_should_skip_rebuild(requested_width, requested_height):
+                _gs = _pu.overlay_active_game_surface()
                 if _gs is not None:
                     self.screen = _gs
                     self.window_width = self.screen.get_width()

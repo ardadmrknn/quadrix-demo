@@ -1917,13 +1917,13 @@ class PvPGame:
             if event.type == pygame.VIDEORESIZE:
                 req_w = max(event.w, 800)
                 req_h = max(event.h, 600)
-                # Tek-context GL aktifken ve boyut sabitse create_display ÇAĞIRMA.
+                # Overlay backend (gl_compat/sdl2) aktif ve boyut sabitse create_display ÇAĞIRMA.
                 _gl_skip = False
                 try:
-                    import gl_compat as _glc
-                    _gl_skip = _glc.should_skip_display_rebuild(req_w, req_h)
+                    import platform_utils as _pu
+                    _gl_skip = _pu.overlay_should_skip_rebuild(req_w, req_h)
                     if _gl_skip:
-                        _gs = _glc.get_game_surface()
+                        _gs = _pu.overlay_active_game_surface()
                         if _gs is not None:
                             self.screen = _gs
                 except Exception:

@@ -83,6 +83,8 @@ except Exception as _e:
 # Gizli importlar (dinamik olarak yüklenen modüller)
 hiddenimports = [
     'pygame',
+    'pygame._sdl2',
+    'pygame._sdl2.video',
     'pygame.mixer',
     'pygame.font',
     'pygame.image',
@@ -141,6 +143,27 @@ if campaign_dir.exists():
         if module_name != '__init__':
             hiddenimports.append(f'campaign.{module_name}')
 
+# ── pygame._sdl2 (SDL2 donanım renderer / Steam overlay backend) ──
+# PyInstaller'ın pygame için yerleşik hook'u YOKTUR; bu yüzden _sdl2 alt
+# modüllerini (video, sdl2, window vb. C-extension .pyd dosyaları) ve onların
+# bağımlı SDL2 DLL'lerini AÇIKÇA toplamamız gerekir. Aksi halde frozen build'de
+# `import pygame._sdl2.video` başarısız olur ve SDL2 overlay backend hiç çalışmaz.
+try:
+    from PyInstaller.utils.hooks import collect_submodules as _collect_submodules
+    _sdl2_submods = _collect_submodules('pygame._sdl2')
+    for _m in _sdl2_submods:
+        if _m not in hiddenimports:
+            hiddenimports.append(_m)
+    print(f'[spec] pygame._sdl2 submodulleri eklendi: {_sdl2_submods}')
+except Exception as _sdl2_exc:
+    print(f'[spec] UYARI: pygame._sdl2 submodul toplama basarisiz: {_sdl2_exc}')
+    for _m in ('pygame._sdl2', 'pygame._sdl2.video', 'pygame._sdl2.sdl2',
+               'pygame._sdl2.window', 'pygame._sdl2.audio', 'pygame._sdl2.controller',
+               'pygame._sdl2.mixer', 'pygame._sdl2.touch'):
+        if _m not in hiddenimports:
+            hiddenimports.append(_m)
+
+
 # Steamworks DLL - dll/win64/ klasöründen al, EXE içine göm (onefile)
 steam_dll_src = str(REPO_ROOT / 'dll' / 'win64' / 'steam_api64.dll')
 if os.path.exists(steam_dll_src):
@@ -168,6 +191,31 @@ for _dll_name in _mingw_dlls:
         print(f'[spec] MinGW DLL eklendi: {_dll_path.name}')
     else:
         print(f'[spec] UYARI: MinGW DLL bulunamadı: {_dll_path}')
+
+
+# pygame._sdl2 C-extension (.pyd) dosyalari + pygame SDL2 DLL'leri.
+# hiddenimports tek basina .pyd'leri fiziksel olarak KOPYALAMAYABILIR (pygame hook'u yok),
+# bu yuzden hem _sdl2 .pyd'lerini hem pygame'in dinamik kutuphanelerini acikca topluyoruz.
+try:
+    import pygame as _pg_mod
+    _pg_dir = Path(_pg_mod.__file__).resolve().parent
+    _sdl2_dir = _pg_dir / '_sdl2'
+    if _sdl2_dir.exists():
+        for _pyd in _sdl2_dir.glob('*.pyd'):
+            binaries.append((str(_pyd), os.path.join('pygame', '_sdl2')))
+            print(f'[spec] pygame._sdl2 .pyd eklendi: {_pyd.name}')
+        for _so in _sdl2_dir.glob('*.so'):
+            binaries.append((str(_so), os.path.join('pygame', '_sdl2')))
+    try:
+        from PyInstaller.utils.hooks import collect_dynamic_libs as _cdl
+        _pg_libs = _cdl('pygame')
+        if _pg_libs:
+            binaries.extend(_pg_libs)
+            print(f'[spec] pygame dinamik kutuphaneleri eklendi: {len(_pg_libs)} adet')
+    except Exception as _pg_lib_exc:
+        print(f'[spec] UYARI: pygame dinamik kutuphane toplama basarisiz: {_pg_lib_exc}')
+except Exception as _sdl2_bin_exc:
+    print(f'[spec] UYARI: pygame._sdl2 .pyd toplama basarisiz: {_sdl2_bin_exc}')
 
 a = Analysis(
     [str(SRC_DIR / 'main.py')],  # Ana giriş noktası

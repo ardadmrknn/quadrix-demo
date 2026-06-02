@@ -338,6 +338,13 @@ def setup_custom_cursor() -> bool:
         hotspot = _CUSTOM_CURSOR_HOTSPOT
         cursor = pygame.cursors.Cursor(hotspot, cursor_surface)
         pygame.mouse.set_cursor(cursor)
+        # SDL2 renderer backend'inde donanım imleci görünmez; software imleci kaydet.
+        try:
+            import sdl2_overlay as _ovl
+            if _ovl.is_active():
+                _ovl.set_software_cursor(cursor_surface, hotspot)
+        except Exception:
+            pass
         print("[Cursor] Ozel fare imleci yuklendi")
         return True
     except Exception as e:
@@ -350,12 +357,22 @@ def setup_custom_cursor() -> bool:
 
 
 def _steam_gl_software_cursor_active() -> bool:
-    """Windows Steam/OpenGL path can lose SDL's hardware cursor; draw our own."""
+    """Windows Steam/OpenGL path can lose SDL's hardware cursor; draw our own.
+
+    NOT: sdl2 backend kendi software imlecini _present() içinde çizdiği için burada
+    yalnızca gl_compat backend'i için True döneriz (çift çizimi önler).
+    """
     if sys.platform != 'win32':
         return False
     try:
-        from gl_compat import is_gl_active
-        return bool(is_gl_active())
+        import sdl2_overlay as _ovl
+        if _ovl.is_active():
+            return False  # sdl2 kendi imlecini çiziyor
+    except Exception:
+        pass
+    try:
+        import gl_compat as _glc
+        return bool(_glc.is_gl_active())
     except Exception:
         return False
 
@@ -445,8 +462,7 @@ def _maybe_recover_windows_display(screen, *, settings_manager=None):
     gl_active = False
     try:
         if _get_steam_overlay_gl_mode(settings_manager) != 'off':
-            from gl_compat import is_gl_active
-            gl_active = bool(is_gl_active())
+            gl_active = _active_overlay_module() is not None
     except Exception:
         gl_active = False
 
@@ -520,8 +536,10 @@ def _maybe_recover_windows_display(screen, *, settings_manager=None):
         # geldiği için etkisizdi. Yalnızca focus dönüşünde pencereyi öne getir.
         if recover_reason == 'focus':
             try:
-                from gl_compat import _gl_flip as _gl_pump_frame
-                _gl_pump_frame()
+                _ovl = _active_overlay_module()
+                if _ovl is not None:
+                    # Her iki backend de monkey-patch'li flip ile kareyi yeniden sunar.
+                    pygame.display.flip()
                 pygame.event.pump()
                 request_window_focus()
             except Exception:
@@ -569,11 +587,11 @@ def _maybe_recover_windows_display(screen, *, settings_manager=None):
 
 
 def _get_actual_display_surface():
-    """Gorunen display surface'ini dondur; GL varsa offscreen yerine gerçek display'i kullan."""
+    """Gorunen display surface'ini dondur; overlay aktifse offscreen yerine gerçek display'i kullan."""
     try:
-        from gl_compat import get_display_surface, is_gl_active
-        if is_gl_active():
-            actual = get_display_surface()
+        _ovl = _active_overlay_module()
+        if _ovl is not None:
+            actual = _ovl.get_display_surface()
             if actual is not None:
                 return actual
     except Exception:
@@ -641,6 +659,59 @@ def _get_steam_overlay_gl_mode(settings_manager=None) -> str:
     if mode in ('1', 'true', 'on', 'force', 'forced', 'enable', 'enabled'):
         return 'force'
     return 'auto'
+
+
+def _get_overlay_backend(settings_manager=None) -> str:
+    """Steam overlay render backend'ini seç: 'glcompat' | 'sdl2' | 'software'.
+
+    Öncelik: QUADRIX_RENDER_BACKEND ortam değişkeni > 'render_backend' ayarı > 'auto'.
+    - 'sdl2'    : SDL2 resmi donanım renderer (Direct3D11) — Yol 2 yeni mimari (sdl2_overlay).
+                  AUTO VARSAYILANI: gl_compat 4+ tur boyunca DWM uyumsuzluğu nedeniyle çözüm
+                  olmadığından yeni mimari varsayılan yapıldı. SDL2 kurulamazsa setup() güvenli
+                  şekilde software'e düşer (oyun yine çalışır).
+    - 'glcompat': eski ctypes-OpenGL + offscreen blit katmanı (geri dönüş için).
+    - 'software': hiçbir overlay katmanı yok; saf software pencere (macOS-eşi, en sağlam).
+    Tanınmayan değer → 'sdl2' (yeni varsayılan).
+    """
+    raw_value = os.environ.get('QUADRIX_RENDER_BACKEND')
+    if raw_value is None and settings_manager is not None:
+        try:
+            raw_value = settings_manager.get('render_backend', 'auto')
+        except Exception:
+            raw_value = 'auto'
+
+    mode = str(raw_value or 'auto').strip().lower()
+    if mode in ('glcompat', 'gl', 'opengl', 'legacy'):
+        return 'glcompat'
+    if mode in ('software', 'soft', 'none', 'off', 'gdi'):
+        return 'software'
+    if mode in ('sdl2', 'sdl', 'd3d', 'd3d11', 'renderer'):
+        return 'sdl2'
+    # 'auto' veya tanınmayan → yeni mimari (sdl2). gl_compat artık yalnızca açık talep ile.
+    return 'sdl2'
+
+
+def _active_overlay_module():
+    """Şu anda AKTİF olan overlay modülünü döndür (gl_compat veya sdl2_overlay), yoksa None.
+
+    Hangi backend'in gerçekten kurulu/aktif olduğunu modüllerin is_active/is_gl_active
+    durumundan tespit eder. Böylece is_gl_active/get_display_surface/_reapply_gl/_gl_flip
+    gibi çağrılar doğru modüle yönlenir. Hata-toleranslıdır.
+    """
+    try:
+        import sdl2_overlay as _ovl
+        if _ovl.is_active():
+            return _ovl
+    except Exception:
+        pass
+    try:
+        import gl_compat as _glc
+        if _glc.is_gl_active():
+            return _glc
+    except Exception:
+        pass
+    return None
+
 
 def _show_mode_intro_popup(screen, mode_key, settings_manager=None):
     """
@@ -1177,6 +1248,7 @@ def main():
     # Ayarları pygame.init() öncesi yükle ki SDL hint/env (VSync gibi) doğru uygulansın.
     settings_manager = SettingsManager()  # Ayar yöneticisi
     steam_overlay_gl_mode = _get_steam_overlay_gl_mode(settings_manager)
+    overlay_backend = _get_overlay_backend(settings_manager)
     try:
         vsync_enabled = bool(settings_manager.get('vsync', True))
     except Exception:
@@ -1270,8 +1342,10 @@ def main():
     # create_display()'den ÖNCE çağrılır; böylece pencere baştan OPENGL
     # bayrağıyla tek seferde açılır ve ikinci bir set_mode(OPENGL) gerekmez.
     # Yalnızca Windows + Steam SDK + GL mevcutken etkindir.
+    # NOT: Yalnızca 'glcompat' backend'inde geçerli. 'sdl2' backend'i kendi
+    # _sdl2 penceresini setup() içinde açar; 'software' hiç overlay kurmaz.
     try:
-        if steam_overlay_gl_mode != 'off':
+        if steam_overlay_gl_mode != 'off' and overlay_backend == 'glcompat':
             from gl_compat import prepare_single_context
             prepare_single_context()
     except Exception as _gl_prep_e:
@@ -1299,21 +1373,26 @@ def main():
     except Exception:
         screen = create_display(native_width, native_height, fullscreen=True, resizable=False, borderless=True)
 
-    # ── Steam overlay OpenGL uyumluluk katmanı (Windows) ───────────────────
+    # ── Steam overlay render katmanı (Windows) ────────────────────────────
     # Steam overlay yalnızca D3D/OpenGL rendering context'e hook olabilir.
-    # Pygame varsayılan olarak software renderer (GDI) kullandığından overlay
-    # görünmez.  gl_compat modülü pencereyi OpenGL moduna alır ve pygame
-    # surface'i her frame GL texture olarak ekrana çizer.
+    # Pygame varsayılan software renderer (GDI) overlay'e görünmez.
+    # Backend seçimi:
+    #   'sdl2'     → SDL2 resmi donanım renderer (D3D11) — Yol 2 yeni mimari.
+    #   'glcompat' → ctypes-OpenGL + offscreen blit (mevcut/kararlı yol).
+    #   'software' → hiçbir overlay katmanı yok (saf software pencere).
     try:
-        if steam_overlay_gl_mode != 'off':
+        if steam_overlay_gl_mode == 'off' or overlay_backend == 'software':
+            print(f"[Overlay] Render katmanı devre dışı (mode={steam_overlay_gl_mode}, backend={overlay_backend})")
+        elif overlay_backend == 'sdl2':
+            import sdl2_overlay as _ovl
+            screen = _ovl.gl_overlay_setup(screen)
+        else:  # 'glcompat'
             from gl_compat import gl_overlay_setup
             screen = gl_overlay_setup(screen)
-        else:
-            print("[GL Compat] Konfigürasyonla devre dışı bırakıldı")
     except Exception as _gl_e:
-        print(f"[GL Compat] Atlandı: {_gl_e}")
+        print(f"[Overlay] Atlandı: {_gl_e}")
         # Tek-context'te create_display ham OpenGL surface döndürmüş olabilir.
-        # gl_overlay_setup beklenmedik şekilde patlarsa oyunu ham GL surface ile
+        # Overlay kurulumu beklenmedik şekilde patlarsa oyunu ham GL surface ile
         # bırakmak kalıcı siyah ekran demektir; pencereyi software'e geri al.
         if current_platform == 'Windows':
             try:
@@ -1340,18 +1419,25 @@ def main():
 
     # Teşhis: startup sonrası gerçek görünür display ve gl durumunu logla.
     try:
-        from gl_compat import _diag_log as _gl_diag_log, is_gl_active as _gl_is_active
+        _ovl = _active_overlay_module()
+        # Teşhis logu: aktif overlay modülü varsa onun _diag_log'unu kullan, yoksa gl_compat.
+        try:
+            _diag = _ovl._diag_log if _ovl is not None else __import__('gl_compat')._diag_log
+        except Exception:
+            _diag = None
         try:
             _real = pygame.display.get_surface()
             _real_flags = _real.get_flags() if _real is not None else 0
             _real_size = _real.get_size() if _real is not None else (0, 0)
         except Exception:
             _real_flags, _real_size = 0, (0, 0)
-        _gl_diag_log(
-            f"[main] Startup tamamlandı: gl_active={_gl_is_active()} "
-            f"görünür_display={_real_size} flags=0x{_real_flags:X} "
-            f"(OPENGL={'VAR' if (_real_flags & pygame.OPENGL) else 'YOK'})"
-        )
+        if _diag is not None:
+            _diag(
+                f"[main] Startup tamamlandı: backend={overlay_backend} "
+                f"overlay_active={_ovl is not None} "
+                f"görünür_display={_real_size} flags=0x{_real_flags:X} "
+                f"(OPENGL={'VAR' if (_real_flags & pygame.OPENGL) else 'YOK'})"
+            )
     except Exception:
         pass
 
@@ -1900,11 +1986,11 @@ def main():
     def _apply_screen(new_screen):
         """Ekran yeniden oluşturulduğunda tüm ekran referanslarını güncelle."""
         nonlocal screen
-        # GL wrapper aktifse display rebuild sonrası tekrar kur
+        # Overlay katmanı aktifse display rebuild sonrası tekrar kur (backend-aware).
         try:
-            from gl_compat import _reapply_gl, is_gl_active
-            if is_gl_active():
-                new_screen = _reapply_gl(new_screen)
+            _ovl = _active_overlay_module()
+            if _ovl is not None:
+                new_screen = _ovl._reapply_gl(new_screen)
         except Exception:
             pass
         screen = new_screen

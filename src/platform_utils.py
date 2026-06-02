@@ -262,6 +262,26 @@ def request_window_focus():
     This function attempts to ensure the window gets focus.
     """
     if IS_WINDOWS:
+        # SDL2 overlay aktifse: asıl görünür pencere ayrı bir _sdl2.Window'dur ve
+        # set_mode penceresi TAM BOYUT + HIDDEN tutulur. Burada get_wm_info() set_mode
+        # penceresinin HWND'sini döndürür; ona ShowWindow(SW_SHOW) çağırmak GİZLİ
+        # pencereyi geri açar → İKİNCİ PENCERE belirir. Bu yüzden overlay aktifken
+        # odağı görünür _sdl2.Window'a yönlendir, set_mode penceresine DOKUNMA.
+        try:
+            _mod = sys.modules.get('sdl2_overlay')
+            if _mod is not None:
+                _is_active = getattr(_mod, 'is_active', None)
+                _get_window = getattr(_mod, 'get_window', None)
+                if callable(_is_active) and _is_active() and callable(_get_window):
+                    _ovl_win = _get_window()
+                    if _ovl_win is not None:
+                        try:
+                            _ovl_win.focus()
+                        except Exception:
+                            pass
+                        return
+        except Exception:
+            pass
         try:
             info = pygame.display.get_wm_info() if hasattr(pygame.display, 'get_wm_info') else {}
             hwnd = None
@@ -384,12 +404,24 @@ def set_app_icon(assets_dir: str) -> None:
         os.path.join(assets_dir, 'quadrix_icon.ico'),
         os.path.join(assets_dir, 'Tetris_icon.png'),
     ]
+    _loaded_icon_surf = None
     for _icon_file in _icon_candidates:
         if os.path.exists(_icon_file):
             try:
                 icon_surf = pygame.image.load(_icon_file).convert_alpha()
                 icon_surf = pygame.transform.smoothscale(icon_surf, (32, 32))
-                pygame.display.set_icon(icon_surf)
+                _loaded_icon_surf = icon_surf
+                # SDL2 renderer (_sdl2.Window) backend aktifse pygame.display.set_icon
+                # çalışmaz; ikonu doğrudan Window.set_icon() ile uygula.
+                _sdl2_icon_done = False
+                try:
+                    import sdl2_overlay as _ovl
+                    if _ovl.is_active():
+                        _sdl2_icon_done = _ovl.apply_window_icon(icon_surf)
+                except Exception:
+                    _sdl2_icon_done = False
+                if not _sdl2_icon_done:
+                    pygame.display.set_icon(icon_surf)
                 break
             except Exception:
                 continue
@@ -404,7 +436,19 @@ def set_app_icon(assets_dir: str) -> None:
             ico_path = os.path.join(assets_dir, 'quadrix_icon.ico')
             if os.path.exists(ico_path):
                 abs_ico = os.path.abspath(ico_path)
-                hwnd = pygame.display.get_wm_info().get('window', 0)
+                # _sdl2.Window modunda get_wm_info boş döner; SDL2 backend aktifse
+                # HWND'yi doğrudan Windows API ile aktif pencereden al.
+                hwnd = 0
+                try:
+                    info = pygame.display.get_wm_info() if hasattr(pygame.display, 'get_wm_info') else {}
+                    hwnd = info.get('window', 0) if isinstance(info, dict) else 0
+                except Exception:
+                    hwnd = 0
+                if not hwnd:
+                    try:
+                        hwnd = ctypes.windll.user32.GetActiveWindow() or ctypes.windll.user32.GetForegroundWindow()
+                    except Exception:
+                        hwnd = 0
                 if hwnd:
                     WM_SETICON = 0x0080
                     ICON_SMALL = 0
@@ -843,6 +887,44 @@ def _gl_diag(message: str) -> None:
             pass
 
 
+def overlay_should_skip_rebuild(width: int, height: int) -> bool:
+    """Aktif overlay backend'i (gl_compat veya sdl2_overlay) display rebuild'i atlamalı mı?
+
+    VIDEORESIZE/rebuild işleyicileri bunu çağırarak, overlay katmanı aktif ve boyut sabitse
+    yeni bir create_display/set_mode (ve pencere/swapchain yeniden yaratımı) yapmaktan kaçınır.
+    Hangi backend aktifse onun should_skip_display_rebuild'ini sorar. Hata-toleranslıdır.
+    """
+    for _mod_name in ('sdl2_overlay', 'gl_compat'):
+        try:
+            _mod = sys.modules.get(_mod_name)
+            if _mod is None:
+                continue
+            checker = getattr(_mod, 'should_skip_display_rebuild', None)
+            if callable(checker) and checker(width, height):
+                return True
+        except Exception:
+            pass
+    return False
+
+
+def overlay_active_game_surface():
+    """Aktif overlay backend'inin offscreen oyun yüzeyini döndür (yoksa None)."""
+    for _mod_name in ('sdl2_overlay', 'gl_compat'):
+        try:
+            _mod = sys.modules.get(_mod_name)
+            if _mod is None:
+                continue
+            getter = getattr(_mod, 'get_game_surface', None)
+            is_active = getattr(_mod, 'is_active', None) or getattr(_mod, 'is_gl_active', None)
+            if callable(getter) and callable(is_active) and is_active():
+                surf = getter()
+                if surf is not None:
+                    return surf
+        except Exception:
+            pass
+    return None
+
+
 def create_display(
     width: int,
     height: int,
@@ -851,6 +933,28 @@ def create_display(
     borderless: bool = False,
 ):
     """Create a pygame display locked to always-fullscreen mode."""
+    # ── TEK PENCERE GARANTİSİ: Overlay backend aktifse set_mode'a HİÇ DOKUNMA ──
+    # SDL2 overlay (veya gl_compat) aktifse asıl görünür pencere ayrı bir
+    # _sdl2.Window'dur; ilk set_mode penceresi 1x1 + HIDDEN'a küçültülmüştür.
+    # Burada yeniden set_mode çağırmak o gizli pencereyi TAM BOYUTLU + GÖRÜNÜR
+    # olarak diriltir → görev çubuğunda/Alt+Tab'da İKİNCİ PENCERE belirir.
+    # (Kaynak: splash focus-recovery, VIDEORESIZE, focus regain rebuild'leri.)
+    # Çözüm: overlay aktifken create_display, set_mode'u tamamen atlayıp overlay'in
+    # offscreen oyun yüzeyini döndürür. Oyun yine bu yüzeye çizer, patched flip
+    # onu görünür _sdl2.Window'a sunar. Böylece YALNIZCA TEK pencere kalır.
+    try:
+        _overlay_surf = overlay_active_game_surface()
+        if _overlay_surf is not None:
+            _gl_diag(
+                "create_display: overlay AKTİF → set_mode ATLANDI, offscreen yüzey "
+                f"döndürüldü ({_overlay_surf.get_width()}x{_overlay_surf.get_height()}) "
+                "[TEK PENCERE korundu]"
+            )
+            invalidate_refresh_rate_cache()
+            return _overlay_surf
+    except Exception:
+        pass
+
     fullscreen = True
     borderless = True
     resizable = False
