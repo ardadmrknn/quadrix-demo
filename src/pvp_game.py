@@ -1917,7 +1917,19 @@ class PvPGame:
             if event.type == pygame.VIDEORESIZE:
                 req_w = max(event.w, 800)
                 req_h = max(event.h, 600)
-                self.screen = create_display(req_w, req_h, fullscreen=True, resizable=False, borderless=True)
+                # Tek-context GL aktifken ve boyut sabitse create_display ÇAĞIRMA.
+                _gl_skip = False
+                try:
+                    import gl_compat as _glc
+                    _gl_skip = _glc.should_skip_display_rebuild(req_w, req_h)
+                    if _gl_skip:
+                        _gs = _glc.get_game_surface()
+                        if _gs is not None:
+                            self.screen = _gs
+                except Exception:
+                    _gl_skip = False
+                if not _gl_skip:
+                    self.screen = create_display(req_w, req_h, fullscreen=True, resizable=False, borderless=True)
                 # Daima surface'tan gerçek piksel boyutunu al
                 self.window_width = self.screen.get_width()
                 self.window_height = self.screen.get_height()

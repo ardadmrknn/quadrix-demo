@@ -44,6 +44,14 @@ _original_create_display = None  # set during first gl_overlay_setup
 _create_display_wrappers: dict[object, object] = {}
 _supports_bgra_upload: bool | None = None
 
+# GPU senkronizasyon modu (DWM/OBS/Steam capture'ın taze kareyi görmesi için).
+# - 'finish': her karede glFlush (swap öncesi) + glFinish (swap sonrası). En güvenli;
+#             DWM/yakalama her zaman güncel kareyi alır ama CPU'yu bloklar (FPS düşebilir).
+# - 'flush' : her karede yalnızca glFlush. Ucuz; komutları GPU'ya iteler.
+# - 'off'   : senkronizasyon yok (eski davranış).
+# Varsayılan 'auto' → GL aktifken 'finish' kullanılır (overlay/capture doğruluğu önceliklidir).
+_gpu_sync_mode: str | None = None
+
 # GL constants (from OpenGL spec, avoids PyOpenGL dep)
 GL_TEXTURE_2D = 0x0DE1
 GL_RGBA = 0x1908
@@ -254,14 +262,80 @@ def _upload_and_draw(surface: pygame.Surface, tex: int, w: int, h: int):
 # Monkey-patched flip / update
 # ---------------------------------------------------------------------------
 
+def _resolve_gpu_sync_mode() -> str:
+    """Aktif GPU senkronizasyon modunu döndür: 'finish' | 'flush' | 'off'.
+
+    Öncelik: QUADRIX_STEAM_OVERLAY_GL_SYNC ortam değişkeni > varsayılan ('auto').
+    'auto' → 'finish' (overlay/capture doğruluğu için en güvenli mod).
+    Sonuç bir kez hesaplanıp önbelleğe alınır.
+    """
+    global _gpu_sync_mode
+    if _gpu_sync_mode is not None:
+        return _gpu_sync_mode
+
+    raw = os.environ.get('QUADRIX_STEAM_OVERLAY_GL_SYNC')
+    mode = str(raw or 'auto').strip().lower()
+
+    if mode in ('off', '0', 'false', 'none', 'disable', 'disabled'):
+        resolved = 'off'
+    elif mode in ('flush',):
+        resolved = 'flush'
+    elif mode in ('finish', '1', 'true', 'on', 'enable', 'enabled'):
+        resolved = 'finish'
+    else:  # 'auto' veya tanınmayan → güvenli varsayılan
+        resolved = 'finish'
+
+    _gpu_sync_mode = resolved
+    return resolved
+
+
+def _gpu_sync(mode: str) -> None:
+    """Sürücü komut kuyruğunu senkronize et (ctypes, PyOpenGL bağımlılığı yok).
+
+    'flush'  → glFlush(): komutları GPU'ya iteler, bloklamaz.
+    'finish' → glFinish(): GPU kareyi bitirene kadar CPU'yu bloklar.
+    Başarısızlıkta sessizce geçilir (safe fallback).
+    """
+    if _gl is None:
+        return
+    try:
+        if mode == 'flush':
+            _gl.glFlush()
+        elif mode == 'finish':
+            _gl.glFinish()
+    except Exception:
+        pass
+
+
 def _gl_flip():
-    """Upload game surface to GL texture, then do real GL buffer swap."""
+    """Upload game surface to GL texture, then do real GL buffer swap.
+
+    DWM/OBS/Steam ekran yakalamasının her zaman TAZE kareyi görmesi için sürücü
+    komut kuyruğu senkronize edilir (Windows'ta OpenGL pencere DWM'yi bypass eder;
+    senkronizasyon olmadan yakalama bir kare geride/bayat kalabilir).
+
+    Sıralama (mentor doğrulaması): glFlush komutları swap'tan ÖNCE GPU'ya iter,
+    SwapBuffers takası yapar, glFinish swap'tan SONRA CPU'yu donanımla eşitler.
+    """
+    sync_mode = 'off'
     if _active and _game_surface is not None:
         try:
             _upload_and_draw(_game_surface, _tex_id, _width, _height)
         except Exception:
             pass
+        sync_mode = _resolve_gpu_sync_mode()
+
+    # 1) Swap ÖNCESİ: komutları GPU'ya iter (flush veya finish ikisi de iter).
+    if sync_mode in ('flush', 'finish'):
+        _gpu_sync('flush')
+
+    # 2) Gerçek pencere buffer takası (SwapBuffers).
     _original_flip()
+
+    # 3) Swap SONRASI: yalnızca 'finish' modunda CPU'yu donanımla eşitle; böylece
+    #    yakalama anında ön bellekte taze kare bulunur.
+    if sync_mode == 'finish':
+        _gpu_sync('finish')
 
 
 def _gl_update(
@@ -760,3 +834,22 @@ def is_gl_active() -> bool:
 def get_game_surface() -> pygame.Surface | None:
     """Return the offscreen game surface (or None if not active)."""
     return _game_surface
+
+
+def should_skip_display_rebuild(width: int, height: int) -> bool:
+    """VIDEORESIZE/rebuild handler'ları için GL-aware erken guard.
+
+    Tek-context GL aktifken ve istenen boyut mevcut GL yüzeyiyle aynıysa True döner.
+    True ise çağıran, ``create_display``/``set_mode`` ÇAĞIRMAMALI (Steam hook ve GL
+    context korunur); bunun yerine ``get_game_surface()`` ile offscreen yüzeye devam
+    etmelidir. Bu kod tabanında pencere her zaman masaüstü çözünürlüğünde sabit
+    olduğundan rebuild'ler boyutu değiştirmez.
+    """
+    if not _active or _game_surface is None:
+        return False
+    if platform.system() != 'Windows':
+        return False
+    try:
+        return int(width) == int(_width) and int(height) == int(_height)
+    except Exception:
+        return False

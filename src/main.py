@@ -514,6 +514,18 @@ def _maybe_recover_windows_display(screen, *, settings_manager=None):
     # (rebuild + reapply) siyah ekran ve stale-frame sorunlarını büyütebilir.
     if should_recover and gl_active and recover_reason in ('focus', 'prtsc'):
         should_recover = False
+        # set_mode yerine: DWM/Steam'e "pencere canlı ve aktif" sinyali ver.
+        # Focus dönüşünde tek temiz kare pompalamak, OpenGL pencerede DWM context
+        # restoration gecikmesini (Alt+Tab siyah ekran) ve PrintScreen bayat kareyi
+        # azaltır. Burada yalnızca GL flip (ve içindeki GPU sync) tetiklenir.
+        try:
+            from gl_compat import _gl_flip as _gl_pump_frame
+            _gl_pump_frame()
+            pygame.event.pump()
+            if recover_reason == 'focus':
+                request_window_focus()
+        except Exception:
+            pass
 
     if should_recover and (now_ms - state['last_display_recover_ms'] >= 900):
         state['last_display_recover_ms'] = now_ms

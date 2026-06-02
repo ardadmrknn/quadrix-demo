@@ -333,3 +333,114 @@ def test_single_context_success_returns_offscreen_and_pumps_first_frame(monkeypa
         pygame.display.get_surface = gl_compat._original_get_surface
         gl_compat._active = False
         gl_compat._game_surface = None
+
+
+# ---------------------------------------------------------------------------
+# GPU senkronizasyon (glFlush/glFinish) ve VIDEORESIZE GL-aware guard testleri.
+# DWM/OBS/PrintScreen'in taze kareyi görmesi + ikinci set_mode'un önlenmesi.
+# ---------------------------------------------------------------------------
+
+class _FakeGL:
+    """ctypes opengl32 taklidi: glFlush/glFinish çağrılarını sayar."""
+
+    def __init__(self):
+        self.flush_count = 0
+        self.finish_count = 0
+
+    def glFlush(self):
+        self.flush_count += 1
+
+    def glFinish(self):
+        self.finish_count += 1
+
+
+def test_resolve_gpu_sync_mode_default_is_finish(monkeypatch):
+    """Varsayılan (auto) GPU sync modu 'finish' olmalı (capture doğruluğu)."""
+    monkeypatch.setattr(gl_compat, '_gpu_sync_mode', None)
+    monkeypatch.delenv('QUADRIX_STEAM_OVERLAY_GL_SYNC', raising=False)
+    assert gl_compat._resolve_gpu_sync_mode() == 'finish'
+
+
+def test_resolve_gpu_sync_mode_env_off(monkeypatch):
+    monkeypatch.setattr(gl_compat, '_gpu_sync_mode', None)
+    monkeypatch.setenv('QUADRIX_STEAM_OVERLAY_GL_SYNC', 'off')
+    assert gl_compat._resolve_gpu_sync_mode() == 'off'
+
+
+def test_resolve_gpu_sync_mode_env_flush(monkeypatch):
+    monkeypatch.setattr(gl_compat, '_gpu_sync_mode', None)
+    monkeypatch.setenv('QUADRIX_STEAM_OVERLAY_GL_SYNC', 'flush')
+    assert gl_compat._resolve_gpu_sync_mode() == 'flush'
+
+
+def test_gl_flip_finish_mode_flushes_before_and_finishes_after_swap(monkeypatch):
+    """finish modunda: swap öncesi glFlush, swap sonrası glFinish çağrılmalı."""
+    fake_gl = _FakeGL()
+    order = []
+
+    monkeypatch.setattr(gl_compat, '_active', True)
+    monkeypatch.setattr(gl_compat, '_game_surface', pygame.Surface((4, 4)))
+    monkeypatch.setattr(gl_compat, '_gl', fake_gl)
+    monkeypatch.setattr(gl_compat, '_gpu_sync_mode', 'finish')
+    monkeypatch.setattr(gl_compat, '_upload_and_draw', lambda *a, **k: order.append('upload'))
+
+    def _fake_flush(mode):
+        order.append(f'sync:{mode}')
+        if mode == 'flush':
+            fake_gl.flush_count += 1
+        elif mode == 'finish':
+            fake_gl.finish_count += 1
+
+    monkeypatch.setattr(gl_compat, '_gpu_sync', _fake_flush)
+    monkeypatch.setattr(gl_compat, '_original_flip', lambda *a, **k: order.append('swap'))
+
+    gl_compat._gl_flip()
+
+    # Sıralama: upload -> flush -> swap -> finish
+    assert order == ['upload', 'sync:flush', 'swap', 'sync:finish']
+    assert fake_gl.flush_count == 1
+    assert fake_gl.finish_count == 1
+
+
+def test_gl_flip_off_mode_skips_gpu_sync(monkeypatch):
+    """off modunda hiç glFlush/glFinish çağrılmamalı; yine de swap yapılmalı."""
+    order = []
+    monkeypatch.setattr(gl_compat, '_active', True)
+    monkeypatch.setattr(gl_compat, '_game_surface', pygame.Surface((4, 4)))
+    monkeypatch.setattr(gl_compat, '_gpu_sync_mode', 'off')
+    monkeypatch.setattr(gl_compat, '_upload_and_draw', lambda *a, **k: order.append('upload'))
+    monkeypatch.setattr(gl_compat, '_gpu_sync', lambda mode: order.append(f'sync:{mode}'))
+    monkeypatch.setattr(gl_compat, '_original_flip', lambda *a, **k: order.append('swap'))
+
+    gl_compat._gl_flip()
+
+    assert order == ['upload', 'swap']
+    assert not any(o.startswith('sync:') for o in order)
+
+
+def test_should_skip_display_rebuild_true_when_gl_active_same_size(monkeypatch):
+    """GL aktif + Windows + boyut sabit → rebuild atlanmalı (True)."""
+    monkeypatch.setattr(gl_compat.platform, 'system', lambda: 'Windows')
+    monkeypatch.setattr(gl_compat, '_active', True)
+    monkeypatch.setattr(gl_compat, '_game_surface', pygame.Surface((1920, 1080)))
+    monkeypatch.setattr(gl_compat, '_width', 1920)
+    monkeypatch.setattr(gl_compat, '_height', 1080)
+    assert gl_compat.should_skip_display_rebuild(1920, 1080) is True
+
+
+def test_should_skip_display_rebuild_false_on_size_change(monkeypatch):
+    """Boyut değişirse rebuild atlanMAMALI (False)."""
+    monkeypatch.setattr(gl_compat.platform, 'system', lambda: 'Windows')
+    monkeypatch.setattr(gl_compat, '_active', True)
+    monkeypatch.setattr(gl_compat, '_game_surface', pygame.Surface((1920, 1080)))
+    monkeypatch.setattr(gl_compat, '_width', 1920)
+    monkeypatch.setattr(gl_compat, '_height', 1080)
+    assert gl_compat.should_skip_display_rebuild(1280, 720) is False
+
+
+def test_should_skip_display_rebuild_false_when_gl_inactive(monkeypatch):
+    """GL aktif değilse rebuild atlanMAMALI (False)."""
+    monkeypatch.setattr(gl_compat.platform, 'system', lambda: 'Windows')
+    monkeypatch.setattr(gl_compat, '_active', False)
+    monkeypatch.setattr(gl_compat, '_game_surface', None)
+    assert gl_compat.should_skip_display_rebuild(1920, 1080) is False

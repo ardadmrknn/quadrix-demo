@@ -1947,6 +1947,26 @@ class Game:
             
             # Pencere boyutu değiştirildiğinde
             if event.type == pygame.VIDEORESIZE:
+                # Tek-context GL aktifken ve boyut sabitse create_display ÇAĞIRMA;
+                # ikinci set_mode/swapchain rebuild Steam hook'unu kırar ve
+                # OBS/PrintScreen'de bayat kare / siyah ekran yapar.
+                _gl_skip = False
+                try:
+                    import gl_compat as _glc
+                    _gl_skip = _glc.should_skip_display_rebuild(
+                        max(event.w, MIN_WINDOW_WIDTH),
+                        max(event.h, MIN_WINDOW_HEIGHT),
+                    )
+                    if _gl_skip:
+                        _gs = _glc.get_game_surface()
+                        if _gs is not None:
+                            self.screen = _gs
+                            self.window_width = self.screen.get_width()
+                            self.window_height = self.screen.get_height()
+                except Exception:
+                    _gl_skip = False
+                if _gl_skip:
+                    continue
                 # VIDEORESIZE event.w/h logical (point) boyutu taşır.
                 # create_display() logical boyutla çağrılır; surface fiziksel piksel olabilir.
                 self.screen = create_display(
