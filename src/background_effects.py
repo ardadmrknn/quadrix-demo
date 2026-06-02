@@ -267,6 +267,39 @@ class ScreenTransition:
         self.progress = 0.0  # 0.0 - 1.0
         self._old_screen_capture = None
         self._callback = None
+        # ── Performans: geçiş boyunca her kare yeni 1920x1080 surface tahsis etmek
+        # yerine yeniden kullanılabilir tamponlar (GC baskısı + stall'ı önler) ──
+        self._solid_overlay = None        # opak renk overlay (fade/zoom)
+        self._solid_overlay_key = None    # (w, h, color)
+        self._scratch_full = None         # slide için tam ekran scratch tampon
+        self._alpha_overlay = None        # SRCALPHA overlay (circle/slide-fade)
+        self._alpha_overlay_size = None
+
+    def _get_solid_overlay(self, width: int, height: int, color=(0, 0, 0)):
+        """Opak renk overlay'i cache'le (fade/zoom için). set_alpha ile şeffaflık verilir.
+
+        Her kare SRCALPHA tahsis + fill yerine; tek opak surface + set_alpha çok daha ucuz.
+        """
+        key = (width, height, color)
+        if self._solid_overlay_key != key or self._solid_overlay is None:
+            surf = pygame.Surface((width, height))
+            surf.fill(color)
+            self._solid_overlay = surf
+            self._solid_overlay_key = key
+        return self._solid_overlay
+
+    def _get_scratch_full(self, width: int, height: int):
+        """Tam ekran opak scratch tamponu (slide için screen.copy() yerine yeniden kullanılır)."""
+        if self._scratch_full is None or self._scratch_full.get_size() != (width, height):
+            self._scratch_full = pygame.Surface((width, height))
+        return self._scratch_full
+
+    def _get_alpha_overlay(self, width: int, height: int):
+        """Tam ekran SRCALPHA overlay'i yeniden kullan (circle mask vb.). Çağıran fill yapar."""
+        if self._alpha_overlay is None or self._alpha_overlay_size != (width, height):
+            self._alpha_overlay = pygame.Surface((width, height), pygame.SRCALPHA)
+            self._alpha_overlay_size = (width, height)
+        return self._alpha_overlay
         
     def start(self, screen: pygame.Surface, callback=None):
         """Geçişi başlat.
@@ -378,9 +411,10 @@ class ScreenTransition:
         else:
             # Yeni ekran açılıyor
             alpha = int(255 * (1 - self._ease_out_quad(self.progress)))
-        
-        overlay = pygame.Surface((width, height), pygame.SRCALPHA)
-        overlay.fill((0, 0, 0, alpha))
+
+        # Cache'li opak overlay + set_alpha (her kare SRCALPHA tahsisi yerine).
+        overlay = self._get_solid_overlay(width, height, (0, 0, 0))
+        overlay.set_alpha(alpha)
         screen.blit(overlay, (0, 0))
     
     def _draw_wipe(self, screen: pygame.Surface, width: int, height: int):
@@ -429,8 +463,8 @@ class ScreenTransition:
             # Daire büyüyor (ekran açılıyor)
             radius = int(max_radius * progress)
         
-        # Maskeleme için surface oluştur
-        mask = pygame.Surface((width, height), pygame.SRCALPHA)
+        # Maskeleme için surface oluştur (cache'li SRCALPHA overlay yeniden kullanılır).
+        mask = self._get_alpha_overlay(width, height)
         mask.fill((0, 0, 0, 255))
         
         if radius > 0:
@@ -496,9 +530,11 @@ class ScreenTransition:
                 new_offset_y = old_offset_y - height
 
             # screen.scroll() açıkta kalan pikselleri temizlemediği için
-            # ghosting/artifact üretir. Güvenli kompozit: yeni ekranı kopyala,
-            # hedefi temizle, ardından yeni+eski ekranları offset ile çiz.
-            new_screen_capture = screen.copy()
+            # ghosting/artifact üretir. Güvenli kompozit: yeni ekranı cache'li
+            # scratch tampona kopyala (her kare yeni surface tahsisi YOK), hedefi
+            # temizle, ardından yeni+eski ekranları offset ile çiz.
+            new_screen_capture = self._get_scratch_full(width, height)
+            new_screen_capture.blit(screen, (0, 0))
             screen.fill((0, 0, 0))
             screen.blit(new_screen_capture, (new_offset_x, new_offset_y))
             screen.blit(self._old_screen_capture, (old_offset_x, old_offset_y))
@@ -507,8 +543,8 @@ class ScreenTransition:
             inv_progress = 1 - progress
             alpha = int(180 * inv_progress)
             if alpha > 0:
-                overlay = pygame.Surface((width, height), pygame.SRCALPHA)
-                overlay.fill((10, 15, 25, alpha))
+                overlay = self._get_solid_overlay(width, height, (10, 15, 25))
+                overlay.set_alpha(alpha)
                 screen.blit(overlay, (0, 0))
     
     def _draw_zoom(self, screen: pygame.Surface, width: int, height: int):
@@ -521,9 +557,9 @@ class ScreenTransition:
         else:
             alpha = int(255 * (1 - progress))
         
-        # Overlay çiz
-        overlay = pygame.Surface((width, height), pygame.SRCALPHA)
-        overlay.fill((0, 0, 0, alpha))
+        # Cache'li opak overlay + set_alpha (her kare SRCALPHA tahsisi yerine).
+        overlay = self._get_solid_overlay(width, height, (0, 0, 0))
+        overlay.set_alpha(alpha)
         screen.blit(overlay, (0, 0))
     
     def is_active(self) -> bool:

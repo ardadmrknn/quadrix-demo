@@ -328,13 +328,18 @@ def setup_custom_cursor() -> bool:
         False: Varsayılan cursor kullanılıyor
     """
     try:
-        cursor_path = resource_path('assets/ui/cursor.png')
-        cursor_surface = pygame.image.load(cursor_path).convert_alpha()
-        # Cursor boyutunu 32x32'ye ölçekle (standart cursor boyutu)
-        cursor_surface = pygame.transform.smoothscale(cursor_surface, (32, 32))
-        # Hotspot: tıklama noktası (sol üst köşeye yakın)
         global _CUSTOM_CURSOR_SURFACE
-        _CUSTOM_CURSOR_SURFACE = cursor_surface
+        # İmleç yüzeyini yalnızca BİR kez diskten yükle + ölçekle (cache).
+        # _apply_screen/rebuild yollarında bu fonksiyon tekrar çağrıldığında
+        # diskten yükleme + smoothscale stall'ı (geçiş gecikmesi) oluşmasın.
+        if _CUSTOM_CURSOR_SURFACE is None:
+            cursor_path = resource_path('assets/ui/cursor.png')
+            cursor_surface = pygame.image.load(cursor_path).convert_alpha()
+            # Cursor boyutunu 32x32'ye ölçekle (standart cursor boyutu)
+            cursor_surface = pygame.transform.smoothscale(cursor_surface, (32, 32))
+            _CUSTOM_CURSOR_SURFACE = cursor_surface
+        cursor_surface = _CUSTOM_CURSOR_SURFACE
+        # Hotspot: tıklama noktası (sol üst köşeye yakın)
         hotspot = _CUSTOM_CURSOR_HOTSPOT
         cursor = pygame.cursors.Cursor(hotspot, cursor_surface)
         pygame.mouse.set_cursor(cursor)

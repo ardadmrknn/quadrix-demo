@@ -46,10 +46,13 @@ _original_set_caption = pygame.display.set_caption
 _original_get_active = getattr(pygame.display, 'get_active', None)
 
 # Software imleç hook'u: SDL2 renderer penceresinde donanım imleci görünmediği için
-# main.py bir imleç yüzeyi + hotspot kaydeder; her present'te offscreen'e çizilir.
+# main.py bir imleç yüzeyi + hotspot kaydeder; her present'te GPU katmanı olarak çizilir.
 _cursor_surface: pygame.Surface | None = None
+_cursor_texture = None        # pygame._sdl2.video.Texture — cursor GPU katmanı
+_cursor_size = (0, 0)
 _cursor_hotspot = (0, 0)
 _cursor_enabled = True
+_cursor_dirty = False         # cursor surface değişti → texture yeniden oluşturulmalı
 
 # Teşhis günlüğü (gl_compat ile aynı dosyaya yazar: gl_debug.log)
 _diag_log_path: str | None = None
@@ -195,18 +198,23 @@ def _should_use_sdl2() -> bool:
 # ---------------------------------------------------------------------------
 
 def _present():
-    """Offscreen surface'i GPU texture'a yükleyip SDL renderer ile sun."""
+    """Offscreen surface'i GPU texture'a yükleyip SDL renderer ile sun.
+
+    İmleç oyun yüzeyine PİŞİRİLMEZ; ayrı bir GPU texture katmanı olarak oyun
+    texture'ından SONRA blend ile çizilir. Böylece statik panellerde imleç izi
+    (ghosting) oluşmaz ve her kare temiz, tek-geçişli sunum yapılır.
+    """
     if not _active:
         return
     try:
-        # Software imleci offscreen'e çiz (donanım imleci SDL2 renderer'da görünmez).
-        _draw_software_cursor()
         if _texture is not None and _game_surface is not None:
             _texture.update(_game_surface)
         if _renderer is not None:
             _renderer.clear()
             if _texture is not None:
                 _renderer.blit(_texture, None)  # POZİSYONEL — dst= kwarg yok
+            # İmleç GPU katmanı (oyun texture'ının ÜSTÜNE, yüzeye pişmeden).
+            _blit_cursor_layer()
             _renderer.present()
     except Exception as exc:
         _diag_log(f"_present hatası: {exc}")
@@ -281,11 +289,13 @@ def is_gl_active() -> bool:
 def set_software_cursor(surface, hotspot=(0, 0)) -> None:
     """Software imleç yüzeyini kaydet (SDL2 renderer'da donanım imleci görünmez).
 
-    main.py setup_custom_cursor içinde çağırır; her present'te offscreen'e çizilir.
-    surface None ise imleç çizimi devre dışı kalır.
+    main.py setup_custom_cursor içinde çağırır; her present'te GPU katmanı olarak
+    çizilir. surface None ise imleç çizimi devre dışı kalır. Yüzey değişince
+    GPU texture bir sonraki present'te yeniden oluşturulur (dirty bayrağı).
     """
-    global _cursor_surface, _cursor_hotspot
+    global _cursor_surface, _cursor_hotspot, _cursor_dirty
     _cursor_surface = surface
+    _cursor_dirty = True
     try:
         _cursor_hotspot = (int(hotspot[0]), int(hotspot[1]))
     except Exception:
@@ -298,19 +308,59 @@ def set_software_cursor_enabled(enabled: bool) -> None:
     _cursor_enabled = bool(enabled)
 
 
-def _draw_software_cursor() -> None:
-    """Kayıtlı imleç yüzeyini offscreen game surface'e çiz (present öncesi)."""
-    if not _cursor_enabled or _cursor_surface is None or _game_surface is None:
+def _ensure_cursor_texture():
+    """İmleç GPU texture'ını (gerekirse) oyun yüzeyinden bir kez oluştur.
+
+    Yüzey değişmediği sürece texture yeniden oluşturulmaz; yalnızca konum değişir.
+    """
+    global _cursor_texture, _cursor_size, _cursor_dirty
+    if not _cursor_dirty:
+        return
+    _cursor_dirty = False
+    # Eski texture'ı serbest bırak.
+    try:
+        if _cursor_texture is not None and hasattr(_cursor_texture, 'destroy'):
+            _cursor_texture.destroy()
+    except Exception:
+        pass
+    _cursor_texture = None
+    if _cursor_surface is None or _renderer is None:
+        return
+    try:
+        from pygame._sdl2.video import Texture
+        _cursor_texture = Texture.from_surface(_renderer, _cursor_surface)
+        _cursor_size = _cursor_surface.get_size()
+        # Alpha blend (cursor PNG'si yarı saydam kenarlara sahip).
+        try:
+            _cursor_texture.blend_mode = 1  # SDL_BLENDMODE_BLEND
+        except Exception:
+            pass
+    except Exception as exc:
+        _diag_log(f"_ensure_cursor_texture hatası: {exc}")
+        _cursor_texture = None
+
+
+def _blit_cursor_layer() -> None:
+    """İmleç GPU texture'ını mevcut fare konumunda renderer'a çiz (present içinde).
+
+    Oyun texture'ı zaten basıldıktan SONRA çağrılır; imleç yüzeye pişmez → ghosting yok.
+    """
+    if not _cursor_enabled or _renderer is None:
         return
     try:
         if not pygame.mouse.get_visible():
             return
     except Exception:
         return
+    _ensure_cursor_texture()
+    if _cursor_texture is None:
+        return
     try:
         mx, my = pygame.mouse.get_pos()
         hx, hy = _cursor_hotspot
-        _game_surface.blit(_cursor_surface, (int(mx) - hx, int(my) - hy))
+        cw, ch = _cursor_size
+        dst = pygame.Rect(int(mx) - hx, int(my) - hy, cw, ch)
+        _renderer.blit(_cursor_texture, dst)
     except Exception:
         pass
 
@@ -567,7 +617,7 @@ def _reapply_gl(display_surface: pygame.Surface) -> pygame.Surface:
 
 def teardown() -> None:
     """SDL2 renderer kaynaklarını serbest bırak ve monkey-patch'leri geri al."""
-    global _active, _window, _renderer, _texture, _game_surface
+    global _active, _window, _renderer, _texture, _game_surface, _cursor_texture, _cursor_dirty
     pygame.display.flip = _original_flip
     pygame.display.update = _original_update
     pygame.display.get_surface = _original_get_surface
@@ -578,13 +628,15 @@ def teardown() -> None:
     except Exception:
         pass
     _active = False
-    for obj_name in ('_texture', '_renderer', '_window'):
+    for obj_name in ('_cursor_texture', '_texture', '_renderer', '_window'):
         obj = globals().get(obj_name)
         try:
             if obj is not None and hasattr(obj, 'destroy'):
                 obj.destroy()
         except Exception:
             pass
+    _cursor_texture = None
+    _cursor_dirty = True
     _texture = None
     _renderer = None
     _window = None
