@@ -96,10 +96,36 @@ _PERF_SPIKE_BUCKETS = (20.0, 33.0, 50.0, 100.0)  # >20ms(<50fps) >33ms(<30fps) >
 
 
 def _perf_enabled() -> bool:
+    """Telemetri açık mı? İKİ yoldan açılabilir (env Steam'de kaybolabildiği için):
+    1) QUADRIX_OVERLAY_PERF=1 ortam değişkeni.
+    2) Veri klasöründe (gl_debug.log'un yanında) 'PERF_ON.txt' SENTINEL dosyası.
+       (En güvenilir yol — Steam env'i strip etse bile çalışır. Kullanıcı sadece
+        bu dosyayı oluşturur; oyun açılışta otomatik telemetriyi açar.)
+    Sonuç cache'lenir (açılışta bir kez çözülür).
+    """
     global _perf_enabled_cache
     if _perf_enabled_cache is None:
-        raw = os.environ.get('QUADRIX_OVERLAY_PERF')
-        _perf_enabled_cache = str(raw or '').strip().lower() in ('1', 'true', 'on', 'yes')
+        on = False
+        # (1) Ortam değişkeni
+        try:
+            raw = os.environ.get('QUADRIX_OVERLAY_PERF')
+            if str(raw or '').strip().lower() in ('1', 'true', 'on', 'yes'):
+                on = True
+        except Exception:
+            pass
+        # (2) Sentinel dosyası (gl_debug.log ile aynı klasör)
+        if not on:
+            try:
+                log_path = _diag_resolve_path()
+                if log_path:
+                    data_dir = os.path.dirname(log_path)
+                    for fname in ('PERF_ON.txt', 'PERF_ON', 'perf_on.txt', 'perf_on'):
+                        if os.path.exists(os.path.join(data_dir, fname)):
+                            on = True
+                            break
+            except Exception:
+                pass
+        _perf_enabled_cache = on
     return _perf_enabled_cache
 
 # Teşhis günlüğü (gl_compat ile aynı dosyaya yazar: gl_debug.log)
@@ -830,9 +856,26 @@ def setup(display_surface: pygame.Surface | None = None) -> pygame.Surface | Non
             _diag_log(f"setup: render sürücü listesi alınamadı: {_drv_exc}")
 
         texture = Texture(renderer, (w, h), streaming=True)
+        # Oyun texture'ı tüm pencereyi OPAK kaplar; alfası YOK SAYILMALI (blend NONE).
+        # Böylece SRCALPHA offscreen surface'in alfa kanalı present'i etkilemez
+        # (yarı-saydam panel blit'leri pencerede saydamlık yaratmaz).
+        try:
+            texture.blend_mode = 0  # SDL_BLENDMODE_NONE
+        except Exception:
+            pass
 
-        game_surface = pygame.Surface((w, h))
-        game_surface.fill((0, 0, 0))
+        # ── OPTİMİZASYON: offscreen surface formatını texture (ARGB8888) ile EŞLEŞTİR ──
+        # SDL streaming texture'ın native formatı ARGB8888 (alfa kanallı). Offscreen
+        # surface DÜZ RGB olursa her texture.update'te SDL CPU'da RGB→ARGB piksel-piksel
+        # dönüşüm yapar (~2.3ms/kare @1080p). SRCALPHA (ARGB8888) surface ise doğrudan
+        # memcpy ile yüklenir (~0.47ms/kare) → her karede ~1.9ms kazanç (5x daha hızlı upload).
+        # Surface opak (alfa=255) doldurulduğu ve oyun her kare tam opak sahne çizdiği için
+        # görsel davranış DÜZ RGB ile birebir aynıdır; yalnızca upload yolu hızlanır.
+        try:
+            game_surface = pygame.Surface((w, h), pygame.SRCALPHA)
+        except Exception:
+            game_surface = pygame.Surface((w, h))
+        game_surface.fill((0, 0, 0, 255))
 
         # Pencereyi şimdi göster (tüm ayarlar tamam; flash yok).
         try:
@@ -877,6 +920,15 @@ def setup(display_surface: pygame.Surface | None = None) -> pygame.Surface | Non
         pass
 
     _diag_log(f"setup OK — SDL2 renderer overlay AKTİF ({w}x{h}, vsync={vsync})")
+    # Telemetri durumunu AÇIKÇA logla — kullanıcı log'dan açık/kapalı olduğunu görsün.
+    try:
+        if _perf_enabled():
+            _diag_log("PERF telemetrisi AÇIK — [PERF]/[GECIS]/[HITCH]/[OLAY] satırları toplanacak")
+        else:
+            _diag_log("PERF telemetrisi KAPALI — açmak için QUADRIX_OVERLAY_PERF=1 veya veri "
+                      "klasöründe 'PERF_ON.txt' dosyası oluştur (gl_debug.log ile aynı klasör)")
+    except Exception:
+        pass
     return _game_surface
 
 
