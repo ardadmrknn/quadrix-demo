@@ -11053,13 +11053,14 @@ class MysteryMode(Game):
             except Exception:
                 return value
 
+        # NOT: 'score' bilerek snapshot dışında bırakıldı. Zaman Kapsulu yalnızca
+        # tahtayı/oyun durumunu geri yükler; geri dönüş skoru ETKILEMEZ.
         board_attrs = (
             'grid',
             'occupancy',
             'texture_grid',
             'gold',
             'owners',
-            'score',
             'lines_cleared',
             'level_lines_cleared',
             'level',
@@ -11156,13 +11157,14 @@ class MysteryMode(Game):
         return data
 
     def _restore_time_capsule_state(self, data: dict[str, Any]) -> None:
+        # NOT: 'score' bilerek listede yok. Geri yükleme skoru ETKILEMEZ;
+        # oyuncu tahtayı geri alsa bile mevcut skoru korur.
         board_attrs = (
             'grid',
             'occupancy',
             'texture_grid',
             'gold',
             'owners',
-            'score',
             'lines_cleared',
             'level_lines_cleared',
             'level',

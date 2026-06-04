@@ -73,7 +73,9 @@ def test_restore_time_capsule_restores_board_and_gameplay_state():
     ok = mode._restore_time_capsule()
 
     assert ok is True
-    assert mode.board.score == 1234
+    # Skor zaman kapsulu geri yuklemesinden ETKILENMEZ: kaydedilen ana donmez,
+    # mevcut skor korunur.
+    assert mode.board.score == 7777
     assert mode.board.lines_cleared == 12
     assert mode.board.level_lines_cleared == 2
     assert mode.board.level == 3
