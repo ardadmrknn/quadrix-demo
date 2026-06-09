@@ -5338,12 +5338,12 @@ class MysteryMode(Game):
         return True
 
     def _get_demo_score_cap(self) -> int:
-        fallback_cap = getattr(demo_config, 'DEMO_MYSTERY_SCORE_CAP', 100000)
+        fallback_cap = getattr(demo_config, 'DEMO_MYSTERY_SCORE_CAP', 150000)
         try:
-            default_cap = max(1, int(fallback_cap or 100000))
+            default_cap = max(1, int(fallback_cap or 150000))
             return max(1, int(getattr(self, '_demo_score_cap_value', default_cap) or default_cap))
         except Exception:
-            return 100000
+            return 150000
 
     def _should_trigger_demo_score_cap(self) -> bool:
         if not getattr(demo_config, 'IS_DEMO', False):
@@ -5747,7 +5747,7 @@ class MysteryMode(Game):
             score_manager=score_manager,
         )
         self.mode_name = t('mode_label_card_mastery')
-        self._demo_score_cap_value = max(1, int(getattr(demo_config, 'DEMO_MYSTERY_SCORE_CAP', 100000) or 100000))
+        self._demo_score_cap_value = max(1, int(getattr(demo_config, 'DEMO_MYSTERY_SCORE_CAP', 150000) or 150000))
         self._demo_score_cap_reached = False
         self._demo_score_cap_active = False
         self._demo_score_cap_prompt = DemoUpgradePrompt(self.screen)
@@ -8064,14 +8064,29 @@ class MysteryMode(Game):
         if getattr(self, '_demo_score_cap_active', False):
             prompt = getattr(self, '_demo_score_cap_prompt', None)
             if prompt is None:
+                self._demo_score_cap_active = False
                 return 'menu'
             prompt.screen = self.screen
+            # Güvenlik: panel bayrağı açık ama prompt bir şekilde pasifse
+            # (ekran yeniden oluşturma, state desync vb.) hiçbir event
+            # tüketilmez ve ESC tepkisiz kalırdı. Bu durumda yeniden göster.
+            if not prompt.is_active():
+                show_demo_score_cap_prompt(prompt)
+                prompt.screen = self.screen
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     return False
+                # Ek güvenlik: prompt event'i yutmasa bile ESC her zaman
+                # paneli kapatıp menüye dönmeli.
+                if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+                    self._demo_score_cap_active = False
+                    prompt.hide()
+                    return 'menu'
                 if prompt.handle_input(event):
                     action = prompt.consume_last_action()
-                    if action in {'confirm', 'cancel'}:
+                    # Score cap panelinde herhangi bir kapanış aksiyonu
+                    # (confirm/cancel/menu_back) menüye döner.
+                    if action is not None:
                         self._demo_score_cap_active = False
                         return 'menu'
             return True

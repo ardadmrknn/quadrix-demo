@@ -27,6 +27,10 @@ DEMO_STEAM_STORE_URL = "https://store.steampowered.com/app/4414520/Quadrix/"
 DEMO_APP_NAME = "quadrix_demo"
 FULL_APP_NAME = "quadrix_full"
 
+# Kart Ustalığı (Mystery) modunda demo skor sınırı. Bu skora ulaşıldığında
+# "Demo Tamamlandı" paneli açılır ve oyun dondurulur.
+DEMO_MYSTERY_SCORE_CAP = 150000
+
 DEMO_LOCKED_EXTRAS_MODE_IDS = {
     "Cascade Mode",
     "Hardcore Mode",

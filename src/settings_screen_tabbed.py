@@ -1084,6 +1084,34 @@ class TabbedSettingsScreen:
         resolved_key = str(tab_key or self._current_tab_key())
         return resolved_key in {'game', 'display', 'audio', 'controls'}
 
+    def _close_button_rect(self, panel: pygame.Rect | None = None) -> pygame.Rect | None:
+        """Sağ üst kapatma (×) butonu rect'i.
+
+        Normal ayar yüzeyi aktif katmanken (modal/capture yokken) görünür.
+        Tıklama semantiği ESC ile aynıdır: ``handle_input`` 'back' döner.
+        Reset butonunun sağında konumlanır; böylece reset gizlendiğinde
+        ikisi de yer değiştirmez."""
+        if self._is_modal_active():
+            return None
+        metrics = self._layout_metrics()
+        panel_rect = panel or metrics['panel']
+        button_h = self._s(34, minimum=26)
+        button_w = self._s(40, minimum=32)
+        button_x = panel_rect.right - int(metrics['title_pad_x']) - button_w
+        button_y = panel_rect.y + self._s(10, minimum=8)
+        return pygame.Rect(button_x, button_y, button_w, button_h)
+
+    def _is_modal_active(self) -> bool:
+        """Back-button tıklamasını yutması gereken herhangi bir overlay/modal."""
+        return bool(
+            getattr(self, '_waiting_for_key', False)
+            or getattr(self, '_music_picker_open', False)
+            or getattr(self, '_playlist_edit_active', False)
+            or getattr(self, '_campaign_phase_select_active', False)
+            or getattr(self, '_display_mode_confirm_active', False)
+            or getattr(self, '_vsync_prompt_active', False)
+        )
+
     def _tab_reset_button_rect(self, panel: pygame.Rect | None = None) -> pygame.Rect | None:
         if not self._can_reset_tab_defaults():
             return None
@@ -1094,7 +1122,15 @@ class TabbedSettingsScreen:
             self._s(172, minimum=130),
             min(self._s(250, minimum=176), int(panel_rect.width * 0.28)),
         )
-        button_x = panel_rect.right - int(metrics['title_pad_x']) - button_w
+        # Close butonu görünüyorsa reset'i onun soluna it; aksi halde
+        # reset eski (sağ kenar) konumunda kalır. Modal aktifken close
+        # görünmediği için reset hizası bozulmaz.
+        close_rect = self._close_button_rect(panel_rect)
+        if close_rect is not None:
+            close_gap = self._s(8, minimum=6)
+            button_x = close_rect.x - close_gap - button_w
+        else:
+            button_x = panel_rect.right - int(metrics['title_pad_x']) - button_w
         button_y = panel_rect.y + self._s(10, minimum=8)
         return pygame.Rect(button_x, button_y, button_w, button_h)
 
@@ -1232,6 +1268,52 @@ class TabbedSettingsScreen:
 
         return f'reset_tab_defaults:{tab_key}'
 
+    def _draw_close_button(self, panel: pygame.Rect) -> None:
+        """Kapatma (×) butonu — panelin sağ üstü.
+
+        Tıklama semantiği ESC ile aynıdır ('back' döner). Modal/capture
+        overlay aktifken gizlenir; böylece modal önceliğini bypass edemez.
+        """
+        button_rect = self._close_button_rect(panel)
+        if button_rect is None:
+            return
+
+        # Hover hesabı click path ile aynı normalize akıştan beslenir.
+        # Ham pygame.mouse.get_pos() Retina/HiDPI yüzeylerde hover'ı
+        # yanlış gösterebildiği için get_mouse_pos() kullanılır.
+        try:
+            mx, my = get_mouse_pos()
+        except Exception:
+            mx, my = -1, -1
+        is_hover = button_rect.collidepoint((mx, my))
+
+        # Arka plan
+        alpha = retro_style._scale_menu_alpha(200 if is_hover else 160)
+        fill = (50, 30, 36) if is_hover else (24, 20, 30)
+        btn_surf = pygame.Surface(button_rect.size, pygame.SRCALPHA)
+        btn_surf.fill((*fill, alpha))
+        self.screen.blit(btn_surf, button_rect.topleft)
+
+        # Kenarlık
+        if is_hover:
+            border = (255, 120, 120)
+            pygame.draw.rect(
+                self.screen,
+                (*border, retro_style._scale_menu_alpha(200)),
+                button_rect, 2, border_radius=10,
+            )
+        else:
+            pygame.draw.rect(self.screen, (60, 70, 95), button_rect, 1, border_radius=10)
+
+        # × glyph
+        glyph_color = (255, 230, 230) if is_hover else (210, 220, 235)
+        font = retro_style.get_fitting_font(
+            '×', self._s(22, minimum=16), button_rect.width - self._s(8, minimum=6), bold=True,
+        )
+        glyph_surf = font.render('×', True, glyph_color)
+        glyph_rect = glyph_surf.get_rect(center=button_rect.center)
+        self.screen.blit(glyph_surf, glyph_rect)
+
     def _draw_tab_reset_button(self, panel: pygame.Rect) -> None:
         self._tab_reset_btn_rect = None
         button_rect = self._tab_reset_button_rect(panel)
@@ -1239,7 +1321,14 @@ class TabbedSettingsScreen:
             return
 
         self._tab_reset_btn_rect = button_rect
-        is_hover = button_rect.collidepoint(pygame.mouse.get_pos())
+        # Hover hesabı close butonu ile aynı normalize akıştan beslenmeli.
+        # Ham pygame.mouse.get_pos() Retina/HiDPI yüzeylerde hover'ı
+        # yanlış gösterebildiği için burada da get_mouse_pos() kullanılır.
+        try:
+            hover_pos = get_mouse_pos()
+        except Exception:
+            hover_pos = (-1, -1)
+        is_hover = button_rect.collidepoint(hover_pos)
         color_code = retro_style.primary
         
         # Arka plan
@@ -2879,6 +2968,23 @@ class TabbedSettingsScreen:
             pos = normalize_mouse_pos(getattr(event, 'pos', None)) or event.pos
             opened_by_gamepad_click = bool(getattr(event, 'from_gamepad', False) and getattr(event, 'button', None) == 1)
 
+            # Close (×) butonu — modal aktif değilken ESC ile aynı semantik.
+            # _close_button_rect() modal kontrolünü kendisi yapar; modal
+            # aktifken None döner ve bu blok atlanır.
+            close_button_rect = self._close_button_rect(self._panel_rect())
+            if close_button_rect and close_button_rect.collidepoint(pos):
+                # Drag state'leri temizle (ESC akışıyla aynı)
+                self._settings_sb_drag_active = False
+                self._slider_drag_active = False
+                self._slider_drag_key = ''
+                self._slider_drag_item = None
+                self._slider_drag_bar_rect = None
+                try:
+                    self.settings_manager.save_settings()
+                except Exception:
+                    pass
+                return 'back'
+
             reset_button_rect = self._tab_reset_button_rect(self._panel_rect())
             if reset_button_rect and reset_button_rect.collidepoint(pos):
                 return self._reset_current_tab_to_defaults()
@@ -3381,7 +3487,11 @@ class TabbedSettingsScreen:
         title_text = _t('panel_settings', 'AYARLAR' if lang == 'tr' else 'SETTINGS')
         title_surf = render_text(self.font_title, title_text, True, (220, 235, 255))
         self.screen.blit(title_surf, (panel.x + int(metrics['title_pad_x']), panel.y + int(metrics['title_pad_y'])))
-        self._close_btn_rect = None
+        # Close button — sağ üstte panel başlık alanında. Modal aktifken
+        # _close_button_rect() None döner ve buton çizilmez; bu sayede
+        # capture/picker/onay overlay'leri mouse routing'i ezmez.
+        self._draw_close_button(panel)
+        self._close_btn_rect = self._close_button_rect(panel)
 
         self._draw_tab_reset_button(panel)
 

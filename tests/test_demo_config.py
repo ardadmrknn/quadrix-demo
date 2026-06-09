@@ -30,7 +30,7 @@ def test_write_demo_config_generates_demo_and_full_variants(tmp_path) -> None:
     assert 'IS_DEMO = True' in demo_source
     assert 'DEMO_STEAM_APP_ID = "4635310"' in demo_source
     assert 'DEMO_STEAM_STORE_URL = "https://store.steampowered.com/app/4414520/Quadrix/"' in demo_source
-    assert 'DEMO_MYSTERY_SCORE_CAP = 100000' in demo_source
+    assert 'DEMO_MYSTERY_SCORE_CAP = 150000' in demo_source
     assert 'get_card_selection_level_interval' not in demo_source
     assert 'DEMO_CARD_SELECTION_LEVEL_INTERVAL' not in demo_source
     assert compile(demo_source, str(output_path), 'exec')
@@ -38,7 +38,7 @@ def test_write_demo_config_generates_demo_and_full_variants(tmp_path) -> None:
     writer.write_demo_config(output_path=output_path, mode='full')
     full_source = output_path.read_text(encoding='utf-8')
     assert 'IS_DEMO = False' in full_source
-    assert 'DEMO_MYSTERY_SCORE_CAP = 100000' in full_source
+    assert 'DEMO_MYSTERY_SCORE_CAP = 150000' in full_source
     assert 'get_card_selection_level_interval' not in full_source
     assert 'DEMO_CARD_SELECTION_LEVEL_INTERVAL' not in full_source
     assert compile(full_source, str(output_path), 'exec')
@@ -56,7 +56,7 @@ def test_generated_demo_config_applies_demo_app_name(tmp_path) -> None:
 
     assert applied == 'quadrix_demo'
     assert env['QUADRIX_APP_NAME'] == 'quadrix_demo'
-    assert demo_config.DEMO_MYSTERY_SCORE_CAP == 100000
+    assert demo_config.DEMO_MYSTERY_SCORE_CAP == 150000
     assert not hasattr(demo_config, 'get_card_selection_level_interval')
     assert not hasattr(demo_config, 'DEMO_CARD_SELECTION_LEVEL_INTERVAL')
 
@@ -73,7 +73,7 @@ def test_generated_full_config_applies_full_app_name(tmp_path) -> None:
 
     assert applied == 'quadrix_full'
     assert env['QUADRIX_APP_NAME'] == 'quadrix_full'
-    assert demo_config.DEMO_MYSTERY_SCORE_CAP == 100000
+    assert demo_config.DEMO_MYSTERY_SCORE_CAP == 150000
     assert not hasattr(demo_config, 'get_card_selection_level_interval')
     assert not hasattr(demo_config, 'DEMO_CARD_SELECTION_LEVEL_INTERVAL')
 
