@@ -5697,6 +5697,8 @@ class MysteryMode(Game):
 
     def wants_mouse_visible(self) -> bool:
         # Kart seçimi, parça seçimi veya atölye popup gibi overlay'lerde mouse görünür olmalı.
+        if getattr(self, '_demo_score_cap_active', False):
+            return True
         if getattr(self, '_piece_selection_active', False):
             return True
         if getattr(self, '_card_workshop_active', False):
@@ -8664,6 +8666,14 @@ class MysteryMode(Game):
             if prompt is not None:
                 prompt.screen = self.screen
                 prompt.draw()
+            # Diğer kart-modu overlay'leri (parça seçimi, atölye, sniper) gibi
+            # fare imlecini her frame görünür yap. Bu, ana döngünün
+            # wants_mouse_visible() zamanlamasından bağımsız olarak imlecin
+            # panelde her zaman görünmesini garanti eder (Windows + macOS).
+            try:
+                pygame.mouse.set_visible(True)
+            except Exception:
+                pass
     
     def _draw_hole_hunter_overlay(self) -> None:
         """Delik Avcısı için sütun seçim overlay'i — küçük ve lokal."""

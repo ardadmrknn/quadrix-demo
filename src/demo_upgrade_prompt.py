@@ -53,6 +53,7 @@ class DemoUpgradePrompt:
         self._background_snapshot: pygame.Surface | None = None
         self._confirm_action = 'confirm'
         self._cancel_action = 'cancel'
+        self._backdrop_dim: int | None = None
 
     def is_active(self) -> bool:
         return bool(self.active)
@@ -69,6 +70,7 @@ class DemoUpgradePrompt:
         outside_click_closes: bool = False,
         confirm_action: str = 'confirm',
         cancel_action: str = 'cancel',
+        backdrop_dim: int | None = None,
     ) -> None:
         self.active = True
         self.eyebrow = str(eyebrow or '')
@@ -84,6 +86,14 @@ class DemoUpgradePrompt:
         self._pressed_action = None
         self._confirm_action = str(confirm_action or 'confirm')
         self._cancel_action = str(cancel_action or 'cancel')
+        # Oyun-içi (ör. demo skor sınırı) bağlamlarda diğer paneller gibi
+        # (duraklatma / çıkış onayı) tam-ekran koyu overlay istenir.
+        # None bırakılırsa menü/ekstra kilit promptlarının hafif vinyet
+        # görünümü korunur.
+        if backdrop_dim is None:
+            self._backdrop_dim = None
+        else:
+            self._backdrop_dim = max(0, min(255, int(backdrop_dim)))
         self._capture_background_snapshot()
 
     def hide(self) -> None:
@@ -92,6 +102,7 @@ class DemoUpgradePrompt:
         self.cancel_rect = None
         self._pressed_action = None
         self._background_snapshot = None
+        self._backdrop_dim = None
 
     def consume_last_action(self) -> str | None:
         action = self._last_action
@@ -384,7 +395,13 @@ class DemoUpgradePrompt:
         s = lambda value, minimum=1: max(minimum, int(round(value * scale)))
 
         overlay = pygame.Surface((width, height), pygame.SRCALPHA)
-        overlay.fill((6, 10, 22, 74))
+        # Oyun-içi bağlamda (demo skor sınırı) diğer paneller gibi koyu,
+        # opak bir overlay; menü/ekstra promptlarında hafif vinyet tonu.
+        dim = getattr(self, '_backdrop_dim', None)
+        if dim is not None:
+            overlay.fill((0, 0, 0, dim))
+        else:
+            overlay.fill((6, 10, 22, 74))
         self.screen.blit(overlay, (0, 0))
 
         vignette = pygame.Surface((width, height), pygame.SRCALPHA)
@@ -758,4 +775,6 @@ def show_demo_score_cap_prompt(prompt: DemoUpgradePrompt) -> None:
         confirm_label=t('demo_open_steam', default="Steam'de Aç"),
         cancel_label=t('demo_back_to_menu', default='Menüye Dön'),
         accent_color=UIColors.NEON_GOLD,
+        # Oyun-içi panel: duraklatma/çıkış onayı gibi tam-ekran koyu overlay.
+        backdrop_dim=185,
     )

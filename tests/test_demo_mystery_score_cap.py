@@ -186,3 +186,40 @@ def test_demo_score_cap_esc_recovers_from_inactive_prompt_desync(monkeypatch):
 
     assert result == 'menu'
     assert mode._demo_score_cap_active is False
+
+
+def test_demo_score_cap_prompt_requests_solid_dark_backdrop():
+    # Skor sınırı paneli oyun-içi olduğu için duraklatma/çıkış panelleri gibi
+    # tam-ekran koyu overlay (dim=185) istemeli; menü kilit promptları None.
+    _, prompt_module = _import_modules()
+    prompt = prompt_module.DemoUpgradePrompt(pygame.Surface((640, 480)))
+
+    prompt_module.show_demo_score_cap_prompt(prompt)
+    assert prompt._backdrop_dim == 185
+
+    # Menü/ekstra kilit promptu hafif vinyet tonunu korur (dim yok).
+    prompt_module.show_demo_full_lock_prompt(prompt)
+    assert prompt._backdrop_dim is None
+
+    # hide() dim'i sıfırlamalı.
+    prompt_module.show_demo_score_cap_prompt(prompt)
+    prompt.hide()
+    assert prompt._backdrop_dim is None
+
+
+def test_demo_score_cap_draw_forces_mouse_cursor_visible():
+    # Panel çizilirken fare imleci her frame görünür yapılmalı (Windows+macOS).
+    # draw() tam akışı ağır board/UI kurulumu gerektirdiği için, score-cap
+    # çizim bloğunun imleci görünür yaptığını kaynak seviyesinde doğrularız.
+    import inspect
+    extra_modes_module, _ = _import_modules()
+
+    source = inspect.getsource(extra_modes_module.MysteryMode.draw_mode_overlay)
+    # _demo_score_cap_active bloğu içinde set_visible(True) çağrısı bulunmalı.
+    assert '_demo_score_cap_active' in source
+    cap_index = source.index('_demo_score_cap_active')
+    # İlgili bloğun yakınında imleç görünürlük çağrısı olmalı.
+    assert 'set_visible(True)' in source[cap_index:], (
+        'Score cap çizim bloğu fare imlecini görünür yapmalı.'
+    )
+
