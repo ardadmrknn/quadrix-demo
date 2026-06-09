@@ -267,6 +267,10 @@ class ExtrasScreen:
         self._sb_drag_active: bool = False
         self._sb_drag_offset_y: int = 0
         self._cached_max_scroll: int = 0
+        # Mouse Geri butonu (sol üst). draw() her frame yeniden hesaplar.
+        # Click semantiği KEYDOWN(K_ESCAPE) ile birebir aynı: 'Geri' döndürür.
+        self._back_rect: 'pygame.Rect | None' = None
+        self._back_hover: bool = False
         self.background_fx = get_shared_falling_blocks_layer('default')
         self._demo_upgrade_prompt = DemoUpgradePrompt(screen)
 
@@ -447,6 +451,10 @@ class ExtrasScreen:
         
         elif event.type == pygame.MOUSEMOTION:
             mouse_pos = normalize_mouse_pos(getattr(event, 'pos', None)) or event.pos
+            # Back affordance hover (event-based; draw() de her frame doğrular)
+            self._back_hover = bool(
+                self._back_rect is not None and self._back_rect.collidepoint(mouse_pos)
+            )
             # Scrollbar drag
             if self._sb_drag_active and self._sb_container_rect:
                 sb_c = self._sb_container_rect
@@ -472,6 +480,11 @@ class ExtrasScreen:
         elif event.type == pygame.MOUSEBUTTONDOWN:
             if event.button == 1:
                 mouse_pos = normalize_mouse_pos(getattr(event, 'pos', None)) or event.pos
+                # Geri butonu (sol üst) — KEYDOWN(K_ESCAPE) ile aynı action
+                # string'i: ExtrasScreen tarihsel olarak 'Geri' döndürür ve
+                # main.py sadece bunu bekliyor; semantiği koru.
+                if self._back_rect is not None and self._back_rect.collidepoint(mouse_pos):
+                    return 'Geri'
                 # Scrollbar thumb drag başlat
                 if self._sb_thumb_rect and self._sb_thumb_rect.collidepoint(mouse_pos):
                     self._sb_drag_active = True
@@ -569,6 +582,9 @@ class ExtrasScreen:
         # Başlık - diğer pencerelerle aynı stil (örn. Başarılar)
         title_rect = retro_style.draw_title(self.screen, t('extras_title'), (width // 2, s(60)), emoji=None)
 
+        # Mouse Geri butonu — sol üst, başlık ortası ile çakışmaz.
+        self._draw_back_button(s)
+
         # Grid başlangıç
         start_y = title_rect.bottom + s(34)
         visible_h = max(1, height - start_y - s(20))
@@ -632,6 +648,27 @@ class ExtrasScreen:
             self._demo_upgrade_prompt.draw()
 
         # Footer intentionally omitted
+
+    
+    def _draw_back_button(self, s) -> None:
+        """Sol üst görünür Geri butonu (mouse affordance).
+
+        ESC ile aynı semantiği taşır; aksi halde Ekstralar ekranı yalnızca
+        klavye ile geri dönülebilir bir tasarımdı. Footer kasıtlı olarak
+        kullanılmadığı için buton başlık hizasında tutulur. Görsel format
+        ana menüdeki sağ alt 'Çık' tuşu ile aynıdır (ortak helper).
+
+        ``s`` çağıran ekrandan gelen ölçek lambda'sıdır (draw() ile aynı)."""
+        try:
+            mouse_pos = get_mouse_pos()
+        except Exception:
+            mouse_pos = (-1, -1)
+        prev_rect = self._back_rect
+        hover = bool(prev_rect is not None and prev_rect.collidepoint(mouse_pos))
+
+        rect = _draw_shared_back_button(self.screen, s, hover=hover, retro_style=retro_style)
+        self._back_rect = rect
+        self._back_hover = bool(rect.collidepoint(mouse_pos))
 
     
     def _draw_modern_mode_card(self, rect, item, selected, hover_progress):

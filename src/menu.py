@@ -7349,6 +7349,10 @@ class AchievementScreen:
         self.selected_category = 'all'
         self._category_tab_rects: dict[str, pygame.Rect] = {}
         self._category_hover: str | None = None
+        # Mouse Geri butonu (sol üst). draw() her frame yeniden hesaplar.
+        # Click semantiği KEYDOWN(K_ESCAPE) ile aynı: 'back'.
+        self._back_rect: 'pygame.Rect | None' = None
+        self._back_hover: bool = False
         # Menüyle aynı shared katman: ekran geçişlerinde animasyon kesilmesin.
         self.background_fx = get_shared_falling_blocks_layer('default')
 
@@ -7565,6 +7569,9 @@ class AchievementScreen:
         elif event.type == pygame.MOUSEMOTION:
             mouse_pos = normalize_mouse_pos(getattr(event, 'pos', None)) or event.pos
             self._category_hover = self._get_category_at_pos(mouse_pos)
+            self._back_hover = bool(
+                self._back_rect is not None and self._back_rect.collidepoint(mouse_pos)
+            )
             if self._sb_drag_active and self._sb_container_rect:
                 _az = max(10, 10 + 2)
                 track_y = self._sb_container_rect.top + _az + 2
@@ -7577,6 +7584,10 @@ class AchievementScreen:
         elif event.type == pygame.MOUSEBUTTONDOWN:
             if event.button == 1:
                 mouse_pos = normalize_mouse_pos(getattr(event, 'pos', None)) or event.pos
+                # Mouse Geri butonu (sol üst) — kategori değişiminden ÖNCE
+                # kontrol edilir; ESC ile aynı 'back' aksiyonunu döndürür.
+                if self._back_rect is not None and self._back_rect.collidepoint(mouse_pos):
+                    return 'back'
                 category_id = self._get_category_at_pos(mouse_pos)
                 if category_id is not None:
                     self._select_category(category_id)
@@ -7599,6 +7610,23 @@ class AchievementScreen:
                 self._sb_drag_offset_y = 0
         return None
     
+    def _draw_back_button(self, _s) -> None:
+        """Sol üst Geri affordance — ESC ile aynı semantik ('back').
+
+        Hit-zone draw() her frame yeniden hesaplar; hover live (normalize)
+        cursor ile yenilenir. Görsel format ana menüdeki sağ alt 'Çık'
+        tuşu ile aynıdır (ortak helper)."""
+        try:
+            live_pos = get_mouse_pos()
+        except Exception:
+            live_pos = (-1, -1)
+        prev_rect = self._back_rect
+        hover = bool(prev_rect is not None and prev_rect.collidepoint(live_pos))
+
+        rect = _draw_shared_back_button(self.screen, _s, hover=hover, retro_style=retro_style)
+        self._back_rect = rect
+        self._back_hover = bool(rect.collidepoint(live_pos))
+    
     def draw(self):
         """Başarı ekranını çiz"""
         self._refresh_fonts_for_language()
@@ -7610,6 +7638,10 @@ class AchievementScreen:
         copy = self._copy_for_language()
 
         title_rect = retro_style.draw_title(self.screen, t('achievements_title'), (width // 2, _s(70)), emoji='☆')
+
+        # Mouse Geri chip'i — başlık ortada; sol üst köşe boş ve kategori
+        # tab'larının dışındadır.
+        self._draw_back_button(_s)
 
         def _ellipsize(text: str, font: pygame.font.Font, max_width: int) -> str:
             if max_width <= 0:
@@ -9993,6 +10025,12 @@ class BlockWorkshopScreen:
         self.saved_block_items = []
         self._refresh_manager_items(reset_selection=True)
 
+        # Mouse Geri butonu (sol üst). draw() her frame yeniden hesaplar.
+        # set_mode_dialog veya manager_open modallarındayken çizilmez ve
+        # click routing modal handler'ına gider.
+        self._back_rect: 'pygame.Rect | None' = None
+        self._back_hover: bool = False
+
     def _ui_scale(self) -> float:
         return get_projected_effective_scale(
             self.screen,
@@ -10101,6 +10139,13 @@ class BlockWorkshopScreen:
                 self.cursor_y = self.board_height - 1
         elif event.type == pygame.MOUSEBUTTONDOWN:
             pos = normalize_mouse_pos(getattr(event, 'pos', None)) or event.pos
+            if event.button == 1:
+                # Mouse Geri butonu (sol üst) — ESC ile aynı semantik.
+                # Hücre boyamasından ÖNCE kontrol; modal aktifken
+                # _back_rect None olduğu için bu yol tetiklenmez.
+                if self._back_rect is not None and self._back_rect.collidepoint(pos):
+                    self._save_board(auto=True)
+                    return 'back'
             cell = self._pos_to_cell(pos)
             if cell:
                 self.cursor_x, self.cursor_y = cell
@@ -10109,8 +10154,11 @@ class BlockWorkshopScreen:
                 elif event.button == 3:
                     self._erase_cell(*cell)
         elif event.type == pygame.MOUSEMOTION:
+            pos = normalize_mouse_pos(getattr(event, 'pos', None)) or event.pos
+            self._back_hover = bool(
+                self._back_rect is not None and self._back_rect.collidepoint(pos)
+            )
             if event.buttons[0] or event.buttons[2]:
-                pos = normalize_mouse_pos(getattr(event, 'pos', None)) or event.pos
                 cell = self._pos_to_cell(pos)
                 if cell:
                     self.cursor_x, self.cursor_y = cell
@@ -10209,11 +10257,36 @@ class BlockWorkshopScreen:
             self.screen.blit(note, note_rect)
             self.message_timer -= 1
 
+        # Mouse Geri butonu — yalnızca üst yüzey aktifken görünür ve aktif.
+        # Modal overlay'ler aktifse _back_rect None'a düşürülür ki click
+        # routing modalı bypass edemesin.
+        if self.manager_open or self.set_mode_dialog:
+            self._back_rect = None
+        else:
+            self._draw_back_button(_s)
+
         # Overlay'ler
         if self.manager_open:
             self._draw_manager_overlay(width, height)
         if self.set_mode_dialog:
             self._draw_set_mode_overlay(width, height)
+
+    def _draw_back_button(self, _s) -> None:
+        """Sol üst Geri affordance — ESC ile aynı semantik ('back').
+
+        Modal overlay öncelik kuralını caller _back_rect'i None'a düşürerek
+        korur. Bu metot sadece çizimi yapar. Görsel format ana menüdeki
+        sağ alt 'Çık' tuşu ile aynıdır (ortak helper)."""
+        try:
+            live_pos = get_mouse_pos()
+        except Exception:
+            live_pos = (-1, -1)
+        prev_rect = self._back_rect
+        hover = bool(prev_rect is not None and prev_rect.collidepoint(live_pos))
+
+        rect = _draw_shared_back_button(self.screen, _s, hover=hover, retro_style=retro_style)
+        self._back_rect = rect
+        self._back_hover = bool(rect.collidepoint(live_pos))
 
     def _draw_board_cells(self, board_rect, cell_size):
         """Board hücrelerini modern gradient stilinde çiz"""
@@ -12695,6 +12768,11 @@ class CreditsScreen:
         # Testçiler popup durumu
         self.testers_popup_open = False
         self.testers_card_rect = None
+        # Mouse Geri butonu (sol üst). Popup açıkken çizilmez ve click
+        # routing bypass etmez — ESC zaten popup'ı önce kapatır, mouse
+        # back de aynı katman önceliğine saygı duyar.
+        self._back_rect: 'pygame.Rect | None' = None
+        self._back_hover: bool = False
         
         # 3 ana kart - Geliştiriciler üstte büyük, diğerleri altta
         self.team_cards = [
@@ -12911,6 +12989,10 @@ class CreditsScreen:
                 
         elif event.type == pygame.MOUSEMOTION:
             self.mouse_pos = normalize_mouse_pos(getattr(event, 'pos', None)) or event.pos
+            self._back_hover = bool(
+                self._back_rect is not None
+                and self._back_rect.collidepoint(self.mouse_pos)
+            )
         
         elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             pos = normalize_mouse_pos(getattr(event, 'pos', None)) or event.pos
@@ -12920,6 +13002,12 @@ class CreditsScreen:
                 if not popup_rect.collidepoint(pos):
                     self.testers_popup_open = False
                 return None
+
+            # Mouse Geri butonu — yalnızca normal credits yüzeyinde aktif.
+            # Popup açıkken self._back_rect None'a düşürülür (draw'da çizilmez)
+            # ve buraya zaten popup-outside-click branch'i girer.
+            if self._back_rect is not None and self._back_rect.collidepoint(pos):
+                return 'back'
             
             # Testçiler kartına tıklama kontrolü
             if self.testers_card_rect and self.testers_card_rect.collidepoint(pos):
@@ -13144,9 +13232,35 @@ class CreditsScreen:
         esc_surf = render_text(self.font_footer, t('credits_esc_hint'), True, (120, 130, 150))
         self.screen.blit(esc_surf, esc_surf.get_rect(center=(width // 2, footer_y + s(18))))
         
+        # Mouse Geri butonu — yalnızca popup kapalıyken görünür ve aktif.
+        # Popup açıkken _back_rect None'a düşürülür; bu hem çizimi hem
+        # click routing'i engeller (handler popup-outside-click branch'ine
+        # girer ve popup'ı kapatır).
+        if self.testers_popup_open:
+            self._back_rect = None
+        else:
+            self._draw_back_button(s)
+        
         # === TESTÇILER POPUP ===
         if self.testers_popup_open:
             self._draw_testers_popup()
+    
+    def _draw_back_button(self, s) -> None:
+        """Sol üst Geri affordance — ESC ile aynı semantik ('back').
+
+        Popup öncelik kuralını _draw_back_button çağrısı dışından
+        (caller'da) korur; bu metot sadece çizimi yapar. Görsel format
+        ana menüdeki sağ alt 'Çık' tuşu ile aynıdır (ortak helper)."""
+        try:
+            live_pos = get_mouse_pos()
+        except Exception:
+            live_pos = (-1, -1)
+        prev_rect = self._back_rect
+        hover = bool(prev_rect is not None and prev_rect.collidepoint(live_pos))
+
+        rect = _draw_shared_back_button(self.screen, s, hover=hover, retro_style=retro_style)
+        self._back_rect = rect
+        self._back_hover = bool(rect.collidepoint(live_pos))
     
     def _draw_testers_popup(self):
         """Oyun testçileri popup'ını çiz"""
