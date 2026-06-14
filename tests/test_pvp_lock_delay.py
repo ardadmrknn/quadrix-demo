@@ -108,68 +108,78 @@ def test_local_pvp_horizontal_move_does_not_extend_lock_delay_forever():
     game.current_piece1 = _grounded_o_piece()
     game.p1_grounded = True
     game.p1_lock_timer = DEFAULT_LOCK_DELAY - 1
+    game.p1_lock_reset_count = 0
     game.lock_and_new_piece = lambda player: calls.append(player)
 
+    # 1. hareket: lock_timer sıfırlanır.
     assert game._try_move_right_p1() is True
+    assert game.p1_lock_timer == 0.0
+    assert game.p1_lock_reset_count == 1
+
+    # 4 hareket daha yaparak limiti (5) tüketelim.
+    for i in range(4):
+        if i % 2 == 0:
+            game._try_move_left_p1()
+        else:
+            game._try_move_right_p1()
+
+    assert game.p1_lock_reset_count == 5
+
+    # lock_timer'ı tekrar set edelim
+    game.p1_lock_timer = DEFAULT_LOCK_DELAY - 1
+    # 6. hareket: artık limit dolduğu için lock_timer sıfırlanmaz.
+    game._try_move_right_p1()
     assert game.p1_lock_timer == DEFAULT_LOCK_DELAY - 1
 
-    game._update_lock_delay_for_player(1, 1)
 
-    assert calls == [1]
-
-
-def test_local_pvp_player2_horizontal_move_does_not_reset_lock_timer():
+def test_local_pvp_player2_horizontal_move_resets_lock_timer_up_to_limit():
     game = _make_lock_delay_game()
     calls: list[int] = []
     game.current_piece2 = _grounded_o_piece()
     game.p2_grounded = True
     game.p2_lock_timer = DEFAULT_LOCK_DELAY - 1
+    game.p2_lock_reset_count = 0
     game.lock_and_new_piece = lambda player: calls.append(player)
 
     assert game._try_move_left_p2() is True
-    assert game.p2_lock_timer == DEFAULT_LOCK_DELAY - 1
-
-    game._update_lock_delay_for_player(2, 1)
-
-    assert calls == [2]
+    assert game.p2_lock_timer == 0.0
 
 
-def test_local_pvp_rotate_does_not_reset_grounded_lock_timer():
+def test_local_pvp_rotate_resets_grounded_lock_timer_up_to_limit():
     game = _make_lock_delay_game()
     calls: list[int] = []
     game.current_piece1 = _grounded_o_piece()
     game.p1_grounded = True
     game.p1_lock_timer = DEFAULT_LOCK_DELAY - 1
+    game.p1_lock_reset_count = 0
     game.lock_and_new_piece = lambda player: calls.append(player)
 
     assert game._try_rotate_p1() is True
-    assert game.p1_lock_timer == DEFAULT_LOCK_DELAY - 1
-
-    game._update_lock_delay_for_player(1, 1)
-
-    assert calls == [1]
+    assert game.p1_lock_timer == 0.0
 
 
-def test_online_pvp_horizontal_move_does_not_reset_grounded_lock_timer():
+def test_online_pvp_horizontal_move_resets_grounded_lock_timer_up_to_limit():
     game = OnlinePvPGame.__new__(OnlinePvPGame)
     game.my_board = Board()
     game.my_piece = _grounded_o_piece()
     game.lock_timer = DEFAULT_LOCK_DELAY - 1
+    game.lock_reset_count = 0
     game._send_piece_position = lambda: None
 
     game._move_horizontal(1)
 
-    assert game.lock_timer == DEFAULT_LOCK_DELAY - 1
+    assert game.lock_timer == 0.0
 
 
-def test_online_pvp_rotate_does_not_reset_grounded_lock_timer():
+def test_online_pvp_rotate_resets_grounded_lock_timer_up_to_limit():
     game = OnlinePvPGame.__new__(OnlinePvPGame)
     game.my_board = Board()
     game.my_piece = _grounded_o_piece()
     game.lock_timer = DEFAULT_LOCK_DELAY - 1
+    game.lock_reset_count = 0
     game.sound = _SilentSound()
     game._send_piece_position = lambda: None
 
     game._rotate_piece(1)
 
-    assert game.lock_timer == DEFAULT_LOCK_DELAY - 1
+    assert game.lock_timer == 0.0

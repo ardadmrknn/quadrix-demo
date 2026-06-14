@@ -48,6 +48,30 @@ EXTRA_COLORS = [
     (255, 128, 0),    # Domino - Turuncu
     (255, 215, 0)     # BigSquare (3x3) - Altın
 ]
+# J, L, S, Z, T parçaları için SRS Kicks (Pygame koordinat sistemine göre -y yukarıdır)
+SRS_KICKS_NORMAL = {
+    # (eski_durum, yeni_durum): [(dx, dy), (dx, dy), (dx, dy), (dx, dy), (dx, dy)]
+    (0, 1): [(0, 0), (-1, 0), (-1, -1), (0, 2), (-1, 2)],
+    (1, 0): [(0, 0), (1, 0), (1, 1), (0, -2), (1, -2)],
+    (1, 2): [(0, 0), (1, 0), (1, 1), (0, -2), (1, -2)],
+    (2, 1): [(0, 0), (-1, 0), (-1, -1), (0, 2), (-1, 2)],
+    (2, 3): [(0, 0), (1, 0), (1, -1), (0, 2), (1, 2)],
+    (3, 2): [(0, 0), (-1, 0), (-1, 1), (0, -2), (-1, -2)],
+    (3, 0): [(0, 0), (-1, 0), (-1, 1), (0, -2), (-1, -2)],
+    (0, 3): [(0, 0), (1, 0), (1, -1), (0, 2), (1, 2)],
+}
+
+# I parçası için SRS Kicks (Pygame koordinat sistemine göre -y yukarıdır)
+SRS_KICKS_I = {
+    (0, 1): [(0, 0), (-2, 0), (1, 0), (-2, 1), (1, -2)],
+    (1, 0): [(0, 0), (2, 0), (-1, 0), (2, -1), (-1, 2)],
+    (1, 2): [(0, 0), (-1, 0), (2, 0), (-1, -2), (2, 1)],
+    (2, 1): [(0, 0), (1, 0), (-2, 0), (1, 2), (-2, -1)],
+    (2, 3): [(0, 0), (2, 0), (-1, 0), (2, -1), (-1, 2)],
+    (3, 2): [(0, 0), (-2, 0), (1, 0), (-2, 1), (1, -2)],
+    (3, 0): [(0, 0), (1, 0), (-2, 0), (1, 2), (-2, -1)],
+    (0, 3): [(0, 0), (-1, 0), (2, 0), (-1, -2), (2, 1)],
+}
 
 SHAPE_NAMES = ['I', 'O', 'T', 'S', 'Z', 'J', 'L']
 EXTRA_SHAPE_NAMES = ['Plus', 'Y', 'Domino', 'BigSquare']
@@ -138,6 +162,59 @@ class Piece:
                     self.color_matrix = None
             self.rotation_state = (self.rotation_state + 1) % 4
     
+    def try_rotate_srs(self, board, direction: int = 1, check_func=None) -> bool:
+        """
+        SRS (Super Rotation System) kurallarına göre parçayı döndürmeyi dener.
+        Başarılıysa parçanın konumunu ve rotation_state'ini güncelleyip True döner.
+        Başarısızsa tüm değişiklikleri geri alıp False döner.
+        
+        Args:
+            board: Oyun tahtası
+            direction: 1 (Saat yönü), -1 (Saat yönünün tersi)
+            check_func: Özel konum kontrol fonksiyonu (örn: co-op'taki oyuncu bazlı sınırlar için)
+        """
+        original_x = self.x
+        original_y = self.y
+        original_state = self.rotation_state
+        
+        if check_func is None:
+            check_func = lambda p: board.is_valid_position(p)
+            
+        # O parçası wall kick yapmaz, sadece döndürme testi yapılır
+        if self.name == 'O':
+            self.rotate(direction)
+            if check_func(self):
+                return True
+            self.rotate(-direction)
+            return False
+            
+        # Parçayı geçici olarak döndür
+        self.rotate(direction)
+        new_state = self.rotation_state
+        
+        # Parça tipine göre kick tablosunu seç
+        if self.name == 'I':
+            kicks = SRS_KICKS_I
+        else:
+            # Diğer standart parçalar ve Quadrix 2 ekstra parçaları (Plus, Y, Domino, BigSquare)
+            # NORMAL kick tablosunu fallback olarak kullanır
+            kicks = SRS_KICKS_NORMAL
+            
+        transition = (original_state, new_state)
+        test_vectors = kicks.get(transition, [(0, 0)])
+        
+        for dx, dy in test_vectors:
+            self.x = original_x + dx
+            self.y = original_y + dy
+            if check_func(self):
+                return True
+                
+        # Hiçbir test geçmedi, değişiklikleri geri al
+        self.x = original_x
+        self.y = original_y
+        self.rotate(-direction)
+        return False
+
     def get_shape(self):
         """Parçanın mevcut şekil matrisini döndür."""
         return self.shape

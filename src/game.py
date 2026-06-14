@@ -225,6 +225,7 @@ def prewarm_common_mode_entry_backgrounds(settings_manager=None) -> list[str]:
 
 class Game:
     """Ana oyun sınıfı"""
+    lock_reset_count = 0
 
     def _active_ui_size(self) -> tuple[int, int]:
         """Aktif canvas boyutunu döndür; stale window ölçüsüne düşmemeye çalış."""
@@ -890,6 +891,7 @@ class Game:
         
         # Lock Delay Sistemi (Yere Değince Kilitlenme Gecikmesi)
         self.lock_timer = 0
+        self.lock_reset_count = 0
         self.lock_delay = DEFAULT_LOCK_DELAY  # Sabitler modülünden
         self.enable_lock_delay = True  # Her zaman açık
         self.game_time = 0  # Toplam oyun süresi
@@ -2137,40 +2139,14 @@ class Game:
                 # Döndürme
                 # Döndürme
                 elif event.key in self._action_keys(bindings, 'rotate'):
-                    original_x = self.current_piece.x
-                    self.current_piece.rotate()
-                    
-                    success = True
-
-                    # Döndürme geçerli değilse geri al
-                    if not self.board.is_valid_position(self.current_piece):
-                        success = False
-                        # Wall kick dene (kenara çarpıyorsa içeri kaydır)
-                        for dx in [1, -1, 2, -2]:
-                            self.current_piece.x = original_x + dx
-                            if self.board.is_valid_position(self.current_piece):
-                                success = True
-                                break
-                        if not success:
-                            # Floor kick: zemine/derin kuyuya yaslı parçalar (özellikle I)
-                            # yatay kick ile dönemeyebilir; yukarı iterek (dy) yer açmayı dene.
-                            self.current_piece.x = original_x
-                            original_y = self.current_piece.y
-                            for dy in [-1, -2]:
-                                self.current_piece.y = original_y + dy
-                                if self.board.is_valid_position(self.current_piece):
-                                    success = True
-                                    break
-                            if not success:
-                                # Hiçbiri işe yaramadı, güvenli geri-alma
-                                self.current_piece.y = original_y
-                                self.current_piece.x = original_x
-                                for _ in range(3):
-                                    # Rotate 3 times to undo the rotation (equivalent to rotate reverse)
-                                    self.current_piece.rotate()
-                    
+                    success = self.current_piece.try_rotate_srs(self.board, 1)
                     if success:
                         self.sound.play('rotate')
+                        # Lock Delay Reset
+                        if not self.board.is_valid_position(self.current_piece, dy=1):
+                            if self.lock_reset_count < 5:
+                                self.lock_timer = 0
+                            self.lock_reset_count += 1
                 elif event.key == bindings['hold2']:
                     # Second pocket (V)
                     # Only operate if the perk is active
@@ -2414,6 +2390,11 @@ class Game:
             self.current_piece.x += 1
             return False
             
+        # Lock Delay Reset: parça yerdeyse ve limit aşılmadıysa sıfırla
+        if not self.board.is_valid_position(self.current_piece, dy=1):
+            if self.lock_reset_count < 5:
+                self.lock_timer = 0
+            self.lock_reset_count += 1
         return True
     
     def _try_move_right(self):
@@ -2426,6 +2407,11 @@ class Game:
             self.current_piece.x -= 1
             return False
             
+        # Lock Delay Reset: parça yerdeyse ve limit aşılmadıysa sıfırla
+        if not self.board.is_valid_position(self.current_piece, dy=1):
+            if self.lock_reset_count < 5:
+                self.lock_timer = 0
+            self.lock_reset_count += 1
         return True
     
     def _perform_das_move(self, direction):
@@ -4124,6 +4110,7 @@ class Game:
         # Yeni aktif parça için lock-delay state'ini temizle
         self.grounded = False
         self.lock_timer = 0
+        self.lock_reset_count = 0
         self.can_hold = True  # Yeni parçada tekrar hold kullanılabilir
         self.can_hold2 = True
         self.fall_speed = self.get_current_speed()
@@ -4446,6 +4433,7 @@ class Game:
                     # Havada
                     self.grounded = False
                     self.lock_timer = 0
+                    self.lock_reset_count = 0
             except Exception:
                 pass
         
@@ -4491,6 +4479,9 @@ class Game:
                         self.grounded = True
                 else:
                     self.grounded = True
+            else:
+                self.lock_reset_count = 0
+                self.lock_timer = 0
     
     def _draw_base_scene(self):
         """Temel oyun sahnesini flip çağrısı olmadan çiz."""
@@ -6541,6 +6532,8 @@ class Game:
             self.sound.unduck_music()
         self.fall_time = 0
         self.fall_speed = self.get_initial_speed()
+        self.lock_timer = 0
+        self.lock_reset_count = 0
         self.game_time = 0
         self.line_clear_animation = 0
         self.combo_message = ""

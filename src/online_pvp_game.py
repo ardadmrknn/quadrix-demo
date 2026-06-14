@@ -321,6 +321,7 @@ class OnlineState:
 
 class OnlinePvPGame:
     """Steam P2P üzerinden Online 1v1 Tetris maçı."""
+    lock_reset_count = 0
 
     @staticmethod
     def _is_focus_loss_event(event) -> bool:
@@ -543,6 +544,7 @@ class OnlinePvPGame:
         # Zamanlama
         self.fall_timer = 0
         self.lock_timer = 0
+        self.lock_reset_count = 0
         self.countdown_timer = 0.0
         self.countdown_value = 3
         self.state_snapshot_timer = 0.0
@@ -4057,6 +4059,7 @@ class OnlinePvPGame:
 
         self.hold_used = True
         self.lock_timer = 0
+        self.lock_reset_count = 0
         try:
             self.sound.play('hold')
         except Exception:
@@ -4608,6 +4611,7 @@ class OnlinePvPGame:
                     if self.soft_dropping:
                         self.my_board.score += 1
                     self.lock_timer = 0
+                    self.lock_reset_count = 0
                     self._send_piece_position()
 
         # Kilitleme gecikmesi — her frame kontrol et (fall_timer dışında)
@@ -4618,6 +4622,7 @@ class OnlinePvPGame:
                     self._lock_piece()
             else:
                 self.lock_timer = 0
+                self.lock_reset_count = 0
 
         # DAS (yatay basılı tutma)
         self._update_das(delta_time)
@@ -4732,6 +4737,7 @@ class OnlinePvPGame:
         self.my_next_piece = self._get_next_piece()
         self.next_piece = self.my_next_piece
         self.lock_timer = 0
+        self.lock_reset_count = 0
         self.hold_used = False  # Yeni parçada hold tekrar kullanılabilir
 
         # Yeni parça pozisyonunu hemen gönder
@@ -4762,6 +4768,12 @@ class OnlinePvPGame:
             if self.my_board.is_valid_position(self.my_piece, dx=dx):
                 self.my_piece.x += dx
                 self._send_piece_position()
+                
+                # Lock Delay Reset: parça yerdeyse ve limit aşılmadıysa sıfırla
+                if not self.my_board.is_valid_position(self.my_piece, dy=1):
+                    if self.lock_reset_count < 5:
+                        self.lock_timer = 0
+                    self.lock_reset_count += 1
 
     # ============================================================
     #  INPUT İŞLEME
@@ -5107,27 +5119,22 @@ class OnlinePvPGame:
         """Parçayı döndür (SRS wall kick dahil)."""
         if not self.my_board or not self.my_piece:
             return
-        old_rot = self.my_piece.rotation_state
-        self.my_piece.rotate(direction)
-        if not self.my_board.is_valid_position(self.my_piece):
-            # Basit wall kick denemeleri
-            for dx in [1, -1, 2, -2]:
-                if self.my_board.is_valid_position(self.my_piece, dx=dx):
-                    self.my_piece.x += dx
-                    self._send_piece_position()
-                    try:
-                        self.sound.play('rotate')
-                    except Exception:
-                        pass
-                    return
-            # Hiçbiri çalışmadıysa geri al
-            self.my_piece.rotate(-direction)
-        else:
+        success = self.my_piece.try_rotate_srs(
+            self.my_board, 
+            direction=direction,
+            check_func=lambda p: self.my_board.is_valid_position(p)
+        )
+        if success:
             self._send_piece_position()
             try:
                 self.sound.play('rotate')
             except Exception:
                 pass
+            # Lock Delay Reset: parça yerdeyse ve limit aşılmadıysa sıfırla
+            if not self.my_board.is_valid_position(self.my_piece, dy=1):
+                if self.lock_reset_count < 5:
+                    self.lock_timer = 0
+                self.lock_reset_count += 1
 
     def _hard_drop(self):
         """Sert düşüş — parçayı anında en alta indir ve kilitle."""

@@ -105,6 +105,8 @@ def _gp_btn(raw) -> int:
 
 class PvPGame:
     """2 oyunculu PvP oyun sınıfı"""
+    p1_lock_reset_count = 0
+    p2_lock_reset_count = 0
 
     @staticmethod
     def _is_focus_loss_event(event) -> bool:
@@ -415,6 +417,8 @@ class PvPGame:
         self.p2_grounded = False
         self.p1_lock_timer = 0.0
         self.p2_lock_timer = 0.0
+        self.p1_lock_reset_count = 0
+        self.p2_lock_reset_count = 0
         self.speed_increase_per_milestone = 0  # Hızlanma yok
         self.min_fall_speed = 900  # Sabit hız
         
@@ -1223,25 +1227,39 @@ class PvPGame:
 
         return best_plan
 
-    def _try_rotate_p1(self) -> bool:
+    def _try_rotate_p1(self, direction: int = 1) -> bool:
         if self.current_piece1 is None or self.board1.is_game_over():
             return False
+        success = self.current_piece1.try_rotate_srs(
+            self.board1, 
+            direction=direction,
+            check_func=lambda p: self.board1.is_valid_position(p)
+        )
+        if success:
+            self.sound.play('rotate')
+            # Lock Delay Reset: parça yerdeyse ve limit aşılmadıysa sıfırla
+            if not self.board1.is_valid_position(self.current_piece1, dy=1):
+                if self.p1_lock_reset_count < 5:
+                    self.p1_lock_timer = 0.0
+                self.p1_lock_reset_count += 1
+        return success
 
-        original_x = self.current_piece1.x
-        self.current_piece1.rotate()
-        if not self.board1.is_valid_position(self.current_piece1):
-            for dx in [1, -1, 2, -2]:
-                self.current_piece1.x = original_x + dx
-                if self.board1.is_valid_position(self.current_piece1):
-                    break
-            else:
-                self.current_piece1.x = original_x
-                for _ in range(3):
-                    self.current_piece1.rotate()
-                return False
-
-        self.sound.play('rotate')
-        return True
+    def _try_rotate_p2(self, direction: int = 1) -> bool:
+        if self.current_piece2 is None or self.board2.is_game_over():
+            return False
+        success = self.current_piece2.try_rotate_srs(
+            self.board2, 
+            direction=direction,
+            check_func=lambda p: self.board2.is_valid_position(p)
+        )
+        if success:
+            self.sound.play('rotate')
+            # Lock Delay Reset: parça yerdeyse ve limit aşılmadıysa sıfırla
+            if not self.board2.is_valid_position(self.current_piece2, dy=1):
+                if self.p2_lock_reset_count < 5:
+                    self.p2_lock_timer = 0.0
+                self.p2_lock_reset_count += 1
+        return success
 
     def _try_soft_drop_step_p1(self) -> bool:
         if self.current_piece1 is None or self.board1.is_game_over():
@@ -2220,21 +2238,7 @@ class PvPGame:
                     
                     # Yukarı ok - Döndür
                     elif event.key == controls2['rotate']:
-                        original_x = self.current_piece2.x
-                        rotated = True
-                        self.current_piece2.rotate()
-                        if not self.board2.is_valid_position(self.current_piece2):
-                            for dx in [1, -1, 2, -2]:
-                                self.current_piece2.x = original_x + dx
-                                if self.board2.is_valid_position(self.current_piece2):
-                                    break
-                            else:
-                                self.current_piece2.x = original_x
-                                for _ in range(3):
-                                    self.current_piece2.rotate()
-                                rotated = False
-                        if rotated:
-                            self.sound.play('rotate')
+                        self._try_rotate_p2()
                     
                     # Space - Hard drop
                     elif event.key == controls2['hard_drop']:
@@ -3181,9 +3185,11 @@ class PvPGame:
         if player == 1:
             self.p1_grounded = False
             self.p1_lock_timer = 0.0
+            self.p1_lock_reset_count = 0
         else:
             self.p2_grounded = False
             self.p2_lock_timer = 0.0
+            self.p2_lock_reset_count = 0
 
     def _mark_player_grounded(self, player: int) -> None:
         if player == 1:
@@ -3251,6 +3257,11 @@ class PvPGame:
         if not self.board1.is_valid_position(self.current_piece1):
             self.current_piece1.x += 1
             return False
+        # Lock Delay Reset: parça yerdeyse ve limit aşılmadıysa sıfırla
+        if not self.board1.is_valid_position(self.current_piece1, dy=1):
+            if self.p1_lock_reset_count < 5:
+                self.p1_lock_timer = 0.0
+            self.p1_lock_reset_count += 1
         return True
     
     def _try_move_right_p1(self):
@@ -3261,6 +3272,11 @@ class PvPGame:
         if not self.board1.is_valid_position(self.current_piece1):
             self.current_piece1.x -= 1
             return False
+        # Lock Delay Reset: parça yerdeyse ve limit aşılmadıysa sıfırla
+        if not self.board1.is_valid_position(self.current_piece1, dy=1):
+            if self.p1_lock_reset_count < 5:
+                self.p1_lock_timer = 0.0
+            self.p1_lock_reset_count += 1
         return True
     
     def _try_move_left_p2(self):
@@ -3271,6 +3287,11 @@ class PvPGame:
         if not self.board2.is_valid_position(self.current_piece2):
             self.current_piece2.x += 1
             return False
+        # Lock Delay Reset: parça yerdeyse ve limit aşılmadıysa sıfırla
+        if not self.board2.is_valid_position(self.current_piece2, dy=1):
+            if self.p2_lock_reset_count < 5:
+                self.p2_lock_timer = 0.0
+            self.p2_lock_reset_count += 1
         return True
     
     def _try_move_right_p2(self):
@@ -3281,6 +3302,11 @@ class PvPGame:
         if not self.board2.is_valid_position(self.current_piece2):
             self.current_piece2.x -= 1
             return False
+        # Lock Delay Reset: parça yerdeyse ve limit aşılmadıysa sıfırla
+        if not self.board2.is_valid_position(self.current_piece2, dy=1):
+            if self.p2_lock_reset_count < 5:
+                self.p2_lock_timer = 0.0
+            self.p2_lock_reset_count += 1
         return True
     
     def _update_das(self, delta_time):

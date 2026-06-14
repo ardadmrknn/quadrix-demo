@@ -718,9 +718,12 @@ def draw_line_sweep_band(
         return
 
     normalized = normalize_line_sweep_theme(theme)
-    band = pygame.Surface(rect.size, pygame.SRCALPHA)
+
+    # Merkezi dikey dalgalanma genliği (yüksekliğin %6'sı veya en az 2 piksel)
     wave_amplitude = max(2.0, rect.height * 0.06)
     draw_h = max(1, int(rect.height - 2 * wave_amplitude))
+
+    # Çizimlerin yapılacağı geçici bir yüzey oluştur
     draw_band = pygame.Surface((rect.width, draw_h), pygame.SRCALPHA)
 
     # Rainbow keeps its striped palette (the rainbow trail itself is the
@@ -734,7 +737,8 @@ def draw_line_sweep_band(
         stripe_height = max(1, draw_h // max(1, len(colors)))
         for index, color in enumerate(colors):
             stripe_rect = pygame.Rect(0, index * stripe_height, rect.width, stripe_height + 1)
-            pygame.draw.rect(draw_band, (*color, 228), stripe_rect)
+            # Tam opak yapmak için alpha değerini 255 yapıyoruz
+            pygame.draw.rect(draw_band, (*color, 255), stripe_rect)
             if stripe_highlight_enabled and index % 2 == 0 and stripe_rect.width > 4:
                 pygame.draw.line(
                     draw_band,
@@ -752,23 +756,27 @@ def draw_line_sweep_band(
         stripe_height = max(1, draw_h // max(1, len(colors)))
         for index, color in enumerate(colors):
             stripe_rect = pygame.Rect(0, index * stripe_height, rect.width, stripe_height + 1)
-            pygame.draw.rect(draw_band, (*color, 228), stripe_rect)
+            pygame.draw.rect(draw_band, (*color, 255), stripe_rect)
+
+    # Dikey Dilimleme (Vertical Slicing) ile Dalgalandırma
+    band = pygame.Surface(rect.size, pygame.SRCALPHA)
+    import math
+    elapsed = pygame.time.get_ticks() / 1000.0
+    slice_w = 2
+    for sx in range(0, rect.width, slice_w):
+        angle = (sx * (2.0 * math.pi / 120.0)) - (elapsed * 5.0)
+        dy = int(math.sin(angle) * wave_amplitude) + int(wave_amplitude)
+
+        # Dilim sınırlarını taşmayacak şekilde clip edelim
+        curr_w = min(slice_w, rect.width - sx)
+        slice_rect = pygame.Rect(sx, 0, curr_w, draw_h)
+        band.blit(draw_band, (sx, dy), slice_rect)
 
     # Animated wind-shimmer pass — a soft diagonal highlight that sweeps across
     # the flag in sync with `phase`. Skipped on previews that are too short
     # for the highlight to read as anything but a stray vertical glitch.
-    if draw_h >= 24 and rect.width >= 60:
-        _apply_wind_shimmer(draw_band, draw_band.get_rect(), phase, normalized)
-
-    elapsed = pygame.time.get_ticks() / 1000.0
-    band.fill((0, 0, 0, 0))
-    slice_w = 2
-    for sx in range(0, rect.width, slice_w):
-        current_slice_w = min(slice_w, rect.width - sx)
-        angle = (sx * (2.0 * math.pi / 120.0)) - (elapsed * 5.0)
-        dy = int(math.sin(angle) * wave_amplitude) + int(wave_amplitude)
-        slice_rect = pygame.Rect(sx, 0, current_slice_w, draw_h)
-        band.blit(draw_band, (sx, dy), slice_rect)
+    if rect.height >= 24 and rect.width >= 60:
+        _apply_wind_shimmer(band, rect, phase, normalized)
 
     if border_radius > 0:
         mask = pygame.Surface(rect.size, pygame.SRCALPHA)
@@ -792,11 +800,15 @@ def _draw_country_flag_band(
     theme_id: str,
     phase: int,
 ) -> None:
-    """Asset-backed country flag tiled flat into the sweep band's draw surface.
+    """Asset-backed country flag tiled into the sweep band.
 
-    The shared wave engine lives in ``draw_line_sweep_band`` now, so this
-    helper only prepares a flat, separator-free flag strip that can be
-    displaced later as vertical slices.
+    Instead of stretching a single flag across the whole band (which
+    distorted the proportions on wide sweeps), we size *one* flag to the
+    band height at its natural aspect ratio and tile it horizontally,
+    scrolling the tiles to the right. The same flag repeats behind the
+    leading copy — mirroring the scrolling card-art animation used on the
+    mystery-card selection screen. If the asset isn't available we fall
+    back to the colour palette so the band stays drawn.
     """
     width, height = band.get_size()
     if width <= 0 or height <= 0:
@@ -804,6 +816,7 @@ def _draw_country_flag_band(
 
     aspect = _get_country_flag_aspect_ratio(theme_id)
     if aspect and aspect > 0:
+        # One un-stretched flag tile, sized to the band height.
         tile_w = max(1, int(round(height * aspect)))
         flag = _get_country_flag_surface(theme_id, tile_w, height)
     else:
@@ -836,10 +849,8 @@ def _draw_country_flag_band(
     x = offset - tile_w
     while x < width:
         band.blit(flag, (x, 0))
+        # Separatör çizgisi tamamen kaldırıldı. Bayraklar doğrudan birleştiriliyor.
         x += tile_w
-
-
-
 
 
 def _apply_wind_shimmer(band: pygame.Surface, rect: pygame.Rect, phase: int, theme: str) -> None:

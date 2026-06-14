@@ -114,10 +114,10 @@ def test_floor_kick_allows_rotation_for_grounded_i_piece(monkeypatch):
 
     game.handle_input()
 
-    # Döndürme başarılı olmalı (dikey duruma geçti) ve floor kick ile yukarı itildi.
+    # Döndürme başarılı olmalı (dikey duruma geçti) ve SRS wall/floor kick ile yukarı ve sağa itildi.
     assert game.current_piece.rotation_state == 1
-    assert game.current_piece.y == 16
-    assert game.current_piece.x == 3
+    assert game.current_piece.y == 15
+    assert game.current_piece.x == 4
     assert board.is_valid_position(game.current_piece)
 
 

@@ -424,6 +424,8 @@ class CoopGame:
         self.p2_grounded = False
         self.p1_lock_timer = 0.0
         self.p2_lock_timer = 0.0
+        self.p1_lock_reset_count = 0
+        self.p2_lock_reset_count = 0
 
         # Event callback'leri (kampanya modu gibi alt sınıflar için)
         self._event_listeners: list = []
@@ -2028,26 +2030,40 @@ class CoopGame:
         if not self.board.is_valid_position_for_player(piece, player):
             piece.x -= dx
             return False
+            
+        # Lock Delay Reset: parça yerdeyse ve limit aşılmadıysa sıfırla
+        if not self.board.is_valid_position_for_player(piece, player, dy=1):
+            if player == 'P1':
+                if self.p1_lock_reset_count < 5:
+                    self.p1_lock_timer = 0.0
+                self.p1_lock_reset_count += 1
+            else:
+                if self.p2_lock_reset_count < 5:
+                    self.p2_lock_timer = 0.0
+                self.p2_lock_reset_count += 1
         return True
 
     def _try_rotate(self, player: str) -> bool:
         piece = self.p1_current_piece if player == 'P1' else self.p2_current_piece
         if piece is None:
             return False
-        original_x = piece.x
-        piece.rotate()
-        if self.board.is_valid_position_for_player(piece, player):
-            return True
-        # Wall kick dene
-        for dx in [1, -1, 2, -2]:
-            piece.x = original_x + dx
-            if self.board.is_valid_position_for_player(piece, player):
-                return True
-        # Başarısız — geri al
-        piece.x = original_x
-        for _ in range(3):
-            piece.rotate()
-        return False
+        success = piece.try_rotate_srs(
+            self.board, 
+            direction=1, 
+            check_func=lambda p: self.board.is_valid_position_for_player(p, player)
+        )
+        if success:
+            # Lock Delay Reset: parça yerdeyse ve limit aşılmadıysa sıfırla
+            if not self.board.is_valid_position_for_player(piece, player, dy=1):
+                if player == 'P1':
+                    if self.p1_lock_reset_count < 5:
+                        self.p1_lock_timer = 0.0
+                    self.p1_lock_reset_count += 1
+                else:
+                    if self.p2_lock_reset_count < 5:
+                        self.p2_lock_timer = 0.0
+                    self.p2_lock_reset_count += 1
+        return success
 
     def _hard_drop(self, player: str) -> None:
         piece = self.p1_current_piece if player == 'P1' else self.p2_current_piece
@@ -2085,9 +2101,11 @@ class CoopGame:
         if player == 'P1':
             self.p1_grounded = False
             self.p1_lock_timer = 0.0
+            self.p1_lock_reset_count = 0
         else:
             self.p2_grounded = False
             self.p2_lock_timer = 0.0
+            self.p2_lock_reset_count = 0
 
     def _set_unfreeze_lock_delay_active(self, player: str, active: bool) -> None:
         if player == 'P1':

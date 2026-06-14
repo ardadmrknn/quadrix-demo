@@ -1212,22 +1212,17 @@ class HardcoreMode(Game):
                         if not self.board.is_valid_position(self.current_piece):
                             self.current_piece.y -= 1
                 elif event.key == pygame.K_DOWN or event.key == pygame.K_s:
-                    # Aşağı -> Döndür
+                    # Aşağı -> Döndür (CW)
                     if self.current_piece:
-                        self.current_piece.rotate()
-                        if not self.board.is_valid_position(self.current_piece):
-                            # Wall kick dene
-                            for dx in [1, -1, 2, -2]:
-                                self.current_piece.x += dx
-                                if self.board.is_valid_position(self.current_piece):
-                                    break
-                                self.current_piece.x -= dx
-                            else:
-                                # Geri döndür
-                                for _ in range(3):
-                                    self.current_piece.rotate()
-                        if self.sound_enabled and self.sound:
-                            self.sound.play('rotate')
+                        success = self.current_piece.try_rotate_srs(self.board, 1)
+                        if success:
+                            if self.sound_enabled and self.sound:
+                                self.sound.play('rotate')
+                            # Lock Delay Reset: parça yerdeyse ve limit aşılmadıysa sıfırla
+                            if not self.board.is_valid_position(self.current_piece, dy=1):
+                                if self.lock_reset_count < 5:
+                                    self.lock_timer = 0
+                                self.lock_reset_count += 1
                 elif event.key == pygame.K_SPACE:
                     # Space hala hard drop
                     if self.current_piece:
@@ -1242,32 +1237,29 @@ class HardcoreMode(Game):
                         if self.sound_enabled and self.sound:
                             self.sound.play('drop')
                 elif event.key == pygame.K_z:
-                    # Z hala saat yönünün tersine döndür
+                    # Z saat yönünün tersine döndür (CCW)
                     if self.current_piece:
-                        # 3 kez döndür = ters yön
-                        for _ in range(3):
-                            self.current_piece.rotate()
-                        if not self.board.is_valid_position(self.current_piece):
-                            self.current_piece.rotate()  # Geri al
-                        if self.sound_enabled and self.sound:
-                            self.sound.play('rotate')
+                        success = self.current_piece.try_rotate_srs(self.board, -1)
+                        if success:
+                            if self.sound_enabled and self.sound:
+                                self.sound.play('rotate')
+                            # Lock Delay Reset: parça yerdeyse ve limit aşılmadıysa sıfırla
+                            if not self.board.is_valid_position(self.current_piece, dy=1):
+                                if self.lock_reset_count < 5:
+                                    self.lock_timer = 0
+                                self.lock_reset_count += 1
                 elif event.key == pygame.K_x:
-                    # X hala saat yönünde döndür
+                    # X saat yönünde döndür (CW)
                     if self.current_piece:
-                        self.current_piece.rotate()
-                        if not self.board.is_valid_position(self.current_piece):
-                            # Wall kick dene
-                            original_x = self.current_piece.x
-                            for dx in [1, -1, 2, -2]:
-                                self.current_piece.x = original_x + dx
-                                if self.board.is_valid_position(self.current_piece):
-                                    break
-                            else:
-                                self.current_piece.x = original_x
-                                for _ in range(3):
-                                    self.current_piece.rotate()
-                        if self.sound_enabled and self.sound:
-                            self.sound.play('rotate')
+                        success = self.current_piece.try_rotate_srs(self.board, 1)
+                        if success:
+                            if self.sound_enabled and self.sound:
+                                self.sound.play('rotate')
+                            # Lock Delay Reset: parça yerdeyse ve limit aşılmadıysa sıfırla
+                            if not self.board.is_valid_position(self.current_piece, dy=1):
+                                if self.lock_reset_count < 5:
+                                    self.lock_timer = 0
+                                self.lock_reset_count += 1
                 elif event.key == pygame.K_r:
                     self.restart()
         
