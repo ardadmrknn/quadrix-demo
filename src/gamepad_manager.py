@@ -135,16 +135,16 @@ DEFAULT_GAMEPAD_BINDINGS = {
     'move_left':    {'dpad': 'left',   'axis': ('left_x', -1)},
     'move_right':   {'dpad': 'right',  'axis': ('left_x', +1)},
     'soft_drop':    {'dpad': 'down',   'axis': ('left_y', +1)},
-    'hard_drop':    {'button': 0},   # A (Xbox) / Cross (PS)
-    'rotate':       {'button': None}, # Devre dışı (sol stick yukarı döndürüyor)
-    'rotate_alt':   {'button': None}, # Devre dışı
+    'hard_drop':    {'button': 3},   # Y (Xbox) / Triangle (PS)
+    'rotate':       {'button': 0},   # A (Xbox) / Cross (PS)
+    'rotate_alt':   {'button': 1},   # B (Xbox) / Circle (PS)
     'hold':         {'button': 9},   # LB / L1
     'hold2':        {'button': 2},   # X (Xbox) / Square (PS)
     'pause':        {'button': 6, 'button_secondary': 5},   # Start / Options / + or Guide (Home)
     'lt':           {'trigger': 'left'},  # LT / L2 (analog trigger)
     'rt':           {'trigger': 'right'}, # RT / R2 (analog trigger)
     'restart':      {'button': None}, # Devre dışı
-    'discard_held': {'button': 3},   # Y (Xbox) / Triangle (PS)
+    'discard_held': {'button': 10},  # RB / R1
     # Kart modu aksiyonlari (varsayilan: atanmis degil)
     'card_rewind': {'button': None},
     'card_sniper': {'button': None},
@@ -406,15 +406,15 @@ class GamepadManager:
             # Her reload'da temiz bir kopya ile başla (önceki mutasyonlar sıfırlanır)
             self._bindings = copy.deepcopy(DEFAULT_GAMEPAD_BINDINGS)
 
-            # Eski çakışan ayarları temizle (rotate/restart UI'dan kaldırıldı)
-            _deprecated = {'rotate', 'rotate_alt', 'restart'}
+            # Eski çakışan ayarları temizle (restart UI'dan kaldırıldı)
+            _deprecated = {'restart'}
             for dep_action in _deprecated:
                 if dep_action in self._bindings:
                     self._bindings[dep_action] = {'button': None, 'button_secondary': None}
 
             # Buton eşlemelerini güncelle
             button_actions = [
-                'hard_drop', 'hold', 'hold2', 'pause',
+                'hard_drop', 'rotate', 'rotate_alt', 'hold', 'hold2', 'pause',
                 'menu_back', 'menu_confirm', 'menu_tab_next', 'menu_tab_prev',
                 'discard_held', 'lt', 'rt',
                 'card_rewind', 'card_sniper', 'card_time_capsule_save',
@@ -1397,7 +1397,7 @@ class GamepadManager:
         if in_game:
             # Oyun içi: buton → aksiyon eşlemesi
             game_actions_list = [
-                'hard_drop', 'hold', 'hold2',
+                'hard_drop', 'rotate', 'rotate_alt', 'hold', 'hold2',
                 'pause', 'discard_held',
                 'lt', 'rt',
                 'card_rewind', 'card_sniper', 'card_time_capsule_save',

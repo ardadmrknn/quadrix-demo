@@ -57,14 +57,14 @@ DEFAULT_CONTROLS = {
         'deadzone': 0.35,
         'mouse_sensitivity': 1.0,
         # Oyun içi butonlar
-        'hard_drop': {'primary': 0, 'secondary': -1},     # A (Xbox) / Cross (PS)
-        'rotate': {'primary': 1, 'secondary': -1},        # B (Xbox) / Circle (PS)
-        'rotate_alt': {'primary': 10, 'secondary': -1},   # RB / R1
+        'hard_drop': {'primary': 3, 'secondary': -1},     # Y (Xbox) / Triangle (PS)
+        'rotate': {'primary': 0, 'secondary': -1},        # A (Xbox) / Cross (PS)
+        'rotate_alt': {'primary': 1, 'secondary': -1},   # B (Xbox) / Circle (PS)
         'hold': {'primary': 9, 'secondary': -1},          # LB / L1
         'hold2': {'primary': 2, 'secondary': -1},         # X (Xbox) / Square (PS)
         'pause': {'primary': 6, 'secondary': -1},         # Start / Options / +
-        'restart': {'primary': 3, 'secondary': -1},       # Y (Xbox) / Triangle (PS)
-        'discard_held': {'primary': 7, 'secondary': -1},  # L3 (Left Stick Click)
+        'restart': {'primary': -1, 'secondary': -1},      # Devre dışı
+        'discard_held': {'primary': 10, 'secondary': -1}, # RB / R1
         'lt': {'primary': 100, 'secondary': -1},          # LT / L2 (trigger pseudo-index)
         'rt': {'primary': 101, 'secondary': -1},          # RT / R2 (trigger pseudo-index)
         # Kart modu butonlari (varsayilan: atanmis degil)
