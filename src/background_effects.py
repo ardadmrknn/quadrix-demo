@@ -10,13 +10,26 @@ import pygame
 # macOS detection - SRCALPHA surface'ler bazen crash yapabiliyor
 _IS_MACOS = sys.platform == 'darwin'
 
-# Jelly renderer'ı import et
+# Jelly renderer + equipped block appearance resolver
 try:
-    from renderers.jelly_renderer import draw_jelly_block
+    from .block_skin_assets import get_equipped_block_appearance  # type: ignore
+except Exception:
+    try:
+        from block_skin_assets import get_equipped_block_appearance
+    except Exception:
+        def get_equipped_block_appearance(user_manager=None, username=None, profile=None):  # type: ignore
+            return 'modern_sharp'
+
+try:
+    from .renderers.jelly_renderer import draw_jelly_block  # type: ignore
     _HAS_JELLY = True
-except ImportError:
-    _HAS_JELLY = False
-    draw_jelly_block = None
+except Exception:
+    try:
+        from renderers.jelly_renderer import draw_jelly_block
+        _HAS_JELLY = True
+    except Exception:
+        _HAS_JELLY = False
+        draw_jelly_block = None
 
 
 _TETROMINO_SHAPES = [
@@ -63,6 +76,7 @@ class FallingBlocksLayer:
         layer_alpha: int = 180,
         shape_pool: list[list[tuple[int, int]]] | None = None,
         color_pool: list[tuple[int, int, int]] | None = None,
+        block_appearance: str | None = None,
     ) -> None:
         self.block_count = block_count
         self.layer_alpha = layer_alpha
@@ -73,10 +87,23 @@ class FallingBlocksLayer:
         self._last_screen_size: tuple[int, int] | None = None
         self._jelly_cell_cache: dict[tuple[int, tuple[int, int, int], int], pygame.Surface] = {}
         self._opacity_multiplier: float = 1.0
+        self.block_appearance = str(block_appearance or 'modern_sharp')
 
     def set_opacity_multiplier(self, value: float) -> None:
         """Tüm düşen blokların alfa değerini orantılı olarak ayarla (0.0–1.0)."""
         self._opacity_multiplier = max(0.0, min(1.0, float(value)))
+
+    def set_block_appearance(self, appearance: str | None) -> None:
+        resolved = str(appearance or 'modern_sharp')
+        if resolved == self.block_appearance:
+            return
+        self.block_appearance = resolved
+        self._jelly_cell_cache.clear()
+
+    def sync_block_appearance(self, user_manager=None, username=None, profile: dict | None = None) -> str:
+        appearance = get_equipped_block_appearance(user_manager, username=username, profile=profile)
+        self.set_block_appearance(appearance)
+        return self.block_appearance
 
     # Public API -------------------------------------------------------------
     def update(self, screen: pygame.Surface) -> None:
@@ -147,13 +174,13 @@ class FallingBlocksLayer:
         color: tuple[int, int, int],
         alpha: int,
     ) -> pygame.Surface:
-        key = (cell_size, color, alpha)
+        key = (self.block_appearance, cell_size, color, alpha)
         cached = self._jelly_cell_cache.get(key)
         if cached is not None:
             return cached
 
         cell_surf = pygame.Surface((cell_size, cell_size), pygame.SRCALPHA)
-        draw_jelly_block(cell_surf, 0, 0, cell_size, color)
+        draw_jelly_block(cell_surf, 0, 0, cell_size, color, appearance=self.block_appearance)
         # macOS'ta SRCALPHA surface üzerinde set_alpha() ile per-surface alpha
         # kullanımı Metal/OpenGL backend'inde tutarsız sonuç verebiliyor.
         # Alpha'yı doğrudan piksel kanallarına bake ederek tüm platformlarda
@@ -232,6 +259,19 @@ def get_shared_falling_blocks_layer(name: str = 'default', **kwargs) -> FallingB
     if layer is None:
         layer = FallingBlocksLayer(**kwargs)
         _SHARED_FALLING_LAYERS[name] = layer
+    return layer
+
+
+def sync_shared_falling_blocks_appearance(
+    user_manager=None,
+    *,
+    username=None,
+    profile: dict | None = None,
+    layer_name: str = 'default',
+) -> FallingBlocksLayer:
+    """Sync the shared falling-block layer with the equipped block appearance."""
+    layer = get_shared_falling_blocks_layer(layer_name)
+    layer.sync_block_appearance(user_manager, username=username, profile=profile)
     return layer
 
 

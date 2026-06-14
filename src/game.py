@@ -20,6 +20,7 @@ except ImportError:
     _NUMPY_AVAILABLE = False
 
 from block_styles import BlockStyleManager, TextureSlice, TextureRenderCache
+from block_skin_assets import get_equipped_block_appearance
 from board import Board
 from pieces import Piece, SHAPE_NAMES, create_piece_by_index, create_piece_by_name, get_piece_spawn_y, skip_hidden_rows
 from constants import *
@@ -766,6 +767,7 @@ class Game:
             self.block_style_manager = BlockStyleManager(self.settings_manager)
         else:
             self.block_style_manager = None
+        self.block_appearance = get_equipped_block_appearance(self.user_manager)
         self._texture_render_cache = TextureRenderCache()
         self._effect_surface_cache = EffectSurfaceCache()
         
@@ -890,7 +892,6 @@ class Game:
         self.lock_timer = 0
         self.lock_delay = DEFAULT_LOCK_DELAY  # Sabitler modülünden
         self.enable_lock_delay = True  # Her zaman açık
-        self.lock_reset_count = 0  # Move reset sayacı (infinity engellemek için)
         self.game_time = 0  # Toplam oyun süresi
         
         # Animasyon
@@ -1697,10 +1698,10 @@ class Game:
         if texture_surface is not None and texture_slice is not None:
             # Keep textured content path but complement with a jelly-style border
             self._draw_texture_cell(x, y, size, color, texture_surface, texture_slice)
-            draw_jelly_border(self.screen, x, y, size, color)
+            draw_jelly_border(self.screen, x, y, size, color, appearance=self.block_appearance)
             return
         # Non-textured jelly block, draw using shared helper
-        draw_jelly_block(self.screen, x, y, size, color)
+        draw_jelly_block(self.screen, x, y, size, color, appearance=self.block_appearance)
         return
     
     def _render_texture_slice(self, surface, slice_info: TextureSlice, size: int) -> pygame.Surface | None:
@@ -2150,12 +2151,23 @@ class Game:
                             if self.board.is_valid_position(self.current_piece):
                                 success = True
                                 break
-                        else:
-                            # Hiçbiri işe yaramadı, geri döndür
+                        if not success:
+                            # Floor kick: zemine/derin kuyuya yaslı parçalar (özellikle I)
+                            # yatay kick ile dönemeyebilir; yukarı iterek (dy) yer açmayı dene.
                             self.current_piece.x = original_x
-                            for _ in range(3):
-                                # Rotate 3 times to undo the rotation (equivalent to rotate reverse)
-                                self.current_piece.rotate()
+                            original_y = self.current_piece.y
+                            for dy in [-1, -2]:
+                                self.current_piece.y = original_y + dy
+                                if self.board.is_valid_position(self.current_piece):
+                                    success = True
+                                    break
+                            if not success:
+                                # Hiçbiri işe yaramadı, güvenli geri-alma
+                                self.current_piece.y = original_y
+                                self.current_piece.x = original_x
+                                for _ in range(3):
+                                    # Rotate 3 times to undo the rotation (equivalent to rotate reverse)
+                                    self.current_piece.rotate()
                     
                     if success:
                         self.sound.play('rotate')
@@ -2457,6 +2469,7 @@ class Game:
         self.das_timer += delta_time
 
         # İlk gecikme henüz dolmadıysa
+        charged_this_frame = False
         if not self.das_charged:
             if self.das_timer >= delay_ms:
                 overshoot = max(0.0, self.das_timer - delay_ms)
@@ -2464,10 +2477,15 @@ class Game:
                 # Gecikme aşımını repeat timer'a aktar (frame bağımsız akıcılık)
                 self.das_repeat_timer = overshoot
                 self._perform_das_move(self.das_direction)
+                charged_this_frame = True
 
         # Gecikme doldu, tekrar modunda
         if self.das_charged:
-            self.das_repeat_timer += delta_time
+            # Şarjın yeni tamamlandığı frame'de delta_time'ı tekrar ekleme:
+            # overshoot zaten bu frame'in geçen süresini temsil ediyor. Aksi halde
+            # o frame iki kez sayılır ve ilk otomatik tekrar ~bir frame erken tetiklenir.
+            if not charged_this_frame:
+                self.das_repeat_timer += delta_time
             # Frame düşüşlerinde kaçan tekrarları telafi et (catch-up)
             while self.das_repeat_timer >= repeat_ms:
                 self.das_repeat_timer -= repeat_ms
@@ -3908,6 +3926,46 @@ class Game:
         except Exception:
             return True  # Hata durumunda kilitlemeye izin ver
     
+    def _finalize_game_over_after_lock(self) -> bool:
+        """Lock-out / block-out sonrası oyunu sonlandır.
+
+        Modlar `_try_prevent_game_over_after_lock` ile bir kerelik kurtarma
+        (örn. Mystery Ghost Echo revive) sağlayabilir; kurtarma başarılıysa oyun
+        devam eder. Oyun gerçekten bittiyse True döner.
+        """
+        prevented = False
+        try:
+            prevent_game_over = getattr(self, "_try_prevent_game_over_after_lock", None)
+            if callable(prevent_game_over):
+                prevented = bool(prevent_game_over())
+        except Exception:
+            prevented = False
+        if prevented:
+            try:
+                prevented = not self.board.is_game_over()
+            except Exception:
+                pass
+        if prevented:
+            return False
+        self.game_over = True
+        try:
+            from gamepad_manager import get_gamepad_manager
+            get_gamepad_manager().rumble(1.0, 1.0, 600)
+        except Exception:
+            pass
+        if self.sound:
+            self.sound.play_game_over_sequence()
+        self.finalize_run()
+        return True
+
+    def _handle_block_out(self) -> None:
+        """Block-out: yeni parça spawn konumunda yerleştirilemiyor → game-over.
+
+        Tüm tek-oyunculu modlar bu temel davranışı paylaşır. Oyun asla bitmeyen
+        modlar (örn. Zen) bunu override edip alan açar.
+        """
+        self._finalize_game_over_after_lock()
+
     def lock_and_new_piece(self):
         """Mevcut parçayı kilitle ve yeni parça oluştur"""
         if self.effects_enabled:
@@ -3946,31 +4004,10 @@ class Game:
         
         lines_cleared = self.board.lock_piece(self.current_piece)
 
-        # Lock-out kontrolü (Tetris Guideline): parça üst satırda kilitlendi.
+        # Lock-out kontrolü (Tetris Guideline): parça üst görünür satırda kilitlendi.
         # Some modes can spend a one-shot save here before the run is finalized.
         if self.board.is_game_over():
-            prevented = False
-            try:
-                prevent_game_over = getattr(self, "_try_prevent_game_over_after_lock", None)
-                if callable(prevent_game_over):
-                    prevented = bool(prevent_game_over())
-            except Exception:
-                prevented = False
-            if prevented:
-                try:
-                    prevented = not self.board.is_game_over()
-                except Exception:
-                    pass
-            if not prevented:
-                self.game_over = True
-                try:
-                    from gamepad_manager import get_gamepad_manager
-                    get_gamepad_manager().rumble(1.0, 1.0, 600)
-                except Exception:
-                    pass
-                if self.sound:
-                    self.sound.play_game_over_sequence()
-                self.finalize_run()
+            if self._finalize_game_over_after_lock():
                 return
 
         # Satır temizlenmiyorsa blok kilitlenme sesi çal
@@ -4087,7 +4124,6 @@ class Game:
         # Yeni aktif parça için lock-delay state'ini temizle
         self.grounded = False
         self.lock_timer = 0
-        self.lock_reset_count = 0
         self.can_hold = True  # Yeni parçada tekrar hold kullanılabilir
         self.can_hold2 = True
         self.fall_speed = self.get_current_speed()
@@ -4218,6 +4254,14 @@ class Game:
                 self.game_over_warning = ""
 
         if self.game_over or self.paused or self.show_exit_prompt:
+            return
+
+        # Block-out: yeni parça spawn konumunda mevcut bloklarla çakışıyorsa
+        # (is_valid_position False) oyun biter. Bloklar gizli satırlarda sessizce
+        # ezilmez; bunun yerine anında game-over verilir. Modlar `_handle_block_out`
+        # ile farklı davranabilir (Zen: otomatik alan açma).
+        if self.current_piece is not None and not self.board.is_valid_position(self.current_piece):
+            self._handle_block_out()
             return
 
         # Soft drop: bazı sistemlerde KEYDOWN/KEYUP kaçabildiği için basılı tuş
@@ -4389,7 +4433,6 @@ class Game:
                     if not self.grounded:
                         self.grounded = True
                         self.lock_timer = 0 # Timer başlat
-                        self.lock_reset_count = 0
                     
                     # Lock Delay aktifse timer işlet
                     if getattr(self, 'enable_lock_delay', True):
@@ -4440,7 +4483,8 @@ class Game:
                 elif getattr(self, 'allow_auto_lock', True):
                     # Lock Delay AÇIKSA burada anında kilitleme! Timer dolunca kilitlenecek.
                     # Eğer lock delay kapalıysa hemen kilitle (klasik davranış).
-                    if not getattr(self, 'enable_lock_delay', False):
+                    # NOT: default True — lock-delay bloğu (yukarıda) ile aynı varsayılan.
+                    if not getattr(self, 'enable_lock_delay', True):
                         self.lock_and_new_piece()
                     else:
                         # Lock delay açıkken grounded olduğunu işaretle

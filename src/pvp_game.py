@@ -16,14 +16,21 @@ from retro_style import retro_style
 from renderers.jelly_renderer import draw_jelly_block, draw_jelly_border
 from themes import ThemeManager
 from block_styles import BlockStyleManager, TextureSlice, TextureRenderCache
-from platform_utils import create_display, get_display_flags, normalize_mouse_pos, get_mouse_pos, set_app_icon, resolve_frame_rate_cap
+from block_skin_assets import get_equipped_block_appearance
+from platform_utils import create_display, get_display_flags, normalize_mouse_pos, get_mouse_pos, set_app_icon, resolve_frame_rate_cap, key_hint_label
 from localization import t, get_language
 from gamepad_manager import is_gamepad_connected
+from promptfont_support import resolve_nav_hint_label
 from ui_scaling import get_projected_effective_scale
 from ui_theme import UIColors, UIFonts
 from text_cache import render_text
 from effect_surface_cache import EffectSurfaceCache
 from sweep_effects import SweepCatState, draw_rainbow_cat_sweep
+try:
+    from sweep_effects import get_equipped_pet
+except Exception:
+    def get_equipped_pet(*args, **kwargs):
+        return 'luna_cat'
 from line_clear_feedback import (
     queue_wave_effects as _queue_wave_effects,
     update_wave_effects as _update_wave_effects,
@@ -303,10 +310,10 @@ class PvPGame:
         
         # Board background'a ayarlardaki transparanlığı uygula
         if self.settings_manager:
-            bg_transparency = self.settings_manager.get('bg_transparency', 0.7)
+            bg_transparency = self.settings_manager.get('bg_transparency', 0.3)
             self.board_background.set_transparency(bg_transparency)
         else:
-            self.board_background.set_transparency(0.7)
+            self.board_background.set_transparency(0.3)
         
         self.load_background_image()
         self.load_board_background()
@@ -317,6 +324,7 @@ class PvPGame:
 
         # Blok stili / texture sistemi (tek oyunculu ile aynı temel)
         self.block_style_manager = BlockStyleManager(self.settings_manager) if self.settings_manager else None
+        self.block_appearance = get_equipped_block_appearance(self.user_manager)
         self._texture_render_cache = TextureRenderCache()
         
         # İki oyuncu
@@ -696,6 +704,25 @@ class PvPGame:
                 return fallback
         return fallback
 
+    def _default_setup_name(self, player: int) -> str:
+        key = 'pvp_player1' if int(player) == 1 else 'pvp_player2'
+        fallback = 'Player 1' if int(player) == 1 else 'Player 2'
+        try:
+            return str(t(key, fallback)).strip() or fallback
+        except Exception:
+            return fallback
+
+    def _confirm_setup_name(self, player: int) -> None:
+        if int(player) == 1:
+            if not str(getattr(self, 'player1_name', '') or '').strip():
+                self.player1_name = self._default_setup_name(1)
+            self.current_input = 2
+        else:
+            if not str(getattr(self, 'player2_name', '') or '').strip():
+                self.player2_name = self._default_setup_name(2)
+            self.current_input = 3
+        self._vs_panel_dirty = True
+
     def _ensure_pause_settings_screen(self):
         pause_settings = getattr(self, '_pause_settings_screen', None)
         if pause_settings is not None:
@@ -780,9 +807,9 @@ class PvPGame:
             pass
 
         try:
-            bg_transparency = float(settings_manager.get('bg_transparency', 0.7))
+            bg_transparency = float(settings_manager.get('bg_transparency', 0.3))
         except Exception:
-            bg_transparency = 0.7
+            bg_transparency = 0.3
         try:
             menu_transparency = float(settings_manager.get('menu_transparency', 1.0))
         except Exception:
@@ -2000,9 +2027,8 @@ class PvPGame:
                         return 'menu'  # Ana menüye dön
                     
                     if self.current_input == 1:
-                        if event.key == pygame.K_RETURN and len(self.player1_name) > 0:
-                            self.current_input = 2
-                            self._vs_panel_dirty = True
+                        if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+                            self._confirm_setup_name(1)
                         elif event.key == pygame.K_BACKSPACE:
                             self.player1_name = self.player1_name[:-1]
                             self._vs_panel_dirty = True
@@ -2011,9 +2037,8 @@ class PvPGame:
                             self._vs_panel_dirty = True
                     
                     elif self.current_input == 2:
-                        if event.key == pygame.K_RETURN and len(self.player2_name) > 0:
-                            self.current_input = 3  # Mod seçimine geç
-                            self._vs_panel_dirty = True
+                        if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+                            self._confirm_setup_name(2)
                         elif event.key == pygame.K_BACKSPACE:
                             self.player2_name = self.player2_name[:-1]
                             self._vs_panel_dirty = True
@@ -2026,7 +2051,7 @@ class PvPGame:
                         if event.key in (pygame.K_LEFT, pygame.K_RIGHT):
                             self.match_mode = 'endless' if self.match_mode == 'timed' else 'timed'
                             self._vs_panel_dirty = True
-                        elif event.key == pygame.K_RETURN:
+                        elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
                             if self.match_mode == 'timed':
                                 self.current_input = 4  # Süre ayarına geç
                             else:
@@ -2051,7 +2076,7 @@ class PvPGame:
                             self.custom_duration_minutes = min(10, self.custom_duration_minutes + 1)
                             self.match_duration_ms = self.custom_duration_minutes * 60 * 1000
                             self._vs_panel_dirty = True
-                        elif event.key == pygame.K_RETURN:
+                        elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
                             # Oyuna başla
                             self.name_input_active = False
                             self._vs_panel_dirty = True
@@ -2087,8 +2112,8 @@ class PvPGame:
                         return 'menu'
                     continue
 
-                # Game over iken ESC - ana menüye dön
-                if self.game_over and event.key == pygame.K_ESCAPE:
+                # Game over iken controller/menu back - ana menüye dön
+                if self.game_over and event.key in (pygame.K_ESCAPE, pygame.K_BACKSPACE):
                     return 'menu'
 
                 # Oyun sırasında ESC - pause menüsünü aç
@@ -2488,8 +2513,13 @@ class PvPGame:
 
             if option == 'resume':
                 color_code = retro_style.success
+                sub_text = resolve_nav_hint_label('ENTER / ESC', 'menu_confirm', 'menu_back')
+            elif option == 'settings':
+                color_code = retro_style.primary
+                sub_text = resolve_nav_hint_label('ENTER', 'menu_confirm')
             elif option == 'main_menu':
                 color_code = retro_style.secondary
+                sub_text = resolve_nav_hint_label('BACKSPACE', 'menu_back')
             elif option == 'music':
                 color_code = retro_style.primary
                 sub_text = t('on') if self.sound.music_enabled else t('off')
@@ -2750,16 +2780,27 @@ class PvPGame:
             return
 
         shake_x, shake_y = self.get_shake_offset()
-        board_y = int(self.p1_offset_y + shake_y)
-        p1_x = int(self.p1_offset_x + shake_x)
-        p2_x = int(self.p2_offset_x + shake_x)
+        board_y = int(getattr(self, 'p1_offset_y', 0) + shake_y)
+        p1_x = int(getattr(self, 'p1_offset_x', 0) + shake_x)
+        p2_x = int(getattr(self, 'p2_offset_x', 0) + shake_x)
         previous_clip = self.screen.get_clip()
         try:
             self.screen.set_clip(clip_rect)
-            self.draw_board(self.board1, self.current_piece1, p1_x, board_y, self.cell_size)
-            self.draw_board(self.board2, self.current_piece2, p2_x, board_y, self.cell_size)
-            if self.effects_enabled:
-                self.draw_particles()
+            if hasattr(self, 'board1') and hasattr(self, 'current_piece1') and hasattr(self, 'cell_size'):
+                try:
+                    self.draw_board(self.board1, self.current_piece1, p1_x, board_y, self.cell_size)
+                except Exception:
+                    pass
+            if hasattr(self, 'board2') and hasattr(self, 'current_piece2') and hasattr(self, 'cell_size'):
+                try:
+                    self.draw_board(self.board2, self.current_piece2, p2_x, board_y, self.cell_size)
+                except Exception:
+                    pass
+            if getattr(self, 'effects_enabled', False):
+                try:
+                    self.draw_particles()
+                except Exception:
+                    pass
         finally:
             self.screen.set_clip(previous_clip)
 
@@ -3107,7 +3148,7 @@ class PvPGame:
             self.screen,
             restart_rect,
             t('rematch', 'Tekrar Oyna'),
-            sub_text='R',
+            sub_text=resolve_nav_hint_label('R', 'menu_confirm'),
             color_code=UIColors.NEON_GREEN,
             state='hover' if restart_rect.collidepoint(mouse_pos) else 'normal',
         )
@@ -3115,7 +3156,7 @@ class PvPGame:
             self.screen,
             menu_rect,
             t('back_to_menu', 'Çıkış'),
-            sub_text='ESC',
+            sub_text=resolve_nav_hint_label('ESC', 'menu_back'),
             color_code=retro_style.secondary,
             state='hover' if menu_rect.collidepoint(mouse_pos) else 'normal',
         )
@@ -3408,6 +3449,7 @@ class PvPGame:
                         self.cell_size,
                         BOARD_WIDTH,
                     )
+
                     # Ekran titremesi (ana oyunla aynı)
                     if lines < 4:
                         self.trigger_screen_shake(intensity=3 + lines * 2, duration=8 / 60.0)
@@ -3542,6 +3584,7 @@ class PvPGame:
                         self.cell_size,
                         BOARD_WIDTH,
                     )
+
                     # Ekran titremesi (ana oyunla aynı)
                     if lines < 4:
                         self.trigger_screen_shake(intensity=3 + lines * 2, duration=8 / 60.0)
@@ -4011,9 +4054,9 @@ class PvPGame:
         target = dst or self.screen
         if texture_surface is not None and texture_slice is not None:
             self._draw_texture_cell(x, y, size, texture_surface, texture_slice, target)
-            draw_jelly_border(target, x, y, size, color)
+            draw_jelly_border(target, x, y, size, color, appearance=self.block_appearance)
             return
-        draw_jelly_block(target, x, y, size, color)
+        draw_jelly_block(target, x, y, size, color, appearance=self.block_appearance)
     
     def draw_particles(self):
         """Partikülleri çiz - İYİLEŞTİRİLMİŞ GLOW EFEKTİ"""
@@ -4180,6 +4223,7 @@ class PvPGame:
             _update_wave_effects(self.p2_wave_effects, dt_frames)
         except Exception:
             pass
+
         if self.p1_falling_block_animations:
             fall_speed = self.block_fall_speed * dt_frames * 60
             for anim in self.p1_falling_block_animations:
@@ -4521,8 +4565,9 @@ class PvPGame:
 
                 sweep_x = offset_x + int(sweep_progress * (board_width + sweep_width)) - sweep_width
                 board_group_rect = pygame.Rect(offset_x, group_y, board_width, group_h)
-                draw_rainbow_cat_sweep(self.screen, self._sweep_cat_state, board_group_rect, sweep_x, sweep_width, phase, BOARD_WIDTH)
+                draw_rainbow_cat_sweep(self.screen, self._sweep_cat_state, board_group_rect, sweep_x, sweep_width, phase, BOARD_WIDTH, pet=get_equipped_pet(self.user_manager))
 
+        
         # Flash overlay - temizlenen satırlar için beyaz parlama
         if self.effects_enabled and flash_rows and glow_alpha > 0:
             # Cache: her frame yeni surface yaratmak yerine yeniden kullan

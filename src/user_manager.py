@@ -6,6 +6,7 @@ from datetime import datetime, date
 
 try:
     from .atomic_io import atomic_write_json  # type: ignore
+    from .block_skin_assets import DEFAULT_BLOCK_SKIN_VALUE  # type: ignore
     from .data_paths import get_profiles_data_dir, iter_legacy_paths, migrate_legacy_file, resolve_cloud_path, resolve_profile_path  # type: ignore
     from .localization import t  # type: ignore
     from .storage_layout import (  # type: ignore
@@ -27,6 +28,7 @@ try:
     )
 except Exception:
     from atomic_io import atomic_write_json
+    from block_skin_assets import DEFAULT_BLOCK_SKIN_VALUE
     from data_paths import get_profiles_data_dir, iter_legacy_paths, migrate_legacy_file, resolve_cloud_path, resolve_profile_path
     from localization import t
     from storage_layout import (
@@ -49,6 +51,20 @@ except Exception:
 
 DAILY_MAX_FAILURES = 3
 DAILY_HISTORY_LIMIT = 40
+
+
+def _sync_default_falling_block_appearance(user_manager, username=None) -> None:
+    try:
+        from background_effects import sync_shared_falling_blocks_appearance
+    except Exception:
+        try:
+            from .background_effects import sync_shared_falling_blocks_appearance  # type: ignore
+        except Exception:
+            return
+    try:
+        sync_shared_falling_blocks_appearance(user_manager, username=username, layer_name='default')
+    except Exception:
+        pass
 
 
 def _derive_tutorial_completed(progress) -> bool:
@@ -241,6 +257,13 @@ class UserManager:
                     # Steam ID alanı (yeni alan — eski profiller için None)
                     if isinstance(profile, dict) and 'steam_id' not in profile:
                         profile['steam_id'] = None
+                        updated = True
+                    # Mystery kart sahipliği / geliştirme kademeleri (yeni alanlar)
+                    if isinstance(profile, dict) and not isinstance(profile.get('owned_cards'), list):
+                        profile['owned_cards'] = []
+                        updated = True
+                    if isinstance(profile, dict) and not isinstance(profile.get('card_tiers'), dict):
+                        profile['card_tiers'] = {}
                         updated = True
                     if isinstance(profile, dict) and 'profile_id' not in profile:
                         self._ensure_profile_id(_name, profile)
@@ -478,6 +501,15 @@ class UserManager:
             'total_playtime': 0,  # Saniye cinsinden
             'last_played': None,
             'neural_fragments': 0,
+            'owned_cosmetics': [],
+            'equipped_cosmetics': {},
+            # Mystery (Kart Ustalığı) kart sahipliği / geliştirme kademeleri.
+            # owned_cards: sahip olunan kart AİLE id'leri (örn. ["clear_rows"]).
+            # card_tiers: aile_id -> ulaşılan kademe (1-tabanlı) (örn. {"clear_rows": 2}).
+            # DİKKAT: Bu, MysteryCardManager.card_level (XP progression) ile
+            # KARIŞTIRILMAMALIDIR. card_tiers mağaza satın-alma/geliştirme kademesidir.
+            'owned_cards': [],
+            'card_tiers': {},
             # Hold (C) ile saklanan parça sayaçları
             # Örn: {'I': 12, 'T': 7}
             'hold_piece_counts': {},
@@ -510,6 +542,7 @@ class UserManager:
         # İlk kullanıcı ise otomatik seç
         if len(self.users) == 1:
             self.current_user = username
+            _sync_default_falling_block_appearance(self, username=username)
         
         self.save_users()
         return True, t('user_create_success')
@@ -591,6 +624,7 @@ class UserManager:
                 self.current_user = list(self.users.keys())[0]
             else:
                 self.current_user = None
+            _sync_default_falling_block_appearance(self, username=self.current_user)
         
         self.save_users()
         return True, t('user_deleted')
@@ -602,6 +636,7 @@ class UserManager:
         
         self.current_user = username
         self.save_users()
+        _sync_default_falling_block_appearance(self, username=username)
         return True, t('user_selected', username=username)
     
     def get_current_user(self):
@@ -735,6 +770,132 @@ class UserManager:
             self.users[user]['neural_fragments'] = int(current + amount)
             self._touch_profile(user)
             self.save_users()
+
+    def get_fragments(self, username=None) -> int:
+        """Return current neural fragment balance for a user."""
+        user = username or self.current_user
+        if not user or user not in self.users:
+            return 0
+        try:
+            return int(self.users[user].get('neural_fragments', 0) or 0)
+        except Exception:
+            return 0
+
+    def spend_fragments(self, amount: int, username=None) -> bool:
+        """Atomically spend fragments from user's wallet. Returns True on success."""
+        user = username or self.current_user
+        if not user or user not in self.users:
+            return False
+        try:
+            cost = int(amount or 0)
+            if cost < 0:
+                return False
+        except Exception:
+            return False
+        current = int(self.users[user].get('neural_fragments', 0) or 0)
+        if current < cost:
+            return False
+        self.users[user]['neural_fragments'] = current - cost
+        self._touch_profile(user)
+        self.save_users()
+        return True
+
+    def _ensure_cosmetic_inventory(self, username=None):
+        user = username or self.current_user
+        if not user or user not in self.users:
+            return None
+        profile = self.users[user]
+        owned = profile.get('owned_cosmetics')
+        if not isinstance(owned, list):
+            owned = []
+            profile['owned_cosmetics'] = owned
+        equipped = profile.get('equipped_cosmetics')
+        if not isinstance(equipped, dict):
+            equipped = {}
+            profile['equipped_cosmetics'] = equipped
+        return user, profile, owned, equipped
+
+    def grant_cosmetic(self, cosmetic_id: str, username=None) -> bool:
+        """Grant a cosmetic to the user's owned inventory. Returns True if added or already owned."""
+        state = self._ensure_cosmetic_inventory(username)
+        if state is None:
+            return False
+        user, profile, owned, _ = state
+        key = str(cosmetic_id or '').strip()
+        if not key:
+            return False
+        owned_set = {str(e) for e in owned}
+        if key in owned_set:
+            return True
+        owned.append(key)
+        self._touch_profile(user)
+        self.save_users()
+        return True
+
+    def grant_and_equip_cosmetic(self, slot: str, cosmetic_id: str, username=None) -> bool:
+        """Grant cosmetic and equip it into the given slot. Returns True on success."""
+        if not cosmetic_id or not slot:
+            return False
+        granted = self.grant_cosmetic(cosmetic_id, username=username)
+        if not granted:
+            return False
+        return bool(self.equip_cosmetic(slot, cosmetic_id, username=username))
+
+    def get_equipped_cosmetic(self, slot: str, username=None):
+        state = self._ensure_cosmetic_inventory(username)
+        if state is None:
+            return None
+        _, _, _, equipped = state
+        return equipped.get(str(slot))
+
+    def equip_cosmetic(self, slot: str, cosmetic_id: str, username=None) -> bool:
+        state = self._ensure_cosmetic_inventory(username)
+        if state is None:
+            return False
+        user, _, owned, equipped = state
+        slot_key = str(slot or '').strip()
+        cosmetic_key = str(cosmetic_id or '').strip()
+        if not slot_key or not cosmetic_key:
+            return False
+
+        owned_set = {str(entry) for entry in owned}
+        # Bundled free defaults can be equipped without ownership: the rainbow
+        # trace and the default Luna-Cat pet. Everything else must be owned.
+        if cosmetic_key not in ('luna_rainbow', 'luna_cat', DEFAULT_BLOCK_SKIN_VALUE) and cosmetic_key not in owned_set:
+            return False
+
+        equipped[slot_key] = cosmetic_key
+        self._touch_profile(user)
+        self.save_users()
+        if slot_key == 'block_skin':
+            _sync_default_falling_block_appearance(self, username=user)
+        return True
+
+    def purchase_and_equip_cosmetic(self, slot: str, cosmetic_id: str, price: int, username=None) -> bool:
+        state = self._ensure_cosmetic_inventory(username)
+        if state is None:
+            return False
+        user, profile, owned, equipped = state
+        slot_key = str(slot or '').strip()
+        cosmetic_key = str(cosmetic_id or '').strip()
+        if not slot_key or not cosmetic_key:
+            return False
+
+        owned_set = {str(entry) for entry in owned}
+        current = int(profile.get('neural_fragments', 0) or 0)
+        cost = max(0, int(price or 0))
+        if cosmetic_key not in owned_set:
+            if current < cost:
+                return False
+            profile['neural_fragments'] = current - cost
+            owned.append(cosmetic_key)
+
+        equipped[slot_key] = cosmetic_key
+        self._touch_profile(user)
+        self.save_users()
+        if slot_key == 'block_skin':
+            _sync_default_falling_block_appearance(self, username=user)
+        return True
 
     def add_xp(self, mode: str, amount: int, username=None):
         """Add XP for a per-mode progression (simple key)."""
@@ -995,3 +1156,150 @@ class UserManager:
         if count <= 0:
             return None
         return {'id': best_id, 'title': best_entry.get('title', best_id), 'count': count}
+
+    # ── Mystery kart sahipliği / geliştirme ───────────────────────
+    #
+    # Kart sahipliği "aile" bazında tutulur (kademe bazında değil). Bir kartın
+    # geliştirilmesi ulaşılan kademeyi (card_tiers[aile_id]) artırır; o ailenin
+    # tier <= N olan tüm varyantları Mystery seçim havuzunda aktif olur.
+    #
+    # ÖNEMLİ AYRIM: card_tiers (mağaza geliştirme kademesi) ≠
+    # MysteryCardManager.card_level (XP progression) ≠ board.level (tempo).
+
+    # Common rarity ile başlayan ama üst kademeleri paralı olan kart aileleri.
+    # Bu aileler için K1 (common) satın alma gerektirmeden "sahip" sayılır.
+    _COMMON_START_CARD_FAMILIES = frozenset({'hold_destroyer'})
+
+    def _ensure_card_inventory(self, username=None):
+        """owned_cards / card_tiers alanlarını garanti et (lazy-init)."""
+        user = username or self.current_user
+        if not user or user not in self.users:
+            return None
+        profile = self.users[user]
+        owned = profile.get('owned_cards')
+        if not isinstance(owned, list):
+            owned = []
+            profile['owned_cards'] = owned
+        tiers = profile.get('card_tiers')
+        if not isinstance(tiers, dict):
+            tiers = {}
+            profile['card_tiers'] = tiers
+        return user, profile, owned, tiers
+
+    def owns_card(self, card_id, username=None) -> bool:
+        """Oyuncu bu kart ailesine sahip mi?
+
+        Common-başlangıçlı aileler (örn. hold_destroyer) satın alma olmadan da
+        sahip sayılır çünkü K1 (common) varyantı her zaman açıktır.
+        """
+        key = str(card_id or '').strip()
+        if not key:
+            return False
+        if key in self._COMMON_START_CARD_FAMILIES:
+            return True
+        state = self._ensure_card_inventory(username)
+        if state is None:
+            return False
+        _, _, owned, _ = state
+        return key in {str(e) for e in owned}
+
+    def get_card_tier(self, card_id, username=None) -> int:
+        """Ailenin ulaşılan geliştirme kademesi (sahip değilse 0).
+
+        Common-başlangıçlı aileler için card_tiers tanımsızsa 1 kabul edilir
+        (K1 zaten ücretsiz açıktır).
+        """
+        key = str(card_id or '').strip()
+        if not key:
+            return 0
+        state = self._ensure_card_inventory(username)
+        if state is None:
+            # user_manager state yoksa: common-başlangıçlılar için K1 varsay.
+            return 1 if key in self._COMMON_START_CARD_FAMILIES else 0
+        _, _, owned, tiers = state
+        try:
+            raw = int(tiers.get(key, 0) or 0)
+        except Exception:
+            raw = 0
+        if raw > 0:
+            return raw
+        # card_tiers'ta yok: common-başlangıçlı aile her zaman en az K1.
+        if key in self._COMMON_START_CARD_FAMILIES:
+            return 1
+        # owned_cards'ta var ama tier yazılmamışsa K1.
+        if key in {str(e) for e in owned}:
+            return 1
+        return 0
+
+    def purchase_card(self, card_id, price, username=None) -> bool:
+        """Bir kart ailesini satın al (atomik).
+
+        Bakiye yeterse: spend_fragments + owned_cards'a ekle + card_tiers[id]=1.
+        Zaten sahipse veya bakiye yetersizse False.
+        """
+        key = str(card_id or '').strip()
+        if not key:
+            return False
+        state = self._ensure_card_inventory(username)
+        if state is None:
+            return False
+        user, profile, owned, tiers = state
+        # Zaten sahipse satın alma yok.
+        if key in {str(e) for e in owned}:
+            return False
+        try:
+            cost = max(0, int(price or 0))
+        except Exception:
+            return False
+        current = int(profile.get('neural_fragments', 0) or 0)
+        if current < cost:
+            return False
+        profile['neural_fragments'] = current - cost
+        owned.append(key)
+        tiers[key] = 1
+        self._touch_profile(user)
+        self.save_users()
+        return True
+
+    def upgrade_card(self, card_id, price, max_tier, username=None) -> bool:
+        """Sahip olunan kartı bir üst kademeye geliştir (atomik).
+
+        Sahipse ve mevcut kademe < max_tier ise: spend_fragments +
+        card_tiers[id] += 1. Aksi halde False.
+        """
+        key = str(card_id or '').strip()
+        if not key:
+            return False
+        state = self._ensure_card_inventory(username)
+        if state is None:
+            return False
+        user, profile, owned, tiers = state
+        try:
+            ceiling = int(max_tier or 0)
+        except Exception:
+            return False
+        if ceiling <= 0:
+            return False
+        current_tier = self.get_card_tier(key, username=username)
+        # Sahiplik kontrolü: owned_cards veya common-başlangıçlı aile.
+        is_owned = key in {str(e) for e in owned} or key in self._COMMON_START_CARD_FAMILIES
+        if not is_owned or current_tier <= 0:
+            return False
+        if current_tier >= ceiling:
+            return False
+        try:
+            cost = max(0, int(price or 0))
+        except Exception:
+            return False
+        balance = int(profile.get('neural_fragments', 0) or 0)
+        if balance < cost:
+            return False
+        profile['neural_fragments'] = balance - cost
+        tiers[key] = current_tier + 1
+        # Common-başlangıçlı aile owned_cards'ta görünmeyebilir; geliştirme
+        # sonrası sahiplik kaydını netleştir (geriye dönük tutarlılık).
+        if key not in {str(e) for e in owned}:
+            owned.append(key)
+        self._touch_profile(user)
+        self.save_users()
+        return True

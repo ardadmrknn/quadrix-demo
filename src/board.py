@@ -76,16 +76,12 @@ class Board:
         return True
 
     def lock_piece(self, piece, *, track_game_over: bool = True) -> int:
-        # Track if piece touches top row (row 0 or above)
         self._last_lock_out = False
-        _touches_top = False
-        for ly, row in enumerate(piece.shape):
-            for lx, c in enumerate(row):
-                if c and (piece.y + ly) <= 0:
-                    _touches_top = True
-                    break
-            if _touches_top:
-                break
+
+        # Esnek Sınır artık lock anında yatay snap yapmaz. Tahta dışında kalan
+        # hücreler görünmez alanda bırakılır; yalnızca görünür alana düşen hücreler yazılır.
+        lock_dx = 0
+
         piece_w = len(piece.shape[0]) if piece.shape else 0
         piece_h = len(piece.shape) if piece.shape else 0
         color_matrix = getattr(piece, 'color_matrix', None)
@@ -94,13 +90,19 @@ class Board:
             or getattr(piece, '_board_style_name', None)
             or getattr(piece, 'name', None)
         )
+        # Görünür alanın üstünde (y < 0) yazılamayan dolu hücre kaldı mı? (top-out)
+        _overflow_top = False
         for ly, row in enumerate(piece.shape):
             for lx, c in enumerate(row):
                 if not c:
                     continue
-                x = piece.x + lx
+                x = piece.x + lx + lock_dx
                 y = piece.y + ly
-                if 0 <= x < self.width and 0 <= y < self.height:
+                if y < 0:
+                    # Tepe taşması: hücre yazılamaz (silinmez de — top-out sinyali).
+                    _overflow_top = True
+                    continue
+                if 0 <= x < self.width and y < self.height:
                     cell_color = piece.color
                     if color_matrix is not None:
                         try:
@@ -128,8 +130,12 @@ class Board:
         
         cleared = self.clear_lines()
 
-        # Lock-out: piece touched top AND row 0 still occupied after line clears
-        if _touches_top and any(self._cell_filled(x, 0) for x in range(self.width)):
+        # Lock-out kuralı: satır temizlikleri bittikten sonra en üst GÖRÜNÜR satırda
+        # (row 0) dolu hücre kaldıysa game-over. Ek olarak, görünür alanın üstüne
+        # taşıp yazılamayan hücre (top-out) varsa da game-over. Negatif/gizli satır
+        # "dokunma" mantığı kaldırıldı (haksız ölümü önlemek için kural net biçimde
+        # görünür row 0'a bağlandı).
+        if _overflow_top or any(self._cell_filled(x, 0) for x in range(self.width)):
             self._last_lock_out = True
             if track_game_over:
                 self._locked_out = True
@@ -165,6 +171,10 @@ class Board:
         all_cleared_rows: List[int] = []
         all_gold_lines: dict[int, bool] = {}
         all_unit_points: dict[int, int] = {}
+        # Cascade boyunca temizlenen satır renkleri (efekt için). Bu çağrıya özel
+        # yerel birikimdir; cascade turları arası aynı row indeksi tekrar
+        # temizlenirse ilk turun renkleri korunur (setdefault).
+        cascade_colors: dict[int, List[Tuple[int, int, int]]] = {}
         
         # CASCADE LOOP: Satır silindikten sonra yeni dolu satırlar oluşabilir, onları da sil
         while True:
@@ -191,8 +201,14 @@ class Board:
             total_lines += len(lines_to_clear)
             
             # Satır renklerini efekt için kaydet (silmeden ÖNCE)
+            # Cascade'in ardışık turlarında satırlar yukarı kaydığından aynı row
+            # indeksi birden çok turda temizlenebilir. İlk turda kaydedilen renkleri
+            # koru (üzerine yazma) ki cascade boyunca temizlenen satır renkleri
+            # kaybolmasın.
             for y in lines_to_clear:
-                self.last_cleared_colors[y] = [self.grid[y][x] for x in range(self.width)]
+                cascade_colors.setdefault(
+                    y, [self.grid[y][x] for x in range(self.width)]
+                )
             
             # Satırları sil (üstten alta doğru - reverse=True ile indeks kayması önlenir)
             # ÖNEMLİ: Önce tüm satırları sil, SONRA boş satırları ekle!
@@ -214,6 +230,8 @@ class Board:
                 self.owners.insert(0, [None for _ in range(self.width)])
         
         self.last_cleared_lines = all_cleared_rows
+        if total_lines > 0:
+            self.last_cleared_colors = cascade_colors
         
         # Puan hesaplama
         # Puan hesaplama
@@ -399,10 +417,12 @@ class Board:
         self.owners = [[None for _ in range(self.width)] for _ in range(self.height)]
         self.score = 0
         self.lines_cleared = 0
+        self.level_lines_cleared = 0
         self.level = 1
         self.combo = 0
         self.tetrises = 0
         self.last_cleared_lines = []
         self.last_cleared_colors = {}
+        self.flexible_border_active = False
         self.back_to_back = False
         self.clear_lock_out()

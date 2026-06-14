@@ -1658,6 +1658,7 @@ def main():
     # Falling blocks katmanını effects_opacity ile senkronize et.
     try:
         from background_effects import get_shared_falling_blocks_layer as _get_fb_init
+        from background_effects import sync_shared_falling_blocks_appearance as _sync_fb_appearance
         _eff_init = float(settings_manager.get('effects_opacity', 1.0))
         for _layer_name, _layer_kwargs in (
             ('default', {}),
@@ -1665,6 +1666,7 @@ def main():
             _fb_init = _get_fb_init(_layer_name, **_layer_kwargs)
             if _fb_init is not None:
                 _fb_init.set_opacity_multiplier(_eff_init)
+        _sync_fb_appearance(user_manager, layer_name='default')
     except Exception:
         pass
 

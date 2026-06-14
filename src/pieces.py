@@ -184,6 +184,11 @@ class Piece:
             if hasattr(self, 'color_matrix'):
                 cm = getattr(self, 'color_matrix', None)
                 new_piece.color_matrix = [row[:] for row in cm] if cm is not None else None
+            # Perk bayrakları: ghost/önizleme gibi tüketiciler is_valid_position'ı
+            # doğru değerlendirsin diye taşı (varsa).
+            for _flag in ('flexible_border', 'tunnel', 'drill'):
+                if hasattr(self, _flag):
+                    setattr(new_piece, _flag, getattr(self, _flag))
             return new_piece
         else:
             # Normal parça
@@ -201,6 +206,11 @@ class Piece:
             if hasattr(self, 'color_matrix'):
                 cm = getattr(self, 'color_matrix', None)
                 new_piece.color_matrix = [row[:] for row in cm] if cm is not None else None
+            # Perk bayrakları: ghost/önizleme gibi tüketiciler is_valid_position'ı
+            # doğru değerlendirsin diye taşı (varsa).
+            for _flag in ('flexible_border', 'tunnel', 'drill'):
+                if hasattr(self, _flag):
+                    setattr(new_piece, _flag, getattr(self, _flag))
             return new_piece
 
 

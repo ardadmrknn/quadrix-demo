@@ -1065,14 +1065,14 @@ class CascadeMode(Game):
 
         # Parçayı tahtaya yerleştir (occupancy/texture/owners ile tutarlı)
         piece = self.current_piece
-        # Lock-out kontrolü (Tetris Guideline): parça üst satırda kilitlendi mi?
-        _lock_out = False
+        # Top-out: görünür alanın üstünde (y<0) yazılamayan dolu hücre kaldı mı?
+        _overflow_top = False
         for ly, row in enumerate(piece.shape):
             for lx, c in enumerate(row):
-                if c and (piece.y + ly) <= 0:
-                    _lock_out = True
+                if c and (piece.y + ly) < 0:
+                    _overflow_top = True
                     break
-            if _lock_out:
+            if _overflow_top:
                 break
         piece_w = len(piece.shape[0]) if getattr(piece, 'shape', None) else 0
         piece_h = len(piece.shape) if getattr(piece, 'shape', None) else 0
@@ -1239,8 +1239,10 @@ class CascadeMode(Game):
             # Daha minimal bildirim için daha kısa süre
             self.cascade_message_time = 90  # ~1.5 saniye
         
-        # Lock-out kontrolü (Tetris Guideline): cascade sonrası row 0 dolu mu?
-        if _lock_out and any(self.board.occupancy[0][x] for x in range(self.board_width)):
+        # Lock-out kuralı: cascade sonrası görünür row 0 dolu kaldıysa ya da tepe
+        # taşması (top-out) varsa game-over (Board.lock_piece ile aynı kural;
+        # negatif/gizli satır "dokunma" mantığı kaldırıldı).
+        if _overflow_top or any(self.board.occupancy[0][x] for x in range(self.board_width)):
             self.board.mark_locked_out()
             self.game_over = True
             try:

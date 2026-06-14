@@ -686,6 +686,14 @@ class ZenMode(Game):
         
         # NOT: Müzik Game.__init__ içinde ayarlardan seçilen müzikle çalacak
     
+    def _handle_block_out(self) -> None:
+        """Zen modu asla bitmez: block-out yerine otomatik alan açar."""
+        try:
+            self.auto_clear_board(clear_entire_board=False)
+            self.auto_clear_triggered = True
+        except Exception:
+            pass
+
     def lock_and_new_piece(self):
         """Parçayı kilitle - ZEN MODUNDA OYUN ASLA BİTMEZ"""
         # Lock explosion - her hücre için parçacık patlaması

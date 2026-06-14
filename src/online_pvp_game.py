@@ -34,6 +34,7 @@ from constants import (
 from board import Board
 from pieces import Piece, SHAPES, get_piece_spawn_y, skip_hidden_rows
 from block_styles import BlockStyleManager, TextureSlice, TextureRenderCache
+from block_skin_assets import get_equipped_block_appearance
 from sound import SoundManager
 from background import BackgroundManager
 from background_effects import get_shared_falling_blocks_layer
@@ -473,6 +474,7 @@ class OnlinePvPGame:
             self.theme_manager.set_theme(active_theme)
         self.mode_skin = get_mode_skin('pvp')
         self.block_style_manager = BlockStyleManager(self.settings_manager) if self.settings_manager else None
+        self.block_appearance = get_equipped_block_appearance(self.user_manager)
         self._texture_render_cache = TextureRenderCache()
         self._effect_surface_cache = EffectSurfaceCache()
         self._sweep_cat_state = SweepCatState()
@@ -942,9 +944,9 @@ class OnlinePvPGame:
         target = dst or self.screen
         if texture_surface is not None and texture_slice is not None:
             self._draw_texture_cell(x, y, size, texture_surface, texture_slice, target)
-            draw_jelly_border(target, x, y, size, color)
+            draw_jelly_border(target, x, y, size, color, appearance=self.block_appearance)
             return
-        draw_jelly_block(target, x, y, size, color)
+        draw_jelly_block(target, x, y, size, color, appearance=self.block_appearance)
 
     def _start_pvp_music(self):
         """PvP müziğini başlat (local PvP ile aynı playlist mantığı)."""

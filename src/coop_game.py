@@ -29,6 +29,7 @@ from retro_style import retro_style
 from renderers.jelly_renderer import draw_jelly_block, draw_jelly_border
 from themes import ThemeManager
 from block_styles import BlockStyleManager, TextureSlice, TextureRenderCache
+from block_skin_assets import get_equipped_block_appearance
 from platform_utils import (
     create_display, normalize_mouse_pos, get_mouse_pos, set_app_icon,
 )
@@ -310,6 +311,7 @@ class CoopGame:
         self.theme_manager = ThemeManager(self.settings_manager)
         self.mode_skin = get_mode_skin('classic')
         self.block_style_manager = BlockStyleManager(self.settings_manager) if self.settings_manager else None
+        self.block_appearance = get_equipped_block_appearance(self.user_manager)
         self._texture_render_cache = TextureRenderCache()
 
         # --- Kontroller ---
@@ -1333,9 +1335,9 @@ class CoopGame:
             color = (128, 128, 128)
         if texture_surface is not None and texture_slice is not None:
             self._draw_texture_cell(x, y, size, color, texture_surface, texture_slice)
-            draw_jelly_border(self.screen, x, y, size, color)
+            draw_jelly_border(self.screen, x, y, size, color, appearance=self.block_appearance)
             return
-        draw_jelly_block(self.screen, x, y, size, color)
+        draw_jelly_block(self.screen, x, y, size, color, appearance=self.block_appearance)
 
     def _make_texture_slice(self, piece: Piece | None, rel_x: int, rel_y: int,
                              piece_width: int | None = None, piece_height: int | None = None) -> TextureSlice | None:
