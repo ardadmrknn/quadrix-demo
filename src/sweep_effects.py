@@ -5,6 +5,7 @@ Hem Game hem PvPGame tarafından kullanılır.
 
 from __future__ import annotations
 
+import math
 import os
 import pygame
 
@@ -482,7 +483,62 @@ _SWEEP_LEVEL_DURATION_DECAY = 0.965
 _SWEEP_LEVEL_MIN_DURATION_RATIO = 0.42
 
 _LINE_SWEEP_SLOT = 'line_sweep_skin'
-_LINE_SWEEP_THEME_ALIASES = {
+
+# Horizontal scroll speed (px/sec) for the tiled country-flag sweep. A single
+# un-stretched flag tile slides to the right and repeats behind itself, the
+# same scrolling-art motif used by the mystery-card selection screen.
+_FLAG_SCROLL_SPEED_PX_PER_SEC = 60.0
+
+# Registry-backed alias map. The country theme registry owns historical
+# cosmetic values (`luna_usa`, etc.) and modern aliases (`tr`, `de`,
+# `birlesik_krallik`, ...). Keeping it at import time keeps lookup O(1)
+# without a global init dance later.
+try:
+    try:
+        from .country_sweep_assets import (  # type: ignore
+            country_theme_aliases as _country_theme_aliases,
+            get_country_theme as _get_country_theme,
+            get_flag_surface as _get_country_flag_surface,
+            get_flag_aspect_ratio as _get_country_flag_aspect_ratio,
+            list_country_themes as _list_country_themes,
+        )
+    except ImportError:
+        from country_sweep_assets import (  # type: ignore
+            country_theme_aliases as _country_theme_aliases,
+            get_country_theme as _get_country_theme,
+            get_flag_surface as _get_country_flag_surface,
+            get_flag_aspect_ratio as _get_country_flag_aspect_ratio,
+            list_country_themes as _list_country_themes,
+        )
+except Exception:
+    _country_theme_aliases = {}
+    def _get_country_theme(theme_id): return None
+    def _get_country_flag_surface(*args): return None
+    def _get_country_flag_aspect_ratio(*args): return None
+    def _list_country_themes(): return []
+
+try:
+    try:
+        from .pet_assets import (  # type: ignore
+            PET_SLOT as _PET_SLOT,
+            is_default_pet as _is_default_pet,
+            load_pet_frames as _load_pet_frames,
+            normalize_pet as _normalize_pet,
+        )
+    except ImportError:
+        from pet_assets import (  # type: ignore
+            PET_SLOT as _PET_SLOT,
+            is_default_pet as _is_default_pet,
+            load_pet_frames as _load_pet_frames,
+            normalize_pet as _normalize_pet,
+        )
+except Exception:
+    _PET_SLOT = 'line_sweep_pet'
+    def _is_default_pet(pet): return True
+    def _load_pet_frames(*args): return []
+    def _normalize_pet(pet): return 'luna_cat'
+
+_LINE_SWEEP_THEME_ALIASES: dict[str, str] = {
     'rainbow': 'rainbow',
     'luna_rainbow': 'rainbow',
     'luna_sweep_rainbow': 'rainbow',
@@ -537,6 +593,318 @@ def get_equipped_line_sweep_theme(user_manager=None, profile: dict | None = None
     return 'rainbow'
 
 
+def _resolve_profile(user_manager, profile: dict | None) -> dict | None:
+    """Best-effort fetch of the active user's profile dict from a manager.
+
+    Mirrors the defensive lookup used by ``get_equipped_line_sweep_theme`` so
+    pet resolution behaves the same across the (loosely typed) user-manager
+    variants used in tests and at runtime.
+    """
+    if profile is not None or user_manager is None:
+        return profile
+    profile_getter = getattr(user_manager, 'get_user_data', None)
+    if not callable(profile_getter):
+        return None
+    try:
+        return profile_getter()
+    except TypeError:
+        current_getter = getattr(user_manager, 'get_current_user', None)
+        try:
+            current_user = current_getter() if callable(current_getter) else getattr(user_manager, 'current_user', None)
+        except Exception:
+            current_user = None
+        try:
+            return profile_getter(current_user)
+        except Exception:
+            return None
+    except Exception:
+        return None
+
+
+def get_equipped_pet(user_manager=None, profile: dict | None = None) -> str:
+    """Resolve the equipped sweep companion (pet) cosmetic value.
+
+    Reads the ``line_sweep_pet`` slot. Falls back to the default Luna-Cat when
+    nothing is equipped (the case for every pre-pets profile) or on any error,
+    so the sweep always has a valid companion to draw.
+    """
+    if profile is None and user_manager is not None:
+        getter = getattr(user_manager, 'get_equipped_cosmetic', None)
+        if callable(getter):
+            try:
+                equipped = getter(_PET_SLOT)
+            except Exception:
+                equipped = None
+            else:
+                return _normalize_pet(equipped)
+
+    profile = _resolve_profile(user_manager, profile)
+    if isinstance(profile, dict):
+        equipped_map = profile.get('equipped_cosmetics', {})
+        if isinstance(equipped_map, dict):
+            return _normalize_pet(equipped_map.get(_PET_SLOT))
+    return _normalize_pet(None)
+
+
+def _get_line_sweep_palette(theme: str) -> list[tuple[int, int, int]]:
+    """Return a small fallback palette for legacy callers (e.g. preview
+    swatches that pre-date the asset pipeline).
+
+    Country themes are now drawn from raster flag assets, but a few
+    callers still ask for a colour list to seed surrounding chrome (chip
+    backgrounds, the "preview palette" sampler in the store). We hand
+    them a flag-accurate sample so the chrome harmonises with the asset.
+    """
+    normalized = normalize_line_sweep_theme(theme)
+    if normalized == 'usa':
+        return [
+            (191, 13, 62),
+            (245, 245, 245),
+            (191, 13, 62),
+            (245, 245, 245),
+            (24, 48, 122),
+        ]
+    if normalized == 'turkiye':
+        return [(227, 10, 23)] * 4 + [(245, 245, 245)]
+    if normalized == 'russia':
+        return [(245, 245, 245), (40, 80, 200), (210, 40, 50)]
+    if normalized == 'japan':
+        return [(248, 248, 248)] * 3 + [(220, 50, 60)]
+    if normalized == 'china':
+        return [(238, 28, 37)] * 4 + [(255, 222, 0)]
+    if normalized == 'germany':
+        return [(20, 20, 20), (220, 20, 30), (255, 206, 0)]
+    if normalized == 'france':
+        return [(0, 85, 164), (245, 245, 245), (239, 65, 53)]
+    if normalized == 'spain':
+        return [(170, 21, 27), (255, 196, 0), (170, 21, 27)]
+    if normalized == 'italy':
+        return [(0, 146, 70), (245, 245, 245), (206, 43, 55)]
+    if normalized == 'brazil':
+        return [(0, 156, 59), (255, 223, 0), (0, 39, 118)]
+    if normalized == 'south_korea':
+        return [(245, 245, 245), (200, 36, 53), (0, 71, 160)]
+    if normalized == 'united_kingdom':
+        return [(0, 36, 125), (245, 245, 245), (200, 16, 46)]
+    return list(_RAINBOW)
+
+
+def _draw_star(surface: pygame.Surface, center: tuple[int, int], radius: int, color: tuple[int, int, int]) -> None:
+    cx, cy = center
+    points = []
+    outer = max(2, int(radius))
+    inner = max(1, int(radius * 0.45))
+    for index in range(10):
+        angle = -90 + index * 36
+        current_radius = outer if index % 2 == 0 else inner
+        vector = pygame.math.Vector2(current_radius, 0).rotate(angle)
+        points.append((cx + vector.x, cy + vector.y))
+    if len(points) >= 3:
+        pygame.draw.polygon(surface, color, points)
+
+
+def draw_line_sweep_band(
+    surface: pygame.Surface,
+    rect: pygame.Rect,
+    theme: str = 'rainbow',
+    *,
+    stripe_highlight_enabled: bool = True,
+    border_radius: int = 0,
+    border_color: tuple[int, int, int] | None = None,
+    border_alpha: int = 72,
+    phase: int = 0,
+) -> None:
+    if rect.width <= 0 or rect.height <= 0:
+        return
+
+    normalized = normalize_line_sweep_theme(theme)
+    band = pygame.Surface(rect.size, pygame.SRCALPHA)
+
+    # Rainbow keeps its striped palette (the rainbow trail itself is the
+    # motif). Country themes go through the unified asset pipeline so we
+    # never stack palette stripes underneath the flag — that's what
+    # produced the chaotic look on small previews and the cheap, hand-drawn
+    # feel on every newly-added country.
+    country_spec = _get_country_theme(normalized)
+    if normalized == 'rainbow':
+        colors = _get_line_sweep_palette(normalized)
+        stripe_height = max(1, rect.height // max(1, len(colors)))
+        for index, color in enumerate(colors):
+            stripe_rect = pygame.Rect(0, index * stripe_height, rect.width, stripe_height + 1)
+            pygame.draw.rect(band, (*color, 228), stripe_rect)
+            if stripe_highlight_enabled and index % 2 == 0 and stripe_rect.width > 4:
+                pygame.draw.line(
+                    band,
+                    (255, 255, 255, 108),
+                    (1, stripe_rect.y),
+                    (stripe_rect.width - 2, stripe_rect.y),
+                    1,
+                )
+        _draw_rainbow_overlay(band, rect, phase)
+    elif country_spec is not None:
+        _draw_country_flag_band(band, rect, country_spec.theme_id, phase)
+    else:
+        # Unknown theme — fall back to the palette path so we never render an
+        # empty band.
+        colors = _get_line_sweep_palette(normalized)
+        stripe_height = max(1, rect.height // max(1, len(colors)))
+        for index, color in enumerate(colors):
+            stripe_rect = pygame.Rect(0, index * stripe_height, rect.width, stripe_height + 1)
+            pygame.draw.rect(band, (*color, 228), stripe_rect)
+
+    # Animated wind-shimmer pass — a soft diagonal highlight that sweeps across
+    # the flag in sync with `phase`. Skipped on previews that are too short
+    # for the highlight to read as anything but a stray vertical glitch.
+    if rect.height >= 24 and rect.width >= 60:
+        _apply_wind_shimmer(band, rect, phase, normalized)
+
+    if border_radius > 0:
+        mask = pygame.Surface(rect.size, pygame.SRCALPHA)
+        pygame.draw.rect(mask, (255, 255, 255, 255), mask.get_rect(), border_radius=border_radius)
+        band.blit(mask, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+
+    if border_color is not None and border_alpha > 0:
+        pygame.draw.rect(band, (*border_color, border_alpha), band.get_rect(), 1, border_radius=border_radius)
+
+    surface.blit(band, rect.topleft)
+
+
+# ------------------------------------------------------------------
+# Per-theme overlays
+# ------------------------------------------------------------------
+
+
+def _draw_country_flag_band(
+    band: pygame.Surface,
+    rect: pygame.Rect,
+    theme_id: str,
+    phase: int,
+) -> None:
+    """Asset-backed country flag tiled into the sweep band.
+
+    Instead of stretching a single flag across the whole band (which
+    distorted the proportions on wide sweeps), we size *one* flag to the
+    band height at its natural aspect ratio and tile it horizontally,
+    scrolling the tiles to the right. The same flag repeats behind the
+    leading copy — mirroring the scrolling card-art animation used on the
+    mystery-card selection screen. If the asset isn't available we fall
+    back to the colour palette so the band stays drawn.
+    """
+    width, height = band.get_size()
+    if width <= 0 or height <= 0:
+        return
+
+    wave_amplitude = max(2.0, height * 0.06)
+    draw_h = max(1, int(height - 2 * wave_amplitude))
+
+    aspect = _get_country_flag_aspect_ratio(theme_id)
+    if aspect and aspect > 0:
+        # One un-stretched flag tile, sized to the drawable height that leaves
+        # headroom for the wave displacement at the top and bottom edges.
+        tile_w = max(1, int(round(draw_h * aspect)))
+        flag = _get_country_flag_surface(theme_id, tile_w, draw_h)
+    else:
+        flag = None
+        tile_w = 0
+
+    if flag is None:
+        # Asset missing on disk — last-resort palette so we never ship an
+        # invisible band. Logged once via the cache; no spam per frame.
+        colors = _get_line_sweep_palette(theme_id)
+        stripe_height = max(1, height // max(1, len(colors)))
+        for index, color in enumerate(colors):
+            pygame.draw.rect(
+                band,
+                (*color, 232),
+                pygame.Rect(0, index * stripe_height, width, stripe_height + 1),
+            )
+        return
+
+    tile_w = flag.get_width()
+    if tile_w <= 0:
+        band.blit(flag, (0, int(wave_amplitude)))
+        return
+
+    # Continuous, time-driven scroll so the motion stays smooth regardless
+    # of the discrete `phase` value. Loops every tile so the repeat is
+    # seamless. Scrolls to the right (image enters from the left).
+    elapsed = pygame.time.get_ticks() / 1000.0
+    offset = int((elapsed * _FLAG_SCROLL_SPEED_PX_PER_SEC) % tile_w)
+    temp_band = pygame.Surface((width, height), pygame.SRCALPHA)
+    tile_y = int(wave_amplitude)
+    x = offset - tile_w
+    while x < width:
+        temp_band.blit(flag, (x, tile_y))
+        x += tile_w
+
+    slice_w = 2
+    for sx in range(0, width, slice_w):
+        current_slice_w = min(slice_w, width - sx)
+        angle = (sx * (2.0 * math.pi / 120.0)) - (elapsed * 5.0)
+        dy = int(math.sin(angle) * wave_amplitude)
+        band.blit(
+            temp_band,
+            (sx, dy),
+            area=pygame.Rect(sx, 0, current_slice_w, height),
+        )
+
+
+
+
+
+def _apply_wind_shimmer(band: pygame.Surface, rect: pygame.Rect, phase: int, theme: str) -> None:
+    """Soft diagonal highlight that scrolls with phase. Sells the 'wind' feel.
+
+    Rainbow already animates via stripe rotation, so we skip it for that theme
+    to avoid double-animation. For flags the shimmer is what makes them read
+    as moving instead of static rectangles.
+    """
+    if theme == 'rainbow':
+        return
+    width, height = band.get_size()
+    if width <= 0 or height <= 0:
+        return
+    # Highlight is a soft vertical column that travels across the flag.
+    # Width scales with the band so previews don't get a knife-thin glitch.
+    band_w = max(6, int(width * 0.18))
+    cycle = 8
+    progress = (phase % cycle) / float(cycle)
+    center_x = int(-band_w + (width + band_w * 2) * progress)
+    if center_x + band_w < 0 or center_x - band_w >= width:
+        return
+    shimmer = pygame.Surface((band_w * 2 + 1, height), pygame.SRCALPHA)
+    for dx in range(-band_w, band_w + 1):
+        falloff = 1.0 - abs(dx) / float(band_w)
+        alpha = int(22 * (falloff ** 2))
+        if alpha > 0:
+            pygame.draw.line(shimmer, (255, 255, 255, alpha), (dx + band_w, 0), (dx + band_w, height), 1)
+    band.blit(shimmer, (center_x - band_w, 0))
+
+
+def _draw_rainbow_overlay(band: pygame.Surface, rect: pygame.Rect, phase: int) -> None:
+    """Soft sparkle pass that travels along the rainbow stripes.
+
+    A single bright dot per stripe at small heights (so it doesn't clump into
+    a blob in store cards), spaced more generously at larger heights for
+    in-game bands.
+    """
+    width, height = band.get_size()
+    if width < 16 or height < 8:
+        return
+    cycle = 8
+    progress = (phase % cycle) / float(cycle)
+    sparkle_x = int(width * progress)
+    radius = max(1, height // 14)
+    if radius <= 0:
+        return
+    palette_count = 6
+    stripe_h = max(1, height // palette_count)
+    # Place one sparkle near the centre of every other stripe so the rainbow
+    # shimmers without a stack of overlapping dots.
+    for i in range(0, palette_count, 2):
+        cy = stripe_h * i + stripe_h // 2
+        if 0 <= cy < height:
+            pygame.draw.circle(band, (255, 255, 255, 90), (sparkle_x, cy), radius)
 
 def compute_line_sweep_progress_speed(
     base_block_speed: float,
