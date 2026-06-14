@@ -1,4 +1,0 @@
-#!/usr/bin/env bash
-# Convenience wrapper: use ./pytest instead of pytest
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-exec "$SCRIPT_DIR/run_tests.sh" "$@"

@@ -1,7 +1,0 @@
-pygame-ce>=2.5.7
-numpy==1.26.4
-Pillow>=12.2.0
-requests>=2.33.1
-
-# Opsiyonel: macOS pencere focus yönetimi için (kurulumu uzun sürebilir)
-# pyobjc-framework-Cocoa
