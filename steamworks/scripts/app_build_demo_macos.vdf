@@ -1,0 +1,13 @@
+"AppBuild"
+{
+    "AppID" "4635310"
+    "Desc" "Demo macOS build"
+    "SetLive" ""
+    "ContentRoot" ""
+    "BuildOutput" ""
+
+    "Depots"
+    {
+        "4635312" "depot_build_demo_macos.vdf"
+    }
+}

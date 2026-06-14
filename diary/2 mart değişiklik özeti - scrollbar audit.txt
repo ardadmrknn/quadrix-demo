@@ -1,0 +1,107 @@
+=========================================================
+  QUADRIX - 2 MART 2026 YAPILAN DEĞİŞİKLİKLER ÖZETİ
+  (Teknik olmayan dille açıklama)
+=========================================================
+
+BUGÜN NE YAPTIK?
+-----------------
+
+Kısaca: Oyunun menülerindeki kaydırma çubuklarını (scrollbar) hem
+güzelleştirdik hem daha akıllı hale getirdik, sonra da her şeyi baştan
+sona kontrol edip bulduğumuz hatayı düzelttik.
+
+
+1. KAYDIRMA ÇUBUĞU YENİLEMESİ
+--------------------------------
+Düşün ki bir liste var, liste ekrana sığmıyor, sağda küçük bir çubuk
+var. İşte o çubuğu:
+
+  - Eskiden görmeye bile değmez kadar küçük ve çirkin bir çizgiydi.
+  - Yeni haliyle renkli, parlak, yukarı/aşağı ok işaretleri olan,
+    sürüklenebilen, tıklanabilir premium bir çubuk oldu.
+
+Ne kazandık?
+  ✔ Çubuğa tıklayıp tutarak aşağı/yukarı sürükleyebiliyorsun
+  ✔ Çubuğun track kısmına (boş yerine) tıklayınca oraya zıplıyor
+  ✔ Fare tekerleği ile de çalışıyor (önce de çalışıyordu, koruduk)
+
+
+2. DİL SEÇİM PANELON ÜSTTE GÖRÜNMESİ
+---------------------------------------
+Ana menüde "Dil Seç" butonuna basınca açılan küçük liste, bazı oyun
+modu kartlarının ALTINDA kalıyordu — yani kartlar listenin üstüne
+çiziliyordu ve liste görünmez hale geliyordu.
+
+  - Sorun: Çizim sırası yanlıştı. Liste önce, kartlar sonra
+    çiziliyordu. Kartlar listeyi siliyordu.
+  - Çözüm: Dil listesinin çizimini en sona taşıdık. Artık her şeyin
+    üstüne çiziliyor, hiçbir şeyin arkasında kalmıyor.
+
+
+3. "MOUSE ÜZERINDEYKEN SCROLL ÇALIŞMIYORDU" HATASI
+----------------------------------------------------
+Şöyle bir durum vardı: Mesela dil listesi açık, fareyi "Türkçe" yazısının
+üzerine getiriyorsun. Mouse tekerleğini çeviriyorsun ama liste kaymıyor!
+
+  - Sorun: Her kare (saniyede 60 kez) kod "seçili öğeyi görünür yap"
+    diye listenin kaydırma konumunu sıfırlıyordu. Sen tekerleği
+    çeviriyordun → liste kayıyordu → bir sonraki karede kod "dur,
+    Türkçe görünür değil, geri sar" diyordu → kayma iptal oluyordu.
+    Göz açıp kapayacak kadar hızlı gerçekleştiği için sanki hiç
+    kaymıyor gibi görünüyordu.
+
+  - Çözüm: "Seçili öğeyi görünür yap" komutu artık sadece klavye
+    ok tuşlarına (↑ ↓) basıldığında çalışıyor. Her kare değil, sadece
+    gerektiğinde. Böylece tekerlek ve sürükleme artık engellenmiyor.
+
+  Bu hata 6 ayrı listede / panelde vardı, hepsinde düzelttik:
+    • Ana menü dil paneli
+    • Mod müziği listesi
+    • Müzik parçası seçici
+    • Tema seçici
+    • Çalma listesi (playlist) editörü
+    • Çalma listesi seçici
+
+
+4. KAPSAMLI KOD DENETİMİ (BUGÜN YAPILAN HER ŞEYİN KONTROLÜ)
+--------------------------------------------------------------
+Bugün değiştirdiğimiz tüm dosyaları tek tek okuyup "yanlış bir şey
+bıraktık mı?" diye kontrol ettik. İncelediğimiz dosyalar:
+
+  • src/extras_menu.py   → Oyun modları seçim ekranı
+  • src/menu.py          → Ana menü
+  • src/settings_screen_tabbed.py → Ayarlar ekranı
+  • src/guide_screen.py  → Oyun rehberi ekranı
+  • src/graphics_menu.py → Grafik ayarları ekranı
+  • src/retro_style.py   → Scrollbar çizim motoru
+
+Bulduğumuz ve düzelttiğimiz ekstra hata:
+
+  extras_menu.py — SCROLL SINIRI TUTARSIZLIĞI
+  ............................................
+  Oyun modları ekranında (extras_menu) kaydırma çubuğu üç farklı
+  yerde hesaplanıyordu:
+    - Fare tekerleği: A formülünü kullanıyordu
+    - Çubuğu sürükleme: B formülünü kullanıyordu
+    - Çubuğa tıklama: B formülünü kullanıyordu
+
+  A ve B farklı sonuçlar veriyordu. Sonuç: tekerleğiyle kaydırınca
+  bir yerde duruyordu, sürükleyince farklı bir yerde duruyordu.
+  Tutarsız bir deneyim.
+
+  Düzeltme: Ortak bir `_cached_max_scroll` değişkeni oluşturduk.
+  Bu değer draw() içinde bir kez hesaplanıyor; tekerlek, sürükleme
+  ve tıklama hepsi aynı değeri okuyor. Artık üçü de aynı noktada
+  duruyor.
+
+
+SONUÇ
+------
+Bugün yapılan her değişiklik ya görünür bir sorunu çözdü (çirkin
+scrollbar, listenin arkada kalması, tekerleğin çalışmaması) ya da
+gizli bir tutarsızlığı giderdi (scroll sınır hesabı). Kullanıcı
+açısından menüler artık daha akıcı ve güvenilir.
+
+Tüm dosyalar hatasız derleniyor (python3 -m py_compile ✔).
+
+=========================================================

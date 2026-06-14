@@ -1,0 +1,12 @@
+sound=1
+music=1
+particles=1
+fullscreen=1
+borderless_fullscreen=1
+showFPS=0
+showGhost=1
+screenShake=1
+volume=70
+difficulty=1
+background=0
+theme=Classic

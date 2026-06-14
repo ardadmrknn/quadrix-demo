@@ -1,0 +1,53 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "quadrix"
+version = "1.0.26"
+description = "Pygame-based Tetris game with Steam integration"
+readme = "README.md"
+requires-python = ">=3.12"
+license = {text = "Proprietary"}
+authors = [
+    {name = "Burak Yasayan"},
+]
+
+dependencies = [
+    "pygame-ce>=2.5.7",
+    "numpy>=1.26.4",
+    "Pillow>=12.2.0",
+    "requests>=2.33.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=9.0.3",
+    "ruff>=0.15.11",
+]
+build = [
+    "pyinstaller>=6.16",
+    "pyinstaller-hooks-contrib>=2026.4",
+]
+macos = [
+    # "pyobjc-framework-Cocoa",  # macOS pencere focus yönetimi (opsiyonel)
+]
+
+[tool.pytest.ini_options]
+pythonpath = [".", "src"]
+addopts = "-ra"
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 120
+src = ["src"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W"]
+ignore = [
+    "E501",  # line too long — mevcut kodda çok fazla uzun satır var
+    "E402",  # module level import not at top — çok kullanılıyor
+    "F841",  # local variable assigned but never used
+    "W605",  # invalid escape sequence
+]

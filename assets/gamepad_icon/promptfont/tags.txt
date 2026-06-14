@@ -1,0 +1,435 @@
+  keyboard-space
+! ascii-bang keyboard-exclamation
+" ascii-doublequote keyboard-doublequote
+# ascii-hash keyboard-pound
+$ ascii-dollar keyboard-dollar
+% ascii-percent keyboard-percent
+& ascii-ampersand keyboard-ampersand
+' ascii-quote keyboard-quote
+( ascii-open-paren keyboard-open-parenthesis
+) ascii-close-paren keyboard-close-parenthesis
+* ascii-star keyboard-numpad-star keyboard-star
++ ascii-plus keyboard-numpad-plus keyboard-plus
+, ascii-comma keyboard-comma
+- ascii-dash keyboard-dash keyboard-numpad-minus
+. ascii-period keyboard-numpad-dot keyboard-period
+/ ascii-slash keyboard-numpad-slash keyboard-slash
+0 ascii-0 icon-rating-0 keyboard-0 keyboard-numpad-0
+1 ascii-1 keyboard-1 keyboard-numpad-1 mouse-1 nintendo-1
+12 icon-rating-12
+16 icon-rating-16
+18 icon-rating-18
+2 ascii-2 keyboard-2 keyboard-numpad-2 mouse-2 nintendo-2
+21 icon-rating-21
+3 ascii-3 icon-rating-3 keyboard-3 keyboard-numpad-3 mouse-3
+4 ascii-4 keyboard-4 keyboard-numpad-4 mouse-4
+5 ascii-5 keyboard-5 keyboard-numpad-5 mouse-5
+6 ascii-6 icon-rating-6 keyboard-6 keyboard-numpad-6 mouse-6
+7 ascii-7 keyboard-7 keyboard-numpad-7 mouse-7
+8 ascii-8 keyboard-8 keyboard-numpad-8 mouse-8
+84562 keyboard-84562
+9 ascii-9 icon-rating-9 keyboard-9 keyboard-numpad-9
+: ascii-colon keyboard-colon
+; ascii-semicolon keyboard-semicolon
+< ascii-open-caret keyboard-open-caret
+= ascii-equals keyboard-equals keyboard-numpad-equals
+> ascii-close-caret keyboard-close-caret
+? ascii-question keyboard-question-mark
+@ ascii-at keyboard-at
+[ ascii-open-bracket keyboard-open-bracket
+\ ascii-backslash keyboard-backslash
+] ascii-close-bracket keyboard-close-bracket
+^ ascii-caret keyboard-caret
+_ ascii-underscore keyboard-underscore
+` ascii-backtick keyboard-backtick
+a ascii-lower-a ascii-upper-a gamepad-a keyboard-a sony-a xbox-a
+ab gamepad-a-b
+accessory icon-accessory
+acid icon-stat-acid
+action icon-action-attack icon-action-defend icon-action-run icon-item
+alert icon-bell icon-bell-muted
+alpha ascii-0 ascii-1 ascii-2 ascii-3 ascii-4 ascii-5 ascii-6 ascii-7 ascii-8 ascii-9 ascii-ampersand ascii-at ascii-backslash ascii-backtick ascii-bang ascii-bar ascii-caret ascii-close-brace ascii-close-bracket ascii-close-caret ascii-close-paren ascii-colon ascii-comma ascii-dash ascii-dollar ascii-doublequote ascii-equals ascii-hash ascii-lower-a ascii-lower-b ascii-lower-c ascii-lower-d ascii-lower-e ascii-lower-f ascii-lower-g ascii-lower-h ascii-lower-i ascii-lower-j ascii-lower-k ascii-lower-l ascii-lower-m ascii-lower-n ascii-lower-o ascii-lower-p ascii-lower-q ascii-lower-r ascii-lower-s ascii-lower-t ascii-lower-u ascii-lower-v ascii-lower-w ascii-lower-x ascii-lower-y ascii-lower-z ascii-open-brace ascii-open-bracket ascii-open-caret ascii-open-paren ascii-percent ascii-period ascii-plus ascii-question ascii-quote ascii-semicolon ascii-slash ascii-star ascii-tilde ascii-underscore ascii-upper-a ascii-upper-b ascii-upper-c ascii-upper-d ascii-upper-e ascii-upper-f ascii-upper-g ascii-upper-h ascii-upper-i ascii-upper-j ascii-upper-k ascii-upper-l ascii-upper-m ascii-upper-n ascii-upper-o ascii-upper-p ascii-upper-q ascii-upper-r ascii-upper-s ascii-upper-t ascii-upper-u ascii-upper-v ascii-upper-w ascii-upper-x ascii-upper-y ascii-upper-z
+alt keyboard-alt keyboard-alt-gr keyboard-alt-l keyboard-alt-r
+alt-gr keyboard-alt-gr
+altgr keyboard-alt-gr
+analog analog-any analog-clockwise analog-counter analog-down analog-down-left analog-down-right analog-fill analog-l analog-l-any analog-l-clockwise analog-l-counter analog-l-down analog-l-left analog-l-left-right analog-l-right analog-l-touch analog-l-up analog-l-up-down analog-left analog-left-right analog-lr-blockwise analog-lr-counter analog-r analog-r-any analog-r-clockwise analog-r-counter analog-r-down analog-r-left analog-r-left-right analog-r-right analog-r-touch analog-r-up analog-r-up-down analog-right analog-stick analog-up analog-up-down analog-up-left analog-up-right
+android android-back android-hamburger-menu android-home android-horizontal-dots android-tabs android-vertical-dots
+armor icon-armor
+armoury rog-ally-armoury
+arrow icon-arrow-down icon-arrow-left icon-arrow-right icon-arrow-up
+arrows keyboard-arrows keyboard-down keyboard-left keyboard-right keyboard-up
+asexual icon-gender-asexual
+attack icon-action-attack
+audio icon-headphones icon-music icon-noise icon-speak
+ay gamepad-a-y
+ayaneo ayaneo-lc ayaneo-rc ayaneo-wave ayn-home ayn-lcc icon-ayaneo
+b ascii-lower-b ascii-upper-b gamepad-b keyboard-b sony-b xbox-b
+back android-back
+backfill analog-fill dpad-fill gamepad-fill generic-fill keyboard-backfill mouse-fill shoulder-fill trigger-fill
+background icon-background
+backspace keyboard-backspace
+bad icon-reception-bad
+battery icon-battery-charging icon-battery-empty icon-battery-full icon-battery-medium
+bell icon-bell icon-bell-muted
+bisexual icon-sex-bisexual
+bludgeoning icon-stat-bludgeoning
+bold icon-bold
+break keyboard-pause
+brightness icon-brightness-high icon-brightness-low
+bsd icon-bsd
+button analog-click analog-l-click analog-r-click analog-stick-click android-back android-hamburger-menu android-home android-horizontal-dots android-tabs android-vertical-dots ayaneo-lc ayaneo-rc ayaneo-wave ayn-home ayn-lcc button-double-press button-hold button-hold-press button-hold-release button-press gamepad-a gamepad-a-b gamepad-a-y gamepad-b gamepad-b-y gamepad-buttons gamepad-home gamepad-l4 gamepad-l5 gamepad-m1 gamepad-m2 gamepad-m3 gamepad-r4 gamepad-r5 gamepad-select gamepad-start gamepad-x gamepad-x-a gamepad-x-b gamepad-x-y gamepad-y gamepad-y1 gamepad-y2 gamepad-y3 gpd-c1 gpd-c2 gpd-menu legion-settings mouse-1 mouse-2 mouse-3 mouse-4 mouse-5 mouse-6 mouse-7 mouse-8 mouse-left mouse-middle mouse-right msi-claw-center msi-claw-quick nintendo-1 nintendo-2 nintendo-button-z nintendo-c nintendo-joycon-sl nintendo-joycon-sr nintendo-left-shoulder nintendo-minus nintendo-plus nintendo-right-shoulder nintendo-z onexplayer-function onexplayer-home onexplayer-keyboard onexplayer-turbo orangepi-controller orangepi-home rog-ally-armoury rog-ally-command sony-a sony-b sony-dualsense-options sony-dualsense-share sony-left-trigger sony-options sony-right-shoulder sony-share sony-x sony-y steam-menu steam-options xbox-a xbox-b xbox-left-shoulder xbox-menu xbox-right-shoulder xbox-view xbox-x xbox-y zotac-zone-logo zotac-zone-menu
+buttons gamepad-fill
+by gamepad-b-y
+c ascii-lower-c ascii-upper-c keyboard-c nintendo-c
+c1 gpd-c1
+c2 gpd-c2
+camera icon-camera icon-webcam
+caps keyboard-caps
+caps-lock keyboard-caps
+capture xbox-view
+cd icon-optical-disc
+center msi-claw-center
+charging icon-battery-charging
+check icon-crossmark icon-tickmark
+checkbox icon-checkbox icon-checkbox-crossed icon-checkbox-ticked
+clipboard icon-clipboard icon-copy icon-paste
+cloud icon-weather-cloudy icon-weather-overcast icon-weather-rain icon-weather-rainy icon-weather-snow
+club icon-empty-club icon-full-club
+comic icon-bubble-scream icon-bubble-scream-right icon-bubble-speech icon-bubble-speech-right icon-bubble-speech-three icon-bubble-speech-two icon-bubble-thought icon-bubble-thought-right
+command keyboard-command rog-ally-command
+computer icon-bsd icon-laptop icon-linux icon-mac icon-windows
+connected icon-network-connected
+connecting icon-network-connecting
+control keyboard-control keyboard-control-l keyboard-control-r
+controller orangepi-controller
+ctrl keyboard-control keyboard-control-l keyboard-control-r
+currency icon-money-bag
+cut icon-scissors
+d ascii-lower-d ascii-upper-d keyboard-d
+d6 icon-d6 icon-d6-1 icon-d6-2 icon-d6-3 icon-d6-4 icon-d6-5 icon-d6-6
+dancepad device-dance-pad
+dark icon-stat-dark
+death icon-crossbones icon-skull
+decrease icon-size-decrease
+defend icon-action-defend
+defense icon-stat-defense
+del keyboard-delete
+delete keyboard-delete
+device device-dance-pad device-ds4 device-dualsense device-flight-stick device-gamepad device-joy-stick device-keyboard device-light-gun device-mouse device-mouse-keyboard device-numpad device-phone device-steering-wheel device-vr-controller device-vr-headset device-x360 icon-ayaneo icon-bsd icon-camera icon-laptop icon-lenovo-legion icon-linux icon-mac icon-meta icon-nintendo-switch icon-playstation icon-speaker icon-usb-stick icon-webcam icon-windows icon-xbox
+diamond icon-empty-diamond icon-full-diamond
+dice icon-d10 icon-d12 icon-d20 icon-d4 icon-d6 icon-d6-1 icon-d6-2 icon-d6-3 icon-d6-4 icon-d6-5 icon-d6-6 icon-d8
+disconnected icon-network-disconnected
+dots-h android-horizontal-dots
+dots-v android-vertical-dots
+doublepress button-double-press
+dpad dpad dpad-down dpad-fill dpad-left dpad-left-down dpad-left-right dpad-right dpad-right-down dpad-up dpad-up-down dupad-left-up gamepad-up-right nintendo-dpad-down nintendo-dpad-left nintendo-dpad-right nintendo-dpad-up xbox-dpad xbox-dpad-down xbox-dpad-left xbox-dpad-left-down xbox-dpad-left-right xbox-dpad-left-up xbox-dpad-right xbox-dpad-right-down xbox-dpad-right-up xbox-dpad-up xbox-dpad-up-down
+dualsense device-dualsense sony-dualsense-options sony-dualsense-share sony-dualsense-touchpad
+dualshock device-ds4 sony-options sony-share sony-touchpad
+e ascii-lower-e ascii-upper-e keyboard-e
+earth icon-earth
+effect icon-spark
+egs icon-epic-game-store
+element icon-earth icon-fire icon-ice icon-lightning icon-water icon-wind
+empty icon-battery-empty icon-empty-club icon-empty-diamond icon-empty-heart icon-empty-spade icon-empty-star
+end keyboard-end
+engine icon-gms icon-godot icon-love2d icon-trial icon-unity icon-unreal
+enter keyboard-enter keyboard-numpad-enter
+epic icon-epic-game-store
+epillepsy icon-warning-photosensitivity
+esc keyboard-escape
+escape keyboard-escape
+exchange icon-exchange
+exit icon-power icon-power-toggle
+expand ican-expand-up icon-resize-cardinal icon-resize-diagonal icon-resize-diagonal-down icon-resize-diagonal-up icon-resize-down icon-resize-horizontal icon-resize-left icon-resize-right icon-resize-vertical
+eye icon-eye
+f ascii-lower-f ascii-upper-f keyboard-f
+f1 keyboard-f1
+f10 keyboard-f10
+f11 keyboard-f11
+f12 keyboard-f12
+f2 keyboard-f2
+f3 keyboard-f3
+f4 keyboard-f4
+f5 keyboard-f5
+f6 keyboard-f6
+f7 keyboard-f7
+f8 keyboard-f8
+f9 keyboard-f9
+female icon-gender-female
+ffw icon-fast-forward
+files icon-code icon-console icon-download icon-file-folder icon-file-folder-open icon-image icon-upload
+fire icon-fire
+flashing icon-warning-flashing
+flightstick device-flight-stick
+floppy icon-diskette
+fn keyboard-fn
+foreground icon-foreground
+full icon-battery-full icon-full-club icon-full-diamond icon-full-heart icon-full-spade icon-star
+function onexplayer-function
+g ascii-lower-g ascii-upper-g keyboard-g
+gamecube nintendo-button-z
+gamepad device-ds4 device-dualsense device-gamepad device-x360 icon-ayaneo icon-lenovo-legion icon-nintendo-switch
+gay icon-sex-gay
+gender icon-gender-asexual icon-gender-female icon-gender-intersex icon-gender-male icon-gender-nonbinary icon-gender-trans
+generic analog-any analog-click analog-clockwise analog-counter analog-down analog-down-left analog-down-right analog-l analog-l-any analog-l-click analog-l-clockwise analog-l-counter analog-l-down analog-l-left analog-l-left-right analog-l-right analog-l-touch analog-l-up analog-l-up-down analog-left analog-left-right analog-lr-blockwise analog-lr-counter analog-r analog-r-any analog-r-click analog-r-clockwise analog-r-counter analog-r-down analog-r-left analog-r-left-right analog-r-right analog-r-touch analog-r-up analog-r-up-down analog-right analog-stick analog-stick-click analog-up analog-up-down analog-up-left analog-up-right button-double-press button-hold button-hold-press button-hold-release button-press device-gamepad dpad dpad-down dpad-left dpad-left-down dpad-left-right dpad-right dpad-right-down dpad-up dpad-up-down dupad-left-up gamepad-a gamepad-a-b gamepad-a-y gamepad-b gamepad-b-y gamepad-buttons gamepad-home gamepad-m1 gamepad-m2 gamepad-m3 gamepad-select gamepad-start gamepad-up-right gamepad-x gamepad-x-a gamepad-x-b gamepad-x-y gamepad-y gamepad-y1 gamepad-y2 gamepad-y3 trackpad-l-any trackpad-l-click trackpad-l-down trackpad-l-left trackpad-l-left-right trackpad-l-right trackpad-l-touch trackpad-l-up trackpad-l-up-down trackpad-r-any trackpad-r-click trackpad-r-down trackpad-r-left trackpad-r-left-right trackpad-r-right trackpad-r-touch trackpad-r-up trackpad-r-up-down
+gog icon-good-old-games
+good icon-reception-good
+gpd gpd-c1 gpd-c2 gpd-menu
+gun device-light-gun
+h ascii-lower-h ascii-upper-h keyboard-h
+hand icon-point-down icon-point-left icon-point-right icon-point-up icon-thumbs-down icon-thumbs-up
+hazard icon-crossbones icon-warning-biohazard icon-warning-radioactive icon-warning-sign
+headset device-vr-headset
+health icon-empty-heart icon-full-heart icon-stat-health
+heart icon-empty-heart icon-full-heart
+history icon-redo icon-undo
+hold button-hold button-hold-press button-hold-release
+home android-home ayn-home gamepad-home gpd-menu keyboard-home onexplayer-home orangepi-home sony-dualsense-touchpad sony-touchpad xbox-menu zotac-zone-menu
+humble icon-humble
+i ascii-lower-i ascii-upper-i keyboard-i
+ice icon-ice
+idle icon-hourglass
+ijkl keyboard-ijkl
+increase icon-size-increase
+insert keyboard-insert
+intersex icon-gender-intersex
+italic icon-italic
+itchio icon-itch-io
+item icon-item
+items icon-accessory icon-armor icon-item icon-weapon
+j ascii-lower-j ascii-upper-j keyboard-j
+joycon nintendo-dpad-down nintendo-dpad-left nintendo-dpad-right nintendo-dpad-up nintendo-joycon-sl nintendo-joycon-sr
+joystick device-joy-stick
+k ascii-lower-k ascii-upper-k keyboard-k
+key key-empty-press keyboard-0 keyboard-1 keyboard-2 keyboard-3 keyboard-4 keyboard-5 keyboard-6 keyboard-7 keyboard-8 keyboard-84562 keyboard-9 keyboard-a keyboard-a-diaeresis keyboard-a-grave keyboard-alt keyboard-alt-gr keyboard-alt-l keyboard-alt-r keyboard-ampersand keyboard-arrows keyboard-at keyboard-b keyboard-backslash keyboard-backspace keyboard-backtick keyboard-bar keyboard-c keyboard-caps keyboard-caret keyboard-cedille keyboard-close-brace keyboard-close-bracket keyboard-close-caret keyboard-close-parenthesis keyboard-colon keyboard-comma keyboard-command keyboard-control keyboard-control-l keyboard-control-r keyboard-d keyboard-dash keyboard-delete keyboard-dollar keyboard-doublequote keyboard-down keyboard-e keyboard-e-acute keyboard-e-grave keyboard-end keyboard-enter keyboard-equals keyboard-escape keyboard-exclamation keyboard-f keyboard-f1 keyboard-f10 keyboard-f11 keyboard-f12 keyboard-f2 keyboard-f3 keyboard-f4 keyboard-f5 keyboard-f6 keyboard-f7 keyboard-f8 keyboard-f9 keyboard-fn keyboard-g keyboard-h keyboard-henkan keyboard-home keyboard-i keyboard-ijkl keyboard-insert keyboard-j keyboard-k keyboard-kana keyboard-key keyboard-l keyboard-left keyboard-m keyboard-muhekan keyboard-n keyboard-num-lock keyboard-numpad-0 keyboard-numpad-1 keyboard-numpad-2 keyboard-numpad-3 keyboard-numpad-4 keyboard-numpad-5 keyboard-numpad-6 keyboard-numpad-7 keyboard-numpad-8 keyboard-numpad-9 keyboard-numpad-dot keyboard-numpad-enter keyboard-numpad-equals keyboard-numpad-minus keyboard-numpad-plus keyboard-numpad-slash keyboard-numpad-star keyboard-o keyboard-o-diaeresis keyboard-open-brace keyboard-open-bracket keyboard-open-caret keyboard-open-parenthesis keyboard-option keyboard-p keyboard-page-down keyboard-page-up keyboard-pause keyboard-percent keyboard-period keyboard-plus keyboard-pound keyboard-print-screen keyboard-q keyboard-question-mark keyboard-quote keyboard-r keyboard-right keyboard-s keyboard-scroll-lock keyboard-semicolon keyboard-shift keyboard-shift-l keyboard-shift-r keyboard-slash keyboard-space keyboard-star keyboard-super keyboard-t keyboard-tab keyboard-tilde keyboard-u keyboard-u-diaeresis keyboard-u-grave keyboard-underscore keyboard-up keyboard-v keyboard-w keyboard-wasd keyboard-x keyboard-y keyboard-z keyboard-zenkaku-hankaku
+keyboard device-keyboard device-mouse-keyboard onexplayer-keyboard
+l analog-l analog-l-any analog-l-click analog-l-clockwise analog-l-counter analog-l-down analog-l-left analog-l-left-right analog-l-right analog-l-touch analog-l-up analog-l-up-down ascii-lower-l ascii-upper-l keyboard-l trackpad-l-any trackpad-l-click trackpad-l-down trackpad-l-left trackpad-l-left-right trackpad-l-right trackpad-l-touch trackpad-l-up trackpad-l-up-down
+l1 nintendo-joycon-sl nintendo-left-shoulder shoulder-fill sony-left-shoulder xbox-left-shoulder
+l2 nintendo-left-trigger sony-left-trigger trigger-fill xbox-left-trigger xbox-left-trigger-pull
+l3 analog-l-click sony-left-stick
+l4 gamepad-l4
+l5 gamepad-l5
+lalt keyboard-alt-l
+lc ayaneo-lc
+lcc ayn-lcc
+lctrl keyboard-control-l
+left keyboard-alt-gr keyboard-alt-l keyboard-control-l keyboard-shift-l mouse-1 mouse-left
+left-alt keyboard-alt-l
+left-control keyboard-control-l
+left-shift keyboard-shift-l
+legion icon-lenovo-legion legion-settings legion-settings
+lesbian icon-sex-lesbian
+light icon-stat-light
+lightning icon-lightning
+linux icon-linux
+lock icon-key icon-lock icon-lock-open
+logo icon-gms icon-godot icon-love2d icon-shirakumo icon-trial icon-unity icon-unreal zotac-zone-logo
+loud icon-volume-loud
+lower ascii-bar ascii-close-brace ascii-lower-a ascii-lower-b ascii-lower-c ascii-lower-d ascii-lower-e ascii-lower-f ascii-lower-g ascii-lower-h ascii-lower-i ascii-lower-j ascii-lower-k ascii-lower-l ascii-lower-m ascii-lower-n ascii-lower-o ascii-lower-p ascii-lower-q ascii-lower-r ascii-lower-s ascii-lower-t ascii-lower-u ascii-lower-v ascii-lower-w ascii-lower-x ascii-lower-y ascii-lower-z ascii-open-brace ascii-tilde
+lr analog-click analog-lr-blockwise analog-lr-counter
+m ascii-lower-m ascii-upper-m keyboard-m
+m1 gamepad-m1
+m2 gamepad-m2
+m3 gamepad-m3
+mac icon-mac keyboard-command keyboard-option
+magic icon-stat-magic
+male icon-gender-male
+map icon-0 icon-1 icon-2 icon-3 icon-4 icon-5 icon-6 icon-7 icon-8 icon-9 icon-bang icon-cross icon-empty-heart icon-empty-star icon-fish icon-flag icon-full-heart icon-pin icon-question icon-shopping-cart icon-skull icon-star
+medium icon-battery-medium icon-database icon-diskette icon-hard-disk icon-optical-disc icon-reception-medium icon-usb-stick icon-volume-medium
+menu android-hamburger-menu ayn-home gamepad-home gpd-menu onexplayer-home orangepi-home sony-dualsense-options sony-options steam-menu xbox-menu zotac-zone-menu
+meta icon-meta keyboard-alt
+microphone icon-microphone icon-microphone-muted
+middle mouse-3 mouse-middle
+minus nintendo-minus
+moon icon-moon-crescent-waning icon-moon-crescent-waxing icon-moon-full icon-moon-gibbous-waning icon-moon-gibbous-waxing icon-moon-new icon-moon-quarter-first icon-moon-quarter-last
+mouse device-mouse device-mouse-keyboard
+move-ccw analog-counter analog-l-counter analog-lr-counter analog-r-counter
+move-cw analog-clockwise analog-l-clockwise analog-lr-blockwise analog-r-clockwise
+move-d analog-down analog-l-down analog-r-down dpad-down keyboard-down mouse-move-down mouse-scroll-down nintendo-dpad-down trackpad-l-down trackpad-r-down xbox-dpad-down
+move-dl analog-down-left
+move-dr analog-down-right
+move-l analog-l-left analog-left analog-r-left dpad-left keyboard-left mouse-move-left mouse-scroll-left nintendo-dpad-left trackpad-l-left trackpad-r-left xbox-dpad-left
+move-ld dpad-left-down xbox-dpad-left-down
+move-lr analog-l-left-right analog-left-right analog-r-left-right dpad-left-right mouse-left-right mouse-scroll-left-right trackpad-l-left-right trackpad-r-left-right xbox-dpad-left-right
+move-lrud analog-any analog-l-any analog-r-any mouse-any mouse-scroll-any trackpad-l-any trackpad-r-any
+move-lu dupad-left-up xbox-dpad-left-up
+move-r analog-l-right analog-r-right analog-right dpad-right keyboard-right mouse-move-right mouse-scroll-right nintendo-dpad-right trackpad-l-right trackpad-r-right xbox-dpad-right
+move-rd dpad-right-down xbox-dpad-right-down
+move-ru xbox-dpad-right-up
+move-u analog-l-up analog-r-up analog-up dpad-up keyboard-up mouse-move-up mouse-scroll-up nintendo-dpad-up trackpad-l-up trackpad-r-up xbox-dpad-up
+move-ud analog-l-up-down analog-r-up-down analog-up-down dpad-up-down mouse-scroll-up-down mouse-up-down trackpad-l-up-down trackpad-r-up-down xbox-dpad-up-down
+move-ul analog-up-left
+move-ur analog-up-right gamepad-up-right
+msiclaw msi-claw-center msi-claw-quick
+muted icon-microphone-muted icon-volume-muted
+n ascii-lower-n ascii-upper-n keyboard-n
+network icon-network-connected icon-network-connecting icon-network-disconnected icon-network-ping icon-network-wired icon-network-wireless icon-reception-bad icon-reception-good icon-reception-medium
+neuter icon-sex-neuter
+nintendo nintendo-1 nintendo-2 nintendo-button-z nintendo-c nintendo-dpad-down nintendo-dpad-left nintendo-dpad-right nintendo-dpad-up nintendo-joycon-sl nintendo-joycon-sr nintendo-left-shoulder nintendo-left-trigger nintendo-minus nintendo-plus nintendo-right-shoulder nintendo-right-trigger nintendo-trigger-z nintendo-z
+nonbinary icon-gender-nonbinary
+notification icon-bell icon-bell-muted
+num keyboard-num-lock
+num-lock keyboard-num-lock
+numlk keyboard-num-lock
+numpad device-numpad keyboard-numpad-0 keyboard-numpad-1 keyboard-numpad-2 keyboard-numpad-3 keyboard-numpad-4 keyboard-numpad-5 keyboard-numpad-6 keyboard-numpad-7 keyboard-numpad-8 keyboard-numpad-9 keyboard-numpad-dot keyboard-numpad-enter keyboard-numpad-equals keyboard-numpad-minus keyboard-numpad-plus keyboard-numpad-slash keyboard-numpad-star
+o ascii-lower-o ascii-upper-o keyboard-o
+onexplayer onexplayer-function onexplayer-home onexplayer-keyboard onexplayer-turbo
+option keyboard-option
+options sony-dualsense-options sony-options steam-options
+orengepi orangepi-controller orangepi-home
+p ascii-lower-p ascii-upper-p keyboard-p
+page keyboard-page-down keyboard-page-up
+page-down keyboard-page-down
+page-up keyboard-page-up
+pause keyboard-pause
+pgdn keyboard-page-down
+pgup keyboard-page-up
+phobia icon-warning-phobia
+phone device-phone
+photosensitivity icon-warning-photosensitivity
+piercing icon-stat-piercing
+ping icon-network-ping
+platform icon-epic-game-store icon-good-old-games icon-humble icon-itch-io icon-meta icon-nintendo-switch icon-playstation icon-steam icon-xbox
+playback icon-fast-forward icon-loop icon-loop-once icon-pause icon-play icon-play-pause icon-record icon-rewind icon-shuffle icon-skip-backward icon-skip-forward icon-stop
+playstation icon-playstation
+plug icon-electrical-plug
+plus nintendo-plus
+pointer mouse-any mouse-left-right mouse-move-down mouse-move-left mouse-move-right mouse-move-up mouse-up-down
+poison icon-stat-poison
+power icon-battery-full icon-electrical-plug
+press analog-click analog-l-click analog-r-click analog-stick-click button-hold-press button-press trackpad-l-click trackpad-r-click xbox-left-trigger-pull xbox-right-trigger-pull
+print keyboard-print-screen
+print-screen keyboard-print-screen
+prohibited icon-denied
+prtsc keyboard-print-screen
+psychic icon-stat-psychic
+q ascii-lower-q ascii-upper-q keyboard-q
+quick msi-claw-quick
+quiet icon-volume-quiet
+r analog-r analog-r-any analog-r-click analog-r-clockwise analog-r-counter analog-r-down analog-r-left analog-r-left-right analog-r-right analog-r-touch analog-r-up analog-r-up-down ascii-lower-r ascii-upper-r keyboard-r trackpad-r-any trackpad-r-click trackpad-r-down trackpad-r-left trackpad-r-left-right trackpad-r-right trackpad-r-touch trackpad-r-up trackpad-r-up-down
+r1 nintendo-joycon-sr nintendo-right-shoulder shoulder-fill sony-right-shoulder xbox-right-shoulder
+r2 nintendo-right-trigger sony-right-trigger trigger-fill xbox-right-trigger xbox-right-trigger-pull
+r3 analog-r-click sony-right-stick
+r4 gamepad-r4
+r5 gamepad-r5
+rain icon-weather-rain icon-weather-rainy
+ralt keyboard-alt-r
+rating icon-empty-heart icon-empty-star icon-full-heart icon-rating-0 icon-rating-12 icon-rating-16 icon-rating-18 icon-rating-21 icon-rating-3 icon-rating-6 icon-rating-9 icon-star
+rc ayaneo-rc
+rctrl keyboard-control-r
+reception icon-reception-bad icon-reception-good icon-reception-medium
+release button-hold-release
+return android-back icon-exit keyboard-enter
+reverse icon-reverse
+right keyboard-alt-r keyboard-control-r keyboard-shift-r mouse-2 mouse-right
+right-alt keyboard-alt-r
+right-control keyboard-control-r
+right-shift keyboard-shift-r
+rock icon-earth
+rog rog-ally-armoury rog-ally-command
+run icon-action-run
+rw icon-rewind
+s analog-any analog-clockwise analog-counter analog-down analog-down-left analog-down-right analog-left analog-left-right analog-right analog-up analog-up-down analog-up-left analog-up-right ascii-lower-s ascii-upper-s keyboard-s
+save icon-diskette icon-write
+scrlk keyboard-scroll-lock
+scroll keyboard-scroll-lock mouse-scroll-any mouse-scroll-down mouse-scroll-left mouse-scroll-left-right mouse-scroll-right mouse-scroll-up mouse-scroll-up-down
+scroll-lock keyboard-scroll-lock
+select gamepad-select
+settings icon-box icon-database icon-diskette icon-gears icon-graphics-card icon-hard-disk icon-headphones icon-information icon-internet icon-language icon-memory icon-moon icon-music icon-noise icon-processor icon-screen icon-spark icon-speak icon-speaker icon-sun icon-write legion-settings
+sex icon-sex-bisexual icon-sex-gay icon-sex-lesbian icon-sex-neuter icon-sex-straight
+shadow icon-stat-dark
+share gamepad-select sony-dualsense-share sony-share xbox-view
+shift keyboard-shift keyboard-shift-l keyboard-shift-r
+shutdown icon-power icon-power-toggle
+size icon-size-decrease icon-size-increase
+skull icon-crossbones
+sl nintendo-joycon-sl
+slashing icon-stat-slashing
+smilie icon-frown icon-smile
+snow icon-weather-snow
+sony device-ds4 device-dualsense icon-playstation sony-a sony-b sony-dualsense-options sony-dualsense-share sony-dualsense-touchpad sony-left-shoulder sony-left-stick sony-left-trigger sony-options sony-right-shoulder sony-right-stick sony-right-trigger sony-share sony-touchpad sony-x sony-y
+space keyboard-space
+spade icon-empty-spade icon-full-spade
+spc keyboard-space
+speaker icon-speaker
+speed icon-stat-speed
+spinner icon-hourglass
+sr nintendo-joycon-sr
+star icon-empty-star icon-spark icon-star
+start gamepad-start
+stat icon-stat-acid icon-stat-bludgeoning icon-stat-dark icon-stat-defense icon-stat-health icon-stat-light icon-stat-magic icon-stat-piercing icon-stat-poison icon-stat-psychic icon-stat-slashing icon-stat-speed icon-stat-strength
+status icon-bone icon-bone-broken
+steam gamepad-l4 gamepad-l5 gamepad-r4 gamepad-r5 icon-steam steam-menu steam-options
+straight icon-sex-straight
+strength icon-stat-strength
+strikethrough icon-strikethrough
+subtext icon-subtext
+suit icon-empty-club icon-empty-diamond icon-empty-heart icon-empty-spade icon-full-club icon-full-diamond icon-full-heart icon-full-spade
+sun icon-sun-white
+super keyboard-super
+supertext icon-supertext
+swearing icon-warning-swearing
+switch icon-nintendo-switch nintendo-minus nintendo-plus
+t ascii-lower-t ascii-upper-t keyboard-t
+tab keyboard-tab
+tabs android-tabs
+text icon-background icon-bold icon-copy icon-foreground icon-italic icon-paste icon-scissors icon-size-decrease icon-size-increase icon-strikethrough icon-subtext icon-supertext icon-underline
+tick icon-crossmark icon-tickmark
+touch analog-l-touch analog-r-touch trackpad-l-touch trackpad-r-touch
+touchpad sony-dualsense-touchpad sony-touchpad
+trackpad trackpad-l-any trackpad-l-click trackpad-l-down trackpad-l-left trackpad-l-left-right trackpad-l-right trackpad-l-touch trackpad-l-up trackpad-l-up-down trackpad-r-any trackpad-r-click trackpad-r-down trackpad-r-left trackpad-r-left-right trackpad-r-right trackpad-r-touch trackpad-r-up trackpad-r-up-down
+trans icon-gender-trans
+trigger nintendo-left-trigger nintendo-right-trigger nintendo-trigger-z sony-right-trigger xbox-left-trigger xbox-left-trigger-pull xbox-right-trigger xbox-right-trigger-pull
+turbo onexplayer-turbo
+u ascii-lower-u ascii-upper-u keyboard-u
+ui box-drawing-black-lower-left-triangle box-drawing-black-lower-right-triangle box-drawing-black-upper-left-triangle box-drawing-black-upper-right-triangle box-drawing-dark-shade box-drawing-down-heavy-and-horizontal-light box-drawing-down-heavy-and-left-light box-drawing-down-heavy-and-left-up-light box-drawing-down-heavy-and-right-light box-drawing-down-heavy-and-right-up-light box-drawing-down-heavy-and-up-horizontal-light box-drawing-down-light-and-horizontal-heavy box-drawing-down-light-and-left-heavy box-drawing-down-light-and-left-up-heavy box-drawing-down-light-and-right-heavy box-drawing-down-light-and-right-up-heavy box-drawing-down-light-and-up-horizontal-heavy box-drawing-full-block box-drawing-heavy-double-dash-horizontal box-drawing-heavy-double-dash-vertical box-drawing-heavy-down box-drawing-heavy-down-and-horizontal box-drawing-heavy-down-and-left box-drawing-heavy-down-and-right box-drawing-heavy-horizontal box-drawing-heavy-left box-drawing-heavy-left-and-light-right box-drawing-heavy-quadruple-dash-horizontal box-drawing-heavy-quadruple-dash-vertical box-drawing-heavy-right box-drawing-heavy-triple-dash-horizontal box-drawing-heavy-triple-dash-vertical box-drawing-heavy-up box-drawing-heavy-up-and-horizontal box-drawing-heavy-up-and-left box-drawing-heavy-up-and-light-down box-drawing-heavy-up-and-right box-drawing-heavy-vertical box-drawing-heavy-vertical-and-horizontal box-drawing-heavy-vertical-and-left box-drawing-heavy-vertical-and-right box-drawing-left-and-lower-and-right-triangular-three-quarters-block box-drawing-left-and-upper-and-right-triangular-three-quarters-block box-drawing-left-down-heavy-and-right-up-light box-drawing-left-five-eighths-block box-drawing-left-half-block box-drawing-left-heavy-and-right-down-light box-drawing-left-heavy-and-right-up-light box-drawing-left-heavy-and-right-vertical-light box-drawing-left-light-and-right-down-heavy box-drawing-left-light-and-right-up-heavy box-drawing-left-light-and-right-vertical-heavy box-drawing-left-one-eighth-block box-drawing-left-one-quarter-block box-drawing-left-seven-eighths-block box-drawing-left-three-eighths-block box-drawing-left-three-quarters-block box-drawing-left-triangular-one-quarter-block box-drawing-left-up-heavy-and-right-down-light box-drawing-light-diagonal-cross box-drawing-light-diagonal-upper-left-to-lower-right box-drawing-light-diagonal-upper-right-to-lower-left box-drawing-light-double-dash-horizontal box-drawing-light-double-dash-vertical box-drawing-light-down box-drawing-light-down-and-horizontal box-drawing-light-down-and-left box-drawing-light-down-and-right box-drawing-light-left box-drawing-light-left-and-heavy-right box-drawing-light-quadruple-dash-horizontal box-drawing-light-quadruple-dash-vertical box-drawing-light-right box-drawing-light-shade box-drawing-light-triple-dash-horizontal box-drawing-light-triple-dash-vertical box-drawing-light-up box-drawing-light-up-and-heavy-down box-drawing-light-up-and-horizontal box-drawing-light-up-and-left box-drawing-light-up-and-right box-drawing-light-vertical box-drawing-light-vertical-and-horizontal box-drawing-light-vertical-and-left box-drawing-light-vertical-and-right box-drawing-lower-five-eighths-block box-drawing-lower-half-block box-drawing-lower-one-eighth-block box-drawing-lower-one-quarter-block box-drawing-lower-seven-eighths-block box-drawing-lower-three-eighths-block box-drawing-lower-three-quarters-block box-drawing-lower-triangular-one-quarter-block box-drawing-medium-shade box-drawing-quadrant-lower-left box-drawing-quadrant-lower-right box-drawing-quadrant-upper-left box-drawing-quadrant-upper-left-and-lower-left-and-lower-right box-drawing-quadrant-upper-left-and-lower-right box-drawing-quadrant-upper-left-and-upper-right-and-lower-left box-drawing-quadrant-upper-left-and-upper-right-and-lower-right box-drawing-quadrant-upper-right box-drawing-quadrant-upper-right-and-lower-left box-drawing-quadrant-upper-right-and-lower-left-and-lower-right box-drawing-right-down-heavy-and-left-up-light box-drawing-right-five-eighths-block box-drawing-right-half-block box-drawing-right-heavy-and-left-down-light box-drawing-right-heavy-and-left-up-light box-drawing-right-heavy-and-left-vertical-light box-drawing-right-light-and-left-down-heavy box-drawing-right-light-and-left-up-heavy box-drawing-right-light-and-left-vertical-heavy box-drawing-right-one-eighth-block box-drawing-right-one-quarter-block box-drawing-right-seven-eighths-block box-drawing-right-three-eighths-block box-drawing-right-three-quarters-block box-drawing-right-triangular-one-quarter-block box-drawing-right-up-heavy-and-left-down-light box-drawing-up-heavy-and-down-horizontal-light box-drawing-up-heavy-and-horizontal-light box-drawing-up-heavy-and-left-down-light box-drawing-up-heavy-and-left-light box-drawing-up-heavy-and-right-down-light box-drawing-up-heavy-and-right-light box-drawing-up-light-and-down-horizontal-heavy box-drawing-up-light-and-horizontal-heavy box-drawing-up-light-and-left-down-heavy box-drawing-up-light-and-left-heavy box-drawing-up-light-and-right-down-heavy box-drawing-up-light-and-right-heavy box-drawing-upper-and-left-and-lower-triangular-three-quarters-block box-drawing-upper-and-right-and-lower-triangular-three-quarters-block box-drawing-upper-five-eighths-block box-drawing-upper-half-block box-drawing-upper-one-eighth-block box-drawing-upper-one-quarter-block box-drawing-upper-seven-eighths-block box-drawing-upper-three-eighths-block box-drawing-upper-three-quarters-block box-drawing-upper-triangular-one-quarter-block box-drawing-vertical-heavy-and-horizontal-light box-drawing-vertical-heavy-and-left-light box-drawing-vertical-heavy-and-right-light box-drawing-vertical-light-and-horizontal-heavy box-drawing-vertical-light-and-left-heavy box-drawing-vertical-light-and-right-heavy icon-0 icon-1 icon-2 icon-3 icon-4 icon-5 icon-6 icon-7 icon-8 icon-9 icon-aperture icon-arrow-down icon-arrow-left icon-arrow-right icon-arrow-up icon-bang icon-bone icon-box icon-brightness-high icon-brightness-low icon-clipboard icon-compass icon-console icon-cross icon-database icon-diskette icon-download icon-empty-heart icon-empty-star icon-exchange icon-exit icon-file-folder icon-file-folder-open icon-fish icon-flag icon-frown icon-gears icon-graphics-card icon-hard-disk icon-headphones icon-image icon-information icon-internet icon-key icon-language icon-lock icon-lock-open icon-magnifying-glass icon-magnifying-glass-right icon-map icon-memory icon-money-bag icon-moon icon-music icon-noise icon-optical-disc icon-pin icon-processor icon-question icon-redo icon-reverse icon-screen icon-shopping-cart icon-skull icon-smile icon-spark icon-speak icon-speaker icon-star icon-sun icon-text-entry icon-undo icon-upload icon-window-close icon-window-maximize icon-window-minimize icon-window-overlap icon-write
+underline icon-underline
+upper ascii-upper-a ascii-upper-b ascii-upper-c ascii-upper-d ascii-upper-e ascii-upper-f ascii-upper-g ascii-upper-h ascii-upper-i ascii-upper-j ascii-upper-k ascii-upper-l ascii-upper-m ascii-upper-n ascii-upper-o ascii-upper-p ascii-upper-q ascii-upper-r ascii-upper-s ascii-upper-t ascii-upper-u ascii-upper-v ascii-upper-w ascii-upper-x ascii-upper-y ascii-upper-z
+v ascii-lower-v ascii-upper-v keyboard-v
+view android-tabs xbox-view
+volume icon-volume-loud icon-volume-medium icon-volume-muted icon-volume-quiet
+vrcontroller device-vr-controller
+w ascii-lower-w ascii-upper-w keyboard-w
+wait icon-hourglass
+warning icon-bone-broken icon-crossbones icon-denied icon-rating-0 icon-rating-12 icon-rating-16 icon-rating-18 icon-rating-21 icon-rating-3 icon-rating-6 icon-rating-9 icon-warning-biohazard icon-warning-flashing icon-warning-phobia icon-warning-photosensitivity icon-warning-radioactive icon-warning-sign icon-warning-swearing
+wasd keyboard-wasd
+water icon-water
+wave ayaneo-wave
+weapon icon-weapon
+weather icon-weather-cloudy icon-weather-overcast icon-weather-rain icon-weather-rainy icon-weather-snow icon-weather-sunny
+wheel device-steering-wheel
+wide-alternate analog-click analog-lr-blockwise analog-lr-counter ayaneo-lc ayaneo-rc device-ds4 device-dualsense device-gamepad device-keyboard device-mouse-keyboard device-x360 gamepad-home gamepad-m1 gamepad-m2 gamepad-m3 gamepad-select gamepad-start gamepad-y1 gamepad-y2 gamepad-y3 gpd-c1 gpd-c2 gpd-menu keyboard-alt keyboard-alt-gr keyboard-alt-l keyboard-alt-r keyboard-arrows keyboard-backspace keyboard-caps keyboard-control keyboard-control-l keyboard-control-r keyboard-enter keyboard-ijkl keyboard-shift-l keyboard-shift-r keyboard-space keyboard-super keyboard-tab keyboard-wasd nintendo-button-z nintendo-joycon-sl nintendo-joycon-sr nintendo-left-shoulder nintendo-right-shoulder onexplayer-function onexplayer-turbo sony-left-shoulder sony-right-shoulder sony-touchpad steam-menu steam-options xbox-left-shoulder xbox-right-shoulder zotac-zone-logo zotac-zone-menu
+win keyboard-super
+wind icon-wind
+window icon-window-close icon-window-maximize icon-window-minimize icon-window-overlap
+windows icon-windows
+wired icon-network-wired
+wireless icon-network-wireless
+x ascii-lower-x ascii-upper-x gamepad-x keyboard-x sony-x xbox-x
+xa gamepad-x-a
+xb gamepad-x-b
+xbox device-x360 icon-xbox xbox-a xbox-b xbox-dpad xbox-dpad-down xbox-dpad-left xbox-dpad-left-down xbox-dpad-left-right xbox-dpad-left-up xbox-dpad-right xbox-dpad-right-down xbox-dpad-right-up xbox-dpad-up xbox-dpad-up-down xbox-left-shoulder xbox-left-trigger xbox-left-trigger-pull xbox-menu xbox-right-shoulder xbox-right-trigger xbox-right-trigger-pull xbox-view xbox-x xbox-y
+xbox360 device-x360
+xy gamepad-x-y
+y ascii-lower-y ascii-upper-y gamepad-y keyboard-y sony-y xbox-y
+y1 gamepad-y1
+y2 gamepad-y2
+y3 gamepad-y3
+z ascii-lower-z ascii-upper-z keyboard-z nintendo-button-z nintendo-trigger-z nintendo-z
+zotaczone zotac-zone-logo zotac-zone-menu
+{ ascii-open-brace keyboard-open-brace
+| ascii-bar keyboard-bar
+} ascii-close-brace keyboard-close-brace
+~ ascii-tilde keyboard-tilde
+à keyboard-a-grave
+ä keyboard-a-diaeresis
+ç keyboard-cedille
+è keyboard-e-grave
+é keyboard-e-acute
+ö keyboard-o-diaeresis
+ù keyboard-u-grave
+ü keyboard-u-diaeresis
+カナ keyboard-kana
+半角/全角 keyboard-zenkaku-hankaku
+変換 keyboard-henkan
+無変換 keyboard-muhekan

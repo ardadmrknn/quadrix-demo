@@ -1,0 +1,13 @@
+"AppBuild"
+{
+    "AppID" "4635310"
+    "Desc" "Demo build"
+    "SetLive" ""
+    "ContentRoot" ""
+    "BuildOutput" ""
+
+    "Depots"
+    {
+        "4635311" "depot_build_demo_windows.vdf"
+    }
+}

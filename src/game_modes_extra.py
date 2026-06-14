@@ -1,0 +1,13835 @@
+"""Ekstra oyun modları: Quadrix Extra (tetris2), Kart Ustalığı (mystery), Wide Mode."""
+
+from __future__ import annotations
+
+import math
+import os
+import sys
+import random
+from typing import Any, Dict, List
+
+import pygame
+
+try:
+    from PIL import Image, ImageSequence
+except Exception:
+    Image = None  # type: ignore
+    ImageSequence = None  # type: ignore
+
+from platform_utils import normalize_mouse_pos, get_mouse_pos, get_display_scale_factor
+
+from asset_manager import load_image
+from localization import t, get_language
+from gamepad_manager import get_gamepad_manager, is_gamepad_connected
+from promptfont_support import get_action_prompt_display, render_action_prompt_surface, render_inline_action_text_surface
+try:
+    from .retro_style import retro_style  # type: ignore
+except Exception:
+    from retro_style import retro_style
+
+try:
+    from .ui_theme import UIColors  # type: ignore
+except Exception:
+    from ui_theme import UIColors
+
+try:
+    from .ui_scaling import get_projected_effective_scale  # type: ignore
+except Exception:
+    from ui_scaling import get_projected_effective_scale
+
+try:
+    from . import demo_config  # type: ignore
+except Exception:
+    import demo_config
+
+try:
+    from .demo_upgrade_prompt import DemoUpgradePrompt, show_demo_score_cap_prompt  # type: ignore
+except Exception:
+    from demo_upgrade_prompt import DemoUpgradePrompt, show_demo_score_cap_prompt
+
+from constants import (
+    BLACK,
+    BOARD_WIDTH,
+    BOARD_HEIGHT,
+    FAST_FALL_SPEED,
+    SIDE_PANEL_WIDTH,
+    INFO_PANEL_HEIGHT,
+    LEVEL_SPEED_MIN_MS,
+)
+from block_styles import TextureSlice
+from screen_shake import (
+    HARD_DROP_SCREEN_SHAKE_DURATION_SECONDS,
+    HARD_DROP_SCREEN_SHAKE_INTENSITY,
+)
+
+# Optional rare-bug tracer (writes JSON dumps when enabled)
+try:
+    from ghost_bug_tracer import GhostBugTracer
+    from data_paths import get_user_data_dir
+except Exception:
+    GhostBugTracer = None  # type: ignore
+    get_user_data_dir = None  # type: ignore
+
+
+def _get_ui_icon_dir() -> str:
+    """PyInstaller uyumlu UI ikon dizini."""
+    if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+        return os.path.normpath(os.path.join(sys._MEIPASS, 'assets', 'ui'))
+    return os.path.normpath(os.path.join(os.path.dirname(__file__), '..', 'assets', 'ui'))
+
+
+UI_ICON_DIR = _get_ui_icon_dir()
+MYSTERY_OVERLAY_REFERENCE_SIZE = (1366.0, 768.0)
+CARD_SELECTION_REROLL_LIMIT = 5
+MYSTERY_LEVEL_SPEED_ANCHORS = (
+    (1, 850),
+    (5, 700),
+    (10, 500),
+    (15, 300),
+    (20, 150),
+    (30, 125),
+)
+MYSTERY_LEVEL_SPEED_MIN_MS = LEVEL_SPEED_MIN_MS
+MYSTERY_LEVEL_SPEED_POST_L30_STEP_MS = 1
+
+
+def get_mystery_level_fall_speed_ms(level: int) -> int:
+    """Mystery modu için board.level tabanlı düşüş aralığını döndür."""
+    try:
+        current_level = int(level)
+    except Exception:
+        current_level = 1
+    current_level = max(1, current_level)
+
+    first_level, first_speed = MYSTERY_LEVEL_SPEED_ANCHORS[0]
+    if current_level <= first_level:
+        return int(first_speed)
+
+    for (start_level, start_speed), (end_level, end_speed) in zip(
+        MYSTERY_LEVEL_SPEED_ANCHORS,
+        MYSTERY_LEVEL_SPEED_ANCHORS[1:],
+    ):
+        if current_level <= end_level:
+            progress = (current_level - start_level) / float(end_level - start_level)
+            interpolated = start_speed + ((end_speed - start_speed) * progress)
+            return max(
+                MYSTERY_LEVEL_SPEED_MIN_MS,
+                int(math.floor(interpolated + 0.5)),
+            )
+
+    last_level, last_speed = MYSTERY_LEVEL_SPEED_ANCHORS[-1]
+    accelerated = int(last_speed) - ((current_level - last_level) * MYSTERY_LEVEL_SPEED_POST_L30_STEP_MS)
+    return max(MYSTERY_LEVEL_SPEED_MIN_MS, accelerated)
+
+
+def _get_card_assets_dir() -> str:
+    """PyInstaller uyumlu kart PNG dizini (assets/cards)."""
+    if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+        return os.path.normpath(os.path.join(sys._MEIPASS, 'assets', 'cards'))
+    return os.path.normpath(os.path.join(os.path.dirname(__file__), '..', 'assets', 'cards'))
+
+
+CARD_ASSET_DIR = _get_card_assets_dir()
+
+
+def _get_card_effects_dir() -> str:
+    """PyInstaller uyumlu kart efekt dizini (assets/cards_effect)."""
+    if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+        return os.path.normpath(os.path.join(sys._MEIPASS, 'assets', 'cards_effect'))
+    return os.path.normpath(os.path.join(os.path.dirname(__file__), '..', 'assets', 'cards_effect'))
+
+
+CARD_EFFECTS_DIR = _get_card_effects_dir()
+
+
+def _prompt_action_text(action: str, keyboard_label: str) -> str:
+    # Resolve prompt labels through this module's gamepad manager so tests and
+    # HUD text stay in sync when `game_modes_extra.get_gamepad_manager` is patched.
+    manager = None
+    try:
+        manager = get_gamepad_manager()
+    except Exception:
+        manager = None
+    display = get_action_prompt_display(action, keyboard_label, gpm=manager)
+    return str(display.get('text') or keyboard_label)
+
+
+def _get_animate_effects_dir() -> str:
+    """PyInstaller uyumlu animasyon efekt dizini (assets/animate_effect)."""
+    if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+        return os.path.normpath(os.path.join(sys._MEIPASS, 'assets', 'animate_effect'))
+    return os.path.normpath(os.path.join(os.path.dirname(__file__), '..', 'assets', 'animate_effect'))
+
+
+ANIMATE_EFFECTS_DIR = _get_animate_effects_dir()
+SNIPER_EXPLOSION_SPEED_MULTIPLIER = 1.2
+
+
+def _dt_to_seconds(dt: float) -> float:
+    """Milisaniye cinsinden gelen dt'yi saniyeye dönüştürür.
+
+    Oyun döngüsü dt'yi milisaniye olarak geçirir (pygame.Clock.tick).
+    Bu yardımcı fonksiyon tutarlı bir şekilde saniyeye çevirir.
+    Eğer dt zaten saniye cinsindeyse (< 1.0 gibi küçük değerler), olduğu gibi bırakır.
+    """
+    s = float(dt)
+    # pygame.Clock.tick() tipik olarak 8-33 ms arası döndürür (30-120 FPS).
+    # 1.0'dan büyükse milisaniye kabul et.
+    if s > 1.0:
+        return s / 1000.0
+    return s
+
+
+def _level_progress_in_current_level(board: Any, lines_needed: int) -> int:
+    """Seviye içi satır ilerlemesini güvenli şekilde hesapla.
+
+    Mystery modunda gerçek seviye artışı `level_lines_cleared` ile hesaplanır.
+    HUD'da aynı kaynağı kullanarak ilerleme metninin desync olmasını engeller.
+    """
+    needed = max(1, int(lines_needed or 1))
+    try:
+        progress_total = getattr(board, 'level_lines_cleared', None)
+        if progress_total is None:
+            progress_total = getattr(board, 'lines_cleared', 0)
+        progress_total = int(progress_total or 0)
+    except Exception:
+        try:
+            progress_total = int(getattr(board, 'lines_cleared', 0) or 0)
+        except Exception:
+            progress_total = 0
+    return progress_total % needed
+
+
+CARD_LOCALIZATION_ALIASES = {
+    'speed_burst_rare': 'speed_burst',
+    'speed_burst_epic': 'speed_burst',
+    'speed_burst_legendary': 'speed_burst',
+    'freeze_drop_rare': 'freeze_drop',
+    'freeze_drop_epic': 'freeze_drop',
+    'freeze_drop_legendary': 'freeze_drop',
+    'hold_destroyer_2': 'hold_destroyer',
+    'hold_destroyer_3': 'hold_destroyer',
+    'hold_destroyer_4': 'hold_destroyer',
+    'hold_destroyer_5': 'hold_destroyer',
+}
+
+
+class _SafeCardFormatDict(dict):
+    def __missing__(self, key: str) -> str:
+        return '{' + key + '}'
+
+
+def _resolve_card_localization_id(card_or_id: Dict[str, Any] | str) -> str:
+    if isinstance(card_or_id, dict):
+        card_id = str(card_or_id.get('id') or '').strip()
+        group_id = str(card_or_id.get('_group_id') or '').strip()
+        if group_id:
+            return group_id
+        return CARD_LOCALIZATION_ALIASES.get(card_id, card_id)
+
+    card_id = str(card_or_id or '').strip()
+    return CARD_LOCALIZATION_ALIASES.get(card_id, card_id)
+
+
+def _build_card_format_context(card_or_id: Dict[str, Any] | str, value: Any = None) -> Dict[str, Any]:
+    context: Dict[str, Any] = {}
+    localization_id = _resolve_card_localization_id(card_or_id)
+
+    if isinstance(card_or_id, dict):
+        for key, raw_value in card_or_id.items():
+            if isinstance(raw_value, (str, int, float)):
+                context[key] = raw_value
+
+        payload = card_or_id.get('payload')
+        if isinstance(payload, dict):
+            for key, raw_value in payload.items():
+                if isinstance(raw_value, (str, int, float)):
+                    context[key] = raw_value
+
+        if 'value' not in context:
+            default_value = card_or_id.get('value')
+            if default_value is None:
+                default_value = card_or_id.get('base')
+            if isinstance(default_value, (str, int, float)):
+                context['value'] = default_value
+
+        speed_multiplier = context.get('speed_multiplier')
+        if isinstance(speed_multiplier, (int, float)) and 'speed_percent' not in context:
+            context['speed_percent'] = int(round((float(speed_multiplier) - 1.0) * 100))
+
+        line_multiplier = context.get('line_multiplier')
+        if isinstance(line_multiplier, (int, float)):
+            context['line_multiplier'] = f"{float(line_multiplier):g}"
+
+        freeze_duration = context.get('freeze_duration')
+        if isinstance(freeze_duration, float) and freeze_duration.is_integer():
+            context['freeze_duration'] = int(freeze_duration)
+
+    if value is not None:
+        context['value'] = value
+
+    if localization_id == 'perk_second_pocket':
+        context['button'] = _prompt_action_text('hold2', 'V')
+    elif localization_id == 'hold_destroyer':
+        context['button'] = _prompt_action_text('discard_held', 'B')
+
+    return context
+
+
+def _format_card_text(text: str, card_or_id: Dict[str, Any] | str, value: Any = None) -> str:
+    if not text or '{' not in text:
+        return text
+
+    context = _build_card_format_context(card_or_id, value)
+    if not context:
+        return text
+
+    try:
+        return text.format_map(_SafeCardFormatDict(context))
+    except Exception:
+        return text
+
+
+def get_card_title(card_or_id: Dict[str, Any] | str, fallback: str = "") -> str:
+    """Kart başlığını yerelleştirilmiş olarak döndürür."""
+    if isinstance(card_or_id, dict) and not fallback:
+        fallback = str(card_or_id.get('title') or '')
+
+    localization_id = _resolve_card_localization_id(card_or_id)
+    key = f"card_{localization_id}_title"
+    translated = t(key)
+    # t() anahtar bulunamazsa anahtarı döndürür
+    text = translated if translated != key else fallback
+    return _format_card_text(text, card_or_id)
+
+
+def get_card_description(card_or_id: Dict[str, Any] | str, value: Any = None, fallback: str = "") -> str:
+    """Kart açıklamasını yerelleştirilmiş olarak döndürür, {value} placeholder'ını doldurur."""
+    if isinstance(card_or_id, dict) and not fallback:
+        fallback = str(card_or_id.get('description') or '')
+
+    localization_id = _resolve_card_localization_id(card_or_id)
+    key = f"card_{localization_id}_desc"
+    translated = t(key)
+    text = translated if translated != key else fallback
+    if localization_id == 'perk_second_pocket' and '{button}' not in text:
+        button_label = _build_card_format_context(card_or_id, value).get('button', 'V')
+        text = text.replace('V', str(button_label), 1)
+    return _format_card_text(text, card_or_id, value)
+
+
+try:
+    # When imported as package (e.g. in tests: `import src.game_modes_extra`),
+    # use the package-relative Game so monkeypatching `src.game.Game` works.
+    from .game import Game  # type: ignore
+except Exception:
+    # Fallback for running modules as scripts / non-package imports.
+    from game import Game
+from pieces import Piece, EXTRA_SHAPE_NAMES
+
+
+def _ui_safe_icon_text(value: object, *, fallback: str = "*") -> str:
+    """Return a UI-safe icon string.
+
+    Emoji/symbol glyphs often render as tofu (square boxes) on some Windows setups
+    with pygame's default font. For UI labels we keep ASCII-only text.
+    """
+    if value is None:
+        return ""
+    text = str(value)
+    if not text:
+        return ""
+    return text if all(ord(ch) < 128 for ch in text) else fallback
+
+
+def _card_type_label_key(card: Dict[str, Any]) -> str:
+    """Kartın davranışına göre doğru tür etiketi anahtarını döndürür.
+
+    Öncelik:
+    1) Kalıcı perk
+    2) Sınırlı kullanım (hak/süre/timer/charges)
+    3) Tek kullanım (anında bir kere etki)
+    """
+    if bool(card.get('persistent', False)):
+        return 'card_type_persistent'
+
+    card_id = str(card.get('id') or '').strip().lower()
+    limited_ids = {
+        'quantum_tunneling',
+        'hammer',
+        'bomb_master',
+        'rewind_power',
+        'perk_phase',
+        'sniper_shot',
+        'time_capsule',
+        'hold_destroyer',
+        'hold_destroyer_2',
+        'hold_destroyer_3',
+        'hold_destroyer_4',
+        'hold_destroyer_5',
+        'freeze_drop_rare',
+        'freeze_drop_epic',
+        'freeze_drop_legendary',
+    }
+    if card_id in limited_ids:
+        return 'card_type_limited'
+
+    if bool(card.get('limited', False)) or bool(card.get('timed_buff', False)) or bool(card.get('charges', False)):
+        return 'card_type_limited'
+
+    desc = str(card.get('description') or '').lower()
+    status = str(card.get('status') or '').lower()
+    if ('hak' in desc) or ('hak' in status) or (' sn' in status) or status.endswith('s'):
+        return 'card_type_limited'
+
+    if bool(card.get('single_use', False)):
+        return 'card_type_single_use'
+    return 'card_type_limited'
+
+
+class Tetris2Mode(Game):
+    """Klasik Quadrix'e ekstra parçalar ekleyen mod."""
+
+    def __init__(
+        self,
+        difficulty: str = "Normal",
+        sound_enabled: bool = True,
+        effects_enabled: bool = True,
+        achievement_manager=None,
+        theme_manager=None,
+        screen=None,
+        fullscreen: bool = False,
+        settings_manager=None,
+        user_manager=None,
+        game_mode: str = "tetris2",
+        score_manager=None,
+        sound_manager=None,
+    ) -> None:
+        self.extra_piece_count = 0
+        # BigSquare (3x3) Quadrix Extra'da havuza dahil edilmez; her 15 parçada 1 gelir.
+        self._spawns_since_big_square = 0
+        super().__init__(
+            difficulty,
+            sound_enabled,
+            effects_enabled,
+            achievement_manager,
+            theme_manager,
+            screen,
+            fullscreen,
+            settings_manager,
+            user_manager,
+            game_mode,
+            sound_manager=sound_manager,
+            score_manager=score_manager,
+        )
+        self.mode_name = "QUADRIX EXTRA"
+        self.tetris2_font_large = retro_style.get_font(48, bold=False)
+        self.tetris2_font_medium = retro_style.get_font(36, bold=False)
+        print("🎮 QUADRIX EXTRA MODE aktif. Ekstra parçalar devrede.")
+
+    def _get_base_piece_factories(self):
+        factories = super()._get_base_piece_factories()
+        # BigSquare'ı (3x3) normal random havuzundan çıkar.
+        # WideMode benzeri şekilde düşük frekansta ayrı olarak spawn edeceğiz.
+        factories.extend(
+            self._make_named_piece_factory(name)
+            for name in EXTRA_SHAPE_NAMES
+            if name != 'BigSquare'
+        )
+        return factories
+
+    def spawn_new_piece(self) -> Piece:
+        # BigSquare: her 15 parçada 1 (random havuza dahil değil)
+        self._spawns_since_big_square = int(getattr(self, '_spawns_since_big_square', 0) or 0) + 1
+        if self._spawns_since_big_square >= 15:
+            # Üst üste 3 aynı parça kuralını bozacaksa BigSquare'ı bir sonraki spawna ertele.
+            identity = 'name:BigSquare'
+            try:
+                if hasattr(self, '_would_exceed_max_consecutive') and self._would_exceed_max_consecutive(identity):
+                    piece = super().spawn_new_piece()
+                else:
+                    piece = self._create_named_piece('BigSquare')
+                    self._apply_block_style(piece)
+                    if hasattr(self, '_note_piece_spawn'):
+                        self._note_piece_spawn(identity)
+                    self._spawns_since_big_square = 0
+            except Exception:
+                piece = super().spawn_new_piece()
+        else:
+            piece = super().spawn_new_piece()
+
+        if getattr(piece, "name", "") in EXTRA_SHAPE_NAMES:
+            self.extra_piece_count += 1
+            print(f"✨ EXTRA PARÇA #{self.extra_piece_count}: {piece.name}")
+        return piece
+
+    def update(self, dt: float) -> None:
+        super().update(dt)
+
+    def restart(self):
+        """Ensure Tetris2 extra counters are reset when restarting"""
+        super().restart()
+        self.extra_piece_count = 0
+        self._spawns_since_big_square = 0
+
+    def apply_theme_to_pieces(self) -> None:
+        # Use the shared theme + block style pipeline for every piece,
+        # including EXTRA_SHAPE_NAMES, to keep visuals consistent across modes.
+        super().apply_theme_to_pieces()
+
+
+class MysteryCardManager:
+    """Kartların veri ve tetik yönetimini üstlenen bağımsız katman.
+
+    Kart ödülleri için board.level'den AYRI bir card_level/card_xp progression
+    hattı tutar. Bu sayede:
+    - board.level: oyun temposu / düşüş hızı için kalır
+    - card_level: kart ödül ekonomisi için kullanılır
+
+    XP yalnızca gerçek player kaynaklı satır temizlemelerinden gelir; kart/
+    ability/external clear'lar XP üretmez (anti-farm). XP taşması durumunda
+    aynı çağrıda birden fazla level alınabilir ve queue oluşur.
+    """
+
+    # XP per simultaneous lines cleared by the player.
+    # 1 -> 1, 2 -> 3, 3 -> 5, 4 -> 8.  Reflects roguelite-style reward weight
+    # without making single clears feel pointless.
+    XP_PER_LINE_COUNT: Dict[int, int] = {1: 1, 2: 3, 3: 5, 4: 8}
+
+    # Initial XP needed for the first card level + per-level growth.
+    BASE_XP_TO_NEXT = 4
+    XP_GROWTH_PER_LEVEL = 2
+
+    # ── RARITY OLASILIK SİSTEMİ ──
+    # Kart seviyesi (card_level) ilerledikçe nadir kartların çıkma olasılığı
+    # artar. Anchor seviyeleri arasında lineer interpolasyon uygulanır;
+    # böylece sert breakpoint olmaz (level 4 ile 5 arasında ani sıçrama yok).
+    # Anchor dışındaki seviyeler için en yakın anchor kullanılır.
+    #
+    # Önemli: Bu ağırlıklar **rarity bucket** ağırlıklarıdır, kart başına
+    # değil. Önce rarity seçilir, sonra o rarity içinden uniform bir kart
+    # alınır. Bu sayede "common kart adedi az, legendary kart adedi çok"
+    # gibi katalog dengesizlikleri olasılığı bozmaz.
+    RARITY_WEIGHT_ANCHORS: Dict[int, Dict[str, float]] = {
+        1:  {'common': 70.0, 'uncommon': 22.0, 'rare':  7.0, 'epic':  0.9, 'legendary': 0.1},
+        5:  {'common': 58.0, 'uncommon': 25.0, 'rare': 13.0, 'epic':  3.0, 'legendary': 1.0},
+        10: {'common': 45.0, 'uncommon': 27.0, 'rare': 18.0, 'epic':  7.0, 'legendary': 3.0},
+        20: {'common': 30.0, 'uncommon': 25.0, 'rare': 22.0, 'epic': 13.0, 'legendary': 10.0},
+    }
+
+    # Bucket key normalizasyonu için kabul edilen rarity etiketleri.
+    _RARITY_ORDER: tuple[str, ...] = ('common', 'uncommon', 'rare', 'epic', 'legendary')
+
+    def __init__(self, mode: "MysteryMode") -> None:
+        self.mode = mode
+        self.catalog = self._build_catalog()
+        self.force_piece_queue: List[str] = []
+        self.pending_choices: List[Dict[str, Any]] = []
+        self.active_cards: List[Dict] = []
+        # Track one-time used card ids to avoid re-offering them
+        self.used_card_ids: set[str] = set()
+        # Debug cadence: extra selection trigger every 2 cleared lines
+        self._debug_lines_progress = 0
+        # === KART XP / KART LEVEL HATTI ===
+        # Bu alanlar board.level'den bağımsız ilerler. UI ve trigger mantığı
+        # buradan beslenir.
+        self.card_xp: int = 0
+        self.card_level: int = 1
+        self.card_xp_to_next: int = self._compute_xp_to_next(self.card_level)
+        # Geriye dönük uyumluluk için tutulan eski alanlar (mevcut testler/araçlar
+        # ve restore akışı bu isimleri okuyor). `progress` artık card_xp ile,
+        # `threshold` card_xp_to_next ile eşitlenir.
+        self.progress = 0
+        self.threshold = self.card_xp_to_next
+
+    def reset(self) -> None:
+        self.force_piece_queue.clear()
+        self.pending_choices.clear()
+        self.active_cards.clear()
+        self.used_card_ids.clear()
+        self._debug_lines_progress = 0
+        self.card_xp = 0
+        self.card_level = 1
+        self.card_xp_to_next = self._compute_xp_to_next(self.card_level)
+        # Mirrors for backward compat
+        self.progress = 0
+        self.threshold = self.card_xp_to_next
+
+    # === XP ECONOMY HELPERS ===
+    @classmethod
+    def _compute_xp_to_next(cls, card_level: int) -> int:
+        """Bir sonraki kart seviyesine geçmek için gereken XP.
+
+        Erken oyunda hızlı, sonra yavaşlayan basit doğrusal eğri.
+        Level 1 -> 4 XP, Level 2 -> 6, Level 3 -> 8, ...
+        """
+        lvl = max(1, int(card_level or 1))
+        return max(1, cls.BASE_XP_TO_NEXT + (lvl - 1) * cls.XP_GROWTH_PER_LEVEL)
+
+    @classmethod
+    def compute_xp_award(
+        cls,
+        cleared: int,
+        *,
+        combo: int = 0,
+        back_to_back: bool = False,
+        perfect_clear: bool = False,
+    ) -> int:
+        """Verilen temizleme bağlamı için kazanılacak XP."""
+        cleared = max(0, int(cleared or 0))
+        if cleared <= 0:
+            return 0
+        base = cls.XP_PER_LINE_COUNT.get(cleared, cls.XP_PER_LINE_COUNT[4] + (cleared - 4) * 2)
+        bonus = 0
+        # Combo bonus: 3+ chained clears => +1 XP. Capped to avoid scaling out of control.
+        if combo >= 3:
+            bonus += 1
+        # Back-to-back Quadrix => small extra XP
+        if back_to_back and cleared >= 4:
+            bonus += 2
+        # Perfect clear is rare and special
+        if perfect_clear:
+            bonus += 3
+        return int(base + bonus)
+
+    # === RARITY WEIGHT HELPERS ===
+    @classmethod
+    def _normalize_rarity(cls, value: Any) -> str:
+        """Kart üzerindeki rarity alanını bilinen bir bucket adına eşler."""
+        text = str(value or 'common').strip().lower()
+        if text in cls._RARITY_ORDER:
+            return text
+        # Bilinmeyen tag'ler -> common'a fallback'le ki olasılık tablosu
+        # asla boş kalmasın.
+        return 'common'
+
+    @classmethod
+    def _rarity_weights_for_level(cls, card_level: int) -> Dict[str, float]:
+        """Verilen card_level için rarity bucket ağırlıklarını döndür.
+
+        Anchor'lar arasında lineer interpolasyon kullanır. Anchor altı/üstü
+        seviyelerde sınır değeri korunur. Sonuçtaki ağırlıklar **renormalize
+        edilmemiştir**; çağıran taraf bucket boş kalmışsa kalanları yeniden
+        normalize etmelidir.
+        """
+        anchors = cls.RARITY_WEIGHT_ANCHORS
+        keys = sorted(anchors.keys())
+        lvl = max(1, int(card_level or 1))
+        if lvl <= keys[0]:
+            return dict(anchors[keys[0]])
+        if lvl >= keys[-1]:
+            return dict(anchors[keys[-1]])
+        lo = max(k for k in keys if k <= lvl)
+        hi = min(k for k in keys if k >= lvl)
+        if lo == hi:
+            return dict(anchors[lo])
+        span = hi - lo
+        t = (lvl - lo) / span if span > 0 else 0.0
+        a = anchors[lo]
+        b = anchors[hi]
+        return {
+            rarity: float(a.get(rarity, 0.0)) * (1.0 - t)
+                  + float(b.get(rarity, 0.0)) * t
+            for rarity in cls._RARITY_ORDER
+        }
+
+    @classmethod
+    def _offer_weight_for_card(cls, card: Dict[str, Any], card_level: int) -> float:
+        try:
+            weight = float(card.get('offer_weight', 1.0) or 1.0)
+        except Exception:
+            weight = 1.0
+        try:
+            until_level = int(card.get('offer_weight_until_level', 0) or 0)
+        except Exception:
+            until_level = 0
+        if until_level > 0 and int(card_level or 1) > until_level:
+            return 1.0
+        return max(0.0, weight)
+
+    @classmethod
+    def _choose_from_bucket(cls, bucket: List[Dict[str, Any]], card_level: int) -> Dict[str, Any]:
+        if len(bucket) <= 1:
+            return bucket[0]
+        weights = [cls._offer_weight_for_card(card, card_level) for card in bucket]
+        total = sum(weights)
+        if total <= 0.0:
+            return random.choice(bucket)
+        roll = random.uniform(0.0, total)
+        cumulative = 0.0
+        for card, weight in zip(bucket, weights):
+            cumulative += weight
+            if roll <= cumulative:
+                return card
+        return bucket[-1]
+
+    def notify_lines_cleared(
+        self,
+        cleared: int,
+        *,
+        source: str = 'player',
+        combo: int = 0,
+        back_to_back: bool = False,
+        perfect_clear: bool = False,
+    ) -> bool:
+        """Card-XP ilerlemesini günceller.
+
+        Yalnızca `source='player'` çağrılarında XP verilir. Kart/ability/external
+        clear'lar XP üretmez (anti-farm). Bir veya birden fazla level-up oluşursa
+        `pending_level_ups` queue'su kadar artar ve dış akış (MysteryMode.update)
+        sıradaki overlay'i açar.
+
+        Geri dönüş: bu çağrıda en az bir card_level artışı oluştuysa True.
+        """
+        if cleared <= 0:
+            return False
+
+        # === ANTI-FARM: yalnızca player kaynaklı clear ödül queue'sunu besler ===
+        # Hem normal XP hem de debug-modu hızlandırması bu kuralı dinler. External,
+        # ability, card, gravity vb. kaynaklı clear'lar -- debug açık olsa bile --
+        # `pending_level_ups` üretmemelidir.
+        normalized_source = str(source or 'player').lower()
+        is_player_source = normalized_source in {'player', 'normal'}
+
+        # Debug cadence: extra selection trigger every 2 cleared lines. Yalnızca
+        # gerçek player clear'larında devreye girer; aksi halde reward queue
+        # delinir.
+        card_mode_debug = False
+        try:
+            card_mode_debug = bool(self.mode.settings_manager.get('card_mode_debug', False))
+        except Exception:
+            card_mode_debug = False
+
+        if card_mode_debug and is_player_source:
+            try:
+                self._debug_lines_progress = int(getattr(self, '_debug_lines_progress', 0) or 0) + int(cleared)
+            except Exception:
+                self._debug_lines_progress = (getattr(self, '_debug_lines_progress', 0) or 0) + cleared
+            debug_triggers = 0
+            while self._debug_lines_progress >= 2:
+                self._debug_lines_progress -= 2
+                debug_triggers += 1
+            if debug_triggers > 0:
+                try:
+                    if getattr(self, 'mode', None) is not None:
+                        self.mode.pending_level_ups = getattr(self.mode, 'pending_level_ups', 0) + int(debug_triggers)
+                except Exception:
+                    pass
+
+        if not is_player_source:
+            # Dış kaynaklı temizlikler XP vermesin ve queue oluşturmasın.
+            return False
+
+        xp_gain = self.compute_xp_award(
+            cleared,
+            combo=combo,
+            back_to_back=back_to_back,
+            perfect_clear=perfect_clear,
+        )
+        if xp_gain <= 0:
+            return False
+
+        self.card_xp += int(xp_gain)
+        levels_gained = 0
+        # Overflow: aynı çağrıda birden fazla level alınabilir.
+        while self.card_xp >= self.card_xp_to_next:
+            self.card_xp -= self.card_xp_to_next
+            self.card_level += 1
+            self.card_xp_to_next = self._compute_xp_to_next(self.card_level)
+            levels_gained += 1
+
+        # Eski (geriye dönük) alanları senkron tut.
+        self.progress = int(self.card_xp)
+        self.threshold = int(self.card_xp_to_next)
+
+        if levels_gained > 0:
+            try:
+                print(
+                    f"[MysteryCardManager] Card level up! card_level={self.card_level} "
+                    f"(+{levels_gained}); card_xp={self.card_xp}/{self.card_xp_to_next}"
+                )
+            except Exception:
+                pass
+            try:
+                # prepare_selection bir kez çağrılır; queue >0 ise update() döngüsü
+                # her overlay kapandığında yeniden hazırlar.
+                try:
+                    self.prepare_selection()
+                except Exception:
+                    pass
+                if getattr(self, 'mode', None) is not None:
+                    mode = self.mode
+                    mode.pending_level_ups = getattr(mode, 'pending_level_ups', 0) + int(levels_gained)
+                    # last_enqueued_level artık card_level'i izler; eski board.level
+                    # tabanlı dedup mantığını bypass eder.
+                    mode.last_enqueued_level = self.card_level
+            except Exception:
+                pass
+            return True
+        return False
+
+    def prepare_selection(self) -> List[Dict[str, Any]]:
+        # Build a filtered pool excluding persistent perks that are already active
+        self.pending_choices = []
+        # If card mode debug setting is enabled, show the full catalog for debugging
+        card_mode_debug = False
+        try:
+            card_mode_debug = bool(self.mode.settings_manager.get('card_mode_debug', False))
+        except Exception:
+            card_mode_debug = False
+        # Debug modunda rarity sampling'i bypass etsek de anti-farm filtresi
+        # korunmalı; aksi halde tek kullanımlık/persistent kartlar tekrar sunulur.
+        def _is_used(c):
+            cid = c.get("id", "")
+            group = c.get("_group_id", cid)
+            if (c.get("single_use") or c.get("persistent")) and (cid in self.used_card_ids or group in self.used_card_ids):
+                return True
+            return False
+
+        filtered_available = [
+            c for c in self.catalog
+            if not (c.get("persistent") and any(ac.get("id") == c.get("id") for ac in self.active_cards))
+            and not _is_used(c)
+        ]
+        if card_mode_debug:
+            available = list(filtered_available)
+            pool_size = len(available)
+        else:
+            # Exclude persistent perks already active and single-use cards already used
+            # Also exclude cards in the same group (e.g., hold_destroyer variants)
+            available = list(filtered_available)
+            # If for whatever reason the filter removes all cards (e.g., all single-use are used),
+            # fall back to the full catalog so the player still receives card choices on level-up.
+            if not available:
+                available = list(self.catalog)
+            pool_size = min(3, len(available))
+        # Ensure we always present at least one card by falling back to full catalog
+        if not available:
+            available = list(self.catalog)
+        if not available:
+            # Give up and return empty pending choices
+            self.pending_choices = []
+            return self.pending_choices
+        
+        # === AĞIRLIKLI SEÇİM SİSTEMİ ===
+        # Her kartın weight değerine göre seçim yap
+        selected_cards = self._weighted_sample(available, pool_size)
+        
+        for card in selected_cards:
+            value = self._roll_value(card)
+            preview_card = dict(card)
+            preview_card.update(
+                {
+                    "value": value,
+                    "description": _format_card_text(str(card.get("description", "")), card, value),
+                    "bg": card.get("bg", (34, 34, 46)),
+                    "icon": card.get("icon", "*"),
+                    "tag": card.get("tag", "Bonus"),
+                    "style": dict(card.get("style", {})),
+                    "icon_image": card.get("icon_image"),
+                    "persistent": card.get("persistent", False),
+                    "payload": dict(card.get("payload", {})),
+                    "rarity": card.get("rarity", "common"),
+                    "single_use": card.get("single_use", False),
+                    "_group_id": card.get("_group_id"),
+                }
+            )
+            self.pending_choices.append(preview_card)
+        return self.pending_choices
+    
+    def _weighted_sample(self, cards: List[Dict], count: int) -> List[Dict]:
+        """Seviyeye göre rarity-bucket bazlı kart örneklemesi.
+
+        İki aşamalı seçim:
+          1. `_rarity_weights_for_level(card_level)` ile bucket ağırlıkları
+             alınır. Filtre sonrası boş kalan bucket'lar otomatik düşürülür
+             ve kalan ağırlıklar orantısal renormalize edilir.
+             2. Seçilen rarity bucket'ı içinden kart seçilir. Varsayılan davranış
+                 uniformdur; ancak kartta `offer_weight` varsa bu yalnızca aynı
+                 rarity içindeki vitrin önceliğini etkiler. Böylece bir bucket'taki
+                 kart sayısı (örn. 3 common vs 10 legendary) bucket'ın çıkma
+                 olasılığını bozmaz.
+
+        `_group_id` paylaşan varyantlar tek bir seçimde tekrar etmez (mevcut
+        invariant); ayrıca aynı reward setinde aynı bucket'tan zorunlu olarak
+        ikinci bir kart çekmek gerekirse bucket renormalizasyonu doğal şekilde
+        bunu mümkün kılar.
+        """
+        if not cards:
+            return []
+        if count <= 0:
+            return []
+
+        # Rarity'ye göre kartları gruplandır
+        by_rarity: Dict[str, List[Dict]] = {r: [] for r in self._RARITY_ORDER}
+        for card in cards:
+            bucket = self._normalize_rarity(card.get('rarity'))
+            by_rarity[bucket].append(card)
+
+        # Seviye-bazlı bucket ağırlıkları
+        card_level = 1
+        try:
+            card_level = int(getattr(self, 'card_level', 1) or 1)
+        except Exception:
+            card_level = 1
+        base_weights = self._rarity_weights_for_level(card_level)
+
+        selected: List[Dict] = []
+        target = min(int(count), len(cards))
+
+        for _ in range(target):
+            # Boş bucket'ları düşür ve kalanları renormalize et (orantısal).
+            active = {
+                rarity: float(base_weights.get(rarity, 0.0))
+                for rarity in self._RARITY_ORDER
+                if by_rarity.get(rarity)
+            }
+            total = sum(active.values())
+            if total <= 0.0:
+                # Tüm aktif bucket'ların ağırlığı 0 ise (örn. anchor 0 verdiği
+                # ve diğer bucket'lar boşaldığı durum) uniform fallback.
+                non_empty = [r for r in self._RARITY_ORDER if by_rarity.get(r)]
+                if not non_empty:
+                    break
+                rarity = random.choice(non_empty)
+            else:
+                roll = random.uniform(0.0, total)
+                cumulative = 0.0
+                rarity = next(iter(active))
+                for r, w in active.items():
+                    cumulative += w
+                    if roll <= cumulative:
+                        rarity = r
+                        break
+
+            bucket = by_rarity[rarity]
+            if not bucket:
+                # Güvenlik ağı: bucket boş çıkarsa diğerlerinden seç
+                non_empty = [r for r in self._RARITY_ORDER if by_rarity.get(r)]
+                if not non_empty:
+                    break
+                rarity = random.choice(non_empty)
+                bucket = by_rarity[rarity]
+
+            chosen = self._choose_from_bucket(bucket, card_level)
+            selected.append(chosen)
+
+            # Aynı seçimde tekrar gelmesin: kartı ve aynı _group_id'li
+            # varyantlarını tüm bucket'lardan çıkar.
+            removed_group = chosen.get('_group_id')
+            if removed_group:
+                for r_key in self._RARITY_ORDER:
+                    by_rarity[r_key] = [
+                        c for c in by_rarity[r_key]
+                        if c.get('_group_id') != removed_group
+                    ]
+            else:
+                bucket.remove(chosen)
+
+        return selected
+
+    def _roll_value(self, card: Dict[str, Any]) -> int:
+        if "value_range" in card:
+            low, high = card["value_range"]
+            return random.randint(low, high)
+        return int(card.get("base", 1))
+
+    def select_card(self, index: int) -> Dict | None:
+        if not (0 <= index < len(self.pending_choices)):
+            return None
+        card = dict(self.pending_choices[index])
+        self.pending_choices = []
+        # Mark *truly* one-time cards as used so they won't be shown again.
+        #
+        # ÖNEMLİ: 'limited' kartlar (Delik Avcısı, Çekiç, Keskin Nişancı, Son
+        # Düşüş, Tuttuğunu Koparan, Hayalet Parça vb.) bir tuşla tetiklenen HAK
+        # verir ve `_apply_card_effect` içinde "tekrar seçilince hakkı tamamla"
+        # mantığına sahiptir. Bunları seçilir seçilmez kalıcı olarak `used`
+        # işaretlersek hak bittikten sonra bir daha asla seçim ekranında
+        # çıkmazlar (rewind_power / perk_phase zaten 'limited' ama 'single_use'
+        # değil ve doğru şekilde tekrar sunuluyor). Bu yüzden 'limited' kartları
+        # kalıcı dışlamıyoruz; yalnızca anlık (instant) single_use kartları ve
+        # kalıcı (persistent) perkleri tek seferlik sayıyoruz.
+        is_one_time = bool(card.get('persistent')) or (
+            bool(card.get('single_use')) and not bool(card.get('limited'))
+        )
+        if is_one_time:
+            self.used_card_ids.add(card.get('id'))
+            # Also mark group_id so all variants are excluded
+            group = card.get('_group_id')
+            if group:
+                self.used_card_ids.add(group)
+        return card
+
+    def pop_forced_piece(self) -> str | None:
+        if self.force_piece_queue:
+            return self.force_piece_queue.pop(0)
+        return None
+
+    def queue_force_piece(self, name: str) -> None:
+        self.force_piece_queue.append(name)
+
+    def get_status(self) -> Dict[str, Any]:
+        # `progress` ve `threshold` geriye dönük uyumluluk için kart XP'yi
+        # yansıtır. UI artık card_level / card_xp / card_xp_to_next alanlarını
+        # tercih etmelidir.
+        return {
+            "progress": self.card_xp,
+            "threshold": self.card_xp_to_next,
+            "card_level": self.card_level,
+            "card_xp": self.card_xp,
+            "card_xp_to_next": self.card_xp_to_next,
+            "hint": t('card_hint_equal'),
+        }
+
+    def get_selection_hint(self) -> str:
+        return t('card_hint_random')
+
+    def _build_catalog(self) -> List[Dict]:
+        # === NADİRLİK SİSTEMİ (Güncellenmiş) ===
+        # common=50-60    -> Basit, anında etkili, sık çıkan
+        # uncommon=40-50  -> Orta güçte, koşullu etkili
+        # rare=25-35      -> Güçlü, stratejik önemli
+        # epic=12-20      -> Çok güçlü, oyun değiştirici
+        # legendary=5-10  -> En güçlü, nadiren çıkar
+        # 
+        # === KART TÜRLERİ ===
+        # single_use=True  -> Anında etki, bir kez kullanılır
+        # charges=True     -> Belirli sayıda hak (tuş ile kullanım)
+        # timed_buff=True  -> Süreli etki (timer ile biter)
+        # persistent=True  -> Oyun boyunca kalıcı perk
+
+        cards = [
+            # ==================== COMMON KARTLAR (Ağırlık: 50-60) ====================
+            # Basit, anında etkili, sık çıkan kartlar
+            {
+                "id": "clear_rows",
+                "title": "Alt Süpür",
+                "base": 2,
+                "value_range": (1, 3),
+                "description": "En alttaki {value} satırı siler. Üstteki bloklar aşağıya düşer.",
+                "color": (120, 230, 255),
+                "bg": (12, 26, 58),
+                "icon": "🧹",
+                "tag": "Uncommon",
+                "rarity": "uncommon",
+                "weight": 60,
+                "icon_image": os.path.join(UI_ICON_DIR, "icon_clean_sweep.png"),
+                "style": {
+                    "gradient": [(32, 90, 140), (10, 24, 38)],
+                    "border": (170, 235, 255),
+                    "corner": 24,
+                    "pattern": "wave",
+                    "icon_bg": (28, 72, 120),
+                },
+                "single_use": True,
+            },
+            {
+                "id": "block_magnet",
+                "title": "Blok Manyetiği",
+                "base": 1,
+                "value_range": (1, 1),
+                "description": "Tüm bloklar sol kenara yapışır ve aralardaki boşluklar kapanır.",
+                "color": (255, 140, 100),
+                "bg": (48, 20, 12),
+                "icon": "M",
+                "tag": "Epic",
+                "rarity": "legendary",
+                "weight": 12,
+                "icon_image": os.path.join(UI_ICON_DIR, "icon_block_magnet.png"),
+                "style": {
+                    "gradient": [(255, 120, 80), (100, 30, 20)],
+                    "border": (255, 170, 130),
+                    "corner": 20,
+                    "pattern": "wave",
+                    "icon_bg": (120, 40, 25),
+                },
+                "single_use": True,
+            },
+            {
+                "id": "peak_sculpt",
+                "title": "Tepe Kesici",
+                "base": 3,
+                "value_range": (2, 4),
+                "description": "En yüksek {value} bloğu siler ve tahta düzleşir.",
+                "color": (140, 255, 210),
+                "bg": (12, 36, 28),
+                "icon": "✂️",
+                "tag": "Uncommon",
+                "rarity": "uncommon",
+                "weight": 55,
+                "icon_image": os.path.join(UI_ICON_DIR, "icon_peak_cutter.png"),
+                "single_use": True,
+                "style": {
+                    "gradient": [(0, 255, 255), (41, 121, 255)],
+                    "border": (150, 255, 255),
+                    "corner": 22,
+                    "pattern": "laser",
+                    "icon_bg": (10, 60, 80),
+                },
+            },
+            {
+                "id": "nova_burst",
+                "title": "Nova Patlaması",
+                "base": 3,
+                "value_range": (2, 4),
+                "description": "Sonraki {value} parça yere düştüğünde etrafındaki bloklar patlar.",
+                "color": (255, 120, 196),
+                "bg": (46, 10, 30),
+                "icon": "💥",
+                "tag": "Epic",
+                "rarity": "epic",
+                "weight": 18,
+                "icon_image": os.path.join(UI_ICON_DIR, "icon_nova_burst.png"),
+                "style": {
+                    "gradient": [(140, 12, 60), (44, 10, 28)],
+                    "border": (255, 170, 220),
+                    "corner": 30,
+                    "pattern": "spark",
+                    "icon_bg": (80, 16, 38),
+                },
+                "single_use": True,
+            },
+            {
+                "id": "mini_bomb",
+                "title": "Mini Bomba",
+                "base": 1,
+                "value_range": (1, 1),
+                "description": "Düşen parça yere değdiğinde yanındaki blokları da patlatır.",
+                "color": (255, 110, 80),
+                "bg": (50, 12, 10),
+                "icon": "B",
+                "tag": "Common",
+                "rarity": "common",
+                "weight": 40,
+                "icon_image": os.path.join(UI_ICON_DIR, "icon_mini_bomb.png"),
+                "style": {"border": (255, 170, 120)},
+                "single_use": True,
+            },
+            {
+                "id": "mirror_hold",
+                "title": "Ayna Cep",
+                "base": 1,
+                "value_range": (1, 1),
+                "description": "Saklanan parçayı ayna görüntüsüne çevirir.",
+                "color": (185, 210, 255),
+                "bg": (16, 20, 52),
+                "icon": "MH",
+                "tag": "Common",
+                "rarity": "common",
+                "weight": 42,
+                "icon_image": os.path.join(UI_ICON_DIR, "icon_mirror_block.png"),
+                "style": {
+                    "gradient": [(160, 190, 255), (38, 50, 120)],
+                    "border": (210, 225, 255),
+                    "corner": 22,
+                    "pattern": "wave",
+                    "icon_bg": (54, 78, 154),
+                },
+                "limited": True,
+                "single_use": True,
+            },
+            {
+                "id": "echo_drop",
+                "title": "Yankı Düşüşü",
+                "base": 1,
+                "value_range": (1, 1),
+                "description": "Parça yere düştüğünde altındaki boş karelere {echo_cells} gölge blok bırakır.",
+                "color": (120, 220, 255),
+                "bg": (8, 18, 42),
+                "icon": "ED",
+                "tag": "Common",
+                "rarity": "common",
+                "weight": 44,
+                "offer_weight": 1.65,
+                "offer_weight_until_level": 8,
+                "payload": {"echo_cells": 2},
+                "icon_image": os.path.join(UI_ICON_DIR, "icon_echo_drop.png"),
+                "style": {
+                    "gradient": [(90, 190, 240), (16, 44, 108)],
+                    "border": (170, 230, 255),
+                    "corner": 22,
+                    "pattern": "wave",
+                    "icon_bg": (24, 74, 138),
+                },
+                "limited": True,
+                "single_use": True,
+            },
+            # ==================== HIZ PATLAMASI (Enderlik Sistemi) ====================
+            {
+                "id": "speed_burst_rare",
+                "_group_id": "speed_burst",
+                "title": "Hız Patlaması",
+                "base": 20,
+                "value_range": (18, 22),
+                "description": "{value} saniye boyunca parçalar daha hızlı düşer. Her sildiğin satır 1.3 katı puan kazandırır.",
+                "color": (255, 200, 80),
+                "bg": (50, 38, 12),
+                "icon": "⚡",
+                "tag": "Rare",
+                "rarity": "rare",
+                "weight": 35,
+                "icon_image": os.path.join(UI_ICON_DIR, "icon_speed_burst.png"),
+                "style": {
+                    "gradient": [(255, 210, 100), (190, 120, 30)],
+                    "border": (255, 220, 120),
+                    "corner": 22,
+                    "pattern": "spark",
+                    "icon_bg": (200, 150, 50),
+                },
+                "timed_buff": True,
+                "payload": {"speed_multiplier": 1.25, "line_multiplier": 1.3},
+            },
+            {
+                "id": "speed_burst_epic",
+                "_group_id": "speed_burst",
+                "title": "Hız Patlaması",
+                "base": 30,
+                "value_range": (25, 35),
+                "description": "{value} saniye boyunca parçalar daha hızlı düşer. Her sildiğin satır 1.5 katı puan kazandırır.",
+                "color": (255, 180, 50),
+                "bg": (50, 35, 10),
+                "icon": "⚡",
+                "tag": "Epic",
+                "rarity": "epic",
+                "weight": 20,
+                "icon_image": os.path.join(UI_ICON_DIR, "icon_speed_burst.png"),
+                "style": {
+                    "gradient": [(255, 190, 60), (170, 90, 15)],
+                    "border": (255, 200, 100),
+                    "corner": 24,
+                    "pattern": "spark",
+                    "icon_bg": (190, 130, 35),
+                },
+                "timed_buff": True,
+                "payload": {"speed_multiplier": 1.4, "line_multiplier": 1.5},
+            },
+            {
+                "id": "speed_burst_legendary",
+                "_group_id": "speed_burst",
+                "title": "Hız Patlaması",
+                "base": 40,
+                "value_range": (35, 45),
+                "description": "{value} saniye boyunca parçalar daha hızlı düşer. Her sildiğin satır 1.75 katı puan kazandırır.",
+                "color": (255, 160, 30),
+                "bg": (48, 30, 8),
+                "icon": "⚡",
+                "tag": "Legendary",
+                "rarity": "legendary",
+                "weight": 8,
+                "icon_image": os.path.join(UI_ICON_DIR, "icon_speed_burst.png"),
+                "style": {
+                    "gradient": [(255, 170, 40), (160, 80, 10)],
+                    "border": (255, 190, 80),
+                    "corner": 26,
+                    "pattern": "spark",
+                    "icon_bg": (180, 120, 25),
+                },
+                "timed_buff": True,
+                "payload": {"speed_multiplier": 1.6, "line_multiplier": 1.75},
+            },
+            {
+                "id": "quantum_tunneling",
+                "title": "Hayalet Parça",
+                "base": 3,
+                "value_range": (3, 3),
+                "description": "G tuşu ile kullan: Parça hayalet olur ve blokların içinden geçer.",
+                "color": (180, 200, 255),
+                "bg": (14, 14, 30),
+                "icon": "👻",
+                "tag": "Epic",
+                "rarity": "epic",
+                "weight": 25,
+                "icon_image": os.path.join(UI_ICON_DIR, "icon_quantum_tunnel.png"),
+                "style": {"border": (160, 180, 255)},
+                "limited": True,
+                "single_use": True,
+            },
+            {
+                "id": "hammer",
+                "title": "Çekiç",
+                "base": 3,
+                "value_range": (3, 3),
+                "description": "H tuşu ile kullan: Düşen parça tek bloğa dönüşür.",
+                "color": (230, 210, 140),
+                "bg": (32, 22, 12),
+                "icon": "H",
+                "tag": "Rare",
+                "rarity": "rare",
+                "weight": 35,
+                "icon_image": os.path.join(UI_ICON_DIR, "icon_hammer.png"),
+                "style": {"border": (255, 236, 190)},
+                "limited": True,
+                "single_use": True,
+            },
+            # ==================== PERKLER (Kalıcı yetenekler) ====================
+            {
+                "id": "bomb_master",
+                "title": "Bomba Ustası",
+                "base": 3,
+                "value_range": (3, 3),
+                "description": "M tuşu ile kullan: Parça bombaya dönüşür ve yere değdiğinde etrafı patlar.",
+                "color": (255, 90, 60),
+                "bg": (50, 12, 10),
+                "icon": "💣",
+                "tag": "Rare",
+                "rarity": "rare",
+                "weight": 30,
+                "limited": True,
+                "single_use": True,
+                "style": {"border": (255, 120, 80)},
+                "icon_image": os.path.join(UI_ICON_DIR, "icon_perk_explosive.png"),
+            },
+            {
+                "id": "rewind_power",
+                "title": "Geri Sarma",
+                "base": 3,
+                "value_range": (3, 3),
+                "description": "U tuşu ile kullan: Son koyduğun parçayı geri al.",
+                "color": (255, 200, 255),
+                "bg": (38, 12, 38),
+                "icon": "RW",
+                "tag": "Rare",
+                "rarity": "rare",
+                "weight": 18,
+                "limited": True,
+                "style": {"border": (255, 150, 255)},
+                "icon_image": os.path.join(UI_ICON_DIR, "icon_perk_rewind.png"),
+            },
+            {
+                "id": "perk_phase",
+                "title": "Şekil Değiştirici",
+                "base": 3,
+                "value_range": (3, 3),
+                "description": "LSHIFT tuşu ile kullan: Parçayı ayna görüntüsüne çevirir (L↔J, Z↔S).",
+                "color": (255, 200, 255),
+                "bg": (24, 12, 34),
+                "icon": "🔄",
+                "tag": "Epic",
+                "rarity": "epic",
+                "weight": 18,
+                "limited": True,
+                "style": {"border": (220, 140, 255)},
+                "icon_image": os.path.join(UI_ICON_DIR, "icon_perk_phase.png"),
+            },
+            {
+                "id": "perk_synergy",
+                "title": "Sinerji Bonus",
+                "base": 1,
+                "value_range": (1, 1),
+                "description": "Sahip olduğun her özel kart için %10 ekstra puan kazanırsın.",
+                "color": (255, 220, 140),
+                "bg": (32, 18, 12),
+                "icon": "🔗",
+                "tag": "Rare",
+                "rarity": "rare",
+                "weight": 25,
+                "persistent": True,
+                "style": {"border": (255, 200, 120)},
+                "icon_image": os.path.join(UI_ICON_DIR, "icon_perk_synergy.png"),
+            },
+            {
+                "id": "perk_second_pocket",
+                "title": "Ekstra Cep",
+                "base": 1,
+                "value_range": (1, 1),
+                "description": "V tuşu ile kullan: İkinci bir parça saklayabilirsin.",
+                "color": (200, 200, 255),
+                "bg": (18, 18, 40),
+                "icon": "🎒",
+                "tag": "Legendary",
+                "rarity": "legendary",
+                "weight": 18,
+                "persistent": True,
+                "style": {"border": (180, 180, 255)},
+                "icon_image": os.path.join(UI_ICON_DIR, "icon_perk_second_pocket.png"),
+            },
+            {
+                "id": "perk_flexible_border",
+                "title": "Esnek Sınır",
+                "base": 1,
+                "value_range": (1, 1),
+                "description": "Parçalar tahtanın kenarından 1 blok dışarı çıkabilir.",
+                "color": (255, 200, 100),
+                "bg": (50, 30, 8),
+                "icon": "⬌",
+                "tag": "Legendary",
+                "rarity": "legendary",
+                "weight": 8,
+                "persistent": True,
+                "style": {
+                    "gradient": [(255, 190, 60), (120, 60, 10)],
+                    "border": (255, 220, 120),
+                    "corner": 28,
+                    "pattern": "spark",
+                    "icon_bg": (140, 80, 20),
+                },
+                "icon_image": os.path.join(UI_ICON_DIR, "icon_perk_flexible_border.png"),
+            },
+            {
+                "id": "gravity_well",
+                "title": "Yerçekimi Dalgası",
+                "base": 1,
+                "value_range": (1, 1),
+                "description": "Tüm bloklar aşağıya düşer ve dolan satırlar silinir.",
+                "color": (120, 160, 255),
+                "bg": (8, 12, 32),
+                "icon": "🌀",
+                "tag": "Epic",
+                "rarity": "epic",
+                "weight": 18,
+                "icon_image": os.path.join(UI_ICON_DIR, "icon_gravity_well.png"),
+                "style": {"border": (140, 180, 255)},
+                "single_use": True,
+            },
+            {
+                "id": "ghost_echo",
+                "title": "İkinci Şans",
+                "base": 10,
+                "value_range": (10, 10),
+                "description": "Oyun bitecekken tahtanın üst yarısı silinir ve oyuna devam edersin.",
+                "color": (200, 200, 255),
+                "bg": (10, 8, 30),
+                "icon": "👻",
+                "tag": "Legendary",
+                "rarity": "legendary",
+                "weight": 12,
+                "icon_image": os.path.join(UI_ICON_DIR, "icon_ghost_echo.png"),
+                "single_use": True,
+                "style": {"border": (220, 220, 255)},
+            },
+            # ==================== YARDIMCI KARTLAR ====================
+            {
+                "id": "row_shuffle",
+                "title": "Blok Karıştırıcı",
+                "base": 3,
+                "value_range": (2, 4),
+                "description": "En alttaki {value} satırdaki blokların yerlerini karıştırır.",
+                "color": (120, 200, 255),
+                "bg": (10, 24, 46),
+                "icon": "🎲",
+                "tag": "Common",
+                "rarity": "common",
+                "weight": 55,
+                "icon_image": os.path.join(UI_ICON_DIR, "icon_row_shuffle.png"),
+                "style": {
+                    "gradient": [(80, 170, 240), (18, 44, 88)],
+                    "border": (170, 210, 240),
+                    "corner": 22,
+                    "pattern": "wave",
+                    "icon_bg": (26, 74, 128),
+                },
+                "single_use": True,
+            },
+            {
+                "id": "laser_drill",
+                "title": "Delici Parça",
+                "base": 1,
+                "value_range": (1, 1),
+                "description": "Düşen parça önündeki blokları eriterek geçer.",
+                "color": (255, 50, 150),
+                "bg": (40, 5, 25),
+                "icon": "🔥",
+                "tag": "Rare",
+                "rarity": "rare",
+                "weight": 25,
+                "icon_image": os.path.join(UI_ICON_DIR, "icon_laser_drill.png"),
+                "style": {
+                    "gradient": [(255, 30, 120), (100, 10, 50)],
+                    "border": (255, 100, 180),
+                    "corner": 24,
+                    "pattern": "laser",
+                    "icon_bg": (150, 20, 80),
+                },
+                "single_use": True,
+            },
+            {
+                "id": "sniper_shot",
+                "title": "Keskin Nişancı",
+                "base": 3,  # 3 hak ver
+                "value_range": (3, 3),  # Sabit 3 hak
+                "description": "N tuşu ile kullan: Açılan ekranda istediğin bloğa tıkla, o blok patlar.",
+                "color": (255, 80, 80),
+                "bg": (50, 10, 10),
+                "icon": "N",
+                "tag": "Uncommon",
+                "rarity": "uncommon",
+                "weight": 35,
+                "icon_image": os.path.join(UI_ICON_DIR, "icon_sniper_shot.png"),
+                "style": {
+                    "gradient": [(180, 30, 30), (60, 10, 10)],
+                    "border": (255, 100, 100),
+                    "corner": 22,
+                    "pattern": "spark",
+                    "icon_bg": (120, 20, 20),
+                },
+                "limited": True,
+                "single_use": True,
+            },
+            {
+                "id": "time_capsule",
+                "title": "Zaman Kapsülü",
+                "base": 1,
+                "value_range": (1, 1),
+                "description": "T tuşu ile kullan: Tahtayı kaydedersin. R tuşuna basınca o ana geri dönersin.",
+                "color": (120, 255, 200),
+                "bg": (10, 40, 30),
+                "icon": "T",
+                "tag": "Legendary",
+                "rarity": "legendary",
+                "weight": 8,
+                "icon_image": os.path.join(UI_ICON_DIR, "icon_time_capsule.png"),
+                "style": {
+                    "gradient": [(80, 200, 160), (20, 60, 50)],
+                    "border": (150, 255, 220),
+                    "corner": 28,
+                    "pattern": "wave",
+                    "icon_bg": (40, 120, 90),
+                },
+                "limited": True,
+                "single_use": True,
+            },
+            {
+                "id": "future_changer",
+                "title": "Geleceği Değiştiren",
+                "base": 2,
+                "value_range": (2, 2),
+                "description": "Bir pencere açılır ve sonraki 2 parçayı sen seçersin.",
+                "color": (180, 100, 255),
+                "bg": (30, 15, 50),
+                "icon": "F",
+                "tag": "Epic",
+                "rarity": "epic",
+                "weight": 15,
+                "icon_image": os.path.join(UI_ICON_DIR, "icon_future_changer.png"),
+                "style": {
+                    "gradient": [(140, 60, 200), (40, 20, 80)],
+                    "border": (200, 140, 255),
+                    "corner": 24,
+                    "pattern": "spark",
+                    "icon_bg": (80, 40, 120),
+                },
+                "single_use": True,
+            },
+            # ==================== YENİ KARTLAR ====================
+            {
+                "id": "block_workshop_card",
+                "title": "Blok Atölyesi",
+                "base": 1,
+                "value_range": (1, 1),
+                "description": "Bir atölye açılır ve en fazla 7 bloklu kendi özel parçanı yapabilirsin.",
+                "color": (255, 200, 100),
+                "bg": (50, 35, 10),
+                "icon": "W",
+                "tag": "Legendary",
+                "rarity": "legendary",
+                "weight": 8,
+                "icon_image": os.path.join(UI_ICON_DIR, "icon_block_workshop.png"),
+                "style": {
+                    "gradient": [(255, 180, 60), (120, 60, 10)],
+                    "border": (255, 220, 120),
+                    "corner": 28,
+                    "pattern": "spark",
+                    "icon_bg": (140, 80, 20),
+                },
+                "single_use": True,
+            },
+            {
+                "id": "gambler_dice",
+                "title": "Kumarbazın Zarı",
+                "base": 1,
+                "value_range": (1, 1),
+                "description": "Zar atılır. Yarı yarıya bir ihtimalle tahta tamamen silinir ya da yarısı bloklarla dolar.",
+                "color": (255, 50, 50),
+                "bg": (50, 5, 5),
+                "icon": "D",
+                "tag": "Legendary",
+                "rarity": "legendary",
+                "weight": 8,
+                "icon_image": os.path.join(UI_ICON_DIR, "icon_gambler_dice.png"),
+                "style": {
+                    "gradient": [(220, 30, 30), (80, 10, 10)],
+                    "border": (255, 80, 80),
+                    "corner": 26,
+                    "pattern": "spark",
+                    "icon_bg": (130, 20, 20),
+                },
+                "single_use": True,
+            },
+            {
+                "id": "color_cleanse",
+                "title": "Renk Temizleme",
+                "base": 1,
+                "value_range": (1, 1),
+                "description": "Rastgele bir renkteki tüm bloklar silinir ve üstteki bloklar aşağıya düşer.",
+                "color": (100, 255, 200),
+                "bg": (10, 40, 30),
+                "icon": "C",
+                "tag": "Epic",
+                "rarity": "epic",
+                "weight": 18,
+                "icon_image": os.path.join(UI_ICON_DIR, "icon_color_fix.png"),
+                "style": {
+                    "gradient": [(60, 220, 160), (15, 60, 45)],
+                    "border": (120, 255, 210),
+                    "corner": 24,
+                    "pattern": "wave",
+                    "icon_bg": (30, 110, 80),
+                },
+                "single_use": True,
+            },
+            {
+                "id": "hold_destroyer",
+                "_group_id": "hold_destroyer",
+                "title": "Tuttuğunu Koparan",
+                "base": 1,
+                "value_range": (1, 1),
+                "description": "{button} tuşu ile kullan: Sakladığın parçayı silersin.",
+                "color": (200, 200, 210),
+                "bg": (30, 30, 35),
+                "icon": "X",
+                "tag": "Common",
+                "rarity": "common",
+                "weight": 55,
+                "icon_image": os.path.join(UI_ICON_DIR, "icon_hold_destroyer.png"),
+                "style": {
+                    "gradient": [(180, 180, 195), (60, 60, 70)],
+                    "border": (210, 210, 220),
+                    "corner": 22,
+                    "pattern": "wave",
+                    "icon_bg": (90, 90, 100),
+                },
+                "limited": True,
+                "single_use": True,
+            },
+            {
+                "id": "hold_destroyer_2",
+                "_group_id": "hold_destroyer",
+                "title": "Tuttuğunu Koparan",
+                "base": 2,
+                "value_range": (2, 2),
+                "description": "{button} tuşu ile kullan: Sakladığın parçayı silersin.",
+                "color": (100, 230, 150),
+                "bg": (12, 36, 22),
+                "icon": "X",
+                "tag": "Uncommon",
+                "rarity": "uncommon",
+                "weight": 45,
+                "icon_image": os.path.join(UI_ICON_DIR, "icon_hold_destroyer.png"),
+                "style": {
+                    "gradient": [(80, 200, 130), (20, 60, 40)],
+                    "border": (130, 255, 180),
+                    "corner": 22,
+                    "pattern": "wave",
+                    "icon_bg": (40, 100, 60),
+                },
+                "limited": True,
+                "single_use": True,
+            },
+            {
+                "id": "hold_destroyer_3",
+                "_group_id": "hold_destroyer",
+                "title": "Tuttuğunu Koparan",
+                "base": 3,
+                "value_range": (3, 3),
+                "description": "{button} tuşu ile kullan: Sakladığın parçayı silersin.",
+                "color": (80, 170, 255),
+                "bg": (10, 20, 40),
+                "icon": "X",
+                "tag": "Rare",
+                "rarity": "rare",
+                "weight": 30,
+                "icon_image": os.path.join(UI_ICON_DIR, "icon_hold_destroyer.png"),
+                "style": {
+                    "gradient": [(60, 140, 220), (15, 40, 90)],
+                    "border": (120, 200, 255),
+                    "corner": 24,
+                    "pattern": "wave",
+                    "icon_bg": (30, 70, 130),
+                },
+                "limited": True,
+                "single_use": True,
+            },
+            {
+                "id": "hold_destroyer_4",
+                "_group_id": "hold_destroyer",
+                "title": "Tuttuğunu Koparan",
+                "base": 4,
+                "value_range": (4, 4),
+                "description": "{button} tuşu ile kullan: Sakladığın parçayı silersin.",
+                "color": (200, 100, 255),
+                "bg": (30, 12, 50),
+                "icon": "X",
+                "tag": "Epic",
+                "rarity": "epic",
+                "weight": 18,
+                "icon_image": os.path.join(UI_ICON_DIR, "icon_hold_destroyer.png"),
+                "style": {
+                    "gradient": [(170, 70, 220), (50, 20, 80)],
+                    "border": (220, 140, 255),
+                    "corner": 26,
+                    "pattern": "spark",
+                    "icon_bg": (90, 35, 130),
+                },
+                "limited": True,
+                "single_use": True,
+            },
+            {
+                "id": "hold_destroyer_5",
+                "_group_id": "hold_destroyer",
+                "title": "Tuttuğunu Koparan",
+                "base": 5,
+                "value_range": (5, 5),
+                "description": "{button} tuşu ile kullan: Sakladığın parçayı silersin.",
+                "color": (255, 200, 60),
+                "bg": (50, 35, 8),
+                "icon": "X",
+                "tag": "Legendary",
+                "rarity": "legendary",
+                "weight": 8,
+                "icon_image": os.path.join(UI_ICON_DIR, "icon_hold_destroyer.png"),
+                "style": {
+                    "gradient": [(255, 180, 40), (120, 70, 10)],
+                    "border": (255, 220, 100),
+                    "corner": 28,
+                    "pattern": "spark",
+                    "icon_bg": (140, 90, 20),
+                },
+                "limited": True,
+                "single_use": True,
+            },
+            # ==================== SON DÜŞÜŞ (Blok Dondurma) ====================
+            {
+                "id": "freeze_drop_rare",
+                "_group_id": "freeze_drop",
+                "title": "Son Düşüş",
+                "base": 3,
+                "value_range": (3, 3),
+                "description": "F tuşu ile kullan: Düşen parça {freeze_duration} saniye havada durur. Bu sürede sadece sağa-sola gidebilir veya sert düşüş yapabilir.",
+                "color": (140, 220, 255),
+                "bg": (10, 24, 50),
+                "icon": "❄️",
+                "tag": "Rare",
+                "rarity": "rare",
+                "weight": 30,
+                "freeze_duration": 6,
+                "icon_image": os.path.join(UI_ICON_DIR, "icon_freeze_drop.png"),
+                "style": {
+                    "gradient": [(100, 200, 255), (20, 60, 120)],
+                    "border": (160, 230, 255),
+                    "corner": 24,
+                    "pattern": "wave",
+                    "icon_bg": (30, 80, 140),
+                },
+                "limited": True,
+                "single_use": True,
+            },
+            {
+                "id": "freeze_drop_epic",
+                "_group_id": "freeze_drop",
+                "title": "Son Düşüş",
+                "base": 3,
+                "value_range": (3, 3),
+                "description": "F tuşu ile kullan: Düşen parça {freeze_duration} saniye havada durur. Bu sürede sadece sağa-sola gidebilir veya sert düşüş yapabilir.",
+                "color": (100, 180, 255),
+                "bg": (8, 18, 44),
+                "icon": "❄️",
+                "tag": "Epic",
+                "rarity": "epic",
+                "weight": 18,
+                "freeze_duration": 10,
+                "icon_image": os.path.join(UI_ICON_DIR, "icon_freeze_drop.png"),
+                "style": {
+                    "gradient": [(70, 160, 240), (15, 40, 100)],
+                    "border": (130, 200, 255),
+                    "corner": 26,
+                    "pattern": "wave",
+                    "icon_bg": (25, 60, 120),
+                },
+                "limited": True,
+                "single_use": True,
+            },
+            {
+                "id": "freeze_drop_legendary",
+                "_group_id": "freeze_drop",
+                "title": "Son Düşüş",
+                "base": 3,
+                "value_range": (3, 3),
+                "description": "F tuşu ile kullan: Düşen parça {freeze_duration} saniye havada durur. Bu sürede sadece sağa-sola gidebilir veya sert düşüş yapabilir.",
+                "color": (60, 150, 255),
+                "bg": (5, 12, 38),
+                "icon": "❄️",
+                "tag": "Legendary",
+                "rarity": "legendary",
+                "weight": 8,
+                "freeze_duration": 15,
+                "icon_image": os.path.join(UI_ICON_DIR, "icon_freeze_drop.png"),
+                "style": {
+                    "gradient": [(40, 120, 220), (10, 30, 80)],
+                    "border": (100, 180, 255),
+                    "corner": 28,
+                    "pattern": "spark",
+                    "icon_bg": (20, 50, 100),
+                },
+                "limited": True,
+                "single_use": True,
+            },
+            # ==================== COMBO SİGORTASI ====================
+            # Bir kez tetiklenir: aktif combo varken satır temizlenmeyen tek
+            # hamlede combo'yu lokal olarak korur. Player XP üretmez.
+            {
+                "id": "combo_insurance",
+                "title": "Combo Sigortası",
+                "base": 1,
+                "value_range": (1, 1),
+                "description": "Bir kez, satır temizleyemediğin hamlede combo bozulmaz.",
+                "color": (255, 220, 140),
+                "bg": (32, 22, 8),
+                "icon": "CI",
+                "tag": "Rare",
+                "rarity": "rare",
+                "weight": 28,
+                "icon_image": os.path.join(UI_ICON_DIR, "icon_combo_sigorta.png"),
+                "style": {
+                    "gradient": [(220, 180, 80), (90, 60, 20)],
+                    "border": (255, 230, 150),
+                    "corner": 22,
+                    "pattern": "spark",
+                    "icon_bg": (110, 80, 30),
+                },
+                "limited": True,
+                "single_use": True,
+            },
+            # ==================== TERS BORÇ ====================
+            # Anında en alt 2 satırı temizler (card source). Sonraki 5 lock için
+            # parça yere değer değmez ek lock delay olmadan kilitlenir.
+            {
+                "id": "reverse_debt",
+                "title": "Ters Borç",
+                "base": 2,
+                "value_range": (2, 2),
+                "description": "En alttaki 2 satırı siler. Sonraki 5 parça yere değer değmez kilitlenir.",
+                "color": (200, 120, 255),
+                "bg": (28, 14, 44),
+                "icon": "RD",
+                "tag": "Common",
+                "rarity": "common",
+                "weight": 45,
+                "icon_image": os.path.join(UI_ICON_DIR, "icon_ters_borc.png"),
+                "style": {
+                    "gradient": [(170, 90, 220), (40, 16, 70)],
+                    "border": (220, 150, 255),
+                    "corner": 22,
+                    "pattern": "wave",
+                    "icon_bg": (80, 40, 120),
+                },
+                "single_use": True,
+            },
+            # ==================== DELİK AVCISI ====================
+            # J ile sütun seçim overlay'i; seçilen sütundaki rastgele kapalı
+            # boşluklardan biri doldurulur. Card source — XP üretmez.
+            {
+                "id": "hole_hunter",
+                "title": "Delik Avcısı",
+                "base": 1,
+                "value_range": (1, 1),
+                "description": "J tuşu ile kullan: Bir sütun seçersin. O sütundaki rastgele kapalı boşluklardan 1 tanesi dolar.",
+                "color": (140, 230, 200),
+                "bg": (10, 36, 30),
+                "icon": "HH",
+                "tag": "Rare",
+                "rarity": "rare",
+                "weight": 26,
+                "icon_image": os.path.join(UI_ICON_DIR, "icon_delik_avci.png"),
+                "style": {
+                    "gradient": [(80, 200, 170), (15, 60, 50)],
+                    "border": (170, 255, 220),
+                    "corner": 22,
+                    "pattern": "wave",
+                    "icon_bg": (35, 110, 90),
+                },
+                "limited": True,
+                "single_use": True,
+            },
+        ]
+        return cards
+
+
+class MysteryCardUI:
+    """Kart seçimi ekranının çizim ve etkileşimlerinden sorumlu arayüz."""
+
+    def __init__(self) -> None:
+        self.fade_alpha = 0.0
+        self.card_rects: List[pygame.Rect] = []
+        self.hover_index = -1
+        self.pulse_time = 0.0
+        self.pause_scroll_offset = 0
+        self.selection_flash = 0.0
+        self.selection_flash_duration = 0.22
+        self.selection_index = -1
+        self.interaction_locked = False
+        self.icon_cache: Dict[str, pygame.Surface] = {}
+        # Grid debug scroll state (pixels)
+        self.randomize_pill_rect = None
+        self.grid_scroll = 0
+        self.grid_max_scroll = 0
+        self._mouse_is_pressed = False
+        # Widget list of UICard instances used to render the cards
+        self.card_widgets: List['UICard'] = []
+        self.active_card_row_snapshots: List[Dict[str, Any]] = []
+        self.skip_button_rect: pygame.Rect | None = None
+        self.reroll_button_rect: pygame.Rect | None = None
+        self.selection_panel_rect: pygame.Rect | None = None
+        # Göz atma (peek) butonu - oyun alanını görmek için
+        self.peek_button_rect: pygame.Rect | None = None
+        self.peek_mode_active = False  # True olunca kart seçimi gizlenip oyun alanı gösterilir
+        self._reveal_sfx_callback = None
+        self._overlay_base_size: tuple[int, int] | None = None
+        # Kart seçim ekranı için okunabilirlik tabanlı minimum referans boyut
+        # (pencere bu boyutlara yakınken kartlar hala rahat okunur kalır)
+        self._overlay_readable_min_size: tuple[int, int] = (1180, 760)
+        self._reroll_enabled = False
+        self._reroll_remaining = 0
+        self._reroll_limit = 0
+        self.focus_target_kind = 'card'
+        self.focus_card_index = 0
+        self.last_focus_card_index = 0
+        self.focus_action: str | None = None
+        self.keyboard_nav_active = False
+
+    def reset(self) -> None:
+        self.card_rects = []
+        self.hover_index = -1
+        self.fade_alpha = 0.0
+        self.pulse_time = 0.0
+        self.clear_selection_feedback()
+        self.randomize_pill_rect = None
+        self.card_widgets = []
+        self.active_card_row_snapshots = []
+        self.skip_button_rect = None
+        self.reroll_button_rect = None
+        self.selection_panel_rect = None
+        self.peek_button_rect = None
+        self.peek_mode_active = False
+        self._reroll_enabled = False
+        self._reroll_remaining = 0
+        self._reroll_limit = 0
+        self.focus_target_kind = 'card'
+        self.focus_card_index = 0
+        self.last_focus_card_index = 0
+        self.focus_action = None
+        self.keyboard_nav_active = False
+
+    def set_reveal_sfx_callback(self, callback) -> None:
+        self._reveal_sfx_callback = callback
+
+    def set_overlay_reference_size(self, width: int, height: int) -> None:
+        """Kart seçim overlay'i için isteğe bağlı referans boyutunu ayarla."""
+        w = max(1, int(width))
+        h = max(1, int(height))
+        self._overlay_base_size = (w, h)
+
+    def set_reroll_enabled(self, enabled: bool) -> None:
+        self._reroll_enabled = bool(enabled)
+
+    def set_reroll_status(self, remaining: int, limit: int) -> None:
+        try:
+            remaining_value = max(0, int(remaining))
+        except Exception:
+            remaining_value = 0
+        try:
+            limit_value = max(0, int(limit))
+        except Exception:
+            limit_value = 0
+
+        self._reroll_remaining = min(remaining_value, limit_value) if limit_value > 0 else remaining_value
+        self._reroll_limit = limit_value
+
+    def update(self, dt: float, overlay_active: bool) -> None:
+        # dt gelebilir: ms (oyun döngüsünden) veya saniye. Tutarlı dönüşüm.
+        seconds = _dt_to_seconds(dt)
+        self._last_dt = dt  # Diğer çizim metodları için sakla
+        target = 220 if overlay_active else 0
+        # fade_speed is in alpha units per millisecond, but we pass ms; keep it fine
+        fade_speed = 300 * seconds
+        if self.fade_alpha < target:
+            self.fade_alpha = min(target, self.fade_alpha + fade_speed)
+        elif self.fade_alpha > target:
+            self.fade_alpha = max(target, self.fade_alpha - fade_speed)
+
+        if overlay_active:
+            tau = math.tau if hasattr(math, "tau") else 2 * math.pi
+            self.pulse_time = (self.pulse_time + seconds * 2.0) % tau
+        else:
+            self.pulse_time = 0.0
+
+        if self.selection_flash > 0:
+            self.selection_flash = max(0.0, self.selection_flash - seconds)
+            if self.selection_flash == 0:
+                self.interaction_locked = False
+
+    def trigger_selection_feedback(self, index: int) -> None:
+        self.selection_index = index
+        self.selection_flash = self.selection_flash_duration
+        self.interaction_locked = True
+        self.focus_target_kind = 'card'
+        self.focus_card_index = max(0, int(index))
+        self.last_focus_card_index = self.focus_card_index
+        self.focus_action = None
+
+    def is_selection_animating(self) -> bool:
+        return self.selection_flash > 0
+
+    def clear_selection_feedback(self) -> None:
+        self.selection_index = -1
+        self.selection_flash = 0.0
+        self.interaction_locked = False
+        self.keyboard_nav_active = False
+
+    # Moved to MysteryCardUI class; UICard does not need vignette helper
+
+    # Note: `_fit_icon_cover` intentionally does not exist on `UICard` anymore.
+    # The icon sizing helper is implemented on `MysteryCardUI` because icon loading
+    # is performed there. `UICard` simply uses the `icon_getter` callable provided
+    # by `MysteryCardUI` which performs fitting.
+
+    def is_interaction_locked(self) -> bool:
+        return self.interaction_locked or self.is_flip_animating()
+
+    def is_flip_animating(self) -> bool:
+        """Herhangi bir kart hala dönme animasyonundaysa True."""
+        for w in self.card_widgets:
+            if not w.is_revealed:
+                return True
+        return False
+
+    def _available_action_targets(self, show_secondary_actions: bool = True) -> list[str]:
+        if not show_secondary_actions:
+            return []
+        actions = ['SKIP']
+        if self._reroll_enabled:
+            actions.append('REROLL')
+        return actions
+
+    def _clamp_focus_card_index(self, card_count: int) -> int:
+        max_index = max(0, int(card_count) - 1)
+        self.focus_card_index = max(0, min(max_index, int(self.focus_card_index)))
+        self.last_focus_card_index = max(0, min(max_index, int(self.last_focus_card_index)))
+        return self.focus_card_index
+
+    def _set_focus_target(self, target: int | str | None, card_count: int | None = None) -> None:
+        if isinstance(target, int):
+            self.focus_target_kind = 'card'
+            self.focus_card_index = max(0, int(target))
+            self.last_focus_card_index = self.focus_card_index
+            self.focus_action = None
+            if card_count is not None:
+                self._clamp_focus_card_index(card_count)
+            return
+
+        if target in ('SKIP', 'REROLL'):
+            self.focus_target_kind = 'action'
+            self.focus_action = str(target)
+
+    def sync_focus_target(self, card_count: int, *, show_secondary_actions: bool = True) -> None:
+        total_cards = max(0, int(card_count))
+        actions = self._available_action_targets(show_secondary_actions)
+
+        if self.focus_target_kind == 'action':
+            if self.focus_action not in actions:
+                if actions:
+                    self.focus_action = actions[0]
+                elif total_cards > 0:
+                    self.focus_target_kind = 'card'
+                    self.focus_action = None
+                    self._clamp_focus_card_index(total_cards)
+                else:
+                    self.focus_target_kind = 'card'
+                    self.focus_action = None
+                    self.focus_card_index = 0
+                    self.last_focus_card_index = 0
+        else:
+            if total_cards > 0:
+                self._clamp_focus_card_index(total_cards)
+            elif actions:
+                self.focus_target_kind = 'action'
+                self.focus_action = actions[0]
+            else:
+                self.focus_target_kind = 'card'
+                self.focus_action = None
+                self.focus_card_index = 0
+                self.last_focus_card_index = 0
+
+        if self.focus_target_kind == 'card' and total_cards > 0:
+            self.last_focus_card_index = self.focus_card_index
+
+    def get_focus_target(self, card_count: int, *, show_secondary_actions: bool = True) -> int | str | None:
+        self.sync_focus_target(card_count, show_secondary_actions=show_secondary_actions)
+        if self.focus_target_kind == 'action':
+            return self.focus_action
+        if int(card_count) <= 0:
+            return None
+        return self.focus_card_index
+
+    def get_forced_hover_index(self, card_count: int, *, show_secondary_actions: bool = True) -> int | None:
+        if not self.keyboard_nav_active:
+            return None
+        focused = self.get_focus_target(card_count, show_secondary_actions=show_secondary_actions)
+        return focused if isinstance(focused, int) else None
+
+    def move_focus(self, direction: str, card_count: int, *, show_secondary_actions: bool = True) -> bool:
+        if direction not in ('left', 'right', 'up', 'down'):
+            return False
+        if self.is_interaction_locked():
+            return False
+
+        self.keyboard_nav_active = True
+        before = self.get_focus_target(card_count, show_secondary_actions=show_secondary_actions)
+        total_cards = max(0, int(card_count))
+        actions = self._available_action_targets(show_secondary_actions)
+
+        if self.focus_target_kind == 'card':
+            current_index = self._clamp_focus_card_index(total_cards) if total_cards > 0 else 0
+            if direction == 'left' and total_cards > 0:
+                self.focus_card_index = max(0, current_index - 1)
+            elif direction == 'right' and total_cards > 0:
+                self.focus_card_index = min(total_cards - 1, current_index + 1)
+            elif direction == 'down' and actions:
+                self.last_focus_card_index = current_index
+                self.focus_target_kind = 'action'
+                self.focus_action = actions[0]
+        else:
+            current_action = self.focus_action if self.focus_action in actions else (actions[0] if actions else None)
+            if current_action is not None:
+                self.focus_action = current_action
+            if direction == 'left' and current_action == 'REROLL' and 'SKIP' in actions:
+                self.focus_action = 'SKIP'
+            elif direction == 'right' and current_action == 'SKIP' and 'REROLL' in actions:
+                self.focus_action = 'REROLL'
+            elif direction == 'up' and total_cards > 0:
+                self.focus_target_kind = 'card'
+                self.focus_action = None
+                self.focus_card_index = self.last_focus_card_index
+                self._clamp_focus_card_index(total_cards)
+
+        after = self.get_focus_target(card_count, show_secondary_actions=show_secondary_actions)
+        return after != before
+
+    def activate_focused(self, card_count: int, *, show_secondary_actions: bool = True) -> int | str | None:
+        if self.is_interaction_locked():
+            return None
+        focused = self.get_focus_target(card_count, show_secondary_actions=show_secondary_actions)
+        if focused == 'REROLL' and not self._reroll_enabled:
+            return None
+        return focused
+
+    def _target_at_pos(self, pos: tuple[int, int], *, include_disabled_reroll: bool = False) -> int | str | None:
+        for idx, rect in enumerate(self.card_rects):
+            if rect.collidepoint(pos):
+                return idx
+        if getattr(self, 'reroll_button_rect', None) and self.reroll_button_rect.collidepoint(pos):
+            if include_disabled_reroll or self._reroll_enabled:
+                return 'REROLL'
+            return None
+        if getattr(self, 'skip_button_rect', None) and self.skip_button_rect.collidepoint(pos):
+            return 'SKIP'
+        return None
+
+    def _get_overlay_scale(self, screen_or_width, window_height: int | None = None, *, min_scale: float = 0.62, max_scale: float = 1.12) -> float:
+        """Kart seçim overlay'i için aktif canvas bazlı ortak scale wrapper'ı."""
+        if hasattr(screen_or_width, 'get_size'):
+            target = screen_or_width
+            w, h = target.get_size()
+        else:
+            w = max(1, int(screen_or_width))
+            h = max(1, int(window_height or 0))
+            target = (w, h)
+
+        rw, rh = self._overlay_readable_min_size
+        readable_floor = min(1.0, min(w / float(max(1, rw)), h / float(max(1, rh))))
+
+        effective_min_scale = max(min_scale, readable_floor)
+        ref_w, ref_h = self._overlay_base_size or MYSTERY_OVERLAY_REFERENCE_SIZE
+        return get_projected_effective_scale(
+            target,
+            min_scale=effective_min_scale,
+            max_scale=max_scale,
+            reference_size=(float(ref_w), float(ref_h)),
+        )
+
+    def draw_selection_overlay(
+        self,
+        screen: pygame.Surface,
+        window_width: int,
+        window_height: int,
+        fonts: Dict[str, pygame.font.Font],
+        cards: List[Dict],
+        hint_text: str,
+        card_mode_debug: bool = False,
+        *,
+        forced_hover_index: int | None = None,
+        show_secondary_actions: bool = True,
+        show_peek_button: bool = True,
+        header_title: str | None = None,
+        header_lines: List[str] | None = None,
+        center_header: bool = False,
+    ) -> None:
+        alpha = int(max(0, min(255, self.fade_alpha)))
+        if alpha <= 0 or not cards:
+            self.selection_panel_rect = None
+            return
+
+        ui_scale = self._get_overlay_scale(screen)
+        s = lambda v, minimum=1: max(minimum, int(round(v * ui_scale)))
+
+        # Peek modu aktifse sadece göz butonunu göster (sağ alt köşe)
+        if show_peek_button and self.peek_mode_active:
+            self.selection_panel_rect = None
+            # Göz butonu - sağ alt köşede sabit
+            peek_btn_size = s(48)
+            peek_btn_x = window_width - peek_btn_size - s(20)
+            peek_btn_y = window_height - peek_btn_size - s(20)
+            self.peek_button_rect = pygame.Rect(peek_btn_x, peek_btn_y, peek_btn_size, peek_btn_size)
+            
+            # Yuvarlak beyaz arka plan çiz
+            center = self.peek_button_rect.center
+            radius = peek_btn_size // 2
+            pygame.draw.circle(screen, (255, 255, 255), center, radius)  # Beyaz daire
+            pygame.draw.circle(screen, (100, 200, 255), center, radius, 2)  # Mavi kenarlık
+            
+            # Göz kapalı ikonu (kart seçimine dön) - PNG ikon kullan
+            peek_icon_path = os.path.join(os.path.dirname(__file__), '..', 'assets', 'kart_secim_sagust.png')
+            if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+                peek_icon_path = os.path.join(sys._MEIPASS, 'assets', 'kart_secim_sagust.png')
+            try:
+                peek_icon = load_image(peek_icon_path)
+                icon_size = max(12, int(peek_btn_size * 0.65))
+                peek_icon = pygame.transform.smoothscale(peek_icon, (icon_size, icon_size))
+                icon_rect = peek_icon.get_rect(center=self.peek_button_rect.center)
+                screen.blit(peek_icon, icon_rect)
+            except Exception:
+                # Fallback: metin göster
+                eye_font = fonts.get('medium', fonts.get('small'))
+                eye_surf = eye_font.render("X", True, (100, 200, 255))
+                screen.blit(eye_surf, eye_surf.get_rect(center=self.peek_button_rect.center))
+            return
+        elif not show_peek_button:
+            self.peek_button_rect = None
+
+        # Arka plan overlay: genel UI (panel) temasıyla uyumlu.
+        overlay = pygame.Surface((window_width, window_height), pygame.SRCALPHA)
+        overlay.fill(UIColors.BG_OVERLAY)
+        screen.blit(overlay, (0, 0))
+
+        card_count = len(cards)
+        self.sync_focus_target(card_count, show_secondary_actions=show_secondary_actions)
+        # Use denser grid when debugging with the 'card_mode_debug' flag
+        if card_mode_debug:
+            card_width = s(220)
+            card_height = s(300)
+            spacing = s(20)
+        else:
+            card_width = s(300)
+            card_height = s(380)
+            spacing = s(48)
+        header_font = fonts.get('panel_header') or fonts.get('heading') or fonts.get('medium')
+        line_font = fonts.get('small') or fonts.get('desc')
+        header_content_height = 0
+        if header_title:
+            header_content_height += header_font.get_height() + s(8)
+        visible_header_lines = [str(raw_line) for raw_line in list(header_lines or [])[:4] if raw_line]
+        for _line in visible_header_lines:
+            header_content_height += line_font.get_height() + s(4)
+        top_content_padding = max(s(120), s(28) + header_content_height + s(24))
+        panel_height = min(window_height - s(40), card_height + s(220) + max(0, top_content_padding - s(120)))
+        total_width = card_count * card_width + (card_count - 1) * spacing
+        panel_width = min(total_width + s(120), window_width - s(40))
+        panel_x = max(s(20), window_width // 2 - panel_width // 2)
+        panel_rect = pygame.Rect(panel_x, s(60), panel_width, panel_height)
+        self.selection_panel_rect = panel_rect.copy()
+        retro_style.draw_glass_panel(
+            screen,
+            panel_rect,
+            alpha=170,
+            border_color=retro_style.glass_border[:3],
+            glow=False,
+        )
+
+        raw_mouse_pos = get_mouse_pos() if pygame.mouse.get_focused() else None
+        mouse_pos = None if self.keyboard_nav_active else raw_mouse_pos
+        if show_peek_button:
+            # Göz butonu - panelin sağ üst köşesinde
+            peek_btn_size = s(40)
+            peek_btn_x = panel_rect.right - peek_btn_size - s(16)
+            peek_btn_y = panel_rect.y + s(16)
+            self.peek_button_rect = pygame.Rect(peek_btn_x, peek_btn_y, peek_btn_size, peek_btn_size)
+
+            # Göz butonu arka planı - Yuvarlak beyaz
+            peek_hovered = mouse_pos and self.peek_button_rect.collidepoint(mouse_pos)
+            center = self.peek_button_rect.center
+            radius = peek_btn_size // 2
+            pygame.draw.circle(screen, (255, 255, 255), center, radius)
+            border_color = (100, 200, 255) if peek_hovered else (180, 180, 200)
+            pygame.draw.circle(screen, border_color, center, radius, 2)
+
+            peek_icon_path = os.path.join(os.path.dirname(__file__), '..', 'assets', 'kart_secim_sagust.png')
+            if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+                peek_icon_path = os.path.join(sys._MEIPASS, 'assets', 'kart_secim_sagust.png')
+            try:
+                peek_icon = load_image(peek_icon_path)
+                icon_size = int(peek_btn_size * 0.65)
+                peek_icon = pygame.transform.smoothscale(peek_icon, (icon_size, icon_size))
+                icon_rect = peek_icon.get_rect(center=self.peek_button_rect.center)
+                screen.blit(peek_icon, icon_rect)
+            except Exception:
+                eye_font = fonts.get('small')
+                eye_surf = eye_font.render("O", True, (100, 200, 255) if peek_hovered else (180, 180, 200))
+                screen.blit(eye_surf, eye_surf.get_rect(center=self.peek_button_rect.center))
+        else:
+            self.peek_button_rect = None
+
+        header_x = panel_rect.x + s(40)
+        header_y = panel_rect.y + s(28)
+        if header_title:
+            # Başlığı belirginleştir: hafif gölge + parlak renk.
+            shadow_surf = header_font.render(str(header_title), True, (8, 12, 24))
+            header_surf = header_font.render(str(header_title), True, (255, 255, 255))
+            if center_header:
+                hrect = header_surf.get_rect(centerx=panel_rect.centerx, top=header_y)
+            else:
+                hrect = header_surf.get_rect(topleft=(header_x, header_y))
+            screen.blit(shadow_surf, (hrect.x + max(1, s(2)), hrect.y + max(1, s(2))))
+            screen.blit(header_surf, hrect)
+            header_y += header_surf.get_height() + s(8)
+        for raw_line in visible_header_lines:
+            # Açıklama satırlarını daha okunur renkle (parlak açık gri).
+            line_surf = line_font.render(str(raw_line), True, (220, 230, 245))
+            if center_header:
+                screen.blit(line_surf, line_surf.get_rect(centerx=panel_rect.centerx, top=header_y))
+            else:
+                screen.blit(line_surf, (header_x, header_y))
+            header_y += line_surf.get_height() + s(4)
+        # (Removed) Selection hint text like "1 / 2 / 3 ... seç"
+        # (Kaldırıldı) Sağ üst "Tamamen rastgele" butonu
+        self.randomize_pill_rect = None
+
+        # Compute start_x and top for grid vs single row layout
+        top = panel_rect.y + top_content_padding
+        if card_mode_debug:
+            # Compute number of columns that fit comfortably
+            # Allow a dynamic count up to 4 columns based on panel width
+            available = max(1, panel_rect.width - s(40))
+            max_cols_fit = max(1, (available + spacing) // (card_width + spacing))
+            cols = max(1, min(4, max_cols_fit))
+            cols = min(cols, card_count)
+            # Resize card width if we can fit more columns while keeping padding
+            fit_width = (panel_rect.width - s(40) - (cols - 1) * spacing) // cols
+            if fit_width < card_width:
+                card_width = max(s(120), fit_width)
+            rows = (card_count + cols - 1) // cols
+            # Resize panel rect height to fit rows
+            desired_height = top_content_padding + rows * (card_height + spacing) + s(80)
+            panel_rect.height = min(desired_height, window_height - s(120))
+            self.selection_panel_rect = panel_rect.copy()
+            retro_style.draw_glass_panel(
+                screen,
+                panel_rect,
+                alpha=170,
+                border_color=retro_style.glass_border[:3],
+                glow=False,
+            )
+            # center a grid of cols columns and respect grid_scroll (vertical)
+            total_grid_width = cols * card_width + (cols - 1) * spacing
+            start_x = panel_rect.x + max(s(20), (panel_rect.width - total_grid_width) // 2)
+            # compute the visible area and max scroll
+            visible_height = panel_rect.height - (top - panel_rect.y) - 40
+            total_grid_height = rows * (card_height + spacing)
+            self.grid_max_scroll = max(0, total_grid_height - visible_height)
+            # clamp current scroll
+            self.grid_scroll = max(0, min(self.grid_scroll, self.grid_max_scroll))
+            # scrollbar drawing params
+            scrollbar_track_x = panel_rect.right - s(20)
+            scrollbar_track_y = top
+            scrollbar_track_w = s(10)
+            scrollbar_track_h = visible_height
+            if self.grid_max_scroll > 0:
+                thumb_h = max(s(24), int(scrollbar_track_h * (visible_height / max(1, total_grid_height))))
+                # compute thumb top position between 0 and scrollbar_track_h - thumb_h
+                scroll_ratio = self.grid_scroll / max(1, self.grid_max_scroll)
+                thumb_top = scrollbar_track_y + int(scroll_ratio * (scrollbar_track_h - thumb_h))
+            else:
+                thumb_h = scrollbar_track_h
+                thumb_top = scrollbar_track_y
+        else:
+            start_x = panel_rect.x + (panel_rect.width - total_width) // 2
+
+        if forced_hover_index is None:
+            forced_hover_index = self.get_forced_hover_index(card_count, show_secondary_actions=show_secondary_actions)
+        self.card_rects = []
+        self.hover_index = -1
+        # Ensure card widget count matches cards
+        if len(self.card_widgets) != len(cards):
+            # Recreate widgets
+            self.card_widgets = [UICard(cards[i], pygame.Rect(0, 0, card_width, card_height), i, fonts, self._get_icon_surface, self._reveal_sfx_callback) for i in range(len(cards))]
+        for idx, card in enumerate(cards):
+            if card_mode_debug:
+                col = idx % cols
+                row = idx // cols
+                rect = pygame.Rect(start_x + col * (card_width + spacing), top + row * (card_height + spacing) - self.grid_scroll, card_width, card_height)
+            else:
+                rect = pygame.Rect(start_x + idx * (card_width + spacing), top, card_width, card_height)
+            # update/assign rect to widget
+            widget = self.card_widgets[idx]
+            widget.sync_resources(card, fonts)
+            widget.base_rect = rect
+            widget.update(dt=self._last_dt if hasattr(self, '_last_dt') else 16.0, mouse_pos=mouse_pos)
+            self.card_rects.append(rect)
+            hovering_allowed = not self.is_interaction_locked()
+            if hovering_allowed and forced_hover_index is not None and idx == forced_hover_index:
+                widget.hover = True
+                widget.target_scale = max(widget.target_scale, 1.06)
+                widget.scale = max(widget.scale, 1.03)
+            hovered = widget.hover if hovering_allowed else idx == self.selection_index
+            if hovered and hovering_allowed:
+                self.hover_index = idx
+            dimmed = False
+            if self.selection_index != -1 and idx != self.selection_index:
+                dimmed = True
+            elif self.hover_index != -1 and idx != self.hover_index and hovering_allowed:
+                dimmed = True
+            # Render via UICard
+            self.card_widgets[idx].render(screen, debug=card_mode_debug)
+
+        # Alt aksiyon: Kart almadan devam et + Yeniden Çek
+        if show_secondary_actions:
+            btn_font = fonts.get('small')
+            badge_font = fonts.get('tag') or btn_font
+            btn_h = s(50)
+            btn_y = panel_rect.bottom - btn_h - s(26)
+            total_btn_area_w = min(s(660), panel_rect.width - s(80))
+            gap = s(12)
+            each_w = (total_btn_area_w - gap) // 2
+            start_x = panel_rect.centerx - total_btn_area_w // 2
+            reroll_enabled = bool(getattr(self, '_reroll_enabled', False))
+            reroll_remaining = max(0, int(getattr(self, '_reroll_remaining', 0)))
+            reroll_limit = max(0, int(getattr(self, '_reroll_limit', 0)))
+            focused_target = self.get_focus_target(card_count, show_secondary_actions=show_secondary_actions)
+            self.skip_button_rect = pygame.Rect(start_x, btn_y, each_w, btn_h)
+            skip_hovered = bool(mouse_pos and self.skip_button_rect.collidepoint(mouse_pos))
+            skip_focused = focused_target == 'SKIP'
+            self._draw_secondary_action_button(
+                screen,
+                self.skip_button_rect,
+                t('card_skip_selection'),
+                btn_font=btn_font,
+                ui_scale=ui_scale,
+                accent=(112, 178, 228),
+                border_color=(132, 190, 232),
+                enabled=True,
+                hovered=skip_hovered,
+                focused=skip_focused,
+            )
+            reroll_x = start_x + each_w + gap
+            self.reroll_button_rect = pygame.Rect(reroll_x, btn_y, each_w, btn_h)
+            reroll_hovered = bool(mouse_pos and self.reroll_button_rect.collidepoint(mouse_pos))
+            reroll_focused = focused_target == 'REROLL'
+            self._draw_secondary_action_button(
+                screen,
+                self.reroll_button_rect,
+                t('card_reroll_selection'),
+                btn_font=btn_font,
+                ui_scale=ui_scale,
+                accent=(242, 186, 82),
+                border_color=(236, 188, 74) if reroll_enabled else (136, 142, 152),
+                enabled=reroll_enabled,
+                hovered=reroll_hovered,
+                focused=reroll_focused,
+            )
+            if not reroll_enabled:
+                disabled_overlay = pygame.Surface(self.reroll_button_rect.size, pygame.SRCALPHA)
+                disabled_overlay.fill((92, 98, 108, 90))
+                screen.blit(disabled_overlay, self.reroll_button_rect.topleft)
+            if reroll_limit > 0:
+                badge_text = f"{reroll_remaining}/{reroll_limit}"
+                badge_label = badge_font.render(
+                    badge_text,
+                    True,
+                    (255, 239, 184) if reroll_enabled else (222, 226, 234),
+                )
+                badge_pad_x = s(8)
+                badge_pad_y = s(4)
+                badge_w = badge_label.get_width() + badge_pad_x * 2
+                badge_h = max(badge_label.get_height() + badge_pad_y * 2, s(18))
+                badge_rect = pygame.Rect(0, 0, badge_w, badge_h)
+                badge_rect.right = self.reroll_button_rect.right - s(10)
+                badge_rect.bottom = self.reroll_button_rect.top + s(10)
+                badge_surface = pygame.Surface((badge_w, badge_h), pygame.SRCALPHA)
+                badge_fill = (78, 54, 8, 232) if reroll_enabled else (72, 76, 84, 220)
+                badge_border = (248, 201, 82, 225) if reroll_enabled else (165, 171, 182, 205)
+                pygame.draw.rect(badge_surface, badge_fill, badge_surface.get_rect(), border_radius=badge_h // 2)
+                pygame.draw.rect(badge_surface, badge_border, badge_surface.get_rect(), width=1, border_radius=badge_h // 2)
+                screen.blit(badge_surface, badge_rect.topleft)
+                screen.blit(badge_label, badge_label.get_rect(center=badge_rect.center))
+        else:
+            self.skip_button_rect = None
+            self.reroll_button_rect = None
+
+        # Draw a scrollbar thumb in debug grid mode to indicate scroll position
+        if card_mode_debug and self.grid_max_scroll > 0:
+            track_rect = pygame.Rect(scrollbar_track_x, scrollbar_track_y, scrollbar_track_w, scrollbar_track_h)
+            thumb_rect = pygame.Rect(scrollbar_track_x + 2, thumb_top, scrollbar_track_w - 4, thumb_h)
+            pygame.draw.rect(screen, (30, 30, 40, 160), track_rect, border_radius=6)
+            pygame.draw.rect(screen, (200, 200, 220, 200), thumb_rect, border_radius=6)
+            # debug helper: small scroll instructions
+            dbg_font = fonts.get('small')
+            dbg_help = dbg_font.render('Scroll: Mouse Wheel', True, (200, 200, 200))
+            screen.blit(dbg_help, (scrollbar_track_x - dbg_help.get_width() - s(10), scrollbar_track_y + scrollbar_track_h - dbg_help.get_height() - s(6)))
+        # Reset randomize pill rect if overlay is closed
+        if not cards:
+            self.randomize_pill_rect = None
+
+    def _draw_secondary_action_button(
+        self,
+        screen: pygame.Surface,
+        rect: pygame.Rect,
+        label_text: str,
+        *,
+        btn_font: pygame.font.Font,
+        ui_scale: float,
+        accent: tuple[int, int, int],
+        border_color: tuple[int, int, int],
+        enabled: bool,
+        hovered: bool,
+        focused: bool,
+    ) -> None:
+        s = lambda value, minimum=1: max(minimum, int(round(float(value) * ui_scale)))
+        corner_radius = max(s(14), rect.height // 3)
+        panel_alpha = 188 if enabled else 118
+        if focused:
+            panel_alpha = min(235, panel_alpha + 22)
+        elif hovered:
+            panel_alpha = min(214, panel_alpha + 10)
+
+        retro_style.draw_glass_panel(
+            screen,
+            rect,
+            alpha=panel_alpha,
+            border_color=border_color,
+            glow=False,
+        )
+
+        accent_surface = pygame.Surface(rect.size, pygame.SRCALPHA)
+        accent_rect = accent_surface.get_rect()
+        pygame.draw.rect(
+            accent_surface,
+            (*accent, 34 if enabled else 14),
+            accent_rect,
+            border_radius=corner_radius,
+        )
+        top_band_height = max(s(10), rect.height // 4)
+        pygame.draw.rect(
+            accent_surface,
+            (*accent, 68 if focused else 48 if hovered else 38),
+            pygame.Rect(s(1), s(1), max(1, rect.width - s(2)), top_band_height),
+            border_radius=corner_radius,
+        )
+        underline_rect = pygame.Rect(
+            s(18),
+            rect.height - s(7),
+            max(s(24), rect.width - s(36)),
+            max(2, s(3)),
+        )
+        pygame.draw.rect(
+            accent_surface,
+            (*accent, 156 if focused else 108 if hovered else 76 if enabled else 34),
+            underline_rect,
+            border_radius=underline_rect.height // 2,
+        )
+        screen.blit(accent_surface, rect.topleft)
+
+        if focused or hovered:
+            ring_padding = s(8) if focused else s(4)
+            ring_rect = rect.inflate(ring_padding * 2, ring_padding * 2)
+            ring_surface = pygame.Surface(ring_rect.size, pygame.SRCALPHA)
+            pygame.draw.rect(
+                ring_surface,
+                (*accent, 108 if focused else 56),
+                ring_surface.get_rect(),
+                width=max(2, s(2)),
+                border_radius=max(corner_radius + ring_padding, ring_rect.height // 3),
+            )
+            screen.blit(ring_surface, ring_rect.topleft)
+
+        label_color = (246, 249, 255) if enabled else (158, 163, 174)
+        if focused and enabled:
+            label_color = (255, 255, 255)
+        label_surf = btn_font.render(str(label_text), True, label_color)
+        label_rect = label_surf.get_rect(center=(rect.centerx, rect.centery - s(1)))
+        screen.blit(label_surf, label_rect)
+
+    def draw_active_cards_panel(
+        self,
+        screen: pygame.Surface,
+        cards: List[Dict],
+        fonts: Dict[str, pygame.font.Font],
+        x: int,
+        y: int,
+        width: int = 260,
+        *,
+        max_display: int = 6,
+        placeholder_text: str | None = None,
+        columns: int = 1,
+        max_height: int | None = None,
+        ui_scale: float | None = None,
+    ) -> int:
+        font_small = fonts.get("small")
+        font_desc = fonts.get("desc")
+        tag_font = fonts.get("tag")
+        card_title_font = fonts.get("card_title", font_small)
+        icon_font = fonts.get("icon", font_small)
+        width = max(120, int(width))
+
+        if ui_scale is None:
+            try:
+                ui_scale = float(card_title_font.get_height()) / 26.0
+            except Exception:
+                ui_scale = 1.0
+        ui_scale = max(0.62, min(1.12, float(ui_scale)))
+        s = lambda value, minimum=1: max(minimum, int(round(float(value) * ui_scale)))
+        self.active_card_row_snapshots = []
+
+        if max_height is not None and int(max_height) <= 0:
+            return 0
+
+        if not cards:
+            if placeholder_text is None:
+                placeholder_text = t('card_placeholder_empty')
+            placeholder = font_small.render(str(placeholder_text), True, (180, 180, 180))
+            screen.blit(placeholder, (x, y))
+            return placeholder.get_height()
+
+        def _compact_text(value: str, max_len: int = 14) -> str:
+            text = str(value or '').strip()
+            if len(text) <= max_len:
+                return text
+            return f"{text[:max(3, max_len - 3)]}..."
+
+        def _parse_status(raw_status: Dict[str, Any] | str) -> tuple[str, str]:
+            state_override = ''
+            if isinstance(raw_status, dict):
+                status = str(raw_status.get('status', '') or '').strip()
+                state_override = str(raw_status.get('status_state', '') or '').strip().lower()
+            else:
+                status = str(raw_status or '').strip()
+            if not status:
+                return 'aktif', 'Aktif'
+            if state_override:
+                max_len = 10 if state_override in ('beklemede', 'sureli') else 12
+                return state_override, _compact_text(status, max_len)
+            low = status.lower()
+            if 'bekle' in low or 'cooldown' in low:
+                return 'beklemede', _compact_text(status, 12)
+            if low.endswith('s') or ' sn' in low or 'sn ' in low:
+                return 'sureli', _compact_text(status, 10)
+            if 'hak' in low:
+                return 'hazir', _compact_text(status, 12)
+            if 'aktif' in low:
+                return 'aktif', 'Aktif'
+            return 'durum', _compact_text(status, 12)
+
+        def _truncate_render_text(font: pygame.font.Font, text: str, max_width: int) -> str:
+            value = str(text or '').strip()
+            if value == '' or max_width <= 0 or font.size(value)[0] <= max_width:
+                return value
+            ellipsis = '...'
+            if font.size(ellipsis)[0] > max_width:
+                return ''
+            trimmed = value
+            while len(trimmed) > 1 and font.size(trimmed.rstrip() + ellipsis)[0] > max_width:
+                trimmed = trimmed[:-1]
+            trimmed = trimmed.rstrip()
+            return (trimmed + ellipsis) if trimmed else value
+
+        def _badge_palette(state_label: str) -> tuple[tuple[int, int, int, int], tuple[int, int, int, int]]:
+            label = str(state_label or '').lower()
+            if label == 'aktif' or label == 'hazir':
+                return (36, 130, 86, 190), (110, 225, 170, 220)
+            if label == 'beklemede' or label == 'sureli':
+                return (62, 70, 84, 190), (168, 178, 196, 220)
+            return (56, 72, 102, 190), (132, 176, 238, 220)
+
+        def _row_border_rgba(card: Dict[str, Any]) -> tuple[int, int, int, int]:
+            rarity_map = {
+                'legendary': UIColors.RARITY_LEGENDARY,
+                'epic': UIColors.RARITY_EPIC,
+                'rare': UIColors.RARITY_RARE,
+                'uncommon': UIColors.RARITY_UNCOMMON,
+                'common': UIColors.RARITY_COMMON,
+            }
+            rarity = str(card.get('rarity', '') or '').strip().lower()
+            if not rarity:
+                tag = str(card.get('tag', '') or '').strip().lower()
+                if tag in rarity_map:
+                    rarity = tag
+                elif tag == 'perk':
+                    rarity = 'legendary'
+            base = rarity_map.get(rarity)
+            if base is None:
+                try:
+                    style_border = tuple((card.get('style', {}) or {}).get('border', ()))
+                    if len(style_border) >= 3:
+                        base = (int(style_border[0]), int(style_border[1]), int(style_border[2]))
+                except Exception:
+                    base = None
+            if base is None:
+                return (138, 154, 188, 100)
+            return (int(base[0]), int(base[1]), int(base[2]), 165)
+
+        # Compact Mode: scale the entire row geometry with the shared card UI scale.
+        row_gap = s(6, minimum=4)
+        col_gap = s(8, minimum=6)
+        content_padding = s(8, minimum=6)
+        title_gap = s(10, minimum=8)
+        title_badge_gap = s(8, minimum=6)
+        badge_pad_x = s(12, minimum=8)
+        badge_pad_y = s(6, minimum=4)
+        corner_radius = s(6, minimum=4)
+        badge_corner_radius = s(9, minimum=6)
+        row_height = max(
+            s(46, minimum=32),
+            max(font_small.get_height(), card_title_font.get_height()) + s(16, minimum=12),
+        )
+        icon_size = min(
+            row_height - s(12, minimum=8),
+            max(s(30, minimum=22), font_small.get_height() + s(8, minimum=6)),
+        )
+        
+        md = max(1, int(max_display))
+        cols = max(1, int(columns))
+        if max_height is not None:
+            available_height = max(0, int(max_height))
+            if available_height <= 0:
+                return 0
+            rows_fit = max(1, (available_height + row_gap) // (row_height + row_gap))
+            md = min(md, rows_fit * cols)
+
+        displayed = cards[-md:]
+
+        # İki sütun hesaplaması
+        if cols > 1:
+            col_width = max(s(120, minimum=96), (width - col_gap * (cols - 1)) // cols)
+        else:
+            col_width = width
+        
+        current_y = y
+        total_rows = (len(displayed) + cols - 1) // cols
+        total_height = total_rows * row_height + max(0, total_rows - 1) * row_gap
+
+        for idx, card in enumerate(displayed):
+            col = idx % cols
+            row = idx // cols
+            card_x = x + col * (col_width + col_gap)
+            card_y = y + row * (row_height + row_gap)
+            # Background
+            panel_color = (14, 18, 34, 186)
+            
+            # Create a surface for the row to handle alpha transparency properly
+            row_surface = pygame.Surface((col_width, row_height), pygame.SRCALPHA)
+            row_rect_local = row_surface.get_rect()
+            row_border_color = _row_border_rgba(card)
+            row_rect = pygame.Rect(card_x, card_y, col_width, row_height)
+            
+            # Glass effect background
+            pygame.draw.rect(row_surface, panel_color, row_rect_local, border_radius=corner_radius)
+            pygame.draw.rect(row_surface, row_border_color, row_rect_local, 1, border_radius=corner_radius)
+            
+            # Icon (Left) - Local coordinates
+            icon_rect_local = pygame.Rect(content_padding, (row_height - icon_size) // 2, icon_size, icon_size)
+            icon_rect = pygame.Rect(card_x + icon_rect_local.x, card_y + icon_rect_local.y, icon_rect_local.w, icon_rect_local.h)
+            
+            # Icon placeholder/image
+            try:
+                icon_image = self._get_icon_surface(card.get('icon_image'), (icon_size, icon_size))
+                if icon_image:
+                    row_surface.blit(icon_image, icon_rect_local)
+                else:
+                    # Text icon fallback (ASCII only)
+                    txt_icon = str(card.get('icon', '*') or '*')
+                    safe_icon = ''.join(ch for ch in txt_icon if ch.isascii() and ch.isalnum())[:2]
+                    if not safe_icon:
+                        safe_icon = '*'
+                    icon_surf = font_small.render(safe_icon, True, card['color'])
+                    icon_pos = icon_surf.get_rect(center=icon_rect_local.center)
+                    row_surface.blit(icon_surf, icon_pos)
+            except Exception:
+                pass
+            try:
+                icon_border = pygame.Rect(icon_rect_local.x - 1, icon_rect_local.y - 1, icon_rect_local.w + 2, icon_rect_local.h + 2)
+                pygame.draw.rect(row_surface, (170, 185, 215, 110), icon_border, 1, border_radius=corner_radius)
+            except Exception:
+                pass
+
+            # Title (Left center)
+            title_local_x = icon_rect_local.right + title_gap
+            title_text = get_card_title(card, card.get("title", "???"))
+            status_label, status_value = _parse_status(card)
+            badge_text = status_value
+            title_rect = None
+            badge_rect = None
+            rendered_title_text = title_text
+
+            badge_font = tag_font if tag_font else font_small
+            max_badge_w = max(s(52, minimum=40), col_width - title_local_x - s(6, minimum=4))
+            prompt_badge_text = _prompt_action_text('hold2', 'V') if _resolve_card_localization_id(card) == 'perk_second_pocket' else ''
+            if prompt_badge_text and badge_text == prompt_badge_text:
+                badge_text_surf = render_action_prompt_surface(
+                    'hold2',
+                    prompt_badge_text,
+                    badge_font,
+                    (232, 238, 248),
+                    max_width=max_badge_w - badge_pad_x,
+                    max_height=max(s(24, minimum=18), badge_font.get_height() + badge_pad_y),
+                )
+                if badge_text_surf is None:
+                    badge_text_surf = badge_font.render(badge_text, True, (232, 238, 248))
+            else:
+                badge_text_surf = badge_font.render(badge_text, True, (232, 238, 248))
+            badge_w = badge_text_surf.get_width() + badge_pad_x
+            if badge_w > max_badge_w:
+                compact = _truncate_render_text(badge_font, badge_text, max_badge_w - badge_pad_x)
+                badge_text_surf = badge_font.render(compact, True, (232, 238, 248))
+                badge_w = badge_text_surf.get_width() + badge_pad_x
+            badge_h = max(s(24, minimum=18), badge_text_surf.get_height() + badge_pad_y)
+            badge_right = col_width - content_padding
+            badge_left = max(title_local_x + s(36, minimum=24), badge_right - badge_w)
+            max_title_w = max(s(18, minimum=14), badge_left - title_local_x - title_badge_gap)
+            
+            try:
+                rendered_title_text = _truncate_render_text(card_title_font, title_text, max_title_w)
+                title_surf = card_title_font.render(rendered_title_text, True, (238, 242, 250))
+                
+                title_local_y = (row_height - title_surf.get_height()) // 2
+                title_rect = pygame.Rect(card_x + title_local_x, card_y + title_local_y, title_surf.get_width(), title_surf.get_height())
+                row_surface.blit(title_surf, (title_local_x, title_local_y))
+            except Exception:
+                pass
+            
+            # Status Badge (Right)
+            try:
+                badge_bg, badge_border = _badge_palette(status_label)
+                status_local_x = badge_left
+                status_local_y = (row_height - badge_h) // 2
+                st_bg_rect = pygame.Rect(status_local_x, status_local_y, badge_w, badge_h)
+                badge_rect = pygame.Rect(card_x + st_bg_rect.x, card_y + st_bg_rect.y, st_bg_rect.w, st_bg_rect.h)
+                pygame.draw.rect(row_surface, badge_bg, st_bg_rect, border_radius=badge_corner_radius)
+                pygame.draw.rect(row_surface, badge_border, st_bg_rect, 1, border_radius=badge_corner_radius)
+                row_surface.blit(badge_text_surf, badge_text_surf.get_rect(center=st_bg_rect.center))
+            except Exception:
+                pass
+
+            # Blit the composed row onto the main screen
+            screen.blit(row_surface, (card_x, card_y))
+            self.active_card_row_snapshots.append({
+                'ui_scale': ui_scale,
+                'row_rect': row_rect.copy(),
+                'icon_rect': icon_rect.copy(),
+                'title_rect': title_rect.copy() if title_rect is not None else None,
+                'badge_rect': badge_rect.copy() if badge_rect is not None else None,
+                'content_padding': int(content_padding),
+                'title_text': rendered_title_text,
+                'badge_text': badge_text,
+            })
+
+        return total_height
+
+    def handle_mouse_click(self, pos: tuple[int, int]) -> int | str | None:
+        # Peek butonu kontrolü
+        if getattr(self, 'peek_button_rect', None) and self.peek_button_rect.collidepoint(pos):
+            self.keyboard_nav_active = False
+            self.peek_mode_active = not self.peek_mode_active
+            return 'PEEK'
+        
+        # Peek modundayken kart seçimi yapılamaz
+        if self.peek_mode_active:
+            return None
+
+        if self.is_interaction_locked():
+            return None
+
+        self.keyboard_nav_active = False
+        target = self._target_at_pos(pos)
+        if target is not None:
+            self._set_focus_target(target, len(self.card_rects))
+        return target
+
+    def handle_mouse_wheel(self, delta: int) -> None:
+        """Scroll the grid up/down in debug grid mode (delta is positive up, negative down)"""
+        step = 40
+        self.grid_scroll = max(0, min(self.grid_scroll - delta * step, getattr(self, 'grid_max_scroll', 0)))
+
+    def handle_mouse_move(self, pos: tuple[int, int]) -> None:
+        """Update hover_index based on mouse position (works with scrolled grid)."""
+        self.keyboard_nav_active = False
+        if not self.card_rects and not getattr(self, 'skip_button_rect', None) and not getattr(self, 'reroll_button_rect', None):
+            self.hover_index = -1
+            return
+
+        for idx, rect in enumerate(self.card_rects):
+            if rect.collidepoint(pos):
+                self.hover_index = idx
+                self._set_focus_target(idx, len(self.card_rects))
+                return
+
+        if getattr(self, 'skip_button_rect', None) and self.skip_button_rect.collidepoint(pos):
+            self.hover_index = -1
+            self._set_focus_target('SKIP', len(self.card_rects))
+            return
+
+        if getattr(self, 'reroll_button_rect', None) and self.reroll_button_rect.collidepoint(pos) and self._reroll_enabled:
+            self.hover_index = -1
+            self._set_focus_target('REROLL', len(self.card_rects))
+            return
+        self.hover_index = -1
+
+    def _draw_card(
+        self,
+        card: Dict,
+        idx: int,
+        rect: pygame.Rect,
+        hovered: bool,
+        dimmed: bool,
+        screen: pygame.Surface,
+        fonts: Dict[str, pygame.font.Font],
+        debug: bool = False,
+    ) -> None:
+        style = card.get("style", {})
+        corner = style.get("corner", 26)
+        accent = card["color"]
+        gradient_colors = style.get("gradient", [card.get("bg", (34, 34, 46)), accent])
+        border_color = style.get("border", accent)
+        icon_bg = style.get("icon_bg", (40, 40, 50))
+
+        shadow = pygame.Surface((rect.width + 26, rect.height + 26), pygame.SRCALPHA)
+        pygame.draw.rect(shadow, (0, 0, 0, 160), (13, 13, rect.width, rect.height), border_radius=corner + 6)
+        screen.blit(shadow, (rect.x - 13, rect.y - 6))
+
+        card_surface = pygame.Surface(rect.size, pygame.SRCALPHA)
+        self._paint_card_body(card_surface, gradient_colors, corner)
+        card_key = card.get("id") or card.get("title", str(idx))
+        self._apply_card_pattern(card_surface, style, accent, corner, card_key)
+
+        top_rect = pygame.Rect(0, 0, rect.width, 140)
+        top_overlay = pygame.Surface(top_rect.size, pygame.SRCALPHA)
+        pygame.draw.rect(top_overlay, (*accent, 45), top_overlay.get_rect(), border_radius=corner)
+        card_surface.blit(top_overlay, (0, 0))
+
+        # Pulse used for subtle floating and hover animations
+        pulse_base = (math.sin(self.pulse_time * 2.0 + idx * 0.63) + 1) * 0.5
+        pulse = (pulse_base * 0.7 + 0.3) if hovered else (pulse_base * 0.35 + 0.65)
+        glow_factor = 0.9 + 0.15 * pulse
+        glow_color = tuple(min(255, int(c * glow_factor)) for c in border_color)
+        pygame.draw.rect(
+            card_surface,
+            glow_color,
+            card_surface.get_rect(),
+            width=3 if hovered else 2,
+            border_radius=corner,
+        )
+
+        icon_rect = pygame.Rect(22, 20, 96, 96)
+        icon_holder = pygame.Surface(icon_rect.size, pygame.SRCALPHA)
+        # Icon holder with soft inner gradient and border
+        icon_holder_grad = pygame.Surface(icon_holder.get_size(), pygame.SRCALPHA)
+        self._fill_gradient(icon_holder_grad, (*icon_bg, 240), (min(255, icon_bg[0]+40), min(255, icon_bg[1]+40), min(255, icon_bg[2]+40), 230))
+        mask = pygame.Surface(icon_holder.get_size(), pygame.SRCALPHA)
+        pygame.draw.rect(mask, (255, 255, 255, 255), mask.get_rect(), border_radius=18)
+        icon_holder_grad.blit(mask, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+        icon_holder.blit(icon_holder_grad, (0, 0))
+        pygame.draw.rect(icon_holder, glow_color, icon_holder.get_rect(), width=2 if hovered else 1, border_radius=18)
+        # Ensure the inner icon image is slightly smaller than the holder border so
+        # the icon never draws over the holder's rounded border.
+        inner_padding = 2
+        inner_size = (icon_rect.width - inner_padding * 2, icon_rect.height - inner_padding * 2)
+        icon_image = self._get_icon_surface(card.get("icon_image"), inner_size)
+        if icon_image:
+            # center icon inside the holder
+            ix = (icon_rect.width - inner_size[0]) // 2
+            iy = (icon_rect.height - inner_size[1]) // 2
+            icon_holder.blit(icon_image, (ix, iy))
+        else:
+            from emoji_renderer import emoji_surface
+            _emoji_ic = emoji_surface(card.get("icon", ""), min(inner_size))
+            if _emoji_ic:
+                ix = (icon_rect.width - _emoji_ic.get_width()) // 2
+                iy = (icon_rect.height - _emoji_ic.get_height()) // 2
+                icon_holder.blit(_emoji_ic, (ix, iy))
+            else:
+                icon_glyph = fonts["icon"].render(_ui_safe_icon_text(card.get("icon", "??"), fallback="??"), True, (12, 12, 18))
+                icon_holder.blit(icon_glyph, icon_glyph.get_rect(center=(icon_rect.width // 2, icon_rect.height // 2)))
+        card_surface.blit(icon_holder, icon_rect.topleft)
+
+        tag_text = card.get("tag", "Bonus").upper()
+        tag_label = fonts["tag"].render(tag_text, True, (240, 240, 255))
+        tag_bg = pygame.Surface((tag_label.get_width() + 18, tag_label.get_height() + 6), pygame.SRCALPHA)
+        # tag background gets a neon halo when hovered
+        halo = pygame.Surface(tag_bg.get_size(), pygame.SRCALPHA)
+        pygame.draw.rect(halo, (*glow_color[:3], 40 if hovered else 20), halo.get_rect(), border_radius=12)
+        tag_bg.blit(halo, (0, 0))
+        pygame.draw.rect(tag_bg, glow_color, tag_bg.get_rect(), border_radius=12)
+        tag_bg.blit(tag_label, (9, 3))
+        card_surface.blit(tag_bg, (rect.width - tag_bg.get_width() - 20, 28))
+
+            # Prepare title text
+        card_title_text = get_card_title(card, card.get("title", ""))
+        title_text = f"{idx + 1}. {card_title_text}"
+        # If title is longer than available area, trim with ellipsis
+        title_font = fonts.get("card_title")
+        title_max_width = rect.width - 48
+        if title_font.size(title_text)[0] > title_max_width:
+            short = title_text
+            while title_font.size(short + "...")[0] > title_max_width and len(short) > 0:
+                short = short[:-1]
+            title_text = short.rstrip() + "..."
+        title_surface = title_font.render(title_text, True, (250, 250, 255))
+        # Make title background stronger for readability in debug grid
+        title_bg_color = (*accent, 200) if debug else (*accent, 120)
+        self._blit_text_with_bg(card_surface, title_surface, (24, 120), title_bg_color)
+
+        # Replace the large numeric value badge with a type label:
+        # - Kalıcı: persistent perks
+        # - Tek Kullanım: single-use cards
+        # - Sınırlı: timed/charged/limited effects
+        type_label = t(_card_type_label_key(card))
+        type_font = fonts.get("tag") or fonts.get("desc") or fonts.get("small")
+        type_surface = type_font.render(type_label, True, (255, 255, 255))
+        type_bg_color = (*accent, 100)
+        value_rect = self._blit_text_with_bg(
+            card_surface,
+            type_surface,
+            (rect.width // 2 - (type_surface.get_width() // 2) - 12, 170),
+            type_bg_color,
+            padding=(16, 6),
+            radius=18,
+        )
+
+        # Wrap description with available width and reduce max cols in debug
+        desc_wrap_width = 30 if not debug else 28
+        card_desc_text = get_card_description(card, card.get("value"), card.get("description", ""))
+        prompt_button_label = _prompt_action_text('hold2', 'V') if _resolve_card_localization_id(card) == 'perk_second_pocket' else ''
+        desc_lines = self._wrap_text(card_desc_text, desc_wrap_width)
+        # Cap description lines in overlay to avoid oversizing the card
+        max_desc_lines_overlay = 4
+        if len(desc_lines) > max_desc_lines_overlay:
+            desc_lines = desc_lines[:max_desc_lines_overlay]
+            last = desc_lines[-1]
+            ellipsis = '...'
+            desc_width_avail = rect.width - 48
+            while fonts["desc"].size(last + ellipsis)[0] > desc_width_avail and len(last) > 0:
+                last = last[:-1]
+            desc_lines[-1] = last.rstrip() + ellipsis
+        line_height_overlay = fonts["desc"].get_linesize()
+        desc_height = len(desc_lines) * line_height_overlay + 18
+        desc_surface = pygame.Surface((rect.width - 48, desc_height), pygame.SRCALPHA)
+        # Use a slightly stronger background on debug mode for better readability
+        desc_bg_alpha = 220 if debug else 140
+        pygame.draw.rect(desc_surface, (3, 3, 10, desc_bg_alpha), desc_surface.get_rect(), border_radius=14)
+        for i, line in enumerate(desc_lines):
+            desc_text = render_inline_action_text_surface(
+                line,
+                prompt_button_label,
+                'hold2',
+                fonts["desc"],
+                (230, 230, 240),
+            ) if prompt_button_label and prompt_button_label in line else fonts["desc"].render(line, True, (230, 230, 240))
+            desc_surface.blit(desc_text, (12, 8 + i * line_height_overlay))
+        card_surface.blit(desc_surface, (24, value_rect.bottom + 20))
+
+        # Add a small index bubble in the top-left like on the screenshot, subtle and readable
+        idx_circle_r = 20
+        idx_bg = pygame.Surface((idx_circle_r * 2, idx_circle_r * 2), pygame.SRCALPHA)
+        pygame.draw.ellipse(idx_bg, (255, 255, 255, 230), idx_bg.get_rect())
+        pygame.draw.ellipse(idx_bg, (160, 140, 220, 180), idx_bg.get_rect(), width=2)
+        idx_font = fonts.get('card_title')
+        idx_text = idx_font.render(str(idx + 1), True, (18, 18, 22))
+        idx_bg.blit(idx_text, ((idx_bg.get_width() - idx_text.get_width()) // 2, (idx_bg.get_height() - idx_text.get_height()) // 2 - 1))
+        card_surface.blit(idx_bg, (12, 12))
+
+        if dimmed:
+            dim_surface = pygame.Surface(card_surface.get_size(), pygame.SRCALPHA)
+            dim_surface.fill((5, 5, 20, 140))
+            card_surface.blit(dim_surface, (0, 0))
+
+        press_ratio = 0.0
+        if self.selection_index == idx and self.selection_flash_duration > 0:
+            progress = 1.0 - (self.selection_flash / self.selection_flash_duration)
+            press_ratio = max(0.0, min(1.0, progress))
+            flash_overlay = pygame.Surface(card_surface.get_size(), pygame.SRCALPHA)
+            flash_alpha = int(120 * (1 - progress))
+            pygame.draw.rect(flash_overlay, (*glow_color[:3], flash_alpha), flash_overlay.get_rect(), border_radius=corner)
+            card_surface.blit(flash_overlay, (0, 0), special_flags=pygame.BLEND_RGBA_ADD)
+
+        # Floating and hover lift animations
+        scale = 1.0
+        lift = 0.0
+        bob = int(6 * (pulse_base - 0.5)) if not hovered else 0
+        if hovered and not dimmed:
+            scale += 0.10
+            lift = 12.0
+        if press_ratio > 0:
+            scale *= 1.0 - 0.05 * press_ratio
+            lift -= 4.0 * press_ratio
+
+        output_surface = card_surface
+        if abs(scale - 1.0) > 0.01 or bob != 0:
+            new_size = (
+                max(1, int(rect.width * scale)),
+                max(1, int(rect.height * scale)),
+            )
+            output_surface = pygame.transform.smoothscale(card_surface, new_size)
+
+        dest_x = rect.centerx - output_surface.get_width() // 2
+        dest_y = rect.centery - output_surface.get_height() // 2 - int(lift) + bob
+        # Hover halo (blit behind the card for a soft neon outline)
+        if hovered and not dimmed:
+            halo_w = output_surface.get_width() + 34
+            halo_h = output_surface.get_height() + 34
+            halo = pygame.Surface((halo_w, halo_h), pygame.SRCALPHA)
+            for i in range(6, 0, -1):
+                a = int(32 * (i / 6))
+                c = (*accent, a)
+                pygame.draw.rect(halo, c, (6 - i, 6 - i, halo_w - (6 - i) * 2, halo_h - (6 - i) * 2), border_radius=corner + 16)
+            screen.blit(halo, (dest_x - 17, dest_y - 17), special_flags=pygame.BLEND_RGBA_ADD)
+        screen.blit(output_surface, (dest_x, dest_y))
+        # Render debug overlay box if requested
+        if debug:
+            dbg_font = fonts.get('small')
+            debug_text = f"id={card.get('id')} p={card.get('persistent', False)}"
+            dbg_surface = dbg_font.render(debug_text, True, (200, 200, 200))
+            dbg_rect = dbg_surface.get_rect(topleft=(rect.x + 8, rect.y + 8))
+            # draw small rounded background for debug label for readability
+            dbg_bg = pygame.Surface((dbg_rect.width + 12, dbg_rect.height + 8), pygame.SRCALPHA)
+            pygame.draw.rect(dbg_bg, (10, 10, 20, 190), dbg_bg.get_rect(), border_radius=6)
+            screen.blit(dbg_bg, (dbg_rect.x - 6, dbg_rect.y - 4))
+            screen.blit(dbg_surface, dbg_rect)
+            # Draw a large index bubble in the top-left to make cards easier to locate
+            idx_font = fonts.get('card_title')
+            idx_text = str(idx + 1)
+            idx_surface = idx_font.render(idx_text, True, (20, 20, 24))
+            idx_bg_w = idx_surface.get_width() + 12
+            idx_bg_h = idx_surface.get_height() + 8
+            idx_bg = pygame.Surface((idx_bg_w, idx_bg_h), pygame.SRCALPHA)
+            pygame.draw.ellipse(idx_bg, (255, 255, 255, 220), idx_bg.get_rect())
+            pygame.draw.ellipse(idx_bg, (140, 120, 220, 200), idx_bg.get_rect(), width=2)
+            bg_x = rect.x + 12
+            bg_y = rect.y + 12
+            screen.blit(idx_bg, (bg_x, bg_y))
+            screen.blit(idx_surface, (bg_x + (idx_bg_w - idx_surface.get_width()) // 2, bg_y + (idx_bg_h - idx_surface.get_height()) // 2 - 1))
+
+    def _paint_card_body(self, surface: pygame.Surface, gradient_colors: List[tuple[int, int, int]], corner: int) -> None:
+        if not gradient_colors:
+            gradient_colors = [(34, 34, 46), (48, 48, 60)]
+        if len(gradient_colors) == 1:
+            gradient_colors = [gradient_colors[0], gradient_colors[0]]
+        grad_surface = pygame.Surface(surface.get_size(), pygame.SRCALPHA)
+        start = (*gradient_colors[0], 255)
+        end = (*gradient_colors[-1], 255)
+        self._fill_gradient(grad_surface, start, end)
+        mask = pygame.Surface(surface.get_size(), pygame.SRCALPHA)
+        pygame.draw.rect(mask, (255, 255, 255, 255), mask.get_rect(), border_radius=corner)
+        grad_surface.blit(mask, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+        surface.blit(grad_surface, (0, 0))
+
+    def _apply_card_pattern(
+        self,
+        surface: pygame.Surface,
+        style: Dict,
+        accent: tuple[int, int, int],
+        corner: int,
+        seed_key: str,
+    ) -> None:
+        pattern = style.get("pattern")
+        if not pattern:
+            return
+        pattern_surface = pygame.Surface(surface.get_size(), pygame.SRCALPHA)
+        color = (*accent, 28)
+        width, height = surface.get_size()
+        rng = random.Random(seed_key)
+        if pattern == "grid":
+            spacing = 18
+            for x in range(0, width, spacing):
+                pygame.draw.line(pattern_surface, color, (x, 0), (x, height), 1)
+            for y in range(0, height, spacing):
+                pygame.draw.line(pattern_surface, color, (0, y), (width, y), 1)
+        elif pattern == "laser":
+            spacing = 26
+            for offset in range(-height, width, spacing):
+                start = (offset, 0)
+                end = (offset + height, height)
+                pygame.draw.line(pattern_surface, (*accent, 36), start, end, 3)
+        elif pattern == "spark":
+            for i in range(10):
+                radius = 6 + i % 3
+                pos = (rng.randint(20, width - 20), rng.randint(40, height - 40))
+                pygame.draw.circle(pattern_surface, (*accent, 30), pos, radius, 0)
+        elif pattern == "wave":
+            for y in range(0, height, 20):
+                points = []
+                for x in range(0, width, 10):
+                    offset = math.sin((x + y * 3) * 0.08) * 6
+                    points.append((x, y + offset))
+                if len(points) > 1:
+                    pygame.draw.lines(pattern_surface, (*accent, 26), False, points, 2)
+        mask = pygame.Surface(surface.get_size(), pygame.SRCALPHA)
+        pygame.draw.rect(mask, (255, 255, 255, 255), mask.get_rect(), border_radius=corner)
+        pattern_surface.blit(mask, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+        surface.blit(pattern_surface, (0, 0), special_flags=pygame.BLEND_RGBA_ADD)
+
+    def _fit_icon_cover(self, image: pygame.Surface, size: tuple[int, int]) -> pygame.Surface:
+        """Scale and crop the icon image so it fully covers the given size.
+
+        This trims transparent borders, scales to cover (preserving aspect ratio),
+        and center-crops to the final size.
+        """
+        if not image:
+            return image
+        # Try bounding rect based on alpha to trim transparent padding
+        try:
+            bounds = image.get_bounding_rect()
+            if bounds.width > 0 and bounds.height > 0 and (bounds.width != image.get_width() or bounds.height != image.get_height()):
+                try:
+                    image = image.subsurface(bounds).copy()
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        iw, ih = image.get_size()
+        tw, th = size
+        if iw == tw and ih == th:
+            return image
+        # Scale to cover
+        scale = max(tw / iw, th / ih)
+        new_w = max(1, int(iw * scale))
+        new_h = max(1, int(ih * scale))
+        try:
+            scaled = pygame.transform.smoothscale(image, (new_w, new_h))
+        except Exception:
+            scaled = pygame.transform.scale(image, (new_w, new_h))
+        # Crop center
+        cx = max(0, (new_w - tw) // 2)
+        cy = max(0, (new_h - th) // 2)
+        try:
+            cropped = scaled.subsurface((cx, cy, tw, th)).copy()
+            return cropped
+        except Exception:
+            return pygame.transform.smoothscale(scaled, (tw, th))
+
+    def _get_icon_surface(self, image_path: str | None, size: tuple[int, int]) -> pygame.Surface | None:
+        if not image_path:
+            return None
+        cache_key = (image_path, size)
+        if cache_key in self.icon_cache:
+            return self.icon_cache[cache_key]
+        if not os.path.exists(image_path):
+            return None
+        try:
+            image = load_image(image_path, convert_alpha=True)
+            image = self._fit_icon_cover(image, size)
+            self.icon_cache[cache_key] = image
+            return image
+        except Exception as exc:  # pylint: disable=broad-except
+            print(f"⚠️ Kart ikonu yüklenemedi ({image_path}): {exc}")
+            return None
+
+
+# ==================== SOFT GLOW TEXTURE CACHE ====================
+# Profesyonel parçacık efektleri için önceden işlenmiş
+# radyal gradyan (soft blob) texture'ları - Balatro/Slay the Spire kalitesinde
+class _GlowCache:
+    """Radyal gradyan glow texture'larını cache'ler. Her boyut için
+    piksel piksel hesaplamak yerine bir kez oluşturur, sonra tint+alpha
+    ile blit eder. Bu teknik AAA kart oyunlarında standart."""
+    _base_cache: Dict[int, pygame.Surface] = {}
+    _tinted_cache: Dict[tuple, pygame.Surface] = {}
+    _MAX_TINTED = 256  # Max tinted cache boyutu
+
+    @classmethod
+    def get(cls, radius: int) -> pygame.Surface:
+        """Beyaz radyal gradyan daire döndürür (SRCALPHA).
+        Merkezde alpha=255, kenarda alpha=0, Gaussian benzeri eğri."""
+        radius = max(2, min(radius, 64))  # Boyut sınırla
+        if radius in cls._base_cache:
+            return cls._base_cache[radius]
+        size = radius * 2
+        surf = pygame.Surface((size, size), pygame.SRCALPHA)
+        # Radyal gradyan: Gaussian falloff
+        r_sq_inv = 1.0 / (radius * radius) if radius > 0 else 1.0
+        for y in range(size):
+            dy = y - radius + 0.5
+            dy2 = dy * dy
+            for x in range(size):
+                dx = x - radius + 0.5
+                dist_sq = (dx * dx + dy2) * r_sq_inv
+                if dist_sq > 1.0:
+                    continue
+                # Smooth Gaussian-like falloff: exp(-3 * dist^2)
+                alpha = int(255 * math.exp(-3.0 * dist_sq))
+                if alpha > 0:
+                    surf.set_at((x, y), (255, 255, 255, alpha))
+        cls._base_cache[radius] = surf
+        return surf
+
+    @classmethod
+    def get_tinted(cls, radius: int, color: tuple, alpha_mult: float = 1.0) -> pygame.Surface:
+        """Renklendirilmiş glow texture döndürür.
+        Sonuçlar cache'lenir — aynı (radius, color, alpha_bucket) tekrar hesaplanmaz."""
+        radius = max(2, min(radius, 64))
+        # Alpha'yı 16 adıma kuantize et (cache hit'i artırır)
+        a_bucket = max(0, min(15, int(alpha_mult * 15.9)))
+        cache_key = (radius, color[0], color[1], color[2], a_bucket)
+        if cache_key in cls._tinted_cache:
+            return cls._tinted_cache[cache_key]
+
+        base = cls.get(radius).copy()
+        # Renk tint uygula
+        tint = pygame.Surface(base.get_size(), pygame.SRCALPHA)
+        effective_alpha = int(255 * (a_bucket / 15.0))
+        tint.fill((color[0], color[1], color[2], effective_alpha))
+        base.blit(tint, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+
+        # Cache boyutunu sınırla
+        if len(cls._tinted_cache) >= cls._MAX_TINTED:
+            # En eski %25'i sil
+            keys = list(cls._tinted_cache.keys())
+            for k in keys[:len(keys) // 4]:
+                del cls._tinted_cache[k]
+
+        cls._tinted_cache[cache_key] = base
+        return base
+
+
+# ==================== GRADIENT CACHE ====================
+_gradient_cache: Dict[tuple, pygame.Surface] = {}
+_GRADIENT_CACHE_MAX = 64
+
+
+def _get_cached_gradient(size: tuple[int, int], start_color: tuple, end_color: tuple) -> pygame.Surface:
+    """Dikey gradyan surface'ini cache'leyerek tekrar hesaplamayı önler.
+    Aynı boyut ve renk kombinasyonu için surface bir kez oluşturulur,
+    sonraki çağrılarda cache'den döner."""
+    key = (size, start_color, end_color)
+    if key in _gradient_cache:
+        return _gradient_cache[key]
+    surf = pygame.Surface(size, pygame.SRCALPHA)
+    width, height = size
+    sc_len = len(start_color)
+    for y in range(height):
+        ratio = y / max(1, height - 1)
+        color = tuple(
+            int(start_color[i] + (end_color[i] - start_color[i]) * ratio)
+            for i in range(sc_len)
+        )
+        pygame.draw.line(surf, color, (0, y), (width, y))
+    if len(_gradient_cache) >= _GRADIENT_CACHE_MAX:
+        keys = list(_gradient_cache.keys())
+        for k in keys[:len(keys) // 4]:
+            del _gradient_cache[k]
+    _gradient_cache[key] = surf
+    return surf
+
+
+def _make_card_text_font(size: int, *, bold: bool = False) -> pygame.font.Font:
+    """Kart metinleri için mevcut dil profilini koruyarak font üret."""
+    font_size = max(1, int(size))
+    try:
+        lang = get_language()
+    except Exception:
+        lang = None
+
+    effective_lang = "ja" if lang == "jp" else lang
+
+    try:
+        from ui_language_profile import get_font_for_language
+
+        font = get_font_for_language(effective_lang, font_size, bold=bold)
+        if font is not None:
+            return font
+    except Exception:
+        pass
+
+    return retro_style.get_font(font_size, bold=bold)
+
+
+class UICard:
+    """UI widget for a single card in the Mystery/Cards overlay.
+
+    Responsibilities:
+    - Render its own rounded glass card with border, glow according to rarity
+    - Manage hover/scale animation and hit testing
+    - Render title, value, description, icon placeholder and hotkey indicator
+    """
+
+    RARITY_COLORS = {
+        'legendary': UIColors.RARITY_LEGENDARY,
+        'epic': UIColors.RARITY_EPIC,
+        'rare': UIColors.RARITY_RARE,
+        'uncommon': UIColors.RARITY_UNCOMMON,
+        'common': UIColors.RARITY_COMMON,
+    }
+
+    # Nadirlik bazlı animasyon süreleri (saniye) - daha dramatik
+    RARITY_FLIP_DURATION = {
+        'common': 0.40,
+        'uncommon': 0.50,
+        'rare': 0.60,
+        'epic': 0.75,
+        'legendary': 0.90,
+    }
+
+    # Nadirlik bazlı kart açılma gecikmesi
+    # Sıradan İLK döner → Efsanevi EN SON döner (heyecan artar!)
+    RARITY_FLIP_BASE_DELAY = {
+        'common': 0.15,
+        'uncommon': 0.55,
+        'rare': 0.95,
+        'epic': 1.40,
+        'legendary': 1.90,
+    }
+
+    _EPIC_SCROLL_IMAGE: pygame.Surface | None = None
+    _EPIC_SCROLL_IMAGE_LOADED = False
+    _EPIC_SCROLL_SPEED_PX_PER_SEC = 22.0
+    _EPIC_SCROLL_ALPHA_HOVER = 155
+    _EPIC_SCROLL_ALPHA_IDLE = 130
+    _COMMON_SCROLL_IMAGE: pygame.Surface | None = None
+    _COMMON_SCROLL_IMAGE_LOADED = False
+    _COMMON_SCROLL_SPEED_PX_PER_SEC = 18.0
+    _COMMON_SCROLL_ALPHA_HOVER = 150
+    _COMMON_SCROLL_ALPHA_IDLE = 130
+    _RARE_SCROLL_IMAGE: pygame.Surface | None = None
+    _RARE_SCROLL_IMAGE_LOADED = False
+    _RARE_SCROLL_SPEED_PX_PER_SEC = 18.0
+    _RARE_SCROLL_ALPHA_HOVER = 150
+    _RARE_SCROLL_ALPHA_IDLE = 130
+    _UNCOMMON_SCROLL_IMAGE: pygame.Surface | None = None
+    _UNCOMMON_SCROLL_IMAGE_LOADED = False
+    _UNCOMMON_SCROLL_SPEED_PX_PER_SEC = 18.0
+    _UNCOMMON_SCROLL_ALPHA_HOVER = 150
+    _UNCOMMON_SCROLL_ALPHA_IDLE = 130
+
+    @staticmethod
+    def _mix_rgb(a: tuple[int, int, int], b: tuple[int, int, int], t: float) -> tuple[int, int, int]:
+        tt = max(0.0, min(1.0, float(t)))
+        return (
+            int(a[0] + (b[0] - a[0]) * tt),
+            int(a[1] + (b[1] - a[1]) * tt),
+            int(a[2] + (b[2] - a[2]) * tt),
+        )
+
+    @staticmethod
+    def _blit_shadowed(surface: pygame.Surface, text: pygame.Surface, pos: tuple[int, int], *, shadow_alpha: int = 160) -> None:
+        shadow = text.copy()
+        shadow.fill((0, 0, 0, 255), special_flags=pygame.BLEND_RGBA_MULT)
+        shadow.set_alpha(max(0, min(255, shadow_alpha)))
+        surface.blit(shadow, (pos[0] + 1, pos[1] + 1))
+        surface.blit(text, pos)
+
+    @staticmethod
+    def _match_hover_corner(base_corner: int, width: int, height: int) -> int:
+        """Kart görsel köşelerini hover ovalliğiyle hizala (corner + 8)."""
+        c = max(8, int(base_corner) + 8)
+        return min(c, max(8, min(int(width), int(height)) // 2))
+
+    def _get_card_face_image(self, face: str, size: tuple[int, int]) -> pygame.Surface | None:
+        """Kart PNG arka/ön yüzünü yükle (assets/cards)."""
+        rarity = self._get_rarity()
+        filename = f"{rarity}_{face}.png"
+        path = os.path.join(CARD_ASSET_DIR, filename)
+        try:
+            return load_image(path, convert_alpha=True, size=size)
+        except Exception:
+            return None
+
+    def __init__(self, card: Dict, rect: pygame.Rect, idx: int, fonts: Dict[str, pygame.font.Font], icon_getter, reveal_sfx_callback=None):
+        self.card = card
+        self.base_rect = rect
+        self.index = idx
+        self.fonts = fonts
+        self.icon_getter = icon_getter
+        self._reveal_sfx_callback = reveal_sfx_callback
+        self.rect = rect.copy()
+        self.hover = False
+        self.scale = 1.0
+        self.target_scale = 1.0
+        self.pulse = 0.0
+
+        # --- Kart Dönme Animasyonu ---
+        rarity = self._get_rarity()
+        self.flip_duration = self.RARITY_FLIP_DURATION.get(rarity, 0.5)
+        # Delay: nadirlik bazlı + küçük index offset (aynı nadirlik aynı anda dönmesin)
+        self.flip_delay = self.RARITY_FLIP_BASE_DELAY.get(rarity, 0.3) + self.index * 0.08
+        self.flip_timer = 0.0  # elapsed time since card selection opened
+        self.flip_progress = 0.0  # 0.0 = face down, 1.0 = face up
+        self.is_revealed = False  # True after flip completes fully
+        self.reveal_burst_done = False  # True after reveal burst particles spawned
+        self._flip_sfx_played = False
+
+        # --- Giriş Animasyonu ---
+        self.entry_progress = 0.0  # 0→1, aşağıdan yukarı slide
+        self.entry_duration = 0.35 + self.index * 0.1  # Sıralı giriş
+        self.entry_done = False
+        self.entry_offset_y = 80  # Başlangıç offset (aşağıdan gelir)
+
+        # --- Açılış Sonrası Efekt Parçacıkları ---
+        self.rarity_particles: List[Dict] = []
+        self._continuous_particle_timer = 0.0
+        self._continuous_particle_interval = self._get_particle_interval(rarity)
+
+        # --- Legendary alev formu için sabit tohumlar ---
+        seed_source = sum(ord(c) for c in str(self.card.get('id', ''))) + self.index * 131
+        rng = random.Random(seed_source)
+        self._flame_seeds = [
+            {
+                'x': rng.random(),
+                'phase': rng.random() * math.pi * 2,
+                'amp': rng.uniform(0.7, 1.1),
+                'w': rng.uniform(0.10, 0.22),
+            }
+            for _ in range(7)
+        ]
+
+        # --- Reveal shake (legendary/epic için) ---
+        self._shake_timer = 0.0
+        self._shake_intensity = 0.0
+        self._epic_sheet_time = 0.0
+
+        # --- Baked Face Cache (statik kart yüzünü tek seferde çiz) ---
+        self._baked_face_bg: pygame.Surface | None = None
+        self._baked_face_fg: pygame.Surface | None = None
+        self._baked_face_key: tuple | None = None
+
+        # --- Shimmer Pre-compute Cache ---
+        self._shimmer_band: pygame.Surface | None = None
+        self._shimmer_mask: pygame.Surface | None = None
+        self._shimmer_work: pygame.Surface | None = None
+        self._shimmer_w: int = 0
+        self._shimmer_cache_key: tuple | None = None
+        self._scroll_scaled_cache: dict[str, tuple[tuple[int, int, int], pygame.Surface]] = {}
+        self._font_signature: tuple | None = None
+        self._resource_signature: tuple | None = None
+        self._face_cache_token = 0
+        self._face_layout_snapshot: Dict[str, object] = {}
+        self.sync_resources(card, fonts)
+
+    @staticmethod
+    def _compute_font_signature(fonts: Dict[str, pygame.font.Font]) -> tuple:
+        keys = ('large', 'medium', 'small', 'card_title', 'desc', 'value', 'icon', 'tag')
+        return tuple(id(fonts.get(key)) for key in keys)
+
+    @staticmethod
+    def _compute_card_signature(card: Dict) -> tuple:
+        localization_id = _resolve_card_localization_id(card)
+        prompt_signature = _prompt_action_text('hold2', 'V') if localization_id == 'perk_second_pocket' else ''
+        return (
+            str(card.get('id', '')),
+            str(card.get('title', '')),
+            str(card.get('description', '')),
+            str(card.get('value', '')),
+            str(card.get('icon', '')),
+            str(card.get('icon_image', '')),
+            str(card.get('tag', '')),
+            str(card.get('rarity', '')),
+            prompt_signature,
+        )
+
+    @staticmethod
+    def _fit_text_to_width(font: pygame.font.Font, text: str, max_width: int) -> str:
+        value = str(text or '')
+        if max_width <= 0 or font.size(value)[0] <= max_width:
+            return value
+
+        suffix = '...'
+        while value and font.size(value.rstrip() + suffix)[0] > max_width:
+            value = value[:-1]
+        return value.rstrip() + suffix if value else suffix
+
+    @staticmethod
+    def _shrink_font_to_fit(
+        font: pygame.font.Font,
+        text: str,
+        max_width: int,
+        *,
+        min_size: int = 12,
+    ) -> tuple[pygame.font.Font, str]:
+        """Metni sığdırmak için önce font boyutunu küçültür.
+
+        Yine sığmazsa son çare olarak '...' ile kısaltarak döndürür.
+        Geri dönen font, orijinal font ile aynı stildedir.
+        """
+        value = str(text or '')
+        if max_width <= 0 or font.size(value)[0] <= max_width:
+            return font, value
+
+        try:
+            current_size = int(font.get_height())
+        except Exception:
+            current_size = 0
+
+        try:
+            is_bold = bool(font.get_bold())
+        except Exception:
+            is_bold = True
+
+        candidate_font = font
+        size = current_size if current_size > min_size else min_size
+        while size > min_size:
+            size -= 1
+            try:
+                candidate_font = retro_style.get_font(size, bold=is_bold)
+            except Exception:
+                break
+            if candidate_font.size(value)[0] <= max_width:
+                return candidate_font, value
+
+        suffix = '...'
+        trimmed = value
+        while trimmed and candidate_font.size(trimmed.rstrip() + suffix)[0] > max_width:
+            trimmed = trimmed[:-1]
+        return candidate_font, (trimmed.rstrip() + suffix if trimmed else suffix)
+
+    @staticmethod
+    def _split_word_to_width(font: pygame.font.Font, word: str, max_width: int) -> List[str]:
+        if not word:
+            return []
+        if max_width <= 0:
+            return [word]
+
+        chunks: List[str] = []
+        current = ''
+        for char in str(word):
+            candidate = current + char
+            if not current or font.size(candidate)[0] <= max_width:
+                current = candidate
+            else:
+                chunks.append(current)
+                current = char
+        if current:
+            chunks.append(current)
+        return chunks
+
+    @classmethod
+    def _wrap_text_to_width(cls, font: pygame.font.Font, text: str, max_width: int) -> List[str]:
+        words = str(text or '').split()
+        if not words:
+            return []
+
+        lines: List[str] = []
+        current = ''
+        for word in words:
+            candidate = (current + ' ' + word).strip()
+            if font.size(candidate)[0] <= max_width:
+                current = candidate
+                continue
+            if current:
+                lines.append(current)
+            if font.size(word)[0] <= max_width:
+                current = word
+            else:
+                lines.append(cls._fit_text_to_width(font, word, max_width))
+                current = ''
+        if current:
+            lines.append(current)
+        return lines
+
+    @classmethod
+    def _wrap_text_to_width_no_ellipsis(cls, font: pygame.font.Font, text: str, max_width: int) -> List[str]:
+        """Metni piksel genişliğine göre sar; hiçbir satırı üç noktayla kesme."""
+        raw_text = str(text or '')
+        if not raw_text.strip():
+            return []
+
+        lines: List[str] = []
+        paragraphs = raw_text.splitlines() or [raw_text]
+        for paragraph in paragraphs:
+            words = paragraph.split()
+            if not words:
+                continue
+
+            current = ''
+            for word in words:
+                candidate = (current + ' ' + word).strip()
+                if current and font.size(candidate)[0] <= max_width:
+                    current = candidate
+                    continue
+                if not current and font.size(word)[0] <= max_width:
+                    current = word
+                    continue
+
+                if current:
+                    lines.append(current)
+                    current = ''
+
+                if font.size(word)[0] <= max_width:
+                    current = word
+                    continue
+
+                split_chunks = cls._split_word_to_width(font, word, max_width)
+                if split_chunks:
+                    lines.extend(split_chunks[:-1])
+                    current = split_chunks[-1]
+
+            if current:
+                lines.append(current)
+
+        return lines
+
+    @classmethod
+    def _fit_wrapped_text_to_box(
+        cls,
+        base_font: pygame.font.Font,
+        text: str,
+        max_width: int,
+        max_height: int,
+        *,
+        min_font_height: int = 8,
+    ) -> tuple[pygame.font.Font, List[str]]:
+        """Açıklamayı kutuya sığdırmak için fontu küçült ve metni eksiksiz sar."""
+        base_height = max(1, int(base_font.get_height()))
+        min_height = max(1, min(base_height, int(min_font_height)))
+        best_font = base_font
+        best_lines = cls._wrap_text_to_width_no_ellipsis(base_font, text, max_width)
+
+        for font_height in range(base_height, min_height - 1, -1):
+            font = base_font if font_height == base_height else _make_card_text_font(font_height)
+            lines = cls._wrap_text_to_width_no_ellipsis(font, text, max_width)
+            line_height = max(1, int(font.get_linesize()))
+            total_height = len(lines) * line_height
+            if total_height <= max(1, int(max_height)) and all(font.size(line)[0] <= max_width for line in lines):
+                return font, lines
+            best_font = font
+            best_lines = lines
+
+        return best_font, best_lines
+
+    def _invalidate_face_cache(self) -> None:
+        self._baked_face_bg = None
+        self._baked_face_fg = None
+        self._baked_face_key = None
+        self._face_layout_snapshot = {}
+        self._face_cache_token += 1
+
+    def sync_resources(self, card: Dict, fonts: Dict[str, pygame.font.Font]) -> None:
+        font_signature = self._compute_font_signature(fonts)
+        try:
+            current_lang = get_language()
+        except Exception:
+            current_lang = None
+        resource_signature = (current_lang, self._compute_card_signature(card), font_signature)
+        self.card = card
+        self.fonts = fonts
+        if self._resource_signature != resource_signature:
+            self._font_signature = font_signature
+            self._resource_signature = resource_signature
+            self._invalidate_face_cache()
+
+    def update(self, dt: float, mouse_pos: tuple[int, int] | None):
+        # dt gelebilir: ms (oyun döngüsünden) veya saniye. Tutarlı dönüşüm.
+        seconds = _dt_to_seconds(dt)
+
+        # --- Giriş Animasyonu (aşağıdan yukarı slide) ---
+        if not self.entry_done:
+            self.entry_progress += seconds / self.entry_duration
+            if self.entry_progress >= 1.0:
+                self.entry_progress = 1.0
+                self.entry_done = True
+
+        # --- Kart Dönme Animasyonu ---
+        self.flip_timer += seconds
+        if self.flip_timer >= self.flip_delay and self.entry_done:
+            elapsed_in_flip = self.flip_timer - self.flip_delay
+            raw_progress = min(1.0, elapsed_in_flip / self.flip_duration)
+            # Ease-out expo: hızlı başla yavaşça bitir
+            self.flip_progress = 1.0 - (1.0 - raw_progress) ** 2.5
+
+            # Reveal SFX, kart yüzünün görünmeye başladığı ana hizalanır
+            # (flip_progress ~0.5). Eskiden flip başında çalıyordu; ses kısa
+            # olduğu için görsel reveal anına ulaşmadan bitiyordu. Bu, hızlı
+            # nadirlikler (common 0.40s) için bile sesin kart yüzü açılırken
+            # duyulmasını sağlar.
+            if not self._flip_sfx_played and self.flip_progress >= 0.5:
+                self._flip_sfx_played = True
+                if self._reveal_sfx_callback:
+                    try:
+                        self._reveal_sfx_callback()
+                    except Exception:
+                        pass
+
+            if self.flip_progress >= 0.99:
+                self.flip_progress = 1.0
+                if not self.is_revealed:
+                    self.is_revealed = True
+                    # Reveal anında shake başlat (epic/legendary)
+                    rarity = self._get_rarity()
+                    if rarity == 'legendary':
+                        self._shake_intensity = 6.0
+                        self._shake_timer = 0.4
+        else:
+            self.flip_progress = 0.0
+
+        # --- Shake güncelleme ---
+        if self._shake_timer > 0:
+            self._shake_timer -= seconds
+            if self._shake_timer <= 0:
+                self._shake_timer = 0
+                self._shake_intensity = 0
+
+        # --- Hover ve Scale ---
+        if self.is_revealed:
+            if mouse_pos and self.base_rect.collidepoint(mouse_pos):
+                self.hover = True
+                self.target_scale = 1.06
+            else:
+                self.hover = False
+                self.target_scale = 1.0
+        else:
+            self.hover = False
+            self.target_scale = 1.0
+
+        interp = min(1.0, seconds * 12.0)
+        self.scale += (self.target_scale - self.scale) * interp
+        self.pulse = (self.pulse + seconds * 3.5) % (2 * math.pi)
+
+        # --- Sürekli Parçacık ---
+        if self.is_revealed:
+            if self._get_rarity() in ('epic', 'rare', 'uncommon', 'common'):
+                self._epic_sheet_time += seconds
+            rarity = self._get_rarity()
+            if rarity == 'legendary':
+                self._continuous_particle_timer += seconds
+                if self._continuous_particle_timer >= self._continuous_particle_interval:
+                    self._continuous_particle_timer = 0.0
+                    self._spawn_continuous_particles(rarity)
+        elif self._get_rarity() in ('epic', 'rare', 'uncommon', 'common'):
+            self._epic_sheet_time = 0.0
+
+        if self._get_rarity() == 'legendary':
+            self._update_particles(seconds)
+
+    def _get_rarity(self) -> str:
+        """Kartın nadirlik seviyesini döndürür."""
+        rarity = str(self.card.get('rarity', '')).lower()
+        if rarity in ('legendary', 'epic', 'rare', 'uncommon', 'common'):
+            return rarity
+        tag = str(self.card.get('tag', '')).lower()
+        if 'legend' in tag:
+            return 'legendary'
+        if 'epic' in tag:
+            return 'epic'
+        if 'rare' in tag:
+            return 'rare'
+        if 'uncommon' in tag:
+            return 'uncommon'
+        return 'common'
+
+    def _get_particle_interval(self, rarity: str) -> float:
+        """Nadirliğe göre sürekli parçacık oluşturma aralığı."""
+        return {
+            'legendary': 0.05,
+            'epic': 0.06,
+            'rare': 0.10,
+            'uncommon': 0.16,
+            'common': 0.25,
+        }.get(rarity, 0.2)
+
+    def rarity_color(self):
+        rarity = self._get_rarity()
+        return self.RARITY_COLORS.get(rarity, self.RARITY_COLORS['common'])
+
+    # ==================== PARÇACIK SİSTEMİ (Gelişmiş) ====================
+
+    def _spawn_reveal_burst(self, rarity: str) -> None:
+        """Kart açılma anında patlama efekti - daha az parçacık,
+        daha büyük ve yumuşak glow blob'larla profesyonel görünüm."""
+        if rarity == 'legendary':
+            return
+        cx = self.base_rect.centerx
+        cy = self.base_rect.centery
+
+        burst_configs = {
+            'legendary': {'count': 30, 'speed': 280, 'size_range': (4, 12), 'life': 1.4, 'glow': True,
+                          'trail': True, 'ring': True,
+                          'colors': [(255, 220, 80), (255, 190, 40), (255, 255, 180)]},
+            'epic':      {'count': 22, 'speed': 230, 'size_range': (3, 10), 'life': 1.1, 'glow': True,
+                          'trail': True, 'ring': True,
+                          'colors': [(210, 110, 255), (180, 70, 255), (240, 180, 255)]},
+            'rare':      {'count': 16, 'speed': 180, 'size_range': (3, 8), 'life': 0.9, 'glow': True,
+                          'trail': False, 'ring': True,
+                          'colors': [(80, 180, 255), (130, 210, 255), (190, 230, 255)]},
+            'uncommon':  {'count': 10, 'speed': 130, 'size_range': (2, 6), 'life': 0.7, 'glow': True,
+                          'trail': False, 'ring': False,
+                          'colors': [(100, 230, 150), (140, 255, 185)]},
+            'common':    {'count': 6, 'speed': 90, 'size_range': (2, 4), 'life': 0.4, 'glow': True,
+                          'trail': False, 'ring': False,
+                          'colors': [(190, 195, 210), (210, 215, 225)]},
+        }
+        cfg = burst_configs.get(rarity, burst_configs['common'])
+
+        # Ana patlama parçacıkları
+        for _ in range(cfg['count']):
+            angle = random.uniform(0, 2 * math.pi)
+            speed = random.uniform(cfg['speed'] * 0.25, cfg['speed'])
+            size = random.uniform(cfg['size_range'][0], cfg['size_range'][1])
+            color = random.choice(cfg['colors'])
+            life = random.uniform(cfg['life'] * 0.5, cfg['life'])
+            self.rarity_particles.append({
+                'x': cx + random.uniform(-5, 5),
+                'y': cy + random.uniform(-5, 5),
+                'vx': math.cos(angle) * speed,
+                'vy': math.sin(angle) * speed,
+                'size': size, 'max_size': size,
+                'life': life, 'max_life': life,
+                'color': color, 'glow': cfg['glow'],
+                'trail': cfg.get('trail', False),
+                'trail_positions': [], 'type': 'burst',
+            })
+
+        # Halka efekti (düzgün dağılımlı ring)
+        if cfg.get('ring'):
+            ring_count = 18 if rarity == 'legendary' else 12
+            for i in range(ring_count):
+                angle = (2 * math.pi / ring_count) * i
+                speed = cfg['speed'] * 0.6
+                self.rarity_particles.append({
+                    'x': cx, 'y': cy,
+                    'vx': math.cos(angle) * speed,
+                    'vy': math.sin(angle) * speed,
+                    'size': 3.0, 'max_size': 3.0,
+                    'life': 0.7, 'max_life': 0.7,
+                    'color': cfg['colors'][0], 'glow': True,
+                    'trail': True, 'trail_positions': [], 'type': 'ring',
+                })
+
+        # Legendary: altın yıldız kıvılcımları (lens flare kuyruğu ile)
+        if rarity == 'legendary':
+            for _ in range(5):
+                angle = random.uniform(0, 2 * math.pi)
+                speed = random.uniform(40, 120)
+                self.rarity_particles.append({
+                    'x': cx, 'y': cy,
+                    'vx': math.cos(angle) * speed,
+                    'vy': math.sin(angle) * speed - 30,
+                    'size': random.uniform(5, 9),
+                    'max_size': 9,
+                    'life': 1.6, 'max_life': 1.6,
+                    'color': (255, 255, 200),
+                    'glow': True, 'trail': True,
+                    'trail_positions': [], 'type': 'star',
+                })
+
+    def _spawn_continuous_particles(self, rarity: str) -> None:
+        """Kart açıldıktan sonra sürekli profesyonel kalite efektler.
+        Daha az parçacık ama daha büyük ve yumuşak glow blob'larla
+        Balatro/Hearthstone tarzı temiz görünüm."""
+        rect = self.base_rect
+
+        if rarity == 'legendary':
+            # --- Yukarı fırlayan üçgen/dalga alevleri ---
+            for _ in range(2):
+                x = rect.x + random.uniform(14, rect.width - 14)
+                y = rect.bottom + random.uniform(-3, 3)
+                height = random.uniform(18, 32)
+                width = random.uniform(8, 16)
+                self.rarity_particles.append({
+                    'x': x, 'y': y,
+                    'vx': random.uniform(-8, 8),
+                    'vy': random.uniform(-130, -90),
+                    'size': random.uniform(3.0, 5.0),
+                    'max_size': 5.0,
+                    'life': random.uniform(0.6, 0.9),
+                    'max_life': 0.9,
+                    'color': random.choice([(255, 170, 60), (255, 130, 45), (255, 210, 120)]),
+                    'glow': True, 'trail': False, 'trail_positions': [],
+                    'type': 'flame_spike',
+                    'height': height,
+                    'width': width,
+                    'phase': random.uniform(0, math.pi * 2),
+                })
+            # Küçük sıcak merkez parçacıkları (daha parlak, daha az)
+            if random.random() < 0.25:
+                x = rect.x + random.uniform(18, rect.width - 18)
+                y = rect.bottom + random.uniform(-2, 2)
+                self.rarity_particles.append({
+                    'x': x, 'y': y,
+                    'vx': random.uniform(-10, 10),
+                    'vy': random.uniform(-120, -70),
+                    'size': random.uniform(1.8, 2.8),
+                    'max_size': 2.8,
+                    'life': random.uniform(0.4, 0.6),
+                    'max_life': 0.6,
+                    'color': (255, 235, 200),
+                    'glow': True, 'trail': False, 'trail_positions': [],
+                    'type': 'flame_core',
+                })
+            # Yavaşça yükselen kıvılcım (kenarlardan, az)
+            if random.random() < 0.2:
+                side_x = random.choice([rect.left - 3, rect.right + 3])
+                y = rect.y + random.uniform(rect.height * 0.3, rect.height)
+                self.rarity_particles.append({
+                    'x': side_x, 'y': y,
+                    'vx': random.uniform(-4, 4),
+                    'vy': random.uniform(-45, -22),
+                    'size': random.uniform(1.6, 2.6),
+                    'max_size': 2.6,
+                    'life': random.uniform(0.5, 0.85),
+                    'max_life': 0.85,
+                    'color': random.choice([(255, 180, 70), (255, 210, 130)]),
+                    'glow': True, 'trail': False, 'trail_positions': [],
+                    'type': 'ember',
+                })
+
+        elif rarity == 'epic':
+            # --- Mor enerji yay (kartın etrafında dönen) ---
+            angle = self.pulse * 2.0 + random.uniform(-0.2, 0.2)
+            rx = rect.width * 0.52
+            ry = rect.height * 0.52
+            ox = rect.centerx + math.cos(angle) * rx
+            oy = rect.centery + math.sin(angle) * ry * 0.65
+            self.rarity_particles.append({
+                'x': ox, 'y': oy,
+                'vx': random.uniform(-6, 6),
+                'vy': random.uniform(-6, 6),
+                'size': random.uniform(3, 6),
+                'max_size': 6,
+                'life': random.uniform(0.6, 1.0),
+                'max_life': 1.0,
+                'color': random.choice([(200, 100, 255), (170, 60, 255), (230, 140, 255)]),
+                'glow': True, 'trail': True, 'trail_positions': [],
+                'type': 'orbit',
+            })
+            # Kenardan çıkan kıvılcım
+            if random.random() < 0.25:
+                is_h = random.random() < 0.5
+                if is_h:
+                    x = random.choice([rect.left, rect.right])
+                    y = rect.y + random.uniform(10, rect.height - 10)
+                else:
+                    x = rect.x + random.uniform(10, rect.width - 10)
+                    y = random.choice([rect.top, rect.bottom])
+                self.rarity_particles.append({
+                    'x': x, 'y': y,
+                    'vx': random.uniform(-20, 20),
+                    'vy': random.uniform(-30, -10),
+                    'size': random.uniform(2, 4),
+                    'max_size': 4,
+                    'life': 0.5,
+                    'max_life': 0.5,
+                    'color': (240, 180, 255),
+                    'glow': True, 'trail': False, 'trail_positions': [],
+                    'type': 'energy_spark',
+                })
+
+        elif rarity == 'rare':
+            # --- Mavi kristal parıltı (yumuşak, yüzen noktalar) ---
+            x = rect.x + random.uniform(5, rect.width - 5)
+            y = rect.bottom + random.uniform(-5, 5)
+            self.rarity_particles.append({
+                'x': x, 'y': y,
+                'vx': random.uniform(-10, 10),
+                'vy': random.uniform(-45, -18),
+                'size': random.uniform(2, 5),
+                'max_size': 5,
+                'life': random.uniform(0.6, 1.0),
+                'max_life': 1.0,
+                'color': random.choice([(80, 170, 255), (120, 200, 255), (170, 220, 255)]),
+                'glow': True, 'trail': False, 'trail_positions': [],
+                'type': 'crystal',
+            })
+
+        elif rarity == 'uncommon':
+            # --- Yeşil yumuşak ışık noktaları ---
+            if random.random() < 0.5:
+                x = rect.x + random.uniform(8, rect.width - 8)
+                y = rect.y + random.uniform(8, rect.height - 8)
+                self.rarity_particles.append({
+                    'x': x, 'y': y,
+                    'vx': random.uniform(-5, 5),
+                    'vy': random.uniform(-20, -8),
+                    'size': random.uniform(2, 4),
+                    'max_size': 4,
+                    'life': random.uniform(0.5, 0.8),
+                    'max_life': 0.8,
+                    'color': random.choice([(100, 220, 150), (130, 250, 180)]),
+                    'glow': True, 'trail': False, 'trail_positions': [],
+                    'type': 'nature_glow',
+                })
+
+        else:  # common
+            # --- Çok hafif toz (az ve zarif) ---
+            if random.random() < 0.25:
+                x = rect.x + random.uniform(15, rect.width - 15)
+                y = rect.y + random.uniform(15, rect.height - 15)
+                self.rarity_particles.append({
+                    'x': x, 'y': y,
+                    'vx': random.uniform(-3, 3),
+                    'vy': random.uniform(-10, -3),
+                    'size': random.uniform(1, 2.5),
+                    'max_size': 2.5,
+                    'life': 0.5,
+                    'max_life': 0.5,
+                    'color': (190, 190, 205),
+                    'glow': False, 'trail': False, 'trail_positions': [],
+                    'type': 'dust',
+                })
+
+    def _update_particles(self, dt: float) -> None:
+        """Gelişmiş parçacık fiziği - iz bırakma, türe göre davranış."""
+        to_remove = []
+        for i, p in enumerate(self.rarity_particles):
+            # İz kaydet (trail parçacıkları için)
+            if p.get('trail'):
+                trail = p.get('trail_positions', [])
+                trail.append((p['x'], p['y'], p['size']))
+                if len(trail) > 8:
+                    trail.pop(0)
+                p['trail_positions'] = trail
+
+            p['x'] += p['vx'] * dt
+            p['y'] += p['vy'] * dt
+            p['life'] -= dt
+
+            ptype = p.get('type', 'burst')
+            if ptype in ('fire', 'fire_inner', 'flame_tongue', 'flame_core', 'flame_spike'):
+                # Alev: yukarı hareket, yanlara salınım
+                p['vy'] -= 26 * dt
+                p['vx'] += math.sin(p['life'] * 10) * 12 * dt
+                # Boyut: başta büyük, sonra küçülür
+                ratio = max(0, p['life'] / p['max_life'])
+                flicker = 0.9 + 0.2 * math.sin(p['life'] * 18)
+                p['size'] = p['max_size'] * (0.3 + 0.7 * ratio) * flicker
+            elif ptype == 'orbit':
+                # Orbit: merkeze doğru hafif çekim
+                p['vy'] += 8 * dt
+            elif ptype == 'star':
+                # Yıldız: yavaş düşüş, yanıp sönme
+                p['vy'] += 15 * dt
+                p['vx'] *= (1.0 - 1.0 * dt)
+            elif ptype == 'ember':
+                # Kor: yukarı + hafif yerçekimi
+                p['vy'] += 20 * dt
+                p['vx'] *= (1.0 - 1.5 * dt)
+            elif ptype == 'crystal':
+                # Kristal: yukarı + hafif salınım
+                p['vx'] += math.sin(p['life'] * 10) * 8 * dt
+            elif ptype == 'nature_glow':
+                # Doğa: yavaş yüzen
+                p['vx'] += math.sin(p['life'] * 6) * 5 * dt
+                p['vy'] -= 5 * dt
+            elif ptype in ('burst', 'ring'):
+                # Patlama: hızlı yavaşlama + hafif yerçekimi
+                p['vx'] *= (1.0 - 3.0 * dt)
+                p['vy'] *= (1.0 - 3.0 * dt)
+                p['vy'] += 40 * dt
+                ratio = max(0, p['life'] / p['max_life'])
+                p['size'] = p.get('max_size', p['size']) * (0.2 + 0.8 * ratio)
+            else:
+                # Varsayılan: hafif yerçekimi + yavaşlama
+                p['vy'] += 30 * dt
+                p['vx'] *= (1.0 - 2.0 * dt)
+
+            if p['life'] <= 0:
+                to_remove.append(i)
+
+        for i in reversed(to_remove):
+            self.rarity_particles.pop(i)
+
+    def _draw_particles(self, surface: pygame.Surface, *, offset: tuple[int, int] = (0, 0),
+                        only_types: set[str] | None = None, exclude_types: set[str] | None = None) -> None:
+        """Profesyonel parçacık çizimi - yumuşak radyal gradyan glow blob'lar.
+        Sert kenarlı daireler yerine önceden işlenmiş Gaussian gradyan kullanır.
+        Teknik: Balatro/Hearthstone tarzı soft-particle rendering."""
+        for p in self.rarity_particles:
+            alpha_ratio = max(0, p['life'] / p['max_life'])
+            color = p['color']
+            ptype = p.get('type', 'burst')
+            if only_types is not None and ptype not in only_types:
+                continue
+            if exclude_types is not None and ptype in exclude_types:
+                continue
+            x = int(p['x'] - offset[0])
+            y = int(p['y'] - offset[1])
+            size = max(0.5, p['size'])
+
+            # --- Trail (iz) çizimi - yumuşak gradyan ile ---
+            if p.get('trail') and p.get('trail_positions'):
+                trail = p['trail_positions']
+                trail_len = len(trail)
+                for ti, (tx, ty, ts) in enumerate(trail):
+                    t_ratio = (ti + 1) / trail_len
+                    t_alpha = t_ratio * alpha_ratio * 0.35
+                    t_radius = max(2, int(ts * t_ratio * 1.2))
+                    if t_alpha > 0.02:
+                        glow = _GlowCache.get_tinted(t_radius, color, t_alpha)
+                        surface.blit(glow, (int(tx - offset[0]) - t_radius, int(ty - offset[1]) - t_radius),
+                                     special_flags=pygame.BLEND_RGBA_ADD)
+
+            # --- Dış glow katmanı (büyük, yumuşak, atmosferik) ---
+            if p.get('glow') and size > 1:
+                is_flame = ptype in ('fire', 'fire_inner', 'flame_tongue', 'flame_core', 'flame_spike')
+                outer_r = max(3, int(size * (2.6 if is_flame else 3.5)))
+                outer_alpha = alpha_ratio * (0.12 if is_flame else 0.2)
+                if outer_alpha > 0.015:
+                    outer = _GlowCache.get_tinted(outer_r, color, outer_alpha)
+                    surface.blit(outer, (x - outer_r, y - outer_r),
+                                 special_flags=pygame.BLEND_RGBA_ADD)
+
+            # --- Üçgen/dalga alev çizimi ---
+            if ptype == 'flame_spike':
+                ratio = max(0, p['life'] / p['max_life'])
+                h = p.get('height', 24) * (0.35 + 0.65 * ratio)
+                w = p.get('width', 12) * (0.40 + 0.60 * ratio)
+                sway = math.sin(self.pulse * 2.6 + p.get('phase', 0.0)) * 7
+                wobble = math.sin(self.pulse * 4.4 + p.get('phase', 0.0)) * 3
+                base_y = y + int(h * 0.55)
+                tip_y = y - int(h * 0.55)
+                mid_y = y - int(h * 0.1)
+                a = int(110 * alpha_ratio)
+                outer_col = self._mix_rgb((255, 90, 30), (255, 160, 70), 0.35 + 0.4 * ratio)
+                inner_col = self._mix_rgb((255, 180, 90), (255, 235, 170), 0.45 + 0.4 * ratio)
+                outer = [
+                    (int(x - w + sway), base_y),
+                    (int(x + w + sway), base_y),
+                    (int(x + w * 0.55 + sway + wobble), mid_y),
+                    (int(x + sway * 0.6), tip_y),
+                    (int(x - w * 0.55 + sway - wobble), mid_y),
+                ]
+                pygame.draw.polygon(surface, (*outer_col, a), outer)
+                inner = [
+                    (int(x - w * 0.45 + sway), base_y),
+                    (int(x + w * 0.45 + sway), base_y),
+                    (int(x + w * 0.2 + sway + wobble), mid_y),
+                    (int(x + sway * 0.4), tip_y + int(h * 0.2)),
+                    (int(x - w * 0.2 + sway - wobble), mid_y),
+                ]
+                pygame.draw.polygon(surface, (*inner_col, int(a * 0.75)), inner)
+
+            # --- Yıldız: 4-ışın lens flare efekti ---
+            if ptype == 'star' and size > 2:
+                star_alpha = max(0, min(255, int(alpha_ratio * 140)))
+                ray_len = int(size * 3)
+                # Her ışın için ince gradyan çizgi
+                for angle_offset in [0, math.pi / 2]:
+                    for thickness in [3, 1]:
+                        dx = math.cos(angle_offset) * ray_len
+                        dy = math.sin(angle_offset) * ray_len
+                        surf_w = int(abs(dx) * 2) + 6
+                        surf_h = int(abs(dy) * 2) + 6
+                        sc = max(surf_w, surf_h)
+                        ray_surf = pygame.Surface((sc, sc), pygame.SRCALPHA)
+                        cx2, cy2 = sc // 2, sc // 2
+                        a = max(0, min(255, int(star_alpha * (0.4 if thickness == 3 else 1.0))))
+                        pygame.draw.line(ray_surf, (*color[:3], a),
+                                         (cx2 - int(dx), cy2 - int(dy)),
+                                         (cx2 + int(dx), cy2 + int(dy)), thickness)
+                        surface.blit(ray_surf, (x - sc // 2, y - sc // 2),
+                                     special_flags=pygame.BLEND_RGBA_ADD)
+
+            # --- İç glow + çekirdek: tek yumuşak blob ---
+            core_r = max(2, int(size * 1.5))
+            # Çekirdeğe yakın parlaklık daha yüksek
+            core_alpha = min(1.0, alpha_ratio ** 0.5 * 0.9)
+            if core_alpha > 0.02:
+                core = _GlowCache.get_tinted(core_r, color, core_alpha)
+                surface.blit(core, (x - core_r, y - core_r),
+                             special_flags=pygame.BLEND_RGBA_ADD)
+
+            # --- Alev parçacıkları: ekstra sıcak merkez (beyaza yakın) ---
+            if ptype in ('fire', 'fire_inner', 'flame_tongue', 'flame_core') and size > 1.5:
+                hot_r = max(2, int(size * 0.7))
+                hot_color = (255, 255, 240)  # beyaza yakın = çok sıcak
+                hot_alpha = alpha_ratio ** 0.7 * 0.35
+                if hot_alpha > 0.03:
+                    hot = _GlowCache.get_tinted(hot_r, hot_color, hot_alpha)
+                    surface.blit(hot, (x - hot_r, y - hot_r),
+                                 special_flags=pygame.BLEND_RGBA_ADD)
+
+    def _draw_legendary_flame_base(self, surface: pygame.Surface, rect: pygame.Rect) -> None:
+        """Legendary kart tabanında yumuşak alev bandı."""
+        band_h = max(22, int(rect.height * 0.20))
+        flame = pygame.Surface((rect.width, band_h), pygame.SRCALPHA)
+
+        # Alev dilleri (şekli ateşe benzeten ana form)
+        pulse = self.pulse
+        for seed in self._flame_seeds:
+            base_x = int(seed['x'] * rect.width)
+            sway = math.sin(pulse * 2.0 + seed['phase']) * 8
+            height = band_h * (0.55 + 0.35 * math.sin(pulse * 1.8 + seed['phase'])) * seed['amp']
+            width = max(10, int(rect.width * seed['w']))
+            tip_y = max(4, int(band_h - height))
+            mid_y = int((band_h + tip_y) * 0.5)
+
+            # Dış alev
+            outer_color = (255, 110, 40, 130)
+            outer = [
+                (base_x - width, band_h - 1),
+                (base_x + width, band_h - 1),
+                (base_x + int(width * 0.45) + int(sway), mid_y),
+                (base_x + int(sway * 0.6), tip_y),
+                (base_x - int(width * 0.45) + int(sway), mid_y),
+            ]
+            pygame.draw.polygon(flame, outer_color, outer)
+
+            # İç alev (daha sıcak)
+            inner_w = int(width * 0.55)
+            inner_tip = max(2, int(tip_y + (band_h - tip_y) * 0.25))
+            inner_color = (255, 210, 120, 150)
+            inner = [
+                (base_x - inner_w, band_h - 2),
+                (base_x + inner_w, band_h - 2),
+                (base_x + int(inner_w * 0.35) + int(sway * 0.6), int((band_h + inner_tip) * 0.55)),
+                (base_x + int(sway * 0.4), inner_tip),
+                (base_x - int(inner_w * 0.35) + int(sway * 0.6), int((band_h + inner_tip) * 0.55)),
+            ]
+            pygame.draw.polygon(flame, inner_color, inner)
+
+            # Uç parıltısı
+            tip_r = max(3, int(width * 0.18))
+            glow = _GlowCache.get_tinted(tip_r, (255, 210, 120), 0.35)
+            flame.blit(glow, (base_x - tip_r, tip_y - tip_r), special_flags=pygame.BLEND_RGBA_ADD)
+
+        # Taban glow'ları (alev kümeleri)
+        pulse2 = (math.sin(self.pulse * 4.2) + 1.0) * 0.5
+        for i in range(6):
+            px = int((i + 0.5) / 6 * rect.width + math.sin(self.pulse * 1.6 + i) * 6)
+            r = int(10 + 7 * pulse2 + (i % 2) * 2)
+            glow = _GlowCache.get_tinted(r, (255, 150, 50), 0.28 + 0.12 * pulse2)
+            flame.blit(glow, (px - r, band_h - r - 2), special_flags=pygame.BLEND_RGBA_ADD)
+
+        surface.blit(flame, (rect.x, rect.bottom - band_h), special_flags=pygame.BLEND_RGBA_ADD)
+
+    @classmethod
+    def _get_epic_scroll_image(cls) -> pygame.Surface | None:
+        """Epic kaydırmalı efekt görselini yükle (tek PNG)."""
+        if cls._EPIC_SCROLL_IMAGE_LOADED:
+            return cls._EPIC_SCROLL_IMAGE
+
+        path = os.path.join(CARD_EFFECTS_DIR, 'epic_effect.png')
+        try:
+            if os.path.exists(path):
+                epic_img = load_image(path, convert_alpha=True)
+                epic_img.set_colorkey((0, 0, 0))
+                cls._EPIC_SCROLL_IMAGE = epic_img
+            else:
+                cls._EPIC_SCROLL_IMAGE = None
+        except Exception:
+            cls._EPIC_SCROLL_IMAGE = None
+
+        cls._EPIC_SCROLL_IMAGE_LOADED = True
+        return cls._EPIC_SCROLL_IMAGE
+
+    @classmethod
+    def _get_common_scroll_image(cls) -> pygame.Surface | None:
+        """Eski epic yıldız kaydırmalı görseli common rarity için yükle."""
+        if cls._COMMON_SCROLL_IMAGE_LOADED:
+            return cls._COMMON_SCROLL_IMAGE
+
+        path = os.path.join(CARD_EFFECTS_DIR, 'deneme_epicv2.png')
+        try:
+            if os.path.exists(path):
+                common_img = load_image(path, convert_alpha=True)
+                common_img.set_colorkey((0, 0, 0))
+                cls._COMMON_SCROLL_IMAGE = common_img
+            else:
+                cls._COMMON_SCROLL_IMAGE = None
+        except Exception:
+            cls._COMMON_SCROLL_IMAGE = None
+
+        cls._COMMON_SCROLL_IMAGE_LOADED = True
+        return cls._COMMON_SCROLL_IMAGE
+
+    def _draw_common_sheet_fx(self, surface: pygame.Surface, rect: pygame.Rect) -> None:
+        """Eski epic yıldız sheet efektini common rarity'de kullan."""
+        if self._get_rarity() != 'common' or not self.is_revealed:
+            return
+
+        base_image = self._get_common_scroll_image()
+        if base_image is None:
+            return
+
+        target_w = max(1, int(rect.width * 1.05))
+        target_h = max(1, int(rect.height * 1.05))
+        scaled = self._get_scaled_scroll_surface('common', base_image, target_w, target_h)
+
+        scroll_y = int((self._epic_sheet_time * self._COMMON_SCROLL_SPEED_PX_PER_SEC) % target_h)
+        fx = pygame.Surface((target_w, target_h), pygame.SRCALPHA)
+        fx.blit(scaled, (0, scroll_y - target_h))
+        fx.blit(scaled, (0, scroll_y))
+
+        fx.set_alpha(self._COMMON_SCROLL_ALPHA_HOVER if self.hover else self._COMMON_SCROLL_ALPHA_IDLE)
+        fx_rect = fx.get_rect(center=rect.center)
+
+        clip_corner = self._match_hover_corner(int(self.card.get('style', {}).get('corner', 15) or 15), rect.width, rect.height)
+        clip = pygame.Surface((rect.width, rect.height), pygame.SRCALPHA)
+        clip.blit(fx, (rect.x - fx_rect.x, rect.y - fx_rect.y))
+        mask = pygame.Surface((rect.width, rect.height), pygame.SRCALPHA)
+        pygame.draw.rect(mask, (255, 255, 255, 255), mask.get_rect(), border_radius=clip_corner)
+        clip.blit(mask, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+        surface.blit(clip, rect.topleft)
+
+    def _draw_epic_sheet_fx(self, surface: pygame.Surface, rect: pygame.Rect) -> None:
+        """Epic rarity için PNG overlay'i yukarıdan aşağı sonsuz döngüyle çizer."""
+        if self._get_rarity() != 'epic' or not self.is_revealed:
+            return
+
+        base_image = self._get_epic_scroll_image()
+        if base_image is None:
+            return
+
+        target_w = max(1, int(rect.width * 1.05))
+        target_h = max(1, int(rect.height * 1.05))
+        scaled = self._get_scaled_scroll_surface('epic', base_image, target_w, target_h)
+
+        scroll_y = int((self._epic_sheet_time * self._EPIC_SCROLL_SPEED_PX_PER_SEC) % target_h)
+        fx = pygame.Surface((target_w, target_h), pygame.SRCALPHA)
+        fx.blit(scaled, (0, scroll_y - target_h))
+        fx.blit(scaled, (0, scroll_y))
+        fx.set_alpha(self._EPIC_SCROLL_ALPHA_HOVER if self.hover else self._EPIC_SCROLL_ALPHA_IDLE)
+
+        fx_rect = fx.get_rect(center=rect.center)
+
+        clip_corner = self._match_hover_corner(int(self.card.get('style', {}).get('corner', 15) or 15), rect.width, rect.height)
+        clip = pygame.Surface((rect.width, rect.height), pygame.SRCALPHA)
+        crop_x = max(0, (target_w - rect.width) // 2)
+        crop_y = max(0, (target_h - rect.height) // 2)
+        clip.blit(fx, (-crop_x, -crop_y))
+        mask = pygame.Surface((rect.width, rect.height), pygame.SRCALPHA)
+        pygame.draw.rect(mask, (255, 255, 255, 255), mask.get_rect(), border_radius=clip_corner)
+        clip.blit(mask, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+        surface.blit(clip, rect.topleft)
+
+    def _get_scaled_scroll_surface(self, rarity_key: str, base_image: pygame.Surface, target_w: int, target_h: int) -> pygame.Surface:
+        cache_key = (id(base_image), target_w, target_h)
+        cached = self._scroll_scaled_cache.get(rarity_key)
+        if cached is not None and cached[0] == cache_key:
+            return cached[1]
+
+        try:
+            scaled = pygame.transform.smoothscale(base_image, (target_w, target_h))
+        except Exception:
+            scaled = pygame.transform.scale(base_image, (target_w, target_h))
+
+        self._scroll_scaled_cache[rarity_key] = (cache_key, scaled)
+        return scaled
+
+    @classmethod
+    def _get_rare_scroll_image(cls) -> pygame.Surface | None:
+        """Rare kaydırmalı efekt görselini yükle (tek PNG)."""
+        if cls._RARE_SCROLL_IMAGE_LOADED:
+            return cls._RARE_SCROLL_IMAGE
+
+        path = os.path.join(CARD_EFFECTS_DIR, 'rare_effect.png')
+        try:
+            if os.path.exists(path):
+                rare_img = load_image(path, convert_alpha=True)
+                rare_img.set_colorkey((0, 0, 0))
+                cls._RARE_SCROLL_IMAGE = rare_img
+            else:
+                cls._RARE_SCROLL_IMAGE = None
+        except Exception:
+            cls._RARE_SCROLL_IMAGE = None
+
+        cls._RARE_SCROLL_IMAGE_LOADED = True
+        return cls._RARE_SCROLL_IMAGE
+
+    def _draw_rare_sheet_fx(self, surface: pygame.Surface, rect: pygame.Rect) -> None:
+        """Rare rarity için yıldız overlay'ini sağdan sola döngüyle çizer."""
+        if self._get_rarity() != 'rare' or not self.is_revealed:
+            return
+
+        base_image = self._get_rare_scroll_image()
+        if base_image is None:
+            return
+
+        target_w = max(1, int(rect.width * 1.05))
+        target_h = max(1, int(rect.height * 1.05))
+        scaled = self._get_scaled_scroll_surface('rare', base_image, target_w, target_h)
+
+        scroll_x = int((self._epic_sheet_time * self._RARE_SCROLL_SPEED_PX_PER_SEC) % target_w)
+        fx = pygame.Surface((target_w, target_h), pygame.SRCALPHA)
+        fx.blit(scaled, (-scroll_x, 0))
+        fx.blit(scaled, (target_w - scroll_x, 0))
+
+        fx.set_alpha(self._RARE_SCROLL_ALPHA_HOVER if self.hover else self._RARE_SCROLL_ALPHA_IDLE)
+        fx_rect = fx.get_rect(center=rect.center)
+
+        clip_corner = self._match_hover_corner(int(self.card.get('style', {}).get('corner', 15) or 15), rect.width, rect.height)
+        clip = pygame.Surface((rect.width, rect.height), pygame.SRCALPHA)
+        clip.blit(fx, (rect.x - fx_rect.x, rect.y - fx_rect.y))
+        mask = pygame.Surface((rect.width, rect.height), pygame.SRCALPHA)
+        pygame.draw.rect(mask, (255, 255, 255, 255), mask.get_rect(), border_radius=clip_corner)
+        clip.blit(mask, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+        surface.blit(clip, rect.topleft)
+
+    @classmethod
+    def _get_uncommon_scroll_image(cls) -> pygame.Surface | None:
+        """Uncommon kaydırmalı efekt görselini yükle (tek PNG)."""
+        if cls._UNCOMMON_SCROLL_IMAGE_LOADED:
+            return cls._UNCOMMON_SCROLL_IMAGE
+
+        path = os.path.join(CARD_EFFECTS_DIR, 'uncommon_effect.png')
+        try:
+            if os.path.exists(path):
+                uncommon_img = load_image(path, convert_alpha=True)
+                uncommon_img.set_colorkey((0, 0, 0))
+                cls._UNCOMMON_SCROLL_IMAGE = uncommon_img
+            else:
+                cls._UNCOMMON_SCROLL_IMAGE = None
+        except Exception:
+            cls._UNCOMMON_SCROLL_IMAGE = None
+
+        cls._UNCOMMON_SCROLL_IMAGE_LOADED = True
+        return cls._UNCOMMON_SCROLL_IMAGE
+
+    def _draw_uncommon_sheet_fx(self, surface: pygame.Surface, rect: pygame.Rect) -> None:
+        """Uncommon rarity için overlay'i yukarıdan aşağı döngüyle çizer."""
+        if self._get_rarity() != 'uncommon' or not self.is_revealed:
+            return
+
+        base_image = self._get_uncommon_scroll_image()
+        if base_image is None:
+            return
+
+        target_w = max(1, int(rect.width * 1.05))
+        target_h = max(1, int(rect.height * 1.05))
+        scaled = self._get_scaled_scroll_surface('uncommon', base_image, target_w, target_h)
+
+        scroll_y = int((self._epic_sheet_time * self._UNCOMMON_SCROLL_SPEED_PX_PER_SEC) % target_h)
+        fx = pygame.Surface((target_w, target_h), pygame.SRCALPHA)
+        fx.blit(scaled, (0, scroll_y - target_h))
+        fx.blit(scaled, (0, scroll_y))
+
+        fx.set_alpha(self._UNCOMMON_SCROLL_ALPHA_HOVER if self.hover else self._UNCOMMON_SCROLL_ALPHA_IDLE)
+        fx_rect = fx.get_rect(center=rect.center)
+
+        clip_corner = self._match_hover_corner(int(self.card.get('style', {}).get('corner', 15) or 15), rect.width, rect.height)
+        clip = pygame.Surface((rect.width, rect.height), pygame.SRCALPHA)
+        crop_x = max(0, (target_w - rect.width) // 2)
+        crop_y = max(0, (target_h - rect.height) // 2)
+        clip.blit(fx, (-crop_x, -crop_y))
+        mask = pygame.Surface((rect.width, rect.height), pygame.SRCALPHA)
+        pygame.draw.rect(mask, (255, 255, 255, 255), mask.get_rect(), border_radius=clip_corner)
+        clip.blit(mask, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+        surface.blit(clip, rect.topleft)
+
+    def _draw_card_back(self, surface: pygame.Surface) -> None:
+        """Kartın arka yüzünü çiz - nadirlik rengiyle gizemli tasarım."""
+        rarity = self._get_rarity()
+        rc = self.rarity_color()
+        rect = self.rect
+
+        # PNG kart arka yüzü varsa önce onu kullan
+        png_back = self._get_card_face_image("back", (rect.width, rect.height))
+        if png_back is not None:
+            body = pygame.Surface((rect.width, rect.height), pygame.SRCALPHA)
+            body.blit(png_back, (0, 0))
+            base_corner = int(self.card.get('style', {}).get('corner', 15) or 15)
+            corner = self._match_hover_corner(base_corner, rect.width, rect.height)
+            mask = pygame.Surface(body.get_size(), pygame.SRCALPHA)
+            pygame.draw.rect(mask, (255, 255, 255, 255), mask.get_rect(), border_radius=corner)
+            body.blit(mask, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+
+            pulse_val = (math.sin(self.pulse * 2) + 1.0) * 0.5
+            border_alpha = 80 + int(70 * pulse_val)
+            pygame.draw.rect(body, (*rc[:3], border_alpha), body.get_rect(), width=2, border_radius=corner)
+
+            surface.blit(body, (rect.x, rect.y))
+            return
+
+        body = pygame.Surface((rect.width, rect.height), pygame.SRCALPHA)
+
+        # Koyu arka plan gradientı
+        dark_top = (15, 15, 35, 240)
+        dark_bot = (8, 8, 22, 240)
+        self._fill_gradient(body, dark_top, dark_bot)
+
+        # Köşe maskesi
+        mask = pygame.Surface(body.get_size(), pygame.SRCALPHA)
+        base_corner = int(self.card.get('style', {}).get('corner', 15) or 15)
+        corner = self._match_hover_corner(base_corner, rect.width, rect.height)
+        pygame.draw.rect(mask, (255, 255, 255, 255), mask.get_rect(), border_radius=corner)
+        body.blit(mask, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+
+        # Nadirlik renginde kenarlık
+        pulse_val = (math.sin(self.pulse * 2) + 1.0) * 0.5
+        border_alpha = 100 + int(80 * pulse_val)
+        pygame.draw.rect(body, (*rc[:3], border_alpha), body.get_rect(), width=2, border_radius=corner)
+
+        # Merkez soru işareti / gizemli sembol
+        cw, ch = rect.width, rect.height
+        # İç desen - nadirliğe göre farklı
+        pattern_surf = pygame.Surface((cw, ch), pygame.SRCALPHA)
+
+        if rarity == 'legendary':
+            # Altın mandala deseni
+            cx, cy = cw // 2, ch // 2
+            for i in range(6):
+                angle = i * math.pi / 3 + self.pulse * 0.5
+                r = min(cw, ch) * 0.25
+                x2 = cx + math.cos(angle) * r
+                y2 = cy + math.sin(angle) * r
+                pygame.draw.line(pattern_surf, (*rc[:3], 60), (cx, cy), (int(x2), int(y2)), 2)
+                pygame.draw.circle(pattern_surf, (*rc[:3], 80), (int(x2), int(y2)), 4)
+            pygame.draw.circle(pattern_surf, (*rc[:3], 50), (cx, cy), int(r * 0.6), 2)
+            pygame.draw.circle(pattern_surf, (*rc[:3], 30), (cx, cy), int(r * 0.9), 1)
+
+        elif rarity == 'epic':
+            # Mor girdap deseni
+            cx, cy = cw // 2, ch // 2
+            for i in range(20):
+                angle = i * 0.4 + self.pulse * 0.3
+                r = 15 + i * 4
+                x2 = cx + math.cos(angle) * r
+                y2 = cy + math.sin(angle) * r
+                alpha = max(20, 80 - i * 3)
+                pygame.draw.circle(pattern_surf, (*rc[:3], alpha), (int(x2), int(y2)), 3)
+
+        elif rarity == 'rare':
+            # Mavi kristal deseni
+            cx, cy = cw // 2, ch // 2
+            for i in range(4):
+                angle = i * math.pi / 2 + math.pi / 4
+                r = min(cw, ch) * 0.2
+                points = [
+                    (cx, cy - r),
+                    (cx + r * 0.3, cy),
+                    (cx, cy + r),
+                    (cx - r * 0.3, cy),
+                ]
+                rotated = []
+                for px, py in points:
+                    dx, dy = px - cx, py - cy
+                    rx = dx * math.cos(angle) - dy * math.sin(angle) + cx
+                    ry = dx * math.sin(angle) + dy * math.cos(angle) + cy
+                    rotated.append((int(rx), int(ry)))
+                pygame.draw.polygon(pattern_surf, (*rc[:3], 40), rotated, 1)
+
+        elif rarity == 'uncommon':
+            # Yeşil yaprak deseni
+            cx, cy = cw // 2, ch // 2
+            for i in range(3):
+                angle = i * (2 * math.pi / 3) + self.pulse * 0.2
+                r = min(cw, ch) * 0.15
+                ex = cx + math.cos(angle) * r
+                ey = cy + math.sin(angle) * r
+                pygame.draw.circle(pattern_surf, (*rc[:3], 40), (int(ex), int(ey)), 8, 1)
+
+        else:  # common
+            # Basit ızgara deseni
+            for x in range(0, cw, 20):
+                pygame.draw.line(pattern_surf, (120, 120, 140, 20), (x, 0), (x, ch), 1)
+            for y in range(0, ch, 20):
+                pygame.draw.line(pattern_surf, (120, 120, 140, 20), (0, y), (cw, y), 1)
+
+        body.blit(pattern_surf, (0, 0))
+
+        # Büyük soru işareti
+        q_font = self.fonts.get('large') or self.fonts.get('card_title')
+        q_text = q_font.render("?", True, (*rc[:3],))
+        q_alpha_surf = q_text.copy()
+        q_alpha_surf.set_alpha(120 + int(60 * pulse_val))
+        body.blit(q_alpha_surf, q_alpha_surf.get_rect(center=(cw // 2, ch // 2)))
+
+        surface.blit(body, (rect.x, rect.y))
+
+    def render(self, surface: pygame.Surface, debug: bool = False):
+        # --- Giriş animasyonu (aşağıdan yukarı spring) ---
+        entry_t = self.entry_progress
+        # Ease-out back (overshoot ile yumuşak giriş)
+        if entry_t < 1.0:
+            s = 1.70158
+            t1 = entry_t - 1.0
+            entry_ease = t1 * t1 * ((s + 1) * t1 + s) + 1.0
+        else:
+            entry_ease = 1.0
+        entry_y_offset = int(self.entry_offset_y * (1.0 - entry_ease))
+        entry_alpha = max(0, min(255, int(255 * min(1.0, entry_t * 2.5))))
+
+        # Compute scaled rect with entry offset
+        sw = int(self.base_rect.width * self.scale)
+        sh = int(self.base_rect.height * self.scale)
+        dx = self.base_rect.centerx - sw // 2
+        dy = self.base_rect.centery - sh // 2 + entry_y_offset
+
+        # Shake offset
+        shake_ox, shake_oy = 0, 0
+        if self._shake_timer > 0 and self._shake_intensity > 0:
+            shake_decay = self._shake_timer / 0.4
+            intensity = self._shake_intensity * shake_decay
+            shake_ox = int(random.uniform(-intensity, intensity))
+            shake_oy = int(random.uniform(-intensity, intensity))
+            dx += shake_ox
+            dy += shake_oy
+
+        self.rect = pygame.Rect(dx, dy, sw, sh)
+
+        style = self.card.get('style', {})
+        corner = style.get('corner', 15)
+        rc = self.rarity_color()
+        rarity = self._get_rarity()
+
+        # Giriş animasyonu opacity
+        if entry_alpha < 255 and not self.entry_done:
+            # Henüz tam visible değil - erken çık eğer çok şeffaf
+            if entry_alpha < 10:
+                return
+
+        # ==================== KART DÖNME ANİMASYONU ====================
+        if self.flip_progress < 1.0:
+            if self.flip_progress <= 0.0:
+                # Arka yüzü göster (giriş animasyonuyla)
+                temp = pygame.Surface((self.rect.width, self.rect.height), pygame.SRCALPHA)
+                old_rect = self.rect
+                self.rect = pygame.Rect(0, 0, self.rect.width, self.rect.height)
+                self._draw_card_back(temp)
+                self.rect = old_rect
+                if entry_alpha < 255:
+                    temp.set_alpha(entry_alpha)
+                surface.blit(temp, (self.rect.x, self.rect.y))
+                return
+
+            # Dönme açısı: 0→π
+            flip_angle = self.flip_progress * math.pi
+            width_scale = abs(math.cos(flip_angle))
+            if width_scale < 0.015:
+                width_scale = 0.015
+
+            showing_front = self.flip_progress > 0.5
+
+            actual_width = max(3, int(self.rect.width * width_scale))
+            # Perspektif: yükseklik hafif uzar daralınca
+            height_stretch = 1.0 + (1.0 - width_scale) * 0.04
+            actual_height = min(int(self.rect.height * height_stretch), self.rect.height + 20)
+
+            temp_rect = pygame.Rect(0, 0, self.rect.width, self.rect.height)
+            temp_surface = pygame.Surface((self.rect.width, self.rect.height), pygame.SRCALPHA)
+
+            if showing_front:
+                self._render_card_face(temp_surface, temp_rect, corner, rc, debug)
+            else:
+                old_rect = self.rect
+                self.rect = temp_rect
+                self._draw_card_back(temp_surface)
+                self.rect = old_rect
+
+            # Sıkıştır
+            try:
+                squeezed = pygame.transform.smoothscale(temp_surface, (actual_width, actual_height))
+            except Exception:
+                squeezed = pygame.transform.scale(temp_surface, (actual_width, actual_height))
+
+            if entry_alpha < 255:
+                squeezed.set_alpha(entry_alpha)
+
+            # Merkeze hizala
+            bx = self.rect.centerx - actual_width // 2
+            by = self.rect.centery - actual_height // 2
+
+            # Kenar ışığı efekti (dönme sırasında - yumuşak gradyan)
+            edge_intensity = 1.0 - width_scale
+            if rarity == 'legendary' and edge_intensity > 0.08:
+                # Sol ve sağ kenarda yumuşak glow (3 nokta yeterli)
+                bar_glow_r = max(5, int(14 * edge_intensity))
+                bar_alpha = edge_intensity * 0.55
+                # Üst, orta, alt — 3 blob yeterli, performanslı
+                for gy_pct in [0.2, 0.5, 0.8]:
+                    gy = int(actual_height * gy_pct)
+                    # Merkeze yakınlık
+                    center_ratio = 1.0 - abs(gy_pct - 0.5) * 2
+                    a = bar_alpha * (0.4 + 0.6 * center_ratio)
+                    g = _GlowCache.get_tinted(bar_glow_r, rc[:3], a)
+                    surface.blit(g, (bx - bar_glow_r, by + gy - bar_glow_r),
+                                 special_flags=pygame.BLEND_RGBA_ADD)
+                    surface.blit(g, (bx + actual_width - bar_glow_r, by + gy - bar_glow_r),
+                                 special_flags=pygame.BLEND_RGBA_ADD)
+
+            surface.blit(squeezed, (bx, by))
+
+            # Geçiş anı parlama (yumuşak radyal flash)
+            if rarity == 'legendary' and 0.42 <= self.flip_progress <= 0.58:
+                flash_t = 1.0 - abs(self.flip_progress - 0.5) / 0.08
+                flash_t = max(0, min(1, flash_t))
+                r_mult = {'legendary': 1.5, 'epic': 1.3, 'rare': 1.0, 'uncommon': 0.7, 'common': 0.4}
+                flash_alpha = flash_t * r_mult.get(rarity, 0.6) * 0.5
+                if flash_alpha > 0.03:
+                    flash_r = max(self.rect.width, self.rect.height) // 2 + 20
+                    flash_glow = _GlowCache.get_tinted(flash_r, rc[:3], flash_alpha)
+                    surface.blit(flash_glow,
+                                 (self.rect.centerx - flash_r, self.rect.centery - flash_r),
+                                 special_flags=pygame.BLEND_RGBA_ADD)
+
+            if rarity == 'legendary':
+                self._draw_particles(surface)
+            return
+
+        # ==================== AÇILMIŞ KART ÇİZİMİ ====================
+        if not self.reveal_burst_done:
+            self.reveal_burst_done = True
+            if rarity == 'legendary':
+                self._spawn_reveal_burst(rarity)
+
+        # Hover glow (yumuşak radyal gradyan ile)
+        if self.hover:
+            glow = pygame.Surface((self.rect.width + 24, self.rect.height + 24), pygame.SRCALPHA)
+            glow_alpha = 40 + int(15 * (math.sin(self.pulse * 2) + 1) * 0.5)
+            pygame.draw.rect(glow, (*rc[:3], glow_alpha), glow.get_rect(), border_radius=corner + 8)
+            surface.blit(glow, (self.rect.x - 12, self.rect.y - 12), special_flags=pygame.BLEND_RGBA_ADD)
+
+        # --- BALATRO TARZI SHIMMER / AURA OVERLAY (Pre-computed) ---
+        # Bell curve band ve mask bir kez hesaplanır, her frame sadece blit edilir.
+        if rarity == 'legendary' and self._ensure_shimmer_cache(corner):
+            shimmer_speed = 1.2
+            shimmer_pos = (math.sin(self.pulse * shimmer_speed) + 1.0) * 0.5
+            shimmer_x = int(shimmer_pos * (self.rect.width + self._shimmer_w)) - self._shimmer_w
+            self._shimmer_work.fill((0, 0, 0, 0))
+            self._shimmer_work.blit(self._shimmer_band, (shimmer_x, 0))
+            self._shimmer_work.blit(self._shimmer_mask, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+            surface.blit(self._shimmer_work, (self.rect.x, self.rect.y), special_flags=pygame.BLEND_RGBA_ADD)
+
+        # Nadirlik dış aura (minimal, yumuşak)
+        if rarity == 'legendary':
+            pulse_v = (math.sin(self.pulse * 1.2) + 1.0) * 0.5
+            a1 = int(18 + 14 * pulse_v)
+            g1 = pygame.Surface((self.rect.width + 28, self.rect.height + 28), pygame.SRCALPHA)
+            pygame.draw.rect(g1, (*rc[:3], a1), g1.get_rect(), border_radius=corner + 10)
+            surface.blit(g1, (self.rect.x - 14, self.rect.y - 14), special_flags=pygame.BLEND_RGBA_ADD)
+
+        # Ön yüzü çiz (epic efekt katmanı card face içinde arka plan ile içerik arasında çizilir)
+        self._render_card_face(surface, self.rect, corner, rc, debug)
+
+        # Parçacıkları çiz (kartın üstünde)
+        if rarity == 'legendary':
+            flame_types = {'fire', 'fire_inner', 'flame_tongue', 'flame_core', 'flame_spike', 'ember'}
+            self._draw_particles(surface, exclude_types=flame_types)
+
+    # ==================== SHIMMER PRE-COMPUTE ====================
+
+    def _ensure_shimmer_cache(self, corner: int) -> bool:
+        """Shimmer efekti için bell-curve band ve rounded-rect mask'i
+        önceden hesapla. Boyut değişmedikçe tekrar hesaplanmaz."""
+        rarity = self._get_rarity()
+        if rarity not in ('legendary', 'epic', 'rare'):
+            return False
+        cache_key = (self.rect.width, self.rect.height, rarity)
+        if self._shimmer_cache_key == cache_key:
+            return True
+        shimmer_width_pct = {'legendary': 0.35, 'epic': 0.25, 'rare': 0.18}[rarity]
+        shimmer_alpha = {'legendary': 45, 'epic': 35, 'rare': 22}[rarity]
+        rc = self.rarity_color()
+        shimmer_w = max(1, int(self.rect.width * shimmer_width_pct))
+        h = self.rect.height
+        w = self.rect.width
+        corner = self._match_hover_corner(corner, w, h)
+        # Bell curve band — tek sefer hesapla
+        band = pygame.Surface((shimmer_w, h), pygame.SRCALPHA)
+        for sx in range(shimmer_w):
+            local_t = sx / max(1, shimmer_w)
+            intensity = math.exp(-8.0 * (local_t - 0.5) ** 2)
+            a = int(shimmer_alpha * intensity)
+            if a > 1:
+                pygame.draw.line(band, (*rc[:3], a), (sx, 0), (sx, h - 1))
+        # Rounded rect mask — tek sefer
+        mask = pygame.Surface((w, h), pygame.SRCALPHA)
+        pygame.draw.rect(mask, (255, 255, 255, 255), mask.get_rect(), border_radius=corner)
+        # Reusable work surface (her frame .fill + blit ile tekrar kullanılır)
+        work = pygame.Surface((w, h), pygame.SRCALPHA)
+        self._shimmer_band = band
+        self._shimmer_mask = mask
+        self._shimmer_work = work
+        self._shimmer_w = shimmer_w
+        self._shimmer_cache_key = cache_key
+        return True
+
+    # ==================== BAKED FACE CACHE ====================
+
+    def _ensure_baked_face(self, rect: pygame.Rect, corner: int, rc: tuple, debug: bool) -> tuple[pygame.Surface, pygame.Surface]:
+        """Statik kart yüzünü iki katman halinde cache'le.
+        İlk katman: arka plan, ikinci katman: ikon + metin + etiketler.
+        Böylece epic efekt bu iki katmanın arasına yerleşebilir."""
+        cache_key = (rect.width, rect.height, debug, self._face_cache_token)
+        if self._baked_face_bg is not None and self._baked_face_fg is not None and self._baked_face_key == cache_key:
+            return self._baked_face_bg, self._baked_face_fg
+
+        bg_layer = pygame.Surface((rect.width, rect.height), pygame.SRCALPHA)
+        fg_layer = pygame.Surface((rect.width, rect.height), pygame.SRCALPHA)
+        png_front = self._get_card_face_image("front", (rect.width, rect.height))
+        if png_front is not None:
+            bg_layer.blit(png_front, (0, 0))
+            corner = self._match_hover_corner(corner, rect.width, rect.height)
+            mask = pygame.Surface(bg_layer.get_size(), pygame.SRCALPHA)
+            pygame.draw.rect(mask, (255, 255, 255, 255), mask.get_rect(), border_radius=corner)
+            bg_layer.blit(mask, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+        else:
+            base_top = UIColors.BG_MEDIUM
+            base_bot = UIColors.BG_LIGHT
+            accent = rc
+            t_top = self._mix_rgb(base_top, accent, 0.10)
+            t_bot = self._mix_rgb(base_bot, accent, 0.18)
+            grad_surface = pygame.Surface(bg_layer.get_size(), pygame.SRCALPHA)
+            self._fill_gradient(grad_surface, (*t_top, 220), (*t_bot, 220))
+            corner = self._match_hover_corner(corner, rect.width, rect.height)
+            mask = pygame.Surface(bg_layer.get_size(), pygame.SRCALPHA)
+            pygame.draw.rect(mask, (255, 255, 255, 255), mask.get_rect(), border_radius=corner)
+            grad_surface.blit(mask, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+            bg_layer.blit(grad_surface, (0, 0))
+
+        inner = pygame.Surface((rect.width - 6, rect.height - 6), pygame.SRCALPHA)
+        pygame.draw.rect(inner, (255, 255, 255, 8), inner.get_rect(), border_radius=max(8, corner - 6))
+        bg_layer.blit(inner, (3, 3))
+
+        content_pad_x = max(14, int(round(rect.width * 0.06)))
+        content_pad_top = max(12, int(round(rect.height * 0.04)))
+        content_pad_bottom = max(12, int(round(rect.height * 0.035)))
+        inner_width = max(1, rect.width - content_pad_x * 2)
+
+        preferred_icon_size = max(40, min(int(round(rect.width * 0.32)), int(round(rect.height * 0.24))))
+        icon_size = max(1, min(inner_width, preferred_icon_size))
+        icon_rect = pygame.Rect((rect.width - icon_size) // 2, content_pad_top, icon_size, icon_size)
+        base_border_color = self.rarity_color()
+        icon_bg = UIColors.BG_LIGHT
+        icon_holder = pygame.Surface((icon_rect.width, icon_rect.height), pygame.SRCALPHA)
+        grad_bg = pygame.Surface(icon_holder.get_size(), pygame.SRCALPHA)
+        start_bg = (*icon_bg, 240)
+        end_bg = (min(255, icon_bg[0] + 20), min(255, icon_bg[1] + 20), min(255, icon_bg[2] + 20), 230)
+        self._fill_gradient(grad_bg, start_bg, end_bg)
+        mask_holder = pygame.Surface(icon_holder.get_size(), pygame.SRCALPHA)
+        icon_corner = max(10, icon_rect.width // 8)
+        pygame.draw.rect(mask_holder, (255, 255, 255, 255), mask_holder.get_rect(), border_radius=icon_corner)
+        grad_bg.blit(mask_holder, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+        icon_holder.blit(grad_bg, (0, 0))
+        pygame.draw.rect(icon_holder, (255, 255, 255, 18), icon_holder.get_rect(), width=1, border_radius=icon_corner)
+        pygame.draw.rect(icon_holder, (*base_border_color[:3], 70), icon_holder.get_rect(), width=1, border_radius=icon_corner)
+        icon_image = self.icon_getter(self.card.get('icon_image'), (max(8, icon_size - 8), max(8, icon_size - 8)))
+        if icon_image:
+            icon_holder.blit(icon_image, ((icon_rect.width - icon_image.get_width()) // 2, (icon_rect.height - icon_image.get_height()) // 2))
+        else:
+            from emoji_renderer import emoji_surface
+            emoji_surface_value = emoji_surface(self.card.get('icon', ''), max(8, icon_size - 8))
+            if emoji_surface_value:
+                icon_holder.blit(emoji_surface_value, ((icon_rect.width - emoji_surface_value.get_width()) // 2, (icon_rect.height - emoji_surface_value.get_height()) // 2))
+            else:
+                glyph = self.fonts['icon'].render(_ui_safe_icon_text(self.card.get('icon', ''), fallback='*'), True, UIColors.TEXT_SECONDARY)
+                icon_holder.blit(glyph, glyph.get_rect(center=(icon_rect.width // 2, icon_rect.height // 2)))
+        fg_layer.blit(icon_holder, icon_rect.topleft)
+
+        title_font = self.fonts.get('card_title') or self.fonts.get('medium') or self.fonts.get('small')
+        card_title_text = get_card_title(self.card, self.card.get('title', ''))
+        title_gap = max(10, int(round(rect.height * 0.028)))
+        # Önce font boyutunu küçülterek metni sığdırmayı dene; gerekirse '...' ile kısalt.
+        title_font, fitted_title = self._shrink_font_to_fit(
+            title_font, card_title_text, inner_width, min_size=12,
+        )
+        title_surface = title_font.render(fitted_title, True, UIColors.TEXT_PRIMARY)
+        title_rect = title_surface.get_rect(centerx=rect.width // 2, top=icon_rect.bottom + title_gap)
+        self._blit_shadowed(fg_layer, title_surface, title_rect.topleft, shadow_alpha=170)
+
+        type_label = t(_card_type_label_key(self.card))
+        type_font = self.fonts.get('tag') or self.fonts.get('desc') or self.fonts.get('small') or self.fonts['value']
+        badge_pad_x = max(10, int(round(rect.width * 0.04)))
+        badge_pad_y = max(6, int(round(rect.height * 0.018)))
+        fitted_type = self._fit_text_to_width(type_font, type_label, max(1, inner_width - badge_pad_x * 2))
+        type_surf = type_font.render(fitted_type, True, UIColors.TEXT_PRIMARY)
+        type_bg = pygame.Surface((type_surf.get_width() + badge_pad_x * 2, type_surf.get_height() + badge_pad_y * 2), pygame.SRCALPHA)
+        badge_radius = max(12, type_bg.get_height() // 2)
+        pygame.draw.rect(type_bg, (*base_border_color, 120), type_bg.get_rect(), border_radius=badge_radius)
+        pygame.draw.rect(type_bg, (255, 255, 255, 18), type_bg.get_rect(), width=1, border_radius=badge_radius)
+        type_rect = type_bg.get_rect(centerx=rect.width // 2, top=title_rect.bottom + max(8, int(round(rect.height * 0.022))))
+        fg_layer.blit(type_bg, type_rect.topleft)
+        self._blit_shadowed(
+            fg_layer,
+            type_surf,
+            (type_rect.x + (type_bg.get_width() - type_surf.get_width()) // 2, type_rect.y + (type_bg.get_height() - type_surf.get_height()) // 2),
+            shadow_alpha=140,
+        )
+
+        desc_font = self.fonts.get('desc') or self.fonts.get('small') or self.fonts.get('tag')
+        desc_pad_x = max(10, int(round(rect.width * 0.035)))
+        desc_gap = max(10, int(round(rect.height * 0.03)))
+        desc_bg_x = content_pad_x
+        desc_bg_w = inner_width
+        wrap_limit_pixels = max(1, desc_bg_w - desc_pad_x * 2)
+        raw_desc = get_card_description(
+            self.card,
+            value=self.card.get('value'),
+            fallback=self.card.get('description', ''),
+        )
+        prompt_button_label = _prompt_action_text('hold2', 'V') if _resolve_card_localization_id(self.card) == 'perk_second_pocket' else ''
+
+        hk = f"[{self.index + 1}]"
+        hk_surf = self.fonts['small'].render(hk, True, UIColors.TEXT_MUTED)
+        hk_margin_x = max(12, int(round(rect.width * 0.05)))
+        hk_margin_y = max(10, int(round(rect.height * 0.03)))
+        hk_rect = hk_surf.get_rect(right=rect.width - hk_margin_x, bottom=rect.height - hk_margin_y)
+
+        desc_y = type_rect.bottom + desc_gap
+        base_desc_pad_y = max(6, int(round(rect.height * 0.02)))
+        base_available_desc_h = max(1, hk_rect.top - desc_y - max(8, content_pad_bottom))
+        max_text_h = max(1, base_available_desc_h - base_desc_pad_y * 2)
+        min_desc_font_h = max(6, int(round(desc_font.get_height() * 0.38)))
+        desc_font, desc_lines = self._fit_wrapped_text_to_box(
+            desc_font,
+            raw_desc,
+            wrap_limit_pixels,
+            max_text_h,
+            min_font_height=min_desc_font_h,
+        )
+        available_desc_h = max(desc_font.get_linesize() + 8, base_available_desc_h)
+        desc_pad_y = min(base_desc_pad_y, max(4, (available_desc_h - desc_font.get_linesize()) // 2))
+
+        desc_bg_rect = None
+        if desc_lines:
+            desc_line_h = desc_font.get_linesize()
+            desc_bg_h = desc_pad_y * 2 + len(desc_lines) * desc_line_h
+            desc_bg_rect = pygame.Rect(desc_bg_x, max(0, desc_y - desc_pad_y), desc_bg_w, desc_bg_h)
+            desc_bg = pygame.Surface(desc_bg_rect.size, pygame.SRCALPHA)
+            pygame.draw.rect(desc_bg, (0, 0, 0, 72), desc_bg.get_rect(), border_radius=max(10, desc_bg_rect.height // 6))
+            fg_layer.blit(desc_bg, desc_bg_rect.topleft)
+
+            text_x = desc_bg_x + desc_pad_x
+            text_y = desc_y
+            for i, line in enumerate(desc_lines):
+                line_surface = render_inline_action_text_surface(
+                    line,
+                    prompt_button_label,
+                    'hold2',
+                    desc_font,
+                    UIColors.TEXT_PRIMARY,
+                ) if prompt_button_label and prompt_button_label in line else desc_font.render(line, True, UIColors.TEXT_PRIMARY)
+                self._blit_shadowed(fg_layer, line_surface, (text_x, text_y + i * desc_line_h), shadow_alpha=180)
+
+        self._blit_shadowed(fg_layer, hk_surf, hk_rect.topleft, shadow_alpha=160)
+
+        if debug:
+            idx_font = self.fonts.get('card_title')
+            idx_text = str(self.index + 1)
+            idx_surface = idx_font.render(idx_text, True, (30, 30, 40))
+            idx_bg_w = idx_surface.get_width() + 12
+            idx_bg_h = idx_surface.get_height() + 8
+            idx_bg = pygame.Surface((idx_bg_w, idx_bg_h), pygame.SRCALPHA)
+            pygame.draw.ellipse(idx_bg, (255, 255, 255, 220), idx_bg.get_rect())
+            idx_bg.blit(idx_surface, ((idx_bg_w - idx_surface.get_width()) // 2, (idx_bg_h - idx_surface.get_height()) // 2))
+            fg_layer.blit(idx_bg, (12, 12))
+
+        self._face_layout_snapshot = {
+            'card_size': (rect.width, rect.height),
+            'icon_rect': icon_rect.copy(),
+            'title_rect': title_rect.copy(),
+            'title_text': fitted_title,
+            'type_rect': type_rect.copy(),
+            'type_text': fitted_type,
+            'desc_bg_rect': desc_bg_rect.copy() if desc_bg_rect is not None else None,
+            'desc_line_count': len(desc_lines),
+            'desc_lines': tuple(desc_lines),
+            'desc_font_height': desc_font.get_height(),
+            'desc_wrap_width': wrap_limit_pixels,
+            'hotkey_rect': hk_rect.copy(),
+        }
+
+        self._baked_face_bg = bg_layer
+        self._baked_face_fg = fg_layer
+        self._baked_face_key = cache_key
+        return bg_layer, fg_layer
+
+    def _render_card_face(self, surface: pygame.Surface, rect: pygame.Rect, corner: int, rc: tuple, debug: bool = False):
+        """Kartın ön yüzünü çiz — baked cache + animasyonlu katmanlar.
+        Statik içerik (gradient, ikon, metin) cache'den gelir;
+        sadece pulse border ve legendary alevler her frame çizilir."""
+        baked_bg, baked_fg = self._ensure_baked_face(rect, corner, rc, debug)
+        body = baked_bg.copy()
+        card_corner = self._match_hover_corner(corner, rect.width, rect.height)
+
+        rarity = self._get_rarity()
+        if rarity == 'epic':
+            local_rect = pygame.Rect(0, 0, rect.width, rect.height)
+            self._draw_epic_sheet_fx(body, local_rect)
+        elif rarity == 'common':
+            local_rect = pygame.Rect(0, 0, rect.width, rect.height)
+            self._draw_common_sheet_fx(body, local_rect)
+        elif rarity == 'rare':
+            local_rect = pygame.Rect(0, 0, rect.width, rect.height)
+            self._draw_rare_sheet_fx(body, local_rect)
+        elif rarity == 'uncommon':
+            local_rect = pygame.Rect(0, 0, rect.width, rect.height)
+            self._draw_uncommon_sheet_fx(body, local_rect)
+
+        body.blit(baked_fg, (0, 0))
+
+        # Animasyonlu border pulse
+        base_border_color = self.rarity_color()
+        pulse_val = (math.sin(self.pulse) + 1.0) * 0.5
+        border_alpha = 120 + int(60 * pulse_val)
+        border_color_pulse = (*base_border_color[:3], border_alpha)
+        pygame.draw.rect(body, border_color_pulse, body.get_rect(), width=2, border_radius=card_corner)
+
+        # Legendary: animasyonlu alev katmanı + alev parçacıkları
+        if self._get_rarity() == 'legendary':
+            local_rect = pygame.Rect(0, 0, rect.width, rect.height)
+            self._draw_legendary_flame_base(body, local_rect)
+            flame_types = {'fire', 'fire_inner', 'flame_tongue', 'flame_core', 'flame_spike', 'ember'}
+            self._draw_particles(body, offset=(self.rect.x, self.rect.y), only_types=flame_types)
+
+        surface.blit(body, (rect.x, rect.y))
+
+    @staticmethod
+    def _fill_gradient(surface: pygame.Surface, start_color: tuple[int, int, int, int], end_color: tuple[int, int, int, int]) -> None:
+        """Gradient çizimi — cache destekli. Aynı boyut+renk tekrar hesaplanmaz."""
+        cached = _get_cached_gradient(surface.get_size(), start_color, end_color)
+        surface.blit(cached, (0, 0))
+
+
+
+class PerkManager:
+    """Simple Perk manager tied to a MysteryMode instance.
+
+    Perks are boolean toggles for now and handle counters and flags.
+    """
+    def __init__(self, mode: 'MysteryMode') -> None:
+        self.mode = mode
+        self.active: dict[str, bool] = {}
+        self.next_piece_bomb = False
+        self.lines_since_chrono = 0
+        self.chrono_freeze_timer = 0.0
+        self.rewind_uses = 0  # Geri Sarma kullanım hakkı
+        # 'phase_shift' is now a shape-mutation perk; state is per piece and handled on the piece object.
+
+    def activate(self, key: str) -> None:
+        # Normalize older/alternate perk ids to the internal keys used by the mode.
+        key_map = {
+            # Historical/test id -> internal id
+            'alchemist_touch': 'perk_alchemist',
+        }
+        normalized = key_map.get(key, key)
+        self.active[normalized] = True
+        # Note: phase_shift uses are now set from card value in _apply_card_effect,
+        # not here. This allows different card values to grant different uses.
+
+    def deactivate(self, key: str) -> None:
+        self.active[key] = False
+
+    def is_active(self, key: str) -> bool:
+        return bool(self.active.get(key, False))
+
+    def notify_lines_cleared(self, lines: int, source: str = "player") -> None:
+        if not lines:
+            return
+        # Explosive Protocol: if 2 lines cleared -> next piece is a bomb
+        # Trigger bomb only if exactly 2 lines cleared simultaneously while the perk is active
+        # Prevent farming via card/ability clears: only player clears should arm bombs.
+        if self.is_active('explosive_protocol') and lines == 2 and str(source).lower() in {"player", "normal"}:
+            self.next_piece_bomb = True
+            # Player feedback: make it clear this is the PLUS-shaped bomb perk.
+            try:
+                self.mode._set_localized_card_message(
+                    'mystery_msg_bomb_master_next_piece_bomb',
+                    1.1,
+                    'Bomba Ustası: Sonraki parça BOMBA (+)',
+                )
+            except Exception:
+                pass
+        # Chrono Lock counter
+        if self.is_active('chrono_lock'):
+            self.lines_since_chrono += lines
+            if self.lines_since_chrono >= 10:
+                self.lines_since_chrono = 0
+                self.chrono_freeze_timer = 3.0
+        # Backwards-compatible Alchemist trigger:
+        # Tests and older behavior expect a Quadrix (4 lines) to trigger without
+        # needing piece context.
+        if self.is_active('perk_alchemist') and int(lines) == 4:
+            try:
+                self.mode.board.convert_to_gold(5)
+            except Exception:
+                pass
+        # NOTE: T-parça 2/3 satır tetikleri piece context ile `maybe_trigger_alchemist` üzerinden gelir.
+        return
+
+    def maybe_trigger_alchemist(self, piece, lines: int) -> None:
+        if not self.is_active('perk_alchemist') or not lines:
+            return
+        try:
+            name = getattr(piece, 'name', None)
+        except Exception:
+            name = None
+        # Approximation (no full T-Spin detector exists):
+        # - Quadrix (4 lines) always triggers
+        # - T piece clearing 2 or 3 lines is treated as T-Spin Double/Triple-like
+        is_tetris = int(lines) == 4
+        is_t_like_spin = (str(name) == 'T' and int(lines) in (2, 3))
+        if not (is_tetris or is_t_like_spin):
+            return
+        # Midas touch: convert 5 random blocks to gold
+        try:
+            self.mode.board.convert_to_gold(5)
+        except Exception:
+            pass
+
+    def on_piece_spawn(self, piece) -> None:
+        # Esnek Sinir: perk aktifse tum yeni parcalara flag ekle
+        if self.is_active('perk_flexible_border'):
+            setattr(piece, 'flexible_border', True)
+        
+        # For phase shift (shape mutation), there's no per-piece auto-reset. We leave
+        # the per-piece flag on the piece object itself and the Game will check it.
+        # If explosive next piece, mark piece property
+        if self.next_piece_bomb:
+            # Mark the piece as a bomb: keep its shape but color it red and set a flag
+            setattr(piece, 'is_bomb', True)
+            # Keep the original color for UI preview while forcing bomb color in-game
+            setattr(piece, '_original_color', getattr(piece, 'color', None))
+            BOMB_COLOR = (221, 0, 5)
+            piece.color = BOMB_COLOR
+            # Preserve this forced color across theme reapplications
+            setattr(piece, '_force_color', BOMB_COLOR)
+            self.next_piece_bomb = False
+
+    def on_piece_locked(self, piece, locked_cells:list[tuple[int,int]]):
+        # Reset tunneling and ghost visuals when a tunneled piece locks
+        if getattr(piece, 'tunnel', False):
+            try:
+                setattr(piece, 'tunnel', False)
+                if getattr(piece, '_original_color', None) is not None:
+                    piece.color = getattr(piece, '_original_color')
+            except Exception:
+                pass
+        
+        # Bomba patlaması artık MysteryMode.lock_and_new_piece içinde yapılıyor
+        # Burada tekrar yapmıyoruz, aksi halde çift patlama olur
+        return
+
+    def get_multiplier(self) -> float:
+        """Sinerji çekirdeği: aktif her perk %10 skor çarpanı verir"""
+        base = 1.0
+        active_count = sum(1 for v in self.active.values() if v)
+        
+        # Sinerji Çekirdeği aktifse çarpan hesapla
+        if self.is_active('synergy_core'):
+            return base + (active_count * 0.10)
+        return base
+    
+    def can_rewind(self) -> bool:
+        """Geri Sarma: kullanılabilir mi kontrol et"""
+        return self.is_active('rewind_power') and self.rewind_uses > 0
+    
+    def use_rewind(self) -> bool:
+        """Geri Sarma kullan - başarılı ise True döner"""
+        if self.can_rewind():
+            self.rewind_uses -= 1
+            if self.rewind_uses <= 0:
+                self.deactivate('rewind_power')
+            return True
+        return False
+
+
+class MysteryMode(Game):
+    """Kart yöneticisi + UI ayrımıyla yeniden ele alınan Mystery Mode."""
+
+    def _card_ui_scale(self) -> float:
+        """Kart modu HUD/font ölçeği."""
+        try:
+            ref_w, ref_h = getattr(self, '_card_ui_reference_size', MYSTERY_OVERLAY_REFERENCE_SIZE)
+            ref_w = max(1, int(ref_w))
+            ref_h = max(1, int(ref_h))
+            w, h = self._active_ui_size()
+
+            rw, rh = getattr(self, '_card_ui_readable_min_size', (1180, 760))
+            readable_floor = min(1.0, min(float(w) / max(1.0, float(rw)), float(h) / max(1.0, float(rh))))
+            effective_min = max(0.62, readable_floor)
+        except Exception:
+            w, h = MYSTERY_OVERLAY_REFERENCE_SIZE
+            ref_w, ref_h = MYSTERY_OVERLAY_REFERENCE_SIZE
+            effective_min = 0.62
+        target = getattr(self, 'screen', None)
+        if target is None:
+            target = (w, h)
+        return get_projected_effective_scale(
+            target,
+            min_scale=effective_min,
+            max_scale=1.12,
+            reference_size=(float(ref_w), float(ref_h)),
+        )
+
+    def _get_card_ui_reference_size(self) -> tuple[int, int]:
+        """Kart UI için Faz 8 baseline referans çözünürlüğünü döndür."""
+        return int(MYSTERY_OVERLAY_REFERENCE_SIZE[0]), int(MYSTERY_OVERLAY_REFERENCE_SIZE[1])
+
+    def _get_mystery_speed_level(self) -> int:
+        try:
+            level = int(getattr(getattr(self, 'board', None), 'level', 1) or 1)
+        except Exception:
+            level = 1
+        return max(1, level)
+
+    def _get_mystery_base_fall_speed(self, level: int | None = None) -> int:
+        target_level = self._get_mystery_speed_level() if level is None else level
+        return get_mystery_level_fall_speed_ms(target_level)
+
+    def get_initial_speed(self) -> int:
+        return self._get_mystery_base_fall_speed()
+
+    def _reset_card_selection_rerolls(self) -> None:
+        self.card_selection_rerolls_remaining = max(
+            0,
+            int(getattr(self, 'card_selection_reroll_limit', CARD_SELECTION_REROLL_LIMIT)),
+        )
+
+    def _can_reroll_card_selection(self) -> bool:
+        card_manager = getattr(self, 'card_manager', None)
+        card_ui = getattr(self, 'card_ui', None)
+        pending_choices = getattr(card_manager, 'pending_choices', []) if card_manager is not None else []
+        interaction_locked = False
+        try:
+            if card_ui is not None and hasattr(card_ui, 'is_interaction_locked'):
+                interaction_locked = bool(card_ui.is_interaction_locked())
+        except Exception:
+            interaction_locked = False
+        return (
+            bool(getattr(self, 'card_selection_active', False))
+            and getattr(self, '_pending_card_choice_index', None) is None
+            and int(getattr(self, 'card_selection_rerolls_remaining', 0)) > 0
+            and not interaction_locked
+            and bool(pending_choices)
+        )
+
+    def _try_reroll_card_selection(self) -> bool:
+        if not self._can_reroll_card_selection():
+            return False
+
+        reroll_limit = max(
+            0,
+            int(getattr(self, 'card_selection_reroll_limit', CARD_SELECTION_REROLL_LIMIT)),
+        )
+        previous_choices = list(getattr(self.card_manager, 'pending_choices', []))
+        self.card_selection_rerolls_remaining = max(
+            0,
+            int(getattr(self, 'card_selection_rerolls_remaining', 0)) - 1,
+        )
+        try:
+            new_choices = self.card_manager.prepare_selection()
+        except Exception:
+            self.card_selection_rerolls_remaining = min(
+                reroll_limit,
+                int(getattr(self, 'card_selection_rerolls_remaining', 0)) + 1,
+            )
+            try:
+                self.card_manager.pending_choices = previous_choices
+            except Exception:
+                pass
+            return False
+
+        if not new_choices:
+            self.card_selection_rerolls_remaining = min(
+                reroll_limit,
+                int(getattr(self, 'card_selection_rerolls_remaining', 0)) + 1,
+            )
+            try:
+                self.card_manager.pending_choices = previous_choices
+            except Exception:
+                pass
+            return False
+
+        self.card_ui.reset()
+        return True
+
+    def _get_demo_score_cap(self) -> int:
+        fallback_cap = getattr(demo_config, 'DEMO_MYSTERY_SCORE_CAP', 150000)
+        try:
+            default_cap = max(1, int(fallback_cap or 150000))
+            return max(1, int(getattr(self, '_demo_score_cap_value', default_cap) or default_cap))
+        except Exception:
+            return 150000
+
+    def _should_trigger_demo_score_cap(self) -> bool:
+        if not getattr(demo_config, 'IS_DEMO', False):
+            return False
+        if getattr(self, '_demo_score_cap_active', False) or getattr(self, '_demo_score_cap_reached', False):
+            return False
+        if getattr(self, 'game_over', False):
+            return False
+
+        board = getattr(self, 'board', None)
+        try:
+            score = int(getattr(board, 'score', 0) or 0)
+        except Exception:
+            return False
+        return score >= self._get_demo_score_cap()
+
+    def _activate_demo_score_cap_prompt(self) -> None:
+        self._demo_score_cap_reached = True
+        self._demo_score_cap_active = True
+        self.card_selection_active = False
+        self.card_selection_rects = []
+        self._pending_card_choice_index = None
+        self.pending_level_ups = 0
+        self.card_message = ''
+        self.card_message_timer = 0.0
+        self._piece_selection_active = False
+        self._sniper_overlay_active = False
+        self._card_workshop_active = False
+
+        try:
+            self.card_manager.pending_choices = []
+        except Exception:
+            pass
+
+        prompt = getattr(self, '_demo_score_cap_prompt', None)
+        if prompt is None:
+            prompt = DemoUpgradePrompt(self.screen)
+            self._demo_score_cap_prompt = prompt
+        prompt.screen = self.screen
+        show_demo_score_cap_prompt(prompt)
+
+    def _maybe_activate_demo_score_cap_prompt(self) -> bool:
+        if not self._should_trigger_demo_score_cap():
+            return False
+        self._activate_demo_score_cap_prompt()
+        return True
+
+    def _get_mystery_layout_metrics(self) -> Dict[str, float | int]:
+        active_width, active_height = self._active_ui_size()
+        effective_width, effective_height = self._effective_ui_size()
+        board_cols = max(1, int(getattr(self, 'board_width', BOARD_WIDTH)))
+        board_rows = max(1, int(getattr(self, 'board_height', BOARD_HEIGHT)))
+        left_panel_max_width = max(320, int(getattr(self, 'left_panel_max_width', 420) or 420))
+
+        cache_key = (
+            int(active_width),
+            int(active_height),
+            int(effective_width),
+            int(effective_height),
+            board_cols,
+            board_rows,
+            left_panel_max_width,
+        )
+        if getattr(self, '_mystery_layout_cache_key', None) == cache_key:
+            return self._mystery_layout_cache
+
+        scale_x = int(active_width) / float(max(1, int(effective_width)))
+        scale_y = int(active_height) / float(max(1, int(effective_height)))
+        pixel_ratio = max(1.0, float(self._display_pixel_ratio()))
+        occupancy_scale = max(
+            1.0,
+            min(
+                2.15,
+                min(
+                    int(effective_width) / float(max(1.0, float(MYSTERY_OVERLAY_REFERENCE_SIZE[0]))),
+                    int(effective_height) / float(max(1.0, float(MYSTERY_OVERLAY_REFERENCE_SIZE[1]))),
+                ),
+            ),
+        )
+
+        max_cell_logical = max(40, min(56, int(round(40 + ((occupancy_scale - 1.0) * 14.0)))))
+        outer_margin_logical = max(12, min(28, int(round(12 + ((occupancy_scale - 1.0) * 8.0)))))
+        panel_gap_logical = max(14, min(24, int(round(14 + ((occupancy_scale - 1.0) * 5.0)))))
+        panel_top_padding_logical = max(10, min(16, int(round(10 + ((occupancy_scale - 1.0) * 3.0)))))
+        panel_bottom_margin_logical = max(40, min(56, int(round(40 + ((occupancy_scale - 1.0) * 8.0)))))
+
+        left_pref_logical = min(
+            left_panel_max_width,
+            max(220, int(round(320 + ((occupancy_scale - 1.0) * 110.0)))),
+        )
+        right_pref_logical = max(160, min(280, int(round(190 + ((occupancy_scale - 1.0) * 70.0)))))
+        left_min_logical = min(
+            left_pref_logical,
+            max(170, int(round(220 + ((occupancy_scale - 1.0) * 35.0)))),
+        )
+        right_min_logical = min(
+            right_pref_logical,
+            max(120, int(round(150 + ((occupancy_scale - 1.0) * 24.0)))),
+        )
+
+        board_area_width_logical = max(
+            160,
+            int(effective_width)
+            - (outer_margin_logical * 2)
+            - (panel_gap_logical * 2)
+            - left_pref_logical
+            - right_pref_logical,
+        )
+        board_area_height_logical = max(160, int(effective_height) - int(INFO_PANEL_HEIGHT))
+
+        cell_by_width = max(14, board_area_width_logical // board_cols)
+        cell_by_height = max(14, board_area_height_logical // board_rows)
+        logical_cell_size = max(14, min(cell_by_width, cell_by_height, max_cell_logical))
+
+        logical_board_width = board_cols * logical_cell_size
+        logical_board_height = board_rows * logical_cell_size
+
+        max_total_panels_logical = max(
+            300,
+            int(effective_width)
+            - (outer_margin_logical * 2)
+            - logical_board_width
+            - (panel_gap_logical * 2),
+        )
+        total_pref_logical = left_pref_logical + right_pref_logical
+        if total_pref_logical > max_total_panels_logical:
+            ratio = max_total_panels_logical / float(max(1, total_pref_logical))
+            left_panel_width_logical = max(left_min_logical, int(left_pref_logical * ratio))
+            right_panel_width_logical = max(right_min_logical, int(right_pref_logical * ratio))
+            overflow = (left_panel_width_logical + right_panel_width_logical) - max_total_panels_logical
+            if overflow > 0:
+                cut_left = min(max(0, left_panel_width_logical - left_min_logical), overflow)
+                left_panel_width_logical -= cut_left
+                overflow -= cut_left
+                if overflow > 0:
+                    right_panel_width_logical = max(right_min_logical, right_panel_width_logical - overflow)
+        else:
+            left_panel_width_logical = left_pref_logical
+            right_panel_width_logical = right_pref_logical
+
+        total_group_width_logical = (
+            left_panel_width_logical
+            + panel_gap_logical
+            + logical_board_width
+            + panel_gap_logical
+            + right_panel_width_logical
+        )
+        logical_group_x = max(
+            outer_margin_logical,
+            (int(effective_width) - total_group_width_logical) // 2,
+        )
+        max_group_x = max(
+            outer_margin_logical,
+            int(effective_width) - outer_margin_logical - total_group_width_logical,
+        )
+        logical_group_x = max(outer_margin_logical, min(logical_group_x, max_group_x))
+
+        logical_board_x = logical_group_x + left_panel_width_logical + panel_gap_logical
+        logical_board_y = max(8, (int(effective_height) - logical_board_height) // 2)
+        logical_panel_x = logical_board_x + logical_board_width + panel_gap_logical
+        logical_panel_y = logical_board_y + panel_top_padding_logical
+        logical_panel_height = min(
+            logical_board_height,
+            max(80, int(effective_height) - logical_panel_y - panel_bottom_margin_logical),
+        )
+
+        metrics = {
+            'cell_size': max(1, int(round(float(logical_cell_size) * pixel_ratio))),
+            'logical_cell_size': logical_cell_size,
+            'board_x': max(0, int(round(float(logical_board_x) * scale_x))),
+            'board_y': max(0, int(round(float(logical_board_y) * scale_y))),
+            'board_width': max(1, int(round(float(logical_board_width) * scale_x))),
+            'board_height': max(1, int(round(float(logical_board_height) * scale_y))),
+            'left_panel_width': max(1, int(round(float(left_panel_width_logical) * scale_x))),
+            'right_panel_width': max(1, int(round(float(right_panel_width_logical) * scale_x))),
+            'panel_x': max(0, int(round(float(logical_panel_x) * scale_x))),
+            'panel_y': max(0, int(round(float(logical_panel_y) * scale_y))),
+            'panel_width': max(1, int(round(float(right_panel_width_logical) * scale_x))),
+            'panel_height': max(1, int(round(float(logical_panel_height) * scale_y))),
+            'panel_gap': max(1, int(round(float(panel_gap_logical) * scale_x))),
+            'panel_bottom_margin': max(1, int(round(float(panel_bottom_margin_logical) * scale_y))),
+            'pixel_ratio': pixel_ratio,
+            'occupancy_scale': occupancy_scale,
+        }
+        metrics['hud_scale'] = max(
+            0.72,
+            min(1.18, float(right_panel_width_logical) / 220.0),
+        )
+        metrics['hud_px_scale'] = float(metrics['hud_scale']) * pixel_ratio
+
+        self._mystery_left_panel_width = int(metrics['left_panel_width'])
+        self._mystery_right_panel_width = int(metrics['right_panel_width'])
+        self._mystery_layout_cache = metrics
+        self._mystery_layout_cache_key = cache_key
+        return metrics
+
+    def _get_side_panel_widths(self, board_pixel_width: int | None = None) -> tuple[int, int]:
+        """Mystery mode için sol/sağ panel genişliklerini ortak gameplay metriğinden döndür."""
+        metrics = self._get_mystery_layout_metrics()
+        return int(metrics['left_panel_width']), int(metrics['right_panel_width'])
+
+    def _make_card_ui_font(
+        self,
+        size: int,
+        *,
+        bold: bool = False,
+    ) -> pygame.font.Font:
+        """Kart UI fontunu mevcut dile göre seç.
+
+        CJK (ja/zh/ko) dillerinde get_font_for_language() ile doğrudan
+        HybridFont oluşturur — retro_style._font_path global durumundan
+        bağımsızdır. Diğer dillerde retro_style.get_font() kullanılır.
+        """
+        try:
+            lang = get_language()
+        except Exception:
+            lang = None
+
+        effective_lang = "ja" if lang == "jp" else lang
+
+        try:
+            from ui_language_profile import get_font_for_language
+
+            font = get_font_for_language(effective_lang, size, bold=bold)
+            if font is not None:
+                return font
+        except Exception:
+            pass
+
+        return retro_style.get_font(size, bold=bold)
+
+    def _build_card_ui_font_pack(
+        self,
+        ui_scale: float | None = None,
+        *,
+        size_adjust: int = 0,
+    ) -> Dict[str, pygame.font.Font]:
+        """Kart Ustalığı UI'si için ortak font paketini üret."""
+        if ui_scale is None:
+            ui_scale = self._card_ui_scale()
+
+        def s(base: int, min_size: int, *, bold: bool = False) -> pygame.font.Font:
+            adjusted_min = max(1, int(min_size) + int(size_adjust))
+            size = max(adjusted_min, int(round(base * ui_scale)) + int(size_adjust))
+            return self._make_card_ui_font(size, bold=bold)
+
+        return {
+            "heading": s(44, 26),
+            "panel_header": s(28, 17),
+            "large": s(44, 24),
+            "medium": s(32, 18),
+            "small": s(18, 11),
+            "card_title": s(26, 14),
+            "value": s(52, 24),
+            "icon": s(80, 32),
+            "tag": s(20, 11),
+            "desc": s(22, 11),
+        }
+
+    def _build_left_panel_font_pack(self, ui_scale: float | None = None) -> Dict[str, pygame.font.Font]:
+        """Sol gameplay panelleri için 1px daha küçük, ölçekli font paketi."""
+        try:
+            return self._build_card_ui_font_pack(ui_scale, size_adjust=-1)
+        except TypeError:
+            base_fonts = self._build_card_ui_font_pack(ui_scale)
+            reduced_fonts: Dict[str, pygame.font.Font] = {}
+            for key, font in base_fonts.items():
+                try:
+                    target_size = max(1, int(font.get_height()) - 1)
+                except Exception:
+                    reduced_fonts[key] = font
+                    continue
+                try:
+                    reduced_fonts[key] = self._make_card_ui_font(target_size)
+                except Exception:
+                    reduced_fonts[key] = font
+            return reduced_fonts
+
+    def _refresh_card_ui_fonts(self) -> None:
+        """Kart UI fontlarını mevcut dile göre yeniden üret."""
+        try:
+            self._card_ui_lang = get_language()
+        except Exception:
+            self._card_ui_lang = None
+
+        profile_signature = (
+            getattr(retro_style, '_font_path', None),
+            getattr(retro_style, '_default_font_path', None),
+            float(getattr(retro_style, '_font_scale', 1.0) or 1.0),
+            bool(getattr(retro_style, '_force_no_bold', False)),
+        )
+        fonts = self._build_card_ui_font_pack()
+
+        self.mystery_font_heading = fonts['heading']
+        self.panel_header_font = fonts['panel_header']
+        self.mystery_font_large = fonts['large']
+        self.mystery_font_medium = fonts['medium']
+        self.mystery_font_small = fonts['small']
+        self.card_font = fonts['card_title']
+        self.card_value_font = fonts['value']
+        self.card_icon_font = fonts['icon']
+        self.card_tag_font = fonts['tag']
+        self.card_desc_font = fonts['desc']
+
+        self._card_ui_font_signature = (
+            self._card_ui_lang,
+            int(self._active_ui_size()[0]),
+            int(self._active_ui_size()[1]),
+            profile_signature,
+        )
+
+    def _ensure_card_ui_fonts(self) -> None:
+        """Dil veya pencere boyutu değiştiyse kart fontlarını tazele."""
+        try:
+            lang = get_language()
+        except Exception:
+            lang = None
+
+        signature = (
+            lang,
+            int(self._active_ui_size()[0]),
+            int(self._active_ui_size()[1]),
+            (
+                getattr(retro_style, '_font_path', None),
+                getattr(retro_style, '_default_font_path', None),
+                float(getattr(retro_style, '_font_scale', 1.0) or 1.0),
+                bool(getattr(retro_style, '_force_no_bold', False)),
+            ),
+        )
+        if getattr(self, "_card_ui_font_signature", None) != signature:
+            self._refresh_card_ui_fonts()
+
+    def _fit_text_to_width(self, font: pygame.font.Font, text: str, max_width: int) -> str:
+        """Metni verilen genişliğe sığacak şekilde kısalt."""
+        value = str(text or "")
+        if max_width <= 0 or font.size(value)[0] <= max_width:
+            return value
+
+        suffix = "..."
+        while value and font.size(value + suffix)[0] > max_width:
+            value = value[:-1]
+        return (value + suffix) if value else suffix
+
+    def _play_card_reveal_sfx(self) -> None:
+        if not self.sound_enabled:
+            return
+        try:
+            self.sound.play_sound('card_reveal')
+        except Exception:
+            pass
+
+    def wants_mouse_visible(self) -> bool:
+        # Kart seçimi, parça seçimi veya atölye popup gibi overlay'lerde mouse görünür olmalı.
+        if getattr(self, '_demo_score_cap_active', False):
+            return True
+        if getattr(self, '_piece_selection_active', False):
+            return True
+        if getattr(self, '_card_workshop_active', False):
+            return True
+        return bool(getattr(self, 'card_selection_active', False)) or super().wants_mouse_visible()
+
+    def __init__(
+        self,
+        difficulty: str = "Normal",
+        sound_enabled: bool = True,
+        effects_enabled: bool = True,
+        achievement_manager=None,
+        theme_manager=None,
+        screen=None,
+        fullscreen: bool = False,
+        settings_manager=None,
+        user_manager=None,
+        game_mode: str = "mystery",
+        score_manager=None,
+        sound_manager=None,
+    ) -> None:
+        # spawn_new_piece içinde kullanılacağı için önce manager yaratılır
+        self.card_manager = MysteryCardManager(self)
+        self.card_ui = MysteryCardUI()
+        self.card_selection_active = False
+        self.card_message = ""
+        self.card_message_timer = 0.0
+        self.card_selection_rects: List[pygame.Rect] = []
+        self._pending_card_choice_index: int | None = None
+        # Queue of pending level-up card selections, and dedup tracker
+        self.pending_level_ups = 0
+        self.last_enqueued_level = 0
+        self.card_selection_reroll_limit = CARD_SELECTION_REROLL_LIMIT
+        self.card_selection_rerolls_remaining = CARD_SELECTION_REROLL_LIMIT
+
+        super().__init__(
+            difficulty,
+            sound_enabled,
+            effects_enabled,
+            achievement_manager,
+            theme_manager,
+            screen,
+            fullscreen,
+            settings_manager,
+            user_manager,
+            game_mode,
+            sound_manager=sound_manager,
+            score_manager=score_manager,
+        )
+        self.mode_name = t('mode_label_card_mastery')
+        self._demo_score_cap_value = max(1, int(getattr(demo_config, 'DEMO_MYSTERY_SCORE_CAP', 150000) or 150000))
+        self._demo_score_cap_reached = False
+        self._demo_score_cap_active = False
+        self._demo_score_cap_prompt = DemoUpgradePrompt(self.screen)
+        self._card_ui_reference_size = self._get_card_ui_reference_size()
+        self._card_ui_readable_min_size = (1180, 760)
+        try:
+            self.card_ui.set_overlay_reference_size(*self._card_ui_reference_size)
+        except Exception:
+            pass
+        self._card_ui_lang = None
+        self._refresh_card_ui_fonts()
+        self.card_ui.set_reveal_sfx_callback(self._play_card_reveal_sfx)
+
+        self.left_panel_max_width = 420
+        self._left_panel_frame = (10, 20, 400)
+        self._left_panel_cards_y = 120
+        # Ensure last_enqueued_level initialized after board is created
+        self.last_enqueued_level = getattr(self.board, 'level', 0)
+
+        # Kart efekt durumları
+        self.speed_effect_timer = 0.0
+        self.speed_effect_multiplier = 1.0
+        self.line_bonus_remaining = 0
+        
+        # Zaman Kapsulu durumu
+        self.time_capsule_saved = False
+        self.time_capsule_data = None
+        self.time_capsule_available = False
+        self.line_bonus_amount = 0
+        self.combo_aura_timer = 0.0
+        self.combo_aura_bonus = 0
+        
+        # Geleceği Değiştiren (future_changer) durumu
+        self._future_changer_remaining = 0
+        self._future_changer_card = None
+        self._piece_selection_active = False
+        self._piece_selection_rects: List[pygame.Rect] = []
+        self._piece_selection_hover = -1
+        
+        # Juicy scoring / experimental revamps
+        self._score_multiplier_timer = 0.0
+        self._score_multiplier_value = 1.0
+        self._line_clear_multiplier_remaining = 0
+        self._line_clear_multiplier_value = 1.0
+        self._speed_burst_timer = 0.0
+        self._speed_burst_speed_mult = 1.0
+        self._speed_burst_line_mult = 1.0
+        self._armed_nova_clusters = 0
+        self._bomb_countdown_timer = 0.0
+        self._bomb_countdown_last_int = 0
+        self._score_color_override = None
+        self._drill_last_cleanup_y = None
+        self._active_effect_visuals: Dict[str, Dict] = {}
+        self._card_board_effects: List[Dict[str, Any]] = []
+
+        # Quantum tunneling (Hayalet Parça) charges: player chooses per-piece via G.
+        self.tunnel_charges_remaining = 0
+
+        # Hammer charges: player can turn the CURRENT falling piece into a 1x1 block via H.
+        self.hammer_charges_remaining = 0
+
+        # Mirror Hold: sonraki hold'a giren parçayı aynalar.
+        self._mirror_hold_charges = 0
+
+        # Echo Drop: uygun bir kilitte parçanın altına küçük bir gölge izi bırakır.
+        self._echo_drop_charges = 0
+        self._echo_drop_fill_count = 2
+
+        # Son Düşüş (Freeze Drop): F tuşuyla bloğu dondur, sadece sağ-sol ve sert düşüş çalışır.
+        self._freeze_drop_charges = 0
+        self._freeze_drop_duration = 0  # Aktif dondurma süresi (saniye, nadirlğe bağlı)
+        self._freeze_drop_timer = 0.0  # Kalan dondurma süresi (saniye)
+        self._freeze_drop_active = False  # Şu an bir parça donuk mu?
+
+        # Combo Sigortası: True ise bir sonraki "satır temizleyemeyen" lock'da
+        # combo lokal olarak korunur. Yalnızca previous_combo > 0 iken tüketilir.
+        self._combo_insurance_armed = False
+
+        # Ters Borç: kart seçildiği anda en alt 2 satır silinir; sonraki N lock
+        # için parça yere değer değmez ek lock delay olmadan kilitlenir.
+        self._reverse_debt_remaining = 0
+        self._reverse_debt_total = 5
+
+        # Delik Avcısı: J tuşuyla sütun seçim overlay'i. value=charges sayısı.
+        self._hole_hunter_charges = 0
+        self._hole_hunter_overlay_active = False
+        self._hole_hunter_cursor_col = 0
+
+        # Keep a short history of picked cards so the left panel can show
+        # "seçilen bütün kartlar" (not only currently-active effects).
+        self.selected_cards_log: List[Dict[str, Any]] = []
+
+        # Sniper patlama efekti (GIF) cache/runtime
+        self._sniper_explosion_frames: List[pygame.Surface] = []
+        self._sniper_explosion_frame_durations_ms: List[int] = []
+        self._sniper_explosion_total_duration_ms = 0
+        self._sniper_explosion_ready = False
+        self._active_sniper_explosions: List[Dict[str, Any]] = []
+        
+        # Geri Sarma durumu
+        self._rewind_available = False
+        self._last_placed_piece = None  # Son yerleştirilen parça bilgisi
+
+        print("🎮 Kart Ustalığı kart pipeline'ı aktif: manager + UI ayrımı tamam.")
+
+        # Initialize per-mode runtime variables early so update() / spawn hooks
+        # won't throw if called before restart() (main loop calls update quickly)
+        self.perk_manager = PerkManager(self)
+        self.energy = 0
+        self.energy_max = 100
+        self.time_warp_timer = 0.0
+        self.gravity_freeze_timer = 0.0
+        self.phase_used_for_piece = False
+        self._last_ability_keys = {'z': False, 'x': False, 'g': False, 'h': False, 'm': False, 'c': False, 'rotate': False, 'lshift': False, 'v': False, 'b': False, 'f': False}
+        # Bomba Ustası: M tuşuyla mini bomba yapma hakları
+        self.bomb_master_charges = 0
+        # Tuttuğunu Koparan: B tuşuyla hold silme hakları (kart seçilene kadar 0)
+        self._hold_destroyer_charges = 0
+        # Mystery modunda base game's sabit B hakkı kullanılmaz.
+        self.discard_held_uses = 0
+        # Score-based speed: Başlangıç hız seviyesi 10, her 500 puanda +1
+        self.speed_level = 10  # Başlangıç hız seviyesi
+
+        # Score-based speed multiplier: her 1000 puanda düşüş aralığı %15 azalır (multiplikatif)
+        self.score_speed_multiplier = 1.0
+        self._last_score_speed_milestone = 0
+        self._last_speed_milestone = 0  # Son hız artışı skoru
+        # Smooth only speed-ups so score milestones don't feel like a jump.
+        # Slowdowns (time_slow/time_warp/chrono) should remain snappy.
+        self._speedup_smooth_time = 0.8
+
+        # === Shape mutation cooldown ===
+        self._shape_mutation_cooldown = 0.0
+
+        # === Rare bug tracer (ghost/tunnel related unexpected clears) ===
+        self._ghost_bug_tracer = None
+        self._ghost_bug_dumped_this_run = False
+        try:
+            env_on = str(os.getenv('TETRIS_TRACE_GHOST_BUG', '')).strip().lower() in {'1', 'true', 'yes', 'on'}
+        except Exception:
+            env_on = False
+        try:
+            settings_on = bool(getattr(self, 'settings_manager', None) and self.settings_manager.get('trace_ghost_bug', False))
+        except Exception:
+            settings_on = False
+        try:
+            debug_on = bool(getattr(self, 'settings_manager', None) and self.settings_manager.get('debug_mode', False))
+        except Exception:
+            debug_on = False
+        tracer_enabled = bool(env_on or settings_on or debug_on)
+        try:
+            if tracer_enabled and GhostBugTracer is not None and get_user_data_dir is not None:
+                dump_dir = os.path.join(get_user_data_dir(), 'debug_ghost_bug')
+                self._ghost_bug_tracer = GhostBugTracer(enabled=True, dump_dir=dump_dir)
+        except Exception:
+            self._ghost_bug_tracer = None
+
+        # Aktif kartları sync et (tüm değişkenler tanımlandıktan sonra)
+        self._sync_active_cards()
+
+    def get_board_offset(self):
+        """Tahtanın ekrandaki pozisyonunu effective-size tabanlı Mystery layout'tan döndür."""
+        metrics = self._get_mystery_layout_metrics()
+        return int(metrics['board_x']), int(metrics['board_y'])
+
+    def get_cell_size(self):
+        """Mystery mode için hücre boyutunu effective-size tabanlı layout'tan döndür."""
+        metrics = self._get_mystery_layout_metrics()
+        return int(metrics['cell_size'])
+
+    def _get_right_hud_panel_metrics(self, offset_x, offset_y, board_width, board_height):
+        metrics = self._get_mystery_layout_metrics()
+        panel_rect = pygame.Rect(
+            int(metrics['panel_x']),
+            int(metrics['panel_y']),
+            int(metrics['panel_width']),
+            int(metrics['panel_height']),
+        )
+        return {
+            'rect': panel_rect,
+            'hud_scale': float(metrics['hud_scale']),
+            'hud_px_scale': float(metrics['hud_px_scale']),
+            'pixel_ratio': float(metrics['pixel_ratio']),
+        }
+
+    def _trace_ghost_bug_clear(
+        self,
+        *,
+        now_ms: int | None,
+        clear_kind: str,
+        cleared_cells: int,
+        coords: list[tuple[int, int]] | None = None,
+        piece=None,
+        note: str | None = None,
+    ) -> None:
+        tracer = getattr(self, '_ghost_bug_tracer', None)
+        if tracer is None:
+            return
+        try:
+            tracer.record_clear(
+                now_ms=now_ms,
+                clear_kind=str(clear_kind),
+                cleared_cells=int(cleared_cells),
+                coords=coords,
+                piece=piece,
+                note=note,
+            )
+        except Exception:
+            return
+
+        if getattr(self, '_ghost_bug_dumped_this_run', False):
+            return
+
+        try:
+            ms_since_g = tracer.ms_since_g(int(now_ms or 0)) if now_ms is not None else None
+        except Exception:
+            ms_since_g = None
+
+        # If we clear arbitrary cells shortly after pressing G, dump once.
+        # Window is intentionally generous to catch delayed/edge-case clears.
+        if ms_since_g is None or ms_since_g > 15000 or int(cleared_cells or 0) <= 0:
+            return
+
+        try:
+            path = tracer.maybe_dump(
+                now_ms=now_ms,
+                trigger=f"clear:{clear_kind}",
+                board=getattr(self, 'board', None),
+                current_piece=getattr(self, 'current_piece', None),
+                extra={
+                    'ms_since_g': int(ms_since_g),
+                    'cleared_cells': int(cleared_cells),
+                    'clear_kind': str(clear_kind),
+                    'note': note,
+                },
+            )
+        except Exception:
+            path = None
+
+        if path:
+            self._ghost_bug_dumped_this_run = True
+            try:
+                print(f"[GhostBugTracer] Dump written: {path}")
+            except Exception:
+                pass
+            # Debug overlay text (only when tracer is enabled anyway)
+            try:
+                self.card_message = f"[Debug] Ghost dump: {os.path.basename(path)}"
+                self.card_message_timer = 2.0
+            except Exception:
+                pass
+
+    def _hammer_current_piece_to_unit(self) -> bool:
+        """Turn the CURRENT falling piece into a 1x1 block.
+
+        Returns True if the piece was updated.
+        """
+        piece = getattr(self, 'current_piece', None)
+        if piece is None:
+            return False
+        if getattr(piece, 'hammered', False):
+            return False
+        try:
+            shape = getattr(piece, 'shape', None)
+            if shape == [[1]]:
+                setattr(piece, 'hammered', True)
+                return False
+        except Exception:
+            pass
+
+        try:
+            old_cells = list(piece.get_cells())
+        except Exception:
+            old_cells = []
+
+        anchor = None
+        for x, y in old_cells:
+            if y >= 0:
+                anchor = (int(x), int(y))
+                break
+        if anchor is None and old_cells:
+            x, y = old_cells[0]
+            anchor = (int(x), int(y))
+        if anchor is None:
+            anchor = (int(getattr(piece, 'x', 0) or 0), int(getattr(piece, 'y', 0) or 0))
+
+        # Preserve the piece's existing color/style. Only shrink its shape.
+        try:
+            piece.shape = [[1]]
+        except Exception:
+            return False
+        try:
+            piece.rotation_state = 0
+        except Exception:
+            pass
+        try:
+            if hasattr(piece, 'color_matrix'):
+                piece.color_matrix = [[getattr(piece, 'color', None)]]
+        except Exception:
+            pass
+
+        # Anchor the new 1x1 on a previously occupied cell for intuitive behavior.
+        try:
+            piece.x, piece.y = anchor
+        except Exception:
+            pass
+        try:
+            piece.x = max(0, min(int(piece.x), int(getattr(self.board, 'width', BOARD_WIDTH)) - 1))
+        except Exception:
+            pass
+        try:
+            if getattr(self, 'board', None) is not None and not self.board.is_valid_position(piece):
+                for dy in range(0, 4):
+                    if self.board.is_valid_position(piece, dy=-dy):
+                        piece.y = int(piece.y) - dy
+                        break
+        except Exception:
+            pass
+
+        try:
+            setattr(piece, 'hammered', True)
+        except Exception:
+            pass
+        return True
+
+    def _record_selected_card(self, card: Dict[str, Any]) -> None:
+        if not card:
+            return
+        try:
+            entry = {
+                'id': card.get('id'),
+                'title': card.get('title', ''),
+                'description': get_card_description(card, card.get('value'), card.get('description', '')),
+                'tag': card.get('tag', ''),
+                'color': card.get('color', (180, 180, 180)),
+                'icon': card.get('icon', ''),
+                'icon_image': card.get('icon_image'),
+                'persistent': bool(card.get('persistent', False)),
+            }
+            self.selected_cards_log.append(entry)
+            # Keep the panel readable and avoid unbounded growth.
+            if len(self.selected_cards_log) > 30:
+                self.selected_cards_log = self.selected_cards_log[-30:]
+            # Kalıcı kart kullanım istatistiği
+            if self.user_manager and card.get('id'):
+                try:
+                    self.user_manager.record_card_usage(str(card['id']), str(card.get('title', '')))
+                except Exception:
+                    pass
+        except Exception:
+            return
+
+    @staticmethod
+    def _key_label(keycode: int) -> str:
+        try:
+            name = pygame.key.name(int(keycode))
+            if not name:
+                return '?'
+            return name.upper() if len(name) <= 2 else name
+        except Exception:
+            return str(keycode)
+
+    @staticmethod
+    def _card_int_value(card: Dict[str, Any], default: int = 1) -> int:
+        try:
+            raw_value = card.get('value', card.get('base', default))
+            return max(1, int(raw_value))
+        except Exception:
+            return max(1, int(default))
+
+    def _localized_card_text(self, key: str, default: str | None = None, **kwargs) -> str:
+        fallback = default
+        if default is not None:
+            try:
+                fallback = str(default).format(**kwargs) if kwargs else str(default)
+            except Exception:
+                fallback = str(default)
+        return t(key, fallback, **kwargs)
+
+    def _localized_active_card_uses_status(self, label: str, count: int) -> str:
+        return self._localized_card_text(
+            'mystery_active_card_uses_status',
+            '{label}: {count} Hak',
+            label=label,
+            count=int(count),
+        )
+
+    def _localized_active_card_timed_uses_status(self, seconds: float, count: int) -> str:
+        try:
+            time_text = f'{float(seconds):.1f}s'
+        except Exception:
+            time_text = f'{seconds}s'
+        return self._localized_card_text(
+            'mystery_active_card_timed_uses_status',
+            '{time_text} | {count} Hak',
+            time_text=time_text,
+            count=int(count),
+        )
+
+    def _set_localized_card_message(self, key: str, display_time: float, default: str | None = None, **kwargs) -> str:
+        text = self._localized_card_text(key, default, **kwargs)
+        self.card_message = text
+        self.card_message_timer = float(display_time)
+        return text
+
+    def _normalize_card_board_color(
+        self,
+        color: Any,
+        fallback: tuple[int, int, int] | None = None,
+    ) -> tuple[int, int, int]:
+        if fallback is None:
+            try:
+                accent = getattr(retro_style, 'accent', (255, 255, 255))
+                fallback = tuple(int(v) for v in accent[:3])
+            except Exception:
+                fallback = (255, 255, 255)
+        try:
+            if isinstance(color, (list, tuple)) and len(color) >= 3:
+                return tuple(max(0, min(255, int(v))) for v in color[:3])
+        except Exception:
+            pass
+        return fallback
+
+    def _card_board_texture_signature(self, texture: Any) -> tuple[Any, ...] | None:
+        if texture is None:
+            return None
+        try:
+            return (
+                getattr(texture, 'piece_name', None),
+                getattr(texture, 'rel_x', None),
+                getattr(texture, 'rel_y', None),
+                getattr(texture, 'width', None),
+                getattr(texture, 'height', None),
+                getattr(texture, 'rotation', None),
+            )
+        except Exception:
+            return None
+
+    def _capture_card_board_snapshot(self) -> dict[str, Any]:
+        cells: dict[tuple[int, int], dict[str, Any]] = {}
+        try:
+            height = int(getattr(self.board, 'height', BOARD_HEIGHT) or BOARD_HEIGHT)
+            width = int(getattr(self.board, 'width', BOARD_WIDTH) or BOARD_WIDTH)
+        except Exception:
+            height = BOARD_HEIGHT
+            width = BOARD_WIDTH
+
+        for y in range(height):
+            for x in range(width):
+                try:
+                    occupied = bool(self.board.occupancy[y][x])
+                except Exception:
+                    occupied = False
+                if not occupied:
+                    continue
+                try:
+                    raw_color = self.board.grid[y][x]
+                except Exception:
+                    raw_color = None
+                try:
+                    texture = self.board.texture_grid[y][x]
+                except Exception:
+                    texture = None
+                try:
+                    gold = bool(self.board.gold[y][x])
+                except Exception:
+                    gold = False
+                cells[(int(x), int(y))] = {
+                    'color': self._normalize_card_board_color(raw_color),
+                    'texture': self._card_board_texture_signature(texture),
+                    'gold': gold,
+                }
+        return {
+            'width': width,
+            'height': height,
+            'cells': cells,
+        }
+
+    def _card_board_cell_signature(self, cell: dict[str, Any]) -> tuple[Any, ...]:
+        return (
+            tuple(cell.get('color', (255, 255, 255))),
+            cell.get('texture'),
+            bool(cell.get('gold', False)),
+        )
+
+    def _pair_card_board_delta_moves(
+        self,
+        removed_items: list[tuple[tuple[int, int], dict[str, Any]]],
+        added_items: list[tuple[tuple[int, int], dict[str, Any]]],
+    ) -> tuple[
+        list[dict[str, Any]],
+        list[tuple[tuple[int, int], dict[str, Any]]],
+        list[tuple[tuple[int, int], dict[str, Any]]],
+    ]:
+        removed_by_signature: dict[tuple[Any, ...], list[tuple[tuple[int, int], dict[str, Any]]]] = {}
+        added_by_signature: dict[tuple[Any, ...], list[tuple[tuple[int, int], dict[str, Any]]]] = {}
+        for item in removed_items:
+            removed_by_signature.setdefault(self._card_board_cell_signature(item[1]), []).append(item)
+        for item in added_items:
+            added_by_signature.setdefault(self._card_board_cell_signature(item[1]), []).append(item)
+
+        moves: list[dict[str, Any]] = []
+        leftover_removed: list[tuple[tuple[int, int], dict[str, Any]]] = []
+        leftover_added: list[tuple[tuple[int, int], dict[str, Any]]] = []
+
+        all_signatures = set(removed_by_signature) | set(added_by_signature)
+        for signature in all_signatures:
+            removed_group = list(removed_by_signature.get(signature, []))
+            added_group = list(added_by_signature.get(signature, []))
+            while removed_group and added_group:
+                source = removed_group.pop(0)
+                sx, sy = source[0]
+                best_index = min(
+                    range(len(added_group)),
+                    key=lambda idx: abs(sx - added_group[idx][0][0]) + abs(sy - added_group[idx][0][1]),
+                )
+                target = added_group.pop(best_index)
+                tx, ty = target[0]
+                if (sx, sy) == (tx, ty):
+                    leftover_removed.append(source)
+                    leftover_added.append(target)
+                    continue
+                moves.append({
+                    'from_x': int(sx),
+                    'from_y': int(sy),
+                    'to_x': int(tx),
+                    'to_y': int(ty),
+                    'color': tuple(target[1].get('color', source[1].get('color', (255, 255, 255)))),
+                })
+            leftover_removed.extend(removed_group)
+            leftover_added.extend(added_group)
+
+        return moves, leftover_removed, leftover_added
+
+    def _card_board_effect_duration(self, effect_id: str) -> float:
+        durations = {
+            'block_magnet': 0.75,
+            'row_shuffle': 0.8,
+            'gambler_dice': 0.85,
+            'time_capsule': 0.85,
+            'laser_drill': 0.35,
+            'mini_bomb': 0.5,
+            'nova_burst': 0.55,
+            'sniper_shot': 0.4,
+        }
+        return float(durations.get(str(effect_id), 0.6))
+
+    def _append_card_board_effect(self, effect: dict[str, Any]) -> None:
+        if not getattr(self, 'effects_enabled', False):
+            return
+        if not any(effect.get(key) for key in ('removed', 'added', 'moves', 'changed')):
+            return
+        effects = getattr(self, '_card_board_effects', None)
+        if not isinstance(effects, list):
+            self._card_board_effects = []
+            effects = self._card_board_effects
+        effect['age'] = 0.0
+        effects.append(effect)
+        if len(effects) > 8:
+            del effects[:-8]
+
+    def _queue_card_board_effect_from_snapshots(
+        self,
+        effect_id: str,
+        before_snapshot: dict[str, Any] | None,
+        after_snapshot: dict[str, Any] | None,
+        *,
+        accent: Any = None,
+        duration: float | None = None,
+    ) -> None:
+        if not getattr(self, 'effects_enabled', False):
+            return
+        if not before_snapshot or not after_snapshot:
+            return
+
+        before_cells = dict(before_snapshot.get('cells', {}))
+        after_cells = dict(after_snapshot.get('cells', {}))
+        removed_items: list[tuple[tuple[int, int], dict[str, Any]]] = []
+        added_items: list[tuple[tuple[int, int], dict[str, Any]]] = []
+        changed: list[dict[str, Any]] = []
+
+        all_positions = set(before_cells) | set(after_cells)
+        for position in all_positions:
+            before_cell = before_cells.get(position)
+            after_cell = after_cells.get(position)
+            if before_cell is None and after_cell is not None:
+                added_items.append((position, after_cell))
+                continue
+            if after_cell is None and before_cell is not None:
+                removed_items.append((position, before_cell))
+                continue
+            if before_cell is None or after_cell is None:
+                continue
+            if self._card_board_cell_signature(before_cell) != self._card_board_cell_signature(after_cell):
+                changed.append({
+                    'x': int(position[0]),
+                    'y': int(position[1]),
+                    'before_color': tuple(before_cell.get('color', (255, 255, 255))),
+                    'after_color': tuple(after_cell.get('color', (255, 255, 255))),
+                })
+
+        moves, leftover_removed, leftover_added = self._pair_card_board_delta_moves(removed_items, added_items)
+        effect = {
+            'id': str(effect_id),
+            'accent': self._normalize_card_board_color(accent),
+            'duration': float(duration if duration is not None else self._card_board_effect_duration(effect_id)),
+            'board_flash_alpha': min(90, 26 + (len(moves) * 4) + (len(changed) * 6) + (len(leftover_removed) + len(leftover_added)) * 2),
+            'moves': moves,
+            'removed': [
+                {
+                    'x': int(pos[0]),
+                    'y': int(pos[1]),
+                    'color': tuple(cell.get('color', (255, 255, 255))),
+                }
+                for pos, cell in leftover_removed
+            ],
+            'added': [
+                {
+                    'x': int(pos[0]),
+                    'y': int(pos[1]),
+                    'color': tuple(cell.get('color', (255, 255, 255))),
+                }
+                for pos, cell in leftover_added
+            ],
+            'changed': changed,
+        }
+        self._append_card_board_effect(effect)
+
+    def _queue_card_board_removed_cells_effect(
+        self,
+        effect_id: str,
+        coords: list[tuple[int, int]] | list[dict[str, Any]],
+        *,
+        accent: Any = None,
+        duration: float | None = None,
+    ) -> None:
+        if not getattr(self, 'effects_enabled', False):
+            return
+        removed: list[dict[str, Any]] = []
+        for item in coords:
+            if isinstance(item, dict):
+                x = item.get('x')
+                y = item.get('y')
+                color = item.get('color', accent)
+            else:
+                try:
+                    x, y = item[:2]
+                except Exception:
+                    continue
+                color = accent
+            if x is None or y is None:
+                continue
+            removed.append({
+                'x': int(x),
+                'y': int(y),
+                'color': self._normalize_card_board_color(color),
+            })
+        self._append_card_board_effect({
+            'id': str(effect_id),
+            'accent': self._normalize_card_board_color(accent),
+            'duration': float(duration if duration is not None else self._card_board_effect_duration(effect_id)),
+            'board_flash_alpha': min(90, 24 + len(removed) * 4),
+            'moves': [],
+            'removed': removed,
+            'added': [],
+            'changed': [],
+        })
+
+    def _update_card_board_effects(self, dt: float) -> None:
+        effects = getattr(self, '_card_board_effects', None)
+        if not effects:
+            return
+        seconds = _dt_to_seconds(dt)
+        alive: list[dict[str, Any]] = []
+        for effect in effects:
+            try:
+                effect['age'] = float(effect.get('age', 0.0)) + seconds
+                if float(effect.get('age', 0.0)) < float(effect.get('duration', 0.6)):
+                    alive.append(effect)
+            except Exception:
+                continue
+        self._card_board_effects = alive
+
+    def _draw_card_board_effects(self) -> None:
+        effects = getattr(self, '_card_board_effects', None)
+        if not getattr(self, 'effects_enabled', False) or not effects:
+            return
+
+        try:
+            board_x, board_y = self.get_board_offset()
+            cell_size = max(1, int(self.get_cell_size()))
+            board_width = int(getattr(self.board, 'width', self.board_width)) * cell_size
+            board_height = int(getattr(self.board, 'height', self.board_height)) * cell_size
+        except Exception:
+            return
+
+        overlay = pygame.Surface((board_width, board_height), pygame.SRCALPHA)
+        border_width = max(2, cell_size // 7)
+
+        for effect in effects:
+            try:
+                duration = max(0.001, float(effect.get('duration', 0.6)))
+                progress = max(0.0, min(1.0, float(effect.get('age', 0.0)) / duration))
+            except Exception:
+                progress = 1.0
+            inv = max(0.0, 1.0 - progress)
+            eased = 1.0 - ((1.0 - progress) ** 3)
+            pulse = max(0.0, 1.0 - abs((progress * 2.0) - 1.0))
+            accent = self._normalize_card_board_color(effect.get('accent'))
+
+            flash_alpha = int(max(0.0, float(effect.get('board_flash_alpha', 0))) * inv)
+            if flash_alpha > 0:
+                pygame.draw.rect(
+                    overlay,
+                    (*accent, flash_alpha),
+                    overlay.get_rect(),
+                    width=max(2, cell_size // 4),
+                    border_radius=max(6, cell_size // 2),
+                )
+
+            for move in effect.get('moves', []) or []:
+                start = (
+                    int(move['from_x'] * cell_size + (cell_size / 2)),
+                    int(move['from_y'] * cell_size + (cell_size / 2)),
+                )
+                end = (
+                    int(move['to_x'] * cell_size + (cell_size / 2)),
+                    int(move['to_y'] * cell_size + (cell_size / 2)),
+                )
+                line_alpha = int(160 * inv)
+                if line_alpha > 0:
+                    pygame.draw.line(
+                        overlay,
+                        (*accent, line_alpha),
+                        start,
+                        end,
+                        max(2, cell_size // 6),
+                    )
+                ghost_center = (
+                    int(start[0] + ((end[0] - start[0]) * eased)),
+                    int(start[1] + ((end[1] - start[1]) * eased)),
+                )
+                ghost_size = max(4, cell_size - 6)
+                ghost_rect = pygame.Rect(0, 0, ghost_size, ghost_size)
+                ghost_rect.center = ghost_center
+                ghost_surface = pygame.Surface(ghost_rect.size, pygame.SRCALPHA)
+                ghost_surface.fill((*self._normalize_card_board_color(move.get('color')), int(110 + (80 * inv))))
+                overlay.blit(ghost_surface, ghost_rect.topleft)
+                dest_rect = pygame.Rect(move['to_x'] * cell_size + 1, move['to_y'] * cell_size + 1, max(2, cell_size - 2), max(2, cell_size - 2))
+                pygame.draw.rect(overlay, (*accent, int(120 * inv)), dest_rect, width=border_width, border_radius=max(4, cell_size // 4))
+
+            for cell in effect.get('removed', []) or []:
+                rect = pygame.Rect(cell['x'] * cell_size + 1, cell['y'] * cell_size + 1, max(2, cell_size - 2), max(2, cell_size - 2))
+                fill = pygame.Surface(rect.size, pygame.SRCALPHA)
+                fill.fill((*self._normalize_card_board_color(cell.get('color')), int(190 * inv)))
+                overlay.blit(fill, rect.topleft)
+                pygame.draw.rect(overlay, (*accent, int(210 * inv)), rect, width=border_width, border_radius=max(4, cell_size // 4))
+
+            for cell in effect.get('added', []) or []:
+                rect = pygame.Rect(cell['x'] * cell_size + 1, cell['y'] * cell_size + 1, max(2, cell_size - 2), max(2, cell_size - 2))
+                fill = pygame.Surface(rect.size, pygame.SRCALPHA)
+                fill.fill((*self._normalize_card_board_color(cell.get('color')), int(70 + (120 * pulse))))
+                overlay.blit(fill, rect.topleft)
+                pygame.draw.rect(overlay, (*accent, int(140 * inv + 40)), rect, width=border_width, border_radius=max(4, cell_size // 4))
+
+            for cell in effect.get('changed', []) or []:
+                rect = pygame.Rect(cell['x'] * cell_size + 1, cell['y'] * cell_size + 1, max(2, cell_size - 2), max(2, cell_size - 2))
+                fill = pygame.Surface(rect.size, pygame.SRCALPHA)
+                fill.fill((*self._normalize_card_board_color(cell.get('after_color')), int(80 + (110 * pulse))))
+                overlay.blit(fill, rect.topleft)
+                pygame.draw.rect(overlay, (*accent, int(180 * inv)), rect, width=border_width, border_radius=max(4, cell_size // 4))
+
+        self.screen.blit(overlay, (board_x, board_y))
+
+    def _set_localized_workshop_message(self, key: str, display_time: float, default: str | None = None, **kwargs) -> str:
+        text = self._localized_card_text(key, default, **kwargs)
+        self._card_workshop_message = text
+        self._card_workshop_message_timer = float(display_time)
+        return text
+
+    def _get_armed_ghost_echo_card(self) -> Dict[str, Any] | None:
+        try:
+            visuals = getattr(self, '_active_effect_visuals', {}) or {}
+            visual = visuals.get('ghost_echo') if isinstance(visuals, dict) else None
+            if isinstance(visual, dict):
+                return visual
+        except Exception:
+            pass
+
+        try:
+            active_cards = list(getattr(self.card_manager, 'active_cards', []) or [])
+        except Exception:
+            active_cards = []
+        for card in active_cards:
+            try:
+                if card.get('id') == 'ghost_echo':
+                    return card
+            except Exception:
+                continue
+        return None
+
+    def _create_mirrored_hold_piece(self, piece):
+        if piece is None:
+            return None
+        try:
+            import copy as _copy
+            mirrored = piece.copy() if hasattr(piece, 'copy') else _copy.deepcopy(piece)
+        except Exception:
+            return piece
+        try:
+            shape = getattr(piece, 'shape', None)
+            if not shape:
+                return piece
+            mirrored.shape = [list(reversed(list(row))) for row in shape]
+        except Exception:
+            return piece
+        try:
+            color_matrix = getattr(piece, 'color_matrix', None)
+        except Exception:
+            color_matrix = None
+        if color_matrix is not None:
+            try:
+                mirrored.color_matrix = [list(reversed(list(row))) for row in color_matrix]
+            except Exception:
+                mirrored.color_matrix = None
+        try:
+            for attr, raw_value in vars(piece).items():
+                if attr in {'shape', 'color_matrix'}:
+                    continue
+                setattr(mirrored, attr, raw_value)
+        except Exception:
+            pass
+        return mirrored
+
+    def _prepare_piece_for_hold(self, piece, *, slot: str = 'primary'):
+        _ = slot
+        if piece is None:
+            return None
+        try:
+            charges = int(getattr(self, '_mirror_hold_charges', 0) or 0)
+        except Exception:
+            charges = 0
+        if charges <= 0:
+            return piece
+        mirrored = self._create_mirrored_hold_piece(piece)
+        if mirrored is None:
+            return piece
+        self._mirror_hold_charges = max(0, charges - 1)
+        try:
+            self._set_localized_card_message(
+                'mystery_msg_mirror_hold_applied',
+                1.0,
+                'Ayna Cep: saklanan parça aynalandi.',
+            )
+        except Exception:
+            pass
+        try:
+            if self._mirror_hold_charges <= 0:
+                self._active_effect_visuals.pop('mirror_hold', None)
+            self._sync_active_cards()
+        except Exception:
+            pass
+        return mirrored
+
+    def _post_lock_cells_after_player_clear(
+        self,
+        locked_cells: list[tuple[int, int]],
+        cleared_rows: list[int] | tuple[int, ...] | None,
+    ) -> list[tuple[int, int]]:
+        try:
+            width = int(getattr(self.board, 'width', BOARD_WIDTH) or BOARD_WIDTH)
+            height = int(getattr(self.board, 'height', BOARD_HEIGHT) or BOARD_HEIGHT)
+        except Exception:
+            width, height = BOARD_WIDTH, BOARD_HEIGHT
+        try:
+            normalized_rows = sorted({int(row) for row in (cleared_rows or [])})
+        except Exception:
+            normalized_rows = []
+        adjusted: list[tuple[int, int]] = []
+        for raw_x, raw_y in locked_cells or []:
+            try:
+                x = int(raw_x)
+                y = int(raw_y)
+            except Exception:
+                continue
+            if y < 0 or y in normalized_rows:
+                continue
+            shift = sum(1 for row in normalized_rows if row > y)
+            new_y = y + shift
+            if 0 <= x < width and 0 <= new_y < height:
+                adjusted.append((x, new_y))
+        return adjusted
+
+    def _piece_lock_color(self, piece, board_x: int, board_y: int):
+        try:
+            color_matrix = getattr(piece, 'color_matrix', None)
+        except Exception:
+            color_matrix = None
+        if color_matrix is not None:
+            try:
+                local_x = int(board_x) - int(getattr(piece, 'x', 0) or 0)
+                local_y = int(board_y) - int(getattr(piece, 'y', 0) or 0)
+                if 0 <= local_y < len(color_matrix) and 0 <= local_x < len(color_matrix[local_y]):
+                    cell_color = color_matrix[local_y][local_x]
+                    if cell_color is not None:
+                        return cell_color
+            except Exception:
+                pass
+        try:
+            original_color = getattr(piece, '_original_color', None)
+            if original_color is not None:
+                return original_color
+        except Exception:
+            pass
+        try:
+            return getattr(piece, 'color', (120, 220, 255))
+        except Exception:
+            return (120, 220, 255)
+
+    def _apply_echo_drop_on_lock(
+        self,
+        locked_piece,
+        locked_cells: list[tuple[int, int]],
+        cleared_rows: list[int] | tuple[int, ...] | None,
+    ) -> int:
+        try:
+            charges = int(getattr(self, '_echo_drop_charges', 0) or 0)
+        except Exception:
+            charges = 0
+        if charges <= 0:
+            return 0
+        try:
+            fill_count = max(1, int(getattr(self, '_echo_drop_fill_count', 2) or 2))
+        except Exception:
+            fill_count = 2
+
+        post_lock_cells = self._post_lock_cells_after_player_clear(locked_cells, cleared_rows)
+        if not post_lock_cells:
+            return 0
+
+        board = getattr(self, 'board', None)
+        if board is None:
+            return 0
+
+        try:
+            accent = tuple((getattr(self, '_active_effect_visuals', {}) or {}).get('echo_drop', {}).get('color', (120, 220, 255)))
+        except Exception:
+            accent = (120, 220, 255)
+
+        candidates: list[tuple[int, int, Any]] = []
+        seen: set[tuple[int, int]] = set()
+        board_width = int(getattr(board, 'width', BOARD_WIDTH) or BOARD_WIDTH)
+        board_height = int(getattr(board, 'height', BOARD_HEIGHT) or BOARD_HEIGHT)
+        for x, y in sorted(post_lock_cells, key=lambda pos: (-pos[1], pos[0])):
+            tx = int(x)
+            ty = int(y) + 1
+            target = (tx, ty)
+            if target in seen:
+                continue
+            if tx < 0 or ty < 0 or tx >= board_width or ty >= board_height:
+                continue
+            try:
+                occupied = bool(board.occupancy[ty][tx])
+            except Exception:
+                occupied = False
+            if occupied:
+                continue
+            seen.add(target)
+            candidates.append((tx, ty, self._piece_lock_color(locked_piece, x, y)))
+            if len(candidates) >= fill_count:
+                break
+
+        if not candidates:
+            return 0
+
+        before_snapshot = None
+        try:
+            before_snapshot = self._capture_card_board_snapshot()
+        except Exception:
+            before_snapshot = None
+
+        for tx, ty, color in candidates:
+            board.grid[ty][tx] = color
+            board.occupancy[ty][tx] = True
+            try:
+                board.texture_grid[ty][tx] = None
+            except Exception:
+                pass
+            try:
+                board.gold[ty][tx] = False
+            except Exception:
+                pass
+            try:
+                board.owners[ty][tx] = None
+            except Exception:
+                pass
+
+        self._echo_drop_charges = max(0, charges - 1)
+        try:
+            self._set_localized_card_message(
+                'mystery_msg_echo_drop_filled',
+                1.0,
+                'Yankı Düşüşü: {placed} gölge blok yerleşti.',
+                placed=len(candidates),
+            )
+        except Exception:
+            pass
+
+        try:
+            if before_snapshot is not None:
+                self._queue_card_board_effect_from_snapshots(
+                    'echo_drop',
+                    before_snapshot,
+                    self._capture_card_board_snapshot(),
+                    accent=accent,
+                )
+        except Exception:
+            pass
+
+        try:
+            if getattr(self, 'effects_enabled', False):
+                cell_size = self.get_cell_size()
+                offset_x, offset_y = self.get_board_offset()
+                avg_x = sum(tx for tx, _, _ in candidates) / len(candidates)
+                avg_y = sum(ty for _, ty, _ in candidates) / len(candidates)
+                self.create_power_particles(
+                    offset_x + int(avg_x * cell_size) + cell_size // 2,
+                    offset_y + int(avg_y * cell_size) + cell_size // 2,
+                    accent,
+                    count=24,
+                )
+        except Exception:
+            pass
+
+        try:
+            prev_score = int(getattr(board, 'score', 0) or 0)
+        except Exception:
+            prev_score = 0
+        cleared_lines = int(board.clear_lines(source='card'))
+        if cleared_lines > 0:
+            try:
+                delta = int(getattr(board, 'score', 0)) - prev_score
+            except Exception:
+                delta = None
+            self._post_external_line_clear(cleared_lines, award_energy=True, score_delta=delta, source='card')
+
+        try:
+            if self._echo_drop_charges <= 0:
+                self._active_effect_visuals.pop('echo_drop', None)
+            self._sync_active_cards()
+        except Exception:
+            pass
+        return len(candidates)
+
+    def _consume_ghost_echo_revive(self) -> bool:
+        card = self._get_armed_ghost_echo_card()
+        if not card:
+            return False
+
+        try:
+            rows = int(card.get('value', card.get('base', 6)) or 6)
+        except Exception:
+            rows = 6
+        try:
+            board_height = int(getattr(self.board, 'height', BOARD_HEIGHT) or BOARD_HEIGHT)
+        except Exception:
+            board_height = BOARD_HEIGHT
+        top_half_rows = max(1, int(math.ceil(board_height / 2.0)))
+        rows = max(top_half_rows, min(rows, board_height))
+        rows = max(1, min(rows, board_height))
+
+        try:
+            if hasattr(self.board, 'clear_top_rows'):
+                self.board.clear_top_rows(rows)
+            else:
+                for y in range(rows):
+                    for x in range(self.board.width):
+                        self.board.grid[y][x] = BLACK
+                        self.board.texture_grid[y][x] = None
+                        self.board.occupancy[y][x] = False
+                        try:
+                            self.board.gold[y][x] = False
+                        except Exception:
+                            pass
+                        try:
+                            self.board.owners[y][x] = None
+                        except Exception:
+                            pass
+        except Exception:
+            pass
+
+        try:
+            if hasattr(self.board, 'clear_lock_out'):
+                self.board.clear_lock_out()
+            else:
+                if hasattr(self.board, '_locked_out'):
+                    self.board._locked_out = False
+                if hasattr(self.board, '_last_lock_out'):
+                    self.board._last_lock_out = False
+        except Exception:
+            pass
+
+        try:
+            self.card_manager.active_cards = [
+                active for active in (getattr(self.card_manager, 'active_cards', []) or [])
+                if not (isinstance(active, dict) and active.get('id') == 'ghost_echo')
+            ]
+        except Exception:
+            pass
+        try:
+            self._active_effect_visuals.pop('ghost_echo', None)
+        except Exception:
+            pass
+        try:
+            self._set_localized_card_message('mystery_msg_revive', 2.0, 'Ölümden döndün!')
+        except Exception:
+            pass
+        try:
+            self._sync_active_cards()
+        except Exception:
+            pass
+        return True
+
+    def _try_prevent_game_over_after_lock(self) -> bool:
+        return self._consume_ghost_echo_revive()
+
+    def spawn_new_piece(self) -> Piece:
+        forced = self.card_manager.pop_forced_piece()
+        if forced:
+            piece = self._create_named_piece(forced)
+            identity = self._piece_identity(piece)
+            # Aynı parça 3 kere üst üste geldiyse forced parçayı tüketme; sonraya ertele.
+            if self._would_exceed_max_consecutive(identity):
+                try:
+                    self.card_manager.force_piece_queue.insert(0, forced)
+                except Exception:
+                    pass
+            else:
+                self._apply_block_style(piece)
+                self._note_piece_spawn(identity)
+                try:
+                    # Keep UI in sync when forced-piece queue is consumed.
+                    if hasattr(self, '_active_effect_visuals'):
+                        self._sync_active_cards()
+                except Exception:
+                    pass
+                # Perk manager'ı forced piece için de çağır (Esnek Sınır vb.)
+                try:
+                    self.perk_manager.on_piece_spawn(piece)
+                except Exception:
+                    pass
+                try:
+                    if not self.board.is_valid_position(piece):
+                        self._consume_ghost_echo_revive()
+                except Exception:
+                    pass
+                return piece
+        piece = super().spawn_new_piece()
+        # Let perk manager adjust the newly spawned piece (bombs, phase)
+        try:
+            self.perk_manager.on_piece_spawn(piece)
+        except Exception:
+            pass
+
+        # Auto-activate Ghost Echo if we would immediately game-over with this spawn
+        try:
+            if not self.board.is_valid_position(piece):
+                self._consume_ghost_echo_revive()
+        except Exception:
+            pass
+        return piece
+
+    def _save_last_placed_piece(self, piece=None) -> None:
+        """Geri Sarma için son yerleştirilen parçanın bilgilerini kaydet."""
+        import copy
+        try:
+            p = piece if piece is not None else self.current_piece
+            if p:
+                # Parçanın kilitlendiği hücreleri kaydet
+                cells = [(x, y) for x, y in p.get_cells() if y >= 0]
+                self._last_placed_piece = {
+                    'piece': copy.deepcopy(p),
+                    'cells': cells,
+                    'color': getattr(p, 'color', None),
+                }
+        except Exception as e:
+            print(f"[Rewind] Parça kaydetme hatası: {e}")
+            self._last_placed_piece = None
+
+    def _do_rewind(self) -> bool:
+        """Geri Sarma kullan - son parçayı board'dan kaldır ve tekrar düşür."""
+        if not getattr(self, '_last_placed_piece', None):
+            self._set_localized_card_message('mystery_msg_rewind_no_piece', 1.0, 'Geri alınacak parça yok!')
+            return False
+        
+        if not self.perk_manager.is_active('rewind_power') or self.perk_manager.rewind_uses <= 0:
+            self._set_localized_card_message('mystery_msg_rewind_no_uses', 1.0, 'Geri sarma hakkın kalmadı!')
+            return False
+        
+        try:
+            import copy
+            last = self._last_placed_piece
+            
+            # Son parçanın hücrelerini board'dan sil (grid, occupancy ve texture_grid)
+            for x, y in last['cells']:
+                if 0 <= y < self.board.height and 0 <= x < self.board.width:
+                    self.board.grid[y][x] = BLACK
+                    self.board.occupancy[y][x] = False
+                    if hasattr(self.board, 'texture_grid'):
+                        self.board.texture_grid[y][x] = None
+                    try:
+                        self.board.gold[y][x] = False
+                    except Exception:
+                        pass
+                    try:
+                        self.board.owners[y][x] = None
+                    except Exception:
+                        pass
+            
+            # Mevcut parçayı kuyruğun başına ekle.
+            # NOT: Parçayı olduğu gibi geri koyarsak, daha sonra tekrar geldiğinde
+            # eski x/y konumundan düşmeye devam eder. Bu yüzden spawn konumuna resetle.
+            queued_piece = self.current_piece
+            try:
+                if queued_piece is not None:
+                    self._position_piece_at_spawn(queued_piece)
+            except Exception:
+                pass
+            self.next_piece_queue.insert(0, queued_piece)
+            
+            # Son parçayı tekrar aktif parça yap
+            restored_piece = copy.deepcopy(last['piece'])
+            self._position_piece_at_spawn(restored_piece)
+            self._skip_hidden_rows(restored_piece)
+            # Rengi koru
+            if last.get('color'):
+                restored_piece.color = last['color']
+            self.current_piece = restored_piece
+            
+            # Tema renklerini uygula
+            self.apply_theme_to_pieces()
+            
+            # Kullanım hakkını düşür
+            self.perk_manager.rewind_uses -= 1
+            
+            # Kalan hakkı göster
+            remaining = self.perk_manager.rewind_uses
+            if remaining <= 0:
+                self.perk_manager.deactivate('rewind_power')
+                self._rewind_available = False
+                self._set_localized_card_message('mystery_msg_rewind_last_use', 1.5, 'Geri Sarma kullanıldı! (Son hak)')
+            else:
+                self._set_localized_card_message(
+                    'mystery_msg_rewind_remaining',
+                    1.5,
+                    'Geri Sarma! ({remaining} hak kaldı)',
+                    remaining=remaining,
+                )
+            
+            # Son parça bilgisini temizle (aynı parçayı tekrar geri alamaz)
+            self._last_placed_piece = None
+            
+            # Ses çal
+            try:
+                self.sound.play('rotate')
+            except:
+                pass
+            
+            self._sync_active_cards()
+            return True
+        except Exception as e:
+            print(f"[Rewind] Geri sarma hatası: {e}")
+            return False
+
+    def lock_and_new_piece(self) -> None:
+        before_piece_ref = self.current_piece
+        before = self.board.lines_cleared
+        previous_combo = getattr(self.board, "combo", 0)
+        # locked cells (for explosive handling)
+        # capture the piece that was locked (current_piece will be replaced by super().lock_and_new_piece())
+        locked_piece = self.current_piece
+        locked_cells = [(x, y) for x, y in locked_piece.get_cells() if y >= 0]
+        # measure previous score to apply synergy multiplier to added points
+        prev_score = self.board.score
+        # If chrono freeze active, set fall_speed high to 'pause' gravity
+        if getattr(self.perk_manager, 'chrono_freeze_timer', 0) > 0:
+            self.gravity_freeze_timer = self.perk_manager.chrono_freeze_timer
+            self.perk_manager.chrono_freeze_timer = 0.0
+        # Son Düşüş: parça kilitlendiğinde dondurma sona erer
+        if getattr(self, '_freeze_drop_active', False):
+            self._freeze_drop_active = False
+            self._freeze_drop_timer = 0.0
+        if getattr(locked_piece, 'drill', False):
+            try:
+                self._cleanup_drill_path_to_lock(locked_piece)
+            except Exception:
+                pass
+        super().lock_and_new_piece()
+
+        # If the underlying Game ignored the lock (e.g., tunneled hard-drop pressed
+        # while not touching), do not run post-lock bookkeeping.
+        if self.current_piece is before_piece_ref:
+            return
+
+        # Consume one tunneling charge only when the tunneled piece actually locked.
+        try:
+            if getattr(locked_piece, 'tunnel', False) and getattr(locked_piece, '_tunnel_charge_pending', False):
+                self.tunnel_charges_remaining = max(0, int(getattr(self, 'tunnel_charges_remaining', 0) or 0) - 1)
+                try:
+                    delattr(locked_piece, '_tunnel_charge_pending')
+                except Exception:
+                    setattr(locked_piece, '_tunnel_charge_pending', False)
+        except Exception:
+            pass
+
+        # Lines cleared by the player's lock only. Secondary card clears can run
+        # below; keep them out of player-source perk/progress bookkeeping.
+        player_lines = self.board.lines_cleared - before
+        try:
+            player_cleared_rows = list(getattr(self.board, 'last_cleared_lines', []) or [])
+        except Exception:
+            player_cleared_rows = []
+
+        # Save rewind snapshot only after a successful lock so the saved cell
+        # positions reflect any last-moment adjustments (including tunneling snap).
+        if getattr(self, '_rewind_available', False):
+            try:
+                # If this placed piece cleared any line(s) (incl. Quadrix), rewind must be disabled.
+                if player_lines > 0:
+                    self._last_placed_piece = None
+                else:
+                    self._save_last_placed_piece(locked_piece)
+            except Exception:
+                pass
+
+        # Apply post-scoring multipliers (synergy_core, timed score multiplier, line-clear multiplier)
+        try:
+            base_delta = int(self.board.score - prev_score)
+        except Exception:
+            base_delta = 0
+        multiplier = self.perk_manager.get_multiplier() if getattr(self, 'perk_manager', None) else 1.0
+        if multiplier != 1.0 and base_delta > 0:
+            self.board.score += int(base_delta * (multiplier - 1.0))
+        try:
+            delta_after_synergy = int(self.board.score - prev_score)
+        except Exception:
+            delta_after_synergy = 0
+        try:
+            self.board.score += self._apply_score_multiplier_to_delta(delta_after_synergy)
+        except Exception:
+            pass
+        # Quantum tunneling is now a multi-charge effect; do not clear its HUD entry on lock.
+        try:
+            self._sync_active_cards()
+        except Exception:
+            pass
+        try:
+            delta_after_timed = int(self.board.score - prev_score)
+            self.board.score += self._apply_line_clear_multiplier_to_delta(player_lines, delta_after_timed)
+        except Exception:
+            pass
+        # Energy gain for Mystery Mode: +10 energy per cleared line
+        if getattr(self, 'energy', None) is not None and player_lines > 0:
+            try:
+                self.energy = min(self.energy_max, int(self.energy + player_lines * 10))
+            except Exception:
+                self.energy = min(getattr(self, 'energy_max', 100), getattr(self, 'energy', 0) + (player_lines * 10))
+        try:
+            self._apply_echo_drop_on_lock(locked_piece, locked_cells, player_cleared_rows)
+        except Exception:
+            pass
+        # Explosive Protocol: if the locked piece is a bomb, explode.
+        if getattr(locked_piece, 'is_bomb', False):
+            width = len(self.board.grid[0])
+            height = len(self.board.grid)
+            cleared_cells = 0
+            cleared_coords: list[tuple[int, int]] = []
+            now_ms = None
+            try:
+                now_ms = int(pygame.time.get_ticks())
+            except Exception:
+                now_ms = None
+            if locked_cells:
+                cx = int(round(sum(x for x, _ in locked_cells) / len(locked_cells)))
+                cy = int(round(sum(y for _, y in locked_cells) / len(locked_cells)))
+
+                bomb_cells = {(int(sx), int(sy)) for sx, sy in locked_cells}
+
+                # Mini bomb: clear only blocks the bomb footprint touches (4-neighborhood).
+                if getattr(locked_piece, '_bomb_contact', False):
+                    targets = set(bomb_cells)
+                    for sx, sy in bomb_cells:
+                        for dx, dy in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+                            nx, ny = sx + dx, sy + dy
+                            if 0 <= nx < width and 0 <= ny < height:
+                                if self.board.occupancy[ny][nx] and (nx, ny) not in bomb_cells:
+                                    targets.add((nx, ny))
+                else:
+                    # Default bomb behavior: a small + around the lock center.
+                    targets = {(cx, cy), (cx - 1, cy), (cx + 1, cy), (cx, cy - 1), (cx, cy + 1)}
+
+                for x, y in targets:
+                    if 0 <= x < width and 0 <= y < height and self.board.occupancy[y][x]:
+                        self.board.occupancy[y][x] = False
+                        self.board.grid[y][x] = BLACK
+                        self.board.texture_grid[y][x] = None
+                        try:
+                            self.board.gold[y][x] = False
+                        except Exception:
+                            pass
+                        try:
+                            self.board.owners[y][x] = None
+                        except Exception:
+                            pass
+                        cleared_cells += 1
+                        cleared_coords.append((int(x), int(y)))
+            if cleared_cells > 0:
+                try:
+                    self._trace_ghost_bug_clear(
+                        now_ms=now_ms,
+                        clear_kind='bomb',
+                        cleared_cells=cleared_cells,
+                        coords=cleared_coords,
+                        piece=locked_piece,
+                        note=f"bomb_contact={bool(getattr(locked_piece, '_bomb_contact', False))}",
+                    )
+                except Exception:
+                    pass
+                if self.sound_enabled:
+                    self.sound.play_sound('clear')
+                self.board.score += cleared_cells * 40
+                try:
+                    self._queue_card_board_removed_cells_effect(
+                        'mini_bomb',
+                        list(cleared_coords),
+                        accent=(255, 120, 80),
+                    )
+                except Exception:
+                    pass
+                if self.effects_enabled and locked_cells:
+                    cell_size = self.get_cell_size()
+                    offset_x, offset_y = self.get_board_offset()
+                    px = offset_x + int(cx * cell_size) + cell_size // 2
+                    py = offset_y + int(cy * cell_size) + cell_size // 2
+                    self.create_power_particles(px, py, (255, 100, 50), count=60)
+                # Patlama sonrasi asili kalan bloklari asagi dusur
+                try:
+                    self.board.apply_gravity()
+                except Exception:
+                    pass
+                # clear any new full rows created by explosion
+                prev_score_ex = int(getattr(self.board, 'score', 0))
+                extra_cleared = int(self.board.clear_lines(source='card'))
+                if extra_cleared:
+                    try:
+                        delta_ex = int(getattr(self.board, 'score', 0)) - prev_score_ex
+                    except Exception:
+                        delta_ex = None
+                    self._post_external_line_clear(extra_cleared, award_energy=True, score_delta=delta_ex, source='card')
+
+        # Alchemist perk trigger with piece context (T-like spins or Quadrix)
+        try:
+            if str(getattr(locked_piece, 'name', '')) == 'T' and int(player_lines) in (2, 3):
+                self.perk_manager.maybe_trigger_alchemist(locked_piece, player_lines)
+        except Exception:
+            pass
+
+        # Armed Nova Burst: after lock, explode a 3x3 around the locked piece center
+        try:
+            charges = int(getattr(self, '_armed_nova_clusters', 0) or 0)
+        except Exception:
+            charges = 0
+        if charges > 0 and locked_cells:
+            prev_score_nova = int(getattr(self.board, 'score', 0))
+            width = len(self.board.grid[0])
+            height = len(self.board.grid)
+            cx = int(round(sum(x for x, _ in locked_cells) / len(locked_cells)))
+            cy = int(round(sum(y for _, y in locked_cells) / len(locked_cells)))
+            cleared_cells = 0
+            cleared_coords: list[tuple[int, int]] = []
+            now_ms = None
+            try:
+                now_ms = int(pygame.time.get_ticks())
+            except Exception:
+                now_ms = None
+            for y in range(max(0, cy - 1), min(height, cy + 2)):
+                for x in range(max(0, cx - 1), min(width, cx + 2)):
+                    if self.board.occupancy[y][x]:
+                        self.board.occupancy[y][x] = False
+                        self.board.grid[y][x] = BLACK
+                        self.board.texture_grid[y][x] = None
+                        try:
+                            self.board.gold[y][x] = False
+                        except Exception:
+                            pass
+                        try:
+                            self.board.owners[y][x] = None
+                        except Exception:
+                            pass
+                        cleared_cells += 1
+                        cleared_coords.append((int(x), int(y)))
+            if cleared_cells:
+                try:
+                    self._trace_ghost_bug_clear(
+                        now_ms=now_ms,
+                        clear_kind='nova_armed',
+                        cleared_cells=cleared_cells,
+                        coords=cleared_coords,
+                        piece=locked_piece,
+                    )
+                except Exception:
+                    pass
+                self.board.score += cleared_cells * 40
+                try:
+                    self._queue_card_board_removed_cells_effect(
+                        'nova_burst',
+                        list(cleared_coords),
+                        accent=getattr(self.mode_skin, 'accent', (255, 180, 120)),
+                    )
+                except Exception:
+                    pass
+                if self.sound_enabled:
+                    self.sound.play_sound('clear')
+                if self.effects_enabled:
+                    cell_size = self.get_cell_size()
+                    offset_x, offset_y = self.get_board_offset()
+                    px = offset_x + int(cx * cell_size) + cell_size // 2
+                    py = offset_y + int(cy * cell_size) + cell_size // 2
+                    self.create_power_particles(px, py, self.mode_skin.accent, count=80)
+                cleared_lines = int(self.board.clear_lines(source='card'))
+                if cleared_lines > 0:
+                    try:
+                        delta = int(getattr(self.board, 'score', 0)) - prev_score_nova
+                    except Exception:
+                        delta = None
+                    self._post_external_line_clear(cleared_lines, award_energy=True, score_delta=delta, source='card')
+            self._armed_nova_clusters = max(0, charges - 1)
+            self._sync_active_cards()
+        if player_lines > 0:
+            self._apply_line_bonus_reward(player_lines)
+            # Spawn XP homing particles for Cascade Protocol (Mystery Mode)
+            if self.effects_enabled:
+                active_width, _ = self._active_ui_size()
+                cell_size = self.get_cell_size()
+                offset_x, offset_y = self.get_board_offset()
+                xp_bar_x = active_width - 120
+                xp_bar_y = offset_y + 40
+                for row in self.board.last_cleared_lines:
+                    for col in range(self.board_width):
+                        cell_x = offset_x + col * cell_size + cell_size // 2
+                        cell_y = offset_y + row * cell_size + cell_size // 2
+                        for _ in range(2):
+                            particle = {
+                                'x': float(cell_x),
+                                'y': float(cell_y),
+                                'vx': random.uniform(-2, 2),
+                                'vy': random.uniform(-2, -1),
+                                'life': random.randint(40, 80),
+                                'max_life': 100,
+                                'color': self.mode_skin.accent,
+                                'size': 3,
+                                'target': (xp_bar_x, xp_bar_y),
+                                'speed_override': 8
+                            }
+                            self.particles.append(particle)
+        self._apply_combo_aura_on_lock(player_lines, previous_combo)
+        # Line-based notification retained to update internal progress, but we no longer
+        # open the card selection overlay from gained lines; selection now happens on level-up.
+        try:
+            try:
+                if getattr(self, 'settings_manager', None) and self.settings_manager.get('debug_mode', False):
+                    print(f"[MysteryMode] lock_and_new_piece: player_lines={player_lines}, board.level={self.board.level}, card_xp={self.card_manager.card_xp}/{self.card_manager.card_xp_to_next}")
+            except Exception:
+                pass
+            # Player kaynaklı clear: gerçek combo / B2B / perfect-clear bağlamıyla XP ver.
+            try:
+                combo_now = int(getattr(self.board, 'combo', 0) or 0)
+            except Exception:
+                combo_now = 0
+            try:
+                b2b_now = bool(getattr(self.board, 'back_to_back', False))
+            except Exception:
+                b2b_now = False
+            perfect_now = False
+            if player_lines > 0:
+                try:
+                    perfect_now = all(not any(row) for row in self.board.occupancy)
+                except Exception:
+                    perfect_now = False
+            triggered = self.card_manager.notify_lines_cleared(
+                player_lines,
+                source='player',
+                combo=combo_now,
+                back_to_back=b2b_now,
+                perfect_clear=perfect_now,
+            )
+            # Note: `notify_lines_cleared` artık card_level deltası kadar
+            # `pending_level_ups` enqueue eder; double-counting yok.
+        except Exception:
+            pass
+        # Perk manager: trigger per-line events
+        try:
+            self.perk_manager.notify_lines_cleared(player_lines, source='player')
+        except Exception:
+            pass
+        # Notify perk manager that a piece was locked
+        try:
+            self.perk_manager.on_piece_locked(self.current_piece, locked_cells)
+        except Exception:
+            pass
+
+        # === COMBO SİGORTASI ===
+        # Player satır temizleyemediyse normalde board.clear_lines (player source)
+        # combo'yu sıfırlar. Kart silahlıysa ve gerçek bir combo varsa lokal
+        # olarak combo'yu geri yükle ve sigortayı tüket. Sahte XP / sahte score
+        # üretmez; yalnız board.combo'yu eski değerine geri yükler.
+        try:
+            if (
+                getattr(self, '_combo_insurance_armed', False)
+                and int(player_lines or 0) <= 0
+                and int(previous_combo or 0) > 0
+                and int(getattr(self.board, 'combo', 0) or 0) <= 0
+            ):
+                self.board.combo = int(previous_combo)
+                self._combo_insurance_armed = False
+                # Aktif görseli paneldekinden de düşür
+                try:
+                    self._active_effect_visuals.pop('combo_insurance', None)
+                except Exception:
+                    pass
+                try:
+                    self._set_localized_card_message(
+                        'mystery_msg_combo_insurance_triggered',
+                        1.4,
+                        'Combo Sigortası tetiklendi! Combo korundu.',
+                    )
+                except Exception:
+                    pass
+                try:
+                    self._sync_active_cards()
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+        # === TERS BORÇ ===
+        # Kart aktifken her başarılı lock cezası 1 azaltır. Sayaç 0 olunca
+        # `lock_delay` normal değere geri döner ve aktif kart panelinden düşer.
+        try:
+            if int(getattr(self, '_reverse_debt_remaining', 0) or 0) > 0:
+                self._reverse_debt_remaining = max(0, int(self._reverse_debt_remaining) - 1)
+                # Lock delay'i remaining'den derive et (single source of truth).
+                try:
+                    self._apply_reverse_debt_lock_delay()
+                except Exception:
+                    pass
+                if self._reverse_debt_remaining <= 0:
+                    try:
+                        self._active_effect_visuals.pop('reverse_debt', None)
+                    except Exception:
+                        pass
+                    try:
+                        self._set_localized_card_message(
+                            'mystery_msg_reverse_debt_expired',
+                            1.2,
+                            'Ters Borç süresi doldu!',
+                        )
+                    except Exception:
+                        pass
+                try:
+                    self._sync_active_cards()
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+    def update(self, dt: float) -> None:
+        if getattr(self, '_demo_score_cap_active', False):
+            self.update_screen_shake()
+            return
+
+        # dt gelebilir: ms (oyun döngüsünden) veya saniye. Tutarlı dönüşüm.
+        seconds = _dt_to_seconds(dt)
+        self.card_message_timer = max(0, self.card_message_timer - seconds)
+        self._update_effect_timers(dt)
+        
+        # Parça seçim popup'ı açıkken oyunu durdur
+        if getattr(self, '_piece_selection_active', False):
+            self.update_screen_shake()
+            return
+
+        # Blok atölyesi kartı popup'ı açıkken oyunu durdur
+        if getattr(self, '_card_workshop_active', False):
+            # Atölye mesaj timer'ını güncelle
+            if getattr(self, '_card_workshop_message_timer', 0) > 0:
+                self._card_workshop_message_timer = max(0, self._card_workshop_message_timer - seconds)
+            self.update_screen_shake()
+            return
+        
+        if self.card_selection_active:
+            # Kart ekranı açıkken oyun alanı CANLI görünmeli.
+            # Parça kontrolü kapalı, ama animasyonlar ve düşüş devam eder.
+            self.card_ui.update(dt, True)
+            if self._pending_card_choice_index is not None and not self.card_ui.is_selection_animating():
+                self._finalize_pending_card_selection()
+
+            prev_allow_auto_lock = getattr(self, 'allow_auto_lock', True)
+            prev_fall_speed = getattr(self, 'fall_speed', None)
+            try:
+                # Yeni parça doğmasın: otomatik kilitlemeyi kapat.
+                self.allow_auto_lock = False
+                # Kart seçiminde blok düşmesin: fall_speed'i çok yükselt.
+                if prev_fall_speed is not None:
+                    self.fall_speed = max(10**9, int(prev_fall_speed))
+                super().update(dt)
+            finally:
+                self.allow_auto_lock = prev_allow_auto_lock
+                if prev_fall_speed is not None:
+                    self.fall_speed = prev_fall_speed
+            return
+        
+        # Keskin Nişancı overlay aktifken oyun alanını dondur (zaman durur)
+        if getattr(self, '_sniper_overlay_active', False):
+            # Sadece ekran sarsıntısı ve UI güncellemelerine izin ver
+            self.update_screen_shake()
+            return
+
+        # Delik Avcısı overlay aktifken oyun alanını dondur
+        if getattr(self, '_hole_hunter_overlay_active', False):
+            self.update_screen_shake()
+            return
+        
+        # Save previous level before running engine update (kept only for
+        # potential debug/log usage; reward queueing artık card_xp tabanlı).
+        prev_level = self.board.level  # noqa: F841 - retained for debug paths
+        super().update(dt)
+
+        if self._maybe_activate_demo_score_cap_prompt():
+            return
+
+        # Drill piece: continuously delete overlapped blocks while falling
+        try:
+            self._cleanup_drill_overlaps()
+        except Exception:
+            pass
+
+        # Bomb piece countdown: show 3-2-1 as it falls
+        try:
+            piece = getattr(self, 'current_piece', None)
+            if piece and getattr(piece, 'is_bomb', False):
+                bomb_seconds = _dt_to_seconds(dt)
+                if getattr(self, '_bomb_countdown_timer', 0.0) <= 0:
+                    self._bomb_countdown_timer = 3.0
+                    self._bomb_countdown_last_int = 0
+                else:
+                    self._bomb_countdown_timer = max(0.0, float(self._bomb_countdown_timer) - bomb_seconds)
+                cur = int(math.ceil(max(0.0, float(self._bomb_countdown_timer))))
+                last = int(getattr(self, '_bomb_countdown_last_int', 0) or 0)
+                if cur != last and cur > 0:
+                    self._bomb_countdown_last_int = cur
+                    self._set_localized_card_message('mystery_msg_bomb_countdown', 0.6, 'BOMBA: {count}', count=cur)
+        except Exception:
+            pass
+        # Detect level up and open card selection when the player levels up
+        self.card_ui.update(dt, False)
+        # --- Active abilities via keyboard state (Z/X/C) ---
+        if not self.card_selection_active and not self.game_over:
+            keys = pygame.key.get_pressed()
+            # Gamepad buton durumunu da kontrol et (pygame.key.get_pressed sentetik olayları algılamaz)
+            try:
+                _gpm = get_gamepad_manager()
+                _gp_connected = _gpm.is_connected()
+            except Exception:
+                _gpm = None
+                _gp_connected = False
+
+            def _pressed(keycode: int) -> bool:
+                """Robust key state check.
+
+                pygame.key.get_pressed() (pygame 2) returns a wrapper that can
+                be indexed by pygame keycodes (event.key). Some environments
+                may behave like a plain sequence; keep a fallback.
+                """
+                try:
+                    kc = int(keycode)
+                except Exception:
+                    return False
+                try:
+                    # Prefer keycode indexing (matches event.key and control bindings).
+                    return bool(keys[kc])
+                except Exception:
+                    pass
+
+                # Fallback: if keys behaves like a plain sequence, allow
+                # small keycodes.
+                try:
+                    if 0 <= kc < len(keys):
+                        return bool(keys[kc])
+                except Exception:
+                    pass
+
+                # Last-resort fallback: attempt keycode -> scancode mapping.
+                try:
+                    if hasattr(pygame.key, 'get_scancode_from_key'):
+                        sc = pygame.key.get_scancode_from_key(kc)
+                        if sc is not None:
+                            return bool(keys[int(sc)])
+                except Exception:
+                    pass
+                return False
+            freeze_input_locked = bool(getattr(self, '_freeze_drop_active', False))
+
+            # Ground Sweep (Z) - cost 40
+            if not freeze_input_locked and keys[pygame.K_z] and not self._last_ability_keys['z']:
+                if self.energy >= 40:
+                    self.energy = max(0, self.energy - 40)
+                    prev_score = int(getattr(self.board, 'score', 0))
+                    self._clear_rows(1, count_as_lines=True)
+                    try:
+                        delta = int(getattr(self.board, 'score', 0)) - prev_score
+                    except Exception:
+                        delta = None
+                    self._post_external_line_clear(1, award_energy=False, score_delta=delta, source='ability')
+                    if self.effects_enabled:
+                        active_width, _ = self._active_ui_size()
+                        self.create_power_particles(active_width - 120, 60, self.mode_skin.accent)
+            self._last_ability_keys['z'] = bool(keys[pygame.K_z])
+
+            # Hayalet Parça (G): Mevcut parçayı hayalet yap - blokların içinden geçebilir.
+            # SPACE ile istenen yerde kilitlenir (komşu blok varsa).
+            # Hak, parça kilitlenince harcanır.
+            _g_pressed = keys[pygame.K_g] or (_gp_connected and _gpm.is_action_pressed('card_ghost'))
+            if not freeze_input_locked and _g_pressed and not self._last_ability_keys.get('g', False):
+                now_ms = None
+                try:
+                    now_ms = int(pygame.time.get_ticks())
+                except Exception:
+                    now_ms = None
+                try:
+                    if self._ghost_bug_tracer is not None:
+                        self._ghost_bug_tracer.mark_g_pressed(int(now_ms or 0))
+                        self._ghost_bug_tracer.event(
+                            'key_g_pressed',
+                            now_ms=now_ms,
+                            tunnel_charges=int(getattr(self, 'tunnel_charges_remaining', 0) or 0),
+                            piece=self._ghost_bug_tracer.snapshot_piece(getattr(self, 'current_piece', None)),
+                        )
+                except Exception:
+                    pass
+                try:
+                    charges = int(getattr(self, 'tunnel_charges_remaining', 0) or 0)
+                except Exception:
+                    charges = 0
+                piece = getattr(self, 'current_piece', None)
+                if charges > 0 and piece and not getattr(piece, 'tunnel', False):
+                    try:
+                        try:
+                            if self._ghost_bug_tracer is not None:
+                                self._ghost_bug_tracer.event(
+                                    'tunnel_arm_before',
+                                    now_ms=now_ms,
+                                    piece=self._ghost_bug_tracer.snapshot_piece(piece),
+                                )
+                        except Exception:
+                            pass
+                        setattr(piece, 'tunnel', True)
+                        setattr(piece, '_tunnel_charge_pending', True)
+                        # Görsel: parçayı yarı saydam yap
+                        setattr(piece, '_original_color', getattr(piece, 'color', None))
+                        try:
+                            piece.color = tuple(int(c * 0.45) for c in getattr(piece, '_original_color'))
+                        except Exception:
+                            pass
+                        try:
+                            self._set_localized_card_message(
+                                'mystery_msg_tunnel_active',
+                                1.2,
+                                'Hayalet aktif! SPACE ile kilitle. Kalan: {charges}',
+                                charges=int(charges),
+                            )
+                        except Exception:
+                            pass
+                        self._sync_active_cards()
+                        try:
+                            if self._ghost_bug_tracer is not None:
+                                self._ghost_bug_tracer.event(
+                                    'tunnel_arm_after',
+                                    now_ms=now_ms,
+                                    piece=self._ghost_bug_tracer.snapshot_piece(piece),
+                                )
+                        except Exception:
+                            pass
+                    except Exception:
+                        pass
+            self._last_ability_keys['g'] = bool(_g_pressed)
+
+            # Çekiç (H): mevcut düşen parçayı 1x1 bloğa dönüştür (3 hak)
+            _h_pressed = keys[pygame.K_h] or (_gp_connected and _gpm.is_action_pressed('card_hammer'))
+            if not freeze_input_locked and _h_pressed and not self._last_ability_keys.get('h', False):
+                try:
+                    charges = int(getattr(self, 'hammer_charges_remaining', 0) or 0)
+                except Exception:
+                    charges = 0
+                if charges > 0:
+                    if self._hammer_current_piece_to_unit():
+                        self.hammer_charges_remaining = max(0, charges - 1)
+                        try:
+                            left = int(getattr(self, 'hammer_charges_remaining', 0) or 0)
+                            self._set_localized_card_message(
+                                'mystery_msg_hammer_used',
+                                1.1,
+                                'Çekiç! Mevcut parça 1x1. Kalan: {left}',
+                                left=left,
+                            )
+                        except Exception:
+                            pass
+                        try:
+                            self._sync_active_cards()
+                        except Exception:
+                            pass
+                        try:
+                            if self.sound_enabled:
+                                self.sound.play_sound('rotate')
+                        except Exception:
+                            pass
+            self._last_ability_keys['h'] = bool(_h_pressed)
+
+            # Bomba Ustası (M): mevcut parçayı mini bomba yap (3 hak)
+            _m_pressed = keys[pygame.K_m] or (_gp_connected and _gpm.is_action_pressed('card_bomb'))
+            if not freeze_input_locked and _m_pressed and not self._last_ability_keys.get('m', False):
+                try:
+                    charges = int(getattr(self, 'bomb_master_charges', 0) or 0)
+                except Exception:
+                    charges = 0
+                if charges > 0:
+                    piece = getattr(self, 'current_piece', None)
+                    if piece is not None and not getattr(piece, 'is_bomb', False):
+                        try:
+                            # Mini bomba mantığı: parçayı bomba yap
+                            setattr(piece, 'is_bomb', True)
+                            # Mini bomb sadece temas ettiği blokları patlatır
+                            setattr(piece, '_bomb_contact', True)
+                            # Orijinal rengi sakla
+                            if getattr(piece, '_original_color', None) is None:
+                                setattr(piece, '_original_color', getattr(piece, 'color', None))
+                            # Bomba rengi: kırmızı
+                            BOMB_COLOR = (221, 0, 5)
+                            piece.color = BOMB_COLOR
+                            setattr(piece, '_force_color', BOMB_COLOR)
+                            # Hakkı düşür
+                            self.bomb_master_charges = max(0, charges - 1)
+                            left = int(self.bomb_master_charges)
+                            self._set_localized_card_message(
+                                'mystery_msg_mini_bomb_armed',
+                                1.2,
+                                'Mini Bomba! Parça kilitlenince patlayacak. Kalan: {left}',
+                                left=left,
+                            )
+                            self._sync_active_cards()
+                            if self.sound_enabled:
+                                self.sound.play_sound('rotate')
+                        except Exception:
+                            pass
+                    elif piece is not None and getattr(piece, 'is_bomb', False):
+                        self._set_localized_card_message('mystery_msg_piece_already_bomb', 0.9, 'Bu parça zaten bomba!')
+                    else:
+                        self._set_localized_card_message('mystery_msg_bomb_master_no_piece', 0.9, 'Bomba Ustası: Parça yok!')
+            self._last_ability_keys['m'] = bool(_m_pressed)
+
+            # Tuttuğunu Koparan (B): hold'daki parçayı sil (hak varsa)
+            _b_pressed = keys[pygame.K_b] or (_gp_connected and _gpm.is_action_pressed('discard_held'))
+            if not freeze_input_locked and _b_pressed and not self._last_ability_keys.get('b', False):
+                try:
+                    hd_charges = int(getattr(self, '_hold_destroyer_charges', 0) or 0)
+                except Exception:
+                    hd_charges = 0
+                if hd_charges > 0 and getattr(self, 'held_piece', None) is not None:
+                    self.held_piece = None
+                    self._hold_destroyer_charges = max(0, hd_charges - 1)
+                    self.can_hold = True
+                    # HUD gösterimi için sync
+                    self.discard_held_uses = self._hold_destroyer_charges
+                    try:
+                        left = int(self._hold_destroyer_charges)
+                        self._set_localized_card_message(
+                            'mystery_msg_hold_destroyer_used',
+                            1.2,
+                            'Saklanan parca silindi! Kalan: {left}',
+                            left=left,
+                        )
+                    except Exception:
+                        pass
+                    try:
+                        self._sync_active_cards()
+                    except Exception:
+                        pass
+                    if self.sound_enabled:
+                        try:
+                            self.sound.play_sound('clear')
+                        except Exception:
+                            pass
+                elif hd_charges > 0:
+                    self._set_localized_card_message('mystery_msg_hold_destroyer_no_piece', 0.9, 'Saklanan parca yok!')
+                # hd_charges == 0 ise sessiz kal (B tuşu aktif kart yok)
+            self._last_ability_keys['b'] = bool(_b_pressed)
+
+            # Son Düşüş (F): mevcut düşen bloğu dondur (3 hak)
+            _f_pressed = keys[pygame.K_f]
+            if not freeze_input_locked and _f_pressed and not self._last_ability_keys.get('f', False):
+                try:
+                    charges = int(getattr(self, '_freeze_drop_charges', 0) or 0)
+                except Exception:
+                    charges = 0
+                if charges > 0 and not getattr(self, '_freeze_drop_active', False):
+                    piece = getattr(self, 'current_piece', None)
+                    if piece is not None:
+                        try:
+                            self._freeze_drop_active = True
+                            dur = int(getattr(self, '_freeze_drop_duration', 6) or 6)
+                            self._freeze_drop_timer = float(dur)
+                            self._freeze_drop_charges = max(0, charges - 1)
+                            # Parçayı buz rengine boya
+                            if getattr(piece, '_original_color', None) is None:
+                                setattr(piece, '_original_color', getattr(piece, 'color', None))
+                            ICE_COLOR = (140, 220, 255)
+                            piece.color = ICE_COLOR
+                            setattr(piece, '_force_color', ICE_COLOR)
+                            setattr(piece, '_frozen', True)
+                            left = int(self._freeze_drop_charges)
+                            self._set_localized_card_message(
+                                'mystery_msg_freeze_drop_used',
+                                1.4,
+                                '❄️ Blok dondu! {duration}sn. Kalan: {left}',
+                                duration=dur,
+                                left=left,
+                            )
+                            self._sync_active_cards()
+                            if self.sound_enabled:
+                                self.sound.play_sound('rotate')
+                        except Exception:
+                            pass
+            self._last_ability_keys['f'] = bool(_f_pressed)
+
+            # Time Warp (X) - cost 60
+            if not freeze_input_locked and keys[pygame.K_x] and not self._last_ability_keys['x']:
+                if self.energy >= 60 and self.time_warp_timer <= 0:
+                    self.energy = max(0, self.energy - 60)
+                    self.time_warp_timer = 3.5
+                    # Derive the slow-fall target from the mode's base speed curve,
+                    # not from the current fall_speed (which may be affected by soft drop).
+                    try:
+                        base_ms = int(self.get_current_speed())
+                    except Exception:
+                        base_ms = int(getattr(self, 'fall_speed', 300) or 300)
+                    self._timewarp_old_speed = int(getattr(self, 'fall_speed', base_ms) or base_ms)
+                    self.fall_speed = max(100, int(base_ms * 3))
+            self._last_ability_keys['x'] = bool(keys[pygame.K_x])
+            # Phase Shift was previously bound to teleport; now replaced by Shape Mutation
+            # Shape Mutation is activated via LSHIFT in the input handler (see Game.handle_input)
+            # The rotation key should only perform regular rotation (handled by input events).
+            rot_key = self.control_bindings.get('rotate', pygame.K_UP)
+            # Keep the _last_ability_keys updated for the rotate binding
+            # (no teleport/phase behavior handled here anymore)
+            self._last_ability_keys['rotate'] = bool(keys[rot_key])
+
+            # Kart Modu: skora bağlı hızlanma KAPALI.
+            # Yalnızca seviye (board.level) bazlı hızlanma kullanılır.
+            self.score_speed_multiplier = 1.0
+            self._last_score_speed_milestone = 0
+
+            # Smooth score-based acceleration so milestone jumps feel gradual.
+            # Do not interfere with soft drop or explicit gravity overrides.
+            try:
+                soft_key = int(self.control_bindings.get('soft_drop', pygame.K_DOWN))
+                # WASD desteği: ayardaki soft_drop'a ek olarak S da her zaman soft drop alternatifi.
+                soft_drop_active = _pressed(soft_key) or _pressed(pygame.K_s)
+                if not soft_drop_active:
+                    try:
+                        from gamepad_manager import get_gamepad_manager
+                        if get_gamepad_manager().is_direction_held('down'):
+                            soft_drop_active = True
+                    except Exception:
+                        pass
+            except Exception:
+                soft_drop_active = False
+
+            # Soft drop must work reliably even if KEYDOWN was swallowed by
+            # an overlay (e.g., card selection). Use key state as source of truth.
+            # Son Düşüş aktifken soft drop engellenir — parça sadece sağ-sol ve sert düşüş yapabilir.
+            if getattr(self, '_freeze_drop_active', False):
+                soft_drop_active = False
+            if soft_drop_active and getattr(self, 'gravity_freeze_timer', 0.0) <= 0:
+                try:
+                    soft_ms = int(self.settings_manager.get('soft_drop_speed', FAST_FALL_SPEED)) if self.settings_manager else int(FAST_FALL_SPEED)
+                except Exception:
+                    soft_ms = int(FAST_FALL_SPEED)
+                # Keep within sane bounds; smaller = faster.
+                soft_ms = max(20, min(1000, soft_ms))
+                try:
+                    current_ms = int(getattr(self, 'fall_speed', soft_ms) or soft_ms)
+                except Exception:
+                    current_ms = soft_ms
+                self.fall_speed = min(current_ms, soft_ms)
+
+            if (not soft_drop_active
+                    and getattr(self, 'time_warp_timer', 0.0) <= 0
+                    and getattr(self, 'gravity_freeze_timer', 0.0) <= 0):
+                try:
+                    target_speed = int(self.get_current_speed())
+                    self._smooth_fall_speed_towards_target(target_speed, seconds)
+                except Exception:
+                    pass
+            # Open the card selection overlay when at least one card-level reward
+            # is queued. The queue is owned by the card manager (driven by card_xp);
+            # board.level deltas no longer affect this path.
+            try:
+                try:
+                    if getattr(self, 'settings_manager', None) and self.settings_manager.get('debug_mode', False):
+                        print(
+                            f"[MysteryMode] reward queue check: pending_level_ups={self.pending_level_ups}, "
+                            f"card_level={getattr(self.card_manager, 'card_level', '?')}, "
+                            f"card_xp={getattr(self.card_manager, 'card_xp', '?')}/"
+                            f"{getattr(self.card_manager, 'card_xp_to_next', '?')}, "
+                            f"board.level={self.board.level}"
+                        )
+                except Exception:
+                    pass
+                if not self.card_selection_active and self.pending_level_ups > 0:
+                    try:
+                        if getattr(self, 'settings_manager', None) and self.settings_manager.get('debug_mode', False):
+                            print(f"[MysteryMode] Attempting selection: pending_level_ups={self.pending_level_ups}, card_selection_active={self.card_selection_active}, game_over={self.game_over}")
+                    except Exception:
+                        pass
+                    # Notify-yolu zaten bir hazırlık yapmış olabilir. Aynı reward
+                    # için ikinci kez prepare_selection çağırmak gereksiz RNG
+                    # tüketir ve aynı olay için iki ayrı seçim seti üretir.
+                    # Yalnızca pending_choices boşsa hazırla; sonraki queued
+                    # reward'lar overlay kapandığında zaten boş olacağından
+                    # yeni hazırlık kendiliğinden yapılır.
+                    if not getattr(self.card_manager, 'pending_choices', None):
+                        self.card_manager.prepare_selection()
+                    try:
+                        if getattr(self, 'settings_manager', None) and self.settings_manager.get('debug_mode', False):
+                            print(f"[MysteryMode] prepare_selection produced {len(self.card_manager.pending_choices)} choices")
+                    except Exception:
+                        pass
+                    if self.card_manager.pending_choices:
+                        self._open_card_selection()
+                    else:
+                        # Nothing could be prepared - clear one pending level to avoid blocking
+                        try:
+                            if getattr(self, 'settings_manager', None) and self.settings_manager.get('debug_mode', False):
+                                print("[MysteryMode] prepare_selection returned empty; decrementing pending_level_ups")
+                        except Exception:
+                            pass
+                        self.pending_level_ups = max(0, self.pending_level_ups - 1)
+            except Exception:
+                pass
+
+    def _update_effect_timers(self, dt: float) -> None:
+        timers_changed = False
+        seconds = _dt_to_seconds(dt)
+        self._update_card_board_effects(dt)
+        if getattr(self, '_score_multiplier_timer', 0.0) > 0:
+            self._score_multiplier_timer = max(0.0, float(self._score_multiplier_timer) - seconds)
+            timers_changed = True
+            if self._score_multiplier_timer == 0:
+                self._score_multiplier_value = 1.0
+        if self.speed_effect_timer > 0:
+            self.speed_effect_timer = max(0.0, self.speed_effect_timer - seconds)
+            timers_changed = True
+            if self.speed_effect_timer == 0:
+                self.speed_effect_multiplier = 1.0
+                self.fall_speed = self.get_current_speed()
+        if self.combo_aura_timer > 0:
+            self.combo_aura_timer = max(0.0, self.combo_aura_timer - seconds)
+            timers_changed = True
+            if self.combo_aura_timer == 0:
+                self.combo_aura_bonus = 0
+        if timers_changed:
+            self._sync_active_cards()
+        # Time warp timer (slow effect) - dt is ms
+        if self.time_warp_timer > 0:
+            self.time_warp_timer = max(0.0, self.time_warp_timer - seconds)
+            if self.time_warp_timer == 0 and hasattr(self, '_timewarp_old_speed'):
+                self.fall_speed = self._timewarp_old_speed
+        # Gravity freeze (chrono lock)
+        if self.gravity_freeze_timer > 0:
+            self.gravity_freeze_timer = max(0.0, self.gravity_freeze_timer - seconds)
+            if self.gravity_freeze_timer > 0:
+                self.fall_speed = int(1e9)
+            else:
+                self.fall_speed = self.get_current_speed()
+            self._sync_active_cards()
+        
+        # Speed Burst timer (Hız Patlaması)
+        speed_burst_timer = getattr(self, '_speed_burst_timer', 0)
+        if speed_burst_timer > 0:
+            self._speed_burst_timer = max(0.0, speed_burst_timer - seconds)
+            if self._speed_burst_timer == 0:
+                # Timer bitti, çarpanları sıfırla
+                self._speed_burst_speed_mult = 1.0
+                self._speed_burst_line_mult = 1.0
+                self.fall_speed = self.get_current_speed()
+                # Aktif efekt görselini kaldır
+                try:
+                    visuals = getattr(self, '_active_effect_visuals', None)
+                    if isinstance(visuals, dict):
+                        visuals.pop('speed_burst', None)
+                except Exception:
+                    pass
+                self._sync_active_cards()
+
+        # Son Düşüş (Freeze Drop) timer
+        if getattr(self, '_freeze_drop_active', False) and getattr(self, '_freeze_drop_timer', 0.0) > 0:
+            self._freeze_drop_timer = max(0.0, self._freeze_drop_timer - seconds)
+            if self._freeze_drop_timer > 0:
+                # Yerçekimini durdur — parça düşmez
+                self.fall_speed = int(1e9)
+            else:
+                # Süre doldu, donma biter
+                self._freeze_drop_active = False
+                piece = getattr(self, 'current_piece', None)
+                if piece is not None:
+                    setattr(piece, '_frozen', False)
+                    orig = getattr(piece, '_original_color', None)
+                    if orig:
+                        piece.color = orig
+                        try:
+                            delattr(piece, '_force_color')
+                        except Exception:
+                            pass
+                self.fall_speed = self.get_current_speed()
+                try:
+                    self._set_localized_card_message('mystery_msg_freeze_drop_expired', 1.0, '❄️ Dondurma süresi doldu!')
+                except Exception:
+                    pass
+            self._sync_active_cards()
+
+    def _resolve_mystery_workshop_debug_key(self) -> int | None:
+        settings_manager = getattr(self, 'settings_manager', None)
+        if settings_manager is None:
+            return None
+
+        try:
+            if not bool(settings_manager.get('mystery_debug_block_workshop', False)):
+                return None
+        except Exception:
+            return None
+
+        try:
+            controls = settings_manager.get_controls()
+        except Exception:
+            return None
+
+        if not isinstance(controls, dict):
+            return None
+        debug_cfg = controls.get('debug', {})
+        if not isinstance(debug_cfg, dict):
+            return None
+
+        return self._binding_to_keycode_or_none(debug_cfg.get('mystery_block_workshop'))
+
+    def _try_open_debug_workshop_from_key(self, event) -> bool:
+        if getattr(event, 'type', None) != pygame.KEYDOWN:
+            return False
+        if self.game_over or self.paused:
+            return False
+        if getattr(self, '_card_workshop_active', False):
+            return False
+
+        trigger_key = self._resolve_mystery_workshop_debug_key()
+        if trigger_key is None or getattr(event, 'key', None) != trigger_key:
+            return False
+
+        self._open_card_workshop_popup()
+        try:
+            if self.settings_manager and self.settings_manager.get('debug_mode', False):
+                print(f"[MysteryMode][Debug] Workshop popup trigger consumed: key={pygame.key.name(trigger_key)}")
+        except Exception:
+            pass
+        return True
+
+    def trigger_hard_drop_screen_shake(self):
+        """Workshop debug parçası için hard drop sarsıntısını biraz güçlendir."""
+        piece = getattr(self, 'current_piece', None)
+        is_workshop_piece = bool(getattr(piece, 'is_workshop_piece', False))
+
+        debug_on = False
+        settings_manager = getattr(self, 'settings_manager', None)
+        if settings_manager is not None:
+            try:
+                debug_on = bool(settings_manager.get('mystery_debug_block_workshop', False))
+            except Exception:
+                debug_on = False
+
+        if not (is_workshop_piece and debug_on):
+            return super().trigger_hard_drop_screen_shake()
+
+        boosted_intensity = max(
+            HARD_DROP_SCREEN_SHAKE_INTENSITY + 2,
+            int(round(HARD_DROP_SCREEN_SHAKE_INTENSITY * 1.6)),
+        )
+        boosted_duration = max(
+            HARD_DROP_SCREEN_SHAKE_DURATION_SECONDS * 1.35,
+            HARD_DROP_SCREEN_SHAKE_DURATION_SECONDS + 0.04,
+        )
+        self.trigger_screen_shake(
+            intensity=boosted_intensity,
+            duration=boosted_duration,
+        )
+
+    def handle_input(self) -> bool:
+        if getattr(self, '_demo_score_cap_active', False):
+            prompt = getattr(self, '_demo_score_cap_prompt', None)
+            if prompt is None:
+                self._demo_score_cap_active = False
+                return 'menu'
+            prompt.screen = self.screen
+            # Güvenlik: panel bayrağı açık ama prompt bir şekilde pasifse
+            # (ekran yeniden oluşturma, state desync vb.) hiçbir event
+            # tüketilmez ve ESC tepkisiz kalırdı. Bu durumda yeniden göster.
+            if not prompt.is_active():
+                show_demo_score_cap_prompt(prompt)
+                prompt.screen = self.screen
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    return False
+                # Ek güvenlik: prompt event'i yutmasa bile ESC her zaman
+                # paneli kapatıp menüye dönmeli.
+                if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+                    self._demo_score_cap_active = False
+                    prompt.hide()
+                    return 'menu'
+                if prompt.handle_input(event):
+                    action = prompt.consume_last_action()
+                    # Score cap panelinde herhangi bir kapanış aksiyonu
+                    # (confirm/cancel/menu_back) menüye döner.
+                    if action is not None:
+                        self._demo_score_cap_active = False
+                        return 'menu'
+            return True
+
+        if self.card_selection_active:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    return False
+                # Handle mousewheel for scrolling while selection is active
+                if event.type == pygame.MOUSEWHEEL:
+                    try:
+                        self.card_ui.handle_mouse_wheel(event.y)
+                    except Exception:
+                        pass
+                if event.type == pygame.MOUSEMOTION:
+                    # update hover states using the card_ui helper
+                    try:
+                        pos = normalize_mouse_pos(getattr(event, 'pos', None)) or event.pos
+                        self.card_ui.handle_mouse_move(pos)
+                    except Exception:
+                        pass
+                if event.type == pygame.KEYDOWN:
+                    if self._handle_card_selection_keydown(event):
+                        continue
+                elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                    pos = normalize_mouse_pos(getattr(event, 'pos', None)) or event.pos
+                    choice = self.card_ui.handle_mouse_click(pos)
+                    if choice is not None:
+                        self._handle_card_selection_choice(choice)
+                elif event.type == pygame.MOUSEMOTION:
+                    # update hover states even when grid scrolled
+                    # this ballot uses the card_rects set by draw_selection_overlay
+                    pass
+            return True
+        
+        # === PARÇA SEÇİM POPUP: Geleceği Değiştiren kartı için ===
+        if getattr(self, '_piece_selection_active', False):
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    return False
+                
+                if event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_ESCAPE:
+                        # ESC ile popup'ı kapat (kalan haklar kaybolur)
+                        self._close_piece_selection_popup()
+                        self._future_changer_remaining = 0
+                        try:
+                            self._set_localized_card_message('mystery_msg_future_cancelled', 1.0, 'Parça seçimi iptal edildi.')
+                        except Exception:
+                            pass
+                        continue
+
+                    # Gamepad/keyboard navigasyon: sol/sağ ile parça seç
+                    if event.key in (pygame.K_LEFT, pygame.K_a):
+                        self._piece_selection_move(-1)
+                        continue
+                    if event.key in (pygame.K_RIGHT, pygame.K_d):
+                        self._piece_selection_move(1)
+                        continue
+                    # Enter/Space/A → seçili parçayı onayla
+                    if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE):
+                        self._piece_selection_confirm()
+                        continue
+                
+                if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                    pos = normalize_mouse_pos(getattr(event, 'pos', None)) or event.pos
+                    if self._handle_piece_selection_click(pos):
+                        continue
+            return True
+
+        # === BLOK ATÖLYESİ KARTI POPUP ===
+        if getattr(self, '_card_workshop_active', False):
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    return False
+                if self._handle_card_workshop_input(event):
+                    continue
+            return True
+        
+        # === SNIPER OVERLAY MODE: Gelişmiş blok seçim sistemi ===
+        if getattr(self, '_sniper_overlay_active', False):
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    return False
+                    
+                if event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_ESCAPE:
+                        # ESC ile overlay'i kapat (hak harcanmaz)
+                        self._close_sniper_overlay()
+                        continue
+
+                    # Gamepad D-pad / ok tuşları ile cursor navigasyonu
+                    if event.key in (pygame.K_LEFT, pygame.K_a):
+                        self._sniper_move_cursor(-1, 0)
+                        continue
+                    if event.key in (pygame.K_RIGHT, pygame.K_d):
+                        self._sniper_move_cursor(1, 0)
+                        continue
+                    if event.key in (pygame.K_UP, pygame.K_w):
+                        self._sniper_move_cursor(0, -1)
+                        continue
+                    if event.key in (pygame.K_DOWN, pygame.K_s):
+                        self._sniper_move_cursor(0, 1)
+                        continue
+
+                    # Enter/Space/A → cursor pozisyonunda ateş
+                    if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE):
+                        self._sniper_fire_at_cursor()
+                        continue
+
+                if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                    # Sol tık - blok patlatma (mevcut mouse path korunuyor)
+                    pos = normalize_mouse_pos(getattr(event, 'pos', None)) or event.pos
+                    cell = self._sniper_screen_to_cell(pos)
+                    
+                    if cell:
+                        cx, cy = cell
+                        # Tıklanan hücrede blok var mı kontrol et
+                        if self.board.occupancy[cy][cx]:
+                            self._execute_sniper_shot(cx, cy)
+                        else:
+                            try:
+                                self._set_localized_card_message('mystery_msg_sniper_empty_cell', 1.5, 'Bos hucre! Dolu bir bloga tikla.')
+                                # Hata sesi
+                                if self.sound_enabled:
+                                    self.sound.play_sound("deny")
+                            except Exception:
+                                pass
+                    else:
+                        try:
+                            self._set_localized_card_message('mystery_msg_sniper_outside_board', 1.5, 'Oyun alani disinda! Tahta icindeki bloklari hedefleyin.')
+                            # Hata sesi
+                            if self.sound_enabled:
+                                self.sound.play_sound("deny")
+                        except Exception:
+                            pass
+                    continue
+                    
+                # Mouse hareket takibi artık draw fonksiyonunda yapılıyor
+                # Bu daha smooth cursor hareketi sağlıyor
+                    
+            return True
+        
+        # === DELİK AVCISI OVERLAY ===
+        if getattr(self, '_hole_hunter_overlay_active', False):
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    return False
+
+                if event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_ESCAPE:
+                        self._close_hole_hunter_overlay(consumed=False)
+                        continue
+                    if event.key in (pygame.K_LEFT, pygame.K_a):
+                        self._hole_hunter_move_cursor(-1)
+                        continue
+                    if event.key in (pygame.K_RIGHT, pygame.K_d):
+                        self._hole_hunter_move_cursor(1)
+                        continue
+                    if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE):
+                        self._hole_hunter_fire_at_cursor()
+                        continue
+                    # J ile de overlay'i kapat (toggle)
+                    if event.key == pygame.K_j:
+                        self._close_hole_hunter_overlay(consumed=False)
+                        continue
+
+                # Mouse hareketi: imleç hangi sütunun üzerindeyse seçim imlecini
+                # oraya taşı (ok tuşlarıyla aynı görsel geri bildirim). Dikey
+                # konumdan bağımsız, yalnız yatay sütun bandına göre çalışır ki
+                # tahtanın üstünde gezerken de doğru sütun vurgulansın.
+                if event.type == pygame.MOUSEMOTION:
+                    pos = normalize_mouse_pos(getattr(event, 'pos', None)) or event.pos
+                    hover_col = self._hole_hunter_hover_column(pos)
+                    if hover_col is not None:
+                        self._hole_hunter_cursor_col = hover_col
+                    continue
+
+                if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                    pos = normalize_mouse_pos(getattr(event, 'pos', None)) or event.pos
+                    col = self._hole_hunter_screen_to_column(pos)
+                    if col is None:
+                        try:
+                            self._set_localized_card_message(
+                                'mystery_msg_hole_hunter_invalid_column',
+                                1.4,
+                                'Geçersiz sütun veya uygun delik yok.',
+                            )
+                            if self.sound_enabled:
+                                self.sound.play_sound('deny')
+                        except Exception:
+                            pass
+                        continue
+                    self._hole_hunter_cursor_col = col
+                    self._hole_hunter_fire_at_cursor()
+                    continue
+
+            return True
+        
+        # NERF: Drill parça kilitliyken döndürme tuşunu engelle
+        drill_locked = getattr(self, '_drill_movement_locked', False)
+        piece = getattr(self, 'current_piece', None)
+        is_drill_piece = piece and getattr(piece, 'drill', False)
+        time_capsule_keyboard_handled = False
+        pg = pygame
+        
+        # Geri Sarma tuşu kontrolü (U tuşu) - normal gameplay sırasında
+        try:
+            events = pg.event.get()
+        except Exception as event_get_error:
+            events = []
+            # Headless/test ortamlarında event kuyruğu init edilmemiş olabilir.
+            # Bu durumda en azından Zaman Kapsulu toggle akışını güvenli şekilde
+            # çalıştırıp girdiyi tüket.
+            if 'video system not initialized' in str(event_get_error).lower():
+                if not self.game_over and not self.paused and not self.card_selection_active:
+                    try:
+                        if self._toggle_time_capsule():
+                            return True
+                    except Exception:
+                        pass
+
+        for event in events:
+            # Drill parça kilitliyken döndürme tuşunu tüket (engelle)
+            if drill_locked and is_drill_piece:
+                if event.type == pg.KEYDOWN:
+                    rotate_key = self.control_bindings.get('rotate', pg.K_UP)
+                    if event.key == rotate_key:
+                        # Döndürme engellendi, event'i yutuyoruz
+                        continue
+
+            if self._try_open_debug_workshop_from_key(event):
+                continue
+
+            # Son Düşüş aktifken açıklamadaki kuralı uygula:
+            # sadece sağ-sol hareket ve sert düşüş temel input olarak kalır.
+            if getattr(self, '_freeze_drop_active', False) and event.type in (pg.KEYDOWN, pg.KEYUP):
+                allowed_keys = set()
+                try:
+                    allowed_keys.update(self._action_keys(self.control_bindings, 'move_left'))
+                    allowed_keys.update(self._action_keys(self.control_bindings, 'move_right'))
+                    allowed_keys.update(self._action_keys(self.control_bindings, 'hard_drop'))
+                except Exception:
+                    allowed_keys.update({pg.K_LEFT, pg.K_RIGHT, pg.K_SPACE})
+                if event.key not in allowed_keys:
+                    continue
+
+            # T: kaydet, R: geri yükle. Event tüketilir; base game restart yoluna düşmez.
+            if event.type == pg.KEYDOWN and event.key in (pg.K_t, pg.K_r):
+                if not self.game_over and not self.paused and not self.card_selection_active:
+                    if event.key == pg.K_t:
+                        self._save_time_capsule()
+                    else:
+                        self._restore_time_capsule()
+                    time_capsule_keyboard_handled = True
+                    continue
+            
+            # B tuşunu yut - MysteryMode B'yi kendi update() metodunda yönetiyor
+            if event.type == pg.KEYDOWN and event.key == pg.K_b:
+                # Base game'in B handler'ına geçirme
+                continue
+
+            if event.type == pg.KEYDOWN and event.key == pg.K_u:
+                if not self.game_over and not self.paused:
+                    if self._do_rewind():
+                        # Rewind başarılı, event'i tüket
+                        continue
+            # N tuşu: Keskin Nişancı overlay'ini aç
+            if event.type == pg.KEYDOWN and event.key == pg.K_n:
+                if not self.game_over and not self.paused:
+                    if self._open_sniper_overlay():
+                        continue
+
+            # J tuşu: Delik Avcısı overlay'ini aç
+            if event.type == pg.KEYDOWN and event.key == pg.K_j:
+                if not self.game_over and not self.paused:
+                    if self._open_hole_hunter_overlay():
+                        continue
+
+            # Event'i tekrar kuyruğa koy ki super().handle_input() işlesin
+            pg.event.post(event)
+        
+        # Gamepad action kontrolü (event loop dışında)
+        if not self.game_over and not self.paused:
+            try:
+                from gamepad_manager import get_gamepad_manager
+                _gpm = get_gamepad_manager()
+                if _gpm and _gpm.enabled:
+                    # Zaman Kapsulu: save ve restore action'lari ayri ayri ele alinir.
+                    if not self.card_selection_active and not time_capsule_keyboard_handled:
+                        if _gpm.was_action_just_pressed('card_time_capsule_save'):
+                            self._save_time_capsule()
+                            return True
+                        if _gpm.was_action_just_pressed('card_time_capsule_restore'):
+                            self._restore_time_capsule()
+                            return True
+            except Exception:
+                pass
+        
+        # Normal gameplay input handling
+        return super().handle_input()
+
+    def restart(self):
+        """Reset Mystery mode specific state on restart."""
+        # ÖNEMLİ: perk_manager'ı super().restart()'tan ÖNCE sıfırla!
+        # Çünkü super().restart() → spawn_new_piece() → perk_manager.on_piece_spawn()
+        # çağırır ve eski perk_manager'daki aktif perkler (ör: flexible_border) 
+        # yeni parçalara uygulanır.
+        self.perk_manager = PerkManager(self)
+        # card_manager'ı da ÖNCE sıfırla (forced piece queue eski oyundan kalmasın)
+        self.card_manager.reset()
+        # Esnek sınır kartını sıfırla (board flag - super().restart() yeni board yaratmadan önce)
+        if hasattr(self, 'board') and self.board is not None:
+            self.board.flexible_border_active = False
+        super().restart()
+        # Reset remaining state
+        self.selected_cards_log = []
+        self.card_selection_active = False
+        self.card_message = ""
+        self.card_message_timer = 0.0
+        self.card_selection_rects = []
+        self._pending_card_choice_index = None
+        self.pending_level_ups = 0
+        self._demo_score_cap_reached = False
+        self._demo_score_cap_active = False
+        if getattr(self, '_demo_score_cap_prompt', None) is not None:
+            self._demo_score_cap_prompt.hide()
+            self._demo_score_cap_prompt.screen = self.screen
+        self.last_enqueued_level = getattr(self.board, 'level', 0)
+        self._reset_card_selection_rerolls()
+        # Reset effect timers and visuals
+        self.speed_effect_timer = 0.0
+        self.speed_effect_multiplier = 1.0
+        self.line_bonus_remaining = 0
+        self.line_bonus_amount = 0
+        self.combo_aura_timer = 0.0
+        self.combo_aura_bonus = 0
+        self._active_effect_visuals = {}
+        self._score_multiplier_timer = 0.0
+        self._score_multiplier_value = 1.0
+        self._line_clear_multiplier_remaining = 0
+        self._line_clear_multiplier_value = 1.0
+        self._score_color_override = None
+        self._speed_burst_timer = 0.0
+        self._speed_burst_speed_mult = 1.0
+        self._speed_burst_line_mult = 1.0
+        self._armed_nova_clusters = 0
+        self._bomb_countdown_timer = 0.0
+        self._bomb_countdown_last_int = 0
+        self._drill_last_cleanup_y = None
+        self.tunnel_charges_remaining = 0
+        self.hammer_charges_remaining = 0
+        self._mirror_hold_charges = 0
+        self._echo_drop_charges = 0
+        self._echo_drop_fill_count = 2
+        # Son Düşüş sıfırla
+        self._freeze_drop_charges = 0
+        self._freeze_drop_duration = 0
+        self._freeze_drop_timer = 0.0
+        self._freeze_drop_active = False
+
+        # Combo Sigortası / Ters Borç / Delik Avcısı runtime state
+        self._combo_insurance_armed = False
+        self._reverse_debt_remaining = 0
+        self._reverse_debt_total = 5
+        self._hole_hunter_charges = 0
+        self._hole_hunter_overlay_active = False
+        self._hole_hunter_cursor_col = 0
+        # Ters Borç tamamen temizlendi: lock_delay default'a dönmeli.
+        try:
+            self._apply_reverse_debt_lock_delay()
+        except Exception:
+            pass
+        
+        # Zaman Kapsulu sifirla
+        self.time_capsule_saved = False
+        self.time_capsule_data = None
+        self.time_capsule_available = False
+        self.bomb_master_charges = 0  # Bomba Ustası M tuşu hakları
+        self._hold_destroyer_charges = 0  # Tuttuğunu Koparan B tuşu hakları
+        # Mystery modunda B tuşu kartlara bağlı, base game'in 5 hakkını devre dışı bırak
+        self.discard_held_uses = 0
+        self.energy = 0
+        self.energy_max = 100
+        self.time_warp_timer = 0.0
+        try:
+            delattr(self, '_timewarp_old_speed')
+        except Exception:
+            pass
+        # Blok Atölyesi popup sıfırla
+        self._card_workshop_active = False
+        self._card_workshop_grid = None
+        self._card_workshop_cursor_x = 0
+        self._card_workshop_cursor_y = 0
+        self._card_workshop_peek_active = False
+        self._card_workshop_peek_rect = None
+        # Geri Sarma state'i sıfırla
+        self._rewind_available = False
+        self._last_placed_piece = None
+        self._sync_active_cards()
+        # Perk manager
+        self.perk_manager = PerkManager(self)
+        self.gravity_freeze_timer = 0.0
+        self.phase_used_for_piece = False
+        # Phase shift (shape mutation) per-run usage limit
+        self.phase_shift_uses_remaining = 0
+        self._last_ability_keys = {'z': False, 'x': False, 'g': False, 'h': False, 'm': False, 'c': False, 'v': False, 'rotate': False, 'lshift': False, 'b': False, 'f': False}
+        # Shape mutation cooldown
+        self._shape_mutation_cooldown = 0.0
+        # Hız seviyesi
+        self.speed_level = 10
+        self._last_speed_milestone = 0
+        self.score_speed_multiplier = 1.0
+        self._last_score_speed_milestone = 0
+        self._speedup_smooth_time = 0.8
+        # Drill hareket kilidi sıfırla
+        self._drill_movement_locked = False
+        # Sniper modu sıfırla
+        self._sniper_charges = 0
+        self._sniper_overlay_active = False
+        self._sniper_card = None
+        self._sniper_hover_pos = None
+        self._active_sniper_explosions = []
+
+    def _try_move_left(self):
+        """Sola hareket - Drill parça kilitliyse engelle"""
+        # NERF: Drill parça bloğa değdiyse hareket engellenir
+        if getattr(self, '_drill_movement_locked', False):
+            piece = getattr(self, 'current_piece', None)
+            if piece and getattr(piece, 'drill', False):
+                return False
+        return super()._try_move_left()
+
+    def _try_move_right(self):
+        """Sağa hareket - Drill parça kilitliyse engelle"""
+        # NERF: Drill parça bloğa değdiyse hareket engellenir
+        if getattr(self, '_drill_movement_locked', False):
+            piece = getattr(self, 'current_piece', None)
+            if piece and getattr(piece, 'drill', False):
+                return False
+        return super()._try_move_right()
+
+    def _smooth_fall_speed_towards_target(self, target_ms: int, seconds: float) -> None:
+        if seconds <= 0:
+            return
+        try:
+            target = int(target_ms)
+        except Exception:
+            return
+        try:
+            current = int(getattr(self, 'fall_speed', target) or target)
+        except Exception:
+            current = target
+
+        # Only smooth speed-ups (smaller interval => faster). Slowdowns can snap.
+        if target >= current:
+            try:
+                self.fall_speed = target
+            except Exception:
+                pass
+            return
+
+        try:
+            smooth_time = float(getattr(self, '_speedup_smooth_time', 0.8) or 0.8)
+        except Exception:
+            smooth_time = 0.8
+        smooth_time = max(0.05, smooth_time)
+        alpha = min(1.0, float(seconds) / smooth_time)
+        next_val = int(round(current + (target - current) * alpha))
+        # Guard against overshoot due to rounding.
+        next_val = max(target, min(current, next_val))
+        try:
+            self.fall_speed = next_val
+        except Exception:
+            pass
+
+    def draw_mode_overlay(self) -> None:
+        self._ensure_card_ui_fonts()
+        active_width, active_height = self._active_ui_size()
+        # Card selection overlay should be visually clean: hide the status panel
+        # (it reads like an extra black overlay/band above the selection UI).
+        if not self.card_selection_active:
+            self._draw_status_panel()
+            # Base Game.draw() only calls draw_mode_overlay().
+            # To ensure the left-panel active cards are always visible in gameplay,
+            # draw them from here as the single render entry-point.
+            try:
+                self.draw_mode_info(0, 0)
+                self._draw_persistent_cards_icon_panel()
+            except Exception as exc:
+                try:
+                    if getattr(self, 'settings_manager', None) and self.settings_manager.get('debug_mode', False):
+                        print(f"[MysteryMode] draw_mode_info failed: {exc!r}")
+                except Exception:
+                    pass
+        
+        if self.card_selection_active:
+            # Kart seçimi ekranı açıldığında da sol panel (aktif kartlar/perkler)
+            # görünür kalmalı.
+            try:
+                self.draw_mode_info(0, 0)
+                self._draw_persistent_cards_icon_panel()
+            except Exception as exc:
+                try:
+                    if getattr(self, 'settings_manager', None) and self.settings_manager.get('debug_mode', False):
+                        print(f"[MysteryMode] draw_mode_info failed (overlay): {exc!r}")
+                except Exception:
+                    pass
+            overlay_scale = self.card_ui._get_overlay_scale(self.screen)
+            fonts = self._build_card_ui_font_pack(overlay_scale)
+            try:
+                if hasattr(self.card_ui, 'set_reroll_status'):
+                    self.card_ui.set_reroll_status(
+                        getattr(self, 'card_selection_rerolls_remaining', 0),
+                        getattr(self, 'card_selection_reroll_limit', CARD_SELECTION_REROLL_LIMIT),
+                    )
+            except Exception:
+                pass
+            try:
+                if hasattr(self.card_ui, 'set_reroll_enabled'):
+                    self.card_ui.set_reroll_enabled(self._can_reroll_card_selection())
+            except Exception:
+                pass
+            self.card_ui.draw_selection_overlay(
+                self.screen,
+                active_width,
+                active_height,
+                fonts,
+                self.card_manager.pending_choices,
+                self.card_manager.get_selection_hint(),
+                bool(self.settings_manager.get('card_mode_debug', False)),
+            )
+        elif self.card_message and self.card_message_timer > 0 and not getattr(self, '_sniper_overlay_active', False):
+            max_width = max(220, int(active_width - 48))
+            message = None
+            for size in range(22, 9, -1):
+                font = retro_style.get_font(size, bold=True)
+                if font.size(self.card_message)[0] <= max_width or size == 10:
+                    message = font.render(self.card_message, True, (255, 255, 255))
+                    break
+            if message is None:
+                message = retro_style.render_fit_text(
+                    self.card_message,
+                    (255, 255, 255),
+                    max_width,
+                    22,
+                    bold=True,
+                )
+            rect = message.get_rect(center=(active_width // 2, 44))
+            self.screen.blit(message, rect)
+        
+        # === SNIPER OVERLAY: Oyun alanı üzerinde blok seçim modu ===
+        if getattr(self, '_sniper_overlay_active', False):
+            self._draw_sniper_board_overlay()
+
+        # === DELİK AVCISI OVERLAY ===
+        if getattr(self, '_hole_hunter_overlay_active', False):
+            self._draw_hole_hunter_overlay()
+
+        self._draw_card_board_effects()
+
+        # Sniper ile patlatılan blokların bulunduğu hücrede GIF patlama efekti
+        self._draw_sniper_explosion_effects()
+        
+        # === PARÇA SEÇİM POPUP: Geleceği Değiştiren kartı için ===
+        if getattr(self, '_piece_selection_active', False):
+            self._draw_piece_selection_popup()
+        
+        # === BLOK ATÖLYESİ POPUP: Blok Atölyesi kartı için ===
+        if getattr(self, '_card_workshop_active', False):
+            self._draw_card_workshop_popup()
+
+        if getattr(self, '_demo_score_cap_active', False):
+            prompt = getattr(self, '_demo_score_cap_prompt', None)
+            if prompt is not None:
+                prompt.screen = self.screen
+                prompt.draw()
+            # Diğer kart-modu overlay'leri (parça seçimi, atölye, sniper) gibi
+            # fare imlecini her frame görünür yap. Bu, ana döngünün
+            # wants_mouse_visible() zamanlamasından bağımsız olarak imlecin
+            # panelde her zaman görünmesini garanti eder (Windows + macOS).
+            try:
+                pygame.mouse.set_visible(True)
+            except Exception:
+                pass
+    
+    def _draw_hole_hunter_overlay(self) -> None:
+        """Delik Avcısı için sütun seçim overlay'i — küçük ve lokal."""
+        try:
+            active_width, active_height = self._active_ui_size()
+            board_x, board_y = self.get_board_offset()
+            cell_size = max(1, int(self.get_cell_size()))
+            board_w_px = self.board.width * cell_size
+            board_h_px = self.board.height * cell_size
+
+            # Hafif karartılmış overlay
+            dim = pygame.Surface((active_width, active_height), pygame.SRCALPHA)
+            dim.fill((0, 0, 0, 110))
+            self.screen.blit(dim, (0, 0))
+
+            # Tahta çerçevesi
+            border = pygame.Rect(board_x - 4, board_y - 4, board_w_px + 8, board_h_px + 8)
+            pygame.draw.rect(self.screen, (140, 230, 200), border, 2, border_radius=4)
+
+            # Cursor sütunu vurgula
+            try:
+                col = max(0, min(self.board.width - 1, int(getattr(self, '_hole_hunter_cursor_col', 0) or 0)))
+            except Exception:
+                col = 0
+            col_x = board_x + col * cell_size
+            col_rect = pygame.Rect(col_x, board_y, cell_size, board_h_px)
+            highlight = pygame.Surface((cell_size, board_h_px), pygame.SRCALPHA)
+            highlight.fill((140, 230, 200, 70))
+            self.screen.blit(highlight, col_rect.topleft)
+            pygame.draw.rect(self.screen, (170, 255, 220), col_rect, 2)
+
+            # Bu sütundaki uygun delikleri marker ile göster
+            holes = self._hole_hunter_find_holes(col)
+            for hy in holes:
+                marker = pygame.Rect(col_x + 2, board_y + hy * cell_size + 2, cell_size - 4, cell_size - 4)
+                pygame.draw.rect(self.screen, (255, 255, 255, 200), marker, 2, border_radius=2)
+        except Exception:
+            pass
+
+    def _draw_sniper_board_overlay(self) -> None:
+        """Sniper modu için gelişmiş blok seçim overlay'i."""
+        try:
+            active_width, active_height = self._active_ui_size()
+            # Mevcut tahta parametreleri
+            board_x, board_y = self.get_board_offset()
+            cell_size = self.get_cell_size()
+            
+            # === MOUSE SINIRLANDIRMA ===
+            # Mouse'u oyun alanı içinde tut
+            board_width = self.board.width * cell_size
+            board_height = self.board.height * cell_size
+            
+            # Normalize: fiziksel piksel uzayında çalış (board koordinatları fiziksel)
+            mouse_x, mouse_y = get_mouse_pos()
+            clamped_x = max(board_x, min(mouse_x, board_x + board_width - 1))
+            clamped_y = max(board_y, min(mouse_y, board_y + board_height - 1))
+            
+            if mouse_x != clamped_x or mouse_y != clamped_y:
+                # set_pos logical space bekler — fiziksel → logical çevir
+                scale = get_display_scale_factor()
+                pygame.mouse.set_pos(int(clamped_x / scale), int(clamped_y / scale))
+            
+            mouse_pos = (clamped_x, clamped_y)
+            self._sniper_hover_pos = mouse_pos
+            
+            # === FULL SCREEN DARK OVERLAY ===
+            dim_overlay = pygame.Surface((active_width, active_height), pygame.SRCALPHA)
+            dim_overlay.fill((0, 0, 0, 120))
+            self.screen.blit(dim_overlay, (0, 0))
+            
+            # === BOARD HIGHLIGHT FRAME ===
+            board_rect = pygame.Rect(
+                board_x - 6, 
+                board_y - 6, 
+                board_width + 12, 
+                board_height + 12
+            )
+            
+            # Animated glow effect
+            import time
+            glow_intensity = int(abs(math.sin(time.time() * 3)) * 50 + 100)
+            
+            # Multi-layer glow using retro style colors
+            for i in range(3):
+                glow_rect = board_rect.inflate(i * 4, i * 4)
+                glow_color = (*retro_style.primary, 80 - i * 20)
+                pygame.draw.rect(self.screen, glow_color, glow_rect, 2, border_radius=4)
+            
+            # Main border using retro style
+            pygame.draw.rect(self.screen, retro_style.primary, board_rect, 3, border_radius=2)
+            
+            # === GRID OVERLAY FOR BETTER TARGETING ===
+            grid_color = (*retro_style.grid_color, 60)
+            for x in range(self.board.width + 1):
+                line_x = board_x + x * cell_size
+                pygame.draw.line(self.screen, grid_color, 
+                               (line_x, board_y), 
+                               (line_x, board_y + board_height), 1)
+            
+            for y in range(self.board.height + 1):
+                line_y = board_y + y * cell_size
+                pygame.draw.line(self.screen, grid_color, 
+                               (board_x, line_y), 
+                               (board_x + board_width, line_y), 1)
+            
+            # === TARGET CELL HIGHLIGHTING ===
+            cell = self._sniper_screen_to_cell(mouse_pos)
+            target_valid = False
+
+            # Gamepad cursor aktifse, mouse yerine gamepad cursor pozisyonunu kullan
+            if getattr(self, '_sniper_cursor_active', False):
+                gcx = int(getattr(self, '_sniper_cursor_x', 0) or 0)
+                gcy = int(getattr(self, '_sniper_cursor_y', 0) or 0)
+                if 0 <= gcx < self.board.width and 0 <= gcy < self.board.height:
+                    cell = (gcx, gcy)
+            
+            if cell:
+                cx, cy = cell
+                screen_x = board_x + cx * cell_size
+                screen_y = board_y + cy * cell_size
+                target_rect = pygame.Rect(screen_x, screen_y, cell_size, cell_size)
+
+                # === BEYAZ HOVER OVERLAY (her hücrede mouse'un olduğu yer belli olsun) ===
+                hover_pulse = abs(math.sin(time.time() * 3.5)) * 0.5 + 0.5
+                hover_alpha = int(70 + hover_pulse * 70)
+                hover_layer = pygame.Surface((cell_size, cell_size), pygame.SRCALPHA)
+                hover_layer.fill((255, 255, 255, hover_alpha))
+                self.screen.blit(hover_layer, target_rect.topleft)
+                pygame.draw.rect(
+                    self.screen,
+                    (255, 255, 255, 230),
+                    target_rect,
+                    width=max(2, int(2 + hover_pulse * 2)),
+                )
+
+                if self.board.occupancy[cy][cx]:
+                    target_valid = True
+                    # === VALID TARGET: ANIMATED HIGHLIGHT ===
+                    
+                    # Pulsing glow effect
+                    pulse = abs(math.sin(time.time() * 4)) * 0.5 + 0.5
+                    glow_alpha = int(100 + pulse * 100)
+                    
+                    # Outer glow (expanding)
+                    glow_size = int(cell_size + 8 + pulse * 8)
+                    glow_surf = pygame.Surface((glow_size, glow_size), pygame.SRCALPHA)
+                    glow_center = glow_size // 2
+                    
+                    # Radial gradient glow using accent color
+                    for r in range(glow_center, 0, -2):
+                        alpha = int(glow_alpha * (1 - r / glow_center) * 0.8)
+                        if alpha > 0:
+                            pygame.draw.circle(glow_surf, (*retro_style.accent, alpha), 
+                                             (glow_center, glow_center), r)
+                    
+                    glow_x = screen_x - (glow_size - cell_size) // 2
+                    glow_y = screen_y - (glow_size - cell_size) // 2
+                    self.screen.blit(glow_surf, (glow_x, glow_y))
+                    
+                    # Target highlight
+                    highlight = pygame.Surface((cell_size, cell_size), pygame.SRCALPHA)
+                    highlight.fill((*retro_style.accent, int(150 + pulse * 50)))
+                    self.screen.blit(highlight, target_rect.topleft)
+                    
+                    # Animated border
+                    border_width = int(3 + pulse * 2)
+                    pygame.draw.rect(self.screen, retro_style.text_primary, target_rect, border_width)
+                    
+                    # Professional crosshair
+                    center_x = screen_x + cell_size // 2
+                    center_y = screen_y + cell_size // 2
+                    
+                    # Crosshair arms
+                    arm_length = cell_size // 2 + 6
+                    line_width = 3
+                    
+                    # Horizontal line with gap in center
+                    gap = 8
+                    pygame.draw.line(self.screen, retro_style.text_primary, 
+                                   (center_x - arm_length, center_y), 
+                                   (center_x - gap, center_y), line_width)
+                    pygame.draw.line(self.screen, retro_style.text_primary, 
+                                   (center_x + gap, center_y), 
+                                   (center_x + arm_length, center_y), line_width)
+                    
+                    # Vertical line with gap in center
+                    pygame.draw.line(self.screen, retro_style.text_primary, 
+                                   (center_x, center_y - arm_length), 
+                                   (center_x, center_y - gap), line_width)
+                    pygame.draw.line(self.screen, retro_style.text_primary, 
+                                   (center_x, center_y + gap), 
+                                   (center_x, center_y + arm_length), line_width)
+                    
+                    # Center dot
+                    pygame.draw.circle(self.screen, retro_style.secondary, (center_x, center_y), 6)
+                    pygame.draw.circle(self.screen, retro_style.text_primary, (center_x, center_y), 6, 2)
+                    pygame.draw.circle(self.screen, retro_style.secondary, (center_x, center_y), 2)
+                    
+                else:
+                    # === INVALID TARGET: SUBTLE INDICATION ===
+                    pygame.draw.rect(self.screen, (*retro_style.text_muted, 100), target_rect)
+                    pygame.draw.rect(self.screen, retro_style.text_muted, target_rect, 2)
+            
+            # === CUSTOM CURSOR ===
+            # Hide system cursor and draw custom one
+            pygame.mouse.set_visible(False)
+            
+            # Draw custom crosshair cursor
+            cursor_x, cursor_y = mouse_pos
+            cursor_color = retro_style.primary if target_valid else retro_style.text_secondary
+            cursor_size = 20
+            
+            # Cursor crosshair
+            pygame.draw.line(self.screen, cursor_color, 
+                           (cursor_x - cursor_size, cursor_y), 
+                           (cursor_x + cursor_size, cursor_y), 2)
+            pygame.draw.line(self.screen, cursor_color, 
+                           (cursor_x, cursor_y - cursor_size), 
+                           (cursor_x, cursor_y + cursor_size), 2)
+            
+            # Cursor center dot
+            pygame.draw.circle(self.screen, cursor_color, (cursor_x, cursor_y), 3)
+            pygame.draw.circle(self.screen, retro_style.bg_color, (cursor_x, cursor_y), 3, 1)
+            
+            # === INSTRUCTION PANEL ===
+            self._draw_sniper_instructions(board_x, board_y, cell_size, target_valid)
+                
+        except Exception as e:
+            try:
+                if getattr(self, 'settings_manager', None) and self.settings_manager.get('debug_mode', False):
+                    print(f"[Sniper Overlay Error] {e}")
+            except Exception:
+                pass
+    
+    def _draw_sniper_instructions(self, board_x: int, board_y: int, cell_size: int, target_valid: bool) -> None:
+        """Sniper modu için ana UI temasına uygun talimat paneli çizer."""
+        try:
+            active_width, active_height = self._active_ui_size()
+            # Sağ HUD panelinin stats kutusunun altındaki boş alana yerleştir
+            # _hud_mode_info_area = (x, y, w, h) — Kombo/Stats paneli bittikten sonraki alan
+            mode_area = getattr(self, '_hud_mode_info_area', None)
+            if mode_area and mode_area[3] >= 60:
+                area_x, area_y, area_w, area_h = mode_area
+                panel_x = area_x
+                # Ekran sağ kenarına kadar genişlet
+                panel_width = int(active_width) - area_x - 8
+                # İçeriğe sıkı fit: 3 satır metin + üst/alt padding + aralar
+                desired_panel_h = 120
+                panel_y = area_y + 4
+            else:
+                # Fallback: tahtanın altı
+                board_pixel_h = self.board.height * cell_size
+                panel_y = board_y + board_pixel_h + 10
+                panel_x = board_x
+                panel_width = self.board.width * cell_size
+                desired_panel_h = 110
+                panel_y = max(8, min(panel_y, active_height - desired_panel_h - 8))
+
+            panel_height = desired_panel_h
+            
+            # Panel rect
+            panel_rect = pygame.Rect(panel_x, panel_y, panel_width, panel_height)
+            panel_rect.width = max(220, min(panel_rect.width, active_width - 16))
+            panel_rect.height = max(80, min(panel_rect.height, active_height - 16))
+            panel_rect.x = max(8, min(panel_rect.x, active_width - panel_rect.width - 8))
+            panel_rect.y = max(8, min(panel_rect.y, active_height - panel_rect.height - 8))
+            self._sniper_instruction_panel_rect = panel_rect.copy()
+            
+            # Opak (saydam olmayan) koyu arka plan
+            pygame.draw.rect(self.screen, (18, 22, 38), panel_rect, border_radius=10)
+            border_col = retro_style.primary if hasattr(retro_style, 'primary') else (80, 120, 220)
+            pygame.draw.rect(self.screen, border_col, panel_rect, 2, border_radius=10)
+            
+            # Instructions text — büyük fontlar
+            font = retro_style.get_font(26, bold=True)
+            small_font = retro_style.get_font(22)
+            
+            if target_valid:
+                main_text = self._localized_card_text('mystery_sniper_instruction_main_valid', 'SOL TIKLAYARAK BLOGU PATLAT')
+                main_color = retro_style.success
+                sub_text = self._localized_card_text('mystery_sniper_instruction_sub_valid', 'Hedef kilitlendi! Tikla ve yok et.')
+                sub_color = retro_style.text_primary
+            else:
+                main_text = self._localized_card_text('mystery_sniper_instruction_main_invalid', 'DOLU BIR BLOGA NISAN AL')
+                main_color = retro_style.accent
+                sub_text = self._localized_card_text('mystery_sniper_instruction_sub_invalid', "Mouse'u dolu bloklarin uzerine getir")
+                sub_color = retro_style.text_secondary
+            
+            # Charges remaining (sağ üst köşe)
+            charges = int(getattr(self, '_sniper_charges', 0) or 0)
+            charge_bg_rect = None
+            charge_rect = None
+            if charges > 0:
+                charge_text = self._localized_card_text('mystery_remaining_label', 'Kalan: {count}', count=charges)
+                charge_surf = small_font.render(charge_text, True, retro_style.primary)
+                charge_rect = charge_surf.get_rect(right=panel_rect.right - 15, y=panel_rect.y + 12)
+                
+                # Charge indicator background
+                charge_bg_rect = charge_rect.inflate(14, 8)
+                charge_bg_surf = pygame.Surface(charge_bg_rect.size, pygame.SRCALPHA)
+                charge_bg_surf.fill((*retro_style.primary, 40))
+                pygame.draw.rect(charge_bg_surf, retro_style.primary, charge_bg_surf.get_rect(), 1, border_radius=8)
+                self.screen.blit(charge_bg_surf, charge_bg_rect.topleft)
+                
+                self.screen.blit(charge_surf, charge_rect)
+
+            # Metin alanı: sağdaki "Kalan" rozetiyle çakışmasın
+            text_left = panel_rect.x + 14
+            text_right = panel_rect.right - 14
+            if charge_bg_rect is not None:
+                text_right = min(text_right, charge_bg_rect.left - 10)
+            text_max_width = max(140, text_right - text_left)
+            text_center_x = text_left + text_max_width // 2
+
+            # Main instruction
+            main_surf = retro_style.render_fit_text(main_text, main_color, text_max_width, 26, bold=True)
+            main_rect = main_surf.get_rect(centerx=text_center_x, y=panel_rect.y + 12)
+            self.screen.blit(main_surf, main_rect)
+
+            # Sub instruction
+            sub_surf = retro_style.render_fit_text(sub_text, sub_color, text_max_width, 21, bold=False)
+            sub_rect = sub_surf.get_rect(centerx=text_center_x, y=main_rect.bottom + 8)
+            self.screen.blit(sub_surf, sub_rect)
+
+            # Cancel instruction
+            cancel_text = self._localized_card_text('mystery_sniper_cancel_label', 'ESC: Iptal Et')
+            cancel_surf = retro_style.render_fit_text(cancel_text, retro_style.text_muted, text_max_width, 19, bold=False)
+            cancel_rect = cancel_surf.get_rect(centerx=text_center_x, y=sub_rect.bottom + 8)
+            self.screen.blit(cancel_surf, cancel_rect)
+                
+        except Exception:
+            pass
+
+    def _ensure_sniper_explosion_assets(self) -> bool:
+        """Sniper patlama GIF frame'lerini bir kez yükler."""
+        if getattr(self, '_sniper_explosion_ready', False):
+            return bool(getattr(self, '_sniper_explosion_frames', []))
+
+        self._sniper_explosion_ready = True
+        self._sniper_explosion_frames = []
+        self._sniper_explosion_frame_durations_ms = []
+        self._sniper_explosion_total_duration_ms = 0
+
+        gif_path = os.path.join(ANIMATE_EFFECTS_DIR, 'sniper_effect.gif')
+        if not os.path.exists(gif_path):
+            return False
+
+        if Image is None or ImageSequence is None:
+            return False
+
+        try:
+            with Image.open(gif_path) as gif:
+                for frame in ImageSequence.Iterator(gif):
+                    rgba = frame.convert('RGBA')
+                    duration = int(frame.info.get('duration', 50) or 50)
+                    if duration <= 0:
+                        duration = 50
+                    duration = max(20, int(duration / SNIPER_EXPLOSION_SPEED_MULTIPLIER))
+                    surf = pygame.image.fromstring(rgba.tobytes(), rgba.size, 'RGBA').convert_alpha()
+                    self._sniper_explosion_frames.append(surf)
+                    self._sniper_explosion_frame_durations_ms.append(duration)
+        except Exception:
+            self._sniper_explosion_frames = []
+            self._sniper_explosion_frame_durations_ms = []
+            self._sniper_explosion_total_duration_ms = 0
+            return False
+
+        self._sniper_explosion_total_duration_ms = int(sum(self._sniper_explosion_frame_durations_ms))
+        return bool(self._sniper_explosion_frames) and self._sniper_explosion_total_duration_ms > 0
+
+    def _spawn_sniper_explosion(self, cx: int, cy: int) -> None:
+        """Belirtilen hücrede sniper patlama animasyonunu başlatır."""
+        if not self._ensure_sniper_explosion_assets():
+            return
+        try:
+            self._active_sniper_explosions.append({
+                'cx': int(cx),
+                'cy': int(cy),
+                'start_ms': int(pygame.time.get_ticks()),
+            })
+        except Exception:
+            pass
+
+    def _draw_sniper_explosion_effects(self) -> None:
+        """Aktif sniper patlama efektlerini patlayan blok konumunda çizer."""
+        if not getattr(self, '_active_sniper_explosions', None):
+            return
+        if not self._ensure_sniper_explosion_assets():
+            self._active_sniper_explosions = []
+            return
+
+        frames = getattr(self, '_sniper_explosion_frames', [])
+        durations = getattr(self, '_sniper_explosion_frame_durations_ms', [])
+        total = int(getattr(self, '_sniper_explosion_total_duration_ms', 0) or 0)
+        if not frames or not durations or total <= 0:
+            self._active_sniper_explosions = []
+            return
+
+        now_ms = int(pygame.time.get_ticks())
+        board_x, board_y = self.get_board_offset()
+        cell_size = self.get_cell_size()
+        alive: List[Dict[str, Any]] = []
+
+        for fx in self._active_sniper_explosions:
+            try:
+                elapsed = now_ms - int(fx.get('start_ms', now_ms))
+                if elapsed < 0 or elapsed >= total:
+                    continue
+
+                acc = 0
+                frame_idx = 0
+                for i, d in enumerate(durations):
+                    acc += int(d)
+                    if elapsed < acc:
+                        frame_idx = i
+                        break
+
+                src = frames[min(frame_idx, len(frames) - 1)]
+                target_size = max(12, int(cell_size * 1.8))
+                if src.get_width() != target_size or src.get_height() != target_size:
+                    frame = pygame.transform.smoothscale(src, (target_size, target_size))
+                else:
+                    frame = src
+
+                cx = int(fx.get('cx', 0))
+                cy = int(fx.get('cy', 0))
+                center_x = board_x + cx * cell_size + cell_size // 2
+                center_y = board_y + cy * cell_size + cell_size // 2
+                draw_x = center_x - frame.get_width() // 2
+                draw_y = center_y - frame.get_height() // 2
+                self.screen.blit(frame, (draw_x, draw_y))
+
+                alive.append(fx)
+            except Exception:
+                continue
+
+        self._active_sniper_explosions = alive
+    
+    def draw_mode_info(self, info_x: int, info_y: int) -> int:
+        # Ensure active cards list is up-to-date for the HUD panel.
+        try:
+            self._sync_active_cards()
+        except Exception:
+            pass
+        panel_x, _, panel_width = self._left_panel_frame
+        cards_y = getattr(self, "_left_panel_cards_y", info_y)
+        cards_x = getattr(self, "_left_panel_content_x", panel_x + 16)
+        cards_width = getattr(self, "_left_panel_content_width", panel_width - 32)
+        # Ensure title and cards y do not overlap with top panel
+        min_cards_y = getattr(self, "_left_panel_cards_y", info_y)
+        if cards_y < min_cards_y:
+            cards_y = min_cards_y
+        active_cards = list(getattr(self.card_manager, 'active_cards', []) or [])
+        # Limited cards should only show while they are active.
+        effects = [c for c in active_cards if not bool(c.get('persistent', False))]
+
+        ui_scale = self._card_ui_scale()
+        fonts = self._build_left_panel_font_pack(ui_scale)
+
+        # Draw a container panel for the "selected/active cards" area.
+        # This shares the same glass-panel base as the level box and right HUD.
+        pad_x = max(10, int(15 * ui_scale))
+        pad_top = max(10, int(14 * ui_scale))
+        pad_bottom = max(10, int(14 * ui_scale))
+        content_indent = max(8, int(10 * ui_scale))
+        hud_panel = getattr(self, '_hud_panel_rect', None)
+        _, active_height = self._active_ui_size()
+        if hud_panel is not None:
+            try:
+                target_bottom = int(getattr(hud_panel, 'bottom', active_height - 30))
+            except Exception:
+                target_bottom = active_height - 30
+        else:
+            target_bottom = active_height - 30
+        panel_h = max(0, int(target_bottom - cards_y))
+        if panel_h <= 0:
+            return 0
+        cards_panel_rect = pygame.Rect(panel_x, cards_y, panel_width, panel_h)
+        self._active_cards_panel_rect = cards_panel_rect.copy()
+        try:
+            self._draw_hud_glass_panel(cards_panel_rect)
+        except Exception:
+            retro_style.draw_glass_panel(self.screen, cards_panel_rect, alpha=90, border_color=(60, 70, 90))
+
+        inner_x = panel_x + pad_x
+        inner_w = max(160, panel_width - pad_x * 2)
+        content_x = inner_x + content_indent
+        content_w = max(120, inner_w - content_indent)
+        y_cursor = cards_panel_rect.y + pad_top
+
+        header_font = fonts['panel_header']
+        section_font = fonts['small']
+
+        header_text = self._fit_text_to_width(header_font, t('cards'), inner_w)
+        header = header_font.render(header_text, True, (220, 230, 255))
+        self.screen.blit(header, (inner_x, y_cursor))
+        y_cursor += header.get_height() + max(6, int(9 * ui_scale))
+
+        section_text = self._fit_text_to_width(section_font, t('card_type_limited'), content_w)
+        label_fx = section_font.render(section_text, True, (180, 200, 220))
+        self.screen.blit(label_fx, (content_x, y_cursor))
+        y_cursor += label_fx.get_height() + max(5, int(7 * ui_scale))
+
+        available_cards_h = max(0, cards_panel_rect.bottom - pad_bottom - y_cursor)
+        effects_h = self.card_ui.draw_active_cards_panel(
+            self.screen,
+            effects,
+            fonts,
+            content_x,
+            y_cursor,
+            content_w,
+            max_display=10,
+            placeholder_text=t('card_placeholder_no_limited'),
+            columns=1,
+            max_height=available_cards_h,
+            ui_scale=ui_scale,
+        )
+        used_height = (y_cursor - cards_panel_rect.y) + effects_h + pad_bottom
+        return min(cards_panel_rect.height, max(0, used_height))
+
+    def _draw_persistent_cards_icon_panel(self) -> None:
+        active_cards = list(getattr(self.card_manager, 'active_cards', []) or [])
+        history_cards = list(getattr(self, 'selected_cards_log', []) or [])
+        ui_scale = self._card_ui_scale()
+        s = lambda v, minimum=1: max(minimum, int(round(v * ui_scale)))
+
+        active_by_id: Dict[str, Dict[str, Any]] = {}
+        for card in active_cards:
+            card_id = str(card.get('id') or '')
+            if card_id and bool(card.get('persistent', False)):
+                active_by_id[card_id] = card
+
+        perks: List[Dict[str, Any]] = []
+        seen: set[str] = set()
+        for card in history_cards:
+            card_id = str(card.get('id') or '')
+            if not card_id or card_id in seen or not bool(card.get('persistent', False)):
+                continue
+            perks.append(active_by_id.get(card_id, card))
+            seen.add(card_id)
+        for card in active_cards:
+            card_id = str(card.get('id') or '')
+            if not card_id or card_id in seen or not bool(card.get('persistent', False)):
+                continue
+            perks.append(card)
+            seen.add(card_id)
+
+        board_x, board_y = self.get_board_offset()
+        cell_size = self.get_cell_size()
+        board_w = self.board_width * cell_size
+        board_h = self.board_height * cell_size
+
+        panel_gap_top = s(12)
+        panel_gap_bottom = s(10)
+        panel_h_max = s(66)
+        panel_h_min = s(42)
+        active_width, active_height = self._active_ui_size()
+        available_below = int(active_height - (board_y + board_h) - panel_gap_top - panel_gap_bottom)
+        if available_below < panel_h_min:
+            return
+
+        desired_w = int(board_w + s(260))
+        panel_w = max(int(board_w), min(desired_w, int(active_width - s(16))))
+        panel_h = min(panel_h_max, available_below)
+        panel_x = int(board_x + (board_w - panel_w) // 2)
+        panel_x = max(s(8), min(panel_x, active_width - panel_w - s(8)))
+        panel_y = int(board_y + board_h + panel_gap_top)
+        panel_rect = pygame.Rect(panel_x, panel_y, panel_w, panel_h)
+        self._persistent_cards_panel_rect = panel_rect.copy()
+
+        try:
+            self._draw_hud_glass_panel(panel_rect)
+        except Exception:
+            retro_style.draw_glass_panel(self.screen, panel_rect, alpha=90, border_color=(60, 70, 90))
+
+        if not perks:
+            return
+
+        item_h = max(s(38), panel_h - s(16))
+        icon_size = s(28)
+        item_w = s(162)
+        spacing = s(10)
+        available_w = max(s(60), panel_w - s(20))
+        max_items_fit = max(1, (available_w + spacing) // (item_w + spacing))
+        shown = perks[-max_items_fit:]
+        total_w = len(shown) * item_w + max(0, len(shown) - 1) * spacing
+        start_x = panel_rect.x + max(s(10), (panel_w - total_w) // 2)
+        item_y = panel_rect.y + (panel_h - item_h) // 2
+        title_font = self.mystery_font_small
+
+        def _trim_text(text: str, max_w: int) -> str:
+            value = str(text or '').strip()
+            if value == '':
+                return ''
+            if title_font.size(value)[0] <= max_w:
+                return value
+            cut = value
+            while len(cut) > 1 and title_font.size(cut + '...')[0] > max_w:
+                cut = cut[:-1]
+            return (cut + '...') if cut else value
+
+        for idx, card in enumerate(shown):
+            item_x = start_x + idx * (item_w + spacing)
+            item_rect = pygame.Rect(item_x, item_y, item_w, item_h)
+            pygame.draw.rect(self.screen, (14, 18, 34, 190), item_rect, border_radius=9)
+            pygame.draw.rect(self.screen, (160, 176, 210, 110), item_rect, 1, border_radius=9)
+
+            icon_rect = pygame.Rect(item_rect.x + s(7), item_rect.y + (item_rect.h - icon_size) // 2, icon_size, icon_size)
+            try:
+                icon_img = self.card_ui._get_icon_surface(card.get('icon_image'), (icon_rect.w, icon_rect.h))
+            except Exception:
+                icon_img = None
+
+            if icon_img is not None:
+                self.screen.blit(icon_img, icon_img.get_rect(center=icon_rect.center))
+            else:
+                txt_icon = str(card.get('icon', '*') or '*')
+                safe_icon = ''.join(ch for ch in txt_icon if ch.isascii() and ch.isalnum())[:2]
+                if not safe_icon:
+                    safe_icon = '*'
+                glyph = self.mystery_font_small.render(safe_icon, True, card.get('color', (220, 235, 255)))
+                self.screen.blit(glyph, glyph.get_rect(center=icon_rect.center))
+
+            text_x = icon_rect.right + s(8)
+            text_w = max(s(34), item_rect.right - s(8) - text_x)
+            card_title = get_card_title(card, card.get('title', ''))
+            card_title = _trim_text(card_title, text_w)
+            title_surf = title_font.render(card_title, True, (224, 234, 252))
+            title_rect = title_surf.get_rect()
+            title_rect.x = text_x
+            title_rect.centery = item_rect.centery
+            self.screen.blit(title_surf, title_rect)
+
+    def _get_left_panel_frame(self) -> tuple[int, int, int]:
+        metrics = self._get_mystery_layout_metrics()
+        ui_scale = self._card_ui_scale()
+        board_x, board_y = self.get_board_offset()
+        base_width = int(metrics['left_panel_width'])
+        panel_gap = int(metrics['panel_gap'])
+        desired_width = int(round(float(base_width) * 1.5))
+        min_x = max(int(8 * ui_scale), 0)
+        right_edge = int(board_x - panel_gap)
+        max_width = max(base_width, right_edge - min_x)
+        width = max(base_width, min(desired_width, max_width))
+        x = max(min_x, right_edge - width)
+        # Align vertical inset with the right HUD panel when available.
+        hud_panel = getattr(self, '_hud_panel_rect', None)
+        if hud_panel is not None:
+            try:
+                y = int(getattr(hud_panel, 'y', board_y + 10))
+            except Exception:
+                y = board_y + 10
+        else:
+            y = max(int(12 * ui_scale), board_y - int(20 * ui_scale))
+        return x, y, width
+
+    def get_current_speed(self) -> int:
+        # Kart Modu (Mystery): board.level tek hız sürücüsüdür.
+        # Kart XP / card_level ekonomisi yalnızca ödül akışı içindir.
+        base_interval = self._get_mystery_base_fall_speed()
+
+        # Zaman yavaşlatma kartı aktifse: speed_effect_multiplier < 1 => interval artar (daha yavaş düşüş)
+        if self.speed_effect_timer > 0 and self.speed_effect_multiplier > 0:
+            base_interval = int(base_interval / self.speed_effect_multiplier)
+        
+        # Hız Patlaması aktifse: speed_burst_speed_mult > 1 => interval düşer (daha hızlı düşüş)
+        speed_burst_mult = getattr(self, '_speed_burst_speed_mult', 1.0)
+        if speed_burst_mult > 1.0:
+            base_interval = int(base_interval / speed_burst_mult)
+
+        return max(MYSTERY_LEVEL_SPEED_MIN_MS, int(base_interval))
+
+    def _draw_status_panel(self) -> None:
+        status = self.card_manager.get_status()
+        ui_scale = self._card_ui_scale()
+        fonts = self._build_left_panel_font_pack(ui_scale)
+
+        panel_x, panel_y, panel_width = self._get_left_panel_frame()
+        self._left_panel_frame = (panel_x, panel_y, panel_width)
+
+        # === İKİ AYRI HAT ===
+        # Üstte: oyunun temposunu yöneten board.level (düşüş hızı için)
+        # Altta: kart ödül ekonomisi için card_level (kart XP ile ilerler)
+        board_level = getattr(self.board, 'level', 1)
+        card_level = int(status.get('card_level', 1))
+        card_xp = int(status.get('card_xp', 0))
+        card_xp_to_next = max(1, int(status.get('card_xp_to_next', 1)))
+        # Sağdaki standart HUD paneli ile aynı stil: glass panel (alpha=90)
+        pad_x = max(10, int(15 * ui_scale))
+        pad_top = max(10, int(14 * ui_scale))
+        pad_bottom = max(10, int(14 * ui_scale))
+        content_indent = max(8, int(10 * ui_scale))
+        inner_x = panel_x + pad_x
+        inner_w = max(160, panel_width - pad_x * 2)
+        content_x = inner_x + content_indent
+        content_w = max(120, inner_w - content_indent)
+
+        heading_font = fonts['heading']
+        info_font = fonts['small']
+
+        header_text = self._fit_text_to_width(
+            heading_font,
+            f"{t('level')}: {board_level}",
+            inner_w,
+        )
+        header_surface = heading_font.render(header_text, True, (230, 235, 245))
+
+        # Kart seviyesi: kart ödül ekonomisinin gerçek ilerleyişini gösterir.
+        # board.level ile karışmaması için ayrı bir etiketle çiz.
+        card_label = t(
+            'card_level_label',
+            level=card_level,
+            current=card_xp,
+            needed=card_xp_to_next,
+        )
+        if card_label.startswith('[?'):
+            card_label = f"Kart Sv: {card_level} ({card_xp}/{card_xp_to_next})"
+            # Localization key yoksa düz metne düş.
+            card_label = f"Kart Sv: {card_level} ({card_xp}/{card_xp_to_next})"
+        info_line_2 = t('card_pool_label', hint=status['hint'])
+        info_line_1 = self._fit_text_to_width(info_font, card_label, content_w)
+        info_line_2 = self._fit_text_to_width(info_font, info_line_2, content_w)
+        info_texts = [
+            info_font.render(info_line_1, True, (180, 200, 220)),
+            info_font.render(info_line_2, True, (180, 200, 220)),
+        ]
+
+        line_gap = max(3, int(5 * ui_scale))
+        content_h = pad_top + header_surface.get_height() + max(5, int(8 * ui_scale))
+        content_h += sum(s.get_height() + line_gap for s in info_texts)
+        content_h += pad_bottom
+
+        panel_rect = pygame.Rect(panel_x, panel_y, panel_width, content_h)
+        try:
+            self._draw_hud_glass_panel(panel_rect)
+        except Exception:
+            retro_style.draw_glass_panel(self.screen, panel_rect, alpha=90, border_color=(60, 70, 90))
+
+        cursor = panel_rect.y + pad_top
+        self.screen.blit(header_surface, (inner_x, cursor))
+        cursor += header_surface.get_height() + max(5, int(8 * ui_scale))
+        for line_surface in info_texts:
+            self.screen.blit(line_surface, (content_x, cursor))
+            cursor += line_surface.get_height() + line_gap
+
+        self._left_panel_cards_y = panel_rect.bottom + max(10, int(18 * ui_scale))
+        self._left_panel_content_x = panel_x + pad_x
+        self._left_panel_content_width = inner_w
+
+    def _open_card_selection(self) -> None:
+        self.card_selection_active = True
+        self.card_ui.reset()
+        self._pending_card_choice_index = None
+        # While the overlay is active we consume events; KEYUP events for left/right
+        # may never reach the base Game handler. Reset DAS to avoid "stuck" drift.
+        try:
+            self.das_direction = 0
+            self.das_timer = 0
+            self.das_repeat_timer = 0
+            self.das_charged = False
+        except Exception:
+            pass
+        if self.sound_enabled:
+            self.sound.play_sound("card_open")
+        # Debug log about overlay opening and the number of pending choices (if debug mode set)
+        try:
+            if getattr(self, 'settings_manager', None) and self.settings_manager.get('debug_mode', False):
+                print(f"[MysteryMode] Opening card selection overlay: {len(self.card_manager.pending_choices)} choices, pending_level_ups={getattr(self, 'pending_level_ups', 0)}")
+        except Exception:
+            pass
+
+    def _get_card_selection_nav_keys(self) -> dict[str, tuple[int, ...]]:
+        nav_keys = {
+            'left': {pygame.K_LEFT, pygame.K_a},
+            'right': {pygame.K_RIGHT, pygame.K_d},
+            'up': {pygame.K_UP, pygame.K_w},
+            'down': {pygame.K_DOWN, pygame.K_s},
+        }
+        action_map = {
+            'left': 'move_left',
+            'right': 'move_right',
+            'up': 'rotate',
+            'down': 'soft_drop',
+        }
+        bindings = getattr(self, 'control_bindings', {}) or {}
+        for direction, action in action_map.items():
+            try:
+                for key in self._action_keys(bindings, action):
+                    nav_keys[direction].add(int(key))
+            except Exception:
+                pass
+        return {direction: tuple(keys) for direction, keys in nav_keys.items()}
+
+    def _handle_card_selection_choice(self, choice: int | str | None) -> bool:
+        if choice is None:
+            return False
+
+        if choice == 'SKIP':
+            try:
+                self.card_manager.pending_choices = []
+            except Exception:
+                pass
+            self._close_card_selection()
+            return True
+
+        if choice == 'REROLL':
+            self._try_reroll_card_selection()
+            return True
+
+        if choice == 'PEEK':
+            return True
+
+        if choice == 'RANDOM':
+            if self.card_manager.pending_choices:
+                idx = random.randint(0, len(self.card_manager.pending_choices) - 1)
+                self._select_card(idx)
+            return True
+
+        self._select_card(int(choice))
+        return True
+
+    def _handle_card_selection_keydown(self, event) -> bool:
+        key = getattr(event, 'key', None)
+        if key is None:
+            return False
+
+        if key == pygame.K_ESCAPE:
+            return self._handle_card_selection_choice('SKIP')
+
+        if self.settings_manager and self.settings_manager.get('card_mode_debug', False):
+            if key in (pygame.K_PAGEUP, pygame.K_UP):
+                try:
+                    self.card_ui.handle_mouse_wheel(1)
+                except Exception:
+                    pass
+                return True
+            if key in (pygame.K_PAGEDOWN, pygame.K_DOWN):
+                try:
+                    self.card_ui.handle_mouse_wheel(-1)
+                except Exception:
+                    pass
+                return True
+            for n in range(1, 10):
+                digit_key = getattr(pygame, f'K_{n}')
+                keypad_key = getattr(pygame, f'K_KP{n}') if hasattr(pygame, f'K_KP{n}') else None
+                if key in (digit_key, keypad_key):
+                    self._select_card(n - 1)
+                    return True
+            return False
+
+        pending_count = len(getattr(self.card_manager, 'pending_choices', []) or [])
+        if key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE):
+            choice = self.card_ui.activate_focused(pending_count)
+            return self._handle_card_selection_choice(choice)
+
+        for direction, keys in self._get_card_selection_nav_keys().items():
+            if key in keys:
+                self.card_ui.move_focus(direction, pending_count)
+                return True
+
+        if key == pygame.K_r:
+            if self.card_manager.pending_choices:
+                idx = random.randint(0, len(self.card_manager.pending_choices) - 1)
+                self._select_card(idx)
+            return True
+
+        if key in (pygame.K_1, pygame.K_KP1):
+            self._select_card(0)
+            return True
+        if key in (pygame.K_2, pygame.K_KP2):
+            self._select_card(1)
+            return True
+        if key in (pygame.K_3, pygame.K_KP3):
+            self._select_card(2)
+            return True
+
+        return False
+
+    def _close_card_selection(self) -> None:
+        self.card_selection_active = False
+        self.card_ui.clear_selection_feedback()
+        self._pending_card_choice_index = None
+        # Same reason as above: ensure gameplay resumes with a clean horizontal
+        # repeat state even if KEYUP was consumed during overlay.
+        try:
+            self.das_direction = 0
+            self.das_timer = 0
+            self.das_repeat_timer = 0
+            self.das_charged = False
+        except Exception:
+            pass
+        # If a pending level-up was queued and a selection UI closes
+        # (either by cancel or after finalize), decrement the queue so
+        # next queued level opens a new overlay as intended.
+        if getattr(self, 'pending_level_ups', 0) > 0:
+            try:
+                self.pending_level_ups = max(0, self.pending_level_ups - 1)
+            except Exception:
+                pass
+
+    def _select_card(self, index: int) -> None:
+        if self._pending_card_choice_index is not None or self.card_ui.is_selection_animating():
+            return
+        # Kart dönme animasyonu devam ediyorsa seçimi engelle
+        if self.card_ui.is_flip_animating():
+            return
+        if not (0 <= index < len(self.card_manager.pending_choices)):
+            return
+        self._pending_card_choice_index = index
+        self.card_ui.trigger_selection_feedback(index)
+
+    def _finalize_pending_card_selection(self) -> None:
+        if self._pending_card_choice_index is None:
+            return
+        card = self.card_manager.select_card(self._pending_card_choice_index)
+        self._pending_card_choice_index = None
+        if not card:
+            self._close_card_selection()
+            # If a level-up was pending but we couldn't select a card, clear one pending
+            if getattr(self, 'pending_level_ups', 0) > 0:
+                self.pending_level_ups = max(0, self.pending_level_ups - 1)
+            return
+        # Record selection for left panel history before applying effects.
+        try:
+            self._record_selected_card(card)
+        except Exception:
+            pass
+        self._apply_card_effect(card)
+        interactive_effect_active = bool(
+            getattr(self, '_piece_selection_active', False)
+            or getattr(self, '_card_workshop_active', False)
+            or getattr(self, '_sniper_overlay_active', False)
+        )
+        if not interactive_effect_active:
+            card_title_text = get_card_title(card, card.get('title', ''))
+            self.card_message = t('card_selected').format(title=card_title_text)
+            self.card_message_timer = 3
+        self._close_card_selection()
+        # Note: pending_level_ups is now decremented by _close_card_selection(),
+        # which is always called when the UI closes (finalize or cancel).
+
+    def _apply_score_multiplier_to_delta(self, delta: int) -> int:
+        if delta <= 0:
+            return 0
+        mult = float(getattr(self, '_score_multiplier_value', 1.0))
+        if getattr(self, '_score_multiplier_timer', 0.0) <= 0 or mult <= 1.0:
+            return 0
+        return int(delta * (mult - 1.0))
+
+    def _apply_line_clear_multiplier_to_delta(self, cleared: int, delta_score: int) -> int:
+        if cleared <= 0 or delta_score <= 0:
+            return 0
+        
+        total_extra = 0
+        
+        # Mevcut line_clear_multiplier sistemi
+        remaining = int(getattr(self, '_line_clear_multiplier_remaining', 0))
+        mult = float(getattr(self, '_line_clear_multiplier_value', 1.0))
+        if remaining > 0 and mult > 1.0:
+            applied = min(cleared, remaining)
+            per_line = float(delta_score) / max(1, int(cleared))
+            extra = int(per_line * applied * (mult - 1.0))
+            self._line_clear_multiplier_remaining = max(0, remaining - applied)
+            total_extra += max(0, extra)
+        
+        # Hız Patlaması bonus çarpanı
+        speed_burst_timer = getattr(self, '_speed_burst_timer', 0)
+        speed_burst_line_mult = getattr(self, '_speed_burst_line_mult', 1.0)
+        if speed_burst_timer > 0 and speed_burst_line_mult > 1.0:
+            # Tüm satırlar için çarpan uygula
+            extra_speed = int(delta_score * (speed_burst_line_mult - 1.0))
+            total_extra += max(0, extra_speed)
+        
+        return total_extra
+
+    def _get_smart_phase_shift_target_name(self, current_name: str) -> str | None:
+        """Mode hook for perk_phase.
+
+        Must stay compatible with the canonical shape-mutation mapping used by
+        Game.swap_current_piece_shape().
+        """
+        name = str(current_name or '')
+        mapping = {'L': 'J', 'J': 'L', 'Z': 'S', 'S': 'Z'}
+        # Returning the same name blocks Game's broader fallback mapping. The
+        # card text promises mirror swaps only, not I/O conversion.
+        return mapping.get(name, name)
+
+    def _evaluate_occupancy(self, occ: list[list[bool]]) -> tuple[int, int, int, int]:
+        """Return (holes, bumpiness, agg_height, full_lines)."""
+        if not occ or not occ[0]:
+            return 0, 0, 0, 0
+        h = len(occ)
+        w = len(occ[0])
+        heights = [0] * w
+        holes = 0
+        full_lines = 0
+        for x in range(w):
+            top = None
+            for y in range(h):
+                if occ[y][x]:
+                    top = y
+                    break
+            if top is None:
+                continue
+            heights[x] = h - top
+            for y in range(top + 1, h):
+                if not occ[y][x]:
+                    holes += 1
+        for y in range(h):
+            if all(occ[y][x] for x in range(w)):
+                full_lines += 1
+        bump = sum(abs(heights[i] - heights[i + 1]) for i in range(w - 1)) if w > 1 else 0
+        agg = sum(heights)
+        return holes, bump, agg, full_lines
+
+    def _apply_block_magnet(self) -> None:
+        """Blok Manyetigi: Tum bosluklar kapanir, bloklar sola kayar."""
+        try:
+            # Her satir icin bloklar sola kayar
+            for y in range(self.board.height):
+                # Mevcut satirda dolu bloklar ve ozellikleri topla
+                blocks = []
+                textures = []
+                golds = []
+                owners = []
+                
+                for x in range(self.board.width):
+                    if self.board.occupancy[y][x]:
+                        blocks.append(self.board.grid[y][x])
+                        textures.append(self.board.texture_grid[y][x])
+                        golds.append(self.board.gold[y][x])
+                        owners.append(self.board.owners[y][x])
+                
+                # Satiri temizle
+                for x in range(self.board.width):
+                    self.board.grid[y][x] = BLACK
+                    self.board.occupancy[y][x] = False
+                    self.board.texture_grid[y][x] = None
+                    self.board.gold[y][x] = False
+                    self.board.owners[y][x] = None
+                
+                # Bloklar sola yaslanacak sekilde yerlestir
+                for i, block in enumerate(blocks):
+                    if i < self.board.width:
+                        self.board.grid[y][i] = block
+                        self.board.occupancy[y][i] = True
+                        if i < len(textures):
+                            self.board.texture_grid[y][i] = textures[i]
+                        if i < len(golds):
+                            self.board.gold[y][i] = golds[i]
+                        if i < len(owners):
+                            self.board.owners[y][i] = owners[i]
+            
+            # Ses efekti
+            if self.sound_enabled:
+                try:
+                    self.sound.play_sound("card_magnet")
+                except Exception:
+                    pass
+                    
+            # Bloklar kaydiktan sonra yercekimi uygulayip tam satirlari temizle
+            try:
+                self.board.apply_gravity()
+            except Exception:
+                pass
+            
+            try:
+                prev_score = int(getattr(self.board, 'score', 0))
+                cleared = self.board.clear_lines(source='card')
+                if cleared > 0:
+                    delta = None
+                    try:
+                        delta = int(getattr(self.board, 'score', 0)) - prev_score
+                    except Exception:
+                        pass
+                    self._post_external_line_clear(cleared, award_energy=True, score_delta=delta, source='card')
+            except Exception:
+                pass
+                    
+        except Exception:
+            pass
+
+    def _post_external_line_clear(
+        self,
+        cleared: int,
+        *,
+        award_energy: bool = True,
+        score_delta: int | None = None,
+        source: str = 'card',
+    ) -> None:
+        """Apply MysteryMode-specific bookkeeping after a non-lock line clear.
+
+        Some cards/abilities can clear lines without going through the normal
+        `lock_and_new_piece()` pipeline. Keep energy/perk/card-progress/bonus
+        consistent by routing those clears here.
+        """
+        if cleared <= 0:
+            return
+
+        try:
+            self._queue_line_clear_effects(cleared)
+        except Exception:
+            pass
+
+        # Apply post-scoring multipliers for non-lock clears (board.clear_lines() already adds score)
+        if score_delta is not None:
+            try:
+                delta0 = int(score_delta)
+            except Exception:
+                delta0 = 0
+            if delta0 > 0:
+                try:
+                    mult = self.perk_manager.get_multiplier() if getattr(self, 'perk_manager', None) else 1.0
+                    if mult != 1.0:
+                        self.board.score += int(delta0 * (mult - 1.0))
+                        delta0 = int(delta0 + (delta0 * (mult - 1.0)))
+                except Exception:
+                    pass
+                try:
+                    extra = self._apply_score_multiplier_to_delta(delta0)
+                    if extra:
+                        self.board.score += extra
+                        delta0 += int(extra)
+                except Exception:
+                    pass
+                try:
+                    extra_lines = self._apply_line_clear_multiplier_to_delta(cleared, delta0)
+                    if extra_lines:
+                        self.board.score += extra_lines
+                except Exception:
+                    pass
+
+        # Energy gain for Mystery Mode:
+        # - card clears: +5/line by default (prevents farming)
+        if award_energy and getattr(self, 'energy', None) is not None:
+            try:
+                per_line = 10 if source == 'player' else 5
+                self.energy = min(self.energy_max, int(self.energy + cleared * per_line))
+            except Exception:
+                per_line = 10 if source == 'player' else 5
+                self.energy = min(getattr(self, 'energy_max', 100), getattr(self, 'energy', 0) + (cleared * per_line))
+
+        # Apply line bonus reward, if enabled
+        try:
+            self._apply_line_bonus_reward(cleared)
+        except Exception:
+            pass
+
+        # Keep card progress in sync. External clears must NOT award card XP
+        # (anti-farm); `notify_lines_cleared` checks `source` and returns False
+        # for non-player sources. The overlay-opening fast path is removed:
+        # rewards now come exclusively from player-source XP gains.
+        try:
+            self.card_manager.notify_lines_cleared(cleared, source=source)
+        except Exception:
+            pass
+
+        # Perk manager per-line triggers
+        try:
+            self.perk_manager.notify_lines_cleared(cleared, source=source)
+        except Exception:
+            pass
+
+    def _apply_card_effect(self, card: Dict) -> None:
+        cid = card["id"]
+        value = card["value"]
+        color = card["color"]
+        effect_triggered = False
+        board_snapshot_before = None
+
+        if getattr(self, 'effects_enabled', False) and cid in {
+            'clear_rows',
+            'column_cleanse',
+            'gravity_well',
+            'peak_sculpt',
+            'block_magnet',
+            'row_shuffle',
+            'gambler_dice',
+            'color_cleanse',
+        }:
+            try:
+                board_snapshot_before = self._capture_card_board_snapshot()
+            except Exception:
+                board_snapshot_before = None
+
+        # Some tests (and potential future callers) apply effects directly without
+        # going through MysteryCardManager.select_card(). Ensure one-time
+        # persistent perks are still marked as used so they won't be re-offered.
+        try:
+            if bool(card.get('persistent')):
+                self.card_manager.used_card_ids.add(str(cid))
+        except Exception:
+            pass
+
+        if cid == "score":
+            # Basit skor patlaması - anında puan ekle
+            base = int(value)
+            # Synergy çarpanı uygula
+            mult = 1.0
+            try:
+                mult = self.perk_manager.get_multiplier() if getattr(self, 'perk_manager', None) else 1.0
+            except Exception:
+                pass
+            total = int(base * mult)
+            self.board.score += total
+            self._set_localized_card_message('mystery_msg_score_bonus', 1.2, '+{total} puan!', total=total)
+            effect_triggered = True
+        elif cid == "clear_rows":
+            self._clear_rows(value)
+            # After collapsing, full rows may appear; clear them as proper line clears.
+            # The sweep itself should not be treated as "N lines cleared" for perks/energy.
+            try:
+                prev_score_after_sweep = int(getattr(self.board, 'score', 0))
+            except Exception:
+                prev_score_after_sweep = 0
+            try:
+                cleared = int(self.board.clear_lines(source='card'))
+            except Exception:
+                cleared = 0
+            if cleared > 0:
+                try:
+                    delta = int(getattr(self.board, 'score', 0)) - prev_score_after_sweep
+                except Exception:
+                    delta = None
+                self._post_external_line_clear(cleared, award_energy=True, score_delta=delta, source='card')
+            try:
+                n = max(1, int(value))
+                self._set_localized_card_message('mystery_msg_clear_rows', 0.9, 'Alt Süpür: -{rows} satır', rows=n)
+            except Exception:
+                pass
+            effect_triggered = True
+        elif cid == "force_piece":
+            self._queue_force_pieces(value)
+            try:
+                # This effect is delayed (applies to upcoming spawns) so keep a visual.
+                self._remember_effect_visual("force_piece", card)
+                self._sync_active_cards()
+            except Exception:
+                pass
+            effect_triggered = True
+        elif cid == "column_cleanse":
+            # Rastgele sütun temizle
+            n_cols = max(1, int(value))
+            self._clear_columns(n_cols)
+            self._set_localized_card_message('mystery_msg_column_cleanse', 1.0, '{count} sütun temizlendi!', count=n_cols)
+            effect_triggered = True
+        elif cid == "combo_boost":
+            self._apply_combo_aura(value, card)
+            effect_triggered = True
+        elif cid == "time_slow":
+            self._apply_time_slow(value, card)
+            effect_triggered = True
+        elif cid == 'bomb_master':
+            # Bomba Ustası: M tuşuyla mini bomba yapma hakları (sınırlı kart)
+            # Sınırlı kartlar: tekrar seçilince hak EKLEME.
+            # Kalan hak 1/2 ise 3'e tamamla; 3+ ise dokunma.
+            try:
+                cur = int(getattr(self, 'bomb_master_charges', 0) or 0)
+            except Exception:
+                cur = 0
+            target_charges = self._card_int_value(card, 3)
+            if cur < target_charges:
+                self.bomb_master_charges = target_charges
+            try:
+                self._set_localized_card_message(
+                    'mystery_msg_bomb_master_ready',
+                    1.4,
+                    'Bomba Ustası! M ile mini bomba ({charges} hak)',
+                    charges=int(self.bomb_master_charges),
+                )
+            except Exception:
+                pass
+            try:
+                self._remember_effect_visual('bomb_master', card)
+                self._sync_active_cards()
+            except Exception:
+                pass
+            effect_triggered = True
+        elif cid == 'rewind_power':
+            self.perk_manager.activate('rewind_power')
+            # Sınırlı kartlar: tekrar seçilince hak EKLEME.
+            # Kalan hak 1/2 ise 3'e tamamla; 3+ ise dokunma.
+            try:
+                cur = int(getattr(self.perk_manager, 'rewind_uses', 0) or 0)
+            except Exception:
+                cur = 0
+            target_charges = self._card_int_value(card, 3)
+            if cur < target_charges:
+                self.perk_manager.rewind_uses = target_charges
+            self._rewind_available = True
+            self._last_placed_piece = None
+            try:
+                self._sync_active_cards()
+            except Exception:
+                pass
+            effect_triggered = True
+        elif cid == 'perk_chrono':
+            self.perk_manager.activate('chrono_lock')
+            try:
+                self._sync_active_cards()
+            except Exception:
+                pass
+            effect_triggered = True
+        elif cid == 'perk_phase':
+            # Şekil Değiştirici: sınırlı kullanımlı (3 hak)
+            self.perk_manager.activate('phase_shift')
+            # Sınırlı kartlar: tekrar seçilince hak EKLEME.
+            # Kalan hak 1/2 ise 3'e tamamla; 3+ ise dokunma.
+            try:
+                cur = int(getattr(self, 'phase_shift_uses_remaining', 0) or 0)
+            except Exception:
+                cur = 0
+            target_charges = self._card_int_value(card, 3)
+            if cur < target_charges:
+                self.phase_shift_uses_remaining = target_charges
+            try:
+                self._remember_effect_visual('perk_phase', card)
+                self._sync_active_cards()
+            except Exception:
+                pass
+            effect_triggered = True
+        elif cid == 'perk_synergy':
+            self.perk_manager.activate('synergy_core')
+            try:
+                self._sync_active_cards()
+            except Exception:
+                pass
+            effect_triggered = True
+        elif cid == 'perk_second_pocket':
+            # Enable the second hold pocket
+            self.perk_manager.activate('second_pocket')
+            try:
+                self._sync_active_cards()
+            except Exception:
+                pass
+            effect_triggered = True
+        elif cid == "line_bonus":
+            # Sonraki N satır temizlemede 2x puan
+            multiplier = card.get("payload", {}).get("multiplier", 2.0)
+            self._enable_line_multiplier(value, multiplier, card)
+            self._set_localized_card_message(
+                'mystery_msg_line_bonus_ready',
+                1.2,
+                'Sonraki {lines} satır: {multiplier:.0f}x puan!',
+                lines=value,
+                multiplier=multiplier,
+            )
+            effect_triggered = True
+        elif cid == "quantum_tunneling":
+            # Grant charges so the player can choose which upcoming pieces become tunneled.
+            # Sınırlı kartlar: tekrar seçilince hak EKLEME.
+            # Kalan hak 1/2 ise 3'e tamamla; 3+ ise dokunma.
+            try:
+                cur = int(getattr(self, 'tunnel_charges_remaining', 0) or 0)
+            except Exception:
+                cur = 0
+            target_charges = self._card_int_value(card, 3)
+            if cur < target_charges:
+                self.tunnel_charges_remaining = target_charges
+            try:
+                self._set_localized_card_message(
+                    'mystery_msg_quantum_tunneling_ready',
+                    1.4,
+                    'Hayalet Parça: {charges} hak (G ile etkinleştir)',
+                    charges=int(self.tunnel_charges_remaining),
+                )
+            except Exception:
+                pass
+            # Show a visual in active effects while charges remain
+            try:
+                self._remember_effect_visual('quantum_tunneling', card)
+                self._sync_active_cards()
+            except Exception:
+                pass
+            effect_triggered = True
+        elif cid == "mini_bomb":
+            # Arm the CURRENT piece as a bomb so it explodes when it locks
+            # (either via SPACE hard drop or natural fall).
+            piece = getattr(self, 'current_piece', None)
+            if piece is not None:
+                try:
+                    setattr(piece, 'is_bomb', True)
+                except Exception:
+                    pass
+                # Mini bomb should only clear blocks it touches (not a generic AoE).
+                try:
+                    setattr(piece, '_bomb_contact', True)
+                except Exception:
+                    pass
+                # Keep original color and preserve across theme reapplications.
+                try:
+                    if getattr(piece, '_original_color', None) is None:
+                        setattr(piece, '_original_color', getattr(piece, 'color', None))
+                except Exception:
+                    pass
+                try:
+                    # Bomba rengi: kırmızı
+                    BOMB_COLOR = (221, 0, 5)
+                    piece.color = BOMB_COLOR
+                    setattr(piece, '_force_color', BOMB_COLOR)
+                except Exception:
+                    pass
+                try:
+                    self._set_localized_card_message('mystery_msg_mini_bomb_ready', 1.2, 'Mini Bomba: Bu parça kilitlenince patlayacak!')
+                except Exception:
+                    pass
+                effect_triggered = True
+            else:
+                # Parça yokken kartı harcama
+                try:
+                    self._set_localized_card_message('mystery_msg_mini_bomb_no_piece', 0.9, 'Mini Bomba: Parça yok!')
+                except Exception:
+                    pass
+                effect_triggered = False
+        elif cid == "hammer":
+            # Grant charges so the player can choose which upcoming piece becomes 1x1.
+            # Sınırlı kartlar: tekrar seçilince hak EKLEME.
+            # Kalan hak 1/2 ise 3'e tamamla; 3+ ise dokunma.
+            try:
+                cur = int(getattr(self, 'hammer_charges_remaining', 0) or 0)
+            except Exception:
+                cur = 0
+            target_charges = self._card_int_value(card, 3)
+            if cur < target_charges:
+                self.hammer_charges_remaining = target_charges
+            try:
+                self._set_localized_card_message(
+                    'mystery_msg_hammer_ready',
+                    1.4,
+                    'Çekiç: {charges} hak (H ile kullan)',
+                    charges=int(self.hammer_charges_remaining),
+                )
+            except Exception:
+                pass
+            try:
+                self._remember_effect_visual('hammer', card)
+                self._sync_active_cards()
+            except Exception:
+                pass
+            effect_triggered = True
+        elif cid == "gravity_well":
+            # Zincirleme reaksiyon: gravity -> clear -> gravity ...
+            total_lines = 0
+            try:
+                while True:
+                    self.board.apply_gravity()
+                    prev_score = int(getattr(self.board, 'score', 0))
+                    lines = int(self.board.clear_lines(source='card'))
+                    if lines <= 0:
+                        break
+                    total_lines += int(lines)
+                    try:
+                        delta = int(getattr(self.board, 'score', 0)) - prev_score
+                    except Exception:
+                        delta = None
+                    self._post_external_line_clear(lines, award_energy=True, score_delta=delta, source='card')
+            except Exception:
+                pass
+            if total_lines > 0:
+                try:
+                    self._set_localized_card_message('mystery_msg_gravity_well', 0.9, 'Gravity Well: {lines} satır', lines=total_lines)
+                except Exception:
+                    pass
+            # Gravity Well is a one-shot card; do not persist in active cards
+            effect_triggered = True
+        elif cid == "ghost_echo":
+            # Arm Ghost Echo: do NOT clear immediately; keep in active visuals until
+            # an invalid spawn occurs (then spawn_new_piece will auto-trigger it).
+            try:
+                # store it in _active_effect_visuals so it shows in the UI and is easy to remove
+                self._remember_effect_visual('ghost_echo', card)
+                self._sync_active_cards()
+            except Exception:
+                pass
+            # mark one-time usage so it's not offered again
+            try:
+                if card.get('single_use'):
+                    self.card_manager.used_card_ids.add(card.get('id'))
+            except Exception:
+                pass
+            # Do not schedule TTL removal -- this will persist (single-use) until consumed
+            effect_triggered = True
+        elif cid == 'perk_alchemist':
+            self.perk_manager.activate('perk_alchemist')
+            try:
+                self._sync_active_cards()
+            except Exception:
+                pass
+            effect_triggered = True
+        elif cid == 'perk_flexible_border':
+            # Esnek Sınır: Parçalar tahtanın kenarlarından 1 blok dışına çıkabilir
+            # Görsel değişiklik yok, sadece hareket sınırları genişliyor
+            self.perk_manager.activate('perk_flexible_border')
+            # Board'a kalıcı flag ekle - tüm parçalar bu özellikten yararlanır
+            try:
+                self.board.flexible_border_active = True
+            except Exception:
+                pass
+            try:
+                if getattr(self, 'current_piece', None) is not None:
+                    setattr(self.current_piece, 'flexible_border', True)
+                for queued_piece in getattr(self, 'next_piece_queue', []) or []:
+                    if queued_piece is not None:
+                        setattr(queued_piece, 'flexible_border', True)
+            except Exception:
+                pass
+            try:
+                self._set_localized_card_message('mystery_msg_flexible_border', 1.5, 'Esnek Sınır aktif! Parçalar kenarlara taşabilir.')
+            except Exception:
+                pass
+            try:
+                self._sync_active_cards()
+            except Exception:
+                pass
+            effect_triggered = True
+        elif cid in ("speed_burst_rare", "speed_burst_epic", "speed_burst_legendary", "speed_burst"):
+            # Hız Patlaması: Belirli süre hızlı düşüş + satır temizleme bonusu
+            duration = int(value)
+            speed_mult = card.get("payload", {}).get("speed_multiplier", 1.5)
+            line_mult = card.get("payload", {}).get("line_multiplier", 1.5)
+            
+            # Timer ve çarpanları ayarla
+            self._speed_burst_timer = duration
+            self._speed_burst_speed_mult = speed_mult
+            self._speed_burst_line_mult = line_mult
+            
+            # Hızı hemen güncelle
+            self.fall_speed = self.get_current_speed()
+            
+            try:
+                self._set_localized_card_message(
+                    'mystery_msg_speed_burst',
+                    1.5,
+                    'Hız Patlaması! {duration}s boyunca hızlı düşüş + {line_mult}x puan!',
+                    duration=duration,
+                    line_mult=line_mult,
+                )
+            except Exception:
+                pass
+            
+            try:
+                # Aktif kart olarak göster (TTL ile)
+                card_copy = dict(card)
+                card_copy['ttl'] = float(duration)
+                self._remember_effect_visual('speed_burst', card_copy)
+                self._sync_active_cards()
+            except Exception:
+                pass
+            effect_triggered = True
+        elif cid == "peak_sculpt":
+            removed = 0
+            try:
+                removed = int(self._level_peaks(value))
+            except Exception:
+                removed = 0
+            if removed > 0:
+                try:
+                    bonus = min(300, removed * 15)
+                    mult = 1.0
+                    try:
+                        mult = self.perk_manager.get_multiplier() if getattr(self, 'perk_manager', None) else 1.0
+                    except Exception:
+                        mult = 1.0
+                    self.board.score += int(bonus * mult)
+                except Exception:
+                    pass
+                try:
+                    self._set_localized_card_message('mystery_msg_peak_sculpt_removed', 0.9, 'Tepe Dilimleyici: -{removed} blok', removed=removed)
+                except Exception:
+                    pass
+            else:
+                try:
+                    self._set_localized_card_message('mystery_msg_peak_sculpt_balanced', 0.9, 'Tepe Dilimleyici: zaten dengeli')
+                except Exception:
+                    pass
+            effect_triggered = True
+        elif cid == "nova_burst":
+            # Arm targeted explosion(s) for upcoming locks
+            self._arm_nova_burst(value, card)
+            effect_triggered = True
+        # === YENİ KART EFEKTLERİ ===
+        elif cid == "block_magnet":
+            # Blok Manyetigi: Tum bosluklar kapanir, bloklar sola kayar
+            self._apply_block_magnet()
+            try:
+                self._set_localized_card_message('mystery_msg_block_magnet', 1.2, 'Blok Manyetigi: bosluklar kapandi!')
+            except Exception:
+                pass
+            effect_triggered = True
+        elif cid == "row_shuffle":
+            # Satır Karıştırıcı: en alttaki N satırdaki blokları karıştır
+            self._shuffle_bottom_rows(value)
+            try:
+                n = max(1, int(value))
+                self._set_localized_card_message('mystery_msg_row_shuffle', 0.9, 'Satır Karıştırıcı: alt {rows} satır', rows=n)
+            except Exception:
+                pass
+            effect_triggered = True
+        elif cid == "laser_drill":
+            # Aktif Delici Parça: oyun durmaz; parça kırmızı olur ve temas ettiği blokları yok eder
+            self._activate_drill_piece()
+            try:
+                self._remember_effect_visual('laser_drill', card)
+                self._sync_active_cards()
+            except Exception:
+                pass
+            effect_triggered = True
+        elif cid == "sniper_shot":
+            # Keskin Nişancı: kart seçimi yalnızca charge verir; hedefleme
+            # overlay'i otomatik açılmaz. Oyuncu N tuşuna (veya gamepad
+            # `card_sniper` aksiyonuna) basınca overlay açılır.
+            charges = int(card.get('value', 3))  # Varsayılan 3 hak
+            self._sniper_charges = charges
+            self._sniper_card = card
+            # Overlay durumunu temiz tut; başka bir kart yanlışlıkla açık
+            # bırakmış olsa bile sniper kartı seçimiyle overlay açılmamalı.
+            self._sniper_overlay_active = False
+            self._sniper_hover_pos = None
+            # Görsel efekt için kaydet
+            try:
+                self._remember_effect_visual('sniper_shot', card)
+                self._sync_active_cards()
+            except Exception:
+                pass
+            try:
+                self._set_localized_card_message(
+                    'mystery_msg_sniper_ready',
+                    3.0,
+                    'Keskin Nisanci hazir! N tusuna bas. ({charges} hak)',
+                    charges=charges,
+                )
+            except Exception:
+                pass
+            effect_triggered = True
+        elif cid == "time_capsule":
+            # Zaman Kapsulu: T ile kaydet, R ile geri don
+            self.time_capsule_available = True
+            self.time_capsule_saved = False
+            self.time_capsule_data = None
+            try:
+                self._set_localized_card_message('mystery_msg_time_capsule_ready', 3.0, 'Zaman Kapsulu aktif! T ile kaydet, R ile geri don.')
+            except Exception:
+                pass
+            # Görsel efekt için kaydet
+            try:
+                self._remember_effect_visual('time_capsule', card)
+                self._sync_active_cards()
+            except Exception:
+                pass
+            effect_triggered = True
+        elif cid == "future_changer":
+            # Geleceği Değiştiren: Sonraki 2 parçayı oyuncu seçer
+            self._future_changer_remaining = self._card_int_value(card, 2)
+            self._future_changer_card = card
+            self._open_piece_selection_popup()
+            effect_triggered = True
+
+        # === SON DÜŞÜŞ (Blok Dondurma) ===
+        elif cid in ("freeze_drop_rare", "freeze_drop_epic", "freeze_drop_legendary"):
+            freeze_dur = int(card.get('freeze_duration', 6))
+            try:
+                cur = int(getattr(self, '_freeze_drop_charges', 0) or 0)
+            except Exception:
+                cur = 0
+            target_charges = self._card_int_value(card, 3)
+            if cur < target_charges:
+                self._freeze_drop_charges = target_charges
+            self._freeze_drop_duration = freeze_dur
+            try:
+                self._set_localized_card_message(
+                    'mystery_msg_freeze_drop_ready',
+                    1.5,
+                    'Son Düşüş! F ile dondur ({charges} hak, {duration}sn)',
+                    charges=int(self._freeze_drop_charges),
+                    duration=freeze_dur,
+                )
+            except Exception:
+                pass
+            try:
+                self._remember_effect_visual('freeze_drop', card)
+                self._sync_active_cards()
+            except Exception:
+                pass
+            effect_triggered = True
+
+        # === BLOK ATÖLYESİ KARTI ===
+        elif cid == "block_workshop_card":
+            # Popup blok atölyesi aç - tek seferlik parça oluştur
+            self._open_card_workshop_popup()
+            effect_triggered = True
+
+        # === KUMARBAZIN ZARI ===
+        elif cid == "gambler_dice":
+            import random as _rng
+            roll = _rng.random()
+            if roll < 0.5:
+                # Tüm tahtayı temizle
+                total_cleared = 0
+                try:
+                    for y in range(self.board.height):
+                        for x in range(self.board.width):
+                            if self.board.occupancy[y][x]:
+                                total_cleared += 1
+                            self.board.grid[y][x] = BLACK
+                            self.board.occupancy[y][x] = False
+                            self.board.texture_grid[y][x] = None
+                            self.board.gold[y][x] = False
+                            self.board.owners[y][x] = None
+                except Exception:
+                    pass
+                try:
+                    bonus = total_cleared * 50
+                    self.board.score += bonus
+                    self._set_localized_card_message('mystery_msg_gambler_jackpot', 2.0, '🎲 JACKPOT! Tum tahta temizlendi! +{bonus} puan', bonus=bonus)
+                except Exception:
+                    pass
+            else:
+                # Kötü şans: açıklamadaki gibi tahtanın yaklaşık yarısını
+                # rastgele bloklarla doldur (üst 5 satırı ani top-out için koru).
+                try:
+                    playable_top = min(5, self.board.height)
+                    playable_cells = [
+                        (x, y)
+                        for y in range(playable_top, self.board.height)
+                        for x in range(self.board.width)
+                    ]
+                    empty_cells = [
+                        (x, y)
+                        for x, y in playable_cells
+                        if not bool(self.board.occupancy[y][x])
+                    ]
+                    current_filled = len(playable_cells) - len(empty_cells)
+                    row_counts = {
+                        y: sum(1 for x in range(self.board.width) if bool(self.board.occupancy[y][x]))
+                        for y in range(playable_top, self.board.height)
+                    }
+                    max_safe_capacity = sum(max(0, self.board.width - 1 - count) for count in row_counts.values())
+                    target_filled = min(
+                        len(playable_cells),
+                        max(1, (self.board.width * self.board.height) // 2),
+                    )
+                    to_place = max(0, min(len(empty_cells), target_filled - current_filled, max_safe_capacity))
+
+                    if to_place > 0:
+                        existing_colors = [
+                            self.board.grid[y][x]
+                            for y in range(self.board.height)
+                            for x in range(self.board.width)
+                            if bool(self.board.occupancy[y][x]) and self.board.grid[y][x] != BLACK
+                        ]
+                        fallback_colors = [
+                            (0, 255, 255),
+                            (255, 255, 0),
+                            (160, 80, 255),
+                            (0, 255, 120),
+                            (255, 80, 80),
+                            (80, 160, 255),
+                            (255, 160, 40),
+                        ]
+                        color_pool = existing_colors or fallback_colors
+                        _rng.shuffle(empty_cells)
+                        placed = 0
+                        for x, y in empty_cells:
+                            if placed >= to_place:
+                                break
+                            if row_counts.get(y, 0) >= self.board.width - 1:
+                                continue
+                            self.board.grid[y][x] = _rng.choice(color_pool)
+                            self.board.occupancy[y][x] = True
+                            self.board.texture_grid[y][x] = None
+                            self.board.gold[y][x] = False
+                            try:
+                                self.board.owners[y][x] = None
+                            except Exception:
+                                pass
+                            placed += 1
+                            row_counts[y] = row_counts.get(y, 0) + 1
+                        # Avoid leaving ready-made full rows that the next normal
+                        # lock would incorrectly collect as player-created clears.
+                        for y in range(playable_top, self.board.height):
+                            if all(bool(self.board.occupancy[y][x]) for x in range(self.board.width)):
+                                x = _rng.randrange(self.board.width)
+                                self.board.grid[y][x] = BLACK
+                                self.board.occupancy[y][x] = False
+                                self.board.texture_grid[y][x] = None
+                                self.board.gold[y][x] = False
+                                try:
+                                    self.board.owners[y][x] = None
+                                except Exception:
+                                    pass
+                        self._set_localized_card_message('mystery_msg_gambler_scramble', 2.0, '🎲 Sansina kusura bakma! {placed} blok eklendi!', placed=placed)
+                    else:
+                        self._set_localized_card_message('mystery_msg_gambler_empty', 2.0, '🎲 Tahta zaten yari dolu, zar daha fazla blok ekleyemedi!')
+                except Exception:
+                    pass
+            effect_triggered = True
+
+        # === RENK TEMİZLEME ===
+        elif cid == "color_cleanse":
+            self._apply_color_cleanse()
+            effect_triggered = True
+
+        # === TUTTUĞUNU KOPARAN (hold_destroyer variants) ===
+        elif cid.startswith("hold_destroyer"):
+            # B tuşuyla saklanan parçayı silme hakkı ver
+            charges = int(card.get('value', 1))
+            try:
+                existing = int(getattr(self, '_hold_destroyer_charges', 0) or 0)
+                self._hold_destroyer_charges = existing + charges
+            except Exception:
+                self._hold_destroyer_charges = charges
+            # HUD gösterimi için sync
+            self.discard_held_uses = int(getattr(self, '_hold_destroyer_charges', charges))
+            try:
+                total = int(getattr(self, '_hold_destroyer_charges', charges))
+                self._set_localized_card_message(
+                    'mystery_msg_hold_destroyer_ready',
+                    1.5,
+                    'Tuttugunu Koparan! {button} ile hold sil ({total} hak)',
+                    total=total,
+                    button=_prompt_action_text('discard_held', 'B'),
+                )
+            except Exception:
+                pass
+            try:
+                self._remember_effect_visual('hold_destroyer', card)
+                self._sync_active_cards()
+            except Exception:
+                pass
+            effect_triggered = True
+
+        elif cid == "mirror_hold":
+            charges = max(1, self._card_int_value(card, 1))
+            try:
+                existing = int(getattr(self, '_mirror_hold_charges', 0) or 0)
+                self._mirror_hold_charges = existing + charges
+            except Exception:
+                self._mirror_hold_charges = charges
+            try:
+                self._set_localized_card_message(
+                    'mystery_msg_mirror_hold_ready',
+                    1.2,
+                    'Ayna Cep hazir! Sonraki hold aynalanacak.',
+                )
+            except Exception:
+                pass
+            try:
+                self._remember_effect_visual('mirror_hold', card)
+                self._sync_active_cards()
+            except Exception:
+                pass
+            effect_triggered = True
+
+        elif cid == "echo_drop":
+            charges = max(1, self._card_int_value(card, 1))
+            payload = card.get('payload', {}) if isinstance(card.get('payload'), dict) else {}
+            try:
+                echo_cells = max(1, int(payload.get('echo_cells', 2) or 2))
+            except Exception:
+                echo_cells = 2
+            try:
+                existing = int(getattr(self, '_echo_drop_charges', 0) or 0)
+                self._echo_drop_charges = existing + charges
+            except Exception:
+                self._echo_drop_charges = charges
+            self._echo_drop_fill_count = max(int(getattr(self, '_echo_drop_fill_count', echo_cells) or echo_cells), echo_cells)
+            try:
+                self._set_localized_card_message(
+                    'mystery_msg_echo_drop_ready',
+                    1.2,
+                    'Yankı Düşüşü hazir! Uygun kilitte {cells} gölge blok bırakacak.',
+                    cells=echo_cells,
+                )
+            except Exception:
+                pass
+            try:
+                self._remember_effect_visual('echo_drop', card)
+                self._sync_active_cards()
+            except Exception:
+                pass
+            effect_triggered = True
+
+        # === COMBO SİGORTASI ===
+        elif cid == "combo_insurance":
+            # Tek kullanım sigorta: silahla. Aynı kart tekrar gelirse hak
+            # ekleme yapma — yalnız True kalsın (zaten silahlı).
+            self._combo_insurance_armed = True
+            try:
+                self._set_localized_card_message(
+                    'mystery_msg_combo_insurance_ready',
+                    1.4,
+                    'Combo Sigortası hazır! Bir hamlede combo bozulmayacak.',
+                )
+            except Exception:
+                pass
+            try:
+                self._remember_effect_visual('combo_insurance', card)
+                self._sync_active_cards()
+            except Exception:
+                pass
+            effect_triggered = True
+
+        # === TERS BORÇ ===
+        elif cid == "reverse_debt":
+            # 1) Anında en alt 2 satırı temizle (card source).
+            try:
+                prev_score_after_sweep = int(getattr(self.board, 'score', 0))
+            except Exception:
+                prev_score_after_sweep = 0
+            try:
+                self._clear_rows(2)
+            except Exception:
+                pass
+            try:
+                cleared = int(self.board.clear_lines(source='card'))
+            except Exception:
+                cleared = 0
+            if cleared > 0:
+                try:
+                    delta = int(getattr(self.board, 'score', 0)) - prev_score_after_sweep
+                except Exception:
+                    delta = None
+                self._post_external_line_clear(cleared, award_energy=True, score_delta=delta, source='card')
+
+            # 2) Sonraki 5 lock için anlık-kilit cezası armalandır.
+            try:
+                self._reverse_debt_total = 5
+                self._reverse_debt_remaining = 5
+            except Exception:
+                self._reverse_debt_remaining = 5
+            # İlk parça da etkilensin: lock_delay'i remaining'den derive et.
+            try:
+                self._apply_reverse_debt_lock_delay()
+            except Exception:
+                pass
+            try:
+                self._set_localized_card_message(
+                    'mystery_msg_reverse_debt_applied',
+                    1.6,
+                    'Ters Borç! Alt 2 satır silindi. Sonraki {count} parça anlık kilitlenir.',
+                    count=int(self._reverse_debt_remaining),
+                )
+            except Exception:
+                pass
+            try:
+                self._remember_effect_visual('reverse_debt', card)
+                self._sync_active_cards()
+            except Exception:
+                pass
+            effect_triggered = True
+
+        # === DELİK AVCISI ===
+        elif cid == "hole_hunter":
+            # Sınırlı kart: tekrar seçilince hak EKLEME — yalnız 1'e tamamla.
+            try:
+                cur = int(getattr(self, '_hole_hunter_charges', 0) or 0)
+            except Exception:
+                cur = 0
+            target_charges = max(1, self._card_int_value(card, 1))
+            if cur < target_charges:
+                self._hole_hunter_charges = target_charges
+            try:
+                self._set_localized_card_message(
+                    'mystery_msg_hole_hunter_ready',
+                    1.6,
+                    'Delik Avcısı hazır! J ile sütun seç ({charges} hak)',
+                    charges=int(self._hole_hunter_charges),
+                )
+            except Exception:
+                pass
+            try:
+                self._remember_effect_visual('hole_hunter', card)
+                self._sync_active_cards()
+            except Exception:
+                pass
+            effect_triggered = True
+
+        if effect_triggered and board_snapshot_before is not None:
+            try:
+                self._queue_card_board_effect_from_snapshots(
+                    cid,
+                    board_snapshot_before,
+                    self._capture_card_board_snapshot(),
+                    accent=color,
+                )
+            except Exception:
+                pass
+
+        if effect_triggered:
+            self._spawn_card_particles(color)
+
+        if self.sound_enabled:
+            self.sound.play_sound("card_activate")
+
+    # === SNIPER SHOT YARDIMCI METODLARI ===
+    def _open_sniper_overlay(self) -> bool:
+        """N tuşuyla sniper overlay'ini açar."""
+        charges = int(getattr(self, '_sniper_charges', 0) or 0)
+        if charges <= 0:
+            try:
+                self._set_localized_card_message('mystery_msg_sniper_no_charges', 0.8, 'Keskin Nişancı hakkın yok!')
+            except Exception:
+                pass
+            return False
+        
+        # Overlay'i aç
+        self._sniper_overlay_active = True
+        self._sniper_hover_pos = None
+        # Gamepad cursor: tahtanın ortasından başla
+        self._sniper_cursor_x = self.board.width // 2
+        self._sniper_cursor_y = self.board.height // 2
+        self._sniper_cursor_active = True
+        try:
+            charges = int(getattr(self, '_sniper_charges', 0) or 0)
+            self._set_localized_card_message('mystery_msg_sniper_open', 10.0, 'Patlatmak istedigin bloga tikla! (ESC: Iptal) - Kalan: {charges}', charges=charges)
+        except Exception:
+            pass
+        return True
+
+    def _close_sniper_overlay(self) -> None:
+        """Sniper overlay'ini kapatır (hak harcanmaz)."""
+        self._sniper_overlay_active = False
+        self._sniper_hover_pos = None
+        self._sniper_cursor_active = False
+        
+        # Mouse cursor'ı tekrar görünür yap
+        pygame.mouse.set_visible(True)
+        
+        try:
+            charges = int(getattr(self, '_sniper_charges', 0) or 0)
+            self._set_localized_card_message('mystery_msg_sniper_cancel', 1.2, 'Keskin Nisanci iptal edildi (Kalan hak: {charges})', charges=charges)
+        except Exception:
+            pass
+
+    def _sniper_move_cursor(self, dx: int, dy: int) -> None:
+        """Sniper cursor'ını D-pad/ok tuşlarıyla hareket ettirir (board sınırları içinde)."""
+        cx = int(getattr(self, '_sniper_cursor_x', 0) or 0) + dx
+        cy = int(getattr(self, '_sniper_cursor_y', 0) or 0) + dy
+        self._sniper_cursor_x = max(0, min(self.board.width - 1, cx))
+        self._sniper_cursor_y = max(0, min(self.board.height - 1, cy))
+        self._sniper_cursor_active = True
+
+    def _sniper_fire_at_cursor(self) -> None:
+        """Gamepad cursor pozisyonundaki hücreye ateş eder."""
+        cx = int(getattr(self, '_sniper_cursor_x', 0) or 0)
+        cy = int(getattr(self, '_sniper_cursor_y', 0) or 0)
+        if not (0 <= cx < self.board.width and 0 <= cy < self.board.height):
+            return
+        if self.board.occupancy[cy][cx]:
+            self._execute_sniper_shot(cx, cy)
+        else:
+            try:
+                self._set_localized_card_message('mystery_msg_sniper_empty_cell', 1.5, 'Bos hucre! Dolu bir bloga tikla.')
+                if self.sound_enabled:
+                    self.sound.play_sound("deny")
+            except Exception:
+                pass
+
+    def _sniper_screen_to_cell(self, pos: tuple[int, int]) -> tuple[int, int] | None:
+        """Mouse pozisyonunu mevcut tahta hücresine çevirir."""
+        try:
+            mx, my = pos
+            
+            # Mevcut tahta parametreleri - doğru koordinatları al
+            board_x, board_y = self.get_board_offset()
+            cell_size = self.get_cell_size()
+            
+            # Tahta sınırları içinde mi kontrol et
+            if mx < board_x or my < board_y:
+                return None
+            
+            board_pixel_w = self.board.width * cell_size
+            board_pixel_h = self.board.height * cell_size
+            
+            if mx >= board_x + board_pixel_w or my >= board_y + board_pixel_h:
+                return None
+            
+            cx = int((mx - board_x) // cell_size)
+            cy = int((my - board_y) // cell_size)
+            
+            # Tahta boyutları içinde mi kontrol et
+            if 0 <= cx < self.board.width and 0 <= cy < self.board.height:
+                return (cx, cy)
+            return None
+        except Exception:
+            return None
+
+    def _execute_sniper_shot(self, cx: int, cy: int) -> None:
+        """Belirtilen hücredeki bloğu yok eder (puan vermez)."""
+        try:
+            # Patlama efektini yok edilen hücrede başlat
+            self._spawn_sniper_explosion(cx, cy)
+
+            # Bloğu temizle
+            from constants import BLACK
+            self.board.grid[cy][cx] = BLACK
+            self.board.occupancy[cy][cx] = False
+            self.board.texture_grid[cy][cx] = None
+            self.board.gold[cy][cx] = False
+            self.board.owners[cy][cx] = None
+            try:
+                self._queue_card_board_removed_cells_effect(
+                    'sniper_shot',
+                    [(int(cx), int(cy))],
+                    accent=(255, 90, 90),
+                )
+            except Exception:
+                pass
+            
+            # Hakkı düş
+            self._sniper_charges = max(0, int(getattr(self, '_sniper_charges', 0) or 0) - 1)
+            remaining = int(getattr(self, '_sniper_charges', 0) or 0)
+            
+            # Mesaj göster
+            try:
+                if remaining > 0:
+                    self._set_localized_card_message('mystery_msg_sniper_destroyed_remaining', 1.5, 'Blok yok edildi! Kalan hak: {remaining}', remaining=remaining)
+                else:
+                    self._set_localized_card_message('mystery_msg_sniper_destroyed_last', 1.5, 'Blok yok edildi! Keskin Nisanci tukendi.')
+            except Exception:
+                pass
+            
+            # Ses efekti
+            if self.sound_enabled:
+                try:
+                    self.sound.play_sound("sniper_shot")  # Özel sniper sesi
+                except Exception:
+                    pass
+            
+        except Exception:
+            pass
+        finally:
+            # Mouse cursor'ı tekrar görünür yap
+            pygame.mouse.set_visible(True)
+            
+            # Overlay'i kapat
+            self._sniper_overlay_active = False
+            self._sniper_hover_pos = None
+            
+            # Hak bittiyse aktif efektlerden kaldır
+            if int(getattr(self, '_sniper_charges', 0) or 0) <= 0:
+                self._sniper_card = None
+                self._active_effect_visuals.pop('sniper_shot', None)
+            self._sync_active_cards()
+
+    # === DELİK AVCISI YARDIMCI METODLARI ===
+    def _open_hole_hunter_overlay(self) -> bool:
+        """J tuşuyla Delik Avcısı sütun seçim overlay'ini açar."""
+        try:
+            charges = int(getattr(self, '_hole_hunter_charges', 0) or 0)
+        except Exception:
+            charges = 0
+        if charges <= 0:
+            return False
+        self._hole_hunter_overlay_active = True
+        try:
+            board_width = int(getattr(self.board, 'width', BOARD_WIDTH) or BOARD_WIDTH)
+        except Exception:
+            board_width = BOARD_WIDTH
+        # Cursor varsayılan: tahtanın orta sütunu
+        try:
+            cur = int(getattr(self, '_hole_hunter_cursor_col', 0) or 0)
+            self._hole_hunter_cursor_col = max(0, min(board_width - 1, cur if cur > 0 else board_width // 2))
+        except Exception:
+            self._hole_hunter_cursor_col = board_width // 2
+        try:
+            self._set_localized_card_message(
+                'mystery_msg_hole_hunter_open',
+                10.0,
+                'Sütun seç (sol/sağ + Enter veya tıkla). ESC: iptal',
+            )
+        except Exception:
+            pass
+        return True
+
+    def _close_hole_hunter_overlay(self, *, consumed: bool) -> None:
+        self._hole_hunter_overlay_active = False
+        try:
+            pygame.mouse.set_visible(True)
+        except Exception:
+            pass
+        if not consumed:
+            try:
+                self._set_localized_card_message(
+                    'mystery_msg_hole_hunter_cancel',
+                    1.0,
+                    'Delik Avcısı iptal edildi.',
+                )
+            except Exception:
+                pass
+
+    def _hole_hunter_move_cursor(self, delta: int) -> None:
+        try:
+            board_width = int(getattr(self.board, 'width', BOARD_WIDTH) or BOARD_WIDTH)
+        except Exception:
+            board_width = BOARD_WIDTH
+        try:
+            cur = int(getattr(self, '_hole_hunter_cursor_col', 0) or 0)
+        except Exception:
+            cur = 0
+        self._hole_hunter_cursor_col = max(0, min(board_width - 1, cur + int(delta)))
+
+    def _hole_hunter_screen_to_column(self, pos: tuple[int, int]) -> int | None:
+        try:
+            mx, my = pos
+            board_x, board_y = self.get_board_offset()
+            cell_size = max(1, int(self.get_cell_size()))
+            board_pixel_w = self.board.width * cell_size
+            board_pixel_h = self.board.height * cell_size
+            # Hem X hem Y board dikdörtgeni içinde olmalı; tahta dışı (üstü/altı)
+            # tıklamalar geçerli sütun olarak kabul edilmemeli.
+            if mx < board_x or mx >= board_x + board_pixel_w:
+                return None
+            if my < board_y or my >= board_y + board_pixel_h:
+                return None
+            col = int((mx - board_x) // cell_size)
+            if 0 <= col < self.board.width:
+                return col
+            return None
+        except Exception:
+            return None
+
+    def _hole_hunter_hover_column(self, pos: tuple[int, int]) -> int | None:
+        """Yalnızca yatay sütun bandına göre sütun döndür (dikey serbest).
+
+        Mouse hover ile seçim için kullanılır: imleç tahtanın üstünde/altında
+        olsa bile, doğru sütun yatayda hizalıysa o sütun döndürülür. `screen_to_
+        column` (tıklama-fire için katı X+Y kontrolü) bu yardımcıdan farklıdır.
+        """
+        try:
+            mx, _my = pos
+            board_x, _board_y = self.get_board_offset()
+            cell_size = max(1, int(self.get_cell_size()))
+            board_pixel_w = self.board.width * cell_size
+            if mx < board_x or mx >= board_x + board_pixel_w:
+                return None
+            col = int((mx - board_x) // cell_size)
+            if 0 <= col < self.board.width:
+                return col
+            return None
+        except Exception:
+            return None
+
+    def _hole_hunter_find_holes(self, col: int) -> list[int]:
+        """Verilen sütundaki kapalı boşluk satırlarını döndür.
+
+        Tanım: hücre boş olacak ve aynı sütunda üstünde en az bir dolu hücre
+        bulunacak. Yani sadece "üstü açık" yüzey boşlukları sayılmaz.
+        """
+        try:
+            height = int(getattr(self.board, 'height', BOARD_HEIGHT) or BOARD_HEIGHT)
+        except Exception:
+            height = BOARD_HEIGHT
+        try:
+            width = int(getattr(self.board, 'width', BOARD_WIDTH) or BOARD_WIDTH)
+        except Exception:
+            width = BOARD_WIDTH
+        if not (0 <= int(col) < width):
+            return []
+        holes: list[int] = []
+        # Önce en üstteki dolu hücreyi bul; ondan sonra gelen boş hücreler hole sayılır.
+        first_filled = None
+        for y in range(height):
+            try:
+                if bool(self.board.occupancy[y][col]):
+                    first_filled = y
+                    break
+            except Exception:
+                continue
+        if first_filled is None:
+            return []
+        for y in range(first_filled + 1, height):
+            try:
+                if not bool(self.board.occupancy[y][col]):
+                    holes.append(y)
+            except Exception:
+                continue
+        return holes
+
+    def _hole_hunter_fire_at_cursor(self) -> bool:
+        col = int(getattr(self, '_hole_hunter_cursor_col', 0) or 0)
+        try:
+            charges = int(getattr(self, '_hole_hunter_charges', 0) or 0)
+        except Exception:
+            charges = 0
+        if charges <= 0:
+            self._close_hole_hunter_overlay(consumed=False)
+            return False
+        holes = self._hole_hunter_find_holes(col)
+        if not holes:
+            try:
+                self._set_localized_card_message(
+                    'mystery_msg_hole_hunter_invalid_column',
+                    1.4,
+                    'Geçersiz sütun veya uygun delik yok.',
+                )
+                if self.sound_enabled:
+                    self.sound.play_sound('deny')
+            except Exception:
+                pass
+            # Hak harcanmaz, board değişmez, overlay açık kalır.
+            return False
+
+        # Doldurulacak hücre seçimi: random.choice (test monkeypatch friendly)
+        target_y = random.choice(holes)
+        # Renk: tahtadaki mevcut renklerden biri varsa kullan, aksi halde fallback.
+        try:
+            existing_colors = [
+                self.board.grid[y][x]
+                for y in range(self.board.height)
+                for x in range(self.board.width)
+                if bool(self.board.occupancy[y][x]) and self.board.grid[y][x] != BLACK
+            ]
+        except Exception:
+            existing_colors = []
+        fill_color = (140, 230, 200)
+        if existing_colors:
+            try:
+                fill_color = random.choice(existing_colors)
+            except Exception:
+                fill_color = existing_colors[0]
+
+        # Tek hücreyi doldur.
+        try:
+            self.board.grid[target_y][col] = fill_color
+            self.board.occupancy[target_y][col] = True
+            self.board.texture_grid[target_y][col] = None
+            try:
+                self.board.gold[target_y][col] = False
+            except Exception:
+                pass
+            try:
+                self.board.owners[target_y][col] = None
+            except Exception:
+                pass
+        except Exception:
+            return False
+
+        # Hak düş, kart tüketildiyse aktif efektten çıkar.
+        try:
+            self._hole_hunter_charges = max(0, charges - 1)
+        except Exception:
+            self._hole_hunter_charges = 0
+        if self._hole_hunter_charges <= 0:
+            try:
+                self._active_effect_visuals.pop('hole_hunter', None)
+            except Exception:
+                pass
+
+        # Tam satır oluşmuş olabilir → card source clear.
+        try:
+            prev_score = int(getattr(self.board, 'score', 0))
+        except Exception:
+            prev_score = 0
+        try:
+            cleared = int(self.board.clear_lines(source='card'))
+        except Exception:
+            cleared = 0
+        if cleared > 0:
+            try:
+                delta = int(getattr(self.board, 'score', 0)) - prev_score
+            except Exception:
+                delta = None
+            self._post_external_line_clear(cleared, award_energy=True, score_delta=delta, source='card')
+
+        try:
+            self._set_localized_card_message(
+                'mystery_msg_hole_hunter_filled',
+                1.4,
+                'Delik dolduruldu! Kalan hak: {remaining}',
+                remaining=int(self._hole_hunter_charges),
+            )
+        except Exception:
+            pass
+        try:
+            if self.sound_enabled:
+                self.sound.play_sound('rotate')
+        except Exception:
+            pass
+
+        # Overlay kapansın (1 hücre / 1 hak)
+        self._close_hole_hunter_overlay(consumed=True)
+        try:
+            self._sync_active_cards()
+        except Exception:
+            pass
+        return True
+
+    # === ZAMAN KAPSULU YARDIMCI METODLARI ===
+    def _toggle_time_capsule(self) -> bool:
+        """Legacy toggle helper: önce kaydet, sonra geri yükle."""
+        if not getattr(self, 'time_capsule_saved', False):
+            return self._save_time_capsule()
+        return self._restore_time_capsule()
+
+    def _capture_time_capsule_state(self) -> dict[str, Any]:
+        import copy
+
+        def snapshot(value: Any) -> Any:
+            try:
+                return copy.deepcopy(value)
+            except Exception:
+                return value
+
+        # NOT: 'score' bilerek snapshot dışında bırakıldı. Zaman Kapsulu yalnızca
+        # tahtayı/oyun durumunu geri yükler; geri dönüş skoru ETKILEMEZ.
+        board_attrs = (
+            'grid',
+            'occupancy',
+            'texture_grid',
+            'gold',
+            'owners',
+            'lines_cleared',
+            'level_lines_cleared',
+            'level',
+            'combo',
+        )
+        state_attrs = (
+            'current_piece',
+            'next_piece_queue',
+            'held_piece',
+            'second_held_piece',
+            'can_hold',
+            'can_hold2',
+            'energy',
+            'fall_speed',
+            'time_warp_timer',
+            '_timewarp_old_speed',
+            'gravity_freeze_timer',
+            'speed_effect_timer',
+            'speed_effect_multiplier',
+            '_speed_burst_timer',
+            '_speed_burst_speed_mult',
+            '_speed_burst_line_mult',
+            'combo_aura_timer',
+            'combo_aura_bonus',
+            '_score_multiplier_timer',
+            '_score_multiplier_value',
+            '_score_color_override',
+            'line_bonus_remaining',
+            'line_bonus_amount',
+            '_line_clear_multiplier_remaining',
+            '_line_clear_multiplier_value',
+            'tunnel_charges_remaining',
+            'hammer_charges_remaining',
+            '_mirror_hold_charges',
+            '_echo_drop_charges',
+            '_echo_drop_fill_count',
+            'bomb_master_charges',
+            '_hold_destroyer_charges',
+            'discard_held_uses',
+            '_freeze_drop_charges',
+            '_freeze_drop_duration',
+            '_freeze_drop_active',
+            '_freeze_drop_timer',
+            '_combo_insurance_armed',
+            '_reverse_debt_remaining',
+            '_reverse_debt_total',
+            '_hole_hunter_charges',
+            '_sniper_charges',
+            'phase_shift_uses_remaining',
+            '_armed_nova_clusters',
+            '_bomb_countdown_timer',
+            '_bomb_countdown_last_int',
+            '_drill_last_cleanup_y',
+            '_drill_movement_locked',
+            '_rewind_available',
+            '_last_placed_piece',
+            'last_enqueued_level',
+            'pending_level_ups',
+        )
+
+        data: dict[str, Any] = {}
+        for attr in board_attrs:
+            if hasattr(self.board, attr):
+                data[f'board_{attr}'] = snapshot(getattr(self.board, attr))
+        for attr in state_attrs:
+            if hasattr(self, attr):
+                data[attr] = snapshot(getattr(self, attr))
+
+        card_manager = getattr(self, 'card_manager', None)
+        if card_manager is not None and hasattr(card_manager, 'force_piece_queue'):
+            data['card_manager_force_piece_queue'] = snapshot(card_manager.force_piece_queue)
+        if card_manager is not None:
+            for attr in (
+                'progress',
+                'threshold',
+                'pending_choices',
+                'active_cards',
+                'used_card_ids',
+                'card_xp',
+                'card_level',
+                'card_xp_to_next',
+            ):
+                if hasattr(card_manager, attr):
+                    data[f'card_manager_{attr}'] = snapshot(getattr(card_manager, attr))
+
+        perk_manager = getattr(self, 'perk_manager', None)
+        if perk_manager is not None:
+            if hasattr(perk_manager, 'active'):
+                data['perk_manager_active'] = snapshot(getattr(perk_manager, 'active'))
+            for attr in ('next_piece_bomb', 'lines_since_chrono', 'chrono_freeze_timer', 'rewind_uses'):
+                if hasattr(perk_manager, attr):
+                    data[f'perk_manager_{attr}'] = snapshot(getattr(perk_manager, attr))
+
+        return data
+
+    def _restore_time_capsule_state(self, data: dict[str, Any]) -> None:
+        # NOT: 'score' bilerek listede yok. Geri yükleme skoru ETKILEMEZ;
+        # oyuncu tahtayı geri alsa bile mevcut skoru korur.
+        board_attrs = (
+            'grid',
+            'occupancy',
+            'texture_grid',
+            'gold',
+            'owners',
+            'lines_cleared',
+            'level_lines_cleared',
+            'level',
+            'combo',
+        )
+        for attr in board_attrs:
+            key = f'board_{attr}'
+            if key in data and hasattr(self.board, attr):
+                setattr(self.board, attr, data[key])
+
+        state_attrs = (
+            'current_piece',
+            'next_piece_queue',
+            'held_piece',
+            'second_held_piece',
+            'can_hold',
+            'can_hold2',
+            'energy',
+            'fall_speed',
+            'time_warp_timer',
+            '_timewarp_old_speed',
+            'gravity_freeze_timer',
+            'speed_effect_timer',
+            'speed_effect_multiplier',
+            '_speed_burst_timer',
+            '_speed_burst_speed_mult',
+            '_speed_burst_line_mult',
+            'combo_aura_timer',
+            'combo_aura_bonus',
+            '_score_multiplier_timer',
+            '_score_multiplier_value',
+            '_score_color_override',
+            'line_bonus_remaining',
+            'line_bonus_amount',
+            '_line_clear_multiplier_remaining',
+            '_line_clear_multiplier_value',
+            'tunnel_charges_remaining',
+            'hammer_charges_remaining',
+            '_mirror_hold_charges',
+            '_echo_drop_charges',
+            '_echo_drop_fill_count',
+            'bomb_master_charges',
+            '_hold_destroyer_charges',
+            'discard_held_uses',
+            '_freeze_drop_charges',
+            '_freeze_drop_duration',
+            '_freeze_drop_active',
+            '_freeze_drop_timer',
+            '_combo_insurance_armed',
+            '_reverse_debt_remaining',
+            '_reverse_debt_total',
+            '_hole_hunter_charges',
+            '_sniper_charges',
+            'phase_shift_uses_remaining',
+            '_armed_nova_clusters',
+            '_bomb_countdown_timer',
+            '_bomb_countdown_last_int',
+            '_drill_last_cleanup_y',
+            '_drill_movement_locked',
+            '_rewind_available',
+            '_last_placed_piece',
+            'last_enqueued_level',
+            'pending_level_ups',
+        )
+        for attr in state_attrs:
+            if attr in data:
+                setattr(self, attr, data[attr])
+
+        card_manager = getattr(self, 'card_manager', None)
+        if card_manager is not None and 'card_manager_force_piece_queue' in data:
+            try:
+                card_manager.force_piece_queue = data['card_manager_force_piece_queue']
+            except Exception:
+                pass
+        if card_manager is not None:
+            for attr in (
+                'progress',
+                'threshold',
+                'pending_choices',
+                'active_cards',
+                'used_card_ids',
+                'card_xp',
+                'card_level',
+                'card_xp_to_next',
+            ):
+                key = f'card_manager_{attr}'
+                if key not in data:
+                    continue
+                try:
+                    value = data[key]
+                    if attr == 'used_card_ids' and not isinstance(value, set):
+                        value = set(value or [])
+                    setattr(card_manager, attr, value)
+                except Exception:
+                    pass
+
+        perk_manager = getattr(self, 'perk_manager', None)
+        if perk_manager is not None:
+            if 'perk_manager_active' in data:
+                try:
+                    active = data['perk_manager_active']
+                    perk_manager.active = dict(active or {}) if isinstance(active, dict) else {}
+                except Exception:
+                    pass
+            for attr in ('next_piece_bomb', 'lines_since_chrono', 'chrono_freeze_timer', 'rewind_uses'):
+                key = f'perk_manager_{attr}'
+                if key in data:
+                    try:
+                        setattr(perk_manager, attr, data[key])
+                    except Exception:
+                        pass
+
+        # Ters Borç davranışı türetilir: sayaç doluysa lock_delay = 0, aksi halde
+        # default. Bu sayede HUD ve gerçek runtime davranışı birbirinden
+        # ayrışmaz; capture/restore yalnızca remaining'i taşımak yeterli.
+        try:
+            self._apply_reverse_debt_lock_delay()
+        except Exception:
+            pass
+
+    def _apply_reverse_debt_lock_delay(self) -> None:
+        """Ters Borç sayacına göre lock_delay'i türetir.
+
+        - remaining > 0  → anlık kilit (lock_delay = 0)
+        - remaining == 0 → DEFAULT_LOCK_DELAY (constants modülünden)
+
+        Bu, restart ve time-capsule restore akışlarının HUD ile gerçek lock
+        davranışını birbirine bağlamasını garanti eder.
+        """
+        try:
+            from constants import DEFAULT_LOCK_DELAY as _DEFAULT_LD
+        except Exception:
+            _DEFAULT_LD = 500
+        try:
+            remaining = int(getattr(self, '_reverse_debt_remaining', 0) or 0)
+        except Exception:
+            remaining = 0
+        try:
+            if remaining > 0:
+                self.lock_delay = 0
+            else:
+                self.lock_delay = int(_DEFAULT_LD)
+        except Exception:
+            pass
+
+    def _save_time_capsule(self) -> bool:
+        """Mevcut oyun durumunu zaman kapsülüne kaydet."""
+        if not getattr(self, 'time_capsule_available', False):
+            try:
+                self._set_localized_card_message('mystery_msg_time_capsule_unavailable', 0.8, 'Zaman Kapsulu yok!')
+            except Exception:
+                pass
+            return False
+        
+        try:
+            self.time_capsule_data = self._capture_time_capsule_state()
+            self.time_capsule_saved = True
+            
+            try:
+                self._set_localized_card_message('mystery_msg_time_capsule_saved', 2.0, 'Zaman Kapsulu kaydedildi! R ile geri yukle.')
+            except Exception:
+                pass
+            
+            # Ses efekti
+            if self.sound_enabled:
+                try:
+                    self.sound.play_sound("card_save")
+                except Exception:
+                    pass
+            
+            self._sync_active_cards()
+            return True
+            
+        except Exception as e:
+            try:
+                self._set_localized_card_message('mystery_msg_time_capsule_save_error', 1.0, 'Zaman Kapsulu kaydetme hatasi!')
+            except Exception:
+                pass
+            return False
+    
+    def _restore_time_capsule(self) -> bool:
+        """Kaydedilen zaman kapsülü durumunu geri yükle."""
+        if not getattr(self, 'time_capsule_available', False):
+            try:
+                self._set_localized_card_message('mystery_msg_time_capsule_unavailable', 0.8, 'Zaman Kapsulu yok!')
+            except Exception:
+                pass
+            return False
+        
+        if not getattr(self, 'time_capsule_saved', False) or not self.time_capsule_data:
+            try:
+                self._set_localized_card_message('mystery_msg_time_capsule_no_snapshot', 1.5, 'Kaydedilmis durum yok! Once T ile kaydet.')
+            except Exception:
+                pass
+            return False
+        
+        try:
+            board_snapshot_before = self._capture_card_board_snapshot() if getattr(self, 'effects_enabled', False) else None
+            data = self.time_capsule_data
+            self._restore_time_capsule_state(data)
+            try:
+                self._queue_card_board_effect_from_snapshots(
+                    'time_capsule',
+                    board_snapshot_before,
+                    self._capture_card_board_snapshot(),
+                    accent=(120, 255, 200),
+                )
+            except Exception:
+                pass
+            
+            # Zaman kapsulunu tüket (tek kullanım)
+            self.time_capsule_available = False
+            self.time_capsule_saved = False
+            self.time_capsule_data = None
+            self._active_effect_visuals.pop('time_capsule', None)
+            
+            # Aktif efekt görsellerini yeniden olustur
+            self._rebuild_active_effect_visuals()
+            
+            try:
+                self._set_localized_card_message('mystery_msg_time_capsule_restored', 2.0, 'Zaman Kapsulu kullanildi! Gecmise donuldu.')
+            except Exception:
+                pass
+            
+            # Ses efekti
+            if self.sound_enabled:
+                try:
+                    self.sound.play_sound("card_restore")
+                except Exception:
+                    pass
+            
+            self._sync_active_cards()
+            return True
+            
+        except Exception as e:
+            try:
+                self._set_localized_card_message('mystery_msg_time_capsule_restore_error', 1.0, 'Zaman Kapsulu geri yukleme hatasi!')
+            except Exception:
+                pass
+            return False
+
+    def _rebuild_active_effect_visuals(self) -> None:
+        """Aktif efektlerin görsel durumunu yeniden olustur."""
+        try:
+            # Mevcut görsel efektleri temizle
+            self._active_effect_visuals.clear()
+            
+            # Aktif kartlari yeniden tara ve görsel efektleri olustur
+            catalog = getattr(self.card_manager, 'catalog', []) or []
+            
+            # Tunnel charges varsa quantum_tunneling efektini ekle
+            if getattr(self, 'tunnel_charges_remaining', 0) > 0:
+                card = next((c for c in catalog if c.get('id') == 'quantum_tunneling'), None)
+                if card:
+                    self._remember_effect_visual('quantum_tunneling', card)
+            
+            # Hammer charges varsa hammer efektini ekle
+            if getattr(self, 'hammer_charges_remaining', 0) > 0:
+                card = next((c for c in catalog if c.get('id') == 'hammer'), None)
+                if card:
+                    self._remember_effect_visual('hammer', card)
+            
+            # Bomb master charges varsa bomb_master efektini ekle
+            if getattr(self, 'bomb_master_charges', 0) > 0:
+                card = next((c for c in catalog if c.get('id') == 'bomb_master'), None)
+                if card:
+                    self._remember_effect_visual('bomb_master', card)
+
+            # Hold destroyer charges varsa hold_destroyer efektini ekle
+            if getattr(self, '_hold_destroyer_charges', 0) > 0:
+                card = next((c for c in catalog if str(c.get('id', '')).startswith('hold_destroyer')), None)
+                if card:
+                    self._remember_effect_visual('hold_destroyer', card)
+
+            if getattr(self, '_mirror_hold_charges', 0) > 0:
+                card = next((c for c in catalog if c.get('id') == 'mirror_hold'), None)
+                if card:
+                    self._remember_effect_visual('mirror_hold', card)
+
+            if getattr(self, '_echo_drop_charges', 0) > 0:
+                card = next((c for c in catalog if c.get('id') == 'echo_drop'), None)
+                if card:
+                    self._remember_effect_visual('echo_drop', card)
+            
+            # Sniper charges varsa sniper_shot efektini ekle
+            if getattr(self, '_sniper_charges', 0) > 0:
+                card = next((c for c in catalog if c.get('id') == 'sniper_shot'), None)
+                if card:
+                    self._remember_effect_visual('sniper_shot', card)
+            
+            # Nova clusters varsa nova_burst efektini ekle
+            if getattr(self, '_armed_nova_clusters', 0) > 0:
+                card = next((c for c in catalog if c.get('id') == 'nova_burst'), None)
+                if card:
+                    self._remember_effect_visual('nova_burst', card)
+            
+            # Speed Burst timer varsa speed_burst efektini ekle
+            if getattr(self, '_speed_burst_timer', 0) > 0:
+                card = next((c for c in catalog if str(c.get('id', '')).startswith('speed_burst')), None)
+                if card:
+                    self._remember_effect_visual('speed_burst', card)
+
+            # Freeze Drop charges/timer varsa freeze_drop efektini ekle
+            if getattr(self, '_freeze_drop_charges', 0) > 0 or getattr(self, '_freeze_drop_active', False):
+                card = next((c for c in catalog if str(c.get('id', '')).startswith('freeze_drop')), None)
+                if card:
+                    self._remember_effect_visual('freeze_drop', card)
+
+            # Combo Sigortası armed ise göster
+            if getattr(self, '_combo_insurance_armed', False):
+                card = next((c for c in catalog if c.get('id') == 'combo_insurance'), None)
+                if card:
+                    self._remember_effect_visual('combo_insurance', card)
+
+            # Ters Borç sayacı aktifse göster
+            if int(getattr(self, '_reverse_debt_remaining', 0) or 0) > 0:
+                card = next((c for c in catalog if c.get('id') == 'reverse_debt'), None)
+                if card:
+                    self._remember_effect_visual('reverse_debt', card)
+
+            # Delik Avcısı hakkı varsa göster
+            if int(getattr(self, '_hole_hunter_charges', 0) or 0) > 0:
+                card = next((c for c in catalog if c.get('id') == 'hole_hunter'), None)
+                if card:
+                    self._remember_effect_visual('hole_hunter', card)
+
+        except Exception:
+            pass
+
+    def _apply_time_slow(self, duration: int, card: Dict) -> None:
+        seconds = max(3, int(duration))
+        payload = card.get("payload", {})
+        multiplier = float(payload.get("speed_multiplier", 0.6))
+        # Smaller multiplier => slower fall (interval increases via division in get_current_speed)
+        multiplier = max(0.2, min(multiplier, 0.95))
+
+        if getattr(self, 'speed_effect_timer', 0.0) > 0:
+            self.speed_effect_timer = min(20.0, float(self.speed_effect_timer) + float(seconds))
+            self.speed_effect_multiplier = min(float(getattr(self, 'speed_effect_multiplier', 1.0) or 1.0), multiplier)
+        else:
+            self.speed_effect_timer = float(seconds)
+            self.speed_effect_multiplier = multiplier
+        self.fall_speed = self.get_current_speed()
+        self._remember_effect_visual("time_slow", card)
+        self._sync_active_cards()
+
+    def _enable_line_bonus(self, lines: int, bonus: int, card: Dict) -> None:
+        self.line_bonus_remaining += max(1, lines)
+        self.line_bonus_amount = max(50, bonus)
+        self._remember_effect_visual("line_bonus", card)
+        self._sync_active_cards()
+
+    def _enable_line_multiplier(self, lines: int, multiplier: float, card: Dict) -> None:
+        n = max(1, int(lines))
+        self._line_clear_multiplier_remaining = int(getattr(self, '_line_clear_multiplier_remaining', 0) or 0) + n
+        self._line_clear_multiplier_value = max(1.0, float(multiplier))
+        # Visual: score text turns gold while charges remain
+        self._score_color_override = (255, 210, 75) if self._line_clear_multiplier_remaining > 0 else None
+        self._remember_effect_visual("line_bonus", card)
+        self._sync_active_cards()
+
+    def _apply_line_bonus_reward(self, cleared: int) -> None:
+        if cleared <= 0 or self.line_bonus_remaining <= 0:
+            return
+        applied = min(cleared, self.line_bonus_remaining)
+        bonus = applied * self.line_bonus_amount
+        self.board.score += bonus
+        self.line_bonus_remaining -= applied
+        self._sync_active_cards()
+
+    def _apply_combo_aura(self, duration: int, card: Dict) -> None:
+        seconds = max(3, duration)
+        payload = card.get("payload", {})
+        self.combo_aura_bonus = max(1, int(payload.get("combo_bonus", 1)))
+        self.combo_aura_timer = float(seconds)
+        self._remember_effect_visual("combo_boost", card)
+        self._sync_active_cards()
+
+    def _apply_combo_aura_on_lock(self, gained: int, previous_combo: int) -> None:
+        if self.combo_aura_timer <= 0:
+            return
+        bonus = max(1, self.combo_aura_bonus)
+        if gained > 0:
+            self.board.combo = max(1, self.board.combo + bonus)
+            self.board.score += gained * 75 * bonus
+        else:
+            self.board.combo = max(previous_combo, 1)
+        self._sync_active_cards()
+
+    def _remember_effect_visual(self, effect_id: str, card: Dict) -> None:
+        self._active_effect_visuals[effect_id] = {
+            "title": card["title"],
+            "color": card["color"],
+            "icon": card.get("icon", "*"),
+            "tag": card.get("tag", "Etki"),
+            "rarity": card.get("rarity", "common"),
+            "style": card.get("style", {}),
+            "icon_image": card.get("icon_image"),
+            "value": card.get("value", card.get("base")),
+            "payload": card.get("payload", {}),
+        }
+
+    def _sync_active_cards(self) -> None:
+        # keep score color override in sync with global line multiplier charges
+        try:
+            if int(getattr(self, '_line_clear_multiplier_remaining', 0) or 0) <= 0:
+                self._score_color_override = None
+        except Exception:
+            pass
+
+        # Gamepad bağlıyken kart buton etiketlerini gamepad buton adıyla göster
+        try:
+            _gpm = get_gamepad_manager()
+            _gp_on = _gpm.is_connected()
+        except Exception:
+            _gpm = None
+            _gp_on = False
+
+        def _card_key(keyboard_label: str, gp_action: str) -> str:
+            """Gamepad bağlıysa gamepad buton adı, değilse klavye tuşu döndür."""
+            if _gp_on and _gpm:
+                return _prompt_action_text(gp_action, keyboard_label)
+            return keyboard_label
+
+        active_label = self._localized_card_text('mystery_status_active', 'Active')
+        gold_label = self._localized_card_text('mystery_status_gold', 'Gold')
+        effect_tag = self._localized_card_text('mystery_active_tag_effect', 'Effect')
+        perk_tag = self._localized_card_text('mystery_active_tag_perk', 'Perk')
+
+        def _card_localized_description(
+            card_id: str,
+            *,
+            value: Any = None,
+            fallback: str = '',
+            payload: Dict[str, Any] | None = None,
+            **extra: Any,
+        ) -> str:
+            card_data: Dict[str, Any] = {'id': card_id}
+            if value is not None:
+                card_data['value'] = value
+            if payload:
+                card_data['payload'] = payload
+            for key, raw_value in extra.items():
+                if raw_value is not None:
+                    card_data[key] = raw_value
+            return get_card_description(card_data, value, fallback)
+
+        cards: List[Dict] = []
+
+        def add(effect_id: str, description: str, status: str = "", *, status_state: str = "") -> None:
+            viz = self._active_effect_visuals.get(effect_id)
+            if not viz:
+                return
+            entry = {
+                "id": effect_id,
+                "title": get_card_title(effect_id, viz["title"]),
+                "description": description,
+                "status": status,  # New compact status field
+                "status_state": status_state,
+                "color": viz["color"],
+                "icon": viz.get("icon", "*"),
+                "tag": viz.get("tag", effect_tag),
+                "rarity": viz.get("rarity", "common"),
+                "style": viz.get("style", {}),
+                "icon_image": viz.get("icon_image"),
+                "value": viz.get("value"),
+                "payload": viz.get("payload"),
+            }
+            cards.append(entry)
+
+        if self.speed_effect_timer > 0:
+            add(
+                "time_slow",
+                _card_localized_description('time_slow', value=round(float(self.speed_effect_timer), 1)),
+                status=f"{self.speed_effect_timer:.1f}s",
+            )
+        else:
+            self._active_effect_visuals.pop("time_slow", None)
+
+        # Hız Patlaması (Speed Burst) görselini güncelle
+        # Timer check: self._speed_burst_timer
+        burst_timer = getattr(self, '_speed_burst_timer', 0)
+        if burst_timer > 0:
+            mult = getattr(self, '_speed_burst_line_mult', 1.5)
+            if "speed_burst" not in self._active_effect_visuals:
+                try:
+                    c = next((x for x in (getattr(self.card_manager, 'catalog', []) or []) if str(x.get('id', '')).startswith('speed_burst')), None)
+                    if c:
+                        self._remember_effect_visual('speed_burst', c)
+                except Exception:
+                    pass
+            add(
+                "speed_burst",
+                _card_localized_description(
+                    'speed_burst',
+                    value=round(float(burst_timer), 1),
+                    payload={
+                        'speed_multiplier': getattr(self, '_speed_burst_speed_mult', 1.0),
+                        'line_multiplier': mult,
+                    },
+                ),
+                status=f"{burst_timer:.1f}s",
+            )
+        else:
+            self._active_effect_visuals.pop("speed_burst", None)
+
+        # Global line multiplier (replaces old fixed +score line bonus)
+        if int(getattr(self, '_line_clear_multiplier_remaining', 0) or 0) > 0 and float(getattr(self, '_line_clear_multiplier_value', 1.0)) > 1.0:
+            rem = int(getattr(self, '_line_clear_multiplier_remaining', 0) or 0)
+            mult = float(getattr(self, '_line_clear_multiplier_value', 1.0))
+            add(
+                "line_bonus",
+                self._localized_card_text(
+                    'mystery_active_line_multiplier_desc',
+                    '{multiplier}x points for the next {count} line clears.',
+                    multiplier=f'{mult:g}',
+                    count=rem,
+                ),
+                status=str(rem),
+            )
+        elif self.line_bonus_remaining > 0:
+            add(
+                "line_bonus",
+                self._localized_card_text(
+                    'mystery_active_line_bonus_flat_desc',
+                    '+{bonus} points for the next {count} line clears.',
+                    bonus=int(self.line_bonus_amount),
+                    count=int(self.line_bonus_remaining),
+                ),
+                status=str(int(self.line_bonus_remaining)),
+            )
+        else:
+            self._active_effect_visuals.pop("line_bonus", None)
+
+        if self.combo_aura_timer > 0:
+            bonus = max(0, int(getattr(self, 'combo_aura_bonus', 0) or 0))
+            if bonus > 0:
+                add(
+                    "combo_boost",
+                    self._localized_card_text(
+                        'mystery_active_combo_boost_bonus_desc',
+                        'Combo will not reset for {seconds}s (+{bonus}).',
+                        seconds=f'{float(self.combo_aura_timer):.1f}',
+                        bonus=bonus,
+                    ),
+                    status=f"{self.combo_aura_timer:.1f}s",
+                )
+            else:
+                add(
+                    "combo_boost",
+                    _card_localized_description('combo_boost', value=round(float(self.combo_aura_timer), 1)),
+                    status=f"{self.combo_aura_timer:.1f}s",
+                )
+        else:
+            self._active_effect_visuals.pop("combo_boost", None)
+
+        # Dynamic score window
+        if getattr(self, '_score_multiplier_timer', 0.0) > 0 and float(getattr(self, '_score_multiplier_value', 1.0)) > 1.0:
+            add(
+                "score",
+                self._localized_card_text(
+                    'mystery_active_score_window_desc',
+                    '{seconds}s of {multiplier}x score multiplier.',
+                    seconds=f'{float(self._score_multiplier_timer):.1f}',
+                    multiplier=f'{float(self._score_multiplier_value):g}',
+                ),
+                status=f"{float(self._score_multiplier_timer):.1f}s",
+            )
+        else:
+            self._active_effect_visuals.pop("score", None)
+
+        # Forced upcoming pieces
+        try:
+            q = list(getattr(self.card_manager, 'force_piece_queue', []) or [])
+        except Exception:
+            q = []
+        if q:
+            add(
+                "force_piece",
+                _card_localized_description('force_piece', value=len(q)),
+                status=str(len(q)),
+            )
+        else:
+            self._active_effect_visuals.pop("force_piece", None)
+
+        # Armed nova burst
+        if int(getattr(self, '_armed_nova_clusters', 0) or 0) > 0:
+            add(
+                "nova_burst",
+                _card_localized_description('nova_burst', value=int(self._armed_nova_clusters)),
+                status=str(int(self._armed_nova_clusters)),
+            )
+        else:
+            self._active_effect_visuals.pop("nova_burst", None)
+
+        # Quantum Tunneling (Hayalet Parça): visible while charges remain or a piece is currently tunneled.
+        try:
+            charges = int(getattr(self, 'tunnel_charges_remaining', 0) or 0)
+        except Exception:
+            charges = 0
+        try:
+            is_tunneled = bool(getattr(getattr(self, 'current_piece', None), 'tunnel', False))
+        except Exception:
+            is_tunneled = False
+        if charges > 0 or is_tunneled:
+            # Robustness: if visuals were cleared for any reason, rebuild from catalog
+            # so the left panel always shows remaining charges.
+            if "quantum_tunneling" not in self._active_effect_visuals:
+                try:
+                    card = next((c for c in (getattr(self.card_manager, 'catalog', []) or []) if c.get('id') == 'quantum_tunneling'), None)
+                except Exception:
+                    card = None
+                if card:
+                    try:
+                        self._remember_effect_visual('quantum_tunneling', card)
+                    except Exception:
+                        pass
+
+        if (charges > 0 or is_tunneled) and "quantum_tunneling" in self._active_effect_visuals:
+            _g_lbl = _card_key('G', 'card_ghost')
+            if is_tunneled:
+                add(
+                    "quantum_tunneling",
+                    self._localized_card_text(
+                        'mystery_active_quantum_tunneling_active_desc',
+                        'Ghost piece is active. The current piece passes through blocks.',
+                    ),
+                    status=self._localized_active_card_uses_status(_g_lbl, charges),
+                    status_state='hazir',
+                )
+            else:
+                add(
+                    "quantum_tunneling",
+                    _card_localized_description('quantum_tunneling', value=charges),
+                    status=self._localized_active_card_uses_status(_g_lbl, charges),
+                    status_state='hazir',
+                )
+        else:
+            self._active_effect_visuals.pop("quantum_tunneling", None)
+
+        # Hammer (Çekiç): visible while charges remain.
+        try:
+            h_charges = int(getattr(self, 'hammer_charges_remaining', 0) or 0)
+        except Exception:
+            h_charges = 0
+        if h_charges > 0:
+            if "hammer" not in self._active_effect_visuals:
+                try:
+                    card = next((c for c in (getattr(self.card_manager, 'catalog', []) or []) if c.get('id') == 'hammer'), None)
+                except Exception:
+                    card = None
+                if card:
+                    try:
+                        self._remember_effect_visual('hammer', card)
+                    except Exception:
+                        pass
+        if h_charges > 0 and "hammer" in self._active_effect_visuals:
+            _h_lbl = _card_key('H', 'card_hammer')
+            add(
+                "hammer",
+                _card_localized_description('hammer', value=h_charges),
+                status=self._localized_active_card_uses_status(_h_lbl, h_charges),
+                status_state='hazir',
+            )
+        else:
+            self._active_effect_visuals.pop("hammer", None)
+
+        # Bomba Ustası (M tuşu): visible while charges remain.
+        try:
+            b_charges = int(getattr(self, 'bomb_master_charges', 0) or 0)
+        except Exception:
+            b_charges = 0
+        if b_charges > 0:
+            if "bomb_master" not in self._active_effect_visuals:
+                try:
+                    card = next((c for c in (getattr(self.card_manager, 'catalog', []) or []) if c.get('id') == 'bomb_master'), None)
+                except Exception:
+                    card = None
+                if card:
+                    try:
+                        self._remember_effect_visual('bomb_master', card)
+                    except Exception:
+                        pass
+        if b_charges > 0 and "bomb_master" in self._active_effect_visuals:
+            _b_lbl = _card_key('M', 'card_bomb')
+            add(
+                "bomb_master",
+                _card_localized_description('bomb_master', value=b_charges),
+                status=self._localized_active_card_uses_status(_b_lbl, b_charges),
+                status_state='hazir',
+            )
+        else:
+            self._active_effect_visuals.pop("bomb_master", None)
+
+        # Tuttuğunu Koparan (B tuşu): visible while charges remain.
+        try:
+            hd_charges = int(getattr(self, '_hold_destroyer_charges', 0) or 0)
+        except Exception:
+            hd_charges = 0
+        if hd_charges > 0:
+            if "hold_destroyer" not in self._active_effect_visuals:
+                try:
+                    card = next((c for c in (getattr(self.card_manager, 'catalog', []) or []) if str(c.get('id', '')).startswith('hold_destroyer')), None)
+                except Exception:
+                    card = None
+                if card:
+                    try:
+                        self._remember_effect_visual('hold_destroyer', card)
+                    except Exception:
+                        pass
+        if hd_charges > 0 and "hold_destroyer" in self._active_effect_visuals:
+            _b_lbl = _card_key('B', 'discard_held')
+            add(
+                "hold_destroyer",
+                _card_localized_description('hold_destroyer', value=hd_charges),
+                status=self._localized_active_card_uses_status(_b_lbl, hd_charges),
+                status_state='hazir',
+            )
+        else:
+            self._active_effect_visuals.pop("hold_destroyer", None)
+
+        try:
+            mh_charges = int(getattr(self, '_mirror_hold_charges', 0) or 0)
+        except Exception:
+            mh_charges = 0
+        if mh_charges > 0:
+            if "mirror_hold" not in self._active_effect_visuals:
+                try:
+                    card = next((c for c in (getattr(self.card_manager, 'catalog', []) or []) if c.get('id') == 'mirror_hold'), None)
+                except Exception:
+                    card = None
+                if card:
+                    try:
+                        self._remember_effect_visual('mirror_hold', card)
+                    except Exception:
+                        pass
+        if mh_charges > 0 and "mirror_hold" in self._active_effect_visuals:
+            _c_lbl = _card_key('C', 'hold')
+            add(
+                "mirror_hold",
+                _card_localized_description('mirror_hold'),
+                status=self._localized_active_card_uses_status(_c_lbl, mh_charges),
+                status_state='hazir',
+            )
+        else:
+            self._active_effect_visuals.pop("mirror_hold", None)
+
+        try:
+            ed_charges = int(getattr(self, '_echo_drop_charges', 0) or 0)
+        except Exception:
+            ed_charges = 0
+        try:
+            ed_fill = max(1, int(getattr(self, '_echo_drop_fill_count', 2) or 2))
+        except Exception:
+            ed_fill = 2
+        if ed_charges > 0:
+            if "echo_drop" not in self._active_effect_visuals:
+                try:
+                    card = next((c for c in (getattr(self.card_manager, 'catalog', []) or []) if c.get('id') == 'echo_drop'), None)
+                except Exception:
+                    card = None
+                if card:
+                    try:
+                        self._remember_effect_visual('echo_drop', card)
+                    except Exception:
+                        pass
+        if ed_charges > 0 and "echo_drop" in self._active_effect_visuals:
+            add(
+                "echo_drop",
+                _card_localized_description('echo_drop', payload={'echo_cells': ed_fill}, echo_cells=ed_fill),
+                status=str(ed_charges),
+                status_state='hazir',
+            )
+        else:
+            self._active_effect_visuals.pop("echo_drop", None)
+
+        # Son Düşüş (F tuşu): visible while charges remain or freeze is active.
+        try:
+            fd_charges = int(getattr(self, '_freeze_drop_charges', 0) or 0)
+        except Exception:
+            fd_charges = 0
+        fd_active = bool(getattr(self, '_freeze_drop_active', False))
+        if fd_charges > 0 or fd_active:
+            if "freeze_drop" not in self._active_effect_visuals:
+                try:
+                    card = next((c for c in (getattr(self.card_manager, 'catalog', []) or []) if str(c.get('id', '')).startswith('freeze_drop')), None)
+                except Exception:
+                    card = None
+                if card:
+                    try:
+                        self._remember_effect_visual('freeze_drop', card)
+                    except Exception:
+                        pass
+        if (fd_charges > 0 or fd_active) and "freeze_drop" in self._active_effect_visuals:
+            _f_lbl = _card_key('F', 'card_freeze')
+            if fd_active:
+                fd_timer = getattr(self, '_freeze_drop_timer', 0.0)
+                add(
+                    "freeze_drop",
+                    self._localized_card_text(
+                        'mystery_active_freeze_drop_active_desc',
+                        'The piece is frozen for {seconds}s. Only left-right movement and hard drop remain active.',
+                        seconds=f'{float(fd_timer):.1f}',
+                    ),
+                    status=self._localized_active_card_timed_uses_status(fd_timer, fd_charges),
+                    status_state='hazir',
+                )
+            else:
+                add(
+                    "freeze_drop",
+                    _card_localized_description(
+                        'freeze_drop',
+                        value=fd_charges,
+                        freeze_duration=int(getattr(self, '_freeze_drop_duration', 6) or 6),
+                    ),
+                    status=self._localized_active_card_uses_status(_f_lbl, fd_charges),
+                    status_state='hazir',
+                )
+        else:
+            self._active_effect_visuals.pop("freeze_drop", None)
+
+        # Combo Sigortası: armed ise panelde görünmeli, tetiklenince düşmeli.
+        if getattr(self, '_combo_insurance_armed', False):
+            if "combo_insurance" not in self._active_effect_visuals:
+                try:
+                    card = next(
+                        (c for c in (getattr(self.card_manager, 'catalog', []) or [])
+                         if c.get('id') == 'combo_insurance'),
+                        None,
+                    )
+                except Exception:
+                    card = None
+                if card:
+                    try:
+                        self._remember_effect_visual('combo_insurance', card)
+                    except Exception:
+                        pass
+        if getattr(self, '_combo_insurance_armed', False) and "combo_insurance" in self._active_effect_visuals:
+            add(
+                "combo_insurance",
+                _card_localized_description(
+                    'combo_insurance',
+                    fallback='Bir kez, satır temizleyemediğin hamlede combo bozulmaz.',
+                ),
+                status=self._localized_card_text('mystery_status_armed', 'Hazır'),
+                status_state='hazir',
+            )
+        else:
+            self._active_effect_visuals.pop("combo_insurance", None)
+
+        # Ters Borç: kalan parça sayacı görünür, sayaç bitince panelden düşer.
+        try:
+            rd_left = int(getattr(self, '_reverse_debt_remaining', 0) or 0)
+        except Exception:
+            rd_left = 0
+        if rd_left > 0:
+            if "reverse_debt" not in self._active_effect_visuals:
+                try:
+                    card = next(
+                        (c for c in (getattr(self.card_manager, 'catalog', []) or [])
+                         if c.get('id') == 'reverse_debt'),
+                        None,
+                    )
+                except Exception:
+                    card = None
+                if card:
+                    try:
+                        self._remember_effect_visual('reverse_debt', card)
+                    except Exception:
+                        pass
+        if rd_left > 0 and "reverse_debt" in self._active_effect_visuals:
+            add(
+                "reverse_debt",
+                self._localized_card_text(
+                    'mystery_active_reverse_debt_desc',
+                    'Sonraki {count} parça yere değer değmez kilitlenir.',
+                    count=rd_left,
+                ),
+                status=str(rd_left),
+                status_state='hazir',
+            )
+        else:
+            self._active_effect_visuals.pop("reverse_debt", None)
+
+        # Delik Avcısı: kalan hak ve J tuşu etiketi.
+        try:
+            hh_left = int(getattr(self, '_hole_hunter_charges', 0) or 0)
+        except Exception:
+            hh_left = 0
+        if hh_left > 0:
+            if "hole_hunter" not in self._active_effect_visuals:
+                try:
+                    card = next(
+                        (c for c in (getattr(self.card_manager, 'catalog', []) or [])
+                         if c.get('id') == 'hole_hunter'),
+                        None,
+                    )
+                except Exception:
+                    card = None
+                if card:
+                    try:
+                        self._remember_effect_visual('hole_hunter', card)
+                    except Exception:
+                        pass
+        if hh_left > 0 and "hole_hunter" in self._active_effect_visuals:
+            _j_lbl = _card_key('J', 'card_hole_hunter')
+            add(
+                "hole_hunter",
+                _card_localized_description(
+                    'hole_hunter',
+                    value=hh_left,
+                    fallback='J tuşu ile kullan: Bir sütun seçersin. O sütundaki rastgele kapalı boşluklardan 1 tanesi dolar.',
+                ),
+                status=self._localized_active_card_uses_status(_j_lbl, hh_left),
+                status_state='hazir',
+            )
+        else:
+            self._active_effect_visuals.pop("hole_hunter", None)
+
+        # Laser Drill: active only while the current piece is drill-enabled
+        try:
+            is_drill = bool(getattr(getattr(self, 'current_piece', None), 'drill', False))
+        except Exception:
+            is_drill = False
+        if is_drill and "laser_drill" in self._active_effect_visuals:
+            add("laser_drill", _card_localized_description('laser_drill'), status=active_label)
+        else:
+            self._active_effect_visuals.pop("laser_drill", None)        
+        # Sniper Shot: N tuşuyla aktifleşir
+        try:
+            sniper_charges = int(getattr(self, '_sniper_charges', 0) or 0)
+        except Exception:
+            sniper_charges = 0
+        if sniper_charges > 0:
+            if "sniper_shot" not in self._active_effect_visuals:
+                try:
+                    card = next((c for c in (getattr(self.card_manager, 'catalog', []) or []) if c.get('id') == 'sniper_shot'), None)
+                except Exception:
+                    card = None
+                if card:
+                    try:
+                        self._remember_effect_visual('sniper_shot', card)
+                    except Exception:
+                        pass
+        if sniper_charges > 0 and "sniper_shot" in self._active_effect_visuals:
+            _n_lbl = _card_key('N', 'card_sniper')
+            add(
+                "sniper_shot",
+                _card_localized_description('sniper_shot', value=sniper_charges),
+                status=self._localized_active_card_uses_status(_n_lbl, sniper_charges),
+                status_state='hazir',
+            )
+        else:
+            self._active_effect_visuals.pop("sniper_shot", None)
+        
+        # Zaman Kapsulu: T ile kaydet, R ile geri yukle.
+        if getattr(self, 'time_capsule_available', False):
+            if "time_capsule" not in self._active_effect_visuals:
+                try:
+                    card = next((c for c in (getattr(self.card_manager, 'catalog', []) or []) if c.get('id') == 'time_capsule'), None)
+                except Exception:
+                    card = None
+                if card:
+                    try:
+                        self._remember_effect_visual('time_capsule', card)
+                    except Exception:
+                        pass
+            
+            if "time_capsule" in self._active_effect_visuals:
+                _t_lbl = _card_key('T', 'card_time_capsule_save')
+                _r_lbl = _card_key('R', 'card_time_capsule_restore')
+                if getattr(self, 'time_capsule_saved', False):
+                    add(
+                        "time_capsule",
+                        self._localized_card_text(
+                            'mystery_active_time_capsule_restore_desc',
+                            '{label}: Restore the saved board state.',
+                            label=_r_lbl,
+                        ),
+                        status=_r_lbl,
+                    )
+                else:
+                    add(
+                        "time_capsule",
+                        self._localized_card_text(
+                            'mystery_active_time_capsule_save_desc',
+                            '{label}: Save the current board state.',
+                            label=_t_lbl,
+                        ),
+                        status=_t_lbl,
+                    )
+        else:
+            self._active_effect_visuals.pop("time_capsule", None)
+        
+        # Gravity Freeze (Krono Kilidi aktifken)
+        if self.gravity_freeze_timer > 0:
+            cards.append({
+                'id': 'gravity_freeze_active',
+                'title': self._localized_card_text('mystery_active_gravity_freeze_title', 'Gravity Halt'),
+                'description': self._localized_card_text(
+                    'mystery_active_gravity_freeze_desc',
+                    'Gravity is stopped for {seconds}s.',
+                    seconds=f'{float(self.gravity_freeze_timer):.1f}',
+                ),
+                'color': (120, 220, 255),
+                'icon': 'GF',
+                'tag': active_label,
+                'status': f'{float(self.gravity_freeze_timer):.1f}s',
+                'style': {},
+            })
+
+        # Ghost Echo: active only when armed; display the number of rows it clears
+        if "ghost_echo" in self._active_effect_visuals:
+            viz = self._active_effect_visuals.get("ghost_echo")
+            rows = int(viz.get("value", viz.get("base", 6)))
+            add(
+                "ghost_echo",
+                self._localized_card_text(
+                    'mystery_active_ghost_echo_desc',
+                    'If the game would end, the top {rows} rows are cleared.',
+                    rows=rows,
+                ),
+                status=str(rows),
+            )
+        else:
+            self._active_effect_visuals.pop("ghost_echo", None)
+        
+        # === KALİCİ PERK KARTLARI ===
+        # Perkler aktif olduğunda sol panelde göster
+        # Map perk runtime ids to the corresponding catalog card ids so we can
+        # reuse the same icon_image that the selection UI uses.
+        try:
+            catalog_by_id = {str(c.get('id')): c for c in (getattr(self.card_manager, 'catalog', []) or [])}
+        except Exception:
+            catalog_by_id = {}
+        perk_to_card_id = {
+            'chrono_lock': 'perk_chrono',
+            'synergy_core': 'perk_synergy',
+            'second_pocket': 'perk_second_pocket',
+            'perk_alchemist': 'perk_alchemist',
+        }
+        # Only truly persistent perks (no usage limits) go here
+        perk_defs = {
+            'second_pocket': {
+                'title': get_card_title('perk_second_pocket', 'Ekstra Cep'),
+                'description': get_card_description('perk_second_pocket', fallback=f'{_card_key("V", "hold2")} ile ikinci parca sakla.'),
+                'status': f'{_card_key("V", "hold2")}',
+                'color': (200, 200, 255),
+                'icon': '🎒',
+                'tag': perk_tag
+            },
+            'chrono_lock': {
+                'title': get_card_title('perk_chrono', 'Zaman Durdurucu'),
+                'description': get_card_description('perk_chrono', fallback='PERK: Every 10 lines, gravity stops for 3 seconds.'),
+                'status': active_label,
+                'color': (120, 220, 255),
+                'icon': '⏸️',
+                'tag': perk_tag
+            },
+            'synergy_core': {
+                'title': get_card_title('perk_synergy', 'Sinerji Bonus'),
+                'description': get_card_description('perk_synergy', fallback='PERK: +10% score bonus for each active perk.'),
+                'status': f'{getattr(self.perk_manager, "get_multiplier", lambda: 1.0)():.2f}x',
+                'color': (255, 220, 140),
+                'icon': '🔗',
+                'tag': perk_tag
+            },
+            'perk_alchemist': {
+                'title': get_card_title('perk_alchemist', 'Altın Dokunuş'),
+                'description': get_card_description('perk_alchemist', fallback='PERK: Clearing 4 lines turns random blocks to gold.'),
+                'status': gold_label,
+                'color': (255, 210, 75),
+                'icon': '✨',
+                'tag': perk_tag
+            },
+        }
+        
+        if hasattr(self, 'perk_manager'):
+            for perk_id, perk_def in perk_defs.items():
+                if self.perk_manager.is_active(perk_id):
+                    card_id = perk_to_card_id.get(perk_id)
+                    icon_image = None
+                    try:
+                        if card_id:
+                            icon_image = catalog_by_id.get(card_id, {}).get('icon_image')
+                    except Exception:
+                        icon_image = None
+
+                    # Use the catalog card id when possible so the left-panel history
+                    # merge can dedupe properly (prevents showing the same perk twice).
+                    # Fallback to a unique runtime id only if mapping is missing.
+                    entry_id = str(card_id) if card_id else f'perk_{perk_id}'
+                    cards.append({
+                        'id': entry_id,
+                        'title': perk_def['title'],
+                        'description': perk_def['description'],
+                        'status': perk_def.get('status', 'Aktif'),
+                        'color': perk_def['color'],
+                        'icon': perk_def['icon'],
+                        'icon_image': icon_image,
+                        'tag': perk_def['tag'],
+                        'style': {},
+                        'persistent': True,
+                    })
+
+        # Rewind is a limited ability (not a persistent perk): show under limited effects.
+        try:
+            uses = int(getattr(self.perk_manager, 'rewind_uses', 0) or 0)
+        except Exception:
+            uses = 0
+        try:
+            rewind_active = bool(getattr(self.perk_manager, 'is_active', lambda _k: False)('rewind_power'))
+        except Exception:
+            rewind_active = False
+        if rewind_active and uses > 0:
+            icon_image = None
+            try:
+                icon_image = catalog_by_id.get('rewind_power', {}).get('icon_image')
+            except Exception:
+                icon_image = None
+            cards.append({
+                'id': 'rewind_power',
+                'title': get_card_title('rewind_power', 'Geri Sarma'),
+                'description': get_card_description('rewind_power', fallback=f'{_card_key("U", "card_rewind")} ile son parcayi geri al.'),
+                'status': self._localized_active_card_uses_status(_card_key("U", "card_rewind"), uses),
+                'status_state': 'hazir',
+                'color': (255, 200, 255),
+                'icon': 'RW',
+                'icon_image': icon_image,
+                'tag': 'Epic',
+                'style': {},
+                'persistent': False,
+            })
+
+        # Şekil Değiştirici is a limited ability (3 uses): show under limited effects.
+        try:
+            phase_uses = int(getattr(self, 'phase_shift_uses_remaining', 0) or 0)
+        except Exception:
+            phase_uses = 0
+        try:
+            phase_active = bool(getattr(self.perk_manager, 'is_active', lambda _k: False)('phase_shift'))
+        except Exception:
+            phase_active = False
+        if phase_active and phase_uses > 0:
+            icon_image = None
+            try:
+                icon_image = catalog_by_id.get('perk_phase', {}).get('icon_image')
+            except Exception:
+                icon_image = None
+            cards.append({
+                'id': 'perk_phase',
+                'title': get_card_title('perk_phase', 'Şekil Değiştirici'),
+                'description': get_card_description('perk_phase', fallback=f'{_card_key("LSHIFT", "card_phase_shift")} ile sekli aynala.'),
+                'status': self._localized_active_card_uses_status(_card_key("LSHIFT", "card_phase_shift"), phase_uses),
+                'status_state': 'hazir',
+                'color': (255, 200, 255),
+                'icon': '🔄',
+                'icon_image': icon_image,
+                'tag': 'Epic',
+                'style': {},
+                'persistent': False,
+            })
+
+        self.card_manager.active_cards = cards
+
+    def _nova_burst(self, clusters: int) -> None:
+        width = len(self.board.grid[0])
+        height = len(self.board.grid)
+        cleared_cells = 0
+        cleared_coords: list[tuple[int, int]] = []
+        now_ms = None
+        try:
+            now_ms = int(pygame.time.get_ticks())
+        except Exception:
+            now_ms = None
+        for _ in range(max(1, clusters)):
+            cx = random.randrange(width)
+            cy = random.randrange(height)
+            for y in range(max(0, cy - 1), min(height, cy + 2)):
+                for x in range(max(0, cx - 1), min(width, cx + 2)):
+                    if self.board.occupancy[y][x] or self.board.grid[y][x] != BLACK:
+                        self.board.grid[y][x] = BLACK
+                        self.board.texture_grid[y][x] = None
+                        self.board.occupancy[y][x] = False
+                        try:
+                            self.board.gold[y][x] = False
+                        except Exception:
+                            pass
+                        try:
+                            self.board.owners[y][x] = None
+                        except Exception:
+                            pass
+                        cleared_cells += 1
+                        cleared_coords.append((int(x), int(y)))
+        if cleared_cells:
+            try:
+                self._trace_ghost_bug_clear(
+                    now_ms=now_ms,
+                    clear_kind='nova_random',
+                    cleared_cells=cleared_cells,
+                    coords=cleared_coords,
+                    piece=getattr(self, 'current_piece', None),
+                    note=f"clusters={int(clusters)}",
+                )
+            except Exception:
+                pass
+        if cleared_cells and self.sound_enabled:
+            self.sound.play_sound("clear")
+        self.board.score += cleared_cells * 40
+        # spawn particles for nova
+        if self.effects_enabled:
+            cell_size = self.get_cell_size()
+            offset_x, offset_y = self.get_board_offset()
+            for _ in range(min(10, clusters * 2)):
+                cx = random.randint(0, BOARD_WIDTH - 1)
+                cy = random.randint(0, BOARD_HEIGHT - 1)
+                x = offset_x + cx * cell_size + cell_size // 2
+                y = offset_y + cy * cell_size + cell_size // 2
+                self.create_power_particles(x, y, self.mode_skin.accent, count=8)
+
+    def _shave_peaks(self, layers: int) -> None:
+        width = len(self.board.grid[0])
+        height = len(self.board.grid)
+        removed = 0
+        for _ in range(max(1, layers)):
+            for col in range(width):
+                for row in range(height):
+                    if self.board.occupancy[row][col]:
+                        self.board.grid[row][col] = BLACK
+                        self.board.texture_grid[row][col] = None
+                        self.board.occupancy[row][col] = False
+                        try:
+                            self.board.gold[row][col] = False
+                        except Exception:
+                            pass
+                        try:
+                            self.board.owners[row][col] = None
+                        except Exception:
+                            pass
+                        removed += 1
+                        break
+        if removed and self.sound_enabled:
+            self.sound.play_sound("clear")
+
+    def _shuffle_bottom_rows(self, row_count: int) -> None:
+        """Satır Karıştırıcı: En alt satırlardaki blokları rastgele karıştır"""
+        width = len(self.board.grid[0])
+        height = len(self.board.grid)
+        row_count = max(1, min(row_count, height))
+        
+        # Alt bölgedeki hücreleri (dolu/boş dahil) topla ve karıştır.
+        # Böylece "karıştırma" boşlukları sıkıştırmaz; dolu/boş sayısı korunur.
+        cells: list[tuple[bool, object, object, bool, object]] = []
+        for row in range(height - row_count, height):
+            for col in range(width):
+                occ = bool(self.board.occupancy[row][col])
+                if occ:
+                    try:
+                        gold = bool(self.board.gold[row][col])
+                    except Exception:
+                        gold = False
+                    try:
+                        owner = self.board.owners[row][col]
+                    except Exception:
+                        owner = None
+                    cells.append((True, self.board.grid[row][col], self.board.texture_grid[row][col], gold, owner))
+                else:
+                    cells.append((False, BLACK, None, False, None))
+
+        random.shuffle(cells)
+
+        idx = 0
+        for row in range(height - row_count, height):
+            for col in range(width):
+                occ, colr, tex, gold, owner = cells[idx]
+                idx += 1
+                if occ:
+                    self.board.grid[row][col] = colr
+                    self.board.texture_grid[row][col] = tex
+                    self.board.occupancy[row][col] = True
+                    try:
+                        self.board.gold[row][col] = bool(gold)
+                    except Exception:
+                        pass
+                    try:
+                        self.board.owners[row][col] = owner
+                    except Exception:
+                        pass
+                else:
+                    self.board.grid[row][col] = BLACK
+                    self.board.texture_grid[row][col] = None
+                    self.board.occupancy[row][col] = False
+                    try:
+                        self.board.gold[row][col] = False
+                    except Exception:
+                        pass
+                    try:
+                        self.board.owners[row][col] = None
+                    except Exception:
+                        pass
+        
+        # Karistirma sonrasi bloklarin havada asili kalmamasi icin yercekimi uygula
+        try:
+            self.board.apply_gravity()
+        except Exception:
+            pass
+
+        # Satır temizleme kontrolü
+        prev_score = int(getattr(self.board, 'score', 0))
+        cleared = self.board.clear_lines(source='card')
+        if cleared > 0:
+            try:
+                delta = int(getattr(self.board, 'score', 0)) - prev_score
+            except Exception:
+                delta = None
+            self._post_external_line_clear(cleared, award_energy=True, score_delta=delta, source='card')
+        
+        if self.sound_enabled:
+            self.sound.play_sound("clear")
+    
+    def _spawn_card_particles(self, color: tuple[int, int, int]) -> None:
+        if not self.effects_enabled:
+            return
+        active_width, active_height = self._active_ui_size()
+        center_x = active_width // 2
+        center_y = active_height // 2
+        self.create_particles(count=30, x=center_x, y=center_y, colors=[color], speed=6)
+
+    def _clear_rows(self, count: int, *, count_as_lines: bool = False) -> None:
+        width = len(self.board.grid[0])
+        count = max(1, min(count, len(self.board.grid)))
+        prev_combo = int(getattr(self.board, 'combo', 0) or 0)
+        prev_level = int(getattr(self.board, 'level', 1) or 1)
+        original_rows_by_col: dict[int, list[int]] = {}
+        if getattr(self, 'effects_enabled', False):
+            try:
+                board_height = int(getattr(self.board, 'height', len(self.board.grid)) or len(self.board.grid))
+                board_width = int(getattr(self.board, 'width', width) or width)
+                for x in range(board_width):
+                    original_rows_by_col[x] = [
+                        y for y in range(board_height)
+                        if self.board.occupancy[y][x]
+                    ]
+            except Exception:
+                original_rows_by_col = {}
+        for _ in range(count):
+            self.board.grid.pop()
+            self.board.grid.insert(0, [BLACK] * width)
+            self.board.texture_grid.pop()
+            self.board.texture_grid.insert(0, [None] * width)
+            self.board.occupancy.pop()
+            self.board.occupancy.insert(0, [False] * width)
+            try:
+                if hasattr(self.board, 'gold'):
+                    self.board.gold.pop()
+                    self.board.gold.insert(0, [False] * width)
+            except Exception:
+                pass
+            try:
+                if hasattr(self.board, 'owners'):
+                    self.board.owners.pop()
+                    self.board.owners.insert(0, [None] * width)
+            except Exception:
+                pass
+        # Physically settle blocks (fill holes) after removing the floor
+        try:
+            self.board.apply_gravity()
+        except Exception:
+            pass
+        if original_rows_by_col:
+            try:
+                board_height = int(getattr(self.board, 'height', len(self.board.grid)) or len(self.board.grid))
+                board_width = int(getattr(self.board, 'width', width) or width)
+                cell_size = max(1, int(self.get_cell_size()))
+                gravity_fall_animations: list[dict[str, float | int | bool]] = []
+                removed_start = max(0, board_height - count)
+                for x in range(board_width):
+                    old_rows = [
+                        y for y in original_rows_by_col.get(x, [])
+                        if y < removed_start
+                    ]
+                    new_rows = [
+                        y for y in range(board_height)
+                        if self.board.occupancy[y][x]
+                    ]
+                    if len(old_rows) != len(new_rows):
+                        continue
+                    for old_y, new_y in zip(old_rows, new_rows):
+                        drop_rows = int(new_y - old_y)
+                        if drop_rows <= 0:
+                            continue
+                        gravity_fall_animations.append({
+                            'row': int(new_y),
+                            'col': int(x),
+                            'current_offset': float(-drop_rows * cell_size),
+                            'target_offset': 0.0,
+                            'sweep_trigger': 0.0,
+                            'started': True,
+                        })
+                if gravity_fall_animations:
+                    self.falling_block_animations = gravity_fall_animations
+            except Exception:
+                pass
+        # Floor sweep can be a synthetic board mutation; only count it as a
+        # cleared line when the caller explicitly opts into that bookkeeping.
+        if count_as_lines:
+            self.board.lines_cleared += count
+        try:
+            self.board.level = prev_level
+        except Exception:
+            pass
+        # Keep combo alive
+        self.board.combo = prev_combo
+        self.board.score += count * 150
+        if self.sound_enabled:
+            self.sound.play_sound("clear")
+
+    def _queue_force_pieces(self, count: int) -> None:
+        preferred = ["I", "T", "O", "L"]
+        for _ in range(max(1, count)):
+            self.card_manager.queue_force_piece(random.choice(preferred))
+
+    def _clear_columns(self, count: int) -> None:
+        width = len(self.board.grid[0])
+        height = len(self.board.grid)
+        for _ in range(max(1, count)):
+            column = random.randrange(width)
+            for row in range(height):
+                self.board.grid[row][column] = BLACK
+                self.board.texture_grid[row][column] = None
+                self.board.occupancy[row][column] = False
+                try:
+                    self.board.gold[row][column] = False
+                except Exception:
+                    pass
+                try:
+                    self.board.owners[row][column] = None
+                except Exception:
+                    pass
+        if self.sound_enabled:
+            self.sound.play_sound("clear")
+
+    def _clear_columns_for_current_piece(self) -> int:
+        if not getattr(self, 'current_piece', None):
+            return 0
+        width = len(self.board.grid[0])
+        height = len(self.board.grid)
+        cols = sorted({x for x, y in self.current_piece.get_cells() if 0 <= x < width})
+        if not cols:
+            return 0
+        cleared_cells = 0
+        for column in cols:
+            for row in range(height):
+                if self.board.occupancy[row][column] or self.board.grid[row][column] != BLACK:
+                    cleared_cells += 1
+                self.board.grid[row][column] = BLACK
+                self.board.texture_grid[row][column] = None
+                self.board.occupancy[row][column] = False
+                try:
+                    self.board.gold[row][column] = False
+                except Exception:
+                    pass
+                try:
+                    self.board.owners[row][column] = None
+                except Exception:
+                    pass
+        if self.sound_enabled:
+            self.sound.play_sound('clear')
+        return cleared_cells
+
+    def _sedimentation_collapse(self) -> None:
+        """Deprem/Sedimentation: tüm kolonları aşağı sıkıştır."""
+        prev_score = int(getattr(self.board, 'score', 0))
+        try:
+            self.board.apply_gravity()
+        except Exception:
+            pass
+        try:
+            cleared = int(self.board.clear_lines(source='card'))
+        except Exception:
+            cleared = 0
+        if cleared > 0:
+            try:
+                delta = int(getattr(self.board, 'score', 0)) - prev_score
+            except Exception:
+                delta = None
+            self._post_external_line_clear(cleared, award_energy=True, score_delta=delta, source='card')
+
+    def _arm_nova_burst(self, charges: int, card: Dict) -> None:
+        n = max(1, int(charges))
+        total = int(getattr(self, '_armed_nova_clusters', 0) or 0) + n
+        self._armed_nova_clusters = total
+        self._remember_effect_visual('nova_burst', card)
+        try:
+            self._set_localized_card_message('mystery_msg_nova_burst_charges', 0.9, 'Nova Patlaması: +{count} şarj (toplam {total})', count=n, total=total)
+        except Exception:
+            pass
+        self._sync_active_cards()
+
+    def _activate_drill_piece(self) -> None:
+        if not getattr(self, 'current_piece', None):
+            return
+        setattr(self.current_piece, 'drill', True)
+        try:
+            setattr(self.current_piece, '_original_color', getattr(self.current_piece, 'color', None))
+        except Exception:
+            pass
+        # Kırmızı vurgu
+        try:
+            self.current_piece.color = (255, 70, 70)
+        except Exception:
+            pass
+        self._drill_last_cleanup_y = getattr(self.current_piece, 'y', None)
+        # NERF: Hareket kilidi başlangıçta kapalı
+        self._drill_movement_locked = False
+
+    def _cleanup_drill_overlaps(self) -> None:
+        piece = getattr(self, 'current_piece', None)
+        if not piece or not getattr(piece, 'drill', False):
+            return
+        try:
+            self._clear_drill_cells(piece.get_cells(), piece, clear_kind='drill')
+        except Exception:
+            pass
+        self._drill_last_cleanup_y = getattr(piece, 'y', None)
+
+    def _cleanup_drill_path_to_lock(self, piece) -> None:
+        if not piece or not getattr(piece, 'drill', False):
+            return
+        try:
+            start_y = int(getattr(self, '_drill_last_cleanup_y', getattr(piece, 'y', 0)) or 0)
+            end_y = int(getattr(piece, 'y', start_y) or start_y)
+        except Exception:
+            return
+
+        if end_y < start_y:
+            start_y, end_y = end_y, start_y
+
+        coords: list[tuple[int, int]] = []
+        original_y = getattr(piece, 'y', end_y)
+        try:
+            for top_y in range(start_y, end_y + 1):
+                piece.y = top_y
+                coords.extend(piece.get_cells())
+        finally:
+            try:
+                piece.y = original_y
+            except Exception:
+                pass
+        self._clear_drill_cells(coords, piece, clear_kind='drill_path')
+        self._drill_last_cleanup_y = getattr(piece, 'y', None)
+
+    def _clear_drill_cells(self, coords, piece, *, clear_kind: str) -> int:
+        width = int(getattr(self.board, 'width', BOARD_WIDTH))
+        height = int(getattr(self.board, 'height', BOARD_HEIGHT))
+        cleared_cells = 0
+        cleared_coords: list[tuple[int, int]] = []
+        now_ms = None
+        try:
+            now_ms = int(pygame.time.get_ticks())
+        except Exception:
+            now_ms = None
+        seen: set[tuple[int, int]] = set()
+        for x, y in coords:
+            key = (int(x), int(y))
+            if key in seen:
+                continue
+            seen.add(key)
+            ix, iy = key
+            if 0 <= ix < width and 0 <= iy < height and self.board.occupancy[iy][ix]:
+                self.board.occupancy[iy][ix] = False
+                self.board.grid[iy][ix] = BLACK
+                self.board.texture_grid[iy][ix] = None
+                try:
+                    self.board.gold[iy][ix] = False
+                except Exception:
+                    pass
+                try:
+                    self.board.owners[iy][ix] = None
+                except Exception:
+                    pass
+                cleared_cells += 1
+                cleared_coords.append((ix, iy))
+        if cleared_cells:
+            try:
+                self._trace_ghost_bug_clear(
+                    now_ms=now_ms,
+                    clear_kind=clear_kind,
+                    cleared_cells=cleared_cells,
+                    coords=cleared_coords,
+                    piece=piece,
+                )
+            except Exception:
+                pass
+            self.board.score += cleared_cells * 20
+            if self.sound_enabled:
+                self.sound.play_sound('clear')
+            try:
+                self._queue_card_board_removed_cells_effect(
+                    'laser_drill',
+                    list(cleared_coords),
+                    accent=(255, 70, 70),
+                )
+            except Exception:
+                pass
+            # NERF: İlk bloğa değdikten sonra hareket kilitlenir
+            self._drill_movement_locked = True
+        return int(cleared_cells)
+
+    def _level_peaks(self, steps: int) -> int:
+        """Tepe Dilimleyici (Leveler): sivri tepeleri keserek max-min farkını azalt."""
+        width = len(self.board.grid[0])
+        height = len(self.board.grid)
+        steps = max(1, int(steps))
+
+        def col_height(x: int) -> int:
+            for y in range(height):
+                if self.board.occupancy[y][x]:
+                    return height - y
+            return 0
+
+        removed = 0
+        for _ in range(steps):
+            heights = [col_height(x) for x in range(width)]
+            if not heights:
+                break
+            max_h = max(heights)
+            min_h = min(heights)
+            if max_h <= 0 or (max_h - min_h) <= 1:
+                break
+            x = heights.index(max_h)
+            # Remove the top-most block of the tallest column
+            for y in range(height):
+                if self.board.occupancy[y][x]:
+                    self.board.grid[y][x] = BLACK
+                    self.board.texture_grid[y][x] = None
+                    self.board.occupancy[y][x] = False
+                    try:
+                        self.board.gold[y][x] = False
+                    except Exception:
+                        pass
+                    try:
+                        self.board.owners[y][x] = None
+                    except Exception:
+                        pass
+                    removed += 1
+                    break
+        if removed and self.sound_enabled:
+            self.sound.play_sound('clear')
+        return int(removed)
+
+    def finalize_run(self, playtime: int | None = None) -> None:
+        """Extend finalize_run to add XP and fragments for Mystery Mode."""
+        # Run base finalize
+        super().finalize_run(playtime)
+        # Add XP and fragments for the current user
+        if self.user_manager:
+            xp_award = int(self.board.score / 10)
+            self.user_manager.add_xp('mystery', xp_award)
+            fragments = int((self.board.score / 100) + (self.board.level * 20) + (self.board.lines_cleared * 5))
+            self.user_manager.add_fragments(fragments)
+
+    # === BLOK ATÖLYESİ KARTI METODLARI ===
+
+    def _open_card_workshop_popup(self) -> None:
+        """Kart modu içi mini blok atölyesi popup'ını açar."""
+        self._card_workshop_active = True
+        self._card_workshop_grid = [[None for _ in range(7)] for _ in range(7)]
+        self._card_workshop_cursor_x = 3
+        self._card_workshop_cursor_y = 3
+        self._card_workshop_peek_active = False
+        self._card_workshop_peek_rect = None
+        self._card_workshop_color = (0, 255, 255)
+        self._set_localized_workshop_message('mystery_workshop_open_instruction', 5.0, 'Blok atolyesi! Maks 7 blok. ENTER ile tamamla.')
+        pygame.mouse.set_visible(True)
+        try:
+            self._set_localized_card_message('mystery_workshop_opened_top', 3.0, 'Blok Atolyesi acildi! Parca olustur ve ENTER ile tamamla.')
+        except Exception:
+            pass
+
+    def _close_card_workshop_popup(self) -> None:
+        """Blok atölyesi popup'ını kapatır."""
+        self._card_workshop_active = False
+        self._card_workshop_grid = None
+        self._card_workshop_cursor_x = 0
+        self._card_workshop_cursor_y = 0
+        self._card_workshop_peek_active = False
+        self._card_workshop_peek_rect = None
+        self._card_workshop_message = ""
+        self._card_workshop_message_timer = 0
+
+    def _card_workshop_count_blocks(self) -> int:
+        """Atölye grid'indeki blok sayısını say."""
+        if not self._card_workshop_grid:
+            return 0
+        count = 0
+        for row in self._card_workshop_grid:
+            for cell in row:
+                if cell is not None:
+                    count += 1
+        return count
+
+    def _card_workshop_get_positions(self) -> list:
+        """Grid'deki tüm blok pozisyonlarını döndür."""
+        positions = []
+        if not self._card_workshop_grid:
+            return positions
+        for y in range(7):
+            for x in range(7):
+                if self._card_workshop_grid[y][x] is not None:
+                    positions.append((x, y))
+        return positions
+
+    def _card_workshop_is_connected(self) -> bool:
+        """Blokların birbirine bağlı olup olmadığını kontrol et."""
+        positions = self._card_workshop_get_positions()
+        if len(positions) <= 1:
+            return True
+        pos_set = set(positions)
+        visited = set()
+        to_visit = [positions[0]]
+        while to_visit:
+            x, y = to_visit.pop()
+            if (x, y) in visited:
+                continue
+            visited.add((x, y))
+            for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                nx, ny = x + dx, y + dy
+                if (nx, ny) in pos_set and (nx, ny) not in visited:
+                    to_visit.append((nx, ny))
+        return len(visited) == len(positions)
+
+    def _card_workshop_finish(self) -> None:
+        """Atölye parçasını tamamla ve oyuna ekle."""
+        positions = self._card_workshop_get_positions()
+        if len(positions) < 2:
+            self._set_localized_workshop_message('mystery_workshop_min_blocks', 2.0, 'En az 2 blok gerekli!')
+            return
+        if not self._card_workshop_is_connected():
+            self._set_localized_workshop_message('mystery_workshop_connected', 2.0, 'Bloklar birbirine bagli olmali!')
+            return
+
+        # Normalize shape 
+        min_x = min(x for x, y in positions)
+        min_y = min(y for x, y in positions)
+        normalized = [(x - min_x, y - min_y) for x, y in positions]
+
+        # Renkleri topla
+        colors = {}
+        for x, y in positions:
+            colors[(x - min_x, y - min_y)] = self._card_workshop_grid[y][x]['color']
+
+        # shape matris oluştur
+        max_x = max(x for x, y in normalized)
+        max_y = max(y for x, y in normalized)
+        shape = [[0 for _ in range(max_x + 1)] for _ in range(max_y + 1)]
+        for x, y in normalized:
+            shape[y][x] = 1
+
+        # color_matrix oluştur
+        color_matrix = [[None for _ in range(max_x + 1)] for _ in range(max_y + 1)]
+        for (x, y), col in colors.items():
+            color_matrix[y][x] = col
+
+        # Piece oluştur - custom shape ile
+        piece = Piece(x=max(0, (self.board.width - len(shape[0])) // 2), y=0, shape_index=0)
+        # Shape'i ve rengi manuel override et
+        piece.shape = shape
+        piece.color = self._card_workshop_color
+        piece.name = "Workshop_Card"
+        piece.shape_index = -1  # Custom parça
+        piece.is_workshop_piece = True
+        piece.color_matrix = color_matrix
+        piece._force_color = None
+
+        # Mevcut parçayı değiştir
+        try:
+            self.current_piece = piece
+            self.apply_theme_to_pieces()
+        except Exception:
+            pass
+
+        self._close_card_workshop_popup()
+        try:
+            self._set_localized_card_message('mystery_workshop_piece_ready', 2.0, 'Atolye parcasi hazirlandi! Hemen kullanabilirsin.')
+        except Exception:
+            pass
+        if self.sound_enabled:
+            try:
+                self.sound.play_sound('card_activate')
+            except Exception:
+                pass
+
+    def _handle_card_workshop_input(self, event) -> bool:
+        """Kart atölyesi popup'ının input'larını işler. True dönerse event tüketildi."""
+        if not getattr(self, '_card_workshop_active', False):
+            return False
+
+        if event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_ESCAPE:
+                if getattr(self, '_card_workshop_peek_active', False):
+                    self._card_workshop_peek_active = False
+                else:
+                    self._close_card_workshop_popup()
+                return True
+            if getattr(self, '_card_workshop_peek_active', False):
+                return True
+            elif event.key == pygame.K_RETURN:
+                self._card_workshop_finish()
+                return True
+            elif event.key == pygame.K_UP:
+                self._card_workshop_cursor_y = max(0, self._card_workshop_cursor_y - 1)
+                return True
+            elif event.key == pygame.K_DOWN:
+                self._card_workshop_cursor_y = min(6, self._card_workshop_cursor_y + 1)
+                return True
+            elif event.key == pygame.K_LEFT:
+                self._card_workshop_cursor_x = max(0, self._card_workshop_cursor_x - 1)
+                return True
+            elif event.key == pygame.K_RIGHT:
+                self._card_workshop_cursor_x = min(6, self._card_workshop_cursor_x + 1)
+                return True
+            elif event.key == pygame.K_SPACE:
+                # Blok yerleştir / sil
+                cx, cy = self._card_workshop_cursor_x, self._card_workshop_cursor_y
+                if self._card_workshop_grid[cy][cx] is not None:
+                    # Sil
+                    temp = self._card_workshop_grid[cy][cx]
+                    self._card_workshop_grid[cy][cx] = None
+                    if self._card_workshop_count_blocks() > 0 and not self._card_workshop_is_connected():
+                        self._card_workshop_grid[cy][cx] = temp
+                        self._set_localized_workshop_message('mystery_workshop_remove_disconnect', 1.5, 'Silme baglantıyı koparir!')
+                    else:
+                        self._set_localized_workshop_message('mystery_workshop_block_removed', 1.0, 'Blok silindi.')
+                else:
+                    # Yerleştir
+                    if self._card_workshop_count_blocks() >= 7:
+                        self._set_localized_workshop_message('mystery_workshop_max_blocks', 1.5, 'Maks 7 blok!')
+                    else:
+                        self._card_workshop_grid[cy][cx] = {'color': self._card_workshop_color}
+                        if self._card_workshop_count_blocks() > 1 and not self._card_workshop_is_connected():
+                            self._card_workshop_grid[cy][cx] = None
+                            self._set_localized_workshop_message('mystery_workshop_connected', 1.5, 'Bloklar birbirine bagli olmali!')
+                        else:
+                            remaining = 7 - self._card_workshop_count_blocks()
+                            self._set_localized_workshop_message('mystery_workshop_block_added', 1.0, 'Blok eklendi. Kalan: {remaining}', remaining=remaining)
+                return True
+        elif event.type == pygame.MOUSEBUTTONDOWN:
+            pos = normalize_mouse_pos(getattr(event, 'pos', None)) or getattr(event, 'pos', None)
+            peek_rect = getattr(self, '_card_workshop_peek_rect', None)
+            if event.button == 1 and pos and peek_rect and peek_rect.collidepoint(pos):
+                self._card_workshop_peek_active = not getattr(self, '_card_workshop_peek_active', False)
+                return True
+            if getattr(self, '_card_workshop_peek_active', False):
+                return True
+            # Mouse ile tıklanabilir grid
+            if pos and hasattr(self, '_card_workshop_grid_rect'):
+                gr = self._card_workshop_grid_rect
+                if gr.collidepoint(pos):
+                    cell_size = gr.width // 7
+                    mx = (pos[0] - gr.x) // cell_size
+                    my = (pos[1] - gr.y) // cell_size
+                    if 0 <= mx < 7 and 0 <= my < 7:
+                        self._card_workshop_cursor_x = mx
+                        self._card_workshop_cursor_y = my
+                        # Sol tık = yerleştir, sağ tık = sil
+                        if event.button == 1:
+                            if self._card_workshop_grid[my][mx] is None:
+                                if self._card_workshop_count_blocks() < 7:
+                                    self._card_workshop_grid[my][mx] = {'color': self._card_workshop_color}
+                                    if self._card_workshop_count_blocks() > 1 and not self._card_workshop_is_connected():
+                                        self._card_workshop_grid[my][mx] = None
+                                        self._set_localized_workshop_message('mystery_workshop_connected', 1.5, 'Bloklar birbirine bagli olmali!')
+                                    else:
+                                        remaining = 7 - self._card_workshop_count_blocks()
+                                        self._set_localized_workshop_message('mystery_workshop_block_added', 1.0, 'Blok eklendi. Kalan: {remaining}', remaining=remaining)
+                                else:
+                                    self._set_localized_workshop_message('mystery_workshop_max_blocks', 1.5, 'Maks 7 blok!')
+                            else:
+                                # Zaten blok var, sil
+                                temp = self._card_workshop_grid[my][mx]
+                                self._card_workshop_grid[my][mx] = None
+                                if self._card_workshop_count_blocks() > 0 and not self._card_workshop_is_connected():
+                                    self._card_workshop_grid[my][mx] = temp
+                                    self._set_localized_workshop_message('mystery_workshop_remove_disconnect', 1.5, 'Silme baglantıyı koparir!')
+                                else:
+                                    self._set_localized_workshop_message('mystery_workshop_block_removed', 1.0, 'Blok silindi.')
+                        elif event.button == 3:
+                            if self._card_workshop_grid[my][mx] is not None:
+                                temp = self._card_workshop_grid[my][mx]
+                                self._card_workshop_grid[my][mx] = None
+                                if self._card_workshop_count_blocks() > 0 and not self._card_workshop_is_connected():
+                                    self._card_workshop_grid[my][mx] = temp
+                                    self._set_localized_workshop_message('mystery_workshop_remove_disconnect', 1.5, 'Silme baglantıyı koparir!')
+                                else:
+                                    self._set_localized_workshop_message('mystery_workshop_block_removed', 1.0, 'Blok silindi.')
+                    return True
+        return False
+
+    def _draw_card_workshop_popup(self) -> None:
+        """Kart modundaki mini blok atölyesi popup'ını çizer."""
+        if not getattr(self, '_card_workshop_active', False):
+            return
+
+        active_width, active_height = self._active_ui_size()
+        ui_scale = self._card_ui_scale()
+
+        def s(value: int) -> int:
+            return max(1, int(round(value * ui_scale)))
+
+        if getattr(self, '_card_workshop_peek_active', False):
+            peek_btn_size = s(48)
+            peek_btn_x = active_width - peek_btn_size - s(20)
+            peek_btn_y = active_height - peek_btn_size - s(20)
+            self._card_workshop_peek_rect = pygame.Rect(peek_btn_x, peek_btn_y, peek_btn_size, peek_btn_size)
+
+            center = self._card_workshop_peek_rect.center
+            radius = peek_btn_size // 2
+            pygame.draw.circle(self.screen, (255, 255, 255), center, radius)
+            pygame.draw.circle(self.screen, (100, 200, 255), center, radius, 2)
+
+            peek_icon_surf = self._get_cached_peek_icon(int(peek_btn_size * 0.65))
+            if peek_icon_surf:
+                icon_rect = peek_icon_surf.get_rect(center=self._card_workshop_peek_rect.center)
+                self.screen.blit(peek_icon_surf, icon_rect)
+            else:
+                fallback_font = retro_style.get_font(s(20), bold=True)
+                eye_surf = fallback_font.render("X", True, (100, 200, 255))
+                self.screen.blit(eye_surf, eye_surf.get_rect(center=self._card_workshop_peek_rect.center))
+            return
+
+        # Popup boyutları
+        popup_width = min(s(500), max(s(320), active_width - s(24)))
+        popup_height = min(s(520), max(s(340), active_height - s(24)))
+        popup_x = max(s(12), (active_width - popup_width) // 2)
+        popup_y = max(s(12), (active_height - popup_height) // 2)
+
+        # Arka plan overlay
+        overlay = pygame.Surface((active_width, active_height), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 200))
+        self.screen.blit(overlay, (0, 0))
+
+        # Dış glow
+        glow_padding = s(15)
+        glow_rect = pygame.Rect(popup_x - glow_padding, popup_y - glow_padding, popup_width + glow_padding * 2, popup_height + glow_padding * 2)
+        glow_surf = pygame.Surface((glow_rect.width, glow_rect.height), pygame.SRCALPHA)
+        pygame.draw.rect(glow_surf, (255, 200, 80, 40), glow_surf.get_rect(), border_radius=s(20))
+        self.screen.blit(glow_surf, glow_rect.topleft)
+
+        # Panel
+        popup_rect = pygame.Rect(popup_x, popup_y, popup_width, popup_height)
+        self._card_workshop_popup_rect = popup_rect.copy()
+        retro_style.draw_glass_panel(self.screen, popup_rect, alpha=240, border_color=(255, 200, 80), glow=True)
+
+        peek_btn_size = s(36)
+        peek_btn_x = popup_rect.right - peek_btn_size - s(16)
+        peek_btn_y = popup_rect.y + s(14)
+        self._card_workshop_peek_rect = pygame.Rect(peek_btn_x, peek_btn_y, peek_btn_size, peek_btn_size)
+
+        mouse_pos = get_mouse_pos() if pygame.mouse.get_focused() else None
+        peek_hovered = mouse_pos is not None and self._card_workshop_peek_rect.collidepoint(mouse_pos)
+        center = self._card_workshop_peek_rect.center
+        radius = peek_btn_size // 2
+        pygame.draw.circle(self.screen, (255, 255, 255), center, radius)
+        border_color = (116, 190, 255) if peek_hovered else (180, 180, 200)
+        pygame.draw.circle(self.screen, border_color, center, radius, 2)
+
+        peek_icon_surf = self._get_cached_peek_icon(int(peek_btn_size * 0.65))
+        if peek_icon_surf:
+            icon_rect = peek_icon_surf.get_rect(center=self._card_workshop_peek_rect.center)
+            self.screen.blit(peek_icon_surf, icon_rect)
+        else:
+            fallback_font = retro_style.get_font(s(16), bold=True)
+            eye_surf = fallback_font.render("O", True, (116, 190, 255) if peek_hovered else (180, 180, 200))
+            self.screen.blit(eye_surf, eye_surf.get_rect(center=self._card_workshop_peek_rect.center))
+
+        count_text = self._localized_card_text('mystery_workshop_block_count', 'Blok: {count}/7', count=self._card_workshop_count_blocks())
+        info_font = self.mystery_font_small
+        count_surf = info_font.render(count_text, True, (200, 200, 210))
+
+        msg_timer = getattr(self, '_card_workshop_message_timer', 0)
+        msg_surf = None
+        if msg_timer > 0:
+            msg = getattr(self, '_card_workshop_message', '')
+            msg_surf = info_font.render(msg, True, (255, 220, 100))
+
+        compact_controls = popup_height <= s(380) or popup_width <= s(360)
+        controls_line_1 = t('card_workshop_controls_line1', 'Arrows: Move | SPACE: Place/Erase')
+        controls_line_2 = t('card_workshop_controls_line2', 'ENTER: Confirm | ESC: Cancel')
+        controls_line_3 = t('card_workshop_controls_line3', 'Mouse: Left click place/erase')
+        controls = [
+            controls_line_1,
+            controls_line_2,
+            controls_line_3,
+        ]
+        if compact_controls:
+            controls = [
+                controls_line_1,
+                controls_line_2,
+                controls_line_3,
+            ]
+        control_font = retro_style.get_font(s(14 if compact_controls else 15), bold=False)
+        control_surfs = [
+            control_font.render(line, True, (140, 140, 155))
+            for line in controls
+        ]
+
+        # Başlık
+        title_font = self.mystery_font_large
+        title_surf = title_font.render(t('block_workshop_title', 'BLOCK WORKSHOP'), True, (255, 220, 100))
+        title_rect = title_surf.get_rect(centerx=popup_rect.centerx, top=popup_y + s(12))
+        self.screen.blit(title_surf, title_rect)
+
+        # Ayırıcı çizgi
+        separator_margin = s(20)
+        separator_y = max(title_rect.bottom + s(10), self._card_workshop_peek_rect.bottom + s(8))
+        min_separator_y = popup_y + s(48)
+        max_separator_y = popup_rect.bottom - max(s(110), len(control_surfs) * control_font.get_height() + s(52))
+        separator_y = max(min_separator_y, min(separator_y, max_separator_y))
+        pygame.draw.line(
+            self.screen,
+            (255, 200, 80, 150),
+            (popup_x + separator_margin, separator_y),
+            (popup_x + popup_width - separator_margin, separator_y),
+            max(1, s(2)),
+        )
+
+        info_gap = s(10)
+        message_gap = s(6)
+        controls_gap = s(12)
+        control_line_gap = s(5 if compact_controls else 7)
+        controls_total_height = sum(surf.get_height() for surf in control_surfs)
+        if control_surfs:
+            controls_total_height += control_line_gap * (len(control_surfs) - 1)
+        # Reserve message line height always; transient status text must not resize grid area.
+        msg_line_height = info_font.get_height()
+        info_height = count_surf.get_height() + message_gap + msg_line_height
+
+        # Grid
+        grid_top = separator_y + s(14)
+        available_grid_height = popup_rect.bottom - s(14) - controls_total_height - controls_gap - info_height - info_gap - grid_top
+        available_grid_width = popup_rect.width - s(32)
+        cell_size = max(1, min(s(48), available_grid_height // 7, available_grid_width // 7))
+        grid_width = 7 * cell_size
+        grid_x = popup_x + (popup_width - grid_width) // 2
+        grid_y = grid_top
+        self._card_workshop_grid_rect = pygame.Rect(grid_x, grid_y, grid_width, grid_width)
+
+        # Grid arka planı
+        grid_padding = s(2)
+        grid_bg = pygame.Surface((grid_width + grid_padding * 2, grid_width + grid_padding * 2), pygame.SRCALPHA)
+        pygame.draw.rect(grid_bg, (20, 20, 30, 200), grid_bg.get_rect(), border_radius=s(8))
+        self.screen.blit(grid_bg, (grid_x - grid_padding, grid_y - grid_padding))
+
+        # Hücreleri çiz
+        for gy in range(7):
+            for gx in range(7):
+                cx = grid_x + gx * cell_size
+                cy = grid_y + gy * cell_size
+                cell_rect = pygame.Rect(cx, cy, max(1, cell_size - 1), max(1, cell_size - 1))
+
+                if self._card_workshop_grid[gy][gx] is not None:
+                    color = self._card_workshop_grid[gy][gx]['color']
+                    pygame.draw.rect(self.screen, color, cell_rect, border_radius=s(4))
+                    # 3D efekt
+                    lighter = tuple(min(255, int(c * 1.4)) for c in color[:3])
+                    darker = tuple(max(0, int(c * 0.4)) for c in color[:3])
+                    line_width = max(1, s(2))
+                    pygame.draw.line(self.screen, lighter, (cx, cy), (cx + cell_size - 2, cy), line_width)
+                    pygame.draw.line(self.screen, lighter, (cx, cy), (cx, cy + cell_size - 2), line_width)
+                    pygame.draw.line(self.screen, darker, (cx + 1, cy + cell_size - 2), (cx + cell_size - 2, cy + cell_size - 2), line_width)
+                    pygame.draw.line(self.screen, darker, (cx + cell_size - 2, cy + 1), (cx + cell_size - 2, cy + cell_size - 2), line_width)
+                else:
+                    pygame.draw.rect(self.screen, (40, 40, 50), cell_rect, border_radius=s(2))
+                    pygame.draw.rect(self.screen, (60, 60, 70), cell_rect, width=1, border_radius=s(2))
+
+                # Cursor
+                if gx == self._card_workshop_cursor_x and gy == self._card_workshop_cursor_y:
+                    pygame.draw.rect(self.screen, (255, 255, 255), cell_rect, width=max(1, s(2)), border_radius=s(4))
+
+        # Bilgi alanı
+        info_y = grid_y + grid_width + info_gap
+        count_rect = count_surf.get_rect(topleft=(popup_x + s(20), info_y))
+        self.screen.blit(count_surf, count_rect)
+
+        info_bottom = count_rect.bottom + message_gap + msg_line_height
+        if msg_surf is not None:
+            msg_rect = msg_surf.get_rect(midtop=(popup_rect.centerx, count_rect.bottom + message_gap))
+            self.screen.blit(msg_surf, msg_rect)
+        self._card_workshop_info_rect = pygame.Rect(
+            popup_x + s(20),
+            info_y,
+            popup_width - s(40),
+            max(1, info_bottom - info_y),
+        )
+
+        # Kontroller
+        controls_y = popup_rect.bottom - s(14) - controls_total_height
+        self._card_workshop_controls_rect = pygame.Rect(
+            popup_x + s(16),
+            controls_y,
+            popup_width - s(32),
+            max(1, controls_total_height),
+        )
+        control_y = controls_y
+        for ctrl_surf in control_surfs:
+            ctrl_rect = ctrl_surf.get_rect(center=(popup_rect.centerx, control_y + ctrl_surf.get_height() // 2))
+            self.screen.blit(ctrl_surf, ctrl_rect)
+            control_y += ctrl_surf.get_height() + control_line_gap
+
+    # === RENK TEMİZLEME KARTI METODU ===
+
+    def _apply_color_cleanse(self) -> None:
+        """Rastgele bir renkteki tüm blokları temizler, gravity uygular."""
+        # Tahtadaki tüm benzersiz renkleri topla
+        color_map = {}
+        for y in range(self.board.height):
+            for x in range(self.board.width):
+                if self.board.occupancy[y][x]:
+                    color = self.board.grid[y][x]
+                    if color and color != BLACK:
+                        key = color[:3]
+                        if key not in color_map:
+                            color_map[key] = []
+                        color_map[key].append((x, y))
+
+        if not color_map:
+            self._set_localized_card_message('mystery_msg_color_cleanse_empty', 1.0, 'Renk Temizleme: Tahta bos!')
+            return
+
+        # Rastgele bir renk seç
+        import random as _rng
+        target_color = _rng.choice(list(color_map.keys()))
+        cells = color_map[target_color]
+
+        # O renkteki tüm blokları temizle
+        removed = 0
+        for x, y in cells:
+            self.board.grid[y][x] = BLACK
+            self.board.occupancy[y][x] = False
+            self.board.texture_grid[y][x] = None
+            self.board.gold[y][x] = False
+            try:
+                self.board.owners[y][x] = None
+            except Exception:
+                pass
+            removed += 1
+
+        # Gravity uygula - üstteki bloklar aşağı düşsün
+        self.board.apply_gravity()
+
+        # Gravity sonrası oluşan tam satırları temizle
+        try:
+            prev_score = int(getattr(self.board, 'score', 0))
+            cleared = int(self.board.clear_lines(source='card'))
+            if cleared > 0:
+                delta = int(getattr(self.board, 'score', 0)) - prev_score
+                self._post_external_line_clear(cleared, award_energy=True, score_delta=delta, source='card')
+        except Exception:
+            pass
+
+        # Skor bonus
+        try:
+            bonus = removed * 25
+            self.board.score += bonus
+        except Exception:
+            pass
+
+        r, g, b = target_color
+        self._set_localized_card_message(
+            'mystery_msg_color_cleanse_removed',
+            1.5,
+            'Renk Temizleme: {removed} blok temizlendi! (RGB:{r},{g},{b})',
+            removed=removed,
+            r=r,
+            g=g,
+            b=b,
+        )
+
+        if self.sound_enabled:
+            try:
+                self.sound.play_sound('clear')
+            except Exception:
+                pass
+
+    # === GELECEGI DEGISTIREN (FUTURE CHANGER) METODLARI ===
+    def _open_piece_selection_popup(self) -> None:
+        """Parça seçim popup'ını açar ve oyunu duraklatır."""
+        self._piece_selection_active = True
+        self._piece_selection_hover = -1
+        self._piece_selection_rects = []
+        # Hangi sıradaki parçayı değiştiriyoruz (0 = ilk, 1 = ikinci)
+        self._future_changer_target_index = 0
+        # Mouse'u görünür yap
+        pygame.mouse.set_visible(True)
+        try:
+            self._set_localized_card_message('mystery_future_popup_first_message', 10.0, '1. sıradaki parçayı seç!')
+        except Exception:
+            pass
+
+    def _close_piece_selection_popup(self) -> None:
+        """Parça seçim popup'ını kapatır."""
+        self._piece_selection_active = False
+        self._piece_selection_hover = -1
+        self._piece_selection_rects = []
+        self._future_changer_target_index = 0
+
+    def _select_future_piece(self, piece_name: str) -> None:
+        """Seçilen parçayı sıradaki parçaların yerine koyar."""
+        remaining = int(getattr(self, '_future_changer_remaining', 0) or 0)
+        if remaining <= 0:
+            self._close_piece_selection_popup()
+            return
+        
+        # Hangi sıradaki parçayı değiştiriyoruz
+        target_idx = getattr(self, '_future_changer_target_index', 0)
+        
+        # Yeni parça oluştur
+        try:
+            new_piece = self._create_named_piece(piece_name)
+            self._apply_block_style(new_piece)
+            
+            # next_piece_queue'daki parçayı değiştir
+            if hasattr(self, 'next_piece_queue') and len(self.next_piece_queue) > target_idx:
+                self.next_piece_queue[target_idx] = new_piece
+            elif hasattr(self, 'next_piece_queue'):
+                # Kuyruk yeterli uzunlukta değilse ekle
+                while len(self.next_piece_queue) <= target_idx:
+                    self.next_piece_queue.append(self.spawn_new_piece())
+                self.next_piece_queue[target_idx] = new_piece
+        except Exception as e:
+            print(f"[FutureChanger] Parça değiştirme hatası: {e}")
+        
+        self._future_changer_remaining = remaining - 1
+        self._future_changer_target_index = target_idx + 1
+        
+        if self.sound_enabled:
+            try:
+                self.sound.play_sound('rotate')
+            except Exception:
+                pass
+        
+        # Hala seçim hakkı varsa popup'ı açık tut
+        if self._future_changer_remaining > 0:
+            try:
+                self._set_localized_card_message(
+                    'mystery_future_popup_selected_next',
+                    10.0,
+                    '{piece_name} seçildi! 2. sıradaki parçayı seç!',
+                    piece_name=piece_name,
+                )
+            except Exception:
+                pass
+        else:
+            # Tüm seçimler yapıldı
+            self._close_piece_selection_popup()
+            try:
+                self._set_localized_card_message(
+                    'mystery_future_popup_selected_done',
+                    2.0,
+                    '{piece_name} seçildi! Sıradaki parçalar değiştirildi.',
+                    piece_name=piece_name,
+                )
+            except Exception:
+                pass
+
+    def _draw_piece_selection_popup(self) -> None:
+        """Parça seçim popup'ını çizer."""
+        if not getattr(self, '_piece_selection_active', False):
+            return
+
+        active_width, active_height = self._active_ui_size()
+        ui_scale = self._card_ui_scale()
+
+        def s(value: int) -> int:
+            return max(1, int(round(value * ui_scale)))
+        
+        # Mouse'u görünür yap (her frame'de)
+        pygame.mouse.set_visible(True)
+        
+        # 7 standart Quadrix parçası
+        piece_names = ['I', 'O', 'T', 'S', 'Z', 'J', 'L']
+        
+        # Popup boyutları (daha büyük)
+        popup_width = min(s(700), max(s(480), active_width - s(24)))
+        popup_height = min(s(220), max(s(180), active_height - s(24)))
+        popup_x = max(s(12), (active_width - popup_width) // 2)
+        popup_y = max(s(12), (active_height - popup_height) // 2)
+        
+        # Arka plan overlay - daha koyu
+        overlay = pygame.Surface((active_width, active_height), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 200))
+        self.screen.blit(overlay, (0, 0))
+        
+        # Dış glow efekti
+        glow_padding = s(15)
+        glow_rect = pygame.Rect(popup_x - glow_padding, popup_y - glow_padding, popup_width + glow_padding * 2, popup_height + glow_padding * 2)
+        glow_surf = pygame.Surface((glow_rect.width, glow_rect.height), pygame.SRCALPHA)
+        pygame.draw.rect(glow_surf, (180, 100, 255, 40), glow_surf.get_rect(), border_radius=s(20))
+        self.screen.blit(glow_surf, glow_rect.topleft)
+        
+        # Popup paneli
+        popup_rect = pygame.Rect(popup_x, popup_y, popup_width, popup_height)
+        self._piece_selection_popup_rect = popup_rect.copy()
+        retro_style.draw_glass_panel(
+            self.screen,
+            popup_rect,
+            alpha=240,
+            border_color=(180, 100, 255),
+            glow=True,
+        )
+        
+        # Üst dekoratif çizgi
+        line_y = popup_y + s(50)
+        pygame.draw.line(self.screen, (180, 100, 255, 150), (popup_x + s(30), line_y), (popup_x + popup_width - s(30), line_y), max(1, s(2)))
+        
+        # Başlık - hangi sıradaki parçayı seçtiğini göster
+        target_idx = getattr(self, '_future_changer_target_index', 0)
+        title_font = self.mystery_font_large
+        title_text = self._localized_card_text('mystery_future_popup_title', '{order}. Sıradaki Parçayı Seç', order=target_idx + 1)
+        title_surf = title_font.render(title_text, True, (255, 255, 255))
+        title_x = popup_x + (popup_width - title_surf.get_width()) // 2
+        self.screen.blit(title_surf, (title_x, popup_y + s(12)))
+        
+        # Parça butonları (daha büyük)
+        button_size = s(80)
+        button_spacing = s(18)
+        total_buttons_width = len(piece_names) * button_size + (len(piece_names) - 1) * button_spacing
+        start_x = popup_x + (popup_width - total_buttons_width) // 2
+        button_y = popup_y + s(65)
+        
+        mouse_pos = get_mouse_pos() if pygame.mouse.get_focused() else None
+        self._piece_selection_rects = []
+        self._piece_selection_hover = -1
+        
+        for idx, name in enumerate(piece_names):
+            btn_x = start_x + idx * (button_size + button_spacing)
+            btn_rect = pygame.Rect(btn_x, button_y, button_size, button_size)
+            self._piece_selection_rects.append((btn_rect, name))
+            
+            # Hover kontrolü
+            hovered = mouse_pos and btn_rect.collidepoint(mouse_pos)
+            if hovered:
+                self._piece_selection_hover = idx
+            
+            # Buton arka planı - yarı saydam koyu
+            btn_bg = pygame.Surface((button_size, button_size), pygame.SRCALPHA)
+            if hovered:
+                pygame.draw.rect(btn_bg, (60, 40, 80, 200), btn_bg.get_rect(), border_radius=12)
+            else:
+                pygame.draw.rect(btn_bg, (30, 20, 50, 180), btn_bg.get_rect(), border_radius=12)
+            self.screen.blit(btn_bg, btn_rect.topleft)
+            
+            # Hover'da glow efekti
+            if hovered:
+                glow_surf = pygame.Surface((button_size + s(16), button_size + s(16)), pygame.SRCALPHA)
+                pygame.draw.rect(glow_surf, (180, 100, 255, 80), glow_surf.get_rect(), border_radius=s(14))
+                self.screen.blit(glow_surf, (btn_x - s(8), button_y - s(8)))
+                # İç border
+                pygame.draw.rect(self.screen, (200, 150, 255), btn_rect, max(1, s(2)), border_radius=s(12))
+            else:
+                # Normal border
+                pygame.draw.rect(self.screen, (80, 60, 100), btn_rect, 1, border_radius=s(12))
+            
+            # Parça şeklini oyun içi bloklarla çiz
+            self._draw_game_piece_preview(btn_rect, name, hovered)
+        
+        # Alt dekoratif çizgi
+        line_y2 = popup_y + popup_height - s(40)
+        pygame.draw.line(self.screen, (180, 100, 255, 100), (popup_x + s(30), line_y2), (popup_x + popup_width - s(30), line_y2), 1)
+        
+        # İptal butonu - daha şık
+        cancel_font = self.mystery_font_small
+        cancel_text = self._localized_card_text('mystery_future_popup_cancel_label', 'ESC: Iptal')
+        cancel_surf = cancel_font.render(cancel_text, True, (150, 130, 170))
+        cancel_x = popup_x + (popup_width - cancel_surf.get_width()) // 2
+        self.screen.blit(cancel_surf, (cancel_x, popup_y + popup_height - s(30)))
+
+    def _draw_game_piece_preview(self, rect: pygame.Rect, piece_name: str, hovered: bool = False) -> None:
+        """Oyun içi blok stilini kullanarak parça önizlemesi çizer."""
+        # Parça şekilleri (4x4 grid içinde)
+        shapes = {
+            'I': [(0, 1), (1, 1), (2, 1), (3, 1)],
+            'O': [(1, 1), (2, 1), (1, 2), (2, 2)],
+            'T': [(0, 1), (1, 1), (2, 1), (1, 2)],
+            'S': [(1, 1), (2, 1), (0, 2), (1, 2)],
+            'Z': [(0, 1), (1, 1), (1, 2), (2, 2)],
+            'J': [(0, 1), (0, 2), (1, 2), (2, 2)],
+            'L': [(2, 1), (0, 2), (1, 2), (2, 2)],
+        }
+        
+        cells = shapes.get(piece_name, [])
+        if not cells:
+            return
+        
+        # Parça rengini tema'dan al (eğer varsa)
+        color = None
+        try:
+            if hasattr(self, 'theme_manager') and self.theme_manager:
+                colors = getattr(self.theme_manager, 'piece_colors', None)
+                if colors and piece_name in colors:
+                    color = colors[piece_name]
+        except Exception:
+            pass
+        
+        # Tema rengi yoksa varsayılan renkler
+        if not color:
+            default_colors = {
+                'I': (0, 240, 240),
+                'O': (240, 240, 0),
+                'T': (160, 0, 240),
+                'S': (0, 240, 0),
+                'Z': (240, 0, 0),
+                'J': (0, 0, 240),
+                'L': (240, 160, 0),
+            }
+            color = default_colors.get(piece_name, (150, 150, 150))
+        
+        # Mini blok boyutu (daha büyük)
+        mini_size = 16
+        
+        # Şekli buton içinde ortala
+        min_x = min(c[0] for c in cells)
+        max_x = max(c[0] for c in cells)
+        min_y = min(c[1] for c in cells)
+        max_y = max(c[1] for c in cells)
+        shape_width = (max_x - min_x + 1) * mini_size
+        shape_height = (max_y - min_y + 1) * mini_size
+        
+        offset_x = rect.x + (rect.width - shape_width) // 2 - min_x * mini_size
+        offset_y = rect.y + (rect.height - shape_height) // 2 - min_y * mini_size
+        
+        # Hover'da parlaklık artır
+        if hovered:
+            color = tuple(min(255, int(c * 1.3)) for c in color[:3])
+        
+        # Blokları oyun içi stilde çiz
+        for cx, cy in cells:
+            bx = offset_x + cx * mini_size
+            by = offset_y + cy * mini_size
+            
+            # Ana blok
+            block_rect = pygame.Rect(bx, by, mini_size - 1, mini_size - 1)
+            
+            # Oyun içi blok stili: gradient efekti
+            lighter = tuple(min(255, int(c * 1.4)) for c in color[:3])
+            darker = tuple(max(0, int(c * 0.4)) for c in color[:3])
+            
+            # Ana renk
+            pygame.draw.rect(self.screen, color, block_rect)
+            
+            # Üst ve sol kenar (açık) - daha kalın
+            pygame.draw.line(self.screen, lighter, (bx, by), (bx + mini_size - 2, by), 2)
+            pygame.draw.line(self.screen, lighter, (bx, by), (bx, by + mini_size - 2), 2)
+            
+            # Alt ve sağ kenar (koyu) - daha kalın
+            pygame.draw.line(self.screen, darker, (bx + 1, by + mini_size - 2), (bx + mini_size - 2, by + mini_size - 2), 2)
+            pygame.draw.line(self.screen, darker, (bx + mini_size - 2, by + 1), (bx + mini_size - 2, by + mini_size - 2), 2)
+            
+            # İç parlaklık (hover'da)
+            if hovered:
+                inner_glow = pygame.Surface((mini_size - 4, mini_size - 4), pygame.SRCALPHA)
+                inner_glow.fill((*lighter, 60))
+                self.screen.blit(inner_glow, (bx + 2, by + 2))
+
+    def _handle_piece_selection_click(self, pos: tuple[int, int]) -> bool:
+        """Parça seçim popup'ında tıklama işler. True dönerse event tüketildi."""
+        if not getattr(self, '_piece_selection_active', False):
+            return False
+        
+        for rect, name in getattr(self, '_piece_selection_rects', []):
+            if rect.collidepoint(pos):
+                self._select_future_piece(name)
+                return True
+        
+        return False
+
+    def _piece_selection_move(self, delta: int) -> None:
+        """Parça seçim popup'ında keyboard/gamepad ile focus'u kaydır."""
+        rects = getattr(self, '_piece_selection_rects', []) or []
+        if not rects:
+            return
+        count = len(rects)
+        current = int(getattr(self, '_piece_selection_index', 0) or 0)
+        new_idx = (current + delta) % count
+        self._piece_selection_index = new_idx
+
+    def _piece_selection_confirm(self) -> None:
+        """Parça seçim popup'ında keyboard/gamepad ile seçili parçayı onayla."""
+        rects = getattr(self, '_piece_selection_rects', []) or []
+        if not rects:
+            return
+        idx = int(getattr(self, '_piece_selection_index', 0) or 0)
+        idx = max(0, min(len(rects) - 1, idx))
+        _, name = rects[idx]
+        self._select_future_piece(name)
+
+
+class WideMode(Game):
+    """15 sütun genişliğinde özel tahta kullanan mod."""
+
+    def __init__(
+        self,
+        difficulty: str = "Normal",
+        sound_enabled: bool = True,
+        effects_enabled: bool = True,
+        achievement_manager=None,
+        theme_manager=None,
+        screen=None,
+        fullscreen: bool = False,
+        settings_manager=None,
+        user_manager=None,
+        game_mode: str = "wide",
+        score_manager=None,
+        sound_manager=None,
+    ) -> None:
+        self.board_width = 15
+        self.board_height = 23
+        self.extra_piece_count = 0
+        # BigSquare is intentionally rare in Wide Mode (hard piece).
+        # Count spawns since the last BigSquare so we can throttle it.
+        self._spawns_since_big_square = 0
+        super().__init__(
+            difficulty,
+            sound_enabled,
+            effects_enabled,
+            achievement_manager,
+            theme_manager,
+            screen,
+            fullscreen,
+            settings_manager,
+            user_manager,
+            game_mode,
+            sound_manager=sound_manager,
+            score_manager=score_manager,
+        )
+        self.mode_name = "WIDE MODE"
+
+        from background import BackgroundManager
+
+        self.wide_background = BackgroundManager()
+        if settings_manager:
+            transparency = settings_manager.get("bg_transparency", 0.7)
+            self.wide_background.set_transparency(transparency)
+        self._load_wide_background()
+
+        self.wide_font_large = retro_style.get_font(48, bold=False)
+        self.wide_font_medium = retro_style.get_font(36, bold=False)
+
+        print("🎮 WIDE MODE aktif. Tahta genişliği 15 sütuna çıktı.")
+
+    def _load_wide_background(self) -> None:
+        custom_bg = self.settings_manager.get("bg_wide") if self.settings_manager else None
+        if custom_bg and os.path.exists(custom_bg) and self.wide_background.load_image(custom_bg):
+            print(f"✨ Özel Wide Mode arka planı yüklendi: {os.path.basename(custom_bg)}")
+            return
+
+        default_path = os.path.join("backgrounds", "wide_background.png")
+        if os.path.exists(default_path) and self.wide_background.load_image(default_path):
+            print("✨ Wide Mode arka planı bulundu ve yüklendi.")
+        else:
+            print("⚠️ Wide Mode arka planı yok, varsayılan kullanılacak.")
+
+    def restart(self):
+        """Clear Wide mode-specific counters on restart."""
+        super().restart()
+        self.extra_piece_count = 0
+        self._spawns_since_big_square = 0
+        # Wide mode-specific reset can include background transparency adjustments if required
+
+    def _get_base_piece_factories(self):
+        factories = super()._get_base_piece_factories()
+        # Keep BigSquare out of the regular pool; it is spawned separately at a low frequency.
+        for name in EXTRA_SHAPE_NAMES:
+            if name == 'BigSquare':
+                continue
+            factories.append(self._make_named_piece_factory(name))
+        return factories
+
+    def spawn_new_piece(self) -> Piece:
+        # Spawn BigSquare roughly once per 15 pieces to keep difficulty reasonable.
+        self._spawns_since_big_square += 1
+        if self._spawns_since_big_square >= 15:
+            piece = self._create_named_piece('BigSquare')
+            identity = self._piece_identity(piece)
+            # Üst üste 3 BigSquare (veya aynı kimlik) oluştuysa BigSquare'ı ertele.
+            if self._would_exceed_max_consecutive(identity):
+                piece = super().spawn_new_piece()
+                # counter'ı resetleme: bir sonraki spawn'da tekrar denensin.
+            else:
+                self._apply_block_style(piece)
+                self._note_piece_spawn(identity)
+                self._spawns_since_big_square = 0
+        else:
+            piece = super().spawn_new_piece()
+        if getattr(piece, "name", "") in EXTRA_SHAPE_NAMES:
+            self.extra_piece_count += 1
+            print(f"✨ Wide Mode ekstra parça #{self.extra_piece_count}: {piece.name}")
+        return piece
+
+    def apply_theme_to_pieces(self) -> None:
+        # Use the shared theme + block style pipeline for every piece,
+        # including EXTRA_SHAPE_NAMES, to keep visuals consistent across modes.
+        super().apply_theme_to_pieces()
+
+    def update(self, dt: float) -> None:
+        super().update(dt)
+        self._update_ghost()
+
+    def move(self, dx: int) -> None:
+        super().move(dx)
+        self._update_ghost()
+
+    def rotate(self) -> None:
+        super().rotate()
+        self._update_ghost()
+
+    def hard_drop(self) -> None:
+        super().hard_drop()
+        if not self.game_over:
+            self._update_ghost()
+
+    def _update_ghost(self) -> None:
+        if not self.current_piece:
+            return
+        self.ghost_piece = self.current_piece.copy()
+        while self.board.is_valid_position(self.ghost_piece):
+            self.ghost_piece.y += 1
+
+    def draw_mode_overlay(self) -> None:
+        # Wide Mode: üst köşelerde metin/etiket gösterme.
+        return
+
+    def draw_board_background(self, offset_x, offset_y, board_width, board_height):  # type: ignore[override]
+        if self.wide_background.is_loaded():
+            self.wide_background.draw(self.screen, (offset_x, offset_y, board_width, board_height))
+        else:
+            super().draw_board_background(offset_x, offset_y, board_width, board_height)
+
+    def lock_piece(self) -> None:
+        super().lock_piece()
+        name = self.current_piece.name if hasattr(self.current_piece, "name") else "Klasik"
+        print(f"🔒 Wide Mode parçası kilitlendi: {name}")

@@ -1,0 +1,181 @@
+================================================================
+QUADRIX — DEĞİŞİKLİK ÖZETİ
+Tarih: 1 Mart 2026
+================================================================
+
+----------------------------------------------------------------
+
+EK GÜNCELLEME — 2 Mart 2026
+================================================================
+
+----------------------------------------------------------------
+8. TEST DOSYALARI DÜZENİ TOPARLANDI
+----------------------------------------------------------------
+- Projenin ana klasöründeki test dosyaları tek tek dağınık duruyordu.
+- Daha düzenli olması için tüm test dosyaları `tests/` klasörü altında toplandı.
+- Toplam 33 adet test dosyası taşındı.
+- Böylece ana klasör daha temiz ve okunabilir hale geldi.
+
+Yapılan küçük ayar:
+- `pytest.ini` dosyasında testlerin doğrudan `tests/` klasöründen okunması sağlandı.
+
+Not:
+- Test toplama sırasında görülen bazı import/stub kaynaklı hatalar, bu taşıma
+  işleminden önce de var olan mevcut test ortamı sorunlarıdır.
+
+----------------------------------------------------------------
+1. STEAM ACHIEVEMENTS SENKRONİZASYONU
+   Dosya: src/steam_integration.py
+----------------------------------------------------------------
+- ISteamUserStats::SetAchievement ctypes binding eklendi
+- ISteamUserStats::GetAchievement ctypes binding eklendi
+- ISteamUserStats::StoreStats ctypes binding eklendi
+- unlock_steam_achievement(api_name) public fonksiyonu eklendi
+- is_steam_achievement_unlocked(api_name) public fonksiyonu eklendi
+- sync_all_achievements(unlocked_ids, id_map) public fonksiyonu eklendi
+
+   Dosya: src/achievements.py
+----------------------------------------------------------------
+- STEAM_ACHIEVEMENT_MAP dict'i eklendi (42 oyun ID → Steam API Name eşlemesi)
+- AchievementManager.unlock() içine Steam bildirim çağrısı eklendi
+- AchievementManager.sync_to_steam() metodu eklendi
+
+   Dosya: src/main.py
+----------------------------------------------------------------
+- Oyun açılışında achievement_manager.sync_to_steam() çağrısı eklendi
+  (daha önce açılmış başarımları retroaktif olarak Steam'e senkronlar)
+
+   Dosya: test_steam_achievements_sync.py  [YENİ OLUŞTURULDU]
+----------------------------------------------------------------
+- 10 unit test: STEAM_ACHIEVEMENT_MAP tutarlılığı, unlock() Steam çağrısı,
+  sync_to_steam(), Steam olmadan graceful degradation
+
+----------------------------------------------------------------
+2. CI/CD PIPELINE
+   Dosya: .github/workflows/ci.yml  [YENİ OLUŞTURULDU]
+----------------------------------------------------------------
+- GitHub Actions workflow oluşturuldu
+- test job: ubuntu-latest / macos-latest / windows-latest × Python 3.12
+  matris build; SDL_VIDEODRIVER=dummy ile pytest çalışır
+- lint job: ruff ile src/ dizini taranır
+- Bilinen kırık test dosyaları --ignore ile hariç tutulur
+- Windows uyumlu YAML >- folded scalar syntax kullanıldı
+
+----------------------------------------------------------------
+3. MOD BAZLI BAŞARIMLAR
+   Dosya: src/achievements.py
+----------------------------------------------------------------
+11 yeni başarım eklendi:
+  sprint_sub60      — Sprint 40 satır < 60 saniye
+  sprint_sub45      — Sprint 40 satır < 45 saniye
+  ultra_50k         — Ultra modunda 50.000+ puan
+  ultra_100k        — Ultra modunda 100.000+ puan
+  survival_5min     — Survival 5 dakika hayatta kal
+  survival_10min    — Survival 10 dakika hayatta kal
+  cascade_chain_10  — Cascade 10x+ zincir combo
+  hardcore_level10  — Hardcore seviye 10'a ulaş
+  daily_7_streak    — Daily 7 gün üst üste
+  daily_30_streak   — Daily 30 gün üst üste
+  wide_200_lines    — Wide tek oyunda 200 satır
+
+  Dosya: src/game.py
+----------------------------------------------------------------
+- finalize_run() içindeki update_stats() çağrısına game_mode parametresi eklendi
+- finalize_run() içindeki update_stats() çağrısına elapsed_seconds=playtime eklendi
+
+  Dosya: src/game_modes_advanced.py
+----------------------------------------------------------------
+- update_stats() çağrısına game_mode=self.game_mode parametresi eklendi
+
+----------------------------------------------------------------
+4. TEST ORDERING DÜZELTMELERİ
+   Dosya: test_platform_utils_display_toggle.py
+----------------------------------------------------------------
+- pygame stub'ına font, mixer, mixer.music alt modülleri eklendi
+- sys.modules'e alt modül kayıtları eklendi
+
+   Dosya: test_ui_theme_font_fallback.py
+----------------------------------------------------------------
+- _ensure_clean_imports() fonksiyonu eklendi; kirli module state temizlenir
+
+   Dosya: test_menu_music_global_tick.py
+----------------------------------------------------------------
+- Constants stub yerine gerçek constants modülü import edilir (hata varsa fallback)
+
+   Dosya: test_steam_lb_id_resolution.py
+----------------------------------------------------------------
+- _import_module() içine m._PARTNER_API_KEY = 'FAKE_TEST_KEY' eklendi
+- m._APP_ID_INT = 4428040 eklendi
+
+  Sonuç: 121 geçen test → 135 geçen test (14 test düzeltildi)
+
+----------------------------------------------------------------
+5. BAĞIMLILIK YÖNETİMİ
+   Dosya: pyproject.toml  [YENİ OLUŞTURULDU]
+----------------------------------------------------------------
+- [project] metadata: name=quadrix, version=1.0.26, python>=3.12
+- [project.dependencies] runtime: pygame-ce>=2.5.6, numpy>=1.26.4, Pillow
+- [project.optional-dependencies]:
+    dev   → pytest, ruff
+    build → pyinstaller>=6.16
+    macos → pyobjc-framework-Cocoa (opsiyonel)
+- [tool.pytest.ini_options]: pythonpath, addopts
+- [tool.ruff]: target-version, line-length, select/ignore kuralları
+
+----------------------------------------------------------------
+6. ACHIEVEMENTS.PY KRİTİK HATA DÜZELTMELERİ
+   Dosya: src/achievements.py
+----------------------------------------------------------------
+BUG 1 (KRİTİK — TypeError): update_stats(game_mode='sprint') çağrısı
+  generic handler'a girince max(0, 'sprint') → TypeError ile çöküyordu.
+  Düzeltme: game_mode kwargs.pop() ile önceden ayrıştırıldı.
+
+BUG 2 (KRİTİK): Mod-bazlı statlar (sprint_best_time, survival_max_time vb.)
+  hiç hesaplanmıyordu; başarımlar asla açılamıyordu.
+  Düzeltme: update_stats() içine game_mode bazlı stat hesaplama bloğu eklendi.
+
+BUG 3 (MAJOR): save() / load() döngüsünde mod statları kaydedilmiyordu;
+  oyun kapatılınca sıfırlanıyordu.
+  Düzeltme: save()'e _MOD_STAT_KEYS listesi, load()'a yükleme bloğu eklendi.
+
+BUG 4 (MINOR): _progress_spec_for() mod başarımları için None dönüyordu;
+  progress bar gösterilmiyordu.
+  Düzeltme: 11 mod başarımı için progress spec eklendi.
+
+BUG 5 (MINOR): Sprint'te progress hesabı yanlıştı (düşük süre = iyi mantığı
+  yoktu; 999/60*100 = %100 gösteriyordu).
+  Düzeltme: _inverse_stats = ('sprint_best_time',) ile ters hesaplama eklendi.
+
+----------------------------------------------------------------
+7. SPRINT MODUNDA PAUSE TIMER DÜZELTMESİ
+   Dosya: src/game_modes.py
+----------------------------------------------------------------
+Sorun: Sprint kronometre pygame.time.get_ticks() farkı ile hesaplanıyordu.
+  Pause sırasında get_ticks() artmaya devam ettiğinden süre de artıyordu.
+
+Eklenenler:
+  __init__ / restart:
+    self._total_paused_ms = 0   — toplam duraklatma süresi birikimi
+    self._pause_start_tick = None — pause başlangıç anı
+
+  _effective_elapsed_ms() [YENİ METOD]:
+    Net geçen süreyi döndürür: get_ticks() - start_time - _total_paused_ms
+    Aktif pause varsa o anki pause süresi de düşülür.
+
+  update() başına pause izleme eklendi:
+    paused=True  → _pause_start_tick kaydedilir
+    paused=False → fark _total_paused_ms'e eklenir, _pause_start_tick sıfırlanır
+
+  _format_elapsed() ve bitiş hesaplaması:
+    _effective_elapsed_ms() kullanacak şekilde güncellendi.
+
+Test: 9 senaryo (çift pause, kesintisiz oyun, bitiş) → TÜMÜ GEÇTİ ✅
+
+----------------------------------------------------------------
+MEVCUT TEST DURUMU
+----------------------------------------------------------------
+Geçen  : 135
+Başarısız: 5  (önceden mevcut, cross-module pygame stub kirlenmesi —
+               pytest-forked veya subprocess izolasyonu gerektirir)
+Atlanan: 1   (manuel test — kasıtlı)
+----------------------------------------------------------------
