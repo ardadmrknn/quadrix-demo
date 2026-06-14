@@ -7195,11 +7195,6 @@ class MysteryMode(Game):
                     px = offset_x + int(cx * cell_size) + cell_size // 2
                     py = offset_y + int(cy * cell_size) + cell_size // 2
                     self.create_power_particles(px, py, (255, 100, 50), count=60)
-                # Patlama sonrasi asili kalan bloklari asagi dusur
-                try:
-                    self.board.apply_gravity()
-                except Exception:
-                    pass
                 # clear any new full rows created by explosion
                 prev_score_ex = int(getattr(self.board, 'score', 0))
                 extra_cleared = int(self.board.clear_lines(source='card'))
