@@ -2117,7 +2117,11 @@ class PvPGame:
                         return 'menu'
                     continue
 
-                # Game over iken controller/menu back - ana menüye dön
+                is_gamepad_event = bool(getattr(event, 'from_gamepad', False))
+
+                # Game over iken menu back - ana menüye dön.
+                # Klavyede ESC/BACKSPACE çıkış davranışını korur; gamepad'de B
+                # aynı yolu tetikler.
                 if self.game_over and event.key in (pygame.K_ESCAPE, pygame.K_BACKSPACE):
                     return 'menu'
 
@@ -2131,6 +2135,8 @@ class PvPGame:
                 
                 if self.game_over:
                     if event.key == pygame.K_r:
+                        self.restart(preserve_session=True)
+                    elif is_gamepad_event and event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
                         self.restart(preserve_session=True)
                     continue
                 

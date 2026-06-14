@@ -86,7 +86,25 @@ def _looks_like_test_stub(mod) -> bool:
 	return "/tests/" in normalized
 
 
+def _purge_foreign_callable_module(module_names: tuple[str, ...], attr_names: tuple[str, ...]) -> bool:
+	allowed_owners = set(module_names)
+	for candidate in module_names:
+		module_obj = sys.modules.get(candidate)
+		if module_obj is None:
+			continue
+		for attr_name in attr_names:
+			value = getattr(module_obj, attr_name, None)
+			owner = getattr(value, "__module__", "")
+			if callable(value) and owner not in allowed_owners:
+				for module_name in module_names:
+					sys.modules.pop(module_name, None)
+				return True
+	return False
+
+
 def _purge_leaked_test_stubs(*, skip_pygame: bool = False) -> None:
+	background_effects_purged = False
+	jelly_renderer_purged = False
 	for base_name in _MODULES_THAT_GET_STUBBED:
 		if skip_pygame and base_name == "pygame":
 			continue
@@ -96,20 +114,52 @@ def _purge_leaked_test_stubs(*, skip_pygame: bool = False) -> None:
 				continue
 			if _looks_like_test_stub(module_obj):
 				sys.modules.pop(candidate, None)
+				if base_name == "background_effects":
+					background_effects_purged = True
+				elif base_name == "renderers.jelly_renderer":
+					jelly_renderer_purged = True
 
 	# Bazi test modulleri gercek background_effects modulu icindeki shared-layer
 	# getter'ini module-level lambda ile degistiriyor. Bu, sonraki testlerde gercek
 	# layer fabrikasi yerine test override'inin sizmasina yol aciyor.
-	for candidate in ("background_effects", "src.background_effects"):
-		module_obj = sys.modules.get(candidate)
-		if module_obj is None:
-			continue
-		getter = getattr(module_obj, "get_shared_falling_blocks_layer", None)
-		owner = getattr(getter, "__module__", "")
-		if callable(getter) and owner not in ("background_effects", "src.background_effects"):
-			sys.modules.pop("background_effects", None)
-			sys.modules.pop("src.background_effects", None)
-			break
+	if _purge_foreign_callable_module(
+		("background_effects", "src.background_effects"),
+		("get_shared_falling_blocks_layer", "sync_shared_falling_blocks_appearance"),
+	):
+		background_effects_purged = True
+
+	if _purge_foreign_callable_module(
+		("renderers.jelly_renderer", "src.renderers.jelly_renderer"),
+		("draw_jelly_block", "draw_jelly_border"),
+	):
+		jelly_renderer_purged = True
+
+	if background_effects_purged:
+		for dependent in ("store_screen", "src.store_screen"):
+			sys.modules.pop(dependent, None)
+
+	if jelly_renderer_purged:
+		for dependent in (
+			"background_effects",
+			"src.background_effects",
+			"store_screen",
+			"src.store_screen",
+			"menu",
+			"src.menu",
+			"game",
+			"src.game",
+			"pvp_game",
+			"src.pvp_game",
+			"coop_game",
+			"src.coop_game",
+			"online_pvp_game",
+			"src.online_pvp_game",
+			"piece_workshop",
+			"src.piece_workshop",
+			"user_screens",
+			"src.user_screens",
+		):
+			sys.modules.pop(dependent, None)
 
 	if skip_pygame:
 		return

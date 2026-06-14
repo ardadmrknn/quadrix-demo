@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import importlib
+import sys
 
 import pygame
 
 try:
-    from .background_effects import get_shared_falling_blocks_layer  # type: ignore
-    from .background_effects import sync_shared_falling_blocks_appearance as _sync_shared_falling_blocks_appearance  # type: ignore
     from .block_skin_assets import (  # type: ignore
         BLOCK_SKIN_SLOT as _BLOCK_SKIN_SLOT,
         DEFAULT_BLOCK_SKIN_VALUE as _DEFAULT_BLOCK_SKIN_VALUE,
@@ -21,8 +21,6 @@ try:
     from .ui_scaling import get_projected_effective_scale  # type: ignore
     from .back_button import draw_back_button as _draw_shared_back_button  # type: ignore
 except Exception:
-    from background_effects import get_shared_falling_blocks_layer
-    from background_effects import sync_shared_falling_blocks_appearance as _sync_shared_falling_blocks_appearance
     from block_skin_assets import (
         BLOCK_SKIN_SLOT as _BLOCK_SKIN_SLOT,
         DEFAULT_BLOCK_SKIN_VALUE as _DEFAULT_BLOCK_SKIN_VALUE,
@@ -84,6 +82,35 @@ except Exception:
 
     def _list_pets():
         return []
+
+
+def _background_effects_module():
+    """Resolve the live background_effects module.
+
+    Test isolation sometimes reloads ``background_effects`` while keeping this
+    module cached. Looking it up lazily keeps StoreScreen bound to the current
+    shared-layer singleton instead of a stale module instance.
+    """
+    cached = sys.modules.get('background_effects')
+    if cached is not None:
+        return cached
+    cached = sys.modules.get('src.background_effects')
+    if cached is not None:
+        return cached
+    try:
+        return importlib.import_module('background_effects')
+    except Exception:
+        if __package__:
+            return importlib.import_module('.background_effects', __package__)
+        raise
+
+
+def _get_shared_falling_blocks_layer(name: str = 'default', **kwargs):
+    return _background_effects_module().get_shared_falling_blocks_layer(name, **kwargs)
+
+
+def _sync_shared_falling_blocks_appearance(*args, **kwargs):
+    return _background_effects_module().sync_shared_falling_blocks_appearance(*args, **kwargs)
 
 # Mystery (Kart Ustalığı) kart mağaza meta verisi — tek kaynak
 # (game_modes_extra.CARD_UPGRADE_FAMILIES / CARD_SINGLE_TIER_LOCKED). Mağaza
@@ -422,7 +449,7 @@ class StoreScreen:
         self._last_grid_viewport = pygame.Rect(0, 0, 0, 0)
         self._draw_scale = 1.0
         self._sweep_cat_state = SweepCatState()
-        self.background_fx = get_shared_falling_blocks_layer('default')
+        self.background_fx = _get_shared_falling_blocks_layer('default')
         # Hero CTA hit-zone - rebuilt every frame; enables click on the action button.
         self._cta_rect: pygame.Rect | None = None
         # Back affordance for mouse users. ESC/BACKSPACE keep working;

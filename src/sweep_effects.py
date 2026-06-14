@@ -719,6 +719,9 @@ def draw_line_sweep_band(
 
     normalized = normalize_line_sweep_theme(theme)
     band = pygame.Surface(rect.size, pygame.SRCALPHA)
+    wave_amplitude = max(2.0, rect.height * 0.06)
+    draw_h = max(1, int(rect.height - 2 * wave_amplitude))
+    draw_band = pygame.Surface((rect.width, draw_h), pygame.SRCALPHA)
 
     # Rainbow keeps its striped palette (the rainbow trail itself is the
     # motif). Country themes go through the unified asset pipeline so we
@@ -728,35 +731,44 @@ def draw_line_sweep_band(
     country_spec = _get_country_theme(normalized)
     if normalized == 'rainbow':
         colors = _get_line_sweep_palette(normalized)
-        stripe_height = max(1, rect.height // max(1, len(colors)))
+        stripe_height = max(1, draw_h // max(1, len(colors)))
         for index, color in enumerate(colors):
             stripe_rect = pygame.Rect(0, index * stripe_height, rect.width, stripe_height + 1)
-            pygame.draw.rect(band, (*color, 228), stripe_rect)
+            pygame.draw.rect(draw_band, (*color, 228), stripe_rect)
             if stripe_highlight_enabled and index % 2 == 0 and stripe_rect.width > 4:
                 pygame.draw.line(
-                    band,
+                    draw_band,
                     (255, 255, 255, 108),
                     (1, stripe_rect.y),
                     (stripe_rect.width - 2, stripe_rect.y),
                     1,
                 )
-        _draw_rainbow_overlay(band, rect, phase)
     elif country_spec is not None:
-        _draw_country_flag_band(band, rect, country_spec.theme_id, phase)
+        _draw_country_flag_band(draw_band, draw_band.get_rect(), country_spec.theme_id, phase)
     else:
         # Unknown theme — fall back to the palette path so we never render an
         # empty band.
         colors = _get_line_sweep_palette(normalized)
-        stripe_height = max(1, rect.height // max(1, len(colors)))
+        stripe_height = max(1, draw_h // max(1, len(colors)))
         for index, color in enumerate(colors):
             stripe_rect = pygame.Rect(0, index * stripe_height, rect.width, stripe_height + 1)
-            pygame.draw.rect(band, (*color, 228), stripe_rect)
+            pygame.draw.rect(draw_band, (*color, 228), stripe_rect)
 
     # Animated wind-shimmer pass — a soft diagonal highlight that sweeps across
     # the flag in sync with `phase`. Skipped on previews that are too short
     # for the highlight to read as anything but a stray vertical glitch.
-    if rect.height >= 24 and rect.width >= 60:
-        _apply_wind_shimmer(band, rect, phase, normalized)
+    if draw_h >= 24 and rect.width >= 60:
+        _apply_wind_shimmer(draw_band, draw_band.get_rect(), phase, normalized)
+
+    elapsed = pygame.time.get_ticks() / 1000.0
+    band.fill((0, 0, 0, 0))
+    slice_w = 2
+    for sx in range(0, rect.width, slice_w):
+        current_slice_w = min(slice_w, rect.width - sx)
+        angle = (sx * (2.0 * math.pi / 120.0)) - (elapsed * 5.0)
+        dy = int(math.sin(angle) * wave_amplitude) + int(wave_amplitude)
+        slice_rect = pygame.Rect(sx, 0, current_slice_w, draw_h)
+        band.blit(draw_band, (sx, dy), slice_rect)
 
     if border_radius > 0:
         mask = pygame.Surface(rect.size, pygame.SRCALPHA)
@@ -780,29 +792,20 @@ def _draw_country_flag_band(
     theme_id: str,
     phase: int,
 ) -> None:
-    """Asset-backed country flag tiled into the sweep band.
+    """Asset-backed country flag tiled flat into the sweep band's draw surface.
 
-    Instead of stretching a single flag across the whole band (which
-    distorted the proportions on wide sweeps), we size *one* flag to the
-    band height at its natural aspect ratio and tile it horizontally,
-    scrolling the tiles to the right. The same flag repeats behind the
-    leading copy — mirroring the scrolling card-art animation used on the
-    mystery-card selection screen. If the asset isn't available we fall
-    back to the colour palette so the band stays drawn.
+    The shared wave engine lives in ``draw_line_sweep_band`` now, so this
+    helper only prepares a flat, separator-free flag strip that can be
+    displaced later as vertical slices.
     """
     width, height = band.get_size()
     if width <= 0 or height <= 0:
         return
 
-    wave_amplitude = max(2.0, height * 0.06)
-    draw_h = max(1, int(height - 2 * wave_amplitude))
-
     aspect = _get_country_flag_aspect_ratio(theme_id)
     if aspect and aspect > 0:
-        # One un-stretched flag tile, sized to the drawable height that leaves
-        # headroom for the wave displacement at the top and bottom edges.
-        tile_w = max(1, int(round(draw_h * aspect)))
-        flag = _get_country_flag_surface(theme_id, tile_w, draw_h)
+        tile_w = max(1, int(round(height * aspect)))
+        flag = _get_country_flag_surface(theme_id, tile_w, height)
     else:
         flag = None
         tile_w = 0
@@ -822,7 +825,7 @@ def _draw_country_flag_band(
 
     tile_w = flag.get_width()
     if tile_w <= 0:
-        band.blit(flag, (0, int(wave_amplitude)))
+        band.blit(flag, (0, 0))
         return
 
     # Continuous, time-driven scroll so the motion stays smooth regardless
@@ -830,23 +833,10 @@ def _draw_country_flag_band(
     # seamless. Scrolls to the right (image enters from the left).
     elapsed = pygame.time.get_ticks() / 1000.0
     offset = int((elapsed * _FLAG_SCROLL_SPEED_PX_PER_SEC) % tile_w)
-    temp_band = pygame.Surface((width, height), pygame.SRCALPHA)
-    tile_y = int(wave_amplitude)
     x = offset - tile_w
     while x < width:
-        temp_band.blit(flag, (x, tile_y))
+        band.blit(flag, (x, 0))
         x += tile_w
-
-    slice_w = 2
-    for sx in range(0, width, slice_w):
-        current_slice_w = min(slice_w, width - sx)
-        angle = (sx * (2.0 * math.pi / 120.0)) - (elapsed * 5.0)
-        dy = int(math.sin(angle) * wave_amplitude)
-        band.blit(
-            temp_band,
-            (sx, dy),
-            area=pygame.Rect(sx, 0, current_slice_w, height),
-        )
 
 
 
@@ -880,31 +870,6 @@ def _apply_wind_shimmer(band: pygame.Surface, rect: pygame.Rect, phase: int, the
             pygame.draw.line(shimmer, (255, 255, 255, alpha), (dx + band_w, 0), (dx + band_w, height), 1)
     band.blit(shimmer, (center_x - band_w, 0))
 
-
-def _draw_rainbow_overlay(band: pygame.Surface, rect: pygame.Rect, phase: int) -> None:
-    """Soft sparkle pass that travels along the rainbow stripes.
-
-    A single bright dot per stripe at small heights (so it doesn't clump into
-    a blob in store cards), spaced more generously at larger heights for
-    in-game bands.
-    """
-    width, height = band.get_size()
-    if width < 16 or height < 8:
-        return
-    cycle = 8
-    progress = (phase % cycle) / float(cycle)
-    sparkle_x = int(width * progress)
-    radius = max(1, height // 14)
-    if radius <= 0:
-        return
-    palette_count = 6
-    stripe_h = max(1, height // palette_count)
-    # Place one sparkle near the centre of every other stripe so the rainbow
-    # shimmers without a stack of overlapping dots.
-    for i in range(0, palette_count, 2):
-        cy = stripe_h * i + stripe_h // 2
-        if 0 <= cy < height:
-            pygame.draw.circle(band, (255, 255, 255, 90), (sparkle_x, cy), radius)
 
 def compute_line_sweep_progress_speed(
     base_block_speed: float,
