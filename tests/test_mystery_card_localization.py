@@ -2,7 +2,7 @@ import os
 import sys
 from types import SimpleNamespace
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), 'src'))
 
 from game_modes_extra import MysteryCardManager, MysteryMode, get_card_description, get_card_title
 from localization import get_language, set_language

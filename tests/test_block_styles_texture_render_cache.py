@@ -10,6 +10,8 @@ SRC_DIR = os.path.join(os.path.dirname(__file__), '..', 'src')
 if SRC_DIR not in sys.path:
     sys.path.insert(0, SRC_DIR)
 
+sys.modules.pop('block_styles', None)
+sys.modules.pop('src.block_styles', None)
 from block_styles import TextureRenderCache, TextureSlice
 
 

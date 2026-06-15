@@ -8,7 +8,7 @@ try:
     from .atomic_io import atomic_write_json  # type: ignore
     from .block_skin_assets import DEFAULT_BLOCK_SKIN_VALUE  # type: ignore
     from .data_paths import get_profiles_data_dir, iter_legacy_paths, migrate_legacy_file, resolve_cloud_path, resolve_profile_path  # type: ignore
-    from .localization import t  # type: ignore
+    from . import localization  # type: ignore
     from .storage_layout import (  # type: ignore
         USERS_SCHEMA_VERSION,
         get_current_user_state_path,
@@ -30,7 +30,7 @@ except Exception:
     from atomic_io import atomic_write_json
     from block_skin_assets import DEFAULT_BLOCK_SKIN_VALUE
     from data_paths import get_profiles_data_dir, iter_legacy_paths, migrate_legacy_file, resolve_cloud_path, resolve_profile_path
-    from localization import t
+    import localization
     from storage_layout import (
         USERS_SCHEMA_VERSION,
         get_current_user_state_path,
@@ -48,6 +48,9 @@ except Exception:
         mark_chapter_completed,
         mark_lesson_completed,
     )
+
+def t(key: str, default: str = None, **kwargs) -> str:
+    return localization.t(key, default, **kwargs)
 
 DAILY_MAX_FAILURES = 3
 DAILY_HISTORY_LIMIT = 40
@@ -104,6 +107,7 @@ class UserManager:
             self.users_file = users_file
         self.users = {}
         self.current_user = None
+        self._ach_cache = {}  # Cache: {username: (mtime, set_of_unlocked_ids)}
         self.load_users()
 
     def _profile_root_dir(self) -> str:
@@ -1261,6 +1265,39 @@ class UserManager:
         self.save_users()
         return True
 
+    def is_achievement_unlocked(self, achievement_id: str, username=None) -> bool:
+        """Kullanıcının belirli bir başarımı tamamlayıp tamamlamadığını sorgular.
+
+        Mtime-tabanlı lazy caching kullanarak disk I/O ve JSON parse yükünü optimize eder.
+        """
+        user = username or self.current_user
+        if not user or user not in self.users:
+            return False
+        try:
+            ach_file = self._resolve_profile_file(user, 'achievements_file', f'achievements_{user}.json')
+            if os.path.exists(ach_file):
+                mtime = os.path.getmtime(ach_file)
+                # Cache kontrolü
+                cached = getattr(self, '_ach_cache', {}).get(user)
+                if cached is not None:
+                    cached_mtime, cached_set = cached
+                    if cached_mtime == mtime:
+                        return achievement_id in cached_set
+                
+                # Cache miss veya dosya değişmişse yeniden oku
+                with open(ach_file, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    unlocked = data.get('unlocked', {})
+                    unlocked_set = set(unlocked.keys()) if isinstance(unlocked, dict) else set()
+                
+                if not hasattr(self, '_ach_cache'):
+                    self._ach_cache = {}
+                self._ach_cache[user] = (mtime, unlocked_set)
+                return achievement_id in unlocked_set
+        except Exception:
+            pass
+        return False
+
     def upgrade_card(self, card_id, price, max_tier, username=None) -> bool:
         """Sahip olunan kartı bir üst kademeye geliştir (atomik).
 
@@ -1287,6 +1324,22 @@ class UserManager:
             return False
         if current_tier >= ceiling:
             return False
+
+        # Başarım Kilidi Kontrolü (efsanevi kademe için)
+        try:
+            from game_modes_extra import CARD_UPGRADE_FAMILIES, CARD_LEGENDARY_REQUIREMENTS
+            family_list = CARD_UPGRADE_FAMILIES.get(key)
+            if family_list and current_tier < len(family_list):
+                next_tier_info = family_list[current_tier]
+                next_card_id = next_tier_info.get('id')
+                next_rarity = next_tier_info.get('rarity')
+                if next_rarity == 'legendary' and next_card_id in CARD_LEGENDARY_REQUIREMENTS:
+                    req_ach = CARD_LEGENDARY_REQUIREMENTS[next_card_id]
+                    if not self.is_achievement_unlocked(req_ach, username=user):
+                        return False
+        except Exception:
+            pass
+
         try:
             cost = max(0, int(price or 0))
         except Exception:

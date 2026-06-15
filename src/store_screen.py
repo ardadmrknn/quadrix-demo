@@ -1600,11 +1600,32 @@ class StoreScreen:
         state = self._resolve_ownership_state(selected)
         name = self._product_title(selected)
 
-        # === Kart ürünleri ===
         if self._is_card_product(selected):
             if state == 'maxed':
                 self.status_message = self._trf(
                     'store_card_maxed', '{name} zaten en yüksek kademede.', name=name
+                )
+                return
+            if state == 'achievement_locked':
+                family = self._card_family_of(selected)
+                current_tier = self._card_current_tier(selected)
+                try:
+                    from game_modes_extra import CARD_UPGRADE_FAMILIES, CARD_LEGENDARY_REQUIREMENTS
+                    from achievements import get_achievement_name
+                    family_list = CARD_UPGRADE_FAMILIES.get(family)
+                    req_ach_name = "Başarım"
+                    if family_list and current_tier < len(family_list):
+                        next_tier_info = family_list[current_tier]
+                        next_card_id = next_tier_info.get('id')
+                        req_ach = CARD_LEGENDARY_REQUIREMENTS.get(next_card_id)
+                        if req_ach:
+                            req_ach_name = get_achievement_name(req_ach)
+                except Exception:
+                    req_ach_name = "Gerekli Başarım"
+                self.status_message = self._trf(
+                    'store_card_achievement_locked',
+                    "Efsanevi kademe kilitli. Açmak için: \"{req_ach_name}\" başarımı gerekli.",
+                    req_ach_name=req_ach_name
                 )
                 return
             # unowned (satın al) veya upgrade (geliştir) → bakiye kontrolü + modal.
@@ -1708,6 +1729,9 @@ class StoreScreen:
         if self._is_card_product(product):
             if state == 'maxed':
                 # Açılışla onay arasında tavana ulaşılmış — sadece kapat.
+                self._close_purchase_confirm()
+                return
+            if state == 'achievement_locked':
                 self._close_purchase_confirm()
                 return
             is_upgrade = (state == 'upgrade')
@@ -2402,6 +2426,27 @@ class StoreScreen:
             label = t('store_card_action_maxed', default='Maks. Kademe')
             base = (96, 188, 132)
             enabled = False
+        elif state == 'achievement_locked':
+            label = t('store_card_action_achievement_locked', default='Kilitli (Rozet)')
+            base = (120, 120, 120)
+            enabled = False
+            family = self._card_family_of(product)
+            current_tier = self._card_current_tier(product)
+            try:
+                from game_modes_extra import CARD_UPGRADE_FAMILIES, CARD_LEGENDARY_REQUIREMENTS
+                from achievements import get_achievement_name
+                family_list = CARD_UPGRADE_FAMILIES.get(family)
+                req_ach_name = "Başarım"
+                if family_list and current_tier < len(family_list):
+                    next_tier_info = family_list[current_tier]
+                    next_card_id = next_tier_info.get('id')
+                    req_ach = CARD_LEGENDARY_REQUIREMENTS.get(next_card_id)
+                    if req_ach:
+                        req_ach_name = get_achievement_name(req_ach)
+            except Exception:
+                req_ach_name = "Rozet Gerekli"
+            sub_font = retro_style.get_font(self._s(11), bold=True)
+            sub_label_surf = sub_font.render(req_ach_name, True, (220, 220, 220))
         elif state == 'upgrade':
             if affordable:
                 # Hedef enderliği etikete ekle: "Geliştir → Rare".
@@ -3293,6 +3338,8 @@ class StoreScreen:
                 return t('store_card_owned_maxed', default='Sahip — maks. kademe')
             if state == 'upgrade':
                 return t('store_card_owned_label', default='Sahip — geliştirilebilir')
+            if state == 'achievement_locked':
+                return t('store_card_owned_achievement_locked', default='Sahip — rozet gerekli')
             return t('store_unowned_label', default='Sahip olunmadı')
         if state == 'equipped':
             return t('store_owned_equipped', default='Takılı')
@@ -3309,6 +3356,8 @@ class StoreScreen:
                 return (144, 255, 186)
             if state == 'upgrade':
                 return (210, 170, 255)
+            if state == 'achievement_locked':
+                return (200, 100, 100)
             return (174, 192, 220)
         if state == 'equipped':
             return (144, 255, 186)
@@ -3324,7 +3373,27 @@ class StoreScreen:
         if self._is_card_product(product):
             if not self._card_is_owned(product):
                 return 'unowned'
-            if self._card_current_tier(product) < self._card_max_tier(product):
+            current_tier = self._card_current_tier(product)
+            max_tier = self._card_max_tier(product)
+            if current_tier < max_tier:
+                # Check if next tier is legendary and locked by achievement
+                family = self._card_family_of(product)
+                try:
+                    from game_modes_extra import CARD_UPGRADE_FAMILIES, CARD_LEGENDARY_REQUIREMENTS
+                    family_list = CARD_UPGRADE_FAMILIES.get(family)
+                    if family_list and current_tier < len(family_list):
+                        next_tier_info = family_list[current_tier]
+                        next_card_id = next_tier_info.get('id')
+                        next_rarity = next_tier_info.get('rarity')
+                        if next_rarity == 'legendary' and next_card_id in CARD_LEGENDARY_REQUIREMENTS:
+                            req_ach = CARD_LEGENDARY_REQUIREMENTS[next_card_id]
+                            um = self.user_manager
+                            if um and hasattr(um, 'is_achievement_unlocked'):
+                                username = self._get_current_username()
+                                if not um.is_achievement_unlocked(req_ach, username=username):
+                                    return 'achievement_locked'
+                except Exception:
+                    pass
                 return 'upgrade'
             return 'maxed'
 

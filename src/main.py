@@ -295,7 +295,13 @@ def _build_user_bound_views(
     highscores_file = user_manager.get_highscores_file()
 
     score_manager = ScoreManager(highscores_file)
-    achievement_manager = AchievementManager(achievements_file)
+    try:
+        achievement_manager = AchievementManager(achievements_file, user_manager=user_manager)
+    except TypeError:
+        # Fallback for tests mocking AchievementManager with single-argument constructor
+        achievement_manager = AchievementManager(achievements_file)
+        if hasattr(achievement_manager, 'user_manager'):
+            achievement_manager.user_manager = user_manager
     highscore_screen = HighScoreScreen(
         screen,
         score_manager,

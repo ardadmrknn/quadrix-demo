@@ -19,7 +19,13 @@ except Exception:
 from platform_utils import normalize_mouse_pos, get_mouse_pos, get_display_scale_factor
 
 from asset_manager import load_image
-from localization import t, get_language
+import localization
+
+def t(key: str, default: str = None, **kwargs) -> str:
+    return localization.t(key, default, **kwargs)
+
+def get_language() -> str:
+    return localization.get_language()
 from gamepad_manager import get_gamepad_manager, is_gamepad_connected
 from promptfont_support import get_action_prompt_display, render_action_prompt_surface, render_inline_action_text_surface
 try:
@@ -212,6 +218,402 @@ CARD_LOCALIZATION_ALIASES = {
     'hold_destroyer_4': 'hold_destroyer',
     'hold_destroyer_5': 'hold_destroyer',
 }
+
+
+# ============================================================================
+# KART MAĞAZA / GELİŞTİRME SİSTEMİ — TEK KAYNAK META VERİSİ
+# ============================================================================
+# Mağaza ("Kartlar" / "Kartları Geliştir") ve Mystery kart kataloğu BU veriden
+# beslenir. Drift olmaması için tek doğruluk kaynağıdır.
+#
+# Para birimi: Lunar (profil neural_fragments). Fiyatlar enderlikten türetilir.
+#
+# DİKKAT — Üç ayrı "level/tier" kavramı vardır, KARIŞTIRMA:
+#   - board.level            : oyun temposu (board.py)
+#   - card_level (XP)        : MysteryCardManager.card_level — ödül progression
+#   - card_tier (sahiplik)   : profil card_tiers — mağaza satın-alma/geliştirme
+#
+# Enderlik bazlı fiyat ölçeği (Lunar). Common ücretsiz (satılmaz).
+CARD_RARITY_PRICES: Dict[str, int] = {
+    'uncommon': 200,
+    'rare': 350,
+    'epic': 600,
+    'legendary': 1000,
+}
+
+# Enderlik -> İngilizce vitrin etiketi (catalog `tag` ile uyumlu).
+_CARD_RARITY_TAGS: Dict[str, str] = {
+    'common': 'Common',
+    'uncommon': 'Uncommon',
+    'rare': 'Rare',
+    'epic': 'Epic',
+    'legendary': 'Legendary',
+}
+
+
+def card_price_for_rarity(rarity: str) -> int:
+    """Enderliğe göre Lunar fiyatı (common = 0, ücretsiz)."""
+    return int(CARD_RARITY_PRICES.get(str(rarity or '').strip().lower(), 0))
+
+
+# Geliştirilebilir kart aileleri. Her aile için kademeler (1-tabanlı) sıralı
+# listede tanımlıdır. Kademe sözlüğü:
+#   id          : katalog girdisi id'si (K1 id'si MEVCUT karttan değişMEZ).
+#   rarity      : kademe enderliği.
+#   value_range : (low, high) — _roll_value bunu kullanır.
+#   extra       : opsiyonel ek alanlar (freeze_duration, blast_size, payload).
+#
+# `_group_id` = aile id'si; tüm kademeler bunu paylaşır (dedup + localization).
+CARD_UPGRADE_FAMILIES: Dict[str, List[Dict[str, Any]]] = {
+    'clear_rows': [
+        {'id': 'clear_rows',      'rarity': 'uncommon',  'value_range': (2, 2)},
+        {'id': 'clear_rows_rare', 'rarity': 'rare',      'value_range': (2, 3)},
+        {'id': 'clear_rows_epic', 'rarity': 'epic',      'value_range': (3, 5)},
+        {'id': 'clear_rows_leg',  'rarity': 'legendary', 'value_range': (5, 5)},
+    ],
+    'sniper_shot': [
+        {'id': 'sniper_shot',      'rarity': 'uncommon',  'value_range': (3, 3)},
+        {'id': 'sniper_shot_rare', 'rarity': 'rare',      'value_range': (4, 4)},
+        {'id': 'sniper_shot_epic', 'rarity': 'epic',      'value_range': (5, 5)},
+        {'id': 'sniper_shot_leg',  'rarity': 'legendary', 'value_range': (6, 6)},
+    ],
+    'peak_sculpt': [
+        {'id': 'peak_sculpt',      'rarity': 'uncommon',  'value_range': (2, 4)},
+        {'id': 'peak_sculpt_rare', 'rarity': 'rare',      'value_range': (3, 5)},
+        {'id': 'peak_sculpt_epic', 'rarity': 'epic',      'value_range': (8, 10)},
+        {'id': 'peak_sculpt_leg',  'rarity': 'legendary', 'value_range': (10, 15)},
+    ],
+    'bomb_master': [
+        {'id': 'bomb_master',      'rarity': 'rare',      'value_range': (3, 3)},
+        {'id': 'bomb_master_epic', 'rarity': 'epic',      'value_range': (4, 4)},
+        {'id': 'bomb_master_leg',  'rarity': 'legendary', 'value_range': (5, 5)},
+    ],
+    'combo_insurance': [
+        {'id': 'combo_insurance',      'rarity': 'rare',      'value_range': (2, 2)},
+        {'id': 'combo_insurance_epic', 'rarity': 'epic',      'value_range': (3, 3)},
+        {'id': 'combo_insurance_leg',  'rarity': 'legendary', 'value_range': (4, 4)},
+    ],
+    'hole_hunter': [
+        {'id': 'hole_hunter',      'rarity': 'rare',      'value_range': (1, 1)},
+        {'id': 'hole_hunter_epic', 'rarity': 'epic',      'value_range': (2, 2)},
+        {'id': 'hole_hunter_leg',  'rarity': 'legendary', 'value_range': (3, 3)},
+    ],
+    'rewind_power': [
+        {'id': 'rewind_power',      'rarity': 'rare',      'value_range': (3, 3)},
+        {'id': 'rewind_power_epic', 'rarity': 'epic',      'value_range': (4, 4)},
+        {'id': 'rewind_power_leg',  'rarity': 'legendary', 'value_range': (5, 5)},
+    ],
+    'hammer': [
+        {'id': 'hammer',      'rarity': 'rare',      'value_range': (3, 3)},
+        {'id': 'hammer_epic', 'rarity': 'epic',      'value_range': (4, 4)},
+        {'id': 'hammer_leg',  'rarity': 'legendary', 'value_range': (5, 5)},
+    ],
+    'perk_synergy': [
+        {'id': 'perk_synergy',      'rarity': 'rare',      'value_range': (1, 1),
+         'extra': {'payload': {'synergy_rate': 0.10}}},
+        {'id': 'perk_synergy_epic', 'rarity': 'epic',      'value_range': (1, 1),
+         'extra': {'payload': {'synergy_rate': 0.15}}},
+        {'id': 'perk_synergy_leg',  'rarity': 'legendary', 'value_range': (1, 1),
+         'extra': {'payload': {'synergy_rate': 0.20}}},
+    ],
+    'speed_burst': [
+        {'id': 'speed_burst_rare',      'rarity': 'rare',      'value_range': (25, 25),
+         'extra': {'payload': {'speed_multiplier': 1.3, 'line_multiplier': 1.3}}},
+        {'id': 'speed_burst_epic',      'rarity': 'epic',      'value_range': (40, 40),
+         'extra': {'payload': {'speed_multiplier': 1.5, 'line_multiplier': 1.5}}},
+        {'id': 'speed_burst_legendary', 'rarity': 'legendary', 'value_range': (60, 60),
+         'extra': {'payload': {'speed_multiplier': 1.75, 'line_multiplier': 2.0}}},
+    ],
+    'freeze_drop': [
+        {'id': 'freeze_drop_rare',      'rarity': 'rare',      'value_range': (3, 3),
+         'extra': {'freeze_duration': 6}},
+        {'id': 'freeze_drop_epic',      'rarity': 'epic',      'value_range': (5, 5),
+         'extra': {'freeze_duration': 10}},
+        {'id': 'freeze_drop_legendary', 'rarity': 'legendary', 'value_range': (7, 7),
+         'extra': {'freeze_duration': 15}},
+    ],
+    'nova_burst': [
+        {'id': 'nova_burst',      'rarity': 'rare',      'value_range': (3, 3),
+         'extra': {'blast_size': 3}},
+        {'id': 'nova_burst_epic', 'rarity': 'epic',      'value_range': (4, 4),
+         'extra': {'blast_size': 4}},
+        {'id': 'nova_burst_leg',  'rarity': 'legendary', 'value_range': (5, 5),
+         'extra': {'blast_size': 5}},
+    ],
+    'future_changer': [
+        {'id': 'future_changer',     'rarity': 'epic',      'value_range': (2, 2)},
+        {'id': 'future_changer_leg', 'rarity': 'legendary', 'value_range': (3, 3)},
+    ],
+    'quantum_tunneling': [
+        {'id': 'quantum_tunneling',     'rarity': 'epic',      'value_range': (3, 3)},
+        {'id': 'quantum_tunneling_leg', 'rarity': 'legendary', 'value_range': (5, 5)},
+    ],
+    'color_cleanse': [
+        {'id': 'color_cleanse',     'rarity': 'epic',      'value_range': (1, 1)},
+        {'id': 'color_cleanse_leg', 'rarity': 'legendary', 'value_range': (2, 2)},
+    ],
+    'hold_destroyer': [
+        {'id': 'hold_destroyer',   'rarity': 'common',    'value_range': (1, 1)},
+        {'id': 'hold_destroyer_2', 'rarity': 'uncommon',  'value_range': (2, 2)},
+        {'id': 'hold_destroyer_3', 'rarity': 'rare',      'value_range': (3, 3)},
+        {'id': 'hold_destroyer_4', 'rarity': 'epic',      'value_range': (4, 4)},
+        {'id': 'hold_destroyer_5', 'rarity': 'legendary', 'value_range': (5, 5)},
+    ],
+}
+
+# Başarım gereksinimleri (efsanevi kart kademeleri için)
+# card_id (legendary card id) -> achievement_id
+CARD_LEGENDARY_REQUIREMENTS: Dict[str, str] = {
+    'clear_rows_leg': 'lines_200',            # Temizlik Makinesi
+    'sniper_shot_leg': 'tetris_10',           # Quadrix Tanrısı
+    'peak_sculpt_leg': 'level_20',            # Işık Hızı
+    'bomb_master_leg': 'hardcore_level10',     # Hardcore Savaşçı
+    'combo_insurance_leg': 'combo_5',         # Kombo Ustası
+    'hole_hunter_leg': 'cascade_chain_10',     # Zincir Reaksiyonu
+    'rewind_power_leg': 'survival_10min',      # Sağ Kalan
+    'hammer_leg': 'score_100k',               # Efsane
+    'perk_synergy_leg': 'daily_30_streak',     # Disiplin Ustası
+    'speed_burst_legendary': 'sprint_sub45',  # Sprint Uzmanı
+    'freeze_drop_legendary': 'survival_5min',  # Hayatta Kalan
+    'nova_burst_leg': 'ultra_100k',           # Ultra Efsane
+    'future_changer_leg': 'campaign_level100_3star', # Efsane Kahraman
+    'quantum_tunneling_leg': 'campaign_level50_3star', # Yarı Mükemmel
+    'color_cleanse_leg': 'campaign_stars_100', # Yıldız Tanrısı
+    'hold_destroyer_5': 'games_100',          # Profesyonel
+}
+
+# Tek kademe, kilitli, GELİŞTİRİLEMEZ kartlar (satın al → o enderlikte sabit).
+# aile_id -> enderlik.
+CARD_SINGLE_TIER_LOCKED: Dict[str, str] = {
+    'laser_drill': 'epic',
+    'gravity_well': 'epic',
+    'perk_phase': 'epic',
+    'block_workshop_card': 'legendary',
+    'block_magnet': 'legendary',
+    'perk_second_pocket': 'legendary',
+    'perk_flexible_border': 'legendary',
+    'gambler_dice': 'legendary',
+    'time_capsule': 'legendary',
+    'ghost_echo': 'legendary',
+}
+
+# Common (otomatik açık, ücretsiz, satın alma/geliştirme YOK).
+CARD_FREE_COMMON_FAMILIES: frozenset[str] = frozenset({
+    'mirror_hold', 'row_shuffle', 'mini_bomb', 'reverse_debt', 'echo_drop',
+})
+
+# Common rarity ile başlayan ama K2+ paralı geliştirilebilen aileler.
+# (hold_destroyer: K1 common ücretsiz, K2-K5 paralı.)
+CARD_COMMON_START_UPGRADE_FAMILIES: frozenset[str] = frozenset({'hold_destroyer'})
+
+
+def get_card_family_max_tier(family_id: str) -> int:
+    """Geliştirilebilir ailenin tavan kademesi (kademe sayısı)."""
+    tiers = CARD_UPGRADE_FAMILIES.get(str(family_id or ''))
+    return len(tiers) if tiers else 1
+
+
+# Aile id -> K1 ikon dosya yolu eşlemesi. _build_catalog() çıktısından bir kez
+# kurulur (lazy global cache) ki her çağrıda katalog yeniden örneklenmesin.
+_FAMILY_ICON_CACHE: Dict[str, str | None] | None = None
+
+
+def _build_family_icon_cache() -> Dict[str, str | None]:
+    """_build_catalog() çıktısını tarayıp aile id -> icon_image haritası kur."""
+    global _FAMILY_ICON_CACHE
+    if _FAMILY_ICON_CACHE is not None:
+        return _FAMILY_ICON_CACHE
+    cache: Dict[str, str | None] = {}
+    try:
+        # MysteryCardManager örneklemeden, doğrudan katalog kurucusuna eriş.
+        # _build_catalog bir instance metodu olduğu için hafif bir kabuk
+        # üzerinden çağırıyoruz (yan etkisizdir; yalnızca liste döndürür).
+        mgr = MysteryCardManager.__new__(MysteryCardManager)
+        catalog = mgr._build_catalog()
+        for card in catalog:
+            group = str(card.get('_group_id') or card.get('id') or '')
+            if not group:
+                continue
+            # K1 (tier == 1 veya grup id == kart id) ikonunu tercih et.
+            is_k1 = (str(card.get('id')) == group) or (int(card.get('tier', 1) or 1) == 1)
+            if group not in cache or is_k1:
+                cache[group] = card.get('icon_image')
+    except Exception:
+        cache = {}
+    _FAMILY_ICON_CACHE = cache
+    return cache
+
+
+def _family_icon_path(family_id: str) -> str | None:
+    """Bir kart ailesinin K1 ikon dosya yolu (yoksa None)."""
+    cache = _build_family_icon_cache()
+    return cache.get(str(family_id or ''))
+
+
+def get_card_purchase_price(family_id: str) -> int:
+    """Bir ailenin satın alma (K1) fiyatı (Lunar)."""
+    fid = str(family_id or '')
+    if fid in CARD_UPGRADE_FAMILIES:
+        return card_price_for_rarity(CARD_UPGRADE_FAMILIES[fid][0]['rarity'])
+    if fid in CARD_SINGLE_TIER_LOCKED:
+        return card_price_for_rarity(CARD_SINGLE_TIER_LOCKED[fid])
+    return 0
+
+
+def get_card_upgrade_price(family_id: str, current_tier: int) -> int:
+    """current_tier -> current_tier+1 geliştirmesinin fiyatı (Lunar)."""
+    fid = str(family_id or '')
+    tiers = CARD_UPGRADE_FAMILIES.get(fid)
+    if not tiers:
+        return 0
+    next_index = int(current_tier)  # current_tier 1-tabanlı; next kademe listede index == current_tier
+    if 0 <= next_index < len(tiers):
+        return card_price_for_rarity(tiers[next_index]['rarity'])
+    return 0
+
+
+def _apply_card_family_metadata(cards: List[Dict]) -> List[Dict]:
+    """Katalog kartlarını tek-kaynak meta veriye göre normalize et / genişlet.
+
+    - Geliştirilebilir aile kademeleri: mevcut K1 kartına `_group_id`+`tier`
+      eklenir; eksik üst kademe varyantları K1 klonlanarak üretilir.
+    - Tek-kademe kilitli kartlar: enderlik meta'dan senkronlanır, `tier=1`.
+    - value_range / rarity / tag / ek alanlar (freeze_duration, blast_size,
+      payload) meta'dan uygulanır.
+
+    K1 id'leri ASLA değişmez (save-compat + effect dalı).
+    """
+    by_id: Dict[str, Dict] = {str(c.get('id')): c for c in cards if c.get('id')}
+    result: List[Dict] = list(cards)
+
+    def _annotate_tier(card: Dict, family_id: str, tier_index: int, spec: Dict) -> None:
+        card['_group_id'] = family_id
+        card['tier'] = tier_index + 1
+        card['rarity'] = spec['rarity']
+        card['tag'] = _CARD_RARITY_TAGS.get(spec['rarity'], card.get('tag', 'Bonus'))
+        vr = spec.get('value_range')
+        if vr is not None:
+            card['value_range'] = tuple(vr)
+            try:
+                card['base'] = int(vr[0])
+            except Exception:
+                pass
+        extra = spec.get('extra') or {}
+        for key, val in extra.items():
+            if key == 'payload':
+                merged = dict(card.get('payload') or {})
+                merged.update(val)
+                card['payload'] = merged
+            else:
+                card[key] = val
+
+    for family_id, tiers in CARD_UPGRADE_FAMILIES.items():
+        template = by_id.get(family_id)
+        for tier_index, spec in enumerate(tiers):
+            variant_id = spec['id']
+            existing = by_id.get(variant_id)
+            if existing is not None:
+                _annotate_tier(existing, family_id, tier_index, spec)
+            else:
+                # Üst kademe varyantı yok → K1'i klonla, kademe alanlarını uygula.
+                if template is None:
+                    continue
+                from copy import deepcopy as _deepcopy
+                clone = _deepcopy(template)
+                clone['id'] = variant_id
+                # Klonda eski K1 styling korunur; sadece kademe alanları değişir.
+                _annotate_tier(clone, family_id, tier_index, spec)
+                result.append(clone)
+                by_id[variant_id] = clone
+
+    # Tek-kademe kilitli kartlar: enderlik senkronu + tier=1.
+    for family_id, rarity in CARD_SINGLE_TIER_LOCKED.items():
+        card = by_id.get(family_id)
+        if card is not None:
+            card['rarity'] = rarity
+            card['tier'] = 1
+
+    return result
+
+
+def get_store_card_families() -> List[Dict[str, Any]]:
+    """Mağaza için satılabilir/geliştirilebilir kart ailelerinin meta listesi.
+
+    Tek kaynak (CARD_UPGRADE_FAMILIES + CARD_SINGLE_TIER_LOCKED) üzerinden
+    türetilir; store_screen bu listeden ürünleri kurar. Common ücretsiz
+    aileler (CARD_FREE_COMMON_FAMILIES) dahil DEĞİLDİR (satılmaz).
+
+    Dönen her giriş:
+        family_id      : aile id'si (örn. "clear_rows")
+        base_rarity    : K1 enderliği
+        purchase_price : satın alma (K1) fiyatı (common-start için K1 ücretsiz)
+        max_tier       : tavan kademe sayısı
+        upgradeable    : max_tier > 1
+        common_start   : K1 common ve ücretsiz açık mı (hold_destroyer)
+        tier_prices    : [None, price2, price3, ...] (index = ulaşılan tier,
+                         current_tier -> current_tier+1 fiyatı). index 0 = K1
+                         satın alma fiyatı.
+    """
+    families: List[Dict[str, Any]] = []
+
+    for family_id, tiers in CARD_UPGRADE_FAMILIES.items():
+        common_start = family_id in CARD_COMMON_START_UPGRADE_FAMILIES
+        base_rarity = tiers[0]['rarity']
+        max_tier = len(tiers)
+        # tier_prices[i] = i. kademeden (i+1). kademeye geçiş fiyatı.
+        # index 0: K1 satın alma (common-start ise 0 / ücretsiz).
+        tier_prices: List[int] = []
+        for i, spec in enumerate(tiers):
+            tier_prices.append(card_price_for_rarity(spec['rarity']))
+        purchase_price = 0 if common_start else tier_prices[0]
+        families.append({
+            'family_id': family_id,
+            'base_rarity': base_rarity,
+            'purchase_price': purchase_price,
+            'max_tier': max_tier,
+            'upgradeable': max_tier > 1,
+            'common_start': common_start,
+            'tier_prices': tier_prices,
+            'tier_rarities': [spec['rarity'] for spec in tiers],
+            'icon_image': _family_icon_path(family_id),
+        })
+
+    for family_id, rarity in CARD_SINGLE_TIER_LOCKED.items():
+        families.append({
+            'family_id': family_id,
+            'base_rarity': rarity,
+            'purchase_price': card_price_for_rarity(rarity),
+            'max_tier': 1,
+            'upgradeable': False,
+            'common_start': False,
+            'tier_prices': [card_price_for_rarity(rarity)],
+            'tier_rarities': [rarity],
+            'icon_image': _family_icon_path(family_id),
+        })
+
+    return families
+
+
+def get_card_tier_rarity(family_id: str, tier: int) -> str | None:
+    """1-tabanlı `tier` kademesinin enderliği. Geçersizse None.
+
+    Tek-kaynak (CARD_UPGRADE_FAMILIES / CARD_SINGLE_TIER_LOCKED) üzerinden,
+    renk eşleşmesine GÜVENMEDEN gerçek tier→rarity verisini döndürür.
+    """
+    fid = str(family_id or '')
+    try:
+        tier_int = int(tier)
+    except Exception:
+        return None
+    if fid in CARD_UPGRADE_FAMILIES:
+        tiers = CARD_UPGRADE_FAMILIES[fid]
+        idx = tier_int - 1
+        if 0 <= idx < len(tiers):
+            return tiers[idx]['rarity']
+        return None
+    if fid in CARD_SINGLE_TIER_LOCKED:
+        return CARD_SINGLE_TIER_LOCKED[fid] if tier_int == 1 else None
+    return None
 
 
 class _SafeCardFormatDict(dict):

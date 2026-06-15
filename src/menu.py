@@ -7967,14 +7967,33 @@ class AchievementScreen:
             desc_surface = self.font_desc.render(desc_text, True, desc_color)
             self.screen.blit(desc_surface, (text_left, row_rect.y + _s(52)))
 
+            # Her başarımın ne kadar Lunar ödülü verdiğini al ve çiz
+            from achievements import ACHIEVEMENT_REWARDS
+            reward_amt = ACHIEVEMENT_REWARDS.get(str(ach.get('id', '')), 0)
+            reward_surf = None
+            if reward_amt > 0:
+                reward_text = t('achievement_reward_format', reward=reward_amt)
+                reward_surf = self.font_hint.render(reward_text, True, (236, 203, 92))
+
             meta_top = row_rect.y + _s(16)
             category_label = self._category_text(self._category_for_achievement(str(ach.get('id', ''))))[0]
             if self.selected_category == 'all':
                 category_meta = self.font_hint.render(category_label, True, self._blend_color(category_color, UIColors.TEXT_SECONDARY, 0.35))
                 category_meta_rect = category_meta.get_rect(right=row_rect.right - _s(18), top=meta_top)
                 self.screen.blit(category_meta, category_meta_rect)
+                
+                # Ödülü soluna çiz
+                if reward_surf:
+                    reward_rect = reward_surf.get_rect(right=category_meta_rect.left - _s(12), top=meta_top)
+                    self.screen.blit(reward_surf, reward_rect)
+                
                 meta_y = category_meta_rect.bottom + _s(10)
             else:
+                # Kategori seçilmişse, direkt sağ üst köşeye çiz
+                if reward_surf:
+                    reward_rect = reward_surf.get_rect(right=row_rect.right - _s(18), top=meta_top)
+                    self.screen.blit(reward_surf, reward_rect)
+                
                 meta_y = row_rect.centery - self.font_desc.get_height() // 2
 
             if ach['unlocked'] and ach['unlock_date']:

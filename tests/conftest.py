@@ -19,6 +19,31 @@ if str(REPO_ROOT) not in sys.path:
 if str(SRC_ROOT) not in sys.path:
 	sys.path.insert(0, str(SRC_ROOT))
 
+# localization orijinal fonksiyonlarını yedekle
+try:
+	import localization
+	_orig_loc_t = getattr(localization, "t", None)
+	_orig_loc_set_language = getattr(localization, "set_language", None)
+	_orig_loc_get_language = getattr(localization, "get_language", None)
+except Exception:
+	_orig_loc_t = None
+	_orig_loc_set_language = None
+	_orig_loc_get_language = None
+
+def _sync_sys_modules_aliases():
+	"""src.* ve normal modül anahtarlarını sys.modules üzerinde eşitler."""
+	for key in list(sys.modules.keys()):
+		if key.startswith("src."):
+			alias = key[4:]
+			if sys.modules[key] is not None:
+				if alias not in sys.modules or sys.modules[alias] is not sys.modules[key]:
+					sys.modules[alias] = sys.modules[key]
+		elif key in _MODULES_THAT_GET_STUBBED:
+			alias = f"src.{key}"
+			if sys.modules[key] is not None:
+				if alias not in sys.modules or sys.modules[alias] is not sys.modules[key]:
+					sys.modules[alias] = sys.modules[key]
+
 
 _MODULES_THAT_GET_STUBBED = {
 	"pygame",
@@ -27,6 +52,7 @@ _MODULES_THAT_GET_STUBBED = {
 	"retro_style",
 	"ui_theme",
 	"background_effects",
+	"background",
 	"renderers",
 	"renderers.jelly_renderer",
 	"block_styles",
@@ -250,11 +276,39 @@ def pytest_pycollect_makemodule(module_path, parent):
 
 @pytest.fixture(autouse=True)
 def _isolate_test_module_stubs(request: pytest.FixtureRequest):
+	_sync_sys_modules_aliases()
 	_purge_leaked_test_stubs(skip_pygame=True)
 	_reset_ui_scale_preset()
 	if not _test_requires_runtime_pygame_stub(request):
 		_purge_leaked_pygame_stubs()
+
+	# sys.modules yedeğini temizlikten SONRA al
+	sys_modules_backup = dict(sys.modules)
 	yield
+	
+	# sys.modules'u geri yükle
+	current_keys = list(sys.modules.keys())
+	for key in current_keys:
+		if key not in sys_modules_backup:
+			sys.modules.pop(key, None)
+	for key, value in sys_modules_backup.items():
+		sys.modules[key] = value
+
+	# Akıllı localization stub temizliği
+	try:
+		for loc_key in ('localization', 'src.localization'):
+			if loc_key in sys.modules:
+				loc = sys.modules[loc_key]
+				set_lang_func = getattr(loc, 'set_language', None)
+				if set_lang_func and hasattr(set_lang_func, '__name__') and set_lang_func.__name__ == '<lambda>':
+					sys.modules.pop(loc_key, None)
+		# Eğer localization hala yüklüyse dilini varsayılana sıfırla
+		if 'localization' in sys.modules:
+			sys.modules['localization'].set_language(sys.modules['localization'].DEFAULT_LANGUAGE)
+	except Exception:
+		pass
+
+	_sync_sys_modules_aliases()
 	_purge_leaked_test_stubs(skip_pygame=True)
 	_purge_leaked_pygame_stubs()
 	_reset_ui_scale_preset()

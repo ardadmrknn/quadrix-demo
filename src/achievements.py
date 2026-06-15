@@ -9,7 +9,10 @@ from datetime import datetime
 import constants
 from atomic_io import atomic_write_json
 from data_paths import iter_legacy_paths, migrate_legacy_file, resolve_data_path
-from localization import t
+import localization
+
+def t(key: str, default: str = None, **kwargs) -> str:
+    return localization.t(key, default, **kwargs)
 
 # ---------------------------------------------------------------------------
 # Oyun içi achievement ID → Steamworks API Name eşlemesi
@@ -382,10 +385,64 @@ def get_achievement_desc(achievement_id: str) -> str:
     return ''
 
 
+# Başarımların tamamlanması durumunda verilecek Lunar (Nöral Parça) ödül miktarları
+ACHIEVEMENT_REWARDS = {
+    # Starter (100 Lunar)
+    'first_game': 100,
+    'first_line': 100,
+    'first_tetris': 100,
+    
+    # Common (150 Lunar)
+    'score_1k': 150,
+    'lines_10': 150,
+    'level_5': 150,
+    'games_10': 150,
+    
+    # Rare (300 Lunar)
+    'score_10k': 300,
+    'lines_50': 300,
+    'tetris_5': 300,
+    'level_10': 300,
+    'games_50': 300,
+    'combo_5': 300,
+    
+    # Epic (500 Lunar)
+    'score_50k': 500,
+    'lines_100': 500,
+    'level_15': 500,
+    'games_100': 500,
+    'pvp_first_win': 500,
+    'campaign_stars_10': 500,
+    'campaign_stars_30': 500,
+    'sprint_sub60': 500,
+    'ultra_50k': 500,
+    'survival_5min': 500,
+    
+    # Legendary (1000 Lunar)
+    'score_100k': 1000,
+    'lines_200': 1000,
+    'tetris_10': 1000,
+    'level_20': 1000,
+    'pvp_10_wins': 1000,
+    'campaign_stars_50': 1000,
+    'campaign_stars_100': 1000,
+    'campaign_level50_3star': 1000,
+    'campaign_level100_3star': 1000,
+    'sprint_sub45': 1000,
+    'ultra_100k': 1000,
+    'survival_10min': 1000,
+    'cascade_chain_10': 1000,
+    'hardcore_level10': 1000,
+    'daily_7_streak': 1000,
+    'daily_30_streak': 1000,
+    'wide_200_lines': 1000,
+}
+
+
 class AchievementManager:
     """Başarı yöneticisi"""
     
-    def __init__(self, filename='achievements.json'):
+    def __init__(self, filename='achievements.json', user_manager=None):
         """Achievement manager başlat"""
         if isinstance(filename, str) and filename:
             self.filename = resolve_data_path(filename)
@@ -395,6 +452,8 @@ class AchievementManager:
             self.filename = filename
             
         self.unlocked = {}  # {achievement_id: unlock_date}
+        self.claimed_rewards = set()  # Kazanılan ödülleri takip eden küme
+        self.user_manager = user_manager
         self.stats = {
             'total_games': 0,
             'total_lines': 0,
@@ -410,6 +469,27 @@ class AchievementManager:
         }
         self.new_achievements = []  # Yeni açılan başarılar (gösterim için)
         self.load()
+        if self.user_manager:
+            self.grant_unclaimed_rewards()
+            
+    def grant_unclaimed_rewards(self):
+        """Geriye dönük veya kazanılan ancak henüz verilmeyen Lunar ödüllerini topluca profile yazar."""
+        if not self.user_manager or not hasattr(self.user_manager, 'add_fragments'):
+            return
+        updated = False
+        for ach_id in list(self.unlocked.keys()):
+            if ach_id in ACHIEVEMENT_REWARDS and ach_id not in self.claimed_rewards:
+                reward = ACHIEVEMENT_REWARDS[ach_id]
+                if reward > 0:
+                    try:
+                        self.user_manager.add_fragments(reward)
+                        self.claimed_rewards.add(ach_id)
+                        updated = True
+                    except Exception as e:
+                        if constants.DEBUG_MODE:
+                            print(f"[UYARI] Geriye dönük başarım ödülü verilemedi ({ach_id}): {e}")
+        if updated:
+            self.save()
     
     def load(self):
         """Başarıları yükle"""
@@ -426,6 +506,12 @@ class AchievementManager:
                         }
                     else:
                         self.unlocked = {}
+                    
+                    loaded_claimed = data.get('claimed_rewards', [])
+                    if isinstance(loaded_claimed, list):
+                        self.claimed_rewards = set(loaded_claimed)
+                    else:
+                        self.claimed_rewards = set()
                     loaded_stats = data.get('stats', {})
                     
                     # Stats'ı güncelle (varsayılanlarla birleştir)
@@ -485,6 +571,7 @@ class AchievementManager:
                     for achievement_id, unlock_date in self.unlocked.items()
                     if achievement_id in ACHIEVEMENTS
                 },
+                'claimed_rewards': list(getattr(self, 'claimed_rewards', set())),
                 'stats': clean_stats
             }
             atomic_write_json(self.filename, data, indent=2, ensure_ascii=False)
@@ -579,13 +666,32 @@ class AchievementManager:
                     print(f"[UYARI] Başarı kontrolü hata ({ach_id}): {e}")
     
     def unlock(self, achievement_id):
-        """Başarıyı aç ve Steam'e senkronla"""
+        """Başarıyı aç, Lunar ödülü ver ve Steam'e senkronla"""
         if achievement_id not in self.unlocked:
             self.unlocked[achievement_id] = datetime.now().strftime('%Y-%m-%d %H:%M')
             self.new_achievements.append(achievement_id)
             if constants.DEBUG_MODE:
                 name = ACHIEVEMENTS.get(achievement_id, {}).get('name', achievement_id)
                 print(f"[ACH] Yeni başarı: {name}")
+            
+            # Lunar ödülü ver
+            um = getattr(self, 'user_manager', None)
+            claimed = getattr(self, 'claimed_rewards', None)
+            if um and hasattr(um, 'add_fragments'):
+                if achievement_id in ACHIEVEMENT_REWARDS and (claimed is None or achievement_id not in claimed):
+                    reward = ACHIEVEMENT_REWARDS[achievement_id]
+                    if reward > 0:
+                        try:
+                            um.add_fragments(reward)
+                            if claimed is not None:
+                                claimed.add(achievement_id)
+                        except Exception as e:
+                            if constants.DEBUG_MODE:
+                                print(f"[UYARI] Başarım ödülü verilemedi ({achievement_id}): {e}")
+            
+            # Değişiklikleri hemen kaydet
+            self.save()
+
             # Steam'e bildir
             steam_name = STEAM_ACHIEVEMENT_MAP.get(achievement_id)
             if steam_name:
