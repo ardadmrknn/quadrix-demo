@@ -14,19 +14,10 @@ try:
         is_default_block_skin as _is_default_block_skin,
         list_block_skins as _list_block_skins,
     )
-    from .country_sweep_assets import (  # type: ignore
-        list_country_themes as _list_country_themes,
-    )
-    from .pet_assets import (  # type: ignore
-        DEFAULT_PET_VALUE as _DEFAULT_PET_VALUE,
-        PET_SLOT as _PET_SLOT,
-        list_pets as _list_pets,
-    )
     from .localization import t  # type: ignore
     from .platform_utils import normalize_mouse_pos, get_mouse_pos  # type: ignore
     from .renderers.jelly_renderer import draw_jelly_block  # type: ignore
     from .retro_style import retro_style  # type: ignore
-    from .sweep_effects import SweepCatState, draw_line_sweep_band  # type: ignore
     from .ui_scaling import get_projected_effective_scale  # type: ignore
     from .back_button import draw_back_button as _draw_shared_back_button  # type: ignore
 except Exception:
@@ -39,21 +30,60 @@ except Exception:
         is_default_block_skin as _is_default_block_skin,
         list_block_skins as _list_block_skins,
     )
-    from country_sweep_assets import (
-        list_country_themes as _list_country_themes,
-    )
-    from pet_assets import (
-        DEFAULT_PET_VALUE as _DEFAULT_PET_VALUE,
-        PET_SLOT as _PET_SLOT,
-        list_pets as _list_pets,
-    )
     from localization import t
     from platform_utils import normalize_mouse_pos, get_mouse_pos
     from renderers.jelly_renderer import draw_jelly_block
     from retro_style import retro_style
-    from sweep_effects import SweepCatState, draw_line_sweep_band
     from ui_scaling import get_projected_effective_scale
     from back_button import draw_back_button as _draw_shared_back_button
+
+try:
+    try:
+        from .sweep_effects import SweepCatState, draw_line_sweep_band  # type: ignore
+    except Exception:
+        from sweep_effects import SweepCatState, draw_line_sweep_band  # type: ignore
+except Exception:
+    try:
+        from .sweep_effects import SweepCatState  # type: ignore
+    except Exception:
+        from sweep_effects import SweepCatState  # type: ignore
+
+    def draw_line_sweep_band(*args, **kwargs):
+        return None
+
+try:
+    try:
+        from .country_sweep_assets import (  # type: ignore
+            list_country_themes as _list_country_themes,
+        )
+    except Exception:
+        from country_sweep_assets import (  # type: ignore
+            list_country_themes as _list_country_themes,
+        )
+except Exception:
+    def _list_country_themes():
+        return []
+
+
+try:
+    try:
+        from .pet_assets import (  # type: ignore
+            DEFAULT_PET_VALUE as _DEFAULT_PET_VALUE,
+            PET_SLOT as _PET_SLOT,
+            list_pets as _list_pets,
+        )
+    except Exception:
+        from pet_assets import (  # type: ignore
+            DEFAULT_PET_VALUE as _DEFAULT_PET_VALUE,
+            PET_SLOT as _PET_SLOT,
+            list_pets as _list_pets,
+        )
+except Exception:
+    _DEFAULT_PET_VALUE = 'luna_cat'
+    _PET_SLOT = 'line_sweep_pet'
+
+    def _list_pets():
+        return []
 
 # Mystery (Kart Ustalığı) kart mağaza meta verisi — tek kaynak
 # (game_modes_extra.CARD_UPGRADE_FAMILIES / CARD_SINGLE_TIER_LOCKED). Mağaza

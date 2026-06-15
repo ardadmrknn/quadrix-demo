@@ -17,10 +17,15 @@ from renderers.jelly_renderer import draw_jelly_block, draw_jelly_border
 from themes import ThemeManager
 from block_styles import BlockStyleManager, TextureSlice, TextureRenderCache
 from block_skin_assets import get_equipped_block_appearance
-from platform_utils import create_display, get_display_flags, normalize_mouse_pos, get_mouse_pos, set_app_icon, resolve_frame_rate_cap, key_hint_label
+from platform_utils import create_display, get_display_flags, normalize_mouse_pos, get_mouse_pos, set_app_icon, resolve_frame_rate_cap
 from localization import t, get_language
 from gamepad_manager import is_gamepad_connected
-from promptfont_support import resolve_nav_hint_label
+try:
+    from promptfont_support import resolve_nav_hint_label
+except Exception:
+    def resolve_nav_hint_label(default_label, *_keys):
+        return default_label
+
 from ui_scaling import get_projected_effective_scale
 from ui_theme import UIColors, UIFonts
 from text_cache import render_text
