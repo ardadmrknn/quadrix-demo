@@ -1,4 +1,4 @@
-﻿"""Clean Board implementation for the repository.
+"""Clean Board implementation for the repository.
 
 Provides a single canonical Board class supporting the following features used
 by Mystery Mode and unit tests:
@@ -75,7 +75,7 @@ class Board:
                 return False
         return True
 
-    def lock_piece(self, piece, *, track_game_over: bool = True) -> int:
+    def lock_piece(self, piece, *, track_game_over: bool = True, t_spin: str | None = None) -> int:
         self._last_lock_out = False
 
         # Esnek Sınır artık lock anında yatay snap yapmaz. Tahta dışında kalan
@@ -128,7 +128,7 @@ class Board:
                     else:
                         self.texture_grid[y][x] = None
         
-        cleared = self.clear_lines()
+        cleared = self.clear_lines(t_spin=t_spin)
 
         # Lock-out kuralı: satır temizlikleri bittikten sonra en üst GÖRÜNÜR satırda
         # (row 0) dolu hücre kaldıysa game-over. Ek olarak, görünür alanın üstüne
@@ -142,7 +142,7 @@ class Board:
 
         return cleared
 
-    def clear_lines(self, source: str = "player") -> int:
+    def clear_lines(self, source: str = "player", t_spin: str | None = None) -> int:
         """Tüm dolu satırları tek seferde sil (cascade dahil).
 
         `source`:
@@ -234,53 +234,59 @@ class Board:
             self.last_cleared_colors = cascade_colors
         
         # Puan hesaplama
-        # Puan hesaplama
-        if total_lines > 0:
-            self.lines_cleared += total_lines
+        if total_lines > 0 or (t_spin is not None and str(source).lower() in {"player", "normal"}):
+            if total_lines > 0:
+                self.lines_cleared += total_lines
             
             # --- SCORING RULES ---
-            # 1. Base Points (Nintendo Guideline-ish)
-            # 1: 100, 2: 300, 3: 500, 4: 800
-            points = [0, 100, 300, 500, 800]
-            base_score = points[min(total_lines, 4)] * self.level
+            # 1. Base Points (T-spin or Normal)
+            if t_spin == 'mini':
+                base_score = 100 * self.level
+            elif t_spin == 'full':
+                t_spin_points = [400, 800, 1200, 1600]
+                base_score = t_spin_points[min(total_lines, 3)] * self.level
+            else:
+                points = [0, 100, 300, 500, 800]
+                base_score = points[min(total_lines, 4)] * self.level
             
             # 2. Combo Bonus (Scaled by Level)
-            # Old: (combo - 1) * 50
-            # New: combo * 50 * level (rewards chaining more)
-            if self.combo > 0:
-                combo_bonus = self.combo * 50 * self.level
+            combo_bonus = 0
+            if total_lines > 0:
+                if self.combo > 0:
+                    combo_bonus = self.combo * 50 * self.level
+                self.combo += 1  # Increment combo for NEXT clear
             else:
-                combo_bonus = 0
-            self.combo += 1  # Increment combo for NEXT clear
+                self.combo = 0
             
-            # 3. Back-to-Back Bonus (Quadrix only)
-            if total_lines >= 4:
-                self.tetrises += 1
+            # 3. Back-to-Back Bonus
+            is_b2b_action = (t_spin is not None and total_lines > 0) or (total_lines >= 4)
+            if is_b2b_action:
                 if self.back_to_back:
-                    # B2B Quadrix: 1.5x base score
+                    # B2B Bonus: 1.5x base score
                     base_score = int(base_score * 1.5)
-                    # print(f"🔥 Back-to-Back Quadrix! (+{base_score})")
                 self.back_to_back = True
-            else:
-                # Clear B2B if it wasn't a Quadrix (unless we add T-Spins later)
+            elif total_lines > 0:
+                # Satır temizlendi ama Quadrix veya T-spin değilse B2B bozulur
                 self.back_to_back = False
 
             # 4. Perfect Clear Bonus
-            # Check if grid is empty
-            if all(not any(row) for row in self.occupancy):
-                 # print("✨ PERFECT CLEAR!")
-                 base_score += 3000 * self.level
+            if total_lines > 0:
+                if all(not any(row) for row in self.occupancy):
+                    base_score += 3000 * self.level
 
             # 5. Gold & Unit Points (Mode specific)
-            per_line = base_score / total_lines if total_lines > 0 else 0
-            gold_count = sum(1 for y in all_cleared_rows if all_gold_lines.get(y, False))
-            extra = int(per_line * 4 * gold_count) if gold_count > 0 else 0
-            unit_points_total = sum(all_unit_points.get(y, 0) for y in all_cleared_rows)
+            if total_lines > 0:
+                self.tetrises += 1 if total_lines >= 4 else 0
+                per_line = base_score / total_lines
+                gold_count = sum(1 for y in all_cleared_rows if all_gold_lines.get(y, False))
+                extra = int(per_line * 4 * gold_count) if gold_count > 0 else 0
+                unit_points_total = sum(all_unit_points.get(y, 0) for y in all_cleared_rows)
+                
+                self.score += base_score + combo_bonus + extra + int(unit_points_total * self.level)
+            else:
+                self.score += base_score
             
-            # Final Score Summation
-            self.score += base_score + combo_bonus + extra + int(unit_points_total * self.level)
-            
-            if str(source).lower() in {"player", "normal"}:
+            if total_lines > 0 and str(source).lower() in {"player", "normal"}:
                 try:
                     self.level_lines_cleared += total_lines
                 except Exception:

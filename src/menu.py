@@ -276,6 +276,7 @@ def get_control_actions():
         ('soft_drop', t('ctrl_soft_drop')),
         ('hard_drop', t('ctrl_hard_drop')),
         ('rotate', t('ctrl_rotate')),
+        ('rotate_180', t('ctrl_rotate_180', default='180 Döndür')),
         ('hold', t('ctrl_hold')),
         ('pause', t('ctrl_pause')),
     ]

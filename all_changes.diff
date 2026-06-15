@@ -1,0 +1,829 @@
+diff --git a/src/board.py b/src/board.py
+index 5ec7364..d4e6c17 100644
+--- a/src/board.py
++++ b/src/board.py
+@@ -1,4 +1,4 @@
+-﻿"""Clean Board implementation for the repository.
++"""Clean Board implementation for the repository.
+ 
+ Provides a single canonical Board class supporting the following features used
+ by Mystery Mode and unit tests:
+@@ -75,7 +75,7 @@ class Board:
+                 return False
+         return True
+ 
+-    def lock_piece(self, piece, *, track_game_over: bool = True) -> int:
++    def lock_piece(self, piece, *, track_game_over: bool = True, t_spin: str | None = None) -> int:
+         self._last_lock_out = False
+ 
+         # Esnek Sınır artık lock anında yatay snap yapmaz. Tahta dışında kalan
+@@ -128,7 +128,7 @@ class Board:
+                     else:
+                         self.texture_grid[y][x] = None
+         
+-        cleared = self.clear_lines()
++        cleared = self.clear_lines(t_spin=t_spin)
+ 
+         # Lock-out kuralı: satır temizlikleri bittikten sonra en üst GÖRÜNÜR satırda
+         # (row 0) dolu hücre kaldıysa game-over. Ek olarak, görünür alanın üstüne
+@@ -142,7 +142,7 @@ class Board:
+ 
+         return cleared
+ 
+-    def clear_lines(self, source: str = "player") -> int:
++    def clear_lines(self, source: str = "player", t_spin: str | None = None) -> int:
+         """Tüm dolu satırları tek seferde sil (cascade dahil).
+ 
+         `source`:
+@@ -234,53 +234,59 @@ class Board:
+             self.last_cleared_colors = cascade_colors
+         
+         # Puan hesaplama
+-        # Puan hesaplama
+-        if total_lines > 0:
+-            self.lines_cleared += total_lines
++        if total_lines > 0 or (t_spin is not None and str(source).lower() in {"player", "normal"}):
++            if total_lines > 0:
++                self.lines_cleared += total_lines
+             
+             # --- SCORING RULES ---
+-            # 1. Base Points (Nintendo Guideline-ish)
+-            # 1: 100, 2: 300, 3: 500, 4: 800
+-            points = [0, 100, 300, 500, 800]
+-            base_score = points[min(total_lines, 4)] * self.level
++            # 1. Base Points (T-spin or Normal)
++            if t_spin == 'mini':
++                base_score = 100 * self.level
++            elif t_spin == 'full':
++                t_spin_points = [400, 800, 1200, 1600]
++                base_score = t_spin_points[min(total_lines, 3)] * self.level
++            else:
++                points = [0, 100, 300, 500, 800]
++                base_score = points[min(total_lines, 4)] * self.level
+             
+             # 2. Combo Bonus (Scaled by Level)
+-            # Old: (combo - 1) * 50
+-            # New: combo * 50 * level (rewards chaining more)
+-            if self.combo > 0:
+-                combo_bonus = self.combo * 50 * self.level
++            combo_bonus = 0
++            if total_lines > 0:
++                if self.combo > 0:
++                    combo_bonus = self.combo * 50 * self.level
++                self.combo += 1  # Increment combo for NEXT clear
+             else:
+-                combo_bonus = 0
+-            self.combo += 1  # Increment combo for NEXT clear
++                self.combo = 0
+             
+-            # 3. Back-to-Back Bonus (Quadrix only)
+-            if total_lines >= 4:
+-                self.tetrises += 1
++            # 3. Back-to-Back Bonus
++            is_b2b_action = (t_spin is not None and total_lines > 0) or (total_lines >= 4)
++            if is_b2b_action:
+                 if self.back_to_back:
+-                    # B2B Quadrix: 1.5x base score
++                    # B2B Bonus: 1.5x base score
+                     base_score = int(base_score * 1.5)
+-                    # print(f"🔥 Back-to-Back Quadrix! (+{base_score})")
+                 self.back_to_back = True
+-            else:
+-                # Clear B2B if it wasn't a Quadrix (unless we add T-Spins later)
++            elif total_lines > 0:
++                # Satır temizlendi ama Quadrix veya T-spin değilse B2B bozulur
+                 self.back_to_back = False
+ 
+             # 4. Perfect Clear Bonus
+-            # Check if grid is empty
+-            if all(not any(row) for row in self.occupancy):
+-                 # print("✨ PERFECT CLEAR!")
+-                 base_score += 3000 * self.level
++            if total_lines > 0:
++                if all(not any(row) for row in self.occupancy):
++                    base_score += 3000 * self.level
+ 
+             # 5. Gold & Unit Points (Mode specific)
+-            per_line = base_score / total_lines if total_lines > 0 else 0
+-            gold_count = sum(1 for y in all_cleared_rows if all_gold_lines.get(y, False))
+-            extra = int(per_line * 4 * gold_count) if gold_count > 0 else 0
+-            unit_points_total = sum(all_unit_points.get(y, 0) for y in all_cleared_rows)
+-            
+-            # Final Score Summation
+-            self.score += base_score + combo_bonus + extra + int(unit_points_total * self.level)
++            if total_lines > 0:
++                self.tetrises += 1 if total_lines >= 4 else 0
++                per_line = base_score / total_lines
++                gold_count = sum(1 for y in all_cleared_rows if all_gold_lines.get(y, False))
++                extra = int(per_line * 4 * gold_count) if gold_count > 0 else 0
++                unit_points_total = sum(all_unit_points.get(y, 0) for y in all_cleared_rows)
++                
++                self.score += base_score + combo_bonus + extra + int(unit_points_total * self.level)
++            else:
++                self.score += base_score
+             
+-            if str(source).lower() in {"player", "normal"}:
++            if total_lines > 0 and str(source).lower() in {"player", "normal"}:
+                 try:
+                     self.level_lines_cleared += total_lines
+                 except Exception:
+diff --git a/src/coop_board.py b/src/coop_board.py
+index ffad1c7..fc89e42 100644
+--- a/src/coop_board.py
++++ b/src/coop_board.py
+@@ -103,7 +103,7 @@ class CoopBoard(Board):
+     # Satır temizleme — katkı hesaplaması
+     # ------------------------------------------------------------------
+ 
+-    def clear_lines(self, source: str = "player") -> int:
++    def clear_lines(self, source: str = "player", t_spin: str | None = None) -> int:
+         """Dolu satırları temizle ve katkı bilgisini güncelle.
+ 
+         Temizlemeden ÖNCE her dolu satırdaki P1/P2 hücre sayısını sayar,
+@@ -128,4 +128,4 @@ class CoopBoard(Board):
+         self.last_clear_p2_cells = p2_cells
+         self.last_clear_row_colors = row_colors
+ 
+-        return super().clear_lines(source)
++        return super().clear_lines(source, t_spin)
+diff --git a/src/game.py b/src/game.py
+index b0f0781..94e801c 100644
+--- a/src/game.py
++++ b/src/game.py
+@@ -859,6 +859,7 @@ class Game:
+         # Önce kuyruğu doldur, sonra kuyruktan al (senkronizasyon için)
+         self.next_piece_queue = [self.spawn_new_piece() for _ in range(3)]  # Sonraki 3 parça
+         self.current_piece = self.next_piece_queue.pop(0)  # Kuyruktan ilk parçayı al
++        self._reset_piece_state()
+         self._skip_hidden_rows(self.current_piece)
+         self.held_piece = None  # Saklanan parça
+         # Second pocket (V) - used by Mystery Mode perk and unit tests
+@@ -1057,6 +1058,7 @@ class Game:
+             'soft_drop': pygame.K_DOWN,
+             'hard_drop': pygame.K_SPACE,
+             'rotate': pygame.K_UP,
++            'rotate_180': pygame.K_e,
+             'hold': pygame.K_c,
+             'hold2': pygame.K_v,
+             'pause': pygame.K_p,
+@@ -1083,6 +1085,7 @@ class Game:
+             'soft_drop': None,
+             'hard_drop': None,
+             'rotate': None,
++            'rotate_180': None,
+             'hold': None,
+             'hold2': None,
+             'pause': None,
+@@ -1359,6 +1362,80 @@ class Game:
+         self._apply_block_style(piece)
+         return piece
+ 
++    def _reset_piece_state(self) -> None:
++        """Yeni bir parça spawn olduğunda veya hold yapıldığında durum değişkenlerini sıfırlar"""
++        if self.current_piece is not None:
++            self.max_reached_y = getattr(self.current_piece, 'y', 0)
++            self.lock_reset_count = 0
++            self.stall_timer = 0.0
++            self.last_move_was_rotate = False
++
++    def _check_t_spin(self) -> tuple[str | None, str | None]:
++        """
++        T-spin durumunu kontrol eder.
++        Döner: (t_spin_type, t_spin_message)
++        t_spin_type: 'full', 'mini', veya None
++        t_spin_message: Ekranda gösterilecek mesaj, örn: "T-SPIN DOUBLE!" veya None
++        """
++        piece_name = getattr(self.current_piece, 'name', None)
++        if not self.current_piece or piece_name != 'T':
++            return None, None
++            
++        if not getattr(self, 'last_move_was_rotate', False):
++            return None, None
++            
++        # T parçasının merkez hücresi
++        cx = self.current_piece.x + 1
++        cy = self.current_piece.y + 1
++        
++        # 4 köşenin koordinatları
++        corners = [
++            (self.current_piece.x, self.current_piece.y),         # Sol Üst
++            (self.current_piece.x + 2, self.current_piece.y),     # Sağ Üst
++            (self.current_piece.x, self.current_piece.y + 2),     # Sol Alt
++            (self.current_piece.x + 2, self.current_piece.y + 2), # Sağ Alt
++        ]
++        
++        dolu_count = 0
++        for x, y in corners:
++            # Sınır dışı mı yoksa dolu mu?
++            if x < 0 or x >= self.board.width or y < 0 or y >= self.board.height:
++                dolu_count += 1
++            elif self.board.occupancy[y][x]:
++                dolu_count += 1
++                
++        if dolu_count < 3:
++            return None, None
++            
++        # Mini mi Full mü ayrımı
++        # Rotasyona göre ön köşeleri belirle
++        rot = self.current_piece.rotation_state
++        if rot == 0:
++            front_corners = [corners[0], corners[1]] # Sol Üst, Sağ Üst
++        elif rot == 1:
++            front_corners = [corners[1], corners[3]] # Sağ Üst, Sağ Alt
++        elif rot == 2:
++            front_corners = [corners[2], corners[3]] # Sol Alt, Sağ Alt
++        else: # rot == 3
++            front_corners = [corners[0], corners[2]] # Sol Üst, Sol Alt
++            
++        front_dolu_count = 0
++        for x, y in front_corners:
++            if x < 0 or x >= self.board.width or y < 0 or y >= self.board.height:
++                front_dolu_count += 1
++            elif self.board.occupancy[y][x]:
++                front_dolu_count += 1
++                
++        # Çıkıntılı ön köşelerden biri boş ise ve 4. veya 5. kick kullanılmadıysa Mini'dir.
++        kick_idx = getattr(self, 'last_rotate_kick_index', 0)
++        
++        if front_dolu_count == 2 or kick_idx in (3, 4):
++            t_spin_type = 'full'
++        else:
++            t_spin_type = 'mini'
++            
++        return t_spin_type, None
++
+     def _load_workshop_blocks(self) -> Dict[str, List[WorkshopBlockDefinition]]:
+         if not self.settings_manager:
+             return {}
+@@ -1581,6 +1658,7 @@ class Game:
+             old_original_color = getattr(self.current_piece, '_original_color', None)
+             old_force_color = getattr(self.current_piece, '_force_color', None)
+             self.current_piece = new_piece
++            self._reset_piece_state()
+             # Restore bomb attributes to new piece
+             if old_is_bomb:
+                 setattr(self.current_piece, 'is_bomb', True)
+@@ -2136,15 +2214,29 @@ class Game:
+                     # Let's add 1 point per manual soft-drop input to keep it simple and rewarding.
+                     # self.board.score += 1
+                 
+-                # Döndürme
+                 # Döndürme
+                 elif event.key in self._action_keys(bindings, 'rotate'):
+                     success = self.current_piece.try_rotate_srs(self.board, 1)
+                     if success:
+                         self.sound.play('rotate')
++                        self.last_move_was_rotate = True
++                        self.last_rotate_kick_index = getattr(self.current_piece, 'last_kick_index', 0)
+                         # Lock Delay Reset
+                         if not self.board.is_valid_position(self.current_piece, dy=1):
+-                            if self.lock_reset_count < 5:
++                            if self.lock_reset_count < 15:
++                                self.lock_timer = 0
++                            self.lock_reset_count += 1
++                
++                # 180 Derece Döndürme
++                elif event.key in self._action_keys(bindings, 'rotate_180'):
++                    success = self.current_piece.try_rotate_180(self.board)
++                    if success:
++                        self.sound.play('rotate')
++                        self.last_move_was_rotate = True
++                        self.last_rotate_kick_index = getattr(self.current_piece, 'last_kick_index', 0)
++                        # Lock Delay Reset
++                        if not self.board.is_valid_position(self.current_piece, dy=1):
++                            if self.lock_reset_count < 15:
+                                 self.lock_timer = 0
+                             self.lock_reset_count += 1
+                 elif event.key == bindings['hold2']:
+@@ -2171,6 +2263,7 @@ class Game:
+                                         pass
+                                 self.second_held_piece = stored_piece
+                                 self.current_piece = self.next_piece_queue.pop(0)
++                                self._reset_piece_state()
+                                 self._skip_hidden_rows(self.current_piece)
+                                 self.next_piece_queue.append(self.spawn_new_piece())
+                             else:
+@@ -2191,6 +2284,7 @@ class Game:
+                                     except Exception:
+                                         pass
+                                 self.current_piece = self.second_held_piece
++                                self._reset_piece_state()
+                                 self.second_held_piece = stored_piece
+                                 self._position_piece_at_spawn(self.current_piece)
+                                 self._skip_hidden_rows(self.current_piece)
+@@ -2273,6 +2367,7 @@ class Game:
+                                 self.held_piece = stored_piece
+                                 # Kuyruktan ilk parçayı al
+                                 self.current_piece = self.next_piece_queue.pop(0)
++                                self._reset_piece_state()
+                                 self._skip_hidden_rows(self.current_piece)
+                                 # Kuyruğa yeni parça ekle
+                                 self.next_piece_queue.append(self.spawn_new_piece())
+@@ -2300,6 +2395,7 @@ class Game:
+                                     except Exception:
+                                         pass
+                                 self.current_piece = self.held_piece
++                                self._reset_piece_state()
+                                 self.held_piece = stored_piece
+                                 self._position_piece_at_spawn(self.current_piece)
+                                 self._skip_hidden_rows(self.current_piece)
+@@ -2390,9 +2486,10 @@ class Game:
+             self.current_piece.x += 1
+             return False
+             
++        self.last_move_was_rotate = False
+         # Lock Delay Reset: parça yerdeyse ve limit aşılmadıysa sıfırla
+         if not self.board.is_valid_position(self.current_piece, dy=1):
+-            if self.lock_reset_count < 5:
++            if self.lock_reset_count < 15:
+                 self.lock_timer = 0
+             self.lock_reset_count += 1
+         return True
+@@ -2407,9 +2504,10 @@ class Game:
+             self.current_piece.x -= 1
+             return False
+             
++        self.last_move_was_rotate = False
+         # Lock Delay Reset: parça yerdeyse ve limit aşılmadıysa sıfırla
+         if not self.board.is_valid_position(self.current_piece, dy=1):
+-            if self.lock_reset_count < 5:
++            if self.lock_reset_count < 15:
+                 self.lock_timer = 0
+             self.lock_reset_count += 1
+         return True
+@@ -2438,8 +2536,6 @@ class Game:
+             return
+ 
+         # Oynanış ayarlarından DAS değerlerini oku (ms)
+-        # Not: Settings ekranında das_delay/das_repeat güncelleniyor; burada constants'a bağlı kalmak
+-        # ayarların etkisiz kalmasına ve akıcılığın bozulmasına neden olur.
+         try:
+             delay_ms = float(self.settings_manager.get('das_delay', DAS_DELAY)) if self.settings_manager else float(DAS_DELAY)
+         except Exception:
+@@ -2449,11 +2545,23 @@ class Game:
+         except Exception:
+             repeat_ms = float(DAS_REPEAT)
+         delay_ms = max(0.0, delay_ms)
+-        repeat_ms = max(1.0, repeat_ms)
++        repeat_ms = max(0.0, repeat_ms)
+ 
+         # Süreyi milisaniye cinsinden artır
+         self.das_timer += delta_time
+ 
++        # Eğer ARR (repeat_ms) 0 ise (anında teleport)
++        if repeat_ms == 0:
++            if not self.das_charged:
++                if self.das_timer >= delay_ms:
++                    self.das_charged = True
++                    while self._perform_das_move(self.das_direction):
++                        pass
++            else:
++                while self._perform_das_move(self.das_direction):
++                    pass
++            return
++
+         # İlk gecikme henüz dolmadıysa
+         charged_this_frame = False
+         if not self.das_charged:
+@@ -3988,7 +4096,13 @@ class Game:
+                     cell_size=cell_size
+                 )
+         
+-        lines_cleared = self.board.lock_piece(self.current_piece)
++        # T-spin kontrolünü yap
++        t_spin_type, _ = self._check_t_spin()
++        
++        try:
++            lines_cleared = self.board.lock_piece(self.current_piece, t_spin=t_spin_type)
++        except TypeError:
++            lines_cleared = self.board.lock_piece(self.current_piece)
+ 
+         # Lock-out kontrolü (Tetris Guideline): parça üst görünür satırda kilitlendi.
+         # Some modes can spend a one-shot save here before the run is finalized.
+@@ -3998,85 +4112,142 @@ class Game:
+ 
+         # Satır temizlenmiyorsa blok kilitlenme sesi çal
+         if lines_cleared == 0:
+-            self.sound.play('lock')
++            if t_spin_type is not None:
++                if t_spin_type == 'mini':
++                    self.combo_message = "T-SPIN MINI"
++                else:
++                    self.combo_message = "T-SPIN"
++                self.combo_message_time = 120
++                self.sound.play('line')
++            else:
++                self.sound.play('lock')
+ 
+         # Satır temizleme efektleri
+         if lines_cleared > 0:
+             self._queue_line_clear_effects(lines_cleared)
+             
+-            # Mesaj ve ses
+-            if lines_cleared == 4:
+-                self.combo_message = "QUADRIX!"
+-                self.sound.play('tetris')
+-                # Gamepad titreşimi - QUADRIX! (güçlü)
+-                try:
+-                    get_gamepad_manager().rumble(0.8, 1.0, 400)
+-                except Exception:
+-                    pass
++            # T-spin ile satır temizleme
++            if t_spin_type is not None:
++                if t_spin_type == 'mini':
++                    self.combo_message = "T-SPIN MINI!"
++                else:
++                    if lines_cleared == 1:
++                        self.combo_message = "T-SPIN SINGLE!"
++                    elif lines_cleared == 2:
++                        self.combo_message = "T-SPIN DOUBLE!"
++                    elif lines_cleared == 3:
++                        self.combo_message = "T-SPIN TRIPLE!"
++                    else:
++                        self.combo_message = f"T-SPIN {lines_cleared}x!"
+                 
+-                # SCREEN SHAKE - QUADRIX!
+-                self.trigger_screen_shake(intensity=15, duration=20 / 60.0)
++                self.combo_message_time = 120
+                 
+-                # Quadrix için ekstra görkemli parçacıklar
+-                if self.effects_enabled:
+-                    # Ekranın ortasından altın renkli patlama
+-                    active_width, active_height = self._active_ui_size()
+-                    center_x = active_width // 2
+-                    center_y = active_height // 2
+-                    self.create_particles(
+-                        count=150,
+-                        x=center_x,
+-                        y=center_y,
+-                        colors=[YELLOW, ORANGE, (255, 215, 0), CYAN],
+-                        speed=10
+-                    )
+-                # QUADRIX mesajı göster
+-                self.combo_message_time = 120  # 2 saniye göster
+-            elif lines_cleared >= 2:
+-                # Satır sayısına göre isim
+-                if lines_cleared == 2:
+-                    clear_name = "DOUBLE!"
+-                elif lines_cleared == 3:
+-                    clear_name = "TRIPLE!"
+-                else:
+-                    clear_name = f"{lines_cleared}x CLEAR!"
+-                # Combo zinciri aktifse onu da ekle
+-                combo_count = getattr(self.board, 'combo', 0)
+-                if combo_count > 1:
+-                    self.combo_message = f"{clear_name}  x{combo_count} Combo"
++                # T-spin Double ve Triple için özel efektler (Quadrix gibi görkemli)
++                if lines_cleared >= 2:
++                    self.sound.play('tetris')
++                    try:
++                        get_gamepad_manager().rumble(0.6, 0.8, 300)
++                    except Exception:
++                        pass
++                    self.trigger_screen_shake(intensity=10, duration=15 / 60.0)
++                    if self.effects_enabled:
++                        active_width, active_height = self._active_ui_size()
++                        center_x = active_width // 2
++                        center_y = active_height // 2
++                        self.create_particles(
++                            count=80 * lines_cleared,
++                            x=center_x,
++                            y=center_y,
++                            colors=[PURPLE, MAGENTA, CYAN],
++                            speed=8
++                        )
+                 else:
+-                    self.combo_message = clear_name
+-                self.sound.play('line')
+-                # Gamepad titreşimi - çoklu satır (orta)
+-                try:
+-                    get_gamepad_manager().rumble(0.4, 0.5, 200)
+-                except Exception:
+-                    pass
+-                
+-                # Çoklu satır için renkli parçacıklar
+-                if self.effects_enabled:
+-                    active_width, active_height = self._active_ui_size()
+-                    center_x = active_width // 2
+-                    center_y = active_height // 2
+-                    self.create_particles(
+-                        count=50 * lines_cleared,
+-                        x=center_x,
+-                        y=center_y,
+-                        colors=[CYAN, MAGENTA, GREEN],
+-                        speed=6
+-                    )
+-                # Mesaj göster sadece 2+ satır için
+-                self.combo_message_time = 120  # 2 saniye göster
++                    self.sound.play('line')
++                    if self.effects_enabled:
++                        active_width, active_height = self._active_ui_size()
++                        center_x = active_width // 2
++                        center_y = active_height // 2
++                        self.create_particles(
++                            count=40 * lines_cleared,
++                            x=center_x,
++                            y=center_y,
++                            colors=[PURPLE, MAGENTA],
++                            speed=6
++                        )
+             else:
+-                # Tek satır - combo varsa göster, yoksa mesaj yok
+-                combo_count = getattr(self.board, 'combo', 0)
+-                if combo_count > 1:
+-                    self.combo_message = f"x{combo_count} Combo!"
+-                    self.combo_message_time = 90  # 1.5 saniye
++                # Normal satır temizleme
++                if lines_cleared == 4:
++                    self.combo_message = "QUADRIX!"
++                    self.sound.play('tetris')
++                    # Gamepad titreşimi - QUADRIX! (güçlü)
++                    try:
++                        get_gamepad_manager().rumble(0.8, 1.0, 400)
++                    except Exception:
++                        pass
++                    
++                    # SCREEN SHAKE - QUADRIX!
++                    self.trigger_screen_shake(intensity=15, duration=20 / 60.0)
++                    
++                    # Quadrix için ekstra görkemli parçacıklar
++                    if self.effects_enabled:
++                        # Ekranın ortasından altın renkli patlama
++                        active_width, active_height = self._active_ui_size()
++                        center_x = active_width // 2
++                        center_y = active_height // 2
++                        self.create_particles(
++                            count=150,
++                            x=center_x,
++                            y=center_y,
++                            colors=[YELLOW, ORANGE, (255, 215, 0), CYAN],
++                            speed=10
++                        )
++                    # QUADRIX mesajı göster
++                    self.combo_message_time = 120  # 2 saniye göster
++                elif lines_cleared >= 2:
++                    # Satır sayısına göre isim
++                    if lines_cleared == 2:
++                        clear_name = "DOUBLE!"
++                    elif lines_cleared == 3:
++                        clear_name = "TRIPLE!"
++                    else:
++                        clear_name = f"{lines_cleared}x CLEAR!"
++                    # Combo zinciri aktifse onu da ekle
++                    combo_count = getattr(self.board, 'combo', 0)
++                    if combo_count > 1:
++                        self.combo_message = f"{clear_name}  x{combo_count} Combo"
++                    else:
++                        self.combo_message = clear_name
++                    self.sound.play('line')
++                    # Gamepad titreşimi - çoklu satır (orta)
++                    try:
++                        get_gamepad_manager().rumble(0.4, 0.5, 200)
++                    except Exception:
++                        pass
++                    
++                    # Çoklu satır için renkli parçacıklar
++                    if self.effects_enabled:
++                        active_width, active_height = self._active_ui_size()
++                        center_x = active_width // 2
++                        center_y = active_height // 2
++                        self.create_particles(
++                            count=50 * lines_cleared,
++                            x=center_x,
++                            y=center_y,
++                            colors=[CYAN, MAGENTA, GREEN],
++                            speed=6
++                        )
++                    # Mesaj göster sadece 2+ satır için
++                    self.combo_message_time = 120  # 2 saniye göster
+                 else:
+-                    self.combo_message = ""
+-                    self.combo_message_time = 0
+-                self.sound.play('line')
++                    # Tek satır - combo varsa göster, yoksa mesaj yok
++                    combo_count = getattr(self.board, 'combo', 0)
++                    if combo_count > 1:
++                        self.combo_message = f"x{combo_count} Combo!"
++                        self.combo_message_time = 90  # 1.5 saniye
++                    else:
++                        self.combo_message = ""
++                        self.combo_message_time = 0
++                    self.sound.play('line')
+             
+             # Başarı kontrolü (oyun sırasında) — eğitim modunda tetiklenmez.
+             if self.achievement_manager and not getattr(self, '_suppress_progression_tracking', False):
+@@ -4105,6 +4276,7 @@ class Game:
+         
+         # Kuyruktan ilk parçayı al ve kuyruğa yeni parça ekle
+         self.current_piece = self.next_piece_queue.pop(0)
++        self._reset_piece_state()
+         self._skip_hidden_rows(self.current_piece)
+         self.next_piece_queue.append(self.spawn_new_piece())
+         # Yeni aktif parça için lock-delay state'ini temizle
+@@ -4416,11 +4588,21 @@ class Game:
+                 effective_lock_delay = 800  # 0.8 saniye
+             # Altı dolu mu? (Yerde mi?)
+             try:
+-                if not self.board.is_valid_position(self.current_piece, dy=1):
++                is_grounded_now = not self.board.is_valid_position(self.current_piece, dy=1)
++                if is_grounded_now:
+                     if not self.grounded:
+                         self.grounded = True
+                         self.lock_timer = 0 # Timer başlat
+                     
++                    # Stall Time Limit: tabanda geçen toplam süreyi biriktir
++                    self.stall_timer += dt
++                    
++                    # Stall Time Limit kontrolü (3 saniye = 3000 ms)
++                    if self.stall_timer >= 3000.0:
++                        if getattr(self, 'allow_auto_lock', True):
++                            self.lock_and_new_piece()
++                            return
++                    
+                     # Lock Delay aktifse timer işlet
+                     if getattr(self, 'enable_lock_delay', True):
+                         self.lock_timer += dt
+@@ -4433,7 +4615,8 @@ class Game:
+                     # Havada
+                     self.grounded = False
+                     self.lock_timer = 0
+-                    self.lock_reset_count = 0
++                    # Step reset kuralı gereği lock_reset_count ve stall_timer sıfırlanmaz,
++                    # sadece stall_timer artışı (is_grounded_now False iken) duraklamış olur.
+             except Exception:
+                 pass
+         
+@@ -4480,8 +4663,12 @@ class Game:
+                 else:
+                     self.grounded = True
+             else:
+-                self.lock_reset_count = 0
+-                self.lock_timer = 0
++                self.last_move_was_rotate = False
++                if self.current_piece.y > self.max_reached_y:
++                    self.max_reached_y = self.current_piece.y
++                    self.stall_timer = 0.0
++                    self.lock_reset_count = 0
++                    self.lock_timer = 0
+     
+     def _draw_base_scene(self):
+         """Temel oyun sahnesini flip çağrısı olmadan çiz."""
+@@ -6520,6 +6707,7 @@ class Game:
+         # Önce kuyruğu doldur, sonra kuyruktan al (senkronizasyon için)
+         self.next_piece_queue = [self.spawn_new_piece() for _ in range(3)]  # Sonraki 3 parça
+         self.current_piece = self.next_piece_queue.pop(0)  # Kuyruktan ilk parçayı al
++        self._reset_piece_state()
+         self._skip_hidden_rows(self.current_piece)
+         self.held_piece = None
+         self.second_held_piece = None
+diff --git a/src/localization.py b/src/localization.py
+index d2d1c59..dafcf97 100644
+--- a/src/localization.py
++++ b/src/localization.py
+@@ -2601,6 +2601,19 @@ TRANSLATIONS = {
+         'zh': '旋转',
+         'ko': '회전',
+     },
++    'ctrl_rotate_180': {
++        'tr': '180 Derece Döndür',
++        'en': 'Rotate 180',
++        'de': 'Rotate 180',
++        'fr': 'Rotate 180',
++        'es': 'Rotate 180',
++        'it': 'Rotate 180',
++        'pt': 'Rotate 180',
++        'ru': 'Rotate 180',
++        'ja': '180度回転',
++        'zh': '旋转180度',
++        'ko': '180도 회전',
++    },
+     'ctrl_hold': {
+         'tr': 'Hold / değiştir',
+         'en': 'Hold / swap',
+diff --git a/src/menu.py b/src/menu.py
+index 0cc101b..30ac304 100644
+--- a/src/menu.py
++++ b/src/menu.py
+@@ -276,6 +276,7 @@ def get_control_actions():
+         ('soft_drop', t('ctrl_soft_drop')),
+         ('hard_drop', t('ctrl_hard_drop')),
+         ('rotate', t('ctrl_rotate')),
++        ('rotate_180', t('ctrl_rotate_180', default='180 Döndür')),
+         ('hold', t('ctrl_hold')),
+         ('pause', t('ctrl_pause')),
+     ]
+diff --git a/src/pieces.py b/src/pieces.py
+index f1af62b..f2c210d 100644
+--- a/src/pieces.py
++++ b/src/pieces.py
+@@ -73,6 +73,22 @@ SRS_KICKS_I = {
+     (0, 3): [(0, 0), (-1, 0), (2, 0), (-1, -2), (2, 1)],
+ }
+ 
++# J, L, T, S, Z parçaları için SRS+ 180 Kicks
++SRS_KICKS_180_NORMAL = {
++    (0, 2): [(0, 0), (0, 1), (1, 0), (-1, 0), (1, 1), (-1, 1), (0, -1)],
++    (2, 0): [(0, 0), (0, -1), (-1, 0), (1, 0), (-1, -1), (1, -1), (0, 1)],
++    (1, 3): [(0, 0), (1, 0), (0, 1), (0, -1), (1, 1), (1, -1), (-1, 0)],
++    (3, 1): [(0, 0), (-1, 0), (0, 1), (0, -1), (-1, 1), (-1, -1), (1, 0)],
++}
++
++# I parçası için SRS+ 180 Kicks
++SRS_KICKS_180_I = {
++    (0, 2): [(0, 0), (-1, 0), (1, 0), (-2, 0), (2, 0), (0, 1), (0, -1)],
++    (2, 0): [(0, 0), (1, 0), (-1, 0), (2, 0), (-2, 0), (0, -1), (0, 1)],
++    (1, 3): [(0, 0), (0, 1), (0, -1), (0, 2), (0, -2), (-1, 0), (1, 0)],
++    (3, 1): [(0, 0), (0, -1), (0, 1), (0, -2), (0, 2), (1, 0), (-1, 0)],
++}
++
+ SHAPE_NAMES = ['I', 'O', 'T', 'S', 'Z', 'J', 'L']
+ EXTRA_SHAPE_NAMES = ['Plus', 'Y', 'Domino', 'BigSquare']
+ HIDDEN_SPAWN_ROWS = 2
+@@ -176,6 +192,7 @@ class Piece:
+         original_x = self.x
+         original_y = self.y
+         original_state = self.rotation_state
++        self.last_kick_index = 0
+         
+         if check_func is None:
+             check_func = lambda p: board.is_valid_position(p)
+@@ -203,10 +220,11 @@ class Piece:
+         transition = (original_state, new_state)
+         test_vectors = kicks.get(transition, [(0, 0)])
+         
+-        for dx, dy in test_vectors:
++        for test_idx, (dx, dy) in enumerate(test_vectors):
+             self.x = original_x + dx
+             self.y = original_y + dy
+             if check_func(self):
++                self.last_kick_index = test_idx
+                 return True
+                 
+         # Hiçbir test geçmedi, değişiklikleri geri al
+@@ -215,6 +233,54 @@ class Piece:
+         self.rotate(-direction)
+         return False
+ 
++    def try_rotate_180(self, board, check_func=None) -> bool:
++        """
++        180 derece döndürmeyi dener.
++        Başarılıysa parçanın konumunu ve rotation_state'ini güncelleyip True döner.
++        Başarısızsa tüm değişiklikleri geri alıp False döner.
++        """
++        original_x = self.x
++        original_y = self.y
++        original_state = self.rotation_state
++        self.last_kick_index = 0
++        
++        if check_func is None:
++            check_func = lambda p: board.is_valid_position(p)
++            
++        # O parçası wall kick yapmaz, sadece döndürme testi yapılır
++        if self.name == 'O':
++            self.rotate(2)
++            if check_func(self):
++                return True
++            self.rotate(-2)
++            return False
++            
++        # Parçayı geçici olarak 180 derece döndür
++        self.rotate(2)
++        new_state = self.rotation_state
++        
++        # Parça tipine göre 180 derece kick tablosunu seç
++        if self.name == 'I':
++            kicks = SRS_KICKS_180_I
++        else:
++            kicks = SRS_KICKS_180_NORMAL
++            
++        transition = (original_state, new_state)
++        test_vectors = kicks.get(transition, [(0, 0)])
++        
++        for test_idx, (dx, dy) in enumerate(test_vectors):
++            self.x = original_x + dx
++            self.y = original_y + dy
++            if check_func(self):
++                self.last_kick_index = test_idx
++                return True
++                
++        # Hiçbir test geçmedi, değişiklikleri geri al
++        self.x = original_x
++        self.y = original_y
++        self.rotate(-2)
++        return False
++
+     def get_shape(self):
+         """Parçanın mevcut şekil matrisini döndür."""
+         return self.shape
+diff --git a/src/settings_manager.py b/src/settings_manager.py
+index 99b3377..387a12f 100644
+--- a/src/settings_manager.py
++++ b/src/settings_manager.py
+@@ -30,6 +30,7 @@ DEFAULT_CONTROLS = {
+         'soft_drop': {'primary': 'down', 'secondary': 's'},
+         'hard_drop': {'primary': 'space', 'secondary': ''},
+         'rotate': {'primary': 'up', 'secondary': 'w'},
++        'rotate_180': {'primary': 'e', 'secondary': ''},
+         'hold': {'primary': 'c', 'secondary': ''},
+         'pause': {'primary': 'p', 'secondary': ''},
+     },

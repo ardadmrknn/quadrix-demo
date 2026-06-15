@@ -103,7 +103,7 @@ class CoopBoard(Board):
     # Satır temizleme — katkı hesaplaması
     # ------------------------------------------------------------------
 
-    def clear_lines(self, source: str = "player") -> int:
+    def clear_lines(self, source: str = "player", t_spin: str | None = None) -> int:
         """Dolu satırları temizle ve katkı bilgisini güncelle.
 
         Temizlemeden ÖNCE her dolu satırdaki P1/P2 hücre sayısını sayar,
@@ -128,4 +128,4 @@ class CoopBoard(Board):
         self.last_clear_p2_cells = p2_cells
         self.last_clear_row_colors = row_colors
 
-        return super().clear_lines(source)
+        return super().clear_lines(source, t_spin)

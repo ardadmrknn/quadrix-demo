@@ -73,6 +73,22 @@ SRS_KICKS_I = {
     (0, 3): [(0, 0), (-1, 0), (2, 0), (-1, -2), (2, 1)],
 }
 
+# J, L, T, S, Z parçaları için SRS+ 180 Kicks
+SRS_KICKS_180_NORMAL = {
+    (0, 2): [(0, 0), (0, 1), (1, 0), (-1, 0), (1, 1), (-1, 1), (0, -1)],
+    (2, 0): [(0, 0), (0, -1), (-1, 0), (1, 0), (-1, -1), (1, -1), (0, 1)],
+    (1, 3): [(0, 0), (1, 0), (0, 1), (0, -1), (1, 1), (1, -1), (-1, 0)],
+    (3, 1): [(0, 0), (-1, 0), (0, 1), (0, -1), (-1, 1), (-1, -1), (1, 0)],
+}
+
+# I parçası için SRS+ 180 Kicks
+SRS_KICKS_180_I = {
+    (0, 2): [(0, 0), (-1, 0), (1, 0), (-2, 0), (2, 0), (0, 1), (0, -1)],
+    (2, 0): [(0, 0), (1, 0), (-1, 0), (2, 0), (-2, 0), (0, -1), (0, 1)],
+    (1, 3): [(0, 0), (0, 1), (0, -1), (0, 2), (0, -2), (-1, 0), (1, 0)],
+    (3, 1): [(0, 0), (0, -1), (0, 1), (0, -2), (0, 2), (1, 0), (-1, 0)],
+}
+
 SHAPE_NAMES = ['I', 'O', 'T', 'S', 'Z', 'J', 'L']
 EXTRA_SHAPE_NAMES = ['Plus', 'Y', 'Domino', 'BigSquare']
 HIDDEN_SPAWN_ROWS = 2
@@ -176,6 +192,7 @@ class Piece:
         original_x = self.x
         original_y = self.y
         original_state = self.rotation_state
+        self.last_kick_index = 0
         
         if check_func is None:
             check_func = lambda p: board.is_valid_position(p)
@@ -203,16 +220,65 @@ class Piece:
         transition = (original_state, new_state)
         test_vectors = kicks.get(transition, [(0, 0)])
         
-        for dx, dy in test_vectors:
+        for test_idx, (dx, dy) in enumerate(test_vectors):
             self.x = original_x + dx
             self.y = original_y + dy
             if check_func(self):
+                self.last_kick_index = test_idx
                 return True
                 
         # Hiçbir test geçmedi, değişiklikleri geri al
         self.x = original_x
         self.y = original_y
         self.rotate(-direction)
+        return False
+
+    def try_rotate_180(self, board, check_func=None) -> bool:
+        """
+        180 derece döndürmeyi dener.
+        Başarılıysa parçanın konumunu ve rotation_state'ini güncelleyip True döner.
+        Başarısızsa tüm değişiklikleri geri alıp False döner.
+        """
+        original_x = self.x
+        original_y = self.y
+        original_state = self.rotation_state
+        self.last_kick_index = 0
+        
+        if check_func is None:
+            check_func = lambda p: board.is_valid_position(p)
+            
+        # O parçası wall kick yapmaz, sadece döndürme testi yapılır
+        if self.name == 'O':
+            self.rotate(2)
+            if check_func(self):
+                return True
+            self.rotate(-2)
+            return False
+            
+        # Parçayı geçici olarak 180 derece döndür
+        self.rotate(2)
+        new_state = self.rotation_state
+        
+        # Parça tipine göre 180 derece kick tablosunu seç
+        if self.name == 'I':
+            kicks = SRS_KICKS_180_I
+        else:
+            kicks = SRS_KICKS_180_NORMAL
+            
+        transition = (original_state, new_state)
+        test_vectors = kicks.get(transition, [(0, 0)])
+        
+        for test_idx, (dx, dy) in enumerate(test_vectors):
+            self.x = original_x + dx
+            self.y = original_y + dy
+            if check_func(self):
+                self.last_kick_index = test_idx
+                return True
+                
+        # Hiçbir test geçmedi, değişiklikleri geri al
+        self.x = original_x
+        self.y = original_y
+        self.rotate(-2)
         return False
 
     def get_shape(self):

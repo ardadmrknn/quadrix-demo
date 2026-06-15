@@ -30,6 +30,7 @@ DEFAULT_CONTROLS = {
         'soft_drop': {'primary': 'down', 'secondary': 's'},
         'hard_drop': {'primary': 'space', 'secondary': ''},
         'rotate': {'primary': 'up', 'secondary': 'w'},
+        'rotate_180': {'primary': 'e', 'secondary': ''},
         'hold': {'primary': 'c', 'secondary': ''},
         'pause': {'primary': 'p', 'secondary': ''},
     },
