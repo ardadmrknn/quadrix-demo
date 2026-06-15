@@ -50,7 +50,9 @@ except Exception:
     )
 
 def t(key: str, default: str = None, **kwargs) -> str:
-    return localization.t(key, default, **kwargs)
+    import sys
+    loc = sys.modules.get('localization', localization)
+    return loc.t(key, default, **kwargs)
 
 DAILY_MAX_FAILURES = 3
 DAILY_HISTORY_LIMIT = 40

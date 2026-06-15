@@ -64,14 +64,19 @@ def test_local_pvp_result_overlay_uses_online_style_controls(monkeypatch):
     assert game.screen.get_at(game._game_over_restart_rect.center)[:3] != (0, 0, 0)
 
 
-def test_local_pvp_result_breakdown_marks_loser_board_as_open_winner():
+def test_local_pvp_result_breakdown_weights_board_open_against_score_lines():
+    # p1 elendi → p2 tahtası açık kalır (board open = 2 puan, board_state 'p2').
+    # Ancak p1 hem skorda (48000>35000) hem satırda (42>31) önde → p1'e 1+1 = 2 puan.
+    # Ağırlıklı puanlama (1052f18): board-open tek başına belirleyici değil;
+    # 2-2 eşitlik berabere demektir.
     game = _make_result_game(2, p1_eliminated=True)
 
     result = game._build_local_result_breakdown()
 
-    assert result["winner"] == "p2"
+    assert result["winner"] == "draw"
     assert result["board_state"] == "p2"
     assert result["score_state"] == "p1"
+    assert result["p1_points"] == result["p2_points"] == 2
 
 
 def test_local_pvp_result_overlay_draws_draw_state(monkeypatch):

@@ -22,13 +22,12 @@ def setup_stubs(monkeypatch):
             stub = types.ModuleType(mod)
             monkeypatch.setitem(sys.modules, mod, stub)
             
-    # Özel stub niteliklerini ata
     if "localization" in sys.modules:
         loc = sys.modules["localization"]
-        loc.SUPPORTED_LANGUAGES = ['tr', 'en', 'de', 'fr', 'es', 'it', 'pt', 'ru', 'ja', 'zh', 'ko']
-        loc.DEFAULT_LANGUAGE = 'tr'
-        loc.set_language = lambda l: None
-        loc.t = lambda k, *a, **kw: k
+        monkeypatch.setattr(loc, "SUPPORTED_LANGUAGES", ['tr', 'en', 'de', 'fr', 'es', 'it', 'pt', 'ru', 'ja', 'zh', 'ko'], raising=False)
+        monkeypatch.setattr(loc, "DEFAULT_LANGUAGE", 'tr', raising=False)
+        monkeypatch.setattr(loc, "set_language", lambda l: None, raising=False)
+        monkeypatch.setattr(loc, "t", lambda k, *a, **kw: k, raising=False)
         
     if "constants" in sys.modules:
         sys.modules["constants"].DEBUG_MODE = False

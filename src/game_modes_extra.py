@@ -22,10 +22,14 @@ from asset_manager import load_image
 import localization
 
 def t(key: str, default: str = None, **kwargs) -> str:
-    return localization.t(key, default, **kwargs)
+    import sys
+    loc = sys.modules.get('localization', localization)
+    return loc.t(key, default, **kwargs)
 
 def get_language() -> str:
-    return localization.get_language()
+    import sys
+    loc = sys.modules.get('localization', localization)
+    return loc.get_language()
 from gamepad_manager import get_gamepad_manager, is_gamepad_connected
 from promptfont_support import get_action_prompt_display, render_action_prompt_surface, render_inline_action_text_surface
 try:

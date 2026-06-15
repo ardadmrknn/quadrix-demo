@@ -33,6 +33,7 @@ class SweepCatState:
         self.frame_base_surfaces: list[pygame.Surface] = []
         self.frame_surface_cache: dict = {}
         self.paw_profile: dict | None = None
+        self.pet_surface_cache: dict = {}
 
     # ------------------------------------------------------------------
     # Sprite yardımcıları
@@ -314,6 +315,63 @@ class SweepCatState:
 
         self.surface_cache[key] = surface
         return surface
+
+    def get_companion_surface(
+        self,
+        target_w: int,
+        target_h: int,
+        phase: int = 0,
+        pet: str | None = None,
+    ) -> pygame.Surface | None:
+        """Surface for the sweep companion at ``phase``.
+
+        When ``pet`` resolves to a registered, frame-backed pet (e.g. the
+        sheep) its pre-registered frames are cycled and scaled by height. The
+        frames share one canvas, so we scale them uniformly and never trim —
+        that keeps the authored bounce/squash steady instead of jittering.
+
+        For the default Luna-Cat (or any unknown/missing pet) this delegates to
+        :meth:`get_cat_surface`, preserving the original sprite + procedural
+        walk-cycle behaviour and full backward compatibility.
+        """
+        pet_surface = self._get_pet_surface(target_h, phase, pet)
+        if pet_surface is not None:
+            return pet_surface
+        return self.get_cat_surface(target_w, target_h, phase)
+
+    def _get_pet_surface(self, target_h: int, phase: int, pet: str | None):
+        if pet is None:
+            return None
+        try:
+            if _is_default_pet(pet):
+                return None
+            frames = _load_pet_frames(pet)
+        except Exception:
+            return None
+        if not frames:
+            return None
+
+        target_h = max(1, int(target_h))
+        frame_index = int(phase) % len(frames)
+        normalized = _normalize_pet(pet)
+        cache_key = (normalized, target_h, frame_index)
+        cached = self.pet_surface_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        base = frames[frame_index]
+        bw, bh = base.get_size()
+        if bw <= 0 or bh <= 0:
+            return None
+        scale = target_h / float(bh)
+        sw = max(1, int(round(bw * scale)))
+        sh = max(1, int(round(target_h)))
+        try:
+            scaled = pygame.transform.smoothscale(base, (sw, sh))
+        except Exception:
+            scaled = pygame.transform.scale(base, (sw, sh))
+        self.pet_surface_cache[cache_key] = scaled
+        return scaled
 
     # ------------------------------------------------------------------
     # Procedural walk-cycle composition

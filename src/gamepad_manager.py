@@ -1201,44 +1201,115 @@ class GamepadManager:
         added_type = getattr(pygame, 'JOYDEVICEADDED', None)
         removed_type = getattr(pygame, 'JOYDEVICEREMOVED', None)
 
-        if (added_type is not None and event_type == added_type) or (removed_type is not None and event_type == removed_type):
-            old_count = len(self.gamepads)
-            
-            # Tüm eski joystick nesnelerini güvenli bir şekilde kapat
-            for gp in list(self.gamepads.values()):
+        if (added_type is not None and event_type == added_type):
+            # Yeni cihaz eklendi → eğer event device_index sağlıyorsa sadece o indeksi işle
+            device_index = getattr(event, 'device_index', None)
+            if device_index is not None:
+                # Aynı slotta zaten CANLI bir kayıt olabilir: ana döngü
+                # update() → _check_connections() polling'i handle_input'tan
+                # ÖNCE koşar ve replug edilen cihazı bu frame'de zaten
+                # kaydetmiş olabilir. Canlı bir joystick'i quit() edip yeniden
+                # kaydetmek girişi anlık olarak bozar (reconnect kaçar). Bu
+                # yüzden yalnızca gerçekten bayat (init olmayan/erişilemez) bir
+                # slotu temizleyip yeniden kaydet.
+                existing = self.gamepads.get(device_index)
+                if existing is not None:
+                    still_live = False
+                    try:
+                        js = getattr(existing, 'joystick', None)
+                        if js is not None and js.get_init():
+                            js.get_name()  # erişilebilir mi?
+                            still_live = True
+                    except Exception:
+                        still_live = False
+                    if still_live:
+                        # Polling zaten kaydetmiş; churn yok, bağlı kabul et.
+                        self._menu_pointer_active = False
+                        return 'connected'
+                    # Bayat slot → temizle ve yeniden kaydet.
+                    try:
+                        js = getattr(existing, 'joystick', None)
+                        if js is not None:
+                            js.quit()
+                    except Exception:
+                        pass
+                    try:
+                        del self.gamepads[device_index]
+                    except Exception:
+                        pass
+
                 try:
-                    if gp.joystick is not None:
-                        gp.joystick.quit()
+                    registered = self._register_gamepad(device_index)
+                except Exception:
+                    registered = False
+                if registered:
+                    self._menu_pointer_active = False
+                    try:
+                        print(f"[Gamepad] Yeni kontrolcü bağlandı (Index: {device_index})")
+                    except Exception:
+                        pass
+                    return 'connected'
+                # device_index ile kayıt başarısız olduysa (indeks kayması
+                # olabilir) genel taramaya düş; böylece reconnect kaçmaz.
+                try:
+                    self._check_connections()
                 except Exception:
                     pass
-            self.gamepads.clear()
-            
-            # Pygame joystick alt sistemini tamamen sıfırla ve yeniden başlat
+                self._menu_pointer_active = False
+                return 'connected' if len(self.gamepads) > 0 else None
+
+            # Cihaz indeksi yoksa, genel tarama/fallback yap
             try:
-                pygame.joystick.quit()
-                pygame.joystick.init()
+                self._check_connections()
             except Exception:
-                pass
-            
-            # Güncel bağlı kontrolcüleri tara
-            self._scan_gamepads()
-            new_count = len(self.gamepads)
-            
-            # Pointer modunu sıfırla
-            self._menu_pointer_active = False
-            
-            if new_count < old_count:
                 try:
-                    print(f"[Gamepad] Kontrolcü bağlantısı kesildi (Eski: {old_count}, Yeni: {new_count})")
+                    # Fallback: tam tarama
+                    self._scan_gamepads()
+                except Exception:
+                    pass
+            # pointer state sıfırla
+            self._menu_pointer_active = False
+            return 'connected' if len(self.gamepads) > 0 else None
+
+        if (removed_type is not None and event_type == removed_type):
+            instance_id = getattr(event, 'instance_id', None)
+            if instance_id is None:
+                return None
+            # Eşleşen instance_id'yi bul ve sil
+            matched_idx = None
+            for idx, gp in list(self.gamepads.items()):
+                try:
+                    if getattr(gp, 'instance_id', None) == instance_id:
+                        matched_idx = idx
+                        break
+                except Exception:
+                    continue
+            if matched_idx is not None:
+                try:
+                    stale = self.gamepads[matched_idx]
+                    if stale and getattr(stale, 'joystick', None) is not None:
+                        stale.joystick.quit()
+                except Exception:
+                    pass
+                try:
+                    del self.gamepads[matched_idx]
+                except Exception:
+                    pass
+                self._menu_pointer_active = False
+                try:
+                    print(f"[Gamepad] Kontrolcü bağlantısı kesildi (Instance: {instance_id})")
                 except Exception:
                     pass
                 return 'disconnected'
-            elif new_count > old_count:
-                try:
-                    print(f"[Gamepad] Yeni kontrolcü bağlandı (Eski: {old_count}, Yeni: {new_count})")
-                except Exception:
-                    pass
-                return 'connected'
+
+            # matched_idx None: muhtemelen update()/_check_connections() bu
+            # frame'de polling ile cihazı zaten kaldırmış olabilir (ana döngü
+            # update'i handle_input'tan önce çağırır). Bu durumda da disconnect
+            # bilgisini kaybetme — auto-pause tetiklensin. Yalnızca artık hiç
+            # bağlı kontrolcü kalmadıysa 'disconnected' bildir.
+            if not self.is_connected():
+                self._menu_pointer_active = False
+                return 'disconnected'
 
         return None
 

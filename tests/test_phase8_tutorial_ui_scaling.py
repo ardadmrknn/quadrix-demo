@@ -18,7 +18,13 @@ import tutorial as tutorial_module
 from game_modes_extra import MysteryCardUI
 
 
-TutorialMode = tutorial_module.TutorialMode
+def _get_tutorial_mode_class():
+    import sys
+    for t_mod_name in ('tutorial', 'src.tutorial'):
+        t_mod = sys.modules.get(t_mod_name)
+        if t_mod is not None and hasattr(t_mod, 'TutorialMode'):
+            return t_mod.TutorialMode
+    return tutorial_module.TutorialMode
 
 
 class _FakeFont:
@@ -47,7 +53,8 @@ def _make_fake_font(size: int, bold: bool = False):
 
 
 def _build_tutorial(size: tuple[int, int], *, window_size: tuple[int, int] | None = None):
-    tutorial = TutorialMode.__new__(TutorialMode)
+    cls = _get_tutorial_mode_class()
+    tutorial = cls.__new__(cls)
     tutorial.screen = pygame.Surface(size, pygame.SRCALPHA)
     if window_size is None:
         window_size = size
@@ -84,14 +91,18 @@ def _install_tutorial_draw_stubs(monkeypatch):
         render_fit_text=lambda text, color, max_width, size, bold=False: _make_fake_font(size, bold=bold).render(text, True, color),
     )
 
-    monkeypatch.setattr(tutorial_module, 'retro_style', retro_style_stub)
-    monkeypatch.setattr(tutorial_module, 't', lambda key, *args, **kwargs: kwargs.get('default', key))
-    monkeypatch.setattr(tutorial_module, 'get_mouse_pos', lambda: (0, 0))
-    monkeypatch.setattr(tutorial_module.pygame.mouse, 'get_focused', lambda: False)
-    monkeypatch.setattr(tutorial_module, 'get_tutorial_card_title', lambda card: str(card.get('title') or 'Kart'))
-    monkeypatch.setattr(tutorial_module, 'get_tutorial_card_rarity_label', lambda card: 'Nadir')
-    monkeypatch.setattr(tutorial_module, 'get_tutorial_card_type_label', lambda card: 'Tip')
-    monkeypatch.setattr(tutorial_module, 'get_tutorial_card_description', lambda card: str(card.get('description') or 'Aciklama'))
+    import sys
+    for t_mod_name in ('tutorial', 'src.tutorial'):
+        t_mod = sys.modules.get(t_mod_name)
+        if t_mod is not None:
+            monkeypatch.setattr(t_mod, 'retro_style', retro_style_stub)
+            monkeypatch.setattr(t_mod, 't', lambda key, *args, **kwargs: kwargs.get('default', key))
+            monkeypatch.setattr(t_mod, 'get_mouse_pos', lambda: (0, 0))
+            monkeypatch.setattr(t_mod.pygame.mouse, 'get_focused', lambda: False)
+            monkeypatch.setattr(t_mod, 'get_tutorial_card_title', lambda card: str(card.get('title') or 'Kart'))
+            monkeypatch.setattr(t_mod, 'get_tutorial_card_rarity_label', lambda card: 'Nadir')
+            monkeypatch.setattr(t_mod, 'get_tutorial_card_type_label', lambda card: 'Tip')
+            monkeypatch.setattr(t_mod, 'get_tutorial_card_description', lambda card: str(card.get('description') or 'Aciklama'))
     return captured_rects
 
 
@@ -115,7 +126,11 @@ def test_tutorial_modal_scale_uses_active_canvas_and_preserves_1366_baseline():
 
 
 def test_tutorial_card_font_pack_can_grow_above_one(monkeypatch):
-    monkeypatch.setattr(tutorial_module, '_tutorial_make_card_ui_font', lambda size, bold=False: size)
+    import sys
+    for t_mod_name in ('tutorial', 'src.tutorial'):
+        t_mod = sys.modules.get(t_mod_name)
+        if t_mod is not None:
+            monkeypatch.setattr(t_mod, '_tutorial_make_card_ui_font', lambda size, bold=False: size)
     tutorial = _build_tutorial((1366, 768))
 
     baseline_fonts = tutorial._build_tutorial_card_ui_font_pack()
@@ -223,6 +238,9 @@ def test_tutorial_overlay_and_tip_panel_live_draw_use_active_canvas(monkeypatch)
 
     tutorial._draw_tutorial_overlay()
 
+    main_rect = tutorial._tutorial_overlay_rect()
+    tutorial._draw_tutorial_tip_panel(main_rect)
+
     assert len(captured_rects) >= 2
     _assert_rects_within_surface(captured_rects[:2])
 
@@ -274,11 +292,14 @@ def test_tutorial_overlay_shifts_up_to_preserve_support_block_positions(monkeypa
 
     tutorial._draw_tutorial_overlay()
 
+    main_rect = tutorial._tutorial_overlay_rect()
+    tutorial._draw_tutorial_tip_panel(main_rect)
+
     assert len(captured_rects) >= 3
     overlay_rect, obj_rect, tip_rect = captured_rects[-3:]
     _assert_rects_within_surface([overlay_rect, obj_rect, tip_rect], size=(800, 768))
-    assert obj_rect.top >= overlay_rect.bottom
-    assert tip_rect.top >= obj_rect.bottom
+    assert overlay_rect.top >= obj_rect.bottom
+    assert obj_rect.top >= tip_rect.bottom
 
 
 def test_tutorial_hub_live_draw_rects_stay_within_active_canvas(monkeypatch):

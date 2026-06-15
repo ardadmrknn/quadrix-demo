@@ -14,25 +14,33 @@ from surface_lru_cache import SurfaceLRUCache
 
 
 def test_surface_lru_cache_reuses_surface_by_key():
-    cache = SurfaceLRUCache(max_entries=4)
-    key = ('tile', 1)
-    surface = pygame.Surface((32, 32), pygame.SRCALPHA)
+    pygame.init()
+    try:
+        cache = SurfaceLRUCache(max_entries=4)
+        key = ('tile', 1)
+        surface = pygame.Surface((32, 32), pygame.SRCALPHA)
 
-    cache.put(key, surface)
+        cache.put(key, surface)
 
-    assert cache.get(key) is surface
+        assert cache.get(key) is surface
+    finally:
+        pygame.quit()
 
 
 def test_surface_lru_cache_evicts_oldest_entry():
-    cache = SurfaceLRUCache(max_entries=2)
-    first = pygame.Surface((8, 8), pygame.SRCALPHA)
-    second = pygame.Surface((8, 8), pygame.SRCALPHA)
-    third = pygame.Surface((8, 8), pygame.SRCALPHA)
+    pygame.init()
+    try:
+        cache = SurfaceLRUCache(max_entries=2)
+        first = pygame.Surface((8, 8), pygame.SRCALPHA)
+        second = pygame.Surface((8, 8), pygame.SRCALPHA)
+        third = pygame.Surface((8, 8), pygame.SRCALPHA)
 
-    cache.put(('first',), first)
-    cache.put(('second',), second)
-    cache.put(('third',), third)
+        cache.put(('first',), first)
+        cache.put(('second',), second)
+        cache.put(('third',), third)
 
-    assert cache.get(('first',)) is None
-    assert cache.get(('second',)) is second
-    assert cache.get(('third',)) is third
+        assert cache.get(('first',)) is None
+        assert cache.get(('second',)) is second
+        assert cache.get(('third',)) is third
+    finally:
+        pygame.quit()

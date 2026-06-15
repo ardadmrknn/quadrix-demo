@@ -163,10 +163,15 @@ def test_added_event_registers_new_gamepad(monkeypatch):
 
 
 def test_added_event_replaces_stale_slot(monkeypatch):
-    """If pygame fires ADDED for an index already in our registry (re-plug
-    into same slot), the stale entry must be cleaned up before re-register."""
+    """If pygame fires ADDED for an index already in our registry but that slot
+    is STALE (joystick no longer initialised), the stale entry must be cleaned
+    up before re-register. A still-LIVE slot must NOT be churned (see
+    `test_added_event_keeps_live_slot`)."""
     manager = _make_manager()
     stale = _fake_gamepad_state(instance_id=10, name='Stale')
+    # Mark the existing slot as stale: joystick reports not-initialised so the
+    # ADDED handler treats it as dead and replaces it.
+    stale.joystick.get_init = lambda: False
     manager.gamepads[0] = stale
 
     quit_calls = []
@@ -185,6 +190,32 @@ def test_added_event_replaces_stale_slot(monkeypatch):
     assert result == 'connected'
     assert quit_calls == ['quit']
     assert manager.gamepads[0].name == 'Fresh'
+
+
+def test_added_event_keeps_live_slot(monkeypatch):
+    """Polling (`_check_connections`) inside `update()` runs BEFORE the gameplay
+    handler processes JOYDEVICEADDED, so on re-plug the controller may already
+    be registered and LIVE. The ADDED handler must NOT quit()+re-register a
+    live joystick (that briefly kills input and breaks reconnect)."""
+    manager = _make_manager()
+    live = _fake_gamepad_state(instance_id=20, name='Live')
+    manager.gamepads[0] = live
+
+    quit_calls = []
+    live.joystick.quit = lambda: quit_calls.append('quit')
+    register_calls = []
+    monkeypatch.setattr(
+        manager,
+        '_register_gamepad',
+        lambda idx: register_calls.append(idx) or True,
+    )
+
+    result = manager.handle_hotplug_event(_added_event(0))
+
+    assert result == 'connected'
+    assert quit_calls == [], 'live slot must not be quit()'
+    assert register_calls == [], 'live slot must not be re-registered'
+    assert manager.gamepads[0] is live
 
 
 def test_added_event_without_device_index_falls_back_to_full_scan(monkeypatch):
@@ -241,6 +272,35 @@ def test_removed_event_unknown_instance_id_is_no_op():
     # Unknown instance: nothing matched; no removal happened.
     assert result is None
     assert 0 in manager.gamepads
+
+
+def test_removed_event_reports_disconnect_when_polling_already_cleared():
+    """Ana döngü update() → _check_connections() polling'i handle_input'tan
+    ÖNCE koşar ve kopan cihazı bu frame'de zaten kaldırmış olabilir. O zaman
+    REMOVED event'i için eşleşen instance bulunamaz; ancak artık hiç bağlı
+    kontrolcü kalmadıysa yine de 'disconnected' bildirilmeli (auto-pause)."""
+    manager = _make_manager()
+    # Polling cihazı zaten kaldırdı → registry boş.
+    assert not manager.gamepads
+
+    result = manager.handle_hotplug_event(_removed_event(instance_id=42))
+
+    assert result == 'disconnected', (
+        'polling cihazı önce kaldırsa bile son kontrolcü gittiyse disconnect '
+        'bildirilmeli'
+    )
+
+
+def test_removed_event_no_false_disconnect_when_other_pad_remains():
+    """Polling eşleşen instance'ı kaldırmış ama BAŞKA bir kontrolcü hâlâ
+    bağlıysa yanlış 'disconnected' bildirme."""
+    manager = _make_manager()
+    manager.gamepads[1] = _fake_gamepad_state(instance_id=43, name='Other')
+
+    result = manager.handle_hotplug_event(_removed_event(instance_id=42))
+
+    assert result is None
+    assert 1 in manager.gamepads
 
 
 def test_unrelated_event_returns_none():

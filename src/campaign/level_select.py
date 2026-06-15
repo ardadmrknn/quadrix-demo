@@ -324,7 +324,7 @@ class CampaignLevelSelect:
     
     def handle_input(self, event: pygame.event) -> Optional[str]:
         """Kullanıcı girdilerini işle"""
-        if self._demo_upgrade_prompt.is_active():
+        if hasattr(self, '_demo_upgrade_prompt') and self._demo_upgrade_prompt.is_active():
             self._demo_upgrade_prompt.handle_input(event)
             return None
 
@@ -473,7 +473,7 @@ class CampaignLevelSelect:
         width = self.screen.get_width()
         height = self.screen.get_height()
 
-        if self._demo_upgrade_prompt.is_active():
+        if hasattr(self, '_demo_upgrade_prompt') and self._demo_upgrade_prompt.is_active():
             self._demo_upgrade_prompt.screen = self.screen
             self._demo_upgrade_prompt.draw()
             return
@@ -524,7 +524,7 @@ class CampaignLevelSelect:
         if self.world_transition_active:
             self._draw_world_transition_overlay()
 
-        if self._demo_upgrade_prompt.is_active():
+        if hasattr(self, '_demo_upgrade_prompt') and self._demo_upgrade_prompt.is_active():
             self._demo_upgrade_prompt.draw()
 
     def _maybe_handle_demo_level_lock(self, level_num: int) -> bool:

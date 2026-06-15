@@ -13,8 +13,6 @@
 
 ## Kaynak Gercekler
 
-.ç.........
-
 ### Windows
 
 - Canonical build helper: `scripts/build/build_windows_exe.ps1`
@@ -50,6 +48,8 @@ macOS tarafinda local override bump yok; runtime dogrudan `src/version_base.py` 
 ### Bridge Toplayan Spec Dosyalari
 
 - `packaging/specs/tetris.spec`
+- `packaging/specs/tetris_demo.spec`
+- `packaging/specs/tetris_demo_macos_allinone.spec`
 - `packaging/specs/tetris_en.spec`
 - `packaging/specs/tetris_macos.spec`
 - `packaging/specs/tetris_macos_allinone.spec`

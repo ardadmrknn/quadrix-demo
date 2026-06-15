@@ -12,7 +12,9 @@ from data_paths import iter_legacy_paths, migrate_legacy_file, resolve_data_path
 import localization
 
 def t(key: str, default: str = None, **kwargs) -> str:
-    return localization.t(key, default, **kwargs)
+    import sys
+    loc = sys.modules.get('localization', localization)
+    return loc.t(key, default, **kwargs)
 
 # ---------------------------------------------------------------------------
 # Oyun içi achievement ID → Steamworks API Name eşlemesi

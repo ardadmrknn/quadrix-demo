@@ -57,13 +57,51 @@ def _make_fake_font(size: int, bold: bool = False):
     return _FakeFont(size)
 
 
+def _get_game_module():
+    import sys
+    for name in ('src.game', 'game'):
+        m = sys.modules.get(name)
+        if m is not None:
+            return m
+    return game_module
+
+
+def _get_extra_modes_module():
+    import sys
+    for name in ('src.game_modes_extra', 'game_modes_extra'):
+        m = sys.modules.get(name)
+        if m is not None:
+            return m
+    return extra_modes_module
+
+
+def _get_game_class():
+    return _get_game_module().Game
+
+
 def _build_game(size: tuple[int, int], *, window_size: tuple[int, int] | None = None):
-    instance = game_module.Game.__new__(game_module.Game)
+    cls = _get_game_class()
+    instance = cls.__new__(cls)
     instance.screen = pygame.Surface(size, pygame.SRCALPHA)
     if window_size is None:
         window_size = size
     instance.window_width, instance.window_height = window_size
     return instance
+
+
+def _patch_ui_scale_helpers(monkeypatch, attr_name, value):
+    import sys
+    targets = []
+    targets.append(game_module)
+    targets.append(extra_modes_module)
+    targets.append(_get_game_module())
+    targets.append(_get_extra_modes_module())
+    for name in ('game', 'src.game', 'game_modes_extra', 'src.game_modes_extra', 'game_modes', 'src.game_modes', 'game_modes_advanced', 'src.game_modes_advanced'):
+        m = sys.modules.get(name)
+        if m is not None:
+            targets.append(m)
+    for target in set(targets):
+        monkeypatch.setattr(target, attr_name, value, raising=False)
 
 
 def _install_game_ui_test_stubs(monkeypatch):
@@ -129,13 +167,34 @@ def _install_advanced_mode_ui_test_stubs(monkeypatch):
     monkeypatch.setitem(sys.modules, 'localization', localization_stub)
 
 
+def _get_mystery_mode_class():
+    import sys
+    for mod in ('game_modes_extra', 'src.game_modes_extra'):
+        m = sys.modules.get(mod)
+        if m is not None and hasattr(m, 'MysteryMode'):
+            return m.MysteryMode
+    return extra_modes_module.MysteryMode
+
+
 def _build_mystery_mode(size: tuple[int, int], *, window_size: tuple[int, int] | None = None):
-    mode = extra_modes_module.MysteryMode.__new__(extra_modes_module.MysteryMode)
+    cls = _get_mystery_mode_class()
+    mode = cls.__new__(cls)
     mode.screen = pygame.Surface(size, pygame.SRCALPHA)
     if window_size is None:
         window_size = size
     mode.window_width, mode.window_height = window_size
-    mode._card_ui_reference_size = extra_modes_module.MYSTERY_OVERLAY_REFERENCE_SIZE
+    
+    import sys
+    ref_val = None
+    for mod in ('game_modes_extra', 'src.game_modes_extra'):
+        m = sys.modules.get(mod)
+        if m is not None and hasattr(m, 'MYSTERY_OVERLAY_REFERENCE_SIZE'):
+            ref_val = m.MYSTERY_OVERLAY_REFERENCE_SIZE
+            break
+    if ref_val is None:
+        ref_val = extra_modes_module.MYSTERY_OVERLAY_REFERENCE_SIZE
+        
+    mode._card_ui_reference_size = ref_val
     mode._card_ui_readable_min_size = (1180, 760)
     return mode
 
@@ -160,7 +219,7 @@ def test_game_ui_scale_uses_effective_ui_size_when_available(monkeypatch):
         captured['display_surface'] = display_surface
         return (1200, 700)
 
-    monkeypatch.setattr(game_module, 'resolve_ui_scale_size', fake_resolve)
+    _patch_ui_scale_helpers(monkeypatch, 'resolve_ui_scale_size', fake_resolve)
 
     expected = min(1200 / 1366.0, 700 / 768.0)
     expected = max(0.72, min(1.24, expected))
@@ -183,7 +242,7 @@ def test_game_overlay_ui_scale_uses_projected_effective_scale(monkeypatch):
         captured['display_surface'] = display_surface
         return 1.87
 
-    monkeypatch.setattr(game_module, 'get_projected_effective_scale', fake_get_projected_scale)
+    _patch_ui_scale_helpers(monkeypatch, 'get_projected_effective_scale', fake_get_projected_scale)
 
     assert math.isclose(game._overlay_ui_scale(min_scale=0.68, max_scale=1.16), 1.87)
     assert captured['screen_or_size'] is game.screen
@@ -457,11 +516,7 @@ def test_mystery_gameplay_layout_projects_effective_metrics_back_to_raw_pixels(m
     mode.board_height = 20
     mode.left_panel_max_width = 420
 
-    monkeypatch.setattr(
-        game_module,
-        'resolve_ui_scale_size',
-        lambda screen_or_size, *, use_effective_display_size=False, display_surface=None: (1470, 956),
-    )
+    monkeypatch.setattr(mode, '_effective_ui_size', lambda: (1470, 956))
 
     metrics = mode._get_mystery_layout_metrics()
 
@@ -1084,11 +1139,7 @@ def test_base_game_layout_projects_effective_retina_metrics_back_to_raw_pixels(m
     game.board_width = 10
     game.board_height = 20
 
-    monkeypatch.setattr(
-        game_module,
-        'resolve_ui_scale_size',
-        lambda screen_or_size, *, use_effective_display_size=False, display_surface=None: (1470, 956),
-    )
+    monkeypatch.setattr(game, '_effective_ui_size', lambda: (1470, 956))
 
     layout = game._get_gameplay_layout_metrics()
 

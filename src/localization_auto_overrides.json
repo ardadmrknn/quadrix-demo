@@ -2230,11 +2230,11 @@
     "pt": "Cortador de Pico"
   },
   "guide_card_phase_desc": {
-    "de": "3 Verwendungsmöglichkeiten: Drücken Sie LSHIFT, um das Teil auf seinen Spiegel zu tauschen (L↔J, Z↔S). Strategische Flexibilität!",
-    "es": "3 usos: Presione LSHIFT para cambiar la pieza a su espejo (L↔J, Z↔S). ¡Flexibilidad estratégica!",
-    "fr": "3 utilisations : Appuyez sur LSHIFT pour échanger la pièce contre son miroir (L↔J, Z↔S). Flexibilité stratégique !",
-    "it": "3 utilizzi: premi LSHIFT per spostare il pezzo nel suo specchio (L↔J, Z↔S). Flessibilità strategica!",
-    "pt": "3 usos: Pressione LSHIFT para trocar a peça para seu espelho (L↔J, Z↔S). Flexibilidade estratégica!"
+    "de": "3 Verwendungsmöglichkeiten: Drücken Sie LSHIFT, um das Teil auf seinen Spiegel zu tauschen (L-J, Z-S). Strategische Flexibilität!",
+    "es": "3 usos: Presione LSHIFT para cambiar la pieza a su espejo (L-J, Z-S). ¡Flexibilidad estratégica!",
+    "fr": "3 utilisations : Appuyez sur LSHIFT pour échanger la pièce contre son miroir (L-J, Z-S). Flexibilité stratégique !",
+    "it": "3 utilizzi: premi LSHIFT per spostare il pezzo nel suo specchio (L-J, Z-S). Flessibilità strategica!",
+    "pt": "3 usos: Pressione LSHIFT para trocar a peça para seu espelho (L-J, Z-S). Flexibilidade estratégica!"
   },
   "guide_card_phase_name": {
     "de": "Gestaltwandler",

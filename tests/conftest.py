@@ -294,14 +294,17 @@ def _isolate_test_module_stubs(request: pytest.FixtureRequest):
 	for key, value in sys_modules_backup.items():
 		sys.modules[key] = value
 
-	# Akıllı localization stub temizliği
+	# Akıllı localization stub temizliği ve orijinal fonksiyonların geri yüklenmesi
 	try:
 		for loc_key in ('localization', 'src.localization'):
 			if loc_key in sys.modules:
 				loc = sys.modules[loc_key]
-				set_lang_func = getattr(loc, 'set_language', None)
-				if set_lang_func and hasattr(set_lang_func, '__name__') and set_lang_func.__name__ == '<lambda>':
-					sys.modules.pop(loc_key, None)
+				if _orig_loc_t is not None:
+					loc.t = _orig_loc_t
+				if _orig_loc_set_language is not None:
+					loc.set_language = _orig_loc_set_language
+				if _orig_loc_get_language is not None:
+					loc.get_language = _orig_loc_get_language
 		# Eğer localization hala yüklüyse dilini varsayılana sıfırla
 		if 'localization' in sys.modules:
 			sys.modules['localization'].set_language(sys.modules['localization'].DEFAULT_LANGUAGE)

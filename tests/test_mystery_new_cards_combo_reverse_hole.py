@@ -28,7 +28,17 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), 'src'))
 
-from localization import get_language, set_language  # noqa: E402  (after sys.path)
+def set_language(lang_code: str) -> bool:
+    import sys
+    import localization
+    loc = sys.modules.get('localization', localization)
+    return loc.set_language(lang_code)
+
+def get_language() -> str:
+    import sys
+    import localization
+    loc = sys.modules.get('localization', localization)
+    return loc.get_language()
 
 
 def _import_mystery():

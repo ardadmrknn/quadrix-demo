@@ -1012,7 +1012,7 @@ class Menu:
 
     def handle_input(self, event):
         """Menü girdilerini işle (klavye + mouse)"""
-        if self._demo_upgrade_prompt.is_active():
+        if hasattr(self, '_demo_upgrade_prompt') and self._demo_upgrade_prompt.is_active():
             self._demo_upgrade_prompt.handle_input(event)
             return None
 
@@ -2365,7 +2365,8 @@ class Menu:
 
     def _maybe_handle_demo_main_action(self, action_id: str) -> bool:
         if demo_config.is_locked_main_action(action_id):
-            show_demo_transition_lock_prompt(self._demo_upgrade_prompt)
+            if hasattr(self, '_demo_upgrade_prompt'):
+                show_demo_transition_lock_prompt(self._demo_upgrade_prompt)
             return True
         return False
 
@@ -3431,7 +3432,7 @@ class Menu:
     def draw(self):
         """Menüyü retro Atari estetiğiyle çiz."""
         width, height = self.screen.get_size()
-        if self._demo_upgrade_prompt.is_active():
+        if hasattr(self, '_demo_upgrade_prompt') and self._demo_upgrade_prompt.is_active():
             self._demo_upgrade_prompt.screen = self.screen
             self._demo_upgrade_prompt.draw()
             return
@@ -3988,7 +3989,7 @@ class Menu:
         if self.show_daily_prompt:
             self._draw_daily_prompt_panel()
 
-        if self._demo_upgrade_prompt.is_active():
+        if hasattr(self, '_demo_upgrade_prompt') and self._demo_upgrade_prompt.is_active():
             self._demo_upgrade_prompt.draw()
 
         # Gamepad bağlıysa küçük gösterge

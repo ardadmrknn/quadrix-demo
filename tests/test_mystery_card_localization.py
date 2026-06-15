@@ -5,7 +5,17 @@ from types import SimpleNamespace
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), 'src'))
 
 from game_modes_extra import MysteryCardManager, MysteryMode, get_card_description, get_card_title
-from localization import get_language, set_language
+def set_language(lang_code: str) -> bool:
+    import sys
+    import localization
+    loc = sys.modules.get('localization', localization)
+    return loc.set_language(lang_code)
+
+def get_language() -> str:
+    import sys
+    import localization
+    loc = sys.modules.get('localization', localization)
+    return loc.get_language()
 
 
 def test_card_variants_resolve_localization_group_and_placeholders():
