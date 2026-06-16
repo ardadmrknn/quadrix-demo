@@ -56,7 +56,7 @@ class DummyUserManager:
 
 
 def test_achievement_rewards_granting():
-    """Test that unlocking achievements awards the correct amount of Lunar fragments."""
+    """Ödüller artık manuel claim_reward() ile verilir; unlock otomatik vermez."""
     pygame.init()
     try:
         dummy_um = DummyUserManager(fragments=0)
@@ -71,18 +71,28 @@ def test_achievement_rewards_granting():
             assert len(am.unlocked) == 0
             assert len(am.claimed_rewards) == 0
             
-            # Unlock a starter achievement: first_game (worth 100 Lunar)
+            # Unlock first_game (100 Lunar). Unlock NO LONGER auto-grants.
             success = am.unlock('first_game')
             assert success is True
             assert 'first_game' in am.unlocked
+            assert 'first_game' not in am.claimed_rewards
+            assert dummy_um.fragments == 0
+            assert am.is_reward_claimable('first_game') is True
+            
+            # Manuel talep: bakiye artar, çift talep 0 döner.
+            assert am.claim_reward('first_game') == 100
             assert 'first_game' in am.claimed_rewards
             assert dummy_um.fragments == 100
+            assert am.claim_reward('first_game') == 0
+            assert dummy_um.fragments == 100
             
-            # Unlock a legendary achievement: lines_200 (worth 1000 Lunar)
+            # Legendary: lines_200 (1000 Lunar) — yine manuel.
             success = am.unlock('lines_200')
             assert success is True
             assert 'lines_200' in am.unlocked
-            assert 'lines_200' in am.claimed_rewards
+            assert 'lines_200' not in am.claimed_rewards
+            assert dummy_um.fragments == 100
+            assert am.claim_reward('lines_200') == 1000
             assert dummy_um.fragments == 1100
             
         finally:
@@ -93,7 +103,8 @@ def test_achievement_rewards_granting():
 
 
 def test_retroactive_achievement_claims():
-    """Test that existing unlocked achievements without claimed rewards are claimed retroactively."""
+    """Geriye dönük otomatik ödül kaldırıldı: açık ama talep edilmemiş başarımlar
+    cüzdana otomatik yazılmaz, yalnızca claim_reward() ile alınır."""
     pygame.init()
     try:
         dummy_um = DummyUserManager(fragments=50)
@@ -112,14 +123,17 @@ def test_retroactive_achievement_claims():
             json.dump(initial_data, f)
             
         try:
-            # Instantiate manager: it should detect the pre-existing achievements,
-            # calculate the rewards (first_game=100, lines_10=150 -> 250 Lunar),
-            # and retroactively add them to dummy_um.
+            # Önceden açık başarımlar tespit edilir ama otomatik verilmez.
             am = AchievementManager(filename=tmp_path, user_manager=dummy_um)
             
-            assert 'first_game' in am.claimed_rewards
-            assert 'lines_10' in am.claimed_rewards
-            # 50 initial + 250 reward = 300
+            assert 'first_game' not in am.claimed_rewards
+            assert 'lines_10' not in am.claimed_rewards
+            assert dummy_um.fragments == 50
+            assert am.is_reward_claimable('first_game') is True
+            assert am.is_reward_claimable('lines_10') is True
+            # Manuel talep edilince eklenir (100 + 150 = 250 -> toplam 300).
+            am.claim_reward('first_game')
+            am.claim_reward('lines_10')
             assert dummy_um.fragments == 300
             
         finally:

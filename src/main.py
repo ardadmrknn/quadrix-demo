@@ -290,6 +290,7 @@ def _build_user_bound_views(
     screen,
     user_manager,
     steam_mode_scores_loader,
+    sound=None,
 ):
     achievements_file = user_manager.get_achievements_file()
     highscores_file = user_manager.get_highscores_file()
@@ -308,7 +309,13 @@ def _build_user_bound_views(
         user_manager,
         steam_mode_scores=steam_mode_scores_loader(limit=3),
     )
-    achievement_screen = AchievementScreen(screen, achievement_manager)
+    try:
+        achievement_screen = AchievementScreen(screen, achievement_manager, sound=sound)
+    except TypeError:
+        # Testlerde tek/çift argümanlı mock AchievementScreen olabilir.
+        achievement_screen = AchievementScreen(screen, achievement_manager)
+        if hasattr(achievement_screen, 'sound'):
+            achievement_screen.sound = sound
     return score_manager, achievement_manager, highscore_screen, achievement_screen
 
 
@@ -1691,6 +1698,14 @@ def main():
     except Exception:
         pass
 
+    # Başarım ekranı menu_sound'dan önce kurulduğu için coin-collect sesini
+    # şimdi bağla (varsa). Böylece "Ödülü Al" coin uçuşunda ses çalar.
+    try:
+        if achievement_screen is not None:
+            achievement_screen.sound = menu_sound
+    except Exception:
+        pass
+
     # Enter sonrası siyah bekleme oluşmaması için ağır ekran kurulumlarını
     # splash öncesinde hazırla.
     menu = Menu(screen, user_manager, settings_manager=settings_manager)
@@ -2539,6 +2554,11 @@ def main():
             elif action in ('achievements', 'Başarılar', 'Başarımlar', 'Achievements'):
                 confirm_exit = False
                 state = 'achievements'
+                # Lunar göstergesini güncel cüzdan bakiyesine yeniden eşitle.
+                try:
+                    achievement_screen.reset_for_open()
+                except Exception:
+                    pass
             elif action in ('high_scores', 'High Scores', t('high_scores'), 'Yüksek Skorlar', 'En Yuksek Skorlar'):
                 confirm_exit = False
                 state = 'highscores'

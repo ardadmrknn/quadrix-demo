@@ -276,6 +276,7 @@ class SoundManager:
                 'sniper_shot',
                 'card_open', 'card_magnet', 'card_save', 'card_activate',
                 'card_restore',
+                'coin_collect',
             )
             for key in sound_keys:
                 self.create_gameplay_sfx(key)
@@ -527,6 +528,20 @@ class SoundManager:
                     {'wave': 'triangle', 'start_freq': 440.0, 'end_freq': 660.0, 'amplitude': 0.22},
                     {'wave': 'sine', 'start_freq': 660.0, 'end_freq': 990.0, 'amplitude': 0.20},
                     {'wave': 'sine', 'start_freq': 220.0, 'end_freq': 330.0, 'amplitude': 0.10},
+                ],
+            },
+            'coin_collect': {
+                # Kisa, parlak "tin" - basarim odulu coin'i hedefe ulastiginda.
+                'duration_ms': 96,
+                'attack_ms': 1,
+                'release_ms': 64,
+                'noise_amount': 0.002,
+                'transient_amount': 0.018,
+                'stereo_width': 0.016,
+                'layers': [
+                    {'wave': 'sine', 'start_freq': 880.0, 'end_freq': 1320.0, 'amplitude': 0.28},
+                    {'wave': 'triangle', 'start_freq': 1320.0, 'end_freq': 1760.0, 'amplitude': 0.16},
+                    {'wave': 'sine', 'start_freq': 660.0, 'end_freq': 990.0, 'amplitude': 0.10},
                 ],
             },
             'tutorial_success': {

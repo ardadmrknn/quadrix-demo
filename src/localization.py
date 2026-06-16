@@ -107,6 +107,20 @@ _TRANSLATION_OVERRIDES_MTIME = None
 
 # Tüm oyun metinleri
 TRANSLATIONS = {
+    'achievement_claim_button': {
+        'tr': 'Odulu Al ({reward} L)',
+        'en': 'Claim ({reward} L)',
+        'de': 'Einlosen ({reward} L)',
+        'fr': 'Reclamer ({reward} L)',
+        'es': 'Reclamar ({reward} L)',
+        'it': 'Riscuoti ({reward} L)',
+        'pt': 'Resgatar ({reward} L)',
+        'ru': 'Zabrat ({reward} L)',
+        'ja': 'Uketoru ({reward} L)',
+        'zh': 'Lingqu ({reward} L)',
+        'ko': 'Batgi ({reward} L)',
+    },
+
     'card_type_limited_dynamic': {
         'tr': '{value} Hak',
         'en': '{value} Uses',

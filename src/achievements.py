@@ -571,28 +571,47 @@ class AchievementManager:
         }
         self.new_achievements = []  # Yeni açılan başarılar (gösterim için)
         self.load()
-        if self.user_manager:
-            self.grant_unclaimed_rewards()
-            
+
     def grant_unclaimed_rewards(self):
-        """Geriye dönük veya kazanılan ancak henüz verilmeyen Lunar ödüllerini topluca profile yazar."""
-        if not self.user_manager or not hasattr(self.user_manager, 'add_fragments'):
-            return
-        updated = False
-        for ach_id in list(self.unlocked.keys()):
-            if ach_id in ACHIEVEMENT_REWARDS and ach_id not in self.claimed_rewards:
-                reward = ACHIEVEMENT_REWARDS[ach_id]
-                if reward > 0:
-                    try:
-                        self.user_manager.add_fragments(reward)
-                        self.claimed_rewards.add(ach_id)
-                        updated = True
-                    except Exception as e:
-                        if constants.DEBUG_MODE:
-                            print(f"[UYARI] Geriye dönük başarım ödülü verilemedi ({ach_id}): {e}")
-        if updated:
-            self.save()
-    
+        """[DEVRE DIŞI] Otomatik geriye dönük ödül dağıtımı kaldırıldı.
+
+        Ödüller artık yalnızca başarımlar ekranındaki sarı "Ödülü Al" butonuna
+        tıklanarak ``claim_reward()`` ile manuel olarak alınır. Bu metot geriye
+        dönük uyumluluk için bırakılmıştır ve hiçbir şey yapmaz."""
+        return
+
+    def is_reward_claimable(self, achievement_id: str) -> bool:
+        """Başarım açık ve ödülü henüz alınmamışsa True döner."""
+        return (
+            achievement_id in self.unlocked
+            and achievement_id in ACHIEVEMENT_REWARDS
+            and ACHIEVEMENT_REWARDS[achievement_id] > 0
+            and achievement_id not in self.claimed_rewards
+        )
+
+    def claim_reward(self, achievement_id: str) -> int:
+        """Başarım ödülünü manuel olarak talep et.
+
+        Yalnızca başarım açık (``unlocked``) ve ödülü daha önce alınmamışsa
+        çalışır. Lunar miktarını oyuncu profiline ekler, ``claimed_rewards``
+        kümesine işler ve kaydeder. Verilen Lunar miktarını döndürür; talep
+        edilemezse 0 döner."""
+        if not self.is_reward_claimable(achievement_id):
+            return 0
+        um = getattr(self, 'user_manager', None)
+        if not um or not hasattr(um, 'add_fragments'):
+            return 0
+        reward = ACHIEVEMENT_REWARDS[achievement_id]
+        try:
+            um.add_fragments(reward)
+        except Exception as e:
+            if constants.DEBUG_MODE:
+                print(f"[UYARI] Başarım ödülü talep edilemedi ({achievement_id}): {e}")
+            return 0
+        self.claimed_rewards.add(achievement_id)
+        self.save()
+        return reward
+
     def load(self):
         """Başarıları yükle"""
         try:
@@ -768,29 +787,17 @@ class AchievementManager:
                     print(f"[UYARI] Başarı kontrolü hata ({ach_id}): {e}")
     
     def unlock(self, achievement_id):
-        """Başarıyı aç, Lunar ödülü ver ve Steam'e senkronla"""
+        """Başarıyı aç ve Steam'e senkronla. (Lunar ödülü manuel claim ile alınır.)"""
         if achievement_id not in self.unlocked:
             self.unlocked[achievement_id] = datetime.now().strftime('%Y-%m-%d %H:%M')
             self.new_achievements.append(achievement_id)
             if constants.DEBUG_MODE:
                 name = ACHIEVEMENTS.get(achievement_id, {}).get('name', achievement_id)
                 print(f"[ACH] Yeni başarı: {name}")
-            
-            # Lunar ödülü ver
-            um = getattr(self, 'user_manager', None)
-            claimed = getattr(self, 'claimed_rewards', None)
-            if um and hasattr(um, 'add_fragments'):
-                if achievement_id in ACHIEVEMENT_REWARDS and (claimed is None or achievement_id not in claimed):
-                    reward = ACHIEVEMENT_REWARDS[achievement_id]
-                    if reward > 0:
-                        try:
-                            um.add_fragments(reward)
-                            if claimed is not None:
-                                claimed.add(achievement_id)
-                        except Exception as e:
-                            if constants.DEBUG_MODE:
-                                print(f"[UYARI] Başarım ödülü verilemedi ({achievement_id}): {e}")
-            
+
+            # Lunar ödülü artık otomatik verilmez. Oyuncu başarımlar ekranındaki
+            # sarı "Ödülü Al" butonuyla claim_reward() üzerinden manuel alır.
+
             # Değişiklikleri hemen kaydet
             self.save()
 

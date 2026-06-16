@@ -7362,13 +7362,31 @@ class AchievementScreen:
         },
     }
     
-    def __init__(self, screen, achievement_manager):
+    def __init__(self, screen, achievement_manager, sound=None):
         """Başarı ekranını başlat"""
         self.screen = screen
         self.achievement_manager = achievement_manager
+        self.sound = sound
+
+        # ── Ödül talep / coin akışı animasyon durumu ──────────────────────
+        # active_coin_particles: uçuştaki coin parçacıkları (bkz. _update_and_draw_coins)
+        # display_lunar_amount: ekranda yumuşakça artan görsel para göstergesi
+        # target_lunar_amount: gerçek (hedef) para miktarı
+        self.active_coin_particles: list[dict[str, Any]] = []
+        self.display_lunar_amount: float = 0.0
+        self.target_lunar_amount: int = 0
+        # Başarımlar ekranına her girişte para değerlerini profile eşitlemek için.
+        self._lunar_synced: bool = False
+        # Sarı "Ödülü Al" butonlarının hit-zone'ları: {achievement_id: (rect, reward, anchor)}
+        self._claim_button_rects: dict[str, tuple[pygame.Rect, int, tuple[int, int]]] = {}
+        # Sağ üst para panelinin merkez koordinatı (coin uçuş hedefi).
+        self._lunar_panel_center: tuple[int, int] | None = None
+        # dt hesabı için son frame zaman damgası (ms).
+        self._last_frame_ms: int | None = None
+        # Lunar coin görseli cache'i: size -> Surface | False
+        self._lunar_coin_cache: dict[int, 'pygame.Surface | bool'] = {}
+
         self._font_lang = None
-        # Başarım PNG ikon cache'i: (id, unlocked, size) -> Surface | False
-        self._ach_icon_cache: dict = {}
         self._cached_font_scale: float = 0.0
         self.font_name = retro_style.get_font(30)
         self.font_desc = retro_style.get_font(20, bold=False)
@@ -7391,14 +7409,9 @@ class AchievementScreen:
         self._back_hover: bool = False
         # Menüyle aynı shared katman: ekran geçişlerinde animasyon kesilmesin.
         self.background_fx = get_shared_falling_blocks_layer('default')
-
-    def _ui_scale(self) -> float:
-        return get_projected_effective_scale(
-            self.screen, min_scale=0.68, max_scale=1.24, reference_size=(1366.0, 768.0),
-        )
-
-    def _s(self, value: int | float, minimum: int = 1) -> int:
-        return max(minimum, int(round(value * self._ui_scale())))
+        # Başarım PNG ikon cache'i: (achievement_id, locked, size) -> Surface | False
+        # False = bu ikon yüklenemedi (tekrar denemeyi önle).
+        self._ach_icon_cache: dict[tuple[str, bool, int], 'pygame.Surface | bool'] = {}
 
     def _load_achievement_icon(self, achievement_id: str, unlocked: bool, size: int) -> 'pygame.Surface | None':
         """Başarım PNG ikonunu yükle, boyutlandır ve cache'le.
@@ -7425,6 +7438,67 @@ class AchievementScreen:
         except Exception:
             self._ach_icon_cache[cache_key] = False
             return None
+
+    def _get_user_manager(self):
+        """Bağlı UserManager'ı achievement_manager üzerinden döndür (yoksa None)."""
+        return getattr(self.achievement_manager, 'user_manager', None)
+
+    def _get_lunar_balance(self) -> int:
+        """Oyuncunun anlık Lunar (Nöral Parça) bakiyesini döndür."""
+        um = self._get_user_manager()
+        if um and hasattr(um, 'get_fragments'):
+            try:
+                return int(um.get_fragments() or 0)
+            except Exception:
+                return 0
+        return 0
+
+    def _sync_lunar_amounts(self) -> None:
+        """Başarımlar ekranına ilk girişte görsel + hedef para değerlerini eşitle."""
+        balance = self._get_lunar_balance()
+        self.display_lunar_amount = float(balance)
+        self.target_lunar_amount = int(balance)
+        self.active_coin_particles = []
+        self._lunar_synced = True
+
+    def reset_for_open(self) -> None:
+        """Ekran açıldığında çağrılır: para göstergesini profile göre yeniden eşitler."""
+        self._lunar_synced = False
+        self._last_frame_ms = None
+
+    def _get_lunar_coin(self, size: int) -> 'pygame.Surface | None':
+        """Lunar coin görselini ``size`` px'e ölçekli döndür; yoksa None."""
+        size = max(1, int(size))
+        cached = self._lunar_coin_cache.get(size)
+        if cached is not None:
+            return cached or None  # False -> None
+        try:
+            img = load_image('assets/ui/lunar_coin.png', convert_alpha=True, size=(size, size))
+            self._lunar_coin_cache[size] = img
+            return img
+        except Exception:
+            self._lunar_coin_cache[size] = False
+            return None
+
+    def _play_coin_sound(self) -> None:
+        """Coin toplama sesini güvenli şekilde çal (sound bağlı değilse sessiz geç)."""
+        snd = getattr(self, 'sound', None)
+        if snd is None:
+            return
+        try:
+            player = getattr(snd, 'play_sound', None) or getattr(snd, 'play', None)
+            if player:
+                player('coin_collect')
+        except Exception:
+            pass
+
+    def _ui_scale(self) -> float:
+        return get_projected_effective_scale(
+            self.screen, min_scale=0.68, max_scale=1.24, reference_size=(1366.0, 768.0),
+        )
+
+    def _s(self, value: int | float, minimum: int = 1) -> int:
+        return max(minimum, int(round(value * self._ui_scale())))
 
     def _refresh_fonts_for_language(self, force: bool = False) -> None:
         """Aktif dile göre başarı ekranı fontlarını güncelle.
@@ -7646,10 +7720,15 @@ class AchievementScreen:
         elif event.type == pygame.MOUSEBUTTONDOWN:
             if event.button == 1:
                 mouse_pos = normalize_mouse_pos(getattr(event, 'pos', None)) or event.pos
-                # Mouse Geri butonu (sol üst) — kategori değişiminden ÖNCE
-                # kontrol edilir; ESC ile aynı 'back' aksiyonunu döndürür.
+                # Geri butonu — kategori tab/scrollbar'dan ÖNCE; click ESC'le
+                # aynı şekilde 'back' döner ve hiçbir kategori değişikliği
+                # tetiklemez.
                 if self._back_rect is not None and self._back_rect.collidepoint(mouse_pos):
                     return 'back'
+                # Sarı "Ödülü Al" butonları — maskenin üzerinde, en üst katmanda
+                # olduğu için kategori/scrollbar'dan ÖNCE değerlendirilir.
+                if self._handle_claim_click(mouse_pos):
+                    return None
                 category_id = self._get_category_at_pos(mouse_pos)
                 if category_id is not None:
                     self._select_category(category_id)
@@ -7671,7 +7750,62 @@ class AchievementScreen:
                 self._sb_drag_active = False
                 self._sb_drag_offset_y = 0
         return None
-    
+
+    def _handle_claim_click(self, mouse_pos) -> bool:
+        """Sarı 'Ödülü Al' butonuna tıklamayı işle.
+
+        Tıklanan butonun ekran koordinatından sağ üst para paneline doğru 10 adet
+        coin parçacığı (farklı gecikmelerle) spawn eder, hedef para miktarını
+        yükseltir, gerçek profile parayı ekler (claim_reward) ve başarımı
+        ``claimed_rewards`` setine işleyip kaydeder. Bir buton işlendiyse True döner."""
+        for ach_id, (rect, reward, anchor) in list(getattr(self, '_claim_button_rects', {}).items()):
+            if not rect.collidepoint(mouse_pos):
+                continue
+
+            # Gerçek profile parayı ekle + claimed setine işle + kaydet.
+            granted = 0
+            mgr = self.achievement_manager
+            if hasattr(mgr, 'claim_reward'):
+                granted = mgr.claim_reward(ach_id)
+            if granted <= 0:
+                # Talep edilemedi (zaten alınmış veya user_manager yok) — yine de
+                # butonun kaybolması için hit-zone'u temizle.
+                self._claim_button_rects.pop(ach_id, None)
+                return True
+
+            # Coin uçuş başlangıcı (buton merkezi) ve hedefi (para paneli merkezi).
+            start_x, start_y = anchor
+            if self._lunar_panel_center is not None:
+                target_x, target_y = self._lunar_panel_center
+            else:
+                width, _h = self.screen.get_size()
+                target_x, target_y = (width - self._s(120), self._s(70))
+
+            # Hedef para miktarını yükselt (görsel gösterge buna doğru ilerler).
+            self.target_lunar_amount += granted
+
+            # Ödülü 10 parçaya böl (farklı gecikmelerle peş peşe uçsun).
+            num_coins = 10
+            base_chunk = granted // num_coins
+            remainder = granted - base_chunk * num_coins
+            for idx in range(num_coins):
+                chunk = base_chunk + (1 if idx < remainder else 0)
+                self.active_coin_particles.append({
+                    'x': float(start_x),
+                    'y': float(start_y),
+                    'target_x': float(target_x),
+                    'target_y': float(target_y),
+                    'speed': 1.6,                # progress/saniye (~0.6s uçuş)
+                    'progress': 0.0,
+                    'delay_frames': float(idx * 4),  # peş peşe çıkış
+                    'value_chunk': int(chunk),
+                })
+
+            # Buton hemen kaybolsun (bir sonraki draw zaten yeniden hesaplar).
+            self._claim_button_rects.pop(ach_id, None)
+            return True
+        return False
+
     def _draw_back_button(self, _s) -> None:
         """Sol üst Geri affordance — ESC ile aynı semantik ('back').
 
@@ -7688,12 +7822,191 @@ class AchievementScreen:
         rect = _draw_shared_back_button(self.screen, _s, hover=hover, retro_style=retro_style)
         self._back_rect = rect
         self._back_hover = bool(rect.collidepoint(live_pos))
-    
+
+    def _draw_lunar_panel(self, title_rect: pygame.Rect) -> pygame.Rect:
+        """Sağ üst köşede mağaza tarzı cam panel içinde Lunar para göstergesini çiz.
+
+        Panel, başlığın sağ tarafına (``width - _s(220)``) hizalanır ve animasyonlu
+        ``display_lunar_amount`` değerini gösterir. Panelin merkezi coin uçuş hedefi
+        olarak ``self._lunar_panel_center`` içine yazılır. Çizilen rect döner."""
+        _s = self._s
+        width, _height = self.screen.get_size()
+
+        panel_w = _s(196)
+        panel_h = _s(54)
+        panel_x = width - _s(220) - (panel_w - _s(196))  # sağ üst köşe hizası
+        # Güvenli sınır: ekrandan taşmasın
+        panel_x = min(panel_x, width - panel_w - _s(14))
+        panel_x = max(panel_x, _s(14))
+        panel_y = title_rect.centery - panel_h // 2
+        panel_rect = pygame.Rect(panel_x, panel_y, panel_w, panel_h)
+
+        gold = (236, 203, 92)
+        retro_style.draw_glass_panel(
+            self.screen,
+            panel_rect,
+            alpha=210,
+            border_color=gold,
+            glow=True,
+        )
+
+        # Lunar coin simgesi (sol)
+        coin_size = _s(34)
+        coin_cx = panel_rect.x + _s(14) + coin_size // 2
+        coin_cy = panel_rect.centery
+        coin_img = self._get_lunar_coin(coin_size)
+        if coin_img is not None:
+            self.screen.blit(coin_img, coin_img.get_rect(center=(coin_cx, coin_cy)))
+        else:
+            # Fallback: altın rengi elmas glyph
+            r = coin_size // 2
+            pygame.draw.polygon(
+                self.screen, gold,
+                [(coin_cx, coin_cy - r), (coin_cx + r, coin_cy),
+                 (coin_cx, coin_cy + r), (coin_cx - r, coin_cy)],
+            )
+
+        # Para değeri (animasyonlu, tam sayıya yuvarlanmış)
+        amount_font = retro_style.get_font(_s(24), bold=True)
+        amount_text = f"{int(round(self.display_lunar_amount))}"
+        amount_surf = amount_font.render(amount_text, True, (255, 244, 210))
+        amount_rect = amount_surf.get_rect(
+            midleft=(coin_cx + coin_size // 2 + _s(10), panel_rect.centery)
+        )
+        self.screen.blit(amount_surf, amount_rect)
+
+        self._lunar_panel_center = panel_rect.center
+        return panel_rect
+
+    def _draw_claim_button(self, row_rect: pygame.Rect, achievement_id: str, reward: int) -> pygame.Rect:
+        """Başarım satırının ortasında sarı, parlayan 'Ödülü Al' butonu çiz.
+
+        Buton hit-zone'u ve merkez koordinatı ``_claim_button_rects`` içine kaydedilir
+        (coin uçuş başlangıç noktası için). Çizilen buton rect'i döner."""
+        _s = self._s
+        btn_w = _s(180)
+        btn_h = _s(46)
+        btn_rect = pygame.Rect(0, 0, btn_w, btn_h)
+        btn_rect.center = row_rect.center
+
+        gold = (236, 203, 92)
+        glow_gold = (255, 226, 130)
+
+        # Parlama (glow) halkası
+        glow_rect = btn_rect.inflate(_s(14), _s(14))
+        glow_surf = pygame.Surface(glow_rect.size, pygame.SRCALPHA)
+        pygame.draw.rect(glow_surf, (*glow_gold, 70), glow_surf.get_rect(), border_radius=_s(14))
+        self.screen.blit(glow_surf, glow_rect.topleft)
+
+        # Buton gövdesi — tek parça pürüzsüz sarı dolgu (üst highlight kutucuğu yok).
+        body_surf = pygame.Surface(btn_rect.size, pygame.SRCALPHA)
+        pygame.draw.rect(body_surf, (*gold, 245), body_surf.get_rect(), border_radius=_s(12))
+        self.screen.blit(body_surf, btn_rect.topleft)
+        pygame.draw.rect(self.screen, glow_gold, btn_rect, _s(2, 1), border_radius=_s(12))
+
+        # Metin: "Odulu Al (150 L)" (emoji kullanılmaz). Yazı buton sınırlarına
+        # taşmayacak şekilde otomatik küçültülür ve tam ortalanır.
+        label = t('achievement_claim_button', default='Odulu Al ({reward} L)', reward=reward)
+        if '{reward}' in label or label == 'achievement_claim_button':
+            # Lokalizasyon yoksa veya format uygulanmadıysa güvenli fallback
+            label = f"Odulu Al ({reward} L)"
+        max_text_w = btn_rect.width - _s(20)
+        max_text_h = btn_rect.height - _s(10)
+        font_size = _s(20)
+        btn_font = retro_style.get_font(font_size, bold=True)
+        label_surf = btn_font.render(label, True, (26, 22, 12))
+        # Buton sınırlarına sığana kadar font boyutunu kademeli küçült.
+        while (label_surf.get_width() > max_text_w or label_surf.get_height() > max_text_h) and font_size > _s(10):
+            font_size -= _s(1, 1)
+            btn_font = retro_style.get_font(font_size, bold=True)
+            label_surf = btn_font.render(label, True, (26, 22, 12))
+        text_rect = label_surf.get_rect(center=btn_rect.center)
+        self.screen.blit(label_surf, text_rect)
+
+        self._claim_button_rects[achievement_id] = (btn_rect.copy(), int(reward), btn_rect.center)
+        return btn_rect
+
+    def _update_and_draw_coins(self, dt: float) -> None:
+        """Aktif coin parçacıklarını güncelle, ekrana çiz ve hedefe ulaşanları işle.
+
+        - delay_frames azaltılır (parçacıklar peş peşe çıkar).
+        - progress hıza bağlı artar (progress += speed * dt).
+        - Anlık konum ease-in-out (t*t*(3-2t)) ile başlangıçtan hedefe lerp edilir.
+        - progress >= 1.0: parçacık listeden çıkar, display_lunar_amount artar,
+          coin toplama sesi çalınır."""
+        _s = self._s
+        if not self.active_coin_particles:
+            return
+
+        gold = (255, 219, 120)
+        radius = _s(8)
+        remaining: list[dict[str, Any]] = []
+
+        for p in self.active_coin_particles:
+            # Gecikme: parçacık henüz aktif değil
+            if p.get('delay_frames', 0) > 0:
+                p['delay_frames'] = p['delay_frames'] - dt * 60.0
+                if p['delay_frames'] < 0:
+                    p['delay_frames'] = 0
+                remaining.append(p)
+                continue
+
+            p['progress'] = p.get('progress', 0.0) + p.get('speed', 1.0) * dt
+
+            if p['progress'] >= 1.0:
+                # Hedefe ulaştı: parayı görsel göstergeye ekle, ses çal
+                self.display_lunar_amount += p.get('value_chunk', 0)
+                self._play_coin_sound()
+                continue
+
+            t_lin = max(0.0, min(1.0, p['progress']))
+            t_ease = t_lin * t_lin * (3.0 - 2.0 * t_lin)  # smooth step
+            x = p['x'] + (p['target_x'] - p['x']) * t_ease
+            y = p['y'] + (p['target_y'] - p['y']) * t_ease
+
+            # Coin görseli veya altın daire çiz
+            coin_img = self._get_lunar_coin(radius * 2)
+            if coin_img is not None:
+                self.screen.blit(coin_img, coin_img.get_rect(center=(int(x), int(y))))
+            else:
+                pygame.draw.circle(self.screen, gold, (int(x), int(y)), radius)
+                pygame.draw.circle(self.screen, (255, 248, 220), (int(x), int(y)), max(1, radius // 2))
+
+            remaining.append(p)
+
+        self.active_coin_particles = remaining
+
+        # Tüm coin uçuşları bittiğinde gösterim değerini doğrudan hedefe kilitle.
+        # Böylece değer yalnızca ileriye doğru artar; lerp ile hedefi aşıp geri
+        # düşme (titreme) olmaz.
+        if not self.active_coin_particles:
+            self.display_lunar_amount = float(self.target_lunar_amount)
+
     def draw(self):
         """Başarı ekranını çiz"""
         self._refresh_fonts_for_language()
         width, height = self.screen.get_size()
         _s = self._s
+
+        # ── Para göstergesi / coin animasyon kare-zamanlaması ─────────────
+        # İlk girişte (veya reset_for_open sonrası) para değerlerini profile eşitle.
+        if not self._lunar_synced:
+            self._sync_lunar_amounts()
+        # dt (saniye) hesabı — coin uçuş animasyonu için.
+        now_ms = pygame.time.get_ticks()
+        if self._last_frame_ms is None:
+            dt = 0.0
+        else:
+            dt = max(0.0, min(0.05, (now_ms - self._last_frame_ms) / 1000.0))
+        self._last_frame_ms = now_ms
+        # NOT: Gösterim değeri lerp ile hedefe yaklaştırılmaz. Artış yalnızca
+        # uçan coin parçacıkları hedefe ulaştıkça value_chunk kadar yapılır
+        # (bkz. _update_and_draw_coins); tüm uçuşlar bitince değer doğrudan
+        # hedefe kilitlenir. Böylece sayaç yalnızca ileriye doğru artar.
+
+        # Bu frame'de yeniden hesaplanacak claim buton hit-zone'ları.
+        self._claim_button_rects = {}
+
         retro_style.draw_background(self.screen)
         self.background_fx.update(self.screen)
         self.background_fx.draw(self.screen)
@@ -7739,15 +8052,15 @@ class AchievementScreen:
                 self.screen.blit(custom_icon, custom_icon.get_rect(center=slot_rect.center))
                 return
 
-            # PNG emoji dene
+            # 2) Apple emoji PNG dene
             from achievements import ACHIEVEMENTS as _ACH_DEFS
             ach_def = _ACH_DEFS.get(achievement_id)
             if ach_def:
                 icon_char = ach_def.get('icon', '')
                 if icon_char:
                     from emoji_renderer import emoji_surface
-                    icon_size = max(16, min(slot_rect.width, slot_rect.height) - 14)
-                    surf = emoji_surface(icon_char, icon_size)
+                    emoji_size = max(16, min(slot_rect.width, slot_rect.height) - 14)
+                    surf = emoji_surface(icon_char, emoji_size)
                     if surf:
                         if not unlocked:
                             # Kilitli: yarı saydam + gri tonlama efekti
@@ -8037,9 +8350,19 @@ class AchievementScreen:
             desc_surface = self.font_desc.render(desc_text, True, desc_color)
             self.screen.blit(desc_surface, (text_left, row_rect.y + _s(52)))
 
-            # Her başarımın ne kadar Lunar ödülü verdiğini al ve çiz
+            # Her başarımın ne kadar Lunar ödülü verdiğini al.
             from achievements import ACHIEVEMENT_REWARDS
-            reward_amt = ACHIEVEMENT_REWARDS.get(str(ach.get('id', '')), 0)
+            ach_id = str(ach.get('id', ''))
+            reward_amt = ACHIEVEMENT_REWARDS.get(ach_id, 0)
+
+            # Talep durumu: unlocked & ödülü henüz alınmamış => bekleyen claim.
+            # Maske ve sarı buton, satırın diğer içeriği çizildikten sonra bu
+            # döngünün içinde (aşağıda) bu satır için doğrudan çizilir.
+            is_claimed = ach_id in getattr(self.achievement_manager, 'claimed_rewards', set())
+            is_pending_claim = bool(unlocked) and reward_amt > 0 and not is_claimed
+
+            # Ödül metni: yalnızca kilitli (açılmamış - not unlocked) başarımlarda
+            # statik "+N Lunar" gösterilir. Açılmış başarımlarda gizlenir.
             reward_surf = None
             if reward_amt > 0 and not unlocked:
                 reward_text = t('achievement_reward_format', reward=reward_amt)
@@ -8076,6 +8399,17 @@ class AchievementScreen:
                 progress_rect = progress_surface.get_rect(right=row_rect.right - _s(18), top=meta_y)
                 self.screen.blit(progress_surface, progress_rect)
 
+            # ── Satıra özel odak maskesi + sarı "Ödülü Al" butonu ─────────
+            # Yalnızca açılmış ama ödülü alınmamış satırlar karartılır. Kilitli
+            # veya ödülü alınmış satırlar bu maskeden etkilenmez (doğal renkte
+            # kalır). Karartma yapıldıktan SONRA sarı buton bu satırın üzerine
+            # çizilir; böylece yalnızca buton parlayarak öne çıkar.
+            if is_pending_claim:
+                row_mask = pygame.Surface((row_rect.width, row_rect.height), pygame.SRCALPHA)
+                row_mask.fill((0, 0, 0, 120))
+                self.screen.blit(row_mask, row_rect.topleft)
+                self._draw_claim_button(row_rect, ach_id, reward_amt)
+
         self.screen.set_clip(prev_clip)
 
         # Scrollbar çiz — panellerin hemen dışına, sağ tarafa
@@ -8099,6 +8433,12 @@ class AchievementScreen:
             self._sb_thumb_rect = None
             self._sb_container_rect = None
             self._max_scroll_cache = 0
+
+        # Sağ üst para paneli — her zaman en üstte (parlar).
+        self._draw_lunar_panel(title_rect)
+
+        # Coin uçuş animasyonu — en son çağrılır (panelin de üstünde uçar).
+        self._update_and_draw_coins(dt)
 
 
 
