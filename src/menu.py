@@ -2007,6 +2007,23 @@ class Menu:
             line_spacing=2,
         )
 
+        # Draw pulsing red exclamation mark directly without a circle
+        if panel_key == 'achievements' and panel_context and panel_context.get('has_unclaimed_achievements', False):
+            current_time = pygame.time.get_ticks()
+            pulse = 1.0 + 0.20 * math.sin(current_time * 0.007)
+            
+            base_font_size = sp(28)  # Larger exclamation mark
+            scaled_font_size = max(10, int(base_font_size * pulse))
+            
+            excl_font = retro_style.get_font(scaled_font_size, bold=True)
+            excl_surf = excl_font.render('!', True, (255, 40, 40))
+            
+            badge_cx = draw_rect.x + sp(4) + _tbg_w - sp(24)
+            badge_cy = draw_rect.y + _tbg_h // 2
+            
+            excl_rect = excl_surf.get_rect(center=(badge_cx, badge_cy))
+            target_surface.blit(excl_surf, excl_rect)
+
         if subtitle:
             tutorial_subtitle = panel_key == 'tutorial_mode'
             badge_subtitle = panel_key in ('piece_workshop', 'block_styles')
@@ -2410,8 +2427,8 @@ class Menu:
         next_level = min(100, highest + 1) if highest < 100 else 100
         return last_level, next_level
 
-    def _get_recent_achievements_panel_data(self, lang: str | None = None) -> tuple[list[str], int]:
-        """Son 3 başarı adı ve toplam tamamlanma yüzdesi."""
+    def _get_recent_achievements_panel_data(self, lang: str | None = None) -> tuple[list[str], int, bool]:
+        """Son 3 başarı adı, toplam tamamlanma yüzdesi ve ödülü alınmamış/yeni başarım var mı."""
         if lang is None:
             try:
                 lang = get_language()
@@ -2432,20 +2449,24 @@ class Menu:
             fallback_percent = 0
 
         if not self.user_manager:
-            return [], fallback_percent
+            return [], fallback_percent, False
 
         try:
             ach_path = self.user_manager.get_achievements_file()
             if not ach_path:
-                return [], fallback_percent
+                return [], fallback_percent, False
             path_obj = Path(ach_path)
             if not path_obj.exists():
-                return [], fallback_percent
+                return [], fallback_percent, False
 
             mtime = path_obj.stat().st_mtime
             cache = self._achievements_panel_cache
             if cache.get('path') == str(path_obj) and cache.get('mtime') == mtime and cache.get('lang') == lang:
-                return cache.get('recent', []), int(cache.get('percent', fallback_percent) or fallback_percent)
+                return (
+                    cache.get('recent', []),
+                    int(cache.get('percent', fallback_percent) or fallback_percent),
+                    bool(cache.get('has_unclaimed', False))
+                )
 
             raw = json.loads(path_obj.read_text(encoding='utf-8'))
             unlocked = raw.get('unlocked', {}) if isinstance(raw, dict) else {}
@@ -2456,6 +2477,14 @@ class Menu:
                 for achievement_id, unlock_date in unlocked.items()
                 if achievement_id in ACHIEVEMENTS
             }
+
+            claimed_rewards = raw.get('claimed_rewards', []) if isinstance(raw, dict) else []
+            if not isinstance(claimed_rewards, list):
+                claimed_rewards = []
+            claimed_set = set(claimed_rewards)
+
+            # Ödülü alınmamış başarım var mı kontrolü
+            has_unclaimed = any(ach_id for ach_id in unlocked if ach_id not in claimed_set)
 
             def _unlock_sort_key(item: tuple[str, str]):
                 date_text = str(item[1] or '')
@@ -2475,10 +2504,11 @@ class Menu:
                 'lang': lang,
                 'recent': recent_names,
                 'percent': max(0, min(100, percent)),
+                'has_unclaimed': has_unclaimed,
             }
-            return recent_names, max(0, min(100, percent))
+            return recent_names, max(0, min(100, percent)), has_unclaimed
         except Exception:
-            return [], fallback_percent
+            return [], fallback_percent, False
 
     def _build_dashboard_panel_context(self, lang: str) -> dict[str, Any]:
         """Ana panel kartları için dinamik UI içerikleri üret."""
@@ -2500,7 +2530,7 @@ class Menu:
         if not daily_title:
             daily_title = t('menu_dashboard_daily_fallback')
 
-        recent_achievements, achievement_percent = self._get_recent_achievements_panel_data(lang)
+        recent_achievements, achievement_percent, has_unclaimed = self._get_recent_achievements_panel_data(lang)
         last_level, next_level = self._get_campaign_levels()
 
         # Campaign level name
@@ -2520,6 +2550,7 @@ class Menu:
             remaining_lives,
             tuple(recent_achievements),
             achievement_percent,
+            has_unclaimed,
             last_level,
             next_level,
             campaign_level_name,
@@ -2533,6 +2564,7 @@ class Menu:
             'daily_max_lives': DAILY_MAX_FAILURES,
             'recent_achievements': recent_achievements,
             'achievement_percent': achievement_percent,
+            'has_unclaimed_achievements': has_unclaimed,
             'campaign_last_level': last_level,
             'campaign_next_level': next_level,
             'campaign_level_name': campaign_level_name,
@@ -7973,7 +8005,7 @@ class AchievementScreen:
             from achievements import ACHIEVEMENT_REWARDS
             reward_amt = ACHIEVEMENT_REWARDS.get(str(ach.get('id', '')), 0)
             reward_surf = None
-            if reward_amt > 0:
+            if reward_amt > 0 and not unlocked:
                 reward_text = t('achievement_reward_format', reward=reward_amt)
                 reward_surf = self.font_hint.render(reward_text, True, (236, 203, 92))
 

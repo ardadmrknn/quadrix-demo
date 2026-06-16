@@ -34,6 +34,16 @@ DEFAULT_CONTROLS = {
         'hold': {'primary': 'c', 'secondary': ''},
         'pause': {'primary': 'p', 'secondary': ''},
     },
+    'card_slots': {
+        # Kart Ustaligi modu: sol paneldeki 6 yuvanin (slot) tetikleme tuslari.
+        # Her yuva birincil/ikincil tus tutar; varsayilan birincil 1..6.
+        'slot_1': {'primary': '1', 'secondary': ''},
+        'slot_2': {'primary': '2', 'secondary': ''},
+        'slot_3': {'primary': '3', 'secondary': ''},
+        'slot_4': {'primary': '4', 'secondary': ''},
+        'slot_5': {'primary': '5', 'secondary': ''},
+        'slot_6': {'primary': '6', 'secondary': ''},
+    },
     'pvp': {
         'player1': {
             'move_left': 'a',
@@ -69,6 +79,12 @@ DEFAULT_CONTROLS = {
         'lt': {'primary': 100, 'secondary': -1},          # LT / L2 (trigger pseudo-index)
         'rt': {'primary': 101, 'secondary': -1},          # RT / R2 (trigger pseudo-index)
         # Kart modu butonlari (varsayilan: atanmis degil)
+        'slot_1': {'primary': 9, 'secondary': -1},     # L1 / LB
+        'slot_2': {'primary': 10, 'secondary': -1},    # R1 / RB
+        'slot_3': {'primary': 100, 'secondary': -1},   # L2 / LT pseudo
+        'slot_4': {'primary': 101, 'secondary': -1},   # R2 / RT pseudo
+        'slot_5': {'primary': 7, 'secondary': -1},     # L3 Click
+        'slot_6': {'primary': 8, 'secondary': -1},     # R3 Click
         'card_rewind': {'primary': -1, 'secondary': -1},
         'card_sniper': {'primary': -1, 'secondary': -1},
         'card_time_capsule_save': {'primary': -1, 'secondary': -1},
@@ -1267,6 +1283,24 @@ class SettingsManager:
                         slot_value = value.get(slot)
                         if isinstance(slot_value, (str, int)):
                             merged['single_player'][action][slot] = slot_value
+        # Kart yuvasi (card_slots) kontrolleri (primary/secondary), single_player ile ayni sema.
+        slots_existing = existing.get('card_slots')
+        if isinstance(slots_existing, dict):
+            for action, value in slots_existing.items():
+                if action not in merged.get('card_slots', {}):
+                    continue
+                default_value = merged['card_slots'][action]
+                if isinstance(value, (str, int)):
+                    if isinstance(default_value, dict):
+                        merged['card_slots'][action]['primary'] = value
+                    else:
+                        merged['card_slots'][action] = value
+                    continue
+                if isinstance(value, dict) and isinstance(default_value, dict):
+                    for slot in ('primary', 'secondary'):
+                        slot_value = value.get(slot)
+                        if isinstance(slot_value, (str, int)):
+                            merged['card_slots'][action][slot] = slot_value
         pvp_existing = existing.get('pvp')
         if isinstance(pvp_existing, dict):
             for player in ('player1', 'player2'):

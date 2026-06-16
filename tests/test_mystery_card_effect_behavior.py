@@ -46,6 +46,7 @@ def _minimal_mode(MysteryMode):
         'hold2': pygame.K_v,
     }
     mode.alt_control_bindings = {}
+    mode.settings_manager = None
     mode._try_open_debug_workshop_from_key = lambda _event: False
     mode._do_rewind = lambda: False
     mode._open_sniper_overlay = lambda: False
@@ -89,7 +90,7 @@ def _minimal_card_effect_mode(MysteryMode, Board, *, effects_enabled: bool):
         progress=0,
         threshold=5,
         pending_choices=[],
-        notify_lines_cleared=lambda _lines, **_kwargs: False,
+        notify_lines_cleared=lambda _lines: False,
         used_card_ids=set(),
     )
     mode.get_cell_size = lambda: 10
@@ -121,13 +122,34 @@ def test_freeze_drop_event_filter_allows_only_lateral_and_hard_drop(monkeypatch)
     assert [event.key for event in posted_events] == [extra.pygame.K_SPACE]
 
 
-def test_sniper_hotkey_consumes_event_when_overlay_opens(monkeypatch):
+def test_slot_key_triggers_sniper_card_via_slot_binding(monkeypatch):
+    # Plan §3: kartların sabit tuşu yoktur; tetikleme slota bağlıdır.
+    # Sniper kartı bir slota yerleştirilince, o slotun tuşu (varsayılan '1')
+    # kartı tetikler ve event tüketilir.
     extra, Game, MysteryMode, _ = _import_mystery_mode()
     mode = _minimal_mode(MysteryMode)
-    mode._open_sniper_overlay = lambda: True
-    event = SimpleNamespace(type=extra.pygame.KEYDOWN, key=extra.pygame.K_n)
-    posted_events = []
+    opened = {'count': 0}
 
+    def _open():
+        opened['count'] += 1
+        return True
+
+    mode._open_sniper_overlay = _open
+    mode.sound_enabled = False
+    mode._refresh_slot_charges = lambda: None
+    mode._sniper_charges = 2
+
+    sniper_card = {'id': 'sniper_shot', 'value': 2, 'charges': 2}
+    mode.card_manager = SimpleNamespace(
+        MAX_CARD_SLOTS=6,
+        active_slots=[sniper_card, None, None, None, None, None],
+        unlocked_slots=3,
+        is_slot_unlocked=lambda idx: idx < 3,
+        get_slot_card=lambda idx: sniper_card if idx == 0 else None,
+    )
+
+    event = SimpleNamespace(type=extra.pygame.KEYDOWN, key=extra.pygame.K_1)
+    posted_events = []
     monkeypatch.setattr(extra.pygame.event, 'get', lambda: [event])
     monkeypatch.setattr(extra.pygame.event, 'post', lambda event: posted_events.append(event))
     monkeypatch.setattr(Game, 'handle_input', lambda self: True)
@@ -137,7 +159,41 @@ def test_sniper_hotkey_consumes_event_when_overlay_opens(monkeypatch):
     )
 
     assert mode.handle_input() is True
+    # Slot 1 tuşu (varsayılan '1') sniper kartını tetikledi ve event tüketildi.
+    assert opened['count'] == 1
     assert posted_events == []
+
+
+def test_legacy_n_key_no_longer_triggers_sniper(monkeypatch):
+    # Plan §3: eski N kısayolu kaldırıldı. N tuşu artık sniper açmaz; event
+    # base game'e iletilir (post edilir).
+    extra, Game, MysteryMode, _ = _import_mystery_mode()
+    mode = _minimal_mode(MysteryMode)
+    opened = {'count': 0}
+    mode._open_sniper_overlay = lambda: opened.__setitem__('count', opened['count'] + 1) or True
+    mode.sound_enabled = False
+    mode._refresh_slot_charges = lambda: None
+    mode.card_manager = SimpleNamespace(
+        MAX_CARD_SLOTS=6,
+        active_slots=[None] * 6,
+        unlocked_slots=3,
+        is_slot_unlocked=lambda idx: idx < 3,
+        get_slot_card=lambda idx: None,
+    )
+
+    event = SimpleNamespace(type=extra.pygame.KEYDOWN, key=extra.pygame.K_n)
+    posted_events = []
+    monkeypatch.setattr(extra.pygame.event, 'get', lambda: [event])
+    monkeypatch.setattr(extra.pygame.event, 'post', lambda event: posted_events.append(event))
+    monkeypatch.setattr(Game, 'handle_input', lambda self: True)
+    monkeypatch.setattr(
+        'game_modes_extra.get_gamepad_manager',
+        lambda: SimpleNamespace(enabled=False),
+    )
+
+    assert mode.handle_input() is True
+    assert opened['count'] == 0
+    assert [e.key for e in posted_events] == [extra.pygame.K_n]
 
 
 def test_freeze_drop_blocks_card_hotkeys_from_key_state(monkeypatch):
@@ -747,7 +803,7 @@ def test_alchemist_quadrix_triggers_once_on_player_lock(monkeypatch):
     mode._active_effect_visuals = {}
     mode._sync_active_cards = lambda: None
     mode._apply_combo_aura_on_lock = lambda gained, _previous_combo: None
-    mode.card_manager = SimpleNamespace(notify_lines_cleared=lambda _lines, **_kwargs: False)
+    mode.card_manager = SimpleNamespace(notify_lines_cleared=lambda _lines: False)
     mode.perk_manager = extra.PerkManager(mode)
     mode.perk_manager.activate('perk_alchemist')
 
@@ -876,7 +932,7 @@ def test_restart_resets_mystery_runtime_effect_state(monkeypatch):
     _, Game, MysteryMode, _ = _import_mystery_mode()
     mode = MysteryMode.__new__(MysteryMode)
     mode.board = SimpleNamespace(level=4, flexible_border_active=True)
-    mode.card_manager = SimpleNamespace(reset=lambda: None, sync_level_progress=lambda: None)
+    mode.card_manager = SimpleNamespace(reset=lambda: None)
     mode.card_selection_reroll_limit = 5
     mode._sync_active_cards = lambda: None
     mode._score_multiplier_timer = 9.0
@@ -999,3 +1055,53 @@ def test_card_reveal_sfx_fires_once_at_flip_midpoint_not_at_flip_start():
     # 3. tick: kart tamamen açılmış olsa bile ikinci kez çalmamalı.
     widget.update(0.40, None)
     assert calls == ['sfx'], 'Aynı kart için reveal SFX sadece bir kez tetiklenmeli'
+
+
+def test_reverse_debt_queues_board_delta_effect_when_effects_enabled():
+    """Opt-in gate kaldırıldıktan sonra tahtayı değiştiren reverse_debt otomatik animasyon almalı.
+
+    reverse_debt eskiden gate set'te olmadığı için animasyonsuz kalıyordu; koşulsuz
+    snapshot ile artık tahta değişimi (silinen alt satırlar) kuyruğa düşmeli.
+    """
+    _, _, MysteryMode, Board = _import_mystery_mode()
+    mode = _minimal_card_effect_mode(MysteryMode, Board, effects_enabled=True)
+
+    # Alt iki satıra (tam dolu OLMAYACAK şekilde) blok koy: clear_lines tetiklenmesin.
+    mode.board.grid[5][0] = (255, 80, 80)
+    mode.board.occupancy[5][0] = True
+    mode.board.grid[4][1] = (80, 160, 255)
+    mode.board.occupancy[4][1] = True
+
+    mode._apply_card_effect({'id': 'reverse_debt', 'title': 'Ters Borç', 'value': 1, 'color': (200, 120, 255)})
+
+    assert mode._card_board_effects, 'reverse_debt tahta değişimi animasyon kuyruğuna eklenmeli'
+    assert mode._card_board_effects[-1]['id'] == 'reverse_debt'
+
+
+def test_board_neutral_card_does_not_queue_board_effect_when_effects_enabled():
+    """Seçim anında tahtayı değiştirmeyen kart (delta boş) animasyon üretmemeli.
+
+    Koşulsuz snapshot alıyoruz ancak delta boşsa _append_card_board_effect no-op'tur;
+    yani armed kartlar (hole_hunter) seçim anında yanlış/çift animasyon üretmez.
+    """
+    _, _, MysteryMode, Board = _import_mystery_mode()
+    mode = _minimal_card_effect_mode(MysteryMode, Board, effects_enabled=True)
+    mode._active_effect_visuals = {}
+
+    # hole_hunter seçim anında yalnız hak armalar; board.occupancy değişmez.
+    mode._apply_card_effect({'id': 'hole_hunter', 'title': 'Delik Avcısı', 'value': 1, 'color': (140, 230, 200)})
+
+    assert mode._card_board_effects == [], 'tahtayı değiştirmeyen kart animasyon üretmemeli'
+
+
+def test_reverse_debt_does_not_queue_board_effect_when_effects_disabled():
+    """effects_enabled kapalıyken hiçbir tahta animasyonu üretilmemeli (gating korunur)."""
+    _, _, MysteryMode, Board = _import_mystery_mode()
+    mode = _minimal_card_effect_mode(MysteryMode, Board, effects_enabled=False)
+
+    mode.board.grid[5][0] = (255, 80, 80)
+    mode.board.occupancy[5][0] = True
+
+    mode._apply_card_effect({'id': 'reverse_debt', 'title': 'Ters Borç', 'value': 1, 'color': (200, 120, 255)})
+
+    assert mode._card_board_effects == []

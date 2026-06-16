@@ -272,15 +272,18 @@ def _build_tab_content(tab_key: str, sm, show_debug: bool = False) -> list[dict]
         for action_key, label in ctrl_actions.get('pvp.player1', []):
             items.append({
                 'type': 'keybind', 'key': f'ctrl_pvp1_{action_key}',
-                'action_key': action_key, 'section': 'pvp.player1',
-                'label_tr': label, 'label_en': label,
             })
-        items.append({'type': 'section', 'loc_key': 'tab_pvp_player2', 'label_tr': 'PVP - OYUNCU 2', 'label_en': 'PVP - PLAYER 2'})
-        for action_key, label in ctrl_actions.get('pvp.player2', []):
+
+        # Kart Ustaligi: sol panel 6 yuvasinin tetikleme tuslari (plan §3-C).
+        items.append({
+            'type': 'section', 'loc_key': 'settings_section_card_slots',
+            'label_tr': 'KART YUVALARI', 'label_en': 'CARD SLOTS',
+        })
+        for slot_no in range(1, 7):
             items.append({
-                'type': 'keybind', 'key': f'ctrl_pvp2_{action_key}',
-                'action_key': action_key, 'section': 'pvp.player2',
-                'label_tr': label, 'label_en': label,
+                'type': 'keybind', 'key': f'ctrl_card_slot_{slot_no}',
+                'action_key': f'slot_{slot_no}', 'section': 'card_slots',
+                'label_tr': f'Yuva {slot_no}', 'label_en': f'Slot {slot_no}',
             })
 
         ingame_gamepad_actions = [
@@ -292,6 +295,9 @@ def _build_tab_content(tab_key: str, sm, show_debug: bool = False) -> list[dict]
             ('pause', _t('gp_pause', 'Duraklat')),
             ('discard_held', _t('gp_discard_held', 'Tutulanı At')),
         ]
+        for slot_no in range(1, 7):
+            ingame_gamepad_actions.append((f'slot_{slot_no}', f'Slot {slot_no}'))
+
         outgame_gamepad_actions = [
             ('menu_confirm', _t('gp_menu_confirm', 'Menü Onay')),
             ('menu_back', _t('gp_menu_back', 'Menü Geri')),
@@ -308,11 +314,22 @@ def _build_tab_content(tab_key: str, sm, show_debug: bool = False) -> list[dict]
             'min': 0, 'max': 3, 'step': 1,
         })
         for action_key, label in ingame_gamepad_actions:
-            items.append({
-                'type': 'keybind', 'key': f'ctrl_gp_{action_key}',
-                'action_key': action_key, 'section': 'gamepad.ingame',
-                'label_tr': label, 'label_en': label,
-            })
+            if action_key.startswith('slot_'):
+                try:
+                    slot_no = int(action_key.split('_')[1])
+                except Exception:
+                    slot_no = 1
+                items.append({
+                    'type': 'keybind', 'key': f'ctrl_gp_{action_key}',
+                    'action_key': action_key, 'section': 'gamepad.ingame',
+                    'label_tr': f'Yuva {slot_no}', 'label_en': f'Slot {slot_no}',
+                })
+            else:
+                items.append({
+                    'type': 'keybind', 'key': f'ctrl_gp_{action_key}',
+                    'action_key': action_key, 'section': 'gamepad.ingame',
+                    'label_tr': label, 'label_en': label,
+                })
         items.append({'type': 'section', 'loc_key': 'settings_gp_section_outgame', 'label_tr': 'GAMEPAD - OYUN DIŞI', 'label_en': 'GAMEPAD - OUT OF GAME'})
         for action_key, label in outgame_gamepad_actions:
             items.append({
@@ -1801,6 +1818,21 @@ class TabbedSettingsScreen:
             )
         return (str(row or ''), '')
 
+    @staticmethod
+    def _is_dual_slot_section(section: str | None) -> bool:
+        """Birincil/ikincil iki slotlu klavye section'lari (plan §3-C card_slots dahil)."""
+        return section in ('single_player', 'card_slots')
+
+    def _get_dual_binding_slots(self, section: str, action_key: str) -> tuple[str, str]:
+        """Dual-slot section (single_player/card_slots) icin (primary, secondary)."""
+        row = self._control_config.get(section, {}).get(action_key, {})
+        if isinstance(row, dict):
+            return (
+                str(row.get('primary', '') or ''),
+                str(row.get('secondary', '') or ''),
+            )
+        return (str(row or ''), '')
+
     def _get_pvp_binding(self, player_section: str, action_key: str) -> str:
         player = 'player1' if player_section == 'pvp.player1' else 'player2'
         return str(self._control_config.get('pvp', {}).get(player, {}).get(action_key, '') or '')
@@ -1840,6 +1872,18 @@ class TabbedSettingsScreen:
                     continue
                 sp_buckets.setdefault(key_norm, []).append(('single_player', action, slot))
         _record(sp_buckets)
+
+        # --- card_slots içi çakışmalar (primary + secondary aynı sayılır) ---
+        slot_buckets: dict[str, list[tuple[str, str, str]]] = {}
+        slots_cfg = self._control_config.get('card_slots', {}) or {}
+        for action in slots_cfg.keys():
+            primary, secondary = self._get_dual_binding_slots('card_slots', action)
+            for slot, key_name in (('primary', primary), ('secondary', secondary)):
+                key_norm = (key_name or '').strip().lower()
+                if not key_norm:
+                    continue
+                slot_buckets.setdefault(key_norm, []).append(('card_slots', action, slot))
+        _record(slot_buckets)
 
         # --- pvp.player1 ve pvp.player2 ayrı namespace'ler ---
         for player_key, section_label in (('player1', 'pvp.player1'), ('player2', 'pvp.player2')):
@@ -1889,8 +1933,8 @@ class TabbedSettingsScreen:
         action_key = item.get('action_key')
         if not action_key or section == 'debug':
             return False
-        if section == 'single_player':
-            primary, _ = self._get_single_player_binding_slots(action_key)
+        if self._is_dual_slot_section(section):
+            primary, _ = self._get_dual_binding_slots(section, action_key)
             return not primary.strip()
         if section in ('pvp.player1', 'pvp.player2'):
             return not self._get_pvp_binding(section, action_key).strip()
@@ -1914,9 +1958,9 @@ class TabbedSettingsScreen:
         if not action_key:
             return
 
-        if section == 'single_player':
-            value = defaults.get('single_player', {}).get(action_key)
-            sp = self._control_config.setdefault('single_player', {})
+        if self._is_dual_slot_section(section):
+            value = defaults.get(section, {}).get(action_key)
+            sp = self._control_config.setdefault(section, {})
             if isinstance(value, dict):
                 sp[action_key] = {
                     'primary': str(value.get('primary', '') or ''),
@@ -1958,8 +2002,8 @@ class TabbedSettingsScreen:
         if not action_key:
             return
 
-        if section == 'single_player':
-            sp = self._control_config.setdefault('single_player', {})
+        if self._is_dual_slot_section(section):
+            sp = self._control_config.setdefault(section, {})
             row = sp.get(action_key)
             if not isinstance(row, dict):
                 row = {'primary': str(row or ''), 'secondary': ''}
@@ -2044,17 +2088,17 @@ class TabbedSettingsScreen:
         section = item.get('section')
         action_key = item.get('action_key')
 
-        if section == 'single_player':
-            value = defaults.get('single_player', {}).get(action_key)
-            current = self._control_config.setdefault('single_player', {}).get(action_key)
+        if self._is_dual_slot_section(section):
+            value = defaults.get(section, {}).get(action_key)
+            current = self._control_config.setdefault(section, {}).get(action_key)
             if isinstance(value, dict):
                 if not isinstance(current, dict):
                     current = {'primary': str(current or ''), 'secondary': ''}
-                    self._control_config.setdefault('single_player', {})[action_key] = current
+                    self._control_config.setdefault(section, {})[action_key] = current
                 slot = self._single_player_bind_slot if self._single_player_bind_slot in ('primary', 'secondary') else 'primary'
                 current[slot] = value.get(slot, '')
             else:
-                self._control_config.setdefault('single_player', {})[action_key] = value
+                self._control_config.setdefault(section, {})[action_key] = value
         elif section == 'pvp.player1':
             value = defaults.get('pvp', {}).get('player1', {}).get(action_key)
             self._control_config.setdefault('pvp', {}).setdefault('player1', {})[action_key] = value
@@ -2959,7 +3003,7 @@ class TabbedSettingsScreen:
                                 elif isinstance(primary_r, pygame.Rect) and primary_r.collidepoint(pos):
                                     hovered_slot = 'primary'
                             if hovered_slot is not None:
-                                if section == 'single_player':
+                                if self._is_dual_slot_section(section):
                                     self._single_player_bind_slot = hovered_slot
                                 elif self._is_gamepad_keybind_section(section):
                                     self._gamepad_bind_slot = hovered_slot
@@ -3073,7 +3117,7 @@ class TabbedSettingsScreen:
                             if isinstance(reset_rect, pygame.Rect) and reset_rect.collidepoint(pos):
                                 self._reset_keybind_row_full(item)
                                 return None
-                            if section == 'single_player':
+                            if self._is_dual_slot_section(section):
                                 slot_rects = self._keybind_slot_rects[i] if i < len(self._keybind_slot_rects) else None
                                 if isinstance(slot_rects, dict):
                                     if slot_rects.get('secondary') and slot_rects['secondary'].collidepoint(pos):
@@ -3187,7 +3231,7 @@ class TabbedSettingsScreen:
         elif itype == 'keybind':
             section = item.get('section')
 
-            if section == 'single_player':
+            if self._is_dual_slot_section(section):
                 if key_code == pygame.K_LEFT:
                     self._single_player_bind_slot = 'primary'
                     return None
@@ -3221,7 +3265,7 @@ class TabbedSettingsScreen:
         if item.get('type') != 'keybind':
             return False
         section = item.get('section')
-        return section != 'single_player' and not self._is_gamepad_keybind_section(section)
+        return not self._is_dual_slot_section(section) and not self._is_gamepad_keybind_section(section)
 
     def _ensure_visible(self) -> None:
         """Seçili öğenin görünür olmasını sağla."""
@@ -4212,9 +4256,10 @@ class TabbedSettingsScreen:
     def _draw_selector_value(self, rect: pygame.Rect, item: dict, selected: bool) -> dict | None:
         """Selector tipi ayar için < değer > göster."""
         s = self._s
-        if item.get('type') == 'keybind' and item.get('section') == 'single_player':
+        if item.get('type') == 'keybind' and self._is_dual_slot_section(item.get('section')):
+            section = item.get('section')
             action_key = item.get('action_key')
-            row = self._control_config.get('single_player', {}).get(action_key, {})
+            row = self._control_config.get(section, {}).get(action_key, {})
             if isinstance(row, dict):
                 primary_text = str(row.get('primary', '') or '').upper() or '—'
                 secondary_text = str(row.get('secondary', '') or '').upper() or '—'

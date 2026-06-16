@@ -1,5 +1,6 @@
 """Quadrix parçalarını (Tetromino) tanımlar"""
 import random
+from typing import Callable, Optional
 from constants import COLORS
 
 # Tetromino şekilleri (I, O, T, S, Z, J, L)
@@ -75,18 +76,18 @@ SRS_KICKS_I = {
 
 # J, L, T, S, Z parçaları için SRS+ 180 Kicks
 SRS_KICKS_180_NORMAL = {
-    (0, 2): [(0, 0), (0, 1), (1, 0), (-1, 0), (1, 1), (-1, 1), (0, -1)],
-    (2, 0): [(0, 0), (0, -1), (-1, 0), (1, 0), (-1, -1), (1, -1), (0, 1)],
-    (1, 3): [(0, 0), (1, 0), (0, 1), (0, -1), (1, 1), (1, -1), (-1, 0)],
-    (3, 1): [(0, 0), (-1, 0), (0, 1), (0, -1), (-1, 1), (-1, -1), (1, 0)],
+    (0, 2): [(0, 0), (0, -1), (1, 0), (-1, 0), (1, -1), (-1, -1), (0, 1)],
+    (2, 0): [(0, 0), (0, 1), (-1, 0), (1, 0), (-1, 1), (1, 1), (0, -1)],
+    (1, 3): [(0, 0), (1, 0), (0, -1), (0, 1), (1, -1), (1, 1), (-1, 0)],
+    (3, 1): [(0, 0), (-1, 0), (0, -1), (0, 1), (-1, -1), (-1, 1), (1, 0)],
 }
 
 # I parçası için SRS+ 180 Kicks
 SRS_KICKS_180_I = {
-    (0, 2): [(0, 0), (-1, 0), (1, 0), (-2, 0), (2, 0), (0, 1), (0, -1)],
-    (2, 0): [(0, 0), (1, 0), (-1, 0), (2, 0), (-2, 0), (0, -1), (0, 1)],
-    (1, 3): [(0, 0), (0, 1), (0, -1), (0, 2), (0, -2), (-1, 0), (1, 0)],
-    (3, 1): [(0, 0), (0, -1), (0, 1), (0, -2), (0, 2), (1, 0), (-1, 0)],
+    (0, 2): [(0, 0), (-1, 0), (1, 0), (-2, 0), (2, 0), (0, -1), (0, 1)],
+    (2, 0): [(0, 0), (1, 0), (-1, 0), (2, 0), (-2, 0), (0, 1), (0, -1)],
+    (1, 3): [(0, 0), (0, -1), (0, 1), (0, -2), (0, 2), (-1, 0), (1, 0)],
+    (3, 1): [(0, 0), (0, 1), (0, -1), (0, 2), (0, -2), (1, 0), (-1, 0)],
 }
 
 SHAPE_NAMES = ['I', 'O', 'T', 'S', 'Z', 'J', 'L']
@@ -178,7 +179,7 @@ class Piece:
                     self.color_matrix = None
             self.rotation_state = (self.rotation_state + 1) % 4
     
-    def try_rotate_srs(self, board, direction: int = 1, check_func=None) -> bool:
+    def try_rotate_srs(self, board: "Board", direction: int = 1, check_func: Optional[Callable[["Piece"], bool]] = None) -> bool:
         """
         SRS (Super Rotation System) kurallarına göre parçayı döndürmeyi dener.
         Başarılıysa parçanın konumunu ve rotation_state'ini güncelleyip True döner.
@@ -233,7 +234,7 @@ class Piece:
         self.rotate(-direction)
         return False
 
-    def try_rotate_180(self, board, check_func=None) -> bool:
+    def try_rotate_180(self, board: "Board", check_func: Optional[Callable[["Piece"], bool]] = None) -> bool:
         """
         180 derece döndürmeyi dener.
         Başarılıysa parçanın konumunu ve rotation_state'ini güncelleyip True döner.

@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import contextlib
 import math
 import os
 import sys
 import random
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import pygame
 
@@ -22,14 +23,10 @@ from asset_manager import load_image
 import localization
 
 def t(key: str, default: str = None, **kwargs) -> str:
-    import sys
-    loc = sys.modules.get('localization', localization)
-    return loc.t(key, default, **kwargs)
+    return localization.t(key, default, **kwargs)
 
 def get_language() -> str:
-    import sys
-    loc = sys.modules.get('localization', localization)
-    return loc.get_language()
+    return localization.get_language()
 from gamepad_manager import get_gamepad_manager, is_gamepad_connected
 from promptfont_support import get_action_prompt_display, render_action_prompt_surface, render_inline_action_text_surface
 try:
@@ -793,6 +790,22 @@ def _card_type_label_key(card: Dict[str, Any]) -> str:
     return 'card_type_limited'
 
 
+def _get_card_type_label(card: Dict[str, Any]) -> str:
+    """Kartın davranışına göre tür etiketini yerelleştirilmiş ve dinamik olarak döndürür."""
+    key = _card_type_label_key(card)
+    if key == 'card_type_limited':
+        val = card.get('value')
+        if val is None:
+            val = card.get('base')
+        if val is not None:
+            label_tmpl = t('card_type_limited_dynamic')
+            if label_tmpl != 'card_type_limited_dynamic' and '{value}' in label_tmpl:
+                return label_tmpl.format(value=val)
+            is_tr = t('card_type_limited') == 'Sınırlı'
+            return f"{val} Hak" if is_tr else f"{val} Uses"
+    return t(key)
+
+
 class Tetris2Mode(Game):
     """Klasik Quadrix'e ekstra parçalar ekleyen mod."""
 
@@ -926,6 +939,9 @@ class MysteryCardManager:
     # Bucket key normalizasyonu için kabul edilen rarity etiketleri.
     _RARITY_ORDER: tuple[str, ...] = ('common', 'uncommon', 'rare', 'epic', 'legendary')
 
+    # Aktif yetenek slot havuzu sınırı (3x2 grid).
+    MAX_CARD_SLOTS: int = 6
+
     def __init__(self, mode: "MysteryMode") -> None:
         self.mode = mode
         self.catalog = self._build_catalog()
@@ -948,6 +964,43 @@ class MysteryCardManager:
         self.progress = 0
         self.threshold = self.card_xp_to_next
 
+        # === AKTİF YETENEK SLOTLARI (3x2 grid) ===
+        # `unlocked_slots`: oyuncunun açık slot sayısı (varsayılan 3, maksimum 6).
+        # `active_slots`: o an slotlara yerleştirilmiş kart nesneleri. Slotlardaki
+        # kartların kalan hakları bu liste elemanlarındaki kart sözlüğünden okunur
+        # (mode tarafı `card['charges']` alanını güncel tutar).
+        # slot kayıt metodu varsa oradan çekilir.
+        self.MAX_CARD_SLOTS: int = type(self).MAX_CARD_SLOTS
+        self.unlocked_slots: int = 3
+        self.active_slots: List[Optional[Dict]] = [None] * self.MAX_CARD_SLOTS
+        self._load_unlocked_slots()
+
+    def _load_unlocked_slots(self) -> None:
+        """Açık slot sayısını profil kaydından çek; yoksa varsayılan 3 ata."""
+        value: int | None = None
+        user_manager = getattr(self.mode, 'user_manager', None)
+        if user_manager is not None:
+            for method_name in ('get_card_slots', 'get_unlocked_card_slots'):
+                getter = getattr(user_manager, method_name, None)
+                if callable(getter):
+                    try:
+                        value = int(getter())
+                        break
+                    except Exception:
+                        value = None
+            if value is None:
+                data_getter = getattr(user_manager, 'get_user_data', None)
+                if callable(data_getter):
+                    try:
+                        data = data_getter() or {}
+                        if 'unlocked_card_slots' in data:
+                            value = int(data.get('unlocked_card_slots'))
+                    except Exception:
+                        value = None
+        if value is None:
+            value = 3
+        self.unlocked_slots = max(3, min(self.MAX_CARD_SLOTS, int(value)))
+
     def reset(self) -> None:
         self.force_piece_queue.clear()
         self.pending_choices.clear()
@@ -960,6 +1013,9 @@ class MysteryCardManager:
         # Mirrors for backward compat
         self.progress = 0
         self.threshold = self.card_xp_to_next
+        # Aktif slotları temizle ve açık slot sayısını profilden tazele.
+        self.active_slots = [None] * self.MAX_CARD_SLOTS
+        self._load_unlocked_slots()
 
     # === XP ECONOMY HELPERS ===
     @classmethod
@@ -1192,10 +1248,40 @@ class MysteryCardManager:
                 return True
             return False
 
+        def _is_locked(c):
+            """Mağaza sahipliğine göre kart kilitli mi?
+
+            - Common her zaman açık (sahiplik gerekmez).
+            - user_manager yoksa (testler / _DummyMode): eski davranış, hepsi açık.
+            - Sahip değilse kilitli.
+            - Sahipse: ulaşılan kademeye (card_tiers) kadar olan varyantlar açık;
+              üst kademeler kilitli.
+            """
+            if getattr(demo_config, 'IS_DEMO', False):
+                return False
+            rarity = self._normalize_rarity(c.get('rarity'))
+            if rarity == 'common':
+                return False
+            um = getattr(self.mode, 'user_manager', None)
+            if um is None or not hasattr(um, 'owns_card'):
+                return False
+            group = c.get('_group_id', c.get('id'))
+            try:
+                if not um.owns_card(group):
+                    return True
+                tier = int(c.get('tier', 1) or 1)
+                return tier > int(um.get_card_tier(group) or 0)
+            except Exception:
+                return False
+
+        def _is_common(c):
+            return self._normalize_rarity(c.get('rarity')) == 'common'
+
         filtered_available = [
             c for c in self.catalog
             if not (c.get("persistent") and any(ac.get("id") == c.get("id") for ac in self.active_cards))
             and not _is_used(c)
+            and not _is_locked(c)
         ]
         if card_mode_debug:
             available = list(filtered_available)
@@ -1205,13 +1291,17 @@ class MysteryCardManager:
             # Also exclude cards in the same group (e.g., hold_destroyer variants)
             available = list(filtered_available)
             # If for whatever reason the filter removes all cards (e.g., all single-use are used),
-            # fall back to the full catalog so the player still receives card choices on level-up.
+            # fall back to the OPEN common cards so the player still receives choices
+            # on level-up WITHOUT leaking locked cards back into the pool.
             if not available:
-                available = list(self.catalog)
+                available = [
+                    c for c in self.catalog
+                    if _is_common(c) and not _is_used(c)
+                ]
             pool_size = min(3, len(available))
-        # Ensure we always present at least one card by falling back to full catalog
+        # Ensure we always present at least one card by falling back to open commons.
         if not available:
-            available = list(self.catalog)
+            available = [c for c in self.catalog if _is_common(c)]
         if not available:
             # Give up and return empty pending choices
             self.pending_choices = []
@@ -1366,6 +1456,51 @@ class MysteryCardManager:
             if group:
                 self.used_card_ids.add(group)
         return card
+
+    # === AKTİF SLOT YÖNETİMİ ===
+    @staticmethod
+    def _card_charges(card: Optional[Dict]) -> int:
+        """Bir slot kartının kalan hak (şarj) sayısını döndür."""
+        if not card:
+            return 0
+        try:
+            return int(card.get('charges', card.get('value', 0)) or 0)
+        except Exception:
+            return 0
+
+    def is_slot_unlocked(self, slot_index: int) -> bool:
+        """Slot oyuncu tarafından açılmış mı (0 tabanlı index)."""
+        return 0 <= int(slot_index) < int(self.unlocked_slots)
+
+    def get_slot_card(self, slot_index: int) -> Optional[Dict]:
+        if 0 <= int(slot_index) < len(self.active_slots):
+            return self.active_slots[int(slot_index)]
+        return None
+
+    def allocate_card_to_slot(self, slot_index: int, card: Dict) -> bool:
+        """Kartı verilen açık slota yerleştir (doluysa üzerine yaz)."""
+        if not self.is_slot_unlocked(slot_index) or not card:
+            return False
+        self.active_slots[int(slot_index)] = card
+        return True
+
+    def consume_slot_charge(self, slot_index: int, amount: int = 1) -> int:
+        """Slottaki kartın hakkını azalt; bittiğinde slotu temizle.
+
+        Geriye kalan hak sayısını döndürür (slot boşsa/kilitliyse -1).
+        """
+        card = self.get_slot_card(slot_index)
+        if card is None:
+            return -1
+        remaining = max(0, self._card_charges(card) - max(1, int(amount)))
+        card['charges'] = remaining
+        if remaining <= 0:
+            self.active_slots[int(slot_index)] = None
+        return remaining
+
+    def clear_slot(self, slot_index: int) -> None:
+        if 0 <= int(slot_index) < len(self.active_slots):
+            self.active_slots[int(slot_index)] = None
 
     def pop_forced_piece(self) -> str | None:
         if self.force_piece_queue:
@@ -1707,7 +1842,7 @@ class MysteryCardManager:
                 "title": "Şekil Değiştirici",
                 "base": 3,
                 "value_range": (3, 3),
-                "description": "LSHIFT tuşu ile kullan: Parçayı ayna görüntüsüne çevirir (L↔J, Z↔S).",
+                "description": "LSHIFT tuşu ile kullan: Parçayı ayna görüntüsüne çevirir (L-J, Z-S).",
                 "color": (255, 200, 255),
                 "bg": (24, 12, 34),
                 "icon": "🔄",
@@ -2258,7 +2393,7 @@ class MysteryCardManager:
                 "single_use": True,
             },
         ]
-        return cards
+        return _apply_card_family_metadata(cards)
 
 
 class MysteryCardUI:
@@ -2266,6 +2401,7 @@ class MysteryCardUI:
 
     def __init__(self) -> None:
         self.fade_alpha = 0.0
+        self.warning_message: str = ""
         self.card_rects: List[pygame.Rect] = []
         self.hover_index = -1
         self.pulse_time = 0.0
@@ -2275,6 +2411,9 @@ class MysteryCardUI:
         self.selection_index = -1
         self.interaction_locked = False
         self.icon_cache: Dict[str, pygame.Surface] = {}
+        # Statik slot etiketleri (tuş rozetleri vb.) için render cache. Her kare
+        # yeniden render etmemek için (font_height, color, text) anahtarıyla tutulur.
+        self._slot_label_cache: Dict[tuple, pygame.Surface] = {}
         # Grid debug scroll state (pixels)
         self.randomize_pill_rect = None
         self.grid_scroll = 0
@@ -2290,6 +2429,8 @@ class MysteryCardUI:
         self.peek_button_rect: pygame.Rect | None = None
         self.peek_mode_active = False  # True olunca kart seçimi gizlenip oyun alanı gösterilir
         self._reveal_sfx_callback = None
+        self._sfx_triggered_this_frame = False
+        self._raw_reveal_sfx_callback = None
         self._overlay_base_size: tuple[int, int] | None = None
         # Kart seçim ekranı için okunabilirlik tabanlı minimum referans boyut
         # (pencere bu boyutlara yakınken kartlar hala rahat okunur kalır)
@@ -2304,6 +2445,7 @@ class MysteryCardUI:
         self.keyboard_nav_active = False
 
     def reset(self) -> None:
+        self.warning_message = ""
         self.card_rects = []
         self.hover_index = -1
         self.fade_alpha = 0.0
@@ -2327,7 +2469,15 @@ class MysteryCardUI:
         self.keyboard_nav_active = False
 
     def set_reveal_sfx_callback(self, callback) -> None:
-        self._reveal_sfx_callback = callback
+        self._raw_reveal_sfx_callback = callback
+        
+        def wrapped_callback() -> None:
+            if not self._sfx_triggered_this_frame:
+                self._sfx_triggered_this_frame = True
+                if self._raw_reveal_sfx_callback is not None:
+                    self._raw_reveal_sfx_callback()
+                    
+        self._reveal_sfx_callback = wrapped_callback
 
     def set_overlay_reference_size(self, width: int, height: int) -> None:
         """Kart seçim overlay'i için isteğe bağlı referans boyutunu ayarla."""
@@ -2352,6 +2502,7 @@ class MysteryCardUI:
         self._reroll_limit = limit_value
 
     def update(self, dt: float, overlay_active: bool) -> None:
+        self._sfx_triggered_this_frame = False
         # dt gelebilir: ms (oyun döngüsünden) veya saniye. Tutarlı dönüşüm.
         seconds = _dt_to_seconds(dt)
         self._last_dt = dt  # Diğer çizim metodları için sakla
@@ -2646,6 +2797,11 @@ class MysteryCardUI:
         visible_header_lines = [str(raw_line) for raw_line in list(header_lines or [])[:4] if raw_line]
         for _line in visible_header_lines:
             header_content_height += line_font.get_height() + s(4)
+
+        warning_msg = getattr(self, 'warning_message', '')
+        if warning_msg:
+            warn_font = fonts.get('medium') or fonts.get('small')
+            header_content_height += warn_font.get_height() + s(10)
         top_content_padding = max(s(120), s(28) + header_content_height + s(24))
         panel_height = min(window_height - s(40), card_height + s(220) + max(0, top_content_padding - s(120)))
         total_width = card_count * card_width + (card_count - 1) * spacing
@@ -2662,7 +2818,8 @@ class MysteryCardUI:
         )
 
         raw_mouse_pos = get_mouse_pos() if pygame.mouse.get_focused() else None
-        mouse_pos = None if self.keyboard_nav_active else raw_mouse_pos
+        is_locked = self.is_interaction_locked()
+        mouse_pos = None if (self.keyboard_nav_active or is_locked) else raw_mouse_pos
         if show_peek_button:
             # Göz butonu - panelin sağ üst köşesinde
             peek_btn_size = s(40)
@@ -2715,6 +2872,15 @@ class MysteryCardUI:
             else:
                 screen.blit(line_surf, (header_x, header_y))
             header_y += line_surf.get_height() + s(4)
+
+        if warning_msg:
+            warn_font = fonts.get('medium') or fonts.get('small')
+            warn_surf = warn_font.render(str(warning_msg), True, (255, 60, 60))
+            if center_header:
+                screen.blit(warn_surf, warn_surf.get_rect(centerx=panel_rect.centerx, top=header_y + s(6)))
+            else:
+                screen.blit(warn_surf, (header_x, header_y + s(6)))
+            header_y += warn_surf.get_height() + s(10)
         # (Removed) Selection hint text like "1 / 2 / 3 ... seç"
         # (Kaldırıldı) Sağ üst "Tamamen rastgele" butonu
         self.randomize_pill_rect = None
@@ -2991,7 +3157,7 @@ class MysteryCardUI:
         font_small = fonts.get("small")
         font_desc = fonts.get("desc")
         tag_font = fonts.get("tag")
-        card_title_font = fonts.get("card_title", font_small)
+        card_title_font = font_small
         icon_font = fonts.get("icon", font_small)
         width = max(120, int(width))
 
@@ -3184,31 +3350,38 @@ class MysteryCardUI:
             badge_rect = None
             rendered_title_text = title_text
 
-            badge_font = tag_font if tag_font else font_small
-            max_badge_w = max(s(52, minimum=40), col_width - title_local_x - s(6, minimum=4))
-            prompt_badge_text = _prompt_action_text('hold2', 'V') if _resolve_card_localization_id(card) == 'perk_second_pocket' else ''
-            if prompt_badge_text and badge_text == prompt_badge_text:
-                badge_text_surf = render_action_prompt_surface(
-                    'hold2',
-                    prompt_badge_text,
-                    badge_font,
-                    (232, 238, 248),
-                    max_width=max_badge_w - badge_pad_x,
-                    max_height=max(s(24, minimum=18), badge_font.get_height() + badge_pad_y),
-                )
-                if badge_text_surf is None:
-                    badge_text_surf = badge_font.render(badge_text, True, (232, 238, 248))
+            is_persistent = bool(card.get('persistent', False))
+
+            if is_persistent:
+                # Kalıcı perk kartlarında durum/tuş/değer rozetlerini tamamen kaldır
+                badge_w = 0
+                max_title_w = col_width - content_padding - title_local_x
             else:
-                badge_text_surf = badge_font.render(badge_text, True, (232, 238, 248))
-            badge_w = badge_text_surf.get_width() + badge_pad_x
-            if badge_w > max_badge_w:
-                compact = _truncate_render_text(badge_font, badge_text, max_badge_w - badge_pad_x)
-                badge_text_surf = badge_font.render(compact, True, (232, 238, 248))
+                badge_font = tag_font if tag_font else font_small
+                max_badge_w = max(s(52, minimum=40), col_width - title_local_x - s(6, minimum=4))
+                prompt_badge_text = _prompt_action_text('hold2', 'V') if _resolve_card_localization_id(card) == 'perk_second_pocket' else ''
+                if prompt_badge_text and badge_text == prompt_badge_text:
+                    badge_text_surf = render_action_prompt_surface(
+                        'hold2',
+                        prompt_badge_text,
+                        badge_font,
+                        (232, 238, 248),
+                        max_width=max_badge_w - badge_pad_x,
+                        max_height=max(s(24, minimum=18), badge_font.get_height() + badge_pad_y),
+                    )
+                    if badge_text_surf is None:
+                        badge_text_surf = badge_font.render(badge_text, True, (232, 238, 248))
+                else:
+                    badge_text_surf = badge_font.render(badge_text, True, (232, 238, 248))
                 badge_w = badge_text_surf.get_width() + badge_pad_x
-            badge_h = max(s(24, minimum=18), badge_text_surf.get_height() + badge_pad_y)
-            badge_right = col_width - content_padding
-            badge_left = max(title_local_x + s(36, minimum=24), badge_right - badge_w)
-            max_title_w = max(s(18, minimum=14), badge_left - title_local_x - title_badge_gap)
+                if badge_w > max_badge_w:
+                    compact = _truncate_render_text(badge_font, badge_text, max_badge_w - badge_pad_x)
+                    badge_text_surf = badge_font.render(compact, True, (232, 238, 248))
+                    badge_w = badge_text_surf.get_width() + badge_pad_x
+                badge_h = max(s(24, minimum=18), badge_text_surf.get_height() + badge_pad_y)
+                badge_right = col_width - content_padding
+                badge_left = max(title_local_x + s(36, minimum=24), badge_right - badge_w)
+                max_title_w = max(s(18, minimum=14), badge_left - title_local_x - title_badge_gap)
             
             try:
                 rendered_title_text = _truncate_render_text(card_title_font, title_text, max_title_w)
@@ -3221,17 +3394,18 @@ class MysteryCardUI:
                 pass
             
             # Status Badge (Right)
-            try:
-                badge_bg, badge_border = _badge_palette(status_label)
-                status_local_x = badge_left
-                status_local_y = (row_height - badge_h) // 2
-                st_bg_rect = pygame.Rect(status_local_x, status_local_y, badge_w, badge_h)
-                badge_rect = pygame.Rect(card_x + st_bg_rect.x, card_y + st_bg_rect.y, st_bg_rect.w, st_bg_rect.h)
-                pygame.draw.rect(row_surface, badge_bg, st_bg_rect, border_radius=badge_corner_radius)
-                pygame.draw.rect(row_surface, badge_border, st_bg_rect, 1, border_radius=badge_corner_radius)
-                row_surface.blit(badge_text_surf, badge_text_surf.get_rect(center=st_bg_rect.center))
-            except Exception:
-                pass
+            if not is_persistent:
+                try:
+                    badge_bg, badge_border = _badge_palette(status_label)
+                    status_local_x = badge_left
+                    status_local_y = (row_height - badge_h) // 2
+                    st_bg_rect = pygame.Rect(status_local_x, status_local_y, badge_w, badge_h)
+                    badge_rect = pygame.Rect(card_x + st_bg_rect.x, card_y + st_bg_rect.y, st_bg_rect.w, st_bg_rect.h)
+                    pygame.draw.rect(row_surface, badge_bg, st_bg_rect, border_radius=badge_corner_radius)
+                    pygame.draw.rect(row_surface, badge_border, st_bg_rect, 1, border_radius=badge_corner_radius)
+                    row_surface.blit(badge_text_surf, badge_text_surf.get_rect(center=st_bg_rect.center))
+                except Exception:
+                    pass
 
             # Blit the composed row onto the main screen
             screen.blit(row_surface, (card_x, card_y))
@@ -3247,6 +3421,182 @@ class MysteryCardUI:
             })
 
         return total_height
+
+    def _cached_label(
+        self,
+        font: pygame.font.Font,
+        text: str,
+        color: tuple[int, int, int],
+    ) -> pygame.Surface:
+        """Statik metni (tuş rozetleri gibi) cache'leyerek render et.
+
+        FPS düşüşünü önlemek için aynı (font yüksekliği, metin, renk) için
+        yüzey yeniden kullanılır.
+        """
+        try:
+            key = (int(font.get_height()), str(text), tuple(color))
+        except Exception:
+            return font.render(str(text), True, color)
+        cached = self._slot_label_cache.get(key)
+        if cached is None:
+            cached = font.render(str(text), True, color)
+            self._slot_label_cache[key] = cached
+        return cached
+
+    def draw_active_slots_grid(
+        self,
+        screen: pygame.Surface,
+        slots: List[Optional[Dict]],
+        unlocked_slots: int,
+        fonts: Dict[str, pygame.font.Font],
+        x: int,
+        y: int,
+        width: int,
+        *,
+        ui_scale: float,
+        slot_keys: Optional[List[str]] = None,
+        highlight_index: int = -1,
+        square_cells: bool = False,
+    ) -> int:
+        """Aktif yetenek slotlarını 3 satır x 2 sütun grid olarak çiz (plan §1).
+
+        Tasarım:
+        - Her hücre oyunun neon/glass temasıyla (retro_style.draw_glass_panel) çizilir.
+        - Ölçüler: col_width = (width - s(8)) // 2, cell_height = s(58).
+        - Sol üstte büyük tuş rozeti [1], merkezde s(32) kart ikonu, sağ altta
+          büyük yeşil dairesel kalan-hak rozeti.
+        - Boş slot: soluk neon çerçeve + ortada soluk "BOS".
+        - Kilitli slot: kırmızı/gri yarı saydam maske + ortada "KILITLI".
+
+        Tüm koordinat/boyut/font kesinlikle ui_scale ile ölçeklenir. Emoji çizilmez.
+        Geriye toplam çizim yüksekliğini (px) döndürür.
+        """
+        s = lambda value, minimum=1: max(minimum, int(round(float(value) * float(ui_scale))))
+
+        font_small = fonts.get('small')
+        # Sol üst köşedeki tuş gösterimlerinin yazısını daha da küçültmek için 'badge' fontu kullanılır
+        badge_font = fonts.get('badge') or font_small
+        icon_font = fonts.get('panel_header') or fonts.get('icon', font_small)
+        # Kalan hak sayısı yazısı sol üstteki sayılar ile uyumlu olsun diye 'badge' fontu ile çizilir
+        charge_font = fonts.get('badge') or font_small
+        empty_font = font_small
+
+        cols = 3
+        rows = 2
+        col_gap = s(8, minimum=6)
+        row_gap = s(8, minimum=6)
+        # 2 satır 3 sütun kare veya yassı slotlar
+        cell_w = max(s(50, minimum=42), (int(width) - col_gap * (cols - 1)) // cols)
+        if square_cells:
+            cell_h = cell_w
+        else:
+            # Slot dikey boyutu %10 büyütülmüştür: s(58, minimum=44) -> s(64, minimum=48)
+            cell_h = s(64, minimum=48)
+        corner = s(10, minimum=5)
+        pad = s(5, minimum=3)
+
+        badge_h = max(s(18, minimum=14), badge_font.get_height() + s(4, minimum=2))
+        # Kalan hak dairesinin yarıçapı sol üst badge yüksekliği ile uyumlu şekilde ölçeklenmiştir
+        charge_r = badge_h // 2
+        # Kart ikon görseli slot kutucuğuna iyi düzeyde yerleşsin diye dinamik ölçeklenir
+        icon_dim = int(min(cell_w, cell_h) * 0.65)
+
+        max_slots = min(len(slots), cols * rows)
+        for idx in range(max_slots):
+            col = idx % cols
+            row = idx // cols
+            cell_x = int(x) + col * (cell_w + col_gap)
+            cell_y = int(y) + row * (cell_h + row_gap)
+            cell_rect = pygame.Rect(cell_x, cell_y, cell_w, cell_h)
+            center = cell_rect.center
+
+            unlocked = idx < int(unlocked_slots)
+            card = slots[idx] if unlocked else None
+
+            if not unlocked:
+                # Kilitli slot: cam panel + kırmızı/gri yarı saydam maske + "KILITLI".
+                try:
+                    retro_style.draw_glass_panel(
+                        screen, cell_rect, alpha=70,
+                        border_color=(120, 70, 80), blur_effect=False, top_highlight=False,
+                    )
+                except Exception:
+                    pygame.draw.rect(screen, (38, 30, 34), cell_rect, border_radius=corner)
+                mask = pygame.Surface(cell_rect.size, pygame.SRCALPHA)
+                mask.fill((120, 70, 80, 90))
+                screen.blit(mask, cell_rect.topleft)
+                pygame.draw.rect(screen, (150, 90, 100, 160), cell_rect, 1, border_radius=corner)
+                lock_surf = self._cached_label(empty_font, t('slot_locked', 'KILITLI'), (210, 170, 178))
+                screen.blit(lock_surf, lock_surf.get_rect(center=center))
+                continue
+
+            highlighted = (idx == int(highlight_index))
+            is_empty = card is None
+
+            # Cam panel arka plan (neon sınır). Boş slotlar daha soluk.
+            if is_empty:
+                border_color = (60, 70, 90)
+                panel_alpha = 55
+            elif highlighted:
+                border_color = (120, 200, 255)
+                panel_alpha = 120
+            else:
+                border_color = (70, 110, 150)
+                panel_alpha = 95
+            try:
+                retro_style.draw_glass_panel(
+                    screen, cell_rect, alpha=panel_alpha,
+                    border_color=border_color, glow=highlighted,
+                    blur_effect=False, top_highlight=False,
+                )
+            except Exception:
+                pygame.draw.rect(screen, (16, 20, 36), cell_rect, border_radius=corner)
+                pygame.draw.rect(screen, border_color, cell_rect, 1, border_radius=corner)
+
+            if is_empty:
+                # Boş slot: ortada çok soluk "BOS".
+                empty_surf = self._cached_label(empty_font, t('slot_empty', 'BOS'), (110, 124, 150))
+                empty_surf.set_alpha(150)
+                screen.blit(empty_surf, empty_surf.get_rect(center=center))
+
+            # Kart ikonu (merkez, s(32)).
+            if card is not None:
+                icon_image = self._get_icon_surface(card.get('icon_image'), (icon_dim, icon_dim))
+                if icon_image:
+                    screen.blit(icon_image, icon_image.get_rect(center=center))
+                else:
+                    raw = str(card.get('icon', '') or '')
+                    safe = ''.join(ch for ch in raw if ch.isascii() and ch.isalnum())[:2] or '?'
+                    glyph = icon_font.render(safe, True, card.get('color', (230, 236, 248)))
+                    screen.blit(glyph, glyph.get_rect(center=center))
+
+            # Tuş rozeti (sol üst köşe) — köşeli parantezler olmadan, sadece numara
+            if slot_keys and idx < len(slot_keys) and slot_keys[idx]:
+                key_text = str(slot_keys[idx])
+                key_surf = self._cached_label(badge_font, key_text, (225, 235, 250))
+                badge_w = key_surf.get_width() + s(10, minimum=6)
+                badge_rect = pygame.Rect(cell_rect.x + pad, cell_rect.y + pad, badge_w, badge_h)
+                badge_bg = pygame.Surface(badge_rect.size, pygame.SRCALPHA)
+                badge_bg.fill((40, 54, 82, 215))
+                screen.blit(badge_bg, badge_rect.topleft)
+                pygame.draw.rect(screen, (90, 120, 160), badge_rect, 1, border_radius=s(5, minimum=3))
+                screen.blit(key_surf, key_surf.get_rect(center=badge_rect.center))
+
+            # Kalan hak (sağ alt köşe) — büyük yeşil dairesel rozet.
+            if card is not None:
+                try:
+                    charges = int(card.get('charges', card.get('value', 0)) or 0)
+                except Exception:
+                    charges = 0
+                if charges > 0:
+                    cx = cell_rect.right - pad - charge_r
+                    cy = cell_rect.bottom - pad - charge_r
+                    pygame.draw.circle(screen, (36, 156, 90), (cx, cy), charge_r)
+                    pygame.draw.circle(screen, (130, 235, 175), (cx, cy), charge_r, max(1, s(2, minimum=1)))
+                    num_surf = self._cached_label(charge_font, str(charges), (240, 255, 244))
+                    screen.blit(num_surf, num_surf.get_rect(center=(cx, cy)))
+
+        return rows * cell_h + (rows - 1) * row_gap
 
     def handle_mouse_click(self, pos: tuple[int, int]) -> int | str | None:
         # Peek butonu kontrolü
@@ -3405,7 +3755,7 @@ class MysteryCardUI:
         # - Kalıcı: persistent perks
         # - Tek Kullanım: single-use cards
         # - Sınırlı: timed/charged/limited effects
-        type_label = t(_card_type_label_key(card))
+        type_label = _get_card_type_label(card)
         type_font = fonts.get("tag") or fonts.get("desc") or fonts.get("small")
         type_surface = type_font.render(type_label, True, (255, 255, 255))
         type_bg_color = (*accent, 100)
@@ -3784,10 +4134,10 @@ class UICard:
 
     # Nadirlik bazlı animasyon süreleri (saniye) - daha dramatik
     RARITY_FLIP_DURATION = {
-        'common': 0.40,
-        'uncommon': 0.50,
-        'rare': 0.60,
-        'epic': 0.75,
+        'common': 0.48,
+        'uncommon': 0.55,
+        'rare': 0.65,
+        'epic': 0.78,
         'legendary': 0.90,
     }
 
@@ -3871,8 +4221,8 @@ class UICard:
         # --- Kart Dönme Animasyonu ---
         rarity = self._get_rarity()
         self.flip_duration = self.RARITY_FLIP_DURATION.get(rarity, 0.5)
-        # Delay: nadirlik bazlı + küçük index offset (aynı nadirlik aynı anda dönmesin)
-        self.flip_delay = self.RARITY_FLIP_BASE_DELAY.get(rarity, 0.3) + self.index * 0.08
+        # Delay: sadece nadirlik bazlı (aynı nadirlikteki kartlar aynı anda döner)
+        self.flip_delay = self.RARITY_FLIP_BASE_DELAY.get(rarity, 0.3)
         self.flip_timer = 0.0  # elapsed time since card selection opened
         self.flip_progress = 0.0  # 0.0 = face down, 1.0 = face up
         self.is_revealed = False  # True after flip completes fully
@@ -3881,7 +4231,7 @@ class UICard:
 
         # --- Giriş Animasyonu ---
         self.entry_progress = 0.0  # 0→1, aşağıdan yukarı slide
-        self.entry_duration = 0.35 + self.index * 0.1  # Sıralı giriş
+        self.entry_duration = 0.35  # Eşit ve akıcı giriş süresi
         self.entry_done = False
         self.entry_offset_y = 80  # Başlangıç offset (aşağıdan gelir)
 
@@ -3969,7 +4319,7 @@ class UICard:
         """Metni sığdırmak için önce font boyutunu küçültür.
 
         Yine sığmazsa son çare olarak '...' ile kısaltarak döndürür.
-        Geri dönen font, orijinal font ile aynı stildedir.
+        Geri dönen font, orijinal font ile aynı tip ve stildedir.
         """
         value = str(text or '')
         if max_width <= 0 or font.size(value)[0] <= max_width:
@@ -3980,11 +4330,16 @@ class UICard:
         except Exception:
             current_size = 0
 
+        # Mevcut font'un kendisi tek satırda yazılan metin için yüksekliği kadar
+        # bir baz boyut bilgisi sunmaz. Bu yüzden retro_style üzerinden bold bilgisini
+        # öğrenip get_font ile yeniden kurmak yerine, font.get_bold() ile mevcut stili
+        # kullanarak küçülen versiyonlar üretmeyi deniyoruz.
         try:
             is_bold = bool(font.get_bold())
         except Exception:
             is_bold = True
 
+        # Adım adım küçülterek dene.
         candidate_font = font
         size = current_size if current_size > min_size else min_size
         while size > min_size:
@@ -3996,6 +4351,7 @@ class UICard:
             if candidate_font.size(value)[0] <= max_width:
                 return candidate_font, value
 
+        # Hâlâ sığmadıysa, en küçük boyutta '...' ile kısalt.
         suffix = '...'
         trimmed = value
         while trimmed and candidate_font.size(trimmed.rstrip() + suffix)[0] > max_width:
@@ -5336,7 +5692,7 @@ class UICard:
         title_rect = title_surface.get_rect(centerx=rect.width // 2, top=icon_rect.bottom + title_gap)
         self._blit_shadowed(fg_layer, title_surface, title_rect.topleft, shadow_alpha=170)
 
-        type_label = t(_card_type_label_key(self.card))
+        type_label = _get_card_type_label(self.card)
         type_font = self.fonts.get('tag') or self.fonts.get('desc') or self.fonts.get('small') or self.fonts['value']
         badge_pad_x = max(10, int(round(rect.width * 0.04)))
         badge_pad_y = max(6, int(round(rect.height * 0.018)))
@@ -5503,6 +5859,8 @@ class PerkManager:
         self.lines_since_chrono = 0
         self.chrono_freeze_timer = 0.0
         self.rewind_uses = 0  # Geri Sarma kullanım hakkı
+        # Sinerji Bonus çarpan oranı (kademeye göre 0.10/0.15/0.20).
+        self.synergy_rate = 0.10
         # 'phase_shift' is now a shape-mutation perk; state is per piece and handled on the piece object.
 
     def activate(self, key: str) -> None:
@@ -5610,13 +5968,21 @@ class PerkManager:
         return
 
     def get_multiplier(self) -> float:
-        """Sinerji çekirdeği: aktif her perk %10 skor çarpanı verir"""
+        """Sinerji çekirdeği: aktif her perk için skor çarpanı verir.
+
+        Çarpan oranı kart kademesine göre değişir (varsayılan %10; geliştirme
+        ile %15/%20). Oran `synergy_rate` üzerinden gelir; tanımsızsa %10.
+        """
         base = 1.0
         active_count = sum(1 for v in self.active.values() if v)
-        
+
         # Sinerji Çekirdeği aktifse çarpan hesapla
         if self.is_active('synergy_core'):
-            return base + (active_count * 0.10)
+            try:
+                rate = float(getattr(self, 'synergy_rate', 0.10) or 0.10)
+            except Exception:
+                rate = 0.10
+            return base + (active_count * rate)
         return base
     
     def can_rewind(self) -> bool:
@@ -5635,6 +6001,54 @@ class PerkManager:
 
 class MysteryMode(Game):
     """Kart yöneticisi + UI ayrımıyla yeniden ele alınan Mystery Mode."""
+
+    def _get_demo_score_cap(self) -> int:
+        fallback_cap = getattr(demo_config, 'DEMO_MYSTERY_SCORE_CAP', 150000)
+        try:
+            default_cap = max(1, int(fallback_cap or 150000))
+            return max(1, int(getattr(self, '_demo_score_cap_value', default_cap) or default_cap))
+        except Exception:
+            return 150000
+
+    def _should_trigger_demo_score_cap(self) -> bool:
+        if not getattr(demo_config, 'IS_DEMO', False):
+            return False
+        if getattr(self, '_demo_score_cap_active', False) or getattr(self, '_demo_score_cap_reached', False):
+            return False
+        try:
+            score = self.board.score
+        except Exception:
+            score = 0
+        return score >= self._get_demo_score_cap()
+
+    def _activate_demo_score_cap_prompt(self) -> None:
+        self._demo_score_cap_reached = True
+        self._demo_score_cap_active = True
+        self.paused = True
+        self.card_selection_active = False
+        self.card_selection_rects = []
+        self._pending_card_choice_index = None
+        self.pending_level_ups = 0
+        self.card_message = ''
+        self.card_message_timer = 0.0
+        self._piece_selection_active = False
+        self._sniper_overlay_active = False
+        self._card_workshop_active = False
+        try:
+            self.card_manager.pending_choices = []
+        except Exception:
+            pass
+        prompt = getattr(self, '_demo_score_cap_prompt', None)
+        if prompt is None:
+            prompt = DemoUpgradePrompt(self.screen)
+            self._demo_score_cap_prompt = prompt
+        show_demo_score_cap_prompt(prompt)
+
+    def _maybe_activate_demo_score_cap_prompt(self) -> bool:
+        if not self._should_trigger_demo_score_cap():
+            return False
+        self._activate_demo_score_cap_prompt()
+        return True
 
     def _card_ui_scale(self) -> float:
         """Kart modu HUD/font ölçeği."""
@@ -5741,60 +6155,6 @@ class MysteryMode(Game):
             return False
 
         self.card_ui.reset()
-        return True
-
-    def _get_demo_score_cap(self) -> int:
-        fallback_cap = getattr(demo_config, 'DEMO_MYSTERY_SCORE_CAP', 150000)
-        try:
-            default_cap = max(1, int(fallback_cap or 150000))
-            return max(1, int(getattr(self, '_demo_score_cap_value', default_cap) or default_cap))
-        except Exception:
-            return 150000
-
-    def _should_trigger_demo_score_cap(self) -> bool:
-        if not getattr(demo_config, 'IS_DEMO', False):
-            return False
-        if getattr(self, '_demo_score_cap_active', False) or getattr(self, '_demo_score_cap_reached', False):
-            return False
-        if getattr(self, 'game_over', False):
-            return False
-
-        board = getattr(self, 'board', None)
-        try:
-            score = int(getattr(board, 'score', 0) or 0)
-        except Exception:
-            return False
-        return score >= self._get_demo_score_cap()
-
-    def _activate_demo_score_cap_prompt(self) -> None:
-        self._demo_score_cap_reached = True
-        self._demo_score_cap_active = True
-        self.card_selection_active = False
-        self.card_selection_rects = []
-        self._pending_card_choice_index = None
-        self.pending_level_ups = 0
-        self.card_message = ''
-        self.card_message_timer = 0.0
-        self._piece_selection_active = False
-        self._sniper_overlay_active = False
-        self._card_workshop_active = False
-
-        try:
-            self.card_manager.pending_choices = []
-        except Exception:
-            pass
-
-        prompt = getattr(self, '_demo_score_cap_prompt', None)
-        if prompt is None:
-            prompt = DemoUpgradePrompt(self.screen)
-            self._demo_score_cap_prompt = prompt
-        prompt.screen = self.screen
-        show_demo_score_cap_prompt(prompt)
-
-    def _maybe_activate_demo_score_cap_prompt(self) -> bool:
-        if not self._should_trigger_demo_score_cap():
-            return False
-        self._activate_demo_score_cap_prompt()
         return True
 
     def _get_mystery_layout_metrics(self) -> Dict[str, float | int]:
@@ -6007,6 +6367,7 @@ class MysteryMode(Game):
             "icon": s(80, 32),
             "tag": s(20, 11),
             "desc": s(22, 11),
+            "badge": s(15, 9, bold=True),
         }
 
     def _build_left_panel_font_pack(self, ui_scale: float | None = None) -> Dict[str, pygame.font.Font]:
@@ -6134,6 +6495,11 @@ class MysteryMode(Game):
         self.card_message_timer = 0.0
         self.card_selection_rects: List[pygame.Rect] = []
         self._pending_card_choice_index: int | None = None
+        # === SLOT YERLEŞTİRME PANELİ (Slot Allocation Overlay) ===
+        # Seviye atlama ekranında aktif bir kart seçildiğinde oyun normal akışına
+        # dönmeden önce bu overlay açılır; oyuncu kartı hangi slota koyacağını seçer.
+        self.slot_selection_active = False
+        self.pending_allocation_card: Optional[Dict] = None
         # Queue of pending level-up card selections, and dedup tracker
         self.pending_level_ups = 0
         self.last_enqueued_level = 0
@@ -6155,10 +6521,6 @@ class MysteryMode(Game):
             score_manager=score_manager,
         )
         self.mode_name = t('mode_label_card_mastery')
-        self._demo_score_cap_value = max(1, int(getattr(demo_config, 'DEMO_MYSTERY_SCORE_CAP', 150000) or 150000))
-        self._demo_score_cap_reached = False
-        self._demo_score_cap_active = False
-        self._demo_score_cap_prompt = DemoUpgradePrompt(self.screen)
         self._card_ui_reference_size = self._get_card_ui_reference_size()
         self._card_ui_readable_min_size = (1180, 760)
         try:
@@ -6174,6 +6536,12 @@ class MysteryMode(Game):
         self._left_panel_cards_y = 120
         # Ensure last_enqueued_level initialized after board is created
         self.last_enqueued_level = getattr(self.board, 'level', 0)
+
+        # Demo score cap variable initialization
+        self._demo_score_cap_value = max(1, int(getattr(demo_config, 'DEMO_MYSTERY_SCORE_CAP', 150000) or 150000))
+        self._demo_score_cap_reached = False
+        self._demo_score_cap_active = False
+        self._demo_score_cap_prompt = DemoUpgradePrompt(self.screen)
 
         # Kart efekt durumları
         self.speed_effect_timer = 0.0
@@ -6204,6 +6572,113 @@ class MysteryMode(Game):
         self._speed_burst_speed_mult = 1.0
         self._speed_burst_line_mult = 1.0
         self._armed_nova_clusters = 0
+        # Nova patlama alanı (NxN). Kademeye göre 3/4/5. Varsayılan 3.
+        self._nova_blast_size = 3
+        self._bomb_countdown_timer = 0.0
+        self._bomb_countdown_last_int = 0
+        self._score_color_override = None
+        self._drill_last_cleanup_y = None
+        self._active_effect_visuals: Dict[str, Dict] = {}
+        self._card_board_effects: List[Dict[str, Any]] = []
+
+        # Quantum tunneling (Hayalet Parça) charges: player chooses per-piece via G.
+        self.tunnel_charges_remaining = 0
+
+        # Hammer charges: player can turn the CURRENT falling piece into a 1x1 block via H.
+        self.hammer_charges_remaining = 0
+
+        # Mirror Hold: sonraki hold'a giren parçayı aynalar.
+        self._mirror_hold_charges = 0
+
+        # Echo Drop: uygun bir kilitte parçanın altına küçük bir gölge izi bırakır.
+        self._echo_drop_charges = 0
+        self._echo_drop_fill_count = 2
+
+        # Son Düşüş (Freeze Drop): F tuşuyla bloğu dondur, sadece sağ-sol ve sert düşüş çalışır.
+        self._freeze_drop_charges = 0
+        self._freeze_drop_duration = 0  # Aktif dondurma süresi (saniye, nadirlğe bağlı)
+        self._freeze_drop_timer = 0.0  # Kalan dondurma süresi (saniye)
+        self._freeze_drop_active = False  # Şu an bir parça donuk mu?
+
+        # Combo Sigortası: True ise bir sonraki "satır temizleyemeyen" lock'da
+        # combo lokal olarak korunur. Yalnızca previous_combo > 0 iken tüketilir.
+        self._combo_insurance_armed = False
+
+        # Ters Borç: kart seçildiği anda en alt 2 satır silinir; sonraki N lock
+        # için parça yere değer değmez ek lock delay olmadan kilitlenir.
+        self._reverse_debt_remaining = 0
+        self._reverse_debt_total = 5
+
+        # Delik Avcısı: J tuşuyla sütun seçim overlay'i. value=charges sayısı.
+        self._hole_hunter_charges = 0
+        self._hole_hunter_overlay_active = False
+        self._hole_hunter_cursor_col = 0
+
+        # Keep a short history of picked cards so the left panel can show
+        # "seçilen bütün kartlar" (not only currently-active effects).
+        self.selected_cards_log: List[Dict[str, Any]] = []
+
+        # Sniper patlama efekti (GIF) cache/runtime
+        self._sniper_explosion_frames: List[pygame.Surface] = []
+        self._sniper_explosion_frame_durations_ms: List[int] = []
+        self._sniper_explosion_total_duration_ms = 0
+        self._sniper_explosion_ready = False
+        self._active_sniper_explosions: List[Dict[str, Any]] = []
+        
+        # Geri Sarma durumu
+        self._rewind_available = False
+        self._last_placed_piece = None  # Son yerleştirilen parça bilgisi
+
+        self.perk_manager = PerkManager(self)
+        self.energy = 0
+        self.energy_max = 100
+        self.time_warp_timer = 0.0
+        self.gravity_freeze_timer = 0.0
+        self.phase_used_for_piece = False
+        self._last_ability_keys = {'z': False, 'x': False, 'g': False, 'h': False, 'm': False, 'c': False, 'rotate': False, 'lshift': False, 'v': False, 'b': False, 'f': False}
+        self._slot_ability_requests: set[str] = set()
+        self.bomb_master_charges = 0
+        self._hold_destroyer_charges = 0
+        self.discard_held_uses = 0
+        self.speed_level = 10
+
+        self.score_speed_multiplier = 1.0
+        self._last_score_speed_milestone = 0
+        self._last_speed_milestone = 0
+        self._speedup_smooth_time = 0.8
+        self._shape_mutation_cooldown = 0.0
+        self._ghost_bug_tracer = None
+        self._ghost_bug_dumped_this_run = False
+        self._sync_active_cards()
+
+    def restart(self) -> None:
+        super().restart()
+        self._demo_score_cap_value = max(1, int(getattr(demo_config, 'DEMO_MYSTERY_SCORE_CAP', 150000) or 150000))
+        self._demo_score_cap_reached = False
+        self._demo_score_cap_active = False
+        if getattr(self, '_demo_score_cap_prompt', None) is not None:
+            self._demo_score_cap_prompt.hide()
+            self._demo_score_cap_prompt.screen = self.screen
+        self.combo_aura_bonus = 0
+        
+        # Geleceği Değiştiren (future_changer) durumu
+        self._future_changer_remaining = 0
+        self._future_changer_card = None
+        self._piece_selection_active = False
+        self._piece_selection_rects: List[pygame.Rect] = []
+        self._piece_selection_hover = -1
+        
+        # Juicy scoring / experimental revamps
+        self._score_multiplier_timer = 0.0
+        self._score_multiplier_value = 1.0
+        self._line_clear_multiplier_remaining = 0
+        self._line_clear_multiplier_value = 1.0
+        self._speed_burst_timer = 0.0
+        self._speed_burst_speed_mult = 1.0
+        self._speed_burst_line_mult = 1.0
+        self._armed_nova_clusters = 0
+        # Nova patlama alanı (NxN). Kademeye göre 3/4/5. Varsayılan 3.
+        self._nova_blast_size = 3
         self._bomb_countdown_timer = 0.0
         self._bomb_countdown_last_int = 0
         self._score_color_override = None
@@ -6270,6 +6745,10 @@ class MysteryMode(Game):
         self.gravity_freeze_timer = 0.0
         self.phase_used_for_piece = False
         self._last_ability_keys = {'z': False, 'x': False, 'g': False, 'h': False, 'm': False, 'c': False, 'rotate': False, 'lshift': False, 'v': False, 'b': False, 'f': False}
+        # Slot kısayolu (1-6) ile tetiklenen, poll-tabanlı yetenekler için bir
+        # kerelik sentetik istek kuyruğu. update() içindeki polled blok bunları
+        # tüketir; böylece tuş ile aynı tetikleme + hak düşürme yolu kullanılır.
+        self._slot_ability_requests: set[str] = set()
         # Bomba Ustası: M tuşuyla mini bomba yapma hakları
         self.bomb_master_charges = 0
         # Tuttuğunu Koparan: B tuşuyla hold silme hakları (kart seçilene kadar 0)
@@ -6499,10 +6978,13 @@ class MysteryMode(Game):
             # Keep the panel readable and avoid unbounded growth.
             if len(self.selected_cards_log) > 30:
                 self.selected_cards_log = self.selected_cards_log[-30:]
-            # Kalıcı kart kullanım istatistiği
-            if self.user_manager and card.get('id'):
+            # Kalıcı kart kullanım istatistiği — aile (_group_id) bazında.
+            # Varyant id'leri (clear_rows_rare vb.) yerine aile id'si kaydedilir
+            # ki aynı kartın farklı kademeleri istatistikte AYRI sayılmasın.
+            usage_id = str(card.get('_group_id') or card.get('id') or '')
+            if self.user_manager and usage_id:
                 try:
-                    self.user_manager.record_card_usage(str(card['id']), str(card.get('title', '')))
+                    self.user_manager.record_card_usage(usage_id, str(card.get('title', '')))
                 except Exception:
                     pass
         except Exception:
@@ -6700,8 +7182,52 @@ class MysteryMode(Game):
             'mini_bomb': 0.5,
             'nova_burst': 0.55,
             'sniper_shot': 0.4,
+            'reverse_debt': 0.7,
+            'hole_hunter': 0.55,
         }
         return float(durations.get(str(effect_id), 0.6))
+
+    @contextlib.contextmanager
+    def _animated_card_board_change(
+        self,
+        effect_id: str,
+        *,
+        accent: Any = None,
+        duration: float | None = None,
+    ):
+        """Tahtayı değiştiren herhangi bir kod yolunu sarmalayan standart desen.
+
+        Gecikmeli/"armed" kartlar (oyuncu tetikleyince tahtayı değiştirenler) için
+        before/after snapshot'ı elle yazmak yerine bu contextmanager ile sarmala::
+
+            with self._animated_card_board_change('hole_hunter', accent=color):
+                # ... tahtayı değiştir ...
+
+        Böylece "tahtayı değiştir + animasyonu kuyruğa at" tek satırlık standart
+        bir desen olur ve before/after yazmayı kimse unutmaz. effects_enabled
+        kapalıyken hiçbir snapshot alınmaz ve hiçbir animasyon üretilmez.
+        """
+        if not getattr(self, 'effects_enabled', False):
+            yield
+            return
+        try:
+            before = self._capture_card_board_snapshot()
+        except Exception:
+            before = None
+        try:
+            yield
+        finally:
+            if before is not None:
+                try:
+                    self._queue_card_board_effect_from_snapshots(
+                        effect_id,
+                        before,
+                        self._capture_card_board_snapshot(),
+                        accent=accent,
+                        duration=duration,
+                    )
+                except Exception:
+                    pass
 
     def _append_card_board_effect(self, effect: dict[str, Any]) -> None:
         if not getattr(self, 'effects_enabled', False):
@@ -7636,8 +8162,17 @@ class MysteryMode(Game):
                 now_ms = int(pygame.time.get_ticks())
             except Exception:
                 now_ms = None
-            for y in range(max(0, cy - 1), min(height, cy + 2)):
-                for x in range(max(0, cx - 1), min(width, cx + 2)):
+            # Patlama alanı NxN (kademeye göre 3/4/5). Merkez etrafında simetrik
+            # yarıçap = (N-1)//2 ... N//2 aralığı; çift N'de merkez hafif sağa/aşağı kayar.
+            try:
+                blast_n = int(getattr(self, '_nova_blast_size', 3) or 3)
+            except Exception:
+                blast_n = 3
+            blast_n = max(3, blast_n)
+            half_lo = (blast_n - 1) // 2
+            half_hi = blast_n // 2
+            for y in range(max(0, cy - half_lo), min(height, cy + half_hi + 1)):
+                for x in range(max(0, cx - half_lo), min(width, cx + half_hi + 1)):
                     if self.board.occupancy[y][x]:
                         self.board.occupancy[y][x] = False
                         self.board.grid[y][x] = BLACK
@@ -7982,7 +8517,7 @@ class MysteryMode(Game):
             # Hayalet Parça (G): Mevcut parçayı hayalet yap - blokların içinden geçebilir.
             # SPACE ile istenen yerde kilitlenir (komşu blok varsa).
             # Hak, parça kilitlenince harcanır.
-            _g_pressed = keys[pygame.K_g] or (_gp_connected and _gpm.is_action_pressed('card_ghost'))
+            _g_pressed = (_gp_connected and _gpm.is_action_pressed('card_ghost')) or ('quantum_tunneling' in self._get_slot_requests())
             if not freeze_input_locked and _g_pressed and not self._last_ability_keys.get('g', False):
                 now_ms = None
                 try:
@@ -8048,7 +8583,7 @@ class MysteryMode(Game):
             self._last_ability_keys['g'] = bool(_g_pressed)
 
             # Çekiç (H): mevcut düşen parçayı 1x1 bloğa dönüştür (3 hak)
-            _h_pressed = keys[pygame.K_h] or (_gp_connected and _gpm.is_action_pressed('card_hammer'))
+            _h_pressed = (_gp_connected and _gpm.is_action_pressed('card_hammer')) or ('hammer' in self._get_slot_requests())
             if not freeze_input_locked and _h_pressed and not self._last_ability_keys.get('h', False):
                 try:
                     charges = int(getattr(self, 'hammer_charges_remaining', 0) or 0)
@@ -8079,7 +8614,7 @@ class MysteryMode(Game):
             self._last_ability_keys['h'] = bool(_h_pressed)
 
             # Bomba Ustası (M): mevcut parçayı mini bomba yap (3 hak)
-            _m_pressed = keys[pygame.K_m] or (_gp_connected and _gpm.is_action_pressed('card_bomb'))
+            _m_pressed = (_gp_connected and _gpm.is_action_pressed('card_bomb')) or ('bomb_master' in self._get_slot_requests())
             if not freeze_input_locked and _m_pressed and not self._last_ability_keys.get('m', False):
                 try:
                     charges = int(getattr(self, 'bomb_master_charges', 0) or 0)
@@ -8121,7 +8656,7 @@ class MysteryMode(Game):
             self._last_ability_keys['m'] = bool(_m_pressed)
 
             # Tuttuğunu Koparan (B): hold'daki parçayı sil (hak varsa)
-            _b_pressed = keys[pygame.K_b] or (_gp_connected and _gpm.is_action_pressed('discard_held'))
+            _b_pressed = (_gp_connected and _gpm.is_action_pressed('discard_held')) or ('hold_destroyer' in self._get_slot_requests())
             if not freeze_input_locked and _b_pressed and not self._last_ability_keys.get('b', False):
                 try:
                     hd_charges = int(getattr(self, '_hold_destroyer_charges', 0) or 0)
@@ -8158,7 +8693,7 @@ class MysteryMode(Game):
             self._last_ability_keys['b'] = bool(_b_pressed)
 
             # Son Düşüş (F): mevcut düşen bloğu dondur (3 hak)
-            _f_pressed = keys[pygame.K_f]
+            _f_pressed = ('freeze_drop' in self._get_slot_requests())
             if not freeze_input_locked and _f_pressed and not self._last_ability_keys.get('f', False):
                 try:
                     charges = int(getattr(self, '_freeze_drop_charges', 0) or 0)
@@ -8215,6 +8750,16 @@ class MysteryMode(Game):
             # Keep the _last_ability_keys updated for the rotate binding
             # (no teleport/phase behavior handled here anymore)
             self._last_ability_keys['rotate'] = bool(keys[rot_key])
+
+            # Slot kısayolundan gelen tek seferlik poll istekleri tüketildi.
+            if self._slot_ability_requests:
+                self._slot_ability_requests.clear()
+            # Slot kartlarının kalan haklarını canlı sayaçlardan tazele; bitenının kalan haklarını canlı sayaçlardan tazele; biten
+            # kart slottan otomatik temizlenir.
+            try:
+                self._refresh_slot_charges()
+            except Exception:
+                pass
 
             # Kart Modu: skora bağlı hızlanma KAPALI.
             # Yalnızca seviye (board.level) bazlı hızlanma kullanılır.
@@ -8470,28 +9015,62 @@ class MysteryMode(Game):
                 self._demo_score_cap_active = False
                 return 'menu'
             prompt.screen = self.screen
-            # Güvenlik: panel bayrağı açık ama prompt bir şekilde pasifse
-            # (ekran yeniden oluşturma, state desync vb.) hiçbir event
-            # tüketilmez ve ESC tepkisiz kalırdı. Bu durumda yeniden göster.
             if not prompt.is_active():
                 show_demo_score_cap_prompt(prompt)
                 prompt.screen = self.screen
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     return False
-                # Ek güvenlik: prompt event'i yutmasa bile ESC her zaman
-                # paneli kapatıp menüye dönmeli.
                 if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
                     self._demo_score_cap_active = False
                     prompt.hide()
                     return 'menu'
                 if prompt.handle_input(event):
                     action = prompt.consume_last_action()
-                    # Score cap panelinde herhangi bir kapanış aksiyonu
-                    # (confirm/cancel/menu_back) menüye döner.
                     if action is not None:
                         self._demo_score_cap_active = False
                         return 'menu'
+            return True
+
+        # === SLOT YERLEŞTİRME OVERLAY (Slot Allocation) ===
+        # Aktif kart seçildikten sonra açılır; 1-6 / mouse ile slota yerleştirilir,
+        # ESC ile iptal edilir (kart açık akışta yine etkilidir).
+        if getattr(self, 'slot_selection_active', False):
+            # Gamepad kontrollerini dinle
+            try:
+                from gamepad_manager import get_gamepad_manager
+                _gpm = get_gamepad_manager()
+                if _gpm and _gpm.enabled:
+                    if _gpm.was_action_just_pressed('menu_back'):
+                        self._cancel_slot_allocation()
+                        return True
+                    for slot_no in range(1, 7):
+                        if _gpm.was_action_just_pressed(f'slot_{slot_no}'):
+                            self._allocate_pending_card_to_slot(slot_no - 1)
+                            return True
+            except Exception:
+                pass
+
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    return False
+                if event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_ESCAPE:
+                        self._cancel_slot_allocation()
+                        continue
+                    # Slota özel keybinding (varsayılan 1-6) ile yerleştir.
+                    slot_index = self._slot_index_for_keycode(event.key)
+                    if slot_index is None:
+                        slot_index = self._slot_index_from_number_key(event.key)
+                    if slot_index is not None:
+                        self._allocate_pending_card_to_slot(slot_index)
+                        continue
+                elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                    pos = normalize_mouse_pos(getattr(event, 'pos', None)) or event.pos
+                    slot_index = self._slot_index_at_pos(pos)
+                    if slot_index is not None:
+                        self._allocate_pending_card_to_slot(slot_index)
+                        continue
             return True
 
         if self.card_selection_active:
@@ -8752,22 +9331,25 @@ class MysteryMode(Game):
                 # Base game'in B handler'ına geçirme
                 continue
 
-            if event.type == pg.KEYDOWN and event.key == pg.K_u:
-                if not self.game_over and not self.paused:
-                    if self._do_rewind():
-                        # Rewind başarılı, event'i tüket
-                        continue
-            # N tuşu: Keskin Nişancı overlay'ini aç
-            if event.type == pg.KEYDOWN and event.key == pg.K_n:
-                if not self.game_over and not self.paused:
-                    if self._open_sniper_overlay():
-                        continue
+            # LSHIFT artık karta özel bir kısayol değil (plan §3). Slota bağlı
+            # değilse base game'in eski Şekil Değiştirici (perk_phase) yoluna
+            # düşmemesi için yutulur.
+            if (
+                event.type == pg.KEYDOWN
+                and event.key == pg.K_LSHIFT
+                and self._slot_index_for_keycode(event.key) is None
+            ):
+                continue
 
-            # J tuşu: Delik Avcısı overlay'ini aç
-            if event.type == pg.KEYDOWN and event.key == pg.K_j:
-                if not self.game_over and not self.paused:
-                    if self._open_hole_hunter_overlay():
-                        continue
+            # Slota özel tetikleme (plan §3): kartların kendi sabit tuşu yoktur.
+            # Slot keybinding (varsayılan 1-6, ayarlardan özelleştirilebilir) ilgili
+            # slottaki kartı tetikler.
+            if event.type == pg.KEYDOWN:
+                slot_index = self._slot_index_for_keycode(event.key)
+                if slot_index is not None:
+                    if not self.game_over and not self.paused:
+                        self._trigger_slot(slot_index)
+                    continue
 
             # Event'i tekrar kuyruğa koy ki super().handle_input() işlesin
             pg.event.post(event)
@@ -8778,6 +9360,13 @@ class MysteryMode(Game):
                 from gamepad_manager import get_gamepad_manager
                 _gpm = get_gamepad_manager()
                 if _gpm and _gpm.enabled:
+                    # Slot Yetenek Tetiklemeleri
+                    if not self.card_selection_active and not self.slot_selection_active:
+                        for slot_no in range(1, 7):
+                            if _gpm.was_action_just_pressed(f'slot_{slot_no}'):
+                                self._trigger_slot(slot_no - 1)
+                                return True
+
                     # Zaman Kapsulu: save ve restore action'lari ayri ayri ele alinir.
                     if not self.card_selection_active and not time_capsule_keyboard_handled:
                         if _gpm.was_action_just_pressed('card_time_capsule_save'):
@@ -8813,11 +9402,11 @@ class MysteryMode(Game):
         self.card_selection_rects = []
         self._pending_card_choice_index = None
         self.pending_level_ups = 0
-        self._demo_score_cap_reached = False
-        self._demo_score_cap_active = False
-        if getattr(self, '_demo_score_cap_prompt', None) is not None:
-            self._demo_score_cap_prompt.hide()
-            self._demo_score_cap_prompt.screen = self.screen
+        # Slot yerleştirme overlay durumunu sıfırla.
+        self.slot_selection_active = False
+        self.pending_allocation_card = None
+        self._slot_ability_requests = set()
+        self._slot_allocation_rects = {}
         self.last_enqueued_level = getattr(self.board, 'level', 0)
         self._reset_card_selection_rerolls()
         # Reset effect timers and visuals
@@ -8837,6 +9426,7 @@ class MysteryMode(Game):
         self._speed_burst_speed_mult = 1.0
         self._speed_burst_line_mult = 1.0
         self._armed_nova_clusters = 0
+        self._nova_blast_size = 3
         self._bomb_countdown_timer = 0.0
         self._bomb_countdown_last_int = 0
         self._drill_last_cleanup_y = None
@@ -9013,12 +9603,15 @@ class MysteryMode(Game):
                     self.card_ui.set_reroll_enabled(self._can_reroll_card_selection())
             except Exception:
                 pass
+            choices = self.card_manager.pending_choices
+            if not choices and getattr(self, 'slot_selection_active', False):
+                choices = getattr(self, '_last_pending_choices', [])
             self.card_ui.draw_selection_overlay(
                 self.screen,
                 active_width,
                 active_height,
                 fonts,
-                self.card_manager.pending_choices,
+                choices,
                 self.card_manager.get_selection_hint(),
                 bool(self.settings_manager.get('card_mode_debug', False)),
             )
@@ -9062,20 +9655,127 @@ class MysteryMode(Game):
         if getattr(self, '_card_workshop_active', False):
             self._draw_card_workshop_popup()
 
+        # === SLOT YERLEŞTİRME OVERLAY: aktif kart seçildikten sonra ===
+        if getattr(self, 'slot_selection_active', False):
+            self._draw_slot_allocation_panel()
+
         if getattr(self, '_demo_score_cap_active', False):
             prompt = getattr(self, '_demo_score_cap_prompt', None)
             if prompt is not None:
                 prompt.screen = self.screen
                 prompt.draw()
-            # Diğer kart-modu overlay'leri (parça seçimi, atölye, sniper) gibi
-            # fare imlecini her frame görünür yap. Bu, ana döngünün
-            # wants_mouse_visible() zamanlamasından bağımsız olarak imlecin
-            # panelde her zaman görünmesini garanti eder (Windows + macOS).
             try:
                 pygame.mouse.set_visible(True)
             except Exception:
                 pass
     
+    def _draw_slot_allocation_panel(self) -> None:
+        """Slot yerleştirme overlay'ini çiz (plan §3-B).
+
+        Oyunun genel HUD cam panel stilini kullanır; açık slotları (boş/dolu) ve
+        kilitli slotları 3x2 grid olarak gösterir. Tüm ölçüler ui_scale ile
+        ölçeklenir; sabit piksel değeri kullanılmaz.
+        """
+        try:
+            self._ensure_card_ui_fonts()
+            active_width, active_height = self._active_ui_size()
+            ui_scale = self._card_ui_scale()
+            # Scale up the panel and slots by an additional 10% (1.5 * 1.1 = 1.65) to make card slot icons visible and readable
+            ui_scale_scaled = ui_scale * 1.65
+            s = lambda v, minimum=1: max(minimum, int(round(float(v) * float(ui_scale_scaled))))
+            fonts = self._build_left_panel_font_pack(ui_scale_scaled)
+            title_font = fonts.get('panel_header') or fonts.get('large') or fonts.get('small')
+            hint_font = fonts.get('small')
+
+            # Karartma katmanı.
+            dim = pygame.Surface((active_width, active_height), pygame.SRCALPHA)
+            dim.fill((0, 0, 0, 150))
+            self.screen.blit(dim, (0, 0))
+
+            # Grid geometrisi (MysteryCardUI.draw_active_slots_grid ile aynı kurallar).
+            cols, rows = 3, 2
+            col_gap = s(10, minimum=6)
+            row_gap = s(10, minimum=6)
+            cell_w = s(80, minimum=64)
+            cell_h = cell_w  # kare slotlar
+            grid_w = cols * cell_w + (cols - 1) * col_gap
+            grid_h = rows * cell_h + (rows - 1) * row_gap
+
+            pad = s(20, minimum=12)
+            title_text = t('slot_allocation_title', 'Karti Hangi Slota Yerlestirmek Istiyorsunuz?')
+            max_title_w = active_width - pad * 4
+            # Eğer başlık metni varsayılan font ile sığmıyorsa daha küçük fontlar dene
+            if title_font.size(title_text)[0] > max_title_w:
+                title_font = fonts.get('medium') or title_font
+                if title_font.size(title_text)[0] > max_title_w:
+                    title_font = fonts.get('small') or title_font
+            title_surf = title_font.render(
+                self._fit_text_to_width(title_font, title_text, max_title_w),
+                True,
+                (235, 242, 252),
+            )
+            hint_surf = hint_font.render(
+                self._fit_text_to_width(hint_font, t('slot_allocation_hint', '1-6 ile sec  -  ESC ile iptal'), active_width - pad * 4),
+                True,
+                (170, 186, 210),
+            )
+
+            panel_w = max(grid_w + pad * 2, title_surf.get_width() + pad * 2)
+            panel_h = title_surf.get_height() + s(14) + grid_h + s(12) + hint_surf.get_height() + pad * 2
+            panel_x = (active_width - panel_w) // 2
+            panel_y = (active_height - panel_h) // 2
+            panel_rect = pygame.Rect(panel_x, panel_y, panel_w, panel_h)
+
+            # Panel arka planı: siyah %75 opak (RGBA: 12, 14, 24, 192)
+            bg_surf = pygame.Surface(panel_rect.size, pygame.SRCALPHA)
+            bg_surf.fill((12, 14, 24, 192))
+            self.screen.blit(bg_surf, panel_rect.topleft)
+            # Belirgin parlak neon mavi çerçeve (çözünürlük bağımsız s() radius ile)
+            pygame.draw.rect(self.screen, (80, 140, 240), panel_rect, 2, border_radius=s(10, minimum=5))
+
+            cursor_y = panel_rect.y + pad
+            self.screen.blit(title_surf, (panel_rect.centerx - title_surf.get_width() // 2, cursor_y))
+            cursor_y += title_surf.get_height() + s(14)
+
+            grid_x = panel_rect.centerx - grid_w // 2
+            grid_y = cursor_y
+
+            slots = list(getattr(self.card_manager, 'active_slots', []) or [])
+            unlocked = int(getattr(self.card_manager, 'unlocked_slots', 3))
+            slot_keys = self._slot_key_labels()
+
+            # Tıklama için slot dikdörtgenlerini sakla.
+            self._slot_allocation_rects: Dict[int, pygame.Rect] = {}
+            for idx in range(cols * rows):
+                col = idx % cols
+                row = idx // cols
+                cx = grid_x + col * (cell_w + col_gap)
+                cy = grid_y + row * (cell_h + row_gap)
+                self._slot_allocation_rects[idx] = pygame.Rect(cx, cy, cell_w, cell_h)
+
+            # Grid'i MysteryCardUI üzerinden çiz (ortak ölçekli çizim yolu).
+            self.card_ui.draw_active_slots_grid(
+                self.screen,
+                slots,
+                unlocked,
+                fonts,
+                grid_x,
+                grid_y,
+                grid_w,
+                ui_scale=ui_scale_scaled,
+                slot_keys=slot_keys,
+                square_cells=True,
+            )
+
+            cursor_y = grid_y + grid_h + s(12)
+            self.screen.blit(hint_surf, (panel_rect.centerx - hint_surf.get_width() // 2, cursor_y))
+        except Exception as exc:
+            try:
+                if getattr(self, 'settings_manager', None) and self.settings_manager.get('debug_mode', False):
+                    print(f"[MysteryMode] slot allocation panel draw failed: {exc!r}")
+            except Exception:
+                pass
+
     def _draw_hole_hunter_overlay(self) -> None:
         """Delik Avcısı için sütun seçim overlay'i — küçük ve lokal."""
         try:
@@ -9111,6 +9811,71 @@ class MysteryMode(Game):
             for hy in holes:
                 marker = pygame.Rect(col_x + 2, board_y + hy * cell_size + 2, cell_size - 4, cell_size - 4)
                 pygame.draw.rect(self.screen, (255, 255, 255, 200), marker, 2, border_radius=2)
+
+            # === SEÇİM GÖSTERGESİ: sütunun üstünde aşağı bakan ok ===
+            # Hangi sütunun hedeflendiğini net göstermek için seçili sütunun
+            # üstünde, ona doğru işaret eden bir ok çiz.
+            arrow_cx = col_x + cell_size // 2
+            arrow_tip_y = board_y - 6
+            arrow_top_y = arrow_tip_y - max(12, cell_size // 2)
+            half_w = max(7, cell_size // 3)
+            try:
+                # Yumuşak nabız efekti
+                import time as _t
+                pulse = (math.sin(_t.time() * 6.0) + 1.0) * 0.5  # 0..1
+            except Exception:
+                pulse = 1.0
+            arrow_color = (
+                int(150 + 105 * pulse),
+                255,
+                int(200 + 55 * pulse),
+            )
+            try:
+                pygame.draw.polygon(
+                    self.screen,
+                    arrow_color,
+                    [
+                        (arrow_cx - half_w, arrow_top_y),
+                        (arrow_cx + half_w, arrow_top_y),
+                        (arrow_cx, arrow_tip_y),
+                    ],
+                )
+                pygame.draw.polygon(
+                    self.screen,
+                    (20, 60, 50),
+                    [
+                        (arrow_cx - half_w, arrow_top_y),
+                        (arrow_cx + half_w, arrow_top_y),
+                        (arrow_cx, arrow_tip_y),
+                    ],
+                    1,
+                )
+            except Exception:
+                pass
+
+            # === MOUSE İŞARETÇİSİ: canlı fare konumunda görsel uyaran ===
+            # Sistem imleci oyun sırasında belirsiz; farenin nereyi gösterdiğini
+            # net belli etmek için tahta üzerindeki yatay banda hizalı bir
+            # işaretçi (içi dolu daire + halka) çiziyoruz.
+            try:
+                mx, my = get_mouse_pos()
+            except Exception:
+                mx, my = (None, None)
+            if mx is not None:
+                over_board_x = (board_x <= mx < board_x + board_w_px)
+                # Y'yi tahta bandına kıstır ki üstte/altta gezse de görünür kalsın.
+                pointer_y = my
+                if pointer_y is None:
+                    pointer_y = board_y + board_h_px // 2
+                pointer_y = max(board_y + 6, min(board_y + board_h_px - 6, int(pointer_y)))
+                pointer_x = arrow_cx if not over_board_x else int(mx)
+                ring_color = (170, 255, 220) if over_board_x else (200, 200, 200)
+                try:
+                    pygame.draw.circle(self.screen, (20, 60, 50), (pointer_x, pointer_y), 9)
+                    pygame.draw.circle(self.screen, ring_color, (pointer_x, pointer_y), 9, 2)
+                    pygame.draw.circle(self.screen, ring_color, (pointer_x, pointer_y), 3)
+                except Exception:
+                    pass
         except Exception:
             pass
 
@@ -9549,6 +10314,7 @@ class MysteryMode(Game):
                 target_bottom = active_height - 30
         else:
             target_bottom = active_height - 30
+
         panel_h = max(0, int(target_bottom - cards_y))
         if panel_h <= 0:
             return 0
@@ -9573,29 +10339,93 @@ class MysteryMode(Game):
         self.screen.blit(header, (inner_x, y_cursor))
         y_cursor += header.get_height() + max(6, int(9 * ui_scale))
 
-        section_text = self._fit_text_to_width(section_font, t('card_type_limited'), content_w)
-        label_fx = section_font.render(section_text, True, (180, 200, 220))
-        self.screen.blit(label_fx, (content_x, y_cursor))
-        y_cursor += label_fx.get_height() + max(5, int(7 * ui_scale))
+        # === AKTİF YETENEK SLOTLARI (3x2 grid) ===
+        # Plan §1-C: aktif sınırlı kartlar YALNIZCA bu 6'lık slot bölgesinde
+        # listelenir. Eski mükerrer dikey "Sınırlı" listesi kaldırılmıştır.
+        # `effects` artık yalnızca slot şarjlarını canlı tutmak için okunur.
+        try:
+            self._refresh_slot_charges()
+        except Exception:
+            pass
+        slots = list(getattr(self.card_manager, 'active_slots', []) or [])
+        unlocked = int(getattr(self.card_manager, 'unlocked_slots', 3))
+        grid_h = 0
+        try:
+            grid_h = self.card_ui.draw_active_slots_grid(
+                self.screen,
+                slots,
+                unlocked,
+                fonts,
+                content_x,
+                y_cursor,
+                content_w,
+                ui_scale=ui_scale,
+                slot_keys=self._slot_key_labels(),
+            )
+        except Exception:
+            grid_h = 0
+        y_cursor += grid_h + max(6, int(9 * ui_scale))
 
-        available_cards_h = max(0, cards_panel_rect.bottom - pad_bottom - y_cursor)
-        effects_h = self.card_ui.draw_active_cards_panel(
-            self.screen,
-            effects,
-            fonts,
-            content_x,
-            y_cursor,
-            content_w,
-            max_display=10,
-            placeholder_text=t('card_placeholder_no_limited'),
-            columns=1,
-            max_height=available_cards_h,
-            ui_scale=ui_scale,
-        )
-        used_height = (y_cursor - cards_panel_rect.y) + effects_h + pad_bottom
+        # Sınırlı (Slot-dışı limited) kartları dikey liste olarak çiz
+        limited_non_slot_cards = [c for c in effects if not self._is_slot_eligible_card(c)]
+        if limited_non_slot_cards:
+            # "Sınırlı" başlığı
+            limited_title_text = self._fit_text_to_width(section_font, t('card_type_limited'), inner_w)
+            limited_header = section_font.render(limited_title_text, True, (190, 205, 235))
+            self.screen.blit(limited_header, (content_x, y_cursor))
+            y_cursor += limited_header.get_height() + max(4, int(6 * ui_scale))
+
+            # Dikey kart paneli çizimi
+            try:
+                panel_h_remaining = max(0, target_bottom - y_cursor - pad_bottom)
+                cards_h = self.card_ui.draw_active_cards_panel(
+                    self.screen,
+                    limited_non_slot_cards,
+                    fonts,
+                    content_x,
+                    y_cursor,
+                    content_w,
+                    max_display=3,
+                    max_height=panel_h_remaining,
+                    ui_scale=ui_scale
+                )
+            except Exception:
+                cards_h = 0
+            y_cursor += cards_h + max(6, int(9 * ui_scale))
+
+        # Kalıcı (Persistent) kartları dikey liste olarak alt alta çiz (tetikleme tuşu yok)
+        persistent_cards = [c for c in active_cards if bool(c.get('persistent', False))]
+        if persistent_cards:
+            # "Kalıcı" başlığı
+            persistent_title_text = self._fit_text_to_width(section_font, t('card_type_persistent'), inner_w)
+            persistent_header = section_font.render(persistent_title_text, True, (215, 225, 250))
+            self.screen.blit(persistent_header, (content_x, y_cursor))
+            y_cursor += persistent_header.get_height() + max(4, int(6 * ui_scale))
+
+            # Dikey kart paneli çizimi (Tek sütun alt alta, dikeyde kırpmayı önlemek için max_height=None)
+            try:
+                cards_h = self.card_ui.draw_active_cards_panel(
+                    self.screen,
+                    persistent_cards,
+                    fonts,
+                    content_x,
+                    y_cursor,
+                    content_w,
+                    columns=1,
+                    max_display=4,
+                    max_height=None,
+                    ui_scale=ui_scale
+                )
+            except Exception:
+                cards_h = 0
+            y_cursor += cards_h + max(6, int(9 * ui_scale))
+
+        used_height = (y_cursor - cards_panel_rect.y) + pad_bottom
         return min(cards_panel_rect.height, max(0, used_height))
 
     def _draw_persistent_cards_icon_panel(self) -> None:
+        self._persistent_cards_panel_rect = pygame.Rect(0, 0, 0, 0)
+        return
         active_cards = list(getattr(self.card_manager, 'active_cards', []) or [])
         history_cards = list(getattr(self, 'selected_cards_log', []) or [])
         ui_scale = self._card_ui_scale()
@@ -9791,7 +10621,6 @@ class MysteryMode(Game):
             needed=card_xp_to_next,
         )
         if card_label.startswith('[?'):
-            card_label = f"Kart Sv: {card_level} ({card_xp}/{card_xp_to_next})"
             # Localization key yoksa düz metne düş.
             card_label = f"Kart Sv: {card_level} ({card_xp}/{card_xp_to_next})"
         info_line_2 = t('card_pool_label', hint=status['hint'])
@@ -9827,6 +10656,8 @@ class MysteryMode(Game):
     def _open_card_selection(self) -> None:
         self.card_selection_active = True
         self.card_ui.reset()
+        self.card_ui.warning_message = ""
+        self._last_pending_choices = list(self.card_manager.pending_choices)
         self._pending_card_choice_index = None
         # While the overlay is active we consume events; KEYUP events for left/right
         # may never reach the base Game handler. Reset DAS to avoid "stuck" drift.
@@ -9956,6 +10787,7 @@ class MysteryMode(Game):
     def _close_card_selection(self) -> None:
         self.card_selection_active = False
         self.card_ui.clear_selection_feedback()
+        self._last_pending_choices = []
         self._pending_card_choice_index = None
         # Same reason as above: ensure gameplay resumes with a clean horizontal
         # repeat state even if KEYUP was consumed during overlay.
@@ -9983,6 +10815,28 @@ class MysteryMode(Game):
             return
         if not (0 <= index < len(self.card_manager.pending_choices)):
             return
+
+        # Sınırlı/aktif kart seçildiğinde boş slotların doluluğunu kontrol et
+        card = self.card_manager.pending_choices[index]
+        if card and self._is_slot_eligible_card(card):
+            unlocked_slots_count = int(getattr(self.card_manager, 'unlocked_slots', 3))
+            active_slots = getattr(self.card_manager, 'active_slots', [])
+            empty_slots_available = False
+            for idx in range(min(unlocked_slots_count, len(active_slots))):
+                if active_slots[idx] is None:
+                    empty_slots_available = True
+                    break
+            if not empty_slots_available:
+                if self.sound_enabled:
+                    try:
+                        self.sound.play_sound('deny')
+                    except Exception:
+                        pass
+                # Kırmızı uyarı yazısını set et (localization uyumlu)
+                self.card_ui.warning_message = t('cards_full_warning', 'Daha fazla bu tur kart ekleyemezsiniz.')
+                return
+
+        self.card_ui.warning_message = ""
         self._pending_card_choice_index = index
         self.card_ui.trigger_selection_feedback(index)
 
@@ -10012,9 +10866,292 @@ class MysteryMode(Game):
             card_title_text = get_card_title(card, card.get('title', ''))
             self.card_message = t('card_selected').format(title=card_title_text)
             self.card_message_timer = 3
+        # Plan §2: Aktif/sınırlı (slota yerleşebilen) kartlarda seçim ekranını
+        # KAPATMA. Oyun zaten duraklatılmışken (level-up overlay açık) slot seçim
+        # panelini bunun ÜZERİNE katman olarak aç. Yalnızca slot atandığında hem
+        # slot paneli hem de seviye atlama ekranı birlikte kapatılır.
+        if not interactive_effect_active and self._is_slot_eligible_card(card):
+            self._open_slot_allocation(card)
+            # card_selection_active=True kalır; pending_level_ups burada
+            # azaltılmaz, allocation/iptal sırasında _close_card_selection ile
+            # tek seferde düşürülür.
+            return
+        # Slota uygun olmayan kart: eski akış (seçim ekranını hemen kapat).
         self._close_card_selection()
         # Note: pending_level_ups is now decremented by _close_card_selection(),
         # which is always called when the UI closes (finalize or cancel).
+
+    # === AKTİF SLOT SİSTEMİ ===
+    # Slot'a yerleşebilen (tuşla tetiklenen, sınırlı haklı) kartların meta haritası.
+    # Plan §3: kartların kendine ait sabit tuşu YOKTUR; tetikleme tamamen slota
+    # bağlıdır. Burada yalnızca kalan hak sayacı ve tetik türü tutulur.
+    #   'charge_attr' -> kalan hak sayacının MysteryMode attribute adı
+    #                    ('perk_rewind_uses' özel: perk_manager.rewind_uses okunur)
+    #   'trigger'     -> 'event' (doğrudan helper çağrısı) | 'poll' (sentetik istek)
+    SLOT_CARD_SPECS: Dict[str, Dict[str, str]] = {
+        'sniper_shot':       {'charge_attr': '_sniper_charges',           'trigger': 'event'},
+        'hole_hunter':       {'charge_attr': '_hole_hunter_charges',      'trigger': 'event'},
+        'rewind_power':      {'charge_attr': 'perk_rewind_uses',          'trigger': 'event'},
+        'perk_phase':        {'charge_attr': 'phase_shift_uses_remaining', 'trigger': 'event'},
+        'hammer':            {'charge_attr': 'hammer_charges_remaining',   'trigger': 'poll'},
+        'bomb_master':       {'charge_attr': 'bomb_master_charges',        'trigger': 'poll'},
+        'freeze_drop':       {'charge_attr': '_freeze_drop_charges',       'trigger': 'poll'},
+        'quantum_tunneling': {'charge_attr': 'tunnel_charges_remaining',   'trigger': 'poll'},
+        'hold_destroyer':     {'charge_attr': '_hold_destroyer_charges',   'trigger': 'poll'},
+    }
+
+    def _slot_effect_id(self, card: Dict | None) -> str:
+        if not card:
+            return ''
+        return str(card.get('_group_id') or card.get('id') or '')
+
+    def _get_slot_requests(self) -> set:
+        """Sentetik slot poll isteklerini güvenli şekilde döndür (init garantili)."""
+        reqs = getattr(self, '_slot_ability_requests', None)
+        if reqs is None:
+            reqs = set()
+            self._slot_ability_requests = reqs
+        return reqs
+
+    def _is_slot_eligible_card(self, card: Dict | None) -> bool:
+        return self._slot_effect_id(card) in self.SLOT_CARD_SPECS
+
+    def _slot_card_charges(self, effect_id: str) -> int:
+        """Slot kartının canlı kalan hakkını ilgili sayaçtan oku."""
+        spec = self.SLOT_CARD_SPECS.get(effect_id)
+        if not spec:
+            return 0
+        attr = spec['charge_attr']
+        if attr == 'perk_rewind_uses':
+            return int(getattr(getattr(self, 'perk_manager', None), 'rewind_uses', 0) or 0)
+        return int(getattr(self, attr, 0) or 0)
+
+    def _refresh_slot_charges(self) -> None:
+        """active_slots kartlarındaki 'charges' alanını canlı sayaçlardan tazele.
+
+        Hakkı biten kart slottan otomatik temizlenir (plan §5).
+        """
+        slots = getattr(self.card_manager, 'active_slots', None)
+        if not slots:
+            return
+        for idx, card in enumerate(slots):
+            if not card:
+                continue
+            remaining = self._slot_card_charges(self._slot_effect_id(card))
+            card['charges'] = remaining
+            if remaining <= 0:
+                slots[idx] = None
+
+    def _slot_key_labels(self) -> List[str]:
+        """active_slots ile hizalı tuş etiketleri (slota özel keybinding'den)."""
+        slots = getattr(self.card_manager, 'active_slots', [])
+        labels: List[str] = []
+        for idx in range(len(slots)):
+            labels.append(self._slot_key_label_for_index(idx))
+        return labels
+
+    def _open_slot_allocation(self, card: Dict) -> None:
+        """Seçilen aktif kart için slot yerleştirme overlay'ini aç."""
+        allocation_card = dict(card)
+        allocation_card['charges'] = self._slot_card_charges(self._slot_effect_id(card))
+        self.pending_allocation_card = allocation_card
+        self.slot_selection_active = True
+        if hasattr(self, 'card_ui') and self.card_ui is not None:
+            self.card_ui.interaction_locked = True
+        self._refresh_slot_charges()
+
+    def _allocate_pending_card_to_slot(self, slot_index: int) -> bool:
+        """Bekleyen kartı verilen açık slota yerleştir; başarılıysa overlay'i kapat."""
+        card = getattr(self, 'pending_allocation_card', None)
+        if card is None:
+            return False
+        if not self.card_manager.is_slot_unlocked(slot_index):
+            if self.sound_enabled:
+                try:
+                    self.sound.play_sound('deny')
+                except Exception:
+                    pass
+            return False
+        self.card_manager.allocate_card_to_slot(slot_index, card)
+        self.pending_allocation_card = None
+        self.slot_selection_active = False
+        self._refresh_slot_charges()
+        if hasattr(self, 'card_ui') and self.card_ui is not None:
+            self.card_ui.interaction_locked = False
+        # Plan §2 adım 4: slot atandığı anda altındaki seviye atlama ekranını da
+        # kapat ve oyun akışını sürdür.
+        if self.card_selection_active:
+            self._close_card_selection()
+        if self.sound_enabled:
+            try:
+                self.sound.play_sound('rotate')
+            except Exception:
+                pass
+        return True
+
+    def _cancel_slot_allocation(self) -> None:
+        """Slot yerleştirmeyi iptal et; kart yine de açık akışta etkilidir.
+
+        İptal halinde de seviye atlama ekranı kapatılır ve oyuna dönülür (plan §2).
+        """
+        self.pending_allocation_card = None
+        self.slot_selection_active = False
+        if hasattr(self, 'card_ui') and self.card_ui is not None:
+            self.card_ui.interaction_locked = False
+        if self.card_selection_active:
+            self._close_card_selection()
+
+    @staticmethod
+    def _slot_index_from_number_key(key: int) -> int | None:
+        """pygame 1-6 tuş kodunu 0 tabanlı slot index'ine çevir (yoksa None)."""
+        number_keys = {
+            pygame.K_1: 0, pygame.K_2: 1, pygame.K_3: 2,
+            pygame.K_4: 3, pygame.K_5: 4, pygame.K_6: 5,
+            pygame.K_KP1: 0, pygame.K_KP2: 1, pygame.K_KP3: 2,
+            pygame.K_KP4: 3, pygame.K_KP5: 4, pygame.K_KP6: 5,
+        }
+        return number_keys.get(key)
+
+    # Slota özel tuş atamaları (plan §3). Varsayılan 1..6, ayarlardan özelleştirilebilir.
+    _DEFAULT_SLOT_KEYCODES = (
+        (pygame.K_1, pygame.K_KP1),
+        (pygame.K_2, pygame.K_KP2),
+        (pygame.K_3, pygame.K_KP3),
+        (pygame.K_4, pygame.K_KP4),
+        (pygame.K_5, pygame.K_KP5),
+        (pygame.K_6, pygame.K_KP6),
+    )
+
+    def _resolve_slot_keybindings(self) -> List[set]:
+        """Her slot (0..5) için tetikleme keycode kümelerini ayarlardan çöz.
+
+        `controls['card_slots']['slot_N']` birincil/ikincil tuşlarını kullanır;
+        çözülemezse varsayılan `K_N` (ve numpad eşi) uygulanır.
+        """
+        resolved: List[set] = []
+        config: Dict[str, Any] = {}
+        sm = getattr(self, 'settings_manager', None)
+        if sm is not None:
+            try:
+                config = sm.get_controls().get('card_slots', {}) or {}
+            except Exception:
+                config = {}
+        for idx in range(self.card_manager.MAX_CARD_SLOTS):
+            keys: set = set()
+            row = config.get(f'slot_{idx + 1}')
+            for slot in ('primary', 'secondary'):
+                binding = row.get(slot) if isinstance(row, dict) else (row if slot == 'primary' else None)
+                if isinstance(binding, str) and binding.strip():
+                    try:
+                        keys.add(int(pygame.key.key_code(binding)))
+                    except Exception:
+                        pass
+                elif isinstance(binding, int):
+                    keys.add(int(binding))
+            if not keys:
+                keys.update(self._DEFAULT_SLOT_KEYCODES[idx])
+            resolved.append(keys)
+        return resolved
+
+    def _slot_index_for_keycode(self, key: int) -> int | None:
+        """Verilen keycode hangi slotu tetikler? Ayarlanmış tuşlara göre çöz."""
+        try:
+            bindings = self._resolve_slot_keybindings()
+        except Exception:
+            bindings = []
+        for idx, keys in enumerate(bindings):
+            if key in keys:
+                return idx
+        return None
+
+    def _slot_key_label_for_index(self, idx: int) -> str:
+        """Slot için kısa tuş etiketi (rozette gösterilir), ayarlardan türetilir."""
+        try:
+            bindings = self._resolve_slot_keybindings()
+        except Exception:
+            bindings = []
+        if 0 <= idx < len(bindings) and bindings[idx]:
+            # En kısa okunur ismi seç (örn '1' veya 'q').
+            names = []
+            for kc in bindings[idx]:
+                try:
+                    names.append(pygame.key.name(kc))
+                except Exception:
+                    continue
+            if names:
+                names.sort(key=len)
+                return names[0].upper()
+        return str(idx + 1)
+
+
+    def _slot_index_at_pos(self, pos: tuple[int, int]) -> int | None:
+        """Slot yerleştirme overlay'inde tıklanan slotun index'ini döndür."""
+        rects = getattr(self, '_slot_allocation_rects', None)
+        if not rects:
+            return None
+        for idx, rect in rects.items():
+            try:
+                if rect is not None and rect.collidepoint(pos):
+                    return int(idx)
+            except Exception:
+                continue
+        return None
+
+    def _activate_slot_event_card(self, effect_id: str) -> bool:
+        """Event-tabanlı slot kartını kendi kanonik tetikleyicisiyle çalıştır."""
+        if effect_id == 'rewind_power':
+            return self._do_rewind()
+        if effect_id == 'sniper_shot':
+            return self._open_sniper_overlay()
+        if effect_id == 'hole_hunter':
+            return self._open_hole_hunter_overlay()
+        if effect_id == 'perk_phase':
+            try:
+                return bool(self.swap_current_piece_shape())
+            except Exception:
+                return False
+        return False
+
+    def _trigger_slot(self, slot_index: int) -> bool:
+        """Oynanışta bir slotun kartını tetikle (plan §5).
+
+        Yuva boş/kilitli ya da hak bittiyse tetikleme yapılmaz ve 'deny' çalınır.
+        Tetikleme başarılıysa hak ilgili kanonik yolda 1 azalır.
+        """
+        if self.game_over or self.paused:
+            return False
+
+        def _deny() -> None:
+            if self.sound_enabled:
+                try:
+                    self.sound.play_sound('deny')
+                except Exception:
+                    pass
+
+        if not self.card_manager.is_slot_unlocked(slot_index):
+            _deny()
+            return False
+        card = self.card_manager.get_slot_card(slot_index)
+        if card is None:
+            _deny()
+            return False
+        effect_id = self._slot_effect_id(card)
+        spec = self.SLOT_CARD_SPECS.get(effect_id)
+        if spec is None or self._slot_card_charges(effect_id) <= 0:
+            _deny()
+            return False
+
+        if spec['trigger'] == 'event':
+            ok = self._activate_slot_event_card(effect_id)
+            if not ok:
+                _deny()
+        else:
+            # Poll-tabanlı kart: update() içindeki tuş bloğu için sentetik istek.
+            self._slot_ability_requests.add(effect_id)
+            ok = True
+        self._refresh_slot_charges()
+        return ok
+
 
     def _apply_score_multiplier_to_delta(self, delta: int) -> int:
         if delta <= 0:
@@ -10240,21 +11377,23 @@ class MysteryMode(Game):
 
     def _apply_card_effect(self, card: Dict) -> None:
         cid = card["id"]
+        # Effect dallanması aile (_group_id) bazlıdır. Böylece geliştirme
+        # varyantları (örn. clear_rows_rare, bomb_master_epic) K1 ile AYNI
+        # davranış dalına düşer; güç farkı yalnızca `value`/ek alanlardan gelir.
+        # cid hâlâ kimlik (used_card_ids, görsel efekt) için kullanılır.
+        effect_id = str(card.get('_group_id') or card.get('id') or '')
         value = card["value"]
         color = card["color"]
         effect_triggered = False
         board_snapshot_before = None
 
-        if getattr(self, 'effects_enabled', False) and cid in {
-            'clear_rows',
-            'column_cleanse',
-            'gravity_well',
-            'peak_sculpt',
-            'block_magnet',
-            'row_shuffle',
-            'gambler_dice',
-            'color_cleanse',
-        }:
+        # Tahtayı değiştiren HER kart (mevcut + gelecek) seçim anında otomatik
+        # board animasyonu alır; ayrı bir effect_id kayıt listesi (opt-in gate)
+        # tutmuyoruz. _queue_card_board_effect_from_snapshots / _append_card_board_effect
+        # delta boşsa hiçbir şey eklemez, yani tahtayı değiştirmeyen kartlar için
+        # bu snapshot otomatik olarak no-op'tur. effects_enabled kapalıyken hiç
+        # snapshot almayız (gereksiz hesap olmasın).
+        if getattr(self, 'effects_enabled', False):
             try:
                 board_snapshot_before = self._capture_card_board_snapshot()
             except Exception:
@@ -10266,23 +11405,13 @@ class MysteryMode(Game):
         try:
             if bool(card.get('persistent')):
                 self.card_manager.used_card_ids.add(str(cid))
+                # Aile (group) bazında da işaretle ki tüm kademe varyantları dışlanır.
+                if effect_id and effect_id != str(cid):
+                    self.card_manager.used_card_ids.add(effect_id)
         except Exception:
             pass
 
-        if cid == "score":
-            # Basit skor patlaması - anında puan ekle
-            base = int(value)
-            # Synergy çarpanı uygula
-            mult = 1.0
-            try:
-                mult = self.perk_manager.get_multiplier() if getattr(self, 'perk_manager', None) else 1.0
-            except Exception:
-                pass
-            total = int(base * mult)
-            self.board.score += total
-            self._set_localized_card_message('mystery_msg_score_bonus', 1.2, '+{total} puan!', total=total)
-            effect_triggered = True
-        elif cid == "clear_rows":
+        if effect_id == "clear_rows":
             self._clear_rows(value)
             # After collapsing, full rows may appear; clear them as proper line clears.
             # The sweep itself should not be treated as "N lines cleared" for perks/energy.
@@ -10306,28 +11435,7 @@ class MysteryMode(Game):
             except Exception:
                 pass
             effect_triggered = True
-        elif cid == "force_piece":
-            self._queue_force_pieces(value)
-            try:
-                # This effect is delayed (applies to upcoming spawns) so keep a visual.
-                self._remember_effect_visual("force_piece", card)
-                self._sync_active_cards()
-            except Exception:
-                pass
-            effect_triggered = True
-        elif cid == "column_cleanse":
-            # Rastgele sütun temizle
-            n_cols = max(1, int(value))
-            self._clear_columns(n_cols)
-            self._set_localized_card_message('mystery_msg_column_cleanse', 1.0, '{count} sütun temizlendi!', count=n_cols)
-            effect_triggered = True
-        elif cid == "combo_boost":
-            self._apply_combo_aura(value, card)
-            effect_triggered = True
-        elif cid == "time_slow":
-            self._apply_time_slow(value, card)
-            effect_triggered = True
-        elif cid == 'bomb_master':
+        elif effect_id == 'bomb_master':
             # Bomba Ustası: M tuşuyla mini bomba yapma hakları (sınırlı kart)
             # Sınırlı kartlar: tekrar seçilince hak EKLEME.
             # Kalan hak 1/2 ise 3'e tamamla; 3+ ise dokunma.
@@ -10353,7 +11461,7 @@ class MysteryMode(Game):
             except Exception:
                 pass
             effect_triggered = True
-        elif cid == 'rewind_power':
+        elif effect_id == 'rewind_power':
             self.perk_manager.activate('rewind_power')
             # Sınırlı kartlar: tekrar seçilince hak EKLEME.
             # Kalan hak 1/2 ise 3'e tamamla; 3+ ise dokunma.
@@ -10371,14 +11479,7 @@ class MysteryMode(Game):
             except Exception:
                 pass
             effect_triggered = True
-        elif cid == 'perk_chrono':
-            self.perk_manager.activate('chrono_lock')
-            try:
-                self._sync_active_cards()
-            except Exception:
-                pass
-            effect_triggered = True
-        elif cid == 'perk_phase':
+        elif effect_id == 'perk_phase':
             # Şekil Değiştirici: sınırlı kullanımlı (3 hak)
             self.perk_manager.activate('phase_shift')
             # Sınırlı kartlar: tekrar seçilince hak EKLEME.
@@ -10396,14 +11497,21 @@ class MysteryMode(Game):
             except Exception:
                 pass
             effect_triggered = True
-        elif cid == 'perk_synergy':
+        elif effect_id == 'perk_synergy':
             self.perk_manager.activate('synergy_core')
+            # Geliştirilebilir: kademeye göre %10/%15/%20 (payload.synergy_rate).
+            try:
+                payload = card.get('payload') if isinstance(card.get('payload'), dict) else {}
+                rate = float(payload.get('synergy_rate', 0.10) or 0.10)
+                self.perk_manager.synergy_rate = rate
+            except Exception:
+                pass
             try:
                 self._sync_active_cards()
             except Exception:
                 pass
             effect_triggered = True
-        elif cid == 'perk_second_pocket':
+        elif effect_id == 'perk_second_pocket':
             # Enable the second hold pocket
             self.perk_manager.activate('second_pocket')
             try:
@@ -10411,19 +11519,7 @@ class MysteryMode(Game):
             except Exception:
                 pass
             effect_triggered = True
-        elif cid == "line_bonus":
-            # Sonraki N satır temizlemede 2x puan
-            multiplier = card.get("payload", {}).get("multiplier", 2.0)
-            self._enable_line_multiplier(value, multiplier, card)
-            self._set_localized_card_message(
-                'mystery_msg_line_bonus_ready',
-                1.2,
-                'Sonraki {lines} satır: {multiplier:.0f}x puan!',
-                lines=value,
-                multiplier=multiplier,
-            )
-            effect_triggered = True
-        elif cid == "quantum_tunneling":
+        elif effect_id == "quantum_tunneling":
             # Grant charges so the player can choose which upcoming pieces become tunneled.
             # Sınırlı kartlar: tekrar seçilince hak EKLEME.
             # Kalan hak 1/2 ise 3'e tamamla; 3+ ise dokunma.
@@ -10450,7 +11546,7 @@ class MysteryMode(Game):
             except Exception:
                 pass
             effect_triggered = True
-        elif cid == "mini_bomb":
+        elif effect_id == "mini_bomb":
             # Arm the CURRENT piece as a bomb so it explodes when it locks
             # (either via SPACE hard drop or natural fall).
             piece = getattr(self, 'current_piece', None)
@@ -10489,7 +11585,7 @@ class MysteryMode(Game):
                 except Exception:
                     pass
                 effect_triggered = False
-        elif cid == "hammer":
+        elif effect_id == "hammer":
             # Grant charges so the player can choose which upcoming piece becomes 1x1.
             # Sınırlı kartlar: tekrar seçilince hak EKLEME.
             # Kalan hak 1/2 ise 3'e tamamla; 3+ ise dokunma.
@@ -10515,7 +11611,7 @@ class MysteryMode(Game):
             except Exception:
                 pass
             effect_triggered = True
-        elif cid == "gravity_well":
+        elif effect_id == "gravity_well":
             # Zincirleme reaksiyon: gravity -> clear -> gravity ...
             total_lines = 0
             try:
@@ -10540,7 +11636,7 @@ class MysteryMode(Game):
                     pass
             # Gravity Well is a one-shot card; do not persist in active cards
             effect_triggered = True
-        elif cid == "ghost_echo":
+        elif effect_id == "ghost_echo":
             # Arm Ghost Echo: do NOT clear immediately; keep in active visuals until
             # an invalid spawn occurs (then spawn_new_piece will auto-trigger it).
             try:
@@ -10556,15 +11652,7 @@ class MysteryMode(Game):
             except Exception:
                 pass
             # Do not schedule TTL removal -- this will persist (single-use) until consumed
-            effect_triggered = True
-        elif cid == 'perk_alchemist':
-            self.perk_manager.activate('perk_alchemist')
-            try:
-                self._sync_active_cards()
-            except Exception:
-                pass
-            effect_triggered = True
-        elif cid == 'perk_flexible_border':
+        elif effect_id == 'perk_flexible_border':
             # Esnek Sınır: Parçalar tahtanın kenarlarından 1 blok dışına çıkabilir
             # Görsel değişiklik yok, sadece hareket sınırları genişliyor
             self.perk_manager.activate('perk_flexible_border')
@@ -10590,7 +11678,7 @@ class MysteryMode(Game):
             except Exception:
                 pass
             effect_triggered = True
-        elif cid in ("speed_burst_rare", "speed_burst_epic", "speed_burst_legendary", "speed_burst"):
+        elif effect_id == "speed_burst":
             # Hız Patlaması: Belirli süre hızlı düşüş + satır temizleme bonusu
             duration = int(value)
             speed_mult = card.get("payload", {}).get("speed_multiplier", 1.5)
@@ -10624,7 +11712,7 @@ class MysteryMode(Game):
             except Exception:
                 pass
             effect_triggered = True
-        elif cid == "peak_sculpt":
+        elif effect_id == "peak_sculpt":
             removed = 0
             try:
                 removed = int(self._level_peaks(value))
@@ -10651,12 +11739,12 @@ class MysteryMode(Game):
                 except Exception:
                     pass
             effect_triggered = True
-        elif cid == "nova_burst":
+        elif effect_id == "nova_burst":
             # Arm targeted explosion(s) for upcoming locks
             self._arm_nova_burst(value, card)
             effect_triggered = True
         # === YENİ KART EFEKTLERİ ===
-        elif cid == "block_magnet":
+        elif effect_id == "block_magnet":
             # Blok Manyetigi: Tum bosluklar kapanir, bloklar sola kayar
             self._apply_block_magnet()
             try:
@@ -10664,7 +11752,7 @@ class MysteryMode(Game):
             except Exception:
                 pass
             effect_triggered = True
-        elif cid == "row_shuffle":
+        elif effect_id == "row_shuffle":
             # Satır Karıştırıcı: en alttaki N satırdaki blokları karıştır
             self._shuffle_bottom_rows(value)
             try:
@@ -10673,7 +11761,7 @@ class MysteryMode(Game):
             except Exception:
                 pass
             effect_triggered = True
-        elif cid == "laser_drill":
+        elif effect_id == "laser_drill":
             # Aktif Delici Parça: oyun durmaz; parça kırmızı olur ve temas ettiği blokları yok eder
             self._activate_drill_piece()
             try:
@@ -10682,7 +11770,7 @@ class MysteryMode(Game):
             except Exception:
                 pass
             effect_triggered = True
-        elif cid == "sniper_shot":
+        elif effect_id == "sniper_shot":
             # Keskin Nişancı: kart seçimi yalnızca charge verir; hedefleme
             # overlay'i otomatik açılmaz. Oyuncu N tuşuna (veya gamepad
             # `card_sniper` aksiyonuna) basınca overlay açılır.
@@ -10709,7 +11797,7 @@ class MysteryMode(Game):
             except Exception:
                 pass
             effect_triggered = True
-        elif cid == "time_capsule":
+        elif effect_id == "time_capsule":
             # Zaman Kapsulu: T ile kaydet, R ile geri don
             self.time_capsule_available = True
             self.time_capsule_saved = False
@@ -10725,7 +11813,7 @@ class MysteryMode(Game):
             except Exception:
                 pass
             effect_triggered = True
-        elif cid == "future_changer":
+        elif effect_id == "future_changer":
             # Geleceği Değiştiren: Sonraki 2 parçayı oyuncu seçer
             self._future_changer_remaining = self._card_int_value(card, 2)
             self._future_changer_card = card
@@ -10733,7 +11821,7 @@ class MysteryMode(Game):
             effect_triggered = True
 
         # === SON DÜŞÜŞ (Blok Dondurma) ===
-        elif cid in ("freeze_drop_rare", "freeze_drop_epic", "freeze_drop_legendary"):
+        elif effect_id == "freeze_drop":
             freeze_dur = int(card.get('freeze_duration', 6))
             try:
                 cur = int(getattr(self, '_freeze_drop_charges', 0) or 0)
@@ -10761,13 +11849,13 @@ class MysteryMode(Game):
             effect_triggered = True
 
         # === BLOK ATÖLYESİ KARTI ===
-        elif cid == "block_workshop_card":
+        elif effect_id == "block_workshop_card":
             # Popup blok atölyesi aç - tek seferlik parça oluştur
             self._open_card_workshop_popup()
             effect_triggered = True
 
         # === KUMARBAZIN ZARI ===
-        elif cid == "gambler_dice":
+        elif effect_id == "gambler_dice":
             import random as _rng
             roll = _rng.random()
             if roll < 0.5:
@@ -10873,12 +11961,12 @@ class MysteryMode(Game):
             effect_triggered = True
 
         # === RENK TEMİZLEME ===
-        elif cid == "color_cleanse":
-            self._apply_color_cleanse()
+        elif effect_id == "color_cleanse":
+            self._apply_color_cleanse(self._card_int_value(card, 1))
             effect_triggered = True
 
         # === TUTTUĞUNU KOPARAN (hold_destroyer variants) ===
-        elif cid.startswith("hold_destroyer"):
+        elif effect_id == "hold_destroyer":
             # B tuşuyla saklanan parçayı silme hakkı ver
             charges = int(card.get('value', 1))
             try:
@@ -10906,7 +11994,7 @@ class MysteryMode(Game):
                 pass
             effect_triggered = True
 
-        elif cid == "mirror_hold":
+        elif effect_id == "mirror_hold":
             charges = max(1, self._card_int_value(card, 1))
             try:
                 existing = int(getattr(self, '_mirror_hold_charges', 0) or 0)
@@ -10928,7 +12016,7 @@ class MysteryMode(Game):
                 pass
             effect_triggered = True
 
-        elif cid == "echo_drop":
+        elif effect_id == "echo_drop":
             charges = max(1, self._card_int_value(card, 1))
             payload = card.get('payload', {}) if isinstance(card.get('payload'), dict) else {}
             try:
@@ -10958,7 +12046,7 @@ class MysteryMode(Game):
             effect_triggered = True
 
         # === COMBO SİGORTASI ===
-        elif cid == "combo_insurance":
+        elif effect_id == "combo_insurance":
             # Tek kullanım sigorta: silahla. Aynı kart tekrar gelirse hak
             # ekleme yapma — yalnız True kalsın (zaten silahlı).
             self._combo_insurance_armed = True
@@ -10978,7 +12066,7 @@ class MysteryMode(Game):
             effect_triggered = True
 
         # === TERS BORÇ ===
-        elif cid == "reverse_debt":
+        elif effect_id == "reverse_debt":
             # 1) Anında en alt 2 satırı temizle (card source).
             try:
                 prev_score_after_sweep = int(getattr(self.board, 'score', 0))
@@ -11027,7 +12115,7 @@ class MysteryMode(Game):
             effect_triggered = True
 
         # === DELİK AVCISI ===
-        elif cid == "hole_hunter":
+        elif effect_id == "hole_hunter":
             # Sınırlı kart: tekrar seçilince hak EKLEME — yalnız 1'e tamamla.
             try:
                 cur = int(getattr(self, '_hole_hunter_charges', 0) or 0)
@@ -11230,6 +12318,12 @@ class MysteryMode(Game):
         if charges <= 0:
             return False
         self._hole_hunter_overlay_active = True
+        # Sütun seçimi mouse ile de yapılabildiği için sistem imlecini görünür
+        # tut; ayrıca overlay üzerine canlı bir işaretçi çiziyoruz.
+        try:
+            pygame.mouse.set_visible(True)
+        except Exception:
+            pass
         try:
             board_width = int(getattr(self.board, 'width', BOARD_WIDTH) or BOARD_WIDTH)
         except Exception:
@@ -11397,48 +12491,51 @@ class MysteryMode(Game):
             except Exception:
                 fill_color = existing_colors[0]
 
-        # Tek hücreyi doldur.
-        try:
-            self.board.grid[target_y][col] = fill_color
-            self.board.occupancy[target_y][col] = True
-            self.board.texture_grid[target_y][col] = None
+        # Tahta değişimini standart animasyon desenine sarmala: blok ekleme +
+        # olası satır temizliği tek before/after snapshot ile yakalanır.
+        with self._animated_card_board_change('hole_hunter', accent=fill_color):
+            # Tek hücreyi doldur.
             try:
-                self.board.gold[target_y][col] = False
+                self.board.grid[target_y][col] = fill_color
+                self.board.occupancy[target_y][col] = True
+                self.board.texture_grid[target_y][col] = None
+                try:
+                    self.board.gold[target_y][col] = False
+                except Exception:
+                    pass
+                try:
+                    self.board.owners[target_y][col] = None
+                except Exception:
+                    pass
             except Exception:
-                pass
-            try:
-                self.board.owners[target_y][col] = None
-            except Exception:
-                pass
-        except Exception:
-            return False
+                return False
 
-        # Hak düş, kart tüketildiyse aktif efektten çıkar.
-        try:
-            self._hole_hunter_charges = max(0, charges - 1)
-        except Exception:
-            self._hole_hunter_charges = 0
-        if self._hole_hunter_charges <= 0:
+            # Hak düş, kart tüketildiyse aktif efektten çıkar.
             try:
-                self._active_effect_visuals.pop('hole_hunter', None)
+                self._hole_hunter_charges = max(0, charges - 1)
             except Exception:
-                pass
+                self._hole_hunter_charges = 0
+            if self._hole_hunter_charges <= 0:
+                try:
+                    self._active_effect_visuals.pop('hole_hunter', None)
+                except Exception:
+                    pass
 
-        # Tam satır oluşmuş olabilir → card source clear.
-        try:
-            prev_score = int(getattr(self.board, 'score', 0))
-        except Exception:
-            prev_score = 0
-        try:
-            cleared = int(self.board.clear_lines(source='card'))
-        except Exception:
-            cleared = 0
-        if cleared > 0:
+            # Tam satır oluşmuş olabilir → card source clear.
             try:
-                delta = int(getattr(self.board, 'score', 0)) - prev_score
+                prev_score = int(getattr(self.board, 'score', 0))
             except Exception:
-                delta = None
-            self._post_external_line_clear(cleared, award_energy=True, score_delta=delta, source='card')
+                prev_score = 0
+            try:
+                cleared = int(self.board.clear_lines(source='card'))
+            except Exception:
+                cleared = 0
+            if cleared > 0:
+                try:
+                    delta = int(getattr(self.board, 'score', 0)) - prev_score
+                except Exception:
+                    delta = None
+                self._post_external_line_clear(cleared, award_energy=True, score_delta=delta, source='card')
 
         try:
             self._set_localized_card_message(
@@ -11537,6 +12634,7 @@ class MysteryMode(Game):
             '_sniper_charges',
             'phase_shift_uses_remaining',
             '_armed_nova_clusters',
+            '_nova_blast_size',
             '_bomb_countdown_timer',
             '_bomb_countdown_last_int',
             '_drill_last_cleanup_y',
@@ -11568,6 +12666,8 @@ class MysteryMode(Game):
                 'card_xp',
                 'card_level',
                 'card_xp_to_next',
+                'unlocked_slots',
+                'active_slots',
             ):
                 if hasattr(card_manager, attr):
                     data[f'card_manager_{attr}'] = snapshot(getattr(card_manager, attr))
@@ -11576,7 +12676,7 @@ class MysteryMode(Game):
         if perk_manager is not None:
             if hasattr(perk_manager, 'active'):
                 data['perk_manager_active'] = snapshot(getattr(perk_manager, 'active'))
-            for attr in ('next_piece_bomb', 'lines_since_chrono', 'chrono_freeze_timer', 'rewind_uses'):
+            for attr in ('next_piece_bomb', 'lines_since_chrono', 'chrono_freeze_timer', 'rewind_uses', 'synergy_rate'):
                 if hasattr(perk_manager, attr):
                     data[f'perk_manager_{attr}'] = snapshot(getattr(perk_manager, attr))
 
@@ -11646,6 +12746,7 @@ class MysteryMode(Game):
             '_sniper_charges',
             'phase_shift_uses_remaining',
             '_armed_nova_clusters',
+            '_nova_blast_size',
             '_bomb_countdown_timer',
             '_bomb_countdown_last_int',
             '_drill_last_cleanup_y',
@@ -11675,6 +12776,8 @@ class MysteryMode(Game):
                 'card_xp',
                 'card_level',
                 'card_xp_to_next',
+                'unlocked_slots',
+                'active_slots',
             ):
                 key = f'card_manager_{attr}'
                 if key not in data:
@@ -11695,7 +12798,7 @@ class MysteryMode(Game):
                     perk_manager.active = dict(active or {}) if isinstance(active, dict) else {}
                 except Exception:
                     pass
-            for attr in ('next_piece_bomb', 'lines_since_chrono', 'chrono_freeze_timer', 'rewind_uses'):
+            for attr in ('next_piece_bomb', 'lines_since_chrono', 'chrono_freeze_timer', 'rewind_uses', 'synergy_rate'):
                 key = f'perk_manager_{attr}'
                 if key in data:
                     try:
@@ -12631,6 +13734,7 @@ class MysteryMode(Game):
             'synergy_core': 'perk_synergy',
             'second_pocket': 'perk_second_pocket',
             'perk_alchemist': 'perk_alchemist',
+            'perk_flexible_border': 'perk_flexible_border',
         }
         # Only truly persistent perks (no usage limits) go here
         perk_defs = {
@@ -12664,6 +13768,14 @@ class MysteryMode(Game):
                 'status': gold_label,
                 'color': (255, 210, 75),
                 'icon': '✨',
+                'tag': perk_tag
+            },
+            'perk_flexible_border': {
+                'title': get_card_title('perk_flexible_border', 'Esnek Sınır'),
+                'description': get_card_description('perk_flexible_border', fallback='PERK: Flexible borders.'),
+                'status': active_label,
+                'color': (180, 255, 180),
+                'icon': '',
                 'tag': perk_tag
             },
         }
@@ -13083,6 +14195,18 @@ class MysteryMode(Game):
         n = max(1, int(charges))
         total = int(getattr(self, '_armed_nova_clusters', 0) or 0) + n
         self._armed_nova_clusters = total
+        # Patlama alanı kademeye göre (3/4/5). Kart girdisindeki blast_size'tan
+        # gelir; yoksa 3. Birden çok nova şarjı varsa en geniş alanı koru.
+        try:
+            blast = int(card.get('blast_size', 3) or 3)
+        except Exception:
+            blast = 3
+        blast = max(3, blast)
+        try:
+            current = int(getattr(self, '_nova_blast_size', 3) or 3)
+        except Exception:
+            current = 3
+        self._nova_blast_size = max(current, blast)
         self._remember_effect_visual('nova_burst', card)
         try:
             self._set_localized_card_message('mystery_msg_nova_burst_charges', 0.9, 'Nova Patlaması: +{count} şarj (toplam {total})', count=n, total=total)
@@ -13703,68 +14827,78 @@ class MysteryMode(Game):
 
     # === RENK TEMİZLEME KARTI METODU ===
 
-    def _apply_color_cleanse(self) -> None:
-        """Rastgele bir renkteki tüm blokları temizler, gravity uygular."""
-        # Tahtadaki tüm benzersiz renkleri topla
-        color_map = {}
-        for y in range(self.board.height):
-            for x in range(self.board.width):
-                if self.board.occupancy[y][x]:
-                    color = self.board.grid[y][x]
-                    if color and color != BLACK:
-                        key = color[:3]
-                        if key not in color_map:
-                            color_map[key] = []
-                        color_map[key].append((x, y))
+    def _apply_color_cleanse(self, colors_to_clear: int = 1) -> None:
+        """Rastgele {colors_to_clear} renkteki tüm blokları temizler, gravity uygular."""
+        import random as _rng
+        try:
+            num_colors = max(1, int(colors_to_clear))
+        except Exception:
+            num_colors = 1
 
-        if not color_map:
+        total_removed = 0
+        last_color = None
+        for _ in range(num_colors):
+            # Tahtadaki tüm benzersiz renkleri her turda yeniden topla
+            # (gravity sonrası renk haritası değişebilir).
+            color_map: dict = {}
+            for y in range(self.board.height):
+                for x in range(self.board.width):
+                    if self.board.occupancy[y][x]:
+                        color = self.board.grid[y][x]
+                        if color and color != BLACK:
+                            key = color[:3]
+                            color_map.setdefault(key, []).append((x, y))
+
+            if not color_map:
+                break
+
+            target_color = _rng.choice(list(color_map.keys()))
+            last_color = target_color
+            cells = color_map[target_color]
+
+            removed = 0
+            for x, y in cells:
+                self.board.grid[y][x] = BLACK
+                self.board.occupancy[y][x] = False
+                self.board.texture_grid[y][x] = None
+                self.board.gold[y][x] = False
+                try:
+                    self.board.owners[y][x] = None
+                except Exception:
+                    pass
+                removed += 1
+            total_removed += removed
+
+            # Gravity uygula - üstteki bloklar aşağı düşsün
+            self.board.apply_gravity()
+
+            # Gravity sonrası oluşan tam satırları temizle
+            try:
+                prev_score = int(getattr(self.board, 'score', 0))
+                cleared = int(self.board.clear_lines(source='card'))
+                if cleared > 0:
+                    delta = int(getattr(self.board, 'score', 0)) - prev_score
+                    self._post_external_line_clear(cleared, award_energy=True, score_delta=delta, source='card')
+            except Exception:
+                pass
+
+        if total_removed <= 0:
             self._set_localized_card_message('mystery_msg_color_cleanse_empty', 1.0, 'Renk Temizleme: Tahta bos!')
             return
 
-        # Rastgele bir renk seç
-        import random as _rng
-        target_color = _rng.choice(list(color_map.keys()))
-        cells = color_map[target_color]
-
-        # O renkteki tüm blokları temizle
-        removed = 0
-        for x, y in cells:
-            self.board.grid[y][x] = BLACK
-            self.board.occupancy[y][x] = False
-            self.board.texture_grid[y][x] = None
-            self.board.gold[y][x] = False
-            try:
-                self.board.owners[y][x] = None
-            except Exception:
-                pass
-            removed += 1
-
-        # Gravity uygula - üstteki bloklar aşağı düşsün
-        self.board.apply_gravity()
-
-        # Gravity sonrası oluşan tam satırları temizle
-        try:
-            prev_score = int(getattr(self.board, 'score', 0))
-            cleared = int(self.board.clear_lines(source='card'))
-            if cleared > 0:
-                delta = int(getattr(self.board, 'score', 0)) - prev_score
-                self._post_external_line_clear(cleared, award_energy=True, score_delta=delta, source='card')
-        except Exception:
-            pass
-
         # Skor bonus
         try:
-            bonus = removed * 25
+            bonus = total_removed * 25
             self.board.score += bonus
         except Exception:
             pass
 
-        r, g, b = target_color
+        r, g, b = (last_color or (0, 0, 0))
         self._set_localized_card_message(
             'mystery_msg_color_cleanse_removed',
             1.5,
             'Renk Temizleme: {removed} blok temizlendi! (RGB:{r},{g},{b})',
-            removed=removed,
+            removed=total_removed,
             r=r,
             g=g,
             b=b,
@@ -14133,7 +15267,7 @@ class WideMode(Game):
 
         self.wide_background = BackgroundManager()
         if settings_manager:
-            transparency = settings_manager.get("bg_transparency", 0.7)
+            transparency = settings_manager.get("bg_transparency", 0.3)
             self.wide_background.set_transparency(transparency)
         self._load_wide_background()
 

@@ -38,7 +38,7 @@ from platform_utils import get_display_flags, create_display, set_app_icon, norm
 from ui_theme import UIFonts, UIColors
 from asset_manager import load_image
 from gamepad_manager import get_gamepad_manager, is_gamepad_connected
-from promptfont_support import render_action_prompt_surface, render_button_index_prompt_surface, render_inline_action_text_surface
+from promptfont_support import render_action_prompt_surface, render_button_index_prompt_surface, render_inline_action_text_surface, resolve_nav_hint_label
 
 try:
     from gamepad_manager import normalize_gamepad_event_button
@@ -1369,6 +1369,8 @@ class Game:
             self.lock_reset_count = 0
             self.stall_timer = 0.0
             self.last_move_was_rotate = False
+            self.grounded = False
+            self.lock_timer = 0.0
 
     def _check_t_spin(self) -> tuple[str | None, str | None]:
         """
@@ -2221,11 +2223,7 @@ class Game:
                         self.sound.play('rotate')
                         self.last_move_was_rotate = True
                         self.last_rotate_kick_index = getattr(self.current_piece, 'last_kick_index', 0)
-                        # Lock Delay Reset
-                        if not self.board.is_valid_position(self.current_piece, dy=1):
-                            if self.lock_reset_count < 15:
-                                self.lock_timer = 0
-                            self.lock_reset_count += 1
+                        self._update_grounded_after_action()
                 
                 # 180 Derece Döndürme
                 elif event.key in self._action_keys(bindings, 'rotate_180'):
@@ -2234,11 +2232,7 @@ class Game:
                         self.sound.play('rotate')
                         self.last_move_was_rotate = True
                         self.last_rotate_kick_index = getattr(self.current_piece, 'last_kick_index', 0)
-                        # Lock Delay Reset
-                        if not self.board.is_valid_position(self.current_piece, dy=1):
-                            if self.lock_reset_count < 15:
-                                self.lock_timer = 0
-                            self.lock_reset_count += 1
+                        self._update_grounded_after_action()
                 elif event.key == bindings['hold2']:
                     # Second pocket (V)
                     # Only operate if the perk is active
@@ -2476,6 +2470,20 @@ class Game:
         
         return True
     
+    def _update_grounded_after_action(self) -> None:
+        """Hareket veya döndürme sonrası grounded durumunu ve lock delay sayaçlarını günceller"""
+        if self.current_piece is None:
+            return
+        is_grounded_now = not self.board.is_valid_position(self.current_piece, dy=1)
+        if is_grounded_now:
+            if self.lock_reset_count < 15 and self.stall_timer < 3000.0:
+                self.lock_timer = 0.0
+            self.lock_reset_count += 1
+            self.grounded = True
+        else:
+            self.grounded = False
+            self.lock_timer = 0.0
+
     def _try_move_left(self):
         """Sola hareket etmeyi dene, başarılıysa True döndür"""
         if self.current_piece is None:
@@ -2487,11 +2495,7 @@ class Game:
             return False
             
         self.last_move_was_rotate = False
-        # Lock Delay Reset: parça yerdeyse ve limit aşılmadıysa sıfırla
-        if not self.board.is_valid_position(self.current_piece, dy=1):
-            if self.lock_reset_count < 15:
-                self.lock_timer = 0
-            self.lock_reset_count += 1
+        self._update_grounded_after_action()
         return True
     
     def _try_move_right(self):
@@ -2505,11 +2509,7 @@ class Game:
             return False
             
         self.last_move_was_rotate = False
-        # Lock Delay Reset: parça yerdeyse ve limit aşılmadıysa sıfırla
-        if not self.board.is_valid_position(self.current_piece, dy=1):
-            if self.lock_reset_count < 15:
-                self.lock_timer = 0
-            self.lock_reset_count += 1
+        self._update_grounded_after_action()
         return True
     
     def _perform_das_move(self, direction):
@@ -2778,8 +2778,16 @@ class Game:
 
             if option == 'Devam Et':
                 color_code = retro_style.success
+                sub_text = resolve_nav_hint_label('ENTER / ESC', 'menu_confirm', 'menu_back')
+            elif option == 'Yeniden Başlat':
+                color_code = retro_style.primary
+                sub_text = resolve_nav_hint_label('ENTER', 'menu_confirm')
+            elif option == 'Ayarlar':
+                color_code = retro_style.primary
+                sub_text = resolve_nav_hint_label('ENTER', 'menu_confirm')
             elif option == 'Ana Menü':
                 color_code = retro_style.secondary
+                sub_text = resolve_nav_hint_label('BACKSPACE', 'menu_back')
             elif option == 'Müzik':
                 color_code = retro_style.primary
                 sub_text = t('on') if self.sound.music_enabled else t('off')
@@ -4592,7 +4600,8 @@ class Game:
                 if is_grounded_now:
                     if not self.grounded:
                         self.grounded = True
-                        self.lock_timer = 0 # Timer başlat
+                        if self.lock_reset_count < 15 and self.stall_timer < 3000.0:
+                            self.lock_timer = 0.0
                     
                     # Stall Time Limit: tabanda geçen toplam süreyi biriktir
                     self.stall_timer += dt
@@ -4614,7 +4623,6 @@ class Game:
                 else:
                     # Havada
                     self.grounded = False
-                    self.lock_timer = 0
                     # Step reset kuralı gereği lock_reset_count ve stall_timer sıfırlanmaz,
                     # sadece stall_timer artışı (is_grounded_now False iken) duraklamış olur.
             except Exception:
@@ -4648,7 +4656,10 @@ class Game:
                         if getattr(self, 'allow_auto_lock', True):
                             self.lock_and_new_piece()
                         else:
-                            self.grounded = True
+                            if not self.grounded:
+                                self.grounded = True
+                                if self.lock_reset_count < 15 and self.stall_timer < 3000.0:
+                                    self.lock_timer = 0.0
                     # Komşu blok yoksa kilitleme - parça beklesin
                 # Komşu blok yoksa kilitleme - parça beklesin
                 elif getattr(self, 'allow_auto_lock', True):
@@ -4659,16 +4670,22 @@ class Game:
                         self.lock_and_new_piece()
                     else:
                         # Lock delay açıkken grounded olduğunu işaretle
-                        self.grounded = True
+                        if not self.grounded:
+                            self.grounded = True
+                            if self.lock_reset_count < 15 and self.stall_timer < 3000.0:
+                                self.lock_timer = 0.0
                 else:
-                    self.grounded = True
+                    if not self.grounded:
+                        self.grounded = True
+                        if self.lock_reset_count < 15 and self.stall_timer < 3000.0:
+                            self.lock_timer = 0.0
             else:
                 self.last_move_was_rotate = False
                 if self.current_piece.y > self.max_reached_y:
                     self.max_reached_y = self.current_piece.y
                     self.stall_timer = 0.0
                     self.lock_reset_count = 0
-                    self.lock_timer = 0
+                    self.lock_timer = 0.0
     
     def _draw_base_scene(self):
         """Temel oyun sahnesini flip çağrısı olmadan çiz."""
@@ -4989,6 +5006,15 @@ class Game:
                         except Exception:
                             pass
                     self.draw_textured_block(block_x, block_y, block_size, draw_color, current_texture, slice_info)
+                    
+                    if self.grounded:
+                        effective_delay: int = 800 if self.current_piece.y <= 2 else getattr(self, 'lock_delay', 500)
+                        ratio: float = min(1.0, max(0.0, self.lock_timer / effective_delay))
+                        alpha: int = int(ratio * 150)
+                        if alpha > 0:
+                            glow_surf: pygame.Surface = pygame.Surface((block_size, block_size), pygame.SRCALPHA)
+                            glow_surf.fill((255, 255, 255, alpha))
+                            self.screen.blit(glow_surf, (block_x, block_y))
         
         # PNG Çerçeve Kontrolü - Blokların ÜZERİNE çizim (Bezel etkisi)
         # 12px padding ile daha ince ve zarif bir çerçeve

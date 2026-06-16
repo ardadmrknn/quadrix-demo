@@ -526,3 +526,59 @@ def resolve_prompt(action: str, keyboard_label: str) -> str:
     """
     display = get_action_prompt_display(action, keyboard_label)
     return str(display.get('text') or keyboard_label)
+
+
+def resolve_nav_hint_label(
+    keyboard_label: str,
+    *actions: str,
+    gpm=None,
+) -> str:
+    """Pause / menü navigasyon ipucu etiketi (klavye veya gamepad).
+
+    Gamepad bağlı değilse mevcut klavye etiketini ``key_hint_label`` ile
+    platforma uygun biçimde döndürür (ör. macOS'ta ``ENTER`` → ``return``).
+    Gamepad bağlıysa verilen aksiyon(lar)ın kontrolcüye özgü buton
+    etiketini döndürür (ör. ``A`` veya ``A / B``).
+
+    Args:
+        keyboard_label: Klavye fallback etiketi (ör. ``'ENTER / ESC'``).
+        *actions: Gamepad bağlıyken gösterilecek aksiyon(lar)
+            (ör. ``'menu_confirm'``, ``'menu_back'``). Birden fazla verilirse
+            etiketleri ``' / '`` ile birleştirilir.
+        gpm: Opsiyonel GamepadManager (test/enjeksiyon için).
+
+    Returns:
+        Aktif girdi yöntemine uygun etiket. Bağlı bir gamepad varsa ama
+        verilen aksiyonların hiçbiri bir butona bağlı değilse, güvenli
+        biçimde klavye etiketine düşer.
+    """
+    manager = gpm
+    if manager is None:
+        try:
+            manager = get_gamepad_manager()
+        except Exception:
+            manager = None
+
+    def _keyboard_fallback() -> str:
+        try:
+            from platform_utils import key_hint_label
+            return key_hint_label(keyboard_label)
+        except Exception:
+            return keyboard_label
+
+    if not _is_connected_for_prompt(manager):
+        return _keyboard_fallback()
+
+    labels: list[str] = []
+    for action in actions:
+        try:
+            display = get_action_prompt_display(action, '', gpm=manager)
+            text = str(display.get('text') or '').strip()
+        except Exception:
+            text = ''
+        if text and text not in labels:
+            labels.append(text)
+
+    if not labels:
+        return _keyboard_fallback()
+    return ' / '.join(labels)

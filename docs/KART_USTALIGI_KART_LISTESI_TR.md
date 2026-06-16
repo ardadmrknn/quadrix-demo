@@ -5,7 +5,9 @@ Bu belge, **Mystery (Kart Ustalığı) modu** kart seçim ekranında oyuncuya su
 - Kanonik kaynak (başlık/açıklama): `src/localization.py` → `card_*_title` / `card_*_desc`
 - Katalog (id, enderlik, hak sayısı, ikon): `src/game_modes_extra.py` → `MysteryCardManager._build_catalog()`
 - Genel envanter ve XP/progression dokümanı: [`CARD_PERK_INVENTORY_TR.md`](CARD_PERK_INVENTORY_TR.md)
-- Toplam: **39 kart girdisi** (31 benzersiz mekanik aile, bazı kartlar enderliğe göre çoklu varyant)
+- Toplam: **65 kart girdisi** (31 benzersiz mekanik aile, bazı kartlar enderliğe göre çoklu varyant)
+
+> **Mağaza/geliştirme:** Geliştirilebilir aileler enderlik kademelerine (tier) ayrılır. Üst kademe varyantları (örn. `clear_rows_rare`, `bomb_master_epic`) K1 ile **aynı başlık/açıklamayı** paylaşır (`_group_id` üzerinden); fark yalnızca enderlik ve etki değerindedir. Tam aile/kademe dökümü için aşağıdaki "Aile Özeti" tablosuna bakın.
 
 ## Yazım Kuralları
 
@@ -205,18 +207,31 @@ Bu belge, **Mystery (Kart Ustalığı) modu** kart seçim ekranında oyuncuya su
 
 | Aile (`_group_id`) | Varyantlar | Enderlik kademesi |
 | --- | --- | --- |
-| `speed_burst` | `speed_burst_rare`, `speed_burst_epic`, `speed_burst_legendary` | 1.3x → 1.5x → 1.75x puan çarpanı |
-| `freeze_drop` | `freeze_drop_rare`, `freeze_drop_epic`, `freeze_drop_legendary` | 6sn → 10sn → 15sn dondurma |
+| `clear_rows` | `clear_rows`, `clear_rows_rare`, `clear_rows_epic`, `clear_rows_leg` | Unc 2 → Rare 2-3 → Epic 3-5 → Leg 5 satır |
+| `peak_sculpt` | `peak_sculpt`, `peak_sculpt_rare`, `peak_sculpt_epic`, `peak_sculpt_leg` | Unc 2-4 → Rare 3-5 → Epic 8-10 → Leg 10-15 blok |
+| `sniper_shot` | `sniper_shot`, `sniper_shot_rare`, `sniper_shot_epic`, `sniper_shot_leg` | Unc 3 → Rare 4 → Epic 5 → Leg 6 hak |
+| `bomb_master` | `bomb_master`, `bomb_master_epic`, `bomb_master_leg` | Rare 3 → Epic 4 → Leg 5 hak |
+| `combo_insurance` | `combo_insurance`, `combo_insurance_epic`, `combo_insurance_leg` | Rare 2 → Epic 3 → Leg 4 koruma |
+| `hole_hunter` | `hole_hunter`, `hole_hunter_epic`, `hole_hunter_leg` | Rare 1 → Epic 2 → Leg 3 boşluk |
+| `rewind_power` | `rewind_power`, `rewind_power_epic`, `rewind_power_leg` | Rare 3 → Epic 4 → Leg 5 hak |
+| `hammer` | `hammer`, `hammer_epic`, `hammer_leg` | Rare 3 → Epic 4 → Leg 5 hak |
+| `perk_synergy` | `perk_synergy`, `perk_synergy_epic`, `perk_synergy_leg` | Rare %10 → Epic %15 → Leg %20 |
+| `speed_burst` | `speed_burst_rare`, `speed_burst_epic`, `speed_burst_legendary` | 1.3x → 1.5x → 2.0x puan çarpanı |
+| `freeze_drop` | `freeze_drop_rare`, `freeze_drop_epic`, `freeze_drop_legendary` | 6sn/3hak → 10sn/5hak → 15sn/7hak |
+| `nova_burst` | `nova_burst`, `nova_burst_epic`, `nova_burst_leg` | Rare 3hak/3x3 → Epic 4hak/4x4 → Leg 5hak/5x5 |
+| `future_changer` | `future_changer`, `future_changer_leg` | Epic 2 → Leg 3 parça |
+| `quantum_tunneling` | `quantum_tunneling`, `quantum_tunneling_leg` | Epic 3 → Leg 5 hak |
+| `color_cleanse` | `color_cleanse`, `color_cleanse_leg` | Epic 1 → Leg 2 renk |
 | `hold_destroyer` | `hold_destroyer`, `hold_destroyer_2`, `hold_destroyer_3`, `hold_destroyer_4`, `hold_destroyer_5` | 1 → 2 → 3 → 4 → 5 hak |
 
 Aynı ailenin sadece bir varyantı seçim ekranında belirir; oyuncu bir varyantı aldıktan sonra aile, o koşu için kilitlenir.
 
 ## Sayım
 
-- Toplam katalog girdisi: **39 ID**
+- Toplam katalog girdisi: **65 ID**
 - Benzersiz mekanik aile: **31**
 
-> Hız Patlaması (3 varyant), Son Düşüş (3 varyant) ve Tuttuğunu Koparan (5 varyant) tek aile sayılır. Aile/varyant ayrımı için yukarıdaki "Aile Özeti" tablosuna ve [`CARD_PERK_INVENTORY_TR.md`](CARD_PERK_INVENTORY_TR.md) dosyasındaki sayım özetine bakın.
+> Çoklu varyantlı 16 aile (Alt Süpür/Tepe Kesici/Keskin Nişancı 4'er; Nova/Hız Patlaması/Son Düşüş/Çekiç/Bomba Ustası/Geri Sarma/Sinerji/Combo Sigortası/Delik Avcısı 3'er; Hayalet Parça/Geleceği Değiştiren/Renk Temizleme 2'şer; Tuttuğunu Koparan 5) tek aile sayılır. Aile/varyant ayrımı için yukarıdaki "Aile Özeti" tablosuna ve [`CARD_PERK_INVENTORY_TR.md`](CARD_PERK_INVENTORY_TR.md) dosyasındaki sayım özetine bakın.
 
 ## Çoklu Dil Desteği
 

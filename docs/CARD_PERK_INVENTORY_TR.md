@@ -46,25 +46,27 @@ XP taşması durumunda aynı çağrıda birden fazla level kazanılabilir; rewar
 
 Yalnızca `source='player'` clear'lar XP üretir. Sweep, Alt Süpür, patlama, gravity collapse, workshop, ability ve diğer dış kaynaklı temizleme yolları XP veya reward queue üretmez. `card_mode_debug` kısayolu da bu kurala uyar.
 
-## Güncel Katalog (39 ID, 31 benzersiz aile)
+## Güncel Katalog (65 ID, 31 benzersiz aile)
 
 Aşağıdaki liste `_build_catalog()` çıktısı ile birebir hizalıdır. `_group_id` ile gruplanmış varyantlar (rare/epic/legendary veya seviye sayısı) tek bir aile olarak sayılır.
 
+> **Mağaza/geliştirme sistemi:** Geliştirilebilir kart aileleri artık enderlik kademelerine (tier) ayrılmıştır. Her kademe ayrı bir katalog girdisidir ama ortak `_group_id` taşır. Aile/kademe/fiyat tek kaynağı `CARD_UPGRADE_FAMILIES`, `CARD_SINGLE_TIER_LOCKED` ve `CARD_FREE_COMMON_FAMILIES` (hepsi `src/game_modes_extra.py`). Detay: [`KART_MAGAZA_SISTEMI_TASARIM_TR.md`](KART_MAGAZA_SISTEMI_TASARIM_TR.md).
+
 ### Çekirdek aksiyon kartları
 
-- `clear_rows` — Alt Süpür
-- `peak_sculpt` — Tepe Kesici
-- `nova_burst` — Nova Patlaması
+- `clear_rows` — Alt Süpür (`_group_id="clear_rows"`, 4 kademe: `clear_rows`, `clear_rows_rare`, `clear_rows_epic`, `clear_rows_leg`)
+- `peak_sculpt` — Tepe Kesici (`_group_id="peak_sculpt"`, 4 kademe: `peak_sculpt`, `peak_sculpt_rare`, `peak_sculpt_epic`, `peak_sculpt_leg`)
+- `nova_burst` — Nova Patlaması (`_group_id="nova_burst"`, 3 kademe: `nova_burst`, `nova_burst_epic`, `nova_burst_leg`)
 - `mini_bomb` — Mini Bomba
-- `quantum_tunneling` — Hayalet Parça
-- `hammer` — Çekiç
+- `quantum_tunneling` — Hayalet Parça (`_group_id="quantum_tunneling"`, 2 kademe: `quantum_tunneling`, `quantum_tunneling_leg`)
+- `hammer` — Çekiç (`_group_id="hammer"`, 3 kademe: `hammer`, `hammer_epic`, `hammer_leg`)
 - `gravity_well` — Yerçekimi Dalgası
 - `block_magnet` — Blok Manyetiği
 - `row_shuffle` — Blok Karıştırıcı
 - `laser_drill` — Delici Parça
-- `sniper_shot` — Keskin Nişancı
+- `sniper_shot` — Keskin Nişancı (`_group_id="sniper_shot"`, 4 kademe: `sniper_shot`, `sniper_shot_rare`, `sniper_shot_epic`, `sniper_shot_leg`)
 - `time_capsule` — Zaman Kapsülü
-- `future_changer` — Geleceği Değiştiren
+- `future_changer` — Geleceği Değiştiren (`_group_id="future_changer"`, 2 kademe: `future_changer`, `future_changer_leg`)
 - `ghost_echo` — İkinci Şans
 
 ### Hız Patlaması ailesi (`_group_id="speed_burst"`)
@@ -89,10 +91,10 @@ Aşağıdaki liste `_build_catalog()` çıktısı ile birebir hizalıdır. `_gro
 
 ### Kalıcı perkler
 
-- `bomb_master` — Bomba Ustası
-- `rewind_power` — Geri Sarma
+- `bomb_master` — Bomba Ustası (`_group_id="bomb_master"`, 3 kademe: `bomb_master`, `bomb_master_epic`, `bomb_master_leg`)
+- `rewind_power` — Geri Sarma (`_group_id="rewind_power"`, 3 kademe: `rewind_power`, `rewind_power_epic`, `rewind_power_leg`)
 - `perk_phase` — Şekil Değiştirici
-- `perk_synergy` — Sinerji Bonus
+- `perk_synergy` — Sinerji Bonus (`_group_id="perk_synergy"`, 3 kademe: `perk_synergy`, `perk_synergy_epic`, `perk_synergy_leg`)
 - `perk_second_pocket` — Ekstra Cep
 - `perk_flexible_border` — Esnek Sınır
 
@@ -100,19 +102,20 @@ Aşağıdaki liste `_build_catalog()` çıktısı ile birebir hizalıdır. `_gro
 
 - `block_workshop_card` — Blok Atölyesi
 - `gambler_dice` — Kumarbazın Zarı
-- `color_cleanse` — Renk Temizleme
-- `combo_insurance` — Combo Sigortası
+- `color_cleanse` — Renk Temizleme (`_group_id="color_cleanse"`, 2 kademe: `color_cleanse`, `color_cleanse_leg`)
+- `combo_insurance` — Combo Sigortası (`_group_id="combo_insurance"`, 3 kademe: `combo_insurance`, `combo_insurance_epic`, `combo_insurance_leg`)
 - `reverse_debt` — Ters Borç
-- `hole_hunter` — Delik Avcısı
+- `hole_hunter` — Delik Avcısı (`_group_id="hole_hunter"`, 3 kademe: `hole_hunter`, `hole_hunter_epic`, `hole_hunter_leg`)
 
 ## Sayım Özeti
 
-- Toplam katalog girdisi: **39 ID**
+- Toplam katalog girdisi: **65 ID**
 - Aileler:
   - Hold Destroyer ailesi: 5 varyant
-  - Speed Burst ailesi: 3 varyant
-  - Freeze Drop ailesi: 3 varyant
-  - Geri kalan kartlar: 28
+  - Alt Süpür / Tepe Kesici / Keskin Nişancı aileleri: 4'er varyant
+  - Nova / Hız Patlaması / Son Düşüş / Çekiç / Bomba Ustası / Geri Sarma / Sinerji / Combo Sigortası / Delik Avcısı aileleri: 3'er varyant
+  - Hayalet Parça / Geleceği Değiştiren / Renk Temizleme aileleri: 2'şer varyant
+  - Tek varyantlı kalan kartlar: 15
 - Benzersiz mekanik aile sayısı: **31**
 
 ## Notlar

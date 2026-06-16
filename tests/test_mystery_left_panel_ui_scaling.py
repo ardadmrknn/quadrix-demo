@@ -91,7 +91,7 @@ def test_mystery_active_card_rows_scale_with_canvas_and_stay_inside_panel(monkey
             'rarity': 'rare',
         },
         {
-            'id': 'hold_destroyer',
+            'id': 'some_limited_card',
             'title': 'Tuttugunu Koparan',
             'status': 'B: 3 Hak',
             'color': (255, 210, 120),
