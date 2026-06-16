@@ -271,6 +271,9 @@ class UserManager:
                     if isinstance(profile, dict) and not isinstance(profile.get('card_tiers'), dict):
                         profile['card_tiers'] = {}
                         updated = True
+                    if isinstance(profile, dict) and 'unlocked_card_slots' not in profile:
+                        profile['unlocked_card_slots'] = 3
+                        updated = True
                     if isinstance(profile, dict) and 'profile_id' not in profile:
                         self._ensure_profile_id(_name, profile)
                         updated = True
@@ -516,6 +519,7 @@ class UserManager:
             # KARIŞTIRILMAMALIDIR. card_tiers mağaza satın-alma/geliştirme kademesidir.
             'owned_cards': [],
             'card_tiers': {},
+            'unlocked_card_slots': 3,
             # Hold (C) ile saklanan parça sayaçları
             # Örn: {'I': 12, 'T': 7}
             'hold_piece_counts': {},
@@ -837,6 +841,22 @@ class UserManager:
         self._touch_profile(user)
         self.save_users()
         return True
+
+    def get_unlocked_card_slots(self, username: str | None = None) -> int:
+        """Card mastery modundaki açık slot sayısını döndür (min 3, max 6)."""
+        user = username or self.current_user
+        if user and user in self.users:
+            val = self.users[user].get('unlocked_card_slots')
+            if val is not None:
+                return max(3, min(6, int(val)))
+        return 3
+
+    def set_unlocked_card_slots(self, count: int, username: str | None = None) -> None:
+        """Card mastery modundaki açık slot sayısını ayarla (min 3, max 6)."""
+        user = username or self.current_user
+        if user and user in self.users:
+            self.users[user]['unlocked_card_slots'] = max(3, min(6, int(count)))
+            self.save_users()
 
     def grant_and_equip_cosmetic(self, slot: str, cosmetic_id: str, username=None) -> bool:
         """Grant cosmetic and equip it into the given slot. Returns True on success."""

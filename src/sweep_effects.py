@@ -619,36 +619,112 @@ _LINE_SWEEP_THEME_ALIASES: dict[str, str] = {
     'luna_sweep_japan': 'japan',
 }
 
+# Import zamanında ülke tescil modülünden gelen tüm alias'ları (tr, de,
+# birlesik_krallik, ...) ekleyerek O(1) lookup'ı genişlet. Modül yüklenemezse
+# (_country_theme_aliases boş dict döner) mevcut tekil eşleşmeler korunur.
+try:
+    _LINE_SWEEP_THEME_ALIASES.update(_country_theme_aliases())
+except Exception:
+    pass
+
+# Dil adına göre doğrudan eşleşen tekil bayraklar (İngilizce hariç)
+LANGUAGE_TO_FLAG = {
+    'turkish': 'turkiye',
+    'german': 'germany',
+    'french': 'france',
+    'spanish': 'spain',
+    'italian': 'italy',
+    'brazilian': 'brazil',
+    'portuguese': 'brazil',
+    'russian': 'russia',
+    'japanese': 'japan',
+    'korean': 'south_korea',
+    'schinese': 'china',
+}
+
+# 2 haneli ISO Ülke koduna göre bayrak eşleşmeleri (İngilizce diller için kurtarıcı)
+COUNTRY_TO_FLAG = {
+    'TR': 'turkiye',
+    'US': 'usa',
+    'GB': 'united_kingdom',
+    'UK': 'united_kingdom',
+    'CA': 'canada',
+    'JP': 'japan',
+    'RU': 'russia',
+    'CN': 'china',
+    'DE': 'germany',
+    'FR': 'france',
+    'ES': 'spain',
+    'IT': 'italy',
+    'BR': 'brazil',
+    'KR': 'south_korea',
+    'SG': 'singapore',
+    'HK': 'hong_kong',
+    'VN': 'vietnam',
+}
+
+# Performans için oturum boyu geçerli olan önbellek değişkeni. Dil/IP tespiti
+# ctypes üzerinden dylib çağrısı + decode gerektirdiği için her karede tekrar
+# çözmek mikro-stutter'a yol açabilir; ilk çağrıda önbelleğe alınır.
+_cached_default_theme: str | None = None
+
 
 def normalize_line_sweep_theme(value: str | None) -> str:
     key = str(value or '').strip().lower()
     return _LINE_SWEEP_THEME_ALIASES.get(key, 'rainbow')
 
 
+def get_default_line_sweep_theme() -> str:
+    """Steam dili ve IP konumunu kontrol ederek varsayılan izi çözer.
+
+    İlk çağrıdan sonra sonucu önbellekten dönerek performans kaybını önler.
+    """
+    global _cached_default_theme
+    if _cached_default_theme is not None:
+        return _cached_default_theme
+
+    resolved_theme = 'rainbow'
+    try:
+        import steam_integration
+    except Exception:
+        steam_integration = None
+
+    # 1. Aşama: Steam Dil Kontrolü
+    if steam_integration is not None and steam_integration.is_available():
+        steam_lang = steam_integration.get_current_game_language()
+        if steam_lang:
+            steam_lang = steam_lang.strip().lower()
+            if steam_lang in LANGUAGE_TO_FLAG:
+                resolved_theme = LANGUAGE_TO_FLAG[steam_lang]
+                _cached_default_theme = resolved_theme
+                return resolved_theme
+
+    # 2. Aşama: Steam IP Ülkesi Kontrolü (Özellikle English kullananlar için)
+    if steam_integration is not None and steam_integration.is_available():
+        country_code = steam_integration.get_ip_country()
+        if country_code and country_code in COUNTRY_TO_FLAG:
+            resolved_theme = COUNTRY_TO_FLAG[country_code]
+            _cached_default_theme = resolved_theme
+            return resolved_theme
+
+    # 3. Aşama: Offline / Steam Dışı Fallback (Oyunun kendi dil ayarı)
+    try:
+        import localization
+        game_lang = localization.get_language()
+        if game_lang == 'tr':
+            resolved_theme = 'turkiye'
+    except Exception:
+        pass
+
+    _cached_default_theme = resolved_theme
+    return resolved_theme
+
+
 def get_equipped_line_sweep_theme(user_manager=None, profile: dict | None = None) -> str:
-    # Basit, tests sırasında eksik olan çağrıyı karşılamak için mevcut profil/veri yapılarını destekler.
-    if profile is None and user_manager is not None:
-        getter = getattr(user_manager, 'get_equipped_cosmetic', None)
-        if callable(getter):
-            try:
-                equipped = getter(_LINE_SWEEP_SLOT)
-            except Exception:
-                equipped = None
-            else:
-                return normalize_line_sweep_theme(equipped)
-
-        profile_getter = getattr(user_manager, 'get_user_data', None)
-        if callable(profile_getter):
-            try:
-                profile = profile_getter()
-            except Exception:
-                profile = None
-
-    if isinstance(profile, dict):
-        equipped_map = profile.get('equipped_cosmetics', {})
-        if isinstance(equipped_map, dict):
-            return normalize_line_sweep_theme(equipped_map.get(_LINE_SWEEP_SLOT))
-    return 'rainbow'
+    """Demo sürümünde mağaza kapalı olduğundan kuşanılmış iz her zaman dile/ülkeye
+    göre çözülen dinamik varsayılan izdir (kullanıcı manuel kozmetik değiştiremez).
+    """
+    return get_default_line_sweep_theme()
 
 
 def _resolve_profile(user_manager, profile: dict | None) -> dict | None:
@@ -680,28 +756,10 @@ def _resolve_profile(user_manager, profile: dict | None) -> dict | None:
 
 
 def get_equipped_pet(user_manager=None, profile: dict | None = None) -> str:
-    """Resolve the equipped sweep companion (pet) cosmetic value.
-
-    Reads the ``line_sweep_pet`` slot. Falls back to the default Luna-Cat when
-    nothing is equipped (the case for every pre-pets profile) or on any error,
-    so the sweep always has a valid companion to draw.
+    """Evcil hayvanı çözer. Demo sürümünde kozmetik pet takma kapalı olduğundan
+    her zaman varsayılan olarak 'luna_cat' döndürür.
     """
-    if profile is None and user_manager is not None:
-        getter = getattr(user_manager, 'get_equipped_cosmetic', None)
-        if callable(getter):
-            try:
-                equipped = getter(_PET_SLOT)
-            except Exception:
-                equipped = None
-            else:
-                return _normalize_pet(equipped)
-
-    profile = _resolve_profile(user_manager, profile)
-    if isinstance(profile, dict):
-        equipped_map = profile.get('equipped_cosmetics', {})
-        if isinstance(equipped_map, dict):
-            return _normalize_pet(equipped_map.get(_PET_SLOT))
-    return _normalize_pet(None)
+    return 'luna_cat'
 
 
 def _get_line_sweep_palette(theme: str) -> list[tuple[int, int, int]]:
@@ -972,14 +1030,20 @@ def draw_rainbow_cat_sweep(
     sweep_width: int,
     phase: int,
     board_width_cells: int,
+    theme: str | None = None,
     stripe_highlight_enabled: bool = True,
+    pet: str | None = None,
 ) -> None:
-    """Rainbow + opsiyonel kedi sprite sweep efektini çiz."""
+    """Rainbow + opsiyonel kedi/evcil hayvan sprite sweep efektini çiz.
+
+    ``theme`` None geldiğinde demo varsayılanı devreye girer: aktif iz dile/ülkeye
+    göre dinamik çözülür. ``pet`` None geldiğinde varsayılan refakatçi kullanılır.
+    """
     sweep_height = max(1, int(board_rect.height))
     sweep_y = board_rect.y
 
     custom_target_w = max(sweep_width, int(sweep_height * 1.65))
-    custom_cat = state.get_cat_surface(custom_target_w, sweep_height, phase)
+    custom_cat = state.get_companion_surface(custom_target_w, sweep_height, phase, pet)
     one_col_w = max(1, int(round(board_rect.width / float(max(1, board_width_cells)))))
 
     if custom_cat is not None:
@@ -987,7 +1051,7 @@ def draw_rainbow_cat_sweep(
         cat_h = custom_cat.get_height()
         cat_x = sweep_x
         cat_y = sweep_y + max(0, (sweep_height - cat_h) // 2)
-        # Rainbow, LunaCat'in baş noktasına kadar uzatılır.
+        # İz, refakatçinin baş noktasına kadar uzatılır.
         head_attach_x = cat_x + max(1, int(cat_w * _CAT_HEAD_ANCHOR_X))
         trail_x = board_rect.x
         trail_right = max(trail_x + one_col_w, head_attach_x)
@@ -996,20 +1060,25 @@ def draw_rainbow_cat_sweep(
         trail_x = sweep_x
         trail_width = sweep_width
 
-    stripe_h = max(1, sweep_height // 6)
-    for i in range(6):
-        color = _RAINBOW[(i + phase) % 6]
-        stripe_y = sweep_y + i * stripe_h
-        stripe_h_i = max(1, (sweep_y + sweep_height) - stripe_y) if i == 5 else stripe_h
+    # Eğer theme None gelmişse (demo varsayılanı), aktif temayı dinamik olarak belirle
+    if theme is None:
+        theme = get_equipped_line_sweep_theme()
 
-        stripe_rect = pygame.Rect(trail_x, stripe_y, trail_width, stripe_h_i)
-        clip = stripe_rect.clip(board_rect)
-        if clip.width <= 0 or clip.height <= 0:
-            continue
-
-        pygame.draw.rect(screen, color, clip)
-        if stripe_highlight_enabled and (i + phase) % 2 == 0 and clip.width > 4:
-            pygame.draw.line(screen, (255, 255, 255), (clip.x + 1, clip.y), (clip.x + clip.width - 2, clip.y), 1)
+    # Eski 6 satırlı hardcoded gökkuşağı çizimi yerine, ana oyundaki gibi
+    # dinamik bayrak şeritlerini kaydıran draw_line_sweep_band fonksiyonunu çağırıyoruz:
+    band_rect = pygame.Rect(trail_x, sweep_y, trail_width, sweep_height)
+    clip = band_rect.clip(board_rect)
+    if clip.width > 0 and clip.height > 0:
+        band_surface = pygame.Surface((band_rect.width, band_rect.height), pygame.SRCALPHA)
+        draw_line_sweep_band(
+            band_surface,
+            band_surface.get_rect(),
+            theme=theme,
+            stripe_highlight_enabled=stripe_highlight_enabled,
+            phase=phase,
+        )
+        src = pygame.Rect(clip.x - band_rect.x, clip.y - band_rect.y, clip.width, clip.height)
+        screen.blit(band_surface, clip.topleft, src)
 
     if custom_cat is not None:
         custom_rect = custom_cat.get_rect()

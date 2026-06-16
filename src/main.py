@@ -218,7 +218,7 @@ try:
         draw_screen_transition, is_screen_transition_active,
         ScreenTransition
     )
-    from .gamepad_manager import get_gamepad_manager, is_gamepad_connected  # type: ignore
+    from .gamepad_manager import get_gamepad_manager, is_gamepad_connected, handle_gamepad_hotplug_event, pump_gamepad_into_event_queue  # type: ignore
     from .ui_scaling import get_projected_effective_scale  # type: ignore
     from .leaderboard_trailer_screen import LeaderboardTrailerScreen  # type: ignore
 except Exception:
@@ -260,7 +260,7 @@ except Exception:
         draw_screen_transition, is_screen_transition_active,
         ScreenTransition
     )
-    from gamepad_manager import get_gamepad_manager, is_gamepad_connected
+    from gamepad_manager import get_gamepad_manager, is_gamepad_connected, handle_gamepad_hotplug_event, pump_gamepad_into_event_queue
     from ui_scaling import get_projected_effective_scale
     from leaderboard_trailer_screen import LeaderboardTrailerScreen
 import pygame
@@ -740,6 +740,21 @@ def _active_overlay_module():
     return None
 
 
+def _popup_confirm_cancel_hints(confirm_kbd: str = 'ENTER', cancel_kbd: str = 'ESC'):
+    """Bloklayıcı popup butonları için (confirm, cancel) ipucu etiketi döndür.
+
+    Gamepad bağlıysa menu_confirm / menu_back butonlarının kontrolcüye özgü
+    etiketini (ör. Xbox 'A' / 'B'), değilse klavye fallback'ini döndürür.
+    """
+    try:
+        from promptfont_support import resolve_nav_hint_label
+        confirm = resolve_nav_hint_label(confirm_kbd, 'menu_confirm')
+        cancel = resolve_nav_hint_label(cancel_kbd, 'menu_back')
+        return confirm, cancel
+    except Exception:
+        return confirm_kbd, cancel_kbd
+
+
 def _show_mode_intro_popup(screen, mode_key, settings_manager=None):
     """
     Oyun moduna girmeden önce bilgi penceresi gösterir (Blocking Loop).
@@ -769,9 +784,25 @@ def _show_mode_intro_popup(screen, mode_key, settings_manager=None):
     bg_capture = _capture_popup_backdrop(screen, dim_alpha=160)
     
     start_time = pygame.time.get_ticks()
-    
+
+    # Gamepad: bu bloklayıcı döngü kendi event.get()'ini kullandığından ana
+    # döngünün gamepad pump'ı buraya ulaşmaz. Pointer modunu bastır (A=ENTER
+    # garantisi) ve her frame gamepad'i kuyruğa pompala.
+    _gpm = None
+    _gp_prev_suppress = False
+    try:
+        _gpm = get_gamepad_manager()
+        _gp_prev_suppress = bool(getattr(_gpm, '_suppress_pointer_mode', False))
+        _gpm.set_suppress_pointer_mode(True)
+    except Exception:
+        _gpm = None
+
     while running_popup:
-        clock.tick(60)
+        delta_ms = clock.tick(60)
+        try:
+            pump_gamepad_into_event_queue(delta_ms, 'menu')
+        except Exception:
+            pass
         screen = _maybe_recover_windows_display(screen, settings_manager=settings_manager)
         bg_capture = _ensure_popup_backdrop(bg_capture, screen, dim_alpha=160)
         
@@ -893,8 +924,9 @@ def _show_mode_intro_popup(screen, mode_key, settings_manager=None):
         cancel_hover = cancel_rect.collidepoint(mouse_active)
         cb_hover = checkbox_click_rect.collidepoint(mouse_active)
 
-        retro_style.draw_uniform_button(screen, play_rect, t('start'), sub_text='ENTER', color_code=retro_style.success, selected=play_hover)
-        retro_style.draw_uniform_button(screen, cancel_rect, t('cancel'), sub_text='ESC', color_code=retro_style.secondary, selected=cancel_hover)
+        start_hint, cancel_hint = _popup_confirm_cancel_hints('ENTER', 'ESC')
+        retro_style.draw_uniform_button(screen, play_rect, t('start'), sub_text=start_hint, color_code=retro_style.success, selected=play_hover)
+        retro_style.draw_uniform_button(screen, cancel_rect, t('cancel'), sub_text=cancel_hint, color_code=retro_style.secondary, selected=cancel_hover)
         
         if cb_hover:
             hover_surf = pygame.Surface(checkbox_click_rect.size, pygame.SRCALPHA)
@@ -903,6 +935,13 @@ def _show_mode_intro_popup(screen, mode_key, settings_manager=None):
         
         pygame.display.flip()
         
+    # Pointer-mode bastırmasını eski haline getir
+    try:
+        if _gpm is not None:
+            _gpm.set_suppress_pointer_mode(_gp_prev_suppress)
+    except Exception:
+        pass
+
     # Çıkarken kaydet
     if result and dont_show_checked and settings_manager:
         settings_manager.set(f'hide_intro_{mode_key}', True)
@@ -982,9 +1021,23 @@ def _show_zen_start_popup(screen, board_height=20, settings_manager=None):
     bg_capture = _capture_popup_backdrop(screen, dim_alpha=160)
     
     result = False
-    
+
+    # Gamepad: bloklayıcı döngü → pointer modunu bastır + her frame pump et.
+    _gpm = None
+    _gp_prev_suppress = False
+    try:
+        _gpm = get_gamepad_manager()
+        _gp_prev_suppress = bool(getattr(_gpm, '_suppress_pointer_mode', False))
+        _gpm.set_suppress_pointer_mode(True)
+    except Exception:
+        _gpm = None
+
     while running_popup:
-        clock.tick(60)
+        delta_ms = clock.tick(60)
+        try:
+            pump_gamepad_into_event_queue(delta_ms, 'menu')
+        except Exception:
+            pass
         screen = _maybe_recover_windows_display(screen, settings_manager=settings_manager)
         bg_capture = _ensure_popup_backdrop(bg_capture, screen, dim_alpha=160)
         
@@ -1129,11 +1182,19 @@ def _show_zen_start_popup(screen, board_height=20, settings_manager=None):
         play_hover = play_rect.collidepoint(mpos)
         cancel_hover = cancel_rect.collidepoint(mpos)
         
-        retro_style.draw_uniform_button(screen, play_rect, t('start'), sub_text='ENTER', color_code=retro_style.success, selected=play_hover)
-        retro_style.draw_uniform_button(screen, cancel_rect, t('cancel'), sub_text='ESC', color_code=retro_style.secondary, selected=cancel_hover)
+        start_hint, cancel_hint = _popup_confirm_cancel_hints('ENTER', 'ESC')
+        retro_style.draw_uniform_button(screen, play_rect, t('start'), sub_text=start_hint, color_code=retro_style.success, selected=play_hover)
+        retro_style.draw_uniform_button(screen, cancel_rect, t('cancel'), sub_text=cancel_hint, color_code=retro_style.secondary, selected=cancel_hover)
         
         pygame.display.flip()
     
+    # Pointer-mode bastırmasını eski haline getir
+    try:
+        if _gpm is not None:
+            _gpm.set_suppress_pointer_mode(_gp_prev_suppress)
+    except Exception:
+        pass
+
     # Seçimi kaydet
     if result is not False and settings_manager:
         settings_manager.set('zen_auto_clear_rows', selected_rows if selected_rows < MAX_ROWS else MAX_ROWS)
@@ -1162,8 +1223,22 @@ def _show_tutorial_prompt(screen):
     # Arka planı yakala
     bg_capture = _capture_popup_backdrop(screen, dim_alpha=220)
 
+    # Gamepad: bloklayıcı döngü → pointer modunu bastır + her frame pump et.
+    _gpm = None
+    _gp_prev_suppress = False
+    try:
+        _gpm = get_gamepad_manager()
+        _gp_prev_suppress = bool(getattr(_gpm, '_suppress_pointer_mode', False))
+        _gpm.set_suppress_pointer_mode(True)
+    except Exception:
+        _gpm = None
+
     while running_popup:
-        clock.tick(60)
+        delta_ms = clock.tick(60)
+        try:
+            pump_gamepad_into_event_queue(delta_ms, 'menu')
+        except Exception:
+            pass
         screen = _maybe_recover_windows_display(screen)
         bg_capture = _ensure_popup_backdrop(bg_capture, screen, dim_alpha=220)
 
@@ -1241,23 +1316,30 @@ def _show_tutorial_prompt(screen):
         retro_style.draw_uniform_button(
             screen, quick_rect,
             t('tutorial_welcome_quick_start', default='Hızlı Başlangıç'),
-            sub_text=t('tutorial_welcome_quick_start_sub', default='~90 sn'),
+            sub_text='ENTER · ' + t('tutorial_welcome_quick_start_sub', default='~90 sn'),
             color_code=retro_style.success, selected=quick_rect.collidepoint(mpos),
         )
         retro_style.draw_uniform_button(
             screen, academy_rect,
             t('tutorial_welcome_full_academy', default='Akademiyi Aç'),
-            sub_text=t('tutorial_welcome_full_academy_sub', default='Tüm dersler'),
+            sub_text='A · ' + t('tutorial_welcome_full_academy_sub', default='Tüm dersler'),
             color_code=retro_style.primary, selected=academy_rect.collidepoint(mpos),
         )
         retro_style.draw_uniform_button(
             screen, dismiss_rect,
             t('tutorial_welcome_dismiss', default='Şimdilik Geç'),
-            sub_text='ESC',
+            sub_text=_popup_confirm_cancel_hints('ENTER', 'ESC')[1],
             color_code=retro_style.secondary, selected=dismiss_rect.collidepoint(mpos),
         )
 
         pygame.display.flip()
+
+    # Pointer-mode bastırmasını eski haline getir
+    try:
+        if _gpm is not None:
+            _gpm.set_suppress_pointer_mode(_gp_prev_suppress)
+    except Exception:
+        pass
 
     return result
 
@@ -1698,13 +1780,13 @@ def main():
     except Exception:
         pass
 
-    # Başarım ekranı menu_sound'dan önce kurulduğu için coin-collect sesini
-    # şimdi bağla (varsa). Böylece "Ödülü Al" coin uçuşunda ses çalar.
-    try:
-        if achievement_screen is not None:
+    # Başarımlar ekranı splash öncesi kurulduysa (menu_sound henüz yokken),
+    # coin toplama sesi için ses yöneticisini şimdi bağla.
+    if achievement_screen is not None and getattr(achievement_screen, 'sound', None) is None:
+        try:
             achievement_screen.sound = menu_sound
-    except Exception:
-        pass
+        except Exception:
+            pass
 
     # Enter sonrası siyah bekleme oluşmaması için ağır ekran kurulumlarını
     # splash öncesinde hazırla.
@@ -1911,6 +1993,7 @@ def main():
             screen,
             user_manager,
             _load_steam_mode_scores,
+            sound=menu_sound,
         )
         _campaign_needs_refresh = True
         _coop_campaign_needs_refresh = True
@@ -4231,6 +4314,30 @@ def main():
                 gamepad_mgr.set_context('menu')
         except Exception:
             pass
+
+        # ── Gamepad Hot-Plug (Menü/UI state'leri) ───────────────────────
+        # Oyun runtime'ları (game/pvp/coop/...) JOYDEVICEADDED/REMOVED
+        # event'lerini kendi handle_input()'larında işler (kopunca otomatik
+        # pause için). Ancak menü/ayar/ekran state'leri bu event'leri
+        # yutmadan görmezden gelir; bu yüzden bir kontrolcü menüdeyken
+        # takılıp çıkarıldığında yeniden bağlanmıyordu. Burada yalnızca
+        # gameplay-dışı state'lerde hot-plug event'lerini merkezi olarak
+        # işleyip yeniden bağlanmayı garantiye alıyoruz.
+        gameplay_states = ('game', 'pvp', 'coop', 'coop_campaign', 'online_pvp', 'online_coop')
+        if state not in gameplay_states:
+            try:
+                added_type = getattr(pygame, 'JOYDEVICEADDED', None)
+                removed_type = getattr(pygame, 'JOYDEVICEREMOVED', None)
+                hotplug_types = [t for t in (added_type, removed_type) if t is not None]
+                if hotplug_types:
+                    for hp_event in pygame.event.get(hotplug_types):
+                        try:
+                            handle_gamepad_hotplug_event(hp_event)
+                        except Exception:
+                            pass
+            except Exception:
+                pass
+        # ────────────────────────────────────────────────────────────────
 
         # ── Gamepad Güncelleme ──────────────────────────────────────────
         # Gamepad durumunu oku ve sentetik klavye olaylarını pygame

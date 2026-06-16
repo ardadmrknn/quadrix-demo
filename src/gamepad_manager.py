@@ -2093,6 +2093,68 @@ def is_gamepad_disconnect_event(event) -> bool:
     return removed_type is not None and event_type == removed_type
 
 
+
+def handle_gamepad_hotplug_event(event) -> str | None:
+    """Modül-level adapter. Oyun döngüleri global GamepadManager singleton'ına
+    `JOYDEVICEADDED` / `JOYDEVICEREMOVED` event'lerini bu yardımcı üzerinden
+    iletir. Geri dönüş GamepadManager.handle_hotplug_event ile aynıdır:
+    'connected', 'disconnected' veya None.
+    """
+    global _instance
+    if _instance is None:
+        return None
+    try:
+        return _instance.handle_hotplug_event(event)
+    except Exception:
+        return None
+
+
+def is_gamepad_disconnect_event(event) -> bool:
+    """`JOYDEVICEREMOVED` event'i mi? (auto-pause kararları için)."""
+    event_type = getattr(event, 'type', None)
+    if event_type is None:
+        return False
+    removed_type = getattr(pygame, 'JOYDEVICEREMOVED', None)
+    return removed_type is not None and event_type == removed_type
+
+
+def pump_gamepad_into_event_queue(delta_ms: float = 16.0, context: Optional[str] = 'menu') -> int:
+    """Blocking popup/modal döngüleri için gamepad girişini canlı tutar.
+
+    Ana oyun döngüsü her frame `GamepadManager.update()` çağırıp sentetik
+    klavye/fare olaylarını kuyruğa post eder. Ancak `_show_mode_intro_popup`,
+    renk seçici gibi kendi `while` + `pygame.event.get()` döngüsüne sahip
+    bloklayıcı ekranlar bu pump'ı atlar ve gamepad ölü kalır. Bu yardımcı,
+    o döngülerin başında çağrılarak:
+      1. (opsiyonel) bağlamı ayarlar (popup'lar için 'menu'),
+      2. gamepad durumunu okur,
+      3. üretilen sentetik olayları pygame kuyruğuna post eder.
+
+    Returns:
+        Kuyruğa eklenen sentetik olay sayısı (test/teşhis için).
+    """
+    manager = None
+    try:
+        manager = get_gamepad_manager()
+    except Exception:
+        manager = _instance
+    if manager is None:
+        return 0
+    try:
+        if context is not None:
+            manager.set_context(context)
+        events = manager.update(delta_ms)
+        posted = 0
+        for ev in events:
+            try:
+                pygame.event.post(ev)
+                posted += 1
+            except Exception:
+                pass
+        return posted
+    except Exception:
+        return 0
+
 def reload_gamepad_settings():
     """Ayarlar değiştiğinde gamepad konfigürasyonunu yeniden yükle."""
     global _instance

@@ -51,6 +51,15 @@ def normalize_ui_scale_preset(preset: str | None) -> str:
 def set_ui_scale_preset(preset: str | None) -> str:
     global _UI_SCALE_PRESET
     _UI_SCALE_PRESET = normalize_ui_scale_preset(preset)
+    # Diğer ui_scaling alias'ının da preset değerini senkronize et
+    try:
+        import sys
+        for key in ('ui_scaling', 'src.ui_scaling'):
+            mod = sys.modules.get(key)
+            if mod and mod is not sys.modules.get(__name__) and hasattr(mod, '_UI_SCALE_PRESET'):
+                mod._UI_SCALE_PRESET = _UI_SCALE_PRESET
+    except Exception:
+        pass
     return _UI_SCALE_PRESET
 
 

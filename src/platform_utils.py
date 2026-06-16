@@ -116,6 +116,64 @@ def get_modifier_key_name() -> str:
     return 'Cmd' if IS_MACOS else 'Ctrl'
 
 
+# Generic (Windows/Linux) tuş etiketlerini macOS klavye terminolojisine çeviren
+# tablo. Mac klavyelerinde Enter "return", Backspace "delete" (⌫), Escape "esc"
+# olarak yazar; bu yüzden kullanıcıya gösterilen kısayol ipuçları platforma göre
+# farklılaşmalı. Anahtarlar BÜYÜK harfle normalize edilerek aranır.
+_MACOS_KEY_LABELS = {
+    'ENTER': 'return',
+    'RETURN': 'return',
+    'BACKSPACE': 'delete',
+    'DELETE': 'delete',
+    'ESC': 'esc',
+    'ESCAPE': 'esc',
+    'CMD': '⌘',
+    'CTRL': '⌃',
+    'CONTROL': '⌃',
+    'ALT': '⌥',
+    'OPTION': '⌥',
+    'SHIFT': '⇧',
+    'SPACE': 'space',
+    'TAB': 'tab',
+}
+
+
+def key_hint_label(label: str) -> str:
+    """Return a platform-appropriate display label for a keyboard hint.
+
+    Windows/Linux'ta etiket olduğu gibi döner. macOS'ta yaygın tuşlar Mac
+    klavye terminolojisine çevrilir (ENTER→return, BACKSPACE→delete, ESC→esc).
+    ``'ENTER / ESC'`` gibi ayraçlı çoklu etiketler de parça parça çevrilir.
+
+    Args:
+        label: Gösterilecek ham tuş ipucu (ör. ``'ENTER / ESC'``).
+
+    Returns:
+        Platforma uygun etiket.
+    """
+    if not label:
+        return label
+    if not IS_MACOS:
+        return label
+
+    def _translate_token(token: str) -> str:
+        stripped = token.strip()
+        if not stripped:
+            return token
+        mapped = _MACOS_KEY_LABELS.get(stripped.upper())
+        if mapped is None:
+            return token
+        # Orijinal token etrafındaki boşlukları koru (ör. ' / ' ayraçları).
+        leading = token[: len(token) - len(token.lstrip())]
+        trailing = token[len(token.rstrip()) :]
+        return f"{leading}{mapped}{trailing}"
+
+    # '/' ayracını koruyarak her parçayı ayrı çevir.
+    if '/' in label:
+        return '/'.join(_translate_token(part) for part in label.split('/'))
+    return _translate_token(label)
+
+
 def get_display_flags(resizable: bool = True, fullscreen: bool = False, vsync: bool = True) -> int:
     """Get the appropriate pygame display flags for the current platform.
     

@@ -335,6 +335,13 @@ def _setup_dll_functions(dll: ctypes.CDLL) -> None:
     except AttributeError:
         pass
 
+    # ISteamUtils_GetIPCountry — Oyuncunun IP adresine göre ülke kodunu döndürür
+    try:
+        dll.SteamAPI_ISteamUtils_GetIPCountry.restype = ctypes.c_char_p
+        dll.SteamAPI_ISteamUtils_GetIPCountry.argtypes = [ctypes.c_void_p]
+    except AttributeError:
+        pass
+
     # ISteamUser_GetSteamID returns uint64 in low/high regs; use c_uint64
     try:
         dll.SteamAPI_ISteamUser_GetSteamID.restype = ctypes.c_uint64
@@ -1492,6 +1499,21 @@ def get_current_game_language() -> str | None:
             return raw.decode('utf-8', errors='replace')
     except Exception as e:
         print(f"[Steam] GetCurrentGameLanguage hatası: {e}")
+    return None
+
+
+def get_ip_country() -> str | None:
+    """Steam client'ın IP adresine göre ülke kodunu döndürür (örneğin 'US', 'TR', 'DE')."""
+    if not is_available() or not _isteam_utils or not _dll:
+        return None
+    if not hasattr(_dll, 'SteamAPI_ISteamUtils_GetIPCountry'):
+        return None
+    try:
+        raw = _dll.SteamAPI_ISteamUtils_GetIPCountry(_isteam_utils)
+        if raw:
+            return raw.decode('utf-8', errors='replace').upper()
+    except Exception as e:
+        print(f"[Steam] GetIPCountry hatası: {e}")
     return None
 
 

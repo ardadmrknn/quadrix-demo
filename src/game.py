@@ -815,6 +815,7 @@ class Game:
         self.achievement_manager = achievement_manager
         self.achievement_notifications = []  # Yeni başarı bildirimleri
         self._achievement_notif_surface_cache = {}
+        self._achievement_notif_icon_cache = {}  # (achievement_id, size) -> Surface | False
         # Eğitim (tutorial) modunda hiçbir eylem başarım tetiklemez veya kullanıcı
         # istatistiklerine yazılmaz. Bu bayrak tüm persist/achievement yollarını kapatır.
         self._suppress_progression_tracking = (str(game_mode) == 'tutorial')
@@ -6249,7 +6250,19 @@ class Game:
 
         # Footer metinlerini istatistikler ile butonlar arasına sıkışmadan yerleştir.
         footer_lines: list[tuple[pygame.Surface, int]] = []
-        score_note = hint_font.render(t('game_over_hint'), True, (170, 186, 214))
+        # Gamepad bağlıyken klavye odaklı ipucu yerine kontrolcü buton
+        # etiketleriyle ipucu göster (restart_key/menu_key zaten gamepad-aware).
+        game_over_hint_text = t('game_over_hint')
+        try:
+            gpm_hint = get_gamepad_manager()
+            if gpm_hint and gpm_hint.enabled and gpm_hint.is_connected():
+                game_over_hint_text = t(
+                    'game_over_hint_gamepad',
+                    default='{0} ile yeniden başlat, {1} ile menüye dön.',
+                ).format(restart_key, menu_key)
+        except Exception:
+            pass
+        score_note = hint_font.render(game_over_hint_text, True, (170, 186, 214))
         footer_lines.append((score_note, s(8)))
 
         if self.user_manager and self.user_manager.get_current_user():
@@ -6471,6 +6484,26 @@ class Game:
 
             # Tema uyumlu panel (cache'den)
             notif = panel_base.copy()
+
+            # Başarıma özgü renkli PNG ikon (varsa) yıldızın üzerine çizilir.
+            ach_id = str(achievement.get('id', ''))
+            if ach_id:
+                icon_box = 54
+                cache_key = (ach_id, icon_box)
+                icon_surf = self._achievement_notif_icon_cache.get(cache_key)
+                if icon_surf is None:
+                    icon_surf = False
+                    try:
+                        from achievements import get_achievement_icon_path
+                        icon_path = get_achievement_icon_path(ach_id, locked=False)
+                        if icon_path:
+                            icon_surf = load_image(icon_path, convert_alpha=True, size=(icon_box, icon_box))
+                    except Exception:
+                        icon_surf = False
+                    self._achievement_notif_icon_cache[cache_key] = icon_surf
+                if icon_surf:
+                    icon_rect = icon_surf.get_rect(center=(41, box_height // 2))
+                    notif.blit(icon_surf, icon_rect)
 
             # Metinler (tema renkleri)
             content_x = 82

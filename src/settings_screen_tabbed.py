@@ -272,6 +272,15 @@ def _build_tab_content(tab_key: str, sm, show_debug: bool = False) -> list[dict]
         for action_key, label in ctrl_actions.get('pvp.player1', []):
             items.append({
                 'type': 'keybind', 'key': f'ctrl_pvp1_{action_key}',
+                'action_key': action_key, 'section': 'pvp.player1',
+                'label_tr': label, 'label_en': label,
+            })
+        items.append({'type': 'section', 'loc_key': 'tab_pvp_player2', 'label_tr': 'PVP - OYUNCU 2', 'label_en': 'PVP - PLAYER 2'})
+        for action_key, label in ctrl_actions.get('pvp.player2', []):
+            items.append({
+                'type': 'keybind', 'key': f'ctrl_pvp2_{action_key}',
+                'action_key': action_key, 'section': 'pvp.player2',
+                'label_tr': label, 'label_en': label,
             })
 
         # Kart Ustaligi: sol panel 6 yuvasinin tetikleme tuslari (plan §3-C).
@@ -1590,14 +1599,14 @@ class TabbedSettingsScreen:
                 hold_hint = _t('settings_keybind_hold_to_clear', 'Hold to clear')
                 if self._is_gamepad_keybind_section(section):
                     return f"{_t('gp_press_button', 'Butona basın')} • {hold_hint}", (255, 210, 120)
-                if section == 'single_player':
+                if self._is_dual_slot_section(section):
                     slot = self._pending_keybind_slot if self._pending_keybind_slot in ('primary', 'secondary') else 'primary'
                     slot_text = _t('primary', 'Birincil') if slot == 'primary' else _t('secondary', 'İkincil')
                     return f"{t('press_key')} ({slot_text}) • {hold_hint}", (255, 210, 120)
                 return f"{t('press_key')} • {hold_hint}", (255, 210, 120)
 
-            if section == 'single_player':
-                row = self._control_config.get('single_player', {}).get(action_key, {})
+            if self._is_dual_slot_section(section):
+                row = self._control_config.get(section, {}).get(action_key, {})
                 if isinstance(row, dict):
                     primary = str(row.get('primary', '') or '').upper() or '—'
                     secondary = str(row.get('secondary', '') or '').upper() or '—'
@@ -2031,8 +2040,8 @@ class TabbedSettingsScreen:
         action_key = self._pending_keybind_item.get('action_key')
         key_name = pygame.key.name(key_code)
 
-        if section == 'single_player':
-            single = self._control_config.setdefault('single_player', {})
+        if self._is_dual_slot_section(section):
+            single = self._control_config.setdefault(section, {})
             row = single.get(action_key)
             if not isinstance(row, dict):
                 row = {'primary': str(row or ''), 'secondary': ''}

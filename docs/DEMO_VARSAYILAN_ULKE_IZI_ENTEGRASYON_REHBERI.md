@@ -1,16 +1,20 @@
 # Demo Sürümü: Dinamik Varsayılan Ülke İzi Sistemi Entegrasyon Kılavuzu
 
-Bu kılavuz, ana oyunda mağazada satılan ülke bayrağı temalı satır temizleme izlerini (line-sweep traces), demo sürümünde oyuncunun indirip başlattığı ülkeye/dile göre otomatik olarak "varsayılan ve ücretsiz" yapan sistemin mimari kurgusunu ve entegrasyon adımlarını içerir.
+Bu kılavuz, ana oyunda mağazada satılan ülke bayrağı temalı satır temizleme izlerini (line-sweep traces), demo sürümünde oyuncunun oyunu hangi ülkeden/dilden başlatmışsa o satır temizleme izini varsayılan (default) yapacak sistemin mimari kurgusunu, performans optimizasyonlarını, macOS uyumluluğunu ve entegrasyon adımlarını içerir.
+
+> [!IMPORTANT]
+> **Demo Sürümü Sınırlandırmaları:**
+> 1. Demo sürümünde mağaza (Store) ekranı açılmayacak ve oyuncular manuel kozmetik değiştiremeyecektir. Bu nedenle bu sistemin tek amacı, oyun içindeki varsayılan satır temizleme izini otomatik ve statik olarak kullanıcının diline/ülkesine göre ayarlamaktır. Mağaza arayüzünde (`store_screen.py`) herhangi bir değişiklik yapılmasına gerek yoktur.
+> 2. Satır temizleme izinin ucundaki refakatçi hayvan seçimi (pet companion) demo sürümünde özelleştirilemez. Bu nedenle refakatçi hayvan **her zaman varsayılan olarak `luna_cat`** olacaktır.
 
 ---
 
 ## 1. Sistemin Mantıksal ve Stratejik Değerlendirmesi
 
-Önerilen sistemin demo sürümüne entegrasyonu hem **oyuncu deneyimi (UX)** hem de **pazarlama stratejisi** açısından son derece mantıklıdır:
+Önerilen sistemin demo sürümüne entegrasyonu son derece mantıklıdır:
 
-*   **Kişiselleştirilmiş İlk İzlenim (FTUE - First-Time User Experience):** Oyuncuların oyunu ilk açtıklarında kendi ülkelerine ait bir görsel öğeyle (satır temizleme efekti) karşılaşmaları, oyuna karşı bir aidiyet ve premium hissiyat oluşturur.
-*   **Düşük Kaynak Maliyeti:** Tüm ülke bayrağı varlıkları (assets) toplamda sadece **~155 KB** boyutundadır. Demo sürümünün paket boyutunu (build size) neredeyse hiç etkilemez.
-*   **Kullanıcı Tercihine Saygı (Manual Override):** Sistem, otomatik tespiti yalnızca kullanıcı manuel bir seçim yapmadığında devreye sokar. Kullanıcı mağazadan (Store) başka bir iz seçtiğinde bu tercih kaydedilir ve otomatik tespit ezilir.
+*   **Premium İlk İzlenim (FTUE):** Oyuncuların oyunu ilk açtıklarında kendi ülkelerine ait bir görsel öğeyle (satır temizleme efekti) karşılaşmaları, oyuna karşı bir aidiyet ve premium hissiyat oluşturur.
+*   **Boyut Maliyeti Yok:** Tüm ülke bayrağı varlıkları (assets) toplamda sadece **~155 KB** boyutundadır. Demo sürümünün paket boyutunu (build size) neredeyse hiç etkilemez.
 *   **Güvenli Fallback Yapısı:** Steamworks API'sine erişilemediği veya kullanıcının ülkesine ait bir bayrak bulunamadığı durumlarda sistem sessizce varsayılan Gökkuşağı (`rainbow`) izine döner.
 
 ---
@@ -21,9 +25,7 @@ Oyun başlatıldığında izlenecek hiyerarşi şu şekildedir:
 
 ```mermaid
 graph TD
-    Start[Oyun Başlatıldı] --> LoadProfile{Profilde kayıtlı iz var mı?}
-    LoadProfile -- Evet (Kullanıcı Seçimi) --> UseEquipped[Kayıtlı İzi Kullan]
-    LoadProfile -- Hayır (İlk Açılış/Boş) --> CheckSteam{Steam Bağlantısı Aktif mi?}
+    Start[Oyun Başlatıldı] --> CheckSteam{Steam Bağlantısı Aktif mi?}
     
     CheckSteam -- Evet --> CheckLang{GetCurrentGameLanguage dili sözlükte var mı?}
     CheckSteam -- Hayır --> FallbackLang{Oyun ayarlarındaki dil sözlükte var mı?}
@@ -40,9 +42,22 @@ graph TD
 
 ---
 
-## 3. Entegrasyon Adımları
+## 3. macOS Uyumluluk Analizi (Compatibility Review)
 
-### Adım 1: Flag Varlıklarının ve Tescil Modülünün Demo Sürümüne Taşınması
+Tasarımın macOS işletim sisteminde ve PyInstaller ile paketlenmiş `.app` paketlerinde sorunsuz çalışması için şu noktalar incelenmiştir:
+
+*   **Kütüphane Yükleme (ctypes):** macOS üzerinde Steamworks API'si `libsteam_api.dylib` dosyası üzerinden yüklenir. [steam_integration.py](file:///c:/Users/arda%20demirkan/Desktop/v2_23022026/quadrix-demo/src/steam_integration.py) modülü halihazırda `sys.platform == 'darwin'` koşuluna sahip olup, `.app` bundle içerisindeki `Contents/MacOS` veya `Frameworks` konumlarını doğru şekilde taramaktadır. ctypes fonksiyon imzaları Windows ile %100 uyumludur.
+*   **Varlık Erişim Yolu (Asset Paths):** macOS uygulamasında dosya yolları dinamik olarak değişir. Modüldeki `_resource_path()` fonksiyonu, PyInstaller'ın `sys._MEIPASS` geçici klasörünü macOS bundle standartlarına uygun olarak çözümler.
+*   **Numpy / Surfarray Bağımsızlığı:** macOS paket boyutunu küçük tutmak için macOS dağıtımlarında `numpy` ve `pygame.surfarray` kütüphaneleri dışarıda bırakılmıştır. Bu durum, bayrak görsellerinde şeffaflık (alpha) katmanı kullanıldığında macOS üzerinde bayrakların tamamen görünmez olmasına (alpha=0 olarak işlenmesine) yol açıyordu. Bu sorunu çözmek için taşınan `country_sweep_assets.py` modülündeki şu kurallar korunmuştur:
+    1.  Bayraklar diskte düz RGB (SRCALPHA içermeyen) 24-bit biçiminde tutulur.
+    2.  Ölçeklendirme sonrası `scaled.convert(24)` ve `set_alpha(None)` uygulanarak SDL blitter'ın piksel bazlı şeffaflık kontrolü bypass edilir.
+    3.  Böylece macOS üzerinde numpy bağımlılığı olmadan %100 kararlı ve görünür bayrak çizimi sağlanır.
+
+---
+
+## 4. Entegrasyon Adımları ve Performans Optimizasyonları
+
+### Adım 1: Varlıkların ve Tescil Modülünün Demo Sürümüne Taşınması
 
 1.  **Varlıkların Kopyalanması:**
     *   Ana oyundaki `v2/assets/ui/line_sweep_countries/` klasörünün tamamını, demo sürümündeki `quadrix-demo/assets/ui/line_sweep_countries/` konumuna kopyalayın.
@@ -53,7 +68,8 @@ graph TD
 
 Steamworks flat C API'sinden `GetIPCountry` fonksiyonunu ctypes üzerinden çekmek için `steam_integration.py` dosyasına eklemeler yapılmalıdır.
 
-#### 1. DLL Fonksiyon Tanımlaması (`_setup_dll_functions` içerisine):
+#### 1. DLL/Dylib Fonksiyon Tanımlaması (`_setup_dll_functions` içerisine):
+DLL/Dylib sürüm uyuşmazlığı riskini engellemek için `try-except` kontrolü uygulanır.
 ```python
 # ISteamUtils_GetIPCountry — Oyuncunun IP adresine göre ülke kodunu döndürür
 try:
@@ -64,10 +80,13 @@ except AttributeError:
 ```
 
 #### 2. Python Wrapper Fonksiyonu:
+Fonksiyon çağrısının güvenliğini artırmak için DLL/Dylib bünyesinde `SteamAPI_ISteamUtils_GetIPCountry` bulunup bulunmadığı `hasattr` ile denetlenir.
 ```python
 def get_ip_country() -> str | None:
     """Steam client'ın IP adresine göre ülke kodunu döndürür (örneğin 'US', 'TR', 'DE')."""
     if not is_available() or not _isteam_utils or not _dll:
+        return None
+    if not hasattr(_dll, 'SteamAPI_ISteamUtils_GetIPCountry'):
         return None
     try:
         raw = _dll.SteamAPI_ISteamUtils_GetIPCountry(_isteam_utils)
@@ -78,11 +97,13 @@ def get_ip_country() -> str | None:
     return None
 ```
 
-### Adım 3: Sweep Efekti Çözümleme Mantığı (`sweep_effects.py`)
+### Adım 3: Animasyon Çizim Mantığı ve Çözümleme Güncellemesi (`sweep_effects.py`)
 
-`sweep_effects.py` içinde varsayılan izin çözümlendiği noktaya Steam ve dil hiyerarşisi entegre edilmelidir.
+> [!TIP]
+> **Performans Uyarısı ve Optimizasyon:**
+> Dil ve IP tespiti işlemleri ctypes üzerinden harici dylib çağrıları yaptığı ve string çözümleme (decode) gerektirdiği için her karede (frame) tekrar çalıştırılması mikro stotter (anlık takılma) riskine yol açabilir. Oyuncunun dili veya IP adresi oturum boyunca **asla değişmeyeceği için** çözümlenen ülke izi ilk çağrıda **modül seviyesinde önbelleğe alınmalıdır (Caching)**.
 
-#### 1. Sabit Sözlüklerin Tanımlanması:
+#### 1. Sabit Sözlüklerin, Alias ve Önbellek Değişkeninin Tanımlanması:
 ```python
 # Dil adına göre doğrudan eşleşen tekil bayraklar (İngilizce hariç)
 LANGUAGE_TO_FLAG = {
@@ -119,12 +140,27 @@ COUNTRY_TO_FLAG = {
     'HK': 'hong_kong',
     'VN': 'vietnam',
 }
+
+# Modül import zamanında alias listesini genişletmek için:
+_LINE_SWEEP_THEME_ALIASES.update(_country_theme_aliases())
+
+# Performans için oturum boyu geçerli olan önbellek değişkeni
+_cached_default_theme: str | None = None
 ```
 
-#### 2. Varsayılan İz Bulma Fonksiyonu (`get_default_line_sweep_theme`):
+#### 2. Önbellek Destekli Varsayılan İz Bulma Fonksiyonu (`get_default_line_sweep_theme`):
+Dil tespiti için karmaşık JSON dosyaları okumak yerine, oyunun o anki aktif çeviri dilini tutan `localization.get_language()` fonksiyonunu doğrudan çağırarak $O(1)$ performansla karara varırız.
 ```python
 def get_default_line_sweep_theme() -> str:
-    """Steam dili ve IP konumunu kontrol ederek varsayılan izi çözer."""
+    """Steam dili ve IP konumunu kontrol ederek varsayılan izi çözer.
+
+    İlk çağrıdan sonra sonucu önbellekten dönerek performans kaybını önler.
+    """
+    global _cached_default_theme
+    if _cached_default_theme is not None:
+        return _cached_default_theme
+
+    resolved_theme = 'rainbow'
     import steam_integration
     
     # 1. Aşama: Steam Dil Kontrolü
@@ -133,76 +169,107 @@ def get_default_line_sweep_theme() -> str:
         if steam_lang:
             steam_lang = steam_lang.strip().lower()
             if steam_lang in LANGUAGE_TO_FLAG:
-                return LANGUAGE_TO_FLAG[steam_lang]
+                resolved_theme = LANGUAGE_TO_FLAG[steam_lang]
+                _cached_default_theme = resolved_theme
+                return resolved_theme
                 
-    # 2. Aşama: Steam IP Ülkesi Kontrolü (Özellikle English/Çoklu dil kullananlar için)
+    # 2. Aşama: Steam IP Ülkesi Kontrolü (Özellikle English kullananlar için)
     if steam_integration.is_available():
         country_code = steam_integration.get_ip_country()
         if country_code and country_code in COUNTRY_TO_FLAG:
-            return COUNTRY_TO_FLAG[country_code]
+            resolved_theme = COUNTRY_TO_FLAG[country_code]
+            _cached_default_theme = resolved_theme
+            return resolved_theme
             
     # 3. Aşama: Offline / Steam Dışı Fallback (Oyunun kendi dil ayarı)
-    # settings_manager üzerinden dil ayarı kontrol edilir
     try:
-        from settings_manager import SettingsManager
-        # get_instance() veya doğrudan okuma yapılabilir
-        # Basitlik için 'tr' ise 'turkiye', değilse 'rainbow'
-    except ImportError:
+        import localization
+        game_lang = localization.get_language()
+        if game_lang == 'tr':
+            resolved_theme = 'turkiye'
+    except Exception:
         pass
 
-    return 'rainbow'
+    _cached_default_theme = resolved_theme
+    return resolved_theme
 ```
 
-#### 3. Kuşanılmış İzi Çözme Fonksiyonunun Güncellenmesi (`get_equipped_line_sweep_theme`):
+#### 3. Kuşanılmış İzi ve Hayvan Refakatçisini Çözme Fonksiyonlarının Güncellenmesi:
 ```python
 def get_equipped_line_sweep_theme(user_manager=None, profile: dict | None = None) -> str:
-    profile = _resolve_profile(user_manager, profile)
-    if isinstance(profile, dict):
-        equipped_map = profile.get('equipped_cosmetics', {})
-        if isinstance(equipped_map, dict):
-            equipped = equipped_map.get(_LINE_SWEEP_SLOT)
-            # Eğer kullanıcı manuel bir seçim yaptıysa onu kullan (rainbow dahil)
-            if equipped is not None:
-                return normalize_line_sweep_theme(equipped)
-                
-    # Eğer henüz hiçbir şey kuşanılmadıysa dinamik varsayılanı kullan
     return get_default_line_sweep_theme()
+
+def get_equipped_pet(user_manager=None, profile: dict | None = None) -> str:
+    """Evcil hayvanı çözer. Demo sürümünde kozmetik pet takma kapalı olduğundan
+    her zaman varsayılan olarak 'luna_cat' döndürür.
+    """
+    return 'luna_cat'
 ```
 
-### Adım 4: Mağaza Arayüzü Durum Yönetimi (`store_screen.py`)
-
-Kullanıcının ülkesine ait dinamik bayrak, mağazada kilitli (`unowned`) görünmek yerine tıpkı Gökkuşağı izi gibi ücretsiz varsayılan (`demo` / "Varsayılan") durumunda gösterilmelidir.
-
-#### `_resolve_ownership_state` Fonksiyonu Güncellemesi:
+#### 4. Ana Oyundaki Kayar Bayrak Animasyonunun Çizilmesi (`draw_rainbow_cat_sweep`):
 ```python
-        # ... (Önceki kart ve kuşanılmış kozmetik kontrolleri) ...
+def draw_rainbow_cat_sweep(
+    screen: pygame.Surface,
+    state: SweepCatState,
+    board_rect: pygame.Rect,
+    sweep_x: int,
+    sweep_width: int,
+    phase: int,
+    board_width_cells: int,
+    theme: str | None = None,
+    stripe_highlight_enabled: bool = True,
+    pet: str | None = None,
+) -> None:
+    """Rainbow + opsiyonel kedi/evcil hayvan sprite sweep efektini çiz."""
+    sweep_height = max(1, int(board_rect.height))
+    sweep_y = board_rect.y
 
-        # Dinamik varsayılan izin tespiti
-        try:
-            from sweep_effects import get_default_line_sweep_theme
-            default_sweep = f"luna_{get_default_line_sweep_theme()}"
-        except ImportError:
-            default_sweep = "luna_rainbow"
+    custom_target_w = max(sweep_width, int(sweep_height * 1.65))
+    custom_cat = state.get_companion_surface(custom_target_w, sweep_height, phase, pet)
+    one_col_w = max(1, int(round(board_rect.width / float(max(1, board_width_cells)))))
 
-        # Eğer ürün varsayılan gökkuşağı veya kullanıcının ülkesinin varsayılan izi ise
-        # mağazada satın alma yerine ücretsiz takılabilir ('demo') moduna çek
-        if value == 'luna_rainbow' or value == default_sweep or value == _DEFAULT_PET_VALUE or _is_default_block_skin(value):
-            return 'demo'
+    if custom_cat is not None:
+        cat_w = custom_cat.get_width()
+        trail_x = sweep_x
+        trail_width = sweep_width
+    else:
+        trail_x = sweep_x
+        trail_width = sweep_width
+
+    # Eğer theme None gelmişse (demo varsayılanı), aktif temayı dinamik olarak belirle
+    if theme is None:
+        theme = get_equipped_line_sweep_theme()
+
+    # Eski 6 satırlı hardcoded gökkuşağı çizimi yerine, ana oyundaki gibi
+    # dinamik bayrak şeritlerini kaydıran draw_line_sweep_band fonksiyonunu çağırıyoruz:
+    band_rect = pygame.Rect(trail_x, sweep_y, trail_width, sweep_height)
+    clip = band_rect.clip(board_rect)
+    if clip.width > 0 and clip.height > 0:
+        band_surface = pygame.Surface((band_rect.width, band_rect.height), pygame.SRCALPHA)
+        draw_line_sweep_band(
+            band_surface,
+            band_surface.get_rect(),
+            theme=theme,
+            stripe_highlight_enabled=stripe_highlight_enabled,
+            phase=phase,
+        )
+        src = pygame.Rect(clip.x - band_rect.x, clip.y - band_rect.y, clip.width, clip.height)
+        screen.blit(band_surface, clip.topleft, src)
+
+    if custom_cat is not None:
+        custom_rect = custom_cat.get_rect()
+        # ... (Kedi sprite blit mantığı aynen korunur) ...
 ```
 
 ---
 
-## 4. Test ve Doğrulama Senaryoları
+## 5. Test ve Doğrulama Senaryoları
 
 Sistemin kararlılığını doğrulamak için aşağıdaki test senaryoları uygulanmalıdır:
 
 1.  **Senaryo A (Almanca Steam):**
-    *   Steam dili `German` olarak ayarlanır. Oyun açılır. Satır temizlendiğinde doğrudan Almanya bayrağının gelmesi beklenir. Mağazada Almanya İzi "Varsayılan" olarak görünmelidir.
+    *   Steam dili `German` olarak ayarlanır. Oyun açılır. Satır temizlendiğinde doğrudan Almanya bayrağının gelmesi ve ucunda `luna_cat` sprite'ının yürümesi beklenir.
 2.  **Senaryo B (İngilizce Dil, ABD IP'si):**
-    *   Steam dili `English` ayarlanır. IP konumu `US` döner. Satır temizlendiğinde ABD bayrağının gelmesi beklenir.
-3.  **Senaryo C (İngilizce Dil, Kanada IP'si):**
-    *   Steam dili `English` ayarlanır. IP konumu `CA` döner. Kanada bayrağının gelmesi beklenir.
-4.  **Senaryo D (Desteklenmeyen Ülke / Offline):**
-    *   Steam kapalı başlatılır veya IP'den `NZ` (Yeni Zelanda - bayrağı yok) döner. Fallback olarak Gökkuşağı (`rainbow`) izinin seçilmesi beklenir.
-5.  **Senaryo E (Manuel Değiştirme):**
-    *   Kullanıcı mağazadan manuel olarak "Japonya İzi" satın alıp takar. Sonraki oyunlarda dil veya konum ne olursa olsun Japonya izinin gelmesi beklenir. Mağazadan tekrar kendi ülke izine tıklayıp "Varsayılan yap" diyerek geri dönebilmelidir.
+    *   Steam dili `English` ayarlanır. IP konumu `US` döner. ABD bayrağının gelmesi ve ucunda `luna_cat` sprite'ının yürümesi beklenir.
+3.  **Senaryo C (Offline / Fallback):**
+    *   Steam kapalı başlatılır. Fallback olarak Gökkuşağı (`rainbow`) izinin seçilmesi ve ucunda `luna_cat` sprite'ının yürümesi beklenir.

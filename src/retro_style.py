@@ -375,10 +375,40 @@ class RetroStyle:
                 pass
         target.blit(overlay, pos)
 
+    @staticmethod
+    def _font_is_alive(font_obj) -> bool:
+        """Cache'lenmiş font hâlâ geçerli mi?
+
+        ``pygame.quit()`` font handle'larını geçersiz kılar (test izolasyon
+        sınırlarında olur). Ölü bir handle üzerinde ``size('')`` çağrısı
+        ``pygame.error: Invalid font`` fırlatır. Bu ucuz kontrol, ölü font'u
+        cache-miss gibi ele almamızı sağlar; oyun runtime'ında font hiç
+        kapatılmadığı için bu yol normalde hiç tetiklenmez.
+        """
+        if font_obj is None:
+            return False
+        try:
+            font_obj.size('')
+            return True
+        except Exception:
+            return False
+
+    def _cached_font_if_alive(self, key):
+        """Geçerliyse cache'lenmiş font'u döndür; ölüyse cache'ten düşür."""
+        font_obj = self.font_cache.get(key)
+        if font_obj is None:
+            return None
+        if self._font_is_alive(font_obj):
+            return font_obj
+        self.font_cache.pop(key, None)
+        return None
+
     def _get_latin_font(self, scaled_size: int, effective_bold: bool) -> pygame.font.Font:
         """Varsayılan latin fontunu döndür (CJK hibrit sistem için)."""
+        if not pygame.font.get_init():
+            pygame.font.init()
         key = (scaled_size, effective_bold, '__latin__')
-        if key not in self.font_cache:
+        if self._cached_font_if_alive(key) is None:
             font_obj = None
             # Önceden kaydedilmiş varsayılan font path varsa kullan
             if self._default_font_path:
@@ -412,7 +442,7 @@ class RetroStyle:
         scaled_size = self._apply_font_scale(size)
         effective_bold = False if self._force_no_bold else bool(bold)
         key = (scaled_size, effective_bold, self._font_path, self._default_font_path)
-        if key not in self.font_cache:
+        if self._cached_font_if_alive(key) is None:
             font_obj = None
             if self._font_path:
                 try:
@@ -427,37 +457,7 @@ class RetroStyle:
             if font_obj is None:
                 font_obj = self._get_latin_font(scaled_size, effective_bold)
             self.font_cache[key] = font_obj
-        # Cached font objects may become invalid if pygame.font was quit and
-        # re-initialized during the test run. Validate cached font and
-        # recreate if necessary.
-        font_obj = self.font_cache.get(key)
-        if font_obj is not None:
-            try:
-                # size('') is a cheap check that will raise if font module is dead
-                font_obj.size('')
-                return font_obj
-            except Exception:
-                try:
-                    del self.font_cache[key]
-                except Exception:
-                    pass
-                # fallthrough: recreate below
-
-        # Recreate font object if cache was invalidated
-        font_obj = None
-        if self._font_path:
-            try:
-                cjk_font = pygame.font.Font(self._font_path, scaled_size)
-                if effective_bold:
-                    cjk_font.set_bold(True)
-                latin_font = self._get_latin_font(scaled_size, effective_bold)
-                font_obj = HybridFont(latin_font, cjk_font)
-            except Exception:
-                font_obj = None
-        if font_obj is None:
-            font_obj = self._get_latin_font(scaled_size, effective_bold)
-        self.font_cache[key] = font_obj
-        return font_obj
+        return self.font_cache[key]
 
     def get_mono_font(self, size: int, bold: bool = True) -> pygame.font.Font:
         """Sayısal sayaçlar vb. için eş aralıklı (monospaced) font döndür."""
@@ -466,7 +466,7 @@ class RetroStyle:
         # Use a distinguishable key for mono fonts
         scaled_size = self._apply_font_scale(size)
         key = (scaled_size, bold, 'mono')
-        if key not in self.font_cache:
+        if self._cached_font_if_alive(key) is None:
             candidates = [
                 "Consolas",
                 "Courier New",

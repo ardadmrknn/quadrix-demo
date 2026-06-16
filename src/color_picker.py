@@ -479,7 +479,24 @@ def pygame_color_picker(
     font_label = _get_font(14, bold=True)
 
     # ── Ana Döngü ───────────────────────────────────────────────────
+    # Gamepad: bu bloklayıcı döngü ana döngünün pump'ını atlar; gamepad'i
+    # burada canlı tut. Pointer modunu bastır ki A=ENTER (onay) garantilensin.
+    _gpm = None
+    _gp_prev_suppress = False
+    try:
+        from gamepad_manager import get_gamepad_manager as _get_gpm
+        _gpm = _get_gpm()
+        _gp_prev_suppress = bool(getattr(_gpm, '_suppress_pointer_mode', False))
+        _gpm.set_suppress_pointer_mode(True)
+    except Exception:
+        _gpm = None
+
     while running:
+        try:
+            from gamepad_manager import pump_gamepad_into_event_queue as _gp_pump
+            _gp_pump(16.0, 'menu')
+        except Exception:
+            pass
         mp = get_mouse_pos()
         h_ok = ok_rect.collidepoint(mp)
         h_cancel = cancel_rect.collidepoint(mp)
@@ -834,12 +851,25 @@ def pygame_color_picker(
                              btn_cache=cancel_btn_h if h_cancel else cancel_btn_n)
 
         # ── Kısayol ipucu ──
-        hint_text = f"ESC: {t('cancel', 'Cancel')}  ·  ENTER: {t('confirm', 'Confirm')}"
+        try:
+            from promptfont_support import resolve_nav_hint_label as _nav_hint
+            _confirm_lbl = _nav_hint('ENTER', 'menu_confirm')
+            _cancel_lbl = _nav_hint('ESC', 'menu_back')
+        except Exception:
+            _confirm_lbl, _cancel_lbl = 'ENTER', 'ESC'
+        hint_text = f"{_cancel_lbl}: {t('cancel', 'Cancel')}  ·  {_confirm_lbl}: {t('confirm', 'Confirm')}"
         screen.blit(font_hint.render(hint_text, True, (65, 65, 95)),
                     (dx + pad, btn_y + btn_h + 4))
 
         pygame.display.flip()
         clock.tick(60)
+
+    # Pointer-mode bastırmasını eski haline getir
+    try:
+        if _gpm is not None:
+            _gpm.set_suppress_pointer_mode(_gp_prev_suppress)
+    except Exception:
+        pass
 
     pygame.event.clear()
     return result
@@ -907,7 +937,23 @@ def pygame_text_input(
     font_i = _get_font(20)
     font_b = _get_font(20, bold=True)
 
+    # Gamepad: bloklayıcı döngü → pointer modunu bastır + her frame pump et.
+    _gpm = None
+    _gp_prev_suppress = False
+    try:
+        from gamepad_manager import get_gamepad_manager as _get_gpm
+        _gpm = _get_gpm()
+        _gp_prev_suppress = bool(getattr(_gpm, '_suppress_pointer_mode', False))
+        _gpm.set_suppress_pointer_mode(True)
+    except Exception:
+        _gpm = None
+
     while running:
+        try:
+            from gamepad_manager import pump_gamepad_into_event_queue as _gp_pump
+            _gp_pump(16.0, 'menu')
+        except Exception:
+            pass
         mp = get_mouse_pos()
         ho = ok_rect.collidepoint(mp) or gp_focus == 1
         hc = cancel_rect.collidepoint(mp) or gp_focus == 2
@@ -1015,6 +1061,13 @@ def pygame_text_input(
 
         pygame.display.flip()
         clock.tick(60)
+
+    # Pointer-mode bastırmasını eski haline getir
+    try:
+        if _gpm is not None:
+            _gpm.set_suppress_pointer_mode(_gp_prev_suppress)
+    except Exception:
+        pass
 
     pygame.event.clear()
     return result

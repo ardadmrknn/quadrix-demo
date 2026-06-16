@@ -40,6 +40,11 @@ from asset_manager import load_image
 from text_cache import render_text
 from ui_scaling import apply_ui_scale_preset, get_projected_effective_scale, get_scale, resolve_ui_scale_size
 from gamepad_manager import get_gamepad_manager, is_gamepad_connected
+try:
+    from promptfont_support import resolve_nav_hint_label as _resolve_nav_hint_label
+except Exception:  # pragma: no cover - promptfont opsiyonel
+    def _resolve_nav_hint_label(keyboard_label, *actions, gpm=None):
+        return keyboard_label
 from back_button import draw_back_button as _draw_shared_back_button
 from leaderboard_trailer_debug import (
     TRAILER_DEBUG_DURATION_MS,
@@ -4663,6 +4668,16 @@ class Menu:
         except Exception:
             pass
 
+    def _select_hint_label(self) -> str:
+        """Popup alt ipucu: gamepad bağlıyken kontrolcü, değilse klavye/mouse."""
+        try:
+            gpm = get_gamepad_manager()
+            if gpm and getattr(gpm, 'enabled', False) and gpm.is_connected():
+                return t('menu_hint_select_gamepad')
+        except Exception:
+            pass
+        return t('menu_hint_select')
+
     def _draw_exit_prompt_panel(self):
         width, height = self.screen.get_size()
         panel_scale = self._fullscreen_panel_scale()
@@ -4713,9 +4728,11 @@ class Menu:
 
         mouse_pos = get_mouse_pos()
 
+        exit_confirm_hint = _resolve_nav_hint_label(t('menu_hint_enter_y'), 'menu_confirm')
+        exit_cancel_hint = _resolve_nav_hint_label(t('menu_hint_esc_n'), 'menu_back')
         for rect, label, sub_label, btn_color in (
-            (yes_rect, t('menu_yes_exit'), t('menu_hint_enter_y'), retro_style.success),
-            (no_rect, t('cancel'), t('menu_hint_esc_n'), retro_style.secondary),
+            (yes_rect, t('menu_yes_exit'), exit_confirm_hint, retro_style.success),
+            (no_rect, t('cancel'), exit_cancel_hint, retro_style.secondary),
         ):
             hover = rect.collidepoint(mouse_pos)
             # Hover'da buton hafifçe büyüsün
@@ -4760,7 +4777,7 @@ class Menu:
         self.exit_no_rect = no_rect
 
         hint_font = retro_style.get_font(max(12, int(16 * panel_scale)), bold=False)
-        hint = render_text(hint_font, t('menu_hint_select'), True, (150, 165, 190))
+        hint = render_text(hint_font, self._select_hint_label(), True, (150, 165, 190))
         self.screen.blit(hint, hint.get_rect(centerx=panel_rect.centerx, bottom=panel_rect.bottom - max(10, int(14 * panel_scale))))
 
     def _draw_daily_prompt_panel(self):
@@ -4865,8 +4882,8 @@ class Menu:
 
         play_label = t('play')
         cancel_label = t('menu_back')
-        play_hint = 'ENTER'
-        cancel_hint = 'ESC'
+        play_hint = _resolve_nav_hint_label('ENTER', 'menu_confirm')
+        cancel_hint = _resolve_nav_hint_label('ESC', 'menu_back')
 
         retro_style.draw_uniform_button(
             self.screen,
@@ -4889,7 +4906,7 @@ class Menu:
         self.daily_cancel_rect = cancel_rect
 
         hint_font = retro_style.get_font(max(11, int(16 * panel_scale)), bold=False)
-        hint = render_text(hint_font, t('menu_hint_select'), True, (150, 165, 190))
+        hint = render_text(hint_font, self._select_hint_label(), True, (150, 165, 190))
         self.screen.blit(hint, hint.get_rect(centerx=panel_rect.centerx, bottom=panel_rect.bottom - max(10, int(14 * panel_scale))))
 
     def _draw_prompt_button(self, rect, label, color):

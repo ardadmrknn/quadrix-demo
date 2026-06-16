@@ -1723,16 +1723,122 @@ class DailyChallengeMode(Game):
         diff = int(challenge.get('difficulty', 3) or 3)
         return max(50, min(220, 40 + diff * 28))
 
+    @staticmethod
+    def _format_localized_number(value: int | float, lang: str) -> str:
+        if isinstance(value, float):
+            return DailyChallengeMode._format_bonus_multiplier(value, lang)
+        formatted = f"{int(value):,}"
+        if lang == 'tr':
+            return formatted.replace(',', '.')
+        return formatted
+
+    @staticmethod
+    def _format_bonus_multiplier(value: float, lang: str) -> str:
+        formatted = f"{float(value):.2f}".rstrip('0').rstrip('.')
+        if lang in {'tr', 'de', 'fr', 'es', 'it', 'pt', 'ru'}:
+            formatted = formatted.replace('.', ',')
+        return formatted
+
+    @staticmethod
+    def _get_translation_entry(key: str) -> dict | None:
+        try:
+            from localization import TRANSLATIONS
+        except Exception:
+            return None
+        entry = TRANSLATIONS.get(key)
+        return entry if isinstance(entry, dict) else None
+
+    @classmethod
+    def _translate(cls, key: str, lang: str, default: str | None = None, **kwargs) -> str:
+        entry = cls._get_translation_entry(key)
+        if entry:
+            text = entry.get(lang) or entry.get('en') or entry.get('tr') or (default if default is not None else key)
+        else:
+            text = default if default is not None else key
+        if kwargs:
+            try:
+                text = text.format(**kwargs)
+            except (KeyError, ValueError, IndexError):
+                pass
+        return str(text)
+
+    @staticmethod
+    def _challenge_effect_slot_count(challenge: dict) -> int:
+        raw_value = challenge.get('effects')
+        if isinstance(raw_value, dict):
+            return max((len(value) for value in raw_value.values() if isinstance(value, list)), default=0)
+        if isinstance(raw_value, list):
+            return len(raw_value)
+        return 0
+
+    @classmethod
+    def _expected_localization_keys(cls, challenge: dict) -> list[str]:
+        challenge_id = str(challenge.get('id') or '').strip()
+        if not challenge_id:
+            return []
+
+        keys = [
+            f"dc_challenge_{challenge_id}_name",
+            f"dc_challenge_{challenge_id}_briefing",
+            f"dc_challenge_{challenge_id}_description",
+        ]
+        for idx in range(1, cls._challenge_effect_slot_count(challenge) + 1):
+            keys.append(f"dc_challenge_{challenge_id}_effect_{idx}")
+        return keys
+
+    @classmethod
+    def _resolve_challenge_text(cls, challenge: dict, field: str, lang: str) -> str:
+        raw_value = challenge.get(field)
+        challenge_id = str(challenge.get('id') or '').strip()
+        if challenge_id:
+            key = f"dc_challenge_{challenge_id}_{field}"
+            if cls._get_translation_entry(key):
+                return cls._translate(key, lang, default='')
+        if isinstance(raw_value, dict):
+            return str(raw_value.get(lang) or raw_value.get('en') or next(iter(raw_value.values()), ''))
+        return str(raw_value or '')
+
+    @classmethod
+    def _resolve_challenge_effects(cls, challenge: dict, lang: str) -> list[str]:
+        raw_value = challenge.get('effects')
+        challenge_id = str(challenge.get('id') or '').strip()
+
+        if challenge_id:
+            effects: list[str] = []
+            idx = 1
+            while True:
+                key = f"dc_challenge_{challenge_id}_effect_{idx}"
+                if not cls._get_translation_entry(key):
+                    break
+                effect = cls._translate(key, lang, default='').strip()
+                if effect:
+                    effects.append(effect)
+                idx += 1
+            if effects:
+                return effects
+
+        if isinstance(raw_value, dict):
+            localized = raw_value.get(lang) or raw_value.get('en')
+            if isinstance(localized, list):
+                return list(localized)
+            for value in raw_value.values():
+                if isinstance(value, list):
+                    return list(value)
+        if isinstance(raw_value, list):
+            return list(raw_value)
+        return []
+
     @classmethod
     def _build_objective_line(cls, challenge: dict, lang: str) -> str:
         target_key, target_val = cls._primary_target(challenge)
+        formatted_target = cls._format_localized_number(target_val, lang)
         if target_key == 'target_score':
-            return (f"Hedef: {target_val} puana ulaş" if lang == 'tr' else f"Objective: reach {target_val} score")
+            return cls._translate('dc_target_score', lang, value=formatted_target)
         if target_key == 'target_lines':
-            return (f"Hedef: {target_val} satır temizle" if lang == 'tr' else f"Objective: clear {target_val} lines")
+            return cls._translate('dc_target_lines', lang, value=formatted_target)
         if target_key == 'target_combo':
-            return (f"Hedef: {target_val} zincir kur" if lang == 'tr' else f"Objective: build a {target_val}-step chain")
-        return ('Hedef: Görevi tamamla' if lang == 'tr' else 'Objective: complete the challenge')
+            return cls._translate('dc_target_combo', lang, value=formatted_target)
+        return cls._translate('dc_objective_complete', lang)
 
     @classmethod
     def _build_rule_line(cls, challenge: dict, lang: str) -> str:
@@ -1740,34 +1846,40 @@ class DailyChallengeMode(Game):
         modifiers = challenge.get('modifiers', {}) or {}
 
         if challenge.get('tetris_only'):
-            rules.append('Sadece 4 satır temizliği geçerli' if lang == 'tr' else 'Only 4-line clears are valid')
+            rules.append(cls._translate('dc_rule_only_quadrix', lang))
         if challenge.get('no_mistakes'):
-            rules.append('Yeni delik açmak yasak' if lang == 'tr' else 'Creating new holes is forbidden')
+            rules.append(cls._translate('dc_rule_no_new_holes', lang))
         if modifiers.get('disable_hold'):
-            rules.append('Hold kapalı' if lang == 'tr' else 'Hold is disabled')
+            rules.append(cls._translate('dc_rule_hold_disabled', lang))
         if modifiers.get('fog_overlay'):
-            rules.append('Sis aktif' if lang == 'tr' else 'Fog is active')
+            rules.append(cls._translate('dc_rule_fog_active', lang))
         garbage_rows = int(modifiers.get('garbage_rows', 0) or 0)
         if garbage_rows > 0:
-            rules.append((f"{garbage_rows} çöp satırı ile başlar" if lang == 'tr' else f"Starts with {garbage_rows} garbage rows"))
+            rules.append(
+                cls._translate(
+                    'dc_rule_garbage_start',
+                    lang,
+                    value=cls._format_localized_number(garbage_rows, lang),
+                )
+            )
 
         if not rules:
-            return ('Kural: Standart günlük meydan okuma' if lang == 'tr' else 'Rule: standard daily challenge')
-        return ('Kural: ' if lang == 'tr' else 'Rule: ') + ' • '.join(rules)
+            return cls._translate('dc_rule_standard', lang)
+        return cls._translate('dc_rule_prefix', lang) + ' • '.join(rules)
 
     @classmethod
     def _build_fail_line(cls, challenge: dict, lang: str) -> str:
         max_mistakes = int(challenge.get('max_mistakes', 0) or 0)
         if max_mistakes > 0:
-            return (
-                f"Başarısızlık: {max_mistakes} kural ihlalinde görev biter"
-                if lang == 'tr'
-                else f"Failure: challenge ends after {max_mistakes} rule violation(s)"
+            return cls._translate(
+                'dc_fail_max_mistakes',
+                lang,
+                value=cls._format_localized_number(max_mistakes, lang),
             )
-        return (
-            'Başarısızlık: Hak biterse gün kapanır (3 deneme)'
-            if lang == 'tr'
-            else 'Failure: day locks when attempts are exhausted (3 tries)'
+        return cls._translate(
+            'dc_fail_attempts_locked',
+            lang,
+            tries=cls._format_localized_number(DAILY_MAX_FAILURES, lang),
         )
 
     @classmethod
@@ -1775,9 +1887,13 @@ class DailyChallengeMode(Game):
         fragments = int(challenge.get('reward_fragments', 0) or 0)
         xp = int(challenge.get('reward_xp', 0) or 0)
         bonus = float(challenge.get('bonus', 1.0) or 1.0)
-        if lang == 'tr':
-            return f"Ödül: +{fragments} fragment • +{xp} XP • x{bonus} skor bonusu"
-        return f"Reward: +{fragments} fragments • +{xp} XP • x{bonus} score bonus"
+        return cls._translate(
+            'dc_reward_summary',
+            lang,
+            fragments=cls._format_localized_number(fragments, lang),
+            xp=cls._format_localized_number(xp, lang),
+            bonus=cls._format_bonus_multiplier(bonus, lang),
+        )
 
     @classmethod
     def _enrich_challenge_ui(cls, challenge: dict, lang: str) -> dict:
@@ -1799,18 +1915,10 @@ class DailyChallengeMode(Game):
     def _materialize_texts(cls, challenge: dict, lang: str) -> dict:
         """Challenge sözlüğündeki çok dilli alanları seçip düzleştir."""
         out = dict(challenge)
-        name_val = challenge.get('name')
-        briefing_val = challenge.get('briefing')
-        desc_val = challenge.get('description')
-        eff_val = challenge.get('effects')
-        if isinstance(name_val, dict):
-            out['name'] = name_val.get(lang) or name_val.get('en') or next(iter(name_val.values()), '')
-        if isinstance(briefing_val, dict):
-            out['briefing'] = briefing_val.get(lang) or briefing_val.get('en') or next(iter(briefing_val.values()), '')
-        if isinstance(desc_val, dict):
-            out['description'] = desc_val.get(lang) or desc_val.get('en') or next(iter(desc_val.values()), '')
-        if isinstance(eff_val, dict):
-            out['effects'] = list(eff_val.get(lang) or eff_val.get('en') or [])
+        out['name'] = cls._resolve_challenge_text(challenge, 'name', lang)
+        out['briefing'] = cls._resolve_challenge_text(challenge, 'briefing', lang)
+        out['description'] = cls._resolve_challenge_text(challenge, 'description', lang)
+        out['effects'] = cls._resolve_challenge_effects(challenge, lang)
         return out
 
     @classmethod
@@ -2234,11 +2342,7 @@ class DailyChallengeMode(Game):
     
     def draw_mode_info(self, info_x, info_y):
         """Daily Challenge bilgilerini çiz"""
-        try:
-            from localization import get_language
-            is_en = get_language() == 'en'
-        except Exception:
-            is_en = False
+        from localization import t
 
         # Günlük panelini oyun alanının soluna yerleştir
         board_offset_x, board_offset_y = self.get_board_offset()
@@ -2263,7 +2367,7 @@ class DailyChallengeMode(Game):
 
         cursor = panel_rect.y + pad_top
 
-        title_txt = 'DAILY CHALLENGE' if is_en else 'GÜNLÜK GÖREV'
+        title_txt = t('dc_panel_title')
         title_surf = ui_style.render_fit_text(title_txt, (100, 220, 255), inner_w, 18, bold=True)
         self.screen.blit(title_surf, (inner_x, cursor))
         cursor += title_surf.get_height() + 8
@@ -2314,20 +2418,16 @@ class DailyChallengeMode(Game):
             cursor += briefing_h + 10
 
         if 'target_score' in self.challenge:
-            target_text = str(self.challenge.get('objective_line') or (f"Target: {self.challenge['target_score']} score" if is_en else f"Hedef: {self.challenge['target_score']} puan"))
+            target_text = str(self.challenge.get('objective_line') or t('dc_target_score', value=self.challenge['target_score']))
             progress = min(100, int(self.board.score / self.challenge['target_score'] * 100))
         elif 'target_lines' in self.challenge:
-            target_text = str(self.challenge.get('objective_line') or (f"Target: {self.challenge['target_lines']} lines" if is_en else f"Hedef: {self.challenge['target_lines']} satır"))
+            target_text = str(self.challenge.get('objective_line') or t('dc_target_lines', value=self.challenge['target_lines']))
             progress = min(100, int(self.board.lines_cleared / self.challenge['target_lines'] * 100))
         elif 'target_combo' in self.challenge:
-            target_text = str(self.challenge.get('objective_line') or (
-                f"Target: {self.challenge['target_combo']}-step chain"
-                if is_en else
-                f"Hedef: {self.challenge['target_combo']} adım zincir"
-            ))
+            target_text = str(self.challenge.get('objective_line') or t('dc_target_combo', value=self.challenge['target_combo']))
             progress = min(100, int(self.board.combo / self.challenge['target_combo'] * 100))
         else:
-            target_text = ("Keep going!" if is_en else "Devam et!")
+            target_text = t('dc_keep_going')
             progress = 0
 
         target_h = draw_wrapped_text_lines(target_text, (200, 210, 225), 16, max_lines=2, line_gap=2)
@@ -2345,18 +2445,21 @@ class DailyChallengeMode(Game):
         cursor = progress_rect.bottom + 12
 
         if self.challenge_completed:
-            completed_surf = ui_style.render_fit_text(('✓ COMPLETED!' if is_en else '✓ TAMAMLANDI!'), GREEN, inner_w, 18, bold=True)
+            completed_surf = ui_style.render_fit_text(t('dc_completed'), GREEN, inner_w, 18, bold=True)
             self.screen.blit(completed_surf, (inner_x, cursor))
             cursor += completed_surf.get_height() + 4
 
             bonus_val = self.challenge.get('bonus')
-            bonus_text = (f'Bonus: x{bonus_val}' if is_en else f'Bonus: x{bonus_val}')
+            bonus_text = t(
+                'dc_bonus_multiplier',
+                bonus=self._format_bonus_multiplier(float(bonus_val or 1.0), get_language()),
+            )
             bonus_surf = ui_style.render_fit_text(bonus_text, (255, 200, 50), inner_w, 14, bold=True)
             self.screen.blit(bonus_surf, (inner_x, cursor))
             cursor += bonus_surf.get_height() + 10
 
         if self.side_effects:
-            effects_title = ('Effects:' if is_en else 'Yan Etkiler:')
+            effects_title = t('dc_effects_title')
             effects_title_surf = ui_style.render_fit_text(effects_title, (255, 200, 50), inner_w, 15, bold=True)
             self.screen.blit(effects_title_surf, (inner_x, cursor))
             cursor += effects_title_surf.get_height() + 5
@@ -2387,11 +2490,7 @@ class DailyChallengeMode(Game):
                 cursor += detail_h + 5
 
         if int(getattr(self, 'max_mistakes', 0) or 0) > 0 and not self.challenge_completed:
-            mistakes_text = (
-                f"Mistakes: {self.mistakes_made}/{self.max_mistakes}"
-                if is_en else
-                f"İhlal: {self.mistakes_made}/{self.max_mistakes}"
-            )
+            mistakes_text = t('dc_mistakes', made=self.mistakes_made, max=self.max_mistakes)
             mistakes_h = draw_wrapped_text_lines(mistakes_text, (255, 170, 145), 14, max_lines=2, line_gap=2)
             if mistakes_h > 0:
                 cursor += mistakes_h + 6
@@ -2400,11 +2499,11 @@ class DailyChallengeMode(Game):
             status = self.user_manager.get_daily_status()
             if status:
                 if status.get('completed'):
-                    status_text = ('Today\'s daily is completed' if is_en else 'Bugünün görevi tamamlandı')
+                    status_text = t('dc_today_completed')
                     color = GREEN
                 else:
                     remaining = max(0, DAILY_MAX_FAILURES - status.get('fails', 0))
-                    status_text = (f'Remaining tries: {remaining}/{DAILY_MAX_FAILURES}' if is_en else f'Kalan hak: {remaining}/{DAILY_MAX_FAILURES}')
+                    status_text = t('dc_remaining_tries', remaining=remaining, max=DAILY_MAX_FAILURES)
                     color = GREEN if remaining > 0 else RED
                 status_h = draw_wrapped_text_lines(status_text, color, 14, max_lines=2, line_gap=2)
                 if status_h > 0:
@@ -2413,7 +2512,7 @@ class DailyChallengeMode(Game):
                 # Streak göster
                 streak_val = int(status.get('streak', 0) or 0)
                 if streak_val > 0:
-                    streak_text = (f'Streak: {streak_val} day' + ('s' if streak_val != 1 else '') if is_en else f'Seri: {streak_val} gün')
+                    streak_text = t('dc_streak', days=streak_val)
                     streak_surf = ui_style.render_fit_text(streak_text, (150, 220, 255), inner_w, 13, bold=False)
                     self.screen.blit(streak_surf, (inner_x, cursor))
                     cursor += streak_surf.get_height() + 5
@@ -2421,10 +2520,10 @@ class DailyChallengeMode(Game):
         adaptive_scale = float(self.challenge.get('adaptive_scale', 1.0) or 1.0)
         if abs(adaptive_scale - 1.0) >= 0.01:
             if adaptive_scale > 1.0:
-                adaptive_txt = ('Adaptive: difficulty up' if is_en else 'Adaptif: zorluk arttı')
+                adaptive_txt = t('dc_adaptive_up')
                 adaptive_color = (255, 210, 120)
             else:
-                adaptive_txt = ('Adaptive: difficulty eased' if is_en else 'Adaptif: zorluk yumuşadı')
+                adaptive_txt = t('dc_adaptive_down')
                 adaptive_color = (140, 220, 170)
             adaptive_surf = ui_style.render_fit_text(adaptive_txt, adaptive_color, inner_w, 12, bold=False)
             self.screen.blit(adaptive_surf, (inner_x, cursor))
@@ -2442,7 +2541,9 @@ class DailyChallengeMode(Game):
 
     def restart(self):
         if not self.can_restart():
-            self.show_game_over_warning('Hakkın bitti!', 2.2)
+            from localization import t
+
+            self.show_game_over_warning(t('dc_no_attempts_left'), 2.2)
             return
         self._daily_outcome_recorded = False
         self._score_recorded = False
