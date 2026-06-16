@@ -14,6 +14,13 @@ from background import BackgroundManager
 from constants import NEON_CYAN, NEON_MAGENTA, NEON_ORANGE, NEON_LIME, NEON_BLUE
 
 
+def _resource_path(relative_path: str) -> str:
+    """Frozen bundle ve normal çalışma için kaynak yolu çözümlemesi."""
+    import sys
+    base_path = getattr(sys, '_MEIPASS', os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+    return os.path.join(base_path, relative_path)
+
+
 def _is_cjk_char(ch: str) -> bool:
     """Karakterin CJK (Çince/Japonca/Korece) olup olmadığını kontrol et."""
     cp = ord(ch)
@@ -256,6 +263,7 @@ class RetroStyle:
             'cjk_kr': os.path.join('font', 'paperlogy', 'Paperlogy-4Regular.ttf'),
             'cjk_jp': os.path.join('font', 'ki-cho-jis_0310', 'KikaiChokokuJIS-Md.otf'),
             'cjk_zh': os.path.join('font', 'cinecaption Regular', 'ChildFunSans-CHS.ttf'),
+            'cyrillic': os.path.join('font', 'kyril', 'KyrillaSansSerif-Black.ttf'),
         }
         self._script_font_cache: dict[tuple[str, int, bool], pygame.font.Font] = {}
 
@@ -582,22 +590,43 @@ class RetroStyle:
 
         Dönüş değerleri:
           'latin' → mevcut Latin/temel fontla render edilebilir
-          'cjk_kr' / 'cjk_jp' / 'cjk_zh' → ilgili CJK alt-script
+          'cjk_kr' / 'cjk_jp' / 'cjk_zh' / 'cyrillic' → ilgili alt-script
         """
         if not ch:
             return 'latin'
         cp = ord(ch)
         # Hangul (Korece)
-        if (0xAC00 <= cp <= 0xD7AF) or (0x1100 <= cp <= 0x11FF) or (0x3130 <= cp <= 0x318F):
+        if (0xAC00 <= cp <= 0xD7AF) or (0x1100 <= cp <= 0x11FF) or (0x3130 <= cp <= 0x318F) or (0xA960 <= cp <= 0xA97F) or (0xD7B0 <= cp <= 0xD7FF):
             return 'cjk_kr'
         # Hiragana / Katakana / Katakana Phonetic Ext / Half-width Katakana (Japonca)
         if (0x3040 <= cp <= 0x309F) or (0x30A0 <= cp <= 0x30FF) or (0x31F0 <= cp <= 0x31FF) or (0xFF65 <= cp <= 0xFF9F):
             return 'cjk_jp'
-        # CJK Unified Ideographs ve Extension A/B (Çince/Japonca ortak Kanji)
-        if (0x4E00 <= cp <= 0x9FFF) or (0x3400 <= cp <= 0x4DBF) or (0x20000 <= cp <= 0x2A6DF):
+        # Kiril (Cyrillic)
+        if (0x0400 <= cp <= 0x04FF) or (0x0500 <= cp <= 0x052F):
+            return 'cyrillic'
+        # CJK Unified Ideographs, Extensions ve Compatibility Ideographs (Çince/Japonca ortak Kanji)
+        if (
+            (0x4E00 <= cp <= 0x9FFF) or          # CJK Unified Ideographs
+            (0x3400 <= cp <= 0x4DBF) or          # Extension A
+            (0xF900 <= cp <= 0xFAFF) or          # Compatibility Ideographs
+            (0x20000 <= cp <= 0x2A6DF) or        # Extension B
+            (0x2A700 <= cp <= 0x2B73F) or        # Extension C
+            (0x2B740 <= cp <= 0x2B81F) or        # Extension D
+            (0x2B820 <= cp <= 0x2CEAF) or        # Extension E
+            (0x2CEB0 <= cp <= 0x2EBEF) or        # Extension F
+            (0x30000 <= cp <= 0x3134F) or        # Extension G
+            (0x31350 <= cp <= 0x323AF) or        # Extension H
+            (0x2F800 <= cp <= 0x2FA1F)           # Compatibility Ideographs Supplement
+        ):
             return 'cjk_zh'
-        # CJK Symbols/Punctuation, Compatibility, Fullwidth Forms — varsayılan olarak Çince fontuyla
-        if (0x3000 <= cp <= 0x303F) or (0x3300 <= cp <= 0x33FF) or (0xFF00 <= cp <= 0xFFEF):
+        # CJK Symbols/Punctuation, Compatibility, Bopomofo, Fullwidth Forms
+        if (
+            (0x3000 <= cp <= 0x303F) or 
+            (0x3300 <= cp <= 0x33FF) or 
+            (0xFF00 <= cp <= 0xFFEF) or
+            (0x3100 <= cp <= 0x312F) or          # Bopomofo
+            (0x31A0 <= cp <= 0x31BF)             # Bopomofo Extended
+        ):
             return 'cjk_zh'
         return 'latin'
 
@@ -626,8 +655,7 @@ class RetroStyle:
         try:
             if not pygame.font.get_init():
                 pygame.font.init()
-            project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            full_path = os.path.join(project_root, rel_path)
+            full_path = _resource_path(rel_path)
             if not os.path.exists(full_path):
                 return None
             font = pygame.font.Font(full_path, scaled_size)
@@ -672,7 +700,16 @@ class RetroStyle:
             if script == 'latin':
                 font = latin_font
             else:
-                font = self._get_script_font(script, base_size, bold=bold) or latin_font
+                font = self._get_script_font(script, base_size, bold=bold)
+                if font is None:
+                    # Çapraz CJK fallback zinciri (yüklenemeyen CJK fontunu diğeriyle ikame et)
+                    for alt_script in ('cjk_zh', 'cjk_jp', 'cjk_kr'):
+                        if alt_script != script:
+                            font = self._get_script_font(alt_script, base_size, bold=bold)
+                            if font is not None:
+                                break
+                if font is None:
+                    font = latin_font
             try:
                 total += font.size(seg)[0]
             except Exception:
@@ -688,11 +725,10 @@ class RetroStyle:
         bold: bool = False,
         min_size: int = 10,
     ) -> pygame.Surface:
-        """Aktif dilden bağımsız çoklu-script (Latin + CJK) metin render'ı.
+        """Aktif dilden bağımsız çoklu-script (Latin + CJK + Kiril) metin render'ı.
 
-        Latin karakterler için mevcut tema fontu, CJK karakterler için (Hangul,
-        Hiragana, Katakana, CJK Unified Ideographs) projedeki ilgili font
-        kullanılır. Steam leaderboard isim listesi gibi kullanıcı üretimli
+        Latin karakterler için mevcut tema fontu, CJK ve Kiril karakterler için projedeki
+        ilgili tescilli font'lar kullanılır. Liderlik tablosu gibi kullanıcı üretimli
         metinler dil seçimi Türkçe iken bile doğru render edilir.
         """
         text = str(text or '')
@@ -716,7 +752,16 @@ class RetroStyle:
             if script == 'latin':
                 font = latin_font
             else:
-                font = self._get_script_font(script, size, bold=bold) or latin_font
+                font = self._get_script_font(script, size, bold=bold)
+                if font is None:
+                    # Çapraz CJK fallback zinciri (yüklenemeyen CJK fontunu diğeriyle ikame et)
+                    for alt_script in ('cjk_zh', 'cjk_jp', 'cjk_kr'):
+                        if alt_script != script:
+                            font = self._get_script_font(alt_script, size, bold=bold)
+                            if font is not None:
+                                break
+                if font is None:
+                    font = latin_font
             try:
                 part = font.render(seg, True, color)
             except Exception:
