@@ -97,7 +97,7 @@ def _start_tracked_worker(target: Callable[[], Any], *, name: str) -> threading.
     return worker
 
 
-def _read_app_id_from_runtime_sources(default: str = '4428040') -> str:
+def _read_app_id_from_runtime_sources(default: str = '4635310') -> str:
     candidates: list[Path] = []
 
     env_app_id = str(os.environ.get('STEAM_APP_ID', '') or '').strip()
@@ -611,7 +611,7 @@ def init() -> bool:
         # env var‧ından okur. Onefile build'larda _MEIPASS geçici klasörüne
         # çıkarılır ama CWD exe'nin bulunduğu yerdir — dosya orada olmayabilir.
         # Env var her zaman çalışır.
-        _APP_ID = _read_app_id_from_runtime_sources('4428040')
+        _APP_ID = _read_app_id_from_runtime_sources('4635310')
         # ── Dev mode / Production mode ayırt et ─────────────────────────────────
         # PyInstaller frozen build'da (sys.frozen=True) Steam client AppID'yi
         # zaten sağlar; env override yapmak yanlış AppID enjekte edebilir.
@@ -1754,7 +1754,7 @@ _LB_NAME_TO_ID: dict[str, int] = {
 # NOT: _PARTNER_API_KEY modül import'unda okunur AMA çalışma zamanı
 # güncellemelerini yakalamak için _get_partner_api_key() fonksiyonu kullanılır.
 _PARTNER_API_KEY_CACHED: str | None = None
-_APP_ID_INT = 4428040
+_APP_ID_INT = 4635310
 
 
 def _get_partner_api_key() -> str:

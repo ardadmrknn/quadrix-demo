@@ -5586,7 +5586,8 @@ class Game:
         self.draw_achievement_notifications()
 
         # Duraklatma menüsü: mod overlay'lerinden sonra çiz ki her zaman üstte kalsın.
-        if self.paused and not self.game_over and not self.show_exit_prompt:
+        # Demo skor limiti ekranı etkinken duraklatma menüsünün çizilmesini engelle.
+        if self.paused and not self.game_over and not self.show_exit_prompt and not getattr(self, '_demo_score_cap_active', False):
             if getattr(self, '_pause_settings_active', False):
                 pause_settings = self._ensure_pause_settings_screen()
                 if pause_settings is not None:

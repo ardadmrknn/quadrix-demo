@@ -35,14 +35,14 @@ class TestInitAppIdGating(unittest.TestCase):
             if 'steam_integration' in mod_name:
                 del sys.modules[mod_name]
         # Remove env vars that might leak between tests
-        for key in ('SteamAppId', 'SteamGameId', 'STEAM_DEV_OVERRIDE'):
+        for key in ('SteamAppId', 'SteamGameId', 'STEAM_DEV_OVERRIDE', 'STEAM_APP_ID'):
             os.environ.pop(key, None)
 
     def tearDown(self):
         for mod_name in list(sys.modules.keys()):
             if 'steam_integration' in mod_name:
                 del sys.modules[mod_name]
-        for key in ('SteamAppId', 'SteamGameId', 'STEAM_DEV_OVERRIDE'):
+        for key in ('SteamAppId', 'SteamGameId', 'STEAM_DEV_OVERRIDE', 'STEAM_APP_ID'):
             os.environ.pop(key, None)
         # Remove sys.frozen if we set it
         if hasattr(sys, 'frozen'):
@@ -85,8 +85,8 @@ class TestInitAppIdGating(unittest.TestCase):
 
         self.assertEqual(
             os.environ.get('SteamAppId'),
-            '4428040',
-            "Dev mode: SteamAppId should be set to '4428040'"
+            '4635310',
+            "Dev mode: SteamAppId should be set to '4635310'"
         )
 
     def test_frozen_mode_skips_env(self):
@@ -115,7 +115,7 @@ class TestInitAppIdGating(unittest.TestCase):
 
         self.assertEqual(
             os.environ.get('SteamAppId'),
-            '4428040',
+            '4635310',
             "STEAM_DEV_OVERRIDE=1 should force dev mode even when frozen"
         )
 
