@@ -1710,6 +1710,53 @@ class Menu:
 
         self._dashboard_flavor_prewarm_signature = signature
 
+    def _get_localized_recommended_ribbon(self) -> pygame.Surface | None:
+        """Get the localized 'recommended' ribbon image, with fallback to English."""
+        lang = str(get_language() or 'tr').lower()
+        if not hasattr(self, '_recommended_ribbon_cache'):
+            self._recommended_ribbon_cache = {}
+
+        if lang in self._recommended_ribbon_cache:
+            return self._recommended_ribbon_cache[lang]
+
+        _RECOMMEND_RIBBON_FILES = {
+            'tr': 'mastery_recommend_tr.png',
+            'en': 'mastery_recommend_ing.png',
+            'de': 'mastery_recommend_almanca.png',
+            'fr': 'mastery_recommend_france.png',
+            'es': 'mastery_recommend_ispanyolcs.png',
+            'it': 'mastery_recommend_italy.png',
+            'pt': 'mastery_recommend_portekizce.png',
+            'ja': 'mastery_recommend_japonca.png',
+            'zh': 'mastery_recommend_basit_çince.png',
+            'ko': 'mastery_recommend_korece.png',
+            'ru': '17.png',
+        }
+
+        filename = _RECOMMEND_RIBBON_FILES.get(lang) or _RECOMMEND_RIBBON_FILES.get('en')
+        if not filename:
+            return None
+
+        path = ROOT_DIR / 'assets' / 'main_menu_deneme' / filename
+        try:
+            if path.exists():
+                surf = pygame.image.load(str(path)).convert_alpha()
+                self._recommended_ribbon_cache[lang] = surf
+                return surf
+            else:
+                # Fallback to English file
+                fallback_filename = _RECOMMEND_RIBBON_FILES.get('en')
+                if fallback_filename:
+                    fallback_path = ROOT_DIR / 'assets' / 'main_menu_deneme' / fallback_filename
+                    if fallback_path.exists():
+                        surf = pygame.image.load(str(fallback_path)).convert_alpha()
+                        self._recommended_ribbon_cache[lang] = surf
+                        return surf
+        except Exception:
+            pass
+
+        return None
+
     def _render_main_dashboard_tile(
         self,
         target_surface: pygame.Surface,
@@ -2127,6 +2174,24 @@ class Menu:
         if panel_context and panel_key and not pvp_micro_prepass and not coop_micro_prepass:
             self._draw_panel_micro_content(draw_rect, panel_key, accent_color, panel_context, hover, target_surface=target_surface)
 
+        # Navigasyon kaynağına göre panelin aktiflik durumu (hover/selected)
+        nav_source = getattr(self, '_nav_source', 'mouse')
+        is_active = hover if nav_source == 'mouse' else (selected or hover)
+
+        # Diğer paneller için %50 karartma (dimming overlay)
+        is_always_bright = panel_key in ('new_gen_tetris', 'tutorial_mode', 'exit')
+        if not is_always_bright and not is_active:
+            # Optimize: Cache the dim surface by size
+            if not hasattr(self, '_dim_surface_cache'):
+                self._dim_surface_cache = {}
+            dim_size = draw_rect.size
+            dim_surf = self._dim_surface_cache.get(dim_size)
+            if dim_surf is None:
+                dim_surf = pygame.Surface(dim_size, pygame.SRCALPHA)
+                pygame.draw.rect(dim_surf, (0, 0, 0, 110), dim_surf.get_rect(), border_radius=14)
+                self._dim_surface_cache[dim_size] = dim_surf
+            target_surface.blit(dim_surf, draw_rect.topleft)
+
         return draw_rect
 
     def _draw_dashboard_tile_flavor(
@@ -2150,20 +2215,28 @@ class Menu:
             scaled_back_result = self._get_scaled_fit_full_dashboard_flavor(panel_key, rect, flavor, hover)
             if scaled_back_result is not None:
                 scaled_back, back_zone = scaled_back_result
-                cover_w, cover_h = scaled_back.get_size()
-                back_x = back_zone.centerx - cover_w // 2
-                back_y = back_zone.centery - cover_h // 2
+                
+                # Optimize: Cache the final masked flavor surface
+                full_flavor_key = ('full_flavor_surf', panel_key, back_zone.size, bool(hover))
+                flavor_surf = self._tile_flavor_scaled_cache.get(full_flavor_key)
+                if flavor_surf is None:
+                    cover_w, cover_h = scaled_back.get_size()
+                    back_x = back_zone.centerx - cover_w // 2
+                    back_y = back_zone.centery - cover_h // 2
 
-                corner_radius = max(8, s(12))
-                flavor_surf = pygame.Surface(back_zone.size, pygame.SRCALPHA)
-                flavor_surf.blit(scaled_back, (back_x - back_zone.x, back_y - back_zone.y))
-                hover_alpha = 90 if hover else 98
-                flavor_overlay = pygame.Surface(back_zone.size, pygame.SRCALPHA)
-                flavor_overlay.fill((0, 0, 0, hover_alpha))
-                flavor_surf.blit(flavor_overlay, (0, 0))
-                corner_mask = pygame.Surface(back_zone.size, pygame.SRCALPHA)
-                pygame.draw.rect(corner_mask, (255, 255, 255, 255), corner_mask.get_rect(), border_radius=corner_radius)
-                flavor_surf.blit(corner_mask, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+                    corner_radius = max(8, s(12))
+                    flavor_surf = pygame.Surface(back_zone.size, pygame.SRCALPHA)
+                    flavor_surf.blit(scaled_back, (back_x - back_zone.x, back_y - back_zone.y))
+                    hover_alpha = 90 if hover else 98
+                    flavor_overlay = pygame.Surface(back_zone.size, pygame.SRCALPHA)
+                    flavor_overlay.fill((0, 0, 0, hover_alpha))
+                    flavor_surf.blit(flavor_overlay, (0, 0))
+                    corner_mask = pygame.Surface(back_zone.size, pygame.SRCALPHA)
+                    pygame.draw.rect(corner_mask, (255, 255, 255, 255), corner_mask.get_rect(), border_radius=corner_radius)
+                    flavor_surf.blit(corner_mask, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+                    
+                    self._tile_flavor_scaled_cache[full_flavor_key] = flavor_surf
+                
                 target.blit(flavor_surf, back_zone.topleft)
             return
 
@@ -3807,6 +3880,32 @@ class Menu:
             drawn_panel_rects[action_key] = draw_rect
             if is_selected and action_key not in ('pvp_2_players', 'coop_mode'):
                 pygame.draw.rect(self.screen, (*accent[:3], 220), draw_rect, 2, border_radius=16)
+
+        # En üst katmanda Mastery Recommended Ribbon çizimi (Dinamik yerelleştirilmiş rozet)
+        recommended_ribbon = self._get_localized_recommended_ribbon()
+        if 'new_gen_tetris' in drawn_panel_rects and recommended_ribbon:
+            card_rect = drawn_panel_rects['new_gen_tetris']
+            orig_w, orig_h = recommended_ribbon.get_size()
+            sp = lambda v, minimum=1: max(minimum, int(round(v * scale)))
+            
+            # Boyut %10 düşürüldü: sp(195) -> sp(175)
+            target_w = sp(175)
+            target_h = int(target_w * (orig_h / orig_w))
+            
+            if not hasattr(self, '_recommended_ribbon_scaled_cache'):
+                self._recommended_ribbon_scaled_cache = {}
+            
+            lang = str(get_language() or 'tr').lower()
+            cache_key = (lang, target_w, target_h)
+            scaled_img = self._recommended_ribbon_scaled_cache.get(cache_key)
+            if scaled_img is None:
+                scaled_img = pygame.transform.smoothscale(recommended_ribbon, (target_w, target_h))
+                self._recommended_ribbon_scaled_cache[cache_key] = scaled_img
+                
+            # Dinamik merkezleme: Sol üst köşeyi yeşil kılavuza uygun açıyla kesecek şekilde ve 2px sol-üste kaydırılmış
+            dest_x = card_rect.x - int(target_w * 0.30) - 2
+            dest_y = card_rect.y - int(target_h * 0.30) - 2
+            self.screen.blit(scaled_img, (dest_x, dest_y))
 
         if not getattr(self, '_suppress_embedded_leaderboard_panel', False):
             self._draw_mystery_leaderboard_panel(mystery_lb_rect)
