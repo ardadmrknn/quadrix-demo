@@ -441,6 +441,106 @@ ACHIEVEMENT_REWARDS = {
 }
 
 
+# Başarım görsel ikonlarının bulunduğu klasör.
+# Açık (kazanılmış)  : <slug>.png
+# Kilitli (kazanılmamış): <slug>_no.png
+ACHIEVEMENT_ICON_DIR = 'assets/basarim_icons'
+
+# Başarım ID -> ikon dosya adı (slug) eşlemesi.
+# Dosyalar assets/basarim_icons içinde Türkçe slug adlarıyla bulunur.
+ACHIEVEMENT_ICON_SLUGS = {
+    # Başlangıç
+    'first_game': 'ilk_adim',
+    'first_line': 'ilk_satir',
+    'first_tetris': 'ilk_quadrix',
+    # Skor
+    'score_1k': 'baslangic',
+    'score_10k': 'deneyimli',
+    'score_50k': 'usta',
+    'score_100k': 'efsane',
+    # Satır
+    'lines_10': 'temizlikci',
+    'lines_50': 'supurge',
+    'lines_100': 'temizlik_robotu',
+    'lines_200': 'temizlik_mechasi',
+    # Quadrix
+    'tetris_5': 'quadrix_ustasi',
+    'tetris_10': 'quadrix_tanrisi',
+    # Seviye
+    'level_5': 'hizlaniyor',
+    'level_10': 'hiz_canavari',
+    'level_15': 'supersonik',
+    'level_20': 'isik_hizi',
+    # Oyun sayısı
+    'games_10': 'sadik_oyuncu',
+    'games_50': 'mudavim',
+    'games_100': 'adamin_dibi',
+    # Kombo
+    'combo_5': 'kombo_ustasi',
+    # PvP
+    'pvp_first_win': 'ilk_zafer',
+    'pvp_10_wins': 'savasci',
+    # Kampanya yıldız
+    'campaign_stars_10': 'yildiz_toplayici',
+    'campaign_stars_30': 'yildiz_avcisi',
+    'campaign_stars_50': 'yildiz_ustasi',
+    'campaign_stars_100': 'yildizlarin_tanrisi',
+    'campaign_level50_3star': 'yari_mukemmel',
+    'campaign_level100_3star': 'efsanevi_kahraman',
+    # Sprint
+    'sprint_sub60': 'hizli_parmaklar',
+    'sprint_sub45': 'sprint_uzmani',
+    # Ultra
+    'ultra_50k': 'ultra_usta',
+    'ultra_100k': 'ultra_efsane',
+    # Survival
+    'survival_5min': 'hayatta_kalan',
+    'survival_10min': 'sag_kalan',
+    # Cascade
+    'cascade_chain_10': 'zincir_reaksiyonu',
+    # Hardcore
+    'hardcore_level10': 'hardcore_sever',
+    # Daily Challenge
+    'daily_7_streak': 'haftalik_rutin',
+    'daily_30_streak': 'disiplin_ustasi',
+    # Wide
+    'wide_200_lines': 'genis_sever',
+}
+
+# Çözülmüş ikon yolu cache'i: (achievement_id, locked) -> path | None
+_ACH_ICON_PATH_CACHE: dict[tuple[str, bool], "str | None"] = {}
+
+
+def get_achievement_icon_path(achievement_id: str, *, locked: bool = False) -> "str | None":
+    """Başarım için PNG ikon dosya yolunu döndür (yoksa None).
+
+    Açık (kazanılmış) ikon  : ``assets/basarim_icons/<slug>.png``
+    Kilitli (kazanılmamış)  : ``assets/basarim_icons/<slug>_no.png``
+    PyInstaller paketi içinde de doğru çözülür (``resource_path``).
+    """
+    cache_key = (achievement_id, locked)
+    if cache_key in _ACH_ICON_PATH_CACHE:
+        return _ACH_ICON_PATH_CACHE[cache_key]
+
+    slug = ACHIEVEMENT_ICON_SLUGS.get(achievement_id)
+    if slug is None:
+        _ACH_ICON_PATH_CACHE[cache_key] = None
+        return None
+
+    filename = f'{slug}_no.png' if locked else f'{slug}.png'
+    path = resource_path(os.path.join(ACHIEVEMENT_ICON_DIR, filename))
+    resolved = path if os.path.exists(path) else None
+
+    # Kilitli ikon bulunamazsa açık ikona düş (en azından bir görsel göster)
+    if resolved is None and locked:
+        resolved = get_achievement_icon_path(achievement_id, locked=False)
+
+    _ACH_ICON_PATH_CACHE[cache_key] = resolved
+    return resolved
+
+# Tüm başarılar
+
+
 class AchievementManager:
     """Başarı yöneticisi"""
     

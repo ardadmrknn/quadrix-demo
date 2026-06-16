@@ -7367,6 +7367,8 @@ class AchievementScreen:
         self.screen = screen
         self.achievement_manager = achievement_manager
         self._font_lang = None
+        # Başarım PNG ikon cache'i: (id, unlocked, size) -> Surface | False
+        self._ach_icon_cache: dict = {}
         self._cached_font_scale: float = 0.0
         self.font_name = retro_style.get_font(30)
         self.font_desc = retro_style.get_font(20, bold=False)
@@ -7397,6 +7399,32 @@ class AchievementScreen:
 
     def _s(self, value: int | float, minimum: int = 1) -> int:
         return max(minimum, int(round(value * self._ui_scale())))
+
+    def _load_achievement_icon(self, achievement_id: str, unlocked: bool, size: int) -> 'pygame.Surface | None':
+        """Başarım PNG ikonunu yükle, boyutlandır ve cache'le.
+
+        Açık (kazanılmış) başarımlarda <slug>.png, kilitlilerde <slug>_no.png
+        kullanılır (assets/basarim_icons). Dosya yoksa None döner (UI emoji/vektör
+        fallback'e geçer).
+        """
+        size = max(8, int(size))
+        cache_key = (achievement_id, bool(unlocked), size)
+        cached = self._ach_icon_cache.get(cache_key)
+        if cached is not None:
+            return cached or None  # False -> None
+
+        from achievements import get_achievement_icon_path
+        path = get_achievement_icon_path(achievement_id, locked=not unlocked)
+        if not path:
+            self._ach_icon_cache[cache_key] = False
+            return None
+        try:
+            img = load_image(path, convert_alpha=True, size=(size, size))
+            self._ach_icon_cache[cache_key] = img
+            return img
+        except Exception:
+            self._ach_icon_cache[cache_key] = False
+            return None
 
     def _refresh_fonts_for_language(self, force: bool = False) -> None:
         """Aktif dile göre başarı ekranı fontlarını güncelle.
@@ -7692,7 +7720,8 @@ class AchievementScreen:
             return trimmed + ell
 
         def _draw_achievement_icon(slot_rect: pygame.Rect, achievement_id: str, unlocked: bool) -> None:
-            """UI-safe başarı ikonu çiz. Önce Apple emoji PNG dene, yoksa vektörel fallback."""
+            """UI-safe başarı ikonu çiz. Önce özel PNG ikon (açık/kilitli),
+            sonra Apple emoji PNG, en son vektörel fallback."""
             border = UIColors.NEON_CYAN if unlocked else UIColors.GLASS_BORDER[:3]
             alpha = 205 if unlocked else 165
             retro_style.draw_glass_panel(
@@ -7702,6 +7731,13 @@ class AchievementScreen:
                 border_color=border,
                 glow=unlocked,
             )
+
+            # 1) Özel başarım PNG ikonu (açık: renkli, kilitli: gri)
+            icon_size = max(16, min(slot_rect.width, slot_rect.height) - 8)
+            custom_icon = self._load_achievement_icon(achievement_id, unlocked, icon_size)
+            if custom_icon is not None:
+                self.screen.blit(custom_icon, custom_icon.get_rect(center=slot_rect.center))
+                return
 
             # PNG emoji dene
             from achievements import ACHIEVEMENTS as _ACH_DEFS
