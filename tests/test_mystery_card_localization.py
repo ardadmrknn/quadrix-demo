@@ -47,7 +47,7 @@ def test_card_variants_resolve_localization_group_and_placeholders():
         assert get_card_description(speed_burst_card) == 'For 30 seconds, pieces fall faster. Every cleared line earns 1.5x points.'
 
         assert get_card_title(freeze_drop_card) == 'Final Drop'
-        assert get_card_description(freeze_drop_card) == 'Press F to use: The falling piece floats in place for 15 seconds. During that time it can only move left/right or hard drop.'
+        assert get_card_description(freeze_drop_card) == 'The falling piece floats in place for 15 seconds. During that time it can only move left/right or hard drop.'
     finally:
         set_language(previous_language)
 
@@ -92,7 +92,7 @@ def test_pending_choices_keep_freeze_duration_for_localized_overlay_text():
 
         assert len(choices) == 1
         assert choices[0]['freeze_duration'] == 15
-        assert get_card_description(choices[0]) == 'Press F to use: The falling piece floats in place for 15 seconds. During that time it can only move left/right or hard drop.'
+        assert get_card_description(choices[0]) == 'The falling piece floats in place for 15 seconds. During that time it can only move left/right or hard drop.'
     finally:
         set_language(previous_language)
 
@@ -258,7 +258,7 @@ def test_mystery_sync_active_cards_localizes_freeze_drop_status_and_marks_ready(
 
         freeze_card = next(card for card in mode.card_manager.active_cards if card['id'] == 'freeze_drop')
         assert freeze_card['title'] == 'Final Drop'
-        assert freeze_card['description'] == 'Press F to use: The falling piece floats in place for 15 seconds. During that time it can only move left/right or hard drop.'
+        assert freeze_card['description'] == 'The falling piece floats in place for 15 seconds. During that time it can only move left/right or hard drop.'
         assert freeze_card['status'] == 'F: 3 Uses'
         assert freeze_card['status_state'] == 'hazir'
     finally:
