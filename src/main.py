@@ -1648,6 +1648,7 @@ def main():
     # ── Steam SDK başlat (Steam üzerinden çalışıyorsa) ──────────────────────
     _steam_init_ok = False
     _steam_user_set = False  # Steam profili başarıyla seçildiyse True
+    _is_new_steam_user = False
     try:
         import steam_integration as _steam
         _steam_init_ok = _steam.init()
@@ -1682,6 +1683,7 @@ def main():
                     ok_c, _ = user_manager.create_user(_username, avatar='🎮', steam_id=_steam_id_str)
                     if ok_c:
                         _target_user = _username
+                        _is_new_steam_user = True
                         print(f"[Steam] Yeni profil oluşturuldu: {_target_user}")
 
                 # 4. Her Steam başlatmada Steam profilini güçlü seç
@@ -2267,6 +2269,40 @@ def main():
         nonlocal running, state, confirm_exit, confirm_daily, daily_prompt_selected, daily_prompt_challenge, game, pvp_game, coop_game, guide_screen
         nonlocal cheat_buffer, cheat_last_key_ms
         nonlocal coop_level_select, _coop_campaign_needs_refresh, leaderboard_trailer_screen
+        nonlocal _is_new_steam_user
+
+        if _is_new_steam_user:
+            _is_new_steam_user = False
+            user_manager.set_tutorial_completed(False)
+            tutorial_choice = _run_popup_and_sync_screen(_show_tutorial_prompt)
+            if tutorial_choice in ('quick_start', 'full_academy'):
+                menu_sound.stop_music()
+                if tutorial_choice == 'quick_start':
+                    tutorial_kwargs = dict(
+                        launch_lesson_id='qs_move_lane',
+                        lesson_flow_scope='chapter',
+                    )
+                else:
+                    tutorial_kwargs = dict(lesson_flow_scope='full')
+                game = TutorialMode(
+                    'Normal',
+                    settings_screen.sound_enabled,
+                    settings_screen.effects_enabled,
+                    achievement_manager,
+                    theme_manager,
+                    screen,
+                    fullscreen,
+                    settings_manager,
+                    user_manager,
+                    sound_manager=menu_sound,
+                    score_manager=score_manager,
+                    block_style_manager=block_style_manager,
+                    **tutorial_kwargs
+                )
+                state = 'game'
+                return False
+            else:
+                user_manager.dismiss_tutorial_prompt()
 
         for event in pygame.event.get():
             # Global M tuşu - Sessiz mod
