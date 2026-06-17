@@ -4530,6 +4530,17 @@ class PvPGame:
                             pass
                     self.draw_textured_block(block_x, block_y, block_size, draw_color, tex, slice_info)
 
+                    grounded = self.p1_grounded if player_idx == 1 else self.p2_grounded
+                    if grounded:
+                        lock_timer = self.p1_lock_timer if player_idx == 1 else self.p2_lock_timer
+                        effective_delay = 800 if current_piece.y <= 2 else getattr(self, 'lock_delay', 500)
+                        ratio = min(1.0, max(0.0, lock_timer / effective_delay))
+                        alpha = int(ratio * 150)
+                        if alpha > 0:
+                            glow_surf = pygame.Surface((int(block_size), int(block_size)), pygame.SRCALPHA)
+                            glow_surf.fill((255, 255, 255, alpha))
+                            self.screen.blit(glow_surf, (int(block_x), int(block_y)))
+
         # ===== SATIR TEMİZLEME EFEKTLERİ (ANA OYUNLA BİREBİR AYNI) =====
         flash_rows = self.p1_line_flash_rows if board is self.board1 else self.p2_line_flash_rows
         glow_alpha = self.p1_line_glow_alpha if board is self.board1 else self.p2_line_glow_alpha

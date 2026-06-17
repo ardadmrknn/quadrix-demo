@@ -6636,6 +6636,17 @@ class OnlinePvPGame:
                                 slice_info,
                             )
 
+                            if piece is self.my_piece:
+                                grounded = not board.is_valid_position(piece, dy=1)
+                                if grounded:
+                                    effective_delay = 800 if piece.y <= 2 else getattr(self, 'lock_delay', 500)
+                                    ratio = min(1.0, max(0.0, self.lock_timer / effective_delay))
+                                    alpha = int(ratio * 150)
+                                    if alpha > 0:
+                                        glow_surf = pygame.Surface((int(cell_size - 2), int(cell_size - 2)), pygame.SRCALPHA)
+                                        glow_surf.fill((255, 255, 255, alpha))
+                                        self.screen.blit(glow_surf, (int(px + 1), int(py + 1)))
+
         if self.my_line_sweep_rows and self.my_line_sweep_active:
             progress = self.my_line_sweep_progress
             valid_rows = sorted({r for r in self.my_line_sweep_rows if 0 <= r < BOARD_HEIGHT})

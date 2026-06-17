@@ -3341,8 +3341,8 @@ class CoopGame:
         self._draw_ghost('P2', ox, oy, cs)
 
         # Aktif parçalar
-        self._draw_piece(self.p1_current_piece, ox, oy, cs)
-        self._draw_piece(self.p2_current_piece, ox, oy, cs)
+        self._draw_piece(self.p1_current_piece, ox, oy, cs, 'P1')
+        self._draw_piece(self.p2_current_piece, ox, oy, cs, 'P2')
 
         # Board frame (PNG)
         if not self._draw_custom_frame(board_rect, "board_frame.png", padding=88, hole_punch=True):
@@ -3630,7 +3630,7 @@ class CoopGame:
         self.screen.blit(cached['glow'], (mx - glow_w // 2, oy))
         self.screen.blit(cached['line'], (mx - 1, oy))
 
-    def _draw_piece(self, piece: Piece | None, ox, oy, cs) -> None:
+    def _draw_piece(self, piece: Piece | None, ox, oy, cs, player: str = 'P1') -> None:
         if piece is None:
             return
         current_texture = getattr(piece, 'texture_surface', None)
@@ -3659,6 +3659,17 @@ class CoopGame:
                         pass
                 slice_info = self._make_texture_slice(piece, local_x, local_y, piece_width, piece_height)
                 self.draw_textured_block(block_x, block_y, block_size, draw_color, current_texture, slice_info)
+
+                grounded = self.p1_grounded if player == 'P1' else self.p2_grounded
+                if grounded:
+                    lock_timer = self.p1_lock_timer if player == 'P1' else self.p2_lock_timer
+                    effective_delay = self._effective_lock_delay_for_player(player, piece)
+                    ratio = min(1.0, max(0.0, lock_timer / effective_delay))
+                    alpha = int(ratio * 150)
+                    if alpha > 0:
+                        glow_surf = pygame.Surface((int(block_size), int(block_size)), pygame.SRCALPHA)
+                        glow_surf.fill((255, 255, 255, alpha))
+                        self.screen.blit(glow_surf, (int(block_x), int(block_y)))
 
     def _draw_ghost(self, player: str, ox, oy, cs) -> None:
         piece = self.p1_current_piece if player == 'P1' else self.p2_current_piece

@@ -4460,9 +4460,12 @@ class Game:
                 except Exception:
                     pass
             soft_prev = bool(getattr(self, '_soft_drop_held', False))
-            if soft_now and not soft_prev:
-                self.fall_speed = FAST_FALL_SPEED
-            elif (not soft_now) and soft_prev:
+            if soft_now:
+                settings_m = getattr(self, 'settings_manager', None)
+                soft_ms = int(settings_m.get('soft_drop_speed', FAST_FALL_SPEED)) if settings_m else int(FAST_FALL_SPEED)
+                soft_ms = max(20, min(1000, soft_ms))
+                self.fall_speed = soft_ms
+            elif soft_prev and not soft_now:
                 self.fall_speed = self.get_current_speed()
             self._soft_drop_held = soft_now
         except Exception:
