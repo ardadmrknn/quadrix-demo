@@ -592,9 +592,9 @@ try:
         )
 except Exception:
     _PET_SLOT = 'line_sweep_pet'
-    def _is_default_pet(pet): return True
+    def _is_default_pet(pet): return pet in ('luna_cat', 'cat', 'lunacat')
     def _load_pet_frames(*args): return []
-    def _normalize_pet(pet): return 'luna_cat'
+    def _normalize_pet(pet): return 'pet_scuba_cat'
 
 _LINE_SWEEP_THEME_ALIASES: dict[str, str] = {
     'rainbow': 'rainbow',
@@ -757,9 +757,9 @@ def _resolve_profile(user_manager, profile: dict | None) -> dict | None:
 
 def get_equipped_pet(user_manager=None, profile: dict | None = None) -> str:
     """Evcil hayvanı çözer. Demo sürümünde kozmetik pet takma kapalı olduğundan
-    her zaman varsayılan olarak 'luna_cat' döndürür.
+    her zaman varsayılan olarak 'pet_scuba_cat' döndürür.
     """
-    return 'luna_cat'
+    return 'pet_scuba_cat'
 
 
 def _get_line_sweep_palette(theme: str) -> list[tuple[int, int, int]]:

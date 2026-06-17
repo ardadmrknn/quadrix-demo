@@ -35,7 +35,7 @@ try:
     from sweep_effects import get_equipped_pet
 except Exception:
     def get_equipped_pet(*args, **kwargs):
-        return 'luna_cat'
+        return 'pet_scuba_cat'
 from line_clear_feedback import (
     queue_wave_effects as _queue_wave_effects,
     update_wave_effects as _update_wave_effects,

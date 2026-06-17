@@ -1,0 +1,11 @@
+pet_id: scuba_cat
+generated: 2026-06-16
+generator: tools/generate_pet_assets.py
+frame_count: 34
+source_frames: scuba_cat_src/00.png, scuba_cat_src/01.png, scuba_cat_src/02.png, scuba_cat_src/03.png, scuba_cat_src/04.png, scuba_cat_src/05.png, scuba_cat_src/06.png, scuba_cat_src/07.png, scuba_cat_src/08.png, scuba_cat_src/09.png, scuba_cat_src/10.png, scuba_cat_src/11.png, scuba_cat_src/12.png, scuba_cat_src/13.png, scuba_cat_src/14.png, scuba_cat_src/15.png, scuba_cat_src/16.png, scuba_cat_src/17.png, scuba_cat_src/18.png, scuba_cat_src/19.png, scuba_cat_src/20.png, scuba_cat_src/21.png, scuba_cat_src/22.png, scuba_cat_src/23.png, scuba_cat_src/24.png, scuba_cat_src/25.png, scuba_cat_src/26.png, scuba_cat_src/27.png, scuba_cat_src/28.png, scuba_cat_src/29.png, scuba_cat_src/30.png, scuba_cat_src/31.png, scuba_cat_src/32.png, scuba_cat_src/33.png (assets/pets/)
+white_bg_removed: False
+black_bg_removed: True
+sizing: per-frame body crop, uniform scale (tallest body -> 480px), bottom-aligned
+max_source_body_h: 458
+output_size (w,h): 378x480
+note: Scuba Cat animated meme pet, black bg removed.

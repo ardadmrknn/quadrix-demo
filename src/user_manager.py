@@ -887,7 +887,8 @@ class UserManager:
         owned_set = {str(entry) for entry in owned}
         # Bundled free defaults can be equipped without ownership: the rainbow
         # trace and the default Luna-Cat pet. Everything else must be owned.
-        if cosmetic_key not in ('luna_rainbow', 'luna_cat', DEFAULT_BLOCK_SKIN_VALUE) and cosmetic_key not in owned_set:
+        # We also whitelist 'pet_scuba_cat' as the new default pet.
+        if cosmetic_key not in ('luna_rainbow', 'luna_cat', 'pet_scuba_cat', DEFAULT_BLOCK_SKIN_VALUE) and cosmetic_key not in owned_set:
             return False
 
         equipped[slot_key] = cosmetic_key
