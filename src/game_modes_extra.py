@@ -929,7 +929,7 @@ class MysteryCardManager:
     # değil. Önce rarity seçilir, sonra o rarity içinden uniform bir kart
     # alınır. Bu sayede "common kart adedi az, legendary kart adedi çok"
     # gibi katalog dengesizlikleri olasılığı bozmaz.
-    # GEÇİCİ AYAR: Mor ve Sarı olasılıklarını artır (Demo sürümü için %2 daha düşük - Eski haline getirmek için bu bloğu geri yükleyin)
+    # GEÇİCİ AYAR: Dengeli ve yelpazeyi genişleten kademeli şans şablonu (Eski haline getirmek için bu bloğu geri yükleyin)
     # RARITY_WEIGHT_ANCHORS: Dict[int, Dict[str, float]] = {
     #     1:  {'common': 70.0, 'uncommon': 22.0, 'rare':  7.0, 'epic':  0.9, 'legendary': 0.1},
     #     5:  {'common': 58.0, 'uncommon': 25.0, 'rare': 13.0, 'epic':  3.0, 'legendary': 1.0},
@@ -937,10 +937,12 @@ class MysteryCardManager:
     #     20: {'common': 30.0, 'uncommon': 25.0, 'rare': 22.0, 'epic': 13.0, 'legendary': 10.0},
     # }
     RARITY_WEIGHT_ANCHORS: Dict[int, Dict[str, float]] = {
-        1:  {'common': 49.0, 'uncommon': 18.0, 'rare':  7.0, 'epic': 15.5, 'legendary': 10.5},
-        5:  {'common': 44.0, 'uncommon': 17.5, 'rare': 10.0, 'epic': 18.0, 'legendary': 10.5},
-        10: {'common': 39.0, 'uncommon': 18.0, 'rare': 12.0, 'epic': 20.5, 'legendary': 10.5},
-        20: {'common': 29.0, 'uncommon': 18.0, 'rare': 17.0, 'epic': 23.0, 'legendary': 13.0},
+        1:  {'common': 70.0, 'uncommon': 25.0, 'rare':  5.0, 'epic':  0.0, 'legendary': 0.0},
+        5:  {'common': 62.5, 'uncommon': 25.0, 'rare': 10.0, 'epic':  2.5, 'legendary': 0.0},
+        10: {'common': 55.0, 'uncommon': 25.0, 'rare': 15.0, 'epic':  5.0, 'legendary': 0.0},
+        13: {'common': 45.0, 'uncommon': 25.0, 'rare': 18.0, 'epic': 10.0, 'legendary': 2.0},
+        17: {'common': 35.0, 'uncommon': 25.0, 'rare': 20.0, 'epic': 13.0, 'legendary': 7.0},
+        20: {'common': 30.0, 'uncommon': 25.0, 'rare': 20.0, 'epic': 15.0, 'legendary': 10.0},
     }
 
     # Bucket key normalizasyonu için kabul edilen rarity etiketleri.

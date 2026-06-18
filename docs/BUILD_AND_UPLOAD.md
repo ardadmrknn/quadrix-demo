@@ -49,8 +49,10 @@ macOS tarafinda local override bump yok; runtime dogrudan `src/version_base.py` 
 
 - `packaging/specs/tetris.spec`
 - `packaging/specs/tetris_demo.spec`
+- `packaging/specs/tetris_demo_linux.spec`
 - `packaging/specs/tetris_demo_macos_allinone.spec`
 - `packaging/specs/tetris_en.spec`
+- `packaging/specs/tetris_linux.spec`
 - `packaging/specs/tetris_macos.spec`
 - `packaging/specs/tetris_macos_allinone.spec`
 - `packaging/specs/tetris_playtest.spec`
