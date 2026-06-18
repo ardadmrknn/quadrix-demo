@@ -200,9 +200,9 @@ def test_reset_clears_card_progression_state():
 # State capture for restore (time capsule path)
 # ---------------------------------------------------------------------------
 
-def test_card_xp_state_survives_capture_and_restore_round_trip():
-    """The capture/restore plumbing in MysteryMode must preserve card_xp,
-    card_level, and card_xp_to_next so time capsule does not award or steal
+def test_card_xp_state_does_not_change_on_restore():
+    """The capture/restore plumbing in MysteryMode must NOT change card_xp,
+    card_level, and card_xp_to_next since time capsule should not affect
     progression."""
     import pygame
 
@@ -248,6 +248,7 @@ def test_card_xp_state_survives_capture_and_restore_round_trip():
 
     mode._restore_time_capsule_state(data)
 
-    assert mgr.card_xp == 5
-    assert mgr.card_level == 4
-    assert mgr.card_xp_to_next == MysteryCardManager._compute_xp_to_next(4)
+    # Artik bu durumlar zaman kapsülü geri yuklemesiyle eski haline donmez, mevcuttaki hallerini korur.
+    assert mgr.card_xp == 0
+    assert mgr.card_level == 1
+    assert mgr.card_xp_to_next == MysteryCardManager._compute_xp_to_next(1)

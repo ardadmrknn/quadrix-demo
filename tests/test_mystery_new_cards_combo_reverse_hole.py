@@ -354,7 +354,7 @@ def test_reverse_debt_lock_counter_decrements_and_restores_lock_delay(monkeypatc
     assert 'reverse_debt' not in mode._active_effect_visuals
 
 
-def test_reverse_debt_state_survives_time_capsule_roundtrip():
+def test_reverse_debt_state_does_not_change_on_time_capsule_restore():
     extra, _, MysteryMode, Board = _import_mystery()
     mode = MysteryMode.__new__(MysteryMode)
     mode.board = Board()
@@ -375,18 +375,14 @@ def test_reverse_debt_state_survives_time_capsule_roundtrip():
     mode._hole_hunter_charges = 0
     mode._restore_time_capsule_state(data)
 
-    assert mode._reverse_debt_remaining == 3
+    # Artik bu durumlar zaman kapsülü geri yuklemesiyle eski haline donmez, mevcuttaki hallerini korur.
+    assert mode._reverse_debt_remaining == 0
     assert mode._reverse_debt_total == 5
-    assert mode._combo_insurance_armed is True
-    assert mode._hole_hunter_charges == 1
+    assert mode._combo_insurance_armed is False
+    assert mode._hole_hunter_charges == 0
 
 
-def test_reverse_debt_restore_brings_back_instant_lock_behavior():
-    """Restore sonrası remaining > 0 ise lock_delay gerçekten 0'a düşmeli.
-
-    Bu, daha önceki kör nokta: capture/restore sayacı taşıyordu ama gerçek
-    lock_delay davranışını taşımıyordu. Helper `_apply_reverse_debt_lock_delay`
-    restore sonunda otomatik tetiklenmeli."""
+def test_reverse_debt_restore_does_not_affect_lock_behavior():
     extra, _, MysteryMode, Board = _import_mystery()
     mode = MysteryMode.__new__(MysteryMode)
     mode.board = Board()
@@ -403,23 +399,18 @@ def test_reverse_debt_restore_brings_back_instant_lock_behavior():
     data = mode._capture_time_capsule_state()
 
     # Aradan zaman geçmiş gibi: oyuncu Ters Borç süresini bitirmiş, lock_delay
-    # default'a dönmüş. Bu, kullanıcının raporladığı kör noktayı simüle eder.
+    # default'a dönmüş.
     mode._reverse_debt_remaining = 0
     mode.lock_delay = 500
 
     mode._restore_time_capsule_state(data)
 
-    # Sayaç geri geldi ve gerçek davranış (lock_delay) da gerçekten anlık kilit.
-    assert mode._reverse_debt_remaining == 4
-    assert mode.lock_delay == 0, (
-        f"Restore sonrası remaining > 0 olmasına rağmen lock_delay anlık kilit "
-        f"davranışına dönmedi: {mode.lock_delay}"
-    )
+    # Artik zaman kapsülü bu degeri geri yuklemez, Ters Borc bitik kalir.
+    assert mode._reverse_debt_remaining == 0
+    assert mode.lock_delay == 500
 
 
-def test_reverse_debt_restore_with_zero_remaining_keeps_default_lock_delay():
-    """Restore sırasında sayaç 0 ise lock_delay default'a dönmeli; HUD ile
-    gerçek davranış birbiriyle çelişmemeli."""
+def test_reverse_debt_restore_does_not_overwrite_active_lock_delay():
     extra, _, MysteryMode, Board = _import_mystery()
     mode = MysteryMode.__new__(MysteryMode)
     mode.board = Board()
@@ -441,11 +432,9 @@ def test_reverse_debt_restore_with_zero_remaining_keeps_default_lock_delay():
 
     mode._restore_time_capsule_state(data)
 
-    assert mode._reverse_debt_remaining == 0
-    assert mode.lock_delay == 500, (
-        f"Restore sırasında remaining 0 olmasına rağmen lock_delay anlık kilit "
-        f"durumunda kaldı: {mode.lock_delay}"
-    )
+    # Geri yukleme sonrasinda Ters Borc aktif kalmaya devam eder, ezilmez.
+    assert mode._reverse_debt_remaining == 5
+    assert mode.lock_delay == 0
 
 
 def test_apply_reverse_debt_lock_delay_helper_is_pure_derivation():

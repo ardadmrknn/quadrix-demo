@@ -246,7 +246,7 @@ def test_freeze_drop_blocks_card_hotkeys_from_key_state(monkeypatch):
     assert mode.hammer_charges_remaining == 3
 
 
-def test_time_capsule_captures_active_card_counters_and_manager_state():
+def test_time_capsule_does_not_restore_active_card_counters_and_manager_state():
     _, _, MysteryMode, Board = _import_mystery_mode()
     mode = MysteryMode.__new__(MysteryMode)
     mode.board = Board()
@@ -297,26 +297,28 @@ def test_time_capsule_captures_active_card_counters_and_manager_state():
 
     mode._restore_time_capsule_state(data)
 
-    assert mode.second_held_piece == 'SECOND_HOLD'
-    assert mode.can_hold2 is False
-    assert mode._speed_burst_timer == 12.5
-    assert mode._speed_burst_speed_mult == 1.6
-    assert mode._speed_burst_line_mult == 1.75
-    assert mode._mirror_hold_charges == 1
-    assert mode._echo_drop_charges == 2
-    assert mode._echo_drop_fill_count == 3
-    assert mode._freeze_drop_charges == 2
-    assert mode._freeze_drop_duration == 15
-    assert mode._freeze_drop_active is True
-    assert mode._freeze_drop_timer == 4.0
-    assert mode.card_manager.force_piece_queue == ['I', 'T']
-    assert mode.card_manager.progress == 4
-    assert mode.card_manager.pending_choices == [{'id': 'clear_rows'}]
-    assert mode.card_manager.active_cards == [{'id': 'freeze_drop'}]
-    assert mode.card_manager.used_card_ids == {'freeze_drop'}
+    # Artik kart sayaclari ve kart yöneticisi durumlari zaman kapsülü geri yuklemesiyle
+    # eski haline donmez, mevcuttaki guncel hallerini korur.
+    assert mode.second_held_piece is None
+    assert mode.can_hold2 is True
+    assert mode._speed_burst_timer == 0.0
+    assert mode._speed_burst_speed_mult == 1.0
+    assert mode._speed_burst_line_mult == 1.0
+    assert mode._mirror_hold_charges == 0
+    assert mode._echo_drop_charges == 0
+    assert mode._echo_drop_fill_count == 0
+    assert mode._freeze_drop_charges == 0
+    assert mode._freeze_drop_duration == 0
+    assert mode._freeze_drop_active is False
+    assert mode._freeze_drop_timer == 0.0
+    assert mode.card_manager.force_piece_queue == []
+    assert mode.card_manager.progress == 0
+    assert mode.card_manager.pending_choices == []
+    assert mode.card_manager.active_cards == []
+    assert mode.card_manager.used_card_ids == set()
 
 
-def test_time_capsule_restores_perk_manager_and_runtime_effect_flags():
+def test_time_capsule_does_not_restore_perk_manager_and_runtime_effect_flags():
     _, _, MysteryMode, Board = _import_mystery_mode()
     mode = MysteryMode.__new__(MysteryMode)
     mode.board = Board()
@@ -357,18 +359,20 @@ def test_time_capsule_restores_perk_manager_and_runtime_effect_flags():
 
     mode._restore_time_capsule_state(data)
 
-    assert mode._score_color_override == (255, 210, 75)
-    assert mode._bomb_countdown_timer == 2.4
-    assert mode._bomb_countdown_last_int == 3
-    assert mode._drill_last_cleanup_y == 12
-    assert mode._drill_movement_locked is True
-    assert mode._rewind_available is True
-    assert mode._last_placed_piece == {'cells': [(1, 18)]}
-    assert mode.perk_manager.active == {'synergy_core': True, 'perk_flexible_border': True}
-    assert mode.perk_manager.next_piece_bomb is True
-    assert mode.perk_manager.lines_since_chrono == 8
-    assert mode.perk_manager.chrono_freeze_timer == 1.5
-    assert mode.perk_manager.rewind_uses == 2
+    # Artik perk yöneticisi ve diger efekt bayraklari zaman kapsülü geri yuklemesiyle
+    # eski haline donmez, mevcuttaki guncel hallerini korur.
+    assert mode._score_color_override is None
+    assert mode._bomb_countdown_timer == 0.0
+    assert mode._bomb_countdown_last_int == 0
+    assert mode._drill_last_cleanup_y is None
+    assert mode._drill_movement_locked is False
+    assert mode._rewind_available is False
+    assert mode._last_placed_piece is None
+    assert mode.perk_manager.active == {}
+    assert mode.perk_manager.next_piece_bomb is False
+    assert mode.perk_manager.lines_since_chrono == 0
+    assert mode.perk_manager.chrono_freeze_timer == 0.0
+    assert mode.perk_manager.rewind_uses == 0
 
 
 def test_phase_shift_mapping_matches_card_text_only_mirrors_lj_and_zs():

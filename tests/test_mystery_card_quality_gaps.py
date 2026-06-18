@@ -241,7 +241,7 @@ def _make_full_mode_for_capsule():
     return mode, mgr
 
 
-def test_time_capsule_round_trip_preserves_pending_level_ups():
+def test_time_capsule_round_trip_does_not_restore_pending_level_ups():
     mode, mgr = _make_full_mode_for_capsule()
     mode.pending_level_ups = 3
     mode.last_enqueued_level = 4
@@ -254,13 +254,13 @@ def test_time_capsule_round_trip_preserves_pending_level_ups():
 
     mode._restore_time_capsule_state(data)
 
-    assert mode.pending_level_ups == 3
-    assert mode.last_enqueued_level == 4
+    # Artik pending_level_ups ve last_enqueued_level zaman kapsülü ile eski haline dönmez,
+    # mevcuttaki güncel (silinmiş/değişmiş) hallerini korur.
+    assert mode.pending_level_ups == 0
+    assert mode.last_enqueued_level == 0
 
 
-def test_time_capsule_preserves_pending_choices_alongside_queue():
-    """If pending_choices exists at capture, restore must keep them so the
-    next update tick can open the overlay without re-rolling RNG."""
+def test_time_capsule_does_not_restore_pending_choices_alongside_queue():
     mode, mgr = _make_full_mode_for_capsule()
     mgr.pending_choices = [{'id': 'reward_a'}, {'id': 'reward_b'}]
     mode.pending_level_ups = 1
@@ -272,14 +272,12 @@ def test_time_capsule_preserves_pending_choices_alongside_queue():
 
     mode._restore_time_capsule_state(data)
 
-    assert mode.pending_level_ups == 1
-    assert mgr.pending_choices == [{'id': 'reward_a'}, {'id': 'reward_b'}]
+    # Artik bu alanlar zaman kapsülü ile eski haline dönmez, mevcuttaki hallerini korur.
+    assert mode.pending_level_ups == 0
+    assert mgr.pending_choices == []
 
 
-def test_time_capsule_with_empty_pending_choices_but_nonzero_queue_can_reprepare():
-    """A queue with no prepared choices should still survive restore so the
-    update loop can re-prepare on the next tick (the queue itself is the
-    source of truth)."""
+def test_time_capsule_with_empty_pending_choices_but_nonzero_queue_does_not_affect_them():
     mode, mgr = _make_full_mode_for_capsule()
     mgr.pending_choices = []
     mode.pending_level_ups = 2
@@ -291,5 +289,6 @@ def test_time_capsule_with_empty_pending_choices_but_nonzero_queue_can_reprepare
 
     mode._restore_time_capsule_state(data)
 
-    assert mode.pending_level_ups == 2
-    assert mgr.pending_choices == []
+    # Artik bu alanlar zaman kapsülü ile eski haline dönmez, mevcuttaki hallerini korur.
+    assert mode.pending_level_ups == 0
+    assert mgr.pending_choices == [{'id': 'stale_should_be_replaced'}]

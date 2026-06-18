@@ -76,15 +76,18 @@ def test_restore_time_capsule_restores_board_and_gameplay_state():
     # Skor zaman kapsulu geri yuklemesinden ETKILENMEZ: kaydedilen ana donmez,
     # mevcut skor korunur.
     assert mode.board.score == 7777
-    assert mode.board.lines_cleared == 12
-    assert mode.board.level_lines_cleared == 2
-    assert mode.board.level == 3
-    assert mode.board.combo == 1
-    assert mode.current_piece == 'CURRENT_SAVED'
-    assert mode.next_piece_queue == ['NEXT_A', 'NEXT_B']
-    assert mode.held_piece == "HOLD_SAVED"
-    assert mode.can_hold is True
-    assert mode.energy == 42
+    # Artik lines_cleared, level_lines_cleared, level, combo, current_piece,
+    # next_piece_queue, held_piece, can_hold, energy gibi durumlar zaman kapsülü
+    # ile geri yuklenmez, mevcuttaki degerlerini korur.
+    assert mode.board.lines_cleared == 88
+    assert mode.board.level_lines_cleared == 7
+    assert mode.board.level == 5
+    assert mode.board.combo == 3
+    assert mode.current_piece is None
+    assert mode.next_piece_queue == []
+    assert mode.held_piece == "HOLD_A"
+    assert mode.can_hold is False
+    assert mode.energy == 5
     assert mode.time_capsule_available is False
     assert mode.time_capsule_saved is False
 

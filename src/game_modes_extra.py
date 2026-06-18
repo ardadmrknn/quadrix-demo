@@ -6010,12 +6010,12 @@ class MysteryMode(Game):
     """Kart yöneticisi + UI ayrımıyla yeniden ele alınan Mystery Mode."""
 
     def _get_demo_score_cap(self) -> int:
-        fallback_cap = getattr(demo_config, 'DEMO_MYSTERY_SCORE_CAP', 150000)
+        fallback_cap = getattr(demo_config, 'DEMO_MYSTERY_SCORE_CAP', 1000000)
         try:
-            default_cap = max(1, int(fallback_cap or 150000))
+            default_cap = max(1, int(fallback_cap or 1000000))
             return max(1, int(getattr(self, '_demo_score_cap_value', default_cap) or default_cap))
         except Exception:
-            return 150000
+            return 1000000
 
     def _should_trigger_demo_score_cap(self) -> bool:
         if not getattr(demo_config, 'IS_DEMO', False):
@@ -6545,7 +6545,7 @@ class MysteryMode(Game):
         self.last_enqueued_level = getattr(self.board, 'level', 0)
 
         # Demo score cap variable initialization
-        self._demo_score_cap_value = max(1, int(getattr(demo_config, 'DEMO_MYSTERY_SCORE_CAP', 150000) or 150000))
+        self._demo_score_cap_value = max(1, int(getattr(demo_config, 'DEMO_MYSTERY_SCORE_CAP', 1000000) or 1000000))
         self._demo_score_cap_reached = False
         self._demo_score_cap_active = False
         self._demo_score_cap_prompt = DemoUpgradePrompt(self.screen)
@@ -6660,7 +6660,7 @@ class MysteryMode(Game):
 
     def restart(self) -> None:
         super().restart()
-        self._demo_score_cap_value = max(1, int(getattr(demo_config, 'DEMO_MYSTERY_SCORE_CAP', 150000) or 150000))
+        self._demo_score_cap_value = max(1, int(getattr(demo_config, 'DEMO_MYSTERY_SCORE_CAP', 1000000) or 1000000))
         self._demo_score_cap_reached = False
         self._demo_score_cap_active = False
         if getattr(self, '_demo_score_cap_prompt', None) is not None:
@@ -12583,243 +12583,35 @@ class MysteryMode(Game):
             except Exception:
                 return value
 
-        # NOT: 'score' bilerek snapshot dışında bırakıldı. Zaman Kapsulu yalnızca
-        # tahtayı/oyun durumunu geri yükler; geri dönüş skoru ETKILEMEZ.
+        # NOT: Zaman Kapsulu yalnızca oyun alanındaki blokların yerleşimini kaydeder.
         board_attrs = (
             'grid',
             'occupancy',
             'texture_grid',
             'gold',
             'owners',
-            'lines_cleared',
-            'level_lines_cleared',
-            'level',
-            'combo',
-        )
-        state_attrs = (
-            'current_piece',
-            'next_piece_queue',
-            'held_piece',
-            'second_held_piece',
-            'can_hold',
-            'can_hold2',
-            'energy',
-            'fall_speed',
-            'time_warp_timer',
-            '_timewarp_old_speed',
-            'gravity_freeze_timer',
-            'speed_effect_timer',
-            'speed_effect_multiplier',
-            '_speed_burst_timer',
-            '_speed_burst_speed_mult',
-            '_speed_burst_line_mult',
-            'combo_aura_timer',
-            'combo_aura_bonus',
-            '_score_multiplier_timer',
-            '_score_multiplier_value',
-            '_score_color_override',
-            'line_bonus_remaining',
-            'line_bonus_amount',
-            '_line_clear_multiplier_remaining',
-            '_line_clear_multiplier_value',
-            'tunnel_charges_remaining',
-            'hammer_charges_remaining',
-            '_mirror_hold_charges',
-            '_echo_drop_charges',
-            '_echo_drop_fill_count',
-            'bomb_master_charges',
-            '_hold_destroyer_charges',
-            'discard_held_uses',
-            '_freeze_drop_charges',
-            '_freeze_drop_duration',
-            '_freeze_drop_active',
-            '_freeze_drop_timer',
-            '_combo_insurance_armed',
-            '_reverse_debt_remaining',
-            '_reverse_debt_total',
-            '_hole_hunter_charges',
-            '_sniper_charges',
-            'phase_shift_uses_remaining',
-            '_armed_nova_clusters',
-            '_nova_blast_size',
-            '_bomb_countdown_timer',
-            '_bomb_countdown_last_int',
-            '_drill_last_cleanup_y',
-            '_drill_movement_locked',
-            '_rewind_available',
-            '_last_placed_piece',
-            'last_enqueued_level',
-            'pending_level_ups',
         )
 
         data: dict[str, Any] = {}
         for attr in board_attrs:
             if hasattr(self.board, attr):
                 data[f'board_{attr}'] = snapshot(getattr(self.board, attr))
-        for attr in state_attrs:
-            if hasattr(self, attr):
-                data[attr] = snapshot(getattr(self, attr))
-
-        card_manager = getattr(self, 'card_manager', None)
-        if card_manager is not None and hasattr(card_manager, 'force_piece_queue'):
-            data['card_manager_force_piece_queue'] = snapshot(card_manager.force_piece_queue)
-        if card_manager is not None:
-            for attr in (
-                'progress',
-                'threshold',
-                'pending_choices',
-                'active_cards',
-                'used_card_ids',
-                'card_xp',
-                'card_level',
-                'card_xp_to_next',
-                'unlocked_slots',
-                'active_slots',
-            ):
-                if hasattr(card_manager, attr):
-                    data[f'card_manager_{attr}'] = snapshot(getattr(card_manager, attr))
-
-        perk_manager = getattr(self, 'perk_manager', None)
-        if perk_manager is not None:
-            if hasattr(perk_manager, 'active'):
-                data['perk_manager_active'] = snapshot(getattr(perk_manager, 'active'))
-            for attr in ('next_piece_bomb', 'lines_since_chrono', 'chrono_freeze_timer', 'rewind_uses', 'synergy_rate'):
-                if hasattr(perk_manager, attr):
-                    data[f'perk_manager_{attr}'] = snapshot(getattr(perk_manager, attr))
 
         return data
 
     def _restore_time_capsule_state(self, data: dict[str, Any]) -> None:
-        # NOT: 'score' bilerek listede yok. Geri yükleme skoru ETKILEMEZ;
-        # oyuncu tahtayı geri alsa bile mevcut skoru korur.
+        # NOT: Zaman Kapsulu yalnızca oyun alanındaki blokların yerleşimini geri yükler.
         board_attrs = (
             'grid',
             'occupancy',
             'texture_grid',
             'gold',
             'owners',
-            'lines_cleared',
-            'level_lines_cleared',
-            'level',
-            'combo',
         )
         for attr in board_attrs:
             key = f'board_{attr}'
             if key in data and hasattr(self.board, attr):
                 setattr(self.board, attr, data[key])
-
-        state_attrs = (
-            'current_piece',
-            'next_piece_queue',
-            'held_piece',
-            'second_held_piece',
-            'can_hold',
-            'can_hold2',
-            'energy',
-            'fall_speed',
-            'time_warp_timer',
-            '_timewarp_old_speed',
-            'gravity_freeze_timer',
-            'speed_effect_timer',
-            'speed_effect_multiplier',
-            '_speed_burst_timer',
-            '_speed_burst_speed_mult',
-            '_speed_burst_line_mult',
-            'combo_aura_timer',
-            'combo_aura_bonus',
-            '_score_multiplier_timer',
-            '_score_multiplier_value',
-            '_score_color_override',
-            'line_bonus_remaining',
-            'line_bonus_amount',
-            '_line_clear_multiplier_remaining',
-            '_line_clear_multiplier_value',
-            'tunnel_charges_remaining',
-            'hammer_charges_remaining',
-            '_mirror_hold_charges',
-            '_echo_drop_charges',
-            '_echo_drop_fill_count',
-            'bomb_master_charges',
-            '_hold_destroyer_charges',
-            'discard_held_uses',
-            '_freeze_drop_charges',
-            '_freeze_drop_duration',
-            '_freeze_drop_active',
-            '_freeze_drop_timer',
-            '_combo_insurance_armed',
-            '_reverse_debt_remaining',
-            '_reverse_debt_total',
-            '_hole_hunter_charges',
-            '_sniper_charges',
-            'phase_shift_uses_remaining',
-            '_armed_nova_clusters',
-            '_nova_blast_size',
-            '_bomb_countdown_timer',
-            '_bomb_countdown_last_int',
-            '_drill_last_cleanup_y',
-            '_drill_movement_locked',
-            '_rewind_available',
-            '_last_placed_piece',
-            'last_enqueued_level',
-            'pending_level_ups',
-        )
-        for attr in state_attrs:
-            if attr in data:
-                setattr(self, attr, data[attr])
-
-        card_manager = getattr(self, 'card_manager', None)
-        if card_manager is not None and 'card_manager_force_piece_queue' in data:
-            try:
-                card_manager.force_piece_queue = data['card_manager_force_piece_queue']
-            except Exception:
-                pass
-        if card_manager is not None:
-            for attr in (
-                'progress',
-                'threshold',
-                'pending_choices',
-                'active_cards',
-                'used_card_ids',
-                'card_xp',
-                'card_level',
-                'card_xp_to_next',
-                'unlocked_slots',
-                'active_slots',
-            ):
-                key = f'card_manager_{attr}'
-                if key not in data:
-                    continue
-                try:
-                    value = data[key]
-                    if attr == 'used_card_ids' and not isinstance(value, set):
-                        value = set(value or [])
-                    setattr(card_manager, attr, value)
-                except Exception:
-                    pass
-
-        perk_manager = getattr(self, 'perk_manager', None)
-        if perk_manager is not None:
-            if 'perk_manager_active' in data:
-                try:
-                    active = data['perk_manager_active']
-                    perk_manager.active = dict(active or {}) if isinstance(active, dict) else {}
-                except Exception:
-                    pass
-            for attr in ('next_piece_bomb', 'lines_since_chrono', 'chrono_freeze_timer', 'rewind_uses', 'synergy_rate'):
-                key = f'perk_manager_{attr}'
-                if key in data:
-                    try:
-                        setattr(perk_manager, attr, data[key])
-                    except Exception:
-                        pass
-
-        # Ters Borç davranışı türetilir: sayaç doluysa lock_delay = 0, aksi halde
-        # default. Bu sayede HUD ve gerçek runtime davranışı birbirinden
-        # ayrışmaz; capture/restore yalnızca remaining'i taşımak yeterli.
-        try:
-            self._apply_reverse_debt_lock_delay()
-        except Exception:
-            pass
 
     def _apply_reverse_debt_lock_delay(self) -> None:
         """Ters Borç sayacına göre lock_delay'i türetir.

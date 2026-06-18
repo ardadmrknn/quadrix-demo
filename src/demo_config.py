@@ -29,7 +29,7 @@ FULL_APP_NAME = "quadrix_full"
 
 # Kart Ustalığı (Mystery) modunda demo skor sınırı. Bu skora ulaşıldığında
 # "Demo Tamamlandı" paneli açılır ve oyun dondurulur.
-DEMO_MYSTERY_SCORE_CAP = 150000
+DEMO_MYSTERY_SCORE_CAP = 1000000
 
 DEMO_LOCKED_EXTRAS_MODE_IDS = {
     "Cascade Mode",
