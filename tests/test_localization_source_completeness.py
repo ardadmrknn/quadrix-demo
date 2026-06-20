@@ -61,4 +61,12 @@ def test_localization_auto_overrides_file_is_valid_json_and_loadable():
     payload = json.loads(LOCALIZATION_OVERRIDES_PATH.read_text(encoding='utf-8'))
 
     assert isinstance(payload, dict)
-    assert payload['ach_achievements']['ru'] == 'Достижения'
+
+    # Çeviriler artık localization.py içindeki TRANSLATIONS tablosuna kalıcı
+    # olarak bake edildi. Override JSON yalnızca "yetim" anahtarları (tr/en
+    # taban değeri olmadığı için merge'in görmezden geldiği, runtime'da
+    # etkisiz girişler) barındırır. Bu, kaynağın tek dosyada (localization.py)
+    # kendi kendine yeterli olmasını sağlar. Detay: docs içindeki orphan
+    # overrides notu.
+    _, translations = _load_localization_source_tables()
+    assert translations['ach_achievements']['ru'] == 'Достижения'
