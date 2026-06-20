@@ -2739,6 +2739,8 @@ class MysteryCardUI:
         header_title: str | None = None,
         header_lines: List[str] | None = None,
         center_header: bool = False,
+        header_lines_font: "pygame.font.Font | None" = None,
+        header_lines_highlight: bool = False,
     ) -> None:
         alpha = int(max(0, min(255, self.fade_alpha)))
         if alpha <= 0 or not cards:
@@ -2800,12 +2802,13 @@ class MysteryCardUI:
             spacing = s(48)
         header_font = fonts.get('panel_header') or fonts.get('heading') or fonts.get('medium')
         line_font = fonts.get('small') or fonts.get('desc')
+        hdr_line_font = header_lines_font or line_font
         header_content_height = 0
         if header_title:
             header_content_height += header_font.get_height() + s(8)
         visible_header_lines = [str(raw_line) for raw_line in list(header_lines or [])[:4] if raw_line]
         for _line in visible_header_lines:
-            header_content_height += line_font.get_height() + s(4)
+            header_content_height += hdr_line_font.get_height() + s(4)
 
         warning_msg = getattr(self, 'warning_message', '')
         if warning_msg:
@@ -2874,8 +2877,25 @@ class MysteryCardUI:
             screen.blit(header_surf, hrect)
             header_y += header_surf.get_height() + s(8)
         for raw_line in visible_header_lines:
+            if header_lines_highlight:
+                # Sarı highlighter: amber zemin + amber metin (tuş etiketi diliyle aynı).
+                line_surf = hdr_line_font.render(str(raw_line), True, (255, 240, 180))
+                if center_header:
+                    lrect = line_surf.get_rect(centerx=panel_rect.centerx, top=header_y)
+                else:
+                    lrect = line_surf.get_rect(topleft=(header_x, header_y))
+                pad = max(2, hdr_line_font.get_height() // 6)
+                badge = pygame.Rect(lrect.x - pad * 2, lrect.y - pad // 2,
+                                    lrect.width + pad * 4, lrect.height + pad)
+                hl = pygame.Surface(badge.size, pygame.SRCALPHA)
+                hl.fill((95, 72, 18, 210))
+                screen.blit(hl, badge.topleft)
+                pygame.draw.rect(screen, (210, 170, 60), badge, max(1, s(1)), border_radius=s(6))
+                screen.blit(line_surf, lrect)
+                header_y += line_surf.get_height() + s(4)
+                continue
             # Açıklama satırlarını daha okunur renkle (parlak açık gri).
-            line_surf = line_font.render(str(raw_line), True, (220, 230, 245))
+            line_surf = hdr_line_font.render(str(raw_line), True, (220, 230, 245))
             if center_header:
                 screen.blit(line_surf, line_surf.get_rect(centerx=panel_rect.centerx, top=header_y))
             else:

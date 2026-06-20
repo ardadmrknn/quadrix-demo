@@ -215,7 +215,7 @@ CARD_CHOICE_SCENARIOS: Dict[str, Dict[str, Any]] = {
         ],
         "context_lines": [
             "Durum: Delikli ve yüksek bir tahta.",
-            "Öncelik: Nefes aldıran hamleyi seçmek.",
+            "Öncelik: Sana nefes aldıran kartı seç.",
         ],
         "board_rows": [
             "XXXXXX.XXX",
@@ -252,7 +252,7 @@ CARD_CHOICE_SCENARIOS: Dict[str, Dict[str, Any]] = {
         ],
         "context_lines": [
             "Aktif perkler: Ekstra Cep, Esnek Sınır.",
-            "Öncelik: Build'i büyüten seçimi bulmak.",
+            "Öncelik: Mevcut kombinasyonunu güçlendiren kartı seç.",
         ],
         "board_rows": [
             ".....X....",
@@ -271,7 +271,7 @@ CARD_CHOICE_SCENARIOS: Dict[str, Dict[str, Any]] = {
             "row_shuffle": "tutorial_card_synergy_feedback_row_shuffle",
         },
         "feedback_by_card": {
-            "perk_synergy": "Doğru seçim. Zaten aktif perklerin olduğu için Sinerji Bonusu hemen büyüyen bir çarpana dönüşür.",
+            "perk_synergy": "Doğru seçim. Zaten aktif perklerin olduğu için Sinerji Bonus hemen büyüyen bir çarpana dönüşür.",
             "speed_burst_rare": "Zayıf seçim. Hız Patlaması faydalı olsa da bu dersin odağı mevcut perk zincirini büyütmek; tek başına build sinerjisi kurmaz.",
             "row_shuffle": "Zayıf seçim. Rastgelelik eklemek yerine aktif perklerden daha fazla değer çıkarmalısın.",
         },
@@ -328,7 +328,7 @@ CARD_CHOICE_SCENARIOS: Dict[str, Dict[str, Any]] = {
         ],
         "context_lines": [
             "Durum: Orta yükseklikte, temiz tahta.",
-            "Öncelik: Run boyunca en çok değer üreten kartı seç.",
+            "Öncelik: Tüm oyun boyunca en çok değer üreten kartı seç.",
         ],
         "board_rows": [
             "...XXX....",
@@ -363,7 +363,7 @@ CARD_CHOICE_SCENARIOS: Dict[str, Dict[str, Any]] = {
         ],
         "context_lines": [
             "Durum: Orta yükseklikte, pürüzlü ama kurtarılabilir tahta.",
-            "Öncelik: Sonraki birkaç hamleyi güvene almak.",
+            "Öncelik: Sonraki birkaç hamleni güvene al.",
         ],
         "board_rows": [
             "...XX.....",
@@ -401,7 +401,7 @@ CARD_CHOICE_SCENARIOS: Dict[str, Dict[str, Any]] = {
         ],
         "context_lines": [
             "Durum: Tahta genel olarak güvenli ama sağ tarafta tek bir sivri kule var.",
-            "Öncelik: Sadece o problemi temizleyip yüzeyi yeniden sakinleştirmek.",
+            "Öncelik: Tek bir sivri kuleyi tam hedefle, büyük kartları boşa harcama.",
         ],
         "board_rows": [
             ".......X..",
@@ -462,6 +462,45 @@ CARD_CHOICE_SCENARIOS: Dict[str, Dict[str, Any]] = {
         },
     },
 }
+
+
+# Kart sonuç panelinde "Önerilen: X" başlığı altında gösterilen gerekçeden,
+# baştaki hüküm cümlesini ("Doğru seçim." vb.) ayıklamak için kullanılır.
+# Hüküm zaten panel başlığında (Doğru Seçim / Kabul Edilebilir / Tekrar Dene)
+# yer aldığı için gerekçe metninde tekrar etmesi kafa karıştırıcıdır; özellikle
+# oyuncu yanlış seçim yaptığında "Önerilen: X" altında "Doğru seçim..." görmesi
+# çelişkili durur. Yalnızca TR ve EN gerçek çeviridir (diğer diller EN'i kopyalar),
+# bu yüzden iki dilin hüküm kalıpları yeterlidir.
+_VERDICT_PREFIXES: tuple[str, ...] = (
+    # TR
+    "Doğru seçim:", "Doğru seçim.",
+    "Kabul edilebilir seçim:", "Kabul edilebilir seçim.",
+    "Kabul edilebilir:", "Kabul edilebilir.",
+    "Zayıf seçim:", "Zayıf seçim.",
+    "Yanlış seçim:", "Yanlış seçim.",
+    "Kısmen işe yarar ama yetersiz:", "Kısmen işe yarar ama yetersiz.",
+    # EN (en + EN'i kopyalayan 9 dil)
+    "Right choice:", "Right choice.",
+    "Right pick:", "Right pick.",
+    "Correct choice:", "Correct choice.",
+    "Correct:", "Correct.",
+    "Acceptable:", "Acceptable.",
+    "Weak choice:", "Weak choice.",
+    "Wrong choice:", "Wrong choice.",
+    "Partly works but not enough:", "Partly works but not enough.",
+    "Partially helpful but not enough:", "Partially helpful but not enough.",
+)
+
+
+def _strip_verdict_prefix(text: str) -> str:
+    """Metnin başındaki hüküm cümlesini ayıklar; başka değişiklik yapmaz."""
+    cleaned = str(text or "").strip()
+    if not cleaned:
+        return cleaned
+    for prefix in _VERDICT_PREFIXES:
+        if cleaned[: len(prefix)].lower() == prefix.lower():
+            return cleaned[len(prefix):].strip()
+    return cleaned
 
 
 class _SafeFormatDict(dict):
@@ -642,6 +681,8 @@ def evaluate_card_choice(scenario: Dict[str, Any] | None, selected_card_id: str 
             recommended_reason = t(str(rec_key), default=rec_fallback)
         else:
             recommended_reason = rec_fallback
+        # "Önerilen: X" altında hüküm cümlesi çelişki yaratır; sadece gerekçeyi bırak.
+        recommended_reason = _strip_verdict_prefix(recommended_reason)
 
     return {
         "success": success,

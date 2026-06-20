@@ -807,6 +807,25 @@ class RetroStyle:
             oldest = order.pop(0)
             cache.pop(oldest, None)
 
+    def _break_long_token(self, token: str, font: pygame.font.Font, max_width: int) -> list[str]:
+        """Tek bir kelime/token genişliğe sığmıyorsa karakter bazında böl.
+
+        Boşluksuz yazılan CJK (Japonca/Çince/Korece) metinlerinde ve aşırı uzun
+        Latin kelimelerde panel taşmasını önler.
+        """
+        pieces: list[str] = []
+        current = ''
+        for ch in token:
+            candidate = current + ch
+            if not current or font.size(candidate)[0] <= max_width:
+                current = candidate
+            else:
+                pieces.append(current)
+                current = ch
+        if current:
+            pieces.append(current)
+        return pieces
+
     def wrap_text(self, text: str, font: pygame.font.Font, max_width: int) -> list[str]:
         if max_width <= 0:
             return [text]
@@ -816,15 +835,28 @@ class RetroStyle:
             if not words:
                 lines.append('')
                 continue
-            current = words[0]
-            for word in words[1:]:
-                test_line = f"{current} {word}"
+            current = ''
+            for word in words:
+                test_line = word if not current else f"{current} {word}"
                 if font.size(test_line)[0] <= max_width:
                     current = test_line
-                else:
+                    continue
+                # Mevcut satır dolu: kaydet ve yeni kelimeye geç.
+                if current:
                     lines.append(current)
+                    current = ''
+                if font.size(word)[0] <= max_width:
                     current = word
-            lines.append(current)
+                else:
+                    # Kelime tek başına bile sığmıyor (ör. boşluksuz CJK cümlesi):
+                    # karakter bazında böl. Son parça bir sonraki kelimeyle
+                    # birleşebilsin diye 'current' olarak tutulur.
+                    pieces = self._break_long_token(word, font, max_width)
+                    if pieces:
+                        lines.extend(pieces[:-1])
+                        current = pieces[-1]
+            if current:
+                lines.append(current)
         return lines
 
     def draw_wrapped_text(
@@ -850,6 +882,73 @@ class RetroStyle:
             screen.blit(line_surface, line_rect)
             y += line_surface.get_height() + line_spacing
         return pygame.Rect(rect.x, rect.y, rect.width, y - rect.y)
+
+    def fit_wrapped_font(
+        self,
+        text: str,
+        base_size: int,
+        min_size: int,
+        max_width: int,
+        max_height: int,
+        bold: bool = False,
+        line_spacing: int = 6,
+    ) -> tuple[pygame.font.Font, list[str]]:
+        """Sarılı metni hem genişliğe hem yüksekliğe sığdıran font + satırları döndür.
+
+        Font boyutu, sarılan tüm satırlar verilen yükseklige sığana kadar (ya da
+        ``min_size``'a inene kadar) küçültülür. Tüm dillerde (uzun Almanca/Fransızca
+        cümleler, boşluksuz CJK metinleri) panel taşmasını önler.
+        """
+        size = max(int(min_size), int(base_size))
+        min_size = max(8, int(min_size))
+        font = self.get_font(size, bold=bold)
+        lines = self.wrap_text(text, font, max_width)
+        if max_height and max_height > 0:
+            while size > min_size:
+                line_h = font.get_height()
+                total_h = len(lines) * line_h + max(0, len(lines) - 1) * line_spacing
+                if total_h <= max_height:
+                    break
+                size -= 1
+                font = self.get_font(size, bold=bold)
+                lines = self.wrap_text(text, font, max_width)
+        return font, lines
+
+    def draw_wrapped_text_fit(
+        self,
+        screen: pygame.Surface,
+        text: str,
+        color: tuple[int, int, int],
+        rect: pygame.Rect,
+        base_size: int,
+        min_size: int,
+        bold: bool = False,
+        align: str = 'center',
+        line_spacing: int = 6,
+    ) -> pygame.Rect:
+        """Genişlik + yükseklige sığacak şekilde font küçülterek sarılı metin çiz.
+
+        Çok satırlı içerik dikeyde ``rect`` içinde ortalanır; böylece kısa metinler
+        de düzgün hizalanır.
+        """
+        font, lines = self.fit_wrapped_font(
+            text, base_size, min_size, rect.width, rect.height,
+            bold=bold, line_spacing=line_spacing,
+        )
+        line_h = font.get_height()
+        total_h = len(lines) * line_h + max(0, len(lines) - 1) * line_spacing
+        y = rect.y + max(0, (rect.height - total_h) // 2)
+        for line in lines:
+            line_surface = font.render(line, True, color)
+            if align == 'left':
+                line_rect = line_surface.get_rect(topleft=(rect.x, y))
+            elif align == 'right':
+                line_rect = line_surface.get_rect(topright=(rect.right, y))
+            else:
+                line_rect = line_surface.get_rect(midtop=(rect.centerx, y))
+            screen.blit(line_surface, line_rect)
+            y += line_h + line_spacing
+        return pygame.Rect(rect.x, rect.y, rect.width, max(total_h, 0))
 
     # ------------------------------------------------------------------
     # Ortak çizim yardımcıları - MODERN TASARIM

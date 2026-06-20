@@ -5645,7 +5645,6 @@ class Game:
         title_surf = title_font.render(t('quit_confirm_title'), True, retro_style.accent)
         self.screen.blit(title_surf, title_surf.get_rect(centerx=panel_rect.centerx, top=panel_rect.y + self._sx(18, ui_scale)))
 
-        body_font = retro_style.get_font(self._sx(18, ui_scale, minimum=12), bold=False)
         body_color = (210, 225, 245)
         body_rect = pygame.Rect(
             panel_rect.x + self._sx(26, ui_scale),
@@ -5653,12 +5652,13 @@ class Game:
             panel_rect.width - self._sx(52, ui_scale),
             self._sx(70, ui_scale),
         )
-        retro_style.draw_wrapped_text(
+        retro_style.draw_wrapped_text_fit(
             self.screen,
             t('quit_confirm_message'),
-            body_font,
             body_color,
             body_rect,
+            base_size=self._sx(18, ui_scale, minimum=12),
+            min_size=self._sx(12, ui_scale, minimum=10),
             align='center',
             line_spacing=self._sx(6, ui_scale),
         )

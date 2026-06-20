@@ -4795,22 +4795,29 @@ class Menu:
 
         retro_style.draw_glass_panel(self.screen, panel_rect, alpha=180, border_color=(*retro_style.accent, 140), glow=True)
 
-        title_font = retro_style.get_font(max(20, int(30 * panel_scale)), bold=True)
+        title_max_w = panel_rect.width - max(36, int(52 * panel_scale))
+        title_font = retro_style.get_fitting_font(
+            t('exit_confirm_title'),
+            max(20, int(30 * panel_scale)),
+            title_max_w,
+            bold=True,
+            min_size=max(13, int(16 * panel_scale)),
+        )
         title_surf = render_text(title_font, t('exit_confirm_title'), True, retro_style.accent)
         self.screen.blit(title_surf, title_surf.get_rect(centerx=panel_rect.centerx, top=panel_rect.y + max(12, int(18 * panel_scale))))
 
-        body_font = retro_style.get_font(max(14, int(18 * panel_scale)), bold=False)
         body_color = (210, 225, 245)
         pad_x = max(18, int(26 * panel_scale))
         body_top = panel_rect.y + max(46, int(64 * panel_scale))
         body_h = max(50, int(70 * panel_scale))
         body_rect = pygame.Rect(panel_rect.x + pad_x, body_top, panel_rect.width - (pad_x * 2), body_h)
-        retro_style.draw_wrapped_text(
+        retro_style.draw_wrapped_text_fit(
             self.screen,
             t('exit_confirm_message'),
-            body_font,
             body_color,
             body_rect,
+            base_size=max(14, int(18 * panel_scale)),
+            min_size=max(11, int(12 * panel_scale)),
             align='center',
             line_spacing=max(3, int(6 * panel_scale)),
         )
@@ -4875,8 +4882,16 @@ class Menu:
         self.exit_yes_rect = yes_rect
         self.exit_no_rect = no_rect
 
-        hint_font = retro_style.get_font(max(12, int(16 * panel_scale)), bold=False)
-        hint = render_text(hint_font, self._select_hint_label(), True, (150, 165, 190))
+        hint_label = self._select_hint_label()
+        hint_max_w = panel_rect.width - max(28, int(40 * panel_scale))
+        hint_font = retro_style.get_fitting_font(
+            hint_label,
+            max(12, int(16 * panel_scale)),
+            hint_max_w,
+            bold=False,
+            min_size=max(8, int(10 * panel_scale)),
+        )
+        hint = render_text(hint_font, hint_label, True, (150, 165, 190))
         self.screen.blit(hint, hint.get_rect(centerx=panel_rect.centerx, bottom=panel_rect.bottom - max(10, int(14 * panel_scale))))
 
     def _draw_daily_prompt_panel(self):

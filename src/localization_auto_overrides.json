@@ -5901,15 +5901,15 @@
     "zh": "情况：一块有孔的高木板。"
   },
   "tutorial_card_rescue_context_2": {
-    "de": "Priorität: Wählen Sie die Bewegung, die Ihnen Luft zum Atmen gibt.",
-    "es": "Prioridad: elige el movimiento que te dé espacio para respirar.",
-    "fr": "Priorité : choisissez le mouvement qui vous laisse une marge de manœuvre.",
-    "it": "Priorità: scegli la mossa che ti dà respiro.",
-    "ja": "優先順位: 余裕ができる動きを選択してください。",
-    "ko": "우선순위: 숨 쉴 여유가 있는 동작을 선택하세요.",
-    "pt": "Prioridade: Escolha o movimento que lhe dá espaço para respirar.",
-    "ru": "Приоритет: выберите ход, который дает вам передышку.",
-    "zh": "优先级：选择能给你喘息空间的动作。"
+    "de": "Priorität: Wähle die Karte, die dir Luft verschafft.",
+    "es": "Prioridad: elige la carta que te dé un respiro.",
+    "fr": "Priorité : choisis la carte qui te donne de l'air.",
+    "it": "Priorità: scegli la carta che ti dà respiro.",
+    "ja": "優先：余裕を生むカードを選ぼう。",
+    "ko": "우선순위: 숨 돌릴 틈을 주는 카드를 골라라.",
+    "pt": "Prioridade: escolha a carta que te dá fôlego.",
+    "ru": "Приоритет: выбери карту, которая даёт передышку.",
+    "zh": "优先：选择能给你喘息空间的卡。"
   },
   "tutorial_card_rescue_desc": {
     "de": "Erfahren Sie, welche Karte Sie tatsächlich auf einem gefährlichen Brett rettet.",
@@ -5978,15 +5978,15 @@
     "zh": "亮眼的卡牌不一定总是正确选择。先判断棋盘真正需要什么。"
   },
   "tutorial_card_rescue_title": {
-    "de": "Wählen Sie die Rettungskarte",
-    "es": "Elige la tarjeta de rescate",
-    "fr": "Choisissez la carte de sauvetage",
-    "it": "Scegli la carta di salvataggio",
-    "ja": "レスキューカードを選ぶ",
-    "ko": "구조 카드를 선택하세요",
-    "pt": "Escolha o cartão de resgate",
-    "ru": "Выберите карту спасения",
-    "zh": "选择救援卡"
+    "de": "Welche Karte rettet dich?",
+    "es": "¿Qué carta te salva?",
+    "fr": "Quelle carte te sauve ?",
+    "it": "Quale carta ti salva?",
+    "ja": "どのカードが助ける？",
+    "ko": "어떤 카드가 널 구하나?",
+    "pt": "Qual carta te salva?",
+    "ru": "Какая карта тебя спасёт?",
+    "zh": "哪张卡能救你？"
   },
   "tutorial_card_strategy_desc": {
     "de": "Lerne langfristige Aufbau-Logik und Risiko-Belohnungs-Abwägung.",
@@ -6022,15 +6022,15 @@
     "zh": "主动福利：额外的口袋，灵活的边界。"
   },
   "tutorial_card_synergy_context_2": {
-    "de": "Priorität: Finden Sie die Auswahl, die Ihren Build skaliert.",
-    "es": "Prioridad: encuentre la opción que mejore su construcción.",
-    "fr": "Priorité : trouvez le choix qui fait évoluer votre build.",
-    "it": "Priorità: trova la scelta che adatta la tua build.",
-    "ja": "優先順位: ビルドをスケールする選択肢を見つけてください。",
-    "ko": "우선순위: 빌드를 확장하는 선택 사항을 찾으세요.",
-    "pt": "Prioridade: Encontre a opção que dimensiona sua construção.",
-    "ru": "Приоритет: найдите вариант, который масштабирует вашу сборку.",
-    "zh": "优先事项：找到可扩展您的构建的选择。"
+    "de": "Priorität: Wähle die Karte, die deine aktuelle Kombo stärkt.",
+    "es": "Prioridad: elige la carta que refuerce tu combinación actual.",
+    "fr": "Priorité : choisis la carte qui renforce ta combinaison actuelle.",
+    "it": "Priorità: scegli la carta che rafforza la tua combo attuale.",
+    "ja": "優先：今のコンボを強化するカードを選ぼう。",
+    "ko": "우선순위: 지금의 조합을 강화하는 카드를 골라라.",
+    "pt": "Prioridade: escolha a carta que reforça sua combinação atual.",
+    "ru": "Приоритет: выбери карту, которая усиливает твою текущую связку.",
+    "zh": "优先：选择能强化当前组合的卡。"
   },
   "tutorial_card_synergy_desc": {
     "de": "Erfahren Sie, welche Karte mit dem Build, den Sie bereits haben, skaliert.",
@@ -6099,15 +6099,15 @@
     "zh": "卡牌选择不仅仅是原始力量；这取决于该卡如何与您当前的版本配合使用。"
   },
   "tutorial_card_synergy_title": {
-    "de": "Lesen Sie die Synergie",
-    "es": "Lea la sinergia",
-    "fr": "Lire la synergie",
-    "it": "Leggi la sinergia",
-    "ja": "シナジーを読む",
-    "ko": "시너지 읽기",
-    "pt": "Leia a Sinergia",
-    "ru": "Читать о синергии",
-    "zh": "阅读协同作用"
+    "de": "Bau deine Synergie aus",
+    "es": "Aumenta tu sinergia",
+    "fr": "Développe ta synergie",
+    "it": "Potenzia la tua sinergia",
+    "ja": "シナジーを育てる",
+    "ko": "시너지를 키워라",
+    "pt": "Aumente sua sinergia",
+    "ru": "Усиль свою синергию",
+    "zh": "扩大你的协同"
   },
   "tutorial_complete": {
     "de": "Großartig! Sie sind bereit zu spielen. Viel Spaß!",

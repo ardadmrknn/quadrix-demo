@@ -163,53 +163,32 @@ class TestBriefingState(unittest.TestCase):
         tutorial.sound = types.SimpleNamespace(play=lambda *_a, **_k: None)
         return tutorial
 
-    def test_start_lesson_opens_briefing_and_sets_up_board(self):
-        # Yeni akış: briefing açılırken tahta KURULUR (arka plan doğru seviye),
-        # ama briefing_active=True ile oyun durur.
+    def test_start_lesson_skips_briefing_and_sets_up_board(self):
+        # 2026-06-20: Tam-ekran briefing modalı kaldırıldı; _start_lesson doğrudan kurar
+        # (keep_briefing=False). Board üstü giriş paneli ayrıca gösterilir.
         tutorial = self._build_lesson_flow_tutorial()
         committed = {}
         tutorial._commit_lesson_setup = lambda lesson, keep_briefing=False: committed.update(
             {'lesson': lesson, 'keep_briefing': keep_briefing})
         with mock.patch.object(tutorial_module, 't', lambda key, *a, **k: k.get('default', key)):
             TutorialMode._start_lesson(tutorial, 'surface_gap_fill')
-        self.assertTrue(tutorial.briefing_active)
-        self.assertEqual(tutorial.lesson_stage, 'briefing')
-        self.assertEqual(tutorial._pending_briefing_lesson_id, 'surface_gap_fill')
-        # Tahta briefing açılırken kuruldu (keep_briefing=True).
-        self.assertEqual(committed.get('lesson', {}).get('id'), 'surface_gap_fill')
-        self.assertTrue(committed.get('keep_briefing'))
-
-    def test_confirm_briefing_dismisses_and_marks_seen(self):
-        tutorial = self._build_lesson_flow_tutorial()
-        committed = {'count': 0}
-        def _commit(lesson, keep_briefing=False):
-            committed['count'] += 1
-            committed['lesson'] = lesson
-        tutorial._commit_lesson_setup = _commit
-        with mock.patch.object(tutorial_module, 't', lambda key, *a, **k: k.get('default', key)):
-            TutorialMode._start_lesson(tutorial, 'surface_gap_fill')
-            TutorialMode._confirm_lesson_briefing(tutorial)
         self.assertFalse(tutorial.briefing_active)
-        self.assertEqual(tutorial.lesson_stage, 'play')
-        # Kurulum yalnız 1 kez (briefing açılışında); confirm tekrar kurmaz.
-        self.assertEqual(committed['count'], 1)
-        self.assertIn('surface_gap_fill', tutorial.briefing_seen_lessons)
+        self.assertEqual(committed.get('lesson', {}).get('id'), 'surface_gap_fill')
+        self.assertFalse(committed.get('keep_briefing'))
 
-    def test_second_play_auto_skips_briefing(self):
+    def test_briefing_never_shown_on_repeat_plays(self):
+        # Hem ilk hem sonraki oynanışta briefing açılmaz; her zaman doğrudan kurulum.
         tutorial = self._build_lesson_flow_tutorial()
         committed = []
         tutorial._commit_lesson_setup = lambda lesson, keep_briefing=False: committed.append(
             (lesson, keep_briefing))
         with mock.patch.object(tutorial_module, 't', lambda key, *a, **k: k.get('default', key)):
-            # İlk oynanış: briefing açılır (tahta keep_briefing ile kurulur), onaylanır.
             TutorialMode._start_lesson(tutorial, 'surface_gap_fill')
-            TutorialMode._confirm_lesson_briefing(tutorial)
-            # İkinci oynanış: briefing otomatik atlanır, doğrudan kurulum (keep_briefing=False).
             TutorialMode._start_lesson(tutorial, 'surface_gap_fill')
         self.assertFalse(tutorial.briefing_active)
         self.assertEqual(len(committed), 2)
-        self.assertTrue(committed[0][1])   # ilk: keep_briefing=True
-        self.assertFalse(committed[1][1])  # ikinci: keep_briefing=False (doğrudan)
+        self.assertFalse(committed[0][1])
+        self.assertFalse(committed[1][1])
 
     def test_skip_briefing_exits_to_menu(self):
         # FAZ 6 — Briefing 'Çıkış' dersi başlatmaz, ana menüye döner.
