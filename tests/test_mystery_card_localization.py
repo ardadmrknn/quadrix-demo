@@ -323,8 +323,8 @@ def test_mystery_sync_active_cards_localizes_time_capsule_and_perk_panel_copy(mo
         second_pocket = next(card for card in mode.card_manager.active_cards if card['id'] == 'perk_second_pocket')
 
         assert time_capsule['title'] == 'Time Capsule'
-        assert time_capsule['description'] == 'T: Save the current board state.'
-        assert time_capsule['status'] == 'T'
+        assert time_capsule['description'] == 'Use it to save the current board state.'
+        assert time_capsule['status'] == ''
         assert second_pocket['title'] == 'Extra Pocket'
         assert second_pocket['description'] == 'Press V to use: You can store a second piece.'
         assert second_pocket['tag'] == 'Perk'

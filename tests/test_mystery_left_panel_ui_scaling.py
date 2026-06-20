@@ -81,11 +81,11 @@ def test_mystery_active_card_rows_scale_with_canvas_and_stay_inside_panel(monkey
 
     cards = [
         {
-            'id': 'time_capsule',
-            'title': 'Sekil Degistirici',
-            'status': 'R: Kaydet',
+            'id': 'mirror_hold',
+            'title': 'Ayna Cep',
+            'status': 'Sinirli',
             'color': (120, 220, 255),
-            'icon': 'R',
+            'icon': 'M',
             'icon_image': None,
             'tag': 'limited',
             'rarity': 'rare',

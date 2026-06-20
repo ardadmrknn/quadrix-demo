@@ -2338,11 +2338,11 @@
     "pt": "Explosão de velocidade"
   },
   "guide_card_time_capsule_desc": {
-    "de": "Verwendung mit R: Erstes Drücken speichert, zweites Drücken stellt wieder her.",
-    "es": "Usar con R: la primera pulsación guarda, la segunda pulsación restaura.",
-    "fr": "Utiliser avec R : la première pression enregistre, la deuxième pression restaure.",
-    "it": "Utilizzare con R: la prima pressione salva, la seconda pressione ripristina.",
-    "pt": "Use com R: o primeiro toque salva, o segundo toque restaura."
+    "de": "Beim Einsatz wird das Spielfeld gespeichert; erneut einsetzen, um zu diesem Moment zurückzukehren.",
+    "es": "Úsala para guardar el tablero; úsala de nuevo para volver a ese momento.",
+    "fr": "Utilise-la pour sauvegarder le plateau ; réutilise-la pour revenir à ce moment.",
+    "it": "Usala per salvare il campo; riusala per tornare a quel momento.",
+    "pt": "Use para salvar o tabuleiro; use de novo para voltar àquele momento."
   },
   "guide_card_time_capsule_name": {
     "de": "Zeitkapsel",
@@ -3458,26 +3458,26 @@
     "zh": "特性"
   },
   "mystery_active_time_capsule_restore_desc": {
-    "de": "{label}: Gespeicherten Feldzustand wiederherstellen.",
-    "es": "{label}: restaura el estado guardado del tablero.",
-    "fr": "{label} : restaurer l’état sauvegardé du plateau.",
-    "it": "{label}: ripristina lo stato salvato del campo.",
-    "ja": "{label}: 保存した盤面状態を復元。",
-    "ko": "{label}: 저장된 보드 상태 복원.",
-    "pt": "{label}: restaure o estado salvo do tabuleiro.",
-    "ru": "{label}: восстановить сохранённое состояние поля.",
-    "zh": "{label}：恢复已保存的棋盘状态。"
+    "de": "Erneut einsetzen, um zum gespeicherten Moment zurückzukehren.",
+    "es": "Úsala de nuevo para volver al momento guardado.",
+    "fr": "Réutilise-la pour revenir au moment sauvegardé.",
+    "it": "Riusala per tornare al momento salvato.",
+    "ja": "もう一度使うと保存した瞬間に戻る。",
+    "ko": "다시 사용하면 저장한 순간으로 돌아간다.",
+    "pt": "Use novamente para voltar ao momento salvo.",
+    "ru": "Используй снова, чтобы вернуться к сохранённому моменту.",
+    "zh": "再次使用可回到已保存的时刻。"
   },
   "mystery_active_time_capsule_save_desc": {
-    "de": "{label}: Aktuellen Feldzustand speichern.",
-    "es": "{label}: guarda el estado actual del tablero.",
-    "fr": "{label} : sauvegarder l’état actuel du plateau.",
-    "it": "{label}: salva lo stato attuale del campo.",
-    "ja": "{label}: 現在の盤面状態を保存。",
-    "ko": "{label}: 현재 보드 상태 저장.",
-    "pt": "{label}: salve o estado atual do tabuleiro.",
-    "ru": "{label}: сохранить текущее состояние поля.",
-    "zh": "{label}：保存当前棋盘状态。"
+    "de": "Beim Einsatz wird der aktuelle Spielfeldzustand gespeichert.",
+    "es": "Al usarla, guarda el estado actual del tablero.",
+    "fr": "À l’utilisation, sauvegarde l’état actuel du plateau.",
+    "it": "Quando usata, salva lo stato attuale del campo.",
+    "ja": "使うと現在の盤面状態を保存する。",
+    "ko": "사용하면 현재 보드 상태를 저장한다.",
+    "pt": "Ao usar, salva o estado atual do tabuleiro.",
+    "ru": "При использовании сохраняет текущее состояние поля.",
+    "zh": "使用时保存当前棋盘状态。"
   },
   "mystery_future_popup_cancel_label": {
     "de": "ESC: Abbrechen",
@@ -4063,26 +4063,26 @@
     "zh": "速度爆发！快速下落 {duration} 秒 + {line_mult} 倍分数！"
   },
   "mystery_msg_time_capsule_no_snapshot": {
-    "de": "Noch kein gespeicherter Zustand! Drücke zuerst T zum Speichern.",
-    "es": "¡Aún no hay estado guardado! Pulsa T primero para guardar.",
-    "fr": "Aucun état sauvegardé ! Appuie d’abord sur T pour sauvegarder.",
-    "it": "Nessuno stato salvato! Premi prima T per salvare.",
-    "ja": "保存状態がありません！先にTで保存してください。",
-    "ko": "저장된 상태가 없습니다! 먼저 T로 저장하세요.",
-    "pt": "Nenhum estado salvo ainda! Pressione T primeiro para salvar.",
-    "ru": "Сохранённого состояния ещё нет! Сначала нажмите T.",
-    "zh": "还没有保存状态！请先按 T 保存。"
+    "de": "Noch kein gespeicherter Zustand! Setze sie zuerst zum Speichern ein.",
+    "es": "¡Aún no hay estado guardado! Úsala una vez para guardar primero.",
+    "fr": "Aucun état sauvegardé ! Utilise-la une fois pour sauvegarder d’abord.",
+    "it": "Nessuno stato salvato! Usala una volta per salvare prima.",
+    "ja": "保存状態がありません！先に一度使って保存してください。",
+    "ko": "저장된 상태가 없습니다! 먼저 한 번 사용해 저장하세요.",
+    "pt": "Nenhum estado salvo ainda! Use-a uma vez para salvar primeiro.",
+    "ru": "Сохранённого состояния ещё нет! Сначала используйте карту, чтобы сохранить.",
+    "zh": "还没有保存状态！请先使用一次进行保存。"
   },
   "mystery_msg_time_capsule_ready": {
-    "de": "Zeitkapsel aktiv! T zum Speichern, R zum Zurückspulen.",
-    "es": "¡Cápsula del tiempo activa! T para guardar, R para rebobinar.",
-    "fr": "Capsule temporelle active ! T pour sauvegarder, R pour rembobiner.",
-    "it": "Capsula temporale attiva! T per salvare, R per riavvolgere.",
-    "ja": "タイムカプセル有効！Tで保存、Rで巻き戻し。",
-    "ko": "타임 캡슐 활성! T로 저장, R로 되감기.",
-    "pt": "Cápsula do tempo ativa! T para salvar, R para retroceder.",
-    "ru": "Капсула времени активна! T — сохранить, R — откатить.",
-    "zh": "时间胶囊已激活！按 T 保存，按 R 回退。"
+    "de": "Zeitkapsel bereit! Einsetzen zum Speichern, erneut einsetzen zum Zurückspulen.",
+    "es": "¡Cápsula del tiempo lista! Úsala para guardar, úsala de nuevo para rebobinar.",
+    "fr": "Capsule temporelle prête ! Utilise-la pour sauvegarder, réutilise-la pour rembobiner.",
+    "it": "Capsula temporale pronta! Usala per salvare, riusala per riavvolgere.",
+    "ja": "タイムカプセル準備完了！使うと保存、もう一度使うと巻き戻し。",
+    "ko": "타임 캡슐 준비 완료! 사용하면 저장, 다시 사용하면 되감기.",
+    "pt": "Cápsula do tempo pronta! Use para salvar, use de novo para retroceder.",
+    "ru": "Капсула времени готова! Используйте, чтобы сохранить, и снова, чтобы откатить.",
+    "zh": "时间胶囊就绪！使用以保存，再次使用以回退。"
   },
   "mystery_msg_time_capsule_restore_error": {
     "de": "Wiederherstellen der Zeitkapsel fehlgeschlagen!",
@@ -4118,15 +4118,15 @@
     "zh": "时间胶囊保存失败！"
   },
   "mystery_msg_time_capsule_saved": {
-    "de": "Zeitkapsel gespeichert! R zum Wiederherstellen.",
-    "es": "¡Cápsula del tiempo guardada! Pulsa R para restaurar.",
-    "fr": "Capsule temporelle sauvegardée ! Appuie sur R pour restaurer.",
-    "it": "Capsula temporale salvata! Premi R per ripristinare.",
-    "ja": "タイムカプセル保存！Rで復元。",
-    "ko": "타임 캡슐 저장! R로 복원하세요.",
-    "pt": "Cápsula do tempo salva! Pressione R para restaurar.",
-    "ru": "Капсула времени сохранена! Нажмите R для восстановления.",
-    "zh": "时间胶囊已保存！按 R 恢复。"
+    "de": "Zeitkapsel gespeichert! Erneut einsetzen, um zu diesem Moment zurückzukehren.",
+    "es": "¡Cápsula del tiempo guardada! Úsala de nuevo para volver a este momento.",
+    "fr": "Capsule temporelle sauvegardée ! Réutilise-la pour revenir à ce moment.",
+    "it": "Capsula temporale salvata! Riusala per tornare a questo momento.",
+    "ja": "タイムカプセル保存！もう一度使うとこの瞬間に戻る。",
+    "ko": "타임 캡슐 저장! 다시 사용하면 이 순간으로 돌아갑니다.",
+    "pt": "Cápsula do tempo salva! Use de novo para voltar a este momento.",
+    "ru": "Капсула времени сохранена! Используйте снова, чтобы вернуться к этому моменту.",
+    "zh": "时间胶囊已保存！再次使用可回到此刻。"
   },
   "mystery_msg_time_capsule_unavailable": {
     "de": "Keine Zeitkapsel verfügbar!",

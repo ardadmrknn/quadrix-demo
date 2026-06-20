@@ -155,7 +155,7 @@ def test_speed_burst_expiry_resets_state_and_clears_visual():
     assert mode.card_manager.active_cards == []
 
 
-def test_handle_input_t_saves_time_capsule_and_consumes_event_without_reposting(monkeypatch):
+def test_handle_input_t_does_not_trigger_time_capsule_and_reposts_event(monkeypatch):
     Game, MysteryMode = _import_game_modes_extra()
     import game_modes_extra as game_modes_module
 
@@ -176,6 +176,8 @@ def test_handle_input_t_saves_time_capsule_and_consumes_event_without_reposting(
     mode._restore_time_capsule = lambda: (restore_calls.append(1) or True)
     mode._do_rewind = lambda: False
     mode._open_sniper_overlay = lambda: False
+    # Saf slot tetiklemesi: T bir slot tuşu değil -> None.
+    mode._slot_index_for_keycode = lambda key: None
 
     event = types.SimpleNamespace(type=game_modes_module.pygame.KEYDOWN, key=game_modes_module.pygame.K_t)
     posted_events = []
@@ -187,13 +189,14 @@ def test_handle_input_t_saves_time_capsule_and_consumes_event_without_reposting(
 
     result = mode.handle_input()
 
+    # T artık Zaman Kapsülü'nü tetiklemez; event base game'e bırakılır.
     assert result is True
-    assert save_calls == [1]
+    assert save_calls == []
     assert restore_calls == []
-    assert posted_events == []
+    assert posted_events == [event]
 
 
-def test_handle_input_r_restores_time_capsule_and_consumes_event_without_reposting(monkeypatch):
+def test_handle_input_r_does_not_trigger_time_capsule_and_reposts_event(monkeypatch):
     Game, MysteryMode = _import_game_modes_extra()
     import game_modes_extra as game_modes_module
 
@@ -214,6 +217,8 @@ def test_handle_input_r_restores_time_capsule_and_consumes_event_without_reposti
     mode._restore_time_capsule = lambda: (restore_calls.append(1) or True)
     mode._do_rewind = lambda: False
     mode._open_sniper_overlay = lambda: False
+    # Saf slot tetiklemesi: R bir slot tuşu değil -> None.
+    mode._slot_index_for_keycode = lambda key: None
 
     event = types.SimpleNamespace(type=game_modes_module.pygame.KEYDOWN, key=game_modes_module.pygame.K_r)
     posted_events = []
@@ -225,7 +230,8 @@ def test_handle_input_r_restores_time_capsule_and_consumes_event_without_reposti
 
     result = mode.handle_input()
 
+    # R artık Zaman Kapsülü'nü tetiklemez; event base game'e bırakılır.
     assert result is True
     assert save_calls == []
-    assert restore_calls == [1]
-    assert posted_events == []
+    assert restore_calls == []
+    assert posted_events == [event]

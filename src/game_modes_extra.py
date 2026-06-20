@@ -1783,7 +1783,7 @@ class MysteryCardManager:
                 "title": "Hayalet Parça",
                 "base": 3,
                 "value_range": (3, 3),
-                "description": "G tuşu ile kullan: Parça hayalet olur ve blokların içinden geçer.",
+                "description": "Parça hayalet olur ve blokların içinden geçer.",
                 "color": (180, 200, 255),
                 "bg": (14, 14, 30),
                 "icon": "👻",
@@ -1800,7 +1800,7 @@ class MysteryCardManager:
                 "title": "Çekiç",
                 "base": 3,
                 "value_range": (3, 3),
-                "description": "H tuşu ile kullan: Düşen parça tek bloğa dönüşür.",
+                "description": "Düşen parça tek bloğa dönüşür.",
                 "color": (230, 210, 140),
                 "bg": (32, 22, 12),
                 "icon": "H",
@@ -1818,7 +1818,7 @@ class MysteryCardManager:
                 "title": "Bomba Ustası",
                 "base": 3,
                 "value_range": (3, 3),
-                "description": "M tuşu ile kullan: Parça bombaya dönüşür ve yere değdiğinde etrafı patlar.",
+                "description": "Parça bombaya dönüşür ve yere değdiğinde etrafı patlar.",
                 "color": (255, 90, 60),
                 "bg": (50, 12, 10),
                 "icon": "💣",
@@ -1835,7 +1835,7 @@ class MysteryCardManager:
                 "title": "Geri Sarma",
                 "base": 3,
                 "value_range": (3, 3),
-                "description": "U tuşu ile kullan: Son koyduğun parçayı geri al.",
+                "description": "Son koyduğun parçayı geri al.",
                 "color": (255, 200, 255),
                 "bg": (38, 12, 38),
                 "icon": "RW",
@@ -1851,7 +1851,7 @@ class MysteryCardManager:
                 "title": "Şekil Değiştirici",
                 "base": 3,
                 "value_range": (3, 3),
-                "description": "LSHIFT tuşu ile kullan: Parçayı ayna görüntüsüne çevirir (L-J, Z-S).",
+                "description": "Parçayı ayna görüntüsüne çevirir (L->J, Z->S).",
                 "color": (255, 200, 255),
                 "bg": (24, 12, 34),
                 "icon": "🔄",
@@ -1883,7 +1883,7 @@ class MysteryCardManager:
                 "title": "Ekstra Cep",
                 "base": 1,
                 "value_range": (1, 1),
-                "description": "V tuşu ile kullan: İkinci bir parça saklayabilirsin.",
+                "description": "{button} tuşu ile kullan: İkinci bir parça saklayabilirsin.",
                 "color": (200, 200, 255),
                 "bg": (18, 18, 40),
                 "icon": "🎒",
@@ -1998,7 +1998,7 @@ class MysteryCardManager:
                 "title": "Keskin Nişancı",
                 "base": 3,  # 3 hak ver
                 "value_range": (3, 3),  # Sabit 3 hak
-                "description": "N tuşu ile kullan: Açılan ekranda istediğin bloğa tıkla, o blok patlar.",
+                "description": "Açılan ekranda istediğin bloğa tıkla, o blok patlar.",
                 "color": (255, 80, 80),
                 "bg": (50, 10, 10),
                 "icon": "N",
@@ -2021,7 +2021,7 @@ class MysteryCardManager:
                 "title": "Zaman Kapsülü",
                 "base": 1,
                 "value_range": (1, 1),
-                "description": "T tuşu ile kullan: Tahtayı kaydedersin. R tuşuna basınca o ana geri dönersin.",
+                "description": "Kullanınca tahtanın o anki halini kaydeder; tekrar kullanınca kaydedilen ana geri dönersin.",
                 "color": (120, 255, 200),
                 "bg": (10, 40, 30),
                 "icon": "T",
@@ -2134,7 +2134,7 @@ class MysteryCardManager:
                 "title": "Tuttuğunu Koparan",
                 "base": 1,
                 "value_range": (1, 1),
-                "description": "{button} tuşu ile kullan: Sakladığın parçayı silersin.",
+                "description": "Sakladığın parçayı silersin.",
                 "color": (200, 200, 210),
                 "bg": (30, 30, 35),
                 "icon": "X",
@@ -2158,7 +2158,7 @@ class MysteryCardManager:
                 "title": "Tuttuğunu Koparan",
                 "base": 2,
                 "value_range": (2, 2),
-                "description": "{button} tuşu ile kullan: Sakladığın parçayı silersin.",
+                "description": "Sakladığın parçayı silersin.",
                 "color": (100, 230, 150),
                 "bg": (12, 36, 22),
                 "icon": "X",
@@ -2182,7 +2182,7 @@ class MysteryCardManager:
                 "title": "Tuttuğunu Koparan",
                 "base": 3,
                 "value_range": (3, 3),
-                "description": "{button} tuşu ile kullan: Sakladığın parçayı silersin.",
+                "description": "Sakladığın parçayı silersin.",
                 "color": (80, 170, 255),
                 "bg": (10, 20, 40),
                 "icon": "X",
@@ -2206,7 +2206,7 @@ class MysteryCardManager:
                 "title": "Tuttuğunu Koparan",
                 "base": 4,
                 "value_range": (4, 4),
-                "description": "{button} tuşu ile kullan: Sakladığın parçayı silersin.",
+                "description": "Sakladığın parçayı silersin.",
                 "color": (200, 100, 255),
                 "bg": (30, 12, 50),
                 "icon": "X",
@@ -2230,7 +2230,7 @@ class MysteryCardManager:
                 "title": "Tuttuğunu Koparan",
                 "base": 5,
                 "value_range": (5, 5),
-                "description": "{button} tuşu ile kullan: Sakladığın parçayı silersin.",
+                "description": "Sakladığın parçayı silersin.",
                 "color": (255, 200, 60),
                 "bg": (50, 35, 8),
                 "icon": "X",
@@ -2255,7 +2255,7 @@ class MysteryCardManager:
                 "title": "Son Düşüş",
                 "base": 3,
                 "value_range": (3, 3),
-                "description": "F tuşu ile kullan: Düşen parça {freeze_duration} saniye havada durur. Bu sürede sadece sağa-sola gidebilir veya sert düşüş yapabilir.",
+                "description": "Düşen parça {freeze_duration} saniye havada durur. Bu sürede sadece sağa-sola gidebilir veya sert düşüş yapabilir.",
                 "color": (140, 220, 255),
                 "bg": (10, 24, 50),
                 "icon": "❄️",
@@ -2280,7 +2280,7 @@ class MysteryCardManager:
                 "title": "Son Düşüş",
                 "base": 3,
                 "value_range": (3, 3),
-                "description": "F tuşu ile kullan: Düşen parça {freeze_duration} saniye havada durur. Bu sürede sadece sağa-sola gidebilir veya sert düşüş yapabilir.",
+                "description": "Düşen parça {freeze_duration} saniye havada durur. Bu sürede sadece sağa-sola gidebilir veya sert düşüş yapabilir.",
                 "color": (100, 180, 255),
                 "bg": (8, 18, 44),
                 "icon": "❄️",
@@ -2305,7 +2305,7 @@ class MysteryCardManager:
                 "title": "Son Düşüş",
                 "base": 3,
                 "value_range": (3, 3),
-                "description": "F tuşu ile kullan: Düşen parça {freeze_duration} saniye havada durur. Bu sürede sadece sağa-sola gidebilir veya sert düşüş yapabilir.",
+                "description": "Düşen parça {freeze_duration} saniye havada durur. Bu sürede sadece sağa-sola gidebilir veya sert düşüş yapabilir.",
                 "color": (60, 150, 255),
                 "bg": (5, 12, 38),
                 "icon": "❄️",
@@ -2383,7 +2383,7 @@ class MysteryCardManager:
                 "title": "Delik Avcısı",
                 "base": 1,
                 "value_range": (1, 1),
-                "description": "J tuşu ile kullan: Bir sütun seçersin. O sütundaki rastgele kapalı boşluklardan 1 tanesi dolar.",
+                "description": "Bir sütun seçersin. O sütundaki rastgele kapalı boşluklardan 1 tanesi dolar.",
                 "color": (140, 230, 200),
                 "bg": (10, 36, 30),
                 "icon": "HH",
@@ -9301,24 +9301,13 @@ class MysteryMode(Game):
         drill_locked = getattr(self, '_drill_movement_locked', False)
         piece = getattr(self, 'current_piece', None)
         is_drill_piece = piece and getattr(piece, 'drill', False)
-        time_capsule_keyboard_handled = False
         pg = pygame
         
         # Geri Sarma tuşu kontrolü (U tuşu) - normal gameplay sırasında
         try:
             events = pg.event.get()
-        except Exception as event_get_error:
+        except Exception:
             events = []
-            # Headless/test ortamlarında event kuyruğu init edilmemiş olabilir.
-            # Bu durumda en azından Zaman Kapsulu toggle akışını güvenli şekilde
-            # çalıştırıp girdiyi tüket.
-            if 'video system not initialized' in str(event_get_error).lower():
-                if not self.game_over and not self.paused and not self.card_selection_active:
-                    try:
-                        if self._toggle_time_capsule():
-                            return True
-                    except Exception:
-                        pass
 
         for event in events:
             # Drill parça kilitliyken döndürme tuşunu tüket (engelle)
@@ -9345,16 +9334,11 @@ class MysteryMode(Game):
                 if event.key not in allowed_keys:
                     continue
 
-            # T: kaydet, R: geri yükle. Event tüketilir; base game restart yoluna düşmez.
-            if event.type == pg.KEYDOWN and event.key in (pg.K_t, pg.K_r):
-                if not self.game_over and not self.paused and not self.card_selection_active:
-                    if event.key == pg.K_t:
-                        self._save_time_capsule()
-                    else:
-                        self._restore_time_capsule()
-                    time_capsule_keyboard_handled = True
-                    continue
-            
+            # T/R artık karta özel kısayol değil (saf slot tetiklemesi): Zaman
+            # Kapsülü yalnızca slot tuşuyla tetiklenir. T/R base game'e bırakılır
+            # (aktif oyunda bir işlevi yok; game-over'da R restart base tarafından
+            # ele alınır).
+
             # B tuşunu yut - MysteryMode B'yi kendi update() metodunda yönetiyor
             if event.type == pg.KEYDOWN and event.key == pg.K_b:
                 # Base game'in B handler'ına geçirme
@@ -9395,15 +9379,6 @@ class MysteryMode(Game):
                             if _gpm.was_action_just_pressed(f'slot_{slot_no}'):
                                 self._trigger_slot(slot_no - 1)
                                 return True
-
-                    # Zaman Kapsulu: save ve restore action'lari ayri ayri ele alinir.
-                    if not self.card_selection_active and not time_capsule_keyboard_handled:
-                        if _gpm.was_action_just_pressed('card_time_capsule_save'):
-                            self._save_time_capsule()
-                            return True
-                        if _gpm.was_action_just_pressed('card_time_capsule_restore'):
-                            self._restore_time_capsule()
-                            return True
             except Exception:
                 pass
         
@@ -10927,7 +10902,26 @@ class MysteryMode(Game):
         'freeze_drop':       {'charge_attr': '_freeze_drop_charges',       'trigger': 'poll'},
         'quantum_tunneling': {'charge_attr': 'tunnel_charges_remaining',   'trigger': 'poll'},
         'hold_destroyer':     {'charge_attr': '_hold_destroyer_charges',   'trigger': 'poll'},
+        'time_capsule':      {'charge_attr': '_time_capsule_charges',      'trigger': 'event'},
     }
+
+    @property
+    def _time_capsule_charges(self) -> int:
+        # Zaman Kapsülü slot kartı: kapsül kullanılabilir durumdayken 1 hak,
+        # geri yükleme ile tüketilince 0. Slot sistemi bu sayaçtan okur.
+        return 1 if getattr(self, 'time_capsule_available', False) else 0
+
+    @_time_capsule_charges.setter
+    def _time_capsule_charges(self, value: int) -> None:
+        try:
+            v = int(value)
+        except Exception:
+            v = 0
+        if v <= 0:
+            # Hak tükendi: kapsülü kapat.
+            self.time_capsule_available = False
+            self.time_capsule_saved = False
+            self.time_capsule_data = None
 
     def _slot_effect_id(self, card: Dict | None) -> str:
         if not card:
@@ -11137,6 +11131,12 @@ class MysteryMode(Game):
         if effect_id == 'perk_phase':
             try:
                 return bool(self.swap_current_piece_shape())
+            except Exception:
+                return False
+        if effect_id == 'time_capsule':
+            # Toggle: ilk tetiklemede tahtayı kaydet, ikincide kaydedilen ana dön.
+            try:
+                return bool(self._toggle_time_capsule())
             except Exception:
                 return False
         return False
@@ -11827,12 +11827,12 @@ class MysteryMode(Game):
                 pass
             effect_triggered = True
         elif effect_id == "time_capsule":
-            # Zaman Kapsulu: T ile kaydet, R ile geri don
+            # Zaman Kapsulu: slotta kullanılır; ilk kullanım kaydeder, ikinci kullanım geri döner.
             self.time_capsule_available = True
             self.time_capsule_saved = False
             self.time_capsule_data = None
             try:
-                self._set_localized_card_message('mystery_msg_time_capsule_ready', 3.0, 'Zaman Kapsulu aktif! T ile kaydet, R ile geri don.')
+                self._set_localized_card_message('mystery_msg_time_capsule_ready', 3.0, 'Zaman Kapsulu hazir! Kullaninca kaydeder, tekrar kullaninca geri donersin.')
             except Exception:
                 pass
             # Görsel efekt için kaydet
@@ -12102,7 +12102,7 @@ class MysteryMode(Game):
             except Exception:
                 prev_score_after_sweep = 0
             try:
-                self._clear_rows(2)
+                self._clear_rows(2, animate_fall=False)
             except Exception:
                 pass
             try:
@@ -12674,7 +12674,7 @@ class MysteryMode(Game):
             self.time_capsule_saved = True
             
             try:
-                self._set_localized_card_message('mystery_msg_time_capsule_saved', 2.0, 'Zaman Kapsulu kaydedildi! R ile geri yukle.')
+                self._set_localized_card_message('mystery_msg_time_capsule_saved', 2.0, 'Zaman Kapsulu kaydedildi! Tekrar kullaninca bu ana donersin.')
             except Exception:
                 pass
             
@@ -12686,6 +12686,11 @@ class MysteryMode(Game):
                     pass
             
             self._sync_active_cards()
+            try:
+                # Slotta ise hak durumunu tazele (kaydetmede hak düşmez).
+                self._refresh_slot_charges()
+            except Exception:
+                pass
             return True
             
         except Exception as e:
@@ -12706,7 +12711,7 @@ class MysteryMode(Game):
         
         if not getattr(self, 'time_capsule_saved', False) or not self.time_capsule_data:
             try:
-                self._set_localized_card_message('mystery_msg_time_capsule_no_snapshot', 1.5, 'Kaydedilmis durum yok! Once T ile kaydet.')
+                self._set_localized_card_message('mystery_msg_time_capsule_no_snapshot', 1.5, 'Kaydedilmis durum yok! Once kullanip kaydet.')
             except Exception:
                 pass
             return False
@@ -12747,6 +12752,11 @@ class MysteryMode(Game):
                     pass
             
             self._sync_active_cards()
+            try:
+                # Kapsül tüketildi: slot kartını boşalt (hak 0 -> slot temizlenir).
+                self._refresh_slot_charges()
+            except Exception:
+                pass
             return True
             
         except Exception as e:
@@ -13426,7 +13436,7 @@ class MysteryMode(Game):
                 _card_localized_description(
                     'hole_hunter',
                     value=hh_left,
-                    fallback='J tuşu ile kullan: Bir sütun seçersin. O sütundaki rastgele kapalı boşluklardan 1 tanesi dolar.',
+                    fallback='Bir sütun seçersin. O sütundaki rastgele kapalı boşluklardan 1 tanesi dolar.',
                 ),
                 status=self._localized_active_card_uses_status(_j_lbl, hh_left),
                 status_state='hazir',
@@ -13484,27 +13494,21 @@ class MysteryMode(Game):
                         pass
             
             if "time_capsule" in self._active_effect_visuals:
-                _t_lbl = _card_key('T', 'card_time_capsule_save')
-                _r_lbl = _card_key('R', 'card_time_capsule_restore')
                 if getattr(self, 'time_capsule_saved', False):
                     add(
                         "time_capsule",
                         self._localized_card_text(
                             'mystery_active_time_capsule_restore_desc',
-                            '{label}: Restore the saved board state.',
-                            label=_r_lbl,
+                            'Use it again to return to the saved moment.',
                         ),
-                        status=_r_lbl,
                     )
                 else:
                     add(
                         "time_capsule",
                         self._localized_card_text(
                             'mystery_active_time_capsule_save_desc',
-                            '{label}: Save the current board state.',
-                            label=_t_lbl,
+                            'Use it to save the current board state.',
                         ),
-                        status=_t_lbl,
                     )
         else:
             self._active_effect_visuals.pop("time_capsule", None)
@@ -13852,13 +13856,16 @@ class MysteryMode(Game):
         center_y = active_height // 2
         self.create_particles(count=30, x=center_x, y=center_y, colors=[color], speed=6)
 
-    def _clear_rows(self, count: int, *, count_as_lines: bool = False) -> None:
+    def _clear_rows(self, count: int, *, count_as_lines: bool = False, animate_fall: bool = True) -> None:
+        # `animate_fall=False` -> alt satırlar silinince üstteki bloklar yeni
+        # konumlarına anında yerleşir; "tüm bloklara düşme animasyonu" tetiklenmez
+        # (Ters Borç için istenen davranış).
         width = len(self.board.grid[0])
         count = max(1, min(count, len(self.board.grid)))
         prev_combo = int(getattr(self.board, 'combo', 0) or 0)
         prev_level = int(getattr(self.board, 'level', 1) or 1)
         original_rows_by_col: dict[int, list[int]] = {}
-        if getattr(self, 'effects_enabled', False):
+        if animate_fall and getattr(self, 'effects_enabled', False):
             try:
                 board_height = int(getattr(self.board, 'height', len(self.board.grid)) or len(self.board.grid))
                 board_width = int(getattr(self.board, 'width', width) or width)
