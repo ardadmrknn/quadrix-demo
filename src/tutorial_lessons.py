@@ -1,9 +1,12 @@
 """Tutorial ders kataloğu — Kanonik V2.
 
-7 bölüm, 26 ders.  Plan referansı:
+7 bölüm, 22 ders.  Plan referansı:
 plans/2026-04-18-egitim-modu-yeniden-tasarim-ve-icerik-stratejisi.md §7
 plans/2026-06-01-egitim-akis-yogunlugu-ve-yeni-oyuncu-deneyimi-plani.md §Ö5a
+plans/2026-06-20-egitim-sikiciligi-azaltma-ve-ceviri-senkron-kilavuzu.md §B
 (kart bölümü 8→6 sıkıştırıldı: cards_tempo_trap + cards_long_term_value kaldırıldı)
+(2026-06-20 sıkıcılık azaltma: plan_hold_vs_place, recover_reduce_ceiling,
+ cards_risk_reward_timing, exam_plan_midterm kaldırıldı → 26→22 ders)
 """
 
 from __future__ import annotations
@@ -38,6 +41,13 @@ LEGACY_LESSON_MAP: Dict[str, str] = {
     "cards_long_term_value": "cards_perk_vs_instant",
     "cards_tempo_trap": "cards_rescue_now",
     "card_synergy_pick": "cards_synergy_scale",
+    # 2026-06-20 — Sıkıcılık azaltma: örtüşen 4 ders kaldırıldı. Eski ilerleme
+    # AYNI BÖLÜMDEKİ hayatta kalan derse taşınır (ensure_progress_shape bölüm-içi
+    # eşler; çapraz-bölüm eşleme tamamlanmışlığı kaybeder).
+    "plan_hold_vs_place": "plan_hold_save",            # queue_hold
+    "recover_reduce_ceiling": "recover_make_breathing_room",  # recovery
+    "cards_risk_reward_timing": "cards_synergy_scale",  # card_strategy
+    "exam_plan_midterm": "exam_hybrid_final",          # mastery_exams
 }
 
 
@@ -320,7 +330,7 @@ LESSONS: List[Dict[str, Any]] = [
     },
 
     # ══════════════════════════════════════════════════════════════
-    # Chapter C — queue_hold  (4 ders, scenario)
+    # Chapter C — queue_hold  (3 ders, scenario)
     # ══════════════════════════════════════════════════════════════
     {
         "id": "plan_hold_save",
@@ -359,24 +369,6 @@ LESSONS: List[Dict[str, Any]] = [
         "allowed_actions": ["move_left", "move_right", "rotate", "soft_drop", "hard_drop"],
     },
     {
-        "id": "plan_hold_vs_place",
-        "chapter": "queue_hold",
-        "kind": "scenario",
-        "scenario_id": "hold_vs_place_decision",
-        "lesson_type": "board_puzzle",
-        "title_key": "tutorial_plan_hold_vs_place_title",
-        "title_fallback": "Koy mu, sakla mı?",
-        "description_key": "tutorial_plan_hold_vs_place_desc",
-        "description_fallback": "Bu parçayı şimdi koymak mı yoksa hold'a atmak mı daha değerli?",
-        "why_it_matters": "Hold kararı, her hamlenin gizli seçeneğidir.",
-        "goal_fallback": "Hedef: Doğru hold kararını ver.",
-        "tip_fallback": "Parçayı koyabiliyorsan koy — ama daha iyi bir yer gelecekse sakla.",
-        "difficulty": 2,
-        "duration_seconds": 30,
-        "skill_tags": ["hold", "decision"],
-        "allowed_actions": ["move_left", "move_right", "rotate", "soft_drop", "hard_drop", "hold"],
-    },
-    {
         "id": "plan_two_step_setup",
         "chapter": "queue_hold",
         "kind": "scenario",
@@ -396,7 +388,7 @@ LESSONS: List[Dict[str, Any]] = [
     },
 
     # ══════════════════════════════════════════════════════════════
-    # Chapter D — recovery  (4 ders, scenario)
+    # Chapter D — recovery  (3 ders, scenario)
     # ══════════════════════════════════════════════════════════════
     {
         "id": "recover_make_breathing_room",
@@ -432,24 +424,6 @@ LESSONS: List[Dict[str, Any]] = [
         "difficulty": 3,
         "duration_seconds": 45,
         "skill_tags": ["recovery", "priority"],
-        "allowed_actions": ["move_left", "move_right", "rotate", "soft_drop", "hard_drop"],
-    },
-    {
-        "id": "recover_reduce_ceiling",
-        "chapter": "recovery",
-        "kind": "scenario",
-        "scenario_id": "recovery_reduce_ceiling",
-        "lesson_type": "repair_challenge",
-        "title_key": "tutorial_recover_ceiling_title",
-        "title_fallback": "Tavanı düşür",
-        "description_key": "tutorial_recover_ceiling_desc",
-        "description_fallback": "Tavan baskısında güvenli taraf ve hız kontrolüyle yüksekliği azalt.",
-        "why_it_matters": "Yüksek tavan = az alan = her hata ölümcül.",
-        "goal_fallback": "Hedef: Yüksekliği en az 2 birim düşür.",
-        "tip_fallback": "Güvenli tarafı kullan, satır temizlemeye odaklan.",
-        "difficulty": 3,
-        "duration_seconds": 45,
-        "skill_tags": ["recovery", "height"],
         "allowed_actions": ["move_left", "move_right", "rotate", "soft_drop", "hard_drop"],
     },
     {
@@ -508,7 +482,7 @@ LESSONS: List[Dict[str, Any]] = [
     },
 
     # ══════════════════════════════════════════════════════════════
-    # Chapter F — card_strategy  (4 ders, card_choice)
+    # Chapter F — card_strategy  (3 ders, card_choice)
     # ══════════════════════════════════════════════════════════════
     {
         "id": "cards_synergy_scale",
@@ -558,25 +532,9 @@ LESSONS: List[Dict[str, Any]] = [
         "skill_tags": ["cards", "precision", "efficiency"],
         "allowed_actions": ["move_left", "move_right", "confirm"],
     },
-    {
-        "id": "cards_risk_reward_timing",
-        "chapter": "card_strategy",
-        "kind": "card_choice",
-        "scenario_id": "risk_reward_timing",
-        "lesson_type": "card_lab",
-        "title_key": "tutorial_cards_risk_reward_title",
-        "title_fallback": "Risk-getiri zamanlaması",
-        "description_key": "tutorial_cards_risk_reward_desc",
-        "description_fallback": "Tempo açma penceresini ne zaman zorlamanın doğru olduğunu öğren.",
-        "why_it_matters": "Güvenli board'da risk almak büyütür; tehlikeli board'da öldürür.",
-        "difficulty": 3,
-        "duration_seconds": 30,
-        "skill_tags": ["cards", "risk", "timing"],
-        "allowed_actions": ["move_left", "move_right", "confirm"],
-    },
 
     # ══════════════════════════════════════════════════════════════
-    # Chapter G — mastery_exams  (3 ders, scenario)
+    # Chapter G — mastery_exams  (2 ders, scenario)
     # ══════════════════════════════════════════════════════════════
     {
         "id": "exam_board_midterm",
@@ -595,24 +553,6 @@ LESSONS: List[Dict[str, Any]] = [
         "duration_seconds": 60,
         "skill_tags": ["exam", "surface", "well", "holes"],
         "allowed_actions": ["move_left", "move_right", "rotate", "soft_drop", "hard_drop"],
-    },
-    {
-        "id": "exam_plan_midterm",
-        "chapter": "mastery_exams",
-        "kind": "scenario",
-        "scenario_id": "exam_plan_combined",
-        "lesson_type": "exam",
-        "title_key": "tutorial_exam_plan_title",
-        "title_fallback": "Planlama Ara Sınavı",
-        "description_key": "tutorial_exam_plan_desc",
-        "description_fallback": "Queue, hold ve risk azaltma kararlarını aynı senaryoda kullan.",
-        "why_it_matters": "Planlama ilkelerini bilinçsiz reflekse çevirmek hedef.",
-        "goal_fallback": "Hedef: Hold ve queue'yu kullanarak temiz sonuç al.",
-        "tip_fallback": "Az ipucu — sırayı ve hold'u birlikte düşün.",
-        "difficulty": 4,
-        "duration_seconds": 60,
-        "skill_tags": ["exam", "queue", "hold", "planning"],
-        "allowed_actions": ["move_left", "move_right", "rotate", "soft_drop", "hard_drop", "hold"],
     },
     {
         "id": "exam_hybrid_final",

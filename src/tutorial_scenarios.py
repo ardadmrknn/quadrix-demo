@@ -784,7 +784,7 @@ def evaluate_scenario(
     }
 
 
-def enrich_scenario_outcome(outcome: Dict[str, Any] | None, scenario: Dict[str, Any] | None) -> Dict[str, Any]:
+def enrich_scenario_outcome(outcome: Dict[str, Any] | None, scenario: Dict[str, Any] | None, scenario_id: str = "") -> Dict[str, Any]:
     enriched = deepcopy(outcome) if isinstance(outcome, dict) else {}
     scenario_data = deepcopy(scenario) if isinstance(scenario, dict) else {}
     if not enriched or not scenario_data:
@@ -808,10 +808,20 @@ def enrich_scenario_outcome(outcome: Dict[str, Any] | None, scenario: Dict[str, 
         target_value = int(objective.get("value", 0) or 0)
         actual_value = metric_values[metric_name]
         passed = actual_value >= target_value if comparison == "min" else actual_value <= target_value
+
+        # Lokalize edilmiş objective metnini alalım
+        obj_id = objective.get("id")
+        raw_text = str(objective.get("text") or "")
+        if scenario_id and obj_id:
+            text_key = f"tutorial_scn_{scenario_id}_obj_{obj_id}"
+            text = t(text_key, default=raw_text)
+        else:
+            text = raw_text
+
         objective_results.append(
             {
-                "id": objective.get("id"),
-                "text": str(objective.get("text") or ""),
+                "id": obj_id,
+                "text": text,
                 "passed": bool(passed),
             }
         )
@@ -824,6 +834,10 @@ def enrich_scenario_outcome(outcome: Dict[str, Any] | None, scenario: Dict[str, 
     if isinstance(coach_feedback, dict) and feedback_key:
         coach_text = coach_feedback.get(feedback_key)
         if coach_text:
-            enriched["coach_text"] = str(coach_text)
+            if scenario_id:
+                cf_key = f"tutorial_scn_{scenario_id}_coach_{feedback_key}"
+                enriched["coach_text"] = t(cf_key, default=str(coach_text))
+            else:
+                enriched["coach_text"] = str(coach_text)
 
     return enriched

@@ -290,7 +290,7 @@ class TestBoardHighlightAndObjectives(unittest.TestCase):
         tutorial = TutorialMode.__new__(TutorialMode)
         tutorial.board_highlight_duration_s = 3.0
         scenario = {'highlight_placements': [['I', 1, 3]], 'expected_hold_usage': True}
-        lesson = {'lesson_type': 'exam', 'id': 'exam_plan_midterm'}
+        lesson = {'lesson_type': 'exam', 'id': 'exam_board_midterm'}
         for attempt in (1, 2):
             TutorialMode._setup_board_highlight(tutorial, scenario, lesson=lesson, attempt_count=attempt)
             self.assertFalse(tutorial.hold_highlight_active, f'attempt {attempt}')
@@ -790,7 +790,7 @@ class TestPerPlacementHighlightTiming(unittest.TestCase):
             'expected_hold_usage': True,
             'hold_highlight_index': 1,
         }
-        lesson = {'lesson_type': 'repair_challenge', 'id': 'recover_reduce_ceiling'}
+        lesson = {'lesson_type': 'repair_challenge', 'id': 'recover_wrong_side_escape'}
         TutorialMode._setup_board_highlight(tutorial, scenario, lesson=lesson, attempt_count=1)
         # hold_highlight_index=1 → ilk parçada hold vurgusu kapalı.
         self.assertTrue(tutorial.hold_highlight_armed)

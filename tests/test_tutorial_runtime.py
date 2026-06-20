@@ -152,7 +152,7 @@ class TestTutorialRuntime(unittest.TestCase):
         # fallback akışını izole ediyoruz.)
         tutorial = TutorialMode.__new__(TutorialMode)
         tutorial.next_lesson_id = None
-        tutorial.active_lesson_id = 'cards_risk_reward_timing'
+        tutorial.active_lesson_id = 'cards_build_direction'
         tutorial.active_lesson = {'chapter': 'card_strategy'}
         tutorial.lesson_lookup = {}
         tutorial.lesson_flow_scope = 'full'
@@ -197,7 +197,7 @@ class TestTutorialRuntime(unittest.TestCase):
         # (Paneli kapatıp fallback akışını izole ediyoruz.)
         tutorial = TutorialMode.__new__(TutorialMode)
         tutorial.next_lesson_id = None
-        tutorial.active_lesson_id = 'cards_risk_reward_timing'
+        tutorial.active_lesson_id = 'cards_build_direction'
         tutorial.active_lesson = {'chapter': 'card_strategy'}
         tutorial.lesson_lookup = {}
         tutorial.lesson_flow_scope = 'chapter'
@@ -215,7 +215,7 @@ class TestTutorialRuntime(unittest.TestCase):
         result = TutorialMode._continue_after_completion(tutorial)
 
         self.assertTrue(result)
-        self.assertEqual(started.get('hub'), ('card_strategy', 'cards_risk_reward_timing'))
+        self.assertEqual(started.get('hub'), ('card_strategy', 'cards_build_direction'))
         self.assertNotIn('lesson_id', started)
 
     def test_card_foundations_boundary_opens_progression_panel(self):
@@ -244,7 +244,7 @@ class TestTutorialRuntime(unittest.TestCase):
         # Ö1: card_strategy sonunda artık ilerleme paneli açılmalı.
         tutorial = TutorialMode.__new__(TutorialMode)
         tutorial.next_lesson_id = None
-        tutorial.active_lesson_id = 'cards_risk_reward_timing'
+        tutorial.active_lesson_id = 'cards_build_direction'
         tutorial.active_lesson = {'chapter': 'card_strategy'}
         tutorial.lesson_lookup = {}
         tutorial.lesson_flow_scope = 'full'

@@ -615,12 +615,13 @@ class TutorialMode(Game):
         s = lambda v, minimum=1: self._sx(v, ui_scale, minimum)
 
         # Ders sonuç panelleri başlat/çıkış (briefing) paneliyle aynı boyutta olsun.
+        # (2026-06-20: font +2px sonrası içeriğin kırpılmaması için yükseklik artırıldı.)
         if is_board_result:
-            panel_width, panel_height = s(640), s(500)
+            panel_width, panel_height = s(640), s(540)
         elif is_card_result:
-            panel_width, panel_height = s(640), s(500)
+            panel_width, panel_height = s(640), s(540)
         else:
-            panel_width, panel_height = s(560), s(380)
+            panel_width, panel_height = s(560), s(410)
         # Aktif canvas'ı taşmasın.
         panel_width = min(panel_width, active_width - s(48))
         panel_height = min(panel_height, active_height - s(40))
@@ -1176,7 +1177,9 @@ class TutorialMode(Game):
             enriched['success'] = False
             enriched['stars'] = 0
             enriched['feedback_key'] = 'need_hold'
-        return enrich_scenario_outcome(enriched, scenario)
+        active_lesson = getattr(self, 'active_lesson', None) or {}
+        scenario_id = active_lesson.get('scenario_id') or ''
+        return enrich_scenario_outcome(enriched, scenario, scenario_id=scenario_id)
 
     def _lesson_index(self, lesson_id=None):
         target_id = lesson_id or self.active_lesson_id
@@ -2466,6 +2469,13 @@ class TutorialMode(Game):
             return False
         lesson_id = str(lesson.get('id') or '')
         if not lesson_id:
+            return False
+        # 2026-06-20: İlk 4 drill dersi (tek-tuş mekaniği: hareket / döndür / soft /
+        # hard drop) için briefing MODALI hiç gösterilmez — oyuncu Enter'a uğramadan
+        # doğrudan oynar; board üstündeki satır-içi HOW TO rehberi (aynı metin)
+        # yönlendirir. 5. ders (ilk satır temizleme) bir puzzle'dır, briefing'i korur.
+        legacy_step = lesson.get('legacy_step')
+        if isinstance(legacy_step, int) and legacy_step in (1, 2, 3, 4):
             return False
         seen = getattr(self, 'briefing_seen_lessons', None)
         if seen is None:
@@ -3992,7 +4002,14 @@ class TutorialMode(Game):
                 effect['alpha'] = 255
             if effect['timer'] <= 0:
                 self.step_completion_effects.remove(effect)
-            
+
+        # 2026-06-20: İlk 4 derste, board üstündeki HOW TO'da istenen tuşa basılana
+        # kadar parça AŞAĞI DÜŞMESİN. inline_howto_active yalnız step 1-4'te aktiftir ve
+        # derste kullanılan tuşa basılınca otomatik False olur (istenen tetik). Aktifken
+        # her karede fall_time sıfırlanır → ebeveyn gravity eşiği (fall_speed) hiç aşılmaz.
+        if getattr(self, 'inline_howto_active', False):
+            self.fall_time = 0
+
         super().update(delta_time)
 
         if not self.waiting_for_enter and not self._is_scenario_lesson_active() and self.step < 7:
@@ -4488,11 +4505,11 @@ class TutorialMode(Game):
         retro_style.draw_glass_panel(self.screen, panel_rect, alpha=238,
                                      border_color=retro_style.primary, glow=True)
 
-        h1_font = retro_style.get_font(s(22, minimum=15), bold=True)
-        counter_font = retro_style.get_font(s(20, minimum=13), bold=True)
-        label_font = retro_style.get_font(s(22, minimum=16), bold=True)
-        body_font = retro_style.get_font(s(15, minimum=11))
-        tiny_font = retro_style.get_font(s(12, minimum=9))
+        h1_font = retro_style.get_font(s(24, minimum=17), bold=True)
+        counter_font = retro_style.get_font(s(22, minimum=15), bold=True)
+        label_font = retro_style.get_font(s(24, minimum=18), bold=True)
+        body_font = retro_style.get_font(s(17, minimum=13))
+        tiny_font = retro_style.get_font(s(14, minimum=11))
 
         pad_x = panel_rect.x + s(24)
         content_w = panel_rect.width - s(48)
@@ -4510,7 +4527,7 @@ class TutorialMode(Game):
 
         header_top = panel_rect.y + s(16)
         header_surf = retro_style.render_fit_text(
-            header_text, (255, 255, 255), content_w - s(20), s(20, minimum=13), bold=True)
+            header_text, (255, 255, 255), content_w - s(20), s(22, minimum=15), bold=True)
         header_bg = pygame.Rect(
             panel_rect.centerx - (header_surf.get_width() + s(28)) // 2,
             header_top,
@@ -4548,8 +4565,8 @@ class TutorialMode(Game):
         # ── NASIL YAPILIR rehberi (ilk derslerde tuş yönergesi — vurgulu kutu) ──
         howto_text = str(data.get('how_to') or '').strip()
         if howto_text and cursor_y < bottom_limit:
-            howto_font = retro_style.get_font(s(16, minimum=11), bold=False)
-            howto_label_font = retro_style.get_font(s(15, minimum=11), bold=True)
+            howto_font = retro_style.get_font(s(18, minimum=13), bold=False)
+            howto_label_font = retro_style.get_font(s(17, minimum=13), bold=True)
             howto_lines = self._wrap_text(howto_text, howto_font, content_w - s(24), max_lines=3)
             label_h = howto_label_font.get_height()
             box_inner_pad = s(12)
@@ -4600,7 +4617,10 @@ class TutorialMode(Game):
                 cursor_y += s(4)
             cursor_y += s(8)
 
-        cursor_y = _draw_block('tutorial_briefing_why', 'Neden', (255, 210, 130), data.get('why'), cursor_y, max_lines=2)
+        # Not (2026-06-20): Pedagojik "Neden" bloğu briefing'den kaldırıldı — oyuncunun
+        # ders başına okuma yükünü azaltmak için (geri bildirim: "3 parçaya bölünmüş yapı
+        # uyku getiriyor"). Bağlam kaybolmaz: "why_it_matters" hub ders kartında korunur.
+        # Briefing artık yalnız eyleme dönük blokları gösterir: HEDEFLER + Dikkat.
         cursor_y = _draw_block('tutorial_briefing_watch', 'Dikkat et', (160, 190, 250), data.get('watch'), cursor_y, max_lines=2)
 
         # ── Başlat / Çıkış butonları ──
@@ -5015,20 +5035,29 @@ class TutorialMode(Game):
             board_x, board_y = 0, 0
             board_w, board_h = active_width, active_height
 
-        panel_w = min(board_w - s(20), s(360))
-        inner_pad = s(14)
+        # 2026-06-20: Kutu %10 büyütüldü (gs = s × 1.10) ve üstteki "sıradaki ders" yeşil
+        # banner'ı (board_h*0.16 + yükseklik) ile çakışmaması için biraz aşağı alındı.
+        # gs ölçek-uyumlu: değer önce ×1.10, sonra oyunun _sx() UI ölçeğinden geçer
+        # (sabit piksel kaçağı yok; tüm diğer panellerle aynı ölçekleme sistemi).
+        GROW = 1.10
+        gs = lambda v, minimum=1: self._sx(v * GROW, ui_scale, max(1, int(round(minimum * GROW))))
+
+        panel_w = min(board_w - s(20), gs(360))
+        inner_pad = gs(14)
         content_w = panel_w - inner_pad * 2
 
-        label_font = retro_style.get_font(s(15, minimum=11), bold=True)
-        body_font = retro_style.get_font(s(15, minimum=11), bold=False)
-        lines = self._wrap_text(text, body_font, content_w - s(8), max_lines=3)
+        label_font = retro_style.get_font(gs(15, minimum=11), bold=True)
+        body_font = retro_style.get_font(gs(15, minimum=11), bold=False)
+        lines = self._wrap_text(text, body_font, content_w - gs(8), max_lines=3)
         label_h = label_font.get_height()
-        body_line_h = body_font.get_height() + s(3)
-        panel_h = inner_pad * 2 + label_h + s(6) + len(lines) * body_line_h
+        body_line_h = body_font.get_height() + gs(3)
+        panel_h = inner_pad * 2 + label_h + gs(6) + len(lines) * body_line_h
 
-        # Board üst-orta (görseldeki turuncu kutunun olduğu hizaya yakın).
+        # Board üst-orta; banner ile çakışmasın diye 0.20 → 0.28 board yüksekliğine indirildi.
         panel_x = board_x + (board_w - panel_w) // 2
-        panel_y = board_y + max(s(16), int(board_h * 0.20))
+        panel_y = board_y + max(s(56), int(board_h * 0.28))
+        # Büyütülen kutu board alt sınırını taşmasın.
+        panel_y = min(panel_y, board_y + board_h - panel_h - s(10))
         panel_rect = pygame.Rect(int(panel_x), int(panel_y), int(panel_w), int(panel_h))
 
         # Nabız atan yeşil accent kutu (briefing how-to kutusuyla aynı dil).
@@ -5038,17 +5067,17 @@ class TutorialMode(Game):
         box_bg.fill((20, 54, 40, 232))
         self.screen.blit(box_bg, panel_rect.topleft)
         border_col = (int(90 + 70 * pulse), int(220 + 30 * pulse), int(150 + 50 * pulse))
-        pygame.draw.rect(self.screen, border_col, panel_rect, max(1, s(2)), border_radius=s(8))
+        pygame.draw.rect(self.screen, border_col, panel_rect, max(1, gs(2)), border_radius=gs(8))
         pygame.draw.rect(self.screen, (120, 245, 175),
-                         pygame.Rect(panel_rect.x, panel_rect.y, s(4), panel_rect.height),
-                         border_radius=s(2))
+                         pygame.Rect(panel_rect.x, panel_rect.y, gs(4), panel_rect.height),
+                         border_radius=gs(2))
 
-        inner_x = panel_rect.x + inner_pad + s(4)
+        inner_x = panel_rect.x + inner_pad + gs(4)
         iy = panel_rect.y + inner_pad
         label_surf = label_font.render(
             '▶ ' + t('tutorial_briefing_howto', default='NASIL YAPILIR'), True, (150, 255, 195))
         self.screen.blit(label_surf, (inner_x, iy))
-        iy += label_h + s(6)
+        iy += label_h + gs(6)
         for line in lines:
             self._blit_line_with_key_highlights(
                 line, body_font, inner_x, iy,
@@ -6166,10 +6195,10 @@ class TutorialMode(Game):
         rect = self._tutorial_lesson_result_panel_rect(is_board_result, is_card_result=is_card_result)
         retro_style.draw_glass_panel(self.screen, rect, alpha=235, border_color=(40, 220, 140) if success else (220, 120, 80))
 
-        title_font = retro_style.get_font(s(28, minimum=18), bold=True)
-        body_font = retro_style.get_font(s(17, minimum=12))
-        small_font = retro_style.get_font(s(16, minimum=11))
-        label_font = retro_style.get_font(s(22, minimum=16), bold=True)
+        title_font = retro_style.get_font(s(30, minimum=20), bold=True)
+        body_font = retro_style.get_font(s(19, minimum=14))
+        small_font = retro_style.get_font(s(18, minimum=13))
+        label_font = retro_style.get_font(s(24, minimum=18), bold=True)
 
         title_surf = title_font.render(str(self.lesson_result.get('title', t('tutorial_result_title', default='Sonuç'))), True, (255, 255, 255))
         self.screen.blit(title_surf, title_surf.get_rect(center=(rect.centerx, rect.y + s(30))))
@@ -6183,7 +6212,7 @@ class TutorialMode(Game):
         self.screen.blit(stars_surf, stars_surf.get_rect(center=(rect.centerx, rect.y + s(62))))
 
         content_cursor_y = rect.y + s(86)
-        detail_font = retro_style.get_font(s(15, minimum=11))
+        detail_font = retro_style.get_font(s(17, minimum=13))
         pad_x = rect.x + s(28)
         text_x = rect.x + s(40)
         max_text_width = rect.width - s(56)
@@ -6193,13 +6222,18 @@ class TutorialMode(Game):
         bottom_limit = rect.bottom - action_reserve
 
         if is_board_result:
-            # Hedef noktaları (ortalanmış)
+            # Hedef noktaları (ortalanmış, uzun/CJK metinler için sarmalı)
             for objective in objective_results[:3]:
-                if content_cursor_y + detail_font.get_height() > bottom_limit:
-                    break
-                objective_surf = detail_font.render(str(objective.get('text') or ''), True, (225, 232, 240))
-                self.screen.blit(objective_surf, objective_surf.get_rect(centerx=rect.centerx, top=content_cursor_y))
-                content_cursor_y += detail_font.get_height() + s(4)
+                obj_text = str(objective.get('text') or '')
+                if not obj_text:
+                    continue
+                for line in self._wrap_text(obj_text, detail_font, max_text_width, max_lines=2):
+                    if content_cursor_y + detail_font.get_height() > bottom_limit:
+                        break
+                    objective_surf = detail_font.render(line, True, (225, 232, 240))
+                    self.screen.blit(objective_surf, objective_surf.get_rect(centerx=rect.centerx, top=content_cursor_y))
+                    content_cursor_y += detail_font.get_height() + s(2)
+                content_cursor_y += s(2)
 
             # FAZ E — Pedagojik üçlü: İyi yaptın / Geliştir / İpucu.
             def _draw_feedback_block(label_key, label_default, label_color, texts, cy, bullet_color):
@@ -6251,7 +6285,7 @@ class TutorialMode(Game):
                     True, (150, 200, 245))
                 self.screen.blit(card_label, card_label.get_rect(centerx=rect.centerx, top=content_cursor_y))
                 content_cursor_y += card_label.get_height() + s(2)
-                ct_font = retro_style.get_font(s(21, minimum=15), bold=True)
+                ct_font = retro_style.get_font(s(23, minimum=17), bold=True)
                 ct_surf = ct_font.render(card_title, True, (255, 255, 255))
                 self.screen.blit(ct_surf, ct_surf.get_rect(centerx=rect.centerx, top=content_cursor_y))
                 content_cursor_y += ct_surf.get_height() + s(8)
