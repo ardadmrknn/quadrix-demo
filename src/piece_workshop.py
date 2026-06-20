@@ -565,6 +565,14 @@ class PieceWorkshopScreen:
             if event.key == pygame.K_s and is_primary_modifier(mods):
                 self._save_current_piece()
                 return None
+
+            # Gamepad-only kaydetme yolu: Start/Options butonu menü bağlamında
+            # K_p sentetik tuşunu üretir (gamepad_manager 'pause' → K_p). Ctrl
+            # gerektirmediği için kontrolcüyle parça kaydının tek garantili yolu
+            # budur; mevcut Ctrl/Cmd+S klavye yolu korunur.
+            if event.key == pygame.K_p:
+                self._save_current_piece()
+                return None
             
             # Cursor hareketi
             if event.key in (pygame.K_LEFT, pygame.K_a):

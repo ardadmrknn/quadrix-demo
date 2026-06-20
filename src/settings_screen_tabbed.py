@@ -296,13 +296,10 @@ def _build_tab_content(tab_key: str, sm, show_debug: bool = False) -> list[dict]
             })
 
         ingame_gamepad_actions = [
-            ('rotate', _t('gp_rotate', 'Döndür')),
-            ('rotate_alt', _t('gp_rotate_alt', 'Döndür (Alt)')),
             ('hard_drop', _t('gp_hard_drop', 'Anında bırak')),
             ('hold', _t('gp_hold', 'Hold / Değiştir')),
             ('hold2', _t('card_perk_second_pocket_title', 'Ekstra Cep')),
             ('pause', _t('gp_pause', 'Duraklat')),
-            ('discard_held', _t('gp_discard_held', 'Tutulanı At')),
         ]
         for slot_no in range(1, 7):
             ingame_gamepad_actions.append((f'slot_{slot_no}', f'Slot {slot_no}'))

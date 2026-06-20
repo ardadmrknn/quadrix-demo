@@ -58,6 +58,9 @@ class CoopLevelSelect:
 
         self.current_world = 1
         self.hovered_level: Optional[int] = None
+        # Klavye/gamepad seçimi: mouse hover'dan bağımsız kalıcı odak.
+        # draw() bu değeri görsel olarak vurgular (hover yoksa).
+        self.selected_level: int = 1
         self.animation_time = 0.0
 
         # İlerleme
@@ -123,13 +126,14 @@ class CoopLevelSelect:
                 sel = getattr(self, 'selected_level', 1)
                 if self._is_level_unlocked(sel):
                     return f'play_{sel}'
-            # Dünya değiştirme (1-5 tuşları)
-            elif event.key == pygame.K_1:
-                self.current_world = 1
-            elif event.key == pygame.K_2:
-                self.current_world = 2
-            elif event.key == pygame.K_3:
-                self.current_world = 3
+            # Dünya değiştirme (sayı tuşları; geçersiz dünyaya geçme)
+            elif pygame.K_1 <= event.key <= pygame.K_9:
+                self._switch_world(event.key - pygame.K_1 + 1)
+            # Gamepad LB/RB → önceki/sonraki dünya (menu_tab_prev/next)
+            elif event.key == pygame.K_LEFTBRACKET:
+                self._switch_world(self.current_world - 1)
+            elif event.key == pygame.K_RIGHTBRACKET:
+                self._switch_world(self.current_world + 1)
 
         if event.type == pygame.VIDEORESIZE:
             self.window_width = self.screen.get_width()
@@ -157,7 +161,7 @@ class CoopLevelSelect:
                 if rect.collidepoint(mx, my):
                     if self._maybe_handle_demo_world_lock(w):
                         return None
-                    self.current_world = w
+                    self._switch_world(w)
                     return None
 
             # Level butonları
@@ -170,18 +174,57 @@ class CoopLevelSelect:
 
         return None
 
-    def _move_selection(self, delta: int) -> None:
-        """Keyboard/gamepad ile level seçimini kaydır."""
-        current = int(getattr(self, 'selected_level', 1) or 1)
-        levels = sorted(self._level_rects.keys()) if self._level_rects else list(range(1, 16))
+    def _levels_in_current_world(self) -> list:
+        """Aktif dünyadaki level numaralarını sıralı döndür."""
+        return sorted(c.level for c in get_coop_world_levels(self.current_world))
+
+    def _switch_world(self, world: int) -> None:
+        """Dünya değiştir (geçerli aralığa kıs) ve seçimi o dünyaya taşı.
+
+        Demo'da kilitli dünyaya geçiş upgrade promptu açar; bu yüzden hedef
+        dünya demo'da kullanılabilir değilse prompt gösterilir ve geçiş yapılmaz.
+        """
+        world = max(1, min(COOP_WORLDS, world))
+        if world == self.current_world:
+            return
+        if self._maybe_handle_demo_world_lock(world):
+            return
+        self.current_world = world
+        self.hovered_level = None
+        self._select_first_unlocked_in_world()
+
+    def _select_first_unlocked_in_world(self) -> None:
+        """Aktif dünyada görünür/oynanabilir bir level seç (ilk açık olan)."""
+        levels = self._levels_in_current_world()
         if not levels:
             return
-        try:
-            idx = levels.index(current)
-        except ValueError:
-            idx = 0
+        target = levels[0]
+        for lv in levels:
+            if self._is_level_unlocked(lv):
+                target = lv
+                break
+        self.selected_level = target
+
+    def _move_selection(self, delta: int) -> None:
+        """Keyboard/gamepad ile level seçimini kaydır.
+
+        Kilitli level'a geçmeye izin verilmez (campaign level_select ile aynı
+        davranış); böylece odak her zaman görünür/oynanabilir bir kart üzerinde
+        kalır.
+        """
+        levels = self._levels_in_current_world()
+        if not levels:
+            return
+        current = int(getattr(self, 'selected_level', levels[0]) or levels[0])
+        if current not in levels:
+            current = levels[0]
+        idx = levels.index(current)
         new_idx = max(0, min(len(levels) - 1, idx + delta))
-        self.selected_level = levels[new_idx]
+        target = levels[new_idx]
+        if self._is_level_unlocked(target):
+            self.selected_level = target
+        # Klavye navigasyonunda hover state'i temizle; seçim kartı vurgulansın.
+        self.hovered_level = None
 
     # ------------------------------------------------------------------
     # Update
@@ -329,6 +372,12 @@ class CoopLevelSelect:
         world_color = _WORLD_COLORS.get(self.current_world, retro_style.primary)
         lang = get_language()
 
+        # Görsel odak: mouse hover varsa onu, yoksa klavye/gamepad seçimini
+        # vurgula. Böylece kontrolcü ile gezinirken seçili kart belli olur.
+        focus_level = self.hovered_level
+        if focus_level is None:
+            focus_level = getattr(self, 'selected_level', None)
+
         f_num = retro_style.get_font(s(22, minimum=14), bold=True)
         f_name = retro_style.get_font(s(12, minimum=9))
         f_star = retro_style.get_font(s(14, minimum=10))
@@ -343,7 +392,7 @@ class CoopLevelSelect:
 
             unlocked = self._is_level_unlocked(lcfg.level)
             stars = self._get_level_stars(lcfg.level)
-            hovered = self.hovered_level == lcfg.level
+            hovered = focus_level == lcfg.level
 
             # Glass card arka plan
             if not unlocked:

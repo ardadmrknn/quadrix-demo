@@ -1076,6 +1076,14 @@ class UserSelectionScreen:
                 idx = order.index(self._form_focus) if self._form_focus in order else 0
                 idx = (idx - 1) % len(order) if reverse else (idx + 1) % len(order)
                 self._form_focus = order[idx]
+            elif event.key in (pygame.K_UP, pygame.K_DOWN):
+                # Gamepad D-pad / sol stick yukarı-aşağı → odak gez (TAB ile aynı
+                # sıra). Gamepad TAB sentetiği üretmediği için odak hareketinin
+                # ok tuşlarıyla da mümkün olması gerekiyor (create/edit formu).
+                order = [0, 1, 2, 3]
+                idx = order.index(self._form_focus) if self._form_focus in order else 0
+                idx = (idx - 1) % len(order) if event.key == pygame.K_UP else (idx + 1) % len(order)
+                self._form_focus = order[idx]
             elif event.key == pygame.K_r and self._form_focus == 0:
                 # Hızlı avatar: rastgele (sadece avatar alanı odaktayken)
                 if self.avatars:

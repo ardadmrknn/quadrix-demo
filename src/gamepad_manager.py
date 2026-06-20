@@ -132,29 +132,51 @@ class GamepadType:
 
 DEFAULT_GAMEPAD_BINDINGS = {
     # Oyun içi aksiyonlar
+    #
+    # YENI OYUN-ICI LAYOUT (Kart Ustaligi cift-tetik fix'i):
+    #   Eski layout LB/RB/LT/RT'yi hem temel aksiyon (hold/discard/lt/rt) hem de
+    #   slot tetigi olarak paylasiyordu. Kart Ustaligi'nda tek butona basinca hem
+    #   temel aksiyon hem slot tetikleniyordu (cift-tetik). Yeni layout slotlari
+    #   A/X/B/Y + LT/RT'ye, temel aksiyonlari ise LB(hold)/RB(hard_drop)'a tasiyarak
+    #   bu cakismayi tamamen ortadan kaldirir. Donme yalnizca D-pad ^ ile yapilir.
+    #   NOT: Demo'da enerji yetenekleri (Z/X) yalnizca klavye ile kullanilir;
+    #   gamepad atamasi yoktur. Bu yuzden eski slot_6'nin kullandigi R3(8) bosalir
+    #   ve hold2 (Ekstra Cep) R3'e tasinabilir (ana oyun ile birebir ayni layout).
     'move_left':    {'dpad': 'left',   'axis': ('left_x', -1)},
     'move_right':   {'dpad': 'right',  'axis': ('left_x', +1)},
     'soft_drop':    {'dpad': 'down',   'axis': ('left_y', +1)},
-    'hard_drop':    {'button': 3},   # Y (Xbox) / Triangle (PS)
-    'rotate':       {'button': 0},   # A (Xbox) / Cross (PS)
-    'rotate_alt':   {'button': 1},   # B (Xbox) / Circle (PS)
-    'hold':         {'button': 9},   # LB / L1
-    'hold2':        {'button': 2},   # X (Xbox) / Square (PS)
+    'hard_drop':    {'button': 10},  # RB / R1 (yeni; eski Y=3'ten tasindi)
+    'rotate':       {'button': None}, # bos (donme D-pad ^ ile; eski A=0 kaldirildi)
+    'rotate_alt':   {'button': None}, # bos (eski B=1 kaldirildi)
+    'hold':         {'button': 9},   # LB / L1 (degismedi)
+    'hold2':        {'button': 8},   # R3 / RS Click (Ekstra Cep / perk_second_pocket)
     'pause':        {'button': 6, 'button_secondary': 5},   # Start / Options / + or Guide (Home)
-    'lt':           {'trigger': 'left'},  # LT / L2 (analog trigger)
-    'rt':           {'trigger': 'right'}, # RT / R2 (analog trigger)
+    'lt':           {'button': None}, # bos (eski LT trigger kaldirildi)
+    'rt':           {'button': None}, # bos (eski RT trigger kaldirildi)
     'restart':      {'button': None}, # Devre dışı
-    'discard_held': {'button': 10},  # RB / R1
+    'discard_held': {'button': None}, # bos (eski RB=10 kaldirildi; kart slota konarak kullanilir)
     # Kart modu aksiyonlari (varsayilan: atanmis degil)
     'card_rewind': {'button': None},
     'card_sniper': {'button': None},
     'card_time_capsule_save': {'button': None},
     'card_time_capsule_restore': {'button': None},
-    'card_freeze': {'button': 1},
+    'card_freeze': {'button': None}, # bos (eski B=1 kaldirildi; zaten etkisizdi)
     'card_phase_shift': {'button': None},
     'card_ghost': {'button': None},
     'card_hammer': {'button': None},
     'card_bomb': {'button': None},
+
+    # Kart Ustaligi sol panel yuvalari (slot_1..slot_6).
+    # Bu aksiyonlar SADECE poll edilir (was_action_just_pressed / is_action_pressed);
+    # sentetik klavye event'i URETMEZLER (game_actions_list / menu_actions_list'te
+    # yer almazlar). Varsayilan layout settings_manager 'gamepad' blogu ile birebir
+    # ayni olmalidir; aksi halde settings dosyasi yokken (ilk acilis) yuvalar olu kalir.
+    'slot_1': {'button': 0},                 # A (Xbox) / Cross (PS)
+    'slot_2': {'button': 2},                 # X (Xbox) / Square (PS)
+    'slot_3': {'button': 1},                 # B (Xbox) / Circle (PS)
+    'slot_4': {'button': 3},                 # Y (Xbox) / Triangle (PS)
+    'slot_5': {'trigger': 'left'},           # LT / L2 (trigger pseudo-index 100)
+    'slot_6': {'trigger': 'right'},          # RT / R2 (trigger pseudo-index 101)
 
     # Menü navigasyonu
     'menu_up':      {'dpad': 'up',    'axis': ('left_y', -1)},
@@ -296,7 +318,9 @@ class GamepadManager:
     MOUSE_NEUTRAL_FOLLOW_RATE = 0.03
 
     # Bağlam: 'game' = oyun içi, 'menu' = menü/UI
-    # B butonu oyun içinde rotate, menüde back olarak çalışır
+    # YENI LAYOUT: B butonu oyun içinde slot_3 (Kart Ustaligi yuvasi), menüde
+    # menu_back olarak çalışır. (Eskiden oyun içinde rotate idi; donme artik
+    # yalnizca D-pad ^ ile yapilir.)
     CONTEXT_GAME = 'game'
     CONTEXT_MENU = 'menu'
 
@@ -417,6 +441,7 @@ class GamepadManager:
                 'hard_drop', 'rotate', 'rotate_alt', 'hold', 'hold2', 'pause',
                 'menu_back', 'menu_confirm', 'menu_tab_next', 'menu_tab_prev',
                 'discard_held', 'lt', 'rt',
+                'slot_1', 'slot_2', 'slot_3', 'slot_4', 'slot_5', 'slot_6',
                 'card_rewind', 'card_sniper', 'card_time_capsule_save',
                 'card_time_capsule_restore', 'card_freeze', 'card_phase_shift',
                 'card_ghost', 'card_hammer', 'card_bomb',
@@ -784,7 +809,8 @@ class GamepadManager:
 
     def set_context(self, context: str):
         """Aktif bağlamı ayarla: 'game' veya 'menu'.
-        B butonu oyun içinde rotate, menüde back olarak çalışır.
+        YENI LAYOUT: B butonu oyun içinde slot_3 (Kart Ustaligi yuvasi), menüde
+        menu_back olarak çalışır (donme yalnizca D-pad ^ ile).
         Bağlam değişiminde prev_buttons sıfırlanır (hayalet event önleme)."""
         if context != self._context:
             self._context = context

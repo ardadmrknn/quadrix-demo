@@ -1131,7 +1131,14 @@ class GuideScreen:
 
             if event.key == pygame.K_t:
                 return self._get_tutorial_action()
-            
+
+            # Onay (Enter/Space) — gamepad A bu sentetik tuşları üretir.
+            # Rehber ekranının birincil eylemi tutorial butonudur; klavyede
+            # 'T' ile tetiklenir ama gamepad'de 'T' yok. Onay tuşu da aynı
+            # birincil eylemi açsın ki gamepad kullanıcısı tutorial'a erişebilsin.
+            if event.key in (pygame.K_RETURN, pygame.K_SPACE):
+                return self._get_tutorial_action()
+
             # Yukarı/Aşağı - scroll
             if event.key == pygame.K_UP:
                 if self.scroll_y > 0:
@@ -1528,12 +1535,16 @@ class GuideScreen:
 
     def _draw_tutorial_button(self):
         btn_rect = self._get_tutorial_button_rect()
-        text = self._get_tutorial_button_label() + " (T)"
+        # Gamepad bağlıyken onay (A) butonunu, değilse 'T' kısayolunu göster.
+        hint = _guide_action_label('menu_confirm', 'T')
+        text = self._get_tutorial_button_label() + f" ({hint})"
         self._draw_action_button(btn_rect, self.tutorial_hover, text, retro_style.primary)
 
     def _draw_back_button(self):
         btn_rect = self._get_back_button_rect()
-        text = t('back') + " (ESC)"
+        # Gamepad bağlıyken geri (B) butonunu, değilse 'ESC' kısayolunu göster.
+        hint = _guide_action_label('menu_back', 'ESC')
+        text = t('back') + f" ({hint})"
         self._draw_action_button(btn_rect, self.back_hover, text, retro_style.secondary)
     
     def _draw_card_navigation(self, content_x: int, content_width: int, height: int):

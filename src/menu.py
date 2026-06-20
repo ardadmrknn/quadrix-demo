@@ -10445,10 +10445,17 @@ class BlockStyleSettingsScreen:
 
     def handle_input(self, event):
         if event.type == pygame.KEYDOWN:
-            # Mouse ile seçilebilen öğeler için ok/enter gibi tuş ataması yok.
-            # Geri / tam ekran gibi global aksiyonlar kalsın.
+            # Liste navigasyonu ve onay: gamepad D-pad/stick -> K_UP/K_DOWN,
+            # A -> K_RETURN olarak sentetik gelir. Klavye yolu sağlam olunca
+            # gamepad de bedavaya çalışır (önceden yalnızca mouse seçilebiliyordu).
             if event.key == pygame.K_ESCAPE:
                 return 'back'
+            elif event.key in (pygame.K_UP, pygame.K_w):
+                self._move_selection(-1)
+            elif event.key in (pygame.K_DOWN, pygame.K_s):
+                self._move_selection(1)
+            elif event.key in (pygame.K_RETURN, pygame.K_SPACE):
+                self._choose_color()
             elif is_fullscreen_toggle(event.key, getattr(event, 'mod', 0)):
                 return 'toggle_fullscreen'
             elif event.key == pygame.K_r:

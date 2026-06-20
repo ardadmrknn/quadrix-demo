@@ -359,6 +359,16 @@ class CampaignLevelSelect:
                 if self.current_world != 5:
                     self._start_world_transition(5)
             
+            # Gamepad LB/RB → önceki/sonraki dünya (menu_tab_prev/next).
+            # Sayı tuşları kontrolcüde zor erişilir; omuz butonları dünya
+            # sekmeleri arasında gezinmenin doğal gamepad yoludur.
+            elif event.key == pygame.K_LEFTBRACKET and not self.world_transition_active:
+                if self.current_world > 1:
+                    self._start_world_transition(self.current_world - 1)
+            elif event.key == pygame.K_RIGHTBRACKET and not self.world_transition_active:
+                if self.current_world < 5:
+                    self._start_world_transition(self.current_world + 1)
+            
             # Enter ile level başlat
             elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
                 if self._maybe_handle_demo_level_lock(self.selected_level):

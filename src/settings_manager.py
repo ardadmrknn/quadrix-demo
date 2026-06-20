@@ -21,6 +21,53 @@ from storage_layout import (
     write_json_file,
 )
 
+# ─── Gamepad layout migration ───────────────────────────────────────────────
+# Gamepad varsayilan layout'u "Kart Ustaligi cift-tetik fix'i" ile degisti
+# (slotlar LB/RB/LT/RT/L3/R3'ten A/X/B/Y + LT/RT'ye, temel aksiyonlar LB/RB'ye
+# tasindi). Diske yazilmis eski oyuncu bloklari `_merge_controls` nedeniyle eski
+# (cift-tetikli) layout'u koruyor. Bu surum numarasi tek seferlik, idempotent
+# bir migration'i yonetir.
+#
+# version yok / 1  → eski (pre-fix) layout
+# version 2        → yeni layout (slot A/X/B/Y+LT/RT, hard_drop=RB, hold=LB,
+#                    hold2=R3 Ekstra Cep)
+#
+# NOT: Demo'da enerji yetenekleri (Ground Sweep / Time Warp) yalnizca klavye
+# (Z/X) ile kullanilir; gamepad atamasi hicbir zaman olmadi. Bu yuzden ana
+# oyundaki v2→v3 (enerji gamepad'den kaldirma) adimina gerek yoktur; tek adimli
+# v1→v2 migration yeterlidir ve nihai layout ana oyunla birebir aynidir.
+CURRENT_GAMEPAD_LAYOUT_VERSION = 2
+
+# Eski (v1) varsayilan gamepad layout'unun `primary` imzasi. Bir aksiyonun
+# saklanmis degeri buradaki primary ile (ve secondary=-1) birebir eslesiyorsa
+# kullanici o aksiyonu OZELLESTIRMEMIS demektir → guvenle yeni default'a
+# tasinabilir. Eslesmiyorsa kullanici bilerek degistirmistir → DOKUNMA.
+_OLD_GAMEPAD_LAYOUT_V1 = {
+    'slot_1': 9,      # LB  → yeni: A(0)
+    'slot_2': 10,     # RB  → yeni: X(2)
+    'slot_3': 100,    # LT  → yeni: B(1)
+    'slot_4': 101,    # RT  → yeni: Y(3)
+    'slot_5': 7,      # L3  → yeni: LT(100)
+    'slot_6': 8,      # R3  → yeni: RT(101)
+    'hard_drop': 3,   # Y   → yeni: RB(10)
+    'hold': 9,        # LB  → yeni: LB(9) (degismedi)
+    'hold2': 2,       # X   → yeni: R3(8)
+    'discard_held': 10,  # RB → yeni: -1
+    'lt': 100,        # LT  → yeni: -1
+    'rt': 101,        # RT  → yeni: -1
+    'rotate': 0,      # A   → yeni: -1 (donme D-pad ^)
+    'rotate_alt': 1,  # B   → yeni: -1
+    'card_freeze': 1,  # B  → yeni: -1
+}
+
+# Migration'da buton-isgali kontrolu yapilirken menu-baglami / ayar anahtarlari
+# haric tutulur (oyun-ici cift-tetik degil).
+_GAMEPAD_NON_GAME_KEYS = frozenset({
+    'enabled', 'rumble', 'deadzone', 'mouse_sensitivity', 'gamepad_layout_version',
+    'menu_confirm', 'menu_back', 'menu_tab_next', 'menu_tab_prev',
+    'editor_secondary', 'editor_delete',
+})
+
 DEFAULT_CONTROLS = {
     'single_player': {
         # Tek oyuncu: her aksiyon için birincil/ikincil tuş.
@@ -67,29 +114,34 @@ DEFAULT_CONTROLS = {
         'rumble': 'high',
         'deadzone': 0.35,
         'mouse_sensitivity': 1.0,
+        # Diske yazilan layout surumu (migration icin). Yeni kurulumlar dogrudan
+        # guncel layout'tadir; eski oyuncular _migrate_gamepad_block ile tasinir.
+        'gamepad_layout_version': CURRENT_GAMEPAD_LAYOUT_VERSION,
         # Oyun içi butonlar
-        'hard_drop': {'primary': 3, 'secondary': -1},     # Y (Xbox) / Triangle (PS)
-        'rotate': {'primary': 0, 'secondary': -1},        # A (Xbox) / Cross (PS)
-        'rotate_alt': {'primary': 1, 'secondary': -1},   # B (Xbox) / Circle (PS)
-        'hold': {'primary': 9, 'secondary': -1},          # LB / L1
-        'hold2': {'primary': 2, 'secondary': -1},         # X (Xbox) / Square (PS)
+        # YENI LAYOUT (Kart Ustaligi cift-tetik fix'i): slotlar A/X/B/Y + LT/RT'ye
+        # tasindi; temel aksiyonlar LB(hold)/RB(hard_drop)'a tasindi. Donme D-pad ^.
+        'hard_drop': {'primary': 10, 'secondary': -1},    # RB / R1 (yeni; eski Y=3'ten tasindi)
+        'rotate': {'primary': -1, 'secondary': -1},       # bos (donme D-pad ^; eski A=0 kaldirildi)
+        'rotate_alt': {'primary': -1, 'secondary': -1},   # bos (eski B=1 kaldirildi)
+        'hold': {'primary': 9, 'secondary': -1},          # LB / L1 (degismedi)
+        'hold2': {'primary': 8, 'secondary': -1},          # R3 / RS Click (Ekstra Cep)
         'pause': {'primary': 6, 'secondary': -1},         # Start / Options / +
         'restart': {'primary': -1, 'secondary': -1},      # Devre dışı
-        'discard_held': {'primary': 10, 'secondary': -1}, # RB / R1
-        'lt': {'primary': 100, 'secondary': -1},          # LT / L2 (trigger pseudo-index)
-        'rt': {'primary': 101, 'secondary': -1},          # RT / R2 (trigger pseudo-index)
-        # Kart modu butonlari (varsayilan: atanmis degil)
-        'slot_1': {'primary': 9, 'secondary': -1},     # L1 / LB
-        'slot_2': {'primary': 10, 'secondary': -1},    # R1 / RB
-        'slot_3': {'primary': 100, 'secondary': -1},   # L2 / LT pseudo
-        'slot_4': {'primary': 101, 'secondary': -1},   # R2 / RT pseudo
-        'slot_5': {'primary': 7, 'secondary': -1},     # L3 Click
-        'slot_6': {'primary': 8, 'secondary': -1},     # R3 Click
+        'discard_held': {'primary': -1, 'secondary': -1}, # bos (eski RB=10 kaldirildi)
+        'lt': {'primary': -1, 'secondary': -1},           # bos (eski LT trigger kaldirildi)
+        'rt': {'primary': -1, 'secondary': -1},           # bos (eski RT trigger kaldirildi)
+        # Kart Ustaligi slot butonlari (yeni layout)
+        'slot_1': {'primary': 0, 'secondary': -1},     # A / Cross
+        'slot_2': {'primary': 2, 'secondary': -1},     # X / Square
+        'slot_3': {'primary': 1, 'secondary': -1},     # B / Circle
+        'slot_4': {'primary': 3, 'secondary': -1},     # Y / Triangle
+        'slot_5': {'primary': 100, 'secondary': -1},   # LT / L2 pseudo
+        'slot_6': {'primary': 101, 'secondary': -1},   # RT / R2 pseudo
         'card_rewind': {'primary': -1, 'secondary': -1},
         'card_sniper': {'primary': -1, 'secondary': -1},
         'card_time_capsule_save': {'primary': -1, 'secondary': -1},
         'card_time_capsule_restore': {'primary': -1, 'secondary': -1},
-        'card_freeze': {'primary': 1, 'secondary': -1},
+        'card_freeze': {'primary': -1, 'secondary': -1}, # bos (eski B=1 kaldirildi)
         'card_phase_shift': {'primary': -1, 'secondary': -1},
         'card_ghost': {'primary': -1, 'secondary': -1},
         'card_hammer': {'primary': -1, 'secondary': -1},
@@ -1254,6 +1306,115 @@ class SettingsManager:
         """Varsayılan kontrol şemasının bir kopyasını döndür."""
         return copy.deepcopy(DEFAULT_CONTROLS)
 
+    @staticmethod
+    def _extract_gamepad_binding(raw):
+        """Saklanmis bir gamepad binding degerinden (int VEYA
+        {'primary','secondary'}) (primary, secondary) tuple'i cikar.
+
+        - int/float          → (deger, -1)
+        - {'primary','secondary'} → (primary, secondary)
+        - diger / gecersiz   → (None, None)
+        secondary verilmemisse -1 kabul edilir.
+        """
+        if isinstance(raw, bool):
+            return None, None
+        if isinstance(raw, (int, float)):
+            return int(raw), -1
+        if isinstance(raw, dict):
+            p = raw.get('primary')
+            s = raw.get('secondary')
+            pi = int(p) if isinstance(p, (int, float)) and not isinstance(p, bool) else None
+            si = int(s) if isinstance(s, (int, float)) and not isinstance(s, bool) else -1
+            return pi, si
+        return None, None
+
+    def _migrate_gamepad_block(self, gp_existing):
+        """Eski gamepad layout'unu guncel layout'a tek seferlik, idempotent tasi.
+
+        Strateji (per-action, gerekce):
+        - `gamepad_layout_version` >= CURRENT ise hicbir sey yapma (idempotent).
+        - Aksi halde layout'u degisen aksiyon icin: saklanmis deger eski
+          default ile birebir esitse (primary + secondary=-1) kullanici o
+          aksiyonu OZELLESTIRMEMIS demektir → yeni default'a tasi. Boylece
+          kullanicinin dokunmadigi her sey cift-tetiksiz yeni layout'a gecer.
+        - Saklanmis deger eski default'tan farkliysa kullanici BILEREK
+          degistirmistir → DOKUNMA (EZME yok).
+
+        v1 → v2: slotlar A/X/B/Y+LT/RT'ye, temel aksiyonlar LB(hold)/RB(hard_drop)'a,
+          hold2 (Ekstra Cep) R3'e tasindi; eski cift-tetik kaynaklari (-1).
+          hold2=R3(8) atamadan once 8'in baska bir aktif oyun-ici binding
+          tarafindan isgal edilmedigi dogrulanir; isgal varsa hold2 -1 birakilir
+          (yeni cift-tetik dogmaz).
+
+        Migration YALNIZCA 'gamepad' blogunu etkiler.
+        """
+        if not isinstance(gp_existing, dict):
+            return gp_existing
+
+        try:
+            version = int(gp_existing.get('gamepad_layout_version', 1))
+        except (TypeError, ValueError):
+            version = 1
+
+        if version >= CURRENT_GAMEPAD_LAYOUT_VERSION:
+            # Zaten guncel → idempotent no-op.
+            return gp_existing
+
+        migrated = copy.deepcopy(gp_existing)
+        gp_defaults = DEFAULT_CONTROLS['gamepad']
+        _MISSING = object()
+
+        def _new_primary(action_key):
+            nd = gp_defaults.get(action_key, {})
+            return nd.get('primary', -1) if isinstance(nd, dict) else -1
+
+        def _occupied_buttons(exclude=()):
+            """Aktif oyun-ici binding'lerin isgal ettigi buton indeksleri."""
+            occ = set()
+            for key, raw in migrated.items():
+                if key in _GAMEPAD_NON_GAME_KEYS or key in exclude:
+                    continue
+                p, _s = self._extract_gamepad_binding(raw)
+                if isinstance(p, int) and p >= 0:
+                    occ.add(p)
+            return occ
+
+        # ── v1 → v2: eski cift-tetikli layout normalizasyonu ──────────────────
+        # hold2 (R3) cift-tetik guard'i icin once digerlerini tasi, en son hold2.
+        for action, old_primary in _OLD_GAMEPAD_LAYOUT_V1.items():
+            if action == 'hold2':
+                continue
+            new_primary = _new_primary(action)
+            stored = migrated.get(action, _MISSING)
+            if stored is _MISSING:
+                # Eski settings'te hic yoktu → kullanici dokunmamis → yeni default.
+                migrated[action] = {'primary': new_primary, 'secondary': -1}
+                continue
+            primary, secondary = self._extract_gamepad_binding(stored)
+            unmodified = (primary == old_primary) and (secondary is None or secondary == -1)
+            if unmodified:
+                migrated[action] = {'primary': new_primary, 'secondary': -1}
+            # else: kullanici ozellestirmis → oldugu gibi birak.
+
+        # hold2 (Ekstra Cep): v1 X(2) → v2 R3(8). Cift-tetik guard.
+        hold2_old = _OLD_GAMEPAD_LAYOUT_V1['hold2']
+        stored_h2 = migrated.get('hold2', _MISSING)
+        if stored_h2 is _MISSING:
+            hold2_unmodified = True
+        else:
+            h2_primary, h2_secondary = self._extract_gamepad_binding(stored_h2)
+            hold2_unmodified = (h2_primary == hold2_old) and (h2_secondary is None or h2_secondary == -1)
+        if hold2_unmodified:
+            new_hold2 = _new_primary('hold2')  # 8 (R3)
+            if new_hold2 >= 0 and new_hold2 in _occupied_buttons(exclude=('hold2',)):
+                migrated['hold2'] = {'primary': -1, 'secondary': -1}
+            else:
+                migrated['hold2'] = {'primary': new_hold2, 'secondary': -1}
+        # else: kullanici hold2'yi ozellestirmis → dokunma.
+
+        migrated['gamepad_layout_version'] = CURRENT_GAMEPAD_LAYOUT_VERSION
+        return migrated
+
     def _merge_controls(self, existing):
         merged = self.get_default_controls()
         if not isinstance(existing, dict):
@@ -1310,6 +1471,8 @@ class SettingsManager:
         # Gamepad ayarlarını birleştir
         gp_existing = existing.get('gamepad')
         if isinstance(gp_existing, dict):
+            # Eski layout'u guncel layout'a tasi (tek seferlik, idempotent).
+            gp_existing = self._migrate_gamepad_block(gp_existing)
             for key, value in gp_existing.items():
                 if key in merged.get('gamepad', {}):
                     default_value = merged['gamepad'][key]

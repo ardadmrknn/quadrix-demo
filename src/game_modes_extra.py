@@ -6499,6 +6499,18 @@ class MysteryMode(Game):
             return True
         if getattr(self, '_card_workshop_active', False):
             return True
+        # Sniper ve Delik Avcısı hedefleme overlay'leri hem mouse ile nişan
+        # alınabilen hem de gamepad ile gezilen ekranlardır. Bunları "mouse
+        # görünür" sayarak ana döngü (main.py) gamepad bağlamını 'menu'ya
+        # geçirir; böylece A=onay/ateş (K_RETURN), B=iptal (K_ESCAPE) ve
+        # D-pad/sol stick imleç hareketi (tekrar/DAS dahil) mevcut klavye
+        # handler'ları üzerinden çalışır. Aksi halde bağlam 'game' kalır ve
+        # A hiçbir sentetik event üretmez (ateş edilemez), B ise K_UP üretip
+        # imleci kaydırır (iptal edilemez).
+        if getattr(self, '_sniper_overlay_active', False):
+            return True
+        if getattr(self, '_hole_hunter_overlay_active', False):
+            return True
         return bool(getattr(self, 'card_selection_active', False)) or super().wants_mouse_visible()
 
     def __init__(
@@ -8803,7 +8815,12 @@ class MysteryMode(Game):
                 soft_drop_active = _pressed(soft_key) or _pressed(pygame.K_s)
                 if not soft_drop_active:
                     try:
-                        from gamepad_manager import get_gamepad_manager
+                        # NOT: Burada modül seviyesindeki get_gamepad_manager
+                        # kullanılır. Yerel `from ... import ...` EKLEME — fonksiyon
+                        # kapsamında adı local'e çevirir ve update() başındaki
+                        # `_gpm = get_gamepad_manager()` çağrısını UnboundLocalError
+                        # ile düşürerek tüm gamepad poll yollarını (Z/X, ghost,
+                        # hammer, bomb, discard) sessizce öldürür.
                         if get_gamepad_manager().is_direction_held('down'):
                             soft_drop_active = True
                     except Exception:
@@ -9673,6 +9690,44 @@ class MysteryMode(Game):
             except Exception:
                 pass
     
+    def _slot_allocation_hint_text(self) -> str:
+        """Slot yerleştirme ipucu metni.
+
+        Gamepad bağlıyken yalnızca AÇIK (unlocked) slot sayısı kadar gerçek
+        kontrolcü buton etiketi ve iptal butonu (menu_back) ile derlenir.
+        Gamepad yoksa mevcut klavye ipucu ('1-6 ... ESC ...') aynen döner.
+        """
+        try:
+            gpm = get_gamepad_manager()
+            gp_on = bool(gpm and gpm.is_connected())
+        except Exception:
+            gpm = None
+            gp_on = False
+        if gp_on and gpm:
+            try:
+                unlocked = int(getattr(self.card_manager, 'unlocked_slots', 3))
+            except Exception:
+                unlocked = 3
+            unlocked = max(1, min(6, unlocked))
+            keys: List[str] = []
+            for i in range(unlocked):
+                try:
+                    lbl = gpm.get_button_label(f'slot_{i + 1}')
+                except Exception:
+                    lbl = None
+                if lbl and lbl != '?':
+                    keys.append(lbl)
+            try:
+                cancel = gpm.get_button_label('menu_back')
+            except Exception:
+                cancel = None
+            if keys and cancel and cancel != '?':
+                return t(
+                    'slot_allocation_hint_gamepad',
+                    '{keys} ile seç  -  {cancel} ile iptal',
+                ).format(keys='/'.join(keys), cancel=cancel)
+        return t('slot_allocation_hint', '1-6 ile sec  -  ESC ile iptal')
+
     def _draw_slot_allocation_panel(self) -> None:
         """Slot yerleştirme overlay'ini çiz (plan §3-B).
 
@@ -9719,7 +9774,7 @@ class MysteryMode(Game):
                 (235, 242, 252),
             )
             hint_surf = hint_font.render(
-                self._fit_text_to_width(hint_font, t('slot_allocation_hint', '1-6 ile sec  -  ESC ile iptal'), active_width - pad * 4),
+                self._fit_text_to_width(hint_font, self._slot_allocation_hint_text(), active_width - pad * 4),
                 True,
                 (170, 186, 210),
             )
@@ -11088,7 +11143,23 @@ class MysteryMode(Game):
         return None
 
     def _slot_key_label_for_index(self, idx: int) -> str:
-        """Slot için kısa tuş etiketi (rozette gösterilir), ayarlardan türetilir."""
+        """Slot için kısa tuş etiketi (rozette gösterilir).
+
+        Gamepad bağlıyken kontrolcü-tipine göre gerçek buton adını döndürür
+        (slot_1=A, slot_2=X, slot_3=B, slot_4=Y, slot_5=LT, slot_6=RT;
+        Xbox/PS/Nintendo otomatik çözülür). Gamepad yoksa veya etiket
+        çözülemezse klavye keybinding'inden türetilen mevcut davranış korunur.
+        """
+        # Gamepad bağlıysa kontrolcü buton adını tercih et.
+        try:
+            gpm = get_gamepad_manager()
+            if gpm and gpm.is_connected():
+                label = gpm.get_button_label(f'slot_{idx + 1}')
+                if label and label != '?':
+                    return label
+        except Exception:
+            pass
+        # Klavye fallback (mevcut davranış).
         try:
             bindings = self._resolve_slot_keybindings()
         except Exception:
@@ -14365,8 +14436,13 @@ class MysteryMode(Game):
             elif event.key == pygame.K_RIGHT:
                 self._card_workshop_cursor_x = min(6, self._card_workshop_cursor_x + 1)
                 return True
-            elif event.key == pygame.K_SPACE:
-                # Blok yerleştir / sil
+            elif event.key in (pygame.K_SPACE, pygame.K_x):
+                # Blok yerleştir / sil.
+                # K_SPACE: klavye. K_x: gamepad X butonu (editor_secondary),
+                # menü bağlamında sentetik K_x üretir. A butonu (K_RETURN) bu
+                # popup'ta "bitir" demek olduğundan blok yerleştirme/silme için
+                # ayrı bir buton (X) gerekir; aksi halde gamepad ile şekil
+                # oluşturulamaz, A'ya basınca anında bitirilir.
                 cx, cy = self._card_workshop_cursor_x, self._card_workshop_cursor_y
                 if self._card_workshop_grid[cy][cx] is not None:
                     # Sil
