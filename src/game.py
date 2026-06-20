@@ -37,6 +37,7 @@ from localization import t, get_language
 from platform_utils import get_display_flags, create_display, set_app_icon, normalize_mouse_pos, get_mouse_pos
 from ui_theme import UIFonts, UIColors
 from asset_manager import load_image
+from text_cache import render_text, clear_text_cache
 from gamepad_manager import get_gamepad_manager, is_gamepad_connected
 from promptfont_support import render_action_prompt_surface, render_button_index_prompt_surface, render_inline_action_text_surface, resolve_nav_hint_label
 
@@ -771,6 +772,10 @@ class Game:
         self.block_appearance = get_equipped_block_appearance(self.user_manager)
         self._texture_render_cache = TextureRenderCache()
         self._effect_surface_cache = EffectSurfaceCache()
+        # Board grid çizgileri için cache (her frame ~32 draw.line yerine tek blit).
+        # Anahtar cell_size + grid_color + board boyutunu içerir; çözünürlük/tema
+        # değişiminde otomatik yeniden üretilir (stale risk yok).
+        self._board_grid_cache = {'key': None, 'surface': None}
         
         # Ses yöneticisi (menü ile paylaşılabilir)
         self.sound = sound_manager or SoundManager()
@@ -1947,6 +1952,12 @@ class Game:
         self.font_large = UIFonts.get(int(FONT_SIZE_LARGE * scale))
         self.font_medium = UIFonts.get(int(FONT_SIZE_MEDIUM * scale))
         self.font_small = UIFonts.get(int(FONT_SIZE_SMALL * scale))
+        # Fontlar yeniden boyutlandığında text_cache'i temizle: render_text anahtarı
+        # id(font) tabanlıdır; eski font objesi GC edilip yeni font aynı id'yi
+        # alırsa eski ölçekteki bayat yüzey dönebilir. Boyut değişiminde global
+        # metin cache'ini süpürmek bu riski kapatır (görsel etkisiz; yüzeyler bir
+        # sonraki frame'de yeniden cache'lenir).
+        clear_text_cache()
     
     def get_cell_size(self):
         """Pencere boyutuna göre hücre boyutunu hesapla - CACHE'LENMİŞ"""
@@ -4814,15 +4825,29 @@ class Game:
         apply_board_tint(self.screen, board_rect, board_skin)
         draw_board_overlay(self.screen, board_rect, board_skin)
         
-        # Grid çizgileri - esnek sınır GÖRSEL DEĞİŞİKLİK YAPMAZ
-        for x in range(self.board_width + 1):  # Dinamik genişlik
-            pygame.draw.line(self.screen, grid_color, 
-                           (offset_x + x * cell_size, offset_y), 
-                           (offset_x + x * cell_size, offset_y + board_height))
-        for y in range(self.board_height + 1):  # Dinamik yükseklik
-            pygame.draw.line(self.screen, grid_color, 
-                           (offset_x, offset_y + y * cell_size), 
-                           (offset_x + board_width, offset_y + y * cell_size))
+        # Grid çizgileri - cache'li (her frame ~(board_w+board_h) draw.line yerine
+        # tek blit). GÖRSEL DEĞİŞİKLİK YAPMAZ: çizgiler birebir aynı opak renkte
+        # (grid_color, alfa yok), aynı konumda, board-yerel koordinatlarda bir kez
+        # render edilip shake dahil offset'e blitlenir. Cache anahtarı cell_size +
+        # grid_color + board boyutunu içerdiğinden çözünürlük/tema değişiminde
+        # otomatik yeniden üretilir (stale risk yok). Yüzey 1px büyük tutulur ki
+        # sağ/alt kenar çizgileri kırpılmasın (ekrana doğrudan çizimle aynı sonuç).
+        # esnek sınır GÖRSEL DEĞİŞİKLİK YAPMAZ
+        grid_key = (cell_size, tuple(grid_color), self.board_width, self.board_height)
+        grid_cache = self._board_grid_cache
+        if grid_cache.get('key') != grid_key or grid_cache.get('surface') is None:
+            grid_surf = pygame.Surface((board_width + 1, board_height + 1), pygame.SRCALPHA)
+            for gx in range(self.board_width + 1):  # Dinamik genişlik
+                pygame.draw.line(grid_surf, grid_color,
+                                 (gx * cell_size, 0),
+                                 (gx * cell_size, board_height))
+            for gy in range(self.board_height + 1):  # Dinamik yükseklik
+                pygame.draw.line(grid_surf, grid_color,
+                                 (0, gy * cell_size),
+                                 (board_width, gy * cell_size))
+            grid_cache['key'] = grid_key
+            grid_cache['surface'] = grid_surf
+        self.screen.blit(grid_cache['surface'], (offset_x, offset_y))
 
         # Board içeriği kare (grid + bloklar + background) çiziliyor; burada köşe
         # yuvarlatma kullanmak kare dolgu ile birleşince “iki çerçeve” hissi yaratıyordu.
@@ -5087,7 +5112,9 @@ class Game:
         curr_y += max(6, int(10 * hud_scale))
         
         # --- NEXT PIECES ---
-        next_label = retro_style.get_font(max(12, int(18 * hud_scale))).render(t('next'), True, label_color)
+        # Statik etiket ("SONRAKİ"/"NEXT") cache'li render edilir; metin ve renk
+        # frame'ler arası sabit olduğundan font.render her frame tekrarlanmaz.
+        next_label = render_text(retro_style.get_font(max(12, int(18 * hud_scale))), t('next'), True, label_color)
         self.screen.blit(next_label, (content_x, curr_y))
         
         curr_y += max(14, int(25 * hud_scale))
@@ -5389,19 +5416,23 @@ class Game:
         self._hud_content_x = content_x
         self._hud_content_w = content_w
 
-        # Stats background (Daha koyu ve gradient)
-        stats_surf = pygame.Surface(stats_rect.size, pygame.SRCALPHA)
-        # Dikey gradient
-        for i in range(stats_h):
-             a = 180 + int(40 * (i / stats_h))
-             pygame.draw.line(stats_surf, (20, 24, 35, a), (0, i), (content_w, i))
+        # Stats background border. Not: önceki kodda burada bir `stats_surf`
+        # SRCALPHA yüzeyi yaratılıp üzerine dikey gradient (stats_h kadar
+        # pygame.draw.line) çiziliyordu; ancak bu yüzey ekrana hiçbir zaman
+        # blit edilmiyordu (ölü kod). Panel arka planını zaten HUD glass panel
+        # sağladığı için yüzey + gradient döngüsü kaldırıldı: görsel çıktı birebir
+        # aynı, frame başına ~stats_h adet draw.line + bir SRCALPHA allocation
+        # tasarrufu sağlanır.
         pygame.draw.rect(self.screen, (50, 60, 80), stats_rect, 1, border_radius=12)
         
         # Stat satırları
         stat_y_cur = curr_y + max(8, int(15 * hud_scale))
         
         def draw_stat_row(label, value, y_pos, color_val=accent_color):
-            l_surf = retro_style.get_font(max(11, int(16 * hud_scale))).render(label, True, (160, 170, 190))
+            # Etiket ("SKOR"/"SEVİYE" vb.) statik metin + sabit renk → cache'li.
+            # Değer (v_surf) skor/seviye gibi sık değişen veri olduğundan ham
+            # render edilir (cache churn'ü ve görsel fark olmaması için).
+            l_surf = render_text(retro_style.get_font(max(11, int(16 * hud_scale))), label, True, (160, 170, 190))
             self.screen.blit(l_surf, (content_x + max(8, int(15 * hud_scale)), y_pos))
             
             v_surf = retro_style.get_font(max(15, int(24 * hud_scale)), bold=True).render(str(value), True, color_val)

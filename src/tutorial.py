@@ -5084,14 +5084,14 @@ class TutorialMode(Game):
                 blocks.append({
                     'label': t('tutorial_briefing_howto', default='NASIL YAPILIR'),
                     'lc': (150, 255, 195),
-                    'lines': [(ln, False) for ln in self._wrap_text(howto_text, body_font, text_w, max_lines=3)],
+                    'lines': [(ln, False) for ln in self._wrap_text(howto_text, body_font, text_w, max_lines=6)],
                     'bc': (236, 248, 240), 'keys': True,
                 })
             else:
                 if objectives:
                     obj_items = []
                     for oi, objv in enumerate(objectives):
-                        for ln in self._wrap_text(objv, body_font, text_w, max_lines=2):
+                        for ln in self._wrap_text(objv, body_font, text_w, max_lines=3):
                             obj_items.append((ln, oi == 0))  # ilk hedef = temel (sarı vurgu)
                     blocks.append({
                         'label': t('tutorial_targets_title', default='HEDEFLER'),
@@ -5102,7 +5102,7 @@ class TutorialMode(Game):
                     blocks.append({
                         'label': t('tutorial_tip_title', default='İPUCU'),
                         'lc': (160, 200, 250),
-                        'lines': [(ln, False) for ln in self._wrap_text(tip_text, body_font, text_w, max_lines=3)],
+                        'lines': [(ln, False) for ln in self._wrap_text(tip_text, body_font, text_w, max_lines=4)],
                         'bc': (220, 230, 242), 'keys': False,
                     })
             ph = inner_pad
