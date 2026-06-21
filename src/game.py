@@ -2654,31 +2654,40 @@ class Game:
                     self.settings_manager.set('sfx_volume', new_vol)
 
         if event.type == pygame.KEYDOWN:
-            # Ok tuşlarına ek olarak WASD menü navigasyonu
-            up_keys = (pygame.K_UP, pygame.K_w)
-            down_keys = (pygame.K_DOWN, pygame.K_s)
-            left_keys = (pygame.K_LEFT, pygame.K_a)
-            right_keys = (pygame.K_RIGHT, pygame.K_d)
+            # Klavyede yalnızca ESC çalışır (oyuna dön). Diğer tüm tuş atamaları
+            # (ENTER, BACKSPACE, ok/WASD navigasyon, ses ayarı) kaldırıldı.
+            # Navigasyon / onay / ses ayarı yalnızca gamepad (sentetik event)
+            # veya fare ile yapılır.
+            from_gamepad = bool(getattr(event, 'from_gamepad', False))
 
-            if event.key in up_keys:
+            if not from_gamepad:
+                if event.key == pygame.K_ESCAPE:
+                    return 'resume'
+                return None
+
+            # ── Gamepad navigasyonu (gamepad_manager sentetik KEYDOWN üretir) ──
+            # D-pad / sol stick yukarı-aşağı: seçenekler arası gezinme
+            if event.key == pygame.K_UP:
                 self.pause_menu_selected = (self.pause_menu_selected - 1) % len(self.pause_menu_options)
                 self.sound.play('move')
                 return None
-            if event.key in down_keys:
+            if event.key == pygame.K_DOWN:
                 self.pause_menu_selected = (self.pause_menu_selected + 1) % len(self.pause_menu_options)
                 self.sound.play('move')
                 return None
-            if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE):
+            # A butonu (menu_confirm → K_RETURN): seçili seçeneği uygula
+            if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
                 option = self.pause_menu_options[self.pause_menu_selected]
                 return apply_option(option)
-            if event.key in left_keys or event.key in right_keys:
+            # D-pad / sol stick sol-sağ: yalnızca ses seviyesi satırlarında ayar
+            if event.key in (pygame.K_LEFT, pygame.K_RIGHT):
                 option = self.pause_menu_options[self.pause_menu_selected]
-                delta = 0.1 if event.key in right_keys else -0.1
-                adjust_volume(option, delta=delta)
+                if option in ('Müzik Seviyesi', 'Efekt Seviyesi'):
+                    delta = 0.1 if event.key == pygame.K_RIGHT else -0.1
+                    adjust_volume(option, delta=delta)
                 return None
-            if event.key == pygame.K_BACKSPACE:
-                return 'main_menu'
-            if event.key in (pygame.K_ESCAPE, self.control_bindings.get('pause', pygame.K_p)):
+            # B butonu (menu_back → K_ESCAPE): oyuna dön
+            if event.key == pygame.K_ESCAPE:
                 return 'resume'
             return None
 
@@ -2734,6 +2743,22 @@ class Game:
 
         return None
     
+    def _pause_slider_adjust_hint(self) -> str:
+        """Ses seviyesi slider'ı için ayar ipucu.
+
+        Gamepad bağlıyken slider D-Pad / sol stick ←/→ ile ayarlanır,
+        bu yüzden kontrolcü ok glyph'lerini gösterir. Klavyede ses ayarı
+        tuş ataması kaldırıldığından, gamepad yokken hiçbir ipucu
+        gösterilmez (fare ile sürükleme/tık geçerli).
+        """
+        try:
+            gpm = get_gamepad_manager()
+            if gpm and getattr(gpm, 'enabled', False) and gpm.is_connected():
+                return '\u2190 \u2192'  # ← →
+        except Exception:
+            pass
+        return ''
+
     def _draw_pause_menu(self):
         """Duraklama menüsünü ana menü çıkış paneli stilinde çiz."""
         width, height = self._active_ui_size()
@@ -2790,16 +2815,17 @@ class Game:
 
             if option == 'Devam Et':
                 color_code = retro_style.success
-                sub_text = resolve_nav_hint_label('ENTER / ESC', 'menu_confirm', 'menu_back')
+                # Kılavuz: oyuna dönmek için klavyede yalnızca ESC, gamepad'de B.
+                sub_text = resolve_nav_hint_label('ESC', 'menu_back')
             elif option == 'Yeniden Başlat':
                 color_code = retro_style.primary
-                sub_text = resolve_nav_hint_label('ENTER', 'menu_confirm')
+                sub_text = None
             elif option == 'Ayarlar':
                 color_code = retro_style.primary
-                sub_text = resolve_nav_hint_label('ENTER', 'menu_confirm')
+                sub_text = None
             elif option == 'Ana Menü':
                 color_code = retro_style.secondary
-                sub_text = resolve_nav_hint_label('BACKSPACE', 'menu_back')
+                sub_text = None
             elif option == 'Müzik':
                 color_code = retro_style.primary
                 sub_text = t('on') if self.sound.music_enabled else t('off')
@@ -2808,10 +2834,10 @@ class Game:
                 sub_text = t('on') if self.sound.sfx_enabled else t('off')
             elif option == 'Müzik Seviyesi':
                 color_code = retro_style.accent
-                sub_text = f"{int(self.sound.music_volume * 100)}%  < >"
+                sub_text = f"{int(self.sound.music_volume * 100)}%  {self._pause_slider_adjust_hint()}".rstrip()
             elif option == 'Efekt Seviyesi':
                 color_code = retro_style.accent
-                sub_text = f"{int(self.sound.sfx_volume * 100)}%  < >"
+                sub_text = f"{int(self.sound.sfx_volume * 100)}%  {self._pause_slider_adjust_hint()}".rstrip()
 
             _pm_hover = button_rect.collidepoint(_pause_mouse_pos)
             retro_style.draw_uniform_button(

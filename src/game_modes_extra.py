@@ -28,7 +28,7 @@ def t(key: str, default: str = None, **kwargs) -> str:
 def get_language() -> str:
     return localization.get_language()
 from gamepad_manager import get_gamepad_manager, is_gamepad_connected
-from promptfont_support import get_action_prompt_display, render_action_prompt_surface, render_inline_action_text_surface
+from promptfont_support import get_action_prompt_display, render_action_prompt_surface, render_inline_action_text_surface, resolve_nav_hint_label
 try:
     from .retro_style import retro_style  # type: ignore
 except Exception:
@@ -2741,6 +2741,7 @@ class MysteryCardUI:
         center_header: bool = False,
         header_lines_font: "pygame.font.Font | None" = None,
         header_lines_highlight: bool = False,
+        header_lines_wide_badge: bool = False,
     ) -> None:
         alpha = int(max(0, min(255, self.fade_alpha)))
         if alpha <= 0 or not cards:
@@ -2885,8 +2886,19 @@ class MysteryCardUI:
                 else:
                     lrect = line_surf.get_rect(topleft=(header_x, header_y))
                 pad = max(2, hdr_line_font.get_height() // 6)
-                badge = pygame.Rect(lrect.x - pad * 2, lrect.y - pad // 2,
-                                    lrect.width + pad * 4, lrect.height + pad)
+                if header_lines_wide_badge:
+                    # Genis badge: panel ic genisliginin buyuk kismini kaplardi;
+                    # ancak metnin iki yanindaki bos alani YARIYA indirmek icin
+                    # genislik = (genis_badge + metin_genisligi) / 2 alinir.
+                    wide_w = panel_rect.width - s(80)
+                    text_w = lrect.width + pad * 4
+                    badge_w = max(text_w, (wide_w + text_w) // 2)
+                    badge = pygame.Rect(0, lrect.y - pad, 0, lrect.height + pad * 2)
+                    badge.width = badge_w
+                    badge.centerx = panel_rect.centerx
+                else:
+                    badge = pygame.Rect(lrect.x - pad * 2, lrect.y - pad // 2,
+                                        lrect.width + pad * 4, lrect.height + pad)
                 hl = pygame.Surface(badge.size, pygame.SRCALPHA)
                 hl.fill((95, 72, 18, 210))
                 screen.blit(hl, badge.topleft)
@@ -9627,6 +9639,20 @@ class MysteryMode(Game):
             choices = self.card_manager.pending_choices
             if not choices and getattr(self, 'slot_selection_active', False):
                 choices = getattr(self, '_last_pending_choices', [])
+            # Gamepad bağlıyken kartların üstündeki boşlukta dinamik tuş ipucu
+            # ("D-Pad ile gezin, A ile seç") sarı highlighter ile gösterilir.
+            # Debug modunda kart navigasyonu farklı (kaydırma/rakam tuşları)
+            # çalıştığı için ipucu yalnızca debug KAPALIYKEN gösterilir.
+            card_mode_debug = bool(self.settings_manager.get('card_mode_debug', False))
+            gp_hint = None if card_mode_debug else self._build_card_select_gamepad_hint()
+            gp_header_lines = [gp_hint] if gp_hint else None
+            # Sarı ipucu yazısı büyütülür (normal 'small' yerine ~22px, ölçek
+            # farkındalıklı) ve badge panel genişliğini kaplar (header_lines_wide_badge).
+            try:
+                gp_header_font = retro_style.get_font(
+                    max(13, int(round(22 * float(overlay_scale)))), bold=True)
+            except Exception:
+                gp_header_font = fonts.get('medium') or fonts.get('small') or fonts.get('desc')
             self.card_ui.draw_selection_overlay(
                 self.screen,
                 active_width,
@@ -9634,7 +9660,12 @@ class MysteryMode(Game):
                 fonts,
                 choices,
                 self.card_manager.get_selection_hint(),
-                bool(self.settings_manager.get('card_mode_debug', False)),
+                card_mode_debug,
+                header_lines=gp_header_lines,
+                header_lines_font=gp_header_font,
+                header_lines_highlight=True,
+                header_lines_wide_badge=True,
+                center_header=True,
             )
         elif self.card_message and self.card_message_timer > 0 and not getattr(self, '_sniper_overlay_active', False):
             max_width = max(220, int(active_width - 48))
@@ -10176,16 +10207,40 @@ class MysteryMode(Game):
             font = retro_style.get_font(26, bold=True)
             small_font = retro_style.get_font(22)
             
+            # Gamepad bağlıyken "sol tıkla / mouse" yönergeleri kontrolcü
+            # butonlarına çevrilir (A=ateş, B=iptal, D-pad=nişan). Sniper'da
+            # bağlam 'menu' olduğundan A→K_RETURN (ateş), B→K_ESCAPE (iptal).
+            gp_connected = False
+            try:
+                gp_connected = bool(is_gamepad_connected())
+            except Exception:
+                gp_connected = False
+            gp_confirm = gp_back = gp_nav = None
+            if gp_connected:
+                try:
+                    gp_confirm = resolve_nav_hint_label('ENTER', 'menu_confirm')
+                    gp_back = resolve_nav_hint_label('ESC', 'menu_back')
+                    gp_nav = self._localized_card_text('gp_dpad', 'D-Pad')
+                except Exception:
+                    gp_connected = False
+
             if target_valid:
-                main_text = self._localized_card_text('mystery_sniper_instruction_main_valid', 'SOL TIKLAYARAK BLOGU PATLAT')
                 main_color = retro_style.success
-                sub_text = self._localized_card_text('mystery_sniper_instruction_sub_valid', 'Hedef kilitlendi! Tikla ve yok et.')
                 sub_color = retro_style.text_primary
+                if gp_connected and gp_confirm:
+                    main_text = self._localized_card_text('mystery_sniper_instruction_main_valid_gp', '{confirm} İLE BLOĞU PATLAT', confirm=gp_confirm)
+                    sub_text = self._localized_card_text('mystery_sniper_instruction_sub_valid_gp', 'Hedef kilitlendi! {confirm} ile yok et.', confirm=gp_confirm)
+                else:
+                    main_text = self._localized_card_text('mystery_sniper_instruction_main_valid', 'SOL TIKLAYARAK BLOGU PATLAT')
+                    sub_text = self._localized_card_text('mystery_sniper_instruction_sub_valid', 'Hedef kilitlendi! Tikla ve yok et.')
             else:
-                main_text = self._localized_card_text('mystery_sniper_instruction_main_invalid', 'DOLU BIR BLOGA NISAN AL')
                 main_color = retro_style.accent
-                sub_text = self._localized_card_text('mystery_sniper_instruction_sub_invalid', "Mouse'u dolu bloklarin uzerine getir")
                 sub_color = retro_style.text_secondary
+                main_text = self._localized_card_text('mystery_sniper_instruction_main_invalid', 'DOLU BIR BLOGA NISAN AL')
+                if gp_connected and gp_nav:
+                    sub_text = self._localized_card_text('mystery_sniper_instruction_sub_invalid_gp', '{nav} ile dolu blogun uzerine gel', nav=gp_nav)
+                else:
+                    sub_text = self._localized_card_text('mystery_sniper_instruction_sub_invalid', "Mouse'u dolu bloklarin uzerine getir")
             
             # Charges remaining (sağ üst köşe)
             charges = int(getattr(self, '_sniper_charges', 0) or 0)
@@ -10224,7 +10279,10 @@ class MysteryMode(Game):
             self.screen.blit(sub_surf, sub_rect)
 
             # Cancel instruction
-            cancel_text = self._localized_card_text('mystery_sniper_cancel_label', 'ESC: Iptal Et')
+            if gp_connected and gp_back:
+                cancel_text = self._localized_card_text('mystery_sniper_cancel_label_gp', '{back}: İptal Et', back=gp_back)
+            else:
+                cancel_text = self._localized_card_text('mystery_sniper_cancel_label', 'ESC: Iptal Et')
             cancel_surf = retro_style.render_fit_text(cancel_text, retro_style.text_muted, text_max_width, 19, bold=False)
             cancel_rect = cancel_surf.get_rect(centerx=text_center_x, y=sub_rect.bottom + 8)
             self.screen.blit(cancel_surf, cancel_rect)
@@ -10757,6 +10815,37 @@ class MysteryMode(Game):
             except Exception:
                 pass
         return {direction: tuple(keys) for direction, keys in nav_keys.items()}
+
+    def _build_card_select_gamepad_hint(self) -> str | None:
+        """Kart seçim panelinin üstünde gösterilecek gamepad ipucu metni.
+
+        Yalnızca bir gamepad bağlıyken döner; aksi halde None (yazı çıkmaz).
+        Gezinme = D-Pad (menüde D-pad ile gezilir; bu yön tuşları kontroller
+        ekranında ayrı ayrı yeniden atanamaz → sabit 'D-Pad' etiketi). Onay =
+        ``menu_confirm`` aksiyonu; bu kontrollerden değiştirilebildiği için
+        ``resolve_nav_hint_label`` ile DİNAMİK (atanan butona göre A/✕/B...)
+        etiket üretilir. Metin tüm dillerde ``card_select_gamepad_hint`` ile
+        biçimlenir.
+        """
+        try:
+            if not is_gamepad_connected():
+                return None
+        except Exception:
+            return None
+        try:
+            gpm = get_gamepad_manager()
+        except Exception:
+            gpm = None
+        try:
+            confirm_label = resolve_nav_hint_label('ENTER', 'menu_confirm', gpm=gpm)
+        except Exception:
+            confirm_label = 'A'
+        nav_label = t('gp_dpad', default='D-Pad')
+        try:
+            template = t('card_select_gamepad_hint', default='{nav} ile gezin, {confirm} ile seç')
+            return template.format(nav=nav_label, confirm=confirm_label)
+        except Exception:
+            return None
 
     def _handle_card_selection_choice(self, choice: int | str | None) -> bool:
         if choice is None:
@@ -12411,11 +12500,18 @@ class MysteryMode(Game):
     # === DELİK AVCISI YARDIMCI METODLARI ===
     def _open_hole_hunter_overlay(self) -> bool:
         """J tuşuyla Delik Avcısı sütun seçim overlay'ini açar."""
+        # Sniper deseniyle aynı: tetikleyen slot indeksini sakla. Hak (charges)
+        # sütun seçildiğinde (sonraki input event'inde) düşürülür; o anda
+        # _active_slot_index_for_ability None olur. Slotu burada saklayıp
+        # _hole_hunter_fire_at_cursor'da geri yüklemezsek hak slot kartına
+        # yazılmaz (yerel fallback'e gider) → kart SINIRSIZ kullanılır.
+        self._active_hole_hunter_slot_index = getattr(self, '_active_slot_index_for_ability', None)
         try:
             charges = int(getattr(self, '_hole_hunter_charges', 0) or 0)
         except Exception:
             charges = 0
         if charges <= 0:
+            self._active_hole_hunter_slot_index = None
             return False
         self._hole_hunter_overlay_active = True
         # Sütun seçimi mouse ile de yapılabildiği için sistem imlecini görünür
@@ -12446,6 +12542,7 @@ class MysteryMode(Game):
 
     def _close_hole_hunter_overlay(self, *, consumed: bool) -> None:
         self._hole_hunter_overlay_active = False
+        self._active_hole_hunter_slot_index = None
         try:
             pygame.mouse.set_visible(True)
         except Exception:
@@ -12611,10 +12708,20 @@ class MysteryMode(Game):
                 return False
 
             # Hak düş, kart tüketildiyse aktif efektten çıkar.
+            # ÖNEMLİ: _hole_hunter_charges setter'ı slot kartını bulabilmek için
+            # _active_slot_index_for_ability'nin set olmasını gerektirir. Overlay
+            # akışında (gecikmeli tetikleme) bu None olduğundan, açılışta sakladığımız
+            # slot indeksini geri yüklüyoruz; aksi halde hak slot kartına yazılmaz
+            # ve kart sınırsız kullanılır.
+            _hh_old_idx = getattr(self, '_active_slot_index_for_ability', None)
+            self._active_slot_index_for_ability = getattr(self, '_active_hole_hunter_slot_index', None)
             try:
-                self._hole_hunter_charges = max(0, charges - 1)
-            except Exception:
-                self._hole_hunter_charges = 0
+                try:
+                    self._hole_hunter_charges = max(0, charges - 1)
+                except Exception:
+                    self._hole_hunter_charges = 0
+            finally:
+                self._active_slot_index_for_ability = _hh_old_idx
             if self._hole_hunter_charges <= 0:
                 try:
                     self._active_effect_visuals.pop('hole_hunter', None)

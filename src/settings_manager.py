@@ -120,6 +120,13 @@ DEFAULT_CONTROLS = {
         # Oyun içi butonlar
         # YENI LAYOUT (Kart Ustaligi cift-tetik fix'i): slotlar A/X/B/Y + LT/RT'ye
         # tasindi; temel aksiyonlar LB(hold)/RB(hard_drop)'a tasindi. Donme D-pad ^.
+        # Hareket aksiyonlari (move_left/right, soft_drop) varsayilan olarak
+        # D-pad + sol stick'e baglidir (gamepad_manager DEFAULT_GAMEPAD_BINDINGS
+        # 'dpad'/'axis'). Buradaki primary=-1, "ek buton atanmamis" demektir; D-pad
+        # her zaman calisir. Kullanici dilerse bu satirlardan ek bir buton atayabilir.
+        'move_left': {'primary': -1, 'secondary': -1},    # D-pad ← / sol stick (yerlesik) + ops. buton
+        'move_right': {'primary': -1, 'secondary': -1},   # D-pad → / sol stick (yerlesik) + ops. buton
+        'soft_drop': {'primary': -1, 'secondary': -1},    # D-pad ↓ / sol stick (yerlesik) + ops. buton
         'hard_drop': {'primary': 10, 'secondary': -1},    # RB / R1 (yeni; eski Y=3'ten tasindi)
         'rotate': {'primary': -1, 'secondary': -1},       # bos (donme D-pad ^; eski A=0 kaldirildi)
         'rotate_alt': {'primary': -1, 'secondary': -1},   # bos (eski B=1 kaldirildi)

@@ -202,6 +202,12 @@ DPAD_TO_KEY = {
 
 # Oyun aksiyonu → Klavye tuşu eşlemesi
 ACTION_TO_KEY = {
+    # Hareket aksiyonlari: varsayilan olarak D-pad/sol stick uretir (asagidaki
+    # DEFAULT_GAMEPAD_BINDINGS 'dpad'/'axis' alanlari). Kullanici ek olarak bir
+    # butona da atayabilir → o buton basildiginda ok-tusu sentetik event uretir.
+    'move_left': pygame.K_LEFT,
+    'move_right': pygame.K_RIGHT,
+    'soft_drop': pygame.K_DOWN,
     'hard_drop': pygame.K_SPACE,
     'rotate': pygame.K_UP,
     'rotate_alt': pygame.K_UP,
@@ -436,8 +442,15 @@ class GamepadManager:
                 if dep_action in self._bindings:
                     self._bindings[dep_action] = {'button': None, 'button_secondary': None}
 
-            # Buton eşlemelerini güncelle
+            # Buton eşlemelerini güncelle.
+            # NOT: Hareket aksiyonlari (move_left/right, soft_drop) varsayilan
+            # olarak D-pad + sol stick'e baglidir. Asagidaki dongu yalnizca
+            # 'button'/'trigger' anahtarlarini pop'lar (dpad/axis KORUNUR), bu
+            # yuzden kullanici ek bir buton atarsa D-pad varsayilani aynen kalir,
+            # buton da paralel calisir. Config'de deger -1 ise hicbir buton
+            # eklenmez (saf D-pad varsayilani).
             button_actions = [
+                'move_left', 'move_right', 'soft_drop',
                 'hard_drop', 'rotate', 'rotate_alt', 'hold', 'hold2', 'pause',
                 'menu_back', 'menu_confirm', 'menu_tab_next', 'menu_tab_prev',
                 'discard_held', 'lt', 'rt',
@@ -1494,6 +1507,7 @@ class GamepadManager:
         if in_game:
             # Oyun içi: buton → aksiyon eşlemesi
             game_actions_list = [
+                'move_left', 'move_right', 'soft_drop',
                 'hard_drop', 'rotate', 'rotate_alt', 'hold', 'hold2',
                 'pause', 'discard_held',
                 'lt', 'rt',

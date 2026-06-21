@@ -93,6 +93,18 @@ def _scale_menu_alpha(alpha: int) -> int:
 
 _KNOWN_GAMEPAD_PROMPT_TYPES = {'xbox', 'playstation', 'nintendo', 'unknown'}
 
+# Hareket aksiyonlari (sol/sag/yumusak dusus) icin yerlesik D-pad varsayilani.
+# Bu aksiyonlar gamepad_manager'da her zaman D-pad hat'i uzerinden ok-tusu uretir
+# (binding'den bagimsiz). Bu yuzden config'de primary=-1 birakilir (cift-tetik
+# engellenir) ama ayar ekraninda primary slot BOS gorunmek yerine ilgili D-pad
+# yonunu (buton index 12/13/14) GORSEL olarak gosterir. Kullanici isterse ek bir
+# buton atayabilir; atadiginda primary o butonu gosterir.
+_GAMEPAD_MOVEMENT_DEFAULT_DPAD = {
+    'move_left': 13,   # CONTROLLER_BUTTON_DPAD_LEFT
+    'move_right': 14,  # CONTROLLER_BUTTON_DPAD_RIGHT
+    'soft_drop': 12,   # CONTROLLER_BUTTON_DPAD_DOWN
+}
+
 
 # ---------------------------------------------------------------------------
 # Sekme ve ayar tanımları
@@ -296,6 +308,9 @@ def _build_tab_content(tab_key: str, sm, show_debug: bool = False) -> list[dict]
             })
 
         ingame_gamepad_actions = [
+            ('move_left', _t('gp_move_left', 'Sola Hareket')),
+            ('move_right', _t('gp_move_right', 'Sağa Hareket')),
+            ('soft_drop', _t('gp_soft_drop', 'Yumuşak Düşüş')),
             ('hard_drop', _t('gp_hard_drop', 'Anında bırak')),
             ('hold', _t('gp_hold', 'Hold / Değiştir')),
             ('hold2', _t('card_perk_second_pocket_title', 'Ekstra Cep')),
@@ -1625,7 +1640,8 @@ class TabbedSettingsScreen:
             if self._is_gamepad_keybind_section(section):
                 primary, secondary = self._get_gamepad_binding_slots(action_key)
                 gp_type = self._current_gamepad_prompt_type()
-                ptxt = self._format_gamepad_button_label(primary, gp_type=gp_type)
+                ptxt = self._format_gamepad_button_label(
+                    self._gamepad_primary_display_value(action_key, primary), gp_type=gp_type)
                 stxt = self._format_gamepad_button_label(secondary, gp_type=gp_type)
                 return f'{ptxt} / {stxt}', (255, 210, 140)
 
@@ -1813,6 +1829,22 @@ class TabbedSettingsScreen:
             primary = raw
         return primary, secondary
 
+    def _gamepad_primary_display_value(self, action_key: str, value):
+        """Primary slot GORSEL degeri.
+
+        Hareket aksiyonlari (move_left/right, soft_drop) icin primary slot bos
+        (-1) ise yerlesik D-pad yonunu (12/13/14) dondur ki ayar ekraninda
+        'D-Pad <-/->/v' gorunsun. Config'de deger -1 KALIR (cift-tetik onlenir);
+        bu yalnizca goruntuleme icindir. Kullanici ek buton atarsa o gosterilir.
+        """
+        try:
+            unassigned = value is None or int(value) < 0
+        except Exception:
+            unassigned = True
+        if unassigned and action_key in _GAMEPAD_MOVEMENT_DEFAULT_DPAD:
+            return _GAMEPAD_MOVEMENT_DEFAULT_DPAD[action_key]
+        return value
+
     def _get_single_player_binding_slots(self, action_key: str) -> tuple[str, str]:
         """Single-player aksiyonu için (primary, secondary) tuş adlarını döndür.
         Eski format (string) primary kabul edilir."""
@@ -1945,6 +1977,10 @@ class TabbedSettingsScreen:
         if section in ('pvp.player1', 'pvp.player2'):
             return not self._get_pvp_binding(section, action_key).strip()
         if self._is_gamepad_keybind_section(section):
+            # Hareket aksiyonlari yerlesik D-pad varsayilanina sahiptir → primary
+            # slot bos olsa bile "atanmamis" uyarisi gosterme.
+            if action_key in _GAMEPAD_MOVEMENT_DEFAULT_DPAD:
+                return False
             primary, _ = self._get_gamepad_binding_slots(action_key)
             return primary is None or int(primary) < 0
         return False
@@ -4326,7 +4362,8 @@ class TabbedSettingsScreen:
             action_key = item.get('action_key')
             primary_val, secondary_val = self._get_gamepad_binding_slots(action_key)
             gp_type = self._current_gamepad_prompt_type()
-            primary_display = self._get_gamepad_slot_display(primary_val, gp_type)
+            primary_display = self._get_gamepad_slot_display(
+                self._gamepad_primary_display_value(action_key, primary_val), gp_type)
             secondary_display = self._get_gamepad_slot_display(secondary_val, gp_type)
 
             if self._waiting_for_key and self._pending_keybind_item == item:

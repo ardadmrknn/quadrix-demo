@@ -99,6 +99,13 @@ if _compute_line_sweep_progress_speed is None:
         return 1.0 / sweep_duration
 
 
+try:
+    from promptfont_support import resolve_nav_hint_label as _resolve_nav_hint_label
+except Exception:  # pragma: no cover - promptfont opsiyonel
+    def _resolve_nav_hint_label(keyboard_label, *actions, gpm=None):
+        return keyboard_label
+
+
 def _tutorial_make_card_ui_font(size, bold=False):
     try:
         try:
@@ -4453,7 +4460,7 @@ class TutorialMode(Game):
         self._draw_briefing_action_button(
             continue_rect,
             t('tutorial_progress_panel_continue', default='Öğrenmeye Devam Et'),
-            'ENTER',
+            _resolve_nav_hint_label('ENTER', 'menu_confirm'),
             retro_style.success,
             continue_rect.collidepoint(mouse_pos),
             s,
@@ -4466,7 +4473,7 @@ class TutorialMode(Game):
         self._draw_briefing_action_button(
             play_rect,
             t('tutorial_progress_panel_play', default='Çıkıp Oyna'),
-            'ESC',
+            _resolve_nav_hint_label('ESC', 'menu_back'),
             retro_style.secondary,
             play_rect.collidepoint(mouse_pos),
             s,
@@ -4635,7 +4642,7 @@ class TutorialMode(Game):
         self._draw_briefing_action_button(
             start_rect,
             t('tutorial_briefing_start', default='Başlat'),
-            'ENTER',
+            _resolve_nav_hint_label('ENTER', 'menu_confirm'),
             retro_style.success,
             start_rect.collidepoint(mouse_pos),
             s,
@@ -4644,7 +4651,7 @@ class TutorialMode(Game):
         self._draw_briefing_action_button(
             skip_rect,
             t('tutorial_briefing_exit', default='Çıkış'),
-            'ESC',
+            _resolve_nav_hint_label('ESC', 'menu_back'),
             retro_style.secondary,
             skip_rect.collidepoint(mouse_pos),
             s,
@@ -5762,7 +5769,7 @@ class TutorialMode(Game):
         retro_style.draw_uniform_button(
             self.screen, back_rect,
             t('tutorial_hub_back', default='Menüye Dön'),
-            sub_text='ESC',
+            sub_text=_resolve_nav_hint_label('ESC', 'menu_back'),
             color_code=retro_style.secondary,
             selected=back_hover,
             state='hover' if back_hover else 'normal',
@@ -5776,7 +5783,7 @@ class TutorialMode(Game):
         retro_style.draw_uniform_button(
             self.screen, start_rect,
             start_label,
-            sub_text='ENTER',
+            sub_text=_resolve_nav_hint_label('ENTER', 'menu_confirm'),
             color_code=retro_style.success if can_start else retro_style.primary,
             selected=start_hover,
             state='hover' if start_hover else 'normal',
@@ -6133,7 +6140,7 @@ class TutorialMode(Game):
         self._draw_briefing_action_button(
             btn_rect,
             t('tutorial_card_preview_continue', default='Devam Et'),
-            'ENTER',
+            _resolve_nav_hint_label('ENTER', 'menu_confirm'),
             retro_style.success,
             btn_rect.collidepoint(mouse_pos),
             s,
@@ -6445,11 +6452,11 @@ class TutorialMode(Game):
         success_btn = bool(self.lesson_result.get('success'))
         if success_btn:
             btn_label = t('tutorial_result_btn_continue', default='Devam Et')
-            btn_sub = 'ENTER'
+            btn_sub = _resolve_nav_hint_label('ENTER', 'menu_confirm')
             btn_color = retro_style.success
         else:
             btn_label = t('tutorial_result_btn_retry', default='Tekrar Dene')
-            btn_sub = 'ENTER / R'
+            btn_sub = _resolve_nav_hint_label('ENTER / R', 'menu_confirm')
             btn_color = (220, 150, 90)
         btn_w = min(s(320), rect.width - s(56))
         btn_rect = pygame.Rect(
