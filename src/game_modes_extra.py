@@ -236,10 +236,10 @@ CARD_LOCALIZATION_ALIASES = {
 #
 # Enderlik bazlı fiyat ölçeği (Lunar). Common ücretsiz (satılmaz).
 CARD_RARITY_PRICES: Dict[str, int] = {
-    'uncommon': 200,
-    'rare': 350,
-    'epic': 600,
-    'legendary': 1000,
+    'uncommon': 300,
+    'rare': 600,
+    'epic': 1200,
+    'legendary': 3000,
 }
 
 # Enderlik -> İngilizce vitrin etiketi (catalog `tag` ile uyumlu).
@@ -14387,7 +14387,25 @@ class MysteryMode(Game):
         if self.user_manager:
             xp_award = int(self.board.score / 10)
             self.user_manager.add_xp('mystery', xp_award)
-            fragments = int((self.board.score / 100) + (self.board.level * 20) + (self.board.lines_cleared * 5))
+            # 1. Eşikli (Tiered) Skor Katsayısı Hesaplaması
+            score = self.board.score
+            if score <= 50000:
+                score_fragments = score / 100
+            elif score <= 250000:
+                score_fragments = 500 + (score - 50000) / 500
+            else:
+                score_fragments = 900 + (score - 250000) / 2000
+            # 2. Karekök Tabanlı Azalan Getiri Uygulaması
+            damped_score_fragments = math.sqrt(score_fragments) * 80
+            # 3. Seviye ve Satır Temizleme Bonusları ile Toplam Hesaplama
+            calculated_fragments = int(
+                damped_score_fragments
+                + (self.board.level * 20)
+                + (self.board.lines_cleared * 5)
+            )
+            # 4. Üst Limit (Cap) Sınırlandırması (Maksimum 2000 Lunar)
+            fragments = min(2000, calculated_fragments)
+            # Cüzdana Ekleme
             self.user_manager.add_fragments(fragments)
 
     # === BLOK ATÖLYESİ KARTI METODLARI ===
