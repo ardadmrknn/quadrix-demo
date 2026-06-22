@@ -1099,6 +1099,13 @@ class GamepadManager:
                 gp.prev_dpad = gp.dpad
                 gp.left_stick.prev_digital_x = gp.left_stick.digital_x
                 gp.left_stick.prev_digital_y = gp.left_stick.digital_y
+                # Trigger prev durumunu da BURADA (yeni degerler okunmadan once)
+                # kaydet ki was_action_just_pressed('slot_5'/'slot_6') edge
+                # algilamasi butonlarla simetrik calissin. Aksi halde prev,
+                # _generate_trigger_events sonunda guncel degere set ediliyor ve
+                # poll sirasinda now==prev olup LT/RT slotlari hic tetiklenmiyordu.
+                gp.prev_left_trigger_pressed = gp.left_trigger >= self.TRIGGER_THRESHOLD
+                gp.prev_right_trigger_pressed = gp.right_trigger >= self.TRIGGER_THRESHOLD
 
                 gp.buttons = self._read_button_states(gp)
 
@@ -1594,9 +1601,11 @@ class GamepadManager:
                 elif up:
                     events.append(self._make_key_event(key, pygame.KEYUP))
 
-        # Prev state'i her zaman güncelle (context ne olursa olsun)
-        gp.prev_left_trigger_pressed = lt_pressed
-        gp.prev_right_trigger_pressed = rt_pressed
+        # NOT: prev_left/right_trigger_pressed ARTIK update() basinda (yeni
+        # trigger degerleri okunmadan once) kaydediliyor. Burada tekrar
+        # guncellemiyoruz; aksi halde poll sirasinda now==prev olur ve
+        # was_action_just_pressed trigger slotlari (slot_5/slot_6) icin hic
+        # edge algilamaz.
 
         return events
 

@@ -5267,12 +5267,14 @@ class Game:
         )
         self.screen.blit(hold_label, hold_label_rect)
         
-        # B tuşu hakkı
-        discard_uses = getattr(self, 'discard_held_uses', 5)
-        d_col = (100, 200, 255) if discard_uses > 0 else (100, 100, 100)
-        d_text = t('hud_key_uses', label='B', count=discard_uses)
-        d_surf = retro_style.get_font(max(10, int(14 * hud_scale))).render(d_text, True, d_col)
-        self.screen.blit(d_surf, (content_x + content_w - d_surf.get_width(), curr_y + 2))
+        # B tuşu hakkı (Kart Ustaligi'nda gizli: hak karta bagli ve slot
+        # panelinde gosteriliyor — bkz. MysteryMode._show_discard_hud_label)
+        if getattr(self, '_show_discard_hud_label', True):
+            discard_uses = getattr(self, 'discard_held_uses', 5)
+            d_col = (100, 200, 255) if discard_uses > 0 else (100, 100, 100)
+            d_text = t('hud_key_uses', label='B', count=discard_uses)
+            d_surf = retro_style.get_font(max(10, int(14 * hud_scale))).render(d_text, True, d_col)
+            self.screen.blit(d_surf, (content_x + content_w - d_surf.get_width(), curr_y + 2))
         
         curr_y += max(14, int(25 * hud_scale))
         hold_box_rect = pygame.Rect(content_x, curr_y, box_size + max(12, int(20 * pixel_ratio)), box_size)

@@ -6043,6 +6043,13 @@ class PerkManager:
 class MysteryMode(Game):
     """Kart yöneticisi + UI ayrımıyla yeniden ele alınan Mystery Mode."""
 
+    # Kart Ustaligi'nda "Saklananı sil" hakki tamamen karta (hold_destroyer)
+    # bagli; hak sayisi sol kart slot panelinde zaten gosteriliyor. Bu yuzden
+    # Saklanan paneli ustundeki ayri "B: N" HUD etiketi gereksiz/karışık olur ve
+    # gizlenir. (Base Game/klasik modda B: N gercek bir mekanik oldugu icin
+    # gosterilmeye devam eder.)
+    _show_discard_hud_label = False
+
     def _get_demo_score_cap(self) -> int:
         fallback_cap = getattr(demo_config, 'DEMO_MYSTERY_SCORE_CAP', 1000000)
         try:
