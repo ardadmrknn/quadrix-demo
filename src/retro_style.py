@@ -262,7 +262,7 @@ class RetroStyle:
         self._script_font_paths: dict[str, str] = {
             'cjk_kr': os.path.join('font', 'paperlogy', 'Paperlogy-4Regular.ttf'),
             'cjk_jp': os.path.join('font', 'ki-cho-jis_0310', 'KikaiChokokuJIS-Md.otf'),
-            'cjk_zh': os.path.join('font', 'cinecaption Regular', 'ChildFunSans-CHS.ttf'),
+            'cjk_zh': os.path.join('font', 'cinecaption_regular', 'ChildFunSans-CHS.ttf'),
             'cyrillic': os.path.join('font', 'kyril', 'KyrillaSansSerif-Black.ttf'),
         }
         self._script_font_cache: dict[tuple[str, int, bool], pygame.font.Font] = {}
@@ -655,8 +655,9 @@ class RetroStyle:
         try:
             if not pygame.font.get_init():
                 pygame.font.init()
-            full_path = _resource_path(rel_path)
-            if not os.path.exists(full_path):
+            from ui_language_profile import _resolve_font_path
+            full_path = _resolve_font_path(rel_path)
+            if not full_path or not os.path.exists(full_path):
                 return None
             font = pygame.font.Font(full_path, scaled_size)
             if effective_bold:

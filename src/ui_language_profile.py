@@ -26,7 +26,7 @@ _PROFILE_BY_LANG = {
         "force_no_bold": True,
     },
     "zh": {
-        "font_path": os.path.join("font", "cinecaption Regular", "ChildFunSans-CHS.ttf"),
+        "font_path": os.path.join("font", "cinecaption_regular", "ChildFunSans-CHS.ttf"),
         "size_scale": 1.0,
         "force_no_bold": True,
     },
