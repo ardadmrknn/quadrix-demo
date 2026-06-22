@@ -86,6 +86,64 @@ def _segment_text(text: str) -> list[tuple[bool, str]]:
     return segments
 
 
+# ── CJK glyph fallback zinciri ────────────────────────────────────────────
+# Birincil CJK fontu (ör. Japonca KikaiChokokuJIS) bazı karakterleri (ör. bazı
+# kanji) içermez; bu durumda karakter ".notdef" kutusu (tofu) olarak çizilir.
+# Aşağıdaki fontlarda sırayla aranıp ilk kapsayan fontla render edilir. Çince
+# ChildFunSans geniş Han kapsamı sağladığından eksik kanji'ler için birincil
+# yedektir.
+_CJK_FALLBACK_REL_PATHS = [
+    os.path.join('font', 'cinecaption_regular', 'ChildFunSans-CHS.ttf'),  # zh — geniş Han
+    os.path.join('font', 'ki-cho-jis_0310', 'KikaiChokokuJIS-Md.otf'),    # jp — kana + sınırlı kanji
+    os.path.join('font', 'paperlogy', 'Paperlogy-4Regular.ttf'),          # kr — Hangul
+]
+_cjk_fallback_resolved_paths: list[str] | None = None
+_cjk_fallback_font_cache: dict[tuple, "pygame.font.Font"] = {}
+
+
+def _resolved_cjk_fallback_paths() -> list[str]:
+    """Yedek CJK font yollarını (mevcut olanları) öncelik sırasıyla döndür."""
+    global _cjk_fallback_resolved_paths
+    if _cjk_fallback_resolved_paths is None:
+        resolved: list[str] = []
+        try:
+            from ui_language_profile import _resolve_font_path
+        except Exception:
+            _resolve_font_path = None  # type: ignore
+        for rel in _CJK_FALLBACK_REL_PATHS:
+            full = None
+            if _resolve_font_path is not None:
+                try:
+                    full = _resolve_font_path(rel)
+                except Exception:
+                    full = None
+            if full and os.path.exists(full):
+                resolved.append(full)
+        _cjk_fallback_resolved_paths = resolved
+    return _cjk_fallback_resolved_paths
+
+
+def _get_cjk_fallback_font(path: str, size: int, bold: bool) -> "pygame.font.Font | None":
+    """Yedek CJK fontunu (cache'li) belirtilen boyutta döndür."""
+    key = (path, int(size), bool(bold))
+    cached = _cjk_fallback_font_cache.get(key)
+    if cached is not None:
+        return cached
+    try:
+        if not pygame.font.get_init():
+            pygame.font.init()
+        font = pygame.font.Font(path, int(size))
+        if bold:
+            try:
+                font.set_bold(True)
+            except Exception:
+                pass
+        _cjk_fallback_font_cache[key] = font
+        return font
+    except Exception:
+        return None
+
+
 class HybridFont:
     """CJK dilleri aktifken latin ve CJK karakterlerini ayrı fontlarla render eden proxy.
 
@@ -94,10 +152,97 @@ class HybridFont:
     birleştirilmiş bir Surface döndürür.
     """
 
-    def __init__(self, latin_font: pygame.font.Font, cjk_font: pygame.font.Font) -> None:
+    def __init__(
+        self,
+        latin_font: pygame.font.Font,
+        cjk_font: pygame.font.Font,
+        cjk_font_path: str | None = None,
+        cjk_size: int | None = None,
+        bold: bool = False,
+    ) -> None:
         self._latin = latin_font
         self._cjk = cjk_font
+        # Glyph fallback için birincil CJK fontunun yolu ve boyutu. Verilmezse
+        # fallback devre dışı kalır (eski davranış).
+        self._cjk_path = cjk_font_path
+        self._cjk_size = cjk_size
+        self._bold = bool(bold)
         self._render_cache: dict[tuple, pygame.Surface] = {}
+
+    # ---- CJK glyph fallback yardımcıları ----
+
+    def _cjk_font_for_char(self, ch: str) -> pygame.font.Font:
+        """Bir CJK karakteri için uygun fontu seç: birincil kapsıyorsa onu,
+        kapsamıyorsa eksik glyph'i içeren ilk yedek fontu döndür."""
+        if not self._cjk_path or self._cjk_size is None:
+            return self._cjk
+        try:
+            from font_coverage import font_covers
+        except Exception:
+            return self._cjk
+        cp = ord(ch)
+        if font_covers(self._cjk_path, cp):
+            return self._cjk
+        for fp in _resolved_cjk_fallback_paths():
+            if fp == self._cjk_path:
+                continue
+            if font_covers(fp, cp):
+                fb = _get_cjk_fallback_font(fp, self._cjk_size, self._bold)
+                if fb is not None:
+                    return fb
+        return self._cjk  # son çare: kutu çizilebilir, daha iyisi yok
+
+    def _cjk_runs(self, seg: str) -> list[tuple[pygame.font.Font, str]]:
+        """CJK segmentini, ardışık aynı-fontlu çalışmalara (run) böl."""
+        runs: list[tuple[pygame.font.Font, str]] = []
+        cur_font: pygame.font.Font | None = None
+        cur_chars: list[str] = []
+        for ch in seg:
+            font = self._cjk_font_for_char(ch)
+            if font is cur_font:
+                cur_chars.append(ch)
+            else:
+                if cur_chars:
+                    runs.append((cur_font, ''.join(cur_chars)))
+                cur_font = font
+                cur_chars = [ch]
+        if cur_chars:
+            runs.append((cur_font, ''.join(cur_chars)))
+        return runs
+
+    def _render_cjk_segment(self, seg: str, antialias: bool, color, background=None) -> pygame.Surface:
+        """CJK segmentini, gerekirse karakter bazında yedek fontla render et."""
+        runs = self._cjk_runs(seg)
+        if len(runs) <= 1:
+            font = runs[0][0] if runs else self._cjk
+            return font.render(seg, antialias, color, background)
+        parts: list[pygame.Surface] = []
+        total_w = 0
+        max_h = 0
+        for font, run_text in runs:
+            part = font.render(run_text, antialias, color)
+            parts.append(part)
+            total_w += part.get_width()
+            max_h = max(max_h, part.get_height())
+        combined = pygame.Surface((max(1, total_w), max(1, max_h)), pygame.SRCALPHA)
+        if background:
+            combined.fill(background)
+        x = 0
+        for part in parts:
+            y = max_h - part.get_height()
+            combined.blit(part, (x, y))
+            x += part.get_width()
+        return combined
+
+    def _cjk_segment_size(self, seg: str) -> tuple[int, int]:
+        """CJK segmentinin (yedek fontlar dahil) render boyutu."""
+        total_w = 0
+        max_h = 0
+        for font, run_text in self._cjk_runs(seg):
+            w, h = font.size(run_text)
+            total_w += w
+            max_h = max(max_h, h)
+        return (total_w, max_h)
 
     # ---- pygame.font.Font uyumlu API ----
 
@@ -112,11 +257,13 @@ class HybridFont:
             return cached
 
         segments = _segment_text(text)
-        # Tek segment ise doğrudan kaynak fontla render et (performans)
+        # Tek segment ise doğrudan render et (performans)
         if len(segments) == 1:
             is_cjk, seg = segments[0]
-            font = self._cjk if is_cjk else self._latin
-            result = font.render(seg, antialias, color, background)
+            if is_cjk:
+                result = self._render_cjk_segment(seg, antialias, color, background)
+            else:
+                result = self._latin.render(seg, antialias, color, background)
             self._render_cache[key] = result
             self._trim_cache()
             return result
@@ -126,8 +273,10 @@ class HybridFont:
         total_width = 0
         max_height = 0
         for is_cjk, seg in segments:
-            font = self._cjk if is_cjk else self._latin
-            part = font.render(seg, antialias, color)
+            if is_cjk:
+                part = self._render_cjk_segment(seg, antialias, color, None)
+            else:
+                part = self._latin.render(seg, antialias, color)
             rendered_parts.append(part)
             total_width += part.get_width()
             max_height = max(max_height, part.get_height())
@@ -154,8 +303,10 @@ class HybridFont:
         total_w = 0
         max_h = 0
         for is_cjk, seg in segments:
-            font = self._cjk if is_cjk else self._latin
-            w, h = font.size(seg)
+            if is_cjk:
+                w, h = self._cjk_segment_size(seg)
+            else:
+                w, h = self._latin.size(seg)
             total_w += w
             max_h = max(max_h, h)
         return (total_w, max_h)
@@ -196,7 +347,7 @@ class HybridFont:
         """Karakter bazlı metrikleri döndür."""
         result = []
         for ch in text:
-            font = self._cjk if _is_cjk_char(ch) else self._latin
+            font = self._cjk_font_for_char(ch) if _is_cjk_char(ch) else self._latin
             m = font.metrics(ch)
             result.extend(m)
         return result
@@ -457,9 +608,14 @@ class RetroStyle:
                     cjk_font = pygame.font.Font(self._font_path, scaled_size)
                     if effective_bold:
                         cjk_font.set_bold(True)
-                    # CJK font path aktif → HybridFont oluştur
+                    # CJK font path aktif → HybridFont oluştur (glyph fallback'li)
                     latin_font = self._get_latin_font(scaled_size, effective_bold)
-                    font_obj = HybridFont(latin_font, cjk_font)
+                    font_obj = HybridFont(
+                        latin_font, cjk_font,
+                        cjk_font_path=self._font_path,
+                        cjk_size=scaled_size,
+                        bold=effective_bold,
+                    )
                 except Exception:
                     font_obj = None
             if font_obj is None:

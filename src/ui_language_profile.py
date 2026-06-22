@@ -132,7 +132,12 @@ def get_font_for_language(lang_code: str, size: int, bold: bool = False) -> Opti
             if bold:
                 cjk_font.set_bold(True)
             latin_font = retro_style._get_latin_font(size, False)
-            loaded = HybridFont(latin_font, cjk_font)
+            loaded = HybridFont(
+                latin_font, cjk_font,
+                cjk_font_path=font_path,
+                cjk_size=size,
+                bold=bool(bold),
+            )
         else:
             loaded = pygame.font.Font(font_path, size)
             if bold:

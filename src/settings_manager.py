@@ -302,6 +302,9 @@ class SettingsManager:
             'local_pvp_demobot_debug': False,
             'coop_debug_halt_blocks': False,
             'mystery_debug_block_workshop': False,
+            # Açıkken duyuru paneli ana menüye her girişte otomatik açılır
+            # (panel düzenini test etmek için). 'announcement_seen' bayrağını yok sayar.
+            'announcement_debug': False,
             # Gizli ayarlar: ana menüde "arda" yazınca görünür olur.
             'show_debug_settings': False,
             # Grafik ayarları - Maksimum kalite varsayılan

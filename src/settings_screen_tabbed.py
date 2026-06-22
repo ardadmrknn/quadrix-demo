@@ -426,6 +426,10 @@ def _build_tab_content(tab_key: str, sm, show_debug: bool = False) -> list[dict]
                 'label_tr': 'Kart Modu Atölye Debug', 'label_en': 'Mystery Workshop Debug',
             })
             items.append({
+                'type': 'toggle', 'key': 'announcement_debug',
+                'label_tr': 'Duyuru Paneli Test (Her Girişte)', 'label_en': 'Announcement Panel Test (Every Entry)',
+            })
+            items.append({
                 'type': 'keybind', 'key': 'ctrl_debug_mystery_block_workshop',
                 'action_key': 'mystery_block_workshop', 'section': 'debug',
                 'label_tr': 'Atölye Tetik Tuşu', 'label_en': 'Workshop Trigger Key',

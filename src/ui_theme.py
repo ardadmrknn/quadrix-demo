@@ -173,7 +173,12 @@ class UIFonts:
                     if effective_bold:
                         cjk_font.set_bold(True)
                     latin_font = cls._get_latin_font(scaled_size, effective_bold)
-                    cls._cache[key] = HybridFont(latin_font, cjk_font)
+                    cls._cache[key] = HybridFont(
+                        latin_font, cjk_font,
+                        cjk_font_path=cls._font_path,
+                        cjk_size=scaled_size,
+                        bold=effective_bold,
+                    )
                 else:
                     cls._cache[key] = cls._get_latin_font(scaled_size, effective_bold)
             except Exception:

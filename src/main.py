@@ -949,6 +949,241 @@ def _show_mode_intro_popup(screen, mode_key, settings_manager=None):
     return result
 
 
+# ── İlk açılış / tutorial sonrası tek seferlik duyuru paneli ──────────────
+# Panel maskotu: dikey karakter görseli. Metin motor tarafından çizildiği
+# için görsel dile bağlı değildir (tek dosya).
+_ANNOUNCEMENT_MASCOT_PATH = 'assets/main_theme/ilk_baslangic_panel_maskpot.png'
+
+
+def _load_announcement_mascot():
+    """Duyuru paneli maskotunu (cache'li) yükle.
+
+    Döndürür: (Surface | None, path_str). Dosya yoksa (None, '') döner ve
+    panel maskotsuz çizilir (layout korunur).
+    """
+    try:
+        from asset_manager import load_image
+    except Exception:
+        from .asset_manager import load_image  # type: ignore
+
+    path = resource_path(_ANNOUNCEMENT_MASCOT_PATH)
+
+    cache = getattr(_load_announcement_mascot, '_cache', None)
+    if cache is None:
+        cache = {}
+        _load_announcement_mascot._cache = cache
+
+    if path in cache:
+        return cache[path]
+
+    loaded = (None, '')
+    try:
+        if os.path.exists(path):
+            surf = load_image(path, convert_alpha=True)
+            if surf is not None:
+                loaded = (surf, path)
+    except Exception:
+        loaded = (None, '')
+
+    cache[path] = loaded
+    return loaded
+
+
+def _show_announcement_popup(screen, settings_manager=None):
+    """İlk açılışta / tutorial sonrası ana menüde gösterilen tek seferlik
+    duyuru panelini çizer (bloklayıcı döngü).
+
+    Metin tüm diller için ``announcement_*`` çeviri anahtarlarından gelir ve
+    panele sığacak şekilde otomatik ölçeklenir (uzun Almanca/Rusça cümleleri
+    ve boşluksuz CJK metinleri panel taşmasını önler). Yazıların altında
+    (varsa) maskot görseli çizilir.
+    """
+    title = t('announcement_title')
+    body = t('announcement_body')
+    btn_label = t('announcement_continue')
+
+    clock = pygame.time.Clock()
+    running_popup = True
+
+    bg_capture = _capture_popup_backdrop(screen, dim_alpha=180)
+
+    # Gamepad: bloklayıcı döngü kendi event.get()'ini kullandığından pointer
+    # modunu bastır (A=ENTER garantisi) ve her frame gamepad'i kuyruğa pompala.
+    _gpm = None
+    _gp_prev_suppress = False
+    try:
+        _gpm = get_gamepad_manager()
+        _gp_prev_suppress = bool(getattr(_gpm, '_suppress_pointer_mode', False))
+        _gpm.set_suppress_pointer_mode(True)
+    except Exception:
+        _gpm = None
+
+    while running_popup:
+        delta_ms = clock.tick(60)
+        try:
+            pump_gamepad_into_event_queue(delta_ms, 'menu')
+        except Exception:
+            pass
+        screen = _maybe_recover_windows_display(screen, settings_manager=settings_manager)
+        bg_capture = _ensure_popup_backdrop(bg_capture, screen, dim_alpha=180)
+
+        width, height = screen.get_size()
+        popup_scale = _fullscreen_popup_scale(screen)
+        sp = lambda v, minimum=1: max(minimum, int(round(v * popup_scale)))
+
+        # Maskot (dikey görsel) — sağ kenara tam boy yaslanır; yazılar soldaki
+        # boşluğa yerleşir.
+        mascot_img, mascot_path = _load_announcement_mascot()
+
+        side_margin = sp(44, 34)
+        # İki sütunlu yerleşim (sol: yazı, sağ: maskot) için panel biraz geniş.
+        panel_width = max(sp(520), min(sp(820), width - side_margin * 2))
+        panel_height = max(sp(360), min(sp(540), height - sp(120, 80)))
+        panel_rect = pygame.Rect(
+            (width - panel_width) // 2,
+            (height - panel_height) // 2,
+            panel_width,
+            panel_height,
+        )
+
+        spacing = sp(14, 8)
+        pad_x = sp(30, 16)
+        inner_pad = sp(22, 12)
+        col_gap = sp(18, 10)
+
+        # ── Maskot: sağ kenara yasla (dikey, panel iç yüksekliği boyunca) ──
+        mascot_draw = None
+        mascot_pos = (0, 0)
+        content_left = panel_rect.x + pad_x
+        content_right = panel_rect.right - pad_x
+        if mascot_img is not None:
+            img_w, img_h = mascot_img.get_size()
+            if img_w > 0 and img_h > 0:
+                avail_h = panel_rect.height - inner_pad * 2
+                # Maskot, panel genişliğinin en fazla ~%44'ünü kaplasın.
+                max_mascot_w = int(panel_rect.width * 0.44)
+                scale = avail_h / img_h
+                if img_w * scale > max_mascot_w:
+                    scale = max_mascot_w / img_w
+                draw_w = max(1, int(img_w * scale))
+                draw_h = max(1, int(img_h * scale))
+                cache_key = (mascot_path, draw_w, draw_h)
+                scaled_cache = getattr(_show_announcement_popup, '_scaled', None)
+                if scaled_cache is None or scaled_cache[0] != cache_key:
+                    # macOS: smoothscale bazen crash yapabildiğinden düz scale kullan.
+                    if current_platform == 'Darwin':
+                        scaled_surf = pygame.transform.scale(mascot_img, (draw_w, draw_h))
+                    else:
+                        try:
+                            scaled_surf = pygame.transform.smoothscale(mascot_img, (draw_w, draw_h))
+                        except Exception:
+                            scaled_surf = pygame.transform.scale(mascot_img, (draw_w, draw_h))
+                    _show_announcement_popup._scaled = (cache_key, scaled_surf)
+                    scaled_cache = _show_announcement_popup._scaled
+                mascot_draw = scaled_cache[1]
+                # Sağ iç kenara yasla, dikeyde panel altına otur (sağ kenarla paralel).
+                mascot_x = panel_rect.right - inner_pad - draw_w
+                mascot_y = panel_rect.bottom - inner_pad - draw_h
+                mascot_pos = (mascot_x, mascot_y)
+                content_right = mascot_x - col_gap
+
+        # Sol içerik sütunu
+        content_w = max(sp(140), content_right - content_left)
+        left_center_x = content_left + content_w // 2
+
+        # Tek buton (sol sütunun altında, sol sütunda ortalı)
+        btn_w = max(sp(160), min(sp(240), content_w))
+        btn_h = sp(56, 40)
+        btn_y = panel_rect.bottom - btn_h - sp(22, 14)
+        btn_rect = pygame.Rect(left_center_x - btn_w // 2, btn_y, btn_w, btn_h)
+
+        # Başlık (sol sütunda ortalı, sütuna sığacak şekilde küçülür)
+        title_top = panel_rect.y + sp(22, 14)
+        title_surf = retro_style.render_fit_text(title, retro_style.accent, content_w, sp(28, 18), bold=True)
+        title_bottom = title_top + title_surf.get_height()
+
+        # Gövde metni — sol sütuna sığacak şekilde otomatik ölçekle (tüm diller)
+        content_top = title_bottom + spacing
+        content_bottom = btn_y - spacing
+        body_max_w = content_w
+        body_max_h = max(sp(40), content_bottom - content_top)
+        body_font, body_lines = retro_style.fit_wrapped_font(
+            body,
+            base_size=sp(23, 15),
+            min_size=sp(13, 11),
+            max_width=body_max_w,
+            max_height=body_max_h,
+            bold=True,
+            line_spacing=sp(8, 5),
+        )
+
+        # ── Olaylar ──
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                running_popup = False
+            elif event.type == pygame.KEYDOWN:
+                if event.key in (
+                    pygame.K_RETURN, pygame.K_KP_ENTER,
+                    pygame.K_SPACE, pygame.K_ESCAPE,
+                ):
+                    running_popup = False
+            elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                mpos = normalize_mouse_pos(event.pos) if 'normalize_mouse_pos' in globals() else event.pos
+                if btn_rect.collidepoint(mpos):
+                    running_popup = False
+
+        # ── Çizim ──
+        screen.blit(bg_capture, (0, 0))
+        retro_style.draw_glass_panel(
+            screen, panel_rect, alpha=224,
+            border_color=(*retro_style.accent, 200), glow=True,
+        )
+
+        # Başlık (sol sütunda ortalı)
+        screen.blit(title_surf, title_surf.get_rect(centerx=left_center_x, top=title_top))
+
+        # Gövde metni (sol sütunda ortalı, dikeyde içerik alanında ortala).
+        # Belirginlik için: parlak beyaz + arkasına koyu gölge.
+        body_color = (255, 255, 255)
+        shadow_color = (8, 10, 18)
+        shadow_off = max(1, sp(2, 1))
+        line_spacing = sp(8, 5)
+        total_text_h = sum(body_font.render(ln, True, body_color).get_height() for ln in body_lines)
+        total_text_h += max(0, len(body_lines) - 1) * line_spacing
+        text_area_h = max(sp(40), content_bottom - content_top)
+        y = content_top + max(0, (text_area_h - total_text_h) // 2)
+        for line in body_lines:
+            line_surf = body_font.render(line, True, body_color)
+            line_rect = line_surf.get_rect(centerx=left_center_x, top=y)
+            shadow_surf = body_font.render(line, True, shadow_color)
+            screen.blit(shadow_surf, (line_rect.x + shadow_off, line_rect.y + shadow_off))
+            screen.blit(line_surf, line_rect)
+            y += line_surf.get_height() + line_spacing
+
+        # Maskot (sağ kenara yaslı, dikey)
+        if mascot_draw is not None:
+            screen.blit(mascot_draw, mascot_pos)
+
+        # Buton
+        btn_hover = btn_rect.collidepoint(get_mouse_pos())
+        start_hint, _ = _popup_confirm_cancel_hints('ENTER', 'ESC')
+        retro_style.draw_uniform_button(
+            screen, btn_rect, btn_label,
+            sub_text=start_hint, color_code=retro_style.success, selected=btn_hover,
+        )
+
+        pygame.display.flip()
+
+    # Pointer-mode bastırmasını eski haline getir
+    try:
+        if _gpm is not None:
+            _gpm.set_suppress_pointer_mode(_gp_prev_suppress)
+    except Exception:
+        pass
+
+    return True
+
+
 def _fullscreen_popup_scale(screen) -> float:
     """Popup/panel olcegi: logical UI size ile karar ver, raw surface'e projekte et."""
     return get_projected_effective_scale(
@@ -4250,6 +4485,14 @@ def main():
     # Ekran geçiş efekti için state takibi
     _previous_state = state
     _prev_transition_active = False  # PERF telemetrisi: geçiş aktif→pasif kenarı için
+    # İlk açılış / tutorial sonrası ana menüde tek seferlik duyuru paneli.
+    # 'announcement_seen' bayrağı false ise, oyuncunun ana menüye ilk
+    # varışında (ilk açılış VEYA tutorial'dan çıkış) panel bir kez gösterilir.
+    _announcement_shown = bool(settings_manager.get('announcement_seen', False))
+    # Debug: 'announcement_debug' açıkken panel ana menüye HER girişte açılır
+    # (düzen testi için). Menüye her girişte True yapılır, panel gösterilince
+    # tüketilir.
+    _announcement_debug_pending = True
     # Menü state'inden başlandığında basılı tutma tekrarı aktif
     if state not in ('game', 'pvp', 'coop', 'coop_campaign', 'online_pvp', 'online_coop'):
         pygame.key.set_repeat(350, 80)
@@ -4425,6 +4668,8 @@ def main():
                     menu.notify_menu_activated()
                 except Exception:
                     pass
+                # Debug duyuru paneli: menüye her yeni girişte yeniden tetiklenebilir.
+                _announcement_debug_pending = True
             # Geçiş efekti başlat (state zaten değişti, sadece görsel efekt)
             # Coop kendi açılış perdesini çiziyor; aynı anda global transition başlatma.
             if state != 'coop':
@@ -4487,6 +4732,42 @@ def main():
                 _apply_screen(surface_now)
         except Exception:
             pass
+
+        # ── İlk açılış / tutorial sonrası tek seferlik duyuru paneli ──────
+        # Ana menü en az bir kez çizildikten (did_draw) ve giriş geçiş efekti
+        # bittikten sonra gösterilir. Backdrop olarak çizili menü yakalanır.
+        # Normalde tek seferlik ('announcement_seen'); 'announcement_debug'
+        # açıkken menüye HER girişte yeniden açılır (panel düzeni testi için).
+        _announcement_debug = bool(settings_manager.get('announcement_debug', False))
+        if _announcement_debug:
+            _should_show_announcement = _announcement_debug_pending
+        else:
+            _should_show_announcement = not _announcement_shown
+        if (
+            _should_show_announcement
+            and state == 'menu'
+            and did_draw
+            and not is_screen_transition_active()
+        ):
+            try:
+                _show_announcement_popup(screen, settings_manager=settings_manager)
+            except Exception:
+                pass
+            finally:
+                _announcement_shown = True
+                _announcement_debug_pending = False
+                if not _announcement_debug:
+                    try:
+                        settings_manager.set('announcement_seen', True)
+                    except Exception:
+                        pass
+                # Popup display'i recover etmiş olabilir; screen referansını senkronla.
+                try:
+                    surface_now = pygame.display.get_surface()
+                    if surface_now is not None and surface_now is not screen:
+                        _apply_screen(surface_now)
+                except Exception:
+                    pass
 
         # ── Menü Müzik Playlist Global Tick ────────────────────────────
         # update_music_playlist() daha önce yalnızca 'menu' ve 'settings'
