@@ -81,7 +81,7 @@ PETS: tuple[PetSpec, ...] = (
         fallback_title='Luna-Cat',
         fallback_desc='Satır temizleme izini takip eden klasik Luna-Cat dostun. Profilinle birlikte gelir.',
         frame_count=0,
-        price=150,
+        price=1800,
         aliases=('cat', 'lunacat'),
     ),
     PetSpec(
@@ -94,7 +94,7 @@ PETS: tuple[PetSpec, ...] = (
         fallback_title='Sevimli Kuzu',
         fallback_desc='Satır temizlerken zıplayarak izini takip eden mavi yeleli minik kuzu. Luna-Cat\'in yerine geçer.',
         frame_count=10,
-        price=350,
+        price=4200,
         size_multiplier=1.30,
         head_anchor_x=0.70,
         aliases=('kuzu', 'lamb', 'koyun'),

@@ -56,7 +56,7 @@ BLOCK_SKINS: tuple[BlockSkinSpec, ...] = (
         desc_key='store_product_block_legacy_desc',
         fallback_title='Eski Blok Gorunumu',
         fallback_desc='Eski koseli, parlak ve bevel vurgulu klasik blok gorunumunu geri getirir.',
-        price=450,
+        price=5400,
         aliases=(
             'legacy',
             'classic',

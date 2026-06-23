@@ -236,10 +236,10 @@ CARD_LOCALIZATION_ALIASES = {
 #
 # Enderlik bazlı fiyat ölçeği (Lunar). Common ücretsiz (satılmaz).
 CARD_RARITY_PRICES: Dict[str, int] = {
-    'uncommon': 300,
-    'rare': 600,
-    'epic': 1200,
-    'legendary': 3000,
+    'uncommon': 3600,
+    'rare': 7200,
+    'epic': 14400,
+    'legendary': 36000,
 }
 
 # Enderlik -> İngilizce vitrin etiketi (catalog `tag` ile uyumlu).
