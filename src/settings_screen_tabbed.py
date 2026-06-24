@@ -183,6 +183,11 @@ def _build_tab_content(tab_key: str, sm, show_debug: bool = False) -> list[dict]
             'loc_key': 'fps_limit',
             'label_tr': 'FPS Limiti', 'label_en': 'FPS Limit',
         })
+        items.append({
+            'type': 'selector', 'key': 'ui_scale_preset',
+            'loc_key': 'ui_scale_preset',
+            'label_tr': 'Arayüz Ölçeği', 'label_en': 'UI Scale',
+        })
 
         items.append({'type': 'section', 'loc_key': 'settings_section_visual', 'label_tr': 'GÖRSEL', 'label_en': 'VISUAL'})
         items.append({
@@ -1572,6 +1577,19 @@ class TabbedSettingsScreen:
                 limit = int(self._get_value('fps_limit') or 0)
                 text = t('automatic') if limit <= 0 else str(limit)
                 return text, (200, 220, 255)
+            elif key == 'ui_scale_preset':
+                val = self._get_value('ui_scale_preset')
+                scale_labels = {
+                    "compact": {"tr": "Kompakt (%94)", "en": "Compact (94%)"},
+                    "normal": {"tr": "Normal (%100)", "en": "Normal (100%)"},
+                    "large": {"tr": "Geniş (%125)", "en": "Large (125%)"},
+                    "huge": {"tr": "Büyük (%150)", "en": "Huge (150%)"},
+                    "massive": {"tr": "Devasa (%175)", "en": "Massive (175%)"},
+                    "double": {"tr": "İki Kat (%200)", "en": "Double (200%)"},
+                }
+                label_dict = scale_labels.get(val, scale_labels["normal"])
+                text = label_dict["tr"] if lang == "tr" else label_dict["en"]
+                return text, (150, 220, 255)
             elif key == 'language':
                 lang_name = get_language_name(self.current_language)
                 return str(lang_name), (100, 255, 200)
@@ -2755,6 +2773,15 @@ class TabbedSettingsScreen:
             idx = (idx + delta) % len(self.FPS_LIMITS)
             self.fps_limit = self.FPS_LIMITS[idx]
             self._set_value('fps_limit', self.fps_limit)
+        elif key == 'ui_scale_preset':
+            from ui_scaling import UI_SCALE_PRESETS
+            current = self.ui_scale_preset
+            if current not in UI_SCALE_PRESETS:
+                current = 'normal'
+            idx = UI_SCALE_PRESETS.index(current)
+            idx = (idx + delta) % len(UI_SCALE_PRESETS)
+            self.ui_scale_preset = UI_SCALE_PRESETS[idx]
+            self._set_value('ui_scale_preset', self.ui_scale_preset)
         elif key == 'language':
             lang_idx = (
                 SUPPORTED_LANGUAGES.index(self.current_language)

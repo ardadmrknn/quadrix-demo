@@ -269,6 +269,9 @@ class Game:
 
     def _ui_scale(self, min_scale: float = 0.72, max_scale: float = 1.24) -> float:
         """Aktif canvas boyutuna bağlı genel UI ölçeği."""
+        eff_w, _ = self._effective_ui_size()
+        if eff_w > 1920:
+            max_scale = max_scale * (eff_w / 1920.0)
         return apply_ui_scale_preset(
             get_scale(
                 self._effective_ui_size(),
@@ -282,6 +285,9 @@ class Game:
 
     def _overlay_ui_scale(self, min_scale: float = 0.72, max_scale: float = 1.20) -> float:
         """Overlay/modal geometriyi logical UI size ile hesapla, raw surface'e projekte et."""
+        eff_w, _ = self._effective_ui_size()
+        if eff_w > 1920:
+            max_scale = max_scale * (eff_w / 1920.0)
         return get_projected_effective_scale(
             getattr(self, 'screen', self._active_ui_size()),
             min_scale=min_scale,

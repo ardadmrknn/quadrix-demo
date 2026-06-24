@@ -666,15 +666,20 @@ class Menu:
         Çok küçük ekranlarda aşırı sıkışmayı, çok büyük ekranlarda da
         kontrolsüz büyümeyi engellemek için clamp uygulanır.
         """
+        min_scale = 0.78
+        max_scale = 1.24
+        eff_w, _ = self._effective_ui_size()
+        if eff_w > 1920:
+            max_scale = max_scale * (eff_w / 1920.0)
         return apply_ui_scale_preset(
             get_scale(
                 self._effective_ui_size(),
-                min_scale=0.78,
-                max_scale=1.24,
+                min_scale=min_scale,
+                max_scale=max_scale,
                 reference_size=(1366.0, 768.0),
             ),
-            min_scale=0.78,
-            max_scale=1.24,
+            min_scale=min_scale,
+            max_scale=max_scale,
         )
 
     def _effective_ui_size(self) -> tuple[int, int]:

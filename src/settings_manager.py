@@ -247,8 +247,8 @@ OBSOLETE_SETTINGS_KEYS = {
     'background_enabled',
 }
 
-FORCED_UI_SCALE_PRESET = 'compact'
-VALID_UI_SCALE_PRESETS = {FORCED_UI_SCALE_PRESET}
+DEFAULT_UI_SCALE_PRESET = 'normal'
+VALID_UI_SCALE_PRESETS = {'compact', 'normal', 'large', 'huge', 'massive', 'double'}
 
 
 class SettingsManager:
@@ -313,8 +313,8 @@ class SettingsManager:
             'vsync': True,  # VSYNC açık - screen tearing önleme
             # FPS limiti: 0 = otomatik ekran yenileme hızı. Değerler: 30/45/60/90/120/0
             'fps_limit': 0,
-            # Effective UI zinciri kompakt preset'e sabitli.
-            'ui_scale_preset': FORCED_UI_SCALE_PRESET,
+            # Varsayılan UI ölçeği.
+            'ui_scale_preset': DEFAULT_UI_SCALE_PRESET,
             'show_ghost': True,
             'bg_transparency': 0.7,
             # Düşen bloklar ve yıldız efektlerinin opaklığı.
@@ -716,7 +716,7 @@ class SettingsManager:
     def _normalize_ui_scale_preset_value(value):
         preset = str(value or '').strip().lower()
         if preset not in VALID_UI_SCALE_PRESETS:
-            return FORCED_UI_SCALE_PRESET
+            return DEFAULT_UI_SCALE_PRESET
         return preset
 
     @classmethod
@@ -849,7 +849,7 @@ class SettingsManager:
                 changed = True
 
         normalized_preset = self._normalize_ui_scale_preset_value(
-            data.get('ui_scale_preset', self.default_settings.get('ui_scale_preset', FORCED_UI_SCALE_PRESET))
+            data.get('ui_scale_preset', self.default_settings.get('ui_scale_preset', DEFAULT_UI_SCALE_PRESET))
         )
         if data.get('ui_scale_preset') != normalized_preset:
             data['ui_scale_preset'] = normalized_preset
@@ -869,7 +869,7 @@ class SettingsManager:
             return
 
         preset = self._normalize_ui_scale_preset_value(
-            self.settings.get('ui_scale_preset', self.default_settings.get('ui_scale_preset', FORCED_UI_SCALE_PRESET))
+            self.settings.get('ui_scale_preset', self.default_settings.get('ui_scale_preset', DEFAULT_UI_SCALE_PRESET))
         )
         self.settings['ui_scale_preset'] = preset
 

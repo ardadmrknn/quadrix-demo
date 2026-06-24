@@ -9,13 +9,19 @@ REFERENCE_SIZE = (1920.0, 1080.0)
 UI_SCALE_PRESET_MULTIPLIERS = {
     "compact": 0.94,
     "normal": 1.0,
-    "large": 1.08,
+    "large": 1.25,
+    "huge": 1.50,
+    "massive": 1.75,
+    "double": 2.0,
 }
 
 UI_SCALE_PRESET_OFFSETS = {
     "compact": -0.10,
     "normal": 0.0,
-    "large": 0.12,
+    "large": 0.25,
+    "huge": 0.50,
+    "massive": 0.75,
+    "double": 1.0,
 }
 
 UI_SCALE_PRESET_OFFSET_THRESHOLD = 1.10
