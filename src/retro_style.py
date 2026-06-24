@@ -444,6 +444,35 @@ class RetroStyle:
         self._glass_glow_cache_order: list[tuple] = []
         self._glass_glow_cache_max = 128
 
+        # Shape surface caches (avoid per-frame Surface allocations in widgets)
+        self._shadow_cache: dict[tuple, pygame.Surface] = {}
+        self._shadow_cache_order: list[tuple] = []
+        self._shadow_cache_max = 64
+
+        self._button_bg_cache: dict[tuple, pygame.Surface] = {}
+        self._button_bg_cache_order: list[tuple] = []
+        self._button_bg_cache_max = 64
+
+        self._setting_row_cache: dict[tuple, pygame.Surface] = {}
+        self._setting_row_cache_order: list[tuple] = []
+        self._setting_row_cache_max = 64
+
+        self._uniform_btn_cache: dict[tuple, pygame.Surface] = {}
+        self._uniform_btn_cache_order: list[tuple] = []
+        self._uniform_btn_cache_max = 64
+
+        self._chip_surf_cache: dict[tuple, pygame.Surface] = {}
+        self._chip_surf_cache_order: list[tuple] = []
+        self._chip_surf_cache_max = 64
+
+        self._scrollbar_surf_cache: dict[tuple, pygame.Surface] = {}
+        self._scrollbar_surf_cache_order: list[tuple] = []
+        self._scrollbar_surf_cache_max = 128
+
+        self._volume_bar_surf_cache: dict[tuple, pygame.Surface] = {}
+        self._volume_bar_surf_cache_order: list[tuple] = []
+        self._volume_bar_surf_cache_max = 64
+
         # Animasyon zamanı
         self._time = 0
 
@@ -483,6 +512,23 @@ class RetroStyle:
         try:
             self._glass_glow_cache.clear()
             self._glass_glow_cache_order.clear()
+        except Exception:
+            pass
+        try:
+            self._shadow_cache.clear()
+            self._shadow_cache_order.clear()
+            self._button_bg_cache.clear()
+            self._button_bg_cache_order.clear()
+            self._setting_row_cache.clear()
+            self._setting_row_cache_order.clear()
+            self._uniform_btn_cache.clear()
+            self._uniform_btn_cache_order.clear()
+            self._chip_surf_cache.clear()
+            self._chip_surf_cache_order.clear()
+            self._scrollbar_surf_cache.clear()
+            self._scrollbar_surf_cache_order.clear()
+            self._volume_bar_surf_cache.clear()
+            self._volume_bar_surf_cache_order.clear()
         except Exception:
             pass
 
@@ -957,12 +1003,17 @@ class RetroStyle:
         key: tuple,
         value: pygame.Surface,
         max_items: int,
-    ) -> None:
+    ) -> pygame.Surface:
+        try:
+            value = value.convert_alpha()
+        except Exception:
+            pass
         cache[key] = value
         order.append(key)
         while len(order) > max_items:
             oldest = order.pop(0)
             cache.pop(oldest, None)
+        return value
 
     def _break_long_token(self, token: str, font: pygame.font.Font, max_width: int) -> list[str]:
         """Tek bir kelime/token genişliğe sığmıyorsa karakter bazında böl.
@@ -1253,7 +1304,7 @@ class RetroStyle:
             if glow_surf is None:
                 glow_surf = pygame.Surface(glow_rect.size, pygame.SRCALPHA)
                 pygame.draw.rect(glow_surf, (*glow_color, self._scale_menu_alpha(30)), glow_surf.get_rect(), border_radius=16)
-                self._lru_put(self._glass_glow_cache, self._glass_glow_cache_order, glow_key, glow_surf, self._glass_glow_cache_max)
+                glow_surf = self._lru_put(self._glass_glow_cache, self._glass_glow_cache_order, glow_key, glow_surf, self._glass_glow_cache_max)
             screen.blit(glow_surf, glow_rect.topleft)
         
         # Ana panel (yarı saydam)
@@ -1263,9 +1314,7 @@ class RetroStyle:
         if panel is None:
             panel = pygame.Surface(rect.size, pygame.SRCALPHA)
             panel.fill((*base_rgb, alpha))
-
-            self._lru_put(self._glass_panel_cache, self._glass_panel_cache_order, panel_key, panel, self._glass_panel_cache_max)
-
+            panel = self._lru_put(self._glass_panel_cache, self._glass_panel_cache_order, panel_key, panel, self._glass_panel_cache_max)
         screen.blit(panel, rect.topleft)
         
         # Kenar çizgisi
@@ -1323,8 +1372,12 @@ class RetroStyle:
         """Glass panel çiz - modern tasarım"""
         # Gölge
         if shadow:
-            shadow_surf = pygame.Surface((rect.width + 8, rect.height + 8), pygame.SRCALPHA)
-            pygame.draw.rect(shadow_surf, (0, 0, 0, 40), shadow_surf.get_rect(), border_radius=14)
+            shadow_key = (rect.width + 8, rect.height + 8)
+            shadow_surf = self._lru_get(self._shadow_cache, self._shadow_cache_order, shadow_key)
+            if shadow_surf is None:
+                shadow_surf = pygame.Surface(shadow_key, pygame.SRCALPHA)
+                pygame.draw.rect(shadow_surf, (0, 0, 0, 40), shadow_surf.get_rect(), border_radius=14)
+                shadow_surf = self._lru_put(self._shadow_cache, self._shadow_cache_order, shadow_key, shadow_surf, self._shadow_cache_max)
             screen.blit(shadow_surf, (rect.x + 4, rect.y + 4))
         
         # Glass panel
@@ -1350,22 +1403,30 @@ class RetroStyle:
         # Glow (selected)
         if selected:
             glow_rect = rect.inflate(12, 12)
-            glow_surf = pygame.Surface(glow_rect.size, pygame.SRCALPHA)
             glow_color = strip_color or self.primary
-            pygame.draw.rect(glow_surf, (*glow_color[:3], self._scale_menu_alpha(40)), glow_surf.get_rect(), border_radius=14)
+            glow_key = ("glow", glow_rect.size, tuple(glow_color[:3]))
+            glow_surf = self._lru_get(self._button_bg_cache, self._button_bg_cache_order, glow_key)
+            if glow_surf is None:
+                glow_surf = pygame.Surface(glow_rect.size, pygame.SRCALPHA)
+                pygame.draw.rect(glow_surf, (*glow_color[:3], self._scale_menu_alpha(40)), glow_surf.get_rect(), border_radius=14)
+                glow_surf = self._lru_put(self._button_bg_cache, self._button_bg_cache_order, glow_key, glow_surf, self._button_bg_cache_max)
             screen.blit(glow_surf, glow_rect.topleft)
         
         # Buton arka planı
-        alpha = self._scale_menu_alpha(200 if selected else 160)
-        fill_color = (28, 35, 55) if selected else (18, 24, 40)
-        
-        btn_surf = pygame.Surface(rect.size, pygame.SRCALPHA)
-        btn_surf.fill((*fill_color, alpha))
-        
-        # Üst kenar highlight
-        for y in range(min(20, rect.height // 3)):
-            h_alpha = int(30 * (1 - y / 20)) if selected else int(15 * (1 - y / 20))
-            pygame.draw.line(btn_surf, (255, 255, 255, self._scale_menu_alpha(h_alpha)), (0, y), (rect.width, y))
+        btn_key = ("bg", rect.size, selected)
+        btn_surf = self._lru_get(self._button_bg_cache, self._button_bg_cache_order, btn_key)
+        if btn_surf is None:
+            alpha = self._scale_menu_alpha(200 if selected else 160)
+            fill_color = (28, 35, 55) if selected else (18, 24, 40)
+            
+            btn_surf = pygame.Surface(rect.size, pygame.SRCALPHA)
+            btn_surf.fill((*fill_color, alpha))
+            
+            # Üst kenar highlight
+            for y in range(min(20, rect.height // 3)):
+                h_alpha = int(30 * (1 - y / 20)) if selected else int(15 * (1 - y / 20))
+                pygame.draw.line(btn_surf, (255, 255, 255, self._scale_menu_alpha(h_alpha)), (0, y), (rect.width, y))
+            btn_surf = self._lru_put(self._button_bg_cache, self._button_bg_cache_order, btn_key, btn_surf, self._button_bg_cache_max)
         
         screen.blit(btn_surf, rect.topleft)
         
@@ -1489,16 +1550,20 @@ class RetroStyle:
     ) -> None:
         """Ayar satırı - modern tasarım"""
         # Arka plan
-        alpha = self._scale_menu_alpha(190 if selected else 150)
-        fill_color = (25, 32, 52) if selected else (18, 24, 40)
-        
-        row_surf = pygame.Surface(rect.size, pygame.SRCALPHA)
-        row_surf.fill((*fill_color, alpha))
-        
-        # Üst highlight
-        for y in range(min(15, rect.height // 4)):
-            h_alpha = int(20 * (1 - y / 15))
-            pygame.draw.line(row_surf, (255, 255, 255, self._scale_menu_alpha(h_alpha)), (0, y), (rect.width, y))
+        row_key = (rect.size, selected)
+        row_surf = self._lru_get(self._setting_row_cache, self._setting_row_cache_order, row_key)
+        if row_surf is None:
+            alpha = self._scale_menu_alpha(190 if selected else 150)
+            fill_color = (25, 32, 52) if selected else (18, 24, 40)
+            
+            row_surf = pygame.Surface(rect.size, pygame.SRCALPHA)
+            row_surf.fill((*fill_color, alpha))
+            
+            # Üst highlight
+            for y in range(min(15, rect.height // 4)):
+                h_alpha = int(20 * (1 - y / 15))
+                pygame.draw.line(row_surf, (255, 255, 255, self._scale_menu_alpha(h_alpha)), (0, y), (rect.width, y))
+            row_surf = self._lru_put(self._setting_row_cache, self._setting_row_cache_order, row_key, row_surf, self._setting_row_cache_max)
         
         screen.blit(row_surf, rect.topleft)
         
@@ -1589,11 +1654,16 @@ class RetroStyle:
         is_hover = state == 'hover' or selected
         
         # Arka plan
-        alpha = self._scale_menu_alpha(200 if is_hover else 160)
-        fill = (30, 38, 58) if is_hover else (20, 26, 42)
+        btn_key = (rect.size, is_hover)
+        btn_surf = self._lru_get(self._uniform_btn_cache, self._uniform_btn_cache_order, btn_key)
+        if btn_surf is None:
+            alpha = self._scale_menu_alpha(200 if is_hover else 160)
+            fill = (30, 38, 58) if is_hover else (20, 26, 42)
+            
+            btn_surf = pygame.Surface(rect.size, pygame.SRCALPHA)
+            btn_surf.fill((*fill, alpha))
+            btn_surf = self._lru_put(self._uniform_btn_cache, self._uniform_btn_cache_order, btn_key, btn_surf, self._uniform_btn_cache_max)
         
-        btn_surf = pygame.Surface(rect.size, pygame.SRCALPHA)
-        btn_surf.fill((*fill, alpha))
         screen.blit(btn_surf, rect.topleft)
         
         # Kenar
@@ -1711,12 +1781,16 @@ class RetroStyle:
 
     def draw_chip(self, screen: pygame.Surface, rect: pygame.Rect, text: str, active: bool = False) -> None:
         """Chip/tag çiz"""
-        fill = (50, 100, 75) if active else (30, 38, 58)
-        border = self.primary if active else (70, 85, 115)
+        chip_key = (rect.size, active)
+        chip_surf = self._lru_get(self._chip_surf_cache, self._chip_surf_cache_order, chip_key)
+        if chip_surf is None:
+            fill = (50, 100, 75) if active else (30, 38, 58)
+            chip_surf = pygame.Surface(rect.size, pygame.SRCALPHA)
+            chip_surf.fill((*fill, 200))
+            chip_surf = self._lru_put(self._chip_surf_cache, self._chip_surf_cache_order, chip_key, chip_surf, self._chip_surf_cache_max)
         
-        chip_surf = pygame.Surface(rect.size, pygame.SRCALPHA)
-        chip_surf.fill((*fill, 200))
         screen.blit(chip_surf, rect.topleft)
+        border = self.primary if active else (70, 85, 115)
         pygame.draw.rect(screen, border, rect, 2, border_radius=rect.height // 2)
         
         font = self.get_fitting_font(text, 14, rect.width - 12, bold=True)
@@ -1752,13 +1826,16 @@ class RetroStyle:
         track_rect = pygame.Rect(track_x, track_y, bar_width, track_height)
 
         # Track arka plan — pill şekli
-        track_surf = pygame.Surface((bar_width, track_height), pygame.SRCALPHA)
-        pygame.draw.rect(track_surf, (20, 28, 48, 180), track_surf.get_rect(), border_radius=r)
-        pygame.draw.rect(track_surf, (60, 80, 120, 120), track_surf.get_rect(), 1, border_radius=r)
-        # İç soluk çizgi (derinlik hissi)
-        inner_line_surf = pygame.Surface((2, track_height - 4), pygame.SRCALPHA)
-        inner_line_surf.fill((255, 255, 255, 14))
-        track_surf.blit(inner_line_surf, (2, 2))
+        track_key = ("track", bar_width, track_height)
+        track_surf = self._lru_get(self._scrollbar_surf_cache, self._scrollbar_surf_cache_order, track_key)
+        if track_surf is None:
+            track_surf = pygame.Surface((bar_width, track_height), pygame.SRCALPHA)
+            pygame.draw.rect(track_surf, (20, 28, 48, 180), track_surf.get_rect(), border_radius=r)
+            pygame.draw.rect(track_surf, (60, 80, 120, 120), track_surf.get_rect(), 1, border_radius=r)
+            inner_line_surf = pygame.Surface((2, track_height - 4), pygame.SRCALPHA)
+            inner_line_surf.fill((255, 255, 255, 14))
+            track_surf.blit(inner_line_surf, (2, 2))
+            track_surf = self._lru_put(self._scrollbar_surf_cache, self._scrollbar_surf_cache_order, track_key, track_surf, self._scrollbar_surf_cache_max)
         screen.blit(track_surf, (track_x, track_y))
 
         # ── Thumb ──────────────────────────────────────────────────────
@@ -1772,37 +1849,46 @@ class RetroStyle:
         thumb_rect = pygame.Rect(track_x, thumb_y, bar_width, thumb_height)
 
         # Dış parlama (glow)
-        glow_w = bar_width + 8
-        glow_h = thumb_height + 8
-        glow_surf = pygame.Surface((glow_w, glow_h), pygame.SRCALPHA)
-        gc = thumb_color
-        for i, alpha in enumerate([20, 35, 50]):
-            inset = i
-            gr = pygame.Rect(inset, inset, glow_w - inset * 2, glow_h - inset * 2)
-            pygame.draw.rect(glow_surf, (*gc, alpha), gr, border_radius=r + 4 - inset)
+        glow_key = ("glow", bar_width, thumb_height, tuple(thumb_color))
+        glow_surf = self._lru_get(self._scrollbar_surf_cache, self._scrollbar_surf_cache_order, glow_key)
+        if glow_surf is None:
+            glow_w = bar_width + 8
+            glow_h = thumb_height + 8
+            glow_surf = pygame.Surface((glow_w, glow_h), pygame.SRCALPHA)
+            gc = thumb_color
+            for i, alpha in enumerate([20, 35, 50]):
+                inset = i
+                gr = pygame.Rect(inset, inset, glow_w - inset * 2, glow_h - inset * 2)
+                pygame.draw.rect(glow_surf, (*gc, alpha), gr, border_radius=r + 4 - inset)
+            glow_surf = self._lru_put(self._scrollbar_surf_cache, self._scrollbar_surf_cache_order, glow_key, glow_surf, self._scrollbar_surf_cache_max)
         screen.blit(glow_surf, (thumb_rect.x - 4, thumb_rect.y - 4))
 
         # Thumb gövdesi — gradient (üstten alta: açık → koyu)
-        thumb_surf = pygame.Surface((bar_width, thumb_height), pygame.SRCALPHA)
-        for iy in range(thumb_height):
-            t_ratio = iy / max(thumb_height - 1, 1)
-            bright = int(thumb_color[0] + (min(255, thumb_color[0] + 60) - thumb_color[0]) * (1 - t_ratio))
-            gr_c = (
-                min(255, int(thumb_color[0] * (1.25 - 0.45 * t_ratio))),
-                min(255, int(thumb_color[1] * (1.20 - 0.40 * t_ratio))),
-                min(255, int(thumb_color[2] * (1.15 - 0.35 * t_ratio))),
-            )
-            pygame.draw.line(thumb_surf, (*gr_c, 230), (0, iy), (bar_width, iy))
-        pygame.draw.rect(thumb_surf, (0, 0, 0, 0), thumb_surf.get_rect(), border_radius=r)  # köşe mask
-        # Yeniden pill çiz — gradient clip için
-        mask = pygame.Surface((bar_width, thumb_height), pygame.SRCALPHA)
-        pygame.draw.rect(mask, (255, 255, 255, 255), mask.get_rect(), border_radius=r)
-        thumb_surf.blit(mask, (0, 0), special_flags=pygame.BLEND_RGBA_MIN)
+        thumb_key = ("thumb", bar_width, thumb_height, tuple(thumb_color))
+        thumb_surf = self._lru_get(self._scrollbar_surf_cache, self._scrollbar_surf_cache_order, thumb_key)
+        if thumb_surf is None:
+            thumb_surf = pygame.Surface((bar_width, thumb_height), pygame.SRCALPHA)
+            for iy in range(thumb_height):
+                t_ratio = iy / max(thumb_height - 1, 1)
+                gr_c = (
+                    min(255, int(thumb_color[0] * (1.25 - 0.45 * t_ratio))),
+                    min(255, int(thumb_color[1] * (1.20 - 0.40 * t_ratio))),
+                    min(255, int(thumb_color[2] * (1.15 - 0.35 * t_ratio))),
+                )
+                pygame.draw.line(thumb_surf, (*gr_c, 230), (0, iy), (bar_width, iy))
+            mask = pygame.Surface((bar_width, thumb_height), pygame.SRCALPHA)
+            pygame.draw.rect(mask, (255, 255, 255, 255), mask.get_rect(), border_radius=r)
+            thumb_surf.blit(mask, (0, 0), special_flags=pygame.BLEND_RGBA_MIN)
+            thumb_surf = self._lru_put(self._scrollbar_surf_cache, self._scrollbar_surf_cache_order, thumb_key, thumb_surf, self._scrollbar_surf_cache_max)
         screen.blit(thumb_surf, thumb_rect.topleft)
 
         # Thumb üst kenarda parlak vurgu çizgisi
-        hl_surf = pygame.Surface((max(1, bar_width - 4), 2), pygame.SRCALPHA)
-        hl_surf.fill((255, 255, 255, 80))
+        hl_key = ("hl", bar_width)
+        hl_surf = self._lru_get(self._scrollbar_surf_cache, self._scrollbar_surf_cache_order, hl_key)
+        if hl_surf is None:
+            hl_surf = pygame.Surface((max(1, bar_width - 4), 2), pygame.SRCALPHA)
+            hl_surf.fill((255, 255, 255, 80))
+            hl_surf = self._lru_put(self._scrollbar_surf_cache, self._scrollbar_surf_cache_order, hl_key, hl_surf, self._scrollbar_surf_cache_max)
         screen.blit(hl_surf, (thumb_rect.x + 2, thumb_rect.y + 2))
 
         # Thumb border
@@ -1875,42 +1961,58 @@ class RetroStyle:
         cy = y + height // 2
 
         # Track – pill, iç gölge
-        track_surf = pygame.Surface((width, height), pygame.SRCALPHA)
-        pygame.draw.rect(track_surf, (16, 22, 42, 215), track_surf.get_rect(), border_radius=r)
-        pygame.draw.rect(track_surf, (60, 80, 120, 130), track_surf.get_rect(), 1, border_radius=r)
-        hl_t = pygame.Surface((max(1, width - 6), 2), pygame.SRCALPHA)
-        hl_t.fill((255, 255, 255, 14))
-        track_surf.blit(hl_t, (3, 3))
+        track_key = ("track", width, height)
+        track_surf = self._lru_get(self._volume_bar_surf_cache, self._volume_bar_surf_cache_order, track_key)
+        if track_surf is None:
+            track_surf = pygame.Surface((width, height), pygame.SRCALPHA)
+            pygame.draw.rect(track_surf, (16, 22, 42, 215), track_surf.get_rect(), border_radius=r)
+            pygame.draw.rect(track_surf, (60, 80, 120, 130), track_surf.get_rect(), 1, border_radius=r)
+            hl_t = pygame.Surface((max(1, width - 6), 2), pygame.SRCALPHA)
+            hl_t.fill((255, 255, 255, 14))
+            track_surf.blit(hl_t, (3, 3))
+            track_surf = self._lru_put(self._volume_bar_surf_cache, self._volume_bar_surf_cache_order, track_key, track_surf, self._volume_bar_surf_cache_max)
         screen.blit(track_surf, (x, y))
 
         # Seçiliyse track glow
         if is_selected:
-            glow_s = pygame.Surface((width + 16, height + 16), pygame.SRCALPHA)
-            for gi, ga in enumerate([12, 28, 50]):
-                gr = pygame.Rect(gi * 2, gi * 2, width + 16 - gi * 4, height + 16 - gi * 4)
-                pygame.draw.rect(glow_s, (*color, ga), gr, border_radius=r + 8 - gi * 2)
+            glow_key = ("glow", width, height, tuple(color))
+            glow_s = self._lru_get(self._volume_bar_surf_cache, self._volume_bar_surf_cache_order, glow_key)
+            if glow_s is None:
+                glow_s = pygame.Surface((width + 16, height + 16), pygame.SRCALPHA)
+                for gi, ga in enumerate([12, 28, 50]):
+                    gr = pygame.Rect(gi * 2, gi * 2, width + 16 - gi * 4, height + 16 - gi * 4)
+                    pygame.draw.rect(glow_s, (*color, ga), gr, border_radius=r + 8 - gi * 2)
+                glow_s = self._lru_put(self._volume_bar_surf_cache, self._volume_bar_surf_cache_order, glow_key, glow_s, self._volume_bar_surf_cache_max)
             screen.blit(glow_s, (x - 8, y - 8))
 
         # Dolgu – neon pill + üst vurgu + glow katman
         fill_w = int(width * max(0.0, min(1.0, value)))
         if fill_w > 2:
-            fill_surf = pygame.Surface((fill_w, height), pygame.SRCALPHA)
-            pygame.draw.rect(fill_surf, (*color, 230), fill_surf.get_rect(), border_radius=r)
-            hl_f = pygame.Surface((max(1, fill_w - 6), max(1, height // 3)), pygame.SRCALPHA)
-            hl_f.fill((255, 255, 255, 70))
-            fill_surf.blit(hl_f, (3, 2))
-            gc = tuple(min(255, c + 55) for c in color)
-            pygame.draw.rect(fill_surf, (*gc, 40), fill_surf.get_rect(), border_radius=r)
+            fill_key = ("fill", fill_w, height, tuple(color))
+            fill_surf = self._lru_get(self._volume_bar_surf_cache, self._volume_bar_surf_cache_order, fill_key)
+            if fill_surf is None:
+                fill_surf = pygame.Surface((fill_w, height), pygame.SRCALPHA)
+                pygame.draw.rect(fill_surf, (*color, 230), fill_surf.get_rect(), border_radius=r)
+                hl_f = pygame.Surface((max(1, fill_w - 6), max(1, height // 3)), pygame.SRCALPHA)
+                hl_f.fill((255, 255, 255, 70))
+                fill_surf.blit(hl_f, (3, 2))
+                gc = tuple(min(255, c + 55) for c in color)
+                pygame.draw.rect(fill_surf, (*gc, 40), fill_surf.get_rect(), border_radius=r)
+                fill_surf = self._lru_put(self._volume_bar_surf_cache, self._volume_bar_surf_cache_order, fill_key, fill_surf, self._volume_bar_surf_cache_max)
             screen.blit(fill_surf, (x, y))
 
         # Knob
         knob_x = x + fill_w
         knob_r = r + 2
         if is_selected:
-            glow_k = pygame.Surface((knob_r * 2 + 10, knob_r * 2 + 10), pygame.SRCALPHA)
-            for gi, ga in enumerate([20, 40, 65]):
-                gkr = knob_r + 5 - gi * 2
-                pygame.draw.circle(glow_k, (*color, ga), (knob_r + 5, knob_r + 5), max(1, gkr))
+            knob_key = ("knob", knob_r, tuple(color))
+            glow_k = self._lru_get(self._volume_bar_surf_cache, self._volume_bar_surf_cache_order, knob_key)
+            if glow_k is None:
+                glow_k = pygame.Surface((knob_r * 2 + 10, knob_r * 2 + 10), pygame.SRCALPHA)
+                for gi, ga in enumerate([20, 40, 65]):
+                    gkr = knob_r + 5 - gi * 2
+                    pygame.draw.circle(glow_k, (*color, ga), (knob_r + 5, knob_r + 5), max(1, gkr))
+                glow_k = self._lru_put(self._volume_bar_surf_cache, self._volume_bar_surf_cache_order, knob_key, glow_k, self._volume_bar_surf_cache_max)
             screen.blit(glow_k, (knob_x - knob_r - 5, cy - knob_r - 5))
         pygame.draw.circle(screen, color, (knob_x, cy), knob_r, 2)
         inner_c = (255, 255, 255) if is_selected else (200, 212, 230)

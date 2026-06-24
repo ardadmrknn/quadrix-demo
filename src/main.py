@@ -41,13 +41,15 @@ try:
 except Exception:
     pass
 
+import text_cache
+
 # ==================== DUAL-MODULE SINGLETON FIX (retro_style + others) ===========
 # Aynı sorun retro_style ve diğer singleton modüller için de geçerli:
 # bare import (from retro_style import retro_style) → sys.modules['retro_style']
 # ama Python paket çözümlemesi → sys.modules['src.retro_style'] olarak AYRI yüklenebilir.
 # İki farklı modül = iki farklı RetroStyle singleton = set_background_transparency()
 # yalnız bir kopyayı günceller, diğeri default (0.3) kalır.
-for _mod_name in ('retro_style', 'background_effects', 'background', 'ui_theme'):
+for _mod_name in ('retro_style', 'background_effects', 'background', 'ui_theme', 'text_cache'):
     try:
         _bare_mod = __import__(_mod_name)
         sys.modules.setdefault(f'src.{_mod_name}', _bare_mod)
@@ -1703,6 +1705,11 @@ def main():
             resizable=False,
             borderless=True,
         )
+        try:
+            from platform_utils import setup_software_resolution_scaling
+            screen = setup_software_resolution_scaling(screen)
+        except Exception:
+            pass
         
         # macOS: Surface validation
         if current_platform == 'Darwin':
@@ -2343,6 +2350,11 @@ def main():
     def _apply_screen(new_screen):
         """Ekran yeniden oluşturulduğunda tüm ekran referanslarını güncelle."""
         nonlocal screen
+        try:
+            from platform_utils import setup_software_resolution_scaling
+            new_screen = setup_software_resolution_scaling(new_screen)
+        except Exception:
+            pass
         # Overlay katmanı aktifse display rebuild sonrası tekrar kur (backend-aware).
         try:
             _ovl = _active_overlay_module()

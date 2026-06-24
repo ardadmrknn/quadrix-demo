@@ -75,6 +75,10 @@ def _get_cached_surface(key: tuple, build_fn) -> pygame.Surface:
     if cached is not None:
         return cached
     surf = build_fn()
+    try:
+        surf = surf.convert_alpha()
+    except Exception:
+        pass
     _UI_SURFACE_CACHE.set(key, surf)
     return surf
 
@@ -296,48 +300,35 @@ class NeonButton:
 
             if alpha_main > 0 or alpha_outer > 0:
                 glow_rect = pygame.Rect(8, 8, scaled_rect.width, scaled_rect.height)
+                q_main = _quantize_int(alpha_main, 4)
+                q_outer = _quantize_int(alpha_outer, 2)
+                
+                glow_key = (
+                    "neon_button_glow",
+                    scaled_rect.width,
+                    scaled_rect.height,
+                    tuple(self.color),
+                    q_main,
+                    q_outer,
+                )
 
-                # Hover animasyonu stabilken cache kullan (görsel değişimi minimize eder)
-                if self.hover_anim >= 0.98:
-                    glow_key = (
-                        "neon_button_glow_full",
-                        scaled_rect.width,
-                        scaled_rect.height,
-                        tuple(self.color),
-                    )
-
-                    def _build_glow_full() -> pygame.Surface:
-                        glow_surf = pygame.Surface((scaled_rect.width + 16, scaled_rect.height + 16), pygame.SRCALPHA)
-                        pygame.draw.rect(
-                            glow_surf,
-                            (*self.color, 40),
-                            glow_rect,
-                            border_radius=UIStyle.BORDER_RADIUS_MEDIUM,
-                        )
-                        pygame.draw.rect(
-                            glow_surf,
-                            (*self.color, 20),
-                            glow_rect.inflate(8, 8),
-                            border_radius=UIStyle.BORDER_RADIUS_MEDIUM + 4,
-                        )
-                        return glow_surf
-
-                    glow_surf = _get_cached_surface(glow_key, _build_glow_full)
-                else:
+                def _build_glow() -> pygame.Surface:
                     glow_surf = pygame.Surface((scaled_rect.width + 16, scaled_rect.height + 16), pygame.SRCALPHA)
                     pygame.draw.rect(
                         glow_surf,
-                        (*self.color, alpha_main),
+                        (*self.color, q_main),
                         glow_rect,
                         border_radius=UIStyle.BORDER_RADIUS_MEDIUM,
                     )
                     pygame.draw.rect(
                         glow_surf,
-                        (*self.color, alpha_outer),
+                        (*self.color, q_outer),
                         glow_rect.inflate(8, 8),
                         border_radius=UIStyle.BORDER_RADIUS_MEDIUM + 4,
                     )
+                    return glow_surf
 
+                glow_surf = _get_cached_surface(glow_key, _build_glow)
                 surface.blit(glow_surf, (scaled_rect.x - 8, scaled_rect.y - 8), special_flags=pygame.BLEND_ADD)
         
         # Arka plan

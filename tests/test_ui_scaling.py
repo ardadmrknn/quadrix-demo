@@ -162,7 +162,7 @@ def test_apply_ui_scale_preset_is_more_visible_near_baseline_for_compact():
 def test_apply_ui_scale_preset_is_more_visible_near_baseline_for_large():
     adjusted = apply_ui_scale_preset(1.0, min_scale=0.72, max_scale=1.24, preset="large")
 
-    assert math.isclose(adjusted, 1.12)
+    assert math.isclose(adjusted, 1.25)
 
 
 def test_apply_ui_scale_preset_m2_air_like_scale_has_clear_spread():
@@ -170,7 +170,7 @@ def test_apply_ui_scale_preset_m2_air_like_scale_has_clear_spread():
     large = apply_ui_scale_preset(0.94, min_scale=0.72, max_scale=1.24, preset="large")
 
     assert math.isclose(compact, 0.84)
-    assert math.isclose(large, 1.06)
+    assert math.isclose(large, 1.19)
 
 
 def test_get_effective_scale_applies_large_preset_after_clamp(monkeypatch):
@@ -194,7 +194,7 @@ def test_get_effective_scale_applies_large_preset_after_clamp(monkeypatch):
     finally:
         set_ui_scale_preset(previous)
 
-    assert math.isclose(scale, 1.24 * 1.08)
+    assert math.isclose(scale, 1.24 * 1.25)
 
 
 def test_get_scale_raw_path_ignores_ui_scale_preset():

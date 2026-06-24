@@ -770,16 +770,26 @@ def get_effective_ui_size(
         return _coerce_positive_size(width, height)
 
     if IS_WINDOWS:
-        surface_size = _get_surface_size(active_display_surface or target_surface)
-        if surface_size is not None:
-            surf_w, surf_h = surface_size
-            # SDL/Pygame bazı build'lerde get_window_size ile logical boyutu zaten
-            # döndürebilir. Bu durumda ikinci kez DPI normalizasyonu yapma.
-            if abs(int(surf_w) - int(width)) <= 1 and abs(int(surf_h) - int(height)) <= 1:
-                scale_factor = _get_windows_window_scale_factor()
-                if scale_factor > 1.01:
-                    width = int(round(float(width) / float(scale_factor)))
-                    height = int(round(float(height) / float(scale_factor)))
+        active_surf = active_display_surface or target_surface
+        is_fs = False
+        if active_surf is not None:
+            try:
+                is_fs = bool(active_surf.get_flags() & (pygame.FULLSCREEN | pygame.NOFRAME))
+            except Exception:
+                pass
+        
+        # Tam ekran veya borderless moddayken DPI ölçeğine bölerek çözünürlüğü küçültme
+        if not is_fs:
+            surface_size = _get_surface_size(active_surf)
+            if surface_size is not None:
+                surf_w, surf_h = surface_size
+                # SDL/Pygame bazı build'lerde get_window_size ile logical boyutu zaten
+                # döndürebilir. Bu durumda ikinci kez DPI normalizasyonu yapma.
+                if abs(int(surf_w) - int(width)) <= 1 and abs(int(surf_h) - int(height)) <= 1:
+                    scale_factor = _get_windows_window_scale_factor()
+                    if scale_factor > 1.01:
+                        width = int(round(float(width) / float(scale_factor)))
+                        height = int(round(float(height) / float(scale_factor)))
 
     return _coerce_positive_size(width, height)
 
@@ -1274,3 +1284,80 @@ def build_support_email_body_template() -> str:
         f'Device model: {device_model}\n'
         f'{os_sw}\n'
     )
+
+
+# ---------------------------------------------------------------------------
+# Yazılımsal Çözünürlük Ölçeklemesi (Software Resolution Scaling)
+# ---------------------------------------------------------------------------
+_software_canvas = None
+_real_display_surface = None
+_software_scale_active = False
+
+_orig_flip = pygame.display.flip
+_orig_update = pygame.display.update
+_orig_get_surface = pygame.display.get_surface
+
+def _software_flip():
+    global _software_canvas, _real_display_surface
+    if _software_canvas is not None and _real_display_surface is not None:
+        pygame.transform.scale(_software_canvas, _real_display_surface.get_size(), _real_display_surface)
+    _orig_flip()
+
+def _software_update(*args, **kwargs):
+    global _software_canvas, _real_display_surface
+    if _software_canvas is not None and _real_display_surface is not None:
+        pygame.transform.scale(_software_canvas, _real_display_surface.get_size(), _real_display_surface)
+    _orig_update(*args, **kwargs)
+
+def _software_get_surface():
+    global _software_canvas
+    if _software_canvas is not None:
+        return _software_canvas
+    return _orig_get_surface()
+
+def setup_software_resolution_scaling(real_surface):
+    """Büyük çözünürlüklerde (örn. 4K) CPU blit yükünü azaltmak için software canvas scaling yama uygula."""
+    global _software_canvas, _real_display_surface, _software_scale_active
+    
+    # OpenGL veya SDL2 Renderer (overlay modülleri) aktifse bu yamayı yapma
+    for mod_name in ('sdl2_overlay', 'gl_compat'):
+        try:
+            mod = sys.modules.get(mod_name)
+            if mod is not None:
+                is_active = getattr(mod, 'is_active', None) or getattr(mod, 'is_gl_active', None)
+                if callable(is_active) and is_active():
+                    return real_surface
+        except Exception:
+            pass
+
+    if real_surface is None or not hasattr(real_surface, 'get_size'):
+        return real_surface
+
+    w, h = real_surface.get_size()
+    # Çözünürlük 1920x1080'den büyükse (örn. 4K TV) yazılımsal ölçeklemeyi aktifleştir
+    if w > 1920 or h > 1080:
+        aspect = w / float(h)
+        canvas_h = 1080
+        canvas_w = int(round(canvas_h * aspect))
+        if canvas_w > 1920:
+            canvas_w = 1920
+            canvas_h = int(round(canvas_w / aspect))
+
+        try:
+            _real_display_surface = real_surface
+            _software_canvas = pygame.Surface((canvas_w, canvas_h), pygame.SRCALPHA if real_surface.get_flags() & pygame.SRCALPHA else 0)
+            _software_canvas = _software_canvas.convert()
+            
+            pygame.display.flip = _software_flip
+            pygame.display.update = _software_update
+            pygame.display.get_surface = _software_get_surface
+            _software_scale_active = True
+            
+            print(f"[Software Scaling] Aktif: {canvas_w}x{canvas_h} -> {w}x{h}")
+            return _software_canvas
+        except Exception as e:
+            print(f"[Software Scaling] Hata: {e}")
+            _software_canvas = None
+            _real_display_surface = None
+            
+    return real_surface

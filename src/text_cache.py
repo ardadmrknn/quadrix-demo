@@ -36,6 +36,41 @@ class _LRUCache:
 _TEXT_CACHE = _LRUCache(max_items=1024)
 
 
+# C-extension type immutability bypass:
+# pygame.font.Font'u doğrudan değiştiremeyiz. Bu yüzden subclass türetip
+# pygame.font.Font ve pygame.sysfont.Font referanslarını eziyoruz.
+class PatchedFont(pygame.font.Font):
+    def render(self, text, antialias, color, background=None):
+        safe_text = "" if text is None else str(text)
+        try:
+            color_key = tuple(color)
+        except Exception:
+            color_key = (255, 255, 255)
+
+        try:
+            bg_key = tuple(background) if background is not None else None
+        except Exception:
+            bg_key = None
+
+        key = (id(self), safe_text, bool(antialias), color_key, bg_key)
+        cached = _TEXT_CACHE.get(key)
+        if cached is not None:
+            return cached.copy()
+
+        rendered = super().render(safe_text, antialias, color, background)
+        _TEXT_CACHE.set(key, rendered)
+        return rendered.copy()
+
+
+# Sınıf referanslarını güncelle
+pygame.font.Font = PatchedFont
+try:
+    import pygame.sysfont
+    pygame.sysfont.Font = PatchedFont
+except Exception:
+    pass
+
+
 def render_text(
     font: pygame.font.Font,
     text: str,
@@ -43,20 +78,7 @@ def render_text(
     color,
 ) -> pygame.Surface:
     """Render text with a small LRU cache."""
-    safe_text = "" if text is None else str(text)
-    try:
-        color_key = tuple(color)
-    except Exception:
-        color_key = (255, 255, 255)
-
-    key = (id(font), safe_text, bool(antialias), color_key)
-    cached = _TEXT_CACHE.get(key)
-    if cached is not None:
-        return cached
-
-    rendered = font.render(safe_text, antialias, color)
-    _TEXT_CACHE.set(key, rendered)
-    return rendered
+    return font.render(text, antialias, color)
 
 
 def clear_text_cache() -> None:
