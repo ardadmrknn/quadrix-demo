@@ -1705,11 +1705,6 @@ def main():
             resizable=False,
             borderless=True,
         )
-        try:
-            from platform_utils import setup_software_resolution_scaling
-            screen = setup_software_resolution_scaling(screen)
-        except Exception:
-            pass
         
         # macOS: Surface validation
         if current_platform == 'Darwin':
@@ -1767,6 +1762,15 @@ def main():
                     print("[GL Compat] Software pencereye güvenli geri dönüş yapıldı")
                 except Exception:
                     pass
+
+    # Donanım overlay katmanı kurulumundan SONRA yazılımsal ölçeklemeyi kur.
+    # Eğer donanım overlay'i aktifse, `setup_software_resolution_scaling` bunu
+    # algılayacak ve bypass ederek ham OpenGL/SDL2 display surface'i kullanacaktır.
+    try:
+        from platform_utils import setup_software_resolution_scaling
+        screen = setup_software_resolution_scaling(screen)
+    except Exception:
+        pass
 
     # Teşhis: startup sonrası gerçek görünür display ve gl durumunu logla.
     try:
@@ -2350,16 +2354,16 @@ def main():
     def _apply_screen(new_screen):
         """Ekran yeniden oluşturulduğunda tüm ekran referanslarını güncelle."""
         nonlocal screen
-        try:
-            from platform_utils import setup_software_resolution_scaling
-            new_screen = setup_software_resolution_scaling(new_screen)
-        except Exception:
-            pass
         # Overlay katmanı aktifse display rebuild sonrası tekrar kur (backend-aware).
         try:
             _ovl = _active_overlay_module()
             if _ovl is not None:
                 new_screen = _ovl._reapply_gl(new_screen)
+        except Exception:
+            pass
+        try:
+            from platform_utils import setup_software_resolution_scaling
+            new_screen = setup_software_resolution_scaling(new_screen)
         except Exception:
             pass
         screen = new_screen

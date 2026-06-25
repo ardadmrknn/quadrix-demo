@@ -11111,7 +11111,12 @@ class MysteryMode(Game):
         for idx, card in enumerate(slots):
             if not card:
                 continue
-            remaining = self._slot_card_charges(self._slot_effect_id(card))
+            old_idx = getattr(self, '_active_slot_index_for_ability', None)
+            self._active_slot_index_for_ability = idx
+            try:
+                remaining = self._slot_card_charges(self._slot_effect_id(card))
+            finally:
+                self._active_slot_index_for_ability = old_idx
             card['charges'] = remaining
             if remaining <= 0:
                 slots[idx] = None
@@ -11333,18 +11338,26 @@ class MysteryMode(Game):
             return False
         effect_id = self._slot_effect_id(card)
         spec = self.SLOT_CARD_SPECS.get(effect_id)
-        if spec is None or self._slot_card_charges(effect_id) <= 0:
+        if spec is None or int(card.get('charges', 0)) <= 0:
             _deny()
             return False
 
-        if spec['trigger'] == 'event':
-            ok = self._activate_slot_event_card(effect_id)
-            if not ok:
-                _deny()
-        else:
-            # Poll-tabanlı kart: update() içindeki tuş bloğu için sentetik istek.
-            self._slot_ability_requests.add(effect_id)
-            ok = True
+        self._active_slot_index_for_ability = slot_index
+        try:
+            if spec['trigger'] == 'event':
+                ok = self._activate_slot_event_card(effect_id)
+                if not ok:
+                    _deny()
+            else:
+                # Poll-tabanlı kart: update() içindeki tuş bloğu için sentetik istek.
+                if not hasattr(self, '_slot_request_sources'):
+                    self._slot_request_sources = {}
+                self._slot_request_sources[effect_id] = slot_index
+                self._slot_ability_requests.add(effect_id)
+                ok = True
+        finally:
+            self._active_slot_index_for_ability = None
+
         self._refresh_slot_charges()
         return ok
 
@@ -12356,8 +12369,10 @@ class MysteryMode(Game):
     # === SNIPER SHOT YARDIMCI METODLARI ===
     def _open_sniper_overlay(self) -> bool:
         """N tuşuyla sniper overlay'ini açar."""
+        self._active_sniper_slot_index = getattr(self, '_active_slot_index_for_ability', None)
         charges = int(getattr(self, '_sniper_charges', 0) or 0)
         if charges <= 0:
+            self._active_sniper_slot_index = None
             try:
                 self._set_localized_card_message('mystery_msg_sniper_no_charges', 0.8, 'Keskin Nişancı hakkın yok!')
             except Exception:
@@ -12385,13 +12400,21 @@ class MysteryMode(Game):
         self._sniper_cursor_active = False
         
         # Mouse cursor'ı tekrar görünür yap
-        pygame.mouse.set_visible(True)
+        try:
+            pygame.mouse.set_visible(True)
+        except Exception:
+            pass
         
+        old_idx = getattr(self, '_active_slot_index_for_ability', None)
+        self._active_slot_index_for_ability = getattr(self, '_active_sniper_slot_index', None)
         try:
             charges = int(getattr(self, '_sniper_charges', 0) or 0)
             self._set_localized_card_message('mystery_msg_sniper_cancel', 1.2, 'Keskin Nisanci iptal edildi (Kalan hak: {charges})', charges=charges)
         except Exception:
             pass
+        finally:
+            self._active_slot_index_for_ability = old_idx
+            self._active_sniper_slot_index = None
 
     def _sniper_move_cursor(self, dx: int, dy: int) -> None:
         """Sniper cursor'ını D-pad/ok tuşlarıyla hareket ettirir (board sınırları içinde)."""
@@ -12448,6 +12471,7 @@ class MysteryMode(Game):
 
     def _execute_sniper_shot(self, cx: int, cy: int) -> None:
         """Belirtilen hücredeki bloğu yok eder (puan vermez)."""
+        self._active_slot_index_for_ability = getattr(self, '_active_sniper_slot_index', None)
         try:
             # Patlama efektini yok edilen hücrede başlat
             self._spawn_sniper_explosion(cx, cy)
@@ -12492,7 +12516,10 @@ class MysteryMode(Game):
             pass
         finally:
             # Mouse cursor'ı tekrar görünür yap
-            pygame.mouse.set_visible(True)
+            try:
+                pygame.mouse.set_visible(True)
+            except Exception:
+                pass
             
             # Overlay'i kapat
             self._sniper_overlay_active = False
@@ -12503,6 +12530,8 @@ class MysteryMode(Game):
                 self._sniper_card = None
                 self._active_effect_visuals.pop('sniper_shot', None)
             self._sync_active_cards()
+            self._active_slot_index_for_ability = None
+            self._active_sniper_slot_index = None
 
     # === DELİK AVCISI YARDIMCI METODLARI ===
     def _open_hole_hunter_overlay(self) -> bool:
