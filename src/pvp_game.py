@@ -3256,6 +3256,13 @@ class PvPGame:
         self.current_piece1.x -= 1
         if not self.board1.is_valid_position(self.current_piece1):
             self.current_piece1.x += 1
+            # Duvar çarpma sarsıntısı (Debounced)
+            import pygame
+            now = pygame.time.get_ticks()
+            last_bump = getattr(self, '_last_p1_left_bump_time', 0)
+            if now - last_bump > 180:
+                setattr(self, '_last_p1_left_bump_time', now)
+                self.trigger_screen_shake(intensity=3, duration=0.12, direction='left')
             return False
         # Lock Delay Reset: parça yerdeyse ve limit aşılmadıysa sıfırla
         if not self.board1.is_valid_position(self.current_piece1, dy=1):
@@ -3271,6 +3278,13 @@ class PvPGame:
         self.current_piece1.x += 1
         if not self.board1.is_valid_position(self.current_piece1):
             self.current_piece1.x -= 1
+            # Duvar çarpma sarsıntısı (Debounced)
+            import pygame
+            now = pygame.time.get_ticks()
+            last_bump = getattr(self, '_last_p1_right_bump_time', 0)
+            if now - last_bump > 180:
+                setattr(self, '_last_p1_right_bump_time', now)
+                self.trigger_screen_shake(intensity=3, duration=0.12, direction='right')
             return False
         # Lock Delay Reset: parça yerdeyse ve limit aşılmadıysa sıfırla
         if not self.board1.is_valid_position(self.current_piece1, dy=1):
@@ -3286,6 +3300,13 @@ class PvPGame:
         self.current_piece2.x -= 1
         if not self.board2.is_valid_position(self.current_piece2):
             self.current_piece2.x += 1
+            # Duvar çarpma sarsıntısı (Debounced)
+            import pygame
+            now = pygame.time.get_ticks()
+            last_bump = getattr(self, '_last_p2_left_bump_time', 0)
+            if now - last_bump > 180:
+                setattr(self, '_last_p2_left_bump_time', now)
+                self.trigger_screen_shake(intensity=3, duration=0.12, direction='left')
             return False
         # Lock Delay Reset: parça yerdeyse ve limit aşılmadıysa sıfırla
         if not self.board2.is_valid_position(self.current_piece2, dy=1):
@@ -3301,6 +3322,13 @@ class PvPGame:
         self.current_piece2.x += 1
         if not self.board2.is_valid_position(self.current_piece2):
             self.current_piece2.x -= 1
+            # Duvar çarpma sarsıntısı (Debounced)
+            import pygame
+            now = pygame.time.get_ticks()
+            last_bump = getattr(self, '_last_p2_right_bump_time', 0)
+            if now - last_bump > 180:
+                setattr(self, '_last_p2_right_bump_time', now)
+                self.trigger_screen_shake(intensity=3, duration=0.12, direction='right')
             return False
         # Lock Delay Reset: parça yerdeyse ve limit aşılmadıysa sıfırla
         if not self.board2.is_valid_position(self.current_piece2, dy=1):
@@ -4059,9 +4087,9 @@ class PvPGame:
             duration=HARD_DROP_SCREEN_SHAKE_DURATION_SECONDS,
         )
 
-    def trigger_screen_shake(self, intensity=10, duration=DEFAULT_SCREEN_SHAKE_DURATION_SECONDS):
+    def trigger_screen_shake(self, intensity=10, duration=DEFAULT_SCREEN_SHAKE_DURATION_SECONDS, direction=None):
         """Ekran titremesi efekti başlat (saniye tabanlı)."""
-        begin_screen_shake(self, intensity=intensity, duration=duration)
+        begin_screen_shake(self, intensity=intensity, duration=duration, direction=direction)
     
     def update_screen_shake(self, dt_ms: float | None = None):
         """Ekran titremesini güncelle (ms tabanlı)."""

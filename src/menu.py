@@ -38,7 +38,12 @@ from platform_utils import (
 from ui_theme import UIColors, UIFonts
 from asset_manager import load_image
 from text_cache import render_text
-from ui_scaling import apply_ui_scale_preset, get_projected_effective_scale, get_scale, resolve_ui_scale_size
+try:
+    from ui_scaling import apply_ui_scale_preset, get_projected_effective_scale, get_scale, resolve_ui_scale_size, get_virtual_canvas_ui_scale, is_virtual_canvas_active
+except ImportError:
+    from ui_scaling import apply_ui_scale_preset, get_projected_effective_scale, get_scale, resolve_ui_scale_size
+    get_virtual_canvas_ui_scale = lambda: None
+    is_virtual_canvas_active = lambda: False
 from gamepad_manager import get_gamepad_manager, is_gamepad_connected
 try:
     from promptfont_support import resolve_nav_hint_label as _resolve_nav_hint_label
@@ -666,6 +671,9 @@ class Menu:
         Çok küçük ekranlarda aşırı sıkışmayı, çok büyük ekranlarda da
         kontrolsüz büyümeyi engellemek için clamp uygulanır.
         """
+        _vc = get_virtual_canvas_ui_scale()
+        if _vc is not None:
+            return _vc
         min_scale = 0.78
         max_scale = 1.24
         eff_w, _ = self._effective_ui_size()
@@ -7251,11 +7259,16 @@ class HighScoreScreen:
         self._back_hover: bool = False
 
     def _ui_scale(self) -> float:
+        _vc = get_virtual_canvas_ui_scale()
+        if _vc is not None:
+            return _vc
         return get_projected_effective_scale(
             self.screen, min_scale=0.68, max_scale=1.24, reference_size=(1366.0, 768.0),
         )
 
     def _s(self, value: int | float, minimum: int = 1) -> int:
+        if is_virtual_canvas_active():
+            return max(minimum, int(round(float(value))))
         return max(minimum, int(round(value * self._ui_scale())))
 
     def handle_input(self, event):
@@ -7627,11 +7640,16 @@ class AchievementScreen:
             pass
 
     def _ui_scale(self) -> float:
+        _vc = get_virtual_canvas_ui_scale()
+        if _vc is not None:
+            return _vc
         return get_projected_effective_scale(
             self.screen, min_scale=0.68, max_scale=1.24, reference_size=(1366.0, 768.0),
         )
 
     def _s(self, value: int | float, minimum: int = 1) -> int:
+        if is_virtual_canvas_active():
+            return max(minimum, int(round(float(value))))
         return max(minimum, int(round(value * self._ui_scale())))
 
     def _refresh_fonts_for_language(self, force: bool = False) -> None:
@@ -9298,6 +9316,9 @@ class MusicSettingsScreen:
         self.picker_item_rects: list[tuple[pygame.Rect, int]] = []
 
     def _ui_scale(self) -> float:
+        _vc = get_virtual_canvas_ui_scale()
+        if _vc is not None:
+            return _vc
         return get_projected_effective_scale(
             self.screen,
             min_scale=0.68,
@@ -9306,6 +9327,8 @@ class MusicSettingsScreen:
         )
 
     def _s(self, value: int | float, minimum: int = 1) -> int:
+        if is_virtual_canvas_active():
+            return max(minimum, int(round(float(value))))
         return max(minimum, int(round(float(value) * self._ui_scale())))
 
     def _main_items(self):
@@ -10219,11 +10242,16 @@ class BlockStyleSettingsScreen:
         self._layout_start_y: int = 160  # draw() sırasında güncellenir
 
     def _ui_scale(self) -> float:
+        _vc = get_virtual_canvas_ui_scale()
+        if _vc is not None:
+            return _vc
         return get_projected_effective_scale(
             self.screen, min_scale=0.68, max_scale=1.24, reference_size=(1366.0, 768.0),
         )
 
     def _s(self, value: int | float, minimum: int = 1) -> int:
+        if is_virtual_canvas_active():
+            return max(minimum, int(round(float(value))))
         return max(minimum, int(round(value * self._ui_scale())))
 
     def _base_color(self, piece_name):
@@ -10602,6 +10630,9 @@ class BlockWorkshopScreen:
         self._back_hover: bool = False
 
     def _ui_scale(self) -> float:
+        _vc = get_virtual_canvas_ui_scale()
+        if _vc is not None:
+            return _vc
         return get_projected_effective_scale(
             self.screen,
             min_scale=0.68,
@@ -10610,6 +10641,8 @@ class BlockWorkshopScreen:
         )
 
     def _s(self, value: int | float, minimum: int = 1) -> int:
+        if is_virtual_canvas_active():
+            return max(minimum, int(round(float(value))))
         return max(minimum, int(round(float(value) * self._ui_scale())))
 
     def save_on_exit(self):

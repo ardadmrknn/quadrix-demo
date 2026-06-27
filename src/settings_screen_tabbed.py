@@ -54,7 +54,12 @@ except ImportError:
         if trigger_val >= 0.5:
             return 100 if axis_index == 4 else 101
         return None
-from ui_scaling import get_projected_effective_scale, normalize_ui_scale_preset, scale_px
+try:
+    from ui_scaling import get_projected_effective_scale, normalize_ui_scale_preset, scale_px, get_virtual_canvas_ui_scale, is_virtual_canvas_active
+except ImportError:
+    from ui_scaling import get_projected_effective_scale, normalize_ui_scale_preset, scale_px
+    get_virtual_canvas_ui_scale = lambda: None
+    is_virtual_canvas_active = lambda: False
 from text_cache import render_text
 
 
@@ -663,6 +668,9 @@ class TabbedSettingsScreen:
         self._settings_sb_drag_offset_y: int = 0
 
     def _ui_scale(self, min_scale: float = 0.72, max_scale: float = 1.22) -> float:
+        _vc = get_virtual_canvas_ui_scale()
+        if _vc is not None:
+            return _vc
         try:
             return get_projected_effective_scale(
                 self.screen,
@@ -674,6 +682,8 @@ class TabbedSettingsScreen:
             return 1.0
 
     def _s(self, value: int | float, minimum: int = 1) -> int:
+        if is_virtual_canvas_active():
+            return max(minimum, int(round(float(value))))
         return scale_px(value, getattr(self, '_ui_scale_current', 1.0), minimum=minimum)
 
     def _font(self, size: int | float, *, bold: bool = False, minimum: int = 8):
@@ -2774,7 +2784,7 @@ class TabbedSettingsScreen:
             self.fps_limit = self.FPS_LIMITS[idx]
             self._set_value('fps_limit', self.fps_limit)
         elif key == 'ui_scale_preset':
-            from ui_scaling import UI_SCALE_PRESETS
+            from ui_scaling import UI_SCALE_PRESETS, set_ui_scale_preset, get_ui_scale_multiplier
             current = self.ui_scale_preset
             if current not in UI_SCALE_PRESETS:
                 current = 'normal'
@@ -2782,6 +2792,13 @@ class TabbedSettingsScreen:
             idx = (idx + delta) % len(UI_SCALE_PRESETS)
             self.ui_scale_preset = UI_SCALE_PRESETS[idx]
             self._set_value('ui_scale_preset', self.ui_scale_preset)
+            # Virtual canvas'ı yeni preset ile anında yeniden kur
+            set_ui_scale_preset(self.ui_scale_preset)
+            try:
+                from platform_utils import rebuild_virtual_canvas
+                rebuild_virtual_canvas(get_ui_scale_multiplier())
+            except Exception:
+                pass
         elif key == 'language':
             lang_idx = (
                 SUPPORTED_LANGUAGES.index(self.current_language)

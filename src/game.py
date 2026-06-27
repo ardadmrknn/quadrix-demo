@@ -2510,6 +2510,13 @@ class Game:
         self.current_piece.x -= 1
         if not self.board.is_valid_position(self.current_piece):
             self.current_piece.x += 1
+            # Sola çarpma sarsıntısını tetikle (Debounced)
+            import pygame
+            now = pygame.time.get_ticks()
+            last_bump = getattr(self, '_last_left_bump_time', 0)
+            if now - last_bump > 180:
+                setattr(self, '_last_left_bump_time', now)
+                self.trigger_bump_shake('left')
             return False
             
         self.last_move_was_rotate = False
@@ -2524,6 +2531,13 @@ class Game:
         self.current_piece.x += 1
         if not self.board.is_valid_position(self.current_piece):
             self.current_piece.x -= 1
+            # Sağa çarpma sarsıntısını tetikle (Debounced)
+            import pygame
+            now = pygame.time.get_ticks()
+            last_bump = getattr(self, '_last_right_bump_time', 0)
+            if now - last_bump > 180:
+                setattr(self, '_last_right_bump_time', now)
+                self.trigger_bump_shake('right')
             return False
             
         self.last_move_was_rotate = False
@@ -3736,8 +3750,16 @@ class Game:
             particle['vx'] *= 0.98 ** dt_frames
             particle['life'] = float(particle.get('life', 0)) - dt_frames
             
+            # Screen bounds check (with 100px tolerance)
+            scr_w, scr_h = self.screen.get_size()
+            if not (-100 <= particle['x'] <= scr_w + 100 and -100 <= particle['y'] <= scr_h + 100):
+                if particle in self.particles:
+                    self.particles.remove(particle)
+                continue
+
             if particle['life'] <= 0:
-                self.particles.remove(particle)
+                if particle in self.particles:
+                    self.particles.remove(particle)
     
     def _get_animation_multiplier(self, level: str) -> float:
         """Animasyon seviyesine göre çarpan döndür
@@ -3785,13 +3807,17 @@ class Game:
             duration=HARD_DROP_SCREEN_SHAKE_DURATION_SECONDS,
         )
 
-    def trigger_screen_shake(self, intensity=10, duration=DEFAULT_SCREEN_SHAKE_DURATION_SECONDS):
+    def trigger_screen_shake(self, intensity=10, duration=DEFAULT_SCREEN_SHAKE_DURATION_SECONDS, direction=None):
         """Ekran titremesi efekti başlat.
 
         duration saniye cinsindendir. Yeni çağrı mevcut shake'i uzatmaz,
         doğrudan yeni shake durumunu başlatır.
         """
-        begin_screen_shake(self, intensity=intensity, duration=duration)
+        begin_screen_shake(self, intensity=intensity, duration=duration, direction=direction)
+
+    def trigger_bump_shake(self, direction: str) -> None:
+        """Bloklar sağa veya sola çarptığında hafif, yönlü bir sarsıntı tetikle."""
+        self.trigger_screen_shake(intensity=3, duration=0.12, direction=direction)
     
     def update_screen_shake(self, dt_ms: float | None = None):
         """Ekran titremesini güncelle (ms tabanlı)."""
@@ -3858,6 +3884,7 @@ class Game:
         eo = getattr(self, 'effects_opacity', 1.0)
         if eo <= 0:
             return
+        scr_w, scr_h = self.screen.get_size()
         for particle in self.ambient_particles:
             # Nabız efekti ile alpha değişimi
             pulse_alpha = int(particle['alpha'] + math.sin(particle['pulse']) * 30)
@@ -3894,11 +3921,19 @@ class Game:
             board_right = None
             board_left = None
         
+        scr_w, scr_h = self.screen.get_size()
         for particle in self.particles:
-            # Esnek sınır: Tahta dışındaki parçacıkları çizme
+            px = particle.get('x', 0)
+            py = particle.get('y', 0)
+            
+            # Screen bounds check
+            if not (0 <= px <= scr_w and 0 <= py <= scr_h):
+                continue
+                
+            # Esnek sınır: Tahta dışındaki veya altındaki parçacıkları çizme
             if board_right is not None and board_left is not None:
-                px = particle.get('x', 0)
-                if px > board_right or px < board_left:
+                board_bottom = board_offset_y + board_pixel_height
+                if px > board_right or px < board_left or py > board_bottom:
                     continue  # Tahta dışı - çizme
             
             # Alpha değeri (sönme efekti)
@@ -6772,8 +6807,9 @@ class Game:
             p['life'] = float(p.get('life', 0.0)) - dt_frames
 
             # Ekran dışına çıktı veya öldü
-            if p['y'] > active_height + 20 or p['life'] <= 0:
-                self._confetti_particles.remove(p)
+            if p['y'] > active_height + 20 or p['x'] < -50 or p['x'] > active_width + 50 or p['life'] <= 0:
+                if p in self._confetti_particles:
+                    self._confetti_particles.remove(p)
     
     def _draw_confetti(self):
         """Konfeti parçacıklarını çiz (optimizeli)."""

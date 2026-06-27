@@ -174,6 +174,7 @@ def key_hint_label(label: str) -> str:
     return _translate_token(label)
 
 
+
 def get_display_flags(resizable: bool = True, fullscreen: bool = False, vsync: bool = True) -> int:
     """Get the appropriate pygame display flags for the current platform.
     
@@ -308,7 +309,14 @@ def resolve_frame_rate_cap(requested_limit: int | None, fallback: int = 60) -> i
         refresh_rate = 0
 
     if refresh_rate < 24 or refresh_rate > 1000:
-        refresh_rate = int(fallback or 60)
+        import sys
+        # macOS üzerinde ProMotion ekranların gücünden tam yararlanmak için
+        # varsayılan otomatik fallback yenileme hızını (eğer özel bir fallback
+        # belirtilmemişse veya varsayılan 60 ise) 90 yapıyoruz.
+        if sys.platform == 'darwin' and fallback == 60:
+            refresh_rate = 90
+        else:
+            refresh_rate = int(fallback or 60)
 
     return max(1, refresh_rate)
 
@@ -446,12 +454,67 @@ def pump_startup_focus_warmup() -> bool:
     return True
 
 
+def preload_app_icon(assets_dir: str) -> None:
+    """Pencere ikonunu pencere OLUŞTURULMADAN ÖNCE uygula.
+
+    Sorun: `create_display()` ile pencere açıldığında, asıl ikon ancak Steam
+    overlay / GL kurulumu bittikten sonra (`set_app_icon`) ayarlanıyordu. Bu
+    aradaki ~1-2 saniyede dock/görev çubuğunda SDL'in VARSAYILAN pygame logosu
+    görünüyordu.
+
+    Pygame/SDL2, `pygame.display.set_icon()` ilk `set_mode()` çağrısından ÖNCE
+    çağrılırsa ikonu pencereye doğuştan uygular. Bu fonksiyon tam da bunu yapar:
+    `pygame.init()` sonrası, `create_display()` ÖNCESİ çağrılmalıdır.
+
+    Ek olarak macOS'ta Dock simgesi AppKit ile baştan ayarlanır (pencere
+    gerektirmez). Windows HWND seviyesindeki ince ayar pencere oluştuktan sonra
+    `set_app_icon()` tarafından tamamlanır.
+    """
+    import os
+    import pygame
+
+    # ── Pygame pencere ikonu (set_mode ÖNCESİ → pencere baştan doğru ikonla açılır) ──
+    _icon_candidates = [
+        os.path.join(assets_dir, 'quadrix_icon.ico'),
+        os.path.join(assets_dir, 'quadrix_icon.png'),
+    ]
+    for _icon_file in _icon_candidates:
+        if os.path.exists(_icon_file):
+            try:
+                icon_surf = pygame.image.load(_icon_file)
+                # convert_alpha için display gerekebilir; set_mode öncesi güvenli olsun
+                try:
+                    icon_surf = icon_surf.convert_alpha()
+                except Exception:
+                    pass
+                icon_surf = pygame.transform.smoothscale(icon_surf, (32, 32))
+                pygame.display.set_icon(icon_surf)
+                break
+            except Exception:
+                continue
+
+    # ── macOS Dock simgesi (pencere gerektirmez; baştan ayarla) ──
+    if IS_MACOS:
+        icns_path = os.path.join(assets_dir, 'quadrix_icon.icns')
+        if not os.path.exists(icns_path):
+            _fallback_png = os.path.join(assets_dir, 'quadrix_icon.png')
+            icns_path = _fallback_png if os.path.exists(_fallback_png) else icns_path
+        try:
+            from AppKit import NSApplication, NSImage
+            abs_path = os.path.abspath(icns_path)
+            image = NSImage.alloc().initWithContentsOfFile_(abs_path)
+            if image:
+                NSApplication.sharedApplication().setApplicationIconImage_(image)
+        except Exception:
+            pass
+
+
 def set_app_icon(assets_dir: str) -> None:
     """Pencere ve görev çubuğu simgesini ayarla.
 
     - pygame.display.set_icon() ile tüm platformlarda simgeyi günceller.
     - Windows'ta AppUserModelID ile görev çubuğu simgesi ve ismi düzeltilir.
-    - macOS'ta AppKit üzerinden Dock simgesini Tetris.icns ile değiştirir.
+    - macOS'ta AppKit üzerinden Dock simgesini quadrix_icon.icns ile değiştirir.
     """
     import os
     import pygame
@@ -460,7 +523,7 @@ def set_app_icon(assets_dir: str) -> None:
     # Önce ICO, fallback olarak PNG dene
     _icon_candidates = [
         os.path.join(assets_dir, 'quadrix_icon.ico'),
-        os.path.join(assets_dir, 'Tetris_icon.png'),
+        os.path.join(assets_dir, 'quadrix_icon.png'),
     ]
     _loaded_icon_surf = None
     for _icon_file in _icon_candidates:
@@ -526,10 +589,10 @@ def set_app_icon(assets_dir: str) -> None:
 
     # ── macOS Dock simgesi (AppKit / PyObjC) ──
     if IS_MACOS:
-        icns_path = os.path.join(assets_dir, 'Tetris.icns')
+        icns_path = os.path.join(assets_dir, 'quadrix_icon.icns')
         if not os.path.exists(icns_path):
             # Fallback: PNG kullan (kandidatlardan bulunanı al)
-            _fallback_png = os.path.join(assets_dir, 'Tetris_icon.png')
+            _fallback_png = os.path.join(assets_dir, 'quadrix_icon.png')
             icns_path = _fallback_png if os.path.exists(_fallback_png) else icns_path
         try:
             from AppKit import NSApplication, NSImage
@@ -855,15 +918,13 @@ def is_fullscreen_toggle(key: int, mods: int, custom_key: int | None = None) -> 
     return False
 
 
-def normalize_mouse_pos(pos: tuple[int, int] | list[int] | None) -> tuple[int, int] | None:
-    """Normalize mouse coordinates to match the display surface pixel space.
+def normalize_mouse_pos(pos: tuple[int, int] | list[int] | None, scale: float = 1.0) -> tuple[int, int] | None:
+    """Normalize mouse coordinates to match the display surface pixel space and apply UI scale.
 
-    On macOS (Retina/HiDPI), SDL may report window sizes in "points" while the
-    pygame display surface is in physical pixels. This can make mouse movement
-    feel offset or scaled incorrectly.
-
-    This helper converts a window-space position (event.pos / pygame.mouse.get_pos)
-    into surface-space coordinates.
+    Virtual Canvas farkındalığı:
+    - Software virtual canvas aktifken fare koordinatları letterbox offset'ten arındırılır
+      ve canvas ölçeğine bölünür.
+    - macOS Retina/HiDPI: window_size (points) ile surface_size (pixels) farkı giderilir.
     """
     if pos is None:
         return None
@@ -873,38 +934,60 @@ def normalize_mouse_pos(pos: tuple[int, int] | list[int] | None) -> tuple[int, i
         return None
 
     try:
+        # --- Virtual Canvas: letterbox offset + canvas scale ---
+        if _software_scale_active and _virtual_blit_rect is not None:
+            bx, by, bw, bh = _virtual_blit_rect
+            canvas_w, canvas_h = _software_canvas.get_size() if _software_canvas is not None else (bw, bh)
+            # Letterbox dışındaki tıklamalar → None (sınır dışı)
+            if bw > 0 and bh > 0:
+                rx = x - bx
+                ry = y - by
+                canvas_x = int(rx * canvas_w / bw)
+                canvas_y = int(ry * canvas_h / bh)
+                # Clamp: canvas sınırlarına sabitle
+                canvas_x = max(0, min(canvas_w - 1, canvas_x))
+                canvas_y = max(0, min(canvas_h - 1, canvas_y))
+                return (canvas_x, canvas_y)
+            return (x, y)
+
+        # --- HiDPI / Retina normalizasyonu ---
         surface = pygame.display.get_surface()
         if surface is None:
-            return (x, y)
-
-        surf_w, surf_h = surface.get_size()
-
-        # pygame 2+: window size (logical) can differ from surface size (pixels) on HiDPI.
-        if hasattr(pygame.display, 'get_window_size'):
-            win_w, win_h = pygame.display.get_window_size()
+            final_x, final_y = x, y
         else:
-            win_w, win_h = (surf_w, surf_h)
+            surf_w, surf_h = surface.get_size()
+            if hasattr(pygame.display, 'get_window_size'):
+                win_w, win_h = pygame.display.get_window_size()
+            else:
+                win_w, win_h = (surf_w, surf_h)
 
-        if not win_w or not win_h:
-            return (x, y)
+            if not win_w or not win_h:
+                final_x, final_y = x, y
+            elif (surf_w, surf_h) == (win_w, win_h):
+                final_x, final_y = x, y
+            else:
+                scale_x = surf_w / float(win_w)
+                scale_y = surf_h / float(win_h)
+                final_x, final_y = int(x * scale_x), int(y * scale_y)
 
-        if (surf_w, surf_h) == (win_w, win_h):
-            return (x, y)
-
-        scale_x = surf_w / float(win_w)
-        scale_y = surf_h / float(win_h)
-        return (int(x * scale_x), int(y * scale_y))
+        if scale != 1.0:
+            final_x = int(final_x / scale)
+            final_y = int(final_y / scale)
+        return (final_x, final_y)
     except Exception:
+        if scale != 1.0:
+            x = int(x / scale)
+            y = int(y / scale)
         return (x, y)
 
 
-def get_mouse_pos() -> tuple[int, int]:
-    """Return current mouse position normalized to the display surface."""
+def get_mouse_pos(scale: float = 1.0) -> tuple[int, int]:
+    """Return current mouse position normalized to the display surface and UI scale."""
     try:
         pos = pygame.mouse.get_pos()
     except Exception:
         return (0, 0)
-    return normalize_mouse_pos(pos) or (0, 0)
+    return normalize_mouse_pos(pos, scale) or (0, 0)
 
 
 def _get_windows_physical_resolution() -> tuple[int, int]:
@@ -1287,77 +1370,436 @@ def build_support_email_body_template() -> str:
 
 
 # ---------------------------------------------------------------------------
-# Yazılımsal Çözünürlük Ölçeklemesi (Software Resolution Scaling)
+# Sanal Ekran (Virtual Canvas) Ölçeklemesi
 # ---------------------------------------------------------------------------
-_software_canvas = None
-_real_display_surface = None
-_software_scale_active = False
+# Oyun sabit bir sanal çözünürlüğe (virtual_canvas) çizilir; bu canvas gerçek
+# pencere boyutuna letterbox/pillarbox korunarak ölçeklenir.
+# Bu sayede tüm UI elemanları otomatik ve tutarlı biçimde büyür/küçülür.
+# ---------------------------------------------------------------------------
+_software_canvas: pygame.Surface | None = None
+_real_display_surface: pygame.Surface | None = None
+_software_scale_active: bool = False
+_virtual_blit_rect: tuple[int, int, int, int] | None = None  # (x, y, w, h) letterbox dest
 
-_orig_flip = pygame.display.flip
-_orig_update = pygame.display.update
-_orig_get_surface = pygame.display.get_surface
+try:
+    _orig_flip = pygame.display.flip
+    _orig_update = pygame.display.update
+    _orig_get_surface = pygame.display.get_surface
+except Exception:
+    _orig_flip = lambda: None
+    _orig_update = lambda *args, **kwargs: None
+    _orig_get_surface = lambda: None
 
-def _software_flip():
-    global _software_canvas, _real_display_surface
-    if _software_canvas is not None and _real_display_surface is not None:
-        pygame.transform.scale(_software_canvas, _real_display_surface.get_size(), _real_display_surface)
+
+def _calc_letterbox(canvas_w: int, canvas_h: int, real_w: int, real_h: int) -> tuple[int, int, int, int]:
+    """Aspect ratio korunarak canvas'ın gerçek yüzeye sığdırıldığı (x, y, w, h) dikdörtgenini döndür."""
+    if real_w <= 0 or real_h <= 0 or canvas_w <= 0 or canvas_h <= 0:
+        return (0, 0, real_w, real_h)
+    scale_x = real_w / float(canvas_w)
+    scale_y = real_h / float(canvas_h)
+    scale = min(scale_x, scale_y)
+    dst_w = int(canvas_w * scale)
+    dst_h = int(canvas_h * scale)
+    off_x = (real_w - dst_w) // 2
+    off_y = (real_h - dst_h) // 2
+    return (off_x, off_y, dst_w, dst_h)
+
+
+def _blit_canvas_to_display() -> None:
+    """Virtual canvas'ı letterbox ile gerçek display'e blit et ve _orig_flip çağır."""
+    global _virtual_blit_rect
+    if _software_canvas is None or _real_display_surface is None:
+        _orig_flip()
+        return
+    real_w, real_h = _real_display_surface.get_size()
+    canvas_w, canvas_h = _software_canvas.get_size()
+    bx, by, bw, bh = _calc_letterbox(canvas_w, canvas_h, real_w, real_h)
+    _virtual_blit_rect = (bx, by, bw, bh)
+    # Siyah bantları doldur (letterbox/pillarbox)
+    _real_display_surface.fill((0, 0, 0))
+    # Canvas'ı ölçekleyip hedef alana blit et
+    try:
+        scaled = pygame.transform.scale(_software_canvas, (bw, bh))
+        _real_display_surface.blit(scaled, (bx, by))
+    except Exception:
+        pass
     _orig_flip()
 
-def _software_update(*args, **kwargs):
-    global _software_canvas, _real_display_surface
-    if _software_canvas is not None and _real_display_surface is not None:
-        pygame.transform.scale(_software_canvas, _real_display_surface.get_size(), _real_display_surface)
-    _orig_update(*args, **kwargs)
 
-def _software_get_surface():
-    global _software_canvas
+def _software_flip() -> None:
+    _blit_canvas_to_display()
+
+
+def _software_update(*args, **kwargs) -> None:
+    _blit_canvas_to_display()
+
+
+def _software_get_surface() -> pygame.Surface:
     if _software_canvas is not None:
         return _software_canvas
     return _orig_get_surface()
 
-def setup_software_resolution_scaling(real_surface):
-    """Büyük çözünürlüklerde (örn. 4K) CPU blit yükünü azaltmak için software canvas scaling yama uygula."""
-    global _software_canvas, _real_display_surface, _software_scale_active
-    
-    # OpenGL veya SDL2 Renderer (overlay modülleri) aktifse bu yamayı yapma
-    for mod_name in ('sdl2_overlay', 'gl_compat'):
-        try:
-            mod = sys.modules.get(mod_name)
-            if mod is not None:
-                is_active = getattr(mod, 'is_active', None) or getattr(mod, 'is_gl_active', None)
-                if callable(is_active) and is_active():
-                    return real_surface
-        except Exception:
-            pass
+
+def _calc_virtual_canvas_size(
+    real_w: int,
+    real_h: int,
+    multiplier: float,
+) -> tuple[int, int]:
+    """UI ölçek çarpanına göre sanal canvas boyutunu hesapla.
+
+    Formül: virtual = actual / multiplier
+    Yükseklik 720–1080 arası clamp edilir; genişlik aspect ratio ile hesaplanır.
+    """
+    if multiplier <= 0:
+        multiplier = 1.0
+    aspect = real_w / float(real_h) if real_h > 0 else (16.0 / 9.0)
+    v_h = int(round(real_h / multiplier))
+    # Yükseklik sınırları: minimum 720, maksimum 1080
+    v_h = max(720, min(1080, v_h))
+    v_w = int(round(v_h * aspect))
+    # Genişlik de mantıklı sınır içinde kalsın
+    v_w = max(1, v_w)
+    return (v_w, v_h)
+
+
+def setup_virtual_canvas(
+    real_surface: pygame.Surface,
+    multiplier: float = 1.0,
+) -> pygame.Surface:
+    """Sanal ekran (virtual canvas) pipeline'ını kur ve oyunun çizeceği küçük surface'i döndür.
+
+    Tüm arka uçlarda (software, gl_compat, sdl2_overlay) çalışır.
+    - multiplier = 1.0 → normal preset: canvas = gerçek boyut (pass-through, no-op).
+    - multiplier > 1.0 → büyük preset: canvas küçülür → tüm UI otomatik büyür.
+    - 4K ekranlarda normal preset bile 1920×1080 canvas'a küçültülür (mevcut davranış korunur).
+
+    Returns:
+        Oyunun çizmesi gereken pygame.Surface.
+    """
+    global _software_canvas, _real_display_surface, _software_scale_active, _virtual_blit_rect
 
     if real_surface is None or not hasattr(real_surface, 'get_size'):
         return real_surface
 
-    w, h = real_surface.get_size()
-    # Çözünürlük 1920x1080'den büyükse (örn. 4K TV) yazılımsal ölçeklemeyi aktifleştir
-    if w > 1920 or h > 1080:
-        aspect = w / float(h)
-        canvas_h = 1080
-        canvas_w = int(round(canvas_h * aspect))
-        if canvas_w > 1920:
-            canvas_w = 1920
-            canvas_h = int(round(canvas_w / aspect))
+    real_w, real_h = real_surface.get_size()
 
+    # Canvas boyutunu hesapla
+    canvas_w, canvas_h = _calc_virtual_canvas_size(real_w, real_h, multiplier)
+
+    # Gerçek pencere ile canvas aynıysa pass-through (monkey-patch gerekmez)
+    if canvas_w == real_w and canvas_h == real_h:
+        # Eğer önceki canvas aktifse temizle
+        if _software_scale_active:
+            _teardown_virtual_canvas()
+        return real_surface
+
+    # Canvas surface oluştur
+    try:
+        canvas = pygame.Surface((canvas_w, canvas_h))
+        canvas = canvas.convert()
+    except Exception as exc:
+        print(f"[Virtual Canvas] Canvas oluşturulamadı: {exc}")
+        return real_surface
+
+    _real_display_surface = real_surface
+    _software_canvas = canvas
+    _software_scale_active = True
+    _virtual_blit_rect = _calc_letterbox(canvas_w, canvas_h, real_w, real_h)
+
+    # Monkey-patch display fonksiyonları
+    pygame.display.flip = _software_flip
+    pygame.display.update = _software_update
+    pygame.display.get_surface = _software_get_surface
+
+    # ui_scaling'e virtual canvas aktif olduğunu bildir
+    # → tüm _ui_scale() / _sx() metodları 1.0 döndürerek çift ölçeklemeyi engeller
+    try:
+        from ui_scaling import set_virtual_canvas_active
+        set_virtual_canvas_active(True)
+    except Exception:
+        pass
+
+    print(
+        f"[Virtual Canvas] Aktif: canvas={canvas_w}x{canvas_h} "
+        f"→ real={real_w}x{real_h} (x{multiplier:.2f}) "
+        f"letterbox=({_virtual_blit_rect[0]},{_virtual_blit_rect[1]},{_virtual_blit_rect[2]},{_virtual_blit_rect[3]})"
+    )
+    return _software_canvas
+
+
+def rebuild_virtual_canvas(multiplier: float | None = None) -> pygame.Surface | None:
+    """Mevcut virtual canvas'ı yeni multiplier ile yeniden kur.
+
+    Settings ekranında UI preset değiştiğinde bu fonksiyon çağrılır.
+    Eğer canvas hiç kurulmamışsa (overlay modları) None döner.
+
+    Args:
+        multiplier: Yeni ölçek çarpanı. None verilirse ui_scaling'den alınır.
+
+    Returns:
+        Yeni canvas surface veya None (overlay modunda).
+    """
+    if _real_display_surface is None:
+        return None
+
+    if multiplier is None:
         try:
-            _real_display_surface = real_surface
-            _software_canvas = pygame.Surface((canvas_w, canvas_h), pygame.SRCALPHA if real_surface.get_flags() & pygame.SRCALPHA else 0)
-            _software_canvas = _software_canvas.convert()
-            
-            pygame.display.flip = _software_flip
-            pygame.display.update = _software_update
-            pygame.display.get_surface = _software_get_surface
-            _software_scale_active = True
-            
-            print(f"[Software Scaling] Aktif: {canvas_w}x{canvas_h} -> {w}x{h}")
-            return _software_canvas
-        except Exception as e:
-            print(f"[Software Scaling] Hata: {e}")
-            _software_canvas = None
-            _real_display_surface = None
-            
-    return real_surface
+            from ui_scaling import get_ui_scale_multiplier
+            multiplier = get_ui_scale_multiplier()
+        except Exception:
+            multiplier = 1.0
+
+    return setup_virtual_canvas(_real_display_surface, multiplier)
+
+
+def _teardown_virtual_canvas() -> None:
+    """Virtual canvas monkey-patch'lerini geri al."""
+    global _software_canvas, _real_display_surface, _software_scale_active, _virtual_blit_rect
+    try:
+        pygame.display.flip = _orig_flip
+        pygame.display.update = _orig_update
+        pygame.display.get_surface = _orig_get_surface
+    except Exception:
+        pass
+    _software_canvas = None
+    _real_display_surface = None
+    _software_scale_active = False
+    _virtual_blit_rect = None
+    # ui_scaling'i bilgilendir: canvas devre dışı, eski ölçeklemeye dön
+    try:
+        from ui_scaling import set_virtual_canvas_active
+        set_virtual_canvas_active(False)
+    except Exception:
+        pass
+
+
+def get_virtual_canvas_info() -> dict:
+    """Mevcut virtual canvas bilgilerini döndür.
+
+    Returns:
+        dict with keys: active, canvas_w, canvas_h, real_w, real_h,
+        offset_x, offset_y, blit_w, blit_h, scale_x, scale_y
+    """
+    if not _software_scale_active or _software_canvas is None or _virtual_blit_rect is None:
+        if _real_display_surface is not None:
+            rw, rh = _real_display_surface.get_size()
+        else:
+            try:
+                surf = _orig_get_surface()
+                rw, rh = (surf.get_size() if surf else (1920, 1080))
+            except Exception:
+                rw, rh = 1920, 1080
+        return {
+            'active': False,
+            'canvas_w': rw, 'canvas_h': rh,
+            'real_w': rw, 'real_h': rh,
+            'offset_x': 0, 'offset_y': 0,
+            'blit_w': rw, 'blit_h': rh,
+            'scale_x': 1.0, 'scale_y': 1.0,
+        }
+    cw, ch = _software_canvas.get_size()
+    rw, rh = _real_display_surface.get_size()
+    bx, by, bw, bh = _virtual_blit_rect
+    sx = bw / float(cw) if cw > 0 else 1.0
+    sy = bh / float(ch) if ch > 0 else 1.0
+    return {
+        'active': True,
+        'canvas_w': cw, 'canvas_h': ch,
+        'real_w': rw, 'real_h': rh,
+        'offset_x': bx, 'offset_y': by,
+        'blit_w': bw, 'blit_h': bh,
+        'scale_x': sx, 'scale_y': sy,
+    }
+
+
+def setup_software_resolution_scaling(real_surface: pygame.Surface) -> pygame.Surface:
+    """Geriye dönük uyumluluk: setup_virtual_canvas'a delege eder.
+
+    Bu fonksiyon artık kullanılmamalıdır; setup_virtual_canvas kullanın.
+    """
+    try:
+        from ui_scaling import get_ui_scale_multiplier
+        multiplier = get_ui_scale_multiplier()
+    except Exception:
+        multiplier = 1.0
+    return setup_virtual_canvas(real_surface, multiplier)
+
+
+# ---------------------------------------------------------------------------
+# Pygame Event Queue Patching (Virtual Canvas Mouse Koordinat Mutasyonu)
+# ---------------------------------------------------------------------------
+# MOUSEMOTION, MOUSEBUTTONDOWN, MOUSEBUTTONUP event'lerinin `pos` (ve
+# MOUSEMOTION için `rel`) değerleri virtual canvas koordinat sistemine
+# otomatik dönüştürülür. Böylece event.pos'u doğrudan kullanan tüm
+# kod yerleri de doğru canvas koordinatı alır — normalize_mouse_pos
+# çağrısı gerekmez.
+# ---------------------------------------------------------------------------
+try:
+    _orig_event_get = pygame.event.get
+except Exception:
+    _orig_event_get = lambda *args, **kwargs: []
+_event_patch_active = False
+
+
+def _normalize_event_pos(raw_pos: tuple) -> tuple[int, int]:
+    """Ham fare pozisyonunu virtual canvas koordinatına dönüştür."""
+    if not _software_scale_active or _virtual_blit_rect is None:
+        return raw_pos
+    bx, by, bw, bh = _virtual_blit_rect
+    canvas_w, canvas_h = (
+        _software_canvas.get_size() if _software_canvas is not None
+        else (bw, bh)
+    )
+    if bw <= 0 or bh <= 0:
+        return raw_pos
+    rx = float(raw_pos[0]) - bx
+    ry = float(raw_pos[1]) - by
+    cx = int(round(rx * canvas_w / bw))
+    cy = int(round(ry * canvas_h / bh))
+    cx = max(0, min(canvas_w - 1, cx))
+    cy = max(0, min(canvas_h - 1, cy))
+    return (cx, cy)
+
+
+def _normalize_event_rel(raw_rel: tuple) -> tuple[int, int]:
+    """Ham fare hareketini (rel) virtual canvas ölçeğine dönüştür."""
+    if not _software_scale_active or _virtual_blit_rect is None:
+        return raw_rel
+    bx, by, bw, bh = _virtual_blit_rect
+    canvas_w, canvas_h = (
+        _software_canvas.get_size() if _software_canvas is not None
+        else (bw, bh)
+    )
+    if bw <= 0 or bh <= 0:
+        return raw_rel
+    sx = canvas_w / float(bw)
+    sy = canvas_h / float(bh)
+    return (int(round(float(raw_rel[0]) * sx)), int(round(float(raw_rel[1]) * sy)))
+
+
+def _patched_event_get(eventtype=None, pump=True, exclude=None):
+    """pygame.event.get wrapper: mouse event koordinatlarını mutate eder."""
+    try:
+        if eventtype is not None and exclude is not None:
+            events = _orig_event_get(eventtype, pump=pump, exclude=exclude)
+        elif eventtype is not None:
+            events = _orig_event_get(eventtype, pump=pump)
+        else:
+            events = _orig_event_get()
+    except Exception:
+        try:
+            events = _orig_event_get()
+        except Exception:
+            return []
+
+    if not _software_scale_active or _virtual_blit_rect is None:
+        return events
+
+    patched = []
+    for event in events:
+        try:
+            etype = event.type
+            if etype in (
+                pygame.MOUSEBUTTONDOWN,
+                pygame.MOUSEBUTTONUP,
+                pygame.MOUSEMOTION,
+            ):
+                new_pos = _normalize_event_pos(event.pos)
+                attrs = {'pos': new_pos}
+                if etype == pygame.MOUSEMOTION:
+                    try:
+                        new_rel = _normalize_event_rel(event.rel)
+                        attrs['rel'] = new_rel
+                    except Exception:
+                        pass
+                # pygame.event.Event ile yeni event oluştur (C-level salt okunur hatalarını önlemek için güvenli kopyalama)
+                # dir(event) yerine event.__dict__ kullanımı hem performansı artırır hem de çökmeleri önler.
+                event_dict = getattr(event, '__dict__', {})
+                new_event = pygame.event.Event(etype, {
+                    **{k: v for k, v in event_dict.items() if k not in attrs},
+                    **attrs,
+                })
+                patched.append(new_event)
+            else:
+                patched.append(event)
+        except Exception:
+            patched.append(event)
+    return patched
+
+
+def patch_event_queue() -> None:
+    """pygame.event.get, mouse.get_pos ve mouse.get_rel'i virtual canvas koordinat
+    dönüşümü için monkey-patch et.
+
+    Bu fonksiyon setup_virtual_canvas'tan sonra bir kez çağrılmalıdır.
+    Virtual canvas aktif değilken tüm patch'ler pass-through çalışır.
+
+    Monkey-patch'lenen fonksiyonlar:
+    - pygame.event.get  → mouse event pos/rel mutasyonu
+    - pygame.mouse.get_pos → letterbox offset + canvas scale dönüşümü
+    - pygame.mouse.get_rel → canvas scale dönüşümü
+    """
+    global _event_patch_active
+    if _event_patch_active:
+        return
+
+    try:
+        pygame.event.get = _patched_event_get
+
+        # pygame.mouse.get_pos → virtual canvas koordinatına normalize et
+        _orig_mouse_get_pos = pygame.mouse.get_pos
+
+        def _patched_mouse_get_pos():
+            try:
+                raw = _orig_mouse_get_pos()
+                return _normalize_event_pos(raw)
+            except Exception:
+                return _orig_mouse_get_pos()
+
+        pygame.mouse.get_pos = _patched_mouse_get_pos
+
+        # pygame.mouse.get_rel → canvas ölçeğine normalize et
+        _orig_mouse_get_rel = pygame.mouse.get_rel
+
+        def _patched_mouse_get_rel():
+            try:
+                raw = _orig_mouse_get_rel()
+                return _normalize_event_rel(raw)
+            except Exception:
+                return _orig_mouse_get_rel()
+
+        pygame.mouse.get_rel = _patched_mouse_get_rel
+
+        # Geri alma için referansları sakla
+        patch_event_queue._orig_mouse_get_pos = _orig_mouse_get_pos
+        patch_event_queue._orig_mouse_get_rel = _orig_mouse_get_rel
+
+        _event_patch_active = True
+        print(
+            "[Virtual Canvas] Tam mouse patching aktif — "
+            "event.get, mouse.get_pos ve mouse.get_rel normalize edilecek"
+        )
+    except Exception as exc:
+        print(f"[Virtual Canvas] Event/mouse patch başarısız: {exc}")
+
+
+def unpatch_event_queue() -> None:
+    """Tüm pygame event/mouse monkey-patch'lerini geri al."""
+    global _event_patch_active
+    try:
+        pygame.event.get = _orig_event_get
+    except Exception:
+        pass
+    try:
+        orig_pos = getattr(patch_event_queue, '_orig_mouse_get_pos', None)
+        if orig_pos is not None:
+            pygame.mouse.get_pos = orig_pos
+    except Exception:
+        pass
+    try:
+        orig_rel = getattr(patch_event_queue, '_orig_mouse_get_rel', None)
+        if orig_rel is not None:
+            pygame.mouse.get_rel = orig_rel
+    except Exception:
+        pass
+    _event_patch_active = False

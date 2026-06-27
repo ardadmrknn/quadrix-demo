@@ -30,6 +30,44 @@ UI_SCALE_PRESETS = tuple(UI_SCALE_PRESET_MULTIPLIERS.keys())
 
 _UI_SCALE_PRESET = "normal"
 
+# ---------------------------------------------------------------------------
+# Virtual Canvas çift ölçekleme koruması
+# ---------------------------------------------------------------------------
+# Virtual canvas aktifken (setup_virtual_canvas kurulumu sonrası) bu bayrak
+# True olur. Bu durumda _ui_scale() / _sx() metodları 1.0 döndürür —
+# canvas zaten küçültüldüğü için ek pers-element ölçekleme çift etkiye yol açar.
+_VIRTUAL_CANVAS_ACTIVE: bool = False
+
+
+def set_virtual_canvas_active(active: bool) -> None:
+    """Virtual canvas pipeline aktifliğini kaydet.
+
+    setup_virtual_canvas() tarafından çağrılır; doğrudan kullanmayın.
+    """
+    global _VIRTUAL_CANVAS_ACTIVE
+    _VIRTUAL_CANVAS_ACTIVE = bool(active)
+
+
+def is_virtual_canvas_active() -> bool:
+    """Virtual canvas pipeline aktif mi?"""
+    return _VIRTUAL_CANVAS_ACTIVE
+
+
+def get_virtual_canvas_ui_scale() -> float:
+    """Virtual canvas aktifken kullanılacak per-element ölçek değeri.
+
+    Virtual canvas aktif = canvas zaten uygun boyuta küçültüldü, ek ölçekleme
+    yapılmasın → 1.0 dönür.
+    Virtual canvas pasif = eski davranış (None) → çağıran kendi hesaplar.
+
+    Returns:
+        1.0 (virtual canvas aktif) veya None (pasif, kendi hesapla).
+    """
+    if _VIRTUAL_CANVAS_ACTIVE:
+        return 1.0
+    return None
+
+
 CONTENT_SCALE_PROFILES = {
     "standard": (0.72, 1.18),
     "content": (0.72, 1.18),
@@ -371,8 +409,11 @@ __all__ = [
     "get_scale",
     "get_ui_scale_multiplier",
     "get_ui_scale_preset",
+    "get_virtual_canvas_ui_scale",
+    "is_virtual_canvas_active",
     "normalize_ui_scale_preset",
     "resolve_ui_scale_size",
     "scale_px",
     "set_ui_scale_preset",
+    "set_virtual_canvas_active",
 ]

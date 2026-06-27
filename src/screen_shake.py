@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import random
+import math
 
 
 DEFAULT_SCREEN_SHAKE_DURATION_SECONDS = 15 / 60.0
@@ -17,6 +18,7 @@ def begin_screen_shake(
     intensity: int = 10,
     duration: float = DEFAULT_SCREEN_SHAKE_DURATION_SECONDS,
     enabled: bool | None = None,
+    direction: str | None = None,
 ) -> None:
     """Start or replace the current screen shake.
 
@@ -43,11 +45,13 @@ def begin_screen_shake(
         state.screen_shake = 0.0
         state.shake_intensity = 0
         state._screen_shake_initial = 0.0
+        state.shake_direction = None
         return
 
     state._screen_shake_initial = duration_ms
     state.screen_shake = duration_ms
     state.shake_intensity = intensity_px
+    state.shake_direction = direction
 
 
 def step_screen_shake(state, *, dt_ms: float | None = None) -> None:
@@ -78,6 +82,20 @@ def sample_screen_shake_offset(state) -> tuple[int, int]:
 
     initial = max(1.0, float(getattr(state, '_screen_shake_initial', remaining) or remaining))
     decay = max(0.0, min(1.0, remaining / initial))
+
+    direction = getattr(state, 'shake_direction', None)
+    if direction in ('left', 'right'):
+        # Yönlü sarsıntı: Sönümlü salınım (damped oscillation)
+        direction_sign = -1 if direction == 'left' else 1
+        elapsed = (initial - remaining) / 1000.0
+        # 25 Hz frekans, tok ve hızlı bir yaylanma hissi sağlar
+        frequency = 2.0 * math.pi * 25.0
+        shake_x = int(direction_sign * intensity * decay * math.cos(frequency * elapsed))
+        # Dikeyde çok hafif sönümlü rastgelelik (tokluk hissi verir)
+        shake_y = random.randint(-1, 1) if intensity > 3 else 0
+        return (shake_x, shake_y)
+
+    # Standart rasgele sarsıntı (hard drop, satır temizleme vb.)
     shake_x = random.randint(-intensity, intensity)
     shake_y = random.randint(-intensity, intensity)
     return (int(shake_x * decay), int(shake_y * decay))

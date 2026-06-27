@@ -139,21 +139,24 @@ DEFAULT_GAMEPAD_BINDINGS = {
     #   temel aksiyon hem slot tetikleniyordu (cift-tetik). Yeni layout slotlari
     #   A/X/B/Y + LT/RT'ye, temel aksiyonlari ise LB(hold)/RB(hard_drop)'a tasiyarak
     #   bu cakismayi tamamen ortadan kaldirir. Donme yalnizca D-pad ^ ile yapilir.
-    #   NOT: Demo'da enerji yetenekleri (Z/X) yalnizca klavye ile kullanilir;
-    #   gamepad atamasi yoktur. Bu yuzden eski slot_6'nin kullandigi R3(8) bosalir
-    #   ve hold2 (Ekstra Cep) R3'e tasinabilir (ana oyun ile birebir ayni layout).
     'move_left':    {'dpad': 'left',   'axis': ('left_x', -1)},
     'move_right':   {'dpad': 'right',  'axis': ('left_x', +1)},
     'soft_drop':    {'dpad': 'down',   'axis': ('left_y', +1)},
     'hard_drop':    {'button': 10},  # RB / R1 (yeni; eski Y=3'ten tasindi)
-    'rotate':       {'button': None}, # bos (donme D-pad ^ ile; eski A=0 kaldirildi)
+    'rotate':       {'button': 11}, # varsayilan D-pad Up
     'rotate_alt':   {'button': None}, # bos (eski B=1 kaldirildi)
     'hold':         {'button': 9},   # LB / L1 (degismedi)
     'hold2':        {'button': 8},   # R3 / RS Click (Ekstra Cep / perk_second_pocket)
     'pause':        {'button': 6, 'button_secondary': 5},   # Start / Options / + or Guide (Home)
     'lt':           {'button': None}, # bos (eski LT trigger kaldirildi)
     'rt':           {'button': None}, # bos (eski RT trigger kaldirildi)
-    'restart':      {'button': None}, # Devre dışı
+    # POLL-ONLY game-over / level-failed aksiyonlari.
+    # restart = Y(3), level_select = X(2). Bu iki aksiyon game_actions_list /
+    # menu_actions_list / sentetik emisyon listelerine GIRMEZ; yalnizca
+    # game-over/level-failed handler'lari icinde was_action_just_pressed ile
+    # okunur. Boylece oyun ortasinda Y/X'in slot poll'u ile cakismaz.
+    'restart':      {'button': 3},  # Y / Triangle — game-over'da yeniden dene (poll-only)
+    'level_select': {'button': 2},  # X / Square — campaign'de level sec (poll-only)
     'discard_held': {'button': None}, # bos (eski RB=10 kaldirildi; kart slota konarak kullanilir)
     # Kart modu aksiyonlari (varsayilan: atanmis degil)
     'card_rewind': {'button': None},
@@ -165,6 +168,10 @@ DEFAULT_GAMEPAD_BINDINGS = {
     'card_ghost': {'button': None},
     'card_hammer': {'button': None},
     'card_bomb': {'button': None},
+
+    # NOT: Enerji yetenekleri (Ground Sweep / Time Warp) tamamen kaldirildi.
+    # Bu yetenekler artik oyunda yok; gamepad aksiyonu (card_ground_sweep /
+    # card_time_warp) da yoktur.
 
     # Kart Ustaligi sol panel yuvalari (slot_1..slot_6).
     # Bu aksiyonlar SADECE poll edilir (was_action_just_pressed / is_action_pressed);
@@ -324,9 +331,7 @@ class GamepadManager:
     MOUSE_NEUTRAL_FOLLOW_RATE = 0.03
 
     # Bağlam: 'game' = oyun içi, 'menu' = menü/UI
-    # YENI LAYOUT: B butonu oyun içinde slot_3 (Kart Ustaligi yuvasi), menüde
-    # menu_back olarak çalışır. (Eskiden oyun içinde rotate idi; donme artik
-    # yalnizca D-pad ^ ile yapilir.)
+    # B butonu oyun içinde rotate, menüde back olarak çalışır
     CONTEXT_GAME = 'game'
     CONTEXT_MENU = 'menu'
 
@@ -365,11 +370,22 @@ class GamepadManager:
         # Instance-level binding kopyası (global DEFAULT_GAMEPAD_BINDINGS mutasyona uğramaz)
         self._bindings = copy.deepcopy(DEFAULT_GAMEPAD_BINDINGS)
 
+        # Menü navigasyonunda çift tetiklenmeyi önlemek için debouncing veri yapısı
+        self._last_menu_key_times: Dict[int, int] = {}
+
         # Ayarlardan oku (varsa)
         self._load_settings()
 
+        # Son aktif girdi zamanı
+        self._last_gamepad_input_time: int = 0
+        self._internal_time: float = 0.0
+
         # İlk tarama
         self._scan_gamepads()
+
+    def get_last_input_time(self) -> int:
+        """Son aktif gamepad girdisi zamanını milisaniye cinsinden döndürür."""
+        return getattr(self, '_last_gamepad_input_time', 0)
 
     def _load_settings(self):
         """Settings'den gamepad ayarlarını yükle."""
@@ -436,8 +452,10 @@ class GamepadManager:
             # Her reload'da temiz bir kopya ile başla (önceki mutasyonlar sıfırlanır)
             self._bindings = copy.deepcopy(DEFAULT_GAMEPAD_BINDINGS)
 
-            # Eski çakışan ayarları temizle (restart UI'dan kaldırıldı)
-            _deprecated = {'restart'}
+            # Eski çakışan ayarları temizle.
+            # NOT: 'restart' artik kullaniliyor (game-over Y butonu) — deprecated
+            # listesinden cikarildi. Su an temizlenecek deprecated aksiyon yok.
+            _deprecated = set()
             for dep_action in _deprecated:
                 if dep_action in self._bindings:
                     self._bindings[dep_action] = {'button': None, 'button_secondary': None}
@@ -454,6 +472,7 @@ class GamepadManager:
                 'hard_drop', 'rotate', 'rotate_alt', 'hold', 'hold2', 'pause',
                 'menu_back', 'menu_confirm', 'menu_tab_next', 'menu_tab_prev',
                 'discard_held', 'lt', 'rt',
+                'restart', 'level_select',
                 'slot_1', 'slot_2', 'slot_3', 'slot_4', 'slot_5', 'slot_6',
                 'card_rewind', 'card_sniper', 'card_time_capsule_save',
                 'card_time_capsule_restore', 'card_freeze', 'card_phase_shift',
@@ -517,12 +536,33 @@ class GamepadManager:
                 dirs.append(trig)
         return dirs
 
-    def _scan_gamepads(self):
-        """Bağlı gamepad'leri tara ve kaydet"""
+    def _scan_gamepads(self) -> None:
+        """Bağlı gamepad'leri de-duplication mantığıyla tara ve kaydet"""
         count = pygame.joystick.get_count()
+        temp_gamepads = []
         for i in range(count):
-            if i not in self.gamepads:
-                self._register_gamepad(i)
+            try:
+                js = pygame.joystick.Joystick(i)
+                js.init()
+                name = js.get_name().lower()
+                gp_type = self._detect_type(js)
+                temp_gamepads.append((i, js, name, gp_type))
+            except Exception:
+                pass
+
+        has_xbox = any(t[3] == GamepadType.XBOX for t in temp_gamepads)
+
+        for device_index, js, name, gp_type in temp_gamepads:
+            # De-duplication: Sanal Xbox kontrolcüsü varken fiziksel PlayStation DirectInput bağlantısını yoksay
+            if has_xbox and gp_type == GamepadType.PLAYSTATION and 'wireless' in name:
+                try:
+                    js.quit()
+                except Exception:
+                    pass
+                continue
+
+            if device_index not in self.gamepads:
+                self._register_gamepad(device_index)
 
     def _register_gamepad(self, device_index: int):
         """Yeni bir gamepad'i kaydet"""
@@ -643,6 +683,32 @@ class GamepadManager:
 
         return None
 
+    def _normalize_playstation_raw_button(self, raw_index: int, name: str) -> int:
+        """Ham PlayStation joystick buton indekslerini standart SDL layout'una eşler."""
+        # Windows DirectInput veya macOS ham Bluetooth modlarında buton indeksleri farklılık gösterir.
+        # Standart SDL GameController düzeni: A=0 (Cross), B=1 (Circle), X=2 (Square), Y=3 (Triangle), 
+        # Back=4 (Share), Guide=5 (PS), Start=6 (Options), L3=7, R3=8, L1=9, R1=10
+        
+        # Yaygın kablosuz / kablolu ham PlayStation eşleme tabloları
+        # 1. Standart Windows DirectInput / DS4 / DualSense Bluetooth ham eşlemesi:
+        # Square=0, Cross=1, Circle=2, Triangle=3, L1=4, R1=5, L2=6, R2=7, Share=8, Options=9, L3=10, R3=11, PS=12
+        dinput_map = {
+            1: 0,   # Cross -> A (0)
+            2: 1,   # Circle -> B (1)
+            0: 2,   # Square -> X (2)
+            3: 3,   # Triangle -> Y (3)
+            4: 9,   # L1 -> LShoulder (9)
+            5: 10,  # R1 -> RShoulder (10)
+            8: 4,   # Share/Select -> Back (4)
+            9: 6,   # Options/Start -> Start (6)
+            10: 7,  # L3 -> LStickClick (7)
+            11: 8,  # R3 -> RStickClick (8)
+            12: 5,  # PS Button -> Guide (5)
+        }
+        
+        # Eğer isim veya cihaz PlayStation olarak tanımlanmışsa ve dinput_map içinde indeks varsa eşle
+        return dinput_map.get(raw_index, raw_index)
+
     def _normalize_raw_button_index(self, gp: Optional[GamepadState], raw_button_index: int) -> int:
         try:
             raw_index = int(raw_button_index)
@@ -651,9 +717,19 @@ class GamepadManager:
 
         if gp is None:
             return raw_index
-        if getattr(gp, 'gamepad_type', GamepadType.UNKNOWN) not in (GamepadType.XBOX, GamepadType.UNKNOWN):
-            return raw_index
-        return WINDOWS_XINPUT_RAW_BUTTON_TO_CANONICAL.get(raw_index, raw_index)
+            
+        gp_type = getattr(gp, 'gamepad_type', GamepadType.UNKNOWN)
+        gp_name = getattr(gp, 'name', '').lower()
+        
+        if gp_type == GamepadType.XBOX or gp_type == GamepadType.UNKNOWN:
+            return WINDOWS_XINPUT_RAW_BUTTON_TO_CANONICAL.get(raw_index, raw_index)
+            
+        if gp_type == GamepadType.PLAYSTATION:
+            # Sadece ham joystick modundaysak (Controller nesnesi yoksa) normalizasyon uygula
+            if getattr(gp, 'controller', None) is None:
+                return self._normalize_playstation_raw_button(raw_index, gp_name)
+                
+        return raw_index
 
     def _read_button_states(self, gp: GamepadState) -> Dict[int, bool]:
         controller = getattr(gp, 'controller', None)
@@ -822,8 +898,7 @@ class GamepadManager:
 
     def set_context(self, context: str):
         """Aktif bağlamı ayarla: 'game' veya 'menu'.
-        YENI LAYOUT: B butonu oyun içinde slot_3 (Kart Ustaligi yuvasi), menüde
-        menu_back olarak çalışır (donme yalnizca D-pad ^ ile).
+        B butonu oyun içinde rotate, menüde back olarak çalışır.
         Bağlam değişiminde prev_buttons sıfırlanır (hayalet event önleme)."""
         if context != self._context:
             self._context = context
@@ -866,6 +941,24 @@ class GamepadManager:
         """
         gp = self.get_active_gamepad()
         if not gp:
+            return False
+
+        # Yön -> Karşılık gelen aksiyon eşleşmesi
+        dir_to_action = {
+            'up': 'rotate',
+            'down': 'soft_drop',
+            'left': 'move_left',
+            'right': 'move_right'
+        }
+        
+        # Eğer bu yöne atanmış aksiyon (rebind edilmiş buton) şu an basılıysa doğrudan True dön
+        action = dir_to_action.get(direction)
+        if action and self.is_action_pressed(action):
+            return True
+
+        # Eğer bu yön bir aksiyon tarafından override edildiyse yön girdisini algılama
+        suppressed = self._get_overridden_dpad_dirs() if self._context == self.CONTEXT_GAME else set()
+        if direction in suppressed:
             return False
 
         # D-pad kontrolü
@@ -1084,6 +1177,10 @@ class GamepadManager:
         if not self.enabled:
             return []
 
+        if not hasattr(self, '_internal_time'):
+            self._internal_time = 0.0
+        self._internal_time += delta_ms
+
         synthetic: List[pygame.event.Event] = []
 
         # Bağlantı/kopma kontrolü
@@ -1153,21 +1250,31 @@ class GamepadManager:
                 if num_axes >= 6:
                     raw_lt = gp.joystick.get_axis(4)
                     raw_rt = gp.joystick.get_axis(5)
-                    # SDL GameController: trigger aralığı -1 (bırak) → +1 (tam bas).
-                    # Bazı sürücüler/platformlar (macOS Bluetooth) 0→1 raporlayabilir.
-                    # İlk frame'de kalibrasyon: eğer her iki trigger da ~0.0 civarındaysa
-                    # sürücü muhtemelen 0→1 aralığı kullanıyordur.
+                    
+                    # İlk frame'lerde eksenlerin kararsız başlangıç değerlerini (-1.0 veya 0.0) süzmek için guard
                     if not getattr(gp, '_trigger_calibrated', False):
                         gp._trigger_calibrated = True
-                        # Her iki trigger da -0.5'ten küçükse → -1..+1 aralığı (standart)
-                        # Aksi halde (0 civarı) → 0..1 aralığı
+                        # Tetikler bırakılmış durumdayken genellikle -1.0 veya tam 0.0 döner.
+                        # Eğer her iki tetik de belirgin şekilde negatifse aralık -1..1'dir, aksi halde 0..1'dir.
                         gp._trigger_range_full = (raw_lt < -0.5 and raw_rt < -0.5)
+                        gp._trigger_initial_raw_lt = raw_lt
+                        gp._trigger_initial_raw_rt = raw_rt
+                    
+                    # Sürücü kararsızlığını önlemek için başlangıçtaki sıfır noktasını koru
                     if getattr(gp, '_trigger_range_full', True):
                         gp.left_trigger = max(0.0, (raw_lt + 1.0) / 2.0)
                         gp.right_trigger = max(0.0, (raw_rt + 1.0) / 2.0)
                     else:
-                        gp.left_trigger = max(0.0, min(1.0, raw_lt))
-                        gp.right_trigger = max(0.0, min(1.0, raw_rt))
+                        # Eğer aralık 0..1 ise ve henüz tetiklere basılmadıysa başlangıçtaki gürültüyü süz
+                        if raw_lt == getattr(gp, '_trigger_initial_raw_lt', 0.0) and raw_lt < 0.1:
+                            gp.left_trigger = 0.0
+                        else:
+                            gp.left_trigger = max(0.0, min(1.0, raw_lt))
+                            
+                        if raw_rt == getattr(gp, '_trigger_initial_raw_rt', 0.0) and raw_rt < 0.1:
+                            gp.right_trigger = 0.0
+                        else:
+                            gp.right_trigger = max(0.0, min(1.0, raw_rt))
                 elif controller is not None:
                     gp.left_trigger = self._read_controller_axis(gp, CONTROLLER_AXIS_TRIGGERLEFT, trigger=True)
                     gp.right_trigger = self._read_controller_axis(gp, CONTROLLER_AXIS_TRIGGERRIGHT, trigger=True)
@@ -1198,18 +1305,53 @@ class GamepadManager:
                 # Gamepad kopmuş olabilir
                 print(f"⚠️ Gamepad {gp_id} okuma hatası: {e}")
 
+        # Son aktif gamepad girdisi zamanını güncelle (basılı tutma durumları dahil)
+        has_active_input = False
+        for gp in self.gamepads.values():
+            if not gp.joystick or not gp.joystick.get_init():
+                continue
+            if any(gp.buttons.values()):
+                has_active_input = True
+                break
+            if gp.left_stick.x != 0.0 or gp.left_stick.y != 0.0:
+                has_active_input = True
+                break
+            if gp.right_stick.x != 0.0 or gp.right_stick.y != 0.0:
+                has_active_input = True
+                break
+            if gp.dpad != (0, 0):
+                has_active_input = True
+                break
+            if gp.left_trigger >= self.TRIGGER_THRESHOLD or gp.right_trigger >= self.TRIGGER_THRESHOLD:
+                has_active_input = True
+                break
+
+        if synthetic or has_active_input:
+            self._last_gamepad_input_time = int(self._internal_time)
+
+        # Menü bağlamındayken mükerrer/çift sinyal gönderme sorununu çözmek için
+        # synthetic KEYDOWN olaylarını debouncing filtresinden geçir.
+        if self._context == self.CONTEXT_MENU:
+            now = int(self._internal_time)
+            filtered_synthetic = []
+            if not hasattr(self, '_last_menu_key_times'):
+                self._last_menu_key_times = {}
+            for ev in synthetic:
+                if ev.type == pygame.KEYDOWN:
+                    if ev.key in self._last_menu_key_times:
+                        last_time = self._last_menu_key_times[ev.key]
+                        if now - last_time < 80:  # 80ms debounce
+                            continue
+                    self._last_menu_key_times[ev.key] = now
+                filtered_synthetic.append(ev)
+            return filtered_synthetic
+
         return synthetic
 
-    def _check_connections(self):
+    def _check_connections(self) -> None:
         """Yeni bağlanan/kopan gamepad'leri kontrol et"""
         try:
-            current_count = pygame.joystick.get_count()
             known_ids = set(self.gamepads.keys())
-
-            # Yeni bağlananlar
-            for i in range(current_count):
-                if i not in known_ids:
-                    self._register_gamepad(i)
 
             # Kopanlar (pygame erişilemez hale gelmiş)
             for gp_id in list(known_ids):
@@ -1223,6 +1365,9 @@ class GamepadManager:
                 except Exception:
                     print(f"🎮 Gamepad koptu: {gp.name} (ID: {gp_id})")
                     del self.gamepads[gp_id]
+
+            # Yeni bağlananları de-duplication mantığıyla tara ve kaydet
+            self._scan_gamepads()
         except Exception:
             pass
 
@@ -1540,9 +1685,25 @@ class GamepadManager:
                 for btn in self._iter_button_indices(binding):
                     button_actions[btn] = action
 
+        dpad_btn_to_dir = {11: 'up', 12: 'down', 13: 'left', 14: 'right'}
+        dir_to_action = {
+            'up': 'rotate',
+            'down': 'soft_drop',
+            'left': 'move_left',
+            'right': 'move_right'
+        }
+
         for btn_idx, action in button_actions.items():
             if action is None:
                 continue
+
+            # Eğer basılan buton bir D-pad yönü ise ve o yönün kendi doğal eylemi ise,
+            # bunun event'ini buton eventi olarak üretme. Çünkü bu yön için event
+            # zaten _generate_dpad_events fonksiyonunda üretilecek (çift tetiklemeyi önleme).
+            if btn_idx in dpad_btn_to_dir:
+                btn_dir = dpad_btn_to_dir[btn_idx]
+                if dir_to_action.get(btn_dir) == action:
+                    continue
 
             # Menü pointer modunda menu_confirm → K_RETURN üretme;
             # A butonu _generate_mouse_click_events'te tıklama olarak işlenir.
@@ -1813,19 +1974,38 @@ class GamepadManager:
     # ─── D-Pad Olayları ─────────────────────────────────────────────────────
 
     def _get_overridden_dpad_dirs(self) -> set:
-        """D-Pad butonları (11-14) bir kart/aksiyon aksiyonuna atanmışsa
-        o yönün ok-tuşu eventini bastırmak için yön setini döndür."""
+        """D-Pad butonları (11-14) başka bir eyleme atanmışsa veya
+        ilgili hareket eylemine başka bir buton atanmışsa o yönün ok-tuşu eventini bastır."""
         overridden = set()
         dpad_btn_to_dir = {11: 'up', 12: 'down', 13: 'left', 14: 'right'}
-        # Hareket dışı aksiyonlar (D-Pad yönünü override eden)
-        movement_actions = {'move_left', 'move_right', 'soft_drop',
-                           'menu_up', 'menu_down', 'menu_left', 'menu_right'}
+        
+        # Her bir yönün karşılık geldiği oyun içi hareket/döndürme eylemi
+        dir_to_action = {
+            'up': 'rotate',
+            'down': 'soft_drop',
+            'left': 'move_left',
+            'right': 'move_right'
+        }
+
+        # 1) Eğer bir D-pad yön butonu (11-14), kendi eylemi dışındaki herhangi bir eyleme atanmışsa bastır.
         for action, binding in self._bindings.items():
-            if action in movement_actions:
-                continue
             for btn in self._iter_button_indices(binding):
                 if btn in dpad_btn_to_dir:
-                    overridden.add(dpad_btn_to_dir[btn])
+                    btn_dir = dpad_btn_to_dir[btn]
+                    # Eğer buton bu yönün kendi doğal eylemine atanmadıysa override et
+                    if dir_to_action.get(btn_dir) != action:
+                        overridden.add(btn_dir)
+
+        # 2) Eğer bir hareket eylemine (move_left, move_right, soft_drop, rotate) başka bir tuş atanmışsa,
+        # o eylemin doğal D-pad yönünün yerleşik emülasyonunu bastır.
+        for btn_dir, action in dir_to_action.items():
+            btn_code = 11 if btn_dir == 'up' else 12 if btn_dir == 'down' else 13 if btn_dir == 'left' else 14
+            binding = self._bindings.get(action, {})
+            buttons = self._iter_button_indices(binding)
+            # Eğer eyleme en az bir buton atanmışsa ve bunlardan hiçbiri bu yönün kendi D-pad butonu değilse
+            if buttons and not any(btn == btn_code for btn in buttons):
+                overridden.add(btn_dir)
+
         return overridden
 
     def _generate_repeat_pulses(
@@ -2142,31 +2322,6 @@ def is_gamepad_disconnect_event(event) -> bool:
     return removed_type is not None and event_type == removed_type
 
 
-
-def handle_gamepad_hotplug_event(event) -> str | None:
-    """Modül-level adapter. Oyun döngüleri global GamepadManager singleton'ına
-    `JOYDEVICEADDED` / `JOYDEVICEREMOVED` event'lerini bu yardımcı üzerinden
-    iletir. Geri dönüş GamepadManager.handle_hotplug_event ile aynıdır:
-    'connected', 'disconnected' veya None.
-    """
-    global _instance
-    if _instance is None:
-        return None
-    try:
-        return _instance.handle_hotplug_event(event)
-    except Exception:
-        return None
-
-
-def is_gamepad_disconnect_event(event) -> bool:
-    """`JOYDEVICEREMOVED` event'i mi? (auto-pause kararları için)."""
-    event_type = getattr(event, 'type', None)
-    if event_type is None:
-        return False
-    removed_type = getattr(pygame, 'JOYDEVICEREMOVED', None)
-    return removed_type is not None and event_type == removed_type
-
-
 def pump_gamepad_into_event_queue(delta_ms: float = 16.0, context: Optional[str] = 'menu') -> int:
     """Blocking popup/modal döngüleri için gamepad girişini canlı tutar.
 
@@ -2203,6 +2358,7 @@ def pump_gamepad_into_event_queue(delta_ms: float = 16.0, context: Optional[str]
         return posted
     except Exception:
         return 0
+
 
 def reload_gamepad_settings():
     """Ayarlar değiştiğinde gamepad konfigürasyonunu yeniden yükle."""
@@ -2268,6 +2424,7 @@ def normalize_gamepad_trigger_event(event) -> Optional[int]:
         joy_id=getattr(event, 'joy', None),
         instance_id=getattr(event, 'instance_id', None),
     )
+
 
 
 # ─── Re-export: GamepadAction enum (focus_manager'dan) ───────────────────────

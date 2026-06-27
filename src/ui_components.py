@@ -239,6 +239,8 @@ class NeonButton:
         icon: str = None,
     ):
         self.rect = rect
+        self.logical_rect = rect.copy()
+        self.scale = 1.0
         self.text = text
         self.color = color or UIColors.NEON_CYAN
         self.font_size = font_size or UIFonts.SIZE_BODY
@@ -251,6 +253,17 @@ class NeonButton:
         # Animasyon
         self.hover_anim = 0.0  # 0-1 arası
         self.press_anim = 0.0
+
+    def update_layout(self, new_rect: pygame.Rect, scale: float = 1.0) -> None:
+        self.rect = new_rect
+        self.scale = scale
+
+    def rebuild_rect(self, parent_rect: pygame.Rect, scale: float) -> None:
+        new_x = parent_rect.x + int(self.logical_rect.x * scale)
+        new_y = parent_rect.y + int(self.logical_rect.y * scale)
+        new_w = int(self.logical_rect.width * scale)
+        new_h = int(self.logical_rect.height * scale)
+        self.update_layout(pygame.Rect(new_x, new_y, new_w, new_h), scale)
     
     def update(self, mouse_pos: Tuple[int, int], mouse_pressed: bool, dt: float) -> bool:
         """Buton durumunu güncelle. Tıklandıysa True döner."""
@@ -345,7 +358,7 @@ class NeonButton:
         
         # İkon varsa sola kaydır
         if self.icon:
-            text_rect.x += 12
+            text_rect.x += int(12 * self.scale)
         
         surface.blit(text_surf, text_rect)
 
@@ -369,6 +382,8 @@ class Slider:
         value_format: str = "{:.0%}",
     ):
         self.rect = rect
+        self.logical_rect = rect.copy()
+        self.scale = 1.0
         self.min_val = min_val
         self.max_val = max_val
         self.value = max(min_val, min(max_val, value))
@@ -382,6 +397,18 @@ class Slider:
         
         # Tutamak boyutu
         self.handle_radius = rect.height // 2
+
+    def update_layout(self, new_rect: pygame.Rect, scale: float = 1.0) -> None:
+        self.rect = new_rect
+        self.scale = scale
+        self.handle_radius = new_rect.height // 2
+
+    def rebuild_rect(self, parent_rect: pygame.Rect, scale: float) -> None:
+        new_x = parent_rect.x + int(self.logical_rect.x * scale)
+        new_y = parent_rect.y + int(self.logical_rect.y * scale)
+        new_w = int(self.logical_rect.width * scale)
+        new_h = int(self.logical_rect.height * scale)
+        self.update_layout(pygame.Rect(new_x, new_y, new_w, new_h), scale)
     
     def update(self, mouse_pos: Tuple[int, int], mouse_pressed: bool, dt: float = 0) -> bool:
         """Slider'ı güncelle. Değer değiştiyse True döner."""
@@ -496,12 +523,25 @@ class ToggleSwitch:
         off_color: Tuple[int, int, int] = None,
     ):
         self.rect = rect
+        self.logical_rect = rect.copy()
+        self.scale = 1.0
         self.value = value
         self.on_color = on_color or UIColors.NEON_GREEN
         self.off_color = off_color or UIColors.SLIDER_BG
         
         self.hovered = False
         self.anim = 1.0 if value else 0.0  # Animasyon değeri
+
+    def update_layout(self, new_rect: pygame.Rect, scale: float = 1.0) -> None:
+        self.rect = new_rect
+        self.scale = scale
+
+    def rebuild_rect(self, parent_rect: pygame.Rect, scale: float) -> None:
+        new_x = parent_rect.x + int(self.logical_rect.x * scale)
+        new_y = parent_rect.y + int(self.logical_rect.y * scale)
+        new_w = int(self.logical_rect.width * scale)
+        new_h = int(self.logical_rect.height * scale)
+        self.update_layout(pygame.Rect(new_x, new_y, new_w, new_h), scale)
     
     def update(self, mouse_pos: Tuple[int, int], mouse_clicked: bool, dt: float = 0) -> bool:
         """Toggle'ı güncelle. Değer değiştiyse True döner."""
@@ -526,12 +566,14 @@ class ToggleSwitch:
         
         # Kenar
         border_color = brighten_color(bg_color, 1.3) if self.hovered else bg_color
+        border_width = max(1, int(2 * self.scale))
         pygame.draw.rect(surface, border_color, self.rect, 
-                        width=2, border_radius=self.rect.height // 2)
+                        width=border_width, border_radius=self.rect.height // 2)
         
         # Tutamak
-        handle_radius = self.rect.height // 2 - 4
-        handle_x = self.rect.x + handle_radius + 4 + int((self.rect.width - handle_radius * 2 - 8) * self.anim)
+        padding = max(1, int(4 * self.scale))
+        handle_radius = self.rect.height // 2 - padding
+        handle_x = self.rect.x + handle_radius + padding + int((self.rect.width - handle_radius * 2 - padding * 2) * self.anim)
         handle_y = self.rect.centery
         
         pygame.draw.circle(surface, UIColors.TEXT_PRIMARY, (handle_x, handle_y), handle_radius)
@@ -555,17 +597,14 @@ class NumberPicker:
         color: Tuple[int, int, int] = None,
     ):
         self.rect = rect
+        self.logical_rect = rect.copy()
+        self.scale = 1.0
         self.min_val = min_val
         self.max_val = max_val
         self.value = max(min_val, min(max_val, value))
         self.step = step
         self.suffix = suffix
         self.color = color or UIColors.NEON_CYAN
-        
-        # Buton alanları
-        btn_size = rect.height - 4
-        self.minus_rect = pygame.Rect(rect.x + 2, rect.y + 2, btn_size, btn_size)
-        self.plus_rect = pygame.Rect(rect.right - btn_size - 2, rect.y + 2, btn_size, btn_size)
         
         self.minus_hovered = False
         self.plus_hovered = False
@@ -575,6 +614,27 @@ class NumberPicker:
         # Basılı tutma için sayaçlar
         self.hold_timer = 0
         self.repeat_timer = 0
+        
+        # Buton alanları
+        self._recalculate_button_rects()
+
+    def _recalculate_button_rects(self) -> None:
+        padding = max(1, int(2 * self.scale))
+        btn_size = self.rect.height - padding * 2
+        self.minus_rect = pygame.Rect(self.rect.x + padding, self.rect.y + padding, btn_size, btn_size)
+        self.plus_rect = pygame.Rect(self.rect.right - btn_size - padding, self.rect.y + padding, btn_size, btn_size)
+
+    def update_layout(self, new_rect: pygame.Rect, scale: float = 1.0) -> None:
+        self.rect = new_rect
+        self.scale = scale
+        self._recalculate_button_rects()
+
+    def rebuild_rect(self, parent_rect: pygame.Rect, scale: float) -> None:
+        new_x = parent_rect.x + int(self.logical_rect.x * scale)
+        new_y = parent_rect.y + int(self.logical_rect.y * scale)
+        new_w = int(self.logical_rect.width * scale)
+        new_h = int(self.logical_rect.height * scale)
+        self.update_layout(pygame.Rect(new_x, new_y, new_w, new_h), scale)
     
     def update(self, mouse_pos: Tuple[int, int], mouse_pressed: bool, dt: float = 0.016) -> bool:
         """Number picker'ı güncelle. Değer değiştiyse True döner."""
@@ -623,38 +683,45 @@ class NumberPicker:
     def draw(self, surface: pygame.Surface) -> None:
         """Number picker'ı çiz"""
         # Ana arka plan
-        pygame.draw.rect(surface, UIColors.BUTTON_BG, self.rect, border_radius=UIStyle.BORDER_RADIUS_SMALL)
+        border_radius = int(UIStyle.BORDER_RADIUS_SMALL * self.scale)
+        border_width = max(1, int(1 * self.scale))
+        pygame.draw.rect(surface, UIColors.BUTTON_BG, self.rect, border_radius=border_radius)
         pygame.draw.rect(surface, UIColors.BUTTON_BORDER, self.rect, 
-                        width=1, border_radius=UIStyle.BORDER_RADIUS_SMALL)
+                        width=border_width, border_radius=border_radius)
         
         # Eksi butonu
         minus_color = brighten_color(UIColors.BUTTON_BG, 1.3) if self.minus_hovered else UIColors.BUTTON_BG
         if self.minus_pressed:
             minus_color = UIColors.BUTTON_ACTIVE
-        pygame.draw.rect(surface, minus_color, self.minus_rect, border_radius=UIStyle.BORDER_RADIUS_SMALL)
+        pygame.draw.rect(surface, minus_color, self.minus_rect, border_radius=border_radius)
         
         # Eksi işareti
         minus_y = self.minus_rect.centery
+        minus_line_width = max(1, int(2 * self.scale))
+        line_margin = int(8 * self.scale)
         pygame.draw.line(surface, UIColors.TEXT_PRIMARY,
-                        (self.minus_rect.x + 8, minus_y),
-                        (self.minus_rect.right - 8, minus_y), 2)
+                        (self.minus_rect.x + line_margin, minus_y),
+                        (self.minus_rect.right - line_margin, minus_y), minus_line_width)
         
         # Artı butonu
         plus_color = brighten_color(UIColors.BUTTON_BG, 1.3) if self.plus_hovered else UIColors.BUTTON_BG
         if self.plus_pressed:
             plus_color = UIColors.BUTTON_ACTIVE
-        pygame.draw.rect(surface, plus_color, self.plus_rect, border_radius=UIStyle.BORDER_RADIUS_SMALL)
+        pygame.draw.rect(surface, plus_color, self.plus_rect, border_radius=border_radius)
         
         # Artı işareti
         plus_cx = self.plus_rect.centerx
         plus_cy = self.plus_rect.centery
+        plus_line_width = max(1, int(2 * self.scale))
+        plus_half_size = int(6 * self.scale)
         pygame.draw.line(surface, UIColors.TEXT_PRIMARY,
-                        (plus_cx - 6, plus_cy), (plus_cx + 6, plus_cy), 2)
+                        (plus_cx - plus_half_size, plus_cy), (plus_cx + plus_half_size, plus_cy), plus_line_width)
         pygame.draw.line(surface, UIColors.TEXT_PRIMARY,
-                        (plus_cx, plus_cy - 6), (plus_cx, plus_cy + 6), 2)
+                        (plus_cx, plus_cy - plus_half_size), (plus_cx, plus_cy + plus_half_size), plus_line_width)
         
         # Değer
-        font = UIFonts.body()
+        font_size = int(UIFonts.SIZE_BODY * self.scale)
+        font = UIFonts.get(font_size)
         value_text = f"{self.value}{self.suffix}"
         text_surf = _render_text_cached(font, value_text, True, UIColors.TEXT_PRIMARY)
         text_rect = text_surf.get_rect(center=self.rect.center)
@@ -746,6 +813,8 @@ class TabBar:
         color: Tuple[int, int, int] = None,
     ):
         self.rect = rect
+        self.logical_rect = rect.copy()
+        self.scale = 1.0
         self.tabs = tabs
         self.selected = selected
         self.color = color or UIColors.NEON_CYAN
@@ -770,6 +839,18 @@ class TabBar:
                 self.rect.height
             )
             self.tab_rects.append(tab_rect)
+
+    def update_layout(self, new_rect: pygame.Rect, scale: float = 1.0) -> None:
+        self.rect = new_rect
+        self.scale = scale
+        self._calculate_tab_rects()
+
+    def rebuild_rect(self, parent_rect: pygame.Rect, scale: float) -> None:
+        new_x = parent_rect.x + int(self.logical_rect.x * scale)
+        new_y = parent_rect.y + int(self.logical_rect.y * scale)
+        new_w = int(self.logical_rect.width * scale)
+        new_h = int(self.logical_rect.height * scale)
+        self.update_layout(pygame.Rect(new_x, new_y, new_w, new_h), scale)
     
     def update(self, mouse_pos: Tuple[int, int], mouse_clicked: bool) -> bool:
         """Tab bar'ı güncelle. Seçim değiştiyse True döner."""
@@ -788,7 +869,8 @@ class TabBar:
     def draw(self, surface: pygame.Surface) -> None:
         """Tab bar'ı çiz"""
         # Arka plan
-        pygame.draw.rect(surface, UIColors.BG_MEDIUM, self.rect, border_radius=UIStyle.BORDER_RADIUS_SMALL)
+        border_radius = int(UIStyle.BORDER_RADIUS_SMALL * self.scale)
+        pygame.draw.rect(surface, UIColors.BG_MEDIUM, self.rect, border_radius=border_radius)
         
         for i, (tab_rect, tab_name) in enumerate(zip(self.tab_rects, self.tabs)):
             is_selected = i == self.selected
@@ -796,20 +878,22 @@ class TabBar:
             
             # Sekme arka planı
             if is_selected:
-                pygame.draw.rect(surface, self.color, tab_rect, border_radius=UIStyle.BORDER_RADIUS_SMALL)
+                pygame.draw.rect(surface, self.color, tab_rect, border_radius=border_radius)
             elif is_hovered:
-                pygame.draw.rect(surface, UIColors.TAB_HOVER, tab_rect, border_radius=UIStyle.BORDER_RADIUS_SMALL)
+                pygame.draw.rect(surface, UIColors.TAB_HOVER, tab_rect, border_radius=border_radius)
             
             # Metin
-            font = UIFonts.body()
+            font_size = int(UIFonts.SIZE_BODY * self.scale)
+            font = UIFonts.get(font_size)
             text_color = UIColors.BG_DARK if is_selected else (UIColors.TEXT_PRIMARY if is_hovered else UIColors.TEXT_SECONDARY)
             text_surf = _render_text_cached(font, tab_name, True, text_color)
             text_rect = text_surf.get_rect(center=tab_rect.center)
             surface.blit(text_surf, text_rect)
         
         # Dış kenar
+        border_width = max(1, int(1 * self.scale))
         pygame.draw.rect(surface, UIColors.BUTTON_BORDER, self.rect, 
-                        width=1, border_radius=UIStyle.BORDER_RADIUS_SMALL)
+                        width=border_width, border_radius=border_radius)
 
 
 # ============================================================================

@@ -1763,12 +1763,18 @@ def main():
                 except Exception:
                     pass
 
-    # Donanım overlay katmanı kurulumundan SONRA yazılımsal ölçeklemeyi kur.
-    # Eğer donanım overlay'i aktifse, `setup_software_resolution_scaling` bunu
-    # algılayacak ve bypass ederek ham OpenGL/SDL2 display surface'i kullanacaktır.
+    # Donanım overlay katmanı kurulumundan SONRA sanal ekran (virtual canvas) pipeline'ını kur.
+    # Virtual canvas: oyun küçük bir sanal çözünürlüğe çizilir, sonra pencere boyutuna
+    # letterbox/pillarbox ile ölçeklenir. Bu sayede tüm UI elemanları UI preset'ine göre
+    # otomatik büyür/küçülür (tek bir ölçekleme noktası — per-element _s() kaldırılabilir).
     try:
-        from platform_utils import setup_software_resolution_scaling
-        screen = setup_software_resolution_scaling(screen)
+        from platform_utils import setup_virtual_canvas, patch_event_queue
+        from ui_scaling import get_ui_scale_multiplier
+        screen = setup_virtual_canvas(screen, get_ui_scale_multiplier())
+        # Event queue patching: mouse event'lerinin pos/rel değerlerini otomatik
+        # virtual canvas koordinatlarına dönüştür. Tüm pygame.event.get() döngüleri
+        # bundan sonra normalize edilmiş koordinatlar alır.
+        patch_event_queue()
     except Exception:
         pass
 

@@ -1425,12 +1425,13 @@ class CoopGame:
             duration=HARD_DROP_SCREEN_SHAKE_DURATION_SECONDS,
         )
 
-    def trigger_screen_shake(self, intensity: int = 10, duration: float = DEFAULT_SCREEN_SHAKE_DURATION_SECONDS) -> None:
+    def trigger_screen_shake(self, intensity: int = 10, duration: float = DEFAULT_SCREEN_SHAKE_DURATION_SECONDS, direction: str | None = None) -> None:
         begin_screen_shake(
             self,
             intensity=intensity,
             duration=duration,
             enabled=self._screen_shake_enabled(),
+            direction=direction,
         )
 
     # ------------------------------------------------------------------
@@ -2032,6 +2033,15 @@ class CoopGame:
         piece.x += dx
         if not self.board.is_valid_position_for_player(piece, player):
             piece.x -= dx
+            # Duvar çarpma sarsıntısı (Debounced)
+            import pygame
+            now = pygame.time.get_ticks()
+            direction = 'left' if dx == -1 else 'right'
+            bump_key = f'_last_{player.lower()}_{direction}_bump_time'
+            last_bump = getattr(self, bump_key, 0)
+            if now - last_bump > 180:
+                setattr(self, bump_key, now)
+                self.trigger_screen_shake(intensity=3, duration=0.12, direction=direction)
             return False
             
         # Lock Delay Reset: parça yerdeyse ve limit aşılmadıysa sıfırla
