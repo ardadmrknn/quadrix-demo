@@ -50,6 +50,10 @@ _original_get_surface = pygame.display.get_surface
 _original_set_caption = pygame.display.set_caption
 _original_get_window_size = getattr(pygame.display, 'get_window_size', None)
 _original_get_active = getattr(pygame.display, 'get_active', None)
+_original_set_visible = pygame.mouse.set_visible
+_original_get_visible = pygame.mouse.get_visible
+_software_cursor_visible = True
+_hardware_cursor_visible = False
 
 # Software imleç hook'u: SDL2 renderer penceresinde donanım imleci görünmediği için
 # main.py bir imleç yüzeyi + hotspot kaydeder; her present'te GPU katmanı olarak çizilir.
@@ -59,6 +63,9 @@ _cursor_size = (0, 0)
 _cursor_hotspot = (0, 0)
 _cursor_enabled = True
 _cursor_dirty = False         # cursor surface değişti → texture yeniden oluşturulmalı
+_cursor_textures_cache: dict[int, object] = {}
+
+_gpu_overlay_drawers: list = []
 
 # ---------------------------------------------------------------------------
 # Performans telemetrisi (opt-in: QUADRIX_OVERLAY_PERF=1)
@@ -99,6 +106,19 @@ _perf_tr_first_frame_ms = 0.0    # geçişin İLK karesi (başlangıç stall'ı 
 _PERF_WINDOW = 600               # kaç karede bir özet (≈60fps'te 10 sn)
 _PERF_HITCH_MS = 70.0            # bu süreyi aşan kare ANLIK loglanır (tek-seferlik stall)
 _PERF_SPIKE_BUCKETS = (20.0, 33.0, 50.0, 100.0)  # >20ms(<50fps) >33ms(<30fps) >50ms >100ms
+
+
+_TEXTURE_COLOR_MOD_CANDIDATES = (
+    ('color', (255, 96, 48)),
+    ('color_mod', (255, 96, 48)),
+)
+_TEXTURE_ALPHA_MOD_CANDIDATES = (
+    ('alpha', 128),
+    ('alpha_mod', 128),
+)
+_TEXTURE_BLEND_MODE_CANDIDATES = (
+    ('blend_mode', 1),
+)
 
 
 def _compute_present_rect(window_w: int, window_h: int, canvas_w: int, canvas_h: int) -> pygame.Rect:
@@ -399,7 +419,35 @@ def _should_use_sdl2() -> bool:
 # Monkey-patch hedefleri
 # ---------------------------------------------------------------------------
 
-def _present():
+def _update_texture_rects(rects) -> None:
+    """Belirli alanları dokuya yükleyerek tam surface upload yükünü azaltır."""
+    if _texture is None or _game_surface is None:
+        return
+    if rects is None:
+        _texture.update(_game_surface)
+        return
+
+    if isinstance(rects, (pygame.Rect, tuple, list)) and len(rects) == 4 and isinstance(rects[0], (int, float)):
+        try:
+            if rects[2] > 0 and rects[3] > 0:
+                _texture.update(_game_surface, area=rects)
+        except Exception:
+            _texture.update(_game_surface)
+    elif isinstance(rects, (list, tuple)):
+        try:
+            if len(rects) > 16:
+                _texture.update(_game_surface)
+            else:
+                for r in rects:
+                    if r and len(r) == 4 and r[2] > 0 and r[3] > 0:
+                        _texture.update(_game_surface, area=r)
+        except Exception:
+            _texture.update(_game_surface)
+    else:
+        _texture.update(_game_surface)
+
+
+def _present(rects=None):
     """Offscreen surface'i GPU texture'a yükleyip SDL renderer ile sun.
 
     İmleç oyun yüzeyine PİŞİRİLMEZ; ayrı bir GPU texture katmanı olarak oyun
@@ -410,22 +458,31 @@ def _present():
         return
     # Hızlı yol: telemetri kapalıyken hiç ek maliyet yok.
     if not _perf_enabled():
+        if _renderer is None:
+            return
+        did_present = False
         try:
             if _texture is not None and _game_surface is not None:
-                _texture.update(_game_surface)
-            if _renderer is not None:
-                _draw_outer_background()
-                if _texture is not None:
-                    _renderer.blit(_texture, _present_rect)  # POZİSYONEL — dst= kwarg yok
-                _blit_cursor_layer()
-                _renderer.present()
+                _update_texture_rects(rects)
+            _draw_outer_background()
+            if _texture is not None:
+                _renderer.blit(_texture, _present_rect)  # POZİSYONEL — dst= kwarg yok
+            _run_gpu_overlay_callbacks(_renderer)
+            _blit_cursor_layer()
+            _renderer.present()
+            did_present = True
         except Exception as exc:
             _diag_log(f"_present hatası: {exc}")
+            if not did_present:
+                try:
+                    _renderer.present()
+                except Exception:
+                    pass
         return
-    _present_with_perf()
+    _present_with_perf(rects)
 
 
-def _present_with_perf():
+def _present_with_perf(rects=None):
     """_present'in ölçümlü sürümü (QUADRIX_OVERLAY_PERF=1). Alt-fazları zamanlar,
     yüzdelik/spike/hitch verisi toplar."""
     global _perf_total, _perf_t_update, _perf_t_present, _perf_t_cursor
@@ -465,20 +522,23 @@ def _present_with_perf():
     _perf_last_frame_ts = now
 
     cur_ms = 0.0
+    did_present = False
     try:
         t0 = _t.perf_counter()
         if _texture is not None and _game_surface is not None:
-            _texture.update(_game_surface)
+            _update_texture_rects(rects)
         t1 = _t.perf_counter()
         if _renderer is not None:
             _draw_outer_background()
             if _texture is not None:
                 _renderer.blit(_texture, _present_rect)
+            _run_gpu_overlay_callbacks(_renderer)
             tc0 = _t.perf_counter()
             _blit_cursor_layer()
             tc1 = _t.perf_counter()
             cur_ms = (tc1 - tc0) * 1000.0
             _renderer.present()
+            did_present = True
         t2 = _t.perf_counter()
         upd_ms = (t1 - t0) * 1000.0
         # present süresi = (t2 - t1) ama içine imleç blit de girer; onu ayır.
@@ -496,10 +556,62 @@ def _present_with_perf():
             _perf_cursor_max = cur_ms
     except Exception as exc:
         _diag_log(f"_present hatası: {exc}")
+        if not did_present and _renderer is not None:
+            try:
+                _renderer.present()
+            except Exception:
+                pass
 
     _perf_total += 1
     if len(_perf_frame_times) >= _PERF_WINDOW:
         _perf_flush_window(now)
+
+
+def register_gpu_overlay_drawer(callback) -> bool:
+    """Register a post-scene SDL2 renderer callback."""
+    if callback is None:
+        return False
+    if callback not in _gpu_overlay_drawers:
+        _gpu_overlay_drawers.append(callback)
+        return True
+    return False
+
+
+def unregister_gpu_overlay_drawer(callback) -> bool:
+    try:
+        _gpu_overlay_drawers.remove(callback)
+        return True
+    except ValueError:
+        return False
+
+
+def _try_set_texture_property(texture, candidates) -> str | None:
+    for attr, value in candidates:
+        try:
+            setattr(texture, attr, value)
+            return attr
+        except Exception:
+            continue
+    return None
+
+
+def probe_sdl2_texture_properties(texture) -> dict:
+    """Return writable SDL2 texture property names for compatibility callers."""
+    return {
+        'color_mod': {'selected': _try_set_texture_property(texture, _TEXTURE_COLOR_MOD_CANDIDATES)},
+        'alpha_mod': {'selected': _try_set_texture_property(texture, _TEXTURE_ALPHA_MOD_CANDIDATES)},
+        'blend_mode': {'selected': _try_set_texture_property(texture, _TEXTURE_BLEND_MODE_CANDIDATES)},
+    }
+
+
+def _run_gpu_overlay_callbacks(renderer) -> None:
+    if not _gpu_overlay_drawers:
+        return
+    for callback in tuple(_gpu_overlay_drawers):
+        try:
+            callback(renderer)
+        except Exception as exc:
+            _diag_log(f"GPU overlay callback hatası: {exc}")
 
 
 def _percentile(sorted_vals, pct):
@@ -602,7 +714,32 @@ def _patched_get_active():
 
 
 def _patched_update(rectangle=None):
-    _present()
+    _present(rectangle)
+
+
+def _patched_mouse_set_visible(visible):
+    global _software_cursor_visible, _hardware_cursor_visible
+    _software_cursor_visible = bool(visible)
+    _hardware_cursor_visible = False
+    try:
+        _original_set_visible(False)
+    except Exception:
+        pass
+    return _software_cursor_visible
+
+
+def _patched_mouse_get_visible():
+    return _software_cursor_visible
+
+
+def get_cursor_mode() -> str:
+    if not _active:
+        return 'inactive'
+    if _software_cursor_visible and _hardware_cursor_visible:
+        return 'hardware'
+    if _software_cursor_visible and _cursor_surface is not None and _cursor_enabled:
+        return 'software'
+    return 'hidden'
 
 
 def _patched_get_surface():
@@ -735,9 +872,12 @@ def set_software_cursor(surface, hotspot=(0, 0)) -> None:
     çizilir. surface None ise imleç çizimi devre dışı kalır. Yüzey değişince
     GPU texture bir sonraki present'te yeniden oluşturulur (dirty bayrağı).
     """
-    global _cursor_surface, _cursor_hotspot, _cursor_dirty
+    global _cursor_surface, _cursor_texture, _cursor_size, _cursor_hotspot, _cursor_dirty
     _cursor_surface = surface
     _cursor_dirty = True
+    if surface is None:
+        _cursor_texture = None
+        _cursor_size = (0, 0)
     try:
         _cursor_hotspot = (int(hotspot[0]), int(hotspot[1]))
     except Exception:
@@ -759,26 +899,31 @@ def _ensure_cursor_texture():
     if not _cursor_dirty:
         return
     _cursor_dirty = False
+    if _cursor_surface is None or _renderer is None:
+        _cursor_texture = None
+        _cursor_size = (0, 0)
+        return
+
+    surf_id = id(_cursor_surface)
+    if surf_id in _cursor_textures_cache:
+        _cursor_texture = _cursor_textures_cache[surf_id]
+        _cursor_size = _cursor_surface.get_size()
+        return
+
     if _perf_enabled():
         _perf_cursor_rebuilds += 1
-    # Eski texture'ı serbest bırak.
-    try:
-        if _cursor_texture is not None and hasattr(_cursor_texture, 'destroy'):
-            _cursor_texture.destroy()
-    except Exception:
-        pass
-    _cursor_texture = None
-    if _cursor_surface is None or _renderer is None:
-        return
+
     try:
         from pygame._sdl2.video import Texture
-        _cursor_texture = Texture.from_surface(_renderer, _cursor_surface)
+        tex = Texture.from_surface(_renderer, _cursor_surface)
         _cursor_size = _cursor_surface.get_size()
         # Alpha blend (cursor PNG'si yarı saydam kenarlara sahip).
         try:
-            _cursor_texture.blend_mode = 1  # SDL_BLENDMODE_BLEND
+            tex.blend_mode = 1  # SDL_BLENDMODE_BLEND
         except Exception:
             pass
+        _cursor_textures_cache[surf_id] = tex
+        _cursor_texture = tex
     except Exception as exc:
         _diag_log(f"_ensure_cursor_texture hatası: {exc}")
         _cursor_texture = None
@@ -889,6 +1034,7 @@ def setup(display_surface: pygame.Surface | None = None) -> pygame.Surface | Non
     Başarısızlıkta None döndürür → çağıran mevcut software surface ile devam etmeli.
     """
     global _active, _window, _renderer, _texture, _background_texture, _game_surface, _width, _height
+    global _original_flip, _original_update, _original_get_surface
 
     if not _should_use_sdl2():
         return None
@@ -1048,6 +1194,19 @@ def setup(display_surface: pygame.Surface | None = None) -> pygame.Surface | Non
     _active = True
 
     # Monkey-patch present yolu (gl_compat ile aynı sözleşme).
+    try:
+        cur_flip = pygame.display.flip
+        cur_update = pygame.display.update
+        cur_get_surface = pygame.display.get_surface
+        if cur_flip is not _patched_flip:
+            _original_flip = cur_flip
+        if cur_update is not _patched_update:
+            _original_update = cur_update
+        if cur_get_surface is not _patched_get_surface:
+            _original_get_surface = cur_get_surface
+    except Exception:
+        pass
+
     pygame.display.flip = _patched_flip
     pygame.display.update = _patched_update
     pygame.display.get_surface = _patched_get_surface
@@ -1057,6 +1216,14 @@ def setup(display_surface: pygame.Surface | None = None) -> pygame.Surface | Non
     pygame.display.set_caption = _patched_set_caption
     try:
         pygame.display.get_active = _patched_get_active
+    except Exception:
+        pass
+
+    # Mouse görünürlük işlevlerini monkey-patch et; SDL2 software cursor ile uyumlu tutar.
+    pygame.mouse.set_visible = _patched_mouse_set_visible
+    pygame.mouse.get_visible = _patched_mouse_get_visible
+    try:
+        _original_set_visible(False)
     except Exception:
         pass
 
@@ -1104,7 +1271,7 @@ def _reapply_gl(display_surface: pygame.Surface) -> pygame.Surface:
 
 def teardown() -> None:
     """SDL2 renderer kaynaklarını serbest bırak ve monkey-patch'leri geri al."""
-    global _active, _window, _renderer, _texture, _background_texture, _game_surface, _cursor_texture, _cursor_dirty
+    global _active, _window, _renderer, _texture, _background_texture, _game_surface, _cursor_texture, _cursor_dirty, _cursor_textures_cache
     pygame.display.flip = _original_flip
     pygame.display.update = _original_update
     pygame.display.get_surface = _original_get_surface
@@ -1116,7 +1283,23 @@ def teardown() -> None:
             pygame.display.get_active = _original_get_active
     except Exception:
         pass
+    pygame.mouse.set_visible = _original_set_visible
+    pygame.mouse.get_visible = _original_get_visible
+    try:
+        _original_set_visible(True)
+    except Exception:
+        pass
     _active = False
+
+    for tex in _cursor_textures_cache.values():
+        try:
+            if hasattr(tex, 'destroy'):
+                tex.destroy()
+        except Exception:
+            pass
+    _cursor_textures_cache.clear()
+    _cursor_texture = None
+
     for obj_name in ('_cursor_texture', '_texture', '_background_texture', '_renderer', '_window'):
         obj = globals().get(obj_name)
         try:

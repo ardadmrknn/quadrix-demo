@@ -57,6 +57,10 @@ from line_clear_feedback import (
     update_wave_effects as _update_wave_effects,
 )
 try:
+    from sdl2_particle_renderer import queue_overlay_particles as _queue_gpu_overlay_particles
+except Exception:
+    _queue_gpu_overlay_particles = None
+try:
     from sweep_effects import compute_line_sweep_progress_speed as _compute_line_sweep_progress_speed
 except Exception:
     def _compute_line_sweep_progress_speed(base_block_speed: float, sweep_travel_px: float, level: int | float = 1) -> float:
@@ -3926,6 +3930,22 @@ class Game:
         except Exception:
             board_right = None
             board_left = None
+            board_bottom = None
+        else:
+            board_bottom = board_offset_y + board_pixel_height
+
+        if _queue_gpu_overlay_particles is not None:
+            try:
+                if _queue_gpu_overlay_particles(
+                    self.particles,
+                    self.screen.get_size(),
+                    board_left=board_left,
+                    board_right=board_right,
+                    board_bottom=board_bottom,
+                ):
+                    return
+            except Exception:
+                pass
         
         scr_w, scr_h = self.screen.get_size()
         for particle in self.particles:
@@ -3938,7 +3958,6 @@ class Game:
                 
             # Esnek sınır: Tahta dışındaki veya altındaki parçacıkları çizme
             if board_right is not None and board_left is not None:
-                board_bottom = board_offset_y + board_pixel_height
                 if px > board_right or px < board_left or py > board_bottom:
                     continue  # Tahta dışı - çizme
             

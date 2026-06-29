@@ -31,6 +31,10 @@ def test_sdl2_overlay_has_gl_compat_parity_interface():
         'get_display_surface',
         'get_game_surface',
         'should_skip_display_rebuild',
+        'register_gpu_overlay_drawer',
+        'unregister_gpu_overlay_drawer',
+        'probe_sdl2_texture_properties',
+        'get_cursor_mode',
         '_reapply_gl',
         '_diag_log',
         'teardown',
@@ -69,6 +73,29 @@ def test_present_noop_when_inactive(monkeypatch):
     """Aktif değilken _present() sessizce hiçbir şey yapmamalı (exception fırlatmamalı)."""
     monkeypatch.setattr(sdl2_overlay, '_active', False)
     sdl2_overlay._present()  # exception yok
+
+
+def test_gpu_overlay_drawer_registration(monkeypatch):
+    monkeypatch.setattr(sdl2_overlay, '_gpu_overlay_drawers', [])
+
+    def callback(renderer):
+        return None
+
+    assert sdl2_overlay.register_gpu_overlay_drawer(callback) is True
+    assert sdl2_overlay.register_gpu_overlay_drawer(callback) is False
+    assert sdl2_overlay.unregister_gpu_overlay_drawer(callback) is True
+    assert sdl2_overlay.unregister_gpu_overlay_drawer(callback) is False
+
+
+def test_cursor_none_clears_cached_active_texture(monkeypatch):
+    marker = object()
+    monkeypatch.setattr(sdl2_overlay, '_cursor_texture', marker)
+    monkeypatch.setattr(sdl2_overlay, '_cursor_size', (32, 32))
+
+    sdl2_overlay.set_software_cursor(None)
+
+    assert sdl2_overlay._cursor_texture is None
+    assert sdl2_overlay._cursor_size == (0, 0)
 
 
 def test_gl_overlay_setup_returns_original_when_unavailable(monkeypatch):
