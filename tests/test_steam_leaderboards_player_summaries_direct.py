@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import os
 import sys
+import types
 import unittest
 from unittest.mock import patch, MagicMock
 
@@ -165,6 +166,40 @@ class TestFetchPlayerSummariesDirectMode(unittest.TestCase):
             args = mock_get.call_args
             called_url = str(args[0][0] if args[0] else args)
         self.assertNotIn('partner.steam-api.com', called_url, "Backend modda Steam Web API'ye gidilmemeli")
+
+    def test_sdk_persona_fallback_when_backend_returns_empty(self):
+        """Backend boş dönerse SDK persona adı yedek kaynak olarak kullanılmalı."""
+        from steam_leaderboards import SteamLeaderboardService
+        svc = SteamLeaderboardService(backend_base_url='http://127.0.0.1:8787')
+        fake_si = types.SimpleNamespace(
+            is_available=lambda: True,
+            get_friend_persona_name=lambda sid: 'SdkPersona' if str(sid) == FAKE_SID else None,
+            request_user_information=lambda sid, require_name_only=False: True,
+        )
+
+        with patch('requests.get', return_value=self._mock_get({'players': {}})):
+            with patch.dict(sys.modules, {'steam_integration': fake_si}):
+                result = svc.fetch_player_summaries([FAKE_SID])
+
+        self.assertEqual(result[FAKE_SID]['personaname'], 'SdkPersona')
+
+    def test_sdk_user_info_requested_when_no_persona_available(self):
+        """SDK adı hemen yoksa sonraki refresh için RequestUserInformation tetiklenmeli."""
+        from steam_leaderboards import SteamLeaderboardService
+        svc = SteamLeaderboardService(backend_base_url='http://127.0.0.1:8787')
+        calls = []
+        fake_si = types.SimpleNamespace(
+            is_available=lambda: True,
+            get_friend_persona_name=lambda sid: None,
+            request_user_information=lambda sid, require_name_only=False: calls.append((sid, require_name_only)) or True,
+        )
+
+        with patch('requests.get', return_value=self._mock_get({'players': {}})):
+            with patch.dict(sys.modules, {'steam_integration': fake_si}):
+                result = svc.fetch_player_summaries([FAKE_SID])
+
+        self.assertEqual(result, {})
+        self.assertEqual(calls, [(FAKE_SID, False)])
 
 
 if __name__ == '__main__':

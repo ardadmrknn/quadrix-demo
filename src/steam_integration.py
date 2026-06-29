@@ -290,6 +290,20 @@ def _setup_dll_functions(dll: ctypes.CDLL) -> None:
     except AttributeError:
         pass
 
+    # ISteamFriends_GetFriendPersonaName
+    try:
+        dll.SteamAPI_ISteamFriends_GetFriendPersonaName.restype = ctypes.c_char_p
+        dll.SteamAPI_ISteamFriends_GetFriendPersonaName.argtypes = [ctypes.c_void_p, ctypes.c_uint64]
+    except AttributeError:
+        pass
+
+    # ISteamFriends_RequestUserInformation
+    try:
+        dll.SteamAPI_ISteamFriends_RequestUserInformation.restype = ctypes.c_int  # bool
+        dll.SteamAPI_ISteamFriends_RequestUserInformation.argtypes = [ctypes.c_void_p, ctypes.c_uint64, ctypes.c_int]
+    except AttributeError:
+        pass
+
     # ISteamFriends_Get*FriendAvatar -> int image_handle (-1 loading, 0 no avatar)
     try:
         dll.SteamAPI_ISteamFriends_GetLargeFriendAvatar.restype = ctypes.c_int
@@ -1385,6 +1399,65 @@ def get_steam_id_str() -> str:
     """SteamID64'ü string olarak döndürür; bilinmiyorsa boş."""
     sid = get_steam_id()
     return str(sid) if sid else ""
+
+
+def get_friend_persona_name(steam_id: int | str) -> str | None:
+    """Belirli bir Steam ID'ye sahip kullanıcının profil adını SDK üzerinden çeker."""
+    if not is_available() or not _isteam_friends or not _dll:
+        return None
+    try:
+        sid = int(steam_id)
+        if sid <= 0:
+            return None
+        getter = getattr(_dll, 'SteamAPI_ISteamFriends_GetFriendPersonaName', None)
+        if not callable(getter):
+            return None
+        raw = getter(_isteam_friends, ctypes.c_uint64(sid))
+        if raw:
+            name = raw.decode('utf-8', errors='replace')
+            if name and name != "[unknown]":
+                return name
+    except Exception as e:
+        print(f"[Steam] GetFriendPersonaName hatası: {e}")
+    return None
+
+
+def request_user_information(steam_id: int | str, require_name_only: bool = True) -> bool:
+    """Steam'in kullanıcı adı/avatar bilgisini async olarak yüklemesini tetikler."""
+    if not is_available() or not _isteam_friends or not _dll:
+        return False
+    try:
+        sid = int(steam_id)
+        if sid <= 0:
+            return False
+        requester = getattr(_dll, 'SteamAPI_ISteamFriends_RequestUserInformation', None)
+        if not callable(requester):
+            return False
+        res = requester(
+            _isteam_friends,
+            ctypes.c_uint64(sid),
+            ctypes.c_int(1 if require_name_only else 0),
+        )
+        return bool(res)
+    except Exception as e:
+        print(f"[Steam] RequestUserInformation hatası: {e}")
+    return False
+
+
+def get_friend_avatar_rgba(
+    steam_id: int | str,
+    preferred: str = 'medium',
+) -> tuple[int, int, bytes] | None:
+    """Belirli bir Steam ID için SDK üzerinden avatar RGBA verisi döndür."""
+    if not is_available() or not _dll or not _isteam_friends or not _isteam_utils:
+        return None
+    try:
+        sid = int(steam_id)
+        if sid <= 0:
+            return None
+    except (ValueError, TypeError):
+        return None
+    return get_avatar_rgba(steam_id=sid, preferred=preferred)
 
 
 def get_avatar_rgba(

@@ -4434,22 +4434,70 @@ class Menu:
                         if _should_abort():
                             return
                         self._steam_player_cache.update(summaries)
-                        # Avatar URL'lerini arka planda indir
-                        def _download_avatars(to_download: dict):
-                            import io
-                            for sid, info in to_download.items():
-                                url = str(info.get('avatarmedium') or info.get('avatar') or '').strip()
-                                if url and url not in self._steam_avatar_bytes:
-                                    try:
-                                        import requests as _req
-                                        resp = _req.get(url, timeout=3)
-                                        if resp.status_code == 200:
-                                            self._steam_avatar_bytes[url] = resp.content
-                                    except Exception:
-                                        pass
-                        threading.Thread(target=_download_avatars, args=(dict(summaries),), daemon=True).start()
+                        if not summaries:
+                            print(f"[Steam] Oyuncu summary boş döndü: ids={len(new_ids)} error={service.last_error}")
+                    except Exception as exc:
+                        print(f"[Steam] Oyuncu summary alınamadı: {exc}")
+
+                def _download_avatars(all_known_ids: list[str]):
+                    def _abort() -> bool:
+                        try:
+                            import steam_integration as _si_cancel
+                            return _si_cancel.should_cancel_background_work()
+                        except Exception:
+                            return False
+
+                    import urllib.request as _urllib_req
+                    try:
+                        import steam_integration as _si_av
+                        _si_available = _si_av.is_available()
                     except Exception:
-                        pass
+                        _si_av = None
+                        _si_available = False
+
+                    for sid in all_known_ids:
+                        if _abort():
+                            return
+                        info = self._steam_player_cache.get(sid, {})
+                        url = str(info.get('avatarmedium') or info.get('avatar') or '').strip()
+                        if url and url not in self._steam_avatar_bytes:
+                            try:
+                                req = _urllib_req.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+                                with _urllib_req.urlopen(req, timeout=3) as resp:
+                                    if resp.status == 200:
+                                        self._steam_avatar_bytes[url] = resp.read()
+                            except Exception as exc:
+                                print(f"[Steam] Avatar URL indirilemedi ({sid}): {exc}")
+
+                        if _abort():
+                            return
+
+                        sdk_key = f'sdk:{sid}'
+                        if not url and sdk_key not in self._steam_avatar_bytes and _si_available and _si_av:
+                            try:
+                                rgba_result = _si_av.get_friend_avatar_rgba(sid, preferred='medium')
+                                if rgba_result:
+                                    w, h, rgba_bytes = rgba_result
+                                    self._steam_avatar_bytes[sdk_key] = rgba_bytes
+                                    self._steam_avatar_bytes[f'{sdk_key}:size'] = (w, h)  # type: ignore[assignment]
+                            except Exception as exc:
+                                print(f"[Steam] SDK avatar alınamadı ({sid}): {exc}")
+
+                all_sids = list(dict.fromkeys(
+                    str(e.get('steam_id', '') or '').strip()
+                    for e in all_entries
+                    if str(e.get('steam_id', '') or '').strip()
+                ))
+                if all_sids:
+                    try:
+                        import steam_integration as _si_track_av
+                        if _si_track_av._start_tracked_worker(
+                            lambda: _download_avatars(list(all_sids)),
+                            name="menu-lb-avatar-download",
+                        ) is None:
+                            pass
+                    except Exception:
+                        threading.Thread(target=_download_avatars, args=(list(all_sids),), daemon=True).start()
 
             except Exception as exc:
                 self._mystery_lb_error = t('menu_lb_error_fetch_failed', error=str(exc))
@@ -4629,8 +4677,8 @@ class Menu:
             avatar_surf: pygame.Surface | None = None
             avatar_url = str(player_info.get('avatarmedium') or player_info.get('avatar') or '').strip()
             avatar_asset = str(entry.get('debug_avatar_asset') or '').strip()
+            av_size_pre = max(20, min(s(32), row_rect.height - s(8)))
             if avatar_url:
-                av_size_pre = max(20, min(s(32), row_rect.height - s(8)))
                 avatar_cache_key = (avatar_url, av_size_pre)
                 if avatar_cache_key not in self._steam_avatar_surf:
                     raw_bytes = self._steam_avatar_bytes.get(avatar_url)
@@ -4643,8 +4691,25 @@ class Menu:
                         except Exception:
                             self._steam_avatar_surf[avatar_cache_key] = None
                 avatar_surf = self._steam_avatar_surf.get(avatar_cache_key)
-            elif avatar_asset:
-                av_size_pre = max(20, min(s(32), row_rect.height - s(8)))
+
+            if avatar_surf is None and steam_id:
+                sdk_key = f'sdk:{steam_id}'
+                sdk_size_key = f'{sdk_key}:size'
+                sdk_cache_key = (sdk_key, av_size_pre)
+                if sdk_cache_key not in self._steam_avatar_surf:
+                    rgba_bytes = self._steam_avatar_bytes.get(sdk_key)
+                    size_info = self._steam_avatar_bytes.get(sdk_size_key)
+                    if rgba_bytes and size_info:
+                        try:
+                            w, h = size_info  # type: ignore[misc]
+                            raw_surf = pygame.image.frombuffer(rgba_bytes, (w, h), 'RGBA')
+                            src = raw_surf.convert() if _IS_MACOS else raw_surf.convert_alpha()
+                            self._steam_avatar_surf[sdk_cache_key] = _circle_crop_bitmap(src, av_size_pre)
+                        except Exception:
+                            self._steam_avatar_surf[sdk_cache_key] = None
+                avatar_surf = self._steam_avatar_surf.get(sdk_cache_key)
+
+            if avatar_surf is None and avatar_asset:
                 avatar_cache_key = (f'asset:{avatar_asset}', av_size_pre)
                 if avatar_cache_key not in self._steam_avatar_surf:
                     try:
@@ -13923,4 +13988,3 @@ class CreditsScreen:
         # Kapatma ipucu
         hint_surf = render_text(self.font_small, t('credits_testers_close_hint'), True, (150, 160, 180))
         self.screen.blit(hint_surf, hint_surf.get_rect(center=(popup_x + popup_w // 2, popup_y + popup_h - max(16, int(25 * popup_scale)))))
-

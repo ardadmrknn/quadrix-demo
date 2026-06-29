@@ -551,14 +551,16 @@ class SteamLeaderboardService:
     def fetch_player_summaries(self, steam_ids: list[str]) -> dict[str, dict[str, Any]]:
         """Verilen Steam ID'leri için oyuncu adı ve avatar URL döndür.
 
-        Önce proxy backend; yoksa direct Steam Web API (publisher_key ile).
+        Birincil kaynak: proxy backend veya direct Steam Web API (avatar URL'leri burada gelir).
+        Yedek isim kaynağı: yerel Steam SDK (GetFriendPersonaName).
         Returns: steam_id -> {personaname, avatar, avatarmedium, avatarfull, profileurl}
-        Boş dict döner: servis yapılandırılmamış, ID listesi boşsa veya hata oluşursa.
+        Boş veya kısmi dict döner.
         """
         clean_ids = [str(sid).strip() for sid in (steam_ids or []) if str(sid or "").strip()]
         if not clean_ids:
             return {}
 
+        api_results: dict[str, dict[str, Any]] = {}
         if self._is_backend_mode():
             raw = self._get_json(
                 "/api/v1/players/summaries",
@@ -566,16 +568,39 @@ class SteamLeaderboardService:
             )
             players = raw.get("players")
             if isinstance(players, dict) and players:
-                return players
+                api_results = players
             # Backend boş döndüyse ve direct de yapılandırıldıysa direct'e düş
-            if not self._is_direct_mode():
-                return {}
+            if not api_results and self._is_direct_mode():
+                api_results = self._fetch_player_summaries_direct(clean_ids)
+        elif self._is_direct_mode():
+            api_results = self._fetch_player_summaries_direct(clean_ids)
 
-        # Direct mod: ISteamUser/GetPlayerSummaries/v2/
-        # (appid gönderilmediğine dikkat — bu endpoint appid gerektirmez)
-        if not self._is_direct_mode():
-            return {}
-        return self._fetch_player_summaries_direct(clean_ids)
+        sdk_names: dict[str, str] = {}
+        ids_needing_sdk = [sid for sid in clean_ids if not api_results.get(sid, {}).get("personaname")]
+        if ids_needing_sdk:
+            try:
+                import steam_integration as si
+                if si.is_available():
+                    for sid in ids_needing_sdk:
+                        name = si.get_friend_persona_name(sid)
+                        if name:
+                            sdk_names[sid] = name
+                        else:
+                            si.request_user_information(sid, require_name_only=False)
+            except Exception as exc:
+                print(f"[SteamLeaderboardService] SDK oyuncu bilgisi alma hatası: {exc}")
+
+        final_results: dict[str, dict[str, Any]] = {}
+        for sid in clean_ids:
+            final_info: dict[str, Any] = {}
+            if sid in api_results:
+                final_info.update(api_results[sid])
+            if not final_info.get("personaname") and sid in sdk_names:
+                final_info["personaname"] = sdk_names[sid]
+            if final_info:
+                final_results[sid] = final_info
+
+        return final_results
     def _fetch_player_summaries_direct(self, clean_ids: list[str]) -> dict[str, dict[str, Any]]:
         """ISteamUser/GetPlayerSummaries/v2/ endpoint'ine direkt GET atar.
 
