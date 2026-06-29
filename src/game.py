@@ -70,7 +70,7 @@ except Exception:
         duration_ratio = max(0.42, 0.965 ** max(0, level_i - 1))
         sweep_duration = max(0.0001, base_duration * duration_ratio)
         return 1.0 / sweep_duration
-from ui_scaling import apply_ui_scale_preset, get_projected_effective_scale, get_scale, resolve_ui_scale_size
+from ui_scaling import apply_ui_scale_preset, get_projected_effective_scale, get_scale, get_ui_scale_readability_floor, resolve_ui_scale_size
 from combo_popup_style import (
     COMBO_POPUP_SHADOW_COLOR,
     get_combo_popup_alpha,
@@ -367,6 +367,12 @@ class Game:
         pixel_ratio = max(1.0, float(getattr(layout, 'pixel_ratio', 1.0) or 1.0))
         logical_panel_width = float(panel_width) / pixel_ratio
         hud_scale = max(0.72, min(1.18, logical_panel_width / 220.0))
+        hud_scale = apply_ui_scale_preset(
+            hud_scale,
+            min_scale=0.72,
+            max_scale=1.18,
+        )
+        hud_scale = max(hud_scale, get_ui_scale_readability_floor(normal_floor=0.72, max_floor=1.16))
         hud_px_scale = hud_scale * pixel_ratio
 
         return {

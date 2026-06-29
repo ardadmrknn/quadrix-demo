@@ -18,6 +18,7 @@ from ui_scaling import (
     get_projected_effective_scale,
     get_scale,
     get_ui_scale_preset,
+    get_ui_scale_readability_floor,
     normalize_ui_scale_preset,
     resolve_ui_scale_size,
     scale_px,
@@ -147,10 +148,10 @@ def test_normalize_ui_scale_preset_falls_back_to_normal():
     assert normalize_ui_scale_preset(" LARGE ") == "large"
 
 
-def test_apply_ui_scale_preset_compact_honors_minimum():
+def test_apply_ui_scale_preset_compact_scales_minimum():
     adjusted = apply_ui_scale_preset(0.74, min_scale=0.72, max_scale=1.24, preset="compact")
 
-    assert math.isclose(adjusted, 0.72)
+    assert math.isclose(adjusted, 0.64)
 
 
 def test_apply_ui_scale_preset_is_more_visible_near_baseline_for_compact():
@@ -163,6 +164,13 @@ def test_apply_ui_scale_preset_is_more_visible_near_baseline_for_large():
     adjusted = apply_ui_scale_preset(1.0, min_scale=0.72, max_scale=1.24, preset="large")
 
     assert math.isclose(adjusted, 1.25)
+
+
+def test_ui_scale_readability_floor_only_raises_large_presets():
+    assert math.isclose(get_ui_scale_readability_floor(preset="normal"), 0.72)
+    assert math.isclose(get_ui_scale_readability_floor(preset="compact"), 0.72)
+    assert math.isclose(get_ui_scale_readability_floor(preset="large"), 0.82)
+    assert math.isclose(get_ui_scale_readability_floor(preset="double"), 1.12)
 
 
 def test_apply_ui_scale_preset_m2_air_like_scale_has_clear_spread():
@@ -264,3 +272,71 @@ def test_get_content_scale_rejects_unknown_profile():
 def test_scale_px_rounds_and_honors_minimum():
     assert scale_px(10, 1.16) == 12
     assert scale_px(0.4, 1.0, minimum=3) == 3
+
+
+def test_sdl2_canonical_present_rect_preserves_1080p_aspect():
+    import sdl2_overlay
+
+    rect_4k = sdl2_overlay._compute_present_rect(3840, 2160, 1920, 1080)
+    assert rect_4k.topleft == (0, 0)
+    assert rect_4k.size == (3840, 2160)
+
+    rect_16_10 = sdl2_overlay._compute_present_rect(2560, 1600, 1920, 1080)
+    assert rect_16_10.size == (2560, 1440)
+    assert rect_16_10.topleft == (0, 80)
+
+    rect_ultrawide = sdl2_overlay._compute_present_rect(3440, 1440, 1920, 1080)
+    assert rect_ultrawide.size == (2560, 1440)
+    assert rect_ultrawide.topleft == (440, 0)
+
+
+def test_normalize_mouse_pos_is_idempotent_for_patched_virtual_canvas_events():
+    import platform_utils as pu
+    import pygame
+
+    pu._software_scale_active = True
+    pu._event_patch_active = True
+    pu._virtual_blit_rect = (0, 0, 2560, 1600)
+    pu._software_canvas = pygame.Surface((1728, 1080))
+
+    try:
+        assert pu.normalize_mouse_pos((864, 540)) == (864, 540)
+    finally:
+        pu._software_scale_active = False
+        pu._event_patch_active = False
+        pu._virtual_blit_rect = None
+        pu._software_canvas = None
+
+
+def test_get_mouse_pos_converts_raw_position_once_when_event_patch_is_active(monkeypatch):
+    import platform_utils as pu
+    import pygame
+
+    pu._software_scale_active = True
+    pu._event_patch_active = True
+    pu._virtual_blit_rect = (0, 0, 2560, 1600)
+    pu._software_canvas = pygame.Surface((1728, 1080))
+    monkeypatch.setattr(pu.patch_event_queue, '_orig_mouse_get_pos', lambda: (1280, 800), raising=False)
+
+    try:
+        assert pu.get_mouse_pos() == (864, 540)
+    finally:
+        pu._software_scale_active = False
+        pu._event_patch_active = False
+        pu._virtual_blit_rect = None
+        pu._software_canvas = None
+
+
+def test_virtual_canvas_resize_event_skips_display_rebuild():
+    import platform_utils as pu
+    import pygame
+
+    pu._software_scale_active = True
+    pu._software_canvas = pygame.Surface((1728, 1080))
+
+    try:
+        assert pu.overlay_should_skip_rebuild(1728, 1080) is True
+        assert pu.overlay_should_skip_rebuild(2560, 1600) is False
+    finally:
+        pu._software_scale_active = False
+        pu._software_canvas = None

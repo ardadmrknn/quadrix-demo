@@ -94,7 +94,22 @@ def normalize_ui_scale_preset(preset: str | None) -> str:
 
 def set_ui_scale_preset(preset: str | None) -> str:
     global _UI_SCALE_PRESET
+    previous = _UI_SCALE_PRESET
     _UI_SCALE_PRESET = normalize_ui_scale_preset(preset)
+    if _UI_SCALE_PRESET != previous:
+        cache = globals().get('_PROJECTED_SCALE_CACHE')
+        if isinstance(cache, dict):
+            cache.clear()
+        try:
+            from ui_theme import UIFonts
+            UIFonts.clear_cache()
+        except Exception:
+            pass
+        try:
+            from text_cache import clear_text_cache
+            clear_text_cache()
+        except Exception:
+            pass
     # Diğer ui_scaling alias'ının da preset değerini senkronize et
     try:
         import sys
@@ -114,6 +129,20 @@ def get_ui_scale_preset() -> str:
 def get_ui_scale_multiplier(preset: str | None = None) -> float:
     normalized = normalize_ui_scale_preset(_UI_SCALE_PRESET if preset is None else preset)
     return float(UI_SCALE_PRESET_MULTIPLIERS[normalized])
+
+
+def get_ui_scale_readability_floor(
+    *,
+    normal_floor: float = 0.72,
+    max_floor: float = 1.16,
+    preset: str | None = None,
+) -> float:
+    """Minimum readable scale for dense HUD/panel content."""
+    multiplier = get_ui_scale_multiplier(preset)
+    if multiplier <= 1.0:
+        return float(normal_floor)
+    floor = float(normal_floor) + ((float(multiplier) - 1.0) * 0.40)
+    return min(float(max_floor), floor)
 
 
 def apply_ui_scale_preset(
@@ -137,7 +166,11 @@ def apply_ui_scale_preset(
         adjusted = float(scale) * multiplier
 
     if multiplier < 1.0:
-        return max(float(min_scale), adjusted)
+        if float(min_scale) <= float(UI_SCALE_PRESET_OFFSET_THRESHOLD):
+            adjusted_min = float(min_scale) + float(UI_SCALE_PRESET_OFFSETS[normalized])
+        else:
+            adjusted_min = float(min_scale) * multiplier
+        return max(adjusted_min, adjusted)
 
     return min(float(max_scale) * multiplier, adjusted)
 
@@ -409,6 +442,7 @@ __all__ = [
     "get_scale",
     "get_ui_scale_multiplier",
     "get_ui_scale_preset",
+    "get_ui_scale_readability_floor",
     "get_virtual_canvas_ui_scale",
     "is_virtual_canvas_active",
     "normalize_ui_scale_preset",

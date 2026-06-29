@@ -934,8 +934,39 @@ def normalize_mouse_pos(pos: tuple[int, int] | list[int] | None, scale: float = 
         return None
 
     try:
+        try:
+            import sdl2_overlay as _sdl2_ovl
+            if _sdl2_ovl.is_active():
+                if _event_patch_active:
+                    info = _sdl2_ovl.get_presentation_info()
+                    canvas_w = max(1, int(info.get('canvas_w', 1920)))
+                    canvas_h = max(1, int(info.get('canvas_h', 1080)))
+                    cx = max(0, min(canvas_w - 1, x))
+                    cy = max(0, min(canvas_h - 1, y))
+                    if scale != 1.0:
+                        cx = int(cx / scale)
+                        cy = int(cy / scale)
+                    return (cx, cy)
+                cx, cy = _sdl2_ovl.window_to_canvas_pos((x, y))
+                if scale != 1.0:
+                    cx = int(cx / scale)
+                    cy = int(cy / scale)
+                return (cx, cy)
+        except Exception:
+            pass
+
         # --- Virtual Canvas: letterbox offset + canvas scale ---
         if _software_scale_active and _virtual_blit_rect is not None:
+            if _event_patch_active and _software_canvas is not None:
+                canvas_w, canvas_h = _software_canvas.get_size()
+                if canvas_w > 0 and canvas_h > 0:
+                    canvas_x = max(0, min(canvas_w - 1, x))
+                    canvas_y = max(0, min(canvas_h - 1, y))
+                    if scale != 1.0:
+                        canvas_x = int(canvas_x / scale)
+                        canvas_y = int(canvas_y / scale)
+                    return (canvas_x, canvas_y)
+
             bx, by, bw, bh = _virtual_blit_rect
             canvas_w, canvas_h = _software_canvas.get_size() if _software_canvas is not None else (bw, bh)
             # Letterbox dışındaki tıklamalar → None (sınır dışı)
@@ -984,10 +1015,43 @@ def normalize_mouse_pos(pos: tuple[int, int] | list[int] | None, scale: float = 
 def get_mouse_pos(scale: float = 1.0) -> tuple[int, int]:
     """Return current mouse position normalized to the display surface and UI scale."""
     try:
-        pos = pygame.mouse.get_pos()
+        orig_get_pos = getattr(patch_event_queue, '_orig_mouse_get_pos', None)
+        pos = orig_get_pos() if orig_get_pos is not None else pygame.mouse.get_pos()
     except Exception:
         return (0, 0)
+
+    try:
+        import sdl2_overlay as _sdl2_ovl
+        if _sdl2_ovl.is_active():
+            x, y = _sdl2_ovl.window_to_canvas_pos(pos)
+            if scale != 1.0:
+                x = int(x / scale)
+                y = int(y / scale)
+            return (x, y)
+    except Exception:
+        pass
+
+    if _software_scale_active and _virtual_blit_rect is not None:
+        try:
+            x, y = _normalize_event_pos(pos)
+            if scale != 1.0:
+                x = int(x / scale)
+                y = int(y / scale)
+            return (x, y)
+        except Exception:
+            pass
     return normalize_mouse_pos(pos, scale) or (0, 0)
+
+
+def get_raw_mouse_pos() -> tuple[int, int]:
+    """Fiziksel pencere koordinatlarında ham fare pozisyonunu döndür."""
+    try:
+        orig_get_pos = getattr(patch_event_queue, '_orig_mouse_get_pos', None)
+        if orig_get_pos is not None:
+            return orig_get_pos()
+        return pygame.mouse.get_pos()
+    except Exception:
+        return (0, 0)
 
 
 def _get_windows_physical_resolution() -> tuple[int, int]:
@@ -1045,6 +1109,14 @@ def overlay_should_skip_rebuild(width: int, height: int) -> bool:
     yeni bir create_display/set_mode (ve pencere/swapchain yeniden yaratımı) yapmaktan kaçınır.
     Hangi backend aktifse onun should_skip_display_rebuild'ini sorar. Hata-toleranslıdır.
     """
+    if _software_scale_active and _software_canvas is not None:
+        try:
+            canvas_w, canvas_h = _software_canvas.get_size()
+            if int(width) == int(canvas_w) and int(height) == int(canvas_h):
+                return True
+        except Exception:
+            pass
+
     for _mod_name in ('sdl2_overlay', 'gl_compat'):
         try:
             _mod = sys.modules.get(_mod_name)
@@ -1643,6 +1715,12 @@ _event_patch_active = False
 
 def _normalize_event_pos(raw_pos: tuple) -> tuple[int, int]:
     """Ham fare pozisyonunu virtual canvas koordinatına dönüştür."""
+    try:
+        import sdl2_overlay as _sdl2_ovl
+        if _sdl2_ovl.is_active():
+            return _sdl2_ovl.window_to_canvas_pos(raw_pos)
+    except Exception:
+        pass
     if not _software_scale_active or _virtual_blit_rect is None:
         return raw_pos
     bx, by, bw, bh = _virtual_blit_rect
@@ -1663,6 +1741,12 @@ def _normalize_event_pos(raw_pos: tuple) -> tuple[int, int]:
 
 def _normalize_event_rel(raw_rel: tuple) -> tuple[int, int]:
     """Ham fare hareketini (rel) virtual canvas ölçeğine dönüştür."""
+    try:
+        import sdl2_overlay as _sdl2_ovl
+        if _sdl2_ovl.is_active():
+            return _sdl2_ovl.window_to_canvas_rel(raw_rel)
+    except Exception:
+        pass
     if not _software_scale_active or _virtual_blit_rect is None:
         return raw_rel
     bx, by, bw, bh = _virtual_blit_rect
@@ -1675,6 +1759,26 @@ def _normalize_event_rel(raw_rel: tuple) -> tuple[int, int]:
     sx = canvas_w / float(bw)
     sy = canvas_h / float(bh)
     return (int(round(float(raw_rel[0]) * sx)), int(round(float(raw_rel[1]) * sy)))
+
+
+def denormalize_mouse_pos(canvas_pos: tuple) -> tuple[int, int]:
+    """Canvas koordinatını fiziksel pencere koordinatına geri dönüştür."""
+    try:
+        import sdl2_overlay as _sdl2_ovl
+        if _sdl2_ovl.is_active():
+            return _sdl2_ovl.canvas_to_window_pos(canvas_pos)
+    except Exception:
+        pass
+    if not _software_scale_active or _virtual_blit_rect is None or _software_canvas is None:
+        return canvas_pos
+    bx, by, bw, bh = _virtual_blit_rect
+    canvas_w, canvas_h = _software_canvas.get_size()
+    if canvas_w <= 0 or canvas_h <= 0 or bw <= 0 or bh <= 0:
+        return canvas_pos
+    cx, cy = canvas_pos[0], canvas_pos[1]
+    rx = float(cx) * bw / canvas_w
+    ry = float(cy) * bh / canvas_h
+    return (int(round(rx + bx)), int(round(ry + by)))
 
 
 def _patched_event_get(eventtype=None, pump=True, exclude=None):
@@ -1692,7 +1796,14 @@ def _patched_event_get(eventtype=None, pump=True, exclude=None):
         except Exception:
             return []
 
-    if not _software_scale_active or _virtual_blit_rect is None:
+    _sdl2_mouse_active = False
+    try:
+        import sdl2_overlay as _sdl2_ovl
+        _sdl2_mouse_active = bool(_sdl2_ovl.is_active())
+    except Exception:
+        _sdl2_mouse_active = False
+
+    if not _sdl2_mouse_active and (not _software_scale_active or _virtual_blit_rect is None):
         return events
 
     patched = []
@@ -1704,6 +1815,9 @@ def _patched_event_get(eventtype=None, pump=True, exclude=None):
                 pygame.MOUSEBUTTONUP,
                 pygame.MOUSEMOTION,
             ):
+                if getattr(event, 'from_gamepad', False):
+                    patched.append(event)
+                    continue
                 new_pos = _normalize_event_pos(event.pos)
                 attrs = {'pos': new_pos}
                 if etype == pygame.MOUSEMOTION:
@@ -1714,7 +1828,7 @@ def _patched_event_get(eventtype=None, pump=True, exclude=None):
                         pass
                 # pygame.event.Event ile yeni event oluştur (C-level salt okunur hatalarını önlemek için güvenli kopyalama)
                 # dir(event) yerine event.__dict__ kullanımı hem performansı artırır hem de çökmeleri önler.
-                event_dict = getattr(event, '__dict__', {})
+                event_dict = event.dict if hasattr(event, 'dict') else getattr(event, '__dict__', {})
                 new_event = pygame.event.Event(etype, {
                     **{k: v for k, v in event_dict.items() if k not in attrs},
                     **attrs,
@@ -1770,14 +1884,51 @@ def patch_event_queue() -> None:
 
         pygame.mouse.get_rel = _patched_mouse_get_rel
 
+        # pygame.mouse.set_pos → canvas koordinatını fiziksel pencere koordinatına geri dönüştür
+        _orig_mouse_set_pos = pygame.mouse.set_pos
+
+        def _patched_mouse_set_pos(*args, **kwargs):
+            try:
+                if len(args) == 2:
+                    px, py = denormalize_mouse_pos((args[0], args[1]))
+                    return _orig_mouse_set_pos(px, py)
+                if len(args) == 1 and isinstance(args[0], (tuple, list)):
+                    px, py = denormalize_mouse_pos(args[0])
+                    return _orig_mouse_set_pos((px, py))
+                return _orig_mouse_set_pos(*args, **kwargs)
+            except Exception:
+                return _orig_mouse_set_pos(*args, **kwargs)
+
+        pygame.mouse.set_pos = _patched_mouse_set_pos
+
+        _orig_display_get_window_size = getattr(pygame.display, 'get_window_size', None)
+        if _orig_display_get_window_size is not None:
+            def _patched_display_get_window_size():
+                try:
+                    import sdl2_overlay as _sdl2_ovl
+                    if _sdl2_ovl.is_active():
+                        info = _sdl2_ovl.get_presentation_info()
+                        return (max(1, int(info.get('canvas_w', 1920))), max(1, int(info.get('canvas_h', 1080))))
+                except Exception:
+                    pass
+                try:
+                    if _software_scale_active and _software_canvas is not None:
+                        return _software_canvas.get_size()
+                except Exception:
+                    pass
+                return _orig_display_get_window_size()
+            pygame.display.get_window_size = _patched_display_get_window_size
+
         # Geri alma için referansları sakla
         patch_event_queue._orig_mouse_get_pos = _orig_mouse_get_pos
         patch_event_queue._orig_mouse_get_rel = _orig_mouse_get_rel
+        patch_event_queue._orig_mouse_set_pos = _orig_mouse_set_pos
+        patch_event_queue._orig_display_get_window_size = _orig_display_get_window_size
 
         _event_patch_active = True
         print(
             "[Virtual Canvas] Tam mouse patching aktif — "
-            "event.get, mouse.get_pos ve mouse.get_rel normalize edilecek"
+            "event.get, mouse.get_pos, mouse.get_rel, mouse.set_pos ve display.get_window_size normalize edilecek"
         )
     except Exception as exc:
         print(f"[Virtual Canvas] Event/mouse patch başarısız: {exc}")
@@ -1800,6 +1951,18 @@ def unpatch_event_queue() -> None:
         orig_rel = getattr(patch_event_queue, '_orig_mouse_get_rel', None)
         if orig_rel is not None:
             pygame.mouse.get_rel = orig_rel
+    except Exception:
+        pass
+    try:
+        orig_set_pos = getattr(patch_event_queue, '_orig_mouse_set_pos', None)
+        if orig_set_pos is not None:
+            pygame.mouse.set_pos = orig_set_pos
+    except Exception:
+        pass
+    try:
+        orig_get_window_size = getattr(patch_event_queue, '_orig_display_get_window_size', None)
+        if orig_get_window_size is not None:
+            pygame.display.get_window_size = orig_get_window_size
     except Exception:
         pass
     _event_patch_active = False

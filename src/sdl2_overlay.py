@@ -25,6 +25,7 @@ from __future__ import annotations
 import os
 import platform
 import sys
+from pathlib import Path
 
 import pygame
 
@@ -35,14 +36,19 @@ _active = False
 _window = None            # pygame._sdl2.video.Window
 _renderer = None          # pygame._sdl2.video.Renderer
 _texture = None           # pygame._sdl2.video.Texture (kalıcı, streaming)
+_background_texture = None
 _game_surface: pygame.Surface | None = None
 _width: int = 0
 _height: int = 0
+
+_CANONICAL_CANVAS_SIZE = (1920, 1080)
+_present_rect = pygame.Rect(0, 0, *_CANONICAL_CANVAS_SIZE)
 
 _original_flip = pygame.display.flip
 _original_update = pygame.display.update
 _original_get_surface = pygame.display.get_surface
 _original_set_caption = pygame.display.set_caption
+_original_get_window_size = getattr(pygame.display, 'get_window_size', None)
 _original_get_active = getattr(pygame.display, 'get_active', None)
 
 # Software imleç hook'u: SDL2 renderer penceresinde donanım imleci görünmediği için
@@ -93,6 +99,128 @@ _perf_tr_first_frame_ms = 0.0    # geçişin İLK karesi (başlangıç stall'ı 
 _PERF_WINDOW = 600               # kaç karede bir özet (≈60fps'te 10 sn)
 _PERF_HITCH_MS = 70.0            # bu süreyi aşan kare ANLIK loglanır (tek-seferlik stall)
 _PERF_SPIKE_BUCKETS = (20.0, 33.0, 50.0, 100.0)  # >20ms(<50fps) >33ms(<30fps) >50ms >100ms
+
+
+def _compute_present_rect(window_w: int, window_h: int, canvas_w: int, canvas_h: int) -> pygame.Rect:
+    if window_w <= 0 or window_h <= 0 or canvas_w <= 0 or canvas_h <= 0:
+        return pygame.Rect(0, 0, max(1, window_w), max(1, window_h))
+    scale = min(window_w / float(canvas_w), window_h / float(canvas_h))
+    dst_w = max(1, int(round(canvas_w * scale)))
+    dst_h = max(1, int(round(canvas_h * scale)))
+    return pygame.Rect((window_w - dst_w) // 2, (window_h - dst_h) // 2, dst_w, dst_h)
+
+
+def _refresh_present_rect() -> pygame.Rect:
+    global _present_rect
+    canvas_w, canvas_h = _game_surface.get_size() if _game_surface is not None else _CANONICAL_CANVAS_SIZE
+    _present_rect = _compute_present_rect(int(_width), int(_height), int(canvas_w), int(canvas_h))
+    return _present_rect
+
+
+def _resolve_outer_background_path() -> Path | None:
+    roots = []
+    meipass = getattr(sys, '_MEIPASS', None)
+    if isinstance(meipass, str) and meipass:
+        roots.append(Path(meipass))
+    roots.append(Path(__file__).resolve().parent.parent)
+    for root in roots:
+        candidate = root / 'backgrounds' / 'outer_background.jpg'
+        if candidate.exists():
+            return candidate
+    return None
+
+
+def _build_background_texture(renderer, window_w: int, window_h: int):
+    path = _resolve_outer_background_path()
+    if path is None or renderer is None or window_w <= 0 or window_h <= 0:
+        return None
+    try:
+        from pygame._sdl2.video import Texture
+        image = pygame.image.load(str(path)).convert()
+        iw, ih = image.get_size()
+        if iw <= 0 or ih <= 0:
+            return None
+        scale = max(window_w / float(iw), window_h / float(ih))
+        sw = max(1, int(round(iw * scale)))
+        sh = max(1, int(round(ih * scale)))
+        scaled = pygame.transform.smoothscale(image, (sw, sh))
+        bg = pygame.Surface((window_w, window_h))
+        bg.blit(scaled, ((window_w - sw) // 2, (window_h - sh) // 2))
+        return Texture.from_surface(renderer, bg)
+    except Exception as exc:
+        _diag_log(f"outer_background texture yüklenemedi: {exc}")
+        return None
+
+
+def _draw_outer_background() -> None:
+    if _renderer is None:
+        return
+    if _background_texture is None:
+        _renderer.clear()
+        return
+    try:
+        _renderer.blit(_background_texture, None)
+    except Exception:
+        _renderer.clear()
+
+
+def get_presentation_info() -> dict:
+    canvas_w, canvas_h = _game_surface.get_size() if _game_surface is not None else _CANONICAL_CANVAS_SIZE
+    rect = _present_rect.copy()
+    return {
+        'active': bool(_active),
+        'window_w': int(_width),
+        'window_h': int(_height),
+        'canvas_w': int(canvas_w),
+        'canvas_h': int(canvas_h),
+        'offset_x': int(rect.x),
+        'offset_y': int(rect.y),
+        'blit_w': int(rect.w),
+        'blit_h': int(rect.h),
+        'scale_x': (rect.w / float(canvas_w)) if canvas_w > 0 else 1.0,
+        'scale_y': (rect.h / float(canvas_h)) if canvas_h > 0 else 1.0,
+    }
+
+
+def window_to_canvas_pos(pos) -> tuple[int, int]:
+    try:
+        x, y = int(pos[0]), int(pos[1])
+    except Exception:
+        return (0, 0)
+    canvas_w, canvas_h = _game_surface.get_size() if _game_surface is not None else _CANONICAL_CANVAS_SIZE
+    rect = _present_rect
+    if rect.w <= 0 or rect.h <= 0:
+        return (max(0, min(canvas_w - 1, x)), max(0, min(canvas_h - 1, y)))
+    cx = int(round((x - rect.x) * canvas_w / float(rect.w)))
+    cy = int(round((y - rect.y) * canvas_h / float(rect.h)))
+    return (max(0, min(canvas_w - 1, cx)), max(0, min(canvas_h - 1, cy)))
+
+
+def window_to_canvas_rel(rel) -> tuple[int, int]:
+    try:
+        dx, dy = float(rel[0]), float(rel[1])
+    except Exception:
+        return (0, 0)
+    canvas_w, canvas_h = _game_surface.get_size() if _game_surface is not None else _CANONICAL_CANVAS_SIZE
+    rect = _present_rect
+    if rect.w <= 0 or rect.h <= 0:
+        return (int(round(dx)), int(round(dy)))
+    return (int(round(dx * canvas_w / float(rect.w))), int(round(dy * canvas_h / float(rect.h))))
+
+
+def canvas_to_window_pos(pos) -> tuple[int, int]:
+    try:
+        x, y = float(pos[0]), float(pos[1])
+    except Exception:
+        return (0, 0)
+    canvas_w, canvas_h = _game_surface.get_size() if _game_surface is not None else _CANONICAL_CANVAS_SIZE
+    rect = _present_rect
+    if canvas_w <= 0 or canvas_h <= 0:
+        return (int(round(x)), int(round(y)))
+    return (
+        int(round(rect.x + (x * rect.w / float(canvas_w)))),
+        int(round(rect.y + (y * rect.h / float(canvas_h)))),
+    )
 
 
 def _perf_enabled() -> bool:
@@ -286,9 +414,9 @@ def _present():
             if _texture is not None and _game_surface is not None:
                 _texture.update(_game_surface)
             if _renderer is not None:
-                _renderer.clear()
+                _draw_outer_background()
                 if _texture is not None:
-                    _renderer.blit(_texture, None)  # POZİSYONEL — dst= kwarg yok
+                    _renderer.blit(_texture, _present_rect)  # POZİSYONEL — dst= kwarg yok
                 _blit_cursor_layer()
                 _renderer.present()
         except Exception as exc:
@@ -343,9 +471,9 @@ def _present_with_perf():
             _texture.update(_game_surface)
         t1 = _t.perf_counter()
         if _renderer is not None:
-            _renderer.clear()
+            _draw_outer_background()
             if _texture is not None:
-                _renderer.blit(_texture, None)
+                _renderer.blit(_texture, _present_rect)
             tc0 = _t.perf_counter()
             _blit_cursor_layer()
             tc1 = _t.perf_counter()
@@ -481,6 +609,14 @@ def _patched_get_surface():
     if _active and _game_surface is not None:
         return _game_surface
     return _original_get_surface()
+
+
+def _patched_get_window_size():
+    if _active and _game_surface is not None:
+        return _game_surface.get_size()
+    if callable(_original_get_window_size):
+        return _original_get_window_size()
+    return _CANONICAL_CANVAS_SIZE
 
 
 def get_display_surface():
@@ -664,7 +800,11 @@ def _blit_cursor_layer() -> None:
     if _cursor_texture is None:
         return
     try:
-        mx, my = pygame.mouse.get_pos()
+        try:
+            from platform_utils import get_raw_mouse_pos
+            mx, my = get_raw_mouse_pos()
+        except Exception:
+            mx, my = pygame.mouse.get_pos()
         hx, hy = _cursor_hotspot
         cw, ch = _cursor_size
         dst = pygame.Rect(int(mx) - hx, int(my) - hy, cw, ch)
@@ -718,7 +858,8 @@ def should_skip_display_rebuild(width: int, height: int) -> bool:
     if platform.system() != 'Windows':
         return False
     try:
-        return int(width) == int(_width) and int(height) == int(_height)
+        req = (int(width), int(height))
+        return req == (int(_width), int(_height)) or req == tuple(map(int, _game_surface.get_size()))
     except Exception:
         return False
 
@@ -747,7 +888,7 @@ def setup(display_surface: pygame.Surface | None = None) -> pygame.Surface | Non
 
     Başarısızlıkta None döndürür → çağıran mevcut software surface ile devam etmeli.
     """
-    global _active, _window, _renderer, _texture, _game_surface, _width, _height
+    global _active, _window, _renderer, _texture, _background_texture, _game_surface, _width, _height
 
     if not _should_use_sdl2():
         return None
@@ -845,6 +986,8 @@ def setup(display_surface: pygame.Surface | None = None) -> pygame.Surface | Non
         except TypeError:
             renderer = Renderer(win)  # vsync kwarg yoksa
 
+        background_texture = _build_background_texture(renderer, w, h)
+
         # Hangi SDL render sürücüleri mevcut, logla (D3D11 varsa overlay hook olabilir).
         # Not: _sdl2 seçili sürücüyü doğrudan vermez; mevcut sürücü listesini loglarız.
         try:
@@ -855,7 +998,8 @@ def setup(display_surface: pygame.Surface | None = None) -> pygame.Surface | Non
         except Exception as _drv_exc:
             _diag_log(f"setup: render sürücü listesi alınamadı: {_drv_exc}")
 
-        texture = Texture(renderer, (w, h), streaming=True)
+        canvas_w, canvas_h = _CANONICAL_CANVAS_SIZE
+        texture = Texture(renderer, (canvas_w, canvas_h), streaming=True)
         # Oyun texture'ı tüm pencereyi OPAK kaplar; alfası YOK SAYILMALI (blend NONE).
         # Böylece SRCALPHA offscreen surface'in alfa kanalı present'i etkilemez
         # (yarı-saydam panel blit'leri pencerede saydamlık yaratmaz).
@@ -872,9 +1016,9 @@ def setup(display_surface: pygame.Surface | None = None) -> pygame.Surface | Non
         # Surface opak (alfa=255) doldurulduğu ve oyun her kare tam opak sahne çizdiği için
         # görsel davranış DÜZ RGB ile birebir aynıdır; yalnızca upload yolu hızlanır.
         try:
-            game_surface = pygame.Surface((w, h), pygame.SRCALPHA)
+            game_surface = pygame.Surface((canvas_w, canvas_h), pygame.SRCALPHA)
         except Exception:
-            game_surface = pygame.Surface((w, h))
+            game_surface = pygame.Surface((canvas_w, canvas_h))
         game_surface.fill((0, 0, 0, 255))
 
         # Pencereyi şimdi göster (tüm ayarlar tamam; flash yok).
@@ -896,15 +1040,19 @@ def setup(display_surface: pygame.Surface | None = None) -> pygame.Surface | Non
     _window = win
     _renderer = renderer
     _texture = texture
+    _background_texture = background_texture
     _game_surface = game_surface
     _width = w
     _height = h
+    _refresh_present_rect()
     _active = True
 
     # Monkey-patch present yolu (gl_compat ile aynı sözleşme).
     pygame.display.flip = _patched_flip
     pygame.display.update = _patched_update
     pygame.display.get_surface = _patched_get_surface
+    if callable(_original_get_window_size):
+        pygame.display.get_window_size = _patched_get_window_size
     # set_caption ve get_active'i de görünür _sdl2 Window'a yönlendir.
     pygame.display.set_caption = _patched_set_caption
     try:
@@ -919,7 +1067,12 @@ def setup(display_surface: pygame.Surface | None = None) -> pygame.Surface | Non
     except Exception:
         pass
 
-    _diag_log(f"setup OK — SDL2 renderer overlay AKTİF ({w}x{h}, vsync={vsync})")
+    _diag_log(
+        f"setup OK — SDL2 renderer overlay AKTİF window={w}x{h} "
+        f"canvas={_game_surface.get_width()}x{_game_surface.get_height()} "
+        f"present=({_present_rect.x},{_present_rect.y},{_present_rect.w},{_present_rect.h}) "
+        f"vsync={vsync}"
+    )
     # Telemetri durumunu AÇIKÇA logla — kullanıcı log'dan açık/kapalı olduğunu görsün.
     try:
         if _perf_enabled():
@@ -951,18 +1104,20 @@ def _reapply_gl(display_surface: pygame.Surface) -> pygame.Surface:
 
 def teardown() -> None:
     """SDL2 renderer kaynaklarını serbest bırak ve monkey-patch'leri geri al."""
-    global _active, _window, _renderer, _texture, _game_surface, _cursor_texture, _cursor_dirty
+    global _active, _window, _renderer, _texture, _background_texture, _game_surface, _cursor_texture, _cursor_dirty
     pygame.display.flip = _original_flip
     pygame.display.update = _original_update
     pygame.display.get_surface = _original_get_surface
     pygame.display.set_caption = _original_set_caption
+    if callable(_original_get_window_size):
+        pygame.display.get_window_size = _original_get_window_size
     try:
         if callable(_original_get_active):
             pygame.display.get_active = _original_get_active
     except Exception:
         pass
     _active = False
-    for obj_name in ('_cursor_texture', '_texture', '_renderer', '_window'):
+    for obj_name in ('_cursor_texture', '_texture', '_background_texture', '_renderer', '_window'):
         obj = globals().get(obj_name)
         try:
             if obj is not None and hasattr(obj, 'destroy'):
@@ -972,6 +1127,7 @@ def teardown() -> None:
     _cursor_texture = None
     _cursor_dirty = True
     _texture = None
+    _background_texture = None
     _renderer = None
     _window = None
     _game_surface = None
