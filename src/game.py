@@ -423,6 +423,13 @@ class Game:
             keys.append(secondary)
         return tuple(keys)
 
+    def _event_matches_action(self, event, bindings: dict, action: str, *, gamepad_aliases: tuple[str, ...] = ()) -> bool:
+        """Klavye binding'ini veya gamepad'in canonical action metadata'sını eşleştir."""
+        if bool(getattr(event, 'from_gamepad', False)):
+            event_action = getattr(event, 'action', None)
+            return event_action == action or event_action in gamepad_aliases
+        return getattr(event, 'key', None) in self._action_keys(bindings, action)
+
     @staticmethod
     def _is_focus_loss_event(event) -> bool:
         event_type = getattr(event, 'type', None)
@@ -799,6 +806,8 @@ class Game:
         self.sound.sfx_enabled = sound_enabled  # Ses efektleri kontrolü
         # Müzik ve ses ayarlarını settings'ten al
         if self.settings_manager:
+            if hasattr(self.sound, 'set_muted'):
+                self.sound.set_muted(bool(self.settings_manager.get('mute_all', False)))
             self.sound.music_enabled = self.settings_manager.get('music_enabled', True)
             # Ses seviyelerini yükle
             saved_music_vol = self.settings_manager.get('music_volume', 0.3)
@@ -1080,6 +1089,7 @@ class Game:
             'soft_drop': pygame.K_DOWN,
             'hard_drop': pygame.K_SPACE,
             'rotate': pygame.K_UP,
+            'rotate_ccw': pygame.K_z,
             'rotate_180': pygame.K_e,
             'hold': pygame.K_c,
             'hold2': pygame.K_v,
@@ -1100,6 +1110,7 @@ class Game:
             'move_right': pygame.K_d,
             'soft_drop': pygame.K_s,
             'rotate': pygame.K_w,
+            'rotate_ccw': pygame.K_q,
         }
         resolved: dict[str, int | None] = {
             'move_left': None,
@@ -1107,6 +1118,7 @@ class Game:
             'soft_drop': None,
             'hard_drop': None,
             'rotate': None,
+            'rotate_ccw': None,
             'rotate_180': None,
             'hold': None,
             'hold2': None,
@@ -1119,11 +1131,11 @@ class Game:
 
         config = self.settings_manager.get_controls().get('single_player', {})
         for action in resolved.keys():
+            if action not in config:
+                resolved[action] = defaults.get(action)
+                continue
             binding = self._binding_from_config(config.get(action), 'secondary')
-            keycode = self._binding_to_keycode_or_none(binding)
-            if keycode is None:
-                keycode = defaults.get(action)
-            resolved[action] = keycode
+            resolved[action] = self._binding_to_keycode_or_none(binding)
 
         if isinstance(primary_bindings, dict):
             for action, primary in primary_bindings.items():
@@ -2245,8 +2257,17 @@ class Game:
                     # self.board.score += 1
                 
                 # Döndürme
-                elif event.key in self._action_keys(bindings, 'rotate'):
+                elif self._event_matches_action(event, bindings, 'rotate', gamepad_aliases=('rotate_alt',)):
                     success = self.current_piece.try_rotate_srs(self.board, 1)
+                    if success:
+                        self.sound.play('rotate')
+                        self.last_move_was_rotate = True
+                        self.last_rotate_kick_index = getattr(self.current_piece, 'last_kick_index', 0)
+                        self._update_grounded_after_action()
+
+                # Saat Yönünün Tersine Döndürme (CCW)
+                elif self._event_matches_action(event, bindings, 'rotate_ccw'):
+                    success = self.current_piece.try_rotate_srs(self.board, -1)
                     if success:
                         self.sound.play('rotate')
                         self.last_move_was_rotate = True
@@ -2254,7 +2275,7 @@ class Game:
                         self._update_grounded_after_action()
                 
                 # 180 Derece Döndürme
-                elif event.key in self._action_keys(bindings, 'rotate_180'):
+                elif self._event_matches_action(event, bindings, 'rotate_180'):
                     success = self.current_piece.try_rotate_180(self.board)
                     if success:
                         self.sound.play('rotate')

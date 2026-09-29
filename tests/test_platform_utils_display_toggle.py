@@ -404,5 +404,38 @@ class TestCreateDisplayWindowsBorderlessFallback(unittest.TestCase):
             os.environ.pop("SDL_VIDEO_WINDOW_POS", None)
 
 
+
+class TestAltF4EventNormalization(unittest.TestCase):
+    """Alt+F4, borderless pencerelerde kapanma olayına dönüştürülür."""
+
+    def test_alt_f4_becomes_quit(self):
+        pygame.K_F4 = getattr(pygame, 'K_F4', 115)
+        pygame.KEYDOWN = getattr(pygame, 'KEYDOWN', 768)
+        pygame.QUIT = getattr(pygame, 'QUIT', 256)
+        pygame.event = types.SimpleNamespace(
+            Event=lambda event_type: types.SimpleNamespace(type=event_type),
+        )
+        event = types.SimpleNamespace(
+            type=getattr(pygame, 'KEYDOWN', 768),
+            key=pygame.K_F4,
+            mod=pygame.KMOD_ALT,
+        )
+
+        normalized = platform_utils.normalize_window_close_event(event)
+        self.assertEqual(normalized.type, pygame.QUIT)
+
+    def test_f4_without_alt_is_unchanged(self):
+        pygame.K_F4 = getattr(pygame, 'K_F4', 115)
+        pygame.KEYDOWN = getattr(pygame, 'KEYDOWN', 768)
+        event = types.SimpleNamespace(
+            type=getattr(pygame, 'KEYDOWN', 768),
+            key=pygame.K_F4,
+            mod=0,
+        )
+        normalized = platform_utils.normalize_window_close_event(event)
+        self.assertIs(normalized, event)
+
+
 if __name__ == "__main__":
     unittest.main()
+

@@ -144,6 +144,7 @@ DEFAULT_GAMEPAD_BINDINGS = {
     'soft_drop':    {'dpad': 'down',   'axis': ('left_y', +1)},
     'hard_drop':    {'button': 10},  # RB / R1 (yeni; eski Y=3'ten tasindi)
     'rotate':       {'button': 11}, # varsayilan D-pad Up
+    'rotate_ccw':   {'button': None}, # canonical CCW; varsayilan bos
     'rotate_alt':   {'button': None}, # bos (eski B=1 kaldirildi)
     'hold':         {'button': 9},   # LB / L1 (degismedi)
     'hold2':        {'button': 8},   # R3 / RS Click (Ekstra Cep / perk_second_pocket)
@@ -217,6 +218,7 @@ ACTION_TO_KEY = {
     'soft_drop': pygame.K_DOWN,
     'hard_drop': pygame.K_SPACE,
     'rotate': pygame.K_UP,
+    'rotate_ccw': pygame.K_z,
     'rotate_alt': pygame.K_UP,
     'hold': pygame.K_c,
     'hold2': pygame.K_v,
@@ -265,6 +267,7 @@ class GamepadState:
     name: str = ''
     guid: str = ''
     instance_id: Optional[int] = None
+    device_index: int = -1
     # Buton basılı durumları (buton_index → bool)
     buttons: Dict[int, bool] = field(default_factory=dict)
     prev_buttons: Dict[int, bool] = field(default_factory=dict)
@@ -469,7 +472,7 @@ class GamepadManager:
             # eklenmez (saf D-pad varsayilani).
             button_actions = [
                 'move_left', 'move_right', 'soft_drop',
-                'hard_drop', 'rotate', 'rotate_alt', 'hold', 'hold2', 'pause',
+                'hard_drop', 'rotate', 'rotate_ccw', 'rotate_alt', 'hold', 'hold2', 'pause',
                 'menu_back', 'menu_confirm', 'menu_tab_next', 'menu_tab_prev',
                 'discard_held', 'lt', 'rt',
                 'restart', 'level_select',
@@ -522,9 +525,9 @@ class GamepadManager:
 
     def _iter_button_indices(self, binding: dict) -> List[int]:
         indices: List[int] = []
-        for key in ('button', 'button_secondary'):
+        for key in ('button', 'button_secondary', 'primary', 'secondary'):
             btn = binding.get(key)
-            if isinstance(btn, int) and btn >= 0 and btn not in indices:
+            if isinstance(btn, int) and not isinstance(btn, bool) and 0 <= btn < 100 and btn not in indices:
                 indices.append(btn)
         return indices
 
@@ -534,6 +537,12 @@ class GamepadManager:
             trig = binding.get(key)
             if trig in ('left', 'right') and trig not in dirs:
                 dirs.append(trig)
+        for key in ('primary', 'secondary'):
+            val = binding.get(key)
+            if val == 100 and 'left' not in dirs:
+                dirs.append('left')
+            elif val == 101 and 'right' not in dirs:
+                dirs.append('right')
         return dirs
 
     def _scan_gamepads(self) -> None:
@@ -1004,7 +1013,20 @@ class GamepadManager:
             if trigger_dir == 'right' and gp.right_trigger >= self.TRIGGER_THRESHOLD:
                 return True
 
+        claimed_buttons = set()
+        if action.startswith('slot_'):
+            core_actions = (
+                'rotate', 'rotate_ccw', 'rotate_alt',
+                'hard_drop', 'soft_drop', 'move_left', 'move_right',
+                'hold', 'hold2',
+            )
+            for ca in core_actions:
+                for b in self._iter_button_indices(self._bindings.get(ca, {})):
+                    claimed_buttons.add(b)
+
         for btn in self._iter_button_indices(binding):
+            if action.startswith('slot_') and btn in claimed_buttons:
+                continue
             if gp.buttons.get(btn, False):
                 return True
 
@@ -1033,7 +1055,20 @@ class GamepadManager:
                 if now and not prev:
                     return True
 
+        claimed_buttons = set()
+        if action.startswith('slot_'):
+            core_actions = (
+                'rotate', 'rotate_ccw', 'rotate_alt',
+                'hard_drop', 'soft_drop', 'move_left', 'move_right',
+                'hold', 'hold2',
+            )
+            for ca in core_actions:
+                for b in self._iter_button_indices(self._bindings.get(ca, {})):
+                    claimed_buttons.add(b)
+
         for btn in self._iter_button_indices(binding):
+            if action.startswith('slot_') and btn in claimed_buttons:
+                continue
             now = gp.buttons.get(btn, False)
             prev = gp.prev_buttons.get(btn, False)
             if now and not prev:
@@ -1288,6 +1323,13 @@ class GamepadManager:
 
                 # D-pad: önce hat, gerekirse button 11-14 fallback
                 gp.dpad = self._read_dpad_state(gp)
+
+                # D-Pad durumunu buton tablosuna (11-14) senkronize et (hat kullanan kontrolcüler için)
+                dpad_x, dpad_y = gp.dpad
+                gp.buttons[11] = (dpad_y == 1)
+                gp.buttons[12] = (dpad_y == -1)
+                gp.buttons[13] = (dpad_x == -1)
+                gp.buttons[14] = (dpad_x == 1)
 
                 # Dijital yön hesapla (analog stick → dijital)
                 gp.left_stick.digital_x = self._to_digital(gp.left_stick.x)
@@ -1634,7 +1676,7 @@ class GamepadManager:
         scale = scaled_mag / magnitude
         return (raw_x * scale, raw_y * scale)
 
-    def _make_key_event(self, key: int, event_type: int) -> pygame.event.Event:
+    def _make_key_event(self, key: int, event_type: int, gp_device_index: int = None, action: str = None) -> pygame.event.Event:
         """Sentetik KEYDOWN veya KEYUP eventi oluştur"""
         return pygame.event.Event(
             event_type,
@@ -1643,6 +1685,8 @@ class GamepadManager:
             unicode='',
             scancode=0,
             from_gamepad=True,
+            device_index=gp_device_index,
+            action=action,
         )
 
     # ─── Buton Olayları ─────────────────────────────────────────────────────
@@ -1660,7 +1704,7 @@ class GamepadManager:
             # Oyun içi: buton → aksiyon eşlemesi
             game_actions_list = [
                 'move_left', 'move_right', 'soft_drop',
-                'hard_drop', 'rotate', 'rotate_alt', 'hold', 'hold2',
+                'hard_drop', 'rotate', 'rotate_ccw', 'rotate_alt', 'hold', 'hold2',
                 'pause', 'discard_held',
                 'lt', 'rt',
                 'card_rewind', 'card_sniper', 'card_time_capsule_save',
@@ -1718,9 +1762,9 @@ class GamepadManager:
                 continue
 
             if pressed_now and not pressed_prev:
-                events.append(self._make_key_event(key, pygame.KEYDOWN))
+                events.append(self._make_key_event(key, pygame.KEYDOWN, gp_device_index=gp.device_index, action=action))
             elif not pressed_now and pressed_prev:
-                events.append(self._make_key_event(key, pygame.KEYUP))
+                events.append(self._make_key_event(key, pygame.KEYUP, gp_device_index=gp.device_index, action=action))
 
         return events
 
@@ -1758,9 +1802,9 @@ class GamepadManager:
                         elif not rt_pressed and gp.prev_right_trigger_pressed:
                             up = True
                 if down:
-                    events.append(self._make_key_event(key, pygame.KEYDOWN))
+                    events.append(self._make_key_event(key, pygame.KEYDOWN, gp_device_index=gp.device_index, action=action))
                 elif up:
-                    events.append(self._make_key_event(key, pygame.KEYUP))
+                    events.append(self._make_key_event(key, pygame.KEYUP, gp_device_index=gp.device_index, action=action))
 
         # NOT: prev_left/right_trigger_pressed ARTIK update() basinda (yeni
         # trigger degerleri okunmadan once) kaydediliyor. Burada tekrar
@@ -2424,6 +2468,29 @@ def normalize_gamepad_trigger_event(event) -> Optional[int]:
         joy_id=getattr(event, 'joy', None),
         instance_id=getattr(event, 'instance_id', None),
     )
+
+
+def normalize_gamepad_hat_event(event) -> Optional[int]:
+    """JOYHATMOTION olayını canonical D-pad buton indeksine (11-14) çevir."""
+    if getattr(event, 'type', None) != getattr(pygame, 'JOYHATMOTION', None):
+        return None
+    val = getattr(event, 'value', (0, 0))
+    if not isinstance(val, (tuple, list)) or len(val) < 2:
+        return None
+    try:
+        hx, hy = int(val[0]), int(val[1])
+    except Exception:
+        return None
+    if hy == 1:
+        return 11  # D-pad Up
+    elif hy == -1:
+        return 12  # D-pad Down
+    elif hx == -1:
+        return 13  # D-pad Left
+    elif hx == 1:
+        return 14  # D-pad Right
+    return None
+
 
 
 

@@ -1257,32 +1257,44 @@ class SoundManager:
         self.enabled = not self.enabled
         return self.enabled
     
+    @staticmethod
+    def _perceptual_volume(volume: float) -> float:
+        """İnsan kulağının logaritmik işitme algısına uygun dinamik ses katsayısı."""
+        clamped = max(0.0, min(1.0, float(volume)))
+        return clamped ** 1.35
+
     def set_volume(self, volume):
         """Ses seviyesini ayarla (0.0 - 1.0)"""
-        self.sfx_volume = max(0.0, min(1.0, volume))
+        self.sfx_volume = max(0.0, min(1.0, float(volume)))
+        effective = self._perceptual_volume(self.sfx_volume)
         for sound in self.sounds.values():
-            sound.set_volume(self.sfx_volume)
+            sound.set_volume(effective)
     
     def play_game_over_sequence(self):
         """Oyun bittiğinde müziği durdur ve gameover sesini çal"""
-        if not self.enabled: return
+        if not self.enabled:
+            return
         
         # Müziği durdur
         self.stop_music()
         
-        # Game Over sesini çal (yüksek sesle)
+        # Sessiz mod veya SFX kapalıysa sesi çalma
+        if getattr(self, 'muted', False) or not getattr(self, 'sfx_enabled', True):
+            return
+
+        # Game Over sesini kullanıcının sfx_volume seviyesinde çal
+        effective_vol = self._perceptual_volume(self.sfx_volume)
         if 'gameover' in self.sounds:
             try:
-                # Force volume to max for visibility
-                self.sounds['gameover'].set_volume(1.0)
+                self.sounds['gameover'].set_volume(effective_vol)
                 self.sounds['gameover'].play()
-                print("🔊 Game Over sesi tetiklendi!")
             except Exception as e:
-                print(f"❌ Game Over sesi çalma hatası: {e}")
+                pass
         else:
-            print("⚠️ Game Over sesi yüklü değil, beep kullanılıyor.")
             self.create_beep('gameover', 220, 500)
-            self.sounds['gameover'].play()
+            if 'gameover' in self.sounds:
+                self.sounds['gameover'].set_volume(effective_vol)
+                self.sounds['gameover'].play()
 
     def get_available_tracks(self):
         """Mevcut tüm müzik parçalarının listesini döndür
@@ -1330,7 +1342,7 @@ class SoundManager:
             track.set_volume(self._compute_volume(name))
 
     def _compute_volume(self, track_name):
-        base = self.music_volume
+        base = self._perceptual_volume(self.music_volume)
         multiplier = self.track_volumes.get(track_name, 1.0)
         duck = getattr(self, '_music_duck_factor', 1.0)
         return max(0.0, min(1.0, base * multiplier * duck))

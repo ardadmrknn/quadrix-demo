@@ -376,7 +376,7 @@ def request_window_focus():
 
             # Additional macOS-specific focus request using PyObjC if available
             try:
-                import AppKit
+                import AppKit  # type: ignore
 
                 app = AppKit.NSApplication.sharedApplication()
                 try:
@@ -500,7 +500,7 @@ def preload_app_icon(assets_dir: str) -> None:
             _fallback_png = os.path.join(assets_dir, 'quadrix_icon.png')
             icns_path = _fallback_png if os.path.exists(_fallback_png) else icns_path
         try:
-            from AppKit import NSApplication, NSImage
+            from AppKit import NSApplication, NSImage  # type: ignore
             abs_path = os.path.abspath(icns_path)
             image = NSImage.alloc().initWithContentsOfFile_(abs_path)
             if image:
@@ -595,7 +595,7 @@ def set_app_icon(assets_dir: str) -> None:
             _fallback_png = os.path.join(assets_dir, 'quadrix_icon.png')
             icns_path = _fallback_png if os.path.exists(_fallback_png) else icns_path
         try:
-            from AppKit import NSApplication, NSImage
+            from AppKit import NSApplication, NSImage  # type: ignore
             abs_path = os.path.abspath(icns_path)
             image = NSImage.alloc().initWithContentsOfFile_(abs_path)
             if image:
@@ -918,6 +918,29 @@ def is_fullscreen_toggle(key: int, mods: int, custom_key: int | None = None) -> 
     return False
 
 
+def is_alt_f4_event(event) -> bool:
+    """Return whether an event represents the Windows/Linux Alt+F4 shortcut."""
+    if getattr(event, 'type', None) != getattr(pygame, 'KEYDOWN', None):
+        return False
+    if getattr(event, 'key', None) != getattr(pygame, 'K_F4', None):
+        return False
+    event_mods = getattr(event, 'mod', None)
+    if not isinstance(event_mods, int):
+        try:
+            event_mods = pygame.key.get_mods()
+        except Exception:
+            event_mods = 0
+    return bool(event_mods & getattr(pygame, 'KMOD_ALT', 0))
+
+
+def normalize_window_close_event(event):
+    """Convert Alt+F4 into QUIT for borderless SDL windows."""
+    if is_alt_f4_event(event):
+        return pygame.event.Event(pygame.QUIT)
+    return event
+
+
+
 def normalize_mouse_pos(pos: tuple[int, int] | list[int] | None, scale: float = 1.0) -> tuple[int, int] | None:
     """Normalize mouse coordinates to match the display surface pixel space and apply UI scale.
 
@@ -1191,7 +1214,7 @@ def create_display(
                 # Böylece SDL Cocoa crash'i (NSWindow setStyleMask) önlenir.
                 # Menu bar ve dock pyobjc ile gizlenir.
                 try:
-                    from AppKit import NSApplication
+                    from AppKit import NSApplication  # type: ignore
                     app = NSApplication.sharedApplication()
                     # HideMenuBar(8) | HideDock(2) = 10
                     app.setPresentationOptions_(8 | 2)
@@ -1207,7 +1230,7 @@ def create_display(
                 # Pencere modu - çerçeveli, yeniden boyutlandırılabilir
                 # Menu bar ve dock'u geri getir
                 try:
-                    from AppKit import NSApplication
+                    from AppKit import NSApplication  # type: ignore
                     app = NSApplication.sharedApplication()
                     app.setPresentationOptions_(0)  # Normal moda dön
                 except Exception:
@@ -1803,12 +1826,14 @@ def _patched_event_get(eventtype=None, pump=True, exclude=None):
     except Exception:
         _sdl2_mouse_active = False
 
+    events = [normalize_window_close_event(e) for e in events]
     if not _sdl2_mouse_active and (not _software_scale_active or _virtual_blit_rect is None):
         return events
 
     patched = []
     for event in events:
         try:
+            event = normalize_window_close_event(event)
             etype = event.type
             if etype in (
                 pygame.MOUSEBUTTONDOWN,

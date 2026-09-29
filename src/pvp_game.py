@@ -672,6 +672,7 @@ class PvPGame:
                 'soft_drop': pygame.K_s,
                 'hard_drop': pygame.K_LSHIFT,
                 'rotate': pygame.K_w,
+                'rotate_ccw': pygame.K_q,
                 'hold': pygame.K_LCTRL,
             },
             'player2': {
@@ -680,6 +681,7 @@ class PvPGame:
                 'soft_drop': pygame.K_DOWN,
                 'hard_drop': pygame.K_SPACE,
                 'rotate': pygame.K_UP,
+                'rotate_ccw': getattr(pygame, 'K_RCTRL', 1073742052),
                 'hold': pygame.K_RCTRL,
             },
             'pause': pygame.K_p,
@@ -2193,6 +2195,10 @@ class PvPGame:
                     # W - Döndür
                     elif event.key == controls1['rotate']:
                         self._try_rotate_p1()
+
+                    # Q - Saat Yönünün Tersi Döndür
+                    elif controls1.get('rotate_ccw') is not None and event.key == controls1['rotate_ccw']:
+                        self._try_rotate_p1(direction=-1)
                     
                     # Shift - Hard drop
                     elif event.key == controls1['hard_drop']:
@@ -2239,6 +2245,10 @@ class PvPGame:
                     # Yukarı ok - Döndür
                     elif event.key == controls2['rotate']:
                         self._try_rotate_p2()
+
+                    # RCTRL - Saat Yönünün Tersi Döndür
+                    elif controls2.get('rotate_ccw') is not None and event.key == controls2['rotate_ccw']:
+                        self._try_rotate_p2(direction=-1)
                     
                     # Space - Hard drop
                     elif event.key == controls2['hard_drop']:

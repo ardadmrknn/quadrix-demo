@@ -526,6 +526,7 @@ class CoopGame:
                 'soft_drop': pygame.K_s,
                 'hard_drop': pygame.K_LSHIFT,
                 'rotate': pygame.K_w,
+                'rotate_ccw': pygame.K_q,
                 'hold': self._P1_HOLD_KEY,
             },
             'player2': {
@@ -534,6 +535,7 @@ class CoopGame:
                 'soft_drop': pygame.K_DOWN,
                 'hard_drop': pygame.K_SPACE,
                 'rotate': pygame.K_UP,
+                'rotate_ccw': getattr(pygame, 'K_RCTRL', 1073742052),
                 'hold': self._P2_HOLD_KEY,
             },
             'debug': {
@@ -1994,7 +1996,7 @@ class CoopGame:
             return
         try:
             alpha = get_combo_popup_alpha(self.combo_message_time)
-            font = getattr(self, 'font_large', None) or _rs.get_font(max(28, int(cell_size * 1.4)), bold=True)
+            font = getattr(self, 'font_large', None) or retro_style.get_font(max(28, int(cell_size * 1.4)), bold=True)
             msg = str(self.combo_message)
             shadow = font.render(msg, True, COMBO_POPUP_SHADOW_COLOR)
             if alpha < 255:
@@ -2056,13 +2058,13 @@ class CoopGame:
                 self.p2_lock_reset_count += 1
         return True
 
-    def _try_rotate(self, player: str) -> bool:
+    def _try_rotate(self, player: str, direction: int = 1) -> bool:
         piece = self.p1_current_piece if player == 'P1' else self.p2_current_piece
         if piece is None:
             return False
         success = piece.try_rotate_srs(
             self.board, 
-            direction=1, 
+            direction=direction, 
             check_func=lambda p: self.board.is_valid_position_for_player(p, player)
         )
         if success:
@@ -2752,6 +2754,9 @@ class CoopGame:
                     elif event.key == c1['rotate']:
                         self._try_rotate('P1')
                         self.sound.play('rotate')
+                    elif c1.get('rotate_ccw') is not None and event.key == c1['rotate_ccw']:
+                        self._try_rotate('P1', direction=-1)
+                        self.sound.play('rotate')
                     elif event.key == c1['hard_drop']:
                         self._hard_drop('P1')
                         self.sound.play('drop')
@@ -2780,6 +2785,9 @@ class CoopGame:
                         self._step_piece_down('P2')
                     elif event.key == c2['rotate']:
                         self._try_rotate('P2')
+                        self.sound.play('rotate')
+                    elif c2.get('rotate_ccw') is not None and event.key == c2['rotate_ccw']:
+                        self._try_rotate('P2', direction=-1)
                         self.sound.play('rotate')
                     elif event.key == c2['hard_drop']:
                         self._hard_drop('P2')
@@ -2881,6 +2889,10 @@ class CoopGame:
 
         elif action == 'rotate':
             self._try_rotate(player)
+            self.sound.play('rotate')
+
+        elif action == 'rotate_ccw':
+            self._try_rotate(player, direction=-1)
             self.sound.play('rotate')
 
         elif action == 'hard_drop':
@@ -4114,7 +4126,9 @@ class CoopGame:
         panel_w = min(max(s(780), w - s(340)), w - s(72))
         panel_h = min(max(s(560), h - s(120)), h - s(52))
         panel_rect = pygame.Rect((w - panel_w) // 2, (h - panel_h) // 2, panel_w, panel_h)
-        glow_rect = panel_rect.inflate(s(26), s(26))
+        if hasattr(panel_rect, 'clamp_ip'):
+            panel_rect.clamp_ip(pygame.Rect(0, 0, w, h))
+        glow_rect = panel_rect.inflate(s(26), s(26)) if hasattr(panel_rect, 'inflate') else panel_rect
         glow_surf = pygame.Surface(glow_rect.size, pygame.SRCALPHA)
         pygame.draw.rect(glow_surf, (165, 32, 58, 34), glow_surf.get_rect(), border_radius=22)
         self.screen.blit(glow_surf, glow_rect.topleft)

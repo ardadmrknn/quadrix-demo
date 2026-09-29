@@ -27,7 +27,7 @@ from gamepad_manager import get_gamepad_manager, reload_gamepad_settings
 from promptfont_support import get_gamepad_prompt_glyph, fit_promptfont_glyph_surface
 
 try:
-    from gamepad_manager import normalize_gamepad_event_button, normalize_gamepad_trigger_event
+    from gamepad_manager import normalize_gamepad_event_button, normalize_gamepad_trigger_event, normalize_gamepad_hat_event
 except ImportError:
     def normalize_gamepad_event_button(event):
         button = getattr(event, 'button', None)
@@ -54,6 +54,27 @@ except ImportError:
         if trigger_val >= 0.5:
             return 100 if axis_index == 4 else 101
         return None
+
+    def normalize_gamepad_hat_event(event):
+        if getattr(event, 'type', None) != getattr(pygame, 'JOYHATMOTION', None):
+            return None
+        val = getattr(event, 'value', (0, 0))
+        if not isinstance(val, (tuple, list)) or len(val) < 2:
+            return None
+        try:
+            hx, hy = int(val[0]), int(val[1])
+        except Exception:
+            return None
+        if hy == 1:
+            return 11
+        elif hy == -1:
+            return 12
+        elif hx == -1:
+            return 13
+        elif hx == 1:
+            return 14
+        return None
+
 try:
     from ui_scaling import get_projected_effective_scale, normalize_ui_scale_preset, scale_px, get_virtual_canvas_ui_scale, is_virtual_canvas_active
 except ImportError:
@@ -322,6 +343,8 @@ def _build_tab_content(tab_key: str, sm, show_debug: bool = False) -> list[dict]
             ('move_right', _t('gp_move_right', 'Sağa Hareket')),
             ('soft_drop', _t('gp_soft_drop', 'Yumuşak Düşüş')),
             ('hard_drop', _t('gp_hard_drop', 'Anında bırak')),
+            ('rotate', _t('gp_rotate', 'Döndür')),
+            ('rotate_ccw', _t('gp_rotate_ccw', 'Saat Yönünün Tersine Döndür')),
             ('hold', _t('gp_hold', 'Hold / Değiştir')),
             ('hold2', _t('card_perk_second_pocket_title', 'Ekstra Cep')),
             ('pause', _t('gp_pause', 'Duraklat')),
@@ -982,10 +1005,10 @@ class TabbedSettingsScreen:
         self.particle_effects = self._particle_effects_level_to_slider_value(sm.get('particle_effects', 'medium'))
         # Audio
         self.music_enabled = sm.get('music_enabled', True)
-        self.music_volume = sm.get('music_volume', 0.3)
-        self.menu_music_volume = sm.get('menu_music_volume', 0.3)
+        self.music_volume = round(round(float(sm.get('music_volume', 0.3) or 0.0) * 20) / 20.0, 2)
+        self.menu_music_volume = round(round(float(sm.get('menu_music_volume', 0.3) or 0.0) * 20) / 20.0, 2)
         self.sound_enabled = sm.get('sound_enabled', True)
-        self.sfx_volume = sm.get('sfx_volume', 0.5)
+        self.sfx_volume = round(round(float(sm.get('sfx_volume', 0.5) or 0.0) * 20) / 20.0, 2)
         self.mute_all = sm.get('mute_all', False)
         # Other
         self.current_language = sm.get('language', 'tr')
@@ -1084,9 +1107,9 @@ class TabbedSettingsScreen:
         self._tab_items = _build_tab_content(
             tab_key, self.settings_manager, self._show_debug_settings,
         )
-        # Seçilebilir öğe indeksleri (section hariç)
+        # Seçilebilir öğe indeksleri (section ve info hariç)
         self._selectable_indices = [
-            i for i, item in enumerate(self._tab_items) if item['type'] != 'section'
+            i for i, item in enumerate(self._tab_items) if item['type'] not in ('section', 'info')
         ]
         if self.selected >= len(self._selectable_indices):
             self.selected = max(0, len(self._selectable_indices) - 1)
@@ -1435,6 +1458,14 @@ class TabbedSettingsScreen:
             setattr(self, key, slider_value)
             self.settings_manager.set(key, self._particle_effects_level_from_slider_value(slider_value))
             return
+        if key in ('music_volume', 'menu_music_volume', 'sfx_volume'):
+            value = round(round(float(value) * 20) / 20.0, 2)
+            if key == 'music_volume':
+                self._music_volume_vis = value
+            elif key == 'menu_music_volume':
+                self._menu_music_volume_vis = value
+            elif key == 'sfx_volume':
+                self._sfx_volume_vis = value
         setattr(self, key, value)
         self.settings_manager.set(key, value)
 
@@ -2686,15 +2717,31 @@ class TabbedSettingsScreen:
     def _adjust_slider(self, key: str, delta: int, item: dict) -> str | None:
         """Slider değerini delta yönünde ayarla."""
         current = float(self._get_value(key))
-        step = item.get('step', 1)
-        min_val = item.get('min', 0)
-        max_val = item.get('max', 1)
+        min_val = float(item.get('min', 0))
+        max_val = float(item.get('max', 1))
 
-        new_val = current + step * delta
-        if item.get('percent'):
-            new_val = round(max(min_val, min(max_val, new_val)), 2)
+        if key in ('music_volume', 'menu_music_volume', 'sfx_volume'):
+            # 20 segmentli Blok Bar: her adım tam 1 blok (%5)
+            num_blocks = 20
+            cur_block = int(round(current * num_blocks))
+            new_block = max(0, min(num_blocks, cur_block + delta))
+            new_val = round(new_block / float(num_blocks), 2)
+            if key == 'music_volume':
+                self._music_volume_vis = new_val
+            elif key == 'menu_music_volume':
+                self._menu_music_volume_vis = new_val
+            elif key == 'sfx_volume':
+                self._sfx_volume_vis = new_val
         else:
-            new_val = int(max(min_val, min(max_val, new_val)))
+            step = float(item.get('step', 1))
+            steps_from_min = round((current - min_val) / step)
+            new_steps = steps_from_min + delta
+            new_val = min_val + new_steps * step
+            new_val = max(min_val, min(max_val, new_val))
+            if item.get('percent'):
+                new_val = round(new_val, 2)
+            else:
+                new_val = int(round(new_val))
 
         self._set_value(key, new_val)
 
@@ -2722,24 +2769,38 @@ class TabbedSettingsScreen:
     def _set_slider_from_x(self, item: dict, x: int, bar_rect: pygame.Rect) -> str | None:
         """Mouse x pozisyonuna göre slider değerini ayarla."""
         key = item.get('key', '')
-        min_val = item.get('min', 0)
-        max_val = item.get('max', 1)
-        step = item.get('step', 1)
+        min_val = float(item.get('min', 0))
+        max_val = float(item.get('max', 1))
+        step = float(item.get('step', 0.05 if item.get('percent') else 1))
 
         ratio = (x - bar_rect.x) / max(1, bar_rect.width)
         ratio = max(0.0, min(1.0, ratio))
-        raw = min_val + ratio * (max_val - min_val)
 
-        # Step snap
-        if step > 0:
-            snapped = round(raw / step) * step
+        if key in ('music_volume', 'menu_music_volume', 'sfx_volume'):
+            # 20 segmentli blok bar snap: her blok tam %5 (0, 1, 2, ..., 20 blok)
+            num_blocks = 20
+            if ratio <= 0.015:
+                new_block = 0
+            else:
+                new_block = max(0, min(num_blocks, int(round(ratio * num_blocks))))
+            new_val = round(new_block / float(num_blocks), 2)
+            if key == 'music_volume':
+                self._music_volume_vis = new_val
+            elif key == 'menu_music_volume':
+                self._menu_music_volume_vis = new_val
+            elif key == 'sfx_volume':
+                self._sfx_volume_vis = new_val
         else:
-            snapped = raw
+            raw = min_val + ratio * (max_val - min_val)
+            if step > 0:
+                snapped = round((raw - min_val) / step) * step + min_val
+            else:
+                snapped = raw
 
-        if item.get('percent'):
-            new_val = round(max(min_val, min(max_val, snapped)), 2)
-        else:
-            new_val = int(max(min_val, min(max_val, round(snapped))))
+            if item.get('percent'):
+                new_val = round(max(min_val, min(max_val, snapped)), 2)
+            else:
+                new_val = int(round(max(min_val, min(max_val, snapped))))
 
         self._set_value(key, new_val)
 
@@ -2920,6 +2981,18 @@ class TabbedSettingsScreen:
                     self._swallow_next_gamepad_click = False
                     self._swallow_next_gamepad_click_deadline_ms = 0
                     self._apply_captured_gamepad_button(trigger_index)
+                    self._waiting_for_key = False
+                    self._pending_keybind_item = None
+                    self._pending_keybind_slot = 'primary'
+                    self._capture_started_by_gamepad_click = False
+                    self._swallow_next_keydown = True
+                    self._reset_hold_to_clear_state()
+                    return None
+                hat_index = normalize_gamepad_hat_event(event)
+                if hat_index is not None:
+                    self._swallow_next_gamepad_click = False
+                    self._swallow_next_gamepad_click_deadline_ms = 0
+                    self._apply_captured_gamepad_button(hat_index)
                     self._waiting_for_key = False
                     self._pending_keybind_item = None
                     self._pending_keybind_slot = 'primary'
@@ -4215,28 +4288,30 @@ class TabbedSettingsScreen:
         key = item.get('key', '')
         min_val = item.get('min', 0)
         max_val = item.get('max', 1)
-        current = float(self._get_value(key))
+        actual_val = float(self._get_value(key))
 
-        # Smooth animasyon
+        # Smooth animasyon (sadece dolgu/knob pozisyonu için)
         if key == 'music_volume':
             current = self._music_volume_vis
         elif key == 'menu_music_volume':
             current = self._menu_music_volume_vis
         elif key == 'sfx_volume':
             current = self._sfx_volume_vis
+        else:
+            current = actual_val
 
         ratio = (current - min_val) / max(0.001, max_val - min_val)
         ratio = max(0.0, min(1.0, ratio))
 
-        # Değer metni
+        # Değer metni (Daima temiz, yuvarlanmış actual_val gösterilmeli!)
         if key == 'particle_effects':
-            value_text = self._particle_effects_label(int(current))
+            value_text = self._particle_effects_label(int(round(actual_val)))
         elif key == 'ctrl_gp_rumble':
-            value_text = self._gamepad_rumble_label(int(current))
+            value_text = self._gamepad_rumble_label(int(round(actual_val)))
         elif item.get('percent'):
-            value_text = f'{int(current * 100)}%'
+            value_text = f'{int(round(actual_val * 100))}%'
         else:
-            value_text = f'{int(current)} {item.get("suffix", "")}'.strip()
+            value_text = f'{int(round(actual_val))} {item.get("suffix", "")}'.strip()
 
         # Layout
         slider_right = rect.right - s(20, minimum=14)
@@ -4303,45 +4378,86 @@ class TabbedSettingsScreen:
             else:
                 fill_color = (0, 180, 255)    # neon blue
 
-            # Track – pill şekli, derinlik gölgesi
+            is_block_bar = key in ('music_volume', 'menu_music_volume', 'sfx_volume')
             _sma = _scale_menu_alpha
-            track_surf = pygame.Surface((bar_rect.width, bar_h), pygame.SRCALPHA)
-            pygame.draw.rect(track_surf, (20, 28, 48, _sma(200)), track_surf.get_rect(), border_radius=r)
-            pygame.draw.rect(track_surf, (60, 80, 120, _sma(130)), track_surf.get_rect(), 1, border_radius=r)
-            hl_t = pygame.Surface((max(1, bar_rect.width - s(6, minimum=4)), s(2, minimum=2)), pygame.SRCALPHA)
-            hl_t.fill((255, 255, 255, _sma(14)))
-            track_surf.blit(hl_t, (s(3, minimum=2), s(3, minimum=2)))
-            self.screen.blit(track_surf, bar_rect.topleft)
 
-            # Dolgu – parlak pill + üst vurgu şeridi
-            fill_w = int(bar_rect.width * ratio)
-            if fill_w > 2:
-                fill_surf = pygame.Surface((fill_w, bar_h), pygame.SRCALPHA)
-                pygame.draw.rect(fill_surf, (*fill_color, _sma(220)), fill_surf.get_rect(), border_radius=r)
-                # üst parlak vurgu
-                hl_f = pygame.Surface((max(1, fill_w - s(8, minimum=6)), s(3, minimum=2)), pygame.SRCALPHA)
-                hl_f.fill((255, 255, 255, _sma(70)))
-                fill_surf.blit(hl_f, (s(4, minimum=3), s(2, minimum=1)))
-                # hafif glow overlay
-                glow_c = tuple(min(255, c + 55) for c in fill_color)
-                pygame.draw.rect(fill_surf, (*glow_c, _sma(45)), fill_surf.get_rect(), border_radius=r)
-                self.screen.blit(fill_surf, bar_rect.topleft)
+            if is_block_bar:
+                # 20 segmentli neon Blok Bar
+                num_blocks = 20
+                gap = max(1, s(2, minimum=1))
+                avail_w = bar_rect.width - (num_blocks - 1) * gap
+                block_w = max(2, avail_w // num_blocks)
+                active_count = int(round(actual_val * num_blocks))
+                b_radius = max(1, s(2, minimum=1))
+                is_active = selected or (self._slider_drag_active and self._slider_drag_key == key)
 
-            # Knob – glow + dış halka + iç daire + vurgu nokta
-            knob_x = bar_rect.x + fill_w
-            knob_r = s(9, minimum=6)
-            is_active = selected or (self._slider_drag_active and self._slider_drag_key == key)
-            if is_active:
-                glow_pad = s(6, minimum=4)
-                glow_surf = pygame.Surface((knob_r * 2 + glow_pad * 2, knob_r * 2 + glow_pad * 2), pygame.SRCALPHA)
-                for gi, ga in enumerate([20, 40, 60]):
-                    gr = knob_r + glow_pad - gi * s(2, minimum=1)
-                    pygame.draw.circle(glow_surf, (*fill_color, ga), (knob_r + glow_pad, knob_r + glow_pad), gr)
-                self.screen.blit(glow_surf, (knob_x - knob_r - glow_pad, rect.centery - knob_r - glow_pad))
-            pygame.draw.circle(self.screen, fill_color, (knob_x, rect.centery), knob_r, 2)
-            knob_inner = (255, 255, 255) if is_active else (200, 212, 230)
-            pygame.draw.circle(self.screen, knob_inner, (knob_x, rect.centery), knob_r - 2)
-            pygame.draw.circle(self.screen, (255, 255, 255), (knob_x - 2, rect.centery - 3), max(1, knob_r // 4))
+                for b_idx in range(num_blocks):
+                    bx = bar_rect.x + b_idx * (block_w + gap)
+                    block_rect = pygame.Rect(bx, bar_rect.y, block_w, bar_h)
+
+                    if b_idx < active_count:
+                        # Aktif Blok: Parlak Neon Dolgu
+                        pygame.draw.rect(self.screen, (*fill_color, _sma(230)), block_rect, border_radius=b_radius)
+                        # Üst parlak vurgu şeridi
+                        hl_h = max(1, bar_h // 3)
+                        hl_rect = pygame.Rect(bx + 1, bar_rect.y + 1, max(1, block_w - 2), hl_h)
+                        hl_surf = pygame.Surface((hl_rect.width, hl_rect.height), pygame.SRCALPHA)
+                        hl_surf.fill((255, 255, 255, _sma(90)))
+                        self.screen.blit(hl_surf, hl_rect.topleft)
+                        # İnce kenarlık
+                        glow_c = tuple(min(255, c + 40) for c in fill_color)
+                        pygame.draw.rect(self.screen, (*glow_c, _sma(180)), block_rect, 1, border_radius=b_radius)
+                    else:
+                        # Pasif Blok: Koyu Şeffaf Arka Plan
+                        bg_surf = pygame.Surface((block_rect.width, block_rect.height), pygame.SRCALPHA)
+                        bg_surf.fill((18, 26, 44, _sma(190)))
+                        self.screen.blit(bg_surf, block_rect.topleft)
+                        pygame.draw.rect(self.screen, (50, 70, 105, _sma(120)), block_rect, 1, border_radius=b_radius)
+
+                # Seçiliyse son aktif bloğun etrafında parlak odak çerçevesi
+                if is_active and active_count > 0:
+                    last_bx = bar_rect.x + (active_count - 1) * (block_w + gap)
+                    last_rect = pygame.Rect(last_bx - 1, bar_rect.y - 1, block_w + 2, bar_h + 2)
+                    pygame.draw.rect(self.screen, (255, 255, 255), last_rect, 1, border_radius=b_radius)
+            else:
+                # Track – pill şekli, derinlik gölgesi
+                track_surf = pygame.Surface((bar_rect.width, bar_h), pygame.SRCALPHA)
+                pygame.draw.rect(track_surf, (20, 28, 48, _sma(200)), track_surf.get_rect(), border_radius=r)
+                pygame.draw.rect(track_surf, (60, 80, 120, _sma(130)), track_surf.get_rect(), 1, border_radius=r)
+                hl_t = pygame.Surface((max(1, bar_rect.width - s(6, minimum=4)), s(2, minimum=2)), pygame.SRCALPHA)
+                hl_t.fill((255, 255, 255, _sma(14)))
+                track_surf.blit(hl_t, (s(3, minimum=2), s(3, minimum=2)))
+                self.screen.blit(track_surf, bar_rect.topleft)
+
+                # Dolgu – parlak pill + üst vurgu şeridi
+                fill_w = int(bar_rect.width * ratio)
+                if fill_w > 2:
+                    fill_surf = pygame.Surface((fill_w, bar_h), pygame.SRCALPHA)
+                    pygame.draw.rect(fill_surf, (*fill_color, _sma(220)), fill_surf.get_rect(), border_radius=r)
+                    # üst parlak vurgu
+                    hl_f = pygame.Surface((max(1, fill_w - s(8, minimum=6)), s(3, minimum=2)), pygame.SRCALPHA)
+                    hl_f.fill((255, 255, 255, _sma(70)))
+                    fill_surf.blit(hl_f, (s(4, minimum=3), s(2, minimum=1)))
+                    # hafif glow overlay
+                    glow_c = tuple(min(255, c + 55) for c in fill_color)
+                    pygame.draw.rect(fill_surf, (*glow_c, _sma(45)), fill_surf.get_rect(), border_radius=r)
+                    self.screen.blit(fill_surf, bar_rect.topleft)
+
+                # Knob – glow + dış halka + iç daire + vurgu nokta
+                knob_x = bar_rect.x + fill_w
+                knob_r = s(9, minimum=6)
+                is_active = selected or (self._slider_drag_active and self._slider_drag_key == key)
+                if is_active:
+                    glow_pad = s(6, minimum=4)
+                    glow_surf = pygame.Surface((knob_r * 2 + glow_pad * 2, knob_r * 2 + glow_pad * 2), pygame.SRCALPHA)
+                    for gi, ga in enumerate([20, 40, 60]):
+                        gr = knob_r + glow_pad - gi * s(2, minimum=1)
+                        pygame.draw.circle(glow_surf, (*fill_color, ga), (knob_r + glow_pad, knob_r + glow_pad), gr)
+                    self.screen.blit(glow_surf, (knob_x - knob_r - glow_pad, rect.centery - knob_r - glow_pad))
+                pygame.draw.circle(self.screen, fill_color, (knob_x, rect.centery), knob_r, 2)
+                knob_inner = (255, 255, 255) if is_active else (200, 212, 230)
+                pygame.draw.circle(self.screen, knob_inner, (knob_x, rect.centery), knob_r - 2)
+                pygame.draw.circle(self.screen, (255, 255, 255), (knob_x - 2, rect.centery - 3), max(1, knob_r // 4))
 
     def _draw_selector_value(self, rect: pygame.Rect, item: dict, selected: bool) -> dict | None:
         """Selector tipi ayar için < değer > göster."""

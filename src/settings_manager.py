@@ -77,6 +77,7 @@ DEFAULT_CONTROLS = {
         'soft_drop': {'primary': 'down', 'secondary': 's'},
         'hard_drop': {'primary': 'space', 'secondary': ''},
         'rotate': {'primary': 'up', 'secondary': 'w'},
+        'rotate_ccw': {'primary': 'z', 'secondary': 'q'},
         'rotate_180': {'primary': 'e', 'secondary': ''},
         'hold': {'primary': 'c', 'secondary': ''},
         'pause': {'primary': 'p', 'secondary': ''},
@@ -98,6 +99,7 @@ DEFAULT_CONTROLS = {
             'soft_drop': 's',
             'hard_drop': 'left shift',
             'rotate': 'w',
+            'rotate_ccw': 'q',
             'hold': 'e',
         },
         'player2': {
@@ -106,6 +108,7 @@ DEFAULT_CONTROLS = {
             'soft_drop': 'down',
             'hard_drop': 'space',
             'rotate': 'up',
+            'rotate_ccw': 'right ctrl',
             'hold': 'right shift',
         },
     },
@@ -129,6 +132,7 @@ DEFAULT_CONTROLS = {
         'soft_drop': {'primary': -1, 'secondary': -1},    # D-pad ↓ / sol stick (yerlesik) + ops. buton
         'hard_drop': {'primary': 10, 'secondary': -1},    # RB / R1 (yeni; eski Y=3'ten tasindi)
         'rotate': {'primary': -1, 'secondary': -1},       # bos (donme D-pad ^; eski A=0 kaldirildi)
+        'rotate_ccw': {'primary': -1, 'secondary': -1},   # canonical CCW; varsayilan bos
         'rotate_alt': {'primary': -1, 'secondary': -1},   # bos (eski B=1 kaldirildi)
         'hold': {'primary': 9, 'secondary': -1},          # LB / L1 (degismedi)
         'hold2': {'primary': 8, 'secondary': -1},          # R3 / RS Click (Ekstra Cep)
