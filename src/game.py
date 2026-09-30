@@ -594,6 +594,162 @@ class Game:
 
         return font.render(draw_text, True, color)
 
+    @staticmethod
+    def _font_cache_key(font: pygame.font.Font) -> tuple:
+        try:
+            return (id(font), font.get_height(), font.get_linesize())
+        except Exception:
+            return (id(font), 0, 0)
+
+    def _hud_prompt_cache_get(self, key: tuple):
+        if not hasattr(self, '_hud_prompt_surface_cache') or self._hud_prompt_surface_cache is None:
+            self._hud_prompt_surface_cache = {}
+            self._hud_prompt_surface_cache_order = []
+        cached = self._hud_prompt_surface_cache.get(key)
+        if cached is not None:
+            try:
+                self._hud_prompt_surface_cache_order.remove(key)
+            except ValueError:
+                pass
+            self._hud_prompt_surface_cache_order.append(key)
+        return cached
+
+    def _hud_prompt_cache_put(self, key: tuple, surface: pygame.Surface | None):
+        if surface is None:
+            return None
+        if not hasattr(self, '_hud_prompt_surface_cache') or self._hud_prompt_surface_cache is None:
+            self._hud_prompt_surface_cache = {}
+            self._hud_prompt_surface_cache_order = []
+        self._hud_prompt_surface_cache[key] = surface
+        try:
+            self._hud_prompt_surface_cache_order.remove(key)
+        except ValueError:
+            pass
+        self._hud_prompt_surface_cache_order.append(key)
+        max_cap = getattr(self, '_hud_prompt_surface_cache_max', 256)
+        while len(self._hud_prompt_surface_cache_order) > max_cap:
+            oldest = self._hud_prompt_surface_cache_order.pop(0)
+            self._hud_prompt_surface_cache.pop(oldest, None)
+        return surface
+
+    def _cached_action_prompt_surface(
+        self,
+        action: str,
+        keyboard_label: str,
+        font: pygame.font.Font,
+        color,
+        *,
+        max_width: int | None = None,
+        max_height: int | None = None,
+    ) -> pygame.Surface | None:
+        color_key = tuple(color) if isinstance(color, (tuple, list)) else color
+        key = (
+            'action',
+            str(action),
+            str(keyboard_label),
+            self._font_cache_key(font),
+            color_key,
+            int(max_width) if max_width is not None else None,
+            int(max_height) if max_height is not None else None,
+        )
+        cached = self._hud_prompt_cache_get(key)
+        if cached is not None:
+            return cached
+        return self._hud_prompt_cache_put(
+            key,
+            render_action_prompt_surface(
+                action,
+                keyboard_label,
+                font,
+                color,
+                max_width=max_width,
+                max_height=max_height,
+            ),
+        )
+
+    def _cached_inline_action_text_surface(
+        self,
+        text: str,
+        label_text: str,
+        action: str,
+        font: pygame.font.Font,
+        color,
+    ) -> pygame.Surface:
+        color_key = tuple(color) if isinstance(color, (tuple, list)) else color
+        key = ('inline', str(text), str(label_text), str(action), self._font_cache_key(font), color_key)
+        cached = self._hud_prompt_cache_get(key)
+        if cached is not None:
+            return cached
+        return self._hud_prompt_cache_put(
+            key,
+            render_inline_action_text_surface(text, label_text, action, font, color),
+        )
+
+    def _get_solid_alpha_surface(self, size: tuple[int, int], color) -> pygame.Surface:
+        """Belirtilen boyut ve renkte katı alfa yüzeyini önbellekten döndürür (salt-okunur blit için)."""
+        if not hasattr(self, '_solid_alpha_surface_cache') or self._solid_alpha_surface_cache is None:
+            self._solid_alpha_surface_cache = {}
+            self._solid_alpha_surface_cache_order = []
+            self._solid_alpha_surface_cache_max = 256
+        width = max(1, int(size[0]))
+        height = max(1, int(size[1]))
+
+        # Renk tuple'ını güvenli RGBA formatına normalize et (RGBA dışındaki 5+ elemanlı veya hatalı tuple'ları önle)
+        if isinstance(color, (tuple, list)):
+            if len(color) >= 4:
+                fill_color = (int(color[0]), int(color[1]), int(color[2]), max(0, min(255, int(color[3]))))
+            elif len(color) == 3:
+                fill_color = (int(color[0]), int(color[1]), int(color[2]), 255)
+            else:
+                fill_color = tuple(color)
+        else:
+            fill_color = color
+
+        key = (width, height, fill_color)
+        cached = self._solid_alpha_surface_cache.get(key)
+        if cached is not None:
+            try:
+                self._solid_alpha_surface_cache_order.remove(key)
+            except ValueError:
+                pass
+            self._solid_alpha_surface_cache_order.append(key)
+            return cached
+        surface = pygame.Surface((width, height), pygame.SRCALPHA)
+        surface.fill(fill_color)
+        self._solid_alpha_surface_cache[key] = surface
+        self._solid_alpha_surface_cache_order.append(key)
+        max_cap = getattr(self, '_solid_alpha_surface_cache_max', 256)
+        while len(self._solid_alpha_surface_cache_order) > max_cap:
+            old_key = self._solid_alpha_surface_cache_order.pop(0)
+            self._solid_alpha_surface_cache.pop(old_key, None)
+        return surface
+
+    def _get_rounded_rect_surface(self, size: tuple[int, int], color, border_radius: int = 0, width: int = 0) -> pygame.Surface:
+        if not hasattr(self, '_rounded_rect_surface_cache') or self._rounded_rect_surface_cache is None:
+            self._rounded_rect_surface_cache = {}
+            self._rounded_rect_surface_cache_order = []
+            self._rounded_rect_surface_cache_max = 256
+        rect_w = max(1, int(size[0]))
+        rect_h = max(1, int(size[1]))
+        color_key = tuple(color) if isinstance(color, (tuple, list)) else color
+        key = (rect_w, rect_h, color_key, max(0, int(border_radius)), max(0, int(width)))
+        cached = self._rounded_rect_surface_cache.get(key)
+        if cached is not None:
+            try:
+                self._rounded_rect_surface_cache_order.remove(key)
+            except ValueError:
+                pass
+            self._rounded_rect_surface_cache_order.append(key)
+            return cached
+        surface = pygame.Surface((rect_w, rect_h), pygame.SRCALPHA)
+        pygame.draw.rect(surface, color, surface.get_rect(), width=max(0, int(width)), border_radius=max(0, int(border_radius)))
+        self._rounded_rect_surface_cache[key] = surface
+        self._rounded_rect_surface_cache_order.append(key)
+        while len(self._rounded_rect_surface_cache_order) > self._rounded_rect_surface_cache_max:
+            old_key = self._rounded_rect_surface_cache_order.pop(0)
+            self._rounded_rect_surface_cache.pop(old_key, None)
+        return surface
+
     def _draw_custom_frame(self, rect: pygame.Rect, asset_name: str, padding: int = 0, hole_punch: bool = False) -> bool:
         """Belirtilen asset varsa rect üzerine (padding ekleyerek) ortalayıp çizer.
         
@@ -799,6 +955,15 @@ class Game:
         # Anahtar cell_size + grid_color + board boyutunu içerir; çözünürlük/tema
         # değişiminde otomatik yeniden üretilir (stale risk yok).
         self._board_grid_cache = {'key': None, 'surface': None}
+        self._hud_prompt_surface_cache = {}
+        self._hud_prompt_surface_cache_order = []
+        self._hud_prompt_surface_cache_max = 96
+        self._solid_alpha_surface_cache = {}
+        self._solid_alpha_surface_cache_order = []
+        self._solid_alpha_surface_cache_max = 64
+        self._rounded_rect_surface_cache = {}
+        self._rounded_rect_surface_cache_order = []
+        self._rounded_rect_surface_cache_max = 96
         
         # Ses yöneticisi (menü ile paylaşılabilir)
         self.sound = sound_manager or SoundManager()
@@ -1275,6 +1440,15 @@ class Game:
                 pass
         self._cached_offset_key = None
         self._cached_cell_size_key = None
+        if hasattr(self, '_hud_prompt_surface_cache'):
+            self._hud_prompt_surface_cache.clear()
+            self._hud_prompt_surface_cache_order.clear()
+        if hasattr(self, '_solid_alpha_surface_cache'):
+            self._solid_alpha_surface_cache.clear()
+            self._solid_alpha_surface_cache_order.clear()
+        if hasattr(self, '_rounded_rect_surface_cache'):
+            self._rounded_rect_surface_cache.clear()
+            self._rounded_rect_surface_cache_order.clear()
         try:
             self.update_fonts()
         except Exception:
@@ -1986,6 +2160,15 @@ class Game:
         # metin cache'ini süpürmek bu riski kapatır (görsel etkisiz; yüzeyler bir
         # sonraki frame'de yeniden cache'lenir).
         clear_text_cache()
+        if hasattr(self, '_hud_prompt_surface_cache'):
+            self._hud_prompt_surface_cache.clear()
+            self._hud_prompt_surface_cache_order.clear()
+        if hasattr(self, '_solid_alpha_surface_cache'):
+            self._solid_alpha_surface_cache.clear()
+            self._solid_alpha_surface_cache_order.clear()
+        if hasattr(self, '_rounded_rect_surface_cache'):
+            self._rounded_rect_surface_cache.clear()
+            self._rounded_rect_surface_cache_order.clear()
     
     def get_cell_size(self):
         """Pencere boyutuna göre hücre boyutunu hesapla - CACHE'LENMİŞ"""
@@ -3024,106 +3207,14 @@ class Game:
         }
         self.particles.append(spark_particle)
     
-    def create_line_clear_particles(self, cleared_rows, board_offset_x, board_offset_y, cell_size):
-        """Satır temizlendiğinde SÜPER parçacıklar oluştur - GELİŞTİRİLMİŞ VERSİYON"""
-        if not self._particle_effects_enabled():
-            return
-        
-        # Parlak renkler paleti
-        sparkle_colors = [
-            (255, 255, 255),  # Beyaz
-            (255, 255, 200),  # Sıcak beyaz
-            (255, 215, 0),    # Altın
-            (0, 255, 255),    # Cyan
-            (255, 100, 255),  # Pembe
-        ]
-        
-        for row in cleared_rows:
-            # Satırdaki tüm hücrelerden parçacıklar saçıl
-            for col in range(self.board_width):  # Dinamik genişlik
-                # Hücrenin ekran pozisyonu
-                cell_x = board_offset_x + col * cell_size + cell_size // 2
-                cell_y = board_offset_y + row * cell_size + cell_size // 2
-                
-                # Hücre rengi - last_cleared_colors'dan al (satır silinmeden kaydedilmiş)
-                try:
-                    if hasattr(self.board, 'last_cleared_colors') and row in self.board.last_cleared_colors:
-                        row_colors = self.board.last_cleared_colors[row]
-                        if col < len(row_colors) and row_colors[col] != BLACK:
-                            cell_color = row_colors[col]
-                        else:
-                            cell_color = random.choice(sparkle_colors)
-                    else:
-                        cell_color = random.choice(sparkle_colors)
-                except Exception:
-                    cell_color = random.choice(sparkle_colors)
-                
-                # === ANA PATLAMA PARÇACIKLARı ===
-                # Her hücreden 6-10 ana parçacık
-                for _ in range(max(1, int(random.randint(6, 10) * self._particle_effects_multiplier()))):
-                    angle = random.uniform(0, 2 * 3.14159)
-                    speed = random.uniform(4, 12)
-                    
-                    # Yatay hareket daha baskın (satır boyunca saçılım)
-                    vx = speed * random.uniform(-1.5, 1.5)
-                    vy = speed * random.uniform(-1, 0.5) - 2  # Yukarı doğru
-                    
-                    particle = {
-                        'x': float(cell_x + random.randint(-3, 3)),
-                        'y': float(cell_y + random.randint(-3, 3)),
-                        'vx': vx,
-                        'vy': vy,
-                        'life': random.randint(40, 80),
-                        'max_life': 80,
-                        'color': cell_color,
-                        'size': random.randint(3, 7),
-                        'glow': True
-                    }
-                    self.particles.append(particle)
-                
-                # === KIVILCIM PARÇACIKLARı ===
-                # Her 2 hücreden 1 kıvılcım
-                if col % 2 == 0:
-                    for _ in range(max(1, int(random.randint(2, 4) * self._particle_effects_multiplier()))):
-                        spark_color = random.choice(sparkle_colors)
-                        spark_speed = random.uniform(8, 15)
-                        
-                        particle = {
-                            'x': float(cell_x),
-                            'y': float(cell_y),
-                            'vx': spark_speed * random.uniform(-1, 1),
-                            'vy': -spark_speed * random.uniform(0.3, 1) - 5,  # Güçlü yukarı
-                            'life': random.randint(20, 40),
-                            'max_life': 40,
-                            'color': spark_color,
-                            'size': random.randint(2, 4),
-                            'glow': True,
-                            'spark': True  # Kıvılcım işareti
-                        }
-                        self.particles.append(particle)
-            
-            # === SATIR ORTASINDAN YILDIZ EFEKTİ ===
-            center_x = board_offset_x + (self.board_width * cell_size) // 2
-            center_y = board_offset_y + row * cell_size + cell_size // 2
-            
-            # Merkezi patlama - yıldız şeklinde
-            star_count = max(4, int(16 * self._particle_effects_multiplier()))
-            for i in range(star_count):
-                angle = (i / star_count) * 2 * math.pi
-                star_speed = random.uniform(6, 14)
-                
-                particle = {
-                    'x': float(center_x),
-                    'y': float(center_y),
-                    'vx': math.cos(angle) * star_speed,
-                    'vy': math.sin(angle) * star_speed - 2,
-                    'life': random.randint(30, 60),
-                    'max_life': 60,
-                    'color': random.choice(sparkle_colors),
-                    'size': random.randint(4, 8),
-                    'glow': True
-                }
-                self.particles.append(particle)
+    def create_line_clear_particles(self, cleared_rows, board_offset_x, board_offset_y, cell_size, *args, **kwargs):
+        """Satır temizleme parçacık patlaması kapalı.
+
+        Sweep/wave ve kısa line-clear animasyonu zaten satır temizlemeyi gösteriyor;
+        buradaki burst parçacıkları telemetride yüksek anlık yük oluşturuyordu.
+        *args ve **kwargs (board=... vb.) imza uyumluluğu için kabul edilir.
+        """
+        return
 
     def _queue_line_clear_effects(self, lines_cleared: int) -> list[int]:
         """Board snapshot'ından ortak satır temizleme efektlerini hazırla."""
@@ -5109,10 +5200,8 @@ class Game:
                                 self.screen.blit(ghost_img, (block_x, block_y))
                                 self._draw_texture_border(block_x, block_y, block_size, ghost_color, textured=True)
                                 continue
-                        # Yarı saydam renkli gölge
-                        s = pygame.Surface((block_size, block_size))
-                        s.set_alpha(50)
-                        s.fill(ghost_color)
+                        # Yarı saydam renkli gölge (RGBA ve RGB güvenliği için dilimleme kullanılır)
+                        s = self._get_solid_alpha_surface((block_size, block_size), (*ghost_color[:3], 50))
                         self.screen.blit(s, (block_x, block_y))
                         pygame.draw.rect(
                             self.screen,
@@ -5152,10 +5241,11 @@ class Game:
                     if self.grounded:
                         effective_delay: int = 800 if self.current_piece.y <= 2 else getattr(self, 'lock_delay', 500)
                         ratio: float = min(1.0, max(0.0, self.lock_timer / effective_delay))
-                        alpha: int = int(ratio * 150)
-                        if alpha > 0:
-                            glow_surf: pygame.Surface = pygame.Surface((block_size, block_size), pygame.SRCALPHA)
-                            glow_surf.fill((255, 255, 255, alpha))
+                        raw_alpha: int = int(ratio * 150)
+                        if raw_alpha > 0:
+                            # Cache churn önleme: Alfa 6'şar basamaklık adımlara kuantize edilir (~25 farklı yüzey)
+                            alpha: int = max(6, min(150, (raw_alpha // 6) * 6))
+                            glow_surf: pygame.Surface = self._get_solid_alpha_surface((block_size, block_size), (255, 255, 255, alpha))
                             self.screen.blit(glow_surf, (block_x, block_y))
         
         # PNG Çerçeve Kontrolü - Blokların ÜZERİNE çizim (Bezel etkisi)
@@ -5339,7 +5429,7 @@ class Game:
         hold_label_text = hold_label_text.rstrip(':').strip()
         if not hold_label_text:
             hold_label_text = str(t('hold', default='Saklanan')).rstrip(':').strip() or 'Saklanan'
-        hold_label = render_inline_action_text_surface(
+        hold_label = self._cached_inline_action_text_surface(
             hold_label_text,
             hold_binding_label,
             'hold',
@@ -5372,7 +5462,7 @@ class Game:
 
         def _render_hold_key_badge(action_name: str, key_text: str, max_width: int):
             badge_font = retro_style.get_font(max(12, int(18 * hud_scale)))
-            badge = render_action_prompt_surface(
+            badge = self._cached_action_prompt_surface(
                 action_name,
                 key_text,
                 badge_font,
@@ -5460,8 +5550,7 @@ class Game:
             
             if not self.can_hold:
                 # Kilit overlay
-                lock_surf = pygame.Surface(hold_box_rect.size, pygame.SRCALPHA)
-                lock_surf.fill((0, 0, 0, 100))
+                lock_surf = self._get_solid_alpha_surface(hold_box_rect.size, (0, 0, 0, 100))
                 self.screen.blit(lock_surf, hold_box_rect.topleft)
                 # Kilit ikonu (basit çarpı)
                 lx, ly = hold_box_rect.center
@@ -5502,8 +5591,7 @@ class Game:
                         self.draw_textured_block(cx, cy, mini_cell - 1, c, shp_tex, s_info)
 
             if not getattr(self, 'can_hold2', True):
-                lock_surf = pygame.Surface(second_box_rect.size, pygame.SRCALPHA)
-                lock_surf.fill((0, 0, 0, 100))
+                lock_surf = self._get_solid_alpha_surface(second_box_rect.size, (0, 0, 0, 100))
                 self.screen.blit(lock_surf, second_box_rect.topleft)
                 lx, ly = second_box_rect.center
                 pygame.draw.line(self.screen, (200, 50, 50), (lx-10, ly-10), (lx+10, ly+10), 3)
@@ -5765,8 +5853,7 @@ class Game:
             return retro_style.get_font(min_size, bold=bold)
 
         # Dim overlay
-        overlay = pygame.Surface((width, height), pygame.SRCALPHA)
-        overlay.fill((0, 0, 0, 185))
+        overlay = self._get_solid_alpha_surface((width, height), (0, 0, 0, 185))
         self.screen.blit(overlay, (0, 0))
 
         panel_width = min(self._sx(520, ui_scale), width - self._sx(100, ui_scale))
@@ -5851,7 +5938,7 @@ class Game:
             _btn_surf = _btn_font.render(_label, True, _txt_color)
             _sub_font = retro_style.get_font(self._sx(13, ui_scale, minimum=10), bold=False)
             _sub_color = (*_btn_color,) if _hover else (140, 155, 180)
-            _sub_surf = render_action_prompt_surface(
+            _sub_surf = self._cached_action_prompt_surface(
                 _action,
                 _sub_label,
                 _sub_font,
@@ -6489,7 +6576,7 @@ class Game:
             if hovered and not disabled:
                 key_color = (min(255, key_color[0] + 28), min(255, key_color[1] + 28), min(255, key_color[2] + 28))
             if action == 'restart':
-                key_surf = render_action_prompt_surface(
+                key_surf = self._cached_action_prompt_surface(
                     'restart',
                     key,
                     btn_font_key,
@@ -6498,7 +6585,7 @@ class Game:
                     max_height=s(18, minimum=12),
                 )
             else:
-                key_surf = render_action_prompt_surface(
+                key_surf = self._cached_action_prompt_surface(
                     'menu_back',
                     key,
                     btn_font_key,
