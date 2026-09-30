@@ -62,6 +62,10 @@ def test_solid_alpha_surface_color_sanitization():
     surf_oversized = game._get_solid_alpha_surface((24, 24), (100, 150, 200, 255, 50))
     assert surf_oversized is not None
 
+    # RGB and alpha channels are all clamped to Pygame's valid range.
+    surf_clamped = game._get_solid_alpha_surface((2, 2), (256, -1, 300, 400))
+    assert surf_clamped.get_at((0, 0)) == (255, 0, 255, 255)
+
 
 def test_create_line_clear_particles_is_throttled_and_flexible():
     game = _create_test_game()
@@ -83,6 +87,63 @@ def test_hud_action_prompt_cache_hits():
     
     assert p1 is not None
     assert p1 is p2
+
+
+def test_hud_action_prompt_cache_tracks_prompt_state(monkeypatch):
+    game = _create_test_game()
+    font = pygame.font.SysFont(None, 20)
+    state = {'connected': False}
+
+    monkeypatch.setattr(
+        'game.get_action_prompt_display',
+        lambda action, label: {
+            'mode': 'glyph' if state['connected'] else 'text',
+            'glyph': 'A' if state['connected'] else None,
+            'text': 'A' if state['connected'] else label,
+        },
+    )
+
+    first = game._cached_action_prompt_surface('menu_confirm', 'ENTER', font, (255, 255, 255))
+    state['connected'] = True
+    second = game._cached_action_prompt_surface('menu_confirm', 'ENTER', font, (255, 255, 255))
+
+    assert first is not second
+
+
+def test_inline_action_prompt_cache_tracks_prompt_state(monkeypatch):
+    game = _create_test_game()
+    font = pygame.font.SysFont(None, 20)
+    state = {'connected': False}
+
+    monkeypatch.setattr(
+        'game.get_action_prompt_display',
+        lambda action, label: {
+            'mode': 'glyph' if state['connected'] else 'text',
+            'glyph': 'A' if state['connected'] else None,
+            'text': 'A' if state['connected'] else label,
+        },
+    )
+
+    first = game._cached_inline_action_text_surface('Hold C', 'C', 'hold', font, (255, 255, 255))
+    state['connected'] = True
+    second = game._cached_inline_action_text_surface('Hold C', 'C', 'hold', font, (255, 255, 255))
+
+    assert first is not second
+
+
+def test_pause_menu_reuses_cached_dim_overlay(monkeypatch):
+    game = _create_test_game()
+    game.pause_menu_options = ['Devam Et']
+    game.pause_menu_selected = 0
+    game._overlay_ui_scale = lambda: 1.0
+    game.screen = pygame.Surface((800, 600))
+    monkeypatch.setattr('game.get_mouse_pos', lambda: (0, 0))
+
+    for _ in range(3):
+        game._draw_pause_menu()
+
+    key = (800, 600, (0, 0, 0, 185))
+    assert list(game._solid_alpha_surface_cache).count(key) == 1
 
 
 def test_sync_runtime_settings_clears_prompt_cache():

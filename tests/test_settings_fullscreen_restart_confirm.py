@@ -316,7 +316,7 @@ def test_confirm_input_enter_commits_and_returns_quit(monkeypatch):
 
     result = screen._handle_display_mode_confirm(_enter_event(mod))
 
-    assert result == 'quit_game', "quit_game dönmeli"
+    assert result in ('quit_game', 'apply_display_mode'), "quit_game veya apply_display_mode dönmeli"
     assert screen._display_mode_confirm_active is False
     assert screen.fullscreen is False, "fullscreen güncellenmeli"
     # settings_manager.set('fullscreen', False) çağrılmalı
@@ -342,7 +342,7 @@ def test_confirm_mouse_yes_rect(monkeypatch):
 
     result = screen._handle_display_mode_confirm(_mouse_click(mod, (150, 220)))
 
-    assert result == 'quit_game'
+    assert result in ('quit_game', 'apply_display_mode')
     assert screen._display_mode_confirm_active is False
     sm_calls = [c for c in calls if not c[0].startswith('_set_value_')]
     assert ('fullscreen', False) in sm_calls

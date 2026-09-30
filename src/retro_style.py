@@ -473,6 +473,10 @@ class RetroStyle:
         self._volume_bar_surf_cache_order: list[tuple] = []
         self._volume_bar_surf_cache_max = 64
 
+        self._title_underline_cache: dict[tuple, pygame.Surface] = {}
+        self._title_underline_cache_order: list[tuple] = []
+        self._title_underline_cache_max = 32
+
         # Animasyon zamanı
         self._time = 0
 
@@ -529,6 +533,8 @@ class RetroStyle:
             self._scrollbar_surf_cache_order.clear()
             self._volume_bar_surf_cache.clear()
             self._volume_bar_surf_cache_order.clear()
+            self._title_underline_cache.clear()
+            self._title_underline_cache_order.clear()
         except Exception:
             pass
 
@@ -1350,13 +1356,27 @@ class RetroStyle:
         # Alt çizgi (gradient)
         line_width = min(title_rect.width + 60, width - 100)
         line_y = title_rect.bottom + 8
-        line_surf = pygame.Surface((line_width, 3), pygame.SRCALPHA)
-        for x in range(line_width):
-            # Ortadan kenarlara gradient
-            dist_from_center = abs(x - line_width // 2) / (line_width // 2)
-            alpha = int(150 * (1 - dist_from_center))
-            pygame.draw.line(line_surf, (*self.primary, alpha), (x, 0), (x, 3))
-        screen.blit(line_surf, (center[0] - line_width // 2, line_y))
+        if line_width > 0:
+            effective_alpha = self._scale_menu_alpha(150)
+            color_key = tuple(self.primary[:3])
+            cache_key = (line_width, color_key, effective_alpha)
+            line_surf = self._lru_get(self._title_underline_cache, self._title_underline_cache_order, cache_key)
+            if line_surf is None:
+                line_surf = pygame.Surface((line_width, 3), pygame.SRCALPHA)
+                half_w = max(1, line_width // 2)
+                for x in range(line_width):
+                    # Ortadan kenarlara gradient
+                    dist_from_center = abs(x - line_width // 2) / half_w
+                    alpha = max(0, min(255, int(effective_alpha * (1.0 - dist_from_center))))
+                    pygame.draw.line(line_surf, (*color_key, alpha), (x, 0), (x, 3))
+                line_surf = self._lru_put(
+                    self._title_underline_cache,
+                    self._title_underline_cache_order,
+                    cache_key,
+                    line_surf,
+                    self._title_underline_cache_max,
+                )
+            screen.blit(line_surf, (center[0] - line_width // 2, line_y))
         
         return title_rect
 

@@ -615,7 +615,11 @@ class DemoUpgradePrompt:
 
     def _open_store(self) -> None:
         try:
-            webbrowser.open(demo_config.DEMO_STEAM_STORE_URL, new=2)
+            try:
+                from steam_integration import open_store_page
+                open_store_page()
+            except Exception:
+                webbrowser.open(demo_config.DEMO_STEAM_STORE_URL, new=2)
         finally:
             self._close_with_action(self._confirm_action)
 

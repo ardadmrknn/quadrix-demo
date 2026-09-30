@@ -83,7 +83,7 @@ class BackgroundManager:
             resolved_path = _resolve_existing_image_path(image_path)
             if resolved_path is not None:
                 self.background_image = _get_cached_background_image(resolved_path)
-                print(f"✅ Arka plan resmi yüklendi: {os.path.basename(resolved_path)}")
+                print(f"[OK] Arka plan resmi yuklendi: {os.path.basename(resolved_path)}")
                 return True
 
             # Do not print per-path 'not found' messages here, the caller will
@@ -91,7 +91,7 @@ class BackgroundManager:
             # when multiple fallback paths are checked.
             return False
         except Exception as e:
-            print(f"⚠️ Arka plan resmi yüklenemedi: {e}")
+            print(f"[WARN] Arka plan resmi yuklenemedi: {e}")
             return False
     
     def set_transparency(self, value):

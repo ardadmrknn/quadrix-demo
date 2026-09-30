@@ -245,7 +245,6 @@ MODE_MUSIC_DEFAULTS = {
 OBSOLETE_SETTINGS_KEYS = {
     'theme',
     'custom_theme_colors',
-    'borderless_fullscreen',
     'resolution',
     'show_fps',
     'background_enabled',
@@ -312,7 +311,9 @@ class SettingsManager:
             # Gizli ayarlar: ana menüde "arda" yazınca görünür olur.
             'show_debug_settings': False,
             # Grafik ayarları - Maksimum kalite varsayılan
-            'fullscreen': True,  # Oyun yalnızca tam ekran çalışır
+            'fullscreen': True,  # Tam ekran veya pencere modu
+            'borderless_fullscreen': True,  # Tam ekranda çerçevesiz mod (Steam overlay dostu)
+            'window_resolution': '1280x720',  # Pencere modu varsayılan çözünürlük
             'steam_overlay_gl': 'auto',  # Mevcut konfigürasyon uyumluluğu için korunur
             'vsync': True,  # VSYNC açık - screen tearing önleme
             # FPS limiti: 0 = otomatik ekran yenileme hızı. Değerler: 30/45/60/90/120/0
@@ -847,10 +848,38 @@ class SettingsManager:
 
         changed = False
 
-        for key in ('borderless_fullscreen', 'resolution'):
-            if key in data:
-                del data[key]
+        if 'resolution' in data:
+            del data['resolution']
+            changed = True
+
+        if 'fullscreen' in data:
+            norm_fs = bool(data['fullscreen'])
+            if data['fullscreen'] is not norm_fs:
+                data['fullscreen'] = norm_fs
                 changed = True
+        else:
+            data['fullscreen'] = True
+            changed = True
+
+        valid_resolutions = ('1920x1080', '1600x900', '1366x768', '1280x720')
+        raw_res = str(data.get('window_resolution', '')).strip().lower()
+        if raw_res not in valid_resolutions:
+            # Fallback to default canonical windowed resolution
+            data['window_resolution'] = '1280x720'
+            changed = True
+
+        for vol_key in ('music_volume', 'menu_music_volume', 'sfx_volume'):
+            if vol_key in data:
+                try:
+                    raw_val = float(data[vol_key])
+                    block_count = max(0, min(20, int(round(raw_val * 20))))
+                    canonical_val = round(block_count / 20.0, 2)
+                    if data[vol_key] != canonical_val:
+                        data[vol_key] = canonical_val
+                        changed = True
+                except Exception:
+                    data[vol_key] = 0.5
+                    changed = True
 
         normalized_preset = self._normalize_ui_scale_preset_value(
             data.get('ui_scale_preset', self.default_settings.get('ui_scale_preset', DEFAULT_UI_SCALE_PRESET))

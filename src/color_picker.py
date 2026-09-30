@@ -12,12 +12,13 @@ from __future__ import annotations
 
 import colorsys
 import math
+import sys
 import time
 from typing import Dict, List, Optional, Tuple
 
 import pygame
 
-from platform_utils import get_mouse_pos
+from platform_utils import get_mouse_pos, resolve_frame_rate_cap
 from localization import t
 
 # ── Tetromino şekilleri ──────────────────────────────────────────────
@@ -294,6 +295,7 @@ def pygame_color_picker(
     initial_color: Tuple[int, int, int] = (255, 0, 0),
     title: str = "",
     piece_name: str = "",
+    settings_manager = None,
 ) -> Optional[Tuple[int, int, int]]:
     """Quadrix premium renk seçici."""
     from localization import t
@@ -490,6 +492,14 @@ def pygame_color_picker(
         _gpm.set_suppress_pointer_mode(True)
     except Exception:
         _gpm = None
+
+    fps_limit = 0
+    try:
+        fps_limit = int(settings_manager.get('fps_limit', 0) or 0) if settings_manager else 0
+    except Exception:
+        fps_limit = 0
+    frame_cap = resolve_frame_rate_cap(fps_limit)
+    is_darwin_busy = (sys.platform == 'darwin' and hasattr(clock, 'tick_busy_loop'))
 
     while running:
         try:
@@ -862,7 +872,10 @@ def pygame_color_picker(
                     (dx + pad, btn_y + btn_h + 4))
 
         pygame.display.flip()
-        clock.tick(60)
+        if is_darwin_busy:
+            clock.tick_busy_loop(frame_cap)
+        else:
+            clock.tick(frame_cap)
 
     # Pointer-mode bastırmasını eski haline getir
     try:
@@ -885,6 +898,7 @@ def pygame_text_input(
     prompt: str = "",
     initial_text: str = "",
     max_length: int = 40,
+    settings_manager = None,
 ) -> Optional[str]:
     """Quadrix premium metin girişi — gamepad uyumlu.
 
@@ -947,6 +961,14 @@ def pygame_text_input(
         _gpm.set_suppress_pointer_mode(True)
     except Exception:
         _gpm = None
+
+    fps_limit = 0
+    try:
+        fps_limit = int(settings_manager.get('fps_limit', 0) or 0) if settings_manager else 0
+    except Exception:
+        fps_limit = 0
+    frame_cap = resolve_frame_rate_cap(fps_limit)
+    is_darwin_busy = (sys.platform == 'darwin' and hasattr(clock, 'tick_busy_loop'))
 
     while running:
         try:
@@ -1060,7 +1082,10 @@ def pygame_text_input(
                              (180, 40, 50), hc, btn_cache=cn_h if hc else cn_n)
 
         pygame.display.flip()
-        clock.tick(60)
+        if is_darwin_busy:
+            clock.tick_busy_loop(frame_cap)
+        else:
+            clock.tick(frame_cap)
 
     # Pointer-mode bastırmasını eski haline getir
     try:

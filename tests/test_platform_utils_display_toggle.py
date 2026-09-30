@@ -436,6 +436,83 @@ class TestAltF4EventNormalization(unittest.TestCase):
         self.assertIs(normalized, event)
 
 
+class TestWindowedModeAndResolution(unittest.TestCase):
+    """Bölüm A: Pencereli mod, çözünürlük clamp ve SDL ortam değişkenleri testleri."""
+
+    def test_create_display_windowed_flags(self):
+        """fullscreen=False ile create_display gerçekten pencereli modda çalışmalı."""
+        captured_args = []
+
+        def fake_set_mode(size, flags=0):
+            captured_args.append((size, flags))
+            surf = MagicMock()
+            surf.get_size.return_value = size
+            return surf
+
+        platform_utils.pygame.display.set_mode = fake_set_mode
+        try:
+            platform_utils.create_display(1280, 720, fullscreen=False, resizable=True, borderless=False)
+            self.assertTrue(len(captured_args) >= 1)
+            size, flags = captured_args[0]
+            self.assertEqual(size, (1280, 720))
+            self.assertFalse(bool(flags & pygame.FULLSCREEN), "Pencereli modda FULLSCREEN bayrağı olmamalı")
+            self.assertFalse(bool(flags & pygame.NOFRAME), "Pencereli modda NOFRAME bayrağı olmamalı")
+            self.assertTrue(bool(flags & pygame.RESIZABLE), "Pencereli modda RESIZABLE bayrağı olmalı")
+        finally:
+            os.environ.pop("SDL_VIDEO_CENTERED", None)
+            os.environ.pop("SDL_VIDEO_WINDOW_POS", None)
+
+    def test_clamp_window_size_aspect_ratio_preserved(self):
+        """Çözünürlük masaüstü alanını aşınca en-boy oranı korunarak clamp edilmeli."""
+        with patch.object(platform_utils, "get_desktop_work_area", return_value=(1366, 700)):
+            # 1920x1080 (16:9 = ~1.777)
+            clamped_w, clamped_h = platform_utils.clamp_window_size_to_work_area(1920, 1080)
+            self.assertLessEqual(clamped_w, 1366)
+            self.assertLessEqual(clamped_h, 700)
+            original_aspect = 1920 / 1080
+            clamped_aspect = clamped_w / clamped_h
+            self.assertAlmostEqual(original_aspect, clamped_aspect, places=1)
+
+    def test_create_display_restores_sdl_env_vars_completely(self):
+        """SDL_VIDEO_CENTERED ve SDL_VIDEO_WINDOW_POS çağrı sonrası eksiksiz geri dönmeli."""
+        os.environ["SDL_VIDEO_CENTERED"] = "my_custom_centered"
+        os.environ["SDL_VIDEO_WINDOW_POS"] = "100,200"
+
+        def fake_set_mode(size, flags=0):
+            surf = MagicMock()
+            surf.get_size.return_value = size
+            return surf
+
+        platform_utils.pygame.display.set_mode = fake_set_mode
+        try:
+            platform_utils.create_display(1280, 720, fullscreen=False, resizable=True)
+            self.assertEqual(os.environ.get("SDL_VIDEO_CENTERED"), "my_custom_centered")
+            self.assertEqual(os.environ.get("SDL_VIDEO_WINDOW_POS"), "100,200")
+        finally:
+            os.environ.pop("SDL_VIDEO_CENTERED", None)
+            os.environ.pop("SDL_VIDEO_WINDOW_POS", None)
+
+    def test_fullscreen_and_overlay_paths_no_regression(self):
+        """fullscreen=True ve overlay yolları regresyona uğramamalı."""
+        captured_args = []
+
+        def fake_set_mode(size, flags=0):
+            captured_args.append((size, flags))
+            surf = MagicMock()
+            surf.get_size.return_value = size
+            return surf
+
+        platform_utils.pygame.display.set_mode = fake_set_mode
+        try:
+            platform_utils.create_display(1920, 1080, fullscreen=True, borderless=True)
+            self.assertTrue(len(captured_args) >= 1)
+            size, flags = captured_args[0]
+            self.assertEqual(size, (1920, 1080))
+            self.assertTrue(bool(flags & pygame.NOFRAME), "Borderless modda NOFRAME bayrağı olmalı")
+        finally:
+            os.environ.pop("SDL_VIDEO_CENTERED", None)
+            os.environ.pop("SDL_VIDEO_WINDOW_POS", None)
+
+
 if __name__ == "__main__":
     unittest.main()
-

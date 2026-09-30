@@ -39,7 +39,13 @@ from ui_theme import UIFonts, UIColors
 from asset_manager import load_image
 from text_cache import render_text, clear_text_cache
 from gamepad_manager import get_gamepad_manager, is_gamepad_connected
-from promptfont_support import render_action_prompt_surface, render_button_index_prompt_surface, render_inline_action_text_surface, resolve_nav_hint_label
+from promptfont_support import (
+    get_action_prompt_display,
+    render_button_index_prompt_surface,
+    render_inline_action_text_surface,
+    render_prompt_display_surface,
+    resolve_nav_hint_label,
+)
 
 try:
     from gamepad_manager import normalize_gamepad_event_button
@@ -601,6 +607,35 @@ class Game:
         except Exception:
             return (id(font), 0, 0)
 
+    @staticmethod
+    def _normalize_surface_color(color) -> tuple[int, int, int, int] | int:
+        """Kanalları sınırla; Pygame renk adlarını ve eşlenmiş tamsayıları koru."""
+        fallback = (255, 255, 255, 255)
+        if isinstance(color, (tuple, list)):
+            if len(color) < 3:
+                return fallback
+            try:
+                rgba = (*color[:3], color[3] if len(color) >= 4 else 255)
+                return tuple(max(0, min(255, int(channel))) for channel in rgba)
+            except (TypeError, ValueError, OverflowError):
+                return fallback
+        if isinstance(color, int):
+            # Surface.fill/draw için bu değer piksel formatına eşlenmiş renktir.
+            return color if 0 <= color <= 0xFFFFFFFF else fallback
+        try:
+            return tuple(pygame.Color(color))
+        except (TypeError, ValueError, OverflowError):
+            return fallback
+
+    @staticmethod
+    def _prompt_display_cache_key(display: dict) -> tuple:
+        """Bağlantı, kontrolcü ve atamalara göre çözülen görünümü anahtara taşı."""
+        return (
+            str(display.get('mode') or ''),
+            str(display.get('glyph') or ''),
+            str(display.get('text') or ''),
+        )
+
     def _hud_prompt_cache_get(self, key: tuple):
         if not hasattr(self, '_hud_prompt_surface_cache') or self._hud_prompt_surface_cache is None:
             self._hud_prompt_surface_cache = {}
@@ -643,10 +678,12 @@ class Game:
         max_height: int | None = None,
     ) -> pygame.Surface | None:
         color_key = tuple(color) if isinstance(color, (tuple, list)) else color
+        display = get_action_prompt_display(action, keyboard_label)
         key = (
             'action',
             str(action),
             str(keyboard_label),
+            self._prompt_display_cache_key(display),
             self._font_cache_key(font),
             color_key,
             int(max_width) if max_width is not None else None,
@@ -657,9 +694,8 @@ class Game:
             return cached
         return self._hud_prompt_cache_put(
             key,
-            render_action_prompt_surface(
-                action,
-                keyboard_label,
+            render_prompt_display_surface(
+                display,
                 font,
                 color,
                 max_width=max_width,
@@ -676,7 +712,16 @@ class Game:
         color,
     ) -> pygame.Surface:
         color_key = tuple(color) if isinstance(color, (tuple, list)) else color
-        key = ('inline', str(text), str(label_text), str(action), self._font_cache_key(font), color_key)
+        display = get_action_prompt_display(action, label_text)
+        key = (
+            'inline',
+            str(text),
+            str(label_text),
+            str(action),
+            self._prompt_display_cache_key(display),
+            self._font_cache_key(font),
+            color_key,
+        )
         cached = self._hud_prompt_cache_get(key)
         if cached is not None:
             return cached
@@ -694,16 +739,7 @@ class Game:
         width = max(1, int(size[0]))
         height = max(1, int(size[1]))
 
-        # Renk tuple'ını güvenli RGBA formatına normalize et (RGBA dışındaki 5+ elemanlı veya hatalı tuple'ları önle)
-        if isinstance(color, (tuple, list)):
-            if len(color) >= 4:
-                fill_color = (int(color[0]), int(color[1]), int(color[2]), max(0, min(255, int(color[3]))))
-            elif len(color) == 3:
-                fill_color = (int(color[0]), int(color[1]), int(color[2]), 255)
-            else:
-                fill_color = tuple(color)
-        else:
-            fill_color = color
+        fill_color = self._normalize_surface_color(color)
 
         key = (width, height, fill_color)
         cached = self._solid_alpha_surface_cache.get(key)
@@ -731,7 +767,7 @@ class Game:
             self._rounded_rect_surface_cache_max = 256
         rect_w = max(1, int(size[0]))
         rect_h = max(1, int(size[1]))
-        color_key = tuple(color) if isinstance(color, (tuple, list)) else color
+        color_key = self._normalize_surface_color(color)
         key = (rect_w, rect_h, color_key, max(0, int(border_radius)), max(0, int(width)))
         cached = self._rounded_rect_surface_cache.get(key)
         if cached is not None:
@@ -742,7 +778,7 @@ class Game:
             self._rounded_rect_surface_cache_order.append(key)
             return cached
         surface = pygame.Surface((rect_w, rect_h), pygame.SRCALPHA)
-        pygame.draw.rect(surface, color, surface.get_rect(), width=max(0, int(width)), border_radius=max(0, int(border_radius)))
+        pygame.draw.rect(surface, color_key, surface.get_rect(), width=max(0, int(width)), border_radius=max(0, int(border_radius)))
         self._rounded_rect_surface_cache[key] = surface
         self._rounded_rect_surface_cache_order.append(key)
         while len(self._rounded_rect_surface_cache_order) > self._rounded_rect_surface_cache_max:
@@ -2999,8 +3035,7 @@ class Game:
         ui_scale = self._overlay_ui_scale()
 
         # Dim overlay (exit confirm style)
-        overlay = pygame.Surface((width, height), pygame.SRCALPHA)
-        overlay.fill((0, 0, 0, 185))
+        overlay = self._get_solid_alpha_surface((width, height), (0, 0, 0, 185))
         self.screen.blit(overlay, (0, 0))
         
         # Lokalize edilmiş seçenek etiketleri

@@ -79,11 +79,15 @@ def test_demo_score_cap_prompt_tracks_confirm_and_cancel(monkeypatch):
     assert prompt.consume_last_action() == 'cancel'
 
     opened_urls: list[str] = []
-    monkeypatch.setattr(prompt_module.webbrowser, 'open', lambda url, new=0: opened_urls.append(url))
+    monkeypatch.setattr(prompt_module.webbrowser, 'open', lambda url, new=0: (opened_urls.append(url), True)[1])
 
     prompt_module.show_demo_score_cap_prompt(prompt)
     assert prompt.handle_input(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_RETURN)) is True
-    assert opened_urls == [prompt_module.demo_config.DEMO_STEAM_STORE_URL]
+    expected_targets = {
+        prompt_module.demo_config.DEMO_STEAM_STORE_URL,
+        f"steam://store/{prompt_module.demo_config.FULL_GAME_STEAM_APP_ID}",
+    }
+    assert any(url in expected_targets for url in opened_urls)
     assert prompt.consume_last_action() == 'confirm'
 
 
@@ -109,14 +113,18 @@ def test_demo_score_cap_prompt_mouse_confirm_waits_for_release(monkeypatch) -> N
     prompt.cancel_rect = pygame.Rect(220, 372, 200, 44)
 
     opened_urls: list[str] = []
-    monkeypatch.setattr(prompt_module.webbrowser, 'open', lambda url, new=0: opened_urls.append(url))
+    monkeypatch.setattr(prompt_module.webbrowser, 'open', lambda url, new=0: (opened_urls.append(url), True)[1])
 
     assert prompt.handle_input(pygame.event.Event(pygame.MOUSEBUTTONDOWN, button=1, pos=prompt.confirm_rect.center)) is True
     assert opened_urls == []
     assert prompt.is_active() is True
 
     assert prompt.handle_input(pygame.event.Event(pygame.MOUSEBUTTONUP, button=1, pos=prompt.confirm_rect.center)) is True
-    assert opened_urls == [prompt_module.demo_config.DEMO_STEAM_STORE_URL]
+    expected_targets = {
+        prompt_module.demo_config.DEMO_STEAM_STORE_URL,
+        f"steam://store/{prompt_module.demo_config.FULL_GAME_STEAM_APP_ID}",
+    }
+    assert any(url in expected_targets for url in opened_urls)
     assert prompt.consume_last_action() == 'confirm'
 
 

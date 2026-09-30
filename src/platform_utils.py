@@ -213,6 +213,12 @@ def get_display_flags(resizable: bool = True, fullscreen: bool = False, vsync: b
     return flags
 
 
+_REFRESH_RATE_CACHE_HZ = 0
+_REFRESH_RATE_CACHE_AT = 0.0
+_REFRESH_RATE_CACHE_TTL_S = 1.0
+_VRR_FEEDBACK_LOW_REFRESH_HZ = 45
+
+
 def invalidate_refresh_rate_cache() -> None:
     """Invalidate the cached display refresh rate."""
     global _REFRESH_RATE_CACHE_HZ, _REFRESH_RATE_CACHE_AT
@@ -220,25 +226,18 @@ def invalidate_refresh_rate_cache() -> None:
     _REFRESH_RATE_CACHE_AT = 0.0
 
 
-def _query_max_refresh_rate() -> int:
-    """Query the active window refresh rate directly from pygame/SDL."""
-    try:
-        if hasattr(pygame.display, 'get_current_refresh_rate'):
-            refresh_rate = int(pygame.display.get_current_refresh_rate() or 0)
-            if refresh_rate > 0:
-                return refresh_rate
-    except Exception:
-        pass
-
+def _query_desktop_refresh_rates() -> list[int]:
+    """Return nominal desktop/mode refresh rates reported by pygame/SDL."""
+    refresh_rates: list[int] = []
     try:
         if hasattr(pygame.display, 'get_desktop_refresh_rates'):
-            refresh_rates = [
-                int(rate)
-                for rate in (pygame.display.get_desktop_refresh_rates() or [])
-                if int(rate or 0) > 0
-            ]
-            if refresh_rates:
-                return max(refresh_rates)
+            for rate in (pygame.display.get_desktop_refresh_rates() or []):
+                try:
+                    parsed = int(rate or 0)
+                except Exception:
+                    parsed = 0
+                if parsed > 0:
+                    refresh_rates.append(parsed)
     except Exception:
         pass
 
@@ -246,16 +245,44 @@ def _query_max_refresh_rate() -> int:
         if hasattr(pygame.display, 'get_num_displays'):
             num = int(pygame.display.get_num_displays() or 0)
             if num > 0 and hasattr(pygame.display, 'get_current_display_mode'):
-                refresh_rates = []
                 for display_idx in range(num):
                     mode = pygame.display.get_current_display_mode(display_idx)
                     rate = int(getattr(mode, 'refresh_rate', 0) or 0)
                     if rate > 0:
                         refresh_rates.append(rate)
-                if refresh_rates:
-                    return max(refresh_rates)
     except Exception:
         pass
+
+    return refresh_rates
+
+
+def _query_max_refresh_rate() -> int:
+    """Query a stable refresh rate for automatic FPS caps.
+
+    On VRR/G-Sync systems SDL may briefly report the current dynamic cadence
+    (commonly 30 Hz) through get_current_refresh_rate(). Treat very low current
+    values as feedback samples and prefer nominal desktop/mode rates instead.
+    """
+    desktop_rates = _query_desktop_refresh_rates()
+    nominal_rate = max(desktop_rates) if desktop_rates else 0
+
+    try:
+        if hasattr(pygame.display, 'get_current_refresh_rate'):
+            refresh_rate = int(pygame.display.get_current_refresh_rate() or 0)
+            if refresh_rate > 0:
+                if (
+                    refresh_rate <= _VRR_FEEDBACK_LOW_REFRESH_HZ
+                    and nominal_rate > refresh_rate
+                ):
+                    return nominal_rate
+                if refresh_rate <= _VRR_FEEDBACK_LOW_REFRESH_HZ:
+                    return 60
+                return refresh_rate
+    except Exception:
+        pass
+
+    if nominal_rate > 0:
+        return nominal_rate
 
     return 60
 
@@ -913,6 +940,78 @@ def get_native_resolution():
     return (1920, 1080)
 
 
+def get_desktop_work_area() -> tuple[int, int]:
+    """Görev çubuğu ve dock alanları hariç kullanılabilir masaüstü çalışma alanını döndürür.
+
+    Windows: SystemParametersInfoW(SPI_GETWORKAREA)
+    macOS: NSScreen.mainScreen().visibleFrame()
+    Fallback: get_native_resolution()
+    """
+    native_w, native_h = get_native_resolution()
+    work_w, work_h = native_w, native_h
+
+    if IS_WINDOWS:
+        try:
+            import ctypes
+            from ctypes import wintypes
+            rect = wintypes.RECT()
+            # SPI_GETWORKAREA = 0x0030 (48)
+            if ctypes.windll.user32.SystemParametersInfoW(0x0030, 0, ctypes.byref(rect), 0):
+                w = int(rect.right - rect.left)
+                h = int(rect.bottom - rect.top)
+                if w > 0 and h > 0:
+                    work_w, work_h = w, h
+        except Exception:
+            pass
+
+    elif IS_MACOS:
+        try:
+            from AppKit import NSScreen  # type: ignore[import-untyped]
+            vframe = NSScreen.mainScreen().visibleFrame()
+            w, h = int(vframe.size.width), int(vframe.size.height)
+            if w > 0 and h > 0:
+                work_w, work_h = w, h
+        except Exception:
+            pass
+
+    final_w = min(native_w, work_w) if native_w > 0 else work_w
+    final_h = min(native_h, work_h) if native_h > 0 else work_h
+    return (final_w, final_h)
+
+
+def clamp_window_size_to_work_area(width: int, height: int) -> tuple[int, int]:
+    """Pencere boyutunu masaüstü çalışma alanına en-boy oranını koruyarak clamp eder."""
+    try:
+        w = int(width)
+        h = int(height)
+    except Exception:
+        return (1280, 720)
+
+    if w <= 0 or h <= 0:
+        return (1280, 720)
+
+    max_w, max_h = get_desktop_work_area()
+    if max_w <= 0 or max_h <= 0:
+        max_w, max_h = (1920, 1080)
+
+    if w <= max_w and h <= max_h:
+        return (w, h)
+
+    # Orantılı clamp: Kullanıcının istediği en-boy oranını koru
+    scale = min(max_w / float(w), max_h / float(h))
+    clamped_w = max(640, int(round(w * scale)))
+    clamped_h = max(360, int(round(h * scale)))
+
+    if clamped_w > max_w:
+        clamped_w = max_w
+        clamped_h = max(360, int(round(clamped_w * (float(h) / float(w)))))
+    if clamped_h > max_h:
+        clamped_h = max_h
+        clamped_w = max(640, int(round(clamped_h * (float(w) / float(h)))))
+
+    return (clamped_w, clamped_h)
+
+
 def is_fullscreen_toggle(key: int, mods: int, custom_key: int | None = None) -> bool:
     """Fullscreen/windowed toggle desteği kaldırıldı."""
     return False
@@ -1201,12 +1300,17 @@ def create_display(
     except Exception:
         pass
 
-    fullscreen = True
-    borderless = True
-    resizable = False
+    fullscreen = bool(fullscreen)
+    borderless = bool(borderless) if fullscreen else False
+    resizable = bool(resizable) if not fullscreen else False
+
+    if not fullscreen:
+        # Ekran boyutundan büyük pencerelerin taşmasını engellemek için çözünürlüğü clamp et (en-boy oranını koru)
+        width, height = clamp_window_size_to_work_area(width, height)
     
     # macOS için özel handling
     if IS_MACOS:
+        old_win_pos_mac = os.environ.get('SDL_VIDEO_WINDOW_POS')
         try:
             if fullscreen:
                 # macOS: Çerçevesiz tam ekran (borderless fullscreen)
@@ -1227,7 +1331,7 @@ def create_display(
                 invalidate_refresh_rate_cache()
                 return surface
             else:
-                # Pencere modu - çerçeveli, yeniden boyutlandırılabilir
+                # Pencere modu - çerçeveli (resizable bayrağına duyarlı)
                 # Menu bar ve dock'u geri getir
                 try:
                     from AppKit import NSApplication  # type: ignore
@@ -1236,19 +1340,24 @@ def create_display(
                 except Exception:
                     pass
                 os.environ['SDL_VIDEO_WINDOW_POS'] = 'center'
-                flags = pygame.RESIZABLE
+                flags = pygame.RESIZABLE if resizable else 0
                 surface = pygame.display.set_mode((width, height), flags)
                 invalidate_refresh_rate_cache()
                 return surface
         except pygame.error as e:
             print(f"[UYARI] macOS display hatası: {e}")
             try:
-                surface = pygame.display.set_mode((width or 800, height or 600), pygame.RESIZABLE)
+                surface = pygame.display.set_mode((width or 800, height or 600), pygame.RESIZABLE if resizable else 0)
                 invalidate_refresh_rate_cache()
                 return surface
             except pygame.error:
                 invalidate_refresh_rate_cache()
                 return pygame.Surface((width or 800, height or 600))
+        finally:
+            if old_win_pos_mac is not None:
+                os.environ['SDL_VIDEO_WINDOW_POS'] = old_win_pos_mac
+            elif 'SDL_VIDEO_WINDOW_POS' in os.environ:
+                del os.environ['SDL_VIDEO_WINDOW_POS']
     
     # Windows/Linux için standart handling
     if fullscreen and borderless:
@@ -1316,10 +1425,17 @@ def create_display(
 
     flags = get_display_flags(resizable=(not fullscreen and resizable), fullscreen=fullscreen)
 
-    # Exclusive fullscreen modunda da SDL_VIDEO_CENTERED'ı geçici devre dışı bırak
+    # Exclusive fullscreen modunda SDL_VIDEO_CENTERED'ı geçici devre dışı bırak;
+    # pencere modunda ise pencereyi ekranın ortasında aç.
     old_centered_excl = None
+    old_win_pos_excl = None
     if fullscreen:
         old_centered_excl = os.environ.pop('SDL_VIDEO_CENTERED', None)
+    else:
+        old_centered_excl = os.environ.get('SDL_VIDEO_CENTERED')
+        old_win_pos_excl = os.environ.get('SDL_VIDEO_WINDOW_POS')
+        os.environ['SDL_VIDEO_CENTERED'] = '1'
+        os.environ['SDL_VIDEO_WINDOW_POS'] = 'center'
     try:
         if fullscreen:
             surface = pygame.display.set_mode((0, 0), flags)
@@ -1329,7 +1445,7 @@ def create_display(
         return surface
     except pygame.error:
         try:
-            fallback_flags = pygame.DOUBLEBUF | pygame.RESIZABLE
+            fallback_flags = pygame.DOUBLEBUF | (pygame.RESIZABLE if resizable else 0)
             surface = pygame.display.set_mode((width or 800, height or 600), fallback_flags)
             invalidate_refresh_rate_cache()
             return surface
@@ -1337,8 +1453,18 @@ def create_display(
             invalidate_refresh_rate_cache()
             return pygame.Surface((width or 800, height or 600))
     finally:
-        if fullscreen and old_centered_excl is not None:
-            os.environ['SDL_VIDEO_CENTERED'] = old_centered_excl
+        if fullscreen:
+            if old_centered_excl is not None:
+                os.environ['SDL_VIDEO_CENTERED'] = old_centered_excl
+        else:
+            if old_centered_excl is not None:
+                os.environ['SDL_VIDEO_CENTERED'] = old_centered_excl
+            elif 'SDL_VIDEO_CENTERED' in os.environ:
+                del os.environ['SDL_VIDEO_CENTERED']
+            if old_win_pos_excl is not None:
+                os.environ['SDL_VIDEO_WINDOW_POS'] = old_win_pos_excl
+            elif 'SDL_VIDEO_WINDOW_POS' in os.environ:
+                del os.environ['SDL_VIDEO_WINDOW_POS']
 
 
 def _first_nonempty_line(text: str | None) -> str | None:
@@ -1984,10 +2110,87 @@ def unpatch_event_queue() -> None:
             pygame.mouse.set_pos = orig_set_pos
     except Exception:
         pass
-    try:
         orig_get_window_size = getattr(patch_event_queue, '_orig_display_get_window_size', None)
         if orig_get_window_size is not None:
             pygame.display.get_window_size = orig_get_window_size
     except Exception:
         pass
     _event_patch_active = False
+
+
+class FocusThrottlePolicy:
+    """Merkezi odak kaybı ve düşük güç tüketimi politikası.
+
+    Pencere arka plandayken veya simge durumundayken CPU/GPU kullanımını
+    azaltmak için FPS tavanını düşürür; ancak ana döngüyü bloklamaz (time.sleep yok).
+    Event kuyruğu, Steam callback'leri ve online networking kesilmeden akar.
+    Odak geri kazanıldığında delta_ms sıçramasını sınırlar.
+    """
+
+    def __init__(
+        self,
+        inactive_fps: int = 15,
+        debounce_ms: int = 150,
+        max_resume_delta_ms: float = 50.0,
+    ) -> None:
+        self.inactive_fps = max(5, int(inactive_fps))
+        self.debounce_ms = max(50, int(debounce_ms))
+        self.max_resume_delta_ms = float(max_resume_delta_ms)
+        self._is_active = True
+        self._inactive_since_ms = 0
+        self._was_throttled = False
+
+    def update_active_state(self, is_active: bool, now_ms: int | None = None) -> None:
+        """Ekranın aktif/odak durumunu güncelle."""
+        if now_ms is None:
+            now_ms = pygame.time.get_ticks() if pygame.get_init() else 0
+
+        if is_active:
+            self._is_active = True
+            self._inactive_since_ms = 0
+        else:
+            if self._is_active:
+                self._is_active = False
+                self._inactive_since_ms = now_ms
+
+    def is_throttled(self, state: str = 'menu', now_ms: int | None = None) -> bool:
+        """Kısa süreli (transient) odak geçişleri debounce edilerek throttle kararı verilir."""
+        if self._is_active:
+            return False
+
+        if now_ms is None:
+            now_ms = pygame.time.get_ticks() if pygame.get_init() else 0
+
+        if (now_ms - self._inactive_since_ms) < self.debounce_ms:
+            return False
+
+        return True
+
+    def resolve_frame_cap(
+        self,
+        target_fps: int,
+        state: str = 'menu',
+        now_ms: int | None = None,
+    ) -> int:
+        """Odak dışındaysa düşük güç FPS tavanı, aktifse hedef FPS döndürür."""
+        if self.is_throttled(state=state, now_ms=now_ms):
+            self._was_throttled = True
+            return self.inactive_fps
+        return target_fps
+
+    def filter_delta_ms(self, delta_ms: float) -> float:
+        """Odak geri kazanıldığında ilk karede oluşabilecek aşırı delta_ms sıçramasını sınırlar."""
+        if self._was_throttled:
+            self._was_throttled = False
+            return min(float(delta_ms), self.max_resume_delta_ms)
+        return float(delta_ms)
+
+
+_GLOBAL_FOCUS_THROTTLE_POLICY: FocusThrottlePolicy | None = None
+
+
+def get_focus_throttle_policy() -> FocusThrottlePolicy:
+    global _GLOBAL_FOCUS_THROTTLE_POLICY
+    if _GLOBAL_FOCUS_THROTTLE_POLICY is None:
+        _GLOBAL_FOCUS_THROTTLE_POLICY = FocusThrottlePolicy()
+    return _GLOBAL_FOCUS_THROTTLE_POLICY

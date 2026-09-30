@@ -6,10 +6,17 @@ Not: Cache anahtarı font objesinin id'si + metin + antialias + renk tuple'ıdı
 
 from __future__ import annotations
 
+import sys
 from collections import OrderedDict
 from typing import Optional
 
 import pygame
+
+# sys.modules üzerinde absolute ve relative import uyumsuzluklarını önlemek için alias oluştur
+_current_module = sys.modules.get(__name__)
+if _current_module is not None:
+    sys.modules.setdefault('text_cache', _current_module)
+    sys.modules.setdefault('src.text_cache', _current_module)
 
 
 class _LRUCache:
@@ -77,36 +84,43 @@ if hasattr(pygame, 'font') and hasattr(pygame.font, 'Font'):
             _TEXT_CACHE.set(key, rendered)
             return rendered.copy()
 
-    pygame.font.Font = PatchedFont
-    try:
-        import pygame.sysfont
-        pygame.sysfont.Font = PatchedFont
-    except Exception:
-        pass
-else:
-    class PatchedFont:
-        def __init__(self, *args, **kwargs):
-            pass
-        def render(self, text, antialias, color, background=None):
+        def render_shared(self, text, antialias, color, background=None) -> pygame.Surface:
+            """Salt-okunur (immutable) blit işlemleri için doğrudan paylaşımlı Surface döndürür."""
+            safe_text = "" if text is None else str(text)
             try:
-                return pygame.Surface((0, 0))
-            except TypeError:
-                try:
-                    return pygame.Surface()
-                except Exception:
-                    class DummySurface:
-                        def get_size(self):
-                            return (0, 0)
-                        def get_rect(self, **kwargs):
-                            class DummyRect:
-                                def __init__(self):
-                                    self.x = self.y = self.width = self.height = 0
-                                    self.top = self.bottom = self.left = self.right = 0
-                                    self.center = self.centerx = self.centery = (0, 0)
-                                def copy(self):
-                                    return self
-                            return DummyRect()
-                    return DummySurface()
+                color_key = tuple(color)
+            except Exception:
+                color_key = (255, 255, 255)
+
+            try:
+                bg_key = tuple(background) if background is not None else None
+            except Exception:
+                bg_key = None
+
+            key = (id(self), safe_text, bool(antialias), color_key, bg_key)
+            cached = _TEXT_CACHE.get(key)
+            if cached is not None:
+                return cached
+
+            rendered = super().render(safe_text, antialias, color, background)
+            _TEXT_CACHE.set(key, rendered)
+            return rendered
+
+def patch_font() -> None:
+    """pygame.font.Font ve sysfont.Font'u PatchedFont ile değiştirir."""
+    global pygame
+    if hasattr(pygame, "font") and hasattr(pygame.font, "Font"):
+        if pygame.font.Font is not PatchedFont:
+            pygame.font.Font = PatchedFont
+        try:
+            import pygame.sysfont
+            if pygame.sysfont.Font is not PatchedFont:
+                pygame.sysfont.Font = PatchedFont
+        except Exception:
+            pass
+
+
+patch_font()
 
 
 def render_text(
@@ -114,9 +128,43 @@ def render_text(
     text: str,
     antialias: bool,
     color,
+    background=None,
 ) -> pygame.Surface:
-    """Render text with a small LRU cache."""
-    return font.render(text, antialias, color)
+    """Render text with a small LRU cache (güvenli kopya)."""
+    return font.render(text, antialias, color, background)
+
+
+def render_text_shared(
+    font: pygame.font.Font,
+    text: str,
+    antialias: bool,
+    color,
+    background=None,
+) -> pygame.Surface:
+    """Yalnızca mutasyona uğramayacak salt okunur blit işlemleri için paylaşımlı Surface döndürür."""
+    if hasattr(font, 'render_shared'):
+        return font.render_shared(text, antialias, color, background)
+
+    # Font PatchedFont değilse bile doğrudan LRU önbelleğini yönet
+    safe_text = "" if text is None else str(text)
+    try:
+        color_key = tuple(color)
+    except Exception:
+        color_key = (255, 255, 255)
+
+    try:
+        bg_key = tuple(background) if background is not None else None
+    except Exception:
+        bg_key = None
+
+    key = (id(font), safe_text, bool(antialias), color_key, bg_key)
+    cached = _TEXT_CACHE.get(key)
+    if cached is not None:
+        return cached
+
+    rendered = font.render(safe_text, antialias, color, background)
+    _TEXT_CACHE.set(key, rendered)
+    return rendered
 
 
 def clear_text_cache() -> None:

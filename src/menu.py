@@ -545,6 +545,9 @@ class Menu:
         self._tile_flavor_scaled_cache = {}
         self._dashboard_flavor_prewarm_signature = None
         self._dashboard_tile_surface_cache = SurfaceLRUCache(max_entries=32)
+        self._corner_button_surface_cache = SurfaceLRUCache(max_entries=64)
+        self._panel_button_surface_cache = SurfaceLRUCache(max_entries=128)
+        self._menu_runtime_sig = None
 
         # Ana menü sağ-alt: Steam skor paneli (Kart Ustalığı)
         # publisher_key ve app_id sadece ortam değişkenleriyle aktif olur;
@@ -1451,9 +1454,11 @@ class Menu:
             menu_transparency = round(float(getattr(retro_style, '_menu_transparency', 1.0)), 4)
         except Exception:
             menu_transparency = 1.0
+        theme_name = str(getattr(getattr(self, 'theme_manager', None), 'current_theme', 'default'))
         return (
             panel_key,
             str(get_language()),
+            theme_name,
             int(rect.width),
             int(rect.height),
             str(title),
@@ -2744,6 +2749,22 @@ class Menu:
         target.blit(badge_surf, badge.topleft)
         target.blit(badge_text, badge_text.get_rect(center=badge.center))
 
+    def _get_cached_panel_button_surface(
+        self,
+        key: tuple,
+        size: tuple[int, int],
+        draw_func,
+    ) -> pygame.Surface:
+        if not hasattr(self, '_panel_button_surface_cache') or self._panel_button_surface_cache is None:
+            self._panel_button_surface_cache = SurfaceLRUCache(max_entries=128)
+        cached = self._panel_button_surface_cache.get(key)
+        if cached is not None:
+            return cached
+        surf = pygame.Surface((max(1, int(size[0])), max(1, int(size[1]))), pygame.SRCALPHA)
+        draw_func(surf)
+        self._panel_button_surface_cache.put(key, surf)
+        return surf
+
     def _draw_panel_micro_content(
         self,
         rect: pygame.Rect,
@@ -3471,27 +3492,30 @@ class Menu:
             btn_rect = pygame.Rect(btn_x, btn_y, btn_w, btn_h)
             btn_hover = btn_rect.collidepoint(get_mouse_pos())
 
-            btn_surf = pygame.Surface((btn_w, btn_h), pygame.SRCALPHA)
             bg_alpha = 225 if btn_hover else 185
-            pygame.draw.rect(btn_surf, (15, 25, 40, bg_alpha), btn_surf.get_rect(), border_radius=11)
-            for hy in range(min(12, btn_h // 3)):
-                ha = int(30 * (1 - hy / 12))
-                pygame.draw.line(btn_surf, (255, 255, 255, ha), (4, hy), (btn_w - 4, hy))
             border_alpha = 240 if btn_hover else 175
-            pygame.draw.rect(btn_surf, (*accent_color[:3], border_alpha), btn_surf.get_rect(), 2, border_radius=11)
-            glow = pygame.Surface((btn_w + 10, btn_h + 10), pygame.SRCALPHA)
-            pygame.draw.rect(glow, (*accent_color[:3], 40 if btn_hover else 18), glow.get_rect(), border_radius=14)
-            self.screen.blit(glow, (btn_rect.x - 5, btn_rect.y - 5))
             btn_font = retro_style.get_fitting_font(btn_label, base_size=max(s(20), 17), max_width=btn_w - s(32), bold=True, min_size=max(15, s(14)))
-            btn_text_surf = btn_font.render(btn_label, True, UIColors.TEXT_PRIMARY)
-            # Sol tarafta üçgen ok ikonu
-            arrow_x = s(12)
-            arrow_cy = btn_h // 2
-            arrow_size = s(7)
-            arrow_pts = [(arrow_x, arrow_cy - arrow_size), (arrow_x, arrow_cy + arrow_size), (arrow_x + arrow_size + 2, arrow_cy)]
-            pygame.draw.polygon(btn_surf, (*accent_color[:3], 230), arrow_pts)
-            btn_surf.blit(btn_text_surf, btn_text_surf.get_rect(center=(btn_w // 2 + s(5), btn_h // 2)))
-            self.screen.blit(btn_surf, btn_rect.topleft)
+            btn_key = ('new_gen_button', btn_w, btn_h, str(btn_label), tuple(accent_color[:3]), bool(btn_hover), str(get_language()), round(float(self._ui_scale()), 4))
+
+            def _draw_new_gen_button(bundle: pygame.Surface) -> None:
+                glow_pad = 5
+                inner = pygame.Rect(glow_pad, glow_pad, btn_w, btn_h)
+                pygame.draw.rect(bundle, (*accent_color[:3], 40 if btn_hover else 18), bundle.get_rect(), border_radius=14)
+                pygame.draw.rect(bundle, (15, 25, 40, bg_alpha), inner, border_radius=11)
+                for hy in range(min(12, btn_h // 3)):
+                    ha = int(30 * (1 - hy / 12))
+                    pygame.draw.line(bundle, (255, 255, 255, ha), (glow_pad + 4, glow_pad + hy), (glow_pad + btn_w - 4, glow_pad + hy))
+                pygame.draw.rect(bundle, (*accent_color[:3], border_alpha), inner, 2, border_radius=11)
+                arrow_x = glow_pad + s(12)
+                arrow_cy = glow_pad + btn_h // 2
+                arrow_size = s(7)
+                arrow_pts = [(arrow_x, arrow_cy - arrow_size), (arrow_x, arrow_cy + arrow_size), (arrow_x + arrow_size + 2, arrow_cy)]
+                pygame.draw.polygon(bundle, (*accent_color[:3], 230), arrow_pts)
+                btn_text_surf = btn_font.render(btn_label, True, UIColors.TEXT_PRIMARY)
+                bundle.blit(btn_text_surf, btn_text_surf.get_rect(center=(glow_pad + btn_w // 2 + s(5), glow_pad + btn_h // 2)))
+
+            btn_bundle = self._get_cached_panel_button_surface(btn_key, (btn_w + 10, btn_h + 10), _draw_new_gen_button)
+            self.screen.blit(btn_bundle, (btn_rect.x - 5, btn_rect.y - 5))
             self.new_gen_tetris_play_rect = btn_rect
 
         elif panel_key == 'extras':
@@ -3503,27 +3527,30 @@ class Menu:
             btn_rect = pygame.Rect(btn_x, btn_y, btn_w, btn_h)
             btn_hover = btn_rect.collidepoint(get_mouse_pos())
 
-            btn_surf = pygame.Surface((btn_w, btn_h), pygame.SRCALPHA)
             bg_alpha = 225 if btn_hover else 185
-            pygame.draw.rect(btn_surf, (15, 25, 40, bg_alpha), btn_surf.get_rect(), border_radius=11)
-            for hy in range(min(12, btn_h // 3)):
-                ha = int(30 * (1 - hy / 12))
-                pygame.draw.line(btn_surf, (255, 255, 255, ha), (4, hy), (btn_w - 4, hy))
             border_alpha = 240 if btn_hover else 175
-            pygame.draw.rect(btn_surf, (*accent_color[:3], border_alpha), btn_surf.get_rect(), 2, border_radius=11)
-            glow = pygame.Surface((btn_w + 10, btn_h + 10), pygame.SRCALPHA)
-            pygame.draw.rect(glow, (*accent_color[:3], 40 if btn_hover else 18), glow.get_rect(), border_radius=14)
-            self.screen.blit(glow, (btn_rect.x - 5, btn_rect.y - 5))
             btn_font = retro_style.get_fitting_font(btn_label, base_size=max(s(18), 15), max_width=btn_w - s(32), bold=True, min_size=max(14, s(13)))
-            btn_text_surf = btn_font.render(btn_label, True, UIColors.TEXT_PRIMARY)
-            # Sol tarafta üçgen ok ikonu
-            arrow_x = s(12)
-            arrow_cy = btn_h // 2
-            arrow_size = s(7)
-            arrow_pts = [(arrow_x, arrow_cy - arrow_size), (arrow_x, arrow_cy + arrow_size), (arrow_x + arrow_size + 2, arrow_cy)]
-            pygame.draw.polygon(btn_surf, (*accent_color[:3], 230), arrow_pts)
-            btn_surf.blit(btn_text_surf, btn_text_surf.get_rect(center=(btn_w // 2 + s(5), btn_h // 2)))
-            self.screen.blit(btn_surf, btn_rect.topleft)
+            btn_key = ('extras_button', btn_w, btn_h, str(btn_label), tuple(accent_color[:3]), bool(btn_hover), str(get_language()), round(float(self._ui_scale()), 4))
+
+            def _draw_extras_button(bundle: pygame.Surface) -> None:
+                glow_pad = 5
+                inner = pygame.Rect(glow_pad, glow_pad, btn_w, btn_h)
+                pygame.draw.rect(bundle, (*accent_color[:3], 40 if btn_hover else 18), bundle.get_rect(), border_radius=14)
+                pygame.draw.rect(bundle, (15, 25, 40, bg_alpha), inner, border_radius=11)
+                for hy in range(min(12, btn_h // 3)):
+                    ha = int(30 * (1 - hy / 12))
+                    pygame.draw.line(bundle, (255, 255, 255, ha), (glow_pad + 4, glow_pad + hy), (glow_pad + btn_w - 4, glow_pad + hy))
+                pygame.draw.rect(bundle, (*accent_color[:3], border_alpha), inner, 2, border_radius=11)
+                arrow_x = glow_pad + s(12)
+                arrow_cy = glow_pad + btn_h // 2
+                arrow_size = s(7)
+                arrow_pts = [(arrow_x, arrow_cy - arrow_size), (arrow_x, arrow_cy + arrow_size), (arrow_x + arrow_size + 2, arrow_cy)]
+                pygame.draw.polygon(bundle, (*accent_color[:3], 230), arrow_pts)
+                btn_text_surf = btn_font.render(btn_label, True, UIColors.TEXT_PRIMARY)
+                bundle.blit(btn_text_surf, btn_text_surf.get_rect(center=(glow_pad + btn_w // 2 + s(5), glow_pad + btn_h // 2)))
+
+            btn_bundle = self._get_cached_panel_button_surface(btn_key, (btn_w + 10, btn_h + 10), _draw_extras_button)
+            self.screen.blit(btn_bundle, (btn_rect.x - 5, btn_rect.y - 5))
             self.extras_browse_rect = btn_rect
 
         elif panel_key == 'tutorial_mode':
@@ -3535,30 +3562,59 @@ class Menu:
             btn_rect = pygame.Rect(btn_x, btn_y, btn_w, btn_h)
             btn_hover = btn_rect.collidepoint(get_mouse_pos())
 
-            btn_surf = pygame.Surface((btn_w, btn_h), pygame.SRCALPHA)
             bg_alpha = 225 if btn_hover else 185
-            pygame.draw.rect(btn_surf, (15, 25, 40, bg_alpha), btn_surf.get_rect(), border_radius=10)
-            for hy in range(min(10, btn_h // 3)):
-                ha = int(28 * (1 - hy / 10))
-                pygame.draw.line(btn_surf, (255, 255, 255, ha), (4, hy), (btn_w - 4, hy))
             border_alpha = 240 if btn_hover else 175
-            pygame.draw.rect(btn_surf, (*accent_color[:3], border_alpha), btn_surf.get_rect(), 2, border_radius=10)
-            glow = pygame.Surface((btn_w + 10, btn_h + 10), pygame.SRCALPHA)
-            pygame.draw.rect(glow, (*accent_color[:3], 40 if btn_hover else 18), glow.get_rect(), border_radius=14)
-            self.screen.blit(glow, (btn_rect.x - 5, btn_rect.y - 5))
             btn_font = retro_style.get_fitting_font(btn_label, base_size=s(17), max_width=btn_w - s(20), bold=True, min_size=max(11, s(12)))
-            btn_text_surf = btn_font.render(btn_label, True, UIColors.TEXT_PRIMARY)
-            btn_surf.blit(btn_text_surf, btn_text_surf.get_rect(center=(btn_w // 2, btn_h // 2)))
-            self.screen.blit(btn_surf, btn_rect.topleft)
+            btn_key = ('tutorial_button', btn_w, btn_h, str(btn_label), tuple(accent_color[:3]), bool(btn_hover), str(get_language()), round(float(self._ui_scale()), 4))
+
+            def _draw_tutorial_button(bundle: pygame.Surface) -> None:
+                glow_pad = 5
+                inner = pygame.Rect(glow_pad, glow_pad, btn_w, btn_h)
+                pygame.draw.rect(bundle, (*accent_color[:3], 40 if btn_hover else 18), bundle.get_rect(), border_radius=14)
+                pygame.draw.rect(bundle, (15, 25, 40, bg_alpha), inner, border_radius=10)
+                for hy in range(min(10, btn_h // 3)):
+                    ha = int(28 * (1 - hy / 10))
+                    pygame.draw.line(bundle, (255, 255, 255, ha), (glow_pad + 4, glow_pad + hy), (glow_pad + btn_w - 4, glow_pad + hy))
+                pygame.draw.rect(bundle, (*accent_color[:3], border_alpha), inner, 2, border_radius=10)
+                btn_text_surf = btn_font.render(btn_label, True, UIColors.TEXT_PRIMARY)
+                bundle.blit(btn_text_surf, btn_text_surf.get_rect(center=(glow_pad + btn_w // 2, glow_pad + btn_h // 2)))
+
+            btn_bundle = self._get_cached_panel_button_surface(btn_key, (btn_w + 10, btn_h + 10), _draw_tutorial_button)
+            self.screen.blit(btn_bundle, (btn_rect.x - 5, btn_rect.y - 5))
             self.tutorial_enter_rect = btn_rect
 
         elif panel_key == 'pvp_2_players':
             # Local PvP butonu kaldırıldı – subtitle yeterli
             pass
 
+    def invalidate_menu_surface_caches(self) -> None:
+        """Menü UI surface cache'lerini temizle."""
+        if hasattr(self, '_dashboard_tile_surface_cache') and self._dashboard_tile_surface_cache is not None:
+            self._dashboard_tile_surface_cache.clear()
+        if hasattr(self, '_corner_button_surface_cache') and self._corner_button_surface_cache is not None:
+            self._corner_button_surface_cache.clear()
+        if hasattr(self, '_panel_button_surface_cache') and self._panel_button_surface_cache is not None:
+            self._panel_button_surface_cache.clear()
+        if hasattr(self, '_tile_flavor_scaled_cache') and self._tile_flavor_scaled_cache is not None:
+            self._tile_flavor_scaled_cache.clear()
+        self._hero_header_cache = None
+        self._hero_header_cache_signature = None
+
     def draw(self):
         """Menüyü retro Atari estetiğiyle çiz."""
         width, height = self.screen.get_size()
+
+        # Boyut, dil, tema, şeffaflık, font ölçeği veya kullanıcı değiştiğinde cache'i geçersiz kıl
+        curr_lang = str(get_language())
+        curr_theme = str(getattr(getattr(self, 'theme_manager', None), 'current_theme', 'default'))
+        curr_alpha = round(float(getattr(retro_style, '_menu_transparency', 1.0)), 4)
+        curr_scale = round(float(self._ui_scale()), 4)
+        curr_user = str(getattr(self, 'current_player_name', ''))
+        curr_sig = ((width, height), curr_lang, curr_theme, curr_alpha, curr_scale, curr_user)
+        if curr_sig != getattr(self, '_menu_runtime_sig', None):
+            self._menu_runtime_sig = curr_sig
+            self.invalidate_menu_surface_caches()
+
         if hasattr(self, '_demo_upgrade_prompt') and self._demo_upgrade_prompt.is_active():
             self._demo_upgrade_prompt.screen = self.screen
             self._demo_upgrade_prompt.draw()
@@ -5809,39 +5865,44 @@ class Menu:
 
         return rect
 
-    def _draw_corner_button(
+    def _draw_globe_icon(self, size: int) -> pygame.Surface:
+        """Pygame ile vektörel dünya/dil ikonu çiz (emoji fallback yerine)."""
+        surf = pygame.Surface((size, size), pygame.SRCALPHA)
+        cx, cy = size // 2, size // 2
+        r = int(size * 0.38)
+        color = UIColors.TEXT_PRIMARY
+        lw = max(2, int(size * 0.05))
+        # Dış çember
+        pygame.draw.circle(surf, color, (cx, cy), r, lw)
+        # Ekvator çizgisi
+        pygame.draw.line(surf, color, (cx - r, cy), (cx + r, cy), lw)
+        # Boylam elipsi
+        inner_w = max(4, int(r * 0.55))
+        pygame.draw.ellipse(surf, color, (cx - inner_w, cy - r, inner_w * 2, r * 2), lw)
+        # Merkez dikey meridyen
+        pygame.draw.line(surf, color, (cx, cy - r), (cx, cy + r), lw)
+        return surf
+
+    def _get_corner_button_surface(
         self,
-        rect: pygame.Rect,
-        icon_text: str | None = None,
+        size: tuple[int, int],
+        accent_color: tuple[int, int, int],
+        is_active: bool,
+        gamepad_selected: bool,
+        hover: bool,
         icon_surface: pygame.Surface | None = None,
-        accent_color: tuple[int, int, int] | None = None,
-        is_active: bool = False,
-        gamepad_selected: bool = False,
-    ) -> None:
-        """Tüm köşe butonları için ortak çizim metodu.
+        icon_text: str | None = None,
+        icon_key: str | None = None,
+    ) -> pygame.Surface:
+        if not hasattr(self, '_corner_button_surface_cache') or self._corner_button_surface_cache is None:
+            self._corner_button_surface_cache = SurfaceLRUCache(max_entries=64)
 
-        Glassmorphism + neon border temalı, SOS butonu ile aynı aileden.
-        ``accent_color`` butonun neon çerçeve rengidir.
-        ``is_active`` True ise buton "basılı/aktif" görünür (örn. mute açıkken).
-        ``gamepad_selected`` True ise d-pad ile seçili — hover efekti gösterilir.
-        """
-        if accent_color is None:
-            accent_color = UIColors.NEON_CYAN
+        try:
+            m_trans = round(float(getattr(retro_style, '_menu_transparency', 1.0)), 4)
+        except Exception:
+            m_trans = 1.0
 
-        mouse_pos = get_mouse_pos()
-        hover = rect.collidepoint(mouse_pos) or gamepad_selected
-
-        # Glass arka plan
         alpha = 210 if (hover or is_active) else 160
-        retro_style.draw_glass_panel(self.screen, rect, alpha=alpha, border_color=accent_color)
-
-        # İnce renkli dolgu overlay (hover/aktif durumda)
-        if hover or is_active:
-            fill = pygame.Surface(rect.size, pygame.SRCALPHA)
-            fill.fill((*accent_color[:3], 35 if gamepad_selected else (30 if hover else 20)))
-            self.screen.blit(fill, rect.topleft)
-
-        # Neon çerçeve (gamepad seçiliyken daha parlak)
         if gamepad_selected:
             border_alpha = 240
             border_width = 3
@@ -5851,15 +5912,76 @@ class Menu:
         else:
             border_alpha = 120
             border_width = 2
-        pygame.draw.rect(self.screen, (*accent_color[:3], border_alpha), rect, border_width, border_radius=12)
 
-        # İkon çiz
-        if icon_surface is not None:
-            icon_rect = icon_surface.get_rect(center=rect.center)
-            self.screen.blit(icon_surface, icon_rect)
-        elif icon_text:
-            label = retro_style.render_fit_text(icon_text, UIColors.TEXT_PRIMARY, rect.width - 8, min(22, rect.height - 8), bold=True)
-            self.screen.blit(label, label.get_rect(center=rect.center))
+        if icon_key is not None:
+            icon_sig = (str(icon_key), size)
+        elif icon_surface is not None:
+            icon_sig = (id(icon_surface), icon_surface.get_size())
+        else:
+            icon_sig = (str(icon_text or ''), size)
+
+        cache_key = (
+            'corner_btn',
+            size,
+            tuple(accent_color[:3]),
+            alpha,
+            bool(is_active),
+            bool(gamepad_selected),
+            bool(hover),
+            border_alpha,
+            border_width,
+            m_trans,
+            icon_sig,
+        )
+
+        cached = self._corner_button_surface_cache.get(cache_key)
+        if cached is None:
+            cached = pygame.Surface(size, pygame.SRCALPHA)
+            local_rect = cached.get_rect()
+            retro_style.draw_glass_panel(cached, local_rect, alpha=alpha, border_color=accent_color)
+            if hover or is_active:
+                fill = pygame.Surface(size, pygame.SRCALPHA)
+                fill.fill((*accent_color[:3], 35 if gamepad_selected else (30 if hover else 20)))
+                cached.blit(fill, (0, 0))
+            pygame.draw.rect(cached, (*accent_color[:3], border_alpha), local_rect, border_width, border_radius=12)
+            if icon_surface is not None:
+                icon_rect = icon_surface.get_rect(center=local_rect.center)
+                cached.blit(icon_surface, icon_rect)
+            elif icon_text:
+                label = retro_style.render_fit_text(icon_text, UIColors.TEXT_PRIMARY, size[0] - 8, min(22, size[1] - 8), bold=True)
+                cached.blit(label, label.get_rect(center=local_rect.center))
+            self._corner_button_surface_cache.put(cache_key, cached)
+
+        return cached
+
+    def _draw_corner_button(
+        self,
+        rect: pygame.Rect,
+        icon_text: str | None = None,
+        icon_surface: pygame.Surface | None = None,
+        accent_color: tuple[int, int, int] | None = None,
+        is_active: bool = False,
+        gamepad_selected: bool = False,
+        icon_key: str | None = None,
+    ) -> None:
+        """Tüm köşe butonları için ortak çizim metodu (LRU cached)."""
+        if accent_color is None:
+            accent_color = UIColors.NEON_CYAN
+
+        mouse_pos = get_mouse_pos()
+        hover = rect.collidepoint(mouse_pos) or gamepad_selected
+
+        btn_surf = self._get_corner_button_surface(
+            rect.size,
+            accent_color,
+            is_active,
+            gamepad_selected,
+            hover,
+            icon_surface=icon_surface,
+            icon_text=icon_text,
+            icon_key=icon_key,
+        )
+        self.screen.blit(btn_surf, rect.topleft)
 
     def _draw_gear_icon(self, size: int) -> pygame.Surface:
         """Pygame ile vektörel dişli (⚙) ikonu çiz."""
@@ -6071,6 +6193,7 @@ class Menu:
             icon_surface=gear_icon,
             accent_color=UIColors.NEON_CYAN,
             gamepad_selected=_gp_sel('settings'),
+            icon_key='settings',
         )
 
         # --- SOL ÜST ALT: Dil (dünya) ---
@@ -6078,14 +6201,13 @@ class Menu:
         self.corner_language_rect = pygame.Rect(margin, language_y, btn_size, btn_size)
         self.corner_language_rect = self._apply_layout_override_rect('language_button', self.corner_language_rect, width, height, min_w=30, min_h=30)
         language_icon_size = int(min(self.corner_language_rect.w, self.corner_language_rect.h) * standard_icon_scale) + icon_size_boost
-        world_icon = self._load_main_theme_icon('language', language_icon_size) or self._load_emoji_icon('language_icon', language_icon_size)
-        if world_icon is None:
-            world_icon = self._render_emoji_surface('🌍', language_icon_size)
+        world_icon = self._load_main_theme_icon('language', language_icon_size) or self._load_emoji_icon('language_icon', language_icon_size) or self._draw_globe_icon(language_icon_size)
         self._draw_corner_button(
             self.corner_language_rect,
             icon_surface=world_icon,
             accent_color=(255, 90, 90),
             gamepad_selected=_gp_sel('language_quick'),
+            icon_key=f'language_{get_language()}',
         )
 
         # --- SOL ÜST + 1: Sessize Al ---
@@ -6107,6 +6229,7 @@ class Menu:
             accent_color=UIColors.NEON_RED if self._is_muted else UIColors.NEON_GREEN,
             is_active=self._is_muted,
             gamepad_selected=_gp_sel('mute_quick'),
+            icon_key=f'mute_{self._is_muted}',
         )
 
         # --- SAĞ ÜST (SOS altı): Kullanıcı Değiştir ---
@@ -6122,6 +6245,7 @@ class Menu:
             icon_surface=user_icon,
             accent_color=UIColors.NEON_MAGENTA,
             gamepad_selected=_gp_sel('switch_user'),
+            icon_key='switch_user',
         )
 
         # --- SOL ALT: Emeği Geçenler ---
@@ -6135,6 +6259,7 @@ class Menu:
             icon_surface=credits_icon,
             accent_color=UIColors.NEON_GOLD,
             gamepad_selected=_gp_sel('credits'),
+            icon_key='credits',
         )
 
         # --- SOL ALT + 1: Yüksek skorlar (credits'in yanı) ---
@@ -6148,6 +6273,7 @@ class Menu:
             icon_surface=trophy_icon,
             accent_color=UIColors.NEON_GOLD,
             gamepad_selected=_gp_sel('high_scores'),
+            icon_key='scores',
         )
 
         # --- SOL ALT ÜST: Kılavuz (credits'in üstü) ---
@@ -6160,6 +6286,7 @@ class Menu:
             self.corner_guide_rect,
             icon_surface=book_icon,
             accent_color=(100, 200, 255),
+            icon_key='guide',
         )
 
     def _get_menu_language_options(self) -> list[tuple[str, str]]:

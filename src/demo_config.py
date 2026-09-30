@@ -23,7 +23,10 @@ def _env_requests_demo_mode() -> bool:
 IS_DEMO = bool(IS_DEMO or _env_requests_demo_mode())
 
 DEMO_STEAM_APP_ID = "4635310"
+DEMO_STEAM_DEPOT_ID = "4635311"
+FULL_GAME_STEAM_APP_ID = "4414520"
 DEMO_STEAM_STORE_URL = "https://store.steampowered.com/app/4414520/Quadrix/"
+FULL_GAME_STEAM_STORE_URL = DEMO_STEAM_STORE_URL
 DEMO_APP_NAME = "quadrix_demo"
 FULL_APP_NAME = "quadrix_full"
 

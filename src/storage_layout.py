@@ -45,6 +45,7 @@ LOCAL_SETTINGS_KEYS = {
     "fullscreen",
     "borderless_fullscreen",
     "resolution",
+    "window_resolution",
     "vsync",
     "fps_limit",
     "ui_scale_preset",

@@ -6,7 +6,7 @@ import pygame
 
 from asset_manager import load_image
 from gamepad_manager import get_gamepad_manager
-from platform_utils import pump_startup_focus_warmup
+from platform_utils import pump_startup_focus_warmup, resolve_frame_rate_cap
 from retro_style import retro_style
 from localization import t
 from background_effects import get_shared_falling_blocks_layer
@@ -276,8 +276,19 @@ class SplashScreen:
         exit_duration = int(base_fade_out_duration / 0.4)  # kayboluş %50 daha yavaş
         early_menu_handoff_alpha = 80  # Splash tamamen bitmeden menüye geç
 
+        fps_limit = 0
+        try:
+            fps_limit = int(self.settings_manager.get('fps_limit', 0) or 0) if self.settings_manager else 0
+        except Exception:
+            fps_limit = 0
+        frame_cap = resolve_frame_rate_cap(fps_limit)
+        is_darwin_busy = (sys.platform == 'darwin' and hasattr(self.clock, 'tick_busy_loop'))
+
         while running:
-            dt = self.clock.tick(60)  # 60 FPS for smooth animations
+            if is_darwin_busy:
+                dt = self.clock.tick_busy_loop(frame_cap)
+            else:
+                dt = self.clock.tick(frame_cap)
             now = pygame.time.get_ticks()
 
             try:

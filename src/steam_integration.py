@@ -386,6 +386,27 @@ def _setup_dll_functions(dll: ctypes.CDLL) -> None:
     except AttributeError:
         pass
 
+    # ISteamFriends_ActivateGameOverlayToStore — mağaza sayfasına overlay açma
+    try:
+        dll.SteamAPI_ISteamFriends_ActivateGameOverlayToStore.restype = None
+        dll.SteamAPI_ISteamFriends_ActivateGameOverlayToStore.argtypes = [
+            ctypes.c_void_p, ctypes.c_uint32, ctypes.c_int]
+    except AttributeError:
+        pass
+
+    # ISteamFriends_ActivateGameOverlayToWebPage — web sayfasına overlay açma
+    try:
+        dll.SteamAPI_ISteamFriends_ActivateGameOverlayToWebPage.restype = None
+        dll.SteamAPI_ISteamFriends_ActivateGameOverlayToWebPage.argtypes = [
+            ctypes.c_void_p, ctypes.c_char_p, ctypes.c_int]
+    except AttributeError:
+        try:
+            dll.SteamAPI_ISteamFriends_ActivateGameOverlayToWebPage.restype = None
+            dll.SteamAPI_ISteamFriends_ActivateGameOverlayToWebPage.argtypes = [
+                ctypes.c_void_p, ctypes.c_char_p]
+        except AttributeError:
+            pass
+
     # ISteamUserStats_FindLeaderboard -> SteamAPICall_t (uint64)
     try:
         dll.SteamAPI_ISteamUserStats_FindLeaderboard.restype = ctypes.c_uint64
@@ -2390,3 +2411,97 @@ def is_overlay_enabled() -> bool:
         return bool(_dll.SteamAPI_ISteamUtils_IsOverlayEnabled(_isteam_utils))
     except Exception:
         return False
+
+
+def activate_game_overlay_to_store(app_id: int, flag: int = 0) -> bool:
+    """Steam overlay'i belirli bir uygulamanın mağaza sayfasına açar.
+
+    flag: 0 = None, 1 = AddToCart, 2 = AddToCartAndCheckout
+    """
+    if not is_available() or not _dll or not _isteam_friends:
+        return False
+    if not hasattr(_dll, 'SteamAPI_ISteamFriends_ActivateGameOverlayToStore'):
+        return False
+    try:
+        _dll.SteamAPI_ISteamFriends_ActivateGameOverlayToStore(
+            _isteam_friends,
+            ctypes.c_uint32(int(app_id)),
+            ctypes.c_int(int(flag)),
+        )
+        return True
+    except Exception as e:
+        print(f"[Steam] ActivateGameOverlayToStore hatası: {e}")
+        return False
+
+
+def activate_game_overlay_to_web_page(url: str, mode: int = 0) -> bool:
+    """Steam overlay'i belirli bir web sayfasına açar."""
+    if not is_available() or not _dll or not _isteam_friends:
+        return False
+    if not hasattr(_dll, 'SteamAPI_ISteamFriends_ActivateGameOverlayToWebPage'):
+        return False
+    try:
+        url_bytes = str(url).encode('utf-8')
+        func = _dll.SteamAPI_ISteamFriends_ActivateGameOverlayToWebPage
+        if getattr(func, 'argtypes', None) and len(func.argtypes) == 2:
+            func(_isteam_friends, url_bytes)
+        else:
+            func(_isteam_friends, url_bytes, ctypes.c_int(int(mode)))
+        return True
+    except Exception as e:
+        print(f"[Steam] ActivateGameOverlayToWebPage hatası: {e}")
+        return False
+
+
+def open_store_page(app_id: str | int | None = None, url: str | None = None) -> tuple[bool, str]:
+    """Tam oyun mağaza sayfasını açmak için çok adımlı akıllı fallback stratejisi.
+
+    Öncelik sırası:
+    1. Steam Overlay Store veya WebPage API (Steam ve Overlay aktifse)
+    2. steam://store/<app_id> protokol çağrısı (yerel Steam istemcisi)
+    3. Standart web tarayıcısı (HTTPS fallback)
+
+    Dönüş: (success: bool, method: str)
+      method: 'overlay_store', 'overlay_web', 'protocol', 'browser', 'failed'
+    """
+    import webbrowser
+    try:
+        from demo_config import FULL_GAME_STEAM_APP_ID, DEMO_STEAM_STORE_URL
+    except Exception:
+        FULL_GAME_STEAM_APP_ID = "4414520"
+        DEMO_STEAM_STORE_URL = "https://store.steampowered.com/app/4414520/Quadrix/"
+
+    target_app_id = str(app_id if app_id is not None else FULL_GAME_STEAM_APP_ID).strip()
+    target_url = str(url if url is not None else DEMO_STEAM_STORE_URL).strip()
+
+    # 1. Steam Overlay (Steam ve Overlay ikisi de aktifse)
+    if is_available() and is_overlay_enabled():
+        try:
+            target_app_id_int = int(target_app_id)
+            if activate_game_overlay_to_store(target_app_id_int):
+                return True, 'overlay_store'
+        except Exception:
+            pass
+
+        try:
+            if activate_game_overlay_to_web_page(target_url):
+                return True, 'overlay_web'
+        except Exception:
+            pass
+
+    # 2. steam://store/<app_id> protokolü
+    try:
+        protocol_url = f"steam://store/{target_app_id}"
+        if webbrowser.open(protocol_url, new=2):
+            return True, 'protocol'
+    except Exception:
+        pass
+
+    # 3. HTTPS Web Browser Fallback
+    try:
+        if webbrowser.open(target_url, new=2):
+            return True, 'browser'
+    except Exception:
+        pass
+
+    return False, 'failed'

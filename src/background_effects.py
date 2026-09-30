@@ -325,6 +325,10 @@ class ScreenTransition:
         self._scratch_full = None         # slide için tam ekran scratch tampon
         self._alpha_overlay = None        # SRCALPHA overlay (circle/slide-fade)
         self._alpha_overlay_size = None
+        self._wipe_left_surf = None       # wipe geçişi sol perde tamponu
+        self._wipe_right_surf = None      # wipe geçişi sağ perde tamponu
+        self._wipe_buffer_size = None     # ((w + 1) // 2, h)
+        self._prev_wipe_cover_width = 0
 
     def _get_solid_overlay(self, width: int, height: int, color=(0, 0, 0)):
         """Opak renk overlay'i cache'le (fade/zoom için). set_alpha ile şeffaflık verilir.
@@ -351,6 +355,17 @@ class ScreenTransition:
             self._alpha_overlay = pygame.Surface((width, height), pygame.SRCALPHA)
             self._alpha_overlay_size = (width, height)
         return self._alpha_overlay
+
+    def _get_wipe_buffers(self, width: int, height: int) -> tuple[pygame.Surface, pygame.Surface]:
+        """Wipe (perde) geçişi için yeniden kullanılabilir tamponları al/oluştur."""
+        max_w = max(1, (width + 1) // 2)
+        target_size = (max_w, height)
+        if self._wipe_buffer_size != target_size or self._wipe_left_surf is None or self._wipe_right_surf is None:
+            self._wipe_left_surf = pygame.Surface(target_size, pygame.SRCALPHA)
+            self._wipe_right_surf = pygame.Surface(target_size, pygame.SRCALPHA)
+            self._wipe_buffer_size = target_size
+            self._prev_wipe_cover_width = max_w
+        return self._wipe_left_surf, self._wipe_right_surf
         
     def start(self, screen: pygame.Surface, callback=None):
         """Geçişi başlat.
@@ -363,6 +378,7 @@ class ScreenTransition:
         self.start_time = pygame.time.get_ticks()
         self.progress = 0.0
         self._callback = callback
+        self._prev_wipe_cover_width = 0
         
         # Slide geçişlerinde her zaman eski ekranı yakala (gri ekran yerine)
         is_slide = self.transition_type.startswith('slide_')
@@ -414,12 +430,14 @@ class ScreenTransition:
                 if elapsed >= half_duration:
                     self.active = False
                     self._old_screen_capture = None
+                    self._prev_wipe_cover_width = 0
                     return False
         else:
             # Tek fazlı geçiş (sadece in)
             self.progress = min(1.0, elapsed / self.duration)
             if elapsed >= self.duration:
                 self.active = False
+                self._prev_wipe_cover_width = 0
                 return False
                 
         return True
@@ -481,13 +499,26 @@ class ScreenTransition:
         
         # Sol ve sağ perde
         if cover_width > 0:
+            max_w = (width + 1) // 2
+            cover_width = min(max_w, cover_width)
             left_rect = pygame.Rect(0, 0, cover_width, height)
             right_rect = pygame.Rect(width - cover_width, 0, cover_width, height)
 
-            left_overlay = pygame.Surface(left_rect.size, pygame.SRCALPHA)
-            right_overlay = pygame.Surface(right_rect.size, pygame.SRCALPHA)
-            left_overlay.fill((15, 20, 30, 236))
-            right_overlay.fill((15, 20, 30, 236))
+            left_overlay, right_overlay = self._get_wipe_buffers(width, height)
+
+            # Yeniden kullanılabilir tamponda eski piksellerin ekrana taşınmasını önle (ghosting koruması)
+            prev_w = getattr(self, '_prev_wipe_cover_width', max_w)
+            clear_w = min(max_w, max(prev_w, cover_width))
+            if clear_w > 0:
+                clear_rect = pygame.Rect(0, 0, clear_w, height)
+                left_overlay.fill((0, 0, 0, 0), clear_rect)
+                right_overlay.fill((0, 0, 0, 0), clear_rect)
+            self._prev_wipe_cover_width = cover_width
+
+            # Yalnızca aktif kapanan alan kadar çizim yap
+            active_rect = pygame.Rect(0, 0, cover_width, height)
+            left_overlay.fill((15, 20, 30, 236), active_rect)
+            right_overlay.fill((15, 20, 30, 236), active_rect)
 
             edge_steps = min(8, cover_width)
             for step in range(edge_steps):
@@ -498,8 +529,8 @@ class ScreenTransition:
                 pygame.draw.line(left_overlay, (48, 62, 82, alpha), (left_x, 0), (left_x, height))
                 pygame.draw.line(right_overlay, (48, 62, 82, alpha), (right_x, 0), (right_x, height))
 
-            screen.blit(left_overlay, left_rect.topleft)
-            screen.blit(right_overlay, right_rect.topleft)
+            screen.blit(left_overlay, left_rect.topleft, area=active_rect)
+            screen.blit(right_overlay, right_rect.topleft, area=active_rect)
     
     def _draw_circle(self, screen: pygame.Surface, width: int, height: int):
         """Daire efekti - ortadan açılıp kapanan."""

@@ -82,6 +82,7 @@ except ImportError:
     get_virtual_canvas_ui_scale = lambda: None
     is_virtual_canvas_active = lambda: False
 from text_cache import render_text
+from surface_lru_cache import SurfaceLRUCache
 
 
 # ---------------------------------------------------------------------------
@@ -200,6 +201,16 @@ def _build_tab_content(tab_key: str, sm, show_debug: bool = False) -> list[dict]
     elif tab_key == 'display':
         items.append({'type': 'section', 'loc_key': 'settings_section_screen', 'label_tr': 'EKRAN', 'label_en': 'SCREEN'})
         items.append({
+            'type': 'selector', 'key': 'fullscreen',
+            'loc_key': 'fullscreen_mode',
+            'label_tr': 'Ekran Modu', 'label_en': 'Display Mode',
+        })
+        items.append({
+            'type': 'selector', 'key': 'window_resolution',
+            'loc_key': 'resolution',
+            'label_tr': 'Pencere Boyutu', 'label_en': 'Window Size',
+        })
+        items.append({
             'type': 'toggle', 'key': 'vsync',
             'loc_key': 'vsync',
             'label_tr': 'VSync', 'label_en': 'VSync',
@@ -208,11 +219,6 @@ def _build_tab_content(tab_key: str, sm, show_debug: bool = False) -> list[dict]
             'type': 'selector', 'key': 'fps_limit',
             'loc_key': 'fps_limit',
             'label_tr': 'FPS Limiti', 'label_en': 'FPS Limit',
-        })
-        items.append({
-            'type': 'selector', 'key': 'ui_scale_preset',
-            'loc_key': 'ui_scale_preset',
-            'label_tr': 'Arayüz Ölçeği', 'label_en': 'UI Scale',
         })
 
         items.append({'type': 'section', 'loc_key': 'settings_section_visual', 'label_tr': 'GÖRSEL', 'label_en': 'VISUAL'})
@@ -585,6 +591,12 @@ class TabbedSettingsScreen:
 
         # Tab rect'leri (mouse için)
         self._tab_rects: list[pygame.Rect] = []
+
+        # Panel ve sekme yüzey cache'leri
+        self._panel_bg_cache = SurfaceLRUCache(16)
+        self._panel_shadow_cache = SurfaceLRUCache(16)
+        self._tab_surf_cache = SurfaceLRUCache(32)
+        self._ui_cache_sig = None
 
         # VSync restart prompt
         self._vsync_prompt_active = False
@@ -993,8 +1005,9 @@ class TabbedSettingsScreen:
         self.das_repeat = sm.get('das_repeat', 50)
         self.soft_drop_speed = sm.get('soft_drop_speed', 50)
         # Display
-        self.fullscreen = True
-        self.resolution = 'auto'
+        self.fullscreen = bool(sm.get('fullscreen', True))
+        self.window_resolution = str(sm.get('window_resolution', '1280x720'))
+        self.resolution = self.window_resolution
         self.vsync = sm.get('vsync', True)
         self.fps_limit = sm.get('fps_limit', 0)
         self.ui_scale_preset = normalize_ui_scale_preset(sm.get('ui_scale_preset', 'compact'))
@@ -1614,7 +1627,14 @@ class TabbedSettingsScreen:
             return text, (200, 220, 255)
 
         elif itype == 'selector':
-            if key == 'fps_limit':
+            if key == 'fullscreen':
+                val = bool(self._get_value('fullscreen'))
+                text = t('fullscreen') if val else t('windowed')
+                return text, (150, 220, 255)
+            elif key == 'window_resolution':
+                val = str(self._get_value('window_resolution') or '1280x720')
+                return val, (150, 220, 255)
+            elif key == 'fps_limit':
                 limit = int(self._get_value('fps_limit') or 0)
                 text = t('automatic') if limit <= 0 else str(limit)
                 return text, (200, 220, 255)
@@ -2835,6 +2855,17 @@ class TabbedSettingsScreen:
             self._display_mode_confirm_yes_rect = None
             self._display_mode_confirm_no_rect = None
             return None
+        elif key == 'window_resolution':
+            res_options = ['1920x1080', '1600x900', '1366x768', '1280x720']
+            current = str(getattr(self, 'window_resolution', '1280x720'))
+            idx = res_options.index(current) if current in res_options else 3
+            idx = (idx + delta) % len(res_options)
+            self.window_resolution = res_options[idx]
+            self.resolution = self.window_resolution
+            self._set_value('window_resolution', self.window_resolution)
+            if not self.fullscreen:
+                return 'apply_display_mode'
+            return None
 
         if key == 'fps_limit':
             current = int(self.fps_limit or 0)
@@ -2845,21 +2876,7 @@ class TabbedSettingsScreen:
             self.fps_limit = self.FPS_LIMITS[idx]
             self._set_value('fps_limit', self.fps_limit)
         elif key == 'ui_scale_preset':
-            from ui_scaling import UI_SCALE_PRESETS, set_ui_scale_preset, get_ui_scale_multiplier
-            current = self.ui_scale_preset
-            if current not in UI_SCALE_PRESETS:
-                current = 'normal'
-            idx = UI_SCALE_PRESETS.index(current)
-            idx = (idx + delta) % len(UI_SCALE_PRESETS)
-            self.ui_scale_preset = UI_SCALE_PRESETS[idx]
-            self._set_value('ui_scale_preset', self.ui_scale_preset)
-            # Virtual canvas'ı yeni preset ile anında yeniden kur
-            set_ui_scale_preset(self.ui_scale_preset)
-            try:
-                from platform_utils import rebuild_virtual_canvas
-                rebuild_virtual_canvas(get_ui_scale_multiplier())
-            except Exception:
-                pass
+            return None
         elif key == 'language':
             lang_idx = (
                 SUPPORTED_LANGUAGES.index(self.current_language)
@@ -3492,7 +3509,7 @@ class TabbedSettingsScreen:
                 except Exception:
                     pass
                 self._display_mode_confirm_active = False
-                return 'quit_game'
+                return 'apply_display_mode'
 
         if event.type == pygame.MOUSEBUTTONDOWN and getattr(event, 'button', None) == 1:
             raw_pos = getattr(event, 'pos', None)
@@ -3511,7 +3528,7 @@ class TabbedSettingsScreen:
                 except Exception:
                     pass
                 self._display_mode_confirm_active = False
-                return 'quit_game'
+                return 'apply_display_mode'
 
             if no_rect is not None and no_rect.collidepoint(pos):
                 self.fullscreen = bool(getattr(self, '_display_mode_confirm_prev_fullscreen', True))
@@ -3605,9 +3622,28 @@ class TabbedSettingsScreen:
     # Çizim
     # ------------------------------------------------------------------
 
+    def _clear_ui_caches(self) -> None:
+        """Panel ve sekme yüzey cache'lerini temizle."""
+        if hasattr(self, '_panel_bg_cache') and self._panel_bg_cache is not None:
+            self._panel_bg_cache.clear()
+        if hasattr(self, '_panel_shadow_cache') and self._panel_shadow_cache is not None:
+            self._panel_shadow_cache.clear()
+        if hasattr(self, '_tab_surf_cache') and self._tab_surf_cache is not None:
+            self._tab_surf_cache.clear()
+
     def draw(self) -> None:
         self._apply_responsive_metrics()
         width, height = self.screen.get_size()
+
+        # Ekran boyutu, tema, dil, alfa veya scale değişiminde cache'i temizle
+        curr_theme = getattr(getattr(self, 'theme_manager', None), 'current_theme', 'default')
+        curr_lang = getattr(self, 'current_language', 'tr')
+        curr_alpha = getattr(self, 'menu_transparency', 1.0)
+        curr_scale = getattr(self, '_ui_scale_current', 1.0)
+        sig = ((width, height), curr_theme, curr_lang, curr_alpha, curr_scale)
+        if sig != getattr(self, '_ui_cache_sig', None):
+            self._ui_cache_sig = sig
+            self._clear_ui_caches()
 
         # Smooth slider animasyonları
         now_ms = pygame.time.get_ticks()
@@ -3666,18 +3702,31 @@ class TabbedSettingsScreen:
         _sma = _scale_menu_alpha
 
         # Gölge
-        shadow = pygame.Surface((rect.width + shadow_pad, rect.height + shadow_pad), pygame.SRCALPHA)
-        pygame.draw.rect(shadow, (0, 0, 0, _sma(60)), shadow.get_rect(), border_radius=shadow_radius)
+        shadow_size = (rect.width + shadow_pad, rect.height + shadow_pad)
+        shadow_alpha = _sma(60)
+        shadow_key = (shadow_size, shadow_radius, shadow_alpha)
+        shadow = self._panel_shadow_cache.get(shadow_key)
+        if shadow is None:
+            shadow = pygame.Surface(shadow_size, pygame.SRCALPHA)
+            pygame.draw.rect(shadow, (0, 0, 0, shadow_alpha), shadow.get_rect(), border_radius=shadow_radius)
+            self._panel_shadow_cache.put(shadow_key, shadow)
         self.screen.blit(shadow, (rect.x + shadow_offset, rect.y + shadow_offset))
 
         # Ana panel
-        panel_surf = pygame.Surface(rect.size, pygame.SRCALPHA)
-        panel_surf.fill((12, 16, 32, _sma(235)))
-        # Üst kenar highlight
         highlight_depth = min(self._s(30, minimum=18), rect.height // 4)
-        for y in range(highlight_depth):
-            alpha = _sma(int(15 * (1 - y / max(1, highlight_depth))))
-            pygame.draw.line(panel_surf, (255, 255, 255, alpha), (0, y), (rect.width, y))
+        panel_alpha = _sma(235)
+        scale_val = getattr(self, '_ui_scale_current', 1.0)
+        theme_val = getattr(getattr(self, 'theme_manager', None), 'current_theme', 'default')
+        panel_key = (rect.size, highlight_depth, panel_alpha, scale_val, theme_val)
+        panel_surf = self._panel_bg_cache.get(panel_key)
+        if panel_surf is None:
+            panel_surf = pygame.Surface(rect.size, pygame.SRCALPHA)
+            panel_surf.fill((12, 16, 32, panel_alpha))
+            # Üst kenar highlight (yalnızca cache miss durumunda)
+            for y in range(highlight_depth):
+                alpha = _sma(int(15 * (1 - y / max(1, highlight_depth))))
+                pygame.draw.line(panel_surf, (255, 255, 255, alpha), (0, y), (rect.width, y))
+            self._panel_bg_cache.put(panel_key, panel_surf)
         self.screen.blit(panel_surf, rect.topleft)
 
         # Kenar çizgisi
@@ -3730,11 +3779,14 @@ class TabbedSettingsScreen:
 
             # Tab arka planı
             _sma = _scale_menu_alpha
-            tab_surf = pygame.Surface(tab_rect.size, pygame.SRCALPHA)
-            if is_active:
-                tab_surf.fill((35, 55, 90, _sma(220)))
-            else:
-                tab_surf.fill((20, 28, 48, _sma(160)))
+            fill_color = (35, 55, 90, _sma(220)) if is_active else (20, 28, 48, _sma(160))
+            scale_val = getattr(self, '_ui_scale_current', 1.0)
+            tab_key = (tab_rect.size, is_active, fill_color, scale_val)
+            tab_surf = self._tab_surf_cache.get(tab_key)
+            if tab_surf is None:
+                tab_surf = pygame.Surface(tab_rect.size, pygame.SRCALPHA)
+                tab_surf.fill(fill_color)
+                self._tab_surf_cache.put(tab_key, tab_surf)
             self.screen.blit(tab_surf, tab_rect.topleft)
 
             # Alt çizgi (aktif sekme)
@@ -4304,7 +4356,10 @@ class TabbedSettingsScreen:
         ratio = max(0.0, min(1.0, ratio))
 
         # Değer metni (Daima temiz, yuvarlanmış actual_val gösterilmeli!)
-        if key == 'particle_effects':
+        if key in ('music_volume', 'menu_music_volume', 'sfx_volume'):
+            actual_blocks = max(0, min(20, int(round(actual_val * 20))))
+            value_text = f'{actual_blocks * 5}%'
+        elif key == 'particle_effects':
             value_text = self._particle_effects_label(int(round(actual_val)))
         elif key == 'ctrl_gp_rumble':
             value_text = self._gamepad_rumble_label(int(round(actual_val)))
@@ -4387,7 +4442,7 @@ class TabbedSettingsScreen:
                 gap = max(1, s(2, minimum=1))
                 avail_w = bar_rect.width - (num_blocks - 1) * gap
                 block_w = max(2, avail_w // num_blocks)
-                active_count = int(round(actual_val * num_blocks))
+                active_count = max(0, min(num_blocks, int(round(actual_val * num_blocks))))
                 b_radius = max(1, s(2, minimum=1))
                 is_active = selected or (self._slider_drag_active and self._slider_drag_key == key)
 

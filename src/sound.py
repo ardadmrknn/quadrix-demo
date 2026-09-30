@@ -40,6 +40,8 @@ class SoundManager:
             self.track_aliases = {}
             self.current_track_name = None
             self.music_paused = False
+            self._last_recovery_attempt_ms = 0
+            self._recovery_debounce_ms = 2000
             if self.enabled:
                 self.create_music()
             
@@ -47,6 +49,91 @@ class SoundManager:
             if constants.DEBUG_MODE:
                 print(f"❌ [SoundManager] Hata: {e}")
             self.enabled = False
+
+    def check_audio_device_health(self) -> bool:
+        """Mixer subsystem ve ses aygıtının sağlıklı olup olmadığını denetler."""
+        if not self.enabled:
+            return False
+        try:
+            init_info = pygame.mixer.get_init()
+            return init_info is not None
+        except Exception:
+            return False
+
+    def recover_mixer(self, force: bool = False) -> bool:
+        """Mixer suspend, aygıt değişimi veya ses kaybı durumunda güvenli kurtarma.
+
+        Durumu kaydeder, mixer'ı yeniden başlatır, ses ve müzik varlıklarını
+        yükler, volume ve mute ayarlarını korur.
+        Döngüyü kilitlemez (debounce korumalıdır).
+        """
+        now_ms = pygame.time.get_ticks() if pygame.get_init() else 0
+        if not force and (now_ms - getattr(self, '_last_recovery_attempt_ms', 0)) < getattr(self, '_recovery_debounce_ms', 2000):
+            return self.enabled
+
+        self._last_recovery_attempt_ms = now_ms
+
+        # 1. State Snapshot
+        saved_track = self.current_track_name
+        saved_resume_track = getattr(self, '_resume_track_name', None)
+        saved_loop = getattr(self, '_resume_loop', True)
+        saved_muted = bool(getattr(self, 'muted', False))
+        saved_music_vol = float(getattr(self, 'music_volume', 0.3))
+        saved_sfx_vol = float(getattr(self, 'sfx_volume', 0.5))
+        saved_duck_factor = float(getattr(self, '_duck_factor', 1.0))
+        saved_playlist = list(getattr(self, 'music_playlist', []))
+        saved_playlist_idx = int(getattr(self, 'music_playlist_index', 0))
+        saved_music_enabled = bool(getattr(self, 'music_enabled', True))
+        saved_sfx_enabled = bool(getattr(self, 'sfx_enabled', True))
+
+        # 2. Re-init mixer
+        reinit_ok = self._ensure_mixer_ready()
+        self.enabled = reinit_ok
+
+        if not reinit_ok:
+            return False
+
+        # 3. Restore Sounds & Music Assets
+        try:
+            self.create_sounds()
+        except Exception:
+            pass
+
+        try:
+            self.create_music()
+        except Exception:
+            pass
+
+        # 4. Restore Volumes and Preferences
+        self.sfx_volume = saved_sfx_vol
+        self.music_volume = saved_music_vol
+        self.music_enabled = saved_music_enabled
+        self.sfx_enabled = saved_sfx_enabled
+        self._duck_factor = saved_duck_factor
+        self.set_volume(saved_sfx_vol)
+        self.set_music_volume(saved_music_vol)
+
+        # 5. Restore Mute and Playback State
+        self.muted = saved_muted
+        self._resume_track_name = saved_resume_track or saved_track
+        self._resume_loop = saved_loop
+        self.music_playlist = saved_playlist
+        self.music_playlist_index = saved_playlist_idx
+
+        if saved_muted:
+            try:
+                pygame.mixer.music.pause()
+            except Exception:
+                pass
+        else:
+            target_track = saved_track or saved_resume_track
+            if target_track and saved_music_enabled:
+                try:
+                    self.play_music(target_track, loop=saved_loop)
+                except Exception:
+                    pass
+
+        return True
 
     def _log_macos_audio_info(self):
         """macOS'ta ses sistemi hakkında detaylı bilgi logla - sadece DEBUG modda"""
@@ -262,6 +349,7 @@ class SoundManager:
                         self.play_music(track, loop=self._resume_loop)
                     except Exception:
                         pass
+            self._resume_track_name = None
 
         return self.muted
     
@@ -1131,6 +1219,7 @@ class SoundManager:
             self.current_music_channel = None
         pygame.mixer.music.stop()
         self.current_track_name = None
+        self._resume_track_name = None
         self.music_paused = False
         self.music_playlist_active = False
 

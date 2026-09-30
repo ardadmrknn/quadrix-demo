@@ -454,6 +454,8 @@ class OnlinePvPGame:
             self.sound.sfx_enabled = settings_manager.get('sound_enabled', True)
             self.sound.set_music_volume(settings_manager.get('music_volume', 0.3))
             self.sound.set_volume(settings_manager.get('sfx_volume', 0.5))
+            if hasattr(self.sound, 'set_muted'):
+                self.sound.set_muted(bool(settings_manager.get('mute_all', False)))
         if hasattr(self.sound, 'unduck_music'):
             self.sound.unduck_music()
 

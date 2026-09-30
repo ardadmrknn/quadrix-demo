@@ -800,7 +800,12 @@ def _show_mode_intro_popup(screen, mode_key, settings_manager=None):
         _gpm = None
 
     while running_popup:
-        delta_ms = clock.tick(60)
+        try:
+            fps_limit = int(settings_manager.get('fps_limit', 0) or 0) if settings_manager else 0
+        except Exception:
+            fps_limit = 0
+        frame_cap = resolve_frame_rate_cap(fps_limit)
+        delta_ms = clock.tick_busy_loop(frame_cap) if sys.platform == 'darwin' and hasattr(clock, 'tick_busy_loop') else clock.tick(frame_cap)
         try:
             pump_gamepad_into_event_queue(delta_ms, 'menu')
         except Exception:
@@ -1021,7 +1026,12 @@ def _show_announcement_popup(screen, settings_manager=None):
         _gpm = None
 
     while running_popup:
-        delta_ms = clock.tick(60)
+        try:
+            fps_limit = int(settings_manager.get('fps_limit', 0) or 0) if settings_manager else 0
+        except Exception:
+            fps_limit = 0
+        frame_cap = resolve_frame_rate_cap(fps_limit)
+        delta_ms = clock.tick_busy_loop(frame_cap) if sys.platform == 'darwin' and hasattr(clock, 'tick_busy_loop') else clock.tick(frame_cap)
         try:
             pump_gamepad_into_event_queue(delta_ms, 'menu')
         except Exception:
@@ -1270,7 +1280,12 @@ def _show_zen_start_popup(screen, board_height=20, settings_manager=None):
         _gpm = None
 
     while running_popup:
-        delta_ms = clock.tick(60)
+        try:
+            fps_limit = int(settings_manager.get('fps_limit', 0) or 0) if settings_manager else 0
+        except Exception:
+            fps_limit = 0
+        frame_cap = resolve_frame_rate_cap(fps_limit)
+        delta_ms = clock.tick_busy_loop(frame_cap) if sys.platform == 'darwin' and hasattr(clock, 'tick_busy_loop') else clock.tick(frame_cap)
         try:
             pump_gamepad_into_event_queue(delta_ms, 'menu')
         except Exception:
@@ -1439,7 +1454,7 @@ def _show_zen_start_popup(screen, board_height=20, settings_manager=None):
     return result
 
 
-def _show_tutorial_prompt(screen):
+def _show_tutorial_prompt(screen, settings_manager=None):
     """
     Yeni oyunculara fayda-odaklı 3 seçenekli eğitim daveti göster.
 
@@ -1471,7 +1486,12 @@ def _show_tutorial_prompt(screen):
         _gpm = None
 
     while running_popup:
-        delta_ms = clock.tick(60)
+        try:
+            fps_limit = int(settings_manager.get('fps_limit', 0) or 0) if settings_manager else 0
+        except Exception:
+            fps_limit = 0
+        frame_cap = resolve_frame_rate_cap(fps_limit)
+        delta_ms = clock.tick_busy_loop(frame_cap) if sys.platform == 'darwin' and hasattr(clock, 'tick_busy_loop') else clock.tick(frame_cap)
         try:
             pump_gamepad_into_event_queue(delta_ms, 'menu')
         except Exception:
@@ -1682,7 +1702,18 @@ def main():
     # Sistem ekran çözünürlüğünü al
     native_width, native_height = get_native_resolution()
 
-    settings_manager.set('fullscreen', True)
+    startup_fullscreen = bool(settings_manager.get('fullscreen', True))
+    startup_borderless = bool(settings_manager.get('borderless_fullscreen', True)) if startup_fullscreen else False
+    raw_res_str = str(settings_manager.get('window_resolution', '1280x720'))
+    try:
+        rw, rh = [int(p) for p in raw_res_str.lower().split('x')]
+    except Exception:
+        rw, rh = 1280, 720
+
+    if startup_fullscreen:
+        init_width, init_height = native_width, native_height
+    else:
+        init_width, init_height = rw, rh
 
     # ── Tek-context OpenGL talebi (Steam overlay) ──────────────────────────
     # create_display()'den ÖNCE çağrılır; böylece pencere baştan OPENGL
@@ -1691,7 +1722,7 @@ def main():
     # NOT: Yalnızca 'glcompat' backend'inde geçerli. 'sdl2' backend'i kendi
     # _sdl2 penceresini setup() içinde açar; 'software' hiç overlay kurmaz.
     try:
-        if steam_overlay_gl_mode != 'off' and overlay_backend == 'glcompat':
+        if startup_fullscreen and steam_overlay_gl_mode != 'off' and overlay_backend == 'glcompat':
             from gl_compat import prepare_single_context
             prepare_single_context()
     except Exception as _gl_prep_e:
@@ -1699,11 +1730,11 @@ def main():
 
     try:
         screen = create_display(
-            native_width,
-            native_height,
-            fullscreen=True,
-            resizable=False,
-            borderless=True,
+            init_width,
+            init_height,
+            fullscreen=startup_fullscreen,
+            resizable=(not startup_fullscreen),
+            borderless=startup_borderless,
         )
         
         # macOS: Surface validation
@@ -1714,10 +1745,22 @@ def main():
             except Exception:
                 pygame.display.quit()
                 pygame.display.init()
-                screen = create_display(native_width, native_height, fullscreen=True, resizable=False, borderless=True)
+                screen = create_display(
+                    init_width,
+                    init_height,
+                    fullscreen=startup_fullscreen,
+                    resizable=(not startup_fullscreen),
+                    borderless=startup_borderless,
+                )
                 
     except Exception:
-        screen = create_display(native_width, native_height, fullscreen=True, resizable=False, borderless=True)
+        screen = create_display(
+            init_width,
+            init_height,
+            fullscreen=startup_fullscreen,
+            resizable=(not startup_fullscreen),
+            borderless=startup_borderless,
+        )
 
     # ── Steam overlay render katmanı (Windows) ────────────────────────────
     # Steam overlay yalnızca D3D/OpenGL rendering context'e hook olabilir.
@@ -1753,11 +1796,11 @@ def main():
                     pass
                 try:
                     screen = create_display(
-                        native_width,
-                        native_height,
-                        fullscreen=True,
-                        resizable=False,
-                        borderless=True,
+                        init_width,
+                        init_height,
+                        fullscreen=startup_fullscreen,
+                        resizable=(not startup_fullscreen),
+                        borderless=startup_borderless,
                     )
                     print("[GL Compat] Software pencereye güvenli geri dönüş yapıldı")
                 except Exception:
@@ -1822,7 +1865,7 @@ def main():
     setup_custom_cursor()
     
     clock = pygame.time.Clock()
-    fullscreen = True  # Oyun her zaman tam ekran çalışır
+    fullscreen = bool(settings_manager.get('fullscreen', True))
     last_fullscreen_toggle_ms = -10_000
     
     # Yöneticiler
@@ -2168,7 +2211,15 @@ def main():
 
             if blend_progress >= 1.0:
                 break
-            blend_clock.tick(60)
+            try:
+                fps_limit = int(settings_manager.get('fps_limit', 0) or 0)
+            except Exception:
+                fps_limit = 0
+            frame_cap = resolve_frame_rate_cap(fps_limit)
+            if sys.platform == 'darwin' and hasattr(blend_clock, 'tick_busy_loop'):
+                blend_clock.tick_busy_loop(frame_cap)
+            else:
+                blend_clock.tick(frame_cap)
 
     # Splash screen'den sonra event kuyruğunu temizle
     pygame.event.clear()
@@ -2420,19 +2471,49 @@ def main():
             coop_level_select,
         )
 
-    def _rebuild_display(width, height, *, fullscreen_value=None, resizable=True, borderless_value=None):
+    def _rebuild_display(width=None, height=None, *, fullscreen_value=None, resizable=None, borderless_value=None):
         """create_display çağır ve yeni screen'i her yere uygula."""
         nonlocal fullscreen
-        fullscreen = True
-        settings_manager.set('fullscreen', True)
+        if fullscreen_value is not None:
+            fullscreen = bool(fullscreen_value)
+        else:
+            fullscreen = bool(settings_manager.get('fullscreen', True))
+        settings_manager.set('fullscreen', fullscreen)
+
+        win_res_str = str(settings_manager.get('window_resolution', '1280x720'))
+        try:
+            rw, rh = [int(p) for p in win_res_str.lower().split('x')]
+        except Exception:
+            rw, rh = 1280, 720
+
+        if fullscreen:
+            native_w, native_h = get_native_resolution()
+            target_w = width if (width is not None and width > 0) else native_w
+            target_h = height if (height is not None and height > 0) else native_h
+            target_borderless = bool(settings_manager.get('borderless_fullscreen', True)) if borderless_value is None else bool(borderless_value)
+            target_resizable = False
+        else:
+            target_w = width if (width is not None and width > 0) else rw
+            target_h = height if (height is not None and height > 0) else rh
+            target_borderless = False
+            target_resizable = True if resizable is None else bool(resizable)
+
         new_screen = create_display(
-            width,
-            height,
-            fullscreen=True,
-            resizable=False,
-            borderless=True,
+            target_w,
+            target_h,
+            fullscreen=fullscreen,
+            resizable=target_resizable,
+            borderless=target_borderless,
         )
         _apply_screen(new_screen)
+        invalidate_refresh_rate_cache()
+        # Mod değişimi sonrası birikmiş resize/video event'lerini temizle
+        try:
+            pygame.event.pump()
+            pygame.event.clear([pygame.VIDEORESIZE])
+        except Exception:
+            pass
+        return new_screen
 
     def _run_popup_and_sync_screen(popup_callable, *args, **kwargs):
         """Popup loop'u display recover yapsa bile ana screen referansini senkron tut."""
@@ -2442,28 +2523,25 @@ def main():
         if refreshed_screen is not screen:
             _apply_screen(refreshed_screen)
         return result
-        # Mod değişimi sonrası birikmiş resize/video event'lerini temizle
-        # (bunlar sonraki frame'de ikinci bir geçiş tetikleyebilir)
-        try:
-            pygame.event.pump()
-            pygame.event.clear([pygame.VIDEORESIZE])
-        except Exception:
-            pass
-        return new_screen
 
-    def _toggle_fullscreen(width=500, height=700):
-        """Eski toggle çağrılarını tam ekranı yeniden uygulayarak uyumlu tut."""
+    def _toggle_fullscreen(width=None, height=None):
+        """Fullscreen ayarını tersine çevirerek display'i yeniden oluştur."""
         nonlocal fullscreen, last_fullscreen_toggle_ms, screen, running
         now_ms = pygame.time.get_ticks()
         if now_ms - last_fullscreen_toggle_ms < 600:
             return False
         last_fullscreen_toggle_ms = now_ms
 
-        fullscreen = True
-        settings_manager.set('fullscreen', True)
+        current_fs = bool(settings_manager.get('fullscreen', fullscreen))
+        target_fs = not current_fs
+        fullscreen = target_fs
+        settings_manager.set('fullscreen', target_fs)
 
         try:
-            _rebuild_display(width, height, fullscreen_value=True, resizable=False, borderless_value=True)
+            # Eski hardcoded (500, 700) çağrıları yerine settings'deki kanonik window_resolution kullan
+            effective_w = width if (width is not None and width not in (500, 700)) else None
+            effective_h = height if (height is not None and height not in (500, 700)) else None
+            _rebuild_display(effective_w, effective_h, fullscreen_value=target_fs)
             return True
         except Exception:
             pass
@@ -2531,7 +2609,7 @@ def main():
         if _is_new_steam_user:
             _is_new_steam_user = False
             user_manager.set_tutorial_completed(False)
-            tutorial_choice = _run_popup_and_sync_screen(_show_tutorial_prompt)
+            tutorial_choice = _run_popup_and_sync_screen(_show_tutorial_prompt, settings_manager=settings_manager)
             if tutorial_choice in ('quick_start', 'full_academy'):
                 menu_sound.stop_music()
                 if tutorial_choice == 'quick_start':
@@ -2777,7 +2855,7 @@ def main():
             elif action in ('single_player', 'Tek Oyunculu', 'Single Player'):
                 # Tutorial Check
                 if not user_manager.is_tutorial_completed() and not user_manager.is_tutorial_prompt_dismissed():
-                    tutorial_choice = _run_popup_and_sync_screen(_show_tutorial_prompt)
+                    tutorial_choice = _run_popup_and_sync_screen(_show_tutorial_prompt, settings_manager=settings_manager)
                     if tutorial_choice in ('quick_start', 'full_academy'):
                         # Start Tutorial
                         menu_sound.stop_music()
@@ -3317,9 +3395,18 @@ def main():
             elif action == 'toggle_card_mode_debug':
                 pass  # Kart debug değişti, sadece settings'e kaydediliyor
             elif action == 'apply_display_mode':
-                fullscreen = True
-                settings_manager.set('fullscreen', True)
-                _rebuild_display(screen.get_width(), screen.get_height(), fullscreen_value=True, resizable=False, borderless_value=True)
+                fs = bool(settings_manager.get('fullscreen', True))
+                fullscreen = fs
+                win_res = str(settings_manager.get('window_resolution', '1280x720'))
+                try:
+                    tw, th = [int(p) for p in win_res.lower().split('x')]
+                except Exception:
+                    tw, th = 1280, 720
+                if fs:
+                    nw, nh = get_native_resolution()
+                    _rebuild_display(nw, nh, fullscreen_value=True, resizable=False, borderless_value=True)
+                else:
+                    _rebuild_display(tw, th, fullscreen_value=False, resizable=True, borderless_value=False)
             elif action == 'change_bg_transparency':
                 # Arka plan şeffaflığı değişti (sekmeli ekrandan)
                 try:
@@ -4229,7 +4316,7 @@ def main():
                 # Yeni kullanıcı oluşturulduğunda tutorial pop-up göster
                 if action == 'new_user_created':
                     user_manager.set_tutorial_completed(False)
-                    tutorial_choice = _run_popup_and_sync_screen(_show_tutorial_prompt)
+                    tutorial_choice = _run_popup_and_sync_screen(_show_tutorial_prompt, settings_manager=settings_manager)
                     if tutorial_choice in ('quick_start', 'full_academy'):
                         menu_sound.stop_music()
                         if tutorial_choice == 'quick_start':
@@ -4568,21 +4655,33 @@ def main():
     
     # Gamepad yöneticisini başlat (tüm state'lerde paylaşılır)
     gamepad_mgr = get_gamepad_manager()
+    from platform_utils import get_focus_throttle_policy
+    focus_policy = get_focus_throttle_policy()
 
     while running:
+        try:
+            is_active_window = bool(pygame.display.get_active())
+        except Exception:
+            is_active_window = True
+        focus_policy.update_active_state(is_active_window)
+
         try:
             fps_limit = int(settings_manager.get('fps_limit', 0) or 0)
         except Exception:
             fps_limit = 0
-        frame_cap = resolve_frame_rate_cap(fps_limit)
+        base_cap = resolve_frame_rate_cap(fps_limit)
+        frame_cap = focus_policy.resolve_frame_cap(base_cap, state=state)
+
         if (
             sys.platform == 'darwin'
             and state in ('game', 'pvp', 'coop', 'coop_campaign', 'online_pvp', 'online_coop')
             and hasattr(clock, 'tick_busy_loop')
+            and not focus_policy.is_throttled(state=state)
         ):
             delta_ms = clock.tick_busy_loop(frame_cap)
         else:
             delta_ms = clock.tick(frame_cap)
+        delta_ms = focus_policy.filter_delta_ms(delta_ms)
 
         try:
             pump_startup_focus_warmup()

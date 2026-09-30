@@ -1699,23 +1699,68 @@ class GamepadManager:
         in_game = (self._context == self.CONTEXT_GAME)
         cfg_bindings = self._bindings
 
+        # Öncelik tablosu: Temel oyun aksiyonları > Kart aksiyonları > Slot aksiyonları
+        # Aynı butona birden fazla aksiyon atanmışsa deterministik olarak yüksek öncelikli olan seçilir.
+        action_priority = {
+            'hard_drop': 100,
+            'rotate': 95,
+            'rotate_ccw': 94,
+            'rotate_alt': 93,
+            'hold': 90,
+            'hold2': 89,
+            'soft_drop': 85,
+            'move_left': 80,
+            'move_right': 80,
+            'pause': 75,
+            'discard_held': 70,
+            'lt': 60,
+            'rt': 60,
+            'card_rewind': 50,
+            'card_sniper': 50,
+            'card_time_capsule_save': 50,
+            'card_time_capsule_restore': 50,
+            'card_freeze': 50,
+            'card_phase_shift': 50,
+            'card_ghost': 50,
+            'card_hammer': 50,
+            'card_bomb': 50,
+            'slot_1': 10,
+            'slot_2': 10,
+            'slot_3': 10,
+            'slot_4': 10,
+            'slot_5': 10,
+            'slot_6': 10,
+        }
+
         # Ayarlardan okunan buton eşlemelerini dinamik olarak oluştur
         if in_game:
-            # Oyun içi: buton → aksiyon eşlemesi
+            # Oyun içi: buton → aksiyonlar listesi (collision resolution için)
             game_actions_list = [
-                'move_left', 'move_right', 'soft_drop',
                 'hard_drop', 'rotate', 'rotate_ccw', 'rotate_alt', 'hold', 'hold2',
+                'move_left', 'move_right', 'soft_drop',
                 'pause', 'discard_held',
                 'lt', 'rt',
                 'card_rewind', 'card_sniper', 'card_time_capsule_save',
                 'card_time_capsule_restore', 'card_freeze', 'card_phase_shift',
                 'card_ghost', 'card_hammer', 'card_bomb',
+                'slot_1', 'slot_2', 'slot_3', 'slot_4', 'slot_5', 'slot_6',
             ]
-            button_actions = {}
+            button_actions_map: dict[int, list[str]] = {}
             for action in game_actions_list:
                 binding = cfg_bindings.get(action, {})
                 for btn in self._iter_button_indices(binding):
-                    button_actions[btn] = action
+                    if btn not in button_actions_map:
+                        button_actions_map[btn] = []
+                    button_actions_map[btn].append(action)
+
+            # Çakışma çözümü (Kural G.4, G.8, G.9, G.10)
+            button_actions = {}
+            for btn, actions in button_actions_map.items():
+                if len(actions) == 1:
+                    button_actions[btn] = actions[0]
+                else:
+                    sorted_actions = sorted(actions, key=lambda a: action_priority.get(a, 0), reverse=True)
+                    button_actions[btn] = sorted_actions[0]
         else:
             # Menü: buton → aksiyon eşlemesi
             menu_actions_list = [
@@ -1723,11 +1768,30 @@ class GamepadManager:
                 'menu_tab_next', 'menu_tab_prev',
                 'editor_secondary', 'editor_delete',
             ]
-            button_actions = {}
+            menu_priority = {
+                'menu_confirm': 100,
+                'menu_back': 90,
+                'pause': 80,
+                'menu_tab_next': 70,
+                'menu_tab_prev': 70,
+                'editor_secondary': 60,
+                'editor_delete': 50,
+            }
+            button_actions_map = {}
             for action in menu_actions_list:
                 binding = cfg_bindings.get(action, {})
                 for btn in self._iter_button_indices(binding):
-                    button_actions[btn] = action
+                    if btn not in button_actions_map:
+                        button_actions_map[btn] = []
+                    button_actions_map[btn].append(action)
+
+            button_actions = {}
+            for btn, actions in button_actions_map.items():
+                if len(actions) == 1:
+                    button_actions[btn] = actions[0]
+                else:
+                    sorted_actions = sorted(actions, key=lambda a: menu_priority.get(a, 0), reverse=True)
+                    button_actions[btn] = sorted_actions[0]
 
         dpad_btn_to_dir = {11: 'up', 12: 'down', 13: 'left', 14: 'right'}
         dir_to_action = {

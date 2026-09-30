@@ -1,13 +1,21 @@
+from collections import OrderedDict
 import pygame
 
 
 class EffectSurfaceCache:
-    """Small LRU cache for frequently re-created alpha helper surfaces."""
+    """O(1) LRU cache for frequently re-created alpha helper surfaces."""
 
     def __init__(self, max_entries: int = 384):
         self.max_entries = max(1, int(max_entries))
-        self._cache: dict[tuple, pygame.Surface] = {}
-        self._order: list[tuple] = []
+        self._cache: OrderedDict[tuple, pygame.Surface] = OrderedDict()
+
+    @property
+    def _order(self) -> list[tuple]:
+        return list(self._cache.keys())
+
+    @_order.setter
+    def _order(self, value: list[tuple]) -> None:
+        pass
 
     @staticmethod
     def _normalize_color(color) -> tuple[int, int, int, int]:
@@ -31,34 +39,19 @@ class EffectSurfaceCache:
 
     def clear(self) -> None:
         self._cache.clear()
-        self._order.clear()
 
     def _get(self, key: tuple) -> pygame.Surface | None:
         surface = self._cache.get(key)
         if surface is None:
             return None
-        try:
-            self._order.remove(key)
-        except ValueError:
-            pass
-        self._order.append(key)
+        self._cache.move_to_end(key)
         return surface
 
     def _put(self, key: tuple, surface: pygame.Surface) -> pygame.Surface:
-        if key in self._cache:
-            self._cache[key] = surface
-            try:
-                self._order.remove(key)
-            except ValueError:
-                pass
-            self._order.append(key)
-            return surface
-
         self._cache[key] = surface
-        self._order.append(key)
-        while len(self._order) > self.max_entries:
-            oldest = self._order.pop(0)
-            self._cache.pop(oldest, None)
+        self._cache.move_to_end(key)
+        while len(self._cache) > self.max_entries:
+            self._cache.popitem(last=False)
         return surface
 
     def get_filled_surface(self, size, color) -> pygame.Surface:
