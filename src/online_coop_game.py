@@ -1974,6 +1974,7 @@ class OnlineCoopGame:
         pygame.K_UP: 'rotate',
         pygame.K_LSHIFT: 'hard_drop',
         pygame.K_SPACE: 'hard_drop',
+        pygame.K_c: 'hold',
         pygame.K_e: 'hold',
         pygame.K_RSHIFT: 'hold',
     }
@@ -1996,6 +1997,7 @@ class OnlineCoopGame:
         pygame.K_UP: 'rotate',
         pygame.K_LSHIFT: 'hard_drop',
         pygame.K_SPACE: 'hard_drop',
+        pygame.K_c: 'hold',
         pygame.K_e: 'hold',
         pygame.K_RSHIFT: 'hold',
     }
@@ -2007,6 +2009,48 @@ class OnlineCoopGame:
         pygame.K_s: 'soft_drop_stop',
         pygame.K_DOWN: 'soft_drop_stop',
     }
+
+    @staticmethod
+    def _binding_keycodes(binding, fallback: tuple[int, ...] = ()) -> tuple[int, ...]:
+        if binding is None:
+            return fallback
+        values = []
+        if isinstance(binding, dict):
+            values.extend((binding.get('primary'), binding.get('secondary')))
+        else:
+            values.append(binding)
+        keys: list[int] = []
+        for value in values:
+            if isinstance(value, int):
+                keycode = value
+            elif isinstance(value, str) and value.strip():
+                try:
+                    keycode = pygame.key.key_code(value)
+                except ValueError:
+                    continue
+            else:
+                continue
+            if keycode not in keys:
+                keys.append(keycode)
+        return tuple(keys)
+
+    def _single_player_action_for_event(self, event, fallback_map: dict[int, str]) -> str | None:
+        """Online Hold prompt'unu gerçek tek oyunculu eşleme ile aynı tut."""
+        if bool(getattr(event, 'from_gamepad', False)) and getattr(event, 'action', None) == 'hold':
+            return 'hold'
+        settings_manager = getattr(self, 'settings_manager', None)
+        if settings_manager is not None:
+            try:
+                controls = settings_manager.get_controls()
+                single = controls.get('single_player', {}) if isinstance(controls, dict) else {}
+                if event.key in self._binding_keycodes(single.get('hold')):
+                    return 'hold'
+                # Eski E / RShift Hold alias'ları yeniden atanan tuşu sızdırmasın.
+                if fallback_map.get(event.key) == 'hold':
+                    return None
+            except Exception:
+                pass
+        return fallback_map.get(event.key)
 
     def _handle_gameplay_keydown(self, event):
         """PLAYING state'te tuş basımı."""
@@ -2022,7 +2066,7 @@ class OnlineCoopGame:
             return
 
         if self.role == 'host':
-            action = self._HOST_KEYS.get(event.key)
+            action = self._single_player_action_for_event(event, self._HOST_KEYS)
             if action and self.coop_game:
                 held_keys = getattr(self, '_held_gameplay_keys', None)
                 if not isinstance(held_keys, set):
@@ -2034,7 +2078,7 @@ class OnlineCoopGame:
                 self.coop_game.inject_remote_input('P1', action)
                 self._push_piece_state_if_changed()
         elif self.role == 'guest':
-            action = self._GUEST_KEYS.get(event.key)
+            action = self._single_player_action_for_event(event, self._GUEST_KEYS)
             if action:
                 held_keys = getattr(self, '_held_gameplay_keys', None)
                 if not isinstance(held_keys, set):
@@ -2809,6 +2853,8 @@ class OnlineCoopGame:
         if self.role != 'guest':
             return None
         if self.coop_game is not None:
+            self.coop_game._is_online_coop = True
+            self.coop_game._local_player_role = 'P2'
             self.coop_game.screen = self.screen
             self.coop_game.window_width = self.window_width
             self.coop_game.window_height = self.window_height
@@ -2826,6 +2872,8 @@ class OnlineCoopGame:
                 settings_manager=self.settings_manager,
                 sound_manager=self.sound,
                 piece_rng_seed=(int(self._game_seed) if int(self._game_seed or 0) > 0 else None),
+                is_online_coop=True,
+                local_player_role='P2',
             )
             self.coop_game._event_listeners = []
             if self._authoritative_gameplay_config:
@@ -3937,6 +3985,8 @@ class OnlineCoopGame:
                 settings_manager=self.settings_manager,
                 sound_manager=self.sound,
                 piece_rng_seed=(int(self._game_seed) if int(self._game_seed or 0) > 0 else None),
+                is_online_coop=True,
+                local_player_role='P1',
             )
             # Çift playlist tick riskini önlemek için CoopGame'in iç
             # `update_music_playlist()` çağrısını bastır. Online wrapper
@@ -4972,15 +5022,9 @@ class OnlineCoopGame:
                 if visibility in ('unknown', 'stale_unknown'):
                     badge_text = t('lobby_label', 'Lobi')
                 elif requires_code:
-                    from emoji_renderer import emoji_surface
-
                     badge_text = t('private_lobby', 'Özel Lobi')
-                    badge_icon = emoji_surface('🔒', max(10, s(13, minimum=10)))
                 else:
-                    from emoji_renderer import emoji_surface
-
                     badge_text = t('open_lobby', 'Açık lobi')
-                    badge_icon = emoji_surface('🔓', max(10, s(13, minimum=10)))
 
                 badge_text_surf = badge_font.render(badge_text, True, accent_color)
                 badge_gap = s(6) if badge_icon else 0

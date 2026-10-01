@@ -35,7 +35,7 @@ from platform_utils import (
     create_display, normalize_mouse_pos, get_mouse_pos, set_app_icon,
 )
 from localization import t
-from gamepad_manager import is_gamepad_connected
+from gamepad_manager import get_gamepad_manager, is_gamepad_connected
 from promptfont_support import render_action_prompt_surface, render_button_index_prompt_surface
 from ui_theme import UIColors, UIFonts
 from sweep_effects import SweepCatState, draw_rainbow_cat_sweep
@@ -252,12 +252,20 @@ class CoopGame:
         settings_manager=None,
         sound_manager=None,
         piece_rng_seed: int | None = None,
+        is_online_coop: bool = False,
+        local_player_role: str | None = None,
     ):
         if not pygame.get_init():
             pygame.init()
 
         self.user_manager = user_manager
         self.settings_manager = settings_manager
+        self._is_online_coop: bool = bool(is_online_coop)
+        self._local_player_role: str | None = (
+            str(local_player_role).upper()
+            if local_player_role in ('P1', 'P2', 'p1', 'p2')
+            else None
+        )
         try:
             self._piece_rng_seed = int(piece_rng_seed) if piece_rng_seed is not None else None
         except Exception:
@@ -884,10 +892,98 @@ class CoopGame:
         return t('coop_next_panel_label', default='{player} NEXT', player=player)
 
     def _hold_label(self, player: str) -> str:
-        controls_key = 'player1' if player == 'P1' else 'player2'
-        hold_key = self.pvp_controls.get(controls_key, {}).get('hold')
-        key_label = self._key_label(hold_key)
-        return t('coop_hold_panel_label', default='{player} Hold ({binding})', player=player, binding=key_label)
+        if not getattr(self, '_is_online_coop', False):
+            controls_key = 'player1' if player == 'P1' else 'player2'
+            hold_key = self.pvp_controls.get(controls_key, {}).get('hold')
+            key_label = self._key_label(hold_key)
+            return t('coop_hold_panel_label', default='{player} Hold ({binding})', player=player, binding=key_label)
+
+        local_role = getattr(self, '_local_player_role', None)
+        binding_label = self._online_hold_binding_label() if player == local_role else ''
+        template = (
+            t('coop_hold_panel_self', default='YOU ({binding})')
+            if player == local_role
+            else t('coop_hold_panel_teammate', default='{player} TEAMMATE')
+        )
+        key = (player, local_role, template, binding_label)
+        cache = getattr(self, '_online_hold_label_cache', None)
+        if cache is None:
+            cache = self._online_hold_label_cache = {}
+        cached = cache.get(player)
+        if cached is None or cached[0] != key:
+            cached = (key, template.format(player=player, binding=binding_label))
+            cache[player] = cached
+        return cached[1]
+
+    def _online_hold_binding_label(self) -> str:
+        """Etiketi yalnızca kontrol cihazı veya Hold eşlemesi değişince üret."""
+        gamepad = None
+        try:
+            gamepad = get_gamepad_manager()
+        except Exception:
+            pass
+        connected = False
+        try:
+            connected = bool(gamepad.enabled and gamepad.is_connected())
+        except Exception:
+            pass
+        if connected:
+            indices = tuple(gamepad.get_action_button_indices('hold'))
+            active = gamepad.get_active_gamepad()
+            gp_type = str(getattr(active, 'gamepad_type', 'xbox') or 'xbox')
+            key = ('gamepad', gp_type, indices)
+        else:
+            manager = getattr(self, 'settings_manager', None)
+            controls = None
+            if manager is not None:
+                # get_controls() tüm eşlemeyi merge eder. HUD için mevcut snapshot yeterli.
+                settings = getattr(manager, 'settings', None)
+                if isinstance(settings, dict):
+                    controls = settings.get('controls')
+                if controls is None:
+                    controls = manager.get_controls()
+            single = controls.get('single_player', {}) if isinstance(controls, dict) else {}
+            raw = single.get('hold', 'c')
+            primary, secondary = (raw.get('primary'), raw.get('secondary')) if isinstance(raw, dict) else (raw, None)
+            key = ('keyboard', primary, secondary)
+
+        if key != getattr(self, '_online_hold_binding_key', None):
+            if connected:
+                label = ' / '.join(self._ascii_gamepad_button_label(i, gp_type) for i in indices) or '-'
+            else:
+                labels = []
+                for value in (primary, secondary):
+                    if value is None or value == '':
+                        continue
+                    keycode = self._binding_to_keycode(value, None)
+                    if keycode is not None:
+                        label = self._key_label(keycode)
+                        if label not in labels:
+                            labels.append(label)
+                label = ' / '.join(labels) or '-'
+            self._online_hold_binding_key = key
+            self._online_hold_binding_text = label
+            self._online_hold_prompt_manager = gamepad if connected else None
+        return self._online_hold_binding_text
+
+    _GAMEPAD_HOLD_LABELS = {
+        'xbox': ('A', 'B', 'X', 'Y', '-', 'Guide', '+', 'LS', 'RS', 'LB', 'RB'),
+        'playstation': ('CROSS', 'CIRCLE', 'SQUARE', 'TRIANGLE', '-', 'PS', '+', 'L3', 'R3', 'L1', 'R1'),
+        'nintendo': ('B', 'A', 'Y', 'X', '-', 'Home', '+', 'LS', 'RS', 'L', 'R'),
+    }
+    _GAMEPAD_HOLD_SPECIAL_LABELS = {11: 'DPAD UP', 12: 'DPAD DOWN', 13: 'DPAD LEFT', 14: 'DPAD RIGHT'}
+
+    @classmethod
+    def _ascii_gamepad_button_label(cls, button_index: int, gamepad_type: str) -> str:
+        """PromptFont bulunamazsa normal fontta güvenli metin göster."""
+        if button_index == 100:
+            return 'L2' if gamepad_type == 'playstation' else 'ZL' if gamepad_type == 'nintendo' else 'LT'
+        if button_index == 101:
+            return 'R2' if gamepad_type == 'playstation' else 'ZR' if gamepad_type == 'nintendo' else 'RT'
+        if button_index in cls._GAMEPAD_HOLD_SPECIAL_LABELS:
+            return cls._GAMEPAD_HOLD_SPECIAL_LABELS[button_index]
+        labels = cls._GAMEPAD_HOLD_LABELS.get(gamepad_type, cls._GAMEPAD_HOLD_LABELS['xbox'])
+        return labels[button_index] if 0 <= button_index < len(labels) else f'BTN{button_index}'
 
     def _render_panel_label_surface(
         self,
@@ -899,6 +995,13 @@ class CoopGame:
         min_size: int = 8,
         bold: bool = False,
     ) -> pygame.Surface:
+        prompt_key = getattr(self, '_online_hold_binding_key', None) if getattr(self, '_is_online_coop', False) else None
+        key = (label, tuple(color), max_width, base_size, min_size, bold, prompt_key)
+        cache = getattr(self, '_panel_label_surface_cache', None)
+        if cache is None:
+            cache = self._panel_label_surface_cache = {}
+        if key in cache:
+            return cache[key]
         safe_max_width = max(8, int(max_width))
         text = str(label or '').strip() or '-'
         base_px = max(int(base_size), int(min_size))
@@ -931,7 +1034,24 @@ class CoopGame:
                     else:
                         candidate = ''
 
-        return font.render(candidate, True, color)
+        surface = render_text(font, candidate, True, color)
+        manager = getattr(self, '_online_hold_prompt_manager', None)
+        own_label = getattr(self, '_online_hold_label_cache', {}).get(getattr(self, '_local_player_role', None))
+        if manager is not None and own_label is not None and label == own_label[1] and candidate == text:
+            try:
+                from promptfont_support import render_inline_action_text_surface
+                surface = render_inline_action_text_surface(
+                    text, self._online_hold_binding_text, 'hold', font, color, gpm=manager,
+                )
+                if surface.get_width() > safe_max_width:
+                    ratio = safe_max_width / surface.get_width()
+                    surface = pygame.transform.smoothscale(surface, (safe_max_width, max(1, round(surface.get_height() * ratio))))
+            except (ImportError, AttributeError):
+                pass
+        if len(cache) >= 32:
+            cache.clear()
+        cache[key] = surface
+        return surface
 
     # ==================================================================
     # Parça üretimi (bağımsız bag'ler)

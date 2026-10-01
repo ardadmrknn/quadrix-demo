@@ -8,6 +8,7 @@ import subprocess
 import sys
 import threading
 import time
+from typing import Callable
 
 
 src_dir_for_imports = os.path.dirname(os.path.abspath(__file__))
@@ -15,11 +16,14 @@ if src_dir_for_imports not in sys.path:
     sys.path.insert(0, src_dir_for_imports)
 
 try:
+    from . import demo_config
     from .demo_config import apply_runtime_environment
 except Exception:
     try:
+        import demo_config
         from demo_config import apply_runtime_environment
     except Exception:
+        demo_config = None
         def apply_runtime_environment():
             return None
 
@@ -955,6 +959,63 @@ def _show_mode_intro_popup(screen, mode_key, settings_manager=None):
         settings_manager.set(f'hide_intro_{mode_key}', True)
 
     return result
+
+
+def _online_pvp_launch_status() -> tuple[bool, str]:
+    """Online PvP için Steam SDK ve native ağ köprüsünü doğrula."""
+    try:
+        import steam_integration
+        if not steam_integration.is_available():
+            return False, t(
+                'steam_required_for_online',
+                'Online PvP için Steam istemcisini açın ve oyunu yeniden başlatın.',
+            )
+    except Exception:
+        return False, t(
+            'steam_required_for_online',
+            'Online PvP için Steam istemcisini açın ve oyunu yeniden başlatın.',
+        )
+
+    try:
+        from steam_networking import SteamNetworking
+        if not SteamNetworking().available:
+            return False, t(
+                'steam_bridge_not_available',
+                'Steam ağ köprüsü yüklenemedi. Online PvP kullanılamıyor.',
+            )
+    except Exception:
+        return False, t(
+            'steam_bridge_not_available',
+            'Steam ağ köprüsü yüklenemedi. Online PvP kullanılamıyor.',
+        )
+    return True, ''
+
+
+def _create_online_pvp_game(*, on_failure: Callable[[], None] | None = None, **kwargs) -> tuple[OnlinePvPGame | None, str]:
+    """Constructor ve Steam önkoşullarını menü state'ini değiştirmeden doğrula."""
+    ready, reason = _online_pvp_launch_status()
+    if not ready:
+        return None, reason
+    game = None
+    try:
+        game = OnlinePvPGame(**kwargs)
+        # İlk input karesinden önce init dene; transient hata fallback UI'da kalır.
+        connected = game._init_networking()
+        game._auto_connect_attempted = True
+        game._auto_connect_retry_timer = 0.0 if connected else 2000.0
+        return game, ''
+    except Exception as exc:
+        print(f"[OnlinePvP] Ekran oluşturma hatası: {exc}")
+        import traceback
+        traceback.print_exc()
+        if game is not None:
+            try:
+                game._cleanup()
+            except Exception:
+                traceback.print_exc()
+        if on_failure is not None:
+            on_failure()
+        return None, t('online_pvp_launch_failed')
 
 
 # ── İlk açılış / tutorial sonrası tek seferlik duyuru paneli ──────────────
@@ -2229,7 +2290,7 @@ def main():
 
     # Kaydedilmiş müzik ayarını kontrol et - ANA SAYFA MÜZİĞİNİ çal
     print("=" * 60)
-    print("🎵 ANA MENÜ MÜZİĞİ BAŞLATILIYOR")
+    print("ANA MENÜ MÜZİĞİ BAŞLATILIYOR")
     print("=" * 60)
     music_enabled = settings_manager.get('music_enabled', True)
     try:
@@ -2977,12 +3038,14 @@ def main():
                 )
                 state = 'pvp'
             elif action in ('online_pvp', 'Online PvP'):
+                if demo_config is not None and demo_config.is_locked_main_action('online_pvp'):
+                    menu._maybe_handle_demo_main_action('online_pvp')
+                    continue
                 if not _run_popup_and_sync_screen(_show_mode_intro_popup, 'online_pvp', settings_manager=settings_manager):
                     continue
                 confirm_exit = False
-                # Menü müziğini durdur; online PvP kendi müziğini başlatacak.
-                menu_sound.stop_music()
-                online_pvp_game = OnlinePvPGame(
+                online_pvp_game, steam_reason = _create_online_pvp_game(
+                    on_failure=_restore_online_pvp_menu_music,
                     screen=screen,
                     fullscreen=fullscreen,
                     user_manager=user_manager,
@@ -2990,6 +3053,10 @@ def main():
                     settings_manager=settings_manager,
                     sound_manager=menu_sound,
                 )
+                if online_pvp_game is None:
+                    state = 'menu'
+                    menu.show_info(steam_reason, duration=240)
+                    continue
                 _handle_online_pvp._game = online_pvp_game
                 state = 'online_pvp'
             elif action in ('daily_challenge', t('daily_challenge')):
@@ -3383,7 +3450,7 @@ def main():
                 if settings_screen.music_enabled and not settings_screen.mute_all and state == 'settings':
                     music_name = settings_screen.menu_music.lower()
                     menu_sound.play_music(music_name, loop=True)
-                    print(f"🎵 Ana sayfa müziği değişti: {settings_screen.menu_music}")
+                    print(f"Ana sayfa müziği değişti: {settings_screen.menu_music}")
             elif action == 'change_game_music':
                 # Oyun İçi Müzik değişti
                 print(f"🎮 Oyun içi müzik ayarlandı: {settings_screen.game_music}")
@@ -3833,11 +3900,13 @@ def main():
                 game = CascadeMode(difficulty, sound, effects, achievement_manager, theme_manager, screen, fullscreen, settings_manager, user_manager, 'cascade', score_manager=score_manager, sound_manager=menu_sound)
                 state = 'game'
             elif action == 'Online PvP':
+                if demo_config is not None and demo_config.get_extras_lock_kind('Online PvP'):
+                    extras_screen._show_demo_lock_prompt_for_mode('Online PvP')
+                    continue
                 if not _run_popup_and_sync_screen(_show_mode_intro_popup, 'online_pvp', settings_manager=settings_manager):
                     continue
-                # Menü müziğini durdur; online PvP kendi müziğini başlatacak.
-                menu_sound.stop_music()
-                online_pvp_game = OnlinePvPGame(
+                online_pvp_game, steam_reason = _create_online_pvp_game(
+                    on_failure=_restore_online_pvp_menu_music,
                     screen=screen,
                     fullscreen=fullscreen,
                     user_manager=user_manager,
@@ -3845,6 +3914,10 @@ def main():
                     settings_manager=settings_manager,
                     sound_manager=menu_sound,
                 )
+                if online_pvp_game is None:
+                    state = 'menu'
+                    menu.show_info(steam_reason, duration=240)
+                    continue
                 _handle_online_pvp._game = online_pvp_game
                 state = 'online_pvp'
             elif action in ('daily_challenge', t('daily_challenge')):
@@ -3982,7 +4055,7 @@ def main():
                         menu_sound.play_music(menu_music.lower(), loop=True)
                 except Exception:
                     menu_sound.play_music(menu_music.lower(), loop=True)
-                print(f"🎵 Ana sayfa müziği başlatıldı: {menu_music}")
+                print(f"Ana sayfa müziği başlatıldı: {menu_music}")
             # Oyun bitti — Steam skor tablosunu güncelle ve HighScoreScreen'e yansıt
             try:
                 fresh_scores = _load_steam_mode_scores(force=True, limit=3)
@@ -4074,7 +4147,7 @@ def main():
                         menu_sound.play_music(menu_music.lower(), loop=True)
                 except Exception:
                     menu_sound.play_music(menu_music.lower(), loop=True)
-                print(f"🎵 Ana sayfa müziği başlatıldı: {menu_music}")
+                print(f"Ana sayfa müziği başlatıldı: {menu_music}")
             return False
 
         pvp_game.update(delta_ms)
@@ -4129,6 +4202,27 @@ def main():
             pass
         return True
 
+    def _restore_online_pvp_menu_music() -> None:
+        try:
+            if settings_screen.music_enabled and not getattr(settings_screen, 'mute_all', False):
+                _menu_vol = settings_manager.get('menu_music_volume', 0.3)
+                menu_sound.unduck_music()
+                menu_sound.set_music_volume(_menu_vol)
+                menu_music = settings_manager.get('menu_music', 'main_1')
+                try:
+                    playlist = settings_manager.get_menu_music_playlist()
+                    playlist_keys = [menu_sound.ensure_track_available(p) for p in playlist]
+                    playlist_keys = [p for p in playlist_keys if p]
+                    if playlist_keys:
+                        do_shuffle = bool(settings_manager.get('music_shuffle', False))
+                        menu_sound.set_music_playlist(playlist_keys, loop=True, autoplay=True, force=True, shuffle=do_shuffle)
+                    else:
+                        menu_sound.play_music(menu_music.lower(), loop=True)
+                except Exception:
+                    menu_sound.play_music(menu_music.lower(), loop=True)
+        except Exception as exc:
+            print(f"[OnlinePvP] Menü müziği geri yüklenemedi: {exc}")
+
     def _handle_online_pvp(delta_ms):
         nonlocal running, state
         online_pvp = getattr(_handle_online_pvp, '_game', None)
@@ -4147,6 +4241,8 @@ def main():
             except Exception:
                 pass
             _handle_online_pvp._game = None
+            _restore_online_pvp_menu_music()
+            menu.show_info(t('online_pvp_launch_failed', 'Online PvP başlatılamadı. Steam bağlantısını kontrol edin.'), duration=240)
             state = 'menu'
             return False
 
@@ -4175,23 +4271,7 @@ def main():
             except Exception:
                 pass
             _handle_online_pvp._game = None
-            if settings_screen.music_enabled and not getattr(settings_screen, 'mute_all', False):
-                _menu_vol = settings_manager.get('menu_music_volume', 0.3)
-                menu_sound.unduck_music()
-                menu_sound.set_music_volume(_menu_vol)
-                menu_music = settings_manager.get('menu_music', 'main_1')
-                try:
-                    playlist = settings_manager.get_menu_music_playlist()
-                    playlist_keys = [menu_sound.ensure_track_available(p) for p in playlist]
-                    playlist_keys = [p for p in playlist_keys if p]
-                    if playlist_keys:
-                        do_shuffle = bool(settings_manager.get('music_shuffle', False))
-                        menu_sound.set_music_playlist(playlist_keys, loop=True, autoplay=True, force=True, shuffle=do_shuffle)
-                    else:
-                        menu_sound.play_music(menu_music.lower(), loop=True)
-                except Exception:
-                    menu_sound.play_music(menu_music.lower(), loop=True)
-                print(f"🎵 Ana sayfa müziği başlatıldı: {menu_music}")
+            _restore_online_pvp_menu_music()
             return False
 
         try:
@@ -4205,6 +4285,8 @@ def main():
             except Exception:
                 pass
             _handle_online_pvp._game = None
+            _restore_online_pvp_menu_music()
+            menu.show_info(t('online_pvp_runtime_failed', 'Online PvP çalışırken hata oluştu. Menüye dönüldü.'), duration=240)
             state = 'menu'
             return False
         try:
@@ -4277,7 +4359,7 @@ def main():
                         menu_sound.play_music(menu_music.lower(), loop=True)
                 except Exception:
                     menu_sound.play_music(menu_music.lower(), loop=True)
-                print(f"🎵 Ana sayfa müziği başlatıldı: {menu_music}")
+                print(f"Ana sayfa müziği başlatıldı: {menu_music}")
             return False
 
         try:

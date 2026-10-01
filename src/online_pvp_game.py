@@ -79,6 +79,7 @@ from ui_theme import UIFonts, UIColors, UIStyle
 from ui_scaling import get_projected_effective_scale
 from localization import t, get_language
 from text_cache import render_text
+from promptfont_support import render_action_prompt_surface
 from combo_popup_style import (
     COMBO_POPUP_SHADOW_COLOR,
     get_combo_popup_alpha,
@@ -452,12 +453,9 @@ class OnlinePvPGame:
         if settings_manager:
             self.sound.music_enabled = settings_manager.get('music_enabled', True)
             self.sound.sfx_enabled = settings_manager.get('sound_enabled', True)
-            self.sound.set_music_volume(settings_manager.get('music_volume', 0.3))
             self.sound.set_volume(settings_manager.get('sfx_volume', 0.5))
             if hasattr(self.sound, 'set_muted'):
                 self.sound.set_muted(bool(settings_manager.get('mute_all', False)))
-        if hasattr(self.sound, 'unduck_music'):
-            self.sound.unduck_music()
 
         # Arka plan
         self.background = BackgroundManager()
@@ -495,6 +493,11 @@ class OnlinePvPGame:
         # ─── Steam Networking ───
         self.net = SteamNetworking()
         self._net_initialized = False
+        self._owns_steam_pump_pause = False
+        self._network_cleanup_failed = False
+        self._network_error_key: str = ''
+        self._bridge_missing = False
+        self._closed = False
         self._auto_connect_attempted = False
         self._auto_connect_retry_timer = 0.0
 
@@ -684,8 +687,7 @@ class OnlinePvPGame:
         # dt saklama
         self._last_dt_ms: float = 16.666
 
-        # Müzik başlat (lobi ekranına girince)
-        self._start_pvp_music()
+        # Lobi müziği yalnızca networking başarıyla başlatıldıktan sonra değişir.
         # Ambient parçacıkları başlat
         self.create_ambient_particles()
 
@@ -954,6 +956,10 @@ class OnlinePvPGame:
 
     def _start_pvp_music(self):
         """PvP müziğini başlat (local PvP ile aynı playlist mantığı)."""
+        if self.settings_manager:
+            self.sound.set_music_volume(self.settings_manager.get('music_volume', 0.3))
+        if hasattr(self.sound, 'unduck_music'):
+            self.sound.unduck_music()
         if not getattr(self.sound, 'music_enabled', True):
             return
         playlist_values = []
@@ -988,58 +994,79 @@ class OnlinePvPGame:
         if track_key:
             self.sound.set_music_playlist([track_key], loop=True, autoplay=True, force=True)
 
+    def _release_steam_pump(self) -> None:
+        """Yalnızca bu ekranın aldığı pause referansını bir kez bırak."""
+        if getattr(self, '_owns_steam_pump_pause', False):
+            _resume_steam_pump()
+            self._owns_steam_pump_pause = False
+
     def _init_networking(self) -> bool:
-        """Steam networking'i başlat."""
+        """Steam köprüsünü ana thread'de, tek callback sahibiyle başlat."""
+        if getattr(self, '_closed', False) or getattr(self, '_network_cleanup_failed', False):
+            return False
         if self._net_initialized:
             return True
 
         if not self.net.available:
-            print("[OnlinePvP] Steam net bridge mevcut değil!")
-            self._status_msg = t('steam_bridge_not_available',
-                                 'Steam ağ köprüsü yüklenemedi. Online PvP kullanılamıyor.')
-            self._status_timer = 4.0
+            self._bridge_missing = True
+            self._network_error_key = 'steam_bridge_not_available'
+            self._status_msg = t(self._network_error_key)
+            self._status_timer = 0.0
             return False
 
-        # ÖNEMLİ: steam_integration.py pump thread'ini duraklat.
-        # İki farklı thread'den SteamAPI_RunCallbacks() çağırmak
-        # Steam SDK'da race condition/segfault oluşturur.
+        self._bridge_missing = False
         try:
-            _pause_steam_pump()
-        except Exception as e:
-            print(f"[OnlinePvP] Pump pause hatası: {e}")
+            if not getattr(self, '_owns_steam_pump_pause', False):
+                _pause_steam_pump()
+                self._owns_steam_pump_pause = True
+            if self.net.init():
+                # Event handler'ları kaydet
+                self.net.on('lobby_created', self._on_lobby_created)
+                self.net.on('lobby_joined', self._on_lobby_joined)
+                self.net.on('lobby_member_joined', self._on_member_joined)
+                self.net.on('lobby_member_left', self._on_member_left)
+                self.net.on('lobby_member_disconnected', self._on_member_disconnected)
+                # Lobi listesi — C++ per-lobi event gönderiyor, tek JSON değil
+                self.net.on('lobby_found', self._on_lobby_found)
+                self.net.on('lobby_data_updated', self._on_lobby_data_updated)
+                self.net.on('lobby_list_complete', self._on_lobby_list_complete)
+                # Steam overlay "Oyuna Katıl" isteği
+                self.net.on('join_requested', self._on_join_requested)
+                # Hata olayları
+                self.net.on('lobby_create_failed', self._on_lobby_error)
+                self.net.on('lobby_join_failed', self._on_lobby_error)
+                self.net.on('lobby_list_failed', self._on_lobby_list_error)
+                # P2P session olayları
+                self.net.on('session_accepted', self._on_session_accepted)
+                self.net.on('session_rejected', self._on_session_rejected)
+                self._net_initialized = True
+                self._network_error_key = ''
+                self._status_msg = ''
+                self._status_timer = 0.0
+                try:
+                    self._start_pvp_music()
+                except Exception as exc:
+                    print(f"[OnlinePvP] Lobi müziği başlatılamadı: {exc}")
+                return True
+        except Exception as exc:
+            print(f"[OnlinePvP] Networking başlatma hatası: {exc}")
+            import traceback
+            traceback.print_exc()
 
-        ok = self.net.init()
-        if ok:
-            self._net_initialized = True
-            # Event handler'ları kaydet
-            self.net.on('lobby_created', self._on_lobby_created)
-            self.net.on('lobby_joined', self._on_lobby_joined)
-            self.net.on('lobby_member_joined', self._on_member_joined)
-            self.net.on('lobby_member_left', self._on_member_left)
-            self.net.on('lobby_member_disconnected', self._on_member_disconnected)
-            # Lobi listesi — C++ per-lobi event gönderiyor, tek JSON değil
-            self.net.on('lobby_found', self._on_lobby_found)
-            self.net.on('lobby_data_updated', self._on_lobby_data_updated)
-            self.net.on('lobby_list_complete', self._on_lobby_list_complete)
-            # Steam overlay "Oyuna Katıl" isteği
-            self.net.on('join_requested', self._on_join_requested)
-            # Hata olayları
-            self.net.on('lobby_create_failed', self._on_lobby_error)
-            self.net.on('lobby_join_failed', self._on_lobby_error)
-            self.net.on('lobby_list_failed', self._on_lobby_list_error)
-            # P2P session olayları
-            self.net.on('session_accepted', self._on_session_accepted)
-            self.net.on('session_rejected', self._on_session_rejected)
+        # Kısmi init dahil native kaynakları kapat; sonra pump referansını bırak.
+        try:
+            self.net.shutdown()
+        except Exception as exc:
+            print(f"[OnlinePvP] Native ağ temizliği başarısız: {exc}")
+            self._network_cleanup_failed = True
+            self._bridge_missing = True  # Belirsiz native durumunda tekrar init yapma.
         else:
-            # Init başarısız — pump'u tekrar başlat
-            try:
-                _resume_steam_pump()
-            except Exception:
-                pass
-            self._status_msg = t('steam_net_init_failed',
-                                 'Steam ağ bağlantısı kurulamadı!')
-            self._status_timer = 4.0
-        return ok
+            self._release_steam_pump()
+        self._net_initialized = False
+        self._network_error_key = 'steam_net_init_failed'
+        self._status_msg = t(self._network_error_key)
+        self._status_timer = 0.0
+        return False
 
     # ============================================================
     #  LOBİ EVENT HANDLER'LARI
@@ -4200,7 +4227,7 @@ class OnlinePvPGame:
 
         # Online PvP ekranına girildiğinde Steam'e otomatik bağlan.
         # İlk deneme geçici olarak başarısız olursa kısa aralıklarla tekrar dene.
-        if not self._net_initialized:
+        if not self._net_initialized and not getattr(self, '_bridge_missing', False) and not getattr(self, '_closed', False):
             if self._auto_connect_retry_timer > 0:
                 self._auto_connect_retry_timer = max(0.0, self._auto_connect_retry_timer - float(delta_time))
             if not self._auto_connect_attempted or self._auto_connect_retry_timer <= 0:
@@ -4874,6 +4901,11 @@ class OnlinePvPGame:
         key = event.key
         mods = getattr(event, 'mod', 0)
 
+        if getattr(self, 'online_state', None) == OnlineState.LOBBY_MENU and not getattr(self, '_net_initialized', True):
+            if key in (pygame.K_ESCAPE, pygame.K_RETURN, pygame.K_KP_ENTER):
+                return 'menu'
+            return None
+
         # ESC — Lobiden / oyundan çık
         if key == pygame.K_ESCAPE:
             # Kod girişi aktifse önce onu kapat
@@ -5033,6 +5065,8 @@ class OnlinePvPGame:
         for btn in self._lobby_buttons:
             if btn['rect'].collidepoint(pos):
                 action = btn.get('action', '')
+                if getattr(self, 'online_state', None) == OnlineState.LOBBY_MENU and not getattr(self, '_net_initialized', True):
+                    return 'menu' if action in ('back', 'exit_menu') else None
                 try:
                     if action == 'create_private':
                         if self._init_networking():
@@ -5179,7 +5213,7 @@ class OnlinePvPGame:
         Önce C++ bridge üzerinden dener. Başarısız olursa doğrudan
         Steam ctypes API'si üzerinden overlay açar (Windows uyumluluğu).
         """
-        if not self._net_initialized:
+        if not getattr(self, '_net_initialized', False):
             ok = self._init_networking()
             if not ok:
                 self._status_msg = t('steam_not_available', 'Steam bağlantısı kurulamadı!')
@@ -5492,8 +5526,63 @@ class OnlinePvPGame:
 
     # ─── Lobi Menü Çizimi ───
 
+    def _draw_network_unavailable(self) -> None:
+        """Ağ yokken kalıcı açıklama ve tek güvenli Geri aksiyonu çiz."""
+        w, h = self.window_width, self.window_height
+        scale = self._ui_scale()
+        s = lambda value: self._sx(value, scale)
+        margin = min(s(24), max(0, min(w, h) // 8))
+        panel = pygame.Rect(0, 0, max(1, min(s(680), w - margin * 2)), max(1, min(s(260), h - margin * 2)))
+        panel.center = (w // 2, h // 2)
+        draw_glass_panel(self.screen, panel, alpha=200, border_color=UIColors.NEON_RED, glow=False)
+        error_key = getattr(self, '_network_error_key', '') or 'connecting'
+        message = t(error_key)
+        restart_hint = t('steam_required_for_online')
+        cache_key = (message, restart_hint, panel.size, scale)
+        cache = getattr(self, '_network_error_text_cache', None)
+        if cache is None or cache[0] != cache_key:
+            max_width = max(1, panel.width - margin * 2)
+            font = _rs.get_fitting_font(message, s(22), max_width, min_size=8)
+            hint_font = _rs.get_fitting_font(restart_hint, s(16), max_width, bold=False, min_size=8)
+            cache = (cache_key, render_text(font, message, True, UIColors.NEON_RED), render_text(hint_font, restart_hint, True, _rs.text_secondary))
+            self._network_error_text_cache = cache
+        self.screen.blit(cache[1], cache[1].get_rect(center=(panel.centerx, panel.y + panel.height // 3)))
+        self.screen.blit(cache[2], cache[2].get_rect(center=(panel.centerx, panel.y + panel.height // 2)))
+        btn = pygame.Rect(0, 0, max(1, min(s(260), panel.width - margin * 2)), max(1, min(s(48), panel.height // 4)))
+        btn.midbottom = (panel.centerx, panel.bottom - margin)
+        try:
+            mouse_pos = get_mouse_pos()
+        except Exception:
+            mouse_pos = None
+        manager = getattr(self, 'gamepad', None)
+        connected = False
+        gp_type = None
+        buttons = ()
+        try:
+            connected = bool(manager.enabled and manager.is_connected())
+            if connected:
+                gp_type = getattr(manager.get_active_gamepad(), 'gamepad_type', None)
+                buttons = tuple(manager.get_action_button_indices('menu_back'))
+        except Exception:
+            connected = False
+        hint_key = (panel.size, scale, connected, gp_type, buttons)
+        hint_cache = getattr(self, '_network_back_hint_cache', None)
+        if hint_cache is None or hint_cache[0] != hint_key:
+            hint_font = _rs.get_font(s(14), bold=False)
+            prompt = render_action_prompt_surface('menu_back', 'ESC / ENTER', hint_font, _rs.text_muted,
+                                                   max_width=max(1, btn.width - margin * 2), max_height=max(1, btn.height // 3),
+                                                   gpm=getattr(self, 'gamepad', None))
+            hint_cache = (hint_key, prompt or 'ESC / ENTER')
+            self._network_back_hint_cache = hint_cache
+        _rs.draw_uniform_button(self.screen, btn, t('back_to_menu'), sub_text=hint_cache[1], color_code=_rs.secondary,
+                                state='hover' if mouse_pos is not None and btn.collidepoint(mouse_pos) else 'normal')
+        self._lobby_buttons.append({'rect': btn, 'action': 'back'})
+
     def _draw_lobby_menu(self):
         """Lobi oluştur/katıl — retro_style butonları ve lobi listesi."""
+        if not self._net_initialized:
+            self._draw_network_unavailable()
+            return
         w, h = self.window_width, self.window_height
         cx = w // 2
         sc = self._ui_scale()
@@ -5755,15 +5844,11 @@ class OnlinePvPGame:
                 if visibility in ('unknown', 'stale_unknown'):
                     badge_text = t('lobby_label', 'Lobi')
                 elif requires_code:
-                    from emoji_renderer import emoji_surface
-
                     badge_text = t('private_lobby', 'Ozel Lobi')
-                    badge_icon = emoji_surface('🔒', max(10, s(13, minimum=10)))
+                    badge_icon = None
                 else:
-                    from emoji_renderer import emoji_surface
-
                     badge_text = t('open_lobby', 'Acik lobi')
-                    badge_icon = emoji_surface('🔓', max(10, s(13, minimum=10)))
+                    badge_icon = None
                 badge_text_surf = badge_font.render(badge_text, True, accent_color)
                 badge_gap = s(6) if badge_icon else 0
                 badge_content_w = badge_text_surf.get_width() + (badge_icon.get_width() if badge_icon else 0) + badge_gap
@@ -7253,17 +7338,21 @@ class OnlinePvPGame:
     #  ANA DÖNGÜ
     # ============================================================
 
-    def _cleanup(self):
-        """Online PvP çıkışında kaynakları temizle ve pump thread'i sürdür."""
+    def _cleanup(self) -> None:
+        """Native kaynakları kapat; kendi pause referansını bir kez bırak."""
+        if getattr(self, '_closed', False):
+            return
         try:
             self.net.shutdown()
-        except Exception:
-            pass
-        # Pump thread'i tekrar başlat — bridge artık RunCallbacks çağırmıyor
-        try:
-            _resume_steam_pump()
-        except Exception:
-            pass
+        except Exception as exc:
+            print(f"[OnlinePvP] Native ağ temizliği başarısız: {exc}")
+            self._network_cleanup_failed = True
+            return  # Native callback sahibi kapanmadan arka plan pump'ını açma.
+        else:
+            self._release_steam_pump()
+            self._network_cleanup_failed = False
+            self._net_initialized = False
+            self._closed = True
 
     def run(self) -> str:
         """Ana oyun döngüsü. 'menu' döndürürse ana menüye dön."""
