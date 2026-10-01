@@ -15,6 +15,7 @@ from pathlib import Path
 
 from coop_board import CoopBoard
 from pieces import Piece, SHAPES, skip_hidden_rows
+from das_controller import DasController
 from constants import (
     BOARD_WIDTH, BOARD_HEIGHT, BLACK, WHITE, CYAN, YELLOW, MAGENTA, GREEN, RED,
     DAS_DELAY, DAS_REPEAT, DEFAULT_LOCK_DELAY,
@@ -69,7 +70,7 @@ from gameplay_layout import (
     compute_coop_layout,
     get_display_pixel_ratio,
 )
-from ui_scaling import apply_ui_scale_preset, get_scale, resolve_ui_scale_size
+from ui_scaling import apply_ui_scale_preset, calculate_overlay_metrics, get_scale, resolve_ui_scale_size
 
 try:
     from gamepad_manager import normalize_gamepad_event_button
@@ -405,14 +406,8 @@ class CoopGame:
         self.elapsed_time = 0.0
 
         # DAS
-        self.p1_das_direction = 0
-        self.p1_das_timer = 0.0
-        self.p1_das_repeat_timer = 0.0
-        self.p1_das_charged = False
-        self.p2_das_direction = 0
-        self.p2_das_timer = 0.0
-        self.p2_das_repeat_timer = 0.0
-        self.p2_das_charged = False
+        self._p1_das = DasController()
+        self._p2_das = DasController()
 
         # Soft drop
         self.p1_soft_drop_active = False
@@ -3000,6 +2995,90 @@ class CoopGame:
     # DAS
     # ------------------------------------------------------------------
 
+    def _p1_das_ctrl(self) -> DasController:
+        ctrl = getattr(self, '_p1_das', None)
+        if ctrl is None:
+            ctrl = DasController()
+            self._p1_das = ctrl
+        return ctrl
+
+    def _p2_das_ctrl(self) -> DasController:
+        ctrl = getattr(self, '_p2_das', None)
+        if ctrl is None:
+            ctrl = DasController()
+            self._p2_das = ctrl
+        return ctrl
+
+    @property
+    def p1_das_direction(self) -> int:
+        return self._p1_das_ctrl().direction
+
+    @p1_das_direction.setter
+    def p1_das_direction(self, value: int) -> None:
+        self._p1_das_ctrl().direction = int(value)
+
+    @property
+    def p1_das_timer(self) -> float:
+        return self._p1_das_ctrl().timer
+
+    @p1_das_timer.setter
+    def p1_das_timer(self, value: float) -> None:
+        self._p1_das_ctrl().timer = float(value)
+
+    @property
+    def p1_das_repeat_timer(self) -> float:
+        return self._p1_das_ctrl().repeat_timer
+
+    @p1_das_repeat_timer.setter
+    def p1_das_repeat_timer(self, value: float) -> None:
+        self._p1_das_ctrl().repeat_timer = float(value)
+
+    @property
+    def p1_das_charged(self) -> bool:
+        return self._p1_das_ctrl().charged
+
+    @p1_das_charged.setter
+    def p1_das_charged(self, value: bool) -> None:
+        self._p1_das_ctrl().charged = bool(value)
+
+    @property
+    def p2_das_direction(self) -> int:
+        return self._p2_das_ctrl().direction
+
+    @p2_das_direction.setter
+    def p2_das_direction(self, value: int) -> None:
+        self._p2_das_ctrl().direction = int(value)
+
+    @property
+    def p2_das_timer(self) -> float:
+        return self._p2_das_ctrl().timer
+
+    @p2_das_timer.setter
+    def p2_das_timer(self, value: float) -> None:
+        self._p2_das_ctrl().timer = float(value)
+
+    @property
+    def p2_das_repeat_timer(self) -> float:
+        return self._p2_das_ctrl().repeat_timer
+
+    @p2_das_repeat_timer.setter
+    def p2_das_repeat_timer(self, value: float) -> None:
+        self._p2_das_ctrl().repeat_timer = float(value)
+
+    @property
+    def p2_das_charged(self) -> bool:
+        return self._p2_das_ctrl().charged
+
+    @p2_das_charged.setter
+    def p2_das_charged(self, value: bool) -> None:
+        self._p2_das_ctrl().charged = bool(value)
+
+    def _perform_das_move(self, player: str, direction: int) -> bool:
+        moved = self._try_move(player, direction)
+        if moved:
+            self.sound.play('move')
+        return moved
+
     def _update_das(self, dt: float) -> None:
         if self._das_settings_dirty:
             try:
@@ -3011,65 +3090,37 @@ class CoopGame:
             except Exception:
                 self._cached_das_repeat = float(DAS_REPEAT)
             self._cached_das_delay = max(0.0, self._cached_das_delay)
-            self._cached_das_repeat = max(1.0, self._cached_das_repeat)
+            self._cached_das_repeat = max(0.0, self._cached_das_repeat)
             self._das_settings_dirty = False
         delay = self._cached_das_delay
         repeat = self._cached_das_repeat
-
         for player in ('P1', 'P2'):
             frozen = self.p1_frozen if player == 'P1' else self.p2_frozen
             if frozen:
                 continue
             if self._player_uses_remote_active_authority(player):
-                if player == 'P1':
-                    self.p1_das_direction = 0
-                    self.p1_das_timer = 0
-                    self.p1_das_repeat_timer = 0
-                    self.p1_das_charged = False
-                else:
-                    self.p2_das_direction = 0
-                    self.p2_das_timer = 0
-                    self.p2_das_repeat_timer = 0
-                    self.p2_das_charged = False
+                (self._p1_das_ctrl() if player == 'P1' else self._p2_das_ctrl()).reset()
                 continue
-            das_dir = self.p1_das_direction if player == 'P1' else self.p2_das_direction
-            piece = self.p1_current_piece if player == 'P1' else self.p2_current_piece
-            if das_dir == 0 or piece is None:
-                continue
-
             if player == 'P1':
-                self.p1_das_timer += dt
-                if not self.p1_das_charged:
-                    if self.p1_das_timer >= delay:
-                        self.p1_das_charged = True
-                        self.p1_das_repeat_timer = max(0.0, self.p1_das_timer - delay)
-                        if self._try_move('P1', das_dir):
-                            self.sound.play('move')
-                else:
-                    self.p1_das_repeat_timer += dt
-                    while self.p1_das_repeat_timer >= repeat:
-                        self.p1_das_repeat_timer -= repeat
-                        if not self._try_move('P1', das_dir):
-                            self.p1_das_repeat_timer = 0
-                            break
-                        self.sound.play('move')
+                piece = self.p1_current_piece
+                ctrl = self._p1_das_ctrl()
             else:
-                self.p2_das_timer += dt
-                if not self.p2_das_charged:
-                    if self.p2_das_timer >= delay:
-                        self.p2_das_charged = True
-                        self.p2_das_repeat_timer = max(0.0, self.p2_das_timer - delay)
-                        if self._try_move('P2', das_dir):
-                            self.sound.play('move')
-                else:
-                    self.p2_das_repeat_timer += dt
-                    while self.p2_das_repeat_timer >= repeat:
-                        self.p2_das_repeat_timer -= repeat
-                        if not self._try_move('P2', das_dir):
-                            self.p2_das_repeat_timer = 0
-                            break
-                        self.sound.play('move')
+                piece = self.p2_current_piece
+                ctrl = self._p2_das_ctrl()
+            if ctrl.direction == 0 or piece is None:
+                continue
+            ctrl.update(
+                dt,
+                (self._perform_das_move_p1 if player == 'P1' else self._perform_das_move_p2),
+                delay_ms=delay,
+                repeat_ms=repeat,
+            )
 
+    def _perform_das_move_p1(self, direction: int) -> bool:
+        return self._perform_das_move('P1', direction)
+
+    def _perform_das_move_p2(self, direction: int) -> bool:
+        return self._perform_das_move('P2', direction)
     def _update_soft_drop(self, dt: float) -> None:
         speed = self._SOFT_DROP_SPEED
         for player in ('P1', 'P2'):
@@ -3986,11 +4037,15 @@ class CoopGame:
         self.screen.blit(msg_surf, msg_surf.get_rect(center=box_rect.center))
 
     def _draw_pause_menu(self) -> None:
-        w, h = self.window_width, self.window_height
+        w, h = self._active_ui_size()
         ui = self._ui_scale()
 
-        overlay = pygame.Surface((w, h), pygame.SRCALPHA)
-        overlay.fill((0, 0, 0, 185))
+        dim_key = (w, h)
+        if getattr(self, '_pause_dim_key', None) != dim_key:
+            self._pause_dim_surface = pygame.Surface(dim_key, pygame.SRCALPHA)
+            self._pause_dim_surface.fill((0, 0, 0, 185))
+            self._pause_dim_key = dim_key
+        overlay = self._pause_dim_surface
         self.screen.blit(overlay, (0, 0))
 
         # Lokalize seçenek etiketleri (Game base ile aynı yapı)
@@ -4004,30 +4059,24 @@ class CoopGame:
             'main_menu': t('main_menu', default='Main Menu'),
         }
 
-        pw = min(self._sx(520, ui), w - self._sx(100, ui))
         count = len(self.pause_menu_options)
-        item_h = self._sx(56, ui)
-        gap = self._sx(10, ui)
-        top_pad = self._sx(78, ui)
-        bot_pad = self._sx(64, ui)
-        ph = top_pad + count * item_h + (count - 1) * gap + bot_pad
-        pr = pygame.Rect((w - pw) // 2, (h - ph) // 2, pw, ph)
+        metrics = calculate_overlay_metrics((w, h), ui, count)
+        pr = metrics['panel_rect']
 
         retro_style.draw_glass_panel(self.screen, pr, alpha=180,
                                       border_color=(*retro_style.accent, 140), glow=True)
 
-        tf = retro_style.get_font(self._sx(30, ui, minimum=16), bold=True)
+        tf = retro_style.get_font(metrics['title_font_size'], bold=True)
         ts = tf.render(t('paused', default='PAUSED'), True, retro_style.accent)
-        self.screen.blit(ts, ts.get_rect(centerx=pr.centerx, top=pr.y + self._sx(18, ui)))
+        self.screen.blit(ts, ts.get_rect(centerx=pr.centerx, top=pr.y + metrics['title_top']))
 
         self._pause_option_rects = []
         self._pause_volume_rects = {}
         _pause_mouse_pos = get_mouse_pos()
 
-        start_y = pr.y + top_pad
+        button_rects = metrics['button_rects']
         for i, opt in enumerate(self.pause_menu_options):
-            y = start_y + i * (item_h + gap)
-            btn_rect = pygame.Rect(pr.x + self._sx(22, ui), y, pr.width - self._sx(44, ui), item_h)
+            btn_rect = button_rects[i].copy()
             self._pause_option_rects.append(btn_rect)
 
             selected = i == self.pause_menu_selected
@@ -4064,20 +4113,20 @@ class CoopGame:
             # Volume bars
             if opt == 'music_volume':
                 bar_rect = pygame.Rect(
-                    btn_rect.right - self._sx(150, ui),
-                    btn_rect.y + self._sx(18, ui),
-                    self._sx(90, ui),
-                    self._sx(18, ui),
+                    btn_rect.right - metrics['volume_bar_max_w'] - self._sx(30, ui),
+                    btn_rect.y + max(0, (btn_rect.height - metrics['volume_bar_h']) // 2),
+                    metrics['volume_bar_max_w'],
+                    metrics['volume_bar_h'],
                 )
                 self._pause_volume_rects[opt] = bar_rect
                 retro_style.draw_volume_bar(self.screen, bar_rect.x, bar_rect.y, bar_rect.width, bar_rect.height,
                                              self.sound.music_volume, (0, 210, 255), int(self.sound.music_volume * 100), selected, ui)
             elif opt == 'sfx_volume':
                 bar_rect = pygame.Rect(
-                    btn_rect.right - self._sx(150, ui),
-                    btn_rect.y + self._sx(18, ui),
-                    self._sx(90, ui),
-                    self._sx(18, ui),
+                    btn_rect.right - metrics['volume_bar_max_w'] - self._sx(30, ui),
+                    btn_rect.y + max(0, (btn_rect.height - metrics['volume_bar_h']) // 2),
+                    metrics['volume_bar_max_w'],
+                    metrics['volume_bar_h'],
                 )
                 self._pause_volume_rects[opt] = bar_rect
                 retro_style.draw_volume_bar(self.screen, bar_rect.x, bar_rect.y, bar_rect.width, bar_rect.height,

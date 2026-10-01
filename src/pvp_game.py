@@ -8,6 +8,7 @@ from pathlib import Path
 from board import Board
 from pieces import Piece, create_piece_by_index, SHAPES, get_piece_spawn_y, skip_hidden_rows
 from constants import *
+from das_controller import DasController
 from sound import SoundManager
 from background import BackgroundManager
 from background_effects import get_shared_falling_blocks_layer
@@ -26,7 +27,7 @@ except Exception:
     def resolve_nav_hint_label(default_label, *_keys):
         return default_label
 
-from ui_scaling import get_projected_effective_scale
+from ui_scaling import calculate_overlay_metrics, get_projected_effective_scale
 from ui_theme import UIColors, UIFonts
 from text_cache import render_text
 from effect_surface_cache import EffectSurfaceCache
@@ -486,16 +487,8 @@ class PvPGame:
         self.p2_firework_time = 0
         
         # DAS (Delayed Auto Shift) - Her oyuncu için ayrı
-        # Oyuncu 1
-        self.p1_das_direction = 0  # -1: sol, 0: yok, 1: sağ
-        self.p1_das_timer = 0
-        self.p1_das_repeat_timer = 0
-        self.p1_das_charged = False
-        # Oyuncu 2
-        self.p2_das_direction = 0
-        self.p2_das_timer = 0
-        self.p2_das_repeat_timer = 0
-        self.p2_das_charged = False
+        self._p1_das = DasController()
+        self._p2_das = DasController()
         
         # Soft drop (hızlı düşüş) - Her oyuncu için ayrı
         self.p1_soft_drop_active = False
@@ -550,6 +543,11 @@ class PvPGame:
         
         self._vs_panel_surface = None
         self._vs_panel_dirty = True
+
+    def _get_pause_dim_surface(self, size: tuple[int, int]) -> pygame.Surface:
+        """Pause/exit karartma yüzeyini bounded efekt cache'inden al."""
+        width, height = max(1, int(size[0])), max(1, int(size[1]))
+        return self._effect_surface_cache.get_filled_surface((width, height), (0, 0, 0, 185))
     
     def apply_theme_to_pieces(self):
         """Tema + blok stili görünümünü mevcut parçalara uygula (ana oyun temeli)."""
@@ -2499,36 +2497,29 @@ class PvPGame:
 
     def _draw_pause_menu(self):
         """Tek oyuncudaki duraklama menüsü panelini PvP'de çiz."""
-        width, height = self.window_width, self.window_height
+        width, height = self.screen.get_size()
         ui_scale = self._ui_scale()
 
-        overlay = pygame.Surface((width, height), pygame.SRCALPHA)
-        overlay.fill((0, 0, 0, 185))
+        overlay = self._get_pause_dim_surface((width, height))
         self.screen.blit(overlay, (0, 0))
 
-        panel_width = min(self._sx(520, ui_scale), width - self._sx(100, ui_scale))
         option_count = len(self.pause_menu_options)
-        item_h = self._sx(56, ui_scale)
-        gap = self._sx(10, ui_scale)
-        top_pad = self._sx(78, ui_scale)
-        bottom_pad = self._sx(64, ui_scale)
-        panel_height = top_pad + option_count * item_h + (option_count - 1) * gap + bottom_pad
-        panel_rect = pygame.Rect((width - panel_width) // 2, (height - panel_height) // 2, panel_width, panel_height)
+        metrics = calculate_overlay_metrics((width, height), ui_scale, option_count)
+        panel_rect = metrics['panel_rect']
 
         retro_style.draw_glass_panel(self.screen, panel_rect, alpha=180, border_color=(*retro_style.accent, 140), glow=True)
 
-        title_font = retro_style.get_font(self._sx(30, ui_scale, minimum=16), bold=True)
+        title_font = retro_style.get_font(metrics['title_font_size'], bold=True)
         title_surf = render_text(title_font, t('paused'), True, retro_style.accent)
-        self.screen.blit(title_surf, title_surf.get_rect(centerx=panel_rect.centerx, top=panel_rect.y + self._sx(18, ui_scale)))
+        self.screen.blit(title_surf, title_surf.get_rect(centerx=panel_rect.centerx, top=panel_rect.y + metrics['title_top']))
 
         self._pause_option_rects = []
         self._pause_volume_rects = {}
         _pause_mouse_pos = get_mouse_pos()
 
-        start_y = panel_rect.y + top_pad
+        button_rects = metrics['button_rects']
         for i, option in enumerate(self.pause_menu_options):
-            y = start_y + i * (item_h + gap)
-            button_rect = pygame.Rect(panel_rect.x + self._sx(22, ui_scale), y, panel_rect.width - self._sx(44, ui_scale), item_h)
+            button_rect = button_rects[i].copy()
             self._pause_option_rects.append(button_rect)
 
             is_selected = i == self.pause_menu_selected
@@ -2571,10 +2562,10 @@ class PvPGame:
 
             if option == 'music_volume':
                 bar_rect = pygame.Rect(
-                    button_rect.right - self._sx(150, ui_scale),
-                    button_rect.y + self._sx(18, ui_scale),
-                    self._sx(90, ui_scale),
-                    self._sx(18, ui_scale),
+                    button_rect.right - metrics['volume_bar_max_w'] - self._sx(30, ui_scale),
+                    button_rect.y + max(0, (button_rect.height - metrics['volume_bar_h']) // 2),
+                    metrics['volume_bar_max_w'],
+                    metrics['volume_bar_h'],
                 )
                 self._pause_volume_rects[option] = bar_rect
                 retro_style.draw_volume_bar(
@@ -2584,10 +2575,10 @@ class PvPGame:
                 )
             elif option == 'sfx_volume':
                 bar_rect = pygame.Rect(
-                    button_rect.right - self._sx(150, ui_scale),
-                    button_rect.y + self._sx(18, ui_scale),
-                    self._sx(90, ui_scale),
-                    self._sx(18, ui_scale),
+                    button_rect.right - metrics['volume_bar_max_w'] - self._sx(30, ui_scale),
+                    button_rect.y + max(0, (button_rect.height - metrics['volume_bar_h']) // 2),
+                    metrics['volume_bar_max_w'],
+                    metrics['volume_bar_h'],
                 )
                 self._pause_volume_rects[option] = bar_rect
                 retro_style.draw_volume_bar(
@@ -3347,8 +3338,98 @@ class PvPGame:
             self.p2_lock_reset_count += 1
         return True
     
+    def _p1_das_ctrl(self) -> DasController:
+        ctrl = getattr(self, '_p1_das', None)
+        if ctrl is None:
+            ctrl = DasController()
+            self._p1_das = ctrl
+        return ctrl
+
+    def _p2_das_ctrl(self) -> DasController:
+        ctrl = getattr(self, '_p2_das', None)
+        if ctrl is None:
+            ctrl = DasController()
+            self._p2_das = ctrl
+        return ctrl
+
+    @property
+    def p1_das_direction(self) -> int:
+        return self._p1_das_ctrl().direction
+
+    @p1_das_direction.setter
+    def p1_das_direction(self, value: int) -> None:
+        self._p1_das_ctrl().direction = int(value)
+
+    @property
+    def p1_das_timer(self) -> float:
+        return self._p1_das_ctrl().timer
+
+    @p1_das_timer.setter
+    def p1_das_timer(self, value: float) -> None:
+        self._p1_das_ctrl().timer = float(value)
+
+    @property
+    def p1_das_repeat_timer(self) -> float:
+        return self._p1_das_ctrl().repeat_timer
+
+    @p1_das_repeat_timer.setter
+    def p1_das_repeat_timer(self, value: float) -> None:
+        self._p1_das_ctrl().repeat_timer = float(value)
+
+    @property
+    def p1_das_charged(self) -> bool:
+        return self._p1_das_ctrl().charged
+
+    @p1_das_charged.setter
+    def p1_das_charged(self, value: bool) -> None:
+        self._p1_das_ctrl().charged = bool(value)
+
+    @property
+    def p2_das_direction(self) -> int:
+        return self._p2_das_ctrl().direction
+
+    @p2_das_direction.setter
+    def p2_das_direction(self, value: int) -> None:
+        self._p2_das_ctrl().direction = int(value)
+
+    @property
+    def p2_das_timer(self) -> float:
+        return self._p2_das_ctrl().timer
+
+    @p2_das_timer.setter
+    def p2_das_timer(self, value: float) -> None:
+        self._p2_das_ctrl().timer = float(value)
+
+    @property
+    def p2_das_repeat_timer(self) -> float:
+        return self._p2_das_ctrl().repeat_timer
+
+    @p2_das_repeat_timer.setter
+    def p2_das_repeat_timer(self, value: float) -> None:
+        self._p2_das_ctrl().repeat_timer = float(value)
+
+    @property
+    def p2_das_charged(self) -> bool:
+        return self._p2_das_ctrl().charged
+
+    @p2_das_charged.setter
+    def p2_das_charged(self, value: bool) -> None:
+        self._p2_das_ctrl().charged = bool(value)
+
+    def _perform_das_move_p1(self, direction: int) -> bool:
+        moved = self._try_move_left_p1() if direction == -1 else self._try_move_right_p1()
+        if moved:
+            self.sound.play('move')
+        return moved
+
+    def _perform_das_move_p2(self, direction: int) -> bool:
+        moved = self._try_move_left_p2() if direction == -1 else self._try_move_right_p2()
+        if moved:
+            self.sound.play('move')
+        return moved
+
     def _update_das(self, delta_time):
-        """Her iki oyuncu için DAS güncelle"""
+        """Her iki oyuncu için ortak DAS controller'ı güncelle."""
         try:
             delay_ms = float(self.settings_manager.get('das_delay', DAS_DELAY)) if self.settings_manager else float(DAS_DELAY)
         except Exception:
@@ -3358,70 +3439,13 @@ class PvPGame:
         except Exception:
             repeat_ms = float(DAS_REPEAT)
         delay_ms = max(0.0, delay_ms)
-        repeat_ms = max(1.0, repeat_ms)
-        
-        # Oyuncu 1 DAS
-        if self.p1_das_direction != 0 and self.current_piece1 and not self.board1.is_game_over():
-            self.p1_das_timer += delta_time
-            if not self.p1_das_charged:
-                if self.p1_das_timer >= delay_ms:
-                    overshoot = max(0.0, self.p1_das_timer - delay_ms)
-                    self.p1_das_charged = True
-                    self.p1_das_repeat_timer = overshoot
-                    if self.p1_das_direction == -1:
-                        if self._try_move_left_p1():
-                            self.sound.play('move')
-                    elif self.p1_das_direction == 1:
-                        if self._try_move_right_p1():
-                            self.sound.play('move')
-            else:
-                self.p1_das_repeat_timer += delta_time
-                while self.p1_das_repeat_timer >= repeat_ms:
-                    self.p1_das_repeat_timer -= repeat_ms
-                    if self.p1_das_direction == -1:
-                        if self._try_move_left_p1():
-                            self.sound.play('move')
-                        else:
-                            self.p1_das_repeat_timer = 0
-                            break
-                    elif self.p1_das_direction == 1:
-                        if self._try_move_right_p1():
-                            self.sound.play('move')
-                        else:
-                            self.p1_das_repeat_timer = 0
-                            break
-        
-        # Oyuncu 2 DAS
-        if self.p2_das_direction != 0 and self.current_piece2 and not self.board2.is_game_over():
-            self.p2_das_timer += delta_time
-            if not self.p2_das_charged:
-                if self.p2_das_timer >= delay_ms:
-                    overshoot = max(0.0, self.p2_das_timer - delay_ms)
-                    self.p2_das_charged = True
-                    self.p2_das_repeat_timer = overshoot
-                    if self.p2_das_direction == -1:
-                        if self._try_move_left_p2():
-                            self.sound.play('move')
-                    elif self.p2_das_direction == 1:
-                        if self._try_move_right_p2():
-                            self.sound.play('move')
-            else:
-                self.p2_das_repeat_timer += delta_time
-                while self.p2_das_repeat_timer >= repeat_ms:
-                    self.p2_das_repeat_timer -= repeat_ms
-                    if self.p2_das_direction == -1:
-                        if self._try_move_left_p2():
-                            self.sound.play('move')
-                        else:
-                            self.p2_das_repeat_timer = 0
-                            break
-                    elif self.p2_das_direction == 1:
-                        if self._try_move_right_p2():
-                            self.sound.play('move')
-                        else:
-                            self.p2_das_repeat_timer = 0
-                            break
-    
+        repeat_ms = max(0.0, repeat_ms)
+
+        if self.p1_das_direction and self.current_piece1 and not self.board1.is_game_over():
+            self._p1_das_ctrl().update(delta_time, self._perform_das_move_p1, delay_ms=delay_ms, repeat_ms=repeat_ms)
+
+        if self.p2_das_direction and self.current_piece2 and not self.board2.is_game_over():
+            self._p2_das_ctrl().update(delta_time, self._perform_das_move_p2, delay_ms=delay_ms, repeat_ms=repeat_ms)
     def _update_soft_drop(self, delta_time):
         """Her iki oyuncu için soft drop (hızlı düşüş) güncelle"""
         # Oyuncu 1 soft drop
@@ -4911,13 +4935,23 @@ class PvPGame:
             return retro_style.get_font(min_size, bold=bold)
 
         # Dim overlay
-        overlay = pygame.Surface((width, height), pygame.SRCALPHA)
-        overlay.fill((0, 0, 0, 185))
+        overlay = self._get_pause_dim_surface((width, height))
         self.screen.blit(overlay, (0, 0))
 
-        panel_width = min(self._sx(520, ui_scale), width - self._sx(100, ui_scale))
-        panel_height = self._sx(240, ui_scale)
-        panel_rect = pygame.Rect((width - panel_width) // 2, (height - panel_height) // 2, panel_width, panel_height)
+        metrics = calculate_overlay_metrics(
+            (width, height),
+            ui_scale,
+            2,
+            base_panel_width=520.0,
+            base_item_height=54.0,
+            base_gap=16.0,
+            base_top_pad=136.0,
+            base_bottom_pad=64.0,
+            max_height_ratio=0.80,
+        )
+        panel_rect = metrics["panel_rect"]
+        yes_rect, no_rect = metrics["button_rects"]
+        body_top = panel_rect.y + self._sx(64, ui_scale)
 
         retro_style.draw_glass_panel(
             self.screen,
@@ -4929,20 +4963,20 @@ class PvPGame:
 
         title_font = _fit_font_size(
             t('quit_confirm_title'),
-            self._sx(30, ui_scale, minimum=16),
+            metrics["title_font_size"],
             self._sx(15, ui_scale, minimum=11),
             panel_rect.width - self._sx(30, ui_scale),
             bold=True,
         )
         title_surf = render_text(title_font, t('quit_confirm_title'), True, retro_style.accent)
-        self.screen.blit(title_surf, title_surf.get_rect(centerx=panel_rect.centerx, top=panel_rect.y + self._sx(18, ui_scale)))
+        self.screen.blit(title_surf, title_surf.get_rect(centerx=panel_rect.centerx, top=panel_rect.y + metrics["title_top"]))
 
         body_color = (210, 225, 245)
         body_rect = pygame.Rect(
             panel_rect.x + self._sx(26, ui_scale),
-            panel_rect.y + self._sx(64, ui_scale),
+            body_top,
             panel_rect.width - self._sx(52, ui_scale),
-            self._sx(70, ui_scale),
+            max(1, yes_rect.y - self._sx(12, ui_scale) - body_top),
         )
         retro_style.draw_wrapped_text_fit(
             self.screen,
@@ -4955,15 +4989,9 @@ class PvPGame:
             line_spacing=self._sx(6, ui_scale),
         )
 
-        button_width = min(self._sx(200, ui_scale), (panel_rect.width - self._sx(26, ui_scale) * 2 - self._sx(16, ui_scale)) // 2)
-        button_height = self._sx(54, ui_scale)
-        spacing = self._sx(16, ui_scale)
-        total_width = button_width * 2 + spacing
-        start_x = panel_rect.centerx - total_width // 2
-        button_y = panel_rect.bottom - button_height - self._sx(48, ui_scale)
-
-        yes_rect = pygame.Rect(start_x, button_y, button_width, button_height)
-        no_rect = pygame.Rect(start_x + button_width + spacing, button_y, button_width, button_height)
+        mouse_pos = get_mouse_pos()
+        yes_hover = yes_rect.collidepoint(mouse_pos)
+        no_hover = no_rect.collidepoint(mouse_pos)
 
         retro_style.draw_uniform_button(
             self.screen,
@@ -4971,6 +4999,7 @@ class PvPGame:
             t('quit_confirm_yes_label'),
             color_code=retro_style.success,
             selected=False,
+            state='hover' if yes_hover else 'normal',
         )
         retro_style.draw_uniform_button(
             self.screen,
@@ -4978,6 +5007,7 @@ class PvPGame:
             t('quit_confirm_no_label'),
             color_code=retro_style.secondary,
             selected=False,
+            state='hover' if no_hover else 'normal',
         )
 
         self.exit_yes_rect = yes_rect

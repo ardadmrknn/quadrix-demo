@@ -24,6 +24,7 @@ from block_skin_assets import get_equipped_block_appearance
 from board import Board
 from pieces import Piece, SHAPE_NAMES, create_piece_by_index, create_piece_by_name, get_piece_spawn_y, skip_hidden_rows
 from constants import *
+from das_controller import DasController
 from sound import SoundManager
 from score_manager import ScoreManager
 from user_manager import DAILY_MAX_FAILURES
@@ -80,7 +81,7 @@ except Exception:
         duration_ratio = max(0.42, 0.965 ** max(0, level_i - 1))
         sweep_duration = max(0.0001, base_duration * duration_ratio)
         return 1.0 / sweep_duration
-from ui_scaling import apply_ui_scale_preset, get_projected_effective_scale, get_scale, get_ui_scale_readability_floor, resolve_ui_scale_size
+from ui_scaling import apply_ui_scale_preset, calculate_overlay_metrics, get_projected_effective_scale, get_scale, get_ui_scale_readability_floor, resolve_ui_scale_size
 from combo_popup_style import (
     COMBO_POPUP_SHADOW_COLOR,
     get_combo_popup_alpha,
@@ -1183,10 +1184,7 @@ class Game:
         self.firework_time = 0
         
         # DAS (Delayed Auto Shift) - Yatay hareket için basılı tutma sistemi
-        self.das_direction = 0  # -1: sol, 0: yok, 1: sağ
-        self.das_timer = 0  # İlk gecikme sayacı (ms)
-        self.das_repeat_timer = 0  # Tekrar sayacı (ms)
-        self.das_charged = False  # İlk gecikme tamamlandı mı?
+        self._das = DasController()
         
         # Fontlar (dinamik olarak güncellenecek)
         # CJK dil profili: oyun başlarken retro_style ve UIFonts profilleri
@@ -2807,17 +2805,49 @@ class Game:
             return False
         return False
 
+    def _das_ctrl(self) -> DasController:
+        ctrl = getattr(self, '_das', None)
+        if ctrl is None:
+            ctrl = DasController()
+            self._das = ctrl
+        return ctrl
+
+    @property
+    def das_direction(self) -> int:
+        return self._das_ctrl().direction
+
+    @das_direction.setter
+    def das_direction(self, value: int) -> None:
+        self._das_ctrl().direction = int(value)
+
+    @property
+    def das_timer(self) -> float:
+        return self._das_ctrl().timer
+
+    @das_timer.setter
+    def das_timer(self, value: float) -> None:
+        self._das_ctrl().timer = float(value)
+
+    @property
+    def das_repeat_timer(self) -> float:
+        return self._das_ctrl().repeat_timer
+
+    @das_repeat_timer.setter
+    def das_repeat_timer(self, value: float) -> None:
+        self._das_ctrl().repeat_timer = float(value)
+
+    @property
+    def das_charged(self) -> bool:
+        return self._das_ctrl().charged
+
+    @das_charged.setter
+    def das_charged(self, value: bool) -> None:
+        self._das_ctrl().charged = bool(value)
+
     def _update_das(self, delta_time):
-        """DAS (Delayed Auto Shift) sistemini güncelle
-        
-        Basılı tutulan yön tuşu için otomatik tekrar hareketi sağlar.
-        İlk basışta anında hareket eder, sonra DAS_DELAY kadar bekler,
-        ardından DAS_REPEAT hızında tekrar eder.
-        """
+        """DAS zamanlamasını paylaşılan controller ile güncelle."""
         if self.das_direction == 0 or self.current_piece is None:
             return
-
-        # Oynanış ayarlarından DAS değerlerini oku (ms)
         try:
             delay_ms = float(self.settings_manager.get('das_delay', DAS_DELAY)) if self.settings_manager else float(DAS_DELAY)
         except Exception:
@@ -2826,49 +2856,12 @@ class Game:
             repeat_ms = float(self.settings_manager.get('das_repeat', DAS_REPEAT)) if self.settings_manager else float(DAS_REPEAT)
         except Exception:
             repeat_ms = float(DAS_REPEAT)
-        delay_ms = max(0.0, delay_ms)
-        repeat_ms = max(0.0, repeat_ms)
-
-        # Süreyi milisaniye cinsinden artır
-        self.das_timer += delta_time
-
-        # Eğer ARR (repeat_ms) 0 ise (anında teleport)
-        if repeat_ms == 0:
-            if not self.das_charged:
-                if self.das_timer >= delay_ms:
-                    self.das_charged = True
-                    while self._perform_das_move(self.das_direction):
-                        pass
-            else:
-                while self._perform_das_move(self.das_direction):
-                    pass
-            return
-
-        # İlk gecikme henüz dolmadıysa
-        charged_this_frame = False
-        if not self.das_charged:
-            if self.das_timer >= delay_ms:
-                overshoot = max(0.0, self.das_timer - delay_ms)
-                self.das_charged = True
-                # Gecikme aşımını repeat timer'a aktar (frame bağımsız akıcılık)
-                self.das_repeat_timer = overshoot
-                self._perform_das_move(self.das_direction)
-                charged_this_frame = True
-
-        # Gecikme doldu, tekrar modunda
-        if self.das_charged:
-            # Şarjın yeni tamamlandığı frame'de delta_time'ı tekrar ekleme:
-            # overshoot zaten bu frame'in geçen süresini temsil ediyor. Aksi halde
-            # o frame iki kez sayılır ve ilk otomatik tekrar ~bir frame erken tetiklenir.
-            if not charged_this_frame:
-                self.das_repeat_timer += delta_time
-            # Frame düşüşlerinde kaçan tekrarları telafi et (catch-up)
-            while self.das_repeat_timer >= repeat_ms:
-                self.das_repeat_timer -= repeat_ms
-                if not self._perform_das_move(self.das_direction):
-                    # Duvara/engelle takıldıysa daha fazla tekrar harcamaya gerek yok
-                    self.das_repeat_timer = 0
-                    break
+        self._das_ctrl().update(
+            delta_time,
+            self._perform_das_move,
+            delay_ms=max(0.0, delay_ms),
+            repeat_ms=max(0.0, repeat_ms),
+        )
     
     def _handle_pause_menu_input(self, event):
         """Duraklama menüsü girdilerini işle"""
@@ -3050,20 +3043,15 @@ class Game:
             'Ana Menü': t('main_menu')
         }
         
-        panel_width = min(self._sx(520, ui_scale), width - self._sx(100, ui_scale))
         option_count = len(self.pause_menu_options)
-        item_h = self._sx(56, ui_scale)
-        gap = self._sx(10, ui_scale)
-        top_pad = self._sx(78, ui_scale)
-        bottom_pad = self._sx(64, ui_scale)
-        panel_height = top_pad + option_count * item_h + (option_count - 1) * gap + bottom_pad
-        panel_rect = pygame.Rect((width - panel_width) // 2, (height - panel_height) // 2, panel_width, panel_height)
+        metrics = calculate_overlay_metrics((width, height), ui_scale, option_count)
+        panel_rect = metrics['panel_rect']
 
         retro_style.draw_glass_panel(self.screen, panel_rect, alpha=180, border_color=(*retro_style.accent, 140), glow=True)
 
-        title_font = retro_style.get_font(self._sx(30, ui_scale, minimum=16), bold=True)
+        title_font = retro_style.get_font(metrics['title_font_size'], bold=True)
         title_surf = title_font.render(t('paused'), True, retro_style.accent)
-        self.screen.blit(title_surf, title_surf.get_rect(centerx=panel_rect.centerx, top=panel_rect.y + self._sx(18, ui_scale)))
+        self.screen.blit(title_surf, title_surf.get_rect(centerx=panel_rect.centerx, top=panel_rect.y + metrics['title_top']))
 
         # Build option hitboxes for mouse
         self._pause_option_rects = []
@@ -3071,10 +3059,9 @@ class Game:
         # Her frame gerçek fare pozisyonunu al (hover state mouse motion olmadan da çalışır)
         _pause_mouse_pos = get_mouse_pos()
 
-        start_y = panel_rect.y + top_pad
+        button_rects = metrics['button_rects']
         for i, option in enumerate(self.pause_menu_options):
-            y = start_y + i * (item_h + gap)
-            button_rect = pygame.Rect(panel_rect.x + self._sx(22, ui_scale), y, panel_rect.width - self._sx(44, ui_scale), item_h)
+            button_rect = button_rects[i].copy()
             self._pause_option_rects.append(button_rect)
 
             is_selected = i == self.pause_menu_selected
@@ -3122,20 +3109,20 @@ class Game:
             # Volume bars (clickable)
             if option == 'Müzik Seviyesi':
                 bar_rect = pygame.Rect(
-                    button_rect.right - self._sx(150, ui_scale),
-                    button_rect.y + self._sx(18, ui_scale),
-                    self._sx(90, ui_scale),
-                    self._sx(18, ui_scale),
+                    button_rect.right - metrics['volume_bar_max_w'] - self._sx(30, ui_scale),
+                    button_rect.y + max(0, (button_rect.height - metrics['volume_bar_h']) // 2),
+                    metrics['volume_bar_max_w'],
+                    metrics['volume_bar_h'],
                 )
                 self._pause_volume_rects[option] = bar_rect
                 retro_style.draw_volume_bar(self.screen, bar_rect.x, bar_rect.y, bar_rect.width, bar_rect.height,
                                       self.sound.music_volume, (0, 210, 255), int(self.sound.music_volume * 100), is_selected, ui_scale)
             elif option == 'Efekt Seviyesi':
                 bar_rect = pygame.Rect(
-                    button_rect.right - self._sx(150, ui_scale),
-                    button_rect.y + self._sx(18, ui_scale),
-                    self._sx(90, ui_scale),
-                    self._sx(18, ui_scale),
+                    button_rect.right - metrics['volume_bar_max_w'] - self._sx(30, ui_scale),
+                    button_rect.y + max(0, (button_rect.height - metrics['volume_bar_h']) // 2),
+                    metrics['volume_bar_max_w'],
+                    metrics['volume_bar_h'],
                 )
                 self._pause_volume_rects[option] = bar_rect
                 retro_style.draw_volume_bar(self.screen, bar_rect.x, bar_rect.y, bar_rect.width, bar_rect.height,
@@ -5302,7 +5289,6 @@ class Game:
         panel_rect = panel_metrics['rect']
         info_x = panel_rect.x
         header_y = panel_rect.y
-        panel_width = panel_rect.width
         panel_height = panel_rect.height
         hud_scale = panel_metrics['hud_px_scale']
         pixel_ratio = panel_metrics['pixel_ratio']
@@ -5891,9 +5877,21 @@ class Game:
         overlay = self._get_solid_alpha_surface((width, height), (0, 0, 0, 185))
         self.screen.blit(overlay, (0, 0))
 
-        panel_width = min(self._sx(520, ui_scale), width - self._sx(100, ui_scale))
-        panel_height = self._sx(240, ui_scale)
-        panel_rect = pygame.Rect((width - panel_width) // 2, (height - panel_height) // 2, panel_width, panel_height)
+        metrics = calculate_overlay_metrics(
+            (width, height),
+            ui_scale,
+            2,
+            base_panel_width=520.0,
+            base_item_height=54.0,
+            base_gap=16.0,
+            base_top_pad=136.0,
+            base_bottom_pad=64.0,
+            max_height_ratio=0.80,
+        )
+        panel_rect = metrics["panel_rect"]
+        panel_width = panel_rect.width
+        yes_rect, no_rect = metrics["button_rects"]
+        body_top = panel_rect.y + self._sx(64, ui_scale)
 
         retro_style.draw_glass_panel(
             self.screen,
@@ -5905,20 +5903,20 @@ class Game:
 
         title_font = _fit_font_size(
             t('quit_confirm_title'),
-            self._sx(30, ui_scale, minimum=16),
+            metrics["title_font_size"],
             self._sx(15, ui_scale, minimum=11),
             panel_rect.width - self._sx(30, ui_scale),
             bold=True,
         )
         title_surf = title_font.render(t('quit_confirm_title'), True, retro_style.accent)
-        self.screen.blit(title_surf, title_surf.get_rect(centerx=panel_rect.centerx, top=panel_rect.y + self._sx(18, ui_scale)))
+        self.screen.blit(title_surf, title_surf.get_rect(centerx=panel_rect.centerx, top=panel_rect.y + metrics["title_top"]))
 
         body_color = (210, 225, 245)
         body_rect = pygame.Rect(
             panel_rect.x + self._sx(26, ui_scale),
-            panel_rect.y + self._sx(64, ui_scale),
+            body_top,
             panel_rect.width - self._sx(52, ui_scale),
-            self._sx(70, ui_scale),
+            max(1, yes_rect.y - self._sx(12, ui_scale) - body_top),
         )
         retro_style.draw_wrapped_text_fit(
             self.screen,
@@ -5931,16 +5929,6 @@ class Game:
             line_spacing=self._sx(6, ui_scale),
         )
 
-        button_width = min(self._sx(200, ui_scale), (panel_rect.width - self._sx(26, ui_scale) * 2 - self._sx(16, ui_scale)) // 2)
-        button_height = self._sx(54, ui_scale)
-        spacing = self._sx(16, ui_scale)
-        total_width = button_width * 2 + spacing
-        start_x = panel_rect.centerx - total_width // 2
-        button_y = panel_rect.bottom - button_height - self._sx(48, ui_scale)
-
-        yes_rect = pygame.Rect(start_x, button_y, button_width, button_height)
-        no_rect = pygame.Rect(start_x + button_width + spacing, button_y, button_width, button_height)
-
         # Hover-aware buton çizimi — ana menü exit confirm ile aynı stil
         mouse_pos = get_mouse_pos()
         for _rect, _label, _sub_label, _btn_color, _action in (
@@ -5949,10 +5937,13 @@ class Game:
         ):
             _hover = _rect.collidepoint(mouse_pos)
             _draw_rect = _rect.inflate(6, 4) if _hover else _rect
+            _draw_rect.clamp_ip(panel_rect)
 
             _btn_bg = pygame.Surface(_draw_rect.size, pygame.SRCALPHA)
             if _hover:
                 pygame.draw.rect(_btn_bg, (*_btn_color, 35), _btn_bg.get_rect(), border_radius=12)
+                _hl_rect = pygame.Rect(4, 2, _draw_rect.width - 8, 1)
+                pygame.draw.rect(_btn_bg, (*_btn_color, 60), _hl_rect)
             else:
                 pygame.draw.rect(_btn_bg, (20, 26, 42, 200), _btn_bg.get_rect(), border_radius=12)
             self.screen.blit(_btn_bg, _draw_rect.topleft)

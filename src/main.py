@@ -42,6 +42,7 @@ except Exception:
     pass
 
 import text_cache
+import perf_telemetry
 
 # ==================== DUAL-MODULE SINGLETON FIX (retro_style + others) ===========
 # Aynı sorun retro_style ve diğer singleton modüller için de geçerli:
@@ -49,7 +50,7 @@ import text_cache
 # ama Python paket çözümlemesi → sys.modules['src.retro_style'] olarak AYRI yüklenebilir.
 # İki farklı modül = iki farklı RetroStyle singleton = set_background_transparency()
 # yalnız bir kopyayı günceller, diğeri default (0.3) kalır.
-for _mod_name in ('retro_style', 'background_effects', 'background', 'ui_theme', 'text_cache'):
+for _mod_name in ('retro_style', 'background_effects', 'background', 'ui_theme', 'text_cache', 'perf_telemetry'):
     try:
         _bare_mod = __import__(_mod_name)
         sys.modules.setdefault(f'src.{_mod_name}', _bare_mod)
@@ -1602,6 +1603,7 @@ def _show_tutorial_prompt(screen, settings_manager=None):
 
 def main():
     """Ana menü ve oyunu başlat"""
+    perf_telemetry.record_startup()
     try:
         _apply_leaderboard_cli_overrides(sys.argv[1:])
     except Exception:
@@ -4682,6 +4684,8 @@ def main():
         else:
             delta_ms = clock.tick(frame_cap)
         delta_ms = focus_policy.filter_delta_ms(delta_ms)
+        _perf_frame_state = state
+        perf_telemetry.begin_frame(_perf_frame_state, clock_ms=delta_ms, fps_limit=frame_cap)
 
         try:
             pump_startup_focus_warmup()
@@ -4824,6 +4828,7 @@ def main():
             # Bilinmeyen state -> güvenli dönüş
             state = 'menu'
             _previous_state = state
+            perf_telemetry.end_frame(_perf_frame_state)
             continue
 
         # Mouse görünürlüğü:
@@ -4843,7 +4848,10 @@ def main():
             # Güvenli varsayılan
             pygame.mouse.set_visible(state not in ('game', 'pvp', 'coop'))
 
+        _handler_started = time.perf_counter() if perf_telemetry.is_enabled() else None
         did_draw = bool(handler(delta_ms))
+        if _handler_started is not None:
+            perf_telemetry.record_phase(_perf_frame_state, 'handler_ms', (time.perf_counter() - _handler_started) * 1000.0)
 
         # Handler içinde (popup/modal) display yeniden oluşturulmuş olabilir.
         # Ana screen referansını ve bağlı ekranları tek noktadan senkronize et.
@@ -4909,7 +4917,12 @@ def main():
             if transition_overlay_active or not handler_flips_display:
                 draw_screen_transition(screen)
                 draw_software_cursor_if_needed(screen)
+                _present_started = time.perf_counter() if perf_telemetry.is_enabled() else None
                 pygame.display.flip()
+                if _present_started is not None:
+                    perf_telemetry.record_phase(_perf_frame_state, 'present_ms', (time.perf_counter() - _present_started) * 1000.0)
+
+        perf_telemetry.end_frame(_perf_frame_state, did_draw=did_draw)
 
         # Sık değişen ayarları (slider vb.) toplu kaydet.
         try:
@@ -4994,6 +5007,7 @@ def main():
             _sig.alarm(0)
         except Exception:
             pass
+        perf_telemetry.flush_all('shutdown')
         os._exit(0)
 
     # ── Windows/Linux: tam cleanup ─────────────────────────────────────
@@ -5012,6 +5026,7 @@ def main():
     pygame.quit()
 
     settings_manager.save_settings()
+    perf_telemetry.flush_all('shutdown')
 
     print("\n" + "=" * 60)
     print("Oyun kapandı. Skorunuz kaydedildi!")
