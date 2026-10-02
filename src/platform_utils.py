@@ -1133,7 +1133,10 @@ def normalize_mouse_pos(pos: tuple[int, int] | list[int] | None, scale: float = 
                         cx = int(cx / scale)
                         cy = int(cy / scale)
                     return (cx, cy)
-                cx, cy = _sdl2_ovl.window_to_canvas_pos((x, y))
+                # FAZ A8: (pos, inside) sözleşmesi — pozisyon her zaman
+                # clamped canvas koordinatıdır; inside bilgisi burada
+                # kullanılmaz (yalnız event yolu DOWN düşürmede iş görür).
+                (cx, cy), _inside = _sdl2_ovl.window_to_canvas_pos((x, y))
                 if scale != 1.0:
                     cx = int(cx / scale)
                     cy = int(cy / scale)
@@ -1209,7 +1212,8 @@ def get_mouse_pos(scale: float = 1.0) -> tuple[int, int]:
     try:
         import sdl2_overlay as _sdl2_ovl
         if _sdl2_ovl.is_active():
-            x, y = _sdl2_ovl.window_to_canvas_pos(pos)
+            # FAZ A8: (pos, inside) sözleşmesi — pozisyon clamped'tır.
+            (x, y), _inside = _sdl2_ovl.window_to_canvas_pos(pos)
             if scale != 1.0:
                 x = int(x / scale)
                 y = int(y / scale)
@@ -2588,8 +2592,15 @@ _event_patch_active = False
 _event_patch_installed: dict = {}
 
 
-def _normalize_event_pos(raw_pos: tuple) -> tuple[int, int]:
-    """Ham fare pozisyonunu virtual canvas koordinatına dönüştür."""
+def _normalize_event_pos_checked(raw_pos: tuple) -> tuple[tuple[int, int], bool]:
+    """Ham fare pozisyonunu canvas koordinatına çevir — (pos, inside) çifti.
+
+    FAZ A8 event provenance: letterbox (siyah bar) üzerindeki pozisyonlar
+    inside=False döner; _patched_event_get MOUSEBUTTONDOWN'ı düşürür (kenar
+    butonu yanlış tetiklenmesi biter). SDL2 overlay ve software virtual
+    canvas yollarının İKİSİNDE de aynı sözleşme geçerlidir. Pozisyon her
+    durumda clamped canvas koordinatıdır (motion/hover yolları bozulmaz).
+    """
     try:
         import sdl2_overlay as _sdl2_ovl
         if _sdl2_ovl.is_active():
@@ -2597,21 +2608,34 @@ def _normalize_event_pos(raw_pos: tuple) -> tuple[int, int]:
     except Exception:
         pass
     if not _software_scale_active or _virtual_blit_rect is None:
-        return raw_pos
+        try:
+            return (int(raw_pos[0]), int(raw_pos[1])), True
+        except Exception:
+            return (0, 0), False
     bx, by, bw, bh = _virtual_blit_rect
     canvas_w, canvas_h = (
         _software_canvas.get_size() if _software_canvas is not None
         else (bw, bh)
     )
     if bw <= 0 or bh <= 0:
-        return raw_pos
-    rx = float(raw_pos[0]) - bx
-    ry = float(raw_pos[1]) - by
+        return (int(raw_pos[0]), int(raw_pos[1])), True
+    try:
+        rx = float(raw_pos[0]) - bx
+        ry = float(raw_pos[1]) - by
+    except Exception:
+        return (0, 0), False
+    inside = (bx <= raw_pos[0] < bx + bw) and (by <= raw_pos[1] < by + bh)
     cx = int(round(rx * canvas_w / bw))
     cy = int(round(ry * canvas_h / bh))
     cx = max(0, min(canvas_w - 1, cx))
     cy = max(0, min(canvas_h - 1, cy))
-    return (cx, cy)
+    return (cx, cy), inside
+
+
+def _normalize_event_pos(raw_pos: tuple) -> tuple[int, int]:
+    """Ham fare pozisyonunu virtual canvas koordinatına dönüştür (yalnız pozisyon)."""
+    pos, _inside = _normalize_event_pos_checked(raw_pos)
+    return pos
 
 
 def _normalize_event_rel(raw_rel: tuple) -> tuple[int, int]:
@@ -2695,7 +2719,14 @@ def _patched_event_get(eventtype=None, pump=True, exclude=None):
                 if getattr(event, 'from_gamepad', False):
                     patched.append(event)
                     continue
-                new_pos = _normalize_event_pos(event.pos)
+                new_pos, pos_inside = _normalize_event_pos_checked(event.pos)
+                # FAZ A8: letterbox (siyah bar) tıklaması GEÇERSİZ event üretir —
+                # MOUSEBUTTONDOWN düşürülür (kenar butonu yanlış tetiklenmesi
+                # biter). BUTTONUP/MOTION iletilir: sürükleme durumu yarım
+                # kalmaz (DOWN'sız gelen UP herhangi bir arm durumunu
+                # tetiklemez), hover takibi clamped pozisyonla sürer.
+                if etype == pygame.MOUSEBUTTONDOWN and not pos_inside:
+                    continue
                 attrs = {'pos': new_pos}
                 if etype == pygame.MOUSEMOTION:
                     try:

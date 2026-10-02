@@ -44,6 +44,9 @@ _height: int = 0
 _CANONICAL_CANVAS_SIZE = (1920, 1080)
 _present_rect = pygame.Rect(0, 0, *_CANONICAL_CANVAS_SIZE)
 
+# FAZ A8: frame-başı paylaşılan presentation snapshot (get_presentation_info).
+_presentation_info_cache: dict | None = None
+
 _original_flip = pygame.display.flip
 _original_update = pygame.display.update
 _original_get_surface = pygame.display.get_surface
@@ -132,6 +135,7 @@ def _compute_present_rect(window_w: int, window_h: int, canvas_w: int, canvas_h:
 
 def _refresh_present_rect() -> pygame.Rect:
     global _present_rect
+    invalidate_presentation_info_cache()
     canvas_w, canvas_h = _game_surface.get_size() if _game_surface is not None else _CANONICAL_CANVAS_SIZE
     _present_rect = _compute_present_rect(int(_width), int(_height), int(canvas_w), int(canvas_h))
     return _present_rect
@@ -185,9 +189,24 @@ def _draw_outer_background() -> None:
 
 
 def get_presentation_info() -> dict:
+    """Sunum geometrisi özeti — frame-başı tek hesap, paylaşılan snapshot.
+
+    FAZ A8 (açık madde (e)): bu bilgi daha önce her çağrıda dict + Rect.copy
+    tahsis ediyordu; normalize_mouse_pos'un ~140 çağrı noktası kare başına
+    onlarca kopya üretiyordu. Artık present() başında cache düşer, kare
+    boyunca AYNI dict okunur — çağrı-başı tahsis sıfırdır. Kurulum/
+    teardown/geometry değişiminde de düşürülür.
+
+    Dönen dict PAYLAŞILAN snapshot'tır (read-only sözleşme): mutasyon
+    yapılmaz, kalıcı referans tutulmaz.
+    """
+    global _presentation_info_cache
+    cached = _presentation_info_cache
+    if cached is not None:
+        return cached
     canvas_w, canvas_h = _game_surface.get_size() if _game_surface is not None else _CANONICAL_CANVAS_SIZE
-    rect = _present_rect.copy()
-    return {
+    rect = _present_rect
+    info = {
         'active': bool(_active),
         'window_w': int(_width),
         'window_h': int(_height),
@@ -200,20 +219,42 @@ def get_presentation_info() -> dict:
         'scale_x': (rect.w / float(canvas_w)) if canvas_w > 0 else 1.0,
         'scale_y': (rect.h / float(canvas_h)) if canvas_h > 0 else 1.0,
     }
+    _presentation_info_cache = info
+    return info
 
 
-def window_to_canvas_pos(pos) -> tuple[int, int]:
+def invalidate_presentation_info_cache() -> None:
+    """Frame/geometri sınırında presentation snapshot'ını düşür.
+
+    _present() her karede çağırır (frame-başı tek yeniden hesap garantisi);
+    setup/teardown/geometry yolları doğrudan çağırır.
+    """
+    global _presentation_info_cache
+    _presentation_info_cache = None
+
+
+def window_to_canvas_pos(pos) -> tuple[tuple[int, int], bool]:
+    """Pencere koordinatını canvas koordinatına çevir — (pos, inside) çifti.
+
+    FAZ A8: letterbox (siyah bar) üzerindeki pozisyonlar inside=False
+    üretir; event yolu bu tıklamaları düşürür (kenar butonu yanlış
+    tetiklenmesi biter). Dönen pozisyon yine clamped canvas koordinatıdır —
+    motion/hover takibi gibi yalnız pozisyon isteyen yollar bozulmaz.
+    Degenerate rect'te (geometri yok) inside=True kabul edilir; event
+    düşürme yalnız GEÇERLİ letterbox geometrisinde devreye girer.
+    """
     try:
         x, y = int(pos[0]), int(pos[1])
     except Exception:
-        return (0, 0)
+        return (0, 0), False
     canvas_w, canvas_h = _game_surface.get_size() if _game_surface is not None else _CANONICAL_CANVAS_SIZE
     rect = _present_rect
     if rect.w <= 0 or rect.h <= 0:
-        return (max(0, min(canvas_w - 1, x)), max(0, min(canvas_h - 1, y)))
+        return (max(0, min(canvas_w - 1, x)), max(0, min(canvas_h - 1, y))), True
+    inside = (rect.x <= x < rect.x + rect.w) and (rect.y <= y < rect.y + rect.h)
     cx = int(round((x - rect.x) * canvas_w / float(rect.w)))
     cy = int(round((y - rect.y) * canvas_h / float(rect.h)))
-    return (max(0, min(canvas_w - 1, cx)), max(0, min(canvas_h - 1, cy)))
+    return (max(0, min(canvas_w - 1, cx)), max(0, min(canvas_h - 1, cy))), inside
 
 
 def window_to_canvas_rel(rel) -> tuple[int, int]:
@@ -456,6 +497,9 @@ def _present(rects=None):
     """
     if not _active:
         return
+    # FAZ A8: kare sınırı — bu karenin presentation snapshot'ı ilk istekte
+    # yeniden hesaplanır, sonraki çağrılar paylaşır (çağrı-başı tahsis yok).
+    invalidate_presentation_info_cache()
     # Hızlı yol: telemetri kapalıyken hiç ek maliyet yok.
     if not _perf_enabled():
         if _renderer is None:
@@ -1418,3 +1462,5 @@ def teardown() -> None:
     _renderer = None
     _window = None
     _game_surface = None
+    # FAZ A8: teardown — stale presentation snapshot servis edilmesin.
+    invalidate_presentation_info_cache()
