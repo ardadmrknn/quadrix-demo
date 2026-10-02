@@ -770,6 +770,9 @@ def is_active() -> bool:
     return _active
 
 
+_canvas_size_inactive_logged = False
+
+
 def get_canvas_size() -> tuple[int, int]:
     """Aktif sabit oyun tuvalinin boyutu (kurulumdan sonra 1920x1080).
 
@@ -778,9 +781,24 @@ def get_canvas_size() -> tuple[int, int]:
     Safe-mode teardown sonrası _game_surface None'dır — erişimci o durumda
     kanonik boyutu döndürür (DUZ-011/013 SDL2 sözleşmesi: erişimci asla
     patlamaz, no-op kanonik değer verir).
+
+    FAZ A2 madde 4 (v2 paritesi): inactive state'te çağrı (teardown sonrası
+    erişim) BİR KEZ diag kanalıyla bildirilir — sessiz kanonik dönüş kalmaz;
+    tekrarlı çağrılar log gürültüsü üretmez (bayrak teardown'da sıfırlanır:
+    her yeni inactive dönemi bir kez bildirir).
     """
+    global _canvas_size_inactive_logged
     if _game_surface is not None:
         return _game_surface.get_size()
+    if not _active and not _canvas_size_inactive_logged:
+        _canvas_size_inactive_logged = True
+        try:
+            _diag_log(
+                "get_canvas_size: overlay INACTIVE — kanonik boyut döndürülüyor "
+                "(teardown sonrası erişim; FAZ A2 madde 4)"
+            )
+        except Exception:
+            pass
     return _CANONICAL_CANVAS_SIZE
 
 
@@ -1038,6 +1056,30 @@ def prepare_single_context() -> bool:
     return avail
 
 
+def _set_scale_quality_hint() -> bool:
+    """SDL_RENDER_SCALE_QUALITY hint'ini kur (FAZ A2 madde 1, v2 paritesi).
+
+    Pixel-art netliği: SDL renderer en-boy esnetmesinde nearest neighbor kullan.
+    "0" = nearest, "1" = linear, "2" = best (anisotropic). SDL bu hint'i
+    Renderer/Texture oluşturulması sırasında okur — kurulumdan SONRA set
+    edildiğinde mevcut renderer'a etkisi yoktur. FAZ 5'in env erken garantisi
+    (main.py: process başı) + bu çağrı (kurulum anı) çifte güvencedir.
+    Başarıda True döner; ctypes/DLL yokluğunda env fallback'i kurar ve False
+    döner (testler sahte ctypes ile bu sözleşmeyi doğrular).
+    """
+    try:
+        import ctypes as _ctypes
+        _sdl2_dll = _ctypes.cdll.LoadLibrary('SDL2.dll')
+        _sdl2_dll.SDL_SetHint(b'SDL_RENDER_SCALE_QUALITY', b'0')
+        return True
+    except Exception:
+        try:
+            os.environ.setdefault('SDL_HINT_RENDER_SCALE_QUALITY', '0')
+        except Exception:
+            pass
+        return False
+
+
 def setup(display_surface: pygame.Surface | None = None) -> pygame.Surface | None:
     """SDL2 renderer pipeline'ını kur ve oyunun çizeceği offscreen surface'i döndür.
 
@@ -1141,6 +1183,11 @@ def setup(display_surface: pygame.Surface | None = None) -> pygame.Surface | Non
         except Exception:
             pass
 
+        # FAZ A2 madde 1 (v2 paritesi): hint Renderer/Texture'dan ÖNCE kurulmalı
+        # — SDL bu hint'i renderer/texture oluşturulması sırasında okur;
+        # sonrasında set edilmesi mevcut pipeline'a uygulanmaz.
+        _set_scale_quality_hint()
+
         try:
             renderer = Renderer(win, vsync=vsync)
         except TypeError:
@@ -1180,6 +1227,28 @@ def setup(display_surface: pygame.Surface | None = None) -> pygame.Surface | Non
         except Exception:
             game_surface = pygame.Surface((canvas_w, canvas_h))
         game_surface.fill((0, 0, 0, 255))
+
+        # FAZ A2 madde 2 (v2 paritesi): texture pixel formatı RUNTIME SORGUSU
+        # ile kayda geçer. Varsayım: streaming texture native ARGB8888 —
+        # SRCALPHA offscreen ile doğrudan memcpy upload yolu. Farklı native
+        # format (örn. BGRA) CPU piksel dönüşümü demektir; log satırı bunu
+        # görünür kılar (ölçümdür, eşik değildir — A9 kapısı eşik koyar).
+        try:
+            _fmt, _access, _q_w, _q_h = texture.query()
+            _fmt_note = f"0x{int(_fmt):08X}"
+            try:
+                if background_texture is not None and hasattr(background_texture, 'query'):
+                    _fmt_note += f" | background=0x{int(background_texture.query()[0]):08X}"
+            except Exception:
+                pass
+            _diag_log(
+                f"setup: texture format={_fmt_note} access={_access} "
+                f"size={_q_w}x{_q_h} | game_surface bytes="
+                f"{game_surface.get_bytesize()} srcalpha="
+                f"{bool(game_surface.get_flags() & pygame.SRCALPHA)}"
+            )
+        except Exception as _fmt_exc:
+            _diag_log(f"setup: texture format sorgusu alınamadı: {_fmt_exc}")
 
         # Pencereyi şimdi göster (tüm ayarlar tamam; flash yok).
         try:
@@ -1294,7 +1363,11 @@ def _reapply_gl(display_surface: pygame.Surface) -> pygame.Surface:
 
 def teardown() -> None:
     """SDL2 renderer kaynaklarını serbest bırak ve monkey-patch'leri geri al."""
-    global _active, _window, _renderer, _texture, _background_texture, _game_surface, _cursor_texture, _cursor_dirty, _cursor_textures_cache
+    global _active, _window, _renderer, _texture, _background_texture, _game_surface, _cursor_texture, _cursor_dirty, _cursor_textures_cache, _canvas_size_inactive_logged
+    # FAZ A2 madde 4 (v2 paritesi): inactive-bildirim bayrağını sıfırla —
+    # yeni kurulum + teardown döngüsünde get_canvas_size'in inactive erişimi
+    # YİNE bir kez bildirilsin (tek seferlik gürültü sözleşmesi korunur).
+    _canvas_size_inactive_logged = False
     pygame.display.flip = _original_flip
     pygame.display.update = _original_update
     pygame.display.get_surface = _original_get_surface

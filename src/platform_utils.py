@@ -1818,9 +1818,18 @@ def _calc_letterbox(canvas_w: int, canvas_h: int, real_w: int, real_h: int) -> t
     return (off_x, off_y, dst_w, dst_h)
 
 
+# FAZ A2 madde 3: letterbox blit geometrisi değişmedikçe subsurface + fill
+# rect'leri YENİDEN KULLANILIR. Kare-başı nesne tahsisi (subsurface wrapper +
+# 4 Rect + ölçeklenmiş ara Surface) GC baskısı yaratır; 240 FPS'te fark
+# yaratır (kare-başı tahsis kırmızı çizgisi). Anahtar: (parent yüzey id,
+# pencere boyutu, letterbox rect). Ayrıca tam-ekran siyah fill yerine yalnız
+# dolu bantlar doldurulur (4K'da tüm-ekran fill maliyeti).
+_blit_letterbox_cache: tuple = (None, None, None, None, None, None)
+
+
 def _blit_canvas_to_display() -> None:
     """Virtual canvas'ı letterbox ile gerçek display'e blit et ve _orig_flip çağır."""
-    global _virtual_blit_rect
+    global _virtual_blit_rect, _blit_letterbox_cache
     if _software_canvas is None or _real_display_surface is None:
         _orig_flip()
         return
@@ -1828,14 +1837,49 @@ def _blit_canvas_to_display() -> None:
     canvas_w, canvas_h = _software_canvas.get_size()
     bx, by, bw, bh = _calc_letterbox(canvas_w, canvas_h, real_w, real_h)
     _virtual_blit_rect = (bx, by, bw, bh)
-    # Siyah bantları doldur (letterbox/pillarbox)
-    _real_display_surface.fill((0, 0, 0))
-    # Canvas'ı ölçekleyip hedef alana blit et
+
+    # bw/bh sıfır veya negatifse scale başarısız olur: siyah fill yapmadan _orig_flip çağır
+    if bw <= 0 or bh <= 0:
+        _orig_flip()
+        return
+
+    # FAZ A2 madde 3: geometri değişmedikçe cache'ten al; değiştiyse (pencere
+    # resize / canvas swap) bir kez yeniden oluştur. Dolu olmayan bantlar
+    # None olarak cache'lenir (0 genişlikli Rect tahsis etme).
+    cache_key = (id(_real_display_surface), real_w, real_h, bx, by, bw, bh)
+    if _blit_letterbox_cache[0] != cache_key:
+        try:
+            sub = _real_display_surface.subsurface(pygame.Rect(bx, by, bw, bh))
+        except Exception:
+            sub = None
+        fills = (
+            pygame.Rect(0, 0, bx, real_h) if bx > 0 else None,
+            pygame.Rect(bx + bw, 0, real_w - (bx + bw), real_h) if bx > 0 else None,
+            pygame.Rect(0, 0, real_w, by) if by > 0 else None,
+            pygame.Rect(0, by + bh, real_w, real_h - (by + bh)) if by > 0 else None,
+        )
+        _blit_letterbox_cache = (cache_key, sub, *fills)
+    _, _sub, _fill_left, _fill_right, _fill_top, _fill_bottom = _blit_letterbox_cache
+
+    # Siyah bantları doldur (Tüm ekranı doldurmak yerine sadece boş yan bantları doldur - 4K ekranlarda yüksek performans sağlar)
+    if _fill_left is not None:
+        _real_display_surface.fill((0, 0, 0), _fill_left)
+        _real_display_surface.fill((0, 0, 0), _fill_right)
+    if _fill_top is not None:
+        _real_display_surface.fill((0, 0, 0), _fill_top)
+        _real_display_surface.fill((0, 0, 0), _fill_bottom)
+
+    # Canvas'ı doğrudan display subsurface'ine ölçekle (Geçici Surface tahsisini ve kopyalamayı önler)
     try:
-        scaled = pygame.transform.scale(_software_canvas, (bw, bh))
-        _real_display_surface.blit(scaled, (bx, by))
-    except Exception:
-        pass
+        if _sub is None:
+            raise ValueError('letterbox subsurface yok')
+        pygame.transform.scale(_software_canvas, (bw, bh), _sub)
+    except Exception as _blit_exc:
+        try:
+            scaled = pygame.transform.scale(_software_canvas, (bw, bh))
+            _real_display_surface.blit(scaled, (bx, by))
+        except Exception as _blit_exc2:
+            print(f"[Virtual Canvas] Blit hatası ({bw}x{bh}): {_blit_exc2}")
     _orig_flip()
 
 
@@ -2383,7 +2427,7 @@ def rebuild_virtual_canvas(multiplier: float | None = None) -> pygame.Surface | 
 
 def _teardown_virtual_canvas() -> None:
     """Virtual canvas monkey-patch'lerini geri al."""
-    global _software_canvas, _real_display_surface, _software_scale_active, _virtual_blit_rect
+    global _software_canvas, _real_display_surface, _software_scale_active, _virtual_blit_rect, _blit_letterbox_cache
 
     # FAZ A4 (v2 paritesi): sökülecek bir şey yoksa sessiz erken çık —
     # INACTIVE'tan TEARING_DOWN'a geçiş yasadışıdır ve toleranslı
@@ -2433,6 +2477,9 @@ def _teardown_virtual_canvas() -> None:
     _real_display_surface = None
     _software_scale_active = False
     _virtual_blit_rect = None
+    # FAZ A2 madde 3 (v2 paritesi): letterbox blit cache'i parent yüzeye
+    # bağlı — yüzey söküldü, cache'teki subsurface/rect'ler bayattı; sıfırla.
+    _blit_letterbox_cache = (None, None, None, None, None, None)
     # FAZ A1: söküm tamamlandı — durum ve kuşak (INACTIVE'a yasal geçiş;
     # idempotent erken dönüş yok, çift bump yalnız sayacı büyütür, zararsız).
     _set_canvas_state(CANVAS_STATE_INACTIVE, None)
