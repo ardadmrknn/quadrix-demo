@@ -77,10 +77,10 @@ except ImportError:
 
 try:
     from ui_scaling import get_projected_effective_scale, normalize_ui_scale_preset, scale_px, get_virtual_canvas_ui_scale, is_virtual_canvas_active
-except ImportError:
-    from ui_scaling import get_projected_effective_scale, normalize_ui_scale_preset, scale_px
-    get_virtual_canvas_ui_scale = lambda: None
-    is_virtual_canvas_active = lambda: False
+except ImportError as exc:  # sessiz yanlış rejim yasak (kılavuz EKS-011)
+    raise ImportError(
+        "ui_scaling yüklenemedi; ölçek çekirdeği olmadan UI çizilemez"
+    ) from exc
 from text_cache import render_text
 from surface_lru_cache import SurfaceLRUCache
 
@@ -4704,6 +4704,31 @@ class TabbedSettingsScreen:
         except Exception:
             pygame.draw.rect(self.screen, (24, 32, 56), panel_rect, border_radius=s(12, minimum=8))
             pygame.draw.rect(self.screen, (140, 170, 220), panel_rect, s(2, minimum=1), border_radius=s(12, minimum=8))
+
+        # Başlık ve soru metni: panel gövdesi metinsiz kalıyordu (önc-var eksik).
+        # Anahtarlar localization.py'de; fallback yalnızca anahtar bulunamazsa.
+        target_fullscreen = bool(getattr(self, '_display_mode_confirm_target_fullscreen', True))
+        title_text = _t('display_mode_confirm_title', 'Görüntü Modu Değişikliği')
+        question_text = _t(
+            'display_mode_confirm_to_fullscreen' if target_fullscreen else 'display_mode_confirm_to_windowed',
+            'Pencereli moddan tam ekrana geçilsin mi?' if target_fullscreen else 'Tam ekrandan pencere moduna geçilsin mi?',
+        )
+
+        title_font = self._fit_font(
+            title_text, s(24, minimum=18), panel_w - s(48, minimum=32), bold=True, minimum=14
+        )
+        title_surf = title_font.render(title_text, True, (0, 230, 230))
+        self.screen.blit(
+            title_surf, title_surf.get_rect(center=(panel_rect.centerx, panel_rect.y + s(52, minimum=38)))
+        )
+
+        question_font = self._fit_font(
+            question_text, s(18, minimum=14), panel_w - s(56, minimum=40), minimum=11
+        )
+        question_surf = question_font.render(question_text, True, (214, 226, 242))
+        self.screen.blit(
+            question_surf, question_surf.get_rect(center=(panel_rect.centerx, panel_rect.y + s(100, minimum=76)))
+        )
 
         btn_h = s(48, minimum=38)
         btn_gap = s(16, minimum=12)
