@@ -90,6 +90,14 @@ _fix_working_directory()
 os.environ.setdefault("PYGAME_HIDE_SUPPORT_PROMPT", "1")
 os.environ['SDL_VIDEO_CENTERED'] = '1'  # Pencereyi merkezle
 
+# FAZ 5 (plan Risk 4 / Faz 4.1): SDL_RENDER_SCALE_QUALITY'nin Renderer'dan
+# ÖNCE garanti tanımlı olması. setdefault kullanıcı env değişkenini ezmez.
+# Not (FAZL-003 demo uyarlaması): v2'nin sdl2_overlay.py'sindeki ctypes
+# SDL_SetHint çağrısının bu depoda karşılığı yoktur — hint burada yalnızca
+# bu env değişkeniyle garanti edilir (SDL, hint değerini ilk sorguda
+# env'den okur; zamanlama bu satır sayesinde Renderer'dan önce).
+os.environ.setdefault("SDL_RENDER_SCALE_QUALITY", "0")
+
 # Platform-spesifik video sürücüsü (renderer'ı zorlamıyoruz: bazı sistemlerde
 # 'failed to create renderer' hatasına sebep olabiliyor.)
 current_platform = platform.system()
