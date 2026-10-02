@@ -1334,6 +1334,125 @@ def overlay_active_game_surface():
     return None
 
 
+def parse_window_resolution(
+    value,
+    default: tuple[int, int] = (1280, 720),
+) -> tuple[int, int]:
+    """Ayar kaydındaki 'WxH' çözünürlük değerini güvenle (w, h)'ye çöz (FAZ A3).
+
+    Ayar dosyasındaki değer elle düzenlenmiş, bozulmuş ya da eski biçimli
+    olabilir; handler bu yüzden ham int parse YAPMAZ. Geçersiz/eksik
+    değerlerde default döner. Boyutlar alt pencere tabanına oturtulur
+    (w >= 320, h >= 200) — bunlar layout pikselleri değil, minimum pencere
+    ölçüsü güvencesidir. Ekranı aşan üst değer create_display'in work-area
+    clamp'ına emanettir; burada üst sınır uygulanmaz. (v2 paritesi)
+    """
+    try:
+        if isinstance(value, str):
+            parts = value.lower().split('x')
+            if len(parts) != 2:
+                return default
+            w = int(parts[0].strip())
+            h = int(parts[1].strip())
+        elif isinstance(value, (tuple, list)) and len(value) == 2:
+            w = int(value[0])
+            h = int(value[1])
+        else:
+            return default
+    except Exception:
+        return default
+    try:
+        w = int(w)
+        h = int(h)
+    except Exception:
+        return default
+    # Alt pencere tabanı: layout piksel sabiti değil, kullanılabilir minimum
+    # pencere güvencesi (deforme '50x30' gibi değerler 320x200'e oturur).
+    w = max(320, w)
+    h = max(200, h)
+    return (w, h)
+
+
+def is_steam_deck() -> bool:
+    """Steam Deck ortamında mı çalışıyoruz? (FAZ A3 tespit/telemetri)
+
+    Valve'ın önerdiği tespit kuralı: Steam Deck üzerinde STEAMDECK=1
+    ortam değişkeni tanımlıdır. LCD/OLED donanım sürümleri bu değerden
+    ayrışmaz; tespitin amacı cihaz sınıfıdır (1280x800 taban + kontrolcü
+    odaklı gezinme). Testlerde monkeypatch ile üstüne yazılabilir.
+    """
+    try:
+        return str(os.environ.get('STEAMDECK', '')).strip() == '1'
+    except Exception:
+        return False
+
+
+def record_platform_display_telemetry(context: str = 'startup') -> None:
+    """Platform/ekran gerçeklerini teşhis günlüğüne kaydet (FAZ A3, plan m4).
+
+    Tek satırda birleştirir: Windows Per-Monitor V2 başlangıç sırası
+    (SDL_WINDOWS_DPI_AWARENESS env değeri + logical/gerçek pencere
+    çifti), macOS Retina logical/backing ayrımı (mantıksal pencere
+    boyutu ile sunum yüzeyi boyutu oranı) ve Steam Deck bayrağı.
+    Kanal _gl_diag -> gl_compat._diag_log'tur: stdout + kalıcı
+    gl_debug.log (pytest altında dosyaya yazmaz, yalnızca print eder).
+    Salt-okunur ve hata yutucudur — davranış değiştirmez. (v2 paritesi)
+    """
+    lw: int | None = None
+    try:
+        parts = [f"DISPLAY TELEMETRY [{context}]"]
+        try:
+            parts.append(f"platform={platform.system()} sys.platform={sys.platform}")
+        except Exception:
+            pass
+        if IS_WINDOWS:
+            try:
+                parts.append(
+                    "dpi_awareness_env="
+                    + str(os.environ.get('SDL_WINDOWS_DPI_AWARENESS', '<unset>'))
+                )
+            except Exception:
+                pass
+        if is_steam_deck():
+            parts.append("steam_deck=1")
+        # Mantıksal pencere boyutu (SDL points; canvas aktifse canvas sözleşmesi)
+        try:
+            lw, lh = get_window_logical_size()
+            parts.append(f"window_logical={lw}x{lh}")
+        except Exception:
+            pass
+        # Sunum/backing gerçekleri (canvas aktifse gerçek pencere; değilse
+        # mevcut sunum yüzeyi — Retina'da yüzey > mantıksal ise backing 2x)
+        try:
+            info = get_virtual_canvas_info()
+            canvas_desc = (
+                f"canvas_active={int(bool(info.get('active')))} "
+                f"canvas={info.get('canvas_w')}x{info.get('canvas_h')} "
+                f"real={info.get('real_w')}x{info.get('real_h')}"
+            )
+            if IS_MACOS and lw is not None:
+                try:
+                    rw = int(info.get('real_w') or 0)
+                    if rw > 0 and lw > 0:
+                        canvas_desc += f" backing_ratio={rw / float(lw):.2f}"
+                except Exception:
+                    pass
+            parts.append(canvas_desc)
+        except Exception:
+            pass
+        try:
+            geo = get_render_geometry()
+            parts.append(
+                f"backend={geo.backend} preset={geo.ui_preset or '<yok>'} "
+                f"dpi_scale={geo.dpi_scale:.2f} generation={geo.generation}"
+            )
+        except Exception:
+            pass
+        _gl_diag(' | '.join(parts))
+    except Exception:
+        pass
+
+
 def create_display(
     width: int,
     height: int,
@@ -1361,6 +1480,15 @@ def create_display(
             )
             invalidate_refresh_rate_cache()
             return _overlay_surf
+    except Exception:
+        pass
+
+    # Software virtual canvas bir overlay backend'i değildir. Gerçek display yeniden
+    # kurulacaksa önce monkey-patch'leri sök; aksi halde yeni set_mode sonrası flip()
+    # eski/stale display surface'e blit etmeye devam edebilir. (v2 paritesi, FAZ A3)
+    try:
+        if _software_scale_active:
+            _teardown_virtual_canvas()
     except Exception:
         pass
 
@@ -2076,6 +2204,15 @@ def setup_virtual_canvas(
             # Eğer önceki bir virtual canvas kuruluysa temizle
             if _software_scale_active:
                 _teardown_virtual_canvas()
+            # FAZ A3 (v2 paritesi): SDL2 yolunda da event/mouse yamaları ayakta
+            # kalsın — _normalize_event_pos overlay aktifken window_to_canvas_pos
+            # üzerinden normalize eder; yamalar sökülüp geri gelmezse SDL2
+            # oturumunda fare koordinatları ham pencere uzayında akar.
+            # patch_event_queue idempotent + desync-toleranslıdır.
+            try:
+                patch_event_queue()
+            except Exception:
+                pass
             return real_surface
     except Exception:
         pass
@@ -2098,6 +2235,15 @@ def setup_virtual_canvas(
         # snapshot'ları damgalamak için bilinçli olarak burada da atılır.
         _set_canvas_state(CANVAS_STATE_FALLBACK, 'software_canvas')
         bump_geometry_generation()
+        # FAZ A3 (v2 paritesi): preset 125 -> 100 gibi geçişler teardown ile
+        # yamaları söktüğünde pass-through dalı onları GERİ GETİRMEZSE
+        # oturumun kalanında (100 -> 125 geri dönüşü dahil) mouse
+        # koordinatları normalize edilmeden akardı. Yamaları burada da
+        # yeniden kur: canvas yokken kimlik dönüşüm (pass-through) uygularlar.
+        try:
+            patch_event_queue()
+        except Exception:
+            pass
         return real_surface
 
     # FAZ A4 (v2 paritesi): PREPARING pass-through dalının SONRASına
@@ -2115,6 +2261,12 @@ def setup_virtual_canvas(
         print(f"[Virtual Canvas] Canvas oluşturulamadı: {exc}")
         _set_canvas_state(CANVAS_STATE_FALLBACK, 'software_canvas')
         bump_geometry_generation()
+        # FAZ A3 (v2 paritesi): hata FALLBACK'inde de yamalar ayakta kalsın
+        # (pass-through).
+        try:
+            patch_event_queue()
+        except Exception:
+            pass
         return real_surface
 
     _real_display_surface = real_surface
@@ -2123,6 +2275,26 @@ def setup_virtual_canvas(
     _virtual_blit_rect = _calc_letterbox(canvas_w, canvas_h, real_w, real_h)
 
     # Monkey-patch display fonksiyonları
+    # _orig_flip'i burada yeniden al: sdl2_overlay veya gl_compat setup sırasında
+    # pygame.display.flip'i zaten patch'lemiş olabilir. Bu noktada aldığımızda
+    # Steam overlay → virtual canvas blit zinciri doğru sırayla çalışır.
+    # (v2 paritesi, FAZ A3: demo doğrudan atama yapıyordu; orig kaydı
+    # yokluğunda ikinci kurulum flip zincirini kendi patch'ine sarardı.)
+    global _orig_flip, _orig_update, _orig_get_surface
+    try:
+        current_flip = pygame.display.flip
+        current_update = pygame.display.update
+        current_get_surface = pygame.display.get_surface
+        # Kendi patch'lerimizi tekrar sarmamak için kontrol et
+        if current_flip not in (_software_flip,):
+            _orig_flip = current_flip
+        if current_update not in (_software_update,):
+            _orig_update = current_update
+        if current_get_surface not in (_software_get_surface,):
+            _orig_get_surface = current_get_surface
+    except Exception:
+        pass
+
     pygame.display.flip = _software_flip
     pygame.display.update = _software_update
     pygame.display.get_surface = _software_get_surface
@@ -2140,11 +2312,35 @@ def setup_virtual_canvas(
     except Exception:
         pass
 
+    # FAZ A3 (v2 paritesi, ömür gediği): kurulum çağrıları startup'a mahsus
+    # olmamalı. Preset değişimi teardown ile yamaları söktüğünde, YENİ kurulum
+    # onları geri getirmeli — aksi halde 125 -> 100 -> 125 döngüsü sonrası
+    # mouse/event normalizasyonu oturum boyunca kapalı kalır. Buradaki
+    # çağrı idempotent: yamalar zaten kuruluysa no-op'tur.
+    try:
+        patch_event_queue()
+    except Exception:
+        pass
+
     print(
         f"[Virtual Canvas] Aktif: canvas={canvas_w}x{canvas_h} "
         f"→ real={real_w}x{real_h} (x{multiplier:.2f}) "
         f"letterbox=({_virtual_blit_rect[0]},{_virtual_blit_rect[1]},{_virtual_blit_rect[2]},{_virtual_blit_rect[3]})"
     )
+
+    # Rebuild/setup sonrasında logical canvas boyutunu event kuyruğuna koy.
+    # Bu, VIDEORESIZE işleyen ekranlarda layout/font yenilemeyi tetikler; global
+    # tüm text/font cache'leri için tam yeniden kurulum garantisi değildir.
+    # (v2 paritesi, FAZ A3.)
+    try:
+        event = pygame.event.Event(
+            pygame.VIDEORESIZE,
+            {'size': (canvas_w, canvas_h), 'w': canvas_w, 'h': canvas_h}
+        )
+        pygame.event.post(event)
+    except Exception:
+        pass
+
     return _software_canvas
 
 
@@ -2210,6 +2406,15 @@ def _teardown_virtual_canvas() -> None:
     # "canvas yok" olarak değişti — bayat snapshot'lar damgalanır).
     _set_canvas_state(CANVAS_STATE_TEARING_DOWN, 'software_canvas')
 
+    # Gerçek ekranın boyutlarını al (v2 paritesi): son VIDEORESIZE bildirimi
+    # için söküm gerçek yüzeyi None'lamadan ÖNCE yakalanır.
+    real_w, real_h = 1728, 1080
+    if _real_display_surface is not None:
+        try:
+            real_w, real_h = _real_display_surface.get_size()
+        except Exception:
+            pass
+
     try:
         # Yalnızca kendi patch'lerimizi geri al (v2 paritesi): mevcut
         # flip/update/get_surface _software_* değilse başka bir katman
@@ -2236,6 +2441,22 @@ def _teardown_virtual_canvas() -> None:
     try:
         from ui_scaling import set_virtual_canvas_active
         set_virtual_canvas_active(False)
+    except Exception:
+        pass
+
+    # Event kuyruğu monkey-patch'lerini de geri al (v2 paritesi, FAZ A3)
+    try:
+        unpatch_event_queue()
+    except Exception:
+        pass
+
+    # Event kuyruğuna gerçek ekran boyutu ile VIDEORESIZE gönder (v2 paritesi)
+    try:
+        event = pygame.event.Event(
+            pygame.VIDEORESIZE,
+            {'size': (real_w, real_h), 'w': real_w, 'h': real_h}
+        )
+        pygame.event.post(event)
     except Exception:
         pass
 
@@ -2306,6 +2527,18 @@ try:
 except Exception:
     _orig_event_get = lambda *args, **kwargs: []
 _event_patch_active = False
+# FAZ A3 (v2 paritesi): kurulum kaydı — hangi slota hangi patched callable
+# kuruldu ve sökülürken hangi orig referansına döneceği (slot → (holder,
+# attr, patched, orig)). patch_event_queue kısmen başarısız olursa flag ile
+# kurulu yamalar ayrışır (desync); ikinci kurulum kendi yamasını "orig"
+# olarak yakalayıp ÇİFTE normalizasyon üretir (self-capture). Bu kayıt
+# desync'i tespit eder ve yamaları kayıtlı orig'lere GERİ ALARAK telafi
+# eder; unpatch yalnızca hâlâ bizim olan slota dokunur — slotu devralan
+# yabancı katman (sdl2_overlay'in get_window_size yaması gibi) ezilmez.
+# Not: legacy `patch_event_queue._orig_*` fonksiyon öznitelikleri ayrıca
+# korunur (get_mouse_pos / get_raw_mouse_pos bunları ham pozisyon için
+# okur — canlı üretim sözleşmesi).
+_event_patch_installed: dict = {}
 
 
 def _normalize_event_pos(raw_pos: tuple) -> tuple[int, int]:
@@ -2449,13 +2682,60 @@ def patch_event_queue() -> None:
     - pygame.event.get  → mouse event pos/rel mutasyonu
     - pygame.mouse.get_pos → letterbox offset + canvas scale dönüşümü
     - pygame.mouse.get_rel → canvas scale dönüşümü
+
+    FAZ A3 (v2 paritesi): idempotent ve desync-toleranslıdır. Flag kapalıyken
+    slotlarda eski yamalarımız duruyorsa (önceki kısmi başarısızlık, ya da
+    flag düşürülmüş ama söküm tam yapılmamış durum) bunlar önce kayıtlı
+    orig'lere geri alınır, ardından taze kurulum yapılır — ikinci kurulum
+    kendi yamasını "orig" olarak yakalayıp çifte normalizasyon üretemez
+    (self-capture) ve flag/kurulum ayrışması kalıcılaşamaz. Slotu yabancı
+    bir katman devralmışsa (örn. sdl2_overlay'in get_window_size yaması)
+    o katmanın üzerine güvenle sarılır; unpatch kimlik guard'ıyla söker.
     """
-    global _event_patch_active
+    if IS_MACOS:
+        return
+
+    global _event_patch_active, _orig_event_get
     if _event_patch_active:
         return
 
+    if not hasattr(pygame, 'event') or not hasattr(pygame, 'mouse'):
+        return
+
+    # FAZ A3 (v2 paritesi): kısmi kurulum telafisi — kayıtlı slotlarda hâlâ
+    # bizim yamamız varsa kayıtlı orig'e geri al. Temiz sökülmüş (slot zaten
+    # orig'te) veya yabancı katmana devredilmiş slota dokunma; ikisi de
+    # aşağıdaki taze kurulumda güvenle sarılır.
+    if _event_patch_installed:
+        for _slot_key, _entry in list(_event_patch_installed.items()):
+            _holder, _attr, _patched, _orig = _entry
+            try:
+                if _orig is not None and getattr(_holder, _attr, None) is _patched:
+                    setattr(_holder, _attr, _orig)
+            except Exception:
+                pass
+            try:
+                del _event_patch_installed[_slot_key]
+            except KeyError:
+                pass
+        try:
+            del _slot_key, _entry, _holder, _attr, _patched, _orig
+        except NameError:
+            pass
+
+    # FAZ A3 (v2 paritesi): bu çağrıda kurulan slotlar — exception durumunda
+    # geri alınır; kısmi başarısızlık flag'i kapalı bırakır, desync oluşmaz.
+    _installed_this_call: list = []
+
+    def _record(slot_key, holder, attr, patched, orig):
+        _event_patch_installed[slot_key] = (holder, attr, patched, orig)
+        _installed_this_call.append(slot_key)
+
     try:
+        if pygame.event.get is not _patched_event_get:
+            _orig_event_get = pygame.event.get
         pygame.event.get = _patched_event_get
+        _record('event_get', pygame.event, 'get', _patched_event_get, _orig_event_get)
 
         # pygame.mouse.get_pos → virtual canvas koordinatına normalize et
         _orig_mouse_get_pos = pygame.mouse.get_pos
@@ -2468,6 +2748,7 @@ def patch_event_queue() -> None:
                 return _orig_mouse_get_pos()
 
         pygame.mouse.get_pos = _patched_mouse_get_pos
+        _record('mouse_get_pos', pygame.mouse, 'get_pos', _patched_mouse_get_pos, _orig_mouse_get_pos)
 
         # pygame.mouse.get_rel → canvas ölçeğine normalize et
         _orig_mouse_get_rel = pygame.mouse.get_rel
@@ -2480,6 +2761,7 @@ def patch_event_queue() -> None:
                 return _orig_mouse_get_rel()
 
         pygame.mouse.get_rel = _patched_mouse_get_rel
+        _record('mouse_get_rel', pygame.mouse, 'get_rel', _patched_mouse_get_rel, _orig_mouse_get_rel)
 
         # pygame.mouse.set_pos → canvas koordinatını fiziksel pencere koordinatına geri dönüştür
         _orig_mouse_set_pos = pygame.mouse.set_pos
@@ -2497,6 +2779,7 @@ def patch_event_queue() -> None:
                 return _orig_mouse_set_pos(*args, **kwargs)
 
         pygame.mouse.set_pos = _patched_mouse_set_pos
+        _record('mouse_set_pos', pygame.mouse, 'set_pos', _patched_mouse_set_pos, _orig_mouse_set_pos)
 
         _orig_display_get_window_size = getattr(pygame.display, 'get_window_size', None)
         if _orig_display_get_window_size is not None:
@@ -2519,6 +2802,8 @@ def patch_event_queue() -> None:
                 except Exception:
                     return _orig_display_get_window_size()
             pygame.display.get_window_size = _patched_display_get_window_size
+            _record('display_get_window_size', pygame.display, 'get_window_size',
+                    _patched_display_get_window_size, _orig_display_get_window_size)
 
         # Geri alma için referansları sakla
         patch_event_queue._orig_mouse_get_pos = _orig_mouse_get_pos
@@ -2532,39 +2817,63 @@ def patch_event_queue() -> None:
             "event.get, mouse.get_pos, mouse.get_rel, mouse.set_pos ve display.get_window_size normalize edilecek"
         )
     except Exception as exc:
+        # FAZ A3 (v2 paritesi): kısmi başarısızlık — bu çağrıda kurulan
+        # slotları kayıtlı orig'lere geri al, kurulum kaydından düşür;
+        # flag kapalı kalır.
+        for _slot_key in _installed_this_call:
+            try:
+                _holder, _attr, _patched, _orig = _event_patch_installed[_slot_key]
+                if _orig is not None and getattr(_holder, _attr, None) is _patched:
+                    setattr(_holder, _attr, _orig)
+            except Exception:
+                pass
+            try:
+                del _event_patch_installed[_slot_key]
+            except KeyError:
+                pass
         print(f"[Virtual Canvas] Event/mouse patch başarısız: {exc}")
 
 
 def unpatch_event_queue() -> None:
-    """Tüm pygame event/mouse monkey-patch'lerini geri al."""
+    """Tüm pygame event/mouse monkey-patch'lerini geri al.
+
+    FAZ A3 (v2 paritesi): yalnızca hâlâ bizim yamamızı taşıyan slotlar geri
+    alınır (kimlik guard'ı) — slotu yabancı bir katman devraldıysa üzerine
+    yazılmaz; o katman sökülürken bizi geri koyar. Kurulum kaydı ve
+    legacy _orig_* öznitelikleri temizlenir (get_mouse_pos / raw okuma
+    yolu pygame.mouse.get_pos'a döner — sökümden sonra bu zaten ham
+    fonksiyondur). Kayıt boşsa ikinci çağrı tam no-op'tur.
+    """
     global _event_patch_active
+    if not _event_patch_installed and not _event_patch_active:
+        # FAZ A3 (v2 paritesi): hızlı yol — kurulum yok (çift unpatch no-op).
+        return
+    for _slot_key, _entry in list(_event_patch_installed.items()):
+        _holder, _attr, _patched, _orig = _entry
+        try:
+            if _orig is not None and getattr(_holder, _attr, None) is _patched:
+                setattr(_holder, _attr, _orig)
+        except Exception:
+            pass
+        try:
+            del _event_patch_installed[_slot_key]
+        except KeyError:
+            pass
     try:
-        pygame.event.get = _orig_event_get
-    except Exception:
+        del patch_event_queue._orig_mouse_get_pos
+    except AttributeError:
         pass
     try:
-        orig_pos = getattr(patch_event_queue, '_orig_mouse_get_pos', None)
-        if orig_pos is not None:
-            pygame.mouse.get_pos = orig_pos
-    except Exception:
+        del patch_event_queue._orig_mouse_get_rel
+    except AttributeError:
         pass
     try:
-        orig_rel = getattr(patch_event_queue, '_orig_mouse_get_rel', None)
-        if orig_rel is not None:
-            pygame.mouse.get_rel = orig_rel
-    except Exception:
+        del patch_event_queue._orig_mouse_set_pos
+    except AttributeError:
         pass
     try:
-        orig_set_pos = getattr(patch_event_queue, '_orig_mouse_set_pos', None)
-        if orig_set_pos is not None:
-            pygame.mouse.set_pos = orig_set_pos
-    except Exception:
-        pass
-    try:
-        orig_get_window_size = getattr(patch_event_queue, '_orig_display_get_window_size', None)
-        if orig_get_window_size is not None:
-            pygame.display.get_window_size = orig_get_window_size
-    except Exception:
+        del patch_event_queue._orig_display_get_window_size
+    except AttributeError:
         pass
     _event_patch_active = False
 

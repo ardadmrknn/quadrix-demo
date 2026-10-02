@@ -268,7 +268,7 @@ except Exception:
     from steam_leaderboards import SteamLeaderboardService
     from user_screens import UserSelectionScreen, UserManagementScreen
     from localization import set_language, t
-    from platform_utils import request_window_focus, arm_startup_focus_warmup, pump_startup_focus_warmup, init_platform_display, get_display_flags, create_display, get_native_resolution, normalize_mouse_pos, get_mouse_pos, set_app_icon, resolve_frame_rate_cap
+    from platform_utils import request_window_focus, arm_startup_focus_warmup, pump_startup_focus_warmup, init_platform_display, get_display_flags, create_display, get_native_resolution, normalize_mouse_pos, get_mouse_pos, set_app_icon, resolve_frame_rate_cap, parse_window_resolution, record_platform_display_telemetry
     from retro_style import retro_style
     from background_effects import (
         start_screen_transition, update_screen_transition,
@@ -1892,6 +1892,15 @@ def main():
     except Exception:
         pass
 
+    # FAZ A3 (plan m4, v2 paritesi): platform/ekran gerçekleri tek teşhis
+    # satırında — Windows Per-Monitor V2 başlangıç sırası, macOS Retina
+    # logical/backing oranı, Steam Deck bayrağı + canvas/geometri özeti.
+    # gl_debug.log'a gider (pytest altında dosya yazmaz).
+    try:
+        record_platform_display_telemetry(context='startup')
+    except Exception:
+        pass
+
     # Teşhis: startup sonrası gerçek görünür display ve gl durumunu logla.
     try:
         _ovl = _active_overlay_module()
@@ -2542,6 +2551,31 @@ def main():
             coop_level_select,
         )
 
+        # FAZ A3 (v2 M6 paritesi): game modüllerinin geometri türevli
+        # offset/cell cache alanları. NOT (doğrulanmış gerçek): bu iki attr
+        # her iki repoda da YAZMA-YALNIZDIR (game init + recover yollarındaki
+        # manuel sıfırlamalar); gerçek layout önbelleği
+        # _gameplay_layout_cache_key boyut anahtarıyla kendini geçersiz kılar.
+        # Bu döngü, mevcut recover sıfırlama KONVANSİYONUNU _apply_screen'e
+        # taşır: geometri değişiminde alanların temiz olması artık tek
+        # noktadan garanti edilir. hasattr guard'lıdır — hiçbir modül
+        # zorunlu tutulmaz.
+        for _game_obj in (
+            getattr(_handle_online_pvp, '_game', None),
+            game,
+            pvp_game,
+            coop_game,
+            coop_campaign_game,
+        ):
+            if _game_obj is None:
+                continue
+            for _cache_attr in ('_cached_offset_key', '_cached_cell_size_key'):
+                if hasattr(_game_obj, _cache_attr):
+                    try:
+                        setattr(_game_obj, _cache_attr, None)
+                    except Exception:
+                        pass
+
     def _rebuild_display(width=None, height=None, *, fullscreen_value=None, resizable=None, borderless_value=None):
         """create_display çağır ve yeni screen'i her yere uygula."""
         nonlocal fullscreen
@@ -2551,11 +2585,11 @@ def main():
             fullscreen = bool(settings_manager.get('fullscreen', True))
         settings_manager.set('fullscreen', fullscreen)
 
+        # FAZ A3 (v2 paritesi): değer doğrulaması settings'e yazma anında VE
+        # burada aynı yardımcıdan geçer — bozuk kayıt (örn. '19x10') bu
+        # noktada güvenli varsayılana düşer, çift parse mantığı ayrışamaz.
         win_res_str = str(settings_manager.get('window_resolution', '1280x720'))
-        try:
-            rw, rh = [int(p) for p in win_res_str.lower().split('x')]
-        except Exception:
-            rw, rh = 1280, 720
+        rw, rh = parse_window_resolution(win_res_str, default=(1280, 720))
 
         if fullscreen:
             native_w, native_h = get_native_resolution()
@@ -3474,11 +3508,11 @@ def main():
             elif action == 'apply_display_mode':
                 fs = bool(settings_manager.get('fullscreen', True))
                 fullscreen = fs
+                # FAZ A3 (v2 paritesi): 'WxH' kaydını güvenle çöz — bozuk kayıt
+                # güvenli varsayılana düşer, alt pencere tabanı (w>=320, h>=200)
+                # normalize edilir.
                 win_res = str(settings_manager.get('window_resolution', '1280x720'))
-                try:
-                    tw, th = [int(p) for p in win_res.lower().split('x')]
-                except Exception:
-                    tw, th = 1280, 720
+                tw, th = parse_window_resolution(win_res, default=(1280, 720))
                 if fs:
                     nw, nh = get_native_resolution()
                     _rebuild_display(nw, nh, fullscreen_value=True, resizable=False, borderless_value=True)
