@@ -99,13 +99,20 @@ sys.modules['pygame.event'] = _pg.event
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 # Stub heavy dependencies
+# NOT: Atama bilerek koşulsuzdur (test_coop.py kalıbıyla birebir). Koşullu
+# "if mod_name not in sys.modules" koruması tam paket koleksiyonunda mayına
+# dönüşür: önce toplanan test dosyaları gerçek platform_utils'u sys.modules'a
+# yüklediğinde koruma stub'u KURMAZ, alttaki import gerçek modülü döndürür ve
+# aşağıdaki 1 argümanlı normalize_mouse_pos lambda'sı GERÇEK modül üzerine
+# yazılır. Gerçek modülün pygame bağlantısı gerçek kaldığı için conftest
+# purge'u onu düşürmez; zehir oturum boyu kalır ve platform_utils.get_mouse_pos
+# (pos, scale) çağrısı TypeError fırlatır (test_a9_perf_gate LevelSelect mayını).
 for mod_name in ('sound', 'background', 'background_effects', 'mode_skins',
                  'retro_style', 'renderers', 'renderers.jelly_renderer',
                  'themes', 'block_styles', 'platform_utils', 'localization',
                  'ui_theme', 'sweep_effects', 'asset_manager'):
-    if mod_name not in sys.modules:
-        m = types.ModuleType(mod_name)
-        sys.modules[mod_name] = m
+    m = types.ModuleType(mod_name)
+    sys.modules[mod_name] = m
 
 # localization stub
 import localization as _loc
