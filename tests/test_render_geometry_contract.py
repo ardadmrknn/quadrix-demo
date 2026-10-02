@@ -34,9 +34,17 @@ if str(SRC_DIR) not in sys.path:
 
 # Modül kirliliği temizliği: stub pygame / önceden import edilmiş modüller
 # kaldırılır; gerçek pygame ile taze import edilir (yukarıdaki docstring).
-for _name in ('platform_utils', 'ui_scaling', 'sdl2_overlay', 'gl_compat', 'pygame'):
+# DİKKAT (K4/A3 kalıbı): pygame KÖKÜNÜ tek başına sökmek aile-yarım-kalma
+# mayınıdır — kök sökülür, pygame.* alt modülleri sys.modules'te asılı
+# kalır, sonraki `import pygame` "partially initialized module" hatası
+# verir VEYA aileyi bozuk bırakır; zincirde bu dosyadan sonra kurulan
+# canlı testler pygame.font gibi alt modülleri kaybeder. Pygame AİLESİNİN
+# TAMAMI (kök + pygame.*) sökülür: yeniden import sıfırdan, tutarlı koşar.
+for _name in ('platform_utils', 'ui_scaling', 'sdl2_overlay', 'gl_compat'):
     sys.modules.pop(_name, None)
     sys.modules.pop('src.' + _name, None)
+for _pg_key in [k for k in list(sys.modules) if k == 'pygame' or k.startswith('pygame.')]:
+    sys.modules.pop(_pg_key, None)
 
 os.environ.setdefault('SDL_VIDEODRIVER', 'dummy')
 os.environ.setdefault('SDL_AUDIODRIVER', 'dummy')
