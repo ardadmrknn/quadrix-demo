@@ -145,6 +145,31 @@ def _purge_leaked_test_stubs(*, skip_pygame: bool = False) -> None:
 				elif base_name == "renderers.jelly_renderer":
 					jelly_renderer_purged = True
 
+	# FAZ A8: gerçek dosyalı modüllerin module-seviyesi pygame binding'i stub'a
+	# kilitliyse modülün kendisi de zehirlenir. Mayın senaryosu: collectstart
+	# purgesi pygame ailesini düşürür → stub kuran test dosyası (örn.
+	# test_platform_utils_display_toggle koleksiyonu) stub'ı sys.modules'a
+	# yerleştirir → platform_utils'u silip stub'la yeniden import eder →
+	# gerçek __file__'lı olduğu için yukarıdaki koşullu purge onu atlar →
+	# oturumun kalanına MOUSEBUTTONDOWN / event.Event gibi nitelikleri
+	# olmayan stub pygame servis edilir (letterbox event testleri ham geçiyordu).
+	# Binding stub'luysa modül düşürülür; sonraki tüketici güncel pygame'le
+	# taze yükler. Stub-runtime gerektiren dosyaların kendi module-level
+	# isim bağlamaları düşürmeden etkilenmez (yalnız taze import tazelenir).
+	for base_name in _MODULES_THAT_GET_STUBBED:
+		if base_name == "pygame":
+			continue
+		for candidate in (base_name, f"src.{base_name}"):
+			module_obj = sys.modules.get(candidate)
+			if module_obj is None:
+				continue
+			bound_pygame = getattr(module_obj, "pygame", None)
+			if (
+				isinstance(bound_pygame, types.ModuleType)
+				and _looks_like_test_stub(bound_pygame)
+			):
+				sys.modules.pop(candidate, None)
+
 	# Bazi test modulleri gercek background_effects modulu icindeki shared-layer
 	# getter'ini module-level lambda ile degistiriyor. Bu, sonraki testlerde gercek
 	# layer fabrikasi yerine test override'inin sizmasina yol aciyor.
@@ -318,6 +343,51 @@ def pytest_pycollect_makemodule(module_path, parent):
 	return None
 
 
+def _collect_font_cache_dicts() -> list:
+	"""FAZ A6 listesindeki modül-level font cache dict'lerini topla."""
+	caches = []
+	ui_theme_mod = sys.modules.get('ui_theme') or sys.modules.get('src.ui_theme')
+	if ui_theme_mod is not None:
+		font_cache = getattr(getattr(ui_theme_mod, 'UIFonts', None), '_cache', None)
+		if isinstance(font_cache, dict):
+			caches.append(font_cache)
+	retro_mod = sys.modules.get('retro_style') or sys.modules.get('src.retro_style')
+	if retro_mod is not None:
+		cjk_cache = getattr(retro_mod, '_cjk_fallback_font_cache', None)
+		if isinstance(cjk_cache, dict):
+			caches.append(cjk_cache)
+		retro_inst = getattr(retro_mod, 'retro_style', None)
+		for inst_cache_attr in ('font_cache', '_script_font_cache'):
+			inst_cache = getattr(retro_inst, inst_cache_attr, None)
+			if isinstance(inst_cache, dict):
+				caches.append(inst_cache)
+	pf_mod = sys.modules.get('promptfont_support') or sys.modules.get('src.promptfont_support')
+	if pf_mod is not None:
+		pf_cache = getattr(pf_mod, '_FONT_CACHE', None)
+		if isinstance(pf_cache, dict):
+			caches.append(pf_cache)
+	return caches
+
+
+def _evict_dead_cached_fonts() -> None:
+	"""Font modülü init'liyken cache'teki ÖLÜ Font girdilerini ayıkla.
+
+	pygame.quit() sonrası yeniden pygame.init() yapıldığında get_init() True
+	döner; quit'ten önce yaratılmış Font nesneleri kalıcı olarak ölüdür ve
+	cache'ten döndükleri her draw yolunu düşürür. Probe (size("")) test
+	teardown'unda tek seferlik çalışır — oyun döngüsünde maliyeti yoktur.
+	"""
+	for cache in _collect_font_cache_dicts():
+		for key, font in list(cache.items()):
+			size_fn = getattr(font, 'size', None)
+			if not callable(size_fn):
+				continue
+			try:
+				size_fn("")
+			except Exception:
+				cache.pop(key, None)
+
+
 @pytest.fixture(autouse=True)
 def _isolate_test_module_stubs(request: pytest.FixtureRequest):
 	_sync_sys_modules_aliases()
@@ -366,30 +436,27 @@ def _isolate_test_module_stubs(request: pytest.FixtureRequest):
 	# binding'i eski modül objesine bağlı kalır. Bu yüzden modüller yerinde
 	# kalır, yalnızca cache dict'leri temizlenir — sonraki font isteği
 	# init'li ortamda yeni Font yaratır.
+	#
+	# FAZ A8: quit'ten SONRA bir test yeniden pygame.init() yaptığında
+	# get_init() True döner — koşullu tam temizlik atlanır ve quit'ten önce
+	# yaratılmış ölü Font'lar cache'te kalır (karışık cache: bazı girdiler
+	# taze, bazıları ölü; level select level_font mayını bu yolla düşüyordu).
+	# Font init'liyken her girdi size("") ile probe edilir: ölü girdiler
+	# ayıklanır, canlılar korunur. Probe yalnızca test teardown'unda
+	# çalışır — oyun döngüsünde maliyeti yoktur.
 	try:
 		import pygame as _pygame_probe
 
 		if not _pygame_probe.font.get_init():
-			ui_theme_mod = sys.modules.get('ui_theme') or sys.modules.get('src.ui_theme')
-			if ui_theme_mod is not None:
-				font_cache = getattr(getattr(ui_theme_mod, 'UIFonts', None), '_cache', None)
-				if isinstance(font_cache, dict):
-					font_cache.clear()
-			retro_mod = sys.modules.get('retro_style') or sys.modules.get('src.retro_style')
-			if retro_mod is not None:
-				cjk_cache = getattr(retro_mod, '_cjk_fallback_font_cache', None)
-				if isinstance(cjk_cache, dict):
-					cjk_cache.clear()
-				retro_inst = getattr(retro_mod, 'retro_style', None)
-				for inst_cache_attr in ('font_cache', '_script_font_cache'):
-					inst_cache = getattr(retro_inst, inst_cache_attr, None)
-					if isinstance(inst_cache, dict):
-						inst_cache.clear()
+			for font_cache in _collect_font_cache_dicts():
+				font_cache.clear()
 			pf_mod = sys.modules.get('promptfont_support') or sys.modules.get('src.promptfont_support')
 			if pf_mod is not None:
 				pf_clear = getattr(pf_mod, 'clear_promptfont_cache', None)
 				if callable(pf_clear):
 					pf_clear()
+		else:
+			_evict_dead_cached_fonts()
 	except Exception:
 		pass
 
