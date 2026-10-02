@@ -40,10 +40,10 @@ from asset_manager import load_image
 from text_cache import render_text
 try:
     from ui_scaling import apply_ui_scale_preset, get_projected_effective_scale, get_scale, resolve_ui_scale_size, get_virtual_canvas_ui_scale, is_virtual_canvas_active
-except ImportError:
-    from ui_scaling import apply_ui_scale_preset, get_projected_effective_scale, get_scale, resolve_ui_scale_size
-    get_virtual_canvas_ui_scale = lambda: None
-    is_virtual_canvas_active = lambda: False
+except ImportError as exc:  # sessiz yanlış rejim yasak (kılavuz EKS-011)
+    raise ImportError(
+        "ui_scaling yüklenemedi; ölçek çekirdeği olmadan UI çizilemez"
+    ) from exc
 from gamepad_manager import get_gamepad_manager, is_gamepad_connected
 try:
     from promptfont_support import resolve_nav_hint_label as _resolve_nav_hint_label
@@ -682,9 +682,11 @@ class Menu:
             return _vc
         min_scale = 0.78
         max_scale = 1.24
-        eff_w, _ = self._effective_ui_size()
-        if eff_w > 1920:
-            max_scale = max_scale * (eff_w / 1920.0)
+        # KALDIRILDI (RN-003): eff_w > 1920 boost. SDL2 yolunda FAZ 1 ile eff
+        # daima 1920x1080 (ölü kod); software canvas'ta 21:9 gibi oranlarda
+        # v_w > 1920 olabilir — bugünden canlıdır. eff sızıntısı herhangi bir
+        # yoldan geri dönerse sessizce taşma üretirdi. Yükseltilmiş üst sınıra
+        # gerçek ihtiyaç olursa preset mekanizması meşru yoldur.
         return apply_ui_scale_preset(
             get_scale(
                 self._effective_ui_size(),

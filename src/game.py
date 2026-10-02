@@ -280,9 +280,12 @@ class Game:
 
     def _ui_scale(self, min_scale: float = 0.72, max_scale: float = 1.24) -> float:
         """Aktif canvas boyutuna bağlı genel UI ölçeği."""
-        eff_w, _ = self._effective_ui_size()
-        if eff_w > 1920:
-            max_scale = max_scale * (eff_w / 1920.0)
+        # KALDIRILDI (RN-003): eff_w > 1920 boost. SDL2 yolunda FAZ 1 ile eff
+        # daima 1920x1080 (ölü kod); software canvas'ta 21:9 gibi oranlarda
+        # v_w > 1920 olabilir — bugünden canlıdır. eff sızıntısı herhangi bir
+        # yoldan geri dönerse sessizce 2.48x taşma üretirdi. Yükseltilmiş üst
+        # sınıra gerçek ihtiyaç olursa preset mekanizması (max_scale x
+        # multiplier) meşru yoldur.
         return apply_ui_scale_preset(
             get_scale(
                 self._effective_ui_size(),
@@ -296,9 +299,8 @@ class Game:
 
     def _overlay_ui_scale(self, min_scale: float = 0.72, max_scale: float = 1.20) -> float:
         """Overlay/modal geometriyi logical UI size ile hesapla, raw surface'e projekte et."""
-        eff_w, _ = self._effective_ui_size()
-        if eff_w > 1920:
-            max_scale = max_scale * (eff_w / 1920.0)
+        # KALDIRILDI (RN-003): eff_w > 1920 boost — 4-A kapsamında (game.py _ui_scale
+        # bloğundaki gerekçe birebir geçerli).
         return get_projected_effective_scale(
             getattr(self, 'screen', self._active_ui_size()),
             min_scale=min_scale,
@@ -375,7 +377,11 @@ class Game:
             max(80, int(active_height) - panel_y - int(layout.panel_bottom_margin)),
         )
 
-        pixel_ratio = max(1.0, float(getattr(layout, 'pixel_ratio', 1.0) or 1.0))
+        # FAZ 4-B (RN-004): max(1.0, ...) clamp'i kaldırıldı —
+        # get_display_pixel_ratio (gameplay_layout.py:36-51) [0.5, 4.0] aralığı
+        # içinde ham projeksiyonu döndürür, aralık dışında 1.0'a fallback yapar;
+        # ekran disiplini çekirdekle hizalandı.
+        pixel_ratio = float(getattr(layout, 'pixel_ratio', 1.0) or 1.0)
         logical_panel_width = float(panel_width) / pixel_ratio
         hud_scale = max(0.72, min(1.18, logical_panel_width / 220.0))
         hud_scale = apply_ui_scale_preset(
@@ -5290,6 +5296,9 @@ class Game:
         info_x = panel_rect.x
         header_y = panel_rect.y
         panel_height = panel_rect.height
+        # DUZ-001: panel_width yerel tanımı yoktu — aşağıdaki kullanımlarda
+        # NameError üretiyordu (v2 game.py _draw_right_hud_panel_core paritesi).
+        panel_width = panel_rect.width
         hud_scale = panel_metrics['hud_px_scale']
         pixel_ratio = panel_metrics['pixel_ratio']
         

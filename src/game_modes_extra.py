@@ -6226,7 +6226,10 @@ class MysteryMode(Game):
 
         scale_x = int(active_width) / float(max(1, int(effective_width)))
         scale_y = int(active_height) / float(max(1, int(effective_height)))
-        pixel_ratio = max(1.0, float(self._display_pixel_ratio()))
+        # FAZ 4-B (RN-004): max(1.0, ...) clamp'i kaldırıldı —
+        # get_display_pixel_ratio [0.5, 4.0] içinde ham projeksiyonu döndürür,
+        # aralık dışında 1.0'a fallback yapar.
+        pixel_ratio = float(self._display_pixel_ratio())
         occupancy_scale = max(
             1.0,
             min(

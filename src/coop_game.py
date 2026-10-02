@@ -208,9 +208,8 @@ class CoopGame:
         return get_display_pixel_ratio(self._active_ui_size(), self._effective_ui_size())
 
     def _ui_scale(self, mn: float = 0.72, mx: float = 1.20) -> float:
-        eff_w, _ = self._effective_ui_size()
-        if eff_w > 1920:
-            mx = mx * (eff_w / 1920.0)
+        # KALDIRILDI (RN-003): eff_w > 1920 boost — 4-A kapsamında (game.py _ui_scale
+        # bloğundaki gerekçe birebir geçerli).
         logical_scale = apply_ui_scale_preset(
             get_scale(
                 self._effective_ui_size(),
