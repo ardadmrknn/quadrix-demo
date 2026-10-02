@@ -149,6 +149,8 @@ def _install_stubs(monkeypatch):
     ui_scaling_stub.get_projected_effective_scale = lambda *args, **kwargs: 1.0
     ui_scaling_stub.normalize_ui_scale_preset = lambda v: "normal"
     ui_scaling_stub.scale_px = lambda v, scale, minimum=1: max(int(minimum), int(round(float(v) * float(scale))))
+    ui_scaling_stub.get_virtual_canvas_ui_scale = lambda *args, **kwargs: None
+    ui_scaling_stub.is_virtual_canvas_active = lambda *args, **kwargs: False
     monkeypatch.setitem(sys.modules, "ui_scaling", ui_scaling_stub)
 
 

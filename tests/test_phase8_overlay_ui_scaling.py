@@ -35,7 +35,9 @@ class _FakeFont:
     def __init__(self, size: int):
         self._size = max(1, int(size))
 
-    def render(self, text, antialias, color):
+    def render(self, text, antialias, color, background=None):
+        # background parametresi text_cache.render_font_text'in (pygame API
+        # paritesi) 4. argümanıdır; stub üretim imzasıyla hizalı tutulur.
         width, height = self.size(text)
         surface = pygame.Surface((width, height), pygame.SRCALPHA)
         rgb = tuple(color[:3]) if isinstance(color, tuple) else (255, 255, 255)
