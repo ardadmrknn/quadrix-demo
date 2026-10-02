@@ -119,6 +119,13 @@ def set_ui_scale_preset(preset: str | None) -> str:
             clear_text_cache()
         except Exception:
             pass
+        # FAZ A5: sarma/ellipsis sonuç cache'leri + layout kuşağı da preset
+        # geçişinde düşer (ölçüm cache'i clear_text_cache içinde temizlenir).
+        try:
+            from ui_text_layout import clear_layout_caches
+            clear_layout_caches()
+        except Exception:
+            pass
     # Diğer ui_scaling alias'ının da preset değerini senkronize et
     try:
         import sys

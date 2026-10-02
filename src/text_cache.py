@@ -42,6 +42,17 @@ class _LRUCache:
 
 _TEXT_CACHE = _LRUCache(max_items=1024)
 
+# FAZ A5: metin ÖLÇÜM (font.size) önbelleği — render önbelleğinden ayrık.
+# Süpürme bulgusu: font.size sonuçları kod tabanında hiçbir yerde
+# önbelleklenmiyordu; sarma/fit döngüleri her adımda pygame C çağrısı
+# tekrarlıyordu. Anahtar (id(font), text); değer (font, w, h) — font
+# referansını değerde tutmak id() geri dönüşüm tuzağını (GC sonrası yeni
+# nesnenin aynı adresi alması) keser: girdi yaşadığı sürece id benzersizdir.
+_MEASURE_CACHE = _LRUCache(max_items=1024)
+
+# FAZ A5 (ui_text_layout) için ortak LRU ilkelinin kamusal adı.
+LRUCache = _LRUCache
+
 
 # System Font Safety Patch (Windows registry DWORD / TypeError guard):
 try:
@@ -167,5 +178,32 @@ def render_text_shared(
     return rendered
 
 
+def measure_text(
+    font: pygame.font.Font,
+    text: str,
+) -> tuple[int, int]:
+    """font.size(text) sonucunu LRU önbellekli döndür: (genişlik, yükseklik).
+
+    Sık ölçüm döngüleri (fit küçültme adımları, satır sarma denemeleri)
+    pygame C çağrısını her adımda tekrarlamak yerine buradan okur. Font
+    ölçümü deterministik olduğu için önbellek davranışsal fark yaratmaz;
+    yalnızca maliyeti düşürür.
+    """
+    safe_text = "" if text is None else str(text)
+    key = (id(font), safe_text)
+    cached = _MEASURE_CACHE.get(key)
+    if cached is not None:
+        return cached[1], cached[2]
+    width, height = font.size(safe_text)
+    _MEASURE_CACHE.set(key, (font, width, height))
+    return width, height
+
+
+def measure_text_width(font: pygame.font.Font, text: str) -> int:
+    """measure_text'in yalnız genişlik bileşeni (sarma/fit döngülerinin ihtiyacı)."""
+    return measure_text(font, text)[0]
+
+
 def clear_text_cache() -> None:
     _TEXT_CACHE.clear()
+    _MEASURE_CACHE.clear()
