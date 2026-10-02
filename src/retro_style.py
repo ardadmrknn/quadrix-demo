@@ -614,8 +614,29 @@ class RetroStyle:
         self.font_cache.pop(key, None)
         return None
 
+    def _sync_font_module_epoch(self) -> None:
+        """Font modül init durumundaki değişimde font cache'lerini boşalt.
+
+        pygame.font quit edildiğinde VEYA pygame ailesi yeniden import
+        edildiğinde (SDL_ttf tekrar yüklenir) cache'teki Font objelerinin
+        C tarafı referansları geçersiz kalır; get_init() sonrası tekrar
+        init edilse bile eski Font "Invalid font (font module quit since
+        font created)" fırlatır. Init durumunun her değişimi (True↔False)
+        bu geçişi yakalar ve cache'leri temizler. Normal oyun akışında init
+        durumu hiç değişmediğinden bu metot yalnız tek bir bool okur.
+        """
+        init_now = bool(pygame.font.get_init())
+        if init_now != self._font_module_was_init:
+            self.font_cache.clear()
+            self._script_font_cache.clear()
+            _cjk_fallback_font_cache.clear()
+            self._font_module_was_init = init_now
+
+    _font_module_was_init = False
+
     def _get_latin_font(self, scaled_size: int, effective_bold: bool) -> pygame.font.Font:
         """Varsayılan latin fontunu döndür (CJK hibrit sistem için)."""
+        self._sync_font_module_epoch()
         if not pygame.font.get_init():
             pygame.font.init()
         key = (scaled_size, effective_bold, '__latin__')
@@ -648,6 +669,7 @@ class RetroStyle:
         return self.font_cache[key]
 
     def get_font(self, size: int, bold: bool = True) -> pygame.font.Font:
+        self._sync_font_module_epoch()
         if not pygame.font.get_init():
             pygame.font.init()
         scaled_size = self._apply_font_scale(size)
@@ -677,6 +699,7 @@ class RetroStyle:
 
     def get_mono_font(self, size: int, bold: bool = True) -> pygame.font.Font:
         """Sayısal sayaçlar vb. için eş aralıklı (monospaced) font döndür."""
+        self._sync_font_module_epoch()
         if not pygame.font.get_init():
             pygame.font.init()
         # Use a distinguishable key for mono fonts

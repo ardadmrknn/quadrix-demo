@@ -88,6 +88,7 @@ class UIFonts:
     _default_font_path = None  # Latin fallback (CJK hibrit için)
     _size_scale = 1.0
     _force_no_bold = False
+    _font_module_was_init = False
 
     @classmethod
     def _apply_size_scale(cls, size: int) -> int:
@@ -119,7 +120,26 @@ class UIFonts:
             cls._size_scale = 1.0
         cls._force_no_bold = bool(force_no_bold)
         cls.clear_cache()
-    
+
+    @classmethod
+    def _sync_font_module_epoch(cls) -> None:
+        """Font modül init durumundaki değişimde font cache'ini boşalt.
+
+        pygame.font quit edildiğinde VEYA pygame ailesi yeniden import
+        edildiğinde (SDL_ttf tekrar yüklenir) cache'teki Font/HybridFont
+        objelerinin C tarafı referansları geçersiz kalır; tekrar init
+        edilse bile eski Font "Invalid font (font module quit since font
+        created)" fırlatır. Init durumunun her değişimi (True↔False) bu
+        geçişi yakalar ve cache'i temizler. Normal oyun akışında init
+        durumu hiç değişmediğinden burası yalnız tek bir bool okur.
+        (retro_style'taki aynı adlı metodun UIFonts sürümü — bkz.
+        RetroStyle._sync_font_module_epoch.)
+        """
+        init_now = bool(pygame.font.get_init())
+        if init_now != cls._font_module_was_init:
+            cls._cache.clear()
+            cls._font_module_was_init = init_now
+
     @classmethod
     def _get_system_font(cls, scaled_size: int, effective_bold: bool) -> pygame.font.Font:
         """Güvenli system font fallback — pygame default font (freesansbold.ttf) olmadan da çalışır."""
@@ -144,6 +164,9 @@ class UIFonts:
     @classmethod
     def _get_latin_font(cls, scaled_size: int, effective_bold: bool) -> pygame.font.Font:
         """Varsayılan latin fontunu döndür (CJK hibrit sistem için)."""
+        cls._sync_font_module_epoch()
+        if not pygame.font.get_init():
+            pygame.font.init()
         key = (scaled_size, effective_bold, '__latin__')
         if key not in cls._cache:
             font_obj = None
@@ -163,6 +186,9 @@ class UIFonts:
     @classmethod
     def get(cls, size: int, bold: bool = False) -> pygame.font.Font:
         """Font al (cache'li)"""
+        cls._sync_font_module_epoch()
+        if not pygame.font.get_init():
+            pygame.font.init()
         scaled_size = cls._apply_size_scale(size)
         effective_bold = False if cls._force_no_bold else bool(bold)
         key = (scaled_size, effective_bold, cls._font_path, cls._default_font_path)
