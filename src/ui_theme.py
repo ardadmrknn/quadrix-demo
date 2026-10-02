@@ -168,7 +168,7 @@ class UIFonts:
         if not pygame.font.get_init():
             pygame.font.init()
         key = (scaled_size, effective_bold, '__latin__')
-        if key not in cls._cache:
+        if cls._cached_font_if_alive(key) is None:
             font_obj = None
             if cls._default_font_path:
                 try:
@@ -184,6 +184,29 @@ class UIFonts:
         return cls._cache[key]
 
     @classmethod
+    def _cached_font_if_alive(cls, key):
+        """Geçerliyse cache'lenmiş font'u döndür; ölüyse cache'ten düşür.
+
+        FAZ A8: pygame.quit() → re-init döngüsünde (arada get() çağrısı
+        olmadığında init-durum bayrağı dönüşü kaçırır) cache'te ölü Font
+        kalır ve tüketicilere servis edilir — "Invalid font (font module
+        quit since font created)". Cache-hit yolunda tek bir ucuz
+        ``size('')`` probe'ı ile yakalanır; ölü font düşürülüp taze
+        oluşturulur. HybridFont boş metinde latin font'a delegate eder.
+        (retro_style._cached_font_if_alive'ın UIFonts karşılığı — bkz.
+        retro_style aynı adlı metodun docstring'i.)
+        """
+        font_obj = cls._cache.get(key)
+        if font_obj is None:
+            return None
+        try:
+            font_obj.size('')
+        except Exception:
+            cls._cache.pop(key, None)
+            return None
+        return font_obj
+
+    @classmethod
     def get(cls, size: int, bold: bool = False) -> pygame.font.Font:
         """Font al (cache'li)"""
         cls._sync_font_module_epoch()
@@ -192,7 +215,7 @@ class UIFonts:
         scaled_size = cls._apply_size_scale(size)
         effective_bold = False if cls._force_no_bold else bool(bold)
         key = (scaled_size, effective_bold, cls._font_path, cls._default_font_path)
-        if key not in cls._cache:
+        if cls._cached_font_if_alive(key) is None:
             try:
                 if cls._font_path:
                     cjk_font = pygame.font.Font(cls._font_path, scaled_size)
