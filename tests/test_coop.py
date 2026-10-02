@@ -306,6 +306,18 @@ for mod_name, original in _ORIGINAL_MODULES.items():
     else:
         sys.modules[mod_name] = original
 
+# FAZ A6 mayın temizliği: yukarıdaki dörtlü stub pygame ortamında İLK KEZ
+# yüklendi (sys.modules'tan pop edilip stub'la import edildiler) — yani
+# local pygame binding'leri sahte. Bu dosyanın testleri module-level
+# binding'lerle (yukarıdaki import'lar) çalıştığı için burada düşürmek
+# onları etkilemez; ama sonraki test dosyaları (alfabetik collection) bu
+# modülleri sys.modules'te bulup stub binding'le kullanmasın diye hepsi
+# burada düşürülür → sonraki import gerçek pygame ile yeniden yükler.
+# game_over_surfaces: coop_game'in FAZ A6'da eklediği yeni LRU yardımcısı;
+# pygame.Surface çağırdığı için stub binding'i TypeError üretir.
+for mod_name in ('board', 'pieces', 'coop_board', 'coop_game', 'game_over_surfaces'):
+    sys.modules.pop(mod_name, None)
+
 
 # =====================================================================
 # CoopBoard testleri

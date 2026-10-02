@@ -192,10 +192,35 @@ def _purge_leaked_test_stubs(*, skip_pygame: bool = False) -> None:
 
 	# Koleksiyon sınırlarında pygame ailesini tamamen sıfırla.
 	# Bazı test dosyaları module-level stub bıraktığı için sonraki dosyada
-	# gerçek pygame importu "partially initialized" hatasına düşebiliyor.
+	# gerçek pygame importu "partially initialized" hatasına düşebiliyor;
+	# import ortasında hata alan pygame yarım modül olarak sys.modules'te
+	# kalır (gerçek __file__'lı olduğu için koşullu purge onu atamaz) ve
+	# sonraki TÜM dosyaları kırar. Koşulsuz atama bu yarım-modül
+	# kirliliğini keser. Yeniden import maliyeti (pygame.__init__ içindeki
+	# korunmamış os.add_dll_directory çağrısı) sessionstart'taki güvenli
+	# sarmalayıcıyla yutulur.
 	for name in list(sys.modules.keys()):
 		if name == "pygame" or name.startswith("pygame."):
 			sys.modules.pop(name, None)
+
+	# pygame düştü: module-level ``import pygame`` yapmış ağır oyun modülleri
+	# eski pygame objesine bağlı kalır. Bazı test dosyaları (test_coop vb.)
+	# module-level stub kurup CoopGame/PvPGame import zincirini stub
+	# ortamında İLK kez yükletiyor; pvp_game/coop_game gerçek dosyalı
+	# olduğundan _looks_like_test_stub bunları atamaz ve kirlenmiş
+	# binding'leri (_RS retro_style, _Surf Surface) bir sonraki dosyaya
+	# sys.modules üzerinden servis edilir (p0 draw testleri bu yolla düşüyordu).
+	# pygame'in atıldığı her koleksiyon sınırında bunlar da düşürülür; sadece
+	# import eden sonraki dosya gerçek pygame ile taze yükler.
+	for heavy_name in (
+		'board', 'pieces', 'coop_board',
+		'pvp_game', 'src.pvp_game',
+		'coop_game', 'src.coop_game',
+		'online_pvp_game', 'src.online_pvp_game',
+		'online_coop_game', 'src.online_coop_game',
+		'game_over_surfaces', 'src.game_over_surfaces',
+	):
+		sys.modules.pop(heavy_name, None)
 
 
 def _purge_leaked_pygame_stubs() -> None:
@@ -240,6 +265,25 @@ def pytest_sessionstart(session):
 			return _DummyHandle()
 
 		os.add_dll_directory = _dummy_add_dll_directory  # type: ignore[attr-defined]
+
+	# FAZ A6: pygame.__init__ (pygame-ce 2.5.6, L56) os.add_dll_directory'i
+	# korumasız çağırır. conftest her koleksiyon sınırında pygame ailesini
+	# sıfırladığı için pygame defalarca yeniden import edilir; DLL dizin
+	# kayıtları birikince Windows WinError 206 fırlatır, pygame YARIM yüklenip
+	# sys.modules'te kalır ve sonraki tüm dosyalar "partially initialized"
+	# hatasıyla düşer. Çağrıyı güvenli sarmalayalım: hata durumunda None
+	# dönsün — pygame DLL'leri aynı satırın PATH ekleme yolundan bulur.
+	elif not getattr(os.add_dll_directory, "_quadrix_test_safe", False):
+		_real_add_dll_directory = os.add_dll_directory
+
+		def _safe_add_dll_directory(_path):
+			try:
+				return _real_add_dll_directory(_path)
+			except OSError:
+				return None
+
+		_safe_add_dll_directory._quadrix_test_safe = True
+		os.add_dll_directory = _safe_add_dll_directory
 
 	_purge_leaked_test_stubs()
 	_reset_ui_scale_preset()
@@ -308,6 +352,80 @@ def _isolate_test_module_stubs(request: pytest.FixtureRequest):
 		# Eğer localization hala yüklüyse dilini varsayılana sıfırla
 		if 'localization' in sys.modules:
 			sys.modules['localization'].set_language(sys.modules['localization'].DEFAULT_LANGUAGE)
+	except Exception:
+		pass
+
+	# FAZ A6: bazı testler finally içinde pygame.quit() çağırır — font modülü
+	# kapanınca modül-level font cache'lerindeki (UIFonts._cache,
+	# retro_style._cjk_fallback_font_cache, retro_style.retro_style.
+	# font_cache/_script_font_cache, promptfont_support) Font nesneleri
+	# "font module quit since font created" durumuna düşer. Sonraki test
+	# pygame.init() yapsa bile cache'ten dönen ölü Font pygame.error fırlatır
+	# (p0 draw testleri bu mayınla düşüyordu). Modülü sys.modules'tan düşürmek
+	# yetmez: pvp_game/coop_game gibi tüketicilerin module-level import
+	# binding'i eski modül objesine bağlı kalır. Bu yüzden modüller yerinde
+	# kalır, yalnızca cache dict'leri temizlenir — sonraki font isteği
+	# init'li ortamda yeni Font yaratır.
+	try:
+		import pygame as _pygame_probe
+
+		if not _pygame_probe.font.get_init():
+			ui_theme_mod = sys.modules.get('ui_theme') or sys.modules.get('src.ui_theme')
+			if ui_theme_mod is not None:
+				font_cache = getattr(getattr(ui_theme_mod, 'UIFonts', None), '_cache', None)
+				if isinstance(font_cache, dict):
+					font_cache.clear()
+			retro_mod = sys.modules.get('retro_style') or sys.modules.get('src.retro_style')
+			if retro_mod is not None:
+				cjk_cache = getattr(retro_mod, '_cjk_fallback_font_cache', None)
+				if isinstance(cjk_cache, dict):
+					cjk_cache.clear()
+				retro_inst = getattr(retro_mod, 'retro_style', None)
+				for inst_cache_attr in ('font_cache', '_script_font_cache'):
+					inst_cache = getattr(retro_inst, inst_cache_attr, None)
+					if isinstance(inst_cache, dict):
+						inst_cache.clear()
+			pf_mod = sys.modules.get('promptfont_support') or sys.modules.get('src.promptfont_support')
+			if pf_mod is not None:
+				pf_clear = getattr(pf_mod, 'clear_promptfont_cache', None)
+				if callable(pf_clear):
+					pf_clear()
+	except Exception:
+		pass
+
+	# FAZ A6: pvp/coop/online game-over draw'ları ve LRU yardımcıları
+	# (game_over_surfaces) stub pygame ile import edilmişse binding'leri
+	# süreç boyunca kirlenir; her test sonunda düşürülür, sonraki ihtiyaçta
+	# gerçek pygame ile taze yüklenir. DİKKAT: game/menu/
+	# settings_screen_tabbed/game_modes_extra v2 conftest'inde düşürülse de
+	# demo tabanında HİÇ düşürülmemiştir — demo testleri (ör.
+	# test_game_solid_alpha...) monkeypatch('game.xxx') deseniyle modülün
+	# testler arasında sys.modules'ta kalmasına güvenir; modül düşünce
+	# monkeypatch yeni bir game objesine patch atar, module-level Game
+	# binding'i eski objenin global'inden okur ve patch görünmez olur.
+	# Liste bu yüzden yalnız FAZ A6 gerekçeli modüllere sınırlıdır
+	# (v2-demo doğal farkı).
+	for dep in (
+		'pvp_game', 'src.pvp_game',
+		'coop_game', 'src.coop_game',
+		'online_pvp_game', 'src.online_pvp_game',
+		'online_coop_game', 'src.online_coop_game',
+		'game_over_surfaces', 'src.game_over_surfaces',
+	):
+		sys.modules.pop(dep, None)
+
+	# Windows'ta PATH şişmesini önle (pygame'in tekrar eden importlarda PATH'i şişirmesini engelle)
+	try:
+		path_env = os.environ.get("PATH", "")
+		if path_env:
+			parts = path_env.split(";")
+			seen = set()
+			unique_parts = []
+			for p in parts:
+				if p and p not in seen:
+					seen.add(p)
+					unique_parts.append(p)
+			os.environ["PATH"] = ";".join(unique_parts)
 	except Exception:
 		pass
 
