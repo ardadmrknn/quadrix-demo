@@ -18,6 +18,9 @@ Kapsam:
    - settings_manager.set çağrılmalı, 'quit_game' dönmeli
 5. Onay modalı açıkken mouse click – Hayır butonuna:
    - settings_manager.set çağrılmamalı, None dönmeli
+6. Onay paneli çizimi: başlık ve yöne göre soru metni render edilmeli
+   (önc-var hata: panel gövdesi tamamen metinsizdi); localization
+   anahtarları (display_mode_confirm_*) en az tr+en tanımlı olmalı
 """
 
 from __future__ import annotations
@@ -60,7 +63,34 @@ def _install_stubs(monkeypatch):
                 setattr(self, k, v)
 
     pygame_stub.Rect = Rect
-    pygame_stub.Surface = type("Surface", (), {"__init__": lambda s, *a, **k: None})
+
+    class StubSurface:
+        """Çizim testleri için minimal Surface (fill/blit/get_size/get_rect)."""
+
+        def __init__(self, *a, **k):
+            size = a[0] if a else None
+            if isinstance(size, (tuple, list)) and len(size) >= 2:
+                self._size = (int(size[0]), int(size[1]))
+            elif isinstance(size, int) and len(a) >= 2 and isinstance(a[1], int):
+                self._size = (int(size), int(a[1]))
+            else:
+                self._size = (1920, 1080)
+
+        def fill(self, *a, **k):
+            return None
+
+        def blit(self, *a, **k):
+            return None
+
+        def get_size(self):
+            return self._size
+
+        def get_rect(self, **kw):
+            return Rect(0, 0, self._size[0], self._size[1])
+
+    pygame_stub.Surface = StubSurface
+    pygame_stub.SRCALPHA = 0x00010000
+    pygame_stub.draw = types.SimpleNamespace(rect=lambda *a, **k: None, line=lambda *a, **k: None)
     pygame_stub.KEYDOWN = 768
     pygame_stub.MOUSEBUTTONDOWN = 1025
     pygame_stub.K_ESCAPE = 27
@@ -99,6 +129,7 @@ def _install_stubs(monkeypatch):
         get_fitting_font=lambda *a, **k: types.SimpleNamespace(render=lambda *a, **k: types.SimpleNamespace(get_height=lambda: 20, get_width=lambda: 80, get_rect=lambda **kw: pygame_stub.Rect())),
         draw_glass_panel=lambda *a, **k: None,
         draw_wrapped_text=lambda *a, **k: None,
+        draw_button=lambda *a, **k: None,
     )
     retro_style_stub = types.ModuleType("retro_style")
     retro_style_stub.retro_style = retro_style_obj
@@ -395,3 +426,91 @@ def test_handle_input_intercepts_all_events_when_modal_active(monkeypatch):
     result = screen.handle_input(_esc_event(mod))
     assert result is None
     assert screen._display_mode_confirm_active is False
+
+
+# ---------------------------------------------------------------------------
+# Test 7+: Onay paneli çizimi – başlık ve soru metni render edilmeli
+# ---------------------------------------------------------------------------
+
+def _make_draw_screen(mod, target_fullscreen):
+    """_draw_display_mode_confirm_panel için minimal instance hazırla."""
+    screen, _calls = _make_screen(mod, initial_fullscreen=True)
+    screen._display_mode_confirm_target_fullscreen = target_fullscreen
+
+    blits = []
+
+    class FakeScreenSurface:
+        def get_size(self):
+            return (1920, 1080)
+
+        def blit(self, surf, pos):
+            blits.append((surf, pos))
+
+    rendered = []
+
+    def fake_fit_font(text, size, max_w, bold=False, minimum=10):
+        import pygame
+
+        class _RecordingFont:
+            def render(self, txt, antialias, color):
+                rendered.append(txt)
+                return types.SimpleNamespace(
+                    get_rect=lambda **kw: pygame.Rect(0, 0, 120, 24)
+                )
+
+        return _RecordingFont()
+
+    screen.screen = FakeScreenSurface()
+    screen._s = lambda value, minimum=1: max(int(value), int(minimum))
+    screen._apply_responsive_metrics = lambda: None
+    screen._get_cached_dim_overlay = lambda w, h, alpha: types.SimpleNamespace(
+        fill=lambda *a, **k: None
+    )
+    screen._fit_font = fake_fit_font
+    return screen, rendered, blits
+
+
+def test_confirm_panel_renders_title_and_question_windowed(monkeypatch):
+    """Pencere moduna geçiş: panel gövdesi başlık + doğru soru metnini göstermeli."""
+    mod = _import_mod(monkeypatch)
+    screen, rendered, blits = _make_draw_screen(mod, target_fullscreen=False)
+
+    screen._draw_display_mode_confirm_panel()
+
+    assert 'Görüntü Modu Değişikliği' in rendered, f"Başlık render edilmeli; rendered={rendered}"
+    assert 'Tam ekrandan pencere moduna geçilsin mi?' in rendered, f"Soru metni render edilmeli; rendered={rendered}"
+    assert 'Pencereli moddan tam ekrana geçilsin mi?' not in rendered, f"Yanlış yön metni; rendered={rendered}"
+    assert len(blits) >= 3, f"Karartma + başlık + soru blit edilmeli; blit sayısı={len(blits)}"
+
+
+def test_confirm_panel_renders_title_and_question_fullscreen(monkeypatch):
+    """Tam ekrana geçiş: yön sorusu fullscreen varyantı kullanmalı."""
+    mod = _import_mod(monkeypatch)
+    screen, rendered, blits = _make_draw_screen(mod, target_fullscreen=True)
+
+    screen._draw_display_mode_confirm_panel()
+
+    assert 'Görüntü Modu Değişikliği' in rendered, f"rendered={rendered}"
+    assert 'Pencereli moddan tam ekrana geçilsin mi?' in rendered, f"rendered={rendered}"
+    assert 'Tam ekrandan pencere moduna geçilsin mi?' not in rendered, f"Yanlış yön metni; rendered={rendered}"
+    assert len(blits) >= 3, f"blit sayısı={len(blits)}"
+
+
+def test_display_mode_confirm_localization_keys_defined():
+    """Yeni anahtarlar localization.py'de en az tr+en tanımlı olmalı."""
+    import os
+
+    src_dir = os.path.join(os.path.dirname(__file__), "src")
+    if src_dir not in sys.path:
+        sys.path.insert(0, src_dir)
+    import localization
+
+    for key in (
+        'display_mode_confirm_title',
+        'display_mode_confirm_to_windowed',
+        'display_mode_confirm_to_fullscreen',
+    ):
+        entry = localization.TRANSLATIONS.get(key)
+        assert isinstance(entry, dict), f"{key} TRANSLATIONS içinde tanımlı olmalı"
+        assert entry.get('tr'), f"{key} için 'tr' çevirisi eksik"
+        assert entry.get('en'), f"{key} için 'en' çevirisi eksik"
