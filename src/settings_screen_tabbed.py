@@ -597,6 +597,12 @@ class TabbedSettingsScreen:
         self._panel_shadow_cache = SurfaceLRUCache(16)
         self._tab_surf_cache = SurfaceLRUCache(32)
         self._ui_cache_sig = None
+        # FAZ A4 (v2 paritesi): surface cache anahtarlarının kuşağı. Demo'da
+        # runtime preset değişimi yok (preset dalı no-op), ancak draw imza
+        # değişimi (boyut/tema/dil/alfa/ölçek) cache'leri temizlerken kuşak
+        # da artar — anahtar bileşenleri aynı kalsa bile bayat girişlerin
+        # ilk karede hit almasını kuşak bileşeni kesinleştirir.
+        self._ui_cache_generation = 0
 
         # VSync restart prompt
         self._vsync_prompt_active = False
@@ -3622,14 +3628,22 @@ class TabbedSettingsScreen:
     # Çizim
     # ------------------------------------------------------------------
 
+    def _bump_ui_cache_generation(self) -> None:
+        """FAZ A4 (v2 paritesi): cache kuşağını artır ve yüzey cache'lerini temizle.
+
+        Anahtarlarına kuşak bileşeni taşıyan cache'ler için clear + anahtar
+        değişimi çifte güvencedir: aynı anahtar bileşenleriyle (boyut/tema)
+        üretilmiş bayat yüzeyler, kuşak artışından sonra hit alamaz.
+        """
+        self._ui_cache_generation = int(getattr(self, '_ui_cache_generation', 0)) + 1
+        for cache_name in ('_panel_bg_cache', '_panel_shadow_cache', '_tab_surf_cache'):
+            cache = getattr(self, cache_name, None)
+            if cache is not None:
+                cache.clear()
+
     def _clear_ui_caches(self) -> None:
-        """Panel ve sekme yüzey cache'lerini temizle."""
-        if hasattr(self, '_panel_bg_cache') and self._panel_bg_cache is not None:
-            self._panel_bg_cache.clear()
-        if hasattr(self, '_panel_shadow_cache') and self._panel_shadow_cache is not None:
-            self._panel_shadow_cache.clear()
-        if hasattr(self, '_tab_surf_cache') and self._tab_surf_cache is not None:
-            self._tab_surf_cache.clear()
+        """Panel ve sekme yüzey cache'lerini temizle + kuşağı artır (FAZ A4)."""
+        self._bump_ui_cache_generation()
 
     def draw(self) -> None:
         self._apply_responsive_metrics()
@@ -3704,7 +3718,7 @@ class TabbedSettingsScreen:
         # Gölge
         shadow_size = (rect.width + shadow_pad, rect.height + shadow_pad)
         shadow_alpha = _sma(60)
-        shadow_key = (shadow_size, shadow_radius, shadow_alpha)
+        shadow_key = (int(getattr(self, '_ui_cache_generation', 0)), shadow_size, shadow_radius, shadow_alpha)
         shadow = self._panel_shadow_cache.get(shadow_key)
         if shadow is None:
             shadow = pygame.Surface(shadow_size, pygame.SRCALPHA)
@@ -3717,7 +3731,7 @@ class TabbedSettingsScreen:
         panel_alpha = _sma(235)
         scale_val = getattr(self, '_ui_scale_current', 1.0)
         theme_val = getattr(getattr(self, 'theme_manager', None), 'current_theme', 'default')
-        panel_key = (rect.size, highlight_depth, panel_alpha, scale_val, theme_val)
+        panel_key = (int(getattr(self, '_ui_cache_generation', 0)), rect.size, highlight_depth, panel_alpha, scale_val, theme_val)
         panel_surf = self._panel_bg_cache.get(panel_key)
         if panel_surf is None:
             panel_surf = pygame.Surface(rect.size, pygame.SRCALPHA)
@@ -3781,7 +3795,7 @@ class TabbedSettingsScreen:
             _sma = _scale_menu_alpha
             fill_color = (35, 55, 90, _sma(220)) if is_active else (20, 28, 48, _sma(160))
             scale_val = getattr(self, '_ui_scale_current', 1.0)
-            tab_key = (tab_rect.size, is_active, fill_color, scale_val)
+            tab_key = (int(getattr(self, '_ui_cache_generation', 0)), tab_rect.size, is_active, fill_color, scale_val)
             tab_surf = self._tab_surf_cache.get(tab_key)
             if tab_surf is None:
                 tab_surf = pygame.Surface(tab_rect.size, pygame.SRCALPHA)

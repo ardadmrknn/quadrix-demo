@@ -2083,10 +2083,6 @@ def setup_virtual_canvas(
     if real_surface is None or not hasattr(real_surface, 'get_size'):
         return real_surface
 
-    # FAZ A1: kurulum yolu başladı (SDL2 pass-through bu noktaya ulaşamaz;
-    # o dalda sdl2_overlay kendi ACTIVE durumunu yönetir).
-    _set_canvas_state(CANVAS_STATE_PREPARING, 'software_canvas')
-
     real_w, real_h = real_surface.get_size()
 
     # Canvas boyutunu hesapla
@@ -2103,6 +2099,13 @@ def setup_virtual_canvas(
         _set_canvas_state(CANVAS_STATE_FALLBACK, 'software_canvas')
         bump_geometry_generation()
         return real_surface
+
+    # FAZ A4 (v2 paritesi): PREPARING pass-through dalının SONRASına
+    # taşındı. Önceki yerinde pass-through, PREPARING iken
+    # _teardown_virtual_canvas çağırıyordu (preparing→tearing_down
+    # yasadışı geçiş; A1'in toleranslı zorla-alması yutuyordu ama
+    # [CanvasState] teşhisini kirletiyordu).
+    _set_canvas_state(CANVAS_STATE_PREPARING, 'software_canvas')
 
     # Canvas surface oluştur
     try:
@@ -2157,7 +2160,19 @@ def rebuild_virtual_canvas(multiplier: float | None = None) -> pygame.Surface | 
     Returns:
         Yeni canvas surface veya None (overlay modunda).
     """
-    if _real_display_surface is None:
+    real_surface = _real_display_surface
+    if real_surface is None:
+        # FAZ A4 (v2 paritesi, S2): tuval söküldükten sonra yeni bir
+        # büyütme isteği gelirse _real_display_surface None'dır; güncel
+        # display surface'ını kullan. Aksi halde ikinci kurulum isteği
+        # HİÇ tuval kuramazdı. Canvas aktifken bu dala düşülmez
+        # (_real_display_surface doludur); None olduğu iki durumda da
+        # get_surface gerçek display'i döndürür.
+        try:
+            real_surface = pygame.display.get_surface()
+        except Exception:
+            real_surface = None
+    if real_surface is None or not hasattr(real_surface, 'get_size'):
         return None
 
     if multiplier is None:
@@ -2167,12 +2182,29 @@ def rebuild_virtual_canvas(multiplier: float | None = None) -> pygame.Surface | 
         except Exception:
             multiplier = 1.0
 
-    return setup_virtual_canvas(_real_display_surface, multiplier)
+    return setup_virtual_canvas(real_surface, multiplier)
 
 
 def _teardown_virtual_canvas() -> None:
     """Virtual canvas monkey-patch'lerini geri al."""
     global _software_canvas, _real_display_surface, _software_scale_active, _virtual_blit_rect
+
+    # FAZ A4 (v2 paritesi): sökülecek bir şey yoksa sessiz erken çık —
+    # INACTIVE'tan TEARING_DOWN'a geçiş yasadışıdır ve toleranslı
+    # zorla-alma bunu yutarken [CanvasState] teşhisini kirletirdi.
+    # Patch'ler bizimse tam yol işletilir.
+    try:
+        _nothing_to_teardown = (
+            _canvas_state == CANVAS_STATE_INACTIVE
+            and not _software_scale_active
+            and _software_canvas is None
+            and _real_display_surface is None
+            and pygame.display.get_surface is not _software_get_surface
+        )
+    except Exception:
+        _nothing_to_teardown = False
+    if _nothing_to_teardown:
+        return
 
     # FAZ A1: söküm başladı; sonda INACTIVE'a döner + kuşak artar (geometri
     # "canvas yok" olarak değişti — bayat snapshot'lar damgalanır).

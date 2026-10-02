@@ -3,29 +3,123 @@
 - Ayarlar paneli arka plan / gölge cache hit ve invalidation
 - Sekme (tab) yüzey cache'i (aktif/pasif ayrımı)
 - ScreenTransition wipe efekti yeniden kullanılabilir tampon ve ghosting koruması
+
+Modüller module-level import yerine hermetik module-fixture ile yüklenir
+(v2 tests/test_settings_preset_transition.py kalıbı, FAZ A4): koleksiyon
+anında önceki dosyalar GERÇEK retro_style modülünün `retro_style`
+nititeliğini kalıcı stub'la değiştirebiliyor (ör.
+test_campaign_debug_unlock_all modül seviyesinde
+`sys.modules['retro_style'].retro_style = SimpleNamespace(get_font=FakeFont)`
+yazar) — sonradan import edilen settings_screen_tabbed bu stub'ı bağlayınca
+_draw_tab_bar stub Font'tan dönen _Surf'ü gerçek Surface'e blit'lemeye
+çalışıp TypeError veriyor. Hermetik pop + taze import bu sızıntıyı keser.
 """
 import os
 import sys
+
 import pygame
 import pytest
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src')))
-from retro_style import retro_style
-from settings_screen_tabbed import TabbedSettingsScreen
-from settings_manager import SettingsManager
-from background_effects import ScreenTransition
+
+def _ensure_src_on_path() -> None:
+    repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+    src_path = os.path.join(repo_root, 'src')
+    # abspath zorunlu: 'tests\..\src' yazımı modül __file__ değerine sızar
+    # ve conftest'in _looks_like_test_stub denetimi ('/tests/' alt dizin
+    # araması) GERÇEK modülü stub sanıp sys.modules'ten söker. Girdiyi
+    # ayrıca koşulsuz ÖNE al: başka test dosyalarının bıraktığı normalize
+    # edilmemiş 'tests\..\src' girdisi öndeyse importlar ondan çözümlenir
+    # ve aynı yanlış pozitife düşer.
+    if src_path in sys.path:
+        sys.path.remove(src_path)
+    sys.path.insert(0, src_path)
 
 
 @pytest.fixture(scope="module", autouse=True)
-def init_pygame():
+def live_env():
+    """Gerçek modülleri hermetik yükle; pygame'i dummy sürücüyle hazırla.
+
+    Test gövdeleri değişmeden kalsın diye yüklenen gerçek nesneler modül
+    global'lerine yazılır (retro_style, TabbedSettingsScreen,
+    SettingsManager, ScreenTransition). Koleksiyon anında bu adlar
+    kirletici dosyaların sys.modules'a bıraktığı stub kopyalara
+    bağlanabiliyordu; live_env bu adları her testten önce taze bağlar.
+    """
     os.environ["SDL_VIDEODRIVER"] = "dummy"
+    _ensure_src_on_path()
+
+    _module_keys = [
+        'settings_screen_tabbed', 'constants', 'retro_style',
+        'platform_utils', 'background_effects', 'localization',
+        'ui_language_profile', 'menu', 'gamepad_manager',
+        'promptfont_support', 'ui_scaling', 'settings_manager',
+        'text_cache', 'surface_lru_cache', 'ui_theme',
+    ]
+    # bare VE 'src.' anahtarlarını birlikte temizle: conftest'in
+    # _sync_sys_modules_aliases'ı src.* kalıntısını bare anahtarın
+    # üzerine geri yazabilir (conftest.py:36-40).
+    _module_lookup_keys = [
+        key
+        for mod in _module_keys
+        for key in (mod, f'src.{mod}')
+    ]
+    _pygame_leaked = sys.modules.get('pygame')
+    if _pygame_leaked is not pygame:
+        sys.modules['pygame'] = pygame
+
+    _original_modules = {key: sys.modules.get(key) for key in _module_lookup_keys}
+    for key in _module_lookup_keys:
+        sys.modules.pop(key, None)
+
+    if not hasattr(pygame, 'K_h'):
+        pytest.skip('pygame stub environment')
+
     pygame.init()
     if not pygame.display.get_init():
         pygame.display.init()
     if not pygame.font.get_init():
         pygame.font.init()
+
+    import retro_style as rs_mod
+    import settings_screen_tabbed as sst_mod
+    from settings_manager import SettingsManager
+    from background_effects import ScreenTransition
+
+    # Hermetiklik sözleşmesi: sst module seviyesinde `from retro_style
+    # import retro_style` bağlar — retro_style kaydı bu fixture'ın taze
+    # import ettiği modüle işaret etmeli (kirleticinin singleton'u
+    # FakeFont stub'ıyla değiştirdiği eski kopya OLMAZ).
+    assert sys.modules['settings_screen_tabbed'] is sst_mod
+    assert sys.modules['retro_style'] is rs_mod
+
+    # Font zinciri sözleşmesi: _fit_font → get_fitting_font → render
+    # gerçek pygame Surface üretmeli (stub zincir _Surf üretir).
+    _probe_font = rs_mod.retro_style.get_fitting_font('SÖZLEŞME', 18, 200)
+    _probe_surf = _probe_font.render('SÖZLEŞME', True, (255, 255, 255))
+    assert isinstance(_probe_surf, pygame.Surface)
+
+    _g = globals()
+    _g['retro_style'] = rs_mod.retro_style
+    _g['TabbedSettingsScreen'] = sst_mod.TabbedSettingsScreen
+    _g['SettingsManager'] = SettingsManager
+    _g['ScreenTransition'] = ScreenTransition
+
     yield
+
+    # Orijinal init_pygame teardown davranışı: modül bittiğinde pygame'i
+    # kapat (sonraki dosyalar kendi init'lerini çağırır).
     pygame.quit()
+
+    # Sonraki test dosyalarına temiz durum bırak: orijinal kayıtları geri koy.
+    for _key, _original in _original_modules.items():
+        if _original is not None:
+            sys.modules[_key] = _original
+        else:
+            sys.modules.pop(_key, None)
+    if _pygame_leaked is not None and _pygame_leaked is not pygame:
+        sys.modules['pygame'] = _pygame_leaked
+    elif _pygame_leaked is None:
+        sys.modules.pop('pygame', None)
 
 
 def test_retro_title_underline_cache_hit():
@@ -136,8 +230,9 @@ def test_settings_tab_active_vs_inactive_cache():
     active_surfaces = []
     inactive_surfaces = []
     for key, surf in tabbed._tab_surf_cache._cache.items():
-        # key: (tab_rect.size, is_active, fill_color, scale_val)
-        is_active = key[1]
+        # key: (kuşak, tab_rect.size, is_active, fill_color, scale_val)
+        # FAZ A4: kuşak bileşeni öne eklendi — is_active artık key[2].
+        is_active = key[2]
         if is_active:
             active_surfaces.append(surf)
         else:
