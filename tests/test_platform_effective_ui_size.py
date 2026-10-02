@@ -3,7 +3,9 @@
 Faz 1 kapsamı:
 - display surface için logical window size okunur
 - offscreen surface'ler yanlışlıkla display DPI mantığına sokulmaz
-- Windows effective UI size, sistem DPI ölçeğine göre normalize edilir
+- Windows eff, çizim hedefi surface sözleşmesiyle döner (FAZ A1 / K1-A:
+  pencereli DPI bölmesi kaldırıldı — S11; eski testler bölme davranışını
+  assert ediyordu, bu dosya bilinçli olarak yeni sözleşmeye güncellendi)
 """
 
 from __future__ import annotations
@@ -171,14 +173,20 @@ class TestGetEffectiveUiSize(unittest.TestCase):
     def tearDown(self):
         _force_linux(platform_utils)
 
-    def test_windows_display_surface_is_normalized_by_scale_factor(self):
+    def test_windows_display_surface_keeps_canvas_size_under_dpi_scale(self):
+        """FAZ A1 / K1-A (S11): DPI bölmesi kalktı; eff = surface boyutu.
+
+        Eski sözleşme (Faz 1) burada (1707, 1107) bekliyordu — bölme, oyun
+        alanı ile game-over katmanını (eff × DPI projeksiyonu) tam DPI kadar
+        ayırıyordu. Yeni sözleşme: eff = çizim hedefi koordinat uzayı.
+        """
         _force_windows(platform_utils)
         display_surface = platform_utils.pygame.Surface((2560, 1660))
 
         with patch.object(platform_utils.pygame.display, 'get_surface', return_value=display_surface, create=True), \
              patch.object(platform_utils.pygame.display, 'get_window_size', return_value=(2560, 1660), create=True), \
              patch.object(platform_utils, '_get_windows_window_scale_factor', return_value=1.5):
-            self.assertEqual(platform_utils.get_effective_ui_size(display_surface), (1707, 1107))
+            self.assertEqual(platform_utils.get_effective_ui_size(display_surface), (2560, 1660))
 
     def test_windows_offscreen_surface_is_not_normalized(self):
         _force_windows(platform_utils)
@@ -190,16 +198,29 @@ class TestGetEffectiveUiSize(unittest.TestCase):
              patch.object(platform_utils, '_get_windows_window_scale_factor', return_value=1.5):
             self.assertEqual(platform_utils.get_effective_ui_size(offscreen_surface), (1200, 800))
 
-    def test_windows_does_not_double_normalize_when_window_size_is_already_logical(self):
+    def test_windows_surface_wins_over_logical_window_size(self):
+        """FAZ A1 / K1-A (S11): SDL logical points yalnız rapor; eff = surface.
+
+        Pencere logical boyutu (1707, 1107) ile çizim surface'ı (2560, 1660)
+        ayrıştığında (SCALED/Retina benzeri) çizim uzayı surface'dır; UI o
+        uzayda konumlanır. Eski test bölme yapılMAdığını (1707, 1107) assert
+        ediyordu; yeni sözleşme surface'ı esas alır.
+        """
         _force_windows(platform_utils)
         display_surface = platform_utils.pygame.Surface((2560, 1660))
 
         with patch.object(platform_utils.pygame.display, 'get_surface', return_value=display_surface, create=True), \
              patch.object(platform_utils.pygame.display, 'get_window_size', return_value=(1707, 1107), create=True), \
              patch.object(platform_utils, '_get_windows_window_scale_factor', return_value=1.5):
-            self.assertEqual(platform_utils.get_effective_ui_size(display_surface), (1707, 1107))
+            self.assertEqual(platform_utils.get_effective_ui_size(display_surface), (2560, 1660))
 
     def test_explicit_display_surface_flag_supports_stale_display_reference(self):
+        """FAZ A1 / K1-A: bayat referansta da eff = aktif surface sözleşmesi.
+
+        display_surface=True çağrı sözleşmesi korunur; çözümleme aktif display
+        surface'ını (2560, 1660) esas alır — eski test (1707, 1107) bölme
+        dışı bırakmayı assert ediyordu.
+        """
         _force_windows(platform_utils)
         active_display_surface = platform_utils.pygame.Surface((2560, 1660))
         stale_display_surface = platform_utils.pygame.Surface((2560, 1660))
@@ -209,7 +230,7 @@ class TestGetEffectiveUiSize(unittest.TestCase):
              patch.object(platform_utils, '_get_windows_window_scale_factor', return_value=1.5):
             self.assertEqual(
                 platform_utils.get_effective_ui_size(stale_display_surface, display_surface=True),
-                (1707, 1107),
+                (2560, 1660),
             )
 
     def test_macos_prefers_logical_window_points(self):

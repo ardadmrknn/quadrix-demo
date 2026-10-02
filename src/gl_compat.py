@@ -138,6 +138,16 @@ _original_create_display = None  # set during first gl_overlay_setup
 _create_display_wrappers: dict[object, object] = {}
 _supports_bgra_upload: bool | None = None
 
+
+def is_active() -> bool:
+    """GL overlay pipeline şu an kurulu mu? (FAZ A1 / K2, BLN-006).
+
+    sdl2_overlay.is_active() deseninin GL kardeşi: platform_utils ve testler
+    gl yolunu import etmeden yoklayabilir. platform_utils._gl_overlay_active()
+    bu erişimciyi kullanır (son çare: `_active` alan okuması).
+    """
+    return _active
+
 # GPU senkronizasyon modu (DWM/OBS/Steam capture'ın taze kareyi görmesi için).
 # - 'dwm'   : glFlush (swap öncesi) + SwapBuffers + glFinish + DwmFlush (swap sonrası).
 #             En doğru yakalama; DWM kompozisyonu beklenir, PrintScreen/Snipping/Window
@@ -763,6 +773,15 @@ def gl_overlay_setup(display_surface: pygame.Surface) -> pygame.Surface:
     pygame.display.update = _gl_update
     pygame.display.get_surface = _gl_get_surface
     _active = True
+
+    # FAZ A1: GL backend yayında — platform_utils'e durum + geometri kuşağı
+    # bildir (döngüsel import yasağı: sys.modules yoklaması, çift anahtarlı).
+    try:
+        _pu = sys.modules.get('platform_utils') or sys.modules.get('src.platform_utils')
+        if _pu is not None and hasattr(_pu, '_notify_canvas_backend_active'):
+            _pu._notify_canvas_backend_active('gl_compat')
+    except Exception:
+        pass
 
     # Patch platform_utils.create_display so that dynamic imports that access
     # the module attribute can still reapply GL when they rebuild the display.

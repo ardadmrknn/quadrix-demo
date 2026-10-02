@@ -1207,6 +1207,15 @@ def setup(display_surface: pygame.Surface | None = None) -> pygame.Surface | Non
     _refresh_present_rect()
     _active = True
 
+    # FAZ A1: SDL2 backend yayında — platform_utils'e durum + geometri kuşağı
+    # bildir (döngüsel import yasağı: sys.modules yoklaması, çift anahtarlı).
+    try:
+        _pu = sys.modules.get('platform_utils') or sys.modules.get('src.platform_utils')
+        if _pu is not None and hasattr(_pu, '_notify_canvas_backend_active'):
+            _pu._notify_canvas_backend_active('sdl2_overlay')
+    except Exception:
+        pass
+
     # Monkey-patch present yolu (gl_compat ile aynı sözleşme).
     try:
         cur_flip = pygame.display.flip
@@ -1304,6 +1313,14 @@ def teardown() -> None:
     except Exception:
         pass
     _active = False
+
+    # FAZ A1: SDL2 backend kapandı — platform_utils'e durum + kuşak bildir.
+    try:
+        _pu = sys.modules.get('platform_utils') or sys.modules.get('src.platform_utils')
+        if _pu is not None and hasattr(_pu, '_notify_canvas_backend_inactive'):
+            _pu._notify_canvas_backend_inactive('sdl2_overlay')
+    except Exception:
+        pass
 
     for tex in _cursor_textures_cache.values():
         try:

@@ -8,6 +8,7 @@ import platform
 import subprocess
 import sys
 import time
+from typing import NamedTuple
 
 import pygame
 
@@ -762,6 +763,11 @@ def get_window_logical_size(
     if sdl2_size is not None:
         return sdl2_size
 
+    # FAZ A1 / madde (d): virtual canvas aktifken canvas boyutu = UI'in
+    # koordinat uzayı (v2 paritesi — demo'da bu early-return eksikti).
+    if _software_scale_active and _software_canvas is not None:
+        return _software_canvas.get_size()
+
     target_surface, _active_display_surface, is_display_surface = _resolve_display_surface_context(
         screen,
         display_surface,
@@ -896,11 +902,17 @@ def get_effective_ui_size(
     Render surfaces still use physical surface sizes. This helper only provides
     a more human-facing size baseline for font/panel/layout scaling.
     """
+    # FAZ A1 / madde (d): virtual canvas aktifken canvas boyutu = UI koordinat
+    # uzayı (v2 paritesi — demo'da bu early-return eksikti). Canvas üstünde
+    # eff = canvas boyutu; SDL2 rejimi zaten yukarıda yakalandı.
+    if _software_scale_active and _software_canvas is not None:
+        return _software_canvas.get_size()
+
     # SDL2 overlay aktifken koordinat uzayı zaten sabit tuvaldir; eff = tuval
     # (EKS-001 / RN-002; v2'deki software-canvas early-return'unun SDL2
     # kardeşi olan bu dal demoda yalnızca SDL2 rejiminde çalışır). Bu
-    # early-return, Windows DPI bölme dalını (aşağıda) SDL2 rejiminde
-    # güvenle atlatır (RN-006 / K13): eff = tuval boyutudur; %150 ölçekleme
+    # early-return, Windows DPI dalını (aşağıda) SDL2 rejiminde güvenle
+    # atlatır (RN-006 / K13): eff = tuval boyutudur; %150 ölçekleme
     # D3D11 sunum katmanının işidir, logical ölçeğin değil.
     sdl2_size = _sdl2_overlay_canvas_size()
     if sdl2_size is not None:
@@ -919,26 +931,19 @@ def get_effective_ui_size(
         return _coerce_positive_size(width, height)
 
     if IS_WINDOWS:
-        active_surf = active_display_surface or target_surface
-        is_fs = False
-        if active_surf is not None:
-            try:
-                is_fs = bool(active_surf.get_flags() & (pygame.FULLSCREEN | pygame.NOFRAME))
-            except Exception:
-                pass
-        
-        # Tam ekran veya borderless moddayken DPI ölçeğine bölerek çözünürlüğü küçültme
-        if not is_fs:
-            surface_size = _get_surface_size(active_surf)
-            if surface_size is not None:
-                surf_w, surf_h = surface_size
-                # SDL/Pygame bazı build'lerde get_window_size ile logical boyutu zaten
-                # döndürebilir. Bu durumda ikinci kez DPI normalizasyonu yapma.
-                if abs(int(surf_w) - int(width)) <= 1 and abs(int(surf_h) - int(height)) <= 1:
-                    scale_factor = _get_windows_window_scale_factor()
-                    if scale_factor > 1.01:
-                        width = int(round(float(width) / float(scale_factor)))
-                        height = int(round(float(height) / float(scale_factor)))
+        # FAZ A1 / K1-A (S11): Windows pencereli DPI bölmesi kaldırıldı.
+        # eff = çizim hedefi surface'unun koordinat uzayı boyutu (tuval
+        # sözleşmesi; kılavuz D.4.1: "DPI canvas/koordinat uzayı boyutunu
+        # değiştirmez"). Eski bölme, oyun alanını (_ui_scale, eff-tabanlı)
+        # game-over katmanından (get_projected_effective_scale = eff × DPI)
+        # tam DPI ölçeği kadar ayırıyordu (S11: %125'te 0.8x/1.0x ayrışma).
+        # Canvas rejimleri yukarıdaki early-return'lara takıldığı için bu
+        # bloğa hiç ulaşamaz; burası yalnız düz pygame pencere rejimidir ve
+        # orada eff = gerçek çizim yüzeyinin boyutudur, projeksiyon çarpanı
+        # 1.0'dır (dpi_scale yalnız bilgi alanı olarak raporlanır).
+        surface_size = _get_surface_size(active_display_surface or target_surface)
+        if surface_size is not None:
+            width, height = surface_size
 
     return _coerce_positive_size(width, height)
 
@@ -1742,6 +1747,294 @@ def _calc_virtual_canvas_size(
     return (v_w, v_h)
 
 
+# ---------------------------------------------------------------------------
+# FAZ A1: Canvas durum makinesi + geometri kuşağı (generation)
+# ---------------------------------------------------------------------------
+# Gorsel_Olcek_Sorunlari_Cozum_Plani.md FAZ A1: her render backend'inin
+# (software canvas / SDL2 overlay / GL overlay / düz pygame) yaşam döngüsü tek
+# duruma ve tek sayaca bağlanır. Ekranlar layout snapshot'larını kuşak
+# numarasıyla damgalar; kuşak değiştiğinde bayat snapshot'ı geçersiz sayıp
+# yeniden kurar (S2/S3'ün kökü: 100→125→100 rect döngüsü + bayat cache).
+# ---------------------------------------------------------------------------
+CANVAS_STATE_INACTIVE = 'inactive'
+CANVAS_STATE_PREPARING = 'preparing'
+CANVAS_STATE_ACTIVE = 'active'
+CANVAS_STATE_TEARING_DOWN = 'tearing_down'
+CANVAS_STATE_FALLBACK = 'fallback'
+
+# Yasal geçişler. SDL2/GL overlay kurulumları INACTIVE→ACTIVE ile girer;
+# software canvas setup→teardown zinciri PREPARING/ACTIVE üzerinden döner;
+# FALLBACK pass-through (canvas==real / kurulum başarısız) durumudur.
+_CANVAS_STATE_TRANSITIONS = {
+    CANVAS_STATE_INACTIVE: frozenset({
+        CANVAS_STATE_PREPARING, CANVAS_STATE_ACTIVE, CANVAS_STATE_FALLBACK,
+    }),
+    CANVAS_STATE_PREPARING: frozenset({
+        CANVAS_STATE_ACTIVE, CANVAS_STATE_FALLBACK,
+    }),
+    CANVAS_STATE_ACTIVE: frozenset({
+        CANVAS_STATE_PREPARING, CANVAS_STATE_TEARING_DOWN,
+    }),
+    CANVAS_STATE_TEARING_DOWN: frozenset({
+        CANVAS_STATE_INACTIVE, CANVAS_STATE_PREPARING,
+    }),
+    CANVAS_STATE_FALLBACK: frozenset({
+        CANVAS_STATE_PREPARING, CANVAS_STATE_ACTIVE, CANVAS_STATE_TEARING_DOWN,
+        CANVAS_STATE_INACTIVE,
+    }),
+}
+
+_canvas_state: str = CANVAS_STATE_INACTIVE
+_canvas_state_backend: str | None = None
+_geometry_generation: int = 0
+
+
+def get_canvas_state() -> str:
+    """Aktif render backend'inin canvas yaşam döngüsü durumu (FAZ A1)."""
+    return _canvas_state
+
+
+def get_canvas_state_backend() -> str | None:
+    """Durumu taşıyan backend adı ('software_canvas' | 'sdl2_overlay' | 'gl_compat' | None)."""
+    return _canvas_state_backend
+
+
+def _set_canvas_state(new_state: str, backend: str | None = None) -> None:
+    """Canvas durumunu güncelle; yasadışı geçişte toleranslı zorla-alma + teşhis.
+
+    Oyun döngüsü bir durum kirliliği yüzünden kilitlenmemeli: sapma yalnızca
+    stdout teşhisine yazılır ve geçiş uygulanır. Aynı duruma ve aynı backend'e
+    geçiş idempotent no-op'tur (log da üretmez).
+    """
+    global _canvas_state, _canvas_state_backend
+    if new_state == _canvas_state and (backend is None or backend == _canvas_state_backend):
+        return
+    allowed = _CANVAS_STATE_TRANSITIONS.get(_canvas_state, frozenset())
+    if new_state not in allowed:
+        try:
+            print(
+                f"[CanvasState] Beklenmedik geçiş: {_canvas_state} -> {new_state} "
+                f"(backend={backend or _canvas_state_backend})"
+            )
+        except Exception:
+            pass
+    _canvas_state = new_state
+    if new_state == CANVAS_STATE_INACTIVE:
+        # INACTIVE = taşıyıcı backend yok; alan her geçişte sıfırlanır
+        # (backend=None "dokunma" yerine sıfırlama semantiği taşır).
+        _canvas_state_backend = None
+    elif backend is not None:
+        _canvas_state_backend = backend
+
+
+def bump_geometry_generation() -> int:
+    """Geometri kuşağını artır; yeni değeri döndür (FAZ A1).
+
+    Canvas kurulumu/ardownı ve backend geçişleri çağırır. Ekranlar snapshot
+    aldıkları kuşağı bu sayıyla damgalar; farklı kuşağa rastlayan tüketici
+    snapshot'ı yeniden kurar (S2/S3 verici ucu; A4 cache generation'ın kaynağı).
+    """
+    global _geometry_generation
+    _geometry_generation += 1
+    return _geometry_generation
+
+
+def get_geometry_generation() -> int:
+    """Mevcut geometri kuşağı sayacı (0 = henüz geçiş yaşanmadı)."""
+    return _geometry_generation
+
+
+def _notify_canvas_backend_active(backend: str) -> None:
+    """Overlay backend kurulduğunda çağırır; ACTIVE + kuşak artışı (FAZ A1).
+
+    sdl2_overlay / gl_compat platform_utils'ü import EDEMEZ (döngüsel import
+    yasağı, plan Risk 2); bu fonksiyonu sys.modules yoklamasıyla bulup
+    çağırırlar (çift anahtarlı: iki import yolu da kapsanır).
+    """
+    _set_canvas_state(CANVAS_STATE_ACTIVE, backend)
+    bump_geometry_generation()
+
+
+def _notify_canvas_backend_inactive(backend: str) -> None:
+    """Overlay backend kapatıldığında çağırır; TEARING_DOWN→INACTIVE + kuşak."""
+    _set_canvas_state(CANVAS_STATE_TEARING_DOWN, backend)
+    bump_geometry_generation()
+    _set_canvas_state(CANVAS_STATE_INACTIVE, None)
+
+
+def _gl_overlay_active() -> bool:
+    """gl_compat overlay aktif mi? (K2 / BLN-006: gl yolu erişimcisi).
+
+    K2 ile gl_compat'e is_active() eklendi; eski sürümlerle (veya erişimci
+    tanımsızken) `_active` modül değişkeni üzerinden son çare yoklaması yapılır.
+    """
+    gl = sys.modules.get('gl_compat') or sys.modules.get('src.gl_compat')
+    if gl is None:
+        return False
+    try:
+        is_active = getattr(gl, 'is_active', None)
+        if callable(is_active):
+            return bool(is_active())
+        return bool(getattr(gl, '_active', False))
+    except Exception:
+        return False
+
+
+class RenderGeometry(NamedTuple):
+    """Geçerli render geometrisinin salt-okunur snapshot'ı (FAZ A1).
+
+    Layout kurulum/snapshot anında alınır (kare içi değil): A6/A7 ekranları ve
+    A8 mouse normalizasyonu aynı kaynaktan okur — iki katmanın farklı ölçek
+    tabanından kaynaklanan ayrışmayı (S11) tek sözleşmeye indirger.
+    """
+
+    canvas_size: tuple[int, int]                       # çizim koordinat uzayı (eff sözleşmesi)
+    window_size: tuple[int, int]                       # hedef pencere/sunum yüzeyi
+    logical_window_size: tuple[int, int]               # SDL logical points (gwls)
+    presentation_rect: tuple[int, int, int, int]       # canvas→pencere blit (x, y, w, h)
+    safe_rect: tuple[int, int, int, int]               # canvas uzayında güvenli alan
+    scale: float                                       # sunum ölçeği (blit_w / canvas_w)
+    offset: tuple[int, int]                            # sunum offset'i (letterbox)
+    backend: str                                       # 'software_canvas' | 'sdl2_overlay' | 'gl_compat' | 'plain'
+    ui_preset: str                                     # ui_scaling preset adı ('' → çözülemedi)
+    dpi_scale: float                                   # Windows pencere DPI ölçeği (değilse 1.0)
+    generation: int                                    # geometri kuşağı
+
+
+def _canvas_safe_rect(canvas_size: tuple[int, int]) -> tuple[int, int, int, int]:
+    """Canvas uzayında kenar marjlı güvenli alanı (x, y, w, h) döndür (A1/A6).
+
+    Marj oran %2.5'tir (1080p tuvalde ~27px, 2160p'de ~54px) ve güvenli alanın
+    en az 24px kalması güvenceye alınır: marj, (boyut - 24) / 2 ile sınırlıdır.
+    Amaç: aşırı taramalı TV'ler ve letterbox hizasındaki kırpılmalara karşı
+    P0 içerik (metin/buton) kenara yapışmasın (S4/S7 tüketimi A6/A7'de).
+    """
+    cw, ch = canvas_size
+    if cw <= 0 or ch <= 0:
+        return (0, 0, 0, 0)
+    margin_x = int(round(cw * 0.025))
+    margin_y = int(round(ch * 0.025))
+    margin_x = max(0, min(margin_x, (cw - 24) // 2)) if cw > 24 else 0
+    margin_y = max(0, min(margin_y, (ch - 24) // 2)) if ch > 24 else 0
+    return (margin_x, margin_y, cw - 2 * margin_x, ch - 2 * margin_y)
+
+
+def get_render_geometry(screen: pygame.Surface | None = None) -> RenderGeometry:
+    """Aktif render geometrisinin tek-snapshot tanımını döndür (FAZ A1).
+
+    Tüm katmanlar (oyun alanı, overlay'ler, menüler) bu tek kaynaktan okur;
+    iki farklı ölçek tabanı (S11) bu sözleşmeyle tek kaynağa iner. Kare içi
+    değil, layout kurulum anında çağrılır. Varsayılan yol 'plain'dir; canvas
+    rejimleri yalnızca kendi durum bayrakları açıksa seçilir (yoklamalar
+    istisna toleranslıdır: overlay modülü yoksa dal sessizce atlanır).
+    """
+    # 1) Backend tespiti + canvas/pencere/sunum değerleri
+    sdl2 = sys.modules.get('sdl2_overlay') or sys.modules.get('src.sdl2_overlay')
+    sdl2_info = None
+    if sdl2 is not None:
+        try:
+            if sdl2.is_active():
+                sdl2_info = sdl2.get_presentation_info()
+        except Exception:
+            sdl2_info = None
+
+    if sdl2_info:
+        backend = 'sdl2_overlay'
+        canvas_size = (int(sdl2_info.get('canvas_w', 0) or 0), int(sdl2_info.get('canvas_h', 0) or 0))
+        window_size = (int(sdl2_info.get('window_w', 0) or 0), int(sdl2_info.get('window_h', 0) or 0))
+        presentation_rect = (
+            int(sdl2_info.get('offset_x', 0) or 0),
+            int(sdl2_info.get('offset_y', 0) or 0),
+            int(sdl2_info.get('blit_w', 0) or 0),
+            int(sdl2_info.get('blit_h', 0) or 0),
+        )
+    elif _software_scale_active and _software_canvas is not None:
+        backend = 'software_canvas'
+        canvas_size = _software_canvas.get_size()
+        if _virtual_blit_rect is not None:
+            presentation_rect = _virtual_blit_rect
+        else:
+            presentation_rect = _calc_letterbox(
+                canvas_size[0], canvas_size[1],
+                *(_real_display_surface.get_size() if _real_display_surface is not None else canvas_size),
+            )
+        if _real_display_surface is not None:
+            window_size = _real_display_surface.get_size()
+        else:
+            window_size = canvas_size
+    elif _gl_overlay_active():
+        backend = 'gl_compat'
+        gl = sys.modules.get('gl_compat') or sys.modules.get('src.gl_compat')
+        gl_surface = None
+        try:
+            gl_surface = gl.get_display_surface() if gl is not None else None
+        except Exception:
+            gl_surface = None
+        if gl_surface is not None:
+            canvas_size = gl_surface.get_size()
+        elif screen is not None:
+            canvas_size = screen.get_size()
+        else:
+            canvas_size = _coerce_positive_size(*get_native_resolution())
+        window_size = canvas_size
+        presentation_rect = (0, 0, canvas_size[0], canvas_size[1])
+    else:
+        backend = 'plain'
+        target_surface, _active_display_surface, _is_display = _resolve_display_surface_context(
+            screen, None,
+        )
+        target_size = _get_surface_size(target_surface)
+        if target_size is None:
+            target_size = _coerce_positive_size(*get_native_resolution())
+        canvas_size = target_size
+        window_size = target_size
+        presentation_rect = (0, 0, target_size[0], target_size[1])
+
+    # 2) Türetilmiş alanlar
+    logical_window_size = get_window_logical_size(screen)
+    cw, ch = canvas_size
+    px, py, pw, ph = presentation_rect
+    if pw > 0 and cw > 0:
+        scale = pw / float(cw)
+    elif ph > 0 and ch > 0:
+        scale = ph / float(ch)
+    else:
+        scale = 1.0
+    offset = (px, py)
+
+    # 3) Preset / DPI / kuşak (istisna toleranslı yoklamalar)
+    ui_preset = ''
+    try:
+        from ui_scaling import get_ui_scale_preset
+        ui_preset = get_ui_scale_preset() or ''
+    except Exception:
+        try:
+            from src.ui_scaling import get_ui_scale_preset
+            ui_preset = get_ui_scale_preset() or ''
+        except Exception:
+            ui_preset = ''
+    dpi_scale = 1.0
+    if IS_WINDOWS:
+        try:
+            dpi_scale = _get_windows_window_scale_factor() or 1.0
+        except Exception:
+            dpi_scale = 1.0
+
+    return RenderGeometry(
+        canvas_size=canvas_size,
+        window_size=window_size,
+        logical_window_size=logical_window_size,
+        presentation_rect=presentation_rect,
+        safe_rect=_canvas_safe_rect(canvas_size),
+        scale=scale,
+        offset=offset,
+        backend=backend,
+        ui_preset=ui_preset,
+        dpi_scale=dpi_scale,
+        generation=_geometry_generation,
+    )
+
+
 def setup_virtual_canvas(
     real_surface: pygame.Surface,
     multiplier: float = 1.0,
@@ -1790,6 +2083,10 @@ def setup_virtual_canvas(
     if real_surface is None or not hasattr(real_surface, 'get_size'):
         return real_surface
 
+    # FAZ A1: kurulum yolu başladı (SDL2 pass-through bu noktaya ulaşamaz;
+    # o dalda sdl2_overlay kendi ACTIVE durumunu yönetir).
+    _set_canvas_state(CANVAS_STATE_PREPARING, 'software_canvas')
+
     real_w, real_h = real_surface.get_size()
 
     # Canvas boyutunu hesapla
@@ -1800,6 +2097,11 @@ def setup_virtual_canvas(
         # Eğer önceki canvas aktifse temizle
         if _software_scale_active:
             _teardown_virtual_canvas()
+        # FAZ A1: geometri "canvas yok, gerçek yüzeye çizim" olarak değişti
+        # (1080p normal preset'in standart durumu). Kuşak bump'ı, bayat
+        # snapshot'ları damgalamak için bilinçli olarak burada da atılır.
+        _set_canvas_state(CANVAS_STATE_FALLBACK, 'software_canvas')
+        bump_geometry_generation()
         return real_surface
 
     # Canvas surface oluştur
@@ -1808,6 +2110,8 @@ def setup_virtual_canvas(
         canvas = canvas.convert()
     except Exception as exc:
         print(f"[Virtual Canvas] Canvas oluşturulamadı: {exc}")
+        _set_canvas_state(CANVAS_STATE_FALLBACK, 'software_canvas')
+        bump_geometry_generation()
         return real_surface
 
     _real_display_surface = real_surface
@@ -1819,6 +2123,11 @@ def setup_virtual_canvas(
     pygame.display.flip = _software_flip
     pygame.display.update = _software_update
     pygame.display.get_surface = _software_get_surface
+
+    # FAZ A1: kurulum tamamlandı — canvas yayında; kuşak sayacı arttı.
+    # Tüketici ekranlar (A6/A7) bu kuşakla snapshot damgalar.
+    _set_canvas_state(CANVAS_STATE_ACTIVE, 'software_canvas')
+    bump_geometry_generation()
 
     # ui_scaling'e virtual canvas aktif olduğunu bildir
     # → tüm _ui_scale() / _sx() metodları 1.0 döndürerek çift ölçeklemeyi engeller
@@ -1864,6 +2173,11 @@ def rebuild_virtual_canvas(multiplier: float | None = None) -> pygame.Surface | 
 def _teardown_virtual_canvas() -> None:
     """Virtual canvas monkey-patch'lerini geri al."""
     global _software_canvas, _real_display_surface, _software_scale_active, _virtual_blit_rect
+
+    # FAZ A1: söküm başladı; sonda INACTIVE'a döner + kuşak artar (geometri
+    # "canvas yok" olarak değişti — bayat snapshot'lar damgalanır).
+    _set_canvas_state(CANVAS_STATE_TEARING_DOWN, 'software_canvas')
+
     try:
         # Yalnızca kendi patch'lerimizi geri al (v2 paritesi): mevcut
         # flip/update/get_surface _software_* değilse başka bir katman
@@ -1882,6 +2196,10 @@ def _teardown_virtual_canvas() -> None:
     _real_display_surface = None
     _software_scale_active = False
     _virtual_blit_rect = None
+    # FAZ A1: söküm tamamlandı — durum ve kuşak (INACTIVE'a yasal geçiş;
+    # idempotent erken dönüş yok, çift bump yalnız sayacı büyütür, zararsız).
+    _set_canvas_state(CANVAS_STATE_INACTIVE, None)
+    bump_geometry_generation()
     # ui_scaling'i bilgilendir: canvas devre dışı, eski ölçeklemeye dön
     try:
         from ui_scaling import set_virtual_canvas_active
