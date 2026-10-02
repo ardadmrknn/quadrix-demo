@@ -35,7 +35,8 @@ from workshop_blocks import WorkshopBlockDefinition, load_workshop_blocks
 from retro_style import retro_style
 from renderers.jelly_renderer import draw_jelly_block, draw_jelly_border
 from localization import t, get_language
-from platform_utils import get_display_flags, create_display, set_app_icon, normalize_mouse_pos, get_mouse_pos
+from platform_utils import get_display_flags, create_display, set_app_icon, normalize_mouse_pos, get_mouse_pos, get_render_geometry, get_geometry_generation
+from ui_text_layout import clamp_rect_in_parent
 from ui_theme import UIFonts, UIColors
 from asset_manager import load_image
 from text_cache import render_text, clear_text_cache
@@ -338,6 +339,11 @@ class Game:
         active_size = self._active_ui_size()
         effective_size = self._effective_ui_size()
         left_group_reserve = max(0, int(self._get_left_gameplay_reserve_width()))
+        # FAZ A6 (S6): layout, A1 RenderGeometry safe rect'ini parent alır —
+        # board/yan HUD/sol kart aynı güvenli alanda; kuşak cache key'e
+        # girer (geometri değişince layout taze çözülür).
+        _layout_geometry, _layout_safe_rect = self._get_render_geometry()
+        _layout_safe_key = tuple(_layout_safe_rect) if _layout_safe_rect is not None else None
         cache_key = (
             int(active_size[0]),
             int(active_size[1]),
@@ -346,6 +352,7 @@ class Game:
             board_width,
             board_height,
             left_group_reserve,
+            _layout_safe_key,
         )
         if getattr(self, '_gameplay_layout_cache_key', None) != cache_key:
             self._gameplay_layout_cache = compute_single_player_layout(
@@ -355,9 +362,42 @@ class Game:
                 board_height=board_height,
                 info_panel_height=INFO_PANEL_HEIGHT,
                 left_group_reserve_px=left_group_reserve,
+                canvas_safe_rect=_layout_safe_key,
             )
             self._gameplay_layout_cache_key = cache_key
         return self._gameplay_layout_cache
+
+    def _get_render_geometry(self):
+        """RenderGeometry snapshot'ı kuşak-bazlı önbellekten döndür (FAZ A6).
+
+        A1 sözleşmesi: geometri layout kurulum anında hesaplanır, kare içi
+        tekrarlar aynı kuşağın paylaşılan salt-okunur snapshot'ını okur.
+        Overlay/panel çizimleri (game-over, campaign modalları) buradan
+        safe rect alır — iki katmanın farklı ölçek tabanı ayrışması (S11/S4)
+        tek kaynakta kapanır. Dönen değer: (geometry, safe_rect) — safe_rect
+        pygame.Rect olarak bir kez tahsis edilir ve kuşak boyunca paylaşılır.
+        """
+        try:
+            generation = get_geometry_generation()
+        except Exception:
+            generation = -1
+        cache = getattr(self, '_render_geometry_cache', None)
+        if cache is not None and cache[0] == generation:
+            return cache[1], cache[2]
+        try:
+            geometry = get_render_geometry(getattr(self, 'screen', None))
+        except Exception:
+            geometry = None
+        safe_rect = None
+        if geometry is not None:
+            try:
+                sx0, sy0, sw, sh = geometry.safe_rect
+                if sw > 0 and sh > 0:
+                    safe_rect = pygame.Rect(sx0, sy0, sw, sh)
+            except Exception:
+                safe_rect = None
+        self._render_geometry_cache = (generation, geometry, safe_rect)
+        return geometry, safe_rect
 
     def _get_right_hud_panel_metrics(self, offset_x, offset_y, board_width, board_height):
         layout = self._get_gameplay_layout_metrics()
@@ -6067,6 +6107,12 @@ class Game:
             peek_btn_size = s(48)
             peek_btn_x = active_width - peek_btn_size - s(20)
             peek_btn_y = active_height - peek_btn_size - s(20)
+            # FAZ A6: köşe butonu canonical safe rect içinde tutulur (aşırı
+            # taramalı TV kırpılmasına karşı).
+            _geo, _safe = self._get_render_geometry()
+            if _safe is not None:
+                peek_btn_x = min(peek_btn_x, _safe.right - peek_btn_size)
+                peek_btn_y = min(peek_btn_y, _safe.bottom - peek_btn_size)
             self._game_over_peek_rect = pygame.Rect(peek_btn_x, peek_btn_y, peek_btn_size, peek_btn_size)
             
             # Yuvarlak beyaz arka plan
@@ -6207,6 +6253,12 @@ class Game:
             panel_width,
             panel_height,
         )
+        # FAZ A6 (S4): panel canonical safe rect içine sabitlenir — aşırı
+        # taramalı TV / letterbox kırpılmalarında P0 içerik kenara yapışmaz;
+        # merkezleme ekran merkezinde kalır (A5 clamp, tahsis üretmez).
+        _geometry, _safe_rect = self._get_render_geometry()
+        if _safe_rect is not None:
+            panel_rect = clamp_rect_in_parent(panel_rect, _safe_rect)
 
         # İç yerleşim sabitleri (okunabilirlik + hizalama)
         pad_x = s(34)
@@ -6222,18 +6274,21 @@ class Game:
         card_border_color  = _theme.get('card_border_color',  (74, 104, 162))
         label_color_soft = (198, 212, 238)
         
-        # Panel glow efekti
+        # Panel glow efekti (FAZ A6: LRU rounded-rect cache — kare-başı
+        # Surface tahsisi draw path'ten çıkarıldı).
         glow_rect = panel_rect.inflate(s(24), s(24))
-        glow_surf = pygame.Surface(glow_rect.size, pygame.SRCALPHA)
-        pygame.draw.rect(glow_surf, (panel_glow_color[0], panel_glow_color[1], panel_glow_color[2], 34), 
-                        glow_surf.get_rect(), border_radius=24)
+        glow_surf = self._get_rounded_rect_surface(
+            glow_rect.size,
+            (panel_glow_color[0], panel_glow_color[1], panel_glow_color[2], 34),
+            border_radius=24,
+        )
         self.screen.blit(glow_surf, glow_rect.topleft)
-        
+
         # Glass panel
         if alt_theme:
-            # Alt tema varsa panel arka planını özel renkle çiz (tint ile)
-            _tint_surf = pygame.Surface(panel_rect.size, pygame.SRCALPHA)
-            _tint_surf.fill((*panel_fill_tint, 216))
+            # Alt tema varsa panel arka planını özel renkle çiz (tint ile;
+            # FAZ A6: LRU solid-alpha cache)
+            _tint_surf = self._get_solid_alpha_surface(panel_rect.size, (*panel_fill_tint, 216))
             self.screen.blit(_tint_surf, panel_rect.topleft)
             pygame.draw.rect(self.screen, panel_border_color, panel_rect, 2, border_radius=12)
         else:
@@ -6305,9 +6360,8 @@ class Game:
         score_top = subtitle_rect.bottom + s(12)
         score_rect = pygame.Rect(inner_left, score_top, inner_w, s(68))
         
-        # Skor arka plan (daha koyu)
-        score_bg = pygame.Surface(score_rect.size, pygame.SRCALPHA)
-        score_bg.fill((*panel_fill_tint, 226))
+        # Skor arka plan (daha koyu; FAZ A6: LRU solid-alpha cache)
+        score_bg = self._get_solid_alpha_surface(score_rect.size, (*panel_fill_tint, 226))
         self.screen.blit(score_bg, score_rect.topleft)
         
         # Skor kenar - neon glow
@@ -6455,10 +6509,9 @@ class Game:
                 min(255, 108 + int(color[2] * 0.95)),
             )
             
-            # Stat kart arka planı
+            # Stat kart arka planı (FAZ A6: LRU solid-alpha cache)
             stat_rect = pygame.Rect(x, y, col_width, row_height)
-            stat_bg = pygame.Surface(stat_rect.size, pygame.SRCALPHA)
-            stat_bg.fill((*stat_bg_color, 216))
+            stat_bg = self._get_solid_alpha_surface(stat_rect.size, (*stat_bg_color, 216))
             self.screen.blit(stat_bg, stat_rect.topleft)
             pygame.draw.rect(self.screen, stat_border_color, stat_rect, 1, border_radius=10)
             
@@ -6558,7 +6611,12 @@ class Game:
         footer_top = max(footer_top_min, footer_bottom - total_footer_h)
 
         y_cursor = footer_top
+        # FAZ A6 (S4): footer satırları buton action rect'lerinin ÜSTÜNDE
+        # kalır — küçük panelde alan biten satırlar çizilmez (disjoint dikey
+        # satır sözleşmesi; çakışarak binme kabul edilmez).
         for surf, gap_after in reversed(footer_lines):
+            if y_cursor + surf.get_height() > footer_bottom:
+                break
             self.screen.blit(surf, surf.get_rect(center=(panel_rect.centerx, y_cursor + surf.get_height() // 2)))
             y_cursor += surf.get_height() + gap_after
         
@@ -6581,16 +6639,18 @@ class Game:
             fill_alpha = 228 if hovered else (212 if not disabled else 132)
             fill_color = (28, 44, 78) if hovered else ((22, 34, 62) if not disabled else (15, 20, 36))
             
-            btn_surf = pygame.Surface(draw_rect.size, pygame.SRCALPHA)
-            btn_surf.fill((*fill_color, fill_alpha))
+            btn_surf = self._get_solid_alpha_surface(draw_rect.size, (*fill_color, fill_alpha))
 
-            # Hover glow (ince dış parlama)
+            # Hover glow (ince dış parlama; FAZ A6: LRU rounded-rect cache)
             if hovered:
                 glow_rect = draw_rect.inflate(s(10), s(8))
-                glow = pygame.Surface(glow_rect.size, pygame.SRCALPHA)
-                pygame.draw.rect(glow, (color[0], color[1], color[2], 42), glow.get_rect(), border_radius=10)
+                glow = self._get_rounded_rect_surface(
+                    glow_rect.size,
+                    (color[0], color[1], color[2], 42),
+                    border_radius=10,
+                )
                 self.screen.blit(glow, glow_rect.topleft)
-            
+
             self.screen.blit(btn_surf, draw_rect.topleft)
             
             # Border

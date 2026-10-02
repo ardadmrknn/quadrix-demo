@@ -97,7 +97,16 @@ def compute_single_player_layout(
     board_height: int,
     info_panel_height: int = 120,
     left_group_reserve_px: int = 0,
+    canvas_safe_rect: tuple[int, int, int, int] | None = None,
 ) -> SinglePlayerLayoutMetrics:
+    """FAZ A6: board + yan HUD + sol kart aynı parent safe rect'i paylaşır.
+
+    canvas_safe_rect verilirse (A1 RenderGeometry.safe_rect — canvas uzayında
+    x, y, w, h) dış marj safe alanla birleştirilir: board/panel koordinat
+    clamp'ları tek outer_margin kaynağından türer, merkezleme değişmeden
+    P0 içerik güvenli alana sabitlenir. None → eski davranış (yalnızca
+    outer_margin) — geriye dönük uyumlu.
+    """
     active_w, active_h = _coerce_size(active_size)
     effective_w, effective_h = _coerce_size(effective_size)
     board_cols = max(1, int(board_width))
@@ -106,6 +115,20 @@ def compute_single_player_layout(
     scale_x = active_w / float(max(1, effective_w))
     scale_y = active_h / float(max(1, effective_h))
     pixel_ratio = get_display_pixel_ratio((active_w, active_h), (effective_w, effective_h))
+
+    # FAZ A6 (S6): safe rect marjı logical uzaya çevrilip outer_margin'a
+    # katılır — board/HUD/sol kartın ortak parent'ı safe alan olur.
+    safe_margin_x_logical = 0
+    safe_margin_y_logical = 0
+    if canvas_safe_rect is not None:
+        try:
+            sx0, sy0, sw, sh = canvas_safe_rect
+            if sw > 0 and sh > 0:
+                safe_margin_x_logical = int(round(max(sx0, active_w - (sx0 + sw)) / max(scale_x, 0.001)))
+                safe_margin_y_logical = int(round(max(sy0, active_h - (sy0 + sh)) / max(scale_y, 0.001)))
+        except Exception:
+            safe_margin_x_logical = 0
+            safe_margin_y_logical = 0
     left_group_reserve_logical = max(
         0,
         int(round(float(left_group_reserve_px) / max(scale_x, 0.001))),
@@ -124,6 +147,9 @@ def compute_single_player_layout(
     panel_min_logical = _clamp_int(120 + ((occupancy_scale - 1.0) * 24.0), 120, 150)
     panel_gap_logical = _clamp_int(25 + ((occupancy_scale - 1.0) * 8.0), 25, 40)
     outer_margin_logical = _clamp_int(12 + ((occupancy_scale - 1.0) * 10.0), 12, 28)
+    # FAZ A6: safe alan marjı dış marj tabanına katılır (board_x/panel_x
+    # clamp'ları bu tek kaynaktan türer).
+    outer_margin_logical = max(outer_margin_logical, safe_margin_x_logical)
     top_shift_logical = _clamp_int(25 + ((occupancy_scale - 1.0) * 6.0), 25, 32)
     panel_top_padding_logical = _clamp_int(10 + ((occupancy_scale - 1.0) * 3.0), 10, 16)
     panel_bottom_margin_logical = _clamp_int(40 + ((occupancy_scale - 1.0) * 8.0), 40, 56)
@@ -199,7 +225,7 @@ def compute_single_player_layout(
         logical_panel_width = max(min(panel_min_logical, logical_available_right), logical_panel_width)
 
     logical_board_y = max(
-        8,
+        max(8, safe_margin_y_logical),
         ((int(effective_h) - logical_board_height) // 2) - top_shift_logical,
     )
     logical_panel_y = logical_board_y + panel_top_padding_logical

@@ -79,6 +79,15 @@ from ui_theme import UIFonts, UIColors, UIStyle
 from ui_scaling import get_projected_effective_scale
 from localization import t, get_language
 from text_cache import render_text
+# FAZ A6: P0 game-over yüzey LRU'ları + kuşak-bazlı safe rect ortak kütüphaneden
+# (OnlinePvPGame Game'den bağımsız olduğu için game.py instance helper'ları kullanılamaz).
+from game_over_surfaces import (
+    get_solid_alpha_surface as _ov_solid_alpha_surface,
+    get_rounded_rect_surface as _ov_rounded_rect_surface,
+    get_circle_surface as _ov_circle_surface,
+    get_card_tint_surface as _ov_card_tint_surface,
+    get_render_safe_rect,
+)
 from promptfont_support import render_action_prompt_surface
 from combo_popup_style import (
     COMBO_POPUP_SHADOW_COLOR,
@@ -6953,8 +6962,8 @@ class OnlinePvPGame:
         sc = self._ui_scale()
         s = lambda v, minimum=1: self._sx(v, sc, minimum)
 
-        overlay = pygame.Surface((w, h), pygame.SRCALPHA)
-        overlay.fill((1, 4, 14, 212))
+        # FAZ A6: karartma katmanı kare-başı Surface tahsisinden LRU'ya taşınır.
+        overlay = _ov_solid_alpha_surface((w, h), (1, 4, 14, 212))
         self.screen.blit(overlay, (0, 0))
 
         if self.winner == 'me':
@@ -7033,6 +7042,10 @@ class OnlinePvPGame:
         )
         ph = max(s(560), content_bottom + s(24))
         panel = pygame.Rect(cx - pw // 2, cy - ph // 2, pw, ph)
+        # FAZ A6 (S4): panel canonical safe rect'e bağlanır — güvenli alan yoksa
+        # eski tam-ekran clamp korunur (geriye dönük uyumlu).
+        _safe_rect = get_render_safe_rect(self.screen)
+        panel.clamp_ip(_safe_rect if _safe_rect is not None else pygame.Rect(0, 0, w, h))
         self._draw_game_over_underlay_effects(panel.inflate(-s(12), -s(12)))
 
         def _draw_alpha_rect(
@@ -7042,8 +7055,8 @@ class OnlinePvPGame:
             radius: int = 0,
             width: int = 0,
         ) -> None:
-            surf = pygame.Surface(rect.size, pygame.SRCALPHA)
-            pygame.draw.rect(surf, (*color[:3], alpha), surf.get_rect(), width, border_radius=radius)
+            # FAZ A6: kare-başı tahsis LRU rounded-rect cache'ine iner.
+            surf = _ov_rounded_rect_surface(rect.size, (*color[:3], alpha), radius, width)
             self.screen.blit(surf, rect.topleft)
 
         def _draw_alpha_circle(
@@ -7053,15 +7066,13 @@ class OnlinePvPGame:
             alpha: int,
             width: int = 0,
         ) -> None:
-            size = radius * 2 + max(2, width * 2)
-            surf = pygame.Surface((size, size), pygame.SRCALPHA)
-            draw_center = (size // 2, size // 2)
-            pygame.draw.circle(surf, (*color[:3], alpha), draw_center, radius, width)
+            surf = _ov_circle_surface(radius, (*color[:3], alpha), width)
+            size = surf.get_size()[0]
             self.screen.blit(surf, (center[0] - size // 2, center[1] - size // 2))
 
         halo_rect = panel.inflate(s(28), s(28))
-        halo = pygame.Surface(halo_rect.size, pygame.SRCALPHA)
-        pygame.draw.rect(halo, (*result_color[:3], 26), halo.get_rect(), border_radius=s(18))
+        # FAZ A6: halo kare-başı tahsis yerine rounded cache.
+        halo = _ov_rounded_rect_surface(halo_rect.size, (*result_color[:3], 26), s(18), 0)
         self.screen.blit(halo, halo_rect.topleft)
 
         draw_glass_panel(self.screen, panel, alpha=218,
@@ -7137,12 +7148,8 @@ class OnlinePvPGame:
             draw_glass_panel(self.screen, card_rect, alpha=168,
                              border_color=(*border_color[:3], 175 if is_winner else 105),
                              glow=is_winner)
-            tint = pygame.Surface(card_rect.size, pygame.SRCALPHA)
-            for y in range(card_rect.height):
-                ratio = y / max(1, card_rect.height - 1)
-                alpha = int((22 if is_winner else 12) * (1.0 - ratio * 0.55))
-                pygame.draw.line(tint, (*accent[:3], alpha), (0, y), (card_rect.width, y))
-            pygame.draw.rect(tint, (*status_color[:3], 18 if is_winner else 8), tint.get_rect(), border_radius=s(12))
+            # FAZ A6: kart degrade tint'i kare-başı satır-satır çizimden LRU'ya.
+            tint = _ov_card_tint_surface(card_rect.size, accent, status_color, is_winner, s(12))
             self.screen.blit(tint, card_rect.topleft)
             pygame.draw.rect(self.screen, (*border_color[:3], 220 if is_winner else 120),
                              card_rect, s(2) if is_winner else 1, border_radius=s(12))
@@ -7290,6 +7297,10 @@ class OnlinePvPGame:
 
         rematch_r = pygame.Rect(cx - btn_w - btn_gap // 2, btn_y, btn_w, btn_h)
         exit_r = pygame.Rect(cx + btn_gap // 2, btn_y, btn_w, btn_h)
+        # FAZ A6: eylem rect'leri de canonical safe rect içinde kalır.
+        _action_parent_rect = _safe_rect if _safe_rect is not None else pygame.Rect(0, 0, w, h)
+        rematch_r.clamp_ip(_action_parent_rect)
+        exit_r.clamp_ip(_action_parent_rect)
         mp = get_mouse_pos()
 
         _rs.draw_uniform_button(self.screen, rematch_r,

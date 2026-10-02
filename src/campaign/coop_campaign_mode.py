@@ -25,10 +25,12 @@ try:
     from localization import t
     from retro_style import retro_style
     from ui_theme import UIFonts, UIColors
+    from game_over_surfaces import get_solid_alpha_surface
 except ImportError:
     from src.localization import t
     from src.retro_style import retro_style
     from src.ui_theme import UIFonts, UIColors
+    from src.game_over_surfaces import get_solid_alpha_surface
 
 from .coop_level_data import get_coop_level, CoopLevelConfig, TOTAL_COOP_LEVELS
 from .coop_objectives import create_coop_objective
@@ -344,8 +346,8 @@ class CoopCampaignMode(CoopGame):
         # Level başlık bandı
         header_h = s(26)
         header_rect = pygame.Rect(panel_x + 2, panel_y + 2, panel_w - 4, header_h)
-        header_surf = pygame.Surface(header_rect.size, pygame.SRCALPHA)
-        header_surf.fill((*UIColors.BG_MEDIUM, 190))
+        # FAZ A6: kare-başı HUD bandı tahsisi solid LRU'ya iner.
+        header_surf = get_solid_alpha_surface(header_rect.size, (*UIColors.BG_MEDIUM, 190))
         self.screen.blit(header_surf, header_rect.topleft)
         pygame.draw.line(self.screen, (*retro_style.primary[:3], 140),
                          (header_rect.x, header_rect.bottom),

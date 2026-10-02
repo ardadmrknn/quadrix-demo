@@ -27,7 +27,12 @@ GOLD = UIColors.NEON_GOLD
 SILVER = UIColors.TEXT_SECONDARY
 BRONZE = (205, 127, 50)
 
-CAMPAIGN_MODAL_REFERENCE_SIZE = (1366.0, 768.0)
+# FAZ A6: campaign modallarının ölçek eğrisi tabanı (1.0x noktası).
+# Clamp profili (0.68-1.20) ui_scaling.MODAL_SCALE_PROFILES["standard"]
+# içinde tek yerde durur; bu sabit yalnızca 1366x768 = 1.0x referansını
+# belirtir (test sözleşmesi bu noktayı kilitler). Eski ayrı
+# CAMPAIGN_MODAL_REFERENCE_SIZE ölçek yolu (kendi clamp'iyle çözüm) kalktı.
+_MODAL_SCALE_REFERENCE_SIZE = (1366.0, 768.0)
 
 # Özel blok renkleri - neon temaya uygun
 SPECIAL_BLOCK_COLORS = {
@@ -49,6 +54,17 @@ class CampaignUIEffects:
         self._power_bar_cache: Dict[Tuple[int, int], pygame.Surface] = {}
         self._level_overlay_cache: Dict[Tuple[int, int], pygame.Surface] = {}
         self._level_failed_overlay_cache: Dict[Tuple[int, int], pygame.Surface] = {}
+        # FAZ A6: modal katman yüzeyleri için LRU cache'ler — kare-başı
+        # Surface tahsisi draw path'ten çıkar (game.py kalıbıyla aynı).
+        self._modal_solid_cache: Dict[Tuple, pygame.Surface] = {}
+        self._modal_solid_order: List[Tuple] = []
+        self._modal_solid_max = 128
+        self._modal_rounded_cache: Dict[Tuple, pygame.Surface] = {}
+        self._modal_rounded_order: List[Tuple] = []
+        self._modal_rounded_max = 128
+        # Kuşak-bazlı geometri snapshot önbelleği (A1: kare içi değil, kuşak
+        # başına tek hesap).
+        self._modal_geometry_cache: Optional[Tuple] = None
         
         # Aktif animasyonlar
         self.level_complete_animation = None
@@ -107,7 +123,117 @@ class CampaignUIEffects:
         return self._font_cache[size]
 
     def _get_modal_ui_scale(self, surface_or_size: Any) -> float:
-        return get_modal_scale(surface_or_size, reference_size=CAMPAIGN_MODAL_REFERENCE_SIZE)
+        """FAZ A6: modal ölçeği A1 RenderGeometry canvas'ından çözülür (S4/S5).
+
+        Ölçek eğrisi ui_scaling.get_modal_scale — clamp profili
+        ("standard": 0.68-1.20) ui_scaling'de tek yerde durur, burada ayrı
+        clamp türetilmez; 1.0x tabanı _MODAL_SCALE_REFERENCE_SIZE
+        (1366x768) olarak açıkça geçilir (test sözleşmesi bu noktayı
+        kilitler; get_modal_scale'in 1920x1080 varsayılanı campaign
+        modallarına uygulanmaz). Geometri tabanlı canvas override'ı
+        yalnızca Surface (gerçek çizim hedefi) verildiğinde uygulanır:
+        virtual canvas / preset yollarında modal ölçeği gerçek çizim
+        uzayını izler. Tuple girişi (ölçüm/test yolu) verildiğinde
+        çağıranın verdiği boyut doğrudan eğriye girer.
+        """
+        surface = surface_or_size if hasattr(surface_or_size, 'get_size') else None
+        size = surface.get_size() if surface is not None else tuple(surface_or_size)
+        if surface is not None:
+            geometry, _safe = self._get_modal_geometry(surface_or_size)
+            if geometry is not None:
+                canvas_w, canvas_h = geometry.canvas_size
+                if canvas_w > 0 and canvas_h > 0:
+                    size = (canvas_w, canvas_h)
+        return get_modal_scale(
+            size,
+            profile="standard",
+            reference_size=_MODAL_SCALE_REFERENCE_SIZE,
+        )
+
+    def _get_modal_geometry(self, surface_or_size: Any):
+        """Kuşak-bazlı RenderGeometry snapshot'ı döndür (FAZ A6).
+
+        A1 sözleşmesi: geometri kuşak başına bir kez çözülür; kare içi modal
+        çizimleri paylaşılan snapshot'ı okur (get_presentation_info dict/Rect
+        tahsisi kare başına tekrarlanmaz). Dönen değer: (geometry, safe_rect).
+        """
+        try:
+            from platform_utils import get_geometry_generation
+            generation = get_geometry_generation()
+        except Exception:
+            generation = -1
+        cache = self._modal_geometry_cache
+        if cache is not None and cache[0] == generation:
+            return cache[1], cache[2]
+        geometry = None
+        safe_rect = None
+        try:
+            from platform_utils import get_render_geometry
+            probe = surface_or_size if hasattr(surface_or_size, 'get_size') else None
+            geometry = get_render_geometry(probe)
+            sx0, sy0, sw, sh = geometry.safe_rect
+            if sw > 0 and sh > 0:
+                safe_rect = pygame.Rect(sx0, sy0, sw, sh)
+        except Exception:
+            geometry = None
+            safe_rect = None
+        self._modal_geometry_cache = (generation, geometry, safe_rect)
+        return geometry, safe_rect
+
+    def _get_modal_solid_surface(self, size: Tuple[int, int], color) -> pygame.Surface:
+        """Düz RGBA dolgu yüzeyi LRU cache'ten döndür (FAZ A6)."""
+        width = max(1, int(size[0]))
+        height = max(1, int(size[1]))
+        color_key = tuple(color) if isinstance(color, (tuple, list)) else color
+        key = (width, height, color_key)
+        cached = self._modal_solid_cache.get(key)
+        if cached is not None:
+            try:
+                self._modal_solid_order.remove(key)
+            except ValueError:
+                pass
+            self._modal_solid_order.append(key)
+            return cached
+        surface = pygame.Surface((width, height), pygame.SRCALPHA)
+        surface.fill(color)
+        self._modal_solid_cache[key] = surface
+        self._modal_solid_order.append(key)
+        while len(self._modal_solid_order) > self._modal_solid_max:
+            old_key = self._modal_solid_order.pop(0)
+            self._modal_solid_cache.pop(old_key, None)
+        return surface
+
+    def _get_modal_rounded_rect_surface(
+        self,
+        size: Tuple[int, int],
+        color,
+        border_radius: int = 0,
+        width: int = 0,
+    ) -> pygame.Surface:
+        """Yuvarlatılmış köşe yüzeyi LRU cache'ten döndür (FAZ A6)."""
+        rect_w = max(1, int(size[0]))
+        rect_h = max(1, int(size[1]))
+        color_key = tuple(color) if isinstance(color, (tuple, list)) else color
+        key = (rect_w, rect_h, color_key, max(0, int(border_radius)), max(0, int(width)))
+        cached = self._modal_rounded_cache.get(key)
+        if cached is not None:
+            try:
+                self._modal_rounded_order.remove(key)
+            except ValueError:
+                pass
+            self._modal_rounded_order.append(key)
+            return cached
+        surface = pygame.Surface((rect_w, rect_h), pygame.SRCALPHA)
+        pygame.draw.rect(
+            surface, color, surface.get_rect(),
+            width=max(0, int(width)), border_radius=max(0, int(border_radius)),
+        )
+        self._modal_rounded_cache[key] = surface
+        self._modal_rounded_order.append(key)
+        while len(self._modal_rounded_order) > self._modal_rounded_max:
+            old_key = self._modal_rounded_order.pop(0)
+            self._modal_rounded_cache.pop(old_key, None)
+        return surface
 
     @staticmethod
     def _scale_modal_px(value: int | float, scale: float, minimum: int = 1) -> int:
@@ -588,9 +714,9 @@ class CampaignUIEffects:
         
         screen_w, screen_h = surface.get_size()
         anim_time = self.level_complete_animation['time']
-        ui_scale = self._get_modal_ui_scale((screen_w, screen_h))
+        ui_scale = self._get_modal_ui_scale(surface)
         s = lambda value, minimum=1: self._scale_modal_px(value, ui_scale, minimum=minimum)
-        
+
         # Fade-in animasyonu (0-0.4 saniye) - game.py stilinde
         fade_duration = 0.4
         if anim_time < fade_duration:
@@ -609,12 +735,15 @@ class CampaignUIEffects:
             self._level_overlay_cache[cache_key] = overlay
 
         if fade_alpha < 240:
-            overlay_scaled = overlay.copy()
-            overlay_scaled.set_alpha(int(255 * (fade_alpha / 240)))
-            surface.blit(overlay_scaled, (0, 0))
+            # FAZ A6: fade-in'de overlay KOPYASI alınmaz — paylaşılan cache
+            # yüzeyi set_alpha modülasyonuyla blit edilir (kare-başı Surface
+            # tahsisi yok; game.py game-over fade deseniyle aynı).
+            overlay.set_alpha(int(255 * (fade_alpha / 240)))
+            surface.blit(overlay, (0, 0))
+            overlay.set_alpha(255)
         else:
             surface.blit(overlay, (0, 0))
-        
+
         # Panel boyutları (game.py stilinde)
         panel_width = min(max(s(460), screen_w - s(320)), screen_w - s(220))
         panel_width = max(s(380), panel_width)
@@ -627,8 +756,16 @@ class CampaignUIEffects:
         # Panel slide-in animasyonu
         if anim_time < 0.3:
             panel_y += int(s(50, minimum=0) * (1 - anim_time / 0.3))
-        
+
         panel_rect = pygame.Rect(panel_x, panel_y, panel_width, panel_height)
+        # FAZ A6 (S4): panel canonical safe rect içine sabitlenir (A1
+        # snapshot'ından; game.py game-over overlay ile aynı sözleşme).
+        # İç yerleşim koordinatları (pad_x/inner_*) panel_rect'ten bu
+        # clamp'ten SONRA türetilir — rect kaynağı tek, türevler otomatik
+        # izler.
+        _geometry, _safe_rect = self._get_modal_geometry(surface)
+        if _safe_rect is not None:
+            panel_rect = _safe_rect.clamp(panel_rect)
         
         # Panel padding
         pad_x = s(32)
@@ -640,41 +777,41 @@ class CampaignUIEffects:
         use_retro = False
         if retro_style:
             try:
-                # Panel glow efekti
+                # Panel glow efekti (FAZ A6: LRU rounded-rect cache)
                 glow_rect = panel_rect.inflate(s(24, minimum=0), s(24, minimum=0))
-                glow_surf = pygame.Surface(glow_rect.size, pygame.SRCALPHA)
-                pygame.draw.rect(glow_surf, (*NEON_CYAN, 25), glow_surf.get_rect(), border_radius=s(20))
+                glow_surf = self._get_modal_rounded_rect_surface(
+                    glow_rect.size, (*NEON_CYAN, 25), border_radius=s(20),
+                )
                 surface.blit(glow_surf, glow_rect.topleft)
-                
+
                 # Glass panel
                 retro_style.draw_glass_panel(surface, panel_rect, alpha=200, border_color=NEON_CYAN)
                 use_retro = True
             except (AttributeError, Exception):
                 # Cache hatası veya başka hata durumunda fallback
                 pass
-        
+
         if not use_retro:
             # Fallback: premium manuel panel
-            # Glow efekti
+            # Glow efekti (FAZ A6: LRU rounded-rect cache)
             glow_rect = panel_rect.inflate(s(24, minimum=0), s(24, minimum=0))
-            glow_surf = pygame.Surface(glow_rect.size, pygame.SRCALPHA)
-            pygame.draw.rect(glow_surf, (*NEON_CYAN, 20), glow_surf.get_rect(), border_radius=s(18))
+            glow_surf = self._get_modal_rounded_rect_surface(
+                glow_rect.size, (*NEON_CYAN, 20), border_radius=s(18),
+            )
             surface.blit(glow_surf, glow_rect.topleft)
-            
-            # Panel arka plan (glassmorphism benzeri)
-            panel_surf = pygame.Surface((panel_width, panel_height), pygame.SRCALPHA)
-            panel_surf.fill((10, 15, 35, 220))
-            
+
+            # Panel arka plan (glassmorphism benzeri; FAZ A6: solid cache)
+            panel_surf = self._get_modal_solid_surface((panel_width, panel_height), (10, 15, 35, 220))
+
             surface.blit(panel_surf, panel_rect.topleft)
-            
+
             # Neon border
             pygame.draw.rect(surface, NEON_CYAN, panel_rect, 2, border_radius=s(14))
-        
+
         # Üst başlık bandı (tema uyumlu)
         header_h = s(88)
         header_rect = pygame.Rect(panel_rect.x + s(8), panel_rect.y + s(8), panel_width - s(16), header_h)
-        header_surf = pygame.Surface(header_rect.size, pygame.SRCALPHA)
-        header_surf.fill((12, 18, 40, 230))
+        header_surf = self._get_modal_solid_surface(header_rect.size, (12, 18, 40, 230))
         surface.blit(header_surf, header_rect.topleft)
         pygame.draw.line(surface, (*NEON_CYAN, 140), (header_rect.x + s(10), header_rect.bottom - s(2, minimum=0)), (header_rect.right - s(10), header_rect.bottom - s(2, minimum=0)), max(1, s(2)))
 
@@ -781,9 +918,8 @@ class CampaignUIEffects:
         score_top = bar_y + s(16)
         score_rect = pygame.Rect(inner_left, score_top, inner_w, s(70, minimum=48))
         
-        # Skor arka plan
-        score_bg = pygame.Surface(score_rect.size, pygame.SRCALPHA)
-        score_bg.fill((8, 12, 28, 220))
+        # Skor arka plan (FAZ A6: LRU solid-alpha cache)
+        score_bg = self._get_modal_solid_surface(score_rect.size, (8, 12, 28, 220))
         surface.blit(score_bg, score_rect.topleft)
         
         # Skor kenar - neon glow
@@ -906,16 +1042,15 @@ class CampaignUIEffects:
             if retro_style:
                 retro_style.draw_glass_panel(surface, rect, alpha=200, border_color=accent, glow=False)
             else:
-                panel_bg = pygame.Surface(rect.size, pygame.SRCALPHA)
-                panel_bg.fill(UIColors.GLASS_BG)
+                # FAZ A6: LRU solid-alpha cache
+                panel_bg = self._get_modal_solid_surface(rect.size, UIColors.GLASS_BG)
                 surface.blit(panel_bg, rect.topleft)
                 pygame.draw.rect(surface, (*accent, 140), rect, 1, border_radius=s(10))
 
             pad = s(12)
             header_h = s(32, minimum=22)
             header_rect = pygame.Rect(rect.x + s(8), rect.y + s(6), rect.width - s(16), header_h)
-            header_surf = pygame.Surface(header_rect.size, pygame.SRCALPHA)
-            header_surf.fill((12, 18, 40, 210))
+            header_surf = self._get_modal_solid_surface(header_rect.size, (12, 18, 40, 210))
             surface.blit(header_surf, header_rect.topleft)
             pygame.draw.line(surface, (*accent, 150), (header_rect.x + s(6), header_rect.bottom - s(1, minimum=0)), (header_rect.right - s(6), header_rect.bottom - s(1, minimum=0)), 1)
 
@@ -1003,10 +1138,9 @@ class CampaignUIEffects:
             next_lines.append((end_text, None))
         draw_panel(right_bottom_rect, t('campaign_next_level_title'), next_lines, accent=NEON_MAGENTA, icon=None, start_delay=0.9)
 
-        # Footer kontrol şeridi
+        # Footer kontrol şeridi (FAZ A6: LRU solid-alpha cache)
         footer_rect = pygame.Rect(panel_rect.x + s(12), panel_rect.bottom - footer_h - s(6), panel_width - s(24), footer_h)
-        footer_surf = pygame.Surface(footer_rect.size, pygame.SRCALPHA)
-        footer_surf.fill((10, 12, 26, 210))
+        footer_surf = self._get_modal_solid_surface(footer_rect.size, (10, 12, 26, 210))
         surface.blit(footer_surf, footer_rect.topleft)
         pygame.draw.line(surface, (*NEON_CYAN, 100), (footer_rect.x + s(10), footer_rect.y + s(2, minimum=0)), (footer_rect.right - s(10), footer_rect.y + s(2, minimum=0)), 1)
 
@@ -1143,9 +1277,9 @@ class CampaignUIEffects:
         
         screen_w, screen_h = surface.get_size()
         anim_time = self.level_failed_animation['time']
-        ui_scale = self._get_modal_ui_scale((screen_w, screen_h))
+        ui_scale = self._get_modal_ui_scale(surface)
         s = lambda value, minimum=1: self._scale_modal_px(value, ui_scale, minimum=minimum)
-        
+
         # Kırmızı renk paleti
         FAIL_RED = UIColors.NEON_RED
         FAIL_DARK = UIColors.TEXT_ERROR
@@ -1168,9 +1302,11 @@ class CampaignUIEffects:
             self._level_failed_overlay_cache[cache_key] = overlay
 
         if fade_alpha < 230:
-            overlay_scaled = overlay.copy()
-            overlay_scaled.set_alpha(int(255 * (fade_alpha / 230)))
-            surface.blit(overlay_scaled, (0, 0))
+            # FAZ A6: fade-in'de overlay KOPYASI alınmaz — paylaşılan cache
+            # yüzeyi set_alpha modülasyonuyla blit edilir (kare-başı tahsis yok).
+            overlay.set_alpha(int(255 * (fade_alpha / 230)))
+            surface.blit(overlay, (0, 0))
+            overlay.set_alpha(255)
         else:
             surface.blit(overlay, (0, 0))
         
@@ -1189,33 +1325,37 @@ class CampaignUIEffects:
             panel_x += shake
         
         panel_rect = pygame.Rect(panel_x, panel_y, panel_width, panel_height)
-        
+        # FAZ A6 (S4): shake dâhil panel canonical safe rect içinde kalır.
+        _geometry, _safe_rect = self._get_modal_geometry(surface)
+        if _safe_rect is not None:
+            panel_rect = _safe_rect.clamp(panel_rect)
+
         # Glass panel çizimi (retro_style varsa kullan, yoksa fallback)
         use_retro = False
         if retro_style:
             try:
-                # Panel glow efekti (kırmızı)
+                # Panel glow efekti (kırmızı; FAZ A6: LRU rounded-rect cache)
                 glow_rect = panel_rect.inflate(s(20, minimum=0), s(20, minimum=0))
-                glow_surf = pygame.Surface(glow_rect.size, pygame.SRCALPHA)
-                pygame.draw.rect(glow_surf, (*FAIL_RED, 20), glow_surf.get_rect(), border_radius=s(18))
+                glow_surf = self._get_modal_rounded_rect_surface(
+                    glow_rect.size, (*FAIL_RED, 20), border_radius=s(18),
+                )
                 surface.blit(glow_surf, glow_rect.topleft)
-                
+
                 # Glass panel (kırmızı border)
                 retro_style.draw_glass_panel(surface, panel_rect, alpha=210, border_color=FAIL_RED)
                 use_retro = True
             except (AttributeError, Exception):
                 pass
-        
+
         if not use_retro:
-            # Fallback: premium manuel panel
+            # Fallback: premium manuel panel (FAZ A6: LRU cache'ler)
             glow_rect = panel_rect.inflate(s(20, minimum=0), s(20, minimum=0))
-            glow_surf = pygame.Surface(glow_rect.size, pygame.SRCALPHA)
-            pygame.draw.rect(glow_surf, (*FAIL_RED, 15), glow_surf.get_rect(), border_radius=s(16))
+            glow_surf = self._get_modal_rounded_rect_surface(
+                glow_rect.size, (*FAIL_RED, 15), border_radius=s(16),
+            )
             surface.blit(glow_surf, glow_rect.topleft)
-            
-            panel_surf = pygame.Surface((panel_width, panel_height), pygame.SRCALPHA)
-            panel_surf.fill((25, 12, 15, 225))
-            
+
+            panel_surf = self._get_modal_solid_surface((panel_width, panel_height), (25, 12, 15, 225))
             surface.blit(panel_surf, panel_rect.topleft)
             pygame.draw.rect(surface, FAIL_RED, panel_rect, 2, border_radius=s(14))
         

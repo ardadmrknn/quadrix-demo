@@ -65,6 +65,14 @@ except Exception:
         return 1.0 / sweep_duration
 from asset_manager import load_image
 from text_cache import render_text
+# FAZ A6: P0 game-over yüzey LRU'ları + kuşak-bazlı safe rect ortak kütüphaneden
+# (CoopGame Game'den bağımsız olduğu için game.py instance helper'ları kullanılamaz).
+from game_over_surfaces import (
+    get_solid_alpha_surface,
+    get_rounded_rect_surface,
+    get_custom_surface,
+    get_render_safe_rect,
+)
 from gameplay_layout import (
     GAMEPLAY_OCCUPANCY_REFERENCE_SIZE,
     compute_coop_layout,
@@ -4281,24 +4289,36 @@ class CoopGame:
             )
             return
 
-        overlay = pygame.Surface((w, h), pygame.SRCALPHA)
-        for row in range(h):
-            ratio = row / max(1, h - 1)
-            alpha = int((155 + 70 * ratio) * fade_progress)
-            red = int(18 + 18 * (1.0 - ratio))
-            green = int(7 + 10 * ratio)
-            blue = int(14 + 24 * ratio)
-            overlay.fill((red, green, blue, min(240, alpha)), (0, row, w, 1))
+        # FAZ A6: dikey degrade karartması kare-başı satır fill'lerinden (h adet
+        # fill/kare!) LRU'ya — fade 12 adıma kuantize edilir (CLAUDE.md
+        # kuantize-alfa standardı), 0.35 s'lik açılma pürüssüz kalır.
+        _fade_q = round(fade_progress * 12) / 12.0
+
+        def _build_coop_overlay() -> pygame.Surface:
+            surface = pygame.Surface((w, h), pygame.SRCALPHA)
+            for row in range(h):
+                ratio = row / max(1, h - 1)
+                alpha = int((155 + 70 * ratio) * _fade_q)
+                red = int(18 + 18 * (1.0 - ratio))
+                green = int(7 + 10 * ratio)
+                blue = int(14 + 24 * ratio)
+                surface.fill((red, green, blue, min(240, alpha)), (0, row, w, 1))
+            return surface
+
+        overlay = get_custom_surface(('coop_go_overlay', w, h, _fade_q), _build_coop_overlay)
         self.screen.blit(overlay, (0, 0))
 
         panel_w = min(max(s(780), w - s(340)), w - s(72))
         panel_h = min(max(s(560), h - s(120)), h - s(52))
         panel_rect = pygame.Rect((w - panel_w) // 2, (h - panel_h) // 2, panel_w, panel_h)
+        # FAZ A6 (S4): panel canonical safe rect'e bağlanır — güvenli alan yoksa
+        # eski tam-ekran clamp korunur (geriye dönük uyumlu).
+        _safe_rect = get_render_safe_rect(self.screen)
         if hasattr(panel_rect, 'clamp_ip'):
-            panel_rect.clamp_ip(pygame.Rect(0, 0, w, h))
+            panel_rect.clamp_ip(_safe_rect if _safe_rect is not None else pygame.Rect(0, 0, w, h))
         glow_rect = panel_rect.inflate(s(26), s(26)) if hasattr(panel_rect, 'inflate') else panel_rect
-        glow_surf = pygame.Surface(glow_rect.size, pygame.SRCALPHA)
-        pygame.draw.rect(glow_surf, (165, 32, 58, 34), glow_surf.get_rect(), border_radius=22)
+        # FAZ A6: glow kare-başı tahsis yerine rounded cache.
+        glow_surf = get_rounded_rect_surface(glow_rect.size, (165, 32, 58, 34), 22, 0)
         self.screen.blit(glow_surf, glow_rect.topleft)
 
         retro_style.draw_glass_panel(
@@ -4309,12 +4329,22 @@ class CoopGame:
             glow=False,
             top_highlight=False,
         )
-        panel_tint = pygame.Surface(panel_rect.size, pygame.SRCALPHA)
-        panel_tint.fill((28, 8, 16, 208))
+        # FAZ A6: panel tint'i (dolgu + üst highlight degrade) kare-başı satır
+        # çiziminden LRU'ya — key boyut + highlight yüksekliğinden türer.
         highlight_h = min(panel_rect.height // 3, s(44))
-        for row in range(highlight_h):
-            hi_alpha = int(24 * (1 - row / max(1, highlight_h)))
-            pygame.draw.line(panel_tint, (255, 255, 255, hi_alpha), (0, row), (panel_rect.width, row))
+
+        def _build_panel_tint() -> pygame.Surface:
+            surface = pygame.Surface(panel_rect.size, pygame.SRCALPHA)
+            surface.fill((28, 8, 16, 208))
+            for row in range(highlight_h):
+                hi_alpha = int(24 * (1 - row / max(1, highlight_h)))
+                pygame.draw.line(surface, (255, 255, 255, hi_alpha), (0, row), (panel_rect.width, row))
+            return surface
+
+        panel_tint = get_custom_surface(
+            ('coop_go_panel_tint', panel_rect.width, panel_rect.height, highlight_h),
+            _build_panel_tint,
+        )
         self.screen.blit(panel_tint, panel_rect.topleft)
         pygame.draw.rect(self.screen, (240, 92, 122), panel_rect, 2, border_radius=18)
 
@@ -4346,8 +4376,8 @@ class CoopGame:
                 min(230, 48 + accent[1] // 2),
                 min(240, 54 + accent[2] // 2),
             )
-            card_fill = pygame.Surface(rect.size, pygame.SRCALPHA)
-            card_fill.fill((*card_bg, 220))
+            # FAZ A6: kart dolgusu kare-başı tahsis yerine solid LRU.
+            card_fill = get_solid_alpha_surface(rect.size, (*card_bg, 220))
             self.screen.blit(card_fill, rect.topleft)
             pygame.draw.rect(self.screen, card_border, rect, 1, border_radius=12)
             pygame.draw.rect(self.screen, accent, (rect.x + s(8), rect.y + s(8), s(5), rect.height - s(16)), border_radius=2)
@@ -4402,8 +4432,8 @@ class CoopGame:
         self.screen.blit(subtitle_surf, (subtitle_x, subtitle_y))
 
         score_rect = pygame.Rect(inner_left, subtitle_y + subtitle_h + s(18), inner_width, s(86))
-        score_fill = pygame.Surface(score_rect.size, pygame.SRCALPHA)
-        score_fill.fill((42, 12, 24, 228))
+        # FAZ A6: skor/reason dolguları solid LRU'dan.
+        score_fill = get_solid_alpha_surface(score_rect.size, (42, 12, 24, 228))
         self.screen.blit(score_fill, score_rect.topleft)
         pygame.draw.rect(self.screen, (112, 180, 255), score_rect, 2, border_radius=14)
 
@@ -4439,8 +4469,7 @@ class CoopGame:
         reason_gap = s(4)
         reason_rect_h = max(s(94), s(22) + reason_title_font.get_height() + reason_gap + reason_body_h + s(20))
         reason_rect = pygame.Rect(inner_left, score_rect.bottom + s(14), inner_width, reason_rect_h)
-        reason_fill = pygame.Surface(reason_rect.size, pygame.SRCALPHA)
-        reason_fill.fill((32, 14, 22, 205))
+        reason_fill = get_solid_alpha_surface(reason_rect.size, (32, 14, 22, 205))
         self.screen.blit(reason_fill, reason_rect.topleft)
         pygame.draw.rect(self.screen, (192, 86, 118), reason_rect, 1, border_radius=14)
 
