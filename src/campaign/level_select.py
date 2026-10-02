@@ -28,6 +28,24 @@ except Exception:
     from demo_upgrade_prompt import DemoUpgradePrompt, show_demo_partial_lock_prompt
 from back_button import draw_back_button as _draw_shared_back_button
 
+# FAZ A7 (S7): canonical safe rect + solid LRU yüzey yardımcıları — level
+# select'in header/grid/bilgi panelleri/PLAY footeri ortak safe alan içinden
+# konumlanır; fallback panel dolguları kare-başı tahsis yerine LRU'dan gelir.
+try:
+    from ui_text_layout import clamp_rect_in_parent  # type: ignore
+    from game_over_surfaces import (
+        get_solid_alpha_surface,
+        get_custom_surface,
+        get_render_safe_rect,
+    )
+except ImportError:  # src.* paket içi çağrı (PyInstaller/paketli build)
+    from src.ui_text_layout import clamp_rect_in_parent
+    from src.game_over_surfaces import (
+        get_solid_alpha_surface,
+        get_custom_surface,
+        get_render_safe_rect,
+    )
+
 # Neon renk paleti (merkezi tema)
 NEON_CYAN = UIColors.NEON_CYAN
 NEON_MAGENTA = UIColors.NEON_MAGENTA
@@ -477,11 +495,27 @@ class CampaignLevelSelect:
         self._update_selection_for_world()
         # Dünya geçişinde hover state'i temizle
         self.hovered_level = None
-    
+
+    def _frame_safe_area(self) -> Tuple[int, int, int, int]:
+        """(origin_x, origin_y, avail_w, avail_h) — FAZ A7 (S7) ortak safe alan.
+
+        Alt çizimlerin tamamı (grid, bilgi paneli, PLAY footer) bu alan
+        içinden konumlanır; safe rect yoksa (aynı generation'da hesap
+        edilemediyse) tam ekran kabul edilir — geriye dönük uyumlu.
+        """
+        safe = getattr(self, '_frame_safe_rect', None)
+        if safe is not None:
+            return safe.x, safe.y, safe.width, safe.height
+        return 0, 0, self.screen.get_width(), self.screen.get_height()
+
     def draw(self) -> None:
         """Ekranı çiz"""
         width = self.screen.get_width()
         height = self.screen.get_height()
+
+        # FAZ A7 (S7): her karede bir kez canonical safe rect çözülür; alt
+        # çizimler kuşak-boyu paylaşılan bu rect'ten türeir (dikey bütçe).
+        self._frame_safe_rect = get_render_safe_rect(self.screen)
 
         if hasattr(self, '_demo_upgrade_prompt') and self._demo_upgrade_prompt.is_active():
             self._demo_upgrade_prompt.screen = self.screen
@@ -752,35 +786,37 @@ class CampaignLevelSelect:
         height = self.screen.get_height()
         ui_scale = self._get_ui_scale()
         s = lambda v, minimum=1: max(minimum, int(round(v * ui_scale)))
-        
+        # FAZ A7 (S7): grid safe alan içinde çözülür.
+        origin_x, origin_y, avail_w, avail_h = self._frame_safe_area()
+
         self.level_buttons = []
-        
+
         # Grid ayarları
         cols = 5
         rows = 4
         gap = s(20)
-        button_size_by_width = min(s(104), (width - s(160)) // cols)
+        button_size_by_width = min(s(104), (avail_w - s(160)) // cols)
 
         # Alt bilgi panelinin üst kenarıyla güvenli boşluk kuralı
         # (_draw_level_info ile aynı panel geometrisi kullanılıyor)
         info_scale = self._get_ui_scale(min_scale=0.68, max_scale=1.18)
-        info_panel_height = min(int(round(250 * info_scale)), height - s(70))
+        info_panel_height = min(int(round(250 * info_scale)), avail_h - s(70))
         info_panel_height = max(s(155), info_panel_height)
-        info_panel_top = height - info_panel_height - s(10)
+        info_panel_top = origin_y + avail_h - info_panel_height - s(10)
         frame_bottom_overflow = max(8, s(10))  # frame_rect inflate(20) nedeniyle görsel taşma
         desired_gap_to_info = max(6, s(8))
         max_grid_bottom = info_panel_top - desired_gap_to_info - frame_bottom_overflow
 
-        top_anchor = max(self.tabs_bottom + s(14), s(175))
+        top_anchor = max(self.tabs_bottom + s(14), origin_y + s(175))
         available_grid_height = max(0, max_grid_bottom - top_anchor)
         button_size_by_height = max(s(52), (available_grid_height - (rows - 1) * gap) // rows)
 
         button_size = min(button_size_by_width, button_size_by_height)
-        
+
         grid_width = cols * button_size + (cols - 1) * gap
         grid_height = rows * button_size + (rows - 1) * gap
-        
-        start_x = (width - grid_width) // 2
+
+        start_x = origin_x + (avail_w - grid_width) // 2
         # 4. satır tabanını alt panel üst kenarına 1-2px boşlukla hizala
         start_y = max(top_anchor, max_grid_bottom - grid_height)
         
@@ -1153,16 +1189,21 @@ class CampaignLevelSelect:
         info_scale = self._get_ui_scale(min_scale=0.68, max_scale=1.18)
         s = lambda v, minimum=1: max(minimum, int(round(v * info_scale)))
         world_color = self.WORLD_COLORS[self.current_world]
-        
+        # FAZ A7 (S7): panel safe alan içinde çözülür ve genişliği safe
+        # alanın %90'ını aşamaz (outer bbox sözleşmesi).
+        origin_x, origin_y, avail_w, avail_h = self._frame_safe_area()
+
         # Panel - iki kartlı düzen için optimize
-        panel_width = min(s(760), width - s(40))
-        panel_height = min(s(250), height - s(70))
+        panel_width = min(s(760), int(avail_w * 0.9))
+        panel_height = min(s(250), avail_h - s(70))
         panel_height = max(s(155), panel_height)
-        panel_x = (width - panel_width) // 2
-        panel_y = height - panel_height - s(10)
-        
+        panel_x = origin_x + (avail_w - panel_width) // 2
+        panel_y = origin_y + avail_h - panel_height - s(10)
+
         panel_rect = pygame.Rect(panel_x, panel_y, panel_width, panel_height)
-        
+        if self._frame_safe_rect is not None:
+            panel_rect = clamp_rect_in_parent(panel_rect, self._frame_safe_rect)
+
         # Ana menü ile uyumlu glass panel
         if self.retro_style:
             self.retro_style.draw_glass_panel(
@@ -1174,16 +1215,24 @@ class CampaignLevelSelect:
             )
         else:
             # Fallback: eski glassmorphism panel
-            panel_surf = pygame.Surface((panel_width, panel_height), pygame.SRCALPHA)
-            panel_surf.fill(UIColors.GLASS_BG)
-            
-            # Üst highlight
-            for i in range(15):
-                alpha = int(30 * (1 - i / 15))
-                pygame.draw.line(panel_surf, UIColors.GLASS_HIGHLIGHT[:3] + (alpha,), (0, i), (panel_width, i))
-            
+            # FAZ A7 (S7): kare-başı panel dolgusu LRU'ya iner (aynı boyutlar
+            # kuşak boyunca tek Surface'ten servis edilir).
+            def _build_info_panel_fallback(size: Tuple[int, int]) -> pygame.Surface:
+                panel_w, panel_h = size
+                panel_surf = pygame.Surface(size, pygame.SRCALPHA)
+                panel_surf.fill(UIColors.GLASS_BG)
+                # Üst highlight
+                for i in range(15):
+                    alpha = int(30 * (1 - i / 15))
+                    pygame.draw.line(panel_surf, UIColors.GLASS_HIGHLIGHT[:3] + (alpha,), (0, i), (panel_w, i))
+                return panel_surf
+
+            panel_surf = get_custom_surface(
+                ('levelsel_info_fallback', panel_rect.width, panel_rect.height),
+                _build_info_panel_fallback,
+            )
             self.screen.blit(panel_surf, panel_rect.topleft)
-            
+
             # Glow border
             glow_rect = panel_rect.inflate(8, 8)
             pygame.draw.rect(self.screen, (*world_color, 25), glow_rect, border_radius=UIStyle.BORDER_RADIUS_LARGE)
@@ -1509,13 +1558,16 @@ class CampaignLevelSelect:
         ui_scale = self._get_ui_scale()
         s = lambda v, minimum=1: max(minimum, int(round(v * ui_scale)))
         world_color = self.WORLD_COLORS[self.current_world]
-        
+        # FAZ A7 (S7): PLAY safe alan içinde; alt/sağ kenar boşluğu >= 24
+        # canonical px (S7 kabul ölçütü — eski s(14)/s(25) ayağı).
+        origin_x, origin_y, avail_w, avail_h = self._frame_safe_area()
+
         play_height = s(44)
         play_width = s(176)
-        play_y = height - play_height - s(14)
+        play_y = origin_y + avail_h - play_height - s(24)
 
         # Oyna butonu
-        play_x = width - play_width - s(25)
+        play_x = origin_x + avail_w - play_width - s(24)
         self.play_button = pygame.Rect(play_x, play_y, play_width, play_height)
         
         is_unlocked = self._is_level_unlocked(self.selected_level)
@@ -1530,10 +1582,20 @@ class CampaignLevelSelect:
                     glow=True,
                 )
             else:
-                btn_surf = pygame.Surface((play_width, play_height), pygame.SRCALPHA)
-                for row in range(play_height):
-                    alpha = int(210 - 40 * (row / play_height))
-                    pygame.draw.line(btn_surf, (*world_color, alpha), (0, row), (play_width, row))
+                # FAZ A7 (S7): gradyanlı PLAY dolgusu LRU'dan (dünya rengi
+                # anahtarda).
+                def _build_play_gradient(size: Tuple[int, int], grad_color=world_color) -> pygame.Surface:
+                    grad_w, grad_h = size
+                    btn_surf = pygame.Surface(size, pygame.SRCALPHA)
+                    for row in range(grad_h):
+                        alpha = int(210 - 40 * (row / grad_h))
+                        pygame.draw.line(btn_surf, (*grad_color, alpha), (0, row), (grad_w, row))
+                    return btn_surf
+
+                btn_surf = get_custom_surface(
+                    ('levelsel_play', play_width, play_height, world_color),
+                    _build_play_gradient,
+                )
                 self.screen.blit(btn_surf, self.play_button.topleft)
                 glow_rect = self.play_button.inflate(10, 10)
                 pygame.draw.rect(self.screen, (*world_color, 35), glow_rect, border_radius=UIStyle.BORDER_RADIUS_MEDIUM)
@@ -1550,8 +1612,8 @@ class CampaignLevelSelect:
                     glow=False,
                 )
             else:
-                btn_surf = pygame.Surface((play_width, play_height), pygame.SRCALPHA)
-                btn_surf.fill((*UIColors.BUTTON_DISABLED, 190))
+                # FAZ A7 (S7): pasif PLAY dolgusu solid LRU'dan.
+                btn_surf = get_solid_alpha_surface((play_width, play_height), (*UIColors.BUTTON_DISABLED, 190))
                 self.screen.blit(btn_surf, self.play_button.topleft)
                 pygame.draw.rect(self.screen, (*UIColors.BUTTON_BORDER, 140), self.play_button, 2, border_radius=UIStyle.BORDER_RADIUS_MEDIUM)
             play_color = UIColors.TEXT_MUTED

@@ -40,9 +40,18 @@ except Exception:
     from ui_theme import UIColors
 
 try:
-    from .ui_scaling import get_projected_effective_scale  # type: ignore
+    from .ui_scaling import get_projected_effective_scale, get_modal_scale  # type: ignore
 except Exception:
-    from ui_scaling import get_projected_effective_scale
+    from ui_scaling import get_projected_effective_scale, get_modal_scale
+
+# FAZ A7 (S5): A5 ölçülmüş text budget + canonical safe rect ve game-over
+# LRU yüzey yardımcıları — kart seçim overlay'i bunlarla çizilir.
+try:
+    from .ui_text_layout import ellipsize_text, clamp_rect_in_parent  # type: ignore
+    from .game_over_surfaces import get_solid_alpha_surface, get_render_safe_rect  # type: ignore
+except Exception:
+    from ui_text_layout import ellipsize_text, clamp_rect_in_parent
+    from game_over_surfaces import get_solid_alpha_surface, get_render_safe_rect
 
 try:
     from . import demo_config  # type: ignore
@@ -2701,8 +2710,14 @@ class MysteryCardUI:
             return 'SKIP'
         return None
 
-    def _get_overlay_scale(self, screen_or_width, window_height: int | None = None, *, min_scale: float = 0.62, max_scale: float = 1.12) -> float:
-        """Kart seçim overlay'i için aktif canvas bazlı ortak scale wrapper'ı."""
+    def _get_overlay_scale(self, screen_or_width, window_height: int | None = None) -> float:
+        """Kart seçim overlay'i için aktif canvas bazlı ortak scale wrapper'ı.
+
+        FAZ A7 (S5): ölçek sözleşmesi tek kaynağa (ui_scaling.get_modal_scale,
+        standard profil 0.68-1.20) bağlanır; okunabilirlik katı
+        (readable_floor) mevcut davranışla korunur — küçük canvaslarda ölçek
+        asla okunabilir minimumun altına inmez.
+        """
         if hasattr(screen_or_width, 'get_size'):
             target = screen_or_width
             w, h = target.get_size()
@@ -2714,14 +2729,13 @@ class MysteryCardUI:
         rw, rh = self._overlay_readable_min_size
         readable_floor = min(1.0, min(w / float(max(1, rw)), h / float(max(1, rh))))
 
-        effective_min_scale = max(min_scale, readable_floor)
         ref_w, ref_h = self._overlay_base_size or MYSTERY_OVERLAY_REFERENCE_SIZE
-        return get_projected_effective_scale(
+        scale = get_modal_scale(
             target,
-            min_scale=effective_min_scale,
-            max_scale=max_scale,
+            profile="standard",
             reference_size=(float(ref_w), float(ref_h)),
         )
+        return max(scale, readable_floor)
 
     def draw_selection_overlay(
         self,
@@ -2786,8 +2800,8 @@ class MysteryCardUI:
             self.peek_button_rect = None
 
         # Arka plan overlay: genel UI (panel) temasıyla uyumlu.
-        overlay = pygame.Surface((window_width, window_height), pygame.SRCALPHA)
-        overlay.fill(UIColors.BG_OVERLAY)
+        # FAZ A7 (S5): kare-başı tam-ekran SRCALPHA tahsisi kalır — solid LRU.
+        overlay = get_solid_alpha_surface((window_width, window_height), UIColors.BG_OVERLAY)
         screen.blit(overlay, (0, 0))
 
         card_count = len(cards)
@@ -2821,6 +2835,11 @@ class MysteryCardUI:
         panel_width = min(total_width + s(120), window_width - s(40))
         panel_x = max(s(20), window_width // 2 - panel_width // 2)
         panel_rect = pygame.Rect(panel_x, s(60), panel_width, panel_height)
+        # FAZ A7 (S5): kart seçim paneli canonical safe rect içinde kalır —
+        # window boyutu stale olduğunda aktif canvas'a clamp (A5 kütüphanesi).
+        _safe_rect = get_render_safe_rect(screen)
+        if _safe_rect is not None:
+            panel_rect = clamp_rect_in_parent(panel_rect, _safe_rect)
         self.selection_panel_rect = panel_rect.copy()
         retro_style.draw_glass_panel(
             screen,
@@ -2899,8 +2918,7 @@ class MysteryCardUI:
                 else:
                     badge = pygame.Rect(lrect.x - pad * 2, lrect.y - pad // 2,
                                         lrect.width + pad * 4, lrect.height + pad)
-                hl = pygame.Surface(badge.size, pygame.SRCALPHA)
-                hl.fill((95, 72, 18, 210))
+                hl = get_solid_alpha_surface(badge.size, (95, 72, 18, 210))
                 screen.blit(hl, badge.topleft)
                 pygame.draw.rect(screen, (210, 170, 60), badge, max(1, s(1)), border_radius=s(6))
                 screen.blit(line_surf, lrect)
@@ -3779,14 +3797,11 @@ class MysteryCardUI:
             # Prepare title text
         card_title_text = get_card_title(card, card.get("title", ""))
         title_text = f"{idx + 1}. {card_title_text}"
-        # If title is longer than available area, trim with ellipsis
+        # FAZ A7 (S5): başlık kart içi bütçesine A5'in ölçülmüş (LRU cache'li)
+        # ellipsis'iyle sığar — karakter-karakter kısaltma döngüsü kalkar.
         title_font = fonts.get("card_title")
         title_max_width = rect.width - 48
-        if title_font.size(title_text)[0] > title_max_width:
-            short = title_text
-            while title_font.size(short + "...")[0] > title_max_width and len(short) > 0:
-                short = short[:-1]
-            title_text = short.rstrip() + "..."
+        title_text = ellipsize_text(title_text, title_font, title_max_width)
         title_surface = title_font.render(title_text, True, (250, 250, 255))
         # Make title background stronger for readability in debug grid
         title_bg_color = (*accent, 200) if debug else (*accent, 120)
@@ -3818,12 +3833,8 @@ class MysteryCardUI:
         max_desc_lines_overlay = 4
         if len(desc_lines) > max_desc_lines_overlay:
             desc_lines = desc_lines[:max_desc_lines_overlay]
-            last = desc_lines[-1]
-            ellipsis = '...'
-            desc_width_avail = rect.width - 48
-            while fonts["desc"].size(last + ellipsis)[0] > desc_width_avail and len(last) > 0:
-                last = last[:-1]
-            desc_lines[-1] = last.rstrip() + ellipsis
+            # FAZ A7 (S5): son satır A5'in ölçülmüş ellipsis'iyle bütçeye iner.
+            desc_lines[-1] = ellipsize_text(desc_lines[-1], fonts["desc"], rect.width - 48)
         line_height_overlay = fonts["desc"].get_linesize()
         desc_height = len(desc_lines) * line_height_overlay + 18
         desc_surface = pygame.Surface((rect.width - 48, desc_height), pygame.SRCALPHA)

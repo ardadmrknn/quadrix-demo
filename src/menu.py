@@ -252,6 +252,26 @@ def _decode_layout_payload(raw: Any) -> tuple[
     return rects, coord_space, reference_window, reference_canvas
 
 
+def _fit_aspect_region(aspect: float, w: int, h: int) -> tuple[int, int, int, int]:
+    """Verilen en/boy oranını (w, h) içine letterbox-fit eden bölgeyi döndür.
+
+    FAZ A7 (S8-S10): canvas_pct layout override'ları için mevcut ekranda
+    aynı oranı koruyan alt bölge. 21:9/16:10 gibi fazla yatay ekranlarda
+    artan alan side gutter olur; düzen yatay esnetilmez.
+    """
+    if aspect <= 0 or w <= 0 or h <= 0:
+        return 0, 0, max(1, w), max(1, h)
+    if w / float(h) > aspect:
+        fit_h = h
+        fit_w = int(round(h * aspect))
+    else:
+        fit_w = w
+        fit_h = int(round(w / aspect))
+    fit_w = max(1, min(w, fit_w))
+    fit_h = max(1, min(h, fit_h))
+    return (w - fit_w) // 2, (h - fit_h) // 2, fit_w, fit_h
+
+
 ROOT_DIR = _resolve_root_dir()
 LOGO_PATH_CANDIDATES = [
     ROOT_DIR / 'backgrounds' / 'logo.png',
@@ -1024,12 +1044,21 @@ class Menu:
         out_w = max(1, int(screen_w))
         out_h = max(1, int(screen_h))
 
-        # Tüm koordinatlar screen_pct: editör 1920×1080 referansıyla yüzde kaydeder,
-        # oyun kendi ekran boyutuyla çarpar.
-        x = int(out_w * x_pct)
-        y = int(out_h * y_pct)
-        w = int(out_w * w_pct)
-        h = int(out_h * h_pct)
+        # FAZ A7 (S8-S10): coord_space gerçekten uygulanır — screen_pct'ye
+        # zorlanmaz. canvas_pct + reference_canvas varsa yüzde değerler, oranı
+        # koruyan (letterbox-fit) canvas bölgesine göre çözülür; 21:9/16:10'da
+        # fazla yatay alan side gutter olarak kalır, düzen esnetilmez.
+        base_x, base_y, base_w, base_h = 0, 0, out_w, out_h
+        ref_canvas = getattr(self, '_layout_override_reference_canvas', None)
+        if getattr(self, '_layout_override_coord_space', 'screen_pct') == 'canvas_pct' and ref_canvas:
+            ref_w, ref_h = int(ref_canvas[2]), int(ref_canvas[3])
+            if ref_w > 0 and ref_h > 0:
+                base_x, base_y, base_w, base_h = _fit_aspect_region(ref_w / float(ref_h), out_w, out_h)
+
+        x = int(base_x + base_w * x_pct)
+        y = int(base_y + base_h * y_pct)
+        w = int(base_w * w_pct)
+        h = int(base_h * h_pct)
 
         w = max(min_w, min(out_w, w))
         h = max(min_h, min(out_h, h))
@@ -4600,8 +4629,14 @@ class Menu:
                 return
 
             panel_rect = pygame.Rect(panel_x, panel_y, panel_w, panel_h)
+            # S10: kısa pencerelerde panel alt kenarı ekranı taşabilir —
+            # dashboard rect yolu gibi ekrana kenetlenir.
+            panel_rect.clamp_ip(self.screen.get_rect())
         else:
             panel_rect = panel_rect.copy()
+            # S10: dışarıdan verilen rect de ekrana kenetlenir (editor/preview
+            # yollarında negatif/taşan koordinat koruması).
+            panel_rect.clamp_ip(self.screen.get_rect())
 
         if panel_rect.width < 220 or panel_rect.height < 180:
             self._mystery_lb_tab_rects = {}
@@ -4688,8 +4723,12 @@ class Menu:
             return
 
         max_rows = min(10, len(active_entries))
-        # Satır yüksekliğini mevcut listeye dinamik sığdır (min 26, max 54 px)
-        row_h = min(s(54), max(s(26), (list_rect.height - s(10)) // max(1, max_rows)))
+        # S9 satır sözleşmesi: satır içeriği (en az 20 px avatar + dikey padding)
+        # row_rect yüksekliğine sığmalı. Alt sınır yalnız s(26) değil içerik
+        # yüksekliğidir; dar panellerde sığmayan satırlar üst üste binmek
+        # yerine list_rect clip bölgesinde kırpılır.
+        row_min_h = max(s(26), 20 + s(13))
+        row_h = min(s(54), max(row_min_h, (list_rect.height - s(10)) // max(1, max_rows)))
         base_y = list_rect.y + s(5)
         medal_colors = [UIColors.NEON_GOLD, (200, 200, 210), (200, 140, 80)]  # Altın, Gümüş, Bronz
         # Aktif Steam kullanıcısını vurgula

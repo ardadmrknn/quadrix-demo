@@ -182,7 +182,10 @@ def test_tutorial_card_overlay_reference_stays_on_phase8_baseline():
         int(tutorial_module.TUTORIAL_MODAL_REFERENCE_SIZE[0]),
         int(tutorial_module.TUTORIAL_MODAL_REFERENCE_SIZE[1]),
     )
-    assert math.isclose(tutorial.card_ui._get_overlay_scale(2560, 1440), 1.12)
+    # FAZ A7 (S5) sözleşmesi: overlay ölçeği get_modal_scale standard
+    # profiline (0.68-1.20) bağlı; 2560x1440 profile üst sınırında 1.20'de
+    # durur (eski phase8 tabanı 1.12 değildi).
+    assert math.isclose(tutorial.card_ui._get_overlay_scale(2560, 1440), 1.20)
 
 
 def test_tutorial_resize_syncs_window_metrics_to_created_surface(monkeypatch):

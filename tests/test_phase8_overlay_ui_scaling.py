@@ -422,35 +422,38 @@ def test_daily_fog_overlay_uses_active_canvas(monkeypatch):
 def test_mystery_overlay_scale_can_grow_above_one_without_largest_seen_state():
     ui = MysteryCardUI()
 
+    # FAZ A7 (S5) sözleşmesi: ölçek tek kaynağa (ui_scaling.get_modal_scale,
+    # standard profil 0.68-1.20) bağlı; eski 1.12 üst sınırı kalktı —
+    # 2560x1440 referans (1366,768) oranını aşar ve profile üst sınırında
+    # 1.20'de durur. "Largest seen" durumu yoktur: her çağrı bağımsızdır.
     assert math.isclose(ui._get_overlay_scale(1366, 768), 1.0)
-    assert math.isclose(ui._get_overlay_scale(2560, 1440), 1.12)
+    assert math.isclose(ui._get_overlay_scale(2560, 1440), 1.20)
 
     another_ui = MysteryCardUI()
-    assert math.isclose(another_ui._get_overlay_scale(2560, 1440), 1.12)
+    assert math.isclose(another_ui._get_overlay_scale(2560, 1440), 1.20)
     assert math.isclose(another_ui._get_overlay_scale(1366, 768), 1.0)
 
 
-def test_mystery_overlay_scale_uses_projected_effective_scale_when_screen_passed(monkeypatch):
+def test_mystery_overlay_scale_delegates_to_modal_scale_when_screen_passed(monkeypatch):
     ui = MysteryCardUI()
     screen = pygame.Surface((2560, 1660), pygame.SRCALPHA)
     captured = {}
 
-    def fake_get_projected_scale(target, *, min_scale, max_scale, reference_size, display_surface=None):
+    def fake_get_modal_scale(target, *, profile, reference_size, **kwargs):
         captured['target'] = target
-        captured['min_scale'] = min_scale
-        captured['max_scale'] = max_scale
+        captured['profile'] = profile
         captured['reference_size'] = reference_size
-        captured['display_surface'] = display_surface
-        return 1.64
+        return 0.9
 
-    monkeypatch.setattr(extra_modes_module, 'get_projected_effective_scale', fake_get_projected_scale)
+    monkeypatch.setattr(extra_modes_module, 'get_modal_scale', fake_get_modal_scale)
 
-    assert math.isclose(ui._get_overlay_scale(screen), 1.64)
+    # FAZ A7 (S5): get_modal_scale (standard profil) tek ölçek kaynağı;
+    # okunabilirlik katı (readable_floor) 2560x1660'ta 1.0 olduğundan
+    # profil değerinin altına inilmez.
+    assert math.isclose(ui._get_overlay_scale(screen), 1.0)
     assert captured['target'] is screen
-    assert captured['min_scale'] >= 0.62
-    assert captured['max_scale'] == 1.12
+    assert captured['profile'] == 'standard'
     assert captured['reference_size'] == tuple(float(v) for v in extra_modes_module.MYSTERY_OVERLAY_REFERENCE_SIZE)
-    assert captured['display_surface'] is None
 
 
 def test_mystery_mode_card_ui_scale_uses_active_canvas_and_phase8_baseline():
