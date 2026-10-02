@@ -687,7 +687,27 @@ def _resolve_display_surface_context(
     try:
         active_display_surface = pygame.display.get_surface()
     except Exception:
+        # RN-002: sessiz yutma, native sızıntı rejimini teşhis edilemez
+        # kıldı. FAZ 1 sonrası buraya hiç düşülmemeli; düşüyorsa bildir.
+        # gl_debug.log'a tek yazma kanalı sdl2_overlay._diag_log'dur
+        # (sdl2_overlay.py:319); main.py stdout'u log dosyasına
+        # yönlendirmez — çıplak print oraya ulaşmaz (BLN-001).
         active_display_surface = None
+        try:
+            from sdl2_overlay import _diag_log  # döngüsel import yok: fonksiyon içi
+        except Exception:
+            try:
+                from src.sdl2_overlay import _diag_log
+            except Exception:
+                _diag_log = None
+        if _diag_log is not None:
+            try:
+                _diag_log(
+                    "RN-002/1-E: display surface çözümü başarısız — eff native "
+                    "fallback'e düşebilir (FAZ 1 sonrası beklenen: hiç tetiklenmemeli)"
+                )
+            except Exception:
+                pass
 
     target_surface = screen if screen is not None else active_display_surface
     if display_surface is None:
@@ -702,6 +722,28 @@ def _resolve_display_surface_context(
     return target_surface, active_display_surface, is_display_surface
 
 
+def _sdl2_overlay_canvas_size() -> tuple[int, int] | None:
+    """SDL2 overlay aktifse sabit tuval boyutunu döndür; değilse None.
+
+    Döngüsel import yasağı (plan Risk 2): sdl2_overlay modül seviyesinde import
+    EDİLMEZ; sys.modules üzerinden yoklanır — get_projected_effective_scale'in
+    platform_utils yoklamasıyla (ui_scaling) aynı yerleşik desen
+    (çift anahtarlı: iki import yolu da kapsanır).
+    """
+    ovl = sys.modules.get('sdl2_overlay') or sys.modules.get('src.sdl2_overlay')
+    if ovl is None:
+        return None
+    try:
+        if not ovl.is_active():
+            return None
+        size = ovl.get_canvas_size()
+    except Exception:
+        return None
+    if size and int(size[0]) > 0 and int(size[1]) > 0:
+        return (int(size[0]), int(size[1]))
+    return None
+
+
 def get_window_logical_size(
     screen: pygame.Surface | None = None,
     *,
@@ -713,6 +755,13 @@ def get_window_logical_size(
     available, which reflects logical points on HiDPI platforms. For offscreen
     surfaces it returns the surface size unchanged.
     """
+    # SDL2 overlay aktifken koordinat uzayı zaten sabit 1920x1080 tuvaldir
+    # (EKS-001 / RN-002; v2'deki software-canvas early-return'unun SDL2
+    # kardeşi olan bu dal demoda yalnızca SDL2 rejiminde çalışır).
+    sdl2_size = _sdl2_overlay_canvas_size()
+    if sdl2_size is not None:
+        return sdl2_size
+
     target_surface, _active_display_surface, is_display_surface = _resolve_display_surface_context(
         screen,
         display_surface,
@@ -847,6 +896,16 @@ def get_effective_ui_size(
     Render surfaces still use physical surface sizes. This helper only provides
     a more human-facing size baseline for font/panel/layout scaling.
     """
+    # SDL2 overlay aktifken koordinat uzayı zaten sabit tuvaldir; eff = tuval
+    # (EKS-001 / RN-002; v2'deki software-canvas early-return'unun SDL2
+    # kardeşi olan bu dal demoda yalnızca SDL2 rejiminde çalışır). Bu
+    # early-return, Windows DPI bölme dalını (aşağıda) SDL2 rejiminde
+    # güvenle atlatır (RN-006 / K13): eff = tuval boyutudur; %150 ölçekleme
+    # D3D11 sunum katmanının işidir, logical ölçeğin değil.
+    sdl2_size = _sdl2_overlay_canvas_size()
+    if sdl2_size is not None:
+        return sdl2_size
+
     target_surface, active_display_surface, is_display_surface = _resolve_display_surface_context(
         screen,
         display_surface,
@@ -1699,6 +1758,35 @@ def setup_virtual_canvas(
     """
     global _software_canvas, _real_display_surface, _software_scale_active, _virtual_blit_rect
 
+    # SDL2 overlay aktifken virtual canvas kurma: SDL renderer GPU'da zaten
+    # letterbox/ölçekleme yapıyor. platform_utils'in CPU-taraflı
+    # pygame.transform.scale'i üstüne eklemek çift maliyet yaratır (CPU scale +
+    # GPU upload). Overlay aktifken pass-through yap; ui_scaling'e "canvas yok"
+    # bildir (çift ölçekleme olmasın). (v2 paritesi — inceleme B1: FAZ 1
+    # early-return'leri olmadan bu dal sessizce atlanabiliyordu; şimdi eff
+    # tuvale sabitlendiği için SDL2 + software birleşik rejimi koordinat
+    # uzayı çelişkisi üretirdi.)
+    try:
+        import sdl2_overlay as _sdl2_ovl
+        if _sdl2_ovl.is_active():
+            try:
+                from ui_scaling import set_virtual_canvas_active
+                # KILAVUZ FAZ 2 (plan Faz 1.2'den gerekçeli sapma): SDL2 yolunda
+                # bayrak bilinçli olarak False kalır. eff boyutu FAZ 1 ile tuvale
+                # sabitlendi; identity _s dallarının açılması 1080p Steam
+                # baseline'ını (~1.22-1.24 ölçek) ham koordinata düşürürdü.
+                # Software canvas (tuval boyutu preset taşıyıcısı) bayrağı
+                # True tutmaya devam eder — mevcut sözleşme korunur.
+                set_virtual_canvas_active(False)
+            except Exception:
+                pass
+            # Eğer önceki bir virtual canvas kuruluysa temizle
+            if _software_scale_active:
+                _teardown_virtual_canvas()
+            return real_surface
+    except Exception:
+        pass
+
     if real_surface is None or not hasattr(real_surface, 'get_size'):
         return real_surface
 
@@ -1777,9 +1865,17 @@ def _teardown_virtual_canvas() -> None:
     """Virtual canvas monkey-patch'lerini geri al."""
     global _software_canvas, _real_display_surface, _software_scale_active, _virtual_blit_rect
     try:
-        pygame.display.flip = _orig_flip
-        pygame.display.update = _orig_update
-        pygame.display.get_surface = _orig_get_surface
+        # Yalnızca kendi patch'lerimizi geri al (v2 paritesi): mevcut
+        # flip/update/get_surface _software_* değilse başka bir katman
+        # (ör. sdl2_overlay'ın _patched_flip'i) patch koymuştur — dokunma.
+        # B1'in canvas→overlay geçişindeki _teardown_virtual_canvas çağrısı
+        # bu korumayı gerekli kılar.
+        if pygame.display.flip is _software_flip:
+            pygame.display.flip = _orig_flip
+        if pygame.display.update is _software_update:
+            pygame.display.update = _orig_update
+        if pygame.display.get_surface is _software_get_surface:
+            pygame.display.get_surface = _orig_get_surface
     except Exception:
         pass
     _software_canvas = None
@@ -2055,19 +2151,23 @@ def patch_event_queue() -> None:
         _orig_display_get_window_size = getattr(pygame.display, 'get_window_size', None)
         if _orig_display_get_window_size is not None:
             def _patched_display_get_window_size():
-                try:
-                    import sdl2_overlay as _sdl2_ovl
-                    if _sdl2_ovl.is_active():
-                        info = _sdl2_ovl.get_presentation_info()
-                        return (max(1, int(info.get('canvas_w', 1920))), max(1, int(info.get('canvas_h', 1080))))
-                except Exception:
-                    pass
+                # get_window_logical_size() BURADAN ÇAĞRILMAZ: o fonksiyon
+                # pygame.display.get_window_size'ı — yani bu patch'in kendisini —
+                # çağırır; argümansız gwls çağrısı KARŞILIKLI RECURSION üretir
+                # (v2 kanıtı K1/K11: 0.44-0.48 ms/çağrı vergisi). Eskiden
+                # buradaki sdl2_overlay sorgusu get_presentation_info() dict'iyle
+                # çağrı başına tahsis üretiyordu; yoklayıcı
+                # (_sdl2_overlay_canvas_size) hem daha ucuz hem v2 ile birebir
+                # parite. Boyutu doğrudan çöz:
                 try:
                     if _software_scale_active and _software_canvas is not None:
                         return _software_canvas.get_size()
+                    sdl2_size = _sdl2_overlay_canvas_size()
+                    if sdl2_size is not None:
+                        return sdl2_size
+                    return _orig_display_get_window_size()
                 except Exception:
-                    pass
-                return _orig_display_get_window_size()
+                    return _orig_display_get_window_size()
             pygame.display.get_window_size = _patched_display_get_window_size
 
         # Geri alma için referansları sakla
@@ -2110,6 +2210,7 @@ def unpatch_event_queue() -> None:
             pygame.mouse.set_pos = orig_set_pos
     except Exception:
         pass
+    try:
         orig_get_window_size = getattr(patch_event_queue, '_orig_display_get_window_size', None)
         if orig_get_window_size is not None:
             pygame.display.get_window_size = orig_get_window_size

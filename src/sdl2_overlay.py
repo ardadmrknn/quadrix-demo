@@ -770,6 +770,20 @@ def is_active() -> bool:
     return _active
 
 
+def get_canvas_size() -> tuple[int, int]:
+    """Aktif sabit oyun tuvalinin boyutu (kurulumdan sonra 1920x1080).
+
+    Ölçek çekirdeği (platform_utils._sdl2_overlay_canvas_size) bunu okur;
+    SDL2 yolunda effective/logical boyutun tek güvenilir kaynağıdır.
+    Safe-mode teardown sonrası _game_surface None'dır — erişimci o durumda
+    kanonik boyutu döndürür (DUZ-011/013 SDL2 sözleşmesi: erişimci asla
+    patlamaz, no-op kanonik değer verir).
+    """
+    if _game_surface is not None:
+        return _game_surface.get_size()
+    return _CANONICAL_CANVAS_SIZE
+
+
 def log_marker(label: str) -> None:
     """Runtime olay işaretçisi (ekran/state geçişi vb.) gl_debug.log'a yaz.
 
