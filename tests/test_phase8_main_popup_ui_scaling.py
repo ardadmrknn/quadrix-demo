@@ -1,3 +1,4 @@
+import ast
 import math
 import pathlib
 import sys
@@ -5,6 +6,7 @@ import importlib
 from types import SimpleNamespace
 
 import pygame
+import pytest
 
 
 ROOT_DIR = pathlib.Path(__file__).parent.parent
@@ -106,6 +108,97 @@ def _assert_popup_layout_within_recovered_surface(recorded, recovered_size=(800,
         assert panel_rect.contains(recorded['body_rects'][0])
     assert recorded['button_rects']
     assert all(panel_rect.contains(rect) for rect in recorded['button_rects'])
+
+
+class _FrameClockProbe:
+    def __init__(self):
+        self.calls = []
+        self.elapsed = [540000, 16]
+
+    def tick(self, cap):
+        self.calls.append(('tick', cap))
+        return self.elapsed.pop(0)
+
+    def tick_busy_loop(self, cap):
+        self.calls.append(('tick_busy_loop', cap))
+        return self.elapsed.pop(0)
+
+
+@pytest.mark.parametrize('platform_name', ['win32', 'darwin'])
+def test_modal_popup_time_is_consumed_before_next_game_frame(monkeypatch, platform_name):
+    clock = _FrameClockProbe()
+    monkeypatch.setattr(main_module.sys, 'platform', platform_name)
+
+    main_module._discard_modal_elapsed_time(clock)
+    # Demo ana döngüsü v2'nin _tick_frame_clock sarmalayıcısına sahip
+    # değil; döngüdeki satır içi ifadeyle aynı çağrı yapılır.
+    if platform_name == 'darwin' and hasattr(clock, 'tick_busy_loop'):
+        delta_ms = clock.tick_busy_loop(144)
+    else:
+        delta_ms = clock.tick(144)
+
+    assert delta_ms == 16
+    expected_tick = 'tick_busy_loop' if platform_name == 'darwin' else 'tick'
+    assert clock.calls == [('tick', 0), (expected_tick, 144)]
+
+
+@pytest.mark.parametrize('confirmed', [True, False])
+@pytest.mark.parametrize('popup_ms', [540000, 660000])
+def test_popup_runner_discards_modal_wait_and_preserves_display_recovery(confirmed, popup_ms):
+    source_path = pathlib.Path(main_module.__file__)
+    source = ast.parse(source_path.read_text(encoding='utf-8'))
+    popup_function = next(
+        node for node in ast.walk(source)
+        if isinstance(node, ast.FunctionDef) and node.name == '_run_popup_and_sync_screen'
+    )
+    factory = ast.parse(
+        'def make_runner(screen, clock):\n'
+        '    def _apply_screen(replacement):\n'
+        '        nonlocal screen\n'
+        '        screen = replacement\n'
+        '    return _run_popup_and_sync_screen, lambda: screen\n'
+    ).body[0]
+    factory.body.insert(1, popup_function)
+    initial_screen = object()
+    recovered_screen = object()
+    events = []
+    namespace = {
+        '_discard_modal_elapsed_time': main_module._discard_modal_elapsed_time,
+        '_refresh_screen_from_display': lambda screen: recovered_screen,
+        'pygame': SimpleNamespace(
+            VIDEORESIZE=123,
+            event=SimpleNamespace(
+                pump=lambda: events.append('pump'),
+                clear=lambda event_types: events.append(event_types),
+            ),
+        ),
+    }
+    module = ast.fix_missing_locations(ast.Module(body=[factory], type_ignores=[]))
+    exec(compile(module, str(source_path), 'exec'), namespace)
+    clock = _FrameClockProbe()
+    clock.elapsed = [popup_ms, 16]
+    runner, get_screen = namespace['make_runner'](initial_screen, clock)
+    calls = []
+
+    def popup(screen, mode_key, *, settings_manager):
+        calls.append((screen, mode_key, settings_manager))
+        return confirmed
+
+    assert runner(popup, 'survival', settings_manager={}) is confirmed
+    assert calls == [(initial_screen, 'survival', {})]
+    assert get_screen() is recovered_screen
+    assert events == ['pump', [123]]
+    assert clock.calls == [('tick', 0)]
+
+    def failing_popup(screen):
+        raise RuntimeError('popup failed')
+
+    clock.elapsed = [popup_ms, 16]
+    with pytest.raises(RuntimeError, match='popup failed'):
+        runner(failing_popup)
+    # Modal süresi tüketildi; sonraki kare popup_ms değil normal pace döner.
+    assert clock.tick(1000) == 16
+    assert clock.calls[-2:] == [('tick', 0), ('tick', 1000)]
 
 
 def test_fullscreen_popup_scale_uses_shared_reference_and_clamps_bounds():

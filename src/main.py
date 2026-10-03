@@ -1117,6 +1117,14 @@ def _load_announcement_mascot():
     return loaded
 
 
+def _discard_modal_elapsed_time(clock) -> None:
+    """Consume blocking modal time without pacing the next frame."""
+    try:
+        clock.tick(0)
+    except Exception:
+        pass
+
+
 def _show_announcement_popup(screen, settings_manager=None):
     """İlk açılışta / tutorial sonrası ana menüde gösterilen tek seferlik
     duyuru panelini çizer (bloklayıcı döngü).
@@ -2672,12 +2680,26 @@ def main():
         return new_screen
 
     def _run_popup_and_sync_screen(popup_callable, *args, **kwargs):
-        """Popup loop'u display recover yapsa bile ana screen referansini senkron tut."""
+        """Modal süresini ana frame saatinden dışla ve display referansını senkron tut."""
         nonlocal screen
-        result = popup_callable(screen, *args, **kwargs)
-        refreshed_screen = _refresh_screen_from_display(screen)
-        if refreshed_screen is not screen:
-            _apply_screen(refreshed_screen)
+        try:
+            result = popup_callable(screen, *args, **kwargs)
+        finally:
+            _discard_modal_elapsed_time(clock)
+            try:
+                refreshed_screen = _refresh_screen_from_display(screen)
+                if refreshed_screen is not screen:
+                    _apply_screen(refreshed_screen)
+            except Exception:
+                pass
+            # FAZ A3 (v2 paritesi): Mod değişimi sonrası birikmiş resize/video
+            # event'lerini temizle (bunlar sonraki frame'de ikinci bir geçiş
+            # tetikleyebilir). _rebuild_display'deki blok ile aynı disiplin.
+            try:
+                pygame.event.pump()
+                pygame.event.clear([pygame.VIDEORESIZE])
+            except Exception:
+                pass
         return result
 
     def _toggle_fullscreen(width=None, height=None):
@@ -5058,7 +5080,7 @@ def main():
             and not is_screen_transition_active()
         ):
             try:
-                _show_announcement_popup(screen, settings_manager=settings_manager)
+                _run_popup_and_sync_screen(_show_announcement_popup, settings_manager=settings_manager)
             except Exception:
                 pass
             finally:
@@ -5069,13 +5091,6 @@ def main():
                         settings_manager.set('announcement_seen', True)
                     except Exception:
                         pass
-                # Popup display'i recover etmiş olabilir; screen referansını senkronla.
-                try:
-                    surface_now = pygame.display.get_surface()
-                    if surface_now is not None and surface_now is not screen:
-                        _apply_screen(surface_now)
-                except Exception:
-                    pass
 
         # ── Menü Müzik Playlist Global Tick ────────────────────────────
         # update_music_playlist() daha önce yalnızca 'menu' ve 'settings'
