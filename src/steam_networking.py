@@ -37,6 +37,44 @@ _bridge_import_attempted = False
 _dll_dirs: list[Any] = []
 
 
+# ---------- DUZ-012: Online PvP hata sınıflandırması ----------
+
+# Iade_Duzeltme_Plani.md DUZ-012 kartındaki altı hata sınıfı + beklenmeyen
+# programlama hatası. Hata yolları bu kodlarla olay tabanlı, seviyeli log
+# yazar; her frame log YAZILMAZ (yalnız except/kenar noktalarında çağrılır).
+# detail alanına AppID, token, kullanıcı profili veya tam yerel path
+# geçirilmez (kart sınırı).
+ONLINE_PVP_ERR_STEAM_CLIENT_OFFLINE = 'steam_client_offline'
+ONLINE_PVP_ERR_STEAM_SDK_MISSING = 'steam_sdk_missing'
+ONLINE_PVP_ERR_BRIDGE_IMPORT_FAILED = 'bridge_import_failed'
+ONLINE_PVP_ERR_BRIDGE_INIT_FAILED = 'bridge_init_failed'
+ONLINE_PVP_ERR_TICK_TRANSIENT = 'tick_transient_error'
+ONLINE_PVP_ERR_NATIVE_CLEANUP_FAILED = 'native_cleanup_failed'
+ONLINE_PVP_ERR_UNEXPECTED = 'unexpected_error'
+
+
+def log_online_pvp_event(level: str, event: str, detail: str = '') -> None:
+    """DUZ-012: Online PvP hata/olay logu — makine-taranabilir tek satır.
+
+    Biçim: ``[OnlinePvP][LEVEL] event=<kod> detail=<kısa açıklama>``.
+    Yalnız olay anında çağrılır (guard dönüşleri, except blokları, durum
+    değişim kenarları); per-frame çağrı yasaktır. ``detail`` alanına
+    hassas veri (AppID, token, kullanıcı profili, tam yerel path)
+    geçirilmez — çağıranlar kısa sınıf bilgisi yazar.
+    """
+    line = f'[OnlinePvP][{level}] event={event}'
+    if detail:
+        line += f' detail={detail}'
+    print(line)
+
+
+def _path_tail(path: str, parts: int = 2) -> str:
+    """DUZ-012: log için path'in son bileşenleri — home/dizin yapısı ifşa
+    etmeden teşhis bağlamı verir (tam path log yasağı)."""
+    norm = os.path.normpath(str(path)).replace('\\', '/')
+    return '/'.join(norm.split('/')[-parts:])
+
+
 def _dedupe_paths(paths: list[str]) -> list[str]:
     seen: set[str] = set()
     out: list[str] = []
@@ -216,11 +254,16 @@ def _try_import_bridge():
         import steam_net_bridge as snb
         _bridge = snb
         _bridge_available = True
-        print(f"[SteamNet] steam_net_bridge yüklendi: {getattr(snb, '__file__', '<builtin>')}")
+        # DUZ-012: tam dosya yolu loglanmaz — yalnız modül dosya adı.
+        bridge_file = str(getattr(snb, '__file__', '') or '<builtin>')
+        print(f"[SteamNet] steam_net_bridge yüklendi: {_path_tail(bridge_file, 1) if bridge_file != '<builtin>' else bridge_file}")
         return True
     except Exception as exc:
-        print(f"[SteamNet] steam_net_bridge yuklenemedi: {exc}")
-        print(f"           Denenen yollar: {_dedupe_paths(tried_paths)}")
+        # DUZ-012: bridge import sınıfı + tam arama dizinleri YERİNE dizin
+        # adları basılır (yerel dizin yapısı/home yolu ifşa edilmez).
+        log_online_pvp_event('ERROR', ONLINE_PVP_ERR_BRIDGE_IMPORT_FAILED, type(exc).__name__)
+        searched = _dedupe_paths(tried_paths)
+        print(f"           Denenen dizinler ({len(searched)}): " + ', '.join(_path_tail(p) for p in searched))
         print("           build.bat ile derleyin veya artifacti local_artifacts/bridge altina koyun.")
         _bridge_available = False
         return False
@@ -467,7 +510,8 @@ class SteamNetworking:
         if not _bridge_import_attempted:
             _try_import_bridge()
         if not _bridge_available:
-            print("[SteamNet] C++ bridge mevcut değil.")
+            # DUZ-012: sebep sınıflandırılır — önceki lazy import başarısızlığı.
+            log_online_pvp_event('WARN', ONLINE_PVP_ERR_BRIDGE_IMPORT_FAILED, 'init oncesi bridge yok')
             return False
 
         try:
@@ -479,11 +523,15 @@ class SteamNetworking:
                 _active_instances.append(self)
                 print(f"[SteamNet] Başlatıldı. Steam ID: {self._my_steam_id}")
             else:
-                print("[SteamNet] init() False döndürdü — bridge instance sıfırlanıyor")
+                # DUZ-012: native init reddi (Steam kapalı / SteamAPI_Init
+                # çağrılmamış / native ret) kendi sınıfıyla loglanır.
+                log_online_pvp_event('WARN', ONLINE_PVP_ERR_BRIDGE_INIT_FAILED, 'native init False')
                 self._bridge_instance = None
             return ok
         except Exception as e:
-            print(f"[SteamNet] init hatası: {e}")
+            # DUZ-012: ctor/native init/get_my_steam_id istisnası — bridge
+            # init sınıfı; traceback bilinmeyen kök neden teşhisi için kalır.
+            log_online_pvp_event('ERROR', ONLINE_PVP_ERR_BRIDGE_INIT_FAILED, type(e).__name__)
             import traceback; traceback.print_exc()
             self._bridge_instance = None
             return False
@@ -498,10 +546,15 @@ class SteamNetworking:
                 # Eski bridge sürümü — fallback
                 try:
                     self._bridge_instance.leave_lobby()
-                except Exception:
-                    pass
+                except Exception as exc:
+                    # DUZ-012: eski-bridge fallback'in kendi native hatası
+                    # artık sessizce yutulmaz (kart: sessiz başarı üretme).
+                    log_online_pvp_event('WARN', ONLINE_PVP_ERR_NATIVE_CLEANUP_FAILED,
+                                         f'eski-bridge leave_lobby: {type(exc).__name__}')
             except Exception as e:
-                print(f"[SteamNet] shutdown hatası: {e}")
+                # DUZ-012: native cleanup hatası sınıfıyla loglanır
+                # (state-reset bloğu yine de çalışır — mevcut sözleşme).
+                log_online_pvp_event('ERROR', ONLINE_PVP_ERR_NATIVE_CLEANUP_FAILED, type(e).__name__)
             self._bridge_instance = None
         self._initialized = False
         self._state = 'idle'
@@ -849,12 +902,14 @@ class SteamNetworking:
             self._tick_consecutive_errors = 0
 
         except Exception as e:
-            print(f"[SteamNet] tick hatası: {e}")
+            # DUZ-012: transient tick hatası sınıfıyla sayaclı log; eşik
+            # davranışı (5 ardışık -> networking_disabled eventi) AYNEN.
+            log_online_pvp_event('WARN', ONLINE_PVP_ERR_TICK_TRANSIENT, type(e).__name__)
             self._tick_consecutive_errors += 1
             if self._tick_consecutive_errors >= self._TICK_ERROR_THRESHOLD:
-                print(
-                    f"[SteamNet] {self._tick_consecutive_errors} ardışık tick hatası — "
-                    "networking devre dışı bırakılıyor."
+                log_online_pvp_event(
+                    'ERROR', ONLINE_PVP_ERR_TICK_TRANSIENT,
+                    f'networking devre disi ({self._tick_consecutive_errors} ardissik hata)',
                 )
                 self._initialized = False
                 self._tick_consecutive_errors = 0

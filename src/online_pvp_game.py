@@ -98,6 +98,11 @@ from steam_networking import (
     SteamNetworking, MsgType, NetEvent, NetMessage,
     CHANNEL_GAME, CHANNEL_STATE, CHANNEL_CONTROL,
     generate_lobby_code,
+    log_online_pvp_event,
+    ONLINE_PVP_ERR_BRIDGE_IMPORT_FAILED,
+    ONLINE_PVP_ERR_BRIDGE_INIT_FAILED,
+    ONLINE_PVP_ERR_NATIVE_CLEANUP_FAILED,
+    ONLINE_PVP_ERR_UNEXPECTED,
 )
 
 
@@ -1016,9 +1021,17 @@ class OnlinePvPGame:
         if self._net_initialized:
             return True
 
+        # DUZ-012: auto-reconnect 2sn'de bir burayı yeniden çağırabilir;
+        # hata logu yalnız hata sınıfı DEĞİŞTİĞİNDE yazılır (durum-geçiş
+        # kenarı — per-frame/retry log spam'i yok). Kullanıcıya giden
+        # status mesajı ve davranış sözleşmesi DEĞİŞMEZ.
+        prev_error_key = getattr(self, '_network_error_key', '')
+
         if not self.net.available:
             self._bridge_missing = True
             self._network_error_key = 'steam_bridge_not_available'
+            if self._network_error_key != prev_error_key:
+                log_online_pvp_event('WARN', ONLINE_PVP_ERR_BRIDGE_IMPORT_FAILED, 'available=False')
             self._status_msg = t(self._network_error_key)
             self._status_timer = 0.0
             return False
@@ -1050,6 +1063,9 @@ class OnlinePvPGame:
                 self.net.on('session_rejected', self._on_session_rejected)
                 self._net_initialized = True
                 self._network_error_key = ''
+                if prev_error_key:
+                    # DUZ-012: retry sonrası toparlanma gözlemlenir.
+                    log_online_pvp_event('INFO', ONLINE_PVP_ERR_BRIDGE_INIT_FAILED, 'init retry basarili')
                 self._status_msg = ''
                 self._status_timer = 0.0
                 try:
@@ -1058,6 +1074,10 @@ class OnlinePvPGame:
                     print(f"[OnlinePvP] Lobi müziği başlatılamadı: {exc}")
                 return True
         except Exception as exc:
+            # DUZ-012: net.init() kendi native hatalarını yutup False döndürür;
+            # buraya ulaşan exception tanım gereği beklenmeyen programlama
+            # hatasıdır (pump pause / handler kaydı) — unexpected sınıfı.
+            log_online_pvp_event('ERROR', ONLINE_PVP_ERR_UNEXPECTED, type(exc).__name__)
             print(f"[OnlinePvP] Networking başlatma hatası: {exc}")
             import traceback
             traceback.print_exc()
@@ -1066,6 +1086,9 @@ class OnlinePvPGame:
         try:
             self.net.shutdown()
         except Exception as exc:
+            # DUZ-012: native cleanup hatası sınıfıyla loglanır; bayrak sözleşmesi
+            # (_network_cleanup_failed + _bridge_missing → yeniden init yok) AYNEN.
+            log_online_pvp_event('ERROR', ONLINE_PVP_ERR_NATIVE_CLEANUP_FAILED, 'init cleanup')
             print(f"[OnlinePvP] Native ağ temizliği başarısız: {exc}")
             self._network_cleanup_failed = True
             self._bridge_missing = True  # Belirsiz native durumunda tekrar init yapma.
@@ -1073,6 +1096,10 @@ class OnlinePvPGame:
             self._release_steam_pump()
         self._net_initialized = False
         self._network_error_key = 'steam_net_init_failed'
+        if self._network_error_key != prev_error_key:
+            # DUZ-012: native init reddi (transient/kalıcı ayrımı shutdown
+            # sonucuna göre zaten yapılır) — yalnız sınıf değişiminde log.
+            log_online_pvp_event('WARN', ONLINE_PVP_ERR_BRIDGE_INIT_FAILED, 'net init basarisiz')
         self._status_msg = t(self._network_error_key)
         self._status_timer = 0.0
         return False
@@ -1095,8 +1122,11 @@ class OnlinePvPGame:
         # böylece diğer platform geçici "public" metadata okumasını önle.
         try:
             self.net.set_lobby_data('metadata_ready', '0')
-        except Exception:
-            pass
+        except Exception as exc:
+            # DUZ-012: race-window korumasının ilk adımı sessizce atlanırsa
+            # gözlemlenir (kart: sessiz başarı üretme) — komşu metadata
+            # bloklarının mevcut print deseniyle hizalı tutulur.
+            print(f"[OnlinePvP] metadata_ready sıfırlama hatası: {exc}")
 
         if self._creating_public_lobby:
             self._lobby_code = ''
@@ -1279,10 +1309,25 @@ class OnlinePvPGame:
             print(f"[OnlinePvP] control send basarisiz: {msg_type} ({reason or 'no_reason'})")
         return ok
 
+    def _log_ready_failure(self, msg: str, pending_flush: bool) -> None:
+        """DUZ-012: 'pending_flush' yolu update döngüsünde her frame tetiklenebilir.
+
+        Aynı pending döneminde yalnız İLK başarısızlık loglanır (kartın
+        per-frame log yasağı); başarı noktaları bayrağı sıfırlar.
+        """
+        if pending_flush and getattr(self, '_ready_flush_fail_logged', False):
+            return
+        print(msg)
+        if pending_flush:
+            self._ready_flush_fail_logged = True
+
     def _send_ready_signal(self, reason: str = '') -> bool:
         """READY sinyalini gönder; session hazır değilse ping ile bootstrap da yap."""
         if not self._net_initialized:
             return False
+        # DUZ-012: pending_flush başarısızlık logları edge-triggered (bkz.
+        # _log_ready_failure); kullanıcı davranışı ve retry sözleşmesi AYNEN.
+        pending_flush = reason == 'pending_flush'
         has_opponent_id = bool(getattr(self.net, 'opponent_steam_id', 0))
 
         if not has_opponent_id:
@@ -1290,9 +1335,13 @@ class OnlinePvPGame:
             ok = bool(self.net.send_ready())
             if ok:
                 self._ready_send_pending = False
+                self._ready_flush_fail_logged = False
                 print(f"[OnlinePvP] READY lobby fallback gonderildi ({reason or 'no_reason'}).")
             else:
-                print(f"[OnlinePvP] READY lobby fallback basarisiz ({reason or 'no_reason'}).")
+                self._log_ready_failure(
+                    f"[OnlinePvP] READY lobby fallback basarisiz ({reason or 'no_reason'}).",
+                    pending_flush,
+                )
             return ok
 
         if not self._session_established:
@@ -1302,15 +1351,22 @@ class OnlinePvPGame:
             lobby_ok = self._send_ready_lobby_fallback(reason=reason)
             if ready_ok or lobby_ok:
                 self._ready_send_pending = False
+                self._ready_flush_fail_logged = False
                 print(
                     f"[OnlinePvP] READY session-oncesi gonderildi "
                     f"({reason or 'no_reason'}), ping={ping_ok}, lobby_fallback={lobby_ok}."
                 )
                 return True
             if not ping_ok:
-                print(f"[OnlinePvP] READY başarısız ({reason or 'no_reason'}): session yok, ping de başarısız.")
+                self._log_ready_failure(
+                    f"[OnlinePvP] READY başarısız ({reason or 'no_reason'}): session yok, ping de başarısız.",
+                    pending_flush,
+                )
             else:
-                print(f"[OnlinePvP] READY başarısız ({reason or 'no_reason'}): ping gitti, session onayı bekleniyor.")
+                self._log_ready_failure(
+                    f"[OnlinePvP] READY başarısız ({reason or 'no_reason'}): ping gitti, session onayı bekleniyor.",
+                    pending_flush,
+                )
             return False
 
         ok = bool(self.net.send_ready())
@@ -1318,8 +1374,12 @@ class OnlinePvPGame:
             ok = self._send_ready_lobby_fallback(reason=reason)
         if ok:
             self._ready_send_pending = False
+            self._ready_flush_fail_logged = False
         else:
-            print(f"[OnlinePvP] send_ready başarısız ({reason or 'no_reason'}).")
+            self._log_ready_failure(
+                f"[OnlinePvP] send_ready başarısız ({reason or 'no_reason'}).",
+                pending_flush,
+            )
         return ok
 
     def _send_ready_lobby_fallback(self, reason: str = '') -> bool:
@@ -1338,7 +1398,12 @@ class OnlinePvPGame:
         if callable(send_to_lobby):
             ok = bool(send_to_lobby(payload, reliable=True, channel=CHANNEL_CONTROL))
             if not ok:
-                print(f"[OnlinePvP] READY lobby fallback basarisiz ({reason or 'no_reason'}).")
+                # DUZ-012: pending_flush çağrı zincirinde per-frame tekrar
+                # edebildiğinden edge-triggered loglanır (bkz. _log_ready_failure).
+                self._log_ready_failure(
+                    f"[OnlinePvP] READY lobby fallback basarisiz ({reason or 'no_reason'}).",
+                    reason == 'pending_flush',
+                )
             return ok
         return False
 
@@ -7356,6 +7421,9 @@ class OnlinePvPGame:
         try:
             self.net.shutdown()
         except Exception as exc:
+            # DUZ-012: native cleanup hatası sınıfıyla loglanır; pump açmama
+            # güvenlik sözleşmesi (return + _network_cleanup_failed) AYNEN.
+            log_online_pvp_event('ERROR', ONLINE_PVP_ERR_NATIVE_CLEANUP_FAILED, 'cleanup')
             print(f"[OnlinePvP] Native ağ temizliği başarısız: {exc}")
             self._network_cleanup_failed = True
             return  # Native callback sahibi kapanmadan arka plan pump'ını açma.

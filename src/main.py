@@ -971,14 +971,40 @@ def _show_mode_intro_popup(screen, mode_key, settings_manager=None):
 
 def _online_pvp_launch_status() -> tuple[bool, str]:
     """Online PvP için Steam SDK ve native ağ köprüsünü doğrula."""
+    # DUZ-012: her başarısızlık sınıfı tek satır olay loguyla ayrıştırılır
+    # (steam kapalı / SDK import / bridge import / bridge kullanılamıyor);
+    # kullanıcıya giden lokalize mesaj ve dönüş değeri DEĞİŞMEZ. Import
+    # hatası mesaj gövdesi path taşıyabileceğinden loga yalnız tür adı yazılır.
+    # steam_networking'in KENDİSİ yüklenemiyorsa sınıflandırma yardımcıları
+    # pasifleşir (bridge import sınıfı aşağıdaki önkoşul bloğunda yakalanır)
+    # — dönüş sözleşmesi eski kodla birebir aynı kalır.
+    try:
+        from steam_networking import (
+            ONLINE_PVP_ERR_BRIDGE_IMPORT_FAILED,
+            ONLINE_PVP_ERR_STEAM_CLIENT_OFFLINE,
+            ONLINE_PVP_ERR_STEAM_SDK_MISSING,
+            log_online_pvp_event,
+        )
+    except Exception:
+        ONLINE_PVP_ERR_BRIDGE_IMPORT_FAILED = 'bridge_import_failed'
+        ONLINE_PVP_ERR_STEAM_CLIENT_OFFLINE = 'steam_client_offline'
+        ONLINE_PVP_ERR_STEAM_SDK_MISSING = 'steam_sdk_missing'
+
+        def log_online_pvp_event(level: str, event: str, detail: str = '') -> None:
+            # steam_networking yokken de olay satırı yazılır (sessiz kalmama);
+            # biçim steam_networking.log_online_pvp_event ile aynıdır.
+            print(f'[OnlinePvP][{level}] event={event}' + (f' detail={detail}' if detail else ''))
+
     try:
         import steam_integration
         if not steam_integration.is_available():
+            log_online_pvp_event('WARN', ONLINE_PVP_ERR_STEAM_CLIENT_OFFLINE, 'is_available=False')
             return False, t(
                 'steam_required_for_online',
                 'Online PvP için Steam istemcisini açın ve oyunu yeniden başlatın.',
             )
-    except Exception:
+    except Exception as exc:
+        log_online_pvp_event('WARN', ONLINE_PVP_ERR_STEAM_SDK_MISSING, type(exc).__name__)
         return False, t(
             'steam_required_for_online',
             'Online PvP için Steam istemcisini açın ve oyunu yeniden başlatın.',
@@ -987,11 +1013,13 @@ def _online_pvp_launch_status() -> tuple[bool, str]:
     try:
         from steam_networking import SteamNetworking
         if not SteamNetworking().available:
+            log_online_pvp_event('WARN', ONLINE_PVP_ERR_BRIDGE_IMPORT_FAILED, 'available=False')
             return False, t(
                 'steam_bridge_not_available',
                 'Steam ağ köprüsü yüklenemedi. Online PvP kullanılamıyor.',
             )
-    except Exception:
+    except Exception as exc:
+        log_online_pvp_event('WARN', ONLINE_PVP_ERR_BRIDGE_IMPORT_FAILED, type(exc).__name__)
         return False, t(
             'steam_bridge_not_available',
             'Steam ağ köprüsü yüklenemedi. Online PvP kullanılamıyor.',
@@ -1001,9 +1029,23 @@ def _online_pvp_launch_status() -> tuple[bool, str]:
 
 def _create_online_pvp_game(*, on_failure: Callable[[], None] | None = None, **kwargs) -> tuple[OnlinePvPGame | None, str]:
     """Constructor ve Steam önkoşullarını menü state'ini değiştirmeden doğrula."""
+    # DUZ-012: exception yolları sınıflandırılmış olay logu yazar. Dış
+    # bağımlılık sınıfları preflight/ init dönüş değerlerinde zaten elenir;
+    # buraya ulaşan exception tanım gereği beklenmeyen programlama hatasıdır
+    # (unexpected_error + traceback) ve native cleanup hatası kendi sınıfını
+    # alır. Davranış sözleşmesi (on_failure, cleanup, mesaj) DEĞİŞMEZ.
     ready, reason = _online_pvp_launch_status()
     if not ready:
         return None, reason
+    # Preflight başarılıysa steam_networking import edilebilir durumdadır
+    # (launch_status köprü önkoşulunu aynı modülden doğruladı) — sabitler
+    # burada güvenle çözülür; preflight başarısızsa bu satır hiç çalışmaz.
+    from steam_networking import (
+        ONLINE_PVP_ERR_BRIDGE_INIT_FAILED,
+        ONLINE_PVP_ERR_NATIVE_CLEANUP_FAILED,
+        ONLINE_PVP_ERR_UNEXPECTED,
+        log_online_pvp_event,
+    )
     game = None
     try:
         game = OnlinePvPGame(**kwargs)
@@ -1011,8 +1053,14 @@ def _create_online_pvp_game(*, on_failure: Callable[[], None] | None = None, **k
         connected = game._init_networking()
         game._auto_connect_attempted = True
         game._auto_connect_retry_timer = 0.0 if connected else 2000.0
+        if not connected:
+            # DUZ-012: transient init başarısızlığı — oyun fallback modda
+            # launch edildi (2sn'de bir oyun içi retry); main seviyesinde
+            # kayıt kalır, on_failure ÇAĞRILMAZ (mevcut sözleşme).
+            log_online_pvp_event('INFO', ONLINE_PVP_ERR_BRIDGE_INIT_FAILED, 'init False — oyun ici fallback retry')
         return game, ''
     except Exception as exc:
+        log_online_pvp_event('ERROR', ONLINE_PVP_ERR_UNEXPECTED, type(exc).__name__)
         print(f"[OnlinePvP] Ekran oluşturma hatası: {exc}")
         import traceback
         traceback.print_exc()
@@ -1020,6 +1068,9 @@ def _create_online_pvp_game(*, on_failure: Callable[[], None] | None = None, **k
             try:
                 game._cleanup()
             except Exception:
+                # DUZ-012: en iyi çaba cleanup'ın kendi native hatası sınıfsız
+                # traceback olarak kaybolmaz.
+                log_online_pvp_event('ERROR', ONLINE_PVP_ERR_NATIVE_CLEANUP_FAILED, 'create cleanup')
                 traceback.print_exc()
         if on_failure is not None:
             on_failure()
