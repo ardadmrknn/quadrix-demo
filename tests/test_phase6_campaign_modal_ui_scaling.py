@@ -42,6 +42,18 @@ def _make_fake_font(size: int, bold: bool = False):
     return _FakeFont(size)
 
 
+def _render_fit_text_stub(text, color, max_width, base_size, bold=True, min_size=10):
+    # retro_style.render_fit_text sahte karşılığı: fake font küçültme
+    # döngüsü (gerçek API imzasıyla uyumlu — campaign_ui P1-3 fit yolu).
+    size = max(1, int(base_size))
+    minimum = max(1, int(min_size or 1))
+    font = _make_fake_font(size, bold=bold)
+    while max_width and font.size(text)[0] > max_width and size > minimum:
+        size -= 1
+        font = _make_fake_font(size, bold=bold)
+    return font.render(text, True, color)
+
+
 def _install_modal_test_stubs(monkeypatch, *, with_retro: bool = True):
     monkeypatch.setattr(campaign_ui.UIFonts, 'get', lambda size: _make_fake_font(size))
     monkeypatch.setattr(campaign_ui, 't', lambda key, *args, **kwargs: key)
@@ -68,6 +80,7 @@ def _install_modal_test_stubs(monkeypatch, *, with_retro: bool = True):
                 border_radius=8,
             ),
             get_font=lambda size, bold=False: _make_fake_font(size, bold=bold),
+            render_fit_text=_render_fit_text_stub,
         )
     monkeypatch.setitem(sys.modules, 'retro_style', retro_style_stub)
 

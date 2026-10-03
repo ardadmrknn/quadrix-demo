@@ -16,6 +16,7 @@ from ui_theme import UIColors, UIFonts, UIStyle
 from platform_utils import get_mouse_pos
 from localization import t
 from ui_scaling import get_modal_scale, scale_px
+from ui_text_layout import ellipsize_text, wrap_text_limited
 
 # Oyunun renk paleti (merkezi tema)
 NEON_CYAN = UIColors.NEON_CYAN
@@ -76,7 +77,16 @@ class CampaignUIEffects:
         # Mouse tıklama için buton rect'leri (her frame draw'da güncellenir)
         self._failed_buttons: Dict[str, pygame.Rect] = {}
         self._complete_buttons: Dict[str, pygame.Rect] = {}
-        
+
+        # P0-2/P1-3 (ölçekleme denetim raporu): modal rect kayıtları —
+        # test sözleşmeleri panel/başlık/metin bütçelerini bu rect'lerden
+        # doğrular (DUZ-010 rect-kayıt idyomu; her frame draw'da güncellenir).
+        self._complete_panel_rect: Optional[pygame.Rect] = None
+        self._complete_title_rect: Optional[pygame.Rect] = None
+        self._failed_panel_rect: Optional[pygame.Rect] = None
+        self._failed_reason_rects: List[pygame.Rect] = []
+        self._failed_hint_rects: List[pygame.Rect] = []
+
     def update(self, dt: float) -> None:
         """Animasyonları güncelle"""
         self.animation_time += dt
@@ -749,10 +759,18 @@ class CampaignUIEffects:
         panel_width = max(s(380), panel_width)
         panel_height = min(max(s(380), screen_h - s(160)), screen_h - s(80))
         panel_height = max(s(340), panel_height)
-        
+
+        _geometry, _safe_rect = self._get_modal_geometry(surface)
+        # P0-1 (ölçekleme denetim raporu): Rect.clamp küçültme yapmaz —
+        # safe rect'ten büyük panelde boyut tavanı konumlandırmadan ÖNCE
+        # uygulanır; floor zinciri safe rect'i aşarsa safe rect kazanır.
+        if _safe_rect is not None:
+            panel_width = min(panel_width, _safe_rect.width)
+            panel_height = min(panel_height, _safe_rect.height)
+
         panel_x = (screen_w - panel_width) // 2
         panel_y = (screen_h - panel_height) // 2
-        
+
         # Panel slide-in animasyonu
         if anim_time < 0.3:
             panel_y += int(s(50, minimum=0) * (1 - anim_time / 0.3))
@@ -763,9 +781,19 @@ class CampaignUIEffects:
         # İç yerleşim koordinatları (pad_x/inner_*) panel_rect'ten bu
         # clamp'ten SONRA türetilir — rect kaynağı tek, türevler otomatik
         # izler.
-        _geometry, _safe_rect = self._get_modal_geometry(surface)
+        # P0-1 (ölçekleme denetim raporu): clamp YÖNÜ düzeltildi — çağıran
+        # (panel) hedefin (safe rect) içine yerleşir. Eski
+        # `_safe_rect.clamp(panel_rect)` çağıranın (safe rect'in)
+        # boyutlarını döndürüp paneli boyutlarıyla eziyordu.
         if _safe_rect is not None:
-            panel_rect = _safe_rect.clamp(panel_rect)
+            panel_rect = panel_rect.clamp(_safe_rect)
+            # Header/footer/fallback yüzey boyutları yerel
+            # panel_width/panel_height değişkenlerinden türetildiği için
+            # clamp sonrasında tek kaynaktan (panel_rect) yenilenir.
+            panel_width = panel_rect.width
+            panel_height = panel_rect.height
+        # P0-2: panel rect test sözleşmesi için kaydedilir (DUZ-010 idyomu).
+        self._complete_panel_rect = panel_rect
         
         # Panel padding
         pad_x = s(32)
@@ -816,24 +844,38 @@ class CampaignUIEffects:
         pygame.draw.line(surface, (*NEON_CYAN, 140), (header_rect.x + s(10), header_rect.bottom - s(2, minimum=0)), (header_rect.right - s(10), header_rect.bottom - s(2, minimum=0)), max(1, s(2)))
 
         # BAŞLIK - premium kısa
+        # P1-3 (ölçekleme denetim raporu): başlık header bütçesine fitted;
+        # retro yolunda render_fit_text (LRU cache), fallback yolunda son
+        # çare ASCII '...'. Glow katmanı aynı surface'ın set_alpha
+        # modülasyonuyla blit edilir — kare başına ikinci font.render
+        # kalkar (FAZ A6 overlay modülasyon deseni).
         title_text = t('campaign_congrats_title')
         title_color = NEON_CYAN
+        title_max_w = max(24, header_rect.width - 2 * s(10))
 
         if retro_style:
-            title_font = retro_style.get_font(s(40, minimum=18), bold=True)
+            title = retro_style.render_fit_text(
+                title_text, title_color, title_max_w,
+                s(40, minimum=18), bold=True, min_size=s(18, minimum=10),
+            )
             subtitle_font = retro_style.get_font(s(21, minimum=11), bold=False)
         else:
             title_font = self._get_font(s(40, minimum=18))
+            title = title_font.render(
+                ellipsize_text(title_text, title_font, title_max_w),
+                True, title_color,
+            )
             subtitle_font = self._get_font(s(21, minimum=11))
 
-        title = title_font.render(title_text, True, title_color)
         title_rect = title.get_rect(centerx=header_rect.centerx, top=header_rect.y + s(6))
+        # P1-3: başlık rect'i test bütçe sözleşmesi için kaydedilir.
+        self._complete_title_rect = title_rect
 
-        # Glow efekti
-        glow_surf = title_font.render(title_text, True, title_color)
+        # Glow efekti — tek surface, modülasyonlu blit + tam alfa restore.
         for dx, dy, a in [(-s(2, minimum=0), 0, 26), (s(2, minimum=0), 0, 26), (0, -s(2, minimum=0), 22), (0, s(2, minimum=0), 22)]:
-            glow_surf.set_alpha(a)
-            surface.blit(glow_surf, (title_rect.x + dx, title_rect.y + dy))
+            title.set_alpha(a)
+            surface.blit(title, (title_rect.x + dx, title_rect.y + dy))
+        title.set_alpha(255)
         surface.blit(title, title_rect)
 
         # ============================================
@@ -847,9 +889,23 @@ class CampaignUIEffects:
         star_start_x = header_rect.centerx - total_star_width // 2
 
         # Alt başlık (level adı) - yıldızların hemen solunda, aynı hizada
-        subtitle = subtitle_font.render(level_name, True, (205, 215, 235))
+        # P1-3 (ölçekleme denetim raporu): level adı yıldız bloğuna kalan
+        # yatay bütçeye fitted; taşmada son çare ASCII '...'.
+        subtitle_color = (205, 215, 235)
+        subtitle_right = star_start_x - s(8)
+        subtitle_max_w = max(24, subtitle_right - (panel_rect.x + s(12)))
+        if retro_style:
+            subtitle = retro_style.render_fit_text(
+                level_name, subtitle_color, subtitle_max_w,
+                s(21, minimum=11), bold=False, min_size=s(11, minimum=8),
+            )
+        else:
+            subtitle = subtitle_font.render(
+                ellipsize_text(level_name, subtitle_font, subtitle_max_w),
+                True, subtitle_color,
+            )
         subtitle_rect = subtitle.get_rect()
-        subtitle_rect.midright = (star_start_x - s(8), star_area_y + star_size // 2)
+        subtitle_rect.midright = (subtitle_right, star_area_y + star_size // 2)
         surface.blit(subtitle, subtitle_rect)
         
         # Yıldız reveal animasyonu
@@ -1315,20 +1371,34 @@ class CampaignUIEffects:
         panel_width = max(s(360), panel_width)
         panel_height = min(max(s(260), screen_h - s(200)), screen_h - s(100))
         panel_height = max(s(220), panel_height)
-        
+
+        _geometry, _safe_rect = self._get_modal_geometry(surface)
+        # P0-1 (ölçekleme denetim raporu): clamp küçültmediği için safe
+        # rect boyut tavanı konumlandırma/shake ÖNCESİ uygulanır.
+        if _safe_rect is not None:
+            panel_width = min(panel_width, _safe_rect.width)
+            panel_height = min(panel_height, _safe_rect.height)
+
         panel_x = (screen_w - panel_width) // 2
         panel_y = (screen_h - panel_height) // 2
-        
+
         # Shake efekti (ilk 0.5 saniyede)
         if anim_time < 0.5:
             shake = int(s(8, minimum=0) * math.sin(anim_time * 45) * (1 - anim_time / 0.5))
             panel_x += shake
-        
+
         panel_rect = pygame.Rect(panel_x, panel_y, panel_width, panel_height)
         # FAZ A6 (S4): shake dâhil panel canonical safe rect içinde kalır.
-        _geometry, _safe_rect = self._get_modal_geometry(surface)
+        # P0-1 (ölçekleme denetim raporu): clamp YÖNÜ düzeltildi — panel
+        # safe rect'in İÇİNE yerleşir; eski `_safe_rect.clamp(panel_rect)`
+        # safe rect'in boyutlarını panel yerine koyuyordu. Fallback yüzey
+        # boyutları clamp sonrası panel_rect'ten yenilenir.
         if _safe_rect is not None:
-            panel_rect = _safe_rect.clamp(panel_rect)
+            panel_rect = panel_rect.clamp(_safe_rect)
+            panel_width = panel_rect.width
+            panel_height = panel_rect.height
+        # P0-2: panel rect test sözleşmesi için kaydedilir (DUZ-010 idyomu).
+        self._failed_panel_rect = panel_rect
 
         # Glass panel çizimi (retro_style varsa kullan, yoksa fallback)
         use_retro = False
@@ -1360,50 +1430,84 @@ class CampaignUIEffects:
             pygame.draw.rect(surface, FAIL_RED, panel_rect, 2, border_radius=s(14))
         
         # BAŞLIK - glow efektli
+        # P1-3 (ölçekleme denetim raporu): başlık panel iç bütçesine
+        # fitted; retro yolunda render_fit_text (LRU cache), glow tek
+        # surface'dan modülasyonlu blit — kare başına ikinci font.render
+        # kalkar.
         title_text = t('campaign_failed_title')
-        
+        title_max_w = max(24, panel_rect.width - 2 * s(24))
+
         if retro_style:
-            title_font = retro_style.get_font(s(48, minimum=22), bold=True)
+            title = retro_style.render_fit_text(
+                title_text, FAIL_RED, title_max_w,
+                s(48, minimum=22), bold=True, min_size=s(22, minimum=12),
+            )
         else:
             title_font = self._get_font(s(48, minimum=22))
-        
-        title = title_font.render(title_text, True, FAIL_RED)
+            title = title_font.render(
+                ellipsize_text(title_text, title_font, title_max_w),
+                True, FAIL_RED,
+            )
+
         title_rect = title.get_rect(centerx=panel_rect.centerx, top=panel_rect.y + s(28))
-        
-        # Glow efekti
-        glow_surf = title_font.render(title_text, True, FAIL_RED)
+
+        # Glow efekti — tek surface, modülasyonlu blit + tam alfa restore.
         for dx, dy, a in [(-s(2, minimum=0), 0, 30), (s(2, minimum=0), 0, 30), (0, -s(2, minimum=0), 25), (0, s(2, minimum=0), 25)]:
-            glow_surf.set_alpha(a)
-            surface.blit(glow_surf, (title_rect.x + dx, title_rect.y + dy))
+            title.set_alpha(a)
+            surface.blit(title, (title_rect.x + dx, title_rect.y + dy))
+        title.set_alpha(255)
         surface.blit(title, title_rect)
         
-        # Sebep (varsa)
+        # P1-3 (ölçekleme denetim raporu): buton satırı rect'leri ÖNCE
+        # üretilir; reason/hint dikey bütçeleri bu satırdan türetilir —
+        # metinler butonları asla kesmez, animasyon boyunca yerleşim
+        # kararlı kalır (0.8 s öncesi buton görünmez, bütçe yine ayrılır).
+        btn_h = s(40, minimum=28)
+        btn_margin = s(10, minimum=6)
+        btn_gap = s(8, minimum=4)
+        btn_w = max(24, (panel_rect.width - btn_margin * 2 - btn_gap) // 2)
+        btn_y = panel_rect.bottom - btn_h - btn_margin
+
+        # Sebep (varsa) — panel iç genişliğine sarılır; satır limiti
+        # kalan dikey bütçeden hesaplanır, taşma ASCII '...' ile kesilir.
+        self._failed_reason_rects = []
+        reason_bottom = title_rect.bottom
         if reason:
             if retro_style:
                 reason_font = retro_style.get_font(s(20, minimum=11), bold=False)
             else:
                 reason_font = self._get_font(s(20, minimum=11))
-            
-            reason_surf = reason_font.render(reason, True, (220, 180, 170))
-            reason_rect = reason_surf.get_rect(centerx=panel_rect.centerx, top=title_rect.bottom + s(16))
-            surface.blit(reason_surf, reason_rect)
-        
+
+            reason_color = (220, 180, 170)
+            reason_max_w = max(24, panel_rect.width - 2 * s(20))
+            reason_top = title_rect.bottom + s(16)
+            reason_avail_h = max(0, (btn_y - s(12, minimum=6)) - reason_top)
+            reason_line_h = reason_font.get_height()
+            reason_max_lines = max(1, reason_avail_h // max(1, reason_line_h + 2))
+            reason_wrapped = wrap_text_limited(
+                str(reason), reason_font, reason_max_w, max_lines=reason_max_lines,
+            )
+            reason_y = reason_top
+            for reason_line in reason_wrapped.lines:
+                reason_surf = reason_font.render(reason_line, True, reason_color)
+                reason_rect = reason_surf.get_rect(centerx=panel_rect.centerx, top=reason_y)
+                surface.blit(reason_surf, reason_rect)
+                self._failed_reason_rects.append(reason_rect)
+                reason_y = reason_rect.bottom + 2
+            if self._failed_reason_rects:
+                reason_bottom = self._failed_reason_rects[-1].bottom
+
         # Buton ipuçları + tıklanabilir butonlar
         if anim_time > 0.8:
             hint_text = t('campaign_failed_hint')
-            
+
             if retro_style:
                 hint_font = retro_style.get_font(s(15, minimum=10), bold=False)
             else:
                 hint_font = self._get_font(s(15, minimum=10))
-            
-            # Butonları panel altına yerleştir
-            btn_h = s(40, minimum=28)
-            btn_margin = s(10, minimum=6)
-            btn_gap = s(8, minimum=4)
-            btn_w = (panel_rect.width - btn_margin * 2 - btn_gap) // 2
-            btn_y = panel_rect.bottom - btn_h - btn_margin
 
+            # Butonları panel altına yerleştir (P1-3: rect'ler yukarıda
+            # bütçe amaçlı üretildi; burada yalnızca oluştur/kayıt/çizim).
             retry_btn_rect = pygame.Rect(panel_rect.x + btn_margin, btn_y, btn_w, btn_h)
             menu_btn_rect = pygame.Rect(panel_rect.x + btn_margin + btn_w + btn_gap, btn_y, btn_w, btn_h)
             self._failed_buttons = {'retry': retry_btn_rect, 'menu': menu_btn_rect}
@@ -1420,17 +1524,38 @@ class CampaignUIEffects:
                     sub_text='ESC', color_code=retro_style.secondary,
                     state='hover' if menu_btn_rect.collidepoint(_mouse_pos) else 'normal',
                 )
-            
-            # Hint metni butonların üstünde
-            hint_surf = hint_font.render(hint_text, True, (160, 145, 145))
-            hint_rect = hint_surf.get_rect(centerx=panel_rect.centerx, bottom=btn_y - s(6, minimum=2))
-            
-            # Yanıp sönen efekt
+
+            # Hint metni butonların üstünde — P1-3: çok satırlı büyüme
+            # YUKARI doğru (alt kenar sabit), reason altına ve panel içine
+            # clamp'li; satır limiti kalan bütçeden, taşma ASCII '...'.
+            self._failed_hint_rects = []
+            hint_color = (160, 145, 145)
+            hint_anchor_bottom = btn_y - s(6, minimum=2)
+            hint_max_w = max(24, panel_rect.width - 2 * s(20))
+            hint_top_limit = max(panel_rect.y + s(8, minimum=4), reason_bottom + s(6, minimum=2))
+            hint_avail_h = max(0, hint_anchor_bottom - hint_top_limit)
+            hint_line_h = hint_font.get_height()
+            # Dejenere küçük panelde tek satıra bile bütçe yoksa hint
+            # atlanır (kontrollü degradasyon; buton sub_text ipucu kalır).
+            hint_max_lines = hint_avail_h // max(1, hint_line_h + 2)
+            hint_wrapped = wrap_text_limited(
+                hint_text, hint_font, hint_max_w, max_lines=max(1, hint_max_lines),
+            )
+            hint_lines = list(hint_wrapped.lines) if hint_max_lines >= 1 else []
+            hint_total_h = len(hint_lines) * hint_line_h + max(0, len(hint_lines) - 1) * 2
+            hint_y = hint_anchor_bottom - hint_total_h
+            # Yanıp sönen efekt (mevcut davranış)
             flash = 0.6 + 0.4 * math.sin(anim_time * 3.5)
-            hint_surf.set_alpha(int(255 * flash))
-            surface.blit(hint_surf, hint_rect)
+            for hint_line in hint_lines:
+                hint_surf = hint_font.render(hint_line, True, hint_color)
+                hint_surf.set_alpha(int(255 * flash))
+                hint_rect = hint_surf.get_rect(centerx=panel_rect.centerx, top=max(hint_y, hint_top_limit))
+                surface.blit(hint_surf, hint_rect)
+                self._failed_hint_rects.append(hint_rect)
+                hint_y = hint_rect.bottom + 2
         else:
             self._failed_buttons = {}
+            self._failed_hint_rects = []
     
     def _draw_star_shape(self, surface: pygame.Surface, cx: int, cy: int, size: int, color: Tuple) -> None:
         """Yıldız şekli çiz"""
