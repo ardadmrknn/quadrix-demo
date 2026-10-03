@@ -658,13 +658,29 @@ class RetroStyle:
                     "DejaVu Sans",
                     "Consolas",
                 ]
+                # v2 a4e20ee ('çince font sorunu'): match_font, Windows font
+                # kaydında DWORD değer bulununca TypeError fırlatabilir —
+                # aday döngüsü her adımda kontrollü fallback ile atlanır.
                 for name in candidates:
-                    path = pygame.font.match_font(name)
-                    if path:
-                        font_obj = pygame.font.Font(path, scaled_size)
-                        break
+                    try:
+                        path = pygame.font.match_font(name)
+                        if path:
+                            font_obj = pygame.font.Font(path, scaled_size)
+                            break
+                    except Exception:
+                        continue
                 if font_obj is None:
-                    font_obj = pygame.font.SysFont(None, scaled_size, bold=effective_bold)
+                    # SysFont de bozuk kayıtla patlayabilir → son çare pygame
+                    # default fontu (None) ile deneme (v2 a4e20ee deseni).
+                    try:
+                        font_obj = pygame.font.SysFont(None, scaled_size, bold=effective_bold)
+                    except Exception:
+                        try:
+                            font_obj = pygame.font.Font(None, scaled_size)
+                            if effective_bold:
+                                font_obj.set_bold(True)
+                        except Exception:
+                            font_obj = pygame.font.Font(None, scaled_size)
             self.font_cache[key] = font_obj
         return self.font_cache[key]
 

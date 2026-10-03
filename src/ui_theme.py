@@ -145,21 +145,36 @@ class UIFonts:
         """Güvenli system font fallback — pygame default font (freesansbold.ttf) olmadan da çalışır."""
         if not pygame.font.get_init():
             pygame.font.init()
+        # v2 a4e20ee ('çince font sorunu'): match_font, Windows font kaydında
+        # DWORD değer bulununca TypeError fırlatabilir — aday döngüsü her
+        # adımda kontrollü fallback ile atlanır.
         for name in ('Segoe UI', 'Arial', 'Helvetica', 'DejaVu Sans'):
-            path = pygame.font.match_font(name)
-            if path:
-                try:
+            try:
+                path = pygame.font.match_font(name)
+                if path:
                     font_obj = pygame.font.Font(path, scaled_size)
                     if effective_bold:
                         font_obj.set_bold(True)
                     return font_obj
-                except Exception:
-                    continue
+            except Exception:
+                continue
         # Son çare: SysFont (freesansbold.ttf gerektirmez)
         try:
             return pygame.font.SysFont(None, scaled_size, bold=effective_bold)
         except Exception:
+            pass
+        try:
             return pygame.font.SysFont('monospace', scaled_size, bold=effective_bold)
+        except Exception:
+            pass
+
+        font_obj = pygame.font.Font(None, scaled_size)
+        if effective_bold:
+            try:
+                font_obj.set_bold(True)
+            except Exception:
+                pass
+        return font_obj
 
     @classmethod
     def _get_latin_font(cls, scaled_size: int, effective_bold: bool) -> pygame.font.Font:
