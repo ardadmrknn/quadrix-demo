@@ -6339,7 +6339,14 @@ class MysteryMode(Game):
         )
 
         metrics = {
-            'cell_size': max(1, int(round(float(logical_cell_size) * pixel_ratio))),
+            # DUZ-011 / v2 220c937 ('çince ve 1600*900 sorunu'): cell_size board_x/
+            # board_width/panel ölçüleriyle AYNI scale_x zincirinde projekte
+            # edilir. pixel_ratio (get_display_pixel_ratio) min(sx, sy) +
+            # [0.5, 4.0] clamp'tir; clamp dışında 1.0'a snap edip board alanıyla
+            # ayrışır — hücreler tahtayı doldurmaz ya da taşırırdı. hud_px_scale
+            # ve metrics['pixel_ratio'] bilinçli olarak pixel_ratio'da kalır
+            # (v2 ile birebir).
+            'cell_size': max(1, int(round(float(logical_cell_size) * scale_x))),
             'logical_cell_size': logical_cell_size,
             'board_x': max(0, int(round(float(logical_board_x) * scale_x))),
             'board_y': max(0, int(round(float(logical_board_y) * scale_y))),
@@ -6868,6 +6875,11 @@ class MysteryMode(Game):
 
         # Aktif kartları sync et (tüm değişkenler tanımlandıktan sonra)
         self._sync_active_cards()
+
+    def _get_left_gameplay_reserve_width(self) -> int:
+        """Sol taraftaki kart paneli genişliğini layout hesaplayıcısına bildir."""
+        metrics = self._get_mystery_layout_metrics()
+        return int(metrics['left_panel_width'])
 
     def get_board_offset(self):
         """Tahtanın ekrandaki pozisyonunu effective-size tabanlı Mystery layout'tan döndür."""
