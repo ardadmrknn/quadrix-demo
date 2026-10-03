@@ -35,6 +35,11 @@ from ui_theme import UIColors
 from localization import t, get_language
 from sound import SoundManager
 from ui_scaling import get_projected_effective_scale
+# P1-12b (ölçekleme denetim raporu): lobi/bekleme metin bütçeleri —
+# ölçüm/önbellek yardımcıları (kare-başı font render yerine LRU).
+from text_cache import render_text
+from ui_text_layout import wrap_text_limited, ellipsize_text
+from game_over_surfaces import get_render_safe_rect
 from steam_networking import (
     SteamNetworking, MsgType, NetEvent, NetMessage,
     CHANNEL_GAME,
@@ -462,6 +467,12 @@ class OnlineCoopGame:
 
         # Lobby butonları
         self._lobby_buttons: list[dict] = []
+
+        # P1-12b (ölçekleme denetim raporu): lobi/bekleme çizim rect
+        # kayıtları (containment testleri; draw metotları her çizimde
+        # yeniler).
+        self._coop_lobby_rects = None
+        self._coop_waiting_rects = None
 
     # ============================================================
     #  NETWORKING
@@ -4927,6 +4938,8 @@ class OnlineCoopGame:
             1,
         )
         content_top = line_y + s(14)
+        # P1-12b: item çizim rect kayıtları (containment testleri).
+        item_records = []
 
         if self._lobby_list_fetching and not entries:
             dots = '.' * (int(time.time() * 2) % 4)
@@ -5011,11 +5024,11 @@ class OnlineCoopGame:
                 except Exception:
                     member_ratio = 0.0
 
-                name_font = _rs.get_font(s(17, minimum=12))
-                self.screen.blit(
-                    name_font.render(lobby_name, True, _rs.text_primary),
-                    (item_rect.x + s(20), item_rect.y + s(10)),
-                )
+                # P1-12b: sağ kenar elemanları (Katıl butonu + rozet) ÖNCE
+                # ölçülür; sol metinler (ad/detay/zaman) kalan bütçeye
+                # ellipsize ile sığdırılır (yatay çakışma yasağı).
+                join_w, join_h = s(92), s(34)
+                join_rect = pygame.Rect(item_rect.right - join_w - s(12), item_rect.centery - join_h // 2, join_w, join_h)
 
                 badge_font = _rs.get_font(s(11, minimum=9), bold=False)
                 badge_icon = None
@@ -5026,7 +5039,7 @@ class OnlineCoopGame:
                 else:
                     badge_text = t('open_lobby', 'Açık lobi')
 
-                badge_text_surf = badge_font.render(badge_text, True, accent_color)
+                badge_text_surf = render_text(badge_font, badge_text, True, accent_color)
                 badge_gap = s(6) if badge_icon else 0
                 badge_content_w = (
                     badge_text_surf.get_width()
@@ -5039,6 +5052,14 @@ class OnlineCoopGame:
                     badge_content_w + s(16),
                     badge_text_surf.get_height() + s(8),
                 )
+
+                # Lobi adı (host adı) — P1-12b: rozetle çakışmayacak bütçe.
+                name_font = _rs.get_font(s(17, minimum=12))
+                name_avail = badge_rect.x - (item_rect.x + s(20)) - s(10)
+                name_surf = render_text(name_font, ellipsize_text(
+                    lobby_name, name_font, max(24, name_avail)), True, _rs.text_primary)
+                name_rect = name_surf.get_rect(topleft=(item_rect.x + s(20), item_rect.y + s(10)))
+                self.screen.blit(name_surf, name_rect)
                 badge_surface = pygame.Surface((badge_rect.width, badge_rect.height), pygame.SRCALPHA)
                 pygame.draw.rect(badge_surface, (*accent_color[:3], 40), badge_surface.get_rect(), border_radius=999)
                 pygame.draw.rect(badge_surface, (*accent_color[:3], 130), badge_surface.get_rect(), 1, border_radius=999)
@@ -5053,6 +5074,7 @@ class OnlineCoopGame:
                     text_rect = badge_text_surf.get_rect(center=badge_rect.center)
                 self.screen.blit(badge_text_surf, text_rect)
 
+                # Detay satırı — P1-12b: Katıl butonunun soluna bütçelenir.
                 detail_font = _rs.get_font(s(12, minimum=9), bold=False)
                 detail_parts = [f"{members}/{max_members} {t('players_count_suffix', 'oyuncu')}"]
                 if requires_code:
@@ -5062,23 +5084,28 @@ class OnlineCoopGame:
                 elif visibility in ('unknown', 'stale_unknown'):
                     detail_parts.append(t('lobby_syncing', 'Lobi bilgisi kontrol ediliyor'))
                 detail_text = '  ·  '.join(detail_parts)
-                self.screen.blit(
-                    detail_font.render(detail_text, True, _rs.text_secondary),
-                    (item_rect.x + s(20), item_rect.y + s(34)),
-                )
+                detail_avail = join_rect.x - (item_rect.x + s(20)) - s(10)
+                detail_surf = render_text(detail_font, ellipsize_text(
+                    detail_text, detail_font, max(24, detail_avail)), True, _rs.text_secondary)
+                detail_rect = detail_surf.get_rect(topleft=(item_rect.x + s(20), item_rect.y + s(34)))
+                self.screen.blit(detail_surf, detail_rect)
 
+                # Zaman bilgisi — P1-12b: s(102)'de başlayan doluluk
+                # barına çakışmayacak bütçe.
+                time_rect = None
                 found_time = lobby.get('found_time', 0)
                 if found_time:
                     elapsed = int(time.time() - found_time)
                     time_text = t('just_now', 'Az önce') if elapsed < 60 else f'{elapsed // 60} dk önce'
                     time_font = _rs.get_font(s(11, minimum=9), bold=False)
-                    self.screen.blit(
-                        time_font.render(time_text, True, _rs.text_muted),
-                        (item_rect.x + s(20), item_rect.y + s(57)),
-                    )
+                    time_avail = s(102) - s(20) - s(10)
+                    time_surf = render_text(time_font, ellipsize_text(
+                        time_text, time_font, max(16, time_avail)), True, _rs.text_muted)
+                    time_rect = time_surf.get_rect(topleft=(item_rect.x + s(20), item_rect.y + s(57)))
+                    self.screen.blit(time_surf, time_rect)
 
-                join_w, join_h = s(92), s(34)
-                join_rect = pygame.Rect(item_rect.right - join_w - s(12), item_rect.centery - join_h // 2, join_w, join_h)
+                # Katıl butonu (rect yukarıda P1-12b hoist'inde hesaplandı:
+                # sol metin bütçeleri join_rect.x'e göre üretilir).
                 join_hover = join_rect.collidepoint(mouse_pos)
                 action = ''
                 if visibility in ('unknown', 'stale_unknown'):
@@ -5119,6 +5146,16 @@ class OnlineCoopGame:
                 occupancy = detail_font.render(f'{members}/{max_members}', True, _rs.text_secondary)
                 self.screen.blit(occupancy, occupancy.get_rect(midleft=(bar_rect.right + s(8), bar_rect.centery)))
 
+                item_records.append({
+                    'item_rect': item_rect,
+                    'name_rect': name_rect,
+                    'badge_rect': badge_rect,
+                    'detail_rect': detail_rect,
+                    'time_rect': time_rect,
+                    'join_rect': join_rect,
+                    'bar_rect': bar_rect,
+                })
+
             self.screen.set_clip(None)
 
             if len(entries) > visible:
@@ -5133,15 +5170,45 @@ class OnlineCoopGame:
                     scroll_text.get_rect(center=(list_x + list_w // 2, list_y + list_h - s(16))),
                 )
 
+        # P1-12b: alt bant (durum/Steam ID) render güvenli alanının altına
+        # taşmaz; durum mesajı ekran genişliğine 2 satıra dek sarılır.
+        lobby_bounds = get_render_safe_rect(self.screen)
+        if lobby_bounds is None:
+            lobby_bounds = pygame.Rect(0, 0, int(w), int(h))
+
+        status_line_rects = []
         if self._status_msg:
             status_font = _rs.get_font(s(16, minimum=11), bold=False)
-            status = status_font.render(self._status_msg, True, UIColors.NEON_MAGENTA)
-            self.screen.blit(status, status.get_rect(center=(cx, h - s(52))))
+            st_budget = max(24, min(w - s(48), s(980)))
+            status_lines = list(wrap_text_limited(
+                str(self._status_msg), status_font, st_budget, max_lines=2).lines)
+            st_line_h = status_font.get_height() + 2
+            anchor_y = min(h - s(52), lobby_bounds.bottom - s(58))
+            for li, line in enumerate(status_lines):
+                status_surf = render_text(status_font, line, True, UIColors.NEON_MAGENTA)
+                status_rect = status_surf.get_rect(center=(
+                    cx, anchor_y + (li - (len(status_lines) - 1) / 2) * st_line_h))
+                self.screen.blit(status_surf, status_rect)
+                status_line_rects.append(status_rect)
 
+        # Steam ID — P1-12b: ekran genişliğine ellipsize.
         info_font = _rs.get_font(s(13, minimum=10), bold=False)
         sid = getattr(self.net, 'my_steam_id', 0) or t('connecting', 'Bağlanılıyor...')
-        info = info_font.render(f'Steam ID: {sid}', True, _rs.text_muted)
-        self.screen.blit(info, info.get_rect(center=(cx, h - s(24))))
+        info_text = f'Steam ID: {sid}'
+        info_surf = render_text(info_font, ellipsize_text(
+            info_text, info_font, max(24, w - s(48))), True, _rs.text_muted)
+        info_rect = info_surf.get_rect(
+            center=(cx, min(h - s(24), lobby_bounds.bottom - s(14))))
+        self.screen.blit(info_surf, info_rect)
+
+        # P1-12b: gerçek blit rect'leri (containment testleri).
+        self._coop_lobby_rects = {
+            'bounds': lobby_bounds,
+            'list_panel': list_panel,
+            'items': list(item_records),
+            'status_line_rects': list(status_line_rects),
+            'steam_id_rect': info_rect,
+        }
 
     def _draw_join_code_input(self, x, y, btn_w, s, mouse_pos):
         """Kod ile katıl panelini Online PvP ile aynı slotlu formda çiz."""
@@ -5225,9 +5292,12 @@ class OnlineCoopGame:
         )
         self.screen.blit(helper_text, helper_text.get_rect(center=(x + btn_w // 2, slots_y + slot_h + s(14))))
 
+        # Hata mesajı — P1-12b: giriş panelinin genişliğine bütçelenir.
         if self._join_code_error:
             error_font = _rs.get_font(s(12, minimum=9), bold=False)
-            error = error_font.render(self._join_code_error, True, UIColors.NEON_RED)
+            error = render_text(error_font, ellipsize_text(
+                str(self._join_code_error), error_font, max(24, btn_w - s(32))),
+                True, UIColors.NEON_RED)
             self.screen.blit(error, error.get_rect(center=(x + btn_w // 2, slots_y + slot_h + s(34))))
 
         submit_w = btn_w - s(32)
@@ -5253,74 +5323,135 @@ class OnlineCoopGame:
         s = lambda v, minimum=1: self._sx(v, sc, minimum)
         mouse_pos = get_mouse_pos()
 
-        pw = min(s(640), w - s(80))
-        ph = min(s(510), h - s(100))
+        # P1-12b (ölçekleme denetim raporu): bekleme paneli render güvenli
+        # alanına clamp'lenir; yükseklik içerik bütçesinden üretilir. Kısa
+        # ekranlarda dikey ritim kuantalı akış merdiveniyle küçülür; dar
+        # ekranlarda aksiyon butonları dikey istife düşer. 1366x768/normal
+        # (flow=1.0, yatay buton) yerleşimde piksel bazında değişiklik yok
+        # (ph=510; geri butonu panel.bottom-s(70)..panel.bottom-s(26)).
+        bounds = get_render_safe_rect(self.screen)
+        if bounds is None:
+            bounds = pygame.Rect(0, 0, int(w), int(h))
+        pw = min(s(640), max(s(200), bounds.width - s(48)))
+        avail_h = max(s(240), bounds.height - s(24))
+        # Yatay 3 buton + aralıklar panele sığmıyorsa dikey istif.
+        stack_buttons = pw < s(448)
+
+        for flow in (1.0, 0.88, 0.76, 0.64, 0.52):
+            fs = lambda v, minimum=1: s(v * flow, minimum=minimum)
+            title_y = fs(40)
+            dots_y = fs(72)
+            mode_y = fs(105)
+            card_off = fs(130)
+            card_h = fs(170, minimum=100)
+            card_label_off = fs(28)
+            card_code_off = fs(72)
+            card_hint_off = fs(112)
+            card_public_off = fs(58)
+            card_public_hint_off = fs(96)
+            btn_gap = fs(20)
+            btn_h = fs(44, minimum=32)
+            row_gap = fs(10)
+            btn_rows = 3 if stack_buttons else 1
+            btn_block_h = btn_rows * btn_h + (btn_rows - 1) * row_gap
+            back_gap = fs(12)
+            back_h = fs(44, minimum=32)
+            back_bottom_margin = fs(26)
+            content_h = (card_off + card_h + btn_gap + btn_block_h
+                         + back_gap + back_h + back_bottom_margin)
+            if max(s(510), content_h) <= avail_h:
+                break
+        ph = min(max(s(510), content_h), avail_h)
         panel = pygame.Rect(cx - pw // 2, cy - ph // 2, pw, ph)
+        panel.clamp_ip(bounds)
         draw_glass_panel(self.screen, panel, alpha=185,
                         border_color=(80, 230, 160), glow=True)
 
         tf = get_fitting_font(
             t('waiting_for_teammate', 'Takım Arkadaşı Bekleniyor...'),
-            s(30), pw - s(60))
-        title = tf.render(
+            fs(30), pw - s(60))
+        title = render_text(
+            tf,
             t('waiting_for_teammate', 'Takım Arkadaşı Bekleniyor...'),
             True, (80, 230, 160))
-        self.screen.blit(title, title.get_rect(center=(cx, panel.y + s(40))))
+        title_rect = title.get_rect(center=(cx, panel.y + title_y))
+        self.screen.blit(title, title_rect)
 
         # Animasyonlu noktalar
         dots = '●' * (int(time.time() * 2) % 4) + '○' * (3 - int(time.time() * 2) % 4)
-        df = _rs.get_font(s(20, minimum=14))
+        df = _rs.get_font(fs(20, minimum=14))
         dots_surf = df.render(dots, True, (80, 230, 160))
-        self.screen.blit(dots_surf, dots_surf.get_rect(center=(cx, panel.y + s(72))))
+        self.screen.blit(dots_surf, dots_surf.get_rect(center=(cx, panel.y + dots_y)))
 
-        mode_font = _rs.get_font(s(14, minimum=11), bold=True)
+        mode_font = _rs.get_font(fs(14, minimum=11), bold=True)
         lobby_type = t('public_lobby_badge', 'AÇIK') if not self._lobby_code else t('private_lobby_badge', 'KOD')
         mode_text = lobby_type
-        mode_surf = mode_font.render(mode_text, True, UIColors.TEXT_PRIMARY)
-        self.screen.blit(mode_surf, mode_surf.get_rect(center=(cx, panel.y + s(105))))
+        mode_surf = render_text(mode_font, mode_text, True, UIColors.TEXT_PRIMARY)
+        self.screen.blit(mode_surf, mode_surf.get_rect(center=(cx, panel.y + mode_y)))
 
-        card = pygame.Rect(panel.x + s(34), panel.y + s(130), panel.width - s(68), s(170))
+        card = pygame.Rect(panel.x + s(34), panel.y + card_off, panel.width - s(68), card_h)
         draw_glass_panel(self.screen, card, alpha=130, border_color=(80, 230, 160), glow=False)
 
         if self._lobby_code:
-            code_label_font = _rs.get_font(s(14, minimum=11), bold=False)
-            code_label = code_label_font.render(
-                t('lobby_code_label', 'Lobi Kodu'), True, _rs.text_muted)
-            self.screen.blit(code_label, code_label.get_rect(center=(cx, card.y + s(28))))
-
-            code_font = _rs.get_font(s(42, minimum=24), bold=True)
-            formatted = self._lobby_code[:3] + ' ' + self._lobby_code[3:] if len(self._lobby_code) >= 6 else self._lobby_code
-            code_surf = code_font.render(formatted, True, UIColors.TEXT_PRIMARY)
-            self.screen.blit(code_surf, code_surf.get_rect(center=(cx, card.y + s(72))))
-
-            hint_font = _rs.get_font(s(12, minimum=10), bold=False)
-            hint = hint_font.render(
-                t('share_code_hint', 'Bu kodu arkadaşınla paylaş'),
+            code_label_font = _rs.get_font(fs(14, minimum=11), bold=False)
+            code_label = render_text(
+                code_label_font, t('lobby_code_label', 'Lobi Kodu'),
                 True, _rs.text_muted)
-            self.screen.blit(hint, hint.get_rect(center=(cx, card.y + s(112))))
+            self.screen.blit(code_label, code_label.get_rect(center=(cx, card.y + card_label_off)))
+
+            code_font = _rs.get_font(fs(42, minimum=24), bold=True)
+            formatted = self._lobby_code[:3] + ' ' + self._lobby_code[3:] if len(self._lobby_code) >= 6 else self._lobby_code
+            code_surf = render_text(code_font, formatted, True, UIColors.TEXT_PRIMARY)
+            self.screen.blit(code_surf, code_surf.get_rect(center=(cx, card.y + card_code_off)))
+
+            hint_font = _rs.get_font(fs(12, minimum=10), bold=False)
+            hint = render_text(
+                hint_font, t('share_code_hint', 'Bu kodu arkadaşınla paylaş'),
+                True, _rs.text_muted)
+            self.screen.blit(hint, hint.get_rect(center=(cx, card.y + card_hint_off)))
         else:
-            public_font = _rs.get_font(s(18, minimum=13), bold=True)
-            public = public_font.render(t('public_lobby_waiting', 'Herkese açık lobi aktif'), True, (90, 150, 230))
-            self.screen.blit(public, public.get_rect(center=(cx, card.y + s(58))))
-            hint = _rs.get_font(s(12, minimum=10), bold=False).render(
+            public_font = _rs.get_font(fs(18, minimum=13), bold=True)
+            public = render_text(
+                public_font, t('public_lobby_waiting', 'Herkese açık lobi aktif'),
+                True, (90, 150, 230))
+            self.screen.blit(public, public.get_rect(center=(cx, card.y + card_public_off)))
+            public_hint_font = _rs.get_font(fs(12, minimum=10), bold=False)
+            public_hint = render_text(
+                public_hint_font,
                 t('public_lobby_waiting_hint', 'Arkadaşın liste üzerinden doğrudan katılabilir'),
                 True,
                 _rs.text_muted,
             )
-            self.screen.blit(hint, hint.get_rect(center=(cx, card.y + s(96))))
+            self.screen.blit(public_hint, public_hint.get_rect(center=(cx, card.y + card_public_hint_off)))
 
-        button_y = card.bottom + s(20)
-        btn_w = min(s(170), (panel.width - s(88)) // 3)
-        btn_h = s(44)
+        # P1-12b: aksiyon butonları kartın altında; geri butonu panelin
+        # dibinden YUKARI doğru planlanır (bottom-up). panel yüksekliği
+        # content_h'yi kapsadığından buton bloğu ↔ geri örtüşmesi YAPISAL
+        # olarak imkânsız (eski kodda kısa ekranlarda örtüşüyordu).
+        button_y = card.bottom + btn_gap
+        if stack_buttons:
+            btn_w = min(s(220), pw - s(48))
+        else:
+            btn_w = min(s(170), (panel.width - s(88)) // 3)
         buttons = []
         if self._lobby_code:
             buttons.append((t('copy_lobby_code', 'Kodu Kopyala'), 'copy_lobby_code', 'C', (80, 230, 160)))
         buttons.append((t('invite_friend_coop', 'Davet Et'), 'invite_friend', 'I', UIColors.NEON_CYAN))
         buttons.append((t('copy_lobby_id', 'ID Kopyala'), 'copy_lobby_id', '', _rs.secondary))
-        total_w = len(buttons) * btn_w + max(0, len(buttons) - 1) * s(10)
+        if stack_buttons:
+            total_w = btn_w
+        else:
+            total_w = len(buttons) * btn_w + max(0, len(buttons) - 1) * s(10)
         start_x = cx - total_w // 2
+        button_rects = []
         for idx, (label, action, shortcut, color) in enumerate(buttons):
-            rect = pygame.Rect(start_x + idx * (btn_w + s(10)), button_y, btn_w, btn_h)
+            if stack_buttons:
+                rect = pygame.Rect(
+                    cx - btn_w // 2,
+                    button_y + idx * (btn_h + row_gap),
+                    btn_w, btn_h)
+            else:
+                rect = pygame.Rect(start_x + idx * (btn_w + s(10)), button_y, btn_w, btn_h)
             _rs.draw_uniform_button(
                 self.screen,
                 rect,
@@ -5330,8 +5461,15 @@ class OnlineCoopGame:
                 state='hover' if rect.collidepoint(mouse_pos) else 'normal',
             )
             self._lobby_buttons.append({'rect': rect, 'action': action})
+            button_rects.append(rect)
 
-        back_rect = pygame.Rect(cx - s(110), panel.bottom - s(70), s(220), s(44))
+        # Geri butonu — panel dibinden yukarı (flow=1.0'da eski konumun
+        # birebir aynısı: panel.bottom-s(70)..panel.bottom-s(26)).
+        back_w = min(s(220), pw - s(48))
+        back_rect = pygame.Rect(
+            cx - back_w // 2,
+            panel.bottom - back_bottom_margin - back_h,
+            back_w, back_h)
         _rs.draw_uniform_button(
             self.screen, back_rect,
             t('back_to_coop_lobby', 'Co-op Lobiye Dön'),
@@ -5341,10 +5479,44 @@ class OnlineCoopGame:
         )
         self._lobby_buttons.append({'rect': back_rect, 'action': 'back_to_lobby'})
 
+        # Durum mesajı — P1-12b: panel genişliğine 2 satıra dek sarılır.
+        # Tek satır eski konumda (panel.bottom - s(18)); iki satır geri
+        # butonuna binerse buton bloğu ile geri arasındaki boşluğa alınır
+        # (panel içinde kalır), o da sığmıyorsa tek satıra iner.
+        status_line_rects = []
         if self._status_msg:
             status_font = _rs.get_font(s(13, minimum=10), bold=False)
-            status = status_font.render(self._status_msg, True, UIColors.TEXT_SECONDARY)
-            self.screen.blit(status, status.get_rect(center=(cx, panel.bottom - s(18))))
+            status_lines = list(wrap_text_limited(
+                str(self._status_msg), status_font,
+                max(24, pw - s(32)), max_lines=2).lines)
+            st_line_h = status_font.get_height() + 2
+            st_total_h = len(status_lines) * st_line_h - 2
+            anchor_y = panel.bottom - s(18)
+            if (len(status_lines) > 1
+                    and anchor_y - st_total_h // 2 < back_rect.bottom + s(2)):
+                buttons_bottom = button_y + btn_block_h
+                if buttons_bottom + s(4) + st_total_h <= back_rect.y - s(4):
+                    anchor_y = (buttons_bottom + back_rect.y) / 2
+                else:
+                    status_lines = status_lines[:1]
+            for li, line in enumerate(status_lines):
+                status_surf = render_text(status_font, line, True, UIColors.TEXT_SECONDARY)
+                status_rect = status_surf.get_rect(center=(
+                    cx, anchor_y + (li - (len(status_lines) - 1) / 2) * st_line_h))
+                self.screen.blit(status_surf, status_rect)
+                status_line_rects.append(status_rect)
+
+        # P1-12b: gerçek blit rect'leri (containment testleri).
+        self._coop_waiting_rects = {
+            'bounds': bounds,
+            'panel': panel,
+            'card': card,
+            'button_rects': list(button_rects),
+            'back': back_rect,
+            'status_line_rects': list(status_line_rects),
+            'flow': float(flow),
+            'stack_buttons': bool(stack_buttons),
+        }
 
     def _get_steam_avatar_surface(self, steam_id: int, size: int) -> pygame.Surface | None:
         """Steam profil fotoğrafını pygame Surface olarak al ve önbelleğe."""
