@@ -18,6 +18,7 @@ from ui_theme import UIColors, UIFonts, UIStyle
 from localization import t, get_language
 from retro_style import retro_style
 from ui_scaling import get_projected_effective_scale
+from ui_text_layout import ellipsize_text
 from back_button import draw_back_button as _draw_shared_back_button
 try:
     from .. import demo_config  # type: ignore
@@ -70,6 +71,9 @@ class CoopLevelSelect:
         self._level_rects: Dict[int, pygame.Rect] = {}
         self._back_rect: Optional[pygame.Rect] = None
         self._world_tab_rects: Dict[int, pygame.Rect] = {}
+        # Aktif grid kolon sayısı (P1-7: dar ekranda 5'in altına düşebilir;
+        # klavye/gamepad dikey navigasyon adımı bunu izler).
+        self._grid_cols: int = 5
 
     # ------------------------------------------------------------------
     # Progress
@@ -114,14 +118,17 @@ class CoopLevelSelect:
             if event.key == pygame.K_ESCAPE:
                 return 'back'
             # Keyboard/gamepad navigasyon (campaign level_select ile aynı pattern)
+            # P1-7: dikey adım aktif grid kolon sayısını izler (kolon sayısı
+            # dar ekranda 5'in altına düşebilir).
+            grid_cols = max(1, int(getattr(self, '_grid_cols', 5)))
             if event.key == pygame.K_LEFT:
                 self._move_selection(-1)
             elif event.key == pygame.K_RIGHT:
                 self._move_selection(1)
             elif event.key == pygame.K_UP:
-                self._move_selection(-5)
+                self._move_selection(-grid_cols)
             elif event.key == pygame.K_DOWN:
-                self._move_selection(5)
+                self._move_selection(grid_cols)
             elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE):
                 sel = getattr(self, 'selected_level', 1)
                 if self._is_level_unlocked(sel):
@@ -275,11 +282,19 @@ class CoopLevelSelect:
         self.screen.blit(ss, (w // 2 - ss.get_width() // 2, header_rect.y + s(52)))
 
         # --- Dünya tabları ---
+        # P0-3/P1-7 (ölçekleme denetimi): tab genişliği ekran bütçesine
+        # clamp'lenir. Sabit s(200) tab + %175/%200 preset ölçeği dar
+        # pencerede tab şeridini ekran dışına taşıyordu (640x360'da
+        # 2*s(200)+s(16)=715 px > 640). Ekran payı okunabilirlik tabanının
+        # altına düşerse containment kazanır — input rect ekranda kalır.
         tab_y = header_rect.bottom + s(12)
         tab_h = s(36)
-        tab_w = s(200)
         tab_gap = s(16)
-        total_tab_w = COOP_WORLDS * tab_w + (COOP_WORLDS - 1) * tab_gap
+        world_count = max(1, COOP_WORLDS)
+        avail_w = max(1, w - 2 * s(16))
+        total_tab_gap = (world_count - 1) * tab_gap
+        tab_w = min(s(200), max(1, (avail_w - total_tab_gap) // world_count))
+        total_tab_w = world_count * tab_w + total_tab_gap
         tab_x0 = w // 2 - total_tab_w // 2
         self._world_tab_rects.clear()
 
@@ -306,7 +321,14 @@ class CoopLevelSelect:
 
             wname = _WORLD_NAMES.get(wi, {}).get(lang, _WORLD_NAMES.get(wi, {}).get('en', f'World {wi}'))
             text_color = retro_style.text_muted if locked else ((10, 12, 28) if active else retro_style.text_secondary)
-            lbl = f_tab.render(wname, True, text_color)
+            # P1-7: dünya adı tab iç bütçesine sığdırılır — önce font
+            # küçültme (get_fitting_font), son çare ASCII ellipsis.
+            tab_inner_w = max(1, tab_w - 2 * s(8))
+            name_font = retro_style.get_fitting_font(
+                wname, s(18), tab_inner_w, bold=True, min_size=s(12),
+            )
+            name_text = ellipsize_text(wname, name_font, tab_inner_w)
+            lbl = name_font.render(name_text, True, text_color)
             self.screen.blit(lbl, (x + tab_w // 2 - lbl.get_width() // 2,
                                    tab_y + tab_h // 2 - lbl.get_height() // 2))
             if locked:
@@ -361,11 +383,50 @@ class CoopLevelSelect:
         if not levels:
             return
 
-        cols = 5
+        # P0-3/P1-7 (ölçekleme denetimi): grid genişliği ekran bütçesine
+        # clamp'lenir. Kolon sayısı 5→1 azalan şekilde sığan en büyük değer
+        # seçilir (sabit 5 kolon ~s(606) toplam genişlikti; %200 preset +
+        # 640x360'da 1041 px'e çıkıyordu). Tek kolon bile taban kartla
+        # sığmıyorsa kart genişliği önce s(72) tabanına, sonra kalan paya iner.
+        avail_w = max(1, w - 2 * s(16))
         btn_w = s(110)
-        btn_h = s(88)
         gap_x = s(14)
+        cols = 1
+        for cand_cols in (5, 4, 3, 2, 1):
+            if cand_cols * btn_w + (cand_cols - 1) * gap_x <= avail_w:
+                cols = cand_cols
+                break
+        if btn_w > avail_w:
+            btn_w = max(24, min(btn_w, s(72)))
+            if btn_w > avail_w:
+                btn_w = max(1, avail_w)
+        # Klavye/gamepad dikey navigasyonu aktif kolon sayısını izler.
+        self._grid_cols = cols
+        btn_h = s(88)
         gap_y = s(14)
+        # P0-3: dikey bütçe — satır dizisi ekranın alt kenarını aşamaz.
+        # Ladder: (1) kart yüksekliği s(56) okunabilirlik tabanına kadar
+        # küçülür, (2) taban da sığmıyorsa kalan yükseklik satır/gap'e
+        # bölünür. Containment (input rect'ler ekranda kalır) okunabilirlik
+        # tabanından önce gelir; dejenere hücreler (ör. 640x360 + %200)
+        # yalnızca bu yolla korunur.
+        rows = (len(levels) + cols - 1) // cols
+        avail_h = max(1, h - s(16) - top)
+        need_h = rows * btn_h + (rows - 1) * gap_y
+        if need_h > avail_h:
+            gap_floor = max(2, s(6))
+            btn_h_floor = s(56)
+            shrunk_h = max(
+                btn_h_floor,
+                (avail_h - (rows - 1) * gap_floor) // max(1, rows),
+            )
+            if shrunk_h < btn_h:
+                btn_h = shrunk_h
+            gap_y = gap_floor
+            if rows * btn_h + (rows - 1) * gap_y > avail_h:
+                # s(56) tabanı bile sığmıyorsa kalan bütçe satırlara bölünür.
+                gap_y = max(1, min(gap_y, avail_h // max(2, 2 * rows - 1)))
+                btn_h = max(1, (avail_h - (rows - 1) * gap_y) // max(1, rows))
         total_grid_w = cols * btn_w + (cols - 1) * gap_x
         x0 = w // 2 - total_grid_w // 2
 
