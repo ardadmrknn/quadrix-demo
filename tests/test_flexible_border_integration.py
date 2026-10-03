@@ -103,7 +103,7 @@ def run_integration_checks():
         assert not valid_at_minus2, "2 blok dışarı geçersiz olmalı"
 
         print("\n=== Özet ===")
-        print("✅ Tüm entegrasyon testleri başarılı!")
+        print("Tüm entegrasyon testleri başarılı!")
     finally:
         pygame.quit()
 

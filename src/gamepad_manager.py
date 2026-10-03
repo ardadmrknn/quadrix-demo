@@ -860,10 +860,10 @@ class GamepadManager:
                 instance_id=self._get_joystick_instance_id(js),
             )
             self.gamepads[device_index] = state
-            print(f"🎮 Gamepad bağlandı: {name} [{gp_type}] (ID: {device_index})")
+            print(f"[Gamepad] Bağlandı: {name} [{gp_type}] (ID: {device_index})")
             return True
         except Exception as e:
-            print(f"⚠️ Gamepad {device_index} başlatılamadı: {e}")
+            print(f"[Gamepad] Uyarı: {device_index} başlatılamadı: {e}")
             return False
 
     def _detect_type(self, js: pygame.joystick.JoystickType) -> str:
@@ -1637,7 +1637,7 @@ class GamepadManager:
 
             except Exception as e:
                 # Gamepad kopmuş olabilir
-                print(f"⚠️ Gamepad {gp_id} okuma hatası: {e}")
+                print(f"[Gamepad] Uyarı: {gp_id} okuma hatası: {e}")
 
         # Son aktif gamepad girdisi zamanını güncelle (basılı tutma durumları dahil)
         has_active_input = False
@@ -1774,7 +1774,7 @@ class GamepadManager:
                     if gp.joystick:
                         gp.joystick.get_name()
                 except Exception:
-                    print(f"🎮 Gamepad koptu: {gp.name} (ID: {gp_id})")
+                    print(f"[Gamepad] Koptu: {gp.name} (ID: {gp_id})")
                     del self.gamepads[gp_id]
 
             # Yeni bağlananları de-duplication mantığıyla tara ve kaydet

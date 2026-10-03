@@ -2285,7 +2285,7 @@ def print_level_summary(level_num: int) -> None:
     
     print(f"\nYıldız Koşulları:")
     for star, cond in level.stars.items():
-        print(f"  ⭐{star}: {cond['description']['tr']}")
+        print(f" {star}: {cond['description']['tr']}")
 
 
 if __name__ == "__main__":

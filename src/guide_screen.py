@@ -513,7 +513,7 @@ class GuideScreen:
                 self._icon_cache[cache_key] = icon
                 return icon
             except Exception as e:
-                print(f"⚠️ Kart ikonu yüklenemedi: {icon_name} - {e}")
+                print(f"[Uyarı] Kart ikonu yüklenemedi: {icon_name} - {e}")
         return None
 
     def _load_guide_emoji_icon(self, icon_name: str) -> Optional[pygame.Surface]:
@@ -534,7 +534,7 @@ class GuideScreen:
             self._icon_cache[cache_key] = icon
             return icon
         except Exception as e:
-            print(f"⚠️ Kılavuz maskotu yüklenemedi: {icon_name} - {e}")
+            print(f"[Uyarı] Kılavuz maskotu yüklenemedi: {icon_name} - {e}")
             return None
 
     def _get_selected_tab_mascot(self, max_width: int, max_height: int) -> Optional[pygame.Surface]:

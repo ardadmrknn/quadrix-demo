@@ -381,7 +381,7 @@ class ExtrasScreen:
                         # Daha büyük ikon
                         item['icon_surface'] = pygame.transform.smoothscale(img, (self.icon_size, self.icon_size))
                     except Exception as e:
-                        print(f"⚠️ Simge yüklenemedi: {icon_path} - {e}")
+                        print(f"[Uyarı] Simge yüklenemedi: {icon_path} - {e}")
     
     def get_ai_prompts_info(self):
         """AI görsel promptlarını döndür (kullanıcıya gösterim için)"""

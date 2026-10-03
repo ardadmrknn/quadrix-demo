@@ -149,7 +149,7 @@ class SurvivalMode(Game):
                 self.virus_level += 1
                 self._apply_level_config()
                 self.sound.play('level_up')
-                print(f"⚠️ VİRÜS SEVİYESİ: {self.virus_level}/5")
+                print(f"[Uyarı] VİRÜS SEVİYESİ: {self.virus_level}/5")
                 print(f"   Max enfekte: {self.max_infected}, Yenilme süresi: {self.consume_time//1000}sn")
         
         # 3. ANTİVİRÜS KONTROLÜ - Her 5000 puanda yenilen sayısı sıfırlanır
@@ -190,7 +190,7 @@ class SurvivalMode(Game):
         bonus = (self.MAX_CONSUMED - self.consumed_count) * 500 + self.board.lines_cleared * 100
         self.board.score += bonus
         
-        print(f"🏆 SURVIVAL KAZANILDI! Bonus: {bonus} puan")
+        print(f"SURVIVAL KAZANILDI! Bonus: {bonus} puan")
         
         if self.effects_enabled:
             active_width, active_height = self._active_ui_size()
@@ -216,7 +216,7 @@ class SurvivalMode(Game):
             self.sound.play_game_over_sequence()
         self.trigger_screen_shake(intensity=30, duration=60 / 60.0)
         
-        print(f"☠️ VİRÜS GALİP! {self.consumed_count} blok yenildi.")
+        print(f"VİRÜS GALİP! {self.consumed_count} blok yenildi.")
         
         if self.effects_enabled:
             active_width, active_height = self._active_ui_size()
@@ -228,7 +228,7 @@ class SurvivalMode(Game):
     
     def _activate_antivirus(self):
         """Her 5000 puanda: Yenilen sayısı sıfırlanır + tüm enfeksiyonlar temizlenir"""
-        print(f"💉 ANTİVİRÜS AKTİF! Yenilen blok sayısı sıfırlandı!")
+        print(f"ANTİVİRÜS AKTİF! Yenilen blok sayısı sıfırlandı!")
         
         self.consumed_count = 0
         self.sound.play('level_up')
@@ -254,7 +254,7 @@ class SurvivalMode(Game):
             
             self.infected_blocks.clear()
         
-        print(f"✅ Tüm enfeksiyonlar temizlendi!")
+        print(f"Tüm enfeksiyonlar temizlendi!")
 
     def _spawn_virus_if_needed(self):
         """Rastgele bir mevcut bloğa ilk virüsü bulaştır"""
@@ -290,7 +290,7 @@ class SurvivalMode(Game):
             if self.sound_enabled:
                 self.sound.play('rotate')
             
-            print(f"☣️ Yeni enfeksiyon: ({target[0]}, {target[1]})")
+            print(f"Yeni enfeksiyon: ({target[0]}, {target[1]})")
 
     def _infect_block(self, x, y):
         """Bir bloğu enfekte et"""
@@ -418,7 +418,7 @@ class SurvivalMode(Game):
         if self.sound_enabled:
             self.sound.play('drop')
         
-        print(f"💀 Blok yenildi! ({x}, {y}) - Toplam: {self.consumed_count}/{self.MAX_CONSUMED}")
+        print(f"Blok yenildi! ({x}, {y}) - Toplam: {self.consumed_count}/{self.MAX_CONSUMED}")
 
     def lock_and_new_piece(self):
         """Parçayı kilitle ve satır temizleme - Survival kurallarıyla"""
@@ -647,7 +647,7 @@ class SurvivalMode(Game):
             del self.infected_blocks[pos]
         
         if to_remove:
-            print(f"🧹 {len(to_remove)} enfeksiyon satır temizliğiyle yok edildi!")
+            print(f"{len(to_remove)} enfeksiyon satır temizliğiyle yok edildi!")
 
     def _shift_infections_after_clear(self, cleared_rows):
         """Satır temizliğinden sonra enfeksiyonların pozisyonlarını güncelle"""
@@ -2112,7 +2112,7 @@ class DailyChallengeMode(Game):
         self.speed_multiplier = float(self.challenge.get('speed_multiplier', 1.0))
         self.controls_under_stats = True
         
-        print(f"📅 Günün Zorluğu: {self.challenge.get('name')}")
+        print(f"Günün Zorluğu: {self.challenge.get('name')}")
         print(f"   {self.challenge.get('description')}")
         
         # Challenge'a göre hızı ayarla
@@ -2185,7 +2185,7 @@ class DailyChallengeMode(Game):
         # Quadrix-only: 1-3 satır temizliği hata sayılır
         if self.tetris_only and cleared not in (0, 4):
             self.mistakes_made += 1
-            print(f"❌ Sadece Quadrix yapabilirsin! Hata: {self.mistakes_made}")
+            print(f"[Hata] Sadece Quadrix yapabilirsin! Hata: {self.mistakes_made}")
             try:
                 self.sound.play('drop')
             except Exception:
@@ -2208,7 +2208,7 @@ class DailyChallengeMode(Game):
         if int(getattr(self, 'mistakes_made', 0) or 0) < int(self.max_mistakes):
             return
         self.game_over = True
-        print(message or "💥 Kural ihlali limiti doldu. Challenge başarısız!")
+        print(message or "Kural ihlali limiti doldu. Challenge başarısız!")
 
     def wants_mouse_visible(self) -> bool:
         if getattr(self, '_daily_failed', False):
@@ -2326,7 +2326,7 @@ class DailyChallengeMode(Game):
             # Bonus puan
             bonus = int(self.board.score * (self.challenge['bonus'] - 1))
             self.board.score += bonus
-            print(f"🎉 Challenge Tamamlandı! Bonus: +{bonus} puan!")
+            print(f"Challenge Tamamlandı! Bonus: +{bonus} puan!")
             self.sound.play('tetris')
             
             # Parçacık efekti

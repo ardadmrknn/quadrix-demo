@@ -10356,27 +10356,27 @@ class BackgroundSelectorScreen:
                 if self.selected == 1:
                     self.backgrounds['main'] = None
                     self.settings_manager.set('bg_main', None)
-                    print("🗑️ Ana arka plan silindi")
+                    print("Ana arka plan silindi")
                 elif self.selected == 2:
                     self.backgrounds['single'] = None
                     self.settings_manager.set('bg_single', None)
-                    print("🗑️ Tek oyuncu arka planı silindi")
+                    print("Tek oyuncu arka planı silindi")
                 elif self.selected == 3:
                     self.backgrounds['outer'] = None
                     self.settings_manager.set('bg_outer', None)
-                    print("🗑️ Dış alan arka planı silindi")
+                    print("Dış alan arka planı silindi")
                 elif self.selected == 4:
                     self.backgrounds['pvp_main'] = None
                     self.settings_manager.set('bg_pvp_main', None)
-                    print("🗑️ PvP ana arka plan silindi")
+                    print("PvP ana arka plan silindi")
                 elif self.selected == 5:
                     self.backgrounds['pvp_board'] = None
                     self.settings_manager.set('bg_pvp_board', None)
-                    print("🗑️ PvP oyun alanı arka planı silindi")
+                    print("PvP oyun alanı arka planı silindi")
                 elif self.selected == 6:
                     self.backgrounds['wide'] = None
                     self.settings_manager.set('bg_wide', None)
-                    print("🗑️ Geniş mod arka planı silindi")
+                    print("Geniş mod arka planı silindi")
         
         # Mouse kontrolü
         elif event.type == pygame.MOUSEMOTION:
@@ -10537,12 +10537,12 @@ class BlockStyleSettingsScreen:
         if chosen:
             color = (chosen[0], chosen[1], chosen[2])
             self.block_style_manager.set_color(piece_name, color)
-            print(f"🎨 {piece_name} rengi güncellendi: {color}")
+            print(f"{piece_name} rengi güncellendi: {color}")
 
     def _reset_color(self):
         piece_name = self.piece_names[self.selected]
         self.block_style_manager.reset_color(piece_name)
-        print(f"↩️ {piece_name} rengi varsayılan temaya döndü")
+        print(f"{piece_name} rengi varsayılan temaya döndü")
 
     def _reset_all_to_theme(self):
         self.block_style_manager.reset_all()
@@ -13102,7 +13102,7 @@ class SettingsScreen:
                     if display_name.lower() not in [b.lower() for b in builtin]:
                         external.append(display_name)
             except Exception as e:
-                print(f"⚠️ Harici müzik listesi alınamadı: {e}")
+                print(f"[Uyarı] Harici müzik listesi alınamadı: {e}")
         
         # music/ klasöründeki dosyaları da tara
         try:
@@ -13118,7 +13118,7 @@ class SettingsScreen:
                         if display_name.lower() not in all_names:
                             external.append(display_name)
         except Exception as e:
-            print(f"⚠️ Music klasörü taranamadı: {e}")
+            print(f"[Uyarı] Music klasörü taranamadı: {e}")
         
         return builtin + sorted(external)
     

@@ -1706,7 +1706,7 @@ def main():
             pass  # tk_compat mevcut değil, normal
         except Exception as exc:
             # Detaylı log - kullanıcı sorun yaşarsa yardımcı olur
-            print(f"⚠️ Tk ön yükleme başarısız (dosya dialog'ı etkilenebilir): {exc}")
+            print(f"[Uyarı] Tk ön yükleme başarısız (dosya dialog'ı etkilenebilir): {exc}")
 
     # ==================== MIXER PRE-INIT (KRITIK) ====================
     # mixer pre_init, ses/müzik stabilitesini artırır (pygame.init'ten önce çağrılmalı!).
@@ -2116,7 +2116,7 @@ def main():
         pass
     import constants
     if constants.DEBUG_MODE:
-        print(f"🌐 Dil ayarlandı: {saved_language}")
+        print(f"Dil ayarlandı: {saved_language}")
     
     # DEBUG MODE'u ayarlardan yükle ve global değişkene ata
     constants.DEBUG_MODE = settings_manager.get('debug_mode', False)
@@ -2392,33 +2392,33 @@ def main():
     
     if constants.DEBUG_MODE:
         print("=" * 60)
-        print("🎮 QUADRIX OYUNU - FULL EDITION V2.7 🎮")
+        print("QUADRIX OYUNU - FULL EDITION V2.7")
         print("=" * 60)
-        print("\n✨ ÖZELLİKLER:")
-        print("  ✅ Tek Oyunculu Mod")
-        print("  ✅ PvP (2 Oyunculu) Mod")
-        print("  ✅ Başarı Sistemi (25+ Başarı) - YENİ! 🏆")
-        print("  ✅ 5 Tema (Classic, Cyberpunk, Neon, Retro, Dark) - YENİ! 🎨")
-        print("  ✅ Ayar Kaydetme Sistemi - YENİ! ⚙️")
-        print("  ✅ Mouse Desteği - YENİ! 🖱️")
-        print("  ✅ Ghost Piece (Gölge parça)")
-        print("  ✅ Next Piece (Sonraki parça önizlemesi)")
-        print("  ✅ Hold System (Parça saklama - C tuşu)")
-        print("  ✅ High Score Sistemi (JSON'a kaydediliyor)")
-        print("  ✅ Ses Efektleri")
-        print("  ✅ Combo ve Quadrix Puanlama)")
+        print("\nÖZELLİKLER:")
+        print("  - Tek Oyunculu Mod")
+        print("  - PvP (2 Oyunculu) Mod")
+        print("  - Başarı Sistemi (25+ Başarı) - YENİ!")
+        print("  - 5 Tema (Classic, Cyberpunk, Neon, Retro, Dark) - YENİ!")
+        print("  - Ayar Kaydetme Sistemi - YENİ!")
+        print("  - Mouse Desteği - YENİ!")
+        print("  - Ghost Piece (Gölge parça)")
+        print("  - Next Piece (Sonraki parça önizlemesi)")
+        print("  - Hold System (Parça saklama - C tuşu)")
+        print("  - High Score Sistemi (JSON'a kaydediliyor)")
+        print("  - Ses Efektleri")
+        print("  - Combo ve Quadrix Puanlama)")
         
     # Block Style Manager for main menu use (passing to TutorialMode)
     block_style_manager = BlockStyleManager(settings_manager)
 
     if constants.DEBUG_MODE:
-        print("  ✅ Partiküller ve Animasyonlar")
-        print("  ✅ Zorluk Seviyeleri")
-        print("  ✅ Ana Menü ve Ayarlar")
-        print("  ✅ İstatistikler ve Liderlik Tablosu")
-        print("  ✅ Tam Ekran Oynanış")
-        print("  ✅ Sessiz Mod (M tuşu)")
-        print("\n🎯 Oyun başlatılıyor...\n")
+        print("  - Partiküller ve Animasyonlar")
+        print("  - Zorluk Seviyeleri")
+        print("  - Ana Menü ve Ayarlar")
+        print("  - İstatistikler ve Liderlik Tablosu")
+        print("  - Tam Ekran Oynanış")
+        print("  - Sessiz Mod (M tuşu)")
+        print("\nOyun başlatılıyor...\n")
 
     def _ensure_menu_music_playing(force: bool = False):
         """Menü sesi açıldığında parçanın gerçekten aktif olmasını garanti et."""
@@ -2486,7 +2486,7 @@ def main():
         if not settings_screen.mute_all:
             _ensure_menu_music_playing()
         if constants.DEBUG_MODE:
-            print("🔇 Sessiz mod: AÇIK (M tuşu)" if settings_screen.mute_all else "🔊 Sessiz mod: KAPALI (M tuşu)")
+            print("Sessiz mod: AÇIK (M tuşu)" if settings_screen.mute_all else "Sessiz mod: KAPALI (M tuşu)")
 
     def _apply_screen(new_screen):
         """Ekran yeniden oluşturulduğunda tüm ekran referanslarını güncelle."""
@@ -3468,16 +3468,16 @@ def main():
             elif action == 'change_music_volume':
                 # Müzik seviyesi değişti
                 menu_sound.set_music_volume(settings_screen.music_volume)
-                print(f"🔊 Müzik seviyesi: {int(settings_screen.music_volume * 100)}%")
+                print(f"Müzik seviyesi: {int(settings_screen.music_volume * 100)}%")
             elif action == 'change_menu_music_volume':
                 # Ana menü müzik seviyesi değişti
                 menu_sound.set_music_volume(settings_screen.menu_music_volume)
                 settings_manager.set('menu_music_volume', settings_screen.menu_music_volume)
-                print(f"🔊 Ana menü müzik seviyesi: {int(settings_screen.menu_music_volume * 100)}%")
+                print(f"Ana menü müzik seviyesi: {int(settings_screen.menu_music_volume * 100)}%")
             elif action == 'change_sfx_volume':
                 # Efekt seviyesi değişti
                 menu_sound.set_volume(settings_screen.sfx_volume)
-                print(f"🔊 Efekt seviyesi: {int(settings_screen.sfx_volume * 100)}%")
+                print(f"Efekt seviyesi: {int(settings_screen.sfx_volume * 100)}%")
             elif action == 'toggle_mute':
                 # Sessiz mod değişti
                 try:
@@ -3486,7 +3486,7 @@ def main():
                     pass
                 if not settings_screen.mute_all:
                     _ensure_menu_music_playing()
-                print("🔇 Sessiz mod: AÇIK" if settings_screen.mute_all else "🔊 Sessiz mod: KAPALI")
+                print("Sessiz mod: AÇIK" if settings_screen.mute_all else "Sessiz mod: KAPALI")
             elif action == 'change_menu_music':
                 # Ana Sayfa Müziği değişti
                 if settings_screen.music_enabled and not settings_screen.mute_all and state == 'settings':
@@ -3495,14 +3495,14 @@ def main():
                     print(f"Ana sayfa müziği değişti: {settings_screen.menu_music}")
             elif action == 'change_game_music':
                 # Oyun İçi Müzik değişti
-                print(f"🎮 Oyun içi müzik ayarlandı: {settings_screen.game_music}")
+                print(f"Oyun içi müzik ayarlandı: {settings_screen.game_music}")
             elif action == 'mode_playlist_changed':
                 pass
             elif action == 'toggle_debug':
                 # Debug modu değişti
                 constants.DEBUG_MODE = settings_screen.debug_mode
                 status = "AÇIK" if constants.DEBUG_MODE else "KAPALI"
-                print(f"🐛 Debug Modu: {status}")
+                print(f"Debug Modu: {status}")
             elif action == 'toggle_card_mode_debug':
                 pass  # Kart debug değişti, sadece settings'e kaydediliyor
             elif action == 'apply_display_mode':
@@ -3603,7 +3603,7 @@ def main():
                 if filepath:
                     settings_screen.custom_background = filepath
                     settings_manager.set('custom_background', filepath)
-                    print(f"🖼️ Arka plan resmi seçildi: {filepath}")
+                    print(f"Arka plan resmi seçildi: {filepath}")
             elif action == 'mode_music':
                 settings_screen.focus_tab('audio')
             elif action and action.startswith('edit_mode_playlist:'):
@@ -5126,8 +5126,8 @@ def main():
 
         print("\n" + "=" * 60)
         print("Oyun kapandı. Skorunuz kaydedildi!")
-        print("Ayarlarınız kaydedildi! ⚙️")
-        print("Oynadığınız için teşekkürler! 🎮")
+        print("Ayarlarınız kaydedildi!")
+        print("Oynadığınız için teşekkürler!")
         print("=" * 60)
 
         # SIGALRM iptal — normal çıkışa ulaştık
@@ -5158,8 +5158,8 @@ def main():
 
     print("\n" + "=" * 60)
     print("Oyun kapandı. Skorunuz kaydedildi!")
-    print("Ayarlarınız kaydedildi! ⚙️")
-    print("Oynadığınız için teşekkürler! 🎮")
+    print("Ayarlarınız kaydedildi!")
+    print("Oynadığınız için teşekkürler!")
     print("=" * 60)
 
 

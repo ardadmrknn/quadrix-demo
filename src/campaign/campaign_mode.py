@@ -360,7 +360,7 @@ class CampaignMode(Game):
                     self.board.occupancy[board_y][col_idx] = True
                     placed_count += 1
         
-        print(f"[GARBAGE] ✅ {placed_count} hücre yerleştirildi!")
+        print(f"[GARBAGE]{placed_count} hücre yerleştirildi!")
         
         # ClearGarbageObjective varsa hedefini güncelle
         if is_clear_garbage_mission and placed_count > 0:
@@ -453,10 +453,10 @@ class CampaignMode(Game):
                     self.star_icon_small = pygame.transform.smoothscale(star_img, (16, 16))
                     self.star_icon_medium = pygame.transform.smoothscale(star_img, (20, 20))
                     self.star_icon_large = pygame.transform.smoothscale(star_img, (26, 26))
-                    print(f"✅ Yıldız ikonu yüklendi: {path}")
+                    print(f"Yıldız ikonu yüklendi: {path}")
                     break
             except Exception as e:
-                print(f"⚠️ Yıldız ikonu yüklenemedi: {e}")
+                print(f"[Uyarı] Yıldız ikonu yüklenemedi: {e}")
         
         # Tik işareti surface oluştur (daha okunaklı)
         tick_size = 18

@@ -1827,7 +1827,7 @@ class PvPGame:
         custom_bg = self.settings_manager.get('bg_pvp_main', None)
         if custom_bg and os.path.exists(custom_bg):
             if self.background.load_image(custom_bg):
-                print(f"✨ Özel PvP ana arka plan yüklendi: {os.path.basename(custom_bg)}")
+                print(f"Özel PvP ana arka plan yüklendi: {os.path.basename(custom_bg)}")
                 return
         
         # Yoksa olası resim yolları - PyInstaller için resource_path kullan
@@ -1844,10 +1844,10 @@ class PvPGame:
         
         for path in possible_paths:
             if self.background.load_image(path):
-                print(f"✨ PvP Arka plan yüklendi: {os.path.basename(path)}")
+                print(f"PvP Arka plan yüklendi: {os.path.basename(path)}")
                 break
         else:
-            print("ℹ️ PvP için arka plan resmi bulunamadı. backgrounds/ klasörüne resim ekleyin!")
+            print("[Bilgi] PvP için arka plan resmi bulunamadı. backgrounds/ klasörüne resim ekleyin!")
     
     def load_board_background(self):
         """Quadrix oyun alanları için ayrı arka plan resmini yükle"""
@@ -1855,7 +1855,7 @@ class PvPGame:
         custom_bg = self.settings_manager.get('bg_pvp_board', None)
         if custom_bg and os.path.exists(custom_bg):
             if self.board_background.load_image(custom_bg):
-                print(f"✨ Özel PvP oyun alanı arka planı yüklendi: {os.path.basename(custom_bg)}")
+                print(f"Özel PvP oyun alanı arka planı yüklendi: {os.path.basename(custom_bg)}")
                 return
         
         # Yoksa olası resim yolları - Quadrix alanları için ayrı arka plan
@@ -1872,10 +1872,10 @@ class PvPGame:
         
         for path in possible_paths:
             if self.board_background.load_image(path):
-                print(f"✨ Quadrix alanlari icin arka plan yuklendi: {os.path.basename(path)}")
+                print(f"Quadrix alanlari icin arka plan yuklendi: {os.path.basename(path)}")
                 break
         else:
-            print("ℹ️ Quadrix alanlari icin ayri arka plan bulunamadi (opsiyonel)")
+            print("[Bilgi] Quadrix alanlari icin ayri arka plan bulunamadi (opsiyonel)")
     
     def update_transparency(self, value):
         """Transparanlık ayarını güncelle.
@@ -1884,7 +1884,7 @@ class PvPGame:
         """
         if self.board_background:
             self.board_background.set_transparency(value)
-            print(f"🎨 PvP board background transparanlığı güncellendi: %{int(value * 100)}")
+            print(f"PvP board background transparanlığı güncellendi: %{int(value * 100)}")
         if getattr(self, 'background', None) is not None:
             try:
                 self.background.set_transparency(value)
@@ -3789,14 +3789,14 @@ class PvPGame:
             # PvP oyun sayısını artır ve kazanan/kaybedeni kaydet
             if self.winner == 1:
                 self.user_manager.update_pvp_stats(win=True)
-                print(f"💾 PvP istatistikleri güncellendi: KAZANDI")
+                print(f"PvP istatistikleri güncellendi: KAZANDI")
             elif self.winner == 2:
                 self.user_manager.update_pvp_stats(win=False)
-                print(f"💾 PvP istatistikleri güncellendi: KAYBETTİ")
+                print(f"PvP istatistikleri güncellendi: KAYBETTİ")
             else:
                 # Beraberlik - oyun sayısını artır ama kazanan/kaybeden yok
                 self.user_manager.update_pvp_stats(win=False)
-                print(f"💾 PvP istatistikleri güncellendi: BERABERE")
+                print(f"PvP istatistikleri güncellendi: BERABERE")
     
     def create_particles(self, count, x=None, y=None, colors=None, speed=5):
         """Partiküller oluştur - optimize edilmiş"""
@@ -4426,7 +4426,7 @@ class PvPGame:
             # Oyuncu 1 hızını artır
             old_speed = self.fall_speed1
             self.fall_speed1 = max(self.min_fall_speed, self.fall_speed1 - self.speed_increase_per_milestone)
-            print(f"🎆 Oyuncu 1: {p1_milestone} PUAN! Hız: {old_speed}ms -> {self.fall_speed1}ms 🚀")
+            print(f"Oyuncu 1: {p1_milestone} PUAN! Hız: {old_speed}ms -> {self.fall_speed1}ms")
         
         # Oyuncu 2 milestone kontrolü
         p2_milestone = (self.board2.score // 1000) * 1000
@@ -4440,7 +4440,7 @@ class PvPGame:
             # Oyuncu 2 hızını artır
             old_speed = self.fall_speed2
             self.fall_speed2 = max(self.min_fall_speed, self.fall_speed2 - self.speed_increase_per_milestone)
-            print(f"🎆 Oyuncu 2: {p2_milestone} PUAN! Hız: {old_speed}ms -> {self.fall_speed2}ms 🚀")
+            print(f"Oyuncu 2: {p2_milestone} PUAN! Hız: {old_speed}ms -> {self.fall_speed2}ms")
         
         # Havai fişek sürelerini güncelle
         if self.p1_firework_active:
@@ -5191,7 +5191,7 @@ class PvPGame:
         # VS panel'i yenile
         self._vs_panel_dirty = True
         
-        print("🔄 PvP oyunu tamamen sıfırlandı!")
+        print("PvP oyunu tamamen sıfırlandı!")
     
     def draw_name_input(self):
         """Retro stile uygun PvP isim giriş ekranı."""

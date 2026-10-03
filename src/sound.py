@@ -47,7 +47,7 @@ class SoundManager:
             
         except Exception as e:
             if constants.DEBUG_MODE:
-                print(f"❌ [SoundManager] Hata: {e}")
+                print(f"[Hata] [SoundManager] Hata: {e}")
             self.enabled = False
 
     def check_audio_device_health(self) -> bool:
@@ -141,7 +141,7 @@ class SoundManager:
             return
         try:
             print("=" * 50)
-            print("🔊 [macOS] SES SİSTEMİ BİLGİLERİ")
+            print("[macOS] SES SİSTEMİ BİLGİLERİ")
             print("=" * 50)
             audio_driver = os.environ.get('SDL_AUDIODRIVER', 'not set')
             print(f"   SDL_AUDIODRIVER: {audio_driver}")
@@ -929,9 +929,9 @@ class SoundManager:
                 builtin.append(name)
         
         if builtin:
-            print(f"   🎹 Yerleşik: {', '.join(builtin[:5])}{'...' if len(builtin) > 5 else ''}")
+            print(f"  Yerleşik: {', '.join(builtin[:5])}{'...' if len(builtin) > 5 else ''}")
         if external:
-            print(f"   📁 Harici: {', '.join(external)}")
+            print(f"  Harici: {', '.join(external)}")
     
     def load_external_music(self, name, filepath):
         """Dışarıdan müzik dosyası yükle"""
@@ -993,7 +993,7 @@ class SoundManager:
                         return None
                 else:
                     if constants.DEBUG_MODE:
-                        print(f"⚠️ Özel müzik bulunamadı: {absolute_path}")
+                        print(f"[Uyarı] Özel müzik bulunamadı: {absolute_path}")
                         print(f"   Desteklenen formatlar: {', '.join(SUPPORTED_FORMATS)}")
                     return None
             return track_key
@@ -1202,7 +1202,7 @@ class SoundManager:
             pygame.mixer.music.pause()
             self.music_paused = True
             if constants.DEBUG_MODE:
-                print(f"⏸️ Müzik duraklatıldı: {self.current_track_name}")
+                print(f"Müzik duraklatıldı: {self.current_track_name}")
     
     def unpause_music(self):
         """Müziği devam ettir"""
@@ -1210,7 +1210,7 @@ class SoundManager:
             pygame.mixer.music.unpause()
             self.music_paused = False
             if constants.DEBUG_MODE:
-                print(f"▶️ Müzik devam ediyor: {self.current_track_name}")
+                print(f"Müzik devam ediyor: {self.current_track_name}")
     
     def stop_music(self):
         """Müziği durdur"""

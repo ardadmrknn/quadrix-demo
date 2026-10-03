@@ -853,7 +853,7 @@ class Tetris2Mode(Game):
         self.mode_name = "QUADRIX EXTRA"
         self.tetris2_font_large = retro_style.get_font(48, bold=False)
         self.tetris2_font_medium = retro_style.get_font(36, bold=False)
-        print("🎮 QUADRIX EXTRA MODE aktif. Ekstra parçalar devrede.")
+        print("QUADRIX EXTRA MODE aktif. Ekstra parçalar devrede.")
 
     def _get_base_piece_factories(self):
         factories = super()._get_base_piece_factories()
@@ -888,7 +888,7 @@ class Tetris2Mode(Game):
 
         if getattr(piece, "name", "") in EXTRA_SHAPE_NAMES:
             self.extra_piece_count += 1
-            print(f"✨ EXTRA PARÇA #{self.extra_piece_count}: {piece.name}")
+            print(f"EXTRA PARÇA #{self.extra_piece_count}: {piece.name}")
         return piece
 
     def update(self, dt: float) -> None:
@@ -4045,7 +4045,7 @@ class MysteryCardUI:
             self.icon_cache[cache_key] = image
             return image
         except Exception as exc:  # pylint: disable=broad-except
-            print(f"⚠️ Kart ikonu yüklenemedi ({image_path}): {exc}")
+            print(f"[Uyarı] Kart ikonu yüklenemedi ({image_path}): {exc}")
             return None
 
 
@@ -6808,7 +6808,7 @@ class MysteryMode(Game):
         self._rewind_available = False
         self._last_placed_piece = None  # Son yerleştirilen parça bilgisi
 
-        print("🎮 Kart Ustalığı kart pipeline'ı aktif: manager + UI ayrımı tamam.")
+        print("Kart Ustalığı kart pipeline'ı aktif: manager + UI ayrımı tamam.")
 
         # Initialize per-mode runtime variables early so update() / spawn hooks
         # won't throw if called before restart() (main loop calls update quickly)
@@ -15353,19 +15353,19 @@ class WideMode(Game):
         self.wide_font_large = retro_style.get_font(48, bold=False)
         self.wide_font_medium = retro_style.get_font(36, bold=False)
 
-        print("🎮 WIDE MODE aktif. Tahta genişliği 15 sütuna çıktı.")
+        print("WIDE MODE aktif. Tahta genişliği 15 sütuna çıktı.")
 
     def _load_wide_background(self) -> None:
         custom_bg = self.settings_manager.get("bg_wide") if self.settings_manager else None
         if custom_bg and os.path.exists(custom_bg) and self.wide_background.load_image(custom_bg):
-            print(f"✨ Özel Wide Mode arka planı yüklendi: {os.path.basename(custom_bg)}")
+            print(f"Özel Wide Mode arka planı yüklendi: {os.path.basename(custom_bg)}")
             return
 
         default_path = os.path.join("backgrounds", "wide_background.png")
         if os.path.exists(default_path) and self.wide_background.load_image(default_path):
-            print("✨ Wide Mode arka planı bulundu ve yüklendi.")
+            print("Wide Mode arka planı bulundu ve yüklendi.")
         else:
-            print("⚠️ Wide Mode arka planı yok, varsayılan kullanılacak.")
+            print("[Uyarı] Wide Mode arka planı yok, varsayılan kullanılacak.")
 
     def restart(self):
         """Clear Wide mode-specific counters on restart."""
@@ -15401,7 +15401,7 @@ class WideMode(Game):
             piece = super().spawn_new_piece()
         if getattr(piece, "name", "") in EXTRA_SHAPE_NAMES:
             self.extra_piece_count += 1
-            print(f"✨ Wide Mode ekstra parça #{self.extra_piece_count}: {piece.name}")
+            print(f"Wide Mode ekstra parça #{self.extra_piece_count}: {piece.name}")
         return piece
 
     def apply_theme_to_pieces(self) -> None:
@@ -15446,4 +15446,4 @@ class WideMode(Game):
     def lock_piece(self) -> None:
         super().lock_piece()
         name = self.current_piece.name if hasattr(self.current_piece, "name") else "Klasik"
-        print(f"🔒 Wide Mode parçası kilitlendi: {name}")
+        print(f"Wide Mode parçası kilitlendi: {name}")

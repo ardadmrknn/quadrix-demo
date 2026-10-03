@@ -383,7 +383,7 @@ def create_random_tetris2_piece(x=3, y=0):
         extra_index = piece_index - 7  # 0-3 arası
         piece = create_extra_piece(extra_index, x=x, y=0)
         color_names = ['MAGENTA', 'CYAN', 'TURUNCU', 'ALTIN']
-        print(f"🎲 EXTRA PARÇA: {piece.name} ({color_names[extra_index]})")
+        print(f"EXTRA PARÇA: {piece.name} ({color_names[extra_index]})")
         return piece
 
 

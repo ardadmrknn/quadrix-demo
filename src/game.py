@@ -1732,7 +1732,7 @@ class Game:
         try:
             definitions = load_workshop_blocks(self.settings_manager)
         except Exception as exc:  # pragma: no cover - defensive logging
-            print(f"⚠️ Atölye blokları yüklenemedi: {exc}")
+            print(f"[Uyarı] Atölye blokları yüklenemedi: {exc}")
             return {}
         mapping: Dict[str, List[WorkshopBlockDefinition]] = {}
         for definition in definitions:
@@ -2114,7 +2114,7 @@ class Game:
         custom_bg = self.settings_manager.get('bg_main', None)
         if custom_bg and os.path.exists(custom_bg):
             if self.background_manager.load_image(custom_bg):
-                print(f"✨ Özel ana arka plan yüklendi: {os.path.basename(custom_bg)}")
+                print(f"Özel ana arka plan yüklendi: {os.path.basename(custom_bg)}")
                 return
         
         # Yoksa olası resim yolları - PyInstaller için resource_path kullan
@@ -2139,10 +2139,10 @@ class Game:
         
         for path in possible_paths:
             if self.background_manager.load_image(path):
-                print(f"✨ Arka plan yüklendi: {os.path.basename(path)}")
+                print(f"Arka plan yüklendi: {os.path.basename(path)}")
                 break
         else:
-            print("ℹ️ Arka plan resmi bulunamadı. backgrounds/ klasörüne resim ekleyin!")
+            print("[Bilgi] Arka plan resmi bulunamadı. backgrounds/ klasörüne resim ekleyin!")
     
     def load_single_background(self):
         """Tek oyunculu oyun alanı için ayrı arka plan resmini yükle"""
@@ -2150,7 +2150,7 @@ class Game:
         custom_bg = self.settings_manager.get('bg_single', None)
         if custom_bg and os.path.exists(custom_bg):
             if self.single_background.load_image(custom_bg):
-                print(f"✨ Özel tek oyuncu arka planı yüklendi: {os.path.basename(custom_bg)}")
+                print(f"Özel tek oyuncu arka planı yüklendi: {os.path.basename(custom_bg)}")
                 return
         
         # Yoksa olası resim yolları - Oyun alanı için ayrı arka plan
@@ -2176,10 +2176,10 @@ class Game:
         
         for path in possible_paths:
             if self.single_background.load_image(path):
-                print(f"✨ Tek oyuncu oyun alani icin arka plan yuklendi: {os.path.basename(path)}")
+                print(f"Tek oyuncu oyun alani icin arka plan yuklendi: {os.path.basename(path)}")
                 break
         else:
-            print("ℹ️ Tek oyuncu oyun alani icin ayri arka plan bulunamadi (opsiyonel)")
+            print("[Bilgi] Tek oyuncu oyun alani icin ayri arka plan bulunamadi (opsiyonel)")
     
     def load_outer_background(self):
         """Oyun alanı dışındaki bölge için arka plan resmini yükle"""
@@ -2188,14 +2188,14 @@ class Game:
             klasik_path = resource_path('assets/klasik.png')
             if os.path.exists(klasik_path):
                 if self.outer_background.load_image(klasik_path):
-                    print(f"✨ Klasik mod arka planı yüklendi: klasik.png")
+                    print(f"Klasik mod arka planı yüklendi: klasik.png")
                     return
 
         # 2. Custom background kontrolü
         custom_bg = self.settings_manager.get('bg_outer', None)
         if custom_bg and os.path.exists(custom_bg):
             if self.outer_background.load_image(custom_bg):
-                print(f"✨ Özel dış alan arka planı yüklendi: {os.path.basename(custom_bg)}")
+                print(f"Özel dış alan arka planı yüklendi: {os.path.basename(custom_bg)}")
                 return
         
         # Yoksa olası resim yolları - Dış alan için arka plan
@@ -2216,10 +2216,10 @@ class Game:
         
         for path in possible_paths:
             if self.outer_background.load_image(path):
-                print(f"✨ Dis alan arka plani yuklendi: {os.path.basename(path)}")
+                print(f"Dis alan arka plani yuklendi: {os.path.basename(path)}")
                 break
         else:
-            print("ℹ️ Dis alan arka plani bulunamadi (opsiyonel)")
+            print("[Bilgi] Dis alan arka plani bulunamadi (opsiyonel)")
     
     def get_initial_speed(self):
         """Sabit başlangıç hızı - Kart modu standardı"""
@@ -2721,7 +2721,7 @@ class Game:
                         self.discard_held_uses -= 1
                         self.can_hold = True  # Tekrar hold kullanabilir
                         self.sound.play('clear')  # Silme sesi
-                        print(f"🗑️ Saklanan parça silindi! Kalan hak: {self.discard_held_uses}")
+                        print(f"Saklanan parça silindi! Kalan hak: {self.discard_held_uses}")
 
                 # Shape Mutation (LSHIFT): only if perk_phase is active
                 elif event.key == pygame.K_LSHIFT:
@@ -4803,7 +4803,7 @@ class Game:
             self.firework_active = True
             self.firework_time = 120  # 2 saniye göster
             self.sound.play('tetris')  # Kutlama sesi
-            print(f"🎆 {next_milestone} PUAN MILESTONE! Havai fişek gösterisi!")
+            print(f"{next_milestone} PUAN MILESTONE! Havai fişek gösterisi!")
         
         # Havai fişek süresini güncelle
         if self.firework_active:

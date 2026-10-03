@@ -950,7 +950,7 @@ class ZenMode(Game):
         if not clear_entire_board and self.auto_clear_rows is not None:
             if not self.board.is_valid_position(self.current_piece):
                 # Recursive çağrı ile tüm tahtayı temizle
-                debug_print(f"⚠️ {self.auto_clear_rows} satır yetmedi, tüm tahta temizleniyor...")
+                debug_print(f"[Uyarı] {self.auto_clear_rows} satır yetmedi, tüm tahta temizleniyor...")
                 self.board.grid = [[BLACK for _ in range(board_width)] for _ in range(board_height)]
                 self.board.texture_grid = [[None for _ in range(board_width)] for _ in range(board_height)]
                 self.board.occupancy = [[False for _ in range(board_width)] for _ in range(board_height)]
@@ -982,11 +982,11 @@ class ZenMode(Game):
                 speed=5
             )
         
-        debug_print(f"🧘 Zen Otomatik Temizlik #{self.auto_clears} - {cleared_desc} temizlendi")
+        debug_print(f"Zen Otomatik Temizlik #{self.auto_clears} - {cleared_desc} temizlendi")
         
         # Otomatik temizlik cezası - kalıcı olarak sakla (TEST: 50 puan)
         self.auto_clear_penalty += 50
-        debug_print(f"⚠️ Otomatik temizlik cezası: -50 puan (Toplam ceza: -{self.auto_clear_penalty})")
+        debug_print(f"[Uyarı] Otomatik temizlik cezası: -50 puan (Toplam ceza: -{self.auto_clear_penalty})")
     
     def calculate_zen_score(self):
         """Zen modunda skor = tahtadaki blok sayısı + temizlenen satırlar - cezalar"""
@@ -1005,7 +1005,7 @@ class ZenMode(Game):
         # Debug - sadece ceza varsa göster
         if self.auto_clear_penalty > 0 and hasattr(self, '_last_penalty_print'):
             if self.auto_clear_penalty != self._last_penalty_print:
-                debug_print(f"💰 ZEN SKOR: Bloklar={block_score} + Satırlar={lines_score} - Ceza={self.auto_clear_penalty} = {zen_score}")
+                debug_print(f"ZEN SKOR: Bloklar={block_score} + Satırlar={lines_score} - Ceza={self.auto_clear_penalty} = {zen_score}")
                 self._last_penalty_print = self.auto_clear_penalty
         
         # Skor hiçbir zaman negatif olamaz
