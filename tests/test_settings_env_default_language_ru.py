@@ -33,22 +33,32 @@ def setup_stubs(monkeypatch):
         sys.modules["constants"].DEBUG_MODE = False
         
     if "pygame" in sys.modules:
+        # FAZ A3 (K4): pg burada GERÇEK pygame olabilir (süitte önceki canlı
+        # dosyalar aileyi sys.modules'te bırakınca). Düz atamalar (pg.display =
+        # ...) gerçek modülün attribute'larını ezer ve teardown geri koymaz —
+        # sonraki canlı testlerde 'SimpleNamespace' object has no attribute
+        # 'get_init'/'set_mode' hatası üretir. monkeypatch.setattr hem stub
+        # hem gerçek modülde çalışır ve teardown'da orijinali geri koyar;
+        # raising=False stub'ta bulunmayan attribute'lar için gereklidir.
+        # (DUZ-011: v2'nin K4 düzeltmesi demo'ya port edildi — kalıcı ezme,
+        # test_ui_theme_font_fallback 4 testini ve win32 font registry
+        # testlerini tam pakette düşürüyordu.)
         pg = sys.modules["pygame"]
-        pg.mixer = types.SimpleNamespace(
-            init=lambda *a, **k: None, 
+        monkeypatch.setattr(pg, "mixer", types.SimpleNamespace(
+            init=lambda *a, **k: None,
             music=types.SimpleNamespace(
-                load=lambda *a, **k: None, 
-                play=lambda *a, **k: None, 
+                load=lambda *a, **k: None,
+                play=lambda *a, **k: None,
                 set_volume=lambda *a, **k: None
             )
-        )
-        pg.font = types.SimpleNamespace(
-            init=lambda: None, 
-            Font=lambda *a, **k: None, 
+        ), raising=False)
+        monkeypatch.setattr(pg, "font", types.SimpleNamespace(
+            init=lambda: None,
+            Font=lambda *a, **k: None,
             SysFont=lambda *a, **k: None
-        )
-        pg.init = lambda: (0, 0)
-        pg.display = types.SimpleNamespace(set_caption=lambda *a: None)
+        ), raising=False)
+        monkeypatch.setattr(pg, "init", lambda: (0, 0), raising=False)
+        monkeypatch.setattr(pg, "display", types.SimpleNamespace(set_caption=lambda *a: None), raising=False)
 
 def _get_settings_manager():
     if "settings_manager" in sys.modules:
