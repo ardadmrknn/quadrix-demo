@@ -2363,11 +2363,39 @@ class Game:
     def handle_input(self):
         """
         Kullanıcı girdilerini işle
-        
+
         Returns:
             bool: Oyun devam edecekse True
         """
+        try:
+            from gamepad_manager import get_gamepad_manager
+            gpm = get_gamepad_manager()
+            gpm_connected = gpm is not None and gpm.is_connected()
+        except Exception:
+            gpm = None
+            gpm_connected = False
+
         for event in pygame.event.get():
+            # Double Input / Ghost Keyboard Input engelleme koruması
+            # (v2 paritesi): bağlı gamepad varken son 150 ms'de gamepad'den
+            # aktif girdi geldiyse, işletim sisteminin/sürücünün emüle ettiği
+            # mükerrer ok-tuşu KEYDOWN/KEYUP'larını yut — yoksa parça çift
+            # hareket eder (Steam Input klavye emülasyonu / sürücü katmanı).
+            if event.type in (pygame.KEYDOWN, pygame.KEYUP) and event.key in (pygame.K_LEFT, pygame.K_RIGHT, pygame.K_UP, pygame.K_DOWN):
+                if not getattr(event, 'from_gamepad', False) and gpm_connected and gpm is not None:
+                    try:
+                        now = pygame.time.get_ticks()
+                        last_gamepad_input = gpm.get_last_input_time()
+                        # Son 150ms içinde gamepad'den aktif bir girdi VARDIYSA,
+                        # işletim sisteminin veya sürücünün emüle ettiği mükerrer klavye girdisini yoksay.
+                        # 0 = "hiç girdi gelmedi": iki saat de 0'ken (süreç başlangıcı ya
+                        # da time modülü başlatılmamış başlıksız ortam) "şimdi girdi var"
+                        # sanılıp klavye ok tuşları yutulmamalı.
+                        if last_gamepad_input > 0 and now - last_gamepad_input < 150:
+                            continue
+                    except Exception:
+                        pass
+
             if event.type == pygame.QUIT:
                 return False
 
@@ -6842,14 +6870,29 @@ class Game:
         try:
             gpm = get_gamepad_manager()
             if gpm and gpm.enabled and gpm.is_connected():
-                # restart için gamepad_config'den oku (varsayılan 3. buton, yani Y)
+                # restart için gamepad_config'den oku (varsayılan 3. buton, yani Y).
+                # Denetim bulgusu (v2 paritesi): değer eski int VE yeni
+                # {'primary': N} formatında gelebilir — int(dict) TypeError
+                # fırlatıp sessizce klavye etiketine düşüyordu (gamepad
+                # legendı hiç görünmüyordu).
                 gp_cfg = self.settings_manager.get_controls().get('gamepad', {})
-                restart_btn = int(gp_cfg.get('restart', 3))
-                restart_key = gpm.get_button_index_label(restart_btn).upper()
-                
+
+                def _binding_button(raw, default):
+                    if isinstance(raw, dict):
+                        raw = raw.get('primary', raw.get('button', default))
+                    try:
+                        return int(raw)
+                    except (TypeError, ValueError):
+                        return int(default)
+
+                restart_btn = _binding_button(gp_cfg.get('restart', 3), 3)
+                if restart_btn >= 0:
+                    restart_key = gpm.get_button_index_label(restart_btn).upper()
+
                 # back/menu için menu_back oku (varsayılan 1. buton, yani B)
-                back_btn = int(gp_cfg.get('menu_back', 1))
-                menu_key = gpm.get_button_index_label(back_btn).upper()
+                back_btn = _binding_button(gp_cfg.get('menu_back', 1), 1)
+                if back_btn >= 0:
+                    menu_key = gpm.get_button_index_label(back_btn).upper()
         except Exception:
             pass
 

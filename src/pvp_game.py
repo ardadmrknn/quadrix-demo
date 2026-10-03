@@ -117,6 +117,12 @@ class PvPGame:
     """2 oyunculu PvP oyun sınıfı"""
     p1_lock_reset_count = 0
     p2_lock_reset_count = 0
+    # Cihaz → oyuncu routing (v2 paritesi): gamepad event'lerinin hangi
+    # oyuncuya ait olduğu device_index ile buradan çözülür. None = atama
+    # yok (legacy tek-gamepad davranışı: P2'yi sürer). İki+ pad
+    # bağlandığında _ensure_gamepad_player_assignments sırayla atar.
+    p1_gamepad_idx = None
+    p2_gamepad_idx = None
 
     @staticmethod
     def _is_focus_loss_event(event) -> bool:
@@ -1952,6 +1958,71 @@ class PvPGame:
         
         return piece
     
+    def _resolve_gamepad_player(self, event) -> int:
+        """Gamepad event'inin hangi oyuncuya ait olduğunu çöz.
+
+        gamepad_player metadata'sı önceliklidir; yoksa device_index
+        p1/p2_gamepad_idx eşleşmesinden çözülür; hiçbiri yoksa legacy
+        tek-gamepad davranışı (ok tuşları P2'yi sürer) korunur.
+        """
+        gp_player = getattr(event, 'gamepad_player', None)
+        if gp_player in (1, 2):
+            return gp_player
+        gp_device = getattr(event, 'device_index', None)
+        if self.p1_gamepad_idx is not None and gp_device == self.p1_gamepad_idx:
+            return 1
+        if self.p2_gamepad_idx is not None and gp_device == self.p2_gamepad_idx:
+            return 2
+        return 2
+
+    def _ensure_gamepad_player_assignments(self):
+        """İki+ gamepad bağlıysa cihaz→oyuncu otomatik ataması (v2 routing
+        katmanı paritesi; atama lobisi demo'da yoktur).
+
+        v2'deki atama lobisi (gamepad left/right ile P1/P2 seçimi) demo'ya
+        bilinçli TAŞINMADI (kurulum akışı değişir). Bunun yerine: tek pad
+        legacy P2 davranışını korur; iki+ pad bağlandığında bağlanma
+        sırasına göre ilk pad P1'e, ikinci pad P2'ye atanır — iki padin
+        de aynı oyuncuyu sürmesi yerine. Klavye girişleri paralel çalışmaya
+        devam eder. Idempotenttır; atama bir kez yapıldığında değişmez.
+        """
+        try:
+            from gamepad_manager import get_gamepad_manager
+            gpm = get_gamepad_manager()
+            if gpm is None:
+                return
+            indices = sorted(int(idx) for idx in getattr(gpm, 'gamepads', {}).keys())
+            if len(indices) >= 2:
+                if self.p1_gamepad_idx is None:
+                    self.p1_gamepad_idx = indices[0]
+                if self.p2_gamepad_idx is None:
+                    self.p2_gamepad_idx = indices[1]
+        except Exception:
+            pass
+
+    @staticmethod
+    def _event_matches_player_action(
+        event,
+        controls: dict,
+        action: str,
+        player: int,
+        gp_player,
+        gamepad_aliases: tuple = (),
+    ) -> bool:
+        """Oyuncuya özgü aksiyon eşleşmesi (DUZ-007; v2 paritesi).
+
+        Gamepad event'i: canonical action metadata + oyuncu çözümlemesi.
+        Klavye event'i: fiziksel tuş karşılaştırması — klavye remap'i
+        gamepad girdisini düşürmez, gamepad hold (K_c) klavye hold
+        tuşlarına (K_LCTRL/K_RCTRL) tesadüfen eşleşmek zorunda kalmaz.
+        """
+        if bool(getattr(event, 'from_gamepad', False)):
+            if gp_player is not None and player is not None and gp_player != player:
+                return False
+            event_action = getattr(event, 'action', None)
+            return event_action == action or event_action in gamepad_aliases
+        return getattr(event, 'key', None) == controls.get(action)
+
     def handle_input(self):
         """Kullanıcı girdilerini işle"""
         for event in pygame.event.get():
@@ -2145,6 +2216,14 @@ class PvPGame:
                     continue
 
                 is_gamepad_event = bool(getattr(event, 'from_gamepad', False))
+                # DUZ-007 (v2 paritesi): gamepad event'leri canonical action
+                # metadata'sı + oyuncu çözümlemesiyle dispatch edilir; klavye
+                # remap'i gamepad girdisini düşürmez, gamepad hold (K_c) P1/P2
+                # hold tuşlarına (K_LCTRL/K_RCTRL) tesadüfen eşleşmek zorunda
+                # kalmaz. İki+ pad bağlıysa cihaz→oyuncu ataması yapılır.
+                if is_gamepad_event and not self.game_over and not self.paused:
+                    self._ensure_gamepad_player_assignments()
+                gp_player = self._resolve_gamepad_player(event) if is_gamepad_event else None
 
                 # Game over iken menu back - ana menüye dön.
                 # Klavyede ESC/BACKSPACE çıkış davranışını korur; gamepad'de B
@@ -2173,7 +2252,7 @@ class PvPGame:
                 # OYUNCU 1 KONTROLLER (WASD + Shift/Ctrl)
                 if not self.board1.is_game_over() and not demobot_active:
                     # A - Sol (DAS ile)
-                    if event.key == controls1['move_left']:
+                    if self._event_matches_player_action(event, controls1, 'move_left', 1, gp_player):
                         moved = self._try_move_left_p1()
                         if moved:
                             self.sound.play('move')
@@ -2183,7 +2262,7 @@ class PvPGame:
                         self.p1_das_charged = False
                     
                     # D - Sağ (DAS ile)
-                    elif event.key == controls1['move_right']:
+                    elif self._event_matches_player_action(event, controls1, 'move_right', 1, gp_player):
                         moved = self._try_move_right_p1()
                         if moved:
                             self.sound.play('move')
@@ -2193,32 +2272,32 @@ class PvPGame:
                         self.p1_das_charged = False
                     
                     # S - Aşağı (soft drop) - tuşa basılınca hızlı düş
-                    elif event.key == controls1['soft_drop']:
+                    elif self._event_matches_player_action(event, controls1, 'soft_drop', 1, gp_player):
                         self.p1_soft_drop_active = True
                         self.p1_soft_drop_timer = 0
                         # İlk hareketi hemen yap
                         self._try_soft_drop_step_p1()
                     
                     # W - Döndür
-                    elif event.key == controls1['rotate']:
+                    elif self._event_matches_player_action(event, controls1, 'rotate', 1, gp_player, gamepad_aliases=('rotate_alt',)):
                         self._try_rotate_p1()
 
                     # Q - Saat Yönünün Tersi Döndür
-                    elif controls1.get('rotate_ccw') is not None and event.key == controls1['rotate_ccw']:
+                    elif self._event_matches_player_action(event, controls1, 'rotate_ccw', 1, gp_player):
                         self._try_rotate_p1(direction=-1)
                     
                     # Shift - Hard drop
-                    elif event.key == controls1['hard_drop']:
+                    elif self._event_matches_player_action(event, controls1, 'hard_drop', 1, gp_player):
                         self._hard_drop_p1()
 
                     # Hold
-                    elif event.key == controls1['hold']:
+                    elif self._event_matches_player_action(event, controls1, 'hold', 1, gp_player):
                         self._try_hold_piece(1)
                 
                 # OYUNCU 2 KONTROLLER (Ok tuşları + Space)
                 if not self.board2.is_game_over():
                     # Sol ok (DAS ile)
-                    if event.key == controls2['move_left']:
+                    if self._event_matches_player_action(event, controls2, 'move_left', 2, gp_player):
                         moved = self._try_move_left_p2()
                         if moved:
                             self.sound.play('move')
@@ -2228,7 +2307,7 @@ class PvPGame:
                         self.p2_das_charged = False
                     
                     # Sağ ok (DAS ile)
-                    elif event.key == controls2['move_right']:
+                    elif self._event_matches_player_action(event, controls2, 'move_right', 2, gp_player):
                         moved = self._try_move_right_p2()
                         if moved:
                             self.sound.play('move')
@@ -2238,7 +2317,7 @@ class PvPGame:
                         self.p2_das_charged = False
                     
                     # Aşağı ok - tuşa basılınca hızlı düş
-                    elif event.key == controls2['soft_drop']:
+                    elif self._event_matches_player_action(event, controls2, 'soft_drop', 2, gp_player):
                         self.p2_soft_drop_active = True
                         self.p2_soft_drop_timer = 0
                         # İlk hareketi hemen yap
@@ -2250,15 +2329,15 @@ class PvPGame:
                             self._reset_lock_delay_state(2)
                     
                     # Yukarı ok - Döndür
-                    elif event.key == controls2['rotate']:
+                    elif self._event_matches_player_action(event, controls2, 'rotate', 2, gp_player, gamepad_aliases=('rotate_alt',)):
                         self._try_rotate_p2()
 
                     # RCTRL - Saat Yönünün Tersi Döndür
-                    elif controls2.get('rotate_ccw') is not None and event.key == controls2['rotate_ccw']:
+                    elif self._event_matches_player_action(event, controls2, 'rotate_ccw', 2, gp_player):
                         self._try_rotate_p2(direction=-1)
                     
                     # Space - Hard drop
-                    elif event.key == controls2['hard_drop']:
+                    elif self._event_matches_player_action(event, controls2, 'hard_drop', 2, gp_player):
                         start_y = self.current_piece2.y
                         drop_distance = 0
                         
@@ -2291,7 +2370,7 @@ class PvPGame:
                             pass
 
                     # Hold
-                    elif event.key == controls2['hold']:
+                    elif self._event_matches_player_action(event, controls2, 'hold', 2, gp_player):
                         self._try_hold_piece(2)
             
             # Game over ekranında mouse tıklama kontrolü
@@ -2311,8 +2390,12 @@ class PvPGame:
                 controls1 = self.pvp_controls['player1']
                 controls2 = self.pvp_controls['player2']
                 demobot_active = self._is_player1_demobot_active()
+                # DUZ-007: gamepad KEYUP'ları da action metadata'sıyla eşleşir —
+                # klavye remap'inde DAS/soft-drop kilitleri doğru temizlenir.
+                is_gamepad_up = bool(getattr(event, 'from_gamepad', False))
+                gp_player = self._resolve_gamepad_player(event) if is_gamepad_up else None
                 # Oyuncu 1
-                if not demobot_active and event.key == controls1['move_left']:
+                if not demobot_active and self._event_matches_player_action(event, controls1, 'move_left', 1, gp_player):
                     if self.p1_das_direction == -1:
                         pressed = pygame.key.get_pressed()
                         other_key = controls1['move_right']
@@ -2327,7 +2410,7 @@ class PvPGame:
                         else:
                             self.p1_das_direction = 0
                             self.p1_das_charged = False
-                elif not demobot_active and event.key == controls1['move_right']:
+                elif not demobot_active and self._event_matches_player_action(event, controls1, 'move_right', 1, gp_player):
                     if self.p1_das_direction == 1:
                         pressed = pygame.key.get_pressed()
                         other_key = controls1['move_left']
@@ -2342,10 +2425,10 @@ class PvPGame:
                         else:
                             self.p1_das_direction = 0
                             self.p1_das_charged = False
-                elif not demobot_active and event.key == controls1['soft_drop']:
+                elif not demobot_active and self._event_matches_player_action(event, controls1, 'soft_drop', 1, gp_player):
                     self.p1_soft_drop_active = False
                 # Oyuncu 2
-                elif event.key == controls2['move_left']:
+                elif self._event_matches_player_action(event, controls2, 'move_left', 2, gp_player):
                     if self.p2_das_direction == -1:
                         pressed = pygame.key.get_pressed()
                         other_key = controls2['move_right']
@@ -2360,7 +2443,7 @@ class PvPGame:
                         else:
                             self.p2_das_direction = 0
                             self.p2_das_charged = False
-                elif event.key == controls2['move_right']:
+                elif self._event_matches_player_action(event, controls2, 'move_right', 2, gp_player):
                     if self.p2_das_direction == 1:
                         pressed = pygame.key.get_pressed()
                         other_key = controls2['move_left']
@@ -2375,7 +2458,7 @@ class PvPGame:
                         else:
                             self.p2_das_direction = 0
                             self.p2_das_charged = False
-                elif event.key == controls2['soft_drop']:
+                elif self._event_matches_player_action(event, controls2, 'soft_drop', 2, gp_player):
                     self.p2_soft_drop_active = False
         
         return True

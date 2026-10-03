@@ -212,7 +212,9 @@ def test_paused_game_does_not_apply_ccw(monkeypatch):
 def test_gamepad_canonical_binding_and_event_metadata():
     assert DEFAULT_GAMEPAD_BINDINGS['rotate_ccw'] == {'button': None}
     assert ACTION_TO_KEY['rotate_ccw'] == pygame.K_z
-    assert CURRENT_GAMEPAD_LAYOUT_VERSION in (2, 5)
+    # Demo layout v3 (2026-10-04): restart=Y(3)/level_select=X(2) eklendi —
+    # CCW bağlamalarını değiştirmez (rotate_ccw hâlâ atanmamış varsayılan).
+    assert CURRENT_GAMEPAD_LAYOUT_VERSION in (2, 3, 5)
 
     manager = GamepadManager.__new__(GamepadManager)
     event = manager._make_key_event(pygame.K_z, pygame.KEYDOWN, gp_device_index=4, action='rotate_ccw')

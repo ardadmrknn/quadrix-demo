@@ -1292,6 +1292,38 @@ class CampaignMode(Game):
     def handle_input(self):
         """Kullanıcı girdilerini işle"""
         if self.level_complete or self.level_failed:
+            # === Gamepad poll-only aksiyonları (v2 paritesi) ===
+            # Bu ekranlarda bağlam 'menu' (wants_mouse_visible True) olduğundan
+            # A (menu_confirm) sentetik K_RETURN, B (menu_back) sentetik K_ESCAPE
+            # üretir; bunlar aşağıdaki klavye event döngüsünde işlenir.
+            #   A → ileri aksiyon: level_failed'da yeniden dene, level_complete'te
+            #       sonraki level (K_RETURN yolundan).
+            #   B → menü / geri (K_ESCAPE yolundan).
+            # restart (Y) ve level_select (X) ise POLL-ONLY aksiyonlardır; sentetik
+            # klavye event'i üretmezler ve yalnızca burada (handler game_over/
+            # level_failed ile gate'li) edge-detection ile okunur. Bu sayede oyun
+            # ortasında asla tetiklenmezler. (Denetim bulgusu: demo'da bu blok
+            # hiç port edilmemişti — level-fail ekranında gamepad tamamen ölüydü.)
+            try:
+                from gamepad_manager import get_gamepad_manager
+                _gpm = get_gamepad_manager()
+                if _gpm and getattr(_gpm, 'enabled', False):
+                    # X → Bölüm Seç (her iki ekranda da geçerli).
+                    if _gpm.was_action_just_pressed('level_select'):
+                        # X butonu menü bağlamında sentetik K_x üretir; bir sonraki
+                        # frame'e sızıp yanlış davranış yapmasın diye tüket.
+                        pygame.event.clear((pygame.KEYDOWN, pygame.KEYUP))
+                        return 'campaign_select'
+                    # Y → Yeniden Dene. level_failed'da retry zaten A'da (birincil);
+                    # Y de retry verir. level_complete'te A=sonraki olduğundan retry
+                    # Y butonuna düşer.
+                    if _gpm.was_action_just_pressed('restart'):
+                        # Y butonu menü bağlamında sentetik K_DELETE üretir; tüket.
+                        pygame.event.clear((pygame.KEYDOWN, pygame.KEYUP))
+                        self.restart()
+                        return True
+            except Exception:
+                pass
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     return False

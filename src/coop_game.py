@@ -126,6 +126,11 @@ class CoopGame:
     # Hold tuşları (hard_drop ile çakışmamak için ayrı tuşlar)
     _P1_HOLD_KEY = pygame.K_e
     _P2_HOLD_KEY = pygame.K_RSHIFT
+    # Cihaz → oyuncu routing (v2 paritesi): gamepad event'lerinin hangi
+    # oyuncuya ait olduğu device_index ile buradan çözülür. None = atama
+    # yok (legacy tek-gamepad davranışı: P2'yi sürer).
+    p1_gamepad_idx = None
+    p2_gamepad_idx = None
     _AMBIENT_PARTICLE_COLOR = (200, 200, 255)
     _SOFT_DROP_SPEED = 50  # ms
     _LINE_CLEAR_SWEEP_BLOCK_FALL_SPEED = 0.144
@@ -2718,6 +2723,71 @@ class CoopGame:
     # handle_input
     # ==================================================================
 
+    @staticmethod
+    def _event_matches_player_action(
+        event,
+        controls: dict,
+        action: str,
+        player: int,
+        gp_player,
+        gamepad_aliases: tuple = (),
+    ) -> bool:
+        """Oyuncuya özgü aksiyon eşleşmesi (DUZ-007; v2 koop uyarlaması).
+
+        Gamepad event'i: canonical action metadata + oyuncu çözümlemesi
+        (gamepad_player ya da device_index → p1/p2_gamepad_idx, legacy
+        tek-gamepad = P2). Klavye event'i: fiziksel tuş karşılaştırması —
+        böylece klavye remap'i gamepad girdisini düşürmez ve gamepad
+        sentetik tuşu (K_c vb.) oyuncunun klavye hold tuşuna
+        (K_e/K_RSHIFT) tesadüfen eşleşmek zorunda kalmaz.
+        """
+        if bool(getattr(event, 'from_gamepad', False)):
+            if gp_player is not None and player is not None and gp_player != player:
+                return False
+            event_action = getattr(event, 'action', None)
+            return event_action == action or event_action in gamepad_aliases
+        return getattr(event, 'key', None) == controls.get(action)
+
+    def _resolve_gamepad_player(self, event) -> int:
+        """Gamepad event'inin hangi oyuncuya ait olduğunu çöz.
+
+        gamepad_player metadata'sı önceliklidir; yoksa device_index
+        p1/p2_gamepad_idx eşleşmesinden çözülür; hiçbiri yoksa legacy
+        tek-gamepad davranışı (ok tuşları P2'yi sürer) korunur.
+        """
+        gp_player = getattr(event, 'gamepad_player', None)
+        if gp_player in (1, 2):
+            return gp_player
+        gp_device = getattr(event, 'device_index', None)
+        if self.p1_gamepad_idx is not None and gp_device == self.p1_gamepad_idx:
+            return 1
+        if self.p2_gamepad_idx is not None and gp_device == self.p2_gamepad_idx:
+            return 2
+        return 2
+
+    def _ensure_gamepad_player_assignments(self):
+        """İki+ gamepad bağlıysa cihaz→oyuncu otomatik ataması (v2 routing
+        katmanı paritesi; koop'ta atama lobisi yoktur).
+
+        Tek pad legacy P2 davranışını korur; iki+ pad bağlandığında bağlanma
+        sırasına göre ilk pad P1'e, ikinci pad P2'ye atanır — iki padin de
+        aynı oyuncuyu sürmesi yerine. Klavye girişleri paralel çalışmaya
+        devam eder. Idempotenttir; atama bir kez yapıldığında değişmez.
+        """
+        try:
+            from gamepad_manager import get_gamepad_manager
+            gpm = get_gamepad_manager()
+            if gpm is None:
+                return
+            indices = sorted(int(idx) for idx in getattr(gpm, 'gamepads', {}).keys())
+            if len(indices) >= 2:
+                if self.p1_gamepad_idx is None:
+                    self.p1_gamepad_idx = indices[0]
+                if self.p2_gamepad_idx is None:
+                    self.p2_gamepad_idx = indices[1]
+        except Exception:
+            pass
+
     def handle_input(self):
         """Kullanıcı girdilerini işle. True=devam, False/'menu'=çık."""
         for event in pygame.event.get():
@@ -2852,94 +2922,106 @@ class CoopGame:
 
                 c1 = self.pvp_controls['player1']
                 c2 = self.pvp_controls['player2']
+                # DUZ-007 (v2 koop paritesi): gamepad event'leri canonical
+                # action metadata'sından çözülür — klavye remap'i gamepad
+                # girdisini düşürmez, gamepad hold (K_c) klavye hold
+                # tuşlarına (K_e/K_RSHIFT) tesadüfen eşleşmek zorunda kalmaz.
+                if bool(getattr(event, 'from_gamepad', False)):
+                    # İki+ pad bağlıysa cihaz→oyuncu ataması (idempotent).
+                    self._ensure_gamepad_player_assignments()
+                gp_player = self._resolve_gamepad_player(event)
 
                 # --- P1 input ---
                 if not self.p1_frozen and self.p1_current_piece is not None:
-                    if event.key == c1['move_left']:
+                    if self._event_matches_player_action(event, c1, 'move_left', 1, gp_player):
                         if self._try_move('P1', -1):
                             self.sound.play('move')
                         self.p1_das_direction = -1
                         self.p1_das_timer = 0
                         self.p1_das_repeat_timer = 0
                         self.p1_das_charged = False
-                    elif event.key == c1['move_right']:
+                    elif self._event_matches_player_action(event, c1, 'move_right', 1, gp_player):
                         if self._try_move('P1', 1):
                             self.sound.play('move')
                         self.p1_das_direction = 1
                         self.p1_das_timer = 0
                         self.p1_das_repeat_timer = 0
                         self.p1_das_charged = False
-                    elif event.key == c1['soft_drop']:
+                    elif self._event_matches_player_action(event, c1, 'soft_drop', 1, gp_player):
                         self.p1_soft_drop_active = True
                         self.p1_soft_drop_timer = 0
                         self._step_piece_down('P1')
-                    elif event.key == c1['rotate']:
+                    elif self._event_matches_player_action(event, c1, 'rotate', 1, gp_player, gamepad_aliases=('rotate_alt',)):
                         self._try_rotate('P1')
                         self.sound.play('rotate')
-                    elif c1.get('rotate_ccw') is not None and event.key == c1['rotate_ccw']:
+                    elif self._event_matches_player_action(event, c1, 'rotate_ccw', 1, gp_player):
                         self._try_rotate('P1', direction=-1)
                         self.sound.play('rotate')
-                    elif event.key == c1['hard_drop']:
+                    elif self._event_matches_player_action(event, c1, 'hard_drop', 1, gp_player):
                         self._hard_drop('P1')
                         self.sound.play('drop')
-                    elif event.key == c1['hold']:
+                    elif self._event_matches_player_action(event, c1, 'hold', 1, gp_player):
                         self._use_shared_hold('P1')
 
                 # --- P2 input ---
                 if not self.p2_frozen and self.p2_current_piece is not None:
-                    if event.key == c2['move_left']:
+                    if self._event_matches_player_action(event, c2, 'move_left', 2, gp_player):
                         if self._try_move('P2', -1):
                             self.sound.play('move')
                         self.p2_das_direction = -1
                         self.p2_das_timer = 0
                         self.p2_das_repeat_timer = 0
                         self.p2_das_charged = False
-                    elif event.key == c2['move_right']:
+                    elif self._event_matches_player_action(event, c2, 'move_right', 2, gp_player):
                         if self._try_move('P2', 1):
                             self.sound.play('move')
                         self.p2_das_direction = 1
                         self.p2_das_timer = 0
                         self.p2_das_repeat_timer = 0
                         self.p2_das_charged = False
-                    elif event.key == c2['soft_drop']:
+                    elif self._event_matches_player_action(event, c2, 'soft_drop', 2, gp_player):
                         self.p2_soft_drop_active = True
                         self.p2_soft_drop_timer = 0
                         self._step_piece_down('P2')
-                    elif event.key == c2['rotate']:
+                    elif self._event_matches_player_action(event, c2, 'rotate', 2, gp_player, gamepad_aliases=('rotate_alt',)):
                         self._try_rotate('P2')
                         self.sound.play('rotate')
-                    elif c2.get('rotate_ccw') is not None and event.key == c2['rotate_ccw']:
+                    elif self._event_matches_player_action(event, c2, 'rotate_ccw', 2, gp_player):
                         self._try_rotate('P2', direction=-1)
                         self.sound.play('rotate')
-                    elif event.key == c2['hard_drop']:
+                    elif self._event_matches_player_action(event, c2, 'hard_drop', 2, gp_player):
                         self._hard_drop('P2')
                         self.sound.play('drop')
-                    elif event.key == c2['hold']:
+                    elif self._event_matches_player_action(event, c2, 'hold', 2, gp_player):
                         self._use_shared_hold('P2')
 
             # -- KEYUP --
             elif event.type == pygame.KEYUP:
                 c1 = self.pvp_controls['player1']
                 c2 = self.pvp_controls['player2']
-                if event.key == c1['move_left']:
+                # DUZ-007: gamepad KEYUP'ları da action metadata'sıyla eşleşir —
+                # klavye remap'inde DAS/soft-drop kilitleri doğru temizlenir.
+                is_gamepad_up = bool(getattr(event, 'from_gamepad', False))
+                gp_player = self._resolve_gamepad_player(event) if is_gamepad_up else None
+                if self._event_matches_player_action(event, c1, 'move_left', 1, gp_player):
                     if self.p1_das_direction == -1:
                         self.p1_das_direction = 0
                         self.p1_das_charged = False
-                elif event.key == c1['move_right']:
+                elif self._event_matches_player_action(event, c1, 'move_right', 1, gp_player):
                     if self.p1_das_direction == 1:
                         self.p1_das_direction = 0
                         self.p1_das_charged = False
-                elif event.key == c1['soft_drop']:
+                elif self._event_matches_player_action(event, c1, 'soft_drop', 1, gp_player):
                     self.p1_soft_drop_active = False
-                elif event.key == c2['move_left']:
+                elif self._event_matches_player_action(event, c2, 'move_left', 2, gp_player):
                     if self.p2_das_direction == -1:
                         self.p2_das_direction = 0
                         self.p2_das_charged = False
-                elif event.key == c2['move_right']:
+                elif self._event_matches_player_action(event, c2, 'move_right', 2, gp_player):
                     if self.p2_das_direction == 1:
                         self.p2_das_direction = 0
                         self.p2_das_charged = False
-                elif event.key == c2['soft_drop']:
+                elif self._event_matches_player_action(event, c2, 'soft_drop', 2, gp_player):
                     self.p2_soft_drop_active = False
 
         return True

@@ -651,6 +651,11 @@ class TabbedSettingsScreen:
         self._single_player_bind_slot = 'primary'
         self._gamepad_bind_slot = 'primary'
         self._swallow_next_keydown = False
+        # KEYDOWN yutma bayrağı süre limiti (v2 paritesi, denetim bulgusu):
+        # bayrak tek atımlıktır ama süresiz kalırsa binding'den SONRA gelen
+        # ilk GERÇEK klavye tuşu (örn. ayarlardan çıkmak için Escape)
+        # yutuluyordu. gamepad-click yutmasının deadline deseniyle aynı.
+        self._swallow_next_keydown_deadline_ms = 0
         self._swallow_next_gamepad_click = False
         self._swallow_next_gamepad_click_deadline_ms = 0
         self._capture_started_by_gamepad_click = False
@@ -2956,9 +2961,19 @@ class TabbedSettingsScreen:
 
     def handle_input(self, event) -> str | None:
         """Girdileri işle. Uyumlu action string döndür."""
-        if self._swallow_next_keydown and event.type == pygame.KEYDOWN:
-            self._swallow_next_keydown = False
-            return None
+        if self._swallow_next_keydown:
+            if (
+                self._swallow_next_keydown_deadline_ms > 0
+                and pygame.time.get_ticks() > self._swallow_next_keydown_deadline_ms
+            ):
+                # Süre doldu: beklenen sentetik KEYDOWN (menü tekrarı) gelmedi —
+                # bayrağı bırak ki sonraki GERÇEK klavye tuşu yutulmasın.
+                self._swallow_next_keydown = False
+                self._swallow_next_keydown_deadline_ms = 0
+            elif event.type == pygame.KEYDOWN:
+                self._swallow_next_keydown = False
+                self._swallow_next_keydown_deadline_ms = 0
+                return None
         if (
             self._swallow_next_gamepad_click
             and self._swallow_next_gamepad_click_deadline_ms > 0
@@ -3031,6 +3046,7 @@ class TabbedSettingsScreen:
                         self._pending_keybind_slot = 'primary'
                         self._capture_started_by_gamepad_click = False
                         self._swallow_next_keydown = True
+                        self._swallow_next_keydown_deadline_ms = pygame.time.get_ticks() + 600
                         self._reset_hold_to_clear_state()
                     return None
                 trigger_index = normalize_gamepad_trigger_event(event)
@@ -3050,6 +3066,7 @@ class TabbedSettingsScreen:
                     self._pending_keybind_slot = 'primary'
                     self._capture_started_by_gamepad_click = False
                     self._swallow_next_keydown = True
+                    self._swallow_next_keydown_deadline_ms = pygame.time.get_ticks() + 600
                     self._reset_hold_to_clear_state()
                     return None
                 hat_index = normalize_gamepad_hat_event(event)
@@ -3062,6 +3079,7 @@ class TabbedSettingsScreen:
                     self._pending_keybind_slot = 'primary'
                     self._capture_started_by_gamepad_click = False
                     self._swallow_next_keydown = True
+                    self._swallow_next_keydown_deadline_ms = pygame.time.get_ticks() + 600
                     self._reset_hold_to_clear_state()
                     return None
                 return None
@@ -3753,6 +3771,7 @@ class TabbedSettingsScreen:
         # yapılan herhangi bir KEYDOWN repeatlemesi menüde başka eylem
         # tetiklemesin.
         self._swallow_next_keydown = True
+        self._swallow_next_keydown_deadline_ms = pygame.time.get_ticks() + 600
 
     # ------------------------------------------------------------------
     # Çizim

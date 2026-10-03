@@ -408,6 +408,61 @@ ACTION_TO_KEY = {
     'editor_delete': pygame.K_DELETE,  # Y butonu → delete/clear
 }
 
+# Buton çakışma çözümü öncelik tablosu (GP-001, v2 paritesi): Aynı fiziksel
+# butona birden fazla aksiyon atanmışsa deterministik olarak yüksek öncelikli
+# olan seçilir. Temel oyun aksiyonları > kart aksiyonları. Tablo modül
+# seviyesinde tutulur — kare başına dict tahsisini önler (v2 deseni).
+GAME_ACTION_PRIORITY = {
+    'hard_drop': 100,
+    'rotate': 95,
+    'rotate_ccw': 94,
+    'rotate_alt': 93,
+    'hold': 90,
+    'hold2': 89,
+    'soft_drop': 85,
+    'move_left': 80,
+    'move_right': 80,
+    'pause': 75,
+    'discard_held': 70,
+    'lt': 60,
+    'rt': 60,
+    'card_rewind': 50,
+    'card_sniper': 50,
+    'card_time_capsule_save': 50,
+    'card_time_capsule_restore': 50,
+    'card_freeze': 50,
+    'card_phase_shift': 50,
+    'card_ghost': 50,
+    'card_hammer': 50,
+    'card_bomb': 50,
+}
+
+# Menü aksiyonları için çakışma önceliği (v2 paritesi)
+MENU_ACTION_PRIORITY = {
+    'menu_confirm': 100,
+    'menu_back': 90,
+    'pause': 80,
+    'menu_tab_next': 70,
+    'menu_tab_prev': 70,
+    'editor_secondary': 60,
+    'editor_delete': 50,
+}
+
+# Oyun bağlamında buton → aksiyon çözümüne giren aksiyon kümesi (GP-001,
+# v2 paritesi). NOT: slot_1..slot_6 bilinçli olarak burada YOK: yuvalar
+# yalnızca poll edilir (was_action_just_pressed), sentetik event üretmez
+# (ACTION_TO_KEY'de slot girdisi yoktur — eski listedeki slot girdileri
+# etkisiz ölü koddur).
+GAME_ACTIONS_LIST = [
+    'move_left', 'move_right', 'soft_drop',
+    'hard_drop', 'rotate', 'rotate_ccw', 'rotate_alt', 'hold', 'hold2',
+    'pause', 'discard_held',
+    'lt', 'rt',
+    'card_rewind', 'card_sniper', 'card_time_capsule_save',
+    'card_time_capsule_restore', 'card_freeze', 'card_phase_shift',
+    'card_ghost', 'card_hammer', 'card_bomb',
+]
+
 
 @dataclass
 class StickState:
@@ -551,6 +606,11 @@ class GamepadManager:
         # Son aktif girdi zamanı
         self._last_gamepad_input_time: int = 0
         self._internal_time: float = 0.0
+        # Steam Input geç hazırlandığında (paketli Steam çalıştırmasında SDL
+        # init anında sanal cihaz henüz yayınlanmamış olabilir) sınırlı
+        # SDL joystick yenileme denemesi planı (v2 paritesi).
+        self._startup_refresh_attempts: int = 0
+        self._startup_refresh_schedule_ms = (250.0, 1000.0, 2500.0, 5000.0)
 
         # GP-006: Steam Input fallback cihazlarının capture kenar kuyruğu.
         # Steam Input sanal gamepad'leri SDL'ye GÖRÜNMEZ; raw
@@ -724,6 +784,68 @@ class GamepadManager:
                 dirs.append('right')
         return dirs
 
+    def _refresh_empty_startup_scan(self) -> None:
+        """Steam Input geç hazır olduğunda SDL joystick listesini yenile (v2 paritesi).
+
+        Steam üzerinden çalıştırılan paketli sürümde Steam Input fiziksel cihazı
+        gizleyip sanal bir gamepad yayınlayabilir. Bu sanal aygıt pygame/SDL ilk
+        init edildiği anda henüz yoksa kaynak çalıştırma ile Steam çalıştırması
+        farklı davranır. Yalnızca başlangıçta hiç cihaz görünmüyorken ve sınırlı
+        sayıda çalışarak mevcut bağlantıları rahatsız etmeden alt sistemi yeniler.
+        """
+        if self.gamepads:
+            return
+        attempt = int(getattr(self, '_startup_refresh_attempts', 0) or 0)
+        schedule = getattr(self, '_startup_refresh_schedule_ms', ())
+        if attempt >= len(schedule):
+            return
+        if float(getattr(self, '_internal_time', 0.0) or 0.0) < float(schedule[attempt]):
+            return
+
+        self._startup_refresh_attempts = attempt + 1
+        try:
+            pygame.event.pump()
+        except Exception:
+            pass
+
+        try:
+            count_before = int(pygame.joystick.get_count())
+        except Exception:
+            count_before = 0
+
+        # Liste zaten güncellendiyse re-init yapmadan normal taramaya bırak.
+        if count_before > 0:
+            return
+
+        try:
+            pygame.joystick.quit()
+            pygame.joystick.init()
+        except Exception as exc:
+            print(f"[Gamepad] SDL joystick yenileme denemesi başarısız: {exc}")
+            return
+
+        try:
+            if _sdl2_controller is not None:
+                if _sdl2_controller.get_init():
+                    _sdl2_controller.quit()
+                _sdl2_controller.init()
+        except Exception:
+            pass
+
+        try:
+            pygame.event.pump()
+        except Exception:
+            pass
+
+        try:
+            count_after = int(pygame.joystick.get_count())
+        except Exception:
+            count_after = 0
+        print(
+            f"[Gamepad] Başlangıç SDL taraması yenilendi "
+            f"(deneme {self._startup_refresh_attempts}/{len(schedule)}, cihaz={count_after})"
+        )
+
     def _sync_steam_input_gamepads(self) -> None:
         """SDL cihazı yoksa Steam Input action cihazlarını fallback olarak kaydet."""
         try:
@@ -801,9 +923,28 @@ class GamepadManager:
 
     def _scan_gamepads(self) -> None:
         """Bağlı gamepad'leri de-duplication mantığıyla tara ve kaydet"""
-        count = pygame.joystick.get_count()
+        try:
+            count = int(pygame.joystick.get_count())
+        except Exception:
+            return
         temp_gamepads = []
         for i in range(count):
+            # Kare-başı Joystick tahsisini önle (v2 paritesi): slot zaten
+            # CANLI bir kayıtla doluysa yeni Joystick nesnesi AÇMA — update()
+            # her karede bu taramayı koşar (CLAUDE.md kare-başı tahsis
+            # yasağı). SDL indeks eşlemesi canlı açıklar için kararlıdır;
+            # yeniden numaralandırma yalnız kopma sonrası boşalan slotta
+            # görünür (aşağıdaki instance_id dedup aynı fiziksel cihazı
+            # iki kez kaydetmez).
+            existing = self.gamepads.get(i)
+            if existing is not None:
+                js_old = getattr(existing, 'joystick', None)
+                try:
+                    if js_old is not None and js_old.get_init():
+                        js_old.get_name()  # erişilebilir mi?
+                        continue  # slot canlı kayıtlı — yeniden açma
+                except Exception:
+                    pass
             try:
                 js = pygame.joystick.Joystick(i)
                 js.init()
@@ -813,7 +954,12 @@ class GamepadManager:
             except Exception:
                 pass
 
-        has_xbox = any(t[3] == GamepadType.XBOX for t in temp_gamepads)
+        # Xbox/PS de-duplication canlı KAYITLI cihazları da kapsar (canlı
+        # slotlar yukarıda açılmadığından temp listesinde yoktur).
+        has_xbox = any(t[3] == GamepadType.XBOX for t in temp_gamepads) or any(
+            getattr(gp, 'gamepad_type', None) == GamepadType.XBOX
+            for gp in self.gamepads.values()
+        )
 
         for device_index, js, name, gp_type in temp_gamepads:
             # De-duplication: Sanal Xbox kontrolcüsü varken fiziksel PlayStation DirectInput bağlantısını yoksay
@@ -822,6 +968,35 @@ class GamepadManager:
                     js.quit()
                 except Exception:
                     pass
+                continue
+
+            # SDL renumbering dedup (denetim bulgusu, v2 paritesi): cihaz
+            # koptuğunda SDL kalan cihazların indekslerini KAYDIRIR (2 pad:
+            # idx0 kopunca idx1'deki pad idx0'a düşer). Yeni slotta açılan
+            # cihazın instance_id'si zaten KAYITLIysa bu aynı fiziksel
+            # cihazdır → ikinci kayıt AÇMA (çift kayıt = kalıcı çift girdi)
+            # ve eski anahtarı taşı (eski anahtar dolu kalırsa yeni takılan
+            # cihaz hiç kaydedilemiyordu).
+            inst = self._get_joystick_instance_id(js)
+            existing_key = None
+            if inst is not None:
+                for key, gp in list(self.gamepads.items()):
+                    if getattr(gp, 'instance_id', None) == inst:
+                        existing_key = key
+                        break
+            if existing_key is not None:
+                if existing_key != device_index:
+                    try:
+                        moved = self.gamepads.pop(existing_key)
+                        moved.joystick = js
+                        moved.device_index = device_index
+                        self.gamepads[device_index] = moved
+                        try:
+                            print(f"[Gamepad] Cihaz indeksi kaydı: {existing_key} → {device_index} (SDL yeniden numaralandırma)")
+                        except Exception:
+                            pass
+                    except Exception:
+                        pass
                 continue
 
             if device_index not in self.gamepads:
@@ -858,7 +1033,17 @@ class GamepadManager:
                 name=name,
                 guid=guid,
                 instance_id=self._get_joystick_instance_id(js),
+                device_index=device_index,
             )
+            # PlayStation D-pad debounce (v2 paritesi): PS directinput
+            # sürücüleri hat-tekrarında çift ok üretebiliyor; 60ms debounce
+            # bunu yerinde filtreler (GamepadState alanları demo'da zaten
+            # vardı — yalnızca süre atanmıyordu, dolayısıyla debounce kapalı
+            # kalıyordu).
+            if gp_type == GamepadType.PLAYSTATION:
+                state.dpad_debounce_time_ms = 60.0
+            else:
+                state.dpad_debounce_time_ms = 0.0
             self.gamepads[device_index] = state
             print(f"[Gamepad] Bağlandı: {name} [{gp_type}] (ID: {device_index})")
             return True
@@ -1501,6 +1686,9 @@ class GamepadManager:
 
         # Bağlantı/kopma kontrolü. Steam Input açıkken SDL'ye görünmeyen
         # sanal cihazlar action snapshot yolundan fallback olarak kaydedilir.
+        # Steam Input sanal aygıtı başlangıçta geç yayınlandıysa sınırlı SDL
+        # refresh denemeleriyle görünür hale getir (v2 paritesi).
+        self._refresh_empty_startup_scan()
         self._sync_steam_input_gamepads()
         self._check_connections()
 
@@ -2069,95 +2257,64 @@ class GamepadManager:
 
     # ─── Buton Olayları ─────────────────────────────────────────────────────
 
+    def _resolve_game_button_actions(self) -> dict:
+        """Oyun bağlamında buton → KAZANAN aksiyon haritası (GP-001 öncelik
+        çözümü, v2 paritesi).
+
+        Aynı butona düşen aksiyonlar GAME_ACTION_PRIORITY ile deterministik
+        sıralanır. Bu karar hem _generate_button_events (event üretimi) hem
+        _get_overridden_dpad_dirs (doğal yön bastırması) tarafından kullanılır:
+        iki katman FARKLI karar verirse D-pad yön butonu ölü girdiye dönüşür
+        (buton yolu 'eventi D-pad yolu üretecek' varsayımıyla kazanan doğal
+        aksiyonu atlıyor, bastırma katmanı ise kaybeden düşük öncelikli
+        aksiyon yüzünden aynı yönü bastırıyordu → hiçbir event üretilmiyordu).
+        """
+        button_actions_map: dict[int, list[str]] = {}
+        for action in GAME_ACTIONS_LIST:
+            binding = self._bindings.get(action, {})
+            for btn in self._iter_button_indices(binding):
+                if btn not in button_actions_map:
+                    button_actions_map[btn] = []
+                button_actions_map[btn].append(action)
+
+        button_actions = {}
+        for btn, actions in button_actions_map.items():
+            if len(actions) == 1:
+                button_actions[btn] = actions[0]
+            else:
+                sorted_actions = sorted(actions, key=lambda a: GAME_ACTION_PRIORITY.get(a, 0), reverse=True)
+                button_actions[btn] = sorted_actions[0]
+        return button_actions
+
     def _generate_button_events(self, gp: GamepadState) -> List[pygame.event.Event]:
         """Buton basılma/bırakılma olaylarını üret.
         Bağlama göre (game/menu) B butonu farklı davranır.
         Ayarlardan okunan buton eşlemelerini kullanır."""
         events = []
         in_game = (self._context == self.CONTEXT_GAME)
-        cfg_bindings = self._bindings
 
-        # Öncelik tablosu: Temel oyun aksiyonları > Kart aksiyonları > Slot aksiyonları
-        # Aynı butona birden fazla aksiyon atanmışsa deterministik olarak yüksek öncelikli olan seçilir.
-        action_priority = {
-            'hard_drop': 100,
-            'rotate': 95,
-            'rotate_ccw': 94,
-            'rotate_alt': 93,
-            'hold': 90,
-            'hold2': 89,
-            'soft_drop': 85,
-            'move_left': 80,
-            'move_right': 80,
-            'pause': 75,
-            'discard_held': 70,
-            'lt': 60,
-            'rt': 60,
-            'card_rewind': 50,
-            'card_sniper': 50,
-            'card_time_capsule_save': 50,
-            'card_time_capsule_restore': 50,
-            'card_freeze': 50,
-            'card_phase_shift': 50,
-            'card_ghost': 50,
-            'card_hammer': 50,
-            'card_bomb': 50,
-            'slot_1': 10,
-            'slot_2': 10,
-            'slot_3': 10,
-            'slot_4': 10,
-            'slot_5': 10,
-            'slot_6': 10,
-        }
+        # Öncelik tabloları modül seviyesindedir (GAME_ACTION_PRIORITY /
+        # MENU_ACTION_PRIORITY): aynı butona birden fazla aksiyon atanmışsa
+        # deterministik olarak yüksek öncelikli olan seçilir; kare başına
+        # dict tahsisi yapılmaz.
 
         # Ayarlardan okunan buton eşlemelerini dinamik olarak oluştur
         if in_game:
-            # Oyun içi: buton → aksiyonlar listesi (collision resolution için)
-            game_actions_list = [
-                'hard_drop', 'rotate', 'rotate_ccw', 'rotate_alt', 'hold', 'hold2',
-                'move_left', 'move_right', 'soft_drop',
-                'pause', 'discard_held',
-                'lt', 'rt',
-                'card_rewind', 'card_sniper', 'card_time_capsule_save',
-                'card_time_capsule_restore', 'card_freeze', 'card_phase_shift',
-                'card_ghost', 'card_hammer', 'card_bomb',
-                'slot_1', 'slot_2', 'slot_3', 'slot_4', 'slot_5', 'slot_6',
-            ]
-            button_actions_map: dict[int, list[str]] = {}
-            for action in game_actions_list:
-                binding = cfg_bindings.get(action, {})
-                for btn in self._iter_button_indices(binding):
-                    if btn not in button_actions_map:
-                        button_actions_map[btn] = []
-                    button_actions_map[btn].append(action)
-
-            # Çakışma çözümü (Kural G.4, G.8, G.9, G.10)
-            button_actions = {}
-            for btn, actions in button_actions_map.items():
-                if len(actions) == 1:
-                    button_actions[btn] = actions[0]
-                else:
-                    sorted_actions = sorted(actions, key=lambda a: action_priority.get(a, 0), reverse=True)
-                    button_actions[btn] = sorted_actions[0]
+            # Oyun içi: buton → kazanan aksiyon (çakışma çözümü, GP-001).
+            # NOT: slot_1..slot_6 bilinçli olarak çözüm dışıdır: yuvalar
+            # yalnızca poll edilir (was_action_just_pressed), sentetik event
+            # üretmez.
+            button_actions = self._resolve_game_button_actions()
         else:
-            # Menü: buton → aksiyon eşlemesi
+            # Menü: buton → aksiyon eşlemesi (çakışma çözümü ile)
             menu_actions_list = [
                 'menu_confirm', 'menu_back', 'pause',
                 'menu_tab_next', 'menu_tab_prev',
                 'editor_secondary', 'editor_delete',
             ]
-            menu_priority = {
-                'menu_confirm': 100,
-                'menu_back': 90,
-                'pause': 80,
-                'menu_tab_next': 70,
-                'menu_tab_prev': 70,
-                'editor_secondary': 60,
-                'editor_delete': 50,
-            }
             button_actions_map = {}
             for action in menu_actions_list:
-                binding = cfg_bindings.get(action, {})
+                binding = self._bindings.get(action, {})
                 for btn in self._iter_button_indices(binding):
                     if btn not in button_actions_map:
                         button_actions_map[btn] = []
@@ -2168,7 +2325,7 @@ class GamepadManager:
                 if len(actions) == 1:
                     button_actions[btn] = actions[0]
                 else:
-                    sorted_actions = sorted(actions, key=lambda a: menu_priority.get(a, 0), reverse=True)
+                    sorted_actions = sorted(actions, key=lambda a: MENU_ACTION_PRIORITY.get(a, 0), reverse=True)
                     button_actions[btn] = sorted_actions[0]
 
         dpad_btn_to_dir = {11: 'up', 12: 'down', 13: 'left', 14: 'right'}
@@ -2464,7 +2621,7 @@ class GamepadManager:
         ilgili hareket eylemine başka bir buton atanmışsa o yönün ok-tuşu eventini bastır."""
         overridden = set()
         dpad_btn_to_dir = {11: 'up', 12: 'down', 13: 'left', 14: 'right'}
-        
+
         # Her bir yönün karşılık geldiği oyun içi hareket/döndürme eylemi
         dir_to_action = {
             'up': 'rotate',
@@ -2473,14 +2630,18 @@ class GamepadManager:
             'right': 'move_right'
         }
 
-        # 1) Eğer bir D-pad yön butonu (11-14), kendi eylemi dışındaki herhangi bir eyleme atanmışsa bastır.
-        for action, binding in self._bindings.items():
-            for btn in self._iter_button_indices(binding):
-                if btn in dpad_btn_to_dir:
-                    btn_dir = dpad_btn_to_dir[btn]
-                    # Eğer buton bu yönün kendi doğal eylemine atanmadıysa override et
-                    if dir_to_action.get(btn_dir) != action:
-                        overridden.add(btn_dir)
+        # 1) D-pad yön butonuna (11-14) bağlı aksiyonların KAZANANI (GP-001
+        # öncelik çözümü — _resolve_game_button_actions ile AYNI karar) doğal
+        # yön aksiyonu DEĞİLSE yönü bastır. Kazanan doğal aksiyonSA buton yolu
+        # eventi D-pad yoluna bırakır: bastırma iki katmanı çeliştirip butonu
+        # ÖLÜ girdiye çevirmemeli (D-pad Up'a bağlanan düşük öncelikli
+        # aksiyonlar — rotate_ccw/hold/pause/kartlar — hiçbir event
+        # üretmiyordu; yalnız hard_drop > rotate çifti kapatılmıştı).
+        button_actions = self._resolve_game_button_actions()
+        for btn, btn_dir in dpad_btn_to_dir.items():
+            winner = button_actions.get(btn)
+            if winner is not None and winner != dir_to_action.get(btn_dir):
+                overridden.add(btn_dir)
 
         # 2) Eğer bir hareket eylemine (move_left, move_right, soft_drop, rotate) başka bir tuş atanmışsa,
         # o eylemin doğal D-pad yönünün yerleşik emülasyonunu bastır.

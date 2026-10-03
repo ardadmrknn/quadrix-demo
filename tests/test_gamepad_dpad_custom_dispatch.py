@@ -12,10 +12,13 @@ yön butonlarının (11-14) custom aksiyon bağlanması:
   aksiyonun KANONİK tuşunu üretir (örn. buton 11 → hard_drop → K_SPACE),
   event from_gamepad + action + device_index taşır; KEYUP da AYNI
   action damgasını taşır (DUZ-007 sözleşmesi).
-- Bastırma (Kural 1): D-pad yön butonu kendi doğal aksiyonu DIŞINDA bir
-  aksiyona bağlanınca o yönün doğal ok-tuşu HİÇ üretilmez — ne basışta
-  KEYDOWN ne bırakışta KEYUP ("hiç basılmamış sayılır"); çapraz girdide
-  yalnızca bastırılan yön kaybolur.
+- Bastırma (Kural 1): D-pad yön butonuna bağlı aksiyonların KAZANANI
+  (GP-001 öncelik çözümü) doğal yön aksiyonu DEĞİLSE o yönün doğal
+  ok-tuşu HİÇ üretilmez — ne basışta KEYDOWN ne bırakışta KEYUP ("hiç
+  basılmamış sayılır"); çapraz girdide yalnızca bastırılan yön kaybolur.
+  Kazanan DOĞAL aksiyonsa yön bastırılmaz (buton yolu skip eder, hat
+  yolu üretir) — iki katmanın aynı kazanan kararını kullanması ölü-girdi
+  sınıfını kapatır (aşağıdaki ölü-girdi testleri).
 - SDL hat Y işareti: yukarı = +1 → K_UP; aşağı = -1 → K_DOWN. Yön
   ters çevirmesi Up→Down geçişinde KEYUP-önce sırasıyla düzgün işlenir.
 - GP-007: oyun bağlamında D-pad HOLD repeat ÜRETMEZ (yalnız edge; oyunun
@@ -26,9 +29,9 @@ yön butonlarının (11-14) custom aksiyon bağlanması:
 Repo notu (v2 ↔ demo): v2'de D-pad edge karşılaştırması debounce'lu
 `prev_dpad_debounced_*` alanlarından, demo'da ham `prev_dpad`'dan yapılır
 (v2 debounce_time<=0 → anında geçerli). `_set_prev_dpad` yardımcısı her
-iki prev sözleşmesini birlikte ayarlar; öncelik tabloları v2'de modül
-seviyesinde, demo'da metot içindedir — bu yüzden tablolar import
-EDİLMEZ, davranış event çıktısından doğrulanır.
+iki prev sözleşmesini birlikte ayarlar; öncelik tabloları (2026-10-04
+birleştirmeden beri) İKİ repoda da modül seviyesindedir — davranış
+event çıktısından doğrulanır.
 
 Desen referansı: tests/test_gamepad_hotplug.py (_make_manager),
 tests/test_gamepad_remap_and_diagonal_dpad.py (GamepadState + hat set).
@@ -273,6 +276,71 @@ def test_up_down_release_sequence_without_duplicates():
         for event in events:
             assert event.from_gamepad is True
             assert event.device_index == 7
+
+
+# ---------------------------------------------------------------------------
+# Ölü-girdi sınıfı (denetim 2026-10-04): D-pad yön butonuna bağlanan DÜŞÜK
+# öncelikli aksiyon butonu ÖLÜ girdiye çevirmemeli — buton yolu ile bastırma
+# katmanı AYNI kazanan kararını (GP-001 öncelik çözümü) kullanır.
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize('loser_action', [
+    'rotate_ccw',      # 94 < rotate 95
+    'hold',            # 90 < 95
+    'soft_drop',       # 85 < 95
+    'pause',           # 75 < 95
+    'card_bomb',       # 50 < 95
+])
+def test_low_priority_binding_on_dpad_dir_keeps_natural_direction(loser_action):
+    """rotate (öncelik 95, 'up' yönünün doğal aksiyonu) D-pad Up'ta
+    KALIRKEN düşük öncelikli bir aksiyon da aynı butona bağlanırsa kazanan
+    rotate'tir: buton yolu skip eder VE doğal yön bastırılmaz → D-pad Up
+    basışı TEK rotate KEYDOWN üretir.
+
+    Eski davranış (ölü girdi): buton yolu kazananı 'D-pad yolu üretecek'
+    varsayımıyla atlıyor, Kural 1 ise kaybeden aksiyon yüzünden 'up'
+    yönünü bastırıyordu → iki katman çelişip HİÇBİR event üretilmiyordu
+    (yalnız hard_drop > rotate çifti kapatılmıştı)."""
+    manager = _make_manager('game')
+    manager._bindings[loser_action] = {'button': 11}
+    # rotate varsayılan bağda 11'de kalıyor (DEFAULT_GAMEPAD_BINDINGS).
+
+    # Buton yolu: kazanan doğal aksiyon → skip (çift tetikleme önleme).
+    _, button_events = _press_button(manager, 11)
+    assert button_events == []
+
+    # Hat yolu: 'up' bastırılmadi → doğal rotate KEYDOWN üretilir.
+    gp = GamepadState(device_index=0)
+    gp.connected = True
+    gp.is_gamepad = True
+    gp.dpad = (0, 1)
+    _set_prev_dpad(gp, 0, 0)
+    hat_events = manager._generate_dpad_events(gp, delta_ms=16.6)
+    assert [(e.key, e.type, e.action) for e in hat_events] == [
+        (pygame.K_UP, pygame.KEYDOWN, 'rotate'),
+    ], f'{loser_action}=11 bağlaması D-pad Up doğal yönünü öldürmemeli'
+
+
+def test_custom_winner_on_dpad_dir_after_natural_unbound():
+    """Doğal aksiyon D-pad yönünden TAŞINIP yerine başka aksiyon
+    bağlanırsa: kazanan custom aksiyon BUTON yolundan event üretir, doğal
+    yön (Kural 1 + Kural 2) bastırılır → tek net davranış."""
+    manager = _make_manager('game')
+    manager._bindings['rotate'] = {'button': 5}       # doğal 11'den taşındı
+    manager._bindings['rotate_ccw'] = {'button': 11}  # 11'in yeni sahibi
+
+    _, events = _press_button(manager, 11)
+    assert [(e.type, e.action) for e in events] == [
+        (pygame.KEYDOWN, 'rotate_ccw'),
+    ]
+
+    gp = GamepadState(device_index=0)
+    gp.connected = True
+    gp.is_gamepad = True
+    gp.dpad = (0, 1)
+    _set_prev_dpad(gp, 0, 0)
+    hat_events = manager._generate_dpad_events(gp, delta_ms=16.6)
+    assert hat_events == [], 'taşınmış doğal yönün emülasyonu bastırılmalı'
 
 
 # ---------------------------------------------------------------------------

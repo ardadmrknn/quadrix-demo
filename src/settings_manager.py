@@ -36,7 +36,7 @@ from storage_layout import (
 # (Z/X) ile kullanilir; gamepad atamasi hicbir zaman olmadi. Bu yuzden ana
 # oyundaki v2→v3 (enerji gamepad'den kaldirma) adimina gerek yoktur; tek adimli
 # v1→v2 migration yeterlidir ve nihai layout ana oyunla birebir aynidir.
-CURRENT_GAMEPAD_LAYOUT_VERSION = 2
+CURRENT_GAMEPAD_LAYOUT_VERSION = 3
 
 # Eski (v1) varsayilan gamepad layout'unun `primary` imzasi. Bir aksiyonun
 # saklanmis degeri buradaki primary ile (ve secondary=-1) birebir eslesiyorsa
@@ -137,7 +137,8 @@ DEFAULT_CONTROLS = {
         'hold': {'primary': 9, 'secondary': -1},          # LB / L1 (degismedi)
         'hold2': {'primary': 8, 'secondary': -1},          # R3 / RS Click (Ekstra Cep)
         'pause': {'primary': 6, 'secondary': -1},         # Start / Options / +
-        'restart': {'primary': -1, 'secondary': -1},      # Devre dışı
+        'restart': {'primary': 3, 'secondary': -1},       # Y / Triangle — game-over yeniden dene (v2 layout v4 paritesi; poll-only)
+        'level_select': {'primary': 2, 'secondary': -1},  # X / Square — level-failed'da bölüm seç (poll-only)
         'discard_held': {'primary': -1, 'secondary': -1}, # bos (eski RB=10 kaldirildi)
         'lt': {'primary': -1, 'secondary': -1},           # bos (eski LT trigger kaldirildi)
         'rt': {'primary': -1, 'secondary': -1},           # bos (eski RT trigger kaldirildi)
@@ -1454,6 +1455,31 @@ class SettingsManager:
             else:
                 migrated['hold2'] = {'primary': new_hold2, 'secondary': -1}
         # else: kullanici hold2'yi ozellestirmis → dokunma.
+
+        # ── v2 → v3: game-over/level-failed gamepad eslemesi (v2 v4 paritesi) ──
+        # restart=Y(3), level_select=X(2). Bu iki aksiyon POLL-ONLY'dir;
+        # sentetik emisyon uretmez ve yalnızca game-over/level-failed
+        # handler'ları içinde okunur. Bağlam-duyarlı oldukları için
+        # slot_4=Y(3)/slot_2=X(2) ile buton paylaşmaları oyun-içi çakışma
+        # DOĞURMAZ → occupancy guard'a gerek yok. (Denetim bulgusu: demo
+        # game-over'da Y ile yeniden deneme, restart=-1 default'u yüzünden
+        # tamamen ölüydü — kod yolu hazır bekliyordu.)
+        if version < 3:
+            # 1) restart: v2 -1 → v3 Y(3). Kullanıcı özelleştirmemişse taşı.
+            stored_restart = migrated.get('restart', _MISSING)
+            if stored_restart is _MISSING:
+                restart_unmodified = True
+            else:
+                r_primary, r_secondary = self._extract_gamepad_binding(stored_restart)
+                restart_unmodified = (r_primary == -1) and (r_secondary is None or r_secondary == -1)
+            if restart_unmodified:
+                migrated['restart'] = {'primary': _new_primary('restart'), 'secondary': -1}
+            # else: kullanici restart'i ozellestirmis → dokunma.
+
+            # 2) level_select: yeni aksiyon. Eski settings'te yoksa yeni
+            #    default'a al. Varsa (ileri/geri uyumluluk) dokunma.
+            if migrated.get('level_select', _MISSING) is _MISSING:
+                migrated['level_select'] = {'primary': _new_primary('level_select'), 'secondary': -1}
 
         migrated['gamepad_layout_version'] = CURRENT_GAMEPAD_LAYOUT_VERSION
         return migrated

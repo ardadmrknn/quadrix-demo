@@ -1781,6 +1781,20 @@ def main():
         except Exception:
             pass
 
+    # ── Steam SDK'yi SDL'den önce başlat (v2 paritesi) ─────────────────────
+    # Steam Input, kontrolcüyü uygulamaya sanal XInput/Steam gamepad olarak
+    # sunabilir. SteamAPI_Init() pygame.init() sonrasına kalırsa SDL joystick
+    # alt sistemi ilk cihaz taramasını sanal aygıt hazır olmadan yapabilir.
+    # Kaynak çalıştırmada görünmeyip yalnızca Steam build'inde ortaya çıkan
+    # "kontrolcü yok" farkının önüne geçmek için Steam'i SDL'den önce aç.
+    # init() idempotent olduğundan sonraki çağrılar güvenlidir.
+    try:
+        import steam_integration as _steam_early
+        if _steam_early.init():
+            print("[Steam] SDL öncesi SDK init OK - overlay ve Steam Input hazır")
+    except Exception as exc:
+        print(f"[Steam] SDL öncesi SDK init atlandı: {exc}")
+
     pygame.init()
 
     # ── Steam SDK erken başlat (Overlay hook için) ─────────────────────────
@@ -4902,14 +4916,18 @@ def main():
             pass
 
         # ── Gamepad Bağlam Güncelleme ──────────────────────────────────
-        # Oyun/PvP sırasında gamepad bağlamını 'game' olarak ayarla.
+        # Oyun/PvP/Koop sırasında gamepad bağlamını 'game' olarak ayarla.
         # Böylece B=rotate, A=hard_drop vb. oyun aksiyonları çalışır.
         # Menü/ayar ekranlarında bağlam 'menu' kalır (B=back, A=confirm).
-        # Not: online_pvp kendi bağlam yönetimini yapar (lobi=menu, playing=game).
+        # Not: online_pvp kendi bağlam yönetimini yapar (lobi=menu,
+        # playing=game). coop_campaign ise gameplay state'i olduğu için
+        # 'game' bağlamına girer (runtime'ı kendi pompasını çağırmaz;
+        # ana döngü pompalar) — aksi halde koop kampanya boyunca RB/LB
+        # menü aksiyonu (köşeli parantez) üretir, hard_drop/hold çalışmaz.
         try:
             if state == 'online_pvp':
                 pass  # online_pvp kendi set_context + update çağrısını yapar
-            elif state in ('game', 'pvp', 'coop'):
+            elif state in ('game', 'pvp', 'coop', 'coop_campaign'):
                 active_runtime = None
                 if state == 'game':
                     active_runtime = game
@@ -4917,6 +4935,8 @@ def main():
                     active_runtime = pvp_game
                 elif state == 'coop':
                     active_runtime = coop_game
+                elif state == 'coop_campaign':
+                    active_runtime = coop_campaign_game
 
                 wants_pointer_ui = False
                 if active_runtime is not None:
@@ -4957,9 +4977,11 @@ def main():
         # event kuyruğuna post et.  Böylece tüm handler'lar (menü, oyun,
         # ayarlar vb.) otomatik olarak gamepad girişini klavye olayı
         # gibi işler — ek kod değişikliği gerekmez.
-        # online_pvp kendi handle_input() içinde update() çağırır (çift güncelleme önlenir).
+        # online_pvp ve online_coop kendi handle_input() içinde update()
+        # çağırır (çift güncelleme önlenir; ana döngü pompası menu-context
+        # baseline'ı yenileyip oyun bağlamı edge'lerini yutuyordu).
         try:
-            if state != 'online_pvp':
+            if state not in ('online_pvp', 'online_coop'):
                 gp_events = gamepad_mgr.update(delta_ms)
                 for gp_ev in gp_events:
                     pygame.event.post(gp_ev)
