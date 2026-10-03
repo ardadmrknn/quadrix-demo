@@ -116,6 +116,13 @@ def test_ghost_keyboard_guard_requires_recent_gamepad_input(
 
     # handle_input içinden çağrılan get_gamepad_manager modül düzeyinde
     # çözülür → sahte manager gerçek donanımı hiç başlatmaz.
+    # Kimlik-bölünmesi (çok-dosyalı koşu): handle_input'in ÇAĞRI-ZAMANI
+    # `from gamepad_manager import ...` çözümlemesi sys.modules'ten okur;
+    # bu dosyanın gm_module'ü farklı bir nesliğe bölünmüşse yama görünmez
+    # olurdu (denetim bulgusu: toplu koşuda sıra bağımlı yanlış-negatif).
+    # Bu yüzden gm_module'ü sys.modules'in HER İKİ anahtarına sabitle.
+    monkeypatch.setitem(sys.modules, 'gamepad_manager', gm_module)
+    monkeypatch.setitem(sys.modules, 'src.gamepad_manager', gm_module)
     monkeypatch.setattr(
         gm_module, 'get_gamepad_manager',
         lambda: _FakeGamepadManager(last_input_time),
