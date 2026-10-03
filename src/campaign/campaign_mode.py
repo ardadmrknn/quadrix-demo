@@ -18,6 +18,7 @@ try:
     from ..retro_style import retro_style  # type: ignore
     from ..platform_utils import get_mouse_pos  # type: ignore
     from ..ui_scaling import get_projected_effective_scale, scale_px  # type: ignore
+    from ..text_cache import render_text  # type: ignore
 except Exception:
     from game import Game
     from constants import COLORS, BLACK, BOARD_WIDTH, BOARD_HEIGHT
@@ -26,6 +27,7 @@ except Exception:
     from retro_style import retro_style
     from platform_utils import get_mouse_pos
     from ui_scaling import get_projected_effective_scale, scale_px
+    from text_cache import render_text
 
 from .level_data import get_level, get_total_levels, LevelConfig, get_world_info, resolve_star_condition_text
 from .objectives import (
@@ -1446,6 +1448,15 @@ class CampaignMode(Game):
 
         Campaign icindeki HUD/panel geometriği base gameplay layout gibi davranmali;
         global compact preset bu panel ailesini ekstra kucultmemeli.
+
+        BILINCLİ URUN KARARI (P1-2, Quadrix_Tum_Ekranlar_Olcekleme_Denetim_Raporu):
+        apply_preset=False kasitli davranistir — degistirilmez. Preset uygulamamanin
+        okunabilirlik bedeli, stat satirlarinin olc-once planlayicisi
+        (Game._fit_hud_stat_row) tabanlari (label 11 / value 15) ve dikey butce
+        ladder'i ile telafi edilir; bu sozlesme
+        test_campaign_hud_scale_ignores_global_compact_preset_for_gameplay_panels
+        (tests/test_phase7_campaign_hud_ui_scaling.py) ve
+        test_campaign_hud_stat_row_containment.py ile kilitlidir.
         """
         target = surface_or_size or getattr(self, 'screen', None)
         if target is None:
@@ -2463,37 +2474,157 @@ class CampaignMode(Game):
         self._hud_content_x = content_x
         self._hud_content_w = content_w
         
-        # Stats background
-        stats_surf = pygame.Surface(stats_rect.size, pygame.SRCALPHA)
-        for i in range(stats_h):
-            a = 180 + int(40 * (i / stats_h))
-            pygame.draw.line(stats_surf, (20, 24, 35, a), (0, i), (content_w, i))
-        self.screen.blit(stats_surf, stats_rect.topleft)
+        # Stats background — P1-2: boyut sabitken gradient'i her karede yeniden
+        # uretme (kare-basi Surface tahsisi yasaği; Hardcore sag panelindeki
+        # P1-1 boyut-anahtarli cache deseniyle ayni).
+        stats_key = (int(stats_rect.width), int(stats_rect.height))
+        if getattr(self, '_campaign_stats_bg_key', None) != stats_key:
+            stats_surf = pygame.Surface(stats_rect.size, pygame.SRCALPHA)
+            for i in range(max(1, stats_h)):
+                a = 180 + int(40 * (i / max(1, stats_h)))
+                pygame.draw.line(stats_surf, (20, 24, 35, a), (0, i), (content_w, i))
+            self._campaign_stats_bg_surface = stats_surf
+            self._campaign_stats_bg_key = stats_key
+        self.screen.blit(self._campaign_stats_bg_surface, stats_rect.topleft)
         pygame.draw.rect(self.screen, (50, 60, 80), stats_rect, 1, border_radius=s(12, minimum=6))
-        
+
         stat_y_cur = curr_y + s(15, minimum=8)
-        
-        def draw_stat_row(label, value, y_pos, color_val=accent_color):
-            l_surf = retro_style.get_font(s(16, minimum=11)).render(label, True, (160, 170, 190))
-            self.screen.blit(l_surf, (content_x + s(15, minimum=8), y_pos))
-            
-            v_surf = retro_style.get_font(s(24, minimum=15), bold=True).render(str(value), True, color_val)
-            v_rect = v_surf.get_rect(topright=(content_x + content_w - s(15, minimum=8), y_pos - s(4, minimum=2)))
-            self.screen.blit(v_surf, v_rect)
-            
-            line_y = y_pos + s(32, minimum=20)
-            inset = s(10, minimum=6)
-            pygame.draw.line(self.screen, (255, 255, 255, 30), (content_x + inset, line_y), (content_x + content_w - inset, line_y))
-            return s(45, minimum=28)
-        
-        stat_y_cur += draw_stat_row(t('score'), f'{self.board.score:,}'.replace(',', '.'), stat_y_cur, accent_color)
-        stat_y_cur += draw_stat_row(t('lines'), str(self.board.lines_cleared), stat_y_cur, text_color)
-        stat_y_cur += draw_stat_row(t('level'), str(self.current_level_num), stat_y_cur)
-        
+
+        # Stat satirlari — P1-2 (Quadrix_Tum_Ekranlar_Olcekleme_Denetim_Raporu §5):
+        # ortak olc-once planlayici (Game._fit_hud_stat_row) ile planlanir.
+        # Eski draw_stat_row olcum yapmadan etiketi soldan, degeri sagdan
+        # ciziyordu; uzun lokalize etiket + genis skor + buyuyen ui_scale
+        # kombinasyonunda orta bolgede ust uste biniyordu ve dikey tasmayi
+        # (stats_rect bittiği yerde opsiyonel satirin mode_info'ya sizmasi)
+        # hic kontrol etmiyordu. Plan sozlesmesi game.py stats blogu ve
+        # Hardcore (P1-1) ile aynidir: olcumler LRU'dan (plan asamasinda
+        # Surface tahsisi yok), kucultme 0.05 adimlarla kuantali, tabanlarda
+        # bile sigmayan satir kontrollu dikey yerlesime duser, ellipsis en son
+        # caredir (ASCII '...').
+        #
+        # NOT (bilincli urun karari): bu panelin ui_scale'i
+        # _get_campaign_hud_scale'ten gelir (apply_preset=False) — gameplay
+        # panelleri base layout gibi davranir; degistirilmez, okunabilirlik
+        # tabani planlayici floor'lari (11/15) + ladder ile korunur.
+        stat_pad = s(15, minimum=8)
+        rows_bottom_cap = min(stats_rect.bottom, panel_rect.bottom - 4)
+        rows_avail = max(24, rows_bottom_cap - stat_y_cur - max(4, int(8 * ui_scale)))
+
+        stat_row_defs = [
+            (t('score'), f'{self.board.score:,}'.replace(',', '.'), accent_color),
+            (t('lines'), str(self.board.lines_cleared), text_color),
+            (t('level'), str(self.current_level_num), accent_color),
+        ]
         if self.board.combo > 1:
-            draw_stat_row(t('combo'), f'x{self.board.combo}', stat_y_cur, (255, 200, 50))
+            stat_row_defs.append((t('combo'), f'x{self.board.combo}', (255, 200, 50)))
         elif self.board.tetrises > 0:
-            draw_stat_row('Quadrix', str(self.board.tetrises), stat_y_cur, (100, 255, 100))
+            # Demo dalinda tetris sayisi 'Quadrix' etiketiyle gosterilir
+            # (demo ozel markalasma — v2'deki t('tetris_label') farki korunur).
+            stat_row_defs.append(('Quadrix', str(self.board.tetrises), (100, 255, 100)))
+        mandatory_row_count = 3
+
+        stat_plans = []
+        for shrink in (1.0, 0.88, 0.76, 0.64, 0.52):
+            stat_plans = [
+                self._fit_hud_stat_row(
+                    label,
+                    value,
+                    content_w,
+                    ui_scale,
+                    label_base=max(4, int(round(16 * shrink))),
+                    value_base=max(6, int(round(24 * shrink))),
+                    slot_base=max(12, int(round(45 * shrink))),
+                    pad=stat_pad,
+                    bold_label=False,
+                )
+                for label, value, _color in stat_row_defs
+            ]
+            if sum(plan['row_h'] for plan in stat_plans) <= rows_avail:
+                break
+        if (
+            sum(plan['row_h'] for plan in stat_plans) > rows_avail
+            and len(stat_plans) > mandatory_row_count
+        ):
+            # En kucuk basamakta bile dikey butce yetmedi → opsiyonel satir
+            # (combo/Quadrix) dusurulur; zorunlu satirlar (skor/satir/seviye)
+            # korunur (game.py stats blogu sozlesmesi).
+            stat_plans = stat_plans[:mandatory_row_count]
+            stat_row_defs = stat_row_defs[:mandatory_row_count]
+
+        def draw_stat_row(plan, y_pos, color_val=accent_color):
+            # Etiket statik metin → cache'li render (game.py/Hardcore deseni);
+            # deger skor/seviye gibi sik degisen veri → ham render.
+            label_text = plan['label_text']
+            label_font = plan['label_font']
+            # Paylasilan planlayici dikey modda yalniz DEGERI ellipsis'ler;
+            # asiri dar butcede etiket tasabilir (game.py kenar durumu —
+            # burada draw-zamani guard ile kapatilir, game.py dokunulmaz).
+            if plan['label_w'] > plan['avail_w'] and label_text:
+                label_text = self._ellipsis_text(label_text, label_font, plan['avail_w'])
+            l_surf = render_text(label_font, label_text, True, (160, 170, 190))
+            v_surf = plan['value_font'].render(plan['value_text'], True, color_val)
+            label_rect = l_surf.get_rect(topleft=(content_x + stat_pad, y_pos))
+            if plan['vertical']:
+                value_top = y_pos + plan['label_h'] + plan['row_gap']
+                # Dikey değerin satır slotundan taşmaması: planlayıcının row_h
+                # sözleşmesi label_h + v_gap + value_h üzerindendir, draw çapası
+                # ise row_gap — slot_h baskınken aradaki fark değeri satırın
+                # altından taşıtabilir. Bir sonraki satırın yatay değeri -s(4)
+                # yükseltmesiyle slot dibine sızabildiğinden değer s(4) pay
+                # yukarıda kenetlenir; etiketle çakışmaması tabandan korunur
+                # (row_h >= label_h + value_h daima sağlandığından güvenli;
+                # game.py dokunulmaz — campaign yerel guard, P1-2).
+                value_top = min(
+                    value_top,
+                    y_pos + plan['row_h'] - plan['value_h'] - s(4, minimum=2),
+                )
+                value_top = max(value_top, y_pos + plan['label_h'] + 2)
+                value_rect = v_surf.get_rect(
+                    topright=(
+                        content_x + content_w - stat_pad,
+                        value_top,
+                    )
+                )
+            else:
+                value_rect = v_surf.get_rect(
+                    topright=(
+                        content_x + content_w - stat_pad,
+                        y_pos - s(4, minimum=2),
+                    )
+                )
+            self.screen.blit(l_surf, label_rect)
+            self.screen.blit(v_surf, value_rect)
+
+            # Alt cizgi — satir yuksekligine duyarl (game.py deseni).
+            inset = s(10, minimum=6)
+            line_y = min(
+                y_pos + s(32, minimum=20),
+                y_pos + plan['row_h'] - max(4, int(6 * ui_scale)),
+            )
+            pygame.draw.line(self.screen, (255, 255, 255, 30), (content_x + inset, line_y), (content_x + content_w - inset, line_y))
+            return plan['row_h'], label_rect, value_rect
+
+        # Gercek blit rect'leri — containment testleri icin kayit (P1-2).
+        recorded_rows = []
+        for (_label, _value, row_color), plan in zip(stat_row_defs, stat_plans):
+            row_h, label_rect, value_rect = draw_stat_row(plan, stat_y_cur, row_color)
+            recorded_rows.append({
+                'label': _label,
+                'label_rect': label_rect,
+                'value_rect': value_rect,
+                'vertical': plan['vertical'],
+                'row_h': row_h,
+            })
+            stat_y_cur += row_h
+        self._campaign_hud_stat_rects = {
+            'panel': panel_rect,
+            'stats': stats_rect,
+            'content_x': int(content_x),
+            'content_w': int(content_w),
+            'rows_bottom_cap': int(rows_bottom_cap),
+            'rows_avail': int(rows_avail),
+            'rows': recorded_rows,
+        }
         
         # Mod info
         mode_info_y = stats_rect.bottom + s(15, minimum=8)
