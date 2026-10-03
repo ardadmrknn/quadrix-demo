@@ -2502,26 +2502,33 @@ class GamepadManager:
         initial_delay_done: bool,
         negative_key: int,
         positive_key: int,
+        gp_device_index: int = None,
+        action_map: dict = None,
     ) -> Tuple[List[pygame.event.Event], float, bool]:
-        """Basılı tutulan yön için klavye benzeri tekrar pulse'ları üret."""
+        """Basılı tutulan yön için klavye benzeri tekrar pulse'ları üret.
+
+        DUZ-007 (v2 paritesi): pulse'lar da canonical action metadata'sı
+        ve cihaz indeksini taşır; _event_matches_action sözleşmesine
+        uymayan çağrı bırakılmaz."""
         if direction == 0:
             return [], 0.0, False
 
         repeat_timer += delta_ms
         events: List[pygame.event.Event] = []
         key = negative_key if direction == -1 else positive_key
+        action = action_map.get(key) if action_map else None
 
         if not initial_delay_done:
             if repeat_timer >= self.STICK_INITIAL_DELAY:
                 initial_delay_done = True
                 repeat_timer = 0.0
-                events.append(self._make_key_event(key, pygame.KEYDOWN))
-                events.append(self._make_key_event(key, pygame.KEYUP))
+                events.append(self._make_key_event(key, pygame.KEYDOWN, gp_device_index=gp_device_index, action=action))
+                events.append(self._make_key_event(key, pygame.KEYUP, gp_device_index=gp_device_index, action=action))
         else:
             while repeat_timer >= self.STICK_REPEAT_INTERVAL:
                 repeat_timer -= self.STICK_REPEAT_INTERVAL
-                events.append(self._make_key_event(key, pygame.KEYDOWN))
-                events.append(self._make_key_event(key, pygame.KEYUP))
+                events.append(self._make_key_event(key, pygame.KEYDOWN, gp_device_index=gp_device_index, action=action))
+                events.append(self._make_key_event(key, pygame.KEYUP, gp_device_index=gp_device_index, action=action))
 
         return events, repeat_timer, initial_delay_done
 
@@ -2536,19 +2543,31 @@ class GamepadManager:
         # Oyun içinde kart aksiyonlarına atanmış D-Pad yönlerini bul
         suppressed = self._get_overridden_dpad_dirs() if self._context == self.CONTEXT_GAME else set()
 
+        # DUZ-007 (v2 paritesi): D-pad eventleri de stick ile AYNI
+        # canonical action metadata'sını taşır. Game.handle_input'taki
+        # _event_matches_action sözleşmesi bu damgayı okur; klavye
+        # binding remap'i gamepad girdisini düşürmez.
+        in_game = (self._context == self.CONTEXT_GAME)
+        action_map = {
+            pygame.K_LEFT: 'move_left' if in_game else 'menu_left',
+            pygame.K_RIGHT: 'move_right' if in_game else 'menu_right',
+            pygame.K_DOWN: 'soft_drop' if in_game else 'menu_down',
+            pygame.K_UP: 'rotate' if in_game else 'menu_up',
+        }
+
         # D-pad X ekseni (sol/sağ)
         if dx != pdx:
             # Önceki yönün KEYUP'ını gönder
             if pdx == -1 and 'left' not in suppressed:
-                events.append(self._make_key_event(pygame.K_LEFT, pygame.KEYUP))
+                events.append(self._make_key_event(pygame.K_LEFT, pygame.KEYUP, gp_device_index=gp.device_index, action=action_map.get(pygame.K_LEFT)))
             elif pdx == 1 and 'right' not in suppressed:
-                events.append(self._make_key_event(pygame.K_RIGHT, pygame.KEYUP))
+                events.append(self._make_key_event(pygame.K_RIGHT, pygame.KEYUP, gp_device_index=gp.device_index, action=action_map.get(pygame.K_RIGHT)))
 
             # Yeni yönün KEYDOWN'ını gönder
             if dx == -1 and 'left' not in suppressed:
-                events.append(self._make_key_event(pygame.K_LEFT, pygame.KEYDOWN))
+                events.append(self._make_key_event(pygame.K_LEFT, pygame.KEYDOWN, gp_device_index=gp.device_index, action=action_map.get(pygame.K_LEFT)))
             elif dx == 1 and 'right' not in suppressed:
-                events.append(self._make_key_event(pygame.K_RIGHT, pygame.KEYDOWN))
+                events.append(self._make_key_event(pygame.K_RIGHT, pygame.KEYDOWN, gp_device_index=gp.device_index, action=action_map.get(pygame.K_RIGHT)))
             gp.dpad_repeat_x = 0.0
             gp.dpad_initial_delay_x = False
         elif dx != 0 and self._context == self.CONTEXT_MENU:
@@ -2559,6 +2578,8 @@ class GamepadManager:
                 gp.dpad_initial_delay_x,
                 pygame.K_LEFT,
                 pygame.K_RIGHT,
+                gp_device_index=gp.device_index,
+                action_map=action_map,
             )
             if dx == -1 and 'left' in suppressed:
                 repeat_events = []
@@ -2573,14 +2594,14 @@ class GamepadManager:
         # Not: SDL hat'ında Y ekseni ters: yukarı = +1, aşağı = -1
         if dy != pdy:
             if pdy == -1 and 'down' not in suppressed:  # aşağı bırakıldı
-                events.append(self._make_key_event(pygame.K_DOWN, pygame.KEYUP))
+                events.append(self._make_key_event(pygame.K_DOWN, pygame.KEYUP, gp_device_index=gp.device_index, action=action_map.get(pygame.K_DOWN)))
             elif pdy == 1 and 'up' not in suppressed:  # yukarı bırakıldı
-                events.append(self._make_key_event(pygame.K_UP, pygame.KEYUP))
+                events.append(self._make_key_event(pygame.K_UP, pygame.KEYUP, gp_device_index=gp.device_index, action=action_map.get(pygame.K_UP)))
 
             if dy == -1 and 'down' not in suppressed:  # aşağı basıldı
-                events.append(self._make_key_event(pygame.K_DOWN, pygame.KEYDOWN))
+                events.append(self._make_key_event(pygame.K_DOWN, pygame.KEYDOWN, gp_device_index=gp.device_index, action=action_map.get(pygame.K_DOWN)))
             elif dy == 1 and 'up' not in suppressed:  # yukarı basıldı
-                events.append(self._make_key_event(pygame.K_UP, pygame.KEYDOWN))
+                events.append(self._make_key_event(pygame.K_UP, pygame.KEYDOWN, gp_device_index=gp.device_index, action=action_map.get(pygame.K_UP)))
             gp.dpad_repeat_y = 0.0
             gp.dpad_initial_delay_y = False
         elif dy != 0 and self._context == self.CONTEXT_MENU:
@@ -2591,6 +2612,8 @@ class GamepadManager:
                 gp.dpad_initial_delay_y,
                 pygame.K_UP,
                 pygame.K_DOWN,
+                gp_device_index=gp.device_index,
+                action_map=action_map,
             )
             if dy == -1 and 'down' in suppressed:
                 repeat_events = []
@@ -2698,6 +2721,8 @@ class GamepadManager:
                 gp.stick_initial_delay_y,
                 pygame.K_UP,
                 pygame.K_DOWN,
+                gp_device_index=gp.device_index,
+                action_map=action_map,
             )
             events.extend(repeat_events)
 

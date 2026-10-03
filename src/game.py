@@ -2451,7 +2451,9 @@ class Game:
                     continue
 
                 # P - Duraklat
-                if event.key == bindings['pause']:
+                # DUZ-007: action metadata sözleşmesi — gamepad pause event'i
+                # klavye remap'inden bağımsız yakalanır (rotate yollarıyla aynı desen).
+                if self._event_matches_action(event, bindings, 'pause'):
                     self.paused = not self.paused
                     if self.paused:
                         self.pause_menu_selected = 0  # Menüyü sıfırla
@@ -2487,7 +2489,9 @@ class Game:
                     continue
                 
                 # Sol hareket - DAS sistemi ile
-                elif event.key in self._action_keys(bindings, 'move_left'):
+                # DUZ-007: _event_matches_action — gamepad move_left event'i
+                # action metadata'sıyla eşleşir (klavye remap bağımsız).
+                elif self._event_matches_action(event, bindings, 'move_left'):
                     # İlk hareket (anında)
                     moved = self._try_move_left()
                     if moved:
@@ -2497,9 +2501,9 @@ class Game:
                     self.das_timer = 0
                     self.das_repeat_timer = 0
                     self.das_charged = False
-                
+
                 # Sağ hareket - DAS sistemi ile
-                elif event.key in self._action_keys(bindings, 'move_right'):
+                elif self._event_matches_action(event, bindings, 'move_right'):
                     # İlk hareket (anında)
                     moved = self._try_move_right()
                     if moved:
@@ -2510,7 +2514,10 @@ class Game:
                     self.das_repeat_timer = 0
                     self.das_charged = False
                 
-                elif event.key in self._action_keys(bindings, 'soft_drop'):
+                # DUZ-007: _event_matches_action (soft_drop). Soft-drop'un
+                # poll tabanlı telafisi (is_direction_held) korunur; bu yalnız
+                # KEYDOWN hız geçişini sözleşmeye taşır.
+                elif self._event_matches_action(event, bindings, 'soft_drop'):
                     self.fall_speed = FAST_FALL_SPEED
                     # Soft drop points: 1 point per cell (applied during gravity update if fast falling, doing here for responsiveness is tricky without affecting gravity)
                     # Actually, standard Quadrix only awards points if the piece actually moves down due to soft drop.
@@ -2545,7 +2552,8 @@ class Game:
                         self.last_move_was_rotate = True
                         self.last_rotate_kick_index = getattr(self.current_piece, 'last_kick_index', 0)
                         self._update_grounded_after_action()
-                elif event.key == bindings['hold2']:
+                # DUZ-007: _event_matches_action (hold2)
+                elif self._event_matches_action(event, bindings, 'hold2'):
                     # Second pocket (V)
                     # Only operate if the perk is active
                     if getattr(self, 'perk_manager', None) and self.perk_manager.is_active('second_pocket'):
@@ -2599,7 +2607,9 @@ class Game:
                             self.sound.play('move')
                 
                 # Hard drop (anında düşür)
-                elif event.key == bindings['hard_drop']:
+                # DUZ-007: _event_matches_action (hard_drop) — tek vuruş
+                # aksiyonu; poll/lockout mantığına dokunulmaz.
+                elif self._event_matches_action(event, bindings, 'hard_drop'):
                     # Hayalet parça aktifse özel davranış: bulunduğu yerde kilitle (komşu blok kontrolü ile)
                     is_tunnel = getattr(self.current_piece, 'tunnel', False)
                     if is_tunnel:
@@ -2643,7 +2653,8 @@ class Game:
                         pass
                 
                 # Hold/Swap parça
-                elif event.key == bindings['hold']:
+                # DUZ-007: _event_matches_action (hold) — tek vuruş aksiyonu
+                elif self._event_matches_action(event, bindings, 'hold'):
                     if self.can_hold:
                         # Do not allow holding a bomb piece: this prevents accidental explosions
                         if getattr(self.current_piece, 'is_bomb', False):
@@ -2744,10 +2755,12 @@ class Game:
                     except Exception:
                         return False
                 # Aşağı tuşu bırakıldığında normal hıza dön
-                if event.key in self._action_keys(self.control_bindings, 'soft_drop'):
+                # DUZ-007: KEYUP de aynı action sözleşmesini kullanır —
+                # gamepad soft_drop bırakışı da hızı geri yükler.
+                if self._event_matches_action(event, self.control_bindings, 'soft_drop'):
                     self.fall_speed = self.get_current_speed()
                 # Sol/Sağ tuşu bırakıldığında DAS'ı durdur
-                elif event.key in self._action_keys(self.control_bindings, 'move_left'):
+                elif self._event_matches_action(event, self.control_bindings, 'move_left'):
                     if self.das_direction == -1:
                         pressed = pygame.key.get_pressed()
                         other_key = self.control_bindings['move_right']
@@ -2763,7 +2776,7 @@ class Game:
                         else:
                             self.das_direction = 0
                             self.das_charged = False
-                elif event.key in self._action_keys(self.control_bindings, 'move_right'):
+                elif self._event_matches_action(event, self.control_bindings, 'move_right'):
                     if self.das_direction == 1:
                         pressed = pygame.key.get_pressed()
                         other_key = self.control_bindings['move_left']
