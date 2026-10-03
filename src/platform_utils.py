@@ -1465,28 +1465,6 @@ def create_display(
     borderless: bool = False,
 ):
     """Create a pygame display honoring the requested fullscreen/windowed mode."""
-    # ── TEK PENCERE GARANTİSİ: Overlay backend aktifse set_mode'a HİÇ DOKUNMA ──
-    # SDL2 overlay (veya gl_compat) aktifse asıl görünür pencere ayrı bir
-    # _sdl2.Window'dur; ilk set_mode penceresi 1x1 + HIDDEN'a küçültülmüştür.
-    # Burada yeniden set_mode çağırmak o gizli pencereyi TAM BOYUTLU + GÖRÜNÜR
-    # olarak diriltir → görev çubuğunda/Alt+Tab'da İKİNCİ PENCERE belirir.
-    # (Kaynak: splash focus-recovery, VIDEORESIZE, focus regain rebuild'leri.)
-    # Çözüm: overlay aktifken create_display, set_mode'u tamamen atlayıp overlay'in
-    # offscreen oyun yüzeyini döndürür. Oyun yine bu yüzeye çizer, patched flip
-    # onu görünür _sdl2.Window'a sunar. Böylece YALNIZCA TEK pencere kalır.
-    try:
-        _overlay_surf = overlay_active_game_surface()
-        if _overlay_surf is not None:
-            _gl_diag(
-                "create_display: overlay AKTİF → set_mode ATLANDI, offscreen yüzey "
-                f"döndürüldü ({_overlay_surf.get_width()}x{_overlay_surf.get_height()}) "
-                "[TEK PENCERE korundu]"
-            )
-            invalidate_refresh_rate_cache()
-            return _overlay_surf
-    except Exception:
-        pass
-
     # Software virtual canvas bir overlay backend'i değildir. Gerçek display yeniden
     # kurulacaksa önce monkey-patch'leri sök; aksi halde yeni set_mode sonrası flip()
     # eski/stale display surface'e blit etmeye devam edebilir. (v2 paritesi, FAZ A3)
@@ -1503,7 +1481,112 @@ def create_display(
     if not fullscreen:
         # Ekran boyutundan büyük pencerelerin taşmasını engellemek için çözünürlüğü clamp et (en-boy oranını koru)
         width, height = clamp_window_size_to_work_area(width, height)
-    
+
+    # ── TEK PENCERE GARANTİSİ: Overlay backend aktifse set_mode'a HİÇ DOKUNMA ──
+    # SDL2 overlay aktifken asıl görünür pencere ayrı bir _sdl2.Window'dur; ilk
+    # set_mode penceresi tam boyutta gizli (HIDDEN + TOOLWINDOW) tutulur. Burada
+    # yeniden set_mode çağırmak o gizli pencereyi GÖRÜNÜR olarak diriltir →
+    # görev çubuğunda/Alt+Tab'da İKİNCİ PENCERE belirir. (Kaynak: splash
+    # focus-recovery, VIDEORESIZE, focus regain rebuild'leri.)
+    # Tespit kanonik seam'dir (overlay_active_game_surface): seam yüzey
+    # döndürürse set_mode ATLANIR. Ek olarak hangi BACKEND'in konuştuğuna
+    # bakılır:
+    # - sdl2_overlay aktifse istenen pencere-modu intent'i (clamped boyut +
+    #   stil + work-area merkezli konum) görünür pencereye
+    #   sdl2_overlay.apply_window_intent ile TEK işlemde uygulanır. Intent
+    #   burada clamping SONRASI uygulanır → 4K'da ekranı aşan istek
+    #   clamp'ten geçer (kılavuz bulgusu C4: intent yutulması).
+    # - gl_compat (ctypes-OpenGL) backend'inde görünür pencere set_mode
+    #   penceresinin KENDİSİDİR; orada intent yalnız gerçek no-op'ta yutulur
+    #   (GL context korunur), değişiklik isteklerinde set_mode çalışır ve
+    #   çağıran taraftaki _reapply_gl pencereyi iki-adımlı yoldan yeniden
+    #   GL'e alır.
+    # - Bilinmeyen backend (ör. test seam kancası): kalıt davranış — set_mode
+    #   atlanır, seam yüzeyi döndürülür.
+    try:
+        try:
+            _overlay_surf = overlay_active_game_surface()
+        except Exception:
+            _overlay_surf = None
+        if _overlay_surf is not None:
+            _sdl2_mod = sys.modules.get('sdl2_overlay') or sys.modules.get('src.sdl2_overlay')
+            _sdl2_active = (
+                _sdl2_mod is not None
+                and callable(getattr(_sdl2_mod, 'is_active', None))
+                and _sdl2_mod.is_active()
+            )
+            if _sdl2_active:
+                _applied = None
+                try:
+                    _applied = _sdl2_mod.apply_window_intent(
+                        width,
+                        height,
+                        fullscreen=fullscreen,
+                        borderless=borderless,
+                        resizable=resizable,
+                    )
+                except Exception as _intent_exc:
+                    _gl_diag(
+                        "create_display: apply_window_intent hatası "
+                        f"({_intent_exc}) — offscreen yüzey döndürüldü [TEK PENCERE korundu]"
+                    )
+                _gl_diag(
+                    "create_display: overlay AKTİF → set_mode ATLANDI, offscreen yüzey "
+                    f"döndürüldü ({_overlay_surf.get_width()}x{_overlay_surf.get_height()}) "
+                    f"intent_uygulandi={_applied} [TEK PENCERE korundu]"
+                )
+                invalidate_refresh_rate_cache()
+                return _overlay_surf
+
+            _glc_mod = sys.modules.get('gl_compat') or sys.modules.get('src.gl_compat')
+            _glc_active = (
+                _glc_mod is not None
+                and callable(getattr(_glc_mod, 'is_gl_active', None))
+                and _glc_mod.is_gl_active()
+            )
+            if _glc_active:
+                # gl_compat aktif + istek gerçek no-op → set_mode atla, GL context'i
+                # koru. İstek pencere durumunu DEĞİŞTİRİYORSA set_mode çalışmalı;
+                # aksi halde pencere-modu değişikliği yutulur (kılavuz bulgusu C4).
+                try:
+                    _actual = pygame.display.get_surface()
+                    _flags_ok = False
+                    if (
+                        _actual is not None
+                        and int(width) == int(_actual.get_width())
+                        and int(height) == int(_actual.get_height())
+                    ):
+                        _fl = _actual.get_flags()
+                        if fullscreen:
+                            _flags_ok = bool(_fl & (pygame.FULLSCREEN | pygame.NOFRAME)) and not bool(_fl & pygame.RESIZABLE)
+                        else:
+                            _flags_ok = (
+                                not bool(_fl & (pygame.FULLSCREEN | pygame.NOFRAME))
+                                and bool(_fl & pygame.RESIZABLE) == bool(resizable)
+                            )
+                    if _flags_ok:
+                        _gl_diag(
+                            "create_display: gl_compat AKTİF + istek no-op → set_mode "
+                            f"ATLANDI, offscreen yüzey döndürüldü ({width}x{height}) "
+                            "[GL context korundu]"
+                        )
+                        invalidate_refresh_rate_cache()
+                        return _overlay_surf
+                except Exception:
+                    pass
+                # Değişiklik isteği: bilinçli set_mode yolu (aşağıda) — pencere
+                # modu geçişi yutulmamalı.
+            else:
+                _gl_diag(
+                    "create_display: overlay AKTİF → set_mode ATLANDI, offscreen yüzey "
+                    f"döndürüldü ({_overlay_surf.get_width()}x{_overlay_surf.get_height()}) "
+                    "[TEK PENCERE korundu]"
+                )
+                invalidate_refresh_rate_cache()
+                return _overlay_surf
+    except Exception:
+        pass
+
     # macOS için özel handling
     if IS_MACOS:
         old_win_pos_mac = os.environ.get('SDL_VIDEO_WINDOW_POS')

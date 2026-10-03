@@ -1904,7 +1904,15 @@ def main():
             print(f"[Overlay] Render katmanı devre dışı (mode={steam_overlay_gl_mode}, backend={overlay_backend})")
         elif overlay_backend == 'sdl2':
             import sdl2_overlay as _ovl
-            screen = _ovl.gl_overlay_setup(screen)
+            # Pencere-modu intent'i (DUZ: açılış boyut/stil/konum) overlay'e
+            # geçirilir; windowed açılışta görünür pencere istenen boyutta,
+            # çerçeveli ve work-area merkezli açılır (borderless+(0,0) değil).
+            screen = _ovl.gl_overlay_setup(
+                screen,
+                fullscreen=startup_fullscreen,
+                borderless=startup_borderless,
+                resizable=(not startup_fullscreen),
+            )
         else:  # 'glcompat'
             from gl_compat import gl_overlay_setup
             screen = gl_overlay_setup(screen)

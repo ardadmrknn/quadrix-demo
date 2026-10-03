@@ -1124,12 +1124,224 @@ def _set_scale_quality_hint() -> bool:
         return False
 
 
-def setup(display_surface: pygame.Surface | None = None) -> pygame.Surface | None:
+def _centered_window_position(window_w: int, window_h: int):
+    """Work-area merkezli pencere konumu (ölçülemiyorsa masaüstü merkezleme).
+
+    Demo platform_utils API'si v2'den FARKLIDIR: burada get_desktop_work_area()
+    (w, h) döndürür (sol/üst ofset bilgisi yoktur) — merkezleme (0,0) kökenine
+    göre yapılır. Ölçülemeyen platformlarda masaüstü boyutundan merkezleme
+    yapılır, o da yoksa None döner (konum değiştirilmez).
+    """
+    try:
+        _pu = sys.modules.get('platform_utils') or sys.modules.get('src.platform_utils')
+        work = _pu.get_desktop_work_area() if _pu is not None and hasattr(_pu, 'get_desktop_work_area') else None
+        if work is not None:
+            work_w, work_h = int(work[0]), int(work[1])
+            if work_w > 0 and work_h > 0:
+                return (
+                    max(0, (work_w - int(window_w)) // 2),
+                    max(0, (work_h - int(window_h)) // 2),
+                )
+    except Exception:
+        pass
+    try:
+        sizes = pygame.display.get_desktop_sizes()
+        if sizes:
+            dw, dh = int(sizes[0][0]), int(sizes[0][1])
+            return (max(0, (dw - int(window_w)) // 2), max(0, (dh - int(window_h)) // 2))
+    except Exception:
+        pass
+    return None
+
+
+def _restore_window_state(prev_state):
+    """Pencere intent'i yarım uygulandıysa önceki duruma döndür (rollback)."""
+    if _window is None or not prev_state or prev_state[0] is None:
+        return
+    cur_size, cur_borderless, cur_resizable, cur_pos = prev_state
+    try:
+        if cur_borderless is not None and bool(_window.borderless) != bool(cur_borderless):
+            _window.borderless = bool(cur_borderless)
+        if cur_resizable is not None and bool(_window.resizable) != bool(cur_resizable):
+            _window.resizable = bool(cur_resizable)
+        if cur_size is not None and tuple(int(v) for v in _window.size) != tuple(cur_size):
+            _window.size = (int(cur_size[0]), int(cur_size[1]))
+        if cur_pos is not None and tuple(int(v) for v in _window.position) != tuple(cur_pos):
+            _window.position = (int(cur_pos[0]), int(cur_pos[1]))
+    except Exception as exc:
+        _diag_log(f"_restore_window_state: rollback kısmi başarısız ({exc})")
+
+
+def apply_window_intent(
+    width: int,
+    height: int,
+    *,
+    fullscreen: bool = False,
+    borderless: bool = False,
+    resizable: bool = False,
+    position=None,
+) -> bool:
+    """Görünür SDL2 penceresine pencere-modu intent'ini TEK işlemde uygula.
+
+    Overlay aktifken create_display set_mode'u atlar (tek-pencere garantisi);
+    bu yüzden istenen boyut/stil/konum intent'i eskiden tamamen yutuluyordu
+    (kılavuz bulgusu C4/C5: pencere asla boyutlanmıyordu/stillenmiyordu).
+    Artık intent burada görünür pencereye uygulanır:
+      - Tam ekran: borderless pencere, istenen boyut, (0,0) konumu. Overlay
+        mimarisinde tam ekran her zaman borderless'tır (setup() sözleşmesi
+        korunur; exclusive SDL fullscreen overlay penceresinde kullanılmaz).
+      - Pencere modu: istenen boyut + kenar/resizable + work-area merkezli
+        konum (position verilmişse o kullanılır).
+
+    No-op kararı için boyut karşılaştırması TEK BAŞINA YETMEZ: boyut +
+    borderless + resizable + konum birlikte karşılaştırılır — aynı boyutta
+    fullscreen↔pencere geçişi de uygulanır. Uygulamadan sonra GERÇEK pencere
+    boyutu geri okunur; _width/_height + present rect gerçek boyuta göre
+    tazelenir, arka plan dokusu yalnız boyut gerçekten değişirse yeniden
+    kurulur. Geometri kuşağı + tazeleme hızı önbelleği tek geçişte düşürülür.
+    Pencere güncellemesi hata verirse önceki duruma geri dönülür (rollback).
+    Değişiklik uygulandıysa True; no-op, devre dışı ya da hata durumunda
+    False döner.
+    """
+    global _width, _height, _background_texture
+
+    if not _active or _window is None:
+        return False
+
+    try:
+        req_w = max(1, int(width))
+        req_h = max(1, int(height))
+    except (TypeError, ValueError):
+        return False
+
+    fullscreen = bool(fullscreen)
+    # create_display normalizasyon paritesi: pencere modu her zaman çerçeveli,
+    # tam ekran her zaman resizable'sız. Overlay'de tam ekran borderless'tır
+    # (exclusive SDL fullscreen overlay penceresinde kullanılmaz).
+    borderless = bool(borderless) if fullscreen else False
+    resizable = bool(resizable) if not fullscreen else False
+    want_borderless = True if fullscreen else borderless
+    want_resizable = False if fullscreen else resizable
+    if fullscreen:
+        want_pos = (0, 0)
+    elif position is not None:
+        try:
+            want_pos = (int(position[0]), int(position[1]))
+        except (TypeError, ValueError, IndexError):
+            want_pos = _centered_window_position(req_w, req_h)
+    else:
+        want_pos = _centered_window_position(req_w, req_h)
+
+    # No-op kararı: boyut + stil + konum birlikte karşılaştırılır.
+    try:
+        cur_size = tuple(int(v) for v in _window.size)
+        cur_borderless = bool(_window.borderless)
+        cur_resizable = bool(_window.resizable)
+        cur_pos = tuple(int(v) for v in _window.position)
+    except Exception:
+        cur_size = None
+        cur_borderless = None
+        cur_resizable = None
+        cur_pos = None
+
+    if (
+        cur_size is not None
+        and cur_size == (req_w, req_h)
+        and cur_borderless == want_borderless
+        and cur_resizable == want_resizable
+        and (want_pos is None or cur_pos == want_pos)
+    ):
+        return False
+
+    prev_state = (cur_size, cur_borderless, cur_resizable, cur_pos)
+    try:
+        # Uygulama sırası: kenar → resizable → boyut → konum.
+        # (window.pyi notu: SDL fullscreen durumundaki pencerenin kenarı
+        # değiştirilemez; overlay penceresi SDL fullscreen'a hiç girmediği
+        # için sıra güvenlidir.)
+        if cur_borderless is None or cur_borderless != want_borderless:
+            _window.borderless = want_borderless
+        if cur_resizable is None or cur_resizable != want_resizable:
+            _window.resizable = want_resizable
+        if cur_size is None or cur_size != (req_w, req_h):
+            _window.size = (req_w, req_h)
+        if want_pos is not None and (cur_pos is None or cur_pos != want_pos):
+            _window.position = want_pos
+    except Exception as exc:
+        _diag_log(f"apply_window_intent: pencere güncellenemedi ({exc}) → rollback")
+        _restore_window_state(prev_state)
+        return False
+
+    # Gerçek boyutu geri oku: SDL kısıtları (min/max boyut, work-area)
+    # istenen boyutu değiştirmiş olabilir.
+    try:
+        actual_w, actual_h = int(_window.size[0]), int(_window.size[1])
+    except Exception:
+        actual_w, actual_h = req_w, req_h
+
+    size_changed = (actual_w, actual_h) != (int(_width), int(_height))
+    _width, _height = actual_w, actual_h
+    _refresh_present_rect()
+    if size_changed and _renderer is not None:
+        try:
+            if _background_texture is not None and hasattr(_background_texture, 'destroy'):
+                _background_texture.destroy()
+        except Exception:
+            pass
+        _background_texture = _build_background_texture(_renderer, actual_w, actual_h)
+
+    # Geometri kuşağı + tazeleme hızı önbelleği TEK geçişte düşürülür
+    # (döngüsel import yasağı: sys.modules yoklaması, setup() deseni).
+    try:
+        _pu = sys.modules.get('platform_utils') or sys.modules.get('src.platform_utils')
+        if _pu is not None:
+            if hasattr(_pu, 'bump_geometry_generation'):
+                _pu.bump_geometry_generation()
+            if hasattr(_pu, 'invalidate_refresh_rate_cache'):
+                _pu.invalidate_refresh_rate_cache()
+    except Exception:
+        pass
+
+    _diag_log(
+        f"apply_window_intent: istenen={req_w}x{req_h} fs={fullscreen} "
+        f"borderless={want_borderless} resizable={want_resizable} pos={want_pos} "
+        f"→ gerçek={actual_w}x{actual_h} boyut_değişti={size_changed}"
+    )
+    return True
+
+
+def get_actual_window_size():
+    """Görünür pencerenin GERÇEK boyutunu döndür (testler/teşhis için).
+
+    _patched_get_window_size'inin aksine tuval boyutunu değil pencereyi
+    okur; overlay kurulu değilse (0, 0) döner.
+    """
+    if not _active or _window is None:
+        return (0, 0)
+    try:
+        return (int(_window.size[0]), int(_window.size[1]))
+    except Exception:
+        return (0, 0)
+
+
+def setup(
+    display_surface: pygame.Surface | None = None,
+    *,
+    fullscreen: bool = False,
+    borderless: bool = False,
+    resizable: bool = False,
+    position=None,
+) -> pygame.Surface | None:
     """SDL2 renderer pipeline'ını kur ve oyunun çizeceği offscreen surface'i döndür.
 
     display_surface: create_display'in döndürdüğü mevcut (software) surface; boyut kaynağı
     olarak kullanılır. Pencere SAF _sdl2.Window ile yeniden açılır (set_mode penceresine
     renderer bağlanamadığı için).
+
+    Pencere-modu intent'i (fullscreen/borderless/resizable/position) görünür pencereye
+    uygulanır: tam ekranda borderless + (0,0) (mevcut sözleşme), pencere modunda istenen
+    kenar/resizable stili + work-area merkezli konum. Intent verilmezse geçmiş davranış
+    korunur (tam ekran varsayımı: borderless + (0,0)).
 
     Başarısızlıkta None döndürür → çağıran mevcut software surface ile devam etmeli.
     """
@@ -1213,17 +1425,37 @@ def setup(display_surface: pygame.Surface | None = None) -> pygame.Surface | Non
             except Exception:
                 pass
 
-        # Başlık + borderless + konum GÖSTERMEDEN ÖNCE ayarla (flash'ı önler).
+        # Başlık + intent (borderless/resizable/konum) GÖSTERMEDEN ÖNCE ayarla
+        # (flash'ı önler). create_display normalizasyon paritesi: pencere modu
+        # her zaman çerçeveli; tam ekranda borderless + (0,0) (mevcut sözleşme);
+        # pencere modunda istenen resizable stili + work-area merkezli konum.
         try:
             win.title = caption
         except Exception:
             pass
+        _fs = bool(fullscreen)
+        # Pencere modu her zaman çerçeveli, tam ekran her zaman borderless
+        # (create_display normalizasyon paritesi + overlay tam ekran sözleşmesi).
+        want_borderless = True if _fs else False
+        want_resizable = False if _fs else bool(resizable)
         try:
-            win.borderless = True
+            win.borderless = want_borderless
         except Exception:
             pass
         try:
-            win.position = (0, 0)
+            if not want_resizable:
+                win.resizable = False
+            else:
+                win.resizable = True
+        except Exception:
+            pass
+        try:
+            if fullscreen:
+                win.position = (0, 0)
+            else:
+                intent_pos = _centered_window_position(w, h) if position is None else position
+                if intent_pos is not None:
+                    win.position = intent_pos
         except Exception:
             pass
 
@@ -1388,9 +1620,26 @@ def setup(display_surface: pygame.Surface | None = None) -> pygame.Surface | Non
     return _game_surface
 
 
-def gl_overlay_setup(display_surface: pygame.Surface) -> pygame.Surface:
-    """gl_compat.gl_overlay_setup paritesi: setup() çağırır, başarısızsa orijinali döndürür."""
-    result = setup(display_surface)
+def gl_overlay_setup(
+    display_surface: pygame.Surface,
+    *,
+    fullscreen: bool = False,
+    borderless: bool = False,
+    resizable: bool = False,
+    position=None,
+) -> pygame.Surface:
+    """gl_compat.gl_overlay_setup paritesi: setup() çağırır, başarısızsa orijinali döndürür.
+
+    Pencere-modu intent'i (kılavuz C4/C5) setup()'a aynen aktarılır —
+    açılışta istenen pencere stili/boyutu görünür pencereye uygulanır.
+    """
+    result = setup(
+        display_surface,
+        fullscreen=fullscreen,
+        borderless=borderless,
+        resizable=resizable,
+        position=position,
+    )
     if result is not None:
         return result
     return display_surface

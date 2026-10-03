@@ -835,6 +835,38 @@ def gl_overlay_resize(new_w: int, new_h: int) -> pygame.Surface | None:
         return _game_surface
 
 
+def _intent_matches_current_window(kwargs) -> bool:
+    """create_display intent'i (pencere/tam ekran stili) mevcut GL penceresiyle eşleşiyor mu?
+
+    Wrapper'ın erken dönüşü yalnız boyut eşitliğine bakarsa, aynı boyutta
+    pencere-modu ↔ tam ekran geçişi set_mode'suz yutulur (kılavuz bulgusu C6).
+    Stil yönü create_display normalizasyonuyla karşılaştırılır: pencere modu
+    çerçeveli + RESIZABLE intent'e göre; tam ekranda borderless → NOFRAME,
+    exclusive → FULLSCREEN. Karar verilemezse False döner (güvenli yan: alttaki
+    create_display + _reapply_gl yolu çalışır, istek yutulmaz).
+    """
+    try:
+        fullscreen = bool(kwargs.get('fullscreen', False))
+        borderless = bool(kwargs.get('borderless', False)) if fullscreen else False
+        resizable = bool(kwargs.get('resizable', True)) if not fullscreen else False
+
+        actual = get_display_surface()
+        if actual is None:
+            return False
+        flags = actual.get_flags()
+        has_fullscreen = bool(flags & pygame.FULLSCREEN)
+        has_noframe = bool(flags & pygame.NOFRAME)
+        has_resizable = bool(flags & pygame.RESIZABLE)
+
+        if fullscreen:
+            if borderless:
+                return has_noframe and not has_fullscreen and not has_resizable
+            return has_fullscreen and not has_resizable
+        return not has_fullscreen and not has_noframe and has_resizable == resizable
+    except Exception:
+        return False
+
+
 def _get_gl_create_display_wrapper(original_create_display):
     """Wrap a create_display callable so rebuilt windows reapply GL overlay."""
     wrapper = _create_display_wrappers.get(original_create_display)
@@ -842,11 +874,16 @@ def _get_gl_create_display_wrapper(original_create_display):
         return wrapper
 
     def _gl_create_display(width, height, **kwargs):
-        # Gereksinim 11.1: Tek-context aktif ve görünür pencere boyutu mevcut GL
-        # yüzeyiyle aynıysa, alttaki create_display'i (ve onun set_mode'unu) HİÇ
-        # çağırma. Steam hook'u ve GL context'i korunur; sadece offscreen yüzeyi
-        # döndür. Bu kod tabanında pencere her zaman masaüstü çözünürlüğünde
-        # sabit olduğundan rebuild'ler boyutu değiştirmez.
+        # Gereksinim 11.1: Tek-context aktif, görünür pencere boyutu mevcut GL
+        # yüzeyiyle AYNI ve İSTENEN intent (boyut + pencere/tam ekran stili)
+        # mevcut pencereyle eşleşiyorsa alttaki create_display'i (ve onun
+        # set_mode'unu) HİÇ çağırma. Steam hook'u ve GL context'i korunur;
+        # sadece offscreen yüzey döndür.
+        # NOT: Eski koşul yalnız mevcut boyut == GL boyutuna bakıyordu; aynı
+        # boyutta pencere-modu ↔ tam ekran geçişi ya da farklı boyut isteyen
+        # rebuild'ler sessizce yutuluyordu. Artık istenen boyut ve stil de
+        # karşılaştırılır; uyuşmazlıkta set_mode + _reapply_gl (iki-adımlı)
+        # yolu çalışır ve pencere gerçekten değişir.
         if _active and _game_surface is not None and platform.system() == 'Windows':
             actual = get_display_surface()
             try:
@@ -854,8 +891,19 @@ def _get_gl_create_display_wrapper(original_create_display):
                 is_gl = bool(actual.get_flags() & pygame.OPENGL) if actual is not None else False
             except Exception:
                 cur_w, cur_h, is_gl = 0, 0, False
-            if is_gl and cur_w == _width and cur_h == _height:
-                print(f"[GL Compat] Rebuild atlandı (tek-context, boyut sabit "
+            try:
+                req_w, req_h = int(width), int(height)
+            except (TypeError, ValueError):
+                req_w, req_h = cur_w, cur_h
+            if (
+                is_gl
+                and cur_w == _width
+                and cur_h == _height
+                and req_w == cur_w
+                and req_h == cur_h
+                and _intent_matches_current_window(kwargs)
+            ):
+                print(f"[GL Compat] Rebuild atlandı (tek-context, boyut+intent sabit "
                       f"{_width}x{_height}); set_mode çağrılmadı")
                 return _game_surface
 
@@ -1020,11 +1068,11 @@ def get_game_surface() -> pygame.Surface | None:
 def should_skip_display_rebuild(width: int, height: int) -> bool:
     """VIDEORESIZE/rebuild handler'ları için GL-aware erken guard.
 
-    Tek-context GL aktifken ve istenen boyut mevcut GL yüzeyiyle aynıysa True döner.
+    Tek-context GL aktifken ve İSTENEN boyut mevcut GL yüzeyiyle aynıysa True döner.
     True ise çağıran, ``create_display``/``set_mode`` ÇAĞIRMAMALI (Steam hook ve GL
     context korunur); bunun yerine ``get_game_surface()`` ile offscreen yüzeye devam
-    etmelidir. Bu kod tabanında pencere her zaman masaüstü çözünürlüğünde sabit
-    olduğundan rebuild'ler boyutu değiştirmez.
+    etmelidir. İstenen boyut mevcut GL boyutundan FARKLIYSA False döner — pencere
+    modu değişikliği yutulmaz, rebuild çalışır.
     """
     if not _active or _game_surface is None:
         return False
