@@ -97,52 +97,71 @@ def _start_tracked_worker(target: Callable[[], Any], *, name: str) -> threading.
     return worker
 
 
-def _read_app_id_from_runtime_sources(default: str = '4635310') -> str:
+# ── Steam AppID kimlik sabitleri (AppID/Cloud çakışma çözümü) ─────────────────
+# Proje kimlikleri: Full 4414520, Demo 4635310, Playtest 4428040.
+# Bu depo (quadrix-demo) YALNIZCA Demo AppID'sini tanır. Full ve Playtest
+# AppID'leri bu depoya yabancıdır ve uyarıyla reddedilir.
+_PROJECT_DEFAULT_APP_ID = '4635310'
+_ALLOWED_APP_IDS = frozenset({'4635310'})
+
+
+def _is_allowed_app_id(app_id: str | None) -> bool:
+    """Değer bu projenin tanıdığı bir Steam AppID'si mi?"""
+    normalized = str(app_id or '').strip()
+    return normalized.isdigit() and normalized in _ALLOWED_APP_IDS
+
+
+def _collect_app_id_candidate_paths() -> list:
+    """AppID dosyası adaylarını öncelik sırasıyla topla.
+
+    Güvenilir kaynaklar YALNIZCA: paketli bundle (_MEIPASS) ve bu projenin
+    kendi runtime dosyaları. CWD ve sys.executable klasörü (Python kurulum
+    dizini dahil) KASITLI olarak listede YOKTUR — başka projenin
+    steam_appid.txt dosyası oradan sızıp Steam'i yanlış AppID altında süreç
+    takibi + Cloud senkronu başlatıyordu (AppID/Cloud çakışması).
+    """
     candidates: list[Path] = []
-
-    env_app_id = str(os.environ.get('STEAM_APP_ID', '') or '').strip()
-    if env_app_id:
-        return env_app_id
-
-    try:
-        candidates.append(Path.cwd() / 'steam_appid.txt')
-    except Exception:
-        pass
-
-    try:
-        exe_path = Path(getattr(sys, 'executable', '') or '')
-        if exe_path:
-            candidates.append(exe_path.resolve().parent / 'steam_appid.txt')
-    except Exception:
-        pass
-
     try:
         if getattr(sys, '_MEIPASS', None):
             candidates.append(Path(sys._MEIPASS) / 'steam_appid.txt')
     except Exception:
         pass
-
     try:
         project_root = Path(__file__).resolve().parent.parent
         candidates.append(project_root / 'config' / 'runtime' / 'steam_appid.txt')
         candidates.append(project_root / 'steam_appid.txt')
     except Exception:
         pass
+    return candidates
 
-    seen: set[str] = set()
-    for candidate in candidates:
-        try:
-            key = str(candidate.resolve())
-        except Exception:
-            key = str(candidate)
-        if key in seen:
+
+def _read_app_id_from_runtime_sources(default: str = _PROJECT_DEFAULT_APP_ID) -> str:
+    """Steam AppID'yi doğrulanmış kaynaklardan çözümle.
+
+    Öncelik:
+    1. Açık süreç env değişkenleri — yalnız DOĞRULANMIŞ (Demo 4635310)
+       değerler kabul edilir; yabancı değer uyarıyla yok sayılır.
+    2. Paketli bundle (_MEIPASS) → projenin config/runtime dosyası.
+    3. Proje varsayılanı (Demo 4635310).
+    """
+    for env_var in ('STEAM_APP_ID', 'SteamAppId', 'SteamGameId'):
+        env_app_id = str(os.environ.get(env_var, '') or '').strip()
+        if not env_app_id:
             continue
-        seen.add(key)
+        if _is_allowed_app_id(env_app_id):
+            return env_app_id
+        print(f"[Steam] Uyarı: {env_var} değeri ({env_app_id}) bu projenin AppID kümesine ait değil; yok sayılıyor.")
+
+    for candidate in _collect_app_id_candidate_paths():
         try:
-            if candidate.exists():
-                raw = candidate.read_text(encoding='utf-8').strip()
-                if raw:
-                    return raw
+            if not candidate.exists():
+                continue
+            raw = candidate.read_text(encoding='utf-8').strip()
+            if not raw:
+                continue
+            if _is_allowed_app_id(raw):
+                return raw
+            print(f"[Steam] Uyarı: {candidate} içindeki AppID ({raw}) tanınmıyor; yok sayılıyor.")
         except Exception:
             continue
 
@@ -641,12 +660,11 @@ def init() -> bool:
         _exit_requested = False
         _shutdown_requested = False
 
-        # ── Steam AppID env var — onefile PyInstaller için zorunlu ──────────────
-        # SteamAPI_Init, steam_appid.txt dosyasını ya CWD'den ya da SteamAppId
-        # env var‧ından okur. Onefile build'larda _MEIPASS geçici klasörüne
-        # çıkarılır ama CWD exe'nin bulunduğu yerdir — dosya orada olmayabilir.
-        # Env var her zaman çalışır.
-        _APP_ID = _read_app_id_from_runtime_sources('4635310')
+        # ── Steam AppID çözümleme (AppID/Cloud çakışma çözümü — Faz 2) ──────────
+        # Doğrulanmış tek akış: açık env → paketli bundle → proje config/runtime
+        # → proje varsayılanı (Demo 4635310). CWD ve sys.executable klasörü
+        # AppID kaynağı DEĞİLDİR.
+        _APP_ID = _read_app_id_from_runtime_sources(_PROJECT_DEFAULT_APP_ID)
         # ── Dev mode / Production mode ayırt et ─────────────────────────────────
         # PyInstaller frozen build'da (sys.frozen=True) Steam client AppID'yi
         # zaten sağlar; env override yapmak yanlış AppID enjekte edebilir.
@@ -657,17 +675,18 @@ def init() -> bool:
             or os.environ.get('STEAM_DEV_OVERRIDE', '0') == '1'
         )
         if _is_dev_mode:
-            os.environ.setdefault('SteamAppId', _APP_ID)
-            os.environ.setdefault('SteamGameId', _APP_ID)
-            # steam_appid.txt'yi exe'nin yanına da yazmaya çalış (Steam offline launch için)
-            try:
-                import sys as _sys
-                _exe_dir = Path(getattr(_sys, 'executable', '') or '').parent
-                _appid_dst = _exe_dir / 'steam_appid.txt'
-                if not _appid_dst.exists():
-                    _appid_dst.write_text(_APP_ID + '\n', encoding='utf-8')
-            except Exception:
-                pass
+            # Yalnızca işlemin BELLEĞİNDE ayarlanır — dosyaya YAZILMAZ.
+            # (Eski davranış sys.executable klasörüne steam_appid.txt yazıyordu;
+            # Python kurulum dizinine taşan AppID diğer Quadrix sürümlerinin
+            # süreçlerini yanlış AppID altında topluyordu.)
+            # Açık atama (setdefault DEĞİL): setdefault sürece önceden
+            # sızmış YABANCI SteamAppId/SteamGameId değerini ezemez —
+            # çözümleyici yabancı değeri reddedip doğru _APP_ID'yi bulsa
+            # bile DLL eski env değerini görür ve süreç yanlış uygulama
+            # altında takip edilirdi. _APP_ID izinli kümeden geldiğinden
+            # atama dev modunda kimliği proje AppID'sine sabitler.
+            os.environ['SteamAppId'] = _APP_ID
+            os.environ['SteamGameId'] = _APP_ID
             print(f"[Steam] Dev mode: AppID override applied ({_APP_ID})")
         else:
             print("[Steam] Production mode: using AppID from Steam client")

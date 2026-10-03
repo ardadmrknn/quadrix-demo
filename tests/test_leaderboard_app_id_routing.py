@@ -4,17 +4,37 @@ import unittest
 from unittest.mock import patch
 
 
-os.environ.setdefault("STEAM_APP_ID", "4428040")
-os.environ.setdefault("STEAM_WEB_API_KEY", "TESTKEY")
-os.environ.setdefault("LEADERBOARD_CLIENT_TOKEN", "test-client-token")
-os.environ.setdefault("LEADERBOARD_TOKEN_SECRET", "test-token-secret-32-chars-xxxxxx")
-os.environ.setdefault("LEADERBOARD_ALLOWED_APP_IDS", "4428040,4414520,4635310")
-
+# AppID/Cloud cakisma cozumu: env degiskenleri artik modul seviyesinde
+# setdefault ile set edilmiyor. Modul seviyesindeki STEAM_WEB_API_KEY=TESTKEY
+# degeri tum pytest surecine siziyor, test_lb_write'in donanim-test atlama
+# korumasini etkisiz birakiyordu (gercek steam_api64.dll yuklenmesi ->
+# python.exe AppID 4428040 altinda takip -> Playtest AutoCloud senkronu).
+# create_app() ve SteamLeaderboardService env degiskenlerini cagri aninda
+# okur; import sirasinda env setine gerek yoktur.
 from backend.steam_leaderboard_proxy import create_app, SteamDirectGateway
 from steam_leaderboards import SteamLeaderboardService
 
 
 class TestLeaderboardAppIdRouting(unittest.TestCase):
+    _TEST_ENV = {
+        "STEAM_APP_ID": "4428040",
+        "STEAM_WEB_API_KEY": "TESTKEY",
+        "LEADERBOARD_CLIENT_TOKEN": "test-client-token",
+        "LEADERBOARD_TOKEN_SECRET": "test-token-secret-32-chars-xxxxxx",
+        "LEADERBOARD_ALLOWED_APP_IDS": "4428040,4414520,4635310",
+    }
+
+    def setUp(self):
+        self._saved_env = {name: os.environ.get(name) for name in self._TEST_ENV}
+        os.environ.update(self._TEST_ENV)
+        self.addCleanup(self._restore_test_env)
+
+    def _restore_test_env(self):
+        for name, old_value in self._saved_env.items():
+            if old_value is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = old_value
     def test_client_sends_app_id_header(self):
         service = SteamLeaderboardService(
             backend_base_url="http://leaderboard.test",

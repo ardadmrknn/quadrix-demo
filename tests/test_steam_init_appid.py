@@ -1,7 +1,9 @@
 """Tests for steam_integration init() AppID override gating."""
 import sys
 import os
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch, MagicMock, call
 
 
@@ -118,6 +120,143 @@ class TestInitAppIdGating(unittest.TestCase):
             '4635310',
             "STEAM_DEV_OVERRIDE=1 should force dev mode even when frozen"
         )
+
+    def test_dev_mode_overwrites_foreign_steam_appid_env(self):
+        """init() dev modunda YABANCI SteamAppId env değerini EZMELİ.
+
+        setdefault mevcut anahtarın değerini değiştirmez: sürece sızmış
+        yabancı SteamAppId (ör. Playtest 4428040) yerinde kalır ve DLL
+        bunu görür — çözümleyicinin 'yok sayılıyor' reddi dev modunda
+        uygulanmış olmazdı. Açık atama kimliği proje AppID'sine sabitler.
+        """
+        os.environ['SteamAppId'] = '4428040'  # demo'ya yabancı (Playtest)
+        os.environ['SteamGameId'] = '4428040'
+
+        mock_dll = _make_mock_dll()
+        si = self._run_init(mock_dll)
+
+        self.assertEqual(
+            os.environ.get('SteamAppId'),
+            '4635310',
+            "Dev mode: yabancı SteamAppId ezilip '4635310' yazılmalı"
+        )
+        self.assertEqual(
+            os.environ.get('SteamGameId'),
+            '4635310',
+            "Dev mode: yabancı SteamGameId ezilip '4635310' yazılmalı"
+        )
+
+
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+_RUNTIME_APPID_FILE = _REPO_ROOT / 'config' / 'runtime' / 'steam_appid.txt'
+
+
+class TestAppIdResolutionContract(unittest.TestCase):
+    """AppID/Cloud cakisma cozumu — Faz 2 cozumleme sozlesmesi (demo deposu).
+
+    Beklenen kimlikler:
+    - Demo kaynak/paket calistirma: 4635310 (Demo)
+    - Full (4414520) ve Playtest (4428040) bu depoya YABANCI: uyariyla
+      reddedilir, proje varsayilanina dusulur.
+    - CWD ve sys.executable klasoru (Python kurulumu) AppID kaynagi DEGILDIR.
+    """
+
+    def setUp(self):
+        for mod_name in list(sys.modules.keys()):
+            if 'steam_integration' in mod_name:
+                del sys.modules[mod_name]
+        for key in ('SteamAppId', 'SteamGameId', 'STEAM_DEV_OVERRIDE', 'STEAM_APP_ID'):
+            os.environ.pop(key, None)
+        import steam_integration as si
+        self.si = si
+
+    def tearDown(self):
+        for mod_name in list(sys.modules.keys()):
+            if 'steam_integration' in mod_name:
+                del sys.modules[mod_name]
+        for key in ('SteamAppId', 'SteamGameId', 'STEAM_DEV_OVERRIDE', 'STEAM_APP_ID'):
+            os.environ.pop(key, None)
+
+    def test_project_default_app_id_is_demo(self):
+        """Demo deposunun proje varsayilani Demo AppID 4635310 olmali."""
+        self.assertEqual(self.si._PROJECT_DEFAULT_APP_ID, '4635310')
+        self.assertIn('4635310', self.si._ALLOWED_APP_IDS)
+        self.assertNotIn('4414520', self.si._ALLOWED_APP_IDS)  # Full kimliği demo'ya yabancı
+        self.assertNotIn('4428040', self.si._ALLOWED_APP_IDS)  # Playtest kimliği demo'ya yabancı
+
+    def test_runtime_appid_file_contains_demo_appid(self):
+        """config/runtime/steam_appid.txt Demo kimligini (4635310) tasimali."""
+        self.assertTrue(_RUNTIME_APPID_FILE.exists(),
+                        'config/runtime/steam_appid.txt mevcut olmali')
+        self.assertEqual(_RUNTIME_APPID_FILE.read_text(encoding='utf-8').strip(),
+                         '4635310')
+
+    def test_env_app_id_foreign_playtest_rejected(self):
+        """Yabanci env AppID (Playtest 4428040) reddedilip proje degerine dusmeli."""
+        os.environ['STEAM_APP_ID'] = '4428040'
+        self.assertEqual(self.si._read_app_id_from_runtime_sources(), '4635310')
+
+    def test_env_app_id_foreign_full_rejected(self):
+        """Yabanci env AppID (Full 4414520) reddedilip proje degerine dusmeli."""
+        os.environ['STEAM_APP_ID'] = '4414520'
+        self.assertEqual(self.si._read_app_id_from_runtime_sources(), '4635310')
+
+    def test_env_app_id_unknown_value_rejected(self):
+        """Taninmayan env AppID reddedilmeli; guvenli Demo varsayilani kullanilmali."""
+        os.environ['SteamAppId'] = '9999999'
+        self.assertEqual(self.si._read_app_id_from_runtime_sources(), '4635310')
+
+    def test_executable_dir_appid_file_not_read(self):
+        """sys.executable klasorundeki (Python kurulumu) steam_appid.txt OKUNMAMALI."""
+        with tempfile.TemporaryDirectory() as tmp:
+            exe_dir = Path(tmp)
+            (exe_dir / 'steam_appid.txt').write_text('4428040', encoding='utf-8')
+            with patch.object(sys, 'executable', str(exe_dir / 'python.exe')):
+                self.assertEqual(self.si._read_app_id_from_runtime_sources(), '4635310')
+
+    def test_cwd_appid_file_not_read(self):
+        """CWD'deki yabanci steam_appid.txt OKUNMAMALI."""
+        with tempfile.TemporaryDirectory() as tmp:
+            cwd_dir = Path(tmp)
+            (cwd_dir / 'steam_appid.txt').write_text('4414520', encoding='utf-8')
+            with patch.object(Path, 'cwd', classmethod(lambda cls: cwd_dir)):
+                self.assertEqual(self.si._read_app_id_from_runtime_sources(), '4635310')
+
+    def test_candidate_paths_are_project_or_bundle_only(self):
+        """Aday listesi yalnizca _MEIPASS ve proje dosyalarini icermeli."""
+        candidates = self.si._collect_app_id_candidate_paths()
+        self.assertTrue(candidates, 'en az bir proje adayi beklenir')
+        project_root = Path(self.si.__file__).resolve().parent.parent
+        meipass = getattr(sys, '_MEIPASS', None)
+        for candidate in candidates:
+            resolved = Path(candidate).resolve()
+            in_project = project_root in resolved.parents
+            in_bundle = bool(meipass) and Path(str(meipass)) in resolved.parents
+            self.assertTrue(in_project or in_bundle,
+                            f'aday proje/bundle disinda olmamali: {resolved}')
+
+    def test_init_dev_mode_does_not_write_appid_file_next_to_executable(self):
+        """init() kaynak modda sys.executable klasorune steam_appid.txt YAZMAMALI."""
+        with tempfile.TemporaryDirectory() as tmp:
+            exe_dir = Path(tmp)
+            fake_exe = exe_dir / 'python.exe'
+            fake_exe.write_text('', encoding='utf-8')
+            with patch.object(sys, 'executable', str(fake_exe)):
+                mock_dll = _make_mock_dll()
+                with patch('ctypes.CDLL', return_value=mock_dll), \
+                     patch('threading.Thread') as mock_thread, \
+                     patch('time.sleep', return_value=None):
+                    mock_thread.return_value = MagicMock()
+                    import steam_integration as si_mod
+                    si_mod._dll_loaded = False
+                    si_mod._init_ok = False
+                    with patch.object(si_mod, '_find_dll', return_value='/fake/steam_api64.dll'), \
+                         patch.object(si_mod, '_setup_dll_functions', return_value=None), \
+                         patch.object(si_mod, '_read_app_id_from_runtime_sources', return_value='4635310'), \
+                         patch('builtins.print', side_effect=lambda *a, **k: None):
+                        si_mod.init()
+                self.assertFalse((exe_dir / 'steam_appid.txt').exists(),
+                                 'Python kurulum klasorune steam_appid.txt yazilmamali')
 
 
 if __name__ == '__main__':

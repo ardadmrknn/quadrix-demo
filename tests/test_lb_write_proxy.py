@@ -2,20 +2,39 @@
 import json, os, unittest
 from unittest.mock import patch, MagicMock
 
-# We'll need to set env vars before importing the app
-os.environ.setdefault('STEAM_APP_ID', '4428040')
-os.environ.setdefault('STEAM_WEB_API_KEY', 'TESTKEY')
-os.environ.setdefault('LEADERBOARD_CLIENT_TOKEN', 'test-client-token')
-os.environ.setdefault('LEADERBOARD_TOKEN_SECRET', 'test-token-secret-32-chars-xxxxxx')
-
 from backend.steam_leaderboard_proxy import create_app, SteamDirectGateway
+
+# AppID/Cloud cakisma cozumu: env degiskenleri artik modul seviyesinde
+# setdefault ile set edilmiyor. Modul seviyesindeki STEAM_WEB_API_KEY=TESTKEY
+# degeri tum pytest surecine siziyor, test_lb_write'in donanim-test atlama
+# korumasini etkisiz birakiyor ve gercek steam_api64.dll yuklenmesini
+# tetikliyordu (python.exe AppID 4428040 altinda takip ediliyor + Playtest
+# AutoCloud senkronu). create_app() ve SteamDirectGateway env degiskenlerini
+# cagri aninda okur; import sirasinda env setine gerek yoktur.
 
 
 class TestSubmitEndpoint(unittest.TestCase):
+    _TEST_ENV = {
+        'STEAM_APP_ID': '4428040',
+        'STEAM_WEB_API_KEY': 'TESTKEY',
+        'LEADERBOARD_CLIENT_TOKEN': 'test-client-token',
+        'LEADERBOARD_TOKEN_SECRET': 'test-token-secret-32-chars-xxxxxx',
+    }
+
     def setUp(self):
+        self._saved_env = {name: os.environ.get(name) for name in self._TEST_ENV}
+        os.environ.update(self._TEST_ENV)
+        self.addCleanup(self._restore_test_env)
         self.app = create_app()
         self.app.config['TESTING'] = True
         self.client = self.app.test_client()
+
+    def _restore_test_env(self):
+        for name, old_value in self._saved_env.items():
+            if old_value is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = old_value
 
     def test_submit_endpoint_exists(self):
         """POST /api/v1/leaderboards/classic/submit should return 200 or 4xx, not 404/405"""

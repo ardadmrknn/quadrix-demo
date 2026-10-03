@@ -188,6 +188,23 @@ $targetConfig = switch ($Target) {
     }
 }
 
+# Faz 5 (AppID/Cloud cakisma cozumu): ContentRoot AppID kimlik kontrolu.
+# ContentRoot icindeki steam_appid.txt dosyalari hedef AppID ile eslesmeli;
+# yanlis surumun icerik klasoru kullanilirsa yukleme ONCESI kesilir.
+$expectedAppId = $targetConfig.AppId
+$appIdFiles = Get-ChildItem -LiteralPath $resolvedContentRoot -Recurse -File -Filter 'steam_appid.txt' -ErrorAction SilentlyContinue
+foreach ($appIdFile in $appIdFiles) {
+    $appIdValue = ''
+    try {
+        $appIdValue = (Get-Content -LiteralPath $appIdFile.FullName -Raw).Trim()
+    } catch {
+        $appIdValue = ''
+    }
+    if ($appIdValue -and ($appIdValue -ne $expectedAppId)) {
+        throw "ContentRoot AppID uyusmazligi: $($appIdFile.FullName) = $appIdValue, hedef = $expectedAppId. Yanlis surumun icerik klasoru kullaniliyor olabilir."
+    }
+}
+
 $tempScript = $null
 $tempDepotScript = $null
 

@@ -6,8 +6,17 @@ APP_ID = 4428040
 LB_ID_MYSTERY = 19198572
 
 
-def test_leaderboard_write():
+def test_leaderboard_write(monkeypatch):
     """Steam liderlik tablosuna yazma testi (yalnizca Windows + Steam acikken calisir)."""
+    # AppID/Cloud cakisma cozumu: bu test gercek steam_api64.dll yukleyip
+    # SteamAPI_InitFlat cagirir; Steam istemcisi python.exe'yi SteamAppId=4428040
+    # (Playtest) altinda takip eder ve surec cikisinda Playtest AutoCloud
+    # senkronunu tetikler (gameprocess_log/cloud_log kaniti). Normal test
+    # paketlerinde bu yan etki istenmedigi icin test yalnizca acik taleple
+    # calisir: QUADRIX_STEAM_HW_TEST=1 pytest tests/test_lb_write.py
+    if os.environ.get("QUADRIX_STEAM_HW_TEST", "").strip() != "1":
+        pytest.skip("Gercek DLL + Steam istemcisi donanim testi; QUADRIX_STEAM_HW_TEST=1 ile acilir")
+
     publisher_key = os.environ.get("STEAM_WEB_API_KEY", "").strip()
     if not publisher_key:
         pytest.skip("STEAM_WEB_API_KEY tanimli degil; partner API yazma testi atlandi")
@@ -19,7 +28,13 @@ def test_leaderboard_write():
     if not os.path.exists(dll_path):
         pytest.skip(f"DLL bulunamadi: {dll_path}")
 
-    os.environ.setdefault("SteamAppId", "4428040")
+    # AppID/Cloud cakisma cozumu: env degiskeni monkeypatch ile set edilir ki
+    # test sonunda otomatik geri yuklensin. os.environ.setdefault kullanmak
+    # SteamAppId=4428040 degerini tum pytest surecine sizdiriyor; ardindan
+    # gercek DLL yukleyen testler SteamAPI_Init'i tetikleyince Steam,
+    # python.exe'yi yanlis AppID altinda takip edip Playtest AutoCloud
+    # senkronu baslatiyordu (gameprocess_log/cloud_log kaniti).
+    monkeypatch.setenv("SteamAppId", "4428040")
 
     try:
         dll = ctypes.CDLL(dll_path)
