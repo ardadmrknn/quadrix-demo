@@ -671,6 +671,39 @@ class SurvivalMode(Game):
         # Bu mod sağ panelde bilgi gösteriyor, sol panel boş bırakılabilir
         return 0
 
+    def _get_survival_infection_overlay(self, cell_size: int, color, bar_width: int, bar_color) -> pygame.Surface:
+        cache = getattr(self, '_survival_infection_overlay_cache', None)
+        order = getattr(self, '_survival_infection_overlay_cache_order', None)
+        if cache is None or order is None:
+            cache = {}
+            order = []
+            self._survival_infection_overlay_cache = cache
+            self._survival_infection_overlay_cache_order = order
+        size = max(1, int(cell_size))
+        key = (size, tuple(color), max(0, min(size, int(bar_width))), tuple(bar_color))
+        cached = cache.get(key)
+        if cached is not None:
+            try:
+                order.remove(key)
+            except ValueError:
+                pass
+            order.append(key)
+            return cached
+
+        overlay = pygame.Surface((size, size), pygame.SRCALPHA)
+        pygame.draw.rect(overlay, color, (0, 0, size, size), border_radius=4)
+        center = (size // 2, size // 2)
+        pygame.draw.circle(overlay, (50, 150, 50, 255), center, size // 4)
+        pygame.draw.circle(overlay, (200, 255, 200, 255), center, size // 6)
+        if bar_width > 0:
+            pygame.draw.rect(overlay, bar_color, (0, 0, int(bar_width), 4))
+        cache[key] = overlay
+        order.append(key)
+        while len(order) > 160:
+            old_key = order.pop(0)
+            cache.pop(old_key, None)
+        return overlay
+
     def draw_mode_overlay(self):
         """Survival modu overlay - Enfekte bloklar ve UI panelleri"""
         if self.game_over:
@@ -686,8 +719,7 @@ class SurvivalMode(Game):
         # Antivirus flash efekti
         if self.antivirus_flash > 0:
             flash_alpha = int(100 * (self.antivirus_flash / 500))
-            flash_surf = pygame.Surface((active_width, active_height), pygame.SRCALPHA)
-            flash_surf.fill((100, 255, 100, flash_alpha))
+            flash_surf = self._get_solid_alpha_surface((active_width, active_height), (100, 255, 100, flash_alpha))
             self.screen.blit(flash_surf, (0, 0))
         
         # === ENFEKSİYON OVERLAY'LERİ ===
@@ -703,9 +735,6 @@ class SurvivalMode(Game):
             remaining = max(0, self.consume_time - elapsed)
             progress = elapsed / self.consume_time  # 0 -> 1
             
-            # Virüs overlay
-            overlay = pygame.Surface((cell_size, cell_size), pygame.SRCALPHA)
-            
             # Arka plan - kalan süreye göre renk
             if progress < 0.5:
                 color = (100, 200, 50, 150)  # Yeşil
@@ -716,20 +745,12 @@ class SurvivalMode(Game):
                 # Yanıp sönme
                 if (pygame.time.get_ticks() // 200) % 2 == 0:
                     color = (255, 100, 100, 220)
-            
-            pygame.draw.rect(overlay, color, (0, 0, cell_size, cell_size), border_radius=4)
-            
-            # Virüs ikonu (basit daire)
-            center = (cell_size // 2, cell_size // 2)
-            pygame.draw.circle(overlay, (50, 150, 50, 255), center, cell_size // 4)
-            pygame.draw.circle(overlay, (200, 255, 200, 255), center, cell_size // 6)
-            
+
             # Zamanlayıcı bar (üstte)
             bar_height = 4
             bar_width = int(cell_size * (1 - progress))
             bar_color = (100, 255, 100) if progress < 0.5 else (255, 200, 50) if progress < 0.75 else (255, 50, 50)
-            pygame.draw.rect(overlay, bar_color, (0, 0, bar_width, bar_height))
-            
+            overlay = self._get_survival_infection_overlay(cell_size, color, bar_width, bar_color)
             self.screen.blit(overlay, (px, py))
         
         # === SAĞ PANEL - SURVIVAL BİLGİLERİ ===
@@ -871,8 +892,7 @@ class SurvivalMode(Game):
                 # Aktif seviye - renkli ve parlak
                 pygame.draw.rect(self.screen, level_colors[i], (bx, cy, box_w, box_h), border_radius=5)
                 # Üst parlama efekti
-                shine_surf = pygame.Surface((max(1, box_w - s(4)), s(6)), pygame.SRCALPHA)
-                shine_surf.fill((255, 255, 255, 100))
+                shine_surf = self._get_solid_alpha_surface((max(1, box_w - s(4)), s(6)), (255, 255, 255, 100))
                 self.screen.blit(shine_surf, (bx + s(2), cy + s(2)))
             else:
                 # Pasif seviye - koyu
@@ -905,8 +925,7 @@ class SurvivalMode(Game):
         if fill_w > 0:
             pygame.draw.rect(self.screen, fill_color, (cx, cy, fill_w, bar_h), border_radius=11)
             # Işıltı efekti
-            shine_surf = pygame.Surface((max(0, fill_w - s(4)), s(7)), pygame.SRCALPHA)
-            shine_surf.fill((255, 255, 255, 90))
+            shine_surf = self._get_solid_alpha_surface((max(1, fill_w - s(4)), s(7)), (255, 255, 255, 90))
             self.screen.blit(shine_surf, (cx + s(2), cy + s(2)))
         
         # Sayı (bar içinde, ortalı)
@@ -931,8 +950,7 @@ class SurvivalMode(Game):
         
         if infect_w > 0:
             pygame.draw.rect(self.screen, infect_color, (cx, cy, infect_w, bar_h), border_radius=11)
-            shine_surf = pygame.Surface((max(0, infect_w - s(4)), s(7)), pygame.SRCALPHA)
-            shine_surf.fill((255, 255, 255, 90))
+            shine_surf = self._get_solid_alpha_surface((max(1, infect_w - s(4)), s(7)), (255, 255, 255, 90))
             self.screen.blit(shine_surf, (cx + s(2), cy + s(2)))
         
         infect_text = f(13, bold=True).render(
@@ -967,8 +985,7 @@ class SurvivalMode(Game):
         
         if av_w > 0:
             pygame.draw.rect(self.screen, av_color, (cx, cy, av_w, bar_h), border_radius=11)
-            shine_surf = pygame.Surface((max(0, av_w - s(4)), s(7)), pygame.SRCALPHA)
-            shine_surf.fill((255, 255, 255, 90))
+            shine_surf = self._get_solid_alpha_surface((max(1, av_w - s(4)), s(7)), (255, 255, 255, 90))
             self.screen.blit(shine_surf, (cx + s(2), cy + s(2)))
         
         av_text = f(13, bold=True).render(f"{int(av_progress * 100)}%", True, (255, 255, 255))
@@ -2249,8 +2266,7 @@ class DailyChallengeMode(Game):
         super().draw_mode_overlay()
         if self.fog_overlay and not self.game_over:
             active_width, active_height = self._active_ui_size()
-            fog = pygame.Surface((active_width, active_height), pygame.SRCALPHA)
-            fog.fill((10, 12, 30, 110))
+            fog = self._get_solid_alpha_surface((active_width, active_height), (10, 12, 30, 110))
             self.screen.blit(fog, (0, 0))
 
         # Daily hedef paneli / ilerleme çubuğu

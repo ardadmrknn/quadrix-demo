@@ -315,7 +315,19 @@ def test_survival_panel_and_flash_use_active_canvas_when_window_size_is_stale(mo
         created_sizes.append(tuple(size))
         return original_surface(size, *args, **kwargs)
 
-    monkeypatch.setattr(advanced_modes_module.pygame, 'Surface', surface_spy)
+    # P0-3/P0-4: flash tahsisi Game._get_solid_alpha_surface üzerinden
+    # game.py'nin pygame binding'ine taşındı; tam pakette pygame ailesi
+    # conftest tarafından düşürülüp yeniden import edildiğinde modül
+    # kimlikleri ayrışabiliyor. Spy'ı hem bu modülün hem Gerçek Game
+    # tabanının pygame'ine kur (kimlik-bağımsız gözlem).
+    import inspect
+    _game_mod = inspect.getmodule(
+        next(cls for cls in mode.__class__.__mro__ if cls.__name__ == 'Game'))
+    _patch_targets = [advanced_modes_module.pygame]
+    if _game_mod is not None and _game_mod.pygame not in _patch_targets:
+        _patch_targets.append(_game_mod.pygame)
+    for _pg in _patch_targets:
+        monkeypatch.setattr(_pg, 'Surface', surface_spy)
 
     advanced_modes_module.SurvivalMode.draw_mode_overlay(mode)
 
@@ -407,7 +419,17 @@ def test_daily_fog_overlay_uses_active_canvas(monkeypatch):
         created_sizes.append(tuple(size))
         return original_surface(size, *args, **kwargs)
 
-    monkeypatch.setattr(advanced_modes_module.pygame, 'Surface', surface_spy)
+    # P0-3/P0-4: fog tahsisi Game._get_solid_alpha_surface üzerinden
+    # game.py'nin pygame binding'ine taşındı; tam pakette modül kimlikleri
+    # ayrışabiliyor → spy'ı hem bu modülün hem Game tabanının pygame'ine kur.
+    import inspect
+    _game_mod = inspect.getmodule(
+        next(cls for cls in mode.__class__.__mro__ if cls.__name__ == 'Game'))
+    _patch_targets = [advanced_modes_module.pygame]
+    if _game_mod is not None and _game_mod.pygame not in _patch_targets:
+        _patch_targets.append(_game_mod.pygame)
+    for _pg in _patch_targets:
+        monkeypatch.setattr(_pg, 'Surface', surface_spy)
 
     original_super = advanced_modes_module.SurvivalMode.draw_mode_overlay
     monkeypatch.setattr(advanced_modes_module.SurvivalMode, 'draw_mode_overlay', lambda self: None)
