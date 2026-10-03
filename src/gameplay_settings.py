@@ -10,6 +10,13 @@ from retro_style import retro_style
 from platform_utils import is_fullscreen_toggle, normalize_mouse_pos
 from background_effects import get_shared_falling_blocks_layer
 from localization import t
+from ui_scaling import (
+    get_projected_effective_scale,
+    get_virtual_canvas_ui_scale,
+    is_virtual_canvas_active,
+    scale_px,
+)
+from ui_text_layout import wrap_text_limited
 
 
 class GameplaySettingsMenu:
@@ -23,12 +30,12 @@ class GameplaySettingsMenu:
         # Arka plan efektleri (ayar ekranları ile tutarlı düşen bloklar)
         self.background_fx = get_shared_falling_blocks_layer('default')
         
-        # Fontlar (retro_style ile uyumlu)
-        self.font_title = retro_style.get_font(48)
-        self.font_option = retro_style.get_font(28)
-        self.font_value = retro_style.get_font(24, bold=False)
-        self.font_hint = retro_style.get_font(20, bold=False)
-        self.font_small = retro_style.get_font(18, bold=False)
+        # Fontlar (retro_style ile uyumlu) — ortak UI ölçeğine duyarlı (P1-9):
+        # taban boyut × ölçek; retro_style.get_font LRU'su aynı boyuta aynı
+        # Font nesnesini döndürür (kare-başı tahsis yok).
+        self._font_scale = None
+        self._font_small_size = 18
+        self._refresh_fonts_if_needed()
         
         # Mevcut ayarları yükle
         self.das_delay = settings_manager.get('das_delay', 170)
@@ -45,6 +52,7 @@ class GameplaySettingsMenu:
         
         self.selected = 0
         self.option_rects = []
+        self.desc_rects = []
         self.scroll_offset = 0
 
     @property
@@ -65,17 +73,108 @@ class GameplaySettingsMenu:
             })
         return result
 
+    def _ui_scale(self, min_scale: float = 0.72, max_scale: float = 1.24) -> float:
+        """Ortak UI ölçeği (graphics_menu ile aynı profil: 1366x768 referans).
+
+        P1-9: ölçek kaynağı get_projected_effective_scale — komşu ayar
+        ekranları hangi profille kullanıyorsa bu ekran da aynı ölçeği alır;
+        sanal tuval aktifken tuval ölçeği doğrudan döner.
+        """
+        _vc = get_virtual_canvas_ui_scale()
+        if _vc is not None:
+            return _vc
+        return get_projected_effective_scale(
+            self.screen,
+            min_scale=min_scale,
+            max_scale=max_scale,
+            reference_size=(1366.0, 768.0),
+        )
+
+    def _s(self, value, minimum=1, *, scale=None):
+        """Değeri ortak UI ölçeğiyle piksele çevir (taban: minimum)."""
+        if is_virtual_canvas_active():
+            return max(minimum, int(round(float(value))))
+        active_scale = self._ui_scale() if scale is None else float(scale)
+        return scale_px(value, active_scale, minimum=minimum)
+
+    def _refresh_fonts_if_needed(self):
+        """Ortak UI ölçeği değiştiyse (pencere boyutu/preset) fontları tazele.
+
+        retro_style.get_font LRU'su aynı boyuta aynı Font nesnesini verir;
+        ölçek değişmedikçe bu çağrı tahsis üretmez.
+        """
+        scale = self._ui_scale()
+        if getattr(self, '_font_scale', None) == scale:
+            return
+        self._font_scale = scale
+        self._font_small_size = self._s(18, minimum=11, scale=scale)
+        self.font_title = retro_style.get_font(self._s(48, minimum=30, scale=scale))
+        self.font_option = retro_style.get_font(self._s(28, minimum=18, scale=scale))
+        self.font_value = retro_style.get_font(self._s(24, minimum=16, scale=scale), bold=False)
+        self.font_hint = retro_style.get_font(self._s(20, minimum=13, scale=scale), bold=False)
+        self.font_small = retro_style.get_font(self._font_small_size, bold=False)
+
     def _layout_metrics(self):
         width, height = self.screen.get_size()
-        card_width = min(620, width - 120)
-        card_height = 74
-        spacing = 82
+        scale = self._ui_scale()
+        # P1-9: taban (620/74/82) × ölçek, okunabilirlik tabanlarıyla;
+        # genişlik bütçesi ekran kenar payını da ölçekler.
+        card_width = min(
+            self._s(620, minimum=420, scale=scale),
+            width - self._s(120, minimum=60, scale=scale),
+        )
+        card_height = self._s(74, minimum=56, scale=scale)
+        spacing = self._s(82, minimum=62, scale=scale)
         return card_width, card_height, spacing
+
+    def _selected_desc_lines(self, rect):
+        """Seçili ayarın açıklamasını kart içi bütçeye sığdır (ölç-önce).
+
+        Sözleşme (P1-9): satır bütçesi = kart iç yüksekliği - başlık bandı
+        (tek satır şerit); genişlik bütçesi = kart iç genişliği - pad.
+        wrap_text_limited önce sarmaya çalışır, sığmazsa ASCII '...' ile
+        kısaltır (emoji yasak - CLAUDE.md).
+        """
+        if self.selected >= len(self.settings):
+            return []
+        desc = self.settings[self.selected].get('desc') or ''
+        if not desc:
+            return []
+        pad_x = self._s(20, minimum=14)
+        max_w = max(8, rect.width - 2 * pad_x)
+        return wrap_text_limited(desc, self.font_small, max_w, max_lines=1).lines
+
+    def _draw_selected_desc(self, rect):
+        """Seçili ayarın açıklamasını kart içi alt şerite çiz (P1-9).
+
+        Şerit, draw_setting_row'un dikey ortalanmış başlık bandının ALTINDA
+        başlar ve kartın alt kenarını aşmaz. Render retro_style.render_fit_text
+        LRU önbelleğinden (kare-başı Surface tahsisi yok); ölçüm
+        wrap_text_limited önbelleğinden.
+        """
+        lines = self._selected_desc_lines(rect)
+        text = lines[0] if lines else ''
+        if not text:
+            return None
+        line_h = self.font_small.get_height()
+        label_band_h = retro_style.get_font(26, bold=True).get_height()
+        label_bottom = rect.y + (rect.height + label_band_h) // 2
+        inset = self._s(6, minimum=4)
+        # Öncelik: (a) kart alt kenarını aşma, (b) başlık bandının altında
+        # başla, (c) kart üst kenarının üstüne çıkma (aşırı küçük kart).
+        top = max(rect.y, min(max(label_bottom + 1, rect.bottom - inset - line_h), rect.bottom - line_h))
+        desc_rect = pygame.Rect(rect.x + self._s(20, minimum=14), top, max(1, rect.width - 2 * self._s(20, minimum=14)), line_h)
+        surf = retro_style.render_fit_text(
+            text, (180, 190, 210), None, self._font_small_size, bold=False,
+        )
+        self.screen.blit(surf, surf.get_rect(midleft=(desc_rect.x, desc_rect.centery)))
+        return desc_rect
 
     def _max_scroll(self, title_rect_bottom: int, height: int) -> int:
         _, _, spacing = self._layout_metrics()
-        top_padding = 40
-        bottom_limit = 160
+        # P1-9: dikey dolgu/alt kesit sabitleri de ortak ölçekle.
+        top_padding = self._s(40, minimum=28)
+        bottom_limit = self._s(160, minimum=120)
         visible_h = max(0, (height - bottom_limit) - (title_rect_bottom + top_padding))
         total_h = (len(self.settings) + 1) * spacing
         return max(0, total_h - max(visible_h, 0))
@@ -143,8 +242,12 @@ class GameplaySettingsMenu:
         """Seçili satırı görünür bölgede tut."""
         _, card_height, spacing = self._layout_metrics()
         height = self.screen.get_height()
+        # Başlık (draw_title) ölçeklenmez → sabit yaklaşık alt kenar.
         title_rect_bottom = 70 + 48
-        visible_height = max(1, (height - 160) - (title_rect_bottom + 40))
+        visible_height = max(
+            1,
+            (height - self._s(160, minimum=120)) - (title_rect_bottom + self._s(40, minimum=28)),
+        )
 
         item_y = self.selected * spacing
         if item_y < self.scroll_offset:
@@ -183,7 +286,7 @@ class GameplaySettingsMenu:
         
         elif event.type == pygame.MOUSEWHEEL:
             # Clamp based on current viewport
-            self.scroll_offset -= event.y * 30
+            self.scroll_offset -= event.y * self._s(30, minimum=18)
             width, height = self.screen.get_size()
             # Approximate title bottom (fixed title position)
             max_scroll = self._max_scroll(70 + 48, height)
@@ -224,19 +327,22 @@ class GameplaySettingsMenu:
         self.background_fx.update(self.screen)
         self.background_fx.draw(self.screen)
         
-        # Başlık
-        title_rect = retro_style.draw_title(self.screen, t('gameplay_settings'), (width // 2, 70), emoji='🎮')
+        # Başlık (P1-9: ölü emoji argümanı kaldırıldı — draw_title zaten
+        # yok sayıyordu; CLAUDE.md emoji yasağı)
+        title_rect = retro_style.draw_title(self.screen, t('gameplay_settings'), (width // 2, 70))
         
         # Ayar kartları
         self.option_rects = []
+        self.desc_rects = []
+        self._refresh_fonts_if_needed()
         card_width, card_height, spacing = self._layout_metrics()
-        start_y = title_rect.bottom + 40 - self.scroll_offset
+        start_y = title_rect.bottom + self._s(40, minimum=28) - self.scroll_offset
         
         for i, setting in enumerate(self.settings):
             y_pos = start_y + i * spacing
             
             # Ekran dışındaysa çizme
-            if y_pos < title_rect.bottom + 10 or y_pos > height - 160:
+            if y_pos < title_rect.bottom + self._s(10, minimum=8) or y_pos > height - self._s(160, minimum=120):
                 self.option_rects.append(pygame.Rect(0, 0, 0, 0))
                 continue
             
@@ -265,15 +371,17 @@ class GameplaySettingsMenu:
                 kind='toggle' if setting.get('type') == 'toggle' else 'selector',
             )
             
-            # Açıklama (alt satır) - dinamik çeviri ile
+            # Açıklama (seçili kartta kart içi alt şerit) - dinamik çeviri ile
+            # P1-9: kart içi bütçe (wrap + ASCII ellipsis), ölçüm ve render
+            # önbellekli; konum başlık bandının altında, kart sınırında.
             if is_selected:
-                desc_surf = self.font_small.render(setting['desc'], True, (180, 190, 210))
-                desc_rect = desc_surf.get_rect(midleft=(rect.x + 20, rect.bottom + 12))
-                self.screen.blit(desc_surf, desc_rect)
+                desc_rect = self._draw_selected_desc(rect)
+                if desc_rect is not None:
+                    self.desc_rects.append(desc_rect)
         
         # Geri butonu
         geri_y = start_y + len(self.settings) * spacing
-        if geri_y >= title_rect.bottom + 10 and geri_y <= height - 160:
+        if geri_y >= title_rect.bottom + self._s(10, minimum=8) and geri_y <= height - self._s(160, minimum=120):
             geri_rect = pygame.Rect(width // 2 - card_width // 2, geri_y, card_width, card_height)
             self.option_rects.append(geri_rect)
             
