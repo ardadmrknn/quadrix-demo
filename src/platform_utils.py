@@ -1464,7 +1464,7 @@ def create_display(
     resizable: bool = True,
     borderless: bool = False,
 ):
-    """Create a pygame display locked to always-fullscreen mode."""
+    """Create a pygame display honoring the requested fullscreen/windowed mode."""
     # ── TEK PENCERE GARANTİSİ: Overlay backend aktifse set_mode'a HİÇ DOKUNMA ──
     # SDL2 overlay (veya gl_compat) aktifse asıl görünür pencere ayrı bir
     # _sdl2.Window'dur; ilk set_mode penceresi 1x1 + HIDDEN'a küçültülmüştür.
