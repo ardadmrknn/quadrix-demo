@@ -4893,7 +4893,7 @@ class PvPGame:
             pulse = abs((self.p1_firework_time % 20) - 10) / 10.0
             color_intensity = int(155 + 100 * pulse)
             
-            msg = f"{self.p1_last_milestone:,} 🎆".replace(',', '.')
+            msg = f"{self.p1_last_milestone:,}".replace(',', '.')
             msg_surf = self.font_large.render(msg, True, (0, color_intensity, 255))
             
             # Oyuncu 1'in alanı üzerinde
@@ -4911,7 +4911,7 @@ class PvPGame:
             pulse = abs((self.p2_firework_time % 20) - 10) / 10.0
             color_intensity = int(155 + 100 * pulse)
             
-            msg = f"{self.p2_last_milestone:,} 🎆".replace(',', '.')
+            msg = f"{self.p2_last_milestone:,}".replace(',', '.')
             msg_surf = self.font_large.render(msg, True, (255, 0, color_intensity))
             
             # Oyuncu 2'nin alanı üzerinde
