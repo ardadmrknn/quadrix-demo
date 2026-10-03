@@ -1,0 +1,104 @@
+"Action Manifest"
+{
+    "major_revision" "1"
+    "minor_revision" "0"
+    "major_revision_affects_xinput" "0"
+    "major_revision_affects_mousekb" "0"
+    "configurations"
+    {
+        "controller_xboxone" { "0" { "path" "quadrix_xbox.vdf" } }
+        "controller_xbox360" { "0" { "path" "quadrix_xbox360.vdf" } }
+        "controller_generic" { "0" { "path" "quadrix_generic.vdf" } }
+        "controller_ps3" { "0" { "path" "quadrix_ps3.vdf" } }
+        "controller_ps4" { "0" { "path" "quadrix_ps4.vdf" } }
+        "controller_ps5" { "0" { "path" "quadrix_ps5.vdf" } }
+        "controller_switch_pro" { "0" { "path" "quadrix_switch_pro.vdf" } }
+        "controller_switch_joycon_left" { "0" { "path" "quadrix_joycon_left.vdf" } }
+        "controller_switch_joycon_right" { "0" { "path" "quadrix_joycon_right.vdf" } }
+        "controller_neptune" { "0" { "path" "quadrix_steam_deck.vdf" } }
+        "controller_steamcontroller_gordon" { "0" { "path" "quadrix_steam_controller.vdf" } }
+    }
+    "actions"
+    {
+        "gameplay"
+        {
+            "title" "#Gameplay"
+            "legacy_set" "0"
+            "StickPadGyro"
+            {
+                "left_stick" { "title" "#LeftStick" "input_mode" "joystick_move" }
+                "right_stick" { "title" "#RightStick" "input_mode" "joystick_move" }
+            }
+            "Button"
+            {
+                "a" "#A"
+                "b" "#B"
+                "x" "#X"
+                "y" "#Y"
+                "back" "#Back"
+                "start" "#Start"
+                "left_stick_click" "#LeftStickClick"
+                "right_stick_click" "#RightStickClick"
+                "left_shoulder" "#LeftShoulder"
+                "right_shoulder" "#RightShoulder"
+                "dpad_up" "#DpadUp"
+                "dpad_down" "#DpadDown"
+                "dpad_left" "#DpadLeft"
+                "dpad_right" "#DpadRight"
+                "left_trigger" "#LeftTrigger"
+                "right_trigger" "#RightTrigger"
+            }
+        }
+    }
+    "localization"
+    {
+        "english"
+        {
+            "title" "Quadrix Gamepad"
+            "description" "Native Quadrix controller actions"
+            "Gameplay" "Gameplay"
+            "LeftStick" "Left Stick"
+            "RightStick" "Right Stick"
+            "A" "A"
+            "B" "B"
+            "X" "X"
+            "Y" "Y"
+            "Back" "Back"
+            "Start" "Start"
+            "LeftStickClick" "Left Stick Click"
+            "RightStickClick" "Right Stick Click"
+            "LeftShoulder" "Left Shoulder"
+            "RightShoulder" "Right Shoulder"
+            "DpadUp" "D-Pad Up"
+            "DpadDown" "D-Pad Down"
+            "DpadLeft" "D-Pad Left"
+            "DpadRight" "D-Pad Right"
+            "LeftTrigger" "Left Trigger"
+            "RightTrigger" "Right Trigger"
+        }
+        "turkish"
+        {
+            "title" "Quadrix Oyun Kumandası"
+            "description" "Quadrix yerel kontrolcü eylemleri"
+            "Gameplay" "Oynanış"
+            "LeftStick" "Sol Çubuk"
+            "RightStick" "Sağ Çubuk"
+            "A" "A"
+            "B" "B"
+            "X" "X"
+            "Y" "Y"
+            "Back" "Geri"
+            "Start" "Başlat"
+            "LeftStickClick" "Sol Çubuk Tıklama"
+            "RightStickClick" "Sağ Çubuk Tıklama"
+            "LeftShoulder" "Sol Omuz"
+            "RightShoulder" "Sağ Omuz"
+            "DpadUp" "Yön Tuşu Yukarı"
+            "DpadDown" "Yön Tuşu Aşağı"
+            "DpadLeft" "Yön Tuşu Sol"
+            "DpadRight" "Yön Tuşu Sağ"
+            "LeftTrigger" "Sol Tetik"
+            "RightTrigger" "Sağ Tetik"
+        }
+    }
+}

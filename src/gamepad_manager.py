@@ -14,8 +14,10 @@ Desteklenen kontrolcüler:
 import copy
 import math
 import sys
+import threading
 
 import pygame
+from collections import deque
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 from platform_utils import IS_WINDOWS, get_mouse_pos as _gmp
@@ -91,6 +93,168 @@ WINDOWS_XINPUT_RAW_BUTTON_TO_CANONICAL = {
     9: CONTROLLER_BUTTON_RIGHTSTICK,
     10: CONTROLLER_BUTTON_GUIDE,
 }
+
+# GP-006: Steam Input action snapshot buton adları → canonical SDL buton
+# indeksleri. _SteamInputJoystick bu harita üzerinden get_button() sağlar.
+_STEAM_INPUT_BUTTON_INDEX = {
+    "a": CONTROLLER_BUTTON_A,
+    "b": CONTROLLER_BUTTON_B,
+    "x": CONTROLLER_BUTTON_X,
+    "y": CONTROLLER_BUTTON_Y,
+    "back": CONTROLLER_BUTTON_BACK,
+    "start": CONTROLLER_BUTTON_START,
+    "left_stick_click": CONTROLLER_BUTTON_LEFTSTICK,
+    "right_stick_click": CONTROLLER_BUTTON_RIGHTSTICK,
+    "left_shoulder": CONTROLLER_BUTTON_LEFTSHOULDER,
+    "right_shoulder": CONTROLLER_BUTTON_RIGHTSHOULDER,
+    "dpad_up": CONTROLLER_BUTTON_DPAD_UP,
+    "dpad_down": CONTROLLER_BUTTON_DPAD_DOWN,
+    "dpad_left": CONTROLLER_BUTTON_DPAD_LEFT,
+    "dpad_right": CONTROLLER_BUTTON_DPAD_RIGHT,
+}
+
+
+class _SteamInputJoystick:
+    """Steam Input action snapshot'ını pygame Joystick arayüzüne uyarlar."""
+
+    def __init__(self, snapshot: dict, instance_id: int):
+        self.instance_id = int(instance_id)
+        self._initialized = True
+        self._snapshot: dict = {}
+        self._rumble_lock = threading.Lock()
+        self._rumble_timer: Optional[threading.Timer] = None
+        self._rumble_generation = 0
+        self.update_snapshot(snapshot)
+
+    def update_snapshot(self, snapshot: dict) -> None:
+        self._snapshot = dict(snapshot or {})
+        self._initialized = True
+
+    def get_init(self) -> bool:
+        return self._initialized
+
+    def init(self) -> None:
+        self._initialized = True
+
+    def quit(self) -> None:
+        self.stop_rumble()
+        self._initialized = False
+
+    def get_name(self) -> str:
+        input_type = int(self._snapshot.get("input_type", 0) or 0)
+        if input_type in (5, 12, 13):
+            return "Steam Input PlayStation Controller"
+        if input_type in (8, 9, 10):
+            return "Steam Input Nintendo Controller"
+        if input_type == 14:
+            return "Steam Input Steam Deck Controller"
+        if input_type == 1:
+            return "Steam Input Steam Controller"
+        if input_type in (2, 3, 4):
+            return "Steam Input Xbox Controller"
+        return "Steam Input Gamepad"
+
+    def get_guid(self) -> str:
+        return f"steaminput{int(self._snapshot.get('handle', 0) or 0):016x}"
+
+    def get_instance_id(self) -> int:
+        return self.instance_id
+
+    def get_id(self) -> int:
+        return self.instance_id
+
+    def get_numbuttons(self) -> int:
+        return 15
+
+    def get_button(self, index: int) -> int:
+        buttons = self._snapshot.get("buttons", {}) or {}
+        for name, canonical_index in _STEAM_INPUT_BUTTON_INDEX.items():
+            if canonical_index == int(index):
+                return int(bool(buttons.get(name, False)))
+        return 0
+
+    def get_numaxes(self) -> int:
+        return 6
+
+    def get_axis(self, index: int) -> float:
+        buttons = self._snapshot.get("buttons", {}) or {}
+        axes = self._snapshot.get("axes", {}) or {}
+        left_x, left_y = axes.get("left_stick", (0.0, 0.0))
+        right_x, right_y = axes.get("right_stick", (0.0, 0.0))
+        # Steam Input joystick_move Y ekseni yukarıyı pozitif verir; SDL/
+        # pygame joystick eksenlerinde ise aşağı pozitiftir. Adapter dışarıya
+        # SDL canonical yönü vermelidir, aksi halde özellikle sağ stick ile
+        # imleç dikey yönde ters hareket eder.
+        values = (
+            float(left_x), -float(left_y), float(right_x), -float(right_y),
+            1.0 if buttons.get("left_trigger", False) else -1.0,
+            1.0 if buttons.get("right_trigger", False) else -1.0,
+        )
+        return values[int(index)] if 0 <= int(index) < len(values) else 0.0
+
+    def get_numhats(self) -> int:
+        return 0
+
+    def rumble(self, low_frequency=0.0, high_frequency=0.0, duration=0) -> bool:
+        """Steam titreşimini başlat ve pygame'in süre sözleşmesine göre durdur."""
+        try:
+            duration_ms = max(0, int(duration))
+        except Exception:
+            duration_ms = 0
+        try:
+            import steam_integration
+            handle = int(self._snapshot.get("handle", 0) or 0)
+            with self._rumble_lock:
+                self._rumble_generation += 1
+                generation = self._rumble_generation
+                previous_timer = self._rumble_timer
+                self._rumble_timer = None
+                if previous_timer is not None:
+                    previous_timer.cancel()
+                started = bool(steam_integration.trigger_steam_input_vibration(
+                    handle, float(low_frequency), float(high_frequency)
+                ))
+                if started and duration_ms > 0:
+                    timer = threading.Timer(
+                        duration_ms / 1000.0,
+                        self._stop_rumble_generation,
+                        args=(generation, handle),
+                    )
+                    timer.daemon = True
+                    self._rumble_timer = timer
+                    timer.start()
+                return started
+        except Exception:
+            return False
+
+    def _stop_rumble_generation(self, generation: int, handle: int) -> None:
+        """Yalnızca hâlâ güncel olan titreşim çağrısını durdur."""
+        try:
+            import steam_integration
+            # Kontrol ile stop aynı kilit altında kalmalı. Aksi halde bu timer
+            # doğrulamadan hemen sonra yeni rumble başlayabilir ve eski timer
+            # yeni titreşimi yanlışlıkla durdurabilir.
+            with self._rumble_lock:
+                if generation != self._rumble_generation:
+                    return
+                self._rumble_timer = None
+                steam_integration.trigger_steam_input_vibration(handle, 0.0, 0.0)
+        except Exception:
+            pass
+
+    def stop_rumble(self) -> None:
+        try:
+            import steam_integration
+            handle = int(self._snapshot.get("handle", 0) or 0)
+            with self._rumble_lock:
+                self._rumble_generation += 1
+                timer = self._rumble_timer
+                self._rumble_timer = None
+                if timer is not None:
+                    timer.cancel()
+            steam_integration.trigger_steam_input_vibration(handle, 0.0, 0.0)
+        except Exception:
+            pass
 
 # Xbox / PlayStation / Nintendo buton indeksleri (SDL GameController layout)
 # SDL GameController standardında butonlar:
@@ -318,6 +482,11 @@ class GamepadManager:
     DEADZONE = 0.35
     # Stick'ten dijital yön tetikleme eşiği
     DIGITAL_THRESHOLD = 0.6
+    # GP-007: dijitalleşme hysteresis çıkış eşiği. Yön girişi
+    # DIGITAL_THRESHOLD ile olur; geri dönüş ancak değerin bu eşiğin
+    # altına inmesiyle kesilir. Eşik bandındaki küçük salınımlar
+    # KEYDOWN/KEYUP spam'i üretmez.
+    STICK_RELEASE_THRESHOLD = 0.35
     # DAS benzeri tekrar: ilk bekleme ve tekrar aralığı (ms)
     STICK_INITIAL_DELAY = 300   # İlk hareket sonrası bekleme
     STICK_REPEAT_INTERVAL = 120  # Tekrar hızı
@@ -383,8 +552,18 @@ class GamepadManager:
         self._last_gamepad_input_time: int = 0
         self._internal_time: float = 0.0
 
+        # GP-006: Steam Input fallback cihazlarının capture kenar kuyruğu.
+        # Steam Input sanal gamepad'leri SDL'ye GÖRÜNMEZ; raw
+        # JOYBUTTONDOWN/UP ve CONTROLLERAXISMOTION üretilmez. Ayarlar
+        # ekranındaki binding capture'ı bu yüzden bu cihazların
+        # buton/trigger geçişlerini buradan okur. SDL cihazları raw event
+        # ürettiği için kuyruğa YAZILMAZ (çift kayıt engellenir). Sınırlı
+        # ring-buffer tavanı (64) kare başına bellek disiplinini korur.
+        self._capture_edges: deque = deque(maxlen=64)
+
         # İlk tarama
         self._scan_gamepads()
+        self._sync_steam_input_gamepads()
 
     def get_last_input_time(self) -> int:
         """Son aktif gamepad girdisi zamanını milisaniye cinsinden döndürür."""
@@ -544,6 +723,81 @@ class GamepadManager:
             elif val == 101 and 'right' not in dirs:
                 dirs.append('right')
         return dirs
+
+    def _sync_steam_input_gamepads(self) -> None:
+        """SDL cihazı yoksa Steam Input action cihazlarını fallback olarak kaydet."""
+        try:
+            sdl_count = int(pygame.joystick.get_count())
+        except Exception:
+            sdl_count = 0
+
+        steam_keys = [
+            key for key, gp in self.gamepads.items()
+            if isinstance(getattr(gp, 'joystick', None), _SteamInputJoystick)
+        ]
+        if sdl_count > 0:
+            for key in steam_keys:
+                try:
+                    self.gamepads[key].joystick.quit()
+                except Exception:
+                    pass
+                self.gamepads.pop(key, None)
+            # GP-006: SDL cihazı geldiğinde Steam fallback kapanır; kopan
+            # Steam cihazlarının bekleyen capture kenarlarını da at.
+            if steam_keys:
+                self._purge_capture_edges_for_devices(steam_keys)
+            return
+
+        try:
+            import steam_integration
+            snapshots = steam_integration.get_steam_input_snapshots()
+        except Exception:
+            snapshots = []
+
+        live_keys: set[int] = set()
+        for snapshot in snapshots:
+            handle = int(snapshot.get("handle", 0) or 0)
+            if not handle:
+                continue
+            # Steam InputHandle_t 64 bittir; tamamını korumak çoklu cihazlarda
+            # alt 31 bit çakışması nedeniyle yanlış state paylaşımını engeller.
+            key = -1000000 - handle
+            live_keys.add(key)
+            existing = self.gamepads.get(key)
+            if existing is not None and isinstance(existing.joystick, _SteamInputJoystick):
+                existing.joystick.update_snapshot(snapshot)
+                existing.name = existing.joystick.get_name()
+                existing.gamepad_type = self._detect_type(existing.joystick)
+                continue
+
+            joystick = _SteamInputJoystick(snapshot, key)
+            gp_type = self._detect_type(joystick)
+            state = GamepadState(
+                joystick=joystick,
+                controller=joystick,
+                gamepad_type=gp_type,
+                name=joystick.get_name(),
+                guid=joystick.get_guid(),
+                instance_id=key,
+                device_index=key,
+            )
+            self.gamepads[key] = state
+            print(f"[Steam Input] gamepad bağlandı: {state.name} [{gp_type}] (ID: {key})")
+
+        removed_keys: List[int] = []
+        for key in steam_keys:
+            if key not in live_keys:
+                gp = self.gamepads.pop(key, None)
+                if gp is not None:
+                    try:
+                        gp.joystick.quit()
+                    except Exception:
+                        pass
+                    print(f"[Steam Input] gamepad koptu: {gp.name} (ID: {key})")
+                removed_keys.append(key)
+        # GP-006: kopan cihazın bekleyen capture kenarlarını kuyruktan at.
+        if removed_keys:
+            self._purge_capture_edges_for_devices(removed_keys)
 
     def _scan_gamepads(self) -> None:
         """Bağlı gamepad'leri de-duplication mantığıyla tara ve kaydet"""
@@ -981,16 +1235,17 @@ class GamepadManager:
         if direction == 'right' and dx == 1:
             return True
 
-        # Sol stick kontrolü: sadece menü/UI'da; oyun içinde D-pad yeterli
-        if self._context != self.CONTEXT_GAME:
-            if direction == 'down' and gp.left_stick.digital_y == 1:
-                return True
-            if direction == 'up' and gp.left_stick.digital_y == -1:
-                return True
-            if direction == 'left' and gp.left_stick.digital_x == -1:
-                return True
-            if direction == 'right' and gp.left_stick.digital_x == 1:
-                return True
+        # Sol stick kontrolü (GP-007 Politika 1): D-pad ile aynı canonical
+        # sözleşme — oyun bağlamında da geçerli. game.py soft drop polling'i
+        # stick aşağıyı da sayar. Bastırılmış yönler yukarıda elendi.
+        if direction == 'down' and gp.left_stick.digital_y == 1:
+            return True
+        if direction == 'up' and gp.left_stick.digital_y == -1:
+            return True
+        if direction == 'left' and gp.left_stick.digital_x == -1:
+            return True
+        if direction == 'right' and gp.left_stick.digital_x == 1:
+            return True
 
         return False
 
@@ -1030,6 +1285,32 @@ class GamepadManager:
             if gp.buttons.get(btn, False):
                 return True
 
+        return False
+
+    def is_capture_input_held(self, signature: tuple) -> bool:
+        """Capture hold-to-clear: imzaya karşılık gelen girdi hâlâ basılı mı?
+
+        İmzalar settings_screen_tabbed capture akışıyla aynı formatta:
+        - ('key', keycode): gerçek klavye tuşu (pygame.key.get_pressed).
+        - ('btn', canonical_button_index): herhangi bir bağlı gamepad'in
+          CANONICAL buton indeksi. SDL raw joystick indeksi KULLANILMAZ:
+          capture imzası canonical'dır; raw okuma cihaza göre kayar ve
+          hold-to-clear kontrolünü yanıltır (GP-005). Cihaz bağlı
+          değilse (disconnect) False döner.
+        """
+        try:
+            kind = signature[0] if len(signature) > 0 else None
+            value = signature[1] if len(signature) > 1 else None
+            if kind == 'key' and isinstance(value, int):
+                pressed = pygame.key.get_pressed()
+                return bool(pressed[value]) if 0 <= value < len(pressed) else False
+            if kind == 'btn' and isinstance(value, int):
+                for gp in list(self.gamepads.values()):
+                    if getattr(gp, 'connected', True) and gp.buttons.get(int(value), False):
+                        return True
+                return False
+        except Exception:
+            return False
         return False
 
     def was_action_just_pressed(self, action: str) -> bool:
@@ -1218,7 +1499,9 @@ class GamepadManager:
 
         synthetic: List[pygame.event.Event] = []
 
-        # Bağlantı/kopma kontrolü
+        # Bağlantı/kopma kontrolü. Steam Input açıkken SDL'ye görünmeyen
+        # sanal cihazlar action snapshot yolundan fallback olarak kaydedilir.
+        self._sync_steam_input_gamepads()
         self._check_connections()
 
         for gp_id, gp in list(self.gamepads.items()):
@@ -1331,9 +1614,18 @@ class GamepadManager:
                 gp.buttons[13] = (dpad_x == -1)
                 gp.buttons[14] = (dpad_x == 1)
 
-                # Dijital yön hesapla (analog stick → dijital)
-                gp.left_stick.digital_x = self._to_digital(gp.left_stick.x)
-                gp.left_stick.digital_y = self._to_digital(gp.left_stick.y)
+                # Dijital yön hesapla (analog stick → dijital).
+                # GP-007: hysteresis için önceki dijital değer geçilir
+                # (bu noktada digital_* hâlâ önceki frame'in değerini tutar).
+                gp.left_stick.digital_x = self._to_digital(gp.left_stick.x, gp.left_stick.digital_x)
+                gp.left_stick.digital_y = self._to_digital(gp.left_stick.y, gp.left_stick.digital_y)
+
+                # GP-006: Steam Input fallback cihazının buton/trigger
+                # geçişlerini capture kenar kuyruğuna yaz. Bu çağrı,
+                # trigger prev_* alanları hâlâ eski değerleri tutarken
+                # (yani _generate_trigger_events bunları güncellemeden
+                # önce) çalışmalıdır.
+                self._record_capture_edges(gp)
 
                 # Olayları üret
                 synthetic.extend(self._generate_button_events(gp))
@@ -1389,6 +1681,83 @@ class GamepadManager:
             return filtered_synthetic
 
         return synthetic
+
+    # ------------------------------------------------------------------
+    # GP-006: Steam Input fallback capture kenar kuyruğu
+    # ------------------------------------------------------------------
+
+    def _record_capture_edges(self, gp) -> None:
+        """Steam Input fallback cihazının buton/trigger geçişlerini kenar
+        kuyruğuna yazar.
+
+        Yalnızca _SteamInputJoystick cihazları kaydedilir: SDL cihazları
+        zaten raw pygame event'i (JOYBUTTONDOWN/UP, CONTROLLERAXISMOTION)
+        üretir; kuyruğa yazılmaları çift sinyale yol açardı.
+
+        Kenar biçimi: (device_key, canonical_index, pressed, timestamp_ms)
+        - device_key: Steam cihaz anahtarı (gp.instance_id; negatif handle)
+        - canonical_index: 0-14 buton (11-14 D-pad senkronu dahil),
+          100=LT, 101=RT pseudo-indeksleri
+        - pressed: True basış, False bırakış
+        """
+        if not isinstance(getattr(gp, 'joystick', None), _SteamInputJoystick):
+            return
+        try:
+            device_key = gp.instance_id if gp.instance_id is not None else gp.device_index
+            timestamp_ms = int(self._internal_time)
+
+            # Buton geçişleri (canonical indeksler; 11-14 D-pad senkronu dahil)
+            prev_buttons = gp.prev_buttons or {}
+            all_indices = set(prev_buttons.keys()) | set(gp.buttons.keys())
+            for idx in all_indices:
+                try:
+                    idx_int = int(idx)
+                except (TypeError, ValueError):
+                    continue
+                was = bool(prev_buttons.get(idx_int, False))
+                now = bool(gp.buttons.get(idx_int, False))
+                if was != now:
+                    self._capture_edges.append((device_key, idx_int, now, timestamp_ms))
+
+            # Trigger geçişleri (pseudo-indeks 100=LT, 101=RT)
+            lt_now = gp.left_trigger >= self.TRIGGER_THRESHOLD
+            if bool(gp.prev_left_trigger_pressed) != lt_now:
+                self._capture_edges.append((device_key, 100, lt_now, timestamp_ms))
+            rt_now = gp.right_trigger >= self.TRIGGER_THRESHOLD
+            if bool(gp.prev_right_trigger_pressed) != rt_now:
+                self._capture_edges.append((device_key, 101, rt_now, timestamp_ms))
+        except Exception:
+            pass
+
+    def consume_capture_edges(self) -> List[tuple]:
+        """Capture kenar kuyruğunu döndürür VE temizler.
+
+        Ayarlar ekranındaki binding capture'ı, Steam Input cihazlarının
+        görünmez girdilerini bu API üzerinden sentetik controller
+        event'lerine çevirip mevcut capture akışından geçirir. Kuyruk
+        boşken tahsis yapılmaz (kare başına bellek disiplini).
+        """
+        if not hasattr(self, '_capture_edges'):
+            self._capture_edges = deque(maxlen=64)
+            return []
+        if not self._capture_edges:
+            return []
+        edges = list(self._capture_edges)
+        self._capture_edges.clear()
+        return edges
+
+    def _purge_capture_edges_for_devices(self, device_keys) -> None:
+        """Kopan Steam Input cihazlarına ait bekleyen capture kenarlarını
+        kuyruktan atar (ölü cihaz kenarlarının capture'ı beslemesini önler)."""
+        try:
+            if not self._capture_edges or not device_keys:
+                return
+            stale = set(device_keys)
+            remaining = [e for e in self._capture_edges if e[0] not in stale]
+            self._capture_edges.clear()
+            self._capture_edges.extend(remaining)
+        except Exception:
+            pass
 
     def _check_connections(self) -> None:
         """Yeni bağlanan/kopan gamepad'leri kontrol et"""
@@ -1555,12 +1924,21 @@ class GamepadManager:
         normalized = (abs(value) - self.DEADZONE) / (1.0 - self.DEADZONE)
         return sign * min(1.0, normalized)
 
-    def _to_digital(self, value: float) -> int:
-        """Analog değeri dijital yöne çevir (-1, 0, +1)"""
+    def _to_digital(self, value: float, prev_digital: int = 0) -> int:
+        """Analog değeri dijital yöne çevir (-1, 0, +1).
+
+        GP-007 hysteresis: yön girişi DIGITAL_THRESHOLD ile yapılır,
+        çıkışı STICK_RELEASE_THRESHOLD'ın altına inmek keser. Eşik
+        bandındaki salınımlar yönü KORUR — event spam önlenir.
+        """
         if value < -self.DIGITAL_THRESHOLD:
             return -1
         if value > self.DIGITAL_THRESHOLD:
             return +1
+        if prev_digital == -1 and value <= -self.STICK_RELEASE_THRESHOLD:
+            return -1
+        if prev_digital == 1 and value >= self.STICK_RELEASE_THRESHOLD:
+            return 1
         return 0
 
     def _buttons_to_dpad(self, gp: GamepadState) -> tuple[int, int]:
@@ -2231,70 +2609,88 @@ class GamepadManager:
     # ─── Analog Stick Olayları ──────────────────────────────────────────────
 
     def _generate_stick_events(self, gp: GamepadState, delta_ms: float) -> List[pygame.event.Event]:
-        """Analog stick'i dijital yöne çevirip DAS benzeri tekrar ile olay üret.
+        """Analog stick'i dijital yöne çevirip olay üret.
 
-        Oyun içinde sol stick devre dışıdır — blok hareketi yalnızca D-pad ile.
-        Menü/UI ekranlarında sol stick navigasyon için kullanılır.
+        GP-007 (ÜRÜN KARARI — Politika 1, analog destekli): oyun
+        bağlamında sol stick, D-pad ile AYNI canonical sözleşmeyle yön
+        girdisi üretir: yalnızca KENAR olayları (sapma → KEYDOWN,
+        bırakış → KEYUP) ve oyun aksiyon adları (move_left/move_right/
+        soft_drop/rotate). Menü tipi DAS/tekrar pulse'ları oyun
+        bağlamına TAŞINMAZ: oyunun kendi DAS/ARR'i bu edge'leri tüketen
+        mevcut akıştadır; sentetik tekrar pulse'u eklemek DAS'ı çift
+        tetikler. Bastırılmış (override edilmiş) yönler D-pad ile aynı
+        conflict resolver kararıyla bastırılır. Menü/UI ekranlarında
+        mevcut davranış (navigasyon + DAS tekrar) korunur.
         """
-        # Oyun bağlamında sol stick ile blok hareket etmesin
-        if self._context == self.CONTEXT_GAME:
-            return []
-
         events = []
         stick = gp.left_stick
+
+        in_game = (self._context == self.CONTEXT_GAME)
+        suppressed = self._get_overridden_dpad_dirs() if in_game else set()
+
+        action_map = {
+            pygame.K_LEFT: 'move_left' if in_game else 'menu_left',
+            pygame.K_RIGHT: 'move_right' if in_game else 'menu_right',
+            pygame.K_DOWN: 'soft_drop' if in_game else 'menu_down',
+            pygame.K_UP: 'rotate' if in_game else 'menu_up',
+        }
 
         # ── X Ekseni ──
         if stick.digital_x != stick.prev_digital_x:
             # Yön değişti - öncekinin KEYUP'ı
-            if stick.prev_digital_x == -1:
-                events.append(self._make_key_event(pygame.K_LEFT, pygame.KEYUP))
-            elif stick.prev_digital_x == 1:
-                events.append(self._make_key_event(pygame.K_RIGHT, pygame.KEYUP))
+            if stick.prev_digital_x == -1 and 'left' not in suppressed:
+                events.append(self._make_key_event(pygame.K_LEFT, pygame.KEYUP, gp_device_index=gp.device_index, action=action_map.get(pygame.K_LEFT)))
+            elif stick.prev_digital_x == 1 and 'right' not in suppressed:
+                events.append(self._make_key_event(pygame.K_RIGHT, pygame.KEYUP, gp_device_index=gp.device_index, action=action_map.get(pygame.K_RIGHT)))
 
             # Yeni yönün KEYDOWN'ı
-            if stick.digital_x == -1:
-                events.append(self._make_key_event(pygame.K_LEFT, pygame.KEYDOWN))
+            if stick.digital_x == -1 and 'left' not in suppressed:
+                events.append(self._make_key_event(pygame.K_LEFT, pygame.KEYDOWN, gp_device_index=gp.device_index, action=action_map.get(pygame.K_LEFT)))
                 gp.stick_repeat_x = 0
                 gp.stick_initial_delay_x = False
-            elif stick.digital_x == 1:
-                events.append(self._make_key_event(pygame.K_RIGHT, pygame.KEYDOWN))
+            elif stick.digital_x == 1 and 'right' not in suppressed:
+                events.append(self._make_key_event(pygame.K_RIGHT, pygame.KEYDOWN, gp_device_index=gp.device_index, action=action_map.get(pygame.K_RIGHT)))
                 gp.stick_repeat_x = 0
                 gp.stick_initial_delay_x = False
-        elif stick.digital_x != 0:
-            # Aynı yönde tutulmaya devam ediliyor → DAS tekrar
+        elif stick.digital_x != 0 and not in_game:
+            # Menü bağlamı: aynı yönde tutulmaya devam → DAS tekrar.
+            # (Oyun bağlamında tekrar YOK: oyunun DAS'ı edge'leri tüketir.)
             gp.stick_repeat_x += delta_ms
             if not gp.stick_initial_delay_x:
                 if gp.stick_repeat_x >= self.STICK_INITIAL_DELAY:
                     gp.stick_initial_delay_x = True
                     gp.stick_repeat_x = 0
                     key = pygame.K_LEFT if stick.digital_x == -1 else pygame.K_RIGHT
-                    events.append(self._make_key_event(key, pygame.KEYDOWN))
-                    events.append(self._make_key_event(key, pygame.KEYUP))
+                    events.append(self._make_key_event(key, pygame.KEYDOWN, gp_device_index=gp.device_index, action=action_map.get(key)))
+                    events.append(self._make_key_event(key, pygame.KEYUP, gp_device_index=gp.device_index, action=action_map.get(key)))
             else:
                 if gp.stick_repeat_x >= self.STICK_REPEAT_INTERVAL:
                     gp.stick_repeat_x -= self.STICK_REPEAT_INTERVAL
                     key = pygame.K_LEFT if stick.digital_x == -1 else pygame.K_RIGHT
-                    events.append(self._make_key_event(key, pygame.KEYDOWN))
-                    events.append(self._make_key_event(key, pygame.KEYUP))
+                    events.append(self._make_key_event(key, pygame.KEYDOWN, gp_device_index=gp.device_index, action=action_map.get(key)))
+                    events.append(self._make_key_event(key, pygame.KEYUP, gp_device_index=gp.device_index, action=action_map.get(key)))
 
         # ── Y Ekseni ──
         if stick.digital_y != stick.prev_digital_y:
-            if stick.prev_digital_y == -1:
-                events.append(self._make_key_event(pygame.K_UP, pygame.KEYUP))
-            elif stick.prev_digital_y == 1:
-                events.append(self._make_key_event(pygame.K_DOWN, pygame.KEYUP))
+            if stick.prev_digital_y == -1 and 'up' not in suppressed:
+                events.append(self._make_key_event(pygame.K_UP, pygame.KEYUP, gp_device_index=gp.device_index, action=action_map.get(pygame.K_UP)))
+            elif stick.prev_digital_y == 1 and 'down' not in suppressed:
+                events.append(self._make_key_event(pygame.K_DOWN, pygame.KEYUP, gp_device_index=gp.device_index, action=action_map.get(pygame.K_DOWN)))
 
-            if stick.digital_y == -1:
-                events.append(self._make_key_event(pygame.K_UP, pygame.KEYDOWN))
+            if stick.digital_y == -1 and 'up' not in suppressed:
+                events.append(self._make_key_event(pygame.K_UP, pygame.KEYDOWN, gp_device_index=gp.device_index, action=action_map.get(pygame.K_UP)))
                 gp.stick_repeat_y = 0
                 gp.stick_initial_delay_y = False
-            elif stick.digital_y == 1:
-                # Aşağı yön → soft drop: hemen KEYDOWN gönder (tekrar gerekmez,
-                # game.py sürekli is_direction_held('down') kontrol eder)
-                events.append(self._make_key_event(pygame.K_DOWN, pygame.KEYDOWN))
+            elif stick.digital_y == 1 and 'down' not in suppressed:
+                # Aşağı yön → soft drop: KEYDOWN gönderilir ve held polling
+                # (is_direction_held('down')) basılı kaldığı sürece sayar;
+                # oyun bağlamında tekrar pulse gerekmez/istenmez.
+                events.append(self._make_key_event(pygame.K_DOWN, pygame.KEYDOWN, gp_device_index=gp.device_index, action=action_map.get(pygame.K_DOWN)))
                 gp.stick_repeat_y = 0
                 gp.stick_initial_delay_y = False
-        elif stick.digital_y != 0:
+        elif stick.digital_y != 0 and not in_game:
+            # Menü bağlamı: aynı yönde tutulmaya devam → DAS tekrar.
+            # (Oyun bağlamında tekrar YOK: oyunun DAS'ı edge'leri tüketir.)
             repeat_events, gp.stick_repeat_y, gp.stick_initial_delay_y = self._generate_repeat_pulses(
                 stick.digital_y,
                 delta_ms,

@@ -3633,6 +3633,10 @@ def main():
                 # Kullanıcı onay kutusunda 'Evet' seçti; oyunu kapat (oto yeniden açılma yok)
                 running = False
 
+        # GP-004: event loop sonrası, draw öncesi frame başına tam bir kez
+        # settings ekranının per-frame sürücüsünü çağır (capture sırasında
+        # hold-to-clear ilerlemesi update() olmadan hiç çalışmaz).
+        settings_screen.update(delta_ms)
         settings_screen.draw()
         return True
 

@@ -39,6 +39,41 @@ _isteam_user: ctypes.c_void_p | None = None
 _isteam_user_stats: ctypes.c_void_p | None = None
 _isteam_utils: ctypes.c_void_p | None = None
 _isteam_apps: ctypes.c_void_p | None = None
+_isteam_input: ctypes.c_void_p | None = None
+_steam_input_initialized = False
+_steam_input_manifest_configured = False
+_steam_input_manifest_ready = False
+_steam_input_action_set_handle = 0
+_steam_input_digital_handles: dict[str, int] = {}
+_steam_input_analog_handles: dict[str, int] = {}
+_steam_input_manifest_retry_at = 0.0
+
+
+class _InputDigitalActionData(ctypes.Structure):
+    _pack_ = 1
+    _fields_ = [
+        ("bState", ctypes.c_bool),
+        ("bActive", ctypes.c_bool),
+    ]
+
+
+class _InputAnalogActionData(ctypes.Structure):
+    _pack_ = 1
+    _fields_ = [
+        ("eMode", ctypes.c_int32),
+        ("x", ctypes.c_float),
+        ("y", ctypes.c_float),
+        ("bActive", ctypes.c_bool),
+    ]
+
+
+_STEAM_INPUT_DIGITAL_ACTIONS = (
+    "a", "b", "x", "y", "back", "start", "left_stick_click",
+    "right_stick_click", "left_shoulder", "right_shoulder",
+    "dpad_up", "dpad_down", "dpad_left", "dpad_right",
+    "left_trigger", "right_trigger",
+)
+_STEAM_INPUT_ANALOG_ACTIONS = ("left_stick", "right_stick")
 
 # Önbellek
 _persona_name_cache: str | None = None
@@ -643,6 +678,181 @@ def _setup_dll_functions(dll: ctypes.CDLL) -> None:
     except AttributeError:
         pass
 
+    # ISteamInput v006 — Steam Input açıkken fiziksel kontrolcü SDL'den
+    # gizlenebilir. Arayüzü SDL/Pygame başlamadan önce Init etmek, Steam'in
+    # macOS sanal gamepad sürücüsünü oyun sürecine zamanında bağlamasını sağlar.
+    try:
+        dll.SteamAPI_SteamInput_v006.restype = ctypes.c_void_p
+        dll.SteamAPI_SteamInput_v006.argtypes = []
+    except AttributeError:
+        pass
+    try:
+        dll.SteamAPI_ISteamInput_Init.restype = ctypes.c_bool
+        dll.SteamAPI_ISteamInput_Init.argtypes = [ctypes.c_void_p, ctypes.c_bool]
+    except AttributeError:
+        pass
+    try:
+        dll.SteamAPI_ISteamInput_Shutdown.restype = ctypes.c_bool
+        dll.SteamAPI_ISteamInput_Shutdown.argtypes = [ctypes.c_void_p]
+    except AttributeError:
+        pass
+    try:
+        dll.SteamAPI_ISteamInput_RunFrame.restype = None
+        dll.SteamAPI_ISteamInput_RunFrame.argtypes = [ctypes.c_void_p, ctypes.c_bool]
+    except AttributeError:
+        pass
+    try:
+        dll.SteamAPI_ISteamInput_GetConnectedControllers.restype = ctypes.c_int
+        dll.SteamAPI_ISteamInput_GetConnectedControllers.argtypes = [
+            ctypes.c_void_p,
+            ctypes.POINTER(ctypes.c_uint64),
+        ]
+    except AttributeError:
+        pass
+    try:
+        dll.SteamAPI_ISteamInput_SetInputActionManifestFilePath.restype = ctypes.c_bool
+        dll.SteamAPI_ISteamInput_SetInputActionManifestFilePath.argtypes = [
+            ctypes.c_void_p, ctypes.c_char_p,
+        ]
+    except AttributeError:
+        pass
+    try:
+        dll.SteamAPI_ISteamInput_GetActionSetHandle.restype = ctypes.c_uint64
+        dll.SteamAPI_ISteamInput_GetActionSetHandle.argtypes = [
+            ctypes.c_void_p, ctypes.c_char_p,
+        ]
+    except AttributeError:
+        pass
+    try:
+        dll.SteamAPI_ISteamInput_ActivateActionSet.restype = None
+        dll.SteamAPI_ISteamInput_ActivateActionSet.argtypes = [
+            ctypes.c_void_p, ctypes.c_uint64, ctypes.c_uint64,
+        ]
+    except AttributeError:
+        pass
+    try:
+        dll.SteamAPI_ISteamInput_GetDigitalActionHandle.restype = ctypes.c_uint64
+        dll.SteamAPI_ISteamInput_GetDigitalActionHandle.argtypes = [
+            ctypes.c_void_p, ctypes.c_char_p,
+        ]
+    except AttributeError:
+        pass
+    try:
+        dll.SteamAPI_ISteamInput_GetDigitalActionData.restype = _InputDigitalActionData
+        dll.SteamAPI_ISteamInput_GetDigitalActionData.argtypes = [
+            ctypes.c_void_p, ctypes.c_uint64, ctypes.c_uint64,
+        ]
+    except AttributeError:
+        pass
+    try:
+        dll.SteamAPI_ISteamInput_GetAnalogActionHandle.restype = ctypes.c_uint64
+        dll.SteamAPI_ISteamInput_GetAnalogActionHandle.argtypes = [
+            ctypes.c_void_p, ctypes.c_char_p,
+        ]
+    except AttributeError:
+        pass
+    try:
+        dll.SteamAPI_ISteamInput_GetAnalogActionData.restype = _InputAnalogActionData
+        dll.SteamAPI_ISteamInput_GetAnalogActionData.argtypes = [
+            ctypes.c_void_p, ctypes.c_uint64, ctypes.c_uint64,
+        ]
+    except AttributeError:
+        pass
+    try:
+        dll.SteamAPI_ISteamInput_GetInputTypeForHandle.restype = ctypes.c_int
+        dll.SteamAPI_ISteamInput_GetInputTypeForHandle.argtypes = [
+            ctypes.c_void_p, ctypes.c_uint64,
+        ]
+    except AttributeError:
+        pass
+    try:
+        dll.SteamAPI_ISteamInput_TriggerVibration.restype = None
+        dll.SteamAPI_ISteamInput_TriggerVibration.argtypes = [
+            ctypes.c_void_p, ctypes.c_uint64, ctypes.c_ushort, ctypes.c_ushort,
+        ]
+    except AttributeError:
+        pass
+
+
+def _find_steam_input_manifest() -> Path | None:
+    candidates: list[Path] = []
+    if getattr(sys, '_MEIPASS', None):
+        candidates.append(Path(sys._MEIPASS) / 'steam_input' / 'quadrix_actions.vdf')
+    try:
+        candidates.append(Path(__file__).resolve().parent.parent / 'config' / 'steam_input' / 'quadrix_actions.vdf')
+    except Exception:
+        pass
+    try:
+        candidates.append(Path.cwd() / 'steam_input' / 'quadrix_actions.vdf')
+    except Exception:
+        pass
+    for candidate in candidates:
+        try:
+            if candidate.is_file():
+                return candidate.resolve()
+        except Exception:
+            continue
+    return None
+
+
+def _configure_steam_input_manifest(dll: ctypes.CDLL) -> bool:
+    global _steam_input_manifest_configured, _steam_input_manifest_ready
+    global _steam_input_action_set_handle
+    global _steam_input_digital_handles, _steam_input_analog_handles
+    global _steam_input_manifest_retry_at
+    if not _isteam_input or not _steam_input_initialized:
+        return False
+    now = time.monotonic()
+    if now < _steam_input_manifest_retry_at:
+        return False
+    _steam_input_manifest_retry_at = now + 2.0
+    manifest = _find_steam_input_manifest()
+    if manifest is None:
+        print("[Steam Input] Quadrix action manifest bulunamadı")
+        return False
+    try:
+        # SetInputActionManifestFilePath mapping yüklemesini asenkron başlatabilir.
+        # İlk sorguda handle'lar henüz hazır değilse manifesti tekrar set etmek
+        # yüklemeyi başa sarar ve paketli uygulamanın ilk açılışta sonsuza kadar
+        # beklemesine yol açar. Manifesti yalnız kabul edilene kadar set et;
+        # sonraki retry'larda yalnız handle'ları yeniden sorgula.
+        if not _steam_input_manifest_configured:
+            ok = bool(dll.SteamAPI_ISteamInput_SetInputActionManifestFilePath(
+                _isteam_input, os.fsencode(str(manifest))
+            ))
+            if not ok:
+                print(f"[Steam Input] Action manifest reddedildi: {manifest}")
+                return False
+            _steam_input_manifest_configured = True
+        action_set = int(dll.SteamAPI_ISteamInput_GetActionSetHandle(
+            _isteam_input, b"gameplay"
+        ))
+        digital = {
+            name: int(dll.SteamAPI_ISteamInput_GetDigitalActionHandle(
+                _isteam_input, name.encode('ascii')
+            ))
+            for name in _STEAM_INPUT_DIGITAL_ACTIONS
+        }
+        analog = {
+            name: int(dll.SteamAPI_ISteamInput_GetAnalogActionHandle(
+                _isteam_input, name.encode('ascii')
+            ))
+            for name in _STEAM_INPUT_ANALOG_ACTIONS
+        }
+        if not action_set or not all(digital.values()) or not all(analog.values()):
+            print("[Steam Input] Action handle'ları eksik; manifest/config eşleşmedi")
+            return False
+        _steam_input_action_set_handle = action_set
+        _steam_input_digital_handles = digital
+        _steam_input_analog_handles = analog
+        _steam_input_manifest_ready = True
+        _steam_input_manifest_retry_at = 0.0
+        print(f"[Steam Input] Quadrix action backend hazır: {manifest}")
+        return True
+    except Exception as exc:
+        print(f"[Steam Input] Action manifest kurulumu hatası: {exc}")
+        return False
+
 
 def init() -> bool:
     """Steam API'yi başlat. Başarılı olursa True döndürür.
@@ -651,6 +861,11 @@ def init() -> bool:
     """
     global _dll, _dll_loaded, _init_ok, _isteam_friends, _isteam_user, _isteam_user_stats, _isteam_utils
     global _isteam_apps, _pump_thread, _pump_running, _precache_thread, _shutdown_requested, _exit_requested
+    global _isteam_input, _steam_input_initialized
+    global _steam_input_manifest_configured, _steam_input_manifest_ready
+    global _steam_input_action_set_handle
+    global _steam_input_digital_handles, _steam_input_analog_handles
+    global _steam_input_manifest_retry_at
 
     with _init_lock:
         if _dll_loaded:
@@ -778,6 +993,32 @@ def init() -> bool:
             'SteamAPI_SteamApps_v008',
             'SteamAPI_SteamApps_v007',
         )
+        _isteam_input = _try_accessor('SteamAPI_SteamInput_v006')
+        _steam_input_initialized = False
+        _steam_input_manifest_configured = False
+        _steam_input_manifest_ready = False
+        _steam_input_action_set_handle = 0
+        _steam_input_digital_handles = {}
+        _steam_input_analog_handles = {}
+        _steam_input_manifest_retry_at = 0.0
+        if _isteam_input:
+            try:
+                # False: SteamAPI_RunCallbacks, Steam Input RunFrame'i otomatik
+                # çalıştırır. Quadrix callback pump'ı zaten sürekli aktiftir.
+                _steam_input_initialized = bool(
+                    dll.SteamAPI_ISteamInput_Init(_isteam_input, ctypes.c_bool(False))
+                )
+                print(
+                    "[Steam Input] Init "
+                    f"{'OK' if _steam_input_initialized else 'başarısız'} "
+                    f"(interface={_isteam_input})"
+                )
+                if _steam_input_initialized:
+                    _configure_steam_input_manifest(dll)
+            except Exception as exc:
+                print(f"[Steam Input] Init hatası: {exc}")
+        else:
+            print("[Steam Input] v006 arayüzü bulunamadı")
 
         # Callback pump thread'i başlat
         _pump_running = True
@@ -816,6 +1057,11 @@ def shutdown() -> None:
     """Steam API'yi kapat."""
     global _dll, _dll_loaded, _init_ok
     global _isteam_friends, _isteam_user, _isteam_user_stats, _isteam_utils, _isteam_apps
+    global _isteam_input, _steam_input_initialized
+    global _steam_input_manifest_configured, _steam_input_manifest_ready
+    global _steam_input_action_set_handle
+    global _steam_input_digital_handles, _steam_input_analog_handles
+    global _steam_input_manifest_retry_at
     global _pump_thread, _pump_running, _pump_paused, _pump_pause_count
     global _precache_thread, _shutdown_requested
 
@@ -866,6 +1112,11 @@ def shutdown() -> None:
                 acquired = _pump_lock.acquire(timeout=1.5)
                 if acquired:
                     try:
+                        if _steam_input_initialized and _isteam_input:
+                            try:
+                                _dll.SteamAPI_ISteamInput_Shutdown(_isteam_input)
+                            except Exception:
+                                pass
                         _dll.SteamAPI_Shutdown()
                     except Exception:
                         pass
@@ -881,6 +1132,14 @@ def shutdown() -> None:
             _isteam_user_stats = None
             _isteam_utils = None
             _isteam_apps = None
+            _isteam_input = None
+            _steam_input_initialized = False
+            _steam_input_manifest_configured = False
+            _steam_input_manifest_ready = False
+            _steam_input_action_set_handle = 0
+            _steam_input_digital_handles = {}
+            _steam_input_analog_handles = {}
+            _steam_input_manifest_retry_at = 0.0
             _dll = None
             _dll_loaded = False
             _init_ok = False
@@ -899,6 +1158,8 @@ def shutdown() -> None:
         pump_thread = _pump_thread
         precache_thread = _precache_thread
         dll = _dll if (_dll and _init_ok) else None
+        steam_input = _isteam_input
+        steam_input_initialized = _steam_input_initialized
         _pump_thread = None
         _precache_thread = None
 
@@ -909,6 +1170,14 @@ def shutdown() -> None:
         _isteam_user_stats = None
         _isteam_utils = None
         _isteam_apps = None
+        _isteam_input = None
+        _steam_input_initialized = False
+        _steam_input_manifest_configured = False
+        _steam_input_manifest_ready = False
+        _steam_input_action_set_handle = 0
+        _steam_input_digital_handles = {}
+        _steam_input_analog_handles = {}
+        _steam_input_manifest_retry_at = 0.0
 
         with _worker_threads_lock:
             worker_threads = [
@@ -953,6 +1222,11 @@ def shutdown() -> None:
             acquired = _pump_lock.acquire(timeout=0.25)
             if acquired:
                 try:
+                    if steam_input_initialized and steam_input:
+                        try:
+                            dll.SteamAPI_ISteamInput_Shutdown(steam_input)
+                        except Exception:
+                            pass
                     dll.SteamAPI_Shutdown()
                 except Exception:
                     pass
@@ -995,6 +1269,123 @@ atexit.register(_atexit_cleanup)
 def is_available() -> bool:
     """Steam SDK başarıyla başlatıldıysa True döndürür."""
     return _init_ok and _dll is not None and not _shutdown_requested
+
+
+def is_steam_input_available() -> bool:
+    """Steam Input arayüzü başarıyla başlatıldıysa True döndürür."""
+    return bool(
+        is_available()
+        and _steam_input_initialized
+        and _isteam_input
+    )
+
+
+def get_steam_input_snapshots() -> list[dict[str, Any]]:
+    """Steam Input action API'sinden canonical gamepad durumlarını döndür."""
+    if not is_steam_input_available() or not _dll or not _isteam_input:
+        return []
+    if not _steam_input_manifest_ready:
+        with _pump_lock:
+            _configure_steam_input_manifest(_dll)
+    if not _steam_input_manifest_ready or not _steam_input_action_set_handle:
+        return []
+    handles = (ctypes.c_uint64 * 16)()
+    snapshots: list[dict[str, Any]] = []
+    try:
+        with _pump_lock:
+            _dll.SteamAPI_ISteamInput_RunFrame(_isteam_input, ctypes.c_bool(False))
+            count = max(0, min(int(
+                _dll.SteamAPI_ISteamInput_GetConnectedControllers(_isteam_input, handles)
+            ), len(handles)))
+            for index in range(count):
+                handle = int(handles[index])
+                if not handle:
+                    continue
+                _dll.SteamAPI_ISteamInput_ActivateActionSet(
+                    _isteam_input, ctypes.c_uint64(handle),
+                    ctypes.c_uint64(_steam_input_action_set_handle),
+                )
+                buttons: dict[str, bool] = {}
+                for name, action_handle in _steam_input_digital_handles.items():
+                    data = _dll.SteamAPI_ISteamInput_GetDigitalActionData(
+                        _isteam_input, ctypes.c_uint64(handle), ctypes.c_uint64(action_handle)
+                    )
+                    buttons[name] = bool(data.bActive and data.bState)
+                axes: dict[str, tuple[float, float]] = {}
+                for name, action_handle in _steam_input_analog_handles.items():
+                    data = _dll.SteamAPI_ISteamInput_GetAnalogActionData(
+                        _isteam_input, ctypes.c_uint64(handle), ctypes.c_uint64(action_handle)
+                    )
+                    axes[name] = (
+                        max(-1.0, min(1.0, float(data.x))) if data.bActive else 0.0,
+                        max(-1.0, min(1.0, float(data.y))) if data.bActive else 0.0,
+                    )
+                input_type = int(_dll.SteamAPI_ISteamInput_GetInputTypeForHandle(
+                    _isteam_input, ctypes.c_uint64(handle)
+                ))
+                snapshots.append({
+                    "handle": handle,
+                    "input_type": input_type,
+                    "buttons": buttons,
+                    "axes": axes,
+                })
+        return snapshots
+    except Exception as exc:
+        print(f"[Steam Input] Action snapshot hatası: {exc}")
+        return []
+
+
+def trigger_steam_input_vibration(
+    handle: int,
+    low_frequency: float,
+    high_frequency: float,
+) -> bool:
+    """Steam Input cihazında 0.0-1.0 aralığındaki motorları tetikle."""
+    if not is_steam_input_available() or not _dll or not _isteam_input or not handle:
+        return False
+    function = getattr(_dll, "SteamAPI_ISteamInput_TriggerVibration", None)
+    if function is None:
+        return False
+    low = max(0, min(65535, round(float(low_frequency) * 65535)))
+    high = max(0, min(65535, round(float(high_frequency) * 65535)))
+    try:
+        with _pump_lock:
+            function(
+                _isteam_input,
+                ctypes.c_uint64(int(handle)),
+                ctypes.c_ushort(low),
+                ctypes.c_ushort(high),
+            )
+        return True
+    except Exception:
+        return False
+
+
+def get_steam_input_controller_count() -> int:
+    """Steam Input tarafından yönetilen bağlı kontrolcü sayısını döndürür.
+
+    Steam Input devre dışıyken veya API kullanılamıyorken 0 döner. Bu değer
+    SDL joystick sayısından bağımsızdır: Steam Input açıkken Steam fiziksel HID
+    aygıtını SDL'den gizleyip sanal Xbox gamepad yayınlayabilir.
+    """
+    if not is_steam_input_available() or not _dll or not _isteam_input:
+        return 0
+    handles = (ctypes.c_uint64 * 16)()
+    try:
+        # En güncel veriyi ana thread sorgularında da garanti et. Init(False)
+        # nedeniyle callback pump zaten RunFrame çağırır; bu çağrı güvenli bir
+        # tazeleme yedeğidir.
+        with _pump_lock:
+            try:
+                _dll.SteamAPI_ISteamInput_RunFrame(_isteam_input, ctypes.c_bool(False))
+            except Exception:
+                pass
+            count = int(
+                _dll.SteamAPI_ISteamInput_GetConnectedControllers(_isteam_input, handles)
+            )
+        return max(0, min(count, len(handles)))
+    except Exception:
+        return 0
 
 
 # ---------------------------------------------------------------------------

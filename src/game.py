@@ -4705,6 +4705,17 @@ class Game:
                 self.game_over_warning = ""
 
         if self.game_over or self.paused or self.show_exit_prompt:
+            # GP-004 (kapsam): duraklatma-ayarları overlay'i de tam bir
+            # TabbedSettingsScreen örneğidir; hold-to-clear ilerlemesi
+            # update() sürücüsü olmadan çalışmaz. Ana ayarlar döngüsündeki
+            # (main.py) çağrıyla aynı desen: her kare, çizimden önce.
+            if self.paused and getattr(self, '_pause_settings_active', False):
+                pause_settings = self._ensure_pause_settings_screen()
+                if pause_settings is not None:
+                    try:
+                        pause_settings.update(dt)
+                    except Exception:
+                        pass
             return
 
         # Block-out: yeni parça spawn konumunda mevcut bloklarla çakışıyorsa

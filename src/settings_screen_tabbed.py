@@ -391,6 +391,14 @@ def _build_tab_content(tab_key: str, sm, show_debug: bool = False) -> list[dict]
                     'label_tr': label, 'label_en': label,
                 })
         items.append({'type': 'section', 'loc_key': 'settings_gp_section_outgame', 'label_tr': 'GAMEPAD - OYUN DIŞI', 'label_en': 'GAMEPAD - OUT OF GAME'})
+        # GP-003 (Seçenek B) kullanıcı açıklaması: menü aksiyonlarına trigger
+        # atanamaz — menü bağlamında trigger edge eventi üretilmez.
+        items.append({
+            'type': 'info',
+            'key': 'gamepad_trigger_outgame_note',
+            'label_tr': "Not: Oyun dışı eylemlere LT/RT tetikleyicisi atanamaz; menü navigasyonu tetikleyici basışını işlemez. Bir buton veya D-pad yönü seçin.",
+            'label_en': "Note: LT/RT triggers cannot be assigned to out-of-game actions; menu navigation does not process trigger presses. Choose a button or D-pad direction.",
+        })
         for action_key, label in outgame_gamepad_actions:
             items.append({
                 'type': 'keybind', 'key': f'ctrl_gp_{action_key}',
@@ -656,6 +664,9 @@ class TabbedSettingsScreen:
         self._hold_to_clear_pressed_at_ms: int | None = None
         self._hold_to_clear_pressed_signature: tuple | None = None
         self._hold_to_clear_consumed = False
+        # GP-003: oyun dışı aksiyon capture'ında reddedilen trigger atamasının
+        # yerelleştirilmiş uyarısı bu zaman damgasına kadar slot alanında gösterilir.
+        self._capture_trigger_reject_warning_until_ms = 0
 
         # Per-frame hesaplanan keybind çakışma haritası ve unbound sayısı.
         self._keybind_conflicts: dict[tuple[str, str, str], str] = {}
@@ -1757,6 +1768,17 @@ class TabbedSettingsScreen:
         self._pending_keybind_item = item
         self._pending_keybind_slot = slot
         self._capture_started_by_gamepad_click = bool(opened_by_gamepad_click)
+        # GP-006: capture'ı AÇAN Steam Input basışının kenarı (ve capture
+        # açılışından önce birikmiş kenarlar) aynı karede tekrar-
+        # oynatılmamalı; aksi halde aktivasyon butonu bırakışta kendine
+        # bağlanır ve Steam Input kullanıcısı yeni buton bağlayamaz.
+        # SDL cihazları kenar kuyruğuna hiç yazılmadığından dreyn no-op'tur.
+        try:
+            gpm = get_gamepad_manager()
+            if gpm is not None and hasattr(gpm, 'consume_capture_edges'):
+                gpm.consume_capture_edges()
+        except Exception:
+            pass
         # Hold-to-clear durumu yeni capture için temiz başlamalı.
         self._reset_hold_to_clear_state()
 
@@ -2192,6 +2214,12 @@ class TabbedSettingsScreen:
 
         action_key = self._pending_keybind_item.get('action_key')
         if not action_key:
+            return
+
+        # GP-003 savunma derinliği: oyun dışı aksiyonlara 100/101 (LT/RT)
+        # token'ları bu yoldan da yazılmamalı — capture UI reddetse bile.
+        if int(button_index) in (100, 101) and self._pending_keybind_item.get('section') == 'gamepad.outgame':
+            self._capture_trigger_reject_warning_until_ms = pygame.time.get_ticks() + 2600
             return
 
         gamepad_cfg = self._control_config.setdefault('gamepad', {})
@@ -2962,7 +2990,13 @@ class TabbedSettingsScreen:
             pending_section = self._pending_keybind_item.get('section') if self._pending_keybind_item else None
 
             if self._is_gamepad_keybind_section(pending_section):
-                if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+                # GP-002: from_gamepad=True sentetik menu_back Escape'i capture'ı
+                # iptal etmemeli; yalnızca GERÇEK klavye Escape'i iptal eder.
+                if (
+                    event.type == pygame.KEYDOWN
+                    and event.key == pygame.K_ESCAPE
+                    and not getattr(event, 'from_gamepad', False)
+                ):
                     self._waiting_for_key = False
                     self._pending_keybind_item = None
                     self._pending_keybind_slot = 'primary'
@@ -3001,6 +3035,13 @@ class TabbedSettingsScreen:
                     return None
                 trigger_index = normalize_gamepad_trigger_event(event)
                 if trigger_index is not None:
+                    # GP-003 (ÜRÜN KARARI — Seçenek B): oyun DIŞI aksiyonlara
+                    # LT/RT atanamaz. Menü bağlamında trigger edge eventi
+                    # üretilmez; binding kaydedilip çalışmamaz (ölü binding).
+                    # Atamayı reddet, uyarı göster, capture AÇIK kalsın.
+                    if self._pending_keybind_item and self._pending_keybind_item.get('section') == 'gamepad.outgame':
+                        self._capture_trigger_reject_warning_until_ms = pygame.time.get_ticks() + 2600
+                        return None
                     self._swallow_next_gamepad_click = False
                     self._swallow_next_gamepad_click_deadline_ms = 0
                     self._apply_captured_gamepad_button(trigger_index)
@@ -3027,11 +3068,20 @@ class TabbedSettingsScreen:
 
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
+                    if getattr(event, 'from_gamepad', False):
+                        # GP-002: sentetik gamepad Escape'i klavye capture'ını
+                        # da iptal etmemeli.
+                        return None
                     self._waiting_for_key = False
                     self._pending_keybind_item = None
                     self._pending_keybind_slot = 'primary'
                     self._capture_started_by_gamepad_click = False
                     self._reset_hold_to_clear_state()
+                    return None
+                if getattr(event, 'from_gamepad', False):
+                    # GP-002: sentetik gamepad KEYDOWN'ları (menu_confirm
+                    # K_RETURN vb.) gerçek klavye tuşu gibi YAKALANMAMALI;
+                    # aksi halde klavye slotuna sentetik tuş yazılırdı.
                     return None
                 # Hold-to-clear: ilk KEYDOWN'da uygulama erteleniyor; KEYUP
                 # geldiğinde "press" olarak uygulanır, ya da basılı tutma
@@ -3043,6 +3093,10 @@ class TabbedSettingsScreen:
                     self._hold_to_clear_consumed = False
                 return None
             if event.type == pygame.KEYUP:
+                if getattr(event, 'from_gamepad', False):
+                    # GP-002: sentetik gamepad KEYUP'ları da yakalama
+                    # akışına girmemeli (gerçek klavye bırakışı değildir).
+                    return None
                 if self._hold_to_clear_consumed:
                     # Hold-to-clear update() içinde zaten işledi.
                     self._reset_hold_to_clear_state()
@@ -3548,11 +3602,88 @@ class TabbedSettingsScreen:
     # ------------------------------------------------------------------
 
     def update(self, dt: float) -> None:
+        # GP-006: Steam Input fallback cihazlarının capture kenarlarını
+        # sentetik controller event'lerine çevirip mevcut capture akışına
+        # ver (SDL'ye görünmeyen Steam Input cihazları için).
+        try:
+            self._consume_gamepad_capture_edges()
+        except Exception:
+            pass
         # Capture sırasında hold-to-clear ilerlemesini izle.
         try:
             self._check_hold_to_clear_progress()
         except Exception:
             pass
+
+    # ------------------------------------------------------------------
+    # GP-006: Steam Input fallback capture kenarı tüketicisi
+    # ------------------------------------------------------------------
+
+    def _consume_gamepad_capture_edges(self) -> None:
+        """Steam Input fallback cihazlarının capture kenarlarını sentetik
+        controller event'lerine çevirip mevcut handle_input akışından geçirir.
+
+        Steam Input sanal gamepad'leri SDL'ye GÖRÜNMEZ; raw
+        JOYBUTTONDOWN/UP veya CONTROLLERAXISMOTION üretilmez. Ayarlar
+        ekranı update() sürücüsünde bu kuyruğu tüketerek binding capture'ı
+        Steam Input cihazlarıyla çalışır kılar. Capture aktif değilken
+        çağrılırsa kuyruk yine dreyn edilir (bayat kenar birikmez) ama
+        event sentezlenmez.
+        """
+        try:
+            gpm = get_gamepad_manager()
+        except Exception:
+            return
+        if gpm is None or not hasattr(gpm, 'consume_capture_edges'):
+            return
+        try:
+            edges = gpm.consume_capture_edges()
+        except Exception:
+            return
+        if not edges:
+            return
+        capture_active = (
+            bool(self._waiting_for_key)
+            and self._pending_keybind_item is not None
+            and self._is_gamepad_keybind_section(self._pending_keybind_item.get('section'))
+        )
+        if not capture_active:
+            return
+        controller_down = getattr(pygame, 'CONTROLLERBUTTONDOWN', None)
+        controller_up = getattr(pygame, 'CONTROLLERBUTTONUP', None)
+        controller_axis_motion = getattr(pygame, 'CONTROLLERAXISMOTION', None)
+        axis_left = getattr(pygame, 'CONTROLLER_AXIS_TRIGGERLEFT', -1)
+        axis_right = getattr(pygame, 'CONTROLLER_AXIS_TRIGGERRIGHT', -1)
+        for edge in edges:
+            try:
+                device_key, canonical_index, pressed, _timestamp_ms = edge
+                index = int(canonical_index)
+                if index in (100, 101):
+                    # Trigger kenarı: CONTROLLERAXISMOTION eşdeğeri. Bırakış
+                    # (-1.0) normalize'da eşiğin altında kalır ve ham akıştaki
+                    # gibi hiçbir şey tetiklemez; basış anında uygulanır.
+                    if controller_axis_motion is None:
+                        continue
+                    synthetic = pygame.event.Event(
+                        controller_axis_motion,
+                        axis=(axis_left if index == 100 else axis_right),
+                        value=1.0 if pressed else -1.0,
+                        instance_id=device_key,
+                    )
+                    self.handle_input(synthetic)
+                    continue
+                # Buton kenarı: CONTROLLERBUTTONDOWN/UP eşdeğeri (ham SDL
+                # akışındaki down→hold imzası, up→apply zinciriyle aynı).
+                if controller_down is None or controller_up is None:
+                    continue
+                synthetic = pygame.event.Event(
+                    controller_down if pressed else controller_up,
+                    button=index,
+                    instance_id=device_key,
+                )
+                self.handle_input(synthetic)
+            except Exception:
+                continue
 
     # ------------------------------------------------------------------
     # Hold-to-clear capture yardımcıları
@@ -3588,18 +3719,17 @@ class TabbedSettingsScreen:
                 pressed = pygame.key.get_pressed()
                 still_held = bool(pressed[sig_value])
             elif sig_kind == 'btn' and isinstance(sig_value, int):
-                # Bağlı joystick'lerden herhangi biri butonu basılı tutuyor mu?
-                num = pygame.joystick.get_count() if hasattr(pygame, 'joystick') else 0
-                for i in range(num):
-                    try:
-                        js = pygame.joystick.Joystick(i)
-                        if not js.get_init():
-                            continue
-                        if 0 <= sig_value < js.get_numbuttons() and js.get_button(sig_value):
-                            still_held = True
-                            break
-                    except Exception:
-                        continue
+                # GP-005: raw SDL joystick indeksi OKUMA. Capture imzası
+                # CANONICAL buton indeksidir; sorgu GamepadManager üzerinden
+                # canonical state'e yapılır (cihaz kaybında False döner).
+                try:
+                    gpm = get_gamepad_manager()
+                except Exception:
+                    gpm = None
+                if gpm is not None and hasattr(gpm, 'is_capture_input_held'):
+                    still_held = bool(gpm.is_capture_input_held(sig))
+                else:
+                    still_held = False
         except Exception:
             still_held = False
         if not still_held:
@@ -4600,7 +4730,15 @@ class TabbedSettingsScreen:
             secondary_display = self._get_gamepad_slot_display(secondary_val, gp_type)
 
             if self._waiting_for_key and self._pending_keybind_item == item:
-                waiting_text = _t('gp_press_button', 'Butona basın')
+                warning_active = (
+                    item.get('section') == 'gamepad.outgame'
+                    and pygame.time.get_ticks() < self._capture_trigger_reject_warning_until_ms
+                )
+                waiting_text = (
+                    _t('gp_trigger_outgame_rejected', 'Tetikleyici atanamaz (LT/RT)')
+                    if warning_active
+                    else _t('gp_press_button', 'Butona basın')
+                )
                 if self._pending_keybind_slot == 'secondary':
                     secondary_display = {'mode': 'text', 'text': waiting_text}
                 else:

@@ -57,6 +57,8 @@ datas = [
     (str(REPO_ROOT / 'config' / 'runtime' / 'settings.txt'), '.'),
     (str(REPO_ROOT / 'config' / 'runtime' / 'menu_layout_runtime.json'), '.'),
     (str(REPO_ROOT / 'config' / 'runtime' / 'credits_layout.json'), '.'),
+    # GP-006: Steam Input action manifest + kontrolcü eşlemeleri
+    (str(REPO_ROOT / 'config' / 'steam_input'), 'steam_input'),
     (str(SRC_DIR / 'splashscreen'), 'src/splashscreen'),
     (str(SRC_DIR / 'avatars'), 'src/avatars'),
     (str(SRC_DIR / 'assets'), 'src/assets'),

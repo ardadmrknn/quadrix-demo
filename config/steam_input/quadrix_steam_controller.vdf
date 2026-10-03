@@ -1,0 +1,113 @@
+"controller_mappings"
+{
+    "version" "3"
+    "revision" "1"
+    "title" "Quadrix Steam Controller Controls"
+    "description" "Native Quadrix Steam Input actions"
+    "controller_type" "controller_steamcontroller_gordon"
+    "major_revision" "1"
+    "minor_revision" "0"
+    "actions"
+    {
+        "gameplay"
+        {
+            "title" "#Gameplay"
+            "legacy_set" "0"
+            "StickPadGyro"
+            {
+                "left_stick" { "title" "#LeftStick" "input_mode" "joystick_move" }
+                "right_stick" { "title" "#RightStick" "input_mode" "joystick_move" }
+            }
+            "Button"
+            {
+                "a" "#A" "b" "#B" "x" "#X" "y" "#Y"
+                "back" "#Back" "start" "#Start"
+                "left_stick_click" "#LeftStickClick" "right_stick_click" "#RightStickClick"
+                "left_shoulder" "#LeftShoulder" "right_shoulder" "#RightShoulder"
+                "dpad_up" "#DpadUp" "dpad_down" "#DpadDown"
+                "dpad_left" "#DpadLeft" "dpad_right" "#DpadRight"
+                "left_trigger" "#LeftTrigger" "right_trigger" "#RightTrigger"
+            }
+        }
+    }
+    "localization"
+    {
+        "english"
+        {
+            "title" "Quadrix Steam Controller Controls" "description" "Native Quadrix Steam Input actions"
+            "Gameplay" "Gameplay" "LeftStick" "Left Stick" "RightStick" "Right Pad"
+            "A" "A" "B" "B" "X" "X" "Y" "Y" "Back" "Back" "Start" "Start"
+            "LeftStickClick" "Stick Click" "RightStickClick" "Right Pad Click"
+            "LeftShoulder" "Left Bumper" "RightShoulder" "Right Bumper"
+            "DpadUp" "D-Pad Up" "DpadDown" "D-Pad Down" "DpadLeft" "D-Pad Left" "DpadRight" "D-Pad Right"
+            "LeftTrigger" "Left Trigger" "RightTrigger" "Right Trigger"
+        }
+    }
+    "group"
+    {
+        "id" "3" "mode" "four_buttons"
+        "inputs"
+        {
+            "button_a" { "activators" { "Full_Press" { "bindings" { "binding" "game_action gameplay a" } } } }
+            "button_b" { "activators" { "Full_Press" { "bindings" { "binding" "game_action gameplay b" } } } }
+            "button_x" { "activators" { "Full_Press" { "bindings" { "binding" "game_action gameplay x" } } } }
+            "button_y" { "activators" { "Full_Press" { "bindings" { "binding" "game_action gameplay y" } } } }
+        }
+    }
+    "group"
+    {
+        "id" "1" "mode" "trigger"
+        "inputs" { "edge" { "activators" { "Full_Press" { "bindings" { "binding" "game_action gameplay left_trigger" } } } } }
+    }
+    "group"
+    {
+        "id" "2" "mode" "trigger"
+        "inputs" { "edge" { "activators" { "Full_Press" { "bindings" { "binding" "game_action gameplay right_trigger" } } } } }
+    }
+    "group"
+    {
+        "id" "6" "mode" "dpad"
+        "inputs"
+        {
+            "dpad_north" { "activators" { "Full_Press" { "bindings" { "binding" "game_action gameplay dpad_up" } } } }
+            "dpad_south" { "activators" { "Full_Press" { "bindings" { "binding" "game_action gameplay dpad_down" } } } }
+            "dpad_east" { "activators" { "Full_Press" { "bindings" { "binding" "game_action gameplay dpad_right" } } } }
+            "dpad_west" { "activators" { "Full_Press" { "bindings" { "binding" "game_action gameplay dpad_left" } } } }
+        }
+        "settings" { "requires_click" "0" }
+    }
+    "group"
+    {
+        "id" "9" "mode" "joystick_move"
+        "inputs" { "click" { "activators" { "Full_Press" { "bindings" { "binding" "game_action gameplay right_stick_click" } } } } }
+        "gameactions" { "gameplay" "right_stick" }
+    }
+    "group"
+    {
+        "id" "26" "mode" "joystick_move"
+        "inputs" { "click" { "activators" { "Full_Press" { "bindings" { "binding" "game_action gameplay left_stick_click" } } } } }
+        "gameactions" { "gameplay" "left_stick" }
+    }
+    "group"
+    {
+        "id" "27" "mode" "switches"
+        "inputs"
+        {
+            "button_escape" { "activators" { "Full_Press" { "bindings" { "binding" "game_action gameplay start" } } } }
+            "button_menu" { "activators" { "Full_Press" { "bindings" { "binding" "game_action gameplay back" } } } }
+            "left_bumper" { "activators" { "Full_Press" { "bindings" { "binding" "game_action gameplay left_shoulder" } } } }
+            "right_bumper" { "activators" { "Full_Press" { "bindings" { "binding" "game_action gameplay right_shoulder" } } } }
+        }
+    }
+    "preset"
+    {
+        "id" "0" "name" "gameplay"
+        "group_source_bindings"
+        {
+            "27" "switch active" "3" "button_diamond active"
+            "1" "left_trigger active" "2" "right_trigger active"
+            "6" "left_trackpad active" "26" "joystick active" "9" "right_trackpad active"
+        }
+    }
+    "settings" { }
+}
