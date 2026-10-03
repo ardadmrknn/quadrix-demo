@@ -39,7 +39,7 @@ from platform_utils import get_display_flags, create_display, set_app_icon, norm
 from ui_text_layout import clamp_rect_in_parent
 from ui_theme import UIFonts, UIColors
 from asset_manager import load_image
-from text_cache import render_text, clear_text_cache
+from text_cache import render_text, clear_text_cache, measure_text_width
 from gamepad_manager import get_gamepad_manager, is_gamepad_connected
 from promptfont_support import (
     get_action_prompt_display,
@@ -646,6 +646,103 @@ class Game:
             draw_text = self._ellipsis_text(draw_text, font, max_width)
 
         return font.render(draw_text, True, color)
+
+    def _fit_hud_stat_row(
+        self,
+        label,
+        value,
+        content_w: int,
+        hud: float,
+        *,
+        label_base: int = 16,
+        value_base: int = 24,
+        label_floor: int = 11,
+        value_floor: int = 15,
+        slot_base: int = 45,
+        pad: int = 8,
+        bold_label: bool = True,
+    ) -> dict:
+        """Stat satırı (etiket sol / değer sağ) için ölçüm-tabanlı font planı.
+
+        Genişlik bütçesi (DUZ-014 kapsamı, v2 uyarlaması): etiket + boşluk +
+        değer satır genişliğine sığmıyorsa fontlar tabanlara (label_floor/
+        value_floor) kadar oransal küçültülür; küçültme oranı %5 adımlarla
+        kuantalanır böylece font_cache'in büyümesi sınırlı kalır. Taban
+        boyutlarda bile sığmayan satır kontrollü dikey yerleşime düşer
+        (etiket üstte, değer altta, tam genişlik) — etiket-değer üst üste
+        binmesi asla çözüm olarak üretilmez. Tüm ölçümler
+        measure_text_width ile LRU'dan okunur; Surface tahsisi yapılmaz.
+        """
+        try:
+            hud_f = float(hud)
+        except (TypeError, ValueError):
+            hud_f = 1.0
+        if hud_f <= 0:
+            hud_f = 1.0
+        label_text = str(label or '')
+        value_text = str(value if value is not None else '')
+        avail_w = max(24, int(content_w) - 2 * max(1, int(pad)))
+        row_gap = max(6, int(12 * hud_f))
+        label_size = max(label_floor, int(label_base * hud_f))
+        value_size = max(value_floor, int(value_base * hud_f))
+
+        label_font = retro_style.get_font(label_size, bold=bold_label)
+        value_font = retro_style.get_font(value_size, bold=True)
+        l_w = measure_text_width(label_font, label_text) if label_text else 0
+        v_w = measure_text_width(value_font, value_text) if value_text else 0
+
+        if l_w + row_gap + v_w > avail_w:
+            # Oransal küçültme: oran 0.05 adımlarla kuantalanır → üretilen
+            # font boyutu seti sınırlıdır (font_cache disiplini korunur).
+            ratio = 0.95
+            fitted = False
+            while ratio >= 0.40:
+                cand_label_size = max(label_floor, int(label_size * ratio))
+                cand_value_size = max(value_floor, int(value_size * ratio))
+                cand_label_font = retro_style.get_font(cand_label_size, bold=bold_label)
+                cand_value_font = retro_style.get_font(cand_value_size, bold=True)
+                cand_l_w = measure_text_width(cand_label_font, label_text) if label_text else 0
+                cand_v_w = measure_text_width(cand_value_font, value_text) if value_text else 0
+                if cand_l_w + row_gap + cand_v_w <= avail_w:
+                    label_font, value_font = cand_label_font, cand_value_font
+                    l_w, v_w = cand_l_w, cand_v_w
+                    fitted = True
+                    break
+                ratio -= 0.05
+            if not fitted:
+                # Tabanlarda da sığmadı → kontrollü dikey yerleşim: değer
+                # tam satır genişliğinde (gerekirse ellipsis ile) çizilir.
+                label_font = retro_style.get_font(label_floor, bold=bold_label)
+                value_font = retro_style.get_font(value_floor, bold=True)
+                l_w = measure_text_width(label_font, label_text) if label_text else 0
+                v_w = measure_text_width(value_font, value_text) if value_text else 0
+                if v_w > avail_w and value_text:
+                    value_text = self._ellipsis_text(value_text, value_font, avail_w)
+                    v_w = measure_text_width(value_font, value_text)
+
+        label_h = label_font.get_height()
+        value_h = value_font.get_height()
+        slot_h = max(28, int(slot_base * hud_f))
+        vertical = bool(label_text and value_text and l_w + row_gap + v_w > avail_w)
+        if vertical:
+            v_gap = max(2, int(4 * hud_f))
+            row_h = max(slot_h, label_h + v_gap + value_h)
+        else:
+            row_h = max(slot_h, label_h, value_h)
+        return {
+            'label_text': label_text,
+            'value_text': value_text,
+            'label_font': label_font,
+            'value_font': value_font,
+            'label_w': int(l_w),
+            'value_w': int(v_w),
+            'label_h': int(label_h),
+            'value_h': int(value_h),
+            'avail_w': int(avail_w),
+            'row_gap': int(row_gap),
+            'vertical': vertical,
+            'row_h': int(row_h),
+        }
 
     @staticmethod
     def _font_cache_key(font: pygame.font.Font) -> tuple:
@@ -5462,8 +5559,19 @@ class Game:
                 ph = len(p.shape) if p.shape else 1
                 pcm = getattr(p, 'color_matrix', None)
                 
-                # Mini blok çizimi
-                mini_cell = max(8, int(13 * hud_scale))
+                # Mini blok çizimi — hücre boyutu parça matrisinin
+                # genişlik/yüksekliğine göre kutu içi bütçeye sığdırılır
+                # (yüksek ölçek presetlerinde/dar panelde kutudan taşma yok).
+                piece_inset = max(3, int(4 * hud_scale))
+                piece_budget = box_size - 2 * piece_inset
+                mini_cell = max(
+                    4,
+                    min(
+                        int(13 * hud_scale),
+                        piece_budget // max(1, pw),
+                        piece_budget // max(1, ph),
+                    ),
+                )
                 # Ortalamak için
                 px_w = pw * mini_cell
                 px_h = ph * mini_cell
@@ -5638,7 +5746,16 @@ class Game:
             hp_tex = getattr(hp, 'texture_surface', None)
             pw = len(hp.shape[0]) if hp.shape else 1
             ph = len(hp.shape) if hp.shape else 1
-            mini_cell = max(9, int(14 * hud_scale))
+            # Hücre boyutu parça matrisine göre kutu içi bütçeye sığdırılır.
+            piece_inset = max(3, int(4 * hud_scale))
+            mini_cell = max(
+                5,
+                min(
+                    int(14 * hud_scale),
+                    (hold_box_rect.width - 2 * piece_inset) // max(1, pw),
+                    (hold_box_rect.height - 2 * piece_inset) // max(1, ph),
+                ),
+            )
             px_w = pw * mini_cell
             px_h = ph * mini_cell
             off_x = hold_box_rect.x + (hold_box_rect.width - px_w) // 2
@@ -5679,7 +5796,16 @@ class Game:
                 shp_tex = getattr(shp, 'texture_surface', None)
                 spw = len(shp.shape[0]) if shp.shape else 1
                 sph = len(shp.shape) if shp.shape else 1
-                mini_cell = max(9, int(14 * hud_scale))
+                # Hücre boyutu parça matrisine göre kutu içi bütçeye sığdırılır.
+                piece_inset = max(3, int(4 * hud_scale))
+                mini_cell = max(
+                    5,
+                    min(
+                        int(14 * hud_scale),
+                        (second_box_rect.width - 2 * piece_inset) // max(1, spw),
+                        (second_box_rect.height - 2 * piece_inset) // max(1, sph),
+                    ),
+                )
                 px_w = spw * mini_cell
                 px_h = sph * mini_cell
                 off_x = second_box_rect.x + (second_box_rect.width - px_w) // 2
@@ -5743,35 +5869,89 @@ class Game:
         # tasarrufu sağlanır.
         pygame.draw.rect(self.screen, (50, 60, 80), stats_rect, 1, border_radius=12)
         
-        # Stat satırları
-        stat_y_cur = curr_y + max(8, int(15 * hud_scale))
-        
-        def draw_stat_row(label, value, y_pos, color_val=accent_color):
+        # Stat satırları — ölç-önce (measure-first): satırlar çizilmeden
+        # ölçülür; dikey bütçe yetmezse üniform küçültme basamağı uygulanır,
+        # en son çare olarak opsiyonel satır (combo/tetris) düşürülür.
+        # Zorunlu satırlar (skor/satır/seviye) her koşulda çizilir.
+        # (v2 uyarlaması — DUZ-014: %175/%200 HUD presetlerinde etiket-değer
+        # çakışması bu plan üretimiyle engellenir.)
+        stat_pad = max(8, int(15 * hud_scale))
+        stat_y_cur = curr_y + stat_pad
+        rows_bottom_cap = min(stats_rect.bottom, panel_rect.bottom - 4)
+        rows_avail = max(24, rows_bottom_cap - stat_y_cur - max(4, int(8 * hud_scale)))
+
+        score_color_override = getattr(self, '_score_color_override', None)
+        stat_row_defs = [
+            (t('score'), f'{self.board.score:,}'.replace(',', '.'), score_color_override or accent_color),
+            (t('lines'), str(self.board.lines_cleared), text_color),
+            (t('level'), str(self.board.level), accent_color),
+        ]
+        if self.board.combo > 1:
+            stat_row_defs.append((t('combo'), f'x{self.board.combo}', (255, 200, 50)))
+        elif self.board.tetrises > 0:
+            stat_row_defs.append((t('tetris_label'), str(self.board.tetrises), (100, 255, 100)))
+        mandatory_row_count = 3
+
+        stat_plans = []
+        for shrink in (1.0, 0.88, 0.76, 0.64, 0.52):
+            stat_plans = [
+                self._fit_hud_stat_row(
+                    label,
+                    value,
+                    content_w,
+                    hud_scale,
+                    label_base=max(4, int(round(16 * shrink))),
+                    value_base=max(6, int(round(24 * shrink))),
+                    slot_base=max(12, int(round(45 * shrink))),
+                    pad=stat_pad,
+                )
+                for label, value, _color in stat_row_defs
+            ]
+            if sum(plan['row_h'] for plan in stat_plans) <= rows_avail:
+                break
+        if (
+            sum(plan['row_h'] for plan in stat_plans) > rows_avail
+            and len(stat_plans) > mandatory_row_count
+        ):
+            # En küçük basamakta bile dikey bütçe yetmedi → opsiyonel satır
+            # düşürülür; zorunlu satırlar korunur.
+            stat_plans = stat_plans[:mandatory_row_count]
+
+        def draw_stat_row(plan, y_pos, color_val=accent_color):
             # Etiket ("SKOR"/"SEVİYE" vb.) statik metin + sabit renk → cache'li.
             # Değer (v_surf) skor/seviye gibi sık değişen veri olduğundan ham
             # render edilir (cache churn'ü ve görsel fark olmaması için).
-            l_surf = render_text(retro_style.get_font(max(11, int(16 * hud_scale))), label, True, (160, 170, 190))
-            self.screen.blit(l_surf, (content_x + max(8, int(15 * hud_scale)), y_pos))
-            
-            v_surf = retro_style.get_font(max(15, int(24 * hud_scale)), bold=True).render(str(value), True, color_val)
-            v_rect = v_surf.get_rect(topright=(content_x + content_w - max(8, int(15 * hud_scale)), y_pos - max(2, int(4 * hud_scale))))
+            l_surf = render_text(plan['label_font'], plan['label_text'], True, (160, 170, 190))
+            v_surf = plan['value_font'].render(plan['value_text'], True, color_val)
+            if plan['vertical']:
+                self.screen.blit(l_surf, (content_x + stat_pad, y_pos))
+                v_rect = v_surf.get_rect(
+                    topright=(
+                        content_x + content_w - stat_pad,
+                        y_pos + plan['label_h'] + plan['row_gap'],
+                    )
+                )
+            else:
+                self.screen.blit(l_surf, (content_x + stat_pad, y_pos))
+                v_rect = v_surf.get_rect(
+                    topright=(
+                        content_x + content_w - stat_pad,
+                        y_pos - max(2, int(4 * hud_scale)),
+                    )
+                )
             self.screen.blit(v_surf, v_rect)
-            
-            # Alt çizgi
-            line_y = y_pos + max(20, int(32 * hud_scale))
-            inset = max(6, int(10 * hud_scale))
-            pygame.draw.line(self.screen, (255, 255, 255, 30), (content_x + inset, line_y), (content_x + content_w - inset, line_y))
-            return max(28, int(45 * hud_scale)) # row height
 
-        score_color_override = getattr(self, '_score_color_override', None)
-        stat_y_cur += draw_stat_row(t('score'), f'{self.board.score:,}'.replace(',', '.'), stat_y_cur, score_color_override or accent_color)
-        stat_y_cur += draw_stat_row(t('lines'), str(self.board.lines_cleared), stat_y_cur, text_color)
-        stat_y_cur += draw_stat_row(t('level'), str(self.board.level), stat_y_cur)
-        
-        if self.board.combo > 1:
-            draw_stat_row(t('combo'), f'x{self.board.combo}', stat_y_cur, (255, 200, 50))
-        elif self.board.tetrises > 0:
-            draw_stat_row(t('tetris_label'), str(self.board.tetrises), stat_y_cur, (100, 255, 100))
+            # Alt çizgi
+            inset = max(6, int(10 * hud_scale))
+            line_y = min(
+                y_pos + max(20, int(32 * hud_scale)),
+                y_pos + plan['row_h'] - max(4, int(6 * hud_scale)),
+            )
+            pygame.draw.line(self.screen, (255, 255, 255, 30), (content_x + inset, line_y), (content_x + content_w - inset, line_y))
+            return plan['row_h']
+
+        for (_label, _value, row_color), plan in zip(stat_row_defs, stat_plans):
+            stat_y_cur += draw_stat_row(plan, stat_y_cur, row_color)
             
         # Mod info
         mode_info_y = stats_rect.bottom + max(8, int(15 * hud_scale))
