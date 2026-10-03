@@ -106,8 +106,25 @@ def _patch_ui_scale_helpers(monkeypatch, attr_name, value):
         monkeypatch.setattr(target, attr_name, value, raising=False)
 
 
-def _install_game_ui_test_stubs(monkeypatch):
-    retro_style_stub = SimpleNamespace(
+def _iter_game_module_targets():
+    """Kirlilik mayını: 'src.main' import eden bir dosya (örn.
+    test_phase8_main_popup) sys.modules'a 'src.game' örneğini (A) kurar;
+    bu dosyanın module-level ``import game`` binding'i (B) ayrı bir örnek
+    kalır ve conftest alias-sync'i A'yı önceliklendirir. _build_game /
+    _get_mystery_mode_class runtime'da A'dan sınıf çözerken stub'lar B'ye
+    kurulursa A gövdesi gerçek retro_style/t/get_localized_skin_title ile
+    koşar (None-skin AttributeError mayını). Stub'lar bu yüzden iki örneğe
+    de kurulur — Görev #59 dual-pygame kuralının modül-örneği karşılığı."""
+    targets = [game_module, _get_game_module()]
+    for name in ('game', 'src.game'):
+        m = sys.modules.get(name)
+        if m is not None:
+            targets.append(m)
+    return set(targets)
+
+
+def _make_game_retro_style_stub():
+    return SimpleNamespace(
         draw_glass_panel=lambda surface, rect, alpha=90, border_color=(255, 255, 255), glow=False: pygame.draw.rect(surface, border_color, rect, 1),
         get_font=lambda size, bold=False: _make_fake_font(size, bold=bold),
         get_fitting_font=lambda text, size, max_width, bold=False, min_size=None, **kwargs: _make_fake_font(size, bold=bold),
@@ -117,10 +134,34 @@ def _install_game_ui_test_stubs(monkeypatch):
         secondary=(220, 120, 120),
         primary=(110, 160, 255),
     )
-    monkeypatch.setattr(game_module, 'retro_style', retro_style_stub)
-    monkeypatch.setattr(game_module, 't', lambda key, *args, **kwargs: kwargs.get('default', key))
-    monkeypatch.setattr(game_module, 'get_localized_skin_title', lambda skin: '')
-    monkeypatch.setattr(game_module, 'get_localized_skin_subtitle', lambda skin: '')
+
+
+def _install_game_ui_test_stubs(monkeypatch):
+    retro_style_stub = _make_game_retro_style_stub()
+    for target in _iter_game_module_targets():
+        monkeypatch.setattr(target, 'retro_style', retro_style_stub)
+        monkeypatch.setattr(target, 't', lambda key, *args, **kwargs: kwargs.get('default', key))
+        monkeypatch.setattr(target, 'get_localized_skin_title', lambda skin: '')
+        monkeypatch.setattr(target, 'get_localized_skin_subtitle', lambda skin: '')
+
+
+def _install_owner_game_globals_stubs(monkeypatch, instance):
+    """Kayıtsız 'game' örneği kirliliği (probe ile kanıtlandı): 13+ dosyalı
+    koşumlarda game_modes_extra'nın Game tabanı, sys.modules'taki 'game'/
+    'src.game' örneğinden eski ve düşürülmüş bir D örneğinde tanımlı
+    kalabilir. MRO'daki Game'in method __globals__'ı D'nin __dict__'idir;
+    monkeypatch.setattr modül-objesi yolu D'ye ulaşamadığından stub'lar
+    doğrudan bu dict'e setitem ile kurulur (teardown'da geri alınır)."""
+    owner = next((c for c in type(instance).__mro__ if c.__name__ == 'Game'), None)
+    if owner is None:
+        return
+    gl = getattr(getattr(owner, '_draw_right_hud_panel_body', None), '__globals__', None)
+    if not isinstance(gl, dict):
+        return
+    monkeypatch.setitem(gl, 'retro_style', _make_game_retro_style_stub())
+    monkeypatch.setitem(gl, 't', lambda key, *args, **kwargs: kwargs.get('default', key))
+    monkeypatch.setitem(gl, 'get_localized_skin_title', lambda skin: '')
+    monkeypatch.setitem(gl, 'get_localized_skin_subtitle', lambda skin: '')
 
 
 def _install_mode_ui_test_stubs(monkeypatch):
@@ -500,7 +541,11 @@ def test_mystery_mode_card_ui_scale_uses_projected_effective_scale(monkeypatch):
         captured['display_surface'] = display_surface
         return 1.58
 
-    monkeypatch.setattr(extra_modes_module, 'get_projected_effective_scale', fake_get_projected_scale)
+    # Çift modül örneği (game_modes_extra vs src.game_modes_extra):
+    # _build_mystery_mode sınıfı runtime'da sahip örneğinden çözer; fake
+    # yalnız bu dosyanın import örneğine kurulursa görülmez. Çoklu hedef
+    # deseni (_patch_ui_scale_helpers) iki örneği de kapsar.
+    _patch_ui_scale_helpers(monkeypatch, 'get_projected_effective_scale', fake_get_projected_scale)
 
     assert math.isclose(mode._card_ui_scale(), 1.58)
     assert captured['target'] is mode.screen
@@ -918,6 +963,10 @@ def test_mystery_second_pocket_hud_stays_on_primary_hold_row(monkeypatch, size):
     _install_game_ui_test_stubs(monkeypatch)
 
     mode = _build_mystery_mode(size, window_size=(1366, 768))
+    # MRO'daki Game tabanı kayıtsız bir 'game' örneğinde tanımlıysa
+    # sys.modules hedefli stub'lar gövdeye ulaşamaz (probe ile kanıtlandı:
+    # game==src.game==game_module tek örnek ama Game.__globals__ farklı).
+    _install_owner_game_globals_stubs(monkeypatch, mode)
     mode.next_piece_queue = [
         SimpleNamespace(shape=[[1, 1], [1, 1]], color=(120, 220, 255), texture_surface=None, color_matrix=None),
         SimpleNamespace(shape=[[1, 1, 1, 1]], color=(255, 200, 120), texture_surface=None, color_matrix=None),

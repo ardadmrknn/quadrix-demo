@@ -192,12 +192,22 @@ def test_tutorial_resize_syncs_window_metrics_to_created_surface(monkeypatch):
     tutorial = _build_tutorial((1366, 768), window_size=(1366, 768))
     updated = {'called': False}
 
-    monkeypatch.setattr(
-        tutorial_module,
-        'create_display',
-        lambda width, height, fullscreen=False, resizable=True: pygame.Surface((2560, 1440), pygame.SRCALPHA),
-    )
     tutorial.update_fonts = lambda: updated.__setitem__('called', True)
+
+    # Çift modül örneği ('tutorial' vs 'src.tutorial'): _build_tutorial
+    # sınıfı runtime'da sahip örneğinden (ör. 'src.main' zincirinin
+    # kurduğu src.tutorial) çözer; _apply_tutorial_resize create_display'i
+    # O örneğin globalinden çağırır. Patch yalnız bu dosyanın import
+    # örneğine (tutorial_module) kurulursa gövde gerçek create_display'i
+    # çağırır ve SDL dummy yüzeyi (1024x576) metrics'e yazılır.
+    def _fake_create_display(width, height, fullscreen=False, resizable=True):
+        return pygame.Surface((2560, 1440), pygame.SRCALPHA)
+
+    monkeypatch.setattr(tutorial_module, 'create_display', _fake_create_display)
+    for t_name in ('tutorial', 'src.tutorial'):
+        t_mod = sys.modules.get(t_name)
+        if t_mod is not None:
+            monkeypatch.setattr(t_mod, 'create_display', _fake_create_display)
 
     tutorial._apply_tutorial_resize(1920, 1080)
 
@@ -374,6 +384,15 @@ def test_tutorial_card_choice_overlay_uses_plain_header_title(monkeypatch):
     recorded = {}
 
     monkeypatch.setattr(tutorial_module, '_tutorial_make_card_ui_font', lambda size, bold=False: _make_fake_font(size, bold=bold))
+    # Çift modül örneği ('tutorial' vs 'src.tutorial'): _build_tutorial
+    # sınıfı runtime'da sahip örneğinden çözer; pygame patch'leri yalnız
+    # import örneğine kurulursa gövdenin kendi pygame'i gerçek
+    # get_focused'i çağırır (video system not initialized).
+    for t_mod_name in ('tutorial', 'src.tutorial'):
+        t_mod = sys.modules.get(t_mod_name)
+        if t_mod is not None:
+            monkeypatch.setattr(t_mod, '_tutorial_make_card_ui_font', lambda size, bold=False: _make_fake_font(size, bold=bold))
+            monkeypatch.setattr(t_mod.pygame.mouse, 'get_focused', lambda: False)
 
     class CardUIStub:
         card_rects = []
@@ -429,6 +448,12 @@ def test_tutorial_card_choice_keyboard_is_blocked_while_peek_active(monkeypatch)
     tutorial.card_ui.peek_mode_active = True
 
     monkeypatch.setattr(tutorial_module.pygame.event, 'get', lambda: [pygame.event.Event(pygame.KEYDOWN, key=pygame.K_RETURN)])
+    # Çift modül örneği: handle_input gövdesinin kendi pygame'i üzerinden
+    # event.get çağrılır; sahip örneğine de stub kurulmalı.
+    for t_mod_name in ('tutorial', 'src.tutorial'):
+        t_mod = sys.modules.get(t_mod_name)
+        if t_mod is not None:
+            monkeypatch.setattr(t_mod.pygame.event, 'get', lambda: [pygame.event.Event(pygame.KEYDOWN, key=pygame.K_RETURN)])
 
     result = tutorial.handle_input()
 
