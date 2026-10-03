@@ -17,6 +17,11 @@ try:
     from .user_manager import DAILY_MAX_FAILURES  # type: ignore
     from .retro_style import retro_style as ui_style  # type: ignore
     from .text_cache import render_text  # type: ignore
+    # P1-4/P1-5 (Quadrix_Tum_Ekranlar_Olcekleme_Denetim_Raporu): safe rect
+    # kısıtı + LRU önbellekli satır sarma. Her ikisi de yaprak modül
+    # (yalnız platform_utils / text_cache import ederler) — döngü riski yok.
+    from .game_over_surfaces import get_render_safe_rect  # type: ignore
+    from .ui_text_layout import wrap_text_limited  # type: ignore
 except Exception:
     from game import Game
     from constants import *
@@ -24,6 +29,8 @@ except Exception:
     from user_manager import DAILY_MAX_FAILURES
     from retro_style import retro_style as ui_style
     from text_cache import render_text
+    from game_over_surfaces import get_render_safe_rect
+    from ui_text_layout import wrap_text_limited
 
 class SurvivalMode(Game):
     """
@@ -757,20 +764,69 @@ class SurvivalMode(Game):
         self._draw_survival_panel()
 
     def _draw_survival_panel(self):
-        """Sağ üst köşede survival bilgi paneli - BÜYÜK VE GÜZELLEŞTİRİLMİŞ"""
+        """Sağ üst köşede survival bilgi paneli - BÜYÜK VE GÜZELLEŞTİRİLMİŞ
+
+        P1-4 (Quadrix_Tum_Ekranlar_Olcekleme_Denetim_Raporu): panel içeriği
+        ölç-önce dikey bütçeye bağlanır. Eski kod sabit s() ritmiyle (içerik
+        toplamı ~s(340)) çiziyordu; %175/%200 preset + kısa pencere
+        yüksekliği kombinasyonunda panel zemini (floor s(300) / ekran payı)
+        içeriği tutamıyor, son bloklar çerçevenin altına taşıyordu. Yeni
+        sözleşme (game.py stats bloğu / Hardcore panel deseni):
+        1. Panel boyutu RenderGeometry safe rect'ine göre kısıtlanır; kısıt
+           clamp'ten ÖNCE uygulanır (Rect.clamp küçültmez — büyük panel
+           clamp'te yine taşar).
+        2. Blok yükseklikleri gerçek font ölçümüyle dinamik üretilir
+           (get_height / font.size — plan aşamasında Surface tahsisi yok).
+        3. Kuantalı flow ladder (1.0→0.52) ritmi + font tabanlarını bütçeye
+           sığdırır; yetmezse opsiyonel bloklar (antivirus → enfeksiyon →
+           virüs seviyesi) düşürülür. Zorunlu bloklar (başlık/süre/tüketilen)
+           asla düşmez.
+        4. Etiketler inner_w'ye, antivirus bilgi satırı etiketle ÇAKIŞMAYAN
+           paya ellipsis'lenir (Wide Arena C1 dersi: sağdan hizalanan değer
+           sol etiketi ezebilir).
+        Demo notu: v2 eşlemesi — glow/gradient/ayırıcı/title yüzeyleri artık
+        önbellekli (kare-başı Surface tahsisi yasağı, CLAUDE.md); eski demo
+        kodunda bunlar her kare yeniden üretiliyordu.
+        """
         from retro_style import retro_style
+        from localization import t
+
         ui_scale = self._survival_panel_scale()
         s = lambda v, minimum=1: max(minimum, int(round(v * ui_scale)))
-        f = lambda size, bold=False, minimum=9: retro_style.get_font(max(minimum, s(size)), bold=bold)
         active_width, active_height = self._active_ui_size()
-        
+
+        # Metinler ölçüm aşaması için önce toplanır (draw yalnız plan tüketir;
+        # kare-başı Surface tahsisi yasak — CLAUDE.md).
+        title_text = t('mode_survival')
+        time_label_text = t('survival_panel_time_left')
+        level_label_text = t('survival_panel_virus_level')
+        consumed_label_text = t('survival_panel_consumed')
+        infect_label_text = t('survival_panel_active_infection')
+        av_label_text = t('survival_panel_antivirus')
+        next_av = self.last_antivirus_score + self.ANTIVIRUS_SCORE
+        current_score = self.board.score
+        score_to_av = next_av - current_score
+        if score_to_av > 0:
+            av_info_text = t('survival_panel_points_remaining', points=score_to_av)
+            av_info_bold = False
+        else:
+            av_info_text = t('survival_panel_ready')
+            av_info_bold = True
+
         # Panel boyutları - BÜYÜTÜLDÜ
         panel_w = min(s(260), max(s(220), int(active_width) - s(24)))
         panel_h = min(s(390), max(s(300), int(active_height) - s(24)))
-        
+
         # Board konumunu al
         board_x, board_y = self.get_board_offset()
-        
+
+        # P1-4: safe rect varsa panel BOYUTU önce ona göre kısıtlanır, sonra
+        # konum clamp'lenir; geometry yoksa mevcut tam-ekran davranışı korunur.
+        safe_rect = get_render_safe_rect(self.screen)
+        bounds = safe_rect if safe_rect is not None else pygame.Rect(0, 0, int(active_width), int(active_height))
+        panel_w = min(panel_w, max(s(120), bounds.width - 2 * s(8)))
+        panel_h = min(panel_h, max(s(160), bounds.height - 2 * s(8)))
+
         # KONUMLANDIRMA (Kullanıcı isteği: Board'un soluna yapışık)
         # Panel sağ kenarı = Board sol kenarı - biraz boşluk
         panel_x = board_x - panel_w - s(15)
@@ -778,11 +834,13 @@ class SurvivalMode(Game):
         panel_y = board_y
         panel_x = max(s(8), min(panel_x, int(active_width) - panel_w - s(8)))
         panel_y = max(s(8), min(panel_y, int(active_height) - panel_h - s(8)))
-        
+
         # === ANA PANEL ===
         panel_rect = pygame.Rect(panel_x, panel_y, panel_w, panel_h)
+        if safe_rect is not None:
+            panel_rect = panel_rect.clamp(safe_rect)
         self._survival_panel_rect = panel_rect
-        
+
         # Tehlike seviyesine göre border rengi ve glow
         danger_ratio = self.consumed_count / self.MAX_CONSUMED
         if danger_ratio < 0.4:
@@ -791,76 +849,192 @@ class SurvivalMode(Game):
             border_color = (255, 200, 50)   # Sarı
         else:
             border_color = (255, 50, 80)    # Kırmızı
-        
+
         # === SOLID ARKA PLAN (Transparan değil) ===
         # Dış glow efekti
         glow_rect = panel_rect.inflate(s(10), s(10))
-        glow_surf = pygame.Surface((glow_rect.width, glow_rect.height), pygame.SRCALPHA)
-        pygame.draw.rect(glow_surf, (*border_color, 50), glow_surf.get_rect(), border_radius=16)
+        glow_surf = self._get_rounded_rect_surface(glow_rect.size, (*border_color, 50), border_radius=16)
         self.screen.blit(glow_surf, glow_rect.topleft)
-        
+
         # Ana arka plan - SOLID koyu renk (opak)
         pygame.draw.rect(self.screen, (18, 22, 40), panel_rect, border_radius=12)
-        
+
         # İç gradient efekti için üst kısım biraz daha açık
         inner_rect = panel_rect.inflate(-s(4), -s(4))
         grad_h = s(50)
-        gradient_surf = pygame.Surface((inner_rect.width, grad_h), pygame.SRCALPHA)
-        for i in range(grad_h):
-            alpha = int(25 * (1 - i / max(1, grad_h)))
-            pygame.draw.line(gradient_surf, (100, 120, 150, alpha), (0, i), (inner_rect.width, i))
+        grad_key = (int(inner_rect.width), int(grad_h))
+        if getattr(self, '_survival_panel_gradient_key', None) != grad_key:
+            gradient_surf = pygame.Surface((inner_rect.width, grad_h), pygame.SRCALPHA)
+            for i in range(grad_h):
+                alpha = int(25 * (1 - i / max(1, grad_h)))
+                pygame.draw.line(gradient_surf, (100, 120, 150, alpha), (0, i), (inner_rect.width, i))
+            self._survival_panel_gradient_surface = gradient_surf
+            self._survival_panel_gradient_key = grad_key
+        gradient_surf = self._survival_panel_gradient_surface
         self.screen.blit(gradient_surf, (inner_rect.x, inner_rect.y))
-        
+
         # Ana çerçeve - kalın ve parlak
         pygame.draw.rect(self.screen, border_color, panel_rect, 3, border_radius=12)
-        
+
         # İç çerçeve - ince dekoratif
         inner_border = panel_rect.inflate(-8, -8)
         inner_border_color = (border_color[0] // 2, border_color[1] // 2, border_color[2] // 2)
         pygame.draw.rect(self.screen, inner_border_color, inner_border, 1, border_radius=10)
-        
+
         # Köşe süslemeleri kaldırıldı (Kullanıcı isteği)
-        
-        # İç padding
+
+        # === İÇERİK BÜTÇESİ (P1-4) =========================================
+        # Ölç-önce plan: her (düşürme, flow) adayı yalnız font ölçümüyle
+        # değerlendirilir — Surface tahsisi yok. En az blok düşüren, sonra en
+        # büyük flow'lu aday seçilir (bilgi kaybı minimize).
         cx = panel_rect.x + s(20)
-        cy = panel_rect.y + s(18)
         inner_w = panel_w - s(40)
-        
+        pad_top = s(18)
+        pad_bottom = s(14)
+        content_budget = max(s(60), panel_h - pad_top - pad_bottom)
+
+        # Opsiyonel blok grupları — düşürme sırası (en az kritik önce).
+        optional_groups = ('antivirus', 'infection', 'virus_level')
+
+        def _build_content_plan(flow, dropped):
+            """Bir (flow, dropped) adayı için blok planı (yalnız ölçüm)."""
+            fs = lambda v, minimum=1: max(minimum, int(round(v * ui_scale * flow)))
+            pick_font = lambda size, bold=False, minimum=9: retro_style.get_font(
+                max(max(8, int(round(minimum * flow))), fs(size)), bold=bold)
+
+            title_font = pick_font(24, bold=True, minimum=12)
+            time_label_font = pick_font(13, bold=True)
+            time_font = pick_font(38, bold=True, minimum=18)
+            label_font = pick_font(13, bold=True)
+            small_font = pick_font(11, bold=av_info_bold)
+            level_font = pick_font(14, bold=True)
+
+            # Yatay uygunluk: antivirus bilgi satırı etiket payıyla sınırlı.
+            av_label_fit = self._ellipsis_text(av_label_text, label_font, inner_w)
+            av_info_max_w = max(fs(30), inner_w - label_font.size(av_label_fit)[0] - fs(8))
+            av_info_fit = self._ellipsis_text(av_info_text, small_font, av_info_max_w)
+
+            blocks = []
+
+            def _add_block(name, advance, content_h, gap):
+                # Dinamik satır yüksekliği: ilerleme tabanı ile ölçülen içerik
+                # yüksekliğinin büyüğü (rapor: 'satır yüksekliği dinamik olsun').
+                blocks.append((name, max(advance, content_h + gap)))
+
+            # Zorunlu bloklar: başlık, ayırıcı, süre, tüketilen göstergesi.
+            _add_block('title', fs(42), title_font.get_height(), fs(8))
+            _add_block('separator', fs(16), fs(2), fs(6))
+            _add_block('time_label', fs(24), time_label_font.get_height(), fs(6))
+            _add_block('time_value', fs(48), time_font.get_height(), fs(8))
+            if 'virus_level' not in dropped:
+                _add_block('level_label', fs(24), label_font.get_height(), fs(6))
+                _add_block('level_boxes', fs(32), fs(20), fs(10))
+            _add_block('consumed_label', fs(24), label_font.get_height(), fs(6))
+            _add_block('consumed_bar', fs(32), fs(22), fs(8))
+            if 'infection' not in dropped:
+                _add_block('infect_label', fs(24), label_font.get_height(), fs(6))
+                _add_block('infect_bar', fs(32), fs(22), fs(8))
+            if 'antivirus' not in dropped:
+                _add_block('av_label', fs(20), max(label_font.get_height(), small_font.get_height()), fs(4))
+                _add_block('av_bar', fs(22), fs(22), 0)
+
+            return {
+                'flow': flow,
+                'dropped': dropped,
+                'fs': fs,
+                'fonts': {
+                    'title': title_font,
+                    'time_label': time_label_font,
+                    'time_value': time_font,
+                    'label': label_font,
+                    'small': small_font,
+                    'level': level_font,
+                },
+                'texts': {
+                    'title': self._ellipsis_text(title_text, title_font, inner_w),
+                    'time_label': self._ellipsis_text(time_label_text, time_label_font, inner_w),
+                    'level_label': self._ellipsis_text(level_label_text, label_font, inner_w),
+                    'consumed_label': self._ellipsis_text(consumed_label_text, label_font, inner_w),
+                    'infect_label': self._ellipsis_text(infect_label_text, label_font, inner_w),
+                    'av_label': av_label_fit,
+                    'av_info': av_info_fit,
+                },
+                'blocks': blocks,
+                'total_h': sum(block_h for _name, block_h in blocks),
+            }
+
+        chosen_plan = None
+        for drop_count in range(len(optional_groups) + 1):
+            dropped = frozenset(optional_groups[:drop_count])
+            for flow_candidate in (1.0, 0.88, 0.76, 0.64, 0.52):
+                candidate = _build_content_plan(flow_candidate, dropped)
+                if candidate['total_h'] <= content_budget:
+                    chosen_plan = candidate
+                    break
+            if chosen_plan is not None:
+                break
+        if chosen_plan is None:
+            # Hiçbir aday sığmadı: en küçük flow + yalnız zorunlu bloklar
+            # (Hardcore panel sözleşmesi — satırlar en küçük planla çizilir,
+            # sessiz kayıp olmaz; taşma bilinçli olarak kabul edilir).
+            chosen_plan = _build_content_plan(0.52, frozenset(optional_groups))
+
+        fs = chosen_plan['fs']
+        fonts = chosen_plan['fonts']
+        texts = chosen_plan['texts']
+        block_heights = dict(chosen_plan['blocks'])
+        block_rects = {}
+
+        # İç padding (dikey bütçe pad_top/pad_bottom ile aynı eksende)
+        cy = panel_rect.y + pad_top
+
         # === BAŞLIK - Büyük ve neon efektli ===
-        from localization import t
-        # Glow efekti
-        title_text = t('mode_survival')
-        title_font = f(24, bold=True, minimum=12)
-        title_glow = render_text(title_font, title_text, True, border_color)
+        # Glow kopyaları + ana yüzey tek anahtarla önbelleklenir (dil/danger
+        # rengi sınırlı küme üretir; kare-başı 4x copy() yasağı — CLAUDE.md).
+        title_font = fonts['title']
+        title_key = (id(title_font), texts['title'], tuple(border_color[:3]))
+        if getattr(self, '_survival_title_key', None) != title_key:
+            glow_base = render_text(title_font, texts['title'], True, border_color)
+            title_glow = glow_base.copy()
+            title_glow.set_alpha(50)
+            self._survival_title_glow_surface = title_glow
+            self._survival_title_surface = render_text(title_font, texts['title'], True, (255, 255, 255))
+            self._survival_title_key = title_key
         for offset in [(2, 0), (-2, 0), (0, 2), (0, -2)]:
-            glow_pos = (cx + offset[0], cy + offset[1])
-            glow_copy = title_glow.copy()
-            glow_copy.set_alpha(50)
-            self.screen.blit(glow_copy, glow_pos)
-        
+            self.screen.blit(self._survival_title_glow_surface, (cx + offset[0], cy + offset[1]))
+
         # Ana başlık
-        title = render_text(title_font, title_text, True, (255, 255, 255))
-        self.screen.blit(title, (cx, cy))
-        cy += s(42)
-        
+        self.screen.blit(self._survival_title_surface, (cx, cy))
+        block_rects['title'] = pygame.Rect(
+            cx, cy, self._survival_title_surface.get_width(), self._survival_title_surface.get_height())
+        cy += block_heights['title']
+
         # Ayırıcı çizgi - gradient efektli
-        for i in range(inner_w):
-            alpha = int(200 * (1 - abs(i - inner_w/2) / (inner_w/2)))
-            color = (*border_color[:3], max(50, alpha))
-            line_surf = pygame.Surface((1, s(2)), pygame.SRCALPHA)
-            line_surf.fill(color)
-            self.screen.blit(line_surf, (cx + i, cy))
-        cy += s(16)
-        
+        sep_h = fs(2)
+        sep_key = (int(inner_w), int(sep_h), tuple(border_color[:3]))
+        if getattr(self, '_survival_separator_key', None) != sep_key:
+            sep_surf = pygame.Surface((inner_w, sep_h), pygame.SRCALPHA)
+            half_w = max(1, inner_w / 2)
+            for i in range(inner_w):
+                alpha = int(200 * (1 - abs(i - half_w) / half_w))
+                color = (*border_color[:3], max(50, alpha))
+                pygame.draw.line(sep_surf, color, (i, 0), (i, sep_h))
+            self._survival_separator_surface = sep_surf
+            self._survival_separator_key = sep_key
+        self.screen.blit(self._survival_separator_surface, (cx, cy))
+        block_rects['separator'] = pygame.Rect(cx, cy, inner_w, sep_h)
+        cy += block_heights['separator']
+
         # === KALAN SÜRE - Büyük ve belirgin ===
         time_left = max(0, self.GAME_DURATION - self.survival_time)
         minutes = int(time_left // 60000)
         seconds = int((time_left % 60000) // 1000)
-        
-        time_label = render_text(f(13, bold=True), t('survival_panel_time_left'), True, (180, 190, 210))
+
+        time_label = render_text(fonts['time_label'], texts['time_label'], True, (180, 190, 210))
         self.screen.blit(time_label, (cx, cy))
-        cy += s(24)
-        
+        block_rects['time_label'] = pygame.Rect(cx, cy, time_label.get_width(), time_label.get_height())
+        cy += block_heights['time_label']
+
         # Süre rengi ve animasyonu
         if time_left < 30000:
             flash = (pygame.time.get_ticks() // 200) % 2 == 0
@@ -869,128 +1043,155 @@ class SurvivalMode(Game):
             time_color = (255, 200, 50)
         else:
             time_color = (100, 255, 180)
-        
-        time_val = f(38, bold=True, minimum=18).render(f"{minutes}:{seconds:02d}", True, time_color)
+
+        time_val = fonts['time_value'].render(f"{minutes}:{seconds:02d}", True, time_color)
         self.screen.blit(time_val, (cx, cy))
-        cy += s(48)
-        
+        block_rects['time_value'] = pygame.Rect(cx, cy, time_val.get_width(), time_val.get_height())
+        cy += block_heights['time_value']
+
         # === VİRÜS SEVİYESİ - İkonlu ===
-        level_label = render_text(f(13, bold=True), t('survival_panel_virus_level'), True, (180, 190, 210))
-        self.screen.blit(level_label, (cx, cy))
-        cy += s(24)
-        
-        # Seviye göstergesi - 5 kutu
-        box_w = (inner_w - s(30)) // 5
-        box_h = s(20)
-        level_colors = [(100, 255, 100), (180, 255, 80), (255, 220, 50), (255, 140, 50), (255, 50, 80)]
-        
-        for i in range(5):
-            bx = cx + i * (box_w + s(6))
-            is_active = i < self.virus_level
-            
-            if is_active:
-                # Aktif seviye - renkli ve parlak
-                pygame.draw.rect(self.screen, level_colors[i], (bx, cy, box_w, box_h), border_radius=5)
-                # Üst parlama efekti
-                shine_surf = self._get_solid_alpha_surface((max(1, box_w - s(4)), s(6)), (255, 255, 255, 100))
-                self.screen.blit(shine_surf, (bx + s(2), cy + s(2)))
-            else:
-                # Pasif seviye - koyu
-                pygame.draw.rect(self.screen, (35, 42, 60), (bx, cy, box_w, box_h), border_radius=5)
-            
-            # Çerçeve
-            pygame.draw.rect(self.screen, (60, 70, 90), (bx, cy, box_w, box_h), 1, border_radius=5)
-        
-        # Seviye yazısı
-        level_color = level_colors[min(self.virus_level - 1, 4)]
-        level_text = f(14, bold=True).render(f"LVL {self.virus_level}", True, level_color)
-        self.screen.blit(level_text, (cx + inner_w - level_text.get_width(), cy + s(2)))
-        cy += s(32)
-        
+        if 'virus_level' not in chosen_plan['dropped']:
+            level_label = render_text(fonts['label'], texts['level_label'], True, (180, 190, 210))
+            self.screen.blit(level_label, (cx, cy))
+            block_rects['level_label'] = pygame.Rect(cx, cy, level_label.get_width(), level_label.get_height())
+            cy += block_heights['level_label']
+
+            # Seviye göstergesi - 5 kutu
+            box_w = (inner_w - fs(30)) // 5
+            box_h = fs(20)
+            level_colors = [(100, 255, 100), (180, 255, 80), (255, 220, 50), (255, 140, 50), (255, 50, 80)]
+
+            boxes_rect = pygame.Rect(cx, cy, inner_w, box_h)
+            for i in range(5):
+                bx = cx + i * (box_w + fs(6))
+                is_active = i < self.virus_level
+
+                if is_active:
+                    # Aktif seviye - renkli ve parlak
+                    pygame.draw.rect(self.screen, level_colors[i], (bx, cy, box_w, box_h), border_radius=5)
+                    # Üst parlama efekti
+                    shine_surf = self._get_solid_alpha_surface((max(1, box_w - fs(4)), fs(6)), (255, 255, 255, 100))
+                    self.screen.blit(shine_surf, (bx + fs(2), cy + fs(2)))
+                else:
+                    # Pasif seviye - koyu
+                    pygame.draw.rect(self.screen, (35, 42, 60), (bx, cy, box_w, box_h), border_radius=5)
+
+                # Çerçeve
+                pygame.draw.rect(self.screen, (60, 70, 90), (bx, cy, box_w, box_h), 1, border_radius=5)
+
+            # Seviye yazısı
+            level_color = level_colors[min(self.virus_level - 1, 4)]
+            level_text = fonts['level'].render(f"LVL {self.virus_level}", True, level_color)
+            self.screen.blit(level_text, (cx + inner_w - level_text.get_width(), cy + fs(2)))
+            block_rects['level_boxes'] = boxes_rect
+            cy += block_heights['level_boxes']
+
         # === YENİLEN BLOKLAR - KRİTİK GÖSTERGE ===
-        consumed_label = render_text(f(13, bold=True), t('survival_panel_consumed'), True, (180, 190, 210))
+        consumed_label = render_text(fonts['label'], texts['consumed_label'], True, (180, 190, 210))
         self.screen.blit(consumed_label, (cx, cy))
-        cy += s(24)
-        
+        block_rects['consumed_label'] = pygame.Rect(cx, cy, consumed_label.get_width(), consumed_label.get_height())
+        cy += block_heights['consumed_label']
+
         # Bar
-        bar_h = s(22)
-        # Bar arka planı
-        pygame.draw.rect(self.screen, (25, 30, 48), (cx, cy, inner_w, bar_h), border_radius=11)
-        pygame.draw.rect(self.screen, (50, 58, 75), (cx, cy, inner_w, bar_h), 1, border_radius=11)
-        
+        bar_h = fs(22)
+        consumed_bar_rect = pygame.Rect(cx, cy, inner_w, bar_h)
+        pygame.draw.rect(self.screen, (25, 30, 48), consumed_bar_rect, border_radius=11)
+        pygame.draw.rect(self.screen, (50, 58, 75), consumed_bar_rect, 1, border_radius=11)
+
         fill_ratio = self.consumed_count / self.MAX_CONSUMED
         fill_w = int(inner_w * fill_ratio)
         fill_color = (100, 255, 100) if fill_ratio < 0.4 else (255, 200, 50) if fill_ratio < 0.7 else (255, 50, 80)
-        
+
         if fill_w > 0:
             pygame.draw.rect(self.screen, fill_color, (cx, cy, fill_w, bar_h), border_radius=11)
             # Işıltı efekti
-            shine_surf = self._get_solid_alpha_surface((max(1, fill_w - s(4)), s(7)), (255, 255, 255, 90))
-            self.screen.blit(shine_surf, (cx + s(2), cy + s(2)))
-        
+            shine_surf = self._get_solid_alpha_surface((max(1, fill_w - fs(4)), fs(7)), (255, 255, 255, 90))
+            self.screen.blit(shine_surf, (cx + fs(2), cy + fs(2)))
+
         # Sayı (bar içinde, ortalı)
-        consumed_text = f(13, bold=True).render(
+        consumed_text = fonts['label'].render(
             f"{self.consumed_count} / {self.MAX_CONSUMED}", True, (255, 255, 255))
         text_rect = consumed_text.get_rect(center=(cx + inner_w // 2, cy + bar_h // 2))
         self.screen.blit(consumed_text, text_rect)
-        cy += s(32)
-        
+        block_rects['consumed_bar'] = consumed_bar_rect
+        cy += block_heights['consumed_bar']
+
         # === AKTİF ENFEKSİYONLAR ===
-        infect_label = render_text(f(13, bold=True), t('survival_panel_active_infection'), True, (180, 190, 210))
-        self.screen.blit(infect_label, (cx, cy))
-        cy += s(24)
-        
-        infect_ratio = len(self.infected_blocks) / max(1, self.max_infected)
-        infect_w = int(inner_w * infect_ratio)
-        
-        pygame.draw.rect(self.screen, (25, 30, 48), (cx, cy, inner_w, bar_h), border_radius=11)
-        pygame.draw.rect(self.screen, (50, 58, 75), (cx, cy, inner_w, bar_h), 1, border_radius=11)
-        
-        infect_color = (100, 200, 80) if infect_ratio < 0.5 else (255, 200, 50) if infect_ratio < 0.8 else (255, 100, 50)
-        
-        if infect_w > 0:
-            pygame.draw.rect(self.screen, infect_color, (cx, cy, infect_w, bar_h), border_radius=11)
-            shine_surf = self._get_solid_alpha_surface((max(1, infect_w - s(4)), s(7)), (255, 255, 255, 90))
-            self.screen.blit(shine_surf, (cx + s(2), cy + s(2)))
-        
-        infect_text = f(13, bold=True).render(
-            f"{len(self.infected_blocks)} / {self.max_infected}", True, (255, 255, 255))
-        text_rect = infect_text.get_rect(center=(cx + inner_w // 2, cy + bar_h // 2))
-        self.screen.blit(infect_text, text_rect)
-        cy += s(32)
-        
+        if 'infection' not in chosen_plan['dropped']:
+            infect_label = render_text(fonts['label'], texts['infect_label'], True, (180, 190, 210))
+            self.screen.blit(infect_label, (cx, cy))
+            block_rects['infect_label'] = pygame.Rect(cx, cy, infect_label.get_width(), infect_label.get_height())
+            cy += block_heights['infect_label']
+
+            infect_ratio = len(self.infected_blocks) / max(1, self.max_infected)
+            infect_w = int(inner_w * infect_ratio)
+
+            infect_bar_rect = pygame.Rect(cx, cy, inner_w, bar_h)
+            pygame.draw.rect(self.screen, (25, 30, 48), infect_bar_rect, border_radius=11)
+            pygame.draw.rect(self.screen, (50, 58, 75), infect_bar_rect, 1, border_radius=11)
+
+            infect_color = (100, 200, 80) if infect_ratio < 0.5 else (255, 200, 50) if infect_ratio < 0.8 else (255, 100, 50)
+
+            if infect_w > 0:
+                pygame.draw.rect(self.screen, infect_color, (cx, cy, infect_w, bar_h), border_radius=11)
+                shine_surf = self._get_solid_alpha_surface((max(1, infect_w - fs(4)), fs(7)), (255, 255, 255, 90))
+                self.screen.blit(shine_surf, (cx + fs(2), cy + fs(2)))
+
+            infect_text = fonts['label'].render(
+                f"{len(self.infected_blocks)} / {self.max_infected}", True, (255, 255, 255))
+            text_rect = infect_text.get_rect(center=(cx + inner_w // 2, cy + bar_h // 2))
+            self.screen.blit(infect_text, text_rect)
+            block_rects['infect_bar'] = infect_bar_rect
+            cy += block_heights['infect_bar']
+
         # === ANTİVİRÜS DURUMU ===
-        next_av = self.last_antivirus_score + self.ANTIVIRUS_SCORE
-        current = self.board.score
-        av_progress = (current - self.last_antivirus_score) / self.ANTIVIRUS_SCORE
-        av_progress = min(1.0, max(0, av_progress))
-        
-        av_label = render_text(f(13, bold=True), t('survival_panel_antivirus'), True, (180, 190, 210))
-        self.screen.blit(av_label, (cx, cy))
-        
-        # Puan bilgisi (sağda)
-        score_to_av = next_av - current
-        if score_to_av > 0:
-            av_info = f(11).render(t('survival_panel_points_remaining', points=score_to_av), True, (140, 150, 170))
-        else:
-            av_info = render_text(f(11, bold=True), t('survival_panel_ready'), True, (100, 255, 150))
-        self.screen.blit(av_info, (cx + inner_w - av_info.get_width(), cy + s(2)))
-        cy += s(20)
-        
-        pygame.draw.rect(self.screen, (25, 30, 48), (cx, cy, inner_w, bar_h), border_radius=11)
-        pygame.draw.rect(self.screen, (50, 58, 75), (cx, cy, inner_w, bar_h), 1, border_radius=11)
-        
-        av_w = int(inner_w * av_progress)
-        av_color = (0, 200, 255) if av_progress < 1.0 else (100, 255, 150)
-        
-        if av_w > 0:
-            pygame.draw.rect(self.screen, av_color, (cx, cy, av_w, bar_h), border_radius=11)
-            shine_surf = self._get_solid_alpha_surface((max(1, av_w - s(4)), s(7)), (255, 255, 255, 90))
-            self.screen.blit(shine_surf, (cx + s(2), cy + s(2)))
-        
-        av_text = f(13, bold=True).render(f"{int(av_progress * 100)}%", True, (255, 255, 255))
-        text_rect = av_text.get_rect(center=(cx + inner_w // 2, cy + bar_h // 2))
-        self.screen.blit(av_text, text_rect)
+        if 'antivirus' not in chosen_plan['dropped']:
+            av_progress = (current_score - self.last_antivirus_score) / self.ANTIVIRUS_SCORE
+            av_progress = min(1.0, max(0, av_progress))
+
+            av_label = render_text(fonts['label'], texts['av_label'], True, (180, 190, 210))
+            self.screen.blit(av_label, (cx, cy))
+
+            # Puan bilgisi (sağda) — etiketle çakışmayan paya ellipsis'lenmiş
+            av_info = fonts['small'].render(
+                texts['av_info'], True, (100, 255, 150) if av_info_bold else (140, 150, 170))
+            self.screen.blit(av_info, (cx + inner_w - av_info.get_width(), cy + fs(2)))
+            block_rects['av_label'] = pygame.Rect(cx, cy, av_label.get_width(), av_label.get_height())
+            block_rects['av_info'] = pygame.Rect(
+                cx + inner_w - av_info.get_width(), cy + fs(2), av_info.get_width(), av_info.get_height())
+            cy += block_heights['av_label']
+
+            av_bar_rect = pygame.Rect(cx, cy, inner_w, bar_h)
+            pygame.draw.rect(self.screen, (25, 30, 48), av_bar_rect, border_radius=11)
+            pygame.draw.rect(self.screen, (50, 58, 75), av_bar_rect, 1, border_radius=11)
+
+            av_w = int(inner_w * av_progress)
+            av_color = (0, 200, 255) if av_progress < 1.0 else (100, 255, 150)
+
+            if av_w > 0:
+                pygame.draw.rect(self.screen, av_color, (cx, cy, av_w, bar_h), border_radius=11)
+                shine_surf = self._get_solid_alpha_surface((max(1, av_w - fs(4)), fs(7)), (255, 255, 255, 90))
+                self.screen.blit(shine_surf, (cx + fs(2), cy + fs(2)))
+
+            av_text = fonts['label'].render(f"{int(av_progress * 100)}%", True, (255, 255, 255))
+            text_rect = av_text.get_rect(center=(cx + inner_w // 2, cy + bar_h // 2))
+            self.screen.blit(av_text, text_rect)
+            block_rects['av_bar'] = av_bar_rect
+
+        # P1-4: gerçek blit rect'leri containment testleri için kaydedilir.
+        content_bottom = max(
+            (rect.bottom for rect in block_rects.values()),
+            default=panel_rect.y + pad_top,
+        )
+        self._survival_hud_rects = {
+            'panel': panel_rect,
+            'bounds': pygame.Rect(bounds),
+            'flow': chosen_plan['flow'],
+            'dropped': tuple(sorted(chosen_plan['dropped'])),
+            'content_budget': int(content_budget),
+            'content_bottom': int(content_bottom),
+            'blocks': block_rects,
+        }
 
     def restart(self):
         super().restart()
@@ -2357,81 +2558,58 @@ class DailyChallengeMode(Game):
             self.particles.append(particle)
     
     def draw_mode_info(self, info_x, info_y):
-        """Daily Challenge bilgilerini çiz"""
-        from localization import t
+        """Daily Challenge bilgilerini çiz
+
+        P1-5 (Quadrix_Tum_Ekranlar_Olcekleme_Denetim_Raporu): panel yüksekliği
+        sabit %50 ekran oranı yerine İÇERİK BÜTÇESİNDEN türetilir — iç blokların
+        gerçek font yükseklikleri toplanır, panel 320-420 aralığında bütçeye
+        göre büyütülür/küçültülür, açıklama (description) satır limiti kalan
+        yükseklikten dinamik belirlenir. Alt bloklar panel tabanını yükseklik
+        farkındalı guard'larla asla aşmaz; hedef/progress ve tüm blok
+        rect'leri ``self._daily_panel_rects`` altına kaydedilir.
+        """
+        from localization import t, get_language
 
         # Günlük panelini oyun alanının soluna yerleştir
         board_offset_x, board_offset_y = self.get_board_offset()
         available_left = max(220, int(board_offset_x) - 44)
         panel_w = max(240, min(320, available_left))
-        panel_h = max(320, min(420, int(self.screen.get_height() * 0.50)))
         top_offset = 24
 
         panel_x = max(18, int(board_offset_x) - panel_w - 26)
         panel_y = int(board_offset_y) + int(top_offset)
-        panel_rect = pygame.Rect(panel_x, panel_y, panel_w, panel_h)
 
         # Sağdaki skor kartı temeli: koyu gradient + ince border
         pad_x = 18
         pad_top = 14
         pad_bottom = 14
-        inner_x = panel_rect.x + pad_x
-        inner_w = panel_rect.width - pad_x * 2
+        inner_w = panel_w - pad_x * 2
 
-        # Sağdaki standart HUD paneli ile aynı stil: glass panel (alpha=90)
-        ui_style.draw_glass_panel(self.screen, panel_rect, alpha=90, border_color=(60, 70, 90))
-
-        cursor = panel_rect.y + pad_top
+        # === ÖLÇÜM AŞAMASI (measure-first) ==================================
+        # Tüm bloklar inner_w'ye göre ölçülür; panel yüksekliği bu ölçümlerden
+        # türetilir. Surface üretimi yalnız LRU önbellekli render_fit_text /
+        # wrap_text_limited üzerinden akar (kare-başı tahsis yasağı — CLAUDE.md).
+        def _lines_height(lines, font, line_gap):
+            if not lines:
+                return 0
+            return len(lines) * font.get_height() + (len(lines) - 1) * line_gap
 
         title_txt = t('dc_panel_title')
         title_surf = ui_style.render_fit_text(title_txt, (100, 220, 255), inner_w, 18, bold=True)
-        self.screen.blit(title_surf, (inner_x, cursor))
-        cursor += title_surf.get_height() + 8
-
         name_txt = str(self.challenge.get('name') or '')
         name_surf = ui_style.render_fit_text(name_txt, (235, 225, 210), inner_w, 26, bold=True)
-        self.screen.blit(name_surf, (inner_x, cursor))
-        cursor += name_surf.get_height() + 10
-
-        def draw_wrapped_text_lines(text: str, color: tuple[int, int, int], font_size: int, max_lines: int, line_gap: int = 2) -> int:
-            txt = str(text or '').strip()
-            if not txt:
-                return 0
-            font = ui_style.get_font(font_size, bold=False)
-            words = txt.split()
-            if not words:
-                return 0
-
-            lines: list[str] = []
-            current = words[0]
-            for word in words[1:]:
-                candidate = f"{current} {word}"
-                if font.size(candidate)[0] <= inner_w:
-                    current = candidate
-                else:
-                    lines.append(current)
-                    current = word
-                    if len(lines) >= max_lines - 1:
-                        break
-            if len(lines) < max_lines:
-                lines.append(current)
-
-            drawn_h = 0
-            for line in lines[:max_lines]:
-                surf = font.render(line, True, color)
-                self.screen.blit(surf, (inner_x, cursor + drawn_h))
-                drawn_h += surf.get_height() + line_gap
-            return max(0, drawn_h - line_gap)
 
         desc_txt = str(self.challenge.get('description') or '')
-        desc_h = draw_wrapped_text_lines(desc_txt, (160, 170, 190), 15, max_lines=3, line_gap=3)
-        if desc_h > 0:
-            cursor += desc_h + 10
+        desc_size, desc_gap = 15, 3
+        desc_font = ui_style.get_font(desc_size, bold=False)
+        # İstenen (tam) sarma — satır limiti panel bütçesi çıktıktan sonra
+        # belirlenir (rapor: 'açıklama satır limitini kalan yüksekliğe göre').
+        desc_full_lines = list(wrap_text_limited(desc_txt, desc_font, inner_w).lines) if desc_txt.strip() else []
 
         briefing_txt = str(self.challenge.get('briefing') or '')
-        briefing_h = draw_wrapped_text_lines(briefing_txt, (175, 190, 220), 14, max_lines=2, line_gap=3)
-        if briefing_h > 0:
-            cursor += briefing_h + 10
+        briefing_size, briefing_gap = 14, 3
+        briefing_font = ui_style.get_font(briefing_size, bold=False)
+        briefing_lines = list(wrap_text_limited(briefing_txt, briefing_font, inner_w, max_lines=2).lines) if briefing_txt.strip() else []
 
         if 'target_score' in self.challenge:
             target_text = str(self.challenge.get('objective_line') or t('dc_target_score', value=self.challenge['target_score']))
@@ -2446,51 +2624,37 @@ class DailyChallengeMode(Game):
             target_text = t('dc_keep_going')
             progress = 0
 
-        target_h = draw_wrapped_text_lines(target_text, (200, 210, 225), 16, max_lines=2, line_gap=2)
-        if target_h > 0:
-            cursor += target_h + 8
+        target_size, target_gap = 16, 2
+        target_font = ui_style.get_font(target_size, bold=False)
+        target_lines = list(wrap_text_limited(str(target_text), target_font, inner_w, max_lines=2).lines) if str(target_text).strip() else []
 
         progress_h = 14
-        progress_rect = pygame.Rect(inner_x, cursor, inner_w, progress_h)
-        pygame.draw.rect(self.screen, (255, 255, 255, 22), progress_rect, border_radius=8)
-        if progress > 0:
-            fill_w = int(inner_w * (progress / 100.0))
-            color = GREEN if progress >= 100 else YELLOW if progress >= 50 else ORANGE
-            pygame.draw.rect(self.screen, color, (inner_x, cursor, fill_w, progress_h), border_radius=8)
-        pygame.draw.rect(self.screen, (255, 255, 255, 40), progress_rect, 1, border_radius=8)
-        cursor = progress_rect.bottom + 12
 
+        completed_surf = None
+        bonus_surf = None
         if self.challenge_completed:
             completed_surf = ui_style.render_fit_text(t('dc_completed'), GREEN, inner_w, 18, bold=True)
-            self.screen.blit(completed_surf, (inner_x, cursor))
-            cursor += completed_surf.get_height() + 4
-
             bonus_val = self.challenge.get('bonus')
             bonus_text = t(
                 'dc_bonus_multiplier',
                 bonus=self._format_bonus_multiplier(float(bonus_val or 1.0), get_language()),
             )
             bonus_surf = ui_style.render_fit_text(bonus_text, (255, 200, 50), inner_w, 14, bold=True)
-            self.screen.blit(bonus_surf, (inner_x, cursor))
-            cursor += bonus_surf.get_height() + 10
 
+        effects_title_surf = None
+        effects_line_groups = []
+        fx_size, fx_gap = 14, 2
+        fx_font = ui_style.get_font(fx_size, bold=False)
         if self.side_effects:
-            effects_title = t('dc_effects_title')
-            effects_title_surf = ui_style.render_fit_text(effects_title, (255, 200, 50), inner_w, 15, bold=True)
-            self.screen.blit(effects_title_surf, (inner_x, cursor))
-            cursor += effects_title_surf.get_height() + 5
-
-            fx_font_size = 14
+            effects_title_surf = ui_style.render_fit_text(t('dc_effects_title'), (255, 200, 50), inner_w, 15, bold=True)
             for effect in self.side_effects[:4]:
-                if cursor > panel_rect.bottom - pad_bottom - 34:
-                    break
-                line = f'- {effect}'
-                line_h = draw_wrapped_text_lines(line, (200, 210, 235), fx_font_size, max_lines=2, line_gap=2)
-                if line_h <= 0:
-                    continue
-                cursor += line_h + 2
-            cursor += 6
+                group = list(wrap_text_limited(f'- {effect}', fx_font, inner_w, max_lines=2).lines)
+                if group:
+                    effects_line_groups.append(group)
 
+        detail_groups = []
+        detail_size, detail_gap = 13, 2
+        detail_font = ui_style.get_font(detail_size, bold=False)
         # Kural / başarısızlık / ödül satırları
         for detail_text, detail_color in (
             (str(self.challenge.get('rule_line') or ''), (205, 215, 235)),
@@ -2499,18 +2663,22 @@ class DailyChallengeMode(Game):
         ):
             if not detail_text:
                 continue
-            if cursor > panel_rect.bottom - pad_bottom - 24:
-                break
-            detail_h = draw_wrapped_text_lines(detail_text, detail_color, 13, max_lines=2, line_gap=2)
-            if detail_h > 0:
-                cursor += detail_h + 5
+            group = list(wrap_text_limited(detail_text, detail_font, inner_w, max_lines=2).lines)
+            if group:
+                detail_groups.append((group, detail_color))
 
+        mistakes_lines = []
+        mistakes_size, mistakes_gap = 14, 2
+        mistakes_font = ui_style.get_font(mistakes_size, bold=False)
         if int(getattr(self, 'max_mistakes', 0) or 0) > 0 and not self.challenge_completed:
             mistakes_text = t('dc_mistakes', made=self.mistakes_made, max=self.max_mistakes)
-            mistakes_h = draw_wrapped_text_lines(mistakes_text, (255, 170, 145), 14, max_lines=2, line_gap=2)
-            if mistakes_h > 0:
-                cursor += mistakes_h + 6
+            mistakes_lines = list(wrap_text_limited(mistakes_text, mistakes_font, inner_w, max_lines=2).lines)
 
+        status_lines = []
+        status_color = GREEN
+        status_size, status_gap = 14, 2
+        status_font = ui_style.get_font(status_size, bold=False)
+        streak_surf = None
         if self.user_manager:
             status = self.user_manager.get_daily_status()
             if status:
@@ -2521,18 +2689,15 @@ class DailyChallengeMode(Game):
                     remaining = max(0, DAILY_MAX_FAILURES - status.get('fails', 0))
                     status_text = t('dc_remaining_tries', remaining=remaining, max=DAILY_MAX_FAILURES)
                     color = GREEN if remaining > 0 else RED
-                status_h = draw_wrapped_text_lines(status_text, color, 14, max_lines=2, line_gap=2)
-                if status_h > 0:
-                    cursor += status_h + 6
-
+                status_lines = list(wrap_text_limited(status_text, status_font, inner_w, max_lines=2).lines)
+                status_color = color
                 # Streak göster
                 streak_val = int(status.get('streak', 0) or 0)
                 if streak_val > 0:
                     streak_text = t('dc_streak', days=streak_val)
                     streak_surf = ui_style.render_fit_text(streak_text, (150, 220, 255), inner_w, 13, bold=False)
-                    self.screen.blit(streak_surf, (inner_x, cursor))
-                    cursor += streak_surf.get_height() + 5
 
+        adaptive_surf = None
         adaptive_scale = float(self.challenge.get('adaptive_scale', 1.0) or 1.0)
         if abs(adaptive_scale - 1.0) >= 0.01:
             if adaptive_scale > 1.0:
@@ -2542,8 +2707,203 @@ class DailyChallengeMode(Game):
                 adaptive_txt = t('dc_adaptive_down')
                 adaptive_color = (140, 220, 170)
             adaptive_surf = ui_style.render_fit_text(adaptive_txt, adaptive_color, inner_w, 12, bold=False)
-            self.screen.blit(adaptive_surf, (inner_x, cursor))
-            cursor += adaptive_surf.get_height() + 4
+
+        # === YÜKSEKLİK BÜTÇESİ ==============================================
+        # Açıklamanın ALTINDAKİ tüm bloklar + aralarındaki ilerleme payları.
+        below_desc_h = 0
+        briefing_h = _lines_height(briefing_lines, briefing_font, briefing_gap)
+        if briefing_h > 0:
+            below_desc_h += briefing_h + 10
+        target_h = _lines_height(target_lines, target_font, target_gap)
+        if target_h > 0:
+            below_desc_h += target_h + 8
+        below_desc_h += progress_h + 12
+        if completed_surf is not None:
+            below_desc_h += completed_surf.get_height() + 4
+        if bonus_surf is not None:
+            below_desc_h += bonus_surf.get_height() + 10
+        if effects_title_surf is not None:
+            below_desc_h += effects_title_surf.get_height() + 5
+            for group in effects_line_groups:
+                below_desc_h += _lines_height(group, fx_font, fx_gap) + 2
+            below_desc_h += 6
+        for group, _detail_color in detail_groups:
+            below_desc_h += _lines_height(group, detail_font, detail_gap) + 5
+        if mistakes_lines:
+            below_desc_h += _lines_height(mistakes_lines, mistakes_font, mistakes_gap) + 6
+        if status_lines:
+            below_desc_h += _lines_height(status_lines, status_font, status_gap) + 6
+        if streak_surf is not None:
+            below_desc_h += streak_surf.get_height() + 5
+        if adaptive_surf is not None:
+            below_desc_h += adaptive_surf.get_height() + 4
+
+        fixed_above_desc = pad_top + title_surf.get_height() + 8 + name_surf.get_height() + 10
+        desc_full_h = _lines_height(desc_full_lines, desc_font, desc_gap)
+        needed_h = fixed_above_desc + (desc_full_h + 10 if desc_full_lines else 0) + below_desc_h + pad_bottom
+
+        # Rapor sözleşmesi: panel 320-420 yükseklik aralığında; içerik küçükse
+        # taban 320, sığmazsa tavandan içerik bütçesine göre küçültülür.
+        panel_h = max(320, min(420, needed_h))
+        # Ekran bütçesi: alt kenar ekranı aşamaz (aşırı kısa pencerede taban 240).
+        panel_h = min(panel_h, max(240, int(self.screen.get_height()) - panel_y - 12))
+
+        # Açıklama satır limiti: kalan dikey bütçeden satır sayısına indirgenir.
+        desc_avail_h = panel_h - fixed_above_desc - below_desc_h - pad_bottom - (10 if desc_full_lines else 0)
+        desc_max_lines = max(0, int(desc_avail_h // max(1, desc_font.get_height() + desc_gap)))
+        desc_draw_lines = list(wrap_text_limited(desc_txt, desc_font, inner_w, max_lines=desc_max_lines).lines) if desc_full_lines else []
+
+        # === ÇİZİM ===========================================================
+        panel_rect = pygame.Rect(panel_x, panel_y, panel_w, panel_h)
+        inner_x = panel_rect.x + pad_x
+
+        # Sağdaki standart HUD paneli ile aynı stil: glass panel (alpha=90)
+        ui_style.draw_glass_panel(self.screen, panel_rect, alpha=90, border_color=(60, 70, 90))
+
+        recorded = {
+            'panel': panel_rect,
+            'desc_max_lines': int(desc_max_lines),
+            'content_budget': int(panel_h),
+        }
+        cursor = panel_rect.y + pad_top
+
+        def _blit_lines(lines, font, color, font_size, line_gap):
+            """Sarılmış satırları LRU önbellekli render_fit_text ile çiz."""
+            rects = []
+            drawn_h = 0
+            for line in lines:
+                surf = ui_style.render_fit_text(line, color, inner_w, font_size, bold=False)
+                self.screen.blit(surf, (inner_x, cursor + drawn_h))
+                rects.append(pygame.Rect(inner_x, cursor + drawn_h, surf.get_width(), surf.get_height()))
+                drawn_h += surf.get_height() + line_gap
+            if not rects:
+                return rects, 0
+            return rects, max(0, drawn_h - line_gap)
+
+        self.screen.blit(title_surf, (inner_x, cursor))
+        recorded['title'] = pygame.Rect(inner_x, cursor, title_surf.get_width(), title_surf.get_height())
+        cursor += title_surf.get_height() + 8
+
+        self.screen.blit(name_surf, (inner_x, cursor))
+        recorded['name'] = pygame.Rect(inner_x, cursor, name_surf.get_width(), name_surf.get_height())
+        cursor += name_surf.get_height() + 10
+
+        # Açıklama — dinamik satır limitiyle (desc_max_lines).
+        desc_rects, desc_draw_h = _blit_lines(desc_draw_lines, desc_font, (160, 170, 190), desc_size, desc_gap)
+        recorded['desc_lines'] = desc_rects
+        if desc_draw_h > 0:
+            cursor += desc_draw_h + 10
+
+        briefing_rects, briefing_draw_h = _blit_lines(briefing_lines, briefing_font, (175, 190, 220), briefing_size, briefing_gap)
+        recorded['briefing_lines'] = briefing_rects
+        if briefing_draw_h > 0:
+            cursor += briefing_draw_h + 10
+
+        target_rects, target_draw_h = _blit_lines(target_lines, target_font, (200, 210, 225), target_size, target_gap)
+        recorded['target_lines'] = target_rects
+        if target_draw_h > 0:
+            cursor += target_draw_h + 8
+
+        # Hedef progress barı — hedef satırının altında (rapor: rect kaydı).
+        progress_rect = pygame.Rect(inner_x, cursor, inner_w, progress_h)
+        pygame.draw.rect(self.screen, (255, 255, 255, 22), progress_rect, border_radius=8)
+        if progress > 0:
+            fill_w = int(inner_w * (progress / 100.0))
+            color = GREEN if progress >= 100 else YELLOW if progress >= 50 else ORANGE
+            pygame.draw.rect(self.screen, color, (inner_x, cursor, fill_w, progress_h), border_radius=8)
+        pygame.draw.rect(self.screen, (255, 255, 255, 40), progress_rect, 1, border_radius=8)
+        recorded['progress'] = progress_rect
+        cursor = progress_rect.bottom + 12
+
+        if completed_surf is not None:
+            self.screen.blit(completed_surf, (inner_x, cursor))
+            recorded['completed'] = pygame.Rect(inner_x, cursor, completed_surf.get_width(), completed_surf.get_height())
+            cursor += completed_surf.get_height() + 4
+
+        if bonus_surf is not None:
+            self.screen.blit(bonus_surf, (inner_x, cursor))
+            recorded['bonus'] = pygame.Rect(inner_x, cursor, bonus_surf.get_width(), bonus_surf.get_height())
+            cursor += bonus_surf.get_height() + 10
+
+        if effects_title_surf is not None:
+            self.screen.blit(effects_title_surf, (inner_x, cursor))
+            recorded['effects_title'] = pygame.Rect(inner_x, cursor, effects_title_surf.get_width(), effects_title_surf.get_height())
+            cursor += effects_title_surf.get_height() + 5
+            effects_line_rects = []
+            for group in effects_line_groups:
+                group_h = _lines_height(group, fx_font, fx_gap)
+                if cursor + group_h > panel_rect.bottom - pad_bottom:
+                    break
+                group_rects, group_draw_h = _blit_lines(group, fx_font, (200, 210, 235), fx_size, fx_gap)
+                effects_line_rects.extend(group_rects)
+                cursor += group_draw_h + 2
+            recorded['effects_lines'] = effects_line_rects
+            cursor += 6
+
+        # Kural / başarısızlık / ödül satırları
+        detail_rects = []
+        for group, detail_color in detail_groups:
+            group_h = _lines_height(group, detail_font, detail_gap)
+            if cursor + group_h > panel_rect.bottom - pad_bottom:
+                break
+            group_rects, group_draw_h = _blit_lines(group, detail_font, detail_color, detail_size, detail_gap)
+            detail_rects.extend(group_rects)
+            cursor += group_draw_h + 5
+        recorded['details'] = detail_rects
+
+        mistakes_rects = []
+        if mistakes_lines:
+            block_h = _lines_height(mistakes_lines, mistakes_font, mistakes_gap)
+            if cursor + block_h <= panel_rect.bottom - pad_bottom:
+                mistakes_rects, mistakes_draw_h = _blit_lines(mistakes_lines, mistakes_font, (255, 170, 145), mistakes_size, mistakes_gap)
+                cursor += mistakes_draw_h + 6
+        recorded['mistakes'] = mistakes_rects
+
+        status_rects = []
+        if status_lines:
+            block_h = _lines_height(status_lines, status_font, status_gap)
+            if cursor + block_h <= panel_rect.bottom - pad_bottom:
+                status_rects, status_draw_h = _blit_lines(status_lines, status_font, status_color, status_size, status_gap)
+                cursor += status_draw_h + 6
+        recorded['status'] = status_rects
+
+        streak_rect = None
+        if streak_surf is not None:
+            if cursor + streak_surf.get_height() <= panel_rect.bottom - pad_bottom:
+                self.screen.blit(streak_surf, (inner_x, cursor))
+                streak_rect = pygame.Rect(inner_x, cursor, streak_surf.get_width(), streak_surf.get_height())
+                cursor += streak_surf.get_height() + 5
+        recorded['streak'] = streak_rect
+
+        adaptive_rect = None
+        if adaptive_surf is not None:
+            if cursor + adaptive_surf.get_height() <= panel_rect.bottom - pad_bottom:
+                self.screen.blit(adaptive_surf, (inner_x, cursor))
+                adaptive_rect = pygame.Rect(inner_x, cursor, adaptive_surf.get_width(), adaptive_surf.get_height())
+                cursor += adaptive_surf.get_height() + 4
+        recorded['adaptive'] = adaptive_rect
+
+        # P1-5: gerçek blit rect'leri containment testleri için kaydedilir.
+        all_rects = [
+            recorded['title'], recorded['name'], recorded['progress'],
+            recorded.get('completed'), recorded.get('bonus'),
+            recorded.get('effects_title'), recorded.get('streak'),
+            recorded.get('adaptive'),
+        ]
+        for rect_list in (
+            recorded.get('desc_lines'), recorded.get('briefing_lines'),
+            recorded.get('target_lines'), recorded.get('effects_lines'),
+            recorded.get('details'), recorded.get('mistakes'),
+            recorded.get('status'),
+        ):
+            if rect_list:
+                all_rects.extend(rect_list)
+        content_bottom = max(
+            (rect.bottom for rect in all_rects if rect is not None),
+            default=panel_rect.y + pad_top,
+        )
+        recorded['content_bottom'] = int(content_bottom)
+        self._daily_panel_rects = recorded
         return 0
 
     def can_restart(self) -> bool:
