@@ -38,6 +38,8 @@ from platform_utils import (
 from ui_theme import UIColors, UIFonts
 from asset_manager import load_image
 from text_cache import render_text
+from ui_text_layout import ellipsize_text
+from game_over_surfaces import get_render_safe_rect
 try:
     from ui_scaling import apply_ui_scale_preset, get_projected_effective_scale, get_scale, resolve_ui_scale_size, get_virtual_canvas_ui_scale, is_virtual_canvas_active
 except ImportError as exc:  # sessiz yanlış rejim yasak (kılavuz EKS-011)
@@ -4924,7 +4926,10 @@ class Menu:
                 text_surf.blit(_gp_emoji, (0, (text_surf.get_height() - 18) // 2))
                 text_surf.blit(label_surf, (18, (text_surf.get_height() - label_surf.get_height()) // 2))
             else:
-                text_surf = font.render(f'🎮 {label}', True, (100, 220, 160))
+                # P1-12a: PNG asset yüklenemediğinde yalın etiket — font
+                # emoji glifi çizme (pygame fontları renkli emojiyi bozar;
+                # CLAUDE.md yasağı). PNG yolu varken davranış aynen korunur.
+                text_surf = font.render(label, True, (100, 220, 160))
             text_rect = text_surf.get_rect()
 
             # Arka plan paneli
@@ -7566,12 +7571,15 @@ class HighScoreScreen:
         )
         self._back_hover = bool(self._back_rect.collidepoint(live_pos))
 
-        # Grid parametreleri
+        # Grid parametreleri (P1-12a: içerik alanı safe rect bütçesine
+        # bağlanır — baseline'ta nötr; HDR marjlarında kartlar güvenli alanda)
         padding = _s(30)
         cols = 3
         card_spacing = _s(20)
-        content_width = min(_s(1200), width - padding * 2)
-        content_x = (width - content_width) // 2
+        safe = get_render_safe_rect(self.screen)
+        bounds = safe if safe is not None else pygame.Rect(0, 0, int(width), int(height))
+        content_width = min(_s(1200), width - padding * 2, bounds.width - padding * 2)
+        content_x = bounds.left + (bounds.width - content_width) // 2
         card_width = (content_width - card_spacing * (cols - 1)) // cols
         card_height = _s(200)
         
@@ -7591,6 +7599,12 @@ class HighScoreScreen:
         
         # Kartları çiz
         self.card_rects = []
+        # P1-12a: gerçek blit rect'leri containment testleri için kaydedilir.
+        self._highscore_rects = {
+            'bounds': bounds, 'clip': clip_rect,
+            'content_x': int(content_x), 'content_w': int(content_width),
+            'cards': self.card_rects, 'card_rows': [],
+        }
         for i, (mode_key, mode_label_key, mode_color) in enumerate(self.MODES):
             col = i % cols
             row = i // cols
@@ -7620,75 +7634,141 @@ class HighScoreScreen:
         if self.max_scroll > 0:
             self._draw_scroll_indicator(width - _s(25), content_top, _s(10), visible_height)
     
+    def _hs_cached_surface(self, kind: str, size, color, make) -> pygame.Surface:
+        """(kind, w, h, renk) anahtarlı kart yüzeyi önbelleği (P1-12a).
+
+        Eski kod her kart için her karede iki SRCALPHA Surface tahsis
+        ediyordu (9 mod → 18 yüzey/kare). Mod renkleri sabit küme olduğundan
+        anahtar uzayı sınırlı kalır.
+        """
+        cache = self.__dict__.setdefault('_hs_surface_cache', {})
+        key = (kind, int(size[0]), int(size[1]), tuple(color[:3]))
+        cached = cache.get(key)
+        if cached is None:
+            cached = make()
+            cache[key] = cached
+            while len(cache) > 32:
+                oldest = next(iter(cache))
+                cache.pop(oldest, None)
+        return cached
+
     def _draw_mode_card(self, rect, mode_name, mode_color, scores):
         """Mod kartını çiz"""
         _s = self._s
-        # Kart arka planı
-        card_surf = pygame.Surface((rect.width, rect.height), pygame.SRCALPHA)
-        pygame.draw.rect(card_surf, (15, 25, 40, 220), card_surf.get_rect(), border_radius=_s(12))
+        # Kart arka planı (P1-12a: önbellekli — kare-başı tahsis yok)
+        card_surf = self._hs_cached_surface(
+            'card', rect.size, mode_color,
+            lambda: _mm_make_rounded(rect.size, (15, 25, 40, 220), _s(12)))
         self.screen.blit(card_surf, rect.topleft)
-        
+
         # Çerçeve
         pygame.draw.rect(self.screen, mode_color, rect, 2, border_radius=_s(12))
-        
-        # Üst başlık bandı
+
+        # Üst başlık bandı (P1-12a: önbellekli)
         header_height = _s(36)
         header_rect = pygame.Rect(rect.x, rect.y, rect.width, header_height)
-        header_surf = pygame.Surface((rect.width, header_height), pygame.SRCALPHA)
-        pygame.draw.rect(header_surf, (*mode_color, 50), header_surf.get_rect(), 
-                        border_top_left_radius=_s(12), border_top_right_radius=_s(12))
+        header_surf = self._hs_cached_surface(
+            'header', (rect.width, header_height), mode_color,
+            lambda: _mm_make_header((rect.width, header_height), (*mode_color, 50), _s(12)))
         self.screen.blit(header_surf, header_rect.topleft)
-        
-        # Mod ismi
-        name_font = retro_style.get_font(_s(18), bold=True)
-        name_surf = name_font.render(mode_name, True, mode_color)
+
+        # Mod ismi (P1-12a: fitted — uzun mod adları kart bütçesine
+        # ASCII '...' ile sığar; baseline genişliğinde font/boyut aynı).
+        name_surf = retro_style.render_fit_text(
+            mode_name, mode_color, max(24, rect.width - _s(24)), _s(18), bold=True)
         self.screen.blit(name_surf, name_surf.get_rect(center=(rect.centerx, rect.y + header_height // 2)))
-        
+
+        # Satır rect kayıtları (P1-12a test sözleşmesi)
+        row_records = [{'name': pygame.Rect(
+            rect.centerx - name_surf.get_width() // 2,
+            rect.y + header_height // 2 - name_surf.get_height() // 2,
+            name_surf.get_width(), name_surf.get_height())}]
         # Skor listesi
         score_area_y = rect.y + header_height + _s(10)
         score_area_h = rect.height - header_height - _s(15)
-        
+
         if not scores:
             # Skor yoksa mesaj
             no_score_font = retro_style.get_font(_s(14), bold=False)
             no_score_surf = no_score_font.render(t('no_scores'), True, retro_style.text_muted)
             self.screen.blit(no_score_surf, no_score_surf.get_rect(center=(rect.centerx, score_area_y + score_area_h // 2)))
+            self._highscore_rects['card_rows'].append(row_records)
             return
-        
+
         # Skorları göster (max 3)
         row_height = score_area_h // 3
-        
+
         for i, entry in enumerate(scores[:3]):
             row_y = score_area_y + i * row_height
-            
+
+            # Tarih (sağda, küçük) — P1-12a: ölçüm ÖNCE (kolon bütçesi
+            # sıra/skor çakışma guard'ı için tarih genişliği gerekli).
+            date_text = entry.get('date', '')[:10] if entry.get('date') else ''
+            date_font = retro_style.get_font(_s(11), bold=False)
+            date_surf = date_font.render(date_text, True, retro_style.text_muted) if date_text else None
+
             # Sıra numarası
             rank_font = retro_style.get_font(_s(16), bold=True)
             rank_color = mode_color if i == 0 else retro_style.text_secondary
             rank_text = f"#{i + 1}"
             rank_surf = rank_font.render(rank_text, True, rank_color)
-            self.screen.blit(rank_surf, (rect.x + _s(15), row_y + row_height // 2 - rank_surf.get_height() // 2))
-            
+            rank_x = rect.x + _s(15)
+            rank_rect = rank_surf.get_rect(
+                midleft=(rank_x, row_y + row_height // 2))
+            self.screen.blit(rank_surf, rank_rect)
+
             # Skor
             score_val = entry.get('score', 0)
             score_text = f"{score_val:,}".replace(',', '.')
             score_font = retro_style.get_font(_s(18), bold=True)
             score_color = (255, 255, 255) if i == 0 else retro_style.text_primary
             score_surf = score_font.render(score_text, True, score_color)
-            self.screen.blit(score_surf, score_surf.get_rect(center=(rect.centerx, row_y + row_height // 2)))
-            
-            # Tarih (sağda, küçük)
-            date_text = entry.get('date', '')[:10] if entry.get('date') else ''
-            if date_text:
-                date_font = retro_style.get_font(_s(11), bold=False)
-                date_surf = date_font.render(date_text, True, retro_style.text_muted)
-                self.screen.blit(date_surf, (rect.right - date_surf.get_width() - _s(10), 
-                                            row_y + row_height // 2 - date_surf.get_height() // 2))
-            
+
+            # P1-12a: sıra/skor/tarih kolon bütçesi — dar kartlarda sıra ile
+            # ortalanan skor çakışabiliyordu (tarih guard'ı vardı, sıra yoktu).
+            # Yalnız TAŞMA anında devreye girer: skor, sıra ile tarih arasındaki
+            # kalan banda fitted çizilir; baseline genişliğinde nötrdür.
+            rank_right = rank_x + rank_surf.get_width()
+            score_left = rect.centerx - score_surf.get_width() // 2
+            date_reserve = (date_surf.get_width() + _s(10)) if date_surf is not None else 0
+            span = rect.width - _s(15) - rank_surf.get_width() - _s(10) - date_reserve - _s(10)
+            if rank_right + _s(6) > score_left:
+                score_surf = retro_style.render_fit_text(
+                    score_text, score_color, max(24, span), _s(18), bold=True)
+                score_rect = score_surf.get_rect(
+                    topleft=(rank_right + _s(8), row_y + row_height // 2 - score_surf.get_height() // 2))
+            else:
+                score_rect = score_surf.get_rect(
+                    center=(rect.centerx, row_y + row_height // 2))
+            self.screen.blit(score_surf, score_rect)
+
+            # Tarih çizimi (sağda) — mevcut çakışma guard'ı korunur.
+            if date_surf is not None:
+                # Overlap kontrolü: skor ile tarih çakışmasın
+                score_right_edge = score_rect.right
+                date_left_edge = rect.right - date_surf.get_width() - _s(10)
+
+                # Çakışma yoksa çiz
+                if date_left_edge > score_right_edge + _s(10):
+                    date_rect = date_surf.get_rect(
+                        midleft=(date_left_edge, row_y + row_height // 2))
+                    self.screen.blit(date_surf, date_rect)
+                else:
+                    date_rect = None
+            else:
+                date_rect = None
+
+            row_records.append({
+                'rank': rank_rect, 'score': score_rect, 'date': date_rect,
+            })
+
             # Ayırıcı çizgi
             if i < len(scores) - 1:
                 line_y = row_y + row_height - 1
-                pygame.draw.line(self.screen, (*mode_color, 40), 
+                pygame.draw.line(self.screen, (*mode_color, 40),
                                (rect.x + _s(15), line_y), (rect.right - _s(15), line_y), 1)
+
+        self._highscore_rects['card_rows'].append(row_records)
     
     def _draw_scroll_indicator(self, x, y, width, height):
         """Scroll göstergesini çiz"""
@@ -8830,6 +8910,29 @@ class AchievementScreen:
 
 
 
+def _mm_make_fill(size, rgba):
+    """Düz renkli SRCALPHA yüzey üret (P1-12a dim/panel önbellek üreticisi)."""
+    surf = pygame.Surface((max(1, int(size[0])), max(1, int(size[1]))), pygame.SRCALPHA)
+    surf.fill(rgba)
+    return surf
+
+
+def _mm_make_rounded(size, rgba, radius):
+    """Yuvarlatılmış köşeli düz yüzey üret (P1-12a gölge önbellek üreticisi)."""
+    surf = pygame.Surface((max(1, int(size[0])), max(1, int(size[1]))), pygame.SRCALPHA)
+    pygame.draw.rect(surf, rgba, surf.get_rect(), border_radius=int(radius))
+    return surf
+
+
+def _mm_make_header(size, rgba, radius):
+    """Üst köşeleri yuvarlatılmış bant yüzeyi (P1-12a header üreticisi)."""
+    surf = pygame.Surface((max(1, int(size[0])), max(1, int(size[1]))), pygame.SRCALPHA)
+    pygame.draw.rect(
+        surf, rgba, surf.get_rect(),
+        border_top_left_radius=int(radius), border_top_right_radius=int(radius))
+    return surf
+
+
 class ModeMusicScreen:
     """Per-mode music selection UI."""
 
@@ -8871,21 +8974,73 @@ class ModeMusicScreen:
         self.picker_selected = 0
         self.picker_scroll = 0
         self.picker_item_rects: list[tuple[pygame.Rect, int]] = []
+        # P1-12a: (kind, w, h) anahtarlı sınırlı yüzey önbelleği (FAZ A6
+        # deseni) — gölge/panel/chip/satır/zemin/dim yüzeyleri kare başına
+        # yeniden tahsis edilmez; pencere boyutu değişince yeni anahtar
+        # üretir, kapasite aşımında en eski tahliye edilir.
+        self._mm_surface_cache: dict[tuple, pygame.Surface] = {}
+
+    def _ui_scale(self) -> float:
+        """Ortak UI ölçeği (HighScoreScreen ile aynı profil — P1-12a)."""
+        _vc = get_virtual_canvas_ui_scale()
+        if _vc is not None:
+            return _vc
+        return get_projected_effective_scale(
+            self.screen, min_scale=0.68, max_scale=1.24, reference_size=(1366.0, 768.0),
+        )
+
+    def _s(self, value: int | float, minimum: int = 1) -> int:
+        if is_virtual_canvas_active():
+            return max(minimum, int(round(float(value))))
+        return max(minimum, int(round(value * self._ui_scale())))
+
+    def _mm_cached_surface(self, kind: str, size, make) -> pygame.Surface:
+        """(kind, w, h) anahtarlı yüzey önbelleği — kare-başı tahsis yasağı."""
+        cache = self._mm_surface_cache
+        key = (kind, int(size[0]), int(size[1]))
+        cached = cache.get(key)
+        if cached is None:
+            cached = make()
+            cache[key] = cached
+            while len(cache) > 24:
+                oldest = next(iter(cache))
+                cache.pop(oldest, None)
+        return cached
+
+    def _mm_panel_bounds(self) -> pygame.Rect:
+        """Mod müziği panelleri için güvenli alan (P1-12a).
+
+        RenderGeometry safe rect'i varsa ona, yoksa tam ekran fallback'e
+        dönülür — dummy sürücü/test ortamında clamp no-op olur.
+        """
+        safe = get_render_safe_rect(self.screen)
+        if safe is not None:
+            return safe
+        width, height = self.screen.get_size()
+        return pygame.Rect(0, 0, int(width), int(height))
 
     def _overlay_layout(self):
         width, height = self.screen.get_size()
+        _s = self._s
 
-        panel_w = min(860, width - 120)
-        panel_h = min(560, height - 160)
-        panel_x = (width - panel_w) // 2
-        panel_y = (height - panel_h) // 2
-        panel_rect = pygame.Rect(panel_x, panel_y, panel_w, panel_h)
+        # P1-12a: panel ölçekli tabanlara ve güvenli alana bağlanır. Eski
+        # sabit 860/560 formülü korunan genişlikte birebir kalır
+        # (min(w-120) davranışı); küçük pencerelerde panel ekrana sığar.
+        bounds = self._mm_panel_bounds()
+        panel_w = min(_s(860), max(_s(320), width - _s(120)))
+        panel_h = min(_s(560), max(_s(240), height - _s(160)))
+        panel_w = min(panel_w, bounds.width)
+        panel_h = min(panel_h, bounds.height)
+        panel_rect = pygame.Rect((width - panel_w) // 2, (height - panel_h) // 2, panel_w, panel_h)
+        panel_rect = panel_rect.clamp(bounds)
 
-        list_top = panel_rect.y + 86
-        list_left = panel_rect.x + 18
-        list_right = panel_rect.right - 18
-        list_bottom = panel_rect.bottom - 60
-        list_rect = pygame.Rect(list_left, list_top, list_right - list_left, list_bottom - list_top)
+        list_top = panel_rect.y + _s(86)
+        list_left = panel_rect.x + _s(18)
+        list_right = panel_rect.right - _s(18)
+        list_bottom = panel_rect.bottom - _s(60)
+        list_rect = pygame.Rect(
+            list_left, list_top,
+            max(40, list_right - list_left), max(40, list_bottom - list_top))
 
         # Keep enough vertical room for title + selected track label (sub_text)
         # so the overlay matches the Music Hub row style.
@@ -8981,9 +9136,11 @@ class ModeMusicScreen:
         """Draw a modal-style version of the ModeMusic screen."""
         width, height = self.screen.get_size()
 
-        # Dim background
-        dim = pygame.Surface((width, height), pygame.SRCALPHA)
-        dim.fill((0, 0, 0, 140))
+        # Dim background (P1-12a: boyut-anahtarlı önbellek — kare-başı
+        # tam-ekran SRCALPHA tahsisi yasak).
+        dim = self._mm_cached_surface(
+            'dim', (width, height),
+            lambda: _mm_make_fill((width, height), (0, 0, 0, 140)))
         self.screen.blit(dim, (0, 0))
 
         panel_rect, list_rect, item_h, gap = self._overlay_layout()
@@ -9032,6 +9189,16 @@ class ModeMusicScreen:
             )
 
         self.screen.set_clip(None)
+
+        # P1-12a: düzen tek kaynağı test sözleşmesi için kaydedilir —
+        # döngü SONRASI (önceki kare yerine bu karenin rect'leri; ilk
+        # çağrıda option_rects henüz boşken erken kayıt sessiz boş
+        # liste üretiyordu).
+        self._mode_music_overlay_rects = {
+            'panel': panel_rect, 'list': list_rect,
+            'item_h': item_h, 'gap': gap,
+            'rows': list(self.option_rects),
+        }
 
         # Scrollbar
         total_h = len(self.modes) * (item_h + gap)
@@ -9286,17 +9453,24 @@ class ModeMusicScreen:
 
     def _draw_track_picker(self):
         width, height = self.screen.get_size()
+        _s = self._s
 
-        # Dim background
-        dim = pygame.Surface((width, height), pygame.SRCALPHA)
-        dim.fill((0, 0, 0, 140))
+        # Dim background (P1-12a: boyut-anahtarlı önbellek)
+        dim = self._mm_cached_surface(
+            'dim', (width, height),
+            lambda: _mm_make_fill((width, height), (0, 0, 0, 140)))
         self.screen.blit(dim, (0, 0))
 
-        panel_w = min(720, width - 120)
-        panel_h = min(520, height - 160)
-        panel_x = (width - panel_w) // 2
-        panel_y = (height - panel_h) // 2
-        panel_rect = pygame.Rect(panel_x, panel_y, panel_w, panel_h)
+        # P1-12a: panel güvenli alana bağlanır; sabit 720/520 tabanları
+        # ölçeklenir (korunan genişlikte çıktı birebir: min(w-120)).
+        bounds = self._mm_panel_bounds()
+        panel_w = min(_s(720), max(_s(300), width - _s(120)))
+        panel_h = min(_s(520), max(_s(220), height - _s(160)))
+        panel_w = min(panel_w, bounds.width)
+        panel_h = min(panel_h, bounds.height)
+        panel_rect = pygame.Rect((width - panel_w) // 2, (height - panel_h) // 2, panel_w, panel_h)
+        panel_rect = panel_rect.clamp(bounds)
+        self._track_picker_rects = {'panel': panel_rect, 'items': []}
 
         retro_style.draw_glass_panel(self.screen, panel_rect, alpha=210, border_color=retro_style.primary, glow=True)
 
@@ -9315,15 +9489,17 @@ class ModeMusicScreen:
                 sub = subtitle_font.render(mode_label, True, (170, 190, 220))
                 self.screen.blit(sub, (panel_rect.x + 20, panel_rect.y + 50))
 
-        # List area
-        list_top = panel_rect.y + 86
-        list_left = panel_rect.x + 18
-        list_right = panel_rect.right - 18
-        list_bottom = panel_rect.bottom - 60
-        list_rect = pygame.Rect(list_left, list_top, list_right - list_left, list_bottom - list_top)
+        # List area (P1-12a: ölçekli dolgular; baseline'ta birebir)
+        list_top = panel_rect.y + _s(86)
+        list_left = panel_rect.x + _s(18)
+        list_right = panel_rect.right - _s(18)
+        list_bottom = panel_rect.bottom - _s(60)
+        list_rect = pygame.Rect(
+            list_left, list_top,
+            max(40, list_right - list_left), max(40, list_bottom - list_top))
 
-        item_h = 44
-        gap = 8
+        item_h = _s(44, minimum=24)
+        gap = _s(8, minimum=4)
         self.picker_item_rects = []
 
         # Clamp scroll
@@ -9346,8 +9522,12 @@ class ModeMusicScreen:
 
             text_font = retro_style.get_font(22, bold=selected)
             label = option['label']
-            txt = text_font.render(label, True, (255, 255, 255) if selected else (205, 215, 235))
-            self.screen.blit(txt, (r.x + 14, r.y + (r.height - txt.get_height()) // 2))
+            # P1-12a: parça adı satır genişliğine ASCII '...' ile sığar
+            # (uzun dosya adları satır bütçesini aşabiliyordu).
+            label_fit = ellipsize_text(label, text_font, max(16, r.width - _s(14) * 2))
+            txt = text_font.render(label_fit, True, (255, 255, 255) if selected else (205, 215, 235))
+            self.screen.blit(txt, (r.x + _s(14), r.y + (r.height - txt.get_height()) // 2))
+            self._track_picker_rects['items'].append((r, label_fit))
 
         self.screen.set_clip(None)
 
@@ -9364,21 +9544,33 @@ class ModeMusicScreen:
     def draw(self):
         width, height = self.screen.get_size()
         retro_style.draw_background(self.screen)
+        _s = self._s
 
         # ── Panel (ayarlar ekranı stiliyle aynı) ──
-        pw = min(1200, max(700, int(width * 0.88)))
-        ph = min(850, max(500, int(height * 0.88)))
-        px = (width - pw) // 2
-        py = (height - ph) // 2
-        panel = pygame.Rect(px, py, pw, ph)
+        # P1-12a: sabit 700/500 tabanları küçük pencerelerde ekrana taşıyordu
+        # (640x360'ta 700px panel). Ölçekli tabanlar + safe-rect bütçesi;
+        # korunan genişlikte (>=800) 0.88*width terimi bağlayıcı kalır →
+        # çıktı birebir korunur.
+        bounds = self._mm_panel_bounds()
+        pw = min(_s(1200), max(_s(340), int(width * 0.88)))
+        ph = min(_s(850), max(_s(260), int(height * 0.88)))
+        pw = min(pw, bounds.width)
+        ph = min(ph, bounds.height)
+        panel = pygame.Rect((width - pw) // 2, (height - ph) // 2, pw, ph)
+        panel = panel.clamp(bounds)
+        px, py = panel.x, panel.y
+        # P1-12a: düzen tek kaynağı containment testleri için kaydedilir.
+        self._mode_music_panel_rects = {'panel': panel, 'rows': []}
 
-        # Gölge
-        shadow = pygame.Surface((pw + 10, ph + 10), pygame.SRCALPHA)
-        pygame.draw.rect(shadow, (0, 0, 0, 60), shadow.get_rect(), border_radius=16)
+        # Gölge (P1-12a: boyut-anahtarlı önbellek — kare-başı tahsis yok)
+        shadow = self._mm_cached_surface(
+            'shadow', (pw + 10, ph + 10),
+            lambda: _mm_make_rounded((pw + 10, ph + 10), (0, 0, 0, 60), 16))
         self.screen.blit(shadow, (px + 5, py + 5))
-        # Arka plan
-        panel_surf = pygame.Surface(panel.size, pygame.SRCALPHA)
-        panel_surf.fill((12, 16, 32, 235))
+        # Arka plan (P1-12a: önbellekli)
+        panel_surf = self._mm_cached_surface(
+            'panel', panel.size,
+            lambda: _mm_make_fill(panel.size, (12, 16, 32, 235)))
         self.screen.blit(panel_surf, panel.topleft)
         pygame.draw.rect(self.screen, (60, 70, 100), panel, 2, border_radius=14)
         pygame.draw.line(self.screen, (80, 140, 220), (px + 2, py + 1), (px + pw - 2, py + 1), 1)
@@ -9386,7 +9578,7 @@ class ModeMusicScreen:
         # ── Başlık (panel içinde) ──
         title_font = retro_style.get_font(36)
         title_text = t('track_title')
-        title_surf = title_font.render(title_text, True, (220, 235, 255))
+        title_surf = render_text(title_font, title_text, True, (220, 235, 255))
         self.screen.blit(title_surf, (px + 24, py + 14))
 
         # Başlık altı çizgi
@@ -9398,8 +9590,10 @@ class ModeMusicScreen:
         chip_surf = chip_font.render(summary_text, True, (200, 230, 255))
         chip_w = chip_surf.get_width() + 40
         chip_rect = pygame.Rect(px + 24, py + 64, chip_w, 32)
-        chip_bg = pygame.Surface(chip_rect.size, pygame.SRCALPHA)
-        chip_bg.fill((30, 40, 60, 180))
+        # P1-12a: chip zemini boyut-anahtarlı önbellekten.
+        chip_bg = self._mm_cached_surface(
+            'chip', chip_rect.size,
+            lambda: _mm_make_fill(chip_rect.size, (30, 40, 60, 180)))
         self.screen.blit(chip_bg, chip_rect.topleft)
         pygame.draw.rect(self.screen, (60, 80, 110), chip_rect, 1, border_radius=14)
         self.screen.blit(chip_surf, (chip_rect.x + 20, chip_rect.centery - chip_surf.get_height() // 2))
@@ -9428,14 +9622,17 @@ class ModeMusicScreen:
 
             item_rect = pygame.Rect(content_left + 8, y_pos, content_width - 16, item_height)
             self.option_rects.append(item_rect)
+            self._mode_music_panel_rects['rows'].append(item_rect)
 
             is_selected = idx == self.selected
 
-            # Satır arka planı (ayarlar paneli stili)
+            # Satır arka planı (ayarlar paneli stili; P1-12a: seçim durumu +
+            # boyut anahtarlı önbellek — kare-başı satır Surface'ı yok)
             bg_alpha = 180 if is_selected else 130
             bg_color = (28, 38, 60) if is_selected else (18, 24, 42)
-            row_surf = pygame.Surface(item_rect.size, pygame.SRCALPHA)
-            row_surf.fill((*bg_color, bg_alpha))
+            row_surf = self._mm_cached_surface(
+                'row_sel' if is_selected else 'row_nrm', item_rect.size,
+                lambda _c=bg_color, _a=bg_alpha: _mm_make_fill(item_rect.size, (*_c, _a)))
             self.screen.blit(row_surf, item_rect.topleft)
 
             if is_selected:
@@ -9443,10 +9640,11 @@ class ModeMusicScreen:
             else:
                 pygame.draw.rect(self.screen, (40, 50, 70), item_rect, 1, border_radius=6)
 
-            # Sol ikon
+            # Sol ikon (P1-12a: zemin yüzeyi önbellekli)
             icon_rect = pygame.Rect(item_rect.x + 16, item_rect.centery - 20, 40, 40)
-            icon_bg = pygame.Surface(icon_rect.size, pygame.SRCALPHA)
-            icon_bg.fill((15, 20, 30, 200))
+            icon_bg = self._mm_cached_surface(
+                'icon', icon_rect.size,
+                lambda: _mm_make_fill(icon_rect.size, (15, 20, 30, 200)))
             self.screen.blit(icon_bg, icon_rect.topleft)
             pygame.draw.rect(self.screen, (50, 60, 85), icon_rect, 1, border_radius=6)
             note_char = ">" if not is_selected else ">>"
