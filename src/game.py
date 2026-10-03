@@ -4684,6 +4684,9 @@ class Game:
                         {'achievement': achievement, 'time': pygame.time.get_ticks(), 'alpha': 255}
                     )
                     print(f"Başarı Açıldı: {achievement['name']} - {achievement['description']}")
+            sync_to_steam = getattr(self.achievement_manager, 'sync_to_steam', None)
+            if callable(sync_to_steam):
+                sync_to_steam(include_stats=False)
 
     def _line_clear_animation_active(self) -> bool:
         """Satır temizleme animasyonu (sweep / blok düşüşü) hâlâ oynuyor mu?
@@ -6454,7 +6457,8 @@ class Game:
         # Alt başlık
         subtitle_font = retro_style.get_font(s(20, minimum=11), bold=False)
         if is_survival_victory:
-            subtitle = subtitle_font.render(t('survival_victory_subtitle', minutes=3), True, (100, 255, 150))
+            survived_minutes = int(getattr(self, 'survival_time', 0) // 60000)
+            subtitle = subtitle_font.render(t('survival_victory_subtitle', minutes=survived_minutes), True, (100, 255, 150))
         else:
             subtitle = subtitle_font.render(t('game_over_subtitle'), True, (188, 205, 234))
         subtitle_rect = subtitle.get_rect(centerx=panel_rect.centerx, top=title_rect.bottom + s(6))

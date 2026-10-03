@@ -589,7 +589,7 @@ class TestTutorialProgressionTracking(unittest.TestCase):
         game._score_recorded = False
         game.game_time = 12000
         game.game_mode = 'tutorial' if suppress else 'classic'
-        calls = {'add_score': 0, 'update_user_stats': 0, 'update_stats': 0}
+        calls = {'add_score': 0, 'update_user_stats': 0, 'update_stats': 0, 'sync_to_steam': 0}
 
         game.board = types.SimpleNamespace(
             score=1000, lines_cleared=5, level=2, tetrises=1, combo=3,
@@ -606,9 +606,13 @@ class TestTutorialProgressionTracking(unittest.TestCase):
         def _update_stats(*_a, **_k):
             calls['update_stats'] += 1
             return []
+        def _sync_to_steam(*, include_stats=True):
+            self.assertFalse(include_stats)
+            calls['sync_to_steam'] += 1
         game.achievement_manager = types.SimpleNamespace(
             stats={}, update_stats=_update_stats,
             get_achievement=lambda _id: None,
+            sync_to_steam=_sync_to_steam,
         )
         game.achievement_notifications = []
         return game, calls
@@ -619,6 +623,7 @@ class TestTutorialProgressionTracking(unittest.TestCase):
         self.assertEqual(calls['add_score'], 0)
         self.assertEqual(calls['update_user_stats'], 0)
         self.assertEqual(calls['update_stats'], 0)
+        self.assertEqual(calls['sync_to_steam'], 0)
         self.assertTrue(game._score_recorded)
 
     def test_finalize_run_records_in_normal_mode(self):
@@ -629,6 +634,7 @@ class TestTutorialProgressionTracking(unittest.TestCase):
         self.assertEqual(calls['add_score'], 1)
         self.assertEqual(calls['update_user_stats'], 1)
         self.assertEqual(calls['update_stats'], 1)
+        self.assertEqual(calls['sync_to_steam'], 1)
 
 
 class TestTutorialCardEffectConsistency(unittest.TestCase):

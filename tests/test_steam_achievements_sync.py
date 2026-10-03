@@ -2,9 +2,14 @@
 
 Gerçek Steam SDK olmadan çalışır — steam_integration mock'lanır.
 """
+import ast
+import ctypes
 import importlib
+import json
 import sys
+import threading
 import types
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -249,6 +254,28 @@ def test_sync_to_steam_calls_sync_all():
     sys.modules.pop("steam_integration", None)
 
 
+def test_sync_to_steam_can_retry_achievements_without_resending_stats():
+    import achievements
+    importlib.reload(achievements)
+
+    mock_steam = MagicMock()
+    mock_steam.sync_all_achievements = MagicMock(return_value=1)
+    mock_steam.sync_stats_to_steam = MagicMock(return_value=9)
+    sys.modules["steam_integration"] = mock_steam
+
+    mgr = achievements.AchievementManager.__new__(achievements.AchievementManager)
+    mgr.unlocked = {"survival_10min": "2026-10-03 12:00"}
+    mgr.stats = {"survival_max_time": 600}
+
+    assert mgr.sync_to_steam(include_stats=False) == 1
+    mock_steam.sync_all_achievements.assert_called_once_with(
+        mgr.unlocked, achievements.STEAM_ACHIEVEMENT_MAP
+    )
+    mock_steam.sync_stats_to_steam.assert_not_called()
+
+    sys.modules.pop("steam_integration", None)
+
+
 # ── steam_integration fonksiyonları ──────────────────────────────────────
 
 def test_unlock_steam_achievement_when_not_available():
@@ -268,6 +295,201 @@ def test_is_steam_achievement_unlocked_when_not_available():
 
     result = steam_integration.is_steam_achievement_unlocked("ACH_FIRST_GAME")
     assert result is None
+
+
+def _configure_available_steam(monkeypatch):
+    import steam_integration
+    importlib.reload(steam_integration)
+    dll = MagicMock()
+    dll.SteamAPI_ISteamUserStats_SetAchievement.return_value = True
+    dll.SteamAPI_ISteamUserStats_StoreStats.return_value = True
+    monkeypatch.setattr(steam_integration, '_dll', dll)
+    monkeypatch.setattr(steam_integration, '_init_ok', True)
+    monkeypatch.setattr(steam_integration, '_isteam_user_stats', object())
+    monkeypatch.setattr(steam_integration, '_shutdown_requested', False)
+    monkeypatch.setattr(steam_integration, '_exit_requested', False)
+    monkeypatch.setattr(steam_integration, '_pump_lock', threading.Lock())
+    return steam_integration, dll
+
+
+def test_unlock_requires_store_stats_success(monkeypatch):
+    steam, dll = _configure_available_steam(monkeypatch)
+    dll.SteamAPI_ISteamUserStats_StoreStats.return_value = False
+
+    assert steam.unlock_steam_achievement('ACH_SURVIVAL_10MIN') is False
+    dll.SteamAPI_ISteamUserStats_SetAchievement.assert_called_once()
+    dll.SteamAPI_ISteamUserStats_StoreStats.assert_called_once()
+
+
+def test_bulk_sync_retries_after_store_stats_failure(monkeypatch):
+    steam, dll = _configure_available_steam(monkeypatch)
+    dll.SteamAPI_ISteamUserStats_StoreStats.side_effect = [False, True]
+    dll.SteamAPI_ISteamUserStats_GetAchievement.return_value = False
+
+    unlocked = {'survival_10min': '2026-10-03 12:00'}
+    mapping = {'survival_10min': 'ACH_SURVIVAL_10MIN'}
+
+    assert steam.sync_all_achievements(unlocked, mapping) == 0
+    assert steam.sync_all_achievements(unlocked, mapping) == 1
+    assert dll.SteamAPI_ISteamUserStats_SetAchievement.call_count == 2
+    assert dll.SteamAPI_ISteamUserStats_StoreStats.call_count == 2
+
+
+@pytest.mark.parametrize('store_result', [False, RuntimeError('store failed')])
+def test_cached_unlock_does_not_hide_failed_steam_store(monkeypatch, store_result):
+    steam, dll = _configure_available_steam(monkeypatch)
+    dll.SteamAPI_ISteamUserStats_StoreStats.side_effect = [store_result, True]
+
+    def get_achievement(handle, name, output):
+        ctypes.cast(output, ctypes.POINTER(ctypes.c_bool)).contents.value = True
+        return True
+
+    dll.SteamAPI_ISteamUserStats_GetAchievement.side_effect = get_achievement
+    assert steam.unlock_steam_achievement('ACH_SURVIVAL_10MIN') is False
+    assert steam.is_steam_achievement_unlocked('ACH_SURVIVAL_10MIN') is True
+    assert steam.sync_all_achievements(
+        {'survival_10min': '2026-10-03 12:00'}, {'survival_10min': 'ACH_SURVIVAL_10MIN'}
+    ) == 0
+    assert dll.SteamAPI_ISteamUserStats_StoreStats.call_count == 2
+
+
+@pytest.mark.parametrize('platform_name', ['win32', 'darwin'])
+@pytest.mark.parametrize('set_result,store_result,expected', [
+    (True, True, True), (True, False, False), (False, True, False),
+])
+def test_achievement_set_and_store_share_callback_lock(
+    monkeypatch, platform_name, set_result, store_result, expected,
+):
+    steam, dll = _configure_available_steam(monkeypatch)
+    monkeypatch.setattr(steam, 'sys', types.SimpleNamespace(platform=platform_name))
+
+    def set_achievement(*args):
+        assert steam._pump_lock.locked()
+        return set_result
+
+    def store_stats(*args):
+        assert steam._pump_lock.locked()
+        return store_result
+
+    dll.SteamAPI_ISteamUserStats_SetAchievement.side_effect = set_achievement
+    dll.SteamAPI_ISteamUserStats_StoreStats.side_effect = store_stats
+    assert steam.unlock_steam_achievement('ACH_SURVIVAL_10MIN') is expected
+    assert dll.SteamAPI_ISteamUserStats_StoreStats.call_count == int(set_result)
+    assert steam.sync_all_achievements(
+        {'survival_10min': '2026-10-03 12:00'}, {'survival_10min': 'ACH_SURVIVAL_10MIN'}
+    ) == int(expected)
+    assert not steam._pump_lock.locked()
+
+
+def test_shutdown_while_waiting_for_lock_prevents_native_achievement_calls(monkeypatch):
+    steam, dll = _configure_available_steam(monkeypatch)
+
+    class ShutdownLock:
+        def __enter__(self):
+            steam._shutdown_requested = True
+
+        def __exit__(self, *args):
+            return False
+
+    monkeypatch.setattr(steam, '_pump_lock', ShutdownLock())
+    assert steam.unlock_steam_achievement('ACH_SURVIVAL_10MIN') is False
+    dll.SteamAPI_ISteamUserStats_SetAchievement.assert_not_called()
+    dll.SteamAPI_ISteamUserStats_StoreStats.assert_not_called()
+
+
+def test_macos_early_exit_prevents_new_achievement_work(monkeypatch):
+    steam, dll = _configure_available_steam(monkeypatch)
+    monkeypatch.setattr(steam, 'sys', types.SimpleNamespace(platform='darwin'))
+    steam.request_shutdown()
+    assert steam.is_available()
+    assert steam.unlock_steam_achievement('ACH_SURVIVAL_10MIN') is False
+    assert steam.sync_all_achievements(
+        {'survival_10min': '2026-10-03 12:00'}, {'survival_10min': 'ACH_SURVIVAL_10MIN'}
+    ) == 0
+    dll.SteamAPI_ISteamUserStats_SetAchievement.assert_not_called()
+
+
+def test_stat_sync_does_not_report_success_when_store_fails(monkeypatch):
+    steam, dll = _configure_available_steam(monkeypatch)
+    dll.SteamAPI_ISteamUserStats_StoreStats.return_value = False
+    assert steam.sync_stats_to_steam({'total_games': 1, 'survival_max_time': 600}) == 0
+
+
+@pytest.mark.parametrize('platform_name', ['win32', 'darwin'])
+def test_second_survival_run_retries_local_unlock_without_duplicate_reward(
+    monkeypatch, tmp_path, platform_name,
+):
+    steam, dll = _configure_available_steam(monkeypatch)
+    monkeypatch.setattr(steam, 'sys', types.SimpleNamespace(platform=platform_name))
+    import achievements
+    importlib.reload(achievements)
+    # Tek-dosya koşumunda autouse _stub_modules, atomic_io'yu (henüz
+    # yüklenmemişse) MagicMock'lu stub'la kurar ve save() dosya yazmaz;
+    # reload'dan SONRA gerçek yazan sarmalayıcı bağla (reload önceki yamayı ezer).
+    monkeypatch.setattr(
+        achievements, 'atomic_write_json',
+        lambda path, data, **kwargs: Path(path).write_text(
+            json.dumps(data, indent=kwargs.get('indent', 2),
+                       ensure_ascii=kwargs.get('ensure_ascii', False)),
+            encoding='utf-8',
+        ),
+    )
+    manager = achievements.AchievementManager(str(tmp_path / 'survival_achievements.json'))
+    manager.unlocked = {
+        achievement_id: '2026-10-03 11:00'
+        for achievement_id in achievements.ACHIEVEMENTS if achievement_id != 'survival_10min'
+    }
+    manager.user_manager = MagicMock()
+    manager.claimed_rewards = set(manager.unlocked)
+    monkeypatch.setattr(threading, 'Thread', MagicMock())
+    game_path = Path(__file__).resolve().parents[1] / 'src' / 'game.py'
+    game_class = next(
+        node for node in ast.parse(game_path.read_text(encoding='utf-8')).body
+        if isinstance(node, ast.ClassDef) and node.name == 'Game'
+    )
+    finalize_method = next(
+        node for node in game_class.body
+        if isinstance(node, ast.FunctionDef) and node.name == 'finalize_run'
+    )
+    namespace = {'pygame': types.SimpleNamespace(time=types.SimpleNamespace(get_ticks=lambda: 0))}
+    module = ast.fix_missing_locations(ast.Module(body=[finalize_method], type_ignores=[]))
+    exec(compile(module, str(game_path), 'exec'), namespace)
+
+    def make_game():
+        return types.SimpleNamespace(
+            _score_recorded=False, game_time=600000, game_mode='survival',
+            score_manager=None, user_manager=None, achievement_manager=manager,
+            achievement_notifications=[],
+            board=types.SimpleNamespace(score=0, lines_cleared=0, level=1, tetrises=0, combo=0),
+        )
+
+    first_game = make_game()
+    dll.SteamAPI_ISteamUserStats_StoreStats.return_value = False
+    namespace['finalize_run'](first_game, playtime=600)
+    assert 'survival_10min' in manager.unlocked
+    assert manager.stats['survival_max_time'] == 600
+    assert len(first_game.achievement_notifications) == 1
+    saved = json.loads(Path(manager.filename).read_text(encoding='utf-8'))
+    assert 'survival_10min' in saved['unlocked']
+    assert manager.claim_reward('survival_10min') == achievements.ACHIEVEMENT_REWARDS['survival_10min']
+    unlock_date = manager.unlocked['survival_10min']
+    dll.SteamAPI_ISteamUserStats_SetAchievement.reset_mock()
+
+    second_game = make_game()
+    dll.SteamAPI_ISteamUserStats_StoreStats.return_value = True
+    namespace['finalize_run'](second_game, playtime=600)
+    assert any(
+        native_call.args[1] == b'ACH_SURVIVAL_10MIN'
+        for native_call in dll.SteamAPI_ISteamUserStats_SetAchievement.call_args_list
+    )
+    assert second_game.achievement_notifications == []
+    assert manager.unlocked['survival_10min'] == unlock_date
+    assert manager.claim_reward('survival_10min') == 0
+    manager.user_manager.add_fragments.assert_called_once()
+    assert manager.stats['total_games'] == 2
+    call_count = dll.SteamAPI_ISteamUserStats_SetAchievement.call_count
+    namespace['finalize_run'](second_game, playtime=600)
+    assert dll.SteamAPI_ISteamUserStats_SetAchievement.call_count == call_count
 
 
 # ── Yeni Steam API fonksiyonları ─────────────────────────────────────────

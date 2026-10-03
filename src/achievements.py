@@ -787,7 +787,7 @@ class AchievementManager:
                     print(f"[UYARI] Başarı kontrolü hata ({ach_id}): {e}")
     
     def unlock(self, achievement_id):
-        """Başarıyı aç ve Steam'e senkronla. (Lunar ödülü manuel claim ile alınır.)"""
+        """Yerel başarımı aç ve Steam'e bildir; Steam hatası yerel kazanımı geri almaz. (Lunar ödülü manuel claim ile alınır.)"""
         if achievement_id not in self.unlocked:
             self.unlocked[achievement_id] = datetime.now().strftime('%Y-%m-%d %H:%M')
             self.new_achievements.append(achievement_id)
@@ -806,21 +806,23 @@ class AchievementManager:
             if steam_name:
                 try:
                     import steam_integration
-                    steam_integration.unlock_steam_achievement(steam_name)
+                    if not steam_integration.unlock_steam_achievement(steam_name):
+                        print(f"[Steam] Başarım yeniden senkronlanacak: {steam_name}")
                 except Exception:
                     pass
             return True
         return False
 
-    def sync_to_steam(self):
+    def sync_to_steam(self, *, include_stats=True):
         """Oyundaki tüm açılmış başarımları ve istatistikleri Steam'e toplu senkronla.
 
-        Oyun açılışında veya profil yüklendiğinde çağrılmalı.
+        Açılış/profil yüklemede ve run sonunda çağrılır. Run sonunda istatistikler
+        zaten gönderildiğinden include_stats=False ile yalnız başarımlar denenir.
         """
         try:
             import steam_integration
             ach_count = steam_integration.sync_all_achievements(self.unlocked, STEAM_ACHIEVEMENT_MAP)
-            stat_count = steam_integration.sync_stats_to_steam(self.stats)
+            stat_count = steam_integration.sync_stats_to_steam(self.stats) if include_stats else 0
             return ach_count + stat_count
         except Exception:
             return 0

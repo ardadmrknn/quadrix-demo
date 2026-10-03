@@ -33,7 +33,7 @@ class SurvivalMode(Game):
     - Virüsler mevcut blokları enfekte eder
     - Enfekte bloklar belirli sürede temizlenmezse YENİLİR (silinir)
     - Yenilen blok sayısı 20'ye ulaşırsa GAME OVER
-    - 5 dakika hayatta kalırsan KAZANIRSIN
+    - 10 dakika hayatta kalırsan KAZANIRSIN
     - Her 5000 puanda yenilen blok sayısı sıfırlanır (Antivirus)
     
     SEVİYELER (her 1 dakikada artar):
@@ -137,7 +137,7 @@ class SurvivalMode(Game):
         
         self.survival_time += delta_time
         
-        # 1. ZAFER KONTROLÜ - 5 dakika hayatta kaldın mı?
+        # 1. ZAFER KONTROLÜ - 10 dakika hayatta kaldın mı?
         if self.survival_time >= self.GAME_DURATION and not self.game_over:
             self._handle_survival_victory()
             return
@@ -180,7 +180,7 @@ class SurvivalMode(Game):
         super().update(delta_time)
     
     def _handle_survival_victory(self):
-        """5 dakika hayatta kaldın - KAZANDIN!"""
+        """10 dakika hayatta kaldın - KAZANDIN!"""
         self.game_over = True
         self.survival_victory = True
         self.sound.play('tetris')
