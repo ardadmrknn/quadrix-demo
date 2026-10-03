@@ -5340,9 +5340,23 @@ class Game:
         self._draw_base_scene_effects(skin)
         
     def _draw_right_hud_panel(self, offset_x, offset_y, board_width, board_height, skin, ui_skin, text_color, accent_color, label_color):
-        """Sağ taraftaki HUD panelini çiz - alt sınıflar override edebilir"""
-        active_width, active_height = self._active_ui_size()
+        """Sağ taraftaki HUD panelini çiz - alt sınıflar override edebilir
+
+        DUZ-001: v2 clip-guard paritesi — panel çizimi panel rect'iyle
+        sınırlanır; önceki clip finally bloğunda geri yüklenir. Gövde
+        _draw_right_hud_panel_body içinde değişmeden korunur (v2'nin
+        core yapısı kör kopyalanmadı, yalnızca guard eklendi).
+        """
+        prev_clip = self.screen.get_clip()
         panel_metrics = self._get_right_hud_panel_metrics(offset_x, offset_y, board_width, board_height)
+        self.screen.set_clip(panel_metrics['rect'])
+        try:
+            self._draw_right_hud_panel_body(offset_x, offset_y, board_width, board_height, skin, ui_skin, text_color, accent_color, label_color, panel_metrics)
+        finally:
+            self.screen.set_clip(prev_clip)
+
+    def _draw_right_hud_panel_body(self, offset_x, offset_y, board_width, board_height, skin, ui_skin, text_color, accent_color, label_color, panel_metrics):
+        active_width, active_height = self._active_ui_size()
         panel_rect = panel_metrics['rect']
         info_x = panel_rect.x
         header_y = panel_rect.y
