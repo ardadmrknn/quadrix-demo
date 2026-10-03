@@ -108,6 +108,10 @@ def test_main_menu_ui_scale_hits_phase5_relaxed_cap_on_large_displays():
 
 
 def test_main_menu_manual_ui_scale_preset_only_affects_general_ui():
+    """Demo sözleşmesi: preset yalnız genel UI ölçeğini büyütür (large çarpanı
+    76cb8c6'da 1.08 → 1.25); kart içeriği ve modal paneller (ikisi de
+    apply_preset=False) preset'ten etkilenmez. v2'de içerik apply_preset=True +
+    1.40 cap ile izler — bilinçli depo farkı."""
     menu = _build_menu((2560, 1440))
     previous = ui_scaling_module.get_ui_scale_preset()
 
@@ -119,7 +123,7 @@ def test_main_menu_manual_ui_scale_preset_only_affects_general_ui():
     finally:
         ui_scaling_module.set_ui_scale_preset(previous)
 
-    assert math.isclose(ui_scale, 1.24 * 1.08)
+    assert math.isclose(ui_scale, 1.24 * 1.25)
     assert math.isclose(fullscreen_scale, 1.16)
     assert math.isclose(content_scale, 1.16)
 
